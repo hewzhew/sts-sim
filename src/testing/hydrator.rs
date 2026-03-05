@@ -45,8 +45,8 @@ fn commod_to_engine_power_id(commod_id: &str) -> String {
 
 /// Translate a CommunicationMod card ID to the format used in CardLibrary.
 ///
-/// CommunicationMod: `Strike_R`, `Defend_G`, `Bash`, `Flame Barrier`
-/// CardLibrary:       `Strike_Ironclad`, `Defend_Silent`, `Bash`, `Flame_Barrier`
+/// CommunicationMod: `Strike_R`, `Defend_G`, `Bash`, `Flame Barrier`, `FlurryOfBlows`
+/// CardLibrary:       `Strike_Ironclad`, `Defend_Silent`, `Bash`, `Flame_Barrier`, `Flurry_of_Blows`
 pub fn commod_to_library_id(commod_id: &str) -> String {
     // Step 0: Handle CommunicationMod internal names that differ from card library IDs.
     // Java uses internal names (e.g., Apparition → "Ghostly") which CommunicationMod exposes.
@@ -71,7 +71,39 @@ pub fn commod_to_library_id(commod_id: &str) -> String {
         commod_id.to_string()
     };
     // Second: spaces → underscores (CommunicationMod uses spaces, library uses underscores)
-    id.replace(' ', "_")
+    let id = id.replace(' ', "_");
+    
+    // Third: CamelCase → underscore_separated for Watcher cards
+    // CommunicationMod sends "FlurryOfBlows" but library uses "Flurry_of_Blows"
+    // Only apply if the ID contains no underscores (already-separated IDs like "Strike_Ironclad" skip this)
+    if !id.contains('_') {
+        let chars: Vec<char> = id.chars().collect();
+        let mut result = String::with_capacity(id.len() + 8);
+        for (i, &ch) in chars.iter().enumerate() {
+            if i > 0 && ch.is_uppercase() && chars[i-1].is_lowercase() {
+                result.push('_');
+            }
+            result.push(ch);
+        }
+        // Convert small words to lowercase: "Of" → "of", "The" → "the", etc.
+        let parts: Vec<&str> = result.split('_').collect();
+        if parts.len() > 1 {
+            let fixed: Vec<String> = parts.iter().enumerate().map(|(i, &p)| {
+                if i > 0 {
+                    match p.to_lowercase().as_str() {
+                        "of" | "the" | "to" | "no" => p.to_lowercase(),
+                        _ => p.to_string(),
+                    }
+                } else {
+                    p.to_string()
+                }
+            }).collect();
+            return fixed.join("_");
+        }
+        return result;
+    }
+    
+    id
 }
 
 /// Create a CardInstance from a CommunicationMod card JSON object.

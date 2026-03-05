@@ -195,15 +195,80 @@ impl CardLibrary {
     }
     
     /// Get a card definition by ID.
+    ///
+    /// Tries direct lookup first, then falls back to CamelCase→Title_Case
+    /// normalization (e.g. "FlurryOfBlows" → "Flurry_of_Blows") since
+    /// CommunicationMod uses CamelCase but our cards.json uses underscores.
     pub fn get(&self, id: &str) -> Result<&CardDefinition, LoaderError> {
-        self.cards
-            .get(id)
-            .ok_or_else(|| LoaderError::CardNotFound(id.to_string()))
+        // Direct lookup
+        if let Some(card) = self.cards.get(id) {
+            return Ok(card);
+        }
+        // CamelCase normalization fallback
+        let normalized = Self::normalize_card_id(id);
+        if normalized != id {
+            if let Some(card) = self.cards.get(&normalized) {
+                return Ok(card);
+            }
+        }
+        Err(LoaderError::CardNotFound(id.to_string()))
     }
     
     /// Get a card definition by ID, returning None if not found.
     pub fn get_opt(&self, id: &str) -> Option<&CardDefinition> {
-        self.cards.get(id)
+        self.cards.get(id).or_else(|| {
+            let normalized = Self::normalize_card_id(id);
+            if normalized != id {
+                self.cards.get(&normalized)
+            } else {
+                None
+            }
+        })
+    }
+    
+    /// Normalize a CamelCase card ID to Title_Case with underscores.
+    ///
+    /// Examples:
+    /// - "FlurryOfBlows" → "Flurry_of_Blows"
+    /// - "CutThroughFate" → "Cut_Through_Fate"
+    /// - "EmptyBody" → "Empty_Body"
+    /// - "DevaForm" → "Deva_Form"
+    /// - "Bash" → "Bash" (no change for single-word)
+    fn normalize_card_id(id: &str) -> String {
+        // Handle upgrade suffix: strip trailing + then re-add
+        let (base, suffix) = if id.ends_with('+') {
+            (&id[..id.len()-1], "+")
+        } else {
+            (id, "")
+        };
+        
+        let mut result = String::with_capacity(base.len() + 8);
+        let chars: Vec<char> = base.chars().collect();
+        
+        for (i, &ch) in chars.iter().enumerate() {
+            if i > 0 && ch.is_uppercase() {
+                // Check if previous char was lowercase (word boundary)
+                if chars[i-1].is_lowercase() {
+                    result.push('_');
+                }
+            }
+            result.push(ch);
+        }
+        
+        // Convert small words to lowercase: "Of" → "of", "The" → "the", "To" → "to"
+        let parts: Vec<&str> = result.split('_').collect();
+        let fixed: Vec<String> = parts.iter().enumerate().map(|(i, &p)| {
+            if i > 0 {
+                match p.to_lowercase().as_str() {
+                    "of" | "the" | "to" | "no" => p.to_lowercase(),
+                    _ => p.to_string(),
+                }
+            } else {
+                p.to_string()
+            }
+        }).collect();
+        
+        format!("{}{}", fixed.join("_"), suffix)
     }
     
     /// Check if a card exists in the library.
@@ -536,6 +601,24 @@ mod tests {
         
         let result = library.get("NonExistent");
         assert!(matches!(result, Err(LoaderError::CardNotFound(_))));
+    }
+    
+    #[test]
+    fn test_normalize_card_id() {
+        assert_eq!(CardLibrary::normalize_card_id("FlurryOfBlows"), "Flurry_of_Blows");
+        assert_eq!(CardLibrary::normalize_card_id("EmptyBody"), "Empty_Body");
+        assert_eq!(CardLibrary::normalize_card_id("CutThroughFate"), "Cut_Through_Fate");
+        assert_eq!(CardLibrary::normalize_card_id("DevaForm"), "Deva_Form");
+        assert_eq!(CardLibrary::normalize_card_id("InnerPeace"), "Inner_Peace");
+        assert_eq!(CardLibrary::normalize_card_id("CrushJoints"), "Crush_Joints");
+        assert_eq!(CardLibrary::normalize_card_id("LikeWater"), "Like_Water");
+        assert_eq!(CardLibrary::normalize_card_id("SpiritShield"), "Spirit_Shield");
+        assert_eq!(CardLibrary::normalize_card_id("MentalFortress"), "Mental_Fortress");
+        // Single words should not change
+        assert_eq!(CardLibrary::normalize_card_id("Bash"), "Bash");
+        assert_eq!(CardLibrary::normalize_card_id("Eruption"), "Eruption");
+        // Already normalized should not change
+        assert_eq!(CardLibrary::normalize_card_id("Flurry_of_Blows"), "Flurry_of_Blows");
     }
     
     #[test]
