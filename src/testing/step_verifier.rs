@@ -15,6 +15,8 @@ use crate::loader::CardLibrary;
 use crate::testing::commod_parser::{DiffTransition, normalize_card_id, parse_combat_snapshot};
 use crate::testing::hydrator::hydrate_combat_state;
 use crate::testing::snapshot::CombatSnapshot;
+use crate::core::stances::Stance;
+
 
 // ============================================================================
 // Step Result Types
@@ -38,7 +40,11 @@ pub struct StepResult {
     pub skip_reason: Option<String>,
     /// Number of divergences filtered by timing whitelist.
     pub timing_filtered: usize,
+    /// The player's stance AFTER this step executed (for carry-forward).
+    /// None if the step was skipped or errored.
+    pub post_stance: Option<Stance>,
 }
+
 
 impl StepResult {
     pub fn passed(&self) -> bool {
@@ -72,6 +78,7 @@ pub fn verify_step(
     command: &str,
     after_json: &Value,
     card_library: &CardLibrary,
+    stance_override: Option<Stance>,
 ) -> StepResult {
     let step_num = 0; // Will be set by caller
 
@@ -87,6 +94,7 @@ pub fn verify_step(
             skipped: true,
             skip_reason: Some(format!("Unsupported command type: '{}'", parts.first().unwrap_or(&""))),
             timing_filtered: 0,
+            post_stance: stance_override, // preserve stance for next step
         };
     }
 
@@ -101,6 +109,7 @@ pub fn verify_step(
             skipped: true,
             skip_reason: Some("Cannot parse hand index from play command".to_string()),
             timing_filtered: 0,
+            post_stance: stance_override,
         },
     };
     // Convert 1-based → 0-based
@@ -117,8 +126,16 @@ pub fn verify_step(
             skipped: true,
             skip_reason: Some("Cannot hydrate before-state (not in combat)".to_string()),
             timing_filtered: 0,
+            post_stance: stance_override,
         },
     };
+
+    // Apply stance carry-forward: CommunicationMod doesn't expose stance,
+    // so we track it across steps. If we have a stance from a previous step,
+    // inject it into the hydrated state.
+    if let Some(st) = stance_override {
+        state.player.stance = st;
+    }
 
     // Validate hand index
     if hand_index >= state.hand.len() {
@@ -132,6 +149,7 @@ pub fn verify_step(
                 hand_index, state.hand.len()
             )),
             timing_filtered: 0,
+            post_stance: Some(state.player.stance),
         };
     }
 
@@ -158,6 +176,7 @@ pub fn verify_step(
             skipped: false,
             skip_reason: None,
             timing_filtered: 0,
+            post_stance: Some(state.player.stance),
         };
     }
 
@@ -171,6 +190,7 @@ pub fn verify_step(
             skipped: true,
             skip_reason: Some("Cannot parse after-state snapshot".to_string()),
             timing_filtered: 0,
+            post_stance: Some(state.player.stance),
         },
     };
 
@@ -185,6 +205,9 @@ pub fn verify_step(
         raw_divergences, &before_snapshot, &expected, &actual,
     );
 
+    // Record post-play stance for carry-forward to next step
+    let post_stance = Some(state.player.stance);
+
     StepResult {
         step_num,
         command: command.to_string(),
@@ -192,6 +215,7 @@ pub fn verify_step(
         skipped: false,
         skip_reason: None,
         timing_filtered,
+        post_stance,
     }
 }
 
@@ -419,6 +443,11 @@ pub fn verify_combat_transitions(
     let mut divergent = 0;
     let mut total_divs = 0;
 
+    // Track stance across steps: CommunicationMod doesn't expose stance,
+    // so we carry forward the post-play stance from each step to the next.
+    // Starts as None (first step uses hydrator default = Neutral).
+    let mut carried_stance: Option<Stance> = None;
+
     // JSONL format: each entry's state is the result AFTER command execution.
     //   transitions[i].raw_state = state AFTER transitions[i].command
     //
@@ -432,11 +461,15 @@ pub fn verify_combat_transitions(
 
         // Only verify if both are in combat
         if prev.snapshot.is_none() || curr.snapshot.is_none() {
+            // Reset stance when leaving combat
+            carried_stance = None;
             continue;
         }
 
         // Only verify play commands (the CURRENT step's command)
         if !curr.command.starts_with("play ") {
+            // For non-play commands (end, potion, etc.), we skip verification
+            // but don't reset the stance — it persists across all combat steps.
             continue;
         }
 
@@ -447,8 +480,14 @@ pub fn verify_combat_transitions(
             &curr.command,       // the play command to execute
             &curr.raw_state,     // state AFTER this play (= expected result)
             card_library,
+            carried_stance,      // stance from previous step
         );
         result.step_num = curr.step;
+
+        // Update carried stance from this step's result
+        if let Some(st) = result.post_stance {
+            carried_stance = Some(st);
+        }
 
         if result.skipped {
             skipped += 1;

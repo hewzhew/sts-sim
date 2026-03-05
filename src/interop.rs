@@ -689,7 +689,7 @@ impl PyStsSim {
         let after: serde_json::Value = serde_json::from_str(after_json)
             .map_err(|e| pyo3::exceptions::PyValueError::new_err(format!("Invalid after JSON: {}", e)))?;
 
-        let result = verify_step(&before, command, &after, &self.card_library);
+        let result = verify_step(&before, command, &after, &self.card_library, None);
 
         let status = if result.skipped {
             "skipped"

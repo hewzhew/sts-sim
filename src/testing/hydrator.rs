@@ -163,6 +163,13 @@ pub fn hydrate_player(json: &Value) -> Player {
         }
     }
 
+    // Parse stance: CommunicationMod exposes player.stance as a string
+    // "Neutral", "Wrath", "Calm", "Divinity", or missing (defaults to Neutral)
+    let stance = json.get("stance")
+        .and_then(|s| s.as_str())
+        .map(Stance::from_str)
+        .unwrap_or(Stance::Neutral);
+
     Player {
         max_hp: json["max_hp"].as_i64().unwrap_or(80) as i32,
         current_hp: json["current_hp"].as_i64().unwrap_or(80) as i32,
@@ -170,7 +177,7 @@ pub fn hydrate_player(json: &Value) -> Player {
         energy: json["energy"].as_i64().unwrap_or(3) as i32,
         max_energy: 3, // CommunicationMod doesn't expose this
         powers,
-        stance: Stance::Neutral,
+        stance,
         gold: 0,
     }
 }
