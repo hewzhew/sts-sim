@@ -195,8 +195,46 @@ python scripts/play_ui.py
 - **必须手动复制**: `Copy-Item target\release\sts_sim.dll bottled_ai_fresh\sts_sim.pyd`
 - 这个问题浪费了 30+ 分钟调试时间（2026-03-05）
 
-### Lesson #19: 不要写终端 Python one-liner
-- PowerShell 引号转义与 Python f-string 冲突，语法错误率 > 50%
-- 用 `sim_diag.py` 子命令代替: `summary`, `report`, `inspect`, `context`
+### Lesson #19: Python 脚本复杂度阈值 — 何时写文件
+- PowerShell 引号转义与 Python f-string 冲突，**终端 one-liner 语法错误率 > 50%**
+- **判断标准**:
+  - ≤2 行、无 f-string/引号嵌套 → 直接 `python -c "..."`
+  - 3-10 行或有引号嵌套 → **写到 `C:\tmp\script_name.py` 再执行**
+  - >10 行或需要复用 → 写到项目 `scripts/` 或 `tests/` 目录
+- **时间对比**: 写文件 ~15s，调试 one-liner 语法错误 ~2-5min
+- 已有的好工具: `sim_diag.py` 子命令（summary/report/inspect/context/trace）
 - 详见 `/diagnose-divergence` 工作流和 `divergence-diagnosis` skill
 
+### Lesson #20: Java 反编译源是 Rust 修复的权威参考
+- **修复 Rust 引擎 bug 时，第一步永远是看 Java 源码**
+- Java 源码路径: `c:\Dev\rust\cardcrawl\` (反编译的游戏代码)
+- 查看方法: `/java-ref` workflow，或直接 grep `cardcrawl/`
+- **常见场景**:
+  - Power 效果不一致 → 看 `powers/某Power.java` 的 `atEndOfTurn()`/`onAttack()` 等 hook
+  - 卡牌效果不对 → 看 `cards/某Card.java` 的 `use()` 方法
+  - 伤害计算偏差 → 看 `DamageInfo.java` + `AbstractCreature.damage()`
+  - 怪物行为错 → 看 `monsters/某Monster.java` 的 `takeTurn()` + `getMove()`
+- **不要凭猜测修改**——Java 的逻辑顺序（hook 触发顺序、Action Queue 执行顺序）经常反直觉
+- 例: Second Wind 先 exhaust 每张卡再加 block，不是先加 block 再 exhaust（之前猜错过）
+
+### Lesson #21: 双目标模块部署 — maturin 的陷阱
+- `maturin develop --release` 只安装到**当前虚拟环境** (`.venv/`)
+- 全局 `C:\Python314\python.exe` 从 `AppData/Roaming/site-packages/` 加载
+- **当 `sts_sim` 目录有 `.venv/` 时，`maturin develop` 永远装到 `.venv` 里!**
+- 全局 Python 的 `.pyd` 不会被更新 → 所有验证脚本用的是旧代码
+- **正确流程** (详见 `/build-deploy` workflow):
+  ```
+  maturin build --release
+  C:\Python314\python.exe -m pip install --force-reinstall target\wheels\*.whl
+  Copy-Item target\release\sts_sim.dll bottled_ai_fresh\sts_sim.pyd
+  ```
+- **诊断**: `python -c "import sts_sim; print(sts_sim.__file__)"` 看加载路径
+- 这个问题在 2026-03-05 浪费了 **3 轮无效验证**（每轮 ~2min 编译+测试）
+
+### Lesson #22: CommunicationMod 的卡牌 ID 不统一
+- Ironclad/Silent 卡用 `_R`/`_G` 后缀 + 下划线分隔: `Strike_R`, `Flame_Barrier`
+- **Watcher 卡用 CamelCase 无下划线**: `FlurryOfBlows`, `CutThroughFate`, `EmptyBody`
+- `commod_to_library_id()` (`hydrator.rs`) 需要处理两种格式
+- 小词 (`of`/`the`/`to`/`no`) 需要小写化: `FlurryOfBlows` → `Flurry_of_Blows`
+- 某些卡名根本不匹配库中任何卡: `ClearTheMind` → `Clear_the_Mind` (库中无此卡)
+- **遇到新角色的卡牌时，先检查 ID 格式差异再做其他调试**
