@@ -44,7 +44,11 @@ pub fn commod_to_library_id(commod_id: &str) -> String {
     // Java uses internal names (e.g., Apparition → "Ghostly") which CommunicationMod exposes.
     let commod_id = match commod_id {
         "Ghostly" => "Apparition",
-        "GhostlyArmor" => "Ghostly_Armor",  // Ghostly Armor is already correct but be safe
+        "GhostlyArmor" => "Ghostly_Armor",
+        // Java Tranquility.ID = "ClearTheMind" → library uses "Tranquility"
+        "ClearTheMind" => "Tranquility",
+        // Java Rushdown card ID = "Adaptation" → library uses "Rushdown"
+        "Adaptation" => "Rushdown",
         _ => commod_id,
     };
 
