@@ -1,0 +1,7640 @@
+{
+  "monsters": [
+    {
+      "id": "Acid Slime (L)",
+      "name": "Acid Slime (L)",
+      "type": "Normal",
+      "act": "Act 1",
+      "hp": {
+        "base": "65-69",
+        "ascension": "68-72"
+      },
+      "starts_with": "Split",
+      "moves": [
+        {
+          "name": "Corrosive Spit",
+          "description": "Deals 11 damage and shuffles 2 Slimed into discard pile.",
+          "intent": "AttackDebuff",
+          "damage": 11,
+          "hits": 1,
+          "effects": [
+            {
+              "type": "AddCard",
+              "card": "Slimed",
+              "amount": 2,
+              "destination": "DiscardPile"
+            }
+          ],
+          "ascension_scaling": [
+            {
+              "asc": 2,
+              "damage": 12
+            }
+          ]
+        },
+        {
+          "name": "Lick",
+          "description": "Inflicts 2 Weak.",
+          "intent": "Debuff",
+          "damage": 0,
+          "hits": 0,
+          "effects": [
+            {
+              "type": "Debuff",
+              "effect": "Weak",
+              "amount": 2
+            }
+          ],
+          "ascension_scaling": []
+        },
+        {
+          "name": "Tackle",
+          "description": "Deals 16 damage.",
+          "intent": "Attack",
+          "damage": 16,
+          "hits": 1,
+          "effects": [],
+          "ascension_scaling": [
+            {
+              "asc": 2,
+              "damage": 18
+            }
+          ]
+        },
+        {
+          "name": "Split",
+          "description": "Dies and spawns 2 Acid Slimes (M) with current HP.",
+          "intent": "Unknown",
+          "damage": 0,
+          "hits": 0,
+          "effects": [
+            {
+              "type": "Split",
+              "spawn": "Acid Slime (M)",
+              "count": 2
+            }
+          ],
+          "ascension_scaling": []
+        }
+      ],
+      "ai_logic": "When not splitting, approximately a 30-40-30 probability split between Corrosive Spit, Tackle, and Lick. Tackle cannot be used twice in a row, and the other moves cannot be used three times in a row.",
+      "ai_logic_asc20": "When not splitting, approximately a 40-30-30 probability split between Corrosive Spit, Tackle, and Lick. Lick cannot be used twice in a row, and the other moves cannot be used three times in a row.",
+      "notes": "Splits if HP is 50% or below",
+      "phases": null,
+      "ascension_variants": [
+        {
+          "hp": "68-72",
+          "move_changes": [
+            "Damage 12, Slimed 2*",
+            "Damage 18"
+          ]
+        }
+      ],
+      "internal_id": "AcidSlime_L",
+      "ascension_breakpoints": [
+        0,
+        2,
+        7,
+        17
+      ],
+      "behavior_model": {
+        "logic_type": "Probabilistic",
+        "rules": [
+          {
+            "move": "Split",
+            "priority": 100,
+            "conditions": [
+              {
+                "type": "HpThreshold",
+                "percent": 50,
+                "comparison": "<="
+              }
+            ]
+          },
+          {
+            "move": "Corrosive Spit",
+            "weight": 30,
+            "priority": 10,
+            "conditions": [
+              {
+                "type": "HistoryConstraint",
+                "max_in_row": 2
+              }
+            ]
+          },
+          {
+            "move": "Tackle",
+            "weight": 40,
+            "priority": 10,
+            "conditions": [
+              {
+                "type": "HistoryConstraint",
+                "max_in_row": 1
+              }
+            ]
+          },
+          {
+            "move": "Lick",
+            "weight": 30,
+            "priority": 10,
+            "conditions": [
+              {
+                "type": "HistoryConstraint",
+                "max_in_row": 2
+              }
+            ]
+          }
+        ]
+      },
+      "behavior_model_asc20": {
+        "logic_type": "Probabilistic",
+        "rules": [
+          {
+            "move": "Split",
+            "priority": 100,
+            "conditions": [
+              {
+                "type": "HpThreshold",
+                "percent": 50,
+                "comparison": "<="
+              }
+            ]
+          },
+          {
+            "move": "Corrosive Spit",
+            "weight": 40,
+            "priority": 10
+          },
+          {
+            "move": "Tackle",
+            "weight": 30,
+            "priority": 10,
+            "conditions": [
+              {
+                "type": "HistoryConstraint",
+                "max_in_row": 2
+              }
+            ]
+          },
+          {
+            "move": "Lick",
+            "weight": 30,
+            "priority": 10,
+            "conditions": [
+              {
+                "type": "HistoryConstraint",
+                "max_in_row": 1
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "Acid Slime (M)",
+      "name": "Acid Slime (M)",
+      "type": "Normal",
+      "act": "Act 1",
+      "hp": {
+        "base": "28-32",
+        "ascension": "29-34"
+      },
+      "starts_with": null,
+      "moves": [
+        {
+          "name": "Corrosive Spit",
+          "description": "Deals 7 damage and shuffles 1 Slimed into discard pile.",
+          "intent": "AttackDebuff",
+          "damage": 7,
+          "hits": 1,
+          "effects": [
+            {
+              "type": "AddCard",
+              "card": "Slimed",
+              "amount": 1,
+              "destination": "DiscardPile"
+            }
+          ],
+          "ascension_scaling": [
+            {
+              "asc": 2,
+              "damage": 8
+            }
+          ]
+        },
+        {
+          "name": "Lick",
+          "description": "Inflicts 1 Weak.",
+          "intent": "Debuff",
+          "damage": 0,
+          "hits": 0,
+          "effects": [
+            {
+              "type": "Debuff",
+              "effect": "Weak",
+              "amount": 1
+            }
+          ],
+          "ascension_scaling": []
+        },
+        {
+          "name": "Tackle",
+          "description": "Deals 10 damage.",
+          "intent": "Attack",
+          "damage": 10,
+          "hits": 1,
+          "effects": [],
+          "ascension_scaling": [
+            {
+              "asc": 2,
+              "damage": 12
+            }
+          ]
+        }
+      ],
+      "ai_logic": "Same AI as Acid Slime (L)",
+      "ai_logic_asc20": "When not splitting, approximately a 40-40-20 probability split between Corrosive Spit, Tackle, and Lick. Lick cannot be used twice in a row, and the other moves cannot be used three times in a row.",
+      "notes": "*Slimed goes into the Discard Pile",
+      "phases": null,
+      "ascension_variants": [
+        {
+          "hp": "29-34",
+          "move_changes": [
+            "Damage 8, Slimed 1*",
+            "Damage 12"
+          ]
+        }
+      ],
+      "internal_id": "AcidSlime_M",
+      "ascension_breakpoints": [
+        0,
+        2,
+        7,
+        17
+      ],
+      "behavior_model": {
+        "logic_type": "Probabilistic",
+        "rules": [
+          {
+            "move": "Corrosive Spit",
+            "weight": 30,
+            "priority": 10,
+            "conditions": [
+              {
+                "type": "HistoryConstraint",
+                "max_in_row": 2
+              }
+            ]
+          },
+          {
+            "move": "Tackle",
+            "weight": 40,
+            "priority": 10,
+            "conditions": [
+              {
+                "type": "HistoryConstraint",
+                "max_in_row": 1
+              }
+            ]
+          },
+          {
+            "move": "Lick",
+            "weight": 30,
+            "priority": 10,
+            "conditions": [
+              {
+                "type": "HistoryConstraint",
+                "max_in_row": 2
+              }
+            ]
+          }
+        ]
+      },
+      "behavior_model_asc20": {
+        "logic_type": "Probabilistic",
+        "rules": [
+          {
+            "move": "Corrosive Spit",
+            "weight": 40,
+            "priority": 10
+          },
+          {
+            "move": "Tackle",
+            "weight": 40,
+            "priority": 10
+          },
+          {
+            "move": "Lick",
+            "weight": 20,
+            "priority": 10,
+            "conditions": [
+              {
+                "type": "HistoryConstraint",
+                "max_in_row": 1
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "Acid Slime (S)",
+      "name": "Acid Slime (S)",
+      "type": "Normal",
+      "act": "Act 1",
+      "hp": {
+        "base": "8-12",
+        "ascension": "9-13"
+      },
+      "starts_with": null,
+      "moves": [
+        {
+          "name": "Lick",
+          "description": "Inflicts 1 Weak.",
+          "intent": "Debuff",
+          "damage": 0,
+          "hits": 0,
+          "effects": [
+            {
+              "type": "Debuff",
+              "effect": "Weak",
+              "amount": 1
+            }
+          ],
+          "ascension_scaling": []
+        },
+        {
+          "name": "Tackle",
+          "description": "Deals 3 damage.",
+          "intent": "Attack",
+          "damage": 3,
+          "hits": 1,
+          "effects": [],
+          "ascension_scaling": [
+            {
+              "asc": 2,
+              "damage": 4
+            }
+          ]
+        }
+      ],
+      "ai_logic": "50% chance of each move on turn 1, then alternates between the two.",
+      "ai_logic_asc20": "Always starts with Lick, then alternates between the two moves.",
+      "notes": null,
+      "phases": null,
+      "ascension_variants": [
+        {
+          "hp": "9-13",
+          "move_changes": [
+            "Damage 4"
+          ]
+        }
+      ],
+      "internal_id": "AcidSlime_S",
+      "ascension_breakpoints": [
+        0,
+        2,
+        7,
+        17
+      ],
+      "behavior_model": {
+        "logic_type": "Turn1ThenAlternate",
+        "rules": [
+          {
+            "move": "Lick",
+            "weight": 50,
+            "priority": 20,
+            "conditions": [
+              {
+                "type": "Turn",
+                "comparison": "==",
+                "target": "1"
+              }
+            ]
+          }
+        ]
+      },
+      "behavior_model_asc20": {
+        "logic_type": "Alternating",
+        "init_sequence": [
+          "Lick"
+        ]
+      }
+    },
+    {
+      "id": "Blue Slaver",
+      "name": "Blue Slaver",
+      "type": "Normal",
+      "act": "Act 1",
+      "hp": {
+        "base": "46-50",
+        "ascension": "48-52"
+      },
+      "starts_with": null,
+      "moves": [
+        {
+          "name": "Stab",
+          "description": "Deals 12 damage.",
+          "intent": "Attack",
+          "damage": 12,
+          "hits": 1,
+          "effects": [],
+          "ascension_scaling": [
+            {
+              "asc": 2,
+              "damage": 13
+            }
+          ]
+        },
+        {
+          "name": "Rake",
+          "description": "Deals 7 damage and applies 1 Weak.",
+          "intent": "AttackDebuff",
+          "damage": 7,
+          "hits": 1,
+          "effects": [
+            {
+              "type": "Debuff",
+              "effect": "Weak",
+              "amount": 1
+            }
+          ],
+          "ascension_scaling": [
+            {
+              "asc": 2,
+              "damage": 8
+            },
+            {
+              "asc": 17,
+              "damage": 8,
+              "effect_amount": 2
+            }
+          ]
+        }
+      ],
+      "ai_logic": "40% chance to use Rake, but cannot use the same move three times in a row.",
+      "ai_logic_asc20": "40% chance to use Rake, but cannot use Stab three times in a row or Rake twice in a row.",
+      "notes": null,
+      "phases": null,
+      "ascension_variants": [
+        {
+          "hp": "48-52",
+          "move_changes": [
+            "Damage 8, Weak 1",
+            "Damage 13"
+          ]
+        }
+      ],
+      "internal_id": "SlaverBlue",
+      "ascension_breakpoints": [
+        0,
+        2,
+        7,
+        17
+      ],
+      "behavior_model": {
+        "logic_type": "Probabilistic",
+        "rules": [
+          {
+            "move": "Rake",
+            "weight": 40,
+            "priority": 10,
+            "conditions": [
+              {
+                "type": "HistoryConstraint",
+                "max_in_row": 2
+              }
+            ]
+          }
+        ]
+      },
+      "behavior_model_asc20": {
+        "logic_type": "Probabilistic",
+        "rules": [
+          {
+            "move": "Rake",
+            "weight": 40,
+            "priority": 10
+          }
+        ]
+      }
+    },
+    {
+      "id": "Cultist",
+      "name": "Cultist",
+      "type": "Normal",
+      "act": "Act 1",
+      "hp": {
+        "base": "48-54",
+        "ascension": "50-56"
+      },
+      "starts_with": null,
+      "moves": [
+        {
+          "name": "Incantation",
+          "description": "Gains 3 Ritual.",
+          "intent": "Buff",
+          "damage": 0,
+          "hits": 0,
+          "effects": [
+            {
+              "type": "Buff",
+              "effect": "Ritual",
+              "amount": 3
+            }
+          ],
+          "ascension_scaling": [
+            {
+              "asc": 2,
+              "effect_amount": 4
+            },
+            {
+              "asc": 17,
+              "effect_amount": 5
+            }
+          ]
+        },
+        {
+          "name": "Dark Strike",
+          "description": "Deals 6 damage.",
+          "intent": "Attack",
+          "damage": 6,
+          "hits": 1,
+          "effects": [],
+          "ascension_scaling": []
+        }
+      ],
+      "ai_logic": "First uses Incantation, then repeats Dark Strike.",
+      "ai_logic_asc20": null,
+      "notes": null,
+      "phases": null,
+      "ascension_variants": [
+        {
+          "hp": "50-56",
+          "move_changes": [
+            "Ritual 4"
+          ]
+        }
+      ],
+      "internal_id": "Cultist",
+      "ascension_breakpoints": [
+        0,
+        2,
+        7,
+        17
+      ],
+      "behavior_model": {
+        "logic_type": "Probabilistic",
+        "init_sequence": [
+          "Incantation"
+        ],
+        "rules": [
+          {
+            "move": "Dark Strike",
+            "weight": 100
+          }
+        ]
+      }
+    },
+    {
+      "id": "Fat Gremlin",
+      "name": "Fat Gremlin",
+      "type": "Normal",
+      "act": "Act 1",
+      "hp": {
+        "base": "13-17",
+        "ascension": "14-18"
+      },
+      "starts_with": null,
+      "moves": [
+        {
+          "name": "Smash",
+          "description": "Deals 4 damage and applies 1 Weak.",
+          "intent": "AttackDebuff",
+          "damage": 4,
+          "hits": 1,
+          "effects": [
+            {
+              "type": "Debuff",
+              "effect": "Weak",
+              "amount": 1
+            }
+          ],
+          "ascension_scaling": [
+            {
+              "asc": 2,
+              "damage": 5
+            },
+            {
+              "asc": 17,
+              "damage": 5,
+              "additional_effect": {
+                "type": "Debuff",
+                "effect": "Frail",
+                "amount": 1
+              }
+            }
+          ]
+        }
+      ],
+      "ai_logic": "Smash every turn.",
+      "ai_logic_asc20": null,
+      "notes": null,
+      "phases": null,
+      "ascension_variants": [
+        {
+          "hp": "14-18",
+          "move_changes": [
+            "Damage 5, Weak 1"
+          ]
+        }
+      ],
+      "internal_id": "GremlinFat",
+      "ascension_breakpoints": [
+        0,
+        2,
+        7,
+        17
+      ],
+      "behavior_model": {
+        "logic_type": "Repeat",
+        "rules": [
+          {
+            "move": "Smash",
+            "weight": 100
+          }
+        ]
+      }
+    },
+    {
+      "id": "Fungi Beast",
+      "name": "Fungi Beast",
+      "type": "Normal",
+      "act": "Act 1",
+      "hp": {
+        "base": "22-28",
+        "ascension": "24-28"
+      },
+      "starts_with": "Spore Cloud 2",
+      "moves": [
+        {
+          "name": "Bite",
+          "description": "Deals 6 damage.",
+          "intent": "Attack",
+          "damage": 6,
+          "hits": 1,
+          "effects": [],
+          "ascension_scaling": []
+        },
+        {
+          "name": "Grow",
+          "description": "Gains 3 Strength.",
+          "intent": "Buff",
+          "damage": 0,
+          "hits": 0,
+          "effects": [
+            {
+              "type": "Buff",
+              "effect": "Strength",
+              "amount": 3
+            }
+          ],
+          "ascension_scaling": [
+            {
+              "asc": 2,
+              "effect_amount": 4
+            },
+            {
+              "asc": 17,
+              "effect_amount": 5
+            }
+          ]
+        }
+      ],
+      "ai_logic": "60% chance of Bite, but cannot use Bite 3 times in a row or Buff twice in a row.",
+      "ai_logic_asc20": null,
+      "notes": "Innate Spore Cloud 2",
+      "phases": null,
+      "ascension_variants": [
+        {
+          "hp": "24-28",
+          "move_changes": [
+            "Strength 4"
+          ]
+        }
+      ],
+      "internal_id": "FungiBeast",
+      "ascension_breakpoints": [
+        0,
+        2,
+        7,
+        17
+      ],
+      "behavior_model": {
+        "logic_type": "Probabilistic",
+        "rules": [
+          {
+            "move": "Bite",
+            "weight": 60,
+            "priority": 10,
+            "conditions": [
+              {
+                "type": "HistoryConstraint",
+                "max_in_row": 2
+              }
+            ]
+          },
+          {
+            "move": "Grow",
+            "weight": 40,
+            "priority": 10,
+            "conditions": [
+              {
+                "type": "HistoryConstraint",
+                "max_in_row": 1
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "Green Louse",
+      "name": "Green Louse",
+      "type": "Normal",
+      "act": "Act 1",
+      "hp": {
+        "base": "11-17",
+        "ascension": "12-18"
+      },
+      "starts_with": "Curl Up N, where N is random between 3-7 ((Asc7: 4-8) | (Asc17: 9-12))",
+      "moves": [
+        {
+          "name": "Bite",
+          "description": "Deals D damage (D is 5-7, chosen at battle start).",
+          "intent": "Attack",
+          "damage": 6,
+          "damage_range": [
+            5,
+            7
+          ],
+          "hits": 1,
+          "effects": [],
+          "ascension_scaling": [
+            {
+              "asc": 2,
+              "damage_bonus": 1
+            }
+          ]
+        },
+        {
+          "name": "Spit Web",
+          "description": "Applies 2 Weak.",
+          "intent": "Debuff",
+          "damage": 0,
+          "hits": 0,
+          "effects": [
+            {
+              "type": "Debuff",
+              "effect": "Weak",
+              "amount": 2
+            }
+          ],
+          "ascension_scaling": []
+        }
+      ],
+      "ai_logic": "75% chance of Bite and 25% chance of Spit Web, but cannot use the same move three times in a row.",
+      "ai_logic_asc20": "75% chance of Bite and 25% chance of Spit Web, but cannot Spit Web twice in a row or Bite 3 times in a row.",
+      "notes": null,
+      "phases": null,
+      "ascension_variants": [],
+      "internal_id": "FuzzyLouseDefensive",
+      "ascension_breakpoints": [
+        0,
+        2,
+        7,
+        17
+      ],
+      "behavior_model": {
+        "logic_type": "Probabilistic",
+        "rules": [
+          {
+            "move": "Bite",
+            "weight": 75,
+            "priority": 10,
+            "conditions": [
+              {
+                "type": "HistoryConstraint",
+                "max_in_row": 2
+              }
+            ]
+          },
+          {
+            "move": "Spit Web",
+            "weight": 25,
+            "priority": 10,
+            "conditions": [
+              {
+                "type": "HistoryConstraint",
+                "max_in_row": 2
+              }
+            ]
+          }
+        ]
+      },
+      "behavior_model_asc20": {
+        "logic_type": "Probabilistic",
+        "rules": [
+          {
+            "move": "Bite",
+            "weight": 75,
+            "priority": 10
+          },
+          {
+            "move": "Spit Web",
+            "weight": 25,
+            "priority": 10
+          }
+        ]
+      }
+    },
+    {
+      "id": "Gremlin Wizard",
+      "name": "Gremlin Wizard",
+      "type": "Normal",
+      "act": "Act 1",
+      "hp": {
+        "base": "21-25",
+        "ascension": "22-26"
+      },
+      "starts_with": null,
+      "moves": [
+        {
+          "name": "Charging",
+          "description": "Does nothing. Preparing for Ultimate Blast.",
+          "intent": "Unknown",
+          "damage": 0,
+          "hits": 0,
+          "effects": [],
+          "ascension_scaling": []
+        },
+        {
+          "name": "Ultimate Blast",
+          "description": "Deals 25 damage.",
+          "intent": "Attack",
+          "damage": 25,
+          "hits": 1,
+          "effects": [],
+          "ascension_scaling": [
+            {
+              "asc": 2,
+              "damage": 30
+            }
+          ]
+        }
+      ],
+      "ai_logic": "Charges for 2 turns, and then uses Ultimate Blast. Afterwards, charges 3 turns and then uses Ultimate Blast, repeating until dead.",
+      "ai_logic_asc20": "Charges for 2 turns, and then repeats Ultimate Blast.",
+      "notes": null,
+      "phases": null,
+      "ascension_variants": [
+        {
+          "hp": "22-26",
+          "move_changes": [
+            "Damage 30"
+          ]
+        }
+      ],
+      "internal_id": "GremlinWizard",
+      "ascension_breakpoints": [
+        0,
+        2,
+        7,
+        17
+      ],
+      "behavior_model": {
+        "logic_type": "Charging",
+        "rules": [
+          {
+            "move": "Charging",
+            "priority": 50,
+            "conditions": [
+              {
+                "type": "ChargingPattern",
+                "max_in_row": 2
+              }
+            ]
+          },
+          {
+            "move": "Ultimate Blast",
+            "priority": 50,
+            "conditions": [
+              {
+                "type": "AfterCharging"
+              }
+            ]
+          }
+        ]
+      },
+      "behavior_model_asc20": {
+        "logic_type": "Charging",
+        "rules": [
+          {
+            "move": "Charging",
+            "weight": 100,
+            "priority": 10
+          },
+          {
+            "move": "Ultimate Blast",
+            "weight": 100,
+            "priority": 20
+          }
+        ]
+      }
+    },
+    {
+      "id": "Jaw Worm",
+      "name": "Jaw Worm",
+      "type": "Normal",
+      "act": "Act 1",
+      "hp": {
+        "base": "40-44",
+        "ascension": "42-46"
+      },
+      "starts_with": null,
+      "moves": [
+        {
+          "name": "Chomp",
+          "description": "Deals 11 damage.",
+          "intent": "Attack",
+          "damage": 11,
+          "hits": 1,
+          "effects": [],
+          "ascension_scaling": [
+            {
+              "asc": 2,
+              "damage": 12
+            }
+          ]
+        },
+        {
+          "name": "Thrash",
+          "description": "Deals 7 damage and gains 5 Block.",
+          "intent": "AttackDefend",
+          "damage": 7,
+          "hits": 1,
+          "effects": [
+            {
+              "type": "Block",
+              "amount": 5
+            }
+          ],
+          "ascension_scaling": []
+        },
+        {
+          "name": "Bellow",
+          "description": "Gains 3 Strength and 6 Block.",
+          "intent": "BuffDefend",
+          "damage": 0,
+          "hits": 0,
+          "effects": [
+            {
+              "type": "Buff",
+              "effect": "Strength",
+              "amount": 3
+            },
+            {
+              "type": "Block",
+              "amount": 6
+            }
+          ],
+          "ascension_scaling": [
+            {
+              "asc": 2,
+              "effect_amount": 4
+            },
+            {
+              "asc": 17,
+              "effect_amount": 5,
+              "block_amount": 9
+            }
+          ]
+        }
+      ],
+      "ai_logic": "Always starts with Chomp. Afterwards, 45-30-25 probability split between Bellow, Thrash and Chomp. Thrash cannot be used three times in a row. Chomp and Bellow cannot be used twice in a row.",
+      "ai_logic_asc20": null,
+      "notes": "Starts with the bonuses of Bellow",
+      "phases": null,
+      "ascension_variants": [],
+      "internal_id": "JawWorm",
+      "ascension_breakpoints": [
+        0,
+        2,
+        7,
+        17
+      ],
+      "behavior_model": {
+        "logic_type": "Probabilistic",
+        "init_sequence": [
+          "Chomp"
+        ],
+        "rules": [
+          {
+            "move": "Bellow",
+            "weight": 45,
+            "priority": 10,
+            "conditions": [
+              {
+                "type": "HistoryConstraint",
+                "max_in_row": 1
+              }
+            ]
+          },
+          {
+            "move": "Thrash",
+            "weight": 30,
+            "priority": 10,
+            "conditions": [
+              {
+                "type": "HistoryConstraint",
+                "max_in_row": 2
+              }
+            ]
+          },
+          {
+            "move": "Chomp",
+            "weight": 25,
+            "priority": 10,
+            "conditions": [
+              {
+                "type": "HistoryConstraint",
+                "max_in_row": 1
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "Looter",
+      "name": "Looter",
+      "type": "Normal",
+      "act": "Act 1",
+      "hp": {
+        "base": "44-48",
+        "ascension": "46-50"
+      },
+      "starts_with": "Thievery 15 ((Asc17: 20))",
+      "moves": [
+        {
+          "name": "Mug",
+          "description": "Deals 10 damage.",
+          "intent": "Attack",
+          "damage": 10,
+          "hits": 1,
+          "effects": [],
+          "ascension_scaling": [
+            {
+              "asc": 2,
+              "damage": 11
+            }
+          ]
+        },
+        {
+          "name": "Lunge",
+          "description": "Deals 12 damage.",
+          "intent": "Attack",
+          "damage": 12,
+          "hits": 1,
+          "effects": [],
+          "ascension_scaling": [
+            {
+              "asc": 2,
+              "damage": 14
+            }
+          ]
+        },
+        {
+          "name": "Smoke Bomb",
+          "description": "Gains 6 Block.",
+          "intent": "Defend",
+          "damage": 0,
+          "hits": 0,
+          "effects": [
+            {
+              "type": "Block",
+              "amount": 6
+            }
+          ],
+          "ascension_scaling": []
+        },
+        {
+          "name": "Escape",
+          "description": "Runs away from battle.",
+          "intent": "Escape",
+          "damage": 0,
+          "hits": 0,
+          "effects": [
+            {
+              "type": "Escape"
+            }
+          ],
+          "ascension_scaling": []
+        }
+      ],
+      "ai_logic": "First, uses Mug twice. Then, has a 50% chance to use Lunge. Either after Lunge or in place of Lunge, uses Smoke Bomb, followed by Escape.",
+      "ai_logic_asc20": null,
+      "notes": "Innate Thievery 15 (20)",
+      "phases": null,
+      "ascension_variants": [
+        {
+          "hp": "46-50",
+          "move_changes": [
+            "Damage 14",
+            "Damage 11"
+          ]
+        }
+      ],
+      "internal_id": "Looter",
+      "ascension_breakpoints": [
+        0,
+        2,
+        7,
+        17
+      ],
+      "behavior_model": {
+        "logic_type": "Probabilistic",
+        "init_sequence": [
+          "Mug",
+          "Mug"
+        ],
+        "rules": [
+          {
+            "move": "Lunge",
+            "weight": 50,
+            "priority": 10
+          }
+        ]
+      }
+    },
+    {
+      "id": "Mad Gremlin",
+      "name": "Mad Gremlin",
+      "type": "Normal",
+      "act": "Act 1",
+      "hp": {
+        "base": "20-24",
+        "ascension": "21-25"
+      },
+      "starts_with": "Angry 1 ((Asc17: 2))",
+      "moves": [
+        {
+          "name": "Scratch",
+          "description": "Deals 4 damage.",
+          "intent": "Attack",
+          "damage": 4,
+          "hits": 1,
+          "effects": [],
+          "ascension_scaling": [
+            {
+              "asc": 2,
+              "damage": 5
+            }
+          ]
+        }
+      ],
+      "ai_logic": "Always uses Scratch.",
+      "ai_logic_asc20": null,
+      "notes": "Innate Angry 1 (2)",
+      "phases": null,
+      "ascension_variants": [
+        {
+          "hp": "21-25",
+          "move_changes": [
+            "Damage 5"
+          ]
+        }
+      ],
+      "internal_id": "GremlinWarrior",
+      "ascension_breakpoints": [
+        0,
+        2,
+        7,
+        7
+      ],
+      "behavior_model": {
+        "logic_type": "Repeat",
+        "rules": [
+          {
+            "move": "Scratch",
+            "weight": 100
+          }
+        ]
+      }
+    },
+    {
+      "id": "Red Louse",
+      "name": "Red Louse",
+      "type": "Normal",
+      "act": "Act 1",
+      "hp": {
+        "base": "10-15",
+        "ascension": "11-16"
+      },
+      "starts_with": "Curl Up N, where N is random between 3-7 ((Asc7: 4-8) | (Asc17: 9-12))",
+      "moves": [
+        {
+          "name": "Bite",
+          "description": "Deals D damage (D is 5-7, chosen at battle start).",
+          "intent": "Attack",
+          "damage": 6,
+          "damage_range": [
+            5,
+            7
+          ],
+          "hits": 1,
+          "effects": [],
+          "ascension_scaling": [
+            {
+              "asc": 2,
+              "damage_bonus": 1
+            }
+          ]
+        },
+        {
+          "name": "Grow",
+          "description": "Gains 3 Strength.",
+          "intent": "Buff",
+          "damage": 0,
+          "hits": 0,
+          "effects": [
+            {
+              "type": "Buff",
+              "effect": "Strength",
+              "amount": 3
+            }
+          ],
+          "ascension_scaling": [
+            {
+              "asc": 17,
+              "effect_amount": 4
+            }
+          ]
+        }
+      ],
+      "ai_logic": "75% chance of Bite and 25% chance of Grow, but cannot use the same move three times in a row.",
+      "ai_logic_asc20": "75% chance of Bite, and 25% chance of Grow, but cannot Grow twice in a row or Bite three times in a row.",
+      "notes": null,
+      "phases": null,
+      "ascension_variants": [],
+      "internal_id": "FuzzyLouseNormal",
+      "ascension_breakpoints": [
+        0,
+        2,
+        7,
+        17
+      ],
+      "behavior_model": {
+        "logic_type": "Probabilistic",
+        "rules": [
+          {
+            "move": "Bite",
+            "weight": 75,
+            "priority": 10,
+            "conditions": [
+              {
+                "type": "HistoryConstraint",
+                "max_in_row": 2
+              }
+            ]
+          },
+          {
+            "move": "Grow",
+            "weight": 25,
+            "priority": 10,
+            "conditions": [
+              {
+                "type": "HistoryConstraint",
+                "max_in_row": 2
+              }
+            ]
+          }
+        ]
+      },
+      "behavior_model_asc20": {
+        "logic_type": "Probabilistic",
+        "rules": [
+          {
+            "move": "Bite",
+            "weight": 75,
+            "priority": 10
+          },
+          {
+            "move": "Grow",
+            "weight": 25,
+            "priority": 10
+          }
+        ]
+      }
+    },
+    {
+      "id": "Red Slaver",
+      "name": "Red Slaver",
+      "type": "Normal",
+      "act": "Act 1",
+      "hp": {
+        "base": "46-50",
+        "ascension": "48-52"
+      },
+      "starts_with": null,
+      "moves": [
+        {
+          "name": "Stab",
+          "description": "Deals 13 damage.",
+          "intent": "Attack",
+          "damage": 13,
+          "hits": 1,
+          "effects": [],
+          "ascension_scaling": [
+            {
+              "asc": 2,
+              "damage": 14
+            }
+          ]
+        },
+        {
+          "name": "Scrape",
+          "description": "Deals 8 damage and applies 1 Vulnerable.",
+          "intent": "AttackDebuff",
+          "damage": 8,
+          "hits": 1,
+          "effects": [
+            {
+              "type": "Debuff",
+              "effect": "Vulnerable",
+              "amount": 1
+            }
+          ],
+          "ascension_scaling": [
+            {
+              "asc": 2,
+              "damage": 9
+            },
+            {
+              "asc": 17,
+              "damage": 9,
+              "effect_amount": 2
+            }
+          ]
+        },
+        {
+          "name": "Entangle",
+          "description": "Applies 1 Entangled (cannot play Attacks this turn).",
+          "intent": "Debuff",
+          "damage": 0,
+          "hits": 0,
+          "effects": [
+            {
+              "type": "Debuff",
+              "effect": "Entangled",
+              "amount": 1
+            }
+          ],
+          "ascension_scaling": []
+        }
+      ],
+      "ai_logic": "Always starts with Stab. Then, has a 25% chance of using Entangle until it is used. If Entangle has not been used yet, cycles in the order of Scrape -> Scrape -> Stab. Otherwise, 45% chance of Stab and 55% chance of Scrape, except Stab and Scrape cannot be used 3 times in a row.",
+      "ai_logic_asc20": "Always starts with Stab. Then, has a 25% chance of using Entangle until it is used. If Entangle has not been used yet, cycles in the order of Scrape -> Stab. Otherwise, 45% chance of Stab and 55% chance of Scrape, except Stab cannot be used 3 times in a row and Scrape cannot be used twice in a row.",
+      "notes": null,
+      "phases": null,
+      "ascension_variants": [
+        {
+          "hp": "48-52",
+          "move_changes": [
+            "Damage 14",
+            "Damage 9, Vuln 1"
+          ]
+        }
+      ],
+      "internal_id": "SlaverRed",
+      "ascension_breakpoints": [
+        0,
+        2,
+        7,
+        17
+      ],
+      "behavior_model": {
+        "logic_type": "Conditional",
+        "init_sequence": [
+          "Stab"
+        ],
+        "rules": [
+          {
+            "move": "Scrape",
+            "priority": 50,
+            "conditions": [
+              {
+                "type": "MoveNotUsedYet",
+                "target": "Entangle"
+              }
+            ]
+          },
+          {
+            "move": "Scrape",
+            "priority": 50,
+            "conditions": [
+              {
+                "type": "MoveNotUsedYet",
+                "target": "Entangle"
+              }
+            ]
+          },
+          {
+            "move": "Stab",
+            "priority": 50,
+            "conditions": [
+              {
+                "type": "MoveNotUsedYet",
+                "target": "Entangle"
+              }
+            ]
+          },
+          {
+            "move": "Stab",
+            "weight": 45,
+            "priority": 30
+          },
+          {
+            "move": "Scrape",
+            "weight": 55,
+            "priority": 30
+          },
+          {
+            "move": "Entangle",
+            "weight": 25,
+            "priority": 20,
+            "conditions": [
+              {
+                "type": "UntilUsed",
+                "target": "Entangle"
+              }
+            ]
+          }
+        ]
+      },
+      "behavior_model_asc20": {
+        "logic_type": "Conditional",
+        "init_sequence": [
+          "Stab"
+        ],
+        "rules": [
+          {
+            "move": "Scrape",
+            "priority": 50,
+            "conditions": [
+              {
+                "type": "MoveNotUsedYet",
+                "target": "Entangle"
+              }
+            ]
+          },
+          {
+            "move": "Stab",
+            "priority": 50,
+            "conditions": [
+              {
+                "type": "MoveNotUsedYet",
+                "target": "Entangle"
+              }
+            ]
+          },
+          {
+            "move": "Stab",
+            "weight": 45,
+            "priority": 30
+          },
+          {
+            "move": "Scrape",
+            "weight": 55,
+            "priority": 30
+          },
+          {
+            "move": "Entangle",
+            "weight": 25,
+            "priority": 20,
+            "conditions": [
+              {
+                "type": "UntilUsed",
+                "target": "Entangle"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "Shield Gremlin",
+      "name": "Shield Gremlin",
+      "type": "Normal",
+      "act": "Act 1",
+      "hp": {
+        "base": "12-15",
+        "ascension": "13-17"
+      },
+      "starts_with": null,
+      "moves": [
+        {
+          "name": "Protect",
+          "description": "Target ally gains 7 Block.",
+          "intent": "Defend",
+          "damage": 0,
+          "hits": 0,
+          "effects": [
+            {
+              "type": "AllyBlock",
+              "amount": 7
+            }
+          ],
+          "ascension_scaling": [
+            {
+              "asc": 2,
+              "effect_amount": 8
+            },
+            {
+              "asc": 17,
+              "effect_amount": 11
+            }
+          ]
+        },
+        {
+          "name": "Shield Bash",
+          "description": "Deals 6 damage.",
+          "intent": "Attack",
+          "damage": 6,
+          "hits": 1,
+          "effects": [],
+          "ascension_scaling": [
+            {
+              "asc": 2,
+              "damage": 8
+            }
+          ]
+        }
+      ],
+      "ai_logic": "Protects random allies until none remain, then uses Shield Bash.",
+      "ai_logic_asc20": null,
+      "notes": null,
+      "phases": null,
+      "ascension_variants": [
+        {
+          "hp": "13-17",
+          "move_changes": [
+            "Ally Block 8",
+            "Damage 8"
+          ]
+        }
+      ],
+      "internal_id": "GremlinTsundere",
+      "ascension_breakpoints": [
+        0,
+        2,
+        7,
+        17
+      ],
+      "behavior_model": {
+        "logic_type": "Conditional",
+        "rules": [
+          {
+            "move": "Protect",
+            "priority": 50,
+            "conditions": [
+              {
+                "type": "AlliesExist"
+              }
+            ]
+          },
+          {
+            "move": "Shield Bash",
+            "priority": 40,
+            "conditions": [
+              {
+                "type": "NoAllies"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "Sneaky Gremlin",
+      "name": "Sneaky Gremlin",
+      "type": "Normal",
+      "act": "Act 1",
+      "hp": {
+        "base": "10-14",
+        "ascension": "11-15"
+      },
+      "starts_with": null,
+      "moves": [
+        {
+          "name": "Puncture",
+          "description": "Deals 9 damage.",
+          "intent": "Attack",
+          "damage": 9,
+          "hits": 1,
+          "effects": [],
+          "ascension_scaling": [
+            {
+              "asc": 2,
+              "damage": 10
+            }
+          ]
+        }
+      ],
+      "ai_logic": "Always uses Puncture.",
+      "ai_logic_asc20": null,
+      "notes": null,
+      "phases": null,
+      "ascension_variants": [
+        {
+          "hp": "11-15",
+          "move_changes": [
+            "Damage 10"
+          ]
+        }
+      ],
+      "internal_id": "GremlinThief",
+      "ascension_breakpoints": [
+        0,
+        2,
+        7
+      ],
+      "behavior_model": {
+        "logic_type": "Repeat",
+        "rules": [
+          {
+            "move": "Puncture",
+            "weight": 100
+          }
+        ]
+      }
+    },
+    {
+      "id": "Spike Slime (L)",
+      "name": "Spike Slime (L)",
+      "type": "Normal",
+      "act": "Act 1",
+      "hp": {
+        "base": "64-70",
+        "ascension": "67-73"
+      },
+      "starts_with": "Split",
+      "moves": [
+        {
+          "name": "Flame Tackle",
+          "description": "Deals 16 damage and shuffles 2 Slimed into discard pile.",
+          "intent": "AttackDebuff",
+          "damage": 16,
+          "hits": 1,
+          "effects": [
+            {
+              "type": "AddCard",
+              "card": "Slimed",
+              "amount": 2,
+              "destination": "DiscardPile"
+            }
+          ],
+          "ascension_scaling": [
+            {
+              "asc": 2,
+              "damage": 18
+            }
+          ]
+        },
+        {
+          "name": "Lick",
+          "description": "Inflicts 2 Frail.",
+          "intent": "Debuff",
+          "damage": 0,
+          "hits": 0,
+          "effects": [
+            {
+              "type": "Debuff",
+              "effect": "Frail",
+              "amount": 2
+            }
+          ],
+          "ascension_scaling": [
+            {
+              "asc": 17,
+              "effect_amount": 3
+            }
+          ]
+        },
+        {
+          "name": "Split",
+          "description": "Dies and spawns 2 Spike Slimes (M) with current HP.",
+          "intent": "Unknown",
+          "damage": 0,
+          "hits": 0,
+          "effects": [
+            {
+              "type": "Split",
+              "spawn": "Spike Slime (M)",
+              "count": 2
+            }
+          ],
+          "ascension_scaling": []
+        }
+      ],
+      "ai_logic": "Has (30-70) probability split between Flame Tackle and Lick, though neither can be used three times in a row.",
+      "ai_logic_asc20": "Has (30-70) probability split between Flame Tackle and Lick, though Lick cannot be used twice in a row and Flame Tackle cannot be used three times in a row.",
+      "notes": "Splits if HP is 50% or below",
+      "phases": null,
+      "ascension_variants": [
+        {
+          "hp": "67-73",
+          "move_changes": [
+            "Damage 18, Slimed 2*"
+          ]
+        }
+      ],
+      "behavior_model": {
+        "logic_type": "Probabilistic",
+        "rules": [
+          {
+            "move": "Split",
+            "priority": 100,
+            "conditions": [
+              {
+                "type": "HpThreshold",
+                "percent": 50,
+                "comparison": "<="
+              }
+            ]
+          },
+          {
+            "move": "Flame Tackle",
+            "weight": 30,
+            "priority": 10,
+            "conditions": [
+              {
+                "type": "HistoryConstraint",
+                "max_in_row": 2
+              }
+            ]
+          },
+          {
+            "move": "Lick",
+            "weight": 70,
+            "priority": 10,
+            "conditions": [
+              {
+                "type": "HistoryConstraint",
+                "max_in_row": 2
+              }
+            ]
+          }
+        ]
+      },
+      "behavior_model_asc20": {
+        "logic_type": "Probabilistic",
+        "rules": [
+          {
+            "move": "Split",
+            "priority": 100,
+            "conditions": [
+              {
+                "type": "HpThreshold",
+                "percent": 50,
+                "comparison": "<="
+              }
+            ]
+          },
+          {
+            "move": "Flame Tackle",
+            "weight": 30,
+            "priority": 10,
+            "conditions": [
+              {
+                "type": "HistoryConstraint",
+                "max_in_row": 1
+              }
+            ]
+          },
+          {
+            "move": "Lick",
+            "weight": 70,
+            "priority": 10,
+            "conditions": [
+              {
+                "type": "HistoryConstraint",
+                "max_in_row": 1
+              }
+            ]
+          }
+        ]
+      },
+      "internal_id": "SpikeSlime_L"
+    },
+    {
+      "id": "Spike Slime (M)",
+      "name": "Spike Slime (M)",
+      "type": "Normal",
+      "act": "Act 1",
+      "hp": {
+        "base": "28-32",
+        "ascension": "29-34"
+      },
+      "starts_with": null,
+      "moves": [
+        {
+          "name": "Flame Tackle",
+          "description": "Deals 8 damage and shuffles 1 Slimed into the discard pile",
+          "intent": "AttackDebuff",
+          "damage": 8,
+          "hits": 1,
+          "effects": [
+            {
+              "type": "AddCard",
+              "card": "Slimed",
+              "amount": 1,
+              "destination": "discard"
+            }
+          ],
+          "ascension_scaling": [
+            {
+              "asc": 2,
+              "damage": 10
+            }
+          ]
+        },
+        {
+          "name": "Lick",
+          "description": "Applies 1 Frail",
+          "intent": "Debuff",
+          "damage": 0,
+          "hits": 0,
+          "effects": [
+            {
+              "type": "Debuff",
+              "effect": "Frail",
+              "amount": 1
+            }
+          ],
+          "ascension_scaling": []
+        }
+      ],
+      "ai_logic": "Same AI as Spike Slime (L)",
+      "ai_logic_asc20": "Same AI as Spike Slime (L)",
+      "notes": "*Slimed goes into the Discard Pile",
+      "phases": null,
+      "ascension_variants": [
+        {
+          "hp": "29-34",
+          "move_changes": [
+            "Damage 10, Slimed 1*"
+          ]
+        }
+      ],
+      "behavior_model": {
+        "logic_type": "Probabilistic",
+        "rules": [
+          {
+            "move": "Flame Tackle",
+            "weight": 30,
+            "priority": 10,
+            "conditions": [
+              {
+                "type": "HistoryConstraint",
+                "max_in_row": 2
+              }
+            ]
+          },
+          {
+            "move": "Lick",
+            "weight": 70,
+            "priority": 10,
+            "conditions": [
+              {
+                "type": "HistoryConstraint",
+                "max_in_row": 2
+              }
+            ]
+          }
+        ]
+      },
+      "behavior_model_asc20": {
+        "logic_type": "Probabilistic",
+        "rules": [
+          {
+            "move": "Flame Tackle",
+            "weight": 30,
+            "priority": 10,
+            "conditions": [
+              {
+                "type": "HistoryConstraint",
+                "max_in_row": 2
+              }
+            ]
+          },
+          {
+            "move": "Lick",
+            "weight": 70,
+            "priority": 10,
+            "conditions": [
+              {
+                "type": "HistoryConstraint",
+                "max_in_row": 1
+              }
+            ]
+          }
+        ]
+      },
+      "internal_id": "SpikeSlime_M"
+    },
+    {
+      "id": "Spike Slime (S)",
+      "name": "Spike Slime (S)",
+      "type": "Normal",
+      "act": "Act 1",
+      "hp": {
+        "base": "10-14",
+        "ascension": "11-15"
+      },
+      "starts_with": null,
+      "moves": [
+        {
+          "name": "Tackle",
+          "description": "Deals 5 damage",
+          "intent": "Attack",
+          "damage": 5,
+          "hits": 1,
+          "effects": [],
+          "ascension_scaling": [
+            {
+              "asc": 2,
+              "damage": 6
+            }
+          ]
+        }
+      ],
+      "ai_logic": "Always uses Tackle.",
+      "ai_logic_asc20": null,
+      "notes": null,
+      "phases": null,
+      "ascension_variants": [
+        {
+          "hp": "11-15",
+          "move_changes": [
+            "Damage 6"
+          ]
+        }
+      ],
+      "behavior_model": {
+        "logic_type": "Repeat",
+        "rules": [
+          {
+            "move": "Tackle",
+            "weight": 100
+          }
+        ]
+      },
+      "internal_id": "SpikeSlime_S"
+    },
+    {
+      "id": "Gremlin Nob",
+      "name": "Gremlin Nob",
+      "type": "Elite",
+      "act": "Act 1",
+      "hp": {
+        "base": "82-86",
+        "ascension": "85-90"
+      },
+      "starts_with": null,
+      "moves": [
+        {
+          "name": "Bellow",
+          "description": "Gains 2 Enrage (gains Strength whenever you play a Skill)",
+          "intent": "Buff",
+          "damage": 0,
+          "hits": 0,
+          "effects": [
+            {
+              "type": "Buff",
+              "effect": "Enrage",
+              "amount": 2
+            }
+          ],
+          "ascension_scaling": [
+            {
+              "asc": 18,
+              "effect_amount": 3
+            }
+          ]
+        },
+        {
+          "name": "Rush",
+          "description": "Deals 14 damage",
+          "intent": "Attack",
+          "damage": 14,
+          "hits": 1,
+          "effects": [],
+          "ascension_scaling": [
+            {
+              "asc": 3,
+              "damage": 16
+            }
+          ]
+        },
+        {
+          "name": "Skull Bash",
+          "description": "Deals 6 damage and applies 2 Vulnerable",
+          "intent": "AttackDebuff",
+          "damage": 6,
+          "hits": 1,
+          "effects": [
+            {
+              "type": "Debuff",
+              "effect": "Vulnerable",
+              "amount": 2
+            }
+          ],
+          "ascension_scaling": [
+            {
+              "asc": 3,
+              "damage": 8
+            }
+          ]
+        }
+      ],
+      "ai_logic": "Always starts with Bellow. Afterwards, has a 33-67 split between Skull Bash and Rush, but cannot use Rush 3 times in a row.",
+      "ai_logic_asc20": "Always starts with Bellow. Afterwards, cycles in the order of Skull Bash -> Rush -> Rush.",
+      "notes": null,
+      "phases": null,
+      "ascension_variants": [
+        {
+          "hp": "85-90",
+          "move_changes": [
+            "Damage 8, Vuln 2",
+            "Damage 16"
+          ]
+        }
+      ],
+      "internal_id": "GremlinNob",
+      "ascension_breakpoints": [
+        0,
+        3,
+        8,
+        18
+      ],
+      "behavior_model": {
+        "logic_type": "Probabilistic",
+        "init_sequence": [
+          "Bellow"
+        ],
+        "rules": [
+          {
+            "move": "Skull Bash",
+            "weight": 33,
+            "priority": 10
+          },
+          {
+            "move": "Rush",
+            "weight": 67,
+            "priority": 10
+          }
+        ]
+      },
+      "behavior_model_asc20": {
+        "logic_type": "Cycle",
+        "init_sequence": [
+          "Bellow"
+        ],
+        "cycle": [
+          "Skull Bash",
+          "Rush",
+          "Rush"
+        ]
+      }
+    },
+    {
+      "id": "Lagavulin",
+      "name": "Lagavulin",
+      "type": "Elite",
+      "act": "Act 1",
+      "hp": {
+        "base": "109-111",
+        "ascension": "112-115"
+      },
+      "starts_with": "Metallicize 8 <br> #Block 8",
+      "moves": [
+        {
+          "name": "Sleep",
+          "description": "Does nothing (asleep, gains 8 Block at start of turn)",
+          "intent": "Sleep",
+          "damage": 0,
+          "hits": 0,
+          "effects": [
+            {
+              "type": "Block",
+              "amount": 8
+            }
+          ],
+          "ascension_scaling": []
+        },
+        {
+          "name": "Stunned",
+          "description": "Does nothing (stunned after being woken by damage)",
+          "intent": "Stunned",
+          "damage": 0,
+          "hits": 0,
+          "effects": [],
+          "ascension_scaling": []
+        },
+        {
+          "name": "Attack",
+          "description": "Deals 18 damage",
+          "intent": "Attack",
+          "damage": 18,
+          "hits": 1,
+          "effects": [],
+          "ascension_scaling": [
+            {
+              "asc": 3,
+              "damage": 20
+            }
+          ]
+        },
+        {
+          "name": "Siphon Soul",
+          "description": "Applies -1 Dexterity and -1 Strength",
+          "intent": "Debuff",
+          "damage": 0,
+          "hits": 0,
+          "effects": [
+            {
+              "type": "Debuff",
+              "effect": "Dexterity",
+              "amount": -1
+            },
+            {
+              "type": "Debuff",
+              "effect": "Strength",
+              "amount": -1
+            }
+          ],
+          "ascension_scaling": [
+            {
+              "asc": 18,
+              "additional_effect": {
+                "type": "Debuff",
+                "effect": "Dexterity",
+                "amount": -2
+              }
+            },
+            {
+              "asc": 18,
+              "additional_effect": {
+                "type": "Debuff",
+                "effect": "Strength",
+                "amount": -2
+              }
+            }
+          ]
+        }
+      ],
+      "ai_logic": "After waking up, cycles in the order of Attack -> Attack -> Siphon Soul.",
+      "ai_logic_asc20": null,
+      "notes": "Innate Block 8",
+      "phases": null,
+      "ascension_variants": [
+        {
+          "hp": "112-115",
+          "move_changes": [
+            "Damage 20",
+            "See Notes"
+          ]
+        }
+      ],
+      "internal_id": "Lagavulin",
+      "ascension_breakpoints": [
+        0,
+        3,
+        8,
+        18
+      ],
+      "behavior_model": {
+        "logic_type": "Cycle",
+        "cycle": [
+          "Attack",
+          "Attack",
+          "Siphon Soul"
+        ]
+      }
+    },
+    {
+      "id": "Sentry",
+      "name": "Sentry",
+      "type": "Elite",
+      "act": "Act 1",
+      "hp": {
+        "base": "38-42",
+        "ascension": "39-45"
+      },
+      "starts_with": "Artifact 1",
+      "moves": [
+        {
+          "name": "Beam",
+          "description": "Deals 9 damage",
+          "intent": "Attack",
+          "damage": 9,
+          "hits": 1,
+          "effects": [],
+          "ascension_scaling": [
+            {
+              "asc": 3,
+              "damage": 10
+            }
+          ]
+        },
+        {
+          "name": "Bolt",
+          "description": "Shuffles 2 Dazed into the discard pile",
+          "intent": "Debuff",
+          "damage": 0,
+          "hits": 0,
+          "effects": [
+            {
+              "type": "AddCard",
+              "card": "Dazed",
+              "amount": 2,
+              "destination": "discard"
+            }
+          ],
+          "ascension_scaling": [
+            {
+              "asc": 18,
+              "effect_amount": 3
+            }
+          ]
+        }
+      ],
+      "ai_logic": "In a 3-Sentry encounter, the Sentries start with Bolt/Beam/Bolt. In the Sentry + Spheric Guardian encounter, the Sentry starts with Bolt. Always alternates between the two moves.",
+      "ai_logic_asc20": null,
+      "notes": "Innate Artifact 1",
+      "phases": null,
+      "ascension_variants": [
+        {
+          "hp": "39-45",
+          "move_changes": [
+            "Damage 10"
+          ]
+        }
+      ],
+      "internal_id": "Sentry",
+      "ascension_breakpoints": [
+        0,
+        3,
+        8,
+        18
+      ],
+      "behavior_model": {
+        "logic_type": "Alternating",
+        "init_sequence": [
+          "Bolt"
+        ],
+        "cycle": [
+          "Bolt",
+          "Beam"
+        ]
+      }
+    },
+    {
+      "id": "Hexaghost",
+      "name": "Hexaghost",
+      "type": "Boss",
+      "act": "Act 1",
+      "hp": {
+        "base": "250",
+        "ascension": "264"
+      },
+      "starts_with": null,
+      "moves": [
+        {
+          "name": "Activate",
+          "description": "Does nothing. Ignites one orb.",
+          "intent": "Unknown",
+          "damage": 0,
+          "hits": 0,
+          "effects": [],
+          "ascension_scaling": []
+        },
+        {
+          "name": "Divider",
+          "description": "Deals (H+1)x6 damage. H = Current Player HP / 12, rounded down.",
+          "intent": "Attack",
+          "damage": 6,
+          "hits": 1,
+          "effects": [],
+          "ascension_scaling": []
+        },
+        {
+          "name": "Sear",
+          "description": "Deals 6 damage and shuffles 1 Burn into the discard pile",
+          "intent": "AttackDebuff",
+          "damage": 6,
+          "hits": 1,
+          "effects": [
+            {
+              "type": "AddCard",
+              "card": "Burn",
+              "amount": 1,
+              "destination": "discard"
+            }
+          ],
+          "ascension_scaling": [
+            {
+              "asc": 19,
+              "effect_amount": 2
+            }
+          ]
+        },
+        {
+          "name": "Tackle",
+          "description": "Deals 5x2 damage",
+          "intent": "Attack",
+          "damage": 5,
+          "hits": 2,
+          "effects": [],
+          "ascension_scaling": [
+            {
+              "asc": 4,
+              "damage": 6
+            }
+          ]
+        },
+        {
+          "name": "Inflame",
+          "description": "Gains 2 Strength and 12 Block",
+          "intent": "BuffDefend",
+          "damage": 0,
+          "hits": 0,
+          "effects": [
+            {
+              "type": "Buff",
+              "effect": "Strength",
+              "amount": 2
+            },
+            {
+              "type": "Block",
+              "amount": 12
+            }
+          ],
+          "ascension_scaling": [
+            {
+              "asc": 19,
+              "effect_amount": 3
+            }
+          ]
+        },
+        {
+          "name": "Inferno",
+          "description": "Deals 2x6 damage, shuffles 3 Burn into the discard pile, upgrades all Burns",
+          "intent": "AttackDebuff",
+          "damage": 2,
+          "hits": 6,
+          "effects": [
+            {
+              "type": "AddCard",
+              "card": "Burn",
+              "amount": 3,
+              "destination": "discard"
+            },
+            {
+              "type": "UpgradeCards",
+              "card": "Burn"
+            }
+          ],
+          "ascension_scaling": [
+            {
+              "asc": 4,
+              "damage": 3
+            }
+          ]
+        }
+      ],
+      "ai_logic": "Always begins with Activate, then Divider. Afterwards, cycles in the order of Sear -> Tackle -> Sear -> Inflame -> Tackle -> Sear -> Inferno, with 0-6 orbs active, respectively.",
+      "ai_logic_asc20": null,
+      "notes": "H = (Player's Current HP / 12) + 1",
+      "phases": null,
+      "ascension_variants": [
+        {
+          "hp": null,
+          "moves": [
+            "Damage Hx6",
+            "Damage 2x6, Burn 3*",
+            "Strength 2, Block 12",
+            "Damage 6, Burn 1",
+            "Damage 5x2",
+            "(does nothing)"
+          ],
+          "move_details": {},
+          "notes": "*Burns go into the Discard Pile",
+          "ai_logic": null
+        },
+        {
+          "hp": "264",
+          "moves": [
+            "(deactivates orbs)",
+            "Upgrade all Burns",
+            "(ignites orbs)"
+          ],
+          "move_details": {},
+          "notes": null,
+          "ai_logic": null
+        },
+        {
+          "hp": null,
+          "moves": [
+            "Sear gives Burn+"
+          ],
+          "move_details": {},
+          "notes": null,
+          "ai_logic": null
+        },
+        {
+          "hp": null,
+          "moves": [
+            "Deactivates Orbs",
+            "Damage 6x2"
+          ],
+          "move_details": {},
+          "notes": null,
+          "ai_logic": null
+        },
+        {
+          "hp": null,
+          "moves": [
+            "Damage 3x6, Burn 3*",
+            "Strength 3, Block 12",
+            "Damage 6, Burn 2*"
+          ],
+          "move_details": {},
+          "notes": null,
+          "ai_logic": null
+        }
+      ],
+      "internal_id": "Hexaghost",
+      "ascension_breakpoints": [
+        0,
+        4,
+        9,
+        19
+      ],
+      "behavior_model": {
+        "logic_type": "Cycle",
+        "init_sequence": [
+          "Activate",
+          "Divider"
+        ],
+        "cycle": [
+          "Sear",
+          "Tackle",
+          "Sear",
+          "Inflame",
+          "Tackle",
+          "Sear",
+          "Inferno"
+        ]
+      }
+    },
+    {
+      "id": "Slime Boss",
+      "name": "Slime Boss",
+      "type": "Boss",
+      "act": "Act 1",
+      "hp": {
+        "base": "140",
+        "ascension": "150"
+      },
+      "starts_with": "Split",
+      "moves": [
+        {
+          "name": "Goop Spray",
+          "description": "Shuffles 3 Slimed into the discard pile",
+          "intent": "Debuff",
+          "damage": 0,
+          "hits": 0,
+          "effects": [
+            {
+              "type": "AddCard",
+              "card": "Slimed",
+              "amount": 3,
+              "destination": "discard"
+            }
+          ],
+          "ascension_scaling": [
+            {
+              "asc": 19,
+              "effect_amount": 5
+            }
+          ]
+        },
+        {
+          "name": "Preparing",
+          "description": "Does nothing (preparing for Slam)",
+          "intent": "Unknown",
+          "damage": 0,
+          "hits": 0,
+          "effects": [],
+          "ascension_scaling": []
+        },
+        {
+          "name": "Slam",
+          "description": "Deals 35 damage",
+          "intent": "Attack",
+          "damage": 35,
+          "hits": 1,
+          "effects": [],
+          "ascension_scaling": [
+            {
+              "asc": 4,
+              "damage": 38
+            }
+          ]
+        },
+        {
+          "name": "Split",
+          "description": "Splits into Acid Slime (L) and Spike Slime (L) with current HP. Triggers at 50% HP or below.",
+          "intent": "Unknown",
+          "damage": 0,
+          "hits": 0,
+          "effects": [
+            {
+              "type": "Split",
+              "spawns": [
+                "Acid Slime (L)",
+                "Spike Slime (L)"
+              ]
+            }
+          ],
+          "ascension_scaling": []
+        }
+      ],
+      "ai_logic": "Always cycles in the order of Goop Spray -> Preparing -> Slam.",
+      "ai_logic_asc20": null,
+      "notes": "Splits into a Spike Slime (L) and an Acid Slime (L) if HP is 50% or below",
+      "phases": null,
+      "ascension_variants": [
+        {
+          "hp": null,
+          "moves": [
+            "Slimed 3*",
+            "Skip Turn",
+            "Damage 35"
+          ],
+          "move_details": {},
+          "notes": null,
+          "ai_logic": null
+        },
+        {
+          "hp": "150",
+          "moves": [
+            "Damage 38"
+          ],
+          "move_details": {},
+          "notes": "*Slimed go into the Discard Pile",
+          "ai_logic": null
+        },
+        {
+          "hp": null,
+          "moves": [
+            "Slimed 5*"
+          ],
+          "move_details": {},
+          "notes": null,
+          "ai_logic": null
+        }
+      ],
+      "internal_id": "SlimeBoss",
+      "ascension_breakpoints": [
+        0,
+        4,
+        9,
+        19
+      ],
+      "behavior_model": {
+        "logic_type": "Cycle",
+        "cycle": [
+          "Goop Spray",
+          "Preparing",
+          "Slam"
+        ]
+      }
+    },
+    {
+      "id": "The Guardian",
+      "name": "The Guardian",
+      "type": "Boss",
+      "act": "Act 1",
+      "hp": {
+        "base": "240",
+        "ascension": "250"
+      },
+      "starts_with": "Mode Shift 30 ((Asc9: 35) | (Asc19: 40))",
+      "moves": [
+        {
+          "name": "Charging Up",
+          "description": "Gains 9 Block",
+          "intent": "Defend",
+          "damage": 0,
+          "hits": 0,
+          "effects": [
+            {
+              "type": "Block",
+              "amount": 9
+            }
+          ],
+          "ascension_scaling": []
+        },
+        {
+          "name": "Fierce Bash",
+          "description": "Deals 32 damage",
+          "intent": "Attack",
+          "damage": 32,
+          "hits": 1,
+          "effects": [],
+          "ascension_scaling": [
+            {
+              "asc": 4,
+              "damage": 36
+            }
+          ]
+        },
+        {
+          "name": "Vent Steam",
+          "description": "Applies 2 Weak and 2 Vulnerable",
+          "intent": "Debuff",
+          "damage": 0,
+          "hits": 0,
+          "effects": [
+            {
+              "type": "Debuff",
+              "effect": "Weak",
+              "amount": 2
+            },
+            {
+              "type": "Debuff",
+              "effect": "Vulnerable",
+              "amount": 2
+            }
+          ],
+          "ascension_scaling": []
+        },
+        {
+          "name": "Whirlwind",
+          "description": "Deals 5x4 damage",
+          "intent": "Attack",
+          "damage": 5,
+          "hits": 4,
+          "effects": [],
+          "ascension_scaling": []
+        },
+        {
+          "name": "Defensive Mode",
+          "description": "Gains 3 Sharp Hide (deals damage when you play Attack cards)",
+          "intent": "Buff",
+          "damage": 0,
+          "hits": 0,
+          "effects": [
+            {
+              "type": "Buff",
+              "effect": "SharpHide",
+              "amount": 3
+            }
+          ],
+          "ascension_scaling": [
+            {
+              "asc": 19,
+              "effect_amount": 4
+            }
+          ]
+        },
+        {
+          "name": "Roll Attack",
+          "description": "Deals 9 damage",
+          "intent": "Attack",
+          "damage": 9,
+          "hits": 1,
+          "effects": [],
+          "ascension_scaling": [
+            {
+              "asc": 4,
+              "damage": 10
+            }
+          ]
+        },
+        {
+          "name": "Twin Slam",
+          "description": "Deals 8x2 damage, removes Sharp Hide and returns to Offensive Mode",
+          "intent": "AttackBuff",
+          "damage": 8,
+          "hits": 2,
+          "effects": [
+            {
+              "type": "RemoveBuff",
+              "effect": "SharpHide"
+            },
+            {
+              "type": "ModeShift",
+              "mode": "Offensive"
+            }
+          ],
+          "ascension_scaling": []
+        }
+      ],
+      "ai_logic": "Offensive mode: Cycles as Charge Up -> Fierce Bash -> Vent Steam -> Whirlwind. If enough damage is applied to satisfy the breakpoint, Guardian instantly gains 20 Block as it enters defensive mode. Defensive mode: Close Up -> Roll Attack -> Twin Slam. After Twin Slam, re-enters offensive cycle with Whirlwind.",
+      "ai_logic_asc20": null,
+      "notes": null,
+      "phases": [
+        {
+          "hp": null,
+          "moves": [
+            "Charge Up",
+            "Fierce Bash",
+            "Vent Steam",
+            "Whirlwind"
+          ],
+          "move_details": {},
+          "notes": "After receiving 30 + 10*X (35 + 10*X) (40 + 10*X) damage, gains 20 block and immediately enters Defensive Mode. X is the number of such transitions that have occured.",
+          "ai_logic": "Always cycles in the order of Charge Up -> Fierce Bash -> Vent Steam -> Whirlwind. The fight always begins with Charge Up. After using Twin Slam in defensive mode, Whirlwind is used next.",
+          "phase_name": "Offensive Mode",
+          "variants": [
+            {
+              "hp": null,
+              "moves": [
+                "Block 9",
+                "Damage 32",
+                "Weak + Vuln 2",
+                "Damage 5x4"
+              ],
+              "move_details": {},
+              "notes": null,
+              "ai_logic": null
+            },
+            {
+              "hp": null,
+              "moves": [
+                "Damage 36"
+              ],
+              "move_details": {},
+              "notes": null,
+              "ai_logic": null
+            }
+          ]
+        },
+        {
+          "hp": null,
+          "moves": [
+            "Close Up",
+            "Roll Attack",
+            "Twin Slam"
+          ],
+          "move_details": {},
+          "notes": "Sharp Hide returns 3 (4) damage after an Attack card is played. It is not the same effect as Thorns.",
+          "ai_logic": "Always uses Close Up, then Roll Attack, then Twin Slam (after which he returns to offensive mode with Whirlwind).",
+          "phase_name": "Defensive Mode",
+          "variants": [
+            {
+              "hp": null,
+              "moves": [
+                "Sharp Hide 3",
+                "Damage 9",
+                "Enter Offensive Mode"
+              ],
+              "move_details": {},
+              "notes": null,
+              "ai_logic": null
+            },
+            {
+              "hp": null,
+              "moves": [
+                "Damage 10",
+                "Damage 8x2"
+              ],
+              "move_details": {},
+              "notes": null,
+              "ai_logic": null
+            },
+            {
+              "hp": null,
+              "moves": [
+                "Sharp Hide 4",
+                "Remove Sharp Hide"
+              ],
+              "move_details": {},
+              "notes": null,
+              "ai_logic": null
+            }
+          ]
+        }
+      ],
+      "ascension_variants": [],
+      "internal_id": "TheGuardian",
+      "ascension_breakpoints": [
+        0,
+        4,
+        9,
+        19
+      ],
+      "behavior_model": {
+        "logic_type": "Cycle",
+        "cycle": [
+          "Charging Up",
+          "Fierce Bash",
+          "Vent Steam",
+          "Whirlwind"
+        ]
+      }
+    },
+    {
+      "id": "Byrd",
+      "name": "Byrd",
+      "type": "Normal",
+      "act": "Act 2",
+      "hp": {
+        "base": "25-31",
+        "ascension": "26-33"
+      },
+      "starts_with": "Flying 3 ((Asc17: 4))",
+      "moves": [
+        {
+          "name": "Peck",
+          "description": "Deals 1x5 damage",
+          "intent": "Attack",
+          "damage": 1,
+          "hits": 5,
+          "effects": [],
+          "ascension_scaling": [
+            {
+              "asc": 2,
+              "hits": 6
+            }
+          ]
+        },
+        {
+          "name": "Swoop",
+          "description": "Deals 12 damage",
+          "intent": "Attack",
+          "damage": 12,
+          "hits": 1,
+          "effects": [],
+          "ascension_scaling": [
+            {
+              "asc": 2,
+              "damage": 14
+            }
+          ]
+        },
+        {
+          "name": "Caw",
+          "description": "Gains 1 Strength",
+          "intent": "Buff",
+          "damage": 0,
+          "hits": 0,
+          "effects": [
+            {
+              "type": "Buff",
+              "effect": "Strength",
+              "amount": 1
+            }
+          ],
+          "ascension_scaling": []
+        },
+        {
+          "name": "Fly",
+          "description": "Gains Flying 3 (takes 50% less damage until hit 3 times in a turn)",
+          "intent": "Buff",
+          "damage": 0,
+          "hits": 0,
+          "effects": [
+            {
+              "type": "Buff",
+              "effect": "Flying",
+              "amount": 3
+            }
+          ],
+          "ascension_scaling": [
+            {
+              "asc": 17,
+              "effect_amount": 4
+            }
+          ]
+        },
+        {
+          "name": "Headbutt",
+          "description": "Deals 3 damage (used after being stunned)",
+          "intent": "Attack",
+          "damage": 3,
+          "hits": 1,
+          "effects": [],
+          "ascension_scaling": []
+        },
+        {
+          "name": "Stunned",
+          "description": "Does nothing (stunned after losing Flying)",
+          "intent": "Stunned",
+          "damage": 0,
+          "hits": 0,
+          "effects": [],
+          "ascension_scaling": []
+        }
+      ],
+      "ai_logic": "Cannot use Swoop on turn 1. When flying, has a 50-20-30 split between Peck, Swoop, and Caw. Peck cannot be used three times in a row and Swoop and Caw cannot be used twice in a row. When knocked down, is stunned, then uses Headbutt, and then starts flying again.",
+      "ai_logic_asc20": null,
+      "notes": "Innate Flying 3 (4)",
+      "phases": null,
+      "ascension_variants": [
+        {
+          "hp": "26-33",
+          "move_changes": [
+            "Damage 1x6",
+            "Damage 14"
+          ]
+        }
+      ],
+      "internal_id": "Byrd",
+      "ascension_breakpoints": [
+        0,
+        2,
+        7,
+        17
+      ],
+      "behavior_model": {
+        "logic_type": "Probabilistic",
+        "rules": [
+          {
+            "move": "Peck",
+            "weight": 50,
+            "priority": 10,
+            "conditions": [
+              {
+                "type": "HistoryConstraint",
+                "max_in_row": 1
+              }
+            ]
+          },
+          {
+            "move": "Swoop",
+            "weight": 20,
+            "priority": 10,
+            "conditions": [
+              {
+                "type": "HistoryConstraint",
+                "max_in_row": 1
+              }
+            ]
+          },
+          {
+            "move": "Caw",
+            "weight": 30,
+            "priority": 10,
+            "conditions": [
+              {
+                "type": "HistoryConstraint",
+                "max_in_row": 1
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "Centurion",
+      "name": "Centurion",
+      "type": "Normal",
+      "act": "Act 2",
+      "hp": {
+        "base": "76-80",
+        "ascension": "78-83"
+      },
+      "starts_with": null,
+      "moves": [
+        {
+          "name": "Slash",
+          "description": "Deals 12 damage",
+          "intent": "Attack",
+          "damage": 12,
+          "hits": 1,
+          "effects": [],
+          "ascension_scaling": [
+            {
+              "asc": 2,
+              "damage": 14
+            }
+          ]
+        },
+        {
+          "name": "Defend",
+          "description": "Gives ally 15 Block",
+          "intent": "Defend",
+          "damage": 0,
+          "hits": 0,
+          "effects": [
+            {
+              "type": "AllyBlock",
+              "amount": 15
+            }
+          ],
+          "ascension_scaling": []
+        },
+        {
+          "name": "Fury",
+          "description": "Deals 6x3 damage (used after Mystic dies)",
+          "intent": "Attack",
+          "damage": 6,
+          "hits": 3,
+          "effects": [],
+          "ascension_scaling": [
+            {
+              "asc": 2,
+              "damage": 7
+            }
+          ]
+        }
+      ],
+      "ai_logic": "While the Mystic is alive, either uses Defend on the Mystic or Slash (about 35-65 probability split). Once the Mystic dies, Defend is replaced by Fury. Uses Defend on itself if was about to use Defend and the Mystic dies. Cannot use any move three times in a row.",
+      "ai_logic_asc20": null,
+      "notes": null,
+      "phases": null,
+      "ascension_variants": [
+        {
+          "hp": "78-83",
+          "move_changes": [
+            "Damage 14",
+            "Damage 7x3"
+          ]
+        }
+      ],
+      "internal_id": "Centurion",
+      "ascension_breakpoints": [
+        0,
+        2,
+        7,
+        17
+      ],
+      "behavior_model": {
+        "logic_type": "Probabilistic",
+        "init_sequence": [
+          "Fury"
+        ],
+        "rules": [
+          {
+            "move": "Slash",
+            "weight": 50,
+            "priority": 10,
+            "conditions": [
+              {
+                "type": "HistoryConstraint",
+                "max_in_row": 2
+              }
+            ]
+          },
+          {
+            "move": "Fury",
+            "weight": 50,
+            "priority": 10,
+            "conditions": [
+              {
+                "type": "HistoryConstraint",
+                "max_in_row": 2
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "Chosen",
+      "name": "Chosen",
+      "type": "Normal",
+      "act": "Act 2",
+      "hp": {
+        "base": "95-99",
+        "ascension": "98-103"
+      },
+      "starts_with": null,
+      "moves": [
+        {
+          "name": "Poke",
+          "description": "Deals 5x2 damage",
+          "intent": "Attack",
+          "damage": 5,
+          "hits": 2,
+          "effects": [],
+          "ascension_scaling": [
+            {
+              "asc": 2,
+              "damage": 6
+            }
+          ]
+        },
+        {
+          "name": "Zap",
+          "description": "Deals 18 damage",
+          "intent": "Attack",
+          "damage": 18,
+          "hits": 1,
+          "effects": [],
+          "ascension_scaling": [
+            {
+              "asc": 2,
+              "damage": 21
+            }
+          ]
+        },
+        {
+          "name": "Debilitate",
+          "description": "Deals 10 damage and applies 2 Vulnerable",
+          "intent": "AttackDebuff",
+          "damage": 10,
+          "hits": 1,
+          "effects": [
+            {
+              "type": "Debuff",
+              "effect": "Vulnerable",
+              "amount": 2
+            }
+          ],
+          "ascension_scaling": [
+            {
+              "asc": 2,
+              "damage": 12
+            }
+          ]
+        },
+        {
+          "name": "Drain",
+          "description": "Deals 10 damage and applies 2 Weak",
+          "intent": "AttackDebuff",
+          "damage": 10,
+          "hits": 1,
+          "effects": [
+            {
+              "type": "Debuff",
+              "effect": "Weak",
+              "amount": 2
+            }
+          ],
+          "ascension_scaling": []
+        },
+        {
+          "name": "Hex",
+          "description": "Applies 1 Hex (gain Dazed when playing non-attack cards)",
+          "intent": "Debuff",
+          "damage": 0,
+          "hits": 0,
+          "effects": [
+            {
+              "type": "Debuff",
+              "effect": "Hex",
+              "amount": 1
+            }
+          ],
+          "ascension_scaling": []
+        }
+      ],
+      "ai_logic": "Always starts with Poke, followed by Hex. Then alternates between using either Debilitate or Drain (50% chance each), and using either Zap or Poke (40% Zap, 60% Poke).",
+      "ai_logic_asc20": "Always starts with Hex. Then alternates between using either Debilitate or Drain (50% chance each), and using either Zap or Poke (40% Zap, 60% Poke).",
+      "notes": null,
+      "phases": null,
+      "ascension_variants": [
+        {
+          "hp": "98-103",
+          "move_changes": [
+            "Damage 6x2",
+            "Damage 21",
+            "Damage 12, Vuln 2"
+          ]
+        }
+      ],
+      "internal_id": "Chosen",
+      "ascension_breakpoints": [
+        0,
+        2,
+        7,
+        17
+      ],
+      "behavior_model": {
+        "logic_type": "Probabilistic",
+        "init_sequence": [
+          "Poke"
+        ]
+      },
+      "behavior_model_asc20": {
+        "logic_type": "Probabilistic",
+        "init_sequence": [
+          "Hex"
+        ]
+      }
+    },
+    {
+      "id": "Mugger",
+      "name": "Mugger",
+      "type": "Normal",
+      "act": "Act 2",
+      "hp": {
+        "base": "48-52",
+        "ascension": "50-54"
+      },
+      "starts_with": "Thievery 15 ((Asc17: 20))",
+      "moves": [
+        {
+          "name": "Mug",
+          "description": "Deals 10 damage and steals gold",
+          "intent": "AttackDebuff",
+          "damage": 10,
+          "hits": 1,
+          "effects": [
+            {
+              "type": "StealGold",
+              "amount": 15
+            }
+          ],
+          "ascension_scaling": [
+            {
+              "asc": 2,
+              "damage": 11
+            },
+            {
+              "asc": 17,
+              "effect_amount": 20
+            }
+          ]
+        },
+        {
+          "name": "Lunge",
+          "description": "Deals 16 damage",
+          "intent": "Attack",
+          "damage": 16,
+          "hits": 1,
+          "effects": [],
+          "ascension_scaling": [
+            {
+              "asc": 2,
+              "damage": 18
+            }
+          ]
+        },
+        {
+          "name": "Smoke Bomb",
+          "description": "Gains 11 Block",
+          "intent": "Defend",
+          "damage": 0,
+          "hits": 0,
+          "effects": [
+            {
+              "type": "Block",
+              "amount": 11
+            }
+          ],
+          "ascension_scaling": []
+        },
+        {
+          "name": "Escape",
+          "description": "Escapes from battle",
+          "intent": "Escape",
+          "damage": 0,
+          "hits": 0,
+          "effects": [
+            {
+              "type": "Escape"
+            }
+          ],
+          "ascension_scaling": []
+        }
+      ],
+      "ai_logic": "First, uses Mug twice. Then, has a 50% chance to use Lunge. Either after Lunge or in place of Lunge, uses Smoke Bomb, followed by Escape.",
+      "ai_logic_asc20": null,
+      "notes": "Innate Thievery 15 (20)",
+      "phases": null,
+      "ascension_variants": [
+        {
+          "hp": "50-54",
+          "move_changes": [
+            "Damage 18",
+            "Damage 11"
+          ]
+        }
+      ],
+      "internal_id": "Mugger",
+      "ascension_breakpoints": [
+        0,
+        2,
+        7,
+        17
+      ],
+      "behavior_model": {
+        "logic_type": "Probabilistic",
+        "init_sequence": [
+          "Mug",
+          "Mug"
+        ],
+        "rules": [
+          {
+            "move": "Lunge",
+            "weight": 50,
+            "priority": 10
+          }
+        ]
+      }
+    },
+    {
+      "id": "Mystic",
+      "name": "Mystic",
+      "type": "Normal",
+      "act": "Act 2",
+      "hp": {
+        "base": "48-56",
+        "ascension": "50-58"
+      },
+      "starts_with": null,
+      "moves": [
+        {
+          "name": "Attack",
+          "description": "Deals 8 damage and applies 1 Frail",
+          "intent": "AttackDebuff",
+          "damage": 8,
+          "hits": 1,
+          "effects": [
+            {
+              "type": "Debuff",
+              "effect": "Frail",
+              "amount": 1
+            }
+          ],
+          "ascension_scaling": [
+            {
+              "asc": 2,
+              "damage": 9,
+              "effect_amount": 2
+            }
+          ]
+        },
+        {
+          "name": "Buff",
+          "description": "Gives all enemies 2 Strength",
+          "intent": "Buff",
+          "damage": 0,
+          "hits": 0,
+          "effects": [
+            {
+              "type": "PartyBuff",
+              "effect": "Strength",
+              "amount": 2
+            }
+          ],
+          "ascension_scaling": [
+            {
+              "asc": 17,
+              "effect_amount": 3
+            }
+          ]
+        },
+        {
+          "name": "Heal",
+          "description": "Heals ally for 16 HP",
+          "intent": "Buff",
+          "damage": 0,
+          "hits": 0,
+          "effects": [
+            {
+              "type": "AllyHeal",
+              "amount": 16
+            }
+          ],
+          "ascension_scaling": [
+            {
+              "asc": 17,
+              "effect_amount": 21
+            }
+          ]
+        }
+      ],
+      "ai_logic": "If there is 16 HP to heal, uses Heal (up to twice in a row). Otherwise, has a 60% chance of attacking and a 40% chance of buffing, but Attack and Buff cannot happen three times in a row.",
+      "ai_logic_asc20": "If there is 21 HP to heal, uses Heal (up to twice in a row). Otherwise, has a 60% chance of attacking and a 40% chance of buffing, but Attack Debuff cannot be used twice in a row, and Buff cannot be used three times in a row.",
+      "notes": null,
+      "phases": null,
+      "ascension_variants": [
+        {
+          "hp": "50-58",
+          "move_changes": [
+            "Party Strength 3",
+            "Damage 9, Frail 2"
+          ]
+        }
+      ],
+      "internal_id": "Healer",
+      "ascension_breakpoints": [
+        0,
+        2,
+        7,
+        17
+      ],
+      "behavior_model": {
+        "logic_type": "Probabilistic",
+        "rules": [
+          {
+            "move": "Attack",
+            "weight": 40,
+            "priority": 10,
+            "conditions": [
+              {
+                "type": "HistoryConstraint",
+                "max_in_row": 1
+              }
+            ]
+          },
+          {
+            "move": "Heal",
+            "weight": 30,
+            "priority": 10,
+            "conditions": [
+              {
+                "type": "HistoryConstraint",
+                "max_in_row": 1
+              }
+            ]
+          },
+          {
+            "move": "Buff",
+            "weight": 30,
+            "priority": 10
+          }
+        ]
+      },
+      "behavior_model_asc20": {
+        "logic_type": "Probabilistic",
+        "rules": [
+          {
+            "move": "Attack",
+            "weight": 40,
+            "priority": 10,
+            "conditions": [
+              {
+                "type": "HistoryConstraint",
+                "max_in_row": 1
+              }
+            ]
+          },
+          {
+            "move": "Heal",
+            "weight": 30,
+            "priority": 10,
+            "conditions": [
+              {
+                "type": "HistoryConstraint",
+                "max_in_row": 1
+              }
+            ]
+          },
+          {
+            "move": "Buff",
+            "weight": 30,
+            "priority": 10
+          }
+        ]
+      }
+    },
+    {
+      "id": "Shelled Parasite",
+      "name": "Shelled Parasite",
+      "type": "Normal",
+      "act": "Act 2",
+      "hp": {
+        "base": "68-72",
+        "ascension": "70-75"
+      },
+      "starts_with": "Plated Armor 14",
+      "moves": [
+        {
+          "name": "Double Strike",
+          "description": "Deals 6x2 damage",
+          "intent": "Attack",
+          "damage": 6,
+          "hits": 2,
+          "effects": [],
+          "ascension_scaling": [
+            {
+              "asc": 2,
+              "damage": 7
+            }
+          ]
+        },
+        {
+          "name": "Suck",
+          "description": "Deals 10 damage and heals self for the damage dealt",
+          "intent": "Attack",
+          "damage": 10,
+          "hits": 1,
+          "effects": [
+            {
+              "type": "Lifesteal"
+            }
+          ],
+          "ascension_scaling": [
+            {
+              "asc": 2,
+              "damage": 12
+            }
+          ]
+        },
+        {
+          "name": "Fell",
+          "description": "Deals 18 damage and applies 2 Frail",
+          "intent": "AttackDebuff",
+          "damage": 18,
+          "hits": 1,
+          "effects": [
+            {
+              "type": "Debuff",
+              "effect": "Frail",
+              "amount": 2
+            }
+          ],
+          "ascension_scaling": [
+            {
+              "asc": 2,
+              "damage": 21
+            }
+          ]
+        }
+      ],
+      "ai_logic": "Cannot use Fell on turn 1. Has a 40-40-20 split between Double Strike, Suck, and Fell, but Double Strike and Suck cannot be used three times in a row and Fell cannot be used twice in a row.",
+      "ai_logic_asc20": "Always starts with Fell. Has a 40-40-20 split between Double Strike, Suck, and Fell, but Double Strike and Suck cannot be used three times in a row and Fell cannot be used twice in a row.",
+      "notes": "Innate Plated Armor 14",
+      "phases": null,
+      "ascension_variants": [
+        {
+          "hp": "70-75",
+          "move_changes": [
+            "Damage 7x2",
+            "Lifesteal 12",
+            "Damage 21, Frail 2"
+          ]
+        }
+      ],
+      "internal_id": "Shelled Parasite",
+      "ascension_breakpoints": [
+        0,
+        2,
+        7,
+        17
+      ],
+      "behavior_model": {
+        "logic_type": "Probabilistic",
+        "rules": [
+          {
+            "move": "Double Strike",
+            "weight": 40,
+            "priority": 10,
+            "conditions": [
+              {
+                "type": "HistoryConstraint",
+                "max_in_row": 1
+              }
+            ]
+          },
+          {
+            "move": "Suck",
+            "weight": 40,
+            "priority": 10,
+            "conditions": [
+              {
+                "type": "HistoryConstraint",
+                "max_in_row": 1
+              }
+            ]
+          },
+          {
+            "move": "Fell",
+            "weight": 20,
+            "priority": 10,
+            "conditions": [
+              {
+                "type": "HistoryConstraint",
+                "max_in_row": 1
+              }
+            ]
+          }
+        ]
+      },
+      "behavior_model_asc20": {
+        "logic_type": "Probabilistic",
+        "init_sequence": [
+          "Fell"
+        ],
+        "rules": [
+          {
+            "move": "Double Strike",
+            "weight": 40,
+            "priority": 10,
+            "conditions": [
+              {
+                "type": "HistoryConstraint",
+                "max_in_row": 1
+              }
+            ]
+          },
+          {
+            "move": "Suck",
+            "weight": 40,
+            "priority": 10,
+            "conditions": [
+              {
+                "type": "HistoryConstraint",
+                "max_in_row": 1
+              }
+            ]
+          },
+          {
+            "move": "Fell",
+            "weight": 20,
+            "priority": 10,
+            "conditions": [
+              {
+                "type": "HistoryConstraint",
+                "max_in_row": 1
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "Snake Plant",
+      "name": "Snake Plant",
+      "type": "Normal",
+      "act": "Act 2",
+      "hp": {
+        "base": "75-79",
+        "ascension": "78-82"
+      },
+      "starts_with": "Malleable 3",
+      "moves": [
+        {
+          "name": "Chomp",
+          "description": "Deals 7x3 damage",
+          "intent": "Attack",
+          "damage": 7,
+          "hits": 3,
+          "effects": [],
+          "ascension_scaling": [
+            {
+              "asc": 2,
+              "damage": 8
+            }
+          ]
+        },
+        {
+          "name": "Enfeebling Spores",
+          "description": "Applies 2 Weak and 2 Frail",
+          "intent": "Debuff",
+          "damage": 0,
+          "hits": 0,
+          "effects": [
+            {
+              "type": "Debuff",
+              "effect": "Weak",
+              "amount": 2
+            },
+            {
+              "type": "Debuff",
+              "effect": "Frail",
+              "amount": 2
+            }
+          ],
+          "ascension_scaling": []
+        }
+      ],
+      "ai_logic": "65% chance of Chomp and 35% chance of Enfeebling Spores, except Chomp cannot happen 3 times in a row and Enfeebling Spores cannot happen twice in a row.",
+      "ai_logic_asc20": "Same as base AI until Enfeebling Spores is used. Afterwards, cycles in the order of Chomp -> Chomp -> Enfeebling Spores.",
+      "notes": "Innate Malleable 3",
+      "phases": null,
+      "ascension_variants": [
+        {
+          "hp": "78-82",
+          "move_changes": [
+            "Damage 8x3"
+          ]
+        }
+      ],
+      "internal_id": "SnakePlant",
+      "ascension_breakpoints": [
+        0,
+        2,
+        7,
+        17
+      ],
+      "behavior_model": {
+        "logic_type": "Probabilistic",
+        "rules": [
+          {
+            "move": "Chomp",
+            "weight": 65,
+            "priority": 10,
+            "conditions": [
+              {
+                "type": "HistoryConstraint",
+                "max_in_row": 2
+              }
+            ]
+          },
+          {
+            "move": "Enfeebling Spores",
+            "weight": 35,
+            "priority": 10,
+            "conditions": [
+              {
+                "type": "HistoryConstraint",
+                "max_in_row": 1
+              }
+            ]
+          }
+        ]
+      },
+      "behavior_model_asc20": {
+        "logic_type": "Probabilistic",
+        "rules": [
+          {
+            "move": "Chomp",
+            "weight": 65,
+            "priority": 10,
+            "conditions": [
+              {
+                "type": "HistoryConstraint",
+                "max_in_row": 2
+              }
+            ]
+          },
+          {
+            "move": "Enfeebling Spores",
+            "weight": 35,
+            "priority": 10
+          }
+        ]
+      }
+    },
+    {
+      "id": "Snecko",
+      "name": "Snecko",
+      "type": "Normal",
+      "act": "Act 2",
+      "hp": {
+        "base": "114-120",
+        "ascension": "120-125"
+      },
+      "starts_with": null,
+      "moves": [
+        {
+          "name": "Perplexing Glare",
+          "description": "Applies 2 Confused (card costs randomized)",
+          "intent": "Debuff",
+          "damage": 0,
+          "hits": 0,
+          "effects": [
+            {
+              "type": "Debuff",
+              "effect": "Confused",
+              "amount": 2
+            }
+          ],
+          "ascension_scaling": []
+        },
+        {
+          "name": "Tail Whip",
+          "description": "Deals 8 damage and applies 2 Vulnerable",
+          "intent": "AttackDebuff",
+          "damage": 8,
+          "hits": 1,
+          "effects": [
+            {
+              "type": "Debuff",
+              "effect": "Vulnerable",
+              "amount": 2
+            }
+          ],
+          "ascension_scaling": [
+            {
+              "asc": 2,
+              "damage": 10
+            }
+          ]
+        },
+        {
+          "name": "Bite",
+          "description": "Deals 15 damage",
+          "intent": "Attack",
+          "damage": 15,
+          "hits": 1,
+          "effects": [],
+          "ascension_scaling": [
+            {
+              "asc": 2,
+              "damage": 18
+            }
+          ]
+        }
+      ],
+      "ai_logic": "Starts with Perplexing Glare. Then, 40% chance of Tail Whip and 60% chance of Bite, but cannot use Bite 3 times in a row.",
+      "ai_logic_asc20": null,
+      "notes": null,
+      "phases": null,
+      "ascension_variants": [
+        {
+          "hp": "120-125",
+          "move_changes": [
+            "Damage 10, Vuln 2",
+            "Damage 18"
+          ]
+        }
+      ],
+      "internal_id": "Snecko",
+      "ascension_breakpoints": [
+        0,
+        2,
+        7,
+        17
+      ],
+      "behavior_model": {
+        "logic_type": "Probabilistic",
+        "init_sequence": [
+          "Perplexing Glare"
+        ],
+        "rules": [
+          {
+            "move": "Tail Whip",
+            "weight": 40,
+            "priority": 10
+          },
+          {
+            "move": "Bite",
+            "weight": 60,
+            "priority": 10
+          }
+        ]
+      }
+    },
+    {
+      "id": "Spheric Guardian",
+      "name": "Spheric Guardian",
+      "type": "Normal",
+      "act": "Act 2",
+      "hp": {
+        "base": "20",
+        "ascension": "20"
+      },
+      "starts_with": "Artifact 3 <br> #Block 40 <br> #Barricade",
+      "moves": [
+        {
+          "name": "Activate",
+          "description": "Does nothing (preparing)",
+          "intent": "Unknown",
+          "damage": 0,
+          "hits": 0,
+          "effects": [],
+          "ascension_scaling": []
+        },
+        {
+          "name": "Attack Debuff",
+          "description": "Deals 10 damage and applies 1 Frail",
+          "intent": "AttackDebuff",
+          "damage": 10,
+          "hits": 1,
+          "effects": [
+            {
+              "type": "Debuff",
+              "effect": "Frail",
+              "amount": 1
+            }
+          ],
+          "ascension_scaling": [
+            {
+              "asc": 2,
+              "damage": 11
+            },
+            {
+              "asc": 17,
+              "effect_amount": 2
+            }
+          ]
+        },
+        {
+          "name": "Slam",
+          "description": "Deals 10 damage twice",
+          "intent": "Attack",
+          "damage": 10,
+          "hits": 2,
+          "effects": [],
+          "ascension_scaling": [
+            {
+              "asc": 2,
+              "damage": 11
+            }
+          ]
+        },
+        {
+          "name": "Harden",
+          "description": "Gains 15 Block",
+          "intent": "Defend",
+          "damage": 0,
+          "hits": 0,
+          "effects": [
+            {
+              "type": "Block",
+              "amount": 15
+            }
+          ],
+          "ascension_scaling": []
+        }
+      ],
+      "ai_logic": "First, uses Activate, followed by Attack Debuff. Afterwards, alternates between Slam and Harden.",
+      "ai_logic_asc20": null,
+      "notes": "Innate Barricade",
+      "phases": null,
+      "ascension_variants": [],
+      "internal_id": "SphericGuardian",
+      "ascension_breakpoints": [
+        0,
+        2,
+        17
+      ],
+      "behavior_model": {
+        "logic_type": "Cycle",
+        "cycle": [
+          "Slam",
+          "Harden"
+        ]
+      }
+    },
+    {
+      "id": "Book of Stabbing",
+      "name": "Book of Stabbing",
+      "type": "Elite",
+      "act": "Act 2",
+      "hp": {
+        "base": "160-164",
+        "ascension": "168-172"
+      },
+      "starts_with": "Painful Stabs",
+      "moves": [
+        {
+          "name": "Multi Stab",
+          "description": "Deals 6xN damage (N starts at 4, increases by 1 each turn)",
+          "intent": "Attack",
+          "damage": 6,
+          "hits": 4,
+          "effects": [
+            {
+              "type": "AddCard",
+              "card": "Wound",
+              "amount": 1,
+              "destination": "discard"
+            }
+          ],
+          "ascension_scaling": [
+            {
+              "asc": 3,
+              "damage": 7
+            }
+          ]
+        },
+        {
+          "name": "Single Stab",
+          "description": "Deals 21 damage and adds 1 Wound to discard pile",
+          "intent": "AttackDebuff",
+          "damage": 21,
+          "hits": 1,
+          "effects": [
+            {
+              "type": "AddCard",
+              "card": "Wound",
+              "amount": 1,
+              "destination": "discard"
+            }
+          ],
+          "ascension_scaling": [
+            {
+              "asc": 3,
+              "damage": 24
+            }
+          ]
+        }
+      ],
+      "ai_logic": "15% chance to use Single Stab, except Multi Stab cannot be used 3 times in a row, and Single Stab cannot be used twice in a row.",
+      "ai_logic_asc20": null,
+      "notes": "Innate Painful Stabs",
+      "phases": null,
+      "ascension_variants": [
+        {
+          "hp": "168-172",
+          "move_changes": [
+            "Damage 7xT",
+            "Damage 24"
+          ]
+        }
+      ],
+      "internal_id": "BookOfStabbing",
+      "ascension_breakpoints": [
+        0,
+        3,
+        8,
+        18
+      ],
+      "behavior_model": {
+        "logic_type": "Probabilistic",
+        "init_sequence": [
+          "Multi Stab"
+        ],
+        "rules": [
+          {
+            "move": "Single Stab",
+            "weight": 40,
+            "priority": 10,
+            "conditions": [
+              {
+                "type": "HistoryConstraint",
+                "max_in_row": 1
+              }
+            ]
+          },
+          {
+            "move": "Multi Stab",
+            "weight": 60,
+            "priority": 10
+          }
+        ]
+      }
+    },
+    {
+      "id": "Gremlin Leader",
+      "name": "Gremlin Leader",
+      "type": "Elite",
+      "act": "Act 2",
+      "hp": {
+        "base": "140-148",
+        "ascension": "145-155"
+      },
+      "starts_with": null,
+      "moves": [
+        {
+          "name": "Encourage",
+          "description": "Gives all Gremlins 3 Strength and 6 Block",
+          "intent": "Buff",
+          "damage": 0,
+          "hits": 0,
+          "effects": [
+            {
+              "type": "PartyBuff",
+              "effect": "Strength",
+              "amount": 3
+            },
+            {
+              "type": "PartyBlock",
+              "amount": 6
+            }
+          ],
+          "ascension_scaling": [
+            {
+              "asc": 18,
+              "effect_amount": 4
+            }
+          ]
+        },
+        {
+          "name": "Rally",
+          "description": "Summons 1-2 random Gremlins",
+          "intent": "Unknown",
+          "damage": 0,
+          "hits": 0,
+          "effects": [
+            {
+              "type": "Summon",
+              "targets": [
+                "Mad Gremlin",
+                "Sneaky Gremlin",
+                "Fat Gremlin",
+                "Shield Gremlin",
+                "Gremlin Wizard"
+              ]
+            }
+          ],
+          "ascension_scaling": []
+        },
+        {
+          "name": "Stab",
+          "description": "Deals 6x3 damage",
+          "intent": "Attack",
+          "damage": 6,
+          "hits": 3,
+          "effects": [],
+          "ascension_scaling": []
+        }
+      ],
+      "ai_logic": "With 0 allies, has a 75-25 split between Rally and Stab. With 1 ally, has a 50-50 split between Rally and Stab if the last move was Encourage, and a 62.5-37.5 split between Rally and Encourage if the last move was Stab. With >1 ally, has a 66-34 split between Encourage and Stab. Cannot use any move twice in a row.",
+      "ai_logic_asc20": null,
+      "notes": null,
+      "phases": null,
+      "ascension_variants": [
+        {
+          "hp": "145-155",
+          "move_changes": [
+            "Party Strength 4, Minions Block 6"
+          ]
+        }
+      ],
+      "internal_id": "GremlinLeader",
+      "ascension_breakpoints": [
+        0,
+        3,
+        8,
+        18
+      ],
+      "behavior_model": {
+        "logic_type": "Probabilistic",
+        "rules": [
+          {
+            "move": "Rally",
+            "weight": 75,
+            "priority": 10
+          },
+          {
+            "move": "Stab",
+            "weight": 25,
+            "priority": 10
+          }
+        ]
+      }
+    },
+    {
+      "id": "Taskmaster",
+      "name": "Taskmaster",
+      "type": "Elite",
+      "act": "Act 2",
+      "hp": {
+        "base": "54-60",
+        "ascension": "57-64"
+      },
+      "starts_with": null,
+      "moves": [
+        {
+          "name": "Scouring Whip",
+          "description": "Deals 7 damage and adds 1 Wound to discard pile",
+          "intent": "AttackDebuff",
+          "damage": 7,
+          "hits": 1,
+          "effects": [
+            {
+              "type": "AddCard",
+              "card": "Wound",
+              "amount": 1,
+              "destination": "discard"
+            }
+          ],
+          "ascension_scaling": [
+            {
+              "asc": 3,
+              "damage": 8
+            },
+            {
+              "asc": 18,
+              "effect_amount": 2
+            }
+          ]
+        }
+      ],
+      "ai_logic": "Always uses Scouring Whip.",
+      "ai_logic_asc20": null,
+      "notes": "*Wounds go into the Discard Pile",
+      "phases": null,
+      "ascension_variants": [
+        {
+          "hp": "57-64",
+          "move_changes": [
+            "Damage 7, Wound 2*"
+          ]
+        }
+      ],
+      "internal_id": "SlaverBoss",
+      "ascension_breakpoints": [
+        0,
+        3,
+        8,
+        18
+      ],
+      "behavior_model": {
+        "logic_type": "Repeat",
+        "rules": [
+          {
+            "move": "Scouring Whip",
+            "weight": 100
+          }
+        ]
+      }
+    },
+    {
+      "id": "Bronze Automaton",
+      "name": "Bronze Automaton",
+      "type": "Boss",
+      "act": "Act 2",
+      "hp": {
+        "base": "300",
+        "ascension": "320"
+      },
+      "starts_with": "Artifact 3",
+      "moves": [
+        {
+          "name": "Spawn Orbs",
+          "description": "Summons 2 Bronze Orbs",
+          "intent": "Unknown",
+          "damage": 0,
+          "hits": 0,
+          "effects": [
+            {
+              "type": "Summon",
+              "targets": [
+                "Bronze Orb"
+              ],
+              "amount": 2
+            }
+          ],
+          "ascension_scaling": []
+        },
+        {
+          "name": "Flail",
+          "description": "Deals 7x2 damage",
+          "intent": "Attack",
+          "damage": 7,
+          "hits": 2,
+          "effects": [],
+          "ascension_scaling": [
+            {
+              "asc": 4,
+              "damage": 8
+            }
+          ]
+        },
+        {
+          "name": "Boost",
+          "description": "Gains 3 Strength and 9 Block",
+          "intent": "BuffDefend",
+          "damage": 0,
+          "hits": 0,
+          "effects": [
+            {
+              "type": "Buff",
+              "effect": "Strength",
+              "amount": 3
+            },
+            {
+              "type": "Block",
+              "amount": 9
+            }
+          ],
+          "ascension_scaling": [
+            {
+              "asc": 4,
+              "effect_amount": 4
+            },
+            {
+              "asc": 19,
+              "block_amount": 12
+            }
+          ]
+        },
+        {
+          "name": "HYPER BEAM",
+          "description": "Deals 45 damage",
+          "intent": "Attack",
+          "damage": 45,
+          "hits": 1,
+          "effects": [],
+          "ascension_scaling": [
+            {
+              "asc": 4,
+              "damage": 50
+            }
+          ]
+        },
+        {
+          "name": "Stunned",
+          "description": "Does nothing (stunned after HYPER BEAM)",
+          "intent": "Stunned",
+          "damage": 0,
+          "hits": 0,
+          "effects": [],
+          "ascension_scaling": []
+        }
+      ],
+      "ai_logic": "Deterministic order. First, uses Spawn Orbs. Afterwards, cycles in the order of Flail -> Boost -> Flail -> Boost -> HYPER BEAM -> Stunned. In Ascension 19, uses Boost instead of Stunned.",
+      "ai_logic_asc20": null,
+      "notes": "Innate Artifact 3",
+      "phases": null,
+      "ascension_variants": [
+        {
+          "hp": null,
+          "moves": [
+            "Summons 2 Bronze Orbs",
+            "Damage 45",
+            "Skip Turn",
+            "Strength 3, Block 9",
+            "Damage 7x2"
+          ],
+          "move_details": {},
+          "notes": null,
+          "ai_logic": null
+        },
+        {
+          "hp": "320",
+          "moves": [
+            "Damage 50",
+            "Strength 4, Block 9",
+            "Damage 8x2"
+          ],
+          "move_details": {},
+          "notes": null,
+          "ai_logic": null
+        },
+        {
+          "hp": null,
+          "moves": [
+            "Strength 4, Block 12"
+          ],
+          "move_details": {},
+          "notes": null,
+          "ai_logic": null
+        }
+      ],
+      "internal_id": "BronzeAutomaton",
+      "ascension_breakpoints": [
+        0,
+        4,
+        9,
+        19
+      ],
+      "behavior_model": {
+        "logic_type": "Cycle",
+        "cycle": [
+          "Flail",
+          "Boost",
+          "Flail",
+          "Boost",
+          "HYPER BEAM",
+          "Stunned"
+        ]
+      }
+    },
+    {
+      "id": "The Champ",
+      "name": "The Champ",
+      "type": "Boss",
+      "act": "Act 2",
+      "hp": {
+        "base": "420",
+        "ascension": "440"
+      },
+      "starts_with": null,
+      "moves": [
+        {
+          "name": "Heavy Slash",
+          "description": "Deals 16 damage",
+          "intent": "Attack",
+          "damage": 16,
+          "hits": 1,
+          "effects": [],
+          "ascension_scaling": [
+            {
+              "asc": 4,
+              "damage": 18
+            }
+          ]
+        },
+        {
+          "name": "Face Slap",
+          "description": "Deals 12 damage and applies 2 Frail and 2 Vulnerable",
+          "intent": "AttackDebuff",
+          "damage": 12,
+          "hits": 1,
+          "effects": [
+            {
+              "type": "Debuff",
+              "effect": "Frail",
+              "amount": 2
+            },
+            {
+              "type": "Debuff",
+              "effect": "Vulnerable",
+              "amount": 2
+            }
+          ],
+          "ascension_scaling": [
+            {
+              "asc": 4,
+              "damage": 14
+            }
+          ]
+        },
+        {
+          "name": "Defensive Stance",
+          "description": "Gains 15 Metallicize and 6 Block",
+          "intent": "Defend",
+          "damage": 0,
+          "hits": 0,
+          "effects": [
+            {
+              "type": "Buff",
+              "effect": "Metallicize",
+              "amount": 15
+            },
+            {
+              "type": "Block",
+              "amount": 6
+            }
+          ],
+          "ascension_scaling": [
+            {
+              "asc": 19,
+              "effect_amount": 20
+            }
+          ]
+        },
+        {
+          "name": "Gloat",
+          "description": "Gains 2 Strength and removes debuffs",
+          "intent": "Buff",
+          "damage": 0,
+          "hits": 0,
+          "effects": [
+            {
+              "type": "Buff",
+              "effect": "Strength",
+              "amount": 2
+            },
+            {
+              "type": "ClearDebuffs"
+            }
+          ],
+          "ascension_scaling": [
+            {
+              "asc": 19,
+              "effect_amount": 4
+            }
+          ]
+        },
+        {
+          "name": "Taunt",
+          "description": "Applies 2 Vulnerable and 2 Weak",
+          "intent": "Debuff",
+          "damage": 0,
+          "hits": 0,
+          "effects": [
+            {
+              "type": "Debuff",
+              "effect": "Vulnerable",
+              "amount": 2
+            },
+            {
+              "type": "Debuff",
+              "effect": "Weak",
+              "amount": 2
+            }
+          ],
+          "ascension_scaling": []
+        },
+        {
+          "name": "Anger",
+          "description": "Removes debuffs and gains 6 Strength (Phase 2 first move)",
+          "intent": "Buff",
+          "damage": 0,
+          "hits": 0,
+          "effects": [
+            {
+              "type": "ClearDebuffs"
+            },
+            {
+              "type": "Buff",
+              "effect": "Strength",
+              "amount": 6
+            }
+          ],
+          "ascension_scaling": [
+            {
+              "asc": 19,
+              "effect_amount": 9
+            }
+          ]
+        },
+        {
+          "name": "Execute",
+          "description": "Deals 10x2 damage",
+          "intent": "Attack",
+          "damage": 10,
+          "hits": 2,
+          "effects": [],
+          "ascension_scaling": []
+        }
+      ],
+      "ai_logic": "Every 4 turns, uses Taunt. Otherwise, approximately (15/15/25/45) (30/0/25/45) probability split between (Defensive Stance/Gloat/Face Slap/Heavy Slash). No move can be used twice in a row, and Defensive Stance cannot be used more than 2 times, total (this applies to enraged too). When attempting to use an invalid move, will use the next move in the order of Defensive Stance -> Gloat -> Face Slap -> Heavy Slash -> Face Slap (instead of even probability distribution).",
+      "ai_logic_asc20": null,
+      "notes": "Enrages when reaching below 50% hp (no indicator)",
+      "phases": [
+        {
+          "hp": null,
+          "moves": [
+            "Anger",
+            "Execute",
+            "Defensive Stance",
+            "Gloat",
+            "Heavy Slash",
+            "Face Slap"
+          ],
+          "move_details": {},
+          "notes": null,
+          "ai_logic": "First, uses Anger. Then, next turn and every three turns thereafter, uses Execute. Otherwise, approximately a (15/15/25/45) (30/0/25/45) probability split between (Defensive Stance/Gloat/Face Slap/Heavy Slash). When attempting to use an invalid move, will use the next move in the order of Defensive Stance -> Gloat -> Face Slap -> Heavy Slash -> Face Slap (instead of even probability distribution).",
+          "phase_name": "Enraged (below 50% HP)",
+          "variants": [
+            {
+              "hp": null,
+              "moves": [
+                "Cleanse Debuffs, Strength 6",
+                "Damage 10x2",
+                "See above",
+                "See above",
+                "See above",
+                "See above"
+              ],
+              "move_details": {},
+              "notes": null,
+              "ai_logic": null
+            },
+            {
+              "hp": null,
+              "moves": [
+                "Cleanse Debuffs, Strength 9",
+                "\"DIE . . .\""
+              ],
+              "move_details": {},
+              "notes": null,
+              "ai_logic": null
+            },
+            {
+              "hp": null,
+              "moves": [
+                "Cleanse Debuffs, Strength 12",
+                "\"Face my wrath!\""
+              ],
+              "move_details": {},
+              "notes": null,
+              "ai_logic": null
+            }
+          ]
+        }
+      ],
+      "ascension_variants": [
+        {
+          "hp": null,
+          "moves": [
+            "Damage 12, Frail + Vuln 2",
+            "Weak + Vuln 2",
+            "Block 15, Metallicize 5",
+            "Strength 2",
+            "Damage 16"
+          ],
+          "move_details": {},
+          "notes": null,
+          "ai_logic": null
+        },
+        {
+          "hp": "440",
+          "moves": [
+            "Damage 14, Frail + Vuln 2",
+            "Block 18, Metallicize 6",
+            "Strength 3",
+            "Damage 18"
+          ],
+          "move_details": {},
+          "notes": null,
+          "ai_logic": null
+        },
+        {
+          "hp": null,
+          "moves": [
+            "Block 20, Metallicize 7",
+            "Strength 4"
+          ],
+          "move_details": {},
+          "notes": null,
+          "ai_logic": null
+        }
+      ],
+      "internal_id": "Champ",
+      "ascension_breakpoints": [
+        0,
+        4,
+        9,
+        19
+      ],
+      "behavior_model": {
+        "logic_type": "Probabilistic",
+        "rules": [
+          {
+            "move": "Face Slap",
+            "weight": 45,
+            "priority": 10,
+            "conditions": [
+              {
+                "type": "HistoryConstraint",
+                "max_in_row": 1
+              }
+            ]
+          },
+          {
+            "move": "Heavy Slash",
+            "weight": 25,
+            "priority": 10,
+            "conditions": [
+              {
+                "type": "HistoryConstraint",
+                "max_in_row": 1
+              }
+            ]
+          },
+          {
+            "move": "Defensive Stance",
+            "weight": 15,
+            "priority": 10,
+            "conditions": [
+              {
+                "type": "HistoryConstraint",
+                "max_in_row": 1
+              }
+            ]
+          },
+          {
+            "move": "Gloat",
+            "weight": 15,
+            "priority": 10,
+            "conditions": [
+              {
+                "type": "HistoryConstraint",
+                "max_in_row": 1
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "The Collector",
+      "name": "The Collector",
+      "type": "Boss",
+      "act": "Act 2",
+      "hp": {
+        "base": "282",
+        "ascension": "300"
+      },
+      "starts_with": null,
+      "moves": [
+        {
+          "name": "Spawn",
+          "description": "Summons 2 Torch Heads",
+          "intent": "Unknown",
+          "damage": 0,
+          "hits": 0,
+          "effects": [
+            {
+              "type": "Summon",
+              "targets": [
+                "Torch Head"
+              ],
+              "amount": 2
+            }
+          ],
+          "ascension_scaling": []
+        },
+        {
+          "name": "Revive",
+          "description": "Summons Torch Heads in empty slots (max 2)",
+          "intent": "Unknown",
+          "damage": 0,
+          "hits": 0,
+          "effects": [
+            {
+              "type": "Summon",
+              "targets": [
+                "Torch Head"
+              ],
+              "amount": 2
+            }
+          ],
+          "ascension_scaling": []
+        },
+        {
+          "name": "Buff",
+          "description": "Gains 15 Block and gives all minions 3 Strength",
+          "intent": "BuffDefend",
+          "damage": 0,
+          "hits": 0,
+          "effects": [
+            {
+              "type": "Block",
+              "amount": 15
+            },
+            {
+              "type": "PartyBuff",
+              "effect": "Strength",
+              "amount": 3
+            }
+          ],
+          "ascension_scaling": [
+            {
+              "asc": 4,
+              "effect_amount": 4
+            },
+            {
+              "asc": 9,
+              "block_amount": 18
+            },
+            {
+              "asc": 19,
+              "block_amount": 23,
+              "effect_amount": 5
+            }
+          ]
+        },
+        {
+          "name": "Mega Debuff",
+          "description": "Applies 3 Weak, Vulnerable, and Frail",
+          "intent": "Debuff",
+          "damage": 0,
+          "hits": 0,
+          "effects": [
+            {
+              "type": "Debuff",
+              "effect": "Weak",
+              "amount": 3
+            },
+            {
+              "type": "Debuff",
+              "effect": "Vulnerable",
+              "amount": 3
+            },
+            {
+              "type": "Debuff",
+              "effect": "Frail",
+              "amount": 3
+            }
+          ],
+          "ascension_scaling": [
+            {
+              "asc": 19,
+              "effect_amount": 5
+            }
+          ]
+        },
+        {
+          "name": "Fireball",
+          "description": "Deals 18 damage",
+          "intent": "Attack",
+          "damage": 18,
+          "hits": 1,
+          "effects": [],
+          "ascension_scaling": [
+            {
+              "asc": 4,
+              "damage": 21
+            }
+          ]
+        }
+      ],
+      "ai_logic": "Always begins with Spawn. On turn 4, always uses the Mega Debuff. Otherwise, if a Torch Head is dead, has approximately a (25/45/30) probability split between (Revive/Fireball/Buff). If all Torch Heads are alive, the split becomes (70/30) between (Fireball/Buff). Cannot use Revive or Buff twice in a row, or Fireball three times in a row.",
+      "ai_logic_asc20": null,
+      "notes": null,
+      "phases": null,
+      "ascension_variants": [
+        {
+          "hp": null,
+          "moves": [
+            "Spawn 2 Torch Heads",
+            "Spawn Torch Heads in empty slots (max 2)",
+            "Block 15, Team Str 3",
+            "Weak + Vuln + Frail 3",
+            "Damage 18"
+          ],
+          "move_details": {},
+          "notes": null,
+          "ai_logic": null
+        },
+        {
+          "hp": "300",
+          "moves": [
+            "Block 15, Team Str 4",
+            "Damage 21"
+          ],
+          "move_details": {},
+          "notes": null,
+          "ai_logic": null
+        },
+        {
+          "hp": null,
+          "moves": [
+            "Block 18, Team Str 4"
+          ],
+          "move_details": {},
+          "notes": null,
+          "ai_logic": null
+        },
+        {
+          "hp": null,
+          "moves": [
+            "Block 23, Team Str 5",
+            "Weak + Vuln + Frail 5"
+          ],
+          "move_details": {},
+          "notes": null,
+          "ai_logic": null
+        }
+      ],
+      "internal_id": "TheCollector",
+      "ascension_breakpoints": [
+        0,
+        4,
+        9,
+        19
+      ],
+      "behavior_model": {
+        "logic_type": "Probabilistic",
+        "init_sequence": [
+          "Spawn"
+        ]
+      }
+    },
+    {
+      "id": "Bronze Orb",
+      "name": "Bronze Orb",
+      "type": "Minion",
+      "act": "Act 2",
+      "hp": {
+        "base": "52-58",
+        "ascension": "54-60"
+      },
+      "starts_with": "Minion",
+      "moves": [
+        {
+          "name": "Stasis",
+          "description": "Steals a random card of highest rarity from draw pile",
+          "intent": "Debuff",
+          "damage": 0,
+          "hits": 0,
+          "effects": [
+            {
+              "type": "StealCard"
+            }
+          ],
+          "ascension_scaling": []
+        },
+        {
+          "name": "Support Beam",
+          "description": "Gives Bronze Automaton 12 Block",
+          "intent": "Defend",
+          "damage": 0,
+          "hits": 0,
+          "effects": [
+            {
+              "type": "AllyBlock",
+              "amount": 12
+            }
+          ],
+          "ascension_scaling": []
+        },
+        {
+          "name": "Beam",
+          "description": "Deals 8 damage",
+          "intent": "Attack",
+          "damage": 8,
+          "hits": 1,
+          "effects": [],
+          "ascension_scaling": []
+        }
+      ],
+      "ai_logic": "Has a 75% chance of using Stasis until it has been used. Otherwise, has a 70% chance of using Support Beam and 30% chance of using Beam, but cannot use the same move 3 times in a row.",
+      "ai_logic_asc20": null,
+      "notes": "Stasis always steals a random card of the highest rarity in your draw pile (or discard pile, if the draw pile is empty).",
+      "phases": null,
+      "ascension_variants": [
+        {
+          "hp": null,
+          "moves": [
+            "Block Bronze Automaton 12",
+            "Damage 8",
+            "Steal Card"
+          ],
+          "move_details": {},
+          "notes": null,
+          "ai_logic": null
+        },
+        {
+          "hp": "54-60",
+          "moves": [],
+          "move_details": {},
+          "notes": null,
+          "ai_logic": null
+        }
+      ],
+      "internal_id": "BronzeOrb",
+      "ascension_breakpoints": [
+        0,
+        9
+      ],
+      "behavior_model": {
+        "logic_type": "Probabilistic",
+        "init_sequence": [
+          "Beam"
+        ],
+        "rules": [
+          {
+            "move": "Stasis",
+            "weight": 40,
+            "priority": 10,
+            "conditions": [
+              {
+                "type": "HistoryConstraint",
+                "max_in_row": 1
+              }
+            ]
+          },
+          {
+            "move": "Support Beam",
+            "weight": 30,
+            "priority": 10
+          },
+          {
+            "move": "Beam",
+            "weight": 30,
+            "priority": 10
+          }
+        ]
+      }
+    },
+    {
+      "id": "Torch Head",
+      "name": "Torch Head",
+      "type": "Minion",
+      "act": "Act 2",
+      "hp": {
+        "base": "38-40",
+        "ascension": "40-45"
+      },
+      "starts_with": "Minion",
+      "moves": [
+        {
+          "name": "Tackle",
+          "description": "Deals 7 damage",
+          "intent": "Attack",
+          "damage": 7,
+          "hits": 1,
+          "effects": [],
+          "ascension_scaling": []
+        }
+      ],
+      "ai_logic": "Always uses Tackle.",
+      "ai_logic_asc20": null,
+      "notes": null,
+      "phases": null,
+      "ascension_variants": [
+        {
+          "hp": null,
+          "moves": [
+            "Damage 7"
+          ],
+          "move_details": {},
+          "notes": null,
+          "ai_logic": null
+        },
+        {
+          "hp": "40-45",
+          "moves": [],
+          "move_details": {},
+          "notes": null,
+          "ai_logic": null
+        }
+      ],
+      "internal_id": "TorchHead",
+      "ascension_breakpoints": [
+        0,
+        9
+      ],
+      "behavior_model": {
+        "logic_type": "Repeat",
+        "rules": [
+          {
+            "move": "Tackle",
+            "weight": 100
+          }
+        ]
+      }
+    },
+    {
+      "id": "Bear",
+      "name": "Bear",
+      "type": "Event",
+      "act": "Act 2",
+      "hp": {
+        "base": "38-42",
+        "ascension": "40-44"
+      },
+      "starts_with": null,
+      "moves": [
+        {
+          "name": "Bear Hug",
+          "description": "Applies 2 Dexterity Down",
+          "intent": "Debuff",
+          "damage": 0,
+          "hits": 0,
+          "effects": [
+            {
+              "type": "Debuff",
+              "effect": "Dexterity",
+              "amount": -2
+            }
+          ],
+          "ascension_scaling": []
+        },
+        {
+          "name": "Lunge",
+          "description": "Deals 10 damage and gains 9 Block",
+          "intent": "AttackDefend",
+          "damage": 10,
+          "hits": 1,
+          "effects": [
+            {
+              "type": "Block",
+              "amount": 9
+            }
+          ],
+          "ascension_scaling": []
+        },
+        {
+          "name": "Maul",
+          "description": "Deals 20 damage",
+          "intent": "Attack",
+          "damage": 20,
+          "hits": 1,
+          "effects": [],
+          "ascension_scaling": []
+        }
+      ],
+      "ai_logic": "Starts with Bear Hug, then alternates between Lunge and Maul.",
+      "ai_logic_asc20": null,
+      "notes": null,
+      "phases": null,
+      "ascension_variants": [
+        {
+          "hp": "40-44",
+          "move_changes": [
+            "Damage 20",
+            "Damage 10, Block 9"
+          ]
+        }
+      ],
+      "internal_id": "BanditBear",
+      "ascension_breakpoints": [
+        0,
+        2,
+        7,
+        17
+      ],
+      "behavior_model": {
+        "logic_type": "Cycle",
+        "init_sequence": [
+          "Bear Hug"
+        ],
+        "cycle": [
+          "Lunge",
+          "Maul"
+        ]
+      }
+    },
+    {
+      "id": "Pointy",
+      "name": "Pointy",
+      "type": "Event",
+      "act": "Act 2",
+      "hp": {
+        "base": "30",
+        "ascension": "34"
+      },
+      "starts_with": null,
+      "moves": [
+        {
+          "name": "Attack",
+          "description": "Deals 6x2 damage",
+          "intent": "Attack",
+          "damage": 6,
+          "hits": 2,
+          "effects": [],
+          "ascension_scaling": []
+        }
+      ],
+      "ai_logic": "Always Attacks.",
+      "ai_logic_asc20": null,
+      "notes": null,
+      "phases": null,
+      "ascension_variants": [
+        {
+          "hp": "34",
+          "move_changes": [
+            "Damage 6x2"
+          ]
+        }
+      ],
+      "internal_id": "BanditChild",
+      "ascension_breakpoints": [
+        0,
+        2,
+        7
+      ],
+      "behavior_model": {
+        "logic_type": "Repeat",
+        "rules": [
+          {
+            "move": "Attack",
+            "weight": 100
+          }
+        ]
+      }
+    },
+    {
+      "id": "Romeo",
+      "name": "Romeo",
+      "type": "Event",
+      "act": "Act 2",
+      "hp": {
+        "base": "35-39",
+        "ascension": "37-41"
+      },
+      "starts_with": null,
+      "moves": [
+        {
+          "name": "Mock",
+          "description": "Does nothing (says 'Grab em' Bear!!')",
+          "intent": "Unknown",
+          "damage": 0,
+          "hits": 0,
+          "effects": [],
+          "ascension_scaling": []
+        },
+        {
+          "name": "Agonizing Slash",
+          "description": "Deals 12 damage and applies 2 Weak",
+          "intent": "AttackDebuff",
+          "damage": 12,
+          "hits": 1,
+          "effects": [
+            {
+              "type": "Debuff",
+              "effect": "Weak",
+              "amount": 2
+            }
+          ],
+          "ascension_scaling": []
+        },
+        {
+          "name": "Cross Slash",
+          "description": "Deals 17 damage",
+          "intent": "Attack",
+          "damage": 17,
+          "hits": 1,
+          "effects": [],
+          "ascension_scaling": []
+        }
+      ],
+      "ai_logic": "Starts with Mock (Unknown Move), then alternates between Agonizing Slash and Cross Slash.",
+      "ai_logic_asc20": "Starts with Mock (Unknown Move). Afterwards, cycles in the order of Agonizing Slash -> Cross Slash -> Cross Slash.",
+      "notes": null,
+      "phases": null,
+      "ascension_variants": [
+        {
+          "hp": "37-41",
+          "move_changes": [
+            "\"Grab em' Bear!!\"",
+            "Damage 12, Weak 2",
+            "Damage 17"
+          ]
+        }
+      ],
+      "internal_id": "BanditLeader",
+      "ascension_breakpoints": [
+        0,
+        2,
+        7,
+        17
+      ],
+      "behavior_model": {
+        "logic_type": "Cycle",
+        "init_sequence": [
+          "Mock"
+        ],
+        "cycle": [
+          "Agonizing Slash",
+          "Cross Slash"
+        ]
+      },
+      "behavior_model_asc20": {
+        "logic_type": "Cycle",
+        "init_sequence": [
+          "Mock"
+        ],
+        "cycle": [
+          "Agonizing Slash",
+          "Cross Slash",
+          "Cross Slash"
+        ]
+      }
+    },
+    {
+      "id": "Darkling",
+      "name": "Darkling",
+      "type": "Normal",
+      "act": "Act 3",
+      "hp": {
+        "base": "48-56",
+        "ascension": "50-59"
+      },
+      "starts_with": "Life Link",
+      "moves": [
+        {
+          "name": "Nip",
+          "description": "Deals 7 damage",
+          "intent": "Attack",
+          "damage": 7,
+          "hits": 1,
+          "effects": [],
+          "ascension_scaling": [
+            {
+              "asc": 2,
+              "damage": 9
+            }
+          ]
+        },
+        {
+          "name": "Chomp",
+          "description": "Deals 8x2 damage",
+          "intent": "Attack",
+          "damage": 8,
+          "hits": 2,
+          "effects": [],
+          "ascension_scaling": [
+            {
+              "asc": 2,
+              "damage": 9
+            }
+          ]
+        },
+        {
+          "name": "Harden",
+          "description": "Gains 12 Block",
+          "intent": "Defend",
+          "damage": 0,
+          "hits": 0,
+          "effects": [
+            {
+              "type": "Block",
+              "amount": 12
+            }
+          ],
+          "ascension_scaling": []
+        },
+        {
+          "name": "Reincarnate",
+          "description": "Revives with 50% HP (only if all Darklings are dead at same time)",
+          "intent": "Buff",
+          "damage": 0,
+          "hits": 0,
+          "effects": [
+            {
+              "type": "Revive",
+              "hp_percent": 50
+            }
+          ],
+          "ascension_scaling": []
+        }
+      ],
+      "ai_logic": "On turn 1, 50% chance of either Nip or Harden. Afterwards, has a 30-40-30 split between Nip, Chomp, and Harden, but  Harden and Chomp both cannot be used twice in a row, and Nip cannot be used three times in a row. The middle Darkling cannot Chomp and has a 50-50 split instead. When \"half-dead\", uses Unknown, followed by Reincarnate.",
+      "ai_logic_asc20": null,
+      "notes": "Innate Life Link",
+      "phases": null,
+      "ascension_variants": [
+        {
+          "hp": "50-59",
+          "move_changes": [
+            "Damage D+2",
+            "Damage 9x2"
+          ]
+        }
+      ],
+      "internal_id": "Darkling",
+      "ascension_breakpoints": [
+        0,
+        2,
+        7,
+        17
+      ],
+      "behavior_model": {
+        "logic_type": "Probabilistic",
+        "rules": [
+          {
+            "move": "Nip",
+            "weight": 30,
+            "priority": 10,
+            "conditions": [
+              {
+                "type": "HistoryConstraint",
+                "max_in_row": 1
+              }
+            ]
+          },
+          {
+            "move": "Chomp",
+            "weight": 40,
+            "priority": 10,
+            "conditions": [
+              {
+                "type": "HistoryConstraint",
+                "max_in_row": 1
+              }
+            ]
+          },
+          {
+            "move": "Harden",
+            "weight": 30,
+            "priority": 10,
+            "conditions": [
+              {
+                "type": "HistoryConstraint",
+                "max_in_row": 1
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "Exploder",
+      "name": "Exploder",
+      "type": "Normal",
+      "act": "Act 3",
+      "hp": {
+        "base": "30",
+        "ascension": "30-35"
+      },
+      "starts_with": "Explosive 3",
+      "moves": [
+        {
+          "name": "Slam",
+          "description": "Deals 9 damage",
+          "intent": "Attack",
+          "damage": 9,
+          "hits": 1,
+          "effects": [],
+          "ascension_scaling": [
+            {
+              "asc": 2,
+              "damage": 11
+            }
+          ]
+        },
+        {
+          "name": "Explode",
+          "description": "Deals 30 damage (explodes)",
+          "intent": "Attack",
+          "damage": 30,
+          "hits": 1,
+          "effects": [
+            {
+              "type": "SelfDestruct"
+            }
+          ],
+          "ascension_scaling": []
+        }
+      ],
+      "ai_logic": "Attacks twice, and then explodes.",
+      "ai_logic_asc20": null,
+      "notes": "Innate Explode 3",
+      "phases": null,
+      "ascension_variants": [
+        {
+          "hp": "30-35",
+          "move_changes": [
+            "Damage 11"
+          ]
+        }
+      ],
+      "internal_id": "Exploder",
+      "ascension_breakpoints": [
+        0,
+        2,
+        7
+      ],
+      "behavior_model": {
+        "logic_type": "Cycle",
+        "cycle": [
+          "Slam",
+          "Slam",
+          "Explode"
+        ]
+      }
+    },
+    {
+      "id": "Jaw Worm (Hard)",
+      "name": "Jaw Worm (Hard)",
+      "type": "Normal",
+      "act": "Act 3",
+      "hp": {
+        "base": "40-44",
+        "ascension": "42-46"
+      },
+      "starts_with": "Strength 3 (Asc7: 4, Asc17: 5), Block 6 (Asc17: 9)",
+      "moves": [
+        {
+          "name": "Chomp",
+          "description": "Deals 11 damage",
+          "intent": "Attack",
+          "damage": 11,
+          "hits": 1,
+          "effects": [],
+          "ascension_scaling": [
+            {
+              "asc": 2,
+              "damage": 12
+            }
+          ]
+        },
+        {
+          "name": "Thrash",
+          "description": "Deals 7 damage and gains 5 Block",
+          "intent": "AttackDefend",
+          "damage": 7,
+          "hits": 1,
+          "effects": [
+            {
+              "type": "Block",
+              "amount": 5
+            }
+          ],
+          "ascension_scaling": []
+        },
+        {
+          "name": "Bellow",
+          "description": "Gains 3 Strength and 6 Block",
+          "intent": "BuffDefend",
+          "damage": 0,
+          "hits": 0,
+          "effects": [
+            {
+              "type": "Buff",
+              "effect": "Strength",
+              "amount": 3
+            },
+            {
+              "type": "Block",
+              "amount": 6
+            }
+          ],
+          "ascension_scaling": [
+            {
+              "asc": 7,
+              "effect_amount": 4
+            },
+            {
+              "asc": 17,
+              "effect_amount": 5,
+              "block_amount": 9
+            }
+          ]
+        }
+      ],
+      "ai_logic": "45-30-25 probability split between Bellow, Thrash and Chomp. Thrash cannot be used three times in a row. Chomp and Bellow cannot be used twice in a row.",
+      "ai_logic_asc20": null,
+      "notes": "Act 3 version. Starts with innate Strength 3/4/5 and Block 6/6/9 (equivalent to one Bellow).",
+      "phases": null,
+      "ascension_variants": [],
+      "behavior_model": {
+        "logic_type": "Probabilistic",
+        "rules": [
+          {
+            "move": "Bellow",
+            "weight": 45,
+            "priority": 10,
+            "conditions": [
+              {
+                "type": "HistoryConstraint",
+                "max_in_row": 1
+              }
+            ]
+          },
+          {
+            "move": "Thrash",
+            "weight": 30,
+            "priority": 10,
+            "conditions": [
+              {
+                "type": "HistoryConstraint",
+                "max_in_row": 2
+              }
+            ]
+          },
+          {
+            "move": "Chomp",
+            "weight": 25,
+            "priority": 10,
+            "conditions": [
+              {
+                "type": "HistoryConstraint",
+                "max_in_row": 1
+              }
+            ]
+          }
+        ]
+      },
+      "internal_id": "JawWorm"
+    },
+    {
+      "id": "Orb Walker",
+      "name": "Orb Walker",
+      "type": "Normal",
+      "act": "Act 3",
+      "hp": {
+        "base": "90-96",
+        "ascension": "92-102"
+      },
+      "starts_with": "Strength Up 3 ((Asc17: 5))",
+      "moves": [
+        {
+          "name": "Laser",
+          "description": "Deals 10 damage and adds 2 Burns to discard pile",
+          "intent": "AttackDebuff",
+          "damage": 10,
+          "hits": 1,
+          "effects": [
+            {
+              "type": "AddCard",
+              "card": "Burn",
+              "amount": 2,
+              "destination": "discard"
+            }
+          ],
+          "ascension_scaling": [
+            {
+              "asc": 2,
+              "damage": 11
+            }
+          ]
+        },
+        {
+          "name": "Claw",
+          "description": "Deals 15 damage",
+          "intent": "Attack",
+          "damage": 15,
+          "hits": 1,
+          "effects": [],
+          "ascension_scaling": [
+            {
+              "asc": 2,
+              "damage": 16
+            }
+          ]
+        }
+      ],
+      "ai_logic": "Has a 60-40 split between Laser and Claw, but neither move can be used three times in a row.",
+      "ai_logic_asc20": null,
+      "notes": "Innate Strength Up 3 (5)",
+      "phases": null,
+      "ascension_variants": [
+        {
+          "hp": "92-102",
+          "move_changes": [
+            "Damage 11, Burn 2*",
+            "Damage 16"
+          ]
+        }
+      ],
+      "internal_id": "Orb Walker",
+      "ascension_breakpoints": [
+        0,
+        2,
+        7,
+        17
+      ],
+      "behavior_model": {
+        "logic_type": "Probabilistic",
+        "rules": [
+          {
+            "move": "Laser",
+            "weight": 60,
+            "priority": 10
+          },
+          {
+            "move": "Claw",
+            "weight": 40,
+            "priority": 10
+          }
+        ]
+      }
+    },
+    {
+      "id": "Repulsor",
+      "name": "Repulsor",
+      "type": "Normal",
+      "act": "Act 3",
+      "hp": {
+        "base": "29-35",
+        "ascension": "31-38"
+      },
+      "starts_with": null,
+      "moves": [
+        {
+          "name": "Bash",
+          "description": "Deals 11 damage",
+          "intent": "Attack",
+          "damage": 11,
+          "hits": 1,
+          "effects": [],
+          "ascension_scaling": [
+            {
+              "asc": 2,
+              "damage": 13
+            }
+          ]
+        },
+        {
+          "name": "Repulse",
+          "description": "Shuffles 2 Dazed into the draw pile",
+          "intent": "Debuff",
+          "damage": 0,
+          "hits": 0,
+          "effects": [
+            {
+              "type": "AddCard",
+              "card": "Dazed",
+              "amount": 2,
+              "destination": "draw"
+            }
+          ],
+          "ascension_scaling": []
+        }
+      ],
+      "ai_logic": "20% chance of Attack, and 80% chance of Debuff. Cannot use Attack twice in a row.",
+      "ai_logic_asc20": null,
+      "notes": "*Dazes go into the Draw Pile",
+      "phases": null,
+      "ascension_variants": [
+        {
+          "hp": "31-38",
+          "move_changes": [
+            "Damage 13"
+          ]
+        }
+      ],
+      "internal_id": "Repulsor",
+      "ascension_breakpoints": [
+        0,
+        2,
+        7
+      ],
+      "behavior_model": {
+        "logic_type": "Probabilistic",
+        "rules": [
+          {
+            "move": "Bash",
+            "weight": 20,
+            "priority": 10,
+            "conditions": [
+              {
+                "type": "HistoryConstraint",
+                "max_in_row": 1
+              }
+            ]
+          },
+          {
+            "move": "Repulse",
+            "weight": 80,
+            "priority": 10
+          }
+        ]
+      }
+    },
+    {
+      "id": "Spiker",
+      "name": "Spiker",
+      "type": "Normal",
+      "act": "Act 3",
+      "hp": {
+        "base": "42-56",
+        "ascension": "44-60"
+      },
+      "starts_with": "Thorns 3 ((Asc2: 4) | (Asc17: 7))",
+      "moves": [
+        {
+          "name": "Cut",
+          "description": "Deals 7 damage",
+          "intent": "Attack",
+          "damage": 7,
+          "hits": 1,
+          "effects": [],
+          "ascension_scaling": [
+            {
+              "asc": 2,
+              "damage": 9
+            }
+          ]
+        },
+        {
+          "name": "Spike",
+          "description": "Gains 2 Thorns",
+          "intent": "Buff",
+          "damage": 0,
+          "hits": 0,
+          "effects": [
+            {
+              "type": "Buff",
+              "effect": "Thorns",
+              "amount": 2
+            }
+          ],
+          "ascension_scaling": []
+        }
+      ],
+      "ai_logic": "50% chance of each action, but cannot use Attack twice in a row. Cannot use (Buff) once it has been used 6 times and will otherwise use Attack.",
+      "ai_logic_asc20": null,
+      "notes": "Innate Thorns 3 (4) (7)",
+      "phases": null,
+      "ascension_variants": [
+        {
+          "hp": "44-60",
+          "move_changes": [
+            "Damage 9"
+          ]
+        }
+      ],
+      "internal_id": "Spiker",
+      "ascension_breakpoints": [
+        0,
+        2,
+        7,
+        17
+      ],
+      "behavior_model": {
+        "logic_type": "Probabilistic",
+        "rules": [
+          {
+            "move": "Cut",
+            "weight": 50,
+            "priority": 10,
+            "conditions": [
+              {
+                "type": "HistoryConstraint",
+                "max_in_row": 1
+              }
+            ]
+          },
+          {
+            "move": "Spike",
+            "weight": 50,
+            "priority": 10
+          }
+        ]
+      }
+    },
+    {
+      "id": "Spire Growth",
+      "name": "Spire Growth",
+      "type": "Normal",
+      "act": "Act 3",
+      "hp": {
+        "base": "170",
+        "ascension": "190"
+      },
+      "starts_with": null,
+      "moves": [
+        {
+          "name": "Constrict",
+          "description": "Applies 10 Constricted (deals damage at end of turn)",
+          "intent": "Debuff",
+          "damage": 0,
+          "hits": 0,
+          "effects": [
+            {
+              "type": "Debuff",
+              "effect": "Constricted",
+              "amount": 10
+            }
+          ],
+          "ascension_scaling": [
+            {
+              "asc": 17,
+              "effect_amount": 12
+            }
+          ]
+        },
+        {
+          "name": "Quick Tackle",
+          "description": "Deals 16 damage",
+          "intent": "Attack",
+          "damage": 16,
+          "hits": 1,
+          "effects": [],
+          "ascension_scaling": [
+            {
+              "asc": 2,
+              "damage": 18
+            }
+          ]
+        },
+        {
+          "name": "Smash",
+          "description": "Deals 22 damage",
+          "intent": "Attack",
+          "damage": 22,
+          "hits": 1,
+          "effects": [],
+          "ascension_scaling": [
+            {
+              "asc": 2,
+              "damage": 25
+            }
+          ]
+        }
+      ],
+      "ai_logic": "Has a 50% chance to use Quick Tackle and 50% chance to Constrict. If Constrict was used last turn or the player is already Constricted, uses Smash instead of Constrict. Cannot use either attack three times in a row.",
+      "ai_logic_asc20": "Always uses Constrict unless it was used last turn or the player is already Constricted. Otherwise, has a 50% chance to use Quick Tackle and 50% chance to use Smash. Cannot use either attack three times in a row.",
+      "notes": null,
+      "phases": null,
+      "ascension_variants": [
+        {
+          "hp": "190",
+          "move_changes": [
+            "Damage 18",
+            "Damage 25"
+          ]
+        }
+      ],
+      "internal_id": "Serpent",
+      "ascension_breakpoints": [
+        0,
+        2,
+        7,
+        17
+      ],
+      "behavior_model": {
+        "logic_type": "Probabilistic",
+        "rules": [
+          {
+            "move": "Quick Tackle",
+            "weight": 50,
+            "priority": 10
+          }
+        ]
+      },
+      "behavior_model_asc20": {
+        "logic_type": "Probabilistic",
+        "rules": [
+          {
+            "move": "Quick Tackle",
+            "weight": 50,
+            "priority": 10
+          },
+          {
+            "move": "Smash",
+            "weight": 50,
+            "priority": 10
+          }
+        ]
+      }
+    },
+    {
+      "id": "The Maw",
+      "name": "The Maw",
+      "type": "Normal",
+      "act": "Act 3",
+      "hp": {
+        "base": "300",
+        "ascension": "300"
+      },
+      "starts_with": null,
+      "moves": [
+        {
+          "name": "Roar",
+          "description": "Applies 3 Weak and 5 Frail",
+          "intent": "Debuff",
+          "damage": 0,
+          "hits": 0,
+          "effects": [
+            {
+              "type": "Debuff",
+              "effect": "Weak",
+              "amount": 3
+            },
+            {
+              "type": "Debuff",
+              "effect": "Frail",
+              "amount": 5
+            }
+          ],
+          "ascension_scaling": []
+        },
+        {
+          "name": "Slam",
+          "description": "Deals 25 damage",
+          "intent": "Attack",
+          "damage": 25,
+          "hits": 1,
+          "effects": [],
+          "ascension_scaling": [
+            {
+              "asc": 2,
+              "damage": 30
+            }
+          ]
+        },
+        {
+          "name": "Nom",
+          "description": "Deals 5xT damage (T = turn / 2 rounded up)",
+          "intent": "Attack",
+          "damage": 5,
+          "hits": 1,
+          "effects": [],
+          "ascension_scaling": []
+        },
+        {
+          "name": "Drool",
+          "description": "Gains 5 Strength",
+          "intent": "Buff",
+          "damage": 0,
+          "hits": 0,
+          "effects": [
+            {
+              "type": "Buff",
+              "effect": "Strength",
+              "amount": 5
+            }
+          ],
+          "ascension_scaling": []
+        }
+      ],
+      "ai_logic": "Always starts with Roar. Afterwards and after using Drool, has a 50-50 split between Slam and Nom. If used Slam, then has a 50-50 split between Nom and Drool. Always uses Drool after Nom.",
+      "ai_logic_asc20": null,
+      "notes": "T = Turn Number / 2, rounded up.",
+      "phases": null,
+      "ascension_variants": [],
+      "internal_id": "Maw",
+      "ascension_breakpoints": [
+        0,
+        2,
+        17
+      ],
+      "behavior_model": {
+        "logic_type": "Probabilistic",
+        "init_sequence": [
+          "Roar"
+        ],
+        "rules": [
+          {
+            "move": "Slam",
+            "weight": 50,
+            "priority": 10
+          },
+          {
+            "move": "Nom",
+            "weight": 50,
+            "priority": 10
+          }
+        ]
+      }
+    },
+    {
+      "id": "Transient",
+      "name": "Transient",
+      "type": "Normal",
+      "act": "Act 3",
+      "hp": {
+        "base": "999",
+        "ascension": "999"
+      },
+      "starts_with": "Fading 5 ((Asc17: 6)) <br> #Shifting",
+      "moves": [
+        {
+          "name": "Attack",
+          "description": "Deals 30+10T damage (T = turn number)",
+          "intent": "Attack",
+          "damage": 30,
+          "hits": 1,
+          "effects": [],
+          "ascension_scaling": [
+            {
+              "asc": 2,
+              "damage": 40
+            }
+          ]
+        }
+      ],
+      "ai_logic": "Always uses Attack.",
+      "ai_logic_asc20": null,
+      "notes": "Innate Fading 5 (6)",
+      "phases": null,
+      "ascension_variants": [],
+      "internal_id": "Transient",
+      "ascension_breakpoints": [
+        0,
+        2,
+        17
+      ],
+      "behavior_model": {
+        "logic_type": "Repeat",
+        "rules": [
+          {
+            "move": "Attack",
+            "weight": 100
+          }
+        ]
+      }
+    },
+    {
+      "id": "Writhing Mass",
+      "name": "Writhing Mass",
+      "type": "Normal",
+      "act": "Act 3",
+      "hp": {
+        "base": "160",
+        "ascension": "175"
+      },
+      "starts_with": "Malleable 4 <br> #Reactive",
+      "moves": [
+        {
+          "name": "Implant",
+          "description": "Permanently adds a Parasite to your deck",
+          "intent": "Debuff",
+          "damage": 0,
+          "hits": 0,
+          "effects": [
+            {
+              "type": "AddCard",
+              "card": "Parasite",
+              "destination": "deck",
+              "permanent": true
+            }
+          ],
+          "ascension_scaling": []
+        },
+        {
+          "name": "Flail",
+          "description": "Deals 15 damage and gains 16 Block",
+          "intent": "AttackDefend",
+          "damage": 15,
+          "hits": 1,
+          "effects": [
+            {
+              "type": "Block",
+              "amount": 16
+            }
+          ],
+          "ascension_scaling": [
+            {
+              "asc": 2,
+              "damage": 16,
+              "effect_amount": 18
+            }
+          ]
+        },
+        {
+          "name": "Wither",
+          "description": "Deals 10 damage, applies 2 Weak and 2 Vulnerable",
+          "intent": "AttackDebuff",
+          "damage": 10,
+          "hits": 1,
+          "effects": [
+            {
+              "type": "Debuff",
+              "effect": "Weak",
+              "amount": 2
+            },
+            {
+              "type": "Debuff",
+              "effect": "Vulnerable",
+              "amount": 2
+            }
+          ],
+          "ascension_scaling": [
+            {
+              "asc": 2,
+              "damage": 12
+            }
+          ]
+        },
+        {
+          "name": "Multi-Strike",
+          "description": "Deals 7x3 damage",
+          "intent": "Attack",
+          "damage": 7,
+          "hits": 3,
+          "effects": [],
+          "ascension_scaling": [
+            {
+              "asc": 2,
+              "damage": 9
+            }
+          ]
+        },
+        {
+          "name": "Strong Strike",
+          "description": "Deals 32 damage",
+          "intent": "Attack",
+          "damage": 32,
+          "hits": 1,
+          "effects": [],
+          "ascension_scaling": [
+            {
+              "asc": 2,
+              "damage": 38
+            }
+          ]
+        }
+      ],
+      "ai_logic": "For the first move, has an approximately equal chance of using Attack 1, Attack 2, and Attack Debuff. Then, has about a 10-30-20-30-10 split between Mega Debuff, Attack Defend, Attack Debuff, Attack 1, and Attack 2, but can only use Mega Debuff once each combat. The same move cannot be used (or rerolled) twice in a row.",
+      "ai_logic_asc20": null,
+      "notes": "Innate Malleable 3",
+      "phases": null,
+      "ascension_variants": [
+        {
+          "hp": "175",
+          "move_changes": [
+            "Damage 16, Block 18",
+            "Dmg 12,Weak+Vuln 2",
+            "Damage 9x3",
+            "Damage 38"
+          ]
+        }
+      ],
+      "internal_id": "WrithingMass",
+      "ascension_breakpoints": [
+        0,
+        2,
+        7
+      ],
+      "behavior_model": {
+        "logic_type": "Probabilistic",
+        "init_sequence": [
+          "Strong Strike"
+        ],
+        "rules": [
+          {
+            "move": "Implant",
+            "weight": 20,
+            "priority": 10,
+            "conditions": [
+              {
+                "type": "HistoryConstraint",
+                "max_in_row": 1
+              }
+            ]
+          },
+          {
+            "move": "Flail",
+            "weight": 20,
+            "priority": 10,
+            "conditions": [
+              {
+                "type": "HistoryConstraint",
+                "max_in_row": 1
+              }
+            ]
+          },
+          {
+            "move": "Wither",
+            "weight": 20,
+            "priority": 10,
+            "conditions": [
+              {
+                "type": "HistoryConstraint",
+                "max_in_row": 1
+              }
+            ]
+          },
+          {
+            "move": "Multi-Strike",
+            "weight": 20,
+            "priority": 10,
+            "conditions": [
+              {
+                "type": "HistoryConstraint",
+                "max_in_row": 1
+              }
+            ]
+          },
+          {
+            "move": "Strong Strike",
+            "weight": 20,
+            "priority": 10,
+            "conditions": [
+              {
+                "type": "HistoryConstraint",
+                "max_in_row": 1
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "Giant Head",
+      "name": "Giant Head",
+      "type": "Elite",
+      "act": "Act 3",
+      "hp": {
+        "base": "500",
+        "ascension": "520"
+      },
+      "starts_with": "Slow",
+      "moves": [
+        {
+          "name": "Count",
+          "description": "Deals 13 damage",
+          "intent": "Attack",
+          "damage": 13,
+          "hits": 1,
+          "effects": [],
+          "ascension_scaling": []
+        },
+        {
+          "name": "Glare",
+          "description": "Applies 1 Weak",
+          "intent": "Debuff",
+          "damage": 0,
+          "hits": 0,
+          "effects": [
+            {
+              "type": "Debuff",
+              "effect": "Weak",
+              "amount": 1
+            }
+          ],
+          "ascension_scaling": []
+        },
+        {
+          "name": "It Is Time",
+          "description": "Deals 30+T damage (T starts at 0, increases by 5 each use, max +30)",
+          "intent": "Attack",
+          "damage": 30,
+          "hits": 1,
+          "effects": [],
+          "ascension_scaling": [
+            {
+              "asc": 3,
+              "damage": 40
+            }
+          ]
+        }
+      ],
+      "ai_logic": "For the first 4 turns, has a 50-50 split between Count and Glare, but cannot use either move three times in a row. Afterwards, repeats It Is Time.",
+      "ai_logic_asc20": "For the first 3 turns, has a 50-50 split between Count and Glare, but cannot use either move three times in a row. Afterwards, repeats It Is Time.",
+      "notes": "Innate Slow",
+      "phases": null,
+      "ascension_variants": [
+        {
+          "hp": "520",
+          "move_changes": [
+            "Damage 40 + T"
+          ]
+        }
+      ],
+      "internal_id": "GiantHead",
+      "ascension_breakpoints": [
+        0,
+        3,
+        8,
+        18
+      ],
+      "behavior_model": {
+        "logic_type": "Probabilistic",
+        "rules": [
+          {
+            "move": "Count",
+            "weight": 50,
+            "priority": 10
+          },
+          {
+            "move": "Glare",
+            "weight": 50,
+            "priority": 10
+          }
+        ]
+      },
+      "behavior_model_asc20": {
+        "logic_type": "Probabilistic",
+        "rules": [
+          {
+            "move": "Count",
+            "weight": 50,
+            "priority": 10
+          },
+          {
+            "move": "Glare",
+            "weight": 50,
+            "priority": 10
+          }
+        ]
+      }
+    },
+    {
+      "id": "Nemesis",
+      "name": "Nemesis",
+      "type": "Elite",
+      "act": "Act 3",
+      "hp": {
+        "base": "185",
+        "ascension": "200"
+      },
+      "starts_with": "Intangible every other turn",
+      "moves": [
+        {
+          "name": "Debuff",
+          "description": "Shuffles 3 Burns into your discard pile",
+          "intent": "Debuff",
+          "damage": 0,
+          "hits": 0,
+          "effects": [
+            {
+              "type": "AddCard",
+              "card": "Burn",
+              "amount": 3,
+              "destination": "discard"
+            }
+          ],
+          "ascension_scaling": [
+            {
+              "asc": 18,
+              "effect_amount": 5
+            }
+          ]
+        },
+        {
+          "name": "Attack",
+          "description": "Deals 6x3 damage",
+          "intent": "Attack",
+          "damage": 6,
+          "hits": 3,
+          "effects": [],
+          "ascension_scaling": [
+            {
+              "asc": 3,
+              "damage": 7
+            }
+          ]
+        },
+        {
+          "name": "Scythe",
+          "description": "Deals 45 damage",
+          "intent": "Attack",
+          "damage": 45,
+          "hits": 1,
+          "effects": [],
+          "ascension_scaling": []
+        }
+      ],
+      "ai_logic": "On turn 1, has a 50% chance of using the Burn or Triple Attack. Afterwards, has approximately a (35/35/30) probability split between the three moves (Burn/Triple Attack/Scythe), except Scythe and Burn cannot be used twice in a row, and Triple Attack cannot be used three times in a row.",
+      "ai_logic_asc20": null,
+      "notes": "Every second turn, gains 1 Intangible",
+      "phases": null,
+      "ascension_variants": [
+        {
+          "hp": "200",
+          "move_changes": [
+            "Damage 7x3"
+          ]
+        }
+      ],
+      "internal_id": "Nemesis",
+      "ascension_breakpoints": [
+        0,
+        3,
+        8,
+        18
+      ],
+      "behavior_model": {
+        "logic_type": "Probabilistic",
+        "init_sequence": [
+          "Debuff"
+        ],
+        "rules": [
+          {
+            "move": "Scythe",
+            "weight": 25,
+            "priority": 10,
+            "conditions": [
+              {
+                "type": "HistoryConstraint",
+                "max_in_row": 1
+              }
+            ]
+          },
+          {
+            "move": "Attack",
+            "weight": 50,
+            "priority": 10,
+            "conditions": [
+              {
+                "type": "HistoryConstraint",
+                "max_in_row": 2
+              }
+            ]
+          },
+          {
+            "move": "Debuff",
+            "weight": 25,
+            "priority": 10,
+            "conditions": [
+              {
+                "type": "HistoryConstraint",
+                "max_in_row": 1
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "Reptomancer",
+      "name": "Reptomancer",
+      "type": "Elite",
+      "act": "Act 3",
+      "hp": {
+        "base": "180-190",
+        "ascension": "190-200"
+      },
+      "starts_with": null,
+      "moves": [
+        {
+          "name": "Summon",
+          "description": "Summons a Dagger",
+          "intent": "Unknown",
+          "damage": 0,
+          "hits": 0,
+          "effects": [
+            {
+              "type": "Summon",
+              "enemy": "Dagger",
+              "amount": 1
+            }
+          ],
+          "ascension_scaling": [
+            {
+              "asc": 18,
+              "effect_amount": 2
+            }
+          ]
+        },
+        {
+          "name": "Snake Strike",
+          "description": "Deals 13x2 damage and applies 1 Weak",
+          "intent": "AttackDebuff",
+          "damage": 13,
+          "hits": 2,
+          "effects": [
+            {
+              "type": "Debuff",
+              "effect": "Weak",
+              "amount": 1
+            }
+          ],
+          "ascension_scaling": [
+            {
+              "asc": 3,
+              "damage": 16
+            }
+          ]
+        },
+        {
+          "name": "Big Bite",
+          "description": "Deals 30 damage",
+          "intent": "Attack",
+          "damage": 30,
+          "hits": 1,
+          "effects": [],
+          "ascension_scaling": [
+            {
+              "asc": 3,
+              "damage": 34
+            }
+          ]
+        }
+      ],
+      "ai_logic": "Always starts with Summon. Otherwise, has an approximately equal chance of using all 3 moves, except cannot use Snake Strike twice in a row, Summon 3 times in a row, or Big Bite twice in a row. Cannot use Summon with 4 Daggers in play (will use the Snake Strike instead).",
+      "ai_logic_asc20": null,
+      "notes": null,
+      "phases": null,
+      "ascension_variants": [
+        {
+          "hp": "190-200",
+          "move_changes": [
+            "Damage 16x2, Weak 1",
+            "Damage 34"
+          ]
+        }
+      ],
+      "internal_id": "Reptomancer",
+      "ascension_breakpoints": [
+        0,
+        3,
+        8,
+        18
+      ],
+      "behavior_model": {
+        "logic_type": "Probabilistic",
+        "init_sequence": [
+          "Summon"
+        ]
+      }
+    },
+    {
+      "id": "Awakened One",
+      "name": "Awakened One",
+      "type": "Boss",
+      "act": "Act 3",
+      "hp": {
+        "base": "300",
+        "ascension": "320"
+      },
+      "starts_with": "Regenerate 10 ((Asc19: 15)) <br> #Curiosity 1 ((Asc19: 2)) <br> (#Strength 2 {{Asc|4}})",
+      "moves": [
+        {
+          "name": "Slash",
+          "description": "Deals 20 damage",
+          "intent": "Attack",
+          "damage": 20,
+          "hits": 1,
+          "effects": [],
+          "ascension_scaling": []
+        },
+        {
+          "name": "Soul Strike",
+          "description": "Deals 6x4 damage",
+          "intent": "Attack",
+          "damage": 6,
+          "hits": 4,
+          "effects": [],
+          "ascension_scaling": []
+        },
+        {
+          "name": "Rebirth",
+          "description": "Removes all debuffs and enters Phase 2",
+          "intent": "Unknown",
+          "damage": 0,
+          "hits": 0,
+          "effects": [
+            {
+              "type": "ClearDebuffs"
+            },
+            {
+              "type": "PhaseTransition",
+              "phase": 2
+            }
+          ],
+          "ascension_scaling": []
+        },
+        {
+          "name": "Dark Echo",
+          "description": "Deals 40 damage",
+          "intent": "Attack",
+          "damage": 40,
+          "hits": 1,
+          "effects": [],
+          "ascension_scaling": []
+        },
+        {
+          "name": "Sludge",
+          "description": "Deals 18 damage and shuffles 1 Void into your draw pile",
+          "intent": "AttackDebuff",
+          "damage": 18,
+          "hits": 1,
+          "effects": [
+            {
+              "type": "AddCard",
+              "card": "Void",
+              "amount": 1,
+              "destination": "draw"
+            }
+          ],
+          "ascension_scaling": []
+        },
+        {
+          "name": "Tackle",
+          "description": "Deals 10x3 damage",
+          "intent": "Attack",
+          "damage": 10,
+          "hits": 3,
+          "effects": [],
+          "ascension_scaling": []
+        }
+      ],
+      "ai_logic": "Phase 1: Always begins with Slash. Then, has 25% chance of using Soul Strike and a 75% chance of using Slash, except Soul Strike cannot be used twice in a row and Slash cannot be used three times in a row. Becomes half-dead and uses Rebirth upon hitting 0 hp to enter phase 2. Phase 2: Always begins with Dark Echo. Then, 50-50 chance of using Sludge or Tackle, except neither can be used three times in a row.",
+      "ai_logic_asc20": null,
+      "notes": null,
+      "phases": [
+        {
+          "hp": "300",
+          "moves": [
+            "Soul Strike",
+            "Slash",
+            "Rebirth"
+          ],
+          "move_details": {},
+          "notes": "Innate Regen 10 (15)",
+          "ai_logic": "Always begins with Slash. Afterwards, has a 25% chance of using Soul Strike and a 75% chance of Slash, except Soul Strike cannot be used twice in a row and slash cannot be used three times in a row. Becomes \"half dead\" and uses Rebirth upon hitting 0 hp.",
+          "phase_name": "Stage 1",
+          "variants": [
+            {
+              "hp": null,
+              "moves": [
+                "Damage 6x4",
+                "Damage 20",
+                "Start Stage 2"
+              ],
+              "move_details": {},
+              "notes": "Innate Curiosity 1 (2)",
+              "ai_logic": null
+            },
+            {
+              "hp": "320",
+              "moves": [],
+              "move_details": {},
+              "notes": "Innate Strength 2",
+              "ai_logic": null
+            }
+          ]
+        },
+        {
+          "hp": "300",
+          "moves": [
+            "Dark Echo",
+            "Sludge",
+            "Tackle"
+          ],
+          "move_details": {},
+          "notes": "Cleanses all debuffs for stage 2",
+          "ai_logic": "Always begins with Dark Echo. Afterwards, has a 50% chance of using Sludge or Tackle, except neither can be used three times in a row.",
+          "phase_name": "Stage 2",
+          "variants": [
+            {
+              "hp": null,
+              "moves": [
+                "Damage 40",
+                "Damage 18, Void 1*",
+                "Damage 10x3"
+              ],
+              "move_details": {},
+              "notes": "Loses Curiosity",
+              "ai_logic": null
+            },
+            {
+              "hp": "320",
+              "moves": [],
+              "move_details": {},
+              "notes": "*Void goes into the Draw Pile",
+              "ai_logic": null
+            }
+          ]
+        }
+      ],
+      "ascension_variants": [],
+      "internal_id": "AwakenedOne",
+      "ascension_breakpoints": [
+        0,
+        4,
+        9,
+        19
+      ],
+      "behavior_model": {
+        "logic_type": "MultiPhase",
+        "phases": [
+          {
+            "phase": 1,
+            "init_sequence": [
+              "Slash"
+            ],
+            "rules": [
+              {
+                "move": "Soul Strike",
+                "weight": 25,
+                "priority": 10,
+                "conditions": [
+                  {
+                    "type": "HistoryConstraint",
+                    "max_in_row": 1
+                  }
+                ]
+              },
+              {
+                "move": "Slash",
+                "weight": 75,
+                "priority": 10,
+                "conditions": [
+                  {
+                    "type": "HistoryConstraint",
+                    "max_in_row": 2
+                  }
+                ]
+              }
+            ],
+            "transition": {
+              "trigger": "HpZero",
+              "uses": "Rebirth"
+            }
+          },
+          {
+            "phase": 2,
+            "init_sequence": [
+              "Dark Echo"
+            ],
+            "rules": [
+              {
+                "move": "Sludge",
+                "weight": 50,
+                "priority": 10,
+                "conditions": [
+                  {
+                    "type": "HistoryConstraint",
+                    "max_in_row": 2
+                  }
+                ]
+              },
+              {
+                "move": "Tackle",
+                "weight": 50,
+                "priority": 10,
+                "conditions": [
+                  {
+                    "type": "HistoryConstraint",
+                    "max_in_row": 2
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "Deca",
+      "name": "Deca",
+      "type": "Boss",
+      "act": "Act 3",
+      "hp": {
+        "base": "250",
+        "ascension": "265"
+      },
+      "starts_with": "Artifact 2 ((Asc19: 3))",
+      "moves": [
+        {
+          "name": "Beam",
+          "description": "Deals 10x2 damage and adds 2 Dazed to your discard pile",
+          "intent": "AttackDebuff",
+          "damage": 10,
+          "hits": 2,
+          "effects": [
+            {
+              "type": "AddCard",
+              "card": "Dazed",
+              "amount": 2,
+              "destination": "discard"
+            }
+          ],
+          "ascension_scaling": [
+            {
+              "asc": 4,
+              "damage": 12
+            }
+          ]
+        },
+        {
+          "name": "Square of Protection",
+          "description": "All enemies gain 16 Block",
+          "intent": "Defend",
+          "damage": 0,
+          "hits": 0,
+          "effects": [
+            {
+              "type": "PartyBlock",
+              "amount": 16
+            }
+          ],
+          "ascension_scaling": [
+            {
+              "asc": 19,
+              "effect_amount": 16,
+              "extra_effect": "PartyPlatedArmor",
+              "extra_amount": 3
+            }
+          ]
+        }
+      ],
+      "ai_logic": "Always begins by using Beam, and then alternates between its two moves.",
+      "ai_logic_asc20": null,
+      "notes": "Innate Artifact 2 (3)",
+      "phases": null,
+      "ascension_variants": [
+        {
+          "hp": null,
+          "moves": [
+            "Team Block 16",
+            "Damage 10x2, Daze 2*"
+          ],
+          "move_details": {},
+          "notes": "*Dazes go into the Discard Pile",
+          "ai_logic": null
+        },
+        {
+          "hp": "265",
+          "moves": [
+            "Team Block 16, Team Plated Armor 3",
+            "Damage 12x2, Daze 2*"
+          ],
+          "move_details": {},
+          "notes": null,
+          "ai_logic": null
+        }
+      ],
+      "internal_id": "Deca",
+      "ascension_breakpoints": [
+        0,
+        4,
+        9,
+        19
+      ],
+      "behavior_model": {
+        "logic_type": "Cycle",
+        "init_sequence": [
+          "Beam"
+        ],
+        "notes": "Alternates between two moves (moves unknown)"
+      }
+    },
+    {
+      "id": "Donu",
+      "name": "Donu",
+      "type": "Boss",
+      "act": "Act 3",
+      "hp": {
+        "base": "250",
+        "ascension": "265"
+      },
+      "starts_with": "Artifact 2 ((Asc19: 3))",
+      "moves": [
+        {
+          "name": "Circle of Power",
+          "description": "All enemies gain 3 Strength",
+          "intent": "Buff",
+          "damage": 0,
+          "hits": 0,
+          "effects": [
+            {
+              "type": "PartyBuff",
+              "effect": "Strength",
+              "amount": 3
+            }
+          ],
+          "ascension_scaling": []
+        },
+        {
+          "name": "Attack",
+          "description": "Deals 10x2 damage",
+          "intent": "Attack",
+          "damage": 10,
+          "hits": 2,
+          "effects": [],
+          "ascension_scaling": [
+            {
+              "asc": 4,
+              "damage": 12
+            }
+          ]
+        }
+      ],
+      "ai_logic": "Always begins by using Circle of Power, and then alternates between its two moves.",
+      "ai_logic_asc20": null,
+      "notes": "Innate Artifact 2 (3)",
+      "phases": null,
+      "ascension_variants": [
+        {
+          "hp": null,
+          "moves": [
+            "Team Strength 3",
+            "Damage 10x2"
+          ],
+          "move_details": {},
+          "notes": null,
+          "ai_logic": null
+        },
+        {
+          "hp": "265",
+          "moves": [
+            "Damage 12x2"
+          ],
+          "move_details": {},
+          "notes": null,
+          "ai_logic": null
+        }
+      ],
+      "internal_id": "Donu",
+      "ascension_breakpoints": [
+        0,
+        4,
+        9,
+        19
+      ],
+      "behavior_model": {
+        "logic_type": "Cycle",
+        "init_sequence": [
+          "Circle of Power"
+        ],
+        "notes": "Alternates between two moves (moves unknown)"
+      }
+    },
+    {
+      "id": "Time Eater",
+      "name": "Time Eater",
+      "type": "Boss",
+      "act": "Act 3",
+      "hp": {
+        "base": "456",
+        "ascension": "480"
+      },
+      "starts_with": "Time Warp",
+      "moves": [
+        {
+          "name": "Reverberate",
+          "description": "Deals 7x3 damage",
+          "intent": "Attack",
+          "damage": 7,
+          "hits": 3,
+          "effects": [],
+          "ascension_scaling": [
+            {
+              "asc": 4,
+              "damage": 8
+            }
+          ]
+        },
+        {
+          "name": "Ripple",
+          "description": "Gains 20 Block, applies 1 Vulnerable and 1 Weak",
+          "intent": "DefendDebuff",
+          "damage": 0,
+          "hits": 0,
+          "effects": [
+            {
+              "type": "Block",
+              "amount": 20
+            },
+            {
+              "type": "Debuff",
+              "effect": "Vulnerable",
+              "amount": 1
+            },
+            {
+              "type": "Debuff",
+              "effect": "Weak",
+              "amount": 1
+            }
+          ],
+          "ascension_scaling": [
+            {
+              "asc": 19,
+              "extra_effect": "Frail",
+              "extra_amount": 1
+            }
+          ]
+        },
+        {
+          "name": "Head Slam",
+          "description": "Deals 26 damage, applies 1 Draw Reduction",
+          "intent": "AttackDebuff",
+          "damage": 26,
+          "hits": 1,
+          "effects": [
+            {
+              "type": "Debuff",
+              "effect": "Draw Reduction",
+              "amount": 1
+            }
+          ],
+          "ascension_scaling": [
+            {
+              "asc": 4,
+              "damage": 32
+            },
+            {
+              "asc": 19,
+              "damage": 32,
+              "extra_effect": "Slimed",
+              "extra_amount": 2,
+              "destination": "discard"
+            }
+          ]
+        },
+        {
+          "name": "Haste",
+          "description": "Heals back to 50% HP and removes all debuffs",
+          "intent": "Buff",
+          "damage": 0,
+          "hits": 0,
+          "effects": [
+            {
+              "type": "ClearDebuffs"
+            },
+            {
+              "type": "Heal",
+              "percent": 50
+            }
+          ],
+          "ascension_scaling": [
+            {
+              "asc": 19,
+              "extra_effect": "Block",
+              "extra_amount": 32
+            }
+          ]
+        }
+      ],
+      "ai_logic": "Always uses Haste once, immediately after reaching below 50% HP. Otherwise, approximately a (20/45/35) probability split between Ripple, Reverberate, and Head Slam, except Ripple and Head Slam cannot be used twice in a row, and Reverberate cannot be used three times in a row.",
+      "ai_logic_asc20": null,
+      "notes": "Innate Time Warp",
+      "phases": null,
+      "ascension_variants": [
+        {
+          "hp": null,
+          "moves": [
+            "Block 20, Vuln + Weak 1",
+            "Damage 7x3",
+            "Damage 26, Draw Reduction 1",
+            "Cleanse Debuffs"
+          ],
+          "move_details": {},
+          "notes": "Draw Reduction lasts for 2 turns",
+          "ai_logic": null
+        },
+        {
+          "hp": "480",
+          "moves": [
+            "Heal to 50% HP"
+          ],
+          "move_details": {},
+          "notes": "*Slimed go into the Draw Pile",
+          "ai_logic": null
+        },
+        {
+          "hp": null,
+          "moves": [
+            "Damage 8x3",
+            "Damage 32, Draw Reduction 1"
+          ],
+          "move_details": {},
+          "notes": null,
+          "ai_logic": null
+        },
+        {
+          "hp": null,
+          "moves": [
+            "Block 20, Vuln, Weak, Frail 1",
+            "Damage 32, Draw Reduction 1,Slimed 2*",
+            "Heal to 50% HP, Block 32"
+          ],
+          "move_details": {},
+          "notes": null,
+          "ai_logic": null
+        }
+      ],
+      "internal_id": "TimeEater",
+      "ascension_breakpoints": [
+        0,
+        4,
+        9,
+        19
+      ],
+      "behavior_model": {
+        "logic_type": "Probabilistic",
+        "rules": [
+          {
+            "move": "Haste",
+            "priority": 100,
+            "conditions": [
+              {
+                "type": "HpThreshold",
+                "percent": 50,
+                "comparison": "<"
+              },
+              {
+                "type": "MoveNotUsedYet",
+                "target": "Haste"
+              }
+            ]
+          },
+          {
+            "move": "Ripple",
+            "weight": 20,
+            "priority": 10,
+            "conditions": [
+              {
+                "type": "HistoryConstraint",
+                "max_in_row": 1
+              }
+            ]
+          },
+          {
+            "move": "Reverberate",
+            "weight": 45,
+            "priority": 10,
+            "conditions": [
+              {
+                "type": "HistoryConstraint",
+                "max_in_row": 1
+              }
+            ]
+          },
+          {
+            "move": "Head Slam",
+            "weight": 35,
+            "priority": 10,
+            "conditions": [
+              {
+                "type": "HistoryConstraint",
+                "max_in_row": 1
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "Dagger",
+      "name": "Dagger",
+      "type": "Minion",
+      "act": "Act 3",
+      "hp": {
+        "base": "20-25",
+        "ascension": "20-25"
+      },
+      "starts_with": "Minion",
+      "moves": [
+        {
+          "name": "Stab",
+          "description": "Deals 9 damage and shuffles 1 Wound into your discard pile",
+          "intent": "AttackDebuff",
+          "damage": 9,
+          "hits": 1,
+          "effects": [
+            {
+              "type": "AddCard",
+              "card": "Wound",
+              "amount": 1,
+              "destination": "discard"
+            }
+          ],
+          "ascension_scaling": []
+        },
+        {
+          "name": "Explode",
+          "description": "Deals 25 damage, then dies",
+          "intent": "Attack",
+          "damage": 25,
+          "hits": 1,
+          "effects": [
+            {
+              "type": "SelfDestruct"
+            }
+          ],
+          "ascension_scaling": []
+        }
+      ],
+      "ai_logic": "Uses Stab, then explodes.",
+      "ai_logic_asc20": null,
+      "notes": "*Wounds go into the Discard Pile",
+      "phases": null,
+      "ascension_variants": [],
+      "internal_id": "Dagger",
+      "ascension_breakpoints": [
+        0
+      ],
+      "behavior_model": {
+        "logic_type": "Cycle",
+        "cycle": [
+          "Stab",
+          "Stab",
+          "Explode"
+        ]
+      }
+    },
+    {
+      "id": "Spire Shield",
+      "name": "Spire Shield",
+      "type": "Elite",
+      "act": "Act 4",
+      "hp": {
+        "base": "110",
+        "ascension": "125"
+      },
+      "starts_with": "Artifact 1 ((Asc18: 2))",
+      "moves": [
+        {
+          "name": "Bash",
+          "description": "Deals 12 damage, applies -1 Strength (or 50% chance -1 Focus if player has Orb slots)",
+          "intent": "AttackDebuff",
+          "damage": 12,
+          "hits": 1,
+          "effects": [
+            {
+              "type": "Debuff",
+              "effect": "Strength",
+              "amount": -1
+            }
+          ],
+          "ascension_scaling": [
+            {
+              "asc": 3,
+              "damage": 14
+            }
+          ]
+        },
+        {
+          "name": "Fortify",
+          "description": "All enemies gain 30 Block",
+          "intent": "Defend",
+          "damage": 0,
+          "hits": 0,
+          "effects": [
+            {
+              "type": "PartyBlock",
+              "amount": 30
+            }
+          ],
+          "ascension_scaling": []
+        },
+        {
+          "name": "Smash",
+          "description": "Deals 34 damage and gains Block equal to damage dealt",
+          "intent": "AttackDefend",
+          "damage": 34,
+          "hits": 1,
+          "effects": [
+            {
+              "type": "Block",
+              "amount": 34
+            }
+          ],
+          "ascension_scaling": [
+            {
+              "asc": 3,
+              "damage": 38
+            },
+            {
+              "asc": 18,
+              "damage": 38,
+              "effect_amount": 99
+            }
+          ]
+        }
+      ],
+      "ai_logic": "Every 3 turns, starting from turn 3, uses Smash. Otherwise, has an equal chance of either using Bash followed by Fortify or Fortify followed by Bash.",
+      "ai_logic_asc20": null,
+      "notes": "Innate Artifact 1 (2)",
+      "phases": null,
+      "ascension_variants": [
+        {
+          "hp": "125",
+          "move_changes": [
+            "Damage 14, Stat* -1",
+            "Damage 38, Block X"
+          ]
+        }
+      ],
+      "internal_id": "SpireShield",
+      "ascension_breakpoints": [
+        0,
+        3,
+        8,
+        18
+      ],
+      "behavior_model": {
+        "logic_type": "Cycle",
+        "init_sequence": [
+          "Bash"
+        ],
+        "cycle": [
+          "Fortify",
+          "Smash"
+        ]
+      }
+    },
+    {
+      "id": "Spire Spear",
+      "name": "Spire Spear",
+      "type": "Elite",
+      "act": "Act 4",
+      "hp": {
+        "base": "160",
+        "ascension": "180"
+      },
+      "starts_with": "Artifact 1 ((Asc18: 2))",
+      "moves": [
+        {
+          "name": "Burn Strike",
+          "description": "Deals 5x2 damage and adds 2 Burns to your discard pile",
+          "intent": "AttackDebuff",
+          "damage": 5,
+          "hits": 2,
+          "effects": [
+            {
+              "type": "AddCard",
+              "card": "Burn",
+              "amount": 2,
+              "destination": "discard"
+            }
+          ],
+          "ascension_scaling": [
+            {
+              "asc": 3,
+              "damage": 6
+            },
+            {
+              "asc": 18,
+              "damage": 6,
+              "destination": "draw"
+            }
+          ]
+        },
+        {
+          "name": "Piercer",
+          "description": "All enemies gain 2 Strength",
+          "intent": "Buff",
+          "damage": 0,
+          "hits": 0,
+          "effects": [
+            {
+              "type": "PartyBuff",
+              "effect": "Strength",
+              "amount": 2
+            }
+          ],
+          "ascension_scaling": []
+        },
+        {
+          "name": "Skewer",
+          "description": "Deals 10x3 damage",
+          "intent": "Attack",
+          "damage": 10,
+          "hits": 3,
+          "effects": [],
+          "ascension_scaling": [
+            {
+              "asc": 3,
+              "hits": 4
+            }
+          ]
+        }
+      ],
+      "ai_logic": "Always starts with Burn Strike. Every 3 turns, starting from turn 2, uses Skewer. Otherwise, has an equal chance to either use Burn Strike followed by Piercer or Piercer followed by Burn Strike.",
+      "ai_logic_asc20": null,
+      "notes": "Innate Artifact 1 (2)",
+      "phases": null,
+      "ascension_variants": [
+        {
+          "hp": "180",
+          "move_changes": [
+            "Damage 6x2, Burn 2*",
+            "Damage 10x4"
+          ]
+        }
+      ],
+      "internal_id": "SpireSpear",
+      "ascension_breakpoints": [
+        0,
+        3,
+        8,
+        18
+      ],
+      "behavior_model": {
+        "logic_type": "Cycle",
+        "init_sequence": [
+          "Burn Strike"
+        ],
+        "cycle": [
+          "Piercer",
+          "Skewer"
+        ]
+      }
+    },
+    {
+      "id": "Corrupt Heart",
+      "name": "Corrupt Heart",
+      "type": "Boss",
+      "act": "Act 4",
+      "hp": {
+        "base": "750",
+        "ascension": "800"
+      },
+      "starts_with": "Beat of Death 1 ((Asc19: 2)) <br> #Invincible 300 ((Asc19: 200))",
+      "moves": [
+        {
+          "name": "Debilitate",
+          "description": "Applies 2 Vulnerable, 2 Weak, and 2 Frail. Shuffles a Dazed, Slimed, Wound, Burn, and Void into your draw pile",
+          "intent": "Debuff",
+          "damage": 0,
+          "hits": 0,
+          "effects": [
+            {
+              "type": "Debuff",
+              "effect": "Vulnerable",
+              "amount": 2
+            },
+            {
+              "type": "Debuff",
+              "effect": "Weak",
+              "amount": 2
+            },
+            {
+              "type": "Debuff",
+              "effect": "Frail",
+              "amount": 2
+            },
+            {
+              "type": "AddCard",
+              "card": "Dazed",
+              "amount": 1,
+              "destination": "draw"
+            },
+            {
+              "type": "AddCard",
+              "card": "Slimed",
+              "amount": 1,
+              "destination": "draw"
+            },
+            {
+              "type": "AddCard",
+              "card": "Wound",
+              "amount": 1,
+              "destination": "draw"
+            },
+            {
+              "type": "AddCard",
+              "card": "Burn",
+              "amount": 1,
+              "destination": "draw"
+            },
+            {
+              "type": "AddCard",
+              "card": "Void",
+              "amount": 1,
+              "destination": "draw"
+            }
+          ],
+          "ascension_scaling": []
+        },
+        {
+          "name": "Blood Shots",
+          "description": "Deals 2x12 damage",
+          "intent": "Attack",
+          "damage": 2,
+          "hits": 12,
+          "effects": [],
+          "ascension_scaling": [
+            {
+              "asc": 4,
+              "hits": 15
+            }
+          ]
+        },
+        {
+          "name": "Echo",
+          "description": "Deals 40 damage",
+          "intent": "Attack",
+          "damage": 40,
+          "hits": 1,
+          "effects": [],
+          "ascension_scaling": [
+            {
+              "asc": 4,
+              "damage": 45
+            }
+          ]
+        },
+        {
+          "name": "Buff",
+          "description": "Removes all Strength Down debuffs, gains 2 Strength and additional buffs (1st: 2 Artifact, 2nd: 1 Beat of Death, 3rd: Painful Stabs, 4th: 10 Strength, 5th+: 50 Strength)",
+          "intent": "Buff",
+          "damage": 0,
+          "hits": 0,
+          "effects": [
+            {
+              "type": "RemoveBuff",
+              "effect": "Strength Down"
+            },
+            {
+              "type": "Buff",
+              "effect": "Strength",
+              "amount": 2
+            },
+            {
+              "type": "ProgressiveBuff"
+            }
+          ],
+          "ascension_scaling": []
+        }
+      ],
+      "ai_logic": "Always begins with Debilitate. Every 3 turns, starting from turn 4, uses Buff. Otherwise, has an equal chance of either using Blood Shots followed by Echo or Echo followed by Blood Shots.",
+      "ai_logic_asc20": null,
+      "notes": "Innate Invincible 300 (200)",
+      "phases": null,
+      "ascension_variants": [
+        {
+          "hp": null,
+          "moves": [
+            "Damage 2x12",
+            "Damage 40",
+            "Vuln + Weak + Frail 2, All Status cards 1*",
+            "Cleanse Strength Down, Strength 2, Additional Buff**",
+            "First Buff: Artifact 2"
+          ],
+          "move_details": {},
+          "notes": "Innate Beat of Death 1 (2)",
+          "ai_logic": null
+        },
+        {
+          "hp": "800",
+          "moves": [
+            "Damage 2x15",
+            "Damage 45",
+            "Second Buff: Beat of Death 1"
+          ],
+          "move_details": {},
+          "notes": "*All Status cards go into the Draw Pile",
+          "ai_logic": null
+        },
+        {
+          "hp": null,
+          "moves": [
+            "Third Buff: Painful Stabs"
+          ],
+          "move_details": {},
+          "notes": null,
+          "ai_logic": null
+        },
+        {
+          "hp": null,
+          "moves": [
+            "Fourth Buff: Strength 10"
+          ],
+          "move_details": {},
+          "notes": null,
+          "ai_logic": null
+        },
+        {
+          "hp": null,
+          "moves": [
+            "Fifth+ Buff: Strength 50"
+          ],
+          "move_details": {},
+          "notes": null,
+          "ai_logic": null
+        }
+      ],
+      "internal_id": "CorruptHeart",
+      "ascension_breakpoints": [
+        0,
+        4,
+        9,
+        19
+      ],
+      "behavior_model": {
+        "logic_type": "Cycle",
+        "cycle": [
+          "Blood Shots",
+          "Debilitate",
+          "Echo",
+          "Blood Shots",
+          "Buff",
+          "Echo"
+        ]
+      }
+    }
+  ]
+}

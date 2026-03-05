@@ -1,0 +1,325 @@
+[
+  {
+    "wiki_id": "Falling",
+    "name": "Falling",
+    "category": "act3",
+    "options": [
+      {
+        "label": "[Land]",
+        "description": "Lose a random Skill card",
+        "effects": [
+          "Removes a random Skill from deck (shown in option text)",
+          "If no eligible Skill exists, this option becomes [Locked] Requires: Skill Card"
+        ],
+        "conditions": [
+          "Requires at least one Skill card not targeted by Bottled Lightning"
+        ]
+      },
+      {
+        "label": "[Channel]",
+        "description": "Lose a random Power card",
+        "effects": [
+          "Removes a random Power from deck (shown in option text)",
+          "If no eligible Power exists, this option becomes [Locked] Requires: Power Card"
+        ],
+        "conditions": [
+          "Requires at least one Power card not targeted by Bottled Tornado"
+        ]
+      },
+      {
+        "label": "[Strike]",
+        "description": "Lose a random Attack card",
+        "effects": [
+          "Removes a random Attack from deck (shown in option text)",
+          "If no eligible Attack exists, this option becomes [Locked] Requires: Attack Card"
+        ],
+        "conditions": [
+          "Requires at least one Attack card not targeted by Bottled Flame"
+        ]
+      },
+      {
+        "label": "[Land] (Special)",
+        "description": "Nothing happens",
+        "effects": [
+          "No card is lost, player continues safely"
+        ],
+        "conditions": [
+          "Only appears if player has NO eligible cards of any type (e.g., very small deck with only bottled cards)"
+        ]
+      }
+    ],
+    "notes": [
+      "Each option shows the specific card that will be lost",
+      "Bottled cards (Bottled Flame/Lightning/Tornado targets) are protected from removal",
+      "Player chooses which card type to sacrifice"
+    ]
+  },
+  {
+    "wiki_id": "Mind_Bloom",
+    "name": "Mind Bloom",
+    "category": "act3",
+    "options": [
+      {
+        "label": "[I am War]",
+        "description": "Fight a random Boss from Act 1. Obtain a Rare Relic.",
+        "effects": [
+          "Enter combat with a random Act 1 boss (can be the same one you fought or a different one)",
+          "After defeating the boss, receive: Rare Relic (as loot drop), normal combat rewards, and 50 Gold (25 on A15+)"
+        ]
+      },
+      {
+        "label": "[I am Awake]",
+        "description": "Upgrade all cards. You can no longer heal.",
+        "effects": [
+          "All cards in deck are upgraded",
+          "Obtain Mark of the Bloom relic (prevents ALL healing)",
+          "Lizard Tail and Fairy in a Bottle become useless (cannot restore HP)",
+          "If you lose Mark of the Bloom (e.g., via N'loth event), healing is restored"
+        ]
+      },
+      {
+        "label": "[I am Rich]",
+        "description": "Gain 999 Gold. Become Cursed - 2 Normality.",
+        "rewards": {
+          "gold": 999,
+          "curse": "random"
+        },
+        "effects": [
+          "Omamori can block one or both Normality curses"
+        ],
+        "conditions": [
+          "Only appears on floors 35-40",
+          "Replaced by [I am Healthy] on floor 41+"
+        ]
+      },
+      {
+        "label": "[I am Healthy]",
+        "description": "Heal to full HP. Become Cursed - Doubt.",
+        "rewards": {
+          "curse": "Doubt"
+        },
+        "conditions": [
+          "Only appears on floor 41+",
+          "Replaces [I am Rich] on higher floors"
+        ]
+      }
+    ],
+    "notes": [
+      "Always shows exactly 3 options: [I am War], [I am Awake], and either [I am Rich] or [I am Healthy] based on floor",
+      "[I am Awake] disqualifies you from the 'Who Needs Relics?' achievement (due to Mark of the Bloom)",
+      "[I am War] boss fight triggers Pantograph and Slaver's Collar as if it were a normal end-of-Act boss",
+      "Omamori can prevent Normality curses from [I am Rich], making it nearly free 999 Gold",
+      "This is often one of the last opportunities to encounter Curses in a run"
+    ]
+  },
+  {
+    "wiki_id": "Mysterious_Sphere",
+    "name": "Mysterious Sphere",
+    "category": "act3",
+    "options": [
+      {
+        "label": "[Open Sphere]",
+        "description": "Fight. Reward:  Rare Relic.",
+        "effects": [
+          "The player enters combat with the 2  Orb Walkers. In addition to the the Rare Relic, the combat rewards also yield 45-55 Gold, a normal card reward, and potentially a Potion just like a normal combat."
+        ]
+      },
+      {
+        "label": "[Leave]",
+        "description": "Nothing happens."
+      }
+    ],
+    "notes": [
+      "Although the fight can be quite dangerous and offers a Relic reward, it does not count as an Elite combat for the sake of  Preserved Insect,  Sling of Courage,  Black Star, and  Slaver's Collar."
+    ]
+  },
+  {
+    "wiki_id": "Secret_Portal",
+    "name": "Secret Portal",
+    "category": "act3",
+    "options": [
+      {
+        "label": "[Enter the Portal]",
+        "description": "IMMEDIATELY travel to the boss.",
+        "effects": [
+          "The player is put directly into combat with the Act 3 boss at the end of the act."
+        ]
+      },
+      {
+        "label": "[Leave]",
+        "description": "Nothing happens."
+      }
+    ],
+    "notes": [
+      "Apart from the unusual method of entering the boss floor and skipping the rest of Act 3, entering the portal is otherwise a completely normal boss fight.",
+      "Pantograph and  Slaver's Collar trigger as expected.",
+      "There will still be the double boss afterwards on A20.",
+      "Defeating the boss (or both bosses on A20) will still allow the player to enter Act 4 if they have all required Keys. Although, the player should be careful to collect the Ruby Key from a Rest Site prior to the event since they will skip the guaranteed Rest Site before the boss (which is often relied on as the last opportunity to collect the Ruby Key).",
+      "The player's current floor is only increased by 1, which causes them to fight the Act 3 Boss earlier than the usual floor 50."
+    ]
+  },
+  {
+    "wiki_id": "Sensory_Stone",
+    "name": "Sensory Stone",
+    "category": "act3",
+    "options": [
+      {
+        "label": "[Recall]",
+        "description": "Add 1 Colorless card to your deck.",
+        "rewards": {
+          "card": "1 Colorless card"
+        },
+        "conditions": [
+          "The player is presented with 1 card reward that can only offer Uncommon Colorless cards and Rare Colorless cards."
+        ]
+      },
+      {
+        "label": "[Recall]",
+        "description": "Add 2 Colorless cards to your deck. Lose 5 HP.",
+        "costs": {
+          "hp": 5
+        },
+        "rewards": {
+          "card": "2 Colorless cards"
+        },
+        "conditions": [
+          "The player is presented with 2 card rewards that can only offer Uncommon Colorless cards and Rare Colorless cards."
+        ]
+      },
+      {
+        "label": "[Recall]",
+        "description": "Add 3 Colorless cards to your deck. Lose 5 HP.",
+        "costs": {
+          "hp": 5
+        },
+        "rewards": {
+          "card": "3 Colorless cards"
+        },
+        "conditions": [
+          "The player is presented with 3 card rewards that can only offer Uncommon Colorless cards and Rare Colorless cards."
+        ]
+      }
+    ],
+    "notes": [
+      "Since the Colorless cards are actually card rewards, they are affected by Relics which modify card rewards in some way.",
+      "Question Card makes each card reward present the player with 1 additional card.",
+      "Singing Bowl can allow the player to skip each card reward in order to gain +2 Max HP.",
+      "Busted Crown makes each card reward present the player with 2 fewer cards.",
+      "N'loth's Gift increases the likelihood of each card being a Rare Colorless card."
+    ]
+  },
+  {
+    "wiki_id": "The_Moai_Head",
+    "name": "The Moai Head",
+    "category": "act3",
+    "options": [
+      {
+        "label": "[Jump Inside]",
+        "description": "Heal to full HP. Lose X Max HP.",
+        "effects": [
+          "X = 12.5% (A15+: 18%) of player's Max HP.",
+          "Healing is blocked by Mark of the Bloom."
+        ]
+      },
+      {
+        "label": "[Offer: Golden Idol]",
+        "description": "Receive 333 Gold. Lose Golden Idol relic.",
+        "rewards": {
+          "gold": 333
+        },
+        "conditions": [
+          "Requires: Golden Idol relic (from Act 1 Golden Idol event).",
+          "If player lacks Golden Idol, shows as [Locked] Requires: Golden Idol."
+        ]
+      },
+      {
+        "label": "[Leave]",
+        "description": "Nothing happens."
+      }
+    ],
+    "notes": [
+      "Golden Idol is acquired from the Act 1 event 'Golden Idol'.",
+      "This is the LAST opportunity to trade Golden Idol (other was Forgotten Altar in Act 2).",
+      "333 Gold from [Offer] far exceeds any remaining combat Gold gains at this point in Act 3."
+    ]
+  },
+  {
+    "wiki_id": "Tomb_of_Lord_Red_Mask",
+    "name": "Tomb of Lord Red Mask",
+    "category": "act3",
+    "options": [
+      {
+        "label": "[Don the Red Mask]",
+        "description": "Gain 222 Gold.",
+        "rewards": {
+          "gold": 222
+        },
+        "requirements": {
+          "has_relic": "Red Mask"
+        },
+        "effects": [
+          "Player keeps the Red Mask relic.",
+          "Gold is a pure reward for owning the relic."
+        ]
+      },
+      {
+        "label": "[Offer: X Gold]",
+        "description": "Lose all Gold. Obtain Red Mask relic.",
+        "rewards": {
+          "relic": "Red Mask"
+        },
+        "requirements": {
+          "has_relic": "Red Mask"
+        },
+        "effects": [
+          "X = all of player's current Gold",
+          "Receive Red Mask relic"
+        ]
+      },
+      {
+        "label": "[Leave]",
+        "description": "Nothing happens."
+      }
+    ],
+    "notes": [
+      "This event has TWO branches based on Red Mask ownership:",
+      "WITH Red Mask: Options are [Don the Red Mask] (222 Gold) or [Leave]",
+      "WITHOUT Red Mask: Options are [Offer: X Gold] (buy Red Mask) or [Leave]. [Don the Red Mask] shows as [Locked] Requires: Red Mask",
+      "Red Mask is obtained from the Act 2 event Masked Bandits."
+    ]
+  },
+  {
+    "wiki_id": "Winding_Halls",
+    "name": "Winding Halls",
+    "category": "act3",
+    "options": [
+      {
+        "label": "[Embrace Madness]",
+        "description": "Receive 2  Madness. Lose X HP.",
+        "effects": [
+          "X is equal to 12.5% (A15+: 18%) of the player's Max HP."
+        ]
+      },
+      {
+        "label": "[Focus]",
+        "description": "Become Cursed -  Writhe. Heal X HP.",
+        "rewards": {
+          "curse": "Writhe"
+        },
+        "effects": [
+          "X is equal to 25% (A15+: 20%) of the player's Max HP."
+        ]
+      },
+      {
+        "label": "[Retrace Your Steps]",
+        "description": "Lose X Max HP.",
+        "effects": [
+          "X is equal to 5% of the player's Max HP."
+        ]
+      }
+    ],
+    "notes": [
+      "Omamori can be used to prevent the  Writhe from [Focus] if it has any charges remaining. This is likely one of the last opportunities for the player to be able to benefit from  Omamori."
+    ]
+  }
+]

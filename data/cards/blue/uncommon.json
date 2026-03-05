@@ -1,0 +1,1010 @@
+[
+  {
+    "id": "Blizzard",
+    "name": "Blizzard",
+    "type": "Attack",
+    "cost": 1,
+    "color": "Blue",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "Enemy",
+      "commands": [],
+      "keywords_used": [
+        "Frost"
+      ]
+    },
+    "original_text": "Deal damage equal to [2|3] times the number of #Frost #Channeled this combat to ALL enemies.",
+    "manual_review_needed": true,
+    "unparsed_text": [
+      "Deal damage equal to [2|3] times the number of #Frost #Channeled this combat to ALL enemies"
+    ]
+  },
+  {
+    "id": "Bullseye",
+    "name": "Bullseye",
+    "type": "Attack",
+    "cost": 1,
+    "color": "Blue",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "Enemy",
+      "commands": [
+        {
+          "type": "DealDamage",
+          "params": {
+            "base": 8,
+            "upgrade": 11
+          }
+        },
+        {
+          "type": "ApplyStatus",
+          "params": {
+            "status": "Lock",
+            "base": 2,
+            "upgrade": 3
+          }
+        }
+      ],
+      "keywords_used": [
+        "Lock-On"
+      ]
+    },
+    "original_text": "Deal [8|11] damage.<br>Apply [2|3] #Lock On."
+  },
+  {
+    "id": "Doom_and_Gloom",
+    "name": "Doom and Gloom",
+    "type": "Attack",
+    "cost": 2,
+    "color": "Blue",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "DealDamageAll",
+          "params": {
+            "base": 10,
+            "upgrade": 14
+          }
+        },
+        {
+          "type": "ChannelOrb",
+          "params": {
+            "orb": "Dark",
+            "count_base": 1,
+            "count_upgrade": 1
+          }
+        }
+      ],
+      "keywords_used": [
+        "Dark"
+      ]
+    },
+    "original_text": "Deal [10|14] damage to ALL enemies.<br>#Channel 1 #Dark."
+  },
+  {
+    "id": "FTL",
+    "name": "FTL",
+    "type": "Attack",
+    "cost": 0,
+    "color": "Blue",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "DealDamage",
+          "params": {
+            "base": 5,
+            "upgrade": 6
+          }
+        },
+        {
+          "type": "DrawCards",
+          "params": {
+            "base": 1,
+            "upgrade": 1
+          }
+        }
+      ]
+    },
+    "original_text": "Deal [5|6] damage. If you have played less than [3|4] cards this turn, draw 1 card."
+  },
+  {
+    "id": "Melter",
+    "name": "Melter",
+    "type": "Attack",
+    "cost": 1,
+    "color": "Blue",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "Enemy",
+      "commands": [
+        {
+          "type": "DealDamage",
+          "params": {
+            "base": 10,
+            "upgrade": 14
+          }
+        },
+        {
+          "type": "RemoveBlock",
+          "params": {
+            "target": "enemy"
+          }
+        }
+      ]
+    },
+    "original_text": "Remove all #Block from the enemy.<br>Deal [10|14] damage.",
+    "manual_review_needed": false
+  },
+  {
+    "id": "Rip_and_Tear",
+    "name": "Rip and Tear",
+    "type": "Attack",
+    "cost": 1,
+    "color": "Blue",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "Enemy",
+      "commands": [
+        {
+          "type": "DealDamage",
+          "params": {
+            "base": 7,
+            "upgrade": 9
+          }
+        }
+      ]
+    },
+    "original_text": "Deal [7|9] damage to a random enemy twice."
+  },
+  {
+    "id": "Scrape",
+    "name": "Scrape",
+    "type": "Attack",
+    "cost": 1,
+    "color": "Blue",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "DealDamage",
+          "params": {
+            "base": 7,
+            "upgrade": 10
+          }
+        },
+        {
+          "type": "DrawCards",
+          "params": {
+            "base": 4,
+            "upgrade": 5
+          }
+        },
+        {
+          "type": "Discard",
+          "params": {
+            "count": "ALL",
+            "random": false
+          }
+        }
+      ]
+    },
+    "original_text": "Deal [7|10] damage.<br>Draw [4|5] cards.<br>Discard all cards drawn this way that do not cost 0."
+  },
+  {
+    "id": "Sunder",
+    "name": "Sunder",
+    "type": "Attack",
+    "cost": 3,
+    "color": "Blue",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "DealDamage",
+          "params": {
+            "base": 24,
+            "upgrade": 32
+          }
+        },
+        {
+          "type": "GainEnergy",
+          "params": {
+            "base": 3,
+            "upgrade": 3
+          }
+        }
+      ]
+    },
+    "original_text": "Deal [24|32] damage.<br>If this kills an enemy, gain @BE @BE @BE."
+  },
+  {
+    "id": "Aggregate",
+    "name": "Aggregate",
+    "type": "Skill",
+    "cost": 1,
+    "color": "Blue",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "GainEnergy",
+          "params": {
+            "base": 1,
+            "upgrade": 1
+          }
+        }
+      ]
+    },
+    "original_text": "Gain @BE for every [4|3] cards in your draw pile."
+  },
+  {
+    "id": "Auto-Shields",
+    "name": "Auto-Shields",
+    "type": "Skill",
+    "cost": 1,
+    "color": "Blue",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "GainBlock",
+          "params": {
+            "base": 11,
+            "upgrade": 15
+          }
+        }
+      ],
+      "keywords_used": [
+        "Block"
+      ]
+    },
+    "original_text": "If you have no #Block, gain [11|15] #Block."
+  },
+  {
+    "id": "Boot_Sequence",
+    "name": "Boot Sequence",
+    "type": "Skill",
+    "cost": 0,
+    "color": "Blue",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "Innate",
+          "params": {}
+        },
+        {
+          "type": "GainBlock",
+          "params": {
+            "base": 10,
+            "upgrade": 13
+          }
+        },
+        {
+          "type": "ExhaustSelf",
+          "params": {}
+        }
+      ],
+      "keywords_used": [
+        "Innate",
+        "Block",
+        "Exhaust"
+      ]
+    },
+    "original_text": "#Innate.<br>Gain [10|13] #Block.<br>#Exhaust."
+  },
+  {
+    "id": "Chaos",
+    "name": "Chaos",
+    "type": "Skill",
+    "cost": 1,
+    "color": "Blue",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "ChannelOrb",
+          "params": {
+            "orb": "Random",
+            "count_base": 1,
+            "count_upgrade": 2
+          }
+        }
+      ],
+      "keywords_used": [
+        "Channel"
+      ]
+    },
+    "original_text": "#Channel [1|2] random [Orb|Orbs]."
+  },
+  {
+    "id": "Chill",
+    "name": "Chill",
+    "type": "Skill",
+    "cost": 0,
+    "color": "Blue",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "Innate",
+          "params": {
+            "upgrade_only": true
+          }
+        },
+        {
+          "type": "ChannelOrb",
+          "params": {
+            "orb": "Frost",
+            "count_base": 1,
+            "count_upgrade": 1
+          }
+        },
+        {
+          "type": "ExhaustSelf",
+          "params": {}
+        }
+      ],
+      "keywords_used": [
+        "Exhaust"
+      ]
+    },
+    "original_text": "[|#Innate. <br>]#Channel 1 #Frost for each enemy in combat.<br>#Exhaust."
+  },
+  {
+    "id": "Consume",
+    "name": "Consume",
+    "type": "Skill",
+    "cost": 2,
+    "color": "Blue",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "GainBuff",
+          "params": {
+            "buff": "Focus",
+            "base": 2,
+            "upgrade": 3
+          }
+        },
+        {
+          "type": "LoseBuff",
+          "params": {
+            "buff": "Orb",
+            "base": 1,
+            "upgrade": 1
+          }
+        }
+      ],
+      "keywords_used": [
+        "Focus"
+      ]
+    },
+    "original_text": "Gain [2|3] #Focus.<br>Lose 1 #Orb slot."
+  },
+  {
+    "id": "Darkness",
+    "name": "Darkness",
+    "type": "Skill",
+    "cost": 1,
+    "color": "Blue",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "ChannelOrb",
+          "params": {
+            "orb": "Dark",
+            "count_base": 1,
+            "count_upgrade": 1
+          }
+        }
+      ],
+      "keywords_used": [
+        "Dark"
+      ]
+    },
+    "original_text": "#Channel 1 #Dark.[|<br>Trigger the passive ability of ALL #Dark orbs.]",
+    "manual_review_needed": true,
+    "unparsed_text": [
+      "Trigger the passive ability of ALL #Dark orbs.]"
+    ]
+  },
+  {
+    "id": "Double_Energy",
+    "name": "Double Energy",
+    "type": "Skill",
+    "cost": 1,
+    "color": "Blue",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "ExhaustSelf",
+          "params": {}
+        },
+        {
+          "type": "DoubleEnergy",
+          "params": {}
+        }
+      ],
+      "keywords_used": [
+        "Energy",
+        "Exhaust"
+      ]
+    },
+    "original_text": "Double your #Energy.<br>#Exhaust.",
+    "cost_upgrade": 0,
+    "manual_review_needed": false
+  },
+  {
+    "id": "Equilibrium",
+    "name": "Equilibrium",
+    "type": "Skill",
+    "cost": 2,
+    "color": "Blue",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "GainBlock",
+          "params": {
+            "base": 13,
+            "upgrade": 16
+          }
+        },
+        {
+          "type": "Retain",
+          "params": {}
+        }
+      ],
+      "keywords_used": [
+        "Block"
+      ]
+    },
+    "original_text": "Gain [13|16] #Block.<br>#Retain your hand this turn."
+  },
+  {
+    "id": "Force_Field",
+    "name": "Force Field",
+    "type": "Skill",
+    "cost": 4,
+    "color": "Blue",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "GainEnergy",
+          "params": {
+            "base": 1,
+            "upgrade": 1
+          }
+        },
+        {
+          "type": "GainBlock",
+          "params": {
+            "base": 12,
+            "upgrade": 16
+          }
+        }
+      ],
+      "keywords_used": [
+        "Block"
+      ]
+    },
+    "original_text": "Costs 1 less @BE for each Power card played this combat.<br>Gain [12|16] #Block."
+  },
+  {
+    "id": "Fusion",
+    "name": "Fusion",
+    "type": "Skill",
+    "cost": 2,
+    "color": "Blue",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "ChannelOrb",
+          "params": {
+            "orb": "Plasma",
+            "count_base": 1,
+            "count_upgrade": 1
+          }
+        }
+      ],
+      "keywords_used": [
+        "Plasma"
+      ]
+    },
+    "original_text": "#Channel 1 #Plasma.",
+    "cost_upgrade": 1
+  },
+  {
+    "id": "Genetic_Algorithm",
+    "name": "Genetic Algorithm",
+    "type": "Skill",
+    "cost": 1,
+    "color": "Blue",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "GainBlock",
+          "params": {
+            "base": 1,
+            "upgrade": 1
+          }
+        },
+        {
+          "type": "ExhaustSelf",
+          "params": {}
+        }
+      ],
+      "keywords_used": [
+        "Block",
+        "Exhaust"
+      ]
+    },
+    "original_text": "Gain 1 #Block. Permanently increase this card's #Block by [2|3].<br>#Exhaust.",
+    "manual_review_needed": false,
+    "flags": {
+      "permanent_block_increase": 2,
+      "permanent_block_increase_upgrade": 3
+    }
+  },
+  {
+    "id": "Glacier",
+    "name": "Glacier",
+    "type": "Skill",
+    "cost": 2,
+    "color": "Blue",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "GainBlock",
+          "params": {
+            "base": 7,
+            "upgrade": 10
+          }
+        },
+        {
+          "type": "ChannelOrb",
+          "params": {
+            "orb": "Frost",
+            "count_base": 2,
+            "count_upgrade": 2
+          }
+        }
+      ],
+      "keywords_used": [
+        "Block",
+        "Frost"
+      ]
+    },
+    "original_text": "Gain [7|10] #Block.<br>#Channel 2 #Frost."
+  },
+  {
+    "id": "Overclock",
+    "name": "Overclock",
+    "type": "Skill",
+    "cost": 0,
+    "color": "Blue",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "DrawCards",
+          "params": {
+            "base": 2,
+            "upgrade": 3
+          }
+        },
+        {
+          "type": "AddCard",
+          "params": {
+            "card": "Burn",
+            "destination": "discard pile"
+          }
+        }
+      ]
+    },
+    "original_text": "Draw [2|3] cards.<br>Add a {{C|Burn}} into your discard pile."
+  },
+  {
+    "id": "Recycle",
+    "name": "Recycle",
+    "type": "Skill",
+    "cost": 1,
+    "color": "Blue",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "ExhaustCards",
+          "params": {
+            "random": false,
+            "count": 1
+          }
+        },
+        {
+          "type": "GainEnergy",
+          "params": {
+            "base": 1,
+            "upgrade": 1
+          }
+        }
+      ]
+    },
+    "original_text": "#Exhaust a card.<br>Gain @BE equal to its cost.",
+    "cost_upgrade": 0
+  },
+  {
+    "id": "Reinforced_Body",
+    "name": "Reinforced Body",
+    "type": "Skill",
+    "cost": -1,
+    "color": "Blue",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "GainBlock",
+          "params": {
+            "base": 7,
+            "upgrade": 9
+          }
+        }
+      ]
+    },
+    "original_text": "Gain [7|9] #Block X times."
+  },
+  {
+    "id": "Reprogram",
+    "name": "Reprogram",
+    "type": "Skill",
+    "cost": 1,
+    "color": "Blue",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "LoseBuff",
+          "params": {
+            "buff": "Focus",
+            "base": 1,
+            "upgrade": 2
+          }
+        },
+        {
+          "type": "GainBuff",
+          "params": {
+            "buff": "Strength",
+            "base": 1,
+            "upgrade": 2
+          }
+        },
+        {
+          "type": "GainBuff",
+          "params": {
+            "buff": "Dexterity",
+            "base": 1,
+            "upgrade": 2
+          }
+        }
+      ],
+      "keywords_used": [
+        "Focus",
+        "Strength",
+        "Dexterity"
+      ]
+    },
+    "original_text": "Lose [1|2] #Focus. <br>Gain [1|2] #Strength. <br>Gain [1|2] #Dexterity."
+  },
+  {
+    "id": "Skim",
+    "name": "Skim",
+    "type": "Skill",
+    "cost": 1,
+    "color": "Blue",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "DrawCards",
+          "params": {
+            "base": 3,
+            "upgrade": 4
+          }
+        }
+      ]
+    },
+    "original_text": "Draw [3|4] cards."
+  },
+  {
+    "id": "Tempest",
+    "name": "Tempest",
+    "type": "Skill",
+    "cost": -1,
+    "color": "Blue",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "ExhaustSelf",
+          "params": {}
+        }
+      ],
+      "keywords_used": [
+        "Channel",
+        "Lightning",
+        "Exhaust"
+      ]
+    },
+    "original_text": "#Channel [X|X+1] #Lightning.<br>#Exhaust.",
+    "manual_review_needed": true,
+    "unparsed_text": [
+      "#Channel [X|X+1] #Lightning."
+    ]
+  },
+  {
+    "id": "White_Noise",
+    "name": "White Noise",
+    "type": "Skill",
+    "cost": 1,
+    "color": "Blue",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "AddCard",
+          "params": {
+            "card": "random Power card",
+            "destination": "hand"
+          }
+        },
+        {
+          "type": "ExhaustSelf",
+          "params": {}
+        }
+      ],
+      "keywords_used": [
+        "Exhaust"
+      ]
+    },
+    "original_text": "Add a random Power card into your hand.<br>It costs 0 this turn.<br>#Exhaust.",
+    "cost_upgrade": 0,
+    "manual_review_needed": false,
+    "flags": {
+      "generated_cost": 0
+    }
+  },
+  {
+    "id": "Capacitor",
+    "name": "Capacitor",
+    "type": "Power",
+    "cost": 1,
+    "color": "Blue",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "GainBuff",
+          "params": {
+            "buff": "Orb",
+            "base": 2,
+            "upgrade": 3
+          }
+        }
+      ]
+    },
+    "original_text": "Gain [2|3] #Orb slots."
+  },
+  {
+    "id": "Defragment",
+    "name": "Defragment",
+    "type": "Power",
+    "cost": 1,
+    "color": "Blue",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "GainBuff",
+          "params": {
+            "buff": "Focus",
+            "base": 1,
+            "upgrade": 2
+          }
+        }
+      ],
+      "keywords_used": [
+        "Focus"
+      ]
+    },
+    "original_text": "Gain [1|2] #Focus."
+  },
+  {
+    "id": "Heatsinks",
+    "name": "Heatsinks",
+    "type": "Power",
+    "cost": 1,
+    "color": "Blue",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "ApplyPower",
+          "params": {
+            "power": "Heatsink",
+            "base": 1,
+            "upgrade": 2
+          }
+        }
+      ]
+    },
+    "original_text": "Whenever you play a Power card, draw [1|2] [card|cards]."
+  },
+  {
+    "id": "Hello_World",
+    "name": "Hello World",
+    "type": "Power",
+    "cost": 1,
+    "color": "Blue",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "ApplyPower",
+          "params": {
+            "power": "Hello",
+            "base": 1,
+            "upgrade": 1
+          }
+        },
+        {
+          "type": "Innate",
+          "params": {
+            "upgrade_only": true
+          }
+        }
+      ]
+    },
+    "original_text": "[|#Innate.] <br>At the start of your turn, add a random Common card into your hand."
+  },
+  {
+    "id": "Loop",
+    "name": "Loop",
+    "type": "Power",
+    "cost": 1,
+    "color": "Blue",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "ApplyPower",
+          "params": {
+            "power": "Loop",
+            "base": 1,
+            "upgrade": 2
+          }
+        }
+      ]
+    },
+    "original_text": "At the start of your turn, trigger the passive ability of your next Orb [1 time|2 times].",
+    "manual_review_needed": true,
+    "unparsed_text": [
+      "At the start of your turn, trigger the passive ability of your next Orb [1 time|2 times]"
+    ]
+  },
+  {
+    "id": "Self_Repair",
+    "name": "Self Repair",
+    "type": "Power",
+    "cost": 1,
+    "color": "Blue",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "Heal",
+          "params": {
+            "base": 7,
+            "upgrade": 10
+          }
+        }
+      ]
+    },
+    "original_text": "At the end of combat, heal [7|10] HP."
+  },
+  {
+    "id": "Static_Discharge",
+    "name": "Static Discharge",
+    "type": "Power",
+    "cost": 1,
+    "color": "Blue",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "ApplyPower",
+          "params": {
+            "power": "Static Discharge",
+            "base": 1,
+            "upgrade": 2
+          }
+        }
+      ],
+      "keywords_used": [
+        "Channel",
+        "Lightning"
+      ]
+    },
+    "original_text": "Whenever you receive unblocked attack damage, #Channel [1|2] #Lightning."
+  },
+  {
+    "id": "Storm",
+    "name": "Storm",
+    "type": "Power",
+    "cost": 1,
+    "color": "Blue",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "ApplyPower",
+          "params": {
+            "power": "Storm",
+            "base": 1,
+            "upgrade": 1
+          }
+        },
+        {
+          "type": "Innate",
+          "params": {
+            "upgrade_only": true
+          }
+        }
+      ],
+      "keywords_used": [
+        "Lightning"
+      ]
+    },
+    "original_text": "[|#Innate. <br>]Whenever you play a {{QueryLink|Cards|type:Power|Power}} card, #Channel 1 #Lightning."
+  }
+]

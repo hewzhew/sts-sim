@@ -1,0 +1,577 @@
+{
+  "condition_types": {
+    "HpThreshold": [
+      {
+        "type": "HpThreshold",
+        "percent": 50,
+        "comparison": "<="
+      },
+      {
+        "type": "HpThreshold",
+        "percent": 50,
+        "comparison": "<="
+      }
+    ],
+    "HistoryConstraint": [
+      {
+        "type": "HistoryConstraint",
+        "max_in_row": 2
+      },
+      {
+        "type": "HistoryConstraint",
+        "max_in_row": 1
+      }
+    ],
+    "Turn": [
+      {
+        "type": "Turn",
+        "comparison": "==",
+        "target": "1"
+      }
+    ],
+    "ChargingPattern": [
+      {
+        "type": "ChargingPattern",
+        "max_in_row": 2
+      }
+    ],
+    "AfterCharging": [
+      {
+        "type": "AfterCharging"
+      }
+    ],
+    "MoveNotUsedYet": [
+      {
+        "type": "MoveNotUsedYet",
+        "target": "Entangle"
+      },
+      {
+        "type": "MoveNotUsedYet",
+        "target": "Entangle"
+      }
+    ],
+    "UntilUsed": [
+      {
+        "type": "UntilUsed",
+        "target": "Entangle"
+      }
+    ],
+    "AlliesExist": [
+      {
+        "type": "AlliesExist"
+      }
+    ],
+    "NoAllies": [
+      {
+        "type": "NoAllies"
+      }
+    ],
+    "AllyAlive": [
+      {
+        "type": "AllyAlive",
+        "target": "Mystic"
+      }
+    ],
+    "EveryNTurns": [
+      {
+        "type": "EveryNTurns",
+        "comparison": "start=4",
+        "target": "4"
+      },
+      {
+        "type": "EveryNTurns",
+        "comparison": "start=3",
+        "target": "3"
+      }
+    ]
+  },
+  "logic_types": {
+    "Probabilistic": {
+      "monster": "Acid Slime (L)",
+      "behavior_model": {
+        "logic_type": "Probabilistic",
+        "rules": [
+          {
+            "move": "Split",
+            "priority": 100,
+            "conditions": [
+              {
+                "type": "HpThreshold",
+                "percent": 50,
+                "comparison": "<="
+              }
+            ]
+          },
+          {
+            "move": "Corrosive Spit",
+            "weight": 30,
+            "priority": 10,
+            "conditions": [
+              {
+                "type": "HistoryConstraint",
+                "max_in_row": 2
+              }
+            ]
+          },
+          {
+            "move": "Tackle",
+            "weight": 40,
+            "priority": 10,
+            "conditions": [
+              {
+                "type": "HistoryConstraint",
+                "max_in_row": 1
+              }
+            ]
+          },
+          {
+            "move": "Lick",
+            "weight": 30,
+            "priority": 10,
+            "conditions": [
+              {
+                "type": "HistoryConstraint",
+                "max_in_row": 2
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "Reference": {
+      "monster": "Acid Slime (M)",
+      "behavior_model": {
+        "logic_type": "Reference",
+        "notes": "Same AI as Acid Slime (L)"
+      }
+    },
+    "Turn1ThenAlternate": {
+      "monster": "Acid Slime (S)",
+      "behavior_model": {
+        "logic_type": "Turn1ThenAlternate",
+        "rules": [
+          {
+            "move": "Lick",
+            "weight": 50,
+            "priority": 20,
+            "conditions": [
+              {
+                "type": "Turn",
+                "comparison": "==",
+                "target": "1"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "Repeat": {
+      "monster": "Fat Gremlin",
+      "behavior_model": {
+        "logic_type": "Repeat",
+        "rules": [
+          {
+            "move": "Smash",
+            "weight": 100
+          }
+        ]
+      }
+    },
+    "Charging": {
+      "monster": "Gremlin Wizard",
+      "behavior_model": {
+        "logic_type": "Charging",
+        "rules": [
+          {
+            "move": "Charging",
+            "priority": 50,
+            "conditions": [
+              {
+                "type": "ChargingPattern",
+                "max_in_row": 2
+              }
+            ]
+          },
+          {
+            "move": "Ultimate Blast",
+            "priority": 50,
+            "conditions": [
+              {
+                "type": "AfterCharging"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "Conditional": {
+      "monster": "Red Slaver",
+      "behavior_model": {
+        "logic_type": "Conditional",
+        "init_sequence": [
+          "Stab"
+        ],
+        "rules": [
+          {
+            "move": "Scrape",
+            "priority": 50,
+            "conditions": [
+              {
+                "type": "MoveNotUsedYet",
+                "target": "Entangle"
+              }
+            ]
+          },
+          {
+            "move": "Scrape",
+            "priority": 50,
+            "conditions": [
+              {
+                "type": "MoveNotUsedYet",
+                "target": "Entangle"
+              }
+            ]
+          },
+          {
+            "move": "Stab",
+            "priority": 50,
+            "conditions": [
+              {
+                "type": "MoveNotUsedYet",
+                "target": "Entangle"
+              }
+            ]
+          },
+          {
+            "move": "Stab",
+            "weight": 45,
+            "priority": 30
+          },
+          {
+            "move": "Scrape",
+            "weight": 55,
+            "priority": 30
+          },
+          {
+            "move": "Entangle",
+            "weight": 25,
+            "priority": 20,
+            "conditions": [
+              {
+                "type": "UntilUsed",
+                "target": "Entangle"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "Cycle": {
+      "monster": "Lagavulin",
+      "behavior_model": {
+        "logic_type": "Cycle",
+        "cycle": [
+          "Attack",
+          "Attack",
+          "Siphon Soul"
+        ]
+      }
+    },
+    "Alternating": {
+      "monster": "Sentry",
+      "behavior_model": {
+        "logic_type": "Alternating",
+        "init_sequence": [
+          "Bolt"
+        ]
+      }
+    },
+    "EveryNTurns": {
+      "monster": "The Champ",
+      "behavior_model": {
+        "logic_type": "EveryNTurns",
+        "cycle": [
+          "Defensive Stance",
+          "Gloat",
+          "Face Slap",
+          "Heavy Slash",
+          "Face Slap (instead of even probability distribution)"
+        ],
+        "rules": [
+          {
+            "move": "Taunt",
+            "priority": 50,
+            "conditions": [
+              {
+                "type": "EveryNTurns",
+                "comparison": "start=4",
+                "target": "4"
+              }
+            ]
+          },
+          {
+            "move": "approximately (15/15/25/45) (30/0/25/45) probability split between (Defensive Stance/Gloat/Face Slap/Heavy Slash)",
+            "weight": 100,
+            "priority": 10
+          }
+        ]
+      }
+    },
+    "MultiPhase": {
+      "monster": "Awakened One",
+      "behavior_model": {
+        "logic_type": "MultiPhase",
+        "phases": [
+          {
+            "phase": 1,
+            "init_sequence": [
+              "Slash"
+            ],
+            "rules": [
+              {
+                "move": "Soul Strike",
+                "weight": 25,
+                "priority": 10,
+                "conditions": [
+                  {
+                    "type": "HistoryConstraint",
+                    "max_in_row": 1
+                  }
+                ]
+              },
+              {
+                "move": "Slash",
+                "weight": 75,
+                "priority": 10,
+                "conditions": [
+                  {
+                    "type": "HistoryConstraint",
+                    "max_in_row": 2
+                  }
+                ]
+              }
+            ],
+            "transition": {
+              "trigger": "HpZero",
+              "uses": "Rebirth"
+            }
+          },
+          {
+            "phase": 2,
+            "init_sequence": [
+              "Dark Echo"
+            ],
+            "rules": [
+              {
+                "move": "Sludge",
+                "weight": 50,
+                "priority": 10,
+                "conditions": [
+                  {
+                    "type": "HistoryConstraint",
+                    "max_in_row": 2
+                  }
+                ]
+              },
+              {
+                "move": "Tackle",
+                "weight": 50,
+                "priority": 10,
+                "conditions": [
+                  {
+                    "type": "HistoryConstraint",
+                    "max_in_row": 2
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    }
+  },
+  "rule_examples": [
+    {
+      "monster": "Acid Slime (L)",
+      "rule": {
+        "move": "Split",
+        "priority": 100,
+        "conditions": [
+          {
+            "type": "HpThreshold",
+            "percent": 50,
+            "comparison": "<="
+          }
+        ]
+      }
+    },
+    {
+      "monster": "Acid Slime (L)",
+      "rule": {
+        "move": "Corrosive Spit",
+        "weight": 30,
+        "priority": 10,
+        "conditions": [
+          {
+            "type": "HistoryConstraint",
+            "max_in_row": 2
+          }
+        ]
+      }
+    },
+    {
+      "monster": "Acid Slime (S)",
+      "rule": {
+        "move": "Lick",
+        "weight": 50,
+        "priority": 20,
+        "conditions": [
+          {
+            "type": "Turn",
+            "comparison": "==",
+            "target": "1"
+          }
+        ]
+      }
+    },
+    {
+      "monster": "Cultist",
+      "rule": {
+        "move": "Dark Strike",
+        "weight": 100
+      }
+    },
+    {
+      "monster": "Gremlin Wizard",
+      "rule": {
+        "move": "Charging",
+        "priority": 50,
+        "conditions": [
+          {
+            "type": "ChargingPattern",
+            "max_in_row": 2
+          }
+        ]
+      }
+    },
+    {
+      "monster": "Gremlin Wizard",
+      "rule": {
+        "move": "Ultimate Blast",
+        "priority": 50,
+        "conditions": [
+          {
+            "type": "AfterCharging"
+          }
+        ]
+      }
+    },
+    {
+      "monster": "Looter",
+      "rule": {
+        "move": "Lunge",
+        "weight": 50,
+        "priority": 10
+      }
+    },
+    {
+      "monster": "Red Slaver",
+      "rule": {
+        "move": "Scrape",
+        "priority": 50,
+        "conditions": [
+          {
+            "type": "MoveNotUsedYet",
+            "target": "Entangle"
+          }
+        ]
+      }
+    },
+    {
+      "monster": "Red Slaver",
+      "rule": {
+        "move": "Entangle",
+        "weight": 25,
+        "priority": 20,
+        "conditions": [
+          {
+            "type": "UntilUsed",
+            "target": "Entangle"
+          }
+        ]
+      }
+    },
+    {
+      "monster": "Shield Gremlin",
+      "rule": {
+        "move": "Protect",
+        "priority": 50,
+        "conditions": [
+          {
+            "type": "AlliesExist"
+          }
+        ]
+      }
+    }
+  ],
+  "phase_example": {
+    "phase": 1,
+    "init_sequence": [
+      "Slash"
+    ],
+    "rules": [
+      {
+        "move": "Soul Strike",
+        "weight": 25,
+        "priority": 10,
+        "conditions": [
+          {
+            "type": "HistoryConstraint",
+            "max_in_row": 1
+          }
+        ]
+      },
+      {
+        "move": "Slash",
+        "weight": 75,
+        "priority": 10,
+        "conditions": [
+          {
+            "type": "HistoryConstraint",
+            "max_in_row": 2
+          }
+        ]
+      }
+    ],
+    "transition": {
+      "trigger": "HpZero",
+      "uses": "Rebirth"
+    }
+  },
+  "monster_fields": [
+    "act",
+    "ai_logic",
+    "ai_logic_asc20",
+    "ascension_breakpoints",
+    "ascension_variants",
+    "behavior_model",
+    "behavior_model_asc20",
+    "hp",
+    "id",
+    "internal_id",
+    "moves",
+    "name",
+    "notes",
+    "phases",
+    "starts_with",
+    "type"
+  ],
+  "behavior_model_fields": [
+    "cycle",
+    "init_sequence",
+    "logic_type",
+    "notes",
+    "phases",
+    "rules"
+  ]
+}

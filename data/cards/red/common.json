@@ -1,0 +1,567 @@
+[
+  {
+    "id": "Anger",
+    "name": "Anger",
+    "type": "Attack",
+    "cost": 0,
+    "color": "Red",
+    "rarity": "Common",
+    "logic": {
+      "target_type": "Enemy",
+      "commands": [
+        {
+          "type": "DealDamage",
+          "params": {
+            "base": 6,
+            "upgrade": 8
+          }
+        },
+        {
+          "type": "AddCard",
+          "params": {
+            "card": "this card",
+            "destination": "discard pile"
+          }
+        }
+      ]
+    },
+    "original_text": "Deal [6|8] damage.<br>Add a copy of this card into your discard pile."
+  },
+  {
+    "id": "Body_Slam",
+    "name": "Body Slam",
+    "type": "Attack",
+    "cost": 1,
+    "color": "Red",
+    "rarity": "Common",
+    "logic": {
+      "target_type": "Enemy",
+      "commands": [
+        {
+          "type": "DealDamage",
+          "params": {
+            "scaling": "Block"
+          }
+        }
+      ],
+      "keywords_used": [
+        "Block"
+      ]
+    },
+    "original_text": "Deal damage equal to your #Block.",
+    "cost_upgrade": 0
+  },
+  {
+    "id": "Clash",
+    "name": "Clash",
+    "type": "Attack",
+    "cost": 0,
+    "color": "Red",
+    "rarity": "Common",
+    "logic": {
+      "target_type": "Enemy",
+      "commands": [
+        {
+          "type": "DealDamage",
+          "params": {
+            "base": 14,
+            "upgrade": 18
+          }
+        }
+      ],
+      "conditions": [
+        "PlayCondition: Can only be played if every card in your hand is an Attack."
+      ]
+    },
+    "original_text": "Can only be played if every card in your hand is an Attack.<br>Deal [14|18] damage.",
+    "manual_review_needed": false,
+    "flags": {
+      "play_condition": {
+        "type": "HandOnlyAttacks"
+      }
+    }
+  },
+  {
+    "id": "Cleave",
+    "name": "Cleave",
+    "type": "Attack",
+    "cost": 1,
+    "color": "Red",
+    "rarity": "Common",
+    "logic": {
+      "target_type": "AllEnemies",
+      "commands": [
+        {
+          "type": "DealDamageAll",
+          "params": {
+            "base": 8,
+            "upgrade": 11
+          }
+        }
+      ]
+    },
+    "original_text": "Deal [8|11] damage to ALL enemies."
+  },
+  {
+    "id": "Clothesline",
+    "name": "Clothesline",
+    "type": "Attack",
+    "cost": 2,
+    "color": "Red",
+    "rarity": "Common",
+    "logic": {
+      "target_type": "Enemy",
+      "commands": [
+        {
+          "type": "DealDamage",
+          "params": {
+            "base": 12,
+            "upgrade": 14
+          }
+        },
+        {
+          "type": "ApplyStatus",
+          "params": {
+            "status": "Weak",
+            "base": 2,
+            "upgrade": 3
+          }
+        }
+      ],
+      "keywords_used": [
+        "Weak"
+      ]
+    },
+    "original_text": "Deal [12|14] damage.<br>Apply [2|3] #Weak."
+  },
+  {
+    "id": "Headbutt",
+    "name": "Headbutt",
+    "type": "Attack",
+    "cost": 1,
+    "color": "Red",
+    "rarity": "Common",
+    "logic": {
+      "target_type": "Enemy",
+      "commands": [
+        {
+          "type": "DealDamage",
+          "params": {
+            "base": 9,
+            "upgrade": 12
+          }
+        },
+        {
+          "type": "PutOnTop",
+          "params": {
+            "from": "discard pile",
+            "to": "draw_pile"
+          }
+        }
+      ]
+    },
+    "original_text": "Deal [9|12] damage.<br>Put a card from your discard pile on top of your draw pile."
+  },
+  {
+    "id": "Heavy_Blade",
+    "name": "Heavy Blade",
+    "type": "Attack",
+    "cost": 2,
+    "color": "Red",
+    "rarity": "Common",
+    "logic": {
+      "target_type": "Enemy",
+      "commands": [
+        {
+          "type": "DealDamage",
+          "params": {
+            "base": 14,
+            "upgrade": 14
+          }
+        },
+        {
+          "type": "StrengthMultiplier",
+          "params": {
+            "base": 3,
+            "upgrade": 5
+          }
+        }
+      ]
+    },
+    "original_text": "Deal 14 damage.<br>#Strength affects this card [3|5] times."
+  },
+  {
+    "id": "Iron_Wave",
+    "name": "Iron Wave",
+    "type": "Attack",
+    "cost": 1,
+    "color": "Red",
+    "rarity": "Common",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "GainBlock",
+          "params": {
+            "base": 5,
+            "upgrade": 7
+          }
+        },
+        {
+          "type": "DealDamage",
+          "params": {
+            "base": 5,
+            "upgrade": 7
+          }
+        }
+      ],
+      "keywords_used": [
+        "Block"
+      ]
+    },
+    "original_text": "Gain [5|7] #Block.<br>Deal [5|7] damage."
+  },
+  {
+    "id": "Perfected_Strike",
+    "name": "Perfected Strike",
+    "type": "Attack",
+    "cost": 2,
+    "color": "Red",
+    "rarity": "Common",
+    "logic": {
+      "target_type": "Enemy",
+      "commands": [
+        {
+          "type": "DealDamage",
+          "params": {
+            "base": 6,
+            "upgrade": 6
+          }
+        }
+      ]
+    },
+    "original_text": "Deal 6 damage. Deals [2|3] additional damage for each Strike in your deck."
+  },
+  {
+    "id": "Pommel_Strike",
+    "name": "Pommel Strike",
+    "type": "Attack",
+    "cost": 1,
+    "color": "Red",
+    "rarity": "Common",
+    "logic": {
+      "target_type": "Enemy",
+      "commands": [
+        {
+          "type": "DealDamage",
+          "params": {
+            "base": 9,
+            "upgrade": 10
+          }
+        },
+        {
+          "type": "DrawCards",
+          "params": {
+            "base": 1,
+            "upgrade": 2
+          }
+        }
+      ]
+    },
+    "original_text": "Deal [9|10] damage. Draw [1|2] card(s)."
+  },
+  {
+    "id": "Sword_Boomerang",
+    "name": "Sword Boomerang",
+    "type": "Attack",
+    "cost": 1,
+    "color": "Red",
+    "rarity": "Common",
+    "logic": {
+      "target_type": "RandomEnemy",
+      "commands": [
+        {
+          "type": "DealDamageRandom",
+          "params": {
+            "base": 3,
+            "upgrade": 3,
+            "times": 3,
+            "times_upgrade": 4
+          }
+        }
+      ]
+    },
+    "original_text": "Deal 3 damage to a random enemy [3|4] times."
+  },
+  {
+    "id": "Thunderclap",
+    "name": "Thunderclap",
+    "type": "Attack",
+    "cost": 1,
+    "color": "Red",
+    "rarity": "Common",
+    "logic": {
+      "target_type": "AllEnemies",
+      "commands": [
+        {
+          "type": "DealDamageAll",
+          "params": {
+            "base": 4,
+            "upgrade": 7
+          }
+        },
+        {
+          "type": "ApplyStatusAll",
+          "params": {
+            "status": "Vulnerable",
+            "base": 1,
+            "upgrade": 1
+          }
+        }
+      ],
+      "keywords_used": [
+        "Vulnerable"
+      ]
+    },
+    "original_text": "Deal [4|7] damage and apply 1 Vulnerable to ALL enemies."
+  },
+  {
+    "id": "Twin_Strike",
+    "name": "Twin Strike",
+    "type": "Attack",
+    "cost": 1,
+    "color": "Red",
+    "rarity": "Common",
+    "logic": {
+      "target_type": "Enemy",
+      "commands": [
+        {
+          "type": "DealDamage",
+          "params": {
+            "base": 5,
+            "upgrade": 7,
+            "times": 2
+          }
+        }
+      ]
+    },
+    "original_text": "Deal [5|7] damage twice."
+  },
+  {
+    "id": "Wild_Strike",
+    "name": "Wild Strike",
+    "type": "Attack",
+    "cost": 1,
+    "color": "Red",
+    "rarity": "Common",
+    "logic": {
+      "target_type": "Enemy",
+      "commands": [
+        {
+          "type": "DealDamage",
+          "params": {
+            "base": 12,
+            "upgrade": 17
+          }
+        },
+        {
+          "type": "ShuffleInto",
+          "params": {
+            "card": "Wound"
+          }
+        }
+      ]
+    },
+    "original_text": "Deal [12|17] damage.<br>Shuffle a {{C|Wound}} into your draw pile."
+  },
+  {
+    "id": "Armaments",
+    "name": "Armaments",
+    "type": "Skill",
+    "cost": 1,
+    "color": "Red",
+    "rarity": "Common",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "GainBlock",
+          "params": {
+            "base": 5,
+            "upgrade": 5
+          }
+        },
+        {
+          "type": "UpgradeCards",
+          "params": {
+            "amount_base": 1,
+            "amount_upgrade": "ALL",
+            "target": "Hand"
+          }
+        }
+      ],
+      "keywords_used": [
+        "Block",
+        "Upgrade"
+      ]
+    },
+    "original_text": "Gain 5 #Block.<br>#Upgrade [a card|all cards] in your hand for the rest of combat."
+  },
+  {
+    "id": "Flex",
+    "name": "Flex",
+    "type": "Skill",
+    "cost": 0,
+    "color": "Red",
+    "rarity": "Common",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "GainBuff",
+          "params": {
+            "buff": "Strength",
+            "base": 2,
+            "upgrade": 4
+          }
+        },
+        {
+          "type": "LoseBuff",
+          "params": {
+            "buff": "Strength",
+            "amount": 2,
+            "amount_upgrade": 4,
+            "end_of_turn": true
+          }
+        }
+      ],
+      "conditions": [
+        "TurnTrigger: At the end of this turn"
+      ],
+      "keywords_used": [
+        "Strength"
+      ]
+    },
+    "original_text": "Gain [2|4] #Strength.<br>At the end of this turn, lose [2|4] #Strength."
+  },
+  {
+    "id": "Havoc",
+    "name": "Havoc",
+    "type": "Skill",
+    "cost": 1,
+    "color": "Red",
+    "rarity": "Common",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "PlayTopCard",
+          "params": {}
+        }
+      ]
+    },
+    "original_text": "Play the top card of your draw pile and #Exhaust it.",
+    "cost_upgrade": 0
+  },
+  {
+    "id": "Shrug_It_Off",
+    "name": "Shrug It Off",
+    "type": "Skill",
+    "cost": 1,
+    "color": "Red",
+    "rarity": "Common",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "GainBlock",
+          "params": {
+            "base": 8,
+            "upgrade": 11
+          }
+        },
+        {
+          "type": "DrawCards",
+          "params": {
+            "base": 1,
+            "upgrade": 1
+          }
+        }
+      ]
+    },
+    "original_text": "Gain [8|11] Block. Draw 1 card."
+  },
+  {
+    "id": "True_Grit",
+    "name": "True Grit",
+    "type": "Skill",
+    "cost": 1,
+    "color": "Red",
+    "rarity": "Common",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "GainBlock",
+          "params": {
+            "base": 7,
+            "upgrade": 9
+          }
+        },
+        {
+          "type": "ExhaustCards",
+          "params": {
+            "base": 1,
+            "upgrade": 1,
+            "select_mode": "random"
+          }
+        }
+      ],
+      "keywords_used": [
+        "Exhaust"
+      ]
+    },
+    "original_text": "Gain [7|9] Block. Exhaust a random card from your hand."
+  },
+  {
+    "id": "Warcry",
+    "name": "Warcry",
+    "type": "Skill",
+    "cost": 0,
+    "color": "Red",
+    "rarity": "Common",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "DrawCards",
+          "params": {
+            "base": 1,
+            "upgrade": 2
+          }
+        },
+        {
+          "type": "ExhaustSelf",
+          "params": {}
+        },
+        {
+          "type": "MoveCard",
+          "params": {
+            "from": "hand",
+            "to": "draw_pile",
+            "insert_at": "top",
+            "select": {
+              "mode": "Choose",
+              "count": 1
+            }
+          }
+        }
+      ],
+      "keywords_used": [
+        "Exhaust"
+      ]
+    },
+    "original_text": "Draw [1|2] [card|cards].<br>Put a card from your hand onto the top of your draw pile.<br>#Exhaust.",
+    "manual_review_needed": false
+  }
+]

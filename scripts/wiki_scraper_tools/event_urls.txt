@@ -1,0 +1,61 @@
+# Slay the Spire Wiki Event URLs
+# 在浏览器中打开每个链接，然后运行书签脚本提取数据
+
+# ============ Shrines (All Acts) ============
+https://slaythespire.wiki.gg/wiki/A_Note_For_Yourself
+https://slaythespire.wiki.gg/wiki/Bonfire_Spirits
+https://slaythespire.wiki.gg/wiki/Duplicator
+https://slaythespire.wiki.gg/wiki/Golden_Shrine
+https://slaythespire.wiki.gg/wiki/Lab
+https://slaythespire.wiki.gg/wiki/Match_and_Keep
+https://slaythespire.wiki.gg/wiki/Ominous_Forge
+https://slaythespire.wiki.gg/wiki/Purifier
+https://slaythespire.wiki.gg/wiki/The_Divine_Fountain
+https://slaythespire.wiki.gg/wiki/The_Woman_in_Blue
+https://slaythespire.wiki.gg/wiki/Transmogrifier
+https://slaythespire.wiki.gg/wiki/Upgrade_Shrine
+https://slaythespire.wiki.gg/wiki/We_Meet_Again!
+https://slaythespire.wiki.gg/wiki/Wheel_of_Change
+
+# ============ Act 1 ============
+https://slaythespire.wiki.gg/wiki/Big_Fish
+https://slaythespire.wiki.gg/wiki/Dead_Adventurer
+https://slaythespire.wiki.gg/wiki/Face_Trader
+https://slaythespire.wiki.gg/wiki/Golden_Idol_(Event)
+https://slaythespire.wiki.gg/wiki/Hypnotizing_Colored_Mushrooms
+https://slaythespire.wiki.gg/wiki/Living_Wall
+https://slaythespire.wiki.gg/wiki/Scrap_Ooze
+https://slaythespire.wiki.gg/wiki/Shining_Light
+https://slaythespire.wiki.gg/wiki/The_Cleric
+https://slaythespire.wiki.gg/wiki/The_Ssssserpent
+https://slaythespire.wiki.gg/wiki/Wing_Statue
+https://slaythespire.wiki.gg/wiki/World_of_Goop
+
+# ============ Act 2 ============
+https://slaythespire.wiki.gg/wiki/Ancient_Writing
+https://slaythespire.wiki.gg/wiki/Augmenter
+https://slaythespire.wiki.gg/wiki/Council_of_Ghosts
+https://slaythespire.wiki.gg/wiki/Cursed_Tome
+https://slaythespire.wiki.gg/wiki/Designer_In-Spire
+https://slaythespire.wiki.gg/wiki/Forgotten_Altar
+https://slaythespire.wiki.gg/wiki/Knowing_Skull
+https://slaythespire.wiki.gg/wiki/Masked_Bandits
+https://slaythespire.wiki.gg/wiki/N%27loth
+https://slaythespire.wiki.gg/wiki/Old_Beggar
+https://slaythespire.wiki.gg/wiki/Pleading_Vagrant
+https://slaythespire.wiki.gg/wiki/The_Colosseum
+https://slaythespire.wiki.gg/wiki/The_Joust
+https://slaythespire.wiki.gg/wiki/The_Library
+https://slaythespire.wiki.gg/wiki/The_Mausoleum
+https://slaythespire.wiki.gg/wiki/The_Nest
+https://slaythespire.wiki.gg/wiki/Vampires
+
+# ============ Act 3 ============
+https://slaythespire.wiki.gg/wiki/Falling
+https://slaythespire.wiki.gg/wiki/Mind_Bloom
+https://slaythespire.wiki.gg/wiki/Mysterious_Sphere
+https://slaythespire.wiki.gg/wiki/Secret_Portal
+https://slaythespire.wiki.gg/wiki/Sensory_Stone
+https://slaythespire.wiki.gg/wiki/The_Moai_Head
+https://slaythespire.wiki.gg/wiki/Tomb_of_Lord_Red_Mask
+https://slaythespire.wiki.gg/wiki/Winding_Halls

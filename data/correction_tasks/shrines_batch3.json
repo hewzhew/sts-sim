@@ -1,0 +1,280 @@
+{
+  "category": "shrines",
+  "batch": 3,
+  "events": [
+    {
+      "wiki_id": "Transmogrifier",
+      "wiki_name": "Transmogrifier",
+      "logic_key": "Transmorgrifier",
+      "status": "pending",
+      "issues": [
+        "MISSING_OPTIONS: Logic缺少选项 {'[pray]'}",
+        "EXTRA_OPTIONS: Logic多余选项 {'[pray] transform a card'}"
+      ],
+      "wiki_data": {
+        "options": [
+          {
+            "label": "[Pray]",
+            "description": "Transform a card.",
+            "conditions": [],
+            "effects": [
+              "Read more on Transform rules here."
+            ]
+          },
+          {
+            "label": "[Leave]",
+            "description": "Nothing happens.",
+            "conditions": [],
+            "effects": []
+          }
+        ],
+        "notes": []
+      },
+      "existing_data": {
+        "name": "Transmogrifier",
+        "options": [
+          {
+            "label": "[Pray] Transform a card",
+            "conditions": [],
+            "actions": [
+              {
+                "type": "CardTransform"
+              }
+            ]
+          },
+          {
+            "label": "[Leave]",
+            "conditions": [],
+            "actions": [
+              {
+                "type": "Leave"
+              }
+            ]
+          }
+        ]
+      },
+      "corrections": []
+    },
+    {
+      "wiki_id": "Upgrade_Shrine",
+      "wiki_name": "Upgrade Shrine",
+      "logic_key": "Upgrade Shrine",
+      "status": "pending",
+      "issues": [
+        "MISSING_OPTIONS: Logic缺少选项 {'[pray]'}",
+        "EXTRA_OPTIONS: Logic多余选项 {'[pray] upgrade a card'}"
+      ],
+      "wiki_data": {
+        "options": [
+          {
+            "label": "[Pray]",
+            "description": "Upgrade a card.",
+            "conditions": [],
+            "effects": []
+          },
+          {
+            "label": "[Leave]",
+            "description": "Nothing happens.",
+            "conditions": [],
+            "effects": []
+          }
+        ],
+        "notes": []
+      },
+      "existing_data": {
+        "name": "Upgrade Shrine",
+        "options": [
+          {
+            "label": "[Pray] Upgrade a card",
+            "conditions": [
+              {
+                "type": "HasUpgradeableCard"
+              }
+            ],
+            "actions": [
+              {
+                "type": "CardUpgrade"
+              }
+            ]
+          },
+          {
+            "label": "[Leave]",
+            "conditions": [],
+            "actions": [
+              {
+                "type": "Leave"
+              }
+            ]
+          }
+        ]
+      },
+      "corrections": []
+    },
+    {
+      "wiki_id": "We_Meet_Again!",
+      "wiki_name": "We Meet Again!",
+      "logic_key": null,
+      "status": "pending",
+      "issues": [
+        "NOT_IN_LOGIC: 事件在 events_logic.json 中不存在，需要新增"
+      ],
+      "wiki_data": {
+        "options": [
+          {
+            "label": "[Give Potion]",
+            "description": "Lose a chosen potion. Obtain a Relic.",
+            "conditions": [],
+            "effects": [
+              "The event will randomly choose a potion upon entry and tell you which one was selected. You will be unable to drink or discard that potion until you leave the event's floor."
+            ]
+          },
+          {
+            "label": "[Give Gold]",
+            "description": "Lose Gold. Obtain a Relic.",
+            "conditions": [],
+            "effects": [
+              "The amount of Gold lost is between 50 and 150 (or your current amount of Gold)."
+            ]
+          },
+          {
+            "label": "[Give Card]",
+            "description": "Lose a chosen card. Obtain a Relic.",
+            "conditions": [],
+            "effects": [
+              "The chosen card will not be Basic or a Curse."
+            ]
+          },
+          {
+            "label": "[Attack]",
+            "description": "Nothing happens.",
+            "conditions": [],
+            "effects": []
+          }
+        ],
+        "notes": [
+          "\"mask wearing hoodlums\" likely refers to the group of bandits in the Act 2 event  Masked Bandits."
+        ]
+      },
+      "existing_data": {
+        "name": null,
+        "options": []
+      },
+      "corrections": []
+    },
+    {
+      "wiki_id": "Wheel_of_Change",
+      "wiki_name": "Wheel of Change",
+      "logic_key": "Wheel of Change",
+      "status": "pending",
+      "issues": [
+        "OPTION_COUNT_MISMATCH: Wiki有1个选项, Logic有2个",
+        "MISSING_OPTIONS: Logic缺少选项 {'[play]'}",
+        "EXTRA_OPTIONS: Logic多余选项 {'[play] spin the wheel', '[leave]'}"
+      ],
+      "wiki_data": {
+        "options": [
+          {
+            "label": "[Play]",
+            "description": "Gain Gold",
+            "conditions": [],
+            "effects": [
+              "Spin a wheel containing the following \"prizes\":",
+              "Gain a random Relic",
+              "Heal to full HP",
+              "Become Cursed -  Decay",
+              "Remove a card from your deck.",
+              "Take 10% (15% 15) of your Max HP as damage.",
+              "Gain Gold",
+              "Gain a random Relic",
+              "Heal to full HP",
+              "Become Cursed -  Decay",
+              "Remove a card from your deck.",
+              "Take 10% (15% 15) of your Max HP as damage."
+            ]
+          }
+        ],
+        "notes": []
+      },
+      "existing_data": {
+        "name": "Wheel of Change",
+        "options": [
+          {
+            "label": "[Play] Spin the wheel",
+            "conditions": [],
+            "actions": [
+              {
+                "type": "WheelSpin"
+              }
+            ],
+            "wheel_outcomes": [
+              {
+                "chance": 0.166,
+                "actions": [
+                  {
+                    "type": "Gold",
+                    "amount": 100
+                  }
+                ]
+              },
+              {
+                "chance": 0.166,
+                "actions": [
+                  {
+                    "type": "GetRelic",
+                    "tier": "Random"
+                  }
+                ]
+              },
+              {
+                "chance": 0.166,
+                "actions": [
+                  {
+                    "type": "HealFull"
+                  }
+                ]
+              },
+              {
+                "chance": 0.166,
+                "actions": [
+                  {
+                    "type": "AddCard",
+                    "card_id": "Decay"
+                  }
+                ]
+              },
+              {
+                "chance": 0.166,
+                "actions": [
+                  {
+                    "type": "CardRemove"
+                  }
+                ]
+              },
+              {
+                "chance": 0.166,
+                "actions": [
+                  {
+                    "type": "LoseHP",
+                    "amount": 10,
+                    "is_percentage": false
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "label": "[Leave]",
+            "conditions": [],
+            "actions": [
+              {
+                "type": "Leave"
+              }
+            ]
+          }
+        ]
+      },
+      "corrections": []
+    }
+  ],
+  "instructions": "\n校对说明:\n1. 查看每个事件的 issues 列表\n2. 对比 wiki_data 和 existing_data 的差异\n3. 在 corrections 中填写需要的修正\n4. 完成后将 status 改为 \"reviewed\"\n\ncorrections 格式示例:\n- {\"action\": \"add_option\", \"label\": \"[新选项]\", \"data\": {...}}\n- {\"action\": \"fix_label\", \"old\": \"[错误]\", \"new\": \"[正确]\"}\n- {\"action\": \"add_event\", \"data\": {...}}\n"
+}

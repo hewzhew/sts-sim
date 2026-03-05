@@ -1,0 +1,294 @@
+{
+  "category": "act3",
+  "batch": 2,
+  "events": [
+    {
+      "wiki_id": "The_Moai_Head",
+      "wiki_name": "The Moai Head",
+      "logic_key": "The Moai Head",
+      "status": "pending",
+      "issues": [
+        "OPTION_COUNT_MISMATCH: Wiki有4个选项, Logic有3个",
+        "MISSING_OPTIONS: Logic缺少选项 {'[locked]', '[offer:  golden idol]', '[jump inside]'}",
+        "EXTRA_OPTIONS: Logic多余选项 {'[jump inside] heal to full hp. lose max hp', '[offer: golden idol] receive 333 gold'}"
+      ],
+      "wiki_data": {
+        "options": [
+          {
+            "label": "[Jump Inside]",
+            "description": "Heal to full HP. Lose X Max HP.",
+            "conditions": [],
+            "effects": [
+              "X is equal to 12.5% (18%) 15 of the player's Max HP."
+            ]
+          },
+          {
+            "label": "[Offer:  Golden Idol]",
+            "description": "Receive 333 Gold. Lose  Golden Idol.",
+            "conditions": [
+              "If the player lacks  Golden Idol, this option is replaced with"
+            ],
+            "effects": []
+          },
+          {
+            "label": "[Locked]",
+            "description": "Requires:  Golden Idol.",
+            "conditions": [],
+            "effects": []
+          },
+          {
+            "label": "[Leave]",
+            "description": "Nothing happens.",
+            "conditions": [],
+            "effects": []
+          }
+        ],
+        "notes": [
+          "Golden Idol is acquired from the Act 1 event of the same name;  Golden Idol.",
+          "The Moai Head is the last opportunity to trade the  Golden Idol, the other being the  Forgotten Altar event in Act 2.",
+          "The 333 Gold from [Offer: Golden Idol] easily outperforms any remaining Gold the player could gain from combats by keeping the  Golden Idol, especially since they likely do not have many combats left in the run by the time they reach this Act 3 event.",
+          "The healing from [Jump Inside] will be prevented if the player has  Mark of the Bloom."
+        ]
+      },
+      "existing_data": {
+        "name": "The Moai Head",
+        "options": [
+          {
+            "label": "[Jump Inside] Heal to full HP. Lose Max HP",
+            "conditions": [],
+            "actions": [
+              {
+                "type": "HealFull"
+              },
+              {
+                "type": "MaxHP",
+                "amount": -0.12,
+                "is_percentage": true
+              }
+            ]
+          },
+          {
+            "label": "[Offer: Golden Idol] Receive 333 Gold",
+            "conditions": [
+              {
+                "type": "HasRelic",
+                "relic_id": "Golden Idol"
+              }
+            ],
+            "actions": [
+              {
+                "type": "LoseRelic",
+                "relic_id": "Golden Idol"
+              },
+              {
+                "type": "Gold",
+                "amount": 333
+              }
+            ]
+          },
+          {
+            "label": "[Leave]",
+            "conditions": [],
+            "actions": [
+              {
+                "type": "Leave"
+              }
+            ]
+          }
+        ]
+      },
+      "corrections": []
+    },
+    {
+      "wiki_id": "Tomb_of_Lord_Red_Mask",
+      "wiki_name": "Tomb of Lord Red Mask",
+      "logic_key": "Tomb of Lord Red Mask",
+      "status": "pending",
+      "issues": [
+        "OPTION_COUNT_MISMATCH: Wiki有5个选项, Logic有3个",
+        "MISSING_OPTIONS: Logic缺少选项 {'[don the red mask]', '[locked]', '[offer: x gold]'}",
+        "EXTRA_OPTIONS: Logic多余选项 {'[offer gold] lose all gold. gain a relic', '[don the red mask] gain 222 gold'}"
+      ],
+      "wiki_data": {
+        "options": [
+          {
+            "label": "[Don the Red Mask]",
+            "description": "Gain 222 Gold.",
+            "conditions": [],
+            "effects": [
+              "The player gets to keep  Red Mask afterwards. The Gold is purely a reward for owning the relic."
+            ]
+          },
+          {
+            "label": "[Leave]",
+            "description": "Nothing happens.",
+            "conditions": [],
+            "effects": [
+              "If The Player Does Not Own  Red Mask"
+            ]
+          },
+          {
+            "label": "[Locked]",
+            "description": "Requires:  Red Mask",
+            "conditions": [],
+            "effects": []
+          },
+          {
+            "label": "[Offer: X Gold]",
+            "description": "Lose all Gold. Obtain a Relic.",
+            "conditions": [],
+            "effects": [
+              "X is equal to all of the player's Gold.",
+              "Rewards the player with  Red Mask."
+            ]
+          },
+          {
+            "label": "[Leave]",
+            "description": "Nothing happens.",
+            "conditions": [],
+            "effects": []
+          }
+        ],
+        "notes": [
+          "Red Mask is obtained from the Act 2 event  Masked Bandits."
+        ]
+      },
+      "existing_data": {
+        "name": "Tomb of Lord Red Mask",
+        "options": [
+          {
+            "label": "[Don the Red Mask] Gain 222 Gold",
+            "conditions": [
+              {
+                "type": "HasRelic",
+                "relic_id": "Red Mask"
+              }
+            ],
+            "actions": [
+              {
+                "type": "Gold",
+                "amount": 222
+              }
+            ]
+          },
+          {
+            "label": "[Offer Gold] Lose all Gold. Gain a Relic",
+            "conditions": [
+              {
+                "type": "Gold",
+                "amount": 1
+              }
+            ],
+            "actions": [
+              {
+                "type": "LoseAllGold"
+              },
+              {
+                "type": "GetRelic",
+                "tier": "Random"
+              }
+            ]
+          },
+          {
+            "label": "[Leave]",
+            "conditions": [],
+            "actions": [
+              {
+                "type": "Leave"
+              }
+            ]
+          }
+        ]
+      },
+      "corrections": []
+    },
+    {
+      "wiki_id": "Winding_Halls",
+      "wiki_name": "Winding Halls",
+      "logic_key": "Winding Halls",
+      "status": "pending",
+      "issues": [
+        "MISSING_OPTIONS: Logic缺少选项 {'[embrace madness]', '[retrace your steps]', '[focus]'}",
+        "EXTRA_OPTIONS: Logic多余选项 {'[embrace madness] receive 2 madness. lose 10 hp', '[leave]', '[focus] become cursed - writhe. heal hp'}"
+      ],
+      "wiki_data": {
+        "options": [
+          {
+            "label": "[Embrace Madness]",
+            "description": "Receive 2  Madness. Lose X HP.",
+            "conditions": [],
+            "effects": [
+              "X is equal to 12.5% (18%) 15 of the player's Max HP."
+            ]
+          },
+          {
+            "label": "[Focus]",
+            "description": "Become Cursed -  Writhe. Heal X HP.",
+            "conditions": [],
+            "effects": [
+              "X is equal to 25% (20%) 15 of the player's Max HP."
+            ]
+          },
+          {
+            "label": "[Retrace Your Steps]",
+            "description": "Lose X Max HP.",
+            "conditions": [],
+            "effects": [
+              "X is equal to 5% of the player's Max HP."
+            ]
+          }
+        ],
+        "notes": [
+          "Omamori can be used to prevent the  Writhe from [Focus] if it has any charges remaining. This is likely one of the last opportunities for the player to be able to benefit from  Omamori."
+        ]
+      },
+      "existing_data": {
+        "name": "Winding Halls",
+        "options": [
+          {
+            "label": "[Embrace Madness] Receive 2 Madness. Lose 10 HP",
+            "conditions": [],
+            "actions": [
+              {
+                "type": "AddCard",
+                "card_id": "Madness",
+                "count": 2
+              },
+              {
+                "type": "LoseHP",
+                "amount": 10,
+                "is_percentage": false
+              }
+            ]
+          },
+          {
+            "label": "[Focus] Become Cursed - Writhe. Heal HP",
+            "conditions": [],
+            "actions": [
+              {
+                "type": "AddCard",
+                "card_id": "Writhe"
+              },
+              {
+                "type": "Heal",
+                "amount": 0.2,
+                "is_percentage": true
+              }
+            ]
+          },
+          {
+            "label": "[Leave]",
+            "conditions": [],
+            "actions": [
+              {
+                "type": "Leave"
+              }
+            ]
+          }
+        ]
+      },
+      "corrections": []
+    }
+  ],
+  "instructions": "\n校对说明:\n1. 查看每个事件的 issues 列表\n2. 对比 wiki_data 和 existing_data 的差异\n3. 在 corrections 中填写需要的修正\n4. 完成后将 status 改为 \"reviewed\"\n\ncorrections 格式示例:\n- {\"action\": \"add_option\", \"label\": \"[新选项]\", \"data\": {...}}\n- {\"action\": \"fix_label\", \"old\": \"[错误]\", \"new\": \"[正确]\"}\n- {\"action\": \"add_event\", \"data\": {...}}\n"
+}

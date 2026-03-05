@@ -1,0 +1,2077 @@
+[
+  {
+    "id": "AcidSlime_L",
+    "java_id": "AcidSlime_L",
+    "display_name": "Acid Slime (L)",
+    "act": 1,
+    "hp": {
+      "asc7": [
+        68,
+        72
+      ],
+      "base": [
+        65,
+        69
+      ]
+    },
+    "_constants": {},
+    "_damage_indices": [
+      "12",
+      "18",
+      "11",
+      "16"
+    ],
+    "_member_vars": {},
+    "_source": "AcidSlime_L.java"
+  },
+  {
+    "id": "AcidSlime_M",
+    "java_id": "AcidSlime_M",
+    "display_name": "Acid Slime (M)",
+    "act": 1,
+    "hp": {
+      "asc7": [
+        29,
+        34
+      ],
+      "base": [
+        28,
+        32
+      ]
+    },
+    "_constants": {},
+    "_damage_indices": [
+      "8",
+      "12",
+      "7",
+      "10"
+    ],
+    "_member_vars": {},
+    "_source": "AcidSlime_M.java"
+  },
+  {
+    "id": "AcidSlime_S",
+    "java_id": "AcidSlime_S",
+    "display_name": "Acid Slime (S)",
+    "act": 1,
+    "hp": {
+      "asc7": [
+        9,
+        13
+      ],
+      "base": [
+        8,
+        12
+      ]
+    },
+    "_constants": {},
+    "_damage_indices": [
+      "4",
+      "3"
+    ],
+    "_member_vars": {},
+    "_source": "AcidSlime_S.java"
+  },
+  {
+    "id": "ApologySlime",
+    "java_id": "Apology Slime",
+    "display_name": "Apology Slime",
+    "act": 1,
+    "hp": {
+      "base": [
+        8,
+        8
+      ]
+    },
+    "_constants": {},
+    "_damage_indices": [
+      "3"
+    ],
+    "_member_vars": {},
+    "_source": "ApologySlime.java"
+  },
+  {
+    "id": "BlueSlaver",
+    "java_id": "SlaverBlue",
+    "display_name": "Blue Slaver",
+    "act": 1,
+    "hp": {
+      "asc7": [
+        48,
+        52
+      ],
+      "base": [
+        46,
+        50
+      ]
+    },
+    "_constants": {
+      "HP_MIN": 46,
+      "HP_MAX": 50,
+      "A_2_HP_MIN": 48,
+      "A_2_HP_MAX": 52,
+      "STAB_DMG": 12,
+      "A_2_STAB_DMG": 13,
+      "RAKE_DMG": 7,
+      "A_2_RAKE_DMG": 8
+    },
+    "_damage_indices": [
+      "stabDmg",
+      "rakeDmg"
+    ],
+    "_member_vars": {
+      "stabDmg": 12,
+      "rakeDmg": 7
+    },
+    "_source": "SlaverBlue.java"
+  },
+  {
+    "id": "Cultist",
+    "java_id": "Cultist",
+    "display_name": "Cultist",
+    "act": 1,
+    "hp": {
+      "asc7": [
+        50,
+        56
+      ],
+      "base": [
+        48,
+        54
+      ]
+    },
+    "_constants": {
+      "HP_MIN": 48,
+      "HP_MAX": 54,
+      "A_2_HP_MIN": 50,
+      "A_2_HP_MAX": 56,
+      "ATTACK_DMG": 6,
+      "RITUAL_AMT": 3,
+      "A_2_RITUAL_AMT": 4
+    },
+    "_damage_indices": [
+      "6"
+    ],
+    "_member_vars": {},
+    "_source": "Cultist.java"
+  },
+  {
+    "id": "FatGremlin",
+    "java_id": "GremlinFat",
+    "display_name": "Fat Gremlin",
+    "act": 1,
+    "hp": {
+      "asc7": [
+        14,
+        18
+      ],
+      "base": [
+        13,
+        17
+      ]
+    },
+    "_constants": {
+      "HP_MIN": 13,
+      "HP_MAX": 17,
+      "A_2_HP_MIN": 14,
+      "A_2_HP_MAX": 18,
+      "BLUNT_DAMAGE": 4,
+      "A_2_BLUNT_DAMAGE": 5,
+      "WEAK_AMT": 1
+    },
+    "_damage_indices": [
+      "5",
+      "4"
+    ],
+    "_member_vars": {},
+    "_source": "GremlinFat.java"
+  },
+  {
+    "id": "FungiBeast",
+    "java_id": "FungiBeast",
+    "display_name": "Fungi Beast",
+    "act": 1,
+    "hp": {
+      "asc7": [
+        24,
+        28
+      ],
+      "base": [
+        22,
+        28
+      ]
+    },
+    "_constants": {
+      "HP_MIN": 22,
+      "HP_MAX": 28,
+      "A_2_HP_MIN": 24,
+      "A_2_HP_MAX": 28,
+      "BITE_DMG": 6,
+      "GROW_STR": 3,
+      "A_2_GROW_STR": 4,
+      "VULN_AMT": 2
+    },
+    "_damage_indices": [
+      "biteDamage"
+    ],
+    "_member_vars": {
+      "strAmt": 3,
+      "biteDamage": 6
+    },
+    "_source": "FungiBeast.java"
+  },
+  {
+    "id": "GreenLouse",
+    "java_id": "FuzzyLouseDefensive",
+    "display_name": "Green Louse",
+    "act": 1,
+    "hp": {
+      "asc7": [
+        12,
+        18
+      ],
+      "base": [
+        11,
+        17
+      ]
+    },
+    "_constants": {
+      "HP_MIN": 11,
+      "HP_MAX": 17,
+      "A_2_HP_MIN": 12,
+      "A_2_HP_MAX": 18,
+      "WEAK_AMT": 2
+    },
+    "_damage_indices": [
+      "biteDamage"
+    ],
+    "_member_vars": {},
+    "_source": "LouseDefensive.java"
+  },
+  {
+    "id": "GremlinNob",
+    "java_id": "GremlinNob",
+    "display_name": "Gremlin Nob",
+    "act": 1,
+    "hp": {
+      "asc8": [
+        85,
+        90
+      ],
+      "base": [
+        82,
+        86
+      ]
+    },
+    "_constants": {
+      "HP_MIN": 82,
+      "HP_MAX": 86,
+      "A_2_HP_MIN": 85,
+      "A_2_HP_MAX": 90,
+      "BASH_DMG": 6,
+      "RUSH_DMG": 14,
+      "A_2_BASH_DMG": 8,
+      "A_2_RUSH_DMG": 16,
+      "DEBUFF_AMT": 2,
+      "ANGRY_LEVEL": 2
+    },
+    "_damage_indices": [
+      "rushDmg",
+      "bashDmg"
+    ],
+    "_member_vars": {
+      "bashDmg": 6,
+      "rushDmg": 14
+    },
+    "_source": "GremlinNob.java"
+  },
+  {
+    "id": "GremlinWizard",
+    "java_id": "GremlinWizard",
+    "display_name": "Gremlin Wizard",
+    "act": 1,
+    "hp": {
+      "asc7": [
+        22,
+        26
+      ],
+      "base": [
+        21,
+        25
+      ]
+    },
+    "_constants": {
+      "HP_MIN": 21,
+      "HP_MAX": 25,
+      "A_2_HP_MIN": 22,
+      "A_2_HP_MAX": 26,
+      "MAGIC_DAMAGE": 25,
+      "A_2_MAGIC_DAMAGE": 30,
+      "CHARGE_LIMIT": 3
+    },
+    "_damage_indices": [
+      "30",
+      "25"
+    ],
+    "_member_vars": {
+      "currentCharge": 0
+    },
+    "_source": "GremlinWizard.java"
+  },
+  {
+    "id": "Guardian",
+    "java_id": "TheGuardian",
+    "display_name": "The Guardian",
+    "act": 1,
+    "hp": {
+      "asc19": [
+        250,
+        250
+      ],
+      "asc9": [
+        250,
+        250
+      ],
+      "base": [
+        240,
+        240
+      ]
+    },
+    "_constants": {
+      "DMG_THRESHOLD": 30,
+      "A_2_DMG_THRESHOLD": 35,
+      "A_19_DMG_THRESHOLD": 40,
+      "FIERCE_BASH_DMG": 32,
+      "A_2_FIERCE_BASH_DMG": 36,
+      "ROLL_DMG": 9,
+      "A_2_ROLL_DMG": 10
+    },
+    "_damage_indices": [
+      "fierceBashDamage",
+      "rollDamage",
+      "whirlwindDamage",
+      "twinSlamDamage"
+    ],
+    "_member_vars": {
+      "dmgThreshold": 30,
+      "fierceBashDamage": 32,
+      "rollDamage": 9,
+      "dmgTaken": 0
+    },
+    "_source": "TheGuardian.java"
+  },
+  {
+    "id": "Hexaghost",
+    "java_id": "Hexaghost",
+    "display_name": "Hexaghost",
+    "act": 1,
+    "hp": {
+      "asc9": [
+        264,
+        264
+      ],
+      "base": [
+        250,
+        250
+      ]
+    },
+    "_constants": {
+      "HP": 250,
+      "A_2_HP": 264,
+      "SEAR_DMG": 6,
+      "INFERNO_DMG": 2,
+      "FIRE_TACKLE_DMG": 5,
+      "BURN_COUNT": 1,
+      "STR_AMT": 2,
+      "A_4_INFERNO_DMG": 3,
+      "A_4_FIRE_TACKLE_DMG": 6,
+      "A_19_BURN_COUNT": 2,
+      "A_19_STR_AMT": 3
+    },
+    "_damage_indices": [
+      "fireTackleDmg",
+      "searDmg",
+      "infernoDmg"
+    ],
+    "_member_vars": {
+      "strAmount": 2,
+      "searBurnCount": 1,
+      "fireTackleDmg": 5,
+      "infernoDmg": 2,
+      "searDmg": 6,
+      "orbActiveCount": 0
+    },
+    "_source": "Hexaghost.java"
+  },
+  {
+    "id": "JawWorm",
+    "java_id": "JawWorm",
+    "display_name": "Jaw Worm",
+    "act": 1,
+    "hp": {
+      "asc7": [
+        42,
+        46
+      ],
+      "base": [
+        40,
+        44
+      ]
+    },
+    "_constants": {
+      "HP_MIN": 40,
+      "HP_MAX": 44,
+      "A_2_HP_MIN": 42,
+      "A_2_HP_MAX": 46,
+      "CHOMP_DMG": 11,
+      "A_2_CHOMP_DMG": 12,
+      "THRASH_DMG": 7,
+      "THRASH_BLOCK": 5,
+      "BELLOW_STR": 3,
+      "A_2_BELLOW_STR": 4,
+      "A_17_BELLOW_STR": 5,
+      "BELLOW_BLOCK": 6,
+      "A_17_BELLOW_BLOCK": 9
+    },
+    "_damage_indices": [
+      "chompDmg",
+      "thrashDmg"
+    ],
+    "_member_vars": {
+      "bellowStr": 3,
+      "bellowBlock": 6,
+      "chompDmg": 11,
+      "thrashDmg": 7,
+      "thrashBlock": 5
+    },
+    "_source": "JawWorm.java"
+  },
+  {
+    "id": "Lagavulin",
+    "java_id": "Lagavulin",
+    "display_name": "Lagavulin",
+    "act": 1,
+    "hp": {
+      "asc8": [
+        112,
+        115
+      ],
+      "base": [
+        109,
+        111
+      ]
+    },
+    "_constants": {
+      "HP_MIN": 109,
+      "HP_MAX": 111,
+      "A_2_HP_MIN": 112,
+      "A_2_HP_MAX": 115,
+      "STRONG_ATK_DMG": 18,
+      "A_2_STRONG_ATK_DMG": 20,
+      "ARMOR_AMT": 8
+    },
+    "_damage_indices": [
+      "attackDmg"
+    ],
+    "_member_vars": {
+      "debuffTurnCount": 0
+    },
+    "_source": "Lagavulin.java"
+  },
+  {
+    "id": "Looter",
+    "java_id": "Looter",
+    "display_name": "Looter",
+    "act": 1,
+    "hp": {
+      "asc7": [
+        46,
+        50
+      ],
+      "base": [
+        44,
+        48
+      ]
+    },
+    "_constants": {
+      "HP_MIN": 44,
+      "HP_MAX": 48,
+      "A_2_HP_MIN": 46,
+      "A_2_HP_MAX": 50
+    },
+    "_damage_indices": [
+      "swipeDmg",
+      "lungeDmg"
+    ],
+    "_member_vars": {
+      "swipeDmg": 10,
+      "lungeDmg": 12
+    },
+    "_source": "Looter.java"
+  },
+  {
+    "id": "MadGremlin",
+    "java_id": "GremlinWarrior",
+    "display_name": "Mad Gremlin",
+    "act": 1,
+    "hp": {
+      "asc7": [
+        21,
+        25
+      ],
+      "base": [
+        20,
+        24
+      ]
+    },
+    "_constants": {
+      "SCRATCH_DAMAGE": 4,
+      "A_2_SCRATCH_DAMAGE": 5,
+      "HP_MIN": 20,
+      "HP_MAX": 24,
+      "A_2_HP_MIN": 21,
+      "A_2_HP_MAX": 25
+    },
+    "_damage_indices": [
+      "5",
+      "4"
+    ],
+    "_member_vars": {},
+    "_source": "GremlinWarrior.java"
+  },
+  {
+    "id": "RedLouse",
+    "java_id": "FuzzyLouseNormal",
+    "display_name": "Red Louse",
+    "act": 1,
+    "hp": {
+      "asc7": [
+        11,
+        16
+      ],
+      "base": [
+        10,
+        15
+      ]
+    },
+    "_constants": {
+      "HP_MIN": 10,
+      "HP_MAX": 15,
+      "A_2_HP_MIN": 11,
+      "A_2_HP_MAX": 16,
+      "STR_AMOUNT": 3
+    },
+    "_damage_indices": [
+      "biteDamage"
+    ],
+    "_member_vars": {},
+    "_source": "LouseNormal.java"
+  },
+  {
+    "id": "RedSlaver",
+    "java_id": "SlaverRed",
+    "display_name": "Red Slaver",
+    "act": 1,
+    "hp": {
+      "asc7": [
+        48,
+        52
+      ],
+      "base": [
+        46,
+        50
+      ]
+    },
+    "_constants": {
+      "HP_MIN": 46,
+      "HP_MAX": 50,
+      "A_2_HP_MIN": 48,
+      "A_2_HP_MAX": 52,
+      "STAB_DMG": 13,
+      "A_2_STAB_DMG": 14,
+      "SCRAPE_DMG": 8,
+      "A_2_SCRAPE_DMG": 9
+    },
+    "_damage_indices": [
+      "stabDmg",
+      "scrapeDmg"
+    ],
+    "_member_vars": {
+      "stabDmg": 13,
+      "scrapeDmg": 8
+    },
+    "_source": "SlaverRed.java"
+  },
+  {
+    "id": "Sentry",
+    "java_id": "Sentry",
+    "display_name": "Sentry",
+    "act": 1,
+    "hp": {
+      "asc8": [
+        39,
+        45
+      ],
+      "base": [
+        38,
+        42
+      ]
+    },
+    "_constants": {
+      "HP_MIN": 38,
+      "HP_MAX": 42,
+      "A_2_HP_MIN": 39,
+      "A_2_HP_MAX": 45,
+      "DAZED_AMT": 2,
+      "A_18_DAZED_AMT": 3
+    },
+    "_damage_indices": [
+      "beamDmg"
+    ],
+    "_member_vars": {},
+    "_source": "Sentry.java"
+  },
+  {
+    "id": "ShieldGremlin",
+    "java_id": "GremlinTsundere",
+    "display_name": "Shield Gremlin",
+    "act": 1,
+    "hp": {
+      "asc17": [
+        13,
+        17
+      ],
+      "asc7": [
+        13,
+        17
+      ],
+      "base": [
+        12,
+        15
+      ]
+    },
+    "_constants": {
+      "HP_MIN": 12,
+      "HP_MAX": 15,
+      "A_2_HP_MIN": 13,
+      "A_2_HP_MAX": 17,
+      "BLOCK_AMOUNT": 7,
+      "A_2_BLOCK_AMOUNT": 8,
+      "A_17_BLOCK_AMOUNT": 11,
+      "BASH_DAMAGE": 6,
+      "A_2_BASH_DAMAGE": 8
+    },
+    "_damage_indices": [
+      "bashDmg"
+    ],
+    "_member_vars": {
+      "blockAmt": 7
+    },
+    "_source": "GremlinTsundere.java"
+  },
+  {
+    "id": "SlimeBoss",
+    "java_id": "SlimeBoss",
+    "display_name": "Slime Boss",
+    "act": 1,
+    "hp": {
+      "asc9": [
+        150,
+        150
+      ],
+      "base": [
+        140,
+        140
+      ]
+    },
+    "_constants": {},
+    "_damage_indices": [
+      "tackleDmg",
+      "slamDmg"
+    ],
+    "_member_vars": {
+      "tackleDmg": 9,
+      "slamDmg": 35
+    },
+    "_source": "SlimeBoss.java"
+  },
+  {
+    "id": "SneakyGremlin",
+    "java_id": "GremlinThief",
+    "display_name": "Sneaky Gremlin",
+    "act": 1,
+    "hp": {
+      "asc7": [
+        11,
+        15
+      ],
+      "base": [
+        10,
+        14
+      ]
+    },
+    "_constants": {
+      "THIEF_DAMAGE": 9,
+      "A_2_THIEF_DAMAGE": 10,
+      "HP_MIN": 10,
+      "HP_MAX": 14,
+      "A_2_HP_MIN": 11,
+      "A_2_HP_MAX": 15
+    },
+    "_damage_indices": [
+      "thiefDamage"
+    ],
+    "_member_vars": {},
+    "_source": "GremlinThief.java"
+  },
+  {
+    "id": "SpikeSlime_L",
+    "java_id": "SpikeSlime_L",
+    "display_name": "Spike Slime (L)",
+    "act": 1,
+    "hp": {
+      "asc7": [
+        67,
+        73
+      ],
+      "base": [
+        64,
+        70
+      ]
+    },
+    "_constants": {},
+    "_damage_indices": [
+      "18",
+      "16"
+    ],
+    "_member_vars": {},
+    "_source": "SpikeSlime_L.java"
+  },
+  {
+    "id": "SpikeSlime_M",
+    "java_id": "SpikeSlime_M",
+    "display_name": "Spike Slime (M)",
+    "act": 1,
+    "hp": {
+      "asc7": [
+        29,
+        34
+      ],
+      "base": [
+        28,
+        32
+      ]
+    },
+    "_constants": {},
+    "_damage_indices": [
+      "10",
+      "8"
+    ],
+    "_member_vars": {},
+    "_source": "SpikeSlime_M.java"
+  },
+  {
+    "id": "SpikeSlime_S",
+    "java_id": "SpikeSlime_S",
+    "display_name": "Spike Slime (S)",
+    "act": 1,
+    "hp": {
+      "asc7": [
+        11,
+        15
+      ],
+      "base": [
+        10,
+        14
+      ]
+    },
+    "_constants": {},
+    "_damage_indices": [
+      "6",
+      "5"
+    ],
+    "_member_vars": {},
+    "_source": "SpikeSlime_S.java"
+  },
+  {
+    "id": "Bear",
+    "java_id": "BanditBear",
+    "display_name": "Bear",
+    "act": 2,
+    "hp": {
+      "asc7": [
+        40,
+        44
+      ],
+      "base": [
+        38,
+        42
+      ]
+    },
+    "_constants": {
+      "MAUL_DMG": 18,
+      "A_2_MAUL_DMG": 20,
+      "LUNGE_DMG": 9,
+      "A_2_LUNGE_DMG": 10,
+      "LUNGE_DEFENSE": 9
+    },
+    "_damage_indices": [
+      "maulDmg",
+      "lungeDmg"
+    ],
+    "_member_vars": {
+      "maulDmg": 18,
+      "lungeDmg": 9
+    },
+    "_source": "BanditBear.java"
+  },
+  {
+    "id": "BookOfStabbing",
+    "java_id": "BookOfStabbing",
+    "display_name": "Book of Stabbing",
+    "act": 2,
+    "hp": {
+      "asc8": [
+        168,
+        172
+      ],
+      "base": [
+        160,
+        164
+      ]
+    },
+    "_constants": {
+      "HP_MIN": 160,
+      "HP_MAX": 164,
+      "A_2_HP_MIN": 168,
+      "A_2_HP_MAX": 172,
+      "STAB_DAMAGE": 6,
+      "BIG_STAB_DAMAGE": 21,
+      "A_2_STAB_DAMAGE": 7,
+      "A_2_BIG_STAB_DAMAGE": 24
+    },
+    "_damage_indices": [
+      "stabDmg",
+      "bigStabDmg"
+    ],
+    "_member_vars": {
+      "stabDmg": 6,
+      "bigStabDmg": 21
+    },
+    "_source": "BookOfStabbing.java"
+  },
+  {
+    "id": "BronzeAutomaton",
+    "java_id": "BronzeAutomaton",
+    "display_name": "Bronze Automaton",
+    "act": 2,
+    "hp": {
+      "asc9": [
+        320,
+        320
+      ],
+      "base": [
+        300,
+        300
+      ]
+    },
+    "_constants": {
+      "HP": 300,
+      "A_2_HP": 320,
+      "FLAIL_DMG": 7,
+      "BEAM_DMG": 45,
+      "A_2_FLAIL_DMG": 8,
+      "A_2_BEAM_DMG": 50,
+      "BLOCK_AMT": 9,
+      "STR_AMT": 3,
+      "A_2_BLOCK_AMT": 12,
+      "A_2_STR_AMT": 4
+    },
+    "_damage_indices": [
+      "flailDmg",
+      "beamDmg"
+    ],
+    "_member_vars": {
+      "blockAmt": 9,
+      "flailDmg": 7,
+      "beamDmg": 45,
+      "strAmt": 3,
+      "numTurns": 0
+    },
+    "_source": "BronzeAutomaton.java"
+  },
+  {
+    "id": "BronzeOrb",
+    "java_id": "BronzeOrb",
+    "display_name": "Bronze Orb",
+    "act": 2,
+    "hp": {
+      "asc9": [
+        54,
+        60
+      ],
+      "base": [
+        52,
+        58
+      ]
+    },
+    "_constants": {
+      "HP_MIN": 52,
+      "HP_MAX": 58,
+      "A_2_HP_MIN": 54,
+      "A_2_HP_MAX": 60,
+      "BEAM_DMG": 8,
+      "BLOCK_AMT": 12
+    },
+    "_damage_indices": [
+      "8"
+    ],
+    "_member_vars": {},
+    "_source": "BronzeOrb.java"
+  },
+  {
+    "id": "Byrd",
+    "java_id": "Byrd",
+    "display_name": "Byrd",
+    "act": 2,
+    "hp": {
+      "asc7": [
+        26,
+        33
+      ],
+      "base": [
+        25,
+        31
+      ]
+    },
+    "_constants": {
+      "HP_MIN": 25,
+      "HP_MAX": 31,
+      "A_2_HP_MIN": 26,
+      "A_2_HP_MAX": 33,
+      "PECK_DMG": 1,
+      "PECK_COUNT": 5,
+      "SWOOP_DMG": 12,
+      "A_2_PECK_COUNT": 6,
+      "A_2_SWOOP_DMG": 14,
+      "HEADBUTT_DMG": 3,
+      "CAW_STR": 1
+    },
+    "_damage_indices": [
+      "peckDmg",
+      "swoopDmg",
+      "3"
+    ],
+    "_member_vars": {
+      "peckDmg": 1,
+      "peckCount": 5,
+      "swoopDmg": 12
+    },
+    "_source": "Byrd.java"
+  },
+  {
+    "id": "Centurion",
+    "java_id": "Centurion",
+    "display_name": "Centurion",
+    "act": 2,
+    "hp": {
+      "asc7": [
+        78,
+        83
+      ],
+      "base": [
+        76,
+        80
+      ]
+    },
+    "_constants": {
+      "HP_MIN": 76,
+      "HP_MAX": 80,
+      "A_2_HP_MIN": 78,
+      "A_2_HP_MAX": 83,
+      "SLASH_DMG": 12,
+      "FURY_DMG": 6,
+      "FURY_HITS": 3,
+      "A_2_SLASH_DMG": 14,
+      "A_2_FURY_DMG": 7
+    },
+    "_damage_indices": [
+      "slashDmg",
+      "furyDmg"
+    ],
+    "_member_vars": {
+      "slashDmg": 12,
+      "furyDmg": 6,
+      "furyHits": 3
+    },
+    "_source": "Centurion.java"
+  },
+  {
+    "id": "Champ",
+    "java_id": "Champ",
+    "display_name": "The Champ",
+    "act": 2,
+    "hp": {
+      "asc9": [
+        440,
+        440
+      ],
+      "base": [
+        420,
+        420
+      ]
+    },
+    "_constants": {
+      "DEBUFF_AMT": 2,
+      "EXEC_COUNT": 2,
+      "FORGE_AMT": 5,
+      "BLOCK_AMT": 15,
+      "A_9_FORGE_AMT": 6,
+      "A_9_BLOCK_AMT": 18,
+      "A_19_FORGE_AMT": 7,
+      "A_19_BLOCK_AMT": 20,
+      "STR_AMT": 2,
+      "A_4_STR_AMT": 3,
+      "A_19_STR_AMT": 4
+    },
+    "_damage_indices": [
+      "slashDmg",
+      "executeDmg",
+      "slapDmg"
+    ],
+    "_member_vars": {
+      "slashDmg": 16,
+      "executeDmg": 10,
+      "slapDmg": 12,
+      "strAmt": 2,
+      "forgeAmt": 5,
+      "blockAmt": 15,
+      "numTurns": 0
+    },
+    "_source": "Champ.java"
+  },
+  {
+    "id": "Chosen",
+    "java_id": "Chosen",
+    "display_name": "Chosen",
+    "act": 2,
+    "hp": {
+      "asc7": [
+        98,
+        103
+      ],
+      "base": [
+        95,
+        99
+      ]
+    },
+    "_constants": {
+      "HP_MIN": 95,
+      "HP_MAX": 99,
+      "A_2_HP_MIN": 98,
+      "A_2_HP_MAX": 103,
+      "ZAP_DMG": 18,
+      "A_2_ZAP_DMG": 21,
+      "DEBILITATE_DMG": 10,
+      "A_2_DEBILITATE_DMG": 12,
+      "POKE_DMG": 5,
+      "A_2_POKE_DMG": 6,
+      "DEBILITATE_VULN": 2,
+      "DRAIN_STR": 3,
+      "DRAIN_WEAK": 3,
+      "HEX_AMT": 1
+    },
+    "_damage_indices": [
+      "zapDmg",
+      "debilitateDmg",
+      "pokeDmg"
+    ],
+    "_member_vars": {
+      "zapDmg": 18,
+      "debilitateDmg": 10,
+      "pokeDmg": 5
+    },
+    "_source": "Chosen.java"
+  },
+  {
+    "id": "Collector",
+    "java_id": "TheCollector",
+    "display_name": "The Collector",
+    "act": 2,
+    "hp": {
+      "asc9": [
+        300,
+        300
+      ],
+      "base": [
+        282,
+        282
+      ]
+    },
+    "_constants": {
+      "FIREBALL_DMG": 18,
+      "STR_AMT": 3,
+      "BLOCK_AMT": 15,
+      "A_2_FIREBALL_DMG": 21,
+      "A_2_STR_AMT": 4,
+      "A_2_BLOCK_AMT": 18,
+      "MEGA_DEBUFF_AMT": 3
+    },
+    "_damage_indices": [
+      "rakeDmg"
+    ],
+    "_member_vars": {
+      "blockAmt": 15,
+      "rakeDmg": 18,
+      "strAmt": 3,
+      "megaDebuffAmt": 3
+    },
+    "_source": "TheCollector.java"
+  },
+  {
+    "id": "GremlinLeader",
+    "java_id": "GremlinLeader",
+    "display_name": "Gremlin Leader",
+    "act": 2,
+    "hp": {
+      "asc8": [
+        145,
+        155
+      ],
+      "base": [
+        140,
+        148
+      ]
+    },
+    "_constants": {
+      "HP_MIN": 140,
+      "HP_MAX": 148,
+      "A_2_HP_MIN": 145,
+      "A_2_HP_MAX": 155,
+      "STR_AMT": 3,
+      "BLOCK_AMT": 6,
+      "A_2_STR_AMT": 4,
+      "A_18_STR_AMT": 5,
+      "A_18_BLOCK_AMT": 10
+    },
+    "_damage_indices": [
+      "STAB_DMG"
+    ],
+    "_member_vars": {
+      "strAmt": 3,
+      "blockAmt": 6
+    },
+    "_source": "GremlinLeader.java"
+  },
+  {
+    "id": "Mugger",
+    "java_id": "Mugger",
+    "display_name": "Mugger",
+    "act": 2,
+    "hp": {
+      "asc7": [
+        50,
+        54
+      ],
+      "base": [
+        48,
+        52
+      ]
+    },
+    "_constants": {
+      "HP_MIN": 48,
+      "HP_MAX": 52,
+      "A_2_HP_MIN": 50,
+      "A_2_HP_MAX": 54
+    },
+    "_damage_indices": [
+      "swipeDmg",
+      "bigSwipeDmg"
+    ],
+    "_member_vars": {
+      "swipeDmg": 10,
+      "bigSwipeDmg": 16
+    },
+    "_source": "Mugger.java"
+  },
+  {
+    "id": "Mystic",
+    "java_id": "Healer",
+    "display_name": "Mystic",
+    "act": 2,
+    "hp": {
+      "asc7": [
+        50,
+        58
+      ],
+      "base": [
+        48,
+        56
+      ]
+    },
+    "_constants": {
+      "HP_MIN": 48,
+      "HP_MAX": 56,
+      "A_2_HP_MIN": 50,
+      "A_2_HP_MAX": 58,
+      "MAGIC_DMG": 8,
+      "HEAL_AMT": 16,
+      "STR_AMOUNT": 2,
+      "A_2_MAGIC_DMG": 9,
+      "A_2_STR_AMOUNT": 3
+    },
+    "_damage_indices": [
+      "magicDmg"
+    ],
+    "_member_vars": {
+      "magicDmg": 8,
+      "strAmt": 2,
+      "healAmt": 16
+    },
+    "_source": "Healer.java"
+  },
+  {
+    "id": "Pointy",
+    "java_id": "BanditChild",
+    "display_name": "Pointy",
+    "act": 2,
+    "hp": {
+      "asc7": [
+        34,
+        34
+      ],
+      "base": [
+        30,
+        30
+      ]
+    },
+    "_constants": {
+      "ATTACK_DMG": 5,
+      "A_2_ATTACK_DMG": 6
+    },
+    "_damage_indices": [],
+    "_member_vars": {},
+    "_source": "BanditPointy.java"
+  },
+  {
+    "id": "Romeo",
+    "java_id": "BanditLeader",
+    "display_name": "Romeo",
+    "act": 2,
+    "hp": {
+      "asc7": [
+        37,
+        41
+      ],
+      "base": [
+        35,
+        39
+      ]
+    },
+    "_constants": {
+      "SLASH_DAMAGE": 15,
+      "AGONIZE_DAMAGE": 10,
+      "A_2_SLASH_DAMAGE": 17,
+      "A_2_AGONIZE_DAMAGE": 12,
+      "WEAK_AMT": 2,
+      "A_17_WEAK": 3
+    },
+    "_damage_indices": [
+      "slashDmg",
+      "agonizeDmg"
+    ],
+    "_member_vars": {
+      "slashDmg": 15,
+      "agonizeDmg": 10
+    },
+    "_source": "BanditLeader.java"
+  },
+  {
+    "id": "ShelledParasite",
+    "java_id": "Shelled Parasite",
+    "display_name": "Shelled Parasite",
+    "act": 2,
+    "hp": {
+      "asc7": [
+        70,
+        75
+      ],
+      "base": [
+        68,
+        72
+      ]
+    },
+    "_constants": {
+      "HP_MIN": 68,
+      "HP_MAX": 72,
+      "A_2_HP_MIN": 70,
+      "A_2_HP_MAX": 75,
+      "PLATED_ARMOR_AMT": 14,
+      "FELL_DMG": 18,
+      "DOUBLE_STRIKE_DMG": 6,
+      "SUCK_DMG": 10,
+      "A_2_FELL_DMG": 21,
+      "A_2_DOUBLE_STRIKE_DMG": 7,
+      "A_2_SUCK_DMG": 12,
+      "DOUBLE_STRIKE_COUNT": 2,
+      "FELL_FRAIL_AMT": 2
+    },
+    "_damage_indices": [
+      "doubleStrikeDmg",
+      "fellDmg",
+      "suckDmg"
+    ],
+    "_member_vars": {
+      "doubleStrikeDmg": 6,
+      "fellDmg": 18,
+      "suckDmg": 10
+    },
+    "_source": "ShelledParasite.java"
+  },
+  {
+    "id": "SnakePlant",
+    "java_id": "SnakePlant",
+    "display_name": "Snake Plant",
+    "act": 2,
+    "hp": {
+      "asc7": [
+        78,
+        82
+      ],
+      "base": [
+        75,
+        79
+      ]
+    },
+    "_constants": {
+      "HP_MIN": 75,
+      "HP_MAX": 79,
+      "A_2_HP_MIN": 78,
+      "A_2_HP_MAX": 82,
+      "CHOMPY_AMT": 3,
+      "CHOMPY_DMG": 7,
+      "A_2_CHOMPY_DMG": 8
+    },
+    "_damage_indices": [
+      "rainBlowsDmg"
+    ],
+    "_member_vars": {},
+    "_source": "SnakePlant.java"
+  },
+  {
+    "id": "Snecko",
+    "java_id": "Snecko",
+    "display_name": "Snecko",
+    "act": 2,
+    "hp": {
+      "asc7": [
+        120,
+        125
+      ],
+      "base": [
+        114,
+        120
+      ]
+    },
+    "_constants": {
+      "BITE_DAMAGE": 15,
+      "TAIL_DAMAGE": 8,
+      "A_2_BITE_DAMAGE": 18,
+      "A_2_TAIL_DAMAGE": 10,
+      "VULNERABLE_AMT": 2,
+      "HP_MIN": 114,
+      "HP_MAX": 120,
+      "A_2_HP_MIN": 120,
+      "A_2_HP_MAX": 125
+    },
+    "_damage_indices": [
+      "biteDmg",
+      "tailDmg"
+    ],
+    "_member_vars": {
+      "biteDmg": 15,
+      "tailDmg": 8
+    },
+    "_source": "Snecko.java"
+  },
+  {
+    "id": "SphericGuardian",
+    "java_id": "SphericGuardian",
+    "display_name": "Spheric Guardian",
+    "act": 2,
+    "hp": {
+      "base": [
+        20,
+        20
+      ]
+    },
+    "_constants": {
+      "DMG": 10,
+      "A_2_DMG": 11,
+      "SLAM_AMT": 2,
+      "HARDEN_BLOCK": 15,
+      "FRAIL_AMT": 5,
+      "ACTIVATE_BLOCK": 25,
+      "ARTIFACT_AMT": 3,
+      "STARTING_BLOCK_AMT": 40
+    },
+    "_damage_indices": [
+      "dmg"
+    ],
+    "_member_vars": {},
+    "_source": "SphericGuardian.java"
+  },
+  {
+    "id": "Taskmaster",
+    "java_id": "SlaverBoss",
+    "display_name": "Taskmaster",
+    "act": 2,
+    "hp": {
+      "asc8": [
+        57,
+        64
+      ],
+      "base": [
+        54,
+        60
+      ]
+    },
+    "_constants": {
+      "HP_MIN": 54,
+      "HP_MAX": 60,
+      "A_2_HP_MIN": 57,
+      "A_2_HP_MAX": 64,
+      "WHIP_DMG": 4,
+      "SCOURING_WHIP_DMG": 7,
+      "WOUNDS": 1,
+      "A_2_WOUNDS": 2
+    },
+    "_damage_indices": [
+      "4",
+      "7"
+    ],
+    "_member_vars": {},
+    "_source": "Taskmaster.java"
+  },
+  {
+    "id": "TorchHead",
+    "java_id": "TorchHead",
+    "display_name": "Torch Head",
+    "act": 2,
+    "hp": {
+      "asc9": [
+        40,
+        45
+      ],
+      "base": [
+        38,
+        40
+      ]
+    },
+    "_constants": {},
+    "_damage_indices": [
+      "7"
+    ],
+    "_member_vars": {},
+    "_source": "TorchHead.java"
+  },
+  {
+    "id": "AwakenedOne",
+    "java_id": "AwakenedOne",
+    "display_name": "Awakened One",
+    "act": 3,
+    "hp": {
+      "asc9": [
+        320,
+        320
+      ],
+      "base": [
+        300,
+        300
+      ]
+    },
+    "_constants": {
+      "A_4_STR": 2,
+      "SLASH_DMG": 20,
+      "SS_DMG": 6,
+      "SS_AMT": 4,
+      "REGEN_AMT": 10,
+      "STR_AMT": 1,
+      "ECHO_DMG": 40,
+      "SLUDGE_DMG": 18,
+      "TACKLE_DMG": 10,
+      "TACKLE_AMT": 3
+    },
+    "_damage_indices": [
+      "20",
+      "6",
+      "40",
+      "18",
+      "10"
+    ],
+    "_member_vars": {},
+    "_source": "AwakenedOne.java"
+  },
+  {
+    "id": "Dagger",
+    "java_id": "Dagger",
+    "display_name": "Dagger",
+    "act": 3,
+    "hp": {
+      "base": [
+        20,
+        20
+      ]
+    },
+    "_constants": {
+      "HP_MIN": 20,
+      "HP_MAX": 25,
+      "STAB_DMG": 9,
+      "SACRIFICE_DMG": 25
+    },
+    "_damage_indices": [
+      "9",
+      "25"
+    ],
+    "_member_vars": {},
+    "_source": "SnakeDagger.java"
+  },
+  {
+    "id": "Darkling",
+    "java_id": "Darkling",
+    "display_name": "Darkling",
+    "act": 3,
+    "hp": {
+      "asc7": [
+        50,
+        59
+      ],
+      "base": [
+        48,
+        56
+      ]
+    },
+    "_constants": {
+      "BITE_DMG": 8,
+      "A_2_BITE_DMG": 9,
+      "BLOCK_AMT": 12,
+      "CHOMP_AMT": 2
+    },
+    "_damage_indices": [
+      "chompDmg",
+      "nipDmg"
+    ],
+    "_member_vars": {
+      "chompDmg": 8
+    },
+    "_source": "Darkling.java"
+  },
+  {
+    "id": "Deca",
+    "java_id": "Deca",
+    "display_name": "Deca",
+    "act": 3,
+    "hp": {
+      "asc9": [
+        265,
+        265
+      ],
+      "base": [
+        250,
+        250
+      ]
+    },
+    "_constants": {
+      "ARTIFACT_AMT": 2,
+      "BEAM_DMG": 10,
+      "BEAM_AMT": 2,
+      "A_2_BEAM_DMG": 12,
+      "BEAM_DAZE_AMT": 2,
+      "PROTECT_BLOCK": 16
+    },
+    "_damage_indices": [
+      "beamDmg"
+    ],
+    "_member_vars": {},
+    "_source": "Deca.java"
+  },
+  {
+    "id": "Donu",
+    "java_id": "Donu",
+    "display_name": "Donu",
+    "act": 3,
+    "hp": {
+      "asc9": [
+        265,
+        265
+      ],
+      "base": [
+        250,
+        250
+      ]
+    },
+    "_constants": {
+      "ARTIFACT_AMT": 2,
+      "BEAM_DMG": 10,
+      "BEAM_AMT": 2,
+      "A_2_BEAM_DMG": 12,
+      "CIRCLE_STR_AMT": 3
+    },
+    "_damage_indices": [
+      "beamDmg"
+    ],
+    "_member_vars": {},
+    "_source": "Donu.java"
+  },
+  {
+    "id": "Exploder",
+    "java_id": "Exploder",
+    "display_name": "Exploder",
+    "act": 3,
+    "hp": {
+      "asc7": [
+        30,
+        35
+      ],
+      "base": [
+        30,
+        30
+      ]
+    },
+    "_constants": {
+      "HP_MIN": 30,
+      "HP_MAX": 30,
+      "A_2_HP_MIN": 30,
+      "A_2_HP_MAX": 35,
+      "ATTACK_DMG": 9,
+      "A_2_ATTACK_DMG": 11,
+      "EXPLODE_BASE": 3
+    },
+    "_damage_indices": [
+      "attackDmg"
+    ],
+    "_member_vars": {},
+    "_source": "Exploder.java"
+  },
+  {
+    "id": "GiantHead",
+    "java_id": "GiantHead",
+    "display_name": "Giant Head",
+    "act": 3,
+    "hp": {
+      "asc8": [
+        520,
+        520
+      ],
+      "base": [
+        500,
+        500
+      ]
+    },
+    "_constants": {
+      "HP": 500,
+      "A_2_HP": 520,
+      "COUNT_DMG": 13,
+      "DEATH_DMG": 30,
+      "GLARE_WEAK": 1,
+      "INCREMENT_DMG": 5,
+      "A_2_DEATH_DMG": 40
+    },
+    "_damage_indices": [
+      "13",
+      "startingDeathDmg"
+    ],
+    "_member_vars": {},
+    "_source": "GiantHead.java"
+  },
+  {
+    "id": "Maw",
+    "java_id": "Maw",
+    "display_name": "The Maw",
+    "act": 3,
+    "hp": {
+      "base": [
+        300,
+        300
+      ]
+    },
+    "_constants": {
+      "HP": 300,
+      "SLAM_DMG": 25,
+      "NOM_DMG": 5,
+      "A_2_SLAM_DMG": 30
+    },
+    "_damage_indices": [
+      "slamDmg",
+      "nomDmg"
+    ],
+    "_member_vars": {
+      "strUp": 3,
+      "terrifyDur": 3,
+      "slamDmg": 25,
+      "nomDmg": 5
+    },
+    "_source": "Maw.java"
+  },
+  {
+    "id": "Nemesis",
+    "java_id": "Nemesis",
+    "display_name": "Nemesis",
+    "act": 3,
+    "hp": {
+      "asc8": [
+        200,
+        200
+      ],
+      "base": [
+        185,
+        185
+      ]
+    },
+    "_constants": {
+      "HP": 185,
+      "A_2_HP": 200,
+      "SCYTHE_COOLDOWN_TURNS": 2,
+      "SCYTHE_DMG": 45,
+      "FIRE_DMG": 6,
+      "FIRE_TIMES": 3,
+      "A_2_FIRE_DMG": 7,
+      "BURN_AMT": 3
+    },
+    "_damage_indices": [
+      "45",
+      "fireDmg"
+    ],
+    "_member_vars": {
+      "scytheCooldown": 2
+    },
+    "_source": "Nemesis.java"
+  },
+  {
+    "id": "OrbWalker",
+    "java_id": "Orb Walker",
+    "display_name": "Orb Walker",
+    "act": 3,
+    "hp": {
+      "asc7": [
+        92,
+        102
+      ],
+      "base": [
+        90,
+        96
+      ]
+    },
+    "_constants": {
+      "HP_MIN": 90,
+      "HP_MAX": 96,
+      "A_2_HP_MIN": 92,
+      "A_2_HP_MAX": 102
+    },
+    "_damage_indices": [
+      "laserDmg",
+      "clawDmg"
+    ],
+    "_member_vars": {
+      "clawDmg": 15,
+      "laserDmg": 10
+    },
+    "_source": "OrbWalker.java"
+  },
+  {
+    "id": "Reptomancer",
+    "java_id": "Reptomancer",
+    "display_name": "Reptomancer",
+    "act": 3,
+    "hp": {
+      "asc8": [
+        190,
+        200
+      ],
+      "base": [
+        180,
+        190
+      ]
+    },
+    "_constants": {
+      "HP_MIN": 180,
+      "HP_MAX": 190,
+      "A_2_HP_MIN": 190,
+      "A_2_HP_MAX": 200,
+      "BITE_DMG": 30,
+      "A_2_BITE_DMG": 34,
+      "SNAKE_STRIKE_DMG": 13,
+      "A_2_SNAKE_STRIKE_DMG": 16,
+      "DAGGERS_PER_SPAWN": 1,
+      "ASC_2_DAGGERS_PER_SPAWN": 2
+    },
+    "_damage_indices": [
+      "16",
+      "34",
+      "13",
+      "30"
+    ],
+    "_member_vars": {},
+    "_source": "Reptomancer.java"
+  },
+  {
+    "id": "Repulsor",
+    "java_id": "Repulsor",
+    "display_name": "Repulsor",
+    "act": 3,
+    "hp": {
+      "asc7": [
+        31,
+        38
+      ],
+      "base": [
+        29,
+        35
+      ]
+    },
+    "_constants": {},
+    "_damage_indices": [
+      "attackDmg"
+    ],
+    "_member_vars": {
+      "dazeAmt": 2
+    },
+    "_source": "Repulsor.java"
+  },
+  {
+    "id": "Spiker",
+    "java_id": "Spiker",
+    "display_name": "Spiker",
+    "act": 3,
+    "hp": {
+      "asc7": [
+        44,
+        60
+      ],
+      "base": [
+        42,
+        56
+      ]
+    },
+    "_constants": {
+      "HP_MIN": 42,
+      "HP_MAX": 56,
+      "A_2_HP_MIN": 44,
+      "A_2_HP_MAX": 60,
+      "STARTING_THORNS": 3,
+      "A_2_STARTING_THORNS": 4,
+      "ATTACK_DMG": 7,
+      "A_2_ATTACK_DMG": 9,
+      "BUFF_AMT": 2
+    },
+    "_damage_indices": [
+      "attackDmg"
+    ],
+    "_member_vars": {
+      "startingThorns": 3,
+      "attackDmg": 7
+    },
+    "_source": "Spiker.java"
+  },
+  {
+    "id": "SpireGrowth",
+    "java_id": "Serpent",
+    "display_name": "Spire Growth",
+    "act": 3,
+    "hp": {
+      "asc7": [
+        190,
+        190
+      ],
+      "base": [
+        170,
+        170
+      ]
+    },
+    "_constants": {
+      "START_HP": 170,
+      "A_2_START_HP": 190
+    },
+    "_damage_indices": [
+      "tackleDmgActual",
+      "smashDmgActual"
+    ],
+    "_member_vars": {},
+    "_source": "SpireGrowth.java"
+  },
+  {
+    "id": "TimeEater",
+    "java_id": "TimeEater",
+    "display_name": "Time Eater",
+    "act": 3,
+    "hp": {
+      "asc9": [
+        480,
+        480
+      ],
+      "base": [
+        456,
+        456
+      ]
+    },
+    "_constants": {
+      "REVERB_DMG": 7,
+      "REVERB_AMT": 3,
+      "A_2_REVERB_DMG": 8,
+      "RIPPLE_BLOCK": 20,
+      "HEAD_SLAM_DMG": 26,
+      "A_2_HEAD_SLAM_DMG": 32,
+      "HEAD_SLAM_STICKY": 1,
+      "RIPPLE_DEBUFF_TURNS": 1
+    },
+    "_damage_indices": [],
+    "_member_vars": {
+      "reverbDmg": 7,
+      "headSlamDmg": 26
+    },
+    "_source": "TimeEater.java"
+  },
+  {
+    "id": "Transient",
+    "java_id": "Transient",
+    "display_name": "Transient",
+    "act": 3,
+    "hp": {
+      "base": [
+        999,
+        999
+      ]
+    },
+    "_constants": {
+      "HP": 999,
+      "DEATH_DMG": 30,
+      "INCREMENT_DMG": 10,
+      "A_2_DEATH_DMG": 40
+    },
+    "_damage_indices": [
+      "startingDeathDmg"
+    ],
+    "_member_vars": {
+      "gold": 1
+    },
+    "_source": "Transient.java"
+  },
+  {
+    "id": "WrithingMass",
+    "java_id": "WrithingMass",
+    "display_name": "Writhing Mass",
+    "act": 3,
+    "hp": {
+      "asc7": [
+        175,
+        175
+      ],
+      "base": [
+        160,
+        160
+      ]
+    },
+    "_constants": {
+      "HP": 160,
+      "A_2_HP": 175,
+      "HIT_COUNT": 3
+    },
+    "_damage_indices": [
+      "38",
+      "9",
+      "16",
+      "12",
+      "32",
+      "7",
+      "15",
+      "10"
+    ],
+    "_member_vars": {
+      "normalDebuffAmt": 2
+    },
+    "_source": "WrithingMass.java"
+  },
+  {
+    "id": "CorruptHeart",
+    "java_id": "CorruptHeart",
+    "display_name": "Corrupt Heart",
+    "act": 4,
+    "hp": {
+      "asc9": [
+        800,
+        800
+      ],
+      "base": [
+        750,
+        750
+      ]
+    },
+    "_constants": {},
+    "_damage_indices": [
+      "45",
+      "2",
+      "40",
+      "2"
+    ],
+    "_member_vars": {
+      "bloodHitCount": 12
+    },
+    "_source": "CorruptHeart.java"
+  },
+  {
+    "id": "SpireShield",
+    "java_id": "SpireShield",
+    "display_name": "Spire Shield",
+    "act": 4,
+    "hp": {
+      "asc8": [
+        125,
+        125
+      ],
+      "base": [
+        110,
+        110
+      ]
+    },
+    "_constants": {
+      "FORTIFY_BLOCK": 30
+    },
+    "_damage_indices": [
+      "14",
+      "38",
+      "12",
+      "34"
+    ],
+    "_member_vars": {},
+    "_source": "SpireShield.java"
+  },
+  {
+    "id": "SpireSpear",
+    "java_id": "SpireSpear",
+    "display_name": "Spire Spear",
+    "act": 4,
+    "hp": {
+      "asc8": [
+        180,
+        180
+      ],
+      "base": [
+        160,
+        160
+      ]
+    },
+    "_constants": {
+      "BURN_STRIKE_COUNT": 2
+    },
+    "_damage_indices": [
+      "6",
+      "10",
+      "5",
+      "10"
+    ],
+    "_member_vars": {
+      "skewerCount": 3
+    },
+    "_source": "SpireSpear.java"
+  }
+]

@@ -1,0 +1,79 @@
+[
+  {
+    "id": "Bash",
+    "name": "Bash",
+    "type": "Attack",
+    "cost": 2,
+    "color": "Red",
+    "rarity": "Basic",
+    "logic": {
+      "target_type": "Enemy",
+      "commands": [
+        {
+          "type": "DealDamage",
+          "params": {
+            "base": 8,
+            "upgrade": 10
+          }
+        },
+        {
+          "type": "ApplyStatus",
+          "params": {
+            "status": "Vulnerable",
+            "base": 2,
+            "upgrade": 3
+          }
+        }
+      ],
+      "keywords_used": [
+        "Vulnerable"
+      ]
+    },
+    "original_text": "Deal [8|10] damage.<br>Apply [2|3] #Vulnerable."
+  },
+  {
+    "id": "Strike_Ironclad",
+    "name": "Strike (Ironclad)",
+    "type": "Attack",
+    "cost": 1,
+    "color": "Red",
+    "rarity": "Basic",
+    "logic": {
+      "target_type": "Enemy",
+      "commands": [
+        {
+          "type": "DealDamage",
+          "params": {
+            "base": 6,
+            "upgrade": 9
+          }
+        }
+      ]
+    },
+    "original_text": "Deal [6|9] damage."
+  },
+  {
+    "id": "Defend_Ironclad",
+    "name": "Defend (Ironclad)",
+    "type": "Skill",
+    "cost": 1,
+    "color": "Red",
+    "rarity": "Basic",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "GainBlock",
+          "params": {
+            "base": 5,
+            "upgrade": 8
+          }
+        }
+      ],
+      "keywords_used": [
+        "Block"
+      ]
+    },
+    "original_text": "Gain [5|8] #Block."
+  }
+]

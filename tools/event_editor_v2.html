@@ -1,0 +1,805 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>StS Event Tuner v2 - Master/Detail</title>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        [v-cloak] { display: none; }
+        * { box-sizing: border-box; }
+        body { overflow: hidden; }
+        .sidebar-scroll { height: calc(100vh - 120px); overflow-y: auto; }
+        .editor-scroll { height: calc(100vh - 60px); overflow-y: auto; }
+        .cheat-scroll { height: calc(100vh - 180px); overflow-y: auto; }
+        .event-item { transition: all 0.15s ease; }
+        .event-item:hover { background-color: rgba(59, 130, 246, 0.15); }
+        .event-item.active { background-color: rgba(59, 130, 246, 0.3); border-left: 3px solid #3b82f6; }
+        .event-item.dirty::after { content: " *"; color: #fbbf24; font-weight: bold; }
+        .json-textarea { font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace; font-size: 12px; }
+        .highlight-missing { box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.6); }
+        .copy-btn:active { transform: scale(0.95); }
+        .cheat-item:hover { background-color: rgba(59, 130, 246, 0.1); }
+        .scrollbar-thin::-webkit-scrollbar { width: 6px; }
+        .scrollbar-thin::-webkit-scrollbar-thumb { background: #4b5563; border-radius: 3px; }
+        .scrollbar-thin::-webkit-scrollbar-track { background: #1f2937; }
+        .fade-enter-active, .fade-leave-active { transition: opacity 0.15s ease; }
+        .fade-enter-from, .fade-leave-to { opacity: 0; }
+    </style>
+</head>
+<body class="bg-gray-900 text-gray-100">
+<div id="app" v-cloak class="h-screen flex flex-col">
+    <!-- Top Bar -->
+    <div class="bg-gray-800 border-b border-gray-700 px-4 py-3 flex items-center justify-between flex-shrink-0">
+        <div class="flex items-center gap-4">
+            <h1 class="text-xl font-bold text-yellow-400">
+                <i class="fas fa-dragon mr-2"></i>StS Event Tuner
+            </h1>
+            <span class="text-sm text-gray-400">
+                {{ Object.keys(eventsData).length }} events
+                <span v-if="dirtyCount > 0" class="text-yellow-400 ml-2">
+                    <i class="fas fa-pen"></i> {{ dirtyCount }} modified
+                </span>
+            </span>
+        </div>
+        <div class="flex items-center gap-3">
+            <label class="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded cursor-pointer transition text-sm">
+                <i class="fas fa-upload mr-2"></i>Load JSON
+                <input type="file" @change="loadFile" accept=".json" class="hidden">
+            </label>
+            <button @click="saveFile" class="bg-green-600 hover:bg-green-700 px-4 py-2 rounded transition text-sm">
+                <i class="fas fa-download mr-2"></i>Save JSON
+            </button>
+        </div>
+    </div>
+
+    <!-- Main 3-Column Layout -->
+    <div class="flex flex-1 overflow-hidden">
+        <!-- Column 1: Event Navigation -->
+        <div class="w-72 bg-gray-850 border-r border-gray-700 flex flex-col flex-shrink-0">
+            <!-- Search Box -->
+            <div class="p-3 border-b border-gray-700">
+                <div class="relative">
+                    <i class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-500"></i>
+                    <input type="text" 
+                           v-model="searchQuery" 
+                           @keydown="handleSearchKeydown"
+                           placeholder="Search events..." 
+                           class="w-full bg-gray-700 border border-gray-600 rounded-lg pl-10 pr-3 py-2 text-sm focus:outline-none focus:border-blue-500">
+                </div>
+                <div class="text-xs text-gray-500 mt-2">
+                    {{ filteredEventIds.length }} / {{ Object.keys(eventsData).length }} events
+                </div>
+            </div>
+            
+            <!-- Event List -->
+            <div class="sidebar-scroll scrollbar-thin">
+                <div v-if="Object.keys(eventsData).length === 0" class="p-4 text-center text-gray-500">
+                    <i class="fas fa-folder-open text-3xl mb-2"></i>
+                    <p class="text-sm">Load a JSON file to begin</p>
+                </div>
+                <div v-else class="py-1">
+                    <div v-for="(eventId, idx) in filteredEventIds" :key="eventId"
+                         @click="selectEvent(eventId)"
+                         class="event-item px-3 py-2 cursor-pointer text-sm"
+                         :class="{ 
+                             'active': selectedEventId === eventId,
+                             'dirty': dirtyEvents[eventId]
+                         }">
+                        <div class="font-medium text-gray-200 truncate" :title="eventId">
+                            {{ eventId }}
+                        </div>
+                        <div class="text-xs text-gray-500 truncate">
+                            {{ eventsData[eventId]?.name || 'No name' }}
+                            <span class="text-gray-600 ml-1">
+                                · {{ eventsData[eventId]?.options?.length || 0 }} opts
+                            </span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Column 2: Event Editor (Single Event Only) -->
+        <div class="flex-1 flex flex-col min-w-0 bg-gray-900">
+            <div class="editor-scroll scrollbar-thin p-4">
+                <!-- No Selection Placeholder -->
+                <div v-if="!selectedEventId" class="h-full flex items-center justify-center">
+                    <div class="text-center text-gray-500">
+                        <i class="fas fa-mouse-pointer text-6xl mb-4"></i>
+                        <p class="text-xl">Select an event from the left</p>
+                        <p class="text-sm mt-2">Or load a JSON file to get started</p>
+                    </div>
+                </div>
+
+                <!-- Event Editor Form -->
+                <div v-else-if="currentEvent" class="max-w-3xl mx-auto">
+                    <!-- Event Header -->
+                    <div class="bg-gray-800 rounded-lg border border-gray-700 mb-4">
+                        <div class="px-4 py-3 border-b border-gray-700 flex items-center justify-between">
+                            <div>
+                                <span class="text-yellow-400 font-bold text-lg">{{ selectedEventId }}</span>
+                                <span v-if="dirtyEvents[selectedEventId]" class="text-yellow-400 ml-2 text-sm">
+                                    <i class="fas fa-pen"></i> Modified
+                                </span>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <button @click="toggleRawMode" 
+                                        class="text-xs px-3 py-1.5 rounded transition"
+                                        :class="rawMode ? 'bg-purple-600' : 'bg-gray-600 hover:bg-gray-500'">
+                                    <i class="fas fa-code mr-1"></i>{{ rawMode ? 'Form View' : 'Raw JSON' }}
+                                </button>
+                                <button @click="resetEvent" class="text-gray-400 hover:text-white text-sm px-2 py-1" title="Reset changes">
+                                    <i class="fas fa-undo"></i>
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Display Name -->
+                        <div class="px-4 py-3">
+                            <label class="text-xs text-gray-400 uppercase tracking-wide">Display Name</label>
+                            <input v-model="currentEvent.name" 
+                                   @input="markDirty"
+                                   class="w-full mt-1 bg-gray-700 border border-gray-600 rounded px-3 py-2 focus:outline-none focus:border-blue-500">
+                        </div>
+                    </div>
+
+                    <!-- Raw JSON Mode -->
+                    <div v-if="rawMode" class="bg-gray-800 rounded-lg border border-gray-700 p-4">
+                        <textarea v-model="rawJsonText" 
+                                  @blur="applyRawJson"
+                                  class="json-textarea w-full h-96 bg-gray-900 border border-gray-600 rounded p-3 text-green-400 focus:outline-none focus:border-blue-500"
+                                  spellcheck="false"></textarea>
+                        <p v-if="rawJsonError" class="text-red-400 text-sm mt-2">
+                            <i class="fas fa-exclamation-circle mr-1"></i>{{ rawJsonError }}
+                        </p>
+                    </div>
+
+                    <!-- Form Mode -->
+                    <div v-else class="space-y-4">
+                        <!-- Options -->
+                        <div v-for="(option, optIdx) in currentEvent.options" :key="optIdx" 
+                             class="bg-gray-800 rounded-lg border border-gray-700 overflow-hidden">
+                            <!-- Option Header -->
+                            <div class="bg-gray-750 px-4 py-2 border-b border-gray-700 flex items-center gap-3">
+                                <span class="bg-blue-600 text-xs px-2 py-0.5 rounded font-medium">
+                                    Option {{ optIdx + 1 }}
+                                </span>
+                                <input v-model="option.label" 
+                                       @input="markDirty"
+                                       class="flex-1 bg-gray-700 border border-gray-600 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-blue-500">
+                                <button @click="deleteOption(optIdx)" class="text-red-400 hover:text-red-300 p-1">
+                                    <i class="fas fa-trash text-xs"></i>
+                                </button>
+                            </div>
+
+                            <div class="p-4 space-y-4">
+                                <!-- Conditions -->
+                                <div>
+                                    <div class="flex items-center justify-between mb-2">
+                                        <span class="text-xs text-gray-400 uppercase tracking-wide">
+                                            <i class="fas fa-lock mr-1"></i>Conditions
+                                        </span>
+                                        <button @click="addCondition(option)" class="text-xs text-blue-400 hover:text-blue-300">
+                                            <i class="fas fa-plus mr-1"></i>Add
+                                        </button>
+                                    </div>
+                                    <div v-if="option.conditions?.length" class="space-y-2">
+                                        <div v-for="(cond, cIdx) in option.conditions" :key="cIdx" 
+                                             class="flex items-center gap-2 bg-gray-900 rounded p-2 flex-wrap">
+                                            <select v-model="cond.type" @change="markDirty"
+                                                    class="bg-gray-700 border border-gray-600 rounded px-2 py-1 text-xs">
+                                                <option v-for="ct in conditionTypes" :value="ct">{{ ct }}</option>
+                                            </select>
+                                            <input v-if="['Gold', 'HasHighDamageCard'].includes(cond.type)" 
+                                                   type="number" v-model.number="cond.amount" @input="markDirty"
+                                                   class="w-20 bg-gray-700 border border-gray-600 rounded px-2 py-1 text-xs"
+                                                   placeholder="amount">
+                                            <input v-if="cond.type === 'HasRelic'" 
+                                                   v-model="cond.relic_id" @input="markDirty"
+                                                   class="flex-1 min-w-32 bg-gray-700 border border-gray-600 rounded px-2 py-1 text-xs"
+                                                   placeholder="relic_id">
+                                            <input v-if="cond.type === 'HasCardType'" 
+                                                   v-model="cond.card_type" @input="markDirty"
+                                                   class="w-24 bg-gray-700 border border-gray-600 rounded px-2 py-1 text-xs"
+                                                   placeholder="Attack/Skill/Power">
+                                            <button @click="removeCondition(option, cIdx)" class="text-red-400 text-xs p-1">
+                                                <i class="fas fa-times"></i>
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <div v-else class="text-xs text-gray-600 italic">No conditions</div>
+                                </div>
+
+                                <!-- Actions -->
+                                <div>
+                                    <div class="flex items-center justify-between mb-2">
+                                        <span class="text-xs text-gray-400 uppercase tracking-wide">
+                                            <i class="fas fa-bolt mr-1"></i>Actions
+                                        </span>
+                                        <button @click="addAction(option)" class="text-xs text-blue-400 hover:text-blue-300">
+                                            <i class="fas fa-plus mr-1"></i>Add
+                                        </button>
+                                    </div>
+                                    <div v-if="option.actions?.length" class="space-y-2">
+                                        <div v-for="(action, aIdx) in option.actions" :key="aIdx" 
+                                             class="bg-gray-900 rounded p-2"
+                                             :class="{'highlight-missing': isActionIncomplete(action)}">
+                                            <div class="flex items-center gap-2 flex-wrap">
+                                                <select v-model="action.type" @change="onActionTypeChange(action)"
+                                                        class="bg-gray-700 border border-gray-600 rounded px-2 py-1 text-xs font-medium">
+                                                    <option v-for="at in actionTypes" :value="at">{{ at }}</option>
+                                                </select>
+                                                
+                                                <!-- Heal / LoseHP -->
+                                                <template v-if="['Heal', 'LoseHP'].includes(action.type)">
+                                                    <input type="number" v-model.number="action.amount" step="0.01" @input="markDirty"
+                                                           class="w-20 bg-gray-700 border border-gray-600 rounded px-2 py-1 text-xs"
+                                                           placeholder="amount">
+                                                    <label class="flex items-center gap-1 text-xs text-gray-400">
+                                                        <input type="checkbox" v-model="action.is_percentage" @change="markDirty" class="rounded">
+                                                        <span>%</span>
+                                                    </label>
+                                                </template>
+                                                
+                                                <!-- Gold / MaxHP -->
+                                                <template v-if="['Gold', 'MaxHP'].includes(action.type)">
+                                                    <input type="number" v-model.number="action.amount" @input="markDirty"
+                                                           class="w-20 bg-gray-700 border border-gray-600 rounded px-2 py-1 text-xs"
+                                                           placeholder="amount">
+                                                    <label v-if="action.type === 'MaxHP'" class="flex items-center gap-1 text-xs text-gray-400">
+                                                        <input type="checkbox" v-model="action.is_percentage" @change="markDirty" class="rounded">
+                                                        <span>%</span>
+                                                    </label>
+                                                </template>
+                                                
+                                                <!-- GetRelic -->
+                                                <template v-if="action.type === 'GetRelic'">
+                                                    <select v-model="action.tier" @change="markDirty"
+                                                            class="bg-gray-700 border border-gray-600 rounded px-2 py-1 text-xs">
+                                                        <option value="">--tier--</option>
+                                                        <option value="Common">Common</option>
+                                                        <option value="Uncommon">Uncommon</option>
+                                                        <option value="Rare">Rare</option>
+                                                        <option value="Random">Random</option>
+                                                    </select>
+                                                    <input v-model="action.relic_id" @input="markDirty"
+                                                           class="flex-1 min-w-32 bg-gray-700 border border-gray-600 rounded px-2 py-1 text-xs"
+                                                           :class="{'border-yellow-500 bg-yellow-900/20': !action.relic_id && !action.tier}"
+                                                           placeholder="relic_id (specific)">
+                                                </template>
+                                                
+                                                <!-- LoseRelic -->
+                                                <template v-if="action.type === 'LoseRelic'">
+                                                    <input v-model="action.relic_id" @input="markDirty"
+                                                           class="flex-1 min-w-32 bg-gray-700 border border-gray-600 rounded px-2 py-1 text-xs"
+                                                           placeholder="relic_id">
+                                                </template>
+                                                
+                                                <!-- AddCard -->
+                                                <template v-if="action.type === 'AddCard'">
+                                                    <input v-model="action.card_id" @input="markDirty"
+                                                           class="flex-1 min-w-32 bg-gray-700 border border-gray-600 rounded px-2 py-1 text-xs"
+                                                           placeholder="card_id">
+                                                    <input type="number" v-model.number="action.count" min="1" @input="markDirty"
+                                                           class="w-16 bg-gray-700 border border-gray-600 rounded px-2 py-1 text-xs"
+                                                           placeholder="count">
+                                                </template>
+                                                
+                                                <!-- GetCard -->
+                                                <template v-if="action.type === 'GetCard'">
+                                                    <select v-model="action.color" @change="markDirty"
+                                                            class="bg-gray-700 border border-gray-600 rounded px-2 py-1 text-xs">
+                                                        <option value="Colorless">Colorless</option>
+                                                        <option value="Red">Red</option>
+                                                        <option value="Green">Green</option>
+                                                        <option value="Blue">Blue</option>
+                                                    </select>
+                                                    <input type="number" v-model.number="action.count" min="1" @input="markDirty"
+                                                           class="w-16 bg-gray-700 border border-gray-600 rounded px-2 py-1 text-xs"
+                                                           placeholder="count">
+                                                </template>
+                                                
+                                                <!-- LoseRandomCard -->
+                                                <template v-if="action.type === 'LoseRandomCard'">
+                                                    <select v-model="action.card_type" @change="markDirty"
+                                                            class="bg-gray-700 border border-gray-600 rounded px-2 py-1 text-xs">
+                                                        <option value="">Any</option>
+                                                        <option value="Attack">Attack</option>
+                                                        <option value="Skill">Skill</option>
+                                                        <option value="Power">Power</option>
+                                                    </select>
+                                                    <select v-model="action.rarity" @change="markDirty"
+                                                            class="bg-gray-700 border border-gray-600 rounded px-2 py-1 text-xs">
+                                                        <option value="">Any Rarity</option>
+                                                        <option value="Rare">Rare</option>
+                                                    </select>
+                                                </template>
+                                                
+                                                <!-- Combat -->
+                                                <template v-if="action.type === 'Combat'">
+                                                    <input v-model="action.enemy" @input="markDirty"
+                                                           class="flex-1 min-w-32 bg-gray-700 border border-gray-600 rounded px-2 py-1 text-xs"
+                                                           placeholder="enemy id">
+                                                </template>
+                                                
+                                                <!-- CardUpgradeRandom -->
+                                                <template v-if="action.type === 'CardUpgradeRandom'">
+                                                    <input type="number" v-model.number="action.count" min="1" @input="markDirty"
+                                                           class="w-16 bg-gray-700 border border-gray-600 rounded px-2 py-1 text-xs"
+                                                           placeholder="count">
+                                                </template>
+                                                
+                                                <!-- ApplyDebuff -->
+                                                <template v-if="action.type === 'ApplyDebuff'">
+                                                    <input v-model="action.debuff" @input="markDirty"
+                                                           class="flex-1 min-w-32 bg-gray-700 border border-gray-600 rounded px-2 py-1 text-xs"
+                                                           placeholder="debuff id">
+                                                </template>
+                                                
+                                                <button @click="removeAction(option, aIdx)" class="text-red-400 text-xs p-1 ml-auto">
+                                                    <i class="fas fa-times"></i>
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div v-else class="text-xs text-gray-600 italic">No actions</div>
+                                </div>
+
+                                <!-- Random Outcomes -->
+                                <div v-if="option.random_outcomes?.length">
+                                    <div class="flex items-center justify-between mb-2">
+                                        <span class="text-xs text-purple-400 uppercase tracking-wide">
+                                            <i class="fas fa-dice mr-1"></i>Random Outcomes
+                                        </span>
+                                        <button @click="addRandomOutcome(option)" class="text-xs text-purple-400 hover:text-purple-300">
+                                            <i class="fas fa-plus mr-1"></i>Add
+                                        </button>
+                                    </div>
+                                    <div class="space-y-3">
+                                        <div v-for="(outcome, oIdx) in option.random_outcomes" :key="oIdx" 
+                                             class="bg-purple-900/20 border border-purple-800 rounded p-3">
+                                            <div class="flex items-center gap-2 mb-2">
+                                                <span class="text-purple-400 text-xs font-medium">Chance:</span>
+                                                <input type="number" v-model.number="outcome.chance" step="0.01" min="0" max="1" @input="markDirty"
+                                                       class="w-20 bg-gray-700 border border-gray-600 rounded px-2 py-1 text-xs">
+                                                <span class="text-gray-400 text-xs">({{ (outcome.chance * 100).toFixed(0) }}%)</span>
+                                                <button @click="removeRandomOutcome(option, oIdx)" class="text-red-400 text-xs p-1 ml-auto">
+                                                    <i class="fas fa-times"></i>
+                                                </button>
+                                            </div>
+                                            <div class="pl-3 border-l-2 border-purple-600 space-y-1">
+                                                <div v-for="(act, actIdx) in outcome.actions" :key="actIdx" 
+                                                     class="text-xs bg-gray-800 rounded p-2 flex items-center gap-2">
+                                                    <span class="text-green-400 font-mono">{{ act.type }}</span>
+                                                    <span class="text-gray-500 truncate flex-1">{{ formatActionPreview(act) }}</span>
+                                                    <button @click="outcome.actions.splice(actIdx, 1); markDirty()" class="text-red-400">
+                                                        <i class="fas fa-times"></i>
+                                                    </button>
+                                                </div>
+                                                <button @click="addActionToOutcome(outcome)" class="text-xs text-purple-400 hover:text-purple-300">
+                                                    <i class="fas fa-plus mr-1"></i>Add Action
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div v-else>
+                                    <button @click="initRandomOutcomes(option)" class="text-xs text-purple-400 hover:text-purple-300">
+                                        <i class="fas fa-dice mr-1"></i>Add Random Outcomes
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Add Option Button -->
+                        <button @click="addOption" 
+                                class="w-full py-3 border-2 border-dashed border-gray-600 rounded-lg text-gray-400 hover:border-blue-500 hover:text-blue-400 transition">
+                            <i class="fas fa-plus mr-2"></i>Add Option
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Column 3: Cheat Sheet -->
+        <div class="w-72 bg-gray-800 border-l border-gray-700 flex flex-col flex-shrink-0">
+            <div class="px-4 py-3 border-b border-gray-700">
+                <h2 class="font-bold text-yellow-400">
+                    <i class="fas fa-book mr-2"></i>Cheat Sheet
+                </h2>
+                <p class="text-xs text-gray-500 mt-1">Click to copy JSON snippet</p>
+            </div>
+
+            <!-- Tabs -->
+            <div class="flex border-b border-gray-700 flex-shrink-0">
+                <button v-for="tab in ['Actions', 'Relics', 'Curses']" :key="tab"
+                        @click="cheatTab = tab"
+                        class="flex-1 px-2 py-2 text-xs transition"
+                        :class="cheatTab === tab ? 'bg-blue-600 text-white' : 'bg-gray-700 text-gray-400 hover:bg-gray-600'">
+                    {{ tab }}
+                </button>
+            </div>
+
+            <div class="cheat-scroll scrollbar-thin p-2">
+                <!-- Actions Tab -->
+                <div v-show="cheatTab === 'Actions'" class="space-y-1">
+                    <div v-for="action in cheatActions" :key="action.type"
+                         @click="copySnippet(action.snippet)"
+                         class="cheat-item p-2 rounded cursor-pointer copy-btn flex items-center gap-2 group">
+                        <span class="text-xs px-1.5 py-0.5 rounded font-medium" :class="action.color">
+                            {{ action.type }}
+                        </span>
+                        <span class="text-xs text-gray-500 flex-1 truncate">{{ action.desc }}</span>
+                        <i class="fas fa-copy text-gray-600 group-hover:text-blue-400 text-xs"></i>
+                    </div>
+                </div>
+
+                <!-- Relics Tab -->
+                <div v-show="cheatTab === 'Relics'" class="space-y-1">
+                    <input type="text" v-model="relicSearch" placeholder="Search relics..."
+                           class="w-full bg-gray-700 border border-gray-600 rounded px-3 py-1.5 text-xs mb-2">
+                    <p class="text-xs text-gray-600 mb-2">Event-specific relics:</p>
+                    <div v-for="relic in filteredRelics" :key="relic.id"
+                         @click="copySnippet(relic.snippet)"
+                         class="cheat-item p-2 rounded cursor-pointer copy-btn flex items-center gap-2 group">
+                        <span class="text-yellow-400 font-mono text-xs">{{ relic.id }}</span>
+                        <span class="text-xs text-gray-600 flex-1 truncate">{{ relic.event }}</span>
+                        <i class="fas fa-copy text-gray-600 group-hover:text-blue-400 text-xs"></i>
+                    </div>
+                </div>
+
+                <!-- Curses Tab -->
+                <div v-show="cheatTab === 'Curses'" class="space-y-1">
+                    <div v-for="curse in curses" :key="curse"
+                         @click="copySnippet(`{&quot;type&quot;: &quot;AddCard&quot;, &quot;card_id&quot;: &quot;${curse}&quot;}`)"
+                         class="cheat-item p-2 rounded cursor-pointer copy-btn flex items-center justify-between group">
+                        <span class="text-red-400 font-mono text-sm">{{ curse }}</span>
+                        <i class="fas fa-copy text-gray-600 group-hover:text-blue-400 text-xs"></i>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Quick Templates -->
+            <div class="border-t border-gray-700 p-3 flex-shrink-0">
+                <p class="text-xs text-gray-500 mb-2 font-medium">Quick Templates</p>
+                <div class="grid grid-cols-2 gap-2">
+                    <button @click="copySnippet('{&quot;type&quot;: &quot;Leave&quot;}')"
+                            class="bg-gray-700 hover:bg-gray-600 text-xs py-1.5 rounded">Leave</button>
+                    <button @click="copySnippet('{&quot;type&quot;: &quot;HealFull&quot;}')"
+                            class="bg-gray-700 hover:bg-gray-600 text-xs py-1.5 rounded">HealFull</button>
+                    <button @click="copySnippet('{&quot;type&quot;: &quot;CardRemove&quot;}')"
+                            class="bg-gray-700 hover:bg-gray-600 text-xs py-1.5 rounded">CardRemove</button>
+                    <button @click="copySnippet('{&quot;type&quot;: &quot;CardUpgrade&quot;}')"
+                            class="bg-gray-700 hover:bg-gray-600 text-xs py-1.5 rounded">CardUpgrade</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast -->
+    <Transition name="fade">
+        <div v-if="showToast" 
+             class="fixed bottom-4 left-1/2 -translate-x-1/2 bg-green-600 text-white px-4 py-2 rounded-lg shadow-lg flex items-center gap-2 z-50">
+            <i class="fas fa-check-circle"></i>
+            <span>{{ toastMessage }}</span>
+        </div>
+    </Transition>
+</div>
+
+<script>
+const { createApp, ref, reactive, computed, watch, nextTick } = Vue;
+
+createApp({
+    setup() {
+        // Core State
+        const eventsData = ref({});
+        const originalData = ref({});
+        const selectedEventId = ref(null);
+        const searchQuery = ref('');
+        const dirtyEvents = reactive({});
+        
+        // UI State
+        const rawMode = ref(false);
+        const rawJsonText = ref('');
+        const rawJsonError = ref('');
+        const cheatTab = ref('Actions');
+        const relicSearch = ref('');
+        const showToast = ref(false);
+        const toastMessage = ref('');
+
+        // Constants
+        const conditionTypes = [
+            'Gold', 'HasRelic', 'HasCurse', 'HasUpgradeableCard', 
+            'HasCardType', 'HasRareCard', 'HasHighDamageCard', 'HasNonStarterRelic'
+        ];
+
+        const actionTypes = [
+            'Leave', 'Gold', 'LoseAllGold',
+            'Heal', 'HealFull', 'LoseHP', 'MaxHP',
+            'CardRemove', 'CardUpgrade', 'CardUpgradeRandom', 'CardTransform', 'CardDuplicate',
+            'AddCard', 'GetCard', 'LoseRandomCard', 'RemoveAllCurses', 'RemoveAllStrikes',
+            'UpgradeAllCards', 'UpgradeAllStrikesAndDefends',
+            'GetRelic', 'LoseRelic', 'GetPotion',
+            'Combat', 'TeleportToBoss', 'RevealBoss', 'ApplyDebuff',
+            'BonfireSpiritsOffer', 'DeadAdventurerSearch', 'ScrapOozeReach',
+            'NlothTrade', 'WheelSpin', 'LibraryRead', 'MatchAndKeepGame', 'CursedTomeRead'
+        ];
+
+        const cheatActions = [
+            { type: 'Heal', desc: 'Restore HP', color: 'bg-green-600', snippet: '{"type": "Heal", "amount": 0.25, "is_percentage": true}' },
+            { type: 'HealFull', desc: 'Full HP', color: 'bg-green-700', snippet: '{"type": "HealFull"}' },
+            { type: 'LoseHP', desc: 'Take damage', color: 'bg-red-600', snippet: '{"type": "LoseHP", "amount": 10, "is_percentage": false}' },
+            { type: 'MaxHP', desc: 'Change max', color: 'bg-pink-600', snippet: '{"type": "MaxHP", "amount": 5}' },
+            { type: 'Gold', desc: 'Gain/lose', color: 'bg-yellow-600', snippet: '{"type": "Gold", "amount": 100}' },
+            { type: 'GetRelic', desc: 'Get relic', color: 'bg-purple-600', snippet: '{"type": "GetRelic", "relic_id": "REPLACE"}' },
+            { type: 'LoseRelic', desc: 'Lose relic', color: 'bg-purple-800', snippet: '{"type": "LoseRelic", "relic_id": "REPLACE"}' },
+            { type: 'GetPotion', desc: 'Get potion', color: 'bg-cyan-600', snippet: '{"type": "GetPotion"}' },
+            { type: 'CardRemove', desc: 'Remove', color: 'bg-blue-600', snippet: '{"type": "CardRemove"}' },
+            { type: 'CardUpgrade', desc: 'Upgrade', color: 'bg-blue-700', snippet: '{"type": "CardUpgrade"}' },
+            { type: 'CardTransform', desc: 'Transform', color: 'bg-indigo-600', snippet: '{"type": "CardTransform"}' },
+            { type: 'AddCard', desc: 'Add card', color: 'bg-orange-600', snippet: '{"type": "AddCard", "card_id": "REPLACE", "count": 1}' },
+            { type: 'Combat', desc: 'Fight', color: 'bg-red-700', snippet: '{"type": "Combat", "enemy": "REPLACE"}' },
+            { type: 'Leave', desc: 'Exit', color: 'bg-gray-600', snippet: '{"type": "Leave"}' },
+        ];
+
+        const eventRelics = [
+            { id: 'WarpedTongs', event: 'Accursed Blacksmith', snippet: '{"type": "GetRelic", "relic_id": "WarpedTongs"}' },
+            { id: 'GoldenIdol', event: 'Golden Idol', snippet: '{"type": "GetRelic", "relic_id": "GoldenIdol"}' },
+            { id: 'BloodyIdol', event: 'Forgotten Altar', snippet: '{"type": "GetRelic", "relic_id": "BloodyIdol"}' },
+            { id: 'RedMask', event: 'Tomb', snippet: '{"type": "GetRelic", "relic_id": "RedMask"}' },
+            { id: 'Necronomicon', event: 'Cursed Tome', snippet: '{"type": "GetRelic", "relic_id": "Necronomicon"}' },
+            { id: 'Enchiridion', event: 'Cursed Tome', snippet: '{"type": "GetRelic", "relic_id": "Enchiridion"}' },
+            { id: 'NilrysCodex', event: 'Cursed Tome', snippet: '{"type": "GetRelic", "relic_id": "NilrysCodex"}' },
+            { id: 'Mutagen', event: 'Lab', snippet: '{"type": "GetRelic", "relic_id": "Mutagen"}' },
+            { id: 'OddMushroom', event: 'Mushrooms', snippet: '{"type": "GetRelic", "relic_id": "OddMushroom"}' },
+            { id: 'SsserpentHead', event: 'Face Trader', snippet: '{"type": "GetRelic", "relic_id": "SsserpentHead"}' },
+            { id: 'NlothsHungryFace', event: 'Face Trader', snippet: '{"type": "GetRelic", "relic_id": "NlothsHungryFace"}' },
+            { id: 'NlothsGift', event: "N'loth", snippet: '{"type": "GetRelic", "relic_id": "NlothsGift"}' },
+            { id: 'SpiritPoop', event: 'Bonfire Spirits', snippet: '{"type": "GetRelic", "relic_id": "SpiritPoop"}' },
+            { id: 'JAX', event: 'Drug Dealer', snippet: '{"type": "GetRelic", "relic_id": "JAX"}' },
+        ];
+
+        const curses = ['Clumsy', 'Decay', 'Doubt', 'Injury', 'Normality', 'Pain', 'Parasite', 'Regret', 'Shame', 'Writhe'];
+
+        // Computed
+        const filteredEventIds = computed(() => {
+            const ids = Object.keys(eventsData.value);
+            if (!searchQuery.value) return ids;
+            const q = searchQuery.value.toLowerCase();
+            return ids.filter(id => 
+                id.toLowerCase().includes(q) || 
+                eventsData.value[id]?.name?.toLowerCase().includes(q)
+            );
+        });
+
+        const currentEvent = computed(() => {
+            return selectedEventId.value ? eventsData.value[selectedEventId.value] : null;
+        });
+
+        const dirtyCount = computed(() => Object.values(dirtyEvents).filter(Boolean).length);
+
+        const filteredRelics = computed(() => {
+            if (!relicSearch.value) return eventRelics;
+            const q = relicSearch.value.toLowerCase();
+            return eventRelics.filter(r => r.id.toLowerCase().includes(q) || r.event.toLowerCase().includes(q));
+        });
+
+        // Watch for raw mode sync
+        watch(selectedEventId, (newId) => {
+            rawMode.value = false;
+            rawJsonError.value = '';
+            if (newId && eventsData.value[newId]) {
+                rawJsonText.value = JSON.stringify(eventsData.value[newId], null, 2);
+            }
+        });
+
+        // Methods
+        function loadFile(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = (evt) => {
+                try {
+                    const data = JSON.parse(evt.target.result);
+                    eventsData.value = data;
+                    originalData.value = JSON.parse(evt.target.result); // Deep copy
+                    Object.keys(dirtyEvents).forEach(k => delete dirtyEvents[k]);
+                    selectedEventId.value = Object.keys(data)[0] || null;
+                    toast(`Loaded ${Object.keys(data).length} events`);
+                } catch (err) {
+                    alert('Invalid JSON: ' + err.message);
+                }
+            };
+            reader.readAsText(file);
+            e.target.value = ''; // Reset input
+        }
+
+        function saveFile() {
+            const blob = new Blob([JSON.stringify(eventsData.value, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'events_logic.json';
+            a.click();
+            URL.revokeObjectURL(url);
+            // Mark all as clean
+            Object.keys(dirtyEvents).forEach(k => delete dirtyEvents[k]);
+            originalData.value = JSON.parse(JSON.stringify(eventsData.value));
+            toast('File saved!');
+        }
+
+        function selectEvent(id) {
+            selectedEventId.value = id;
+        }
+
+        function handleSearchKeydown(e) {
+            const ids = filteredEventIds.value;
+            if (!ids.length) return;
+            const currentIdx = ids.indexOf(selectedEventId.value);
+            if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                const next = currentIdx < ids.length - 1 ? currentIdx + 1 : 0;
+                selectedEventId.value = ids[next];
+            } else if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                const prev = currentIdx > 0 ? currentIdx - 1 : ids.length - 1;
+                selectedEventId.value = ids[prev];
+            } else if (e.key === 'Enter' && ids.length) {
+                e.preventDefault();
+                if (!selectedEventId.value) selectedEventId.value = ids[0];
+            }
+        }
+
+        function markDirty() {
+            if (selectedEventId.value) {
+                dirtyEvents[selectedEventId.value] = true;
+            }
+        }
+
+        function toggleRawMode() {
+            if (!rawMode.value) {
+                rawJsonText.value = JSON.stringify(currentEvent.value, null, 2);
+            }
+            rawMode.value = !rawMode.value;
+        }
+
+        function applyRawJson() {
+            try {
+                eventsData.value[selectedEventId.value] = JSON.parse(rawJsonText.value);
+                rawJsonError.value = '';
+                markDirty();
+            } catch (err) {
+                rawJsonError.value = err.message;
+            }
+        }
+
+        function resetEvent() {
+            if (!selectedEventId.value || !originalData.value[selectedEventId.value]) return;
+            if (confirm('Reset all changes to this event?')) {
+                eventsData.value[selectedEventId.value] = JSON.parse(JSON.stringify(originalData.value[selectedEventId.value]));
+                delete dirtyEvents[selectedEventId.value];
+                rawJsonText.value = JSON.stringify(eventsData.value[selectedEventId.value], null, 2);
+            }
+        }
+
+        // Option/Action manipulation
+        function addOption() {
+            if (!currentEvent.value.options) currentEvent.value.options = [];
+            currentEvent.value.options.push({ label: '[New Option]', conditions: [], actions: [] });
+            markDirty();
+        }
+
+        function deleteOption(idx) {
+            if (confirm('Delete this option?')) {
+                currentEvent.value.options.splice(idx, 1);
+                markDirty();
+            }
+        }
+
+        function addCondition(option) {
+            if (!option.conditions) option.conditions = [];
+            option.conditions.push({ type: 'Gold', amount: 50 });
+            markDirty();
+        }
+
+        function removeCondition(option, idx) {
+            option.conditions.splice(idx, 1);
+            markDirty();
+        }
+
+        function addAction(option) {
+            if (!option.actions) option.actions = [];
+            option.actions.push({ type: 'Leave' });
+            markDirty();
+        }
+
+        function removeAction(option, idx) {
+            option.actions.splice(idx, 1);
+            markDirty();
+        }
+
+        function onActionTypeChange(action) {
+            // Clear extra fields when type changes
+            const baseKeys = ['type'];
+            Object.keys(action).forEach(k => {
+                if (!baseKeys.includes(k)) delete action[k];
+            });
+            markDirty();
+        }
+
+        function addRandomOutcome(option) {
+            if (!option.random_outcomes) option.random_outcomes = [];
+            option.random_outcomes.push({ chance: 0.5, actions: [] });
+            markDirty();
+        }
+
+        function removeRandomOutcome(option, idx) {
+            option.random_outcomes.splice(idx, 1);
+            markDirty();
+        }
+
+        function initRandomOutcomes(option) {
+            option.random_outcomes = [{ chance: 0.5, actions: [] }];
+            markDirty();
+        }
+
+        function addActionToOutcome(outcome) {
+            if (!outcome.actions) outcome.actions = [];
+            outcome.actions.push({ type: 'Leave' });
+            markDirty();
+        }
+
+        function isActionIncomplete(action) {
+            if (action.type === 'GetRelic' && !action.relic_id && !action.tier) return true;
+            if (action.type === 'AddCard' && !action.card_id) return true;
+            if (action.type === 'Combat' && !action.enemy) return true;
+            return false;
+        }
+
+        function formatActionPreview(action) {
+            const { type, ...rest } = action;
+            const parts = [];
+            if (rest.amount !== undefined) parts.push(`amount:${rest.amount}`);
+            if (rest.relic_id) parts.push(rest.relic_id);
+            if (rest.card_id) parts.push(rest.card_id);
+            if (rest.enemy) parts.push(rest.enemy);
+            return parts.join(', ') || '';
+        }
+
+        function copySnippet(snippet) {
+            const decoded = snippet.replace(/&quot;/g, '"');
+            navigator.clipboard.writeText(decoded);
+            toast('Copied!');
+        }
+
+        function toast(msg) {
+            toastMessage.value = msg;
+            showToast.value = true;
+            setTimeout(() => showToast.value = false, 1500);
+        }
+
+        return {
+            // State
+            eventsData, selectedEventId, searchQuery, dirtyEvents,
+            rawMode, rawJsonText, rawJsonError,
+            cheatTab, relicSearch, showToast, toastMessage,
+            // Constants
+            conditionTypes, actionTypes, cheatActions, eventRelics, curses,
+            // Computed
+            filteredEventIds, currentEvent, dirtyCount, filteredRelics,
+            // Methods
+            loadFile, saveFile, selectEvent, handleSearchKeydown,
+            markDirty, toggleRawMode, applyRawJson, resetEvent,
+            addOption, deleteOption, addCondition, removeCondition,
+            addAction, removeAction, onActionTypeChange,
+            addRandomOutcome, removeRandomOutcome, initRandomOutcomes, addActionToOutcome,
+            isActionIncomplete, formatActionPreview, copySnippet, toast
+        };
+    }
+}).mount('#app');
+</script>
+</body>
+</html>

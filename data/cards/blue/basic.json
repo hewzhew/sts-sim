@@ -1,0 +1,95 @@
+[
+  {
+    "id": "Strike_Defect",
+    "name": "Strike (Defect)",
+    "type": "Attack",
+    "cost": 1,
+    "color": "Blue",
+    "rarity": "Basic",
+    "logic": {
+      "target_type": "Enemy",
+      "commands": [
+        {
+          "type": "DealDamage",
+          "params": {
+            "base": 6,
+            "upgrade": 9
+          }
+        }
+      ]
+    },
+    "original_text": "Deal [6|9] damage."
+  },
+  {
+    "id": "Defend_Defect",
+    "name": "Defend (Defect)",
+    "type": "Skill",
+    "cost": 1,
+    "color": "Blue",
+    "rarity": "Basic",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "GainBlock",
+          "params": {
+            "base": 5,
+            "upgrade": 8
+          }
+        }
+      ],
+      "keywords_used": [
+        "Block"
+      ]
+    },
+    "original_text": "Gain [5|8] #Block."
+  },
+  {
+    "id": "Dualcast",
+    "name": "Dualcast",
+    "type": "Skill",
+    "cost": 1,
+    "color": "Blue",
+    "rarity": "Basic",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "EvokeOrb",
+          "params": {
+            "times_base": 1,
+            "times_upgrade": 1
+          }
+        }
+      ]
+    },
+    "original_text": "#Evoke your next Orb twice.",
+    "cost_upgrade": 0
+  },
+  {
+    "id": "Zap",
+    "name": "Zap",
+    "type": "Skill",
+    "cost": 1,
+    "color": "Blue",
+    "rarity": "Basic",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "ChannelOrb",
+          "params": {
+            "orb": "Lightning",
+            "count_base": 1,
+            "count_upgrade": 1
+          }
+        }
+      ],
+      "keywords_used": [
+        "Lightning"
+      ]
+    },
+    "original_text": "#Channel 1 #Lightning.",
+    "cost_upgrade": 0
+  }
+]

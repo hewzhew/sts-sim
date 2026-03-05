@@ -1,0 +1,125 @@
+Here are things that do not fit elsewhere but may still be useful.	
+	
+Statistic Name	Value
+Rare Card (Shop)	9%
+Uncommon Card (Shop)	37%
+Common Card (Shop)	54%
+Rare Card (Elite Rooms)	10%
+Uncommon Card (Elite Rooms)	40%
+Common Card (Elite Rooms)	50%
+Rare Card	3%
+Uncommon Card	37%
+Common Card	60%
+Rare Relic (not from chests)	17%
+Uncommon Relic (not from chests)	33%
+Common Relic (not from chests)	50%
+Shrine Chance (Chance an Event is a Shrine)	25%
+Common Potion	65%
+Uncommon Potion	25%
+Rare Potion	10%
+Normal Encounter Gold Drop	10-20
+Elite Encounter Gold Drop	25-35
+Boss Gold Drop	95-105
+	
+Small Chests:	50%
+Common Relic	75%
+Uncommon Relic	25%
+Gold Chance	50%
+Gold Amount	25, 10% variance
+	
+Medium Chests:	33%
+Common Relic	35%
+Uncommon Relic	50%
+Rare Relic	15%
+Gold Chance	35%
+Gold Amount	50, 10% variance
+	
+Large Chests:	17%
+Uncommon Relic	75%
+Rare Relic	25%
+Gold Chance	50%
+Gold Amount	75, 10% variance
+	
+Percentage of Random Rooms:	
+Normal Encounter	53%
+Elite Encounter	8%
+Rest Site	12%
+Shop	5%
+Unknown	22%
+	
+Unknown Rooms:	
+Normal Encounter	10%
+Normal Encounter Ramp	10%
+Elite Encounter (Deadly Events)	20%
+Elite Encounter Ramp (Deadly Events)	20%
+Shop	3%
+Shop Ramp	3%
+Treasure	2%
+Treasure Ramp	2%
+Treasure Ramp (Deadly Events)	4%
+	
+Shop Prices:	
+Common Card	50
+Uncommon Card	75
+Rare Card	150
+Colorless Card	20% more
+On Sale Card	50% less
+Card Price Variance (Not in Dailies)	10% less to 10% more
+Common Relic	150
+Uncommon Relic	250
+Rare Relic	300
+Shop Relic	150
+Relic Price Variance (Not in Dailies)	5% less to 5% more
+Common Potion	50
+Uncommon Potion	75
+Rare Potion	100
+Potion Price Variance (Not in Dailies)	5% less to 5% more
+	
+Note on card rarity rolls:	
+Rare cards start off at the listed percentage minus 5%, and the chance increases by 1% with every common card rolled. The same offset is subtracted from the chance for common cards (then uncommons, if necessary). When a rare card is rolled, the chance resets back to the listed value minus 5%. Only cards generated from card rewards affect the offset.	
+	
+	
+	
+	
+Note on unknown room rolls:	
+Unknown room contents start off at the listed percentage and increase by their ramp whenever the content is not rolled. Whenever the content is rolled, it resets back to its listed percentage. All contents take away from event probability, then treasure, then shop, if neccessary. All probabilities also reset upon entering a new Act.	
+	
+	
+	
+	
+Note on potion drop chance:	
+The chance for a potion to drop from any combat (including boss, elite, event, and normal combats) starts at 40% at the beginning of each Act. When a potion drops, the chance decreases by 10%, and when it doesn't drop, the chance increases by 10%.	
+	
+	
+Note on potion rarity:	
+The given potion rarities apply to most sources of potions, except for the Knowing Skull, Lab, Woman in Blue, and Neow events, as well as the Cauldron and Tiny House relics. These sources give you a potion uniformly at random, ignoring rarity.	
+	
+	
+	
+Ascension Mode Effects	Value
+1. Increase in Elites	~60%
+2. Deadlier Normal Enemies	
+3. Deadlier Elites	
+4. Deadlier Bosses	
+5. Percentage of missing HP healed after bosses	75%
+6. Percentage of HP missing at start of run	10%
+7. Tougher Normal Enemies	
+8. Tougher Elites	
+9. Tougher Bosses	
+10. Start with Ascender's Bane (unremovable curse)	
+11. Potion slots decreased by 1	
+12. Upgraded cards appear less often.	50% less
+13. Bosses drop less gold	25% less
+14. Lower Max HP	5 less for Ironclad, 4 for Silent/Defect/Watcher
+15. Unfavorable Events	
+16. More expensive cards/relics/potions in shops	10% more
+17. Normal enemies are more challenging	
+18. Elites are more challenging	
+19. Bosses are more challenging	
+20. Fight 2 different bosses at the end of Act 3	
+	
+Emerald Elite Buff	Value
+Increased Max HP	25%
+Strength	1 + Act #
+Metallicize	2 + 2 * Act #
+Regeneration	1 + 2 * Act #

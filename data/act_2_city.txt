@@ -1,0 +1,65 @@
+Global Statistics for the City:					
+Chance for upgraded cards: 25%					
+					
+First Two Combat Encounters:	Encounter Weight:	Details:			
+Spheric Guardian	2				
+Chosen	2				
+Shell Parasite	2				
+3 Byrds	2				
+2 Thieves	2	1 Looter on the left, and 1 Mugger on the right			
+					
+Remaining Combat Encounters:					
+Chosen and Byrds	2	1 Chosen and 1 Byrd			
+Cultist and Chosen	3	1 Chosen and 1 Cultist			
+Sentry and Sphere	2	1 Sentry and 1 Spheric Guardian			
+Snake Plant	6				
+Snecko	4				
+Centurion and Healer	6	1 Centurion and 1 Mystic			
+3 Cultists	3				
+Shelled Parasite and Fungi	3	1 Shelled Parasite, 1 Fungi Beast			
+					
+Elite Combat Encounters:					
+Gremlin Leader	1				
+Slavers	1	Slaver (Blue), Taskmaster, Slaver (Red)			
+Book of Stabbing	1				
+					
+Boss:					
+The Champ					
+Bronze Automaton					
+The Collector					
+					
+Regular Events:	Notes:				
+Ancient Writing					
+Augmenter					
+The Colosseum	Only above guaranteed chest floor				
+Council of Ghosts					
+Cursed Tome					
+Forgotten Altar					
+The Library					
+Masked Bandits					
+The Mausoleum					
+The Nest					
+Pleading Vagrant					
+Old Beggar	Only with at least 75 gold				
+Vampires(?)					
+					
+Shrine Events (Less common):	Notes:				
+Bonfire Spirits					
+The Divine Fountain	Only if cursed				
+Designer In-Spire	Only with at least 75 gold				
+Duplicator					
+Face Trader					
+Golden Shrine					
+The Joust	Only with at least 50 gold				
+Knowing Skull	Only with more than 12 HP				
+Lab					
+Match and Keep					
+A Note For Yourself	Disabled in Ascension 15+ and Dailies				
+N'Loth	Only with 2 or more relics				
+Ominous Forge					
+Purifier					
+Transmogrifier					
+Upgrade Shrine					
+We Meet Again					
+Wheel of Change					
+The Woman in Blue	Only with at least 50 gold				

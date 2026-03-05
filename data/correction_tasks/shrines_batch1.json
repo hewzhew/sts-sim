@@ -1,0 +1,316 @@
+{
+  "category": "shrines",
+  "batch": 1,
+  "events": [
+    {
+      "wiki_id": "A_Note_For_Yourself",
+      "wiki_name": "A Note For Yourself",
+      "logic_key": null,
+      "status": "pending",
+      "issues": [
+        "NOT_IN_LOGIC: 事件在 events_logic.json 中不存在，需要新增"
+      ],
+      "wiki_data": {
+        "options": [
+          {
+            "label": "[Take and Give]",
+            "description": "Receive and Store a Card",
+            "conditions": [],
+            "effects": [
+              "Receive a card that you had stored previously, and store a card in your deck in return.",
+              "The first time the player encounters this event in their save file, it will have  Iron Wave stored.",
+              "The first time the player encounters this event in their save file, it will have  Iron Wave stored."
+            ]
+          },
+          {
+            "label": "[Ignore]",
+            "description": "Nothing happens.",
+            "conditions": [],
+            "effects": [
+              "You are then given the option to"
+            ]
+          },
+          {
+            "label": "[Leave]",
+            "description": ".",
+            "conditions": [],
+            "effects": []
+          }
+        ],
+        "notes": [
+          "This event can store a card between runs, and allows the player to obtain a card from a different character.",
+          "On  14 or lower, the player must have beaten that Ascension level on the chosen character in order to encounter this event.",
+          "On  15 or higher, this event cannot be encountered.",
+          "Playing the Daily Climb also disables this event.",
+          "If you store an upgraded card, it remains upgraded when found on another run.",
+          "Searing Blow retains its upgrade level when it was stored.",
+          "Searing Blow retains its upgrade level when it was stored.",
+          "Retrieving a card is considered adding a card to your deck, and will trigger relics such as  Molten Egg,  Toxic Egg,  Frozen Egg, and  Ceramic Fish."
+        ]
+      },
+      "existing_data": {
+        "name": null,
+        "options": []
+      },
+      "corrections": []
+    },
+    {
+      "wiki_id": "Bonfire_Spirits",
+      "wiki_name": "Bonfire Spirits",
+      "logic_key": "Bonfire Elementals",
+      "status": "pending",
+      "issues": [
+        "OPTION_COUNT_MISMATCH: Wiki有1个选项, Logic有2个",
+        "MISSING_OPTIONS: Logic缺少选项 {'[offer]'}",
+        "EXTRA_OPTIONS: Logic多余选项 {'[leave]', '[offer] receive reward based on card rarity'}"
+      ],
+      "wiki_data": {
+        "options": [
+          {
+            "label": "[Offer]",
+            "description": "Receive a reward based on the offer.",
+            "conditions": [],
+            "effects": [
+              "Offer a card in your deck to remove. The reward you receive depends on the rarity of the card you give."
+            ]
+          }
+        ],
+        "notes": [
+          "This event is one of those that treats Basic cards as a lower quality than Common.",
+          "Obtaining  Spirit Poop adds the Poopy Score bonus which lowers your total score by one."
+        ]
+      },
+      "existing_data": {
+        "name": "Bonfire Spirits",
+        "options": [
+          {
+            "label": "[Offer] Receive reward based on card rarity",
+            "conditions": [],
+            "actions": [
+              {
+                "type": "BonfireSpiritsOffer"
+              }
+            ],
+            "offer_outcomes": {
+              "curse": {
+                "actions": [
+                  {
+                    "type": "GetRelic",
+                    "tier": "Common"
+                  }
+                ]
+              },
+              "common": {
+                "actions": [
+                  {
+                    "type": "Heal",
+                    "amount": 5,
+                    "is_percentage": false
+                  }
+                ]
+              },
+              "uncommon": {
+                "actions": [
+                  {
+                    "type": "HealFull"
+                  }
+                ]
+              },
+              "rare": {
+                "actions": [
+                  {
+                    "type": "MaxHP",
+                    "amount": 10
+                  },
+                  {
+                    "type": "HealFull"
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "label": "[Leave]",
+            "conditions": [],
+            "actions": [
+              {
+                "type": "Leave"
+              }
+            ]
+          }
+        ]
+      },
+      "corrections": []
+    },
+    {
+      "wiki_id": "Duplicator",
+      "wiki_name": "Duplicator",
+      "logic_key": "Duplicator",
+      "status": "pending",
+      "issues": [
+        "MISSING_OPTIONS: Logic缺少选项 {'[pray]'}",
+        "EXTRA_OPTIONS: Logic多余选项 {'[pray] duplicate a card in your deck'}"
+      ],
+      "wiki_data": {
+        "options": [
+          {
+            "label": "[Pray]",
+            "description": "Duplicate a card in your deck.",
+            "conditions": [],
+            "effects": []
+          },
+          {
+            "label": "[Leave]",
+            "description": "Nothing happens.",
+            "conditions": [],
+            "effects": []
+          }
+        ],
+        "notes": []
+      },
+      "existing_data": {
+        "name": "Duplicator",
+        "options": [
+          {
+            "label": "[Pray] Duplicate a card in your deck",
+            "conditions": [],
+            "actions": [
+              {
+                "type": "CardDuplicate"
+              }
+            ]
+          },
+          {
+            "label": "[Leave]",
+            "conditions": [],
+            "actions": [
+              {
+                "type": "Leave"
+              }
+            ]
+          }
+        ]
+      },
+      "corrections": []
+    },
+    {
+      "wiki_id": "Golden_Shrine",
+      "wiki_name": "Golden Shrine",
+      "logic_key": "Golden Shrine",
+      "status": "pending",
+      "issues": [
+        "MISSING_OPTIONS: Logic缺少选项 {'[pray]', '[desecrate]'}",
+        "EXTRA_OPTIONS: Logic多余选项 {'[pray] gain 100 gold', '[desecrate] gain 250 gold. become cursed - regret'}"
+      ],
+      "wiki_data": {
+        "options": [
+          {
+            "label": "[Pray]",
+            "description": "Gain 100 Gold.",
+            "conditions": [],
+            "effects": []
+          },
+          {
+            "label": "[Desecrate]",
+            "description": "Gain 275 Gold. Become Cursed -  Regret.",
+            "conditions": [],
+            "effects": [
+              "Regret -  Unplayable. At the end of your turn, lose HP equal to the number of cards in your hand."
+            ]
+          },
+          {
+            "label": "[Leave]",
+            "description": "Nothing happens.",
+            "conditions": [],
+            "effects": []
+          }
+        ],
+        "notes": []
+      },
+      "existing_data": {
+        "name": "Golden Shrine",
+        "options": [
+          {
+            "label": "[Pray] Gain 100 Gold",
+            "conditions": [],
+            "actions": [
+              {
+                "type": "Gold",
+                "amount": 100
+              }
+            ]
+          },
+          {
+            "label": "[Desecrate] Gain 250 Gold. Become Cursed - Regret",
+            "conditions": [],
+            "actions": [
+              {
+                "type": "Gold",
+                "amount": 250
+              },
+              {
+                "type": "AddCard",
+                "card_id": "Regret"
+              }
+            ]
+          },
+          {
+            "label": "[Leave]",
+            "conditions": [],
+            "actions": [
+              {
+                "type": "Leave"
+              }
+            ]
+          }
+        ]
+      },
+      "corrections": []
+    },
+    {
+      "wiki_id": "Lab",
+      "wiki_name": "Lab",
+      "logic_key": "Lab",
+      "status": "pending",
+      "issues": [
+        "MISSING_OPTIONS: Logic缺少选项 {'[search]'}",
+        "EXTRA_OPTIONS: Logic多余选项 {'[search] find 3 potions'}"
+      ],
+      "wiki_data": {
+        "options": [
+          {
+            "label": "[Search]",
+            "description": "Find some Potions!",
+            "conditions": [],
+            "effects": [
+              "Opens a rewards menu with three (two 15) random Potions. These can be skipped."
+            ]
+          }
+        ],
+        "notes": []
+      },
+      "existing_data": {
+        "name": "Lab",
+        "options": [
+          {
+            "label": "[Search] Find 3 Potions",
+            "conditions": [],
+            "actions": [
+              {
+                "type": "GetPotion"
+              },
+              {
+                "type": "GetPotion"
+              },
+              {
+                "type": "GetPotion"
+              }
+            ]
+          }
+        ]
+      },
+      "corrections": []
+    }
+  ],
+  "instructions": "\n校对说明:\n1. 查看每个事件的 issues 列表\n2. 对比 wiki_data 和 existing_data 的差异\n3. 在 corrections 中填写需要的修正\n4. 完成后将 status 改为 \"reviewed\"\n\ncorrections 格式示例:\n- {\"action\": \"add_option\", \"label\": \"[新选项]\", \"data\": {...}}\n- {\"action\": \"fix_label\", \"old\": \"[错误]\", \"new\": \"[正确]\"}\n- {\"action\": \"add_event\", \"data\": {...}}\n"
+}

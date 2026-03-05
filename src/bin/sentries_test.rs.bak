@@ -1,0 +1,294 @@
+#![allow(unused_imports, unused_variables, dead_code, unused_mut, unused_assignments)]
+//! Real combat simulation: Ironclad vs 3 Sentries (Act 1 Elite)
+//!
+//! Run with: cargo run --release --bin sentries_test
+//!
+//! Expected: 0-20% win rate with greedy play (Sentries flood your deck with Daze)
+//! Pattern: Sentry1=Bolt, Sentry2=Beam, Sentry3=Bolt then alternate
+
+use std::env;
+use std::time::Instant;
+
+use sts_sim::schema::CardInstance;
+use sts_sim::state::GameState;
+use sts_sim::enemy::MonsterState;
+use sts_sim::loader::{CardLibrary, MonsterLibrary};
+use sts_sim::engine;
+
+struct CombatResult {
+    won: bool,
+    turns: usize,
+    player_hp: i32,
+    enemies_alive: usize,
+    cards_played: u32,
+    daze_count: u32,
+}
+
+fn run_sentries_combat(
+    seed: u64,
+    card_library: &CardLibrary,
+    monster_library: &MonsterLibrary,
+    max_turns: usize,
+    verbose: bool,
+) -> CombatResult {
+    let mut state = GameState::new(seed);
+
+    // Spawn 3 Sentries
+    let sentry_def = monster_library.get("Sentry").expect("Sentry not in monster library");
+    
+    // Sentry 1: starts with Bolt (init_sequence default)
+    let sentry1 = MonsterState::new(sentry_def, &mut state.rng, false);
+    state.enemies.push(sentry1);
+    
+    // Sentry 2: starts with Beam (odd spawn index in Java)
+    // Java: lastIndexOf(this) % 2 == 1 閳?Beam
+    // We simulate this by seeding move_history with "Bolt" and skipping init.
+    // select_alternating sees last_move="Bolt" 閳?picks cycle[1]="Beam"
+    // Verified against: monsters/exordium/Sentry.java 閳?getMove()
+    let mut sentry2 = MonsterState::new(sentry_def, &mut state.rng, false);
+    sentry2.is_middle = true;
+    sentry2.turn = 1;  // plan_next_move will increment to 2, past init_sequence(len=1)
+    sentry2.move_history.push_front("Bolt".to_string());  // Fake last move
+    state.enemies.push(sentry2);
+    
+    // Sentry 3: starts with Bolt (init_sequence default)
+    let sentry3 = MonsterState::new(sentry_def, &mut state.rng, false);
+    state.enemies.push(sentry3);
+
+    if verbose {
+        for (i, e) in state.enemies.iter().enumerate() {
+            println!("  Sentry {}: {}/{} HP", i+1, e.hp, e.max_hp);
+        }
+    }
+
+    // Build Ironclad starter deck: 5 Strike, 4 Defend, 1 Bash
+    for _ in 0..5 {
+        state.obtain_card(CardInstance::new("Strike_Ironclad".to_string(), 1));
+    }
+    for _ in 0..4 {
+        state.obtain_card(CardInstance::new("Defend_Ironclad".to_string(), 1));
+    }
+    state.obtain_card(CardInstance::new("Bash".to_string(), 2));
+    state.shuffle_draw_pile();
+
+    // Battle start
+    engine::on_battle_start(&mut state, card_library, None);
+    engine::plan_enemy_moves(&mut state, monster_library);
+
+    let mut total_cards_played: u32 = 0;
+
+    for turn in 0..max_turns {
+        if verbose {
+            println!("\n--- Turn {} ---", turn + 1);
+            println!("  Player: {} HP, {} Block, {} Energy", 
+                state.player.current_hp, state.player.block, state.player.energy);
+            for (i, e) in state.enemies.iter().enumerate() {
+                if !e.is_dead() {
+                    println!("  Sentry {}: {} HP, intent: {}", i+1, e.hp, e.current_move);
+                }
+            }
+            println!("  Hand: {}, Draw: {}, Discard: {}", 
+                state.hand.len(), state.draw_pile.len(), state.discard_pile.len());
+        }
+
+        // === Player turn ===
+        state.start_turn();
+        engine::on_turn_start(&mut state, card_library, None);
+
+        // Greedy strategy: play first playable card each step
+        // Skip Daze cards (they're unplayable status cards, cost 99 or similar)
+        loop {
+            let playable_idx = state.hand.iter().position(|c| {
+                c.current_cost >= 0 && c.current_cost <= state.player.energy
+            });
+
+            match playable_idx {
+                Some(idx) => {
+                    // Find first alive enemy as target
+                    let target = state.enemies.iter().position(|e| !e.is_dead());
+                    
+                    match engine::play_card_from_hand(&mut state, card_library, idx, target) {
+                        Ok(_) => {
+                            total_cards_played += 1;
+                        }
+                        Err(e) => {
+                            if verbose {
+                                println!("  Card error: {}", e);
+                            }
+                            break;
+                        }
+                    }
+
+                    // Check win
+                    if state.combat_won() {
+                        let daze_count = count_dazes(&state);
+                        return CombatResult {
+                            won: true,
+                            turns: turn + 1,
+                            player_hp: state.player.current_hp,
+                            enemies_alive: 0,
+                            cards_played: total_cards_played,
+                            daze_count,
+                        };
+                    }
+                }
+                None => break,
+            }
+        }
+
+        engine::on_turn_end(&mut state, card_library, None);
+        state.end_turn();
+
+        // === Enemy turn ===
+        engine::execute_enemy_turn(&mut state, monster_library);
+
+        // Check loss
+        if state.player.current_hp <= 0 {
+            let daze_count = count_dazes(&state);
+            let enemies_alive = state.enemies.iter().filter(|e| !e.is_dead()).count();
+            return CombatResult {
+                won: false,
+                turns: turn + 1,
+                player_hp: 0,
+                enemies_alive,
+                cards_played: total_cards_played,
+                daze_count,
+            };
+        }
+
+        // Note: plan_enemy_moves is already called inside execute_enemy_turn
+    }
+
+    // Timeout = loss
+    let daze_count = count_dazes(&state);
+    let enemies_alive = state.enemies.iter().filter(|e| !e.is_dead()).count();
+    CombatResult {
+        won: false,
+        turns: max_turns,
+        player_hp: state.player.current_hp,
+        enemies_alive,
+        cards_played: total_cards_played,
+        daze_count,
+    }
+}
+
+fn count_dazes(state: &GameState) -> u32 {
+    let mut count = 0u32;
+    for card in &state.hand {
+        if card.definition_id == "Dazed" { count += 1; }
+    }
+    for card in &state.draw_pile {
+        if card.definition_id == "Dazed" { count += 1; }
+    }
+    for card in &state.discard_pile {
+        if card.definition_id == "Dazed" { count += 1; }
+    }
+    count
+}
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let num_games: u32 = env::args().nth(1)
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(10);
+
+    println!("閳烘柡鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫧");
+    println!("閳? Real Combat Test: Ironclad vs 3 Sentries ({:>5} games)  閳?, num_games);
+    println!("閳烘埃鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ殕\n");
+
+    let card_library = CardLibrary::load("data/cards")?;
+    let monster_library = MonsterLibrary::load("data/monsters_with_behavior.json")?;
+    println!("棣冩憥 Loaded {} cards, {} monsters", card_library.len(), monster_library.len());
+
+    // Run one verbose game first
+    println!("\n閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀?);
+    println!("棣冩敵 Sample game (seed=42, verbose):");
+    println!("閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀?);
+    let sample = run_sentries_combat(42, &card_library, &monster_library, 50, true);
+    println!("\n  Result: {} in {} turns, Player HP: {}, Enemies alive: {}, Dazes: {}",
+        if sample.won { "WIN" } else { "LOSS" },
+        sample.turns, sample.player_hp, sample.enemies_alive, sample.daze_count);
+
+    // Run N games
+    println!("\n閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀?);
+    println!("棣冩惓 Running {} games...", num_games);
+    println!("閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀?);
+    let start = Instant::now();
+
+    let mut wins = 0u32;
+    let mut losses = 0u32;
+    let mut timeouts = 0u32;
+    let mut total_turns = 0u64;
+    let mut win_hp_sum = 0i64;
+    let mut total_dazes = 0u64;
+    let mut total_cards = 0u64;
+    let mut loss_enemies_alive: [u32; 4] = [0; 4]; // 0,1,2,3 enemies alive at loss
+
+    for i in 0..num_games {
+        let result = run_sentries_combat(i as u64, &card_library, &monster_library, 50, false);
+
+        total_turns += result.turns as u64;
+        total_dazes += result.daze_count as u64;
+        total_cards += result.cards_played as u64;
+
+        if result.won {
+            wins += 1;
+            win_hp_sum += result.player_hp as i64;
+        } else if result.turns >= 50 {
+            timeouts += 1;
+        } else {
+            losses += 1;
+            loss_enemies_alive[result.enemies_alive.min(3)] += 1;
+        }
+    }
+
+    let elapsed = start.elapsed();
+    let win_rate = wins as f64 / num_games as f64 * 100.0;
+
+    println!("\n閳烘柡鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫧");
+    println!("閳? Results: {} games vs 3 Sentries                         閳?, num_games);
+    println!("閳虹姭鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ殠");
+    println!("閳? Win rate:       {:5.1}% ({}/{})                        閳?,
+        win_rate, wins, num_games);
+    println!("閳? Loss rate:      {:5.1}% ({}/{})                        閳?,
+        losses as f64 / num_games as f64 * 100.0, losses, num_games);
+    println!("閳? Timeouts:       {:5.1}% ({}/{})                        閳?,
+        timeouts as f64 / num_games as f64 * 100.0, timeouts, num_games);
+    println!("閳? Avg turns:      {:5.1}                                  閳?,
+        total_turns as f64 / num_games as f64);
+    println!("閳? Avg cards/game: {:5.1}                                  閳?,
+        total_cards as f64 / num_games as f64);
+    println!("閳? Avg dazes:      {:5.1}                                  閳?,
+        total_dazes as f64 / num_games as f64);
+    if wins > 0 {
+        println!("閳? Avg HP on win:  {:5.1}                                  閳?,
+            win_hp_sum as f64 / wins as f64);
+    }
+    println!("閳? Time:           {:5.2}s ({:.0} games/sec)               閳?,
+        elapsed.as_secs_f64(), num_games as f64 / elapsed.as_secs_f64());
+    println!("閳虹姭鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ殠");
+    println!("閳? Loss breakdown (enemies still alive):                   閳?);
+    println!("閳?   0 alive: {}  1 alive: {}  2 alive: {}  3 alive: {}    閳?,
+        loss_enemies_alive[0], loss_enemies_alive[1], 
+        loss_enemies_alive[2], loss_enemies_alive[3]);
+    println!("閳烘埃鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ殕");
+
+    // Sanity checks
+    println!("\n棣冩敵 Sanity Check:");
+    if win_rate > 50.0 {
+        println!("   閳跨媴绗?Win rate too high ({:.1}%) 閳?something is wrong with enemy damage/AI", win_rate);
+        println!("      Random play vs 3 Sentries should be 0-20% at best");
+    } else if win_rate < 1.0 {
+        println!("   閳╃櫢绗?Win rate very low ({:.1}%) 閳?may be correct for random play vs elite", win_rate);
+    } else {
+        println!("   閴?Win rate {:.1}% looks reasonable", win_rate);
+    }
+
+    let avg_dazes = total_dazes as f64 / num_games as f64;
+    if avg_dazes < 1.0 {
+        println!("   閳跨媴绗?Very few Dazes ({:.1} avg) 閳?Bolt/Daze mechanic might not be working", avg_dazes);
+    } else {
+        println!("   閴?Avg {:.1} Dazes per game 閳?Bolt mechanic is working", avg_dazes);
+    }
+
+    Ok(())
+}

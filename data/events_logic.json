@@ -1,0 +1,1203 @@
+{
+  "Accursed Blacksmith": {
+    "name": "Ominous Forge",
+    "options": [
+      {
+        "label": "[Forge] Upgrade a card",
+        "conditions": [
+          { "type": "HasUpgradeableCard" }
+        ],
+        "actions": [],
+        "random_outcomes": [
+          {
+            "chance": 0.75,
+            "actions": [{ "type": "CardUpgrade" }]
+          },
+          {
+            "chance": 0.25,
+            "actions": [
+              { "type": "CardUpgrade" },
+              { "type": "AddCard", "card_id": "Injury" }
+            ]
+          }
+        ]
+      },
+      {
+        "label": "[Rummage] Obtain a Relic",
+        "conditions": [],
+        "actions": [],
+        "random_outcomes": [
+          {
+            "chance": 0.25,
+            "actions": [{ "type": "GetRelic", "tier": "Random" }]
+          },
+          {
+            "chance": 0.75,
+            "actions": [
+              { "type": "GetRelic", "tier": "Random" },
+              { "type": "AddCard", "card_id": "Normality" }
+            ]
+          }
+        ]
+      },
+      {
+        "label": "[Leave]",
+        "conditions": [],
+        "actions": [{ "type": "Leave" }]
+      }
+    ]
+  },
+
+  "Addict": {
+    "name": "Addicted",
+    "options": [
+      {
+        "label": "[Offer Gold] Receive a Relic",
+        "conditions": [
+          { "type": "Gold", "amount": 75 }
+        ],
+        "actions": [
+          { "type": "Gold", "amount": -75 },
+          { "type": "GetRelic", "tier": "Random" }
+        ]
+      },
+      {
+        "label": "[Give JAX] Receive a Relic",
+        "conditions": [
+          { "type": "HasRelic", "relic_id": "J.A.X." }
+        ],
+        "actions": [
+          { "type": "LoseRelic", "relic_id": "J.A.X." },
+          { "type": "GetRelic", "tier": "Random" }
+        ]
+      },
+      {
+        "label": "[Leave]",
+        "conditions": [],
+        "actions": [{ "type": "Leave" }]
+      }
+    ]
+  },
+
+  "Back to Basics": {
+    "name": "Ancient Writing",
+    "options": [
+      {
+        "label": "[Elegance] Remove a card from your deck",
+        "conditions": [],
+        "actions": [{ "type": "CardRemove" }]
+      },
+      {
+        "label": "[Simplicity] Upgrade all Strikes and Defends",
+        "conditions": [],
+        "actions": [{ "type": "UpgradeAllStrikesAndDefends" }]
+      }
+    ]
+  },
+
+  "Beggar": {
+    "name": "Old Beggar",
+    "options": [
+      {
+        "label": "[Offer Gold] Remove a card from your deck",
+        "conditions": [
+          { "type": "Gold", "amount": 75 }
+        ],
+        "actions": [
+          { "type": "Gold", "amount": -75 },
+          { "type": "CardRemove" }
+        ]
+      },
+      {
+        "label": "[Leave]",
+        "conditions": [],
+        "actions": [{ "type": "Leave" }]
+      }
+    ]
+  },
+
+  "Big Fish": {
+    "name": "Big Fish",
+    "options": [
+      {
+        "label": "[Banana] Heal 1/3 HP",
+        "conditions": [],
+        "actions": [{ "type": "Heal", "amount": 0.33, "is_percentage": true }]
+      },
+      {
+        "label": "[Donut] Max HP +5",
+        "conditions": [],
+        "actions": [{ "type": "MaxHP", "amount": 5 }]
+      },
+      {
+        "label": "[Box] Receive a Relic. Become Cursed - Regret",
+        "conditions": [],
+        "actions": [
+          { "type": "GetRelic", "tier": "Random" },
+          { "type": "AddCard", "card_id": "Regret" }
+        ]
+      }
+    ]
+  },
+
+  "Bonfire Elementals": {
+    "name": "Bonfire Spirits",
+    "options": [
+      {
+        "label": "[Offer] Receive reward based on card rarity",
+        "conditions": [],
+        "actions": [{ "type": "BonfireSpiritsOffer" }],
+        "offer_outcomes": {
+          "curse": { "actions": [{ "type": "GetRelic", "tier": "Common" }] },
+          "common": { "actions": [{ "type": "Heal", "amount": 5, "is_percentage": false }] },
+          "uncommon": { "actions": [{ "type": "HealFull" }] },
+          "rare": { "actions": [{ "type": "MaxHP", "amount": 10 }, { "type": "HealFull" }] }
+        }
+      },
+      {
+        "label": "[Leave]",
+        "conditions": [],
+        "actions": [{ "type": "Leave" }]
+      }
+    ]
+  },
+
+  "Cursed Tome": {
+    "name": "Cursed Tome",
+    "options": [
+      {
+        "label": "[Read] Continue reading (costs HP)",
+        "conditions": [],
+        "actions": [{ "type": "CursedTomeRead" }],
+        "progression": [
+          { "hp_cost": 1 },
+          { "hp_cost": 2 },
+          { "hp_cost": 3 }
+        ],
+        "final_reward": { "type": "GetRelic", "relic_id": "Necronomicon" }
+      },
+      {
+        "label": "[Stop] Leave",
+        "conditions": [],
+        "actions": [{ "type": "Leave" }]
+      }
+    ]
+  },
+
+  "Dead Adventurer": {
+    "name": "Dead Adventurer",
+    "options": [
+      {
+        "label": "[Search] Find Loot (risk of combat)",
+        "conditions": [],
+        "actions": [{ "type": "DeadAdventurerSearch" }],
+        "search_outcomes": {
+          "gold_chance": 0.35,
+          "relic_chance": 0.25,
+          "combat_chance": 0.25
+        }
+      },
+      {
+        "label": "[Leave]",
+        "conditions": [],
+        "actions": [{ "type": "Leave" }]
+      }
+    ]
+  },
+
+  "Drug Dealer": {
+    "name": "J.A.X. Dealer",
+    "options": [
+      {
+        "label": "[Pay] Get JAXXED",
+        "conditions": [
+          { "type": "Gold", "amount": 50 }
+        ],
+        "actions": [
+          { "type": "Gold", "amount": -50 },
+          { "type": "GetRelic", "relic_id": "J.A.X." }
+        ]
+      },
+      {
+        "label": "[Leave]",
+        "conditions": [],
+        "actions": [{ "type": "Leave" }]
+      }
+    ]
+  },
+
+  "Duplicator": {
+    "name": "Duplicator",
+    "options": [
+      {
+        "label": "[Pray] Duplicate a card in your deck",
+        "conditions": [],
+        "actions": [{ "type": "CardDuplicate" }]
+      },
+      {
+        "label": "[Leave]",
+        "conditions": [],
+        "actions": [{ "type": "Leave" }]
+      }
+    ]
+  },
+
+  "Falling": {
+    "name": "Falling",
+    "options": [
+      {
+        "label": "[Land] Lose a Skill card",
+        "conditions": [
+          { "type": "HasCardType", "card_type": "Skill" }
+        ],
+        "actions": [{ "type": "LoseRandomCard", "card_type": "Skill" }]
+      },
+      {
+        "label": "[Channel] Lose a Power card",
+        "conditions": [
+          { "type": "HasCardType", "card_type": "Power" }
+        ],
+        "actions": [{ "type": "LoseRandomCard", "card_type": "Power" }]
+      },
+      {
+        "label": "[Strike] Lose an Attack card",
+        "conditions": [
+          { "type": "HasCardType", "card_type": "Attack" }
+        ],
+        "actions": [{ "type": "LoseRandomCard", "card_type": "Attack" }]
+      }
+    ]
+  },
+
+  "Forgotten Altar": {
+    "name": "Forgotten Altar",
+    "options": [
+      {
+        "label": "[Offer: Golden Idol] Receive Bloody Idol",
+        "conditions": [
+          { "type": "HasRelic", "relic_id": "Golden Idol" }
+        ],
+        "actions": [
+          { "type": "LoseRelic", "relic_id": "Golden Idol" },
+          { "type": "GetRelic", "relic_id": "Bloody Idol" }
+        ]
+      },
+      {
+        "label": "[Sacrifice] Gain Max HP, Lose HP",
+        "conditions": [],
+        "actions": [
+          { "type": "MaxHP", "amount": 5 },
+          { "type": "LoseHP", "amount": 0.25, "is_percentage": true }
+        ]
+      },
+      {
+        "label": "[Desecrate] Become Cursed - Decay",
+        "conditions": [],
+        "actions": [{ "type": "AddCard", "card_id": "Decay" }]
+      }
+    ]
+  },
+
+  "Fountain of Cleansing": {
+    "name": "The Divine Fountain",
+    "options": [
+      {
+        "label": "[Drink] Remove all Curses from your deck",
+        "conditions": [
+          { "type": "HasCurse" }
+        ],
+        "actions": [{ "type": "RemoveAllCurses" }]
+      },
+      {
+        "label": "[Leave]",
+        "conditions": [],
+        "actions": [{ "type": "Leave" }]
+      }
+    ]
+  },
+
+  "Ghosts": {
+    "name": "Council of Ghosts",
+    "options": [
+      {
+        "label": "[Accept] Obtain 5 Apparition. Lose Max HP",
+        "conditions": [],
+        "actions": [
+          { "type": "AddCard", "card_id": "Apparition", "count": 5 },
+          { "type": "MaxHP", "amount": -0.50, "is_percentage": true }
+        ]
+      },
+      {
+        "label": "[Refuse]",
+        "conditions": [],
+        "actions": [{ "type": "Leave" }]
+      }
+    ]
+  },
+
+  "Golden Idol": {
+    "name": "Golden Idol",
+    "options": [
+      {
+        "label": "[Take] Receive Golden Idol. Trigger a trap",
+        "conditions": [],
+        "actions": [
+          { "type": "GetRelic", "relic_id": "Golden Idol" }
+        ],
+        "trap_options": [
+          {
+            "label": "[Outrun] Become Cursed - Injury",
+            "actions": [{ "type": "AddCard", "card_id": "Injury" }]
+          },
+          {
+            "label": "[Smash] Take damage",
+            "actions": [{ "type": "LoseHP", "amount": 0.25, "is_percentage": true }]
+          },
+          {
+            "label": "[Hide] Lose Max HP",
+            "actions": [{ "type": "MaxHP", "amount": -0.08, "is_percentage": true }]
+          }
+        ]
+      },
+      {
+        "label": "[Leave]",
+        "conditions": [],
+        "actions": [{ "type": "Leave" }]
+      }
+    ]
+  },
+
+  "Golden Shrine": {
+    "name": "Golden Shrine",
+    "options": [
+      {
+        "label": "[Pray] Gain 100 Gold",
+        "conditions": [],
+        "actions": [{ "type": "Gold", "amount": 100 }]
+      },
+      {
+        "label": "[Desecrate] Gain 250 Gold. Become Cursed - Regret",
+        "conditions": [],
+        "actions": [
+          { "type": "Gold", "amount": 250 },
+          { "type": "AddCard", "card_id": "Regret" }
+        ]
+      },
+      {
+        "label": "[Leave]",
+        "conditions": [],
+        "actions": [{ "type": "Leave" }]
+      }
+    ]
+  },
+
+  "Golden Wing": {
+    "name": "Wing Statue",
+    "options": [
+      {
+        "label": "[Pray] Remove a card. Lose 7 HP",
+        "conditions": [],
+        "actions": [
+          { "type": "CardRemove" },
+          { "type": "LoseHP", "amount": 7, "is_percentage": false }
+        ]
+      },
+      {
+        "label": "[Destroy] Gain Gold",
+        "conditions": [
+          { "type": "HasHighDamageCard", "min_damage": 10 }
+        ],
+        "actions": [
+          { "type": "Gold", "amount": 50, "variance": 25 }
+        ]
+      },
+      {
+        "label": "[Leave]",
+        "conditions": [],
+        "actions": [{ "type": "Leave" }]
+      }
+    ]
+  },
+
+  "Knowing Skull": {
+    "name": "Knowing Skull",
+    "options": [
+      {
+        "label": "[Information?] Reveal the Boss",
+        "conditions": [],
+        "actions": [
+          { "type": "RevealBoss" },
+          { "type": "LoseHP", "amount": 6, "is_percentage": false }
+        ]
+      },
+      {
+        "label": "[Success?] Get a Colorless Card",
+        "conditions": [],
+        "actions": [
+          { "type": "GetCard", "color": "Colorless" },
+          { "type": "LoseHP", "amount": 6, "is_percentage": false }
+        ]
+      },
+      {
+        "label": "[A Pick Me Up?] Get a Potion",
+        "conditions": [],
+        "actions": [
+          { "type": "GetPotion" },
+          { "type": "LoseHP", "amount": 6, "is_percentage": false }
+        ]
+      },
+      {
+        "label": "[Riches?] Gain 90 Gold",
+        "conditions": [],
+        "actions": [
+          { "type": "Gold", "amount": 90 },
+          { "type": "LoseHP", "amount": 6, "is_percentage": false }
+        ]
+      },
+      {
+        "label": "[How do I leave?] Exit",
+        "conditions": [],
+        "actions": [
+          { "type": "LoseHP", "amount": 6, "is_percentage": false },
+          { "type": "Leave" }
+        ]
+      }
+    ]
+  },
+
+  "Lab": {
+    "name": "Lab",
+    "options": [
+      {
+        "label": "[Search] Find 3 Potions",
+        "conditions": [],
+        "actions": [
+          { "type": "GetPotion" },
+          { "type": "GetPotion" },
+          { "type": "GetPotion" }
+        ]
+      }
+    ]
+  },
+
+  "Liars Game": {
+    "name": "The Ssssserpent",
+    "options": [
+      {
+        "label": "[Agree] Receive 175 Gold. Become Cursed - Doubt",
+        "conditions": [],
+        "actions": [
+          { "type": "Gold", "amount": 175 },
+          { "type": "AddCard", "card_id": "Doubt" }
+        ]
+      },
+      {
+        "label": "[Disagree]",
+        "conditions": [],
+        "actions": [{ "type": "Leave" }]
+      }
+    ]
+  },
+
+  "Living Wall": {
+    "name": "Living Wall",
+    "options": [
+      {
+        "label": "[Forget] Remove a card in your deck",
+        "conditions": [],
+        "actions": [{ "type": "CardRemove" }]
+      },
+      {
+        "label": "[Change] Transform a card in your deck",
+        "conditions": [],
+        "actions": [{ "type": "CardTransform" }]
+      },
+      {
+        "label": "[Grow] Upgrade a card in your deck",
+        "conditions": [
+          { "type": "HasUpgradeableCard" }
+        ],
+        "actions": [{ "type": "CardUpgrade" }]
+      }
+    ]
+  },
+
+  "Masked Bandits": {
+    "name": "Masked Bandits",
+    "options": [
+      {
+        "label": "[Pay] Lose ALL of your Gold",
+        "conditions": [],
+        "actions": [{ "type": "LoseAllGold" }]
+      },
+      {
+        "label": "[Fight!] Combat encounter",
+        "conditions": [],
+        "actions": [{ "type": "Combat", "enemy": "Masked Bandits" }]
+      }
+    ]
+  },
+
+  "Match and Keep!": {
+    "name": "Match and Keep!",
+    "options": [
+      {
+        "label": "[Play] Play matching game",
+        "conditions": [],
+        "actions": [{ "type": "MatchAndKeepGame", "attempts": 5 }]
+      },
+      {
+        "label": "[Leave]",
+        "conditions": [],
+        "actions": [{ "type": "Leave" }]
+      }
+    ]
+  },
+
+  "Mushrooms": {
+    "name": "Mushrooms",
+    "options": [
+      {
+        "label": "[Stomp] Anger the Mushrooms (combat)",
+        "conditions": [],
+        "actions": [{ "type": "Combat", "enemy": "Fungi Beasts" }]
+      },
+      {
+        "label": "[Eat] Heal 25% HP. Become Cursed - Parasite",
+        "conditions": [],
+        "actions": [
+          { "type": "Heal", "amount": 0.25, "is_percentage": true },
+          { "type": "AddCard", "card_id": "Parasite" }
+        ]
+      }
+    ]
+  },
+
+  "Mysterious Sphere": {
+    "name": "Mysterious Sphere",
+    "options": [
+      {
+        "label": "[Open Sphere] Fight. Reward: Rare Relic",
+        "conditions": [],
+        "actions": [
+          { "type": "Combat", "enemy": "2 Orb Walkers" },
+          { "type": "GetRelic", "tier": "Rare" }
+        ]
+      },
+      {
+        "label": "[Leave]",
+        "conditions": [],
+        "actions": [{ "type": "Leave" }]
+      }
+    ]
+  },
+
+  "N'loth": {
+    "name": "N'loth",
+    "options": [
+      {
+        "label": "[Offer Relic] Trade a relic for N'loth's Gift",
+        "conditions": [
+          { "type": "HasNonStarterRelic" }
+        ],
+        "actions": [
+          { "type": "NlothTrade" }
+        ]
+      },
+      {
+        "label": "[Leave]",
+        "conditions": [],
+        "actions": [{ "type": "Leave" }]
+      }
+    ]
+  },
+
+  "Purifier": {
+    "name": "Purifier",
+    "options": [
+      {
+        "label": "[Pray] Remove a card from your deck",
+        "conditions": [],
+        "actions": [{ "type": "CardRemove" }]
+      },
+      {
+        "label": "[Leave]",
+        "conditions": [],
+        "actions": [{ "type": "Leave" }]
+      }
+    ]
+  },
+
+  "Scrap Ooze": {
+    "name": "Scrap Ooze",
+    "options": [
+      {
+        "label": "[Reach Inside] Lose HP for chance at Relic",
+        "conditions": [],
+        "actions": [{ "type": "ScrapOozeReach" }],
+        "reach_mechanics": {
+          "hp_per_attempt": 3,
+          "base_chance": 0.25,
+          "chance_increment": 0.25,
+          "max_attempts": 4
+        }
+      },
+      {
+        "label": "[Leave]",
+        "conditions": [],
+        "actions": [{ "type": "Leave" }]
+      }
+    ]
+  },
+
+  "SecretPortal": {
+    "name": "Secret Portal",
+    "options": [
+      {
+        "label": "[Enter the Portal] IMMEDIATELY travel to the boss",
+        "conditions": [],
+        "actions": [{ "type": "TeleportToBoss" }]
+      },
+      {
+        "label": "[Leave]",
+        "conditions": [],
+        "actions": [{ "type": "Leave" }]
+      }
+    ]
+  },
+
+  "SensoryStone": {
+    "name": "Sensory Stone",
+    "options": [
+      {
+        "label": "[Recall] Add 1 Colorless card to your deck",
+        "conditions": [],
+        "actions": [{ "type": "GetCard", "color": "Colorless", "count": 1 }]
+      },
+      {
+        "label": "[Recall] Add 2 Colorless cards. Lose 5 HP",
+        "conditions": [],
+        "actions": [
+          { "type": "GetCard", "color": "Colorless", "count": 2 },
+          { "type": "LoseHP", "amount": 5, "is_percentage": false }
+        ]
+      },
+      {
+        "label": "[Recall] Add 3 Colorless cards. Lose 10 HP",
+        "conditions": [],
+        "actions": [
+          { "type": "GetCard", "color": "Colorless", "count": 3 },
+          { "type": "LoseHP", "amount": 10, "is_percentage": false }
+        ]
+      },
+      {
+        "label": "[Leave]",
+        "conditions": [],
+        "actions": [{ "type": "Leave" }]
+      }
+    ]
+  },
+
+  "Shining Light": {
+    "name": "Shining Light",
+    "options": [
+      {
+        "label": "[Enter] Upgrade 2 random cards. Lose HP",
+        "conditions": [
+          { "type": "HasUpgradeableCard" }
+        ],
+        "actions": [
+          { "type": "CardUpgradeRandom", "count": 2 },
+          { "type": "LoseHP", "amount": 0.20, "is_percentage": true }
+        ]
+      },
+      {
+        "label": "[Leave]",
+        "conditions": [],
+        "actions": [{ "type": "Leave" }]
+      }
+    ]
+  },
+
+  "The Cleric": {
+    "name": "The Cleric",
+    "options": [
+      {
+        "label": "[Heal] Pay 35 Gold: Heal 20 HP",
+        "conditions": [
+          { "type": "Gold", "amount": 35 }
+        ],
+        "actions": [
+          { "type": "Gold", "amount": -35 },
+          { "type": "Heal", "amount": 20, "is_percentage": false }
+        ]
+      },
+      {
+        "label": "[Purify] Pay 50 Gold: Remove a card",
+        "conditions": [
+          { "type": "Gold", "amount": 50 }
+        ],
+        "actions": [
+          { "type": "Gold", "amount": -50 },
+          { "type": "CardRemove" }
+        ]
+      },
+      {
+        "label": "[Leave]",
+        "conditions": [],
+        "actions": [{ "type": "Leave" }]
+      }
+    ]
+  },
+
+  "The Joust": {
+    "name": "The Joust",
+    "options": [
+      {
+        "label": "[Murderer] Bet Gold - 70% win",
+        "conditions": [
+          { "type": "Gold", "amount": 50 }
+        ],
+        "actions": [],
+        "random_outcomes": [
+          {
+            "chance": 0.70,
+            "actions": [{ "type": "Gold", "amount": 100 }]
+          },
+          {
+            "chance": 0.30,
+            "actions": [{ "type": "Gold", "amount": -50 }]
+          }
+        ]
+      },
+      {
+        "label": "[Owner] Bet Gold - 30% win big",
+        "conditions": [
+          { "type": "Gold", "amount": 50 }
+        ],
+        "actions": [],
+        "random_outcomes": [
+          {
+            "chance": 0.30,
+            "actions": [{ "type": "Gold", "amount": 250 }]
+          },
+          {
+            "chance": 0.70,
+            "actions": [{ "type": "Gold", "amount": -50 }]
+          }
+        ]
+      },
+      {
+        "label": "[Watch]",
+        "conditions": [],
+        "actions": [{ "type": "Leave" }]
+      }
+    ]
+  },
+
+  "The Library": {
+    "name": "The Library",
+    "options": [
+      {
+        "label": "[Read] Choose 1 of 20 cards to add to your deck",
+        "conditions": [],
+        "actions": [{ "type": "LibraryRead", "choices": 20 }]
+      },
+      {
+        "label": "[Sleep] Heal 30% HP",
+        "conditions": [],
+        "actions": [{ "type": "Heal", "amount": 0.30, "is_percentage": true }]
+      },
+      {
+        "label": "[Leave]",
+        "conditions": [],
+        "actions": [{ "type": "Leave" }]
+      }
+    ]
+  },
+
+  "The Mausoleum": {
+    "name": "The Mausoleum",
+    "options": [
+      {
+        "label": "[Open Coffin] Receive a Relic (50% Cursed)",
+        "conditions": [],
+        "actions": [],
+        "random_outcomes": [
+          {
+            "chance": 0.50,
+            "actions": [{ "type": "GetRelic", "tier": "Random" }]
+          },
+          {
+            "chance": 0.50,
+            "actions": [
+              { "type": "GetRelic", "tier": "Random" },
+              { "type": "AddCard", "card_id": "Writhe" }
+            ]
+          }
+        ]
+      },
+      {
+        "label": "[Leave]",
+        "conditions": [],
+        "actions": [{ "type": "Leave" }]
+      }
+    ]
+  },
+
+  "The Moai Head": {
+    "name": "The Moai Head",
+    "options": [
+      {
+        "label": "[Jump Inside] Heal to full HP. Lose Max HP",
+        "conditions": [],
+        "actions": [
+          { "type": "HealFull" },
+          { "type": "MaxHP", "amount": -0.12, "is_percentage": true }
+        ]
+      },
+      {
+        "label": "[Offer: Golden Idol] Receive 333 Gold",
+        "conditions": [
+          { "type": "HasRelic", "relic_id": "Golden Idol" }
+        ],
+        "actions": [
+          { "type": "LoseRelic", "relic_id": "Golden Idol" },
+          { "type": "Gold", "amount": 333 }
+        ]
+      },
+      {
+        "label": "[Leave]",
+        "conditions": [],
+        "actions": [{ "type": "Leave" }]
+      }
+    ]
+  },
+
+  "The Woman in Blue": {
+    "name": "The Woman in Blue",
+    "options": [
+      {
+        "label": "[Buy 1 Potion] Pay 20 Gold",
+        "conditions": [
+          { "type": "Gold", "amount": 20 }
+        ],
+        "actions": [
+          { "type": "Gold", "amount": -20 },
+          { "type": "GetPotion" }
+        ]
+      },
+      {
+        "label": "[Buy 2 Potions] Pay 30 Gold",
+        "conditions": [
+          { "type": "Gold", "amount": 30 }
+        ],
+        "actions": [
+          { "type": "Gold", "amount": -30 },
+          { "type": "GetPotion" },
+          { "type": "GetPotion" }
+        ]
+      },
+      {
+        "label": "[Buy 3 Potions] Pay 40 Gold",
+        "conditions": [
+          { "type": "Gold", "amount": 40 }
+        ],
+        "actions": [
+          { "type": "Gold", "amount": -40 },
+          { "type": "GetPotion" },
+          { "type": "GetPotion" },
+          { "type": "GetPotion" }
+        ]
+      },
+      {
+        "label": "[Leave] Take 5 Damage",
+        "conditions": [],
+        "actions": [
+          { "type": "LoseHP", "amount": 5, "is_percentage": false },
+          { "type": "Leave" }
+        ]
+      }
+    ]
+  },
+
+  "Thinking with Puddles": {
+    "name": "Thinking with Puddles",
+    "options": [
+      {
+        "label": "[Gooped] Lose a random Rare card",
+        "conditions": [
+          { "type": "HasRareCard" }
+        ],
+        "actions": [{ "type": "LoseRandomCard", "rarity": "Rare" }]
+      },
+      {
+        "label": "[Land Face First] Take damage. Become Cursed - Injury",
+        "conditions": [],
+        "actions": [
+          { "type": "LoseHP", "amount": 0.10, "is_percentage": true },
+          { "type": "AddCard", "card_id": "Injury" }
+        ]
+      }
+    ]
+  },
+
+  "Tomb of Lord Red Mask": {
+    "name": "Tomb of Lord Red Mask",
+    "options": [
+      {
+        "label": "[Don the Red Mask] Gain 222 Gold",
+        "conditions": [
+          { "type": "HasRelic", "relic_id": "Red Mask" }
+        ],
+        "actions": [{ "type": "Gold", "amount": 222 }]
+      },
+      {
+        "label": "[Offer Gold] Lose all Gold. Gain a Relic",
+        "conditions": [
+          { "type": "Gold", "amount": 1 }
+        ],
+        "actions": [
+          { "type": "LoseAllGold" },
+          { "type": "GetRelic", "tier": "Random" }
+        ]
+      },
+      {
+        "label": "[Leave]",
+        "conditions": [],
+        "actions": [{ "type": "Leave" }]
+      }
+    ]
+  },
+
+  "Transmorgrifier": {
+    "name": "Transmogrifier",
+    "options": [
+      {
+        "label": "[Pray] Transform a card",
+        "conditions": [],
+        "actions": [{ "type": "CardTransform" }]
+      },
+      {
+        "label": "[Leave]",
+        "conditions": [],
+        "actions": [{ "type": "Leave" }]
+      }
+    ]
+  },
+
+  "Upgrade Shrine": {
+    "name": "Upgrade Shrine",
+    "options": [
+      {
+        "label": "[Pray] Upgrade a card",
+        "conditions": [
+          { "type": "HasUpgradeableCard" }
+        ],
+        "actions": [{ "type": "CardUpgrade" }]
+      },
+      {
+        "label": "[Leave]",
+        "conditions": [],
+        "actions": [{ "type": "Leave" }]
+      }
+    ]
+  },
+
+  "Vampires": {
+    "name": "Vampires(?)",
+    "options": [
+      {
+        "label": "[Accept] Remove all Strikes. Obtain 5 Bites. Lose 30% Max HP",
+        "conditions": [],
+        "actions": [
+          { "type": "RemoveAllStrikes" },
+          { "type": "AddCard", "card_id": "Bite", "count": 5 },
+          { "type": "MaxHP", "amount": -0.30, "is_percentage": true }
+        ]
+      },
+      {
+        "label": "[Offer Blood Vial] Remove all Strikes. Obtain 5 Bites",
+        "conditions": [
+          { "type": "HasRelic", "relic_id": "Blood Vial" }
+        ],
+        "actions": [
+          { "type": "LoseRelic", "relic_id": "Blood Vial" },
+          { "type": "RemoveAllStrikes" },
+          { "type": "AddCard", "card_id": "Bite", "count": 5 }
+        ]
+      },
+      {
+        "label": "[Refuse]",
+        "conditions": [],
+        "actions": [{ "type": "Leave" }]
+      }
+    ]
+  },
+
+  "Wheel of Change": {
+    "name": "Wheel of Change",
+    "options": [
+      {
+        "label": "[Play] Spin the wheel",
+        "conditions": [],
+        "actions": [{ "type": "WheelSpin" }],
+        "wheel_outcomes": [
+          { "chance": 0.166, "actions": [{ "type": "Gold", "amount": 100 }] },
+          { "chance": 0.166, "actions": [{ "type": "GetRelic", "tier": "Random" }] },
+          { "chance": 0.166, "actions": [{ "type": "HealFull" }] },
+          { "chance": 0.166, "actions": [{ "type": "AddCard", "card_id": "Decay" }] },
+          { "chance": 0.166, "actions": [{ "type": "CardRemove" }] },
+          { "chance": 0.166, "actions": [{ "type": "LoseHP", "amount": 10, "is_percentage": false }] }
+        ]
+      },
+      {
+        "label": "[Leave]",
+        "conditions": [],
+        "actions": [{ "type": "Leave" }]
+      }
+    ]
+  },
+
+  "Winding Halls": {
+    "name": "Winding Halls",
+    "options": [
+      {
+        "label": "[Embrace Madness] Receive 2 Madness. Lose 10 HP",
+        "conditions": [],
+        "actions": [
+          { "type": "AddCard", "card_id": "Madness", "count": 2 },
+          { "type": "LoseHP", "amount": 10, "is_percentage": false }
+        ]
+      },
+      {
+        "label": "[Focus] Become Cursed - Writhe. Heal HP",
+        "conditions": [],
+        "actions": [
+          { "type": "AddCard", "card_id": "Writhe" },
+          { "type": "Heal", "amount": 0.20, "is_percentage": true }
+        ]
+      },
+      {
+        "label": "[Leave]",
+        "conditions": [],
+        "actions": [{ "type": "Leave" }]
+      }
+    ]
+  },
+
+  "World of Goop": {
+    "name": "World of Goop",
+    "options": [
+      {
+        "label": "[Gather Gold] Gain 75 Gold. Lose 11 HP",
+        "conditions": [],
+        "actions": [
+          { "type": "Gold", "amount": 75 },
+          { "type": "LoseHP", "amount": 11, "is_percentage": false }
+        ]
+      },
+      {
+        "label": "[Leave It] Lose 20% Gold",
+        "conditions": [],
+        "actions": [{ "type": "Gold", "amount": -0.20, "is_percentage": true }]
+      }
+    ]
+  },
+
+  "MindBloom": {
+    "name": "Mind Bloom",
+    "options": [
+      {
+        "label": "[I am War] Fight Act 1 Boss. Receive Rare Relic",
+        "conditions": [],
+        "actions": [
+          { "type": "Combat", "enemy": "Act1Boss" },
+          { "type": "GetRelic", "tier": "Rare" }
+        ]
+      },
+      {
+        "label": "[I am Rich] Gain 999 Gold. Cursed - 2 Normality",
+        "conditions": [],
+        "actions": [
+          { "type": "Gold", "amount": 999 },
+          { "type": "AddCard", "card_id": "Normality", "count": 2 }
+        ]
+      },
+      {
+        "label": "[I am Healthy] Heal to full HP. Cursed - Doubt",
+        "conditions": [],
+        "actions": [
+          { "type": "HealFull" },
+          { "type": "AddCard", "card_id": "Doubt" }
+        ]
+      },
+      {
+        "label": "[I am Awake] Upgrade all Cards. Cannot heal anymore",
+        "conditions": [],
+        "actions": [
+          { "type": "UpgradeAllCards" },
+          { "type": "ApplyDebuff", "debuff": "MarkOfTheBloom" }
+        ]
+      }
+    ]
+  },
+
+  "Nest": {
+    "name": "The Nest",
+    "options": [
+      {
+        "label": "[Stay in Line] Obtain Ritual Dagger. Lose 6 HP",
+        "conditions": [],
+        "actions": [
+          { "type": "AddCard", "card_id": "Ritual Dagger" },
+          { "type": "LoseHP", "amount": 6, "is_percentage": false }
+        ]
+      },
+      {
+        "label": "[Smash and Grab] Obtain Gold",
+        "conditions": [],
+        "actions": [{ "type": "Gold", "amount": 99 }]
+      },
+      {
+        "label": "[Leave]",
+        "conditions": [],
+        "actions": [{ "type": "Leave" }]
+      }
+    ]
+  },
+
+  "FaceTrader": {
+    "name": "Face Trader",
+    "options": [
+      {
+        "label": "[Touch] Lose HP, gain Gold",
+        "conditions": [],
+        "actions": [
+          { "type": "LoseHP", "amount": 0.10, "is_percentage": true },
+          { "type": "Gold", "amount": 50 }
+        ]
+      },
+      {
+        "label": "[Trade] 50% Good Face, 50% Bad Face",
+        "conditions": [],
+        "actions": [],
+        "random_outcomes": [
+          {
+            "chance": 0.50,
+            "actions": [{ "type": "GetRelic", "relic_id": "Ssserpent Head" }]
+          },
+          {
+            "chance": 0.50,
+            "actions": [{ "type": "GetRelic", "relic_id": "N'loth's Hungry Face" }]
+          }
+        ]
+      },
+      {
+        "label": "[Leave]",
+        "conditions": [],
+        "actions": [{ "type": "Leave" }]
+      }
+    ]
+  }
+}

@@ -1,0 +1,926 @@
+[
+  {
+    "id": "All-Out_Attack",
+    "name": "All-Out Attack",
+    "type": "Attack",
+    "cost": 1,
+    "color": "Green",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "AllEnemies",
+      "commands": [
+        {
+          "type": "DealDamageAll",
+          "params": {
+            "base": 10,
+            "upgrade": 14
+          }
+        },
+        {
+          "type": "Discard",
+          "params": {
+            "count": 1,
+            "random": true
+          }
+        }
+      ]
+    },
+    "original_text": "Deal [10|14] damage to ALL enemies.<br>Discard 1 card at random."
+  },
+  {
+    "id": "Backstab",
+    "name": "Backstab",
+    "type": "Attack",
+    "cost": 0,
+    "color": "Green",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "Enemy",
+      "commands": [
+        {
+          "type": "Innate",
+          "params": {}
+        },
+        {
+          "type": "DealDamage",
+          "params": {
+            "base": 11,
+            "upgrade": 15
+          }
+        },
+        {
+          "type": "ExhaustSelf",
+          "params": {}
+        }
+      ],
+      "keywords_used": [
+        "Innate",
+        "Exhaust"
+      ]
+    },
+    "original_text": "#Innate.<br>Deal [11|15] damage.<br>#Exhaust."
+  },
+  {
+    "id": "Choke",
+    "name": "Choke",
+    "type": "Attack",
+    "cost": 2,
+    "color": "Green",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "Enemy",
+      "commands": [
+        {
+          "type": "DealDamage",
+          "params": {
+            "base": 12,
+            "upgrade": 12
+          }
+        },
+        {
+          "type": "RemoveEnemyBuff",
+          "params": {
+            "buff": "HP",
+            "base": 3,
+            "upgrade": 5
+          }
+        }
+      ],
+      "conditions": [
+        "Trigger: Whenever you play a card this turn, the enemy loses [3|5] HP"
+      ]
+    },
+    "original_text": "Deal 12 damage.<br>Whenever you play a card this turn, the enemy loses [3|5] HP."
+  },
+  {
+    "id": "Dash",
+    "name": "Dash",
+    "type": "Attack",
+    "cost": 2,
+    "color": "Green",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "GainBlock",
+          "params": {
+            "base": 10,
+            "upgrade": 13
+          }
+        },
+        {
+          "type": "DealDamage",
+          "params": {
+            "base": 10,
+            "upgrade": 13
+          }
+        }
+      ],
+      "keywords_used": [
+        "Block"
+      ]
+    },
+    "original_text": "Gain [10|13] #Block.<br>Deal [10|13] damage."
+  },
+  {
+    "id": "Endless_Agony",
+    "name": "Endless Agony",
+    "type": "Attack",
+    "cost": 0,
+    "color": "Green",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "Enemy",
+      "commands": [
+        {
+          "type": "AddCard",
+          "params": {
+            "card": "it",
+            "destination": "hand"
+          }
+        },
+        {
+          "type": "DealDamage",
+          "params": {
+            "base": 4,
+            "upgrade": 6
+          }
+        },
+        {
+          "type": "ExhaustSelf",
+          "params": {}
+        }
+      ],
+      "conditions": [
+        "Trigger: Whenever you draw this card, add a copy of it into your hand."
+      ],
+      "keywords_used": [
+        "Exhaust"
+      ]
+    },
+    "original_text": "Whenever you draw this card, add a copy of it into your hand.<br>Deal [4|6] damage.<br>#Exhaust."
+  },
+  {
+    "id": "Eviscerate",
+    "name": "Eviscerate",
+    "type": "Attack",
+    "cost": 3,
+    "color": "Green",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "GainEnergy",
+          "params": {
+            "base": 1,
+            "upgrade": 1
+          }
+        },
+        {
+          "type": "DealDamage",
+          "params": {
+            "base": 7,
+            "upgrade": 9,
+            "times": 3,
+            "times_upgrade": 3
+          }
+        }
+      ]
+    },
+    "original_text": "Costs 1 less @GE for each card discarded this turn.<br>Deal [7|9] damage 3 times."
+  },
+  {
+    "id": "Finisher",
+    "name": "Finisher",
+    "type": "Attack",
+    "cost": 1,
+    "color": "Green",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "Enemy",
+      "commands": [
+        {
+          "type": "DealDamage",
+          "params": {
+            "base": 6,
+            "upgrade": 8
+          }
+        }
+      ]
+    },
+    "original_text": "Deal [6|8] damage for each Attack played this turn."
+  },
+  {
+    "id": "Flechettes",
+    "name": "Flechettes",
+    "type": "Attack",
+    "cost": 1,
+    "color": "Green",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "Enemy",
+      "commands": [
+        {
+          "type": "DealDamage",
+          "params": {
+            "base": 4,
+            "upgrade": 6
+          }
+        }
+      ]
+    },
+    "original_text": "Deal [4|6] damage for each Skill in your hand."
+  },
+  {
+    "id": "Heel_Hook",
+    "name": "Heel Hook",
+    "type": "Attack",
+    "cost": 1,
+    "color": "Green",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "DealDamage",
+          "params": {
+            "base": 5,
+            "upgrade": 8
+          }
+        },
+        {
+          "type": "DrawCards",
+          "params": {
+            "base": 1,
+            "upgrade": 1
+          }
+        }
+      ],
+      "conditions": [
+        "IfEnemyHas: If the enemy has #Weak"
+      ],
+      "keywords_used": [
+        "Weak"
+      ]
+    },
+    "original_text": "Deal [5|8] damage. <br>If the enemy has #Weak, <br>gain @GE and draw 1 card.",
+    "manual_review_needed": false,
+    "flags": {
+      "condition_enemy_weak": true
+    }
+  },
+  {
+    "id": "Masterful_Stab",
+    "name": "Masterful Stab",
+    "type": "Attack",
+    "cost": 0,
+    "color": "Green",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "GainEnergy",
+          "params": {
+            "base": 1,
+            "upgrade": 1
+          }
+        },
+        {
+          "type": "DealDamage",
+          "params": {
+            "base": 12,
+            "upgrade": 16
+          }
+        }
+      ]
+    },
+    "original_text": "Costs 1 additional @GE for each time you lose HP this combat.<br>Deal [12|16] damage."
+  },
+  {
+    "id": "Predator",
+    "name": "Predator",
+    "type": "Attack",
+    "cost": 2,
+    "color": "Green",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "Enemy",
+      "commands": [
+        {
+          "type": "DealDamage",
+          "params": {
+            "base": 15,
+            "upgrade": 20
+          }
+        }
+      ]
+    },
+    "original_text": "Deal [15|20] damage.<br>Next turn, draw 2 additional cards.",
+    "manual_review_needed": false,
+    "flags": {
+      "has_next_turn_effect": true
+    }
+  },
+  {
+    "id": "Riddle_with_Holes",
+    "name": "Riddle with Holes",
+    "type": "Attack",
+    "cost": 2,
+    "color": "Green",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "Enemy",
+      "commands": [
+        {
+          "type": "DealDamage",
+          "params": {
+            "base": 3,
+            "upgrade": 4,
+            "times": 5,
+            "times_upgrade": 5
+          }
+        }
+      ]
+    },
+    "original_text": "Deal [3|4] damage 5 times."
+  },
+  {
+    "id": "Skewer",
+    "name": "Skewer",
+    "type": "Attack",
+    "cost": -1,
+    "color": "Green",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "Enemy",
+      "commands": [
+        {
+          "type": "DealDamage",
+          "params": {
+            "base": 7,
+            "upgrade": 10
+          }
+        }
+      ]
+    },
+    "original_text": "Deal [7|10] damage X times."
+  },
+  {
+    "id": "Blur",
+    "name": "Blur",
+    "type": "Skill",
+    "cost": 1,
+    "color": "Green",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "GainBlock",
+          "params": {
+            "base": 5,
+            "upgrade": 8
+          }
+        },
+        {
+          "type": "ApplyBuff",
+          "params": {
+            "buff": "Blur",
+            "amount": {
+              "type": "Fixed",
+              "params": {
+                "base": 1
+              }
+            },
+            "target": "self"
+          }
+        }
+      ],
+      "keywords_used": [
+        "Block"
+      ]
+    },
+    "original_text": "Gain [5|8] #Block.<br>#Block is not removed at the start of your next turn.",
+    "manual_review_needed": false
+  },
+  {
+    "id": "Bouncing_Flask",
+    "name": "Bouncing Flask",
+    "type": "Skill",
+    "cost": 2,
+    "color": "Green",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "Enemy",
+      "commands": [
+        {
+          "type": "ApplyStatus",
+          "params": {
+            "status": "Poison",
+            "base": 3,
+            "upgrade": 3
+          }
+        }
+      ]
+    },
+    "original_text": "Apply 3 #Poison to a random enemy [3|4] times."
+  },
+  {
+    "id": "Calculated_Gamble",
+    "name": "Calculated Gamble",
+    "type": "Skill",
+    "cost": 0,
+    "color": "Green",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "Discard",
+          "params": {
+            "count": "ALL",
+            "random": false
+          }
+        },
+        {
+          "type": "ExhaustSelf",
+          "params": {
+            "base_only": true
+          }
+        }
+      ]
+    },
+    "original_text": "Discard your hand,<br>then draw that many cards.[<br>#Exhaust.|]",
+    "manual_review_needed": false,
+    "flags": {
+      "draw_equal": true
+    }
+  },
+  {
+    "id": "Catalyst",
+    "name": "Catalyst",
+    "type": "Skill",
+    "cost": 1,
+    "color": "Green",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "ExhaustSelf",
+          "params": {}
+        },
+        {
+          "type": "MultiplyStatus",
+          "params": {
+            "status": "Poison",
+            "target": "enemy",
+            "multiplier": 2,
+            "upgrade_multiplier": 3
+          }
+        }
+      ],
+      "keywords_used": [
+        "Poison",
+        "Exhaust"
+      ]
+    },
+    "original_text": "[Double|Triple] the enemy's #Poison.<br>#Exhaust.",
+    "manual_review_needed": false
+  },
+  {
+    "id": "Concentrate",
+    "name": "Concentrate",
+    "type": "Skill",
+    "cost": 0,
+    "color": "Green",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "Discard",
+          "params": {
+            "count": 3,
+            "random": false
+          }
+        },
+        {
+          "type": "GainEnergy",
+          "params": {
+            "base": 2,
+            "upgrade": 2
+          }
+        }
+      ]
+    },
+    "original_text": "Discard [3|2] cards.<br>Gain @GE @GE."
+  },
+  {
+    "id": "Crippling_Cloud",
+    "name": "Crippling Cloud",
+    "type": "Skill",
+    "cost": 2,
+    "color": "Green",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "Enemy",
+      "commands": [
+        {
+          "type": "ApplyStatus",
+          "params": {
+            "status": "Poison",
+            "base": 4,
+            "upgrade": 7
+          }
+        },
+        {
+          "type": "ExhaustSelf",
+          "params": {}
+        }
+      ],
+      "keywords_used": [
+        "Exhaust"
+      ]
+    },
+    "original_text": "Apply [4|7] #Poison and 2 #Weak to ALL enemies.<br>#Exhaust."
+  },
+  {
+    "id": "Distraction",
+    "name": "Distraction",
+    "type": "Skill",
+    "cost": 1,
+    "color": "Green",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "AddCard",
+          "params": {
+            "card": "random Skill",
+            "destination": "hand"
+          }
+        },
+        {
+          "type": "ExhaustSelf",
+          "params": {}
+        }
+      ],
+      "keywords_used": [
+        "Exhaust"
+      ]
+    },
+    "original_text": "Add a random Skill into your hand.<br>It costs 0 this turn.<br>#Exhaust.",
+    "cost_upgrade": 0,
+    "manual_review_needed": false,
+    "flags": {
+      "generated_cost": 0
+    }
+  },
+  {
+    "id": "Escape_Plan",
+    "name": "Escape Plan",
+    "type": "Skill",
+    "cost": 0,
+    "color": "Green",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "DrawCards",
+          "params": {
+            "base": 1,
+            "upgrade": 1
+          }
+        },
+        {
+          "type": "GainBlock",
+          "params": {
+            "base": 3,
+            "upgrade": 5
+          }
+        }
+      ],
+      "keywords_used": [
+        "Block"
+      ]
+    },
+    "original_text": "Draw 1 card.<br>If you draw a Skill, gain [3|5] #Block."
+  },
+  {
+    "id": "Expertise",
+    "name": "Expertise",
+    "type": "Skill",
+    "cost": 1,
+    "color": "Green",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "DrawUntil",
+          "params": {
+            "target": 6,
+            "upgrade": 7
+          }
+        }
+      ]
+    },
+    "original_text": "Draw cards until you have [6|7] in your hand.",
+    "manual_review_needed": false
+  },
+  {
+    "id": "Leg_Sweep",
+    "name": "Leg Sweep",
+    "type": "Skill",
+    "cost": 2,
+    "color": "Green",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "ApplyStatus",
+          "params": {
+            "status": "Weak",
+            "base": 2,
+            "upgrade": 3
+          }
+        },
+        {
+          "type": "GainBlock",
+          "params": {
+            "base": 11,
+            "upgrade": 14
+          }
+        }
+      ],
+      "keywords_used": [
+        "Weak",
+        "Block"
+      ]
+    },
+    "original_text": "Apply [2|3] #Weak.<br>Gain [11|14] #Block."
+  },
+  {
+    "id": "Reflex",
+    "name": "Reflex",
+    "type": "Skill",
+    "cost": -2,
+    "color": "Green",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "Unplayable",
+          "params": {}
+        },
+        {
+          "type": "DrawCards",
+          "params": {
+            "base": 2,
+            "upgrade": 3
+          }
+        }
+      ],
+      "keywords_used": [
+        "Unplayable"
+      ]
+    },
+    "original_text": "#Unplayable.<br>If this card is discarded from your hand, draw [2|3] cards."
+  },
+  {
+    "id": "Setup",
+    "name": "Setup",
+    "type": "Skill",
+    "cost": 1,
+    "color": "Green",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "PutOnTop",
+          "params": {
+            "from": "hand",
+            "to": "draw_pile"
+          }
+        }
+      ]
+    },
+    "original_text": "Put a card from your hand on top of your draw pile.<br>It costs 0 until played.",
+    "cost_upgrade": 0,
+    "manual_review_needed": false,
+    "flags": {
+      "cost_zero_until_played": true
+    }
+  },
+  {
+    "id": "Tactician",
+    "name": "Tactician",
+    "type": "Skill",
+    "cost": -2,
+    "color": "Green",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "Unplayable",
+          "params": {}
+        },
+        {
+          "type": "GainEnergy",
+          "params": {
+            "base": 1,
+            "upgrade": 2
+          }
+        }
+      ],
+      "keywords_used": [
+        "Unplayable"
+      ]
+    },
+    "original_text": "#Unplayable.<br>If this card is discarded from your hand, gain [@GE|@GE @GE]."
+  },
+  {
+    "id": "Terror",
+    "name": "Terror",
+    "type": "Skill",
+    "cost": 1,
+    "color": "Green",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "Enemy",
+      "commands": [
+        {
+          "type": "ApplyStatus",
+          "params": {
+            "status": "Vulnerable",
+            "base": 99,
+            "upgrade": 99
+          }
+        },
+        {
+          "type": "ExhaustSelf",
+          "params": {}
+        }
+      ],
+      "keywords_used": [
+        "Vulnerable",
+        "Exhaust"
+      ]
+    },
+    "original_text": "Apply 99 #Vulnerable.<br>#Exhaust.",
+    "cost_upgrade": 0
+  },
+  {
+    "id": "Accuracy",
+    "name": "Accuracy",
+    "type": "Power",
+    "cost": 1,
+    "color": "Green",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "ApplyPower",
+          "params": {
+            "power": "Accuracy",
+            "amount": 4,
+            "upgrade_amount": 6
+          }
+        }
+      ]
+    },
+    "original_text": "{{C|Shiv|Shivs}} deal [4|6] additional damage.",
+    "manual_review_needed": false
+  },
+  {
+    "id": "Caltrops",
+    "name": "Caltrops",
+    "type": "Power",
+    "cost": 1,
+    "color": "Green",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "Enemy",
+      "commands": [
+        {
+          "type": "ApplyPower",
+          "params": {
+            "power": "Caltrops",
+            "base": 3,
+            "upgrade": 5
+          }
+        }
+      ]
+    },
+    "original_text": "Whenever you are attacked, deal [3|5] damage back."
+  },
+  {
+    "id": "Footwork",
+    "name": "Footwork",
+    "type": "Power",
+    "cost": 1,
+    "color": "Green",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "GainBuff",
+          "params": {
+            "buff": "Dexterity",
+            "base": 2,
+            "upgrade": 3
+          }
+        }
+      ],
+      "keywords_used": [
+        "Dexterity"
+      ]
+    },
+    "original_text": "Gain [2|3] #Dexterity."
+  },
+  {
+    "id": "Infinite_Blades",
+    "name": "Infinite Blades",
+    "type": "Power",
+    "cost": 1,
+    "color": "Green",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "ApplyPower",
+          "params": {
+            "power": "Infinite Blades",
+            "base": 1,
+            "upgrade": 1
+          }
+        },
+        {
+          "type": "Innate",
+          "params": {
+            "upgrade_only": true
+          }
+        }
+      ]
+    },
+    "original_text": "[|#Innate. ]At the start of your turn, add a {{C|Shiv}} into your hand."
+  },
+  {
+    "id": "Noxious_Fumes",
+    "name": "Noxious Fumes",
+    "type": "Power",
+    "cost": 1,
+    "color": "Green",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "AllEnemies",
+      "commands": [
+        {
+          "type": "ApplyPower",
+          "params": {
+            "power": "Noxious Fumes",
+            "base": 2,
+            "upgrade": 3
+          }
+        }
+      ]
+    },
+    "original_text": "At the start of your turn, apply [2|3] #Poison to ALL enemies."
+  },
+  {
+    "id": "Well-Laid_Plans",
+    "name": "Well-Laid Plans",
+    "type": "Power",
+    "cost": 1,
+    "color": "Green",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "ApplyPower",
+          "params": {
+            "power": "Well-Laid Plans",
+            "amount": 1,
+            "upgrade_amount": 2
+          }
+        }
+      ]
+    },
+    "original_text": "At the end of your turn, #Retain up to [1|2] [card|cards].",
+    "manual_review_needed": false
+  }
+]

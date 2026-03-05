@@ -1,0 +1,404 @@
+{
+  "category": "shrines",
+  "batch": 2,
+  "events": [
+    {
+      "wiki_id": "Match_and_Keep",
+      "wiki_name": "Match and Keep",
+      "logic_key": "Match and Keep!",
+      "status": "pending",
+      "issues": [
+        "OPTION_COUNT_MISMATCH: Wiki有1个选项, Logic有2个",
+        "MISSING_OPTIONS: Logic缺少选项 {'[play]'}",
+        "EXTRA_OPTIONS: Logic多余选项 {'[play] play matching game', '[leave]'}"
+      ],
+      "wiki_data": {
+        "options": [
+          {
+            "label": "[Play]",
+            "description": "",
+            "conditions": [],
+            "effects": [
+              "Play a matching game for cards. Match pairs of cards to add them to your deck. There is always a pair of one Colorless card and one Curse."
+            ]
+          }
+        ],
+        "notes": []
+      },
+      "existing_data": {
+        "name": "Match and Keep!",
+        "options": [
+          {
+            "label": "[Play] Play matching game",
+            "conditions": [],
+            "actions": [
+              {
+                "type": "MatchAndKeepGame",
+                "attempts": 5
+              }
+            ]
+          },
+          {
+            "label": "[Leave]",
+            "conditions": [],
+            "actions": [
+              {
+                "type": "Leave"
+              }
+            ]
+          }
+        ]
+      },
+      "corrections": []
+    },
+    {
+      "wiki_id": "Ominous_Forge",
+      "wiki_name": "Ominous Forge",
+      "logic_key": "Accursed Blacksmith",
+      "status": "pending",
+      "issues": [
+        "MISSING_OPTIONS: Logic缺少选项 {'[forge]', '[rummage]'}",
+        "EXTRA_OPTIONS: Logic多余选项 {'[forge] upgrade a card', '[rummage] obtain a relic'}"
+      ],
+      "wiki_data": {
+        "options": [
+          {
+            "label": "[Forge]",
+            "description": "Upgrade a card in your deck.",
+            "conditions": [],
+            "effects": []
+          },
+          {
+            "label": "[Rummage]",
+            "description": "Obtain a special relic. Become Cursed -  Pain.",
+            "conditions": [],
+            "effects": [
+              "Warped Tongs - At the start of your turn,  Upgrade a random card in your hand for the rest of combat.",
+              "Pain -  Unplayable. While in hand, lose 1 HP whenever you play another card."
+            ]
+          },
+          {
+            "label": "[Leave]",
+            "description": "Nothing happens.",
+            "conditions": [],
+            "effects": []
+          }
+        ],
+        "notes": [
+          "Internally called Accursed_Blacksmith."
+        ]
+      },
+      "existing_data": {
+        "name": "Ominous Forge",
+        "options": [
+          {
+            "label": "[Forge] Upgrade a card",
+            "conditions": [
+              {
+                "type": "HasUpgradeableCard"
+              }
+            ],
+            "actions": [],
+            "random_outcomes": [
+              {
+                "chance": 0.75,
+                "actions": [
+                  {
+                    "type": "CardUpgrade"
+                  }
+                ]
+              },
+              {
+                "chance": 0.25,
+                "actions": [
+                  {
+                    "type": "CardUpgrade"
+                  },
+                  {
+                    "type": "AddCard",
+                    "card_id": "Injury"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "label": "[Rummage] Obtain a Relic",
+            "conditions": [],
+            "actions": [],
+            "random_outcomes": [
+              {
+                "chance": 0.25,
+                "actions": [
+                  {
+                    "type": "GetRelic",
+                    "tier": "Random"
+                  }
+                ]
+              },
+              {
+                "chance": 0.75,
+                "actions": [
+                  {
+                    "type": "GetRelic",
+                    "tier": "Random"
+                  },
+                  {
+                    "type": "AddCard",
+                    "card_id": "Normality"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "label": "[Leave]",
+            "conditions": [],
+            "actions": [
+              {
+                "type": "Leave"
+              }
+            ]
+          }
+        ]
+      },
+      "corrections": []
+    },
+    {
+      "wiki_id": "Purifier",
+      "wiki_name": "Purifier",
+      "logic_key": "Purifier",
+      "status": "pending",
+      "issues": [
+        "MISSING_OPTIONS: Logic缺少选项 {'[pray]'}",
+        "EXTRA_OPTIONS: Logic多余选项 {'[pray] remove a card from your deck'}"
+      ],
+      "wiki_data": {
+        "options": [
+          {
+            "label": "[Pray]",
+            "description": "Remove a card from your deck.",
+            "conditions": [],
+            "effects": []
+          },
+          {
+            "label": "[Leave]",
+            "description": "Nothing happens.",
+            "conditions": [],
+            "effects": []
+          }
+        ],
+        "notes": [
+          "This probably would not work as an air purifier."
+        ]
+      },
+      "existing_data": {
+        "name": "Purifier",
+        "options": [
+          {
+            "label": "[Pray] Remove a card from your deck",
+            "conditions": [],
+            "actions": [
+              {
+                "type": "CardRemove"
+              }
+            ]
+          },
+          {
+            "label": "[Leave]",
+            "conditions": [],
+            "actions": [
+              {
+                "type": "Leave"
+              }
+            ]
+          }
+        ]
+      },
+      "corrections": []
+    },
+    {
+      "wiki_id": "The_Divine_Fountain",
+      "wiki_name": "The Divine Fountain",
+      "logic_key": "Fountain of Cleansing",
+      "status": "pending",
+      "issues": [
+        "MISSING_OPTIONS: Logic缺少选项 {'[drink]'}",
+        "EXTRA_OPTIONS: Logic多余选项 {'[drink] remove all curses from your deck'}"
+      ],
+      "wiki_data": {
+        "options": [
+          {
+            "label": "[Drink]",
+            "description": "Remove all Curses from your deck.",
+            "conditions": [],
+            "effects": []
+          },
+          {
+            "label": "[Leave]",
+            "description": "Nothing happens.",
+            "conditions": [],
+            "effects": []
+          }
+        ],
+        "notes": [
+          "Removing all Curses may not be beneficial if you are relying on the  Strength from  Du-Vu Doll.",
+          "The Max HP gain from  Darkstone Periapt is kept even when the Curses are removed."
+        ]
+      },
+      "existing_data": {
+        "name": "The Divine Fountain",
+        "options": [
+          {
+            "label": "[Drink] Remove all Curses from your deck",
+            "conditions": [
+              {
+                "type": "HasCurse"
+              }
+            ],
+            "actions": [
+              {
+                "type": "RemoveAllCurses"
+              }
+            ]
+          },
+          {
+            "label": "[Leave]",
+            "conditions": [],
+            "actions": [
+              {
+                "type": "Leave"
+              }
+            ]
+          }
+        ]
+      },
+      "corrections": []
+    },
+    {
+      "wiki_id": "The_Woman_in_Blue",
+      "wiki_name": "The Woman in Blue",
+      "logic_key": "The Woman in Blue",
+      "status": "pending",
+      "issues": [
+        "MISSING_OPTIONS: Logic缺少选项 {'[buy 2 potions]', '[buy 3 potions]', '[leave]', '[buy 1 potion]'}",
+        "EXTRA_OPTIONS: Logic多余选项 {'[buy 3 potions] pay 40 gold', '[leave] take 5 damage', '[buy 2 potions] pay 30 gold', '[buy 1 potion] pay 20 gold'}"
+      ],
+      "wiki_data": {
+        "options": [
+          {
+            "label": "[Buy 1 Potion]",
+            "description": "20 Gold.",
+            "conditions": [],
+            "effects": []
+          },
+          {
+            "label": "[Buy 2 Potions]",
+            "description": "30 Gold.",
+            "conditions": [],
+            "effects": []
+          },
+          {
+            "label": "[Buy 3 Potions]",
+            "description": "40 Gold.",
+            "conditions": [],
+            "effects": []
+          },
+          {
+            "label": "[Leave]",
+            "description": "Nothing happens.",
+            "conditions": [],
+            "effects": []
+          }
+        ],
+        "notes": [
+          "Even if you skip grabbing the potions you bought, she will still be satisfied."
+        ]
+      },
+      "existing_data": {
+        "name": "The Woman in Blue",
+        "options": [
+          {
+            "label": "[Buy 1 Potion] Pay 20 Gold",
+            "conditions": [
+              {
+                "type": "Gold",
+                "amount": 20
+              }
+            ],
+            "actions": [
+              {
+                "type": "Gold",
+                "amount": -20
+              },
+              {
+                "type": "GetPotion"
+              }
+            ]
+          },
+          {
+            "label": "[Buy 2 Potions] Pay 30 Gold",
+            "conditions": [
+              {
+                "type": "Gold",
+                "amount": 30
+              }
+            ],
+            "actions": [
+              {
+                "type": "Gold",
+                "amount": -30
+              },
+              {
+                "type": "GetPotion"
+              },
+              {
+                "type": "GetPotion"
+              }
+            ]
+          },
+          {
+            "label": "[Buy 3 Potions] Pay 40 Gold",
+            "conditions": [
+              {
+                "type": "Gold",
+                "amount": 40
+              }
+            ],
+            "actions": [
+              {
+                "type": "Gold",
+                "amount": -40
+              },
+              {
+                "type": "GetPotion"
+              },
+              {
+                "type": "GetPotion"
+              },
+              {
+                "type": "GetPotion"
+              }
+            ]
+          },
+          {
+            "label": "[Leave] Take 5 Damage",
+            "conditions": [],
+            "actions": [
+              {
+                "type": "LoseHP",
+                "amount": 5,
+                "is_percentage": false
+              },
+              {
+                "type": "Leave"
+              }
+            ]
+          }
+        ]
+      },
+      "corrections": []
+    }
+  ],
+  "instructions": "\n校对说明:\n1. 查看每个事件的 issues 列表\n2. 对比 wiki_data 和 existing_data 的差异\n3. 在 corrections 中填写需要的修正\n4. 完成后将 status 改为 \"reviewed\"\n\ncorrections 格式示例:\n- {\"action\": \"add_option\", \"label\": \"[新选项]\", \"data\": {...}}\n- {\"action\": \"fix_label\", \"old\": \"[错误]\", \"new\": \"[正确]\"}\n- {\"action\": \"add_event\", \"data\": {...}}\n"
+}

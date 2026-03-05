@@ -1,0 +1,495 @@
+[
+  {
+    "id": "Brilliance",
+    "name": "Brilliance",
+    "type": "Attack",
+    "cost": 1,
+    "color": "Purple",
+    "rarity": "Rare",
+    "logic": {
+      "target_type": "Enemy",
+      "commands": [
+        {
+          "type": "DealDamage",
+          "params": {
+            "base": 12,
+            "upgrade": 16
+          }
+        }
+      ]
+    },
+    "original_text": "Deal [12|16] damage. Deals additional damage equal to #Mantra gained this combat.",
+    "manual_review_needed": true,
+    "unparsed_text": [
+      "Deals additional damage equal to #Mantra gained this combat"
+    ]
+  },
+  {
+    "id": "Lesson_Learned",
+    "name": "Lesson Learned",
+    "type": "Attack",
+    "cost": 2,
+    "color": "Purple",
+    "rarity": "Rare",
+    "logic": {
+      "target_type": "Enemy",
+      "commands": [
+        {
+          "type": "DealDamage",
+          "params": {
+            "base": 10,
+            "upgrade": 13
+          }
+        },
+        {
+          "type": "ExhaustSelf",
+          "params": {}
+        },
+        {
+          "type": "Conditional",
+          "params": {
+            "condition": {
+              "type": "EnemyKilledByLastAttack"
+            },
+            "then_do": [
+              {
+                "type": "UpgradeCard",
+                "params": {
+                  "select_mode": "random",
+                  "pile": "deck"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "conditions": [
+        "OnFatal: If #Fatal"
+      ],
+      "keywords_used": [
+        "Fatal",
+        "Exhaust"
+      ]
+    },
+    "original_text": "Deal [10|13] damage. <br>If #Fatal, #Upgrade a random card in your deck. <br>#Exhaust.",
+    "manual_review_needed": false
+  },
+  {
+    "id": "Ragnarok",
+    "name": "Ragnarok",
+    "type": "Attack",
+    "cost": 3,
+    "color": "Purple",
+    "rarity": "Rare",
+    "logic": {
+      "target_type": "RandomEnemy",
+      "commands": [
+        {
+          "type": "DealDamageRandom",
+          "params": {
+            "base": 5,
+            "upgrade": 6,
+            "times": 5,
+            "times_upgrade": 6
+          }
+        }
+      ]
+    },
+    "original_text": "Deal [5|6] damage to a random enemy [5|6] times."
+  },
+  {
+    "id": "Alpha",
+    "name": "Alpha",
+    "type": "Skill",
+    "cost": 1,
+    "color": "Purple",
+    "rarity": "Rare",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "Innate",
+          "params": {
+            "upgrade_only": true
+          }
+        },
+        {
+          "type": "ShuffleInto",
+          "params": {
+            "card": "Beta"
+          }
+        },
+        {
+          "type": "ExhaustSelf",
+          "params": {}
+        }
+      ],
+      "keywords_used": [
+        "Exhaust"
+      ]
+    },
+    "original_text": "[|#Innate. ]Shuffle a {{C|Beta}} into your draw pile. #Exhaust."
+  },
+  {
+    "id": "Blasphemy",
+    "name": "Blasphemy",
+    "type": "Skill",
+    "cost": 1,
+    "color": "Purple",
+    "rarity": "Rare",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "EnterStance",
+          "params": {
+            "stance": "Divinity"
+          }
+        },
+        {
+          "type": "ExhaustSelf",
+          "params": {}
+        }
+      ],
+      "keywords_used": [
+        "Divinity",
+        "Exhaust"
+      ]
+    },
+    "original_text": "[|#Retain. ]Enter #Divinity. Die next turn. #Exhaust",
+    "manual_review_needed": false,
+    "flags": {
+      "has_next_turn_effect": true
+    }
+  },
+  {
+    "id": "Conjure_Blade",
+    "name": "Conjure Blade",
+    "type": "Skill",
+    "cost": -1,
+    "color": "Purple",
+    "rarity": "Rare",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "ShuffleInto",
+          "params": {
+            "card": "an Expunger[| with X+1]"
+          }
+        },
+        {
+          "type": "ExhaustSelf",
+          "params": {}
+        }
+      ],
+      "keywords_used": [
+        "Exhaust"
+      ]
+    },
+    "original_text": "Shuffle an {{C|Expunger}}[| with X+1] into your draw pile. <br>#Exhaust."
+  },
+  {
+    "id": "Deus_Ex_Machina",
+    "name": "Deus Ex Machina",
+    "type": "Skill",
+    "cost": -2,
+    "color": "Purple",
+    "rarity": "Rare",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "Unplayable",
+          "params": {}
+        },
+        {
+          "type": "AddCard",
+          "params": {
+            "card": "[2|3] Miracles",
+            "destination": "hand"
+          }
+        }
+      ],
+      "keywords_used": [
+        "Unplayable",
+        "Exhaust"
+      ]
+    },
+    "original_text": "#Unplayable. <br>When you draw this card, add [2|3] {{C|Miracle|Miracles}} to your hand and #Exhaust."
+  },
+  {
+    "id": "Judgment",
+    "name": "Judgment",
+    "type": "Skill",
+    "cost": 1,
+    "color": "Purple",
+    "rarity": "Rare",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "Execute",
+          "params": {
+            "threshold": 30,
+            "upgrade_threshold": 40
+          }
+        }
+      ]
+    },
+    "original_text": "If the enemy has [30|40] or less HP, set their HP to 0.",
+    "manual_review_needed": false
+  },
+  {
+    "id": "Omniscience",
+    "name": "Omniscience",
+    "type": "Skill",
+    "cost": 4,
+    "color": "Purple",
+    "rarity": "Rare",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "ExhaustSelf",
+          "params": {}
+        }
+      ],
+      "keywords_used": [
+        "Exhaust"
+      ]
+    },
+    "original_text": "Choose a card in your draw pile. Play the chosen card twice and #Exhaust it. #Exhaust.",
+    "cost_upgrade": 3,
+    "manual_review_needed": false,
+    "flags": {
+      "requires_card_choice": true,
+      "play_chosen_twice_exhaust": true
+    }
+  },
+  {
+    "id": "Scrawl",
+    "name": "Scrawl",
+    "type": "Skill",
+    "cost": 1,
+    "color": "Purple",
+    "rarity": "Rare",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "ExhaustSelf",
+          "params": {}
+        },
+        {
+          "type": "DrawUntilFull",
+          "params": {}
+        }
+      ],
+      "keywords_used": [
+        "Exhaust"
+      ]
+    },
+    "original_text": "Draw cards until your hand is full. <br>#Exhaust.",
+    "cost_upgrade": 0,
+    "manual_review_needed": false
+  },
+  {
+    "id": "Spirit_Shield",
+    "name": "Spirit Shield",
+    "type": "Skill",
+    "cost": 2,
+    "color": "Purple",
+    "rarity": "Rare",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "GainBlock",
+          "params": {
+            "base": 3,
+            "upgrade": 4
+          }
+        }
+      ]
+    },
+    "original_text": "Gain [3|4] #Block for each card in your hand."
+  },
+  {
+    "id": "Vault",
+    "name": "Vault",
+    "type": "Skill",
+    "cost": 3,
+    "color": "Purple",
+    "rarity": "Rare",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "ExhaustSelf",
+          "params": {}
+        },
+        {
+          "type": "ExtraTurn",
+          "params": {}
+        },
+        {
+          "type": "EndTurn",
+          "params": {}
+        }
+      ],
+      "keywords_used": [
+        "Exhaust"
+      ]
+    },
+    "original_text": "Take an extra turn after this one. <br>End your turn. <br>#Exhaust.",
+    "cost_upgrade": 2,
+    "manual_review_needed": false
+  },
+  {
+    "id": "Wish",
+    "name": "Wish",
+    "type": "Skill",
+    "cost": 3,
+    "color": "Purple",
+    "rarity": "Rare",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "GainBuff",
+          "params": {
+            "buff": "Plated",
+            "base": 6,
+            "upgrade": 8
+          }
+        },
+        {
+          "type": "ExhaustSelf",
+          "params": {}
+        }
+      ],
+      "keywords_used": [
+        "Plated Armor",
+        "Strength",
+        "Exhaust"
+      ]
+    },
+    "original_text": "Choose one: Gain [6|8] #Plated Armor, [3|4] #Strength, or [25|30] Gold. #Exhaust."
+  },
+  {
+    "id": "Deva_Form",
+    "name": "Deva Form",
+    "type": "Power",
+    "cost": 3,
+    "color": "Purple",
+    "rarity": "Rare",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "ApplyPower",
+          "params": {
+            "power": "DevaForm",
+            "base": 1,
+            "upgrade": 1
+          }
+        },
+        {
+          "type": "Ethereal",
+          "params": {}
+        }
+      ],
+      "keywords_used": [
+        "Ethereal"
+      ]
+    },
+    "original_text": "[#Ethereal.<br>|]At the start of your turn, gain @PE <br>and increase this gain by 1.",
+    "manual_review_needed": false,
+    "flags": {
+      "escalating_gain": 1
+    }
+  },
+  {
+    "id": "Devotion",
+    "name": "Devotion",
+    "type": "Power",
+    "cost": 1,
+    "color": "Purple",
+    "rarity": "Rare",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "ApplyPower",
+          "params": {
+            "power": "Devotion",
+            "base": 2,
+            "upgrade": 3
+          }
+        }
+      ],
+      "keywords_used": [
+        "Mantra"
+      ]
+    },
+    "original_text": "At the start of your turn, gain [2|3] #Mantra."
+  },
+  {
+    "id": "Establishment",
+    "name": "Establishment",
+    "type": "Power",
+    "cost": 1,
+    "color": "Purple",
+    "rarity": "Rare",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "Innate",
+          "params": {
+            "upgrade_only": true
+          }
+        },
+        {
+          "type": "ApplyPower",
+          "params": {
+            "power": "Establishment",
+            "amount": 1
+          }
+        }
+      ],
+      "conditions": [
+        "Trigger: Whenever a card is #Retained, lower its cost by 1"
+      ]
+    },
+    "original_text": "[|#Innate. ]Whenever a card is #Retained, lower its cost by 1.",
+    "manual_review_needed": false
+  },
+  {
+    "id": "Master_Reality",
+    "name": "Master Reality",
+    "type": "Power",
+    "cost": 1,
+    "color": "Purple",
+    "rarity": "Rare",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "ApplyPower",
+          "params": {
+            "power": "Master Reality",
+            "amount": 1
+          }
+        }
+      ],
+      "conditions": [
+        "Trigger: Whenever a card is created during combat, #Upgrade it"
+      ]
+    },
+    "original_text": "Whenever a card is created during combat, #Upgrade it.",
+    "cost_upgrade": 0,
+    "manual_review_needed": false
+  }
+]

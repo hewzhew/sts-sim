@@ -1,0 +1,251 @@
+{
+  "category": "act1",
+  "total_wiki_events": 12,
+  "events": [
+    {
+      "wiki_id": "Big_Fish",
+      "name": "Big Fish",
+      "found_in_existing": true,
+      "wiki_options_count": 4,
+      "existing_options_count": 3,
+      "option_labels_wiki": [
+        "[Banana]",
+        "[Donut]",
+        "[Box]",
+        "[Leave]"
+      ],
+      "option_labels_existing": [
+        "[Banana] Heal 1/3 HP",
+        "[Donut] Max HP +5",
+        "[Box] Receive a Relic. Become Cursed - Regret"
+      ],
+      "needs_review": true,
+      "issues": [
+        "选项数量不匹配: Wiki=4, 现有=3",
+        "现有数据缺少选项: {'[banana]', '[donut]', '[box]', '[leave]'}",
+        "现有数据多余选项: {'[banana] heal 1/3 hp', '[donut] max hp +5', '[box] receive a relic. become cursed - regret'}"
+      ]
+    },
+    {
+      "wiki_id": "Dead_Adventurer",
+      "name": "Dead Adventurer",
+      "found_in_existing": true,
+      "wiki_options_count": 11,
+      "existing_options_count": 2,
+      "option_labels_wiki": [
+        "[Search]",
+        "[Search]",
+        "[Search]",
+        "[Search]",
+        "[Search]",
+        "[Search]",
+        "[Search]",
+        "[Search]",
+        "[Search]",
+        "[Continue]",
+        "[Leave]"
+      ],
+      "option_labels_existing": [
+        "[Search] Find Loot (risk of combat)",
+        "[Leave]"
+      ],
+      "needs_review": true,
+      "issues": [
+        "选项数量不匹配: Wiki=11, 现有=2",
+        "现有数据缺少选项: {'[continue]', '[search]'}",
+        "现有数据多余选项: {'[search] find loot (risk of combat)'}"
+      ]
+    },
+    {
+      "wiki_id": "Face_Trader",
+      "name": "Face Trader",
+      "found_in_existing": false,
+      "wiki_options_count": 3,
+      "existing_options_count": 0,
+      "option_labels_wiki": [
+        "[Touch]",
+        "[Trade]",
+        "[Leave]"
+      ],
+      "option_labels_existing": [],
+      "needs_review": true,
+      "issues": [
+        "事件在 events_logic.json 中不存在"
+      ]
+    },
+    {
+      "wiki_id": "Golden_Idol_(Event)",
+      "name": "Golden Idol (Event)",
+      "found_in_existing": false,
+      "wiki_options_count": 5,
+      "existing_options_count": 0,
+      "option_labels_wiki": [
+        "[Take]",
+        "[Outrun]",
+        "[Smash]",
+        "[Hide]",
+        "[Leave]"
+      ],
+      "option_labels_existing": [],
+      "needs_review": true,
+      "issues": [
+        "事件在 events_logic.json 中不存在"
+      ]
+    },
+    {
+      "wiki_id": "Hypnotizing_Colored_Mushrooms",
+      "name": "Hypnotizing Colored Mushrooms",
+      "found_in_existing": false,
+      "wiki_options_count": 2,
+      "existing_options_count": 0,
+      "option_labels_wiki": [
+        "[Stomp]",
+        "[Eat]"
+      ],
+      "option_labels_existing": [],
+      "needs_review": true,
+      "issues": [
+        "事件在 events_logic.json 中不存在"
+      ]
+    },
+    {
+      "wiki_id": "Living_Wall",
+      "name": "Living Wall",
+      "found_in_existing": true,
+      "wiki_options_count": 3,
+      "existing_options_count": 3,
+      "option_labels_wiki": [
+        "[Forget]",
+        "[Change]",
+        "[Grow]"
+      ],
+      "option_labels_existing": [
+        "[Forget] Remove a card in your deck",
+        "[Change] Transform a card in your deck",
+        "[Grow] Upgrade a card in your deck"
+      ],
+      "needs_review": true,
+      "issues": [
+        "现有数据缺少选项: {'[forget]', '[grow]', '[change]'}",
+        "现有数据多余选项: {'[forget] remove a card in your deck', '[change] transform a card in your deck', '[grow] upgrade a card in your deck'}"
+      ]
+    },
+    {
+      "wiki_id": "Scrap_Ooze",
+      "name": "Scrap Ooze",
+      "found_in_existing": true,
+      "wiki_options_count": 2,
+      "existing_options_count": 2,
+      "option_labels_wiki": [
+        "[Reach Inside]",
+        "[Leave]"
+      ],
+      "option_labels_existing": [
+        "[Reach Inside] Lose HP for chance at Relic",
+        "[Leave]"
+      ],
+      "needs_review": true,
+      "issues": [
+        "现有数据缺少选项: {'[reach inside]'}",
+        "现有数据多余选项: {'[reach inside] lose hp for chance at relic'}"
+      ]
+    },
+    {
+      "wiki_id": "Shining_Light",
+      "name": "Shining Light",
+      "found_in_existing": true,
+      "wiki_options_count": 2,
+      "existing_options_count": 2,
+      "option_labels_wiki": [
+        "[Enter]",
+        "[Leave]"
+      ],
+      "option_labels_existing": [
+        "[Enter] Upgrade 2 random cards. Lose HP",
+        "[Leave]"
+      ],
+      "needs_review": true,
+      "issues": [
+        "现有数据缺少选项: {'[enter]'}",
+        "现有数据多余选项: {'[enter] upgrade 2 random cards. lose hp'}"
+      ]
+    },
+    {
+      "wiki_id": "The_Cleric",
+      "name": "The Cleric",
+      "found_in_existing": true,
+      "wiki_options_count": 3,
+      "existing_options_count": 3,
+      "option_labels_wiki": [
+        "[Heal]",
+        "[Purify]",
+        "[Leave]"
+      ],
+      "option_labels_existing": [
+        "[Heal] Pay 35 Gold: Heal 20 HP",
+        "[Purify] Pay 50 Gold: Remove a card",
+        "[Leave]"
+      ],
+      "needs_review": true,
+      "issues": [
+        "现有数据缺少选项: {'[heal]', '[purify]'}",
+        "现有数据多余选项: {'[heal] pay 35 gold: heal 20 hp', '[purify] pay 50 gold: remove a card'}"
+      ]
+    },
+    {
+      "wiki_id": "The_Ssssserpent",
+      "name": "The Ssssserpent",
+      "found_in_existing": false,
+      "wiki_options_count": 3,
+      "existing_options_count": 0,
+      "option_labels_wiki": [
+        "[Agree]",
+        "[Disagree]",
+        "[Leave]"
+      ],
+      "option_labels_existing": [],
+      "needs_review": true,
+      "issues": [
+        "事件在 events_logic.json 中不存在"
+      ]
+    },
+    {
+      "wiki_id": "Wing_Statue",
+      "name": "Wing Statue",
+      "found_in_existing": false,
+      "wiki_options_count": 4,
+      "existing_options_count": 0,
+      "option_labels_wiki": [
+        "[Pray]",
+        "[Destroy]",
+        "[Locked]",
+        "[Leave]"
+      ],
+      "option_labels_existing": [],
+      "needs_review": true,
+      "issues": [
+        "事件在 events_logic.json 中不存在"
+      ]
+    },
+    {
+      "wiki_id": "World_of_Goop",
+      "name": "World of Goop",
+      "found_in_existing": true,
+      "wiki_options_count": 2,
+      "existing_options_count": 2,
+      "option_labels_wiki": [
+        "[Gather Gold]",
+        "[Leave It]"
+      ],
+      "option_labels_existing": [
+        "[Gather Gold] Gain 75 Gold. Lose 11 HP",
+        "[Leave It] Lose 20% Gold"
+      ],
+      "needs_review": true,
+      "issues": [
+        "现有数据缺少选项: {'[gather gold]', '[leave it]'}",
+        "现有数据多余选项: {'[leave it] lose 20% gold', '[gather gold] gain 75 gold. lose 11 hp'}"
+      ]
+    }
+  ]
+}

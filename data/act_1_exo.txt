@@ -1,0 +1,59 @@
+Global Statistics for the Exordium:					
+Chance for upgraded cards: 0%					
+					
+First Three Combat Encounters:	Encounter Weight:	Details:			
+Cultist	2				
+Jaw Worm	2				
+2 Louse	2	2x Louse (each independently has a 50% chance of either color)			
+Small Slimes	2	Either (Spike Slime(M) + Acid Slime (S)) or (Acid Slime (M) + Spike Slime (S))			
+					
+Remaining Combat Encounters:					
+Gremlin Gang	1	4 randomly chosen from: [2x Fat Gremlin, 2x Sneaky Gremlin, 2x Mad Gremlin, Shield Gremlin, and Gremlin Wizard]			
+Large Slime	2	Spike Slime (L) or Acid Slime (L)			
+Lots of Slimes	1	3x Spike Slime (S) and 2x Acid Slime (S)			
+Blue Slaver	2				
+Red Slaver	1				
+3 Louse	2	3x Louse (each independently has a 50% chance of either color)			
+2 Fungi Beasts	2				
+Exordium Thugs	1.5	First enemy: Louse (any) or Medium Slime (any)		Second Enemy: Slaver (any), Cultist, or Looter	
+Exordium Wildlife	1.5	First enemy: Fungi Beast or Jaw Worm		Second Enemy: Louse (any) or Medium Slime (any)	
+Looter	2				
+					
+Elite Combat Encounters:					
+Gremlin Nob	1				
+Lagavulin	1				
+3 Sentries	1				
+					
+Boss:					
+The Guardian					
+Hexaghost					
+Slime Boss					
+					
+Regular Events:	Notes:				
+Big Fish					
+The Cleric	Only with at least 35 gold				
+Dead Adventurer	Floor 7 or above				
+Golden Idol					
+Living Wall					
+Mushrooms	Floor 7 or above				
+Scrap Ooze					
+Shining Light					
+The Ssssserpent					
+Wing Statue					
+World of Goop					
+					
+Shrine Events (Less common):					
+Bonfire Spirits					
+The Divine Fountain	Only if cursed				
+Face Trader					
+Golden Shrine					
+Lab					
+Match and Keep					
+A Note For Yourself	Disabled in Ascension 15+ and Dailies				
+Ominous Forge					
+Purifier					
+Transmogrifier					
+Upgrade Shrine					
+We Meet Again					
+Wheel of Change					
+The Woman in Blue	Only with at least 50 gold				

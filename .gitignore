@@ -1,0 +1,63 @@
+# ===== Build / Runtime =====
+/target
+/.venv
+/.cargo
+*.pyc
+__pycache__/
+
+# ===== IDE / Editor =====
+.vscode/
+*.swp
+*.swo
+
+# ===== Temporary outputs (regenerable) =====
+# Build/test/debug logs
+build_output.txt
+build_errors*.txt
+build_final.txt
+check_errors.txt
+_build.txt
+_test.txt
+
+# Simulation/stress test outputs
+stress_*.txt
+e2e_*.log
+debug_*.txt
+diff_counts.txt
+act3_out.txt
+act3_test_result.txt
+test_output.txt
+test_final.txt
+
+# ===== Scratch / temp files =====
+tmp_*
+*.tmp
+
+# ===== Large data (regenerable from game runs) =====
+tests/fixtures/*.jsonl
+
+# ===== Archive of old development code =====
+_archive/
+
+# ===== Model weights (too large for git) =====
+*.pt
+*.pth
+*.onnx
+
+# ===== Script outputs (regenerable) =====
+scripts/*_output.txt
+scripts/*.txt
+
+# ===== Test outputs (regenerable) =====
+tests/*.log
+tests/*.txt
+
+# ===== Pattern: any _output or _results file =====
+*_results*.txt
+*_verbose*.txt
+*_ethereal*.txt
+*_output*.txt
+
+# ===== System files =====
+Thumbs.db
+.DS_Store

@@ -1,0 +1,425 @@
+{
+  "_comment": "卡牌效果系统类型定义 - 用于手动补全卡牌逻辑",
+  "_version": "0.1.0",
+  
+  "commands": {
+    "_comment": "所有可用的Command类型及其参数",
+    
+    "DealDamage": {
+      "description": "对单个敌人造成伤害",
+      "status": "implemented",
+      "params": {
+        "base": "number - 基础伤害 (可选)",
+        "upgrade": "number - 升级后伤害 (可选)",
+        "scaling": "string - 伤害来源 (如'Block', 'Strength')"
+      },
+      "example": {
+        "type": "DealDamage",
+        "params": { "base": 6, "upgrade": 9 }
+      }
+    },
+    
+    "DealDamageAll": {
+      "description": "对所有敌人造成伤害 (AOE)",
+      "status": "todo",
+      "params": {
+        "base": "number",
+        "upgrade": "number"
+      },
+      "example": {
+        "type": "DealDamageAll",
+        "params": { "base": 8, "upgrade": 11 }
+      }
+    },
+    
+    "DealDamageRandom": {
+      "description": "对随机敌人造成伤害",
+      "status": "todo",
+      "params": {
+        "base": "number",
+        "times": "number - 攻击次数"
+      }
+    },
+    
+    "GainBlock": {
+      "description": "获得格挡",
+      "status": "implemented",
+      "params": {
+        "base": "number",
+        "upgrade": "number"
+      }
+    },
+    
+    "DoubleBlock": {
+      "description": "格挡翻倍",
+      "status": "todo"
+    },
+    
+    "ApplyStatus": {
+      "description": "对敌人施加状态效果",
+      "status": "partial",
+      "params": {
+        "status": "string - 状态名称",
+        "base": "number - 基础层数",
+        "upgrade": "number - 升级后层数",
+        "target": "string - 目标 (Enemy/Self/AllEnemies)"
+      }
+    },
+    
+    "ApplyStatusAll": {
+      "description": "对所有敌人施加状态",
+      "status": "todo"
+    },
+    
+    "GainBuff": {
+      "description": "获得增益效果 (力量/敏捷等)",
+      "status": "todo",
+      "params": {
+        "buff": "string - Strength/Dexterity/等",
+        "base": "number",
+        "upgrade": "number"
+      }
+    },
+    
+    "LoseBuff": {
+      "description": "失去增益效果",
+      "status": "todo",
+      "params": {
+        "buff": "string",
+        "amount": "number"
+      }
+    },
+    
+    "RemoveEnemyBuff": {
+      "description": "移除敌人的增益",
+      "status": "todo"
+    },
+    
+    "DoubleBuff": {
+      "description": "翻倍某个buff",
+      "status": "todo"
+    },
+    
+    "DrawCards": {
+      "description": "抽牌",
+      "status": "implemented",
+      "params": {
+        "base": "number",
+        "upgrade": "number"
+      }
+    },
+    
+    "Discard": {
+      "description": "弃牌",
+      "status": "todo",
+      "params": {
+        "amount": "number",
+        "random": "boolean - 是否随机弃牌"
+      }
+    },
+    
+    "GainEnergy": {
+      "description": "获得能量",
+      "status": "implemented",
+      "params": {
+        "base": "number",
+        "upgrade": "number"
+      }
+    },
+    
+    "Heal": {
+      "description": "回复HP",
+      "status": "implemented",
+      "params": {
+        "base": "number"
+      }
+    },
+    
+    "LoseHP": {
+      "description": "失去HP (非伤害)",
+      "status": "todo",
+      "params": {
+        "amount": "number"
+      }
+    },
+    
+    "AddCard": {
+      "description": "添加卡牌到牌组",
+      "status": "partial",
+      "params": {
+        "card": "string - 卡牌ID或'this card'",
+        "destination": "string - hand/draw pile/discard pile",
+        "upgraded": "boolean - 是否升级版"
+      }
+    },
+    
+    "ShuffleInto": {
+      "description": "将卡牌洗入抽牌堆",
+      "status": "todo",
+      "params": {
+        "card": "string",
+        "amount": "number"
+      }
+    },
+    
+    "PutOnTop": {
+      "description": "将卡牌放到抽牌堆顶",
+      "status": "todo"
+    },
+    
+    "PlayTopCard": {
+      "description": "打出抽牌堆顶的牌",
+      "status": "todo"
+    },
+    
+    "UpgradeCards": {
+      "description": "升级手牌中的卡牌",
+      "status": "partial",
+      "params": {
+        "amount_base": "number|'ALL'",
+        "amount_upgrade": "number|'ALL'",
+        "target": "string - Hand/Draw/Discard"
+      }
+    },
+    
+    "ExhaustSelf": {
+      "description": "消耗此卡牌 (打出后移出战斗)",
+      "status": "todo",
+      "_note": "这是一个卡牌属性，不是命令"
+    },
+    
+    "Exhaust": {
+      "description": "消耗卡牌",
+      "status": "implemented"
+    },
+    
+    "ExhaustCards": {
+      "description": "消耗手牌中的卡牌",
+      "status": "todo",
+      "params": {
+        "amount": "number",
+        "random": "boolean"
+      }
+    },
+    
+    "ApplyPower": {
+      "description": "获得能力 (Power卡效果)",
+      "status": "todo",
+      "params": {
+        "power": "string - 能力名称",
+        "stacks": "number"
+      }
+    },
+    
+    "ChannelOrb": {
+      "description": "引导充能球 (机器人)",
+      "status": "todo",
+      "params": {
+        "orb": "string - Lightning/Frost/Dark/Plasma"
+      }
+    },
+    
+    "EvokeOrb": {
+      "description": "激发充能球",
+      "status": "todo",
+      "params": {
+        "amount": "number"
+      }
+    },
+    
+    "EnterStance": {
+      "description": "进入姿态 (观者)",
+      "status": "todo",
+      "params": {
+        "stance": "string - Wrath/Calm/Divinity"
+      }
+    },
+    
+    "ExitStance": {
+      "description": "退出姿态",
+      "status": "todo"
+    },
+    
+    "Scry": {
+      "description": "预见 (观者)",
+      "status": "todo",
+      "params": {
+        "amount": "number - 查看卡牌数"
+      }
+    },
+    
+    "IncreaseDamage": {
+      "description": "增加伤害 (本次战斗)",
+      "status": "todo"
+    },
+    
+    "StrengthMultiplier": {
+      "description": "力量倍增",
+      "status": "todo"
+    }
+  },
+  
+  "card_keywords": {
+    "_comment": "卡牌关键词 (影响卡牌本身的属性)",
+    
+    "Exhaust": {
+      "description": "打出后消耗",
+      "status": "partial",
+      "implementation_note": "需要在schema.rs的CardDefinition中添加exhaust字段"
+    },
+    
+    "Ethereal": {
+      "description": "回合结束时如果在手牌中则消耗",
+      "status": "todo"
+    },
+    
+    "Innate": {
+      "description": "战斗开始时必定在起始手牌",
+      "status": "todo"
+    },
+    
+    "Retain": {
+      "description": "回合结束时不弃置",
+      "status": "todo"
+    },
+    
+    "Unplayable": {
+      "description": "无法打出",
+      "status": "todo"
+    }
+  },
+  
+  "statuses": {
+    "_comment": "状态效果 (持续的debuff/buff)",
+    
+    "Vulnerable": {
+      "description": "受到伤害+50%",
+      "status": "implemented",
+      "duration_type": "turns"
+    },
+    
+    "Weak": {
+      "description": "造成伤害-25%",
+      "status": "implemented",
+      "duration_type": "turns"
+    },
+    
+    "Frail": {
+      "description": "获得格挡-25%",
+      "status": "partial",
+      "duration_type": "turns"
+    },
+    
+    "Poison": {
+      "description": "每回合受到等于层数的伤害，层数-1",
+      "status": "partial",
+      "duration_type": "stacks"
+    },
+    
+    "Strength": {
+      "description": "每点力量+1伤害",
+      "status": "partial",
+      "duration_type": "permanent"
+    },
+    
+    "Dexterity": {
+      "description": "每点敏捷+1格挡",
+      "status": "partial",
+      "duration_type": "permanent"
+    },
+    
+    "Block": {
+      "description": "格挡伤害",
+      "status": "implemented",
+      "duration_type": "turn_end"
+    },
+    
+    "Lock": {
+      "description": "特殊状态",
+      "status": "todo"
+    },
+    
+    "Mark": {
+      "description": "标记 (观者)",
+      "status": "todo"
+    },
+    
+    "Thorns": {
+      "description": "被攻击时反弹伤害",
+      "status": "todo"
+    },
+    
+    "Artifact": {
+      "description": "免疫下一个debuff",
+      "status": "todo"
+    },
+    
+    "Intangible": {
+      "description": "所有伤害减为1",
+      "status": "todo"
+    },
+    
+    "Ritual": {
+      "description": "每回合获得力量",
+      "status": "todo"
+    },
+    
+    "Vigor": {
+      "description": "下次攻击+伤害",
+      "status": "todo"
+    },
+    
+    "Mantra": {
+      "description": "真言 (观者)",
+      "status": "todo"
+    },
+    
+    "Focus": {
+      "description": "充能球效果+ (机器人)",
+      "status": "todo"
+    }
+  },
+  
+  "orbs": {
+    "_comment": "充能球 (机器人专属)",
+    
+    "Lightning": {
+      "description": "被动: 每回合对随机敌人造成3伤害; 激发: 造成8伤害",
+      "status": "todo"
+    },
+    
+    "Frost": {
+      "description": "被动: 每回合获得2格挡; 激发: 获得5格挡",
+      "status": "todo"
+    },
+    
+    "Dark": {
+      "description": "被动: 每回合+6伤害; 激发: 对HP最低敌人造成伤害",
+      "status": "todo"
+    },
+    
+    "Plasma": {
+      "description": "被动: 每回合+1能量; 激发: +2能量",
+      "status": "todo"
+    }
+  },
+  
+  "stances": {
+    "_comment": "姿态 (观者专属)",
+    
+    "Wrath": {
+      "description": "愤怒: 造成和受到的伤害x2",
+      "status": "todo"
+    },
+    
+    "Calm": {
+      "description": "冷静: 退出时+2能量",
+      "status": "todo"
+    },
+    
+    "Divinity": {
+      "description": "神性: 造成伤害x3, 回合结束退出",
+      "status": "todo"
+    }
+  }
+}

@@ -1,0 +1,2886 @@
+[
+  {
+    "id": "BurningBlood",
+    "name": "Burning Blood",
+    "tier": "Starter",
+    "description": "At the end of combat, heal 6 HP.",
+    "logic": {
+      "hooks": [
+        {
+          "trigger": "BattleEnd",
+          "commands": [
+            {
+              "type": "Heal",
+              "params": {
+                "amount": 6
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "manual_review_needed": false,
+    "class_specific": "Ironclad",
+    "flavor": "Your body's own blood burns with an undying rage."
+  },
+  {
+    "id": "RingoftheSnake",
+    "name": "Ring of the Snake",
+    "tier": "Starter",
+    "description": "At the start of each combat, draw 2 additional cards.",
+    "logic": {
+      "hooks": [
+        {
+          "trigger": "BattleStart",
+          "commands": [
+            {
+              "type": "DrawCards",
+              "params": {
+                "base": 2
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "manual_review_needed": false,
+    "class_specific": "Silent",
+    "flavor": "Made from a fossilized snake. Represents great skill as a huntress."
+  },
+  {
+    "id": "CrackedCore",
+    "name": "Cracked Core",
+    "tier": "Starter",
+    "description": "At the start of each combat, #Channel 1 #Lightning.",
+    "logic": {
+      "hooks": [
+        {
+          "trigger": "BattleStart",
+          "commands": [
+            {
+              "type": "ChannelOrb",
+              "params": {
+                "orb": "Lightning",
+                "count": 1
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "manual_review_needed": false,
+    "class_specific": "Defect",
+    "flavor": "The mysterious life force which powers the Automatons within the Spire. It appears to be cracked."
+  },
+  {
+    "id": "PureWater",
+    "name": "Pure Water",
+    "tier": "Common",
+    "description": "",
+    "logic": {
+      "hooks": []
+    },
+    "manual_review_needed": true
+  },
+  {
+    "id": "Akabeko",
+    "name": "Akabeko",
+    "tier": "Common",
+    "description": "",
+    "logic": {
+      "hooks": []
+    },
+    "manual_review_needed": true
+  },
+  {
+    "id": "Anchor",
+    "name": "Anchor",
+    "tier": "Common",
+    "description": "Start each combat with 10 #Block.",
+    "logic": {
+      "hooks": [
+        {
+          "trigger": "BattleStart",
+          "commands": [
+            {
+              "type": "GainBlock",
+              "params": {
+                "base": 10
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "manual_review_needed": false,
+    "flavor": "Holding this miniature trinket, you feel heavier and more stable."
+  },
+  {
+    "id": "AncientTeaSet",
+    "name": "Ancient Tea Set",
+    "tier": "Common",
+    "description": "Whenever you enter a Rest Site, start the next combat with 2 extra #Energy.",
+    "logic": {
+      "hooks": []
+    },
+    "manual_review_needed": true,
+    "flavor": "The key to a refreshing night's rest."
+  },
+  {
+    "id": "ArtofWar",
+    "name": "Art of War",
+    "tier": "Common",
+    "description": "",
+    "logic": {
+      "hooks": []
+    },
+    "manual_review_needed": true
+  },
+  {
+    "id": "BagofMarbles",
+    "name": "Bag of Marbles",
+    "tier": "Common",
+    "description": "At the start of each combat, apply 1 #Vulnerable to ALL enemies.",
+    "logic": {
+      "hooks": [
+        {
+          "trigger": "BattleStart",
+          "commands": [
+            {
+              "type": "ApplyToAllEnemies",
+              "params": {
+                "status": "Vulnerable",
+                "amount": 1
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "manual_review_needed": false,
+    "flavor": "A once popular toy in the City. Useful for throwing enemies off balance."
+  },
+  {
+    "id": "BagofPreparation",
+    "name": "Bag of Preparation",
+    "tier": "Common",
+    "description": "At the start of each combat, draw 2 additional cards.",
+    "logic": {
+      "hooks": [
+        {
+          "trigger": "BattleStart",
+          "commands": [
+            {
+              "type": "DrawCards",
+              "params": {
+                "base": 2
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "manual_review_needed": false,
+    "flavor": "Oversized adventurer's pack. Has many pockets and straps."
+  },
+  {
+    "id": "BloodVial",
+    "name": "Blood Vial",
+    "tier": "Common",
+    "description": "At the start of each combat, heal 2 HP.",
+    "logic": {
+      "hooks": [
+        {
+          "trigger": "BattleStart",
+          "commands": [
+            {
+              "type": "Heal",
+              "params": {
+                "amount": 2
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "manual_review_needed": false,
+    "flavor": "A vial containing the blood of a pure and elder vampire."
+  },
+  {
+    "id": "BronzeScales",
+    "name": "Bronze Scales",
+    "tier": "Common",
+    "description": "Start each combat with 3 #Thorns.",
+    "logic": {
+      "hooks": [
+        {
+          "trigger": "BattleStart",
+          "commands": [
+            {
+              "type": "GainBuff",
+              "params": {
+                "buff": "Thorns",
+                "base": 3
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "manual_review_needed": false,
+    "flavor": "The sharp scales of the Guardian. Rearranges itself to protect its user."
+  },
+  {
+    "id": "CentennialPuzzle",
+    "name": "Centennial Puzzle",
+    "tier": "Common",
+    "description": "The first time you lose HP each combat, draw 3 cards.",
+    "logic": {
+      "hooks": [
+        {
+          "trigger": "PlayerLoseHp",
+          "commands": [
+            {
+              "type": "DrawCards",
+              "params": {
+                "base": 3
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "manual_review_needed": false,
+    "flavor": "Upon solving the puzzle you feel a powerful warmth in your chest."
+  },
+  {
+    "id": "CeramicFish",
+    "name": "Ceramic Fish",
+    "tier": "Common",
+    "description": "Whenever you add a card to your deck, gain 9 [[Gold]].",
+    "logic": {
+      "hooks": [
+        {
+          "trigger": "AddCardToDeck",
+          "commands": [
+            {
+              "type": "GainGold",
+              "params": {
+                "amount": 9
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "manual_review_needed": false,
+    "flavor": "Meticulously painted, these fish were revered to bring great fortune."
+  },
+  {
+    "id": "DreamCatcher",
+    "name": "Dream Catcher",
+    "tier": "Common",
+    "description": "Whenever you Rest, you may add a card to your deck.",
+    "logic": {
+      "hooks": []
+    },
+    "manual_review_needed": true,
+    "flavor": "The northern tribes would often use dream catchers at night, believing they led to self improvement."
+  },
+  {
+    "id": "HappyFlower",
+    "name": "Happy Flower",
+    "tier": "Common",
+    "description": "Every 3 turns, gain 1 #Energy.",
+    "logic": {
+      "hooks": [],
+      "counter_max": 3
+    },
+    "manual_review_needed": true,
+    "flavor": "This unceasingly joyous plant is a popular novelty item among nobles."
+  },
+  {
+    "id": "JuzuBracelet",
+    "name": "Juzu Bracelet",
+    "tier": "Common",
+    "description": "Regular enemy combats are no longer encountered in ? rooms.",
+    "logic": {
+      "hooks": []
+    },
+    "manual_review_needed": true,
+    "flavor": "A ward against the unknown."
+  },
+  {
+    "id": "Lantern",
+    "name": "Lantern",
+    "tier": "Common",
+    "description": "Gain 1 #Energy on the first turn of each combat.",
+    "logic": {
+      "hooks": [
+        {
+          "trigger": "TurnStart",
+          "commands": [
+            {
+              "type": "GainEnergy",
+              "params": {
+                "amount": 1
+              }
+            }
+          ],
+          "condition": {
+            "turn": 1
+          }
+        }
+      ]
+    },
+    "manual_review_needed": false,
+    "flavor": "An eerie lantern which illuminates only for the wielder."
+  },
+  {
+    "id": "MawBank",
+    "name": "Maw Bank",
+    "tier": "Common",
+    "description": "Whenever you climb a floor, gain 12 [[Gold]]. No longer works when you spend any [[Gold]] at a shop.",
+    "logic": {
+      "hooks": [
+        {
+          "trigger": "ClimbFloor",
+          "commands": [
+            {
+              "type": "GainGold",
+              "params": {
+                "amount": 12
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "manual_review_needed": false,
+    "flavor": "Surprisingly popular, despite maw attacks being a regular occurrence."
+  },
+  {
+    "id": "MealTicket",
+    "name": "Meal Ticket",
+    "tier": "Common",
+    "description": "Whenever you enter a shop, heal 15 HP.",
+    "logic": {
+      "hooks": [
+        {
+          "trigger": "EnterShop",
+          "commands": [
+            {
+              "type": "Heal",
+              "params": {
+                "amount": 15
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "manual_review_needed": false,
+    "flavor": "Complimentary meatballs with every visit!"
+  },
+  {
+    "id": "Nunchaku",
+    "name": "Nunchaku",
+    "tier": "Common",
+    "description": "",
+    "logic": {
+      "hooks": [],
+      "counter_max": 10
+    },
+    "manual_review_needed": true
+  },
+  {
+    "id": "OddlySmoothStone",
+    "name": "Oddly Smooth Stone",
+    "tier": "Common",
+    "description": "At the start of each combat, gain 1 #Dexterity.",
+    "logic": {
+      "hooks": [
+        {
+          "trigger": "BattleStart",
+          "commands": [
+            {
+              "type": "GainBuff",
+              "params": {
+                "buff": "Dexterity",
+                "base": 1
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "manual_review_needed": false,
+    "flavor": "You have never seen something so smooth and pristine. This must be the work of the Ancients."
+  },
+  {
+    "id": "Omamori",
+    "name": "Omamori",
+    "tier": "Common",
+    "description": "",
+    "logic": {
+      "hooks": []
+    },
+    "manual_review_needed": true
+  },
+  {
+    "id": "Orichalcum",
+    "name": "Orichalcum",
+    "tier": "Common",
+    "description": "If you end your turn without #Block, gain 6 #Block.",
+    "logic": {
+      "hooks": [
+        {
+          "trigger": "TurnEnd",
+          "commands": [
+            {
+              "type": "GainBlock",
+              "params": {
+                "base": 6
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "manual_review_needed": false,
+    "flavor": "A green tinted metal of an unknown origin. Seemingly indestructible."
+  },
+  {
+    "id": "PenNib",
+    "name": "Pen Nib",
+    "tier": "Common",
+    "description": "",
+    "logic": {
+      "hooks": [],
+      "counter_max": 10
+    },
+    "manual_review_needed": true
+  },
+  {
+    "id": "PotionBelt",
+    "name": "Potion Belt",
+    "tier": "Common",
+    "description": "Upon pickup, gain 2 [[Potions|Potion]] slots.",
+    "logic": {
+      "hooks": []
+    },
+    "manual_review_needed": true,
+    "flavor": "I can hold more Potions using this belt!"
+  },
+  {
+    "id": "PreservedInsect",
+    "name": "Preserved Insect",
+    "tier": "Common",
+    "description": "Enemies in Elite combats have 25% less HP.",
+    "logic": {
+      "hooks": []
+    },
+    "manual_review_needed": true,
+    "flavor": "The insect seems to create a shrinking aura that targets particularly large enemies."
+  },
+  {
+    "id": "RegalPillow",
+    "name": "Regal Pillow",
+    "tier": "Common",
+    "description": "Whenever you Rest, heal an additional 15 HP.",
+    "logic": {
+      "hooks": []
+    },
+    "manual_review_needed": true,
+    "flavor": "Now you can get a proper night's rest."
+  },
+  {
+    "id": "SmilingMask",
+    "name": "Smiling Mask",
+    "tier": "Common",
+    "description": "The merchant's card removal service now always costs 50 [[Gold]].",
+    "logic": {
+      "hooks": []
+    },
+    "manual_review_needed": true,
+    "flavor": "Mask worn by the merchant. He must have spares..."
+  },
+  {
+    "id": "Strawberry",
+    "name": "Strawberry",
+    "tier": "Common",
+    "description": "Upon pickup, raise your Max HP by 7.",
+    "logic": {
+      "hooks": [
+        {
+          "trigger": "OnPickup",
+          "commands": [
+            {
+              "type": "RaiseMaxHp",
+              "params": {
+                "amount": 7
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "manual_review_needed": false,
+    "flavor": "\\"
+  },
+  {
+    "id": "TheBoot",
+    "name": "The Boot",
+    "tier": "Common",
+    "description": "",
+    "logic": {
+      "hooks": []
+    },
+    "manual_review_needed": true
+  },
+  {
+    "id": "TinyChest",
+    "name": "Tiny Chest",
+    "tier": "Common",
+    "description": "Every 4th ? room is a Treasure room.",
+    "logic": {
+      "hooks": []
+    },
+    "manual_review_needed": true,
+    "flavor": "\\"
+  },
+  {
+    "id": "ToyOrnithopter",
+    "name": "Toy Ornithopter",
+    "tier": "Common",
+    "description": "Whenever you use a [[Potions|potion]], heal 5 HP.",
+    "logic": {
+      "hooks": [
+        {
+          "trigger": "PlayerUsePotion",
+          "commands": [
+            {
+              "type": "Heal",
+              "params": {
+                "amount": 5
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "manual_review_needed": false,
+    "flavor": "\\"
+  },
+  {
+    "id": "Vajra",
+    "name": "Vajra",
+    "tier": "Common",
+    "description": "At the start of each combat, gain 1 #Strength.",
+    "logic": {
+      "hooks": [
+        {
+          "trigger": "BattleStart",
+          "commands": [
+            {
+              "type": "GainBuff",
+              "params": {
+                "buff": "Strength",
+                "base": 1
+              }
+            },
+            {
+              "type": "GainBuff",
+              "params": {
+                "buff": "Strength",
+                "base": 1
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "manual_review_needed": false,
+    "flavor": "An ornamental relic given to warriors displaying glory in battle."
+  },
+  {
+    "id": "WarPaint",
+    "name": "War Paint",
+    "tier": "Common",
+    "description": "",
+    "logic": {
+      "hooks": []
+    },
+    "manual_review_needed": true
+  },
+  {
+    "id": "Whetstone",
+    "name": "Whetstone",
+    "tier": "Common",
+    "description": "",
+    "logic": {
+      "hooks": []
+    },
+    "manual_review_needed": true
+  },
+  {
+    "id": "RedSkull",
+    "name": "Red Skull",
+    "tier": "Common",
+    "description": "While your HP is at or below 50%, you have 3 additional #Strength.",
+    "logic": {
+      "hooks": []
+    },
+    "manual_review_needed": true,
+    "class_specific": "Ironclad",
+    "flavor": "A small skull covered in ornamental paint."
+  },
+  {
+    "id": "Snake Skull",
+    "name": "Snecko Skull",
+    "tier": "Common",
+    "description": "Whenever you apply #Poison, apply an additional 1 #Poison.",
+    "logic": {
+      "hooks": [
+        {
+          "trigger": "PlayerApplyPoison",
+          "commands": [
+            {
+              "type": "ApplyStatus",
+              "params": {
+                "status": "Poison",
+                "amount": 1
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "manual_review_needed": false,
+    "class_specific": "Silent",
+    "flavor": "A snecko skull in pristine condition. Mysteriously clean and smooth, dirt and grime fall off inexplicably."
+  },
+  {
+    "id": "DataDisk",
+    "name": "Data Disk",
+    "tier": "Common",
+    "description": "Start each combat with 1 #Focus.",
+    "logic": {
+      "hooks": [
+        {
+          "trigger": "BattleStart",
+          "commands": [
+            {
+              "type": "GainBuff",
+              "params": {
+                "buff": "Focus",
+                "base": 1
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "manual_review_needed": false,
+    "class_specific": "Defect",
+    "flavor": "This disk contains precious data on birds and snakes."
+  },
+  {
+    "id": "Damaru",
+    "name": "Damaru",
+    "tier": "Common",
+    "description": "At the start of your turn, gain 1 #Mantra.",
+    "logic": {
+      "hooks": [
+        {
+          "trigger": "TurnStart",
+          "commands": [
+            {
+              "type": "GainBuff",
+              "params": {
+                "buff": "Mantra",
+                "base": 1
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "manual_review_needed": false,
+    "class_specific": "Watcher",
+    "flavor": "The sound of the small drum keeps your mind awake, revealing a path forward."
+  },
+  {
+    "id": "BlueCandle",
+    "name": "Blue Candle",
+    "tier": "Common",
+    "description": "",
+    "logic": {
+      "hooks": []
+    },
+    "manual_review_needed": true
+  },
+  {
+    "id": "BottledFlame",
+    "name": "Bottled Flame",
+    "tier": "Common",
+    "description": "",
+    "logic": {
+      "hooks": []
+    },
+    "manual_review_needed": true
+  },
+  {
+    "id": "BottledLightning",
+    "name": "Bottled Lightning",
+    "tier": "Common",
+    "description": "",
+    "logic": {
+      "hooks": []
+    },
+    "manual_review_needed": true
+  },
+  {
+    "id": "BottledTornado",
+    "name": "Bottled Tornado",
+    "tier": "Common",
+    "description": "",
+    "logic": {
+      "hooks": []
+    },
+    "manual_review_needed": true
+  },
+  {
+    "id": "DarkstonePeriapt",
+    "name": "Darkstone Periapt",
+    "tier": "Common",
+    "description": "",
+    "logic": {
+      "hooks": []
+    },
+    "manual_review_needed": true
+  },
+  {
+    "id": "EternalFeather",
+    "name": "Eternal Feather",
+    "tier": "Uncommon",
+    "description": "For every 5 cards in your deck, heal 3 HP whenever you enter a Rest Site.",
+    "logic": {
+      "hooks": [
+        {
+          "trigger": "EnterRest",
+          "commands": [
+            {
+              "type": "Heal",
+              "params": {
+                "amount": 3
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "manual_review_needed": false,
+    "flavor": "This feather appears to be completely indestructible. What bird does this possibly come from? "
+  },
+  {
+    "id": "FrozenEgg",
+    "name": "Frozen Egg",
+    "tier": "Common",
+    "description": "",
+    "logic": {
+      "hooks": []
+    },
+    "manual_review_needed": true
+  },
+  {
+    "id": "GremlinHorn",
+    "name": "Gremlin Horn",
+    "tier": "Uncommon",
+    "description": "Whenever an enemy dies, gain 1 #Energy and draw 1 card.",
+    "logic": {
+      "hooks": [
+        {
+          "trigger": "EnemyDied",
+          "commands": [
+            {
+              "type": "DrawCards",
+              "params": {
+                "base": 1
+              }
+            },
+            {
+              "type": "GainEnergy",
+              "params": {
+                "amount": 1
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "manual_review_needed": false,
+    "flavor": "\\"
+  },
+  {
+    "id": "HornCleat",
+    "name": "Horn Cleat",
+    "tier": "Uncommon",
+    "description": "At the start of your 2nd turn, gain 14 #Block.",
+    "logic": {
+      "hooks": [
+        {
+          "trigger": "TurnStart",
+          "commands": [
+            {
+              "type": "GainBlock",
+              "params": {
+                "base": 14
+              }
+            }
+          ],
+          "condition": {
+            "turn": 2
+          }
+        }
+      ]
+    },
+    "manual_review_needed": false,
+    "flavor": "Pleasant to hold in the hand. What was it for?"
+  },
+  {
+    "id": "InkBottle",
+    "name": "Ink Bottle",
+    "tier": "Uncommon",
+    "description": "Whenever you play 10 cards, draw 1 card.",
+    "logic": {
+      "hooks": [],
+      "counter_max": 10
+    },
+    "manual_review_needed": true,
+    "flavor": "Once exhausted, appears to refill itself in a different color."
+  },
+  {
+    "id": "Kunai",
+    "name": "Kunai",
+    "tier": "Common",
+    "description": "",
+    "logic": {
+      "hooks": [],
+      "counter_max": 3
+    },
+    "manual_review_needed": true
+  },
+  {
+    "id": "LetterOpener",
+    "name": "Letter Opener",
+    "tier": "Common",
+    "description": "",
+    "logic": {
+      "hooks": []
+    },
+    "manual_review_needed": true
+  },
+  {
+    "id": "Matryoshka",
+    "name": "Matryoshka",
+    "tier": "Uncommon",
+    "description": "The next 2 non-boss chests you open contain 2 Relics.",
+    "logic": {
+      "hooks": []
+    },
+    "manual_review_needed": true,
+    "flavor": "A stackable set of painted dolls. The paint depicts an unknown bird with white eyes and blue feathers."
+  },
+  {
+    "id": "MeatontheBone",
+    "name": "Meat on the Bone",
+    "tier": "Uncommon",
+    "description": "If your HP is at or below 50% at the end of combat, heal 12 HP.",
+    "logic": {
+      "hooks": [
+        {
+          "trigger": "BattleEnd",
+          "commands": [
+            {
+              "type": "Heal",
+              "params": {
+                "amount": 12
+              }
+            }
+          ],
+          "condition": {
+            "hp_below_percent": 50
+          }
+        }
+      ]
+    },
+    "manual_review_needed": false,
+    "flavor": "The meat keeps replenishing, never seeming to fully run out."
+  },
+  {
+    "id": "MercuryHourglass",
+    "name": "Mercury Hourglass",
+    "tier": "Uncommon",
+    "description": "At the start of your turn, deal 3 damage to ALL enemies.",
+    "logic": {
+      "hooks": [
+        {
+          "trigger": "TurnStart",
+          "commands": [
+            {
+              "type": "DamageAll",
+              "params": {
+                "amount": 3
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "manual_review_needed": false,
+    "flavor": "An enchanted hourglass that endlessly drips."
+  },
+  {
+    "id": "MoltenEgg",
+    "name": "Molten Egg",
+    "tier": "Common",
+    "description": "",
+    "logic": {
+      "hooks": []
+    },
+    "manual_review_needed": true
+  },
+  {
+    "id": "MummifiedHand",
+    "name": "Mummified Hand",
+    "tier": "Common",
+    "description": "",
+    "logic": {
+      "hooks": []
+    },
+    "manual_review_needed": true
+  },
+  {
+    "id": "OrnamentalFan",
+    "name": "Ornamental Fan",
+    "tier": "Common",
+    "description": "",
+    "logic": {
+      "hooks": [],
+      "counter_max": 3
+    },
+    "manual_review_needed": true
+  },
+  {
+    "id": "Pantograph",
+    "name": "Pantograph",
+    "tier": "Uncommon",
+    "description": "At the start of Boss combats, heal 25 HP.",
+    "logic": {
+      "hooks": [
+        {
+          "trigger": "BossStart",
+          "commands": [
+            {
+              "type": "Heal",
+              "params": {
+                "amount": 25
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "manual_review_needed": false,
+    "flavor": "\\"
+  },
+  {
+    "id": "Pear",
+    "name": "Pear",
+    "tier": "Uncommon",
+    "description": "Upon pickup, raise your Max HP by 10.",
+    "logic": {
+      "hooks": [
+        {
+          "trigger": "OnPickup",
+          "commands": [
+            {
+              "type": "RaiseMaxHp",
+              "params": {
+                "amount": 10
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "manual_review_needed": false,
+    "flavor": "A common fruit before the Spireblight."
+  },
+  {
+    "id": "QuestionCard",
+    "name": "Question Card",
+    "tier": "Uncommon",
+    "description": "Future card rewards have 1 additional card to choose from.",
+    "logic": {
+      "hooks": []
+    },
+    "manual_review_needed": true,
+    "flavor": "\\"
+  },
+  {
+    "id": "Shuriken",
+    "name": "Shuriken",
+    "tier": "Common",
+    "description": "",
+    "logic": {
+      "hooks": [],
+      "counter_max": 3
+    },
+    "manual_review_needed": true
+  },
+  {
+    "id": "SingingBowl",
+    "name": "Singing Bowl",
+    "tier": "Uncommon",
+    "description": "When adding cards to your deck, you may raise your Max HP by 2 instead.",
+    "logic": {
+      "hooks": []
+    },
+    "manual_review_needed": true,
+    "flavor": "This well-used artifact rings out with a beautiful melody when struck."
+  },
+  {
+    "id": "StrikeDummy",
+    "name": "Strike Dummy",
+    "tier": "Uncommon",
+    "description": "Cards containing \\",
+    "logic": {
+      "hooks": []
+    },
+    "manual_review_needed": true,
+    "flavor": "It's beat up."
+  },
+  {
+    "id": "Sundial",
+    "name": "Sundial",
+    "tier": "Uncommon",
+    "description": "Every 3 times you shuffle your draw pile, gain 2 #Energy.",
+    "logic": {
+      "hooks": [],
+      "counter_max": 3
+    },
+    "manual_review_needed": true,
+    "flavor": "\\"
+  },
+  {
+    "id": "TheCourier",
+    "name": "The Courier",
+    "tier": "Uncommon",
+    "description": "The Merchant restocks [[Cards|cards]], [[Relics|relics]], and [[Potions|potions]]. All prices are reduced by 20%.",
+    "logic": {
+      "hooks": []
+    },
+    "manual_review_needed": true,
+    "flavor": "The merchant's personal pet!"
+  },
+  {
+    "id": "ToxicEgg",
+    "name": "Toxic Egg",
+    "tier": "Common",
+    "description": "",
+    "logic": {
+      "hooks": []
+    },
+    "manual_review_needed": true
+  },
+  {
+    "id": "WhiteBeastStatue",
+    "name": "White Beast Statue",
+    "tier": "Uncommon",
+    "description": "[[Potions]] always appear in combat rewards.",
+    "logic": {
+      "hooks": []
+    },
+    "manual_review_needed": true,
+    "flavor": "A small white statue of a creature you have never seen before."
+  },
+  {
+    "id": "Paper Frog",
+    "name": "Paper Phrog",
+    "tier": "Uncommon",
+    "description": "Enemies with #Vulnerable take 75% more damage rather than 50%.",
+    "logic": {
+      "hooks": []
+    },
+    "manual_review_needed": true,
+    "class_specific": "Ironclad",
+    "flavor": "The paper continually folds and unfolds itself into the shape of a small creature."
+  },
+  {
+    "id": "Self Forming Clay",
+    "name": "Self-Forming Clay",
+    "tier": "Uncommon",
+    "description": "Whenever you lose HP, gain 3 #Block next turn.",
+    "logic": {
+      "hooks": [
+        {
+          "trigger": "PlayerLoseHp",
+          "commands": [
+            {
+              "type": "GainBlock",
+              "params": {
+                "base": 3
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "manual_review_needed": false,
+    "class_specific": "Ironclad",
+    "flavor": "\\"
+  },
+  {
+    "id": "NinjaScroll",
+    "name": "Ninja Scroll",
+    "tier": "Common",
+    "description": "",
+    "logic": {
+      "hooks": []
+    },
+    "manual_review_needed": true
+  },
+  {
+    "id": "Paper Crane",
+    "name": "Paper Krane",
+    "tier": "Uncommon",
+    "description": "Enemies with #Weak deal 40% less damage rather than 25%.",
+    "logic": {
+      "hooks": []
+    },
+    "manual_review_needed": true,
+    "class_specific": "Silent",
+    "flavor": "An origami of a creature from a past age."
+  },
+  {
+    "id": "Gold-PlatedCables",
+    "name": "Gold-Plated Cables",
+    "tier": "Uncommon",
+    "description": "Your rightmost #Orb triggers its passive an additional time.",
+    "logic": {
+      "hooks": []
+    },
+    "manual_review_needed": true,
+    "class_specific": "Defect",
+    "flavor": "\\"
+  },
+  {
+    "id": "SymbioticVirus",
+    "name": "Symbiotic Virus",
+    "tier": "Uncommon",
+    "description": "At the start of each combat, #Channel 1 #Dark.",
+    "logic": {
+      "hooks": [
+        {
+          "trigger": "BattleStart",
+          "commands": [
+            {
+              "type": "ChannelOrb",
+              "params": {
+                "orb": "Dark",
+                "count": 1
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "manual_review_needed": false,
+    "class_specific": "Defect",
+    "flavor": "A little bit of bad can do a lot of good."
+  },
+  {
+    "id": "Duality",
+    "name": "Duality",
+    "tier": "Common",
+    "description": "",
+    "logic": {
+      "hooks": []
+    },
+    "manual_review_needed": true
+  },
+  {
+    "id": "TeardropLocket",
+    "name": "Teardrop Locket",
+    "tier": "Uncommon",
+    "description": "Start each combat in #Calm.",
+    "logic": {
+      "hooks": [
+        {
+          "trigger": "BattleStart",
+          "commands": [
+            {
+              "type": "EnterStance",
+              "params": {
+                "stance": "Calm"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "manual_review_needed": false,
+    "class_specific": "Watcher",
+    "flavor": "Its owner blind, its contents unseen."
+  },
+  {
+    "id": "Bird-FacedUrn",
+    "name": "Bird-Faced Urn",
+    "tier": "Common",
+    "description": "",
+    "logic": {
+      "hooks": []
+    },
+    "manual_review_needed": true
+  },
+  {
+    "id": "Calipers",
+    "name": "Calipers",
+    "tier": "Rare",
+    "description": "At the start of your turn, lose 15 #Block rather than all of your #Block.",
+    "logic": {
+      "hooks": []
+    },
+    "manual_review_needed": true,
+    "flavor": "\\"
+  },
+  {
+    "id": "Captain'sWheel",
+    "name": "Captain's Wheel",
+    "tier": "Rare",
+    "description": "At the start of your 3rd turn, gain 18 #Block.",
+    "logic": {
+      "hooks": [
+        {
+          "trigger": "TurnStart",
+          "commands": [
+            {
+              "type": "GainBlock",
+              "params": {
+                "base": 18
+              }
+            }
+          ],
+          "condition": {
+            "turn": 3
+          }
+        }
+      ]
+    },
+    "manual_review_needed": false,
+    "flavor": "Wooden trinket carved with delicate precision. A name is carved into it but the language is foreign."
+  },
+  {
+    "id": "DeadBranch",
+    "name": "Dead Branch",
+    "tier": "Rare",
+    "description": "Whenever you #Exhaust a card, add a random card to your hand.",
+    "logic": {
+      "hooks": []
+    },
+    "manual_review_needed": true,
+    "flavor": "The branch of a tree from a forgotten era."
+  },
+  {
+    "id": "Du-VuDoll",
+    "name": "Du-Vu Doll",
+    "tier": "Common",
+    "description": "",
+    "logic": {
+      "hooks": []
+    },
+    "manual_review_needed": true
+  },
+  {
+    "id": "FossilizedHelix",
+    "name": "Fossilized Helix",
+    "tier": "Rare",
+    "description": "Prevent the first time you would lose HP in combat.",
+    "logic": {
+      "hooks": []
+    },
+    "manual_review_needed": true,
+    "flavor": "Seemingly indestructible, you wonder what kind of creature this belonged to."
+  },
+  {
+    "id": "GamblingChip",
+    "name": "Gambling Chip",
+    "tier": "Rare",
+    "description": "At the start of each combat, discard any number of cards, then draw that many cards.",
+    "logic": {
+      "hooks": []
+    },
+    "manual_review_needed": true,
+    "flavor": "You can see a small inscription on one side. It reads: \\"
+  },
+  {
+    "id": "Ginger",
+    "name": "Ginger",
+    "tier": "Rare",
+    "description": "You can no longer become #Weakened.",
+    "logic": {
+      "hooks": []
+    },
+    "manual_review_needed": true,
+    "flavor": "A potent tool in many tonics."
+  },
+  {
+    "id": "Girya",
+    "name": "Girya",
+    "tier": "Rare",
+    "description": "You can now gain #Strength at Rest Sites (up to 3 times).",
+    "logic": {
+      "hooks": []
+    },
+    "manual_review_needed": true,
+    "flavor": "This Girya is unfathomably heavy. You could train with this to get significantly stronger."
+  },
+  {
+    "id": "IceCream",
+    "name": "Ice Cream",
+    "tier": "Rare",
+    "description": "#Energy is now conserved between turns.",
+    "logic": {
+      "hooks": []
+    },
+    "manual_review_needed": true,
+    "flavor": "Delicious!"
+  },
+  {
+    "id": "IncenseBurner",
+    "name": "Incense Burner",
+    "tier": "Rare",
+    "description": "Every 6 turns, gain 1 #Intangible.",
+    "logic": {
+      "hooks": [],
+      "counter_max": 6
+    },
+    "manual_review_needed": true,
+    "flavor": "The smoke imbues its owner with the spirit of the burned."
+  },
+  {
+    "id": "LizardTail",
+    "name": "Lizard Tail",
+    "tier": "Rare",
+    "description": "When you would die, heal to 50% of your Max HP instead (works once).",
+    "logic": {
+      "hooks": []
+    },
+    "manual_review_needed": true,
+    "flavor": "A fake tail to trick enemies during combat."
+  },
+  {
+    "id": "Mango",
+    "name": "Mango",
+    "tier": "Rare",
+    "description": "Upon pickup, raise your Max HP by 14.",
+    "logic": {
+      "hooks": [
+        {
+          "trigger": "OnPickup",
+          "commands": [
+            {
+              "type": "RaiseMaxHp",
+              "params": {
+                "amount": 14
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "manual_review_needed": false,
+    "flavor": "The most coveted forgotten fruit. Impeccably preserved with no signs of Spireblight."
+  },
+  {
+    "id": "OldCoin",
+    "name": "Old Coin",
+    "tier": "Rare",
+    "description": "Upon pickup, gain 300 [[Gold]].",
+    "logic": {
+      "hooks": [
+        {
+          "trigger": "OnPickup",
+          "commands": [
+            {
+              "type": "GainGold",
+              "params": {
+                "amount": 300
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "manual_review_needed": false,
+    "flavor": "Unique coins are highly valued by Merchants for their historical value and rare metallic composition."
+  },
+  {
+    "id": "PeacePipe",
+    "name": "Peace Pipe",
+    "tier": "Rare",
+    "description": "You can now remove cards from your deck at Rest Sites.",
+    "logic": {
+      "hooks": []
+    },
+    "manual_review_needed": true,
+    "flavor": "Clears the mind and cleanses the soul."
+  },
+  {
+    "id": "Pocketwatch",
+    "name": "Pocketwatch",
+    "tier": "Rare",
+    "description": "Whenever you play 3 or less cards during your turn, draw 3 additional cards at the start of your next turn.",
+    "logic": {
+      "hooks": []
+    },
+    "manual_review_needed": true,
+    "flavor": "The hands seem stuck on the 3 o'clock position."
+  },
+  {
+    "id": "PrayerWheel",
+    "name": "Prayer Wheel",
+    "tier": "Rare",
+    "description": "Normal enemies drop an additional card reward.",
+    "logic": {
+      "hooks": []
+    },
+    "manual_review_needed": true,
+    "flavor": "The wheel continues to spin, never stopping."
+  },
+  {
+    "id": "Shovel",
+    "name": "Shovel",
+    "tier": "Rare",
+    "description": "You can now Dig for relics at Rest Sites.",
+    "logic": {
+      "hooks": []
+    },
+    "manual_review_needed": true,
+    "flavor": "The Spire houses all number of relics from past civilizations and powerful adventurers lost to time. Time to go dig them up!"
+  },
+  {
+    "id": "Calendar",
+    "name": "Stone Calendar",
+    "tier": "Rare",
+    "description": "At the end of turn 7, deal 52 damage to ALL enemies.",
+    "logic": {
+      "hooks": [
+        {
+          "trigger": "TurnEnd",
+          "commands": [
+            {
+              "type": "DamageAll",
+              "params": {
+                "amount": 52
+              }
+            }
+          ],
+          "condition": {
+            "turn": 7
+          }
+        }
+      ],
+      "counter_max": 7
+    },
+    "manual_review_needed": false,
+    "flavor": "The passage of time is imperceptible in the Spire."
+  },
+  {
+    "id": "ThreadandNeedle",
+    "name": "Thread and Needle",
+    "tier": "Rare",
+    "description": "At the start of each combat, gain 4 #Plated Armor.",
+    "logic": {
+      "hooks": [
+        {
+          "trigger": "BattleStart",
+          "commands": [
+            {
+              "type": "GainBuff",
+              "params": {
+                "buff": "PlatedArmor",
+                "base": 4
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "manual_review_needed": false,
+    "flavor": "Wrapping the magical thread around your body, you feel harder to the touch."
+  },
+  {
+    "id": "Torii",
+    "name": "Torii",
+    "tier": "Common",
+    "description": "",
+    "logic": {
+      "hooks": []
+    },
+    "manual_review_needed": true
+  },
+  {
+    "id": "TungstenRod",
+    "name": "Tungsten Rod",
+    "tier": "Rare",
+    "description": "Whenever you would lose HP, lose 1 less.",
+    "logic": {
+      "hooks": []
+    },
+    "manual_review_needed": true,
+    "flavor": "It's very very heavy."
+  },
+  {
+    "id": "Turnip",
+    "name": "Turnip",
+    "tier": "Rare",
+    "description": "You can no longer become #Frail.",
+    "logic": {
+      "hooks": []
+    },
+    "manual_review_needed": true,
+    "flavor": "Best with Ginger."
+  },
+  {
+    "id": "UnceasingTop",
+    "name": "Unceasing Top",
+    "tier": "Rare",
+    "description": "Whenever you have no cards in hand during your turn, draw a card.",
+    "logic": {
+      "hooks": []
+    },
+    "manual_review_needed": true,
+    "flavor": "The top continues to spin effortlessly as if you were in a dream."
+  },
+  {
+    "id": "WingBoots",
+    "name": "Wing Boots",
+    "tier": "Rare",
+    "description": "You may ignore paths when choosing the next room to travel to 3 times.",
+    "logic": {
+      "hooks": []
+    },
+    "manual_review_needed": true,
+    "flavor": "Stylish."
+  },
+  {
+    "id": "ChampionBelt",
+    "name": "Champion Belt",
+    "tier": "Rare",
+    "description": "Whenever you apply #Vulnerable, also apply 1 #Weak.",
+    "logic": {
+      "hooks": [
+        {
+          "trigger": "PlayerApplyVulnerable",
+          "commands": [
+            {
+              "type": "ApplyStatus",
+              "params": {
+                "status": "Weak",
+                "amount": 1
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "manual_review_needed": false,
+    "class_specific": "Ironclad",
+    "flavor": "Only the greatest may wear this belt."
+  },
+  {
+    "id": "Charon'sAshes",
+    "name": "Charon's Ashes",
+    "tier": "Rare",
+    "description": "Whenever you #Exhaust a card, deal 3 damage to ALL enemies.",
+    "logic": {
+      "hooks": [
+        {
+          "trigger": "PlayerExhaust",
+          "commands": [
+            {
+              "type": "DamageAll",
+              "params": {
+                "amount": 3
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "manual_review_needed": false,
+    "class_specific": "Ironclad",
+    "flavor": "Charon was said to be the god of rebirth, eternally dying and reviving in a burst of flame."
+  },
+  {
+    "id": "MagicFlower",
+    "name": "Magic Flower",
+    "tier": "Rare",
+    "description": "Healing is 50% more effective during combat.",
+    "logic": {
+      "hooks": []
+    },
+    "manual_review_needed": true,
+    "class_specific": "Ironclad",
+    "flavor": "A flower long thought extinct, somehow preserved in perfect condition."
+  },
+  {
+    "id": "TheSpecimen",
+    "name": "The Specimen",
+    "tier": "Rare",
+    "description": "Whenever an enemy dies, transfer any #Poison it has to a random enemy.",
+    "logic": {
+      "hooks": []
+    },
+    "manual_review_needed": true,
+    "class_specific": "Silent",
+    "flavor": "\\"
+  },
+  {
+    "id": "Tingsha",
+    "name": "Tingsha",
+    "tier": "Rare",
+    "description": "Whenever you discard a card during your turn, deal 3 damage to a random enemy.",
+    "logic": {
+      "hooks": [
+        {
+          "trigger": "PlayerDiscard",
+          "commands": [
+            {
+              "type": "DamageRandom",
+              "params": {
+                "amount": 3
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "manual_review_needed": false,
+    "class_specific": "Silent",
+    "flavor": "The sound this instrument generates seems to be capable of reverberating to painful levels of volume."
+  },
+  {
+    "id": "ToughBandages",
+    "name": "Tough Bandages",
+    "tier": "Rare",
+    "description": "Whenever you discard a card during your turn, gain 3 #Block.",
+    "logic": {
+      "hooks": [
+        {
+          "trigger": "PlayerDiscard",
+          "commands": [
+            {
+              "type": "GainBlock",
+              "params": {
+                "base": 3
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "manual_review_needed": false,
+    "class_specific": "Silent",
+    "flavor": "Loss gives strength."
+  },
+  {
+    "id": "EmotionChip",
+    "name": "Emotion Chip",
+    "tier": "Rare",
+    "description": "If you lost HP during the previous turn, trigger the passive ability of all #Orbs at the start of your turn.",
+    "logic": {
+      "hooks": []
+    },
+    "manual_review_needed": true,
+    "class_specific": "Defect",
+    "flavor": "...<3...?"
+  },
+  {
+    "id": "CloakClasp",
+    "name": "Cloak Clasp",
+    "tier": "Rare",
+    "description": "At the end of your turn, gain 1 #Block for each card in your hand.",
+    "logic": {
+      "hooks": []
+    },
+    "manual_review_needed": true,
+    "class_specific": "Watcher",
+    "flavor": "A simple but sturdy design."
+  },
+  {
+    "id": "GoldenEye",
+    "name": "Golden Eye",
+    "tier": "Rare",
+    "description": "Whenever you #Scry, #Scry 2 additional cards.",
+    "logic": {
+      "hooks": []
+    },
+    "manual_review_needed": true,
+    "class_specific": "Watcher",
+    "flavor": "See into the minds of those nearby, predicting their future moves."
+  },
+  {
+    "id": "Cauldron",
+    "name": "Cauldron",
+    "tier": "Shop",
+    "description": "When obtained, brews 5 random [[Potions|potions]].",
+    "logic": {
+      "hooks": []
+    },
+    "manual_review_needed": true,
+    "flavor": "The Merchant is actually a rather skilled potion brewer. Buy 4 get 1 free."
+  },
+  {
+    "id": "ChemicalX",
+    "name": "Chemical X",
+    "tier": "Shop",
+    "description": "The effects of your cost X cards are increased by 2.",
+    "logic": {
+      "hooks": []
+    },
+    "manual_review_needed": true,
+    "flavor": "WARNING: Do not combine with sugar, spice, and everything nice."
+  },
+  {
+    "id": "ClockworkSouvenir",
+    "name": "Clockwork Souvenir",
+    "tier": "Shop",
+    "description": "Start each combat with 1 #Artifact.",
+    "logic": {
+      "hooks": []
+    },
+    "manual_review_needed": true,
+    "flavor": "So many intricate gears."
+  },
+  {
+    "id": "Dolly'sMirror",
+    "name": "Dolly's Mirror",
+    "tier": "Shop",
+    "description": "Upon pickup, obtain an additional copy of a card in your deck.",
+    "logic": {
+      "hooks": []
+    },
+    "manual_review_needed": true,
+    "flavor": "I look funny in this."
+  },
+  {
+    "id": "Frozen Eye",
+    "name": "Frozen Eye",
+    "tier": "Shop",
+    "description": "When viewing your Draw Pile, the cards are now shown in order.",
+    "logic": {
+      "hooks": []
+    },
+    "manual_review_needed": true,
+    "flavor": "Staring into the eye, you see a glimpse of your future."
+  },
+  {
+    "id": "HandDrill",
+    "name": "Hand Drill",
+    "tier": "Shop",
+    "description": "Whenever you break an enemy's #Block, apply 2 #Vulnerable.",
+    "logic": {
+      "hooks": []
+    },
+    "manual_review_needed": true,
+    "flavor": "Spirals are dangerous."
+  },
+  {
+    "id": "Lee'sWaffle",
+    "name": "Lee's Waffle",
+    "tier": "Shop",
+    "description": "Upon pickup, raise your Max HP by 7 and heal all of your HP.",
+    "logic": {
+      "hooks": [
+        {
+          "trigger": "OnPickup",
+          "commands": [
+            {
+              "type": "RaiseMaxHp",
+              "params": {
+                "amount": 7
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "manual_review_needed": false,
+    "flavor": "\\"
+  },
+  {
+    "id": "MedicalKit",
+    "name": "Medical Kit",
+    "tier": "Common",
+    "description": "",
+    "logic": {
+      "hooks": []
+    },
+    "manual_review_needed": true
+  },
+  {
+    "id": "MembershipCard",
+    "name": "Membership Card",
+    "tier": "Shop",
+    "description": "50% discount on all products!",
+    "logic": {
+      "hooks": []
+    },
+    "manual_review_needed": true,
+    "flavor": "\\"
+  },
+  {
+    "id": "OrangePellets",
+    "name": "Orange Pellets",
+    "tier": "Common",
+    "description": "",
+    "logic": {
+      "hooks": []
+    },
+    "manual_review_needed": true
+  },
+  {
+    "id": "Orrery",
+    "name": "Orrery",
+    "tier": "Shop",
+    "description": "Upon pickup, choose and add 5 cards to your deck.",
+    "logic": {
+      "hooks": []
+    },
+    "manual_review_needed": true,
+    "flavor": "\\"
+  },
+  {
+    "id": "PrismaticShard",
+    "name": "Prismatic Shard",
+    "tier": "Common",
+    "description": "",
+    "logic": {
+      "hooks": []
+    },
+    "manual_review_needed": true
+  },
+  {
+    "id": "SlingofCourage",
+    "name": "Sling of Courage",
+    "tier": "Shop",
+    "description": "Start each Elite combat with 2 #Strength.",
+    "logic": {
+      "hooks": []
+    },
+    "manual_review_needed": true,
+    "flavor": "A handy tool for dealing with particularly tough opponents."
+  },
+  {
+    "id": "StrangeSpoon",
+    "name": "Strange Spoon",
+    "tier": "Shop",
+    "description": "Cards which #Exhaust when played will instead discard 50% of the time.",
+    "logic": {
+      "hooks": []
+    },
+    "manual_review_needed": true,
+    "flavor": "Staring at the spoon, it appears to bend and twist around before your eyes."
+  },
+  {
+    "id": "Abacus",
+    "name": "The Abacus",
+    "tier": "Shop",
+    "description": "Whenever you shuffle your draw pile, gain 6 #Block.",
+    "logic": {
+      "hooks": []
+    },
+    "manual_review_needed": true,
+    "flavor": "One...Two...Three..."
+  },
+  {
+    "id": "Toolbox",
+    "name": "Toolbox",
+    "tier": "Common",
+    "description": "",
+    "logic": {
+      "hooks": []
+    },
+    "manual_review_needed": true
+  },
+  {
+    "id": "Brimstone",
+    "name": "Brimstone",
+    "tier": "Shop",
+    "description": "At the start of your turn, gain 2 #Strength and ALL enemies gain 1 #Strength.",
+    "logic": {
+      "hooks": [
+        {
+          "trigger": "TurnStart",
+          "commands": [
+            {
+              "type": "GainBuff",
+              "params": {
+                "buff": "Strength",
+                "base": 2
+              }
+            },
+            {
+              "type": "GainBuff",
+              "params": {
+                "buff": "Strength",
+                "base": 2
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "manual_review_needed": false,
+    "class_specific": "Ironclad",
+    "flavor": "Emanates an infernal heat."
+  },
+  {
+    "id": "Funnel",
+    "name": "Twisted Funnel",
+    "tier": "Shop",
+    "description": "At the start of each combat, apply 4 #Poison to ALL enemies.",
+    "logic": {
+      "hooks": [
+        {
+          "trigger": "BattleStart",
+          "commands": [
+            {
+              "type": "ApplyStatus",
+              "params": {
+                "status": "Poison",
+                "amount": 4
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "manual_review_needed": false,
+    "class_specific": "Silent",
+    "flavor": "I wouldn't drink out of it."
+  },
+  {
+    "id": "RunicCapacitor",
+    "name": "Runic Capacitor",
+    "tier": "Shop",
+    "description": "Start each combat with 3 additional #Orb slots.",
+    "logic": {
+      "hooks": []
+    },
+    "manual_review_needed": true,
+    "class_specific": "Defect",
+    "flavor": "More is better."
+  },
+  {
+    "id": "Melange",
+    "name": "Melange",
+    "tier": "Shop",
+    "description": "Whenever you shuffle your draw pile, #Scry 3.",
+    "logic": {
+      "hooks": []
+    },
+    "manual_review_needed": true,
+    "class_specific": "Watcher",
+    "flavor": "Mysterious sands from an unknown origin. Smells of cinnamon."
+  },
+  {
+    "id": "Astrolabe",
+    "name": "Astrolabe",
+    "tier": "Boss",
+    "description": "Upon pickup, #Transform 3 cards, then #Upgrade them.",
+    "logic": {
+      "hooks": []
+    },
+    "manual_review_needed": true,
+    "flavor": "A tool to glean invaluable knowledge from the stars."
+  },
+  {
+    "id": "BlackStar",
+    "name": "Black Star",
+    "tier": "Boss",
+    "description": "Elites now drop an additional relic when defeated.",
+    "logic": {
+      "hooks": []
+    },
+    "manual_review_needed": true,
+    "flavor": "Originally discovered in the town of the serpent, aside a solitary candle."
+  },
+  {
+    "id": "BustedCrown",
+    "name": "Busted Crown",
+    "tier": "Boss",
+    "description": "Gain 1 #Energy at the start of your turn. Future card rewards have 2 less cards to choose from.",
+    "logic": {
+      "hooks": [
+        {
+          "trigger": "TurnStart",
+          "commands": [
+            {
+              "type": "GainEnergy",
+              "params": {
+                "amount": 1
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "manual_review_needed": false,
+    "flavor": "The Champ's crown... or a pale imitation?"
+  },
+  {
+    "id": "CallingBell",
+    "name": "Calling Bell",
+    "tier": "Common",
+    "description": "",
+    "logic": {
+      "hooks": []
+    },
+    "manual_review_needed": true
+  },
+  {
+    "id": "CoffeeDripper",
+    "name": "Coffee Dripper",
+    "tier": "Boss",
+    "description": "Gain 1 #Energy at the start of your turn. You can no longer Rest at Rest Sites.",
+    "logic": {
+      "hooks": [
+        {
+          "trigger": "TurnStart",
+          "commands": [
+            {
+              "type": "GainEnergy",
+              "params": {
+                "amount": 1
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "manual_review_needed": false,
+    "flavor": "\\"
+  },
+  {
+    "id": "CursedKey",
+    "name": "Cursed Key",
+    "tier": "Common",
+    "description": "",
+    "logic": {
+      "hooks": []
+    },
+    "manual_review_needed": true
+  },
+  {
+    "id": "Ectoplasm",
+    "name": "Ectoplasm",
+    "tier": "Boss",
+    "description": "Gain 1 #Energy at the start of your turn. You can no longer gain [[Gold]].",
+    "logic": {
+      "hooks": [
+        {
+          "trigger": "TurnStart",
+          "commands": [
+            {
+              "type": "GainEnergy",
+              "params": {
+                "amount": 1
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "manual_review_needed": false,
+    "flavor": "This blob of slime and energy seems to pulse with life."
+  },
+  {
+    "id": "EmptyCage",
+    "name": "Empty Cage",
+    "tier": "Boss",
+    "description": "Upon pickup, remove 2 cards from your deck.",
+    "logic": {
+      "hooks": []
+    },
+    "manual_review_needed": true,
+    "flavor": "\\"
+  },
+  {
+    "id": "FusionHammer",
+    "name": "Fusion Hammer",
+    "tier": "Boss",
+    "description": "Gain 1 #Energy at the start of your turn. You can no longer Smith at Rest Sites.",
+    "logic": {
+      "hooks": [
+        {
+          "trigger": "TurnStart",
+          "commands": [
+            {
+              "type": "GainEnergy",
+              "params": {
+                "amount": 1
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "manual_review_needed": false,
+    "flavor": "Once wielded, the owner can never let go."
+  },
+  {
+    "id": "Pandora'sBox",
+    "name": "Pandora's Box",
+    "tier": "Boss",
+    "description": "Upon pickup, #Transform all Strike and Defend cards.",
+    "logic": {
+      "hooks": []
+    },
+    "manual_review_needed": true,
+    "flavor": "You have a bad feeling about opening this."
+  },
+  {
+    "id": "Philosopher'sStone",
+    "name": "Philosopher's Stone",
+    "tier": "Boss",
+    "description": "Gain 1 #Energy at the start of your turn. ALL enemies start combat with 1 #Strength.",
+    "logic": {
+      "hooks": [
+        {
+          "trigger": "TurnStart",
+          "commands": [
+            {
+              "type": "GainEnergy",
+              "params": {
+                "amount": 1
+              }
+            },
+            {
+              "type": "GainBuff",
+              "params": {
+                "buff": "Strength",
+                "base": 1
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "manual_review_needed": false,
+    "flavor": "Raw energy emanates from the stone, empowering all nearby."
+  },
+  {
+    "id": "RunicDome",
+    "name": "Runic Dome",
+    "tier": "Boss",
+    "description": "Gain 1 #Energy at the start of your turn. You can no longer see enemy intents.",
+    "logic": {
+      "hooks": [
+        {
+          "trigger": "TurnStart",
+          "commands": [
+            {
+              "type": "GainEnergy",
+              "params": {
+                "amount": 1
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "manual_review_needed": false,
+    "flavor": "The runes are indecipherable."
+  },
+  {
+    "id": "RunicPyramid",
+    "name": "Runic Pyramid",
+    "tier": "Boss",
+    "description": "At the end of your turn, you no longer discard your hand.",
+    "logic": {
+      "hooks": []
+    },
+    "manual_review_needed": true,
+    "flavor": "The runes are indecipherable."
+  },
+  {
+    "id": "SacredBark",
+    "name": "Sacred Bark",
+    "tier": "Boss",
+    "description": "Double the effectiveness of [[Potions|potions]].",
+    "logic": {
+      "hooks": []
+    },
+    "manual_review_needed": true,
+    "flavor": "A bark rumored to originate from the World tree."
+  },
+  {
+    "id": "Slaver'sCollar",
+    "name": "Slaver's Collar",
+    "tier": "Boss",
+    "description": "During Boss and Elite combats, gain 1 #Energy at the start of your turn.",
+    "logic": {
+      "hooks": [
+        {
+          "trigger": "TurnStart",
+          "commands": [
+            {
+              "type": "GainEnergy",
+              "params": {
+                "amount": 1
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "manual_review_needed": false,
+    "flavor": "Rusty miserable chains."
+  },
+  {
+    "id": "SneckoEye",
+    "name": "Snecko Eye",
+    "tier": "Boss",
+    "description": "At the start of your turn, draw 2 additional cards. Start each combat #Confused.",
+    "logic": {
+      "hooks": [
+        {
+          "trigger": "BattleStart",
+          "commands": [
+            {
+              "type": "DrawCards",
+              "params": {
+                "base": 2
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "manual_review_needed": false,
+    "flavor": "An eye of a fallen snecko. Much larger than you imagined."
+  },
+  {
+    "id": "Sozu",
+    "name": "Sozu",
+    "tier": "Boss",
+    "description": "Gain 1 #Energy at the start of your turn. You can no longer obtain [[Potions|potions]].",
+    "logic": {
+      "hooks": [
+        {
+          "trigger": "TurnStart",
+          "commands": [
+            {
+              "type": "GainEnergy",
+              "params": {
+                "amount": 1
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "manual_review_needed": false,
+    "flavor": "You notice that magical liquids seem to lose their properties when near this relic."
+  },
+  {
+    "id": "TinyHouse",
+    "name": "Tiny House",
+    "tier": "Boss",
+    "description": "Upon pickup, obtain 1 [[Potions|Potion]]. <br>Gain 50 [[Gold]]. <br>Raise your Max HP by 5. <br>Obtain 1 card. <br>#Upgrade 1 random card.",
+    "logic": {
+      "hooks": [
+        {
+          "trigger": "OnPickup",
+          "commands": [
+            {
+              "type": "RaiseMaxHp",
+              "params": {
+                "amount": 5
+              }
+            },
+            {
+              "type": "GainGold",
+              "params": {
+                "amount": 50
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "manual_review_needed": false,
+    "flavor": "\\"
+  },
+  {
+    "id": "VelvetChoker",
+    "name": "Velvet Choker",
+    "tier": "Boss",
+    "description": "Gain 1 #Energy at the start of your turn. You cannot play more than 6 cards per turn.",
+    "logic": {
+      "hooks": [
+        {
+          "trigger": "TurnStart",
+          "commands": [
+            {
+              "type": "GainEnergy",
+              "params": {
+                "amount": 1
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "manual_review_needed": false,
+    "flavor": "\\"
+  },
+  {
+    "id": "BlackBlood",
+    "name": "Black Blood",
+    "tier": "Common",
+    "description": "",
+    "logic": {
+      "hooks": []
+    },
+    "manual_review_needed": true
+  },
+  {
+    "id": "MarkofPain",
+    "name": "Mark of Pain",
+    "tier": "Common",
+    "description": "",
+    "logic": {
+      "hooks": []
+    },
+    "manual_review_needed": true
+  },
+  {
+    "id": "RunicCube",
+    "name": "Runic Cube",
+    "tier": "Boss",
+    "description": "Whenever you lose HP, draw 1 card.",
+    "logic": {
+      "hooks": [
+        {
+          "trigger": "PlayerLoseHp",
+          "commands": [
+            {
+              "type": "DrawCards",
+              "params": {
+                "base": 1
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "manual_review_needed": false,
+    "class_specific": "Ironclad",
+    "flavor": "The runes are indecipherable."
+  },
+  {
+    "id": "HoveringKite",
+    "name": "Hovering Kite",
+    "tier": "Boss",
+    "description": "The first time you discard a card each turn, gain 1 #Energy.",
+    "logic": {
+      "hooks": []
+    },
+    "manual_review_needed": true,
+    "class_specific": "Silent",
+    "flavor": "The Kite floats around you in battle, propelled by a mysterious force."
+  },
+  {
+    "id": "RingoftheSerpent",
+    "name": "Ring of the Serpent",
+    "tier": "Common",
+    "description": "",
+    "logic": {
+      "hooks": []
+    },
+    "manual_review_needed": true
+  },
+  {
+    "id": "WristBlade",
+    "name": "Wrist Blade",
+    "tier": "Common",
+    "description": "",
+    "logic": {
+      "hooks": []
+    },
+    "manual_review_needed": true
+  },
+  {
+    "id": "FrozenCore",
+    "name": "Frozen Core",
+    "tier": "Common",
+    "description": "",
+    "logic": {
+      "hooks": []
+    },
+    "manual_review_needed": true
+  },
+  {
+    "id": "Inserter",
+    "name": "Inserter",
+    "tier": "Boss",
+    "description": "Every 2 turns, gain 1 #Orb slot.",
+    "logic": {
+      "hooks": []
+    },
+    "manual_review_needed": true,
+    "class_specific": "Defect",
+    "flavor": "Push. Pull. Stack. Repeat."
+  },
+  {
+    "id": "NuclearBattery",
+    "name": "Nuclear Battery",
+    "tier": "Boss",
+    "description": "At the start of each combat, #Channel 1 #Plasma.",
+    "logic": {
+      "hooks": [
+        {
+          "trigger": "BattleStart",
+          "commands": [
+            {
+              "type": "ChannelOrb",
+              "params": {
+                "orb": "Plasma",
+                "count": 1
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "manual_review_needed": false,
+    "class_specific": "Defect",
+    "flavor": "Ooooh..."
+  },
+  {
+    "id": "HolyWater",
+    "name": "Holy Water",
+    "tier": "Common",
+    "description": "",
+    "logic": {
+      "hooks": []
+    },
+    "manual_review_needed": true
+  },
+  {
+    "id": "VioletLotus",
+    "name": "Violet Lotus",
+    "tier": "Boss",
+    "description": "Whenever you exit #Calm, gain an additional #Energy.",
+    "logic": {
+      "hooks": []
+    },
+    "manual_review_needed": true,
+    "class_specific": "Watcher",
+    "flavor": "The old texts describe that the surface of \\"
+  },
+  {
+    "id": "BloodyIdol",
+    "name": "Bloody Idol",
+    "tier": "Event",
+    "description": "Whenever you gain [[Gold]], heal 5 HP.",
+    "logic": {
+      "hooks": []
+    },
+    "manual_review_needed": true,
+    "flavor": "The idol now weeps a constant stream of blood."
+  },
+  {
+    "id": "CultistHeadpiece",
+    "name": "Cultist Headpiece",
+    "tier": "Event",
+    "description": "You feel more talkative.",
+    "logic": {
+      "hooks": []
+    },
+    "manual_review_needed": true,
+    "flavor": "Part of the Flock!"
+  },
+  {
+    "id": "Enchiridion",
+    "name": "Enchiridion",
+    "tier": "Common",
+    "description": "",
+    "logic": {
+      "hooks": []
+    },
+    "manual_review_needed": true
+  },
+  {
+    "id": "FaceofCleric",
+    "name": "Face of Cleric",
+    "tier": "Event",
+    "description": "At the end of combat, raise your Max HP by 1.",
+    "logic": {
+      "hooks": [
+        {
+          "trigger": "BattleEnd",
+          "commands": [
+            {
+              "type": "RaiseMaxHp",
+              "params": {
+                "amount": 1
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "manual_review_needed": false,
+    "flavor": "Everyone loves Cleric."
+  },
+  {
+    "id": "GoldenIdol",
+    "name": "Golden Idol",
+    "tier": "Event",
+    "description": "Enemies drop 25% more [[Gold]].",
+    "logic": {
+      "hooks": []
+    },
+    "manual_review_needed": true,
+    "flavor": "Made of solid gold, you feel richer just holding it."
+  },
+  {
+    "id": "GremlinVisage",
+    "name": "Gremlin Visage",
+    "tier": "Event",
+    "description": "Start each combat with 1 #Weak.",
+    "logic": {
+      "hooks": []
+    },
+    "manual_review_needed": true,
+    "flavor": "Time to run."
+  },
+  {
+    "id": "MarkoftheBloom",
+    "name": "Mark of the Bloom",
+    "tier": "Event",
+    "description": "You can no longer heal.",
+    "logic": {
+      "hooks": []
+    },
+    "manual_review_needed": true,
+    "flavor": "In the Beyond, thoughts and reality are one."
+  },
+  {
+    "id": "MutagenicStrength",
+    "name": "Mutagenic Strength",
+    "tier": "Event",
+    "description": "Start each combat with 3 #Strength. At the end of your first turn, lose 3 #Strength.",
+    "logic": {
+      "hooks": [
+        {
+          "trigger": "BattleStart",
+          "commands": [
+            {
+              "type": "GainBuff",
+              "params": {
+                "buff": "Strength",
+                "base": 3
+              }
+            }
+          ],
+          "condition": {
+            "turn": 1
+          }
+        }
+      ]
+    },
+    "manual_review_needed": false,
+    "flavor": "\\"
+  },
+  {
+    "id": "N'loth'sGift",
+    "name": "N'loth's Gift",
+    "tier": "Common",
+    "description": "",
+    "logic": {
+      "hooks": []
+    },
+    "manual_review_needed": true
+  },
+  {
+    "id": "N'loth'sHungryFace",
+    "name": "N'loth's Hungry Face",
+    "tier": "Event",
+    "description": "The next non-Boss chest you open is empty.",
+    "logic": {
+      "hooks": []
+    },
+    "manual_review_needed": true,
+    "flavor": "You feel hungry."
+  },
+  {
+    "id": "Necronomicon",
+    "name": "Necronomicon",
+    "tier": "Common",
+    "description": "",
+    "logic": {
+      "hooks": []
+    },
+    "manual_review_needed": true
+  },
+  {
+    "id": "NeowsBlessing",
+    "name": "Neow's Lament",
+    "tier": "Event",
+    "description": "Enemies in your first 3 combats will have 1 HP.",
+    "logic": {
+      "hooks": []
+    },
+    "manual_review_needed": true,
+    "flavor": "The blessing of lamentation bestowed by Neow."
+  },
+  {
+    "id": "Nilry'sCodex",
+    "name": "Nilry's Codex",
+    "tier": "Event",
+    "description": "At the end of each turn, you may shuffle 1 of 3 random cards to shuffle into your draw pile.",
+    "logic": {
+      "hooks": []
+    },
+    "manual_review_needed": true,
+    "flavor": "Crafted by the infamous game master himself. Said to expand one's mind."
+  },
+  {
+    "id": "OddMushroom",
+    "name": "Odd Mushroom",
+    "tier": "Event",
+    "description": "When #Vulnerable, take 25% more attack damage rather than 50%.",
+    "logic": {
+      "hooks": []
+    },
+    "manual_review_needed": true,
+    "flavor": "\\"
+  },
+  {
+    "id": "RedMask",
+    "name": "Red Mask",
+    "tier": "Event",
+    "description": "At the start of each combat, apply 1 #Weak to ALL enemies.",
+    "logic": {
+      "hooks": [
+        {
+          "trigger": "BattleStart",
+          "commands": [
+            {
+              "type": "ApplyStatus",
+              "params": {
+                "status": "Weak",
+                "amount": 1
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "manual_review_needed": false,
+    "flavor": "This very stylish looking mask belongs to the leader of the Red Mask Bandits. Technically that makes you the leader now?"
+  },
+  {
+    "id": "SpiritPoop",
+    "name": "Spirit Poop",
+    "tier": "Event",
+    "description": "It's unpleasant.",
+    "logic": {
+      "hooks": []
+    },
+    "manual_review_needed": true,
+    "flavor": "The charred remains of your offering to the spirits."
+  },
+  {
+    "id": "Serpent Head",
+    "name": "Ssserpent Head",
+    "tier": "Event",
+    "description": "Whenever you enter a ? room, gain 50 [[Gold]].",
+    "logic": {
+      "hooks": []
+    },
+    "manual_review_needed": true,
+    "flavor": "The most fulfilling of lives is that in which you can buy anything!"
+  },
+  {
+    "id": "WarpedTongs",
+    "name": "Warped Tongs",
+    "tier": "Event",
+    "description": "At the start of your turn, #Upgrade a random card in your hand for the rest of combat.",
+    "logic": {
+      "hooks": []
+    },
+    "manual_review_needed": true,
+    "flavor": "The cursed tongs emit a strong desire to return to where they were stolen from."
+  },
+  {
+    "id": "Circlet",
+    "name": "Circlet",
+    "tier": "Special",
+    "description": "Collect as many as you can.",
+    "logic": {
+      "hooks": []
+    },
+    "manual_review_needed": true,
+    "flavor": "You ran out of relics to find. Impressive!"
+  },
+  {
+    "id": "RedCirclet",
+    "name": "Red Circlet",
+    "tier": "Special",
+    "description": "You ran out of relics. Impressive!",
+    "logic": {
+      "hooks": []
+    },
+    "manual_review_needed": true,
+    "flavor": "Looks very pretty."
+  },
+  {
+    "id": "GrotesqueTrophy",
+    "name": "Grotesque Trophy",
+    "tier": "Common",
+    "description": "",
+    "logic": {
+      "hooks": []
+    },
+    "manual_review_needed": true
+  },
+  {
+    "id": "MimicInfestation",
+    "name": "Mimic Infestation",
+    "tier": "Blight",
+    "description": "Treasure rooms in future acts are replaced by Elites. Elites no longer drop Relics.",
+    "logic": {
+      "hooks": []
+    },
+    "manual_review_needed": true
+  },
+  {
+    "id": "Muzzle",
+    "name": "Muzzle",
+    "tier": "Blight",
+    "description": "You can no longer increase your Max HP. All healing is halved.",
+    "logic": {
+      "hooks": []
+    },
+    "manual_review_needed": true
+  },
+  {
+    "id": "ShieldofBlight",
+    "name": "Shield of Blight",
+    "tier": "Blight",
+    "description": "Enemies have 50% more HP.",
+    "logic": {
+      "hooks": []
+    },
+    "manual_review_needed": true
+  },
+  {
+    "id": "SpearofBlight",
+    "name": "Spear of Blight",
+    "tier": "Blight",
+    "description": "Enemies deal 100% more damage.",
+    "logic": {
+      "hooks": []
+    },
+    "manual_review_needed": true
+  },
+  {
+    "id": "TimeMaze",
+    "name": "Time Maze",
+    "tier": "Blight",
+    "description": "\tYou cannot play more than 15 cards per turn.",
+    "logic": {
+      "hooks": []
+    },
+    "manual_review_needed": true
+  },
+  {
+    "id": "Accursed",
+    "name": "Accursed",
+    "tier": "Common",
+    "description": "",
+    "logic": {
+      "hooks": []
+    },
+    "manual_review_needed": true
+  },
+  {
+    "id": "AncientAugmentation",
+    "name": "Ancient Augmentation",
+    "tier": "Common",
+    "description": "Enemies start combat with 1 #Artifact, 10 #Plated Armor, and 10 #Regenerate.",
+    "logic": {
+      "hooks": []
+    },
+    "manual_review_needed": true
+  },
+  {
+    "id": "Post-Durian",
+    "name": "Post-Durian",
+    "tier": "Common",
+    "description": "Lose 50% of your Max HP.",
+    "logic": {
+      "hooks": []
+    },
+    "manual_review_needed": true
+  },
+  {
+    "id": "Hauntings",
+    "name": "Hauntings",
+    "tier": "Common",
+    "description": "Enemies start combat with 1 #Intangible.",
+    "logic": {
+      "hooks": []
+    },
+    "manual_review_needed": true
+  },
+  {
+    "id": "Scatterbrain",
+    "name": "Scatterbrain",
+    "tier": "Common",
+    "description": "Draw 1 less card a turn.",
+    "logic": {
+      "hooks": []
+    },
+    "manual_review_needed": true
+  },
+  {
+    "id": "TwistingMind",
+    "name": "Twisting Mind",
+    "tier": "Common",
+    "description": "",
+    "logic": {
+      "hooks": []
+    },
+    "manual_review_needed": true
+  },
+  {
+    "id": "VoidEssence",
+    "name": "Void Essence",
+    "tier": "Common",
+    "description": "\tLose 1 #Energy permanently.",
+    "logic": {
+      "hooks": []
+    },
+    "manual_review_needed": true
+  }
+]

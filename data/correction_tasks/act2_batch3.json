@@ -1,0 +1,411 @@
+{
+  "category": "act2",
+  "batch": 3,
+  "events": [
+    {
+      "wiki_id": "Pleading_Vagrant",
+      "wiki_name": "Pleading Vagrant",
+      "logic_key": "Addict",
+      "status": "pending",
+      "issues": [
+        "MISSING_OPTIONS: Logic缺少选项 {'[rob]', '[offer gold]'}",
+        "EXTRA_OPTIONS: Logic多余选项 {'[offer gold] receive a relic', '[give jax] receive a relic'}"
+      ],
+      "wiki_data": {
+        "options": [
+          {
+            "label": "[Offer Gold]",
+            "description": "85 Gold: Obtain a Relic.",
+            "conditions": [
+              "If the player does not have enough Gold, this option will be greyed out."
+            ],
+            "effects": []
+          },
+          {
+            "label": "[Rob]",
+            "description": "Obtain a Relic. Become Cursed -  Shame.",
+            "conditions": [],
+            "effects": []
+          },
+          {
+            "label": "[Leave]",
+            "description": "Nothing happens.",
+            "conditions": [],
+            "effects": []
+          }
+        ],
+        "notes": [
+          "Omamori can be used to prevent the  Shame from [Rob] if it has any charges remaining."
+        ]
+      },
+      "existing_data": {
+        "name": "Addicted",
+        "options": [
+          {
+            "label": "[Offer Gold] Receive a Relic",
+            "conditions": [
+              {
+                "type": "Gold",
+                "amount": 75
+              }
+            ],
+            "actions": [
+              {
+                "type": "Gold",
+                "amount": -75
+              },
+              {
+                "type": "GetRelic",
+                "tier": "Random"
+              }
+            ]
+          },
+          {
+            "label": "[Give JAX] Receive a Relic",
+            "conditions": [
+              {
+                "type": "HasRelic",
+                "relic_id": "J.A.X."
+              }
+            ],
+            "actions": [
+              {
+                "type": "LoseRelic",
+                "relic_id": "J.A.X."
+              },
+              {
+                "type": "GetRelic",
+                "tier": "Random"
+              }
+            ]
+          },
+          {
+            "label": "[Leave]",
+            "conditions": [],
+            "actions": [
+              {
+                "type": "Leave"
+              }
+            ]
+          }
+        ]
+      },
+      "corrections": []
+    },
+    {
+      "wiki_id": "The_Colosseum",
+      "wiki_name": "The Colosseum",
+      "logic_key": null,
+      "status": "pending",
+      "issues": [
+        "NOT_IN_LOGIC: 事件在 events_logic.json 中不存在，需要新增"
+      ],
+      "wiki_data": {
+        "options": [
+          {
+            "label": "[Fight]",
+            "description": "After the fight ends, a choice has to be made:",
+            "conditions": [],
+            "effects": [
+              "The player enters a fight with a  Blue Slaver and  Red Slaver. This fight gives no rewards."
+            ]
+          },
+          {
+            "label": "[COWARDICE]",
+            "description": "Escape.",
+            "conditions": [],
+            "effects": []
+          },
+          {
+            "label": "[VICTORY]",
+            "description": "A powerful fight with many rewards.",
+            "conditions": [],
+            "effects": [
+              "The player enters a fight with  Taskmaster and  Gremlin Nob.",
+              "The rewards are 100 Gold, 1 Rare Relic, 1 Uncommon Relic, a card reward, and sometimes a Potion."
+            ]
+          }
+        ],
+        "notes": [
+          "Some mechanics behave strangely during the two fights in this event due to their atypical nature:",
+          "[Fight] is treated as a normal combat.",
+          "Smoke Bomb can be used to escape the fight and the player will still be prompted to choose either [COWARDICE] or [VICTORY] afterwards as normal.",
+          "The game still rolls to drop a Potion, but never presents the player with it even if a Potion would be dropped. This means it is impossible to know if the potion chance has increased or decreased, and this uncertainty will persist until the potion chance resets at start of the next act.",
+          "While it has no combat rewards and transitions to the next dialogue of the event very quickly, end-of-combat effects like  Burning Blood and  Self Repair will still trigger.",
+          "Smoke Bomb can be used to escape the fight and the player will still be prompted to choose either [COWARDICE] or [VICTORY] afterwards as normal.",
+          "The game still rolls to drop a Potion, but never presents the player with it even if a Potion would be dropped. This means it is impossible to know if the potion chance has increased or decreased, and this uncertainty will persist until the potion chance resets at start of the next act.",
+          "While it has no combat rewards and transitions to the next dialogue of the event very quickly, end-of-combat effects like  Burning Blood and  Self Repair will still trigger.",
+          "[VICTORY] is treated as an Elite combat for most effects.",
+          "Preserved Insect,  Sling of Courage, and  Slaver's Collar will all trigger their effects as expected.",
+          "The only exception is  Black Star, which has no effect on the Relics dropped as rewards. This combat will always drop exactly 1 Rare Relic and 1 Uncommon Relic.",
+          "Preserved Insect,  Sling of Courage, and  Slaver's Collar will all trigger their effects as expected.",
+          "The only exception is  Black Star, which has no effect on the Relics dropped as rewards. This combat will always drop exactly 1 Rare Relic and 1 Uncommon Relic."
+        ]
+      },
+      "existing_data": {
+        "name": null,
+        "options": []
+      },
+      "corrections": []
+    },
+    {
+      "wiki_id": "The_Joust",
+      "wiki_name": "The Joust",
+      "logic_key": "The Joust",
+      "status": "pending",
+      "issues": [
+        "OPTION_COUNT_MISMATCH: Wiki有2个选项, Logic有3个",
+        "MISSING_OPTIONS: Logic缺少选项 {'[owner]', '[murderer]'}",
+        "EXTRA_OPTIONS: Logic多余选项 {'[owner] bet gold - 30% win big', '[murderer] bet gold - 70% win', '[watch]'}"
+      ],
+      "wiki_data": {
+        "options": [
+          {
+            "label": "[Murderer]",
+            "description": "Bet 50 Gold - 70%: win 100 Gold.",
+            "conditions": [],
+            "effects": []
+          },
+          {
+            "label": "[Owner]",
+            "description": "Bet 50 Gold - 30%: win 250 Gold.",
+            "conditions": [],
+            "effects": [
+              "There is no option to avoid betting."
+            ]
+          }
+        ],
+        "notes": [
+          "If the player possesses  Ectoplasm, this event is a mandatory loss of 50 Gold. There is no option to leave the event without betting, and any potential winnings cannot be gained.",
+          "The player may consider using the expected value (EV) of each option to determine who they want to bet on.",
+          "The EV of betting on the Murderer is a net increase of 20 Gold (a 70% chance to receive 100 Gold is an expected 70 Gold, minus the 50 Gold that was bet. 0.7 x 100 - 50 = 20)",
+          "The EV of betting on the Owner is a net increase of 25 Gold (a 30% chance to receive 250 Gold is an expected 75 Gold, minus the 50 Gold that was bet. 0.3 x 250 - 50 = 25)",
+          "It may be more beneficial to ignore the EV and instead consider whether the relatively safe 50 extra Gold by betting on the Murderer is more useful to the player's current run compared to risking the bet on the Owner and likely losing their 50 Gold for the more unlikely net gain of 200 Gold.",
+          "The EV of betting on the Murderer is a net increase of 20 Gold (a 70% chance to receive 100 Gold is an expected 70 Gold, minus the 50 Gold that was bet. 0.7 x 100 - 50 = 20)",
+          "The EV of betting on the Owner is a net increase of 25 Gold (a 30% chance to receive 250 Gold is an expected 75 Gold, minus the 50 Gold that was bet. 0.3 x 250 - 50 = 25)",
+          "It may be more beneficial to ignore the EV and instead consider whether the relatively safe 50 extra Gold by betting on the Murderer is more useful to the player's current run compared to risking the bet on the Owner and likely losing their 50 Gold for the more unlikely net gain of 200 Gold."
+        ]
+      },
+      "existing_data": {
+        "name": "The Joust",
+        "options": [
+          {
+            "label": "[Murderer] Bet Gold - 70% win",
+            "conditions": [
+              {
+                "type": "Gold",
+                "amount": 50
+              }
+            ],
+            "actions": [],
+            "random_outcomes": [
+              {
+                "chance": 0.7,
+                "actions": [
+                  {
+                    "type": "Gold",
+                    "amount": 100
+                  }
+                ]
+              },
+              {
+                "chance": 0.3,
+                "actions": [
+                  {
+                    "type": "Gold",
+                    "amount": -50
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "label": "[Owner] Bet Gold - 30% win big",
+            "conditions": [
+              {
+                "type": "Gold",
+                "amount": 50
+              }
+            ],
+            "actions": [],
+            "random_outcomes": [
+              {
+                "chance": 0.3,
+                "actions": [
+                  {
+                    "type": "Gold",
+                    "amount": 250
+                  }
+                ]
+              },
+              {
+                "chance": 0.7,
+                "actions": [
+                  {
+                    "type": "Gold",
+                    "amount": -50
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "label": "[Watch]",
+            "conditions": [],
+            "actions": [
+              {
+                "type": "Leave"
+              }
+            ]
+          }
+        ]
+      },
+      "corrections": []
+    },
+    {
+      "wiki_id": "The_Library",
+      "wiki_name": "The Library",
+      "logic_key": "The Library",
+      "status": "pending",
+      "issues": [
+        "OPTION_COUNT_MISMATCH: Wiki有2个选项, Logic有3个",
+        "MISSING_OPTIONS: Logic缺少选项 {'[read]', '[sleep]'}",
+        "EXTRA_OPTIONS: Logic多余选项 {'[read] choose 1 of 20 cards to add to your deck', '[sleep] heal 30% hp', '[leave]'}"
+      ],
+      "wiki_data": {
+        "options": [
+          {
+            "label": "[Read]",
+            "description": "Choose 1 of 20 cards to add to your deck.",
+            "conditions": [],
+            "effects": []
+          },
+          {
+            "label": "[Sleep]",
+            "description": "Heal X HP.",
+            "conditions": [],
+            "effects": [
+              "X is equal to 33% (20%) 15 of the player's Max HP."
+            ]
+          }
+        ],
+        "notes": [
+          "[Sleep] is unaffected by  Regal Pillow, does not trigger  Dream Catcher, and can still be chosen with  Coffee Dripper.",
+          "Mark of the Bloom makes [Sleep] serve only as a way to skip adding a card to your deck as it will no longer heal you.",
+          "N'loth's Gift increases the likelihood of each card offered by [Read] being Rare."
+        ]
+      },
+      "existing_data": {
+        "name": "The Library",
+        "options": [
+          {
+            "label": "[Read] Choose 1 of 20 cards to add to your deck",
+            "conditions": [],
+            "actions": [
+              {
+                "type": "LibraryRead",
+                "choices": 20
+              }
+            ]
+          },
+          {
+            "label": "[Sleep] Heal 30% HP",
+            "conditions": [],
+            "actions": [
+              {
+                "type": "Heal",
+                "amount": 0.3,
+                "is_percentage": true
+              }
+            ]
+          },
+          {
+            "label": "[Leave]",
+            "conditions": [],
+            "actions": [
+              {
+                "type": "Leave"
+              }
+            ]
+          }
+        ]
+      },
+      "corrections": []
+    },
+    {
+      "wiki_id": "The_Mausoleum",
+      "wiki_name": "The Mausoleum",
+      "logic_key": "The Mausoleum",
+      "status": "pending",
+      "issues": [
+        "MISSING_OPTIONS: Logic缺少选项 {'[open coffin]'}",
+        "EXTRA_OPTIONS: Logic多余选项 {'[open coffin] receive a relic (50% cursed)'}"
+      ],
+      "wiki_data": {
+        "options": [
+          {
+            "label": "[Open Coffin]",
+            "description": "Obtain a Relic. 50% (100%) 15: Become Cursed -  Writhe",
+            "conditions": [],
+            "effects": []
+          },
+          {
+            "label": "[Leave]",
+            "description": "Nothing happens.",
+            "conditions": [],
+            "effects": []
+          }
+        ],
+        "notes": [
+          "If the player receives  Omamori as the Relic reward, it will not prevent the  Writhe from being gained.",
+          "If the player receives  Darkstone Periapt as the Relic reward, it will grant the +6 Max HP."
+        ]
+      },
+      "existing_data": {
+        "name": "The Mausoleum",
+        "options": [
+          {
+            "label": "[Open Coffin] Receive a Relic (50% Cursed)",
+            "conditions": [],
+            "actions": [],
+            "random_outcomes": [
+              {
+                "chance": 0.5,
+                "actions": [
+                  {
+                    "type": "GetRelic",
+                    "tier": "Random"
+                  }
+                ]
+              },
+              {
+                "chance": 0.5,
+                "actions": [
+                  {
+                    "type": "GetRelic",
+                    "tier": "Random"
+                  },
+                  {
+                    "type": "AddCard",
+                    "card_id": "Writhe"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "label": "[Leave]",
+            "conditions": [],
+            "actions": [
+              {
+                "type": "Leave"
+              }
+            ]
+          }
+        ]
+      },
+      "corrections": []
+    }
+  ],
+  "instructions": "\n校对说明:\n1. 查看每个事件的 issues 列表\n2. 对比 wiki_data 和 existing_data 的差异\n3. 在 corrections 中填写需要的修正\n4. 完成后将 status 改为 \"reviewed\"\n\ncorrections 格式示例:\n- {\"action\": \"add_option\", \"label\": \"[新选项]\", \"data\": {...}}\n- {\"action\": \"fix_label\", \"old\": \"[错误]\", \"new\": \"[正确]\"}\n- {\"action\": \"add_event\", \"data\": {...}}\n"
+}

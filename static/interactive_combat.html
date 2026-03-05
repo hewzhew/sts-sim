@@ -1,0 +1,644 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>STS Sim — Interactive Combat</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+  :root {
+    --bg: #0f1117;
+    --surface: #1a1d27;
+    --surface2: #242836;
+    --border: #2e3345;
+    --text: #e2e4ea;
+    --text-dim: #8b90a0;
+    --accent: #6c8cff;
+    --red: #ff5c5c;
+    --green: #4ade80;
+    --gold: #fbbf24;
+    --blue: #60a5fa;
+    --purple: #a78bfa;
+    --card-attack: #c0392b;
+    --card-skill: #2980b9;
+    --card-power: #8e44ad;
+    --card-status: #555;
+    --hp-bar: #e74c3c;
+    --hp-fill: #27ae60;
+    --block-color: #3498db;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'Inter', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* Top bar */
+  .topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 24px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+  }
+  .topbar h1 {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--accent);
+    letter-spacing: 0.5px;
+  }
+  .topbar .turn-info {
+    font-size: 14px;
+    color: var(--text-dim);
+  }
+  .topbar .turn-info span { color: var(--gold); font-weight: 600; }
+
+  .topbar-actions {
+    display: flex;
+    gap: 8px;
+  }
+  .topbar-actions button {
+    padding: 6px 16px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: var(--surface2);
+    color: var(--text);
+    font-size: 13px;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .topbar-actions button:hover { background: var(--accent); color: #fff; border-color: var(--accent); }
+
+  /* Main layout */
+  .main {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    padding: 16px 24px;
+    gap: 16px;
+    max-width: 1200px;
+    margin: 0 auto;
+    width: 100%;
+  }
+
+  /* === ENEMIES === */
+  .enemies-row {
+    display: flex;
+    justify-content: center;
+    gap: 20px;
+  }
+  .enemy-card {
+    width: 200px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 16px;
+    text-align: center;
+    transition: all 0.2s;
+    position: relative;
+  }
+  .enemy-card.dead {
+    opacity: 0.3;
+    filter: grayscale(1);
+  }
+  .enemy-card.targeted {
+    border-color: var(--gold);
+    box-shadow: 0 0 12px rgba(251,191,36,0.3);
+  }
+  .enemy-card:not(.dead):hover {
+    border-color: var(--accent);
+    transform: translateY(-2px);
+    cursor: pointer;
+  }
+  .enemy-name {
+    font-size: 14px;
+    font-weight: 600;
+    margin-bottom: 8px;
+  }
+  .enemy-hp-bar {
+    height: 8px;
+    background: var(--surface2);
+    border-radius: 4px;
+    overflow: hidden;
+    margin-bottom: 4px;
+  }
+  .enemy-hp-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--red), #e67e22);
+    border-radius: 4px;
+    transition: width 0.3s;
+  }
+  .enemy-hp-text {
+    font-size: 12px;
+    color: var(--text-dim);
+    margin-bottom: 8px;
+  }
+  .enemy-intent {
+    font-size: 12px;
+    padding: 4px 10px;
+    background: var(--surface2);
+    border-radius: 6px;
+    display: inline-block;
+    color: var(--gold);
+    font-weight: 500;
+  }
+  .enemy-block {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    background: var(--block-color);
+    color: #fff;
+    font-size: 11px;
+    font-weight: 700;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  /* === PLAYER STATUS === */
+  .player-row {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 24px;
+    padding: 12px 0;
+  }
+  .stat {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 15px;
+    font-weight: 500;
+  }
+  .stat .icon {
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+  }
+  .stat.hp .icon { background: var(--red); }
+  .stat.block .icon { background: var(--block-color); }
+  .stat.energy .icon { background: var(--gold); color: #000; }
+  .stat.deck .icon { background: var(--surface2); }
+
+  .hp-bar-player {
+    width: 200px;
+    height: 10px;
+    background: var(--surface2);
+    border-radius: 5px;
+    overflow: hidden;
+  }
+  .hp-bar-player .fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--red), var(--green));
+    transition: width 0.3s;
+  }
+
+  /* === HAND === */
+  .hand-label {
+    text-align: center;
+    font-size: 12px;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-bottom: 4px;
+  }
+  .hand-row {
+    display: flex;
+    justify-content: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    min-height: 140px;
+    padding: 8px;
+  }
+  .card {
+    width: 110px;
+    height: 150px;
+    border-radius: 10px;
+    padding: 10px 8px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: space-between;
+    cursor: pointer;
+    transition: all 0.2s;
+    border: 2px solid transparent;
+    position: relative;
+  }
+  .card:hover:not(.unplayable) {
+    transform: translateY(-12px);
+    box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+  }
+  .card.selected {
+    border-color: var(--gold) !important;
+    transform: translateY(-16px);
+    box-shadow: 0 8px 24px rgba(251,191,36,0.4);
+  }
+  .card.unplayable {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+  .card.attack { background: linear-gradient(135deg, #8b2020, #c0392b); }
+  .card.skill { background: linear-gradient(135deg, #1a5276, #2980b9); }
+  .card.status { background: linear-gradient(135deg, #333, #555); }
+
+  .card-name {
+    font-size: 11px;
+    font-weight: 600;
+    text-align: center;
+    word-break: break-word;
+    line-height: 1.2;
+  }
+  .card-cost {
+    position: absolute;
+    top: -6px;
+    left: -6px;
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    background: var(--gold);
+    color: #000;
+    font-size: 13px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .card-cost.unplayable-cost { background: #666; color: #999; }
+  .card-tags {
+    display: flex;
+    gap: 3px;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+  .card-tag {
+    font-size: 9px;
+    padding: 1px 5px;
+    border-radius: 3px;
+    background: rgba(255,255,255,0.15);
+    color: rgba(255,255,255,0.7);
+  }
+  .card-tag.ethereal { background: rgba(167,139,250,0.3); color: var(--purple); }
+
+  /* === CONTROLS === */
+  .controls {
+    display: flex;
+    justify-content: center;
+    gap: 12px;
+    padding: 8px 0;
+  }
+  .btn {
+    padding: 10px 28px;
+    border-radius: 8px;
+    border: none;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .btn-end {
+    background: linear-gradient(135deg, #e67e22, #d35400);
+    color: #fff;
+  }
+  .btn-end:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(230,126,34,0.4); }
+  .btn-end:disabled { opacity: 0.4; cursor: not-allowed; transform: none; box-shadow: none; }
+
+  /* === LOG === */
+  .log-panel {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px 16px;
+    max-height: 180px;
+    overflow-y: auto;
+    font-size: 12px;
+    font-family: 'JetBrains Mono', monospace;
+    line-height: 1.6;
+    color: var(--text-dim);
+  }
+  .log-panel .log-entry { white-space: pre-wrap; }
+  .log-panel .log-entry:last-child { color: var(--text); }
+
+  /* === GAME OVER OVERLAY === */
+  .overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.7);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+    backdrop-filter: blur(4px);
+  }
+  .overlay.hidden { display: none; }
+  .overlay-box {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 40px 48px;
+    text-align: center;
+  }
+  .overlay-box h2 { font-size: 28px; margin-bottom: 8px; }
+  .overlay-box h2.win { color: var(--green); }
+  .overlay-box h2.loss { color: var(--red); }
+  .overlay-box p { color: var(--text-dim); margin-bottom: 20px; }
+  .overlay-box button {
+    padding: 10px 32px;
+    border-radius: 8px;
+    border: none;
+    background: var(--accent);
+    color: #fff;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  /* Phase indicator */
+  .phase-badge {
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .phase-badge.player { background: rgba(74,222,128,0.15); color: var(--green); }
+  .phase-badge.enemy { background: rgba(255,92,92,0.15); color: var(--red); }
+</style>
+</head>
+<body>
+  <div class="topbar">
+    <h1>⚔️ STS Sim — Interactive Combat</h1>
+    <div class="turn-info">Turn <span id="turnNum">1</span> · <span class="phase-badge player" id="phaseBadge">YOUR TURN</span></div>
+    <div class="topbar-actions">
+      <button onclick="resetGame()">🔄 New Game</button>
+    </div>
+  </div>
+
+  <div class="main">
+    <!-- Enemies -->
+    <div class="enemies-row" id="enemies"></div>
+
+    <!-- Player status -->
+    <div class="player-row" id="playerRow">
+      <div class="stat hp">
+        <div class="icon">❤</div>
+        <span id="hpText">80/80</span>
+        <div class="hp-bar-player"><div class="fill" id="hpFill" style="width:100%"></div></div>
+      </div>
+      <div class="stat block">
+        <div class="icon">🛡</div>
+        <span id="blockText">0</span>
+      </div>
+      <div class="stat energy">
+        <div class="icon">⚡</div>
+        <span id="energyText">3/3</span>
+      </div>
+      <div class="stat deck">
+        <div class="icon">📚</div>
+        <span id="deckText">Draw: 5 · Discard: 0 · Exhaust: 0</span>
+      </div>
+    </div>
+
+    <!-- Hand -->
+    <div class="hand-label">HAND (<span id="handCount">0</span> cards)</div>
+    <div class="hand-row" id="hand"></div>
+
+    <!-- Controls -->
+    <div class="controls">
+      <button class="btn btn-end" id="endTurnBtn" onclick="endTurn()">End Turn →</button>
+    </div>
+
+    <!-- Log -->
+    <div class="log-panel" id="log"></div>
+  </div>
+
+  <!-- Game Over Overlay -->
+  <div class="overlay hidden" id="overlay">
+    <div class="overlay-box">
+      <h2 id="overlayTitle">Victory!</h2>
+      <p id="overlayText">You defeated the Sentries!</p>
+      <button onclick="resetGame()">Play Again</button>
+    </div>
+  </div>
+
+<script>
+const API = '';
+let state = null;
+let selectedCard = null;
+let needTarget = false;
+
+async function fetchState() {
+  const r = await fetch(`${API}/api/state`);
+  state = await r.json();
+  render();
+}
+
+async function playCard(cardIdx, targetIdx) {
+  const body = { card_idx: cardIdx };
+  if (targetIdx !== undefined && targetIdx !== null) body.target_idx = targetIdx;
+  const r = await fetch(`${API}/api/play`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  state = await r.json();
+  if (state.error) {
+    alert(state.error);
+    return;
+  }
+  selectedCard = null;
+  needTarget = false;
+  render();
+}
+
+async function endTurn() {
+  const r = await fetch(`${API}/api/end_turn`, { method: 'POST' });
+  state = await r.json();
+  selectedCard = null;
+  needTarget = false;
+  render();
+}
+
+async function resetGame() {
+  const r = await fetch(`${API}/api/reset`, { method: 'POST' });
+  state = await r.json();
+  selectedCard = null;
+  needTarget = false;
+  document.getElementById('overlay').classList.add('hidden');
+  render();
+}
+
+function getCardType(id) {
+  if (['Strike_Ironclad', 'Bash'].includes(id)) return 'attack';
+  if (['Defend_Ironclad'].includes(id)) return 'skill';
+  if (['Dazed', 'Burn', 'Wound', 'Slimed', 'Void'].includes(id)) return 'status';
+  return 'attack'; // default
+}
+
+function cardNeedsTarget(id) {
+  return ['Strike_Ironclad', 'Bash'].includes(id);
+}
+
+function prettyCardName(id) {
+  return id.replace('_Ironclad', '').replace('_', ' ');
+}
+
+function render() {
+  if (!state) return;
+
+  // Turn
+  document.getElementById('turnNum').textContent = state.turn;
+  const badge = document.getElementById('phaseBadge');
+  if (state.phase === 'player_turn') {
+    badge.textContent = 'YOUR TURN';
+    badge.className = 'phase-badge player';
+  } else if (state.phase === 'enemy_turn') {
+    badge.textContent = 'ENEMY TURN';
+    badge.className = 'phase-badge enemy';
+  } else {
+    badge.textContent = 'GAME OVER';
+    badge.className = 'phase-badge enemy';
+  }
+
+  // Player
+  document.getElementById('hpText').textContent = `${state.player_hp}/${state.player_max_hp}`;
+  document.getElementById('hpFill').style.width = `${(state.player_hp / state.player_max_hp) * 100}%`;
+  document.getElementById('blockText').textContent = state.player_block;
+  document.getElementById('energyText').textContent = `${state.player_energy}/${state.player_max_energy}`;
+  document.getElementById('deckText').textContent =
+    `Draw: ${state.draw_pile_count} · Discard: ${state.discard_pile_count} · Exhaust: ${state.exhaust_pile_count}`;
+
+  // Enemies
+  const enemiesDiv = document.getElementById('enemies');
+  enemiesDiv.innerHTML = state.enemies.map((e, i) => {
+    const hpPct = e.max_hp > 0 ? (e.hp / e.max_hp) * 100 : 0;
+    const classes = ['enemy-card'];
+    if (e.dead) classes.push('dead');
+    if (needTarget && selectedCard !== null && !e.dead) classes.push('targeted');
+    return `
+      <div class="${classes.join(' ')}" onclick="selectEnemy(${i})" data-idx="${i}">
+        ${e.block > 0 ? `<div class="enemy-block">${e.block}</div>` : ''}
+        <div class="enemy-name">${e.name} ${i+1}</div>
+        <div class="enemy-hp-bar"><div class="enemy-hp-fill" style="width:${hpPct}%"></div></div>
+        <div class="enemy-hp-text">${e.hp}/${e.max_hp}</div>
+        ${!e.dead ? `<div class="enemy-intent">${e.intent}</div>` : '<div class="enemy-intent" style="color:#666">💀 Dead</div>'}
+      </div>
+    `;
+  }).join('');
+
+  // Hand
+  const handDiv = document.getElementById('hand');
+  document.getElementById('handCount').textContent = state.hand.length;
+  handDiv.innerHTML = state.hand.map((c, i) => {
+    const type = getCardType(c.id);
+    const classes = ['card', type];
+    if (!c.playable) classes.push('unplayable');
+    if (selectedCard === i) classes.push('selected');
+    const tags = [];
+    if (c.ethereal) tags.push('<span class="card-tag ethereal">Ethereal</span>');
+    if (c.cost < 0) tags.push('<span class="card-tag">Unplayable</span>');
+    return `
+      <div class="${classes.join(' ')}" onclick="selectCard(${i})" data-idx="${i}">
+        <div class="card-cost ${!c.playable ? 'unplayable-cost' : ''}">${c.cost >= 0 ? c.cost : 'X'}</div>
+        <div class="card-name">${prettyCardName(c.id)}</div>
+        <div class="card-tags">${tags.join('')}</div>
+      </div>
+    `;
+  }).join('');
+
+  // End turn button
+  document.getElementById('endTurnBtn').disabled = state.phase !== 'player_turn';
+
+  // Log
+  const logDiv = document.getElementById('log');
+  if (state.log) {
+    logDiv.innerHTML = state.log.map(l => `<div class="log-entry">${l}</div>`).join('');
+    logDiv.scrollTop = logDiv.scrollHeight;
+  }
+
+  // Game over
+  if (state.game_over) {
+    const overlay = document.getElementById('overlay');
+    overlay.classList.remove('hidden');
+    const title = document.getElementById('overlayTitle');
+    const text = document.getElementById('overlayText');
+    if (state.won) {
+      title.textContent = '🏆 Victory!';
+      title.className = 'win';
+      text.textContent = `Defeated all Sentries in ${state.turn} turns with ${state.player_hp} HP remaining.`;
+    } else {
+      title.textContent = '💀 Defeat!';
+      title.className = 'loss';
+      text.textContent = `Fallen on turn ${state.turn}.`;
+    }
+  }
+}
+
+function selectCard(idx) {
+  if (!state || state.phase !== 'player_turn') return;
+  const card = state.hand[idx];
+  if (!card || !card.playable) return;
+
+  if (selectedCard === idx) {
+    // Deselect
+    selectedCard = null;
+    needTarget = false;
+    render();
+    return;
+  }
+
+  selectedCard = idx;
+
+  if (cardNeedsTarget(card.id)) {
+    // Need to select target
+    needTarget = true;
+    render();
+  } else {
+    // No target needed (e.g., Defend), play immediately
+    needTarget = false;
+    const target = state.enemies.findIndex(e => !e.dead);
+    playCard(idx, target >= 0 ? target : undefined);
+  }
+}
+
+function selectEnemy(idx) {
+  if (!needTarget || selectedCard === null) return;
+  const enemy = state.enemies[idx];
+  if (enemy.dead) return;
+  playCard(selectedCard, idx);
+}
+
+// Keyboard shortcuts
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'e' || e.key === 'E') {
+    endTurn();
+  } else if (e.key === 'r' || e.key === 'R') {
+    resetGame();
+  } else if (e.key >= '1' && e.key <= '9') {
+    const idx = parseInt(e.key) - 1;
+    if (state && idx < state.hand.length) {
+      selectCard(idx);
+    }
+  }
+});
+
+// Initial load
+fetchState();
+</script>
+</body>
+</html>

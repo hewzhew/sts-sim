@@ -1,0 +1,54 @@
+Global Statistics for the Beyond:					
+Chance for upgraded cards: 50%					
+					
+First Two Combat Encounters:	Encounter Weight (All Equal):	Details:			
+3 Darklings	2				
+Orb Walker	2				
+3 Shapes	2	3 from [2x Repulsor, 2x Exploder, 2x Spiker]			
+					
+Remaining Combat Encounters:					
+4 Shapes	1	4 from [2x Repulsor, 2x Exploder, 2x Spiker]			
+Maw	1				
+Spheric Guardian + 2 Shapes	1	The shapes are independently chosen with equal probability			
+3 Darklings	1				
+Spire Growth	1				
+Transient	1				
+Jaw Worm Horde	1	3x Jaw Worms (Hard Version)			
+Writhing Mass	1				
+					
+Elite Combat Encounters:					
+Giant Head	2				
+Nemesis	2				
+Reptomancer	2	Reptomancer + 2 Daggers			
+					
+Boss:					
+The Awakened One					
+Donu and Deca					
+Time Eater					
+					
+Regular Events:	Notes:				
+Falling					
+Mind Bloom					
+The Moai Head	Only with Golden Idol or at most 50% HP				
+Mysterious Sphere					
+Sensory Stone					
+Tomb of Lord Red Mask					
+Winding Halls					
+					
+Shrine Events (Less common):	Notes:				
+Bonfire Spirits					
+Designer In-Spire	Only with at least 75 gold				
+The Divine Fountain	Only if cursed				
+Duplicator					
+Golden Shrine					
+Lab					
+Match and Keep					
+A Note For Yourself	This event does not occur in Ascension 15+ and Dailies. It is also disabled on your highest unlocked Ascension level.				
+Ominous Forge					
+Purifier					
+Secret Portal	Only if at least 800 seconds have elapsed				
+Transmogrifier					
+Upgrade Shrine					
+We Meet Again					
+Wheel of Change					
+The Woman in Blue	Only with at least 50 gold				

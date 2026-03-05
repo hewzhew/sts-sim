@@ -1,0 +1,110 @@
+[
+  {
+    "id": "Neutralize",
+    "name": "Neutralize",
+    "type": "Attack",
+    "cost": 0,
+    "color": "Green",
+    "rarity": "Basic",
+    "logic": {
+      "target_type": "Enemy",
+      "commands": [
+        {
+          "type": "DealDamage",
+          "params": {
+            "base": 3,
+            "upgrade": 4
+          }
+        },
+        {
+          "type": "ApplyStatus",
+          "params": {
+            "status": "Weak",
+            "base": 1,
+            "upgrade": 2
+          }
+        }
+      ],
+      "keywords_used": [
+        "Weak"
+      ]
+    },
+    "original_text": "Deal [3|4] damage.<br>Apply [1|2] #Weak."
+  },
+  {
+    "id": "Strike_Silent",
+    "name": "Strike (Silent)",
+    "type": "Attack",
+    "cost": 1,
+    "color": "Green",
+    "rarity": "Basic",
+    "logic": {
+      "target_type": "Enemy",
+      "commands": [
+        {
+          "type": "DealDamage",
+          "params": {
+            "base": 6,
+            "upgrade": 9
+          }
+        }
+      ]
+    },
+    "original_text": "Deal [6|9] damage."
+  },
+  {
+    "id": "Defend_Silent",
+    "name": "Defend (Silent)",
+    "type": "Skill",
+    "cost": 1,
+    "color": "Green",
+    "rarity": "Basic",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "GainBlock",
+          "params": {
+            "base": 5,
+            "upgrade": 8
+          }
+        }
+      ],
+      "keywords_used": [
+        "Block"
+      ]
+    },
+    "original_text": "Gain [5|8] #Block."
+  },
+  {
+    "id": "Survivor",
+    "name": "Survivor",
+    "type": "Skill",
+    "cost": 1,
+    "color": "Green",
+    "rarity": "Basic",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "GainBlock",
+          "params": {
+            "base": 8,
+            "upgrade": 11
+          }
+        },
+        {
+          "type": "Discard",
+          "params": {
+            "count": 1,
+            "random": false
+          }
+        }
+      ],
+      "keywords_used": [
+        "Block"
+      ]
+    },
+    "original_text": "Gain [8|11] #Block.<br>Discard 1 card."
+  }
+]

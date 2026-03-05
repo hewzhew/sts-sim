@@ -1,0 +1,232 @@
+{
+  "category": "act1",
+  "batch": 3,
+  "events": [
+    {
+      "wiki_id": "Wing_Statue",
+      "wiki_name": "Wing Statue",
+      "logic_key": "Golden Wing",
+      "status": "pending",
+      "issues": [
+        "OPTION_COUNT_MISMATCH: Wiki有4个选项, Logic有3个",
+        "MISSING_OPTIONS: Logic缺少选项 {'[pray]', '[locked]', '[destroy]'}",
+        "EXTRA_OPTIONS: Logic多余选项 {'[pray] remove a card. lose 7 hp', '[destroy] gain gold'}"
+      ],
+      "wiki_data": {
+        "options": [
+          {
+            "label": "[Pray]",
+            "description": "Remove a card from your deck. Lose 7 HP.",
+            "conditions": [],
+            "effects": []
+          },
+          {
+            "label": "[Destroy]",
+            "description": "Receive 50 - 80 Gold.",
+            "conditions": [
+              "Requires an Attack card in the player's deck that deals 10 or more damage in a single hit (e.g.  Twin Strike does not count).",
+              "If the player's deck does satisfy the condition, this option is replaced with"
+            ],
+            "effects": []
+          },
+          {
+            "label": "[Locked]",
+            "description": "Requires: Card with 10 or more damage.",
+            "conditions": [],
+            "effects": [
+              "See the Notes section for more details on which cards satisfy this requirement."
+            ]
+          },
+          {
+            "label": "[Leave]",
+            "description": "Nothing happens.",
+            "conditions": [],
+            "effects": []
+          }
+        ],
+        "notes": [
+          "The event specifically only checks Attack cards in the player's deck, despite only stating \"Cards\" in general. It also only checks whether the card's base damage is 10 or more. This means that any card that can only achieve 10 or more damage through the use of multi-hits (such as  Twin Strike and  Riddle with Holes) or that have damage which is dynamically calculated from certain conditions in combat (such as  Perfected Strike and  Mind Blast) do not meet the requirement.",
+          "Cards With 10 or More Damage",
+          "The following is a list of cards that satisfy the condition of \"Requires: Card with 10 or more damage.\" for the [Destroy] option:",
+          "Clash",
+          "Clothesline",
+          "Heavy Blade",
+          "Wild Strike",
+          "Blood for Blood",
+          "Carnage",
+          "Hemokinesis",
+          "Searing Blow",
+          "Sever Soul",
+          "Uppercut",
+          "Bludgeon",
+          "Feed",
+          "Immolate",
+          "Bane",
+          "Flying Knee",
+          "Sneaky Strike",
+          "All-Out Attack",
+          "Backstab",
+          "Choke",
+          "Dash",
+          "Masterful Stab",
+          "Predator",
+          "Die Die Die",
+          "Grand Finale",
+          "Unload",
+          "Streamline",
+          "Doom and Gloom",
+          "Melter",
+          "Sunder",
+          "All for One",
+          "Core Surge",
+          "Hyperbeam",
+          "Meteor Strike",
+          "Conclude",
+          "Reach Heaven",
+          "Sands of Time",
+          "Signature Move",
+          "Wheel Kick",
+          "Brilliance",
+          "Lesson Learned",
+          "Hand of Greed",
+          "Ritual Dagger",
+          "Cards With 10 or More Damage After Being Upgraded",
+          "The following is a list of cards that satisfy the condition of \"Requires: Card with 10 or more damage.\" for the [Destroy] option only after they have been  Upgraded to increase their base damage:",
+          "Bash",
+          "Cleave",
+          "Headbutt",
+          "Pommel Strike",
+          "Reckless Charge",
+          "Fiend Fire",
+          "Dagger Throw",
+          "Quick Slash",
+          "Skewer",
+          "Glass Knife",
+          "Ball Lightning",
+          "Compile Driver",
+          "Rebound",
+          "Bullseye",
+          "Scrape",
+          "Bowling Bash",
+          "Crush Joints",
+          "Empty Fist",
+          "Follow-Up",
+          "Sash Whip",
+          "Carve Reality",
+          "Fear No Evil",
+          "Wallop",
+          "Windmill Strike",
+          "Dramatic Entrance",
+          "Swift Strike"
+        ]
+      },
+      "existing_data": {
+        "name": "Wing Statue",
+        "options": [
+          {
+            "label": "[Pray] Remove a card. Lose 7 HP",
+            "conditions": [],
+            "actions": [
+              {
+                "type": "CardRemove"
+              },
+              {
+                "type": "LoseHP",
+                "amount": 7,
+                "is_percentage": false
+              }
+            ]
+          },
+          {
+            "label": "[Destroy] Gain Gold",
+            "conditions": [
+              {
+                "type": "HasHighDamageCard",
+                "min_damage": 10
+              }
+            ],
+            "actions": [
+              {
+                "type": "Gold",
+                "amount": 50,
+                "variance": 25
+              }
+            ]
+          },
+          {
+            "label": "[Leave]",
+            "conditions": [],
+            "actions": [
+              {
+                "type": "Leave"
+              }
+            ]
+          }
+        ]
+      },
+      "corrections": []
+    },
+    {
+      "wiki_id": "World_of_Goop",
+      "wiki_name": "World of Goop",
+      "logic_key": "World of Goop",
+      "status": "pending",
+      "issues": [
+        "MISSING_OPTIONS: Logic缺少选项 {'[leave it]', '[gather gold]'}",
+        "EXTRA_OPTIONS: Logic多余选项 {'[leave it] lose 20% gold', '[gather gold] gain 75 gold. lose 11 hp'}"
+      ],
+      "wiki_data": {
+        "options": [
+          {
+            "label": "[Gather Gold]",
+            "description": "Gain 75 Gold. Lose 11 HP.",
+            "conditions": [],
+            "effects": []
+          },
+          {
+            "label": "[Leave It]",
+            "description": "Lose X Gold.",
+            "conditions": [],
+            "effects": [
+              "X is a random number between 20 and 50 (35 and 75) 15 Gold. X cannot be more Gold than the player currently has."
+            ]
+          }
+        ],
+        "notes": []
+      },
+      "existing_data": {
+        "name": "World of Goop",
+        "options": [
+          {
+            "label": "[Gather Gold] Gain 75 Gold. Lose 11 HP",
+            "conditions": [],
+            "actions": [
+              {
+                "type": "Gold",
+                "amount": 75
+              },
+              {
+                "type": "LoseHP",
+                "amount": 11,
+                "is_percentage": false
+              }
+            ]
+          },
+          {
+            "label": "[Leave It] Lose 20% Gold",
+            "conditions": [],
+            "actions": [
+              {
+                "type": "Gold",
+                "amount": -0.2,
+                "is_percentage": true
+              }
+            ]
+          }
+        ]
+      },
+      "corrections": []
+    }
+  ],
+  "instructions": "\n校对说明:\n1. 查看每个事件的 issues 列表\n2. 对比 wiki_data 和 existing_data 的差异\n3. 在 corrections 中填写需要的修正\n4. 完成后将 status 改为 \"reviewed\"\n\ncorrections 格式示例:\n- {\"action\": \"add_option\", \"label\": \"[新选项]\", \"data\": {...}}\n- {\"action\": \"fix_label\", \"old\": \"[错误]\", \"new\": \"[正确]\"}\n- {\"action\": \"add_event\", \"data\": {...}}\n"
+}

@@ -1,0 +1,353 @@
+{
+  "category": "act2",
+  "total_wiki_events": 17,
+  "events": [
+    {
+      "wiki_id": "Ancient_Writing",
+      "name": "Ancient Writing",
+      "found_in_existing": false,
+      "wiki_options_count": 2,
+      "existing_options_count": 0,
+      "option_labels_wiki": [
+        "[Elegance]",
+        "[Simplicity]"
+      ],
+      "option_labels_existing": [],
+      "needs_review": true,
+      "issues": [
+        "事件在 events_logic.json 中不存在"
+      ]
+    },
+    {
+      "wiki_id": "Augmenter",
+      "name": "Augmenter",
+      "found_in_existing": false,
+      "wiki_options_count": 3,
+      "existing_options_count": 0,
+      "option_labels_wiki": [
+        "[Test J.A.X.]",
+        "[Become Test Subject]",
+        "[Ingest Mutagens]"
+      ],
+      "option_labels_existing": [],
+      "needs_review": true,
+      "issues": [
+        "事件在 events_logic.json 中不存在"
+      ]
+    },
+    {
+      "wiki_id": "Council_of_Ghosts",
+      "name": "Council of Ghosts",
+      "found_in_existing": false,
+      "wiki_options_count": 3,
+      "existing_options_count": 0,
+      "option_labels_wiki": [
+        "[Accept]",
+        "[Refuse]",
+        "[Leave]"
+      ],
+      "option_labels_existing": [],
+      "needs_review": true,
+      "issues": [
+        "事件在 events_logic.json 中不存在"
+      ]
+    },
+    {
+      "wiki_id": "Cursed_Tome",
+      "name": "Cursed Tome",
+      "found_in_existing": true,
+      "wiki_options_count": 14,
+      "existing_options_count": 2,
+      "option_labels_wiki": [
+        "[Read]",
+        "[Continue]",
+        "[Continue]",
+        "[Continue]",
+        "[Take]",
+        "[Take]",
+        "[Stop]",
+        "[Leave]",
+        "[Continue]",
+        "[Stop]",
+        "[Read]",
+        "[Continue]",
+        "[Take]",
+        "[Leave]"
+      ],
+      "option_labels_existing": [
+        "[Read] Continue reading (costs HP)",
+        "[Stop] Leave"
+      ],
+      "needs_review": true,
+      "issues": [
+        "选项数量不匹配: Wiki=14, 现有=2",
+        "现有数据缺少选项: {'[stop]', '[continue]', '[leave]', '[read]', '[take]'}",
+        "现有数据多余选项: {'[read] continue reading (costs hp)', '[stop] leave'}"
+      ]
+    },
+    {
+      "wiki_id": "Designer_In-Spire",
+      "name": "Designer In-Spire",
+      "found_in_existing": false,
+      "wiki_options_count": 4,
+      "existing_options_count": 0,
+      "option_labels_wiki": [
+        "[Adjustments]",
+        "[Clean Up]",
+        "[Full Service]",
+        "[Punch]"
+      ],
+      "option_labels_existing": [],
+      "needs_review": true,
+      "issues": [
+        "事件在 events_logic.json 中不存在"
+      ]
+    },
+    {
+      "wiki_id": "Forgotten_Altar",
+      "name": "Forgotten Altar",
+      "found_in_existing": true,
+      "wiki_options_count": 4,
+      "existing_options_count": 3,
+      "option_labels_wiki": [
+        "[Offer: Golden Idol]",
+        "[Locked]",
+        "[Sacrifice]",
+        "[Desecrate]"
+      ],
+      "option_labels_existing": [
+        "[Offer: Golden Idol] Receive Bloody Idol",
+        "[Sacrifice] Gain Max HP, Lose HP",
+        "[Desecrate] Become Cursed - Decay"
+      ],
+      "needs_review": true,
+      "issues": [
+        "选项数量不匹配: Wiki=4, 现有=3",
+        "现有数据缺少选项: {'[locked]', '[desecrate]', '[sacrifice]', '[offer: golden idol]'}",
+        "现有数据多余选项: {'[desecrate] become cursed - decay', '[sacrifice] gain max hp, lose hp', '[offer: golden idol] receive bloody idol'}"
+      ]
+    },
+    {
+      "wiki_id": "Knowing_Skull",
+      "name": "Knowing Skull",
+      "found_in_existing": true,
+      "wiki_options_count": 4,
+      "existing_options_count": 5,
+      "option_labels_wiki": [
+        "[A Pick Me Up?]",
+        "[Riches?]",
+        "[Success?]",
+        "[How do I leave?]"
+      ],
+      "option_labels_existing": [
+        "[Information?] Reveal the Boss",
+        "[Success?] Get a Colorless Card",
+        "[A Pick Me Up?] Get a Potion",
+        "[Riches?] Gain 90 Gold",
+        "[How do I leave?] Exit"
+      ],
+      "needs_review": true,
+      "issues": [
+        "选项数量不匹配: Wiki=4, 现有=5",
+        "现有数据缺少选项: {'[a pick me up?]', '[success?]', '[riches?]', '[how do i leave?]'}",
+        "现有数据多余选项: {'[information?] reveal the boss', '[riches?] gain 90 gold', '[success?] get a colorless card', '[how do i leave?] exit', '[a pick me up?] get a potion'}"
+      ]
+    },
+    {
+      "wiki_id": "Masked_Bandits",
+      "name": "Masked Bandits",
+      "found_in_existing": true,
+      "wiki_options_count": 2,
+      "existing_options_count": 2,
+      "option_labels_wiki": [
+        "[Pay]",
+        "[Fight!]"
+      ],
+      "option_labels_existing": [
+        "[Pay] Lose ALL of your Gold",
+        "[Fight!] Combat encounter"
+      ],
+      "needs_review": true,
+      "issues": [
+        "现有数据缺少选项: {'[pay]', '[fight!]'}",
+        "现有数据多余选项: {'[fight!] combat encounter', '[pay] lose all of your gold'}"
+      ]
+    },
+    {
+      "wiki_id": "N'loth",
+      "name": "N'loth",
+      "found_in_existing": true,
+      "wiki_options_count": 3,
+      "existing_options_count": 2,
+      "option_labels_wiki": [
+        "[Offer: Relic A]",
+        "[Offer: Relic B]",
+        "[Leave]"
+      ],
+      "option_labels_existing": [
+        "[Offer Relic] Trade a relic for N'loth's Gift",
+        "[Leave]"
+      ],
+      "needs_review": true,
+      "issues": [
+        "选项数量不匹配: Wiki=3, 现有=2",
+        "现有数据缺少选项: {'[offer: relic b]', '[offer: relic a]'}",
+        "现有数据多余选项: {\"[offer relic] trade a relic for n'loth's gift\"}"
+      ]
+    },
+    {
+      "wiki_id": "Old_Beggar",
+      "name": "Old Beggar",
+      "found_in_existing": false,
+      "wiki_options_count": 2,
+      "existing_options_count": 0,
+      "option_labels_wiki": [
+        "[Offer Gold]",
+        "[Leave]"
+      ],
+      "option_labels_existing": [],
+      "needs_review": true,
+      "issues": [
+        "事件在 events_logic.json 中不存在"
+      ]
+    },
+    {
+      "wiki_id": "Pleading_Vagrant",
+      "name": "Pleading Vagrant",
+      "found_in_existing": false,
+      "wiki_options_count": 3,
+      "existing_options_count": 0,
+      "option_labels_wiki": [
+        "[Offer Gold]",
+        "[Rob]",
+        "[Leave]"
+      ],
+      "option_labels_existing": [],
+      "needs_review": true,
+      "issues": [
+        "事件在 events_logic.json 中不存在"
+      ]
+    },
+    {
+      "wiki_id": "The_Colosseum",
+      "name": "The Colosseum",
+      "found_in_existing": false,
+      "wiki_options_count": 3,
+      "existing_options_count": 0,
+      "option_labels_wiki": [
+        "[Fight]",
+        "[COWARDICE]",
+        "[VICTORY]"
+      ],
+      "option_labels_existing": [],
+      "needs_review": true,
+      "issues": [
+        "事件在 events_logic.json 中不存在"
+      ]
+    },
+    {
+      "wiki_id": "The_Joust",
+      "name": "The Joust",
+      "found_in_existing": true,
+      "wiki_options_count": 2,
+      "existing_options_count": 3,
+      "option_labels_wiki": [
+        "[Murderer]",
+        "[Owner]"
+      ],
+      "option_labels_existing": [
+        "[Murderer] Bet Gold - 70% win",
+        "[Owner] Bet Gold - 30% win big",
+        "[Watch]"
+      ],
+      "needs_review": true,
+      "issues": [
+        "选项数量不匹配: Wiki=2, 现有=3",
+        "现有数据缺少选项: {'[murderer]', '[owner]'}",
+        "现有数据多余选项: {'[owner] bet gold - 30% win big', '[watch]', '[murderer] bet gold - 70% win'}"
+      ]
+    },
+    {
+      "wiki_id": "The_Library",
+      "name": "The Library",
+      "found_in_existing": true,
+      "wiki_options_count": 2,
+      "existing_options_count": 3,
+      "option_labels_wiki": [
+        "[Read]",
+        "[Sleep]"
+      ],
+      "option_labels_existing": [
+        "[Read] Choose 1 of 20 cards to add to your deck",
+        "[Sleep] Heal 30% HP",
+        "[Leave]"
+      ],
+      "needs_review": true,
+      "issues": [
+        "选项数量不匹配: Wiki=2, 现有=3",
+        "现有数据缺少选项: {'[sleep]', '[read]'}",
+        "现有数据多余选项: {'[leave]', '[read] choose 1 of 20 cards to add to your deck', '[sleep] heal 30% hp'}"
+      ]
+    },
+    {
+      "wiki_id": "The_Mausoleum",
+      "name": "The Mausoleum",
+      "found_in_existing": true,
+      "wiki_options_count": 2,
+      "existing_options_count": 2,
+      "option_labels_wiki": [
+        "[Open Coffin]",
+        "[Leave]"
+      ],
+      "option_labels_existing": [
+        "[Open Coffin] Receive a Relic (50% Cursed)",
+        "[Leave]"
+      ],
+      "needs_review": true,
+      "issues": [
+        "现有数据缺少选项: {'[open coffin]'}",
+        "现有数据多余选项: {'[open coffin] receive a relic (50% cursed)'}"
+      ]
+    },
+    {
+      "wiki_id": "The_Nest",
+      "name": "The Nest",
+      "found_in_existing": false,
+      "wiki_options_count": 2,
+      "existing_options_count": 0,
+      "option_labels_wiki": [
+        "[Smash and Grab]",
+        "[Stay in Line]"
+      ],
+      "option_labels_existing": [],
+      "needs_review": true,
+      "issues": [
+        "事件在 events_logic.json 中不存在"
+      ]
+    },
+    {
+      "wiki_id": "Vampires",
+      "name": "Vampires",
+      "found_in_existing": true,
+      "wiki_options_count": 4,
+      "existing_options_count": 3,
+      "option_labels_wiki": [
+        "[Offer: Blood Vial]",
+        "[Accept]",
+        "[Refuse]",
+        "[Leave]"
+      ],
+      "option_labels_existing": [
+        "[Accept] Remove all Strikes. Obtain 5 Bites. Lose 30% Max HP",
+        "[Offer Blood Vial] Remove all Strikes. Obtain 5 Bites",
+        "[Refuse]"
+      ],
+      "needs_review": true,
+      "issues": [
+        "选项数量不匹配: Wiki=4, 现有=3",
+        "现有数据缺少选项: {'[offer: blood vial]', '[leave]', '[accept]'}",
+        "现有数据多余选项: {'[accept] remove all strikes. obtain 5 bites. lose 30% max hp', '[offer blood vial] remove all strikes. obtain 5 bites'}"
+      ]
+    }
+  ]
+}

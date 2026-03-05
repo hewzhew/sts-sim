@@ -1,0 +1,61 @@
+# Event URLs from wiki.gg
+# Format: EventID | Display Name | Wiki URL | Acts
+
+# Shrines (All Acts)
+A_Note_For_Yourself | A Note For Yourself | https://slaythespire.wiki.gg/wiki/A_Note_For_Yourself | All Acts - Shrine
+Bonfire_Spirits | Bonfire Spirits | https://slaythespire.wiki.gg/wiki/Bonfire_Spirits | All Acts - Shrine
+Duplicator | Duplicator | https://slaythespire.wiki.gg/wiki/Duplicator | All Acts - Shrine
+Golden_Shrine | Golden Shrine | https://slaythespire.wiki.gg/wiki/Golden_Shrine | All Acts - Shrine
+Lab | Lab | https://slaythespire.wiki.gg/wiki/Lab | All Acts - Shrine
+Match_and_Keep | Match and Keep | https://slaythespire.wiki.gg/wiki/Match_and_Keep | All Acts - Shrine
+Ominous_Forge | Ominous Forge | https://slaythespire.wiki.gg/wiki/Ominous_Forge | All Acts
+Purifier | Purifier | https://slaythespire.wiki.gg/wiki/Purifier | All Acts - Shrine
+The_Divine_Fountain | The Divine Fountain | https://slaythespire.wiki.gg/wiki/The_Divine_Fountain | All Acts - Shrine
+The_Woman_in_Blue | The Woman in Blue | https://slaythespire.wiki.gg/wiki/The_Woman_in_Blue | All Acts - Shrine
+Transmogrifier | Transmogrifier | https://slaythespire.wiki.gg/wiki/Transmogrifier | All Acts - Shrine
+Upgrade_Shrine | Upgrade Shrine | https://slaythespire.wiki.gg/wiki/Upgrade_Shrine | All Acts - Shrine
+We_Meet_Again | We Meet Again! | https://slaythespire.wiki.gg/wiki/We_Meet_Again! | All Acts - Shrine
+Wheel_of_Change | Wheel of Change | https://slaythespire.wiki.gg/wiki/Wheel_of_Change | All Acts - Shrine
+
+# Act 1
+Big_Fish | Big Fish | https://slaythespire.wiki.gg/wiki/Big_Fish | Act 1
+Dead_Adventurer | Dead Adventurer | https://slaythespire.wiki.gg/wiki/Dead_Adventurer | Act 1
+Face_Trader | Face Trader | https://slaythespire.wiki.gg/wiki/Face_Trader | Act 1, Act 2 - Shrine
+Golden_Idol | Golden Idol | https://slaythespire.wiki.gg/wiki/Golden_Idol_(Event) | Act 1
+Hypnotizing_Colored_Mushrooms | Hypnotizing Colored Mushrooms | https://slaythespire.wiki.gg/wiki/Hypnotizing_Colored_Mushrooms | Act 1
+Living_Wall | Living Wall | https://slaythespire.wiki.gg/wiki/Living_Wall | Act 1
+Scrap_Ooze | Scrap Ooze | https://slaythespire.wiki.gg/wiki/Scrap_Ooze | Act 1
+Shining_Light | Shining Light | https://slaythespire.wiki.gg/wiki/Shining_Light | Act 1
+The_Cleric | The Cleric | https://slaythespire.wiki.gg/wiki/The_Cleric | Act 1
+The_Ssssserpent | The Ssssserpent | https://slaythespire.wiki.gg/wiki/The_Ssssserpent | Act 1
+Wing_Statue | Wing Statue | https://slaythespire.wiki.gg/wiki/Wing_Statue | Act 1
+World_of_Goop | World of Goop | https://slaythespire.wiki.gg/wiki/World_of_Goop | Act 1
+
+# Act 2
+Ancient_Writing | Ancient Writing | https://slaythespire.wiki.gg/wiki/Ancient_Writing | Act 2
+Augmenter | Augmenter | https://slaythespire.wiki.gg/wiki/Augmenter | Act 2
+Council_of_Ghosts | Council of Ghosts | https://slaythespire.wiki.gg/wiki/Council_of_Ghosts | Act 2
+Cursed_Tome | Cursed Tome | https://slaythespire.wiki.gg/wiki/Cursed_Tome | Act 2
+Designer_In-Spire | Designer In-Spire | https://slaythespire.wiki.gg/wiki/Designer_In-Spire | Act 2, Act 3 - Shrine
+Forgotten_Altar | Forgotten Altar | https://slaythespire.wiki.gg/wiki/Forgotten_Altar | Act 2
+Knowing_Skull | Knowing Skull | https://slaythespire.wiki.gg/wiki/Knowing_Skull | Act 2 - Shrine
+Masked_Bandits | Masked Bandits | https://slaythespire.wiki.gg/wiki/Masked_Bandits | Act 2
+Nloth | N'loth | https://slaythespire.wiki.gg/wiki/N%27loth | Act 2 - Shrine
+Old_Beggar | Old Beggar | https://slaythespire.wiki.gg/wiki/Old_Beggar | Act 2
+Pleading_Vagrant | Pleading Vagrant | https://slaythespire.wiki.gg/wiki/Pleading_Vagrant | Act 2
+The_Colosseum | The Colosseum | https://slaythespire.wiki.gg/wiki/The_Colosseum | Act 2
+The_Joust | The Joust | https://slaythespire.wiki.gg/wiki/The_Joust | Act 2 - Shrine
+The_Library | The Library | https://slaythespire.wiki.gg/wiki/The_Library | Act 2
+The_Mausoleum | The Mausoleum | https://slaythespire.wiki.gg/wiki/The_Mausoleum | Act 2
+The_Nest | The Nest | https://slaythespire.wiki.gg/wiki/The_Nest | Act 2
+Vampires | Vampires | https://slaythespire.wiki.gg/wiki/Vampires | Act 2
+
+# Act 3
+Falling | Falling | https://slaythespire.wiki.gg/wiki/Falling | Act 3
+Mind_Bloom | Mind Bloom | https://slaythespire.wiki.gg/wiki/Mind_Bloom | Act 3
+Mysterious_Sphere | Mysterious Sphere | https://slaythespire.wiki.gg/wiki/Mysterious_Sphere | Act 3
+Secret_Portal | Secret Portal | https://slaythespire.wiki.gg/wiki/Secret_Portal | Act 3 - Shrine
+Sensory_Stone | Sensory Stone | https://slaythespire.wiki.gg/wiki/Sensory_Stone | Act 3
+The_Moai_Head | The Moai Head | https://slaythespire.wiki.gg/wiki/The_Moai_Head | Act 3
+Tomb_of_Lord_Red_Mask | Tomb of Lord Red Mask | https://slaythespire.wiki.gg/wiki/Tomb_of_Lord_Red_Mask | Act 3
+Winding_Halls | Winding Halls | https://slaythespire.wiki.gg/wiki/Winding_Halls | Act 3

@@ -1,0 +1,328 @@
+[
+  {
+    "wiki_id": "Falling",
+    "name": "Falling",
+    "category": "act3",
+    "options": [
+      {
+        "label": "[Land]",
+        "description": "Lose a random Skill card",
+        "conditions": [
+          "Requires at least one Skill card not targeted by Bottled Lightning"
+        ],
+        "effects": [
+          "Removes a random Skill from deck (shown in option text)",
+          "If no eligible Skill exists, this option becomes [Locked] Requires: Skill Card"
+        ]
+      },
+      {
+        "label": "[Channel]",
+        "description": "Lose a random Power card",
+        "conditions": [
+          "Requires at least one Power card not targeted by Bottled Tornado"
+        ],
+        "effects": [
+          "Removes a random Power from deck (shown in option text)",
+          "If no eligible Power exists, this option becomes [Locked] Requires: Power Card"
+        ]
+      },
+      {
+        "label": "[Strike]",
+        "description": "Lose a random Attack card",
+        "conditions": [
+          "Requires at least one Attack card not targeted by Bottled Flame"
+        ],
+        "effects": [
+          "Removes a random Attack from deck (shown in option text)",
+          "If no eligible Attack exists, this option becomes [Locked] Requires: Attack Card"
+        ]
+      },
+      {
+        "label": "[Land] (Special)",
+        "description": "Nothing happens",
+        "conditions": [
+          "Only appears if player has NO eligible cards of any type (e.g., very small deck with only bottled cards)"
+        ],
+        "effects": [
+          "No card is lost, player continues safely"
+        ]
+      }
+    ],
+    "notes": [
+      "Each option shows the specific card that will be lost",
+      "Bottled cards (Bottled Flame/Lightning/Tornado targets) are protected from removal",
+      "Player chooses which card type to sacrifice"
+    ],
+    "raw_options": "All options will randomly choose a card in the player's deck of a particular type. The option's text will explicitly tell the player which card they would lose. If the player lacks a card of a particular type, then the option relating to that type will be locked (e.g. if the player has no Powers for the [Channel] option, it is replaced with the option [Locked] Requires: Power Card).\n\n\n[Land] Lose (a random Skill)\n• Cannot be a Skill targeted by  Bottled Lightning.\n[Channel] Lose (a random Power)\n• Cannot be a Power targeted by  Bottled Tornado.\n[Strike] Lose (a random Attack)\n• Cannot be an Attack targeted by  Bottled Flame.\nIf the player somehow manages to lack even a single eligible card (e.g. they have a very small deck containing only bottled cards), then the only option listed is a special [Land] option that has no description.",
+    "raw_dialogue": "As you head upwards hopping from one floating shape to another, you slip\nYou begin to fall.\n[Continue]\n\nWhile in  free fall you consider your options:\nLand safely with your greatest techniques.\nChannel a Power to survive the fall.\nStrike at the wall to hang on to it.\n[Land]\n\nYou land with extreme grace before continuing on.\n\n\n[Channel]\n\nHarnessing and expending some of your raw power, you manage to land unhurt.\n\n\n[Strike]\n\nYou are able to latch on to the wall, and manage to make a short hop onto another stable platform.\n\n\nThe special [Land] that only occurs if the player's deck has no cards that are eligible for removal;\n\nYou seem to fall as slow as a feather, reaching the bottom without a scratch."
+  },
+  {
+    "wiki_id": "Mind_Bloom",
+    "name": "Mind Bloom",
+    "category": "act3",
+    "options": [
+      {
+        "label": "[I am War]",
+        "description": "Fight a random Boss from Act 1. Obtain a Rare Relic.",
+        "conditions": [],
+        "effects": [
+          "Enter combat with a random Act 1 boss (can be the same one you fought or a different one)",
+          "After defeating the boss, receive: Rare Relic (as loot drop), normal combat rewards, and 50 Gold (25 on A15+)"
+        ]
+      },
+      {
+        "label": "[I am Awake]",
+        "description": "Upgrade all cards. You can no longer heal.",
+        "conditions": [],
+        "effects": [
+          "All cards in deck are upgraded",
+          "Obtain Mark of the Bloom relic (prevents ALL healing)",
+          "Lizard Tail and Fairy in a Bottle become useless (cannot restore HP)",
+          "If you lose Mark of the Bloom (e.g., via N'loth event), healing is restored"
+        ]
+      },
+      {
+        "label": "[I am Rich]",
+        "description": "Gain 999 Gold. Become Cursed - 2 Normality.",
+        "conditions": [
+          "Only appears on floors 35-40",
+          "Replaced by [I am Healthy] on floor 41+"
+        ],
+        "effects": [
+          "Omamori can block one or both Normality curses"
+        ]
+      },
+      {
+        "label": "[I am Healthy]",
+        "description": "Heal to full HP. Become Cursed - Doubt.",
+        "conditions": [
+          "Only appears on floor 41+",
+          "Replaces [I am Rich] on higher floors"
+        ],
+        "effects": []
+      }
+    ],
+    "notes": [
+      "Always shows exactly 3 options: [I am War], [I am Awake], and either [I am Rich] or [I am Healthy] based on floor",
+      "[I am Awake] disqualifies you from the 'Who Needs Relics?' achievement (due to Mark of the Bloom)",
+      "[I am War] boss fight triggers Pantograph and Slaver's Collar as if it were a normal end-of-Act boss",
+      "Omamori can prevent Normality curses from [I am Rich], making it nearly free 999 Gold",
+      "This is often one of the last opportunities to encounter Curses in a run"
+    ],
+    "raw_options": "[I am War] Fight a Boss from Act 1. Obtain a Rare Relic.\n• The boss is selected at random. It can be the same boss that the player actually fought in Act 1, or one of the two that they did not encounter.\n• In addition to the Boss dropping a Rare Relic, it also drops normal combat rewards and 50 (A15+: 25) Gold.\n[I am Awake] Upgrade all cards. You can no longer heal.\n• Obtain  Mark of the Bloom.\n[I am Rich] Gain 999 Gold. Cursed - 2  Normality.\n• This option only appears on floors 35 to 40.\n[I am Healthy] Heal to full HP. Cursed -  Doubt.\n• This option replaces [I am Rich] on floor 41 and above.",
+    "raw_dialogue": "While walking and traversing through the chaos of the Spire, your thoughts suddenly begin to feel very... real...\nImaginings of monsters and riches begin to manifest themselves into reality.\nThe sensation is quickly fleeting. What do you do?\n\n[I am War]\n\n\n(No dialogue; the player immediately enters combat with the random Boss from Act 1)\n\n\n[I am Awake]\n\nEverything makes sense now.\nThe lack of memories, the ascent, the Ancient One.\nThis is the way it always was.\nThis is the way it always will be.\nAll will be forgotten again soon...\n\n\n[I am Rich] or [I am Healthy]\n\nCan it really be this easy?"
+  },
+  {
+    "wiki_id": "Mysterious_Sphere",
+    "name": "Mysterious Sphere",
+    "category": "act3",
+    "options": [
+      {
+        "label": "[Open Sphere]",
+        "description": "Fight. Reward:  Rare Relic.",
+        "conditions": [],
+        "effects": [
+          "The player enters combat with the 2  Orb Walkers. In addition to the the Rare Relic, the combat rewards also yield 45-55 Gold, a normal card reward, and potentially a Potion just like a normal combat."
+        ]
+      },
+      {
+        "label": "[Leave]",
+        "description": "Nothing happens.",
+        "conditions": [],
+        "effects": []
+      }
+    ],
+    "notes": [
+      "Although the fight can be quite dangerous and offers a Relic reward, it does not count as an Elite combat for the sake of  Preserved Insect,  Sling of Courage,  Black Star, and  Slaver's Collar."
+    ],
+    "raw_options": "[Open Sphere] Fight. Reward:  Rare Relic.\n• The player enters combat with the 2  Orb Walkers. In addition to the the Rare Relic, the combat rewards also yield 45-55 Gold, a normal card reward, and potentially a Potion just like a normal combat.\n[Leave] Nothing happens.",
+    "raw_dialogue": "Jutting from the chaotic terrain around you, a bony sphere surrounds a mysterious glowing object within.\nWhile you are curious what lies inside, you notice some sentries keeping an eye on it.\n\n[Open Sphere]\n\nAs soon as you strike the sphere, the sentries spring to life around you!\n\n\n[Fight]\n\nThe sphere visually breaks open and the player enters combat with the 2  Orb Walkers.\n\n\n[Leave]\n\nNo need to be greedy."
+  },
+  {
+    "wiki_id": "Secret_Portal",
+    "name": "Secret Portal",
+    "category": "act3",
+    "options": [
+      {
+        "label": "[Enter the Portal]",
+        "description": "IMMEDIATELY travel to the boss.",
+        "conditions": [],
+        "effects": [
+          "The player is put directly into combat with the Act 3 boss at the end of the act."
+        ]
+      },
+      {
+        "label": "[Leave]",
+        "description": "Nothing happens.",
+        "conditions": [],
+        "effects": []
+      }
+    ],
+    "notes": [
+      "Apart from the unusual method of entering the boss floor and skipping the rest of Act 3, entering the portal is otherwise a completely normal boss fight.",
+      "Pantograph and  Slaver's Collar trigger as expected.",
+      "There will still be the double boss afterwards on A20.",
+      "Defeating the boss (or both bosses on A20) will still allow the player to enter Act 4 if they have all required Keys. Although, the player should be careful to collect the Ruby Key from a Rest Site prior to the event since they will skip the guaranteed Rest Site before the boss (which is often relied on as the last opportunity to collect the Ruby Key).",
+      "The player's current floor is only increased by 1, which causes them to fight the Act 3 Boss earlier than the usual floor 50."
+    ],
+    "raw_options": "[Enter the Portal] IMMEDIATELY travel to the boss.\n• The player is put directly into combat with the Act 3 boss at the end of the act.\n[Leave] Nothing happens.",
+    "raw_dialogue": "Before you is a sight that seems out of place in the alien landscape around you. Strangely placed into one of the living walls of the Beyond is an enclosed stone entrance filled with a swirling magical portal.\n\n\nYou aren't sure where it leads, but maybe it could speed your journey through the Spire.\n\n[Enter the Portal]\n\nJumping through the portal, your sense of time and space is completely torn apart.\n\n\nAs you reorient yourself to the new surroundings, you realize that right before you is a fearsome battle.\n\n\n[Leave]\n\n Careful and cautious seems the better approach for reaching the top of the Spire. Ignoring the portal you continue on."
+  },
+  {
+    "wiki_id": "Sensory_Stone",
+    "name": "Sensory Stone",
+    "category": "act3",
+    "options": [
+      {
+        "label": "[Recall]",
+        "description": "Add 1 Colorless card to your deck.",
+        "conditions": [
+          "The player is presented with 1 card reward that can only offer Uncommon Colorless cards and Rare Colorless cards."
+        ],
+        "effects": []
+      },
+      {
+        "label": "[Recall]",
+        "description": "Add 2 Colorless cards to your deck. Lose 5 HP.",
+        "conditions": [
+          "The player is presented with 2 card rewards that can only offer Uncommon Colorless cards and Rare Colorless cards."
+        ],
+        "effects": []
+      },
+      {
+        "label": "[Recall]",
+        "description": "Add 3 Colorless cards to your deck. Lose 5 HP.",
+        "conditions": [
+          "The player is presented with 3 card rewards that can only offer Uncommon Colorless cards and Rare Colorless cards."
+        ],
+        "effects": []
+      }
+    ],
+    "notes": [
+      "Since the Colorless cards are actually card rewards, they are affected by Relics which modify card rewards in some way.",
+      "Question Card makes each card reward present the player with 1 additional card.",
+      "Singing Bowl can allow the player to skip each card reward in order to gain +2 Max HP.",
+      "Busted Crown makes each card reward present the player with 2 fewer cards.",
+      "N'loth's Gift increases the likelihood of each card being a Rare Colorless card."
+    ],
+    "raw_options": "[Recall] Add 1 Colorless card to your deck.\n• The player is presented with 1 card reward that can only offer Uncommon Colorless cards and Rare Colorless cards.\n[Recall] Add 2 Colorless cards to your deck. Lose 5 HP.\n• The player is presented with 2 card rewards that can only offer Uncommon Colorless cards and Rare Colorless cards.\n[Recall] Add 3 Colorless cards to your deck. Lose 5 HP.\n• The player is presented with 3 card rewards that can only offer Uncommon Colorless cards and Rare Colorless cards.",
+    "raw_dialogue": "Navigating through the Beyond, you discover a glowing tesseract spinning and shifting gently in the air.\n\n[Interact]\n\n\nYou touch it.\n\n\nA sharp pain flows through you, followed by vivid flashes of a distant memory.\n...whose memories are these?\n\n\n[Recall]\nAfter leaving the card rewards screen, the player is presented with one of four possible dialogue texts. Each contains the memories of one of the four playable characters. The dialogue is chosen randomly, and the current character being played has no effect on which one is presented.\n\nIronclad's Memories\n\nFEAR.\nA demonic creature towers above you, wings spread wide as it howls with laughter. Dead bodies of a tribe surround you while the village is engulfed in terrible dark flames.\nThe demon calls out, taunting you.\n\" YOU REALLY ARE THE STRONGEST NOW! Haha.. HEHE... HAHAHAAAAH!! \" \nThis laughter echoes forever...\n\n\nSilent's Memories\n\nTRIUMPH.\nThe remains of a ghostly creature sink slowly into the mud before you, barely visible in the moonlight. You have proven yourself amongst your sisters.\nStanding victoriously, you wait in silence as the others ceremoniously place the creature's skull atop your head. The ritual has concluded.\nYou head towards the Spire...\n\n\nDefect's Memories\n\nCONFUSION.\n[OBJECTIVE] BALANCE must be ENFORCED\n[DEFINE] BALANCE\n[ERROR] BALANCE NOT FOUND\n[DEFINE] BALANCE\n[ERROR] BALANCE NOT FOUND\n[WARNING] Large object approaching\n\"I... ..am ....Neow..\"\n\n\nWatcher's Memories\n\nSERENITY.\nTwo primitive creatures fight over a carcass on the side of the road. You observe, devoid of emotion.\nWatch. Remember. Live. This is the Watcher's mission.\nRecently, one of your peers had stopped reporting on their assignment: a Spire of unknown origin.\nAs the fight ends, you continue onward, unfazed by the bloody scene that took place."
+  },
+  {
+    "wiki_id": "The_Moai_Head",
+    "name": "The Moai Head",
+    "category": "act3",
+    "options": [
+      {
+        "label": "[Jump Inside]",
+        "description": "Heal to full HP. Lose X Max HP.",
+        "conditions": [],
+        "effects": [
+          "X = 12.5% (A15+: 18%) of player's Max HP.",
+          "Healing is blocked by Mark of the Bloom."
+        ]
+      },
+      {
+        "label": "[Offer: Golden Idol]",
+        "description": "Receive 333 Gold. Lose Golden Idol relic.",
+        "conditions": [
+          "Requires: Golden Idol relic (from Act 1 Golden Idol event).",
+          "If player lacks Golden Idol, shows as [Locked] Requires: Golden Idol."
+        ],
+        "effects": []
+      },
+      {
+        "label": "[Leave]",
+        "description": "Nothing happens.",
+        "conditions": [],
+        "effects": []
+      }
+    ],
+    "notes": [
+      "Golden Idol is acquired from the Act 1 event 'Golden Idol'.",
+      "This is the LAST opportunity to trade Golden Idol (other was Forgotten Altar in Act 2).",
+      "333 Gold from [Offer] far exceeds any remaining combat Gold gains at this point in Act 3."
+    ],
+    "raw_options": "[Jump Inside] Heal to full HP. Lose X Max HP.\n• X is equal to 12.5% (A15+: 18%) of the player's Max HP.\n[Offer:  Golden Idol] Receive 333 Gold. Lose  Golden Idol.\n• If the player lacks  Golden Idol, this option is replaced with [Locked] Requires:  Golden Idol.\n[Leave] Nothing happens.",
+    "raw_dialogue": "You stumble across something that feels *very* out of place. Before you, an enormous stony head emerges from a large wall segment that does not shift and change like the rest of this area.\nThe head's mouth is wide open, and it reveals large intimidating teeth stained red with blood. The surface of the status is riddled with pictographs that seem to indicate people throwing themselves into the mouth of this head and being devoured. Why would anyone do that?\n\n[Jump Inside]\n\n At first when you step into the mouth of the statue, nothing happens.\nAs you start to feel more than a little foolish, the huge molars slam down from above, crushing you whole.\nDarkness.\nSometime later from within the dark, you see a sliver of light, and hear what you now realize is the sound of stony teeth slowly rising upwards.\n\n\nYou leave confused.\n\n \n[Offer:  Golden Idol]\n\n You jump back a little as the gigantic molars smash down on the idol, smashing it to dust. As the teeth start to rise up again, gold pours forth in a torrent from the opening, flooding you with riches.\n\n \n[Leave]\n\n You leave, wondering what could have been."
+  },
+  {
+    "wiki_id": "Tomb_of_Lord_Red_Mask",
+    "name": "Tomb of Lord Red Mask",
+    "category": "act3",
+    "options": [
+      {
+        "label": "[Don the Red Mask]",
+        "description": "Gain 222 Gold.",
+        "conditions": [
+          "Requires: Red Mask relic (from Masked Bandits event in Act 2)"
+        ],
+        "effects": [
+          "Player keeps the Red Mask relic.",
+          "Gold is a pure reward for owning the relic."
+        ]
+      },
+      {
+        "label": "[Offer: X Gold]",
+        "description": "Lose all Gold. Obtain Red Mask relic.",
+        "conditions": [
+          "Only available if player does NOT have Red Mask relic"
+        ],
+        "effects": [
+          "X = all of player's current Gold",
+          "Receive Red Mask relic"
+        ]
+      },
+      {
+        "label": "[Leave]",
+        "description": "Nothing happens.",
+        "conditions": [],
+        "effects": []
+      }
+    ],
+    "notes": [
+      "This event has TWO branches based on Red Mask ownership:",
+      "WITH Red Mask: Options are [Don the Red Mask] (222 Gold) or [Leave]",
+      "WITHOUT Red Mask: Options are [Offer: X Gold] (buy Red Mask) or [Leave]. [Don the Red Mask] shows as [Locked] Requires: Red Mask",
+      "Red Mask is obtained from the Act 2 event Masked Bandits."
+    ],
+    "raw_options": "If The Player Owns  Red Mask\n[Don the Red Mask] Gain 222 Gold.\n• The player gets to keep  Red Mask afterwards. The Gold is purely a reward for owning the relic.\n[Leave] Nothing happens.\nIf The Player Does Not Own  Red Mask\n[Locked] Requires:  Red Mask\n\n\n[Offer: X Gold] Lose all Gold. Obtain a Relic.\n• X is equal to all of the player's Gold.\n• Rewards the player with  Red Mask.\n[Leave] Nothing happens.",
+    "raw_dialogue": "A highly ornamented tomb can be seen on the other side of a floating path. Upon reaching the tomb, you notice a slot for gold coins with a scratched out inscription above it.\n \n[Don the Red Mask]\n\n You don the mask and the tomb starts to flake away... a secret passage!\n\nThe passage is lined with countless stolen goods and mounds of gold!\n\n \n[Offer: X Gold]\n\n An opening appears in the tomb and out slides a small red mask with a note attached. \"Take from others as I have taken from you!\"\n\n \n[Leave]\n\n\n(No dialogue)"
+  },
+  {
+    "wiki_id": "Winding_Halls",
+    "name": "Winding Halls",
+    "category": "act3",
+    "options": [
+      {
+        "label": "[Embrace Madness]",
+        "description": "Receive 2  Madness. Lose X HP.",
+        "conditions": [],
+        "effects": [
+          "X is equal to 12.5% (A15+: 18%) of the player's Max HP."
+        ]
+      },
+      {
+        "label": "[Focus]",
+        "description": "Become Cursed -  Writhe. Heal X HP.",
+        "conditions": [],
+        "effects": [
+          "X is equal to 25% (A15+: 20%) of the player's Max HP."
+        ]
+      },
+      {
+        "label": "[Retrace Your Steps]",
+        "description": "Lose X Max HP.",
+        "conditions": [],
+        "effects": [
+          "X is equal to 5% of the player's Max HP."
+        ]
+      }
+    ],
+    "notes": [
+      "Omamori can be used to prevent the  Writhe from [Focus] if it has any charges remaining. This is likely one of the last opportunities for the player to be able to benefit from  Omamori."
+    ],
+    "raw_options": "[Embrace Madness] Receive 2  Madness. Lose X HP.\n• X is equal to 12.5% (A15+: 18%) of the player's Max HP.\n[Focus] Become Cursed -  Writhe. Heal X HP.\n• X is equal to 25% (A15+: 20%) of the player's Max HP.\n[Retrace Your Steps] Lose X Max HP.\n• X is equal to 5% of the player's Max HP.",
+    "raw_dialogue": "As you slowly make your way up the twisting pathways, you constantly find yourself losing your way as the walls and ground seem to inexplicably shift before your eyes\n\nThe constant whispering voices in the back of your head aren't helping things either.\n\n\n\n[...]\n\n\nPassing by a structure you are certain you have previously seen you start to question if you are going insane, or if the impossible geography of this place is starting to get to you. You need to change something, and soon.\n\nThat's what the voices say anyway, and why would they lie?\n[Embrace Madness]\n\n Something in you cracks.\n\nOnly the truly mad can understand a place like this, so you give into the chattering voices and continue on with a \"new\" perspective.\nThings do seem to make so much more sense now.\n\n \n[Focus]\n\n As you take a moment to stop and carefully observe the undulating landscape around you, the hint of a pattern starts to emerge from within the randomness. Whenever the demented noises begin to interrupt your thoughts, you struggle through the mental pain and ignore it.\n\nEventually you successfully map out a path forward, and continue on, now resistant to the nefarious nature of this alien place.\n\n \n[Retrace Your Steps]\n\n You spend what feels like an eternity lost in the maze. Slowly but surely, you are able to retrace your steps, reorient yourself, and make it out of the twisting passages.\n\nYou feel drained from the experience."
+  }
+]

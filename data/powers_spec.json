@@ -1,0 +1,6150 @@
+[
+  {
+    "id": "Accuracy",
+    "java_class": "AccuracyPower",
+    "power_type": "Buff",
+    "constructor": {
+      "params": [
+        "owner",
+        "amt"
+      ],
+      "param_types": {
+        "owner": "AbstractCreature",
+        "amt": "int"
+      },
+      "field_mapping": {
+        "amount": "amt"
+      }
+    },
+    "hooks": [
+      {
+        "method": "stackPower",
+        "params": "int stackAmount",
+        "field_modifications": [
+          {
+            "field": "amount",
+            "op": "+=",
+            "value": "stackAmount"
+          }
+        ]
+      }
+    ],
+    "stack_behavior": {
+      "method": "custom",
+      "code": "this.amount += stackAmount; this.updateExistingShivs();"
+    },
+    "card_creates_with": [
+      {
+        "card": "Accuracy",
+        "color": "green",
+        "constructor_args": "p, this.magicNumber",
+        "base_value": 4,
+        "upgrade_delta": 2
+      }
+    ]
+  },
+  {
+    "id": "Adaptation",
+    "java_class": "RushdownPower",
+    "power_type": "Buff",
+    "constructor": {
+      "params": [
+        "owner",
+        "amount"
+      ],
+      "param_types": {
+        "owner": "AbstractCreature",
+        "amount": "int"
+      },
+      "field_mapping": {
+        "amount": "amount"
+      }
+    },
+    "hooks": [
+      {
+        "method": "onChangeStance",
+        "params": "AbstractStance oldStance, AbstractStance newStance",
+        "actions": [
+          {
+            "action": "DrawCardAction",
+            "args": "owner, amount"
+          }
+        ]
+      }
+    ],
+    "card_creates_with": [
+      {
+        "card": "Rushdown",
+        "color": "purple",
+        "constructor_args": "p, this.magicNumber",
+        "base_value": 2,
+        "upgrade_delta": 0
+      }
+    ]
+  },
+  {
+    "id": "After Image",
+    "java_class": "AfterImagePower",
+    "power_type": "Buff",
+    "constructor": {
+      "params": [
+        "owner",
+        "amount"
+      ],
+      "param_types": {
+        "owner": "AbstractCreature",
+        "amount": "int"
+      },
+      "field_mapping": {
+        "amount": "amount"
+      }
+    },
+    "hooks": [
+      {
+        "method": "onUseCard",
+        "params": "AbstractCard card, UseCardAction action",
+        "actions": [
+          {
+            "action": "GainBlockAction",
+            "args": "player, player, amount, true"
+          }
+        ]
+      }
+    ],
+    "card_creates_with": [
+      {
+        "card": "AfterImage",
+        "color": "green",
+        "constructor_args": "p, 1",
+        "base_value": null,
+        "upgrade_delta": null
+      }
+    ]
+  },
+  {
+    "id": "Amplify",
+    "java_class": "AmplifyPower",
+    "power_type": "Buff",
+    "constructor": {
+      "params": [
+        "owner",
+        "amount"
+      ],
+      "param_types": {
+        "owner": "AbstractCreature",
+        "amount": "int"
+      },
+      "field_mapping": {
+        "amount": "amount"
+      }
+    },
+    "hooks": [
+      {
+        "method": "atEndOfTurn",
+        "params": "boolean isPlayer",
+        "actions": [
+          {
+            "action": "RemoveSpecificPowerAction",
+            "args": "owner, owner, POWER_ID"
+          }
+        ]
+      },
+      {
+        "method": "onUseCard",
+        "params": "AbstractCard card, UseCardAction action"
+      }
+    ],
+    "card_creates_with": [
+      {
+        "card": "Amplify",
+        "color": "blue",
+        "constructor_args": "p, this.magicNumber",
+        "base_value": 1,
+        "upgrade_delta": 1
+      }
+    ]
+  },
+  {
+    "id": "AngelForm",
+    "java_class": "LiveForeverPower",
+    "power_type": "Buff",
+    "constructor": {
+      "params": [
+        "owner",
+        "armorAmt"
+      ],
+      "param_types": {
+        "owner": "AbstractCreature",
+        "armorAmt": "int"
+      },
+      "field_mapping": {
+        "amount": "armorAmt"
+      }
+    },
+    "hooks": [
+      {
+        "method": "atEndOfTurn",
+        "params": "boolean isPlayer",
+        "actions": [
+          {
+            "action": "ApplyPowerAction",
+            "args": "owner, owner, new PlatedArmorPower(owner, amount), amount"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "Anger",
+    "java_class": "AngerPower",
+    "power_type": "Buff",
+    "constructor": {
+      "params": [
+        "owner",
+        "amount"
+      ],
+      "param_types": {
+        "owner": "AbstractCreature",
+        "amount": "int"
+      },
+      "field_mapping": {
+        "amount": "amount"
+      }
+    },
+    "hooks": [
+      {
+        "method": "onUseCard",
+        "params": "AbstractCard card, UseCardAction action",
+        "guards": [
+          "card_type_check"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "Angry",
+    "java_class": "AngryPower",
+    "power_type": "Buff",
+    "constructor": {
+      "params": [
+        "owner",
+        "attackAmount"
+      ],
+      "param_types": {
+        "owner": "AbstractCreature",
+        "attackAmount": "int"
+      },
+      "field_mapping": {
+        "amount": "attackAmount"
+      }
+    },
+    "hooks": [
+      {
+        "method": "onAttacked",
+        "params": "DamageInfo info, int damageAmount",
+        "guards": [
+          "attacker_exists"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "Artifact",
+    "java_class": "ArtifactPower",
+    "power_type": "Buff",
+    "constructor": {
+      "params": [
+        "owner",
+        "amount"
+      ],
+      "param_types": {
+        "owner": "AbstractCreature",
+        "amount": "int"
+      },
+      "field_mapping": {
+        "amount": "amount"
+      }
+    },
+    "hooks": [
+      {
+        "method": "onSpecificTrigger",
+        "params": null
+      }
+    ],
+    "card_creates_with": [
+      {
+        "card": "CoreSurge",
+        "color": "blue",
+        "constructor_args": "p, this.magicNumber",
+        "base_value": 11,
+        "upgrade_delta": 4
+      },
+      {
+        "card": "Panacea",
+        "color": "colorless",
+        "constructor_args": "p, this.magicNumber",
+        "base_value": 1,
+        "upgrade_delta": 1
+      }
+    ]
+  },
+  {
+    "id": "Attack Burn",
+    "java_class": "AttackBurnPower",
+    "power_type": "Debuff",
+    "constructor": {
+      "params": [
+        "owner",
+        "amount"
+      ],
+      "param_types": {
+        "owner": "AbstractCreature",
+        "amount": "int"
+      },
+      "field_mapping": {
+        "amount": "amount"
+      }
+    },
+    "hooks": [
+      {
+        "method": "atEndOfRound",
+        "params": null,
+        "field_modifications": [
+          {
+            "field": "justApplied",
+            "op": "=",
+            "value": "false"
+          }
+        ]
+      },
+      {
+        "method": "onUseCard",
+        "params": "AbstractCard card, UseCardAction action",
+        "guards": [
+          "card_type_check"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "BackAttack",
+    "java_class": "BackAttackPower",
+    "power_type": "Buff",
+    "no_stack": true,
+    "constructor": {
+      "params": [
+        "owner"
+      ],
+      "param_types": {
+        "owner": "AbstractCreature"
+      },
+      "field_mapping": {
+        "amount": -1
+      }
+    }
+  },
+  {
+    "id": "Barricade",
+    "java_class": "BarricadePower",
+    "power_type": "Buff",
+    "no_stack": true,
+    "constructor": {
+      "params": [
+        "owner"
+      ],
+      "param_types": {
+        "owner": "AbstractCreature"
+      },
+      "field_mapping": {
+        "amount": -1
+      }
+    },
+    "card_creates_with": [
+      {
+        "card": "Barricade",
+        "color": "red",
+        "constructor_args": "p",
+        "base_value": null,
+        "upgrade_delta": 2
+      }
+    ]
+  },
+  {
+    "id": "BattleHymn",
+    "java_class": "BattleHymnPower",
+    "power_type": "Buff",
+    "constructor": {
+      "params": [
+        "owner",
+        "amt"
+      ],
+      "param_types": {
+        "owner": "AbstractCreature",
+        "amt": "int"
+      },
+      "field_mapping": {
+        "amount": "amt"
+      }
+    },
+    "hooks": [
+      {
+        "method": "atStartOfTurn",
+        "params": null,
+        "guards": [
+          "monsters_alive"
+        ],
+        "actions": [
+          {
+            "action": "MakeTempCardInHandAction",
+            "args": "(AbstractCard)new Smite(), amount, false"
+          }
+        ]
+      },
+      {
+        "method": "stackPower",
+        "params": "int stackAmount",
+        "field_modifications": [
+          {
+            "field": "amount",
+            "op": "+=",
+            "value": "stackAmount"
+          }
+        ]
+      }
+    ],
+    "card_creates_with": [
+      {
+        "card": "BattleHymn",
+        "color": "purple",
+        "constructor_args": "p, this.magicNumber",
+        "base_value": 1,
+        "upgrade_delta": null
+      }
+    ]
+  },
+  {
+    "id": "BeatOfDeath",
+    "java_class": "BeatOfDeathPower",
+    "power_type": "Buff",
+    "constructor": {
+      "params": [
+        "owner",
+        "amount"
+      ],
+      "param_types": {
+        "owner": "AbstractCreature",
+        "amount": "int"
+      },
+      "field_mapping": {
+        "amount": "amount"
+      }
+    },
+    "hooks": [
+      {
+        "method": "onAfterUseCard",
+        "params": "AbstractCard card, UseCardAction action",
+        "actions": [
+          {
+            "action": "DamageAction",
+            "args": "(AbstractCreature)player, new DamageInfo(owner, amount, THORNS), BLUNT_LIGHT"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "Berserk",
+    "java_class": "BerserkPower",
+    "power_type": "Buff",
+    "constructor": {
+      "params": [
+        "owner",
+        "amount"
+      ],
+      "param_types": {
+        "owner": "AbstractCreature",
+        "amount": "int"
+      },
+      "field_mapping": {
+        "amount": "amount"
+      }
+    },
+    "hooks": [
+      {
+        "method": "atStartOfTurn",
+        "params": null,
+        "actions": [
+          {
+            "action": "GainEnergyAction",
+            "args": "amount"
+          }
+        ]
+      }
+    ],
+    "card_creates_with": [
+      {
+        "card": "Berserk",
+        "color": "red",
+        "constructor_args": "p, 1",
+        "base_value": 2,
+        "upgrade_delta": -1
+      }
+    ]
+  },
+  {
+    "id": "Bias",
+    "java_class": "BiasPower",
+    "power_type": "Debuff",
+    "constructor": {
+      "params": [
+        "owner",
+        "setAmount"
+      ],
+      "param_types": {
+        "owner": "AbstractCreature",
+        "setAmount": "int"
+      },
+      "field_mapping": {
+        "amount": "setAmount"
+      }
+    },
+    "hooks": [
+      {
+        "method": "atStartOfTurn",
+        "params": null,
+        "actions": [
+          {
+            "action": "ApplyPowerAction",
+            "args": "owner, owner, new FocusPower(owner, -amount), -amount"
+          }
+        ]
+      },
+      {
+        "method": "stackPower",
+        "params": "int stackAmount",
+        "field_modifications": [
+          {
+            "field": "amount",
+            "op": "+=",
+            "value": "stackAmount"
+          }
+        ]
+      }
+    ],
+    "card_creates_with": [
+      {
+        "card": "BiasedCognition",
+        "color": "blue",
+        "constructor_args": "p, 1",
+        "base_value": 4,
+        "upgrade_delta": 1
+      }
+    ]
+  },
+  {
+    "id": "BlockReturnPower",
+    "java_class": "BlockReturnPower",
+    "power_type": "Debuff",
+    "constructor": {
+      "params": [
+        "owner",
+        "blockAmt"
+      ],
+      "param_types": {
+        "owner": "AbstractCreature",
+        "blockAmt": "int"
+      },
+      "field_mapping": {
+        "amount": "blockAmt"
+      }
+    },
+    "hooks": [
+      {
+        "method": "onAttacked",
+        "params": "DamageInfo info, int damageAmount"
+      },
+      {
+        "method": "stackPower",
+        "params": "int stackAmount",
+        "field_modifications": [
+          {
+            "field": "amount",
+            "op": "+=",
+            "value": "stackAmount"
+          }
+        ]
+      }
+    ],
+    "card_creates_with": [
+      {
+        "card": "TalkToTheHand",
+        "color": "purple",
+        "constructor_args": "m, this.magicNumber",
+        "base_value": 5,
+        "upgrade_delta": 2
+      }
+    ]
+  },
+  {
+    "id": "Blur",
+    "java_class": "BlurPower",
+    "power_type": "Buff",
+    "constructor": {
+      "params": [
+        "owner",
+        "amount"
+      ],
+      "param_types": {
+        "owner": "AbstractCreature",
+        "amount": "int"
+      },
+      "field_mapping": {
+        "amount": "amount"
+      }
+    },
+    "hooks": [
+      {
+        "method": "atEndOfRound",
+        "params": null,
+        "actions": [
+          {
+            "action": "RemoveSpecificPowerAction",
+            "args": "owner, owner, POWER_ID"
+          }
+        ]
+      }
+    ],
+    "card_creates_with": [
+      {
+        "card": "Blur",
+        "color": "green",
+        "constructor_args": "p, 1",
+        "base_value": 5,
+        "upgrade_delta": 3
+      }
+    ]
+  },
+  {
+    "id": "Brutality",
+    "java_class": "BrutalityPower",
+    "power_type": "Buff",
+    "constructor": {
+      "params": [
+        "owner",
+        "drawAmount"
+      ],
+      "param_types": {
+        "owner": "AbstractCreature",
+        "drawAmount": "int"
+      },
+      "field_mapping": {
+        "amount": "drawAmount"
+      }
+    },
+    "hooks": [
+      {
+        "method": "atStartOfTurnPostDraw",
+        "params": null,
+        "actions": [
+          {
+            "action": "DrawCardAction",
+            "args": "owner, amount"
+          },
+          {
+            "action": "LoseHPAction",
+            "args": "owner, owner, amount"
+          }
+        ]
+      }
+    ],
+    "card_creates_with": [
+      {
+        "card": "Brutality",
+        "color": "red",
+        "constructor_args": "p, 1",
+        "base_value": null,
+        "upgrade_delta": null
+      }
+    ]
+  },
+  {
+    "id": "Buffer",
+    "java_class": "BufferPower",
+    "power_type": "Buff",
+    "constructor": {
+      "params": [
+        "owner",
+        "bufferAmt"
+      ],
+      "param_types": {
+        "owner": "AbstractCreature",
+        "bufferAmt": "int"
+      },
+      "field_mapping": {
+        "amount": "bufferAmt"
+      }
+    },
+    "hooks": [
+      {
+        "method": "onAttackedToChangeDamage",
+        "params": "DamageInfo info, int damageAmount",
+        "guards": [
+          "damage_positive"
+        ]
+      },
+      {
+        "method": "stackPower",
+        "params": "int stackAmount",
+        "field_modifications": [
+          {
+            "field": "amount",
+            "op": "+=",
+            "value": "stackAmount"
+          }
+        ]
+      }
+    ],
+    "card_creates_with": [
+      {
+        "card": "Buffer",
+        "color": "blue",
+        "constructor_args": "p, this.magicNumber",
+        "base_value": 1,
+        "upgrade_delta": 1
+      }
+    ]
+  },
+  {
+    "id": "Burst",
+    "java_class": "BurstPower",
+    "power_type": "Buff",
+    "constructor": {
+      "params": [
+        "owner",
+        "amount"
+      ],
+      "param_types": {
+        "owner": "AbstractCreature",
+        "amount": "int"
+      },
+      "field_mapping": {
+        "amount": "amount"
+      }
+    },
+    "hooks": [
+      {
+        "method": "atEndOfTurn",
+        "params": "boolean isPlayer",
+        "actions": [
+          {
+            "action": "RemoveSpecificPowerAction",
+            "args": "owner, owner, POWER_ID"
+          }
+        ]
+      },
+      {
+        "method": "onUseCard",
+        "params": "AbstractCard card, UseCardAction action"
+      }
+    ],
+    "card_creates_with": [
+      {
+        "card": "Burst",
+        "color": "green",
+        "constructor_args": "p, this.magicNumber",
+        "base_value": 1,
+        "upgrade_delta": 1
+      }
+    ]
+  },
+  {
+    "id": "CannotChangeStancePower",
+    "java_class": "CannotChangeStancePower",
+    "power_type": "Debuff",
+    "constructor": {
+      "params": [
+        "owner"
+      ],
+      "param_types": {
+        "owner": "AbstractCreature"
+      },
+      "field_mapping": {}
+    },
+    "hooks": [
+      {
+        "method": "atEndOfTurn",
+        "params": "boolean isPlayer",
+        "actions": [
+          {
+            "action": "RemoveSpecificPowerAction",
+            "args": "owner, owner, POWER_ID"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "Choked",
+    "java_class": "ChokePower",
+    "power_type": "Debuff",
+    "constructor": {
+      "params": [
+        "owner",
+        "amount"
+      ],
+      "param_types": {
+        "owner": "AbstractCreature",
+        "amount": "int"
+      },
+      "field_mapping": {
+        "amount": "amount"
+      }
+    },
+    "hooks": [
+      {
+        "method": "atStartOfTurn",
+        "params": null,
+        "actions": [
+          {
+            "action": "RemoveSpecificPowerAction",
+            "args": "owner, owner, POWER_ID"
+          }
+        ]
+      },
+      {
+        "method": "onUseCard",
+        "params": "AbstractCard card, UseCardAction action",
+        "actions": [
+          {
+            "action": "LoseHPAction",
+            "args": "owner, null, amount"
+          }
+        ]
+      }
+    ],
+    "card_creates_with": [
+      {
+        "card": "Choke",
+        "color": "green",
+        "constructor_args": "m, this.magicNumber",
+        "base_value": 12,
+        "upgrade_delta": 2
+      }
+    ]
+  },
+  {
+    "id": "Collect",
+    "java_class": "CollectPower",
+    "power_type": "Buff",
+    "constructor": {
+      "params": [
+        "owner",
+        "numTurns"
+      ],
+      "param_types": {
+        "owner": "AbstractCreature",
+        "numTurns": "int"
+      },
+      "field_mapping": {
+        "amount": 999
+      }
+    },
+    "hooks": [
+      {
+        "method": "stackPower",
+        "params": "int stackAmount",
+        "field_modifications": [
+          {
+            "field": "amount",
+            "op": "=",
+            "value": "999"
+          }
+        ]
+      }
+    ],
+    "stack_behavior": {
+      "method": "custom",
+      "code": "super.stackPower(stackAmount); if (this.amount >= 999) {; this.amount = 999;"
+    }
+  },
+  {
+    "id": "Combust",
+    "java_class": "CombustPower",
+    "power_type": "Buff",
+    "constructor": {
+      "params": [
+        "owner",
+        "hpLoss",
+        "damageAmount"
+      ],
+      "param_types": {
+        "owner": "AbstractCreature",
+        "hpLoss": "int",
+        "damageAmount": "int"
+      },
+      "field_mapping": {
+        "amount": "damageAmount",
+        "hpLoss": "hpLoss"
+      }
+    },
+    "hooks": [
+      {
+        "method": "atEndOfTurn",
+        "params": "boolean isPlayer",
+        "guards": [
+          "monsters_alive"
+        ],
+        "actions": [
+          {
+            "action": "LoseHPAction",
+            "args": "owner, owner, hpLoss, FIRE"
+          },
+          {
+            "action": "DamageAllEnemiesAction",
+            "args": "null, damageMatrix(amount, ignoreThorns), THORNS, FIRE"
+          }
+        ]
+      },
+      {
+        "method": "stackPower",
+        "params": "int stackAmount",
+        "field_modifications": [
+          {
+            "field": "amount",
+            "op": "+=",
+            "value": "stackAmount"
+          }
+        ]
+      }
+    ],
+    "stack_behavior": {
+      "method": "custom",
+      "code": "this.amount += stackAmount; ++this.hpLoss;"
+    },
+    "card_creates_with": [
+      {
+        "card": "Combust",
+        "color": "red",
+        "constructor_args": "p, 1, this.magicNumber",
+        "base_value": 5,
+        "upgrade_delta": 2
+      }
+    ]
+  },
+  {
+    "id": "Compulsive",
+    "java_class": "ReactivePower",
+    "power_type": "Buff",
+    "constructor": {
+      "params": [
+        "owner"
+      ],
+      "param_types": {
+        "owner": "AbstractCreature"
+      },
+      "field_mapping": {}
+    },
+    "hooks": [
+      {
+        "method": "onAttacked",
+        "params": "DamageInfo info, int damageAmount",
+        "guards": [
+          "attacker_exists"
+        ],
+        "actions": [
+          {
+            "action": "RollMoveAction",
+            "args": "(AbstractMonster)owner"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "Confusion",
+    "java_class": "ConfusionPower",
+    "power_type": "Debuff",
+    "constructor": {
+      "params": [
+        "owner"
+      ],
+      "param_types": {
+        "owner": "AbstractCreature"
+      },
+      "field_mapping": {}
+    },
+    "hooks": [
+      {
+        "method": "onCardDraw",
+        "params": "AbstractCard card"
+      }
+    ]
+  },
+  {
+    "id": "Conserve",
+    "java_class": "ConservePower",
+    "power_type": "Buff",
+    "constructor": {
+      "params": [
+        "owner",
+        "amount"
+      ],
+      "param_types": {
+        "owner": "AbstractCreature",
+        "amount": "int"
+      },
+      "field_mapping": {
+        "amount": "amount"
+      }
+    },
+    "hooks": [
+      {
+        "method": "atEndOfRound",
+        "params": null,
+        "actions": [
+          {
+            "action": "RemoveSpecificPowerAction",
+            "args": "owner, owner, POWER_ID"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "Constricted",
+    "java_class": "ConstrictedPower",
+    "power_type": "Debuff",
+    "constructor": {
+      "params": [
+        "target",
+        "source",
+        "fadeAmt"
+      ],
+      "param_types": {
+        "target": "AbstractCreature",
+        "source": "AbstractCreature",
+        "fadeAmt": "int"
+      },
+      "field_mapping": {
+        "amount": "fadeAmt"
+      }
+    },
+    "hooks": [
+      {
+        "method": "atEndOfTurn",
+        "params": "boolean isPlayer",
+        "actions": [
+          {
+            "action": "DamageAction",
+            "args": "owner, new DamageInfo(this.source, amount, THORNS"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "Controlled",
+    "java_class": "MentalFortressPower",
+    "power_type": "Buff",
+    "constructor": {
+      "params": [
+        "owner",
+        "amount"
+      ],
+      "param_types": {
+        "owner": "AbstractCreature",
+        "amount": "int"
+      },
+      "field_mapping": {
+        "amount": "amount"
+      }
+    },
+    "hooks": [
+      {
+        "method": "onChangeStance",
+        "params": "AbstractStance oldStance, AbstractStance newStance",
+        "actions": [
+          {
+            "action": "GainBlockAction",
+            "args": "owner, owner, amount"
+          }
+        ]
+      }
+    ],
+    "card_creates_with": [
+      {
+        "card": "MentalFortress",
+        "color": "purple",
+        "constructor_args": "p, this.magicNumber",
+        "base_value": 4,
+        "upgrade_delta": 2
+      }
+    ]
+  },
+  {
+    "id": "CorpseExplosionPower",
+    "java_class": "CorpseExplosionPower",
+    "power_type": "Debuff",
+    "constructor": {
+      "params": [
+        "owner"
+      ],
+      "param_types": {
+        "owner": "AbstractCreature"
+      },
+      "field_mapping": {
+        "amount": 1
+      }
+    },
+    "hooks": [
+      {
+        "method": "onDeath",
+        "params": null,
+        "guards": [
+          "monsters_alive"
+        ],
+        "actions": [
+          {
+            "action": "DamageAllEnemiesAction",
+            "args": "null, damageMatrix(owner.maxHealth * amount, ignoreThorns), THORNS, FIRE"
+          }
+        ]
+      }
+    ],
+    "card_creates_with": [
+      {
+        "card": "CorpseExplosion",
+        "color": "green",
+        "constructor_args": "m",
+        "base_value": 6,
+        "upgrade_delta": 3
+      }
+    ]
+  },
+  {
+    "id": "Corruption",
+    "java_class": "CorruptionPower",
+    "power_type": "Buff",
+    "no_stack": true,
+    "constructor": {
+      "params": [
+        "owner"
+      ],
+      "param_types": {
+        "owner": "AbstractCreature"
+      },
+      "field_mapping": {
+        "amount": -1
+      }
+    },
+    "hooks": [
+      {
+        "method": "onUseCard",
+        "params": "AbstractCard card, UseCardAction action",
+        "guards": [
+          "card_type_check"
+        ]
+      },
+      {
+        "method": "onCardDraw",
+        "params": "AbstractCard card",
+        "guards": [
+          "card_type_check"
+        ]
+      }
+    ],
+    "card_creates_with": [
+      {
+        "card": "Corruption",
+        "color": "red",
+        "constructor_args": "p",
+        "base_value": 3,
+        "upgrade_delta": 2
+      }
+    ]
+  },
+  {
+    "id": "Creative AI",
+    "java_class": "CreativeAIPower",
+    "power_type": "Buff",
+    "constructor": {
+      "params": [
+        "owner",
+        "amt"
+      ],
+      "param_types": {
+        "owner": "AbstractCreature",
+        "amt": "int"
+      },
+      "field_mapping": {
+        "amount": "amt"
+      }
+    },
+    "hooks": [
+      {
+        "method": "atStartOfTurn",
+        "params": null,
+        "actions": [
+          {
+            "action": "MakeTempCardInHandAction",
+            "args": "card"
+          }
+        ]
+      }
+    ],
+    "card_creates_with": [
+      {
+        "card": "CreativeAI",
+        "color": "blue",
+        "constructor_args": "p, this.magicNumber",
+        "base_value": 1,
+        "upgrade_delta": 2
+      }
+    ]
+  },
+  {
+    "id": "Curiosity",
+    "java_class": "CuriosityPower",
+    "power_type": "Buff",
+    "constructor": {
+      "params": [
+        "owner",
+        "amount"
+      ],
+      "param_types": {
+        "owner": "AbstractCreature",
+        "amount": "int"
+      },
+      "field_mapping": {
+        "amount": "amount"
+      }
+    },
+    "hooks": [
+      {
+        "method": "onUseCard",
+        "params": "AbstractCard card, UseCardAction action",
+        "guards": [
+          "card_type_check"
+        ],
+        "actions": [
+          {
+            "action": "ApplyPowerAction",
+            "args": "owner, owner, new StrengthPower(owner, amount), amount"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "Curl Up",
+    "java_class": "CurlUpPower",
+    "power_type": "Buff",
+    "constructor": {
+      "params": [
+        "owner",
+        "amount"
+      ],
+      "param_types": {
+        "owner": "AbstractCreature",
+        "amount": "int"
+      },
+      "field_mapping": {
+        "amount": "amount"
+      }
+    },
+    "hooks": [
+      {
+        "method": "onAttacked",
+        "params": "DamageInfo info, int damageAmount",
+        "actions": [
+          {
+            "action": "ChangeStateAction",
+            "args": "(AbstractMonster)owner, \"CLOSED\""
+          },
+          {
+            "action": "GainBlockAction",
+            "args": "owner, owner, amount"
+          },
+          {
+            "action": "RemoveSpecificPowerAction",
+            "args": "owner, owner, POWER_ID"
+          }
+        ],
+        "field_modifications": [
+          {
+            "field": "triggered",
+            "op": "=",
+            "value": "true"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "Dark Embrace",
+    "java_class": "DarkEmbracePower",
+    "power_type": "Buff",
+    "constructor": {
+      "params": [
+        "owner",
+        "amount"
+      ],
+      "param_types": {
+        "owner": "AbstractCreature",
+        "amount": "int"
+      },
+      "field_mapping": {
+        "amount": "amount"
+      }
+    },
+    "hooks": [
+      {
+        "method": "onExhaust",
+        "params": "AbstractCard card",
+        "guards": [
+          "monsters_alive"
+        ],
+        "actions": [
+          {
+            "action": "DrawCardAction",
+            "args": "owner, amount"
+          }
+        ]
+      }
+    ],
+    "card_creates_with": [
+      {
+        "card": "DarkEmbrace",
+        "color": "red",
+        "constructor_args": "p, 1",
+        "base_value": null,
+        "upgrade_delta": 1
+      }
+    ]
+  },
+  {
+    "id": "Demon Form",
+    "java_class": "DemonFormPower",
+    "power_type": "Buff",
+    "constructor": {
+      "params": [
+        "owner",
+        "strengthAmount"
+      ],
+      "param_types": {
+        "owner": "AbstractCreature",
+        "strengthAmount": "int"
+      },
+      "field_mapping": {
+        "amount": "strengthAmount"
+      }
+    },
+    "hooks": [
+      {
+        "method": "atStartOfTurnPostDraw",
+        "params": null,
+        "actions": [
+          {
+            "action": "ApplyPowerAction",
+            "args": "owner, owner, new StrengthPower(owner, amount), amount"
+          }
+        ]
+      }
+    ],
+    "card_creates_with": [
+      {
+        "card": "DemonForm",
+        "color": "red",
+        "constructor_args": "p, this.magicNumber",
+        "base_value": 2,
+        "upgrade_delta": 1
+      }
+    ]
+  },
+  {
+    "id": "DevaForm",
+    "java_class": "DevaPower",
+    "power_type": "Buff",
+    "constructor": {
+      "params": [
+        "owner"
+      ],
+      "param_types": {
+        "owner": "AbstractCreature"
+      },
+      "field_mapping": {
+        "amount": 1
+      }
+    },
+    "hooks": [
+      {
+        "method": "stackPower",
+        "params": "int stackAmount"
+      }
+    ],
+    "stack_behavior": {
+      "method": "custom",
+      "code": "super.stackPower(stackAmount); ++this.energyGainAmount;"
+    },
+    "card_creates_with": [
+      {
+        "card": "DevaForm",
+        "color": "purple",
+        "constructor_args": "p",
+        "base_value": 1,
+        "upgrade_delta": null
+      }
+    ]
+  },
+  {
+    "id": "DevotionPower",
+    "java_class": "DevotionPower",
+    "power_type": "Buff",
+    "constructor": {
+      "params": [
+        "owner",
+        "newAmount"
+      ],
+      "param_types": {
+        "owner": "AbstractCreature",
+        "newAmount": "int"
+      },
+      "field_mapping": {
+        "amount": "newAmount"
+      }
+    },
+    "hooks": [
+      {
+        "method": "atStartOfTurnPostDraw",
+        "params": null,
+        "actions": [
+          {
+            "action": "ChangeStanceAction",
+            "args": "\"Divinity\""
+          }
+        ]
+      }
+    ],
+    "card_creates_with": [
+      {
+        "card": "Devotion",
+        "color": "purple",
+        "constructor_args": "p, this.magicNumber",
+        "base_value": 2,
+        "upgrade_delta": 1
+      }
+    ]
+  },
+  {
+    "id": "DexLoss",
+    "java_class": "LoseDexterityPower",
+    "power_type": "Debuff",
+    "constructor": {
+      "params": [
+        "owner",
+        "newAmount"
+      ],
+      "param_types": {
+        "owner": "AbstractCreature",
+        "newAmount": "int"
+      },
+      "field_mapping": {
+        "amount": "newAmount"
+      }
+    },
+    "hooks": [
+      {
+        "method": "atEndOfTurn",
+        "params": "boolean isPlayer",
+        "actions": [
+          {
+            "action": "ApplyPowerAction",
+            "args": "owner, owner, new DexterityPower(owner, -amount), -amount"
+          },
+          {
+            "action": "RemoveSpecificPowerAction",
+            "args": "owner, owner, POWER_ID"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "Dexterity",
+    "java_class": "DexterityPower",
+    "power_type": "Debuff",
+    "can_go_negative": true,
+    "constructor": {
+      "params": [
+        "owner",
+        "amount"
+      ],
+      "param_types": {
+        "owner": "AbstractCreature",
+        "amount": "int"
+      },
+      "field_mapping": {
+        "amount": 999
+      }
+    },
+    "hooks": [
+      {
+        "method": "modifyBlock",
+        "params": "float blockAmount",
+        "return_value": "0.0f"
+      },
+      {
+        "method": "stackPower",
+        "params": "int stackAmount",
+        "field_modifications": [
+          {
+            "field": "amount",
+            "op": "+=",
+            "value": "stackAmount"
+          }
+        ]
+      },
+      {
+        "method": "reducePower",
+        "params": "int reduceAmount",
+        "field_modifications": [
+          {
+            "field": "amount",
+            "op": "-=",
+            "value": "reduceAmount"
+          }
+        ]
+      }
+    ],
+    "stack_behavior": {
+      "method": "custom",
+      "code": "this.amount += stackAmount; if (this.amount == 0) {; this.addToTop(new RemoveSpecificPowerAction(this.owner, this.owner, POWER_ID));"
+    },
+    "card_creates_with": [
+      {
+        "card": "Reprogram",
+        "color": "blue",
+        "constructor_args": "p, this.magicNumber",
+        "base_value": 1,
+        "upgrade_delta": 1
+      },
+      {
+        "card": "DEPRECATEDSimmeringRage",
+        "color": "unknown",
+        "constructor_args": "p, -1",
+        "base_value": 2,
+        "upgrade_delta": 1
+      },
+      {
+        "card": "Footwork",
+        "color": "green",
+        "constructor_args": "p, this.magicNumber",
+        "base_value": 2,
+        "upgrade_delta": 1
+      },
+      {
+        "card": "Fasting",
+        "color": "purple",
+        "constructor_args": "p, this.magicNumber",
+        "base_value": 3,
+        "upgrade_delta": 1
+      }
+    ]
+  },
+  {
+    "id": "Double Damage",
+    "java_class": "DoubleDamagePower",
+    "power_type": "Buff",
+    "constructor": {
+      "params": [
+        "owner",
+        "amount",
+        "isSourceMonster"
+      ],
+      "param_types": {
+        "owner": "AbstractCreature",
+        "amount": "int",
+        "isSourceMonster": "boolean"
+      },
+      "field_mapping": {
+        "amount": "amount"
+      }
+    },
+    "hooks": [
+      {
+        "method": "atEndOfRound",
+        "params": null,
+        "field_modifications": [
+          {
+            "field": "justApplied",
+            "op": "=",
+            "value": "false"
+          }
+        ]
+      },
+      {
+        "method": "atDamageGive",
+        "params": "float damage, DamageInfo.DamageType type",
+        "return_value": "damage * 2.0f"
+      }
+    ]
+  },
+  {
+    "id": "Double Tap",
+    "java_class": "DoubleTapPower",
+    "power_type": "Buff",
+    "constructor": {
+      "params": [
+        "owner",
+        "amount"
+      ],
+      "param_types": {
+        "owner": "AbstractCreature",
+        "amount": "int"
+      },
+      "field_mapping": {
+        "amount": "amount"
+      }
+    },
+    "hooks": [
+      {
+        "method": "atEndOfTurn",
+        "params": "boolean isPlayer",
+        "actions": [
+          {
+            "action": "RemoveSpecificPowerAction",
+            "args": "owner, owner, POWER_ID"
+          }
+        ]
+      },
+      {
+        "method": "onUseCard",
+        "params": "AbstractCard card, UseCardAction action"
+      }
+    ],
+    "card_creates_with": [
+      {
+        "card": "DoubleTap",
+        "color": "red",
+        "constructor_args": "p, this.magicNumber",
+        "base_value": 1,
+        "upgrade_delta": 1
+      }
+    ]
+  },
+  {
+    "id": "Draw",
+    "java_class": "DrawPower",
+    "power_type": "Debuff",
+    "constructor": {
+      "params": [
+        "owner",
+        "amount"
+      ],
+      "param_types": {
+        "owner": "AbstractCreature",
+        "amount": "int"
+      },
+      "field_mapping": {
+        "amount": "amount"
+      }
+    },
+    "hooks": [
+      {
+        "method": "onRemove",
+        "params": null
+      },
+      {
+        "method": "reducePower",
+        "params": "int reduceAmount",
+        "field_modifications": [
+          {
+            "field": "amount",
+            "op": "-=",
+            "value": "reduceAmount"
+          }
+        ]
+      }
+    ],
+    "card_creates_with": [
+      {
+        "card": "MachineLearning",
+        "color": "blue",
+        "constructor_args": "p, this.magicNumber",
+        "base_value": 1,
+        "upgrade_delta": null
+      }
+    ]
+  },
+  {
+    "id": "Draw Card",
+    "java_class": "DrawCardNextTurnPower",
+    "power_type": "Buff",
+    "constructor": {
+      "params": [
+        "owner",
+        "drawAmount"
+      ],
+      "param_types": {
+        "owner": "AbstractCreature",
+        "drawAmount": "int"
+      },
+      "field_mapping": {
+        "amount": "drawAmount"
+      }
+    },
+    "hooks": [
+      {
+        "method": "atStartOfTurnPostDraw",
+        "params": null,
+        "actions": [
+          {
+            "action": "DrawCardAction",
+            "args": "owner, amount"
+          },
+          {
+            "action": "RemoveSpecificPowerAction",
+            "args": "owner, owner, POWER_ID"
+          }
+        ]
+      }
+    ],
+    "card_creates_with": [
+      {
+        "card": "Predator",
+        "color": "green",
+        "constructor_args": "p, 2",
+        "base_value": 15,
+        "upgrade_delta": 5
+      },
+      {
+        "card": "SimmeringFury",
+        "color": "purple",
+        "constructor_args": "p, this.magicNumber",
+        "base_value": 2,
+        "upgrade_delta": 1
+      }
+    ]
+  },
+  {
+    "id": "Draw Reduction",
+    "java_class": "DrawReductionPower",
+    "power_type": "Debuff",
+    "constructor": {
+      "params": [
+        "owner",
+        "amount"
+      ],
+      "param_types": {
+        "owner": "AbstractCreature",
+        "amount": "int"
+      },
+      "field_mapping": {
+        "amount": "amount"
+      }
+    },
+    "hooks": [
+      {
+        "method": "atEndOfRound",
+        "params": null,
+        "field_modifications": [
+          {
+            "field": "justApplied",
+            "op": "=",
+            "value": "false"
+          }
+        ]
+      },
+      {
+        "method": "onRemove",
+        "params": null
+      },
+      {
+        "method": "onInitialApplication",
+        "params": null
+      }
+    ]
+  },
+  {
+    "id": "DuplicationPower",
+    "java_class": "DuplicationPower",
+    "power_type": "Buff",
+    "constructor": {
+      "params": [
+        "owner",
+        "amount"
+      ],
+      "param_types": {
+        "owner": "AbstractCreature",
+        "amount": "int"
+      },
+      "field_mapping": {
+        "amount": "amount"
+      }
+    },
+    "hooks": [
+      {
+        "method": "atEndOfRound",
+        "params": null,
+        "actions": [
+          {
+            "action": "RemoveSpecificPowerAction",
+            "args": "owner, owner, POWER_ID"
+          }
+        ]
+      },
+      {
+        "method": "onUseCard",
+        "params": "AbstractCard card, UseCardAction action"
+      }
+    ]
+  },
+  {
+    "id": "Echo Form",
+    "java_class": "EchoPower",
+    "power_type": "Buff",
+    "constructor": {
+      "params": [
+        "owner",
+        "amount"
+      ],
+      "param_types": {
+        "owner": "AbstractCreature",
+        "amount": "int"
+      },
+      "field_mapping": {
+        "amount": "amount"
+      }
+    },
+    "hooks": [
+      {
+        "method": "atStartOfTurn",
+        "params": null,
+        "field_modifications": [
+          {
+            "field": "cardsDoubledThisTurn",
+            "op": "=",
+            "value": "0"
+          }
+        ]
+      },
+      {
+        "method": "onUseCard",
+        "params": "AbstractCard card, UseCardAction action"
+      }
+    ],
+    "card_creates_with": [
+      {
+        "card": "EchoForm",
+        "color": "blue",
+        "constructor_args": "p, 1",
+        "base_value": null,
+        "upgrade_delta": null
+      }
+    ]
+  },
+  {
+    "id": "Electro",
+    "java_class": "ElectroPower",
+    "power_type": "Buff",
+    "constructor": {
+      "params": [
+        "owner"
+      ],
+      "param_types": {
+        "owner": "AbstractCreature"
+      },
+      "field_mapping": {}
+    },
+    "card_creates_with": [
+      {
+        "card": "Electrodynamics",
+        "color": "blue",
+        "constructor_args": "p",
+        "base_value": 2,
+        "upgrade_delta": 1
+      }
+    ]
+  },
+  {
+    "id": "EndTurnDeath",
+    "java_class": "EndTurnDeathPower",
+    "power_type": "Buff",
+    "no_stack": true,
+    "constructor": {
+      "params": [
+        "owner"
+      ],
+      "param_types": {
+        "owner": "AbstractCreature"
+      },
+      "field_mapping": {
+        "amount": -1
+      }
+    },
+    "hooks": [
+      {
+        "method": "atStartOfTurn",
+        "params": null,
+        "actions": [
+          {
+            "action": "VFXAction",
+            "args": "new LightningEffect(owner.hb.cX, owner.hb.cY"
+          },
+          {
+            "action": "LoseHPAction",
+            "args": "owner, owner, 99999"
+          },
+          {
+            "action": "RemoveSpecificPowerAction",
+            "args": "owner, owner, POWER_ID"
+          }
+        ]
+      }
+    ],
+    "card_creates_with": [
+      {
+        "card": "Blasphemy",
+        "color": "purple",
+        "constructor_args": "p",
+        "base_value": null,
+        "upgrade_delta": null
+      }
+    ]
+  },
+  {
+    "id": "Energized",
+    "java_class": "EnergizedPower",
+    "power_type": "Buff",
+    "constructor": {
+      "params": [
+        "owner",
+        "energyAmt"
+      ],
+      "param_types": {
+        "owner": "AbstractCreature",
+        "energyAmt": "int"
+      },
+      "field_mapping": {
+        "amount": 999
+      }
+    },
+    "hooks": [
+      {
+        "method": "stackPower",
+        "params": "int stackAmount",
+        "field_modifications": [
+          {
+            "field": "amount",
+            "op": "=",
+            "value": "999"
+          }
+        ]
+      }
+    ],
+    "stack_behavior": {
+      "method": "custom",
+      "code": "super.stackPower(stackAmount); if (this.amount >= 999) {; this.amount = 999;"
+    },
+    "card_creates_with": [
+      {
+        "card": "FlyingKnee",
+        "color": "green",
+        "constructor_args": "p, 1",
+        "base_value": 8,
+        "upgrade_delta": 3
+      },
+      {
+        "card": "Outmaneuver",
+        "color": "green",
+        "constructor_args": "p, 2",
+        "base_value": null,
+        "upgrade_delta": null
+      },
+      {
+        "card": "Outmaneuver",
+        "color": "green",
+        "constructor_args": "p, 3",
+        "base_value": null,
+        "upgrade_delta": null
+      }
+    ]
+  },
+  {
+    "id": "EnergizedBlue",
+    "java_class": "EnergizedBluePower",
+    "power_type": "Buff",
+    "constructor": {
+      "params": [
+        "owner",
+        "energyAmt"
+      ],
+      "param_types": {
+        "owner": "AbstractCreature",
+        "energyAmt": "int"
+      },
+      "field_mapping": {
+        "amount": 999
+      }
+    },
+    "hooks": [
+      {
+        "method": "stackPower",
+        "params": "int stackAmount",
+        "field_modifications": [
+          {
+            "field": "amount",
+            "op": "=",
+            "value": "999"
+          }
+        ]
+      }
+    ],
+    "stack_behavior": {
+      "method": "custom",
+      "code": "super.stackPower(stackAmount); if (this.amount >= 999) {; this.amount = 999;"
+    },
+    "card_creates_with": [
+      {
+        "card": "ConserveBattery",
+        "color": "blue",
+        "constructor_args": "p, 1",
+        "base_value": 7,
+        "upgrade_delta": 3
+      }
+    ]
+  },
+  {
+    "id": "EnergyDownPower",
+    "java_class": "EnergyDownPower",
+    "power_type": "Debuff",
+    "constructor": {
+      "params": [
+        "owner",
+        "amount",
+        "isFasting"
+      ],
+      "param_types": {
+        "owner": "AbstractCreature",
+        "amount": "int",
+        "isFasting": "boolean"
+      },
+      "field_mapping": {
+        "amount": "amount"
+      }
+    },
+    "hooks": [
+      {
+        "method": "atStartOfTurn",
+        "params": null,
+        "actions": [
+          {
+            "action": "LoseEnergyAction",
+            "args": "amount"
+          }
+        ]
+      }
+    ],
+    "card_creates_with": [
+      {
+        "card": "Fasting",
+        "color": "purple",
+        "constructor_args": "p, 1, true",
+        "base_value": 3,
+        "upgrade_delta": 1
+      }
+    ]
+  },
+  {
+    "id": "Entangled",
+    "java_class": "EntanglePower",
+    "power_type": "Debuff",
+    "constructor": {
+      "params": [
+        "owner"
+      ],
+      "param_types": {
+        "owner": "AbstractCreature"
+      },
+      "field_mapping": {
+        "amount": 1
+      }
+    },
+    "hooks": [
+      {
+        "method": "atEndOfTurn",
+        "params": "boolean isPlayer",
+        "actions": [
+          {
+            "action": "RemoveSpecificPowerAction",
+            "args": "owner, owner, POWER_ID"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "Envenom",
+    "java_class": "EnvenomPower",
+    "power_type": "Buff",
+    "constructor": {
+      "params": [
+        "owner",
+        "newAmount"
+      ],
+      "param_types": {
+        "owner": "AbstractCreature",
+        "newAmount": "int"
+      },
+      "field_mapping": {
+        "amount": "newAmount"
+      }
+    },
+    "hooks": [
+      {
+        "method": "onAttack",
+        "params": "DamageInfo info, int damageAmount, AbstractCreature target"
+      }
+    ],
+    "card_creates_with": [
+      {
+        "card": "Envenom",
+        "color": "green",
+        "constructor_args": "p, 1",
+        "base_value": null,
+        "upgrade_delta": 1
+      }
+    ]
+  },
+  {
+    "id": "Equilibrium",
+    "java_class": "EquilibriumPower",
+    "power_type": "Buff",
+    "constructor": {
+      "params": [
+        "owner",
+        "amount"
+      ],
+      "param_types": {
+        "owner": "AbstractCreature",
+        "amount": "int"
+      },
+      "field_mapping": {
+        "amount": "amount"
+      }
+    },
+    "hooks": [
+      {
+        "method": "atEndOfTurn",
+        "params": "boolean isPlayer"
+      },
+      {
+        "method": "atEndOfRound",
+        "params": null,
+        "actions": [
+          {
+            "action": "RemoveSpecificPowerAction",
+            "args": "owner, owner, POWER_ID"
+          }
+        ]
+      }
+    ],
+    "card_creates_with": [
+      {
+        "card": "Equilibrium",
+        "color": "blue",
+        "constructor_args": "p, this.magicNumber",
+        "base_value": 13,
+        "upgrade_delta": 3
+      }
+    ]
+  },
+  {
+    "id": "EstablishmentPower",
+    "java_class": "EstablishmentPower",
+    "power_type": "Buff",
+    "constructor": {
+      "params": [
+        "owner",
+        "strengthAmount"
+      ],
+      "param_types": {
+        "owner": "AbstractCreature",
+        "strengthAmount": "int"
+      },
+      "field_mapping": {
+        "amount": "strengthAmount"
+      }
+    },
+    "hooks": [
+      {
+        "method": "atEndOfTurn",
+        "params": "boolean isPlayer",
+        "actions": [
+          {
+            "action": "EstablishmentPowerAction",
+            "args": "amount"
+          }
+        ]
+      }
+    ],
+    "card_creates_with": [
+      {
+        "card": "Establishment",
+        "color": "purple",
+        "constructor_args": "p, this.magicNumber",
+        "base_value": 1,
+        "upgrade_delta": null
+      }
+    ]
+  },
+  {
+    "id": "Evolve",
+    "java_class": "EvolvePower",
+    "power_type": "Buff",
+    "constructor": {
+      "params": [
+        "owner",
+        "drawAmt"
+      ],
+      "param_types": {
+        "owner": "AbstractCreature",
+        "drawAmt": "int"
+      },
+      "field_mapping": {
+        "amount": "drawAmt"
+      }
+    },
+    "hooks": [
+      {
+        "method": "onCardDraw",
+        "params": "AbstractCard card",
+        "actions": [
+          {
+            "action": "DrawCardAction",
+            "args": "owner, amount"
+          }
+        ]
+      }
+    ],
+    "card_creates_with": [
+      {
+        "card": "Evolve",
+        "color": "red",
+        "constructor_args": "p, this.magicNumber",
+        "base_value": 1,
+        "upgrade_delta": 1
+      }
+    ]
+  },
+  {
+    "id": "Explosive",
+    "java_class": "ExplosivePower",
+    "power_type": "Buff",
+    "constructor": {
+      "params": [
+        "owner",
+        "damage"
+      ],
+      "param_types": {
+        "owner": "AbstractCreature",
+        "damage": "int"
+      },
+      "field_mapping": {
+        "amount": "damage"
+      }
+    }
+  },
+  {
+    "id": "Fading",
+    "java_class": "FadingPower",
+    "power_type": "Buff",
+    "constructor": {
+      "params": [
+        "owner",
+        "turns"
+      ],
+      "param_types": {
+        "owner": "AbstractCreature",
+        "turns": "int"
+      },
+      "field_mapping": {
+        "amount": "turns"
+      }
+    }
+  },
+  {
+    "id": "Feel No Pain",
+    "java_class": "FeelNoPainPower",
+    "power_type": "Buff",
+    "constructor": {
+      "params": [
+        "owner",
+        "amount"
+      ],
+      "param_types": {
+        "owner": "AbstractCreature",
+        "amount": "int"
+      },
+      "field_mapping": {
+        "amount": "amount"
+      }
+    },
+    "hooks": [
+      {
+        "method": "onExhaust",
+        "params": "AbstractCard card",
+        "actions": [
+          {
+            "action": "GainBlockAction",
+            "args": "owner, amount, Settings.FAST_MODE"
+          }
+        ]
+      }
+    ],
+    "card_creates_with": [
+      {
+        "card": "FeelNoPain",
+        "color": "red",
+        "constructor_args": "p, this.magicNumber",
+        "base_value": 3,
+        "upgrade_delta": 1
+      }
+    ]
+  },
+  {
+    "id": "Fire Breathing",
+    "java_class": "FireBreathingPower",
+    "power_type": "Buff",
+    "constructor": {
+      "params": [
+        "owner",
+        "newAmount"
+      ],
+      "param_types": {
+        "owner": "AbstractCreature",
+        "newAmount": "int"
+      },
+      "field_mapping": {
+        "amount": "newAmount"
+      }
+    },
+    "hooks": [
+      {
+        "method": "onCardDraw",
+        "params": "AbstractCard card",
+        "actions": [
+          {
+            "action": "DamageAllEnemiesAction",
+            "args": "null, damageMatrix(amount, ignoreThorns), THORNS, FIRE, true"
+          }
+        ]
+      }
+    ],
+    "card_creates_with": [
+      {
+        "card": "FireBreathing",
+        "color": "red",
+        "constructor_args": "p, this.magicNumber",
+        "base_value": 6,
+        "upgrade_delta": 4
+      }
+    ]
+  },
+  {
+    "id": "Flame Barrier",
+    "java_class": "FlameBarrierPower",
+    "power_type": "Buff",
+    "constructor": {
+      "params": [
+        "owner",
+        "thornsDamage"
+      ],
+      "param_types": {
+        "owner": "AbstractCreature",
+        "thornsDamage": "int"
+      },
+      "field_mapping": {
+        "amount": "thornsDamage"
+      }
+    },
+    "hooks": [
+      {
+        "method": "atStartOfTurn",
+        "params": null,
+        "actions": [
+          {
+            "action": "RemoveSpecificPowerAction",
+            "args": "(AbstractCreature)player, (AbstractCreature)player, POWER_ID"
+          }
+        ]
+      },
+      {
+        "method": "onAttacked",
+        "params": "DamageInfo info, int damageAmount",
+        "guards": [
+          "attacker_exists"
+        ]
+      },
+      {
+        "method": "stackPower",
+        "params": "int stackAmount"
+      }
+    ],
+    "stack_behavior": {
+      "method": "custom",
+      "code": "if (this.amount == -1) {; logger.info(this.name + \" does not stack\"); return;"
+    },
+    "card_creates_with": [
+      {
+        "card": "FlameBarrier",
+        "color": "red",
+        "constructor_args": "p, this.magicNumber",
+        "base_value": 12,
+        "upgrade_delta": 4
+      }
+    ]
+  },
+  {
+    "id": "Flex",
+    "java_class": "LoseStrengthPower",
+    "power_type": "Debuff",
+    "constructor": {
+      "params": [
+        "owner",
+        "newAmount"
+      ],
+      "param_types": {
+        "owner": "AbstractCreature",
+        "newAmount": "int"
+      },
+      "field_mapping": {
+        "amount": "newAmount"
+      }
+    },
+    "hooks": [
+      {
+        "method": "atEndOfTurn",
+        "params": "boolean isPlayer",
+        "actions": [
+          {
+            "action": "ApplyPowerAction",
+            "args": "owner, owner, new StrengthPower(owner, -amount), -amount"
+          },
+          {
+            "action": "RemoveSpecificPowerAction",
+            "args": "owner, owner, POWER_ID"
+          }
+        ]
+      }
+    ],
+    "card_creates_with": [
+      {
+        "card": "DEPRECATEDFuryAura",
+        "color": "unknown",
+        "constructor_args": "p, this.magicNumber",
+        "base_value": 4,
+        "upgrade_delta": 2
+      },
+      {
+        "card": "DEPRECATEDFuryAura",
+        "color": "unknown",
+        "constructor_args": "p, 1",
+        "base_value": 4,
+        "upgrade_delta": 2
+      },
+      {
+        "card": "Flex",
+        "color": "red",
+        "constructor_args": "p, this.magicNumber",
+        "base_value": 2,
+        "upgrade_delta": 2
+      }
+    ]
+  },
+  {
+    "id": "Flight",
+    "java_class": "FlightPower",
+    "power_type": "Buff",
+    "constructor": {
+      "params": [
+        "owner",
+        "amount"
+      ],
+      "param_types": {
+        "owner": "AbstractCreature",
+        "amount": "int"
+      },
+      "field_mapping": {
+        "amount": "amount"
+      }
+    },
+    "hooks": [
+      {
+        "method": "atStartOfTurn",
+        "params": null,
+        "field_modifications": [
+          {
+            "field": "amount",
+            "op": "=",
+            "value": "this.storedAmount"
+          }
+        ]
+      },
+      {
+        "method": "atDamageFinalReceive",
+        "params": "float damage, DamageInfo.DamageType type",
+        "return_value": "this.calculateDamageTakenAmount(damage, type)"
+      },
+      {
+        "method": "onAttacked",
+        "params": "DamageInfo info, int damageAmount",
+        "guards": [
+          "attacker_exists"
+        ],
+        "actions": [
+          {
+            "action": "ReducePowerAction",
+            "args": "owner, owner, POWER_ID, 1"
+          }
+        ]
+      },
+      {
+        "method": "onRemove",
+        "params": null,
+        "actions": [
+          {
+            "action": "ChangeStateAction",
+            "args": "(AbstractMonster)owner, \"GROUNDED\""
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "Focus",
+    "java_class": "FocusPower",
+    "power_type": "Debuff",
+    "can_go_negative": true,
+    "constructor": {
+      "params": [
+        "owner",
+        "amount"
+      ],
+      "param_types": {
+        "owner": "AbstractCreature",
+        "amount": "int"
+      },
+      "field_mapping": {
+        "amount": "amount"
+      }
+    },
+    "hooks": [
+      {
+        "method": "stackPower",
+        "params": "int stackAmount",
+        "field_modifications": [
+          {
+            "field": "amount",
+            "op": "+=",
+            "value": "stackAmount"
+          }
+        ]
+      },
+      {
+        "method": "reducePower",
+        "params": "int reduceAmount",
+        "field_modifications": [
+          {
+            "field": "amount",
+            "op": "-=",
+            "value": "reduceAmount"
+          }
+        ]
+      }
+    ],
+    "stack_behavior": {
+      "method": "custom",
+      "code": "this.amount += stackAmount; if (this.amount == 0) {; this.addToTop(new RemoveSpecificPowerAction(this.owner, this.owner, POWER_ID));"
+    },
+    "card_creates_with": [
+      {
+        "card": "BiasedCognition",
+        "color": "blue",
+        "constructor_args": "p, this.magicNumber",
+        "base_value": 4,
+        "upgrade_delta": 1
+      },
+      {
+        "card": "Consume",
+        "color": "blue",
+        "constructor_args": "p, this.magicNumber",
+        "base_value": 2,
+        "upgrade_delta": 1
+      },
+      {
+        "card": "Defragment",
+        "color": "blue",
+        "constructor_args": "p, this.magicNumber",
+        "base_value": 1,
+        "upgrade_delta": 1
+      },
+      {
+        "card": "Hyperbeam",
+        "color": "blue",
+        "constructor_args": "p, -this.magicNumber",
+        "base_value": 26,
+        "upgrade_delta": 8
+      },
+      {
+        "card": "Reprogram",
+        "color": "blue",
+        "constructor_args": "p, -this.magicNumber",
+        "base_value": 1,
+        "upgrade_delta": 1
+      }
+    ]
+  },
+  {
+    "id": "Frail",
+    "java_class": "FrailPower",
+    "power_type": "Debuff",
+    "constructor": {
+      "params": [
+        "owner",
+        "amount",
+        "isSourceMonster"
+      ],
+      "param_types": {
+        "owner": "AbstractCreature",
+        "amount": "int",
+        "isSourceMonster": "boolean"
+      },
+      "field_mapping": {
+        "amount": "amount"
+      }
+    },
+    "hooks": [
+      {
+        "method": "atEndOfRound",
+        "params": null,
+        "field_modifications": [
+          {
+            "field": "justApplied",
+            "op": "=",
+            "value": "false"
+          }
+        ]
+      },
+      {
+        "method": "modifyBlock",
+        "params": "float blockAmount",
+        "return_value": "blockAmount * 0.75f"
+      }
+    ],
+    "card_creates_with": [
+      {
+        "card": "Shame",
+        "color": "curses",
+        "constructor_args": "player, 1, true",
+        "base_value": null,
+        "upgrade_delta": null
+      }
+    ]
+  },
+  {
+    "id": "FreeAttackPower",
+    "java_class": "FreeAttackPower",
+    "power_type": "Buff",
+    "constructor": {
+      "params": [
+        "owner",
+        "amount"
+      ],
+      "param_types": {
+        "owner": "AbstractCreature",
+        "amount": "int"
+      },
+      "field_mapping": {
+        "amount": "amount"
+      }
+    },
+    "hooks": [
+      {
+        "method": "onUseCard",
+        "params": "AbstractCard card, UseCardAction action"
+      }
+    ],
+    "card_creates_with": [
+      {
+        "card": "Swivel",
+        "color": "purple",
+        "constructor_args": "p, 1",
+        "base_value": 8,
+        "upgrade_delta": 3
+      }
+    ]
+  },
+  {
+    "id": "Generic Strength Up Power",
+    "java_class": "GenericStrengthUpPower",
+    "power_type": "Buff",
+    "constructor": {
+      "params": [
+        "owner",
+        "newName",
+        "strAmt"
+      ],
+      "param_types": {
+        "owner": "AbstractCreature",
+        "newName": "String",
+        "strAmt": "int"
+      },
+      "field_mapping": {
+        "amount": "strAmt"
+      }
+    },
+    "hooks": [
+      {
+        "method": "atEndOfRound",
+        "params": null,
+        "actions": [
+          {
+            "action": "ApplyPowerAction",
+            "args": "owner, owner, new StrengthPower(owner, amount), amount"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "GrowthPower",
+    "java_class": "GrowthPower",
+    "power_type": "Buff",
+    "constructor": {
+      "params": [
+        "owner",
+        "strAmt"
+      ],
+      "param_types": {
+        "owner": "AbstractCreature",
+        "strAmt": "int"
+      },
+      "field_mapping": {
+        "amount": "strAmt"
+      }
+    },
+    "hooks": [
+      {
+        "method": "atEndOfRound",
+        "params": null,
+        "actions": [
+          {
+            "action": "ApplyPowerAction",
+            "args": "owner, owner, new StrengthPower(owner, amount), amount"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "Heatsink",
+    "java_class": "HeatsinkPower",
+    "power_type": "Buff",
+    "constructor": {
+      "params": [
+        "owner",
+        "drawAmt"
+      ],
+      "param_types": {
+        "owner": "AbstractCreature",
+        "drawAmt": "int"
+      },
+      "field_mapping": {
+        "amount": "drawAmt"
+      }
+    },
+    "hooks": [
+      {
+        "method": "onUseCard",
+        "params": "AbstractCard card, UseCardAction action",
+        "guards": [
+          "card_type_check"
+        ]
+      },
+      {
+        "method": "stackPower",
+        "params": "int stackAmount",
+        "field_modifications": [
+          {
+            "field": "amount",
+            "op": "+=",
+            "value": "stackAmount"
+          }
+        ]
+      }
+    ],
+    "card_creates_with": [
+      {
+        "card": "Heatsinks",
+        "color": "blue",
+        "constructor_args": "p, this.magicNumber",
+        "base_value": 1,
+        "upgrade_delta": 1
+      }
+    ]
+  },
+  {
+    "id": "Hello",
+    "java_class": "HelloPower",
+    "power_type": "Buff",
+    "constructor": {
+      "params": [
+        "owner",
+        "cardAmt"
+      ],
+      "param_types": {
+        "owner": "AbstractCreature",
+        "cardAmt": "int"
+      },
+      "field_mapping": {
+        "amount": "cardAmt"
+      }
+    },
+    "hooks": [
+      {
+        "method": "atStartOfTurn",
+        "params": null,
+        "guards": [
+          "monsters_alive"
+        ],
+        "actions": [
+          {
+            "action": "MakeTempCardInHandAction",
+            "args": "AbstractDungeon.getCard(AbstractCard.CardRarity.COMMON, AbstractDungeon.cardRandomRng).makeCopy(), 1, false"
+          }
+        ]
+      },
+      {
+        "method": "stackPower",
+        "params": "int stackAmount",
+        "field_modifications": [
+          {
+            "field": "amount",
+            "op": "+=",
+            "value": "stackAmount"
+          }
+        ]
+      }
+    ],
+    "card_creates_with": [
+      {
+        "card": "HelloWorld",
+        "color": "blue",
+        "constructor_args": "p, 1",
+        "base_value": null,
+        "upgrade_delta": null
+      }
+    ]
+  },
+  {
+    "id": "Hex",
+    "java_class": "HexPower",
+    "power_type": "Debuff",
+    "constructor": {
+      "params": [
+        "owner",
+        "amount"
+      ],
+      "param_types": {
+        "owner": "AbstractCreature",
+        "amount": "int"
+      },
+      "field_mapping": {
+        "amount": "amount"
+      }
+    },
+    "hooks": [
+      {
+        "method": "onUseCard",
+        "params": "AbstractCard card, UseCardAction action",
+        "actions": [
+          {
+            "action": "MakeTempCardInDrawPileAction",
+            "args": "new Dazed(), amount, true, true"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "Infinite Blades",
+    "java_class": "InfiniteBladesPower",
+    "power_type": "Buff",
+    "constructor": {
+      "params": [
+        "owner",
+        "bladeAmt"
+      ],
+      "param_types": {
+        "owner": "AbstractCreature",
+        "bladeAmt": "int"
+      },
+      "field_mapping": {
+        "amount": "bladeAmt"
+      }
+    },
+    "hooks": [
+      {
+        "method": "atStartOfTurn",
+        "params": null,
+        "guards": [
+          "monsters_alive"
+        ],
+        "actions": [
+          {
+            "action": "MakeTempCardInHandAction",
+            "args": "(AbstractCard)new Shiv(), amount, false"
+          }
+        ]
+      },
+      {
+        "method": "stackPower",
+        "params": "int stackAmount",
+        "field_modifications": [
+          {
+            "field": "amount",
+            "op": "+=",
+            "value": "stackAmount"
+          }
+        ]
+      }
+    ],
+    "card_creates_with": [
+      {
+        "card": "InfiniteBlades",
+        "color": "green",
+        "constructor_args": "p, 1",
+        "base_value": null,
+        "upgrade_delta": null
+      }
+    ]
+  },
+  {
+    "id": "Intangible",
+    "java_class": "IntangiblePower",
+    "power_type": "Buff",
+    "constructor": {
+      "params": [
+        "owner",
+        "turns"
+      ],
+      "param_types": {
+        "owner": "AbstractCreature",
+        "turns": "int"
+      },
+      "field_mapping": {
+        "amount": "turns"
+      }
+    },
+    "hooks": [
+      {
+        "method": "atEndOfTurn",
+        "params": "boolean isPlayer",
+        "field_modifications": [
+          {
+            "field": "justApplied",
+            "op": "=",
+            "value": "false"
+          }
+        ]
+      },
+      {
+        "method": "atDamageFinalReceive",
+        "params": "float damage, DamageInfo.DamageType type"
+      }
+    ]
+  },
+  {
+    "id": "IntangiblePlayer",
+    "java_class": "IntangiblePlayerPower",
+    "power_type": "Buff",
+    "constructor": {
+      "params": [
+        "owner",
+        "turns"
+      ],
+      "param_types": {
+        "owner": "AbstractCreature",
+        "turns": "int"
+      },
+      "field_mapping": {
+        "amount": "turns"
+      }
+    },
+    "hooks": [
+      {
+        "method": "atEndOfRound",
+        "params": null,
+        "actions": [
+          {
+            "action": "RemoveSpecificPowerAction",
+            "args": "owner, owner, POWER_ID"
+          }
+        ]
+      },
+      {
+        "method": "atDamageFinalReceive",
+        "params": "float damage, DamageInfo.DamageType type"
+      }
+    ],
+    "card_creates_with": [
+      {
+        "card": "Apparition",
+        "color": "colorless",
+        "constructor_args": "p, 1",
+        "base_value": null,
+        "upgrade_delta": null
+      },
+      {
+        "card": "WraithForm",
+        "color": "green",
+        "constructor_args": "p, this.magicNumber",
+        "base_value": 2,
+        "upgrade_delta": 1
+      }
+    ]
+  },
+  {
+    "id": "Invincible",
+    "java_class": "InvinciblePower",
+    "power_type": "Buff",
+    "constructor": {
+      "params": [
+        "owner",
+        "amount"
+      ],
+      "param_types": {
+        "owner": "AbstractCreature",
+        "amount": "int"
+      },
+      "field_mapping": {
+        "amount": "amount"
+      }
+    },
+    "hooks": [
+      {
+        "method": "atStartOfTurn",
+        "params": null,
+        "field_modifications": [
+          {
+            "field": "amount",
+            "op": "=",
+            "value": "this.maxAmt"
+          }
+        ]
+      },
+      {
+        "method": "onAttackedToChangeDamage",
+        "params": "DamageInfo info, int damageAmount"
+      }
+    ]
+  },
+  {
+    "id": "Juggernaut",
+    "java_class": "JuggernautPower",
+    "power_type": "Buff",
+    "constructor": {
+      "params": [
+        "owner",
+        "newAmount"
+      ],
+      "param_types": {
+        "owner": "AbstractCreature",
+        "newAmount": "int"
+      },
+      "field_mapping": {
+        "amount": "newAmount"
+      }
+    },
+    "hooks": [
+      {
+        "method": "onGainedBlock",
+        "params": "float blockAmount",
+        "actions": [
+          {
+            "action": "DamageRandomEnemyAction",
+            "args": "new DamageInfo(owner, amount, THORNS), SLASH_HORIZONTAL"
+          }
+        ]
+      }
+    ],
+    "card_creates_with": [
+      {
+        "card": "Juggernaut",
+        "color": "red",
+        "constructor_args": "p, this.magicNumber",
+        "base_value": 5,
+        "upgrade_delta": 2
+      }
+    ]
+  },
+  {
+    "id": "Life Link",
+    "java_class": "RegrowPower",
+    "power_type": "Buff",
+    "constructor": {
+      "params": [
+        "owner"
+      ],
+      "param_types": {
+        "owner": "AbstractCreature"
+      },
+      "field_mapping": {}
+    }
+  },
+  {
+    "id": "Life Link",
+    "java_class": "ResurrectPower",
+    "power_type": "Buff",
+    "constructor": {
+      "params": [
+        "owner"
+      ],
+      "param_types": {
+        "owner": "AbstractCreature"
+      },
+      "field_mapping": {}
+    }
+  },
+  {
+    "id": "Lightning Mastery",
+    "java_class": "LightningMasteryPower",
+    "power_type": "Buff",
+    "constructor": {
+      "params": [
+        "owner",
+        "amount"
+      ],
+      "param_types": {
+        "owner": "AbstractCreature",
+        "amount": "int"
+      },
+      "field_mapping": {
+        "amount": "amount"
+      }
+    }
+  },
+  {
+    "id": "LikeWaterPower",
+    "java_class": "LikeWaterPower",
+    "power_type": "Buff",
+    "constructor": {
+      "params": [
+        "owner",
+        "amt"
+      ],
+      "param_types": {
+        "owner": "AbstractCreature",
+        "amt": "int"
+      },
+      "field_mapping": {
+        "amount": "amt"
+      }
+    },
+    "hooks": [
+      {
+        "method": "atEndOfTurnPreEndTurnCards",
+        "params": "boolean isPlayer",
+        "actions": [
+          {
+            "action": "GainBlockAction",
+            "args": "owner, owner, amount"
+          }
+        ]
+      },
+      {
+        "method": "stackPower",
+        "params": "int stackAmount",
+        "field_modifications": [
+          {
+            "field": "amount",
+            "op": "+=",
+            "value": "stackAmount"
+          },
+          {
+            "field": "amount",
+            "op": "=",
+            "value": "999"
+          }
+        ]
+      }
+    ],
+    "stack_behavior": {
+      "method": "custom",
+      "code": "this.amount += stackAmount; if (this.amount > 999) {; this.amount = 999;"
+    },
+    "card_creates_with": [
+      {
+        "card": "LikeWater",
+        "color": "purple",
+        "constructor_args": "p, this.magicNumber",
+        "base_value": 5,
+        "upgrade_delta": 2
+      }
+    ]
+  },
+  {
+    "id": "Lockon",
+    "java_class": "LockOnPower",
+    "power_type": "Debuff",
+    "constructor": {
+      "params": [
+        "owner",
+        "amount"
+      ],
+      "param_types": {
+        "owner": "AbstractCreature",
+        "amount": "int"
+      },
+      "field_mapping": {
+        "amount": "amount"
+      }
+    },
+    "hooks": [
+      {
+        "method": "atEndOfRound",
+        "params": null,
+        "actions": [
+          {
+            "action": "RemoveSpecificPowerAction",
+            "args": "owner, owner, POWER_ID"
+          }
+        ]
+      }
+    ],
+    "card_creates_with": [
+      {
+        "card": "LockOn",
+        "color": "blue",
+        "constructor_args": "m, this.magicNumber",
+        "base_value": 8,
+        "upgrade_delta": 3
+      }
+    ]
+  },
+  {
+    "id": "Loop",
+    "java_class": "LoopPower",
+    "power_type": "Buff",
+    "constructor": {
+      "params": [
+        "owner",
+        "amt"
+      ],
+      "param_types": {
+        "owner": "AbstractCreature",
+        "amt": "int"
+      },
+      "field_mapping": {
+        "amount": "amt"
+      }
+    },
+    "hooks": [
+      {
+        "method": "atStartOfTurn",
+        "params": null
+      }
+    ],
+    "card_creates_with": [
+      {
+        "card": "Loop",
+        "color": "blue",
+        "constructor_args": "p, this.magicNumber",
+        "base_value": 1,
+        "upgrade_delta": 1
+      }
+    ]
+  },
+  {
+    "id": "Magnetism",
+    "java_class": "MagnetismPower",
+    "power_type": "Buff",
+    "constructor": {
+      "params": [
+        "owner",
+        "cardAmount"
+      ],
+      "param_types": {
+        "owner": "AbstractCreature",
+        "cardAmount": "int"
+      },
+      "field_mapping": {
+        "amount": "cardAmount"
+      }
+    },
+    "hooks": [
+      {
+        "method": "atStartOfTurn",
+        "params": null,
+        "guards": [
+          "monsters_alive"
+        ],
+        "actions": [
+          {
+            "action": "MakeTempCardInHandAction",
+            "args": "AbstractDungeon.returnTrulyRandomColorlessCardInCombat().makeCopy(), 1, false"
+          }
+        ]
+      },
+      {
+        "method": "stackPower",
+        "params": "int stackAmount",
+        "field_modifications": [
+          {
+            "field": "amount",
+            "op": "+=",
+            "value": "stackAmount"
+          }
+        ]
+      }
+    ],
+    "card_creates_with": [
+      {
+        "card": "Magnetism",
+        "color": "colorless",
+        "constructor_args": "p, this.magicNumber",
+        "base_value": 1,
+        "upgrade_delta": 1
+      }
+    ]
+  },
+  {
+    "id": "Malleable",
+    "java_class": "MalleablePower",
+    "power_type": "Buff",
+    "constructor": {
+      "params": [
+        "owner"
+      ],
+      "param_types": {
+        "owner": "AbstractCreature"
+      },
+      "field_mapping": {}
+    },
+    "hooks": [
+      {
+        "method": "atEndOfTurn",
+        "params": "boolean isPlayer"
+      },
+      {
+        "method": "atEndOfRound",
+        "params": null
+      },
+      {
+        "method": "onAttacked",
+        "params": "DamageInfo info, int damageAmount"
+      },
+      {
+        "method": "stackPower",
+        "params": "int stackAmount",
+        "field_modifications": [
+          {
+            "field": "amount",
+            "op": "+=",
+            "value": "stackAmount"
+          },
+          {
+            "field": "basePower",
+            "op": "+=",
+            "value": "stackAmount"
+          }
+        ]
+      }
+    ],
+    "stack_behavior": {
+      "method": "custom",
+      "code": "this.amount += stackAmount; this.basePower += stackAmount;"
+    }
+  },
+  {
+    "id": "Mantra",
+    "java_class": "MantraPower",
+    "power_type": "Buff",
+    "constructor": {
+      "params": [
+        "owner",
+        "amount"
+      ],
+      "param_types": {
+        "owner": "AbstractCreature",
+        "amount": "int"
+      },
+      "field_mapping": {
+        "amount": "amount"
+      }
+    },
+    "hooks": [
+      {
+        "method": "stackPower",
+        "params": "int stackAmount",
+        "field_modifications": [
+          {
+            "field": "amount",
+            "op": "-=",
+            "value": "10"
+          }
+        ]
+      }
+    ],
+    "stack_behavior": {
+      "method": "custom",
+      "code": "super.stackPower(stackAmount); if (this.amount >= 10) {; this.addToTop(new ChangeStanceAction(\"Divinity\")); this.amount -= 10; if (this.amount <= 0) {; this.addToTop(new RemoveSpecificPowerAction(this.owner, this.owner, POWER_ID));"
+    },
+    "card_creates_with": [
+      {
+        "card": "Pray",
+        "color": "purple",
+        "constructor_args": "p, this.magicNumber",
+        "base_value": 3,
+        "upgrade_delta": 1
+      },
+      {
+        "card": "Prostrate",
+        "color": "purple",
+        "constructor_args": "p, this.magicNumber",
+        "base_value": 2,
+        "upgrade_delta": 1
+      },
+      {
+        "card": "Worship",
+        "color": "purple",
+        "constructor_args": "p, this.magicNumber",
+        "base_value": 5,
+        "upgrade_delta": null
+      }
+    ]
+  },
+  {
+    "id": "MasterRealityPower",
+    "java_class": "MasterRealityPower",
+    "power_type": "Buff",
+    "constructor": {
+      "params": [
+        "owner"
+      ],
+      "param_types": {
+        "owner": "AbstractCreature"
+      },
+      "field_mapping": {}
+    },
+    "card_creates_with": [
+      {
+        "card": "MasterReality",
+        "color": "purple",
+        "constructor_args": "p",
+        "base_value": null,
+        "upgrade_delta": 0
+      }
+    ]
+  },
+  {
+    "id": "Mayhem",
+    "java_class": "MayhemPower",
+    "power_type": "Buff",
+    "constructor": {
+      "params": [
+        "owner",
+        "amount"
+      ],
+      "param_types": {
+        "owner": "AbstractCreature",
+        "amount": "int"
+      },
+      "field_mapping": {
+        "amount": "amount"
+      }
+    },
+    "hooks": [
+      {
+        "method": "atStartOfTurn",
+        "params": null,
+        "actions": [
+          {
+            "action": "AbstractGameAction",
+            "args": "){ @Override public void update() { this.addToBot(new PlayTopCardAction(AbstractDungeon.getCurrRoom().monsters.getRandomMonster(null, true, AbstractDungeon.cardRandomRng), false"
+          }
+        ],
+        "field_modifications": [
+          {
+            "field": "isDone",
+            "op": "=",
+            "value": "true"
+          }
+        ]
+      }
+    ],
+    "card_creates_with": [
+      {
+        "card": "Mayhem",
+        "color": "colorless",
+        "constructor_args": "p, this.magicNumber",
+        "base_value": 1,
+        "upgrade_delta": 1
+      }
+    ]
+  },
+  {
+    "id": "Metallicize",
+    "java_class": "MetallicizePower",
+    "power_type": "Buff",
+    "constructor": {
+      "params": [
+        "owner",
+        "armorAmt"
+      ],
+      "param_types": {
+        "owner": "AbstractCreature",
+        "armorAmt": "int"
+      },
+      "field_mapping": {
+        "amount": "armorAmt"
+      }
+    },
+    "hooks": [
+      {
+        "method": "atEndOfTurnPreEndTurnCards",
+        "params": "boolean isPlayer",
+        "actions": [
+          {
+            "action": "GainBlockAction",
+            "args": "owner, owner, amount"
+          }
+        ]
+      }
+    ],
+    "card_creates_with": [
+      {
+        "card": "Metallicize",
+        "color": "red",
+        "constructor_args": "p, this.magicNumber",
+        "base_value": 3,
+        "upgrade_delta": 1
+      }
+    ]
+  },
+  {
+    "id": "Minion",
+    "java_class": "MinionPower",
+    "power_type": "Buff",
+    "constructor": {
+      "params": [
+        "owner"
+      ],
+      "param_types": {
+        "owner": "AbstractCreature"
+      },
+      "field_mapping": {}
+    }
+  },
+  {
+    "id": "Mode Shift",
+    "java_class": "ModeShiftPower",
+    "power_type": "Buff",
+    "constructor": {
+      "params": [
+        "owner",
+        "newAmount"
+      ],
+      "param_types": {
+        "owner": "AbstractCreature",
+        "newAmount": "int"
+      },
+      "field_mapping": {
+        "amount": "newAmount"
+      }
+    }
+  },
+  {
+    "id": "Next Turn Block",
+    "java_class": "NextTurnBlockPower",
+    "power_type": "Buff",
+    "constructor": {
+      "params": [
+        "owner",
+        "armorAmt",
+        "newName"
+      ],
+      "param_types": {
+        "owner": "AbstractCreature",
+        "armorAmt": "int",
+        "newName": "String"
+      },
+      "field_mapping": {
+        "amount": "armorAmt"
+      }
+    },
+    "hooks": [
+      {
+        "method": "atStartOfTurn",
+        "params": null,
+        "actions": [
+          {
+            "action": "GainBlockAction",
+            "args": "owner, owner, amount"
+          },
+          {
+            "action": "RemoveSpecificPowerAction",
+            "args": "owner, owner, POWER_ID"
+          }
+        ]
+      }
+    ],
+    "card_creates_with": [
+      {
+        "card": "DEPRECATEDPrediction",
+        "color": "unknown",
+        "constructor_args": "p, this.block",
+        "base_value": 12,
+        "upgrade_delta": 4
+      },
+      {
+        "card": "DodgeAndRoll",
+        "color": "green",
+        "constructor_args": "p, this.block",
+        "base_value": 4,
+        "upgrade_delta": 2
+      }
+    ]
+  },
+  {
+    "id": "Night Terror",
+    "java_class": "NightmarePower",
+    "power_type": "Buff",
+    "constructor": {
+      "params": [
+        "owner",
+        "cardAmt",
+        "copyMe"
+      ],
+      "param_types": {
+        "owner": "AbstractCreature",
+        "cardAmt": "int",
+        "copyMe": "AbstractCard"
+      },
+      "field_mapping": {
+        "amount": "cardAmt"
+      }
+    },
+    "hooks": [
+      {
+        "method": "atStartOfTurn",
+        "params": null,
+        "actions": [
+          {
+            "action": "MakeTempCardInHandAction",
+            "args": "this.card, amount"
+          },
+          {
+            "action": "RemoveSpecificPowerAction",
+            "args": "owner, owner, POWER_ID"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "Nirvana",
+    "java_class": "NirvanaPower",
+    "power_type": "Buff",
+    "constructor": {
+      "params": [
+        "owner",
+        "amt"
+      ],
+      "param_types": {
+        "owner": "AbstractCreature",
+        "amt": "int"
+      },
+      "field_mapping": {
+        "amount": "amt"
+      }
+    },
+    "card_creates_with": [
+      {
+        "card": "Nirvana",
+        "color": "purple",
+        "constructor_args": "p, this.magicNumber",
+        "base_value": 3,
+        "upgrade_delta": 1
+      }
+    ]
+  },
+  {
+    "id": "No Draw",
+    "java_class": "NoDrawPower",
+    "power_type": "Debuff",
+    "no_stack": true,
+    "constructor": {
+      "params": [
+        "owner"
+      ],
+      "param_types": {
+        "owner": "AbstractCreature"
+      },
+      "field_mapping": {
+        "amount": -1
+      }
+    },
+    "hooks": [
+      {
+        "method": "atEndOfTurn",
+        "params": "boolean isPlayer",
+        "actions": [
+          {
+            "action": "RemoveSpecificPowerAction",
+            "args": "owner, owner, POWER_ID"
+          }
+        ]
+      }
+    ],
+    "card_creates_with": [
+      {
+        "card": "BulletTime",
+        "color": "green",
+        "constructor_args": "p",
+        "base_value": null,
+        "upgrade_delta": 2
+      },
+      {
+        "card": "BattleTrance",
+        "color": "red",
+        "constructor_args": "p",
+        "base_value": 3,
+        "upgrade_delta": 1
+      }
+    ]
+  },
+  {
+    "id": "NoBlockPower",
+    "java_class": "NoBlockPower",
+    "power_type": "Debuff",
+    "constructor": {
+      "params": [
+        "owner",
+        "amount",
+        "isSourceMonster"
+      ],
+      "param_types": {
+        "owner": "AbstractCreature",
+        "amount": "int",
+        "isSourceMonster": "boolean"
+      },
+      "field_mapping": {
+        "amount": "amount"
+      }
+    },
+    "hooks": [
+      {
+        "method": "atEndOfRound",
+        "params": null,
+        "field_modifications": [
+          {
+            "field": "justApplied",
+            "op": "=",
+            "value": "false"
+          }
+        ]
+      },
+      {
+        "method": "modifyBlockLast",
+        "params": "float blockAmount",
+        "return_value": "0.0f"
+      }
+    ],
+    "card_creates_with": [
+      {
+        "card": "PanicButton",
+        "color": "colorless",
+        "constructor_args": "p, this.magicNumber, false",
+        "base_value": 30,
+        "upgrade_delta": 10
+      }
+    ]
+  },
+  {
+    "id": "NoSkills",
+    "java_class": "NoSkillsPower",
+    "power_type": "Debuff",
+    "constructor": {
+      "params": [
+        "owner"
+      ],
+      "param_types": {
+        "owner": "AbstractCreature"
+      },
+      "field_mapping": {
+        "amount": 1
+      }
+    },
+    "hooks": [
+      {
+        "method": "atEndOfTurn",
+        "params": "boolean isPlayer",
+        "actions": [
+          {
+            "action": "RemoveSpecificPowerAction",
+            "args": "owner, owner, POWER_ID"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "Noxious Fumes",
+    "java_class": "NoxiousFumesPower",
+    "power_type": "Buff",
+    "constructor": {
+      "params": [
+        "owner",
+        "poisonAmount"
+      ],
+      "param_types": {
+        "owner": "AbstractCreature",
+        "poisonAmount": "int"
+      },
+      "field_mapping": {
+        "amount": "poisonAmount"
+      }
+    },
+    "hooks": [
+      {
+        "method": "atStartOfTurnPostDraw",
+        "params": null,
+        "guards": [
+          "monsters_alive"
+        ],
+        "actions": [
+          {
+            "action": "ApplyPowerAction",
+            "args": "m, owner, new PoisonPower(m, owner, amount), amount"
+          }
+        ]
+      },
+      {
+        "method": "stackPower",
+        "params": "int stackAmount",
+        "field_modifications": [
+          {
+            "field": "amount",
+            "op": "+=",
+            "value": "stackAmount"
+          }
+        ]
+      }
+    ],
+    "card_creates_with": [
+      {
+        "card": "NoxiousFumes",
+        "color": "green",
+        "constructor_args": "p, this.magicNumber",
+        "base_value": 2,
+        "upgrade_delta": 1
+      }
+    ]
+  },
+  {
+    "id": "Nullify Attack",
+    "java_class": "ForcefieldPower",
+    "power_type": "Buff",
+    "no_stack": true,
+    "constructor": {
+      "params": [
+        "owner"
+      ],
+      "param_types": {
+        "owner": "AbstractCreature"
+      },
+      "field_mapping": {
+        "amount": -1
+      }
+    },
+    "hooks": [
+      {
+        "method": "atDamageFinalReceive",
+        "params": "float damage, DamageInfo.DamageType type",
+        "return_value": "0.0f"
+      }
+    ]
+  },
+  {
+    "id": "OmegaPower",
+    "java_class": "OmegaPower",
+    "power_type": "Buff",
+    "constructor": {
+      "params": [
+        "owner",
+        "newAmount"
+      ],
+      "param_types": {
+        "owner": "AbstractCreature",
+        "newAmount": "int"
+      },
+      "field_mapping": {
+        "amount": "newAmount"
+      }
+    },
+    "hooks": [
+      {
+        "method": "atEndOfTurn",
+        "params": "boolean isPlayer",
+        "actions": [
+          {
+            "action": "VFXAction",
+            "args": "new OmegaFlashEffect(m.hb.cX, m.hb.cY"
+          }
+        ]
+      }
+    ],
+    "card_creates_with": [
+      {
+        "card": "Omega",
+        "color": "tempCards",
+        "constructor_args": "p, this.magicNumber",
+        "base_value": 50,
+        "upgrade_delta": 10
+      }
+    ]
+  },
+  {
+    "id": "OmnisciencePower",
+    "java_class": "OmnisciencePower",
+    "power_type": "Buff",
+    "constructor": {
+      "params": [
+        "owner",
+        "newAmount"
+      ],
+      "param_types": {
+        "owner": "AbstractCreature",
+        "newAmount": "int"
+      },
+      "field_mapping": {
+        "amount": "newAmount"
+      }
+    }
+  },
+  {
+    "id": "Painful Stabs",
+    "java_class": "PainfulStabsPower",
+    "power_type": "Buff",
+    "no_stack": true,
+    "constructor": {
+      "params": [
+        "owner"
+      ],
+      "param_types": {
+        "owner": "AbstractCreature"
+      },
+      "field_mapping": {
+        "amount": -1
+      }
+    },
+    "hooks": [
+      {
+        "method": "onInflictDamage",
+        "params": "DamageInfo info, int damageAmount, AbstractCreature target",
+        "actions": [
+          {
+            "action": "MakeTempCardInDiscardAction",
+            "args": "(AbstractCard)new Wound(), 1"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "Panache",
+    "java_class": "PanachePower",
+    "power_type": "Buff",
+    "constructor": {
+      "params": [
+        "owner",
+        "damage"
+      ],
+      "param_types": {
+        "owner": "AbstractCreature",
+        "damage": "int"
+      },
+      "field_mapping": {
+        "amount": 5
+      }
+    },
+    "hooks": [
+      {
+        "method": "atStartOfTurn",
+        "params": null,
+        "field_modifications": [
+          {
+            "field": "amount",
+            "op": "=",
+            "value": "5"
+          }
+        ]
+      },
+      {
+        "method": "onUseCard",
+        "params": "AbstractCard card, UseCardAction action",
+        "actions": [
+          {
+            "action": "DamageAllEnemiesAction",
+            "args": "(AbstractCreature)player, damageMatrix(this.damage, ignoreThorns), THORNS, SLASH_DIAGONAL"
+          }
+        ],
+        "field_modifications": [
+          {
+            "field": "amount",
+            "op": "=",
+            "value": "5"
+          }
+        ]
+      },
+      {
+        "method": "stackPower",
+        "params": "int stackAmount",
+        "field_modifications": [
+          {
+            "field": "damage",
+            "op": "+=",
+            "value": "stackAmount"
+          }
+        ]
+      }
+    ],
+    "card_creates_with": [
+      {
+        "card": "Panache",
+        "color": "colorless",
+        "constructor_args": "p, this.magicNumber",
+        "base_value": 10,
+        "upgrade_delta": 4
+      }
+    ]
+  },
+  {
+    "id": "PathToVictoryPower",
+    "java_class": "MarkPower",
+    "power_type": "Debuff",
+    "constructor": {
+      "params": [
+        "owner",
+        "amt"
+      ],
+      "param_types": {
+        "owner": "AbstractCreature",
+        "amt": "int"
+      },
+      "field_mapping": {
+        "amount": "amt"
+      }
+    },
+    "hooks": [
+      {
+        "method": "triggerMarks",
+        "params": "AbstractCard card",
+        "actions": [
+          {
+            "action": "LoseHPAction",
+            "args": "owner, null, amount, FIRE"
+          }
+        ]
+      }
+    ],
+    "card_creates_with": [
+      {
+        "card": "PressurePoints",
+        "color": "purple",
+        "constructor_args": "m, this.magicNumber",
+        "base_value": 8,
+        "upgrade_delta": 3
+      }
+    ]
+  },
+  {
+    "id": "Pen Nib",
+    "java_class": "PenNibPower",
+    "power_type": "Buff",
+    "constructor": {
+      "params": [
+        "owner",
+        "amount"
+      ],
+      "param_types": {
+        "owner": "AbstractCreature",
+        "amount": "int"
+      },
+      "field_mapping": {
+        "amount": "amount"
+      }
+    },
+    "hooks": [
+      {
+        "method": "atDamageGive",
+        "params": "float damage, DamageInfo.DamageType type",
+        "return_value": "damage * 2.0f"
+      },
+      {
+        "method": "onUseCard",
+        "params": "AbstractCard card, UseCardAction action",
+        "guards": [
+          "card_type_check"
+        ],
+        "actions": [
+          {
+            "action": "RemoveSpecificPowerAction",
+            "args": "owner, owner, POWER_ID"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "Phantasmal",
+    "java_class": "PhantasmalPower",
+    "power_type": "Buff",
+    "constructor": {
+      "params": [
+        "owner",
+        "amount"
+      ],
+      "param_types": {
+        "owner": "AbstractCreature",
+        "amount": "int"
+      },
+      "field_mapping": {
+        "amount": "amount"
+      }
+    },
+    "hooks": [
+      {
+        "method": "atStartOfTurn",
+        "params": null,
+        "actions": [
+          {
+            "action": "ApplyPowerAction",
+            "args": "owner, owner, new DoubleDamagePower(owner, 1, false), amount"
+          },
+          {
+            "action": "ReducePowerAction",
+            "args": "owner, owner, POWER_ID, 1"
+          }
+        ]
+      }
+    ],
+    "card_creates_with": [
+      {
+        "card": "PhantasmalKiller",
+        "color": "green",
+        "constructor_args": "p, 1",
+        "base_value": null,
+        "upgrade_delta": 0
+      }
+    ]
+  },
+  {
+    "id": "Plated Armor",
+    "java_class": "PlatedArmorPower",
+    "power_type": "Buff",
+    "constructor": {
+      "params": [
+        "owner",
+        "amt"
+      ],
+      "param_types": {
+        "owner": "AbstractCreature",
+        "amt": "int"
+      },
+      "field_mapping": {
+        "amount": "amt"
+      }
+    },
+    "hooks": [
+      {
+        "method": "atEndOfTurnPreEndTurnCards",
+        "params": "boolean isPlayer",
+        "actions": [
+          {
+            "action": "GainBlockAction",
+            "args": "owner, owner, amount"
+          }
+        ]
+      },
+      {
+        "method": "wasHPLost",
+        "params": "DamageInfo info, int damageAmount",
+        "guards": [
+          "attacker_exists"
+        ],
+        "actions": [
+          {
+            "action": "ReducePowerAction",
+            "args": "owner, owner, POWER_ID, 1"
+          }
+        ]
+      },
+      {
+        "method": "onRemove",
+        "params": null,
+        "actions": [
+          {
+            "action": "ChangeStateAction",
+            "args": "(AbstractMonster)owner, \"ARMOR_BREAK\""
+          }
+        ]
+      },
+      {
+        "method": "stackPower",
+        "params": "int stackAmount",
+        "field_modifications": [
+          {
+            "field": "amount",
+            "op": "+=",
+            "value": "stackAmount"
+          },
+          {
+            "field": "amount",
+            "op": "=",
+            "value": "999"
+          }
+        ]
+      }
+    ],
+    "stack_behavior": {
+      "method": "custom",
+      "code": "this.amount += stackAmount; if (this.amount > 999) {; this.amount = 999;"
+    },
+    "card_creates_with": [
+      {
+        "card": "LiveForever",
+        "color": "unknown",
+        "constructor_args": "p, this.magicNumber",
+        "base_value": 6,
+        "upgrade_delta": 2
+      }
+    ]
+  },
+  {
+    "id": "Poison",
+    "java_class": "PoisonPower",
+    "power_type": "Debuff",
+    "constructor": {
+      "params": [
+        "owner",
+        "source",
+        "poisonAmt"
+      ],
+      "param_types": {
+        "owner": "AbstractCreature",
+        "source": "AbstractCreature",
+        "poisonAmt": "int"
+      },
+      "field_mapping": {
+        "amount": 9999
+      }
+    },
+    "hooks": [
+      {
+        "method": "atStartOfTurn",
+        "params": null,
+        "actions": [
+          {
+            "action": "PoisonLoseHpAction",
+            "args": "owner, this.source, amount, POISON"
+          }
+        ]
+      },
+      {
+        "method": "stackPower",
+        "params": "int stackAmount"
+      }
+    ],
+    "stack_behavior": {
+      "method": "custom",
+      "code": "super.stackPower(stackAmount); if (this.amount > 98 && AbstractDungeon.player.chosenClass == AbstractPlayer.PlayerClass.THE_SILENT) {; UnlockTracker.unlockAchievement(\"CATALYST\");"
+    },
+    "card_creates_with": [
+      {
+        "card": "CorpseExplosion",
+        "color": "green",
+        "constructor_args": "m, p, this.magicNumber",
+        "base_value": 6,
+        "upgrade_delta": 3
+      },
+      {
+        "card": "CripplingPoison",
+        "color": "green",
+        "constructor_args": "monster, p, this.magicNumber",
+        "base_value": 4,
+        "upgrade_delta": 3
+      },
+      {
+        "card": "DeadlyPoison",
+        "color": "green",
+        "constructor_args": "m, p, this.magicNumber",
+        "base_value": 5,
+        "upgrade_delta": 2
+      },
+      {
+        "card": "PoisonedStab",
+        "color": "green",
+        "constructor_args": "m, p, this.magicNumber",
+        "base_value": 6,
+        "upgrade_delta": 2
+      }
+    ]
+  },
+  {
+    "id": "Rage",
+    "java_class": "RagePower",
+    "power_type": "Buff",
+    "constructor": {
+      "params": [
+        "owner",
+        "amount"
+      ],
+      "param_types": {
+        "owner": "AbstractCreature",
+        "amount": "int"
+      },
+      "field_mapping": {
+        "amount": "amount"
+      }
+    },
+    "hooks": [
+      {
+        "method": "atEndOfTurn",
+        "params": "boolean isPlayer",
+        "actions": [
+          {
+            "action": "RemoveSpecificPowerAction",
+            "args": "owner, owner, POWER_ID"
+          }
+        ]
+      },
+      {
+        "method": "onUseCard",
+        "params": "AbstractCard card, UseCardAction action",
+        "guards": [
+          "card_type_check"
+        ],
+        "actions": [
+          {
+            "action": "GainBlockAction",
+            "args": "(AbstractCreature)player, player, amount"
+          }
+        ]
+      }
+    ],
+    "card_creates_with": [
+      {
+        "card": "Rage",
+        "color": "red",
+        "constructor_args": "p, this.magicNumber",
+        "base_value": 3,
+        "upgrade_delta": 2
+      }
+    ]
+  },
+  {
+    "id": "Rebound",
+    "java_class": "ReboundPower",
+    "power_type": "Buff",
+    "constructor": {
+      "params": [
+        "owner"
+      ],
+      "param_types": {
+        "owner": "AbstractCreature"
+      },
+      "field_mapping": {
+        "amount": 1
+      }
+    },
+    "hooks": [
+      {
+        "method": "atEndOfTurn",
+        "params": "boolean isPlayer",
+        "actions": [
+          {
+            "action": "RemoveSpecificPowerAction",
+            "args": "owner, owner, POWER_ID"
+          }
+        ]
+      },
+      {
+        "method": "onAfterUseCard",
+        "params": "AbstractCard card, UseCardAction action",
+        "field_modifications": [
+          {
+            "field": "justEvoked",
+            "op": "=",
+            "value": "false"
+          }
+        ]
+      }
+    ],
+    "card_creates_with": [
+      {
+        "card": "Rebound",
+        "color": "blue",
+        "constructor_args": "p",
+        "base_value": 9,
+        "upgrade_delta": 3
+      }
+    ]
+  },
+  {
+    "id": "RechargingCore",
+    "java_class": "RechargingCorePower",
+    "power_type": "Buff",
+    "constructor": {
+      "params": [
+        "owner",
+        "amount"
+      ],
+      "param_types": {
+        "owner": "AbstractCreature",
+        "amount": "int"
+      },
+      "field_mapping": {
+        "amount": "amount"
+      }
+    },
+    "hooks": [
+      {
+        "method": "atStartOfTurn",
+        "params": null,
+        "actions": [
+          {
+            "action": "GainEnergyAction",
+            "args": "amount"
+          }
+        ],
+        "field_modifications": [
+          {
+            "field": "turnTimer",
+            "op": "=",
+            "value": "3"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "Regenerate",
+    "java_class": "RegenerateMonsterPower",
+    "power_type": "Buff",
+    "constructor": {
+      "params": [
+        "owner",
+        "regenAmt"
+      ],
+      "param_types": {
+        "owner": "AbstractMonster",
+        "regenAmt": "int"
+      },
+      "field_mapping": {
+        "amount": "regenAmt"
+      }
+    },
+    "hooks": [
+      {
+        "method": "atEndOfTurn",
+        "params": "boolean isPlayer",
+        "actions": [
+          {
+            "action": "HealAction",
+            "args": "owner, owner, amount"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "Regeneration",
+    "java_class": "RegenPower",
+    "power_type": "Buff",
+    "constructor": {
+      "params": [
+        "owner",
+        "heal"
+      ],
+      "param_types": {
+        "owner": "AbstractCreature",
+        "heal": "int"
+      },
+      "field_mapping": {
+        "amount": "heal"
+      }
+    },
+    "hooks": [
+      {
+        "method": "atEndOfTurn",
+        "params": "boolean isPlayer"
+      },
+      {
+        "method": "stackPower",
+        "params": "int stackAmount"
+      }
+    ]
+  },
+  {
+    "id": "Repair",
+    "java_class": "RepairPower",
+    "power_type": "Buff",
+    "constructor": {
+      "params": [
+        "owner",
+        "amount"
+      ],
+      "param_types": {
+        "owner": "AbstractCreature",
+        "amount": "int"
+      },
+      "field_mapping": {
+        "amount": "amount"
+      }
+    },
+    "hooks": [
+      {
+        "method": "onVictory",
+        "params": null
+      }
+    ],
+    "card_creates_with": [
+      {
+        "card": "SelfRepair",
+        "color": "blue",
+        "constructor_args": "p, this.magicNumber",
+        "base_value": 7,
+        "upgrade_delta": 3
+      }
+    ]
+  },
+  {
+    "id": "Retain Cards",
+    "java_class": "RetainCardPower",
+    "power_type": "Buff",
+    "constructor": {
+      "params": [
+        "owner",
+        "numCards"
+      ],
+      "param_types": {
+        "owner": "AbstractCreature",
+        "numCards": "int"
+      },
+      "field_mapping": {
+        "amount": "numCards"
+      }
+    },
+    "hooks": [
+      {
+        "method": "atEndOfTurn",
+        "params": "boolean isPlayer",
+        "actions": [
+          {
+            "action": "RetainCardsAction",
+            "args": "owner, amount"
+          }
+        ]
+      }
+    ],
+    "card_creates_with": [
+      {
+        "card": "WellLaidPlans",
+        "color": "green",
+        "constructor_args": "p, this.magicNumber",
+        "base_value": 1,
+        "upgrade_delta": 1
+      }
+    ]
+  },
+  {
+    "id": "Ritual",
+    "java_class": "RitualPower",
+    "power_type": "Buff",
+    "constructor": {
+      "params": [
+        "owner",
+        "strAmt",
+        "playerControlled"
+      ],
+      "param_types": {
+        "owner": "AbstractCreature",
+        "strAmt": "int",
+        "playerControlled": "boolean"
+      },
+      "field_mapping": {
+        "amount": "strAmt"
+      }
+    },
+    "hooks": [
+      {
+        "method": "atEndOfTurn",
+        "params": "boolean isPlayer",
+        "actions": [
+          {
+            "action": "ApplyPowerAction",
+            "args": "owner, owner, new StrengthPower(owner, amount), amount"
+          }
+        ]
+      },
+      {
+        "method": "atEndOfRound",
+        "params": null,
+        "actions": [
+          {
+            "action": "ApplyPowerAction",
+            "args": "owner, owner, new StrengthPower(owner, amount), amount"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "Rupture",
+    "java_class": "RupturePower",
+    "power_type": "Buff",
+    "constructor": {
+      "params": [
+        "owner",
+        "strAmt"
+      ],
+      "param_types": {
+        "owner": "AbstractCreature",
+        "strAmt": "int"
+      },
+      "field_mapping": {
+        "amount": "strAmt"
+      }
+    },
+    "hooks": [
+      {
+        "method": "wasHPLost",
+        "params": "DamageInfo info, int damageAmount"
+      }
+    ],
+    "card_creates_with": [
+      {
+        "card": "Rupture",
+        "color": "red",
+        "constructor_args": "p, this.magicNumber",
+        "base_value": 1,
+        "upgrade_delta": 1
+      }
+    ]
+  },
+  {
+    "id": "Sadistic",
+    "java_class": "SadisticPower",
+    "power_type": "Debuff",
+    "constructor": {
+      "params": [
+        "owner",
+        "amount"
+      ],
+      "param_types": {
+        "owner": "AbstractCreature",
+        "amount": "int"
+      },
+      "field_mapping": {
+        "amount": "amount"
+      }
+    },
+    "hooks": [
+      {
+        "method": "onApplyPower",
+        "params": "AbstractPower power, AbstractCreature target, AbstractCreature source",
+        "actions": [
+          {
+            "action": "DamageAction",
+            "args": "target, new DamageInfo(owner, amount, THORNS), FIRE"
+          }
+        ]
+      }
+    ],
+    "card_creates_with": [
+      {
+        "card": "SadisticNature",
+        "color": "colorless",
+        "constructor_args": "p, this.magicNumber",
+        "base_value": 5,
+        "upgrade_delta": 2
+      }
+    ]
+  },
+  {
+    "id": "Shackled",
+    "java_class": "GainStrengthPower",
+    "power_type": "Debuff",
+    "constructor": {
+      "params": [
+        "owner",
+        "newAmount"
+      ],
+      "param_types": {
+        "owner": "AbstractCreature",
+        "newAmount": "int"
+      },
+      "field_mapping": {
+        "amount": 999
+      }
+    },
+    "hooks": [
+      {
+        "method": "atEndOfTurn",
+        "params": "boolean isPlayer",
+        "actions": [
+          {
+            "action": "ApplyPowerAction",
+            "args": "owner, owner, new StrengthPower(owner, amount), amount"
+          },
+          {
+            "action": "RemoveSpecificPowerAction",
+            "args": "owner, owner, POWER_ID"
+          }
+        ]
+      },
+      {
+        "method": "stackPower",
+        "params": "int stackAmount",
+        "field_modifications": [
+          {
+            "field": "amount",
+            "op": "+=",
+            "value": "stackAmount"
+          }
+        ]
+      },
+      {
+        "method": "reducePower",
+        "params": "int reduceAmount",
+        "field_modifications": [
+          {
+            "field": "amount",
+            "op": "-=",
+            "value": "reduceAmount"
+          }
+        ]
+      }
+    ],
+    "stack_behavior": {
+      "method": "custom",
+      "code": "this.amount += stackAmount; if (this.amount == 0) {; this.addToTop(new RemoveSpecificPowerAction(this.owner, this.owner, POWER_ID));"
+    },
+    "card_creates_with": [
+      {
+        "card": "DarkShackles",
+        "color": "colorless",
+        "constructor_args": "m, this.magicNumber",
+        "base_value": 9,
+        "upgrade_delta": 6
+      },
+      {
+        "card": "DEPRECATEDPeace",
+        "color": "unknown",
+        "constructor_args": "mo, this.magicNumber",
+        "base_value": 5,
+        "upgrade_delta": 1
+      },
+      {
+        "card": "PiercingWail",
+        "color": "green",
+        "constructor_args": "mo, this.magicNumber",
+        "base_value": 6,
+        "upgrade_delta": 2
+      }
+    ]
+  },
+  {
+    "id": "Sharp Hide",
+    "java_class": "SharpHidePower",
+    "power_type": "Buff",
+    "constructor": {
+      "params": [
+        "owner",
+        "amount"
+      ],
+      "param_types": {
+        "owner": "AbstractCreature",
+        "amount": "int"
+      },
+      "field_mapping": {
+        "amount": "amount"
+      }
+    },
+    "hooks": [
+      {
+        "method": "onUseCard",
+        "params": "AbstractCard card, UseCardAction action",
+        "guards": [
+          "card_type_check"
+        ],
+        "actions": [
+          {
+            "action": "DamageAction",
+            "args": "(AbstractCreature)player, new DamageInfo(owner, amount, THORNS), SLASH_HORIZONTAL"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "Shifting",
+    "java_class": "ShiftingPower",
+    "power_type": "Buff",
+    "constructor": {
+      "params": [
+        "owner"
+      ],
+      "param_types": {
+        "owner": "AbstractCreature"
+      },
+      "field_mapping": {}
+    },
+    "hooks": [
+      {
+        "method": "onAttacked",
+        "params": "DamageInfo info, int damageAmount",
+        "guards": [
+          "damage_positive"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "Skill Burn",
+    "java_class": "SkillBurnPower",
+    "power_type": "Debuff",
+    "constructor": {
+      "params": [
+        "owner",
+        "amount"
+      ],
+      "param_types": {
+        "owner": "AbstractCreature",
+        "amount": "int"
+      },
+      "field_mapping": {
+        "amount": "amount"
+      }
+    },
+    "hooks": [
+      {
+        "method": "atEndOfRound",
+        "params": null,
+        "field_modifications": [
+          {
+            "field": "justApplied",
+            "op": "=",
+            "value": "false"
+          }
+        ]
+      },
+      {
+        "method": "onUseCard",
+        "params": "AbstractCard card, UseCardAction action",
+        "guards": [
+          "card_type_check"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "Slow",
+    "java_class": "SlowPower",
+    "power_type": "Debuff",
+    "constructor": {
+      "params": [
+        "owner",
+        "amount"
+      ],
+      "param_types": {
+        "owner": "AbstractCreature",
+        "amount": "int"
+      },
+      "field_mapping": {
+        "amount": "amount"
+      }
+    },
+    "hooks": [
+      {
+        "method": "atEndOfRound",
+        "params": null,
+        "field_modifications": [
+          {
+            "field": "amount",
+            "op": "=",
+            "value": "0"
+          }
+        ]
+      },
+      {
+        "method": "atDamageReceive",
+        "params": "float damage, DamageInfo.DamageType type",
+        "return_value": "damage * (1.0f + (float)this.amount * 0.1f)"
+      },
+      {
+        "method": "onAfterUseCard",
+        "params": "AbstractCard card, UseCardAction action",
+        "actions": [
+          {
+            "action": "ApplyPowerAction",
+            "args": "owner, owner, new SlowPower(owner, 1), 1"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "Split",
+    "java_class": "SplitPower",
+    "power_type": "Buff",
+    "no_stack": true,
+    "constructor": {
+      "params": [
+        "owner"
+      ],
+      "param_types": {
+        "owner": "AbstractCreature"
+      },
+      "field_mapping": {
+        "amount": -1
+      }
+    }
+  },
+  {
+    "id": "Spore Cloud",
+    "java_class": "SporeCloudPower",
+    "power_type": "Buff",
+    "constructor": {
+      "params": [
+        "owner",
+        "vulnAmt"
+      ],
+      "param_types": {
+        "owner": "AbstractCreature",
+        "vulnAmt": "int"
+      },
+      "field_mapping": {
+        "amount": "vulnAmt"
+      }
+    },
+    "hooks": [
+      {
+        "method": "onDeath",
+        "params": null
+      }
+    ]
+  },
+  {
+    "id": "Stasis",
+    "java_class": "StasisPower",
+    "power_type": "Buff",
+    "no_stack": true,
+    "constructor": {
+      "params": [
+        "owner",
+        "card"
+      ],
+      "param_types": {
+        "owner": "AbstractCreature",
+        "card": "AbstractCard"
+      },
+      "field_mapping": {
+        "amount": -1
+      }
+    },
+    "hooks": [
+      {
+        "method": "onDeath",
+        "params": null,
+        "actions": [
+          {
+            "action": "MakeTempCardInHandAction",
+            "args": "this.card, false, true"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "StaticDischarge",
+    "java_class": "StaticDischargePower",
+    "power_type": "Buff",
+    "constructor": {
+      "params": [
+        "owner",
+        "lightningAmount"
+      ],
+      "param_types": {
+        "owner": "AbstractCreature",
+        "lightningAmount": "int"
+      },
+      "field_mapping": {
+        "amount": "lightningAmount"
+      }
+    },
+    "hooks": [
+      {
+        "method": "onAttacked",
+        "params": "DamageInfo info, int damageAmount"
+      }
+    ],
+    "card_creates_with": [
+      {
+        "card": "StaticDischarge",
+        "color": "blue",
+        "constructor_args": "p, this.magicNumber",
+        "base_value": 1,
+        "upgrade_delta": 1
+      }
+    ]
+  },
+  {
+    "id": "Storm",
+    "java_class": "StormPower",
+    "power_type": "Buff",
+    "constructor": {
+      "params": [
+        "owner",
+        "amount"
+      ],
+      "param_types": {
+        "owner": "AbstractCreature",
+        "amount": "int"
+      },
+      "field_mapping": {
+        "amount": "amount"
+      }
+    },
+    "hooks": [
+      {
+        "method": "onUseCard",
+        "params": "AbstractCard card, UseCardAction action",
+        "actions": [
+          {
+            "action": "ChannelAction",
+            "args": "new Lightning("
+          }
+        ]
+      }
+    ],
+    "card_creates_with": [
+      {
+        "card": "Storm",
+        "color": "blue",
+        "constructor_args": "p, this.magicNumber",
+        "base_value": 1,
+        "upgrade_delta": null
+      }
+    ]
+  },
+  {
+    "id": "Strength",
+    "java_class": "StrengthPower",
+    "power_type": "Debuff",
+    "can_go_negative": true,
+    "constructor": {
+      "params": [
+        "owner",
+        "amount"
+      ],
+      "param_types": {
+        "owner": "AbstractCreature",
+        "amount": "int"
+      },
+      "field_mapping": {
+        "amount": 999
+      }
+    },
+    "hooks": [
+      {
+        "method": "atDamageGive",
+        "params": "float damage, DamageInfo.DamageType type",
+        "return_value": "damage + (float)this.amount"
+      },
+      {
+        "method": "stackPower",
+        "params": "int stackAmount",
+        "field_modifications": [
+          {
+            "field": "amount",
+            "op": "+=",
+            "value": "stackAmount"
+          }
+        ]
+      },
+      {
+        "method": "reducePower",
+        "params": "int reduceAmount",
+        "field_modifications": [
+          {
+            "field": "amount",
+            "op": "-=",
+            "value": "reduceAmount"
+          }
+        ]
+      }
+    ],
+    "stack_behavior": {
+      "method": "custom",
+      "code": "this.amount += stackAmount; if (this.amount == 0) {; this.addToTop(new RemoveSpecificPowerAction(this.owner, this.owner, POWER_ID));"
+    },
+    "card_creates_with": [
+      {
+        "card": "Reprogram",
+        "color": "blue",
+        "constructor_args": "p, this.magicNumber",
+        "base_value": 1,
+        "upgrade_delta": 1
+      },
+      {
+        "card": "DarkShackles",
+        "color": "colorless",
+        "constructor_args": "m, -this.magicNumber",
+        "base_value": 9,
+        "upgrade_delta": 6
+      },
+      {
+        "card": "JAX",
+        "color": "colorless",
+        "constructor_args": "p, this.magicNumber",
+        "base_value": 2,
+        "upgrade_delta": 1
+      },
+      {
+        "card": "DEPRECATEDFlameMastery",
+        "color": "unknown",
+        "constructor_args": "p, this.magicNumber",
+        "base_value": 2,
+        "upgrade_delta": 1
+      },
+      {
+        "card": "DEPRECATEDFuryAura",
+        "color": "unknown",
+        "constructor_args": "p, this.magicNumber",
+        "base_value": 4,
+        "upgrade_delta": 2
+      },
+      {
+        "card": "DEPRECATEDFuryAura",
+        "color": "unknown",
+        "constructor_args": "p, 1",
+        "base_value": 4,
+        "upgrade_delta": 2
+      },
+      {
+        "card": "DEPRECATEDPeace",
+        "color": "unknown",
+        "constructor_args": "mo, -this.magicNumber",
+        "base_value": 5,
+        "upgrade_delta": 1
+      },
+      {
+        "card": "DEPRECATEDSimmeringRage",
+        "color": "unknown",
+        "constructor_args": "p, this.magicNumber",
+        "base_value": 2,
+        "upgrade_delta": 1
+      },
+      {
+        "card": "PiercingWail",
+        "color": "green",
+        "constructor_args": "mo, -this.magicNumber",
+        "base_value": 6,
+        "upgrade_delta": 2
+      },
+      {
+        "card": "BecomeAlmighty",
+        "color": "unknown",
+        "constructor_args": "p, this.magicNumber",
+        "base_value": 3,
+        "upgrade_delta": 1
+      },
+      {
+        "card": "Fasting",
+        "color": "purple",
+        "constructor_args": "p, this.magicNumber",
+        "base_value": 3,
+        "upgrade_delta": 1
+      },
+      {
+        "card": "Disarm",
+        "color": "red",
+        "constructor_args": "m, -this.magicNumber",
+        "base_value": 2,
+        "upgrade_delta": 1
+      },
+      {
+        "card": "Flex",
+        "color": "red",
+        "constructor_args": "p, this.magicNumber",
+        "base_value": 2,
+        "upgrade_delta": 2
+      },
+      {
+        "card": "Inflame",
+        "color": "red",
+        "constructor_args": "p, this.magicNumber",
+        "base_value": 2,
+        "upgrade_delta": 1
+      }
+    ]
+  },
+  {
+    "id": "StrikeUp",
+    "java_class": "StrikeUpPower",
+    "power_type": "Buff",
+    "constructor": {
+      "params": [
+        "owner",
+        "amt"
+      ],
+      "param_types": {
+        "owner": "AbstractCreature",
+        "amt": "int"
+      },
+      "field_mapping": {
+        "amount": "amt"
+      }
+    },
+    "hooks": [
+      {
+        "method": "stackPower",
+        "params": "int stackAmount",
+        "field_modifications": [
+          {
+            "field": "amount",
+            "op": "+=",
+            "value": "stackAmount"
+          }
+        ]
+      }
+    ],
+    "stack_behavior": {
+      "method": "custom",
+      "code": "this.amount += stackAmount; this.updateExistingStrikes();"
+    }
+  },
+  {
+    "id": "Study",
+    "java_class": "StudyPower",
+    "power_type": "Buff",
+    "constructor": {
+      "params": [
+        "owner",
+        "amount"
+      ],
+      "param_types": {
+        "owner": "AbstractCreature",
+        "amount": "int"
+      },
+      "field_mapping": {
+        "amount": "amount"
+      }
+    },
+    "hooks": [
+      {
+        "method": "atEndOfTurn",
+        "params": "boolean playerTurn",
+        "actions": [
+          {
+            "action": "MakeTempCardInDrawPileAction",
+            "args": "new Insight(), amount, true, true"
+          }
+        ]
+      }
+    ],
+    "card_creates_with": [
+      {
+        "card": "Study",
+        "color": "purple",
+        "constructor_args": "p, this.magicNumber",
+        "base_value": 1,
+        "upgrade_delta": 1
+      }
+    ]
+  },
+  {
+    "id": "Surrounded",
+    "java_class": "SurroundedPower",
+    "power_type": "Buff",
+    "no_stack": true,
+    "constructor": {
+      "params": [
+        "owner"
+      ],
+      "param_types": {
+        "owner": "AbstractCreature"
+      },
+      "field_mapping": {
+        "amount": -1
+      }
+    }
+  },
+  {
+    "id": "TheBomb",
+    "java_class": "TheBombPower",
+    "power_type": "Buff",
+    "constructor": {
+      "params": [
+        "owner",
+        "turns",
+        "damage"
+      ],
+      "param_types": {
+        "owner": "AbstractCreature",
+        "turns": "int",
+        "damage": "int"
+      },
+      "field_mapping": {
+        "amount": "turns"
+      }
+    },
+    "hooks": [
+      {
+        "method": "atEndOfTurn",
+        "params": "boolean isPlayer",
+        "guards": [
+          "monsters_alive"
+        ],
+        "actions": [
+          {
+            "action": "ReducePowerAction",
+            "args": "owner, owner, this, 1"
+          },
+          {
+            "action": "DamageAllEnemiesAction",
+            "args": "null, damageMatrix(this.damage, ignoreThorns), THORNS, FIRE"
+          }
+        ]
+      }
+    ],
+    "card_creates_with": [
+      {
+        "card": "TheBomb",
+        "color": "colorless",
+        "constructor_args": "p, 3, this.magicNumber",
+        "base_value": 40,
+        "upgrade_delta": 10
+      }
+    ]
+  },
+  {
+    "id": "Thievery",
+    "java_class": "ThieveryPower",
+    "power_type": "Buff",
+    "constructor": {
+      "params": [
+        "owner",
+        "stealAmount"
+      ],
+      "param_types": {
+        "owner": "AbstractCreature",
+        "stealAmount": "int"
+      },
+      "field_mapping": {
+        "amount": "stealAmount"
+      }
+    }
+  },
+  {
+    "id": "Thorns",
+    "java_class": "ThornsPower",
+    "power_type": "Buff",
+    "constructor": {
+      "params": [
+        "owner",
+        "thornsDamage"
+      ],
+      "param_types": {
+        "owner": "AbstractCreature",
+        "thornsDamage": "int"
+      },
+      "field_mapping": {
+        "amount": "thornsDamage"
+      }
+    },
+    "hooks": [
+      {
+        "method": "onAttacked",
+        "params": "DamageInfo info, int damageAmount"
+      },
+      {
+        "method": "stackPower",
+        "params": "int stackAmount"
+      }
+    ],
+    "stack_behavior": {
+      "method": "custom",
+      "code": "if (this.amount == -1) {; logger.info(this.name + \" does not stack\"); return;"
+    },
+    "card_creates_with": [
+      {
+        "card": "Caltrops",
+        "color": "green",
+        "constructor_args": "p, this.magicNumber",
+        "base_value": 3,
+        "upgrade_delta": 2
+      }
+    ]
+  },
+  {
+    "id": "Thousand Cuts",
+    "java_class": "ThousandCutsPower",
+    "power_type": "Buff",
+    "constructor": {
+      "params": [
+        "owner",
+        "amount"
+      ],
+      "param_types": {
+        "owner": "AbstractCreature",
+        "amount": "int"
+      },
+      "field_mapping": {
+        "amount": "amount"
+      }
+    },
+    "hooks": [
+      {
+        "method": "stackPower",
+        "params": "int stackAmount",
+        "field_modifications": [
+          {
+            "field": "amount",
+            "op": "+=",
+            "value": "stackAmount"
+          }
+        ]
+      }
+    ],
+    "card_creates_with": [
+      {
+        "card": "AThousandCuts",
+        "color": "green",
+        "constructor_args": "p, this.magicNumber",
+        "base_value": 1,
+        "upgrade_delta": 1
+      }
+    ]
+  },
+  {
+    "id": "Time Warp",
+    "java_class": "TimeWarpPower",
+    "power_type": "Buff",
+    "constructor": {
+      "params": [
+        "owner"
+      ],
+      "param_types": {
+        "owner": "AbstractCreature"
+      },
+      "field_mapping": {
+        "amount": 0
+      }
+    },
+    "hooks": [
+      {
+        "method": "onAfterUseCard",
+        "params": "AbstractCard card, UseCardAction action",
+        "actions": [
+          {
+            "action": "ApplyPowerAction",
+            "args": "m, m, new StrengthPower(m, 2), 2"
+          }
+        ],
+        "field_modifications": [
+          {
+            "field": "amount",
+            "op": "=",
+            "value": "0"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "TimeMazePower",
+    "java_class": "TimeMazePower",
+    "power_type": "Buff",
+    "constructor": {
+      "params": [
+        "owner",
+        "maxAmount"
+      ],
+      "param_types": {
+        "owner": "AbstractCreature",
+        "maxAmount": "int"
+      },
+      "field_mapping": {
+        "amount": "maxAmount"
+      }
+    },
+    "hooks": [
+      {
+        "method": "atStartOfTurn",
+        "params": null,
+        "field_modifications": [
+          {
+            "field": "amount",
+            "op": "=",
+            "value": "15"
+          }
+        ]
+      },
+      {
+        "method": "onAfterUseCard",
+        "params": "AbstractCard card, UseCardAction action",
+        "field_modifications": [
+          {
+            "field": "amount",
+            "op": "=",
+            "value": "this.maxAmount"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "Tools Of The Trade",
+    "java_class": "ToolsOfTheTradePower",
+    "power_type": "Buff",
+    "constructor": {
+      "params": [
+        "owner",
+        "drawAmount"
+      ],
+      "param_types": {
+        "owner": "AbstractCreature",
+        "drawAmount": "int"
+      },
+      "field_mapping": {
+        "amount": "drawAmount"
+      }
+    },
+    "hooks": [
+      {
+        "method": "atStartOfTurnPostDraw",
+        "params": null,
+        "actions": [
+          {
+            "action": "DrawCardAction",
+            "args": "owner, amount"
+          },
+          {
+            "action": "DiscardAction",
+            "args": "owner, owner, amount, false"
+          }
+        ]
+      }
+    ],
+    "card_creates_with": [
+      {
+        "card": "ToolsOfTheTrade",
+        "color": "green",
+        "constructor_args": "p, 1",
+        "base_value": null,
+        "upgrade_delta": 0
+      }
+    ]
+  },
+  {
+    "id": "Unawakened",
+    "java_class": "UnawakenedPower",
+    "power_type": "Buff",
+    "no_stack": true,
+    "constructor": {
+      "params": [
+        "owner"
+      ],
+      "param_types": {
+        "owner": "AbstractCreature"
+      },
+      "field_mapping": {
+        "amount": -1
+      }
+    }
+  },
+  {
+    "id": "Vault",
+    "java_class": "VaultPower",
+    "power_type": "Buff",
+    "constructor": {
+      "params": [
+        "target",
+        "source",
+        "amount"
+      ],
+      "param_types": {
+        "target": "AbstractCreature",
+        "source": "AbstractCreature",
+        "amount": "int"
+      },
+      "field_mapping": {
+        "amount": "amount"
+      }
+    },
+    "hooks": [
+      {
+        "method": "atEndOfRound",
+        "params": null,
+        "actions": [
+          {
+            "action": "DamageAction",
+            "args": "owner, new DamageInfo(this.source, amount, NORMAL), BLUNT_HEAVY"
+          },
+          {
+            "action": "RemoveSpecificPowerAction",
+            "args": "owner, owner, POWER_ID"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "Vigor",
+    "java_class": "VigorPower",
+    "power_type": "Buff",
+    "constructor": {
+      "params": [
+        "owner",
+        "amount"
+      ],
+      "param_types": {
+        "owner": "AbstractCreature",
+        "amount": "int"
+      },
+      "field_mapping": {
+        "amount": "amount"
+      }
+    },
+    "hooks": [
+      {
+        "method": "atDamageGive",
+        "params": "float damage, DamageInfo.DamageType type",
+        "return_value": "damage += (float)this.amount"
+      },
+      {
+        "method": "onUseCard",
+        "params": "AbstractCard card, UseCardAction action",
+        "guards": [
+          "card_type_check"
+        ],
+        "actions": [
+          {
+            "action": "RemoveSpecificPowerAction",
+            "args": "owner, owner, POWER_ID"
+          }
+        ]
+      }
+    ],
+    "card_creates_with": [
+      {
+        "card": "DEPRECATEDSurvey",
+        "color": "unknown",
+        "constructor_args": "p, this.magicNumber",
+        "base_value": 8,
+        "upgrade_delta": 3
+      },
+      {
+        "card": "DEPRECATEDWindup",
+        "color": "unknown",
+        "constructor_args": "p, this.magicNumber",
+        "base_value": 6,
+        "upgrade_delta": 3
+      },
+      {
+        "card": "WreathOfFlame",
+        "color": "purple",
+        "constructor_args": "p, this.magicNumber",
+        "base_value": 5,
+        "upgrade_delta": 3
+      }
+    ]
+  },
+  {
+    "id": "Vulnerable",
+    "java_class": "VulnerablePower",
+    "power_type": "Debuff",
+    "constructor": {
+      "params": [
+        "owner",
+        "amount",
+        "isSourceMonster"
+      ],
+      "param_types": {
+        "owner": "AbstractCreature",
+        "amount": "int",
+        "isSourceMonster": "boolean"
+      },
+      "field_mapping": {
+        "amount": "amount"
+      }
+    },
+    "hooks": [
+      {
+        "method": "atEndOfRound",
+        "params": null,
+        "field_modifications": [
+          {
+            "field": "justApplied",
+            "op": "=",
+            "value": "false"
+          }
+        ]
+      },
+      {
+        "method": "atDamageReceive",
+        "params": "float damage, DamageInfo.DamageType type",
+        "return_value": "damage * 1.25f"
+      }
+    ],
+    "card_creates_with": [
+      {
+        "card": "BeamCell",
+        "color": "blue",
+        "constructor_args": "m, this.magicNumber, false",
+        "base_value": 3,
+        "upgrade_delta": 1
+      },
+      {
+        "card": "Trip",
+        "color": "colorless",
+        "constructor_args": "m, this.magicNumber, false",
+        "base_value": 2,
+        "upgrade_delta": null
+      },
+      {
+        "card": "Trip",
+        "color": "colorless",
+        "constructor_args": "mo, this.magicNumber, false",
+        "base_value": 2,
+        "upgrade_delta": null
+      },
+      {
+        "card": "DEPRECATEDChallengeAccepted",
+        "color": "unknown",
+        "constructor_args": "p, this.magicNumber, false",
+        "base_value": 3,
+        "upgrade_delta": 1
+      },
+      {
+        "card": "DEPRECATEDChallengeAccepted",
+        "color": "unknown",
+        "constructor_args": "mo, this.magicNumber, false",
+        "base_value": 3,
+        "upgrade_delta": 1
+      },
+      {
+        "card": "Terror",
+        "color": "green",
+        "constructor_args": "m, 99, false",
+        "base_value": null,
+        "upgrade_delta": 0
+      },
+      {
+        "card": "Bash",
+        "color": "red",
+        "constructor_args": "m, this.magicNumber, false",
+        "base_value": 8,
+        "upgrade_delta": 2
+      },
+      {
+        "card": "Berserk",
+        "color": "red",
+        "constructor_args": "p, this.magicNumber, false",
+        "base_value": 2,
+        "upgrade_delta": -1
+      },
+      {
+        "card": "Shockwave",
+        "color": "red",
+        "constructor_args": "mo, this.magicNumber, false",
+        "base_value": 3,
+        "upgrade_delta": 2
+      },
+      {
+        "card": "ThunderClap",
+        "color": "red",
+        "constructor_args": "mo, 1, false",
+        "base_value": 4,
+        "upgrade_delta": 3
+      },
+      {
+        "card": "Uppercut",
+        "color": "red",
+        "constructor_args": "m, this.magicNumber, false",
+        "base_value": 13,
+        "upgrade_delta": 1
+      }
+    ]
+  },
+  {
+    "id": "WaveOfTheHandPower",
+    "java_class": "WaveOfTheHandPower",
+    "power_type": "Buff",
+    "constructor": {
+      "params": [
+        "owner",
+        "newAmount"
+      ],
+      "param_types": {
+        "owner": "AbstractCreature",
+        "newAmount": "int"
+      },
+      "field_mapping": {
+        "amount": "newAmount"
+      }
+    },
+    "hooks": [
+      {
+        "method": "atEndOfRound",
+        "params": null,
+        "actions": [
+          {
+            "action": "RemoveSpecificPowerAction",
+            "args": "owner, owner, POWER_ID"
+          }
+        ]
+      },
+      {
+        "method": "onGainedBlock",
+        "params": "float blockAmount",
+        "actions": [
+          {
+            "action": "ApplyPowerAction",
+            "args": "mo, p, new WeakPower(mo, amount, false), amount, true, NONE"
+          }
+        ]
+      }
+    ],
+    "card_creates_with": [
+      {
+        "card": "WaveOfTheHand",
+        "color": "purple",
+        "constructor_args": "p, this.magicNumber",
+        "base_value": 1,
+        "upgrade_delta": 1
+      }
+    ]
+  },
+  {
+    "id": "Weakened",
+    "java_class": "WeakPower",
+    "power_type": "Debuff",
+    "constructor": {
+      "params": [
+        "owner",
+        "amount",
+        "isSourceMonster"
+      ],
+      "param_types": {
+        "owner": "AbstractCreature",
+        "amount": "int",
+        "isSourceMonster": "boolean"
+      },
+      "field_mapping": {
+        "amount": "amount"
+      }
+    },
+    "hooks": [
+      {
+        "method": "atEndOfRound",
+        "params": null,
+        "field_modifications": [
+          {
+            "field": "justApplied",
+            "op": "=",
+            "value": "false"
+          }
+        ]
+      },
+      {
+        "method": "atDamageGive",
+        "params": "float damage, DamageInfo.DamageType type",
+        "return_value": "damage * 0.6f"
+      }
+    ],
+    "card_creates_with": [
+      {
+        "card": "Blind",
+        "color": "colorless",
+        "constructor_args": "m, this.magicNumber, false",
+        "base_value": 2,
+        "upgrade_delta": null
+      },
+      {
+        "card": "Blind",
+        "color": "colorless",
+        "constructor_args": "mo, this.magicNumber, false",
+        "base_value": 2,
+        "upgrade_delta": null
+      },
+      {
+        "card": "Doubt",
+        "color": "curses",
+        "constructor_args": "player, 1, true",
+        "base_value": null,
+        "upgrade_delta": null
+      },
+      {
+        "card": "DEPRECATEDRestrainingPalm",
+        "color": "unknown",
+        "constructor_args": "m, this.magicNumber, false",
+        "base_value": 8,
+        "upgrade_delta": 2
+      },
+      {
+        "card": "DEPRECATEDSoothingAura",
+        "color": "unknown",
+        "constructor_args": "m, this.magicNumber, false",
+        "base_value": 1,
+        "upgrade_delta": 1
+      },
+      {
+        "card": "DEPRECATEDSoothingAura",
+        "color": "unknown",
+        "constructor_args": "target, this.magicNumber, false",
+        "base_value": 1,
+        "upgrade_delta": 1
+      },
+      {
+        "card": "DEPRECATEDStomp",
+        "color": "unknown",
+        "constructor_args": "m, this.magicNumber, false",
+        "base_value": 6,
+        "upgrade_delta": 3
+      },
+      {
+        "card": "CripplingPoison",
+        "color": "green",
+        "constructor_args": "monster, 2, false",
+        "base_value": 4,
+        "upgrade_delta": 3
+      },
+      {
+        "card": "LegSweep",
+        "color": "green",
+        "constructor_args": "m, this.magicNumber, false",
+        "base_value": 11,
+        "upgrade_delta": 1
+      },
+      {
+        "card": "Neutralize",
+        "color": "green",
+        "constructor_args": "m, this.magicNumber, false",
+        "base_value": 3,
+        "upgrade_delta": 1
+      },
+      {
+        "card": "SuckerPunch",
+        "color": "green",
+        "constructor_args": "m, this.magicNumber, false",
+        "base_value": 7,
+        "upgrade_delta": 2
+      },
+      {
+        "card": "Clothesline",
+        "color": "red",
+        "constructor_args": "m, this.magicNumber, false",
+        "base_value": 12,
+        "upgrade_delta": 2
+      },
+      {
+        "card": "Intimidate",
+        "color": "red",
+        "constructor_args": "mo, this.magicNumber, false",
+        "base_value": 1,
+        "upgrade_delta": 1
+      },
+      {
+        "card": "Shockwave",
+        "color": "red",
+        "constructor_args": "mo, this.magicNumber, false",
+        "base_value": 3,
+        "upgrade_delta": 2
+      },
+      {
+        "card": "Uppercut",
+        "color": "red",
+        "constructor_args": "m, this.magicNumber, false",
+        "base_value": 13,
+        "upgrade_delta": 1
+      }
+    ]
+  },
+  {
+    "id": "Winter",
+    "java_class": "WinterPower",
+    "power_type": "Buff",
+    "constructor": {
+      "params": [
+        "owner",
+        "orbAmt"
+      ],
+      "param_types": {
+        "owner": "AbstractCreature",
+        "orbAmt": "int"
+      },
+      "field_mapping": {
+        "amount": "orbAmt"
+      }
+    },
+    "hooks": [
+      {
+        "method": "atStartOfTurn",
+        "params": null,
+        "guards": [
+          "monsters_alive"
+        ]
+      },
+      {
+        "method": "stackPower",
+        "params": "int stackAmount",
+        "field_modifications": [
+          {
+            "field": "amount",
+            "op": "+=",
+            "value": "stackAmount"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "WireheadingPower",
+    "java_class": "ForesightPower",
+    "power_type": "Buff",
+    "constructor": {
+      "params": [
+        "owner",
+        "scryAmt"
+      ],
+      "param_types": {
+        "owner": "AbstractCreature",
+        "scryAmt": "int"
+      },
+      "field_mapping": {
+        "amount": "scryAmt"
+      }
+    },
+    "hooks": [
+      {
+        "method": "atStartOfTurn",
+        "params": null
+      }
+    ],
+    "card_creates_with": [
+      {
+        "card": "Foresight",
+        "color": "purple",
+        "constructor_args": "p, this.magicNumber",
+        "base_value": 3,
+        "upgrade_delta": 1
+      }
+    ]
+  },
+  {
+    "id": "Wraith Form v2",
+    "java_class": "WraithFormPower",
+    "power_type": "Debuff",
+    "can_go_negative": true,
+    "constructor": {
+      "params": [
+        "owner",
+        "amount"
+      ],
+      "param_types": {
+        "owner": "AbstractCreature",
+        "amount": "int"
+      },
+      "field_mapping": {
+        "amount": "amount"
+      }
+    },
+    "hooks": [
+      {
+        "method": "atEndOfTurn",
+        "params": "boolean isPlayer",
+        "actions": [
+          {
+            "action": "ApplyPowerAction",
+            "args": "player, player, new DexterityPower(player, amount), amount"
+          }
+        ]
+      },
+      {
+        "method": "stackPower",
+        "params": "int stackAmount",
+        "field_modifications": [
+          {
+            "field": "amount",
+            "op": "+=",
+            "value": "stackAmount"
+          }
+        ]
+      }
+    ],
+    "card_creates_with": [
+      {
+        "card": "WraithForm",
+        "color": "green",
+        "constructor_args": "p, -1",
+        "base_value": 2,
+        "upgrade_delta": 1
+      }
+    ]
+  },
+  {
+    "id": "WrathNextTurnPower",
+    "java_class": "WrathNextTurnPower",
+    "power_type": "Buff",
+    "constructor": {
+      "params": [
+        "owner"
+      ],
+      "param_types": {
+        "owner": "AbstractCreature"
+      },
+      "field_mapping": {}
+    },
+    "hooks": [
+      {
+        "method": "atStartOfTurn",
+        "params": null,
+        "actions": [
+          {
+            "action": "ChangeStanceAction",
+            "args": "\"Wrath\""
+          },
+          {
+            "action": "RemoveSpecificPowerAction",
+            "args": "owner, owner, this"
+          }
+        ]
+      }
+    ],
+    "card_creates_with": [
+      {
+        "card": "SimmeringFury",
+        "color": "purple",
+        "constructor_args": "p",
+        "base_value": 2,
+        "upgrade_delta": 1
+      }
+    ]
+  }
+]

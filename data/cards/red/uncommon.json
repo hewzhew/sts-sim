@@ -1,0 +1,1030 @@
+[
+  {
+    "id": "Blood_for_Blood",
+    "name": "Blood for Blood",
+    "type": "Attack",
+    "cost": 4,
+    "color": "Red",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "GainEnergy",
+          "params": {
+            "base": 1,
+            "upgrade": 1
+          }
+        },
+        {
+          "type": "DealDamage",
+          "params": {
+            "base": 18,
+            "upgrade": 22
+          }
+        }
+      ]
+    },
+    "original_text": "Costs 1 less @RE<br>for each time you lose HP this combat.<br>Deal [18|22] damage.",
+    "cost_upgrade": 3,
+    "manual_review_needed": false,
+    "flags": {
+      "cost_reduction_per_hp_loss": true
+    }
+  },
+  {
+    "id": "Carnage",
+    "name": "Carnage",
+    "type": "Attack",
+    "cost": 2,
+    "color": "Red",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "Enemy",
+      "commands": [
+        {
+          "type": "Ethereal",
+          "params": {}
+        },
+        {
+          "type": "DealDamage",
+          "params": {
+            "base": 20,
+            "upgrade": 28
+          }
+        }
+      ],
+      "keywords_used": [
+        "Ethereal"
+      ]
+    },
+    "original_text": "#Ethereal.<br>Deal [20|28] damage."
+  },
+  {
+    "id": "Dropkick",
+    "name": "Dropkick",
+    "type": "Attack",
+    "cost": 1,
+    "color": "Red",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "DealDamage",
+          "params": {
+            "base": 5,
+            "upgrade": 8
+          }
+        },
+        {
+          "type": "DrawCards",
+          "params": {
+            "base": 1,
+            "upgrade": 1
+          }
+        }
+      ],
+      "conditions": [
+        "IfEnemyHas: If the enemy has #Vulnerable"
+      ],
+      "keywords_used": [
+        "Vulnerable"
+      ]
+    },
+    "original_text": "Deal [5|8] damage.<br>If the enemy has #Vulnerable, gain @RE and draw 1 card."
+  },
+  {
+    "id": "Hemokinesis",
+    "name": "Hemokinesis",
+    "type": "Attack",
+    "cost": 1,
+    "color": "Red",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "Enemy",
+      "commands": [
+        {
+          "type": "LoseHP",
+          "params": {
+            "base": 2,
+            "upgrade": 2
+          }
+        },
+        {
+          "type": "DealDamage",
+          "params": {
+            "base": 15,
+            "upgrade": 20
+          }
+        }
+      ]
+    },
+    "original_text": "Lose 2 HP.<br>Deal [15|20] damage."
+  },
+  {
+    "id": "Pummel",
+    "name": "Pummel",
+    "type": "Attack",
+    "cost": 1,
+    "color": "Red",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "Enemy",
+      "commands": [
+        {
+          "type": "DealDamage",
+          "params": {
+            "base": 2,
+            "upgrade": 2,
+            "times": 4,
+            "times_upgrade": 5
+          }
+        },
+        {
+          "type": "ExhaustSelf",
+          "params": {}
+        }
+      ],
+      "keywords_used": [
+        "Exhaust"
+      ]
+    },
+    "original_text": "Deal 2 damage [4|5] times.<br>#Exhaust."
+  },
+  {
+    "id": "Rampage",
+    "name": "Rampage",
+    "type": "Attack",
+    "cost": 1,
+    "color": "Red",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "Enemy",
+      "commands": [
+        {
+          "type": "DealDamage",
+          "params": {
+            "base": 8,
+            "upgrade": 8
+          }
+        },
+        {
+          "type": "IncreaseDamage",
+          "params": {
+            "base": 5,
+            "upgrade": 8,
+            "permanent": false
+          }
+        }
+      ]
+    },
+    "original_text": "Deal 8 damage.<br>Increase this card's damage by [5|8] this combat."
+  },
+  {
+    "id": "Reckless_Charge",
+    "name": "Reckless Charge",
+    "type": "Attack",
+    "cost": 0,
+    "color": "Red",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "Enemy",
+      "commands": [
+        {
+          "type": "DealDamage",
+          "params": {
+            "base": 7,
+            "upgrade": 10
+          }
+        },
+        {
+          "type": "ShuffleInto",
+          "params": {
+            "card": "Dazed"
+          }
+        }
+      ]
+    },
+    "original_text": "Deal [7|10] damage.<br>Shuffle a {{C|Dazed}} into your draw pile."
+  },
+  {
+    "id": "Searing_Blow",
+    "name": "Searing Blow",
+    "type": "Attack",
+    "cost": 2,
+    "color": "Red",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "Enemy",
+      "commands": [
+        {
+          "type": "DealDamage",
+          "params": {
+            "base": 12,
+            "upgrade": 16
+          }
+        }
+      ]
+    },
+    "original_text": "Deal [12|16] damage.<br>Can be #Upgraded any number of times.",
+    "manual_review_needed": false,
+    "flags": {
+      "infinite_upgrade": true
+    }
+  },
+  {
+    "id": "Sever_Soul",
+    "name": "Sever Soul",
+    "type": "Attack",
+    "cost": 2,
+    "color": "Red",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "Enemy",
+      "commands": [
+        {
+          "type": "ExhaustCards",
+          "params": {
+            "random": false,
+            "count": "ALL",
+            "filter": "non-attack"
+          }
+        },
+        {
+          "type": "DealDamage",
+          "params": {
+            "base": 16,
+            "upgrade": 22
+          }
+        }
+      ]
+    },
+    "original_text": "#Exhaust all non-Attack cards in your hand.<br>Deal [16|22] damage."
+  },
+  {
+    "id": "Uppercut",
+    "name": "Uppercut",
+    "type": "Attack",
+    "cost": 2,
+    "color": "Red",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "Enemy",
+      "commands": [
+        {
+          "type": "DealDamage",
+          "params": {
+            "base": 13,
+            "upgrade": 13
+          }
+        },
+        {
+          "type": "ApplyStatus",
+          "params": {
+            "status": "Weak",
+            "base": 1,
+            "upgrade": 2
+          }
+        },
+        {
+          "type": "ApplyStatus",
+          "params": {
+            "status": "Vulnerable",
+            "base": 1,
+            "upgrade": 2
+          }
+        }
+      ],
+      "keywords_used": [
+        "Weak",
+        "Vulnerable"
+      ]
+    },
+    "original_text": "Deal 13 damage.<br>Apply [1|2] #Weak.<br>Apply [1|2] #Vulnerable."
+  },
+  {
+    "id": "Whirlwind",
+    "name": "Whirlwind",
+    "type": "Attack",
+    "cost": -1,
+    "color": "Red",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "AllEnemies",
+      "commands": [
+        {
+          "type": "DealDamageAll",
+          "params": {
+            "base": 5,
+            "upgrade": 8
+          }
+        }
+      ]
+    },
+    "original_text": "Deal [5|8] damage to ALL enemies X times."
+  },
+  {
+    "id": "Battle_Trance",
+    "name": "Battle Trance",
+    "type": "Skill",
+    "cost": 0,
+    "color": "Red",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "DrawCards",
+          "params": {
+            "base": 3,
+            "upgrade": 4
+          }
+        },
+        {
+          "type": "ApplyBuff",
+          "params": {
+            "buff": "No Draw",
+            "amount": {
+              "type": "Fixed",
+              "params": {
+                "base": 1
+              }
+            },
+            "target": "self"
+          }
+        }
+      ]
+    },
+    "original_text": "Draw [3|4] cards.<br>You cannot draw additional cards this turn.",
+    "manual_review_needed": false
+  },
+  {
+    "id": "Bloodletting",
+    "name": "Bloodletting",
+    "type": "Skill",
+    "cost": 0,
+    "color": "Red",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "LoseHP",
+          "params": {
+            "base": 3,
+            "upgrade": 3
+          }
+        },
+        {
+          "type": "GainEnergy",
+          "params": {
+            "base": 2,
+            "upgrade": 3
+          }
+        }
+      ]
+    },
+    "original_text": "Lose 3 HP.<br>Gain [@RE @RE|@RE @RE @RE]."
+  },
+  {
+    "id": "Burning_Pact",
+    "name": "Burning Pact",
+    "type": "Skill",
+    "cost": 1,
+    "color": "Red",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "ExhaustCards",
+          "params": {
+            "random": false,
+            "base": 1,
+            "upgrade": 1
+          }
+        },
+        {
+          "type": "DrawCards",
+          "params": {
+            "base": 2,
+            "upgrade": 3
+          }
+        }
+      ]
+    },
+    "original_text": "#Exhaust 1 card.<br>Draw [2|3] cards."
+  },
+  {
+    "id": "Disarm",
+    "name": "Disarm",
+    "type": "Skill",
+    "cost": 1,
+    "color": "Red",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "Enemy",
+      "commands": [
+        {
+          "type": "RemoveEnemyBuff",
+          "params": {
+            "buff": "Strength",
+            "base": 2,
+            "upgrade": 3
+          }
+        },
+        {
+          "type": "ExhaustSelf",
+          "params": {}
+        }
+      ],
+      "keywords_used": [
+        "Strength",
+        "Exhaust"
+      ]
+    },
+    "original_text": "Enemy loses [2|3] #Strength.<br>#Exhaust."
+  },
+  {
+    "id": "Dual_Wield",
+    "name": "Dual Wield",
+    "type": "Skill",
+    "cost": 1,
+    "color": "Red",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "AddCard",
+          "params": {
+            "card": "[a copy|2 copies] of that card",
+            "destination": "hand"
+          }
+        }
+      ]
+    },
+    "original_text": "Choose an Attack or Power card. Add [a copy|2 copies] of that card into your hand.",
+    "manual_review_needed": false,
+    "flags": {
+      "choose_card_types": [
+        "Attack",
+        "Power"
+      ]
+    }
+  },
+  {
+    "id": "Entrench",
+    "name": "Entrench",
+    "type": "Skill",
+    "cost": 2,
+    "color": "Red",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "DoubleBlock",
+          "params": {}
+        }
+      ],
+      "keywords_used": [
+        "Block"
+      ]
+    },
+    "original_text": "Double your #Block.",
+    "cost_upgrade": 1
+  },
+  {
+    "id": "Flame_Barrier",
+    "name": "Flame Barrier",
+    "type": "Skill",
+    "cost": 2,
+    "color": "Red",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "GainBlock",
+          "params": {
+            "base": 12,
+            "upgrade": 16
+          }
+        },
+        {
+          "type": "DealDamage",
+          "params": {
+            "base": 4,
+            "upgrade": 6
+          }
+        }
+      ],
+      "conditions": [
+        "Trigger: Whenever you are attacked this turn, deal [4|6] damage back"
+      ],
+      "keywords_used": [
+        "Block"
+      ]
+    },
+    "original_text": "Gain [12|16] #Block.<br>Whenever you are attacked this turn, deal [4|6] damage back."
+  },
+  {
+    "id": "Ghostly_Armor",
+    "name": "Ghostly Armor",
+    "type": "Skill",
+    "cost": 1,
+    "color": "Red",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "Ethereal",
+          "params": {}
+        },
+        {
+          "type": "GainBlock",
+          "params": {
+            "base": 10,
+            "upgrade": 13
+          }
+        }
+      ],
+      "keywords_used": [
+        "Ethereal",
+        "Block"
+      ]
+    },
+    "original_text": "#Ethereal.<br>Gain [10|13] #Block."
+  },
+  {
+    "id": "Infernal_Blade",
+    "name": "Infernal Blade",
+    "type": "Skill",
+    "cost": 1,
+    "color": "Red",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "AddCard",
+          "params": {
+            "card": "random Attack",
+            "destination": "hand"
+          }
+        },
+        {
+          "type": "ExhaustSelf",
+          "params": {}
+        }
+      ],
+      "keywords_used": [
+        "Exhaust"
+      ]
+    },
+    "original_text": "Add a random Attack into your hand.<br>It costs 0 this turn.<br>#Exhaust.",
+    "cost_upgrade": 0,
+    "manual_review_needed": false,
+    "flags": {
+      "generated_cost": 0
+    }
+  },
+  {
+    "id": "Intimidate",
+    "name": "Intimidate",
+    "type": "Skill",
+    "cost": 0,
+    "color": "Red",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "AllEnemies",
+      "commands": [
+        {
+          "type": "ApplyStatusAll",
+          "params": {
+            "status": "Weak",
+            "base": 1,
+            "upgrade": 2
+          }
+        },
+        {
+          "type": "ExhaustSelf",
+          "params": {}
+        }
+      ],
+      "keywords_used": [
+        "Exhaust"
+      ]
+    },
+    "original_text": "Apply [1|2] #Weak to ALL enemies.<br>#Exhaust."
+  },
+  {
+    "id": "Power_Through",
+    "name": "Power Through",
+    "type": "Skill",
+    "cost": 1,
+    "color": "Red",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "AddCard",
+          "params": {
+            "card": "2 Wounds",
+            "destination": "hand"
+          }
+        },
+        {
+          "type": "GainBlock",
+          "params": {
+            "base": 15,
+            "upgrade": 20
+          }
+        }
+      ],
+      "keywords_used": [
+        "Block"
+      ]
+    },
+    "original_text": "Add 2 {{C|Wound|Wounds}} into your hand.<br>Gain [15|20] #Block."
+  },
+  {
+    "id": "Rage",
+    "name": "Rage",
+    "type": "Skill",
+    "cost": 0,
+    "color": "Red",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "GainBlock",
+          "params": {
+            "base": 3,
+            "upgrade": 5
+          }
+        }
+      ],
+      "conditions": [
+        "Trigger: Whenever you play an Attack this turn, gain [3|5] #Block"
+      ],
+      "keywords_used": [
+        "Block"
+      ]
+    },
+    "original_text": "Whenever you play an Attack this turn, gain [3|5] #Block."
+  },
+  {
+    "id": "Second_Wind",
+    "name": "Second Wind",
+    "type": "Skill",
+    "cost": 1,
+    "color": "Red",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "ExhaustCards",
+          "params": {
+            "random": false,
+            "count": "ALL",
+            "filter": "non-attack"
+          }
+        },
+        {
+          "type": "GainBlock",
+          "params": {
+            "base": 5,
+            "upgrade": 7
+          }
+        }
+      ]
+    },
+    "original_text": "#Exhaust all non-Attack cards in your hand. Gain [5|7] #Block for each card #Exhausted."
+  },
+  {
+    "id": "Seeing_Red",
+    "name": "Seeing Red",
+    "type": "Skill",
+    "cost": 1,
+    "color": "Red",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "GainEnergy",
+          "params": {
+            "base": 2,
+            "upgrade": 2
+          }
+        },
+        {
+          "type": "ExhaustSelf",
+          "params": {}
+        }
+      ],
+      "keywords_used": [
+        "Exhaust"
+      ]
+    },
+    "original_text": "Gain @RE @RE.<br>#Exhaust.",
+    "cost_upgrade": 0
+  },
+  {
+    "id": "Sentinel",
+    "name": "Sentinel",
+    "type": "Skill",
+    "cost": 1,
+    "color": "Red",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "GainBlock",
+          "params": {
+            "base": 5,
+            "upgrade": 8
+          }
+        },
+        {
+          "type": "GainEnergy",
+          "params": {
+            "base": 2,
+            "upgrade": 3
+          }
+        }
+      ],
+      "conditions": [
+        "OnExhaust: If this card is #Exhausted"
+      ],
+      "keywords_used": [
+        "Block"
+      ]
+    },
+    "original_text": "Gain [5|8] #Block.<br>If this card is #Exhausted,<br>gain [@RE @RE|@RE @RE @RE].",
+    "manual_review_needed": false,
+    "flags": {
+      "on_exhaust_trigger": true
+    }
+  },
+  {
+    "id": "Shockwave",
+    "name": "Shockwave",
+    "type": "Skill",
+    "cost": 2,
+    "color": "Red",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "Enemy",
+      "commands": [
+        {
+          "type": "ApplyStatus",
+          "params": {
+            "status": "Weak",
+            "base": 3,
+            "upgrade": 5
+          }
+        },
+        {
+          "type": "ExhaustSelf",
+          "params": {}
+        }
+      ],
+      "keywords_used": [
+        "Exhaust"
+      ]
+    },
+    "original_text": "Apply [3|5] #Weak and #Vulnerable to ALL enemies.<br>#Exhaust."
+  },
+  {
+    "id": "Spot_Weakness",
+    "name": "Spot Weakness",
+    "type": "Skill",
+    "cost": 1,
+    "color": "Red",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "GainBuff",
+          "params": {
+            "buff": "Strength",
+            "base": 3,
+            "upgrade": 4
+          }
+        }
+      ],
+      "keywords_used": [
+        "Strength"
+      ]
+    },
+    "original_text": "If the enemy intends to attack, gain [3|4] #Strength."
+  },
+  {
+    "id": "Combust",
+    "name": "Combust",
+    "type": "Power",
+    "cost": 1,
+    "color": "Red",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "AllEnemies",
+      "commands": [
+        {
+          "type": "ApplyPower",
+          "params": {
+            "power": "Combust",
+            "base": 5,
+            "upgrade": 7
+          }
+        }
+      ]
+    },
+    "original_text": "At the end of your turn, lose 1 HP and deal [5|7] damage to ALL enemies."
+  },
+  {
+    "id": "Dark_Embrace",
+    "name": "Dark Embrace",
+    "type": "Power",
+    "cost": 2,
+    "color": "Red",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "ApplyPower",
+          "params": {
+            "power": "Dark Embrace",
+            "base": 1,
+            "upgrade": 1
+          }
+        }
+      ]
+    },
+    "original_text": "Whenever a card is #Exhausted,<br>draw 1 card.",
+    "cost_upgrade": 1,
+    "manual_review_needed": false,
+    "flags": {
+      "trigger_on_any_exhaust": true
+    }
+  },
+  {
+    "id": "Evolve",
+    "name": "Evolve",
+    "type": "Power",
+    "cost": 1,
+    "color": "Red",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "ApplyPower",
+          "params": {
+            "power": "Evolve",
+            "base": 1,
+            "upgrade": 2
+          }
+        }
+      ]
+    },
+    "original_text": "Whenever you draw a {{QueryLink|Cards|type:Status|Status}} card, draw [1|2] [card|cards]."
+  },
+  {
+    "id": "Feel_No_Pain",
+    "name": "Feel No Pain",
+    "type": "Power",
+    "cost": 1,
+    "color": "Red",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "ApplyPower",
+          "params": {
+            "power": "Feel No Pain",
+            "base": 3,
+            "upgrade": 4
+          }
+        }
+      ],
+      "keywords_used": [
+        "Block"
+      ]
+    },
+    "original_text": "Whenever a card is #Exhausted,<br>gain [3|4] #Block.",
+    "manual_review_needed": false,
+    "flags": {
+      "trigger_on_any_exhaust": true
+    }
+  },
+  {
+    "id": "Fire_Breathing",
+    "name": "Fire Breathing",
+    "type": "Power",
+    "cost": 1,
+    "color": "Red",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "AllEnemies",
+      "commands": [
+        {
+          "type": "ApplyPower",
+          "params": {
+            "power": "Fire Breathing",
+            "base": 6,
+            "upgrade": 10
+          }
+        }
+      ]
+    },
+    "original_text": "Whenever you draw a {{QueryLink|Cards|type:Status|Status}} or {{QueryLink|Cards|type:Curse|Curse}} card, deal [6|10] damage to ALL enemies."
+  },
+  {
+    "id": "Inflame",
+    "name": "Inflame",
+    "type": "Power",
+    "cost": 1,
+    "color": "Red",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "GainBuff",
+          "params": {
+            "buff": "Strength",
+            "base": 2,
+            "upgrade": 3
+          }
+        }
+      ],
+      "keywords_used": [
+        "Strength"
+      ]
+    },
+    "original_text": "Gain [2|3] #Strength."
+  },
+  {
+    "id": "Metallicize",
+    "name": "Metallicize",
+    "type": "Power",
+    "cost": 1,
+    "color": "Red",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "ApplyPower",
+          "params": {
+            "power": "Metallicize",
+            "base": 3,
+            "upgrade": 4
+          }
+        }
+      ]
+    },
+    "original_text": "At the end of your turn, gain [3|4] #Block."
+  },
+  {
+    "id": "Rupture",
+    "name": "Rupture",
+    "type": "Power",
+    "cost": 1,
+    "color": "Red",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "ApplyPower",
+          "params": {
+            "power": "Rupture",
+            "base": 1,
+            "upgrade": 2
+          }
+        }
+      ],
+      "keywords_used": [
+        "Strength"
+      ]
+    },
+    "original_text": "Whenever you lose HP from a card,<br>gain [1|2] #Strength.",
+    "manual_review_needed": false,
+    "flags": {
+      "trigger_on_self_damage": true
+    }
+  }
+]

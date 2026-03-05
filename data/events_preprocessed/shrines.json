@@ -1,0 +1,405 @@
+[
+  {
+    "wiki_id": "A_Note_For_Yourself",
+    "name": "A Note For Yourself",
+    "category": "shrines",
+    "options": [
+      {
+        "label": "[Take and Give]",
+        "description": "Receive and Store a Card",
+        "conditions": [],
+        "effects": [
+          "Receive a card that you had stored previously, and store a card in your deck in return.",
+          "First encounter in save file: Iron Wave is stored by default."
+        ]
+      },
+      {
+        "label": "[Ignore]",
+        "description": "Nothing happens.",
+        "conditions": [],
+        "effects": []
+      }
+    ],
+    "notes": [
+      "This event can store a card between runs, allows obtaining cards from different characters.",
+      "On A14 or lower: Must have beaten that Ascension level on chosen character to encounter.",
+      "On A15 or higher: This event cannot be encountered.",
+      "Playing the Daily Climb also disables this event.",
+      "Upgraded cards and Searing Blow upgrade levels are preserved when stored.",
+      "Retrieving a card triggers relics: Molten Egg, Toxic Egg, Frozen Egg, Ceramic Fish."
+    ],
+    "raw_options": "[Take and Give] Receive and Store a Card\n• Receive a card that you had stored previously, and store a card in your deck in return.\nThe first time the player encounters this event in their save file, it will have  Iron Wave stored.\n• The first time the player encounters this event in their save file, it will have  Iron Wave stored.\n[Ignore] Nothing happens.\n\n\nYou are then given the option to [Leave].",
+    "raw_dialogue": "You spot a loose brick within a pillar that catches your eye.\nYou find a folded note and a card inside. It reads,\n\"The Heart awaits\"\nThis is your handwriting.\n[Take and Give]\n\n\nChoose a Card to Store.\n\n\nPrior to [Leave]\n\n\n\"What is going on?\""
+  },
+  {
+    "wiki_id": "Bonfire_Spirits",
+    "name": "Bonfire Spirits",
+    "category": "shrines",
+    "options": [
+      {
+        "label": "[Offer]",
+        "description": "Receive a reward based on the offer.",
+        "conditions": [],
+        "effects": [
+          "Offer a card in your deck to remove. The reward you receive depends on the rarity of the card you give."
+        ]
+      }
+    ],
+    "notes": [
+      "This event is one of those that treats Basic cards as a lower quality than Common.",
+      "Obtaining  Spirit Poop adds the Poopy Score bonus which lowers your total score by one."
+    ],
+    "raw_options": "[Offer] Receive a reward based on the offer.\n• Offer a card in your deck to remove. The reward you receive depends on the rarity of the card you give.",
+    "raw_dialogue": "You happen upon what looks like a group of purple fire spirits dancing around a large bonfire.\nBefore selecting [Offer]\n\n\nThe spirits toss small bones and fragments into the fire, which brilliantly erupts each time.\nAs you approach, the spirits all turn to you, expectantly...\n\n\n[Offer]\n\n\nYou toss an offering into the bonfire.\nWhen offering a Basic card\n\n\nNothing happens...\nThe spirits seem to be ignoring you now. Disappointing...\n\n\nWhen offering a Common card\n\n\nThe flames grow slightly brighter.\nThe spirits continue dancing. You feel slightly warmer from their presence..\nYou heal 5 HP.\n\n\nWhen offering an Uncommon card\n\n\nThe flames erupt, growing significantly stronger!\nThe spirits dance around you excitedly, filling you with a sense of warmth.\nYou are healed to full HP.\n\n\nWhen offering a Rare card\n\n\nThe flames burst, nearly knocking you off your feet, as the fire doubles in strength.\nThe spirits dance around you excitedly before merging into your form, filling you with warmth and strength.\nYour Max HP increases by 10 and you are healed to full HP.\n\n\nWhen offering a Curse\n\n\nHowever, the spirits aren't happy you offered a Curse...\nThe card fizzles a meek black smoke. You receive a... something in return.\n(Gives  Spirit Poop)"
+  },
+  {
+    "wiki_id": "Duplicator",
+    "name": "Duplicator",
+    "category": "shrines",
+    "options": [
+      {
+        "label": "[Pray]",
+        "description": "Duplicate a card in your deck.",
+        "conditions": [],
+        "effects": []
+      },
+      {
+        "label": "[Leave]",
+        "description": "Nothing happens.",
+        "conditions": [],
+        "effects": []
+      }
+    ],
+    "notes": [],
+    "raw_options": "[Pray] Duplicate a card in your deck.\n[Leave] Nothing happens.",
+    "raw_dialogue": "Before you lies a decorated altar to some ancient entity.\n\n[Pray]\n\nYou kneel respectfully. A ghastly mirror image appears from the shrine and collides into you.\n\n\n[Leave]\n\nYou ignore the shrine, confident in your choice."
+  },
+  {
+    "wiki_id": "Golden_Shrine",
+    "name": "Golden Shrine",
+    "category": "shrines",
+    "options": [
+      {
+        "label": "[Pray]",
+        "description": "Gain 100 Gold.",
+        "conditions": [],
+        "effects": []
+      },
+      {
+        "label": "[Desecrate]",
+        "description": "Gain 275 Gold. Become Cursed -  Regret.",
+        "conditions": [],
+        "effects": [
+          "Regret -  Unplayable. At the end of your turn, lose HP equal to the number of cards in your hand."
+        ]
+      },
+      {
+        "label": "[Leave]",
+        "description": "Nothing happens.",
+        "conditions": [],
+        "effects": []
+      }
+    ],
+    "notes": [],
+    "raw_options": "[Pray] Gain 100 Gold.\n[Desecrate] Gain 275 Gold. Become Cursed -  Regret.\n• Regret -  Unplayable. At the end of your turn, lose HP equal to the number of cards in your hand.\n[Leave] Nothing happens.",
+    "raw_dialogue": "Before you lies an elaborate shrine to an ancient spirit.\n\n[Pray]\n\nAs your hand touches the shrine, gold rains from the ceiling showering you in riches.\n\n\n[Desecrate]\n\nEach time you strike the shrine, gold pours forth again and again! \nAs you pocket the riches, something weighs heavily on you.\n\n\n[Leave]\n\nYou ignore the shrine."
+  },
+  {
+    "wiki_id": "Lab",
+    "name": "Lab",
+    "category": "shrines",
+    "options": [
+      {
+        "label": "[Search]",
+        "description": "Find some Potions!",
+        "conditions": [],
+        "effects": [
+          "Opens a rewards menu with three (two 15) random Potions. These can be skipped."
+        ]
+      }
+    ],
+    "notes": [],
+    "raw_options": "[Search] Find some Potions!\n• Opens a rewards menu with three (two 15) random Potions. These can be skipped.",
+    "raw_dialogue": "You find yourself in a room filled with racks of test tubes, beakers, flasks, forceps, pinch clamps, stirring rods, tongs, goggles funnels, pipets, cylinders, condensers, and even a rare spiral tube of glass. \nWhy do you know the names of all these tools? It doesn't matter, you take a look around."
+  },
+  {
+    "wiki_id": "Match_and_Keep",
+    "name": "Match and Keep",
+    "category": "shrines",
+    "event_type": "minigame",
+    "minigame": {
+      "type": "memory_match",
+      "grid_size": 12,
+      "pairs": 6,
+      "attempts": 5,
+      "card_pool": {
+        "guaranteed": [
+          { "type": "colorless", "count": 1 },
+          { "type": "curse", "count": 1 }
+        ],
+        "random": [
+          { "type": "character_card", "count": 4 }
+        ]
+      },
+      "outcome": "skill_based",
+      "simulation_note": "For AI simulation, treat as probabilistic: expected ~2-3 matches with random play, skilled play can match all 6"
+    },
+    "options": [
+      {
+        "label": "[Play]",
+        "description": "Play a memory matching game for cards.",
+        "conditions": [],
+        "effects": [],
+        "rewards": {
+          "cards": {
+            "type": "matched_pairs",
+            "min": 0,
+            "max": 6,
+            "always_includes": ["colorless", "curse"]
+          }
+        }
+      }
+    ],
+    "notes": [
+      "Match pairs of cards to add them to your deck",
+      "12 cards total, 6 pairs, 5 attempts to flip",
+      "Always includes 1 Colorless card pair and 1 Curse pair"
+    ],
+    "raw_options": "[Play]\n• Play a matching game for cards. Match pairs of cards to add them to your deck. There is always a pair of one Colorless card and one Curse.",
+    "raw_dialogue": "A gremlin is madly shuffling cards on a table. This monster seems to be a harmless one. You approach him out of curiosity.\n\nBefore selecting [Play]\n\n\"Twelve cards! Match them to keep them! Five tries, no do-overs. \nAre you ready? Let's start!\"\n\n\nAfter [Play]\n\nYou complete the gremlin's game and look up. \nHe disappeared?"
+  },
+  {
+    "wiki_id": "Ominous_Forge",
+    "name": "Ominous Forge",
+    "category": "shrines",
+    "options": [
+      {
+        "label": "[Forge]",
+        "description": "Upgrade a card in your deck.",
+        "conditions": [],
+        "effects": []
+      },
+      {
+        "label": "[Rummage]",
+        "description": "Obtain a special relic. Become Cursed -  Pain.",
+        "conditions": [],
+        "effects": [
+          "Warped Tongs - At the start of your turn,  Upgrade a random card in your hand for the rest of combat.",
+          "Pain -  Unplayable. While in hand, lose 1 HP whenever you play another card."
+        ]
+      },
+      {
+        "label": "[Leave]",
+        "description": "Nothing happens.",
+        "conditions": [],
+        "effects": []
+      }
+    ],
+    "notes": [
+      "Internally called Accursed_Blacksmith."
+    ],
+    "raw_options": "[Forge] Upgrade a card in your deck.\n\n[Rummage] Obtain a special relic. Become Cursed -  Pain.\n• Warped Tongs - At the start of your turn,  Upgrade a random card in your hand for the rest of combat.\n• Pain -  Unplayable. While in hand, lose 1 HP whenever you play another card.\n[Leave] Nothing happens.",
+    "raw_dialogue": "You duck inside a small hut. Inside you find what appears to be a forge. The smithing tools are covered with dust, yet a fire roars inside the furnace. You feel on edge...\n\n[Forge]\n\nYou decide to put the forge to use and... \nCLANG CLAAANG CLANG! \n...improve your arsenal!\n\n\n[Rummage]\n\nYou decide to see if you can find anything of use. After uncovering tarps, looking through boxes, and checking nooks and crannies, you find a dust covered relic! \nTaking the relic, you can't shake a sudden feeling of sharp pain as you exit the hut. Maybe you disturbed some sort of spirit?\n\n\n[Leave]\n\nThere doesn't seem to be anything of use. You exit the way you came, the flames of the furnace casting eerie shadows on the walls inside the hut..."
+  },
+  {
+    "wiki_id": "Purifier",
+    "name": "Purifier",
+    "category": "shrines",
+    "options": [
+      {
+        "label": "[Pray]",
+        "description": "Remove a card from your deck.",
+        "conditions": [],
+        "effects": []
+      },
+      {
+        "label": "[Leave]",
+        "description": "Nothing happens.",
+        "conditions": [],
+        "effects": []
+      }
+    ],
+    "notes": [
+      "This probably would not work as an air purifier."
+    ],
+    "raw_options": "[Pray] Remove a card from your deck.\n[Leave] Nothing happens.",
+    "raw_dialogue": "Before you lies an elaborate shrine to a forgotten spirit. \n[Pray]\n\n\n As you kneel in reverence, you feel a weight lifted off your shoulders.\n\n\n[Leave]\n\n\n You ignore the shrine."
+  },
+  {
+    "wiki_id": "The_Divine_Fountain",
+    "name": "The Divine Fountain",
+    "category": "shrines",
+    "options": [
+      {
+        "label": "[Drink]",
+        "description": "Remove all Curses from your deck.",
+        "conditions": [],
+        "effects": []
+      },
+      {
+        "label": "[Leave]",
+        "description": "Nothing happens.",
+        "conditions": [],
+        "effects": []
+      }
+    ],
+    "notes": [
+      "Removing all Curses may not be beneficial if you are relying on the  Strength from  Du-Vu Doll.",
+      "The Max HP gain from  Darkstone Periapt is kept even when the Curses are removed."
+    ],
+    "raw_options": "[Drink] Remove all Curses from your deck.\n[Leave] Nothing happens.",
+    "raw_dialogue": "You come across shimmering water flowing endlessly from a fountain on a nearby wall.\n\n[Drink]\n\nAs you drink the water, you feel a dark grasp loosen.\n\n\n[Leave]\n\nUnsure of the nature of this water, you continue on your way, parched."
+  },
+  {
+    "wiki_id": "The_Woman_in_Blue",
+    "name": "The Woman in Blue",
+    "category": "shrines",
+    "options": [
+      {
+        "label": "[Buy 1 Potion]",
+        "description": "20 Gold.",
+        "conditions": [],
+        "effects": []
+      },
+      {
+        "label": "[Buy 2 Potions]",
+        "description": "30 Gold.",
+        "conditions": [],
+        "effects": []
+      },
+      {
+        "label": "[Buy 3 Potions]",
+        "description": "40 Gold.",
+        "conditions": [],
+        "effects": []
+      },
+      {
+        "label": "[Leave]",
+        "description": "Nothing happens.",
+        "conditions": [],
+        "effects": []
+      }
+    ],
+    "notes": [
+      "Even if you skip grabbing the potions you bought, she will still be satisfied."
+    ],
+    "raw_options": "[Buy 1 Potion] 20 Gold.\n[Buy 2 Potions] 30 Gold.\n[Buy 3 Potions] 40 Gold.\n[Leave] Nothing happens.",
+    "raw_dialogue": "From the darkness, an arm pulls you into a small shop. As your eyes adjust, you see a pale woman in sharp clothes gesturing to a wall of potions. \n\"Buy a potion. Now!\" she states.\n\n[Buy] any amount of potions\n\n\"Good. Now leave.\" \nYou exit the shop cautiously.\n\n\n[Leave]\n\nWHAM \nHer gloved fist collides with your face, nearly knocking you off your feet. \n\"Get out before I litter the floor with your guts.\" You take her word and exit with your guts still safely in your body."
+  },
+  {
+    "wiki_id": "Transmogrifier",
+    "name": "Transmogrifier",
+    "category": "shrines",
+    "options": [
+      {
+        "label": "[Pray]",
+        "description": "Transform a card.",
+        "conditions": [],
+        "effects": [
+          "Read more on Transform rules here."
+        ]
+      },
+      {
+        "label": "[Leave]",
+        "description": "Nothing happens.",
+        "conditions": [],
+        "effects": []
+      }
+    ],
+    "notes": [],
+    "raw_options": "[Pray]  Transform a card.\n• Read more on Transform rules here.\n[Leave] Nothing happens.",
+    "raw_dialogue": "Before you lies an elaborate shrine to a forgotten spirit.\n\n[Pray]\n\nAs the power of the shrine flows through you, your mind feels altered.\n\n\n[Leave]\n\nYou ignore the shrine."
+  },
+  {
+    "wiki_id": "Upgrade_Shrine",
+    "name": "Upgrade Shrine",
+    "category": "shrines",
+    "options": [
+      {
+        "label": "[Pray]",
+        "description": "Upgrade a card.",
+        "conditions": [],
+        "effects": []
+      },
+      {
+        "label": "[Leave]",
+        "description": "Nothing happens.",
+        "conditions": [],
+        "effects": []
+      }
+    ],
+    "notes": [],
+    "raw_options": "[Pray]  Upgrade a card.\n[Leave] Nothing happens.",
+    "raw_dialogue": "Before you lies an elaborate shrine to a forgotten spirit.\n\n[Pray]\n\nThe shrine's energy flows into you, making you stronger.\n\n\n[Leave]\n\nYou ignore the shrine."
+  },
+  {
+    "wiki_id": "We_Meet_Again!",
+    "name": "We Meet Again!",
+    "category": "shrines",
+    "options": [
+      {
+        "label": "[Give Potion]",
+        "description": "Lose a chosen potion. Obtain a Relic.",
+        "conditions": [],
+        "effects": [
+          "The event will randomly choose a potion upon entry and tell you which one was selected. You will be unable to drink or discard that potion until you leave the event's floor."
+        ]
+      },
+      {
+        "label": "[Give Gold]",
+        "description": "Lose Gold. Obtain a Relic.",
+        "conditions": [],
+        "effects": [
+          "The amount of Gold lost is between 50 and 150 (or your current amount of Gold)."
+        ]
+      },
+      {
+        "label": "[Give Card]",
+        "description": "Lose a chosen card. Obtain a Relic.",
+        "conditions": [],
+        "effects": [
+          "The chosen card will not be Basic or a Curse."
+        ]
+      },
+      {
+        "label": "[Attack]",
+        "description": "Nothing happens.",
+        "conditions": [],
+        "effects": []
+      }
+    ],
+    "notes": [
+      "\"mask wearing hoodlums\" likely refers to the group of bandits in the Act 2 event  Masked Bandits."
+    ],
+    "raw_options": "[Give Potion] Lose a chosen potion. Obtain a Relic.\n• The event will randomly choose a potion upon entry and tell you which one was selected. You will be unable to drink or discard that potion until you leave the event's floor.\n[Give Gold] Lose Gold. Obtain a Relic.\n• The amount of Gold lost is between 50 and 150 (or your current amount of Gold).\n[Give Card] Lose a chosen card. Obtain a Relic.\n• The chosen card will not be Basic or a Curse.\n[Attack] Nothing happens.",
+    "raw_dialogue": "\"We meet again!\" \nA cheery disheveled fellow approaches you gleefully. You do not know this man. \n\"It's me! Ranwid! Have any goods for me today? The usual? A fella like me can't make it alone, you know?\" \nYou eye him suspiciously and consider your options.\n\n\n\n[Give Potion]\n\n\"Exquisite! Was feeling parched.\" \nGlup glup glup \nHe downs the potion in one go and lets out a satisfied burp. \n\n\n[Give Gold]\n\n\"Magnificent! This will be quite handy if I run into those mask wearing hoodlums again.\"\n\n\n[Give Card]\n\n\"Exemplary! I shall study this further in my chambers.\"\n\n\nHe rummages around in his various pockets... \n\"Here, look what I've got for you today! Take it take it!\"\n\n\n[Attack]\n\n\"Aaaaagghh!! What a jerk you are sometimes!\" \nHe runs away."
+  },
+  {
+    "wiki_id": "Wheel_of_Change",
+    "name": "Wheel of Change",
+    "category": "shrines",
+    "options": [
+      {
+        "label": "[Play]",
+        "description": "Spin the wheel for a random outcome.",
+        "conditions": [],
+        "effects": [
+          "Spin a wheel containing 6 equally-weighted outcomes:"
+        ],
+        "random_outcomes": [
+          "Gain Gold (100 Gold)",
+          "Gain a random Relic",
+          "Heal to full HP",
+          "Become Cursed - Decay",
+          "Remove a card from your deck",
+          "Take 10% (A15+: 15%) of Max HP as damage"
+        ]
+      }
+    ],
+    "notes": [
+      "All 6 outcomes have equal probability (1/6 each)."
+    ],
+    "raw_options": "Spin Button.\n  Wheel arrow.\n[Play]\n• Spin a wheel containing the following \"prizes\":\nGain Gold\nGain a random Relic\nHeal to full HP\nBecome Cursed -  Decay\nRemove a card from your deck.\nTake 10% (15% 15) of your Max HP as damage.\n• Gain Gold\n• Gain a random Relic\n• Heal to full HP\n• Become Cursed -  Decay\n• Remove a card from your deck.\n• Take 10% (15% 15) of your Max HP as damage.",
+    "raw_dialogue": "You come upon a dapper looking, cheery gremlin. \n\"It's time to spin the wheel! Are you R E A D Y ? Of course you are!\"\n\n\n\nWhen receiving a Relic\n\n\"Ah, a gift! \nEnjoy!\"\n\n\nWhen taking damage\n\n\"Uh oh! \nYou lose!\" \nYou spot him readying a shiv...\n\n\nYou slash at the crazy gremlin but he's simply too quick! \nHe gets you a few times with a crude shiv. \n\"The price has been paid!!\" \nand with that, both the gremlin and its wheel disappear in a puff of smoke.\n\n\nWhen obtaining Gold\n\n\"You win some GOLD! \nYAY!!!!\"\n\n\nWhen obtaining  Decay\n\n\"Looks like you won a Curse! \nThat's not good. \nOh well! Better luck next time!\"\n\n\nWhen removing a card from your deck\n\n\"Ohh, the power of darkness... \nChoose a card to remove from your deck!\""
+  }
+]

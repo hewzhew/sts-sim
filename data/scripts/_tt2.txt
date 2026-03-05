@@ -1,0 +1,14 @@
+
+=== TurnTrigger Cards ===
+
+ID                        Type     Color      ApplyPower?  PowerName            Trigger Text
+------------------------------------------------------------------------------------------------------------------------
+Decay                     Curse    colorless  [MISS]       -                    TurnTrigger: At the end of your turn
+Doubt                     Curse    colorless  [MISS]       -                    TurnTrigger: At the end of your turn
+Pride                     Curse    colorless  [MISS]       -                    TurnTrigger: At the end of your turn
+Regret                    Curse    colorless  [MISS]       -                    TurnTrigger: At the end of your turn
+Shame                     Curse    colorless  [MISS]       -                    TurnTrigger: At the end of your turn
+Flex                      Skill    red        [MISS]       -                    TurnTrigger: At the end of this turn
+Burn                      Status   colorless  [MISS]       -                    TurnTrigger: At the end of your turn
+
+Total: 7 TurnTrigger cards, 0 Power cards missing ApplyPower

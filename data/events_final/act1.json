@@ -1,0 +1,562 @@
+[
+  {
+    "wiki_id": "Big_Fish",
+    "name": "Big Fish",
+    "category": "act1",
+    "options": [
+      {
+        "label": "[Banana]",
+        "description": "Heal 1/3 of your max HP.",
+        "conditions": [
+          {
+            "type": "ManualCheck",
+            "text": "If the player's HP is not divisble by 3, the HP gain is rounded down."
+          }
+        ]
+      },
+      {
+        "label": "[Donut]",
+        "description": "Max HP +5.",
+        "conditions": [
+          {
+            "type": "ManualCheck",
+            "text": "Like all HP gain, the extra hit points are healed when you get them."
+          }
+        ]
+      },
+      {
+        "label": "[Box]",
+        "description": "Obtain a Relic. Become Cursed -  Regret.",
+        "rewards": {
+          "relic": "random",
+          "curse": "Regret"
+        },
+        "effects": [
+          "The Relic is a randomly selected Common, Uncommon, or Rare Relic.",
+          "You are then given the option to"
+        ]
+      },
+      {
+        "label": "[Leave]",
+        "description": "."
+      }
+    ]
+  },
+  {
+    "wiki_id": "Dead_Adventurer",
+    "name": "Dead Adventurer",
+    "category": "act1",
+    "options": [
+      {
+        "label": "[Search]",
+        "description": "Find Loot. 25% (A15+: 35%) chance: Elite monster returns.",
+        "effects": [
+          "Each [Search] attempt either triggers an Act 1 Elite fight OR yields one of these rewards: 30 Gold, a random Relic, or Nothing.",
+          "Each reward can only be found once per event.",
+          "Rewards found before fighting the Elite are removed from its combat drops.",
+          "Each subsequent [Search] increases Elite encounter chance by +25% (cumulative: 25%→50%→75%).",
+          "If all 3 searches succeed without Elite encounter, event ends successfully."
+        ],
+        "random_outcomes": [
+          {
+            "outcome": "Elite Fight",
+            "chance": "25% (A15+: 35%), +25% per search",
+            "effect": "Fight random Act 1 Elite (Gremlin Nob, Lagavulin, or Sentries). Lagavulin is NOT asleep and uses Siphon Soul turn 1.",
+            "trigger": {
+              "type": "Combat"
+            }
+          },
+          {
+            "outcome": "Loot",
+            "chance": "75% (A15+: 65%), -25% per search",
+            "effect": "Receive one of: 30 Gold, random Relic, or Nothing (each reward once only)",
+            "reward": {
+              "type": "Gold",
+              "amount": 30
+            }
+          }
+        ]
+      },
+      {
+        "label": "[Continue]",
+        "description": "Search again (after first search).",
+        "effects": [
+          "Same as [Search] but with increased Elite encounter chance (+25% cumulative)"
+        ],
+        "conditions": [
+          {
+            "type": "ManualCheck",
+            "text": "Only appears after a successful [Search] that didn't trigger Elite"
+          }
+        ]
+      },
+      {
+        "label": "[Leave]",
+        "description": "Nothing happens."
+      }
+    ],
+    "notes": [
+      "Black Star will not cause the Elite to drop an additional Relic. However, the other \"elite relics\"  Preserved Insect,  Sling of Courage, and  Slaver's Collar will work as expected.",
+      "It is quite unlikely for the player to be able to [Search] three times without being ambushed since they must succeed on all three searches with increasing chances of failure. See the table below for more information:",
+      "Cumulative Chance of Avoiding the Elite",
+      "Number of Searches(% chance of Elite returning)",
+      "Before  15",
+      "15 and Above",
+      "1 (25% / A15+: 35%)",
+      "75%",
+      "65%",
+      "2 (50% / A15+: 60%)",
+      "37.5%",
+      "26%",
+      "3 (75% / A15+: 85%)",
+      "9.375%",
+      "3.9%"
+    ]
+  },
+  {
+    "wiki_id": "Face_Trader",
+    "name": "Face Trader",
+    "category": "act1",
+    "options": [
+      {
+        "label": "[Touch]",
+        "description": "Lose X HP, gain 75 (A15+: 50) Gold.",
+        "rewards": {
+          "gold": 75,
+          "gold_ascension": 50
+        },
+        "effects": [
+          "X is equal to 10% of the player's Max HP, rounded down."
+        ],
+        "costs": {
+          "hp_percent": 10.0
+        }
+      },
+      {
+        "label": "[Trade]",
+        "description": "50%: Good Face. 50%: Bad Face.",
+        "effects": [
+          "Receive one of the following special Relics:",
+          "Face of Cleric (good face)",
+          "Ssserpent Head (good face)",
+          "Gremlin Visage (bad face)",
+          "N'loth's Hungry Face (bad face)",
+          "Cultist Headpiece (neutral face)",
+          "Face of Cleric (good face)",
+          "Ssserpent Head (good face)",
+          "Gremlin Visage (bad face)",
+          "N'loth's Hungry Face (bad face)",
+          "Cultist Headpiece (neutral face)"
+        ]
+      },
+      {
+        "label": "[Leave]",
+        "description": "Nothing happens."
+      }
+    ],
+    "notes": [
+      "The chances stated by the Event are inaccurate. The actual chances are 40% good face, 40% bad face, and 20% neutral face ( Cultist Headpiece).",
+      "All 5 masks have the same probability of being chosen."
+    ]
+  },
+  {
+    "wiki_id": "Golden_Idol_(Event)",
+    "name": "Golden Idol (Event)",
+    "category": "act1",
+    "options": [
+      {
+        "label": "[Take]",
+        "description": "Obtain  Golden Idol. Trigger a trap."
+      },
+      {
+        "label": "[Outrun]",
+        "description": "Become Cursed -  Injury.",
+        "rewards": {
+          "curse": "Injury"
+        }
+      },
+      {
+        "label": "[Smash]",
+        "description": "Take X Damage.",
+        "effects": [
+          "X is equal to 25% (A15+: 35%) of the player's Max HP."
+        ],
+        "costs": {
+          "hp_percent": 25.0,
+          "hp_percent_ascension": 35.0
+        }
+      },
+      {
+        "label": "[Hide]",
+        "description": "Lose X Max HP.",
+        "effects": [
+          "X is equal to 8% (A15+: 10%) of the player's Max HP."
+        ],
+        "costs": {
+          "hp_percent": 8.0,
+          "hp_percent_ascension": 10.0
+        }
+      },
+      {
+        "label": "[Leave]",
+        "description": "Nothing happens."
+      }
+    ],
+    "notes": [
+      "Forgotten Altar will allow  Golden Idol to be exchanged for  Bloody Idol.",
+      "The Moai Head will allow  Golden Idol to be exchanged for 333 Gold."
+    ]
+  },
+  {
+    "wiki_id": "Hypnotizing_Colored_Mushrooms",
+    "name": "Hypnotizing Colored Mushrooms",
+    "category": "act1",
+    "options": [
+      {
+        "label": "[Stomp]",
+        "description": "Anger the Mushrooms.",
+        "effects": [
+          "Enter a battle against 3  Fungi Beasts. Winning grants the exclusive Relic  Odd Mushroom along with regular combat rewards."
+        ]
+      },
+      {
+        "label": "[Eat]",
+        "description": "Heal X HP. Become Cursed -  Parasite.",
+        "rewards": {
+          "curse": "Parasite"
+        },
+        "effects": [
+          "X is equal to 25% of the player's max HP."
+        ],
+        "costs": {
+          "hp_percent": 25.0
+        }
+      }
+    ]
+  },
+  {
+    "wiki_id": "Living_Wall",
+    "name": "Living Wall",
+    "category": "act1",
+    "options": [
+      {
+        "label": "[Forget]",
+        "description": "Remove a card from your deck.",
+        "costs": {
+          "remove_card": 1
+        }
+      },
+      {
+        "label": "[Change]",
+        "description": "Transform a card in your deck.",
+        "rewards": {
+          "transform_card": 1
+        }
+      },
+      {
+        "label": "[Grow]",
+        "description": "Upgrade a card in your deck.",
+        "rewards": {
+          "upgrade_card": 1
+        }
+      }
+    ]
+  },
+  {
+    "wiki_id": "Scrap_Ooze",
+    "name": "Scrap Ooze",
+    "category": "act1",
+    "options": [
+      {
+        "label": "[Reach Inside]",
+        "description": "Lose 3 (A15+: 5) HP. 25% chance to find a Relic.",
+        "costs": {
+          "hp": 3,
+          "hp_ascension": 5
+        },
+        "conditions": [
+          {
+            "type": "ManualCheck",
+            "text": "If you fail to find a Relic, you can try again until you find one. Each time you fail, the HP loss is increased by 1 and the chance to gain a Relic increases by 10%."
+          }
+        ]
+      },
+      {
+        "label": "[Leave]",
+        "description": "Nothing happens."
+      }
+    ],
+    "notes": [
+      "Scrap Ooze Details and Math",
+      "Number of Attempts",
+      "HP Lost on This Attempt",
+      "Chance of Finding the Relicon This Attempt",
+      "Total HP Lost",
+      "Chance of Having Found the Relicby This Attempt (i.e. Cumulative Chance)",
+      "1",
+      "3 (A15+: 5)",
+      "25%",
+      "2",
+      "4 (A15+: 6)",
+      "35%",
+      "7 (A15+: 11)",
+      "51.25%",
+      "3",
+      "5 (A15+: 7)",
+      "45%",
+      "12 (A15+: 18)",
+      "~73.19%",
+      "4",
+      "6 (A15+: 8)",
+      "55%",
+      "18 (A15+: 26)",
+      "~87.93%",
+      "5",
+      "7 (A15+: 9)",
+      "65%",
+      "25 (A15+: 35)",
+      "~95.78%",
+      "6",
+      "8 (A15+: 10)",
+      "75%",
+      "33 (A15+: 45)",
+      "~98.94%",
+      "7",
+      "9 (A15+: 11)",
+      "85%",
+      "42 (A15+: 56)",
+      "~99.84%",
+      "8",
+      "10 (A15+: 12)",
+      "95%",
+      "52 (A15+: 68)",
+      "~99.99%",
+      "9",
+      "11 (A15+: 13)",
+      "105% (100%)",
+      "63 (A15+: 81)",
+      "100%"
+    ]
+  },
+  {
+    "wiki_id": "Shining_Light",
+    "name": "Shining Light",
+    "category": "act1",
+    "options": [
+      {
+        "label": "[Enter]",
+        "description": "Upgrade 2 random cards. Lose X HP.",
+        "effects": [
+          "X is equal to 20% (A15+: 30%) of the player's max HP."
+        ],
+        "costs": {
+          "hp_percent": 20.0,
+          "hp_percent_ascension": 30.0
+        }
+      },
+      {
+        "label": "[Leave]",
+        "description": "Nothing happens."
+      }
+    ]
+  },
+  {
+    "wiki_id": "The_Cleric",
+    "name": "The Cleric",
+    "category": "act1",
+    "options": [
+      {
+        "label": "[Heal]",
+        "description": "35 Gold: Heal X HP.",
+        "effects": [
+          "X is equal to 25% of the player's Max HP, rounded down."
+        ],
+        "costs": {
+          "hp_percent": 25.0
+        }
+      },
+      {
+        "label": "[Purify]",
+        "description": "50 (A15+: 75) Gold: Remove a card from your deck.",
+        "costs": {
+          "remove_card": 1
+        }
+      },
+      {
+        "label": "[Leave]",
+        "description": "Nothing happens."
+      }
+    ]
+  },
+  {
+    "wiki_id": "The_Ssssserpent",
+    "name": "The Ssssserpent",
+    "category": "act1",
+    "options": [
+      {
+        "label": "[Agree]",
+        "description": "Gain 175 (A15+: 150) Gold. Become Cursed -  Doubt.",
+        "rewards": {
+          "gold": 175,
+          "gold_ascension": 150,
+          "curse": "Doubt"
+        }
+      },
+      {
+        "label": "[Disagree]",
+        "description": "Nothing happens.",
+        "effects": [
+          "You are then given the option to"
+        ]
+      },
+      {
+        "label": "[Leave]",
+        "description": "."
+      }
+    ]
+  },
+  {
+    "wiki_id": "Wing_Statue",
+    "name": "Wing Statue",
+    "category": "act1",
+    "options": [
+      {
+        "label": "[Pray]",
+        "description": "Remove a card from your deck. Lose 7 HP.",
+        "costs": {
+          "hp": 7,
+          "remove_card": 1
+        }
+      },
+      {
+        "label": "[Destroy]",
+        "description": "Receive 50 - 80 Gold.",
+        "rewards": {
+          "gold": {
+            "min": 50,
+            "max": 80
+          }
+        },
+        "conditions": [
+          {
+            "type": "HasCardType",
+            "card_type": "Attack"
+          },
+          {
+            "type": "ManualCheck",
+            "text": "If condition not met, shows as [Locked] Requires: Card with 10 or more damage."
+          }
+        ]
+      },
+      {
+        "label": "[Leave]",
+        "description": "Nothing happens."
+      }
+    ],
+    "notes": [
+      "The event specifically only checks Attack cards in the player's deck, despite only stating \"Cards\" in general. It also only checks whether the card's base damage is 10 or more. This means that any card that can only achieve 10 or more damage through the use of multi-hits (such as  Twin Strike and  Riddle with Holes) or that have damage which is dynamically calculated from certain conditions in combat (such as  Perfected Strike and  Mind Blast) do not meet the requirement.",
+      "Cards With 10 or More Damage",
+      "The following is a list of cards that satisfy the condition of \"Requires: Card with 10 or more damage.\" for the [Destroy] option:",
+      "Clash",
+      "Clothesline",
+      "Heavy Blade",
+      "Wild Strike",
+      "Blood for Blood",
+      "Carnage",
+      "Hemokinesis",
+      "Searing Blow",
+      "Sever Soul",
+      "Uppercut",
+      "Bludgeon",
+      "Feed",
+      "Immolate",
+      "Bane",
+      "Flying Knee",
+      "Sneaky Strike",
+      "All-Out Attack",
+      "Backstab",
+      "Choke",
+      "Dash",
+      "Masterful Stab",
+      "Predator",
+      "Die Die Die",
+      "Grand Finale",
+      "Unload",
+      "Streamline",
+      "Doom and Gloom",
+      "Melter",
+      "Sunder",
+      "All for One",
+      "Core Surge",
+      "Hyperbeam",
+      "Meteor Strike",
+      "Conclude",
+      "Reach Heaven",
+      "Sands of Time",
+      "Signature Move",
+      "Wheel Kick",
+      "Brilliance",
+      "Lesson Learned",
+      "Hand of Greed",
+      "Ritual Dagger",
+      "Cards With 10 or More Damage After Being Upgraded",
+      "The following is a list of cards that satisfy the condition of \"Requires: Card with 10 or more damage.\" for the [Destroy] option only after they have been  Upgraded to increase their base damage:",
+      "Bash",
+      "Cleave",
+      "Headbutt",
+      "Pommel Strike",
+      "Reckless Charge",
+      "Fiend Fire",
+      "Dagger Throw",
+      "Quick Slash",
+      "Skewer",
+      "Glass Knife",
+      "Ball Lightning",
+      "Compile Driver",
+      "Rebound",
+      "Bullseye",
+      "Scrape",
+      "Bowling Bash",
+      "Crush Joints",
+      "Empty Fist",
+      "Follow-Up",
+      "Sash Whip",
+      "Carve Reality",
+      "Fear No Evil",
+      "Wallop",
+      "Windmill Strike",
+      "Dramatic Entrance",
+      "Swift Strike"
+    ]
+  },
+  {
+    "wiki_id": "World_of_Goop",
+    "name": "World of Goop",
+    "category": "act1",
+    "options": [
+      {
+        "label": "[Gather Gold]",
+        "description": "Gain 75 Gold. Lose 11 HP.",
+        "costs": {
+          "hp": 11
+        },
+        "rewards": {
+          "gold": 75
+        }
+      },
+      {
+        "label": "[Leave It]",
+        "description": "Lose X Gold.",
+        "effects": [
+          "X is a random number between 20 and 50 (A15+: 35 and 75) Gold. X cannot be more Gold than the player currently has."
+        ],
+        "rewards": {
+          "gold": {
+            "min": 20,
+            "max": 50
+          }
+        }
+      }
+    ]
+  }
+]

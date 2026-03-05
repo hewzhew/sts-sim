@@ -1,0 +1,1034 @@
+[
+  {
+    "id": "Carve_Reality",
+    "name": "Carve Reality",
+    "type": "Attack",
+    "cost": 1,
+    "color": "Purple",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "Enemy",
+      "commands": [
+        {
+          "type": "DealDamage",
+          "params": {
+            "base": 6,
+            "upgrade": 10
+          }
+        },
+        {
+          "type": "AddCard",
+          "params": {
+            "card": "Smite",
+            "destination": "hand"
+          }
+        }
+      ]
+    },
+    "original_text": "Deal [6|10] damage. Add a {{C|Smite}} into your hand."
+  },
+  {
+    "id": "Conclude",
+    "name": "Conclude",
+    "type": "Attack",
+    "cost": 1,
+    "color": "Purple",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "AllEnemies",
+      "commands": [
+        {
+          "type": "DealDamageAll",
+          "params": {
+            "base": 12,
+            "upgrade": 16
+          }
+        },
+        {
+          "type": "EndTurn",
+          "params": {}
+        }
+      ]
+    },
+    "original_text": "Deal [12|16] damage to ALL enemies. End your turn.",
+    "manual_review_needed": false
+  },
+  {
+    "id": "Fear_No_Evil",
+    "name": "Fear No Evil",
+    "type": "Attack",
+    "cost": 1,
+    "color": "Purple",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "DealDamage",
+          "params": {
+            "base": 8,
+            "upgrade": 11
+          }
+        },
+        {
+          "type": "EnterStance",
+          "params": {
+            "stance": "Calm"
+          }
+        }
+      ],
+      "keywords_used": [
+        "Calm"
+      ]
+    },
+    "original_text": "Deal [8|11] damage. If the enemy intends to Attack, enter #Calm."
+  },
+  {
+    "id": "Reach_Heaven",
+    "name": "Reach Heaven",
+    "type": "Attack",
+    "cost": 2,
+    "color": "Purple",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "Enemy",
+      "commands": [
+        {
+          "type": "DealDamage",
+          "params": {
+            "base": 10,
+            "upgrade": 15
+          }
+        },
+        {
+          "type": "ShuffleInto",
+          "params": {
+            "card": "[[Through Violence]]"
+          }
+        }
+      ]
+    },
+    "original_text": "Deal [10|15] damage. Shuffle a [[Through Violence]] into your draw pile."
+  },
+  {
+    "id": "Sands_of_Time",
+    "name": "Sands of Time",
+    "type": "Attack",
+    "cost": 4,
+    "color": "Purple",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "Enemy",
+      "commands": [
+        {
+          "type": "Retain",
+          "params": {}
+        },
+        {
+          "type": "DealDamage",
+          "params": {
+            "base": 20,
+            "upgrade": 26
+          }
+        }
+      ],
+      "conditions": [
+        "Trigger: Whenever this card is #Retained, lower its cost by 1"
+      ],
+      "keywords_used": [
+        "Retain"
+      ]
+    },
+    "original_text": "#Retain. Deal [20|26] damage. Whenever this card is #Retained, lower its cost by 1.",
+    "manual_review_needed": false,
+    "flags": {
+      "retain_cost_reduction": 1
+    }
+  },
+  {
+    "id": "Signature_Move",
+    "name": "Signature Move",
+    "type": "Attack",
+    "cost": 2,
+    "color": "Purple",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "Enemy",
+      "commands": [
+        {
+          "type": "DealDamage",
+          "params": {
+            "base": 30,
+            "upgrade": 40
+          }
+        }
+      ],
+      "conditions": [
+        "PlayCondition: Can only be played if this is the only Attack in your hand"
+      ]
+    },
+    "original_text": "Can only be played if this is the only Attack in your hand. Deal [30|40] damage.",
+    "manual_review_needed": false,
+    "flags": {
+      "play_condition": {
+        "type": "OnlyAttackInHand"
+      }
+    }
+  },
+  {
+    "id": "Talk_to_the_Hand",
+    "name": "Talk to the Hand",
+    "type": "Attack",
+    "cost": 1,
+    "color": "Purple",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "DealDamage",
+          "params": {
+            "base": 5,
+            "upgrade": 7
+          }
+        },
+        {
+          "type": "GainBlock",
+          "params": {
+            "base": 2,
+            "upgrade": 3
+          }
+        },
+        {
+          "type": "ExhaustSelf",
+          "params": {}
+        }
+      ],
+      "conditions": [
+        "Trigger: Whenever you attack this enemy, gain [2|3] #Block"
+      ],
+      "keywords_used": [
+        "Block",
+        "Exhaust"
+      ]
+    },
+    "original_text": "Deal [5|7] damage. Whenever you attack this enemy, gain [2|3] #Block. #Exhaust."
+  },
+  {
+    "id": "Tantrum",
+    "name": "Tantrum",
+    "type": "Attack",
+    "cost": 1,
+    "color": "Purple",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "DealDamage",
+          "params": {
+            "base": 3,
+            "upgrade": 3,
+            "times": 3,
+            "times_upgrade": 4
+          }
+        },
+        {
+          "type": "EnterStance",
+          "params": {
+            "stance": "Wrath"
+          }
+        },
+        {
+          "type": "ShuffleInto",
+          "params": {
+            "card": "this card"
+          }
+        }
+      ],
+      "keywords_used": [
+        "Wrath"
+      ]
+    },
+    "original_text": "Deal 3 damage [3|4] times. Enter #Wrath. Shuffle this card into your draw pile."
+  },
+  {
+    "id": "Wallop",
+    "name": "Wallop",
+    "type": "Attack",
+    "cost": 2,
+    "color": "Purple",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "DealDamage",
+          "params": {
+            "base": 9,
+            "upgrade": 12
+          }
+        },
+        {
+          "type": "GainBlock",
+          "params": {
+            "scaling": "unblocked damage dealt"
+          }
+        }
+      ]
+    },
+    "original_text": "Deal [9|12] damage. Gain #Block equal to unblocked damage dealt."
+  },
+  {
+    "id": "Weave",
+    "name": "Weave",
+    "type": "Attack",
+    "cost": 0,
+    "color": "Purple",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "Enemy",
+      "commands": [
+        {
+          "type": "DealDamage",
+          "params": {
+            "base": 4,
+            "upgrade": 6
+          }
+        }
+      ],
+      "conditions": [
+        "Trigger: Whenever you #Scry, return this from the discard pile to your hand"
+      ],
+      "keywords_used": [
+        "Scry"
+      ]
+    },
+    "original_text": "Deal [4|6] damage. Whenever you #Scry, return this from the discard pile to your hand.",
+    "manual_review_needed": false,
+    "flags": {
+      "trigger_on_scry_return": true
+    }
+  },
+  {
+    "id": "Wheel_Kick",
+    "name": "Wheel Kick",
+    "type": "Attack",
+    "cost": 2,
+    "color": "Purple",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "DealDamage",
+          "params": {
+            "base": 15,
+            "upgrade": 20
+          }
+        },
+        {
+          "type": "DrawCards",
+          "params": {
+            "base": 2,
+            "upgrade": 2
+          }
+        }
+      ]
+    },
+    "original_text": "Deal [15|20] damage. Draw 2 cards."
+  },
+  {
+    "id": "Windmill_Strike",
+    "name": "Windmill Strike",
+    "type": "Attack",
+    "cost": 2,
+    "color": "Purple",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "Enemy",
+      "commands": [
+        {
+          "type": "Retain",
+          "params": {}
+        },
+        {
+          "type": "DealDamage",
+          "params": {
+            "base": 7,
+            "upgrade": 10
+          }
+        }
+      ],
+      "conditions": [
+        "Trigger: Whenever this card is #Retained, increase its damage by [4|5]"
+      ],
+      "keywords_used": [
+        "Retain"
+      ]
+    },
+    "original_text": "#Retain. Deal [7|10] damage. Whenever this card is #Retained, increase its damage by [4|5].",
+    "manual_review_needed": false,
+    "flags": {
+      "retain_damage_increase": 4,
+      "retain_damage_increase_upgrade": 5
+    }
+  },
+  {
+    "id": "Collect",
+    "name": "Collect",
+    "type": "Skill",
+    "cost": -1,
+    "color": "Purple",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "ExhaustSelf",
+          "params": {}
+        }
+      ],
+      "keywords_used": [
+        "Exhaust"
+      ]
+    },
+    "original_text": "Put a {{C|Miracle|Miracle+}} into your hand at the start of your next [X|X+1] turns. #Exhaust",
+    "manual_review_needed": true,
+    "unparsed_text": [
+      "Put a Miracle+ into your hand at the start of your next [X|X+1] turns"
+    ]
+  },
+  {
+    "id": "Deceive_Reality",
+    "name": "Deceive Reality",
+    "type": "Skill",
+    "cost": 1,
+    "color": "Purple",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "GainBlock",
+          "params": {
+            "base": 4,
+            "upgrade": 7
+          }
+        },
+        {
+          "type": "AddCard",
+          "params": {
+            "card": "Safety",
+            "destination": "hand"
+          }
+        }
+      ],
+      "keywords_used": [
+        "Block"
+      ]
+    },
+    "original_text": "Gain [4|7] #Block. Add a {{C|Safety}} into your hand."
+  },
+  {
+    "id": "Empty_Mind",
+    "name": "Empty Mind",
+    "type": "Skill",
+    "cost": 1,
+    "color": "Purple",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "ExitStance",
+          "params": {}
+        },
+        {
+          "type": "DrawCards",
+          "params": {
+            "base": 2,
+            "upgrade": 3
+          }
+        }
+      ],
+      "keywords_used": [
+        "Stance"
+      ]
+    },
+    "original_text": "Exit your #Stance. Draw [2|3] cards."
+  },
+  {
+    "id": "Foreign_Influence",
+    "name": "Foreign Influence",
+    "type": "Skill",
+    "cost": 0,
+    "color": "Purple",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "Self",
+      "commands": [],
+      "keywords_used": [
+        "Exhaust"
+      ]
+    },
+    "original_text": "Choose 1 of 3 Attacks of any color to add to your hand.[ |It costs 0 this turn.] #Exhaust.",
+    "manual_review_needed": false,
+    "flags": {
+      "generated_cost": 0
+    }
+  },
+  {
+    "id": "Indignation",
+    "name": "Indignation",
+    "type": "Skill",
+    "cost": 1,
+    "color": "Purple",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "AllEnemies",
+      "commands": [
+        {
+          "type": "ApplyStatusAll",
+          "params": {
+            "status": "Vulnerable",
+            "base": 3,
+            "upgrade": 5
+          }
+        }
+      ],
+      "conditions": [
+        "IfInStance: If you are in #Wrath"
+      ],
+      "keywords_used": [
+        "Wrath"
+      ]
+    },
+    "original_text": "If you are in #Wrath, apply [3|5] #Vulnerable to ALL enemies, otherwise enter #Wrath."
+  },
+  {
+    "id": "Inner_Peace",
+    "name": "Inner Peace",
+    "type": "Skill",
+    "cost": 1,
+    "color": "Purple",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "DrawCards",
+          "params": {
+            "base": 3,
+            "upgrade": 4
+          }
+        }
+      ],
+      "conditions": [
+        "IfInStance: If you are in #Calm"
+      ],
+      "keywords_used": [
+        "Calm"
+      ]
+    },
+    "original_text": "If you are in #Calm, draw [3|4] cards, otherwise Enter #Calm."
+  },
+  {
+    "id": "Meditate",
+    "name": "Meditate",
+    "type": "Skill",
+    "cost": 1,
+    "color": "Purple",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "EnterStance",
+          "params": {
+            "stance": "Calm"
+          }
+        },
+        {
+          "type": "MoveCard",
+          "params": {
+            "from": "discard_pile",
+            "to": "hand",
+            "insert_at": "top",
+            "select": {
+              "mode": "Choose",
+              "count": 1
+            },
+            "retain": true,
+            "upgrade_count": 2
+          }
+        },
+        {
+          "type": "EndTurn",
+          "params": {}
+        }
+      ],
+      "keywords_used": [
+        "Retain",
+        "Calm"
+      ]
+    },
+    "original_text": "Put [1 card|2 cards] from your discard pile into your hand and #Retain [it|them]. Enter #Calm. End your turn.",
+    "manual_review_needed": false
+  },
+  {
+    "id": "Perseverance",
+    "name": "Perseverance",
+    "type": "Skill",
+    "cost": 1,
+    "color": "Purple",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "Retain",
+          "params": {}
+        },
+        {
+          "type": "GainBlock",
+          "params": {
+            "base": 5,
+            "upgrade": 7
+          }
+        }
+      ],
+      "conditions": [
+        "Trigger: Whenever this card is #Retained, increase its #Block by [2|3]"
+      ],
+      "keywords_used": [
+        "Retain",
+        "Block"
+      ]
+    },
+    "original_text": "#Retain. Gain [5|7] #Block. Whenever this card is #Retained, increase its #Block by [2|3].",
+    "manual_review_needed": false,
+    "flags": {
+      "retain_block_increase": 2,
+      "retain_block_increase_upgrade": 3
+    }
+  },
+  {
+    "id": "Pray",
+    "name": "Pray",
+    "type": "Skill",
+    "cost": 1,
+    "color": "Purple",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "GainBuff",
+          "params": {
+            "buff": "Mantra",
+            "base": 3,
+            "upgrade": 4
+          }
+        },
+        {
+          "type": "ShuffleInto",
+          "params": {
+            "card": "an Insight"
+          }
+        }
+      ],
+      "keywords_used": [
+        "Mantra"
+      ]
+    },
+    "original_text": "Gain [3|4] #Mantra. Shuffle an {{C|Insight}} into your draw pile."
+  },
+  {
+    "id": "Sanctity",
+    "name": "Sanctity",
+    "type": "Skill",
+    "cost": 1,
+    "color": "Purple",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "GainBlock",
+          "params": {
+            "base": 6,
+            "upgrade": 9
+          }
+        },
+        {
+          "type": "DrawCards",
+          "params": {
+            "base": 2,
+            "upgrade": 2
+          }
+        }
+      ],
+      "keywords_used": [
+        "Block"
+      ]
+    },
+    "original_text": "Gain [6|9] #Block. <br>If the last card played this combat was a Skill, draw 2 cards."
+  },
+  {
+    "id": "Simmering_Fury",
+    "name": "Simmering Fury",
+    "type": "Skill",
+    "cost": 1,
+    "color": "Purple",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "DrawCards",
+          "params": {
+            "base": 2,
+            "upgrade": 3
+          }
+        }
+      ]
+    },
+    "original_text": "At the start of your next turn, enter #Wrath and draw [2|3] cards."
+  },
+  {
+    "id": "Swivel",
+    "name": "Swivel",
+    "type": "Skill",
+    "cost": 2,
+    "color": "Purple",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "GainBlock",
+          "params": {
+            "base": 8,
+            "upgrade": 11
+          }
+        },
+        {
+          "type": "ApplyBuff",
+          "params": {
+            "buff": "Free Attack",
+            "amount": {
+              "type": "Fixed",
+              "params": {
+                "base": 1
+              }
+            },
+            "target": "self"
+          }
+        }
+      ],
+      "keywords_used": [
+        "Block"
+      ]
+    },
+    "original_text": "Gain [8|11] #Block. <br>The next Attack you play costs 0.",
+    "manual_review_needed": false
+  },
+  {
+    "id": "Wave_of_the_Hand",
+    "name": "Wave of the Hand",
+    "type": "Skill",
+    "cost": 1,
+    "color": "Purple",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "AllEnemies",
+      "commands": [
+        {
+          "type": "ApplyStatusAll",
+          "params": {
+            "status": "Weak",
+            "base": 1,
+            "upgrade": 2
+          }
+        }
+      ],
+      "conditions": [
+        "Trigger: Whenever you gain #Block this turn, apply [1|2] #Weak to ALL enemies"
+      ]
+    },
+    "original_text": "Whenever you gain #Block this turn, apply [1|2] #Weak to ALL enemies."
+  },
+  {
+    "id": "Worship",
+    "name": "Worship",
+    "type": "Skill",
+    "cost": 2,
+    "color": "Purple",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "GainBuff",
+          "params": {
+            "buff": "Mantra",
+            "base": 5,
+            "upgrade": 5
+          }
+        }
+      ],
+      "keywords_used": [
+        "Mantra"
+      ]
+    },
+    "original_text": "[|#Retain. ]Gain 5 #Mantra."
+  },
+  {
+    "id": "Wreath_of_Flame",
+    "name": "Wreath of Flame",
+    "type": "Skill",
+    "cost": 1,
+    "color": "Purple",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "ApplyBuff",
+          "params": {
+            "buff": "Vigor",
+            "amount": 5,
+            "upgrade_amount": 8,
+            "target": "self"
+          }
+        }
+      ]
+    },
+    "original_text": "Your next Attack deals [5|8] additional damage.",
+    "manual_review_needed": false
+  },
+  {
+    "id": "Battle_Hymn",
+    "name": "Battle Hymn",
+    "type": "Power",
+    "cost": 1,
+    "color": "Purple",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "ApplyPower",
+          "params": {
+            "power": "BattleHymn",
+            "base": 1,
+            "upgrade": 1
+          }
+        },
+        {
+          "type": "Innate",
+          "params": {
+            "upgrade_only": true
+          }
+        }
+      ]
+    },
+    "original_text": "[|#Innate. <br>]At the start of each turn add a {{C|Smite}} into your hand."
+  },
+  {
+    "id": "Fasting",
+    "name": "Fasting",
+    "type": "Power",
+    "cost": 2,
+    "color": "Purple",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "ApplyPower",
+          "params": {
+            "power": "Fasting",
+            "base": 3,
+            "upgrade": 4
+          }
+        },
+        {
+          "type": "GainBuff",
+          "params": {
+            "buff": "Strength",
+            "base": 3,
+            "upgrade": 4
+          }
+        },
+        {
+          "type": "GainBuff",
+          "params": {
+            "buff": "Dexterity",
+            "base": 3,
+            "upgrade": 4
+          }
+        }
+      ],
+      "keywords_used": [
+        "Strength",
+        "Dexterity"
+      ]
+    },
+    "original_text": "Gain [3|4] #Strength. <br>Gain [3|4] #Dexterity. <br>Gain 1 less @PE at the start of each turn."
+  },
+  {
+    "id": "Foresight",
+    "name": "Foresight",
+    "type": "Power",
+    "cost": 1,
+    "color": "Purple",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "ApplyPower",
+          "params": {
+            "power": "Foresight",
+            "base": 3,
+            "upgrade": 4
+          }
+        }
+      ],
+      "keywords_used": [
+        "Scry"
+      ]
+    },
+    "original_text": "At the start of your turn, #Scry [3|4]."
+  },
+  {
+    "id": "Like_Water",
+    "name": "Like Water",
+    "type": "Power",
+    "cost": 1,
+    "color": "Purple",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "GainBlock",
+          "params": {
+            "base": 5,
+            "upgrade": 7
+          }
+        }
+      ],
+      "conditions": [
+        "IfInStance: if you are in #Calm"
+      ],
+      "keywords_used": [
+        "Calm",
+        "Block"
+      ]
+    },
+    "original_text": "At the end of your turn, if you are in #Calm, gain [5|7] #Block."
+  },
+  {
+    "id": "Mental_Fortress",
+    "name": "Mental Fortress",
+    "type": "Power",
+    "cost": 1,
+    "color": "Purple",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "ApplyPower",
+          "params": {
+            "power": "Mental Fortress",
+            "base": 4,
+            "upgrade": 6
+          }
+        }
+      ],
+      "keywords_used": [
+        "Block"
+      ]
+    },
+    "original_text": "Whenever you switch #Stances, gain [4|6] #Block."
+  },
+  {
+    "id": "Nirvana",
+    "name": "Nirvana",
+    "type": "Power",
+    "cost": 1,
+    "color": "Purple",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "ApplyPower",
+          "params": {
+            "power": "Nirvana",
+            "base": 3,
+            "upgrade": 4
+          }
+        }
+      ],
+      "keywords_used": [
+        "Scry",
+        "Block"
+      ]
+    },
+    "original_text": "Whenever you #Scry, gain [3|4] #Block."
+  },
+  {
+    "id": "Rushdown",
+    "name": "Rushdown",
+    "type": "Power",
+    "cost": 1,
+    "color": "Purple",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "ApplyPower",
+          "params": {
+            "power": "Rushdown",
+            "base": 2,
+            "upgrade": 2
+          }
+        }
+      ],
+      "keywords_used": [
+        "Wrath"
+      ]
+    },
+    "original_text": "Whenever you enter #Wrath, draw 2 cards.",
+    "cost_upgrade": 0
+  },
+  {
+    "id": "Study",
+    "name": "Study",
+    "type": "Power",
+    "cost": 2,
+    "color": "Purple",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "ApplyPower",
+          "params": {
+            "power": "Study",
+            "base": 1,
+            "upgrade": 1
+          }
+        }
+      ]
+    },
+    "original_text": "At the end of your turn, shuffle an {{C|Insight}} into your draw pile.",
+    "cost_upgrade": 1
+  }
+]

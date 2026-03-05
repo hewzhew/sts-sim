@@ -1,0 +1,474 @@
+[
+  {
+    "id": "Bite",
+    "name": "Bite",
+    "type": "Attack",
+    "cost": 1,
+    "color": "Colorless",
+    "rarity": "Special",
+    "logic": {
+      "target_type": "Enemy",
+      "commands": [
+        {
+          "type": "DealDamage",
+          "params": {
+            "base": 7,
+            "upgrade": 8
+          }
+        },
+        {
+          "type": "Heal",
+          "params": {
+            "base": 2,
+            "upgrade": 3
+          }
+        }
+      ]
+    },
+    "original_text": "Deal [7|8] damage.<br>Heal [2|3] HP."
+  },
+  {
+    "id": "Expunger",
+    "name": "Expunger",
+    "type": "Attack",
+    "cost": 1,
+    "color": "Colorless",
+    "rarity": "Special",
+    "logic": {
+      "target_type": "Enemy",
+      "commands": [
+        {
+          "type": "DealDamage",
+          "params": {
+            "base": 9,
+            "upgrade": 15
+          }
+        }
+      ]
+    },
+    "original_text": "Deal [9|15] damage X times."
+  },
+  {
+    "id": "Ritual_Dagger",
+    "name": "Ritual Dagger",
+    "type": "Attack",
+    "cost": 1,
+    "color": "Colorless",
+    "rarity": "Special",
+    "logic": {
+      "target_type": "Enemy",
+      "commands": [
+        {
+          "type": "DealDamage",
+          "params": {
+            "base": 15,
+            "upgrade": 15
+          }
+        },
+        {
+          "type": "IncreaseDamage",
+          "params": {
+            "base": 3,
+            "upgrade": 5,
+            "permanent": true
+          }
+        },
+        {
+          "type": "ExhaustSelf",
+          "params": {}
+        }
+      ],
+      "conditions": [
+        "OnFatal: If #Fatal"
+      ],
+      "keywords_used": [
+        "Fatal",
+        "Exhaust"
+      ]
+    },
+    "original_text": "Deal 15 damage. If #Fatal, permanently increase this card's damage by [3|5].<br>#Exhaust."
+  },
+  {
+    "id": "Shiv",
+    "name": "Shiv",
+    "type": "Attack",
+    "cost": 0,
+    "color": "Colorless",
+    "rarity": "Special",
+    "logic": {
+      "target_type": "Enemy",
+      "commands": [
+        {
+          "type": "DealDamage",
+          "params": {
+            "base": 4,
+            "upgrade": 6
+          }
+        },
+        {
+          "type": "ExhaustSelf",
+          "params": {}
+        }
+      ],
+      "keywords_used": [
+        "Exhaust"
+      ]
+    },
+    "original_text": "Deal [4|6] damage.<br>#Exhaust."
+  },
+  {
+    "id": "Smite",
+    "name": "Smite",
+    "type": "Attack",
+    "cost": 1,
+    "color": "Colorless",
+    "rarity": "Special",
+    "logic": {
+      "target_type": "Enemy",
+      "commands": [
+        {
+          "type": "Retain",
+          "params": {}
+        },
+        {
+          "type": "DealDamage",
+          "params": {
+            "base": 12,
+            "upgrade": 16
+          }
+        },
+        {
+          "type": "ExhaustSelf",
+          "params": {}
+        }
+      ],
+      "keywords_used": [
+        "Retain",
+        "Exhaust"
+      ]
+    },
+    "original_text": "#Retain. Deal [12|16] damage. #Exhaust."
+  },
+  {
+    "id": "Through_Violence",
+    "name": "Through Violence",
+    "type": "Attack",
+    "cost": 0,
+    "color": "Colorless",
+    "rarity": "Special",
+    "logic": {
+      "target_type": "Enemy",
+      "commands": [
+        {
+          "type": "Retain",
+          "params": {}
+        },
+        {
+          "type": "DealDamage",
+          "params": {
+            "base": 20,
+            "upgrade": 30
+          }
+        },
+        {
+          "type": "ExhaustSelf",
+          "params": {}
+        }
+      ],
+      "keywords_used": [
+        "Retain",
+        "Exhaust"
+      ]
+    },
+    "original_text": "#Retain. Deal [20|30] damage. #Exhaust."
+  },
+  {
+    "id": "Apparition",
+    "name": "Apparition",
+    "type": "Skill",
+    "cost": 1,
+    "color": "Colorless",
+    "rarity": "Special",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "Ethereal",
+          "params": {}
+        },
+        {
+          "type": "GainBuff",
+          "params": {
+            "buff": "Intangible",
+            "base": 1,
+            "upgrade": 1
+          }
+        },
+        {
+          "type": "ExhaustSelf",
+          "params": {}
+        }
+      ],
+      "keywords_used": [
+        "Ethereal",
+        "Intangible",
+        "Exhaust"
+      ]
+    },
+    "original_text": "[#Ethereal. <br>|]Gain 1 #Intangible. <br>#Exhaust."
+  },
+  {
+    "id": "Beta",
+    "name": "Beta",
+    "type": "Skill",
+    "cost": 2,
+    "color": "Colorless",
+    "rarity": "Special",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "ShuffleInto",
+          "params": {
+            "card": "an Omega"
+          }
+        },
+        {
+          "type": "ExhaustSelf",
+          "params": {}
+        }
+      ],
+      "keywords_used": [
+        "Exhaust"
+      ]
+    },
+    "original_text": "Shuffle an {{C|Omega}} into draw pile. <br>#Exhaust.",
+    "cost_upgrade": 1
+  },
+  {
+    "id": "Fame_and_Fortune",
+    "name": "Fame and Fortune",
+    "type": "Skill",
+    "cost": -2,
+    "color": "Colorless",
+    "rarity": "Special",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "GainGold",
+          "params": {
+            "amount": 25,
+            "upgrade": 30
+          }
+        }
+      ]
+    },
+    "original_text": "Gain [25|30] Gold",
+    "manual_review_needed": false
+  },
+  {
+    "id": "Insight",
+    "name": "Insight",
+    "type": "Skill",
+    "cost": 0,
+    "color": "Colorless",
+    "rarity": "Special",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "Retain",
+          "params": {}
+        },
+        {
+          "type": "DrawCards",
+          "params": {
+            "base": 2,
+            "upgrade": 3
+          }
+        },
+        {
+          "type": "ExhaustSelf",
+          "params": {}
+        }
+      ],
+      "keywords_used": [
+        "Retain",
+        "Exhaust"
+      ]
+    },
+    "original_text": "#Retain. Draw [2|3] cards. #Exhaust."
+  },
+  {
+    "id": "J.A.X.",
+    "name": "J.A.X.",
+    "type": "Skill",
+    "cost": 0,
+    "color": "Colorless",
+    "rarity": "Special",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "LoseHP",
+          "params": {
+            "base": 3,
+            "upgrade": 3
+          }
+        },
+        {
+          "type": "GainBuff",
+          "params": {
+            "buff": "Strength",
+            "base": 2,
+            "upgrade": 3
+          }
+        }
+      ],
+      "keywords_used": [
+        "Strength"
+      ]
+    },
+    "original_text": "Lose 3 HP.<br>Gain [2|3] #Strength."
+  },
+  {
+    "id": "Miracle",
+    "name": "Miracle",
+    "type": "Skill",
+    "cost": 0,
+    "color": "Colorless",
+    "rarity": "Special",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "Retain",
+          "params": {}
+        },
+        {
+          "type": "GainEnergy",
+          "params": {
+            "base": 1,
+            "upgrade": 2
+          }
+        },
+        {
+          "type": "ExhaustSelf",
+          "params": {}
+        }
+      ],
+      "keywords_used": [
+        "Retain",
+        "Exhaust"
+      ]
+    },
+    "original_text": "#Retain. <br>Gain [@PE|@PE @PE]. <br>#Exhaust."
+  },
+  {
+    "id": "Safety",
+    "name": "Safety",
+    "type": "Skill",
+    "cost": 1,
+    "color": "Colorless",
+    "rarity": "Special",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "Retain",
+          "params": {}
+        },
+        {
+          "type": "GainBlock",
+          "params": {
+            "base": 12,
+            "upgrade": 16
+          }
+        },
+        {
+          "type": "ExhaustSelf",
+          "params": {}
+        }
+      ],
+      "keywords_used": [
+        "Retain",
+        "Block",
+        "Exhaust"
+      ]
+    },
+    "original_text": "#Retain. Gain [12|16] #Block. #Exhaust."
+  },
+  {
+    "id": "Become_Almighty",
+    "name": "Become Almighty",
+    "type": "Power",
+    "cost": -2,
+    "color": "Colorless",
+    "rarity": "Special",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "GainBuff",
+          "params": {
+            "buff": "Strength",
+            "base": 3,
+            "upgrade": 4
+          }
+        }
+      ],
+      "keywords_used": [
+        "Strength"
+      ]
+    },
+    "original_text": "Gain [3|4] #Strength."
+  },
+  {
+    "id": "Live_Forever",
+    "name": "Live Forever",
+    "type": "Power",
+    "cost": -2,
+    "color": "Colorless",
+    "rarity": "Special",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "GainBuff",
+          "params": {
+            "buff": "Plated",
+            "base": 6,
+            "upgrade": 8
+          }
+        }
+      ],
+      "keywords_used": [
+        "Plated Armor"
+      ]
+    },
+    "original_text": "Gain [6|8] #Plated Armor."
+  },
+  {
+    "id": "Omega",
+    "name": "Omega",
+    "type": "Power",
+    "cost": 3,
+    "color": "Colorless",
+    "rarity": "Special",
+    "logic": {
+      "target_type": "AllEnemies",
+      "commands": [
+        {
+          "type": "ApplyPower",
+          "params": {
+            "power": "Omega",
+            "base": 50,
+            "upgrade": 60
+          }
+        }
+      ]
+    },
+    "original_text": "At the end of your turn, deal [50|60] damage to ALL enemies."
+  }
+]

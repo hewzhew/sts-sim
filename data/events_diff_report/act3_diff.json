@@ -1,0 +1,175 @@
+{
+  "category": "act3",
+  "total_wiki_events": 8,
+  "events": [
+    {
+      "wiki_id": "Falling",
+      "name": "Falling",
+      "found_in_existing": true,
+      "wiki_options_count": 6,
+      "existing_options_count": 3,
+      "option_labels_wiki": [
+        "[Channel]",
+        "[Locked]",
+        "[Land]",
+        "[Channel]",
+        "[Strike]",
+        "[Land]"
+      ],
+      "option_labels_existing": [
+        "[Land] Lose a Skill card",
+        "[Channel] Lose a Power card",
+        "[Strike] Lose an Attack card"
+      ],
+      "needs_review": true,
+      "issues": [
+        "选项数量不匹配: Wiki=6, 现有=3",
+        "现有数据缺少选项: {'[locked]', '[channel]', '[land]', '[strike]'}",
+        "现有数据多余选项: {'[strike] lose an attack card', '[land] lose a skill card', '[channel] lose a power card'}"
+      ]
+    },
+    {
+      "wiki_id": "Mind_Bloom",
+      "name": "Mind Bloom",
+      "found_in_existing": false,
+      "wiki_options_count": 5,
+      "existing_options_count": 0,
+      "option_labels_wiki": [
+        "[I am War]",
+        "[I am Awake]",
+        "[I am Rich]",
+        "[I am Healthy]",
+        "[I am Rich]"
+      ],
+      "option_labels_existing": [],
+      "needs_review": true,
+      "issues": [
+        "事件在 events_logic.json 中不存在"
+      ]
+    },
+    {
+      "wiki_id": "Mysterious_Sphere",
+      "name": "Mysterious Sphere",
+      "found_in_existing": true,
+      "wiki_options_count": 2,
+      "existing_options_count": 2,
+      "option_labels_wiki": [
+        "[Open Sphere]",
+        "[Leave]"
+      ],
+      "option_labels_existing": [
+        "[Open Sphere] Fight. Reward: Rare Relic",
+        "[Leave]"
+      ],
+      "needs_review": true,
+      "issues": [
+        "现有数据缺少选项: {'[open sphere]'}",
+        "现有数据多余选项: {'[open sphere] fight. reward: rare relic'}"
+      ]
+    },
+    {
+      "wiki_id": "Secret_Portal",
+      "name": "Secret Portal",
+      "found_in_existing": false,
+      "wiki_options_count": 2,
+      "existing_options_count": 0,
+      "option_labels_wiki": [
+        "[Enter the Portal]",
+        "[Leave]"
+      ],
+      "option_labels_existing": [],
+      "needs_review": true,
+      "issues": [
+        "事件在 events_logic.json 中不存在"
+      ]
+    },
+    {
+      "wiki_id": "Sensory_Stone",
+      "name": "Sensory Stone",
+      "found_in_existing": false,
+      "wiki_options_count": 3,
+      "existing_options_count": 0,
+      "option_labels_wiki": [
+        "[Recall]",
+        "[Recall]",
+        "[Recall]"
+      ],
+      "option_labels_existing": [],
+      "needs_review": true,
+      "issues": [
+        "事件在 events_logic.json 中不存在"
+      ]
+    },
+    {
+      "wiki_id": "The_Moai_Head",
+      "name": "The Moai Head",
+      "found_in_existing": true,
+      "wiki_options_count": 4,
+      "existing_options_count": 3,
+      "option_labels_wiki": [
+        "[Jump Inside]",
+        "[Offer:  Golden Idol]",
+        "[Locked]",
+        "[Leave]"
+      ],
+      "option_labels_existing": [
+        "[Jump Inside] Heal to full HP. Lose Max HP",
+        "[Offer: Golden Idol] Receive 333 Gold",
+        "[Leave]"
+      ],
+      "needs_review": true,
+      "issues": [
+        "选项数量不匹配: Wiki=4, 现有=3",
+        "现有数据缺少选项: {'[locked]', '[offer:  golden idol]', '[jump inside]'}",
+        "现有数据多余选项: {'[offer: golden idol] receive 333 gold', '[jump inside] heal to full hp. lose max hp'}"
+      ]
+    },
+    {
+      "wiki_id": "Tomb_of_Lord_Red_Mask",
+      "name": "Tomb of Lord Red Mask",
+      "found_in_existing": true,
+      "wiki_options_count": 5,
+      "existing_options_count": 3,
+      "option_labels_wiki": [
+        "[Don the Red Mask]",
+        "[Leave]",
+        "[Locked]",
+        "[Offer: X Gold]",
+        "[Leave]"
+      ],
+      "option_labels_existing": [
+        "[Don the Red Mask] Gain 222 Gold",
+        "[Offer Gold] Lose all Gold. Gain a Relic",
+        "[Leave]"
+      ],
+      "needs_review": true,
+      "issues": [
+        "选项数量不匹配: Wiki=5, 现有=3",
+        "现有数据缺少选项: {'[locked]', '[offer: x gold]', '[don the red mask]'}",
+        "现有数据多余选项: {'[don the red mask] gain 222 gold', '[offer gold] lose all gold. gain a relic'}"
+      ]
+    },
+    {
+      "wiki_id": "Winding_Halls",
+      "name": "Winding Halls",
+      "found_in_existing": true,
+      "wiki_options_count": 3,
+      "existing_options_count": 3,
+      "option_labels_wiki": [
+        "[Embrace Madness]",
+        "[Focus]",
+        "[Retrace Your Steps]"
+      ],
+      "option_labels_existing": [
+        "[Embrace Madness] Receive 2 Madness. Lose 10 HP",
+        "[Focus] Become Cursed - Writhe. Heal HP",
+        "[Leave]"
+      ],
+      "needs_review": true,
+      "issues": [
+        "现有数据缺少选项: {'[focus]', '[embrace madness]', '[retrace your steps]'}",
+        "现有数据多余选项: {'[leave]', '[embrace madness] receive 2 madness. lose 10 hp', '[focus] become cursed - writhe. heal hp'}"
+      ]
+    }
+  ]
+}

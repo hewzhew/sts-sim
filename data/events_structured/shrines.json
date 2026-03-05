@@ -1,0 +1,382 @@
+[
+  {
+    "wiki_id": "A_Note_For_Yourself",
+    "name": "A Note For Yourself",
+    "category": "shrines",
+    "options": [
+      {
+        "label": "[Take and Give]",
+        "description": "Receive and Store a Card",
+        "rewards": {
+          "card": "a"
+        },
+        "effects": [
+          "Receive a card that you had stored previously, and store a card in your deck in return.",
+          "First encounter in save file: Iron Wave is stored by default."
+        ]
+      },
+      {
+        "label": "[Ignore]",
+        "description": "Nothing happens."
+      }
+    ],
+    "notes": [
+      "This event can store a card between runs, allows obtaining cards from different characters.",
+      "On A14 or lower: Must have beaten that Ascension level on chosen character to encounter.",
+      "On A15 or higher: This event cannot be encountered.",
+      "Playing the Daily Climb also disables this event.",
+      "Upgraded cards and Searing Blow upgrade levels are preserved when stored.",
+      "Retrieving a card triggers relics: Molten Egg, Toxic Egg, Frozen Egg, Ceramic Fish."
+    ]
+  },
+  {
+    "wiki_id": "Bonfire_Spirits",
+    "name": "Bonfire Spirits",
+    "category": "shrines",
+    "options": [
+      {
+        "label": "[Offer]",
+        "description": "Receive a reward based on the offer.",
+        "rewards": {
+          "card": "depends on the rarity of the"
+        },
+        "effects": [
+          "Offer a card in your deck to remove. The reward you receive depends on the rarity of the card you give."
+        ]
+      }
+    ],
+    "notes": [
+      "This event is one of those that treats Basic cards as a lower quality than Common.",
+      "Obtaining  Spirit Poop adds the Poopy Score bonus which lowers your total score by one."
+    ]
+  },
+  {
+    "wiki_id": "Duplicator",
+    "name": "Duplicator",
+    "category": "shrines",
+    "options": [
+      {
+        "label": "[Pray]",
+        "description": "Duplicate a card in your deck."
+      },
+      {
+        "label": "[Leave]",
+        "description": "Nothing happens."
+      }
+    ]
+  },
+  {
+    "wiki_id": "Golden_Shrine",
+    "name": "Golden Shrine",
+    "category": "shrines",
+    "options": [
+      {
+        "label": "[Pray]",
+        "description": "Gain 100 Gold.",
+        "rewards": {
+          "gold": 100
+        }
+      },
+      {
+        "label": "[Desecrate]",
+        "description": "Gain 275 Gold. Become Cursed -  Regret.",
+        "rewards": {
+          "gold": 275,
+          "curse": "Regret"
+        },
+        "effects": [
+          "Regret -  Unplayable. At the end of your turn, lose HP equal to the number of cards in your hand."
+        ]
+      },
+      {
+        "label": "[Leave]",
+        "description": "Nothing happens."
+      }
+    ]
+  },
+  {
+    "wiki_id": "Lab",
+    "name": "Lab",
+    "category": "shrines",
+    "options": [
+      {
+        "label": "[Search]",
+        "description": "Find some Potions!",
+        "effects": [
+          "Opens a rewards menu with three (two 15) random Potions. These can be skipped."
+        ]
+      }
+    ]
+  },
+  {
+    "wiki_id": "Match_and_Keep",
+    "name": "Match and Keep",
+    "category": "shrines",
+    "event_type": "minigame",
+    "minigame": {
+      "type": "memory_match",
+      "grid_size": 12,
+      "pairs": 6,
+      "attempts": 5,
+      "card_pool": {
+        "guaranteed": [
+          {
+            "type": "colorless",
+            "count": 1
+          },
+          {
+            "type": "curse",
+            "count": 1
+          }
+        ],
+        "random": [
+          {
+            "type": "character_card",
+            "count": 4
+          }
+        ]
+      },
+      "outcome": "skill_based",
+      "simulation_note": "For AI simulation, treat as probabilistic: expected ~2-3 matches with random play, skilled play can match all 6"
+    },
+    "options": [
+      {
+        "label": "[Play]",
+        "description": "Play a memory matching game for cards.",
+        "rewards": {
+          "cards": {
+            "type": "matched_pairs",
+            "min": 0,
+            "max": 6,
+            "always_includes": [
+              "colorless",
+              "curse"
+            ]
+          }
+        }
+      }
+    ],
+    "notes": [
+      "Match pairs of cards to add them to your deck",
+      "12 cards total, 6 pairs, 5 attempts to flip",
+      "Always includes 1 Colorless card pair and 1 Curse pair"
+    ]
+  },
+  {
+    "wiki_id": "Ominous_Forge",
+    "name": "Ominous Forge",
+    "category": "shrines",
+    "options": [
+      {
+        "label": "[Forge]",
+        "description": "Upgrade a card in your deck.",
+        "rewards": {
+          "upgrade_card": 1
+        }
+      },
+      {
+        "label": "[Rummage]",
+        "description": "Obtain a special relic. Become Cursed -  Pain.",
+        "rewards": {
+          "relic": "random",
+          "curse": "Pain"
+        },
+        "effects": [
+          "Warped Tongs - At the start of your turn,  Upgrade a random card in your hand for the rest of combat.",
+          "Pain -  Unplayable. While in hand, lose 1 HP whenever you play another card."
+        ]
+      },
+      {
+        "label": "[Leave]",
+        "description": "Nothing happens."
+      }
+    ],
+    "notes": [
+      "Internally called Accursed_Blacksmith."
+    ]
+  },
+  {
+    "wiki_id": "Purifier",
+    "name": "Purifier",
+    "category": "shrines",
+    "options": [
+      {
+        "label": "[Pray]",
+        "description": "Remove a card from your deck.",
+        "costs": {
+          "remove_card": 1
+        }
+      },
+      {
+        "label": "[Leave]",
+        "description": "Nothing happens."
+      }
+    ],
+    "notes": [
+      "This probably would not work as an air purifier."
+    ]
+  },
+  {
+    "wiki_id": "The_Divine_Fountain",
+    "name": "The Divine Fountain",
+    "category": "shrines",
+    "options": [
+      {
+        "label": "[Drink]",
+        "description": "Remove all Curses from your deck.",
+        "rewards": {
+          "curse": "random"
+        }
+      },
+      {
+        "label": "[Leave]",
+        "description": "Nothing happens."
+      }
+    ],
+    "notes": [
+      "Removing all Curses may not be beneficial if you are relying on the  Strength from  Du-Vu Doll.",
+      "The Max HP gain from  Darkstone Periapt is kept even when the Curses are removed."
+    ]
+  },
+  {
+    "wiki_id": "The_Woman_in_Blue",
+    "name": "The Woman in Blue",
+    "category": "shrines",
+    "options": [
+      {
+        "label": "[Buy 1 Potion]",
+        "description": "20 Gold."
+      },
+      {
+        "label": "[Buy 2 Potions]",
+        "description": "30 Gold."
+      },
+      {
+        "label": "[Buy 3 Potions]",
+        "description": "40 Gold."
+      },
+      {
+        "label": "[Leave]",
+        "description": "Nothing happens."
+      }
+    ],
+    "notes": [
+      "Even if you skip grabbing the potions you bought, she will still be satisfied."
+    ]
+  },
+  {
+    "wiki_id": "Transmogrifier",
+    "name": "Transmogrifier",
+    "category": "shrines",
+    "options": [
+      {
+        "label": "[Pray]",
+        "description": "Transform a card.",
+        "rewards": {
+          "transform_card": 1
+        },
+        "effects": [
+          "Read more on Transform rules here."
+        ]
+      },
+      {
+        "label": "[Leave]",
+        "description": "Nothing happens."
+      }
+    ]
+  },
+  {
+    "wiki_id": "Upgrade_Shrine",
+    "name": "Upgrade Shrine",
+    "category": "shrines",
+    "options": [
+      {
+        "label": "[Pray]",
+        "description": "Upgrade a card.",
+        "rewards": {
+          "upgrade_card": 1
+        }
+      },
+      {
+        "label": "[Leave]",
+        "description": "Nothing happens."
+      }
+    ]
+  },
+  {
+    "wiki_id": "We_Meet_Again!",
+    "name": "We Meet Again!",
+    "category": "shrines",
+    "options": [
+      {
+        "label": "[Give Potion]",
+        "description": "Lose a chosen potion. Obtain a Relic.",
+        "costs": {
+          "relic": "a chosen potion"
+        },
+        "rewards": {
+          "relic": "random"
+        },
+        "effects": [
+          "The event will randomly choose a potion upon entry and tell you which one was selected. You will be unable to drink or discard that potion until you leave the event's floor."
+        ]
+      },
+      {
+        "label": "[Give Gold]",
+        "description": "Lose Gold. Obtain a Relic.",
+        "rewards": {
+          "relic": "random"
+        },
+        "effects": [
+          "The amount of Gold lost is between 50 and 150 (or your current amount of Gold)."
+        ]
+      },
+      {
+        "label": "[Give Card]",
+        "description": "Lose a chosen card. Obtain a Relic.",
+        "costs": {
+          "relic": "a chosen card"
+        },
+        "rewards": {
+          "relic": "random",
+          "curse": "random"
+        },
+        "effects": [
+          "The chosen card will not be Basic or a Curse."
+        ]
+      },
+      {
+        "label": "[Attack]",
+        "description": "Nothing happens."
+      }
+    ],
+    "notes": [
+      "\"mask wearing hoodlums\" likely refers to the group of bandits in the Act 2 event  Masked Bandits."
+    ]
+  },
+  {
+    "wiki_id": "Wheel_of_Change",
+    "name": "Wheel of Change",
+    "category": "shrines",
+    "options": [
+      {
+        "label": "[Play]",
+        "description": "Spin the wheel for a random outcome.",
+        "effects": [
+          "Spin a wheel containing 6 equally-weighted outcomes:"
+        ],
+        "random_outcomes": [
+          "Gain Gold (100 Gold)",
+          "Gain a random Relic",
+          "Heal to full HP",
+          "Become Cursed - Decay",
+          "Remove a card from your deck",
+          "Take 10% (A15+: 15%) of Max HP as damage"
+        ]
+      }
+    ],
+    "notes": [
+      "All 6 outcomes have equal probability (1/6 each)."
+    ]
+  }
+]

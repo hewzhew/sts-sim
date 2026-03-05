@@ -1,0 +1,466 @@
+[
+  {
+    "id": "Hand_of_Greed",
+    "name": "Hand of Greed",
+    "type": "Attack",
+    "cost": 2,
+    "color": "Colorless",
+    "rarity": "Rare",
+    "logic": {
+      "target_type": "Enemy",
+      "commands": [
+        {
+          "type": "DealDamage",
+          "params": {
+            "base": 20,
+            "upgrade": 25
+          }
+        },
+        {
+          "type": "Conditional",
+          "params": {
+            "condition": {
+              "type": "EnemyKilledByLastAttack"
+            },
+            "then_do": [
+              {
+                "type": "GainGold",
+                "params": {
+                  "amount": 20,
+                  "upgrade": 25
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "conditions": [
+        "OnFatal: If #Fatal"
+      ],
+      "keywords_used": [
+        "Fatal"
+      ]
+    },
+    "original_text": "Deal [20|25] damage.<br>If #Fatal, gain [20|25] Gold.",
+    "manual_review_needed": false
+  },
+  {
+    "id": "Apotheosis",
+    "name": "Apotheosis",
+    "type": "Skill",
+    "cost": 2,
+    "color": "Colorless",
+    "rarity": "Rare",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "UpgradeCards",
+          "params": {
+            "amount_base": "ALL",
+            "amount_upgrade": "ALL",
+            "target": "Deck"
+          }
+        },
+        {
+          "type": "ExhaustSelf",
+          "params": {}
+        }
+      ],
+      "keywords_used": [
+        "Exhaust"
+      ]
+    },
+    "original_text": "#Upgrade ALL your cards for the rest of combat.<br>#Exhaust.",
+    "cost_upgrade": 1
+  },
+  {
+    "id": "Chrysalis",
+    "name": "Chrysalis",
+    "type": "Skill",
+    "cost": 2,
+    "color": "Colorless",
+    "rarity": "Rare",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "ShuffleInto",
+          "params": {
+            "card": "[3|5] random Skills"
+          }
+        },
+        {
+          "type": "ExhaustSelf",
+          "params": {}
+        }
+      ],
+      "keywords_used": [
+        "Exhaust"
+      ]
+    },
+    "original_text": "Shuffle [3|5] random Skills into your draw pile. They cost 0 this combat.<br>#Exhaust.",
+    "manual_review_needed": false,
+    "flags": {
+      "generated_cost": 0
+    }
+  },
+  {
+    "id": "Master_of_Strategy",
+    "name": "Master of Strategy",
+    "type": "Skill",
+    "cost": 0,
+    "color": "Colorless",
+    "rarity": "Rare",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "DrawCards",
+          "params": {
+            "base": 3,
+            "upgrade": 4
+          }
+        },
+        {
+          "type": "ExhaustSelf",
+          "params": {}
+        }
+      ],
+      "keywords_used": [
+        "Exhaust"
+      ]
+    },
+    "original_text": "Draw [3|4] cards.<br>#Exhaust."
+  },
+  {
+    "id": "Metamorphosis",
+    "name": "Metamorphosis",
+    "type": "Skill",
+    "cost": 2,
+    "color": "Colorless",
+    "rarity": "Rare",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "ShuffleInto",
+          "params": {
+            "card": "[3|5] random Attacks"
+          }
+        },
+        {
+          "type": "ExhaustSelf",
+          "params": {}
+        }
+      ],
+      "keywords_used": [
+        "Exhaust"
+      ]
+    },
+    "original_text": "Shuffle [3|5] random Attacks into your draw pile. They cost 0 this combat.<br>#Exhaust.",
+    "manual_review_needed": false,
+    "flags": {
+      "generated_cost": 0
+    }
+  },
+  {
+    "id": "Secret_Technique",
+    "name": "Secret Technique",
+    "type": "Skill",
+    "cost": 0,
+    "color": "Colorless",
+    "rarity": "Rare",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "ExhaustSelf",
+          "params": {
+            "base_only": true
+          }
+        },
+        {
+          "type": "MoveCard",
+          "params": {
+            "from": "draw_pile",
+            "to": "hand",
+            "insert_at": "top",
+            "select": {
+              "mode": "Choose",
+              "count": 1
+            },
+            "filter": {
+              "type": "CardType",
+              "params": {
+                "card_type": "Skill"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "original_text": "Put a Skill from your draw pile into your hand.[<br>#Exhaust.|]",
+    "manual_review_needed": false
+  },
+  {
+    "id": "Secret_Weapon",
+    "name": "Secret Weapon",
+    "type": "Skill",
+    "cost": 0,
+    "color": "Colorless",
+    "rarity": "Rare",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "ExhaustSelf",
+          "params": {
+            "base_only": true
+          }
+        },
+        {
+          "type": "MoveCard",
+          "params": {
+            "from": "draw_pile",
+            "to": "hand",
+            "insert_at": "top",
+            "select": {
+              "mode": "Choose",
+              "count": 1
+            },
+            "filter": {
+              "type": "CardType",
+              "params": {
+                "card_type": "Attack"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "original_text": "Put an Attack from your draw pile into your hand.[<br>#Exhaust.|]",
+    "manual_review_needed": false
+  },
+  {
+    "id": "The_Bomb",
+    "name": "The Bomb",
+    "type": "Skill",
+    "cost": 2,
+    "color": "Colorless",
+    "rarity": "Rare",
+    "logic": {
+      "target_type": "AllEnemies",
+      "commands": [
+        {
+          "type": "DealDamageAll",
+          "params": {
+            "base": 40,
+            "upgrade": 50
+          }
+        }
+      ]
+    },
+    "original_text": "At the end of 3 turns, deal [40|50] damage to ALL enemies."
+  },
+  {
+    "id": "Thinking_Ahead",
+    "name": "Thinking Ahead",
+    "type": "Skill",
+    "cost": 0,
+    "color": "Colorless",
+    "rarity": "Rare",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "DrawCards",
+          "params": {
+            "base": 2,
+            "upgrade": 2
+          }
+        },
+        {
+          "type": "PutOnTop",
+          "params": {
+            "from": "hand",
+            "to": "draw_pile"
+          }
+        },
+        {
+          "type": "ExhaustSelf",
+          "params": {
+            "base_only": true
+          }
+        }
+      ]
+    },
+    "original_text": "Draw 2 cards.<br>Put a card from your hand on top of your draw pile.[<br>#Exhaust.|]"
+  },
+  {
+    "id": "Transmutation",
+    "name": "Transmutation",
+    "type": "Skill",
+    "cost": -1,
+    "color": "Colorless",
+    "rarity": "Rare",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "AddCard",
+          "params": {
+            "card": "X random[| #Upgraded] Colorless cards",
+            "destination": "hand"
+          }
+        },
+        {
+          "type": "ExhaustSelf",
+          "params": {}
+        }
+      ],
+      "keywords_used": [
+        "Exhaust"
+      ]
+    },
+    "original_text": "Add X random[| #Upgraded] Colorless cards into your hand. They cost 0 this turn.<br>#Exhaust.",
+    "manual_review_needed": false,
+    "flags": {
+      "generated_cost": 0
+    }
+  },
+  {
+    "id": "Violence",
+    "name": "Violence",
+    "type": "Skill",
+    "cost": 0,
+    "color": "Colorless",
+    "rarity": "Rare",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "ExhaustSelf",
+          "params": {}
+        },
+        {
+          "type": "MoveCard",
+          "params": {
+            "from": "draw_pile",
+            "to": "hand",
+            "insert_at": "top",
+            "select": {
+              "mode": "Random",
+              "count": 3
+            },
+            "filter": {
+              "type": "CardType",
+              "params": {
+                "card_type": "Attack"
+              }
+            },
+            "upgrade_count": 4
+          }
+        }
+      ],
+      "keywords_used": [
+        "Exhaust"
+      ]
+    },
+    "original_text": "Put [3|4] random Attacks from your draw pile into your hand.<br>#Exhaust.",
+    "manual_review_needed": false
+  },
+  {
+    "id": "Magnetism",
+    "name": "Magnetism",
+    "type": "Power",
+    "cost": 2,
+    "color": "Colorless",
+    "rarity": "Rare",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "ApplyPower",
+          "params": {
+            "power": "Magnetism",
+            "base": 1,
+            "upgrade": 1
+          }
+        }
+      ]
+    },
+    "original_text": "At the start of your turn, add a random Colorless card into your hand.",
+    "cost_upgrade": 1
+  },
+  {
+    "id": "Mayhem",
+    "name": "Mayhem",
+    "type": "Power",
+    "cost": 2,
+    "color": "Colorless",
+    "rarity": "Rare",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "ApplyPower",
+          "params": {
+            "power": "Mayhem",
+            "base": 1,
+            "upgrade": 1
+          }
+        }
+      ]
+    },
+    "original_text": "At the start of your turn, play the top card of your draw pile.",
+    "cost_upgrade": 1
+  },
+  {
+    "id": "Panache",
+    "name": "Panache",
+    "type": "Power",
+    "cost": 0,
+    "color": "Colorless",
+    "rarity": "Rare",
+    "logic": {
+      "target_type": "AllEnemies",
+      "commands": [
+        {
+          "type": "DealDamageAll",
+          "params": {
+            "base": 10,
+            "upgrade": 14
+          }
+        }
+      ]
+    },
+    "original_text": "Every time you play 5 cards in a single turn, deal [10|14] damage to ALL enemies."
+  },
+  {
+    "id": "Sadistic_Nature",
+    "name": "Sadistic Nature",
+    "type": "Power",
+    "cost": 0,
+    "color": "Colorless",
+    "rarity": "Rare",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "ApplyPower",
+          "params": {
+            "power": "Sadistic Nature",
+            "amount": 5,
+            "upgrade_amount": 7
+          }
+        }
+      ],
+      "conditions": [
+        "Trigger: Whenever you apply a debuff to an enemy, they take [5|7] damage"
+      ]
+    },
+    "original_text": "Whenever you apply a debuff to an enemy, they take [5|7] damage.",
+    "manual_review_needed": false
+  }
+]

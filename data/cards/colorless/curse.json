@@ -1,0 +1,394 @@
+[
+  {
+    "id": "Ascender's_Bane",
+    "name": "Ascender's Bane",
+    "type": "Curse",
+    "cost": -2,
+    "color": "Colorless",
+    "rarity": "Curse",
+    "logic": {
+      "target_type": "Enemy",
+      "commands": [
+        {
+          "type": "Unplayable",
+          "params": {}
+        },
+        {
+          "type": "Ethereal",
+          "params": {}
+        }
+      ],
+      "keywords_used": [
+        "Unplayable",
+        "Ethereal"
+      ]
+    },
+    "original_text": "#Unplayable. <br>#Ethereal. <br>Cannot be removed from your deck.",
+    "manual_review_needed": false,
+    "flags": {
+      "cannot_remove": true
+    }
+  },
+  {
+    "id": "Clumsy",
+    "name": "Clumsy",
+    "type": "Curse",
+    "cost": -2,
+    "color": "Colorless",
+    "rarity": "Curse",
+    "logic": {
+      "target_type": "Enemy",
+      "commands": [
+        {
+          "type": "Unplayable",
+          "params": {}
+        },
+        {
+          "type": "Ethereal",
+          "params": {}
+        }
+      ],
+      "keywords_used": [
+        "Unplayable",
+        "Ethereal"
+      ]
+    },
+    "original_text": "#Unplayable. <br>#Ethereal."
+  },
+  {
+    "id": "Curse_of_the_Bell",
+    "name": "Curse of the Bell",
+    "type": "Curse",
+    "cost": -2,
+    "color": "Colorless",
+    "rarity": "Curse",
+    "logic": {
+      "target_type": "Enemy",
+      "commands": [
+        {
+          "type": "Unplayable",
+          "params": {}
+        }
+      ],
+      "keywords_used": [
+        "Unplayable"
+      ]
+    },
+    "original_text": "#Unplayable. <br>Cannot be removed from your deck.",
+    "manual_review_needed": false,
+    "flags": {
+      "cannot_remove": true
+    }
+  },
+  {
+    "id": "Decay",
+    "name": "Decay",
+    "type": "Curse",
+    "cost": -2,
+    "color": "Colorless",
+    "rarity": "Curse",
+    "logic": {
+      "target_type": "Enemy",
+      "commands": [
+        {
+          "type": "Unplayable",
+          "params": {}
+        }
+      ],
+      "conditions": [
+        "TurnTrigger: At the end of your turn"
+      ],
+      "keywords_used": [
+        "Unplayable"
+      ]
+    },
+    "original_text": "#Unplayable.<br>At the end of your turn, take 2 damage.",
+    "manual_review_needed": false,
+    "flags": {
+      "end_of_turn_damage": 2,
+      "end_of_turn_damage_upgrade": 2
+    }
+  },
+  {
+    "id": "Doubt",
+    "name": "Doubt",
+    "type": "Curse",
+    "cost": -2,
+    "color": "Colorless",
+    "rarity": "Curse",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "Unplayable",
+          "params": {}
+        },
+        {
+          "type": "GainBuff",
+          "params": {
+            "buff": "Weak",
+            "base": 1,
+            "upgrade": 1
+          }
+        }
+      ],
+      "conditions": [
+        "TurnTrigger: At the end of your turn"
+      ],
+      "keywords_used": [
+        "Unplayable",
+        "Weak"
+      ]
+    },
+    "original_text": "#Unplayable.<br>At the end of your turn, gain 1 #Weak."
+  },
+  {
+    "id": "Injury",
+    "name": "Injury",
+    "type": "Curse",
+    "cost": -2,
+    "color": "Colorless",
+    "rarity": "Curse",
+    "logic": {
+      "target_type": "Enemy",
+      "commands": [
+        {
+          "type": "Unplayable",
+          "params": {}
+        }
+      ],
+      "keywords_used": [
+        "Unplayable"
+      ]
+    },
+    "original_text": "#Unplayable."
+  },
+  {
+    "id": "Necronomicurse",
+    "name": "Necronomicurse",
+    "type": "Curse",
+    "cost": -2,
+    "color": "Colorless",
+    "rarity": "Curse",
+    "logic": {
+      "target_type": "Enemy",
+      "commands": [
+        {
+          "type": "Unplayable",
+          "params": {}
+        }
+      ],
+      "keywords_used": [
+        "Unplayable"
+      ]
+    },
+    "original_text": "#Unplayable.<br>There is no escape from this curse.",
+    "manual_review_needed": false,
+    "flags": {
+      "cannot_remove": true,
+      "returns_when_removed": true
+    }
+  },
+  {
+    "id": "Normality",
+    "name": "Normality",
+    "type": "Curse",
+    "cost": -2,
+    "color": "Colorless",
+    "rarity": "Curse",
+    "logic": {
+      "target_type": "Enemy",
+      "commands": [
+        {
+          "type": "Unplayable",
+          "params": {}
+        }
+      ],
+      "keywords_used": [
+        "Unplayable"
+      ]
+    },
+    "original_text": "#Unplayable.<br>While in hand, you cannot play more than 3 cards this turn.",
+    "manual_review_needed": false,
+    "flags": {
+      "card_play_limit": 3
+    }
+  },
+  {
+    "id": "Pain",
+    "name": "Pain",
+    "type": "Curse",
+    "cost": -2,
+    "color": "Colorless",
+    "rarity": "Curse",
+    "logic": {
+      "target_type": "Enemy",
+      "commands": [
+        {
+          "type": "Unplayable",
+          "params": {}
+        },
+        {
+          "type": "LoseHP",
+          "params": {
+            "base": 1,
+            "upgrade": 1
+          }
+        }
+      ],
+      "keywords_used": [
+        "Unplayable"
+      ]
+    },
+    "original_text": "#Unplayable.<br>While in hand, lose 1 HP when other cards are played."
+  },
+  {
+    "id": "Parasite",
+    "name": "Parasite",
+    "type": "Curse",
+    "cost": -2,
+    "color": "Colorless",
+    "rarity": "Curse",
+    "logic": {
+      "target_type": "Enemy",
+      "commands": [
+        {
+          "type": "Unplayable",
+          "params": {}
+        },
+        {
+          "type": "LoseBuff",
+          "params": {
+            "buff": "Max",
+            "base": 3,
+            "upgrade": 3
+          }
+        }
+      ],
+      "keywords_used": [
+        "Unplayable"
+      ]
+    },
+    "original_text": "#Unplayable.<br>If transformed or removed from your deck, lose 3 Max HP."
+  },
+  {
+    "id": "Pride",
+    "name": "Pride",
+    "type": "Curse",
+    "cost": 1,
+    "color": "Colorless",
+    "rarity": "Curse",
+    "logic": {
+      "target_type": "Enemy",
+      "commands": [
+        {
+          "type": "Innate",
+          "params": {}
+        },
+        {
+          "type": "ExhaustSelf",
+          "params": {}
+        }
+      ],
+      "conditions": [
+        "TurnTrigger: At the end of your turn"
+      ],
+      "keywords_used": [
+        "Innate",
+        "Exhaust"
+      ]
+    },
+    "original_text": "#Innate.<br>At the end of your turn, put a copy of this card on top of your draw pile. #Exhaust.",
+    "manual_review_needed": false,
+    "flags": {
+      "copy_to_draw_top_end_of_turn": true
+    }
+  },
+  {
+    "id": "Regret",
+    "name": "Regret",
+    "type": "Curse",
+    "cost": -2,
+    "color": "Colorless",
+    "rarity": "Curse",
+    "logic": {
+      "target_type": "Enemy",
+      "commands": [
+        {
+          "type": "Unplayable",
+          "params": {}
+        }
+      ],
+      "conditions": [
+        "TurnTrigger: At the end of your turn"
+      ],
+      "keywords_used": [
+        "Unplayable"
+      ]
+    },
+    "original_text": "#Unplayable.<br>At the end of your turn, lose HP equal to the number of cards in your hand.",
+    "manual_review_needed": false,
+    "flags": {
+      "lose_hp_per_card_in_hand": true
+    }
+  },
+  {
+    "id": "Shame",
+    "name": "Shame",
+    "type": "Curse",
+    "cost": -2,
+    "color": "Colorless",
+    "rarity": "Curse",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "Unplayable",
+          "params": {}
+        },
+        {
+          "type": "GainBuff",
+          "params": {
+            "buff": "Frail",
+            "base": 1,
+            "upgrade": 1
+          }
+        }
+      ],
+      "conditions": [
+        "TurnTrigger: At the end of your turn"
+      ],
+      "keywords_used": [
+        "Unplayable",
+        "Frail"
+      ]
+    },
+    "original_text": "#Unplayable.<br>At the end of your turn, gain 1 #Frail."
+  },
+  {
+    "id": "Writhe",
+    "name": "Writhe",
+    "type": "Curse",
+    "cost": -2,
+    "color": "Colorless",
+    "rarity": "Curse",
+    "logic": {
+      "target_type": "Enemy",
+      "commands": [
+        {
+          "type": "Unplayable",
+          "params": {}
+        },
+        {
+          "type": "Innate",
+          "params": {}
+        }
+      ],
+      "keywords_used": [
+        "Unplayable",
+        "Innate"
+      ]
+    },
+    "original_text": "#Unplayable.<br>#Innate."
+  }
+]

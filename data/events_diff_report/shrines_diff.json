@@ -1,0 +1,269 @@
+{
+  "category": "shrines",
+  "total_wiki_events": 14,
+  "events": [
+    {
+      "wiki_id": "A_Note_For_Yourself",
+      "name": "A Note For Yourself",
+      "found_in_existing": false,
+      "wiki_options_count": 3,
+      "existing_options_count": 0,
+      "option_labels_wiki": [
+        "[Take and Give]",
+        "[Ignore]",
+        "[Leave]"
+      ],
+      "option_labels_existing": [],
+      "needs_review": true,
+      "issues": [
+        "事件在 events_logic.json 中不存在"
+      ]
+    },
+    {
+      "wiki_id": "Bonfire_Spirits",
+      "name": "Bonfire Spirits",
+      "found_in_existing": false,
+      "wiki_options_count": 1,
+      "existing_options_count": 0,
+      "option_labels_wiki": [
+        "[Offer]"
+      ],
+      "option_labels_existing": [],
+      "needs_review": true,
+      "issues": [
+        "事件在 events_logic.json 中不存在"
+      ]
+    },
+    {
+      "wiki_id": "Duplicator",
+      "name": "Duplicator",
+      "found_in_existing": true,
+      "wiki_options_count": 2,
+      "existing_options_count": 2,
+      "option_labels_wiki": [
+        "[Pray]",
+        "[Leave]"
+      ],
+      "option_labels_existing": [
+        "[Pray] Duplicate a card in your deck",
+        "[Leave]"
+      ],
+      "needs_review": true,
+      "issues": [
+        "现有数据缺少选项: {'[pray]'}",
+        "现有数据多余选项: {'[pray] duplicate a card in your deck'}"
+      ]
+    },
+    {
+      "wiki_id": "Golden_Shrine",
+      "name": "Golden Shrine",
+      "found_in_existing": true,
+      "wiki_options_count": 3,
+      "existing_options_count": 3,
+      "option_labels_wiki": [
+        "[Pray]",
+        "[Desecrate]",
+        "[Leave]"
+      ],
+      "option_labels_existing": [
+        "[Pray] Gain 100 Gold",
+        "[Desecrate] Gain 250 Gold. Become Cursed - Regret",
+        "[Leave]"
+      ],
+      "needs_review": true,
+      "issues": [
+        "现有数据缺少选项: {'[desecrate]', '[pray]'}",
+        "现有数据多余选项: {'[desecrate] gain 250 gold. become cursed - regret', '[pray] gain 100 gold'}"
+      ]
+    },
+    {
+      "wiki_id": "Lab",
+      "name": "Lab",
+      "found_in_existing": true,
+      "wiki_options_count": 1,
+      "existing_options_count": 1,
+      "option_labels_wiki": [
+        "[Search]"
+      ],
+      "option_labels_existing": [
+        "[Search] Find 3 Potions"
+      ],
+      "needs_review": true,
+      "issues": [
+        "现有数据缺少选项: {'[search]'}",
+        "现有数据多余选项: {'[search] find 3 potions'}"
+      ]
+    },
+    {
+      "wiki_id": "Match_and_Keep",
+      "name": "Match and Keep",
+      "found_in_existing": true,
+      "wiki_options_count": 1,
+      "existing_options_count": 2,
+      "option_labels_wiki": [
+        "[Play]"
+      ],
+      "option_labels_existing": [
+        "[Play] Play matching game",
+        "[Leave]"
+      ],
+      "needs_review": true,
+      "issues": [
+        "选项数量不匹配: Wiki=1, 现有=2",
+        "现有数据缺少选项: {'[play]'}",
+        "现有数据多余选项: {'[leave]', '[play] play matching game'}"
+      ]
+    },
+    {
+      "wiki_id": "Ominous_Forge",
+      "name": "Ominous Forge",
+      "found_in_existing": false,
+      "wiki_options_count": 3,
+      "existing_options_count": 0,
+      "option_labels_wiki": [
+        "[Forge]",
+        "[Rummage]",
+        "[Leave]"
+      ],
+      "option_labels_existing": [],
+      "needs_review": true,
+      "issues": [
+        "事件在 events_logic.json 中不存在"
+      ]
+    },
+    {
+      "wiki_id": "Purifier",
+      "name": "Purifier",
+      "found_in_existing": true,
+      "wiki_options_count": 2,
+      "existing_options_count": 2,
+      "option_labels_wiki": [
+        "[Pray]",
+        "[Leave]"
+      ],
+      "option_labels_existing": [
+        "[Pray] Remove a card from your deck",
+        "[Leave]"
+      ],
+      "needs_review": true,
+      "issues": [
+        "现有数据缺少选项: {'[pray]'}",
+        "现有数据多余选项: {'[pray] remove a card from your deck'}"
+      ]
+    },
+    {
+      "wiki_id": "The_Divine_Fountain",
+      "name": "The Divine Fountain",
+      "found_in_existing": false,
+      "wiki_options_count": 2,
+      "existing_options_count": 0,
+      "option_labels_wiki": [
+        "[Drink]",
+        "[Leave]"
+      ],
+      "option_labels_existing": [],
+      "needs_review": true,
+      "issues": [
+        "事件在 events_logic.json 中不存在"
+      ]
+    },
+    {
+      "wiki_id": "The_Woman_in_Blue",
+      "name": "The Woman in Blue",
+      "found_in_existing": true,
+      "wiki_options_count": 4,
+      "existing_options_count": 4,
+      "option_labels_wiki": [
+        "[Buy 1 Potion]",
+        "[Buy 2 Potions]",
+        "[Buy 3 Potions]",
+        "[Leave]"
+      ],
+      "option_labels_existing": [
+        "[Buy 1 Potion] Pay 20 Gold",
+        "[Buy 2 Potions] Pay 30 Gold",
+        "[Buy 3 Potions] Pay 40 Gold",
+        "[Leave] Take 5 Damage"
+      ],
+      "needs_review": true,
+      "issues": [
+        "现有数据缺少选项: {'[buy 2 potions]', '[leave]', '[buy 3 potions]', '[buy 1 potion]'}",
+        "现有数据多余选项: {'[buy 2 potions] pay 30 gold', '[buy 1 potion] pay 20 gold', '[leave] take 5 damage', '[buy 3 potions] pay 40 gold'}"
+      ]
+    },
+    {
+      "wiki_id": "Transmogrifier",
+      "name": "Transmogrifier",
+      "found_in_existing": false,
+      "wiki_options_count": 2,
+      "existing_options_count": 0,
+      "option_labels_wiki": [
+        "[Pray]",
+        "[Leave]"
+      ],
+      "option_labels_existing": [],
+      "needs_review": true,
+      "issues": [
+        "事件在 events_logic.json 中不存在"
+      ]
+    },
+    {
+      "wiki_id": "Upgrade_Shrine",
+      "name": "Upgrade Shrine",
+      "found_in_existing": true,
+      "wiki_options_count": 2,
+      "existing_options_count": 2,
+      "option_labels_wiki": [
+        "[Pray]",
+        "[Leave]"
+      ],
+      "option_labels_existing": [
+        "[Pray] Upgrade a card",
+        "[Leave]"
+      ],
+      "needs_review": true,
+      "issues": [
+        "现有数据缺少选项: {'[pray]'}",
+        "现有数据多余选项: {'[pray] upgrade a card'}"
+      ]
+    },
+    {
+      "wiki_id": "We_Meet_Again!",
+      "name": "We Meet Again!",
+      "found_in_existing": false,
+      "wiki_options_count": 4,
+      "existing_options_count": 0,
+      "option_labels_wiki": [
+        "[Give Potion]",
+        "[Give Gold]",
+        "[Give Card]",
+        "[Attack]"
+      ],
+      "option_labels_existing": [],
+      "needs_review": true,
+      "issues": [
+        "事件在 events_logic.json 中不存在"
+      ]
+    },
+    {
+      "wiki_id": "Wheel_of_Change",
+      "name": "Wheel of Change",
+      "found_in_existing": true,
+      "wiki_options_count": 1,
+      "existing_options_count": 2,
+      "option_labels_wiki": [
+        "[Play]"
+      ],
+      "option_labels_existing": [
+        "[Play] Spin the wheel",
+        "[Leave]"
+      ],
+      "needs_review": true,
+      "issues": [
+        "选项数量不匹配: Wiki=1, 现有=2",
+        "现有数据缺少选项: {'[play]'}",
+        "现有数据多余选项: {'[play] spin the wheel', '[leave]'}"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,352 @@
+//! Interactive combat server 閳?play Slay the Spire battles in the browser.
+//!
+//! Usage: cargo run --release --bin interactive_combat [port]
+//!
+//! Opens a browser-based UI where you can manually play cards against 3 Sentries.
+//! The game state is served as JSON, and the HTML/JS frontend renders it.
+
+use std::collections::HashMap;
+use std::env;
+use std::io::{Read, Write};
+use std::net::TcpListener;
+use std::sync::Mutex;
+
+use sts_sim::schema::CardInstance;
+use sts_sim::state::GameState;
+use sts_sim::enemy::MonsterState;
+use sts_sim::loader::{CardLibrary, MonsterLibrary};
+use sts_sim::engine;
+
+/// Lightweight JSON state for the frontend.
+fn game_state_json(state: &GameState) -> String {
+    let hand: Vec<HashMap<&str, serde_json::Value>> = state.hand.iter().enumerate().map(|(i, c)| {
+        let mut m = HashMap::new();
+        m.insert("idx", serde_json::Value::Number(i.into()));
+        m.insert("id", serde_json::Value::String(c.definition_id.clone()));
+        m.insert("cost", serde_json::Value::Number(c.current_cost.into()));
+        m.insert("upgraded", serde_json::Value::Bool(c.upgraded));
+        m.insert("ethereal", serde_json::Value::Bool(c.is_ethereal));
+        let playable = c.current_cost >= 0 && c.current_cost <= state.player.energy;
+        m.insert("playable", serde_json::Value::Bool(playable));
+        m
+    }).collect();
+
+    let enemies: Vec<HashMap<&str, serde_json::Value>> = state.enemies.iter().enumerate().map(|(i, e)| {
+        let mut m = HashMap::new();
+        m.insert("idx", serde_json::Value::Number(i.into()));
+        m.insert("name", serde_json::Value::String(e.name.clone()));
+        m.insert("hp", serde_json::Value::Number(e.hp.into()));
+        m.insert("max_hp", serde_json::Value::Number(e.max_hp.into()));
+        m.insert("block", serde_json::Value::Number(e.block.into()));
+        m.insert("dead", serde_json::Value::Bool(e.is_dead()));
+        m.insert("intent", serde_json::Value::String(e.current_move.clone()));
+        // Serialize active powers as {"PowerName": stacks}
+        let powers: HashMap<String, i32> = e.powers.iter()
+            .map(|(k, v)| (k.clone(), *v))
+            .collect();
+        m.insert("powers", serde_json::to_value(&powers).unwrap_or_default());
+        m
+    }).collect();
+
+    let draw_count = state.draw_pile.len();
+    let discard_count = state.discard_pile.len();
+    let exhaust_count = state.exhaust_pile.len();
+
+    format!(r#"{{
+        "turn": {},
+        "player_hp": {},
+        "player_max_hp": {},
+        "player_block": {},
+        "player_energy": {},
+        "player_max_energy": {},
+        "hand": {},
+        "enemies": {},
+        "draw_pile_count": {},
+        "discard_pile_count": {},
+        "exhaust_pile_count": {},
+        "game_over": {},
+        "won": {}
+    }}"#,
+        state.turn,
+        state.player.current_hp,
+        state.player.max_hp,
+        state.player.block,
+        state.player.energy,
+        state.player.max_energy,
+        serde_json::to_string(&hand).unwrap(),
+        serde_json::to_string(&enemies).unwrap(),
+        draw_count,
+        discard_count,
+        exhaust_count,
+        state.player.current_hp <= 0 || state.combat_won(),
+        state.combat_won(),
+    )
+}
+
+/// Simple HTTP response helpers
+fn respond_json(mut stream: std::net::TcpStream, body: &str) {
+    let resp = format!(
+        "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nAccess-Control-Allow-Origin: *\r\nContent-Length: {}\r\n\r\n{}",
+        body.len(), body
+    );
+    let _ = stream.write_all(resp.as_bytes());
+}
+
+fn respond_html(mut stream: std::net::TcpStream, body: &str) {
+    let resp = format!(
+        "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\n\r\n{}",
+        body.len(), body
+    );
+    let _ = stream.write_all(resp.as_bytes());
+}
+
+fn respond_404(mut stream: std::net::TcpStream) {
+    let body = "404 Not Found";
+    let resp = format!(
+        "HTTP/1.1 404 Not Found\r\nContent-Length: {}\r\n\r\n{}",
+        body.len(), body
+    );
+    let _ = stream.write_all(resp.as_bytes());
+}
+
+/// Parse a simple HTTP request to get method + path + body
+fn parse_request(buf: &[u8]) -> Option<(String, String, String)> {
+    // Trim null bytes from the end (buffer is fixed-size 4096)
+    let end = buf.iter().position(|&b| b == 0).unwrap_or(buf.len());
+    let s = String::from_utf8_lossy(&buf[..end]);
+    let first_line = s.lines().next()?;
+    let parts: Vec<&str> = first_line.split_whitespace().collect();
+    if parts.len() < 2 { return None; }
+    // Extract body (after double newline)
+    let body = s.split("\r\n\r\n").nth(1).unwrap_or("").trim().to_string();
+    Some((parts[0].to_string(), parts[1].to_string(), body))
+}
+
+/// Phase of the interactive game
+#[derive(Clone, PartialEq)]
+enum Phase {
+    PlayerTurn,
+    EnemyTurn,
+    GameOver,
+}
+
+struct InteractiveGame {
+    state: GameState,
+    card_library: CardLibrary,
+    monster_library: MonsterLibrary,
+    phase: Phase,
+    log: Vec<String>,
+}
+
+impl InteractiveGame {
+    fn new() -> Result<Self, Box<dyn std::error::Error>> {
+        let card_library = CardLibrary::load("data/cards")?;
+        let monster_library = MonsterLibrary::load("data/monsters_with_behavior.json")?;
+
+        let mut state = GameState::new(42);
+        state.player.current_hp = 80;
+        state.player.max_hp = 80;
+        state.player.energy = 3;
+        state.player.max_energy = 3;
+
+        // Add 3 Sentries (same setup as sentries_test.rs)
+        let sentry_def = monster_library.get("Sentry").expect("Sentry not in monster library");
+
+        // Sentry 1: starts with Bolt
+        let sentry1 = MonsterState::new(sentry_def, &mut state.rng, false);
+        state.enemies.push(sentry1);
+
+        // Sentry 2: starts with Beam (middle sentry)
+        let mut sentry2 = MonsterState::new(sentry_def, &mut state.rng, false);
+        sentry2.is_middle = true;
+        sentry2.turn = 1;
+        sentry2.move_history.push_front("Bolt".to_string());
+        state.enemies.push(sentry2);
+
+        // Sentry 3: starts with Bolt
+        let sentry3 = MonsterState::new(sentry_def, &mut state.rng, false);
+        state.enemies.push(sentry3);
+
+        // Build Ironclad starter deck: 5 Strike, 4 Defend, 1 Bash
+        for _ in 0..5 {
+            state.obtain_card(CardInstance::new("Strike_Ironclad".to_string(), 1));
+        }
+        for _ in 0..4 {
+            state.obtain_card(CardInstance::new("Defend_Ironclad".to_string(), 1));
+        }
+        state.obtain_card(CardInstance::new("Bash".to_string(), 2));
+        state.shuffle_draw_pile();
+
+        // Battle start
+        engine::on_battle_start(&mut state, &card_library, None);
+        engine::plan_enemy_moves(&mut state, &monster_library);
+
+        // Start first turn
+        state.start_turn();
+        engine::on_turn_start(&mut state, &card_library, None);
+
+        Ok(InteractiveGame {
+            state,
+            card_library,
+            monster_library,
+            phase: Phase::PlayerTurn,
+            log: vec!["閳挎棑绗?Combat Start! Ironclad vs 3 Sentries".to_string()],
+        })
+    }
+
+    fn play_card(&mut self, card_idx: usize, target_idx: Option<usize>) -> String {
+        if self.phase != Phase::PlayerTurn {
+            return r#"{"error": "Not player turn"}"#.to_string();
+        }
+
+        if card_idx >= self.state.hand.len() {
+            return r#"{"error": "Invalid card index"}"#.to_string();
+        }
+
+        let card_id = self.state.hand[card_idx].definition_id.clone();
+        let card_cost = self.state.hand[card_idx].current_cost;
+
+        if card_cost < 0 || card_cost > self.state.player.energy {
+            return format!(r#"{{"error": "Cannot play {} (cost {} > energy {})"}}"#,
+                card_id, card_cost, self.state.player.energy);
+        }
+
+        match engine::play_card_from_hand(&mut self.state, &self.card_library, card_idx, target_idx) {
+            Ok(_) => {
+                self.log.push(format!("閳?Played {} 閳?target {:?}", card_id, target_idx));
+
+                // Check win
+                if self.state.combat_won() {
+                    self.phase = Phase::GameOver;
+                    self.log.push("棣冨汲 Victory!".to_string());
+                }
+
+                self.state_json_with_log()
+            }
+            Err(e) => {
+                format!(r#"{{"error": "{}"}}"#, e)
+            }
+        }
+    }
+
+    fn end_turn(&mut self) -> String {
+        if self.phase != Phase::PlayerTurn {
+            return r#"{"error": "Not player turn"}"#.to_string();
+        }
+
+        self.log.push(format!("閳逛讲鏀ｉ埞?End of Turn {} 閳逛讲鏀ｉ埞?, self.state.turn));
+
+        // End player turn
+        engine::on_turn_end(&mut self.state, &self.card_library, None);
+        self.state.end_turn();
+
+        // Enemy turn
+        self.phase = Phase::EnemyTurn;
+        engine::execute_enemy_turn(&mut self.state, &self.monster_library);
+
+        // Check loss
+        if self.state.player.current_hp <= 0 {
+            self.phase = Phase::GameOver;
+            self.log.push("棣冩媰 Defeat!".to_string());
+            return self.state_json_with_log();
+        }
+
+        // Start next player turn
+        self.state.start_turn();
+        engine::on_turn_start(&mut self.state, &self.card_library, None);
+        self.phase = Phase::PlayerTurn;
+
+        self.log.push(format!("閳逛讲鏀ｉ埞?Turn {} Start 閳逛讲鏀ｉ埞?, self.state.turn));
+
+        self.state_json_with_log()
+    }
+
+    fn state_json_with_log(&self) -> String {
+        let base = game_state_json(&self.state);
+        let log_json = serde_json::to_string(&self.log).unwrap();
+        // Insert log into the JSON
+        let trimmed = base.trim_end().trim_end_matches('}');
+        format!(r#"{}, "log": {}, "phase": "{}"}}"#,
+            trimmed, log_json,
+            match self.phase {
+                Phase::PlayerTurn => "player_turn",
+                Phase::EnemyTurn => "enemy_turn",
+                Phase::GameOver => "game_over",
+            }
+        )
+    }
+
+    fn reset(&mut self) -> String {
+        let new = InteractiveGame::new();
+        match new {
+            Ok(g) => {
+                *self = g;
+                self.state_json_with_log()
+            }
+            Err(e) => format!(r#"{{"error": "{}"}}"#, e),
+        }
+    }
+}
+
+const HTML_PAGE: &str = include_str!("../../static/interactive_combat.html");
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let port: u16 = env::args().nth(1)
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(8080);
+
+    let game = Mutex::new(InteractiveGame::new()?);
+
+    let listener = TcpListener::bind(format!("127.0.0.1:{}", port))?;
+    println!("棣冨箖 Interactive Combat Server running at http://127.0.0.1:{}", port);
+    println!("   Open this URL in your browser to play!");
+    println!("   Press Ctrl+C to stop.");
+
+    for stream in listener.incoming() {
+        let Ok(mut stream) = stream else { continue };
+        let mut buf = [0u8; 4096];
+        let n = stream.read(&mut buf).unwrap_or(0);
+        if n == 0 { continue; }
+
+        let Some((method, path, body)) = parse_request(&buf[..n]) else {
+            respond_404(stream);
+            continue;
+        };
+
+        match (method.as_str(), path.as_str()) {
+            ("GET", "/") => {
+                respond_html(stream, HTML_PAGE);
+            }
+            ("GET", "/api/state") => {
+                let g = game.lock().unwrap();
+                respond_json(stream, &g.state_json_with_log());
+            }
+            ("POST", "/api/play") => {
+                // Parse body: {"card_idx": 0, "target_idx": 0}
+                let parsed: serde_json::Value = serde_json::from_str(&body).unwrap_or_default();
+                let card_idx = parsed["card_idx"].as_u64().unwrap_or(0) as usize;
+                let target_idx = parsed.get("target_idx")
+                    .and_then(|v| v.as_u64())
+                    .map(|v| v as usize);
+
+                let mut g = game.lock().unwrap();
+                let result = g.play_card(card_idx, target_idx);
+                respond_json(stream, &result);
+            }
+            ("POST", "/api/end_turn") => {
+                let mut g = game.lock().unwrap();
+                let result = g.end_turn();
+                respond_json(stream, &result);
+            }
+            ("POST", "/api/reset") => {
+                let mut g = game.lock().unwrap();
+                let result = g.reset();
+                respond_json(stream, &result);
+            }
+            _ => {
+                respond_404(stream);
+            }
+        }
+    }
+    Ok(())
+}

@@ -1,0 +1,1842 @@
+{
+  "keywords": {
+    "Block": {
+      "id": "Block",
+      "code": "#Block",
+      "text": "Until next turn, prevents damage.",
+      "category": "mechanic",
+      "link": "Block",
+      "image": "Icon_Block.png"
+    },
+    "Energy": {
+      "id": "Energy",
+      "code": "#Energy",
+      "text": "Resource used to play cards.",
+      "category": "mechanic",
+      "link": "Keywords#Energy",
+      "image": "ColorlessEnergy.png"
+    },
+    "Ethereal": {
+      "id": "Ethereal",
+      "code": "#Ethereal",
+      "text": "If an Ethereal card is in your hand at the end of your turn, it is #Exhausted. <br>#Exhausted cards are removed from your deck until the end of combat.",
+      "category": "mechanic",
+      "link": "Keywords#Ethereal",
+      "image": ""
+    },
+    "Exhaust": {
+      "id": "Exhaust",
+      "code": "#Exhaust",
+      "text": "Removed until end of combat.",
+      "category": "mechanic",
+      "link": "Keywords#Exhaust",
+      "image": ""
+    },
+    "Fatal": {
+      "id": "Fatal",
+      "code": "#Fatal",
+      "text": "Fatal effects occur when a card kills a '''non-minion''' enemy.",
+      "category": "mechanic",
+      "link": "Fatal",
+      "image": ""
+    },
+    "Innate": {
+      "id": "Innate",
+      "code": "#Innate",
+      "text": "Start each combat with this card in your hand.",
+      "category": "mechanic",
+      "link": "Keywords#Innate",
+      "image": ""
+    },
+    "Retain": {
+      "id": "Retain",
+      "code": "#Retain",
+      "text": "Retained cards are not discarded at the end of your turn.",
+      "category": "mechanic",
+      "link": "Keywords#Retain",
+      "image": ""
+    },
+    "Transform": {
+      "id": "Transform",
+      "code": "#Transform",
+      "text": "Transformed cards become a random card of any rarity.",
+      "category": "mechanic",
+      "link": "Transform",
+      "image": ""
+    },
+    "Upgrade": {
+      "id": "Upgrade",
+      "code": "#Upgrade",
+      "text": "Upgrading cards makes them more powerful. Most cards can only be upgraded once.",
+      "category": "mechanic",
+      "link": "Upgrade",
+      "image": ""
+    },
+    "Unplayable": {
+      "id": "Unplayable",
+      "code": "#Unplayable",
+      "text": "Unplayable cards cannot be played from your hand.",
+      "category": "mechanic",
+      "link": "Keywords#Unplayable",
+      "image": ""
+    },
+    "Artifact": {
+      "id": "Artifact",
+      "code": "#Artifact",
+      "text": "Negates X debuffs.",
+      "category": "buff",
+      "link": "Artifact",
+      "image": "Icon_Artifact.png"
+    },
+    "Buffer": {
+      "id": "Buffer",
+      "code": "#Buffer",
+      "text": "Prevent the next X times you would lose HP.",
+      "category": "buff",
+      "link": "Buffer",
+      "image": "Icon_Buffer.png"
+    },
+    "Confused": {
+      "id": "Confused",
+      "code": "#Confused",
+      "text": "Whenever you draw a card, randomize its cost.",
+      "category": "mechanic",
+      "link": "Snecko_Eye",
+      "image": "Icon_Confused.png"
+    },
+    "Dexterity": {
+      "id": "Dexterity",
+      "code": "#Dexterity",
+      "text": "Increase #Block gained from cards by X.",
+      "category": "buff",
+      "link": "Dexterity",
+      "image": "Icon_Dexterity.png"
+    },
+    "Dexterity Down": {
+      "id": "Dexterity Down",
+      "code": "#Dexterity Down",
+      "text": "At the end of this turn, lose X #Dexterity.",
+      "category": "mechanic",
+      "link": "Debuffs#Dexterity_Down",
+      "image": "Icon_StrengthDown.png"
+    },
+    "Draw Card": {
+      "id": "Draw Card",
+      "code": "#Draw Card",
+      "text": "Draw X additional cards next turn.",
+      "category": "mechanic",
+      "link": "Buffs#Draw_Card",
+      "image": "Icon_DrawCard.png"
+    },
+    "Frail": {
+      "id": "Frail",
+      "code": "#Frail",
+      "text": "Gain 25% less #Block from cards for X turns.",
+      "category": "debuff",
+      "link": "Debuffs#Frail",
+      "image": "Icon_Frail.png"
+    },
+    "Intangible": {
+      "id": "Intangible",
+      "code": "#Intangible",
+      "text": "Reduce ALL damage taken and HP loss to 1.",
+      "category": "buff",
+      "link": "Buffs#Intangible",
+      "image": "Icon_Intangible.png"
+    },
+    "Next Turn Block": {
+      "id": "Next Turn Block",
+      "code": "#Next Turn Block",
+      "text": "Gain X #Block next turn.",
+      "category": "mechanic",
+      "link": "Dodge_And_Roll",
+      "image": "Icon_NextTurnBlock.png"
+    },
+    "No Draw": {
+      "id": "No Draw",
+      "code": "#No Draw",
+      "text": "You may not draw additional cards this turn.",
+      "category": "mechanic",
+      "link": "Debuffs#No_Draw",
+      "image": "Icon_NoDraw.png"
+    },
+    "Plated Armor": {
+      "id": "Plated Armor",
+      "code": "#Plated Armor",
+      "text": "At the end of your turn, receive X #Block. Receiving unblocked damage reduces #Plated Armor by 1.",
+      "category": "buff",
+      "link": "Buffs#PlatedArmor",
+      "image": "Icon_PlatedArmor.png"
+    },
+    "Regen": {
+      "id": "Regen",
+      "code": "#Regen",
+      "text": "Regen heals X HP at the end of your turn. <br>Each turn, #Regen is reduced by 1.",
+      "category": "buff",
+      "link": "Buffs#Regen",
+      "image": "Icon_Regen.png"
+    },
+    "Ritual": {
+      "id": "Ritual",
+      "code": "#Ritual",
+      "text": "Gain X #Strength every turn.",
+      "category": "buff",
+      "link": "Buffs#Ritual",
+      "image": "Icon_Ritual.png"
+    },
+    "Shackled": {
+      "id": "Shackled",
+      "code": "#Shackled",
+      "text": "At the end of its turn, gains X #Strength.",
+      "category": "debuff",
+      "link": "Strength#Negative Strength",
+      "image": "Icon_Shackled.png"
+    },
+    "Strength": {
+      "id": "Strength",
+      "code": "#Strength",
+      "text": "Increases attack damage by X.",
+      "category": "buff",
+      "link": "Strength",
+      "image": "Icon_Strength.png"
+    },
+    "Strength Down": {
+      "id": "Strength Down",
+      "code": "#Strength Down",
+      "text": "At the end of this turn, lose X #Strength.",
+      "category": "mechanic",
+      "link": "Strength#Negative Strength",
+      "image": "Icon_StrengthDown.png"
+    },
+    "Thorns": {
+      "id": "Thorns",
+      "code": "#Thorns",
+      "text": "Inflict X damage on the attacker when hit.",
+      "category": "buff",
+      "link": "Buffs#Thorns",
+      "image": "Icon_Thorns.png"
+    },
+    "Vigor": {
+      "id": "Vigor",
+      "code": "#Vigor",
+      "text": "Your next attack deals X additional damage per hit.",
+      "category": "buff",
+      "link": "Wreath_Of_Fire",
+      "image": "Icon_Vigor.png"
+    },
+    "Vulnerable": {
+      "id": "Vulnerable",
+      "code": "#Vulnerable",
+      "text": "Take 50% more damage from '''Attacks''' for X turns.",
+      "category": "debuff",
+      "link": "Vulnerable",
+      "image": "Icon_Vulnerable.png"
+    },
+    "Weak": {
+      "id": "Weak",
+      "code": "#Weak",
+      "text": "Deal 25% less damage with '''Attacks''' for X turns.",
+      "category": "debuff",
+      "link": "Weak",
+      "image": "Icon_Weak.png"
+    },
+    "Double Tap": {
+      "id": "Double Tap",
+      "code": "#Double Tap",
+      "text": "",
+      "category": "mechanic",
+      "link": "",
+      "image": ""
+    },
+    "Flame Barrier": {
+      "id": "Flame Barrier",
+      "code": "#Flame Barrier",
+      "text": "When attacked, deals X damage back.",
+      "category": "mechanic",
+      "link": "Flame_Barrier",
+      "image": "Icon_FlameBarrier.png"
+    },
+    "Rage": {
+      "id": "Rage",
+      "code": "#Rage",
+      "text": "",
+      "category": "mechanic",
+      "link": "",
+      "image": ""
+    },
+    "Barricade": {
+      "id": "Barricade",
+      "code": "#Barricade",
+      "text": " #Block is not removed at the beginning of your turn.",
+      "category": "buff",
+      "link": "Barricade",
+      "image": "Icon_Barricade.png"
+    },
+    "Berserk": {
+      "id": "Berserk",
+      "code": "#Berserk",
+      "text": "At the start of your turn, gain X @RE '''Energy'''.",
+      "category": "mechanic",
+      "link": "Berserk",
+      "image": "Icon_Berserk.png"
+    },
+    "Brutality": {
+      "id": "Brutality",
+      "code": "#Brutality",
+      "text": "At the start of your turn, lose X HP and draw X cards.",
+      "category": "mechanic",
+      "link": "Brutality",
+      "image": "Icon_Brutality.png"
+    },
+    "Combust": {
+      "id": "Combust",
+      "code": "#Combust",
+      "text": "At the end of your turn, lose X HP and deal damage to ALL enemies.",
+      "category": "mechanic",
+      "link": "Combust",
+      "image": "Icon_Combust.png"
+    },
+    "Corruption": {
+      "id": "Corruption",
+      "code": "#Corruption",
+      "text": "",
+      "category": "mechanic",
+      "link": "",
+      "image": ""
+    },
+    "Dark Embrace": {
+      "id": "Dark Embrace",
+      "code": "#Dark Embrace",
+      "text": "Whenever a card is #Exhausted, draw X cards.",
+      "category": "mechanic",
+      "link": "Dark_Embrace",
+      "image": "Icon_DarkEmbrace.png"
+    },
+    "Demon Form": {
+      "id": "Demon Form",
+      "code": "#Demon Form",
+      "text": "At the start of your turn, gain X #Strength.",
+      "category": "mechanic",
+      "link": "Demon_Form",
+      "image": "Icon_DemonForm.png"
+    },
+    "Evolve": {
+      "id": "Evolve",
+      "code": "#Evolve",
+      "text": "",
+      "category": "mechanic",
+      "link": "",
+      "image": ""
+    },
+    "Feel No Pain": {
+      "id": "Feel No Pain",
+      "code": "#Feel No Pain",
+      "text": "Whenever you #Exhaust a card, gain X #Block.",
+      "category": "mechanic",
+      "link": "Feel No Pain",
+      "image": "Icon_FeelNoPain.png"
+    },
+    "Fire Breathing": {
+      "id": "Fire Breathing",
+      "code": "#Fire Breathing",
+      "text": "",
+      "category": "mechanic",
+      "link": "",
+      "image": ""
+    },
+    "Juggernaut": {
+      "id": "Juggernaut",
+      "code": "#Juggernaut",
+      "text": "Whenever you gain #Block, deal X damage to a random enemy.",
+      "category": "mechanic",
+      "link": "Juggernaut",
+      "image": "Icon_Juggernaut.png"
+    },
+    "Metallicize": {
+      "id": "Metallicize",
+      "code": "#Metallicize",
+      "text": "At the end of every turn, gain X #Block.",
+      "category": "buff",
+      "link": "Metallicize",
+      "image": "Icon_Metallicize.png"
+    },
+    "Rupture": {
+      "id": "Rupture",
+      "code": "#Rupture",
+      "text": "Whenever you lose HP from a card, gain X #Strength.",
+      "category": "mechanic",
+      "link": "Rupture",
+      "image": "Icon_Rupture.png"
+    },
+    "Blur": {
+      "id": "Blur",
+      "code": "#Blur",
+      "text": "#Block is not removed at the beginning of your next X turns.",
+      "category": "mechanic",
+      "link": "Blur",
+      "image": "Icon_Blur.png"
+    },
+    "Burst": {
+      "id": "Burst",
+      "code": "#Burst",
+      "text": "",
+      "category": "mechanic",
+      "link": "",
+      "image": ""
+    },
+    "Corpse Explosion": {
+      "id": "Corpse Explosion",
+      "code": "#Corpse Explosion",
+      "text": "On death, deal damage equal to Max HP X times to ALL enemies.",
+      "category": "mechanic",
+      "link": "Corpse_Explosion",
+      "image": "Icon_CorpseExplosion.png"
+    },
+    "Choked": {
+      "id": "Choked",
+      "code": "#Choked",
+      "text": "Whenever you play a card this turn, loses X HP.",
+      "category": "debuff",
+      "link": "Choke",
+      "image": "Icon_Choked.png"
+    },
+    "Double Damage": {
+      "id": "Double Damage",
+      "code": "#Double Damage",
+      "text": "",
+      "category": "mechanic",
+      "link": "",
+      "image": ""
+    },
+    "Energized (Silent)": {
+      "id": "Energized (Silent)",
+      "code": "#EnergizedGE",
+      "text": "Gain X additional @GE '''Energy''' next turn.",
+      "category": "mechanic",
+      "link": "Buffs#Energized",
+      "image": "Icon_EnergizedGreen.png"
+    },
+    "Nightmare": {
+      "id": "Nightmare",
+      "code": "#Nightmare",
+      "text": "Add X copies of the chosen card into your hand next turn.",
+      "category": "mechanic",
+      "link": "Nightmare",
+      "image": "Icon_Nightmare.png"
+    },
+    "Phantasmal": {
+      "id": "Phantasmal",
+      "code": "#Phantasmal",
+      "text": "Deal '''Double Damage''' for the next X turns.",
+      "category": "mechanic",
+      "link": "Phantasmal_Killer",
+      "image": "Icon_Phantasmal.png"
+    },
+    "Poison": {
+      "id": "Poison",
+      "code": "#Poison",
+      "text": "Lose X HP at the start of their turn. <br>Each turn, #Poison is reduced by 1.",
+      "category": "debuff",
+      "link": "Poison",
+      "image": "Icon_Poison.png"
+    },
+    "Accuracy": {
+      "id": "Accuracy",
+      "code": "#Accuracy",
+      "text": "",
+      "category": "mechanic",
+      "link": "",
+      "image": ""
+    },
+    "After Image": {
+      "id": "After Image",
+      "code": "#After Image",
+      "text": "Whenever you play a card, gain X #Block.",
+      "category": "mechanic",
+      "link": "After_Image",
+      "image": "Icon_AfterImage.png"
+    },
+    "Envenom": {
+      "id": "Envenom",
+      "code": "#Envenom",
+      "text": "Whenever you deal unblocked damage, apply X #Poison.",
+      "category": "mechanic",
+      "link": "Envenom",
+      "image": "Icon_Envenom.png"
+    },
+    "Infinite Blades": {
+      "id": "Infinite Blades",
+      "code": "#Infinite Blades",
+      "text": "",
+      "category": "mechanic",
+      "link": "",
+      "image": ""
+    },
+    "Noxious Fumes": {
+      "id": "Noxious Fumes",
+      "code": "#Noxious Fumes",
+      "text": "At the start of your turn, apply X #Poison to ALL enemies.",
+      "category": "mechanic",
+      "link": "Noxious_Fumes",
+      "image": "Icon_NoxiousFumes.png"
+    },
+    "Retain Cards": {
+      "id": "Retain Cards",
+      "code": "#Retain Cards",
+      "text": "At the start of your turn, you may #Retain X cards.",
+      "category": "mechanic",
+      "link": "Well-Laid_Plans",
+      "image": "Icon_Equilibrium.png"
+    },
+    "Thousand Cuts": {
+      "id": "Thousand Cuts",
+      "code": "#Thousand Cuts",
+      "text": "Whenever you play a card, deal X damage to ALL enemies.",
+      "category": "mechanic",
+      "link": "A_Thousand_Cuts",
+      "image": "Icon_ThousandCuts.png"
+    },
+    "Tools Of The Trade": {
+      "id": "Tools Of The Trade",
+      "code": "#Tools Of The Trade",
+      "text": "At the start of your turn, draw X cards and discard X cards.",
+      "category": "mechanic",
+      "link": "Tools_Of_The_Trade",
+      "image": "Icon_Tools.png"
+    },
+    "Wraith Form": {
+      "id": "Wraith Form",
+      "code": "#Wraith Form",
+      "text": "At the start of your turn, lose X #Dexterity.",
+      "category": "mechanic",
+      "link": "Wraith_Form",
+      "image": "Icon_WraithForm.png"
+    },
+    "Orb": {
+      "id": "Orb",
+      "code": "#Orb",
+      "text": "You start with 3 Orb Slots. <br><br>#Lightning: Deal 3(8 on #Evoke) damage to a random enemy. <br>#Frost: Gain 2(5 on #Evoke) #Block. <br>#Dark: Increases damage by 6 every turn. On #Evoke, deal damage to the enemy with the lowest health. <br>#Plasma: Gain 1(2 on #Evoke) #Energy.",
+      "category": "mechanic",
+      "link": "Orbs",
+      "image": ""
+    },
+    "Channel": {
+      "id": "Channel",
+      "code": "#Channel",
+      "text": "Summons an orb in your first empty #Orb Slot. <br>If you have no empty slots, your first [[Orb]] is automatically #Evoked to make room.",
+      "category": "mechanic",
+      "link": "Orbs#Channel",
+      "image": ""
+    },
+    "Orb Slot": {
+      "id": "Orb Slot",
+      "code": "#Orb Slot",
+      "text": "Orbs can be channeled into these slots. The Defect starts with 3 slots, which can be increased with cards, relics, or potions.",
+      "category": "mechanic",
+      "link": "Orbs#Orb_Slots",
+      "image": "OrbSlot.png"
+    },
+    "Evoke": {
+      "id": "Evoke",
+      "code": "#Evoke",
+      "text": "Consume your rightmost Orb and use its '''Evoke''' effect.",
+      "category": "mechanic",
+      "link": "Orbs#Evoke",
+      "image": ""
+    },
+    "Lightning": {
+      "id": "Lightning",
+      "code": "#Lightning",
+      "text": "'''Passive:''' Deal 3 (+1 per #Focus) damage to a random enemy. <br>#Evoke: Deals 8 (+1 per #Focus) damage to a random enemy.",
+      "category": "orb",
+      "link": "Lightning",
+      "image": "LightningOrb.png"
+    },
+    "Frost": {
+      "id": "Frost",
+      "code": "#Frost",
+      "text": "Passive: Gains 2 (+1 per #Focus) #Block.<br>#Evoke: Gains 5 (+1 per #Focus) #Block.",
+      "category": "orb",
+      "link": "Frost",
+      "image": "FrostOrb.png"
+    },
+    "Dark": {
+      "id": "Dark",
+      "code": "#Dark",
+      "text": "'''Passive:''' Increases damage by 6 (+1 per #Focus) every turn. <br>'''Evoke:''' Deals damage to the enemy with the least HP equal to stored damage.",
+      "category": "orb",
+      "link": "Dark",
+      "image": "DarkOrb.png"
+    },
+    "Plasma": {
+      "id": "Plasma",
+      "code": "#Plasma",
+      "text": "'''Passive:''' Gain 1 @BE '''Energy'''. <br>#Evoke: Gain 2 @BE '''Energy'''.",
+      "category": "orb",
+      "link": "Plasma",
+      "image": "PlasmaOrb.png"
+    },
+    "Amplify": {
+      "id": "Amplify",
+      "code": "#Amplify",
+      "text": "",
+      "category": "mechanic",
+      "link": "",
+      "image": ""
+    },
+    "Energized (Defect)": {
+      "id": "Energized (Defect)",
+      "code": "#EnergizedBE",
+      "text": "Gain X additional @BE '''Energy''' next turn.",
+      "category": "mechanic",
+      "link": "Charge_Battery",
+      "image": "Icon_EnergizedBlue.png"
+    },
+    "Equilibrium": {
+      "id": "Equilibrium",
+      "code": "#Equilibrium",
+      "text": "Retain your hand for X turns.",
+      "category": "mechanic",
+      "link": "Equilibrium",
+      "image": "Icon_Equilibrium.png"
+    },
+    "Focus": {
+      "id": "Focus",
+      "code": "#Focus",
+      "text": "Increases the effectiveness of #Channeled Orbs by X.",
+      "category": "mechanic",
+      "link": "Orbs#Focus",
+      "image": "Icon_Focus.png"
+    },
+    "Lock-On": {
+      "id": "Lock-On",
+      "code": "#Lock On",
+      "text": "Receives 50% more damage from Orbs for X turns.",
+      "category": "debuff",
+      "link": "Bullseye",
+      "image": "Icon_LockOn.png"
+    },
+    "Rebound": {
+      "id": "Rebound",
+      "code": "#Rebound",
+      "text": "The next card you play this turn is put on top of your draw pile.",
+      "category": "mechanic",
+      "link": "Rebound",
+      "image": "Icon_Rebound.png"
+    },
+    "Bias": {
+      "id": "Bias",
+      "code": "#Bias",
+      "text": "At the start of your turn, lose X #Focus.",
+      "category": "mechanic",
+      "link": "Biased_Cognition",
+      "image": "Icon_Bias.png"
+    },
+    "Creative AI": {
+      "id": "Creative AI",
+      "code": "#Creative AI",
+      "text": "",
+      "category": "mechanic",
+      "link": "",
+      "image": ""
+    },
+    "Draw": {
+      "id": "Draw",
+      "code": "#Draw",
+      "text": "At the start of your turn, draw X additional cards.",
+      "category": "mechanic",
+      "link": "Machine_Learning",
+      "image": "Icon_DrawCard.png"
+    },
+    "Echo Form": {
+      "id": "Echo Form",
+      "code": "#Echo Form",
+      "text": "The first X cards you play each turn are played twice.",
+      "category": "mechanic",
+      "link": "Echo_Form",
+      "image": "Icon_EchoForm.png"
+    },
+    "Electro": {
+      "id": "Electro",
+      "code": "#Electro",
+      "text": "#Lightning hits ALL enemies.",
+      "category": "mechanic",
+      "link": "Electrodynamics",
+      "image": "Icon_Electro.png"
+    },
+    "Heatsink": {
+      "id": "Heatsink",
+      "code": "#Heatsink",
+      "text": "",
+      "category": "mechanic",
+      "link": "",
+      "image": ""
+    },
+    "Hello": {
+      "id": "Hello",
+      "code": "#Hello",
+      "text": "",
+      "category": "mechanic",
+      "link": "",
+      "image": ""
+    },
+    "Loop": {
+      "id": "Loop",
+      "code": "#Loop",
+      "text": "At the start of your turn, trigger the passive ability of your next Orb X times.",
+      "category": "mechanic",
+      "link": "Loop",
+      "image": "Icon_Loop.png"
+    },
+    "Static Discharge": {
+      "id": "Static Discharge",
+      "code": "#Static Discharge",
+      "text": "Whenever you receive attack damage, #Channel X #Lightning.",
+      "category": "mechanic",
+      "link": "Static_Discharge",
+      "image": "Icon_StaticDischarge.png"
+    },
+    "Storm": {
+      "id": "Storm",
+      "code": "#Storm",
+      "text": "",
+      "category": "mechanic",
+      "link": "",
+      "image": ""
+    },
+    "Repair": {
+      "id": "Repair",
+      "code": "#Repair",
+      "text": "At the end of combat, heal X HP.",
+      "category": "mechanic",
+      "link": "Self_Repair",
+      "image": "Icon_Repair.png"
+    },
+    "Stance": {
+      "id": "Stance",
+      "code": "#Stance",
+      "text": "You can only have one stance at a time.<br><br>'''Calm:''' Upon exiting this Stance, gain 2 @PE '''Energy'''<br><br>'''Wrath:''' In this Stance, you deal and receive double attack damage.<br><br>'''Divinity:''' Upon entering this Stance, gain 3 @PE '''Energy'''. Attacks deal triple damage. <br>Exit this Stance at the start of your next turn.<br><br>'''Empty:''' No effect.",
+      "category": "stance",
+      "link": "Keywords#Stance",
+      "image": ""
+    },
+    "Calm": {
+      "id": "Calm",
+      "code": "#Calm",
+      "text": "Upon exiting this Stance, gain 2 @PE '''Energy'''.",
+      "category": "stance",
+      "link": "Keywords#Stance",
+      "image": ""
+    },
+    "Wrath": {
+      "id": "Wrath",
+      "code": "#Wrath",
+      "text": "In this Stance, you deal and receive double attack damage.",
+      "category": "stance",
+      "link": "Keywords#Stance",
+      "image": ""
+    },
+    "Divinity": {
+      "id": "Divinity",
+      "code": "#Divinity",
+      "text": "",
+      "category": "stance",
+      "link": "",
+      "image": ""
+    },
+    "Scry": {
+      "id": "Scry",
+      "code": "#Scry",
+      "text": "Look at the top X cards of your draw pile. You may discard any of them.",
+      "category": "mechanic",
+      "link": "Keywords#Scry",
+      "image": ""
+    },
+    "Blasphemer": {
+      "id": "Blasphemer",
+      "code": "#Blasphemer",
+      "text": "At the start of your turn, die.",
+      "category": "mechanic",
+      "link": "Blasphemy",
+      "image": "Icon_Blasphemer.png"
+    },
+    "Block Return": {
+      "id": "Block Return",
+      "code": "#Block Return",
+      "text": "When attacked, you gain X #Block.",
+      "category": "mechanic",
+      "link": "Talk_To_The_Hand",
+      "image": "Icon_BlockReturn.png"
+    },
+    "Collect": {
+      "id": "Collect",
+      "code": "#Collect",
+      "text": "",
+      "category": "mechanic",
+      "link": "",
+      "image": ""
+    },
+    "Free Attack Power": {
+      "id": "Free Attack Power",
+      "code": "#Free Attack Power",
+      "text": "",
+      "category": "mechanic",
+      "link": "",
+      "image": ""
+    },
+    "Mantra": {
+      "id": "Mantra",
+      "code": "#Mantra",
+      "text": "When you obtain 10 #Mantra, enter #Divinity.",
+      "category": "mechanic",
+      "link": "Buffs#Mantra",
+      "image": "Icon_Mantra.png"
+    },
+    "Mark": {
+      "id": "Mark",
+      "code": "#Mark",
+      "text": "",
+      "category": "mechanic",
+      "link": "",
+      "image": ""
+    },
+    "Simmering Rage": {
+      "id": "Simmering Rage",
+      "code": "#Simmering Rage",
+      "text": "Enter #Wrath at the start of your turn.",
+      "category": "mechanic",
+      "link": "Simmering_Fury",
+      "image": "Icon_Anger.png"
+    },
+    "Wave of the Hand": {
+      "id": "Wave of the Hand",
+      "code": "#Wave of the Hand",
+      "text": "Whenever you gain #Block, apply X #Weak to ALL enemies.",
+      "category": "mechanic",
+      "link": "Wave_of_the_Hand",
+      "image": "Icon_Wave.png"
+    },
+    "Battle Hymn": {
+      "id": "Battle Hymn",
+      "code": "#Battle Hymn",
+      "text": "",
+      "category": "mechanic",
+      "link": "",
+      "image": ""
+    },
+    "Deva": {
+      "id": "Deva",
+      "code": "#Deva",
+      "text": "At the start of your turn, gain @PE X times and increase this gain by Y.",
+      "category": "mechanic",
+      "link": "Deva_Form",
+      "image": "Icon_DevaForm.png"
+    },
+    "Devotion": {
+      "id": "Devotion",
+      "code": "#Devotion",
+      "text": "At the start of your turn, gain X #Mantra.",
+      "category": "mechanic",
+      "link": "Devotion",
+      "image": "Icon_Devotion.png"
+    },
+    "Establishment": {
+      "id": "Establishment",
+      "code": "#Establishment",
+      "text": "Whenever a card is #Retained, lower its cost by X.",
+      "category": "mechanic",
+      "link": "Establishment",
+      "image": "Icon_Establishment.png"
+    },
+    "Fasting": {
+      "id": "Fasting",
+      "code": "#Fasting",
+      "text": "At the start of your turn, lose X @PE '''Energy'''.",
+      "category": "mechanic",
+      "link": "Fasting",
+      "image": "Icon_Fasting.png"
+    },
+    "Foresight": {
+      "id": "Foresight",
+      "code": "#Foresight",
+      "text": "At the start of your turn, #Scry X.",
+      "category": "mechanic",
+      "link": "Foresight",
+      "image": "Icon_Foresight.png"
+    },
+    "Like Water": {
+      "id": "Like Water",
+      "code": "#Like Water",
+      "text": "At the end of your turn, if you are in #Calm, gain X #Block.",
+      "category": "mechanic",
+      "link": "Like_Water",
+      "image": "Icon_LikeWater.png"
+    },
+    "Master Reality": {
+      "id": "Master Reality",
+      "code": "#MasterReality",
+      "text": "Whenever a card is created, it is #Upgraded.",
+      "category": "mechanic",
+      "link": "Master_Reality",
+      "image": "Icon_MasterReality.png"
+    },
+    "Mental Fortress": {
+      "id": "Mental Fortress",
+      "code": "#Mental Fortress",
+      "text": "Whenever you switch #Stances, gain X #Block.",
+      "category": "mechanic",
+      "link": "Mental_Fortress",
+      "image": "Icon_MentalFortress.png"
+    },
+    "Nirvana": {
+      "id": "Nirvana",
+      "code": "#Nirvana",
+      "text": "Whenever you #Scry, gain X #Block.",
+      "category": "mechanic",
+      "link": "Nirvana",
+      "image": "Icon_Nirvana.png"
+    },
+    "Rushdown": {
+      "id": "Rushdown",
+      "code": "#Rushdown",
+      "text": "Whenever you enter #Wrath, draw X cards.",
+      "category": "mechanic",
+      "link": "Rushdown",
+      "image": "Icon_Rushdown.png"
+    },
+    "Study": {
+      "id": "Study",
+      "code": "#Study",
+      "text": "",
+      "category": "mechanic",
+      "link": "",
+      "image": ""
+    },
+    "Omega": {
+      "id": "Omega",
+      "code": "#Omega",
+      "text": "At the end of your turn, deal X damage to ALL enemies.",
+      "category": "mechanic",
+      "link": "Alpha",
+      "image": "Icon_Omega.png"
+    },
+    "No Block": {
+      "id": "No Block",
+      "code": "#No Block",
+      "text": "You cannot gain #Block from cards.",
+      "category": "mechanic",
+      "link": "Panic_Button",
+      "image": "Icon_NoBlock.png"
+    },
+    "The Bomb": {
+      "id": "The Bomb",
+      "code": "#The Bomb",
+      "text": "At the end of X turns, deal Y damage to ALL enemies.",
+      "category": "mechanic",
+      "link": "The_Bomb",
+      "image": "Icon_Bomb.png"
+    },
+    "Pen Nib": {
+      "id": "Pen Nib",
+      "code": "#Pen Nib",
+      "text": "",
+      "category": "mechanic",
+      "link": "",
+      "image": ""
+    },
+    "Magnetism": {
+      "id": "Magnetism",
+      "code": "#Magnetism",
+      "text": "",
+      "category": "mechanic",
+      "link": "",
+      "image": ""
+    },
+    "Mayhem": {
+      "id": "Mayhem",
+      "code": "#Mayhem",
+      "text": "At the start of your turn, play the top X cards of your draw pile.",
+      "category": "mechanic",
+      "link": "Mayhem",
+      "image": "Icon_Mayhem.png"
+    },
+    "Panache": {
+      "id": "Panache",
+      "code": "#Panache",
+      "text": "If you play X more cards this turn, deal Y damage to ALL enemies.",
+      "category": "mechanic",
+      "link": "Panache",
+      "image": "Icon_Panache.png"
+    },
+    "Sadistic": {
+      "id": "Sadistic",
+      "code": "#Sadistic",
+      "text": "Whenever you apply a debuff to a enemy, deal X damage.",
+      "category": "mechanic",
+      "link": "Sadistic_Nature",
+      "image": "Icon_Sadistic.png"
+    },
+    "Angry": {
+      "id": "Angry",
+      "code": "#Angry",
+      "text": "Upon receiving attack damage, gains X #Strength.",
+      "category": "mechanic",
+      "link": "Buffs#Angry",
+      "image": "Icon_Rage.png"
+    },
+    "Beat of Death": {
+      "id": "Beat of Death",
+      "code": "#Beat of Death",
+      "text": "Whenever you play a card, take X damage.",
+      "category": "mechanic",
+      "link": "Corrupt_Heart",
+      "image": "Icon_BeatOfDeath.png"
+    },
+    "Constricted": {
+      "id": "Constricted",
+      "code": "#Constricted",
+      "text": "Take X damage at the end of your turn.",
+      "category": "debuff",
+      "link": "Spire_Growth",
+      "image": "Icon_Constricted.png"
+    },
+    "Curiosity": {
+      "id": "Curiosity",
+      "code": "#Curiosity",
+      "text": "",
+      "category": "mechanic",
+      "link": "",
+      "image": ""
+    },
+    "Curl Up": {
+      "id": "Curl Up",
+      "code": "#Curl Up",
+      "text": "Gains X #Block upon first receiving attack damage.",
+      "category": "mechanic",
+      "link": "Louses",
+      "image": "Icon_CurlUp.png"
+    },
+    "Draw Reduction": {
+      "id": "Draw Reduction",
+      "code": "#Draw Reduction",
+      "text": "Draw X less cards next turn.",
+      "category": "mechanic",
+      "link": "Time_Eater",
+      "image": "Icon_DrawReduction.png"
+    },
+    "Enrage": {
+      "id": "Enrage",
+      "code": "#Enrage",
+      "text": "",
+      "category": "mechanic",
+      "link": "",
+      "image": ""
+    },
+    "Entangled": {
+      "id": "Entangled",
+      "code": "#Entangled",
+      "text": "",
+      "category": "mechanic",
+      "link": "",
+      "image": ""
+    },
+    "Explosive": {
+      "id": "Explosive",
+      "code": "#Explosive",
+      "text": "Explodes after X turns, dealing some amount of damage.",
+      "category": "mechanic",
+      "link": "Shapes#Exploder",
+      "image": "Icon_Explosive.png"
+    },
+    "Fading": {
+      "id": "Fading",
+      "code": "#Fading",
+      "text": "Dies in X turns.",
+      "category": "mechanic",
+      "link": "Transient",
+      "image": "Icon_Fading.png"
+    },
+    "Flying": {
+      "id": "Flying",
+      "code": "#Flying",
+      "text": "Takes 50% less attack damage. Cancelled if dealt attack damage X times in one turn. Resets charges at the start of next turn if not fully removed.",
+      "category": "mechanic",
+      "link": "Byrd",
+      "image": "Icon_Flying.png"
+    },
+    "Hex": {
+      "id": "Hex",
+      "code": "#Hex",
+      "text": "",
+      "category": "debuff",
+      "link": "",
+      "image": ""
+    },
+    "Invincible": {
+      "id": "Invincible",
+      "code": "#Invincible",
+      "text": "Can only lose X more HP this turn.",
+      "category": "mechanic",
+      "link": "Corrupt_Heart",
+      "image": "Icon_Invincible.png"
+    },
+    "Life Link": {
+      "id": "Life Link",
+      "code": "#Life Link",
+      "text": "",
+      "category": "mechanic",
+      "link": "",
+      "image": ""
+    },
+    "Malleable": {
+      "id": "Malleable",
+      "code": "#Malleable",
+      "text": "Upon receiving attack damage, gains X #Block. #Block gain increases as #Malleable is triggered. Resets at the start of your turn.",
+      "category": "mechanic",
+      "link": "",
+      "image": "Icon_Malleable.png"
+    },
+    "Mode Shift": {
+      "id": "Mode Shift",
+      "code": "#Mode Shift",
+      "text": "",
+      "category": "mechanic",
+      "link": "",
+      "image": ""
+    },
+    "Minion": {
+      "id": "Minion",
+      "code": "#Minion",
+      "text": "Minions abandon combat without their leader.",
+      "category": "mechanic",
+      "link": "Minions",
+      "image": "Icon_Minion.png"
+    },
+    "Painful Stabs": {
+      "id": "Painful Stabs",
+      "code": "#Painful Stabs",
+      "text": "",
+      "category": "mechanic",
+      "link": "",
+      "image": ""
+    },
+    "Reactive": {
+      "id": "Reactive",
+      "code": "#Reactive",
+      "text": "Upon receiving attack damage, changes its [[Intent]].",
+      "category": "mechanic",
+      "link": "Writhing_Mass",
+      "image": "Icon_Reactive.png"
+    },
+    "Regenerate": {
+      "id": "Regenerate",
+      "code": "#Regenerate",
+      "text": "At the end of its turn, heals X HP.",
+      "category": "mechanic",
+      "link": "Awakened_One",
+      "image": "Icon_Regen.png"
+    },
+    "Sharp Hide": {
+      "id": "Sharp Hide",
+      "code": "#Sharp Hide",
+      "text": "",
+      "category": "mechanic",
+      "link": "",
+      "image": ""
+    },
+    "Shifting": {
+      "id": "Shifting",
+      "code": "#Shifting",
+      "text": "Upon losing HP, loses that much #Strength until the end of the turn.",
+      "category": "mechanic",
+      "link": "Transient",
+      "image": "Icon_Shifting.png"
+    },
+    "Slow": {
+      "id": "Slow",
+      "code": "#Slow",
+      "text": "",
+      "category": "mechanic",
+      "link": "",
+      "image": ""
+    },
+    "Split": {
+      "id": "Split",
+      "code": "#Split",
+      "text": "When its HP is at or below 50%, it will split into 2 smaller Slimes with its current HP.",
+      "category": "mechanic",
+      "link": "",
+      "image": "Icon_Split.png"
+    },
+    "Spore Cloud": {
+      "id": "Spore Cloud",
+      "code": "#Spore Cloud",
+      "text": "On death, applies X #Vulnerable.",
+      "category": "mechanic",
+      "link": "Buffs#Spore Cloud",
+      "image": "Icon_SporeCloud.png"
+    },
+    "Stasis": {
+      "id": "Stasis",
+      "code": "#Stasis",
+      "text": "On death, a stolen card is returned to your hand.",
+      "category": "mechanic",
+      "link": "Bronze_Automaton",
+      "image": "Icon_Stasis.png"
+    },
+    "Strength Up": {
+      "id": "Strength Up",
+      "code": "#Strength Up",
+      "text": "At the end of its turn, gains #Strength.",
+      "category": "mechanic",
+      "link": "Orb_Walker",
+      "image": "Icon_Stasis.png"
+    },
+    "Surrounded": {
+      "id": "Surrounded",
+      "code": "#Surrounded",
+      "text": "Receive 50% more damage if attacked from behind. Use targeting cards or potions to change your orientation.",
+      "category": "mechanic",
+      "link": "Spire_Shield_and_Spire_Spear",
+      "image": "Icon_Surrounded.png"
+    },
+    "Back Attack": {
+      "id": "Back Attack",
+      "code": "#Back Attack",
+      "text": "Deals 50% more damage as it is attacking you from behind.",
+      "category": "mechanic",
+      "link": "Spire_Shield_and_Spire_Spear",
+      "image": "Icon_Surrounded.png"
+    },
+    "Thievery": {
+      "id": "Thievery",
+      "code": "#Thievery",
+      "text": "Steals X [[Gold]] whenever it attacks. Stolen gold is returned if this enemy is killed.",
+      "category": "mechanic",
+      "link": "Thief",
+      "image": "Icon_Thievery.png"
+    },
+    "Time Warp": {
+      "id": "Time Warp",
+      "code": "#Time Warp",
+      "text": "Whenever you play a certain number of cards, ends your turn and gains X #Strength.",
+      "category": "mechanic",
+      "link": "Time_Eater",
+      "image": "Icon_TimeWarp.png"
+    },
+    "Unawakened": {
+      "id": "Unawakened",
+      "code": "#Unawakened",
+      "text": "This enemy hasn't awakened yet...",
+      "category": "mechanic",
+      "link": "Awakened_One",
+      "image": "Icon_Unawakened.png"
+    },
+    "Draft": {
+      "id": "Draft",
+      "code": "#Draft",
+      "text": "'''Daily Modifier''': Draft a starting deck of cards.",
+      "category": "mechanic",
+      "link": "Custom_Mode#Draft",
+      "image": "Mod_Draft.png"
+    },
+    "Sealed Deck": {
+      "id": "Sealed Deck",
+      "code": "#Sealed Deck",
+      "text": "'''Daily Modifier''': Craft a deck from 30 random cards.",
+      "category": "mechanic",
+      "link": "Custom_Mode#Sealed_Deck",
+      "image": "Mod_SealedDeck.png"
+    },
+    "Hoarder": {
+      "id": "Hoarder",
+      "code": "#Hoarder",
+      "text": "'''Daily Modifier''': Whenever you add a card to your deck, add two additional copies. You can no longer remove cards from your deck at the '''Merchant'''.",
+      "category": "mechanic",
+      "link": "Custom_Mode#Hoarder",
+      "image": "Mod_Greed.png"
+    },
+    "Insanity": {
+      "id": "Insanity",
+      "code": "#Insanity",
+      "text": "'''Daily Modifier''': Start with a random deck of 50 cards.",
+      "category": "mechanic",
+      "link": "Custom_Mode#Insanity",
+      "image": "Mod_RestlessJourney.png"
+    },
+    "Chimera": {
+      "id": "Chimera",
+      "code": "#Chimera",
+      "text": "'''Daily Modifier''': Your starting deck is a fusion of all 4 characters.",
+      "category": "mechanic",
+      "link": "Custom_Mode#Chimera",
+      "image": "Mod_Chimera.png"
+    },
+    "Shiny": {
+      "id": "Shiny",
+      "code": "#Shiny",
+      "text": "'''Daily Modifier''': Your starting deck is replaced with 1 of every rare card.",
+      "category": "mechanic",
+      "link": "Custom_Mode#Shiny",
+      "image": "Mod_Shiny.png"
+    },
+    "Specialized": {
+      "id": "Specialized",
+      "code": "#Specialized",
+      "text": "'''Daily Modifier''': Start with 5 copies of a single card.",
+      "category": "mechanic",
+      "link": "Custom_Mode#Specialized",
+      "image": "Mod_Specialized.png"
+    },
+    "Vintage": {
+      "id": "Vintage",
+      "code": "#Vintage",
+      "text": "'''Daily Modifier''': Normal Enemies drop relics instead of cards.",
+      "category": "mechanic",
+      "link": "Custom_Mode#Vintage",
+      "image": "Mod_Vintage.png"
+    },
+    "Controlled Chaos": {
+      "id": "Controlled Chaos",
+      "code": "#Controlled Chaos",
+      "text": "'''Daily Modifier''': Start with '''Frozen Eye'''. At the start of your turn, add 10 random cards to the bottom of your draw pile.",
+      "category": "mechanic",
+      "link": "Custom_Mode#Controlled_Chaos",
+      "image": "Mod_ControlledChaos.png"
+    },
+    "All Star": {
+      "id": "All Star",
+      "code": "#All Star",
+      "text": "'''Daily Modifier''': Start with 5 colorless cards.",
+      "category": "mechanic",
+      "link": "Custom_Mode#All_Star",
+      "image": "Mod_AllStar.png"
+    },
+    "Diverse": {
+      "id": "Diverse",
+      "code": "#Diverse",
+      "text": "'''Daily Modifier''': Cards are not restricted by your character.",
+      "category": "mechanic",
+      "link": "Custom_Mode#Diverse",
+      "image": "Mod_Diverse.png"
+    },
+    "Red Cards": {
+      "id": "Red Cards",
+      "code": "#Red Cards",
+      "text": "'''Daily Modifier''': Red cards now appear in rewards and shops.",
+      "category": "mechanic",
+      "link": "Custom_Mode#Red_Cards",
+      "image": "Mod_RedCards.png"
+    },
+    "Green Cards": {
+      "id": "Green Cards",
+      "code": "#Green Cards",
+      "text": "'''Daily Modifier''': Green cards now appear in rewards and shops.",
+      "category": "mechanic",
+      "link": "Custom_Mode#Green_Cards",
+      "image": "Mod_GreenCards.png"
+    },
+    "Blue Cards": {
+      "id": "Blue Cards",
+      "code": "#Blue Cards",
+      "text": "'''Daily Modifier''': Blue cards now appear in rewards and shops.",
+      "category": "mechanic",
+      "link": "Custom_Mode#Blue_Cards",
+      "image": "Mod_BlueCards.png"
+    },
+    "Purple Cards": {
+      "id": "Purple Cards",
+      "code": "#Purple Cards",
+      "text": "'''Daily Modifier''': Purple cards now appear in rewards and shops.",
+      "category": "mechanic",
+      "link": "Custom_Mode#Purple_Cards",
+      "image": "Mod_PurpleCards.png"
+    },
+    "Colorless Cards": {
+      "id": "Colorless Cards",
+      "code": "#Colorless Cards",
+      "text": "'''Daily Modifier''': Colorless cards now appear in rewards and shops.",
+      "category": "mechanic",
+      "link": "Custom_Mode#Colorless_Cards",
+      "image": "Mod_ColorlessCards.png"
+    },
+    "Heirloom": {
+      "id": "Heirloom",
+      "code": "#Heirloom",
+      "text": "'''Daily Modifier''': Start with one 1 Rare relic.",
+      "category": "mechanic",
+      "link": "Custom_Mode#Heirloom",
+      "image": "Mod_Heirloom.png"
+    },
+    "Time Dilation": {
+      "id": "Time Dilation",
+      "code": "#Time Dilation",
+      "text": "'''Daily Modifier''': All enemies start with the '''Slow''' debuff.",
+      "category": "mechanic",
+      "link": "Custom_Mode#Time_Dilation",
+      "image": "Mod_TimeDilation.png"
+    },
+    "Flight": {
+      "id": "Flight",
+      "code": "#Flight",
+      "text": "'''Daily Modifier''': You may ignore paths when choosing the next room to travel to.",
+      "category": "mechanic",
+      "link": "Custom_Mode#Flight",
+      "image": "Mod_Flight.png"
+    },
+    "Deadly Events": {
+      "id": "Deadly Events",
+      "code": "#Deadly Events",
+      "text": "'''Daily Modifier''': Unknown rooms can now contain Elites but are also more likely to contain Treasure Rooms.",
+      "category": "mechanic",
+      "link": "Custom_Mode#Deadly_Events",
+      "image": "Mod_DeadlyEvents.png"
+    },
+    "Binary": {
+      "id": "Binary",
+      "code": "#Binary",
+      "text": "'''Daily Modifier''': Card rewards contain only two cards.",
+      "category": "mechanic",
+      "link": "Custom_Mode#Binary",
+      "image": "Mod_Binary.png"
+    },
+    "Cursed Run": {
+      "id": "Cursed Run",
+      "code": "#Cursed Run",
+      "text": "'''Daily Modifier''': Whenever you defeat a Boss, become '''Cursed'''. Your starting relic is replaced by '''Cursed Key''', '''Darkstone Periapt''', and '''Du-Vu Doll'''.",
+      "category": "mechanic",
+      "link": "Custom_Mode#Cursed_Run",
+      "image": "Mod_CursedRun.png"
+    },
+    "Big Game Hunter": {
+      "id": "Big Game Hunter",
+      "code": "#Big Game Hunter",
+      "text": "'''Daily Modifier''': Elites are now swarming the Spire and drop better rewards.",
+      "category": "mechanic",
+      "link": "Custom_Mode#Big_Game_Hunter",
+      "image": "Mod_EliteSwarm.png"
+    },
+    "Lethality": {
+      "id": "Lethality",
+      "code": "#Lethality",
+      "text": "'''Daily Modifier''': You start each combat with +3 '''Strength'''. All enemies start each combat with +3 '''Strength'''.",
+      "category": "mechanic",
+      "link": "Custom_Mode#Lethality",
+      "image": "Mod_LethalEnemies.png"
+    },
+    "Midas": {
+      "id": "Midas",
+      "code": "#Midas",
+      "text": "'''Daily Modifier''': Enemies drop 200% more Gold, but you cannot Upgrade cards at Rest Sites.",
+      "category": "mechanic",
+      "link": "Custom_Mode#Midas",
+      "image": "Mod_Midas.png"
+    },
+    "Night Terrors": {
+      "id": "Night Terrors",
+      "code": "#Night Terrors",
+      "text": "'''Daily Modifier''': Resting at Rest Sites heals 100% of your HP, but costs 5 max HP.",
+      "category": "mechanic",
+      "link": "Custom_Mode#Night_Terrors",
+      "image": "Mod_NightTerrors.png"
+    },
+    "Terminal": {
+      "id": "Terminal",
+      "code": "#Terminal",
+      "text": "'''Daily Modifier''': Whenever you enter a new room, lose 1 max HP. Start each combat with 5 '''Plated Armor'''.",
+      "category": "mechanic",
+      "link": "Custom_Mode#Terminal",
+      "image": "Mod_ToughEnemies.png"
+    },
+    "Certain Future": {
+      "id": "Certain Future",
+      "code": "#Certain Future",
+      "text": "'''Daily Modifier''': The map only contains one path.",
+      "category": "mechanic",
+      "link": "Custom_Mode#Certain_Future",
+      "image": "Mod_CertainFuture.png"
+    },
+    "Endless": {
+      "id": "Endless",
+      "code": "#Endless",
+      "text": "'''Custom Modifier''': Winning will return you to Act 1 with the same deck. But beware, the blight eventually consumes all...",
+      "category": "mechanic",
+      "link": "Custom_Mode#Custom_Modifiers",
+      "image": "Mod_Endless.png"
+    },
+    "Daily Mods": {
+      "id": "Daily Mods",
+      "code": "#Daily Mods",
+      "text": "'''Custom Modifier''': Embark on a run with exactly 3 random Daily Mods.",
+      "category": "mechanic",
+      "link": "Custom_Mode#Custom_Modifiers",
+      "image": ""
+    },
+    "The Ending": {
+      "id": "The Ending",
+      "code": "#The Ending",
+      "text": "'''Custom Modifier''': Enables the Final Act.",
+      "category": "mechanic",
+      "link": "Custom_Mode#Custom_Modifiers",
+      "image": ""
+    },
+    "Blight Chests": {
+      "id": "Blight Chests",
+      "code": "#Blight Chests",
+      "text": "'''Custom Modifier''': Boss chests contain Blights after beating Act 3 on Endless.",
+      "category": "mechanic",
+      "link": "Custom_Mode#Custom_Modifiers",
+      "image": ""
+    },
+    "Praise Snecko": {
+      "id": "Praise Snecko",
+      "code": "#Praise Snecko",
+      "text": "'''Custom Modifier''': Replaces your starting relic with '''Snecko Eye'''.",
+      "category": "mechanic",
+      "link": "Custom_Mode#Custom_Modifiers",
+      "image": ""
+    },
+    "Inception": {
+      "id": "Inception",
+      "code": "#Inception",
+      "text": "'''Custom Modifier''': Replaces your starting relic with '''Unceasing Top'''.",
+      "category": "mechanic",
+      "link": "Custom_Mode#Custom_Modifiers",
+      "image": ""
+    },
+    "My True Form": {
+      "id": "My True Form",
+      "code": "#My True Form",
+      "text": "'''Custom Modifier''': Start with a copy of '''Demon Form''', '''Wraith Form''', '''Echo Form''', and '''Deva Form'''.",
+      "category": "mechanic",
+      "link": "Custom_Mode#Custom_Modifiers",
+      "image": ""
+    },
+    "One Hit Wonder": {
+      "id": "One Hit Wonder",
+      "code": "#One Hit Wonder",
+      "text": "'''Custom Modifier''': Start the game with 1 max HP.",
+      "category": "mechanic",
+      "link": "Custom_Mode#Custom_Modifiers",
+      "image": ""
+    },
+    "Starter Deck": {
+      "id": "Starter Deck",
+      "code": "#Starter Deck",
+      "text": "'''Custom Modifier''': Start with '''Busted Crown''' and Binary, so enemies no longer drop cards.",
+      "category": "mechanic",
+      "link": "Custom_Mode#Custom_Modifiers",
+      "image": ""
+    },
+    "Uncertain Future": {
+      "id": "Uncertain Future",
+      "code": "#Uncertain Future",
+      "text": "'''Removed Modifier''': The map now only shows Unknown rooms.",
+      "category": "mechanic",
+      "link": "Custom_Mode#Removed_Modifiers",
+      "image": "Mod_UncertainFuture.png"
+    },
+    "Brewmaster": {
+      "id": "Brewmaster",
+      "code": "#Brewmaster",
+      "text": "'''Removed Modifier''': Start with '''White Beast Statue''' and 5 copies of '''Alchemize'''.",
+      "category": "mechanic",
+      "link": "Custom_Mode#Removed_Modifiers",
+      "image": "Mod_Brewmaster.png"
+    },
+    "Careless": {
+      "id": "Careless",
+      "code": "#Careless",
+      "text": "'''Removed Modifier''': At the beginning of your turn, discard the top card of your draw pile.",
+      "category": "mechanic",
+      "link": "Custom_Mode#Removed_Modifiers",
+      "image": "Mod_TimeDilation.png"
+    },
+    "Colossus": {
+      "id": "Colossus",
+      "code": "#Colossus",
+      "text": "'''Removed Modifier''': Enemies now have more HP but drop better rewards.",
+      "category": "mechanic",
+      "link": "Custom_Mode#Removed_Modifiers",
+      "image": "Mod_Colossus.png"
+    },
+    "Restless Journey": {
+      "id": "Restless Journey",
+      "code": "#Restless Journey",
+      "text": "'''Removed Modifier''': The player no longer heals to full health when entering new Acts.",
+      "category": "mechanic",
+      "link": "Custom_Mode#Removed_Modifiers",
+      "image": "Mod_RestlessJourney.png"
+    },
+    "Heartbreaker": {
+      "id": "Heartbreaker",
+      "code": "#Heartbreaker",
+      "text": "'''Removed Modifier''': Enables the Final Act. (Renamed to 'The Ending')",
+      "category": "mechanic",
+      "link": "Custom_Mode#Removed_Modifiers",
+      "image": ""
+    }
+  },
+  "icons": {
+    "Red Energy": {
+      "id": "Red Energy",
+      "code": "@RE",
+      "text": "The [[Ironclad]]'s Energy orb. Energy is a resource used to play cards."
+    },
+    "Green Energy": {
+      "id": "Green Energy",
+      "code": "@GE",
+      "text": "The [[Silent]]'s Energy orb. Energy is a resource used to play cards."
+    },
+    "Blue Energy": {
+      "id": "Blue Energy",
+      "code": "@BE",
+      "text": "The [[Defect]]'s Energy orb. Energy is a resource used to play cards."
+    },
+    "Purple Energy": {
+      "id": "Purple Energy",
+      "code": "@PE",
+      "text": "The [[Watcher]]'s Energy orb. Energy is a resource used to play cards."
+    },
+    "Colorless Energy": {
+      "id": "Colorless Energy",
+      "code": "@CE",
+      "text": "The generic Energy icon found on all Colorless cards. Energy is a resource used to play cards."
+    },
+    "Lightning Orb": {
+      "id": "Lightning Orb",
+      "code": "@LO",
+      "text": "The Defect's Lighting Orb."
+    },
+    "Frost Orb": {
+      "id": "Frost Orb",
+      "code": "@FO",
+      "text": "The Defect's Frost Orb."
+    },
+    "Dark Orb": {
+      "id": "Dark Orb",
+      "code": "@DO",
+      "text": "The Defect's Dark Orb."
+    },
+    "Plasma Orb": {
+      "id": "Plasma Orb",
+      "code": "@PO",
+      "text": "The Defect's Plasma Orb."
+    }
+  },
+  "code_to_id": {
+    "@RE": "Red Energy",
+    "@GE": "Green Energy",
+    "@BE": "Blue Energy",
+    "@PE": "Purple Energy",
+    "@CE": "Colorless Energy",
+    "@LO": "Lightning Orb",
+    "@FO": "Frost Orb",
+    "@DO": "Dark Orb",
+    "@PO": "Plasma Orb",
+    "#Block": "Block",
+    "#Energy": "Energy",
+    "#Ethereal": "Ethereal",
+    "#Exhaust": "Exhaust",
+    "#Fatal": "Fatal",
+    "#Innate": "Innate",
+    "#Retain": "Retain",
+    "#Transform": "Transform",
+    "#Upgrade": "Upgrade",
+    "#Unplayable": "Unplayable",
+    "#Artifact": "Artifact",
+    "#Buffer": "Buffer",
+    "#Confused": "Confused",
+    "#Dexterity": "Dexterity",
+    "#Dexterity Down": "Dexterity Down",
+    "#Draw Card": "Draw Card",
+    "#Frail": "Frail",
+    "#Intangible": "Intangible",
+    "#Next Turn Block": "Next Turn Block",
+    "#No Draw": "No Draw",
+    "#Plated Armor": "Plated Armor",
+    "#Regen": "Regen",
+    "#Ritual": "Ritual",
+    "#Shackled": "Shackled",
+    "#Strength": "Strength",
+    "#Strength Down": "Strength Down",
+    "#Thorns": "Thorns",
+    "#Vigor": "Vigor",
+    "#Vulnerable": "Vulnerable",
+    "#Weak": "Weak",
+    "#Double Tap": "Double Tap",
+    "#Flame Barrier": "Flame Barrier",
+    "#Rage": "Rage",
+    "#Barricade": "Barricade",
+    "#Berserk": "Berserk",
+    "#Brutality": "Brutality",
+    "#Combust": "Combust",
+    "#Corruption": "Corruption",
+    "#Dark Embrace": "Dark Embrace",
+    "#Demon Form": "Demon Form",
+    "#Evolve": "Evolve",
+    "#Feel No Pain": "Feel No Pain",
+    "#Fire Breathing": "Fire Breathing",
+    "#Juggernaut": "Juggernaut",
+    "#Metallicize": "Metallicize",
+    "#Rupture": "Rupture",
+    "#Blur": "Blur",
+    "#Burst": "Burst",
+    "#Corpse Explosion": "Corpse Explosion",
+    "#Choked": "Choked",
+    "#Double Damage": "Double Damage",
+    "#EnergizedGE": "Energized (Silent)",
+    "#Nightmare": "Nightmare",
+    "#Phantasmal": "Phantasmal",
+    "#Poison": "Poison",
+    "#Accuracy": "Accuracy",
+    "#After Image": "After Image",
+    "#Envenom": "Envenom",
+    "#Infinite Blades": "Infinite Blades",
+    "#Noxious Fumes": "Noxious Fumes",
+    "#Retain Cards": "Retain Cards",
+    "#Thousand Cuts": "Thousand Cuts",
+    "#Tools Of The Trade": "Tools Of The Trade",
+    "#Wraith Form": "Wraith Form",
+    "#Orb": "Orb",
+    "#Channel": "Channel",
+    "#Orb Slot": "Orb Slot",
+    "#Evoke": "Evoke",
+    "#Lightning": "Lightning",
+    "#Frost": "Frost",
+    "#Dark": "Dark",
+    "#Plasma": "Plasma",
+    "#Amplify": "Amplify",
+    "#EnergizedBE": "Energized (Defect)",
+    "#Equilibrium": "Equilibrium",
+    "#Focus": "Focus",
+    "#Lock On": "Lock-On",
+    "#Rebound": "Rebound",
+    "#Bias": "Bias",
+    "#Creative AI": "Creative AI",
+    "#Draw": "Draw",
+    "#Echo Form": "Echo Form",
+    "#Electro": "Electro",
+    "#Heatsink": "Heatsink",
+    "#Hello": "Hello",
+    "#Loop": "Loop",
+    "#Static Discharge": "Static Discharge",
+    "#Storm": "Storm",
+    "#Repair": "Repair",
+    "#Stance": "Stance",
+    "#Calm": "Calm",
+    "#Wrath": "Wrath",
+    "#Divinity": "Divinity",
+    "#Scry": "Scry",
+    "#Blasphemer": "Blasphemer",
+    "#Block Return": "Block Return",
+    "#Collect": "Collect",
+    "#Free Attack Power": "Free Attack Power",
+    "#Mantra": "Mantra",
+    "#Mark": "Mark",
+    "#Simmering Rage": "Simmering Rage",
+    "#Wave of the Hand": "Wave of the Hand",
+    "#Battle Hymn": "Battle Hymn",
+    "#Deva": "Deva",
+    "#Devotion": "Devotion",
+    "#Establishment": "Establishment",
+    "#Fasting": "Fasting",
+    "#Foresight": "Foresight",
+    "#Like Water": "Like Water",
+    "#MasterReality": "Master Reality",
+    "#Mental Fortress": "Mental Fortress",
+    "#Nirvana": "Nirvana",
+    "#Rushdown": "Rushdown",
+    "#Study": "Study",
+    "#Omega": "Omega",
+    "#No Block": "No Block",
+    "#The Bomb": "The Bomb",
+    "#Pen Nib": "Pen Nib",
+    "#Magnetism": "Magnetism",
+    "#Mayhem": "Mayhem",
+    "#Panache": "Panache",
+    "#Sadistic": "Sadistic",
+    "#Angry": "Angry",
+    "#Beat of Death": "Beat of Death",
+    "#Constricted": "Constricted",
+    "#Curiosity": "Curiosity",
+    "#Curl Up": "Curl Up",
+    "#Draw Reduction": "Draw Reduction",
+    "#Enrage": "Enrage",
+    "#Entangled": "Entangled",
+    "#Explosive": "Explosive",
+    "#Fading": "Fading",
+    "#Flying": "Flying",
+    "#Hex": "Hex",
+    "#Invincible": "Invincible",
+    "#Life Link": "Life Link",
+    "#Malleable": "Malleable",
+    "#Mode Shift": "Mode Shift",
+    "#Minion": "Minion",
+    "#Painful Stabs": "Painful Stabs",
+    "#Reactive": "Reactive",
+    "#Regenerate": "Regenerate",
+    "#Sharp Hide": "Sharp Hide",
+    "#Shifting": "Shifting",
+    "#Slow": "Slow",
+    "#Split": "Split",
+    "#Spore Cloud": "Spore Cloud",
+    "#Stasis": "Stasis",
+    "#Strength Up": "Strength Up",
+    "#Surrounded": "Surrounded",
+    "#Back Attack": "Back Attack",
+    "#Thievery": "Thievery",
+    "#Time Warp": "Time Warp",
+    "#Unawakened": "Unawakened",
+    "#Draft": "Draft",
+    "#Sealed Deck": "Sealed Deck",
+    "#Hoarder": "Hoarder",
+    "#Insanity": "Insanity",
+    "#Chimera": "Chimera",
+    "#Shiny": "Shiny",
+    "#Specialized": "Specialized",
+    "#Vintage": "Vintage",
+    "#Controlled Chaos": "Controlled Chaos",
+    "#All Star": "All Star",
+    "#Diverse": "Diverse",
+    "#Red Cards": "Red Cards",
+    "#Green Cards": "Green Cards",
+    "#Blue Cards": "Blue Cards",
+    "#Purple Cards": "Purple Cards",
+    "#Colorless Cards": "Colorless Cards",
+    "#Heirloom": "Heirloom",
+    "#Time Dilation": "Time Dilation",
+    "#Flight": "Flight",
+    "#Deadly Events": "Deadly Events",
+    "#Binary": "Binary",
+    "#Cursed Run": "Cursed Run",
+    "#Big Game Hunter": "Big Game Hunter",
+    "#Lethality": "Lethality",
+    "#Midas": "Midas",
+    "#Night Terrors": "Night Terrors",
+    "#Terminal": "Terminal",
+    "#Certain Future": "Certain Future",
+    "#Endless": "Endless",
+    "#Daily Mods": "Daily Mods",
+    "#The Ending": "The Ending",
+    "#Blight Chests": "Blight Chests",
+    "#Praise Snecko": "Praise Snecko",
+    "#Inception": "Inception",
+    "#My True Form": "My True Form",
+    "#One Hit Wonder": "One Hit Wonder",
+    "#Starter Deck": "Starter Deck",
+    "#Uncertain Future": "Uncertain Future",
+    "#Brewmaster": "Brewmaster",
+    "#Careless": "Careless",
+    "#Colossus": "Colossus",
+    "#Restless Journey": "Restless Journey",
+    "#Heartbreaker": "Heartbreaker"
+  },
+  "energy_codes": [
+    "@PE",
+    "@GE",
+    "@BE",
+    "@CE",
+    "@RE"
+  ]
+}

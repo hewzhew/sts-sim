@@ -1,0 +1,686 @@
+[
+  {
+    "wiki_id": "Ancient_Writing",
+    "name": "Ancient Writing",
+    "category": "act2",
+    "options": [
+      {
+        "label": "[Elegance]",
+        "description": "Remove a card from your deck.",
+        "costs": {
+          "remove_card": 1
+        }
+      },
+      {
+        "label": "[Simplicity]",
+        "description": "Upgrade all Strikes and Defends.",
+        "effects": [
+          "All of the player's basic Strikes and basic Defends are  Upgraded."
+        ]
+      }
+    ]
+  },
+  {
+    "wiki_id": "Augmenter",
+    "name": "Augmenter",
+    "category": "act2",
+    "options": [
+      {
+        "label": "[Test J.A.X.]",
+        "description": "Get JAXXED.",
+        "effects": [
+          "Adds  J.A.X. to the player's deck."
+        ]
+      },
+      {
+        "label": "[Become Test Subject]",
+        "description": "Transform 2 cards.",
+        "effects": [
+          "Read more on Transform rules here."
+        ]
+      },
+      {
+        "label": "[Ingest Mutagens]",
+        "description": "Obtain a special relic.",
+        "rewards": {
+          "relic": "random"
+        },
+        "effects": [
+          "Rewards the player with  Mutagenic Strength."
+        ]
+      }
+    ]
+  },
+  {
+    "wiki_id": "Council_of_Ghosts",
+    "name": "Council of Ghosts",
+    "category": "act2",
+    "options": [
+      {
+        "label": "[Accept]",
+        "description": "Receive 5 (A15+: 3) Apparitions. Lose X Max HP.",
+        "effects": [
+          "X is equal to 50% of the player's Max HP, rounded up."
+        ],
+        "costs": {
+          "hp_percent": 50.0
+        }
+      },
+      {
+        "label": "[Refuse]",
+        "description": "Nothing happens.",
+        "effects": [
+          "You are then given the option to"
+        ]
+      },
+      {
+        "label": "[Leave]",
+        "description": "."
+      }
+    ]
+  },
+  {
+    "wiki_id": "Cursed_Tome",
+    "name": "Cursed Tome",
+    "category": "act2",
+    "options": [
+      {
+        "label": "[Read]",
+        "description": "Begin reading the tome (starts the event sequence)."
+      },
+      {
+        "label": "[Continue]",
+        "description": "Lose 1 HP. (After 1st read)",
+        "costs": {
+          "hp": 1
+        },
+        "conditions": [
+          {
+            "type": "ManualCheck",
+            "text": "Appears after selecting [Read]"
+          }
+        ]
+      },
+      {
+        "label": "[Continue]",
+        "description": "Lose 2 HP. (After 2nd read)",
+        "costs": {
+          "hp": 2
+        },
+        "conditions": [
+          {
+            "type": "ManualCheck",
+            "text": "Appears after first [Continue]"
+          }
+        ]
+      },
+      {
+        "label": "[Continue]",
+        "description": "Lose 3 HP. (After 3rd read)",
+        "costs": {
+          "hp": 3
+        },
+        "conditions": [
+          {
+            "type": "ManualCheck",
+            "text": "Appears after second [Continue]"
+          }
+        ]
+      },
+      {
+        "label": "[Take]",
+        "description": "Obtain the book. Lose 10 (A15+: 15) HP.",
+        "costs": {
+          "hp": 10,
+          "hp_ascension": 15
+        },
+        "rewards": {
+          "relic": "one random book"
+        },
+        "effects": [
+          "Receive one random book relic: Enchiridion, Nilry's Codex, or Necronomicon.",
+          "Player doesn't know which book until after choosing [Take].",
+          "Total HP cost if committed: 16 (A15+: 21) HP (1+2+3+10/15)"
+        ],
+        "conditions": [
+          {
+            "type": "ManualCheck",
+            "text": "Appears after third [Continue]"
+          }
+        ]
+      },
+      {
+        "label": "[Stop]",
+        "description": "Lose 3 HP. Give up on the book.",
+        "costs": {
+          "hp": 3
+        },
+        "effects": [
+          "Exit without obtaining the book relic."
+        ],
+        "conditions": [
+          {
+            "type": "ManualCheck",
+            "text": "Appears after third [Continue], alternative to [Take]"
+          }
+        ]
+      },
+      {
+        "label": "[Leave]",
+        "description": "Nothing happens.",
+        "conditions": [
+          {
+            "type": "ManualCheck",
+            "text": "Available at start, before [Read]"
+          }
+        ]
+      }
+    ],
+    "notes": [
+      "This is a SEQUENTIAL event: [Read] → [Continue] x3 → [Take]/[Stop]. Player can [Leave] only at the start.",
+      "Tungsten Rod reduces total HP lost by 4 (to 12/17) if player takes the book, or to 5 if player stops.",
+      "Practical summary: Either commit to 16 (A15+: 21) HP for random book relic, or [Leave] immediately for 0 cost."
+    ]
+  },
+  {
+    "wiki_id": "Designer_In-Spire",
+    "name": "Designer In-Spire",
+    "category": "act2",
+    "options": [
+      {
+        "label": "[Adjustments]",
+        "description": "Lose 40 (A15+: 50) Gold. One of the following rewards appears.",
+        "costs": {
+          "gold": 40,
+          "gold_ascension": 50
+        },
+        "rewards": {
+          "upgrade_card": 1
+        },
+        "effects": [
+          "Upgrade a card.",
+          "Upgrade two random cards."
+        ]
+      },
+      {
+        "label": "[Clean Up]",
+        "description": "Lose 60 (A15+: 75) Gold. One of the following rewards appears.",
+        "costs": {
+          "gold": 60,
+          "gold_ascension": 75
+        },
+        "effects": [
+          "Remove a card.",
+          "Transform two cards."
+        ]
+      },
+      {
+        "label": "[Full Service]",
+        "description": "Lose 90 (A15+: 110) Gold.  Remove a card, then upgrade a random card.",
+        "costs": {
+          "gold": 90,
+          "gold_ascension": 110,
+          "remove_card": 1
+        }
+      },
+      {
+        "label": "[Punch]",
+        "description": "Lose 3 (A15+: 5) HP.",
+        "costs": {
+          "hp": 3,
+          "hp_ascension": 5
+        }
+      }
+    ]
+  },
+  {
+    "wiki_id": "Forgotten_Altar",
+    "name": "Forgotten Altar",
+    "category": "act2",
+    "options": [
+      {
+        "label": "[Offer: Golden Idol]",
+        "description": "Obtain a special Relic (Bloody Idol). Lose Golden Idol.",
+        "costs": {
+          "relic": "Golden Idol"
+        },
+        "rewards": {
+          "relic": "Bloody Idol"
+        },
+        "requirements": {
+          "has_relic": "Golden Idol"
+        },
+        "effects": [
+          "Receive Bloody Idol relic",
+          "Golden Idol is consumed"
+        ]
+      },
+      {
+        "label": "[Sacrifice]",
+        "description": "Gain 5 Max HP. Lose X HP.",
+        "rewards": {
+          "max_hp": 5
+        },
+        "effects": [
+          "X is equal to 25% (A15+: 35%) of the player's Max HP."
+        ],
+        "costs": {
+          "hp_percent": 25.0,
+          "hp_percent_ascension": 35.0
+        }
+      },
+      {
+        "label": "[Desecrate]",
+        "description": "Become Cursed - Decay.",
+        "rewards": {
+          "curse": "Decay"
+        }
+      }
+    ],
+    "notes": [
+      "Golden Idol is only obtained from the  Golden Idol Event.",
+      "If the  Golden Idol is turned into the  Bloody Idol,  The Moai Head Event in Act 3 will no longer accept it as an offering."
+    ]
+  },
+  {
+    "wiki_id": "Knowing_Skull",
+    "name": "Knowing Skull",
+    "category": "act2",
+    "event_type": "loop",
+    "loop_mechanic": {
+      "description": "Event repeats until [How do I leave?] is chosen",
+      "cost_formula": "max(6, floor(max_hp * 0.10)) + selection_count",
+      "cost_per_selection": 1,
+      "tracked_per_option": true
+    },
+    "options": [
+      {
+        "label": "[A Pick Me Up?]",
+        "description": "Get a Potion. Lose X HP.",
+        "costs": {
+          "hp": "X",
+          "hp_formula": "max(6, floor(max_hp * 0.10)) + potion_selection_count"
+        },
+        "rewards": {
+          "potion": {
+            "type": "random",
+            "count": 1
+          }
+        },
+        "loop_action": "continue",
+        "notes": [
+          "Works even with full potion slots or Sozu - still pay HP cost"
+        ]
+      },
+      {
+        "label": "[Riches?]",
+        "description": "Gain 90 Gold. Lose X HP.",
+        "costs": {
+          "hp": "X",
+          "hp_formula": "max(6, floor(max_hp * 0.10)) + gold_selection_count"
+        },
+        "rewards": {
+          "gold": 90
+        },
+        "loop_action": "continue"
+      },
+      {
+        "label": "[Success?]",
+        "description": "Get a Colorless card. Lose X HP.",
+        "costs": {
+          "hp": "X",
+          "hp_formula": "max(6, floor(max_hp * 0.10)) + card_selection_count"
+        },
+        "rewards": {
+          "card": {
+            "type": "colorless",
+            "rarity": "uncommon",
+            "count": 1
+          }
+        },
+        "loop_action": "continue"
+      },
+      {
+        "label": "[How do I leave?]",
+        "description": "Lose X HP.",
+        "costs": {
+          "hp": "X",
+          "hp_formula": "max(6, floor(max_hp * 0.10)) + leave_selection_count"
+        },
+        "loop_action": "exit"
+      }
+    ],
+    "notes": [
+      "Bloody Idol can greatly increase the number of times the player can choose [Riches?] since they will heal 5 HP every time it gives them Gold.",
+      "Tungsten Rod will reduce the HP lost by 1 every time an option is selected."
+    ]
+  },
+  {
+    "wiki_id": "Masked_Bandits",
+    "name": "Masked Bandits",
+    "category": "act2",
+    "options": [
+      {
+        "label": "[Pay]",
+        "description": "Lose ALL of your Gold.",
+        "costs": {
+          "gold": "all"
+        }
+      },
+      {
+        "label": "[Fight!]",
+        "description": "",
+        "rewards": {
+          "card": "regular",
+          "gold": {
+            "min": 25,
+            "max": 35
+          }
+        },
+        "effects": [
+          "Starts a combat against the three bandits ( Pointy,  Romeo, and  Bear). Upon winning, obtain regular card rewards, 25 - 35 Gold, and  Red Mask."
+        ]
+      }
+    ],
+    "notes": [
+      "Although the fight can be quite dangerous and offers a Relic reward, it does not count as an Elite combat for the sake of  Preserved Insect,  Sling of Courage,  Black Star, and  Slaver's Collar.",
+      "If the player has  Red Mask, the Act 3 Event  Tomb of Lord Red Mask will have an option to gain 222 Gold for free."
+    ]
+  },
+  {
+    "wiki_id": "N'loth",
+    "name": "N'loth",
+    "category": "act2",
+    "options": [
+      {
+        "label": "[Offer: Relic A]",
+        "description": "Lose this relic. Obtain a special relic.",
+        "costs": {
+          "relic": "this"
+        },
+        "rewards": {
+          "relic": "random"
+        }
+      },
+      {
+        "label": "[Offer: Relic B]",
+        "description": "Lose this relic. Obtain a special relic.",
+        "costs": {
+          "relic": "this"
+        },
+        "rewards": {
+          "relic": "random"
+        },
+        "effects": [
+          "Rewards the player with  N'loth's Gift."
+        ]
+      },
+      {
+        "label": "[Leave]",
+        "description": "Nothing happens."
+      }
+    ],
+    "notes": [
+      "N'loth can pick Relics that activate their effects only upon being picked up, as well as used-up Relics.",
+      "For example, offering Relics like  Mango or  Old Coin will not remove the max HP or Gold granted by them, effectively removing the downside of  N'loth's Gift."
+    ]
+  },
+  {
+    "wiki_id": "Old_Beggar",
+    "name": "Old Beggar",
+    "category": "act2",
+    "options": [
+      {
+        "label": "[Offer Gold]",
+        "description": "75 Gold: Remove a card from your deck.",
+        "costs": {
+          "remove_card": 1
+        }
+      },
+      {
+        "label": "[Leave]",
+        "description": "Nothing happens."
+      }
+    ]
+  },
+  {
+    "wiki_id": "Pleading_Vagrant",
+    "name": "Pleading Vagrant",
+    "category": "act2",
+    "options": [
+      {
+        "label": "[Offer Gold]",
+        "description": "85 Gold: Obtain a Relic.",
+        "rewards": {
+          "relic": "random"
+        },
+        "conditions": [
+          {
+            "type": "ManualCheck",
+            "text": "If the player does not have enough Gold, this option will be greyed out."
+          }
+        ]
+      },
+      {
+        "label": "[Rob]",
+        "description": "Obtain a Relic. Become Cursed -  Shame.",
+        "rewards": {
+          "relic": "random",
+          "curse": "Shame"
+        }
+      },
+      {
+        "label": "[Leave]",
+        "description": "Nothing happens."
+      }
+    ],
+    "notes": [
+      "Omamori can be used to prevent the  Shame from [Rob] if it has any charges remaining."
+    ]
+  },
+  {
+    "wiki_id": "The_Colosseum",
+    "name": "The Colosseum",
+    "category": "act2",
+    "event_type": "multi_phase",
+    "phases": [
+      {
+        "phase": 1,
+        "name": "Forced Combat",
+        "options": [
+          {
+            "label": "[Fight]",
+            "description": "Fight Blue Slaver and Red Slaver (no rewards).",
+            "effects": [
+              "Mandatory fight - no escape option.",
+              "End-of-combat effects (Burning Blood, Self Repair) still trigger.",
+              "Smoke Bomb can be used to flee but still proceeds to Phase 2."
+            ]
+          }
+        ]
+      },
+      {
+        "phase": 2,
+        "name": "After First Victory",
+        "options": [
+          {
+            "label": "[COWARDICE]",
+            "description": "Escape through the wall hole.",
+            "effects": [
+              "Event ends with no additional rewards."
+            ]
+          },
+          {
+            "label": "[VICTORY]",
+            "description": "Fight Taskmaster and Gremlin Nob for massive rewards.",
+            "effects": [
+              "Rewards: 100 Gold, 1 Rare Relic, 1 Uncommon Relic, card reward, possible Potion.",
+              "Treated as Elite combat (Preserved Insect, Sling of Courage, Slaver's Collar work).",
+              "Black Star does NOT double relics (always exactly 1 Rare + 1 Uncommon)."
+            ]
+          }
+        ]
+      }
+    ],
+    "options": [],
+    "notes": [
+      "This is a TWO-PHASE event: Phase 1 (mandatory fight) → Phase 2 (escape or glory).",
+      "Both fights can trigger Potion drop roll, but Phase 1 potion is never shown.",
+      "Phase 2 [VICTORY] fight is one of the best reward opportunities in Act 2."
+    ]
+  },
+  {
+    "wiki_id": "The_Joust",
+    "name": "The Joust",
+    "category": "act2",
+    "options": [
+      {
+        "label": "[Murderer]",
+        "description": "Bet 50 Gold - 70%: win 100 Gold.",
+        "bet": {
+          "amount": 50,
+          "win_chance": 0.3,
+          "win_reward": {
+            "gold": 250
+          },
+          "lose_cost": {
+            "gold": 50
+          }
+        }
+      },
+      {
+        "label": "[Owner]",
+        "description": "Bet 50 Gold - 30%: win 250 Gold.",
+        "effects": [
+          "There is no option to avoid betting."
+        ],
+        "bet": {
+          "amount": 50,
+          "win_chance": 0.7,
+          "win_reward": {
+            "gold": 100
+          },
+          "lose_cost": {
+            "gold": 50
+          }
+        }
+      }
+    ],
+    "notes": [
+      "If the player possesses  Ectoplasm, this event is a mandatory loss of 50 Gold. There is no option to leave the event without betting, and any potential winnings cannot be gained.",
+      "The player may consider using the expected value (EV) of each option to determine who they want to bet on.",
+      "The EV of betting on the Murderer is a net increase of 20 Gold (a 70% chance to receive 100 Gold is an expected 70 Gold, minus the 50 Gold that was bet. 0.7 x 100 - 50 = 20)",
+      "The EV of betting on the Owner is a net increase of 25 Gold (a 30% chance to receive 250 Gold is an expected 75 Gold, minus the 50 Gold that was bet. 0.3 x 250 - 50 = 25)",
+      "It may be more beneficial to ignore the EV and instead consider whether the relatively safe 50 extra Gold by betting on the Murderer is more useful to the player's current run compared to risking the bet on the Owner and likely losing their 50 Gold for the more unlikely net gain of 200 Gold."
+    ]
+  },
+  {
+    "wiki_id": "The_Library",
+    "name": "The Library",
+    "category": "act2",
+    "options": [
+      {
+        "label": "[Read]",
+        "description": "Choose 1 of 20 cards to add to your deck."
+      },
+      {
+        "label": "[Sleep]",
+        "description": "Heal X HP.",
+        "effects": [
+          "X is equal to 33% (A15+: 20%) of the player's Max HP."
+        ],
+        "costs": {
+          "hp_percent": 33.0,
+          "hp_percent_ascension": 20.0
+        }
+      }
+    ],
+    "notes": [
+      "[Sleep] is unaffected by  Regal Pillow, does not trigger  Dream Catcher, and can still be chosen with  Coffee Dripper.",
+      "Mark of the Bloom makes [Sleep] serve only as a way to skip adding a card to your deck as it will no longer heal you.",
+      "N'loth's Gift increases the likelihood of each card offered by [Read] being Rare."
+    ]
+  },
+  {
+    "wiki_id": "The_Mausoleum",
+    "name": "The Mausoleum",
+    "category": "act2",
+    "options": [
+      {
+        "label": "[Open Coffin]",
+        "description": "Obtain a Relic. 50% (A15+: 100%): Become Cursed -  Writhe",
+        "rewards": {
+          "relic": "random",
+          "curse": "Writhe"
+        }
+      },
+      {
+        "label": "[Leave]",
+        "description": "Nothing happens."
+      }
+    ],
+    "notes": [
+      "If the player receives  Omamori as the Relic reward, it will not prevent the  Writhe from being gained.",
+      "If the player receives  Darkstone Periapt as the Relic reward, it will grant the +6 Max HP."
+    ]
+  },
+  {
+    "wiki_id": "The_Nest",
+    "name": "The Nest",
+    "category": "act2",
+    "options": [
+      {
+        "label": "[Smash and Grab]",
+        "description": "Obtain 99 (A15+: 50) Gold."
+      },
+      {
+        "label": "[Stay in Line]",
+        "description": "Obtain  Ritual Dagger. Lose 6 HP.",
+        "costs": {
+          "hp": 6
+        }
+      }
+    ]
+  },
+  {
+    "wiki_id": "Vampires",
+    "name": "Vampires",
+    "category": "act2",
+    "options": [
+      {
+        "label": "[Offer: Blood Vial]",
+        "description": "Lose  Blood Vial.  Remove all  Strikes. Receive 5  Bites.",
+        "costs": {
+          "relic": "Blood Vial"
+        },
+        "conditions": [
+          {
+            "type": "HasRelic",
+            "id": "Blood Vial"
+          }
+        ]
+      },
+      {
+        "label": "[Accept]",
+        "description": "Remove all  Strikes. Receive 5  Bites. Lose X Max HP.",
+        "effects": [
+          "X is equal to 30% of the player's max HP."
+        ],
+        "costs": {
+          "hp_percent": 30.0
+        }
+      },
+      {
+        "label": "[Refuse]",
+        "description": "Nothing happens.",
+        "effects": [
+          "You are then given the option to"
+        ]
+      },
+      {
+        "label": "[Leave]",
+        "description": "."
+      }
+    ]
+  }
+]

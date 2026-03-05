@@ -1,0 +1,538 @@
+[
+  {
+    "id": "All_for_One",
+    "name": "All for One",
+    "type": "Attack",
+    "cost": 2,
+    "color": "Blue",
+    "rarity": "Rare",
+    "logic": {
+      "target_type": "Enemy",
+      "commands": [
+        {
+          "type": "DealDamage",
+          "params": {
+            "base": 10,
+            "upgrade": 14
+          }
+        },
+        {
+          "type": "MoveCard",
+          "params": {
+            "from": "discard_pile",
+            "to": "hand",
+            "insert_at": "top",
+            "select": {
+              "mode": "All"
+            },
+            "filter": {
+              "type": "Cost",
+              "params": {
+                "cost": 0
+              }
+            }
+          }
+        }
+      ]
+    },
+    "original_text": "Deal [10|14] damage.<br>Put all cost 0 cards from your discard pile into your hand.",
+    "manual_review_needed": false
+  },
+  {
+    "id": "Core_Surge",
+    "name": "Core Surge",
+    "type": "Attack",
+    "cost": 1,
+    "color": "Blue",
+    "rarity": "Rare",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "DealDamage",
+          "params": {
+            "base": 11,
+            "upgrade": 15
+          }
+        },
+        {
+          "type": "GainBuff",
+          "params": {
+            "buff": "Artifact",
+            "base": 1,
+            "upgrade": 1
+          }
+        },
+        {
+          "type": "ExhaustSelf",
+          "params": {}
+        }
+      ],
+      "keywords_used": [
+        "Artifact",
+        "Exhaust"
+      ]
+    },
+    "original_text": "Deal [11|15] damage.<br>Gain 1 #Artifact.<br>#Exhaust."
+  },
+  {
+    "id": "Hyperbeam",
+    "name": "Hyperbeam",
+    "type": "Attack",
+    "cost": 2,
+    "color": "Blue",
+    "rarity": "Rare",
+    "logic": {
+      "target_type": "AllEnemies",
+      "commands": [
+        {
+          "type": "DealDamageAll",
+          "params": {
+            "base": 26,
+            "upgrade": 34
+          }
+        },
+        {
+          "type": "LoseBuff",
+          "params": {
+            "buff": "Focus",
+            "base": 3,
+            "upgrade": 3
+          }
+        }
+      ],
+      "keywords_used": [
+        "Focus"
+      ]
+    },
+    "original_text": "Deal [26|34] damage to ALL enemies.<br>Lose 3 #Focus."
+  },
+  {
+    "id": "Meteor_Strike",
+    "name": "Meteor Strike",
+    "type": "Attack",
+    "cost": 5,
+    "color": "Blue",
+    "rarity": "Rare",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "DealDamage",
+          "params": {
+            "base": 24,
+            "upgrade": 30
+          }
+        },
+        {
+          "type": "ChannelOrb",
+          "params": {
+            "orb": "Plasma",
+            "count_base": 3,
+            "count_upgrade": 3
+          }
+        }
+      ],
+      "keywords_used": [
+        "Plasma"
+      ]
+    },
+    "original_text": "Deal [24|30] damage. <br>#Channel 3 #Plasma."
+  },
+  {
+    "id": "Thunder_Strike",
+    "name": "Thunder Strike",
+    "type": "Attack",
+    "cost": 3,
+    "color": "Blue",
+    "rarity": "Rare",
+    "logic": {
+      "target_type": "Enemy",
+      "commands": [
+        {
+          "type": "DealDamage",
+          "params": {
+            "base": 7,
+            "upgrade": 9
+          }
+        }
+      ],
+      "keywords_used": [
+        "Lightning"
+      ]
+    },
+    "original_text": "Deal [7|9] damage to a random enemy for each #Lightning #Channeled this combat."
+  },
+  {
+    "id": "Amplify",
+    "name": "Amplify",
+    "type": "Skill",
+    "cost": 1,
+    "color": "Blue",
+    "rarity": "Rare",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "ApplyBuff",
+          "params": {
+            "buff": "Double Tap",
+            "amount": {
+              "type": "Fixed",
+              "params": {
+                "base": 1
+              }
+            },
+            "upgrade_amount": 1,
+            "target": "self"
+          }
+        }
+      ]
+    },
+    "original_text": "This turn, your next [Power card is|2 Power cards are] played twice.",
+    "manual_review_needed": false
+  },
+  {
+    "id": "Fission",
+    "name": "Fission",
+    "type": "Skill",
+    "cost": 0,
+    "color": "Blue",
+    "rarity": "Rare",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "DrawCards",
+          "params": {
+            "base": 1,
+            "upgrade": 1
+          }
+        },
+        {
+          "type": "ExhaustSelf",
+          "params": {}
+        }
+      ],
+      "keywords_used": [
+        "Evoke",
+        "Exhaust"
+      ]
+    },
+    "original_text": "[Remove|#Evoke] all your Orbs. Gain @BE and draw 1 card for each Orb [removed|#Evoked].<br>#Exhaust.",
+    "manual_review_needed": true,
+    "unparsed_text": [
+      "[Remove|#Evoke] all your Orbs"
+    ]
+  },
+  {
+    "id": "Multi-Cast",
+    "name": "Multi-Cast",
+    "type": "Skill",
+    "cost": -1,
+    "color": "Blue",
+    "rarity": "Rare",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "EvokeOrb",
+          "params": {
+            "times_base": 1,
+            "times_upgrade": 1
+          }
+        }
+      ]
+    },
+    "original_text": "#Evoke your next Orb [X|X+1] times."
+  },
+  {
+    "id": "Rainbow",
+    "name": "Rainbow",
+    "type": "Skill",
+    "cost": 2,
+    "color": "Blue",
+    "rarity": "Rare",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "ChannelOrb",
+          "params": {
+            "orb": "Lightning",
+            "count_base": 1,
+            "count_upgrade": 1
+          }
+        },
+        {
+          "type": "ChannelOrb",
+          "params": {
+            "orb": "Frost",
+            "count_base": 1,
+            "count_upgrade": 1
+          }
+        },
+        {
+          "type": "ChannelOrb",
+          "params": {
+            "orb": "Dark",
+            "count_base": 1,
+            "count_upgrade": 1
+          }
+        },
+        {
+          "type": "ExhaustSelf",
+          "params": {
+            "base_only": true
+          }
+        }
+      ],
+      "keywords_used": [
+        "Lightning",
+        "Frost",
+        "Dark"
+      ]
+    },
+    "original_text": "#Channel 1 #Lightning.<br>#Channel 1 #Frost.<br>#Channel 1 #Dark.[<br>#Exhaust.|]"
+  },
+  {
+    "id": "Reboot",
+    "name": "Reboot",
+    "type": "Skill",
+    "cost": 0,
+    "color": "Blue",
+    "rarity": "Rare",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "ShuffleInto",
+          "params": {
+            "card": "ALL your cards"
+          }
+        },
+        {
+          "type": "DrawCards",
+          "params": {
+            "base": 4,
+            "upgrade": 6
+          }
+        },
+        {
+          "type": "ExhaustSelf",
+          "params": {}
+        }
+      ],
+      "keywords_used": [
+        "Exhaust"
+      ]
+    },
+    "original_text": "Shuffle ALL your cards into your draw pile.<br>Draw [4|6] cards.<br>#Exhaust."
+  },
+  {
+    "id": "Seek",
+    "name": "Seek",
+    "type": "Skill",
+    "cost": 0,
+    "color": "Blue",
+    "rarity": "Rare",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "ExhaustSelf",
+          "params": {}
+        },
+        {
+          "type": "MoveCard",
+          "params": {
+            "from": "draw_pile",
+            "to": "hand",
+            "insert_at": "top",
+            "select": {
+              "mode": "Choose",
+              "count": 1
+            },
+            "upgrade_count": 2
+          }
+        }
+      ],
+      "keywords_used": [
+        "Exhaust"
+      ]
+    },
+    "original_text": "Put [1|2] [card|cards] from your draw pile into your hand.<br>#Exhaust.",
+    "manual_review_needed": false
+  },
+  {
+    "id": "Biased_Cognition",
+    "name": "Biased Cognition",
+    "type": "Power",
+    "cost": 1,
+    "color": "Blue",
+    "rarity": "Rare",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "ApplyPower",
+          "params": {
+            "power": "Bias",
+            "base": 1,
+            "upgrade": 1
+          }
+        },
+        {
+          "type": "GainBuff",
+          "params": {
+            "buff": "Focus",
+            "base": 4,
+            "upgrade": 5
+          }
+        }
+      ],
+      "keywords_used": [
+        "Focus"
+      ]
+    },
+    "original_text": "Gain [4|5] #Focus.<br>At the start of your turn, lose 1 #Focus."
+  },
+  {
+    "id": "Buffer",
+    "name": "Buffer",
+    "type": "Power",
+    "cost": 2,
+    "color": "Blue",
+    "rarity": "Rare",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "ApplyPower",
+          "params": {
+            "power": "Buffer",
+            "amount": 1,
+            "upgrade_amount": 2
+          }
+        }
+      ]
+    },
+    "original_text": "Prevent the next [time|2 times] you would lose HP.",
+    "manual_review_needed": false
+  },
+  {
+    "id": "Creative_AI",
+    "name": "Creative AI",
+    "type": "Power",
+    "cost": 3,
+    "color": "Blue",
+    "rarity": "Rare",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "ApplyPower",
+          "params": {
+            "power": "Creative AI",
+            "base": 1,
+            "upgrade": 1
+          }
+        }
+      ]
+    },
+    "original_text": "At the start of your turn, add a random Power card into your hand.",
+    "cost_upgrade": 2
+  },
+  {
+    "id": "Echo_Form",
+    "name": "Echo Form",
+    "type": "Power",
+    "cost": 3,
+    "color": "Blue",
+    "rarity": "Rare",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "Ethereal",
+          "params": {}
+        },
+        {
+          "type": "ApplyPower",
+          "params": {
+            "power": "Echo Form",
+            "amount": 1
+          }
+        }
+      ],
+      "keywords_used": [
+        "Ethereal"
+      ]
+    },
+    "original_text": "[#Ethereal. <br>|]The first card you play each turn is played twice.",
+    "manual_review_needed": false
+  },
+  {
+    "id": "Electrodynamics",
+    "name": "Electrodynamics",
+    "type": "Power",
+    "cost": 2,
+    "color": "Blue",
+    "rarity": "Rare",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "ChannelOrb",
+          "params": {
+            "orb": "Lightning",
+            "count_base": 2,
+            "count_upgrade": 3
+          }
+        },
+        {
+          "type": "ApplyPower",
+          "params": {
+            "power": "Electrodynamics",
+            "amount": 1
+          }
+        }
+      ],
+      "keywords_used": [
+        "Channel",
+        "Lightning"
+      ]
+    },
+    "original_text": "#Lightning now hits ALL enemies.<br>#Channel [2|3] #Lightning.",
+    "manual_review_needed": false
+  },
+  {
+    "id": "Machine_Learning",
+    "name": "Machine Learning",
+    "type": "Power",
+    "cost": 1,
+    "color": "Blue",
+    "rarity": "Rare",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "Innate",
+          "params": {
+            "upgrade_only": true
+          }
+        },
+        {
+          "type": "ApplyPower",
+          "params": {
+            "power": "Draw",
+            "amount": 1,
+            "upgrade_amount": 1
+          }
+        }
+      ]
+    },
+    "original_text": "[|#Innate. <br>]At the start of your turn, draw 1 additional card.",
+    "manual_review_needed": false
+  }
+]

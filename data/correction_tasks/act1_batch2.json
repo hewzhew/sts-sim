@@ -1,0 +1,404 @@
+{
+  "category": "act1",
+  "batch": 2,
+  "events": [
+    {
+      "wiki_id": "Living_Wall",
+      "wiki_name": "Living Wall",
+      "logic_key": "Living Wall",
+      "status": "pending",
+      "issues": [
+        "MISSING_OPTIONS: Logic缺少选项 {'[change]', '[forget]', '[grow]'}",
+        "EXTRA_OPTIONS: Logic多余选项 {'[forget] remove a card in your deck', '[change] transform a card in your deck', '[grow] upgrade a card in your deck'}"
+      ],
+      "wiki_data": {
+        "options": [
+          {
+            "label": "[Forget]",
+            "description": "Remove a card from your deck.",
+            "conditions": [],
+            "effects": []
+          },
+          {
+            "label": "[Change]",
+            "description": "Transform a card in your deck.",
+            "conditions": [],
+            "effects": []
+          },
+          {
+            "label": "[Grow]",
+            "description": "Upgrade a card in your deck.",
+            "conditions": [],
+            "effects": []
+          }
+        ],
+        "notes": []
+      },
+      "existing_data": {
+        "name": "Living Wall",
+        "options": [
+          {
+            "label": "[Forget] Remove a card in your deck",
+            "conditions": [],
+            "actions": [
+              {
+                "type": "CardRemove"
+              }
+            ]
+          },
+          {
+            "label": "[Change] Transform a card in your deck",
+            "conditions": [],
+            "actions": [
+              {
+                "type": "CardTransform"
+              }
+            ]
+          },
+          {
+            "label": "[Grow] Upgrade a card in your deck",
+            "conditions": [
+              {
+                "type": "HasUpgradeableCard"
+              }
+            ],
+            "actions": [
+              {
+                "type": "CardUpgrade"
+              }
+            ]
+          }
+        ]
+      },
+      "corrections": []
+    },
+    {
+      "wiki_id": "Scrap_Ooze",
+      "wiki_name": "Scrap Ooze",
+      "logic_key": "Scrap Ooze",
+      "status": "pending",
+      "issues": [
+        "MISSING_OPTIONS: Logic缺少选项 {'[reach inside]'}",
+        "EXTRA_OPTIONS: Logic多余选项 {'[reach inside] lose hp for chance at relic'}"
+      ],
+      "wiki_data": {
+        "options": [
+          {
+            "label": "[Reach Inside]",
+            "description": "Lose 3 (5) 15 HP. 25% chance to find a Relic.",
+            "conditions": [
+              "If you fail to find a Relic, you can try again until you find one. Each time you fail, the HP loss is increased by 1 and the chance to gain a Relic increases by 10%."
+            ],
+            "effects": []
+          },
+          {
+            "label": "[Leave]",
+            "description": "Nothing happens.",
+            "conditions": [],
+            "effects": []
+          }
+        ],
+        "notes": [
+          "Scrap Ooze Details and Math",
+          "Number of Attempts",
+          "HP Lost on This Attempt",
+          "Chance of Finding the Relicon This Attempt",
+          "Total HP Lost",
+          "Chance of Having Found the Relicby This Attempt (i.e. Cumulative Chance)",
+          "1",
+          "3 (5 15)",
+          "25%",
+          "3 (5 15)",
+          "25%",
+          "2",
+          "4 (6 15)",
+          "35%",
+          "7 (11 15)",
+          "51.25%",
+          "3",
+          "5 (7 15)",
+          "45%",
+          "12 (18 15)",
+          "~73.19%",
+          "4",
+          "6 (8 15)",
+          "55%",
+          "18 (26 15)",
+          "~87.93%",
+          "5",
+          "7 (9 15)",
+          "65%",
+          "25 (35 15)",
+          "~95.78%",
+          "6",
+          "8 (10 15)",
+          "75%",
+          "33 (45 15)",
+          "~98.94%",
+          "7",
+          "9 (11 15)",
+          "85%",
+          "42 (56 15)",
+          "~99.84%",
+          "8",
+          "10 (12 15)",
+          "95%",
+          "52 (68 15)",
+          "~99.99%",
+          "9",
+          "11 (13 15)",
+          "105% (100%)",
+          "63 (81 15)",
+          "100%"
+        ]
+      },
+      "existing_data": {
+        "name": "Scrap Ooze",
+        "options": [
+          {
+            "label": "[Reach Inside] Lose HP for chance at Relic",
+            "conditions": [],
+            "actions": [
+              {
+                "type": "ScrapOozeReach"
+              }
+            ],
+            "reach_mechanics": {
+              "hp_per_attempt": 3,
+              "base_chance": 0.25,
+              "chance_increment": 0.25,
+              "max_attempts": 4
+            }
+          },
+          {
+            "label": "[Leave]",
+            "conditions": [],
+            "actions": [
+              {
+                "type": "Leave"
+              }
+            ]
+          }
+        ]
+      },
+      "corrections": []
+    },
+    {
+      "wiki_id": "Shining_Light",
+      "wiki_name": "Shining Light",
+      "logic_key": "Shining Light",
+      "status": "pending",
+      "issues": [
+        "MISSING_OPTIONS: Logic缺少选项 {'[enter]'}",
+        "EXTRA_OPTIONS: Logic多余选项 {'[enter] upgrade 2 random cards. lose hp'}"
+      ],
+      "wiki_data": {
+        "options": [
+          {
+            "label": "[Enter]",
+            "description": "Upgrade 2 random cards. Lose X HP.",
+            "conditions": [],
+            "effects": [
+              "X is equal to 20% (30%) 15 of the player's max HP."
+            ]
+          },
+          {
+            "label": "[Leave]",
+            "description": "Nothing happens.",
+            "conditions": [],
+            "effects": []
+          }
+        ],
+        "notes": []
+      },
+      "existing_data": {
+        "name": "Shining Light",
+        "options": [
+          {
+            "label": "[Enter] Upgrade 2 random cards. Lose HP",
+            "conditions": [
+              {
+                "type": "HasUpgradeableCard"
+              }
+            ],
+            "actions": [
+              {
+                "type": "CardUpgradeRandom",
+                "count": 2
+              },
+              {
+                "type": "LoseHP",
+                "amount": 0.2,
+                "is_percentage": true
+              }
+            ]
+          },
+          {
+            "label": "[Leave]",
+            "conditions": [],
+            "actions": [
+              {
+                "type": "Leave"
+              }
+            ]
+          }
+        ]
+      },
+      "corrections": []
+    },
+    {
+      "wiki_id": "The_Cleric",
+      "wiki_name": "The Cleric",
+      "logic_key": "The Cleric",
+      "status": "pending",
+      "issues": [
+        "MISSING_OPTIONS: Logic缺少选项 {'[heal]', '[purify]'}",
+        "EXTRA_OPTIONS: Logic多余选项 {'[purify] pay 50 gold: remove a card', '[heal] pay 35 gold: heal 20 hp'}"
+      ],
+      "wiki_data": {
+        "options": [
+          {
+            "label": "[Heal]",
+            "description": "35 Gold: Heal X HP.",
+            "conditions": [],
+            "effects": [
+              "X is equal to 25% of the player's Max HP, rounded down."
+            ]
+          },
+          {
+            "label": "[Purify]",
+            "description": "50 (75) 15 Gold: Remove a card from your deck.",
+            "conditions": [],
+            "effects": []
+          },
+          {
+            "label": "[Leave]",
+            "description": "Nothing happens.",
+            "conditions": [],
+            "effects": []
+          }
+        ],
+        "notes": []
+      },
+      "existing_data": {
+        "name": "The Cleric",
+        "options": [
+          {
+            "label": "[Heal] Pay 35 Gold: Heal 20 HP",
+            "conditions": [
+              {
+                "type": "Gold",
+                "amount": 35
+              }
+            ],
+            "actions": [
+              {
+                "type": "Gold",
+                "amount": -35
+              },
+              {
+                "type": "Heal",
+                "amount": 20,
+                "is_percentage": false
+              }
+            ]
+          },
+          {
+            "label": "[Purify] Pay 50 Gold: Remove a card",
+            "conditions": [
+              {
+                "type": "Gold",
+                "amount": 50
+              }
+            ],
+            "actions": [
+              {
+                "type": "Gold",
+                "amount": -50
+              },
+              {
+                "type": "CardRemove"
+              }
+            ]
+          },
+          {
+            "label": "[Leave]",
+            "conditions": [],
+            "actions": [
+              {
+                "type": "Leave"
+              }
+            ]
+          }
+        ]
+      },
+      "corrections": []
+    },
+    {
+      "wiki_id": "The_Ssssserpent",
+      "wiki_name": "The Ssssserpent",
+      "logic_key": "Liars Game",
+      "status": "pending",
+      "issues": [
+        "OPTION_COUNT_MISMATCH: Wiki有3个选项, Logic有2个",
+        "MISSING_OPTIONS: Logic缺少选项 {'[agree]', '[leave]'}",
+        "EXTRA_OPTIONS: Logic多余选项 {'[agree] receive 175 gold. become cursed - doubt'}"
+      ],
+      "wiki_data": {
+        "options": [
+          {
+            "label": "[Agree]",
+            "description": "Gain 175 (150) 15 Gold. Become Cursed -  Doubt.",
+            "conditions": [],
+            "effects": []
+          },
+          {
+            "label": "[Disagree]",
+            "description": "Nothing happens.",
+            "conditions": [],
+            "effects": [
+              "You are then given the option to"
+            ]
+          },
+          {
+            "label": "[Leave]",
+            "description": ".",
+            "conditions": [],
+            "effects": []
+          }
+        ],
+        "notes": []
+      },
+      "existing_data": {
+        "name": "The Ssssserpent",
+        "options": [
+          {
+            "label": "[Agree] Receive 175 Gold. Become Cursed - Doubt",
+            "conditions": [],
+            "actions": [
+              {
+                "type": "Gold",
+                "amount": 175
+              },
+              {
+                "type": "AddCard",
+                "card_id": "Doubt"
+              }
+            ]
+          },
+          {
+            "label": "[Disagree]",
+            "conditions": [],
+            "actions": [
+              {
+                "type": "Leave"
+              }
+            ]
+          }
+        ]
+      },
+      "corrections": []
+    }
+  ],
+  "instructions": "\n校对说明:\n1. 查看每个事件的 issues 列表\n2. 对比 wiki_data 和 existing_data 的差异\n3. 在 corrections 中填写需要的修正\n4. 完成后将 status 改为 \"reviewed\"\n\ncorrections 格式示例:\n- {\"action\": \"add_option\", \"label\": \"[新选项]\", \"data\": {...}}\n- {\"action\": \"fix_label\", \"old\": \"[错误]\", \"new\": \"[正确]\"}\n- {\"action\": \"add_event\", \"data\": {...}}\n"
+}

@@ -1,0 +1,1394 @@
+[
+  {
+    "id": "Strength",
+    "name": "Strength",
+    "type": "Buff",
+    "stack_type": "Intensity",
+    "description": "Increases attack damage by X.",
+    "duration_based": false,
+    "can_be_negative": true,
+    "logic": {
+      "trigger": "OnCalculateDamage",
+      "modifier": "DamageAdditive",
+      "value_per_stack": 1
+    }
+  },
+  {
+    "id": "Dexterity",
+    "name": "Dexterity",
+    "type": "Buff",
+    "stack_type": "Intensity",
+    "description": "Increases Block gained from cards by X.",
+    "duration_based": false,
+    "can_be_negative": true,
+    "logic": {
+      "trigger": "OnCalculateBlock",
+      "modifier": "BlockAdditive",
+      "value_per_stack": 1
+    }
+  },
+  {
+    "id": "Focus",
+    "name": "Focus",
+    "type": "Buff",
+    "stack_type": "Intensity",
+    "description": "Increases the effectiveness of Orbs by X.",
+    "duration_based": false,
+    "can_be_negative": true,
+    "class_specific": "Defect",
+    "logic": {
+      "trigger": "OnOrbEffect",
+      "modifier": "OrbEffectAdditive",
+      "value_per_stack": 1
+    }
+  },
+  {
+    "id": "Vulnerable",
+    "name": "Vulnerable",
+    "type": "Debuff",
+    "stack_type": "Duration",
+    "description": "Receive 50% more damage from Attacks for X turns.",
+    "duration_based": true,
+    "decrements_at": "TurnEnd",
+    "logic": {
+      "trigger": "OnDamageReceived",
+      "modifier": "DamageReceivedMultiplier",
+      "value": 1.5
+    }
+  },
+  {
+    "id": "Weak",
+    "name": "Weak",
+    "type": "Debuff",
+    "stack_type": "Duration",
+    "description": "Attacks deal 25% less damage for X turns.",
+    "duration_based": true,
+    "decrements_at": "TurnEnd",
+    "logic": {
+      "trigger": "OnCalculateDamage",
+      "modifier": "DamageMultiplier",
+      "value": 0.75
+    }
+  },
+  {
+    "id": "Frail",
+    "name": "Frail",
+    "type": "Debuff",
+    "stack_type": "Duration",
+    "description": "Gain 25% less Block from cards for X turns.",
+    "duration_based": true,
+    "decrements_at": "TurnEnd",
+    "logic": {
+      "trigger": "OnCalculateBlock",
+      "modifier": "BlockMultiplier",
+      "value": 0.75
+    }
+  },
+  {
+    "id": "Poison",
+    "name": "Poison",
+    "type": "Debuff",
+    "stack_type": "IntensityAndDuration",
+    "description": "At the start of turn, lose X HP, then reduce Poison by 1.",
+    "duration_based": true,
+    "decrements_at": "AfterTrigger",
+    "logic": {
+      "trigger": "TurnStart",
+      "effect": "LoseHP",
+      "amount": "stacks"
+    }
+  },
+  {
+    "id": "Artifact",
+    "name": "Artifact",
+    "type": "Buff",
+    "stack_type": "Counter",
+    "description": "Negates the next debuff.",
+    "duration_based": false,
+    "logic": {
+      "trigger": "OnDebuffApplied",
+      "effect": "NegateDebuff",
+      "consumes_stack": true
+    }
+  },
+  {
+    "id": "Intangible",
+    "name": "Intangible",
+    "type": "Buff",
+    "stack_type": "Duration",
+    "description": "Reduce ALL damage and HP loss to 1 for X turns.",
+    "duration_based": true,
+    "decrements_at": "TurnEnd",
+    "logic": {
+      "trigger": "OnDamageReceived",
+      "modifier": "DamageSetTo",
+      "value": 1
+    }
+  },
+  {
+    "id": "Thorns",
+    "name": "Thorns",
+    "type": "Buff",
+    "stack_type": "Intensity",
+    "description": "When attacked, deals X damage back.",
+    "duration_based": false,
+    "logic": {
+      "trigger": "OnAttacked",
+      "effect": "DealDamageToAttacker",
+      "amount": "stacks"
+    }
+  },
+  {
+    "id": "PlatedArmor",
+    "name": "Plated Armor",
+    "type": "Buff",
+    "stack_type": "Intensity",
+    "description": "At the end of turn, gain X Block. Receiving unblocked attack damage reduces Plated Armor by 1.",
+    "duration_based": false,
+    "logic": {
+      "trigger": "TurnEnd",
+      "effect": "GainBlock",
+      "amount": "stacks",
+      "on_unblocked_damage": "ReduceByOne"
+    }
+  },
+  {
+    "id": "Metallicize",
+    "name": "Metallicize",
+    "type": "Buff",
+    "stack_type": "Intensity",
+    "description": "At the end of turn, gain X Block.",
+    "duration_based": false,
+    "logic": {
+      "trigger": "TurnEnd",
+      "effect": "GainBlock",
+      "amount": "stacks"
+    }
+  },
+  {
+    "id": "Barricade",
+    "name": "Barricade",
+    "type": "Buff",
+    "stack_type": "NoStack",
+    "description": "Block is not removed at the start of turn.",
+    "duration_based": false,
+    "logic": {
+      "trigger": "Passive",
+      "effect": "RetainBlock"
+    }
+  },
+  {
+    "id": "Buffer",
+    "name": "Buffer",
+    "type": "Buff",
+    "stack_type": "Counter",
+    "description": "Prevent the next X times you would lose HP.",
+    "duration_based": false,
+    "logic": {
+      "trigger": "OnLoseHP",
+      "effect": "PreventHPLoss",
+      "consumes_stack": true
+    }
+  },
+  {
+    "id": "Ritual",
+    "name": "Ritual",
+    "type": "Buff",
+    "stack_type": "Intensity",
+    "description": "At the end of turn, gain X Strength.",
+    "duration_based": false,
+    "logic": {
+      "trigger": "TurnEnd",
+      "effect": "GainStrength",
+      "amount": "stacks"
+    }
+  },
+  {
+    "id": "Vigor",
+    "name": "Vigor",
+    "type": "Buff",
+    "stack_type": "Intensity",
+    "description": "Your next Attack deals X additional damage.",
+    "duration_based": false,
+    "logic": {
+      "trigger": "OnPlayAttack",
+      "modifier": "DamageAdditive",
+      "amount": "stacks",
+      "consumes_all": true
+    }
+  },
+  {
+    "id": "Regen",
+    "name": "Regen",
+    "type": "Buff",
+    "stack_type": "IntensityAndDuration",
+    "description": "At the end of turn, heal X HP and reduce Regen by 1.",
+    "duration_based": true,
+    "decrements_at": "AfterTrigger",
+    "logic": {
+      "trigger": "TurnEnd",
+      "effect": "Heal",
+      "amount": "stacks"
+    }
+  },
+  {
+    "id": "Regenerate",
+    "name": "Regenerate",
+    "type": "Buff",
+    "stack_type": "Intensity",
+    "description": "At the end of turn, heals X HP. Does not decay.",
+    "duration_based": false,
+    "logic": {
+      "trigger": "TurnEnd",
+      "effect": "Heal",
+      "amount": "stacks"
+    }
+  },
+  {
+    "id": "NextTurnBlock",
+    "name": "Next Turn Block",
+    "type": "Buff",
+    "stack_type": "Intensity",
+    "description": "Gain X Block next turn.",
+    "duration_based": false,
+    "logic": {
+      "trigger": "TurnStart",
+      "effect": "GainBlock",
+      "amount": "stacks",
+      "consumes_all": true
+    }
+  },
+  {
+    "id": "Energized",
+    "name": "Energized",
+    "type": "Buff",
+    "stack_type": "Intensity",
+    "description": "Gain X additional Energy next turn.",
+    "duration_based": false,
+    "logic": {
+      "trigger": "TurnStart",
+      "effect": "GainEnergy",
+      "amount": "stacks",
+      "consumes_all": true
+    }
+  },
+  {
+    "id": "DrawCard",
+    "name": "Draw Card",
+    "type": "Buff",
+    "stack_type": "Intensity",
+    "description": "Draw X additional cards next turn.",
+    "duration_based": false,
+    "logic": {
+      "trigger": "TurnStart",
+      "effect": "DrawCards",
+      "amount": "stacks",
+      "consumes_all": true
+    }
+  },
+  {
+    "id": "Mantra",
+    "name": "Mantra",
+    "type": "Buff",
+    "stack_type": "Counter",
+    "description": "Whenever you gain 10 Mantra, enter Divinity.",
+    "duration_based": false,
+    "class_specific": "Watcher",
+    "logic": {
+      "trigger": "OnGainMantra",
+      "effect": "EnterDivinity",
+      "threshold": 10
+    }
+  },
+  {
+    "id": "Blur",
+    "name": "Blur",
+    "type": "Buff",
+    "stack_type": "Duration",
+    "description": "Block is not removed at the start of your next X turns.",
+    "duration_based": true,
+    "decrements_at": "TurnStart",
+    "logic": {
+      "trigger": "Passive",
+      "effect": "RetainBlock"
+    }
+  },
+  {
+    "id": "DoubleTap",
+    "name": "Double Tap",
+    "type": "Buff",
+    "stack_type": "Counter",
+    "description": "Your next X Attacks are played twice.",
+    "duration_based": false,
+    "logic": {
+      "trigger": "OnPlayAttack",
+      "effect": "PlayCardAgain",
+      "consumes_stack": true
+    }
+  },
+  {
+    "id": "Burst",
+    "name": "Burst",
+    "type": "Buff",
+    "stack_type": "Counter",
+    "description": "Your next X Skills are played twice this turn.",
+    "duration_based": false,
+    "logic": {
+      "trigger": "OnPlaySkill",
+      "effect": "PlayCardAgain",
+      "consumes_stack": true
+    }
+  },
+  {
+    "id": "Amplify",
+    "name": "Amplify",
+    "type": "Buff",
+    "stack_type": "Counter",
+    "description": "Your next X Power cards are played twice.",
+    "duration_based": false,
+    "class_specific": "Defect",
+    "logic": {
+      "trigger": "OnPlayPower",
+      "effect": "PlayCardAgain",
+      "consumes_stack": true
+    }
+  },
+  {
+    "id": "Duplication",
+    "name": "Duplication",
+    "type": "Buff",
+    "stack_type": "Counter",
+    "description": "Your next X cards are played twice.",
+    "duration_based": false,
+    "logic": {
+      "trigger": "OnPlayCard",
+      "effect": "PlayCardAgain",
+      "consumes_stack": true
+    }
+  },
+  {
+    "id": "FlameBarrier",
+    "name": "Flame Barrier",
+    "type": "Buff",
+    "stack_type": "Intensity",
+    "description": "When attacked, deals X damage back. Wears off at start of turn.",
+    "duration_based": false,
+    "class_specific": "Ironclad",
+    "logic": {
+      "trigger": "OnAttacked",
+      "effect": "DealDamageToAttacker",
+      "amount": "stacks",
+      "clears_at": "TurnStart"
+    }
+  },
+  {
+    "id": "Envenom",
+    "name": "Envenom",
+    "type": "Buff",
+    "stack_type": "Intensity",
+    "description": "Whenever you deal unblocked attack damage, apply X Poison.",
+    "duration_based": false,
+    "class_specific": "Silent",
+    "logic": {
+      "trigger": "OnUnblockedDamage",
+      "effect": "ApplyPoison",
+      "amount": "stacks"
+    }
+  },
+  {
+    "id": "Accuracy",
+    "name": "Accuracy",
+    "type": "Buff",
+    "stack_type": "Intensity",
+    "description": "Shivs deal X additional damage.",
+    "duration_based": false,
+    "class_specific": "Silent",
+    "logic": {
+      "trigger": "OnPlayShiv",
+      "modifier": "DamageAdditive",
+      "amount": "stacks"
+    }
+  },
+  {
+    "id": "AfterImage",
+    "name": "After Image",
+    "type": "Buff",
+    "stack_type": "Intensity",
+    "description": "Whenever you play a card, gain X Block.",
+    "duration_based": false,
+    "class_specific": "Silent",
+    "logic": {
+      "trigger": "OnPlayCard",
+      "effect": "GainBlock",
+      "amount": "stacks"
+    }
+  },
+  {
+    "id": "NoxiousFumes",
+    "name": "Noxious Fumes",
+    "type": "Buff",
+    "stack_type": "Intensity",
+    "description": "At the start of turn, apply X Poison to ALL enemies.",
+    "duration_based": false,
+    "class_specific": "Silent",
+    "logic": {
+      "trigger": "TurnStart",
+      "effect": "ApplyPoisonToAll",
+      "amount": "stacks"
+    }
+  },
+  {
+    "id": "ThousandCuts",
+    "name": "A Thousand Cuts",
+    "type": "Buff",
+    "stack_type": "Intensity",
+    "description": "Whenever you play a card, deal X damage to ALL enemies.",
+    "duration_based": false,
+    "class_specific": "Silent",
+    "logic": {
+      "trigger": "OnPlayCard",
+      "effect": "DealDamageToAll",
+      "amount": "stacks"
+    }
+  },
+  {
+    "id": "DemonForm",
+    "name": "Demon Form",
+    "type": "Buff",
+    "stack_type": "Intensity",
+    "description": "At the start of turn, gain X Strength.",
+    "duration_based": false,
+    "class_specific": "Ironclad",
+    "logic": {
+      "trigger": "TurnStart",
+      "effect": "GainStrength",
+      "amount": "stacks"
+    }
+  },
+  {
+    "id": "Brutality",
+    "name": "Brutality",
+    "type": "Buff",
+    "stack_type": "Intensity",
+    "description": "At the start of turn, lose X HP and draw X cards.",
+    "duration_based": false,
+    "class_specific": "Ironclad",
+    "logic": {
+      "trigger": "TurnStart",
+      "effects": [
+        {"type": "LoseHP", "amount": "stacks"},
+        {"type": "DrawCards", "amount": "stacks"}
+      ]
+    }
+  },
+  {
+    "id": "Combust",
+    "name": "Combust",
+    "type": "Buff",
+    "stack_type": "Intensity",
+    "description": "At the end of turn, lose 1 HP and deal X damage to ALL enemies.",
+    "duration_based": false,
+    "class_specific": "Ironclad",
+    "logic": {
+      "trigger": "TurnEnd",
+      "effects": [
+        {"type": "LoseHP", "amount": 1},
+        {"type": "DealDamageToAll", "amount": "stacks"}
+      ]
+    }
+  },
+  {
+    "id": "DarkEmbrace",
+    "name": "Dark Embrace",
+    "type": "Buff",
+    "stack_type": "Intensity",
+    "description": "Whenever a card is Exhausted, draw X cards.",
+    "duration_based": false,
+    "class_specific": "Ironclad",
+    "logic": {
+      "trigger": "OnExhaust",
+      "effect": "DrawCards",
+      "amount": "stacks"
+    }
+  },
+  {
+    "id": "Evolve",
+    "name": "Evolve",
+    "type": "Buff",
+    "stack_type": "Intensity",
+    "description": "Whenever you draw a Status, draw X cards.",
+    "duration_based": false,
+    "class_specific": "Ironclad",
+    "logic": {
+      "trigger": "OnDrawStatus",
+      "effect": "DrawCards",
+      "amount": "stacks"
+    }
+  },
+  {
+    "id": "FeelNoPain",
+    "name": "Feel No Pain",
+    "type": "Buff",
+    "stack_type": "Intensity",
+    "description": "Whenever a card is Exhausted, gain X Block.",
+    "duration_based": false,
+    "class_specific": "Ironclad",
+    "logic": {
+      "trigger": "OnExhaust",
+      "effect": "GainBlock",
+      "amount": "stacks"
+    }
+  },
+  {
+    "id": "FireBreathing",
+    "name": "Fire Breathing",
+    "type": "Buff",
+    "stack_type": "Intensity",
+    "description": "Whenever you draw a Status or Curse, deal X damage to ALL enemies.",
+    "duration_based": false,
+    "class_specific": "Ironclad",
+    "logic": {
+      "trigger": "OnDrawStatusOrCurse",
+      "effect": "DealDamageToAll",
+      "amount": "stacks"
+    }
+  },
+  {
+    "id": "Juggernaut",
+    "name": "Juggernaut",
+    "type": "Buff",
+    "stack_type": "Intensity",
+    "description": "Whenever you gain Block, deal X damage to a random enemy.",
+    "duration_based": false,
+    "class_specific": "Ironclad",
+    "logic": {
+      "trigger": "OnGainBlock",
+      "effect": "DealDamageToRandom",
+      "amount": "stacks"
+    }
+  },
+  {
+    "id": "Rage",
+    "name": "Rage",
+    "type": "Buff",
+    "stack_type": "Intensity",
+    "description": "Whenever you play an Attack, gain X Block.",
+    "duration_based": false,
+    "class_specific": "Ironclad",
+    "logic": {
+      "trigger": "OnPlayAttack",
+      "effect": "GainBlock",
+      "amount": "stacks"
+    }
+  },
+  {
+    "id": "Rupture",
+    "name": "Rupture",
+    "type": "Buff",
+    "stack_type": "Intensity",
+    "description": "Whenever you lose HP from a card, gain X Strength.",
+    "duration_based": false,
+    "class_specific": "Ironclad",
+    "logic": {
+      "trigger": "OnLoseHPFromCard",
+      "effect": "GainStrength",
+      "amount": "stacks"
+    }
+  },
+  {
+    "id": "Corruption",
+    "name": "Corruption",
+    "type": "Buff",
+    "stack_type": "NoStack",
+    "description": "Skills cost 0. Whenever you play a Skill, Exhaust it.",
+    "duration_based": false,
+    "class_specific": "Ironclad",
+    "logic": {
+      "trigger": "Passive",
+      "effects": [
+        {"type": "SkillsCostZero"},
+        {"type": "ExhaustSkillsOnPlay"}
+      ]
+    }
+  },
+  {
+    "id": "Berserk",
+    "name": "Berserk",
+    "type": "Buff",
+    "stack_type": "Intensity",
+    "description": "At the start of turn, gain X Energy.",
+    "duration_based": false,
+    "class_specific": "Ironclad",
+    "logic": {
+      "trigger": "TurnStart",
+      "effect": "GainEnergy",
+      "amount": "stacks"
+    }
+  },
+  {
+    "id": "EchoForm",
+    "name": "Echo Form",
+    "type": "Buff",
+    "stack_type": "Intensity",
+    "description": "The first X cards you play each turn are played twice.",
+    "duration_based": false,
+    "class_specific": "Defect",
+    "logic": {
+      "trigger": "OnPlayCard",
+      "effect": "PlayCardAgain",
+      "limit_per_turn": "stacks"
+    }
+  },
+  {
+    "id": "CreativeAI",
+    "name": "Creative AI",
+    "type": "Buff",
+    "stack_type": "Intensity",
+    "description": "At the start of turn, add X random Power cards into your hand.",
+    "duration_based": false,
+    "class_specific": "Defect",
+    "logic": {
+      "trigger": "TurnStart",
+      "effect": "AddRandomPowerToHand",
+      "amount": "stacks"
+    }
+  },
+  {
+    "id": "Heatsink",
+    "name": "Heatsink",
+    "type": "Buff",
+    "stack_type": "Intensity",
+    "description": "Whenever you play a Power card, draw X cards.",
+    "duration_based": false,
+    "class_specific": "Defect",
+    "logic": {
+      "trigger": "OnPlayPower",
+      "effect": "DrawCards",
+      "amount": "stacks"
+    }
+  },
+  {
+    "id": "HelloWorld",
+    "name": "Hello World",
+    "type": "Buff",
+    "stack_type": "Intensity",
+    "description": "At the start of turn, add X random Common cards into your hand.",
+    "duration_based": false,
+    "class_specific": "Defect",
+    "logic": {
+      "trigger": "TurnStart",
+      "effect": "AddRandomCommonToHand",
+      "amount": "stacks"
+    }
+  },
+  {
+    "id": "Loop",
+    "name": "Loop",
+    "type": "Buff",
+    "stack_type": "Intensity",
+    "description": "At the start of turn, trigger the passive ability of your next Orb X times.",
+    "duration_based": false,
+    "class_specific": "Defect",
+    "logic": {
+      "trigger": "TurnStart",
+      "effect": "TriggerOrbPassive",
+      "amount": "stacks"
+    }
+  },
+  {
+    "id": "Storm",
+    "name": "Storm",
+    "type": "Buff",
+    "stack_type": "Intensity",
+    "description": "Whenever you play a Power card, channel X Lightning.",
+    "duration_based": false,
+    "class_specific": "Defect",
+    "logic": {
+      "trigger": "OnPlayPower",
+      "effect": "ChannelLightning",
+      "amount": "stacks"
+    }
+  },
+  {
+    "id": "StaticDischarge",
+    "name": "Static Discharge",
+    "type": "Buff",
+    "stack_type": "Intensity",
+    "description": "Whenever you receive unblocked attack damage, channel X Lightning.",
+    "duration_based": false,
+    "class_specific": "Defect",
+    "logic": {
+      "trigger": "OnUnblockedDamage",
+      "effect": "ChannelLightning",
+      "amount": "stacks"
+    }
+  },
+  {
+    "id": "Electro",
+    "name": "Electro",
+    "type": "Buff",
+    "stack_type": "NoStack",
+    "description": "Lightning hits ALL enemies.",
+    "duration_based": false,
+    "class_specific": "Defect",
+    "logic": {
+      "trigger": "Passive",
+      "effect": "LightningHitsAll"
+    }
+  },
+  {
+    "id": "Bias",
+    "name": "Bias",
+    "type": "Debuff",
+    "stack_type": "Intensity",
+    "description": "At the start of turn, lose X Focus.",
+    "duration_based": false,
+    "class_specific": "Defect",
+    "logic": {
+      "trigger": "TurnStart",
+      "effect": "LoseFocus",
+      "amount": "stacks"
+    }
+  },
+  {
+    "id": "MentalFortress",
+    "name": "Mental Fortress",
+    "type": "Buff",
+    "stack_type": "Intensity",
+    "description": "Whenever you switch Stances, gain X Block.",
+    "duration_based": false,
+    "class_specific": "Watcher",
+    "logic": {
+      "trigger": "OnStanceChange",
+      "effect": "GainBlock",
+      "amount": "stacks"
+    }
+  },
+  {
+    "id": "Rushdown",
+    "name": "Rushdown",
+    "type": "Buff",
+    "stack_type": "Intensity",
+    "description": "Whenever you enter Wrath, draw X cards.",
+    "duration_based": false,
+    "class_specific": "Watcher",
+    "logic": {
+      "trigger": "OnEnterWrath",
+      "effect": "DrawCards",
+      "amount": "stacks"
+    }
+  },
+  {
+    "id": "LikeWater",
+    "name": "Like Water",
+    "type": "Buff",
+    "stack_type": "Intensity",
+    "description": "At the end of turn, if in Calm, gain X Block.",
+    "duration_based": false,
+    "class_specific": "Watcher",
+    "logic": {
+      "trigger": "TurnEnd",
+      "condition": "InCalm",
+      "effect": "GainBlock",
+      "amount": "stacks"
+    }
+  },
+  {
+    "id": "Nirvana",
+    "name": "Nirvana",
+    "type": "Buff",
+    "stack_type": "Intensity",
+    "description": "Whenever you Scry, gain X Block.",
+    "duration_based": false,
+    "class_specific": "Watcher",
+    "logic": {
+      "trigger": "OnScry",
+      "effect": "GainBlock",
+      "amount": "stacks"
+    }
+  },
+  {
+    "id": "Foresight",
+    "name": "Foresight",
+    "type": "Buff",
+    "stack_type": "Intensity",
+    "description": "At the start of turn, Scry X.",
+    "duration_based": false,
+    "class_specific": "Watcher",
+    "logic": {
+      "trigger": "TurnStart",
+      "effect": "Scry",
+      "amount": "stacks"
+    }
+  },
+  {
+    "id": "BattleHymn",
+    "name": "Battle Hymn",
+    "type": "Buff",
+    "stack_type": "Intensity",
+    "description": "At the start of turn, add X Smites to your hand.",
+    "duration_based": false,
+    "class_specific": "Watcher",
+    "logic": {
+      "trigger": "TurnStart",
+      "effect": "AddSmiteToHand",
+      "amount": "stacks"
+    }
+  },
+  {
+    "id": "Devotion",
+    "name": "Devotion",
+    "type": "Buff",
+    "stack_type": "Intensity",
+    "description": "At the start of turn, gain X Mantra.",
+    "duration_based": false,
+    "class_specific": "Watcher",
+    "logic": {
+      "trigger": "TurnStart",
+      "effect": "GainMantra",
+      "amount": "stacks"
+    }
+  },
+  {
+    "id": "Establishment",
+    "name": "Establishment",
+    "type": "Buff",
+    "stack_type": "Intensity",
+    "description": "Whenever a card is Retained, lower its cost by X.",
+    "duration_based": false,
+    "class_specific": "Watcher",
+    "logic": {
+      "trigger": "OnRetain",
+      "effect": "ReduceCost",
+      "amount": "stacks"
+    }
+  },
+  {
+    "id": "DoubleDamage",
+    "name": "Double Damage",
+    "type": "Buff",
+    "stack_type": "Duration",
+    "description": "Attacks deal double damage for X turns.",
+    "duration_based": true,
+    "decrements_at": "TurnEnd",
+    "logic": {
+      "trigger": "OnCalculateDamage",
+      "modifier": "DamageMultiplier",
+      "value": 2.0
+    }
+  },
+  {
+    "id": "PenNib",
+    "name": "Pen Nib",
+    "type": "Buff",
+    "stack_type": "NoStack",
+    "description": "Your next Attack deals double damage.",
+    "duration_based": false,
+    "logic": {
+      "trigger": "OnPlayAttack",
+      "modifier": "DamageMultiplier",
+      "value": 2.0,
+      "consumes_on_use": true
+    }
+  },
+  {
+    "id": "StrengthDown",
+    "name": "Strength Down",
+    "type": "Debuff",
+    "stack_type": "Intensity",
+    "description": "At the end of turn, lose X Strength.",
+    "duration_based": false,
+    "logic": {
+      "trigger": "TurnEnd",
+      "effect": "LoseStrength",
+      "amount": "stacks",
+      "then": "RemoveSelf"
+    }
+  },
+  {
+    "id": "DexterityDown",
+    "name": "Dexterity Down",
+    "type": "Debuff",
+    "stack_type": "Intensity",
+    "description": "At the end of turn, lose X Dexterity.",
+    "duration_based": false,
+    "logic": {
+      "trigger": "TurnEnd",
+      "effect": "LoseDexterity",
+      "amount": "stacks",
+      "then": "RemoveSelf"
+    }
+  },
+  {
+    "id": "Shackled",
+    "name": "Shackled",
+    "type": "Debuff",
+    "stack_type": "Intensity",
+    "description": "At the end of turn, regain X Strength.",
+    "duration_based": false,
+    "logic": {
+      "trigger": "TurnEnd",
+      "effect": "GainStrength",
+      "amount": "stacks",
+      "then": "RemoveSelf"
+    }
+  },
+  {
+    "id": "Constricted",
+    "name": "Constricted",
+    "type": "Debuff",
+    "stack_type": "Intensity",
+    "description": "At the end of turn, take X damage.",
+    "duration_based": false,
+    "logic": {
+      "trigger": "TurnEnd",
+      "effect": "TakeDamage",
+      "amount": "stacks"
+    }
+  },
+  {
+    "id": "Entangled",
+    "name": "Entangled",
+    "type": "Debuff",
+    "stack_type": "NoStack",
+    "description": "You may not play Attacks this turn.",
+    "duration_based": false,
+    "logic": {
+      "trigger": "Passive",
+      "effect": "CannotPlayAttacks",
+      "clears_at": "TurnEnd"
+    }
+  },
+  {
+    "id": "NoDraw",
+    "name": "No Draw",
+    "type": "Debuff",
+    "stack_type": "NoStack",
+    "description": "You cannot draw cards this turn.",
+    "duration_based": false,
+    "logic": {
+      "trigger": "Passive",
+      "effect": "CannotDraw",
+      "clears_at": "TurnEnd"
+    }
+  },
+  {
+    "id": "NoBlock",
+    "name": "No Block",
+    "type": "Debuff",
+    "stack_type": "Duration",
+    "description": "You cannot gain Block from cards for X turns.",
+    "duration_based": true,
+    "decrements_at": "TurnEnd",
+    "logic": {
+      "trigger": "Passive",
+      "effect": "CannotGainBlockFromCards"
+    }
+  },
+  {
+    "id": "Slow",
+    "name": "Slow",
+    "type": "Debuff",
+    "stack_type": "Intensity",
+    "description": "Whenever you play a card, receive 10% more damage this turn.",
+    "duration_based": false,
+    "logic": {
+      "trigger": "OnPlayCard",
+      "effect": "IncreaseDamageReceived",
+      "amount": 10
+    }
+  },
+  {
+    "id": "Hex",
+    "name": "Hex",
+    "type": "Debuff",
+    "stack_type": "Intensity",
+    "description": "Whenever you play a non-Attack card, add X Dazed to draw pile.",
+    "duration_based": false,
+    "logic": {
+      "trigger": "OnPlayNonAttack",
+      "effect": "AddDazedToDrawPile",
+      "amount": "stacks"
+    }
+  },
+  {
+    "id": "Confused",
+    "name": "Confused",
+    "type": "Debuff",
+    "stack_type": "NoStack",
+    "description": "Whenever you draw a card, randomize its cost.",
+    "duration_based": false,
+    "logic": {
+      "trigger": "OnDraw",
+      "effect": "RandomizeCost"
+    }
+  },
+  {
+    "id": "DrawReduction",
+    "name": "Draw Reduction",
+    "type": "Debuff",
+    "stack_type": "Duration",
+    "description": "Draw 1 less card for X turns.",
+    "duration_based": true,
+    "decrements_at": "TurnEnd",
+    "logic": {
+      "trigger": "Passive",
+      "effect": "DrawReduction",
+      "amount": 1
+    }
+  },
+  {
+    "id": "WraithForm",
+    "name": "Wraith Form",
+    "type": "Debuff",
+    "stack_type": "Intensity",
+    "description": "Lose X Dexterity at the start of turn.",
+    "duration_based": false,
+    "class_specific": "Silent",
+    "logic": {
+      "trigger": "TurnStart",
+      "effect": "LoseDexterity",
+      "amount": "stacks"
+    }
+  },
+  {
+    "id": "Fasting",
+    "name": "Fasting",
+    "type": "Debuff",
+    "stack_type": "Intensity",
+    "description": "Gain X less Energy at the start of each turn.",
+    "duration_based": false,
+    "class_specific": "Watcher",
+    "logic": {
+      "trigger": "Passive",
+      "effect": "EnergyReduction",
+      "amount": "stacks"
+    }
+  },
+  {
+    "id": "Mark",
+    "name": "Mark",
+    "type": "Debuff",
+    "stack_type": "Intensity",
+    "description": "Pressure Points deals damage equal to Mark stacks.",
+    "duration_based": false,
+    "class_specific": "Watcher",
+    "logic": {
+      "trigger": "OnPressurePoints",
+      "effect": "TakeDamage",
+      "amount": "stacks"
+    }
+  },
+  {
+    "id": "LockOn",
+    "name": "Lock-On",
+    "type": "Debuff",
+    "stack_type": "Duration",
+    "description": "Lightning and Dark Orbs deal 50% more damage to this enemy.",
+    "duration_based": true,
+    "decrements_at": "TurnEnd",
+    "class_specific": "Defect",
+    "logic": {
+      "trigger": "OnOrbDamage",
+      "modifier": "OrbDamageMultiplier",
+      "value": 1.5
+    }
+  },
+  {
+    "id": "Choked",
+    "name": "Choked",
+    "type": "Debuff",
+    "stack_type": "Intensity",
+    "description": "Whenever you play a card this turn, enemy loses X HP.",
+    "duration_based": false,
+    "class_specific": "Silent",
+    "logic": {
+      "trigger": "OnPlayCard",
+      "effect": "LoseHP",
+      "amount": "stacks",
+      "clears_at": "TurnEnd"
+    }
+  },
+  {
+    "id": "BlockReturn",
+    "name": "Block Return",
+    "type": "Debuff",
+    "stack_type": "Intensity",
+    "description": "Whenever you attack this enemy, gain X Block.",
+    "duration_based": false,
+    "class_specific": "Watcher",
+    "logic": {
+      "trigger": "OnAttacked",
+      "effect": "AttackerGainsBlock",
+      "amount": "stacks"
+    }
+  },
+  {
+    "id": "CorpseExplosion",
+    "name": "Corpse Explosion",
+    "type": "Debuff",
+    "stack_type": "Intensity",
+    "description": "On death, deal damage equal to Max HP X times to ALL enemies.",
+    "duration_based": false,
+    "class_specific": "Silent",
+    "logic": {
+      "trigger": "OnDeath",
+      "effect": "DealMaxHPDamageToAll",
+      "times": "stacks"
+    }
+  },
+  {
+    "id": "Angry",
+    "name": "Angry",
+    "type": "Buff",
+    "stack_type": "Intensity",
+    "description": "Upon receiving attack damage, gains X Strength.",
+    "duration_based": false,
+    "enemy_only": true,
+    "logic": {
+      "trigger": "OnDamageReceived",
+      "effect": "GainStrength",
+      "amount": "stacks"
+    }
+  },
+  {
+    "id": "Enrage",
+    "name": "Enrage",
+    "type": "Buff",
+    "stack_type": "Intensity",
+    "description": "Whenever player plays a Skill, gains X Strength.",
+    "duration_based": false,
+    "enemy_only": true,
+    "logic": {
+      "trigger": "OnPlayerPlaySkill",
+      "effect": "GainStrength",
+      "amount": "stacks"
+    }
+  },
+  {
+    "id": "Curiosity",
+    "name": "Curiosity",
+    "type": "Buff",
+    "stack_type": "Intensity",
+    "description": "Whenever player plays a Power, gains X Strength.",
+    "duration_based": false,
+    "enemy_only": true,
+    "logic": {
+      "trigger": "OnPlayerPlayPower",
+      "effect": "GainStrength",
+      "amount": "stacks"
+    }
+  },
+  {
+    "id": "CurlUp",
+    "name": "Curl Up",
+    "type": "Buff",
+    "stack_type": "Intensity",
+    "description": "On receiving attack damage, gain X Block. Triggers once.",
+    "duration_based": false,
+    "enemy_only": true,
+    "logic": {
+      "trigger": "OnDamageReceived",
+      "effect": "GainBlock",
+      "amount": "stacks",
+      "consumes_on_use": true
+    }
+  },
+  {
+    "id": "SporeCloud",
+    "name": "Spore Cloud",
+    "type": "Buff",
+    "stack_type": "Intensity",
+    "description": "On death, applies X Vulnerable to player.",
+    "duration_based": false,
+    "enemy_only": true,
+    "logic": {
+      "trigger": "OnDeath",
+      "effect": "ApplyVulnerableToPlayer",
+      "amount": "stacks"
+    }
+  },
+  {
+    "id": "Split",
+    "name": "Split",
+    "type": "Buff",
+    "stack_type": "NoStack",
+    "description": "When HP at or below 50%, splits into 2 smaller slimes.",
+    "duration_based": false,
+    "enemy_only": true,
+    "logic": {
+      "trigger": "OnHPBelow50Percent",
+      "effect": "Split"
+    }
+  },
+  {
+    "id": "Flying",
+    "name": "Flying",
+    "type": "Buff",
+    "stack_type": "Intensity",
+    "description": "Takes 50% less damage from attacks. Removed after X attacks.",
+    "duration_based": false,
+    "enemy_only": true,
+    "logic": {
+      "trigger": "OnDamageReceived",
+      "modifier": "DamageReceivedMultiplier",
+      "value": 0.5,
+      "consumes_stack": true
+    }
+  },
+  {
+    "id": "Malleable",
+    "name": "Malleable",
+    "type": "Buff",
+    "stack_type": "Intensity",
+    "description": "On attack damage, gain X Block. Block gain increases each trigger.",
+    "duration_based": false,
+    "enemy_only": true,
+    "logic": {
+      "trigger": "OnDamageReceived",
+      "effect": "GainBlock",
+      "amount": "stacks",
+      "increment_per_trigger": 1
+    }
+  },
+  {
+    "id": "ModeShift",
+    "name": "Mode Shift",
+    "type": "Buff",
+    "stack_type": "Intensity",
+    "description": "After receiving X damage, changes to defensive mode.",
+    "duration_based": false,
+    "enemy_only": true,
+    "logic": {
+      "trigger": "OnDamageReceived",
+      "effect": "TrackDamage",
+      "threshold": "stacks"
+    }
+  },
+  {
+    "id": "SharpHide",
+    "name": "Sharp Hide",
+    "type": "Buff",
+    "stack_type": "Intensity",
+    "description": "Whenever player plays an Attack, player takes X damage.",
+    "duration_based": false,
+    "enemy_only": true,
+    "logic": {
+      "trigger": "OnPlayerPlayAttack",
+      "effect": "DealDamageToPlayer",
+      "amount": "stacks"
+    }
+  },
+  {
+    "id": "Invincible",
+    "name": "Invincible",
+    "type": "Buff",
+    "stack_type": "Intensity",
+    "description": "Can only lose X more HP this turn.",
+    "duration_based": false,
+    "enemy_only": true,
+    "logic": {
+      "trigger": "OnDamageReceived",
+      "effect": "LimitDamage",
+      "amount": "stacks"
+    }
+  },
+  {
+    "id": "BeatOfDeath",
+    "name": "Beat of Death",
+    "type": "Buff",
+    "stack_type": "Intensity",
+    "description": "Whenever player plays a card, player takes X damage.",
+    "duration_based": false,
+    "enemy_only": true,
+    "logic": {
+      "trigger": "OnPlayerPlayCard",
+      "effect": "DealDamageToPlayer",
+      "amount": "stacks"
+    }
+  },
+  {
+    "id": "PainfulStabs",
+    "name": "Painful Stabs",
+    "type": "Buff",
+    "stack_type": "Intensity",
+    "description": "Whenever player receives attack damage, add X Wounds to discard.",
+    "duration_based": false,
+    "enemy_only": true,
+    "logic": {
+      "trigger": "OnDealDamageToPlayer",
+      "effect": "AddWoundsToDiscard",
+      "amount": "stacks"
+    }
+  },
+  {
+    "id": "TimeWarp",
+    "name": "Time Warp",
+    "type": "Buff",
+    "stack_type": "Counter",
+    "description": "After player plays 12 cards, end turn and gain 2 Strength.",
+    "duration_based": false,
+    "enemy_only": true,
+    "logic": {
+      "trigger": "OnPlayerPlayCard",
+      "effect": "CountCards",
+      "threshold": 12,
+      "then": ["EndPlayerTurn", "GainStrength"]
+    }
+  },
+  {
+    "id": "Thievery",
+    "name": "Thievery",
+    "type": "Buff",
+    "stack_type": "Intensity",
+    "description": "Steals X Gold whenever it attacks.",
+    "duration_based": false,
+    "enemy_only": true,
+    "logic": {
+      "trigger": "OnAttack",
+      "effect": "StealGold",
+      "amount": "stacks"
+    }
+  },
+  {
+    "id": "StrengthUp",
+    "name": "Strength Up",
+    "type": "Buff",
+    "stack_type": "Intensity",
+    "description": "At the end of turn, gains X Strength.",
+    "duration_based": false,
+    "enemy_only": true,
+    "logic": {
+      "trigger": "TurnEnd",
+      "effect": "GainStrength",
+      "amount": "stacks"
+    }
+  },
+  {
+    "id": "Minion",
+    "name": "Minion",
+    "type": "Buff",
+    "stack_type": "NoStack",
+    "description": "Minions abandon combat without their leader.",
+    "duration_based": false,
+    "enemy_only": true,
+    "logic": {
+      "trigger": "OnLeaderDeath",
+      "effect": "Flee"
+    }
+  },
+  {
+    "id": "Fading",
+    "name": "Fading",
+    "type": "Buff",
+    "stack_type": "Duration",
+    "description": "Dies in X turns.",
+    "duration_based": true,
+    "decrements_at": "TurnEnd",
+    "enemy_only": true,
+    "logic": {
+      "trigger": "OnStacksReachZero",
+      "effect": "Die"
+    }
+  }
+]

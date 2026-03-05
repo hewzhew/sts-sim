@@ -1,0 +1,405 @@
+{
+  "category": "act2",
+  "batch": 1,
+  "events": [
+    {
+      "wiki_id": "Ancient_Writing",
+      "wiki_name": "Ancient Writing",
+      "logic_key": "Back to Basics",
+      "status": "pending",
+      "issues": [
+        "MISSING_OPTIONS: Logic缺少选项 {'[simplicity]', '[elegance]'}",
+        "EXTRA_OPTIONS: Logic多余选项 {'[simplicity] upgrade all strikes and defends', '[elegance] remove a card from your deck'}"
+      ],
+      "wiki_data": {
+        "options": [
+          {
+            "label": "[Elegance]",
+            "description": "Remove a card from your deck.",
+            "conditions": [],
+            "effects": []
+          },
+          {
+            "label": "[Simplicity]",
+            "description": "Upgrade all Strikes and Defends.",
+            "conditions": [],
+            "effects": [
+              "All of the player's basic Strikes and basic Defends are  Upgraded."
+            ]
+          }
+        ],
+        "notes": []
+      },
+      "existing_data": {
+        "name": "Ancient Writing",
+        "options": [
+          {
+            "label": "[Elegance] Remove a card from your deck",
+            "conditions": [],
+            "actions": [
+              {
+                "type": "CardRemove"
+              }
+            ]
+          },
+          {
+            "label": "[Simplicity] Upgrade all Strikes and Defends",
+            "conditions": [],
+            "actions": [
+              {
+                "type": "UpgradeAllStrikesAndDefends"
+              }
+            ]
+          }
+        ]
+      },
+      "corrections": []
+    },
+    {
+      "wiki_id": "Augmenter",
+      "wiki_name": "Augmenter",
+      "logic_key": "Drug Dealer",
+      "status": "pending",
+      "issues": [
+        "OPTION_COUNT_MISMATCH: Wiki有3个选项, Logic有2个",
+        "MISSING_OPTIONS: Logic缺少选项 {'[test j.a.x.]', '[become test subject]', '[ingest mutagens]'}",
+        "EXTRA_OPTIONS: Logic多余选项 {'[pay] get jaxxed', '[leave]'}"
+      ],
+      "wiki_data": {
+        "options": [
+          {
+            "label": "[Test J.A.X.]",
+            "description": "Get JAXXED.",
+            "conditions": [],
+            "effects": [
+              "Adds  J.A.X. to the player's deck."
+            ]
+          },
+          {
+            "label": "[Become Test Subject]",
+            "description": "Transform 2 cards.",
+            "conditions": [],
+            "effects": [
+              "Read more on Transform rules here."
+            ]
+          },
+          {
+            "label": "[Ingest Mutagens]",
+            "description": "Obtain a special relic.",
+            "conditions": [],
+            "effects": [
+              "Rewards the player with  Mutagenic Strength."
+            ]
+          }
+        ],
+        "notes": []
+      },
+      "existing_data": {
+        "name": "J.A.X. Dealer",
+        "options": [
+          {
+            "label": "[Pay] Get JAXXED",
+            "conditions": [
+              {
+                "type": "Gold",
+                "amount": 50
+              }
+            ],
+            "actions": [
+              {
+                "type": "Gold",
+                "amount": -50
+              },
+              {
+                "type": "GetRelic",
+                "relic_id": "J.A.X."
+              }
+            ]
+          },
+          {
+            "label": "[Leave]",
+            "conditions": [],
+            "actions": [
+              {
+                "type": "Leave"
+              }
+            ]
+          }
+        ]
+      },
+      "corrections": []
+    },
+    {
+      "wiki_id": "Council_of_Ghosts",
+      "wiki_name": "Council of Ghosts",
+      "logic_key": "Ghosts",
+      "status": "pending",
+      "issues": [
+        "OPTION_COUNT_MISMATCH: Wiki有3个选项, Logic有2个",
+        "MISSING_OPTIONS: Logic缺少选项 {'[leave]', '[accept]'}",
+        "EXTRA_OPTIONS: Logic多余选项 {'[accept] obtain 5 apparition. lose max hp'}"
+      ],
+      "wiki_data": {
+        "options": [
+          {
+            "label": "[Accept]",
+            "description": "Receive 5 (3) 15  Apparitions. Lose X Max HP.",
+            "conditions": [],
+            "effects": [
+              "X is equal to 50% of the player's Max HP, rounded up."
+            ]
+          },
+          {
+            "label": "[Refuse]",
+            "description": "Nothing happens.",
+            "conditions": [],
+            "effects": [
+              "You are then given the option to"
+            ]
+          },
+          {
+            "label": "[Leave]",
+            "description": ".",
+            "conditions": [],
+            "effects": []
+          }
+        ],
+        "notes": []
+      },
+      "existing_data": {
+        "name": "Council of Ghosts",
+        "options": [
+          {
+            "label": "[Accept] Obtain 5 Apparition. Lose Max HP",
+            "conditions": [],
+            "actions": [
+              {
+                "type": "AddCard",
+                "card_id": "Apparition",
+                "count": 5
+              },
+              {
+                "type": "MaxHP",
+                "amount": -0.5,
+                "is_percentage": true
+              }
+            ]
+          },
+          {
+            "label": "[Refuse]",
+            "conditions": [],
+            "actions": [
+              {
+                "type": "Leave"
+              }
+            ]
+          }
+        ]
+      },
+      "corrections": []
+    },
+    {
+      "wiki_id": "Cursed_Tome",
+      "wiki_name": "Cursed Tome",
+      "logic_key": "Cursed Tome",
+      "status": "pending",
+      "issues": [
+        "OPTION_COUNT_MISMATCH: Wiki有14个选项, Logic有2个",
+        "MISSING_OPTIONS: Logic缺少选项 {'[read]', '[stop]', '[leave]', '[continue]', '[take]'}",
+        "EXTRA_OPTIONS: Logic多余选项 {'[read] continue reading (costs hp)', '[stop] leave'}"
+      ],
+      "wiki_data": {
+        "options": [
+          {
+            "label": "[Read]",
+            "description": "",
+            "conditions": [],
+            "effects": []
+          },
+          {
+            "label": "[Continue]",
+            "description": "Lose 1 HP.",
+            "conditions": [],
+            "effects": []
+          },
+          {
+            "label": "[Continue]",
+            "description": "Lose 2 HP.",
+            "conditions": [],
+            "effects": []
+          },
+          {
+            "label": "[Continue]",
+            "description": "Lose 3 HP.",
+            "conditions": [],
+            "effects": []
+          },
+          {
+            "label": "[Take]",
+            "description": "Obtain the book. Lose 10 (15) 15 HP.",
+            "conditions": [],
+            "effects": [
+              "The book may be  Enchiridion,  Nilry's Codex, or  Necronomicon. The player does not know which book they will get until after they choose"
+            ]
+          },
+          {
+            "label": "[Take]",
+            "description": "and lose their HP.",
+            "conditions": [],
+            "effects": []
+          },
+          {
+            "label": "[Stop]",
+            "description": "Lose 3 HP.",
+            "conditions": [],
+            "effects": []
+          },
+          {
+            "label": "[Leave]",
+            "description": "Nothing happens.",
+            "conditions": [],
+            "effects": [
+              "Practical Options",
+              "Because the player can choose to leave the event immediately and lose 0 HP instead of selecting"
+            ]
+          },
+          {
+            "label": "[Continue]",
+            "description": "3 times and then backing out with",
+            "conditions": [],
+            "effects": []
+          },
+          {
+            "label": "[Stop]",
+            "description": "while losing a total of 9 HP, there are really only 2 practical ways to navigate the event. The player can either commit to all the HP loss and obtain the book, or leave immediately to do nothing.",
+            "conditions": [],
+            "effects": [
+              "For simplicity, the event's options can be thought of in this way instead:",
+              ""
+            ]
+          },
+          {
+            "label": "[Read]",
+            "description": ", then all 3",
+            "conditions": [],
+            "effects": []
+          },
+          {
+            "label": "[Continue]",
+            "description": ", and finally",
+            "conditions": [],
+            "effects": []
+          },
+          {
+            "label": "[Take]",
+            "description": "Obtain the book. Lose 16 (21) 15 HP.",
+            "conditions": [],
+            "effects": [
+              ""
+            ]
+          },
+          {
+            "label": "[Leave]",
+            "description": "Nothing happens.",
+            "conditions": [],
+            "effects": []
+          }
+        ],
+        "notes": [
+          "Tungsten Rod will reduce the HP lost for each instance of damage from the event's options. If the player selects [Continue] 3 times and then [Take],  Tungsten Rod reduces the total HP lost by 4 for a total of 12 (17) 15 HP lost instead of 16 (21) 15.",
+          "If the player selects [Stop] instead of [Take],  Tungsten Rod reduces the total HP lost to 5 instead of 9.",
+          "If the player selects [Stop] instead of [Take],  Tungsten Rod reduces the total HP lost to 5 instead of 9."
+        ]
+      },
+      "existing_data": {
+        "name": "Cursed Tome",
+        "options": [
+          {
+            "label": "[Read] Continue reading (costs HP)",
+            "conditions": [],
+            "actions": [
+              {
+                "type": "CursedTomeRead"
+              }
+            ],
+            "progression": [
+              {
+                "hp_cost": 1
+              },
+              {
+                "hp_cost": 2
+              },
+              {
+                "hp_cost": 3
+              }
+            ],
+            "final_reward": {
+              "type": "GetRelic",
+              "relic_id": "Necronomicon"
+            }
+          },
+          {
+            "label": "[Stop] Leave",
+            "conditions": [],
+            "actions": [
+              {
+                "type": "Leave"
+              }
+            ]
+          }
+        ]
+      },
+      "corrections": []
+    },
+    {
+      "wiki_id": "Designer_In-Spire",
+      "wiki_name": "Designer In-Spire",
+      "logic_key": null,
+      "status": "pending",
+      "issues": [
+        "NOT_IN_LOGIC: 事件在 events_logic.json 中不存在，需要新增"
+      ],
+      "wiki_data": {
+        "options": [
+          {
+            "label": "[Adjustments]",
+            "description": "Lose 40 (50) 15 Gold. One of the following rewards appears.",
+            "conditions": [],
+            "effects": [
+              "Upgrade a card.",
+              "Upgrade two random cards."
+            ]
+          },
+          {
+            "label": "[Clean Up]",
+            "description": "Lose 60 (75) 15 Gold. One of the following rewards appears.",
+            "conditions": [],
+            "effects": [
+              "Remove a card.",
+              "Transform two cards."
+            ]
+          },
+          {
+            "label": "[Full Service]",
+            "description": "Lose 90 (110) 15 Gold.  Remove a card, then upgrade a random card.",
+            "conditions": [],
+            "effects": []
+          },
+          {
+            "label": "[Punch]",
+            "description": "Lose 3 (5) 15 HP.",
+            "conditions": [],
+            "effects": []
+          }
+        ],
+        "notes": []
+      },
+      "existing_data": {
+        "name": null,
+        "options": []
+      },
+      "corrections": []
+    }
+  ],
+  "instructions": "\n校对说明:\n1. 查看每个事件的 issues 列表\n2. 对比 wiki_data 和 existing_data 的差异\n3. 在 corrections 中填写需要的修正\n4. 完成后将 status 改为 \"reviewed\"\n\ncorrections 格式示例:\n- {\"action\": \"add_option\", \"label\": \"[新选项]\", \"data\": {...}}\n- {\"action\": \"fix_label\", \"old\": \"[错误]\", \"new\": \"[正确]\"}\n- {\"action\": \"add_event\", \"data\": {...}}\n"
+}

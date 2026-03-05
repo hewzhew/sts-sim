@@ -1,0 +1,595 @@
+[
+  {
+    "id": "Bowling_Bash",
+    "name": "Bowling Bash",
+    "type": "Attack",
+    "cost": 1,
+    "color": "Purple",
+    "rarity": "Common",
+    "logic": {
+      "target_type": "Enemy",
+      "commands": [
+        {
+          "type": "DealDamage",
+          "params": {
+            "base": 7,
+            "upgrade": 10
+          }
+        }
+      ]
+    },
+    "original_text": "Deal [7|10] damage for each enemy in combat."
+  },
+  {
+    "id": "Consecrate",
+    "name": "Consecrate",
+    "type": "Attack",
+    "cost": 0,
+    "color": "Purple",
+    "rarity": "Common",
+    "logic": {
+      "target_type": "AllEnemies",
+      "commands": [
+        {
+          "type": "DealDamageAll",
+          "params": {
+            "base": 5,
+            "upgrade": 8
+          }
+        }
+      ]
+    },
+    "original_text": "Deal [5|8] damage to ALL enemies."
+  },
+  {
+    "id": "Crush_Joints",
+    "name": "Crush Joints",
+    "type": "Attack",
+    "cost": 1,
+    "color": "Purple",
+    "rarity": "Common",
+    "logic": {
+      "target_type": "Enemy",
+      "commands": [
+        {
+          "type": "DealDamage",
+          "params": {
+            "base": 8,
+            "upgrade": 10
+          }
+        },
+        {
+          "type": "ApplyStatus",
+          "params": {
+            "status": "Vulnerable",
+            "base": 1,
+            "upgrade": 2
+          }
+        }
+      ],
+      "keywords_used": [
+        "Vulnerable"
+      ]
+    },
+    "original_text": "Deal [8|10] damage. If the last card played this combat was a {{QueryLink|Cards|type:Skill|Skill}}, apply [1|2] #Vulnerable."
+  },
+  {
+    "id": "Cut_Through_Fate",
+    "name": "Cut Through Fate",
+    "type": "Attack",
+    "cost": 1,
+    "color": "Purple",
+    "rarity": "Common",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "DealDamage",
+          "params": {
+            "base": 7,
+            "upgrade": 9
+          }
+        },
+        {
+          "type": "Scry",
+          "params": {
+            "base": 2,
+            "upgrade": 3
+          }
+        },
+        {
+          "type": "DrawCards",
+          "params": {
+            "base": 1,
+            "upgrade": 1
+          }
+        }
+      ],
+      "keywords_used": [
+        "Scry"
+      ]
+    },
+    "original_text": "Deal [7|9] damage. #Scry [2|3]. Draw 1 card."
+  },
+  {
+    "id": "Empty_Fist",
+    "name": "Empty Fist",
+    "type": "Attack",
+    "cost": 1,
+    "color": "Purple",
+    "rarity": "Common",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "DealDamage",
+          "params": {
+            "base": 9,
+            "upgrade": 14
+          }
+        },
+        {
+          "type": "ExitStance",
+          "params": {}
+        }
+      ],
+      "keywords_used": [
+        "Stance"
+      ]
+    },
+    "original_text": "Deal [9|14] damage. Exit your #Stance."
+  },
+  {
+    "id": "Flurry_of_Blows",
+    "name": "Flurry of Blows",
+    "type": "Attack",
+    "cost": 0,
+    "color": "Purple",
+    "rarity": "Common",
+    "logic": {
+      "target_type": "Enemy",
+      "commands": [
+        {
+          "type": "DealDamage",
+          "params": {
+            "base": 4,
+            "upgrade": 6
+          }
+        }
+      ],
+      "conditions": [
+        "Trigger: Whenever you change #Stances, return this from the discard pile to your hand"
+      ]
+    },
+    "original_text": "Deal [4|6] damage.<br>Whenever you change #Stances, return this from the discard pile to your hand.",
+    "manual_review_needed": false,
+    "flags": {
+      "trigger_on_stance_change": true
+    }
+  },
+  {
+    "id": "Flying_Sleeves",
+    "name": "Flying Sleeves",
+    "type": "Attack",
+    "cost": 1,
+    "color": "Purple",
+    "rarity": "Common",
+    "logic": {
+      "target_type": "Enemy",
+      "commands": [
+        {
+          "type": "Retain",
+          "params": {}
+        },
+        {
+          "type": "DealDamage",
+          "params": {
+            "base": 4,
+            "upgrade": 6,
+            "times": 2,
+            "times_upgrade": 2
+          }
+        }
+      ],
+      "keywords_used": [
+        "Retain"
+      ]
+    },
+    "original_text": "#Retain. Deal [4|6] damage twice."
+  },
+  {
+    "id": "Follow-Up",
+    "name": "Follow-Up",
+    "type": "Attack",
+    "cost": 1,
+    "color": "Purple",
+    "rarity": "Common",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "DealDamage",
+          "params": {
+            "base": 7,
+            "upgrade": 11
+          }
+        },
+        {
+          "type": "GainEnergy",
+          "params": {
+            "base": 1,
+            "upgrade": 1
+          }
+        }
+      ]
+    },
+    "original_text": "Deal [7|11] damage. If the previous card played was an Attack, gain @PE."
+  },
+  {
+    "id": "Just_Lucky",
+    "name": "Just Lucky",
+    "type": "Attack",
+    "cost": 0,
+    "color": "Purple",
+    "rarity": "Common",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "Scry",
+          "params": {
+            "base": 1,
+            "upgrade": 2
+          }
+        },
+        {
+          "type": "GainBlock",
+          "params": {
+            "base": 2,
+            "upgrade": 3
+          }
+        },
+        {
+          "type": "DealDamage",
+          "params": {
+            "base": 3,
+            "upgrade": 4
+          }
+        }
+      ],
+      "keywords_used": [
+        "Scry",
+        "Block"
+      ]
+    },
+    "original_text": "#Scry [1|2]. <br>Gain [2|3] #Block. <br>Deal [3|4] damage."
+  },
+  {
+    "id": "Sash_Whip",
+    "name": "Sash Whip",
+    "type": "Attack",
+    "cost": 1,
+    "color": "Purple",
+    "rarity": "Common",
+    "logic": {
+      "target_type": "Enemy",
+      "commands": [
+        {
+          "type": "DealDamage",
+          "params": {
+            "base": 8,
+            "upgrade": 10
+          }
+        },
+        {
+          "type": "ApplyStatus",
+          "params": {
+            "status": "Weak",
+            "base": 1,
+            "upgrade": 2
+          }
+        }
+      ],
+      "keywords_used": [
+        "Weak"
+      ]
+    },
+    "original_text": "Deal [8|10] damage. If the last card played this combat was an Attack, apply [1|2] #Weak."
+  },
+  {
+    "id": "Crescendo",
+    "name": "Crescendo",
+    "type": "Skill",
+    "cost": 1,
+    "color": "Purple",
+    "rarity": "Common",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "Retain",
+          "params": {}
+        },
+        {
+          "type": "EnterStance",
+          "params": {
+            "stance": "Wrath"
+          }
+        },
+        {
+          "type": "ExhaustSelf",
+          "params": {}
+        }
+      ],
+      "keywords_used": [
+        "Retain",
+        "Wrath",
+        "Exhaust"
+      ]
+    },
+    "original_text": "#Retain. <br>Enter #Wrath. <br>#Exhaust.",
+    "cost_upgrade": 0
+  },
+  {
+    "id": "Empty_Body",
+    "name": "Empty Body",
+    "type": "Skill",
+    "cost": 1,
+    "color": "Purple",
+    "rarity": "Common",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "GainBlock",
+          "params": {
+            "base": 7,
+            "upgrade": 10
+          }
+        },
+        {
+          "type": "ExitStance",
+          "params": {}
+        }
+      ],
+      "keywords_used": [
+        "Block",
+        "Stance"
+      ]
+    },
+    "original_text": "Gain [7|10] #Block. Exit your #Stance."
+  },
+  {
+    "id": "Evaluate",
+    "name": "Evaluate",
+    "type": "Skill",
+    "cost": 1,
+    "color": "Purple",
+    "rarity": "Common",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "GainBlock",
+          "params": {
+            "base": 6,
+            "upgrade": 10
+          }
+        },
+        {
+          "type": "ShuffleInto",
+          "params": {
+            "card": "an Insight"
+          }
+        }
+      ],
+      "keywords_used": [
+        "Block"
+      ]
+    },
+    "original_text": "Gain [6|10] #Block. Shuffle an {{C|Insight}} into your draw pile."
+  },
+  {
+    "id": "Halt",
+    "name": "Halt",
+    "type": "Skill",
+    "cost": 0,
+    "color": "Purple",
+    "rarity": "Common",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "GainBlock",
+          "params": {
+            "base": 3,
+            "upgrade": 4
+          }
+        },
+        {
+          "type": "Conditional",
+          "params": {
+            "condition": {
+              "type": "InStance",
+              "params": {
+                "stance": "Wrath"
+              }
+            },
+            "then_do": [
+              {
+                "type": "GainBlock",
+                "params": {
+                  "amount": 9,
+                  "upgrade": 14
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "conditions": [
+        "IfInStance: If you are in #Wrath"
+      ],
+      "keywords_used": [
+        "Block",
+        "Wrath"
+      ]
+    },
+    "original_text": "Gain [3|4] #Block. <br>If you are in #Wrath, gain [9|14] additional #Block.",
+    "manual_review_needed": false
+  },
+  {
+    "id": "Pressure_Points",
+    "name": "Pressure Points",
+    "type": "Skill",
+    "cost": 1,
+    "color": "Purple",
+    "rarity": "Common",
+    "logic": {
+      "target_type": "Enemy",
+      "commands": [
+        {
+          "type": "ApplyStatus",
+          "params": {
+            "status": "Mark",
+            "base": 8,
+            "upgrade": 11
+          }
+        }
+      ]
+    },
+    "original_text": "Apply [8|11] Mark. ALL enemies lose HP equal to their Mark.",
+    "manual_review_needed": true,
+    "unparsed_text": [
+      "ALL enemies lose HP equal to their Mark"
+    ]
+  },
+  {
+    "id": "Prostrate",
+    "name": "Prostrate",
+    "type": "Skill",
+    "cost": 0,
+    "color": "Purple",
+    "rarity": "Common",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "GainBuff",
+          "params": {
+            "buff": "Mantra",
+            "base": 2,
+            "upgrade": 3
+          }
+        },
+        {
+          "type": "GainBlock",
+          "params": {
+            "base": 4,
+            "upgrade": 4
+          }
+        }
+      ],
+      "keywords_used": [
+        "Mantra",
+        "Block"
+      ]
+    },
+    "original_text": "Gain [2|3] #Mantra. <br>Gain 4 #Block."
+  },
+  {
+    "id": "Protect",
+    "name": "Protect",
+    "type": "Skill",
+    "cost": 2,
+    "color": "Purple",
+    "rarity": "Common",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "Retain",
+          "params": {}
+        },
+        {
+          "type": "GainBlock",
+          "params": {
+            "base": 12,
+            "upgrade": 16
+          }
+        }
+      ],
+      "keywords_used": [
+        "Retain",
+        "Block"
+      ]
+    },
+    "original_text": "#Retain. Gain [12|16] #Block."
+  },
+  {
+    "id": "Third_Eye",
+    "name": "Third Eye",
+    "type": "Skill",
+    "cost": 1,
+    "color": "Purple",
+    "rarity": "Common",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "GainBlock",
+          "params": {
+            "base": 7,
+            "upgrade": 9
+          }
+        },
+        {
+          "type": "Scry",
+          "params": {
+            "base": 3,
+            "upgrade": 5
+          }
+        }
+      ],
+      "keywords_used": [
+        "Block",
+        "Scry"
+      ]
+    },
+    "original_text": "Gain [7|9] #Block. <br>#Scry [3|5]."
+  },
+  {
+    "id": "Tranquility",
+    "name": "Tranquility",
+    "type": "Skill",
+    "cost": 1,
+    "color": "Purple",
+    "rarity": "Common",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "Retain",
+          "params": {}
+        },
+        {
+          "type": "EnterStance",
+          "params": {
+            "stance": "Calm"
+          }
+        },
+        {
+          "type": "ExhaustSelf",
+          "params": {}
+        }
+      ],
+      "keywords_used": [
+        "Retain",
+        "Calm",
+        "Exhaust"
+      ]
+    },
+    "original_text": "#Retain. Enter #Calm. #Exhaust.",
+    "cost_upgrade": 0
+  }
+]

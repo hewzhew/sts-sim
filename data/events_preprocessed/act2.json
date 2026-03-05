@@ -1,0 +1,643 @@
+[
+  {
+    "wiki_id": "Ancient_Writing",
+    "name": "Ancient Writing",
+    "category": "act2",
+    "options": [
+      {
+        "label": "[Elegance]",
+        "description": "Remove a card from your deck.",
+        "conditions": [],
+        "effects": []
+      },
+      {
+        "label": "[Simplicity]",
+        "description": "Upgrade all Strikes and Defends.",
+        "conditions": [],
+        "effects": [
+          "All of the player's basic Strikes and basic Defends are  Upgraded."
+        ]
+      }
+    ],
+    "notes": [],
+    "raw_options": "[Elegance] Remove a card from your deck.\n\n\n[Simplicity] Upgrade all Strikes and Defends.\n• All of the player's basic Strikes and basic Defends are  Upgraded.",
+    "raw_dialogue": "Scaling the city, you notice a wall covered in the writing of Ancients. As you try to wrap your head around what the puzzling symbols and glyphs could mean, the writing begins to glow.\nSuddenly, the message becomes clear...\n\n\n[Elegance]\n\nThe answer was elegance.\nOf course.\n\n\n[Simplicity]\n\nThe truth is always simple."
+  },
+  {
+    "wiki_id": "Augmenter",
+    "name": "Augmenter",
+    "category": "act2",
+    "options": [
+      {
+        "label": "[Test J.A.X.]",
+        "description": "Get JAXXED.",
+        "conditions": [],
+        "effects": [
+          "Adds  J.A.X. to the player's deck."
+        ]
+      },
+      {
+        "label": "[Become Test Subject]",
+        "description": "Transform 2 cards.",
+        "conditions": [],
+        "effects": [
+          "Read more on Transform rules here."
+        ]
+      },
+      {
+        "label": "[Ingest Mutagens]",
+        "description": "Obtain a special relic.",
+        "conditions": [],
+        "effects": [
+          "Rewards the player with  Mutagenic Strength."
+        ]
+      }
+    ],
+    "notes": [],
+    "raw_options": "[Test J.A.X.] Get JAXXED.\n• Adds  J.A.X. to the player's deck.\n[Become Test Subject] Transform 2 cards.\n• Read more on Transform rules here.\n[Ingest Mutagens]  Obtain a special relic.\n• Rewards the player with  Mutagenic Strength.",
+    "raw_dialogue": "A man with an eyepatch and a devilish grin strides up to you.\n\n\"Hey there, stranger. Interested in advancing science? I can make you stronger than any training or blessing. You're gonna need it if you're one of those heroes with a death wish.\"\n\n\"Whad'ya say?\"\n\n[Test J.A.X.]\n\n\"Excellent.\"\n\nThe man hands over a dangerous looking syringe filled with a glowing liquid before skulking off into a shadowy alleyway.\n\n\n[Become Test Subject]\n\n\"Marvelous.\"\n\nYou quaff the mysterious substance. Immediately, you are invigorated and feel your muscle fibers twitch.\n\n\n[Ingest Mutagens]\n\n\"Superb.\"\n\nThe man injects you with three unknown substances and pulls out a notepad. As you begin to feel light-headed, he starts to frantically write down notes.\n\nLosing track of time completely, by the time you regain your senses, the shady character has disappeared."
+  },
+  {
+    "wiki_id": "Council_of_Ghosts",
+    "name": "Council of Ghosts",
+    "category": "act2",
+    "options": [
+      {
+        "label": "[Accept]",
+        "description": "Receive 5 (A15+: 3) Apparitions. Lose X Max HP.",
+        "conditions": [],
+        "effects": [
+          "X is equal to 50% of the player's Max HP, rounded up."
+        ]
+      },
+      {
+        "label": "[Refuse]",
+        "description": "Nothing happens.",
+        "conditions": [],
+        "effects": [
+          "You are then given the option to"
+        ]
+      },
+      {
+        "label": "[Leave]",
+        "description": ".",
+        "conditions": [],
+        "effects": []
+      }
+    ],
+    "notes": [],
+    "raw_options": "[Accept] Receive 5 (A15+: 3) Apparitions. Lose X Max HP.\n• X is equal to 50% of the player's Max HP, rounded up.\n[Refuse] Nothing happens.\n\n\nYou are then given the option to [Leave].",
+    "raw_dialogue": "As you continue your ascent, thick black smoke begins to billow out of the ground and walls around you, coalescing into three masked forms that start to speak.\n\n\"Another puppet of Neow I think.\"\n\"AGREED! SHE ALWAYS MAKES THE FUNNEST TOYS!\"\n\nYou notice an over-sized grin as the third addresses you.\n\"Ignore the others... Would you like a taste of our power?\"\n[Accept]\n\n\"Excellent!\"\nAs the ghostly shape speaks, you notice its large mouth opening wider and wider. Thick black smoke spews forth and envelops the room. You cannot see or breathe...\n\nJust before you lose consciousness, the sensation stops.\n\nWhatever those things were, they are gone now. You continue on, feeling rather hollow.\n\n\n[Refuse]\n\n\"How disappointing...\"\n\"You will join us sooner or later.\"\n\"HA HA HA HAHAHA!\"\nThe shapes fade away, leaving only the unnerving laughter ringing in your ears."
+  },
+  {
+    "wiki_id": "Cursed_Tome",
+    "name": "Cursed Tome",
+    "category": "act2",
+    "options": [
+      {
+        "label": "[Read]",
+        "description": "Begin reading the tome (starts the event sequence).",
+        "conditions": [],
+        "effects": []
+      },
+      {
+        "label": "[Continue]",
+        "description": "Lose 1 HP. (After 1st read)",
+        "conditions": [
+          "Appears after selecting [Read]"
+        ],
+        "effects": []
+      },
+      {
+        "label": "[Continue]",
+        "description": "Lose 2 HP. (After 2nd read)",
+        "conditions": [
+          "Appears after first [Continue]"
+        ],
+        "effects": []
+      },
+      {
+        "label": "[Continue]",
+        "description": "Lose 3 HP. (After 3rd read)",
+        "conditions": [
+          "Appears after second [Continue]"
+        ],
+        "effects": []
+      },
+      {
+        "label": "[Take]",
+        "description": "Obtain the book. Lose 10 (A15+: 15) HP.",
+        "conditions": [
+          "Appears after third [Continue]"
+        ],
+        "effects": [
+          "Receive one random book relic: Enchiridion, Nilry's Codex, or Necronomicon.",
+          "Player doesn't know which book until after choosing [Take].",
+          "Total HP cost if committed: 16 (A15+: 21) HP (1+2+3+10/15)"
+        ]
+      },
+      {
+        "label": "[Stop]",
+        "description": "Lose 3 HP. Give up on the book.",
+        "conditions": [
+          "Appears after third [Continue], alternative to [Take]"
+        ],
+        "effects": [
+          "Exit without obtaining the book relic."
+        ]
+      },
+      {
+        "label": "[Leave]",
+        "description": "Nothing happens.",
+        "conditions": [
+          "Available at start, before [Read]"
+        ],
+        "effects": []
+      }
+    ],
+    "notes": [
+      "This is a SEQUENTIAL event: [Read] → [Continue] x3 → [Take]/[Stop]. Player can [Leave] only at the start.",
+      "Tungsten Rod reduces total HP lost by 4 (to 12/17) if player takes the book, or to 5 if player stops.",
+      "Practical summary: Either commit to 16 (A15+: 21) HP for random book relic, or [Leave] immediately for 0 cost."
+    ],
+    "raw_options": "[Read]\n[Continue] Lose 1 HP.\n\n\n[Continue] Lose 2 HP.\n\n\n[Continue] Lose 3 HP.\n\n\n[Take] Obtain the book. Lose 10 (A15+: 15) HP.\n\nThe book may be  Enchiridion,  Nilry's Codex, or  Necronomicon. The player does not know which book they will get until after they choose [Take] and lose their HP.\n\n[Stop] Lose 3 HP.\n[Leave] Nothing happens.\nPractical Options\nBecause the player can choose to leave the event immediately and lose 0 HP instead of selecting [Continue] 3 times and then backing out with [Stop] while losing a total of 9 HP, there are really only 2 practical ways to navigate the event. The player can either commit to all the HP loss and obtain the book, or leave immediately to do nothing.\nFor simplicity, the event's options can be thought of in this way instead:\n• [Read], then all 3 [Continue], and finally [Take] Obtain the book. Lose 16 (A15+: 21) HP.\n• [Leave] Nothing happens.",
+    "raw_dialogue": "In an abandoned temple, you find a giant book, open, riddled with cryptic writings. \nAs you try to interpret the elaborate script, it begins to shift and morph into writing you are familiar with.\n\n\n[Read]\n\nOdd. The book seems to be about an Ancient named Neow. \nThis piques your interest, but you have a general feeling of malaise.\n\n[Continue]\n\nThe Ancient of Resurrection, Neow, was exiled to the bottom of the Spire. \nYou feel compelled to read more, but your body begins to ache.\n\n[Continue]\n\nSeeking vengeance, Neow blesses outsiders, using them for her own purposes. \nYou are starting to feel very weak and tired...\n\n[Continue]\n\nThose resurrected by Neow remember only fragments of their past selves, cursed to fight for eternity. \nAs you near the final page, your old wounds begin to reopen!\n\n[Take]\n\nUpon finishing the tome, you decide to take it with you. With proof in hand, will you retain your memories?\n\n\n[Stop]\n\nWith incredible strain and willpower, you resist the trance of the tome and SLAM it shut. \nYou turn and exit the temple, feeling drained...\n\n\n\n\n\n\n[Leave]\n\nYou exit, feeling a dark energy emanating from the book on the pedestal."
+  },
+  {
+    "wiki_id": "Designer_In-Spire",
+    "name": "Designer In-Spire",
+    "category": "act2",
+    "options": [
+      {
+        "label": "[Adjustments]",
+        "description": "Lose 40 (A15+: 50) Gold. One of the following rewards appears.",
+        "conditions": [],
+        "effects": [
+          "Upgrade a card.",
+          "Upgrade two random cards."
+        ]
+      },
+      {
+        "label": "[Clean Up]",
+        "description": "Lose 60 (A15+: 75) Gold. One of the following rewards appears.",
+        "conditions": [],
+        "effects": [
+          "Remove a card.",
+          "Transform two cards."
+        ]
+      },
+      {
+        "label": "[Full Service]",
+        "description": "Lose 90 (A15+: 110) Gold.  Remove a card, then upgrade a random card.",
+        "conditions": [],
+        "effects": []
+      },
+      {
+        "label": "[Punch]",
+        "description": "Lose 3 (A15+: 5) HP.",
+        "conditions": [],
+        "effects": []
+      }
+    ],
+    "notes": [],
+    "raw_options": "[Adjustments] Lose 40 (A15+: 50) Gold. One of the following rewards appears.\n• Upgrade a card.\n• Upgrade two random cards.\n[Clean Up] Lose 60 (A15+: 75) Gold. One of the following rewards appears.\n• Remove a card.\n• Transform two cards.\n[Full Service] Lose 90 (A15+: 110) Gold.  Remove a card, then upgrade a random card.\n\n\n[Punch] Lose 3 (A15+: 5) HP.",
+    "raw_dialogue": "You discover a colorful shop with the banner \"IN-SPIRE\" and walk in to see what's inside.\n\"No, no way. Nope. Can't let you in!\" \nA man with ridiculous clothing appears at the entrance to bar you.\n\n[Continue]\n\n\n\n\"This will not do, no no. What is this style? Disgusting! Are you bleeeeding? Groooss. Business?? You a customer? Fine. Whaaatever.\" \nHe lets out an exaggerated sigh and points at a list of services. \nThe services seem fine, but you would rather punch this smug man in his smug face.\n\n[Adjustments], [Clean Up], and [Full Service]\n\n\"Okay, bye bye now.\" \n...should've punched him.\n\n\n[Punch]\n\nYou punch him so hard your fist hurts. \n\"My FACE!! Now I'll have to-\" \nHe fainted. Who's groooss and bleeeeding now?"
+  },
+  {
+    "wiki_id": "Forgotten_Altar",
+    "name": "Forgotten Altar",
+    "category": "act2",
+    "options": [
+      {
+        "label": "[Offer: Golden Idol]",
+        "description": "Obtain a special Relic (Bloody Idol). Lose Golden Idol.",
+        "conditions": [
+          "Requires: Golden Idol"
+        ],
+        "effects": [
+          "Receive Bloody Idol relic",
+          "Golden Idol is consumed"
+        ],
+        "requirements": {
+          "has_relic": "Golden Idol"
+        },
+        "costs": {
+          "relic": "Golden Idol"
+        },
+        "rewards": {
+          "relic": "Bloody Idol"
+        }
+      },
+      {
+        "label": "[Sacrifice]",
+        "description": "Gain 5 Max HP. Lose X HP.",
+        "conditions": [],
+        "effects": [
+          "X is equal to 25% (A15+: 35%) of the player's Max HP."
+        ]
+      },
+      {
+        "label": "[Desecrate]",
+        "description": "Become Cursed - Decay.",
+        "conditions": [],
+        "effects": []
+      }
+    ],
+    "notes": [
+      "Golden Idol is only obtained from the  Golden Idol Event.",
+      "If the  Golden Idol is turned into the  Bloody Idol,  The Moai Head Event in Act 3 will no longer accept it as an offering."
+    ],
+    "raw_options": "[Offer: Golden Idol] Obtain a special  Relic. Lose  Golden Idol.\n• If the player does not have  Golden Idol, this option is replaced with [Locked] Requires: Golden Idol.\n[Sacrifice] Gain 5 Max HP. Lose X HP.\n• X is equal to 25% (A15+: 35%) of the player's Max HP.\n[Desecrate] Become Cursed - Decay.",
+    "raw_dialogue": "In front of you sits an altar to a forgotten god.\n\nAtop the altar sits an ornate female statue with arms outstretched.\n\nShe calls out to you, demanding sacrifice.\n\n[Offer: Golden Idol]\n\nAs you gently set the idol onto the altar a cold wind swirls throughout the room.\n\nThe arms of the statue begin to discolor and crumble.\n\nYour golden idol begins to dull in color and begins bleeding from its eyes.\n\nThe bleeding never ceases.\n\n\n[Sacrifice]\n\nYou stand on the altar and cut your wrists.\n\nAs the blood spills out in sacrifice, the arms of the statue reach out and close around your eyes.\n\nEverything goes dark.\n\nYou wake up a short time later feeling a new potential surging through you.\n\n\n[Desecrate]\n\nYou lash out and smash the statue in front of you, breaking the magical hold the room had placed upon you.\n\nA dark wail echoes all around you, and you can feel the cursed magic seep into your bones."
+  },
+  {
+    "wiki_id": "Knowing_Skull",
+    "name": "Knowing Skull",
+    "category": "act2",
+    "event_type": "loop",
+    "loop_mechanic": {
+      "description": "Event repeats until [How do I leave?] is chosen",
+      "cost_formula": "X = max(6, floor(max_hp * 0.10)) + selection_count",
+      "cost_base_percent": 0.10,
+      "cost_minimum": 6,
+      "cost_per_selection": 1,
+      "tracked_per_option": true
+    },
+    "options": [
+      {
+        "label": "[A Pick Me Up?]",
+        "description": "Get a Potion. Lose X HP.",
+        "conditions": [],
+        "effects": [],
+        "costs": {
+          "hp": "X",
+          "hp_formula": "max(6, floor(max_hp * 0.10)) + potion_selection_count"
+        },
+        "rewards": {
+          "potion": { "type": "random", "count": 1 }
+        },
+        "notes": [
+          "Works even with full potion slots or Sozu - still pay HP cost"
+        ],
+        "loop_action": "continue"
+      },
+      {
+        "label": "[Riches?]",
+        "description": "Gain 90 Gold. Lose X HP.",
+        "conditions": [],
+        "effects": [],
+        "costs": {
+          "hp": "X",
+          "hp_formula": "max(6, floor(max_hp * 0.10)) + gold_selection_count"
+        },
+        "rewards": {
+          "gold": 90
+        },
+        "loop_action": "continue"
+      },
+      {
+        "label": "[Success?]",
+        "description": "Get a Colorless card. Lose X HP.",
+        "conditions": [],
+        "effects": [],
+        "costs": {
+          "hp": "X",
+          "hp_formula": "max(6, floor(max_hp * 0.10)) + card_selection_count"
+        },
+        "rewards": {
+          "card": { "type": "colorless", "rarity": "uncommon", "count": 1 }
+        },
+        "loop_action": "continue"
+      },
+      {
+        "label": "[How do I leave?]",
+        "description": "Lose X HP.",
+        "conditions": [],
+        "effects": [],
+        "costs": {
+          "hp": "X",
+          "hp_formula": "max(6, floor(max_hp * 0.10)) + leave_selection_count"
+        },
+        "rewards": {},
+        "loop_action": "exit"
+      }
+    ],
+    "notes": [
+      "Bloody Idol can greatly increase the number of times the player can choose [Riches?] since they will heal 5 HP every time it gives them Gold.",
+      "Tungsten Rod will reduce the HP lost by 1 every time an option is selected."
+    ],
+    "raw_options": "The following options are presented to the player until they decide to leave the event. X is equal to 10% of the player's Max HP (minimum of 6 HP) plus the number of times they have chosen that specific option (Lose 6 HP, then Lose 7 HP, then Lose 8 HP, etc.)\n\n\n[A Pick Me Up?] Get a Potion. Lose X HP.\n• A random Potion is immediately added to the player's left-most empty potion slot.\n• The player is able to select this option even if all their potion slots are full or if they possess  Sozu. They still lose HP and this option's HP loss is still increased by 1 even though no potion is obtained.\n[Riches?] Gain 90 Gold. Lose X HP.\n\n\n[Success?] Get a Colorless card. Lose X HP.\n• A random Uncommon Colorless card is added to the player's deck.\n[How do I leave?] Lose X HP.\n• This event repeats until this option is chosen.",
+    "raw_dialogue": "You find yourself in an old, decorated chamber. In the center of the room, a large skull sits atop an ornate pedestal. As you approach, the skull bursts into flames and turns to face you.\n\n\n[Continue]\n\n\n\"WHAT IS IT YOU SEEK? WHAT IS IT YOU OFFER?\" \nIn sync with its final words, the door behind you slams shut.\n\n[A Pick Me Up?]\n\n\"PERHAPS THIS WILL HELP?\" \nYou obtain a card. \n\"ANYTHING ELSE?\"\n\nThe player is able to choose any of the Options again. [A Pick Me Up?] now costs 1 more HP than it did previously.\n\n\n\n[Riches?]\n\n\"DRINK UP!\" \nYou obtain a potion. \n\"ANYTHING ELSE?\"\n\nThe player is able to choose any of the Options again. [Riches?] now costs 1 more HP than it did previously.\n\n\n[Success?]\n\n\"YOU MORTALS NEVER CHANGE. IT IS DONE.\" \nGold rains down on you! \n\"ANYTHING ELSE?\"\n\nThe player is able to choose any of the Options again. [Success?] now costs 1 more HP than it did previously.\n\n\n[How do I leave?]\n\n\"BEHIND YOU, MORTAL.\" \nYou peek behind the skull. Surely enough, there is a door.\n\nThe event ends, and the player is given the option to [Leave]."
+  },
+  {
+    "wiki_id": "Masked_Bandits",
+    "name": "Masked Bandits",
+    "category": "act2",
+    "options": [
+      {
+        "label": "[Pay]",
+        "description": "Lose ALL of your Gold.",
+        "conditions": [],
+        "effects": []
+      },
+      {
+        "label": "[Fight!]",
+        "description": "",
+        "conditions": [],
+        "effects": [
+          "Starts a combat against the three bandits ( Pointy,  Romeo, and  Bear). Upon winning, obtain regular card rewards, 25 - 35 Gold, and  Red Mask."
+        ]
+      }
+    ],
+    "notes": [
+      "Although the fight can be quite dangerous and offers a Relic reward, it does not count as an Elite combat for the sake of  Preserved Insect,  Sling of Courage,  Black Star, and  Slaver's Collar.",
+      "If the player has  Red Mask, the Act 3 Event  Tomb of Lord Red Mask will have an option to gain 222 Gold for free."
+    ],
+    "raw_options": "[Pay] Lose ALL of your Gold.\n\n\n[Fight!]\n• Starts a combat against the three bandits ( Pointy,  Romeo, and  Bear). Upon winning, obtain regular card rewards, 25 - 35 Gold, and  Red Mask.",
+    "raw_dialogue": "You encounter a group of bandits wearing large red masks.\n\n\"Hello, pay up to pass... a reasonable fee of ALL your gold will do! Heh heh!\"\n\n[Pay]\n\nHehehe.. Thanks for the gold!\n\nOh, I love gold. It's so nice.\n\nshiny shiny chits they are!\n\n[Continue]\n\nHey Bear, hey!\n\nThis guy gave us all his gold! What a sucker, right?\n\nGet this, I just had to ask nicely. Who knew?!\n\nI certainly didn't! What a chump!\n\n\n[Continue]\n\nGang, let's all have a laugh for this wondrous occasion!\n\nHahaah\n\nHo HOH hoho!\n\nHoh!\n\n\n[Leave]\n\n\nIf the player returns from the Map screen instead of progressing to the next floor, the event has extra dialogue:\n\nOh? You're still here?\n\nDid you overhear something? Didn't think so.\n\n*snerk* ...loser.... Hahaha haaah\n\n\n[Fight!]\n\n\n(No dialogue; the player enters combat with the Bandits)"
+  },
+  {
+    "wiki_id": "N'loth",
+    "name": "N'loth",
+    "category": "act2",
+    "options": [
+      {
+        "label": "[Offer: Relic A]",
+        "description": "Lose this relic. Obtain a special relic.",
+        "conditions": [],
+        "effects": []
+      },
+      {
+        "label": "[Offer: Relic B]",
+        "description": "Lose this relic. Obtain a special relic.",
+        "conditions": [],
+        "effects": [
+          "Rewards the player with  N'loth's Gift."
+        ]
+      },
+      {
+        "label": "[Leave]",
+        "description": "Nothing happens.",
+        "conditions": [],
+        "effects": []
+      }
+    ],
+    "notes": [
+      "N'loth can pick Relics that activate their effects only upon being picked up, as well as used-up Relics.",
+      "For example, offering Relics like  Mango or  Old Coin will not remove the max HP or Gold granted by them, effectively removing the downside of  N'loth's Gift."
+    ],
+    "raw_options": "Note: \"Relic A\" and \"Relic B\" will be randomly chosen from the player's currently held Relics.\n\n[Offer: Relic A] Lose this relic. Obtain a special relic.\n[Offer: Relic B] Lose this relic. Obtain a special relic.\n• Rewards the player with  N'loth's Gift.\n[Leave] Nothing happens.",
+    "raw_dialogue": "An odd creature with a hunched back sprouting several tentacles is scrounging through a pile of trash and debris in front of you. As you approach, he shuffles towards you in a non-threatening manner.\n\n\"N'loth hungry. Feed N'loth.\"\n\n\n[Offer: Relic A] or [Offer: Relic B]\n\n Holding the relic out towards him, N'loth snatches it out of your hand with his tentacles, dislocates his jaw, and slurps down your offer in one quick gulp.\n\nHe gives you a large, toothy grin as more tentacles appear from behind his cloak, these ones brandishing an impossibly neat looking box. He pushes it towards you until you take it.\n\n\n[Leave]\n\nYou shake your head. N'loth hunches even further and sighs, then scuttles away."
+  },
+  {
+    "wiki_id": "Old_Beggar",
+    "name": "Old Beggar",
+    "category": "act2",
+    "options": [
+      {
+        "label": "[Offer Gold]",
+        "description": "75 Gold: Remove a card from your deck.",
+        "conditions": [],
+        "effects": []
+      },
+      {
+        "label": "[Leave]",
+        "description": "Nothing happens.",
+        "conditions": [],
+        "effects": []
+      }
+    ],
+    "notes": [],
+    "raw_options": "[Offer Gold] 75 Gold: Remove a card from your deck. \n\n\n[Leave] Nothing happens.",
+    "raw_dialogue": "An old beggar cloaked in fur reaches his hands out towards you as you pass. \"Spare some coin, child?\"\n\n[Offer Gold]\n\nThe beggar takes off its cloak to reveal that he is Cleric! \n\"You are a kind soul. Receive my purification!\" he screams. \nYou are unsure if he is grateful or mad.\n\n[Leave]\n\n\nIf the player returns from the Map screen instead of progressing to the next floor, the event has extra dialogue:\n\n\"I hope you do better this time, friend!\" he shouts.\n\nWondering what was implied by this, you push forward.\n\n\n[Leave]\n\nThe beggar looks to the floor as you pass. \n\"You will never make a difference... You never do.\""
+  },
+  {
+    "wiki_id": "Pleading_Vagrant",
+    "name": "Pleading Vagrant",
+    "category": "act2",
+    "options": [
+      {
+        "label": "[Offer Gold]",
+        "description": "85 Gold: Obtain a Relic.",
+        "conditions": [
+          "If the player does not have enough Gold, this option will be greyed out."
+        ],
+        "effects": []
+      },
+      {
+        "label": "[Rob]",
+        "description": "Obtain a Relic. Become Cursed -  Shame.",
+        "conditions": [],
+        "effects": []
+      },
+      {
+        "label": "[Leave]",
+        "description": "Nothing happens.",
+        "conditions": [],
+        "effects": []
+      }
+    ],
+    "notes": [
+      "Omamori can be used to prevent the  Shame from [Rob] if it has any charges remaining."
+    ],
+    "raw_options": "[Offer Gold] 85 Gold: Obtain a Relic.\n• If the player does not have enough Gold, this option will be greyed out.\n[Rob] Obtain a Relic. Become Cursed -  Shame.\n\n\n[Leave] Nothing happens.",
+    "raw_dialogue": "While sneaking past a group of shrouded figures, one of them approaches you.\n\n\"Got anything for me friend? Please... maybe some Coin?\"\n\n\"I just need somewhere to stay, I have treasures I can trade...\"\n\nHe seems delusional, but harmless.\n\n\n[Offer Gold]\n\n\"Oh yes, yes! Here here, a fair trade!\"\n\n\n[Rob]\n\nYou snatch the precious relic from his clutches and walk away.\n\nFrom behind you hear,\n\n\"Have you no shame? HAVE YOU NO SHAAAAAME?!\"\n\nYou have some shame.\n\n\n[Leave]\n\n\n(No dialogue)"
+  },
+  {
+    "wiki_id": "The_Colosseum",
+    "name": "The Colosseum",
+    "category": "act2",
+    "event_type": "multi_phase",
+    "phases": [
+      {
+        "phase": 1,
+        "name": "Forced Combat",
+        "options": [
+          {
+            "label": "[Fight]",
+            "description": "Fight Blue Slaver and Red Slaver (no rewards).",
+            "effects": [
+              "Mandatory fight - no escape option.",
+              "End-of-combat effects (Burning Blood, Self Repair) still trigger.",
+              "Smoke Bomb can be used to flee but still proceeds to Phase 2."
+            ]
+          }
+        ]
+      },
+      {
+        "phase": 2,
+        "name": "After First Victory",
+        "options": [
+          {
+            "label": "[COWARDICE]",
+            "description": "Escape through the wall hole.",
+            "effects": [
+              "Event ends with no additional rewards."
+            ]
+          },
+          {
+            "label": "[VICTORY]",
+            "description": "Fight Taskmaster and Gremlin Nob for massive rewards.",
+            "effects": [
+              "Rewards: 100 Gold, 1 Rare Relic, 1 Uncommon Relic, card reward, possible Potion.",
+              "Treated as Elite combat (Preserved Insect, Sling of Courage, Slaver's Collar work).",
+              "Black Star does NOT double relics (always exactly 1 Rare + 1 Uncommon)."
+            ]
+          }
+        ]
+      }
+    ],
+    "notes": [
+      "This is a TWO-PHASE event: Phase 1 (mandatory fight) → Phase 2 (escape or glory).",
+      "Both fights can trigger Potion drop roll, but Phase 1 potion is never shown.",
+      "Phase 2 [VICTORY] fight is one of the best reward opportunities in Act 2."
+    ],
+    "raw_options": "[Fight]\n• The player enters a fight with a  Blue Slaver and  Red Slaver. This fight gives no rewards.\nAfter the fight ends, a choice has to be made: \n[COWARDICE] Escape.\n\n\n[VICTORY] A powerful fight with many rewards.\n\nThe player enters a fight with  Taskmaster and  Gremlin Nob.\nThe rewards are 100 Gold, 1 Rare Relic, 1 Uncommon Relic, a card reward, and sometimes a Potion.",
+    "raw_dialogue": "Thwack!!! \n.. \n...... \n... \nYou were knocked unconscious...\n \n[Continue]\n\n\nGroggy and with a throbbing head, you awaken to find yourself thrown in the center of a massive stadium with an overflowing audience of Slavers, Cultists, and other denizens of the City! \nAn armored giant with a golden crown bellows at you from atop, \n\"WE NOW BEGIN THE 4200TH COMBAT!!!!\" \nA gate on the opposite side opens...\n\n[Fight]\n\n\n(The player enters combat with a  Blue Slaver and  Red Slaver. After ending the fight, more dialogue is presented.)\n\n\n\"WELL DONE, WEAKLING!\" \nThe giant mock claps whilst he riles up the crowd with exaggerated gestures. \nGold and confetti shower you! \n\"TIME FOR THE REAL CHALLENGE!!\" \n\nThe last battle left a small hole in the Colosseum's wall, you can easily escape through there while everyone is distracted. \nDo you stay and fight?\n\n\n[COWARDICE]\n\n\n(No dialogue)\n\n\n[VICTORY]\n\n\n(No dialogue, the player enters combat with  Taskmaster and  Gremlin Nob)"
+  },
+  {
+    "wiki_id": "The_Joust",
+    "name": "The Joust",
+    "category": "act2",
+    "options": [
+      {
+        "label": "[Murderer]",
+        "description": "Bet 50 Gold - 70%: win 100 Gold.",
+        "conditions": [],
+        "effects": []
+      },
+      {
+        "label": "[Owner]",
+        "description": "Bet 50 Gold - 30%: win 250 Gold.",
+        "conditions": [],
+        "effects": [
+          "There is no option to avoid betting."
+        ]
+      }
+    ],
+    "notes": [
+      "If the player possesses  Ectoplasm, this event is a mandatory loss of 50 Gold. There is no option to leave the event without betting, and any potential winnings cannot be gained.",
+      "The player may consider using the expected value (EV) of each option to determine who they want to bet on.",
+      "The EV of betting on the Murderer is a net increase of 20 Gold (a 70% chance to receive 100 Gold is an expected 70 Gold, minus the 50 Gold that was bet. 0.7 x 100 - 50 = 20)",
+      "The EV of betting on the Owner is a net increase of 25 Gold (a 30% chance to receive 250 Gold is an expected 75 Gold, minus the 50 Gold that was bet. 0.3 x 250 - 50 = 25)",
+      "It may be more beneficial to ignore the EV and instead consider whether the relatively safe 50 extra Gold by betting on the Murderer is more useful to the player's current run compared to risking the bet on the Owner and likely losing their 50 Gold for the more unlikely net gain of 200 Gold."
+    ],
+    "raw_options": "[Murderer] Bet 50 Gold - 70%: win 100 Gold.\n[Owner] Bet 50 Gold - 30%: win 250 Gold.\nThere is no option to avoid betting.",
+    "raw_dialogue": "As you make your way through the large buildings you come across a long narrow bridge and spot knights on either side, facing one another. \nYou approach... \n\"HALT!\" \nA knight forcefully gestures you to stop with its giant lance.\n\n[Continue]\n\n\"Today is the day I must settle the score with the murderer of my beloved pet, Noodles. Until then, you may not pass. \nFellow witness, why don't you bet on who you think will emerge victorious?\"\n\n[Murderer]\n\n\"I can't believe you're betting against Noodles!\" \nFurious, he clamps down his helmet and rushes towards his nemesis.\n\n\n[Owner]\n\n\"Give me strength, Noodles!\" \nClamping down his helmet, the knight charges forward.\n\n\n*CRASH!!!* *KLAAAANG!* \n*POW!*\n\n\n\nDepending on who loses the joust: The owner died. / The nemesis was slain.\n\n\nWhen losing the bet:\nYou lost the bet, but at least you weren't gouged by a lance.\nWhen winning the bet:\nYou win the bet. Unsure what to think, you grab your winnings and leave."
+  },
+  {
+    "wiki_id": "The_Library",
+    "name": "The Library",
+    "category": "act2",
+    "options": [
+      {
+        "label": "[Read]",
+        "description": "Choose 1 of 20 cards to add to your deck.",
+        "conditions": [],
+        "effects": []
+      },
+      {
+        "label": "[Sleep]",
+        "description": "Heal X HP.",
+        "conditions": [],
+        "effects": [
+          "X is equal to 33% (A15+: 20%) of the player's Max HP."
+        ]
+      }
+    ],
+    "notes": [
+      "[Sleep] is unaffected by  Regal Pillow, does not trigger  Dream Catcher, and can still be chosen with  Coffee Dripper.",
+      "Mark of the Bloom makes [Sleep] serve only as a way to skip adding a card to your deck as it will no longer heal you.",
+      "N'loth's Gift increases the likelihood of each card offered by [Read] being Rare."
+    ],
+    "raw_options": "[Read] Choose 1 of 20 cards to add to your deck.\n\n\n[Sleep] Heal X HP.\n• X is equal to 33% (A15+: 20%) of the player's Max HP.",
+    "raw_dialogue": "You come across an ornate building which appears abandoned. \nA plaque that has been torn free from a wall is on the floor. It reads, \"THE LIBRARY\". \nInside, you find countless rows of scrolls, manuscripts, and books. \nYou pick one and cozy yourself into a chair for some quiet time.\n\n[Read]\nThere are 3 possible stories that the player can read. One of the following is chosen at random.\n\nThe story is about an insect-controlling teenage girl who aspires to become a hero. The book is filled with creative uses of power, combat strategies, and varying perspectives.\nSatisfying.\n\n\nThe story is about a man who journeyed beyond the stars and found himself stuck on a desolate foreign planet. Ingenuity, luck, perseverance, and humor to retain his sanity were his tools to return home.\nFascinating.\n\n\nThe story takes place in a giant isolated building underground as the outside conditions have become unbearable. The novel is mired with conspiracies, propaganda, and injustice. You ponder if similar dynamics are at play within the Spire.\nUnsettling.\n\n\n[Sleep]\n\nReading is for chumps. \nYou doze off in a comfy chair instead. \nZzz... zzz... ..Zz... \nYou wake up feeling refreshed."
+  },
+  {
+    "wiki_id": "The_Mausoleum",
+    "name": "The Mausoleum",
+    "category": "act2",
+    "options": [
+      {
+        "label": "[Open Coffin]",
+        "description": "Obtain a Relic. 50% (A15+: 100%): Become Cursed -  Writhe",
+        "conditions": [],
+        "effects": []
+      },
+      {
+        "label": "[Leave]",
+        "description": "Nothing happens.",
+        "conditions": [],
+        "effects": []
+      }
+    ],
+    "notes": [
+      "If the player receives  Omamori as the Relic reward, it will not prevent the  Writhe from being gained.",
+      "If the player receives  Darkstone Periapt as the Relic reward, it will grant the +6 Max HP."
+    ],
+    "raw_options": "[Open Coffin] Obtain a Relic. 50% (A15+: 100%): Become Cursed -  Writhe\n[Leave] Nothing happens.",
+    "raw_dialogue": "Venturing through a series of tombs, you are faced with a large sarcophagus studded with gems in the center of a circular room. \nYou cannot make out the writing on the coffin, however, you do notice black fog seeping out from the sides.\n\n[Open Coffin]\nThe dialogue changes depending on whether the player becomes cursed with  Writhe or not.\nIf the player does not receive  Writhe:\n\n\n\nYou push open the coffin. The fog dissipates harmlessly. Inside, you find the mortal remains of a decorated soldier grasping an old relic. You pilfer it and move on.\n\n\n\nIf the player receives  Writhe:\n\n\n\nYou push open the coffin. As you do, black fog spews forth and covers the entire room! Inside, you find no body, only a relic. You take it and move onwards, coughing violently.\n\n\n\n[Leave]\n\nYou continue on your way, leaving the forgotten dead undisturbed."
+  },
+  {
+    "wiki_id": "The_Nest",
+    "name": "The Nest",
+    "category": "act2",
+    "options": [
+      {
+        "label": "[Smash and Grab]",
+        "description": "Obtain 99 (A15+: 50) Gold.",
+        "conditions": [],
+        "effects": []
+      },
+      {
+        "label": "[Stay in Line]",
+        "description": "Obtain  Ritual Dagger. Lose 6 HP.",
+        "conditions": [],
+        "effects": []
+      }
+    ],
+    "notes": [],
+    "raw_options": "[Smash and Grab] Obtain 99 (A15+: 50) Gold.\n\n\n[Stay in Line] Obtain  Ritual Dagger. Lose 6 HP.",
+    "raw_dialogue": "A long line of hooded figures can be seen entering an unassuming cathedral.\n\n\nNaturally, you join the line and are quickly surrounded by Cultists! \nThey ignore you as they gleefully chant and wave their weapons around. \n\"MURDER!! MURDER MURDER!!\" \n\"CAW CAW CAAAAAWWW!\" \n\"MURDER! MURDER MURDER!!\" \n\"CAAW CAW CAAAAAAWW!!\" \nYou eye a Donation Box...\n\n[Smash and Grab]\n\nThey didn't even notice.\n\n\n[Stay in Line]\n\nYou decide to stay in line (out of fear) to see what will happen. \nEventually, you are face-to-face with the leader. A well-dressed cultist hands you an Ornate Dagger. Like the others before you, you slash your forearm and let the blood drip into a misshapen bowl. \nThe cultists chant and holler for you! \n\"CAAW CAW CAAAAAAWW!!\" \nYou chant, too. Why not?"
+  },
+  {
+    "wiki_id": "Vampires",
+    "name": "Vampires",
+    "category": "act2",
+    "options": [
+      {
+        "label": "[Offer: Blood Vial]",
+        "description": "Lose  Blood Vial.  Remove all  Strikes. Receive 5  Bites.",
+        "conditions": [
+          "Only present if the player has  Blood Vial."
+        ],
+        "effects": []
+      },
+      {
+        "label": "[Accept]",
+        "description": "Remove all  Strikes. Receive 5  Bites. Lose X Max HP.",
+        "conditions": [],
+        "effects": [
+          "X is equal to 30% of the player's max HP."
+        ]
+      },
+      {
+        "label": "[Refuse]",
+        "description": "Nothing happens.",
+        "conditions": [],
+        "effects": [
+          "You are then given the option to"
+        ]
+      },
+      {
+        "label": "[Leave]",
+        "description": ".",
+        "conditions": [],
+        "effects": []
+      }
+    ],
+    "notes": [],
+    "raw_options": "[Offer: Blood Vial] Lose  Blood Vial.  Remove all  Strikes. Receive 5  Bites.\n• Only present if the player has  Blood Vial.\n[Accept] Remove all  Strikes. Receive 5  Bites. Lose X Max HP.\n• X is equal to 30% of the player's max HP.\n[Refuse] Nothing happens.\nYou are then given the option to [Leave].",
+    "raw_dialogue": "Navigating an unlit street, you come across several hooded figures in the midst of some dark ritual. As you approach, they turn to you in eerie unison. The tallest among them bares fanged teeth and extends a long, pale hand towards you.\n\n\"Join us brother, and feel the warmth of the Spire.\"\n\n[Offer: Blood Vial]\n\nThe pale figures gasp as you take out the Blood Vial.\n\n\"The master's blood... the master's blood! THE MASTER'S BLOOD!\"\n\nThey all chant fervently as the tall one bows before you. \"Drink from His blood, and become one with Him.\"\n\nThe chant growing louder, you consume the contents of the vial. Your vision immediately warps and fades to darkness.\n\n\nYou wake up some time later, alone. An intense hunger passes through your belly. You must feed...\n\n\n[Accept]\n\nThe tall figure grabs your arm, pulls you forward, and sinks his fangs into your neck. You feel a dark force pour into your neck and course through your body.\n\n...\n\nYou wake up some time later, alone. An intense hunger passes through your belly. You must feed...\n\n\n[Refuse]\n\nYou step back and raise your weapon in defiance. The tall figure sighs.\n\n\"Very well.\" The entire group of hooded figures morph into a thick black fog that flows away from you.\n\nYou are alone once more."
+  }
+]

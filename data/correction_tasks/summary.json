@@ -1,0 +1,22 @@
+{
+  "total": 51,
+  "with_issues": 51,
+  "categories": {
+    "shrines": {
+      "total": 14,
+      "with_issues": 14
+    },
+    "act1": {
+      "total": 12,
+      "with_issues": 12
+    },
+    "act2": {
+      "total": 17,
+      "with_issues": 17
+    },
+    "act3": {
+      "total": 8,
+      "with_issues": 8
+    }
+  }
+}

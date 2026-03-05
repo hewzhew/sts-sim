@@ -1,0 +1,178 @@
+{
+  "category": "act2",
+  "batch": 4,
+  "events": [
+    {
+      "wiki_id": "The_Nest",
+      "wiki_name": "The Nest",
+      "logic_key": "Nest",
+      "status": "pending",
+      "issues": [
+        "OPTION_COUNT_MISMATCH: Wiki有2个选项, Logic有3个",
+        "MISSING_OPTIONS: Logic缺少选项 {'[stay in line]', '[smash and grab]'}",
+        "EXTRA_OPTIONS: Logic多余选项 {'[stay in line] obtain ritual dagger. lose 6 hp', '[smash and grab] obtain gold', '[leave]'}"
+      ],
+      "wiki_data": {
+        "options": [
+          {
+            "label": "[Smash and Grab]",
+            "description": "Obtain 99 (50) 15 Gold.",
+            "conditions": [],
+            "effects": []
+          },
+          {
+            "label": "[Stay in Line]",
+            "description": "Obtain  Ritual Dagger. Lose 6 HP.",
+            "conditions": [],
+            "effects": []
+          }
+        ],
+        "notes": []
+      },
+      "existing_data": {
+        "name": "The Nest",
+        "options": [
+          {
+            "label": "[Stay in Line] Obtain Ritual Dagger. Lose 6 HP",
+            "conditions": [],
+            "actions": [
+              {
+                "type": "AddCard",
+                "card_id": "Ritual Dagger"
+              },
+              {
+                "type": "LoseHP",
+                "amount": 6,
+                "is_percentage": false
+              }
+            ]
+          },
+          {
+            "label": "[Smash and Grab] Obtain Gold",
+            "conditions": [],
+            "actions": [
+              {
+                "type": "Gold",
+                "amount": 99
+              }
+            ]
+          },
+          {
+            "label": "[Leave]",
+            "conditions": [],
+            "actions": [
+              {
+                "type": "Leave"
+              }
+            ]
+          }
+        ]
+      },
+      "corrections": []
+    },
+    {
+      "wiki_id": "Vampires",
+      "wiki_name": "Vampires",
+      "logic_key": "Vampires",
+      "status": "pending",
+      "issues": [
+        "OPTION_COUNT_MISMATCH: Wiki有4个选项, Logic有3个",
+        "MISSING_OPTIONS: Logic缺少选项 {'[offer: blood vial]', '[leave]', '[accept]'}",
+        "EXTRA_OPTIONS: Logic多余选项 {'[accept] remove all strikes. obtain 5 bites. lose 30% max hp', '[offer blood vial] remove all strikes. obtain 5 bites'}"
+      ],
+      "wiki_data": {
+        "options": [
+          {
+            "label": "[Offer: Blood Vial]",
+            "description": "Lose  Blood Vial.  Remove all  Strikes. Receive 5  Bites.",
+            "conditions": [
+              "Only present if the player has  Blood Vial."
+            ],
+            "effects": []
+          },
+          {
+            "label": "[Accept]",
+            "description": "Remove all  Strikes. Receive 5  Bites. Lose X Max HP.",
+            "conditions": [],
+            "effects": [
+              "X is equal to 30% of the player's max HP."
+            ]
+          },
+          {
+            "label": "[Refuse]",
+            "description": "Nothing happens.",
+            "conditions": [],
+            "effects": [
+              "You are then given the option to"
+            ]
+          },
+          {
+            "label": "[Leave]",
+            "description": ".",
+            "conditions": [],
+            "effects": []
+          }
+        ],
+        "notes": []
+      },
+      "existing_data": {
+        "name": "Vampires(?)",
+        "options": [
+          {
+            "label": "[Accept] Remove all Strikes. Obtain 5 Bites. Lose 30% Max HP",
+            "conditions": [],
+            "actions": [
+              {
+                "type": "RemoveAllStrikes"
+              },
+              {
+                "type": "AddCard",
+                "card_id": "Bite",
+                "count": 5
+              },
+              {
+                "type": "MaxHP",
+                "amount": -0.3,
+                "is_percentage": true
+              }
+            ]
+          },
+          {
+            "label": "[Offer Blood Vial] Remove all Strikes. Obtain 5 Bites",
+            "conditions": [
+              {
+                "type": "HasRelic",
+                "relic_id": "Blood Vial"
+              }
+            ],
+            "actions": [
+              {
+                "type": "LoseRelic",
+                "relic_id": "Blood Vial"
+              },
+              {
+                "type": "RemoveAllStrikes"
+              },
+              {
+                "type": "AddCard",
+                "card_id": "Bite",
+                "count": 5
+              }
+            ]
+          },
+          {
+            "label": "[Refuse]",
+            "conditions": [],
+            "actions": [
+              {
+                "type": "Leave"
+              }
+            ]
+          }
+        ]
+      },
+      "corrections": []
+    }
+  ],
+  "instructions": "\n校对说明:\n1. 查看每个事件的 issues 列表\n2. 对比 wiki_data 和 existing_data 的差异\n3. 在 corrections 中填写需要的修正\n4. 完成后将 status 改为 \"reviewed\"\n\ncorrections 格式示例:\n- {\"action\": \"add_option\", \"label\": \"[新选项]\", \"data\": {...}}\n- {\"action\": \"fix_label\", \"old\": \"[错误]\", \"new\": \"[正确]\"}\n- {\"action\": \"add_event\", \"data\": {...}}\n"
+}

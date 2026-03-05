@@ -1,0 +1,109 @@
+[
+  {
+    "id": "Eruption",
+    "name": "Eruption",
+    "type": "Attack",
+    "cost": 2,
+    "color": "Purple",
+    "rarity": "Basic",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "DealDamage",
+          "params": {
+            "base": 9,
+            "upgrade": 9
+          }
+        },
+        {
+          "type": "EnterStance",
+          "params": {
+            "stance": "Wrath"
+          }
+        }
+      ],
+      "keywords_used": [
+        "Wrath"
+      ]
+    },
+    "original_text": "Deal 9 damage. Enter #Wrath.",
+    "cost_upgrade": 1
+  },
+  {
+    "id": "Strike_Watcher",
+    "name": "Strike (Watcher)",
+    "type": "Attack",
+    "cost": 1,
+    "color": "Purple",
+    "rarity": "Basic",
+    "logic": {
+      "target_type": "Enemy",
+      "commands": [
+        {
+          "type": "DealDamage",
+          "params": {
+            "base": 6,
+            "upgrade": 9
+          }
+        }
+      ]
+    },
+    "original_text": "Deal [6|9] damage."
+  },
+  {
+    "id": "Defend_Watcher",
+    "name": "Defend (Watcher)",
+    "type": "Skill",
+    "cost": 1,
+    "color": "Purple",
+    "rarity": "Basic",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "GainBlock",
+          "params": {
+            "base": 5,
+            "upgrade": 8
+          }
+        }
+      ],
+      "keywords_used": [
+        "Block"
+      ]
+    },
+    "original_text": "Gain [5|8] #Block."
+  },
+  {
+    "id": "Vigilance",
+    "name": "Vigilance",
+    "type": "Skill",
+    "cost": 2,
+    "color": "Purple",
+    "rarity": "Basic",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "GainBlock",
+          "params": {
+            "base": 8,
+            "upgrade": 12
+          }
+        },
+        {
+          "type": "EnterStance",
+          "params": {
+            "stance": "Calm"
+          }
+        }
+      ],
+      "keywords_used": [
+        "Block",
+        "Calm"
+      ]
+    },
+    "original_text": "Gain [8|12] #Block. <br>Enter #Calm."
+  }
+]

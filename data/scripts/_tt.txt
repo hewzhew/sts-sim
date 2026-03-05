@@ -1,0 +1,39 @@
+
+=== TurnTrigger Cards ===
+
+ID                        Type     Color      ApplyPower?  PowerName            Trigger Text
+------------------------------------------------------------------------------------------------------------------------
+Decay                     Curse    colorless  [MISS]       -                    TurnTrigger: At the end of your turn
+Doubt                     Curse    colorless  [MISS]       -                    TurnTrigger: At the end of your turn
+Pride                     Curse    colorless  [MISS]       -                    TurnTrigger: At the end of your turn
+Regret                    Curse    colorless  [MISS]       -                    TurnTrigger: At the end of your turn
+Shame                     Curse    colorless  [MISS]       -                    TurnTrigger: At the end of your turn
+Biased_Cognition          Power    blue       [MISS]       -                    TurnTrigger: At the start of your turn [!]
+Creative_AI               Power    blue       [MISS]       -                    TurnTrigger: At the start of your turn [!]
+Hello_World               Power    blue       [MISS]       -                    TurnTrigger: At the start of your turn [!]
+Loop                      Power    blue       [MISS]       -                    TurnTrigger: At the start of your turn [!]
+Machine_Learning          Power    blue       [OK]         Draw                 TurnTrigger: At the start of your turn
+Magnetism                 Power    colorless  [MISS]       -                    TurnTrigger: At the start of your turn [!]
+Mayhem                    Power    colorless  [MISS]       -                    TurnTrigger: At the start of your turn [!]
+Omega                     Power    colorless  [OK]         Omega                TurnTrigger: At the end of your turn
+Infinite_Blades           Power    green      [MISS]       -                    TurnTrigger: At the start of your turn [!]
+Noxious_Fumes             Power    green      [MISS]       -                    TurnTrigger: At the start of your turn [!]
+Tools_of_the_Trade        Power    green      [MISS]       -                    TurnTrigger: At the start of your turn [!]
+Well-Laid_Plans           Power    green      [OK]         Well-Laid Plans      TurnTrigger: At the end of your turn
+Wraith_Form               Power    green      [MISS]       -                    TurnTrigger: At the end of your turn [!]
+Battle_Hymn               Power    purple     [MISS]       -                    TurnTrigger: At the start of each turn [!]
+Deva_Form                 Power    purple     [MISS]       -                    TurnTrigger: At the start of your turn [!]
+Devotion                  Power    purple     [MISS]       -                    TurnTrigger: At the start of your turn [!]
+Fasting                   Power    purple     [MISS]       -                    TurnTrigger: at the start of each turn [!]
+Foresight                 Power    purple     [MISS]       -                    TurnTrigger: At the start of your turn [!]
+Study                     Power    purple     [MISS]       -                    TurnTrigger: At the end of your turn [!]
+Barricade                 Power    red        [OK]         Barricade            TurnTrigger: at the start of your turn
+Berserk                   Power    red        [OK]         Berserk              TurnTrigger: At the start of your turn
+Brutality                 Power    red        [OK]         Brutality            TurnTrigger: At the start of your turn
+Combust                   Power    red        [OK]         Combust              TurnTrigger: At the end of your turn
+Demon_Form                Power    red        [OK]         Demon Form           TurnTrigger: At the start of your turn
+Metallicize               Power    red        [OK]         Metallicize          TurnTrigger: At the end of your turn
+Flex                      Skill    red        [MISS]       -                    TurnTrigger: At the end of this turn
+Burn                      Status   colorless  [MISS]       -                    TurnTrigger: At the end of your turn
+
+Total: 32 TurnTrigger cards, 16 Power cards missing ApplyPower

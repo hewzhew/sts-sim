@@ -1,0 +1,471 @@
+{
+  "category": "act3",
+  "batch": 1,
+  "events": [
+    {
+      "wiki_id": "Falling",
+      "wiki_name": "Falling",
+      "logic_key": "Falling",
+      "status": "pending",
+      "issues": [
+        "OPTION_COUNT_MISMATCH: Wiki有4个选项, Logic有3个",
+        "MISSING_OPTIONS: Logic缺少选项 {'[land]', '[strike]', '[channel]', '[land] (special)'}",
+        "EXTRA_OPTIONS: Logic多余选项 {'[channel] lose a power card', '[strike] lose an attack card', '[land] lose a skill card'}"
+      ],
+      "wiki_data": {
+        "options": [
+          {
+            "label": "[Land]",
+            "description": "Lose a random Skill card",
+            "conditions": [
+              "Requires at least one Skill card not targeted by Bottled Lightning"
+            ],
+            "effects": [
+              "Removes a random Skill from deck (shown in option text)",
+              "If no eligible Skill exists, this option becomes [Locked] Requires: Skill Card"
+            ]
+          },
+          {
+            "label": "[Channel]",
+            "description": "Lose a random Power card",
+            "conditions": [
+              "Requires at least one Power card not targeted by Bottled Tornado"
+            ],
+            "effects": [
+              "Removes a random Power from deck (shown in option text)",
+              "If no eligible Power exists, this option becomes [Locked] Requires: Power Card"
+            ]
+          },
+          {
+            "label": "[Strike]",
+            "description": "Lose a random Attack card",
+            "conditions": [
+              "Requires at least one Attack card not targeted by Bottled Flame"
+            ],
+            "effects": [
+              "Removes a random Attack from deck (shown in option text)",
+              "If no eligible Attack exists, this option becomes [Locked] Requires: Attack Card"
+            ]
+          },
+          {
+            "label": "[Land] (Special)",
+            "description": "Nothing happens",
+            "conditions": [
+              "Only appears if player has NO eligible cards of any type (e.g., very small deck with only bottled cards)"
+            ],
+            "effects": [
+              "No card is lost, player continues safely"
+            ]
+          }
+        ],
+        "notes": [
+          "Each option shows the specific card that will be lost",
+          "Bottled cards (Bottled Flame/Lightning/Tornado targets) are protected from removal",
+          "Player chooses which card type to sacrifice"
+        ]
+      },
+      "existing_data": {
+        "name": "Falling",
+        "options": [
+          {
+            "label": "[Land] Lose a Skill card",
+            "conditions": [
+              {
+                "type": "HasCardType",
+                "card_type": "Skill"
+              }
+            ],
+            "actions": [
+              {
+                "type": "LoseRandomCard",
+                "card_type": "Skill"
+              }
+            ]
+          },
+          {
+            "label": "[Channel] Lose a Power card",
+            "conditions": [
+              {
+                "type": "HasCardType",
+                "card_type": "Power"
+              }
+            ],
+            "actions": [
+              {
+                "type": "LoseRandomCard",
+                "card_type": "Power"
+              }
+            ]
+          },
+          {
+            "label": "[Strike] Lose an Attack card",
+            "conditions": [
+              {
+                "type": "HasCardType",
+                "card_type": "Attack"
+              }
+            ],
+            "actions": [
+              {
+                "type": "LoseRandomCard",
+                "card_type": "Attack"
+              }
+            ]
+          }
+        ]
+      },
+      "corrections": []
+    },
+    {
+      "wiki_id": "Mind_Bloom",
+      "wiki_name": "Mind Bloom",
+      "logic_key": "MindBloom",
+      "status": "pending",
+      "issues": [
+        "OPTION_COUNT_MISMATCH: Wiki有5个选项, Logic有4个",
+        "MISSING_OPTIONS: Logic缺少选项 {'[i am rich]', '[i am awake]', '[i am war]', '[i am healthy]'}",
+        "EXTRA_OPTIONS: Logic多余选项 {'[i am war] fight act 1 boss. receive rare relic', '[i am awake] upgrade all cards. cannot heal anymore', '[i am healthy] heal to full hp. cursed - doubt', '[i am rich] gain 999 gold. cursed - 2 normality'}"
+      ],
+      "wiki_data": {
+        "options": [
+          {
+            "label": "[I am War]",
+            "description": "Fight a Boss from Act 1. Obtain a Rare Relic.",
+            "conditions": [],
+            "effects": [
+              "The boss is selected at random. It can be the same boss that the player actually fought in Act 1, or one of the two that they did not encounter.",
+              "In addition to the Boss dropping a Rare Relic, it also drops normal combat rewards and 50 (25) 15 Gold."
+            ]
+          },
+          {
+            "label": "[I am Awake]",
+            "description": "Upgrade all cards. You can no longer heal.",
+            "conditions": [],
+            "effects": [
+              "Obtain  Mark of the Bloom."
+            ]
+          },
+          {
+            "label": "[I am Rich]",
+            "description": "Gain 999 Gold. Cursed - 2  Normality.",
+            "conditions": [
+              "This option only appears on floors 35 to 40."
+            ],
+            "effects": []
+          },
+          {
+            "label": "[I am Healthy]",
+            "description": "Heal to full HP. Cursed -  Doubt.",
+            "conditions": [],
+            "effects": [
+              "This option replaces"
+            ]
+          },
+          {
+            "label": "[I am Rich]",
+            "description": "on floor 41 and above.",
+            "conditions": [],
+            "effects": []
+          }
+        ],
+        "notes": [
+          "Because the healing prevention of [I am Awake] is implemented as the  Mark of the Bloom relic, it can disqualify the player from the Who Needs Relics? achievement.",
+          "The boss fight from [I am War] will trigger  Pantograph and  Slaver's Collar as if it were a normal end-of-Act boss fight.",
+          "Omamori can prevent one or both  Normality curses from [I am Rich] if it has one or both uses remaining. This allows the player to receive 999 Gold with practically no downside, especially considering that  Mind Bloom is often one of the last opportunities to encounter Curses in a run."
+        ]
+      },
+      "existing_data": {
+        "name": "Mind Bloom",
+        "options": [
+          {
+            "label": "[I am War] Fight Act 1 Boss. Receive Rare Relic",
+            "conditions": [],
+            "actions": [
+              {
+                "type": "Combat",
+                "enemy": "Act1Boss"
+              },
+              {
+                "type": "GetRelic",
+                "tier": "Rare"
+              }
+            ]
+          },
+          {
+            "label": "[I am Rich] Gain 999 Gold. Cursed - 2 Normality",
+            "conditions": [],
+            "actions": [
+              {
+                "type": "Gold",
+                "amount": 999
+              },
+              {
+                "type": "AddCard",
+                "card_id": "Normality",
+                "count": 2
+              }
+            ]
+          },
+          {
+            "label": "[I am Healthy] Heal to full HP. Cursed - Doubt",
+            "conditions": [],
+            "actions": [
+              {
+                "type": "HealFull"
+              },
+              {
+                "type": "AddCard",
+                "card_id": "Doubt"
+              }
+            ]
+          },
+          {
+            "label": "[I am Awake] Upgrade all Cards. Cannot heal anymore",
+            "conditions": [],
+            "actions": [
+              {
+                "type": "UpgradeAllCards"
+              },
+              {
+                "type": "ApplyDebuff",
+                "debuff": "MarkOfTheBloom"
+              }
+            ]
+          }
+        ]
+      },
+      "corrections": []
+    },
+    {
+      "wiki_id": "Mysterious_Sphere",
+      "wiki_name": "Mysterious Sphere",
+      "logic_key": "Mysterious Sphere",
+      "status": "pending",
+      "issues": [
+        "MISSING_OPTIONS: Logic缺少选项 {'[open sphere]'}",
+        "EXTRA_OPTIONS: Logic多余选项 {'[open sphere] fight. reward: rare relic'}"
+      ],
+      "wiki_data": {
+        "options": [
+          {
+            "label": "[Open Sphere]",
+            "description": "Fight. Reward:  Rare Relic.",
+            "conditions": [],
+            "effects": [
+              "The player enters combat with the 2  Orb Walkers. In addition to the the Rare Relic, the combat rewards also yield 45-55 Gold, a normal card reward, and potentially a Potion just like a normal combat."
+            ]
+          },
+          {
+            "label": "[Leave]",
+            "description": "Nothing happens.",
+            "conditions": [],
+            "effects": []
+          }
+        ],
+        "notes": [
+          "Although the fight can be quite dangerous and offers a Relic reward, it does not count as an Elite combat for the sake of  Preserved Insect,  Sling of Courage,  Black Star, and  Slaver's Collar."
+        ]
+      },
+      "existing_data": {
+        "name": "Mysterious Sphere",
+        "options": [
+          {
+            "label": "[Open Sphere] Fight. Reward: Rare Relic",
+            "conditions": [],
+            "actions": [
+              {
+                "type": "Combat",
+                "enemy": "2 Orb Walkers"
+              },
+              {
+                "type": "GetRelic",
+                "tier": "Rare"
+              }
+            ]
+          },
+          {
+            "label": "[Leave]",
+            "conditions": [],
+            "actions": [
+              {
+                "type": "Leave"
+              }
+            ]
+          }
+        ]
+      },
+      "corrections": []
+    },
+    {
+      "wiki_id": "Secret_Portal",
+      "wiki_name": "Secret Portal",
+      "logic_key": "SecretPortal",
+      "status": "pending",
+      "issues": [
+        "MISSING_OPTIONS: Logic缺少选项 {'[enter the portal]'}",
+        "EXTRA_OPTIONS: Logic多余选项 {'[enter the portal] immediately travel to the boss'}"
+      ],
+      "wiki_data": {
+        "options": [
+          {
+            "label": "[Enter the Portal]",
+            "description": "IMMEDIATELY travel to the boss.",
+            "conditions": [],
+            "effects": [
+              "The player is put directly into combat with the Act 3 boss at the end of the act."
+            ]
+          },
+          {
+            "label": "[Leave]",
+            "description": "Nothing happens.",
+            "conditions": [],
+            "effects": []
+          }
+        ],
+        "notes": [
+          "Apart from the unusual method of entering the boss floor and skipping the rest of Act 3, entering the portal is otherwise a completely normal boss fight.",
+          "Pantograph and  Slaver's Collar trigger as expected.",
+          "There will still be the double boss afterwards on A20 20.",
+          "Defeating the boss (or both bosses) 20 will still allow the player to enter Act 4 if they have all required Keys. Although, the player should be careful to collect the Ruby Key from a Rest Site prior to the event since they will skip the guaranteed Rest Site before the boss (which is often relied on as the last opportunity to collect the Ruby Key).",
+          "Pantograph and  Slaver's Collar trigger as expected.",
+          "There will still be the double boss afterwards on A20 20.",
+          "Defeating the boss (or both bosses) 20 will still allow the player to enter Act 4 if they have all required Keys. Although, the player should be careful to collect the Ruby Key from a Rest Site prior to the event since they will skip the guaranteed Rest Site before the boss (which is often relied on as the last opportunity to collect the Ruby Key).",
+          "The player's current floor is only increased by 1, which causes them to fight the Act 3 Boss earlier than the usual floor 50."
+        ]
+      },
+      "existing_data": {
+        "name": "Secret Portal",
+        "options": [
+          {
+            "label": "[Enter the Portal] IMMEDIATELY travel to the boss",
+            "conditions": [],
+            "actions": [
+              {
+                "type": "TeleportToBoss"
+              }
+            ]
+          },
+          {
+            "label": "[Leave]",
+            "conditions": [],
+            "actions": [
+              {
+                "type": "Leave"
+              }
+            ]
+          }
+        ]
+      },
+      "corrections": []
+    },
+    {
+      "wiki_id": "Sensory_Stone",
+      "wiki_name": "Sensory Stone",
+      "logic_key": "SensoryStone",
+      "status": "pending",
+      "issues": [
+        "OPTION_COUNT_MISMATCH: Wiki有3个选项, Logic有4个",
+        "MISSING_OPTIONS: Logic缺少选项 {'[recall]'}",
+        "EXTRA_OPTIONS: Logic多余选项 {'[recall] add 2 colorless cards. lose 5 hp', '[leave]', '[recall] add 1 colorless card to your deck', '[recall] add 3 colorless cards. lose 10 hp'}"
+      ],
+      "wiki_data": {
+        "options": [
+          {
+            "label": "[Recall]",
+            "description": "Add 1 Colorless card to your deck.",
+            "conditions": [
+              "The player is presented with 1 card reward that can only offer Uncommon Colorless cards and Rare Colorless cards."
+            ],
+            "effects": []
+          },
+          {
+            "label": "[Recall]",
+            "description": "Add 2 Colorless cards to your deck. Lose 5 HP.",
+            "conditions": [
+              "The player is presented with 2 card rewards that can only offer Uncommon Colorless cards and Rare Colorless cards."
+            ],
+            "effects": []
+          },
+          {
+            "label": "[Recall]",
+            "description": "Add 3 Colorless cards to your deck. Lose 5 HP.",
+            "conditions": [
+              "The player is presented with 3 card rewards that can only offer Uncommon Colorless cards and Rare Colorless cards."
+            ],
+            "effects": []
+          }
+        ],
+        "notes": [
+          "Since the Colorless cards are actually card rewards, they are affected by Relics which modify card rewards in some way.",
+          "Question Card makes each card reward present the player with 1 additional card.",
+          "Singing Bowl can allow the player to skip each card reward in order to gain +2 Max HP.",
+          "Busted Crown makes each card reward present the player with 2 fewer cards.",
+          "N'loth's Gift increases the likelihood of each card being a Rare Colorless card.",
+          "Question Card makes each card reward present the player with 1 additional card.",
+          "Singing Bowl can allow the player to skip each card reward in order to gain +2 Max HP.",
+          "Busted Crown makes each card reward present the player with 2 fewer cards.",
+          "N'loth's Gift increases the likelihood of each card being a Rare Colorless card."
+        ]
+      },
+      "existing_data": {
+        "name": "Sensory Stone",
+        "options": [
+          {
+            "label": "[Recall] Add 1 Colorless card to your deck",
+            "conditions": [],
+            "actions": [
+              {
+                "type": "GetCard",
+                "color": "Colorless",
+                "count": 1
+              }
+            ]
+          },
+          {
+            "label": "[Recall] Add 2 Colorless cards. Lose 5 HP",
+            "conditions": [],
+            "actions": [
+              {
+                "type": "GetCard",
+                "color": "Colorless",
+                "count": 2
+              },
+              {
+                "type": "LoseHP",
+                "amount": 5,
+                "is_percentage": false
+              }
+            ]
+          },
+          {
+            "label": "[Recall] Add 3 Colorless cards. Lose 10 HP",
+            "conditions": [],
+            "actions": [
+              {
+                "type": "GetCard",
+                "color": "Colorless",
+                "count": 3
+              },
+              {
+                "type": "LoseHP",
+                "amount": 10,
+                "is_percentage": false
+              }
+            ]
+          },
+          {
+            "label": "[Leave]",
+            "conditions": [],
+            "actions": [
+              {
+                "type": "Leave"
+              }
+            ]
+          }
+        ]
+      },
+      "corrections": []
+    }
+  ],
+  "instructions": "\n校对说明:\n1. 查看每个事件的 issues 列表\n2. 对比 wiki_data 和 existing_data 的差异\n3. 在 corrections 中填写需要的修正\n4. 完成后将 status 改为 \"reviewed\"\n\ncorrections 格式示例:\n- {\"action\": \"add_option\", \"label\": \"[新选项]\", \"data\": {...}}\n- {\"action\": \"fix_label\", \"old\": \"[错误]\", \"new\": \"[正确]\"}\n- {\"action\": \"add_event\", \"data\": {...}}\n"
+}

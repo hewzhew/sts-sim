@@ -1,0 +1,18 @@
+Battle_Hymn               -> NOT FOUND IN SPEC
+Biased_Cognition          -> power_id="Bias", card_args="p, 1", base=4, upgrade_delta=1
+Creative_AI               -> power_id="Creative AI", card_args="p, this.magicNumber", base=1, upgrade_delta=2
+Deva_Form                 -> NOT FOUND IN SPEC
+Devotion                  -> NOT FOUND IN SPEC
+Fasting                   -> NOT FOUND IN SPEC
+Foresight                 -> NOT FOUND IN SPEC
+Hello_World               -> power_id="Hello", card_args="p, 1", base=None, upgrade_delta=None
+Infinite_Blades           -> power_id="Infinite Blades", card_args="p, 1", base=None, upgrade_delta=None
+Loop                      -> power_id="Loop", card_args="p, this.magicNumber", base=1, upgrade_delta=1
+Machine_Learning          -> NOT FOUND IN SPEC
+Magnetism                 -> power_id="Magnetism", card_args="p, this.magicNumber", base=1, upgrade_delta=1
+Mayhem                    -> power_id="Mayhem", card_args="p, this.magicNumber", base=1, upgrade_delta=1
+Noxious_Fumes             -> power_id="Noxious Fumes", card_args="p, this.magicNumber", base=2, upgrade_delta=1
+Study                     -> power_id="Study", card_args="p, this.magicNumber", base=1, upgrade_delta=1
+Tools_of_the_Trade        -> NOT FOUND IN SPEC
+Well-Laid_Plans           -> NOT FOUND IN SPEC
+Wraith_Form               -> power_id="Wraith Form v2", card_args="p, -1", base=2, upgrade_delta=1

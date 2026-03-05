@@ -1,0 +1,500 @@
+[
+  {
+    "id": "Bludgeon",
+    "name": "Bludgeon",
+    "type": "Attack",
+    "cost": 3,
+    "color": "Red",
+    "rarity": "Rare",
+    "logic": {
+      "target_type": "Enemy",
+      "commands": [
+        {
+          "type": "DealDamage",
+          "params": {
+            "base": 32,
+            "upgrade": 42
+          }
+        }
+      ]
+    },
+    "original_text": "Deal [32|42] damage."
+  },
+  {
+    "id": "Feed",
+    "name": "Feed",
+    "type": "Attack",
+    "cost": 1,
+    "color": "Red",
+    "rarity": "Rare",
+    "logic": {
+      "target_type": "Enemy",
+      "commands": [
+        {
+          "type": "DealDamage",
+          "params": {
+            "base": 10,
+            "upgrade": 12
+          }
+        },
+        {
+          "type": "ExhaustSelf",
+          "params": {}
+        },
+        {
+          "type": "Conditional",
+          "params": {
+            "condition": {
+              "type": "EnemyKilledByLastAttack"
+            },
+            "then_do": [
+              {
+                "type": "GainMaxHP",
+                "params": {
+                  "amount": 3,
+                  "upgrade": 4
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "conditions": [
+        "OnFatal: If #Fatal"
+      ],
+      "keywords_used": [
+        "Fatal",
+        "Exhaust"
+      ]
+    },
+    "original_text": "Deal [10|12] damage.<br>If #Fatal, raise your Max HP by [3|4]. #Exhaust.",
+    "manual_review_needed": false
+  },
+  {
+    "id": "Fiend_Fire",
+    "name": "Fiend Fire",
+    "type": "Attack",
+    "cost": 2,
+    "color": "Red",
+    "rarity": "Rare",
+    "logic": {
+      "target_type": "Enemy",
+      "commands": [
+        {
+          "type": "DealDamage",
+          "params": {
+            "base": 7,
+            "upgrade": 10
+          }
+        },
+        {
+          "type": "ExhaustSelf",
+          "params": {}
+        },
+        {
+          "type": "ExhaustCard",
+          "params": {
+            "pile": "hand",
+            "select": {
+              "mode": "All"
+            }
+          }
+        }
+      ],
+      "keywords_used": [
+        "Exhaust"
+      ]
+    },
+    "original_text": "#Exhaust your hand.<br>Deal [7|10] damage for each card #Exhausted.<br>#Exhaust.",
+    "manual_review_needed": false
+  },
+  {
+    "id": "Immolate",
+    "name": "Immolate",
+    "type": "Attack",
+    "cost": 2,
+    "color": "Red",
+    "rarity": "Rare",
+    "logic": {
+      "target_type": "AllEnemies",
+      "commands": [
+        {
+          "type": "DealDamageAll",
+          "params": {
+            "base": 21,
+            "upgrade": 28
+          }
+        },
+        {
+          "type": "AddCard",
+          "params": {
+            "card": "Burn",
+            "destination": "discard pile"
+          }
+        }
+      ]
+    },
+    "original_text": "Deal [21|28] damage to ALL enemies.<br>Add a {{C|Burn}} into your discard pile."
+  },
+  {
+    "id": "Reaper",
+    "name": "Reaper",
+    "type": "Attack",
+    "cost": 2,
+    "color": "Red",
+    "rarity": "Rare",
+    "logic": {
+      "target_type": "AllEnemies",
+      "commands": [
+        {
+          "type": "DealDamageAll",
+          "params": {
+            "base": 4,
+            "upgrade": 5
+          }
+        },
+        {
+          "type": "ExhaustSelf",
+          "params": {}
+        },
+        {
+          "type": "Heal",
+          "params": {
+            "amount": {
+              "type": "LastUnblockedDamage"
+            }
+          }
+        }
+      ],
+      "keywords_used": [
+        "Exhaust"
+      ]
+    },
+    "original_text": "Deal [4|5] damage to ALL enemies. Heal HP equal to unblocked damage.<br>#Exhaust.",
+    "manual_review_needed": false
+  },
+  {
+    "id": "Double_Tap",
+    "name": "Double Tap",
+    "type": "Skill",
+    "cost": 1,
+    "color": "Red",
+    "rarity": "Rare",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "ApplyBuff",
+          "params": {
+            "buff": "Double Tap",
+            "amount": {
+              "type": "Fixed",
+              "params": {
+                "base": 1
+              }
+            },
+            "upgrade_amount": 2,
+            "target": "self"
+          }
+        }
+      ]
+    },
+    "original_text": "This turn, your next [Attack is|2 Attacks are] played twice.",
+    "manual_review_needed": false
+  },
+  {
+    "id": "Exhume",
+    "name": "Exhume",
+    "type": "Skill",
+    "cost": 1,
+    "color": "Red",
+    "rarity": "Rare",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "ExhaustSelf",
+          "params": {}
+        },
+        {
+          "type": "MoveCard",
+          "params": {
+            "from": "exhaust_pile",
+            "to": "hand",
+            "insert_at": "top",
+            "select": {
+              "mode": "Choose",
+              "count": 1
+            }
+          }
+        }
+      ],
+      "keywords_used": [
+        "Exhaust"
+      ]
+    },
+    "original_text": "Put a card from your #Exhaust pile into your hand.<br>#Exhaust.",
+    "cost_upgrade": 0,
+    "manual_review_needed": false
+  },
+  {
+    "id": "Impervious",
+    "name": "Impervious",
+    "type": "Skill",
+    "cost": 2,
+    "color": "Red",
+    "rarity": "Rare",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "GainBlock",
+          "params": {
+            "base": 30,
+            "upgrade": 40
+          }
+        },
+        {
+          "type": "ExhaustSelf",
+          "params": {}
+        }
+      ],
+      "keywords_used": [
+        "Block",
+        "Exhaust"
+      ]
+    },
+    "original_text": "Gain [30|40] #Block.<br>#Exhaust."
+  },
+  {
+    "id": "Limit_Break",
+    "name": "Limit Break",
+    "type": "Skill",
+    "cost": 1,
+    "color": "Red",
+    "rarity": "Rare",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "DoubleBuff",
+          "params": {
+            "buff": "Strength"
+          }
+        },
+        {
+          "type": "ExhaustSelf",
+          "params": {
+            "base_only": true
+          }
+        }
+      ],
+      "keywords_used": [
+        "Strength"
+      ]
+    },
+    "original_text": "Double your #Strength.[<br>#Exhaust.|]"
+  },
+  {
+    "id": "Offering",
+    "name": "Offering",
+    "type": "Skill",
+    "cost": 0,
+    "color": "Red",
+    "rarity": "Rare",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "LoseHP",
+          "params": {
+            "base": 6,
+            "upgrade": 6
+          }
+        },
+        {
+          "type": "GainEnergy",
+          "params": {
+            "base": 2,
+            "upgrade": 2
+          }
+        },
+        {
+          "type": "DrawCards",
+          "params": {
+            "base": 3,
+            "upgrade": 5
+          }
+        },
+        {
+          "type": "ExhaustSelf",
+          "params": {}
+        }
+      ],
+      "keywords_used": [
+        "Exhaust"
+      ]
+    },
+    "original_text": "Lose 6 HP.<br>Gain @RE @RE.<br>Draw [3|5] cards.<br>#Exhaust."
+  },
+  {
+    "id": "Barricade",
+    "name": "Barricade",
+    "type": "Power",
+    "cost": 3,
+    "color": "Red",
+    "rarity": "Rare",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "ApplyPower",
+          "params": {
+            "power": "Barricade",
+            "amount": 1
+          }
+        }
+      ]
+    },
+    "original_text": "#Block is not removed at the start of your turn.",
+    "cost_upgrade": 2,
+    "manual_review_needed": false
+  },
+  {
+    "id": "Berserk",
+    "name": "Berserk",
+    "type": "Power",
+    "cost": 0,
+    "color": "Red",
+    "rarity": "Rare",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "ApplyPower",
+          "params": {
+            "power": "Berserk",
+            "base": 1,
+            "upgrade": 1
+          }
+        },
+        {
+          "type": "GainBuff",
+          "params": {
+            "buff": "Vulnerable",
+            "base": 2,
+            "upgrade": 1
+          }
+        }
+      ],
+      "keywords_used": [
+        "Vulnerable"
+      ]
+    },
+    "original_text": "Gain [2|1] #Vulnerable.<br>At the start of your turn, gain @RE."
+  },
+  {
+    "id": "Brutality",
+    "name": "Brutality",
+    "type": "Power",
+    "cost": 0,
+    "color": "Red",
+    "rarity": "Rare",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "ApplyPower",
+          "params": {
+            "power": "Brutality",
+            "base": 1,
+            "upgrade": 1
+          }
+        },
+        {
+          "type": "Innate",
+          "params": {
+            "upgrade_only": true
+          }
+        }
+      ]
+    },
+    "original_text": "[|#Innate.<br>]At the start of your turn, lose 1 HP and draw 1 card."
+  },
+  {
+    "id": "Corruption",
+    "name": "Corruption",
+    "type": "Power",
+    "cost": 3,
+    "color": "Red",
+    "rarity": "Rare",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "ApplyPower",
+          "params": {
+            "power": "Corruption",
+            "amount": 1
+          }
+        }
+      ],
+      "conditions": [
+        "Trigger: Whenever you play a Skill, #Exhaust it"
+      ]
+    },
+    "original_text": "Skills cost 0.<br>Whenever you play a Skill, #Exhaust it.",
+    "cost_upgrade": 2,
+    "manual_review_needed": false,
+    "flags": {
+      "skill_exhaust_trigger": true
+    }
+  },
+  {
+    "id": "Demon_Form",
+    "name": "Demon Form",
+    "type": "Power",
+    "cost": 3,
+    "color": "Red",
+    "rarity": "Rare",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "ApplyPower",
+          "params": {
+            "power": "Demon Form",
+            "base": 2,
+            "upgrade": 3
+          }
+        }
+      ]
+    },
+    "original_text": "At the start of your turn, gain [2|3] #Strength."
+  },
+  {
+    "id": "Juggernaut",
+    "name": "Juggernaut",
+    "type": "Power",
+    "cost": 2,
+    "color": "Red",
+    "rarity": "Rare",
+    "logic": {
+      "target_type": "Enemy",
+      "commands": [
+        {
+          "type": "ApplyPower",
+          "params": {
+            "power": "Juggernaut",
+            "base": 5,
+            "upgrade": 7
+          }
+        }
+      ],
+      "keywords_used": [
+        "Block"
+      ]
+    },
+    "original_text": "Whenever you gain #Block, deal [5|7] damage to a random enemy."
+  }
+]

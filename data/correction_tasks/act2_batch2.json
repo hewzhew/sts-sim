@@ -1,0 +1,418 @@
+{
+  "category": "act2",
+  "batch": 2,
+  "events": [
+    {
+      "wiki_id": "Forgotten_Altar",
+      "wiki_name": "Forgotten Altar",
+      "logic_key": "Forgotten Altar",
+      "status": "pending",
+      "issues": [
+        "OPTION_COUNT_MISMATCH: Wiki有4个选项, Logic有3个",
+        "MISSING_OPTIONS: Logic缺少选项 {'[offer: golden idol]', '[locked]', '[sacrifice]', '[desecrate]'}",
+        "EXTRA_OPTIONS: Logic多余选项 {'[sacrifice] gain max hp, lose hp', '[desecrate] become cursed - decay', '[offer: golden idol] receive bloody idol'}"
+      ],
+      "wiki_data": {
+        "options": [
+          {
+            "label": "[Offer: Golden Idol]",
+            "description": "Obtain a special  Relic. Lose  Golden Idol.",
+            "conditions": [
+              "If the player does not have  Golden Idol, this option is replaced with"
+            ],
+            "effects": []
+          },
+          {
+            "label": "[Locked]",
+            "description": "Requires: Golden Idol.",
+            "conditions": [],
+            "effects": []
+          },
+          {
+            "label": "[Sacrifice]",
+            "description": "Gain 5 Max HP. Lose X HP.",
+            "conditions": [],
+            "effects": [
+              "X is equal to 25% (35%) 15 of the player's Max HP."
+            ]
+          },
+          {
+            "label": "[Desecrate]",
+            "description": "Become Cursed - Decay.",
+            "conditions": [],
+            "effects": []
+          }
+        ],
+        "notes": [
+          "Golden Idol is only obtained from the  Golden Idol Event.",
+          "If the  Golden Idol is turned into the  Bloody Idol,  The Moai Head Event in Act 3 will no longer accept it as an offering."
+        ]
+      },
+      "existing_data": {
+        "name": "Forgotten Altar",
+        "options": [
+          {
+            "label": "[Offer: Golden Idol] Receive Bloody Idol",
+            "conditions": [
+              {
+                "type": "HasRelic",
+                "relic_id": "Golden Idol"
+              }
+            ],
+            "actions": [
+              {
+                "type": "LoseRelic",
+                "relic_id": "Golden Idol"
+              },
+              {
+                "type": "GetRelic",
+                "relic_id": "Bloody Idol"
+              }
+            ]
+          },
+          {
+            "label": "[Sacrifice] Gain Max HP, Lose HP",
+            "conditions": [],
+            "actions": [
+              {
+                "type": "MaxHP",
+                "amount": 5
+              },
+              {
+                "type": "LoseHP",
+                "amount": 0.25,
+                "is_percentage": true
+              }
+            ]
+          },
+          {
+            "label": "[Desecrate] Become Cursed - Decay",
+            "conditions": [],
+            "actions": [
+              {
+                "type": "AddCard",
+                "card_id": "Decay"
+              }
+            ]
+          }
+        ]
+      },
+      "corrections": []
+    },
+    {
+      "wiki_id": "Knowing_Skull",
+      "wiki_name": "Knowing Skull",
+      "logic_key": "Knowing Skull",
+      "status": "pending",
+      "issues": [
+        "OPTION_COUNT_MISMATCH: Wiki有4个选项, Logic有5个",
+        "MISSING_OPTIONS: Logic缺少选项 {'[riches?]', '[success?]', '[a pick me up?]', '[how do i leave?]'}",
+        "EXTRA_OPTIONS: Logic多余选项 {'[a pick me up?] get a potion', '[how do i leave?] exit', '[riches?] gain 90 gold', '[information?] reveal the boss', '[success?] get a colorless card'}"
+      ],
+      "wiki_data": {
+        "options": [
+          {
+            "label": "[A Pick Me Up?]",
+            "description": "Get a Potion. Lose X HP.",
+            "conditions": [
+              "The player is able to select this option even if all their potion slots are full or if they possess  Sozu. They still lose HP and this option's HP loss is still increased by 1 even though no potion is obtained."
+            ],
+            "effects": [
+              "A random Potion is immediately added to the player's left-most empty potion slot."
+            ]
+          },
+          {
+            "label": "[Riches?]",
+            "description": "Gain 90 Gold. Lose X HP.",
+            "conditions": [],
+            "effects": []
+          },
+          {
+            "label": "[Success?]",
+            "description": "Get a Colorless card. Lose X HP.",
+            "conditions": [],
+            "effects": [
+              "A random Uncommon Colorless card is added to the player's deck."
+            ]
+          },
+          {
+            "label": "[How do I leave?]",
+            "description": "Lose X HP.",
+            "conditions": [],
+            "effects": [
+              "This event repeats until this option is chosen."
+            ]
+          }
+        ],
+        "notes": [
+          "Bloody Idol can greatly increase the number of times the player can choose [Riches?] since they will heal 5 HP every time it gives them Gold.",
+          "Tungsten Rod will reduce the HP lost by 1 every time an option is selected."
+        ]
+      },
+      "existing_data": {
+        "name": "Knowing Skull",
+        "options": [
+          {
+            "label": "[Information?] Reveal the Boss",
+            "conditions": [],
+            "actions": [
+              {
+                "type": "RevealBoss"
+              },
+              {
+                "type": "LoseHP",
+                "amount": 6,
+                "is_percentage": false
+              }
+            ]
+          },
+          {
+            "label": "[Success?] Get a Colorless Card",
+            "conditions": [],
+            "actions": [
+              {
+                "type": "GetCard",
+                "color": "Colorless"
+              },
+              {
+                "type": "LoseHP",
+                "amount": 6,
+                "is_percentage": false
+              }
+            ]
+          },
+          {
+            "label": "[A Pick Me Up?] Get a Potion",
+            "conditions": [],
+            "actions": [
+              {
+                "type": "GetPotion"
+              },
+              {
+                "type": "LoseHP",
+                "amount": 6,
+                "is_percentage": false
+              }
+            ]
+          },
+          {
+            "label": "[Riches?] Gain 90 Gold",
+            "conditions": [],
+            "actions": [
+              {
+                "type": "Gold",
+                "amount": 90
+              },
+              {
+                "type": "LoseHP",
+                "amount": 6,
+                "is_percentage": false
+              }
+            ]
+          },
+          {
+            "label": "[How do I leave?] Exit",
+            "conditions": [],
+            "actions": [
+              {
+                "type": "LoseHP",
+                "amount": 6,
+                "is_percentage": false
+              },
+              {
+                "type": "Leave"
+              }
+            ]
+          }
+        ]
+      },
+      "corrections": []
+    },
+    {
+      "wiki_id": "Masked_Bandits",
+      "wiki_name": "Masked Bandits",
+      "logic_key": "Masked Bandits",
+      "status": "pending",
+      "issues": [
+        "MISSING_OPTIONS: Logic缺少选项 {'[pay]', '[fight!]'}",
+        "EXTRA_OPTIONS: Logic多余选项 {'[pay] lose all of your gold', '[fight!] combat encounter'}"
+      ],
+      "wiki_data": {
+        "options": [
+          {
+            "label": "[Pay]",
+            "description": "Lose ALL of your Gold.",
+            "conditions": [],
+            "effects": []
+          },
+          {
+            "label": "[Fight!]",
+            "description": "",
+            "conditions": [],
+            "effects": [
+              "Starts a combat against the three bandits ( Pointy,  Romeo, and  Bear). Upon winning, obtain regular card rewards, 25 - 35 Gold, and  Red Mask."
+            ]
+          }
+        ],
+        "notes": [
+          "Although the fight can be quite dangerous and offers a Relic reward, it does not count as an Elite combat for the sake of  Preserved Insect,  Sling of Courage,  Black Star, and  Slaver's Collar.",
+          "If the player has  Red Mask, the Act 3 Event  Tomb of Lord Red Mask will have an option to gain 222 Gold for free."
+        ]
+      },
+      "existing_data": {
+        "name": "Masked Bandits",
+        "options": [
+          {
+            "label": "[Pay] Lose ALL of your Gold",
+            "conditions": [],
+            "actions": [
+              {
+                "type": "LoseAllGold"
+              }
+            ]
+          },
+          {
+            "label": "[Fight!] Combat encounter",
+            "conditions": [],
+            "actions": [
+              {
+                "type": "Combat",
+                "enemy": "Masked Bandits"
+              }
+            ]
+          }
+        ]
+      },
+      "corrections": []
+    },
+    {
+      "wiki_id": "N'loth",
+      "wiki_name": "N'loth",
+      "logic_key": "N'loth",
+      "status": "pending",
+      "issues": [
+        "OPTION_COUNT_MISMATCH: Wiki有3个选项, Logic有2个",
+        "MISSING_OPTIONS: Logic缺少选项 {'[offer: relic a]', '[offer: relic b]'}",
+        "EXTRA_OPTIONS: Logic多余选项 {\"[offer relic] trade a relic for n'loth's gift\"}"
+      ],
+      "wiki_data": {
+        "options": [
+          {
+            "label": "[Offer: Relic A]",
+            "description": "Lose this relic. Obtain a special relic.",
+            "conditions": [],
+            "effects": []
+          },
+          {
+            "label": "[Offer: Relic B]",
+            "description": "Lose this relic. Obtain a special relic.",
+            "conditions": [],
+            "effects": [
+              "Rewards the player with  N'loth's Gift."
+            ]
+          },
+          {
+            "label": "[Leave]",
+            "description": "Nothing happens.",
+            "conditions": [],
+            "effects": []
+          }
+        ],
+        "notes": [
+          "N'loth can pick Relics that activate their effects only upon being picked up, as well as used-up Relics.",
+          "For example, offering Relics like  Mango or  Old Coin will not remove the max HP or Gold granted by them, effectively removing the downside of  N'loth's Gift.",
+          "For example, offering Relics like  Mango or  Old Coin will not remove the max HP or Gold granted by them, effectively removing the downside of  N'loth's Gift."
+        ]
+      },
+      "existing_data": {
+        "name": "N'loth",
+        "options": [
+          {
+            "label": "[Offer Relic] Trade a relic for N'loth's Gift",
+            "conditions": [
+              {
+                "type": "HasNonStarterRelic"
+              }
+            ],
+            "actions": [
+              {
+                "type": "NlothTrade"
+              }
+            ]
+          },
+          {
+            "label": "[Leave]",
+            "conditions": [],
+            "actions": [
+              {
+                "type": "Leave"
+              }
+            ]
+          }
+        ]
+      },
+      "corrections": []
+    },
+    {
+      "wiki_id": "Old_Beggar",
+      "wiki_name": "Old Beggar",
+      "logic_key": "Beggar",
+      "status": "pending",
+      "issues": [
+        "MISSING_OPTIONS: Logic缺少选项 {'[offer gold]'}",
+        "EXTRA_OPTIONS: Logic多余选项 {'[offer gold] remove a card from your deck'}"
+      ],
+      "wiki_data": {
+        "options": [
+          {
+            "label": "[Offer Gold]",
+            "description": "75 Gold: Remove a card from your deck.",
+            "conditions": [],
+            "effects": []
+          },
+          {
+            "label": "[Leave]",
+            "description": "Nothing happens.",
+            "conditions": [],
+            "effects": []
+          }
+        ],
+        "notes": []
+      },
+      "existing_data": {
+        "name": "Old Beggar",
+        "options": [
+          {
+            "label": "[Offer Gold] Remove a card from your deck",
+            "conditions": [
+              {
+                "type": "Gold",
+                "amount": 75
+              }
+            ],
+            "actions": [
+              {
+                "type": "Gold",
+                "amount": -75
+              },
+              {
+                "type": "CardRemove"
+              }
+            ]
+          },
+          {
+            "label": "[Leave]",
+            "conditions": [],
+            "actions": [
+              {
+                "type": "Leave"
+              }
+            ]
+          }
+        ]
+      },
+      "corrections": []
+    }
+  ],
+  "instructions": "\n校对说明:\n1. 查看每个事件的 issues 列表\n2. 对比 wiki_data 和 existing_data 的差异\n3. 在 corrections 中填写需要的修正\n4. 完成后将 status 改为 \"reviewed\"\n\ncorrections 格式示例:\n- {\"action\": \"add_option\", \"label\": \"[新选项]\", \"data\": {...}}\n- {\"action\": \"fix_label\", \"old\": \"[错误]\", \"new\": \"[正确]\"}\n- {\"action\": \"add_event\", \"data\": {...}}\n"
+}

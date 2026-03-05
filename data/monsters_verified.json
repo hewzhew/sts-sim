@@ -1,0 +1,4389 @@
+{
+  "_meta": {
+    "schema": "v5",
+    "rules": [
+      "R1: All values uniform type: damage/amount is int or {min,max}, never array",
+      "R2: Move keys are Java byte IDs as strings. name field is human-readable only",
+      "R3: HP is always {min, max} object",
+      "R4: Effect uses id (not power), amount is Optional (omit if N/A), target is self|player",
+      "R5: Cards use id/amount/destination - symmetric with effects",
+      "R6: No metadata inside moves/effects/cards. Root _notes only (underscore = skip on deserialize)",
+      "R7: Ascension overrides are cumulative: asc4 inherits base, asc9 inherits asc4, etc",
+      "R8: Rust types: DynamicValue = Fixed(i32) | Range{min,max}; amount = Option<DynamicValue>",
+      "R9: Each entry has id field = Rust MonsterId enum variant name (= top-level key)"
+    ]
+  },
+  "AcidSlime_L": {
+    "id": "AcidSlime_L",
+    "name": "Acid Slime (L)",
+    "java_id": "AcidSlime_L",
+    "type": "normal",
+    "act": 1,
+    "hp": {
+      "min": 65,
+      "max": 69
+    },
+    "moves": {
+      "1": {
+        "name": "Corrosive Spit",
+        "damage": 11,
+        "cards": [
+          {
+            "id": "Slimed",
+            "amount": 2,
+            "destination": "discard"
+          }
+        ]
+      },
+      "2": {
+        "name": "Tackle",
+        "damage": 16
+      },
+      "3": {
+        "name": "Split"
+      },
+      "4": {
+        "name": "Lick",
+        "effects": [
+          {
+            "id": "Weak",
+            "target": "player",
+            "amount": 2
+          }
+        ]
+      }
+    },
+    "pre_battle": [
+      {
+        "id": "Split",
+        "target": "self"
+      }
+    ],
+    "ascension": {
+      "2": {
+        "moves": {
+          "1": {
+            "damage": 12
+          },
+          "2": {
+            "damage": 18
+          }
+        }
+      },
+      "7": {
+        "hp": {
+          "min": 68,
+          "max": 72
+        }
+      }
+    }
+  },
+  "AcidSlime_M": {
+    "id": "AcidSlime_M",
+    "name": "Acid Slime (M)",
+    "java_id": "AcidSlime_M",
+    "type": "normal",
+    "act": 1,
+    "hp": {
+      "min": 28,
+      "max": 32
+    },
+    "moves": {
+      "1": {
+        "name": "Corrosive Spit",
+        "damage": 7,
+        "cards": [
+          {
+            "id": "Slimed",
+            "amount": 1,
+            "destination": "discard"
+          }
+        ]
+      },
+      "2": {
+        "name": "Tackle",
+        "damage": 10
+      },
+      "4": {
+        "name": "Lick",
+        "effects": [
+          {
+            "id": "Weak",
+            "target": "player",
+            "amount": 1
+          }
+        ]
+      }
+    },
+    "ascension": {
+      "2": {
+        "moves": {
+          "1": {
+            "damage": 8
+          },
+          "2": {
+            "damage": 12
+          }
+        }
+      },
+      "7": {
+        "hp": {
+          "min": 29,
+          "max": 34
+        }
+      }
+    }
+  },
+  "AcidSlime_S": {
+    "id": "AcidSlime_S",
+    "name": "Acid Slime (S)",
+    "java_id": "AcidSlime_S",
+    "type": "normal",
+    "act": 1,
+    "hp": {
+      "min": 8,
+      "max": 12
+    },
+    "moves": {
+      "1": {
+        "name": "Tackle",
+        "damage": 3
+      },
+      "2": {
+        "name": "Lick",
+        "effects": [
+          {
+            "id": "Weak",
+            "target": "player",
+            "amount": 1
+          }
+        ]
+      }
+    },
+    "ascension": {
+      "2": {
+        "moves": {
+          "1": {
+            "damage": 4
+          }
+        }
+      },
+      "7": {
+        "hp": {
+          "min": 9,
+          "max": 13
+        }
+      }
+    }
+  },
+  "Cultist": {
+    "id": "Cultist",
+    "name": "Cultist",
+    "java_id": "Cultist",
+    "type": "normal",
+    "act": 1,
+    "hp": {
+      "min": 48,
+      "max": 54
+    },
+    "moves": {
+      "1": {
+        "name": "Dark Strike",
+        "damage": 6
+      },
+      "3": {
+        "name": "Incantation",
+        "effects": [
+          {
+            "id": "Ritual",
+            "target": "self",
+            "amount": 3
+          }
+        ]
+      }
+    },
+    "ascension": {
+      "2": {
+        "moves": {
+          "3": {
+            "effects": [
+              {
+                "id": "Ritual",
+                "target": "self",
+                "amount": 4
+              }
+            ]
+          }
+        }
+      },
+      "7": {
+        "hp": {
+          "min": 50,
+          "max": 56
+        }
+      },
+      "17": {
+        "moves": {
+          "3": {
+            "effects": [
+              {
+                "id": "Ritual",
+                "target": "self",
+                "amount": 5
+              }
+            ]
+          }
+        }
+      }
+    }
+  },
+  "FatGremlin": {
+    "id": "FatGremlin",
+    "name": "Fat Gremlin",
+    "java_id": "GremlinFat",
+    "type": "normal",
+    "act": 1,
+    "hp": {
+      "min": 13,
+      "max": 17
+    },
+    "moves": {
+      "2": {
+        "name": "Smear",
+        "damage": 4,
+        "effects": [
+          {
+            "id": "Weak",
+            "target": "player",
+            "amount": 1
+          }
+        ]
+      }
+    },
+    "ascension": {
+      "2": {
+        "moves": {
+          "2": {
+            "damage": 5
+          }
+        }
+      },
+      "7": {
+        "hp": {
+          "min": 14,
+          "max": 18
+        }
+      },
+      "17": {
+        "moves": {
+          "2": {
+            "damage": 5,
+            "effects": [
+              {
+                "id": "Weak",
+                "target": "player",
+                "amount": 1
+              },
+              {
+                "id": "Frail",
+                "target": "player",
+                "amount": 1
+              }
+            ]
+          }
+        }
+      }
+    }
+  },
+  "FungiBeast": {
+    "id": "FungiBeast",
+    "name": "Fungi Beast",
+    "java_id": "FungiBeast",
+    "type": "normal",
+    "act": 1,
+    "hp": {
+      "min": 22,
+      "max": 28
+    },
+    "moves": {
+      "1": {
+        "name": "Bite",
+        "damage": 6
+      },
+      "2": {
+        "name": "Grow",
+        "effects": [
+          {
+            "id": "Strength",
+            "target": "self",
+            "amount": 3
+          }
+        ]
+      }
+    },
+    "pre_battle": [
+      {
+        "id": "SporeCloud",
+        "target": "self",
+        "amount": 2
+      }
+    ],
+    "ascension": {
+      "2": {
+        "moves": {
+          "2": {
+            "effects": [
+              {
+                "id": "Strength",
+                "target": "self",
+                "amount": 4
+              }
+            ]
+          }
+        }
+      },
+      "7": {
+        "hp": {
+          "min": 24,
+          "max": 28
+        }
+      },
+      "17": {
+        "moves": {
+          "2": {
+            "effects": [
+              {
+                "id": "Strength",
+                "target": "self",
+                "amount": 5
+              }
+            ]
+          }
+        }
+      }
+    },
+    "_notes": "Asc17 grow = strAmt+1 in takeTurn. Base strAmt=3, asc2 strAmt=4."
+  },
+  "GreenLouse": {
+    "id": "GreenLouse",
+    "name": "Green Louse",
+    "java_id": "FuzzyLouseDefensive",
+    "type": "normal",
+    "act": 1,
+    "hp": {
+      "min": 11,
+      "max": 17
+    },
+    "moves": {
+      "3": {
+        "name": "Bite",
+        "damage": {
+          "min": 5,
+          "max": 7
+        }
+      },
+      "4": {
+        "name": "Spit Web",
+        "effects": [
+          {
+            "id": "Weak",
+            "target": "player",
+            "amount": 2
+          }
+        ]
+      }
+    },
+    "pre_battle": [
+      {
+        "id": "CurlUp",
+        "target": "self",
+        "amount": {
+          "min": 3,
+          "max": 7
+        }
+      }
+    ],
+    "ascension": {
+      "2": {
+        "moves": {
+          "3": {
+            "damage": {
+              "min": 6,
+              "max": 8
+            }
+          }
+        }
+      },
+      "7": {
+        "hp": {
+          "min": 12,
+          "max": 18
+        },
+        "pre_battle": [
+          {
+            "id": "CurlUp",
+            "target": "self",
+            "amount": {
+              "min": 4,
+              "max": 8
+            }
+          }
+        ]
+      },
+      "17": {
+        "pre_battle": [
+          {
+            "id": "CurlUp",
+            "target": "self",
+            "amount": {
+              "min": 9,
+              "max": 12
+            }
+          }
+        ]
+      }
+    }
+  },
+  "JawWorm": {
+    "id": "JawWorm",
+    "name": "Jaw Worm",
+    "java_id": "JawWorm",
+    "type": "normal",
+    "act": 1,
+    "hp": {
+      "min": 40,
+      "max": 44
+    },
+    "moves": {
+      "1": {
+        "name": "Chomp",
+        "damage": 11
+      },
+      "3": {
+        "name": "Thrash",
+        "damage": 7,
+        "block": 5
+      },
+      "2": {
+        "name": "Bellow",
+        "block": 6,
+        "effects": [
+          {
+            "id": "Strength",
+            "target": "self",
+            "amount": 3
+          }
+        ]
+      }
+    },
+    "ascension": {
+      "2": {
+        "moves": {
+          "1": {
+            "damage": 12
+          },
+          "2": {
+            "effects": [
+              {
+                "id": "Strength",
+                "target": "self",
+                "amount": 4
+              }
+            ]
+          }
+        }
+      },
+      "7": {
+        "hp": {
+          "min": 42,
+          "max": 46
+        }
+      },
+      "17": {
+        "moves": {
+          "2": {
+            "block": 9,
+            "effects": [
+              {
+                "id": "Strength",
+                "target": "self",
+                "amount": 5
+              }
+            ]
+          }
+        }
+      }
+    }
+  },
+  "Looter": {
+    "id": "Looter",
+    "name": "Looter",
+    "java_id": "Looter",
+    "type": "normal",
+    "act": 1,
+    "hp": {
+      "min": 44,
+      "max": 48
+    },
+    "moves": {
+      "1": {
+        "name": "Mug",
+        "damage": 10
+      },
+      "2": {
+        "name": "Smoke Bomb",
+        "block": 6
+      },
+      "3": {
+        "name": "Escape"
+      },
+      "4": {
+        "name": "Lunge",
+        "damage": 12
+      }
+    },
+    "pre_battle": [
+      {
+        "id": "Thievery",
+        "target": "self",
+        "amount": 15
+      }
+    ],
+    "ascension": {
+      "2": {
+        "moves": {
+          "1": {
+            "damage": 11
+          },
+          "4": {
+            "damage": 14
+          }
+        }
+      },
+      "7": {
+        "hp": {
+          "min": 46,
+          "max": 50
+        }
+      },
+      "17": {
+        "pre_battle": [
+          {
+            "id": "Thievery",
+            "target": "self",
+            "amount": 20
+          }
+        ]
+      }
+    },
+    "_notes": "Thievery steals gold on unblocked attack damage."
+  },
+  "MadGremlin": {
+    "id": "MadGremlin",
+    "name": "Mad Gremlin",
+    "java_id": "GremlinWarrior",
+    "type": "normal",
+    "act": 1,
+    "hp": {
+      "min": 20,
+      "max": 24
+    },
+    "moves": {
+      "1": {
+        "name": "Scratch",
+        "damage": 4
+      }
+    },
+    "pre_battle": [
+      {
+        "id": "Angry",
+        "target": "self",
+        "amount": 1
+      }
+    ],
+    "ascension": {
+      "2": {
+        "moves": {
+          "1": {
+            "damage": 5
+          }
+        }
+      },
+      "7": {
+        "hp": {
+          "min": 21,
+          "max": 25
+        }
+      },
+      "17": {
+        "pre_battle": [
+          {
+            "id": "Angry",
+            "target": "self",
+            "amount": 2
+          }
+        ]
+      }
+    }
+  },
+  "RedLouse": {
+    "id": "RedLouse",
+    "name": "Red Louse",
+    "java_id": "FuzzyLouseNormal",
+    "type": "normal",
+    "act": 1,
+    "hp": {
+      "min": 10,
+      "max": 15
+    },
+    "moves": {
+      "3": {
+        "name": "Bite",
+        "damage": {
+          "min": 5,
+          "max": 7
+        }
+      },
+      "4": {
+        "name": "Grow",
+        "effects": [
+          {
+            "id": "Strength",
+            "target": "self",
+            "amount": 3
+          }
+        ]
+      }
+    },
+    "pre_battle": [
+      {
+        "id": "CurlUp",
+        "target": "self",
+        "amount": {
+          "min": 3,
+          "max": 7
+        }
+      }
+    ],
+    "ascension": {
+      "2": {
+        "moves": {
+          "3": {
+            "damage": {
+              "min": 6,
+              "max": 8
+            }
+          }
+        }
+      },
+      "7": {
+        "hp": {
+          "min": 11,
+          "max": 16
+        },
+        "pre_battle": [
+          {
+            "id": "CurlUp",
+            "target": "self",
+            "amount": {
+              "min": 4,
+              "max": 8
+            }
+          }
+        ]
+      },
+      "17": {
+        "moves": {
+          "4": {
+            "effects": [
+              {
+                "id": "Strength",
+                "target": "self",
+                "amount": 4
+              }
+            ]
+          }
+        },
+        "pre_battle": [
+          {
+            "id": "CurlUp",
+            "target": "self",
+            "amount": {
+              "min": 9,
+              "max": 12
+            }
+          }
+        ]
+      }
+    }
+  },
+  "SneakyGremlin": {
+    "id": "SneakyGremlin",
+    "name": "Sneaky Gremlin",
+    "java_id": "GremlinThief",
+    "type": "normal",
+    "act": 1,
+    "hp": {
+      "min": 10,
+      "max": 14
+    },
+    "moves": {
+      "1": {
+        "name": "Puncture",
+        "damage": 9
+      }
+    },
+    "ascension": {
+      "2": {
+        "moves": {
+          "1": {
+            "damage": 10
+          }
+        }
+      },
+      "7": {
+        "hp": {
+          "min": 11,
+          "max": 15
+        }
+      }
+    }
+  },
+  "ShieldGremlin": {
+    "id": "ShieldGremlin",
+    "name": "Shield Gremlin",
+    "java_id": "GremlinTsundere",
+    "type": "normal",
+    "act": 1,
+    "hp": {
+      "min": 12,
+      "max": 15
+    },
+    "moves": {
+      "1": {
+        "name": "Protect",
+        "block": 7
+      },
+      "2": {
+        "name": "Shield Bash",
+        "damage": 6
+      }
+    },
+    "ascension": {
+      "2": {
+        "moves": {
+          "2": {
+            "damage": 8
+          }
+        }
+      },
+      "7": {
+        "hp": {
+          "min": 13,
+          "max": 17
+        },
+        "moves": {
+          "1": {
+            "block": 8
+          }
+        }
+      },
+      "17": {
+        "moves": {
+          "1": {
+            "block": 11
+          }
+        }
+      }
+    },
+    "_notes": "Protect gives block to a random ally. Falls back to Shield Bash when alone."
+  },
+  "GremlinWizard": {
+    "id": "GremlinWizard",
+    "name": "Gremlin Wizard",
+    "java_id": "GremlinWizard",
+    "type": "normal",
+    "act": 1,
+    "hp": {
+      "min": 21,
+      "max": 25
+    },
+    "moves": {
+      "2": {
+        "name": "Charging"
+      },
+      "1": {
+        "name": "Ultimate Blast",
+        "damage": 25
+      }
+    },
+    "ascension": {
+      "2": {
+        "moves": {
+          "1": {
+            "damage": 30
+          }
+        }
+      },
+      "7": {
+        "hp": {
+          "min": 22,
+          "max": 26
+        }
+      }
+    },
+    "_notes": "Charges 2 turns then fires. Asc17: no charge after firing, attacks every turn."
+  },
+  "SpikeSlime_L": {
+    "id": "SpikeSlime_L",
+    "name": "Spike Slime (L)",
+    "java_id": "SpikeSlime_L",
+    "type": "normal",
+    "act": 1,
+    "hp": {
+      "min": 64,
+      "max": 70
+    },
+    "moves": {
+      "1": {
+        "name": "Flame Tackle",
+        "damage": 16,
+        "cards": [
+          {
+            "id": "Slimed",
+            "amount": 2,
+            "destination": "discard"
+          }
+        ]
+      },
+      "3": {
+        "name": "Split"
+      },
+      "4": {
+        "name": "Lick",
+        "effects": [
+          {
+            "id": "Frail",
+            "target": "player",
+            "amount": 2
+          }
+        ]
+      }
+    },
+    "pre_battle": [
+      {
+        "id": "Split",
+        "target": "self"
+      }
+    ],
+    "ascension": {
+      "2": {
+        "moves": {
+          "1": {
+            "damage": 18
+          }
+        }
+      },
+      "7": {
+        "hp": {
+          "min": 67,
+          "max": 73
+        }
+      },
+      "17": {
+        "moves": {
+          "4": {
+            "effects": [
+              {
+                "id": "Frail",
+                "target": "player",
+                "amount": 3
+              }
+            ]
+          }
+        }
+      }
+    }
+  },
+  "SpikeSlime_M": {
+    "id": "SpikeSlime_M",
+    "name": "Spike Slime (M)",
+    "java_id": "SpikeSlime_M",
+    "type": "normal",
+    "act": 1,
+    "hp": {
+      "min": 28,
+      "max": 32
+    },
+    "moves": {
+      "1": {
+        "name": "Flame Tackle",
+        "damage": 8,
+        "cards": [
+          {
+            "id": "Slimed",
+            "amount": 1,
+            "destination": "discard"
+          }
+        ]
+      },
+      "4": {
+        "name": "Lick",
+        "effects": [
+          {
+            "id": "Frail",
+            "target": "player",
+            "amount": 1
+          }
+        ]
+      }
+    },
+    "ascension": {
+      "2": {
+        "moves": {
+          "1": {
+            "damage": 10
+          }
+        }
+      },
+      "7": {
+        "hp": {
+          "min": 29,
+          "max": 34
+        }
+      }
+    }
+  },
+  "SpikeSlime_S": {
+    "id": "SpikeSlime_S",
+    "name": "Spike Slime (S)",
+    "java_id": "SpikeSlime_S",
+    "type": "normal",
+    "act": 1,
+    "hp": {
+      "min": 10,
+      "max": 14
+    },
+    "moves": {
+      "1": {
+        "name": "Tackle",
+        "damage": 5
+      }
+    },
+    "ascension": {
+      "2": {
+        "moves": {
+          "1": {
+            "damage": 6
+          }
+        }
+      },
+      "7": {
+        "hp": {
+          "min": 11,
+          "max": 15
+        }
+      }
+    }
+  },
+  "BlueSlaver": {
+    "id": "BlueSlaver",
+    "name": "Blue Slaver",
+    "java_id": "SlaverBlue",
+    "type": "normal",
+    "act": 1,
+    "hp": {
+      "min": 46,
+      "max": 50
+    },
+    "moves": {
+      "1": {
+        "name": "Stab",
+        "damage": 12
+      },
+      "4": {
+        "name": "Rake",
+        "damage": 7,
+        "effects": [
+          {
+            "id": "Weak",
+            "target": "player",
+            "amount": 1
+          }
+        ]
+      }
+    },
+    "ascension": {
+      "2": {
+        "moves": {
+          "1": {
+            "damage": 13
+          },
+          "4": {
+            "damage": 8
+          }
+        }
+      },
+      "7": {
+        "hp": {
+          "min": 48,
+          "max": 52
+        }
+      },
+      "17": {
+        "moves": {
+          "4": {
+            "damage": 8,
+            "effects": [
+              {
+                "id": "Weak",
+                "target": "player",
+                "amount": 2
+              }
+            ]
+          }
+        }
+      }
+    }
+  },
+  "RedSlaver": {
+    "id": "RedSlaver",
+    "name": "Red Slaver",
+    "java_id": "SlaverRed",
+    "type": "normal",
+    "act": 1,
+    "hp": {
+      "min": 46,
+      "max": 50
+    },
+    "moves": {
+      "1": {
+        "name": "Stab",
+        "damage": 13
+      },
+      "2": {
+        "name": "Entangle",
+        "effects": [
+          {
+            "id": "Entangle",
+            "target": "player"
+          }
+        ]
+      },
+      "3": {
+        "name": "Scrape",
+        "damage": 8,
+        "effects": [
+          {
+            "id": "Vulnerable",
+            "target": "player",
+            "amount": 1
+          }
+        ]
+      }
+    },
+    "ascension": {
+      "2": {
+        "moves": {
+          "1": {
+            "damage": 14
+          },
+          "3": {
+            "damage": 9
+          }
+        }
+      },
+      "7": {
+        "hp": {
+          "min": 48,
+          "max": 52
+        }
+      },
+      "17": {
+        "moves": {
+          "3": {
+            "damage": 9,
+            "effects": [
+              {
+                "id": "Vulnerable",
+                "target": "player",
+                "amount": 2
+              }
+            ]
+          }
+        }
+      }
+    },
+    "_notes": "Entangle used at most once. No amount needed."
+  },
+  "GremlinNob": {
+    "id": "GremlinNob",
+    "name": "Gremlin Nob",
+    "java_id": "GremlinNob",
+    "type": "elite",
+    "act": 1,
+    "hp": {
+      "min": 82,
+      "max": 86
+    },
+    "moves": {
+      "3": {
+        "name": "Bellow",
+        "effects": [
+          {
+            "id": "Enrage",
+            "target": "self",
+            "amount": 2
+          }
+        ]
+      },
+      "1": {
+        "name": "Rush",
+        "damage": 14
+      },
+      "2": {
+        "name": "Skull Bash",
+        "damage": 6,
+        "effects": [
+          {
+            "id": "Vulnerable",
+            "target": "player",
+            "amount": 2
+          }
+        ]
+      }
+    },
+    "ascension": {
+      "3": {
+        "moves": {
+          "3": {
+            "effects": [
+              {
+                "id": "Enrage",
+                "target": "self",
+                "amount": 3
+              }
+            ]
+          },
+          "1": {
+            "damage": 16
+          },
+          "2": {
+            "damage": 8
+          }
+        }
+      },
+      "8": {
+        "hp": {
+          "min": 85,
+          "max": 90
+        }
+      },
+      "18": {
+        "moves": {
+          "3": {
+            "effects": [
+              {
+                "id": "Enrage",
+                "target": "self",
+                "amount": 4
+              }
+            ]
+          }
+        }
+      }
+    },
+    "_notes": "Enrage = gain Str each time player plays a Skill."
+  },
+  "Lagavulin": {
+    "id": "Lagavulin",
+    "name": "Lagavulin",
+    "java_id": "Lagavulin",
+    "type": "elite",
+    "act": 1,
+    "hp": {
+      "min": 109,
+      "max": 111
+    },
+    "moves": {
+      "3": {
+        "name": "Attack",
+        "damage": 18
+      },
+      "1": {
+        "name": "Siphon Soul",
+        "effects": [
+          {
+            "id": "Dexterity",
+            "target": "player",
+            "amount": -1
+          },
+          {
+            "id": "Strength",
+            "target": "player",
+            "amount": -1
+          }
+        ]
+      }
+    },
+    "pre_battle": [
+      {
+        "id": "Metallicize",
+        "target": "self",
+        "amount": 8
+      }
+    ],
+    "ascension": {
+      "3": {
+        "moves": {
+          "3": {
+            "damage": 20
+          },
+          "1": {
+            "effects": [
+              {
+                "id": "Dexterity",
+                "target": "player",
+                "amount": -2
+              },
+              {
+                "id": "Strength",
+                "target": "player",
+                "amount": -2
+              }
+            ]
+          }
+        }
+      },
+      "8": {
+        "hp": {
+          "min": 112,
+          "max": 115
+        }
+      },
+      "18": {
+        "pre_battle": [
+          {
+            "id": "Metallicize",
+            "target": "self",
+            "amount": 10
+          }
+        ]
+      }
+    },
+    "_notes": "Starts asleep with Metallicize. Wakes after 3 turns or on damage."
+  },
+  "Sentry": {
+    "id": "Sentry",
+    "name": "Sentry",
+    "java_id": "Sentry",
+    "type": "elite",
+    "act": 1,
+    "hp": {
+      "min": 38,
+      "max": 42
+    },
+    "moves": {
+      "3": {
+        "name": "Bolt",
+        "cards": [
+          {
+            "id": "Dazed",
+            "amount": 2,
+            "destination": "discard"
+          }
+        ]
+      },
+      "4": {
+        "name": "Beam",
+        "damage": 9
+      }
+    },
+    "pre_battle": [
+      {
+        "id": "Artifact",
+        "target": "self",
+        "amount": 1
+      }
+    ],
+    "ascension": {
+      "3": {
+        "moves": {
+          "4": {
+            "damage": 10
+          }
+        }
+      },
+      "8": {
+        "hp": {
+          "min": 39,
+          "max": 45
+        }
+      },
+      "18": {
+        "moves": {
+          "3": {
+            "cards": [
+              {
+                "id": "Dazed",
+                "amount": 3,
+                "destination": "discard"
+              }
+            ]
+          }
+        }
+      }
+    }
+  },
+  "Guardian": {
+    "id": "Guardian",
+    "name": "The Guardian",
+    "java_id": "TheGuardian",
+    "type": "boss",
+    "act": 1,
+    "hp": {
+      "min": 240,
+      "max": 240
+    },
+    "moves": {
+      "5": {
+        "name": "Whirlwind",
+        "damage": 5,
+        "hits": 4
+      },
+      "2": {
+        "name": "Fierce Bash",
+        "damage": 32
+      },
+      "7": {
+        "name": "Vent Steam",
+        "effects": [
+          {
+            "id": "Weak",
+            "target": "player",
+            "amount": 2
+          },
+          {
+            "id": "Vulnerable",
+            "target": "player",
+            "amount": 2
+          }
+        ]
+      },
+      "6": {
+        "name": "Charge Up"
+      },
+      "3": {
+        "name": "Roll Attack",
+        "damage": 9
+      },
+      "4": {
+        "name": "Twin Slam",
+        "damage": 8,
+        "hits": 2
+      },
+      "1": {
+        "name": "Close Up"
+      }
+    },
+    "pre_battle": [
+      {
+        "id": "ModeShift",
+        "target": "self",
+        "amount": 10
+      }
+    ],
+    "ascension": {
+      "4": {
+        "moves": {
+          "2": {
+            "damage": 36
+          },
+          "4": {
+            "damage": 9
+          }
+        }
+      },
+      "9": {
+        "hp": {
+          "min": 250,
+          "max": 250
+        }
+      },
+      "19": {
+        "pre_battle": [
+          {
+            "id": "ModeShift",
+            "target": "self",
+            "amount": 15
+          }
+        ],
+        "moves": {
+          "7": {
+            "effects": [
+              {
+                "id": "Weak",
+                "target": "player",
+                "amount": 3
+              },
+              {
+                "id": "Vulnerable",
+                "target": "player",
+                "amount": 3
+              }
+            ]
+          }
+        }
+      }
+    },
+    "_notes": "Has offensive/defensive mode cycle. Sharp Hide 3 (asc19: 4) applied in Close Up."
+  },
+  "Hexaghost": {
+    "id": "Hexaghost",
+    "name": "Hexaghost",
+    "java_id": "Hexaghost",
+    "type": "boss",
+    "act": 1,
+    "hp": {
+      "min": 250,
+      "max": 250
+    },
+    "moves": {
+      "5": {
+        "name": "Activate"
+      },
+      "1": {
+        "name": "Divider",
+        "damage": 0
+      },
+      "4": {
+        "name": "Sear",
+        "damage": 6,
+        "cards": [
+          {
+            "id": "Burn",
+            "amount": 1,
+            "destination": "discard"
+          }
+        ]
+      },
+      "2": {
+        "name": "Tackle",
+        "damage": 5,
+        "hits": 2
+      },
+      "3": {
+        "name": "Inflame",
+        "effects": [
+          {
+            "id": "Strength",
+            "target": "self",
+            "amount": 2
+          }
+        ]
+      },
+      "6": {
+        "name": "Inferno",
+        "damage": 2,
+        "hits": 6,
+        "cards": [
+          {
+            "id": "Burn",
+            "amount": 3,
+            "destination": "discard"
+          }
+        ]
+      }
+    },
+    "ascension": {
+      "4": {
+        "moves": {
+          "3": {
+            "effects": [
+              {
+                "id": "Strength",
+                "target": "self",
+                "amount": 3
+              }
+            ]
+          },
+          "2": {
+            "damage": 6
+          }
+        }
+      },
+      "9": {
+        "hp": {
+          "min": 264,
+          "max": 264
+        }
+      },
+      "19": {
+        "moves": {
+          "6": {
+            "cards": [
+              {
+                "id": "BurnPlus",
+                "amount": 3,
+                "destination": "discard"
+              }
+            ]
+          }
+        }
+      }
+    },
+    "_notes": "Divider damage = (player_HP / 12 + 1). Inferno upgraded burns at asc19."
+  },
+  "SlimeBoss": {
+    "id": "SlimeBoss",
+    "name": "Slime Boss",
+    "java_id": "SlimeBoss",
+    "type": "boss",
+    "act": 1,
+    "hp": {
+      "min": 140,
+      "max": 140
+    },
+    "moves": {
+      "1": {
+        "name": "Slam",
+        "damage": 35
+      },
+      "2": {
+        "name": "Preparing"
+      },
+      "3": {
+        "name": "Split"
+      },
+      "4": {
+        "name": "Goop Spray",
+        "cards": [
+          {
+            "id": "Slimed",
+            "amount": 3,
+            "destination": "discard"
+          }
+        ]
+      }
+    },
+    "pre_battle": [
+      {
+        "id": "Split",
+        "target": "self"
+      }
+    ],
+    "ascension": {
+      "4": {
+        "moves": {
+          "1": {
+            "damage": 38
+          }
+        }
+      },
+      "9": {
+        "hp": {
+          "min": 150,
+          "max": 150
+        }
+      },
+      "19": {
+        "moves": {
+          "4": {
+            "cards": [
+              {
+                "id": "Slimed",
+                "amount": 5,
+                "destination": "discard"
+              }
+            ]
+          }
+        }
+      }
+    }
+  },
+  "Bear": {
+    "id": "Bear",
+    "name": "Bear",
+    "java_id": "BanditBear",
+    "type": "normal",
+    "act": 2,
+    "hp": {
+      "min": 38,
+      "max": 42
+    },
+    "moves": {
+      "1": {
+        "name": "Maul",
+        "damage": 18
+      },
+      "2": {
+        "name": "Bear Hug",
+        "effects": [
+          {
+            "id": "Dexterity",
+            "target": "player",
+            "amount": -2
+          }
+        ]
+      },
+      "3": {
+        "name": "Lunge",
+        "damage": 9,
+        "block": 9
+      }
+    },
+    "ascension": {
+      "2": {
+        "moves": {
+          "1": {
+            "damage": 20
+          },
+          "3": {
+            "damage": 10
+          }
+        }
+      },
+      "7": {
+        "hp": {
+          "min": 40,
+          "max": 44
+        }
+      },
+      "17": {
+        "moves": {
+          "2": {
+            "effects": [
+              {
+                "id": "Dexterity",
+                "target": "player",
+                "amount": -4
+              }
+            ]
+          }
+        }
+      }
+    },
+    "_notes": "Always starts with Bear Hug. Cycle: BearHug -> Lunge -> Maul -> Lunge -> Maul..."
+  },
+  "BookOfStabbing": {
+    "id": "BookOfStabbing",
+    "name": "Book of Stabbing",
+    "java_id": "BookOfStabbing",
+    "type": "elite",
+    "act": 2,
+    "hp": {
+      "min": 160,
+      "max": 164
+    },
+    "moves": {
+      "1": {
+        "name": "Multi-Stab",
+        "damage": 6,
+        "hits": 2
+      },
+      "2": {
+        "name": "Single Stab",
+        "damage": 21
+      }
+    },
+    "pre_battle": [
+      {
+        "id": "PainfulStabs",
+        "target": "self"
+      }
+    ],
+    "ascension": {
+      "3": {
+        "moves": {
+          "1": {
+            "damage": 7
+          },
+          "2": {
+            "damage": 24
+          }
+        }
+      },
+      "8": {
+        "hp": {
+          "min": 168,
+          "max": 172
+        }
+      },
+      "18": {
+        "moves": {
+          "1": {
+            "hits": 3
+          }
+        }
+      }
+    },
+    "_notes": "Multi-stab hits increase by 1 each use. PainfulStabs = shuffle Wound on attack."
+  },
+  "BronzeOrb": {
+    "id": "BronzeOrb",
+    "name": "Bronze Orb",
+    "java_id": "BronzeOrb",
+    "type": "normal",
+    "act": 2,
+    "hp": {
+      "min": 52,
+      "max": 58
+    },
+    "moves": {
+      "1": {
+        "name": "Beam",
+        "damage": 8
+      },
+      "2": {
+        "name": "Support Beam",
+        "damage": 8,
+        "block": 0
+      },
+      "3": {
+        "name": "Stasis"
+      }
+    },
+    "ascension": {
+      "9": {
+        "hp": {
+          "min": 54,
+          "max": 60
+        }
+      }
+    },
+    "_notes": "Stasis steals a card. SupportBeam block = 2x # orbs alive. Spawned by BronzeAutomaton."
+  },
+  "Byrd": {
+    "id": "Byrd",
+    "name": "Byrd",
+    "java_id": "Byrd",
+    "type": "normal",
+    "act": 2,
+    "hp": {
+      "min": 25,
+      "max": 31
+    },
+    "moves": {
+      "1": {
+        "name": "Peck",
+        "damage": 1,
+        "hits": 5
+      },
+      "2": {
+        "name": "Fly"
+      },
+      "3": {
+        "name": "Swoop",
+        "damage": 12
+      },
+      "4": {
+        "name": "Stunned"
+      },
+      "5": {
+        "name": "Headbutt",
+        "damage": 3
+      },
+      "6": {
+        "name": "Caw",
+        "effects": [
+          {
+            "id": "Strength",
+            "target": "self",
+            "amount": 1
+          }
+        ]
+      }
+    },
+    "pre_battle": [
+      {
+        "id": "Flight",
+        "target": "self",
+        "amount": 3
+      }
+    ],
+    "ascension": {
+      "2": {
+        "moves": {
+          "1": {
+            "hits": 6
+          },
+          "3": {
+            "damage": 14
+          }
+        }
+      },
+      "7": {
+        "hp": {
+          "min": 26,
+          "max": 33
+        }
+      },
+      "17": {
+        "pre_battle": [
+          {
+            "id": "Flight",
+            "target": "self",
+            "amount": 4
+          }
+        ]
+      }
+    },
+    "_notes": "Starts flying. Grounded = stunned, then headbutt -> fly again."
+  },
+  "Centurion": {
+    "id": "Centurion",
+    "name": "Centurion",
+    "java_id": "Centurion",
+    "type": "normal",
+    "act": 2,
+    "hp": {
+      "min": 76,
+      "max": 80
+    },
+    "moves": {
+      "1": {
+        "name": "Slash",
+        "damage": 12
+      },
+      "2": {
+        "name": "Defend",
+        "block": 15
+      },
+      "3": {
+        "name": "Fury",
+        "damage": 6,
+        "hits": 3
+      }
+    },
+    "ascension": {
+      "2": {
+        "moves": {
+          "1": {
+            "damage": 14
+          },
+          "3": {
+            "damage": 7
+          }
+        }
+      },
+      "7": {
+        "hp": {
+          "min": 78,
+          "max": 83
+        }
+      },
+      "17": {
+        "moves": {
+          "2": {
+            "block": 20
+          }
+        }
+      }
+    },
+    "_notes": "Defend gives block to random ally (usually Mystic). When alone, uses Fury instead."
+  },
+  "Chosen": {
+    "id": "Chosen",
+    "name": "Chosen",
+    "java_id": "Chosen",
+    "type": "normal",
+    "act": 2,
+    "hp": {
+      "min": 95,
+      "max": 99
+    },
+    "moves": {
+      "5": {
+        "name": "Poke",
+        "damage": 5,
+        "hits": 2
+      },
+      "1": {
+        "name": "Zap",
+        "damage": 18
+      },
+      "2": {
+        "name": "Drain",
+        "effects": [
+          {
+            "id": "Weak",
+            "target": "player",
+            "amount": 3
+          },
+          {
+            "id": "Strength",
+            "target": "self",
+            "amount": 3
+          }
+        ]
+      },
+      "3": {
+        "name": "Debilitate",
+        "damage": 10,
+        "effects": [
+          {
+            "id": "Vulnerable",
+            "target": "player",
+            "amount": 2
+          }
+        ]
+      },
+      "4": {
+        "name": "Hex",
+        "effects": [
+          {
+            "id": "Hex",
+            "target": "player",
+            "amount": 1
+          }
+        ]
+      }
+    },
+    "ascension": {
+      "2": {
+        "moves": {
+          "5": {
+            "damage": 6
+          },
+          "1": {
+            "damage": 21
+          },
+          "3": {
+            "damage": 12
+          }
+        }
+      },
+      "7": {
+        "hp": {
+          "min": 98,
+          "max": 103
+        }
+      }
+    },
+    "_notes": "Always uses Hex first. Then Poke, then cycles attacks."
+  },
+  "Mugger": {
+    "id": "Mugger",
+    "name": "Mugger",
+    "java_id": "Mugger",
+    "type": "normal",
+    "act": 2,
+    "hp": {
+      "min": 48,
+      "max": 52
+    },
+    "moves": {
+      "1": {
+        "name": "Mug",
+        "damage": 10
+      },
+      "2": {
+        "name": "Smoke Bomb",
+        "block": 11
+      },
+      "3": {
+        "name": "Escape"
+      },
+      "4": {
+        "name": "Lunge",
+        "damage": 16
+      }
+    },
+    "pre_battle": [
+      {
+        "id": "Thievery",
+        "target": "self",
+        "amount": 15
+      }
+    ],
+    "ascension": {
+      "2": {
+        "moves": {
+          "1": {
+            "damage": 11
+          },
+          "4": {
+            "damage": 18
+          }
+        }
+      },
+      "7": {
+        "hp": {
+          "min": 50,
+          "max": 54
+        }
+      },
+      "17": {
+        "moves": {
+          "2": {
+            "block": 17
+          }
+        },
+        "pre_battle": [
+          {
+            "id": "Thievery",
+            "target": "self",
+            "amount": 20
+          }
+        ]
+      }
+    }
+  },
+  "Mystic": {
+    "id": "Mystic",
+    "name": "Mystic",
+    "java_id": "Healer",
+    "type": "normal",
+    "act": 2,
+    "hp": {
+      "min": 48,
+      "max": 56
+    },
+    "moves": {
+      "1": {
+        "name": "Attack",
+        "damage": 8,
+        "effects": [
+          {
+            "id": "Frail",
+            "target": "player",
+            "amount": 2
+          }
+        ]
+      },
+      "2": {
+        "name": "Heal"
+      },
+      "3": {
+        "name": "Buff",
+        "effects": [
+          {
+            "id": "Strength",
+            "target": "self",
+            "amount": 2
+          }
+        ]
+      }
+    },
+    "ascension": {
+      "2": {
+        "moves": {
+          "1": {
+            "damage": 9
+          },
+          "3": {
+            "effects": [
+              {
+                "id": "Strength",
+                "target": "self",
+                "amount": 3
+              }
+            ]
+          }
+        }
+      },
+      "7": {
+        "hp": {
+          "min": 50,
+          "max": 58
+        }
+      },
+      "17": {
+        "moves": {
+          "3": {
+            "effects": [
+              {
+                "id": "Strength",
+                "target": "self",
+                "amount": 4
+              }
+            ]
+          }
+        }
+      }
+    },
+    "_notes": "Heal heals all allies for 16 (asc17: 20). Buff gives Str to all allies."
+  },
+  "Pointy": {
+    "id": "Pointy",
+    "name": "Pointy",
+    "java_id": "BanditChild",
+    "type": "normal",
+    "act": 2,
+    "hp": {
+      "min": 30,
+      "max": 30
+    },
+    "moves": {
+      "1": {
+        "name": "Attack",
+        "damage": 5,
+        "hits": 2
+      }
+    },
+    "ascension": {
+      "2": {
+        "moves": {
+          "1": {
+            "damage": 6
+          }
+        }
+      },
+      "7": {
+        "hp": {
+          "min": 34,
+          "max": 34
+        }
+      }
+    }
+  },
+  "Romeo": {
+    "id": "Romeo",
+    "name": "Romeo",
+    "java_id": "BanditLeader",
+    "type": "normal",
+    "act": 2,
+    "hp": {
+      "min": 35,
+      "max": 39
+    },
+    "moves": {
+      "1": {
+        "name": "Cross Slash",
+        "damage": 15
+      },
+      "2": {
+        "name": "Mock"
+      },
+      "3": {
+        "name": "Agonizing Slash",
+        "damage": 10,
+        "effects": [
+          {
+            "id": "Weak",
+            "target": "player",
+            "amount": 2
+          }
+        ]
+      }
+    },
+    "ascension": {
+      "2": {
+        "moves": {
+          "1": {
+            "damage": 17
+          },
+          "3": {
+            "damage": 12
+          }
+        }
+      },
+      "7": {
+        "hp": {
+          "min": 37,
+          "max": 41
+        }
+      },
+      "17": {
+        "moves": {
+          "3": {
+            "effects": [
+              {
+                "id": "Weak",
+                "target": "player",
+                "amount": 3
+              }
+            ]
+          }
+        }
+      }
+    },
+    "_notes": "Always starts with Mock. Cycle: Mock -> AgonizingSlash -> CrossSlash."
+  },
+  "ShelledParasite": {
+    "id": "ShelledParasite",
+    "name": "Shelled Parasite",
+    "java_id": "Shelled Parasite",
+    "type": "normal",
+    "act": 2,
+    "hp": {
+      "min": 68,
+      "max": 72
+    },
+    "moves": {
+      "1": {
+        "name": "Fell",
+        "damage": 18,
+        "effects": [
+          {
+            "id": "Frail",
+            "target": "player",
+            "amount": 2
+          }
+        ]
+      },
+      "2": {
+        "name": "Double Strike",
+        "damage": 6,
+        "hits": 2
+      },
+      "3": {
+        "name": "Suck",
+        "damage": 10
+      },
+      "4": {
+        "name": "Stunned"
+      }
+    },
+    "pre_battle": [
+      {
+        "id": "PlatedArmor",
+        "target": "self",
+        "amount": 14
+      }
+    ],
+    "ascension": {
+      "2": {
+        "moves": {
+          "1": {
+            "damage": 21
+          },
+          "2": {
+            "damage": 7
+          },
+          "3": {
+            "damage": 12
+          }
+        }
+      },
+      "7": {
+        "hp": {
+          "min": 70,
+          "max": 75
+        }
+      },
+      "17": {
+        "pre_battle": [
+          {
+            "id": "PlatedArmor",
+            "target": "self",
+            "amount": 19
+          }
+        ]
+      }
+    },
+    "_notes": "Suck heals self for damage dealt."
+  },
+  "SnakePlant": {
+    "id": "SnakePlant",
+    "name": "Snake Plant",
+    "java_id": "SnakePlant",
+    "type": "normal",
+    "act": 2,
+    "hp": {
+      "min": 75,
+      "max": 79
+    },
+    "moves": {
+      "1": {
+        "name": "Chomp",
+        "damage": 7,
+        "hits": 3
+      },
+      "2": {
+        "name": "Enfeebling Spores",
+        "effects": [
+          {
+            "id": "Frail",
+            "target": "player",
+            "amount": 2
+          },
+          {
+            "id": "Weak",
+            "target": "player",
+            "amount": 2
+          }
+        ]
+      }
+    },
+    "pre_battle": [
+      {
+        "id": "Malleable",
+        "target": "self"
+      }
+    ],
+    "ascension": {
+      "2": {
+        "moves": {
+          "1": {
+            "damage": 8
+          }
+        }
+      },
+      "7": {
+        "hp": {
+          "min": 78,
+          "max": 82
+        }
+      },
+      "17": {
+        "moves": {
+          "2": {
+            "effects": [
+              {
+                "id": "Frail",
+                "target": "player",
+                "amount": 3
+              },
+              {
+                "id": "Weak",
+                "target": "player",
+                "amount": 3
+              }
+            ]
+          }
+        }
+      }
+    }
+  },
+  "Snecko": {
+    "id": "Snecko",
+    "name": "Snecko",
+    "java_id": "Snecko",
+    "type": "normal",
+    "act": 2,
+    "hp": {
+      "min": 114,
+      "max": 120
+    },
+    "moves": {
+      "1": {
+        "name": "Perplexing Glare",
+        "effects": [
+          {
+            "id": "Confused",
+            "target": "player"
+          }
+        ]
+      },
+      "2": {
+        "name": "Bite",
+        "damage": 15
+      },
+      "3": {
+        "name": "Tail Whip",
+        "effects": [
+          {
+            "id": "Vulnerable",
+            "target": "player",
+            "amount": 2
+          },
+          {
+            "id": "Weak",
+            "target": "player",
+            "amount": 2
+          }
+        ]
+      }
+    },
+    "ascension": {
+      "2": {
+        "moves": {
+          "2": {
+            "damage": 18
+          }
+        }
+      },
+      "7": {
+        "hp": {
+          "min": 120,
+          "max": 125
+        }
+      },
+      "17": {
+        "moves": {
+          "3": {
+            "effects": [
+              {
+                "id": "Vulnerable",
+                "target": "player",
+                "amount": 3
+              },
+              {
+                "id": "Weak",
+                "target": "player",
+                "amount": 2
+              }
+            ]
+          }
+        }
+      }
+    },
+    "_notes": "Always uses Glare first."
+  },
+  "SphericGuardian": {
+    "id": "SphericGuardian",
+    "name": "Spheric Guardian",
+    "java_id": "SphericGuardian",
+    "type": "normal",
+    "act": 2,
+    "hp": {
+      "min": 20,
+      "max": 20
+    },
+    "moves": {
+      "1": {
+        "name": "Slam",
+        "damage": 10,
+        "hits": 2
+      },
+      "2": {
+        "name": "Activate",
+        "block": 25
+      },
+      "3": {
+        "name": "Harden",
+        "damage": 10,
+        "block": 15
+      },
+      "4": {
+        "name": "Attack+Debuff",
+        "damage": 10,
+        "effects": [
+          {
+            "id": "Frail",
+            "target": "player",
+            "amount": 5
+          }
+        ]
+      }
+    },
+    "pre_battle": [
+      {
+        "id": "Artifact",
+        "target": "self",
+        "amount": 1
+      },
+      {
+        "id": "Barricade",
+        "target": "self"
+      }
+    ],
+    "ascension": {
+      "2": {
+        "moves": {
+          "1": {
+            "damage": 11
+          },
+          "3": {
+            "damage": 11
+          },
+          "4": {
+            "damage": 11
+          }
+        }
+      },
+      "17": {
+        "pre_battle": [
+          {
+            "id": "Artifact",
+            "target": "self",
+            "amount": 2
+          },
+          {
+            "id": "Barricade",
+            "target": "self"
+          }
+        ]
+      }
+    },
+    "_notes": "Starts with Activate for block, then cycles attacks. Barricade = block persists."
+  },
+  "Taskmaster": {
+    "id": "Taskmaster",
+    "name": "Taskmaster",
+    "java_id": "SlaverBoss",
+    "type": "elite",
+    "act": 2,
+    "hp": {
+      "min": 54,
+      "max": 60
+    },
+    "moves": {
+      "2": {
+        "name": "Scouring Whip",
+        "damage": 7,
+        "cards": [
+          {
+            "id": "Wound",
+            "amount": 1,
+            "destination": "discard"
+          }
+        ]
+      }
+    },
+    "ascension": {
+      "3": {
+        "moves": {
+          "2": {
+            "damage": 8
+          }
+        }
+      },
+      "8": {
+        "hp": {
+          "min": 57,
+          "max": 64
+        }
+      },
+      "18": {
+        "moves": {
+          "2": {
+            "cards": [
+              {
+                "id": "Wound",
+                "amount": 2,
+                "destination": "discard"
+              }
+            ]
+          }
+        }
+      }
+    },
+    "_notes": "Always uses Scouring Whip. Spawns RedSlaver + BlueSlaver."
+  },
+  "TorchHead": {
+    "id": "TorchHead",
+    "name": "Torch Head",
+    "java_id": "TorchHead",
+    "type": "normal",
+    "act": 2,
+    "hp": {
+      "min": 38,
+      "max": 40
+    },
+    "moves": {
+      "1": {
+        "name": "Tackle",
+        "damage": 7
+      }
+    },
+    "ascension": {
+      "9": {
+        "hp": {
+          "min": 40,
+          "max": 45
+        }
+      }
+    },
+    "_notes": "Minion of BronzeAutomaton. Single move only."
+  },
+  "GremlinLeader": {
+    "id": "GremlinLeader",
+    "name": "Gremlin Leader",
+    "java_id": "GremlinLeader",
+    "type": "elite",
+    "act": 2,
+    "hp": {
+      "min": 140,
+      "max": 148
+    },
+    "moves": {
+      "2": {
+        "name": "Rally!",
+        "effects": [
+          {
+            "id": "Strength",
+            "target": "self",
+            "amount": 3
+          }
+        ]
+      },
+      "3": {
+        "name": "Encourage",
+        "block": 6,
+        "effects": [
+          {
+            "id": "Strength",
+            "target": "self",
+            "amount": 1
+          }
+        ]
+      },
+      "4": {
+        "name": "Stab",
+        "damage": 6,
+        "hits": 3
+      }
+    },
+    "pre_battle": [
+      {
+        "id": "Minion",
+        "target": "self"
+      }
+    ],
+    "ascension": {
+      "3": {
+        "moves": {
+          "4": {
+            "damage": 7
+          },
+          "2": {
+            "effects": [
+              {
+                "id": "Strength",
+                "target": "self",
+                "amount": 4
+              }
+            ]
+          }
+        }
+      },
+      "8": {
+        "hp": {
+          "min": 145,
+          "max": 155
+        }
+      },
+      "18": {
+        "moves": {
+          "3": {
+            "block": 10,
+            "effects": [
+              {
+                "id": "Strength",
+                "target": "self",
+                "amount": 2
+              }
+            ]
+          }
+        }
+      }
+    },
+    "_notes": "Encourage gives block+Str to all gremlins. Rally spawns new gremlins."
+  },
+  "Champ": {
+    "id": "Champ",
+    "name": "The Champ",
+    "java_id": "Champ",
+    "type": "boss",
+    "act": 2,
+    "hp": {
+      "min": 420,
+      "max": 420
+    },
+    "moves": {
+      "4": {
+        "name": "Face Slap",
+        "damage": 12,
+        "effects": [
+          {
+            "id": "Frail",
+            "target": "player",
+            "amount": 2
+          }
+        ]
+      },
+      "1": {
+        "name": "Heavy Slash",
+        "damage": 16
+      },
+      "2": {
+        "name": "Defensive Stance",
+        "block": 15,
+        "effects": [
+          {
+            "id": "Metallicize",
+            "target": "self",
+            "amount": 5
+          }
+        ]
+      },
+      "3": {
+        "name": "Execute",
+        "damage": 10,
+        "hits": 2
+      },
+      "5": {
+        "name": "Gloat",
+        "effects": [
+          {
+            "id": "Strength",
+            "target": "self",
+            "amount": 2
+          }
+        ]
+      },
+      "6": {
+        "name": "Taunt",
+        "effects": [
+          {
+            "id": "Vulnerable",
+            "target": "player",
+            "amount": 2
+          },
+          {
+            "id": "Weak",
+            "target": "player",
+            "amount": 2
+          }
+        ]
+      },
+      "7": {
+        "name": "Anger",
+        "effects": [
+          {
+            "id": "RemoveDebuffs",
+            "target": "self"
+          },
+          {
+            "id": "Strength",
+            "target": "self",
+            "amount": 6
+          }
+        ]
+      }
+    },
+    "ascension": {
+      "4": {
+        "moves": {
+          "4": {
+            "damage": 14
+          },
+          "1": {
+            "damage": 18
+          },
+          "3": {
+            "damage": 12
+          }
+        }
+      },
+      "9": {
+        "hp": {
+          "min": 440,
+          "max": 440
+        }
+      },
+      "19": {
+        "moves": {
+          "2": {
+            "effects": [
+              {
+                "id": "Metallicize",
+                "target": "self",
+                "amount": 7
+              }
+            ]
+          },
+          "5": {
+            "effects": [
+              {
+                "id": "Strength",
+                "target": "self",
+                "amount": 3
+              }
+            ]
+          },
+          "6": {
+            "effects": [
+              {
+                "id": "Vulnerable",
+                "target": "player",
+                "amount": 3
+              },
+              {
+                "id": "Weak",
+                "target": "player",
+                "amount": 3
+              }
+            ]
+          }
+        }
+      }
+    },
+    "_notes": "Anger Str = strAmt * 3. Also removes Shackled."
+  },
+  "Collector": {
+    "id": "Collector",
+    "name": "The Collector",
+    "java_id": "TheCollector",
+    "type": "boss",
+    "act": 2,
+    "hp": {
+      "min": 282,
+      "max": 282
+    },
+    "moves": {
+      "1": {
+        "name": "Spawn"
+      },
+      "2": {
+        "name": "Fireball",
+        "damage": 18
+      },
+      "3": {
+        "name": "Buff",
+        "effects": [
+          {
+            "id": "Strength",
+            "target": "self",
+            "amount": 3
+          }
+        ]
+      },
+      "4": {
+        "name": "Mega Debuff",
+        "effects": [
+          {
+            "id": "Vulnerable",
+            "target": "player",
+            "amount": 3
+          },
+          {
+            "id": "Weak",
+            "target": "player",
+            "amount": 3
+          },
+          {
+            "id": "Frail",
+            "target": "player",
+            "amount": 3
+          }
+        ]
+      },
+      "5": {
+        "name": "Revive"
+      }
+    },
+    "pre_battle": [
+      {
+        "id": "Minion",
+        "target": "self"
+      }
+    ],
+    "ascension": {
+      "4": {
+        "moves": {
+          "2": {
+            "damage": 21
+          },
+          "3": {
+            "effects": [
+              {
+                "id": "Strength",
+                "target": "self",
+                "amount": 4
+              }
+            ]
+          }
+        }
+      },
+      "9": {
+        "hp": {
+          "min": 300,
+          "max": 300
+        }
+      },
+      "19": {
+        "moves": {
+          "4": {
+            "effects": [
+              {
+                "id": "Vulnerable",
+                "target": "player",
+                "amount": 5
+              },
+              {
+                "id": "Weak",
+                "target": "player",
+                "amount": 5
+              },
+              {
+                "id": "Frail",
+                "target": "player",
+                "amount": 5
+              }
+            ]
+          }
+        }
+      }
+    },
+    "_notes": "Spawns 2 torchheads. Revive if minions dead. Mega Debuff on first turn."
+  },
+  "BronzeAutomaton": {
+    "id": "BronzeAutomaton",
+    "name": "Bronze Automaton",
+    "java_id": "BronzeAutomaton",
+    "type": "boss",
+    "act": 2,
+    "hp": {
+      "min": 300,
+      "max": 300
+    },
+    "moves": {
+      "4": {
+        "name": "Spawn Orbs"
+      },
+      "1": {
+        "name": "Flail",
+        "damage": 7,
+        "hits": 2
+      },
+      "2": {
+        "name": "Hyper Beam",
+        "damage": 45
+      },
+      "3": {
+        "name": "Stunned"
+      },
+      "5": {
+        "name": "Boost",
+        "block": 9,
+        "effects": [
+          {
+            "id": "Strength",
+            "target": "self",
+            "amount": 3
+          }
+        ]
+      }
+    },
+    "pre_battle": [
+      {
+        "id": "Artifact",
+        "target": "self",
+        "amount": 3
+      }
+    ],
+    "ascension": {
+      "4": {
+        "moves": {
+          "1": {
+            "damage": 8
+          },
+          "2": {
+            "damage": 50
+          },
+          "5": {
+            "effects": [
+              {
+                "id": "Strength",
+                "target": "self",
+                "amount": 4
+              }
+            ]
+          }
+        }
+      },
+      "9": {
+        "hp": {
+          "min": 320,
+          "max": 320
+        }
+      },
+      "19": {
+        "pre_battle": [
+          {
+            "id": "Artifact",
+            "target": "self",
+            "amount": 4
+          }
+        ]
+      }
+    },
+    "_notes": "Cycles: Boost -> Flail -> Flail -> HyperBeam -> Stunned -> repeat."
+  },
+  "Darkling": {
+    "id": "Darkling",
+    "name": "Darkling",
+    "java_id": "Darkling",
+    "type": "normal",
+    "act": 3,
+    "hp": {
+      "min": 48,
+      "max": 56
+    },
+    "moves": {
+      "1": {
+        "name": "Chomp",
+        "damage": 8,
+        "hits": 2
+      },
+      "2": {
+        "name": "Harden",
+        "block": 12,
+        "effects": [
+          {
+            "id": "Regrow",
+            "target": "self"
+          }
+        ]
+      },
+      "3": {
+        "name": "Nip",
+        "damage": 7
+      },
+      "5": {
+        "name": "Reincarnate"
+      }
+    },
+    "pre_battle": [
+      {
+        "id": "Regrow",
+        "target": "self"
+      }
+    ],
+    "ascension": {
+      "2": {
+        "moves": {
+          "1": {
+            "damage": 9
+          },
+          "3": {
+            "damage": 8
+          }
+        }
+      },
+      "7": {
+        "hp": {
+          "min": 50,
+          "max": 59
+        }
+      },
+      "17": {
+        "moves": {
+          "2": {
+            "block": 15
+          }
+        }
+      }
+    },
+    "_notes": "Revives with half HP when killed unless all Darklings die simultaneously."
+  },
+  "Exploder": {
+    "id": "Exploder",
+    "name": "Exploder",
+    "java_id": "Exploder",
+    "type": "normal",
+    "act": 3,
+    "hp": {
+      "min": 30,
+      "max": 30
+    },
+    "moves": {
+      "1": {
+        "name": "Slam",
+        "damage": 9
+      }
+    },
+    "pre_battle": [
+      {
+        "id": "Explosive",
+        "target": "self",
+        "amount": 30
+      }
+    ],
+    "ascension": {
+      "2": {
+        "moves": {
+          "1": {
+            "damage": 11
+          }
+        }
+      },
+      "7": {
+        "hp": {
+          "min": 30,
+          "max": 35
+        }
+      }
+    },
+    "_notes": "Explodes for 30 damage after 3 turns if not killed."
+  },
+  "Maw": {
+    "id": "Maw",
+    "name": "The Maw",
+    "java_id": "Maw",
+    "type": "normal",
+    "act": 3,
+    "hp": {
+      "min": 300,
+      "max": 300
+    },
+    "moves": {
+      "2": {
+        "name": "Roar",
+        "effects": [
+          {
+            "id": "Weak",
+            "target": "player",
+            "amount": 3
+          },
+          {
+            "id": "Frail",
+            "target": "player",
+            "amount": 3
+          }
+        ]
+      },
+      "3": {
+        "name": "Slam",
+        "damage": 25
+      },
+      "4": {
+        "name": "Drool",
+        "effects": [
+          {
+            "id": "Strength",
+            "target": "self",
+            "amount": 3
+          }
+        ]
+      },
+      "5": {
+        "name": "Nom Nom",
+        "damage": 5
+      }
+    },
+    "ascension": {
+      "2": {
+        "moves": {
+          "3": {
+            "damage": 30
+          },
+          "5": {
+            "damage": 7
+          }
+        }
+      },
+      "17": {
+        "moves": {
+          "4": {
+            "effects": [
+              {
+                "id": "Strength",
+                "target": "self",
+                "amount": 5
+              }
+            ]
+          },
+          "2": {
+            "effects": [
+              {
+                "id": "Weak",
+                "target": "player",
+                "amount": 5
+              },
+              {
+                "id": "Frail",
+                "target": "player",
+                "amount": 5
+              }
+            ]
+          }
+        }
+      }
+    },
+    "_notes": "Roar first. NomNom hits = turnCount/2 (int div, turnCount starts 1, increments each getMove)."
+  },
+  "OrbWalker": {
+    "id": "OrbWalker",
+    "name": "Orb Walker",
+    "java_id": "Orb Walker",
+    "type": "normal",
+    "act": 3,
+    "hp": {
+      "min": 90,
+      "max": 96
+    },
+    "moves": {
+      "1": {
+        "name": "Laser",
+        "damage": 10,
+        "cards": [
+          {
+            "id": "Burn",
+            "amount": 1,
+            "destination": "discard"
+          }
+        ]
+      },
+      "2": {
+        "name": "Claw",
+        "damage": 15
+      }
+    },
+    "pre_battle": [
+      {
+        "id": "GenericStrengthUp",
+        "target": "self"
+      }
+    ],
+    "ascension": {
+      "2": {
+        "moves": {
+          "1": {
+            "damage": 11
+          },
+          "2": {
+            "damage": 16
+          }
+        }
+      },
+      "7": {
+        "hp": {
+          "min": 92,
+          "max": 102
+        }
+      },
+      "17": {
+        "moves": {
+          "1": {
+            "cards": [
+              {
+                "id": "Burn",
+                "amount": 2,
+                "destination": "discard"
+              }
+            ]
+          }
+        }
+      }
+    },
+    "_notes": "GenericStrengthUp = gain 3 Str each turn."
+  },
+  "Repulsor": {
+    "id": "Repulsor",
+    "name": "Repulsor",
+    "java_id": "Repulsor",
+    "type": "normal",
+    "act": 3,
+    "hp": {
+      "min": 29,
+      "max": 35
+    },
+    "moves": {
+      "1": {
+        "name": "Bash",
+        "cards": [
+          {
+            "id": "Dazed",
+            "amount": 2,
+            "destination": "discard"
+          }
+        ]
+      },
+      "2": {
+        "name": "Attack",
+        "damage": 11
+      }
+    },
+    "ascension": {
+      "2": {
+        "moves": {
+          "2": {
+            "damage": 13
+          }
+        }
+      },
+      "7": {
+        "hp": {
+          "min": 31,
+          "max": 38
+        }
+      }
+    }
+  },
+  "Spiker": {
+    "id": "Spiker",
+    "name": "Spiker",
+    "java_id": "Spiker",
+    "type": "normal",
+    "act": 3,
+    "hp": {
+      "min": 42,
+      "max": 56
+    },
+    "moves": {
+      "1": {
+        "name": "Cut",
+        "damage": 5,
+        "hits": 2
+      },
+      "2": {
+        "name": "Spike",
+        "effects": [
+          {
+            "id": "Thorns",
+            "target": "self",
+            "amount": 2
+          }
+        ]
+      }
+    },
+    "pre_battle": [
+      {
+        "id": "Thorns",
+        "target": "self",
+        "amount": 3
+      }
+    ],
+    "ascension": {
+      "2": {
+        "moves": {
+          "1": {
+            "damage": 6
+          }
+        }
+      },
+      "7": {
+        "hp": {
+          "min": 44,
+          "max": 60
+        }
+      },
+      "17": {
+        "moves": {
+          "2": {
+            "effects": [
+              {
+                "id": "Thorns",
+                "target": "self",
+                "amount": 3
+              }
+            ]
+          }
+        }
+      }
+    }
+  },
+  "SpireGrowth": {
+    "id": "SpireGrowth",
+    "name": "Spire Growth",
+    "java_id": "Serpent",
+    "type": "normal",
+    "act": 3,
+    "hp": {
+      "min": 170,
+      "max": 170
+    },
+    "moves": {
+      "1": {
+        "name": "Quick Tackle",
+        "damage": 16
+      },
+      "2": {
+        "name": "Constrict",
+        "effects": [
+          {
+            "id": "Constricted",
+            "target": "player",
+            "amount": 10
+          }
+        ]
+      },
+      "3": {
+        "name": "Smash",
+        "damage": 22
+      }
+    },
+    "ascension": {
+      "2": {
+        "moves": {
+          "1": {
+            "damage": 18
+          },
+          "3": {
+            "damage": 25
+          }
+        }
+      },
+      "7": {
+        "hp": {
+          "min": 190,
+          "max": 190
+        }
+      },
+      "17": {
+        "moves": {
+          "2": {
+            "effects": [
+              {
+                "id": "Constricted",
+                "target": "player",
+                "amount": 12
+              }
+            ]
+          }
+        }
+      }
+    }
+  },
+  "Transient": {
+    "id": "Transient",
+    "name": "Transient",
+    "java_id": "Transient",
+    "type": "normal",
+    "act": 3,
+    "hp": {
+      "min": 999,
+      "max": 999
+    },
+    "moves": {
+      "1": {
+        "name": "Attack",
+        "damage": 30
+      }
+    },
+    "pre_battle": [
+      {
+        "id": "Shifting",
+        "target": "self"
+      },
+      {
+        "id": "Fading",
+        "target": "self",
+        "amount": 5
+      }
+    ],
+    "ascension": {
+      "2": {
+        "moves": {
+          "1": {
+            "damage": 40
+          }
+        }
+      },
+      "17": {
+        "moves": {
+          "1": {
+            "damage": 50
+          }
+        }
+      }
+    },
+    "_notes": "Fading = dies after 5 turns. Shifting = damage increases by 10 each turn."
+  },
+  "WrithingMass": {
+    "id": "WrithingMass",
+    "name": "Writhing Mass",
+    "java_id": "WrithingMass",
+    "type": "normal",
+    "act": 3,
+    "hp": {
+      "min": 160,
+      "max": 160
+    },
+    "moves": {
+      "0": {
+        "name": "Strong Strike",
+        "damage": 32
+      },
+      "1": {
+        "name": "Multi-Strike",
+        "damage": 9,
+        "hits": 3
+      },
+      "2": {
+        "name": "Flail",
+        "damage": 16,
+        "block": 16
+      },
+      "3": {
+        "name": "Wither",
+        "damage": 12,
+        "effects": [
+          {
+            "id": "Weak",
+            "target": "player",
+            "amount": 2
+          },
+          {
+            "id": "Vulnerable",
+            "target": "player",
+            "amount": 2
+          }
+        ]
+      },
+      "4": {
+        "name": "Mega Debuff",
+        "effects": [
+          {
+            "id": "Weak",
+            "target": "player",
+            "amount": 2
+          },
+          {
+            "id": "Vulnerable",
+            "target": "player",
+            "amount": 2
+          },
+          {
+            "id": "Frail",
+            "target": "player",
+            "amount": 2
+          }
+        ]
+      }
+    },
+    "pre_battle": [
+      {
+        "id": "Reactive",
+        "target": "self"
+      },
+      {
+        "id": "Malleable",
+        "target": "self"
+      }
+    ],
+    "ascension": {
+      "2": {
+        "moves": {
+          "0": {
+            "damage": 38
+          },
+          "1": {
+            "hits": 4
+          },
+          "2": {
+            "block": 18
+          },
+          "3": {
+            "damage": 15
+          },
+          "4": {
+            "effects": [
+              {
+                "id": "Weak",
+                "target": "player",
+                "amount": 3
+              },
+              {
+                "id": "Vulnerable",
+                "target": "player",
+                "amount": 3
+              },
+              {
+                "id": "Frail",
+                "target": "player",
+                "amount": 3
+              }
+            ]
+          }
+        }
+      },
+      "7": {
+        "hp": {
+          "min": 175,
+          "max": 175
+        }
+      }
+    },
+    "_notes": "Randomly picks move each turn. Reactive = applies Weak/Vulnerable on attack."
+  },
+  "GiantHead": {
+    "id": "GiantHead",
+    "name": "Giant Head",
+    "java_id": "GiantHead",
+    "type": "elite",
+    "act": 3,
+    "hp": {
+      "min": 500,
+      "max": 500
+    },
+    "moves": {
+      "1": {
+        "name": "Glare",
+        "effects": [
+          {
+            "id": "Weak",
+            "target": "player",
+            "amount": 1
+          }
+        ]
+      },
+      "2": {
+        "name": "It Is Time",
+        "damage": 40
+      },
+      "3": {
+        "name": "Count"
+      }
+    },
+    "pre_battle": [
+      {
+        "id": "Slow",
+        "target": "self"
+      }
+    ],
+    "ascension": {
+      "3": {
+        "moves": {
+          "2": {
+            "damage": 50
+          }
+        }
+      },
+      "8": {
+        "hp": {
+          "min": 520,
+          "max": 520
+        }
+      },
+      "18": {
+        "pre_battle": [
+          {
+            "id": "Slow",
+            "target": "self"
+          }
+        ],
+        "moves": {
+          "1": {
+            "effects": [
+              {
+                "id": "Weak",
+                "target": "player",
+                "amount": 2
+              }
+            ]
+          }
+        }
+      }
+    },
+    "_notes": "Count (move 3) increments internal counter. Attacks with 'It Is Time' after 5 turns."
+  },
+  "Nemesis": {
+    "id": "Nemesis",
+    "name": "Nemesis",
+    "java_id": "Nemesis",
+    "type": "elite",
+    "act": 3,
+    "hp": {
+      "min": 185,
+      "max": 185
+    },
+    "moves": {
+      "2": {
+        "name": "Debuff",
+        "damage": 6,
+        "hits": 3,
+        "effects": [
+          {
+            "id": "Burn",
+            "target": "player"
+          }
+        ]
+      },
+      "3": {
+        "name": "Scythe",
+        "damage": 45
+      },
+      "4": {
+        "name": "Attack",
+        "damage": 7,
+        "hits": 2,
+        "cards": [
+          {
+            "id": "Burn",
+            "amount": 3,
+            "destination": "discard"
+          }
+        ]
+      }
+    },
+    "end_turn_effects": [
+      {
+        "id": "Intangible",
+        "target": "self",
+        "amount": 1
+      }
+    ],
+    "ascension": {
+      "3": {
+        "moves": {
+          "3": {
+            "damage": 50
+          }
+        }
+      },
+      "8": {
+        "hp": {
+          "min": 200,
+          "max": 200
+        }
+      },
+      "18": {
+        "moves": {
+          "4": {
+            "cards": [
+              {
+                "id": "Burn",
+                "amount": 5,
+                "destination": "discard"
+              }
+            ]
+          }
+        }
+      }
+    },
+    "_notes": "Intangible only applied if not already present."
+  },
+  "Reptomancer": {
+    "id": "Reptomancer",
+    "name": "Reptomancer",
+    "java_id": "Reptomancer",
+    "type": "elite",
+    "act": 3,
+    "hp": {
+      "min": 180,
+      "max": 190
+    },
+    "moves": {
+      "1": {
+        "name": "Snake Strike",
+        "damage": 13,
+        "hits": 2,
+        "effects": [
+          {
+            "id": "Weak",
+            "target": "player",
+            "amount": 1
+          }
+        ]
+      },
+      "2": {
+        "name": "Summon"
+      },
+      "3": {
+        "name": "Big Bite",
+        "damage": 30
+      }
+    },
+    "pre_battle": [
+      {
+        "id": "Minion",
+        "target": "self"
+      }
+    ],
+    "ascension": {
+      "3": {
+        "moves": {
+          "1": {
+            "damage": 16
+          },
+          "3": {
+            "damage": 34
+          }
+        }
+      },
+      "8": {
+        "hp": {
+          "min": 190,
+          "max": 200
+        }
+      },
+      "18": {
+        "moves": {
+          "3": {
+            "damage": 34
+          }
+        }
+      }
+    },
+    "_notes": "Summons SnakeDagger minions. Always summons first."
+  },
+  "AwakenedOne": {
+    "id": "AwakenedOne",
+    "name": "Awakened One",
+    "java_id": "AwakenedOne",
+    "type": "boss",
+    "act": 3,
+    "hp": {
+      "min": 300,
+      "max": 300
+    },
+    "moves": {
+      "1": {
+        "name": "Slash",
+        "damage": 20
+      },
+      "2": {
+        "name": "Soul Strike",
+        "damage": 6,
+        "hits": 4
+      },
+      "3": {
+        "name": "Rebirth"
+      },
+      "5": {
+        "name": "Dark Echo",
+        "damage": 40
+      },
+      "6": {
+        "name": "Sludge",
+        "damage": 18,
+        "cards": [
+          {
+            "id": "Void",
+            "amount": 1,
+            "destination": "discard"
+          }
+        ]
+      },
+      "8": {
+        "name": "Tackle",
+        "damage": 10,
+        "hits": 3
+      }
+    },
+    "pre_battle": [
+      {
+        "id": "Curiosity",
+        "target": "self"
+      }
+    ],
+    "ascension": {
+      "9": {
+        "hp": {
+          "min": 320,
+          "max": 320
+        }
+      }
+    },
+    "_notes": "Phase 1: Slash/SoulStrike + Curiosity. Phase 2 after Rebirth: DarkEcho/Sludge/Tackle. Rebirth at full HP."
+  },
+  "Deca": {
+    "id": "Deca",
+    "name": "Deca",
+    "java_id": "Deca",
+    "type": "boss",
+    "act": 3,
+    "hp": {
+      "min": 250,
+      "max": 250
+    },
+    "moves": {
+      "0": {
+        "name": "Beam",
+        "damage": 10,
+        "hits": 2,
+        "cards": [
+          {
+            "id": "Dazed",
+            "amount": 2,
+            "destination": "discard"
+          }
+        ]
+      },
+      "2": {
+        "name": "Square of Protection",
+        "block": 16,
+        "effects": [
+          {
+            "id": "PlatedArmor",
+            "target": "self",
+            "amount": 3
+          }
+        ]
+      }
+    },
+    "pre_battle": [
+      {
+        "id": "Artifact",
+        "target": "self",
+        "amount": 2
+      }
+    ],
+    "ascension": {
+      "4": {
+        "moves": {
+          "0": {
+            "damage": 12
+          }
+        }
+      },
+      "9": {
+        "hp": {
+          "min": 265,
+          "max": 265
+        }
+      },
+      "19": {
+        "pre_battle": [
+          {
+            "id": "Artifact",
+            "target": "self",
+            "amount": 3
+          }
+        ]
+      }
+    }
+  },
+  "Donu": {
+    "id": "Donu",
+    "name": "Donu",
+    "java_id": "Donu",
+    "type": "boss",
+    "act": 3,
+    "hp": {
+      "min": 250,
+      "max": 250
+    },
+    "moves": {
+      "0": {
+        "name": "Beam",
+        "damage": 10,
+        "hits": 2
+      },
+      "2": {
+        "name": "Circle of Power",
+        "effects": [
+          {
+            "id": "Strength",
+            "target": "self",
+            "amount": 3
+          }
+        ]
+      }
+    },
+    "pre_battle": [
+      {
+        "id": "Artifact",
+        "target": "self",
+        "amount": 2
+      }
+    ],
+    "ascension": {
+      "4": {
+        "moves": {
+          "0": {
+            "damage": 12
+          },
+          "2": {
+            "effects": [
+              {
+                "id": "Strength",
+                "target": "self",
+                "amount": 4
+              }
+            ]
+          }
+        }
+      },
+      "9": {
+        "hp": {
+          "min": 265,
+          "max": 265
+        }
+      },
+      "19": {
+        "pre_battle": [
+          {
+            "id": "Artifact",
+            "target": "self",
+            "amount": 3
+          }
+        ]
+      }
+    }
+  },
+  "TimeEater": {
+    "id": "TimeEater",
+    "name": "Time Eater",
+    "java_id": "TimeEater",
+    "type": "boss",
+    "act": 3,
+    "hp": {
+      "min": 456,
+      "max": 456
+    },
+    "moves": {
+      "2": {
+        "name": "Reverberate",
+        "damage": 7,
+        "hits": 3
+      },
+      "3": {
+        "name": "Ripple",
+        "damage": 8,
+        "block": 2
+      },
+      "4": {
+        "name": "Head Slam",
+        "damage": 26,
+        "effects": [
+          {
+            "id": "DrawReduction",
+            "target": "player",
+            "amount": 1
+          }
+        ],
+        "cards": [
+          {
+            "id": "Slimed",
+            "amount": 2,
+            "destination": "discard"
+          }
+        ]
+      },
+      "5": {
+        "name": "Haste",
+        "effects": [
+          {
+            "id": "RemoveDebuffs",
+            "target": "self"
+          },
+          {
+            "id": "Heal",
+            "target": "self"
+          }
+        ]
+      }
+    },
+    "pre_battle": [
+      {
+        "id": "TimeWarp",
+        "target": "self"
+      }
+    ],
+    "ascension": {
+      "4": {
+        "moves": {
+          "2": {
+            "damage": 8
+          },
+          "3": {
+            "damage": 9
+          },
+          "4": {
+            "damage": 32
+          }
+        }
+      },
+      "9": {
+        "hp": {
+          "min": 480,
+          "max": 480
+        }
+      }
+    },
+    "_notes": "TimeWarp: after 12 cards played, ends player turn + gains Str. Haste at half HP."
+  },
+  "CorruptHeart": {
+    "id": "CorruptHeart",
+    "name": "Corrupt Heart",
+    "java_id": "CorruptHeart",
+    "type": "boss",
+    "act": 4,
+    "hp": {
+      "min": 750,
+      "max": 750
+    },
+    "moves": {
+      "1": {
+        "name": "Blood Shots",
+        "damage": 2,
+        "hits": 12
+      },
+      "2": {
+        "name": "Echo",
+        "damage": 40
+      },
+      "3": {
+        "name": "Debilitate",
+        "effects": [
+          {
+            "id": "Vulnerable",
+            "target": "player",
+            "amount": 2
+          },
+          {
+            "id": "Weak",
+            "target": "player",
+            "amount": 2
+          },
+          {
+            "id": "Frail",
+            "target": "player",
+            "amount": 2
+          }
+        ],
+        "cards": [
+          {
+            "id": "Dazed",
+            "amount": 1,
+            "destination": "draw_pile"
+          },
+          {
+            "id": "Slimed",
+            "amount": 1,
+            "destination": "draw_pile"
+          },
+          {
+            "id": "Wound",
+            "amount": 1,
+            "destination": "draw_pile"
+          },
+          {
+            "id": "Burn",
+            "amount": 1,
+            "destination": "draw_pile"
+          },
+          {
+            "id": "Void",
+            "amount": 1,
+            "destination": "draw_pile"
+          }
+        ]
+      },
+      "4": {
+        "name": "Buff",
+        "effects": [
+          {
+            "id": "Artifact",
+            "target": "self",
+            "amount": 2
+          },
+          {
+            "id": "BeatOfDeath",
+            "target": "self",
+            "amount": 1
+          },
+          {
+            "id": "PainfulStabs",
+            "target": "self"
+          },
+          {
+            "id": "Strength",
+            "target": "self",
+            "amount": 2
+          }
+        ]
+      }
+    },
+    "pre_battle": [
+      {
+        "id": "Invincible",
+        "target": "self",
+        "amount": 200
+      },
+      {
+        "id": "BeatOfDeath",
+        "target": "self",
+        "amount": 1
+      }
+    ],
+    "ascension": {
+      "4": {
+        "moves": {
+          "1": {
+            "hits": 15
+          },
+          "2": {
+            "damage": 45
+          }
+        }
+      },
+      "9": {
+        "hp": {
+          "min": 800,
+          "max": 800
+        }
+      },
+      "19": {
+        "pre_battle": [
+          {
+            "id": "Invincible",
+            "target": "self",
+            "amount": 200
+          },
+          {
+            "id": "BeatOfDeath",
+            "target": "self",
+            "amount": 2
+          }
+        ]
+      }
+    },
+    "_notes": "Move 4 also removes negative Str first. Cycle-based extra buffs (Artifact/BeatOfDeath/PainfulStabs/Str+10/Str+50) are AI behavior in Rust."
+  },
+  "SpireShield": {
+    "id": "SpireShield",
+    "name": "Spire Shield",
+    "java_id": "SpireShield",
+    "type": "elite",
+    "act": 4,
+    "hp": {
+      "min": 110,
+      "max": 110
+    },
+    "moves": {
+      "1": {
+        "name": "Bash",
+        "damage": 12
+      },
+      "2": {
+        "name": "Fortify",
+        "block": 30
+      },
+      "3": {
+        "name": "Smash",
+        "damage": 34
+      }
+    },
+    "pre_battle": [
+      {
+        "id": "Artifact",
+        "target": "self",
+        "amount": 1
+      },
+      {
+        "id": "Surrounded",
+        "target": "self"
+      }
+    ],
+    "ascension": {
+      "3": {
+        "moves": {
+          "1": {
+            "damage": 14
+          },
+          "3": {
+            "damage": 38
+          }
+        }
+      },
+      "8": {
+        "hp": {
+          "min": 125,
+          "max": 125
+        }
+      },
+      "18": {
+        "pre_battle": [
+          {
+            "id": "Artifact",
+            "target": "self",
+            "amount": 2
+          },
+          {
+            "id": "Surrounded",
+            "target": "self"
+          }
+        ]
+      }
+    }
+  },
+  "SpireSpear": {
+    "id": "SpireSpear",
+    "name": "Spire Spear",
+    "java_id": "SpireSpear",
+    "type": "elite",
+    "act": 4,
+    "hp": {
+      "min": 160,
+      "max": 160
+    },
+    "moves": {
+      "1": {
+        "name": "Burn Strike",
+        "damage": 5,
+        "hits": 2,
+        "cards": [
+          {
+            "id": "Burn",
+            "amount": 2,
+            "destination": "discard"
+          }
+        ]
+      },
+      "2": {
+        "name": "Piercer",
+        "damage": 10,
+        "effects": [
+          {
+            "id": "Strength",
+            "target": "self",
+            "amount": 2
+          }
+        ]
+      },
+      "3": {
+        "name": "Skewer",
+        "damage": 10,
+        "hits": 3
+      }
+    },
+    "pre_battle": [
+      {
+        "id": "Artifact",
+        "target": "self",
+        "amount": 1
+      },
+      {
+        "id": "Surrounded",
+        "target": "self"
+      }
+    ],
+    "ascension": {
+      "3": {
+        "moves": {
+          "1": {
+            "damage": 6
+          },
+          "3": {
+            "hits": 4
+          }
+        }
+      },
+      "8": {
+        "hp": {
+          "min": 180,
+          "max": 180
+        }
+      },
+      "18": {
+        "pre_battle": [
+          {
+            "id": "Artifact",
+            "target": "self",
+            "amount": 2
+          },
+          {
+            "id": "Surrounded",
+            "target": "self"
+          }
+        ]
+      }
+    }
+  },
+  "Dagger": {
+    "id": "Dagger",
+    "name": "Dagger",
+    "java_id": "Dagger",
+    "type": "minion",
+    "act": 3,
+    "hp": {
+      "min": 20,
+      "max": 25
+    },
+    "moves": {
+      "1": {
+        "name": "Stab",
+        "damage": 9,
+        "cards": [
+          {
+            "id": "Wound",
+            "amount": 1,
+            "destination": "discard"
+          }
+        ]
+      },
+      "2": {
+        "name": "Explode",
+        "damage": 25
+      }
+    },
+    "_notes": "Reptomancer minion. No ascension scaling. First move = Stab, then Explode (kills self)."
+  }
+}

@@ -1,0 +1,231 @@
+#![allow(unused_imports, unused_variables, dead_code, unused_mut, unused_assignments)]
+//! Real combat simulation: Ironclad vs Jaw Worm
+//!
+//! Run with: cargo run --release --bin jaw_worm_test
+//!
+//! This uses the FULL engine (card library, damage pipeline, enemy AI)
+//! instead of the hardcoded fake in run_single_simulation.
+
+use std::env;
+use std::time::Instant;
+
+// Need to use the library crate modules
+use sts_sim::schema::CardInstance;
+use sts_sim::state::GameState;
+use sts_sim::enemy::MonsterState;
+use sts_sim::loader::{CardLibrary, MonsterLibrary};
+use sts_sim::engine;
+
+struct CombatResult {
+    won: bool,
+    turns: usize,
+    player_hp: i32,
+    enemy_hp: i32,
+    cards_played: u32,
+}
+
+fn run_real_combat(
+    seed: u64,
+    card_library: &CardLibrary,
+    monster_library: &MonsterLibrary,
+    max_turns: usize,
+    verbose: bool,
+) -> CombatResult {
+    let mut state = GameState::new(seed);
+
+    // Spawn Jaw Worm from library
+    let jaw_worm_def = monster_library.get("Jaw Worm").expect("Jaw Worm not in monster library");
+    let jaw_worm = MonsterState::new(jaw_worm_def, &mut state.rng, false);
+    if verbose {
+        println!("  Jaw Worm HP: {}/{}", jaw_worm.hp, jaw_worm.max_hp);
+    }
+    state.enemies.push(jaw_worm);
+
+    // Build Ironclad starter deck: 5 Strike, 4 Defend, 1 Bash
+    for _ in 0..5 {
+        state.obtain_card(CardInstance::new("Strike_Ironclad".to_string(), 1));
+    }
+    for _ in 0..4 {
+        state.obtain_card(CardInstance::new("Defend_Ironclad".to_string(), 1));
+    }
+    state.obtain_card(CardInstance::new("Bash".to_string(), 2));
+    state.shuffle_draw_pile();
+
+    // Battle start (relics, etc.)
+    engine::on_battle_start(&mut state, card_library, None);
+
+    // Plan Jaw Worm's first move
+    engine::plan_enemy_moves(&mut state, monster_library);
+
+    let mut total_cards_played: u32 = 0;
+
+    for turn in 0..max_turns {
+        if verbose {
+            println!("\n--- Turn {} ---", turn + 1);
+            println!("  Player: {} HP, {} Block", state.player.current_hp, state.player.block);
+            println!("  Jaw Worm: {} HP, {} Block", state.enemies[0].hp, state.enemies[0].block);
+        }
+
+        // === Player turn ===
+        state.start_turn();
+        engine::on_turn_start(&mut state, card_library, None);
+
+        // Greedy strategy: play all playable cards (first found that costs <= energy)
+        loop {
+            let playable_idx = state.hand.iter().position(|c| {
+                c.current_cost >= 0 && c.current_cost <= state.player.energy
+            });
+
+            match playable_idx {
+                Some(idx) => {
+                    match engine::play_card_from_hand(&mut state, card_library, idx, Some(0)) {
+                        Ok(_) => {
+                            total_cards_played += 1;
+                        }
+                        Err(e) => {
+                            if verbose {
+                                println!("  Card error: {}", e);
+                            }
+                            break;
+                        }
+                    }
+
+                    // Check win
+                    if state.combat_won() {
+                        return CombatResult {
+                            won: true,
+                            turns: turn + 1,
+                            player_hp: state.player.current_hp,
+                            enemy_hp: 0,
+                            cards_played: total_cards_played,
+                        };
+                    }
+                }
+                None => break,
+            }
+        }
+
+        engine::on_turn_end(&mut state, card_library, None);
+        state.end_turn();
+
+        // === Enemy turn ===
+        engine::execute_enemy_turn(&mut state, monster_library);
+
+        // Check loss
+        if state.player.current_hp <= 0 {
+            return CombatResult {
+                won: false,
+                turns: turn + 1,
+                player_hp: 0,
+                enemy_hp: state.enemies[0].hp,
+                cards_played: total_cards_played,
+            };
+        }
+
+        // Note: plan_enemy_moves is already called inside execute_enemy_turn
+    }
+
+    // Timeout = loss
+    CombatResult {
+        won: false,
+        turns: max_turns,
+        player_hp: state.player.current_hp,
+        enemy_hp: state.enemies[0].hp,
+        cards_played: total_cards_played,
+    }
+}
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let num_games: u32 = env::args().nth(1)
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(10);
+
+    println!("閳烘柡鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫧");
+    println!("閳? Real Combat Test: Ironclad vs Jaw Worm ({:>5} games)    閳?, num_games);
+    println!("閳烘埃鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ殕\n");
+
+    // Load libraries
+    let card_library = CardLibrary::load("data/cards")?;
+    let monster_library = MonsterLibrary::load("data/monsters_with_behavior.json")?;
+    println!("棣冩憥 Loaded {} cards, {} monsters", card_library.len(), monster_library.len());
+
+    // Run one verbose game first
+    println!("\n閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀?);
+    println!("棣冩敵 Sample game (seed=42, verbose):");
+    println!("閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀?);
+    let sample = run_real_combat(42, &card_library, &monster_library, 50, true);
+    println!("\n  Result: {} in {} turns, Player HP: {}, Enemy HP: {}",
+        if sample.won { "WIN" } else { "LOSS" },
+        sample.turns, sample.player_hp, sample.enemy_hp);
+
+    // Run N games
+    println!("\n閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀?);
+    println!("棣冩惓 Running {} games...", num_games);
+    println!("閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀?);
+    let start = Instant::now();
+
+    let mut wins = 0u32;
+    let mut total_turns = 0u64;
+    let mut total_player_hp = 0i64;
+    let mut total_cards = 0u64;
+    let mut min_turns = usize::MAX;
+    let mut max_turns_seen = 0usize;
+    let mut win_hp_sum = 0i64;
+    let mut win_count_for_hp = 0u32;
+
+    for i in 0..num_games {
+        let result = run_real_combat(i as u64, &card_library, &monster_library, 50, false);
+
+        if result.won {
+            wins += 1;
+            win_hp_sum += result.player_hp as i64;
+            win_count_for_hp += 1;
+        }
+        total_turns += result.turns as u64;
+        total_player_hp += result.player_hp as i64;
+        total_cards += result.cards_played as u64;
+        min_turns = min_turns.min(result.turns);
+        max_turns_seen = max_turns_seen.max(result.turns);
+    }
+
+    let elapsed = start.elapsed();
+
+    println!("\n閳烘柡鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫧");
+    println!("閳? Results: {} games                                       閳?, num_games);
+    println!("閳虹姭鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ殠");
+    println!("閳? Win rate:       {:5.1}% ({}/{})                        閳?,
+        wins as f64 / num_games as f64 * 100.0, wins, num_games);
+    println!("閳? Avg turns:      {:5.1}  (min: {}, max: {})             閳?,
+        total_turns as f64 / num_games as f64, min_turns, max_turns_seen);
+    println!("閳? Avg cards/game: {:5.1}                                  閳?,
+        total_cards as f64 / num_games as f64);
+    if win_count_for_hp > 0 {
+        println!("閳? Avg HP on win:  {:5.1}                                  閳?,
+            win_hp_sum as f64 / win_count_for_hp as f64);
+    }
+    println!("閳? Time:           {:5.2}s ({:.0} games/sec)               閳?,
+        elapsed.as_secs_f64(), num_games as f64 / elapsed.as_secs_f64());
+    println!("閳烘埃鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ殕");
+
+    // Sanity checks
+    let win_rate = wins as f64 / num_games as f64 * 100.0;
+    println!("\n棣冩敵 Sanity Check:");
+    if win_rate < 10.0 {
+        println!("   閳跨媴绗?Win rate too low ({:.1}%) 閳?something is probably broken", win_rate);
+    } else if win_rate > 90.0 {
+        println!("   閳跨媴绗?Win rate too high ({:.1}%) 閳?enemy AI might not be working", win_rate);
+    } else {
+        println!("   閴?Win rate {:.1}% looks reasonable for random play vs Jaw Worm", win_rate);
+    }
+
+    let avg_turns = total_turns as f64 / num_games as f64;
+    if avg_turns < 2.0 {
+        println!("   閳跨媴绗?Avg turns too low ({:.1}) 閳?games ending too fast", avg_turns);
+    } else if avg_turns > 30.0 {
+        println!("   閳跨媴绗?Avg turns too high ({:.1}) 閳?games might be stalling", avg_turns);
+    } else {
+        println!("   閴?Avg turns {:.1} looks reasonable", avg_turns);
+    }
+
+    Ok(())
+}

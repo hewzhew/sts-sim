@@ -1,0 +1,559 @@
+[
+  {
+    "id": "Dramatic_Entrance",
+    "name": "Dramatic Entrance",
+    "type": "Attack",
+    "cost": 0,
+    "color": "Colorless",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "AllEnemies",
+      "commands": [
+        {
+          "type": "Innate",
+          "params": {}
+        },
+        {
+          "type": "DealDamageAll",
+          "params": {
+            "base": 8,
+            "upgrade": 12
+          }
+        },
+        {
+          "type": "ExhaustSelf",
+          "params": {}
+        }
+      ],
+      "keywords_used": [
+        "Innate",
+        "Exhaust"
+      ]
+    },
+    "original_text": "#Innate.<br>Deal [8|12] damage to ALL enemies.<br>#Exhaust."
+  },
+  {
+    "id": "Flash_of_Steel",
+    "name": "Flash of Steel",
+    "type": "Attack",
+    "cost": 0,
+    "color": "Colorless",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "DealDamage",
+          "params": {
+            "base": 3,
+            "upgrade": 6
+          }
+        },
+        {
+          "type": "DrawCards",
+          "params": {
+            "base": 1,
+            "upgrade": 1
+          }
+        }
+      ]
+    },
+    "original_text": "Deal [3|6] damage.<br>Draw 1 card."
+  },
+  {
+    "id": "Mind_Blast",
+    "name": "Mind Blast",
+    "type": "Attack",
+    "cost": 2,
+    "color": "Colorless",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "Enemy",
+      "commands": [
+        {
+          "type": "Innate",
+          "params": {}
+        },
+        {
+          "type": "DealDamage",
+          "params": {
+            "scaling": "the"
+          }
+        }
+      ],
+      "keywords_used": [
+        "Innate"
+      ]
+    },
+    "original_text": "#Innate.<br>Deal damage equal to the number of cards in your draw pile.",
+    "cost_upgrade": 1
+  },
+  {
+    "id": "Swift_Strike",
+    "name": "Swift Strike",
+    "type": "Attack",
+    "cost": 0,
+    "color": "Colorless",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "Enemy",
+      "commands": [
+        {
+          "type": "DealDamage",
+          "params": {
+            "base": 7,
+            "upgrade": 10
+          }
+        }
+      ]
+    },
+    "original_text": "Deal [7|10] damage."
+  },
+  {
+    "id": "Bandage_Up",
+    "name": "Bandage Up",
+    "type": "Skill",
+    "cost": 0,
+    "color": "Colorless",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "Heal",
+          "params": {
+            "base": 4,
+            "upgrade": 6
+          }
+        },
+        {
+          "type": "ExhaustSelf",
+          "params": {}
+        }
+      ],
+      "keywords_used": [
+        "Exhaust"
+      ]
+    },
+    "original_text": "Heal [4|6] HP.<br>#Exhaust."
+  },
+  {
+    "id": "Blind",
+    "name": "Blind",
+    "type": "Skill",
+    "cost": 0,
+    "color": "Colorless",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "Enemy",
+      "commands": [
+        {
+          "type": "ApplyStatus",
+          "params": {
+            "status": "Weak",
+            "base": 2,
+            "upgrade": 2
+          }
+        }
+      ],
+      "keywords_used": [
+        "Weak"
+      ]
+    },
+    "original_text": "Apply 2 #Weak[| to ALL enemies]."
+  },
+  {
+    "id": "Dark_Shackles",
+    "name": "Dark Shackles",
+    "type": "Skill",
+    "cost": 0,
+    "color": "Colorless",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "Enemy",
+      "commands": [
+        {
+          "type": "RemoveEnemyBuff",
+          "params": {
+            "buff": "Strength",
+            "base": 9,
+            "upgrade": 15
+          }
+        },
+        {
+          "type": "ExhaustSelf",
+          "params": {}
+        }
+      ],
+      "keywords_used": [
+        "Exhaust"
+      ]
+    },
+    "original_text": "Enemy loses [9|15] #Strength this turn.<br>#Exhaust."
+  },
+  {
+    "id": "Deep_Breath",
+    "name": "Deep Breath",
+    "type": "Skill",
+    "cost": 0,
+    "color": "Colorless",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "ShuffleInto",
+          "params": {
+            "card": "your discard pile"
+          }
+        },
+        {
+          "type": "Draw",
+          "params": {
+            "amount": 1,
+            "upgrade_amount": 2
+          }
+        }
+      ]
+    },
+    "original_text": "Shuffle your discard pile into your draw pile.<br>Draw [1 card|2 cards].",
+    "manual_review_needed": false
+  },
+  {
+    "id": "Discovery",
+    "name": "Discovery",
+    "type": "Skill",
+    "cost": 1,
+    "color": "Colorless",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "ExhaustSelf",
+          "params": {
+            "base_only": true
+          }
+        },
+        {
+          "type": "Discover",
+          "params": {
+            "choose": 1,
+            "from": 3
+          }
+        }
+      ]
+    },
+    "original_text": "Choose 1 of 3 random cards to add into your hand. It costs 0 this turn.[<br>#Exhaust.|]",
+    "manual_review_needed": false,
+    "flags": {
+      "generated_cost": 0
+    }
+  },
+  {
+    "id": "Enlightenment",
+    "name": "Enlightenment",
+    "type": "Skill",
+    "cost": 0,
+    "color": "Colorless",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "Self",
+      "commands": []
+    },
+    "original_text": "Reduce the cost of all cards in your hand to 1 this [turn|combat].",
+    "manual_review_needed": true,
+    "unparsed_text": [
+      "Reduce the cost of all cards in your hand to 1 this [turn|combat]"
+    ]
+  },
+  {
+    "id": "Finesse",
+    "name": "Finesse",
+    "type": "Skill",
+    "cost": 0,
+    "color": "Colorless",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "GainBlock",
+          "params": {
+            "base": 2,
+            "upgrade": 4
+          }
+        },
+        {
+          "type": "DrawCards",
+          "params": {
+            "base": 1,
+            "upgrade": 1
+          }
+        }
+      ],
+      "keywords_used": [
+        "Block"
+      ]
+    },
+    "original_text": "Gain [2|4] #Block.<br>Draw 1 card."
+  },
+  {
+    "id": "Forethought",
+    "name": "Forethought",
+    "type": "Skill",
+    "cost": 0,
+    "color": "Colorless",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "MoveCard",
+          "params": {
+            "from": "hand",
+            "to": "draw_pile",
+            "insert_at": "bottom",
+            "select": {
+              "mode": "Choose_any"
+            }
+          }
+        }
+      ]
+    },
+    "original_text": "Put [a card|any number of cards] from your hand to the bottom of your draw pile. [It costs|They cost] 0 until played.",
+    "manual_review_needed": false,
+    "flags": {
+      "cost_zero_until_played": true
+    }
+  },
+  {
+    "id": "Good_Instincts",
+    "name": "Good Instincts",
+    "type": "Skill",
+    "cost": 0,
+    "color": "Colorless",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "GainBlock",
+          "params": {
+            "base": 6,
+            "upgrade": 9
+          }
+        }
+      ],
+      "keywords_used": [
+        "Block"
+      ]
+    },
+    "original_text": "Gain [6|9] #Block."
+  },
+  {
+    "id": "Impatience",
+    "name": "Impatience",
+    "type": "Skill",
+    "cost": 0,
+    "color": "Colorless",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "DrawCards",
+          "params": {
+            "base": 2,
+            "upgrade": 3
+          }
+        }
+      ]
+    },
+    "original_text": "If you have no Attacks in your hand, draw [2|3] cards."
+  },
+  {
+    "id": "Jack_of_All_Trades",
+    "name": "Jack of All Trades",
+    "type": "Skill",
+    "cost": 0,
+    "color": "Colorless",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "AddCard",
+          "params": {
+            "card": "[1|2] random Colorless [card|cards]",
+            "destination": "hand"
+          }
+        },
+        {
+          "type": "ExhaustSelf",
+          "params": {}
+        }
+      ],
+      "keywords_used": [
+        "Exhaust"
+      ]
+    },
+    "original_text": "Add [1|2] random Colorless [card|cards] into your hand.<br>#Exhaust."
+  },
+  {
+    "id": "Madness",
+    "name": "Madness",
+    "type": "Skill",
+    "cost": 1,
+    "color": "Colorless",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "ExhaustSelf",
+          "params": {}
+        },
+        {
+          "type": "SetCostRandom",
+          "params": {
+            "pile": "hand",
+            "cost": 0,
+            "permanent": true
+          }
+        }
+      ],
+      "keywords_used": [
+        "Exhaust"
+      ]
+    },
+    "original_text": "Reduce the cost of a random card in your hand to 0 this combat.<br>#Exhaust.",
+    "cost_upgrade": 0,
+    "manual_review_needed": false
+  },
+  {
+    "id": "Panacea",
+    "name": "Panacea",
+    "type": "Skill",
+    "cost": 0,
+    "color": "Colorless",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "GainBuff",
+          "params": {
+            "buff": "Artifact",
+            "base": 1,
+            "upgrade": 2
+          }
+        },
+        {
+          "type": "ExhaustSelf",
+          "params": {}
+        }
+      ],
+      "keywords_used": [
+        "Artifact",
+        "Exhaust"
+      ]
+    },
+    "original_text": "Gain [1|2] #Artifact.<br>#Exhaust."
+  },
+  {
+    "id": "Panic_Button",
+    "name": "Panic Button",
+    "type": "Skill",
+    "cost": 0,
+    "color": "Colorless",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "GainBlock",
+          "params": {
+            "base": 30,
+            "upgrade": 40
+          }
+        },
+        {
+          "type": "ExhaustSelf",
+          "params": {}
+        },
+        {
+          "type": "ApplyDebuff",
+          "params": {
+            "debuff": "No Block",
+            "amount": 2,
+            "target": "self"
+          }
+        }
+      ],
+      "keywords_used": [
+        "Block",
+        "Exhaust"
+      ]
+    },
+    "original_text": "Gain [30|40] #Block. You cannot gain #Block from cards for 2 turns.<br>#Exhaust.",
+    "manual_review_needed": false
+  },
+  {
+    "id": "Purity",
+    "name": "Purity",
+    "type": "Skill",
+    "cost": 0,
+    "color": "Colorless",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "Self",
+      "commands": [
+        {
+          "type": "ExhaustSelf",
+          "params": {}
+        },
+        {
+          "type": "ExhaustCard",
+          "params": {
+            "pile": "hand",
+            "select": {
+              "mode": "Choose_up_to"
+            },
+            "upgrade_count": 5
+          }
+        }
+      ],
+      "keywords_used": [
+        "Exhaust"
+      ]
+    },
+    "original_text": "#Exhaust up to [3|5] cards in your hand.<br>#Exhaust.",
+    "manual_review_needed": false
+  },
+  {
+    "id": "Trip",
+    "name": "Trip",
+    "type": "Skill",
+    "cost": 0,
+    "color": "Colorless",
+    "rarity": "Uncommon",
+    "logic": {
+      "target_type": "Enemy",
+      "commands": [
+        {
+          "type": "ApplyStatus",
+          "params": {
+            "status": "Vulnerable",
+            "base": 2,
+            "upgrade": 2
+          }
+        }
+      ],
+      "keywords_used": [
+        "Vulnerable"
+      ]
+    },
+    "original_text": "Apply 2 #Vulnerable[| to ALL enemies]."
+  }
+]

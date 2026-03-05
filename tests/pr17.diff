@@ -1,0 +1,307 @@
+diff --git a/src/main/java/communicationmod/CommandExecutor.java b/src/main/java/communicationmod/CommandExecutor.java
+index 122555f..2a6b08a 100644
+--- a/src/main/java/communicationmod/CommandExecutor.java
++++ b/src/main/java/communicationmod/CommandExecutor.java
+@@ -20,6 +20,7 @@
+ import com.megacrit.cardcrawl.random.Random;
+ import com.megacrit.cardcrawl.relics.AbstractRelic;
+ import com.megacrit.cardcrawl.rooms.*;
++import com.megacrit.cardcrawl.screens.DeathScreen;
+ import communicationmod.patches.InputActionPatch;
+ import org.apache.logging.log4j.LogManager;
+ import org.apache.logging.log4j.Logger;
+@@ -66,6 +67,9 @@ public static boolean executeCommand(String command) throws InvalidCommandExcept
+             case "start":
+                 executeStartCommand(tokens);
+                 return true;
++            case "abandon":
++                executeAbandonCommand();
++                return true;
+             case "state":
+                 executeStateCommand();
+                 return false;
+@@ -108,6 +112,9 @@ public static ArrayList<String> getAvailableCommands() {
+         if (isStartCommandAvailable()) {
+             availableCommands.add("start");
+         }
++        if (isAbandonCommandAvailable()) {
++            availableCommands.add("abandon");
++        }
+         if (isInDungeon()) {
+             availableCommands.add("key");
+             availableCommands.add("click");
+@@ -189,6 +196,10 @@ public static boolean isStartCommandAvailable() {
+         return !isInDungeon() && CardCrawlGame.mainMenuScreen != null;
+     }
+ 
++    public static boolean isAbandonCommandAvailable() {
++        return !isStartCommandAvailable();
++    }
++
+     private static void executeStateCommand() {
+         CommunicationMod.mustSendGameState = true;
+     }
+@@ -352,11 +363,19 @@ private static void executeStartCommand(String[] tokens) throws InvalidCommandEx
+         }
+         if(tokens.length >= 4) {
+             String seedString = tokens[3].toUpperCase();
+-            if(!seedString.matches("^[A-Z0-9]+$")) {
++            boolean numerical = false;
++            if(!seedString.matches("^-?[A-Z0-9]+$")) {
+                 throw new InvalidCommandException(tokens, InvalidCommandException.InvalidCommandFormat.INVALID_ARGUMENT, seedString);
+             }
++            if (seedString.matches("^-?[0-9]+$")) {
++                numerical = true;
++            }
+             seedSet = true;
+-            seed = SeedHelper.getLong(seedString);
++            if (numerical) {
++                seed = Long.parseLong(seedString);
++            } else {
++                seed = SeedHelper.getLong(seedString);
++            }
+             boolean isTrialSeed = TrialHelper.isTrialSeed(seedString);
+             if (isTrialSeed) {
+                 Settings.specialSeed = seed;
+@@ -381,6 +400,12 @@ private static void executeStartCommand(String[] tokens) throws InvalidCommandEx
+         GameStateListener.resetStateVariables();
+     }
+ 
++    private static void executeAbandonCommand() {
++        AbstractDungeon.closeCurrentScreen();
++        AbstractDungeon.player.isDead = true;
++        AbstractDungeon.deathScreen = new DeathScreen(AbstractDungeon.getMonsters());
++    }
++
+     private static void executeKeyCommand(String[] tokens) throws InvalidCommandException {
+         if (tokens.length < 2) {
+             throw new InvalidCommandException(tokens, InvalidCommandException.InvalidCommandFormat.MISSING_ARGUMENT);
+diff --git a/src/main/java/communicationmod/CommsCommand.java b/src/main/java/communicationmod/CommsCommand.java
+new file mode 100644
+index 0000000..dfb574e
+--- /dev/null
++++ b/src/main/java/communicationmod/CommsCommand.java
+@@ -0,0 +1,59 @@
++package communicationmod;
++
++import basemod.DevConsole;
++import basemod.devcommands.ConsoleCommand;
++
++import java.util.ArrayList;
++
++public class CommsCommand extends ConsoleCommand {
++
++        public CommsCommand() {
++            maxExtraTokens = 1;
++            minExtraTokens = 1;
++            requiresPlayer = false;
++        }
++
++        private static void cmdHelp() {
++            DevConsole.couldNotParse();
++            DevConsole.log("options are:");
++            DevConsole.log("* pause");
++            DevConsole.log("* play");
++            DevConsole.log("* restart");
++        }
++
++        public void execute(String[] tokens, int depth) {
++            switch (tokens[1].toLowerCase()) {
++                case "pause":
++                    CommunicationMod.paused = true;
++                    break;
++                case "play":
++                    CommunicationMod.paused = false;
++                    break;
++                case "restart":
++                    CommunicationMod.paused = false;
++                    CommunicationMod.mustSendGameState = true;
++            }
++        }
++
++        @Override
++        public ArrayList<String> extraOptions(String[] tokens, int depth) {
++            ArrayList<String> result = new ArrayList<>();
++            result.add("pause");
++            result.add("play");
++            result.add("restart");
++
++            if (tokens.length == depth + 1) {
++                return result;
++            } else if (result.contains(tokens[depth])) {
++                complete = true;
++                result = new ArrayList<>();
++            }
++            return result;
++        }
++
++        @Override
++        public void errorMsg() {
++            cmdHelp();
++        }
++
++}
+diff --git a/src/main/java/communicationmod/CommunicationMod.java b/src/main/java/communicationmod/CommunicationMod.java
+index 375521e..1d4464b 100644
+--- a/src/main/java/communicationmod/CommunicationMod.java
++++ b/src/main/java/communicationmod/CommunicationMod.java
+@@ -26,6 +26,8 @@
+ import java.util.concurrent.LinkedBlockingQueue;
+ import java.util.concurrent.TimeUnit;
+ 
++import static basemod.devcommands.ConsoleCommand.addCommand;
++
+ @SpireInitializer
+ public class CommunicationMod implements PostInitializeSubscriber, PostUpdateSubscriber, PostDungeonUpdateSubscriber, PreUpdateSubscriber, OnStateChangeSubscriber {
+ 
+@@ -37,6 +39,7 @@ public class CommunicationMod implements PostInitializeSubscriber, PostUpdateSub
+     private static BlockingQueue<String> writeQueue;
+     private static Thread readThread;
+     private static BlockingQueue<String> readQueue;
++    public static boolean paused;
+     private static final String MODNAME = "Communication Mod";
+     private static final String AUTHOR = "Forgotten Arbiter";
+     private static final String DESCRIPTION = "This mod communicates with an external program to play Slay the Spire.";
+@@ -81,6 +84,7 @@ public CommunicationMod(){
+ 
+     public static void initialize() {
+         CommunicationMod mod = new CommunicationMod();
++        addCommand("comms", CommsCommand.class);
+     }
+ 
+     public void receivePreUpdate() {
+@@ -89,7 +93,7 @@ public void receivePreUpdate() {
+             writeThread.interrupt();
+             readThread.interrupt();
+         }
+-        if(messageAvailable()) {
++        if(messageAvailable() && !paused) {
+             try {
+                 boolean stateChanged = CommandExecutor.executeCommand(readMessage());
+                 if(stateChanged) {
+diff --git a/src/main/java/communicationmod/GameStateConverter.java b/src/main/java/communicationmod/GameStateConverter.java
+index 6842f0a..d5a4a6e 100644
+--- a/src/main/java/communicationmod/GameStateConverter.java
++++ b/src/main/java/communicationmod/GameStateConverter.java
+@@ -13,6 +13,10 @@
+ import com.megacrit.cardcrawl.map.MapRoomNode;
+ import com.megacrit.cardcrawl.monsters.AbstractMonster;
+ import com.megacrit.cardcrawl.monsters.EnemyMoveInfo;
++import com.megacrit.cardcrawl.monsters.beyond.*;
++import com.megacrit.cardcrawl.monsters.city.BookOfStabbing;
++import com.megacrit.cardcrawl.monsters.city.Champ;
++import com.megacrit.cardcrawl.monsters.exordium.Hexaghost;
+ import com.megacrit.cardcrawl.neow.NeowEvent;
+ import com.megacrit.cardcrawl.orbs.AbstractOrb;
+ import com.megacrit.cardcrawl.potions.AbstractPotion;
+@@ -669,35 +673,72 @@ private static HashMap<String, Object> convertMonsterToJson(AbstractMonster mons
+         jsonMonster.put("name", monster.name);
+         jsonMonster.put("current_hp", monster.currentHealth);
+         jsonMonster.put("max_hp", monster.maxHealth);
+-        if (AbstractDungeon.player.hasRelic(RunicDome.ID)) {
+-            jsonMonster.put("intent", AbstractMonster.Intent.NONE);
+-        } else {
+-            jsonMonster.put("intent", monster.intent.name());
+-            EnemyMoveInfo moveInfo = (EnemyMoveInfo)ReflectionHacks.getPrivate(monster, AbstractMonster.class, "move");
+-            if (moveInfo != null) {
+-                jsonMonster.put("move_id", moveInfo.nextMove);
+-                jsonMonster.put("move_base_damage", moveInfo.baseDamage);
+-                int intentDmg = (int)ReflectionHacks.getPrivate(monster, AbstractMonster.class, "intentDmg");
+-                if (moveInfo.baseDamage > 0) {
+-                    jsonMonster.put("move_adjusted_damage", intentDmg);
+-                } else {
+-                    jsonMonster.put("move_adjusted_damage", moveInfo.baseDamage);
+-                }
+-                int move_hits = moveInfo.multiplier;
+-                // If isMultiDamage is not set, the multiplier is probably 0, but there is really 1 attack.
+-                if (!moveInfo.isMultiDamage) {
+-                    move_hits = 1;
+-                }
+-                jsonMonster.put("move_hits", move_hits);
++        // send over full intent information
++        // the user must exclude this if runic dome is present if they wish to avoid "cheating"
++        jsonMonster.put("intent", monster.intent.name());
++        EnemyMoveInfo moveInfo = (EnemyMoveInfo)ReflectionHacks.getPrivate(monster, AbstractMonster.class, "move");
++        if (moveInfo != null) {
++            jsonMonster.put("move_id", moveInfo.nextMove);
++            jsonMonster.put("move_base_damage", moveInfo.baseDamage);
++            int intentDmg = (int)ReflectionHacks.getPrivate(monster, AbstractMonster.class, "intentDmg");
++            if (moveInfo.baseDamage > 0) {
++                jsonMonster.put("move_adjusted_damage", intentDmg);
++            } else {
++                jsonMonster.put("move_adjusted_damage", moveInfo.baseDamage);
+             }
++            int move_hits = moveInfo.multiplier;
++            // If isMultiDamage is not set, the multiplier is probably 0, but there is really 1 attack.
++            if (!moveInfo.isMultiDamage) {
++                move_hits = 1;
++            }
++            jsonMonster.put("move_hits", move_hits);
+         }
+-        if(monster.moveHistory.size() >= 2) {
++        if (monster.moveHistory.size() >= 2) {
+             jsonMonster.put("last_move_id", monster.moveHistory.get(monster.moveHistory.size() - 2));
+         }
+-        if(monster.moveHistory.size() >= 3) {
++        if (monster.moveHistory.size() >= 3) {
+             jsonMonster.put("second_last_move_id", monster.moveHistory.get(monster.moveHistory.size() - 3));
+         }
++
++        // some monster-specific information that isn't a part of powers
++        String[] miscIntFieldNames = {
++                "nipDmg", "thornsCount", "stabCount", "biteDmg", "currentCharge"
++        };
++        // nipDmg is the darkling nip attack damage amount (only available to the player after the first time the darkling rolls nip)
++        // thornsCount is the number of times a spiker has buffed its thorns amount
++        // stabCount is the number of stabs the book of stabbing does in its multi-attack
++        // biteDmg is the louse bite attack damage amount (only available to the player after the first time the louse rolls bite)
++        // currentCharge is the amount of turns the gremlin wizard has charged up
++        Object misc;
++        for (String fieldName : miscIntFieldNames) {
++            misc = getFieldIfExists(monster, fieldName);
++            if (misc != null) {
++                jsonMonster.put("miscInt", (int)misc);
++                break;
++            }
++        }
++        String[] miscBoolFieldNames = {
++                "thresholdReached", "usedHaste", "form1", "usedMegaDebuff", "usedStasis"
++        };
++        // thresholdReached is if champ has gone below half HP - this is probably redundant
++        // usedHaste is if time eater has used haste (the heal move)
++        // form1 is if awakened one is in its first form still
++        // usedMegaDebuff is if writhing mass has used implant (the curse move)
++        // usedStasis is if the bronze orb has used stasis yet
++        for (String fieldName : miscBoolFieldNames) {
++            misc = getFieldIfExists(monster, fieldName);
++            if (misc != null) {
++                jsonMonster.put("miscBool", (boolean)misc);
++                break;
++            }
++        }
++        if (monster instanceof Hexaghost) {
++            jsonMonster.put("active_orbs", getFieldIfExists(monster, "orbActiveCount"));
++            jsonMonster.put("miscInt", monster.damage.get(2).base);
++        }
++
+         jsonMonster.put("half_dead", monster.halfDead);
++        jsonMonster.put("is_escaping", monster.isEscaping);
+         jsonMonster.put("is_gone", monster.isDeadOrEscaped());
+         jsonMonster.put("block", monster.currentBlock);
+         jsonMonster.put("powers", convertCreaturePowersToJson(monster));
+@@ -783,13 +824,14 @@ private static ArrayList<Object> convertCreaturePowersToJson(AbstractCreature cr
+                 json_power.put("card", convertCardToJson((AbstractCard)card));
+             }
+             String[] miscFieldNames = {
+-                    "basePower", "maxAmt", "storedAmount", "hpLoss", "cardsDoubledThisTurn"
++                    "basePower", "maxAmt", "storedAmount", "hpLoss", "cardsDoubledThisTurn", "energyGainAmount"
+             };
+             // basePower gives the base power for Malleable
+             // maxAmt gives the max amount of damage per turn for Invincible
+             // storedAmount gives the number of stacks per turn for Flight
+             // hpLoss gives the amount of HP lost per turn with Combust
+             // cardsDoubledThisTurn gives the number of cards already doubled with Echo Form
++            // energyGainedAmount gives the amount of energy per turn given by Deva Form
+             Object misc = null;
+             for (String fieldName : miscFieldNames) {
+                 misc = getFieldIfExists(power, fieldName);

@@ -1,0 +1,270 @@
+#![allow(unused_imports, unused_variables, dead_code, unused_mut, unused_assignments)]
+//! Slay the Spire Simulator - Phase 5 Demo
+//!
+//! This demonstrates the complete combat loop with:
+//! 1. Relic system (Burning Blood, Vajra, Pen Nib)
+//! 2. Enemy AI and behavior
+//! 3. Full player-enemy turn cycle
+//! 4. Procedural map generation
+
+use sts_sim::core::schema::CardInstance;
+use sts_sim::core::state::GameState;
+use sts_sim::monsters::enemy::MonsterState;
+use sts_sim::core::loader::{CardLibrary, MonsterLibrary};
+use sts_sim::items::relics::RelicInstance;
+use sts_sim::dungeon_mod::map::{generate_map, generate_all_maps, SimpleMap, Map};
+use sts_sim::engine;
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    println!("閳烘柡鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫧");
+    println!("閳? Slay the Spire Simulator - Phase 4: Relics & Hooks      閳?);
+    println!("閳烘埃鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ殕\n");
+
+    // === Step 1: Load Libraries ===
+    println!("棣冩憥 Loading card library...");
+    let card_library = CardLibrary::load("data/cards")?;
+    println!("   Loaded {} cards", card_library.len());
+    
+    println!("\n棣冩憥 Loading monster library...");
+    let monster_library = MonsterLibrary::load("data/monsters_with_behavior.json")?;
+    println!("   Loaded {} monsters", monster_library.len());
+
+    // === Step 2: Set up combat with Cultist ===
+    println!("\n閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀?);
+    println!("棣冨箖 DEMO: Combat vs Cultist (with Relics!)");
+    println!("閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀?);
+    
+    let mut state = GameState::new(12345);
+    
+    // === Give player some relics ===
+    println!("\n棣冨返 Adding Relics:");
+    
+    // Burning Blood (Ironclad starter) - heal 6 at end of combat
+    state.relics.push(RelicInstance::new("BurningBlood"));
+    println!("   棣冩暉 Burning Blood - Heal 6 HP at end of combat");
+    
+    // Vajra - gain 1 Strength at start of combat
+    state.relics.push(RelicInstance::new("Vajra"));
+    println!("   棣冩尛 Vajra - +1 Strength at start of combat");
+    
+    // Pen Nib - every 10th attack deals double damage
+    state.relics.push(RelicInstance::new("PenNib"));
+    println!("   棣冩瀳閿?Pen Nib - Every 10th attack deals double damage");
+    
+    // Anchor - gain 10 block at start of combat
+    state.relics.push(RelicInstance::new("Anchor"));
+    println!("   閳?Anchor - +10 Block at start of combat");
+    
+    // Spawn a Cultist using the monster library
+    let cultist_def = monster_library.get("Cultist")?;
+    println!("\n棣冾浂 Spawning: {}", cultist_def.name);
+    println!("   HP Range: {}", cultist_def.hp.base);
+    
+    let cultist = MonsterState::new(cultist_def, &mut state.rng, false);
+    println!("   Rolled HP: {}/{}", cultist.hp, cultist.max_hp);
+    state.enemies.push(cultist);
+    
+    // Build starter deck
+    for _ in 0..5 {
+        state.obtain_card(CardInstance::new("Strike_Ironclad".to_string(), 1));
+    }
+    for _ in 0..4 {
+        state.obtain_card(CardInstance::new("Defend_Ironclad".to_string(), 1));
+    }
+    state.obtain_card(CardInstance::new("Bash".to_string(), 2));
+    state.shuffle_draw_pile();
+    
+    // === Step 3: Battle Start - Trigger relics ===
+    println!("\n閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀?);
+    println!("閳挎棑绗?BATTLE START");
+    println!("閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀?);
+    
+    engine::on_battle_start(&mut state, &card_library, None);
+    
+    println!("\n棣冩惓 After Battle Start Relics:");
+    println!("   Player Strength: {} (from Vajra)", state.player.strength());
+    println!("   Player Block: {} (from Anchor)", state.player.block);
+    
+    // Plan Cultist's first move
+    engine::plan_enemy_moves(&mut state, &monster_library);
+    
+    // === Step 4: Player Turn 1 ===
+    println!("\n閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀?);
+    println!("棣冨箣 TURN 1 - Player Turn");
+    println!("閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀?);
+    
+    state.start_turn();
+    engine::on_turn_start(&mut state, &card_library, None);
+    
+    println!("\nPlayer HP: {}/{}", state.player.current_hp, state.player.max_hp);
+    println!("Player Block: {}", state.player.block);
+    println!("Player Strength: {}", state.player.strength());
+    println!("Energy: {}/{}", state.player.energy, state.player.max_energy);
+    println!("Hand size: {} cards", state.hand.len());
+    
+    // Play some Strikes to build Pen Nib counter
+    println!("\n  Playing attacks to build Pen Nib counter...");
+    for i in 0..3 {
+        if let Some(strike_idx) = state.hand.iter().position(|c| c.definition_id == "Strike_Ironclad") {
+            println!("  [Attack {}] Playing Strike...", i + 1);
+            if let Err(e) = engine::play_card_from_hand(&mut state, &card_library, strike_idx, Some(0)) {
+                println!("    Error: {}", e);
+            }
+        }
+    }
+    
+    println!("\n  Cultist HP after attacks: {}", state.enemies[0].hp);
+    println!("  Pen Nib counter: {}/10", state.relics.iter().find(|r| r.id == "PenNib").map(|r| r.counter).unwrap_or(0));
+    
+    engine::on_turn_end(&mut state, &card_library, None);
+    state.end_turn();
+    
+    // === Step 5: Enemy Turn 1 ===
+    engine::execute_enemy_turn(&mut state, &monster_library);
+    
+    // === Step 6: Turn 2 ===
+    println!("\n閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀?);
+    println!("棣冨箣 TURN 2 - Player Turn");
+    println!("閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀?);
+    
+    state.start_turn();
+    engine::on_turn_start(&mut state, &card_library, None);
+    
+    println!("\nPlayer HP: {}/{}", state.player.current_hp, state.player.max_hp);
+    println!("Cultist HP: {}/{}", state.enemies[0].hp, state.enemies[0].max_hp);
+    println!("Cultist Strength: {}", state.enemies[0].strength());
+    
+    // Play Bash
+    if let Some(bash_idx) = state.hand.iter().position(|c| c.definition_id == "Bash") {
+        println!("\n  Playing Bash on Cultist...");
+        if let Err(e) = engine::play_card_from_hand(&mut state, &card_library, bash_idx, Some(0)) {
+            println!("    Error: {}", e);
+        }
+        println!("  Cultist HP after Bash: {}", state.enemies[0].hp);
+        println!("  Cultist Vulnerable: {} stacks", state.enemies[0].get_status("Vulnerable"));
+    }
+    
+    engine::on_turn_end(&mut state, &card_library, None);
+    state.end_turn();
+    
+    // === Step 7: Enemy Turn 2 ===
+    engine::execute_enemy_turn(&mut state, &monster_library);
+    
+    // === Step 8: Simulate combat end (for Burning Blood) ===
+    println!("\n閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀?);
+    println!("棣冨汲 SIMULATING COMBAT VICTORY");
+    println!("閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀?);
+    
+    // Damage player to show Burning Blood healing
+    state.player.current_hp = 50;
+    println!("\n  Player HP before end: {}/{}", state.player.current_hp, state.player.max_hp);
+    
+    engine::on_battle_end(&mut state, true, None);
+    
+    println!("  Player HP after Burning Blood: {}/{}", state.player.current_hp, state.player.max_hp);
+    
+    // === Summary ===
+    println!("\n閳烘柡鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫧");
+    println!("閳? Combat Summary                                           閳?);
+    println!("閳虹姭鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ殠");
+    println!("閳? Player HP: {:3}/{}                                       閳?, 
+        state.player.current_hp, state.player.max_hp);
+    println!("閳? Cultist HP: {:3}/{}                                      閳?, 
+        state.enemies[0].hp, state.enemies[0].max_hp);
+    println!("閳? Pen Nib:   {:3}/10 attacks                               閳?, 
+        state.relics.iter().find(|r| r.id == "PenNib").map(|r| r.counter).unwrap_or(0));
+    println!("閳烘埃鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ殕");
+    
+    println!("\n閴?Phase 4 Demo Complete!");
+    println!("\nKey achievements:");
+    println!("  閴?Relic system with RelicInstance tracking");
+    println!("  閴?BattleStart triggers (Vajra +1 Str, Anchor +10 Block)");
+    println!("  閴?PlayerPlayCard triggers (Pen Nib counter)");
+    println!("  閴?BattleEnd triggers (Burning Blood heal)");
+    println!("  閴?Complete hook system: GameEvent -> trigger_relics -> apply_relic_results");
+    
+    // ========================================================================
+    // Phase 5.1: Procedural Map Generation
+    // ========================================================================
+    println!("\n\n");
+    println!("閳烘柡鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫧");
+    println!("閳? Phase 5.1: Procedural Map Generation                     閳?);
+    println!("閳烘埃鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ櫜閳烘劏鏅查埡鎰ㄦ殕");
+    
+    // Generate map with the same seed as the game
+    let game_seed: i64 = 673465884448; // Example seed from sts_map_oracle
+    println!("\n棣冩閿?Generating maps for seed: {}", game_seed);
+    println!("   (This should match sts_map_oracle output for verification)");
+    
+    // Generate all 3 act maps
+    let maps = generate_all_maps(game_seed, true); // A0 mode
+    
+    for map in &maps {
+        println!("{}", map);
+    }
+    
+    // Show SimpleMap conversion for Act 1
+    println!("\n閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀?);
+    println!("棣冩惓 SimpleMap Conversion (for GameState)");
+    println!("閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀?);
+    
+    let simple_map = SimpleMap::from_map(&maps[0]);
+    println!("{}", simple_map);
+    
+    println!("\n棣冩惙 Starting positions: {:?}", simple_map.get_starting_positions());
+    println!("   Total connected nodes: {}", simple_map.nodes.len());
+    
+    // Show a path through the map
+    println!("\n棣冩瘽 Example path from start:");
+    if let Some(&start_idx) = simple_map.get_starting_positions().first() {
+        let mut current = start_idx;
+        for floor in 0..15 {
+            if let Some(node) = simple_map.get(current) {
+                println!("   Floor {:2}: ({}, {}) - {}", floor, node.x, node.y, node.room_type);
+                if let Some(&next) = node.children.first() {
+                    current = next;
+                } else {
+                    break;
+                }
+            }
+        }
+    }
+    
+    // Integrate map into GameState
+    println!("\n閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀?);
+    println!("棣冨箖 GameState Integration");
+    println!("閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀ｉ埞浣叉敚閳逛讲鏀?);
+    
+    let mut state = GameState::new(game_seed as u64);
+    state.map = Some(SimpleMap::from_map(&maps[0]));
+    state.act = 1;
+    state.floor = 0;
+    
+    // Simulate picking a starting node
+    if let Some(ref map) = state.map {
+        let starts = map.get_starting_positions();
+        state.current_map_node = starts.first().copied();
+        println!("\n   Act: {}", state.act);
+        println!("   Floor: {}", state.floor);
+        println!("   Current node: {:?}", state.current_map_node);
+        
+        if let Some(idx) = state.current_map_node {
+            if let Some(node) = map.get(idx) {
+                println!("   Room type: {}", node.room_type);
+                println!("   Available paths: {:?}", node.children);
+            }
+        }
+    }
+    
+    println!("\n閴?Phase 5.1 Demo Complete!");
+    println!("\nKey achievements:");
+    println!("  閴?Map generation algorithm from sts_map_oracle");
+    println!("  閴?RoomType enum (M/E/R/$/?/T/B)");
+    println!("  閴?MapRoomNode with edges and parents");
+    println!("  閴?Room assignment rules (no Elite/Rest before floor 5, etc.)");
+    println!("  閴?Fixed rooms (Floor 0=Monster, 8=Treasure, 14=Rest)");
+    println!("  閴?SimpleMap for GameState integration");
+    println!("  閴?ASCII visualization matching sts_map_oracle output");
+    
+    Ok(())
+}

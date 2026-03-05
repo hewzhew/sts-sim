@@ -1,0 +1,137 @@
+[
+  {
+    "id": "Burn",
+    "name": "Burn",
+    "type": "Status",
+    "cost": -2,
+    "color": "Colorless",
+    "rarity": "Common",
+    "logic": {
+      "target_type": "Enemy",
+      "commands": [
+        {
+          "type": "Unplayable",
+          "params": {}
+        }
+      ],
+      "conditions": [
+        "TurnTrigger: At the end of your turn"
+      ],
+      "keywords_used": [
+        "Unplayable"
+      ]
+    },
+    "original_text": "#Unplayable.<br>At the end of your turn, take [2|4] damage.",
+    "manual_review_needed": false,
+    "flags": {
+      "end_of_turn_damage": 2,
+      "end_of_turn_damage_upgrade": 4
+    }
+  },
+  {
+    "id": "Dazed",
+    "name": "Dazed",
+    "type": "Status",
+    "cost": -2,
+    "color": "Colorless",
+    "rarity": "Common",
+    "logic": {
+      "target_type": "Enemy",
+      "commands": [
+        {
+          "type": "Unplayable",
+          "params": {}
+        },
+        {
+          "type": "Ethereal",
+          "params": {}
+        }
+      ],
+      "keywords_used": [
+        "Unplayable",
+        "Ethereal"
+      ]
+    },
+    "original_text": "#Unplayable.<br>#Ethereal."
+  },
+  {
+    "id": "Slimed",
+    "name": "Slimed",
+    "type": "Status",
+    "cost": 1,
+    "color": "Colorless",
+    "rarity": "Common",
+    "logic": {
+      "target_type": "Enemy",
+      "commands": [
+        {
+          "type": "ExhaustSelf",
+          "params": {}
+        }
+      ],
+      "keywords_used": [
+        "Exhaust"
+      ]
+    },
+    "original_text": "#Exhaust."
+  },
+  {
+    "id": "Void",
+    "name": "Void",
+    "type": "Status",
+    "cost": -2,
+    "color": "Colorless",
+    "rarity": "Common",
+    "logic": {
+      "target_type": "Enemy",
+      "commands": [
+        {
+          "type": "Unplayable",
+          "params": {}
+        },
+        {
+          "type": "Ethereal",
+          "params": {}
+        },
+        {
+          "type": "LoseBuff",
+          "params": {
+            "buff": "Energy",
+            "base": 1,
+            "upgrade": 1
+          }
+        }
+      ],
+      "conditions": [
+        "Trigger: Whenever this card is drawn, lose 1 #Energy"
+      ],
+      "keywords_used": [
+        "Unplayable",
+        "Ethereal",
+        "Energy"
+      ]
+    },
+    "original_text": "#Unplayable.<br>#Ethereal.<br>Whenever this card is drawn, lose 1 #Energy."
+  },
+  {
+    "id": "Wound",
+    "name": "Wound",
+    "type": "Status",
+    "cost": -2,
+    "color": "Colorless",
+    "rarity": "Common",
+    "logic": {
+      "target_type": "Enemy",
+      "commands": [
+        {
+          "type": "Unplayable",
+          "params": {}
+        }
+      ],
+      "keywords_used": [
+        "Unplayable"
+      ]
+    },
+    "original_text": "#Unplayable."
+  }
+]

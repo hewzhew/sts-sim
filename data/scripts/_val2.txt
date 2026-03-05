@@ -1,0 +1,25 @@
+
+=== Validation Report ===
+
+--- Check 1: Power+TurnTrigger cards must have ApplyPower ---
+  [OK] All Power+TurnTrigger cards have ApplyPower
+
+--- Check 2: ApplyPower names must resolve in hooks.rs from_str ---
+  [OK] All ApplyPower names resolve in hooks.rs
+
+--- Check 3: No duplicate card IDs ---
+  [OK] No duplicate card IDs
+
+--- Check 4: powers.json entries resolvable in hooks.rs ---
+  WARN: powers.json 'Focus' has no hooks.rs PowerId mapping
+  WARN: powers.json 'Choked' has no hooks.rs PowerId mapping
+  WARN: powers.json 'Flying' has no hooks.rs PowerId mapping
+  WARN: powers.json 'PainfulStabs' has no hooks.rs PowerId mapping
+  WARN: powers.json 'StrengthUp' has no hooks.rs PowerId mapping
+
+--- Check 5: Power cards without TurnTrigger should not have ONLY hook-handled commands ---
+  [OK] (informational only)
+
+========================================
+Result: 0 errors, 5 warnings
+[OK] All critical checks passed!
