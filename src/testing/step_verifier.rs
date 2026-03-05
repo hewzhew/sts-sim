@@ -197,17 +197,10 @@ pub fn verify_step(
 
 /// Normalize a power ID from Rust engine format to CommunicationMod/Java format.
 ///
-/// Java uses different POWER_ID strings than what the Rust engine uses internally:
-/// - Java `WeakPower.POWER_ID = "Weakened"` but Rust uses `"Weak"`
-/// - Java `VulnerablePower.POWER_ID = "Vulnerable"` (same)
-/// - Java `FrailPower.POWER_ID = "Frail"` (same)
-fn normalize_power_id(rust_id: &str) -> String {
-    match rust_id {
-        "Weak" => "Weakened".to_string(),
-        "Intangible" => "IntangiblePlayer".to_string(),
-        _ => rust_id.to_string(),
-    }
-}
+// Power ID normalization is now handled by the centralized id_map module.
+// Both expected (commod_parser::parse_powers) and actual (GameState powers) use
+// Rust engine IDs, so no conversion needed during snapshot comparison.
+
 
 /// Convert the current GameState back to a CombatSnapshot for comparison.
 pub fn snapshot_from_game_state(state: &crate::core::state::GameState) -> CombatSnapshot {
@@ -221,7 +214,7 @@ pub fn snapshot_from_game_state(state: &crate::core::state::GameState) -> Combat
 
     let enemies: Vec<EnemySnap> = state.enemies.iter().map(|e| {
         let powers: BTreeMap<String, i32> = e.powers.iter()
-            .map(|(k, v)| (normalize_power_id(k), *v))
+            .map(|(k, v)| (k.clone(), *v))
             .collect();
         EnemySnap {
             name: e.name.clone(),
@@ -241,7 +234,7 @@ pub fn snapshot_from_game_state(state: &crate::core::state::GameState) -> Combat
     }).collect();
 
     let player_powers: BTreeMap<String, i32> = state.player.powers.iter()
-        .map(|(k, v)| (normalize_power_id(k), *v))
+        .map(|(k, v)| (k.clone(), *v))
         .collect();
 
     CombatSnapshot {

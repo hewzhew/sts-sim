@@ -140,7 +140,10 @@ fn parse_powers(arr: &Value) -> BTreeMap<String, i32> {
             powers.iter().filter_map(|p| {
                 let id = p["id"].as_str()?;
                 let amount = p["amount"].as_i64().unwrap_or(0) as i32;
-                Some((id.to_string(), amount))
+                // Normalize Java power IDs to Rust engine format
+                // e.g. "Weakened" → "Weak", "Time Warp" → "TimeWarp"
+                let engine_id = super::id_map::commod_to_engine_power_id(id);
+                Some((engine_id, amount))
             }).collect()
         })
         .unwrap_or_default()

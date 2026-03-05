@@ -25,19 +25,11 @@ use crate::powers::PowerSet;
 use super::commod_parser::normalize_card_id;
 
 /// Convert a CommunicationMod power ID to the engine's internal power ID.
-///
-/// Java power classes have POWER_ID constants that differ from the Rust engine's
-/// internal naming. For example:
-/// - Java `WeakPower.POWER_ID = "Weakened"` → Rust engine uses `"Weak"`
-///
-/// This is the inverse of `normalize_power_id` in step_verifier.rs.
+/// Delegates to the centralized `id_map` module.
 fn commod_to_engine_power_id(commod_id: &str) -> String {
-    match commod_id {
-        "Weakened" => "Weak".to_string(),
-        "IntangiblePlayer" => "Intangible".to_string(),
-        _ => commod_id.to_string(),
-    }
+    super::id_map::commod_to_engine_power_id(commod_id)
 }
+
 
 // ============================================================================
 // Card Instance Hydration
@@ -304,18 +296,11 @@ pub fn hydrate_relic(json: &Value) -> RelicInstance {
 }
 
 /// Convert a CommunicationMod relic ID to the engine's internal relic ID.
-///
-/// Java relic classes have ID constants that sometimes differ from the Rust engine's
-/// internal naming. For example:
-/// - Java `Duality.ID = "Yang"` → Rust engine uses `"Duality"`
+/// Delegates to the centralized `id_map` module.
 fn commod_to_engine_relic_id(commod_id: &str) -> String {
-    match commod_id {
-        "Yang" => "Duality".to_string(),
-        // Add more mappings as needed:
-        // Java ID → Rust engine ID
-        _ => commod_id.to_string(),
-    }
+    super::id_map::commod_to_engine_relic_id(commod_id)
 }
+
 
 
 /// Hydrate all relics from a JSON array.

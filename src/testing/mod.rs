@@ -15,3 +15,4 @@ pub mod replay;
 pub mod hydrator;
 pub mod step_verifier;
 pub mod timing_known;
+pub mod id_map;
