@@ -290,8 +290,10 @@ pub fn hydrate_enemy(json: &Value) -> MonsterState {
 /// Create a RelicInstance from CommunicationMod relic JSON.
 pub fn hydrate_relic(json: &Value) -> RelicInstance {
     let id = json["id"].as_str().unwrap_or("");
-    // Normalize: some relics use spaces in CommunicationMod but not in Rust
-    let normalized_id = id.replace(' ', "");
+    // First: map Java relic IDs to Rust engine names
+    let engine_id = commod_to_engine_relic_id(id);
+    // Then: normalize spaces (some relics use spaces in CommunicationMod but not in Rust)
+    let normalized_id = engine_id.replace(' ', "");
 
     RelicInstance {
         id: normalized_id,
@@ -300,6 +302,21 @@ pub fn hydrate_relic(json: &Value) -> RelicInstance {
         pulsed: false,
     }
 }
+
+/// Convert a CommunicationMod relic ID to the engine's internal relic ID.
+///
+/// Java relic classes have ID constants that sometimes differ from the Rust engine's
+/// internal naming. For example:
+/// - Java `Duality.ID = "Yang"` → Rust engine uses `"Duality"`
+fn commod_to_engine_relic_id(commod_id: &str) -> String {
+    match commod_id {
+        "Yang" => "Duality".to_string(),
+        // Add more mappings as needed:
+        // Java ID → Rust engine ID
+        _ => commod_id.to_string(),
+    }
+}
+
 
 /// Hydrate all relics from a JSON array.
 pub fn hydrate_relics(arr: &Value) -> Vec<RelicInstance> {

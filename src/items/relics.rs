@@ -402,8 +402,10 @@ pub struct RelicTriggerResult {
     pub extra_draw: i32,
     /// Strength to gain
     pub strength_gain: i32,
-    /// Dexterity to gain
+    /// Dexterity to gain (permanent)
     pub dexterity_gain: i32,
+    /// Temporary Dexterity to gain (applies both +Dex and +DexLoss, removed at end of turn)
+    pub temp_dexterity_gain: i32,
     /// HP to heal
     pub heal: i32,
     /// Energy to gain
@@ -475,6 +477,7 @@ impl RelicTriggerResult {
         self.extra_draw > 0
             || self.strength_gain > 0
             || self.dexterity_gain > 0
+            || self.temp_dexterity_gain > 0
             || self.heal > 0
             || self.energy_gain > 0
             || self.block_gain > 0
@@ -503,6 +506,7 @@ impl RelicTriggerResult {
         self.extra_draw += other.extra_draw;
         self.strength_gain += other.strength_gain;
         self.dexterity_gain += other.dexterity_gain;
+        self.temp_dexterity_gain += other.temp_dexterity_gain;
         self.heal += other.heal;
         self.energy_gain += other.energy_gain;
         self.block_gain += other.block_gain;
@@ -1655,14 +1659,11 @@ fn trigger_hardcoded_relic_standalone(
         
         // Duality (Yang): When you play an Attack, gain 1 temporary Dexterity.
         // Java: Duality.onUseCard(ATTACK) → DexterityPower(1) + LoseDexterityPower(1)
-        // Simplified: +1 Dex now, -1 Dex at end of turn (handled via temp buff)
+        // Uses temp_dexterity_gain: applies both +1 Dex and +1 DexLoss (removed at end of turn)
         ("Duality", GameEvent::PlayerPlayCard { card_type: CardType::Attack, .. }) => {
-            result.dexterity_gain += 1;
+            result.temp_dexterity_gain += 1;
             result.messages.push("☯️ Duality: +1 temporary Dexterity".to_string());
             relic.pulse();
-            // Note: this should be temporary (+1 now, -1 at turn end).
-            // For proper temp handling, we'd need a LoseDexterity power.
-            // For now, tracked as permanent gain per trigger (conservative approximation).
         }
         
         // Gremlin Horn: When a non-boss enemy dies, gain 1 Energy and draw 1 card.
@@ -2359,6 +2360,12 @@ pub fn apply_relic_results(state: &mut GameState, result: &RelicTriggerResult) {
     }
     if result.dexterity_gain > 0 {
         state.player.apply_status("Dexterity", result.dexterity_gain);
+    }
+    // Temporary Dexterity: apply both +Dex and +DexLoss (DexLoss removes Dex at end of turn)
+    // Java: LoseDexterityPower.atEndOfTurn() → ApplyPower(Dexterity, -amount) + RemoveSelf
+    if result.temp_dexterity_gain > 0 {
+        state.player.apply_status("Dexterity", result.temp_dexterity_gain);
+        state.player.apply_status("DexLoss", result.temp_dexterity_gain);
     }
     if result.block_gain > 0 {
         state.player.block += result.block_gain;
