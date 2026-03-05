@@ -319,33 +319,34 @@ pub fn play_card(
     }, None);
     apply_relic_results(state, &relic_result);
     
-    // === P1.8: onAfterUseCard power hook ===
-    // Java: UseCardAction.update() → p.onAfterUseCard(card, action) for player + enemy powers
-    // Key effects: TimeWarp counter check (end turn at 12 cards)
+    // === P1.8: onAfterUseCard power hook (enemy powers) ===
+    // Java: UseCardAction.update() → p.onAfterUseCard(card, action) for ALL creatures' powers
+    // TimeWarp is an ENEMY power (on Time Eater), not a player power.
     {
-        let power_snapshot: Vec<(String, i32)> = state.player.powers.iter()
-            .map(|(k, v)| (k.clone(), *v))
-            .collect();
-        for (power_id, stacks) in &power_snapshot {
-            match crate::power_hooks::PowerId::from_str(power_id) {
-                crate::power_hooks::PowerId::TimeWarp => {
-                    // TimeWarp: increment counter on each card played, at 12 → end turn + gain STR
-                    let current = state.player.powers.get("TimeWarp");
-                    if current >= 12 {
-                        state.player.powers.remove("TimeWarp");
-                        // Gain 2 Strength for the Time Eater
-                        for enemy in state.enemies.iter_mut() {
-                            if !enemy.is_dead() {
-                                enemy.apply_status("Strength", 2);
-                            }
-                        }
-                        // End player turn (Java: ChangeStateAction → EndTurnAction)
-                        state.player.energy = 0;
-                        game_log!("  ⏰ Time Warp: 12 cards played — turn ending! Enemy +2 STR");
-                    }
+        let mut time_warp_triggered = false;
+        for enemy in state.enemies.iter_mut() {
+            if enemy.is_dead() { continue; }
+            if enemy.powers.has("TimeWarp") {
+                let current = enemy.powers.get("TimeWarp");
+                let new_val = current + 1;
+                if new_val >= 12 {
+                    enemy.powers.set("TimeWarp", 0);
+                    time_warp_triggered = true;
+                    game_log!("  ⏰ Time Warp: 12 cards played — turn ending! Enemy +2 STR");
+                } else {
+                    enemy.powers.set("TimeWarp", new_val);
                 }
-                _ => {}
             }
+        }
+        if time_warp_triggered {
+            // Gain 2 Strength for ALL enemies (not just the one with TimeWarp)
+            for enemy in state.enemies.iter_mut() {
+                if !enemy.is_dead() {
+                    enemy.apply_status("Strength", 2);
+                }
+            }
+            // End player turn (Java: callEndTurnEarlySequence)
+            state.player.energy = 0;
         }
     }
     
