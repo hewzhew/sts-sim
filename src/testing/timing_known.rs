@@ -362,7 +362,7 @@ fn timing_rules() -> Vec<TimingRule> {
                 div.field == "player_block" &&
                 (before.player_powers.iter().any(|(k, _)| 
                     k == "LikeWater" || k == "LikeWaterPower") ||
-                 before.hand.iter().any(|c| c.id == "LikeWater"))
+                 before.hand.iter().any(|c| c.id == "LikeWater" || c.id == "Like_Water"))
             },
         },
 
