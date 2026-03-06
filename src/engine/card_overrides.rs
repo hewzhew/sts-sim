@@ -99,6 +99,7 @@ pub fn try_override(
         "Second_Wind" => Some(second_wind(state, upgraded)),
         "Wallop" => Some(wallop(state, upgraded, target_idx)),
         "Spirit_Shield" | "SpiritShield" => Some(spirit_shield(state, upgraded)),
+        "Indignation" => Some(indignation(state, upgraded)),
         _ => None,
     }
 }
@@ -678,4 +679,79 @@ fn spirit_shield(
         card_count, magic_number, base_block, actual_block, state.player.block);
     
     vec![CommandResult::BlockGained { amount: actual_block }]
+}
+
+// ============================================================================
+// Indignation (Watcher - Uncommon Skill)
+// ============================================================================
+// Java: IndignationAction.update():
+//   if (player.stance.ID.equals("Wrath")) →
+//     Apply Vulnerable(magicNumber) to ALL enemies
+//   else →
+//     ChangeStanceAction("Wrath") (no Vulnerable)
+//   magicNumber = 3 (base), 5 (upgraded)
+//   Cost: 1
+
+fn indignation(
+    state: &mut GameState,
+    upgraded: bool,
+) -> Vec<CommandResult> {
+    use crate::core::stances::Stance;
+    
+    let vuln_amount = if upgraded { 5 } else { 3 };
+    
+    if state.player.stance == Stance::Wrath {
+        // Already in Wrath → apply Vulnerable to ALL enemies
+        let mut results = Vec::new();
+        for i in 0..state.enemies.len() {
+            if state.enemies[i].is_dead() { continue; }
+            state.enemies[i].powers.apply("Vulnerable", vuln_amount, None);
+            game_log!("  → Indignation (Wrath): Applied Vulnerable({}) to {}",
+                vuln_amount, state.enemies[i].name);
+            results.push(CommandResult::StatusApplied {
+                target: state.enemies[i].name.clone(),
+                status: "Vulnerable".to_string(),
+                stacks: vuln_amount,
+            });
+        }
+        results
+    } else {
+        // Not in Wrath → enter Wrath (triggers stance change hooks)
+        let old_stance = state.player.stance;
+        
+        // 1. On-exit effects of old stance
+        let exit_energy = old_stance.on_exit_energy();
+        if exit_energy > 0 {
+            state.player.energy += exit_energy;
+            game_log!("  🧘 Indignation: Exiting {} → +{} Energy", old_stance.name(), exit_energy);
+        }
+        
+        // 2. Change stance
+        state.player.stance = Stance::Wrath;
+        game_log!("  → Indignation: {} → Wrath", old_stance.name());
+        
+        // 3. On-enter effects
+        let enter_energy = Stance::Wrath.on_enter_energy();
+        if enter_energy > 0 {
+            state.player.energy += enter_energy;
+        }
+        
+        // 4. Trigger on_stance_change hooks (MentalFortress, Rushdown)
+        let stance_effects: Vec<_> = state.player.powers.iter()
+            .flat_map(|(id_str, &stacks)| {
+                use crate::power_hooks::{PowerInstance, PowerId};
+                let pi = PowerInstance::new(PowerId::from_str(id_str), stacks);
+                let effects = pi.on_stance_change("Wrath");
+                let pid = pi.id;
+                effects.into_iter().map(move |e| (pid, e)).collect::<Vec<_>>()
+            })
+            .collect();
+        
+        for (power_id, effect) in &stance_effects {
+            let pid_str = format!("{:?}", power_id);
+            crate::engine::commands::apply_hook_effects(state, &[effect.clone()], &pid_str, None, None);
+        }
+        
+        vec![CommandResult::Skipped { reason: "Entered Wrath".to_string() }]
+    }
 }

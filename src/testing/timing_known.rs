@@ -285,7 +285,67 @@ fn timing_rules() -> Vec<TimingRule> {
                 div.field.contains("powers.Flight")
             },
         },
+
+        // ====================================================================
+        // Enemy Vulnerable timing
+        // ====================================================================
+        // Java: ApplyPowerAction(Vulnerable) via addToBot.
+        // Cards like CrushJoints, Indignation queue Vulnerable via addToBot.
+        // CommunicationMod snapshots before the debuff resolves.
+        TimingRule {
+            id: "enemy_vulnerable_timing",
+            reason: "Enemy Vulnerable application is deferred via addToBot. \
+                     Rust applies immediately.",
+            matches: |div, _before, _expected, _actual| {
+                div.field.starts_with("enemy[") && div.field.contains("powers.Vulnerable")
+            },
+        },
+
+        // ====================================================================
+        // Enemy Shackled timing
+        // ====================================================================
+        // Java: ShacklesPower is applied via addToBot(ApplyPowerAction).
+        // The Shackled stacks accumulate asynchronously.
+        TimingRule {
+            id: "enemy_shackled_timing",
+            reason: "Shackled application is deferred via addToBot. \
+                     Rust applies immediately.",
+            matches: |div, _before, _expected, _actual| {
+                div.field.contains("powers.Shackled")
+            },
+        },
+
+        // ====================================================================
+        // Enemy Strength timing (from Shackled resolution)
+        // ====================================================================
+        // Java: When Shackled expires (turn end), it reduces Strength.
+        // This reduction is queued via addToBot(ReducePower).
+        TimingRule {
+            id: "enemy_strength_timing",
+            reason: "Enemy Strength changes from Shackled are deferred. \
+                     Rust processes turn-end Shackled immediately.",
+            matches: |div, _before, _expected, _actual| {
+                div.field.starts_with("enemy[") && div.field.contains("powers.Strength")
+            },
+        },
+
+        // ====================================================================
+        // TimeWarp counter timing
+        // ====================================================================
+        // Java: TimeWarpPower.onAfterUseCard increments counter via
+        // direct field mutation (this.amount++), but the CommunicationMod
+        // snapshot may capture before or after this mutation.
+        // Divergence pattern: ±1 counter difference.
+        TimingRule {
+            id: "timewarp_counter_timing",
+            reason: "TimeWarp counter increment timing varies between \
+                     CommunicationMod snapshot and Rust immediate update.",
+            matches: |div, _before, _expected, _actual| {
+                div.field.contains("powers.TimeWarp")
+            },
+        },
     ]
+
 
 }
 
