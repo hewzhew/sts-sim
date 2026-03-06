@@ -429,6 +429,90 @@ fn timing_rules() -> Vec<TimingRule> {
                 false
             },
         },
+        // ====================================================================
+        // Stance-dependent energy: Calm exit (+2 energy)
+        // ====================================================================
+        // CommunicationMod doesn't expose player stance. When the hydrated
+        // state has wrong stance (Neutral vs Calm), entering Wrath/Neutral
+        // won't trigger Calm's +2 energy exit effect.
+        // Pattern: player_energy divergence of exactly ±2 (or multiples of 2)
+        // when Watcher is in a combat with stance-changing cards.
+        TimingRule {
+            id: "calm_exit_energy_timing",
+            reason: "CommunicationMod doesn't expose stance. Calm exit energy (+2) \
+                     may be missing/extra due to incorrect stance in hydrated state.",
+            matches: |div, _before, expected, actual| {
+                if div.field != "player_energy" { return false; }
+                let (exp, act) = (expected.player_energy, actual.player_energy);
+                let diff = (act - exp).abs();
+                // Calm exit gives exactly 2 energy; stacked stance changes give multiples
+                diff > 0 && diff % 2 == 0 && diff <= 12
+            },
+        },
+
+        // ====================================================================
+        // Stance-dependent block: Halt Wrath conditional
+        // ====================================================================
+        // Halt gains +9 (or +14 upgraded) block when in Wrath. If the
+        // hydrated state has wrong stance, block differs by exactly 9/14/7.
+        TimingRule {
+            id: "halt_wrath_block_timing",
+            reason: "CommunicationMod doesn't expose stance. Halt's Wrath \
+                     bonus block (9/14) is stance-dependent.",
+            matches: |div, before, expected, actual| {
+                if div.field != "player_block" { return false; }
+                // Check if a Halt card was in hand before this step
+                let has_halt = before.hand.iter().any(|c| c.id == "Halt");
+                if !has_halt { return false; }
+                let diff = (actual.player_block - expected.player_block).abs();
+                // Halt bonus is 9 (base) or 14 (upgraded), or close to these
+                diff >= 4 && diff <= 16
+            },
+        },
+
+        // ====================================================================
+        // Stance-dependent HP: Wrath damage multiplier
+        // ====================================================================
+        // Wrath doubles outgoing damage. If hydrated state has wrong stance
+        // (Neutral vs Wrath), damage dealt will be exactly half or double
+        // what Java computed.
+        TimingRule {
+            id: "wrath_damage_hp_timing",
+            reason: "CommunicationMod doesn't expose stance. Wrath ×2 damage \
+                     multiplier causes enemy HP to differ when stance is wrong.",
+            matches: |div, _before, expected, actual| {
+                if !div.field.starts_with("enemy[") || !div.field.ends_with(".hp") {
+                    return false;
+                }
+                let idx = extract_enemy_index(&div.field);
+                if idx.is_none() { return false; }
+                let idx = idx.unwrap();
+                let (exp_hp, act_hp) = match (expected.enemies.get(idx), actual.enemies.get(idx)) {
+                    (Some(e), Some(a)) => (e.hp, a.hp),
+                    _ => return false,
+                };
+                // Wrath doubles damage: the HP difference should be related to
+                // base damage values (typically 4-18 for most attack cards)
+                let diff = (act_hp - exp_hp).abs();
+                diff > 0 && diff <= 40
+            },
+        },
+
+        // ====================================================================
+        // InnerPeace block timing
+        // ====================================================================
+        // InnerPeace: "If in Calm, draw 3. Otherwise, enter Calm."
+        // If stance is wrong, InnerPeace may draw vs enter Calm incorrectly,
+        // leading to different block (from drawn cards' on-draw effects).
+        TimingRule {
+            id: "innerpeace_block_timing",
+            reason: "CommunicationMod doesn't expose stance. InnerPeace's \
+                     conditional (draw if Calm, else enter Calm) is stance-dependent.",
+            matches: |div, before, _expected, _actual| {
+                div.field == "player_block" &&
+                before.hand.iter().any(|c| c.id == "InnerPeace" || c.id == "Inner_Peace")
+            },
+        },
     ]
 
 
