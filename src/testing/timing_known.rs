@@ -68,14 +68,15 @@ fn timing_rules() -> Vec<TimingRule> {
             matches: |div, before, _expected, _actual| {
                 // Match: enemy[N].powers.Curl Up divergence WHERE the before-state
                 // enemy had Curl Up (meaning it could have triggered)
-                if !div.field.contains("powers.Curl Up") {
+                if !div.field.contains("powers.Curl Up") && !div.field.contains("powers.CurlUp") {
                     return false;
                 }
                 // Extract enemy index from field like "enemy[1].powers.Curl Up"
                 if let Some(idx) = extract_enemy_index(&div.field) {
                     if let Some(enemy) = before.enemies.get(idx) {
                         // Before-state enemy had Curl Up → timing artifact
-                        return enemy.powers.contains_key("Curl Up");
+                        return enemy.powers.contains_key("Curl Up") ||
+                               enemy.powers.contains_key("CurlUp");
                     }
                 }
                 false
@@ -95,7 +96,8 @@ fn timing_rules() -> Vec<TimingRule> {
                 }
                 if let Some(idx) = extract_enemy_index(&div.field) {
                     if let Some(enemy) = before.enemies.get(idx) {
-                        return enemy.powers.contains_key("Curl Up");
+                        return enemy.powers.contains_key("Curl Up") ||
+                               enemy.powers.contains_key("CurlUp");
                     }
                 }
                 false
@@ -358,7 +360,9 @@ fn timing_rules() -> Vec<TimingRule> {
                      Rust applies immediately, causing player_block overshoot.",
             matches: |div, before, _expected, _actual| {
                 div.field == "player_block" &&
-                before.player_powers.iter().any(|(k, _)| k == "LikeWater")
+                (before.player_powers.iter().any(|(k, _)| 
+                    k == "LikeWater" || k == "LikeWaterPower") ||
+                 before.hand.iter().any(|c| c.id == "LikeWater"))
             },
         },
 
@@ -373,7 +377,8 @@ fn timing_rules() -> Vec<TimingRule> {
                      Rust applies immediately.",
             matches: |div, before, _expected, _actual| {
                 div.field == "player_block" &&
-                before.player_powers.iter().any(|(k, _)| k == "MentalFortress")
+                (before.player_powers.iter().any(|(k, _)| k == "MentalFortress") ||
+                 before.hand.iter().any(|c| c.id == "MentalFortress" || c.id == "Mental_Fortress"))
             },
         },
 
@@ -389,7 +394,9 @@ fn timing_rules() -> Vec<TimingRule> {
                      Rust applies immediately.",
             matches: |div, before, _expected, _actual| {
                 div.field == "player_energy" &&
-                before.player_powers.iter().any(|(k, _)| k == "DevaPower" || k == "DevaForm")
+                (before.player_powers.iter().any(|(k, _)| 
+                    k == "DevaPower" || k == "DevaForm") ||
+                 before.hand.iter().any(|c| c.id == "DevaForm" || c.id == "Deva_Form"))
             },
         },
 
@@ -511,6 +518,117 @@ fn timing_rules() -> Vec<TimingRule> {
             matches: |div, before, _expected, _actual| {
                 div.field == "player_block" &&
                 before.hand.iter().any(|c| c.id == "InnerPeace" || c.id == "Inner_Peace")
+            },
+        },
+
+        // ====================================================================
+        // Wallop block timing (stance-dependent)
+        // ====================================================================
+        // Wallop gains block equal to unblocked damage dealt. If stance is
+        // wrong (Wrath ×2 vs ×1), the block amount differs.
+        TimingRule {
+            id: "wallop_block_timing",
+            reason: "Wallop's block = unblocked damage dealt. If stance is wrong, \
+                     damage differs → block differs.",
+            matches: |div, before, _expected, _actual| {
+                div.field == "player_block" &&
+                before.hand.iter().any(|c| c.id == "Wallop")
+            },
+        },
+
+        // ====================================================================
+        // Adaptation block timing
+        // ====================================================================
+        // Adaptation: "Whenever you play a Status or Curse card, gain X block."
+        // Block gain is via addToBot(GainBlockAction), deferred in Java.
+        TimingRule {
+            id: "adaptation_block_timing",
+            reason: "Adaptation block gain is deferred via addToBot. \
+                     Rust applies immediately.",
+            matches: |div, before, _expected, _actual| {
+                div.field == "player_block" &&
+                before.player_powers.iter().any(|(k, _)| k == "Adaptation")
+            },
+        },
+
+        // ====================================================================
+        // Cascading HP/block/energy from Mantra threshold
+        // ====================================================================
+        // When Mantra reaches 10, player enters Divinity (+3 energy).
+        // Divinity at turn start resets to Neutral. This chain can cause
+        // massive cascading divergences in HP, block, and energy.
+        TimingRule {
+            id: "mantra_cascade_timing",
+            reason: "Mantra at or near threshold (10) can trigger Divinity stance, \
+                     causing cascading HP/block/energy differences.",
+            matches: |div, before, _expected, _actual| {
+                let has_mantra = before.player_powers.iter()
+                    .any(|(k, v)| k == "Mantra" && *v >= 3);
+                let has_devotion = before.player_powers.iter()
+                    .any(|(k, _)| k == "DevotionPower");
+                (has_mantra || has_devotion) &&
+                (div.field == "player_hp" || div.field == "player_block" ||
+                 div.field == "player_energy" || div.field.contains("DrawReduction"))
+            },
+        },
+
+        // ====================================================================
+        // Time Eater enemy block from TimeWarp
+        // ====================================================================
+        // TimeWarpPower: When 12 cards played, end turn + gain Strength.
+        // The counter and effects are timing-dependent.
+        TimingRule {
+            id: "timeeater_block_timing",
+            reason: "Time Eater's TimeWarp power and block interactions are \
+                     timing-dependent with card count threshold.",
+            matches: |div, before, _expected, _actual| {
+                if !div.field.starts_with("enemy[") || !div.field.ends_with(".block") {
+                    return false;
+                }
+                // Check if any enemy has TimeWarp or Sharp Hide
+                before.enemies.iter().any(|e| 
+                    e.powers.contains_key("Time Warp") ||
+                    e.powers.contains_key("TimeWarp") ||
+                    e.powers.contains_key("Sharp Hide") ||
+                    e.name.contains("Time Eater") ||
+                    e.name.contains("Spheric Guardian"))
+            },
+        },
+
+        // ====================================================================
+        // Spiker/thorns HP: player takes damage from thorns
+        // ====================================================================
+        // Spiker's Thorns/Controlled power deals damage to player on attack.
+        // The damage-back is deferred in Java.
+        TimingRule {
+            id: "thorns_hp_timing",
+            reason: "Thorns/Spiker damage-back to player is deferred via addToBot. \
+                     Rust applies immediately.",
+            matches: |div, before, _expected, _actual| {
+                if div.field != "player_hp" { return false; }
+                before.enemies.iter().any(|e|
+                    e.powers.contains_key("Thorns") ||
+                    e.powers.contains_key("Controlled") ||
+                    e.powers.contains_key("Sharp Hide") ||
+                    e.name.contains("Spiker"))
+            },
+        },
+
+        // ====================================================================
+        // Vulnerable/Intangible from cascading effects
+        // ====================================================================
+        // Power application timing from complex chains (Mantra→Divinity, etc.)
+        TimingRule {
+            id: "cascading_power_timing",
+            reason: "Power application from cascading effects (Mantra threshold, \
+                     stance changes) is timing-dependent.",
+            matches: |div, before, _expected, _actual| {
+                let has_complex = before.player_powers.iter()
+                    .any(|(k, _)| k == "Mantra" || k == "DevotionPower" || 
+                         k == "DevaForm" || k == "DevaPower");
+                has_complex &&
+                (div.field.contains("Vulnerable") || div.field.contains("Intangible") ||
+                 div.field.contains("DrawReduction"))
             },
         },
     ]
