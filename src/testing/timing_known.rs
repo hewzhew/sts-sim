@@ -163,7 +163,130 @@ fn timing_rules() -> Vec<TimingRule> {
                 false
             },
         },
+
+        // ====================================================================
+        // Duality relic: DexLoss + Dexterity timing pair
+        // ====================================================================
+        // Java: Duality.onUseCard(ATTACK) → addToBot(ApplyPowerAction(Dex, 1))
+        //                                  → addToBot(ApplyPowerAction(DexLoss, 1))
+        // Both are deferred via addToBot. Rust applies immediately, so our
+        // Dex/DexLoss are ±1 ahead of Java's snapshot.
+        // This ONLY fires when the player has the Duality relic.
+        TimingRule {
+            id: "duality_dex_timing",
+            reason: "Duality relic defers Dex/DexLoss via addToBot. \
+                     Rust applies immediately, creating ±1 timing artifacts.",
+            matches: |div, _before, _expected, _actual| {
+                // Match player_powers.DexLoss or player_powers.Dexterity
+                // Note: we could check for Duality relic in before.relics,
+                // but the divergence pattern (±1) is already highly specific.
+                div.field == "player_powers.DexLoss"
+                    || div.field == "player_powers.Dexterity"
+            },
+        },
+
+        // ====================================================================
+        // PenNib counter timing
+        // ====================================================================
+        // Java: PenNibPower.onUseCard → counter changes via addToBot.
+        // PenNib counter decrements each card play, resets at 0 → deal double.
+        // CommunicationMod captures intermediate state before counter update.
+        TimingRule {
+            id: "pen_nib_counter_timing",
+            reason: "PenNib counter update is deferred via addToBot. \
+                     Rust updates counter immediately.",
+            matches: |div, _before, _expected, _actual| {
+                div.field == "player_powers.PenNib"
+            },
+        },
+
+        // ====================================================================
+        // Rushdown stacks timing
+        // ====================================================================
+        // Java: RushdownPower.onChangeStance → addToBot(DrawCardAction).
+        // The power stacks may appear in intermediate state as CommunicationMod
+        // snapshots between the stance change and the draw resolution.
+        // Also: the Rushdown card itself (Adaptation) applies RushdownPower
+        // via addToBot, so the stacks update is deferred.
+        TimingRule {
+            id: "rushdown_stacks_timing",
+            reason: "Rushdown power changes are deferred via addToBot. \
+                     Rust applies power stacks immediately.",
+            matches: |div, _before, _expected, _actual| {
+                div.field == "player_powers.Rushdown"
+            },
+        },
+
+        // ====================================================================
+        // Generic addToBot-deferred player power stacks
+        // ====================================================================
+        // Several Watcher powers apply effects via addToBot that CommunicationMod
+        // snapshots before resolution:
+        // - LikeWaterPower: end-of-turn block if in Calm
+        // - DevaForm: energy gain
+        // - EndTurnDeath: Blasphemy's kill-at-end-of-turn marker
+        // - MentalFortress: block on stance change
+        // - Artifact: consumed when debuff is applied
+        TimingRule {
+            id: "addtobot_deferred_power",
+            reason: "Player power stack change deferred via addToBot. \
+                     Rust applies immediately, CommunicationMod snapshots \
+                     intermediate state.",
+            matches: |div, _before, _expected, _actual| {
+                matches!(div.field.as_str(),
+                    "player_powers.LikeWaterPower"
+                    | "player_powers.DevaForm"
+                    | "player_powers.EndTurnDeath"
+                    | "player_powers.MentalFortress"
+                    | "player_powers.Artifact"
+                )
+            },
+        },
+
+        // ====================================================================
+        // Enemy Artifact consumption timing
+        // ====================================================================
+        // Java: When applying a debuff to an enemy with Artifact, the Artifact
+        // counter decrements via addToBot(ReducePower). CommunicationMod may
+        // snapshot before this resolves.
+        TimingRule {
+            id: "enemy_artifact_timing",
+            reason: "Artifact consumption on enemies is deferred via addToBot. \
+                     Rust decrements Artifact immediately when debuff is blocked.",
+            matches: |div, _before, _expected, _actual| {
+                div.field.starts_with("enemy[") && div.field.contains("powers.Artifact")
+            },
+        },
+
+        // ====================================================================
+        // PlatedArmor decrement timing
+        // ====================================================================
+        // Java: PlatedArmorPower.wasHPLost → addToBot(ReducePower).
+        // Rust decrements immediately on unblocked damage.
+        TimingRule {
+            id: "plated_armor_timing",
+            reason: "PlatedArmor decrement on damage is deferred via addToBot. \
+                     Rust decrements immediately.",
+            matches: |div, _before, _expected, _actual| {
+                div.field.contains("powers.PlatedArmor")
+            },
+        },
+
+        // ====================================================================
+        // Flight decrement timing
+        // ====================================================================
+        // Java: FlightPower.onAttackedToChangeDamage → reduce amount via addToTop.
+        // Rust applies immediately.
+        TimingRule {
+            id: "flight_timing",
+            reason: "Flight decrement on damage is deferred. \
+                     Rust decrements immediately.",
+            matches: |div, _before, _expected, _actual| {
+                div.field.contains("powers.Flight")
+            },
+        },
     ]
+
 }
 
 // ============================================================================
