@@ -97,6 +97,8 @@ pub fn try_override(
         "Foreign_Influence" => Some(foreign_influence(state, upgraded)),
         "Phantasmal_Killer" => Some(phantasmal_killer(state)),
         "Second_Wind" => Some(second_wind(state, upgraded)),
+        "Wallop" => Some(wallop(state, upgraded, target_idx)),
+        "Spirit_Shield" | "SpiritShield" => Some(spirit_shield(state, upgraded)),
         _ => None,
     }
 }
@@ -576,4 +578,104 @@ fn second_wind(
         CommandResult::BlockGained { amount: total_block },
         CommandResult::CardExhausted,
     ]
+}
+
+// ============================================================================
+// Wallop (Watcher - Uncommon Attack)
+// ============================================================================
+// Java: WallopAction.update():
+//   target.damage(info);
+//   if (target.lastDamageTaken > 0) → GainBlockAction(source, target.lastDamageTaken)
+//   baseDamage = 9, upgradeDamage(3) → 12
+//   Cost: 2
+
+fn wallop(
+    state: &mut GameState,
+    upgraded: bool,
+    target_idx: Option<usize>,
+) -> Vec<CommandResult> {
+    use crate::power_hooks::calculate_block_hooked;
+    
+    let base_damage = if upgraded { 12 } else { 9 };
+    let target_enemy = target_idx.unwrap_or(0);
+    
+    // Calculate damage
+    let final_damage = if let Some(enemy) = state.enemies.get(target_enemy) {
+        calculate_card_damage(
+            base_damage, &state.player.powers, &enemy.powers, state.player.stance,
+            build_relic_flags(state),
+        )
+    } else {
+        base_damage
+    };
+    
+    // Deal damage
+    let mut killed = false;
+    let mut actual = 0;
+    let has_boot = state.relics.iter().any(|r| r.id == "Boot" && r.active);
+    if target_enemy < state.enemies.len() && !state.enemies[target_enemy].is_dead() {
+        let (act, pend) = state.enemies[target_enemy].take_damage_from_player(final_damage, has_boot);
+        actual = act;
+        if pend > 0 && !state.enemies[target_enemy].is_dead() { state.enemies[target_enemy].block += pend; }
+        killed = state.enemies[target_enemy].is_dead();
+        fire_on_attacked_hooks(state, target_enemy, actual);
+    }
+    
+    state.record_attack_result(actual, actual, killed);
+    
+    let mut results = vec![CommandResult::DamageDealt {
+        target: format!("Enemy {}", target_enemy),
+        amount: actual,
+        killed,
+    }];
+    
+    // Java: if (target.lastDamageTaken > 0) → gain block = lastDamageTaken
+    // lastDamageTaken = actual unblocked damage dealt (after block reduction)
+    if actual > 0 {
+        state.player.block += actual;
+        game_log!("  → Wallop: Dealt {} damage → gained {} block (player block now {})",
+            actual, actual, state.player.block);
+        results.push(CommandResult::BlockGained { amount: actual });
+    } else {
+        game_log!("  → Wallop: Dealt 0 unblocked damage, no block gained");
+    }
+    
+    results
+}
+
+// ============================================================================
+// Spirit Shield (Watcher - Rare Skill)
+// ============================================================================
+// Java: SpiritShield.applyPowers():
+//   count = hand.size() - 1 (excluding self, which is still in hand during applyPowers)
+//   baseBlock = count * magicNumber
+//   super.applyPowers() → applies Dex, Frail, etc.
+//   Then: GainBlockAction(player, this.block)
+//   magicNumber = 3 (base), 4 (upgraded)
+//   Cost: 2
+//
+// NOTE: play_card_from_hand removes the card BEFORE calling override,
+// so hand.len() already excludes Spirit Shield itself.
+
+fn spirit_shield(
+    state: &mut GameState,
+    upgraded: bool,
+) -> Vec<CommandResult> {
+    use crate::power_hooks::calculate_block_hooked;
+    
+    let magic_number = if upgraded { 4 } else { 3 };
+    
+    // Count cards in hand (Spirit Shield already removed by play_card_from_hand)
+    let card_count = state.hand.len() as i32;
+    
+    let base_block = card_count * magic_number;
+    
+    // Apply block through pipeline (Dex, Frail, etc.)
+    let actual_block = calculate_block_hooked(base_block, &state.player.powers);
+    state.player.block += actual_block;
+    
+    game_log!("  → Spirit Shield: {} cards × {} = {} base → {} actual block (player block now {})",
+        card_count, magic_number, base_block, actual_block, state.player.block);
+    
+    vec![CommandResult::BlockGained { amount: actual_block }]
 }

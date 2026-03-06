@@ -95,6 +95,9 @@ pub enum Condition {
     EnemyHasStatus { status: String, min_stacks: i32 },
     /// Player has a specific status/buff
     PlayerHasStatus { status: String, min_stacks: i32 },
+    /// Player is in a specific stance (Wrath, Calm, Divinity)
+    /// Java: AbstractDungeon.player.stance.ID.equals(stanceId)
+    InStance { stance: String },
     /// Always true (for else branches that should always execute)
     Always,
     /// Unknown condition - defaults to false
@@ -110,6 +113,15 @@ impl Condition {
                     "Fatal" | "fatal" | "IfFatal" => Condition::Fatal,
                     "HandFull" | "hand_full" => Condition::HandFull,
                     "HandEmpty" | "hand_empty" => Condition::HandEmpty,
+                    "InStance" | "in_stance" => {
+                        let stance = obj.get("params")
+                            .and_then(|p| p.get("stance"))
+                            .and_then(|v| v.as_str())
+                            .or_else(|| obj.get("stance").and_then(|v| v.as_str()))
+                            .unwrap_or("")
+                            .to_string();
+                        Condition::InStance { stance }
+                    }
                     "EnemyHpBelow" | "enemy_hp_below" => {
                         let threshold = obj.get("threshold")
                             .and_then(|v| v.as_i64())
@@ -199,6 +211,12 @@ impl Condition {
             Condition::PlayerHasStatus { status, min_stacks } => {
                 // Check player powers (unified with temp buffs)
                 state.player.get_status(status) >= *min_stacks
+            }
+            
+            Condition::InStance { stance } => {
+                use crate::core::stances::Stance;
+                let target_stance = Stance::from_str(stance);
+                state.player.stance == target_stance
             }
             
             Condition::Always => true,
