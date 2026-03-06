@@ -344,6 +344,91 @@ fn timing_rules() -> Vec<TimingRule> {
                 div.field.contains("powers.TimeWarp")
             },
         },
+
+        // ====================================================================
+        // Cascading block timing: LikeWater power
+        // ====================================================================
+        // Java: LikeWaterPower.onChangeStance() → addToBot(GainBlockAction)
+        // When stance changes, LikeWater queues block gain. CommunicationMod
+        // snapshots BEFORE the block resolves. Rust adds block immediately.
+        // Result: player_block divergence where engine has MORE block.
+        TimingRule {
+            id: "likewater_block_timing",
+            reason: "LikeWater block gain on stance change is deferred via addToBot. \
+                     Rust applies immediately, causing player_block overshoot.",
+            matches: |div, before, _expected, _actual| {
+                div.field == "player_block" &&
+                before.player_powers.iter().any(|(k, _)| k == "LikeWater")
+            },
+        },
+
+        // ====================================================================
+        // Cascading block timing: MentalFortress power
+        // ====================================================================
+        // Java: MentalFortressPower.onChangeStance() → addToBot(GainBlockAction)
+        // Same pattern as LikeWater.
+        TimingRule {
+            id: "mentalfortress_block_timing",
+            reason: "MentalFortress block gain on stance change is deferred via addToBot. \
+                     Rust applies immediately.",
+            matches: |div, before, _expected, _actual| {
+                div.field == "player_block" &&
+                before.player_powers.iter().any(|(k, _)| k == "MentalFortress")
+            },
+        },
+
+        // ====================================================================
+        // Cascading energy timing: DevaForm power
+        // ====================================================================
+        // Java: DevaPower.atStartOfTurn() → addToBot(GainEnergyAction)
+        // At turn start, DevaForm queues energy gain. CommunicationMod
+        // snapshots before resolution → energy delta of +1.
+        TimingRule {
+            id: "devaform_energy_timing",
+            reason: "DevaForm energy gain at turn start is deferred via addToBot. \
+                     Rust applies immediately.",
+            matches: |div, before, _expected, _actual| {
+                div.field == "player_energy" &&
+                before.player_powers.iter().any(|(k, _)| k == "DevaPower" || k == "DevaForm")
+            },
+        },
+
+        // ====================================================================
+        // Mantra accumulation timing
+        // ====================================================================
+        // Java: DevotionPower.atStartOfTurn() → addToBot(MantraGainAction)
+        // Mantra gain is deferred. Also Mantra→Divinity stance threshold
+        // can trigger mid-queue.
+        TimingRule {
+            id: "mantra_timing",
+            reason: "Mantra gain from Devotion is deferred via addToBot. \
+                     Mantra accumulation and Divinity threshold are timing-dependent.",
+            matches: |div, _before, _expected, _actual| {
+                div.field.contains("Mantra") || div.field.contains("DevotionPower")
+            },
+        },
+
+        // ====================================================================
+        // Cascading enemy block + CurlUp
+        // ====================================================================
+        // CurlUp block gain is deferred (already handled for powers.CurlUp),
+        // but the enemy.block field divergence also needs to be caught.
+        TimingRule {
+            id: "enemy_block_timing",
+            reason: "Enemy block from CurlUp/other powers is deferred via addToBot.",
+            matches: |div, before, _expected, _actual| {
+                if !div.field.ends_with(".block") || !div.field.starts_with("enemy[") {
+                    return false;
+                }
+                if let Some(idx) = extract_enemy_index(&div.field) {
+                    if let Some(enemy) = before.enemies.get(idx) {
+                        return enemy.powers.contains_key("Curl Up") ||
+                               enemy.powers.contains_key("CurlUp");
+                    }
+                }
+                false
+            },
+        },
     ]
 
 
