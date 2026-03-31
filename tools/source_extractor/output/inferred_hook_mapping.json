@@ -1,0 +1,443 @@
+{
+  "atStartOfTurn": {
+    "resolve_power_at_turn_start": {
+      "score": 3,
+      "shared": [
+        "Berserk",
+        "FlameBarrier",
+        "NextTurnBlock"
+      ]
+    },
+    "resolve_power_on_attacked": {
+      "score": 2,
+      "shared": [
+        "FlameBarrier",
+        "Flight"
+      ]
+    },
+    "resolve_power_on_calculate_damage_from_player": {
+      "score": 1,
+      "shared": [
+        "Flight"
+      ]
+    }
+  },
+  "atEndOfTurn": {
+    "resolve_power_at_end_of_turn": {
+      "score": 7,
+      "shared": [
+        "Combust",
+        "Constricted",
+        "Entangle",
+        "Intangible",
+        "Malleable",
+        "Regen",
+        "Ritual"
+      ]
+    },
+    "resolve_power_at_turn_start": {
+      "score": 1,
+      "shared": [
+        "Rage"
+      ]
+    },
+    "resolve_power_on_use_card": {
+      "score": 1,
+      "shared": [
+        "DoubleTap"
+      ]
+    },
+    "resolve_power_on_attacked": {
+      "score": 1,
+      "shared": [
+        "Malleable"
+      ]
+    }
+  },
+  "reducePower": {
+    "resolve_power_on_attack_to_change_damage": {
+      "score": 1,
+      "shared": [
+        "Strength"
+      ]
+    },
+    "resolve_power_on_calculate_damage_to_enemy": {
+      "score": 1,
+      "shared": [
+        "Strength"
+      ]
+    },
+    "resolve_power_on_calculate_block": {
+      "score": 1,
+      "shared": [
+        "Dexterity"
+      ]
+    }
+  },
+  "atDamageGive": {
+    "resolve_power_on_calculate_damage_to_enemy": {
+      "score": 3,
+      "shared": [
+        "Strength",
+        "Vigor",
+        "Weak"
+      ]
+    },
+    "resolve_power_on_attack_to_change_damage": {
+      "score": 1,
+      "shared": [
+        "Strength"
+      ]
+    },
+    "resolve_power_on_use_card": {
+      "score": 1,
+      "shared": [
+        "Vigor"
+      ]
+    }
+  },
+  "atEndOfRound": {
+    "resolve_power_at_end_of_turn": {
+      "score": 3,
+      "shared": [
+        "Malleable",
+        "Ritual",
+        "Slow"
+      ]
+    },
+    "resolve_power_on_calculate_damage_from_player": {
+      "score": 2,
+      "shared": [
+        "Slow",
+        "Vulnerable"
+      ]
+    },
+    "resolve_power_on_calculate_block": {
+      "score": 1,
+      "shared": [
+        "Frail"
+      ]
+    },
+    "resolve_power_on_use_card": {
+      "score": 1,
+      "shared": [
+        "DuplicationPower"
+      ]
+    },
+    "resolve_power_on_calculate_damage_to_enemy": {
+      "score": 1,
+      "shared": [
+        "Weak"
+      ]
+    },
+    "resolve_power_on_attacked": {
+      "score": 1,
+      "shared": [
+        "Malleable"
+      ]
+    },
+    "resolve_power_on_attacked_to_change_damage": {
+      "score": 1,
+      "shared": [
+        "Vulnerable"
+      ]
+    }
+  },
+  "onAfterUseCard": {
+    "resolve_power_on_player_card_played": {
+      "score": 2,
+      "shared": [
+        "BeatOfDeath",
+        "TimeWarp"
+      ]
+    },
+    "resolve_power_at_end_of_turn": {
+      "score": 1,
+      "shared": [
+        "Slow"
+      ]
+    },
+    "resolve_power_on_calculate_damage_from_player": {
+      "score": 1,
+      "shared": [
+        "Slow"
+      ]
+    }
+  },
+  "atDamageReceive": {
+    "resolve_power_on_calculate_damage_from_player": {
+      "score": 2,
+      "shared": [
+        "Slow",
+        "Vulnerable"
+      ]
+    },
+    "resolve_power_on_attacked_to_change_damage": {
+      "score": 1,
+      "shared": [
+        "Vulnerable"
+      ]
+    },
+    "resolve_power_at_end_of_turn": {
+      "score": 1,
+      "shared": [
+        "Slow"
+      ]
+    }
+  },
+  "atEndOfTurnPreEndTurnCards": {
+    "resolve_power_at_end_of_turn": {
+      "score": 2,
+      "shared": [
+        "Metallicize",
+        "PlatedArmor"
+      ]
+    },
+    "resolve_power_on_remove": {
+      "score": 1,
+      "shared": [
+        "PlatedArmor"
+      ]
+    },
+    "resolve_power_on_attacked": {
+      "score": 1,
+      "shared": [
+        "PlatedArmor"
+      ]
+    }
+  },
+  "onDeath": {
+    "resolve_power_on_death": {
+      "score": 2,
+      "shared": [
+        "SporeCloud",
+        "Stasis"
+      ]
+    }
+  },
+  "onCardDraw": {
+    "resolve_power_on_card_drawn": {
+      "score": 2,
+      "shared": [
+        "Evolve",
+        "FireBreathing"
+      ]
+    },
+    "resolve_power_on_apply": {
+      "score": 1,
+      "shared": [
+        "Corruption"
+      ]
+    },
+    "resolve_power_on_card_draw": {
+      "score": 1,
+      "shared": [
+        "Corruption"
+      ]
+    },
+    "resolve_power_on_use_card": {
+      "score": 1,
+      "shared": [
+        "Corruption"
+      ]
+    }
+  },
+  "onUseCard": {
+    "resolve_power_on_use_card": {
+      "score": 4,
+      "shared": [
+        "Corruption",
+        "DoubleTap",
+        "DuplicationPower",
+        "Vigor"
+      ]
+    },
+    "resolve_power_on_card_played": {
+      "score": 3,
+      "shared": [
+        "Anger",
+        "Hex",
+        "SharpHide"
+      ]
+    },
+    "resolve_power_at_turn_start": {
+      "score": 1,
+      "shared": [
+        "Rage"
+      ]
+    },
+    "resolve_power_on_calculate_damage_to_enemy": {
+      "score": 1,
+      "shared": [
+        "Vigor"
+      ]
+    },
+    "resolve_power_on_player_card_played": {
+      "score": 1,
+      "shared": [
+        "Curiosity"
+      ]
+    },
+    "resolve_power_on_apply": {
+      "score": 1,
+      "shared": [
+        "Corruption"
+      ]
+    },
+    "resolve_power_on_card_draw": {
+      "score": 1,
+      "shared": [
+        "Corruption"
+      ]
+    }
+  },
+  "onAttacked": {
+    "resolve_power_on_attacked": {
+      "score": 8,
+      "shared": [
+        "Angry",
+        "CurlUp",
+        "FlameBarrier",
+        "Flight",
+        "Malleable",
+        "Reactive",
+        "Shifting",
+        "Thorns"
+      ]
+    },
+    "resolve_power_at_end_of_turn": {
+      "score": 2,
+      "shared": [
+        "Malleable",
+        "Shifting"
+      ]
+    },
+    "resolve_power_at_turn_start": {
+      "score": 1,
+      "shared": [
+        "FlameBarrier"
+      ]
+    },
+    "resolve_power_on_calculate_damage_from_player": {
+      "score": 1,
+      "shared": [
+        "Flight"
+      ]
+    }
+  },
+  "wasHPLost": {
+    "resolve_power_at_end_of_turn": {
+      "score": 1,
+      "shared": [
+        "PlatedArmor"
+      ]
+    },
+    "resolve_power_on_remove": {
+      "score": 1,
+      "shared": [
+        "PlatedArmor"
+      ]
+    },
+    "resolve_power_on_attacked": {
+      "score": 1,
+      "shared": [
+        "PlatedArmor"
+      ]
+    },
+    "resolve_power_on_hp_lost": {
+      "score": 1,
+      "shared": [
+        "Rupture"
+      ]
+    }
+  },
+  "onRemove": {
+    "resolve_power_on_attacked": {
+      "score": 2,
+      "shared": [
+        "Flight",
+        "PlatedArmor"
+      ]
+    },
+    "resolve_power_at_end_of_turn": {
+      "score": 1,
+      "shared": [
+        "PlatedArmor"
+      ]
+    },
+    "resolve_power_on_remove": {
+      "score": 1,
+      "shared": [
+        "PlatedArmor"
+      ]
+    },
+    "resolve_power_on_calculate_damage_from_player": {
+      "score": 1,
+      "shared": [
+        "Flight"
+      ]
+    }
+  },
+  "atStartOfTurnPostDraw": {
+    "resolve_power_on_post_draw": {
+      "score": 1,
+      "shared": [
+        "Brutality"
+      ]
+    }
+  },
+  "onExhaust": {
+    "resolve_power_on_exhaust": {
+      "score": 2,
+      "shared": [
+        "DarkEmbrace",
+        "FeelNoPain"
+      ]
+    }
+  },
+  "onGainedBlock": {
+    "resolve_power_on_block_gained": {
+      "score": 1,
+      "shared": [
+        "Juggernaut"
+      ]
+    }
+  },
+  "duringTurn": {
+    "resolve_power_at_end_of_turn": {
+      "score": 2,
+      "shared": [
+        "Explosive",
+        "Fading"
+      ]
+    }
+  },
+  "atDamageFinalReceive": {
+    "resolve_power_at_end_of_turn": {
+      "score": 1,
+      "shared": [
+        "Intangible"
+      ]
+    },
+    "resolve_power_on_calculate_damage_from_player": {
+      "score": 1,
+      "shared": [
+        "Flight"
+      ]
+    },
+    "resolve_power_on_attacked": {
+      "score": 1,
+      "shared": [
+        "Flight"
+      ]
+    }
+  },
+  "onInflictDamage": {
+    "resolve_power_on_attack": {
+      "score": 1,
+      "shared": [
+        "PainfulStabs"
+      ]
+    }
+  }
+}

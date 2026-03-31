@@ -1,0 +1,87 @@
+# StS Extraction Summary
+
+- **action**: 0 classes
+- **card**: 439 classes
+- **power**: 162 classes
+- **relic**: 191 classes
+- **monster**: 67 classes
+- **potion**: 44 classes
+- **orb**: 6 classes
+- **room**: 13 classes
+- **other**: 1089 classes
+
+**Total classes**: 2011
+
+## Hook Methods Found (71)
+
+- `atBattleStart` — used by 43 classes
+- `atBattleStartPreDraw` — used by 6 classes
+- `atDamageFinalGive` — used by 1 classes
+- `atDamageFinalReceive` — used by 5 classes
+- `atDamageGive` — used by 9 classes
+- `atDamageReceive` — used by 5 classes
+- `atEndOfRound` — used by 22 classes
+- `atEndOfTurn` — used by 29 classes
+- `atEndOfTurnPreEndTurnCards` — used by 4 classes
+- `atPreBattle` — used by 13 classes
+- `atStartOfTurn` — used by 30 classes
+- `atStartOfTurnPostDraw` — used by 8 classes
+- `canUse` — used by 15 classes
+- `duringTurn` — used by 3 classes
+- `justEnteredRoom` — used by 7 classes
+- `makeCopy` — used by 680 classes
+- `makeStatEquivalentCopy` — used by 2 classes
+- `onAfterCardPlayed` — used by 3 classes
+- `onAfterUseCard` — used by 6 classes
+- `onApplyPower` — used by 2 classes
+- `onAttack` — used by 3 classes
+- `onAttacked` — used by 17 classes
+- `onAttackedToChangeDamage` — used by 4 classes
+- `onBlockBroken` — used by 2 classes
+- `onCardDraw` — used by 6 classes
+- `onChangeStance` — used by 6 classes
+- `onChannel` — used by 1 classes
+- `onChestOpen` — used by 3 classes
+- `onDeath` — used by 4 classes
+- `onDrawOrDiscard` — used by 4 classes
+- `onEnterRestRoom` — used by 2 classes
+- `onEnterRoom` — used by 35 classes
+- `onEquip` — used by 52 classes
+- `onEvokeOrb` — used by 2 classes
+- `onExhaust` — used by 6 classes
+- `onGainedBlock` — used by 3 classes
+- `onHeal` — used by 1 classes
+- `onInflictDamage` — used by 2 classes
+- `onInitialApplication` — used by 2 classes
+- `onLoseHp` — used by 3 classes
+- `onManualDiscard` — used by 4 classes
+- `onMasterDeckChange` — used by 2 classes
+- `onMonsterDeath` — used by 3 classes
+- `onObtainCard` — used by 6 classes
+- `onPlayCard` — used by 8 classes
+- `onPlayerEndTurn` — used by 9 classes
+- `onPlayerGainBlock` — used by 1 classes
+- `onPlayerGainedBlock` — used by 3 classes
+- `onPlayerHeal` — used by 4 classes
+- `onRemove` — used by 5 classes
+- `onShuffle` — used by 4 classes
+- `onSmith` — used by 1 classes
+- `onSpawnMonster` — used by 2 classes
+- `onSpecificTrigger` — used by 2 classes
+- `onTrigger` — used by 4 classes
+- `onUnequip` — used by 18 classes
+- `onUseCard` — used by 41 classes
+- `onVictory` — used by 27 classes
+- `reducePower` — used by 6 classes
+- `triggerAtStartOfTurn` — used by 1 classes
+- `triggerOnEndOfPlayerTurn` — used by 4 classes
+- `triggerOnEndOfTurnForPlayingCard` — used by 7 classes
+- `triggerOnExhaust` — used by 3 classes
+- `triggerOnGlowCheck` — used by 16 classes
+- `triggerOnManualDiscard` — used by 3 classes
+- `triggerOnOtherCardPlayed` — used by 3 classes
+- `triggerWhenDrawn` — used by 7 classes
+- `updateDescription` — used by 194 classes
+- `upgrade` — used by 439 classes
+- `use` — used by 487 classes
+- `wasHPLost` — used by 8 classes

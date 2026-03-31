@@ -1,0 +1,1894 @@
+[
+  {
+    "class_name": "AbstractMonster",
+    "java_file": "AbstractMonster.java",
+    "hp_values": [],
+    "damage_values": [],
+    "enemy_type": "NORMAL",
+    "get_move": {
+      "has_method": true,
+      "uses_num": false,
+      "rng_calls": []
+    }
+  },
+  {
+    "class_name": "EnemyMoveInfo",
+    "java_file": "EnemyMoveInfo.java",
+    "hp_values": [],
+    "damage_values": [],
+    "enemy_type": "NORMAL",
+    "get_move": {
+      "has_method": false,
+      "uses_num": false,
+      "rng_calls": []
+    }
+  },
+  {
+    "class_name": "MonsterGroup",
+    "java_file": "MonsterGroup.java",
+    "hp_values": [],
+    "damage_values": [],
+    "enemy_type": "NORMAL",
+    "get_move": {
+      "has_method": false,
+      "uses_num": false,
+      "rng_calls": []
+    }
+  },
+  {
+    "class_name": "MonsterInfo",
+    "java_file": "MonsterInfo.java",
+    "hp_values": [],
+    "damage_values": [],
+    "enemy_type": "NORMAL",
+    "get_move": {
+      "has_method": false,
+      "uses_num": false,
+      "rng_calls": []
+    }
+  },
+  {
+    "class_name": "MonsterQueueItem",
+    "java_file": "MonsterQueueItem.java",
+    "hp_values": [],
+    "damage_values": [],
+    "enemy_type": "NORMAL",
+    "get_move": {
+      "has_method": false,
+      "uses_num": false,
+      "rng_calls": []
+    }
+  },
+  {
+    "class_name": "AwakenedOne",
+    "java_file": "AwakenedOne.java",
+    "hp_values": [
+      {
+        "condition": "asc>=9",
+        "min": 320,
+        "max": 320
+      },
+      {
+        "condition": "asc>=9",
+        "min": 300,
+        "max": 300
+      }
+    ],
+    "damage_values": [
+      {
+        "condition": "default",
+        "base": 20
+      },
+      {
+        "condition": "default",
+        "base": 6
+      },
+      {
+        "condition": "default",
+        "base": 40
+      },
+      {
+        "condition": "default",
+        "base": 18
+      },
+      {
+        "condition": "default",
+        "base": 10
+      }
+    ],
+    "enemy_type": "BOSS",
+    "get_move": {
+      "has_method": true,
+      "uses_num": true,
+      "rng_calls": []
+    }
+  },
+  {
+    "class_name": "Darkling",
+    "java_file": "Darkling.java",
+    "hp_values": [
+      {
+        "condition": "asc>=7",
+        "min": 50,
+        "max": 59
+      },
+      {
+        "condition": "asc>=7",
+        "min": 48,
+        "max": 56
+      }
+    ],
+    "damage_values": [],
+    "enemy_type": "NORMAL",
+    "get_move": {
+      "has_method": true,
+      "uses_num": true,
+      "rng_calls": [
+        "random(40, 99)",
+        "random(0, 99)"
+      ]
+    }
+  },
+  {
+    "class_name": "Deca",
+    "java_file": "Deca.java",
+    "hp_values": [
+      {
+        "condition": "asc>=9",
+        "min": 265,
+        "max": 265
+      },
+      {
+        "condition": "asc>=9",
+        "min": 250,
+        "max": 250
+      }
+    ],
+    "damage_values": [],
+    "enemy_type": "BOSS",
+    "get_move": {
+      "has_method": true,
+      "uses_num": false,
+      "rng_calls": []
+    }
+  },
+  {
+    "class_name": "Donu",
+    "java_file": "Donu.java",
+    "hp_values": [
+      {
+        "condition": "asc>=9",
+        "min": 265,
+        "max": 265
+      },
+      {
+        "condition": "asc>=9",
+        "min": 250,
+        "max": 250
+      }
+    ],
+    "damage_values": [],
+    "enemy_type": "BOSS",
+    "get_move": {
+      "has_method": true,
+      "uses_num": false,
+      "rng_calls": []
+    }
+  },
+  {
+    "class_name": "Exploder",
+    "java_file": "Exploder.java",
+    "hp_values": [
+      {
+        "condition": "asc>=7",
+        "min": 30,
+        "max": 35
+      },
+      {
+        "condition": "asc>=7",
+        "min": 30,
+        "max": 30
+      }
+    ],
+    "damage_values": [],
+    "enemy_type": "NORMAL",
+    "get_move": {
+      "has_method": true,
+      "uses_num": false,
+      "rng_calls": []
+    }
+  },
+  {
+    "class_name": "GiantHead",
+    "java_file": "GiantHead.java",
+    "hp_values": [
+      {
+        "condition": "asc>=8",
+        "min": 520,
+        "max": 520
+      },
+      {
+        "condition": "asc>=8",
+        "min": 500,
+        "max": 500
+      }
+    ],
+    "damage_values": [
+      {
+        "condition": "asc>=3",
+        "base": 13
+      }
+    ],
+    "enemy_type": "ELITE",
+    "get_move": {
+      "has_method": true,
+      "uses_num": true,
+      "rng_calls": []
+    }
+  },
+  {
+    "class_name": "Maw",
+    "java_file": "Maw.java",
+    "hp_values": [],
+    "damage_values": [],
+    "enemy_type": "NORMAL",
+    "get_move": {
+      "has_method": true,
+      "uses_num": true,
+      "rng_calls": []
+    }
+  },
+  {
+    "class_name": "Nemesis",
+    "java_file": "Nemesis.java",
+    "hp_values": [
+      {
+        "condition": "asc>=8",
+        "min": 200,
+        "max": 200
+      },
+      {
+        "condition": "asc>=8",
+        "min": 185,
+        "max": 185
+      }
+    ],
+    "damage_values": [
+      {
+        "condition": "asc>=8",
+        "base": 45
+      }
+    ],
+    "enemy_type": "ELITE",
+    "get_move": {
+      "has_method": true,
+      "uses_num": true,
+      "rng_calls": [
+        "randomBoolean()",
+        "randomBoolean()",
+        "randomBoolean()"
+      ]
+    }
+  },
+  {
+    "class_name": "OrbWalker",
+    "java_file": "OrbWalker.java",
+    "hp_values": [
+      {
+        "condition": "asc>=7",
+        "min": 92,
+        "max": 102
+      },
+      {
+        "condition": "asc>=7",
+        "min": 90,
+        "max": 96
+      }
+    ],
+    "damage_values": [],
+    "enemy_type": "NORMAL",
+    "get_move": {
+      "has_method": true,
+      "uses_num": true,
+      "rng_calls": []
+    }
+  },
+  {
+    "class_name": "Reptomancer",
+    "java_file": "Reptomancer.java",
+    "hp_values": [
+      {
+        "condition": "asc>=18",
+        "min": 190,
+        "max": 200
+      },
+      {
+        "condition": "asc>=18",
+        "min": 180,
+        "max": 190
+      }
+    ],
+    "damage_values": [
+      {
+        "condition": "asc>=8",
+        "base": 16
+      },
+      {
+        "condition": "asc>=3",
+        "base": 34
+      },
+      {
+        "condition": "asc>=3",
+        "base": 13
+      },
+      {
+        "condition": "default",
+        "base": 30
+      }
+    ],
+    "enemy_type": "ELITE",
+    "get_move": {
+      "has_method": true,
+      "uses_num": true,
+      "rng_calls": [
+        "random(33, 99)",
+        "random(65)"
+      ]
+    }
+  },
+  {
+    "class_name": "Repulsor",
+    "java_file": "Repulsor.java",
+    "hp_values": [
+      {
+        "condition": "asc>=7",
+        "min": 31,
+        "max": 38
+      },
+      {
+        "condition": "asc>=7",
+        "min": 29,
+        "max": 35
+      }
+    ],
+    "damage_values": [],
+    "enemy_type": "NORMAL",
+    "get_move": {
+      "has_method": true,
+      "uses_num": true,
+      "rng_calls": []
+    }
+  },
+  {
+    "class_name": "SnakeDagger",
+    "java_file": "SnakeDagger.java",
+    "hp_values": [],
+    "damage_values": [
+      {
+        "condition": "default",
+        "base": 9
+      },
+      {
+        "condition": "default",
+        "base": 25
+      }
+    ],
+    "enemy_type": "NORMAL",
+    "get_move": {
+      "has_method": true,
+      "uses_num": false,
+      "rng_calls": []
+    }
+  },
+  {
+    "class_name": "Spiker",
+    "java_file": "Spiker.java",
+    "hp_values": [
+      {
+        "condition": "asc>=7",
+        "min": 44,
+        "max": 60
+      },
+      {
+        "condition": "asc>=7",
+        "min": 42,
+        "max": 56
+      }
+    ],
+    "damage_values": [],
+    "enemy_type": "NORMAL",
+    "get_move": {
+      "has_method": true,
+      "uses_num": true,
+      "rng_calls": []
+    }
+  },
+  {
+    "class_name": "SpireGrowth",
+    "java_file": "SpireGrowth.java",
+    "hp_values": [
+      {
+        "condition": "asc>=7",
+        "min": 190,
+        "max": 190
+      },
+      {
+        "condition": "asc>=7",
+        "min": 170,
+        "max": 170
+      }
+    ],
+    "damage_values": [],
+    "enemy_type": "NORMAL",
+    "get_move": {
+      "has_method": true,
+      "uses_num": true,
+      "rng_calls": []
+    }
+  },
+  {
+    "class_name": "TimeEater",
+    "java_file": "TimeEater.java",
+    "hp_values": [
+      {
+        "condition": "asc>=9",
+        "min": 480,
+        "max": 480
+      },
+      {
+        "condition": "asc>=9",
+        "min": 456,
+        "max": 456
+      }
+    ],
+    "damage_values": [],
+    "enemy_type": "BOSS",
+    "get_move": {
+      "has_method": true,
+      "uses_num": true,
+      "rng_calls": [
+        "random(50, 99)",
+        "randomBoolean(0.66f)",
+        "random(74)"
+      ]
+    }
+  },
+  {
+    "class_name": "Transient",
+    "java_file": "Transient.java",
+    "hp_values": [],
+    "damage_values": [],
+    "enemy_type": "NORMAL",
+    "get_move": {
+      "has_method": true,
+      "uses_num": false,
+      "rng_calls": []
+    }
+  },
+  {
+    "class_name": "WrithingMass",
+    "java_file": "WrithingMass.java",
+    "hp_values": [
+      {
+        "condition": "asc>=7",
+        "min": 175,
+        "max": 175
+      },
+      {
+        "condition": "asc>=7",
+        "min": 160,
+        "max": 160
+      }
+    ],
+    "damage_values": [
+      {
+        "condition": "asc>=7",
+        "base": 38
+      },
+      {
+        "condition": "asc>=2",
+        "base": 9
+      },
+      {
+        "condition": "asc>=2",
+        "base": 16
+      },
+      {
+        "condition": "asc>=2",
+        "base": 12
+      },
+      {
+        "condition": "default",
+        "base": 32
+      },
+      {
+        "condition": "default",
+        "base": 7
+      },
+      {
+        "condition": "default",
+        "base": 15
+      },
+      {
+        "condition": "default",
+        "base": 10
+      }
+    ],
+    "enemy_type": "NORMAL",
+    "get_move": {
+      "has_method": true,
+      "uses_num": true,
+      "rng_calls": [
+        "random(10, 99)",
+        "randomBoolean(0.1f)",
+        "random(20, 99)",
+        "randomBoolean(0.4f)",
+        "random(19)",
+        "random(40, 99)",
+        "randomBoolean(0.3f)",
+        "random(39)",
+        "random(69)"
+      ]
+    }
+  },
+  {
+    "class_name": "BanditBear",
+    "java_file": "BanditBear.java",
+    "hp_values": [
+      {
+        "condition": "asc>=7",
+        "min": 40,
+        "max": 44
+      },
+      {
+        "condition": "asc>=7",
+        "min": 38,
+        "max": 42
+      }
+    ],
+    "damage_values": [],
+    "enemy_type": "NORMAL",
+    "get_move": {
+      "has_method": true,
+      "uses_num": false,
+      "rng_calls": []
+    }
+  },
+  {
+    "class_name": "BanditLeader",
+    "java_file": "BanditLeader.java",
+    "hp_values": [
+      {
+        "condition": "asc>=17",
+        "min": 37,
+        "max": 41
+      },
+      {
+        "condition": "asc>=17",
+        "min": 35,
+        "max": 39
+      }
+    ],
+    "damage_values": [],
+    "enemy_type": "NORMAL",
+    "get_move": {
+      "has_method": true,
+      "uses_num": false,
+      "rng_calls": []
+    }
+  },
+  {
+    "class_name": "BanditPointy",
+    "java_file": "BanditPointy.java",
+    "hp_values": [
+      {
+        "condition": "asc>=7",
+        "min": 34,
+        "max": 34
+      },
+      {
+        "condition": "asc>=7",
+        "min": 30,
+        "max": 30
+      }
+    ],
+    "damage_values": [],
+    "enemy_type": "NORMAL",
+    "get_move": {
+      "has_method": true,
+      "uses_num": false,
+      "rng_calls": []
+    }
+  },
+  {
+    "class_name": "BookOfStabbing",
+    "java_file": "BookOfStabbing.java",
+    "hp_values": [
+      {
+        "condition": "asc>=8",
+        "min": 168,
+        "max": 172
+      },
+      {
+        "condition": "asc>=8",
+        "min": 160,
+        "max": 164
+      }
+    ],
+    "damage_values": [],
+    "enemy_type": "ELITE",
+    "get_move": {
+      "has_method": true,
+      "uses_num": true,
+      "rng_calls": []
+    }
+  },
+  {
+    "class_name": "BronzeAutomaton",
+    "java_file": "BronzeAutomaton.java",
+    "hp_values": [
+      {
+        "condition": "asc>=9",
+        "min": 320,
+        "max": 320
+      },
+      {
+        "condition": "asc>=9",
+        "min": 300,
+        "max": 300
+      }
+    ],
+    "damage_values": [],
+    "enemy_type": "BOSS",
+    "get_move": {
+      "has_method": true,
+      "uses_num": false,
+      "rng_calls": []
+    }
+  },
+  {
+    "class_name": "BronzeOrb",
+    "java_file": "BronzeOrb.java",
+    "hp_values": [
+      {
+        "condition": "asc>=9",
+        "min": 54,
+        "max": 60
+      },
+      {
+        "condition": "asc>=9",
+        "min": 52,
+        "max": 58
+      }
+    ],
+    "damage_values": [
+      {
+        "condition": "asc>=9",
+        "base": 8
+      }
+    ],
+    "enemy_type": "NORMAL",
+    "get_move": {
+      "has_method": true,
+      "uses_num": true,
+      "rng_calls": []
+    }
+  },
+  {
+    "class_name": "Byrd",
+    "java_file": "Byrd.java",
+    "hp_values": [
+      {
+        "condition": "asc>=7",
+        "min": 26,
+        "max": 33
+      },
+      {
+        "condition": "asc>=7",
+        "min": 25,
+        "max": 31
+      }
+    ],
+    "damage_values": [
+      {
+        "condition": "default",
+        "base": 3
+      }
+    ],
+    "enemy_type": "NORMAL",
+    "get_move": {
+      "has_method": true,
+      "uses_num": true,
+      "rng_calls": [
+        "randomBoolean(0.375f)",
+        "randomBoolean(0.4f)",
+        "randomBoolean(0.375f)",
+        "randomBoolean(0.2857f)"
+      ]
+    }
+  },
+  {
+    "class_name": "Centurion",
+    "java_file": "Centurion.java",
+    "hp_values": [
+      {
+        "condition": "asc>=7",
+        "min": 78,
+        "max": 83
+      },
+      {
+        "condition": "asc>=7",
+        "min": 76,
+        "max": 80
+      }
+    ],
+    "damage_values": [],
+    "enemy_type": "NORMAL",
+    "get_move": {
+      "has_method": true,
+      "uses_num": true,
+      "rng_calls": []
+    }
+  },
+  {
+    "class_name": "Champ",
+    "java_file": "Champ.java",
+    "hp_values": [
+      {
+        "condition": "asc>=9",
+        "min": 440,
+        "max": 440
+      },
+      {
+        "condition": "asc>=9",
+        "min": 420,
+        "max": 420
+      }
+    ],
+    "damage_values": [],
+    "enemy_type": "BOSS",
+    "get_move": {
+      "has_method": true,
+      "uses_num": true,
+      "rng_calls": []
+    }
+  },
+  {
+    "class_name": "Chosen",
+    "java_file": "Chosen.java",
+    "hp_values": [
+      {
+        "condition": "asc>=7",
+        "min": 98,
+        "max": 103
+      },
+      {
+        "condition": "asc>=7",
+        "min": 95,
+        "max": 99
+      }
+    ],
+    "damage_values": [],
+    "enemy_type": "NORMAL",
+    "get_move": {
+      "has_method": true,
+      "uses_num": true,
+      "rng_calls": []
+    }
+  },
+  {
+    "class_name": "GremlinLeader",
+    "java_file": "GremlinLeader.java",
+    "hp_values": [
+      {
+        "condition": "asc>=8",
+        "min": 145,
+        "max": 155
+      },
+      {
+        "condition": "asc>=8",
+        "min": 140,
+        "max": 148
+      }
+    ],
+    "damage_values": [],
+    "enemy_type": "ELITE",
+    "get_move": {
+      "has_method": true,
+      "uses_num": true,
+      "rng_calls": [
+        "random(50, 99)",
+        "random(0, 80)"
+      ]
+    }
+  },
+  {
+    "class_name": "Healer",
+    "java_file": "Healer.java",
+    "hp_values": [
+      {
+        "condition": "asc>=7",
+        "min": 50,
+        "max": 58
+      },
+      {
+        "condition": "asc>=7",
+        "min": 48,
+        "max": 56
+      }
+    ],
+    "damage_values": [],
+    "enemy_type": "NORMAL",
+    "get_move": {
+      "has_method": true,
+      "uses_num": true,
+      "rng_calls": []
+    }
+  },
+  {
+    "class_name": "Mugger",
+    "java_file": "Mugger.java",
+    "hp_values": [
+      {
+        "condition": "asc>=17",
+        "min": 50,
+        "max": 54
+      },
+      {
+        "condition": "asc>=17",
+        "min": 48,
+        "max": 52
+      }
+    ],
+    "damage_values": [],
+    "enemy_type": "NORMAL",
+    "get_move": {
+      "has_method": true,
+      "uses_num": false,
+      "rng_calls": []
+    }
+  },
+  {
+    "class_name": "ShelledParasite",
+    "java_file": "ShelledParasite.java",
+    "hp_values": [
+      {
+        "condition": "asc>=7",
+        "min": 70,
+        "max": 75
+      },
+      {
+        "condition": "asc>=7",
+        "min": 68,
+        "max": 72
+      }
+    ],
+    "damage_values": [],
+    "enemy_type": "NORMAL",
+    "get_move": {
+      "has_method": true,
+      "uses_num": true,
+      "rng_calls": [
+        "randomBoolean()",
+        "random(20, 99)"
+      ]
+    }
+  },
+  {
+    "class_name": "SnakePlant",
+    "java_file": "SnakePlant.java",
+    "hp_values": [
+      {
+        "condition": "asc>=7",
+        "min": 78,
+        "max": 82
+      },
+      {
+        "condition": "asc>=7",
+        "min": 75,
+        "max": 79
+      }
+    ],
+    "damage_values": [],
+    "enemy_type": "NORMAL",
+    "get_move": {
+      "has_method": true,
+      "uses_num": true,
+      "rng_calls": []
+    }
+  },
+  {
+    "class_name": "Snecko",
+    "java_file": "Snecko.java",
+    "hp_values": [
+      {
+        "condition": "asc>=7",
+        "min": 120,
+        "max": 125
+      },
+      {
+        "condition": "asc>=7",
+        "min": 114,
+        "max": 120
+      }
+    ],
+    "damage_values": [],
+    "enemy_type": "NORMAL",
+    "get_move": {
+      "has_method": true,
+      "uses_num": true,
+      "rng_calls": []
+    }
+  },
+  {
+    "class_name": "SphericGuardian",
+    "java_file": "SphericGuardian.java",
+    "hp_values": [],
+    "damage_values": [],
+    "enemy_type": "NORMAL",
+    "get_move": {
+      "has_method": true,
+      "uses_num": false,
+      "rng_calls": []
+    }
+  },
+  {
+    "class_name": "Taskmaster",
+    "java_file": "Taskmaster.java",
+    "hp_values": [
+      {
+        "condition": "asc>=8",
+        "min": 57,
+        "max": 64
+      },
+      {
+        "condition": "asc>=8",
+        "min": 54,
+        "max": 60
+      }
+    ],
+    "damage_values": [
+      {
+        "condition": "asc>=18",
+        "base": 4
+      },
+      {
+        "condition": "asc>=18",
+        "base": 7
+      }
+    ],
+    "enemy_type": "ELITE",
+    "get_move": {
+      "has_method": true,
+      "uses_num": false,
+      "rng_calls": []
+    }
+  },
+  {
+    "class_name": "TheCollector",
+    "java_file": "TheCollector.java",
+    "hp_values": [
+      {
+        "condition": "asc>=9",
+        "min": 300,
+        "max": 300
+      },
+      {
+        "condition": "asc>=9",
+        "min": 282,
+        "max": 282
+      }
+    ],
+    "damage_values": [],
+    "enemy_type": "BOSS",
+    "get_move": {
+      "has_method": true,
+      "uses_num": true,
+      "rng_calls": []
+    }
+  },
+  {
+    "class_name": "TorchHead",
+    "java_file": "TorchHead.java",
+    "hp_values": [
+      {
+        "condition": "asc>=9",
+        "min": 40,
+        "max": 45
+      },
+      {
+        "condition": "asc>=9",
+        "min": 38,
+        "max": 40
+      }
+    ],
+    "damage_values": [
+      {
+        "condition": "default",
+        "base": 7
+      }
+    ],
+    "enemy_type": "NORMAL",
+    "get_move": {
+      "has_method": true,
+      "uses_num": false,
+      "rng_calls": []
+    }
+  },
+  {
+    "class_name": "CorruptHeart",
+    "java_file": "CorruptHeart.java",
+    "hp_values": [
+      {
+        "condition": "asc>=9",
+        "min": 800,
+        "max": 800
+      },
+      {
+        "condition": "asc>=9",
+        "min": 750,
+        "max": 750
+      }
+    ],
+    "damage_values": [
+      {
+        "condition": "asc>=9",
+        "base": 45
+      },
+      {
+        "condition": "asc>=4",
+        "base": 2
+      },
+      {
+        "condition": "asc>=4",
+        "base": 40
+      },
+      {
+        "condition": "default",
+        "base": 2
+      }
+    ],
+    "enemy_type": "BOSS",
+    "get_move": {
+      "has_method": true,
+      "uses_num": false,
+      "rng_calls": [
+        "randomBoolean()"
+      ]
+    }
+  },
+  {
+    "class_name": "SpireShield",
+    "java_file": "SpireShield.java",
+    "hp_values": [
+      {
+        "condition": "asc>=8",
+        "min": 125,
+        "max": 125
+      },
+      {
+        "condition": "asc>=8",
+        "min": 110,
+        "max": 110
+      }
+    ],
+    "damage_values": [
+      {
+        "condition": "asc>=8",
+        "base": 14
+      },
+      {
+        "condition": "asc>=3",
+        "base": 38
+      },
+      {
+        "condition": "asc>=3",
+        "base": 12
+      },
+      {
+        "condition": "default",
+        "base": 34
+      }
+    ],
+    "enemy_type": "ELITE",
+    "get_move": {
+      "has_method": true,
+      "uses_num": false,
+      "rng_calls": [
+        "randomBoolean()"
+      ]
+    }
+  },
+  {
+    "class_name": "SpireSpear",
+    "java_file": "SpireSpear.java",
+    "hp_values": [
+      {
+        "condition": "asc>=8",
+        "min": 180,
+        "max": 180
+      },
+      {
+        "condition": "asc>=8",
+        "min": 160,
+        "max": 160
+      }
+    ],
+    "damage_values": [
+      {
+        "condition": "asc>=3",
+        "base": 6
+      },
+      {
+        "condition": "asc>=3",
+        "base": 10
+      },
+      {
+        "condition": "default",
+        "base": 5
+      },
+      {
+        "condition": "default",
+        "base": 10
+      }
+    ],
+    "enemy_type": "ELITE",
+    "get_move": {
+      "has_method": true,
+      "uses_num": false,
+      "rng_calls": [
+        "randomBoolean()"
+      ]
+    }
+  },
+  {
+    "class_name": "AcidSlime_L",
+    "java_file": "AcidSlime_L.java",
+    "hp_values": [
+      {
+        "condition": "asc>=7",
+        "min": 68,
+        "max": 72
+      },
+      {
+        "condition": "asc>=7",
+        "min": 65,
+        "max": 69
+      }
+    ],
+    "damage_values": [
+      {
+        "condition": "asc>=2",
+        "base": 12
+      },
+      {
+        "condition": "asc>=2",
+        "base": 18
+      },
+      {
+        "condition": "asc>=2",
+        "base": 11
+      },
+      {
+        "condition": "default",
+        "base": 16
+      }
+    ],
+    "enemy_type": "NORMAL",
+    "get_move": {
+      "has_method": true,
+      "uses_num": true,
+      "rng_calls": [
+        "randomBoolean(0.6f)",
+        "randomBoolean(0.6f)",
+        "randomBoolean(0.4f)",
+        "randomBoolean()",
+        "randomBoolean(0.4f)",
+        "randomBoolean(0.4f)"
+      ]
+    }
+  },
+  {
+    "class_name": "AcidSlime_M",
+    "java_file": "AcidSlime_M.java",
+    "hp_values": [
+      {
+        "condition": "asc>=7",
+        "min": 29,
+        "max": 34
+      },
+      {
+        "condition": "asc>=7",
+        "min": 28,
+        "max": 32
+      }
+    ],
+    "damage_values": [
+      {
+        "condition": "asc>=2",
+        "base": 8
+      },
+      {
+        "condition": "asc>=2",
+        "base": 12
+      },
+      {
+        "condition": "asc>=2",
+        "base": 7
+      },
+      {
+        "condition": "default",
+        "base": 10
+      }
+    ],
+    "enemy_type": "NORMAL",
+    "get_move": {
+      "has_method": true,
+      "uses_num": true,
+      "rng_calls": [
+        "randomBoolean()",
+        "randomBoolean(0.5f)",
+        "randomBoolean(0.4f)",
+        "randomBoolean()",
+        "randomBoolean(0.4f)",
+        "randomBoolean(0.4f)"
+      ]
+    }
+  },
+  {
+    "class_name": "AcidSlime_S",
+    "java_file": "AcidSlime_S.java",
+    "hp_values": [
+      {
+        "condition": "asc>=7",
+        "min": 9,
+        "max": 13
+      },
+      {
+        "condition": "asc>=7",
+        "min": 8,
+        "max": 12
+      }
+    ],
+    "damage_values": [
+      {
+        "condition": "asc>=7",
+        "base": 4
+      },
+      {
+        "condition": "asc>=2",
+        "base": 3
+      }
+    ],
+    "enemy_type": "NORMAL",
+    "get_move": {
+      "has_method": true,
+      "uses_num": false,
+      "rng_calls": [
+        "randomBoolean()"
+      ]
+    }
+  },
+  {
+    "class_name": "ApologySlime",
+    "java_file": "ApologySlime.java",
+    "hp_values": [],
+    "damage_values": [
+      {
+        "condition": "default",
+        "base": 3
+      }
+    ],
+    "enemy_type": "NORMAL",
+    "get_move": {
+      "has_method": true,
+      "uses_num": false,
+      "rng_calls": [
+        "randomBoolean()"
+      ]
+    }
+  },
+  {
+    "class_name": "Cultist",
+    "java_file": "Cultist.java",
+    "hp_values": [
+      {
+        "condition": "asc>=7",
+        "min": 50,
+        "max": 56
+      },
+      {
+        "condition": "asc>=7",
+        "min": 48,
+        "max": 54
+      }
+    ],
+    "damage_values": [
+      {
+        "condition": "asc>=2",
+        "base": 6
+      }
+    ],
+    "enemy_type": "NORMAL",
+    "get_move": {
+      "has_method": true,
+      "uses_num": false,
+      "rng_calls": []
+    }
+  },
+  {
+    "class_name": "FungiBeast",
+    "java_file": "FungiBeast.java",
+    "hp_values": [
+      {
+        "condition": "asc>=7",
+        "min": 24,
+        "max": 28
+      },
+      {
+        "condition": "asc>=7",
+        "min": 22,
+        "max": 28
+      }
+    ],
+    "damage_values": [],
+    "enemy_type": "NORMAL",
+    "get_move": {
+      "has_method": true,
+      "uses_num": true,
+      "rng_calls": []
+    }
+  },
+  {
+    "class_name": "GremlinFat",
+    "java_file": "GremlinFat.java",
+    "hp_values": [
+      {
+        "condition": "asc>=7",
+        "min": 14,
+        "max": 18
+      },
+      {
+        "condition": "asc>=7",
+        "min": 13,
+        "max": 17
+      }
+    ],
+    "damage_values": [
+      {
+        "condition": "asc>=7",
+        "base": 5
+      },
+      {
+        "condition": "asc>=2",
+        "base": 4
+      }
+    ],
+    "enemy_type": "NORMAL",
+    "get_move": {
+      "has_method": true,
+      "uses_num": false,
+      "rng_calls": []
+    }
+  },
+  {
+    "class_name": "GremlinNob",
+    "java_file": "GremlinNob.java",
+    "hp_values": [
+      {
+        "condition": "asc>=8",
+        "min": 85,
+        "max": 90
+      },
+      {
+        "condition": "asc>=8",
+        "min": 82,
+        "max": 86
+      }
+    ],
+    "damage_values": [],
+    "enemy_type": "ELITE",
+    "get_move": {
+      "has_method": true,
+      "uses_num": true,
+      "rng_calls": []
+    }
+  },
+  {
+    "class_name": "GremlinThief",
+    "java_file": "GremlinThief.java",
+    "hp_values": [
+      {
+        "condition": "asc>=7",
+        "min": 11,
+        "max": 15
+      },
+      {
+        "condition": "asc>=7",
+        "min": 10,
+        "max": 14
+      }
+    ],
+    "damage_values": [],
+    "enemy_type": "NORMAL",
+    "get_move": {
+      "has_method": true,
+      "uses_num": false,
+      "rng_calls": []
+    }
+  },
+  {
+    "class_name": "GremlinTsundere",
+    "java_file": "GremlinTsundere.java",
+    "hp_values": [
+      {
+        "condition": "asc>=17",
+        "min": 13,
+        "max": 17
+      },
+      {
+        "condition": "asc>=17",
+        "min": 13,
+        "max": 17
+      },
+      {
+        "condition": "asc>=7",
+        "min": 12,
+        "max": 15
+      }
+    ],
+    "damage_values": [],
+    "enemy_type": "NORMAL",
+    "get_move": {
+      "has_method": true,
+      "uses_num": false,
+      "rng_calls": []
+    }
+  },
+  {
+    "class_name": "GremlinWarrior",
+    "java_file": "GremlinWarrior.java",
+    "hp_values": [
+      {
+        "condition": "asc>=7",
+        "min": 21,
+        "max": 25
+      },
+      {
+        "condition": "asc>=7",
+        "min": 20,
+        "max": 24
+      }
+    ],
+    "damage_values": [
+      {
+        "condition": "asc>=7",
+        "base": 5
+      },
+      {
+        "condition": "asc>=2",
+        "base": 4
+      }
+    ],
+    "enemy_type": "NORMAL",
+    "get_move": {
+      "has_method": true,
+      "uses_num": false,
+      "rng_calls": []
+    }
+  },
+  {
+    "class_name": "GremlinWizard",
+    "java_file": "GremlinWizard.java",
+    "hp_values": [
+      {
+        "condition": "asc>=7",
+        "min": 22,
+        "max": 26
+      },
+      {
+        "condition": "asc>=7",
+        "min": 21,
+        "max": 25
+      }
+    ],
+    "damage_values": [
+      {
+        "condition": "asc>=7",
+        "base": 30
+      },
+      {
+        "condition": "asc>=2",
+        "base": 25
+      }
+    ],
+    "enemy_type": "NORMAL",
+    "get_move": {
+      "has_method": true,
+      "uses_num": false,
+      "rng_calls": []
+    }
+  },
+  {
+    "class_name": "Hexaghost",
+    "java_file": "Hexaghost.java",
+    "hp_values": [
+      {
+        "condition": "asc>=9",
+        "min": 264,
+        "max": 264
+      },
+      {
+        "condition": "asc>=9",
+        "min": 250,
+        "max": 250
+      }
+    ],
+    "damage_values": [],
+    "enemy_type": "BOSS",
+    "get_move": {
+      "has_method": true,
+      "uses_num": false,
+      "rng_calls": []
+    }
+  },
+  {
+    "class_name": "HexaghostBody",
+    "java_file": "HexaghostBody.java",
+    "hp_values": [],
+    "damage_values": [],
+    "enemy_type": "NORMAL",
+    "get_move": {
+      "has_method": false,
+      "uses_num": false,
+      "rng_calls": []
+    }
+  },
+  {
+    "class_name": "HexaghostOrb",
+    "java_file": "HexaghostOrb.java",
+    "hp_values": [],
+    "damage_values": [],
+    "enemy_type": "NORMAL",
+    "get_move": {
+      "has_method": false,
+      "uses_num": false,
+      "rng_calls": []
+    }
+  },
+  {
+    "class_name": "JawWorm",
+    "java_file": "JawWorm.java",
+    "hp_values": [
+      {
+        "condition": "asc>=7",
+        "min": 42,
+        "max": 46
+      },
+      {
+        "condition": "asc>=7",
+        "min": 40,
+        "max": 44
+      }
+    ],
+    "damage_values": [],
+    "enemy_type": "NORMAL",
+    "get_move": {
+      "has_method": true,
+      "uses_num": true,
+      "rng_calls": [
+        "randomBoolean(0.5625f)",
+        "randomBoolean(0.357f)",
+        "randomBoolean(0.416f)"
+      ]
+    }
+  },
+  {
+    "class_name": "Lagavulin",
+    "java_file": "Lagavulin.java",
+    "hp_values": [
+      {
+        "condition": "asc>=8",
+        "min": 112,
+        "max": 115
+      },
+      {
+        "condition": "asc>=8",
+        "min": 109,
+        "max": 111
+      }
+    ],
+    "damage_values": [],
+    "enemy_type": "ELITE",
+    "get_move": {
+      "has_method": true,
+      "uses_num": false,
+      "rng_calls": []
+    }
+  },
+  {
+    "class_name": "Looter",
+    "java_file": "Looter.java",
+    "hp_values": [
+      {
+        "condition": "asc>=17",
+        "min": 46,
+        "max": 50
+      },
+      {
+        "condition": "asc>=17",
+        "min": 44,
+        "max": 48
+      }
+    ],
+    "damage_values": [],
+    "enemy_type": "NORMAL",
+    "get_move": {
+      "has_method": true,
+      "uses_num": false,
+      "rng_calls": []
+    }
+  },
+  {
+    "class_name": "LouseDefensive",
+    "java_file": "LouseDefensive.java",
+    "hp_values": [
+      {
+        "condition": "asc>=7",
+        "min": 12,
+        "max": 18
+      },
+      {
+        "condition": "asc>=7",
+        "min": 11,
+        "max": 17
+      }
+    ],
+    "damage_values": [],
+    "enemy_type": "NORMAL",
+    "get_move": {
+      "has_method": true,
+      "uses_num": true,
+      "rng_calls": []
+    }
+  },
+  {
+    "class_name": "LouseNormal",
+    "java_file": "LouseNormal.java",
+    "hp_values": [
+      {
+        "condition": "asc>=7",
+        "min": 11,
+        "max": 16
+      },
+      {
+        "condition": "asc>=7",
+        "min": 10,
+        "max": 15
+      }
+    ],
+    "damage_values": [],
+    "enemy_type": "NORMAL",
+    "get_move": {
+      "has_method": true,
+      "uses_num": true,
+      "rng_calls": []
+    }
+  },
+  {
+    "class_name": "Sentry",
+    "java_file": "Sentry.java",
+    "hp_values": [
+      {
+        "condition": "asc>=8",
+        "min": 39,
+        "max": 45
+      },
+      {
+        "condition": "asc>=8",
+        "min": 38,
+        "max": 42
+      }
+    ],
+    "damage_values": [],
+    "enemy_type": "ELITE",
+    "get_move": {
+      "has_method": true,
+      "uses_num": false,
+      "rng_calls": []
+    }
+  },
+  {
+    "class_name": "SlaverBlue",
+    "java_file": "SlaverBlue.java",
+    "hp_values": [
+      {
+        "condition": "asc>=7",
+        "min": 48,
+        "max": 52
+      },
+      {
+        "condition": "asc>=7",
+        "min": 46,
+        "max": 50
+      }
+    ],
+    "damage_values": [],
+    "enemy_type": "NORMAL",
+    "get_move": {
+      "has_method": true,
+      "uses_num": true,
+      "rng_calls": []
+    }
+  },
+  {
+    "class_name": "SlaverRed",
+    "java_file": "SlaverRed.java",
+    "hp_values": [
+      {
+        "condition": "asc>=7",
+        "min": 48,
+        "max": 52
+      },
+      {
+        "condition": "asc>=7",
+        "min": 46,
+        "max": 50
+      }
+    ],
+    "damage_values": [],
+    "enemy_type": "NORMAL",
+    "get_move": {
+      "has_method": true,
+      "uses_num": true,
+      "rng_calls": []
+    }
+  },
+  {
+    "class_name": "SlimeBoss",
+    "java_file": "SlimeBoss.java",
+    "hp_values": [
+      {
+        "condition": "asc>=9",
+        "min": 150,
+        "max": 150
+      },
+      {
+        "condition": "asc>=9",
+        "min": 140,
+        "max": 140
+      }
+    ],
+    "damage_values": [],
+    "enemy_type": "BOSS",
+    "get_move": {
+      "has_method": true,
+      "uses_num": false,
+      "rng_calls": []
+    }
+  },
+  {
+    "class_name": "SpikeSlime_L",
+    "java_file": "SpikeSlime_L.java",
+    "hp_values": [
+      {
+        "condition": "asc>=7",
+        "min": 67,
+        "max": 73
+      },
+      {
+        "condition": "asc>=7",
+        "min": 64,
+        "max": 70
+      }
+    ],
+    "damage_values": [
+      {
+        "condition": "asc>=2",
+        "base": 18
+      },
+      {
+        "condition": "asc>=2",
+        "base": 16
+      }
+    ],
+    "enemy_type": "NORMAL",
+    "get_move": {
+      "has_method": true,
+      "uses_num": true,
+      "rng_calls": []
+    }
+  },
+  {
+    "class_name": "SpikeSlime_M",
+    "java_file": "SpikeSlime_M.java",
+    "hp_values": [
+      {
+        "condition": "asc>=7",
+        "min": 29,
+        "max": 34
+      },
+      {
+        "condition": "asc>=7",
+        "min": 28,
+        "max": 32
+      }
+    ],
+    "damage_values": [
+      {
+        "condition": "asc>=2",
+        "base": 10
+      },
+      {
+        "condition": "asc>=2",
+        "base": 8
+      }
+    ],
+    "enemy_type": "NORMAL",
+    "get_move": {
+      "has_method": true,
+      "uses_num": true,
+      "rng_calls": []
+    }
+  },
+  {
+    "class_name": "SpikeSlime_S",
+    "java_file": "SpikeSlime_S.java",
+    "hp_values": [
+      {
+        "condition": "asc>=7",
+        "min": 11,
+        "max": 15
+      },
+      {
+        "condition": "asc>=7",
+        "min": 10,
+        "max": 14
+      }
+    ],
+    "damage_values": [
+      {
+        "condition": "asc>=7",
+        "base": 6
+      },
+      {
+        "condition": "asc>=2",
+        "base": 5
+      }
+    ],
+    "enemy_type": "NORMAL",
+    "get_move": {
+      "has_method": true,
+      "uses_num": false,
+      "rng_calls": []
+    }
+  },
+  {
+    "class_name": "TheGuardian",
+    "java_file": "TheGuardian.java",
+    "hp_values": [
+      {
+        "condition": "asc>=19",
+        "min": 250,
+        "max": 250
+      },
+      {
+        "condition": "asc>=19",
+        "min": 250,
+        "max": 250
+      },
+      {
+        "condition": "asc>=9",
+        "min": 240,
+        "max": 240
+      }
+    ],
+    "damage_values": [],
+    "enemy_type": "BOSS",
+    "get_move": {
+      "has_method": true,
+      "uses_num": false,
+      "rng_calls": []
+    }
+  }
+]

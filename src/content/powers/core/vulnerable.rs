@@ -1,0 +1,33 @@
+use crate::action::Action;
+use crate::combat::PowerId;
+use crate::core::EntityId;
+
+pub fn on_calculate_damage_from_player(mut damage: f32, amount: i32, has_odd_mushroom: bool) -> f32 {
+    if amount > 0 { 
+        let multiplier = if has_odd_mushroom { 1.25 } else { 1.5 };
+        damage = (damage * multiplier).floor(); 
+    }
+    damage
+}
+
+pub fn on_attacked_to_change_damage(current_damage: i32, amount: i32, has_odd_mushroom: bool) -> i32 {
+    if amount > 0 { 
+        let multiplier = if has_odd_mushroom { 1.25 } else { 1.5 };
+        (current_damage as f32 * multiplier) as i32 
+    } else { 
+        current_damage 
+    }
+}
+
+pub fn at_end_of_round(owner: EntityId, amount: i32) -> smallvec::SmallVec<[Action; 2]> {
+    let mut actions = smallvec::smallvec![];
+    if amount > 0 {
+        actions.push(Action::ApplyPower {
+            source: owner,
+            target: owner,
+            power_id: PowerId::Vulnerable,
+            amount: -1,
+        });
+    }
+    actions
+}

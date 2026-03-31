@@ -1,0 +1,21 @@
+use crate::combat::{CombatState, CombatCard};
+use crate::action::{Action, ActionInfo, AddTo};
+use smallvec::SmallVec;
+use crate::content::powers::PowerId;
+
+pub fn disarm_play(_state: &CombatState, card: &CombatCard, target: crate::core::EntityId) -> SmallVec<[ActionInfo; 4]> {
+    let mut actions = smallvec::SmallVec::new();
+    let amount = card.base_magic_num_mut; // 2, upgraded 3
+    
+    actions.push(ActionInfo {
+        action: Action::ApplyPower {
+            source: 0,
+            target,
+            power_id: PowerId::Strength,
+            amount: -amount, // Reduces strength
+        },
+        insertion_mode: AddTo::Bottom,
+    });
+    
+    actions
+}
