@@ -3,7 +3,8 @@ use crate::combat::{CombatCard, CombatState};
 use crate::core::EntityId;
 use smallvec::{smallvec, SmallVec};
 
-pub fn bite_play(_state: &CombatState, card: &CombatCard, target: EntityId) -> SmallVec<[ActionInfo; 4]> {
+pub fn bite_play(_state: &CombatState, card: &CombatCard, target: Option<EntityId>) -> SmallVec<[ActionInfo; 4]> {
+    let target = target.expect("Bite requires a valid target!");
     // Exact mechanics: Deal 7 (8) damage. Heal 2 (3) HP. Exhaust.
     // The exhaust and damage output values will naturally adapt based on card definition mapping and upgrades.
     let heal_amount = if card.upgrades > 0 { 3 } else { 2 };

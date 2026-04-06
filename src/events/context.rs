@@ -1,5 +1,3 @@
-use crate::content::relics::RelicId;
-
 #[derive(Debug, Clone)]
 pub struct EventContext {
     pub act_num: u8,

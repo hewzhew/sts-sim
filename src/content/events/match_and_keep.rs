@@ -197,7 +197,7 @@ pub fn get_choices(_run_state: &RunState, event_state: &EventState) -> Vec<Event
     }
 }
 
-pub fn handle_choice(_engine_state: &mut EngineState, run_state: &mut RunState, mut choice_idx: usize) {
+pub fn handle_choice(_engine_state: &mut EngineState, run_state: &mut RunState, choice_idx: usize) {
     let mut event_state = run_state.event_state.take().unwrap();
 
     match event_state.current_screen {

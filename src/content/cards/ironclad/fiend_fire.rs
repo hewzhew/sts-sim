@@ -3,7 +3,8 @@ use crate::action::{Action, ActionInfo, AddTo, DamageInfo, DamageType};
 use crate::core::EntityId;
 use smallvec::SmallVec;
 
-pub fn fiend_fire_play(_state: &CombatState, card: &CombatCard, target: EntityId) -> SmallVec<[ActionInfo; 4]> {
+pub fn fiend_fire_play(_state: &CombatState, card: &CombatCard, target: Option<EntityId>) -> SmallVec<[ActionInfo; 4]> {
+    let target = target.expect("Fiend Fire requires a valid target!");
     smallvec::smallvec![
         ActionInfo {
             action: Action::FiendFire {

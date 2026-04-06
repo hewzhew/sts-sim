@@ -1,7 +1,7 @@
 use crate::state::core::{ClientInput, EngineState};
 
 /// Translates a Rust ClientInput into the String format expected by Java's CommunicationMod over stdin/stdout.
-pub fn input_to_java_command(input: &ClientInput, state: &EngineState) -> Option<String> {
+pub fn input_to_java_command(input: &ClientInput, _state: &EngineState) -> Option<String> {
     match input {
         ClientInput::PlayCard { card_index, target } => {
             let mut cmd = format!("PLAY {}", card_index + 1); // Java expects 1-indexed cards
@@ -45,8 +45,8 @@ pub fn input_to_java_command(input: &ClientInput, state: &EngineState) -> Option
 
         // For complex selects where Rust atomicly expects array, picking the *first* unselected item is a naive shim 
         // to make Java advance one step and return a new intermediate frame.
-        ClientInput::SubmitHandSelect(uuids) |
-        ClientInput::SubmitGridSelect(uuids) => {
+        ClientInput::SubmitHandSelect(_uuids) |
+        ClientInput::SubmitGridSelect(_uuids) => {
             // A more advanced map is required to find the exact index in Java's choice_list corresponding to this UUID.
             // For now, we print a placeholder or pick the first.
             // In reality, diff_driver / mapping usually bridges this, but we'll panic/error cleanly if it hits complex logic unsupported by LiveComm.

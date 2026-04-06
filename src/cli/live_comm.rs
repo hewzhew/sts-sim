@@ -11,7 +11,7 @@ const RAW_PATH: &str = r"d:\rust\sts_simulator\live_comm_raw.jsonl";
 // ─── Combat Diff Accumulator (for per-combat summary) ────────
 
 struct CombatDiffRecord {
-    frame: u64,
+    _frame: u64,
     field: String,
     category: DiffCategory,
     rust_val: String,
@@ -296,7 +296,7 @@ pub fn run_live_comm_loop(mut _agent: crate::bot::agent::Agent) {
                         
                         // Accumulate for combat summary
                         stats.diffs.push(CombatDiffRecord {
-                            frame: frame_count,
+                            _frame: frame_count,
                             field: d.field.clone(),
                             category: d.category,
                             rust_val: d.rust_val.clone(),
@@ -305,7 +305,7 @@ pub fn run_live_comm_loop(mut _agent: crate::bot::agent::Agent) {
                     }
                     
                     // Mention suppressed gaps
-                    let suppressed = action_diffs.iter()
+                    let _suppressed = action_diffs.iter()
                         .filter(|d| d.category == DiffCategory::ContentGap 
                             && stats.seen_content_gaps.contains(&d.field)
                             && action_diffs.iter().filter(|d2| d2.field == d.field).count() > 0)

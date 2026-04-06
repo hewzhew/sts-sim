@@ -2,7 +2,8 @@ use crate::combat::{CombatState, CombatCard};
 use crate::action::{Action, ActionInfo, AddTo};
 use smallvec::SmallVec;
 
-pub fn reckless_charge_play(_state: &CombatState, card: &CombatCard, target: crate::core::EntityId) -> SmallVec<[ActionInfo; 4]> {
+pub fn reckless_charge_play(_state: &CombatState, card: &CombatCard, target: Option<crate::core::EntityId>) -> SmallVec<[ActionInfo; 4]> {
+    let target = target.expect("Reckless Charge requires a valid target!");
     smallvec::smallvec![
         ActionInfo {
             action: Action::Damage(crate::action::DamageInfo {

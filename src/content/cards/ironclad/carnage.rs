@@ -2,7 +2,8 @@ use crate::combat::{CombatState, CombatCard};
 use crate::action::{Action, ActionInfo, AddTo, DamageType, DamageInfo};
 use smallvec::SmallVec;
 
-pub fn carnage_play(_state: &CombatState, card: &CombatCard, target: crate::core::EntityId) -> SmallVec<[ActionInfo; 4]> {
+pub fn carnage_play(_state: &CombatState, card: &CombatCard, target: Option<crate::core::EntityId>) -> SmallVec<[ActionInfo; 4]> {
+    let target = target.expect("Carnage requires a valid target!");
     let mut actions = smallvec::SmallVec::new();
     let damage = card.base_damage_mut;
     

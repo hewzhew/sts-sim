@@ -488,6 +488,8 @@ pub fn resolve_power_on_remove(id: PowerId, state: &CombatState, owner: crate::c
     }
 }
 
+
+
 pub fn resolve_power_on_attack_to_change_damage(
     id: PowerId, _state: &CombatState, _info: &crate::action::DamageInfo, current_damage: i32, amount: i32
 ) -> i32 {
@@ -498,7 +500,7 @@ pub fn resolve_power_on_attack_to_change_damage(
 }
 
 pub fn resolve_power_on_attacked_to_change_damage(
-    id: PowerId, _state: &CombatState, _info: &crate::action::DamageInfo, current_damage: i32, amount: i32
+    id: PowerId, _state: &CombatState, _info: &crate::action::DamageInfo, current_damage: i32, _amount: i32
 ) -> i32 {
     match id {
         _ => current_damage

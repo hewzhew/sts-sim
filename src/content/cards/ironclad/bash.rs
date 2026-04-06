@@ -3,7 +3,8 @@ use crate::action::{Action, ActionInfo, AddTo, DamageInfo, DamageType};
 use crate::core::EntityId;
 use smallvec::SmallVec;
 
-pub fn bash_play(_state: &CombatState, card: &CombatCard, target: EntityId) -> SmallVec<[ActionInfo; 4]> {
+pub fn bash_play(_state: &CombatState, card: &CombatCard, target: Option<EntityId>) -> SmallVec<[ActionInfo; 4]> {
+    let target = target.expect("Bash requires a valid target!");
     smallvec::smallvec![
         ActionInfo { 
             action: Action::Damage(DamageInfo { 

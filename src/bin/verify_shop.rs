@@ -1,4 +1,3 @@
-use sts_simulator::rng::RngPool;
 use sts_simulator::state::RunState;
 use sts_simulator::content::cards::java_id;
 

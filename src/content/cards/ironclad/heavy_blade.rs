@@ -3,7 +3,8 @@ use crate::action::{Action, ActionInfo, AddTo, DamageInfo, DamageType};
 use crate::core::EntityId;
 use smallvec::SmallVec;
 
-pub fn heavy_blade_play(_state: &CombatState, card: &CombatCard, target: EntityId) -> SmallVec<[ActionInfo; 4]> {
+pub fn heavy_blade_play(_state: &CombatState, card: &CombatCard, target: Option<EntityId>) -> SmallVec<[ActionInfo; 4]> {
+    let target = target.expect("Heavy Blade requires a valid target!");
     smallvec::smallvec![ActionInfo { 
         action: Action::Damage(DamageInfo { 
             source: 0,

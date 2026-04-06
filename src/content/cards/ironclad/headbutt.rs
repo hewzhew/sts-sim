@@ -4,7 +4,8 @@ use crate::state::{GridSelectReason, PileType};
 use crate::core::EntityId;
 use smallvec::SmallVec;
 
-pub fn headbutt_play(state: &CombatState, card: &CombatCard, target: EntityId) -> SmallVec<[ActionInfo; 4]> {
+pub fn headbutt_play(state: &CombatState, card: &CombatCard, target: Option<EntityId>) -> SmallVec<[ActionInfo; 4]> {
+    let target = target.expect("Headbutt requires a valid target!");
     let mut actions = SmallVec::new();
     
     actions.push(ActionInfo {

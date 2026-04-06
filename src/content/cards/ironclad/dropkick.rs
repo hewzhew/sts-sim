@@ -3,7 +3,8 @@ use crate::action::{Action, ActionInfo, AddTo, DamageInfo, DamageType};
 use crate::core::EntityId;
 use smallvec::SmallVec;
 
-pub fn dropkick_play(_state: &CombatState, card: &CombatCard, target: EntityId) -> SmallVec<[ActionInfo; 4]> {
+pub fn dropkick_play(_state: &CombatState, card: &CombatCard, target: Option<EntityId>) -> SmallVec<[ActionInfo; 4]> {
+    let target = target.expect("Dropkick requires a valid target!");
     let mut actions = SmallVec::new();
     
     // The correct Java behavior: DropkickAction checks Vulnerable AT EXECUTION TIME, not at play time.

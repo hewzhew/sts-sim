@@ -1236,7 +1236,7 @@ use smallvec::SmallVec;
 
 /// Central dispatch table for resolving card play mechanics.
 pub fn resolve_card_play(card_id: CardId, _state: &CombatState, _card: &CombatCard, target: Option<EntityId>) -> SmallVec<[ActionInfo; 4]> {
-    let t = target.unwrap_or(9999); // Use 9999 for "No Target" instead of 0 (Player)
+    let t = target;
     match card_id {
         CardId::Strike => ironclad::strike::strike_play(_state, _card, t),
         CardId::Bash => ironclad::bash::bash_play(_state, _card, t),
@@ -1323,7 +1323,7 @@ pub fn resolve_card_play(card_id: CardId, _state: &CombatState, _card: &CombatCa
         },
         CardId::Shiv => {
             let mut actions = smallvec::SmallVec::new();
-            if t != 9999 {
+            if let Some(t) = t {
                 let def = get_card_definition(CardId::Shiv);
                 actions.push(ActionInfo {
                     action: crate::action::Action::Damage(crate::action::DamageInfo {
@@ -1357,12 +1357,14 @@ pub fn resolve_card_play(card_id: CardId, _state: &CombatState, _card: &CombatCa
                 },
                 CardId::Blind => {
                     // Apply 2 Weak to target
-                    acts.push(Action::ApplyPower { source: 0, target: t, power_id: PowerId::Weak, amount: mag });
+                    let target_id = t.expect("Blind requires a target!");
+                    acts.push(Action::ApplyPower { source: 0, target: target_id, power_id: PowerId::Weak, amount: mag });
                 },
                 CardId::DarkShackles => {
                     // Apply -9 Strength to target (temporary, lost at end of turn)
-                    acts.push(Action::ApplyPower { source: 0, target: t, power_id: PowerId::Strength, amount: -mag });
-                    acts.push(Action::ApplyPower { source: 0, target: t, power_id: PowerId::LoseStrength, amount: -mag });
+                    let target_id = t.expect("Dark Shackles requires a target!");
+                    acts.push(Action::ApplyPower { source: 0, target: target_id, power_id: PowerId::Strength, amount: -mag });
+                    acts.push(Action::ApplyPower { source: 0, target: target_id, power_id: PowerId::LoseStrength, amount: -mag });
                 },
                 CardId::DeepBreath => {
                     // Shuffle discard into draw pile, draw 1
@@ -1393,8 +1395,9 @@ pub fn resolve_card_play(card_id: CardId, _state: &CombatState, _card: &CombatCa
                 },
                 CardId::FlashOfSteel => {
                     // Deal 3 damage, Draw 1
+                    let target_id = t.expect("Flash of Steel requires a target!");
                     acts.push(Action::Damage(crate::action::DamageInfo {
-                        source: 0, target: t, base: dmg, output: dmg,
+                        source: 0, target: target_id, base: dmg, output: dmg,
                         damage_type: crate::action::DamageType::Normal, is_modified: false,
                     }));
                     acts.push(Action::DrawCards(1));
@@ -1430,8 +1433,9 @@ pub fn resolve_card_play(card_id: CardId, _state: &CombatState, _card: &CombatCa
                 CardId::MindBlast => {
                     // Deal damage equal to draw pile size
                     let draw_size = _state.draw_pile.len() as i32;
+                    let target_id = t.expect("Mind Blast requires a target!");
                     acts.push(Action::Damage(crate::action::DamageInfo {
-                        source: 0, target: t, base: draw_size, output: draw_size,
+                        source: 0, target: target_id, base: draw_size, output: draw_size,
                         damage_type: crate::action::DamageType::Normal, is_modified: true,
                     }));
                 },
@@ -1451,14 +1455,16 @@ pub fn resolve_card_play(card_id: CardId, _state: &CombatState, _card: &CombatCa
                 },
                 CardId::SwiftStrike => {
                     // Deal 7 damage
+                    let target_id = t.expect("Swift Strike requires a target!");
                     acts.push(Action::Damage(crate::action::DamageInfo {
-                        source: 0, target: t, base: dmg, output: dmg,
+                        source: 0, target: target_id, base: dmg, output: dmg,
                         damage_type: crate::action::DamageType::Normal, is_modified: false,
                     }));
                 },
                 CardId::Trip => {
                     // Apply 2 Vulnerable to target
-                    acts.push(Action::ApplyPower { source: 0, target: t, power_id: PowerId::Vulnerable, amount: mag });
+                    let target_id = t.expect("Trip requires a target!");
+                    acts.push(Action::ApplyPower { source: 0, target: target_id, power_id: PowerId::Vulnerable, amount: mag });
                 },
                 // ── Colorless Rare ──
                 CardId::Apotheosis => {
@@ -1470,8 +1476,9 @@ pub fn resolve_card_play(card_id: CardId, _state: &CombatState, _card: &CombatCa
                     }
                 },
                 CardId::HandOfGreed => {
+                    let target_id = t.expect("Hand of Greed requires a target!");
                     acts.push(Action::Damage(crate::action::DamageInfo {
-                        source: 0, target: t, base: dmg, output: dmg,
+                        source: 0, target: target_id, base: dmg, output: dmg,
                         damage_type: crate::action::DamageType::Normal, is_modified: false,
                     }));
                 },

@@ -3,7 +3,7 @@ use crate::action::{Action, ActionInfo, AddTo};
 use crate::core::EntityId;
 use smallvec::SmallVec;
 
-pub fn double_tap_play(_state: &CombatState, card: &CombatCard, _target: EntityId) -> SmallVec<[ActionInfo; 4]> {
+pub fn double_tap_play(_state: &CombatState, card: &CombatCard, _target: Option<EntityId>) -> SmallVec<[ActionInfo; 4]> {
     let mut actions = SmallVec::new();
     
     actions.push(ActionInfo {

@@ -3,7 +3,8 @@ use crate::action::{Action, ActionInfo, AddTo, DamageInfo, DamageType};
 use crate::core::EntityId;
 use smallvec::SmallVec;
 
-pub fn iron_wave_play(_state: &CombatState, card: &CombatCard, target: EntityId) -> SmallVec<[ActionInfo; 4]> {
+pub fn iron_wave_play(_state: &CombatState, card: &CombatCard, target: Option<EntityId>) -> SmallVec<[ActionInfo; 4]> {
+    let target = target.expect("Iron Wave requires a valid target!");
     smallvec::smallvec![
         ActionInfo { 
             action: Action::GainBlock { target: 0, amount: card.base_block_mut },
