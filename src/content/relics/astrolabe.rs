@@ -1,6 +1,21 @@
-// Astrolabe: Upon pickup, Transform and Upgrade 3 cards.
-// Evaluated natively out of combat on map/reward screens.
+use crate::state::core::{EngineState, RunPendingChoiceState, RunPendingChoiceReason};
+use crate::state::run::RunState;
+use crate::content::cards::{get_card_definition, CardType};
 
-pub fn has_astrolabe() -> bool {
-    true
+pub fn on_equip(run_state: &mut RunState, return_state: EngineState) -> Option<EngineState> {
+    let purgeable_count = run_state.master_deck.iter()
+        .filter(|c| {
+            let def = get_card_definition(c.id);
+            def.card_type != CardType::Curse
+        })
+        .count();
+    if purgeable_count > 0 {
+        return Some(EngineState::RunPendingChoice(RunPendingChoiceState {
+            min_choices: purgeable_count.min(3),
+            max_choices: purgeable_count.min(3),
+            reason: RunPendingChoiceReason::Transform,
+            return_state: Box::new(return_state),
+        }));
+    }
+    None
 }

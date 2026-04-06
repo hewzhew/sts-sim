@@ -8,7 +8,7 @@ fn main() {
     let dest_path = Path::new(&out_dir).join("generated_schema.rs");
 
     // The schema file we're parsing. Ensure cargo triggers rebuild if it changes.
-    let schema_path = "../../tools/protocol_schema.json";
+    let _schema_path = "../../tools/protocol_schema.json";
     
     // We expect the build.rs to be in `sts_simulator/`
     let full_schema_path = Path::new("tools/protocol_schema.json");
@@ -30,7 +30,7 @@ fn main() {
     generated_code.push_str("// ============================================================================\n\n");
 
     if let Some(enums) = parsed["enums"].as_object() {
-        for (enum_key, enum_def) in enums {
+        for (_enum_key, enum_def) in enums {
             if let (Some(rust_type), Some(fn_name), Some(entries)) = (
                 enum_def["rust_type"].as_str(),
                 enum_def["fn_name"].as_str(),

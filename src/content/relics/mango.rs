@@ -1,8 +1,13 @@
+use crate::state::core::EngineState;
+use crate::state::run::RunState;
 use crate::action::ActionInfo;
 use smallvec::SmallVec;
 
-/// Mango: Raise Max HP by 14 upon pickup.
-/// No combat hooks. Max HP is preserved stat-side inside PlayerEntity / RunState out of combat.
+pub fn on_equip(run_state: &mut RunState) -> Option<EngineState> {
+    run_state.max_hp += 14;
+    run_state.current_hp = (run_state.current_hp + 14).min(run_state.max_hp);
+    None
+}
 
 pub fn at_battle_start() -> SmallVec<[ActionInfo; 4]> {
     SmallVec::new()

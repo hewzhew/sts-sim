@@ -52,16 +52,20 @@ pub fn handle_choice(_engine_state: &mut EngineState, run_state: &mut RunState, 
                         run_state.potions[potion_slot] = None;
                     }
                     let relic_id = run_state.random_relic();
-                    run_state.relics.push(RelicState::new(relic_id));
                     event_state.current_screen = 1;
+                    if let Some(next_state) = run_state.obtain_relic(relic_id, EngineState::EventRoom) {
+                        *_engine_state = next_state;
+                    }
                 },
                 1 => {
                     // Give gold → relic
                     let amt = event_state.internal_state & 0xFF;
                     run_state.gold = (run_state.gold - amt).max(0);
                     let relic_id = run_state.random_relic();
-                    run_state.relics.push(RelicState::new(relic_id));
                     event_state.current_screen = 1;
+                    if let Some(next_state) = run_state.obtain_relic(relic_id, EngineState::EventRoom) {
+                        *_engine_state = next_state;
+                    }
                 },
                 2 => {
                     // Give card → relic
@@ -71,8 +75,10 @@ pub fn handle_choice(_engine_state: &mut EngineState, run_state: &mut RunState, 
                         run_state.remove_card_from_deck(uuid);
                     }
                     let relic_id = run_state.random_relic();
-                    run_state.relics.push(RelicState::new(relic_id));
                     event_state.current_screen = 1;
+                    if let Some(next_state) = run_state.obtain_relic(relic_id, EngineState::EventRoom) {
+                        *_engine_state = next_state;
+                    }
                 },
                 _ => {
                     // Attack (leave)

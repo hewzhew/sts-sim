@@ -1,6 +1,8 @@
-// Pear: Raise your Max HP by 10.
-// Passive effect applied immediately upon obtaining the relic. Not hooked into combat directly.
+use crate::state::core::EngineState;
+use crate::state::run::RunState;
 
-pub fn get_max_hp_increase() -> i32 {
-    10
+pub fn on_equip(run_state: &mut RunState) -> Option<EngineState> {
+    run_state.max_hp += 10;
+    run_state.current_hp = (run_state.current_hp + 10).min(run_state.max_hp);
+    None
 }

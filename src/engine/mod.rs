@@ -8,6 +8,7 @@ pub mod pending_choices;
 pub mod event_handler;
 
 pub mod boss_relic_handler;
+pub mod relic_manager;
 
 pub use core::*;
 pub use run_loop::*;

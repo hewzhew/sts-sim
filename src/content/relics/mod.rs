@@ -157,6 +157,13 @@ pub mod matryoshka;
 pub mod slavers_collar;
 pub mod pandoras_box;
 // ---------- END RELIC MODULES ----------
+pub mod strawberry;
+pub mod waffle;
+pub mod old_coin;
+pub mod whetstone;
+pub mod war_paint;
+pub mod tiny_house;
+pub mod orrery;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum RelicTier {

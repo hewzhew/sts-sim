@@ -1,7 +1,6 @@
 use crate::state::core::{EngineState, ClientInput};
 use crate::state::run::RunState;
 use crate::state::reward::BossRelicChoiceState;
-use crate::engine::reward_handler::apply_on_obtain_effect;
 
 pub fn handle(run_state: &mut RunState, state: &mut BossRelicChoiceState, input: Option<ClientInput>) -> Option<EngineState> {
     if let Some(in_val) = input {
@@ -9,7 +8,6 @@ pub fn handle(run_state: &mut RunState, state: &mut BossRelicChoiceState, input:
             ClientInput::SubmitRelicChoice(idx) => {
                 if idx < state.relics.len() {
                     let chosen_relic = state.relics[idx];
-                    run_state.relics.push(crate::content::relics::RelicState::new(chosen_relic));
                     
                     // apply_on_obtain_effect might trigger a PendingChoice (e.g. for Calling Bell or Astrolabe), 
                     // which we then wrap and return. When the inner state resolves, it will surface 
@@ -20,7 +18,7 @@ pub fn handle(run_state: &mut RunState, state: &mut BossRelicChoiceState, input:
                     
                     run_state.advance_act();
                     
-                    if let Some(next_state) = apply_on_obtain_effect(run_state, chosen_relic, EngineState::MapNavigation) {
+                    if let Some(next_state) = run_state.obtain_relic(chosen_relic, EngineState::MapNavigation) {
                         return Some(next_state);
                     }
                     

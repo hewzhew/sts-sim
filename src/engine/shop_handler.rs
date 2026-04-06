@@ -15,14 +15,7 @@ pub fn handle(run_state: &mut crate::state::run::RunState, shop: &mut crate::sho
                 if idx < shop.relics.len() && run_state.gold >= shop.relics[idx].price {
                     run_state.gold -= shop.relics[idx].price;
                     let r = shop.relics.remove(idx);
-                    run_state.relics.push(crate::content::relics::RelicState::new(r.relic_id));
-
-                    // Check for on-obtain effects (like max HP, DollysMirror, Orrery, etc)
-                    if let Some(next_state) = crate::engine::reward_handler::apply_on_obtain_effect(
-                        run_state, 
-                        r.relic_id, 
-                        EngineState::Shop(shop.clone())
-                    ) {
+                    if let Some(next_state) = run_state.obtain_relic(r.relic_id, EngineState::Shop(shop.clone())) {
                         return Some(next_state);
                     }
                 }

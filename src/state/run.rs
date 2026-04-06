@@ -195,6 +195,14 @@ impl RunState {
         self.relics = player.relics;
     }
 
+    /// Primary entry point for adding a new relic to the run.
+    /// Handles appending to the relics array and immediately dispatches to the RelicManager 
+    /// for onEquip hooks (e.g. increasing Max HP or interrupting the engine state with a UI).
+    pub fn obtain_relic(&mut self, relic_id: crate::content::relics::RelicId, return_state: crate::state::core::EngineState) -> Option<crate::state::core::EngineState> {
+        self.relics.push(crate::content::relics::RelicState::new(relic_id));
+        crate::engine::relic_manager::on_equip(self, relic_id, return_state)
+    }
+
 
 
     /// Triggers when the player enters a Rest Room (Campfire).
