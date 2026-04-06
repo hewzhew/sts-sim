@@ -1,7 +1,7 @@
 use crate::state::core::{EngineState, ClientInput};
 
 
-pub fn handle(run_state: &mut crate::state::run::RunState, shop: &mut crate::state::shop::ShopState, input: Option<crate::state::core::ClientInput>) -> Option<crate::state::core::EngineState> {
+pub fn handle(run_state: &mut crate::state::run::RunState, shop: &mut crate::shop::ShopState, input: Option<crate::state::core::ClientInput>) -> Option<crate::state::core::EngineState> {
     if let Some(in_val) = input {
         match in_val {
             ClientInput::BuyCard(idx) => {

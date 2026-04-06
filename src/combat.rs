@@ -149,6 +149,10 @@ pub struct PlayerEntity {
     pub stance: StanceId,
     pub relics: Vec<RelicState>,
     pub relic_buses: RelicBuses,
+    /// Java: EnergyManager.energyMaster — base energy per turn.
+    /// Starts at 3, boss relics with onEquip() { ++energyMaster } increment this.
+    /// SlaversCollar conditionally adds +1 at battle start (handled separately).
+    pub energy_master: u8,
 }
 
 impl PlayerEntity {
@@ -159,6 +163,16 @@ impl PlayerEntity {
     pub fn add_relic(&mut self, state: RelicState) {
         let index = self.relics.len();
         let sub = crate::content::relics::get_relic_subscriptions(state.id);
+        
+        // Java onEquip(): boss relics with ++energyMaster
+        use crate::content::relics::RelicId;
+        match state.id {
+            RelicId::BustedCrown | RelicId::CoffeeDripper | RelicId::CursedKey
+            | RelicId::Ectoplasm | RelicId::FusionHammer | RelicId::MarkOfPain
+            | RelicId::PhilosopherStone | RelicId::RunicDome | RelicId::Sozu
+            | RelicId::VelvetChoker => { self.energy_master += 1; }
+            _ => {}
+        }
         
         self.relics.push(state);
         
@@ -220,6 +234,7 @@ pub struct MonsterEntity {
     pub slot: u8,
     pub is_dying: bool,
     pub is_escaped: bool,
+    pub half_dead: bool,
     pub next_move_byte: u8,
     pub current_intent: Intent,
     pub move_history: VecDeque<u8>,

@@ -19,9 +19,9 @@ pub fn on_attacked_to_change_damage(current_damage: i32, amount: i32, has_odd_mu
     }
 }
 
-pub fn at_end_of_round(owner: EntityId, amount: i32) -> smallvec::SmallVec<[Action; 2]> {
+pub fn at_end_of_round(owner: EntityId, amount: i32, just_applied: bool) -> smallvec::SmallVec<[Action; 2]> {
     let mut actions = smallvec::smallvec![];
-    if amount > 0 {
+    if amount > 0 && !just_applied {
         actions.push(Action::ApplyPower {
             source: owner,
             target: owner,

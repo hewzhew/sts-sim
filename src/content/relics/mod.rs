@@ -155,6 +155,7 @@ pub mod red_skull;
 pub mod the_specimen;
 pub mod matryoshka;
 pub mod slavers_collar;
+pub mod pandoras_box;
 // ---------- END RELIC MODULES ----------
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

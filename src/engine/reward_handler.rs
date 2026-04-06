@@ -12,9 +12,24 @@ fn post_reward_state(run_state: &mut RunState) -> EngineState {
             return EngineState::EventRoom;
         }
     }
-    // After boss reward screen, advance to next act
+    // After boss reward screen, trigger boss relic selection before advancing act
     if run_state.pending_boss_reward {
-        run_state.advance_act();
+        run_state.pending_boss_reward = false; // consume
+        let mut relics = Vec::new();
+        // Generate 3 unique boss relics
+        for _ in 0..3 {
+            // we should make sure they are unique if possible, but for now just roll 3 times
+            // duplicate handling is ideally done during generation. We'll roll 3 times and accept it.
+            let mut next_relic = run_state.random_relic_by_tier(crate::content::relics::RelicTier::Boss);
+            // simple deduplication (max 10 retries to prevent infinite loop)
+            let mut retries = 0;
+            while relics.contains(&next_relic) && retries < 10 {
+                next_relic = run_state.random_relic_by_tier(crate::content::relics::RelicTier::Boss);
+                retries += 1;
+            }
+            relics.push(next_relic);
+        }
+        return EngineState::BossRelicSelect(crate::state::reward::BossRelicChoiceState::new(relics));
     }
     EngineState::MapNavigation
 }
@@ -77,7 +92,7 @@ pub fn handle(run_state: &mut crate::state::run::RunState, reward_state: &mut cr
                         }
                     }
                 }
-                if reward_state.items.is_empty() {
+                if reward_state.items.is_empty() && reward_state.pending_card_choice.is_none() {
                     return Some(post_reward_state(run_state));
                 }
             },
@@ -235,16 +250,12 @@ pub fn apply_on_obtain_effect(run_state: &mut RunState, relic_id: RelicId, retur
 
         // === PandorasBox: Transform all Strikes and Defends ===
         RelicId::PandorasBox => {
-            let mut indices_to_transform = Vec::new();
-            for (i, c) in run_state.master_deck.iter().enumerate() {
-                if c.id == CardId::Strike || c.id == CardId::Defend {
-                    indices_to_transform.push(i);
+            let results = crate::content::relics::pandoras_box::on_equip(run_state);
+            if !results.is_empty() {
+                println!("  [Pandora's Box] Transformed {} cards:", results.len());
+                for (old, new) in &results {
+                    println!("    {} → {}", old, new);
                 }
-            }
-            // Process transforms from end-to-beginning to avoid shifting indices
-            indices_to_transform.sort_unstable_by(|a, b| b.cmp(a));
-            for idx in indices_to_transform {
-                run_state.transform_card(idx);
             }
         },
         // === CallingBell: Curse of the Bell + 3 Relics ===

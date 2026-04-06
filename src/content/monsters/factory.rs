@@ -124,6 +124,7 @@ pub fn build_encounter(
             slot,
             is_dying: false,
             is_escaped: false,
+            half_dead: false,
             next_move_byte: 0,
             current_intent: Intent::Unknown,
             move_history: VecDeque::new(),

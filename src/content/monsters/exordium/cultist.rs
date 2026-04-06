@@ -34,6 +34,11 @@ impl MonsterBehavior for Cultist {
                     power_id: PowerId::Ritual,
                     amount: ritual_amount,
                 });
+                actions.push(Action::UpdatePowerExtraData {
+                    target: entity.id,
+                    power_id: PowerId::Ritual,
+                    value: 1, // 1 = skip first turn
+                });
             }
             1 => { // DARK_STRIKE
                 actions.push(Action::Damage(DamageInfo {

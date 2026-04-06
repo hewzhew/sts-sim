@@ -5,16 +5,16 @@
 //!
 //! Usage: cargo test diff_driver -- --nocapture
 
-mod diff_utils;
+
 
 use serde_json::Value;
 use sts_simulator::state::core::{EngineState, ClientInput};
 use sts_simulator::combat::CombatState;
 use sts_simulator::engine::core::tick_engine;
 
-use diff_utils::parser::parse_replay;
-use diff_utils::state_sync::{build_combat_state, sync_state};
-use diff_utils::comparator::compare_states;
+use sts_simulator::diff::parser::parse_replay;
+use sts_simulator::diff::state_sync::{build_combat_state, sync_state};
+use sts_simulator::diff::comparator::compare_states;
 
 // ============================================================================
 // Engine Execution
@@ -164,7 +164,16 @@ fn test_diff_all_combats() {
             let alive = tick_until_stable(&mut es, &mut cs, input);
             
             // Compare with Java result (skip pile sizes for end_turn since RNG not synced)
-            let diffs = compare_states(&cs, &action.result, is_end_turn);
+            let mut context = sts_simulator::diff::comparator::ActionContext {
+                last_command: card_name.clone(),
+                was_end_turn: is_end_turn,
+                ..Default::default()
+            };
+            if let Some(monsters) = action.result.get("monsters").and_then(|m| m.as_array()) {
+                context.monster_intents = monsters.iter().map(|m| m["intent"].as_str().unwrap_or("?").to_string()).collect();
+                context.monster_names = monsters.iter().map(|m| m["id"].as_str().unwrap_or("?").to_string()).collect();
+            }
+            let diffs = compare_states(&cs, &action.result, is_end_turn, &context);
             
             if diffs.is_empty() {
                 total_pass += 1;
@@ -307,7 +316,16 @@ fn test_diff_rng_replay() {
             };
             
             let alive = tick_until_stable(&mut es, &mut cs, input);
-            let diffs = compare_states(&cs, &action.result, is_end_turn);
+            let mut context = sts_simulator::diff::comparator::ActionContext {
+                last_command: card_name.clone(),
+                was_end_turn: is_end_turn,
+                ..Default::default()
+            };
+            if let Some(monsters) = action.result.get("monsters").and_then(|m| m.as_array()) {
+                context.monster_intents = monsters.iter().map(|m| m["intent"].as_str().unwrap_or("?").to_string()).collect();
+                context.monster_names = monsters.iter().map(|m| m["id"].as_str().unwrap_or("?").to_string()).collect();
+            }
+            let diffs = compare_states(&cs, &action.result, is_end_turn, &context);
             
             if diffs.is_empty() {
                 total_pass += 1;
@@ -472,7 +490,16 @@ fn test_diff_all_v2_replays() {
                 };
                 
                 let _alive = tick_until_stable(&mut es, &mut cs, input);
-                let diffs = compare_states(&cs, &action.result, is_end_turn);
+                let mut context = sts_simulator::diff::comparator::ActionContext {
+                    last_command: card_name.clone(),
+                    was_end_turn: is_end_turn,
+                    ..Default::default()
+                };
+                if let Some(monsters) = action.result.get("monsters").and_then(|m| m.as_array()) {
+                    context.monster_intents = monsters.iter().map(|m| m["intent"].as_str().unwrap_or("?").to_string()).collect();
+                    context.monster_names = monsters.iter().map(|m| m["id"].as_str().unwrap_or("?").to_string()).collect();
+                }
+                let diffs = compare_states(&cs, &action.result, is_end_turn, &context);
                 
                 if diffs.is_empty() {
                     file_pass += 1;

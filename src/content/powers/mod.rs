@@ -38,7 +38,6 @@ pub enum PowerId {
     Berserk,
     Angry,
     Anger,
-    LagavulinSleep,
     ModeShift,
     SharpHide,
     Artifact,
@@ -122,7 +121,7 @@ pub fn get_power_definition(id: PowerId) -> PowerDefinition {
         PowerId::Dexterity => PowerDefinition { id, name: "Dexterity" },
         PowerId::Ritual => PowerDefinition { id, name: "Ritual" },
         PowerId::Poison => PowerDefinition { id, name: "Poison" },
-        PowerId::LoseStrength => PowerDefinition { id, name: "Downfall" },
+        PowerId::LoseStrength => PowerDefinition { id, name: "Lose Strength" },
         PowerId::DemonForm => PowerDefinition { id, name: "Demon Form" },
         PowerId::Corruption => PowerDefinition { id, name: "Corruption" },
         PowerId::DoubleTap => PowerDefinition { id, name: "Double Tap" },
@@ -150,7 +149,6 @@ pub fn get_power_definition(id: PowerId) -> PowerDefinition {
         PowerId::Berserk => PowerDefinition { id, name: "Berserk" },
         PowerId::Angry => PowerDefinition { id, name: "Angry" },
         PowerId::Anger => PowerDefinition { id, name: "Anger" },
-        PowerId::LagavulinSleep => PowerDefinition { id, name: "LagavulinSleep" },
         PowerId::ModeShift => PowerDefinition { id, name: "Mode Shift" },
         PowerId::SharpHide => PowerDefinition { id, name: "Sharp Hide" },
         PowerId::Artifact => PowerDefinition { id, name: "Artifact" },
@@ -270,9 +268,7 @@ pub fn resolve_power_on_exhaust(id: PowerId, _state: &CombatState, owner: crate:
 pub fn resolve_power_on_hp_lost(id: PowerId, state: &CombatState, owner: crate::core::EntityId, amount: i32) -> smallvec::SmallVec<[crate::action::Action; 2]> {
     match id {
         PowerId::Rupture => ironclad::rupture::on_hp_lost(amount),
-        PowerId::LagavulinSleep => core::lagavulin_sleep::on_hp_lost(owner),
         PowerId::Split => core::split::on_hp_lost(state, owner, amount),
-        PowerId::ModeShift => core::mode_shift::on_hp_lost(state, owner, amount),
         _ => smallvec::smallvec![]
     }
 }
@@ -371,6 +367,7 @@ pub fn resolve_power_at_end_of_turn(id: PowerId, _state: &CombatState, owner: cr
         PowerId::Regrow => core::regrow::at_end_of_turn(owner, amount),
         PowerId::Constricted => core::constricted::at_end_of_turn(owner, amount),
         PowerId::Fading => core::fading::at_end_of_turn(owner, amount),
+        PowerId::LoseStrength => core::lose_strength::at_end_of_turn(owner, amount),
         PowerId::Shifting => core::shifting::at_end_of_turn(owner),
         PowerId::Slow => core::slow::at_end_of_turn(owner),
         PowerId::Intangible => core::intangible::at_end_of_turn(owner, amount),
@@ -412,11 +409,11 @@ pub fn resolve_power_at_end_of_turn(id: PowerId, _state: &CombatState, owner: cr
     }
 }
 
-pub fn resolve_power_at_end_of_round(id: PowerId, _state: &CombatState, owner: crate::core::EntityId, amount: i32) -> smallvec::SmallVec<[crate::action::Action; 2]> {
+pub fn resolve_power_at_end_of_round(id: PowerId, _state: &CombatState, owner: crate::core::EntityId, amount: i32, just_applied: bool) -> smallvec::SmallVec<[crate::action::Action; 2]> {
     match id {
-        PowerId::Vulnerable => core::vulnerable::at_end_of_round(owner, amount),
-        PowerId::Weak => core::weak::at_end_of_round(owner, amount),
-        PowerId::Frail => core::frail::at_end_of_round(owner, amount),
+        PowerId::Vulnerable => core::vulnerable::at_end_of_round(owner, amount, just_applied),
+        PowerId::Weak => core::weak::at_end_of_round(owner, amount, just_applied),
+        PowerId::Frail => core::frail::at_end_of_round(owner, amount, just_applied),
         PowerId::Ritual => core::ritual::at_end_of_round(_state, owner, amount),
         // Other Powers that decay at end of round can be added here
         _ => smallvec::smallvec![]
@@ -504,10 +501,6 @@ pub fn resolve_power_on_attacked_to_change_damage(
     id: PowerId, _state: &CombatState, _info: &crate::action::DamageInfo, current_damage: i32, amount: i32
 ) -> i32 {
     match id {
-        PowerId::Vulnerable => {
-            let has_odd_mushroom = crate::content::relics::hooks::on_calculate_vulnerable_multiplier(_state);
-            core::vulnerable::on_attacked_to_change_damage(current_damage, amount, has_odd_mushroom)
-        },
         _ => current_damage
     }
 }
@@ -519,9 +512,8 @@ pub fn resolve_power_on_calculate_damage_to_enemy(
     if def.card_type == crate::content::cards::CardType::Attack {
         match id {
             PowerId::Strength => core::strength::on_calculate_damage_to_enemy(card.id, card.base_magic_num_mut, damage, amount),
-            PowerId::LoseStrength => core::lose_strength::on_calculate_damage_to_enemy(card.id, card.base_magic_num_mut, damage, amount),
             PowerId::PenNibPower => core::pen_nib::on_calculate_damage_to_enemy(damage),
-            PowerId::Weak => damage * 0.75,
+            PowerId::Weak => (damage * 0.75).floor(),
             // Java: atDamageGive — Vigor adds its amount to NORMAL attack damage
             PowerId::Vigor => damage + amount as f32,
             _ => damage
@@ -566,6 +558,64 @@ pub fn resolve_power_on_calculate_damage_from_player(
     }
     
     updated_damage
+}
+
+/// Java: AbstractMonster.calculateDamage() pipeline
+/// Evaluates the damage a monster will deal based on its base intent damage
+/// after adjusting for Strength, Weak, Vulnerable, Intangible, etc.
+pub fn calculate_monster_damage(base: i32, source_id: usize, target_id: usize, state: &CombatState) -> i32 {
+    let mut tmp = base as f32;
+
+    // 1. Monster powers (Strength, Weak, etc.) atDamageGive
+    if let Some(owner_powers) = state.power_db.get(&source_id) {
+        for p in owner_powers {
+            tmp = match p.power_type {
+                PowerId::Strength => core::strength::on_attack_to_change_damage(tmp as i32, p.amount) as f32, // Strength is linear addition
+                PowerId::Weak => tmp * 0.75,
+                _ => tmp
+            };
+        }
+    }
+
+    // 2. Target powers (Vulnerable, Intangible, etc.) atDamageReceive
+    if let Some(target_powers) = state.power_db.get(&target_id) {
+        for p in target_powers {
+            tmp = match p.power_type {
+                PowerId::Vulnerable => {
+                    let has_odd_mushroom = if target_id == 0 {
+                        crate::content::relics::hooks::on_calculate_vulnerable_multiplier(state)
+                    } else { false };
+                    core::vulnerable::on_calculate_damage_from_player(tmp, p.amount, has_odd_mushroom) // Same logic for monster vs player vulnerability
+                },
+                _ => tmp
+            };
+        }
+    }
+
+    // 3. Player stance atDamageReceive
+    if target_id == 0 {
+        if state.player.stance == crate::combat::StanceId::Wrath {
+            tmp *= 2.0;
+        }
+    }
+
+    // 4. Target powers atDamageFinalReceive (Intangible)
+    if let Some(target_powers) = state.power_db.get(&target_id) {
+        for p in target_powers {
+            tmp = match p.power_type {
+                PowerId::Intangible => {
+                    core::intangible::at_damage_final_receive(tmp as i32, p.amount, crate::action::DamageType::Normal) as f32
+                },
+                PowerId::Flight => {
+                    core::flight::at_damage_final_receive(tmp as i32, p.amount, crate::action::DamageType::Normal) as f32
+                },
+                _ => tmp
+            };
+        }
+    }
+
+    let dmg = tmp.floor() as i32;
+    dmg.max(0)
 }
 
 /// Java: AbstractPower.canPlayCard(AbstractCard) — returns false to block card play.

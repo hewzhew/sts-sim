@@ -268,6 +268,34 @@ fn build_curse(id: CardId, name: &'static str, cost: i8) -> CardDefinition {
     def
 }
 
+/// Dispatches card-specific logic that natively occurs exactly when a card is exhausted.
+/// Base Slay the Spire has only two cards that override `triggerOnExhaust()`:
+/// 1. Sentinel (Gain Energy)
+/// 2. Necronomicurse (Clone itself back to hand)
+pub fn resolve_card_on_exhaust(card: &crate::combat::CombatCard, _state: &crate::combat::CombatState) -> Vec<crate::action::ActionInfo> {
+    match card.id {
+        CardId::Necronomicurse => vec![
+            crate::action::ActionInfo {
+                action: crate::action::Action::MakeTempCardInHand {
+                    card_id: CardId::Necronomicurse,
+                    amount: 1,
+                    upgraded: false,
+                },
+                insertion_mode: crate::action::AddTo::Bottom,
+            }
+        ],
+        CardId::Sentinel => vec![
+            crate::action::ActionInfo {
+                action: crate::action::Action::GainEnergy {
+                    amount: if card.upgrades > 0 { 3 } else { 2 },
+                },
+                insertion_mode: crate::action::AddTo::Bottom,
+            }
+        ],
+        _ => vec![],
+    }
+}
+
 pub fn get_card_definition(id: CardId) -> CardDefinition {
     match id {
         CardId::AscendersBane => build_curse(CardId::AscendersBane, "Ascender's Bane", -2),
@@ -1206,7 +1234,7 @@ use crate::core::EntityId;
 use crate::content::powers::PowerId;
 use smallvec::SmallVec;
 
-/// 中央路由表：所有的卡牌实际打出逻辑在这里分发
+/// Central dispatch table for resolving card play mechanics.
 pub fn resolve_card_play(card_id: CardId, _state: &CombatState, _card: &CombatCard, target: Option<EntityId>) -> SmallVec<[ActionInfo; 4]> {
     let t = target.unwrap_or(9999); // Use 9999 for "No Target" instead of 0 (Player)
     match card_id {
@@ -1668,6 +1696,21 @@ pub fn can_play_card(card: &CombatCard, state: &CombatState) -> Result<(), &'sta
         {
             return Err("Entangled: Cannot play Attacks this turn.");
         }
+    }
+
+    // Card-specific overrides (Java: card.canUse overrides)
+    match card.id {
+        CardId::Clash => {
+            let has_non_attack = state.hand.iter().any(|c| {
+                let d = crate::content::cards::get_card_definition(c.id);
+                d.card_type != crate::content::cards::CardType::Attack
+            });
+            if has_non_attack {
+                return Err("Can only play Clash if every card in your hand is an Attack.");
+            }
+        }
+        // Future cards like Grand Finale (if draw pile not empty) go here
+        _ => {}
     }
 
     // Default cost validation

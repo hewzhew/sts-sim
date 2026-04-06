@@ -1,5 +1,5 @@
 use crate::combat::{CombatState, MonsterEntity, Intent, MonsterId};
-use crate::action::Action;
+use crate::action::{Action, ActionInfo};
 
 pub mod exordium;
 pub mod city;
@@ -22,6 +22,11 @@ pub trait MonsterBehavior {
     /// Optional sequence of actions to be executed immediately upon spawning (equivalent to usePreBattleAction in Java).
     fn use_pre_battle_action(_entity: &MonsterEntity, _hp_rng: &mut crate::rng::StsRng, _ascension_level: u8) -> Vec<Action> {
         Vec::new()
+    }
+
+    /// Invoked whenever the monster loses HP (from attacks, poison, thorns, etc).
+    fn on_damaged(_state: &mut CombatState, _entity: &MonsterEntity, _amount: i32) -> smallvec::SmallVec<[ActionInfo; 4]> {
+        smallvec::SmallVec::new()
     }
 
     /// Sequence of actions to run when the entity dies.
@@ -456,6 +461,14 @@ pub fn resolve_pre_battle_action(id: EnemyId, entity: &MonsterEntity, hp_rng: &m
         EnemyId::SpireSpear => ending::spire_spear::SpireSpear::use_pre_battle_action(entity, hp_rng, ascension_level),
         EnemyId::CorruptHeart => ending::corrupt_heart::CorruptHeart::use_pre_battle_action(entity, hp_rng, ascension_level),
         _ => Vec::new()
+    }
+}
+
+pub fn dispatch_on_damaged(id: EnemyId, state: &mut CombatState, entity: &MonsterEntity, amount: i32) -> smallvec::SmallVec<[ActionInfo; 4]> {
+    match id {
+        EnemyId::Lagavulin => exordium::lagavulin::Lagavulin::on_damaged(state, entity, amount),
+        EnemyId::TheGuardian => exordium::the_guardian::TheGuardian::on_damaged(state, entity, amount),
+        _ => smallvec::smallvec![]
     }
 }
 

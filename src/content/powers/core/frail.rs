@@ -7,9 +7,9 @@ pub fn on_calculate_block(mut block: f32, amount: i32) -> f32 {
     block
 }
 
-pub fn at_end_of_round(owner: EntityId, amount: i32) -> smallvec::SmallVec<[Action; 2]> {
+pub fn at_end_of_round(owner: EntityId, amount: i32, just_applied: bool) -> smallvec::SmallVec<[Action; 2]> {
     let mut actions = smallvec::smallvec![];
-    if amount > 0 {
+    if amount > 0 && !just_applied {
         actions.push(Action::ApplyPower {
             source: owner,
             target: owner,

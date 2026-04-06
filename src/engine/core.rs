@@ -22,7 +22,9 @@ pub fn tick_engine(engine_state: &mut EngineState, combat_state: &mut CombatStat
     if *engine_state == EngineState::CombatPlayerTurn {
         if let Some(cmd) = input {
             if handle_player_turn_input(engine_state, combat_state, cmd).is_ok() {
-                if *engine_state != EngineState::CombatPlayerTurn && !matches!(engine_state, EngineState::PendingChoice(_)) {
+                // After a card play, actions (damage, block, etc.) are queued.
+                // Transition to CombatProcessing to drain the queue.
+                if !combat_state.action_queue.is_empty() && *engine_state == EngineState::CombatPlayerTurn {
                     *engine_state = EngineState::CombatProcessing;
                 }
             } else {
@@ -41,12 +43,14 @@ pub fn tick_engine(engine_state: &mut EngineState, combat_state: &mut CombatStat
             // Intercept SuspendFor* actions → transition to PendingChoice
             match next_action {
                 Action::SuspendForHandSelect { min, max, reason } => {
+                    update_monster_intents(combat_state);
                     *engine_state = EngineState::PendingChoice(PendingChoice::HandSelect {
                         min_cards: min, max_cards: max, can_cancel: false, reason,
                     });
                     return true;
                 },
                 Action::SuspendForGridSelect { source_pile, min, max, can_cancel, reason } => {
+                    update_monster_intents(combat_state);
                     *engine_state = EngineState::PendingChoice(PendingChoice::GridSelect {
                         source_pile, min_cards: min, max_cards: max, can_cancel, reason,
                     });
@@ -87,6 +91,7 @@ pub fn tick_engine(engine_state: &mut EngineState, combat_state: &mut CombatStat
                     // Store cost_for_turn in the first element of limbo as a signal
                     // (it will be applied when the choice is resolved)
                     combat_state.counters.discovery_cost_for_turn = cost_for_turn;
+                    update_monster_intents(combat_state);
                     *engine_state = EngineState::PendingChoice(PendingChoice::DiscoverySelect(cards));
                     return true;
                 },
@@ -131,6 +136,7 @@ pub fn tick_engine(engine_state: &mut EngineState, combat_state: &mut CombatStat
                             cards.push(id);
                         }
                     }
+                    update_monster_intents(combat_state);
                     *engine_state = EngineState::PendingChoice(PendingChoice::CardRewardSelect {
                         cards,
                         destination,
@@ -139,6 +145,7 @@ pub fn tick_engine(engine_state: &mut EngineState, combat_state: &mut CombatStat
                     return true;
                 },
                 Action::SuspendForStanceChoice => {
+                    update_monster_intents(combat_state);
                     *engine_state = EngineState::PendingChoice(PendingChoice::StanceChoice);
                     return true;
                 },
@@ -161,6 +168,7 @@ pub fn tick_engine(engine_state: &mut EngineState, combat_state: &mut CombatStat
             // Queue is empty — decide next state based on combat phase
             match combat_state.current_phase {
                 CombatPhase::PlayerTurn => {
+                    update_monster_intents(combat_state);
                     *engine_state = EngineState::CombatPlayerTurn;
                 },
                 CombatPhase::TurnTransition => {
@@ -217,14 +225,27 @@ pub fn tick_engine(engine_state: &mut EngineState, combat_state: &mut CombatStat
                     // 3. Drain pre-turn actions instantly
                     while let Some(action) = combat_state.action_queue.pop_front() {
                         super::action_handlers::execute_action(action, combat_state);
+                        if combat_state.player.current_hp <= 0 {
+                            combat_state.action_queue.clear();
+                            *engine_state = EngineState::GameOver(RunResult::Defeat);
+                            return false;
+                        }
                     }
 
                     // 2. Execute each alive monster's turn (player block absorbs damage)
                     combat_state.current_phase = CombatPhase::MonsterTurn;
-                    let monster_snapshots: Vec<_> = combat_state.monsters.iter()
-                        .filter(|m| !m.is_dying && !m.is_escaped)
-                        .cloned()
-                        .collect();
+                    let mut monster_snapshots = Vec::new();
+                    let mut dead_ids = Vec::new();
+                    for m in &combat_state.monsters {
+                        if m.is_dying || m.is_escaped {
+                            dead_ids.push(m.id);
+                        } else {
+                            monster_snapshots.push(m.clone());
+                        }
+                    }
+                    for id in dead_ids {
+                        combat_state.power_db.remove(&id);
+                    }
                     for monster in &monster_snapshots {
                         // Reset monster Invincible limit
                         if let Some(powers) = combat_state.power_db.get_mut(&monster.id) {
@@ -240,11 +261,10 @@ pub fn tick_engine(engine_state: &mut EngineState, combat_state: &mut CombatStat
                         while let Some(action) = combat_state.action_queue.pop_front() {
                             super::action_handlers::execute_action(action, combat_state);
                             if combat_state.player.current_hp <= 0 {
-                                break;
+                                combat_state.action_queue.clear();
+                                *engine_state = EngineState::GameOver(RunResult::Defeat);
+                                return false;
                             }
-                        }
-                        if combat_state.player.current_hp <= 0 {
-                            break;
                         }
                     }
                     // (Monster actions now drained per-monster inside the for-loop above)
@@ -270,6 +290,11 @@ pub fn tick_engine(engine_state: &mut EngineState, combat_state: &mut CombatStat
                     // Drain atEndOfTurn collective actions
                     while let Some(action) = combat_state.action_queue.pop_front() {
                         super::action_handlers::execute_action(action, combat_state);
+                        if combat_state.player.current_hp <= 0 {
+                            combat_state.action_queue.clear();
+                            *engine_state = EngineState::GameOver(RunResult::Defeat);
+                            return false;
+                        }
                     }
 
                     // 2.5 === FULL ROUND END ===
@@ -278,7 +303,7 @@ pub fn tick_engine(engine_state: &mut EngineState, combat_state: &mut CombatStat
                     if let Some(powers) = combat_state.power_db.get(&0).cloned() {
                         for power in &powers {
                             let hook_actions = crate::content::powers::resolve_power_at_end_of_round(
-                                power.power_type, combat_state, 0, power.amount
+                                power.power_type, combat_state, 0, power.amount, power.just_applied
                             );
                             for a in hook_actions {
                                 combat_state.action_queue.push_back(a);
@@ -294,7 +319,7 @@ pub fn tick_engine(engine_state: &mut EngineState, combat_state: &mut CombatStat
                         if let Some(powers) = combat_state.power_db.get(&mid).cloned() {
                             for power in &powers {
                                 let hook_actions = crate::content::powers::resolve_power_at_end_of_round(
-                                    power.power_type, combat_state, mid, power.amount
+                                    power.power_type, combat_state, mid, power.amount, power.just_applied
                                 );
                                 for a in hook_actions {
                                     combat_state.action_queue.push_back(a);
@@ -306,14 +331,19 @@ pub fn tick_engine(engine_state: &mut EngineState, combat_state: &mut CombatStat
                     while let Some(action) = combat_state.action_queue.pop_front() {
                         super::action_handlers::execute_action(action, combat_state);
                     }
+                    
+                    // Clear all just_applied flags globally at the end of the round!
+                    for powers in combat_state.power_db.values_mut() {
+                        for p in powers.iter_mut() {
+                            p.just_applied = false;
+                        }
+                    }
 
-                    // If player died during monster turn, skip new-turn setup entirely
+                    // If player died during monster turn, immediate game over
                     if combat_state.player.current_hp <= 0 {
-                        // Clear remaining actions (Thorns from killing blow, remaining hits, etc.)
-                        // Java: death screen interrupts action queue, nothing else processes
                         combat_state.action_queue.clear();
-                        *engine_state = EngineState::CombatProcessing;
-                        return true;
+                        *engine_state = EngineState::GameOver(RunResult::Defeat);
+                        return false;
                     }
 
                     // 3. (Intent rolling is handled by Action::RollMonsterMove in the queue)
@@ -338,32 +368,8 @@ pub fn tick_engine(engine_state: &mut EngineState, combat_state: &mut CombatStat
                     combat_state.turn_count += 1;
                     combat_state.current_phase = CombatPhase::PlayerTurn;
 
-                    // 6. Reset energy — base 3 for all classes
-                    // SlaversCollar: +1 energy in elite/boss (counter set at at_battle_start)
-                    let mut base_energy: u8 = 3;
-                    for relic in combat_state.player.relics.iter() {
-                        match relic.id {
-                            // All boss relics with onEquip() { ++energyMaster }
-                            crate::content::relics::RelicId::BustedCrown
-                            | crate::content::relics::RelicId::CoffeeDripper
-                            | crate::content::relics::RelicId::CursedKey
-                            | crate::content::relics::RelicId::Ectoplasm
-                            | crate::content::relics::RelicId::FusionHammer
-                            | crate::content::relics::RelicId::MarkOfPain
-                            | crate::content::relics::RelicId::PhilosopherStone
-                            | crate::content::relics::RelicId::RunicDome
-                            | crate::content::relics::RelicId::Sozu
-                            | crate::content::relics::RelicId::VelvetChoker => {
-                                base_energy += 1;
-                            }
-                            // SlaversCollar: conditional +1 (elite/boss only, counter==1)
-                            crate::content::relics::RelicId::SlaversCollar if relic.counter == 1 => {
-                                base_energy += 1;
-                            }
-                            _ => {}
-                        }
-                    }
-                    combat_state.energy = base_energy;
+                    // 6. Reset energy — Java: EnergyManager.recharge() → this.energy = this.energyMaster
+                    combat_state.energy = combat_state.player.energy_master;
 
                     // 7. Reset per-turn counters
                     combat_state.counters.cards_played_this_turn = 0;
@@ -439,32 +445,15 @@ pub fn tick_engine(engine_state: &mut EngineState, combat_state: &mut CombatStat
                     *engine_state = EngineState::CombatProcessing;
                 },
             }
+            if combat_state.player.current_hp <= 0 {
+                *engine_state = EngineState::GameOver(RunResult::Defeat);
+                return false;
+            }
             return true;
         }
     }
 
-    if combat_state.player.current_hp <= 0 {
-        // FairyPotion death prevention: scan potion slots for Fairy in a Bottle
-        let fairy_slot = combat_state.potions.iter().position(|p| {
-            p.as_ref().map_or(false, |pot| pot.id == crate::content::potions::PotionId::FairyPotion)
-        });
-        if let Some(slot) = fairy_slot {
-            // Consume the fairy potion
-            combat_state.potions[slot] = None;
-            // Heal: maxHP * (potency / 100.0f), potency=30 (or 60 with SacredBark)
-            let mut potency = 30;
-            if combat_state.player.has_relic(crate::content::relics::RelicId::SacredBark) {
-                potency *= 2;
-            }
-            let heal_amt = std::cmp::max(1, (combat_state.player.max_hp as f32 * potency as f32 / 100.0) as i32);
-            combat_state.player.current_hp = heal_amt;
-        } else {
-            *engine_state = EngineState::GameOver(RunResult::Defeat);
-            return false;
-        }
-    }
-
-    if combat_state.monsters.iter().all(|m| m.current_hp <= 0) {
+    if combat_state.monsters.iter().all(|m| m.current_hp <= 0 || m.is_escaped) {
         if !combat_state.counters.victory_triggered {
             combat_state.counters.victory_triggered = true;
             combat_state.action_queue.clear();
@@ -481,7 +470,7 @@ pub fn tick_engine(engine_state: &mut EngineState, combat_state: &mut CombatStat
 
 fn handle_player_turn_input(engine_state: &mut EngineState, combat_state: &mut CombatState, cmd: ClientInput) -> Result<(), &'static str> {
     match cmd {
-        ClientInput::PlayCard { card_index, target } => {
+        ClientInput::PlayCard { card_index, mut target } => {
             // 1. Validate card in hand
             if card_index >= combat_state.hand.len() {
                 return Err("Card index out of range");
@@ -498,6 +487,35 @@ fn handle_player_turn_input(engine_state: &mut EngineState, combat_state: &mut C
             let card_id = card.id;
             let _card_uuid = card.uuid;
             let def = crate::content::cards::get_card_definition(card_id);
+
+            // 1.2 Card-Specific Play Conditions (Clash, Normality, etc.)
+            crate::content::cards::can_play_card(card, combat_state)?;
+
+            // 1.5 Target Validation and Auto-Selection
+            use crate::content::cards::CardTarget;
+            if def.target == CardTarget::Enemy {
+                let targetable: Vec<_> = combat_state.monsters.iter()
+                    .filter(|m| !m.is_dying && !m.is_escaped && !m.half_dead)
+                    .map(|m| m.id)
+                    .collect();
+
+                if let Some(t_id) = target {
+                    if !targetable.contains(&t_id) {
+                        return Err("Invalid or untargetable monster selected.");
+                    }
+                } else {
+                    if targetable.len() == 1 {
+                        // Auto-select the only valid target
+                        target = Some(targetable[0]);
+                    } else if targetable.is_empty() {
+                        return Err("No valid targets available.");
+                    } else {
+                        return Err("Multiple targets available. Must specify a target.");
+                    }
+                }
+            } else {
+                target = None;
+            }
 
             // 2. Compute effective cost
             let effective_cost = if card.free_to_play_once {
@@ -769,4 +787,79 @@ pub fn queue_actions(queue: &mut std::collections::VecDeque<Action>, actions: Sm
     for action in to_bottom {
         queue.push_back(action);
     }
+}
+
+/// Java: AbstractMonster.applyPowers()
+/// Interrogates each living monster, extracts base Damage from its `current_intent`,
+/// runs it through `calculate_monster_damage()`, and stores the mutated result in `intent_dmg`.
+/// This is purely for updating the UI visually before user interaction.
+pub fn update_monster_intents(combat_state: &mut CombatState) {
+    let alive_monsters: Vec<_> = combat_state.monsters.iter()
+        .filter(|m| !m.is_dying && !m.is_escaped)
+        .map(|m| m.id)
+        .collect();
+
+    for mid in alive_monsters {
+        let mut new_intent_dmg = 0;
+        
+        // Temporarily extract current intent (cannot borrow mutably directly since we need state)
+        if let Some(monster) = combat_state.monsters.iter().find(|m| m.id == mid) {
+            if let crate::combat::Intent::Attack { damage, .. } 
+                | crate::combat::Intent::AttackBuff { damage, .. }
+                | crate::combat::Intent::AttackDebuff { damage, .. }
+                | crate::combat::Intent::AttackDefend { damage, .. } = monster.current_intent 
+            {
+                // `damage` in the enum represents the pure base damage
+                new_intent_dmg = crate::content::powers::calculate_monster_damage(damage, mid, 0, combat_state);
+            } else {
+                new_intent_dmg = -1; // Not an attack intent
+            }
+        }
+
+        // Apply it back
+        if let Some(monster) = combat_state.monsters.iter_mut().find(|m| m.id == mid) {
+            if new_intent_dmg != -1 {
+                monster.intent_dmg = new_intent_dmg;
+            } else {
+                monster.intent_dmg = 0;
+            }
+        }
+    }
+}
+
+/// Run tick_engine until it returns to CombatPlayerTurn or game over.
+pub fn tick_until_stable_turn(es: &mut EngineState, cs: &mut CombatState, input: ClientInput) -> bool {
+    // First tick with input
+    let alive = tick_engine(es, cs, Some(input));
+    if !alive {
+        return false;
+    }
+    
+    // After any input: engine stays at CombatPlayerTurn but actions may be queued.
+    // We need to force CombatProcessing to drain the action queue.
+    if *es == EngineState::CombatPlayerTurn && !cs.action_queue.is_empty() {
+        *es = EngineState::CombatProcessing;
+    }
+    
+    // Keep ticking until we're back at PlayerTurn (waiting for input), or we're in a PendingChoice
+    let mut iterations = 0;
+    loop {
+        match es {
+            EngineState::CombatPlayerTurn => break,
+            EngineState::CombatProcessing => {},
+            EngineState::PendingChoice(_) => break, // Would need user input
+            EngineState::GameOver(_) => return false,
+            _ => break, // RewardScreen, etc.
+        }
+        let alive = tick_engine(es, cs, None);
+        if !alive {
+            return false;
+        }
+        iterations += 1;
+        if iterations > 1000 {
+            eprintln!("  WARNING: tick loop exceeded 1000 iterations");
+            break;
+        }
+    }
+    true
 }

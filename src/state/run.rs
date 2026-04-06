@@ -34,19 +34,10 @@ pub struct RunState {
     
     // Transient states
     pub reward_state: Option<crate::state::reward::RewardState>,
-    pub shop_state: Option<crate::state::shop::ShopState>,
+    pub shop_state: Option<crate::shop::ShopState>,
     pub event_state: Option<crate::state::events::EventState>,
 
-    // Event pools (Java: eventList, shrineList, specialOneTimeEventList)
-    pub event_pool: Vec<crate::state::events::EventId>,
-    pub shrine_pool: Vec<crate::state::events::EventId>,
-    pub one_time_event_pool: Vec<crate::state::events::EventId>,
-
-    // Event room-type chance trackers (Java: EventHelper static fields)
-    pub event_monster_chance: f32,
-    pub event_shop_chance: f32,
-    pub event_treasure_chance: f32,
-    pub shrine_chance: f32, // Java: AbstractDungeon.shrineChance = 0.25
+    pub event_generator: crate::events::generator::EventGenerator,
 
     // Relic pools — filled at dungeon init, popped from end when obtaining relics.
     // Java: commonRelicPool, uncommonRelicPool, rareRelicPool, shopRelicPool, bossRelicPool
@@ -103,16 +94,8 @@ impl RunState {
             shop_state: None,
             event_state: None,
 
-            // Event pools initialized for Act 1
-            event_pool: Vec::new(),
-            shrine_pool: Vec::new(),
-            one_time_event_pool: Vec::new(),
-
-            // Event room-type chances (Java: resetProbabilities)
-            event_monster_chance: 0.10,
-            event_shop_chance: 0.03,
-            event_treasure_chance: 0.02,
-            shrine_chance: 0.25,
+            // Subsystems
+            event_generator: crate::events::generator::EventGenerator::new(1),
 
             // Relic pools (filled by init_relic_pools)
             common_relic_pool: Vec::new(),
@@ -128,7 +111,6 @@ impl RunState {
 
             pending_boss_reward: false,
         };
-        rs.initialize_event_pools();
         rs.init_relic_pools();
         rs.init_encounter_lists();
         rs.init_boss_list();
@@ -192,6 +174,7 @@ impl RunState {
             stance: crate::combat::StanceId::Neutral,
             relics: Vec::new(),
             relic_buses: Default::default(),
+            energy_master: 3,
         };
         // Safely re-initialize the bus mappings through the add_relic interface
         for rs in &self.relics {
@@ -349,543 +332,211 @@ impl RunState {
     }
 
     /// Generates ShopState with randomized prices, accounting for merchant Relics
-    pub fn generate_shop(&mut self) -> crate::state::shop::ShopState {
-        let mut shop = crate::state::shop::ShopState::new();
-
-        let has_membership_card = self.relics.iter().any(|r| r.id == crate::content::relics::RelicId::MembershipCard);
-        let has_courier = self.relics.iter().any(|r| r.id == crate::content::relics::RelicId::Courier);
-        let has_discerning_monocle = self.relics.iter().any(|r| r.id == crate::content::relics::RelicId::DiscerningMonocle);
-        let has_smiling_mask = self.relics.iter().any(|r| r.id == crate::content::relics::RelicId::SmilingMask);
-        let ascension_level = self.ascension_level;
-
-        // Applies the precise Java sequential rounding chain for prices
-        let apply_modifier = |mut base: f32, is_purge: bool| -> i32 {
-            if ascension_level >= 16 && !is_purge {
-                base = (base * 1.1).round();
-            }
-            if has_courier {
-                base = (base * 0.8).round();
-            }
-            if has_discerning_monocle {
-                base = (base * 0.8).round();
-            }
-            if has_membership_card {
-                base = (base * 0.5).round();
-            }
-            base as i32
+    pub fn generate_shop(&mut self) -> crate::shop::ShopState {
+        let config = crate::shop::state::ShopConfig {
+            ascension_level: self.ascension_level as i32,
+            has_courier: self.relics.iter().any(|r| r.id == crate::content::relics::RelicId::Courier),
+            has_membership_card: self.relics.iter().any(|r| r.id == crate::content::relics::RelicId::MembershipCard),
+            has_smiling_mask: self.relics.iter().any(|r| r.id == crate::content::relics::RelicId::SmilingMask),
+            previous_purge_count: self.shop_purge_count,
+            potion_class: self.potion_class(),
+            card_blizz_randomizer: self.card_blizz_randomizer,
         };
 
-        // 1. Cards (7 slots: 5 colored, 2 colorless)
-        // Java: Merchant generates 2 Attack, 2 Skill, 1 Power with rollRarity() each
-        // Base prices: Common=50, Uncommon=75, Rare=150
-        let card_type_slots = [
-            crate::content::cards::CardType::Attack,
-            crate::content::cards::CardType::Attack,
-            crate::content::cards::CardType::Skill,
-            crate::content::cards::CardType::Skill,
-            crate::content::cards::CardType::Power,
-        ];
+        let crate::state::run::RunState {
+            ref mut rng_pool,
+            ref mut common_relic_pool,
+            ref mut uncommon_relic_pool,
+            ref mut rare_relic_pool,
+            ref mut shop_relic_pool,
+            ref mut boss_relic_pool,
+            ..
+        } = self;
 
-        let sale_index = self.rng_pool.merchant_rng.random_range(0, 4) as usize;
-        let mut used_cards: Vec<crate::content::cards::CardId> = Vec::new();
-
-        for (i, &card_type) in card_type_slots.iter().enumerate() {
-            // Roll rarity for this slot
-            let rarity_roll = self.rng_pool.card_rng.random_range(0, 99);
-            let rarity = if rarity_roll < 9 {
-                crate::content::cards::CardRarity::Rare
-            } else if rarity_roll < 37 {
-                crate::content::cards::CardRarity::Uncommon
-            } else {
-                crate::content::cards::CardRarity::Common
-            };
-
-            let base_price: f32 = match rarity {
-                crate::content::cards::CardRarity::Common => 50.0,
-                crate::content::cards::CardRarity::Uncommon => 75.0,
-                crate::content::cards::CardRarity::Rare => 150.0,
-                _ => 50.0,
-            };
-
-            // Select card from pool, filtered by type, avoiding duplicates
-            let pool = crate::content::cards::ironclad_pool_for_rarity(rarity);
-            let typed_pool: Vec<crate::content::cards::CardId> = pool.iter()
-                .copied()
-                .filter(|&id| crate::content::cards::get_card_definition(id).card_type == card_type)
-                .collect();
-
-            let card_id = if !typed_pool.is_empty() {
-                let mut attempts = 0;
+        crate::shop::shop_screen::generate_shop(
+            rng_pool,
+            &config,
+            |mut tier| -> crate::content::relics::RelicId {
+                use crate::content::relics::{RelicTier, RelicId};
                 loop {
-                    let idx = self.rng_pool.merchant_rng.random_range(0, (typed_pool.len() - 1) as i32) as usize;
-                    let candidate = typed_pool[idx];
-                    if !used_cards.contains(&candidate) || attempts >= 20 {
-                        used_cards.push(candidate);
-                        break candidate;
+                    match tier {
+                        RelicTier::Common => {
+                            if let Some(id) = common_relic_pool.pop() { return id; }
+                            tier = RelicTier::Uncommon;
+                        }
+                        RelicTier::Uncommon => {
+                            if let Some(id) = uncommon_relic_pool.pop() { return id; }
+                            tier = RelicTier::Rare;
+                        }
+                        RelicTier::Rare => return rare_relic_pool.pop().unwrap_or(RelicId::Circlet),
+                        RelicTier::Shop => {
+                            if let Some(id) = shop_relic_pool.pop() { return id; }
+                            tier = RelicTier::Uncommon;
+                        }
+                        RelicTier::Boss => return boss_relic_pool.pop().unwrap_or(RelicId::Circlet),
+                        _ => return RelicId::Circlet,
                     }
-                    attempts += 1;
                 }
-            } else {
-                // Fallback: pick any card from the rarity pool
-                let idx = self.rng_pool.merchant_rng.random_range(0, (pool.len() - 1) as i32) as usize;
-                pool[idx]
-            };
-
-            let limit = (base_price * 0.1) as i32;
-            let jitter = self.rng_pool.merchant_rng.random_range(-limit, limit);
-            let mut price = base_price + jitter as f32;
-            price = price.trunc();
-
-            if i == sale_index {
-                price = (price * 0.5).trunc();
             }
-
-            shop.cards.push(crate::state::shop::ShopCard {
-                card_id,
-                price: apply_modifier(price, false),
-            });
-        }
-
-        // Colorless cards (2 slots: 1 Uncommon, 1 Rare)
-        let colorless_slots: [(f32, &[crate::content::cards::CardId]); 2] = [
-            (75.0 * 1.2, crate::content::cards::COLORLESS_UNCOMMON_POOL),
-            (150.0 * 1.2, crate::content::cards::COLORLESS_RARE_POOL),
-        ];
-
-        for (base, pool) in colorless_slots.iter() {
-            let idx = self.rng_pool.merchant_rng.random_range(0, (pool.len() - 1) as i32) as usize;
-            let card_id = pool[idx];
-            let limit = (*base * 0.1) as i32;
-            let jitter = self.rng_pool.merchant_rng.random_range(-limit, limit);
-            let price = (*base + jitter as f32).trunc();
-            shop.cards.push(crate::state::shop::ShopCard {
-                card_id,
-                price: apply_modifier(price, false),
-            });
-        }
-
-        // 2. Relics (3 slots) — Java: ShopScreen.initRelics()
-        // Slots 0-1: rollRelicTier() → returnRandomRelicEnd(tier)
-        // Slot 2: fixed SHOP tier → returnRandomRelicEnd(SHOP)
-        for i in 0..3 {
-            let tier = if i != 2 {
-                // Java: ShopScreen.rollRelicTier() — uses merchantRng
-                let roll = self.rng_pool.merchant_rng.random_range(0, 99);
-                if roll < 48 {
-                    crate::content::relics::RelicTier::Common
-                } else if roll < 82 {
-                    crate::content::relics::RelicTier::Uncommon
-                } else {
-                    crate::content::relics::RelicTier::Rare
-                }
-            } else {
-                crate::content::relics::RelicTier::Shop
-            };
-
-            let relic_id = self.random_relic_by_tier(tier);
-
-            // Base price from tier (Java: AbstractRelic.getPrice())
-            let base_price: f32 = match tier {
-                crate::content::relics::RelicTier::Common => 150.0,
-                crate::content::relics::RelicTier::Uncommon => 250.0,
-                crate::content::relics::RelicTier::Rare => 300.0,
-                crate::content::relics::RelicTier::Shop => 150.0,
-                _ => 150.0,
-            };
-
-            // Price jitter: merchantRng.random(0.95f, 1.05f) → start + nextFloat() * (end - start)
-            let jitter_mult = 0.95_f32 + self.rng_pool.merchant_rng.random_f32_range(0.1);
-            let price = (base_price * jitter_mult).round();
-
-            shop.relics.push(crate::state::shop::ShopRelic {
-                relic_id,
-                price: apply_modifier(price, false),
-            });
-        }
-
-        // 3. Potions (3 slots) — Java: ShopScreen.initPotions()
-        // Generate 3 random potions with rarity-based pricing + merchant jitter
-        let pc = self.potion_class();
-        for _ in 0..3 {
-            let potion_id = crate::content::potions::random_potion(
-                &mut self.rng_pool.potion_rng,
-                pc,
-                false,
-            );
-            let base_price = crate::content::potions::get_potion_price(potion_id) as f32;
-            let limit = (base_price * 0.05) as i32;
-            let jitter = self.rng_pool.merchant_rng.random_range(-limit, limit);
-            let price = (base_price + jitter as f32).round();
-            shop.potions.push(crate::state::shop::ShopPotion {
-                potion_id,
-                price: apply_modifier(price, false),
-            });
-        }
-
-        // 4. Purge Logic
-        if has_smiling_mask {
-            shop.purge_cost = apply_modifier(50.0, true);
-        } else {
-            let mut base_purge = 75.0 + (self.shop_purge_count as f32 * 25.0);
-            // Asc 10: Card removal costs 25 more
-            if self.ascension_level >= 10 {
-                base_purge += 25.0;
-            }
-            shop.purge_cost = apply_modifier(base_purge, true);
-        }
-
-        shop
+        )
     }
 
     /// Initialize event pools for the current act, matching Java Exordium/TheCity/TheBeyond.initializeEventList()
     /// and AbstractDungeon.initializeSpecialOneTimeEventList().
-    pub fn initialize_event_pools(&mut self) {
-        use crate::state::events::EventId;
-
-        // Act-specific event pool (Java: eventList)
-        self.event_pool = match self.act_num {
-            1 => vec![
-                EventId::BigFish, EventId::Cleric, EventId::DeadAdventurer,
-                EventId::GoldenIdol, EventId::GoldenWing, EventId::WorldOfGoop,
-                EventId::Ssssserpent, EventId::LivingWall, EventId::Mushrooms,
-                EventId::ScrapOoze, EventId::ShiningLight,
-            ],
-            2 => vec![
-                EventId::Addict, EventId::BackTotheBasics, EventId::Beggar,
-                EventId::Colosseum, EventId::CursedTome, EventId::DrugDealer,
-                EventId::ForgottenAltar, EventId::Ghosts, EventId::MaskedBandits,
-                EventId::Nest, EventId::TheLibrary, EventId::Mausoleum,
-                EventId::Vampires,
-            ],
-            _ => vec![
-                EventId::Falling, EventId::MindBloom, EventId::MoaiHead,
-                EventId::MysteriousSphere, EventId::SensoryStone,
-                EventId::TombRedMask, EventId::WindingHalls,
-            ],
-        };
-
-        // Per-act shrine pool (Java: shrineList)
-        self.shrine_pool = match self.act_num {
-            1 => vec![
-                EventId::MatchAndKeep, EventId::GoldenShrine,
-                EventId::Transmorgrifier, EventId::Purifier,
-                EventId::UpgradeShrine, EventId::GremlinWheelGame,
-            ],
-            2 => vec![
-                EventId::MatchAndKeep, EventId::GremlinWheelGame,
-                EventId::GoldenShrine, EventId::Transmorgrifier,
-                EventId::Purifier, EventId::UpgradeShrine,
-            ],
-            _ => vec![
-                EventId::MatchAndKeep, EventId::GremlinWheelGame,
-                EventId::GoldenShrine, EventId::Transmorgrifier,
-                EventId::Purifier, EventId::UpgradeShrine,
-            ],
-        };
-
-        // Cross-act one-time events (Java: specialOneTimeEventList, set once at dungeon init)
-        // Only initialize if empty (they persist across acts)
-        if self.one_time_event_pool.is_empty() {
-            self.one_time_event_pool = vec![
-                EventId::AccursedBlacksmith, EventId::BonfireElementals,
-                EventId::Designer, EventId::Duplicator,
-                EventId::FaceTrader, EventId::FountainOfCurseCleansing,
-                EventId::KnowingSkull, EventId::Lab, EventId::Nloth,
-                EventId::NoteForYourself,
-                EventId::TheJoust, EventId::WeMeetAgain,
-                EventId::WomanInBlue,
-            ];
-        }
-    }
-
-    /// Only repopulate eventList when it's exhausted (Java behavior).
-    /// Does NOT reset shrine_pool or one_time_event_pool.
-    fn repopulate_event_list(&mut self) {
-        use crate::state::events::EventId;
-        self.event_pool = match self.act_num {
-            1 => vec![
-                EventId::BigFish, EventId::Cleric, EventId::DeadAdventurer,
-                EventId::GoldenIdol, EventId::GoldenWing, EventId::WorldOfGoop,
-                EventId::Ssssserpent, EventId::LivingWall, EventId::Mushrooms,
-                EventId::ScrapOoze, EventId::ShiningLight,
-            ],
-            2 => vec![
-                EventId::Addict, EventId::BackTotheBasics, EventId::Beggar,
-                EventId::Colosseum, EventId::CursedTome, EventId::DrugDealer,
-                EventId::ForgottenAltar, EventId::Ghosts, EventId::MaskedBandits,
-                EventId::Nest, EventId::TheLibrary, EventId::Mausoleum,
-                EventId::Vampires,
-            ],
-            _ => vec![
-                EventId::Falling, EventId::MindBloom, EventId::MoaiHead,
-                EventId::MysteriousSphere, EventId::SensoryStone,
-                EventId::TombRedMask, EventId::WindingHalls,
-            ],
-        };
-    }
-
-    /// Mirrors Java's AbstractDungeon.generateEvent(Random rng).
-    /// Two-stage decision: 25% chance shrine/oneTime, 75% chance eventList.
     pub fn generate_event(&mut self) -> crate::state::events::EventId {
-
-        // Step 1: Room-type roll (Java: EventHelper.roll())
-        // Uses eventRng.random() → nextFloat for seed parity.
-        // We compute the room type but always return Event (no room conversion support).
-        let roll = self.rng_pool.event_rng.random_f32(); // Java: eventRng.random()
-
-        // TinyChest: increment counter each ? room. Every 4th forces treasure.
-        // Java: EventHelper.roll() L99-106
-        let mut force_chest = false;
-        if let Some(tc) = self.relics.iter_mut().find(|r| r.id == crate::content::relics::RelicId::TinyChest) {
-            tc.counter += 1;
-            if tc.counter == 4 {
-                tc.counter = 0;
-                force_chest = true;
+        use crate::content::relics::RelicId;
+        
+        let mut tiny_chest_counter = 0;
+        let mut has_juzu = false;
+        let mut has_golden_idol = false;
+        
+        for relic in &mut self.relics {
+            match relic.id {
+                RelicId::TinyChest => {
+                    relic.counter += 1;
+                    if relic.counter == 4 {
+                        relic.counter = 0;
+                        tiny_chest_counter = 3; // Trigger force_chest in EventGenerator
+                    } else {
+                        tiny_chest_counter = relic.counter;
+                    }
+                }
+                RelicId::JuzuBracelet => has_juzu = true,
+                RelicId::GoldenIdol => has_golden_idol = true,
+                _ => {}
             }
         }
 
-        let monster_size = (self.event_monster_chance * 100.0) as i32;
-        let shop_size = (self.event_shop_chance * 100.0) as i32;
-        let treasure_size = (self.event_treasure_chance * 100.0) as i32;
-        let roll_idx = (roll * 100.0) as i32;
-
-        // Determine what room type WOULD have been hit
-        let mut fill = 0;
-        let mut is_monster = roll_idx < fill + monster_size;
-        fill += monster_size;
-        let is_shop = !is_monster && roll_idx < fill + shop_size;
-        fill += shop_size;
-        let mut is_treasure = !is_monster && !is_shop && roll_idx < fill + treasure_size;
-
-        // TinyChest: force treasure if counter hit 4
-        if force_chest {
-            is_treasure = true;
-            is_monster = false;
-        }
-
-        // JuzuBracelet: convert MONSTER roll to EVENT (Java: EventHelper.roll() L150-153)
-        if is_monster {
-            if self.relics.iter().any(|r| r.id == crate::content::relics::RelicId::JuzuBracelet) {
-                is_monster = false; // Converted to EVENT
-            }
-        }
-
-        // Reset/ramp chance trackers (Java: EventHelper.roll() lines 149-179)
-        if is_monster {
-            self.event_monster_chance = 0.10;
-        } else {
-            self.event_monster_chance += 0.10;
-        }
-        if is_shop {
-            self.event_shop_chance = 0.03;
-        } else {
-            self.event_shop_chance += 0.03;
-        }
-        if is_treasure {
-            self.event_treasure_chance = 0.02;
-        } else {
-            self.event_treasure_chance += 0.02;
-        }
-
-        // Step 2: Two-stage event selection (Java: AbstractDungeon.generateEvent)
-        // Roll rng.random(1.0f) < shrineChance → getShrine, else getEvent
-        let shrine_roll = self.rng_pool.event_rng.random_f32_range(1.0); // Java: rng.random(1.0f)
-
-        if shrine_roll < self.shrine_chance {
-            // Try shrine/oneTime pool first
-            if !self.shrine_pool.is_empty() || !self.one_time_event_pool.is_empty() {
-                return self.get_shrine_event();
-            }
-            // Fallback to eventList if shrine pool empty
-            if !self.event_pool.is_empty() {
-                return self.get_pool_event();
-            }
-            return self.generate_event_fallback();
-        }
-
-        // Try eventList first
-        if let Some(event) = self.try_get_pool_event() {
-            return event;
-        }
-        // Fallback to shrine if eventList exhausted
-        if !self.shrine_pool.is_empty() || !self.one_time_event_pool.is_empty() {
-            return self.get_shrine_event();
-        }
-        self.generate_event_fallback()
-    }
-
-    /// Java: AbstractDungeon.getShrine(Random rng)
-    /// Builds filtered candidate list from shrine_pool + one_time_event_pool with conditions.
-    fn get_shrine_event(&mut self) -> crate::state::events::EventId {
-        use crate::state::events::EventId;
-
-        let mut candidates: Vec<EventId> = Vec::new();
-        candidates.extend_from_slice(&self.shrine_pool);
-
-        // Add one-time events with Java condition checks
-        let act = self.act_num;
-        let gold = self.gold;
-        let hp = self.current_hp;
-        let relic_count = self.relics.len();
-        let asc = self.ascension_level;
-        let has_curse = self.master_deck.iter().any(|c| {
-            let def = crate::content::cards::get_card_definition(c.id);
-            def.card_type == crate::content::cards::CardType::Curse
+        let has_curses = self.master_deck.iter().any(|c| {
+            crate::content::cards::get_card_definition(c.id).card_type == crate::content::cards::CardType::Curse
         });
 
-        for &event in &self.one_time_event_pool {
-            let ok = match event {
-                EventId::FountainOfCurseCleansing => has_curse,
-                EventId::Designer => (act == 2 || act == 3) && gold >= 75,
-                EventId::Duplicator => act == 2 || act == 3,
-                EventId::FaceTrader => act == 1 || act == 2,
-                EventId::KnowingSkull => act == 2 && hp > 12,
-                EventId::Nloth => act == 2 && relic_count >= 2,
-                EventId::TheJoust => act == 2 && gold >= 50,
-                EventId::WomanInBlue => gold >= 50,
-                EventId::NoteForYourself => asc < 15,
-                _ => true, // AccursedBlacksmith, BonfireElementals, Lab, WeMeetAgain, etc.
-            };
-            if ok {
-                candidates.push(event);
-            }
-        }
+        let ctx = crate::events::context::EventContext {
+            act_num: self.act_num,
+            ascension_level: self.ascension_level,
+            floor_num: self.floor_num,
+            gold: self.gold,
+            current_hp: self.current_hp,
+            max_hp: self.max_hp,
+            has_curses,
+            has_golden_idol,
+            tiny_chest_counter,
+            has_juzu_bracelet: has_juzu,
+            relic_count: self.relics.len(),
+        };
 
-        if candidates.is_empty() {
-            return self.generate_event_fallback();
-        }
+        // 1. Roll room type (this consumes event_rng and updates chances, just like Java EventHelper.roll)
+        // Even if we always return Event for now, we MUST roll the room type to align RNG!
+        let _room_type = self.event_generator.roll_room_type(&mut self.rng_pool, &ctx);
 
-        let idx = self.rng_pool.event_rng.random_range(0, (candidates.len() - 1) as i32) as usize;
-        let chosen = candidates[idx];
-
-        // Remove from source pool
-        if let Some(pos) = self.shrine_pool.iter().position(|&e| e == chosen) {
-            self.shrine_pool.remove(pos);
-        }
-        if let Some(pos) = self.one_time_event_pool.iter().position(|&e| e == chosen) {
-            self.one_time_event_pool.remove(pos);
-        }
-
-        chosen
+        // 2. Roll specific event ID
+        self.event_generator.generate_event(&mut self.rng_pool, &ctx)
     }
 
-    /// Java: AbstractDungeon.getEvent(Random rng)
-    /// Builds filtered candidate list from event_pool with per-event conditions.
-    fn get_pool_event(&mut self) -> crate::state::events::EventId {
-        self.try_get_pool_event().unwrap_or_else(|| self.generate_event_fallback())
-    }
-
-    /// Try to pick from eventList with conditions. Returns None if pool exhausted.
-    fn try_get_pool_event(&mut self) -> Option<crate::state::events::EventId> {
-        use crate::state::events::EventId;
-        use crate::content::relics::RelicId;
-
-        let floor = self.floor_num;
-        let gold = self.gold;
-        let hp_pct = if self.max_hp > 0 { self.current_hp as f32 / self.max_hp as f32 } else { 1.0 };
-        let has_golden_idol = self.relics.iter().any(|r| r.id == RelicId::GoldenIdol);
-        // Map midpoint: assume 15 floors per act, midpoint = 7
-        let map_midpoint = 7;
-
-        let mut candidates: Vec<EventId> = Vec::new();
-        for &event in &self.event_pool {
-            let ok = match event {
-                EventId::DeadAdventurer => floor > 6,
-                EventId::Mushrooms => floor > 6,
-                EventId::MoaiHead => has_golden_idol || hp_pct <= 0.5,
-                EventId::Cleric => gold >= 35,
-                EventId::Beggar => gold >= 75,
-                EventId::Colosseum => floor > map_midpoint,
-                _ => true,
-            };
-            if ok {
-                candidates.push(event);
-            }
-        }
-
-        if candidates.is_empty() {
-            return None;
-        }
-
-        let idx = self.rng_pool.event_rng.random_range(0, (candidates.len() - 1) as i32) as usize;
-        let chosen = candidates[idx];
-
-        // Remove from event_pool
-        if let Some(pos) = self.event_pool.iter().position(|&e| e == chosen) {
-            self.event_pool.remove(pos);
-            if self.event_pool.is_empty() {
-                self.repopulate_event_list();
-            }
-        }
-
-        Some(chosen)
-    }
-
-    /// Fallback for generate_event when pools are unexpectedly empty
-    fn generate_event_fallback(&mut self) -> crate::state::events::EventId {
-        use crate::state::events::EventId;
-        let options = [EventId::Cleric, EventId::GoldenIdol, EventId::GoldenShrine];
-        let idx = self.rng_pool.event_rng.random_range(0, 2) as usize;
-        options[idx]
-    }
-
-    /// Adds a card to the master deck with auto-generated UUID.
-    /// If the card is a Curse and the player has Omamori with charges, the curse is negated instead.
+    /// Adds a card to the master deck using DeckManager pipeline.
+    /// Handles Omamori negation, CeramicFish gold, Elite Eggs upgrades, etc.
     /// Returns true if the card was actually added (false if Omamori blocked it).
     pub fn add_card_to_deck(&mut self, card_id: crate::content::cards::CardId) -> bool {
-        let def = crate::content::cards::get_card_definition(card_id);
+        let ctx = self.build_deck_context();
+        let mut target_uuid = self.next_card_uuid();
         
-        // Omamori: negate curses
-        if def.card_type == crate::content::cards::CardType::Curse {
-            if let Some(omamori) = self.relics.iter_mut().find(|r| r.id == crate::content::relics::RelicId::Omamori) {
-                if omamori.counter > 0 {
-                    omamori.counter -= 1;
-                    if omamori.counter == 0 {
-                        omamori.used_up = true;
+        let result = crate::deck::manager::DeckManager::obtain_card(&ctx, card_id, &mut target_uuid);
+        let mut was_added = false;
+        
+        if !result.final_cards.is_empty() {
+            was_added = true;
+            for card in result.final_cards {
+                let def = crate::content::cards::get_card_definition(card.id);
+                println!("  [OBTAIN] Added card to deck: {}{}", def.name, if card.upgrades > 0 { "+" } else { "" });
+                self.master_deck.push(card);
+            }
+            self.dispatch_on_master_deck_change();
+        }
+        
+        self.resolve_deck_actions(result.actions);
+        was_added
+    }
+
+    /// Removes a specific card instance from the master deck.
+    /// Handles Parasite triggers, Necronomicurse regeneration.
+    pub fn remove_card_from_deck(&mut self, uuid: u32) {
+        let mut removed_id = None;
+        if let Some(pos) = self.master_deck.iter().position(|c| c.uuid == uuid) {
+            removed_id = Some(self.master_deck.remove(pos).id);
+        }
+        
+        if let Some(card_id) = removed_id {
+            let result = crate::deck::manager::DeckManager::remove_card(card_id);
+            self.dispatch_on_master_deck_change();
+            self.resolve_deck_actions(result.actions);
+        }
+    }
+
+    fn build_deck_context(&self) -> crate::deck::context::DeckContext {
+        use crate::content::relics::RelicId;
+        let mut omamori_charges = 0;
+        let mut has_omamori = false;
+        
+        for relic in &self.relics {
+            if relic.id == RelicId::Omamori {
+                has_omamori = true;
+                omamori_charges = relic.counter;
+            }
+        }
+        
+        crate::deck::context::DeckContext {
+            has_hoarder_mod: false,
+            has_omamori,
+            omamori_charges,
+            has_ceramic_fish: self.relics.iter().any(|r| r.id == RelicId::CeramicFish),
+            has_darkstone_periapt: self.relics.iter().any(|r| r.id == RelicId::DarkstonePeriapt),
+            has_molten_egg: self.relics.iter().any(|r| r.id == RelicId::MoltenEgg),
+            has_toxic_egg: self.relics.iter().any(|r| r.id == RelicId::ToxicEgg),
+            has_frozen_egg: self.relics.iter().any(|r| r.id == RelicId::FrozenEgg),
+            has_necronomicon: self.relics.iter().any(|r| r.id == RelicId::Necronomicon),
+        }
+    }
+
+    fn resolve_deck_actions(&mut self, actions: Vec<crate::deck::manager::DeckAction>) {
+        use crate::deck::manager::DeckAction;
+        for action in actions {
+            match action {
+                DeckAction::PreventObtain => { /* Handled structurally */ }
+                DeckAction::GainGold(amount) => self.gold += amount,
+                DeckAction::GainMaxHp(amount) => {
+                    self.max_hp += amount;
+                    self.current_hp += amount;
+                }
+                DeckAction::LoseMaxHp(amount) => {
+                    self.max_hp -= amount;
+                    if self.current_hp > self.max_hp {
+                        self.current_hp = self.max_hp;
                     }
-                    return false; // Curse negated
+                }
+                DeckAction::UpdateRelicCounter(relic_id, counter) => {
+                    if let Some(relic) = self.relics.iter_mut().find(|r| r.id == relic_id) {
+                        relic.counter = counter;
+                        if counter == 0 && relic_id == crate::content::relics::RelicId::Omamori {
+                            relic.used_up = true;
+                        }
+                    }
+                }
+                DeckAction::TriggerObtainCard(card_id) => {
+                    // Re-enters add_card_to_deck (e.g. for Necronomicurse)
+                    self.add_card_to_deck(card_id);
                 }
             }
         }
+    }
 
-        // DarkstonePeriapt: +6 Max HP when obtaining a curse
-        if def.card_type == crate::content::cards::CardType::Curse {
-            if self.relics.iter().any(|r| r.id == crate::content::relics::RelicId::DarkstonePeriapt) {
-                self.max_hp += 6;
-                self.current_hp += 6;
-            }
-        }
-
-        // CeramicFish: +9 gold on any card obtain
-        if self.relics.iter().any(|r| r.id == crate::content::relics::RelicId::CeramicFish) {
-            self.gold += 9;
-        }
-
-        // Egg auto-upgrade hooks (Java: onObtainCard in MoltenEgg/ToxicEgg/FrozenEgg)
-        let should_upgrade = match def.card_type {
-            crate::content::cards::CardType::Attack => {
-                self.relics.iter().any(|r| r.id == crate::content::relics::RelicId::MoltenEgg)
-            }
-            crate::content::cards::CardType::Skill => {
-                self.relics.iter().any(|r| r.id == crate::content::relics::RelicId::FrozenEgg)
-            }
-            crate::content::cards::CardType::Power => {
-                self.relics.iter().any(|r| r.id == crate::content::relics::RelicId::ToxicEgg)
-            }
-            _ => false,
-        };
-
-        let uuid = self.next_card_uuid();
-        let mut card = crate::combat::CombatCard::new(card_id, uuid);
-        if should_upgrade {
-            card.upgrades += 1;
-        }
-        self.master_deck.push(card);
-        true
+    /// Triggers AbstractRelic.onMasterDeckChange for all relics
+    pub fn dispatch_on_master_deck_change(&mut self) {
+        // e.g., Du-Vu Doll might recalculate strength later.
+        // Currently a no-op placeholder for future relic callbacks
     }
 
     /// Returns a simple auto-incrementing UUID for new cards.
-    fn next_card_uuid(&self) -> u32 {
+    pub fn next_card_uuid(&self) -> u32 {
         self.master_deck.len() as u32 + 10000
     }
 
@@ -982,6 +633,16 @@ impl RunState {
         self.act_num += 1;
         self.pending_boss_reward = false;
 
+        // Boss defeat heal
+        // Java: AbstractDungeon.dungeonTransitionSetup() -> player.heal(0.75 or maxHealth)
+        let missing = self.max_hp - self.current_hp;
+        let heal_amount = if self.ascension_level >= 5 {
+            (missing as f32 * 0.75).round() as i32
+        } else {
+            self.max_hp
+        };
+        self.current_hp = (self.current_hp + heal_amount).min(self.max_hp);
+
         // Generate new map for the next act
         // Generate map for the new act; returns consumed mapRng for emerald placement.
         let (mut new_map, mut map_rng) = crate::map::generator::generate_map_for_act(
@@ -1003,12 +664,10 @@ impl RunState {
         self.init_boss_list();
 
         // Reinitialize event pools for the new act
-        self.initialize_event_pools();
+        self.event_generator.initialize_event_pools(self.act_num);
 
         // Reset event room-type probabilities (Java: AbstractDungeon.resetProbabilities)
-        self.event_monster_chance = 0.10;
-        self.event_shop_chance = 0.03;
-        self.event_treasure_chance = 0.02;
+        self.event_generator.reset_probabilities();
 
         // Update card_upgraded_chance per act (Java: initializeLevelSpecificChances)
         // Asc 12: halves the upgrade chance per act

@@ -27,38 +27,34 @@ pub fn tick_run(engine_state: &mut EngineState, run_state: &mut RunState, combat
                     
                     // Check for Act 3 boss victory → Act 4 transition
                     // Java: AbstractRoom:317 — if BossRoom + TheBeyond/TheEnding + 3 keys → skip rewards
-                    if cs.is_boss_fight && run_state.act_num == 3
-                        && run_state.is_final_act_available
-                        && run_state.keys[0] && run_state.keys[1] && run_state.keys[2]
-                    {
-                        // All 3 keys collected — transition to Act 4 (TheEnding)
-                        let ending_map = crate::map::generator::generate_ending_map();
-                        run_state.map = crate::map::state::MapState::new(ending_map);
-                        run_state.act_num = 4;
-                        *engine_state = EngineState::MapNavigation;
-                    } else if cs.is_boss_fight && run_state.act_num <= 2 {
-                        // Act 1 or Act 2 boss defeated — mark for act advance after rewards
-                        run_state.pending_boss_reward = true;
-                        if let EngineState::RewardScreen(rs) = engine_state {
-                            let is_boss = cs.is_boss_fight;
-                            let is_elite = cs.is_elite_fight;
-                            *rs = run_state.generate_combat_rewards(is_elite, is_boss);
-                        }
-                    } else if cs.is_boss_fight && run_state.act_num == 3 {
-                        // Act 3 boss defeated without all keys → game victory (no Act 4)
-                        *engine_state = EngineState::GameOver(crate::state::core::RunResult::Victory);
-                    } else if let EngineState::RewardScreen(rs) = engine_state {
-                        // Normal (non-boss) reward generation
+                    if let EngineState::RewardScreen(rs) = engine_state {
                         let is_boss = cs.is_boss_fight;
                         let is_elite = cs.is_elite_fight;
+                        // Populate the actual dropped rewards
                         *rs = run_state.generate_combat_rewards(is_elite, is_boss);
-                        
-                        // Emerald key: if this elite node has emerald key, add to rewards
-                        // Java: MonsterRoomElite:90 — addSapphireKey-style paired reward
-                        if is_elite && run_state.is_final_act_available && !run_state.keys[2] {
-                            if let Some(node) = run_state.map.get_current_node() {
-                                if node.has_emerald_key {
-                                    rs.items.push(crate::state::RewardItem::EmeraldKey);
+
+                        if is_boss && run_state.act_num == 3
+                            && run_state.is_final_act_available
+                            && run_state.keys[0] && run_state.keys[1] && run_state.keys[2]
+                        {
+                            // All 3 keys collected — transition to Act 4 (TheEnding)
+                            let ending_map = crate::map::generator::generate_ending_map();
+                            run_state.map = crate::map::state::MapState::new(ending_map);
+                            run_state.act_num = 4;
+                            *engine_state = EngineState::MapNavigation;
+                        } else if is_boss && run_state.act_num <= 2 {
+                            // Act 1 or Act 2 boss defeated — mark for act advance after rewards
+                            run_state.pending_boss_reward = true;
+                        } else if is_boss && run_state.act_num == 3 {
+                            // Act 3 boss defeated without all keys → game victory (no Act 4)
+                            *engine_state = EngineState::GameOver(crate::state::core::RunResult::Victory);
+                        } else {
+                            // Normal (non-boss) elite reward generation adds emerald key if present
+                            if is_elite && run_state.is_final_act_available && !run_state.keys[2] {
+                                if let Some(node) = run_state.map.get_current_node() {
+                                    if node.has_emerald_key {
+                                        rs.items.push(crate::state::RewardItem::EmeraldKey);
+                                    }
                                 }
                             }
                         }
@@ -164,6 +160,9 @@ pub fn tick_run(engine_state: &mut EngineState, run_state: &mut RunState, combat
                 };
 
                 if run_state.map.travel_to(target_x, target_y, has_flight).is_ok() {
+                    // Increment floor number successfully entering a new room
+                    run_state.floor_num += 1;
+
                     // WingBoots: decrement counter on successful flight (non-adjacent travel)
                     if is_flight {
                         if let Some(wb) = run_state.relics.iter_mut().find(|r| r.id == crate::content::relics::RelicId::WingBoots) {
@@ -332,6 +331,18 @@ pub fn tick_run(engine_state: &mut EngineState, run_state: &mut RunState, combat
             let mut transition = None;
             if let EngineState::RewardScreen(rs) = engine_state {
                 if let Some(new_state) = reward_handler::handle(run_state, rs, input.clone()) {
+                    transition = Some(new_state);
+                }
+            }
+            if let Some(new_state) = transition {
+                *engine_state = new_state;
+            }
+            true
+        },
+        EngineState::BossRelicSelect(_) => {
+            let mut transition = None;
+            if let EngineState::BossRelicSelect(bs) = engine_state {
+                if let Some(new_state) = super::boss_relic_handler::handle(run_state, bs, input.clone()) {
                     transition = Some(new_state);
                 }
             }

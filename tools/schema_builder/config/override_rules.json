@@ -1,0 +1,2378 @@
+{
+    "power_id": {
+        "DemonForm": {
+            "class": "ironclad",
+            "java": [
+                "Demon Form"
+            ]
+        },
+        "Corruption": {
+            "class": "ironclad"
+        },
+        "DoubleTap": {
+            "class": "ironclad",
+            "java": [
+                "Double Tap"
+            ]
+        },
+        "FeelNoPain": {
+            "class": "ironclad",
+            "java": [
+                "Feel No Pain"
+            ]
+        },
+        "DarkEmbrace": {
+            "class": "ironclad",
+            "java": [
+                "Dark Embrace"
+            ]
+        },
+        "Rupture": {
+            "class": "ironclad"
+        },
+        "Combust": {
+            "class": "ironclad"
+        },
+        "Brutality": {
+            "class": "ironclad"
+        },
+        "Barricade": {
+            "class": "ironclad"
+        },
+        "Juggernaut": {
+            "class": "ironclad"
+        },
+        "FlameBarrier": {
+            "class": "ironclad",
+            "java": [
+                "Flame Barrier"
+            ]
+        },
+        "Evolve": {
+            "class": "ironclad"
+        },
+        "FireBreathing": {
+            "class": "ironclad",
+            "java": [
+                "Fire Breathing"
+            ]
+        },
+        "Rage": {
+            "class": "ironclad"
+        },
+        "Berserk": {
+            "class": "ironclad"
+        },
+        "MagnetismPower": {
+            "class": "colorless",
+            "java": [
+                "Magnetism"
+            ]
+        },
+        "MayhemPower": {
+            "class": "colorless",
+            "java": [
+                "Mayhem"
+            ]
+        },
+        "PanachePower": {
+            "class": "colorless",
+            "java": [
+                "Panache"
+            ]
+        },
+        "SadisticPower": {
+            "class": "colorless",
+            "java": [
+                "Sadistic Nature"
+            ]
+        },
+        "TheBombPower": {
+            "class": "colorless",
+            "java": [
+                "TheBomb"
+            ]
+        },
+        "LoseStrength": {
+            "java": [
+                "LoseStrength",
+                "Lose Strength"
+            ]
+        },
+        "DexterityDown": {
+            "java": [
+                "DexterityDown",
+                "Lose Dexterity",
+                "DexLoss"
+            ]
+        },
+        "Weak": {
+            "java": [
+                "Weakened",
+                "Weak"
+            ]
+        },
+        "Regen": {
+            "java": [
+                "Regen",
+                "Regeneration",
+                "Regenerate",
+                "RegenerateMonster"
+            ]
+        },
+        "PlatedArmor": {
+            "java": [
+                "Plated Armor",
+                "PlatedArmor"
+            ]
+        },
+        "NextTurnBlock": {
+            "java": [
+                "Next Turn Block"
+            ]
+        },
+        "NoDraw": {
+            "java": [
+                "No Draw"
+            ]
+        },
+        "Entangle": {
+            "java": [
+                "Entangle",
+                "Entangled"
+            ],
+            "owner": "monster"
+        },
+        "Angry": {
+            "java": [
+                "Angry",
+                "Anger"
+            ],
+            "owner": "monster"
+        },
+        "Confusion": {
+            "java": [
+                "Confusion",
+                "Confused"
+            ],
+            "owner": "monster"
+        },
+        "TimeWarp": {
+            "java": [
+                "Time Warp"
+            ],
+            "owner": "monster"
+        },
+        "CurlUp": {
+            "owner": "monster",
+            "java": [
+                "Curl Up"
+            ]
+        },
+        "SporeCloud": {
+            "owner": "monster",
+            "java": [
+                "Spore Cloud"
+            ]
+        },
+        "Split": {
+            "owner": "monster"
+        },
+        "Minion": {
+            "owner": "monster"
+        },
+        "ModeShift": {
+            "owner": "monster",
+            "java": [
+                "Mode Shift"
+            ]
+        },
+        "SharpHide": {
+            "owner": "monster",
+            "java": [
+                "Sharp Hide"
+            ]
+        },
+        "Flight": {
+            "owner": "monster"
+        },
+        "Hex": {
+            "owner": "monster"
+        },
+        "Malleable": {
+            "owner": "monster"
+        },
+        "Thievery": {
+            "owner": "monster"
+        },
+        "Stasis": {
+            "owner": "monster"
+        },
+        "Explosive": {
+            "owner": "monster"
+        },
+        "Regrow": {
+            "owner": "monster"
+        },
+        "Fading": {
+            "owner": "monster"
+        },
+        "Shifting": {
+            "owner": "monster"
+        },
+        "Reactive": {
+            "owner": "monster"
+        },
+        "Slow": {
+            "owner": "monster"
+        },
+        "Curiosity": {
+            "owner": "monster"
+        },
+        "Unawakened": {
+            "owner": "monster"
+        },
+        "Invincible": {
+            "owner": "monster"
+        },
+        "DrawReduction": {
+            "owner": "monster"
+        },
+        "GenericStrengthUp": {
+            "owner": "monster"
+        },
+        "Strength": {},
+        "Vulnerable": {},
+        "Frail": {},
+        "Dexterity": {},
+        "Ritual": {},
+        "Poison": {},
+        "Artifact": {},
+        "Intangible": {},
+        "Thorns": {},
+        "Vigor": {},
+        "Focus": {},
+        "Metallicize": {},
+        "Buffer": {},
+        "PenNibPower": {
+            "java": [
+                "Pen Nib"
+            ]
+        },
+        "Energized": {},
+        "Constricted": {},
+        "PainfulStabs": {},
+        "BeatOfDeath": {},
+        "Mantra": {},
+        "DuplicationPower": {},
+        "Surrounded": {},
+        "Anger": {
+            "java": [
+                "UNKNOWN_PLEASE_MAP_MANUALLY"
+            ]
+        },
+        "GuardianThreshold": {
+            "java": [
+                "UNKNOWN_PLEASE_MAP_MANUALLY"
+            ]
+        },
+        "Electro": {
+            "java": [
+                "UNKNOWN_PLEASE_MAP_MANUALLY"
+            ]
+        },
+        "NoSkills": {
+            "java": [
+                "UNKNOWN_PLEASE_MAP_MANUALLY"
+            ]
+        },
+        "ThousandCuts": {
+            "java": [
+                "UNKNOWN_PLEASE_MAP_MANUALLY"
+            ]
+        },
+        "Shackled": {
+            "java": [
+                "UNKNOWN_PLEASE_MAP_MANUALLY"
+            ]
+        },
+        "BackAttack": {
+            "java": [
+                "UNKNOWN_PLEASE_MAP_MANUALLY"
+            ]
+        }
+    },
+    "relic_id": {
+        "ArtofWar": {
+            "java": [
+                "Art of War"
+            ]
+        },
+        "MarkOfPain": {
+            "java": [
+                "Mark of Pain"
+            ]
+        },
+        "SneckoSkull": {
+            "java": [
+                "Snake Skull"
+            ]
+        },
+        "ChampionBelt": {
+            "java": [
+                "Champion Belt"
+            ]
+        },
+        "MarkOfTheBloom": {
+            "java": [
+                "Mark of the Bloom"
+            ]
+        },
+        "MagicFlower": {
+            "java": [
+                "Magic Flower"
+            ]
+        },
+        "RunicPyramid": {
+            "java": [
+                "Runic Pyramid"
+            ]
+        },
+        "SneckoEye": {
+            "java": [
+                "Snecko Eye"
+            ]
+        },
+        "RunicDome": {
+            "java": [
+                "Runic Dome"
+            ]
+        },
+        "PhilosopherStone": {
+            "java": [
+                "Philosopher's Stone"
+            ]
+        },
+        "BustedCrown": {
+            "java": [
+                "Busted Crown"
+            ]
+        },
+        "EmptyCage": {
+            "java": [
+                "Empty Cage"
+            ]
+        },
+        "CallingBell": {
+            "java": [
+                "Calling Bell"
+            ]
+        },
+        "CursedKey": {
+            "java": [
+                "Cursed Key"
+            ]
+        },
+        "Sozu": {
+            "java": [
+                "Sozu"
+            ]
+        },
+        "VelvetChoker": {
+            "java": [
+                "Velvet Choker"
+            ]
+        },
+        "CoffeeDripper": {
+            "java": [
+                "Coffee Dripper"
+            ]
+        },
+        "FusionHammer": {
+            "java": [
+                "Fusion Hammer"
+            ]
+        },
+        "SacredBark": {
+            "java": [
+                "SacredBark"
+            ]
+        },
+        "WhiteBeastStatue": {
+            "java": [
+                "White Beast Statue"
+            ]
+        },
+        "HoveringKite": {
+            "java": [
+                "HoveringKite"
+            ]
+        },
+        "Brimstone": {
+            "java": [
+                "Brimstone"
+            ]
+        },
+        "MedicalKit": {
+            "java": [
+                "Medical Kit"
+            ]
+        },
+        "TinyHouse": {
+            "java": [
+                "Tiny House"
+            ]
+        },
+        "Astrolabe": {
+            "java": [
+                "Astrolabe"
+            ]
+        },
+        "BlackStar": {
+            "java": [
+                "Black Star"
+            ]
+        },
+        "SlaversCollar": {
+            "java": [
+                "SlaversCollar"
+            ]
+        },
+        "Ectoplasm": {
+            "java": [
+                "Ectoplasm"
+            ]
+        },
+        "LizardTail": {
+            "java": [
+                "Lizard Tail"
+            ]
+        },
+        "BurningBlood": {
+            "java": [
+                "Burning Blood"
+            ]
+        },
+        "CentennialPuzzle": {
+            "java": [
+                "Centennial Puzzle"
+            ]
+        },
+        "ToyOrnithopter": {
+            "java": [
+                "Toy Ornithopter"
+            ]
+        },
+        "Strawberry": {},
+        "NeowsLament": {
+            "java": [
+                "NeowsBlessing",
+                "Neow's Lament"
+            ]
+        },
+        "Akabeko": {},
+        "Anchor": {},
+        "BagOfMarbles": {
+            "java": [
+                "Bag of Marbles"
+            ]
+        },
+        "BronzeScales": {
+            "java": [
+                "Bronze Scales"
+            ]
+        },
+        "Lantern": {},
+        "OddlySmoothStone": {
+            "java": [
+                "Oddly Smooth Stone"
+            ]
+        },
+        "PenNib": {
+            "java": [
+                "Pen Nib"
+            ]
+        },
+        "RedSkull": {
+            "java": [
+                "Red Skull"
+            ]
+        },
+        "Kunai": {},
+        "Shuriken": {},
+        "OrnamentalFan": {
+            "java": [
+                "Ornamental Fan"
+            ]
+        },
+        "Vajra": {},
+        "Orichalcum": {},
+        "Nunchaku": {},
+        "LetterOpener": {
+            "java": [
+                "Letter Opener"
+            ]
+        },
+        "HappyFlower": {
+            "java": [
+                "HappyFlower",
+                "Happy Flower"
+            ]
+        },
+        "DataDisk": {
+            "java": [
+                "DataDisk",
+                "Data Disk"
+            ]
+        },
+        "MercuryHourglass": {
+            "java": [
+                "Mercury Hourglass"
+            ]
+        },
+        "MeatOnTheBone": {
+            "java": [
+                "Meat on the Bone"
+            ]
+        },
+        "PaperCrane": {
+            "java": [
+                "Paper Crane",
+                "Paper Krane"
+            ]
+        },
+        "SelfFormingClay": {
+            "java": [
+                "Self Forming Clay",
+                "SelfFormingClay"
+            ]
+        },
+        "Torii": {},
+        "TungstenRod": {},
+        "RunicCube": {
+            "java": [
+                "Runic Cube"
+            ]
+        },
+        "GremlinHorn": {
+            "java": [
+                "Gremlin Horn"
+            ]
+        },
+        "AncientTeaSet": {
+            "java": [
+                "Ancient Tea Set"
+            ]
+        },
+        "BagofPreparation": {
+            "java": [
+                "Bag of Preparation"
+            ]
+        },
+        "BirdFacedUrn": {
+            "java": [
+                "Bird Faced Urn"
+            ]
+        },
+        "BlackBlood": {
+            "java": [
+                "Black Blood"
+            ]
+        },
+        "BloodVial": {
+            "java": [
+                "Blood Vial"
+            ]
+        },
+        "BlueCandle": {
+            "java": [
+                "Blue Candle"
+            ]
+        },
+        "Boot": {},
+        "BottledFlame": {
+            "java": [
+                "Bottled Flame"
+            ]
+        },
+        "BottledLightning": {
+            "java": [
+                "Bottled Lightning"
+            ]
+        },
+        "BottledTornado": {
+            "java": [
+                "Bottled Tornado"
+            ]
+        },
+        "Calipers": {},
+        "CaptainsWheel": {},
+        "CharonsAshes": {
+            "java": [
+                "Charon's Ashes"
+            ]
+        },
+        "ChemicalX": {
+            "java": [
+                "Chemical X"
+            ]
+        },
+        "CloakClasp": {},
+        "ClockworkSouvenir": {},
+        "CrackedCore": {
+            "java": [
+                "Cracked Core"
+            ]
+        },
+        "CultistMask": {},
+        "Damaru": {},
+        "DeadBranch": {
+            "java": [
+                "Dead Branch"
+            ]
+        },
+        "DreamCatcher": {
+            "java": [
+                "Dream Catcher"
+            ]
+        },
+        "DuVuDoll": {
+            "java": [
+                "Du-Vu Doll"
+            ]
+        },
+        "EmotionChip": {
+            "java": [
+                "Emotion Chip"
+            ]
+        },
+        "Enchiridion": {},
+        "FaceOfCleric": {},
+        "FossilizedHelix": {},
+        "FrozenCore": {},
+        "GamblingChip": {
+            "java": [
+                "Gambling Chip"
+            ]
+        },
+        "Ginger": {},
+        "Girya": {},
+        "Cables": {},
+        "GremlinMask": {},
+        "HandDrill": {},
+        "HolyWater": {},
+        "HornCleat": {},
+        "IceCream": {
+            "java": [
+                "Ice Cream"
+            ]
+        },
+        "IncenseBurner": {
+            "java": [
+                "Incense Burner"
+            ]
+        },
+        "InkBottle": {},
+        "Inserter": {},
+        "MarkofPain": {
+            "java": [
+                "Mark of Pain"
+            ]
+        },
+        "MarkoftheBloom": {
+            "java": [
+                "Mark of the Bloom"
+            ]
+        },
+        "MummifiedHand": {
+            "java": [
+                "Mummified Hand"
+            ]
+        },
+        "MutagenicStrength": {},
+        "Necronomicon": {},
+        "NilrysCodex": {
+            "java": [
+                "Nilry's Codex"
+            ]
+        },
+        "NinjaScroll": {
+            "java": [
+                "Ninja Scroll"
+            ]
+        },
+        "NuclearBattery": {
+            "java": [
+                "Nuclear Battery"
+            ]
+        },
+        "OddMushroom": {
+            "java": [
+                "Odd Mushroom"
+            ]
+        },
+        "Omamori": {},
+        "OrangePellets": {},
+        "Pantograph": {},
+        "PaperFrog": {
+            "java": [
+                "Paper Frog"
+            ]
+        },
+        "PhilosophersStone": {
+            "java": [
+                "Philosopher's Stone"
+            ]
+        },
+        "Pocketwatch": {},
+        "PreservedInsect": {},
+        "PureWater": {},
+        "RedMask": {
+            "java": [
+                "Red Mask"
+            ]
+        },
+        "RingoftheSerpent": {
+            "java": [
+                "Ring of the Serpent"
+            ]
+        },
+        "RunicCapacitor": {
+            "java": [
+                "Runic Capacitor"
+            ]
+        },
+        "Sling": {},
+        "RingoftheSnake": {
+            "java": [
+                "Ring of the Snake"
+            ]
+        },
+        "SnakeSkull": {
+            "java": [
+                "Snake Skull"
+            ]
+        },
+        "StoneCalendar": {},
+        "StrangeSpoon": {
+            "java": [
+                "Strange Spoon"
+            ]
+        },
+        "StrikeDummy": {},
+        "SymbioticVirus": {
+            "java": [
+                "Symbiotic Virus"
+            ]
+        },
+        "TeardropLocket": {},
+        "Test1": {
+            "java": [
+                "Test 1"
+            ]
+        },
+        "Test4": {
+            "java": [
+                "Test 4"
+            ]
+        },
+        "Test6": {
+            "java": [
+                "Test 6"
+            ]
+        },
+        "TheSpecimen": {
+            "java": [
+                "The Specimen"
+            ]
+        },
+        "ThreadandNeedle": {
+            "java": [
+                "Thread and Needle"
+            ]
+        },
+        "Tingsha": {},
+        "Toolbox": {},
+        "ToughBandages": {
+            "java": [
+                "Tough Bandages"
+            ]
+        },
+        "Turnip": {},
+        "TwistedFunnel": {},
+        "UnceasingTop": {
+            "java": [
+                "Unceasing Top"
+            ]
+        },
+        "VioletLotus": {},
+        "WarpedTongs": {},
+        "EternalFeather": {
+            "java": [
+                "Eternal Feather"
+            ]
+        },
+        "TinyChest": {
+            "java": [
+                "Tiny Chest"
+            ]
+        },
+        "Whetstone": {},
+        "ToxicEgg2": {
+            "java": [
+                "Toxic Egg 2"
+            ]
+        },
+        "FrozenEgg2": {
+            "java": [
+                "Frozen Egg 2"
+            ]
+        },
+        "MoltenEgg2": {
+            "java": [
+                "Molten Egg 2"
+            ]
+        },
+        "TheAbacus": {},
+        "BloodyIdol": {
+            "java": [
+                "Bloody Idol"
+            ]
+        },
+        "Cauldron": {},
+        "CeramicFish": {},
+        "Circlet": {},
+        "TheCourier": {
+            "java": [
+                "The Courier"
+            ]
+        },
+        "DarkstonePeriapt": {
+            "java": [
+                "Darkstone Periapt"
+            ]
+        },
+        "DiscerningMonocle": {
+            "java": [
+                "Discerning Monocle"
+            ]
+        },
+        "DollysMirror": {},
+        "Yang": {},
+        "FrozenEye": {
+            "java": [
+                "Frozen Eye"
+            ]
+        },
+        "GoldenEye": {},
+        "GoldenIdol": {
+            "java": [
+                "Golden Idol"
+            ]
+        },
+        "JuzuBracelet": {
+            "java": [
+                "Juzu Bracelet"
+            ]
+        },
+        "Mango": {},
+        "Matryoshka": {},
+        "MawBank": {},
+        "MealTicket": {},
+        "Melange": {},
+        "MembershipCard": {
+            "java": [
+                "Membership Card"
+            ]
+        },
+        "NlothsGift": {
+            "java": [
+                "Nloth's Gift"
+            ]
+        },
+        "NlothsMask": {},
+        "OldCoin": {
+            "java": [
+                "Old Coin"
+            ]
+        },
+        "Orrery": {},
+        "PandorasBox": {
+            "java": [
+                "Pandora's Box"
+            ]
+        },
+        "PeacePipe": {
+            "java": [
+                "Peace Pipe"
+            ]
+        },
+        "Pear": {},
+        "PotionBelt": {
+            "java": [
+                "Potion Belt"
+            ]
+        },
+        "PrayerWheel": {
+            "java": [
+                "Prayer Wheel"
+            ]
+        },
+        "PrismaticShard": {},
+        "QuestionCard": {
+            "java": [
+                "Question Card"
+            ]
+        },
+        "RedCirclet": {
+            "java": [
+                "Red Circlet"
+            ]
+        },
+        "RegalPillow": {
+            "java": [
+                "Regal Pillow"
+            ]
+        },
+        "Shovel": {},
+        "SingingBowl": {
+            "java": [
+                "Singing Bowl"
+            ]
+        },
+        "SmilingMask": {
+            "java": [
+                "Smiling Mask"
+            ]
+        },
+        "SpiritPoop": {
+            "java": [
+                "Spirit Poop"
+            ]
+        },
+        "SsserpentHead": {},
+        "Sundial": {},
+        "Test3": {
+            "java": [
+                "Test 3"
+            ]
+        },
+        "Test5": {
+            "java": [
+                "Test 5"
+            ]
+        },
+        "LeesWaffle": {
+            "java": [
+                "Lee's Waffle"
+            ]
+        },
+        "WarPaint": {
+            "java": [
+                "War Paint"
+            ]
+        },
+        "WingedGreaves": {},
+        "WristBlade": {},
+        "Abacus": {
+            "java": [
+                "TheAbacus"
+            ]
+        },
+        "ArtOfWar": {
+            "java": [
+                "Art of War"
+            ]
+        },
+        "BagOfPreparation": {
+            "java": [
+                "Bag of Preparation"
+            ]
+        },
+        "Courier": {
+            "java": [
+                "The Courier"
+            ]
+        },
+        "DarkBlood": {
+            "java": [
+                "UNKNOWN_PLEASE_MAP_MANUALLY"
+            ]
+        },
+        "Dodecahedron": {},
+        "Duality": {
+            "java": [
+                "Yang"
+            ]
+        },
+        "FrozenEgg": {
+            "java": [
+                "UNKNOWN_PLEASE_MAP_MANUALLY"
+            ]
+        },
+        "GoldPlatedCables": {
+            "java": [
+                "Cables"
+            ]
+        },
+        "MoltenEgg": {
+            "java": [
+                "UNKNOWN_PLEASE_MAP_MANUALLY"
+            ]
+        },
+        "RingOfTheSerpent": {
+            "java": [
+                "Ring of the Serpent"
+            ]
+        },
+        "SnakeRing": {
+            "java": [
+                "Ring of the Snake"
+            ]
+        },
+        "ThreadAndNeedle": {
+            "java": [
+                "Thread and Needle"
+            ]
+        },
+        "ToxicEgg": {
+            "java": [
+                "UNKNOWN_PLEASE_MAP_MANUALLY"
+            ]
+        },
+        "Waffle": {
+            "java": [
+                "Lee's Waffle"
+            ]
+        },
+        "WingBoots": {
+            "java": [
+                "WingedGreaves"
+            ]
+        }
+    },
+    "monster_id": {
+        "LouseNormal": {
+            "java": [
+                "FuzzyLouseNormal",
+                "Louse"
+            ],
+            "index": 2
+        },
+        "LouseDefensive": {
+            "java": [
+                "FuzzyLouseDefensive"
+            ],
+            "index": 3
+        },
+        "SpikeSlimeS": {
+            "java": [
+                "SpikeSlime_S"
+            ],
+            "index": 4
+        },
+        "SpikeSlimeM": {
+            "java": [
+                "SpikeSlime_M"
+            ],
+            "index": 5
+        },
+        "AcidSlimeS": {
+            "java": [
+                "AcidSlime_S"
+            ],
+            "index": 6
+        },
+        "AcidSlimeM": {
+            "java": [
+                "AcidSlime_M"
+            ],
+            "index": 7
+        },
+        "SlaverBlue": {
+            "java": [
+                "SlaverBlue",
+                "Slaver"
+            ],
+            "index": 10
+        },
+        "AcidSlimeL": {
+            "java": [
+                "AcidSlime_L"
+            ],
+            "index": 12
+        },
+        "SpikeSlimeL": {
+            "java": [
+                "SpikeSlime_L"
+            ],
+            "index": 13
+        },
+        "SphericGuardian": {
+            "java": [
+                "SphericGuardian",
+                "Spheric Guardian"
+            ],
+            "index": 25
+        },
+        "Snecko": {
+            "java": [
+                "SneckoB",
+                "Snecko"
+            ],
+            "index": 28
+        },
+        "Healer": {
+            "java": [
+                "Healer",
+                "Mystic"
+            ],
+            "index": 30
+        },
+        "ShelledParasite": {
+            "java": [
+                "ShelledParasite",
+                "Shelled Parasite"
+            ],
+            "index": 32
+        },
+        "Taskmaster": {
+            "java": [
+                "Taskmaster",
+                "SlaverBoss"
+            ],
+            "index": 35
+        },
+        "Maw": {
+            "java": [
+                "Maw"
+            ],
+            "index": 50
+        },
+        "SpireGrowth": {
+            "java": [
+                "SpireGrowth"
+            ],
+            "index": 51
+        },
+        "FadingNemesis": {
+            "java": [
+                "Nemesis"
+            ],
+            "index": 55
+        },
+        "Transient": {
+            "java": [
+                "Transient"
+            ],
+            "index": 52
+        },
+        "Reptomancer": {
+            "java": [
+                "Reptomancer"
+            ],
+            "index": 56
+        },
+        "SpireShield": {
+            "java": [
+                "SpireShield"
+            ],
+            "index": 62
+        },
+        "SpireSpear": {
+            "java": [
+                "SpireSpear"
+            ],
+            "index": 63
+        },
+        "AwakenedOne": {
+            "java": [
+                "AwakenedOne"
+            ],
+            "index": 58
+        },
+        "TimeEater": {
+            "java": [
+                "TimeEater"
+            ],
+            "index": 59
+        },
+        "Donu": {
+            "java": [
+                "Donu"
+            ],
+            "index": 60
+        },
+        "Deca": {
+            "java": [
+                "Deca"
+            ],
+            "index": 61
+        },
+        "CorruptHeart": {
+            "java": [
+                "CorruptHeart"
+            ],
+            "index": 64
+        },
+        "Darkling": {
+            "java": [
+                "Darkling"
+            ],
+            "index": 49
+        },
+        "JawWorm": {
+            "index": 0
+        },
+        "Cultist": {
+            "index": 1
+        },
+        "FungiBeast": {
+            "index": 8
+        },
+        "Looter": {
+            "index": 9
+        },
+        "SlaverRed": {
+            "index": 11
+        },
+        "GremlinFat": {
+            "index": 14
+        },
+        "GremlinThief": {
+            "index": 15
+        },
+        "GremlinTsundere": {
+            "index": 16
+        },
+        "GremlinWarrior": {
+            "index": 17
+        },
+        "GremlinWizard": {
+            "index": 18
+        },
+        "GremlinNob": {
+            "index": 19
+        },
+        "Lagavulin": {
+            "index": 20
+        },
+        "Sentry": {
+            "index": 21
+        },
+        "SlimeBoss": {
+            "index": 22
+        },
+        "Hexaghost": {
+            "index": 23
+        },
+        "TheGuardian": {
+            "index": 24
+        },
+        "Byrd": {
+            "index": 26
+        },
+        "Chosen": {
+            "index": 27
+        },
+        "Centurion": {
+            "index": 29
+        },
+        "SnakePlant": {
+            "index": 31
+        },
+        "Mugger": {
+            "index": 33
+        },
+        "BookOfStabbing": {
+            "index": 34
+        },
+        "GremlinLeader": {
+            "index": 36
+        },
+        "BronzeAutomaton": {
+            "index": 37
+        },
+        "BronzeOrb": {
+            "index": 38
+        },
+        "TheCollector": {
+            "index": 39
+        },
+        "TorchHead": {
+            "index": 40
+        },
+        "Champ": {
+            "index": 41
+        },
+        "BanditBear": {
+            "index": 42
+        },
+        "BanditLeader": {
+            "index": 43
+        },
+        "BanditPointy": {
+            "index": 44
+        },
+        "Exploder": {
+            "index": 45
+        },
+        "Repulsor": {
+            "index": 46
+        },
+        "Spiker": {
+            "index": 47
+        },
+        "OrbWalker": {
+            "index": 48
+        },
+        "WrithingMass": {
+            "index": 53
+        },
+        "GiantHead": {
+            "index": 54
+        },
+        "Nemesis": {
+            "index": 55
+        },
+        "SnakeDagger": {
+            "index": 57
+        }
+    },
+    "card_id": {
+        "DemonForm": {
+            "java": [
+                "Demon Form"
+            ]
+        },
+        "DoubleTap": {
+            "java": [
+                "Double Tap"
+            ]
+        },
+        "FiendFire": {
+            "java": [
+                "Fiend Fire"
+            ]
+        },
+        "FeelNoPain": {
+            "java": [
+                "Feel No Pain"
+            ]
+        },
+        "DarkEmbrace": {
+            "java": [
+                "Dark Embrace"
+            ]
+        },
+        "DualWield": {
+            "java": [
+                "Dual Wield"
+            ]
+        },
+        "FlameBarrier": {
+            "java": [
+                "Flame Barrier"
+            ]
+        },
+        "FireBreathing": {
+            "java": [
+                "Fire Breathing"
+            ]
+        },
+        "Carnage": {
+            "java": [
+                "Carnage"
+            ],
+            "card_type": "ATTACK",
+            "class": "ironclad"
+        },
+        "BloodForBlood": {
+            "java": [
+                "Blood for Blood"
+            ]
+        },
+        "Cleave": {
+            "java": [
+                "Cleave"
+            ],
+            "card_type": "ATTACK",
+            "class": "ironclad"
+        },
+        "Clash": {
+            "java": [
+                "Clash"
+            ],
+            "card_type": "ATTACK",
+            "class": "ironclad"
+        },
+        "Combust": {
+            "java": [
+                "Combust"
+            ],
+            "card_type": "POWER",
+            "class": "ironclad"
+        },
+        "Metallicize": {
+            "java": [
+                "Metallicize"
+            ],
+            "card_type": "POWER",
+            "class": "ironclad"
+        },
+        "Armaments": {
+            "java": [
+                "Armaments"
+            ],
+            "card_type": "SKILL",
+            "class": "ironclad"
+        },
+        "SeeingRed": {
+            "java": [
+                "Seeing Red"
+            ]
+        },
+        "Headbutt": {
+            "java": [
+                "Headbutt"
+            ],
+            "card_type": "ATTACK",
+            "class": "ironclad"
+        },
+        "Rampage": {
+            "java": [
+                "Rampage"
+            ],
+            "card_type": "ATTACK",
+            "class": "ironclad"
+        },
+        "Dropkick": {
+            "java": [
+                "Dropkick"
+            ],
+            "card_type": "ATTACK",
+            "class": "ironclad"
+        },
+        "SecondWind": {
+            "java": [
+                "Second Wind"
+            ]
+        },
+        "SearingBlow": {
+            "java": [
+                "Searing Blow"
+            ]
+        },
+        "Intimidate": {
+            "java": [
+                "Intimidate"
+            ],
+            "card_type": "SKILL",
+            "class": "ironclad"
+        },
+        "IronWave": {
+            "java": [
+                "Iron Wave"
+            ]
+        },
+        "TrueGrit": {
+            "java": [
+                "True Grit"
+            ]
+        },
+        "Whirlwind": {
+            "java": [
+                "Whirlwind"
+            ],
+            "card_type": "ATTACK",
+            "class": "ironclad"
+        },
+        "Exhume": {
+            "java": [
+                "Exhume"
+            ],
+            "card_type": "SKILL",
+            "class": "ironclad"
+        },
+        "PommelStrike": {
+            "java": [
+                "Pommel Strike"
+            ]
+        },
+        "WildStrike": {
+            "java": [
+                "Wild Strike"
+            ]
+        },
+        "PerfectedStrike": {
+            "java": [
+                "Perfected Strike"
+            ]
+        },
+        "TwinStrike": {
+            "java": [
+                "Twin Strike"
+            ]
+        },
+        "ShrugItOff": {
+            "java": [
+                "Shrug It Off"
+            ]
+        },
+        "GhostlyArmor": {
+            "java": [
+                "Ghostly Armor"
+            ]
+        },
+        "Clothesline": {
+            "java": [
+                "Clothesline"
+            ],
+            "card_type": "ATTACK",
+            "class": "ironclad"
+        },
+        "ThunderClap": {
+            "java": [
+                "Thunderclap"
+            ]
+        },
+        "SwordBoomerang": {
+            "java": [
+                "Sword Boomerang"
+            ]
+        },
+        "BodySlam": {
+            "java": [
+                "Body Slam"
+            ]
+        },
+        "HeavyBlade": {
+            "java": [
+                "Heavy Blade"
+            ]
+        },
+        "Rage": {
+            "java": [
+                "Rage"
+            ],
+            "card_type": "SKILL",
+            "class": "ironclad"
+        },
+        "SeverSoul": {
+            "java": [
+                "Sever Soul"
+            ]
+        },
+        "PowerThrough": {
+            "java": [
+                "Power Through"
+            ]
+        },
+        "LimitBreak": {
+            "java": [
+                "Limit Break"
+            ]
+        },
+        "Reaper": {
+            "java": [
+                "Reaper"
+            ],
+            "card_type": "ATTACK",
+            "class": "ironclad"
+        },
+        "Immolate": {
+            "java": [
+                "Immolate"
+            ],
+            "card_type": "ATTACK",
+            "class": "ironclad"
+        },
+        "Juggernaut": {
+            "java": [
+                "Juggernaut"
+            ],
+            "card_type": "POWER",
+            "class": "ironclad"
+        },
+        "Bludgeon": {
+            "java": [
+                "Bludgeon"
+            ],
+            "card_type": "ATTACK",
+            "class": "ironclad"
+        },
+        "Feed": {
+            "java": [
+                "Feed"
+            ],
+            "card_type": "ATTACK",
+            "class": "ironclad"
+        },
+        "Flex": {
+            "java": [
+                "Flex"
+            ],
+            "card_type": "SKILL",
+            "class": "ironclad"
+        },
+        "Inflame": {
+            "java": [
+                "Inflame"
+            ],
+            "card_type": "POWER",
+            "class": "ironclad"
+        },
+        "SpotWeakness": {
+            "java": [
+                "Spot Weakness"
+            ]
+        },
+        "Rupture": {
+            "java": [
+                "Rupture"
+            ],
+            "card_type": "POWER",
+            "class": "ironclad"
+        },
+        "Berserk": {
+            "java": [
+                "Berserk"
+            ],
+            "card_type": "POWER",
+            "class": "ironclad"
+        },
+        "Brutality": {
+            "java": [
+                "Brutality"
+            ],
+            "card_type": "POWER",
+            "class": "ironclad"
+        },
+        "SadisticNature": {
+            "java": [
+                "Sadistic Nature"
+            ]
+        },
+        "GoodInstincts": {
+            "java": [
+                "Good Instincts"
+            ]
+        },
+        "SwiftStrike": {
+            "java": [
+                "Swift Strike"
+            ]
+        },
+        "Finesse": {
+            "java": [
+                "Finesse"
+            ],
+            "card_type": "SKILL",
+            "class": "colorless"
+        },
+        "DeepBreath": {
+            "java": [
+                "Deep Breath"
+            ]
+        },
+        "BandageUp": {
+            "java": [
+                "Bandage Up"
+            ]
+        },
+        "Blind": {
+            "java": [
+                "Blind"
+            ],
+            "card_type": "SKILL",
+            "class": "colorless"
+        },
+        "DarkShackles": {
+            "java": [
+                "Dark Shackles"
+            ]
+        },
+        "Magnetism": {
+            "java": [
+                "Magnetism"
+            ],
+            "card_type": "POWER",
+            "class": "colorless"
+        },
+        "Mayhem": {
+            "java": [
+                "Mayhem"
+            ],
+            "card_type": "POWER",
+            "class": "colorless"
+        },
+        "Panache": {
+            "java": [
+                "Panache"
+            ],
+            "card_type": "POWER",
+            "class": "colorless"
+        },
+        "TheBomb": {
+            "java": [
+                "The Bomb"
+            ]
+        },
+        "Bite": {
+            "java": [
+                "Bite"
+            ],
+            "card_type": "ATTACK",
+            "class": "colorless"
+        },
+        "JAX": {
+            "java": [
+                "J.A.X."
+            ]
+        },
+        "Anger": {
+            "card_type": "ATTACK",
+            "class": "ironclad"
+        },
+        "Barricade": {
+            "card_type": "POWER",
+            "class": "ironclad"
+        },
+        "Bash": {
+            "card_type": "ATTACK",
+            "class": "ironclad"
+        },
+        "Battle Trance": {
+            "card_type": "SKILL",
+            "class": "ironclad"
+        },
+        "Blood for Blood": {
+            "card_type": "ATTACK",
+            "class": "ironclad"
+        },
+        "Bloodletting": {
+            "card_type": "SKILL",
+            "class": "ironclad"
+        },
+        "Body Slam": {
+            "card_type": "ATTACK",
+            "class": "ironclad"
+        },
+        "Burning Pact": {
+            "card_type": "SKILL",
+            "class": "ironclad"
+        },
+        "Corruption": {
+            "card_type": "POWER",
+            "class": "ironclad"
+        },
+        "Dark Embrace": {
+            "card_type": "POWER",
+            "class": "ironclad"
+        },
+        "Defend_R": {
+            "card_type": "SKILL",
+            "class": "ironclad"
+        },
+        "Demon Form": {
+            "card_type": "POWER",
+            "class": "ironclad"
+        },
+        "Disarm": {
+            "card_type": "SKILL",
+            "class": "ironclad"
+        },
+        "Double Tap": {
+            "card_type": "SKILL",
+            "class": "ironclad"
+        },
+        "Dual Wield": {
+            "card_type": "SKILL",
+            "class": "ironclad"
+        },
+        "Entrench": {
+            "card_type": "SKILL",
+            "class": "ironclad"
+        },
+        "Evolve": {
+            "card_type": "POWER",
+            "class": "ironclad"
+        },
+        "Feel No Pain": {
+            "card_type": "POWER",
+            "class": "ironclad"
+        },
+        "Fiend Fire": {
+            "card_type": "ATTACK",
+            "class": "ironclad"
+        },
+        "Fire Breathing": {
+            "card_type": "POWER",
+            "class": "ironclad"
+        },
+        "Flame Barrier": {
+            "card_type": "SKILL",
+            "class": "ironclad"
+        },
+        "Ghostly Armor": {
+            "card_type": "SKILL",
+            "class": "ironclad"
+        },
+        "Havoc": {
+            "card_type": "SKILL",
+            "class": "ironclad"
+        },
+        "Heavy Blade": {
+            "card_type": "ATTACK",
+            "class": "ironclad"
+        },
+        "Hemokinesis": {
+            "card_type": "ATTACK",
+            "class": "ironclad"
+        },
+        "Impervious": {
+            "card_type": "SKILL",
+            "class": "ironclad"
+        },
+        "Infernal Blade": {
+            "card_type": "SKILL",
+            "class": "ironclad"
+        },
+        "Iron Wave": {
+            "card_type": "ATTACK",
+            "class": "ironclad"
+        },
+        "Limit Break": {
+            "card_type": "SKILL",
+            "class": "ironclad"
+        },
+        "Offering": {
+            "card_type": "SKILL",
+            "class": "ironclad"
+        },
+        "Perfected Strike": {
+            "card_type": "ATTACK",
+            "class": "ironclad"
+        },
+        "Pommel Strike": {
+            "card_type": "ATTACK",
+            "class": "ironclad"
+        },
+        "Power Through": {
+            "card_type": "SKILL",
+            "class": "ironclad"
+        },
+        "Pummel": {
+            "card_type": "ATTACK",
+            "class": "ironclad"
+        },
+        "Reckless Charge": {
+            "card_type": "ATTACK",
+            "class": "ironclad"
+        },
+        "Searing Blow": {
+            "card_type": "ATTACK",
+            "class": "ironclad"
+        },
+        "Second Wind": {
+            "card_type": "SKILL",
+            "class": "ironclad"
+        },
+        "Seeing Red": {
+            "card_type": "SKILL",
+            "class": "ironclad"
+        },
+        "Sentinel": {
+            "card_type": "SKILL",
+            "class": "ironclad"
+        },
+        "Sever Soul": {
+            "card_type": "ATTACK",
+            "class": "ironclad"
+        },
+        "Shockwave": {
+            "card_type": "SKILL",
+            "class": "ironclad"
+        },
+        "Shrug It Off": {
+            "card_type": "SKILL",
+            "class": "ironclad"
+        },
+        "Spot Weakness": {
+            "card_type": "SKILL",
+            "class": "ironclad"
+        },
+        "Strike_R": {
+            "card_type": "ATTACK",
+            "class": "ironclad"
+        },
+        "Sword Boomerang": {
+            "card_type": "ATTACK",
+            "class": "ironclad"
+        },
+        "Thunderclap": {
+            "card_type": "ATTACK",
+            "class": "ironclad"
+        },
+        "True Grit": {
+            "card_type": "SKILL",
+            "class": "ironclad"
+        },
+        "Twin Strike": {
+            "card_type": "ATTACK",
+            "class": "ironclad"
+        },
+        "Uppercut": {
+            "card_type": "ATTACK",
+            "class": "ironclad"
+        },
+        "Warcry": {
+            "card_type": "SKILL",
+            "class": "ironclad"
+        },
+        "Wild Strike": {
+            "card_type": "ATTACK",
+            "class": "ironclad"
+        },
+        "Apotheosis": {
+            "card_type": "SKILL",
+            "class": "colorless"
+        },
+        "Ghostly": {
+            "card_type": "SKILL",
+            "class": "colorless"
+        },
+        "Bandage Up": {
+            "card_type": "SKILL",
+            "class": "colorless"
+        },
+        "Chrysalis": {
+            "card_type": "SKILL",
+            "class": "colorless"
+        },
+        "Dark Shackles": {
+            "card_type": "SKILL",
+            "class": "colorless"
+        },
+        "Deep Breath": {
+            "card_type": "SKILL",
+            "class": "colorless"
+        },
+        "Discovery": {
+            "card_type": "SKILL",
+            "class": "colorless"
+        },
+        "Dramatic Entrance": {
+            "card_type": "ATTACK",
+            "class": "colorless"
+        },
+        "Enlightenment": {
+            "card_type": "SKILL",
+            "class": "colorless"
+        },
+        "Flash of Steel": {
+            "card_type": "ATTACK",
+            "class": "colorless"
+        },
+        "Forethought": {
+            "card_type": "SKILL",
+            "class": "colorless"
+        },
+        "Good Instincts": {
+            "card_type": "SKILL",
+            "class": "colorless"
+        },
+        "HandOfGreed": {
+            "card_type": "ATTACK",
+            "class": "colorless"
+        },
+        "Impatience": {
+            "card_type": "SKILL",
+            "class": "colorless"
+        },
+        "Jack Of All Trades": {
+            "card_type": "SKILL",
+            "class": "colorless"
+        },
+        "J.A.X.": {
+            "card_type": "SKILL",
+            "class": "colorless"
+        },
+        "Madness": {
+            "card_type": "SKILL",
+            "class": "colorless"
+        },
+        "Master of Strategy": {
+            "card_type": "SKILL",
+            "class": "colorless"
+        },
+        "Metamorphosis": {
+            "card_type": "SKILL",
+            "class": "colorless"
+        },
+        "Mind Blast": {
+            "card_type": "ATTACK",
+            "class": "colorless"
+        },
+        "Panacea": {
+            "card_type": "SKILL",
+            "class": "colorless"
+        },
+        "PanicButton": {
+            "card_type": "SKILL",
+            "class": "colorless"
+        },
+        "Purity": {
+            "card_type": "SKILL",
+            "class": "colorless"
+        },
+        "RitualDagger": {
+            "card_type": "ATTACK",
+            "class": "colorless"
+        },
+        "Sadistic Nature": {
+            "card_type": "POWER",
+            "class": "colorless"
+        },
+        "Secret Technique": {
+            "card_type": "SKILL",
+            "class": "colorless"
+        },
+        "Secret Weapon": {
+            "card_type": "SKILL",
+            "class": "colorless"
+        },
+        "Swift Strike": {
+            "card_type": "ATTACK",
+            "class": "colorless"
+        },
+        "The Bomb": {
+            "card_type": "SKILL",
+            "class": "colorless"
+        },
+        "Thinking Ahead": {
+            "card_type": "SKILL",
+            "class": "colorless"
+        },
+        "Transmutation": {
+            "card_type": "SKILL",
+            "class": "colorless"
+        },
+        "Trip": {
+            "card_type": "SKILL",
+            "class": "colorless"
+        },
+        "Violence": {
+            "card_type": "SKILL",
+            "class": "colorless"
+        },
+        "Burn": {
+            "card_type": "STATUS"
+        },
+        "Dazed": {
+            "card_type": "STATUS"
+        },
+        "Slimed": {
+            "card_type": "STATUS"
+        },
+        "Void": {
+            "card_type": "STATUS"
+        },
+        "Wound": {
+            "card_type": "STATUS"
+        },
+        "AscendersBane": {
+            "card_type": "CURSE"
+        },
+        "Clumsy": {
+            "card_type": "CURSE"
+        },
+        "CurseOfTheBell": {
+            "card_type": "CURSE"
+        },
+        "Decay": {
+            "card_type": "CURSE"
+        },
+        "Doubt": {
+            "card_type": "CURSE"
+        },
+        "Injury": {
+            "card_type": "CURSE"
+        },
+        "Necronomicurse": {
+            "card_type": "CURSE"
+        },
+        "Normality": {
+            "card_type": "CURSE"
+        },
+        "Pain": {
+            "card_type": "CURSE"
+        },
+        "Parasite": {
+            "card_type": "CURSE"
+        },
+        "Pride": {
+            "card_type": "CURSE"
+        },
+        "Regret": {
+            "card_type": "CURSE"
+        },
+        "Shame": {
+            "card_type": "CURSE"
+        },
+        "Writhe": {
+            "card_type": "CURSE"
+        },
+        "Strike": {
+            "java": [
+                "UNKNOWN_PLEASE_MAP_MANUALLY"
+            ]
+        },
+        "Defend": {
+            "java": [
+                "UNKNOWN_PLEASE_MAP_MANUALLY"
+            ]
+        },
+        "BurningPact": {
+            "java": [
+                "Burning Pact"
+            ]
+        },
+        "RecklessCharge": {
+            "java": [
+                "Reckless Charge"
+            ]
+        },
+        "BattleTrance": {
+            "java": [
+                "Battle Trance"
+            ]
+        },
+        "InfernalBlade": {
+            "java": [
+                "Infernal Blade"
+            ]
+        },
+        "Miracle": {},
+        "Shiv": {},
+        "Apparition": {
+            "java": [
+                "Ghostly"
+            ]
+        },
+        "DramaticEntrance": {
+            "java": [
+                "Dramatic Entrance"
+            ]
+        },
+        "FlashOfSteel": {
+            "java": [
+                "Flash of Steel"
+            ]
+        },
+        "JackOfAllTrades": {
+            "java": [
+                "Jack Of All Trades"
+            ]
+        },
+        "MindBlast": {
+            "java": [
+                "Mind Blast"
+            ]
+        },
+        "MasterOfStrategy": {
+            "java": [
+                "Master of Strategy"
+            ]
+        },
+        "SecretTechnique": {
+            "java": [
+                "Secret Technique"
+            ]
+        },
+        "SecretWeapon": {
+            "java": [
+                "Secret Weapon"
+            ]
+        },
+        "ThinkingAhead": {
+            "java": [
+                "Thinking Ahead"
+            ]
+        }
+    },
+    "potion_id": {
+        "FairyPotion": {
+            "java": [
+                "FairyPotion"
+            ]
+        },
+        "EntropicBrew": {
+            "java": [
+                "EntropicBrew"
+            ]
+        },
+        "StancePotion": {
+            "java": [
+                "StancePotion"
+            ]
+        },
+        "BlessingOfTheForge": {
+            "java": [
+                "BlessingOfTheForge"
+            ]
+        },
+        "SteroidPotion": {
+            "java": [
+                "SteroidPotion"
+            ]
+        },
+        "WeakPotion": {
+            "java": [
+                "Weak Potion"
+            ]
+        },
+        "VulnerablePotion": {
+            "java": [
+                "FearPotion"
+            ]
+        },
+        "PowerPotion": {
+            "java": [
+                "PowerPotion"
+            ]
+        },
+        "AttackPotion": {
+            "java": [
+                "AttackPotion"
+            ]
+        },
+        "SkillPotion": {
+            "java": [
+                "SkillPotion"
+            ]
+        },
+        "ColorlessPotion": {
+            "java": [
+                "ColorlessPotion"
+            ]
+        },
+        "AmbushPotion": {
+            "java": [
+                "AmbushPotion"
+            ]
+        },
+        "DistilledChaos": {
+            "java": [
+                "DistilledChaos"
+            ]
+        },
+        "EnergyPotion": {
+            "java": [
+                "Energy Potion"
+            ]
+        },
+        "CapacityPotion": {
+            "java": [
+                "CapacityPotion"
+            ]
+        },
+        "BloodPotion": {
+            "java": [
+                "BloodPotion"
+            ]
+        },
+        "SpeedPotion": {
+            "java": [
+                "SpeedPotion"
+            ]
+        },
+        "ExplosivePotion": {
+            "java": [
+                "Explosive Potion"
+            ]
+        },
+        "BlockPotion": {
+            "java": [
+                "Block Potion"
+            ]
+        },
+        "DexterityPotion": {
+            "java": [
+                "Dexterity Potion"
+            ]
+        },
+        "RegenPotion": {
+            "java": [
+                "Regen Potion"
+            ]
+        },
+        "FirePotion": {
+            "java": [
+                "Fire Potion"
+            ]
+        },
+        "PoisonPotion": {
+            "java": [
+                "Poison Potion"
+            ]
+        },
+        "WeakenPotion": {
+            "java": [
+                "Weak Potion"
+            ]
+        },
+        "FearPotion": {},
+        "StrengthPotion": {
+            "java": [
+                "Strength Potion"
+            ]
+        },
+        "SwiftPotion": {
+            "java": [
+                "Swift Potion"
+            ]
+        },
+        "FocusPotion": {},
+        "BottledMiracle": {},
+        "AncientPotion": {
+            "java": [
+                "Ancient Potion"
+            ]
+        },
+        "EssenceOfSteel": {},
+        "LiquidBronze": {},
+        "DistilledChaosPotion": {
+            "java": [
+                "DistilledChaos"
+            ]
+        },
+        "DuplicationPotion": {},
+        "CunningPotion": {},
+        "PotionOfCapacity": {},
+        "LiquidMemories": {},
+        "GamblersBrew": {},
+        "Elixir": {
+            "java": [
+                "ElixirPotion"
+            ]
+        },
+        "SmokeBomb": {},
+        "FruitJuice": {
+            "java": [
+                "Fruit Juice"
+            ]
+        },
+        "SneckoOil": {},
+        "GhostInAJar": {},
+        "HeartOfIron": {},
+        "CultistPotion": {},
+        "Ambrosia": {},
+        "EssenceOfDarkness": {},
+        "_PotionSlot": {
+            "java": [
+                "Potion Slot"
+            ]
+        }
+    }
+}

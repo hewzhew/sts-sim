@@ -160,6 +160,17 @@ impl StsRng {
         self.next_float() * range
     }
 
+    /// `random(min, max)` → float in `[min, max)` (MathUtils.random matching).
+    #[track_caller]
+    pub fn random_f32_min_max(&mut self, min: f32, max: f32) -> f32 {
+        self.counter += 1;
+        if std::env::var("RNG_TRACE").is_ok() {
+            let loc = std::panic::Location::caller();
+            eprintln!("  [RNG] counter={} random_f32_min_max({},{}) at {}:{}", self.counter, min, max, loc.file(), loc.line());
+        }
+        min + self.next_float() * (max - min)
+    }
+
     /// `randomLong()` → raw u64, used as seed for `java.util.Random` in shuffles.
     #[track_caller]
     pub fn random_long(&mut self) -> u64 {

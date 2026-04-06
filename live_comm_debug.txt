@@ -1,0 +1,1175 @@
+=== Rust Live-Comm Started ===
+Sent: ready
+[F1] Not in game → START
+[F2] EVENT  screen=EVENT  → CHOOSE 0
+[F3] EVENT  screen=EVENT  → CHOOSE 0
+[F4] EVENT  screen=EVENT  → CHOOSE 0
+[F5] COMPLETE  screen=MAP  → CHOOSE 0
+
+[F6] COMBAT  HP=80/80  E=3  Hand=5  Draw=5  Disc=0  Monsters=1
+  M[0] id=1 hp=1/43 blk=0 intent=Attack { damage: 11, hits: 1 }
+  Hand: [0:Defend, 1:Strike, 2:Strike, 3:Defend, 4:Strike]
+  → PlayCard { card_index: 1, target: Some(1) }
+  SEND: PLAY 2 0
+
+╔══════════════════════════════════════════════════════╗
+║  COMBAT SUMMARY (F6 ~ F6)                          
+╠══════════════════════════════════════════════════════╣
+║  Frames: 1  |  Actions: 1
+║  ENGINE BUGS:  0
+║  CONTENT GAPS: 0
+║  TIMING:       0
+║
+║  VERDICT: ✅ Engine OK
+╚══════════════════════════════════════════════════════╝
+[F7] COMPLETE  screen=COMBAT_REWARD  → CHOOSE 0
+[F8] COMPLETE  screen=COMBAT_REWARD  → CHOOSE 0
+[F9] COMPLETE  screen=CARD_REWARD  → CHOOSE 0
+[F10] COMPLETE  screen=COMBAT_REWARD  → PROCEED
+[F11] COMPLETE  screen=MAP  → CHOOSE 0
+[F12] EVENT  screen=EVENT  → CHOOSE 0
+[F13] EVENT  screen=EVENT  → CHOOSE 0
+[F14] COMPLETE  screen=MAP  → CHOOSE 0
+[F15] COMPLETE  screen=SHOP_ROOM  → PROCEED
+[F16] COMPLETE  screen=MAP  → CHOOSE 0
+
+[F17] COMBAT  HP=87/90  E=3  Hand=5  Draw=6  Disc=0  Monsters=2
+  M[0] id=1 hp=1/15 blk=0 intent=Buff pw=[Curl Up=7]
+  M[1] id=2 hp=1/14 blk=0 intent=Attack { damage: 5, hits: 1 } pw=[Curl Up=5]
+  Hand: [0:Bash, 1:Strike, 2:Defend, 3:Strike, 4:Defend]
+  → PlayCard { card_index: 0, target: Some(1) }
+  SEND: PLAY 1 0
+
+[F18] COMBAT  HP=87/90  E=1  Hand=4  Draw=6  Disc=1  Monsters=2
+  M[0] id=1 hp=0/15 blk=0 intent=Buff pw=[Curl Up=7] (DEAD)
+  M[1] id=2 hp=1/14 blk=0 intent=Attack { damage: 5, hits: 1 } pw=[Curl Up=5]
+  Hand: [0:Strike, 1:Defend, 2:Strike, 3:Defend]
+  >>> PARITY OK <<<
+  → PlayCard { card_index: 0, target: Some(2) }
+  SEND: PLAY 1 1
+
+╔══════════════════════════════════════════════════════╗
+║  COMBAT SUMMARY (F17 ~ F18)                          
+╠══════════════════════════════════════════════════════╣
+║  Frames: 2  |  Actions: 2
+║  ENGINE BUGS:  0
+║  CONTENT GAPS: 0
+║  TIMING:       0
+║
+║  VERDICT: ✅ Engine OK
+╚══════════════════════════════════════════════════════╝
+[F19] COMPLETE  screen=COMBAT_REWARD  → CHOOSE 0
+[F20] COMPLETE  screen=COMBAT_REWARD  → CHOOSE 0
+[F21] COMPLETE  screen=COMBAT_REWARD  → CHOOSE 0
+[F22] COMPLETE  screen=CARD_REWARD  → CHOOSE 0
+[F23] COMPLETE  screen=COMBAT_REWARD  → PROCEED
+[F24] COMPLETE  screen=MAP  → CHOOSE 0
+
+[F25] COMBAT  HP=90/90  E=3  Hand=5  Draw=7  Disc=0  Monsters=2
+  M[0] id=1 hp=1/8 blk=0 intent=Debuff
+  M[1] id=2 hp=1/28 blk=0 intent=Debuff
+  Hand: [0:Perfected Strike, 1:Strike, 2:Strike, 3:Defend, 4:Strike]
+  → PlayCard { card_index: 0, target: Some(1) }
+  SEND: PLAY 1 0
+
+[F26] COMBAT  HP=90/90  E=1  Hand=4  Draw=7  Disc=1  Monsters=2
+  M[0] id=1 hp=0/8 blk=0 intent=Debuff (DEAD)
+  M[1] id=2 hp=1/28 blk=0 intent=Debuff
+  Hand: [0:Strike, 1:Strike, 2:Defend, 3:Strike]
+  >>> PARITY OK <<<
+  → PlayCard { card_index: 0, target: Some(2) }
+  SEND: PLAY 1 1
+
+╔══════════════════════════════════════════════════════╗
+║  COMBAT SUMMARY (F25 ~ F26)                          
+╠══════════════════════════════════════════════════════╣
+║  Frames: 2  |  Actions: 2
+║  ENGINE BUGS:  0
+║  CONTENT GAPS: 0
+║  TIMING:       0
+║
+║  VERDICT: ✅ Engine OK
+╚══════════════════════════════════════════════════════╝
+[F27] COMPLETE  screen=COMBAT_REWARD  → CHOOSE 0
+[F28] COMPLETE  screen=COMBAT_REWARD  → CHOOSE 0
+[F29] COMPLETE  screen=COMBAT_REWARD  → CHOOSE 0
+[F30] COMPLETE  screen=CARD_REWARD  → CHOOSE 0
+[F31] COMPLETE  screen=COMBAT_REWARD  → PROCEED
+[F32] COMPLETE  screen=MAP  → CHOOSE 0
+[F33] INCOMPLETE  screen=REST  → CHOOSE 0
+[F34] COMPLETE  screen=REST  → PROCEED
+[F35] COMPLETE  screen=MAP  → CHOOSE 0
+
+[F36] COMBAT  HP=90/90  E=3  Hand=5  Draw=8  Disc=0  Monsters=2
+  M[0] id=1 hp=44/44 blk=0 intent=Attack { damage: 11, hits: 1 }
+  M[1] id=2 hp=31/31 blk=0 intent=Attack { damage: 10, hits: 1 }
+  Hand: [0:Strike, 1:Perfected Strike, 2:Defend, 3:Strike, 4:Combust]
+  → PlayCard { card_index: 0, target: Some(1) }
+  SEND: PLAY 1 0
+
+[F37] COMBAT  HP=90/90  E=2  Hand=4  Draw=8  Disc=1  Monsters=2
+  M[0] id=1 hp=38/44 blk=0 intent=Attack { damage: 11, hits: 1 }
+  M[1] id=2 hp=31/31 blk=0 intent=Attack { damage: 10, hits: 1 }
+  Hand: [0:Perfected Strike, 1:Defend, 2:Strike, 3:Combust]
+  >>> PARITY OK <<<
+  → PlayCard { card_index: 2, target: Some(1) }
+  SEND: PLAY 3 0
+
+[F38] COMBAT  HP=90/90  E=1  Hand=3  Draw=8  Disc=2  Monsters=2
+  M[0] id=1 hp=32/44 blk=0 intent=Attack { damage: 11, hits: 1 }
+  M[1] id=2 hp=31/31 blk=0 intent=Attack { damage: 10, hits: 1 }
+  Hand: [0:Perfected Strike, 1:Defend, 2:Combust]
+  >>> PARITY OK <<<
+  → PlayCard { card_index: 1, target: None }
+  SEND: PLAY 2
+
+[F39] COMBAT  HP=90/90  E=0  Hand=2  Draw=8  Disc=3  Monsters=2
+  M[0] id=1 hp=32/44 blk=0 intent=Attack { damage: 11, hits: 1 }
+  M[1] id=2 hp=31/31 blk=0 intent=Attack { damage: 10, hits: 1 }
+  Hand: [0:Perfected Strike, 1:Combust]
+  >>> PARITY OK <<<
+  → EndTurn
+  SEND: END
+
+[F40] COMBAT  HP=74/90  E=3  Hand=5  Draw=3  Disc=5  Monsters=2
+  M[0] id=1 hp=32/44 blk=0 intent=AttackDefend { damage: 7, hits: 1 }
+  M[1] id=2 hp=31/31 blk=0 intent=Debuff
+  Hand: [0:Strike, 1:Defend, 2:Bash, 3:Defend, 4:Strike]
+  >>> PARITY OK <<<
+  → PlayCard { card_index: 2, target: Some(1) }
+  SEND: PLAY 3 0
+
+[F41] COMBAT  HP=74/90  E=1  Hand=4  Draw=3  Disc=6  Monsters=2
+  M[0] id=1 hp=24/44 blk=0 intent=AttackDefend { damage: 7, hits: 1 } pw=[Vulnerable=2]
+  M[1] id=2 hp=31/31 blk=0 intent=Debuff
+  Hand: [0:Strike, 1:Defend, 2:Defend, 3:Strike]
+  >>> PARITY OK <<<
+  → PlayCard { card_index: 1, target: None }
+  SEND: PLAY 2
+
+[F42] COMBAT  HP=74/90  E=0  Hand=3  Draw=3  Disc=7  Monsters=2
+  M[0] id=1 hp=24/44 blk=0 intent=AttackDefend { damage: 7, hits: 1 } pw=[Vulnerable=2]
+  M[1] id=2 hp=31/31 blk=0 intent=Debuff
+  Hand: [0:Strike, 1:Defend, 2:Strike]
+  >>> PARITY OK <<<
+  → EndTurn
+  SEND: END
+
+[F43] COMBAT  HP=72/90  E=3  Hand=5  Draw=8  Disc=0  Monsters=2
+  M[0] id=1 hp=24/44 blk=5 intent=AttackDefend { damage: 7, hits: 1 } pw=[Vulnerable=1]
+  M[1] id=2 hp=31/31 blk=0 intent=Debuff
+  Hand: [0:Heavy Blade, 1:Defend, 2:Strike, 3:Defend, 4:Strike]
+  Player pw: [Weak=1]
+  >>> PARITY OK <<<
+  → PlayCard { card_index: 2, target: Some(2) }
+  SEND: PLAY 3 1
+
+[F44] COMBAT  HP=72/90  E=2  Hand=4  Draw=8  Disc=1  Monsters=2
+  M[0] id=1 hp=24/44 blk=5 intent=AttackDefend { damage: 7, hits: 1 } pw=[Vulnerable=1]
+  M[1] id=2 hp=27/31 blk=0 intent=Debuff
+  Hand: [0:Heavy Blade, 1:Defend, 2:Defend, 3:Strike]
+  Player pw: [Weak=1]
+  >>> PARITY OK <<<
+  → PlayCard { card_index: 1, target: None }
+  SEND: PLAY 2
+
+[F45] COMBAT  HP=72/90  E=1  Hand=3  Draw=8  Disc=2  Monsters=2
+  M[0] id=1 hp=24/44 blk=5 intent=AttackDefend { damage: 7, hits: 1 } pw=[Vulnerable=1]
+  M[1] id=2 hp=27/31 blk=0 intent=Debuff
+  Hand: [0:Heavy Blade, 1:Defend, 2:Strike]
+  Player pw: [Weak=1]
+  >>> PARITY OK <<<
+  → PlayCard { card_index: 1, target: None }
+  SEND: PLAY 2
+
+[F46] COMBAT  HP=72/90  E=0  Hand=2  Draw=8  Disc=3  Monsters=2
+  M[0] id=1 hp=24/44 blk=5 intent=AttackDefend { damage: 7, hits: 1 } pw=[Vulnerable=1]
+  M[1] id=2 hp=27/31 blk=0 intent=Debuff
+  Hand: [0:Heavy Blade, 1:Strike]
+  Player pw: [Weak=1]
+  >>> PARITY OK <<<
+  → EndTurn
+  SEND: END
+
+[F47] COMBAT  HP=72/90  E=3  Hand=5  Draw=3  Disc=5  Monsters=2
+  M[0] id=1 hp=24/44 blk=5 intent=Attack { damage: 11, hits: 1 }
+  M[1] id=2 hp=27/31 blk=0 intent=AttackDebuff { damage: 7, hits: 1 }
+  Hand: [0:Bash, 1:Strike, 2:Perfected Strike, 3:Defend, 4:Combust]
+  Player pw: [Weak=1]
+  >>> PARITY OK <<<
+  → PlayCard { card_index: 0, target: Some(2) }
+  SEND: PLAY 1 1
+
+[F48] COMBAT  HP=72/90  E=1  Hand=4  Draw=3  Disc=6  Monsters=2
+  M[0] id=1 hp=24/44 blk=5 intent=Attack { damage: 11, hits: 1 }
+  M[1] id=2 hp=21/31 blk=0 intent=AttackDebuff { damage: 7, hits: 1 } pw=[Vulnerable=2]
+  Hand: [0:Strike, 1:Perfected Strike, 2:Defend, 3:Combust]
+  Player pw: [Weak=1]
+  >>> PARITY OK <<<
+  → PlayCard { card_index: 2, target: None }
+  SEND: PLAY 3
+
+[F49] COMBAT  HP=72/90  E=0  Hand=3  Draw=3  Disc=7  Monsters=2
+  M[0] id=1 hp=24/44 blk=5 intent=Attack { damage: 11, hits: 1 }
+  M[1] id=2 hp=21/31 blk=0 intent=AttackDebuff { damage: 7, hits: 1 } pw=[Vulnerable=2]
+  Hand: [0:Strike, 1:Perfected Strike, 2:Combust]
+  Player pw: [Weak=1]
+  >>> PARITY OK <<<
+  → EndTurn
+  SEND: END
+
+[F50] COMBAT  HP=59/90  E=3  Hand=5  Draw=9  Disc=0  Monsters=2
+  M[0] id=1 hp=24/44 blk=0 intent=DefendBuff
+  M[1] id=2 hp=21/31 blk=0 intent=Attack { damage: 10, hits: 1 } pw=[Vulnerable=1]
+  Hand: [0:Strike, 1:Defend, 2:Strike, 3:Heavy Blade, 4:Defend]
+  >>> PARITY OK <<<
+  → PlayCard { card_index: 3, target: Some(2) }
+  SEND: PLAY 4 1
+
+[F51] COMBAT  HP=59/90  E=1  Hand=4  Draw=9  Disc=1  Monsters=2
+  M[0] id=1 hp=24/44 blk=0 intent=DefendBuff
+  M[1] id=2 hp=0/31 blk=0 intent=Attack { damage: 10, hits: 1 } pw=[Vulnerable=1] (DEAD)
+  Hand: [0:Strike, 1:Defend, 2:Strike, 3:Defend]
+  >>> PARITY OK <<<
+  → PlayCard { card_index: 0, target: Some(1) }
+  SEND: PLAY 1 0
+
+[F52] COMBAT  HP=59/90  E=0  Hand=3  Draw=9  Disc=2  Monsters=2
+  M[0] id=1 hp=18/44 blk=0 intent=DefendBuff
+  M[1] id=2 hp=0/31 blk=0 intent=Attack { damage: 10, hits: 1 } pw=[Vulnerable=1] (DEAD)
+  Hand: [0:Defend, 1:Strike, 2:Defend]
+  >>> PARITY OK <<<
+  → EndTurn
+  SEND: END
+
+[F53] COMBAT  HP=59/90  E=3  Hand=5  Draw=4  Disc=5  Monsters=2
+  M[0] id=1 hp=18/44 blk=6 intent=AttackDefend { damage: 7, hits: 1 } pw=[Strength=3]
+  M[1] id=2 hp=0/31 blk=0 intent=Attack { damage: 10, hits: 1 } (DEAD)
+  Hand: [0:Strike, 1:Defend, 2:Strike, 3:Bash, 4:Slimed]
+  >>> PARITY OK <<<
+  → PlayCard { card_index: 3, target: Some(1) }
+  SEND: PLAY 4 0
+
+[F54] COMBAT  HP=59/90  E=1  Hand=4  Draw=4  Disc=6  Monsters=2
+  M[0] id=1 hp=16/44 blk=0 intent=AttackDefend { damage: 7, hits: 1 } pw=[Strength=3, Vulnerable=2]
+  M[1] id=2 hp=0/31 blk=0 intent=Attack { damage: 10, hits: 1 } (DEAD)
+  Hand: [0:Strike, 1:Defend, 2:Strike, 3:Slimed]
+  >>> PARITY OK <<<
+  → PlayCard { card_index: 1, target: None }
+  SEND: PLAY 2
+
+[F55] COMBAT  HP=59/90  E=0  Hand=3  Draw=4  Disc=7  Monsters=2
+  M[0] id=1 hp=16/44 blk=0 intent=AttackDefend { damage: 7, hits: 1 } pw=[Strength=3, Vulnerable=2]
+  M[1] id=2 hp=0/31 blk=0 intent=Attack { damage: 10, hits: 1 } (DEAD)
+  Hand: [0:Strike, 1:Strike, 2:Slimed]
+  >>> PARITY OK <<<
+  → EndTurn
+  SEND: END
+
+[F56] COMBAT  HP=54/90  E=3  Hand=5  Draw=9  Disc=0  Monsters=2
+  M[0] id=1 hp=16/44 blk=5 intent=Attack { damage: 11, hits: 1 } pw=[Strength=3, Vulnerable=1]
+  M[1] id=2 hp=0/31 blk=0 intent=Attack { damage: 10, hits: 1 } (DEAD)
+  Hand: [0:Defend, 1:Perfected Strike, 2:Strike, 3:Combust, 4:Strike]
+  >>> PARITY OK <<<
+  → PlayCard { card_index: 2, target: Some(1) }
+  SEND: PLAY 3 0
+
+[F57] COMBAT  HP=54/90  E=2  Hand=4  Draw=9  Disc=1  Monsters=2
+  M[0] id=1 hp=12/44 blk=0 intent=Attack { damage: 11, hits: 1 } pw=[Strength=3, Vulnerable=1]
+  M[1] id=2 hp=0/31 blk=0 intent=Attack { damage: 10, hits: 1 } (DEAD)
+  Hand: [0:Defend, 1:Perfected Strike, 2:Combust, 3:Strike]
+  >>> PARITY OK <<<
+  → PlayCard { card_index: 3, target: Some(1) }
+  SEND: PLAY 4 0
+
+[F58] COMBAT  HP=54/90  E=1  Hand=3  Draw=9  Disc=2  Monsters=2
+  M[0] id=1 hp=3/44 blk=0 intent=Attack { damage: 11, hits: 1 } pw=[Strength=3, Vulnerable=1]
+  M[1] id=2 hp=0/31 blk=0 intent=Attack { damage: 10, hits: 1 } (DEAD)
+  Hand: [0:Defend, 1:Perfected Strike, 2:Combust]
+  >>> PARITY OK <<<
+  → PlayCard { card_index: 0, target: None }
+  SEND: PLAY 1
+
+[F59] COMBAT  HP=54/90  E=0  Hand=2  Draw=9  Disc=3  Monsters=2
+  M[0] id=1 hp=3/44 blk=0 intent=Attack { damage: 11, hits: 1 } pw=[Strength=3, Vulnerable=1]
+  M[1] id=2 hp=0/31 blk=0 intent=Attack { damage: 10, hits: 1 } (DEAD)
+  Hand: [0:Perfected Strike, 1:Combust]
+  >>> PARITY OK <<<
+  → EndTurn
+  SEND: END
+
+[F60] COMBAT  HP=45/90  E=3  Hand=5  Draw=4  Disc=5  Monsters=2
+  M[0] id=1 hp=3/44 blk=0 intent=DefendBuff pw=[Strength=3]
+  M[1] id=2 hp=0/31 blk=0 intent=Attack { damage: 10, hits: 1 } (DEAD)
+  Hand: [0:Defend, 1:Slimed, 2:Strike, 3:Bash, 4:Defend]
+  >>> PARITY OK <<<
+  → PlayCard { card_index: 3, target: Some(1) }
+  SEND: PLAY 4 0
+
+╔══════════════════════════════════════════════════════╗
+║  COMBAT SUMMARY (F36 ~ F60)                          
+╠══════════════════════════════════════════════════════╣
+║  Frames: 25  |  Actions: 25
+║  ENGINE BUGS:  0
+║  CONTENT GAPS: 0
+║  TIMING:       0
+║
+║  VERDICT: ✅ Engine OK
+╚══════════════════════════════════════════════════════╝
+[F61] COMPLETE  screen=COMBAT_REWARD  → CHOOSE 0
+[F62] COMPLETE  screen=COMBAT_REWARD  → CHOOSE 0
+[F63] COMPLETE  screen=CARD_REWARD  → CHOOSE 0
+[F64] COMPLETE  screen=COMBAT_REWARD  → PROCEED
+[F65] COMPLETE  screen=MAP  → CHOOSE 0
+
+[F66] COMBAT  HP=51/90  E=3  Hand=5  Draw=9  Disc=0  Monsters=3
+  M[0] id=1 hp=15/15 blk=0 intent=Attack { damage: 6, hits: 1 } pw=[Curl Up=5]
+  M[1] id=2 hp=12/12 blk=0 intent=Buff pw=[Curl Up=5]
+  M[2] id=3 hp=12/12 blk=0 intent=Debuff pw=[Curl Up=5]
+  Hand: [0:Heavy Blade, 1:Defend, 2:Searing Blow, 3:Strike, 4:Defend]
+  → PlayCard { card_index: 0, target: Some(1) }
+  SEND: PLAY 1 0
+
+[F67] COMBAT  HP=51/90  E=1  Hand=4  Draw=9  Disc=1  Monsters=3
+  M[0] id=1 hp=1/15 blk=5 intent=Attack { damage: 6, hits: 1 }
+  M[1] id=2 hp=12/12 blk=0 intent=Buff pw=[Curl Up=5]
+  M[2] id=3 hp=12/12 blk=0 intent=Debuff pw=[Curl Up=5]
+  Hand: [0:Defend, 1:Searing Blow, 2:Strike, 3:Defend]
+  >>> PARITY OK <<<
+  → PlayCard { card_index: 2, target: Some(1) }
+  SEND: PLAY 3 0
+
+[F68] COMBAT  HP=51/90  E=0  Hand=3  Draw=9  Disc=2  Monsters=3
+  M[0] id=1 hp=0/15 blk=0 intent=Attack { damage: 6, hits: 1 } (DEAD)
+  M[1] id=2 hp=12/12 blk=0 intent=Buff pw=[Curl Up=5]
+  M[2] id=3 hp=12/12 blk=0 intent=Debuff pw=[Curl Up=5]
+  Hand: [0:Defend, 1:Searing Blow, 2:Defend]
+  >>> PARITY OK <<<
+  → EndTurn
+  SEND: END
+
+[F69] COMBAT  HP=51/90  E=3  Hand=5  Draw=4  Disc=5  Monsters=3
+  M[0] id=1 hp=0/15 blk=0 intent=Attack { damage: 6, hits: 1 } (DEAD)
+  M[1] id=2 hp=12/12 blk=0 intent=Attack { damage: 6, hits: 1 } pw=[Curl Up=5, Strength=3]
+  M[2] id=3 hp=12/12 blk=0 intent=Debuff pw=[Curl Up=5]
+  Hand: [0:Bash, 1:Strike, 2:Combust, 3:Perfected Strike, 4:Strike]
+  Player pw: [Weak=2]
+  >>> PARITY OK <<<
+  → PlayCard { card_index: 0, target: Some(2) }
+  SEND: PLAY 1 1
+
+[F70] COMBAT  HP=51/90  E=1  Hand=4  Draw=4  Disc=6  Monsters=3
+  M[0] id=1 hp=0/15 blk=0 intent=Attack { damage: 6, hits: 1 } (DEAD)
+  M[1] id=2 hp=6/12 blk=5 intent=Attack { damage: 6, hits: 1 } pw=[Strength=3, Vulnerable=2]
+  M[2] id=3 hp=12/12 blk=0 intent=Debuff pw=[Curl Up=5]
+  Hand: [0:Strike, 1:Combust, 2:Perfected Strike, 3:Strike]
+  Player pw: [Weak=2]
+  >>> PARITY OK <<<
+  → PlayCard { card_index: 0, target: Some(3) }
+  SEND: PLAY 1 2
+
+[F71] COMBAT  HP=51/90  E=0  Hand=3  Draw=4  Disc=7  Monsters=3
+  M[0] id=1 hp=0/15 blk=0 intent=Attack { damage: 6, hits: 1 } (DEAD)
+  M[1] id=2 hp=6/12 blk=5 intent=Attack { damage: 6, hits: 1 } pw=[Strength=3, Vulnerable=2]
+  M[2] id=3 hp=8/12 blk=5 intent=Debuff
+  Hand: [0:Combust, 1:Perfected Strike, 2:Strike]
+  Player pw: [Weak=2]
+  >>> PARITY OK <<<
+  → EndTurn
+  SEND: END
+
+[F72] COMBAT  HP=42/90  E=3  Hand=5  Draw=9  Disc=0  Monsters=3
+  M[0] id=1 hp=0/15 blk=0 intent=Attack { damage: 6, hits: 1 } (DEAD)
+  M[1] id=2 hp=6/12 blk=0 intent=Attack { damage: 6, hits: 1 } pw=[Strength=3, Vulnerable=1]
+  M[2] id=3 hp=8/12 blk=0 intent=Attack { damage: 7, hits: 1 }
+  Hand: [0:Strike, 1:Strike, 2:Defend, 3:Defend, 4:Defend]
+  Player pw: [Weak=3]
+  >>> PARITY FAIL (1 diffs: 0 bugs, 1 gaps, 0 timing) <<<
+  CAUSED BY: END → monsters: [M[0](type_3)=Attack { damage: 6, hits: 1 }, M[1](type_2)=Attack { damage: 6, hits: 1 }, M[2](type_3)=Debuff]
+    player.hp : Rust=39, Java=42  [CONTENT_GAP]
+  [HEALED] Prediction chain reset from Java truth
+  → PlayCard { card_index: 0, target: Some(3) }
+  SEND: PLAY 1 2
+
+[F73] COMBAT  HP=42/90  E=2  Hand=4  Draw=9  Disc=1  Monsters=3
+  M[0] id=1 hp=0/15 blk=0 intent=Attack { damage: 6, hits: 1 } (DEAD)
+  M[1] id=2 hp=6/12 blk=0 intent=Attack { damage: 6, hits: 1 } pw=[Strength=3, Vulnerable=1]
+  M[2] id=3 hp=4/12 blk=0 intent=Attack { damage: 7, hits: 1 }
+  Hand: [0:Strike, 1:Defend, 2:Defend, 3:Defend]
+  Player pw: [Weak=3]
+  >>> PARITY OK <<<
+  → PlayCard { card_index: 0, target: Some(3) }
+  SEND: PLAY 1 2
+
+[F74] COMBAT  HP=42/90  E=1  Hand=3  Draw=9  Disc=2  Monsters=3
+  M[0] id=1 hp=0/15 blk=0 intent=Attack { damage: 6, hits: 1 } (DEAD)
+  M[1] id=2 hp=6/12 blk=0 intent=Attack { damage: 6, hits: 1 } pw=[Strength=3, Vulnerable=1]
+  M[2] id=3 hp=0/12 blk=0 intent=Attack { damage: 7, hits: 1 } (DEAD)
+  Hand: [0:Defend, 1:Defend, 2:Defend]
+  Player pw: [Weak=3]
+  >>> PARITY OK <<<
+  → PlayCard { card_index: 0, target: None }
+  SEND: PLAY 1
+
+[F75] COMBAT  HP=42/90  E=0  Hand=2  Draw=9  Disc=3  Monsters=3
+  M[0] id=1 hp=0/15 blk=0 intent=Attack { damage: 6, hits: 1 } (DEAD)
+  M[1] id=2 hp=6/12 blk=0 intent=Attack { damage: 6, hits: 1 } pw=[Strength=3, Vulnerable=1]
+  M[2] id=3 hp=0/12 blk=0 intent=Attack { damage: 7, hits: 1 } (DEAD)
+  Hand: [0:Defend, 1:Defend]
+  Player pw: [Weak=3]
+  >>> PARITY OK <<<
+  → EndTurn
+  SEND: END
+
+[F76] COMBAT  HP=38/90  E=3  Hand=5  Draw=4  Disc=5  Monsters=3
+  M[0] id=1 hp=0/15 blk=0 intent=Attack { damage: 6, hits: 1 } (DEAD)
+  M[1] id=2 hp=6/12 blk=0 intent=Buff pw=[Strength=3]
+  M[2] id=3 hp=0/12 blk=0 intent=Attack { damage: 7, hits: 1 } (DEAD)
+  Hand: [0:Strike, 1:Bash, 2:Heavy Blade, 3:Perfected Strike, 4:Defend]
+  Player pw: [Weak=2]
+  >>> PARITY FAIL (1 diffs: 0 bugs, 1 gaps, 0 timing) <<<
+  CAUSED BY: END → monsters: [M[0](type_3)=Attack { damage: 6, hits: 1 }, M[1](type_2)=Attack { damage: 6, hits: 1 }, M[2](type_3)=Attack { damage: 7, hits: 1 }]
+  [HEALED] Prediction chain reset from Java truth
+  → PlayCard { card_index: 1, target: Some(2) }
+  SEND: PLAY 2 1
+
+╔══════════════════════════════════════════════════════╗
+║  COMBAT SUMMARY (F66 ~ F76)                          
+╠══════════════════════════════════════════════════════╣
+║  Frames: 11  |  Actions: 11
+║  ENGINE BUGS:  0
+║  CONTENT GAPS: 2
+║  TIMING:       0
+║
+║  ⚠ Content Gaps:
+║    - player.hp (×2)
+║
+║  VERDICT: ✅ Engine OK (content gaps only)
+╚══════════════════════════════════════════════════════╝
+[F77] COMPLETE  screen=COMBAT_REWARD  → CHOOSE 0
+[F78] COMPLETE  screen=COMBAT_REWARD  → CHOOSE 0
+[F79] COMPLETE  screen=COMBAT_REWARD  → CHOOSE 0
+[F80] COMPLETE  screen=CARD_REWARD  → CHOOSE 0
+[F81] COMPLETE  screen=COMBAT_REWARD  → PROCEED
+[F82] COMPLETE  screen=MAP  → CHOOSE 0
+[F83] COMPLETE  screen=CHEST  → CHOOSE 0
+[F84] COMPLETE  screen=COMBAT_REWARD  → CHOOSE 0
+[F85] COMPLETE  screen=COMBAT_REWARD  → PROCEED
+[F86] COMPLETE  screen=MAP  → CHOOSE 0
+
+[F87] COMBAT  HP=58/104  E=3  Hand=5  Draw=10  Disc=0  Monsters=2
+  M[0] id=1 hp=26/26 blk=0 intent=Attack { damage: 6, hits: 1 } pw=[Spore Cloud=2]
+  M[1] id=2 hp=23/23 blk=0 intent=Attack { damage: 6, hits: 1 } pw=[Spore Cloud=2]
+  Hand: [0:Bash, 1:Defend, 2:Strike, 3:Strike, 4:Strike]
+  → PlayCard { card_index: 0, target: Some(1) }
+  SEND: PLAY 1 0
+
+[F88] COMBAT  HP=58/104  E=1  Hand=4  Draw=10  Disc=1  Monsters=2
+  M[0] id=1 hp=18/26 blk=0 intent=Attack { damage: 6, hits: 1 } pw=[Spore Cloud=2, Vulnerable=2]
+  M[1] id=2 hp=23/23 blk=0 intent=Attack { damage: 6, hits: 1 } pw=[Spore Cloud=2]
+  Hand: [0:Defend, 1:Strike, 2:Strike, 3:Strike]
+  >>> PARITY OK <<<
+  → PlayCard { card_index: 0, target: None }
+  SEND: PLAY 1
+
+[F89] COMBAT  HP=58/104  E=0  Hand=3  Draw=10  Disc=2  Monsters=2
+  M[0] id=1 hp=18/26 blk=0 intent=Attack { damage: 6, hits: 1 } pw=[Spore Cloud=2, Vulnerable=2]
+  M[1] id=2 hp=23/23 blk=0 intent=Attack { damage: 6, hits: 1 } pw=[Spore Cloud=2]
+  Hand: [0:Strike, 1:Strike, 2:Strike]
+  >>> PARITY OK <<<
+  → EndTurn
+  SEND: END
+
+[F90] COMBAT  HP=51/104  E=3  Hand=5  Draw=5  Disc=5  Monsters=2
+  M[0] id=1 hp=18/26 blk=0 intent=Attack { damage: 6, hits: 1 } pw=[Spore Cloud=2, Vulnerable=1]
+  M[1] id=2 hp=23/23 blk=0 intent=Buff pw=[Spore Cloud=2]
+  Hand: [0:Defend, 1:Heavy Blade, 2:Defend, 3:Combust, 4:Strike]
+  >>> PARITY OK <<<
+  → PlayCard { card_index: 1, target: Some(1) }
+  SEND: PLAY 2 0
+
+[F91] COMBAT  HP=51/104  E=1  Hand=4  Draw=5  Disc=6  Monsters=2
+  M[0] id=1 hp=0/26 blk=0 intent=Attack { damage: 6, hits: 1 } pw=[Spore Cloud=2, Vulnerable=1] (DEAD)
+  M[1] id=2 hp=23/23 blk=0 intent=Buff pw=[Spore Cloud=2]
+  Hand: [0:Defend, 1:Defend, 2:Combust, 3:Strike]
+  Player pw: [Vulnerable=2]
+  >>> PARITY OK <<<
+  → PlayCard { card_index: 3, target: Some(2) }
+  SEND: PLAY 4 1
+
+[F92] COMBAT  HP=51/104  E=0  Hand=3  Draw=5  Disc=7  Monsters=2
+  M[0] id=1 hp=0/26 blk=0 intent=Attack { damage: 6, hits: 1 } pw=[Spore Cloud=2, Vulnerable=1] (DEAD)
+  M[1] id=2 hp=17/23 blk=0 intent=Buff pw=[Spore Cloud=2]
+  Hand: [0:Defend, 1:Defend, 2:Combust]
+  Player pw: [Vulnerable=2]
+  >>> PARITY OK <<<
+  → EndTurn
+  SEND: END
+
+[F93] COMBAT  HP=51/104  E=3  Hand=5  Draw=0  Disc=10  Monsters=2
+  M[0] id=1 hp=0/26 blk=0 intent=Attack { damage: 6, hits: 1 } (DEAD)
+  M[1] id=2 hp=17/23 blk=0 intent=Attack { damage: 6, hits: 1 } pw=[Spore Cloud=2, Strength=3]
+  Hand: [0:Perfected Strike, 1:Strike, 2:Searing Blow, 3:Defend, 4:Body Slam]
+  Player pw: [Vulnerable=1]
+  >>> PARITY OK <<<
+  → PlayCard { card_index: 2, target: Some(2) }
+  SEND: PLAY 3 1
+
+[F94] COMBAT  HP=51/104  E=1  Hand=4  Draw=0  Disc=11  Monsters=2
+  M[0] id=1 hp=0/26 blk=0 intent=Attack { damage: 6, hits: 1 } (DEAD)
+  M[1] id=2 hp=5/23 blk=0 intent=Attack { damage: 6, hits: 1 } pw=[Spore Cloud=2, Strength=3]
+  Hand: [0:Perfected Strike, 1:Strike, 2:Defend, 3:Body Slam]
+  Player pw: [Vulnerable=1]
+  >>> PARITY OK <<<
+  → PlayCard { card_index: 1, target: Some(2) }
+  SEND: PLAY 2 1
+
+╔══════════════════════════════════════════════════════╗
+║  COMBAT SUMMARY (F87 ~ F94)                          
+╠══════════════════════════════════════════════════════╣
+║  Frames: 8  |  Actions: 8
+║  ENGINE BUGS:  0
+║  CONTENT GAPS: 0
+║  TIMING:       0
+║
+║  VERDICT: ✅ Engine OK
+╚══════════════════════════════════════════════════════╝
+[F95] COMPLETE  screen=COMBAT_REWARD  → CHOOSE 0
+[F96] COMPLETE  screen=COMBAT_REWARD  → CHOOSE 0
+[F97] COMPLETE  screen=CARD_REWARD  → CHOOSE 0
+[F98] COMPLETE  screen=COMBAT_REWARD  → PROCEED
+[F99] COMPLETE  screen=MAP  → CHOOSE 0
+
+[F100] COMBAT  HP=57/104  E=3  Hand=5  Draw=11  Disc=0  Monsters=1
+  M[0] id=1 hp=67/67 blk=0 intent=Debuff pw=[Split=-1]
+  Hand: [0:Heavy Blade, 1:Strike, 2:Strike, 3:Defend, 4:Strike]
+  → PlayCard { card_index: 0, target: Some(1) }
+  SEND: PLAY 1 0
+
+[F101] COMBAT  HP=57/104  E=1  Hand=4  Draw=11  Disc=1  Monsters=1
+  M[0] id=1 hp=53/67 blk=0 intent=Debuff pw=[Split=-1]
+  Hand: [0:Strike, 1:Strike, 2:Defend, 3:Strike]
+  >>> PARITY OK <<<
+  → PlayCard { card_index: 0, target: Some(1) }
+  SEND: PLAY 1 0
+
+[F102] COMBAT  HP=57/104  E=0  Hand=3  Draw=11  Disc=2  Monsters=1
+  M[0] id=1 hp=47/67 blk=0 intent=Debuff pw=[Split=-1]
+  Hand: [0:Strike, 1:Defend, 2:Strike]
+  >>> PARITY OK <<<
+  → EndTurn
+  SEND: END
+
+[F103] COMBAT  HP=57/104  E=3  Hand=5  Draw=6  Disc=5  Monsters=1
+  M[0] id=1 hp=47/67 blk=0 intent=Debuff pw=[Split=-1]
+  Hand: [0:Strike, 1:Body Slam, 2:Strike, 3:Defend, 4:Bash]
+  Player pw: [Weak=2]
+  >>> PARITY OK <<<
+  → PlayCard { card_index: 4, target: Some(1) }
+  SEND: PLAY 5 0
+
+[F104] COMBAT  HP=57/104  E=1  Hand=4  Draw=6  Disc=6  Monsters=1
+  M[0] id=1 hp=41/67 blk=0 intent=Debuff pw=[Split=-1, Vulnerable=2]
+  Hand: [0:Strike, 1:Body Slam, 2:Strike, 3:Defend]
+  Player pw: [Weak=2]
+  >>> PARITY OK <<<
+  → PlayCard { card_index: 0, target: Some(1) }
+  SEND: PLAY 1 0
+
+[F105] COMBAT  HP=57/104  E=0  Hand=3  Draw=6  Disc=7  Monsters=1
+  M[0] id=1 hp=35/67 blk=0 intent=Debuff pw=[Split=-1, Vulnerable=2]
+  Hand: [0:Body Slam, 1:Strike, 2:Defend]
+  Player pw: [Weak=2]
+  >>> PARITY OK <<<
+  → EndTurn
+  SEND: END
+
+[F106] COMBAT  HP=57/104  E=3  Hand=5  Draw=1  Disc=10  Monsters=1
+  M[0] id=1 hp=35/67 blk=0 intent=Attack { damage: 16, hits: 1 } pw=[Split=-1, Vulnerable=1]
+  Hand: [0:Cleave, 1:Defend, 2:Perfected Strike, 3:Combust, 4:Searing Blow]
+  Player pw: [Weak=3]
+  >>> PARITY OK <<<
+  → PlayCard { card_index: 4, target: Some(1) }
+  SEND: PLAY 5 0
+
+[F107] COMBAT  HP=57/104  E=1  Hand=4  Draw=1  Disc=11  Monsters=1
+  M[0] id=1 hp=22/67 blk=0 intent=Unknown pw=[Split=-1, Vulnerable=1]
+  Hand: [0:Cleave, 1:Defend, 2:Perfected Strike, 3:Combust]
+  Player pw: [Weak=3]
+  >>> PARITY OK <<<
+  → PlayCard { card_index: 0, target: None }
+  SEND: PLAY 1
+
+[F108] COMBAT  HP=57/104  E=0  Hand=3  Draw=1  Disc=12  Monsters=1
+  M[0] id=1 hp=13/67 blk=0 intent=Unknown pw=[Split=-1, Vulnerable=1]
+  Hand: [0:Defend, 1:Perfected Strike, 2:Combust]
+  Player pw: [Weak=3]
+  >>> PARITY OK <<<
+  → EndTurn
+  SEND: END
+
+[F109] COMBAT  HP=57/104  E=3  Hand=5  Draw=11  Disc=0  Monsters=3
+  M[0] id=1 hp=13/13 blk=0 intent=AttackDebuff { damage: 7, hits: 1 }
+  M[1] id=2 hp=0/67 blk=0 intent=Unknown (DEAD)
+  M[2] id=3 hp=13/13 blk=0 intent=Debuff
+  Hand: [0:Defend, 1:Defend, 2:Bash, 3:Strike, 4:Combust]
+  Player pw: [Weak=2]
+  >>> PARITY OK <<<
+  → PlayCard { card_index: 2, target: Some(1) }
+  SEND: PLAY 3 0
+
+[F110] COMBAT  HP=57/104  E=1  Hand=4  Draw=11  Disc=1  Monsters=3
+  M[0] id=1 hp=7/13 blk=0 intent=AttackDebuff { damage: 7, hits: 1 } pw=[Vulnerable=2]
+  M[1] id=2 hp=0/67 blk=0 intent=Unknown (DEAD)
+  M[2] id=3 hp=13/13 blk=0 intent=Debuff
+  Hand: [0:Defend, 1:Defend, 2:Strike, 3:Combust]
+  Player pw: [Weak=2]
+  >>> PARITY OK <<<
+  → PlayCard { card_index: 0, target: None }
+  SEND: PLAY 1
+
+[F111] COMBAT  HP=57/104  E=0  Hand=3  Draw=11  Disc=2  Monsters=3
+  M[0] id=1 hp=7/13 blk=0 intent=AttackDebuff { damage: 7, hits: 1 } pw=[Vulnerable=2]
+  M[1] id=2 hp=0/67 blk=0 intent=Unknown (DEAD)
+  M[2] id=3 hp=13/13 blk=0 intent=Debuff
+  Hand: [0:Defend, 1:Strike, 2:Combust]
+  Player pw: [Weak=2]
+  >>> PARITY OK <<<
+  → EndTurn
+  SEND: END
+
+[F112] COMBAT  HP=55/104  E=3  Hand=5  Draw=6  Disc=6  Monsters=3
+  M[0] id=1 hp=7/13 blk=0 intent=Attack { damage: 10, hits: 1 } pw=[Vulnerable=1]
+  M[1] id=2 hp=0/67 blk=0 intent=Unknown (DEAD)
+  M[2] id=3 hp=13/13 blk=0 intent=Attack { damage: 10, hits: 1 }
+  Hand: [0:Strike, 1:Searing Blow, 2:Cleave, 3:Perfected Strike, 4:Strike]
+  Player pw: [Weak=2]
+  >>> PARITY OK <<<
+  → PlayCard { card_index: 1, target: Some(3) }
+  SEND: PLAY 2 2
+
+[F113] COMBAT  HP=55/104  E=1  Hand=4  Draw=6  Disc=7  Monsters=3
+  M[0] id=1 hp=7/13 blk=0 intent=Attack { damage: 10, hits: 1 } pw=[Vulnerable=1]
+  M[1] id=2 hp=0/67 blk=0 intent=Unknown (DEAD)
+  M[2] id=3 hp=4/13 blk=0 intent=Attack { damage: 10, hits: 1 }
+  Hand: [0:Strike, 1:Cleave, 2:Perfected Strike, 3:Strike]
+  Player pw: [Weak=2]
+  >>> PARITY OK <<<
+  → PlayCard { card_index: 1, target: None }
+  SEND: PLAY 2
+
+╔══════════════════════════════════════════════════════╗
+║  COMBAT SUMMARY (F100 ~ F113)                          
+╠══════════════════════════════════════════════════════╣
+║  Frames: 14  |  Actions: 14
+║  ENGINE BUGS:  0
+║  CONTENT GAPS: 0
+║  TIMING:       0
+║
+║  VERDICT: ✅ Engine OK
+╚══════════════════════════════════════════════════════╝
+[F114] COMPLETE  screen=COMBAT_REWARD  → CHOOSE 0
+[F115] COMPLETE  screen=COMBAT_REWARD  → CHOOSE 0
+[F116] COMPLETE  screen=CARD_REWARD  → CHOOSE 0
+[F117] COMPLETE  screen=COMBAT_REWARD  → PROCEED
+[F118] COMPLETE  screen=MAP  → CHOOSE 0
+
+[F119] COMBAT  HP=61/104  E=3  Hand=5  Draw=12  Disc=0  Monsters=5
+  M[0] id=1 hp=11/11 blk=0 intent=Attack { damage: 5, hits: 1 }
+  M[1] id=2 hp=14/14 blk=0 intent=Attack { damage: 5, hits: 1 }
+  M[2] id=3 hp=10/10 blk=0 intent=Attack { damage: 5, hits: 1 }
+  M[3] id=4 hp=12/12 blk=0 intent=Attack { damage: 3, hits: 1 }
+  M[4] id=5 hp=10/10 blk=0 intent=Debuff
+  Hand: [0:Defend, 1:Strike, 2:Searing Blow, 3:Cleave, 4:Bash]
+  → PlayCard { card_index: 3, target: None }
+  SEND: PLAY 4
+
+[F120] COMBAT  HP=61/104  E=2  Hand=4  Draw=12  Disc=1  Monsters=5
+  M[0] id=1 hp=3/11 blk=0 intent=Attack { damage: 5, hits: 1 }
+  M[1] id=2 hp=6/14 blk=0 intent=Attack { damage: 5, hits: 1 }
+  M[2] id=3 hp=2/10 blk=0 intent=Attack { damage: 5, hits: 1 }
+  M[3] id=4 hp=4/12 blk=0 intent=Attack { damage: 3, hits: 1 }
+  M[4] id=5 hp=2/10 blk=0 intent=Debuff
+  Hand: [0:Defend, 1:Strike, 2:Searing Blow, 3:Bash]
+  >>> PARITY OK <<<
+  → PlayCard { card_index: 1, target: Some(2) }
+  SEND: PLAY 2 1
+
+[F121] COMBAT  HP=61/104  E=1  Hand=3  Draw=12  Disc=2  Monsters=5
+  M[0] id=1 hp=3/11 blk=0 intent=Attack { damage: 5, hits: 1 }
+  M[1] id=2 hp=0/14 blk=0 intent=Attack { damage: 5, hits: 1 } (DEAD)
+  M[2] id=3 hp=2/10 blk=0 intent=Attack { damage: 5, hits: 1 }
+  M[3] id=4 hp=4/12 blk=0 intent=Attack { damage: 3, hits: 1 }
+  M[4] id=5 hp=2/10 blk=0 intent=Debuff
+  Hand: [0:Defend, 1:Searing Blow, 2:Bash]
+  >>> PARITY OK <<<
+  → PlayCard { card_index: 0, target: None }
+  SEND: PLAY 1
+
+[F122] COMBAT  HP=61/104  E=0  Hand=2  Draw=12  Disc=3  Monsters=5
+  M[0] id=1 hp=3/11 blk=0 intent=Attack { damage: 5, hits: 1 }
+  M[1] id=2 hp=0/14 blk=0 intent=Attack { damage: 5, hits: 1 } (DEAD)
+  M[2] id=3 hp=2/10 blk=0 intent=Attack { damage: 5, hits: 1 }
+  M[3] id=4 hp=4/12 blk=0 intent=Attack { damage: 3, hits: 1 }
+  M[4] id=5 hp=2/10 blk=0 intent=Debuff
+  Hand: [0:Searing Blow, 1:Bash]
+  >>> PARITY OK <<<
+  → EndTurn
+  SEND: END
+
+[F123] COMBAT  HP=53/104  E=3  Hand=5  Draw=7  Disc=5  Monsters=5
+  M[0] id=1 hp=3/11 blk=0 intent=Attack { damage: 5, hits: 1 }
+  M[1] id=2 hp=0/14 blk=0 intent=Attack { damage: 5, hits: 1 } (DEAD)
+  M[2] id=3 hp=2/10 blk=0 intent=Attack { damage: 5, hits: 1 }
+  M[3] id=4 hp=4/12 blk=0 intent=Debuff
+  M[4] id=5 hp=2/10 blk=0 intent=Attack { damage: 3, hits: 1 }
+  Hand: [0:Strike, 1:Sword Boomerang, 2:Perfected Strike, 3:Defend, 4:Strike]
+  Player pw: [Weak=1]
+  >>> PARITY OK <<<
+  → PlayCard { card_index: 1, target: None }
+  SEND: PLAY 2
+
+[F124] COMBAT  HP=53/104  E=2  Hand=4  Draw=7  Disc=6  Monsters=5
+  M[0] id=1 hp=0/11 blk=0 intent=Attack { damage: 5, hits: 1 } (DEAD)
+  M[1] id=2 hp=0/14 blk=0 intent=Attack { damage: 5, hits: 1 } (DEAD)
+  M[2] id=3 hp=0/10 blk=0 intent=Attack { damage: 5, hits: 1 } (DEAD)
+  M[3] id=4 hp=4/12 blk=0 intent=Debuff
+  M[4] id=5 hp=2/10 blk=0 intent=Attack { damage: 3, hits: 1 }
+  Hand: [0:Strike, 1:Perfected Strike, 2:Defend, 3:Strike]
+  Player pw: [Weak=1]
+  >>> PARITY OK <<<
+  → PlayCard { card_index: 0, target: Some(4) }
+  SEND: PLAY 1 3
+
+[F125] COMBAT  HP=53/104  E=1  Hand=3  Draw=7  Disc=7  Monsters=5
+  M[0] id=1 hp=0/11 blk=0 intent=Attack { damage: 5, hits: 1 } (DEAD)
+  M[1] id=2 hp=0/14 blk=0 intent=Attack { damage: 5, hits: 1 } (DEAD)
+  M[2] id=3 hp=0/10 blk=0 intent=Attack { damage: 5, hits: 1 } (DEAD)
+  M[3] id=4 hp=0/12 blk=0 intent=Debuff (DEAD)
+  M[4] id=5 hp=2/10 blk=0 intent=Attack { damage: 3, hits: 1 }
+  Hand: [0:Perfected Strike, 1:Defend, 2:Strike]
+  Player pw: [Weak=1]
+  >>> PARITY OK <<<
+  → PlayCard { card_index: 2, target: Some(5) }
+  SEND: PLAY 3 4
+
+╔══════════════════════════════════════════════════════╗
+║  COMBAT SUMMARY (F119 ~ F125)                          
+╠══════════════════════════════════════════════════════╣
+║  Frames: 7  |  Actions: 7
+║  ENGINE BUGS:  0
+║  CONTENT GAPS: 0
+║  TIMING:       0
+║
+║  VERDICT: ✅ Engine OK
+╚══════════════════════════════════════════════════════╝
+[F126] COMPLETE  screen=COMBAT_REWARD  → CHOOSE 0
+[F127] COMPLETE  screen=COMBAT_REWARD  → CHOOSE 0
+[F128] COMPLETE  screen=CARD_REWARD  → CHOOSE 0
+[F129] COMPLETE  screen=COMBAT_REWARD  → PROCEED
+[F130] COMPLETE  screen=MAP  → CHOOSE 0
+[F131] EVENT  screen=EVENT  → CHOOSE 0
+[F132] EVENT  screen=EVENT  → CHOOSE 0
+[F133] COMPLETE  screen=MAP  → CHOOSE 0
+[F134] EVENT  screen=EVENT  → CHOOSE 0
+[F135] EVENT  screen=EVENT  → CHOOSE 0
+[F136] COMPLETE  screen=MAP  → CHOOSE 0
+[F137] INCOMPLETE  screen=REST  → CHOOSE 0
+[F138] COMPLETE  screen=REST  → PROCEED
+[F139] COMPLETE  screen=MAP  → CHOOSE 0
+
+[F140] COMBAT  HP=104/104  E=3  Hand=5  Draw=13  Disc=0  Monsters=1
+  M[0] id=1 hp=140/140 blk=0 intent=StrongDebuff pw=[Split=-1]
+  Hand: [0:Strike, 1:Strike, 2:Defend, 3:Combust, 4:Searing Blow]
+  → PlayCard { card_index: 4, target: Some(1) }
+  SEND: PLAY 5 0
+
+[F141] COMBAT  HP=104/104  E=1  Hand=4  Draw=13  Disc=1  Monsters=1
+  M[0] id=1 hp=128/140 blk=0 intent=StrongDebuff pw=[Split=-1]
+  Hand: [0:Strike, 1:Strike, 2:Defend, 3:Combust]
+  >>> PARITY OK <<<
+  → PlayCard { card_index: 0, target: Some(1) }
+  SEND: PLAY 1 0
+
+[F142] COMBAT  HP=104/104  E=0  Hand=3  Draw=13  Disc=2  Monsters=1
+  M[0] id=1 hp=122/140 blk=0 intent=StrongDebuff pw=[Split=-1]
+  Hand: [0:Strike, 1:Defend, 2:Combust]
+  >>> PARITY OK <<<
+  → EndTurn
+  SEND: END
+
+[F143] COMBAT  HP=104/104  E=3  Hand=5  Draw=8  Disc=8  Monsters=1
+  M[0] id=1 hp=122/140 blk=0 intent=Unknown pw=[Split=-1]
+  Hand: [0:Sword Boomerang, 1:Perfected Strike, 2:Defend, 3:Strike, 4:Strike]
+  >>> PARITY OK <<<
+  → PlayCard { card_index: 0, target: None }
+  SEND: PLAY 1
+
+[F144] COMBAT  HP=104/104  E=2  Hand=4  Draw=8  Disc=9  Monsters=1
+  M[0] id=1 hp=113/140 blk=0 intent=Unknown pw=[Split=-1]
+  Hand: [0:Perfected Strike, 1:Defend, 2:Strike, 3:Strike]
+  >>> PARITY OK <<<
+  → PlayCard { card_index: 2, target: Some(1) }
+  SEND: PLAY 3 0
+
+[F145] COMBAT  HP=104/104  E=1  Hand=3  Draw=8  Disc=10  Monsters=1
+  M[0] id=1 hp=107/140 blk=0 intent=Unknown pw=[Split=-1]
+  Hand: [0:Perfected Strike, 1:Defend, 2:Strike]
+  >>> PARITY OK <<<
+  → PlayCard { card_index: 2, target: Some(1) }
+  SEND: PLAY 3 0
+
+[F146] COMBAT  HP=104/104  E=0  Hand=2  Draw=8  Disc=11  Monsters=1
+  M[0] id=1 hp=101/140 blk=0 intent=Unknown pw=[Split=-1]
+  Hand: [0:Perfected Strike, 1:Defend]
+  >>> PARITY OK <<<
+  → EndTurn
+  SEND: END
+
+[F147] COMBAT  HP=104/104  E=3  Hand=5  Draw=3  Disc=13  Monsters=1
+  M[0] id=1 hp=101/140 blk=0 intent=Attack { damage: 35, hits: 1 } pw=[Split=-1]
+  Hand: [0:Body Slam, 1:Heavy Blade, 2:Bash, 3:Strike, 4:Defend]
+  >>> PARITY OK <<<
+  → PlayCard { card_index: 2, target: Some(1) }
+  SEND: PLAY 3 0
+
+[F148] COMBAT  HP=104/104  E=1  Hand=4  Draw=3  Disc=14  Monsters=1
+  M[0] id=1 hp=93/140 blk=0 intent=Attack { damage: 35, hits: 1 } pw=[Split=-1, Vulnerable=2]
+  Hand: [0:Body Slam, 1:Heavy Blade, 2:Strike, 3:Defend]
+  >>> PARITY OK <<<
+  → PlayCard { card_index: 3, target: None }
+  SEND: PLAY 4
+
+[F149] COMBAT  HP=104/104  E=0  Hand=3  Draw=3  Disc=15  Monsters=1
+  M[0] id=1 hp=93/140 blk=0 intent=Attack { damage: 35, hits: 1 } pw=[Split=-1, Vulnerable=2]
+  Hand: [0:Body Slam, 1:Heavy Blade, 2:Strike]
+  >>> PARITY OK <<<
+  → EndTurn
+  SEND: END
+
+[F150] COMBAT  HP=74/104  E=3  Hand=5  Draw=16  Disc=0  Monsters=1
+  M[0] id=1 hp=93/140 blk=0 intent=StrongDebuff pw=[Split=-1, Vulnerable=1]
+  Hand: [0:Defend, 1:True Grit, 2:Cleave, 3:Body Slam, 4:Strike]
+  >>> PARITY OK <<<
+  → PlayCard { card_index: 2, target: None }
+  SEND: PLAY 3
+
+[F151] COMBAT  HP=74/104  E=2  Hand=4  Draw=16  Disc=1  Monsters=1
+  M[0] id=1 hp=81/140 blk=0 intent=StrongDebuff pw=[Split=-1, Vulnerable=1]
+  Hand: [0:Defend, 1:True Grit, 2:Body Slam, 3:Strike]
+  >>> PARITY OK <<<
+  → PlayCard { card_index: 1, target: None }
+  SEND: PLAY 2
+
+[F152] COMBAT  HP=74/104  E=1  Hand=2  Draw=16  Disc=2  Monsters=1
+  M[0] id=1 hp=81/140 blk=0 intent=StrongDebuff pw=[Split=-1, Vulnerable=1]
+  Hand: [0:Body Slam, 1:Strike]
+  >>> PARITY OK <<<
+  → PlayCard { card_index: 0, target: Some(1) }
+  SEND: PLAY 1 0
+
+[F153] COMBAT  HP=74/104  E=0  Hand=1  Draw=16  Disc=3  Monsters=1
+  M[0] id=1 hp=71/140 blk=0 intent=StrongDebuff pw=[Split=-1, Vulnerable=1]
+  Hand: [0:Strike]
+  >>> PARITY OK <<<
+  → EndTurn
+  SEND: END
+
+[F154] COMBAT  HP=74/104  E=3  Hand=5  Draw=11  Disc=7  Monsters=1
+  M[0] id=1 hp=71/140 blk=0 intent=Unknown pw=[Split=-1]
+  Hand: [0:Strike, 1:Slimed, 2:Searing Blow, 3:Strike, 4:Slimed]
+  >>> PARITY OK <<<
+  → PlayCard { card_index: 2, target: Some(1) }
+  SEND: PLAY 3 0
+
+[F155] COMBAT  HP=74/104  E=1  Hand=4  Draw=11  Disc=8  Monsters=1
+  M[0] id=1 hp=59/140 blk=0 intent=Unknown pw=[Split=-1]
+  Hand: [0:Strike, 1:Slimed, 2:Strike, 3:Slimed]
+  >>> PARITY OK <<<
+  → PlayCard { card_index: 0, target: Some(1) }
+  SEND: PLAY 1 0
+
+[F156] COMBAT  HP=74/104  E=0  Hand=3  Draw=11  Disc=9  Monsters=1
+  M[0] id=1 hp=53/140 blk=0 intent=Unknown pw=[Split=-1]
+  Hand: [0:Slimed, 1:Strike, 2:Slimed]
+  >>> PARITY OK <<<
+  → EndTurn
+  SEND: END
+
+[F157] COMBAT  HP=74/104  E=3  Hand=5  Draw=6  Disc=12  Monsters=3
+  M[0] id=1 hp=53/53 blk=0 intent=Debuff pw=[Split=-1]
+  M[1] id=2 hp=0/140 blk=0 intent=Unknown pw=[Split=-1] (DEAD)
+  M[2] id=3 hp=53/53 blk=0 intent=Debuff pw=[Split=-1]
+  Hand: [0:Strike, 1:Bash, 2:Sword Boomerang, 3:Defend, 4:Perfected Strike]
+  >>> PARITY FAIL (2 diffs: 2 bugs, 0 gaps, 0 timing) <<<
+  CAUSED BY: END → monsters: [M[0](type_22)=Unknown]
+    monster[0].power[Split].amount : Rust=1, Java=-1  [ENGINE_BUG]
+    monster[2].power[Split].amount : Rust=1, Java=-1  [ENGINE_BUG]
+  [HEALED] Prediction chain reset from Java truth
+  → PlayCard { card_index: 1, target: Some(1) }
+  SEND: PLAY 2 0
+
+[F158] COMBAT  HP=74/104  E=1  Hand=4  Draw=6  Disc=13  Monsters=3
+  M[0] id=1 hp=45/53 blk=0 intent=Debuff pw=[Split=-1, Vulnerable=2]
+  M[1] id=2 hp=0/140 blk=0 intent=Unknown pw=[Split=-1] (DEAD)
+  M[2] id=3 hp=53/53 blk=0 intent=Debuff pw=[Split=-1]
+  Hand: [0:Strike, 1:Sword Boomerang, 2:Defend, 3:Perfected Strike]
+  >>> PARITY OK <<<
+  → PlayCard { card_index: 1, target: None }
+  SEND: PLAY 2
+
+[F159] COMBAT  HP=74/104  E=0  Hand=3  Draw=6  Disc=14  Monsters=3
+  M[0] id=1 hp=33/53 blk=0 intent=Debuff pw=[Split=-1, Vulnerable=2]
+  M[1] id=2 hp=0/140 blk=0 intent=Unknown (DEAD)
+  M[2] id=3 hp=53/53 blk=0 intent=Debuff pw=[Split=-1]
+  Hand: [0:Strike, 1:Defend, 2:Perfected Strike]
+  >>> PARITY FAIL (1 diffs: 1 bugs, 0 gaps, 0 timing) <<<
+  CAUSED BY: PLAY 2
+    monster[0].hp : Rust=36, Java=33  [ENGINE_BUG]
+  [HEALED] Prediction chain reset from Java truth
+  → EndTurn
+  SEND: END
+
+[F160] COMBAT  HP=74/104  E=3  Hand=5  Draw=1  Disc=17  Monsters=3
+  M[0] id=1 hp=33/53 blk=0 intent=Debuff pw=[Split=-1, Vulnerable=1]
+  M[1] id=2 hp=0/140 blk=0 intent=Unknown (DEAD)
+  M[2] id=3 hp=53/53 blk=0 intent=Debuff pw=[Split=-1]
+  Hand: [0:Defend, 1:Combust, 2:Defend, 3:Slimed, 4:Strike]
+  Player pw: [Frail=2, Weak=2]
+  >>> PARITY OK <<<
+  → PlayCard { card_index: 4, target: Some(1) }
+  SEND: PLAY 5 0
+
+[F161] COMBAT  HP=74/104  E=2  Hand=4  Draw=1  Disc=18  Monsters=3
+  M[0] id=1 hp=27/53 blk=0 intent=Debuff pw=[Split=-1, Vulnerable=1]
+  M[1] id=2 hp=0/140 blk=0 intent=Unknown (DEAD)
+  M[2] id=3 hp=53/53 blk=0 intent=Debuff pw=[Split=-1]
+  Hand: [0:Defend, 1:Combust, 2:Defend, 3:Slimed]
+  Player pw: [Frail=2, Weak=2]
+  >>> PARITY OK <<<
+  → PlayCard { card_index: 0, target: None }
+  SEND: PLAY 1
+
+[F162] COMBAT  HP=74/104  E=1  Hand=3  Draw=1  Disc=19  Monsters=3
+  M[0] id=1 hp=27/53 blk=0 intent=Debuff pw=[Split=-1, Vulnerable=1]
+  M[1] id=2 hp=0/140 blk=0 intent=Unknown (DEAD)
+  M[2] id=3 hp=53/53 blk=0 intent=Debuff pw=[Split=-1]
+  Hand: [0:Combust, 1:Defend, 2:Slimed]
+  Player pw: [Frail=2, Weak=2]
+  >>> PARITY OK <<<
+  → PlayCard { card_index: 1, target: None }
+  SEND: PLAY 2
+
+[F163] COMBAT  HP=74/104  E=0  Hand=2  Draw=1  Disc=20  Monsters=3
+  M[0] id=1 hp=27/53 blk=0 intent=Debuff pw=[Split=-1, Vulnerable=1]
+  M[1] id=2 hp=0/140 blk=0 intent=Unknown (DEAD)
+  M[2] id=3 hp=53/53 blk=0 intent=Debuff pw=[Split=-1]
+  Hand: [0:Combust, 1:Slimed]
+  Player pw: [Frail=2, Weak=2]
+  >>> PARITY OK <<<
+  → EndTurn
+  SEND: END
+
+[F164] COMBAT  HP=74/104  E=3  Hand=5  Draw=18  Disc=0  Monsters=3
+  M[0] id=1 hp=27/53 blk=0 intent=AttackDebuff { damage: 16, hits: 1 } pw=[Split=-1]
+  M[1] id=2 hp=0/140 blk=0 intent=Unknown (DEAD)
+  M[2] id=3 hp=53/53 blk=0 intent=Attack { damage: 16, hits: 1 } pw=[Split=-1]
+  Hand: [0:Heavy Blade, 1:Defend, 2:Strike, 3:Slimed, 4:Strike]
+  Player pw: [Frail=3, Weak=3]
+  >>> PARITY OK <<<
+  → PlayCard { card_index: 0, target: Some(1) }
+  SEND: PLAY 1 0
+
+[F165] COMBAT  HP=74/104  E=1  Hand=4  Draw=18  Disc=1  Monsters=3
+  M[0] id=1 hp=17/53 blk=0 intent=Unknown pw=[Split=-1]
+  M[1] id=2 hp=0/140 blk=0 intent=Unknown (DEAD)
+  M[2] id=3 hp=53/53 blk=0 intent=Attack { damage: 16, hits: 1 } pw=[Split=-1]
+  Hand: [0:Defend, 1:Strike, 2:Slimed, 3:Strike]
+  Player pw: [Frail=3, Weak=3]
+  >>> PARITY OK <<<
+  → PlayCard { card_index: 0, target: None }
+  SEND: PLAY 1
+
+[F166] COMBAT  HP=74/104  E=0  Hand=3  Draw=18  Disc=2  Monsters=3
+  M[0] id=1 hp=17/53 blk=0 intent=Unknown pw=[Split=-1]
+  M[1] id=2 hp=0/140 blk=0 intent=Unknown (DEAD)
+  M[2] id=3 hp=53/53 blk=0 intent=Attack { damage: 16, hits: 1 } pw=[Split=-1]
+  Hand: [0:Strike, 1:Slimed, 2:Strike]
+  Player pw: [Frail=3, Weak=3]
+  >>> PARITY OK <<<
+  → EndTurn
+  SEND: END
+
+[F167] COMBAT  HP=61/104  E=3  Hand=5  Draw=13  Disc=5  Monsters=5
+  M[0] id=1 hp=17/17 blk=0 intent=Debuff
+  M[1] id=2 hp=0/53 blk=0 intent=Debuff (DEAD)
+  M[2] id=3 hp=17/17 blk=0 intent=Debuff
+  M[3] id=4 hp=0/140 blk=0 intent=Unknown (DEAD)
+  M[4] id=5 hp=53/53 blk=0 intent=AttackDebuff { damage: 11, hits: 1 } pw=[Split=-1]
+  Hand: [0:Combust, 1:Body Slam, 2:True Grit, 3:Slimed, 4:Slimed]
+  Player pw: [Frail=2, Weak=2]
+  >>> PARITY OK <<<
+  → PlayCard { card_index: 2, target: None }
+  SEND: PLAY 3
+
+[F168] COMBAT  HP=61/104  E=2  Hand=3  Draw=13  Disc=6  Monsters=5
+  M[0] id=1 hp=17/17 blk=0 intent=Debuff
+  M[1] id=2 hp=0/53 blk=0 intent=Debuff (DEAD)
+  M[2] id=3 hp=17/17 blk=0 intent=Debuff
+  M[3] id=4 hp=0/140 blk=0 intent=Unknown (DEAD)
+  M[4] id=5 hp=53/53 blk=0 intent=AttackDebuff { damage: 11, hits: 1 } pw=[Split=-1]
+  Hand: [0:Combust, 1:Slimed, 2:Slimed]
+  Player pw: [Frail=2, Weak=2]
+  >>> PARITY OK <<<
+  → EndTurn
+  SEND: END
+
+[F169] COMBAT  HP=55/104  E=3  Hand=5  Draw=8  Disc=11  Monsters=5
+  M[0] id=1 hp=17/17 blk=0 intent=AttackDebuff { damage: 8, hits: 1 }
+  M[1] id=2 hp=0/53 blk=0 intent=Debuff (DEAD)
+  M[2] id=3 hp=17/17 blk=0 intent=Debuff
+  M[3] id=4 hp=0/140 blk=0 intent=Unknown (DEAD)
+  M[4] id=5 hp=53/53 blk=0 intent=AttackDebuff { damage: 11, hits: 1 } pw=[Split=-1]
+  Hand: [0:Defend, 1:Slimed, 2:Strike, 3:Slimed, 4:Perfected Strike]
+  Player pw: [Frail=3, Weak=1]
+  >>> PARITY OK <<<
+  → PlayCard { card_index: 2, target: Some(1) }
+  SEND: PLAY 3 0
+
+[F170] COMBAT  HP=55/104  E=2  Hand=4  Draw=8  Disc=12  Monsters=5
+  M[0] id=1 hp=13/17 blk=0 intent=AttackDebuff { damage: 8, hits: 1 }
+  M[1] id=2 hp=0/53 blk=0 intent=Debuff (DEAD)
+  M[2] id=3 hp=17/17 blk=0 intent=Debuff
+  M[3] id=4 hp=0/140 blk=0 intent=Unknown (DEAD)
+  M[4] id=5 hp=53/53 blk=0 intent=AttackDebuff { damage: 11, hits: 1 } pw=[Split=-1]
+  Hand: [0:Defend, 1:Slimed, 2:Slimed, 3:Perfected Strike]
+  Player pw: [Frail=3, Weak=1]
+  >>> PARITY OK <<<
+  → PlayCard { card_index: 0, target: None }
+  SEND: PLAY 1
+
+[F171] COMBAT  HP=55/104  E=1  Hand=3  Draw=8  Disc=13  Monsters=5
+  M[0] id=1 hp=13/17 blk=0 intent=AttackDebuff { damage: 8, hits: 1 }
+  M[1] id=2 hp=0/53 blk=0 intent=Debuff (DEAD)
+  M[2] id=3 hp=17/17 blk=0 intent=Debuff
+  M[3] id=4 hp=0/140 blk=0 intent=Unknown (DEAD)
+  M[4] id=5 hp=53/53 blk=0 intent=AttackDebuff { damage: 11, hits: 1 } pw=[Split=-1]
+  Hand: [0:Slimed, 1:Slimed, 2:Perfected Strike]
+  Player pw: [Frail=3, Weak=1]
+  >>> PARITY OK <<<
+  → EndTurn
+  SEND: END
+
+[F172] COMBAT  HP=39/104  E=3  Hand=5  Draw=3  Disc=19  Monsters=5
+  M[0] id=1 hp=13/17 blk=0 intent=Debuff
+  M[1] id=2 hp=0/53 blk=0 intent=Debuff (DEAD)
+  M[2] id=3 hp=17/17 blk=0 intent=AttackDebuff { damage: 8, hits: 1 }
+  M[3] id=4 hp=0/140 blk=0 intent=Unknown (DEAD)
+  M[4] id=5 hp=53/53 blk=0 intent=Attack { damage: 16, hits: 1 } pw=[Split=-1]
+  Hand: [0:Defend, 1:Searing Blow, 2:Slimed, 3:Sword Boomerang, 4:Strike]
+  Player pw: [Frail=3]
+  >>> PARITY OK <<<
+  → PlayCard { card_index: 1, target: Some(3) }
+  SEND: PLAY 2 2
+
+[F173] COMBAT  HP=39/104  E=1  Hand=4  Draw=3  Disc=20  Monsters=5
+  M[0] id=1 hp=13/17 blk=0 intent=Debuff
+  M[1] id=2 hp=0/53 blk=0 intent=Debuff (DEAD)
+  M[2] id=3 hp=5/17 blk=0 intent=AttackDebuff { damage: 8, hits: 1 }
+  M[3] id=4 hp=0/140 blk=0 intent=Unknown (DEAD)
+  M[4] id=5 hp=53/53 blk=0 intent=Attack { damage: 16, hits: 1 } pw=[Split=-1]
+  Hand: [0:Defend, 1:Slimed, 2:Sword Boomerang, 3:Strike]
+  Player pw: [Frail=3]
+  >>> PARITY OK <<<
+  → PlayCard { card_index: 2, target: None }
+  SEND: PLAY 3
+
+[F174] COMBAT  HP=39/104  E=0  Hand=3  Draw=3  Disc=21  Monsters=5
+  M[0] id=1 hp=10/17 blk=0 intent=Debuff
+  M[1] id=2 hp=0/53 blk=0 intent=Debuff (DEAD)
+  M[2] id=3 hp=5/17 blk=0 intent=AttackDebuff { damage: 8, hits: 1 }
+  M[3] id=4 hp=0/140 blk=0 intent=Unknown (DEAD)
+  M[4] id=5 hp=47/53 blk=0 intent=Attack { damage: 16, hits: 1 } pw=[Split=-1]
+  Hand: [0:Defend, 1:Slimed, 2:Strike]
+  Player pw: [Frail=3]
+  >>> PARITY OK <<<
+  → EndTurn
+  SEND: END
+
+[F175] COMBAT  HP=15/104  E=3  Hand=5  Draw=23  Disc=0  Monsters=5
+  M[0] id=1 hp=10/17 blk=0 intent=Debuff
+  M[1] id=2 hp=0/53 blk=0 intent=Debuff (DEAD)
+  M[2] id=3 hp=5/17 blk=0 intent=Debuff
+  M[3] id=4 hp=0/140 blk=0 intent=Unknown (DEAD)
+  M[4] id=5 hp=47/53 blk=0 intent=AttackDebuff { damage: 11, hits: 1 } pw=[Split=-1]
+  Hand: [0:Bash, 1:Cleave, 2:Strike, 3:Slimed, 4:Strike]
+  Player pw: [Frail=3]
+  >>> PARITY OK <<<
+  → PlayCard { card_index: 1, target: None }
+  SEND: PLAY 2
+
+[F176] COMBAT  HP=15/104  E=2  Hand=4  Draw=23  Disc=1  Monsters=5
+  M[0] id=1 hp=2/17 blk=0 intent=Debuff
+  M[1] id=2 hp=0/53 blk=0 intent=Debuff (DEAD)
+  M[2] id=3 hp=0/17 blk=0 intent=Debuff (DEAD)
+  M[3] id=4 hp=0/140 blk=0 intent=Unknown (DEAD)
+  M[4] id=5 hp=39/53 blk=0 intent=AttackDebuff { damage: 11, hits: 1 } pw=[Split=-1]
+  Hand: [0:Bash, 1:Strike, 2:Slimed, 3:Strike]
+  Player pw: [Frail=3]
+  >>> PARITY OK <<<
+  → PlayCard { card_index: 1, target: Some(1) }
+  SEND: PLAY 2 0
+
+[F177] COMBAT  HP=15/104  E=1  Hand=3  Draw=23  Disc=2  Monsters=5
+  M[0] id=1 hp=0/17 blk=0 intent=Debuff (DEAD)
+  M[1] id=2 hp=0/53 blk=0 intent=Debuff (DEAD)
+  M[2] id=3 hp=0/17 blk=0 intent=Debuff (DEAD)
+  M[3] id=4 hp=0/140 blk=0 intent=Unknown (DEAD)
+  M[4] id=5 hp=39/53 blk=0 intent=AttackDebuff { damage: 11, hits: 1 } pw=[Split=-1]
+  Hand: [0:Bash, 1:Slimed, 2:Strike]
+  Player pw: [Frail=3]
+  >>> PARITY OK <<<
+  → PlayCard { card_index: 2, target: Some(5) }
+  SEND: PLAY 3 4
+
+[F178] COMBAT  HP=15/104  E=0  Hand=2  Draw=23  Disc=3  Monsters=5
+  M[0] id=1 hp=0/17 blk=0 intent=Debuff (DEAD)
+  M[1] id=2 hp=0/53 blk=0 intent=Debuff (DEAD)
+  M[2] id=3 hp=0/17 blk=0 intent=Debuff (DEAD)
+  M[3] id=4 hp=0/140 blk=0 intent=Unknown (DEAD)
+  M[4] id=5 hp=33/53 blk=0 intent=AttackDebuff { damage: 11, hits: 1 } pw=[Split=-1]
+  Hand: [0:Bash, 1:Slimed]
+  Player pw: [Frail=3]
+  >>> PARITY OK <<<
+  → EndTurn
+  SEND: END
+
+[F179] COMBAT  HP=4/104  E=3  Hand=5  Draw=18  Disc=7  Monsters=5
+  M[0] id=1 hp=0/17 blk=0 intent=Debuff (DEAD)
+  M[1] id=2 hp=0/53 blk=0 intent=Debuff (DEAD)
+  M[2] id=3 hp=0/17 blk=0 intent=Debuff (DEAD)
+  M[3] id=4 hp=0/140 blk=0 intent=Unknown (DEAD)
+  M[4] id=5 hp=33/53 blk=0 intent=AttackDebuff { damage: 11, hits: 1 } pw=[Split=-1]
+  Hand: [0:Combust, 1:Slimed, 2:Slimed, 3:Slimed, 4:Perfected Strike]
+  Player pw: [Frail=2]
+  >>> PARITY OK <<<
+  → EndTurn
+  SEND: END
+
+╔══════════════════════════════════════════════════════╗
+║  COMBAT SUMMARY (F140 ~ F180)                          
+╠══════════════════════════════════════════════════════╣
+║  Frames: 41  |  Actions: 40
+║  ENGINE BUGS:  3
+║  CONTENT GAPS: 0
+║  TIMING:       0
+║
+║  ⛔ Engine Bugs:
+║    - monster[0].hp (×1) Rust=36 Java=33
+║    - monster[0].power[Split].amount (×1) Rust=1 Java=-1
+║    - monster[2].power[Split].amount (×1) Rust=1 Java=-1
+║
+║  VERDICT: ❌ Engine Bugs Found
+╚══════════════════════════════════════════════════════╝
+
+[F180] === GAME OVER === victory=false score=121

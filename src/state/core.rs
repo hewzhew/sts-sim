@@ -7,7 +7,7 @@ pub enum EngineState {
     CombatProcessing,
     RewardScreen(crate::state::reward::RewardState),
     Campfire,
-    Shop(crate::state::shop::ShopState),
+    Shop(crate::shop::ShopState),
     MapNavigation,
     EventRoom,
     PendingChoice(PendingChoice),
@@ -16,6 +16,7 @@ pub enum EngineState {
     /// Combat proceeds normally (CombatPlayerTurn), and when it ends, the engine
     /// checks this state to determine how to handle rewards and where to return.
     EventCombat(EventCombatState),
+    BossRelicSelect(crate::state::reward::BossRelicChoiceState),
     GameOver(RunResult),
 }
 
@@ -157,7 +158,8 @@ pub enum ClientInput {
     BuyRelic(usize),
     BuyPotion(usize),
     PurgeCard(usize), // Purge card at index in master deck
-    Proceed, // Used to skip screens (Reward, Campfire, etc)
+    SubmitRelicChoice(usize), // Pick boss relic at index from BossRelicSelect screen
+    Proceed, // Used to skip screens (Reward, Campfire, BossRelicSelect, etc)
     Cancel,
 }
 

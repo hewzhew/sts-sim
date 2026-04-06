@@ -1,7 +1,18 @@
-use crate::content::cards::CardId;
+use crate::content::powers::PowerId;
+use crate::action::Action;
+use crate::core::EntityId;
 
-pub fn on_calculate_damage_to_enemy(card_id: CardId, base_magic_num: i32, mut damage: f32, amount: i32) -> f32 {
-    let strength_multiplier = if card_id == CardId::HeavyBlade { base_magic_num } else { 1 };
-    damage -= (amount * strength_multiplier) as f32;
-    damage
+pub fn at_end_of_turn(owner: EntityId, amount: i32) -> smallvec::SmallVec<[Action; 2]> {
+    let mut actions = smallvec::SmallVec::new();
+    actions.push(Action::ApplyPower {
+        source: owner,
+        target: owner,
+        power_id: PowerId::Strength,
+        amount: -amount,
+    });
+    actions.push(Action::RemovePower {
+        target: owner,
+        power_id: PowerId::LoseStrength,
+    });
+    actions
 }

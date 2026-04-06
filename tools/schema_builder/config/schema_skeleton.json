@@ -1,0 +1,32 @@
+{
+    "version": "3.0",
+    "description": "STS simulator protocol schema — single source of truth for Java↔Rust ID mappings",
+    "enums": {
+        "power_id": {
+            "rust_type": "PowerId",
+            "fn_name": "power_id_from_java",
+            "entries": {}
+        },
+        "monster_id": {
+            "rust_type": "EnemyId",
+            "fn_name": "monster_id_from_java",
+            "description": "Java monster class name → Rust EnemyId numeric index. The 'java' array lists all known Java IDs for this monster (class name, display name variants).",
+            "entries": {}
+        },
+        "relic_id": {
+            "rust_type": "RelicId",
+            "fn_name": "relic_id_from_java",
+            "entries": {}
+        },
+        "card_id": {
+            "rust_type": "CardId",
+            "fn_name": "card_id_from_java",
+            "entries": {}
+        },
+        "potion_id": {
+            "rust_type": "PotionId",
+            "fn_name": "potion_id_from_java",
+            "entries": {}
+        }
+    }
+}

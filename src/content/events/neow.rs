@@ -349,8 +349,12 @@ fn apply_reward(
     match reward {
         NeowRewardType::ThreeEnemyKill => {
             // Obtain NeowsLament relic
-            let relic = crate::content::relics::RelicState::new(crate::content::relics::RelicId::NeowsLament);
+            let relic_id = crate::content::relics::RelicId::NeowsLament;
+            let relic = crate::content::relics::RelicState::new(relic_id);
             run_state.relics.push(relic);
+            if let Some(next_state) = crate::engine::reward_handler::apply_on_obtain_effect(run_state, relic_id, crate::state::core::EngineState::EventRoom) {
+                *engine_state = next_state;
+            }
         },
         NeowRewardType::TenPercentHpBonus => {
             run_state.max_hp += hp_bonus;
@@ -369,11 +373,17 @@ fn apply_reward(
         NeowRewardType::RandomCommonRelic => {
             if let Some(relic_id) = run_state.common_relic_pool.pop() {
                 run_state.relics.push(crate::content::relics::RelicState::new(relic_id));
+                if let Some(next_state) = crate::engine::reward_handler::apply_on_obtain_effect(run_state, relic_id, crate::state::core::EngineState::EventRoom) {
+                    *engine_state = next_state;
+                }
             }
         },
         NeowRewardType::OneRareRelic => {
             if let Some(relic_id) = run_state.rare_relic_pool.pop() {
                 run_state.relics.push(crate::content::relics::RelicState::new(relic_id));
+                if let Some(next_state) = crate::engine::reward_handler::apply_on_obtain_effect(run_state, relic_id, crate::state::core::EngineState::EventRoom) {
+                    *engine_state = next_state;
+                }
             }
         },
         NeowRewardType::BossRelic => {
@@ -384,6 +394,10 @@ fn apply_reward(
             // Obtain random boss relic
             if let Some(relic_id) = run_state.boss_relic_pool.pop() {
                 run_state.relics.push(crate::content::relics::RelicState::new(relic_id));
+                // Trigger effects like Pandora's Box transforming the deck
+                if let Some(next_state) = crate::engine::reward_handler::apply_on_obtain_effect(run_state, relic_id, crate::state::core::EngineState::EventRoom) {
+                    *engine_state = next_state;
+                }
             }
         },
         NeowRewardType::OneRandomRareCard => {

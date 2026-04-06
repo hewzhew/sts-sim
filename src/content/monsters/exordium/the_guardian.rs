@@ -1,5 +1,5 @@
 use crate::combat::{CombatState, MonsterEntity, Intent, PowerId};
-use crate::action::{Action, DamageInfo, DamageType};
+use crate::action::{Action, ActionInfo, AddTo, DamageInfo, DamageType};
 use crate::content::monsters::MonsterBehavior;
 
 pub struct TheGuardian;
@@ -22,6 +22,40 @@ impl MonsterBehavior for TheGuardian {
                 amount: shift_amt,
             }
         ]
+    }
+
+    fn on_damaged(state: &mut CombatState, entity: &MonsterEntity, amount: i32) -> smallvec::SmallVec<[ActionInfo; 4]> {
+        let mut triggered = false;
+
+        if let Some(powers) = state.power_db.get_mut(&entity.id) {
+            if let Some(pos) = powers.iter().position(|p| p.power_type == PowerId::ModeShift) {
+                powers[pos].amount -= amount;
+                if powers[pos].amount <= 0 {
+                    triggered = true;
+                    // Properly use powers.remove() as the ultimate synchronous lock
+                    // This physically deletes ModeShift from memory so subsequent multi-hit damage
+                    // does not find it and trigger another mode shift.
+                    powers.remove(pos);
+                }
+            }
+        }
+
+        if triggered {
+            // These will be processed by queue_actions(). AddTo::Top means they get added to the top of the queue.
+            // Under queue_actions() logic, AddTo::Top elements are reversed before pushing. 
+            // Thus, we push them in the order we want them to *execute*.
+            // 1. Gain GuardianThreshold + 10
+            // 2. Gain 20 block
+            // 3. Change intent/move to CLOSE UP (1)
+            // (RemovePower is no longer needed since we physically removed it above!)
+            return smallvec::smallvec![
+                ActionInfo { action: Action::ApplyPower { target: entity.id, source: entity.id, power_id: PowerId::GuardianThreshold, amount: 10 }, insertion_mode: AddTo::Top },
+                ActionInfo { action: Action::GainBlock { target: entity.id, amount: 20 }, insertion_mode: AddTo::Top },
+                ActionInfo { action: Action::SetMonsterMove { monster_id: entity.id, next_move_byte: 1, intent: Intent::Buff }, insertion_mode: AddTo::Top },
+            ];
+        }
+        
+        smallvec::smallvec![]
     }
 
     fn roll_move(_rng: &mut crate::rng::StsRng, entity: &MonsterEntity, ascension_level: u8, _num: i32) -> (u8, Intent) {

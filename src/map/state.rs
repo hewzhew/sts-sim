@@ -38,10 +38,12 @@ impl MapState {
 
         // Handle normal edge traversal
         if target_y == self.current_y + 1 {
-            let current_node = &self.graph[self.current_y as usize][self.current_x as usize];
-            for edge in current_node.edges.iter() {
-                if edge.dst_x == target_x && edge.dst_y == target_y {
-                    return true;
+            if self.current_y >= 0 && (self.current_y as usize) < self.graph.len() {
+                let current_node = &self.graph[self.current_y as usize][self.current_x as usize];
+                for edge in current_node.edges.iter() {
+                    if edge.dst_x == target_x && edge.dst_y == target_y {
+                        return true;
+                    }
                 }
             }
         }
@@ -59,7 +61,7 @@ impl MapState {
         }
         
         // Handling Boss Node Phase 
-        if target_y == 15 && self.boss_node_available && self.current_y == 14 {
+        if target_y == 15 && self.current_y == 14 {
             return true;
         }
 
@@ -76,6 +78,9 @@ impl MapState {
     }
 
     pub fn get_current_room_type(&self) -> Option<RoomType> {
+        if self.current_y == 15 {
+            return Some(RoomType::MonsterRoomBoss);
+        }
         self.get_current_node().and_then(|n| n.class)
     }
 

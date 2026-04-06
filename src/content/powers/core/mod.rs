@@ -10,7 +10,6 @@ pub mod entangle;
 pub mod split;
 pub mod angry;
 pub mod anger;
-pub mod lagavulin_sleep;
 pub mod mode_shift;
 pub mod sharp_hide;
 pub mod flight;

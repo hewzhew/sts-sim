@@ -1,5 +1,6 @@
-# Rust
+# Rust (all nested target dirs too)
 /target/
+**/target/
 
 # Python
 **/__pycache__/

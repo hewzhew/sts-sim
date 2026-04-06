@@ -28,6 +28,17 @@ impl Default for RewardState {
     }
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct BossRelicChoiceState {
+    pub relics: Vec<RelicId>,
+}
+
+impl BossRelicChoiceState {
+    pub fn new(relics: Vec<RelicId>) -> Self {
+        Self { relics }
+    }
+}
+
 impl RewardState {
     pub fn new() -> Self {
         RewardState {

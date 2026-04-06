@@ -7,5 +7,7 @@ pub mod reward_handler;
 pub mod pending_choices;
 pub mod event_handler;
 
+pub mod boss_relic_handler;
+
 pub use core::*;
 pub use run_loop::*;
