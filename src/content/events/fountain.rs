@@ -37,13 +37,20 @@ pub fn handle_choice(_engine_state: &mut EngineState, run_state: &mut RunState, 
             match choice_idx {
                 0 => {
                     // Remove all removable curses
-                    run_state.master_deck.retain(|c| {
-                        let def = get_card_definition(c.id);
-                        def.card_type != CardType::Curse
-                            || c.id == CardId::AscendersBane
-                            || c.id == CardId::CurseOfTheBell
-                            || c.id == CardId::Necronomicurse
-                    });
+                    let curses_to_remove: Vec<u32> = run_state.master_deck.iter()
+                        .filter(|c| {
+                            let def = get_card_definition(c.id);
+                            def.card_type == CardType::Curse
+                                && c.id != CardId::AscendersBane
+                                && c.id != CardId::CurseOfTheBell
+                                && c.id != CardId::Necronomicurse
+                        })
+                        .map(|c| c.uuid)
+                        .collect();
+                        
+                    for uuid in curses_to_remove {
+                        run_state.remove_card_from_deck(uuid);
+                    }
                     event_state.current_screen = 1;
                 },
                 _ => {

@@ -43,9 +43,10 @@ pub fn handle(run_state: &mut crate::state::run::RunState, shop: &mut crate::sho
             ClientInput::PurgeCard(idx) => {
                 if shop.purge_available && run_state.gold >= shop.purge_cost {
                     if idx < run_state.master_deck.len() {
+                        let uuid = run_state.master_deck[idx].uuid;
                         run_state.gold -= shop.purge_cost;
                         shop.purge_available = false;
-                        run_state.master_deck.remove(idx);
+                        run_state.remove_card_from_deck(uuid);
                         run_state.shop_purge_count += 1;
                     }
                 }

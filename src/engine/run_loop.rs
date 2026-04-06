@@ -97,7 +97,8 @@ pub fn tick_run(engine_state: &mut EngineState, run_state: &mut RunState, combat
                                         crate::content::cards::CardRarity::Rare => 5,
                                     };
                                 }
-                                run_state.master_deck.remove(idx);
+                                let uuid = run_state.master_deck[idx].uuid;
+                                run_state.remove_card_from_deck(uuid);
                             }
                         }
                     },

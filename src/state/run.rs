@@ -195,33 +195,7 @@ impl RunState {
         self.relics = player.relics;
     }
 
-    /// Central Mutator Gateway for permanently removing a card from the deck.
-    /// Handles all Global/Out-Of-Combat curse triggers securely.
-    pub fn remove_card_from_master_deck(&mut self, uuid: u32) -> Result<(), &'static str> {
-        let card_index = self.master_deck.iter().position(|c| c.uuid == uuid);
-        
-        if let Some(idx) = card_index {
-            let card = self.master_deck.remove(idx);
-            
-            // Global Curse Hooks
-            match card.id {
-                crate::content::cards::CardId::Parasite => {
-                    self.max_hp = (self.max_hp - 3).max(1);
-                    self.current_hp = self.current_hp.min(self.max_hp);
-                    // Sound effect trigger placeholder
-                },
-                crate::content::cards::CardId::Necronomicurse => {
-                    // Block the removal by putting it right back
-                    self.master_deck.push(card);
-                    // Relic flash trigger placeholder
-                },
-                _ => {}
-            }
-            Ok(())
-        } else {
-            Err("Card UUID not found in master deck")
-        }
-    }
+
 
     /// Triggers when the player enters a Rest Room (Campfire).
     pub fn on_enter_rest_room(&mut self) {

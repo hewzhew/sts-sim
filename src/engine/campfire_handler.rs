@@ -77,7 +77,8 @@ pub fn handle(engine_state: &mut EngineState, run_state: &mut RunState, input: O
                     // Guard: skip bottled cards (when tracking is implemented)
                     let card = &run_state.master_deck[idx];
                     if !is_card_bottled(card, &run_state.relics) {
-                        run_state.master_deck.remove(idx);
+                        let uuid = card.uuid;
+                        run_state.remove_card_from_deck(uuid);
                     }
                 }
                 *engine_state = EngineState::MapNavigation;

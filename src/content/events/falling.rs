@@ -62,7 +62,8 @@ pub fn handle_choice(_engine_state: &mut EngineState, run_state: &mut RunState, 
                 _ => attack_idx(s),
             };
             if card_idx < run_state.master_deck.len() {
-                run_state.master_deck.remove(card_idx);
+                let uuid = run_state.master_deck[card_idx].uuid;
+                run_state.remove_card_from_deck(uuid);
             }
             event_state.current_screen = 2;
         },

@@ -3,7 +3,6 @@ use crate::content::relics::RelicId;
 use crate::state::core::EngineState;
 use crate::state::events::{EventChoiceMeta, EventState};
 use crate::state::run::RunState;
-use crate::combat::CombatCard;
 
 fn get_hp_loss(run_state: &RunState) -> i32 {
     let mut loss = (run_state.max_hp as f32 * 0.3).ceil() as i32;
@@ -73,15 +72,21 @@ pub fn handle_choice(_engine_state: &mut EngineState, run_state: &mut RunState, 
 }
 
 fn replace_attacks(run_state: &mut RunState) {
-    // Retain only cards that do NOT have the StarterStrike tag
-    run_state.master_deck.retain(|card| {
-        let def = crate::content::cards::get_card_definition(card.id);
-        !def.tags.contains(&CardTag::StarterStrike)
-    });
+    // Identify Strikes to remove
+    let strikes_to_remove: Vec<u32> = run_state.master_deck.iter()
+        .filter(|card| {
+            let def = crate::content::cards::get_card_definition(card.id);
+            def.tags.contains(&CardTag::StarterStrike)
+        })
+        .map(|card| card.uuid)
+        .collect();
+        
+    for uuid in strikes_to_remove {
+        run_state.remove_card_from_deck(uuid);
+    }
 
-    // Add 5 Bites with proper UUID generation for internal engine identity
-    let starting_uuid = run_state.master_deck.len() as u32 + 1000;
-    for i in 0..5 {
-        run_state.master_deck.push(CombatCard::new(CardId::Bite, starting_uuid + i));
+    // Add 5 Bites through the DeckManager pipeline
+    for _ in 0..5 {
+        run_state.add_card_to_deck(CardId::Bite);
     }
 }

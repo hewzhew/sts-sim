@@ -67,7 +67,8 @@ pub fn handle_choice(_engine_state: &mut EngineState, run_state: &mut RunState, 
                     // Give card → relic
                     let card_idx = ((event_state.internal_state >> 8) & 0xFF) as usize;
                     if card_idx < run_state.master_deck.len() {
-                        run_state.master_deck.remove(card_idx);
+                        let uuid = run_state.master_deck[card_idx].uuid;
+                        run_state.remove_card_from_deck(uuid);
                     }
                     let relic_id = run_state.random_relic();
                     run_state.relics.push(RelicState::new(relic_id));
