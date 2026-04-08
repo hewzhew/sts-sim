@@ -7,7 +7,7 @@ pub struct Brimstone;
 impl Brimstone {
     pub fn at_turn_start(state: &CombatState) -> SmallVec<[ActionInfo; 4]> {
         let mut actions = SmallVec::new();
-        
+
         // Give player 2 strength
         actions.push(ActionInfo {
             action: Action::ApplyPower {
@@ -33,7 +33,7 @@ impl Brimstone {
                 });
             }
         }
-        
+
         actions
     }
 }

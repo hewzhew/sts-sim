@@ -13,9 +13,9 @@ fn get_damage(run_state: &RunState) -> i32 {
 fn has_upgradable_cards(run_state: &RunState) -> bool {
     run_state.master_deck.iter().any(|c| {
         let def = crate::content::cards::get_card_definition(c.id);
-        c.id == crate::content::cards::CardId::SearingBlow 
-            || (c.upgrades == 0 
-                && def.card_type != crate::content::cards::CardType::Status 
+        c.id == crate::content::cards::CardId::SearingBlow
+            || (c.upgrades == 0
+                && def.card_type != crate::content::cards::CardType::Status
                 && def.card_type != crate::content::cards::CardType::Curse)
     })
 }
@@ -30,7 +30,8 @@ pub fn get_choices(run_state: &RunState, event_state: &EventState) -> Vec<EventC
 
     if has_upgradable_cards(run_state) {
         choices.push(EventChoiceMeta::new(format!(
-            "[Enter the Light] Take {} damage. Upgrade 2 random cards.", damage
+            "[Enter the Light] Take {} damage. Upgrade 2 random cards.",
+            damage
         )));
     } else {
         choices.push(EventChoiceMeta::disabled(
@@ -54,13 +55,13 @@ pub fn handle_choice(_engine_state: &mut EngineState, run_state: &mut RunState, 
                     let damage = get_damage(run_state);
                     run_state.current_hp = (run_state.current_hp - damage).max(0);
                     run_state.upgrade_random_cards(2);
-                },
+                }
                 _ => {
                     // Leave
                 }
             }
             event_state.current_screen = 1;
-        },
+        }
         _ => {
             event_state.completed = true;
         }

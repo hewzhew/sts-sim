@@ -20,7 +20,8 @@ pub fn handle_spawn_monster(
     let enemy_id = monster_id;
 
     let (actual_hp, actual_max_hp) = if current_hp == 0 {
-        let (hp_min, hp_max) = crate::content::monsters::get_hp_range(enemy_id, state.ascension_level);
+        let (hp_min, hp_max) =
+            crate::content::monsters::get_hp_range(enemy_id, state.ascension_level);
         let _ = state.rng.monster_hp_rng.random_range(hp_min, hp_max); // constructor's unused roll
         let rolled = state.rng.monster_hp_rng.random_range(hp_min, hp_max); // setHp's actual roll
         (rolled, rolled)
@@ -57,7 +58,9 @@ pub fn handle_spawn_monster(
         state.action_queue.push_back(a);
     }
 
-    state.action_queue.push_back(Action::RollMonsterMove { monster_id: new_entity_id });
+    state.action_queue.push_back(Action::RollMonsterMove {
+        monster_id: new_entity_id,
+    });
 }
 
 pub fn handle_spawn_monster_smart(
@@ -96,11 +99,19 @@ pub fn handle_escape(target: usize, state: &mut CombatState) {
 }
 
 pub fn handle_roll_monster_move(monster_id: usize, state: &mut CombatState) {
-    if let Some(m) = state.monsters.iter().find(|m| m.id == monster_id && !m.is_dying) {
+    if let Some(m) = state
+        .monsters
+        .iter()
+        .find(|m| m.id == monster_id && !m.is_dying)
+    {
         let entity_snapshot = m.clone();
         let num = state.rng.ai_rng.random(99);
         let (move_byte, intent) = crate::content::monsters::roll_monster_move(
-            &mut state.rng.ai_rng, &entity_snapshot, state.ascension_level, num, &state.monsters
+            &mut state.rng.ai_rng,
+            &entity_snapshot,
+            state.ascension_level,
+            num,
+            &state.monsters,
         );
         if let Some(m) = state.monsters.iter_mut().find(|m| m.id == monster_id) {
             m.next_move_byte = move_byte;
@@ -110,7 +121,12 @@ pub fn handle_roll_monster_move(monster_id: usize, state: &mut CombatState) {
     }
 }
 
-pub fn handle_set_monster_move(monster_id: usize, next_move_byte: u8, intent: crate::combat::Intent, state: &mut CombatState) {
+pub fn handle_set_monster_move(
+    monster_id: usize,
+    next_move_byte: u8,
+    intent: crate::combat::Intent,
+    state: &mut CombatState,
+) {
     if let Some(m) = state.monsters.iter_mut().find(|m| m.id == monster_id) {
         m.next_move_byte = next_move_byte;
         m.current_intent = intent;
@@ -118,19 +134,31 @@ pub fn handle_set_monster_move(monster_id: usize, next_move_byte: u8, intent: cr
     }
 }
 
-pub fn handle_update_relic_counter(relic_id: crate::content::relics::RelicId, counter: i32, state: &mut CombatState) {
+pub fn handle_update_relic_counter(
+    relic_id: crate::content::relics::RelicId,
+    counter: i32,
+    state: &mut CombatState,
+) {
     if let Some(relic) = state.player.relics.iter_mut().find(|r| r.id == relic_id) {
         relic.counter = counter;
     }
 }
 
-pub fn handle_update_relic_amount(relic_id: crate::content::relics::RelicId, amount: i32, state: &mut CombatState) {
+pub fn handle_update_relic_amount(
+    relic_id: crate::content::relics::RelicId,
+    amount: i32,
+    state: &mut CombatState,
+) {
     if let Some(relic) = state.player.relics.iter_mut().find(|r| r.id == relic_id) {
         relic.counter += amount;
     }
 }
 
-pub fn handle_update_relic_used_up(relic_id: crate::content::relics::RelicId, used_up: bool, state: &mut CombatState) {
+pub fn handle_update_relic_used_up(
+    relic_id: crate::content::relics::RelicId,
+    used_up: bool,
+    state: &mut CombatState,
+) {
     if let Some(relic) = state.player.relics.iter_mut().find(|r| r.id == relic_id) {
         relic.used_up = used_up;
     }

@@ -20,17 +20,22 @@ pub fn get_choices(run_state: &RunState, event_state: &EventState) -> Vec<EventC
     }
 
     let can_attack = has_high_damage_card(run_state);
-    let mut choices = vec![
-        EventChoiceMeta::new(format!("[Remove a card] Take {} damage. Remove a card from your deck.", DAMAGE)),
-    ];
+    let mut choices = vec![EventChoiceMeta::new(format!(
+        "[Remove a card] Take {} damage. Remove a card from your deck.",
+        DAMAGE
+    ))];
 
     if can_attack {
         choices.push(EventChoiceMeta::new(format!(
-            "[Attack] Gain {}-{} Gold.", MIN_GOLD, MAX_GOLD
+            "[Attack] Gain {}-{} Gold.",
+            MIN_GOLD, MAX_GOLD
         )));
     } else {
         choices.push(EventChoiceMeta::disabled(
-            format!("[Attack] Requires an Attack card with ≥{} damage.", REQUIRED_DAMAGE),
+            format!(
+                "[Attack] Requires an Attack card with ≥{} damage.",
+                REQUIRED_DAMAGE
+            ),
             "No qualifying attack card.",
         ));
     }
@@ -57,7 +62,7 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
                         return_state: Box::new(EngineState::EventRoom),
                     });
                     return;
-                },
+                }
                 1 => {
                     // Attack: gain gold
                     if has_high_damage_card(run_state) {
@@ -65,13 +70,13 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
                         run_state.gold += gold;
                     }
                     event_state.current_screen = 1;
-                },
+                }
                 _ => {
                     // Leave
                     event_state.current_screen = 1;
                 }
             }
-        },
+        }
         _ => {
             event_state.completed = true;
         }

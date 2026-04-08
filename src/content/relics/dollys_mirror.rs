@@ -1,4 +1,4 @@
-use crate::state::core::{EngineState, RunPendingChoiceState, RunPendingChoiceReason};
+use crate::state::core::{EngineState, RunPendingChoiceReason, RunPendingChoiceState};
 use crate::state::run::RunState;
 
 pub fn on_equip(run_state: &mut RunState, return_state: EngineState) -> Option<EngineState> {

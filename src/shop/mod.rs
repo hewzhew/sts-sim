@@ -1,5 +1,5 @@
-pub mod state;
 pub mod merchant;
 pub mod shop_screen;
+pub mod state;
 
-pub use state::{ShopState, ShopCard, ShopRelic, ShopPotion};
+pub use state::{ShopCard, ShopPotion, ShopRelic, ShopState};

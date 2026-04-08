@@ -1,6 +1,6 @@
 use crate::action::{Action, ActionInfo, AddTo};
-use smallvec::SmallVec;
 use crate::content::powers::PowerId;
+use smallvec::SmallVec;
 
 pub struct ClockworkSouvenir;
 

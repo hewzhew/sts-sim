@@ -7,12 +7,19 @@ pub fn get_choices(run_state: &RunState, event_state: &EventState) -> Vec<EventC
     match event_state.current_screen {
         0 => {
             let hp_loss = ((run_state.max_hp as f32) * 0.5).ceil() as i32;
-            let count = if run_state.ascension_level >= 15 { 3 } else { 5 };
+            let count = if run_state.ascension_level >= 15 {
+                3
+            } else {
+                5
+            };
             vec![
-                EventChoiceMeta::new(format!("[Accept] Lose {} Max HP. Obtain {} Apparitions.", hp_loss, count)),
+                EventChoiceMeta::new(format!(
+                    "[Accept] Lose {} Max HP. Obtain {} Apparitions.",
+                    hp_loss, count
+                )),
                 EventChoiceMeta::new("[Refuse]"),
             ]
-        },
+        }
         _ => vec![EventChoiceMeta::new("[Leave]")],
     }
 }
@@ -33,17 +40,21 @@ pub fn handle_choice(_engine_state: &mut EngineState, run_state: &mut RunState, 
                     if run_state.current_hp > run_state.max_hp {
                         run_state.current_hp = run_state.max_hp;
                     }
-                    let count = if run_state.ascension_level >= 15 { 3 } else { 5 };
+                    let count = if run_state.ascension_level >= 15 {
+                        3
+                    } else {
+                        5
+                    };
                     for _ in 0..count {
                         run_state.add_card_to_deck(CardId::Apparition);
                     }
                     event_state.current_screen = 1;
-                },
+                }
                 _ => {
                     event_state.current_screen = 1;
-                },
+                }
             }
-        },
+        }
         _ => {
             event_state.completed = true;
         }

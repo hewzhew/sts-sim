@@ -1,7 +1,7 @@
-use crate::combat::CombatState;
-use crate::core::EntityId;
 use crate::action::Action;
+use crate::combat::CombatState;
 use crate::content::powers::PowerId;
+use crate::core::EntityId;
 
 /// Java MalleablePower.onAttacked():
 ///   if (damageAmount < owner.currentHealth && damageAmount > 0 && info.type == NORMAL) {
@@ -18,14 +18,18 @@ pub fn on_attacked(
     power_amount: i32,
 ) -> smallvec::SmallVec<[Action; 2]> {
     let mut actions = smallvec::smallvec![];
-    
+
     // Java: damageAmount < this.owner.currentHealth && damageAmount > 0
     let owner_hp = if owner == 0 {
         state.player.current_hp
     } else {
-        state.monsters.iter().find(|m| m.id == owner).map_or(0, |m| m.current_hp)
+        state
+            .monsters
+            .iter()
+            .find(|m| m.id == owner)
+            .map_or(0, |m| m.current_hp)
     };
-    
+
     if damage > 0 && damage < owner_hp {
         actions.push(Action::GainBlock {
             target: owner,
@@ -42,10 +46,13 @@ pub fn on_monster_turn_ended(
     _power_amount: i32,
 ) -> smallvec::SmallVec<[Action; 2]> {
     let mut actions = smallvec::smallvec![];
-    
+
     // reset amount to extra_data (basePower in Java)
     if let Some(power_list) = state.power_db.get(&owner) {
-        if let Some(power) = power_list.iter().find(|p| p.power_type == PowerId::Malleable) {
+        if let Some(power) = power_list
+            .iter()
+            .find(|p| p.power_type == PowerId::Malleable)
+        {
             let base_power = power.extra_data;
             if power.amount != base_power {
                 let diff = base_power - power.amount;

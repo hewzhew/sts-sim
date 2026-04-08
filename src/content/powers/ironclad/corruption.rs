@@ -1,4 +1,4 @@
-use crate::combat::{CombatState, CombatCard};
+use crate::combat::{CombatCard, CombatState};
 
 pub fn on_apply(state: &mut CombatState) {
     crate::content::cards::ironclad::corruption::corruption_on_apply(state)
@@ -9,5 +9,9 @@ pub fn on_card_draw(state: &CombatState, card: &mut CombatCard) {
 }
 
 pub fn on_use_card(state: &mut CombatState, card: &CombatCard, exhaust_override: &mut bool) {
-    crate::content::cards::ironclad::corruption::corruption_on_use_card(state, card, exhaust_override)
+    crate::content::cards::ironclad::corruption::corruption_on_use_card(
+        state,
+        card,
+        exhaust_override,
+    )
 }

@@ -1,10 +1,10 @@
-use crate::action::{ActionInfo, Action, AddTo};
+use crate::action::{Action, ActionInfo, AddTo};
 use smallvec::SmallVec;
 
 /// Vajra: At the start of each combat, gain 1 Strength.
 pub fn at_battle_start() -> SmallVec<[ActionInfo; 4]> {
     let mut actions = SmallVec::new();
-    
+
     actions.push(ActionInfo {
         action: Action::ApplyPower {
             source: 0,

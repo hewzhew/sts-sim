@@ -1,5 +1,5 @@
-use crate::combat::{CombatState, MonsterEntity, Intent, PowerId};
 use crate::action::{Action, DamageInfo, DamageType};
+use crate::combat::{CombatState, Intent, MonsterEntity, PowerId};
 use crate::content::monsters::MonsterBehavior;
 
 // Helper to calculate divider damage: (player.currentHealth / 12) + 1
@@ -11,7 +11,12 @@ fn get_divider_damage(state: &CombatState) -> i32 {
 pub struct Hexaghost;
 
 impl MonsterBehavior for Hexaghost {
-    fn roll_move(_rng: &mut crate::rng::StsRng, entity: &MonsterEntity, ascension_level: u8, _num: i32) -> (u8, Intent) {
+    fn roll_move(
+        _rng: &mut crate::rng::StsRng,
+        entity: &MonsterEntity,
+        ascension_level: u8,
+        _num: i32,
+    ) -> (u8, Intent) {
         if entity.move_history.is_empty() {
             return (5, Intent::Unknown); // ACTIVATE
         }
@@ -40,9 +45,17 @@ impl MonsterBehavior for Hexaghost {
         // [4, 2] -> next 4 (SEAR 2)
         // Sequence 3 (INFLAME) follows specifically if previous move 2 was 4:
         // History: 1 -> 4 -> 2 -> 4 -> 3 -> 2 -> 4 -> 6 -> 1 -> 4 -> 2...
-        
-        let prev_move = if history.len() >= 2 { history[history.len() - 2] } else { 0 };
-        let prev_prev_move = if history.len() >= 3 { history[history.len() - 3] } else { 0 };
+
+        let prev_move = if history.len() >= 2 {
+            history[history.len() - 2]
+        } else {
+            0
+        };
+        let prev_prev_move = if history.len() >= 3 {
+            history[history.len() - 3]
+        } else {
+            0
+        };
 
         let tackle_dmg = if ascension_level >= 4 { 6 } else { 5 };
         let inferno_dmg = if ascension_level >= 4 { 3 } else { 2 };
@@ -52,12 +65,24 @@ impl MonsterBehavior for Hexaghost {
             1 | 6 => (4, Intent::AttackDebuff { damage: 6, hits: 1 }), // SEAR 0
             4 => {
                 if prev_move == 1 || prev_move == 6 || prev_move == 0 {
-                    (2, Intent::Attack { damage: tackle_dmg, hits: 2 }) // TACKLE 1
+                    (
+                        2,
+                        Intent::Attack {
+                            damage: tackle_dmg,
+                            hits: 2,
+                        },
+                    ) // TACKLE 1
                 } else if prev_move == 2 {
                     if prev_prev_move == 4 {
                         (3, Intent::DefendBuff) // INFLAME 3
                     } else if prev_prev_move == 3 {
-                        (6, Intent::AttackDebuff { damage: inferno_dmg, hits: 6 }) // INFERNO 6
+                        (
+                            6,
+                            Intent::AttackDebuff {
+                                damage: inferno_dmg,
+                                hits: 6,
+                            },
+                        ) // INFERNO 6
                     } else {
                         (3, Intent::DefendBuff) // Fallback
                     }
@@ -69,7 +94,13 @@ impl MonsterBehavior for Hexaghost {
                 (4, Intent::AttackDebuff { damage: 6, hits: 1 }) // SEAR 2 or 5
             }
             3 => {
-                (2, Intent::Attack { damage: tackle_dmg, hits: 2 }) // TACKLE 4
+                (
+                    2,
+                    Intent::Attack {
+                        damage: tackle_dmg,
+                        hits: 2,
+                    },
+                ) // TACKLE 4
             }
             _ => (4, Intent::AttackDebuff { damage: 6, hits: 1 }),
         }
@@ -84,7 +115,8 @@ impl MonsterBehavior for Hexaghost {
         let mut actions = Vec::new();
 
         match entity.next_move_byte {
-            5 => { // ACTIVATE
+            5 => {
+                // ACTIVATE
                 // ACTIVATE immediately overrides subsequent state move towards DIVIDER without directly inflicting damage
                 // In Java, take_turn for 5 sets intent to 1 immediately!
                 // Pushes Action::SetMonsterMove into queue
@@ -96,7 +128,8 @@ impl MonsterBehavior for Hexaghost {
                 });
                 return actions;
             }
-            1 => { // DIVIDER
+            1 => {
+                // DIVIDER
                 let d = get_divider_damage(state);
                 for _ in 0..6 {
                     actions.push(Action::Damage(DamageInfo {
@@ -109,7 +142,8 @@ impl MonsterBehavior for Hexaghost {
                     }));
                 }
             }
-            2 => { // TACKLE
+            2 => {
+                // TACKLE
                 for _ in 0..2 {
                     actions.push(Action::Damage(DamageInfo {
                         source: entity.id,
@@ -121,8 +155,12 @@ impl MonsterBehavior for Hexaghost {
                     }));
                 }
             }
-            3 => { // INFLAME
-                actions.push(Action::GainBlock { target: entity.id, amount: 12 });
+            3 => {
+                // INFLAME
+                actions.push(Action::GainBlock {
+                    target: entity.id,
+                    amount: 12,
+                });
                 actions.push(Action::ApplyPower {
                     target: entity.id,
                     source: entity.id,
@@ -130,7 +168,8 @@ impl MonsterBehavior for Hexaghost {
                     amount: str_amount,
                 });
             }
-            4 => { // SEAR
+            4 => {
+                // SEAR
                 actions.push(Action::Damage(DamageInfo {
                     source: entity.id,
                     target: 0,
@@ -139,7 +178,7 @@ impl MonsterBehavior for Hexaghost {
                     damage_type: DamageType::Normal,
                     is_modified: false,
                 }));
-                
+
                 // Add Burn to discard pile. Upgraded if INFERNO was played.
                 let mut _burn_upgraded = false;
                 for act in &entity.move_history {
@@ -148,7 +187,7 @@ impl MonsterBehavior for Hexaghost {
                         break;
                     }
                 }
-                
+
                 // we just insert a Burn. Engine later can handle upgraded versions via different Action struct
                 let card_id = crate::content::cards::CardId::Burn;
 
@@ -158,7 +197,8 @@ impl MonsterBehavior for Hexaghost {
                     upgraded: _burn_upgraded,
                 });
             }
-            6 => { // INFERNO
+            6 => {
+                // INFERNO
                 for _ in 0..6 {
                     actions.push(Action::Damage(DamageInfo {
                         source: entity.id,
@@ -171,10 +211,12 @@ impl MonsterBehavior for Hexaghost {
                 }
                 actions.push(Action::UpgradeAllBurns);
             }
-            _ => { }
+            _ => {}
         }
 
-        actions.push(Action::RollMonsterMove { monster_id: entity.id });
+        actions.push(Action::RollMonsterMove {
+            monster_id: entity.id,
+        });
         actions
     }
 }

@@ -7,7 +7,7 @@ pub fn get_choices(run_state: &RunState, event_state: &EventState) -> Vec<EventC
     if event_state.current_screen == 1 {
         return vec![EventChoiceMeta::new("[Leave]")];
     }
-    
+
     let mut choices = vec![
         EventChoiceMeta::new("[Forget] Remove a card from your deck."),
         EventChoiceMeta::new("[Change] Transform a card in your deck."),
@@ -37,13 +37,13 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
         if event_state.completed {
             return;
         }
-        
+
         // This event only has 1 interactive screen (screen 0) where you pick one path, then screen 1 is just 'Leave'
         if event_state.current_screen == 0 {
             let reason = match choice_idx {
-                0 => RunPendingChoiceReason::Purge, // [Forget]
+                0 => RunPendingChoiceReason::Purge,     // [Forget]
                 1 => RunPendingChoiceReason::Transform, // [Change]
-                _ => RunPendingChoiceReason::Upgrade, // [Grow], it's button index 2
+                _ => RunPendingChoiceReason::Upgrade,   // [Grow], it's button index 2
             };
 
             event_state.current_screen = 1; // Advance to post-choice 'Leave' screen

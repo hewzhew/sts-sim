@@ -1,13 +1,24 @@
-use crate::combat::{CombatState, MonsterEntity, Intent, PowerId};
 use crate::action::{Action, DamageInfo, DamageType};
+use crate::combat::{CombatState, Intent, MonsterEntity, PowerId};
 use crate::content::monsters::MonsterBehavior;
 
 pub struct GremlinFat;
 
 impl MonsterBehavior for GremlinFat {
-    fn roll_move(_rng: &mut crate::rng::StsRng, _entity: &MonsterEntity, ascension_level: u8, _num: i32) -> (u8, Intent) {
+    fn roll_move(
+        _rng: &mut crate::rng::StsRng,
+        _entity: &MonsterEntity,
+        ascension_level: u8,
+        _num: i32,
+    ) -> (u8, Intent) {
         let dmg = if ascension_level >= 2 { 5 } else { 4 };
-        (2, Intent::AttackDebuff { damage: dmg, hits: 1 })
+        (
+            2,
+            Intent::AttackDebuff {
+                damage: dmg,
+                hits: 1,
+            },
+        )
     }
 
     fn take_turn(state: &mut CombatState, entity: &MonsterEntity) -> Vec<Action> {
@@ -15,7 +26,8 @@ impl MonsterBehavior for GremlinFat {
         let mut actions = Vec::new();
 
         match entity.next_move_byte {
-            2 => { // BLUNT
+            2 => {
+                // BLUNT
                 actions.push(Action::Damage(DamageInfo {
                     source: entity.id,
                     target: 0,
@@ -25,7 +37,7 @@ impl MonsterBehavior for GremlinFat {
                     is_modified: false,
                 }));
                 actions.push(Action::ApplyPower {
-                    target: 0, 
+                    target: 0,
                     source: entity.id,
                     power_id: PowerId::Weak,
                     amount: 1,
@@ -39,16 +51,19 @@ impl MonsterBehavior for GremlinFat {
                     });
                 }
             }
-            99 => { // ESCAPE
+            99 => {
+                // ESCAPE
                 actions.push(Action::Escape { target: entity.id });
                 // Need to resend escape just in case (like STS does)? No, Escape is enough
             }
-            _ => { }
+            _ => {}
         }
 
         // It always tries to roll move again unless it's escaped
         if entity.next_move_byte != 99 {
-            actions.push(Action::RollMonsterMove { monster_id: entity.id });
+            actions.push(Action::RollMonsterMove {
+                monster_id: entity.id,
+            });
         }
         actions
     }

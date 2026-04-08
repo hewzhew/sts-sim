@@ -1,7 +1,7 @@
+use crate::action::{Action, ActionInfo, AddTo};
 use crate::combat::CombatState;
 use crate::content::relics::RelicState;
 use smallvec::SmallVec;
-use crate::action::{Action, ActionInfo, AddTo};
 
 /// EmotionChip (Defect Rare)
 /// Java: wasHPLost(amount) → if in combat && amount > 0: set pulse=true
@@ -12,7 +12,11 @@ use crate::action::{Action, ActionInfo, AddTo};
 ///   counter == 0 → no pulse
 ///   counter == 1 → pulse active (will fire on next turn start)
 
-pub fn on_lose_hp(_state: &CombatState, relic: &mut RelicState, amount: i32) -> SmallVec<[ActionInfo; 4]> {
+pub fn on_lose_hp(
+    _state: &CombatState,
+    relic: &mut RelicState,
+    amount: i32,
+) -> SmallVec<[ActionInfo; 4]> {
     // Java: wasHPLost(damageAmount) — if damageAmount > 0, set pulse=true
     if amount > 0 && relic.counter != 1 {
         relic.counter = 1; // Set pulse
@@ -25,7 +29,7 @@ pub fn at_turn_start(_state: &CombatState, relic: &mut RelicState) -> SmallVec<[
     // Java: atTurnStart() — if pulse: addToBot(ImpulseAction), reset pulse
     if relic.counter == 1 {
         relic.counter = 0; // Reset pulse
-        // ImpulseAction triggers all orb passives
+                           // ImpulseAction triggers all orb passives
         actions.push(ActionInfo {
             action: Action::TriggerPassiveOrbs,
             insertion_mode: AddTo::Bottom, // Java: addToBot

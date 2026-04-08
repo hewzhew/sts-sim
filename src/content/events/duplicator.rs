@@ -30,13 +30,13 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
                         return_state: Box::new(EngineState::EventRoom),
                     });
                     return;
-                },
+                }
                 _ => {
                     // Leave
                     event_state.current_screen = 1;
                 }
             }
-        },
+        }
         _ => {
             event_state.completed = true;
         }

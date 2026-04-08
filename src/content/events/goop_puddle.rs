@@ -13,7 +13,10 @@ pub fn get_choices(_run_state: &RunState, event_state: &EventState) -> Vec<Event
     // Gold loss stored in internal_state (rolled at init time, matching Java)
     let gold_loss = event_state.internal_state;
     vec![
-        EventChoiceMeta::new(format!("[Gather Gold] Gain {} Gold. Take {} damage.", GOLD_GAIN, DAMAGE)),
+        EventChoiceMeta::new(format!(
+            "[Gather Gold] Gain {} Gold. Take {} damage.",
+            GOLD_GAIN, DAMAGE
+        )),
         EventChoiceMeta::new(format!("[Leave] Lose {} Gold.", gold_loss)),
     ]
 }
@@ -28,16 +31,16 @@ pub fn handle_choice(_engine_state: &mut EngineState, run_state: &mut RunState, 
                     // Gather Gold: +75g, take 11 damage
                     run_state.gold += GOLD_GAIN;
                     run_state.current_hp = (run_state.current_hp - DAMAGE).max(0);
-                },
+                }
                 _ => {
                     // Leave: lose pre-rolled gold amount
                     let gold_loss = event_state.internal_state;
                     let actual_loss = gold_loss.min(run_state.gold);
                     run_state.gold -= actual_loss;
-                },
+                }
             }
             event_state.current_screen = 1;
-        },
+        }
         _ => {
             event_state.completed = true;
         }

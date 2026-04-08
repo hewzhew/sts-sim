@@ -1,12 +1,16 @@
-use crate::combat::{CombatState, MonsterEntity, Intent};
-use crate::action::{Action, DamageType, DamageInfo};
+use crate::action::{Action, DamageInfo, DamageType};
+use crate::combat::{CombatState, Intent, MonsterEntity};
 use crate::content::monsters::MonsterBehavior;
 use crate::content::powers::PowerId;
 
 pub struct SphericGuardian;
 
 impl MonsterBehavior for SphericGuardian {
-    fn use_pre_battle_action(entity: &MonsterEntity, _hp_rng: &mut crate::rng::StsRng, _ascension_level: u8) -> Vec<Action> {
+    fn use_pre_battle_action(
+        entity: &MonsterEntity,
+        _hp_rng: &mut crate::rng::StsRng,
+        _ascension_level: u8,
+    ) -> Vec<Action> {
         vec![
             Action::ApplyPower {
                 source: entity.id,
@@ -27,21 +31,44 @@ impl MonsterBehavior for SphericGuardian {
         ]
     }
 
-    fn roll_move(_rng: &mut crate::rng::StsRng, entity: &MonsterEntity, ascension_level: u8, _num: i32) -> (u8, Intent) {
+    fn roll_move(
+        _rng: &mut crate::rng::StsRng,
+        entity: &MonsterEntity,
+        ascension_level: u8,
+        _num: i32,
+    ) -> (u8, Intent) {
         let dmg = if ascension_level >= 2 { 11 } else { 10 };
 
         if entity.move_history.is_empty() {
             return (2, Intent::Defend);
         }
-        
+
         if entity.move_history.len() == 1 {
-            return (4, Intent::AttackDebuff { damage: dmg, hits: 1 });
+            return (
+                4,
+                Intent::AttackDebuff {
+                    damage: dmg,
+                    hits: 1,
+                },
+            );
         }
 
         if entity.move_history.back() == Some(&1) {
-            (3, Intent::AttackDefend { damage: dmg, hits: 1 })
+            (
+                3,
+                Intent::AttackDefend {
+                    damage: dmg,
+                    hits: 1,
+                },
+            )
         } else {
-            (1, Intent::Attack { damage: dmg, hits: 2 })
+            (
+                1,
+                Intent::Attack {
+                    damage: dmg,
+                    hits: 2,
+                },
+            )
         }
     }
 
@@ -69,14 +96,14 @@ impl MonsterBehavior for SphericGuardian {
                     damage_type: DamageType::Normal,
                     is_modified: false,
                 }));
-            },
+            }
             2 => {
                 let block_amt = if asc >= 17 { 35 } else { 25 };
                 actions.push(Action::GainBlock {
                     target: entity.id,
                     amount: block_amt,
                 });
-            },
+            }
             3 => {
                 actions.push(Action::GainBlock {
                     target: entity.id,
@@ -90,7 +117,7 @@ impl MonsterBehavior for SphericGuardian {
                     damage_type: DamageType::Normal,
                     is_modified: false,
                 }));
-            },
+            }
             4 => {
                 actions.push(Action::Damage(DamageInfo {
                     source: entity.id,
@@ -106,10 +133,12 @@ impl MonsterBehavior for SphericGuardian {
                     power_id: PowerId::Frail,
                     amount: 5,
                 });
-            },
+            }
             _ => {}
         }
-        actions.push(Action::RollMonsterMove { monster_id: entity.id });
+        actions.push(Action::RollMonsterMove {
+            monster_id: entity.id,
+        });
 
         actions
     }

@@ -13,7 +13,7 @@ pub fn at_turn_start(counter: i32) -> SmallVec<[ActionInfo; 4]> {
     // Java: counter == -1 ? counter += 2 : ++counter
     // This handles uninitialized (-1) counter by jumping to 1 instead of 0
     let next_counter = if counter == -1 {
-        1  // Java: -1 + 2 = 1
+        1 // Java: -1 + 2 = 1
     } else if counter + 1 >= 6 {
         0
     } else {

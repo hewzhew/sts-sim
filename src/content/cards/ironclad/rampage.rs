@@ -1,13 +1,17 @@
-use crate::combat::{CombatState, CombatCard};
-use crate::action::{Action, ActionInfo, AddTo, DamageType, DamageInfo};
+use crate::action::{Action, ActionInfo, AddTo, DamageInfo, DamageType};
+use crate::combat::{CombatCard, CombatState};
 use smallvec::SmallVec;
 
-pub fn rampage_play(_state: &CombatState, card: &CombatCard, target: Option<crate::core::EntityId>) -> SmallVec<[ActionInfo; 4]> {
+pub fn rampage_play(
+    _state: &CombatState,
+    card: &CombatCard,
+    target: Option<crate::core::EntityId>,
+) -> SmallVec<[ActionInfo; 4]> {
     let target = target.expect("Rampage requires a valid target!");
     let mut actions = smallvec::SmallVec::new();
     let damage = card.base_damage_mut; // Dynamically calculated to include misc_value
     let increase_amount = card.base_magic_num_mut; // 8, upgraded 12
-    
+
     actions.push(ActionInfo {
         action: Action::Damage(DamageInfo {
             source: 0,
@@ -19,7 +23,7 @@ pub fn rampage_play(_state: &CombatState, card: &CombatCard, target: Option<crat
         }),
         insertion_mode: AddTo::Bottom,
     });
-    
+
     actions.push(ActionInfo {
         action: Action::ModifyCardMisc {
             card_uuid: card.uuid,
@@ -27,6 +31,6 @@ pub fn rampage_play(_state: &CombatState, card: &CombatCard, target: Option<crat
         },
         insertion_mode: AddTo::Bottom,
     });
-    
+
     actions
 }

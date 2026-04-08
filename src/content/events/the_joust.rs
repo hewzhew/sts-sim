@@ -14,7 +14,9 @@ use crate::state::run::RunState;
 
 pub fn get_choices(_run_state: &RunState, event_state: &EventState) -> Vec<EventChoiceMeta> {
     match event_state.current_screen {
-        0 => vec![EventChoiceMeta::new("[Approach] Investigate the commotion.")],
+        0 => vec![EventChoiceMeta::new(
+            "[Approach] Investigate the commotion.",
+        )],
         1 => vec![
             EventChoiceMeta::new("[Bet Against Owner] Pay 50 Gold. Win 100 Gold if Murderer wins."),
             EventChoiceMeta::new("[Bet For Owner] Pay 50 Gold. Win 250 Gold if Owner wins."),
@@ -25,14 +27,20 @@ pub fn get_choices(_run_state: &RunState, event_state: &EventState) -> Vec<Event
             let bet_for = (event_state.internal_state & 1) != 0;
             let owner_wins = (event_state.internal_state & 2) != 0;
             let msg = if owner_wins {
-                if bet_for { "Owner wins! You won 250 Gold!" }
-                else { "Owner wins! You lost your bet." }
+                if bet_for {
+                    "Owner wins! You won 250 Gold!"
+                } else {
+                    "Owner wins! You lost your bet."
+                }
             } else {
-                if bet_for { "Murderer wins! You lost your bet." }
-                else { "Murderer wins! You won 100 Gold!" }
+                if bet_for {
+                    "Murderer wins! You lost your bet."
+                } else {
+                    "Murderer wins! You won 100 Gold!"
+                }
             };
             vec![EventChoiceMeta::new(format!("{} [Leave]", msg))]
-        },
+        }
         _ => vec![EventChoiceMeta::new("[Leave]")],
     }
 }
@@ -41,16 +49,19 @@ pub fn handle_choice(_engine_state: &mut EngineState, run_state: &mut RunState, 
     let mut event_state = run_state.event_state.take().unwrap();
 
     match event_state.current_screen {
-        0 => { // Approach → explanation
+        0 => {
+            // Approach → explanation
             event_state.current_screen = 1;
-        },
-        1 => { // Place bet
+        }
+        1 => {
+            // Place bet
             let bet_for = choice_idx == 1;
             run_state.gold = (run_state.gold - 50).max(0);
             event_state.internal_state = if bet_for { 1 } else { 0 };
             event_state.current_screen = 2;
-        },
-        2 => { // Resolve joust
+        }
+        2 => {
+            // Resolve joust
             // Java: miscRng.randomBoolean(0.3f) — owner wins 30%
             let owner_wins = run_state.rng_pool.misc_rng.random_boolean_chance(0.3);
 
@@ -64,9 +75,10 @@ pub fn handle_choice(_engine_state: &mut EngineState, run_state: &mut RunState, 
             }
             // else: bet lost, gold already deducted
 
-            event_state.internal_state = (if bet_for { 1 } else { 0 }) | (if owner_wins { 2 } else { 0 });
+            event_state.internal_state =
+                (if bet_for { 1 } else { 0 }) | (if owner_wins { 2 } else { 0 });
             event_state.current_screen = 3;
-        },
+        }
         _ => {
             event_state.completed = true;
         }

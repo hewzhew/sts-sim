@@ -1,9 +1,9 @@
 use std::io::{self, BufRead, Write};
-use sts_simulator::state::core::*;
-use sts_simulator::state::run::RunState;
-use sts_simulator::state::reward::RewardItem;
 use sts_simulator::combat::CombatState;
 use sts_simulator::engine::run_loop::tick_run;
+use sts_simulator::rewards::state::RewardItem;
+use sts_simulator::state::core::*;
+use sts_simulator::state::run::RunState;
 
 // ─── Smart Silence System ───────────────────────────────────────────────────
 
@@ -62,7 +62,9 @@ impl AppState {
         for rule in &self.dashboard.intercept_rules {
             let triggered = match rule {
                 LogRule::ActReached(act) => run.act_num >= *act,
-                LogRule::HpBelowPercent(pct) => (run.current_hp as f32 / run.max_hp.max(1) as f32) < *pct,
+                LogRule::HpBelowPercent(pct) => {
+                    (run.current_hp as f32 / run.max_hp.max(1) as f32) < *pct
+                }
                 LogRule::BossCombat => _combat.map_or(false, |c| c.is_boss_fight),
             };
             if triggered && target_mode < DisplayMode::DeepDebug {
@@ -75,16 +77,23 @@ impl AppState {
     fn is_bot_active(&self, es: &EngineState) -> bool {
         match self.mode {
             InputMode::Auto => true,
-            InputMode::SkipCombat => matches!(es,
-                EngineState::CombatPlayerTurn | EngineState::CombatProcessing |
-                EngineState::PendingChoice(_) | EngineState::EventCombat(_)
+            InputMode::SkipCombat => matches!(
+                es,
+                EngineState::CombatPlayerTurn
+                    | EngineState::CombatProcessing
+                    | EngineState::PendingChoice(_)
+                    | EngineState::EventCombat(_)
             ),
             InputMode::Manual => false,
         }
     }
 
-    pub fn is_debug(&self) -> bool { self.current_display == DisplayMode::DeepDebug }
-    pub fn is_silence(&self) -> bool { self.current_display == DisplayMode::TotalSilence }
+    pub fn is_debug(&self) -> bool {
+        self.current_display == DisplayMode::DeepDebug
+    }
+    pub fn is_silence(&self) -> bool {
+        self.current_display == DisplayMode::TotalSilence
+    }
 }
 
 // ─── Main ───────────────────────────────────────────────────────────────────
@@ -92,22 +101,61 @@ impl AppState {
 fn main() {
     let args: Vec<String> = std::env::args().collect();
 
-    let seed: u64 = args.get(1)
-        .and_then(|s| s.parse().ok())
-        .unwrap_or_else(|| {
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_millis() as u64
-        });
+    let seed: u64 = args.get(1).and_then(|s| s.parse().ok()).unwrap_or_else(|| {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis() as u64
+    });
 
-    let ascension: u8 = args.get(2)
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(0);
+    let ascension: u8 = args.get(2).and_then(|s| s.parse().ok()).unwrap_or(0);
 
     let has_flag = |f: &str| args.iter().any(|a| a.trim().contains(f));
+    let flag_value = |flag: &str| {
+        args.iter()
+            .position(|a| a == flag)
+            .and_then(|idx| args.get(idx + 1))
+            .cloned()
+    };
     let start_auto = has_flag("--auto");
-    
+    let coverage_mode = if has_flag("--coverage-off") {
+        sts_simulator::bot::coverage::CoverageMode::Off
+    } else if has_flag("--coverage-aggressive") {
+        sts_simulator::bot::coverage::CoverageMode::AggressiveNovel
+    } else {
+        sts_simulator::bot::coverage::CoverageMode::PreferNovel
+    };
+    let curiosity_target = flag_value("--curiosity-card")
+        .map(sts_simulator::bot::coverage::CuriosityTarget::card)
+        .or_else(|| {
+            flag_value("--curiosity-relic")
+                .map(sts_simulator::bot::coverage::CuriosityTarget::relic)
+        })
+        .or_else(|| {
+            flag_value("--curiosity-potion")
+                .map(sts_simulator::bot::coverage::CuriosityTarget::potion)
+        })
+        .or_else(|| {
+            flag_value("--curiosity-archetype")
+                .map(sts_simulator::bot::coverage::CuriosityTarget::archetype)
+        })
+        .or_else(|| {
+            flag_value("--curiosity-power")
+                .map(sts_simulator::bot::coverage::CuriosityTarget::power_tag)
+        })
+        .or_else(|| {
+            flag_value("--curiosity-pile")
+                .map(sts_simulator::bot::coverage::CuriosityTarget::pile_tag)
+        })
+        .or_else(|| {
+            flag_value("--curiosity-pending")
+                .map(sts_simulator::bot::coverage::CuriosityTarget::pending_choice)
+        })
+        .or_else(|| {
+            flag_value("--curiosity-source")
+                .map(sts_simulator::bot::coverage::CuriosityTarget::source)
+        });
+
     // Parse Dashboard Configuration
     let mut db_config = DashboardConfig::new(DisplayMode::DeepDebug);
     if has_flag("--silent") {
@@ -130,7 +178,11 @@ fn main() {
     let initial_display = db_config.base_mode;
 
     let mut app = AppState {
-        mode: if start_auto { InputMode::Auto } else { InputMode::Manual },
+        mode: if start_auto {
+            InputMode::Auto
+        } else {
+            InputMode::Manual
+        },
         dashboard: db_config,
         current_display: initial_display,
         agent: sts_simulator::bot::agent::Agent::new(),
@@ -138,6 +190,8 @@ fn main() {
         combat_start_hp: 0,
         stashed_event_combat: None,
     };
+    app.agent.set_coverage_mode(coverage_mode);
+    app.agent.set_curiosity_target(curiosity_target.clone());
 
     if has_flag("--live-comm") {
         sts_simulator::cli::live_comm::run_live_comm_loop(app.agent);
@@ -147,7 +201,20 @@ fn main() {
     if !app.is_silence() {
         println!("=== Slay the Spire Simulator ===");
         println!("Seed: {}  Ascension: {}  Class: Ironclad", seed, ascension);
-        println!("Mode: {}  Display: {:?}", if app.mode == InputMode::Auto { "auto" } else { "manual" }, app.current_display);
+        println!(
+            "Mode: {}  Display: {:?}  Coverage: {:?}{}",
+            if app.mode == InputMode::Auto {
+                "auto"
+            } else {
+                "manual"
+            },
+            app.current_display,
+            coverage_mode,
+            curiosity_target
+                .as_ref()
+                .map(|target| format!("  Curiosity: {}", target.label()))
+                .unwrap_or_default()
+        );
         println!("Type 'help' for commands.\n");
     }
 
@@ -156,17 +223,28 @@ fn main() {
     // Starter deck
     use sts_simulator::content::cards::CardId;
     let starter_cards = [
-        CardId::Strike, CardId::Strike, CardId::Strike, CardId::Strike, CardId::Strike,
-        CardId::Defend, CardId::Defend, CardId::Defend, CardId::Defend,
+        CardId::Strike,
+        CardId::Strike,
+        CardId::Strike,
+        CardId::Strike,
+        CardId::Strike,
+        CardId::Defend,
+        CardId::Defend,
+        CardId::Defend,
+        CardId::Defend,
         CardId::Bash,
     ];
     for (i, &card_id) in starter_cards.iter().enumerate() {
-        run_state.master_deck.push(sts_simulator::combat::CombatCard::new(card_id, i as u32));
+        run_state
+            .master_deck
+            .push(sts_simulator::combat::CombatCard::new(card_id, i as u32));
     }
 
     // Starter relic
     use sts_simulator::content::relics::{RelicId, RelicState};
-    run_state.relics.push(RelicState::new(RelicId::BurningBlood));
+    run_state
+        .relics
+        .push(RelicState::new(RelicId::BurningBlood));
 
     let mut engine_state = EngineState::EventRoom;
     let mut combat_state: Option<CombatState> = None;
@@ -175,6 +253,7 @@ fn main() {
     let mut stdout = io::stdout();
 
     let mut last_floor_num = 0;
+    let mut watchdog = sts_simulator::utils::watchdog::SimulationWatchdog::new(100, 5);
 
     'outer: loop {
         app.evaluate_display_mode(&run_state, combat_state.as_ref());
@@ -187,7 +266,8 @@ fn main() {
             engine_state = EngineState::CombatProcessing;
             // Drain initial start-of-combat triggers (relics/innate cards) using the proper run_loop
             loop {
-                let keep_running = tick_run(&mut engine_state, &mut run_state, &mut combat_state, None);
+                let keep_running =
+                    tick_run(&mut engine_state, &mut run_state, &mut combat_state, None);
                 if !keep_running || !matches!(engine_state, EngineState::CombatProcessing) {
                     break;
                 }
@@ -203,13 +283,18 @@ fn main() {
                     }
                     // Stash the event combat state for post-combat handling
                     app.stashed_event_combat = Some(ecs);
-                    combat_state = Some(init_event_combat(&mut run_state, encounter_id, app.current_display));
+                    combat_state = Some(init_event_combat(
+                        &mut run_state,
+                        encounter_id,
+                        app.current_display,
+                    ));
                     app.combat_start_hp = run_state.current_hp;
                     app.combat_cards_played = 0;
                     // Switch to normal combat flow so action queue gets processed
                     engine_state = EngineState::CombatProcessing;
                     loop {
-                        let kr = tick_run(&mut engine_state, &mut run_state, &mut combat_state, None);
+                        let kr =
+                            tick_run(&mut engine_state, &mut run_state, &mut combat_state, None);
                         if !kr || !matches!(engine_state, EngineState::CombatProcessing) {
                             break;
                         }
@@ -223,9 +308,20 @@ fn main() {
         if run_state.floor_num != last_floor_num {
             last_floor_num = run_state.floor_num;
             if app.current_display == DisplayMode::Summary {
-                let room_str = run_state.map.get_current_room_type().map(|r| format!("{:?}", r)).unwrap_or_else(|| "Unknown".to_string());
-                println!("\n[Floor {} | Act {}] HP: {}/{} | Gold: {} | Room: {}",
-                    run_state.floor_num, run_state.act_num, run_state.current_hp, run_state.max_hp, run_state.gold, room_str);
+                let room_str = run_state
+                    .map
+                    .get_current_room_type()
+                    .map(|r| format!("{:?}", r))
+                    .unwrap_or_else(|| "Unknown".to_string());
+                println!(
+                    "\n[Floor {} | Act {}] HP: {}/{} | Gold: {} | Room: {}",
+                    run_state.floor_num,
+                    run_state.act_num,
+                    run_state.current_hp,
+                    run_state.max_hp,
+                    run_state.gold,
+                    room_str
+                );
             }
         }
 
@@ -254,7 +350,9 @@ fn main() {
                     println!("  [BOT] Hand: {} Energy: {}", cs.hand.len(), cs.energy);
                 }
             }
-            let decision = app.agent.decide(&engine_state, &run_state, &combat_state, app.is_debug());
+            let decision =
+                app.agent
+                    .decide(&engine_state, &run_state, &combat_state, app.is_debug());
             if app.is_debug() {
                 println!("  [BOT] {:?}", decision);
             } else if verbose && app.current_display >= DisplayMode::Summary {
@@ -265,10 +363,12 @@ fn main() {
                             let def = sts_simulator::content::cards::get_card_definition(c.id);
                             println!("  [BOT] → {}", def.name);
                         }
-                    },
+                    }
                     ClientInput::EndTurn => println!("  [BOT] End Turn"),
-                    ClientInput::Proceed => {},
-                    ClientInput::UsePotion { potion_index, .. } => println!("  [BOT] Potion #{}", potion_index),
+                    ClientInput::Proceed => {}
+                    ClientInput::UsePotion { potion_index, .. } => {
+                        println!("  [BOT] Potion #{}", potion_index)
+                    }
                     ClientInput::SelectCard(idx) => println!("  [BOT] Pick Card #{}", idx),
                     ClientInput::ClaimReward(idx) => println!("  [BOT] Reward #{}", idx),
                     ClientInput::SubmitRelicChoice(idx) => println!("  [BOT] Boss Relic #{}", idx),
@@ -277,11 +377,26 @@ fn main() {
                     _ => println!("  [BOT] {:?}", decision),
                 }
             } else if app.mode == InputMode::SkipCombat {
-                // In skip mode, only print turn ends
-                if matches!(&decision, ClientInput::EndTurn) {
-                    if let Some(cs) = &combat_state {
-                        println!("  Turn {} done — HP: {}/{}", cs.turn_count, cs.player.current_hp, cs.player.max_hp);
+                // In skip mode, print turn ends + significant actions (potions, key cards)
+                match &decision {
+                    ClientInput::EndTurn => {
+                        if let Some(cs) = &combat_state {
+                            println!(
+                                "  Turn {} done — HP: {}/{}",
+                                cs.turn_count, cs.player.current_hp, cs.player.max_hp
+                            );
+                        }
                     }
+                    ClientInput::UsePotion { potion_index, .. } => {
+                        if let Some(cs) = &combat_state {
+                            if let Some(Some(p)) = cs.potions.get(*potion_index) {
+                                let def =
+                                    sts_simulator::content::potions::get_potion_definition(p.id);
+                                println!("  [BOT] Used Potion: {}", def.name);
+                            }
+                        }
+                    }
+                    _ => {}
                 }
             }
             // Track cards played for combat summary
@@ -299,7 +414,9 @@ fn main() {
                 break;
             }
             let line = line.trim().to_string();
-            if line.is_empty() { continue; }
+            if line.is_empty() {
+                continue;
+            }
 
             // Check meta commands first
             match handle_meta_command(&line, &mut app, &engine_state, &run_state, &combat_state) {
@@ -308,7 +425,9 @@ fn main() {
                 MetaResult::Step(input) => input,
                 MetaResult::PassThrough => {
                     // Normal game input
-                    if let Some(c) = sts_simulator::cli::input::parse_input(&line, &engine_state, &combat_state) {
+                    if let Some(c) =
+                        sts_simulator::cli::input::parse_input(&line, &engine_state, &combat_state)
+                    {
                         c
                     } else {
                         println!("  Invalid input.");
@@ -318,8 +437,17 @@ fn main() {
             }
         };
 
+        if watchdog.feed(&engine_state, &run_state, &combat_state, &input) {
+            break 'outer;
+        }
+
         // ── Tick the engine ──
-        let keep_running = tick_run(&mut engine_state, &mut run_state, &mut combat_state, Some(input));
+        let keep_running = tick_run(
+            &mut engine_state,
+            &mut run_state,
+            &mut combat_state,
+            Some(input),
+        );
 
         // ── Process engine ticks until stable ──
         if matches!(engine_state, EngineState::CombatProcessing) {
@@ -328,7 +456,8 @@ fn main() {
                 if !matches!(engine_state, EngineState::CombatProcessing) {
                     break;
                 }
-                let keep_running = tick_run(&mut engine_state, &mut run_state, &mut combat_state, None);
+                let keep_running =
+                    tick_run(&mut engine_state, &mut run_state, &mut combat_state, None);
                 if !keep_running {
                     break;
                 }
@@ -341,15 +470,20 @@ fn main() {
         }
 
         // ── Combat ended? ──
-        if !matches!(engine_state,
-            EngineState::CombatPlayerTurn | EngineState::CombatProcessing |
-            EngineState::PendingChoice(_) | EngineState::EventCombat(_)
+        if !matches!(
+            engine_state,
+            EngineState::CombatPlayerTurn
+                | EngineState::CombatProcessing
+                | EngineState::PendingChoice(_)
+                | EngineState::EventCombat(_)
         ) {
             if let Some(ref cs) = combat_state {
                 let end_hp = cs.player.current_hp;
                 if app.current_display >= DisplayMode::Summary {
-                    println!("  [COMBAT END] HP: {} → {} | Cards played: {}",
-                        app.combat_start_hp, end_hp, app.combat_cards_played);
+                    println!(
+                        "  [COMBAT END] HP: {} → {} | Cards played: {}",
+                        app.combat_start_hp, end_hp, app.combat_cards_played
+                    );
                 }
                 combat_state = None;
 
@@ -374,10 +508,10 @@ fn main() {
                         match ecs.post_combat_return {
                             PostCombatReturn::EventRoom => {
                                 engine_state = EngineState::EventRoom;
-                            },
+                            }
                             PostCombatReturn::MapNavigation => {
                                 engine_state = EngineState::MapNavigation;
-                            },
+                            }
                         }
                     }
                 }
@@ -405,14 +539,21 @@ fn main() {
 }
 
 fn print_run_summary(rs: &RunState) {
+    let profile = sts_simulator::bot::evaluator::CardEvaluator::deck_profile(rs);
     println!("\n--- RUN SUMMARY ---");
     println!("  Floor: {} (Act {})", rs.floor_num, rs.act_num);
     println!("  HP: {} / {}", rs.current_hp, rs.max_hp);
     println!("  Gold: {}", rs.gold);
+    println!(
+        "  Archetype: {}",
+        sts_simulator::bot::evaluator::CardEvaluator::archetype_summary(&profile)
+    );
 
     let mut potion_count = 0;
     for p in &rs.potions {
-        if p.is_some() { potion_count += 1; }
+        if p.is_some() {
+            potion_count += 1;
+        }
     }
     println!("  Potions: {} / {}", potion_count, rs.potions.len());
 
@@ -425,7 +566,11 @@ fn print_run_summary(rs: &RunState) {
     let mut deck_counts = std::collections::HashMap::new();
     for c in &rs.master_deck {
         let def = sts_simulator::content::cards::get_card_definition(c.id);
-        let name = if c.upgrades > 0 { format!("{} +{}", def.name, c.upgrades) } else { def.name.to_string() };
+        let name = if c.upgrades > 0 {
+            format!("{} +{}", def.name, c.upgrades)
+        } else {
+            def.name.to_string()
+        };
         *deck_counts.entry(name).or_insert(0) += 1;
     }
     let mut deck_list: Vec<_> = deck_counts.into_iter().collect();
@@ -461,26 +606,26 @@ fn handle_meta_command(
             let input = app.agent.decide(es, rs, cs, app.is_debug());
             println!("  [BOT] Decided: {:?}", input);
             MetaResult::Step(input)
-        },
+        }
         "quit" | "q" => {
             println!("Goodbye!");
             MetaResult::Quit
-        },
+        }
         "help" | "h" => {
             sts_simulator::cli::input::print_help();
             MetaResult::Handled
-        },
+        }
         "state" | "s" => {
             sts_simulator::cli::display::print_detailed_state(es, rs, cs);
             MetaResult::Handled
-        },
+        }
         "relics" => {
             println!("  Relics ({}):", rs.relics.len());
             for r in &rs.relics {
                 println!("    {:?} (counter={})", r.id, r.counter);
             }
             MetaResult::Handled
-        },
+        }
         "potions" => {
             println!("  Potions:");
             for (i, p) in rs.potions.iter().enumerate() {
@@ -490,7 +635,27 @@ fn handle_meta_command(
                 }
             }
             MetaResult::Handled
-        },
+        }
+        "purge" => {
+            if let EngineState::Shop(shop) = es {
+                if shop.purge_available {
+                    println!(
+                        "  [PURGE] Choose a card to remove for {} gold:",
+                        shop.purge_cost
+                    );
+                    for (i, card) in rs.master_deck.iter().enumerate() {
+                        let def = sts_simulator::content::cards::get_card_definition(card.id);
+                        println!("    [{}] {} (uuid={})", i, def.name, card.uuid);
+                    }
+                    println!("  → Type 'purge <deck_idx>' to confirm.");
+                } else {
+                    println!("  [PURGE] Sold Out.");
+                }
+            } else {
+                println!("  [PURGE] Not in a shop.");
+            }
+            MetaResult::Handled
+        }
         "draw" | "discard" | "exhaust" => {
             if let Some(combat) = cs {
                 let pile = match line {
@@ -508,30 +673,30 @@ fn handle_meta_command(
                 println!("  Not in combat.");
             }
             MetaResult::Handled
-        },
+        }
         // ── Mode switching commands ──
         "auto" => {
             app.mode = InputMode::Auto;
             println!("  [MODE] Switched to AUTO. Type Ctrl+C to stop.");
             MetaResult::Handled
-        },
+        }
         "auto run" => {
             app.mode = InputMode::Auto;
             app.dashboard.base_mode = DisplayMode::Summary;
             println!("  [MODE] Full auto + summary. Running to completion...");
             MetaResult::Handled
-        },
+        }
         "silent run" | "sr" => {
             app.mode = InputMode::Auto;
             app.dashboard.base_mode = DisplayMode::TotalSilence;
             println!("  [MODE] Full auto + silent. Running to completion...");
             MetaResult::Handled
-        },
+        }
         "manual" => {
             app.mode = InputMode::Manual;
             println!("  [MODE] Switched to MANUAL.");
             MetaResult::Handled
-        },
+        }
         "skip" => {
             if cs.is_some() {
                 app.mode = InputMode::SkipCombat;
@@ -541,7 +706,7 @@ fn handle_meta_command(
                 println!("  Not in combat. Use 'auto' for full auto.");
             }
             MetaResult::Handled
-        },
+        }
         "fast" => {
             if app.dashboard.base_mode == DisplayMode::DeepDebug {
                 app.dashboard.base_mode = DisplayMode::Summary;
@@ -550,7 +715,7 @@ fn handle_meta_command(
             }
             println!("  [DISPLAY] Base mode set to {:?}", app.dashboard.base_mode);
             MetaResult::Handled
-        },
+        }
         _ => MetaResult::PassThrough,
     }
 }
@@ -563,18 +728,20 @@ fn init_combat(run_state: &mut RunState, current_display: DisplayMode) -> Combat
 
     let encounter_id = if let Some(room_type) = run_state.map.get_current_room_type() {
         match room_type {
-            RoomType::MonsterRoomElite => {
-                run_state.next_elite().unwrap_or(factory::EncounterId::JawWorm)
-            },
-            RoomType::MonsterRoomBoss => {
-                run_state.next_boss().unwrap_or(factory::EncounterId::Hexaghost)
-            },
-            _ => {
-                run_state.next_encounter().unwrap_or(factory::EncounterId::JawWorm)
-            },
+            RoomType::MonsterRoomElite => run_state
+                .next_elite()
+                .unwrap_or(factory::EncounterId::JawWorm),
+            RoomType::MonsterRoomBoss => run_state
+                .next_boss()
+                .unwrap_or(factory::EncounterId::Hexaghost),
+            _ => run_state
+                .next_encounter()
+                .unwrap_or(factory::EncounterId::JawWorm),
         }
     } else {
-        run_state.next_encounter().unwrap_or(factory::EncounterId::JawWorm)
+        run_state
+            .next_encounter()
+            .unwrap_or(factory::EncounterId::JawWorm)
     };
 
     if current_display >= DisplayMode::Summary {
@@ -586,7 +753,7 @@ fn init_combat(run_state: &mut RunState, current_display: DisplayMode) -> Combat
         encounter_id,
         &mut run_state.rng_pool.misc_rng,
         &mut run_state.rng_pool.monster_hp_rng,
-        run_state.ascension_level
+        run_state.ascension_level,
     );
 
     let mut cs = CombatState {
@@ -626,7 +793,7 @@ fn init_combat(run_state: &mut RunState, current_display: DisplayMode) -> Combat
             m,
             cs.ascension_level,
             num,
-            &monsters_clone
+            &monsters_clone,
         );
         m.next_move_byte = move_byte;
         m.current_intent = intent;
@@ -638,25 +805,27 @@ fn init_combat(run_state: &mut RunState, current_display: DisplayMode) -> Combat
     // Java: CardGroup.initializeDeck() calls shuffle(shuffleRng)
     sts_simulator::rng::shuffle_with_random_long(&mut cs.draw_pile, &mut cs.rng.shuffle_rng);
 
-    cs.action_queue.push_back(sts_simulator::action::Action::BattleStartTrigger);
-    cs.action_queue.push_back(sts_simulator::action::Action::DrawCards(5));
+    cs.action_queue
+        .push_back(sts_simulator::action::Action::PreBattleTrigger);
 
     cs
 }
 
 // ─── Event Combat helpers ───────────────────────────────────────────────────
 
-fn encounter_key_to_id(key: &str) -> Option<sts_simulator::content::monsters::factory::EncounterId> {
+fn encounter_key_to_id(
+    key: &str,
+) -> Option<sts_simulator::content::monsters::factory::EncounterId> {
     use sts_simulator::content::monsters::factory::EncounterId;
     match key {
-        "Colosseum Slavers"  => Some(EncounterId::ColosseumSlavers),
-        "Colosseum Nobs"     => Some(EncounterId::ColosseumNobs),
-        "3 Bandits"          => Some(EncounterId::MaskedBandits),
-        "Dead Adventurer"    => Some(EncounterId::LagavulinEvent),
-        "3 Fungi Beasts"     => Some(EncounterId::TheMushroomLair),
-        "2 Orb Walkers"      => Some(EncounterId::TwoOrbWalkers),
-        "Mind Bloom Boss"    => Some(EncounterId::AwakenedOne), // MindBloom spawns a random act 1 boss; fallback
-        _                    => None,
+        "Colosseum Slavers" => Some(EncounterId::ColosseumSlavers),
+        "Colosseum Nobs" => Some(EncounterId::ColosseumNobs),
+        "3 Bandits" => Some(EncounterId::MaskedBandits),
+        "Dead Adventurer" => Some(EncounterId::LagavulinEvent),
+        "3 Fungi Beasts" => Some(EncounterId::TheMushroomLair),
+        "2 Orb Walkers" => Some(EncounterId::TwoOrbWalkers),
+        "Mind Bloom Boss" => Some(EncounterId::AwakenedOne), // MindBloom spawns a random act 1 boss; fallback
+        _ => None,
     }
 }
 
@@ -676,7 +845,7 @@ fn init_event_combat(
         encounter_id,
         &mut run_state.rng_pool.misc_rng,
         &mut run_state.rng_pool.monster_hp_rng,
-        run_state.ascension_level
+        run_state.ascension_level,
     );
 
     let mut cs = CombatState {
@@ -711,7 +880,7 @@ fn init_event_combat(
             m,
             cs.ascension_level,
             num,
-            &monsters_clone
+            &monsters_clone,
         );
         m.next_move_byte = move_byte;
         m.current_intent = intent;
@@ -723,8 +892,8 @@ fn init_event_combat(
     // Java: CardGroup.initializeDeck() calls shuffle(shuffleRng)
     sts_simulator::rng::shuffle_with_random_long(&mut cs.draw_pile, &mut cs.rng.shuffle_rng);
 
-    cs.action_queue.push_back(sts_simulator::action::Action::BattleStartTrigger);
-    cs.action_queue.push_back(sts_simulator::action::Action::DrawCards(5));
+    cs.action_queue
+        .push_back(sts_simulator::action::Action::PreBattleTrigger);
 
     cs
 }

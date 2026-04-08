@@ -1,4 +1,4 @@
-use crate::action::{Action, DamageType, DamageInfo};
+use crate::action::{Action, DamageInfo, DamageType};
 use crate::combat::{CombatState, Intent};
 use crate::content::monsters::MonsterBehavior;
 use crate::content::powers::PowerId;
@@ -6,7 +6,12 @@ use crate::content::powers::PowerId;
 pub struct BanditLeader;
 
 impl MonsterBehavior for BanditLeader {
-    fn roll_move(_rng: &mut crate::rng::StsRng, entity: &crate::combat::MonsterEntity, ascension_level: u8, _num: i32) -> (u8, Intent) {
+    fn roll_move(
+        _rng: &mut crate::rng::StsRng,
+        entity: &crate::combat::MonsterEntity,
+        ascension_level: u8,
+        _num: i32,
+    ) -> (u8, Intent) {
         if entity.move_history.is_empty() {
             return (2, Intent::Unknown); // MOCK
         }
@@ -16,23 +21,53 @@ impl MonsterBehavior for BanditLeader {
 
         let last_move = entity.move_history.back().copied().unwrap_or(0);
         let last_two_moves = |byte| {
-            entity.move_history.len() >= 2 && 
-            entity.move_history[entity.move_history.len()-1] == byte && 
-            entity.move_history[entity.move_history.len()-2] == byte
+            entity.move_history.len() >= 2
+                && entity.move_history[entity.move_history.len() - 1] == byte
+                && entity.move_history[entity.move_history.len() - 2] == byte
         };
 
         if last_move == 2 {
-            (3, Intent::AttackDebuff { damage: agonize_dmg, hits: 1 }) // AGONIZING_SLASH
+            (
+                3,
+                Intent::AttackDebuff {
+                    damage: agonize_dmg,
+                    hits: 1,
+                },
+            ) // AGONIZING_SLASH
         } else if last_move == 3 {
-            (1, Intent::Attack { damage: slash_dmg, hits: 1 }) // CROSS_SLASH
+            (
+                1,
+                Intent::Attack {
+                    damage: slash_dmg,
+                    hits: 1,
+                },
+            ) // CROSS_SLASH
         } else if last_move == 1 {
             if ascension_level >= 17 && !last_two_moves(1) {
-                (1, Intent::Attack { damage: slash_dmg, hits: 1 }) // CROSS_SLASH again
+                (
+                    1,
+                    Intent::Attack {
+                        damage: slash_dmg,
+                        hits: 1,
+                    },
+                ) // CROSS_SLASH again
             } else {
-                (3, Intent::AttackDebuff { damage: agonize_dmg, hits: 1 }) // AGONIZING_SLASH
+                (
+                    3,
+                    Intent::AttackDebuff {
+                        damage: agonize_dmg,
+                        hits: 1,
+                    },
+                ) // AGONIZING_SLASH
             }
         } else {
-            (1, Intent::Attack { damage: slash_dmg, hits: 1 }) // default fallback
+            (
+                1,
+                Intent::Attack {
+                    damage: slash_dmg,
+                    hits: 1,
+                },
+            ) // default fallback
         }
     }
 
@@ -45,9 +80,10 @@ impl MonsterBehavior for BanditLeader {
 
         match entity.next_move_byte {
             2 => { // MOCK
-                // Empty action physically, normally does a TalkAction depending on Bear alive state
-            },
-            3 => { // AGONIZING_SLASH
+                 // Empty action physically, normally does a TalkAction depending on Bear alive state
+            }
+            3 => {
+                // AGONIZING_SLASH
                 actions.push(Action::Damage(DamageInfo {
                     source: entity.id,
                     target: 0,
@@ -62,8 +98,9 @@ impl MonsterBehavior for BanditLeader {
                     power_id: PowerId::Weak,
                     amount: weak_amount,
                 });
-            },
-            1 => { // CROSS_SLASH
+            }
+            1 => {
+                // CROSS_SLASH
                 actions.push(Action::Damage(DamageInfo {
                     source: entity.id,
                     target: 0,
@@ -72,11 +109,13 @@ impl MonsterBehavior for BanditLeader {
                     damage_type: DamageType::Normal,
                     is_modified: false,
                 }));
-            },
+            }
             _ => {}
         }
 
-        actions.push(Action::RollMonsterMove { monster_id: entity.id });
+        actions.push(Action::RollMonsterMove {
+            monster_id: entity.id,
+        });
         actions
     }
 }

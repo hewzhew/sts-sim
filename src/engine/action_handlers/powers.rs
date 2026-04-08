@@ -7,9 +7,27 @@ use crate::action::Action;
 use crate::combat::CombatState;
 use crate::content::powers::PowerId;
 
-pub fn handle_apply_power(source: usize, target: usize, power_id: PowerId, mut amount: i32, state: &mut CombatState) {
+pub fn handle_apply_power(
+    source: usize,
+    target: usize,
+    power_id: PowerId,
+    mut amount: i32,
+    state: &mut CombatState,
+) {
+    if matches!(
+        power_id,
+        PowerId::NoDraw | PowerId::Minion | PowerId::Corruption | PowerId::Split
+    ) {
+        amount = -1;
+    }
+
     // C1: Snake Skull → +1 Poison
-    if amount > 0 && power_id == PowerId::Poison && state.player.has_relic(crate::content::relics::RelicId::SneckoSkull) {
+    if amount > 0
+        && power_id == PowerId::Poison
+        && state
+            .player
+            .has_relic(crate::content::relics::RelicId::SneckoSkull)
+    {
         if source == 0 && target != 0 {
             amount += 1;
         }
@@ -29,16 +47,24 @@ pub fn handle_apply_power(source: usize, target: usize, power_id: PowerId, mut a
         if let Some(source_powers) = state.power_db.get(&source).cloned() {
             for power in &source_powers {
                 let hook_actions = crate::content::powers::resolve_power_on_apply_power(
-                    power.power_type, power.amount, power_id, amount, target, source, state
+                    power.power_type,
+                    power.amount,
+                    power_id,
+                    amount,
+                    target,
+                    source,
+                    state,
                 );
-                let hook_actions_4: smallvec::SmallVec<[crate::action::ActionInfo; 4]> = hook_actions.into_iter().collect();
+                let hook_actions_4: smallvec::SmallVec<[crate::action::ActionInfo; 4]> =
+                    hook_actions.into_iter().collect();
                 crate::engine::core::queue_actions(&mut state.action_queue, hook_actions_4);
             }
         }
     }
 
     // U4: Champion Belt
-    let champion_belt_actions = crate::content::relics::hooks::on_apply_power(state, power_id, target);
+    let champion_belt_actions =
+        crate::content::relics::hooks::on_apply_power(state, power_id, target);
     crate::engine::core::queue_actions(&mut state.action_queue, champion_belt_actions);
 
     // U5: Monster re-check after hooks
@@ -65,7 +91,10 @@ pub fn handle_apply_power(source: usize, target: usize, power_id: PowerId, mut a
         });
         if has_artifact {
             if let Some(powers) = state.power_db.get_mut(&target) {
-                if let Some(art) = powers.iter_mut().find(|p| p.power_type == PowerId::Artifact) {
+                if let Some(art) = powers
+                    .iter_mut()
+                    .find(|p| p.power_type == PowerId::Artifact)
+                {
                     art.amount -= 1;
                     if art.amount <= 0 {
                         powers.retain(|p| p.power_type != PowerId::Artifact);
@@ -76,30 +105,72 @@ pub fn handle_apply_power(source: usize, target: usize, power_id: PowerId, mut a
         }
     }
 
+    // Java ApplyPowerAction: No Draw does not stack and reapplying it is a no-op.
+    if matches!(
+        power_id,
+        PowerId::NoDraw | PowerId::Minion | PowerId::Corruption | PowerId::Split
+    )
+        && state
+            .power_db
+            .get(&target)
+            .is_some_and(|powers| powers.iter().any(|p| p.power_type == power_id))
+    {
+        return;
+    }
+
     // Core power application
     let powers = state.power_db.entry(target).or_insert_with(Vec::new);
     if let Some(existing) = powers.iter_mut().find(|p| p.power_type == power_id) {
         existing.amount += amount;
         if power_id == PowerId::Combust {
             existing.extra_data += 1;
+        } else if power_id == PowerId::Malleable && amount > 0 {
+            existing.extra_data += amount;
+        } else if power_id == PowerId::Flight && amount > 0 {
+            existing.extra_data = existing.amount.max(existing.extra_data);
         }
 
-        // Only remove if amount <= 0 AND the power cannot go negative
-        let can_go_neg = matches!(power_id, PowerId::Strength | PowerId::Dexterity | PowerId::Focus);
-        if existing.amount == 0 && can_go_neg {
-            // Java keeps Strength/Dexterity/Focus around even if they hit exactly 0!
-        } else if existing.amount <= 0 && !can_go_neg && power_id != PowerId::TimeWarp {
+        // Strength/Dexterity/Focus can go negative, but Java still removes them at exactly 0.
+        let can_go_neg = matches!(
+            power_id,
+            PowerId::Strength
+                | PowerId::Dexterity
+                | PowerId::Focus
+                | PowerId::NoDraw
+                | PowerId::Minion
+                | PowerId::Corruption
+                | PowerId::Split
+        );
+        if existing.amount == 0 && power_id != PowerId::TimeWarp {
+            powers.retain(|p| p.power_type != power_id);
+        } else if existing.amount < 0 && !can_go_neg && power_id != PowerId::TimeWarp {
             powers.retain(|p| p.power_type != power_id);
         }
     } else {
         // If they don't have it, we only add it if amount > 0, OR if it's a negative amount of a power that CAN go negative
-        let can_go_neg = matches!(power_id, PowerId::Strength | PowerId::Dexterity | PowerId::Focus);
+        let can_go_neg = matches!(
+            power_id,
+            PowerId::Strength
+                | PowerId::Dexterity
+                | PowerId::Focus
+                | PowerId::NoDraw
+                | PowerId::Minion
+                | PowerId::Corruption
+                | PowerId::Split
+        );
         if amount > 0 || (amount < 0 && can_go_neg) {
             let extra_data = match power_id {
                 PowerId::Combust => 1,
+                PowerId::Malleable => amount,
+                PowerId::Flight => amount,
                 _ => 0,
             };
-            powers.push(crate::combat::Power { power_type: power_id, amount, extra_data, just_applied: true });
+            powers.push(crate::combat::Power {
+                power_type: power_id,
+                amount,
+                extra_data,
+                just_applied: true,
+            });
         }
     }
 
@@ -117,9 +188,7 @@ pub fn handle_remove_power(target: usize, power_id: PowerId, state: &mut CombatS
 
 pub fn handle_remove_all_debuffs(target: usize, state: &mut CombatState) {
     if let Some(powers) = state.power_db.get_mut(&target) {
-        powers.retain(|p| {
-            !crate::content::powers::is_debuff(p.power_type, p.amount)
-        });
+        powers.retain(|p| !crate::content::powers::is_debuff(p.power_type, p.amount));
     }
 }
 
@@ -129,7 +198,11 @@ pub fn handle_apply_stasis(target_id: usize, state: &mut CombatState) {
     }
 
     let source_pile_draw = !state.draw_pile.is_empty();
-    let source_pile = if source_pile_draw { &state.draw_pile } else { &state.discard_pile };
+    let source_pile = if source_pile_draw {
+        &state.draw_pile
+    } else {
+        &state.discard_pile
+    };
 
     let rarities_to_check = [
         crate::content::cards::CardRarity::Rare,
@@ -157,7 +230,10 @@ pub fn handle_apply_stasis(target_id: usize, state: &mut CombatState) {
     }
 
     let pick_idx = if candidates.len() > 1 {
-        let r = state.rng.card_random_rng.random(candidates.len() as i32 - 1) as usize;
+        let r = state
+            .rng
+            .card_random_rng
+            .random(candidates.len() as i32 - 1) as usize;
         candidates[r]
     } else {
         candidates[0]
@@ -180,7 +256,12 @@ pub fn handle_apply_stasis(target_id: usize, state: &mut CombatState) {
     });
 }
 
-pub fn handle_update_power_extra_data(target: usize, power_id: PowerId, value: i32, state: &mut CombatState) {
+pub fn handle_update_power_extra_data(
+    target: usize,
+    power_id: PowerId,
+    value: i32,
+    state: &mut CombatState,
+) {
     if let Some(powers) = state.power_db.get_mut(&target) {
         if let Some(power) = powers.iter_mut().find(|p| p.power_type == power_id) {
             power.extra_data = value;
@@ -190,8 +271,12 @@ pub fn handle_update_power_extra_data(target: usize, power_id: PowerId, value: i
 
 pub fn handle_awakened_rebirth_clear(target: usize, state: &mut CombatState) {
     if let Some(powers) = state.power_db.get_mut(&target) {
-        // Remove Curiosity and Unawakened, keep the rest
-        powers.retain(|p| p.power_type != PowerId::Curiosity && p.power_type != PowerId::Unawakened);
+        powers.retain(|p| {
+            p.power_type != PowerId::Curiosity
+                && p.power_type != PowerId::Unawakened
+                && p.power_type != PowerId::Shackled
+                && !crate::content::powers::is_debuff(p.power_type, p.amount)
+        });
     }
 }
 

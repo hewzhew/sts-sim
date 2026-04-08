@@ -1,5 +1,5 @@
 use crate::action::Action;
-use crate::combat::{CombatState, CombatCard};
+use crate::combat::{CombatCard, CombatState};
 use crate::content::powers::PowerId;
 use crate::core::EntityId;
 
@@ -10,7 +10,7 @@ pub fn on_player_card_played(
     _state: &CombatState,
 ) -> smallvec::SmallVec<[Action; 2]> {
     let mut actions = smallvec::SmallVec::new();
-    
+
     // Phase 1: Increment Time Warp counter
     if amount < 11 {
         actions.push(Action::ApplyPower {

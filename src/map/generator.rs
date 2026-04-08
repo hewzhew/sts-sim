@@ -11,8 +11,8 @@ use std::collections::{HashMap, HashSet};
 
 use serde::Serialize;
 
-use crate::rng::StsRng;
 use super::node::{Map, MapEdge, MapRoomNode, Point, RoomType};
+use crate::rng::StsRng;
 use RoomType::*;
 
 // ─── Constants ───────────────────────────────────────────────────────────────
@@ -41,7 +41,13 @@ pub fn generate_maps(
         .iter()
         .map(|offset| {
             let mut rng = StsRng::new(seed.wrapping_add(*offset));
-            generate_single_map(map_height, map_width, path_density, is_ascension_zero, &mut rng)
+            generate_single_map(
+                map_height,
+                map_width,
+                path_density,
+                is_ascension_zero,
+                &mut rng,
+            )
         })
         .collect()
 }
@@ -52,7 +58,13 @@ pub fn generate_maps(
 pub fn generate_map_for_act(seed: u64, act: u8, is_ascension_zero: bool) -> (Map, StsRng) {
     let offset = ACT_OFFSETS[(act - 1).min(2) as usize];
     let mut rng = StsRng::new(seed.wrapping_add(offset));
-    let map = generate_single_map(MAP_HEIGHT, MAP_WIDTH, PATH_DENSITY, is_ascension_zero, &mut rng);
+    let map = generate_single_map(
+        MAP_HEIGHT,
+        MAP_WIDTH,
+        PATH_DENSITY,
+        is_ascension_zero,
+        &mut rng,
+    );
     (map, rng)
 }
 
@@ -199,7 +211,10 @@ fn generate_single_map(
         (ShopRoom, 0.05),
         (RestRoom, 0.12),
         (EventRoom, 0.22),
-        (MonsterRoomElite, 0.08 * if is_ascension_zero { 1.0 } else { 1.6 }),
+        (
+            MonsterRoomElite,
+            0.08 * if is_ascension_zero { 1.0 } else { 1.6 },
+        ),
     ]
     .iter()
     .cloned()

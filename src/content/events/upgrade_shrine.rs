@@ -5,8 +5,8 @@ use crate::state::run::RunState;
 fn has_upgradable_cards(run_state: &RunState) -> bool {
     run_state.master_deck.iter().any(|c| {
         let def = crate::content::cards::get_card_definition(c.id);
-        c.id == crate::content::cards::CardId::SearingBlow 
-            || (c.upgrades == 0 
+        c.id == crate::content::cards::CardId::SearingBlow
+            || (c.upgrades == 0
                 && def.card_type != crate::content::cards::CardType::Status
                 && def.card_type != crate::content::cards::CardType::Curse)
     })
@@ -50,13 +50,13 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
                         });
                         return;
                     }
-                },
+                }
                 _ => {
                     // Leave
                     event_state.current_screen = 1;
                 }
             }
-        },
+        }
         _ => {
             event_state.completed = true;
         }

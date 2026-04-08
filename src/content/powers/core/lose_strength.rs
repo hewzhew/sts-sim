@@ -1,5 +1,5 @@
-use crate::content::powers::PowerId;
 use crate::action::Action;
+use crate::content::powers::PowerId;
 use crate::core::EntityId;
 
 pub fn at_end_of_turn(owner: EntityId, amount: i32) -> smallvec::SmallVec<[Action; 2]> {

@@ -8,7 +8,9 @@ pub fn get_choices(run_state: &RunState, event_state: &EventState) -> Vec<EventC
         0 => {
             // Simplicity: Purge a card; Basics: Upgrade all Strikes/Defends
             let has_purgeable = run_state.master_deck.iter().any(|c| {
-                c.id != CardId::AscendersBane && c.id != CardId::CurseOfTheBell && c.id != CardId::Necronomicurse
+                c.id != CardId::AscendersBane
+                    && c.id != CardId::CurseOfTheBell
+                    && c.id != CardId::Necronomicurse
             });
             vec![
                 if has_purgeable {
@@ -19,7 +21,7 @@ pub fn get_choices(run_state: &RunState, event_state: &EventState) -> Vec<EventC
                 EventChoiceMeta::new("[Basics] Upgrade all Strikes and Defends."),
                 EventChoiceMeta::new("[Leave]"),
             ]
-        },
+        }
         // After purge returns
         _ => vec![EventChoiceMeta::new("[Leave]")],
     }
@@ -42,7 +44,7 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
                         return_state: Box::new(EngineState::EventRoom),
                     });
                     return;
-                },
+                }
                 1 => {
                     // Upgrade all Strikes and Defends
                     for card in run_state.master_deck.iter_mut() {
@@ -51,12 +53,12 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
                         }
                     }
                     event_state.current_screen = 1;
-                },
+                }
                 _ => {
                     event_state.completed = true;
-                },
+                }
             }
-        },
+        }
         _ => {
             event_state.completed = true;
         }

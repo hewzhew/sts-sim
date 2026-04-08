@@ -1,11 +1,16 @@
-use crate::combat::{MonsterEntity, Intent};
-use crate::action::{Action, DamageType, DamageInfo};
+use crate::action::{Action, DamageInfo, DamageType};
+use crate::combat::{Intent, MonsterEntity};
 use crate::content::monsters::MonsterBehavior;
 
 pub struct SpireShield;
 
 impl MonsterBehavior for SpireShield {
-    fn roll_move(_rng: &mut crate::rng::StsRng, entity: &MonsterEntity, ascension_level: u8, _num: i32) -> (u8, Intent) {
+    fn roll_move(
+        _rng: &mut crate::rng::StsRng,
+        entity: &MonsterEntity,
+        ascension_level: u8,
+        _num: i32,
+    ) -> (u8, Intent) {
         // Java: SpireShield.getMove uses moveCount % 3 deterministic cycle.
         // moveCount increments AFTER each selection (post-increment).
         // Since roll_move is called once per turn, moveCount == move_history.len()
@@ -22,41 +27,58 @@ impl MonsterBehavior for SpireShield {
                 if _rng.random_boolean() {
                     (2, Intent::Defend) // FORTIFY
                 } else {
-                    (1, Intent::AttackDebuff { damage: bash_dmg, hits: 1 }) // BASH
+                    (
+                        1,
+                        Intent::AttackDebuff {
+                            damage: bash_dmg,
+                            hits: 1,
+                        },
+                    ) // BASH
                 }
             }
             1 => {
                 // Java: if (!lastMove(BASH)) → Bash; else → Fortify
                 if last_move != 1 {
-                    (1, Intent::AttackDebuff { damage: bash_dmg, hits: 1 }) // BASH
+                    (
+                        1,
+                        Intent::AttackDebuff {
+                            damage: bash_dmg,
+                            hits: 1,
+                        },
+                    ) // BASH
                 } else {
                     (2, Intent::Defend) // FORTIFY
                 }
             }
             _ => {
                 // Java: always SMASH (byte 3) with ATTACK_DEFEND intent
-                (3, Intent::AttackDefend { damage: smash_dmg, hits: 1 }) // SMASH
+                (
+                    3,
+                    Intent::AttackDefend {
+                        damage: smash_dmg,
+                        hits: 1,
+                    },
+                ) // SMASH
             }
         }
     }
 
-    fn use_pre_battle_action(_entity: &MonsterEntity, _hp_rng: &mut crate::rng::StsRng, ascension_level: u8) -> Vec<Action> {
+    fn use_pre_battle_action(
+        _entity: &MonsterEntity,
+        _hp_rng: &mut crate::rng::StsRng,
+        ascension_level: u8,
+    ) -> Vec<Action> {
         // Java: Apply Surrounded to player (positional, not modeled) + Artifact to self
         let artifact_amt = if ascension_level >= 18 { 2 } else { 1 };
-        vec![
-            Action::ApplyPower {
-                source: _entity.id,
-                target: _entity.id,
-                power_id: crate::content::powers::PowerId::Artifact,
-                amount: artifact_amt,
-            }
-        ]
+        vec![Action::ApplyPower {
+            source: _entity.id,
+            target: _entity.id,
+            power_id: crate::content::powers::PowerId::Artifact,
+            amount: artifact_amt,
+        }]
     }
 
-    fn take_turn(
-        state: &mut crate::combat::CombatState,
-        entity: &MonsterEntity,
-    ) -> Vec<Action> {
+    fn take_turn(state: &mut crate::combat::CombatState, entity: &MonsterEntity) -> Vec<Action> {
         let mut actions = Vec::new();
         let asc = state.ascension_level;
 
@@ -64,7 +86,8 @@ impl MonsterBehavior for SpireShield {
         let smash_dmg = if asc >= 3 { 38 } else { 34 };
 
         match entity.next_move_byte {
-            1 => { // BASH — attack + debuff (-1 Str or -1 Focus)
+            1 => {
+                // BASH — attack + debuff (-1 Str or -1 Focus)
                 actions.push(Action::Damage(DamageInfo {
                     source: entity.id,
                     target: 0,
@@ -74,7 +97,7 @@ impl MonsterBehavior for SpireShield {
                     is_modified: false,
                 }));
                 // Java: if player has orbs && aiRng.randomBoolean() → -1 Focus
-                // else → -1 Str. 
+                // else → -1 Str.
                 if state.player.max_orbs > 0 && state.rng.ai_rng.random_boolean() {
                     actions.push(Action::ApplyPower {
                         source: entity.id,
@@ -90,15 +113,20 @@ impl MonsterBehavior for SpireShield {
                         amount: -1,
                     });
                 }
-            },
-            2 => { // FORTIFY — block all monsters (Java uses flat 30, not Asc-scaled)
+            }
+            2 => {
+                // FORTIFY — block all monsters (Java uses flat 30, not Asc-scaled)
                 for m in &state.monsters {
                     if !m.is_dying {
-                        actions.push(Action::GainBlock { target: m.id, amount: 30 });
+                        actions.push(Action::GainBlock {
+                            target: m.id,
+                            amount: 30,
+                        });
                     }
                 }
-            },
-            3 => { // SMASH — attack + gain block
+            }
+            3 => {
+                // SMASH — attack + gain block
                 actions.push(Action::Damage(DamageInfo {
                     source: entity.id,
                     target: 0,
@@ -109,12 +137,17 @@ impl MonsterBehavior for SpireShield {
                 }));
                 // Java: Asc 18 → 99 block, else → damage output as block
                 let block = if asc >= 18 { 99 } else { smash_dmg };
-                actions.push(Action::GainBlock { target: entity.id, amount: block });
-            },
-            _ => {},
+                actions.push(Action::GainBlock {
+                    target: entity.id,
+                    amount: block,
+                });
+            }
+            _ => {}
         }
 
-        actions.push(Action::RollMonsterMove { monster_id: entity.id });
+        actions.push(Action::RollMonsterMove {
+            monster_id: entity.id,
+        });
 
         actions
     }
@@ -122,15 +155,29 @@ impl MonsterBehavior for SpireShield {
     fn on_death(state: &mut crate::combat::CombatState, _entity: &MonsterEntity) -> Vec<Action> {
         let mut actions = Vec::new();
         // Java: if player has "Surrounded" power, remove it and adjust player facing
-        if state.power_db.get(&0).map_or(false, |powers| powers.iter().any(|p| p.power_type == crate::content::powers::PowerId::Surrounded)) {
-            actions.push(Action::RemovePower { target: 0, power_id: crate::content::powers::PowerId::Surrounded });
+        if state.power_db.get(&0).map_or(false, |powers| {
+            powers
+                .iter()
+                .any(|p| p.power_type == crate::content::powers::PowerId::Surrounded)
+        }) {
+            actions.push(Action::RemovePower {
+                target: 0,
+                power_id: crate::content::powers::PowerId::Surrounded,
+            });
         }
-        
+
         // Java: Remove "BackAttack" power from surviving monsters
         for m in &state.monsters {
             if m.current_hp > 0 && !m.is_dying {
-                if state.power_db.get(&m.id).map_or(false, |powers| powers.iter().any(|p| p.power_type == crate::content::powers::PowerId::BackAttack)) {
-                    actions.push(Action::RemovePower { target: m.id, power_id: crate::content::powers::PowerId::BackAttack });
+                if state.power_db.get(&m.id).map_or(false, |powers| {
+                    powers
+                        .iter()
+                        .any(|p| p.power_type == crate::content::powers::PowerId::BackAttack)
+                }) {
+                    actions.push(Action::RemovePower {
+                        target: m.id,
+                        power_id: crate::content::powers::PowerId::BackAttack,
+                    });
                 }
             }
         }

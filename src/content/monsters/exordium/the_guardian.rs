@@ -1,13 +1,23 @@
-use crate::combat::{CombatState, MonsterEntity, Intent, PowerId};
 use crate::action::{Action, ActionInfo, AddTo, DamageInfo, DamageType};
+use crate::combat::{CombatState, Intent, MonsterEntity, PowerId};
 use crate::content::monsters::MonsterBehavior;
 
 pub struct TheGuardian;
 
 impl MonsterBehavior for TheGuardian {
-    fn use_pre_battle_action(entity: &MonsterEntity, _hp_rng: &mut crate::rng::StsRng, ascension_level: u8) -> Vec<Action> {
+    fn use_pre_battle_action(
+        entity: &MonsterEntity,
+        _hp_rng: &mut crate::rng::StsRng,
+        ascension_level: u8,
+    ) -> Vec<Action> {
         // Mode Shift amount based on Ascension. We use 30 as base.
-        let shift_amt = if ascension_level >= 19 { 40 } else if ascension_level >= 9 { 35 } else { 30 };
+        let shift_amt = if ascension_level >= 19 {
+            40
+        } else if ascension_level >= 9 {
+            35
+        } else {
+            30
+        };
         vec![
             Action::ApplyPower {
                 target: entity.id,
@@ -20,45 +30,72 @@ impl MonsterBehavior for TheGuardian {
                 source: entity.id,
                 power_id: PowerId::GuardianThreshold,
                 amount: shift_amt,
-            }
+            },
         ]
     }
 
-    fn on_damaged(state: &mut CombatState, entity: &MonsterEntity, amount: i32) -> smallvec::SmallVec<[ActionInfo; 4]> {
+    fn on_damaged(
+        state: &mut CombatState,
+        entity: &MonsterEntity,
+        amount: i32,
+    ) -> smallvec::SmallVec<[ActionInfo; 4]> {
         let mut triggered = false;
 
         if let Some(powers) = state.power_db.get_mut(&entity.id) {
-            if let Some(pos) = powers.iter().position(|p| p.power_type == PowerId::ModeShift) {
+            if let Some(pos) = powers
+                .iter()
+                .position(|p| p.power_type == PowerId::ModeShift)
+            {
                 powers[pos].amount -= amount;
                 if powers[pos].amount <= 0 {
                     triggered = true;
-                    // Properly use powers.remove() as the ultimate synchronous lock
-                    // This physically deletes ModeShift from memory so subsequent multi-hit damage
-                    // does not find it and trigger another mode shift.
+                    // Java handles Mode Shift inside The Guardian itself. Remove it immediately
+                    // so later hits in the same multi-hit sequence cannot re-trigger the transition.
                     powers.remove(pos);
                 }
             }
         }
 
         if triggered {
-            // These will be processed by queue_actions(). AddTo::Top means they get added to the top of the queue.
-            // Under queue_actions() logic, AddTo::Top elements are reversed before pushing. 
-            // Thus, we push them in the order we want them to *execute*.
-            // 1. Gain GuardianThreshold + 10
-            // 2. Gain 20 block
-            // 3. Change intent/move to CLOSE UP (1)
-            // (RemovePower is no longer needed since we physically removed it above!)
+            // Execute as a Guardian-specific state transition:
+            // increase the next threshold, gain block, then force CLOSE UP.
             return smallvec::smallvec![
-                ActionInfo { action: Action::ApplyPower { target: entity.id, source: entity.id, power_id: PowerId::GuardianThreshold, amount: 10 }, insertion_mode: AddTo::Top },
-                ActionInfo { action: Action::GainBlock { target: entity.id, amount: 20 }, insertion_mode: AddTo::Top },
-                ActionInfo { action: Action::SetMonsterMove { monster_id: entity.id, next_move_byte: 1, intent: Intent::Buff }, insertion_mode: AddTo::Top },
+                ActionInfo {
+                    action: Action::ApplyPower {
+                        target: entity.id,
+                        source: entity.id,
+                        power_id: PowerId::GuardianThreshold,
+                        amount: 10
+                    },
+                    insertion_mode: AddTo::Top
+                },
+                ActionInfo {
+                    action: Action::GainBlock {
+                        target: entity.id,
+                        amount: 20
+                    },
+                    insertion_mode: AddTo::Top
+                },
+                ActionInfo {
+                    action: Action::SetMonsterMove {
+                        monster_id: entity.id,
+                        next_move_byte: 1,
+                        intent: Intent::Buff
+                    },
+                    insertion_mode: AddTo::Top
+                },
             ];
         }
-        
+
         smallvec::smallvec![]
     }
 
-    fn roll_move(_rng: &mut crate::rng::StsRng, entity: &MonsterEntity, ascension_level: u8, _num: i32) -> (u8, Intent) {
+    fn roll_move(
+        _rng: &mut crate::rng::StsRng,
+        entity: &MonsterEntity,
+        ascension_level: u8,
+        _num: i32,
+    ) -> (u8, Intent) {
         let fierce_bash_dmg = if ascension_level >= 4 { 36 } else { 32 };
         let roll_dmg = if ascension_level >= 4 { 10 } else { 9 };
 
@@ -66,31 +103,38 @@ impl MonsterBehavior for TheGuardian {
             return (6, Intent::Defend); // CHARGE UP
         }
 
-        // ModeShift power removal triggers Defensive Mode when HP is lost.
-        // It injects a NextMove to 1 (CLOSE UP).
-        // If we are in defensive mode (meaning MoveHistory's recent items are 1, 3, 4)
-        // Defensive mode cycle: 1 -> 3 -> 4 -> (reset to offensive / 5)
-        
         // Determine if Guardian is in Offensive (open) or Defensive (close) mode
         let mut is_open = true;
         let last_move = *entity.move_history.back().unwrap_or(&6);
-        
+
         if last_move == 1 || last_move == 3 {
             is_open = false; // We just entered or are within defensive mode
         }
-        
+
         if is_open {
             match last_move {
-                6 => (2, Intent::Attack { damage: fierce_bash_dmg, hits: 1 }), // CHARGE -> BASH
+                6 => (
+                    2,
+                    Intent::Attack {
+                        damage: fierce_bash_dmg,
+                        hits: 1,
+                    },
+                ), // CHARGE -> BASH
                 2 => (7, Intent::StrongDebuff), // BASH -> STEAM
                 7 => (5, Intent::Attack { damage: 5, hits: 4 }), // STEAM -> WHIRLWIND
-                5 => (6, Intent::Defend), // WHIRLWIND -> CHARGE
+                5 => (6, Intent::Defend),       // WHIRLWIND -> CHARGE
                 4 => (5, Intent::Attack { damage: 5, hits: 4 }), // Just came out of defensive Twin Slam, goes to WHIRLWIND
                 _ => (6, Intent::Defend),
             }
         } else {
             match last_move {
-                1 => (3, Intent::Attack { damage: roll_dmg, hits: 1 }), // CLOSE UP -> ROLL
+                1 => (
+                    3,
+                    Intent::Attack {
+                        damage: roll_dmg,
+                        hits: 1,
+                    },
+                ), // CLOSE UP -> ROLL
                 3 => (4, Intent::AttackBuff { damage: 8, hits: 2 }), // ROLL -> TWIN SLAM
                 _ => (6, Intent::Defend),
             }
@@ -101,11 +145,18 @@ impl MonsterBehavior for TheGuardian {
         let asc = state.ascension_level;
         let fierce_bash_dmg = if asc >= 4 { 36 } else { 32 };
         let roll_dmg = if asc >= 4 { 10 } else { 9 };
-        let _shift_amt = if asc >= 19 { 40 } else if asc >= 9 { 35 } else { 30 };
+        let _shift_amt = if asc >= 19 {
+            40
+        } else if asc >= 9 {
+            35
+        } else {
+            30
+        };
         let mut actions = Vec::new();
 
         match entity.next_move_byte {
-            1 => { // CLOSE UP
+            1 => {
+                // CLOSE UP
                 // The Guardian talks
                 // Gains Sharp Hide
                 actions.push(Action::ApplyPower {
@@ -115,7 +166,8 @@ impl MonsterBehavior for TheGuardian {
                     amount: if asc >= 19 { 4 } else { 3 },
                 });
             }
-            2 => { // FIERCE BASH
+            2 => {
+                // FIERCE BASH
                 actions.push(Action::Damage(DamageInfo {
                     source: entity.id,
                     target: 0,
@@ -125,7 +177,8 @@ impl MonsterBehavior for TheGuardian {
                     is_modified: false,
                 }));
             }
-            3 => { // ROLL ATTACK
+            3 => {
+                // ROLL ATTACK
                 actions.push(Action::Damage(DamageInfo {
                     source: entity.id,
                     target: 0,
@@ -135,16 +188,15 @@ impl MonsterBehavior for TheGuardian {
                     is_modified: false,
                 }));
             }
-            4 => { // TWIN SLAM (exits defensive mode)
+            4 => {
+                // TWIN SLAM (exits defensive mode)
                 // Remove existing block immediately
                 actions.push(Action::LoseBlock {
                     target: entity.id,
                     amount: entity.block,
                 });
-                
-                // Reapply ModeShift with current GuardianThreshold value
-                // In actual take_turn, we evaluate at Action time, but we can queue it with a dynamic power fetch.
-                // Retrieve the current GuardianThreshold value dynamically from state right now
+
+                // Reapply Mode Shift using Guardian's internal threshold tracker.
                 let cur_thresh = state.get_power(entity.id, PowerId::GuardianThreshold);
                 actions.push(Action::ApplyPower {
                     target: entity.id,
@@ -152,7 +204,7 @@ impl MonsterBehavior for TheGuardian {
                     power_id: PowerId::ModeShift,
                     amount: cur_thresh,
                 });
-                
+
                 // Attack
                 for _ in 0..2 {
                     actions.push(Action::Damage(DamageInfo {
@@ -164,14 +216,15 @@ impl MonsterBehavior for TheGuardian {
                         is_modified: false,
                     }));
                 }
-                
+
                 // Lose Sharp Hide
                 actions.push(Action::RemovePower {
                     target: entity.id,
                     power_id: PowerId::SharpHide,
                 });
             }
-            5 => { // WHIRLWIND
+            5 => {
+                // WHIRLWIND
                 for _ in 0..4 {
                     actions.push(Action::Damage(DamageInfo {
                         source: entity.id,
@@ -183,13 +236,15 @@ impl MonsterBehavior for TheGuardian {
                     }));
                 }
             }
-            6 => { // CHARGE UP
+            6 => {
+                // CHARGE UP
                 actions.push(Action::GainBlock {
                     target: entity.id,
                     amount: 9,
                 });
             }
-            7 => { // VENT STEAM
+            7 => {
+                // VENT STEAM
                 actions.push(Action::ApplyPower {
                     target: 0,
                     source: entity.id,
@@ -203,10 +258,12 @@ impl MonsterBehavior for TheGuardian {
                     amount: 2,
                 });
             }
-            _ => { }
+            _ => {}
         }
 
-        actions.push(Action::RollMonsterMove { monster_id: entity.id });
+        actions.push(Action::RollMonsterMove {
+            monster_id: entity.id,
+        });
         actions
     }
 }

@@ -1,5 +1,5 @@
-use crate::combat::{CombatState, MonsterEntity, Intent};
-use crate::action::{Action, DamageType, DamageInfo};
+use crate::action::{Action, DamageInfo, DamageType};
+use crate::combat::{CombatState, Intent, MonsterEntity};
 use crate::content::monsters::MonsterBehavior;
 
 pub struct Centurion;
@@ -14,7 +14,7 @@ impl Centurion {
     ) -> (u8, Intent) {
         let slash_dmg = if ascension_level >= 2 { 14 } else { 12 };
         let fury_dmg = if ascension_level >= 2 { 7 } else { 6 };
-        
+
         let mut alive_count = 0;
         for m in monsters {
             if !m.is_dying && !m.is_escaped {
@@ -24,28 +24,57 @@ impl Centurion {
 
         let num = rng.random_range(0, 99);
         let move_history = &entity.move_history;
-        
-        let last_two_moves_2 = move_history.len() >= 2 && move_history[move_history.len() - 1] == 2 && move_history[move_history.len() - 2] == 2;
-        let last_two_moves_3 = move_history.len() >= 2 && move_history[move_history.len() - 1] == 3 && move_history[move_history.len() - 2] == 3;
-        let last_two_moves_1 = move_history.len() >= 2 && move_history[move_history.len() - 1] == 1 && move_history[move_history.len() - 2] == 1;
+
+        let last_two_moves_2 = move_history.len() >= 2
+            && move_history[move_history.len() - 1] == 2
+            && move_history[move_history.len() - 2] == 2;
+        let last_two_moves_3 = move_history.len() >= 2
+            && move_history[move_history.len() - 1] == 3
+            && move_history[move_history.len() - 2] == 3;
+        let last_two_moves_1 = move_history.len() >= 2
+            && move_history[move_history.len() - 1] == 1
+            && move_history[move_history.len() - 2] == 1;
 
         if num >= 65 && !last_two_moves_2 && !last_two_moves_3 {
             if alive_count > 1 {
                 return (2, Intent::Defend);
             }
-            return (3, Intent::Attack { damage: fury_dmg, hits: 3 });
+            return (
+                3,
+                Intent::Attack {
+                    damage: fury_dmg,
+                    hits: 3,
+                },
+            );
         }
 
         if !last_two_moves_1 {
-            return (1, Intent::Attack { damage: slash_dmg, hits: 1 });
+            return (
+                1,
+                Intent::Attack {
+                    damage: slash_dmg,
+                    hits: 1,
+                },
+            );
         }
 
-        (3, Intent::Attack { damage: fury_dmg, hits: 3 })
+        (
+            3,
+            Intent::Attack {
+                damage: fury_dmg,
+                hits: 3,
+            },
+        )
     }
 }
 
 impl MonsterBehavior for Centurion {
-    fn roll_move(_rng: &mut crate::rng::StsRng, _entity: &MonsterEntity, _ascension_level: u8, _num: i32) -> (u8, Intent) {
+    fn roll_move(
+        _rng: &mut crate::rng::StsRng,
+        _entity: &MonsterEntity,
+        _ascension_level: u8,
+        _num: i32,
+    ) -> (u8, Intent) {
         unreachable!("Centurion requires roll_move_custom with monsters slice");
     }
 
@@ -56,7 +85,8 @@ impl MonsterBehavior for Centurion {
         let block_amt = if state.ascension_level >= 17 { 20 } else { 15 };
 
         match entity.next_move_byte {
-            1 => { // SLASH
+            1 => {
+                // SLASH
                 actions.push(Action::Damage(DamageInfo {
                     source: entity.id,
                     target: 0,
@@ -66,13 +96,15 @@ impl MonsterBehavior for Centurion {
                     is_modified: false,
                 }));
             }
-            2 => { // PROTECT
-                actions.push(Action::GainBlockRandomMonster { 
-                    source: entity.id, 
-                    amount: block_amt 
+            2 => {
+                // PROTECT
+                actions.push(Action::GainBlockRandomMonster {
+                    source: entity.id,
+                    amount: block_amt,
                 });
             }
-            3 => { // FURY
+            3 => {
+                // FURY
                 for _ in 0..3 {
                     actions.push(Action::Damage(DamageInfo {
                         source: entity.id,
@@ -87,7 +119,9 @@ impl MonsterBehavior for Centurion {
             _ => {}
         }
 
-        actions.push(Action::RollMonsterMove { monster_id: entity.id });
+        actions.push(Action::RollMonsterMove {
+            monster_id: entity.id,
+        });
         actions
     }
 }

@@ -1,16 +1,24 @@
-use crate::combat::{CombatState, CombatCard, Intent};
 use crate::action::{Action, ActionInfo, AddTo};
+use crate::combat::{CombatCard, CombatState, Intent};
 use crate::core::EntityId;
 use smallvec::SmallVec;
 
-pub fn spot_weakness_play(state: &CombatState, card: &CombatCard, target: Option<EntityId>) -> SmallVec<[ActionInfo; 4]> {
+pub fn spot_weakness_play(
+    state: &CombatState,
+    card: &CombatCard,
+    target: Option<EntityId>,
+) -> SmallVec<[ActionInfo; 4]> {
     let target = target.expect("Spot Weakness requires a valid target!");
     let mut actions = smallvec::SmallVec::new();
-    
+
     // Check if target intends to attack
-    let is_attacking = if let Some(target_monster) = state.monsters.iter().find(|m| m.id == target) {
+    let is_attacking = if let Some(target_monster) = state.monsters.iter().find(|m| m.id == target)
+    {
         match target_monster.current_intent {
-            Intent::Attack { .. } | Intent::AttackDefend { .. } | Intent::AttackBuff { .. } | Intent::AttackDebuff { .. } => true,
+            Intent::Attack { .. }
+            | Intent::AttackDefend { .. }
+            | Intent::AttackBuff { .. }
+            | Intent::AttackDebuff { .. } => true,
             _ => false,
         }
     } else {

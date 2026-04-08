@@ -1,8 +1,12 @@
-use crate::combat::{CombatState, CombatCard};
 use crate::action::{Action, ActionInfo, AddTo};
+use crate::combat::{CombatCard, CombatState};
 use smallvec::SmallVec;
 
-pub fn reckless_charge_play(_state: &CombatState, card: &CombatCard, target: Option<crate::core::EntityId>) -> SmallVec<[ActionInfo; 4]> {
+pub fn reckless_charge_play(
+    _state: &CombatState,
+    card: &CombatCard,
+    target: Option<crate::core::EntityId>,
+) -> SmallVec<[ActionInfo; 4]> {
     let target = target.expect("Reckless Charge requires a valid target!");
     smallvec::smallvec![
         ActionInfo {
@@ -17,7 +21,12 @@ pub fn reckless_charge_play(_state: &CombatState, card: &CombatCard, target: Opt
             insertion_mode: AddTo::Bottom,
         },
         ActionInfo {
-            action: Action::MakeTempCardInDrawPile { card_id: crate::content::cards::CardId::Dazed, amount: 1, random_spot: true, upgraded: false },
+            action: Action::MakeTempCardInDrawPile {
+                card_id: crate::content::cards::CardId::Dazed,
+                amount: 1,
+                random_spot: true,
+                upgraded: false
+            },
             insertion_mode: AddTo::Bottom,
         }
     ]

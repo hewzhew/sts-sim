@@ -6,7 +6,12 @@ use smallvec::SmallVec;
 pub fn at_battle_start() -> SmallVec<[ActionInfo; 4]> {
     let mut actions = SmallVec::new();
     actions.push(ActionInfo {
-        action: Action::MakeTempCardInDrawPile { card_id: crate::content::cards::CardId::Wound, amount: 2, random_spot: true, upgraded: false },
+        action: Action::MakeTempCardInDrawPile {
+            card_id: crate::content::cards::CardId::Wound,
+            amount: 2,
+            random_spot: true,
+            upgraded: false,
+        },
         insertion_mode: AddTo::Bottom,
     });
     actions

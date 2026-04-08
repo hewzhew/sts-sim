@@ -7,7 +7,7 @@ impl CaptainsWheel {
     pub fn at_turn_start(counter: i32) -> SmallVec<[ActionInfo; 4]> {
         let mut actions = SmallVec::new();
         let current = if counter == -1 { 0 } else { counter };
-        
+
         if current < 2 {
             actions.push(ActionInfo {
                 action: Action::UpdateRelicCounter {

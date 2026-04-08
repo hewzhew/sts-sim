@@ -3,7 +3,11 @@ use smallvec::SmallVec;
 
 /// LetterOpener: Every time you play 3 Skills in a single turn, deal 5 damage to ALL enemies.
 /// Java: onUseCard() → ++counter; if counter % 3 == 0: counter=0, addToBot(DamageAllEnemiesAction(5, THORNS))
-pub fn on_use_card(state: &crate::combat::CombatState, card_id: crate::content::cards::CardId, counter: i32) -> SmallVec<[ActionInfo; 4]> {
+pub fn on_use_card(
+    state: &crate::combat::CombatState,
+    card_id: crate::content::cards::CardId,
+    counter: i32,
+) -> SmallVec<[ActionInfo; 4]> {
     let mut actions = SmallVec::new();
     let def = crate::content::cards::get_card_definition(card_id);
 
@@ -20,9 +24,8 @@ pub fn on_use_card(state: &crate::combat::CombatState, card_id: crate::content::
 
         if next_counter == 0 {
             // Java: addToBot(new DamageAllEnemiesAction(null, DamageInfo.createDamageMatrix(5, true), THORNS))
-            let damages: smallvec::SmallVec<[i32; 5]> = state.monsters.iter()
-                .map(|_| 5i32)
-                .collect();
+            let damages: smallvec::SmallVec<[i32; 5]> =
+                state.monsters.iter().map(|_| 5i32).collect();
             actions.push(ActionInfo {
                 action: Action::DamageAllEnemies {
                     source: 0,

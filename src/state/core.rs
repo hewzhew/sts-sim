@@ -1,11 +1,11 @@
-use crate::core::EntityId;
 use crate::content::cards::CardId;
+use crate::core::EntityId;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum EngineState {
     CombatPlayerTurn,
     CombatProcessing,
-    RewardScreen(crate::state::reward::RewardState),
+    RewardScreen(crate::rewards::state::RewardState),
     Campfire,
     Shop(crate::shop::ShopState),
     MapNavigation,
@@ -16,7 +16,7 @@ pub enum EngineState {
     /// Combat proceeds normally (CombatPlayerTurn), and when it ends, the engine
     /// checks this state to determine how to handle rewards and where to return.
     EventCombat(EventCombatState),
-    BossRelicSelect(crate::state::reward::BossRelicChoiceState),
+    BossRelicSelect(crate::rewards::state::BossRelicChoiceState),
     GameOver(RunResult),
 }
 
@@ -24,7 +24,7 @@ pub enum EngineState {
 #[derive(Clone, Debug, PartialEq)]
 pub struct EventCombatState {
     /// Pre-populated rewards (gold, relics) added before combat starts.
-    pub rewards: crate::state::reward::RewardState,
+    pub rewards: crate::rewards::state::RewardState,
     /// If false, skip the reward screen entirely after combat (e.g., Colosseum fight 1).
     pub reward_allowed: bool,
     /// If true, suppress card rewards in the reward screen.
@@ -49,6 +49,7 @@ pub enum RunPendingChoiceReason {
     Purge,
     Upgrade,
     Transform,
+    TransformUpgraded,
     Duplicate,
 }
 
@@ -69,20 +70,21 @@ pub enum RunResult {
 #[derive(Clone, Debug, PartialEq)]
 pub enum PendingChoice {
     GridSelect {
-        source_pile: PileType, 
+        source_pile: PileType,
+        candidate_uuids: Vec<u32>,
         min_cards: u8,
         max_cards: u8,
         can_cancel: bool,
         reason: GridSelectReason,
     },
     HandSelect {
+        candidate_uuids: Vec<u32>,
         min_cards: u8,
         max_cards: u8,
         can_cancel: bool,
         reason: HandSelectReason,
     },
     DiscoverySelect(Vec<CardId>),
-    TargetSelect(TargetValidation),
     ScrySelect {
         cards: Vec<CardId>,
         card_uuids: Vec<u32>,
@@ -115,19 +117,34 @@ pub enum HandSelectReason {
     Discard,
     Retain,
     PutOnDrawPile,
-    PutToBottomOfDraw,  // Forethought: moved cards become free_to_play_once
+    PutToBottomOfDraw, // Forethought: moved cards become free_to_play_once
     Copy { amount: u8 },
     Upgrade,
     GamblingChip,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
+pub enum HandSelectFilter {
+    Any,
+    Upgradeable,
+    AttackOrPower,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum GridSelectReason {
     MoveToDrawPile,
     Exhume { upgrade: bool },
-    SkillFromDeckToHand,    // SecretTechnique: pick Skill from draw → hand
-    AttackFromDeckToHand,   // SecretWeapon: pick Attack from draw → hand
-    DiscardToHand,          // LiquidMemories: pick from discard → hand (cost 0)
+    SkillFromDeckToHand,  // SecretTechnique: pick Skill from draw → hand
+    AttackFromDeckToHand, // SecretWeapon: pick Attack from draw → hand
+    DiscardToHand,        // LiquidMemories: pick from discard → hand (cost 0)
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum GridSelectFilter {
+    Any,
+    NonExhume,
+    Skill,
+    Attack,
 }
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum TargetValidation {
@@ -137,8 +154,14 @@ pub enum TargetValidation {
 
 #[derive(Clone, Debug)]
 pub enum ClientInput {
-    PlayCard { card_index: usize, target: Option<EntityId> },
-    UsePotion { potion_index: usize, target: Option<EntityId> },
+    PlayCard {
+        card_index: usize,
+        target: Option<EntityId>,
+    },
+    UsePotion {
+        potion_index: usize,
+        target: Option<EntityId>,
+    },
     DiscardPotion(usize),
     EndTurn,
     SubmitCardChoice(Vec<usize>),
@@ -152,14 +175,14 @@ pub enum ClientInput {
     SubmitHandSelect(Vec<u32>),    // Array of card UUIDs selected
     SubmitGridSelect(Vec<u32>),    // Array of card UUIDs selected from grid (discard/draw)
     SubmitDeckSelect(Vec<usize>),  // Array of absolute master_deck indices selected
-    ClaimReward(usize), // Index of the RewardItem to claim
-    SelectCard(usize),  // Pick card at index from pending_card_choice
+    ClaimReward(usize),            // Index of the RewardItem to claim
+    SelectCard(usize),             // Pick card at index from pending_card_choice
     BuyCard(usize),
     BuyRelic(usize),
     BuyPotion(usize),
-    PurgeCard(usize), // Purge card at index in master deck
+    PurgeCard(usize),         // Purge card at index in master deck
     SubmitRelicChoice(usize), // Pick boss relic at index from BossRelicSelect screen
-    Proceed, // Used to skip screens (Reward, Campfire, BossRelicSelect, etc)
+    Proceed,                  // Used to skip screens (Reward, Campfire, BossRelicSelect, etc)
     Cancel,
 }
 

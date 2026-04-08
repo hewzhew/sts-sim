@@ -1,4 +1,4 @@
-use crate::combat::{CombatState, CombatCard};
+use crate::combat::{CombatCard, CombatState};
 use crate::content::powers::PowerId;
 
 /// DuplicationPower: from Duplication Potion.
@@ -23,10 +23,12 @@ pub fn on_use_card(state: &mut CombatState, card: &CombatCard, purge: bool, targ
             powers.retain(|p| p.amount > 0);
         }
 
-        state.action_queue.push_back(crate::action::Action::PlayCardDirect {
-            card: Box::new(clone),
-            target,  // Propagate original target
-            purge: true,
-        });
+        state
+            .action_queue
+            .push_back(crate::action::Action::PlayCardDirect {
+                card: Box::new(clone),
+                target, // Propagate original target
+                purge: true,
+            });
     }
 }

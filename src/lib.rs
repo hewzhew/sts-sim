@@ -1,15 +1,18 @@
-pub mod core;
-pub mod rng;
-pub mod state;
 pub mod action;
 pub mod combat;
-pub mod game;
-pub mod engine;
 pub mod content;
-pub mod map;
-pub mod shop;
-pub mod events;
+pub mod core;
 pub mod deck;
+pub mod engine;
+pub mod events;
+pub mod game;
+pub mod interaction_coverage;
+pub mod map;
+pub mod rewards;
+pub mod rng;
+pub mod shop;
+pub mod state;
+pub mod utils;
 pub mod verification;
 
 pub use engine::*;

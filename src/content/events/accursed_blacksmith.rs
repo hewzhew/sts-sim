@@ -26,9 +26,14 @@ pub fn get_choices(run_state: &RunState, event_state: &EventState) -> Vec<EventC
     if has_upgradable {
         choices.push(EventChoiceMeta::new("[Forge] Upgrade a card."));
     } else {
-        choices.push(EventChoiceMeta::disabled("[Forge] Upgrade a card.", "No upgradable cards"));
+        choices.push(EventChoiceMeta::disabled(
+            "[Forge] Upgrade a card.",
+            "No upgradable cards",
+        ));
     }
-    choices.push(EventChoiceMeta::new("[Rummage] Obtain Pain and Warped Tongs."));
+    choices.push(EventChoiceMeta::new(
+        "[Rummage] Obtain Pain and Warped Tongs.",
+    ));
     choices.push(EventChoiceMeta::new("[Leave]"));
     choices
 }
@@ -44,7 +49,8 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
     match event_state.current_screen {
         0 => {
             match choice_idx {
-                0 => { // Forge: upgrade a card via grid-select (Java: gridSelectScreen.open(getUpgradableCards(), 1, ...))
+                0 => {
+                    // Forge: upgrade a card via grid-select (Java: gridSelectScreen.open(getUpgradableCards(), 1, ...))
                     *engine_state = EngineState::RunPendingChoice(RunPendingChoiceState {
                         min_choices: 1,
                         max_choices: 1,
@@ -52,19 +58,23 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
                         return_state: Box::new(EngineState::EventRoom),
                     });
                     event_state.current_screen = 1;
-                },
-                1 => { // Rummage: obtain Pain curse + WarpedTongs relic
+                }
+                1 => {
+                    // Rummage: obtain Pain curse + WarpedTongs relic
                     run_state.add_card_to_deck(crate::content::cards::CardId::Pain);
-                    run_state.relics.push(crate::content::relics::RelicState::new(
-                        crate::content::relics::RelicId::WarpedTongs,
-                    ));
+                    run_state
+                        .relics
+                        .push(crate::content::relics::RelicState::new(
+                            crate::content::relics::RelicId::WarpedTongs,
+                        ));
                     event_state.current_screen = 1;
-                },
-                _ => { // Leave
+                }
+                _ => {
+                    // Leave
                     event_state.completed = true;
                 }
             }
-        },
+        }
         _ => {
             event_state.completed = true;
         }

@@ -1,9 +1,13 @@
-use crate::combat::{CombatState, CombatCard};
 use crate::action::{Action, ActionInfo, AddTo, DamageInfo, DamageType};
+use crate::combat::{CombatCard, CombatState};
 use crate::core::EntityId;
 use smallvec::SmallVec;
 
-pub fn hemokinesis_play(_state: &CombatState, card: &CombatCard, target: Option<EntityId>) -> SmallVec<[ActionInfo; 4]> {
+pub fn hemokinesis_play(
+    _state: &CombatState,
+    card: &CombatCard,
+    target: Option<EntityId>,
+) -> SmallVec<[ActionInfo; 4]> {
     let target = target.expect("Hemokinesis requires a valid target!");
     smallvec::smallvec![
         ActionInfo {

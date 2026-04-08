@@ -10,8 +10,7 @@
 /// Key difference from `transform_card`:
 ///   - `transform_card` uses `miscRng` and excludes the original card from the pool
 ///   - PandorasBox uses `cardRandomRng` and picks from the ENTIRE pool (no exclusion)
-
-use crate::content::cards::{CardId, get_card_definition};
+use crate::content::cards::{get_card_definition, CardId};
 use crate::state::run::RunState;
 
 /// Executes PandorasBox's onEquip logic.
@@ -19,17 +18,17 @@ use crate::state::run::RunState;
 pub fn on_equip(run_state: &mut RunState) -> Vec<(String, String)> {
     // Phase 1: Remove all starter Strikes and Defends, count them
     let mut removed_names = Vec::new();
-    let mut i = 0;
-    while i < run_state.master_deck.len() {
-        let card_id = run_state.master_deck[i].id;
-        if card_id == CardId::Strike || card_id == CardId::Defend {
-            let def = get_card_definition(card_id);
+    let mut to_remove_uuids = Vec::new();
+    for card in &run_state.master_deck {
+        if card.id == CardId::Strike || card.id == CardId::Defend {
+            to_remove_uuids.push(card.uuid);
+            let def = get_card_definition(card.id);
             removed_names.push(def.name.to_string());
-            run_state.master_deck.remove(i);
-            // don't increment i — next card shifted into this position
-        } else {
-            i += 1;
         }
+    }
+
+    for uuid in to_remove_uuids {
+        run_state.remove_card_from_deck(uuid);
     }
 
     let count = removed_names.len();
@@ -40,9 +39,10 @@ pub fn on_equip(run_state: &mut RunState) -> Vec<(String, String)> {
     // Phase 2: Generate `count` truly random cards using cardRandomRng
     // Java: returnTrulyRandomCard() → srcCommonCardPool + srcUncommonCardPool + srcRareCardPool
     //       → cardRandomRng.random(list.size() - 1)
-    use crate::content::cards::{IRONCLAD_COMMON_POOL, IRONCLAD_UNCOMMON_POOL, IRONCLAD_RARE_POOL};
+    use crate::content::cards::{IRONCLAD_COMMON_POOL, IRONCLAD_RARE_POOL, IRONCLAD_UNCOMMON_POOL};
 
-    let pool: Vec<CardId> = IRONCLAD_COMMON_POOL.iter()
+    let pool: Vec<CardId> = IRONCLAD_COMMON_POOL
+        .iter()
         .chain(IRONCLAD_UNCOMMON_POOL.iter())
         .chain(IRONCLAD_RARE_POOL.iter())
         .copied()
@@ -58,7 +58,10 @@ pub fn on_equip(run_state: &mut RunState) -> Vec<(String, String)> {
         }
 
         // Java uses cardRandomRng (NOT miscRng)
-        let pick = run_state.rng_pool.card_rng.random_range(0, pool.len() as i32 - 1) as usize;
+        let pick = run_state
+            .rng_pool
+            .card_rng
+            .random_range(0, pool.len() as i32 - 1) as usize;
         let new_card_id = pool[pick];
 
         // Java calls onPreviewObtainCard for each relic (egg auto-upgrade etc.)

@@ -17,7 +17,8 @@ pub fn input_to_java_command(input: &ClientInput, _state: &EngineState) -> Optio
         ClientInput::UsePotion { potion_index, target } => {
             let mut cmd = format!("POTION USE {}", potion_index);
             if let Some(t) = target {
-                cmd.push_str(&format!(" {}", t));
+                let monster_idx = if *t > 0 { t - 1 } else { 0 };
+                cmd.push_str(&format!(" {}", monster_idx));
             }
             Some(cmd)
         },
@@ -27,7 +28,7 @@ pub fn input_to_java_command(input: &ClientInput, _state: &EngineState) -> Optio
         ClientInput::EndTurn => Some("END".to_string()),
         ClientInput::Proceed => Some("PROCEED".to_string()),
         ClientInput::Cancel => Some("RETURN".to_string()),
-        
+
         // --- Choices (Event, Discovery, Map, Rewards, Shops) ---
         ClientInput::SubmitDiscoverChoice(idx) |
         ClientInput::SelectEventOption(idx) |
@@ -53,7 +54,7 @@ pub fn input_to_java_command(input: &ClientInput, _state: &EngineState) -> Optio
             eprintln!("WARNING: Array-based selection (Grid/Hand) is theoretically not supported in 1-pass by LiveComm. Defaulting to CHOOSE 0");
             Some(format!("CHOOSE 0"))
         },
-        
+
         _ => {
             eprintln!("Unhandled input translation: {:?}", input);
             None

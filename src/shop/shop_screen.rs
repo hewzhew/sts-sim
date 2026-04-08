@@ -1,8 +1,8 @@
-use crate::shop::state::{ShopState, ShopCard, ShopRelic, ShopPotion, ShopConfig};
-use crate::shop::merchant::generate_cards;
 use crate::content::cards::get_card_definition;
-use crate::content::relics::{RelicTier, RelicId};
 use crate::content::potions;
+use crate::content::relics::{RelicId, RelicTier};
+use crate::shop::merchant::generate_cards;
+use crate::shop::state::{ShopCard, ShopConfig, ShopPotion, ShopRelic, ShopState};
 
 /// Equivalent to Java's `ShopScreen.init(...)` + associated methods.
 /// Consumes rng sequences and populates the ShopState, determining prices and discounts.
@@ -56,9 +56,13 @@ where
     for i in 0..3 {
         let tier = if i != 2 {
             let roll = rng_pool.merchant_rng.random_range(0, 99);
-            if roll < 48 { RelicTier::Common } 
-            else if roll < 82 { RelicTier::Uncommon } 
-            else { RelicTier::Rare }
+            if roll < 48 {
+                RelicTier::Common
+            } else if roll < 82 {
+                RelicTier::Uncommon
+            } else {
+                RelicTier::Rare
+            }
         } else {
             RelicTier::Shop
         };
@@ -71,7 +75,7 @@ where
             RelicTier::Shop => 150.0,
             _ => 150.0,
         };
-        
+
         let jitter_mult = rng_pool.merchant_rng.random_f32_min_max(0.95, 1.05);
         let price = (base_price * jitter_mult).round() as i32;
         shop.relics.push(ShopRelic { relic_id, price });
@@ -98,16 +102,32 @@ where
     let has_smiling_mask = config.has_smiling_mask;
 
     let mut pass = |mult: f32, affect_purge: bool| {
-        for c in shop.cards.iter_mut() { c.price = (c.price as f32 * mult).round() as i32; }
-        for r in shop.relics.iter_mut() { r.price = (r.price as f32 * mult).round() as i32; }
-        for p in shop.potions.iter_mut() { p.price = (p.price as f32 * mult).round() as i32; }
-        if affect_purge { shop.purge_cost = (shop.purge_cost as f32 * mult).round() as i32; }
+        for c in shop.cards.iter_mut() {
+            c.price = (c.price as f32 * mult).round() as i32;
+        }
+        for r in shop.relics.iter_mut() {
+            r.price = (r.price as f32 * mult).round() as i32;
+        }
+        for p in shop.potions.iter_mut() {
+            p.price = (p.price as f32 * mult).round() as i32;
+        }
+        if affect_purge {
+            shop.purge_cost = (shop.purge_cost as f32 * mult).round() as i32;
+        }
     };
 
-    if ascension_level >= 16 { pass(1.1, false); }
-    if has_courier { pass(0.8, true); }
-    if has_membership_card { pass(0.5, true); }
-    if has_smiling_mask { shop.purge_cost = 50; }
+    if ascension_level >= 16 {
+        pass(1.1, false);
+    }
+    if has_courier {
+        pass(0.8, true);
+    }
+    if has_membership_card {
+        pass(0.5, true);
+    }
+    if has_smiling_mask {
+        shop.purge_cost = 50;
+    }
 
     shop
 }

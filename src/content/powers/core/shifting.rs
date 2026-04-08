@@ -1,10 +1,10 @@
 use crate::action::Action;
-use crate::core::EntityId;
 use crate::combat::CombatState;
 use crate::content::powers::PowerId;
+use crate::core::EntityId;
 
 pub fn on_attacked(
-    _state: &CombatState,
+    state: &CombatState,
     owner: EntityId,
     damage: i32,
     _source: EntityId,
@@ -19,6 +19,19 @@ pub fn on_attacked(
             power_id: PowerId::Strength,
             amount: -damage,
         });
+        let has_artifact = state.power_db.get(&owner).is_some_and(|powers| {
+            powers
+                .iter()
+                .any(|p| p.power_type == PowerId::Artifact && p.amount > 0)
+        });
+        if !has_artifact {
+            actions.push(Action::ApplyPower {
+                source: owner,
+                target: owner,
+                power_id: PowerId::Shackled,
+                amount: damage,
+            });
+        }
     }
 
     actions
@@ -27,7 +40,7 @@ pub fn on_attacked(
 pub fn at_end_of_turn(_owner: EntityId) -> smallvec::SmallVec<[Action; 2]> {
     let actions = smallvec::smallvec![];
     // In actual game shifting restores stripped strength back to its starting state each turn.
-    // For now we assume a hard reset or clean state handling per turn. 
+    // For now we assume a hard reset or clean state handling per turn.
     // Actual implementation requires an internal track `amount_lost_this_turn`, simplified for MVP.
     // actions.push(Action::ApplyPower { ... amount: amount_lost_this_turn ... })
     actions

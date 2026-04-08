@@ -1,5 +1,5 @@
-use crate::combat::CombatState;
 use crate::action::{Action, ActionInfo, AddTo};
+use crate::combat::CombatState;
 use smallvec::SmallVec;
 
 /// Lizard Tail: When you would die, heal to 50% of your Max HP instead (Works once).
@@ -14,7 +14,10 @@ pub fn on_lose_hp(state: &CombatState, used: bool) -> SmallVec<[ActionInfo; 4]> 
         let heal_amount = std::cmp::max(1, state.player.max_hp / 2);
 
         actions.push(ActionInfo {
-            action: Action::Heal { target: 0, amount: heal_amount },
+            action: Action::Heal {
+                target: 0,
+                amount: heal_amount,
+            },
             insertion_mode: AddTo::Top, // Java: addToTop (heal happens before death check resolves)
         });
 

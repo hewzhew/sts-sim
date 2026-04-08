@@ -1,9 +1,13 @@
-use crate::combat::{CombatState, CombatCard};
 use crate::action::{Action, ActionInfo, AddTo, DamageInfo, DamageType};
+use crate::combat::{CombatCard, CombatState};
 use crate::core::EntityId;
 use smallvec::SmallVec;
 
-pub fn sever_soul_play(_state: &CombatState, card: &CombatCard, target: Option<EntityId>) -> SmallVec<[ActionInfo; 4]> {
+pub fn sever_soul_play(
+    _state: &CombatState,
+    card: &CombatCard,
+    target: Option<EntityId>,
+) -> SmallVec<[ActionInfo; 4]> {
     let target = target.expect("Sever Soul requires a valid target!");
     smallvec::smallvec![
         ActionInfo {

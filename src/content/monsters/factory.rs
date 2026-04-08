@@ -1,5 +1,5 @@
+use crate::combat::{Intent, MonsterEntity};
 use crate::rng::StsRng;
-use crate::combat::{MonsterEntity, Intent};
 use std::collections::VecDeque;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -30,62 +30,62 @@ pub enum EncounterId {
 
     // === Act 2: The City ===
     // Weak
-    TwoThieves,          // "2 Thieves" — Looter + Mugger
-    ThreeByrds,          // "3 Byrds"
-    ChosenAlone,         // "Chosen"
-    ShellParasite,       // "Shell Parasite"
-    SphericGuardian,     // "Spheric Guardian"
+    TwoThieves,      // "2 Thieves" — Looter + Mugger
+    ThreeByrds,      // "3 Byrds"
+    ChosenAlone,     // "Chosen"
+    ShellParasite,   // "Shell Parasite"
+    SphericGuardian, // "Spheric Guardian"
     // Strong
-    ChosenAndByrds,      // "Chosen and Byrds" — Byrd + Chosen
-    SentryAndSphere,     // "Sentry and Sphere" — Sentry + SphericGuardian
-    SnakePlant,          // "Snake Plant"
-    Snecko,              // "Snecko"
-    CenturionAndHealer,  // "Centurion and Healer"
-    CultistAndChosen,    // "Cultist and Chosen"
-    ThreeCultists,       // "3 Cultists"
+    ChosenAndByrds,          // "Chosen and Byrds" — Byrd + Chosen
+    SentryAndSphere,         // "Sentry and Sphere" — Sentry + SphericGuardian
+    SnakePlant,              // "Snake Plant"
+    Snecko,                  // "Snecko"
+    CenturionAndHealer,      // "Centurion and Healer"
+    CultistAndChosen,        // "Cultist and Chosen"
+    ThreeCultists,           // "3 Cultists"
     ShelledParasiteAndFungi, // "Shelled Parasite and Fungi"
     // Elite
-    GremlinLeader,       // "Gremlin Leader" — 2 gremlins + leader
-    Slavers,             // "Slavers" — Blue + Taskmaster + Red
-    BookOfStabbing,      // "Book of Stabbing"
+    GremlinLeader,  // "Gremlin Leader" — 2 gremlins + leader
+    Slavers,        // "Slavers" — Blue + Taskmaster + Red
+    BookOfStabbing, // "Book of Stabbing"
     // Boss
-    Automaton,           // "Automaton" — BronzeAutomaton
-    TheChamp,            // "Champ"
-    Collector,           // "Collector" — TheCollector
+    Automaton, // "Automaton" — BronzeAutomaton
+    TheChamp,  // "Champ"
+    Collector, // "Collector" — TheCollector
     // Event
-    MaskedBandits,       // "Masked Bandits"
-    ColosseumSlavers,    // "Colosseum Slavers"
-    ColosseumNobs,       // "Colosseum Nobs"
+    MaskedBandits,    // "Masked Bandits"
+    ColosseumSlavers, // "Colosseum Slavers"
+    ColosseumNobs,    // "Colosseum Nobs"
 
     // === Act 3: The Beyond ===
     // Weak
-    ThreeDarklings,      // "3 Darklings"
-    OrbWalker,           // "Orb Walker"
-    ThreeShapes,         // "3 Shapes" — random draw from Spiker/Repulsor/Exploder
+    ThreeDarklings, // "3 Darklings"
+    OrbWalker,      // "Orb Walker"
+    ThreeShapes,    // "3 Shapes" — random draw from Spiker/Repulsor/Exploder
     // Strong
-    SpireGrowth,         // "Spire Growth"
-    Transient,           // "Transient"
-    FourShapes,          // "4 Shapes"
-    TheMaw,              // "Maw"
-    SphereAndTwoShapes,  // "Sphere and 2 Shapes"
-    JawWormHorde,        // "Jaw Worm Horde" — 3 JawWorms (harder)
-    WrithingMass,        // "Writhing Mass"
+    SpireGrowth,        // "Spire Growth"
+    Transient,          // "Transient"
+    FourShapes,         // "4 Shapes"
+    TheMaw,             // "Maw"
+    SphereAndTwoShapes, // "Sphere and 2 Shapes"
+    JawWormHorde,       // "Jaw Worm Horde" — 3 JawWorms (harder)
+    WrithingMass,       // "Writhing Mass"
     // Elite
-    GiantHead,           // "Giant Head"
-    TheNemesis,          // "Nemesis"
-    Reptomancer,         // "Reptomancer" — Reptomancer + SnakeDaggers
+    GiantHead,   // "Giant Head"
+    TheNemesis,  // "Nemesis"
+    Reptomancer, // "Reptomancer" — Reptomancer + SnakeDaggers
     // Boss
-    AwakenedOne,         // "Awakened One" — 2 Cultists + AwakenedOne
-    TimeEater,           // "Time Eater"
-    DonuAndDeca,         // "Donu and Deca"
+    AwakenedOne, // "Awakened One" — 2 Cultists + AwakenedOne
+    TimeEater,   // "Time Eater"
+    DonuAndDeca, // "Donu and Deca"
     // Event
-    MysteriousSphere,    // "Mysterious Sphere" — 2 Shapes + OrbWalker
-    TwoOrbWalkers,       // "2 Orb Walkers"
-    SneckoAndMystics,    // "Snecko and Mystics" — Healer + Snecko + Healer
+    MysteriousSphere, // "Mysterious Sphere" — 2 Shapes + OrbWalker
+    TwoOrbWalkers,    // "2 Orb Walkers"
+    SneckoAndMystics, // "Snecko and Mystics" — Healer + Snecko + Healer
 
     // === Act 4 ===
-    ShieldAndSpear,      // "Shield and Spear"
-    TheHeart,            // "The Heart" — CorruptHeart
+    ShieldAndSpear, // "Shield and Spear"
+    TheHeart,       // "The Heart" — CorruptHeart
 }
 
 use crate::content::monsters::EnemyId;
@@ -135,13 +135,25 @@ pub fn build_encounter(
 
     match encounter {
         EncounterId::BlueSlaver => {
-            monsters.push(spawn_monster(EnemyId::SlaverBlue, monster_hp_rng, slot_counter));
+            monsters.push(spawn_monster(
+                EnemyId::SlaverBlue,
+                monster_hp_rng,
+                slot_counter,
+            ));
         }
         EncounterId::Cultist => {
-            monsters.push(spawn_monster(EnemyId::Cultist, monster_hp_rng, slot_counter));
+            monsters.push(spawn_monster(
+                EnemyId::Cultist,
+                monster_hp_rng,
+                slot_counter,
+            ));
         }
         EncounterId::JawWorm => {
-            monsters.push(spawn_monster(EnemyId::JawWorm, monster_hp_rng, slot_counter));
+            monsters.push(spawn_monster(
+                EnemyId::JawWorm,
+                monster_hp_rng,
+                slot_counter,
+            ));
         }
         EncounterId::Looter => {
             monsters.push(spawn_monster(EnemyId::Looter, monster_hp_rng, slot_counter));
@@ -149,10 +161,14 @@ pub fn build_encounter(
         EncounterId::GremlinGang => {
             // Java: spawnGremlins() — draw-without-replace from pool of 8, pick 4
             let mut pool = vec![
-                EnemyId::GremlinWarrior, EnemyId::GremlinWarrior,
-                EnemyId::GremlinThief, EnemyId::GremlinThief,
-                EnemyId::GremlinFat, EnemyId::GremlinFat,
-                EnemyId::GremlinTsundere, EnemyId::GremlinWizard,
+                EnemyId::GremlinWarrior,
+                EnemyId::GremlinWarrior,
+                EnemyId::GremlinThief,
+                EnemyId::GremlinThief,
+                EnemyId::GremlinFat,
+                EnemyId::GremlinFat,
+                EnemyId::GremlinTsundere,
+                EnemyId::GremlinWizard,
             ];
             for _ in 0..4 {
                 let index = misc_rng.random_range(0, (pool.len() - 1) as i32) as usize;
@@ -162,11 +178,19 @@ pub fn build_encounter(
             }
         }
         EncounterId::RedSlaver => {
-            monsters.push(spawn_monster(EnemyId::SlaverRed, monster_hp_rng, slot_counter));
+            monsters.push(spawn_monster(
+                EnemyId::SlaverRed,
+                monster_hp_rng,
+                slot_counter,
+            ));
         }
         EncounterId::LargeSlime => {
             let is_acid = misc_rng.random_boolean();
-            let slime_id = if is_acid { EnemyId::AcidSlimeL } else { EnemyId::SpikeSlimeL };
+            let slime_id = if is_acid {
+                EnemyId::AcidSlimeL
+            } else {
+                EnemyId::SpikeSlimeL
+            };
             monsters.push(spawn_monster(slime_id, monster_hp_rng, slot_counter));
         }
         EncounterId::ExordiumThugs => {
@@ -174,19 +198,39 @@ pub fn build_encounter(
 
             // bottomGetWeakWildlife: getLouse(), SpikeSlimeM, AcidSlimeM
             let get_louse = |rng: &mut StsRng| -> EnemyId {
-                if rng.random_boolean() { EnemyId::LouseNormal } else { EnemyId::LouseDefensive }
+                if rng.random_boolean() {
+                    EnemyId::LouseNormal
+                } else {
+                    EnemyId::LouseDefensive
+                }
             };
-            let weak_pool = [get_louse(misc_rng), EnemyId::SpikeSlimeM, EnemyId::AcidSlimeM];
+            let weak_pool = [
+                get_louse(misc_rng),
+                EnemyId::SpikeSlimeM,
+                EnemyId::AcidSlimeM,
+            ];
             let weak_idx = misc_rng.random_range(0, 2) as usize;
-            monsters.push(spawn_monster(weak_pool[weak_idx], monster_hp_rng, slot_counter));
+            monsters.push(spawn_monster(
+                weak_pool[weak_idx],
+                monster_hp_rng,
+                slot_counter,
+            ));
             slot_counter += 1;
 
             // bottomGetStrongHumanoid: Cultist, getSlaver(), Looter
             // Java: getSlaver() = miscRng.randomBoolean() ? SlaverRed : SlaverBlue
-            let slaver = if misc_rng.random_boolean() { EnemyId::SlaverRed } else { EnemyId::SlaverBlue };
+            let slaver = if misc_rng.random_boolean() {
+                EnemyId::SlaverRed
+            } else {
+                EnemyId::SlaverBlue
+            };
             let strong_pool = [EnemyId::Cultist, slaver, EnemyId::Looter];
             let strong_idx = misc_rng.random_range(0, 2) as usize;
-            monsters.push(spawn_monster(strong_pool[strong_idx], monster_hp_rng, slot_counter));
+            monsters.push(spawn_monster(
+                strong_pool[strong_idx],
+                monster_hp_rng,
+                slot_counter,
+            ));
         }
         EncounterId::ExordiumWildlife => {
             // Java: bottomWildlife() — numMonster=2: strongWildlife + weakWildlife
@@ -194,19 +238,35 @@ pub fn build_encounter(
             // bottomGetStrongWildlife: FungiBeast, JawWorm
             let strong_pool = [EnemyId::FungiBeast, EnemyId::JawWorm];
             let strong_idx = misc_rng.random_range(0, 1) as usize;
-            monsters.push(spawn_monster(strong_pool[strong_idx], monster_hp_rng, slot_counter));
+            monsters.push(spawn_monster(
+                strong_pool[strong_idx],
+                monster_hp_rng,
+                slot_counter,
+            ));
             slot_counter += 1;
 
             // bottomGetWeakWildlife: getLouse(), SpikeSlimeM, AcidSlimeM
-            let louse = if misc_rng.random_boolean() { EnemyId::LouseNormal } else { EnemyId::LouseDefensive };
+            let louse = if misc_rng.random_boolean() {
+                EnemyId::LouseNormal
+            } else {
+                EnemyId::LouseDefensive
+            };
             let weak_pool = [louse, EnemyId::SpikeSlimeM, EnemyId::AcidSlimeM];
             let weak_idx = misc_rng.random_range(0, 2) as usize;
-            monsters.push(spawn_monster(weak_pool[weak_idx], monster_hp_rng, slot_counter));
+            monsters.push(spawn_monster(
+                weak_pool[weak_idx],
+                monster_hp_rng,
+                slot_counter,
+            ));
         }
         EncounterId::ThreeLouse => {
             // Java: getLouse() × 3 — each independently random Normal/Defensive
             for _ in 0..3 {
-                let louse = if misc_rng.random_boolean() { EnemyId::LouseNormal } else { EnemyId::LouseDefensive };
+                let louse = if misc_rng.random_boolean() {
+                    EnemyId::LouseNormal
+                } else {
+                    EnemyId::LouseDefensive
+                };
                 monsters.push(spawn_monster(louse, monster_hp_rng, slot_counter));
                 slot_counter += 1;
             }
@@ -214,22 +274,33 @@ pub fn build_encounter(
         EncounterId::TwoLouse => {
             // Java: getLouse() × 2
             for _ in 0..2 {
-                let louse = if misc_rng.random_boolean() { EnemyId::LouseNormal } else { EnemyId::LouseDefensive };
+                let louse = if misc_rng.random_boolean() {
+                    EnemyId::LouseNormal
+                } else {
+                    EnemyId::LouseDefensive
+                };
                 monsters.push(spawn_monster(louse, monster_hp_rng, slot_counter));
                 slot_counter += 1;
             }
         }
         EncounterId::TwoFungiBeasts => {
             for _ in 0..2 {
-                monsters.push(spawn_monster(EnemyId::FungiBeast, monster_hp_rng, slot_counter));
+                monsters.push(spawn_monster(
+                    EnemyId::FungiBeast,
+                    monster_hp_rng,
+                    slot_counter,
+                ));
                 slot_counter += 1;
             }
         }
         EncounterId::LotsOfSlimes => {
             // Java: spawnManySmallSlimes() — draw-without-replace from pool of 5
             let mut pool = vec![
-                EnemyId::SpikeSlimeS, EnemyId::SpikeSlimeS, EnemyId::SpikeSlimeS,
-                EnemyId::AcidSlimeS, EnemyId::AcidSlimeS,
+                EnemyId::SpikeSlimeS,
+                EnemyId::SpikeSlimeS,
+                EnemyId::SpikeSlimeS,
+                EnemyId::AcidSlimeS,
+                EnemyId::AcidSlimeS,
             ];
             for _ in 0..5 {
                 let index = misc_rng.random_range(0, (pool.len() - 1) as i32) as usize;
@@ -241,20 +312,44 @@ pub fn build_encounter(
         EncounterId::SmallSlimes => {
             let is_spike = misc_rng.random_boolean();
             if is_spike {
-                monsters.push(spawn_monster(EnemyId::SpikeSlimeS, monster_hp_rng, slot_counter));
+                monsters.push(spawn_monster(
+                    EnemyId::SpikeSlimeS,
+                    monster_hp_rng,
+                    slot_counter,
+                ));
                 slot_counter += 1;
-                monsters.push(spawn_monster(EnemyId::AcidSlimeM, monster_hp_rng, slot_counter));
+                monsters.push(spawn_monster(
+                    EnemyId::AcidSlimeM,
+                    monster_hp_rng,
+                    slot_counter,
+                ));
             } else {
-                monsters.push(spawn_monster(EnemyId::AcidSlimeS, monster_hp_rng, slot_counter));
+                monsters.push(spawn_monster(
+                    EnemyId::AcidSlimeS,
+                    monster_hp_rng,
+                    slot_counter,
+                ));
                 slot_counter += 1;
-                monsters.push(spawn_monster(EnemyId::SpikeSlimeM, monster_hp_rng, slot_counter));
+                monsters.push(spawn_monster(
+                    EnemyId::SpikeSlimeM,
+                    monster_hp_rng,
+                    slot_counter,
+                ));
             }
         }
         EncounterId::GremlinNob => {
-            monsters.push(spawn_monster(EnemyId::GremlinNob, monster_hp_rng, slot_counter));
+            monsters.push(spawn_monster(
+                EnemyId::GremlinNob,
+                monster_hp_rng,
+                slot_counter,
+            ));
         }
         EncounterId::Lagavulin | EncounterId::LagavulinEvent => {
-            monsters.push(spawn_monster(EnemyId::Lagavulin, monster_hp_rng, slot_counter));
+            monsters.push(spawn_monster(
+                EnemyId::Lagavulin,
+                monster_hp_rng,
+                slot_counter,
+            ));
         }
         EncounterId::ThreeSentries => {
             for _ in 0..3 {
@@ -264,18 +359,34 @@ pub fn build_encounter(
         }
         EncounterId::TheMushroomLair => {
             for _ in 0..3 {
-                monsters.push(spawn_monster(EnemyId::FungiBeast, monster_hp_rng, slot_counter));
+                monsters.push(spawn_monster(
+                    EnemyId::FungiBeast,
+                    monster_hp_rng,
+                    slot_counter,
+                ));
                 slot_counter += 1;
             }
         }
         EncounterId::TheGuardian => {
-            monsters.push(spawn_monster(EnemyId::TheGuardian, monster_hp_rng, slot_counter));
+            monsters.push(spawn_monster(
+                EnemyId::TheGuardian,
+                monster_hp_rng,
+                slot_counter,
+            ));
         }
         EncounterId::Hexaghost => {
-            monsters.push(spawn_monster(EnemyId::Hexaghost, monster_hp_rng, slot_counter));
+            monsters.push(spawn_monster(
+                EnemyId::Hexaghost,
+                monster_hp_rng,
+                slot_counter,
+            ));
         }
         EncounterId::SlimeBoss => {
-            monsters.push(spawn_monster(EnemyId::SlimeBoss, monster_hp_rng, slot_counter));
+            monsters.push(spawn_monster(
+                EnemyId::SlimeBoss,
+                monster_hp_rng,
+                slot_counter,
+            ));
         }
 
         // ==========================================
@@ -297,10 +408,18 @@ pub fn build_encounter(
             monsters.push(spawn_monster(EnemyId::Chosen, monster_hp_rng, slot_counter));
         }
         EncounterId::ShellParasite => {
-            monsters.push(spawn_monster(EnemyId::ShelledParasite, monster_hp_rng, slot_counter));
+            monsters.push(spawn_monster(
+                EnemyId::ShelledParasite,
+                monster_hp_rng,
+                slot_counter,
+            ));
         }
         EncounterId::SphericGuardian => {
-            monsters.push(spawn_monster(EnemyId::SphericGuardian, monster_hp_rng, slot_counter));
+            monsters.push(spawn_monster(
+                EnemyId::SphericGuardian,
+                monster_hp_rng,
+                slot_counter,
+            ));
         }
         EncounterId::ChosenAndByrds => {
             // Java: Byrd + Chosen
@@ -312,42 +431,73 @@ pub fn build_encounter(
             // Java: Sentry + SphericGuardian
             monsters.push(spawn_monster(EnemyId::Sentry, monster_hp_rng, slot_counter));
             slot_counter += 1;
-            monsters.push(spawn_monster(EnemyId::SphericGuardian, monster_hp_rng, slot_counter));
+            monsters.push(spawn_monster(
+                EnemyId::SphericGuardian,
+                monster_hp_rng,
+                slot_counter,
+            ));
         }
         EncounterId::SnakePlant => {
-            monsters.push(spawn_monster(EnemyId::SnakePlant, monster_hp_rng, slot_counter));
+            monsters.push(spawn_monster(
+                EnemyId::SnakePlant,
+                monster_hp_rng,
+                slot_counter,
+            ));
         }
         EncounterId::Snecko => {
             monsters.push(spawn_monster(EnemyId::Snecko, monster_hp_rng, slot_counter));
         }
         EncounterId::CenturionAndHealer => {
-            monsters.push(spawn_monster(EnemyId::Centurion, monster_hp_rng, slot_counter));
+            monsters.push(spawn_monster(
+                EnemyId::Centurion,
+                monster_hp_rng,
+                slot_counter,
+            ));
             slot_counter += 1;
             monsters.push(spawn_monster(EnemyId::Healer, monster_hp_rng, slot_counter));
         }
         EncounterId::CultistAndChosen => {
             // Java: Cultist(-230, 15, false) + Chosen(100, 25)
-            monsters.push(spawn_monster(EnemyId::Cultist, monster_hp_rng, slot_counter));
+            monsters.push(spawn_monster(
+                EnemyId::Cultist,
+                monster_hp_rng,
+                slot_counter,
+            ));
             slot_counter += 1;
             monsters.push(spawn_monster(EnemyId::Chosen, monster_hp_rng, slot_counter));
         }
         EncounterId::ThreeCultists => {
             for _ in 0..3 {
-                monsters.push(spawn_monster(EnemyId::Cultist, monster_hp_rng, slot_counter));
+                monsters.push(spawn_monster(
+                    EnemyId::Cultist,
+                    monster_hp_rng,
+                    slot_counter,
+                ));
                 slot_counter += 1;
             }
         }
         EncounterId::ShelledParasiteAndFungi => {
-            monsters.push(spawn_monster(EnemyId::ShelledParasite, monster_hp_rng, slot_counter));
+            monsters.push(spawn_monster(
+                EnemyId::ShelledParasite,
+                monster_hp_rng,
+                slot_counter,
+            ));
             slot_counter += 1;
-            monsters.push(spawn_monster(EnemyId::FungiBeast, monster_hp_rng, slot_counter));
+            monsters.push(spawn_monster(
+                EnemyId::FungiBeast,
+                monster_hp_rng,
+                slot_counter,
+            ));
         }
         EncounterId::GremlinLeader => {
             // Java: spawnGremlin() + spawnGremlin() + GremlinLeader
             // spawnGremlin = random from Warrior/Thief/Fat/Tsundere/Wizard
             let gremlin_pool = [
-                EnemyId::GremlinWarrior, EnemyId::GremlinThief, EnemyId::GremlinFat,
-                EnemyId::GremlinTsundere, EnemyId::GremlinWizard,
+                EnemyId::GremlinWarrior,
+                EnemyId::GremlinThief,
+                EnemyId::GremlinFat,
+                EnemyId::GremlinTsundere,
+                EnemyId::GremlinWizard,
             ];
             let g1 = gremlin_pool[misc_rng.random_range(0, 4) as usize];
             monsters.push(spawn_monster(g1, monster_hp_rng, slot_counter));
@@ -355,47 +505,103 @@ pub fn build_encounter(
             let g2 = gremlin_pool[misc_rng.random_range(0, 4) as usize];
             monsters.push(spawn_monster(g2, monster_hp_rng, slot_counter));
             slot_counter += 1;
-            monsters.push(spawn_monster(EnemyId::GremlinLeader, monster_hp_rng, slot_counter));
+            monsters.push(spawn_monster(
+                EnemyId::GremlinLeader,
+                monster_hp_rng,
+                slot_counter,
+            ));
         }
         EncounterId::Slavers => {
             // Java: SlaverBlue + Taskmaster + SlaverRed
-            monsters.push(spawn_monster(EnemyId::SlaverBlue, monster_hp_rng, slot_counter));
+            monsters.push(spawn_monster(
+                EnemyId::SlaverBlue,
+                monster_hp_rng,
+                slot_counter,
+            ));
             slot_counter += 1;
-            monsters.push(spawn_monster(EnemyId::Taskmaster, monster_hp_rng, slot_counter));
+            monsters.push(spawn_monster(
+                EnemyId::Taskmaster,
+                monster_hp_rng,
+                slot_counter,
+            ));
             slot_counter += 1;
-            monsters.push(spawn_monster(EnemyId::SlaverRed, monster_hp_rng, slot_counter));
+            monsters.push(spawn_monster(
+                EnemyId::SlaverRed,
+                monster_hp_rng,
+                slot_counter,
+            ));
         }
         EncounterId::BookOfStabbing => {
-            monsters.push(spawn_monster(EnemyId::BookOfStabbing, monster_hp_rng, slot_counter));
+            monsters.push(spawn_monster(
+                EnemyId::BookOfStabbing,
+                monster_hp_rng,
+                slot_counter,
+            ));
         }
         EncounterId::Automaton => {
-            monsters.push(spawn_monster(EnemyId::BronzeAutomaton, monster_hp_rng, slot_counter));
+            monsters.push(spawn_monster(
+                EnemyId::BronzeAutomaton,
+                monster_hp_rng,
+                slot_counter,
+            ));
         }
         EncounterId::TheChamp => {
             monsters.push(spawn_monster(EnemyId::Champ, monster_hp_rng, slot_counter));
         }
         EncounterId::Collector => {
-            monsters.push(spawn_monster(EnemyId::TheCollector, monster_hp_rng, slot_counter));
+            monsters.push(spawn_monster(
+                EnemyId::TheCollector,
+                monster_hp_rng,
+                slot_counter,
+            ));
         }
         EncounterId::MaskedBandits => {
             // Java: BanditPointy + BanditLeader + BanditBear
-            monsters.push(spawn_monster(EnemyId::BanditPointy, monster_hp_rng, slot_counter));
+            monsters.push(spawn_monster(
+                EnemyId::BanditPointy,
+                monster_hp_rng,
+                slot_counter,
+            ));
             slot_counter += 1;
-            monsters.push(spawn_monster(EnemyId::BanditLeader, monster_hp_rng, slot_counter));
+            monsters.push(spawn_monster(
+                EnemyId::BanditLeader,
+                monster_hp_rng,
+                slot_counter,
+            ));
             slot_counter += 1;
-            monsters.push(spawn_monster(EnemyId::BanditBear, monster_hp_rng, slot_counter));
+            monsters.push(spawn_monster(
+                EnemyId::BanditBear,
+                monster_hp_rng,
+                slot_counter,
+            ));
         }
         EncounterId::ColosseumSlavers => {
             // Java: SlaverBlue + SlaverRed
-            monsters.push(spawn_monster(EnemyId::SlaverBlue, monster_hp_rng, slot_counter));
+            monsters.push(spawn_monster(
+                EnemyId::SlaverBlue,
+                monster_hp_rng,
+                slot_counter,
+            ));
             slot_counter += 1;
-            monsters.push(spawn_monster(EnemyId::SlaverRed, monster_hp_rng, slot_counter));
+            monsters.push(spawn_monster(
+                EnemyId::SlaverRed,
+                monster_hp_rng,
+                slot_counter,
+            ));
         }
         EncounterId::ColosseumNobs => {
             // Java: Taskmaster + GremlinNob
-            monsters.push(spawn_monster(EnemyId::Taskmaster, monster_hp_rng, slot_counter));
+            monsters.push(spawn_monster(
+                EnemyId::Taskmaster,
+                monster_hp_rng,
+                slot_counter,
+            ));
             slot_counter += 1;
-            monsters.push(spawn_monster(EnemyId::GremlinNob, monster_hp_rng, slot_counter));
+            monsters.push(spawn_monster(
+                EnemyId::GremlinNob,
+                monster_hp_rng,
+                slot_counter,
+            ));
         }
 
         // ==========================================
@@ -403,19 +609,30 @@ pub fn build_encounter(
         // ==========================================
         EncounterId::ThreeDarklings => {
             for _ in 0..3 {
-                monsters.push(spawn_monster(EnemyId::Darkling, monster_hp_rng, slot_counter));
+                monsters.push(spawn_monster(
+                    EnemyId::Darkling,
+                    monster_hp_rng,
+                    slot_counter,
+                ));
                 slot_counter += 1;
             }
         }
         EncounterId::OrbWalker => {
-            monsters.push(spawn_monster(EnemyId::OrbWalker, monster_hp_rng, slot_counter));
+            monsters.push(spawn_monster(
+                EnemyId::OrbWalker,
+                monster_hp_rng,
+                slot_counter,
+            ));
         }
         EncounterId::ThreeShapes => {
             // Java: spawnShapes(true) — 3 random shapes, draw-without-replace
             let mut shape_pool = vec![
-                EnemyId::Spiker, EnemyId::Spiker,
-                EnemyId::Repulsor, EnemyId::Repulsor,
-                EnemyId::Exploder, EnemyId::Exploder,
+                EnemyId::Spiker,
+                EnemyId::Spiker,
+                EnemyId::Repulsor,
+                EnemyId::Repulsor,
+                EnemyId::Exploder,
+                EnemyId::Exploder,
             ];
             for _ in 0..3 {
                 let idx = misc_rng.random_range(0, (shape_pool.len() - 1) as i32) as usize;
@@ -425,17 +642,28 @@ pub fn build_encounter(
             }
         }
         EncounterId::SpireGrowth => {
-            monsters.push(spawn_monster(EnemyId::SpireGrowth, monster_hp_rng, slot_counter));
+            monsters.push(spawn_monster(
+                EnemyId::SpireGrowth,
+                monster_hp_rng,
+                slot_counter,
+            ));
         }
         EncounterId::Transient => {
-            monsters.push(spawn_monster(EnemyId::Transient, monster_hp_rng, slot_counter));
+            monsters.push(spawn_monster(
+                EnemyId::Transient,
+                monster_hp_rng,
+                slot_counter,
+            ));
         }
         EncounterId::FourShapes => {
             // Java: spawnShapes(false) — 4 random shapes, draw-without-replace
             let mut shape_pool = vec![
-                EnemyId::Spiker, EnemyId::Spiker,
-                EnemyId::Repulsor, EnemyId::Repulsor,
-                EnemyId::Exploder, EnemyId::Exploder,
+                EnemyId::Spiker,
+                EnemyId::Spiker,
+                EnemyId::Repulsor,
+                EnemyId::Repulsor,
+                EnemyId::Exploder,
+                EnemyId::Exploder,
             ];
             for _ in 0..4 {
                 let idx = misc_rng.random_range(0, (shape_pool.len() - 1) as i32) as usize;
@@ -455,42 +683,90 @@ pub fn build_encounter(
             let s2 = get_ancient_shape(misc_rng);
             monsters.push(spawn_monster(s2, monster_hp_rng, slot_counter));
             slot_counter += 1;
-            monsters.push(spawn_monster(EnemyId::SphericGuardian, monster_hp_rng, slot_counter));
+            monsters.push(spawn_monster(
+                EnemyId::SphericGuardian,
+                monster_hp_rng,
+                slot_counter,
+            ));
         }
         EncounterId::JawWormHorde => {
             // Java: 3 JawWorms with isHorde=true
             for _ in 0..3 {
-                monsters.push(spawn_monster(EnemyId::JawWorm, monster_hp_rng, slot_counter));
+                monsters.push(spawn_monster(
+                    EnemyId::JawWorm,
+                    monster_hp_rng,
+                    slot_counter,
+                ));
                 slot_counter += 1;
             }
         }
         EncounterId::WrithingMass => {
-            monsters.push(spawn_monster(EnemyId::WrithingMass, monster_hp_rng, slot_counter));
+            monsters.push(spawn_monster(
+                EnemyId::WrithingMass,
+                monster_hp_rng,
+                slot_counter,
+            ));
         }
         EncounterId::GiantHead => {
-            monsters.push(spawn_monster(EnemyId::GiantHead, monster_hp_rng, slot_counter));
+            monsters.push(spawn_monster(
+                EnemyId::GiantHead,
+                monster_hp_rng,
+                slot_counter,
+            ));
         }
         EncounterId::TheNemesis => {
-            monsters.push(spawn_monster(EnemyId::Nemesis, monster_hp_rng, slot_counter));
+            monsters.push(spawn_monster(
+                EnemyId::Nemesis,
+                monster_hp_rng,
+                slot_counter,
+            ));
         }
         EncounterId::Reptomancer => {
             // Java: SnakeDagger + Reptomancer + SnakeDagger
-            monsters.push(spawn_monster(EnemyId::SnakeDagger, monster_hp_rng, slot_counter));
+            monsters.push(spawn_monster(
+                EnemyId::SnakeDagger,
+                monster_hp_rng,
+                slot_counter,
+            ));
             slot_counter += 1;
-            monsters.push(spawn_monster(EnemyId::Reptomancer, monster_hp_rng, slot_counter));
+            monsters.push(spawn_monster(
+                EnemyId::Reptomancer,
+                monster_hp_rng,
+                slot_counter,
+            ));
             slot_counter += 1;
-            monsters.push(spawn_monster(EnemyId::SnakeDagger, monster_hp_rng, slot_counter));
+            monsters.push(spawn_monster(
+                EnemyId::SnakeDagger,
+                monster_hp_rng,
+                slot_counter,
+            ));
         }
         EncounterId::AwakenedOne => {
             // Java: 2 Cultists + AwakenedOne
-            monsters.push(spawn_monster(EnemyId::Cultist, monster_hp_rng, slot_counter));
+            monsters.push(spawn_monster(
+                EnemyId::Cultist,
+                monster_hp_rng,
+                slot_counter,
+            ));
             slot_counter += 1;
-            monsters.push(spawn_monster(EnemyId::Cultist, monster_hp_rng, slot_counter));
+            monsters.push(spawn_monster(
+                EnemyId::Cultist,
+                monster_hp_rng,
+                slot_counter,
+            ));
             slot_counter += 1;
-            monsters.push(spawn_monster(EnemyId::AwakenedOne, monster_hp_rng, slot_counter));
+            monsters.push(spawn_monster(
+                EnemyId::AwakenedOne,
+                monster_hp_rng,
+                slot_counter,
+            ));
         }
         EncounterId::TimeEater => {
-            monsters.push(spawn_monster(EnemyId::TimeEater, monster_hp_rng, slot_counter));
+            monsters.push(spawn_monster(
+                EnemyId::TimeEater,
+                monster_hp_rng,
+                slot_counter,
+            ));
         }
         EncounterId::DonuAndDeca => {
             monsters.push(spawn_monster(EnemyId::Deca, monster_hp_rng, slot_counter));
@@ -505,11 +781,19 @@ pub fn build_encounter(
             let s2 = get_ancient_shape(misc_rng);
             monsters.push(spawn_monster(s2, monster_hp_rng, slot_counter));
             slot_counter += 1;
-            monsters.push(spawn_monster(EnemyId::OrbWalker, monster_hp_rng, slot_counter));
+            monsters.push(spawn_monster(
+                EnemyId::OrbWalker,
+                monster_hp_rng,
+                slot_counter,
+            ));
         }
         EncounterId::TwoOrbWalkers => {
             for _ in 0..2 {
-                monsters.push(spawn_monster(EnemyId::OrbWalker, monster_hp_rng, slot_counter));
+                monsters.push(spawn_monster(
+                    EnemyId::OrbWalker,
+                    monster_hp_rng,
+                    slot_counter,
+                ));
                 slot_counter += 1;
             }
         }
@@ -526,12 +810,24 @@ pub fn build_encounter(
         // Act 4
         // ==========================================
         EncounterId::ShieldAndSpear => {
-            monsters.push(spawn_monster(EnemyId::SpireShield, monster_hp_rng, slot_counter));
+            monsters.push(spawn_monster(
+                EnemyId::SpireShield,
+                monster_hp_rng,
+                slot_counter,
+            ));
             slot_counter += 1;
-            monsters.push(spawn_monster(EnemyId::SpireSpear, monster_hp_rng, slot_counter));
+            monsters.push(spawn_monster(
+                EnemyId::SpireSpear,
+                monster_hp_rng,
+                slot_counter,
+            ));
         }
         EncounterId::TheHeart => {
-            monsters.push(spawn_monster(EnemyId::CorruptHeart, monster_hp_rng, slot_counter));
+            monsters.push(spawn_monster(
+                EnemyId::CorruptHeart,
+                monster_hp_rng,
+                slot_counter,
+            ));
         }
     }
 

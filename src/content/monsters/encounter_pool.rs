@@ -133,10 +133,22 @@ fn generate_exordium(
     // Weak enemies (3)
     // Java: Cultist(2.0), JawWorm(2.0), 2Louse(2.0), SmallSlimes(2.0)
     let mut weak = vec![
-        MonsterInfo { encounter: EncounterId::Cultist, weight: 2.0 },
-        MonsterInfo { encounter: EncounterId::JawWorm, weight: 2.0 },
-        MonsterInfo { encounter: EncounterId::TwoLouse, weight: 2.0 },
-        MonsterInfo { encounter: EncounterId::SmallSlimes, weight: 2.0 },
+        MonsterInfo {
+            encounter: EncounterId::Cultist,
+            weight: 2.0,
+        },
+        MonsterInfo {
+            encounter: EncounterId::JawWorm,
+            weight: 2.0,
+        },
+        MonsterInfo {
+            encounter: EncounterId::TwoLouse,
+            weight: 2.0,
+        },
+        MonsterInfo {
+            encounter: EncounterId::SmallSlimes,
+            weight: 2.0,
+        },
     ];
     normalize_weights(&mut weak);
     populate_monster_list(monster_list, &weak, 3, false, monster_rng);
@@ -146,16 +158,46 @@ fn generate_exordium(
     //       LotsOfSlimes(1.0), ExordiumThugs(1.5), ExordiumWildlife(1.5),
     //       RedSlaver(1.0), 3Louse(2.0), 2FungiBeasts(2.0)
     let mut strong = vec![
-        MonsterInfo { encounter: EncounterId::BlueSlaver, weight: 2.0 },
-        MonsterInfo { encounter: EncounterId::GremlinGang, weight: 1.0 },
-        MonsterInfo { encounter: EncounterId::Looter, weight: 2.0 },
-        MonsterInfo { encounter: EncounterId::LargeSlime, weight: 2.0 },
-        MonsterInfo { encounter: EncounterId::LotsOfSlimes, weight: 1.0 },
-        MonsterInfo { encounter: EncounterId::ExordiumThugs, weight: 1.5 },
-        MonsterInfo { encounter: EncounterId::ExordiumWildlife, weight: 1.5 },
-        MonsterInfo { encounter: EncounterId::RedSlaver, weight: 1.0 },
-        MonsterInfo { encounter: EncounterId::ThreeLouse, weight: 2.0 },
-        MonsterInfo { encounter: EncounterId::TwoFungiBeasts, weight: 2.0 },
+        MonsterInfo {
+            encounter: EncounterId::BlueSlaver,
+            weight: 2.0,
+        },
+        MonsterInfo {
+            encounter: EncounterId::GremlinGang,
+            weight: 1.0,
+        },
+        MonsterInfo {
+            encounter: EncounterId::Looter,
+            weight: 2.0,
+        },
+        MonsterInfo {
+            encounter: EncounterId::LargeSlime,
+            weight: 2.0,
+        },
+        MonsterInfo {
+            encounter: EncounterId::LotsOfSlimes,
+            weight: 1.0,
+        },
+        MonsterInfo {
+            encounter: EncounterId::ExordiumThugs,
+            weight: 1.5,
+        },
+        MonsterInfo {
+            encounter: EncounterId::ExordiumWildlife,
+            weight: 1.5,
+        },
+        MonsterInfo {
+            encounter: EncounterId::RedSlaver,
+            weight: 1.0,
+        },
+        MonsterInfo {
+            encounter: EncounterId::ThreeLouse,
+            weight: 2.0,
+        },
+        MonsterInfo {
+            encounter: EncounterId::TwoFungiBeasts,
+            weight: 2.0,
+        },
     ];
     normalize_weights(&mut strong);
 
@@ -167,9 +209,18 @@ fn generate_exordium(
     // Elites (10)
     // Java: GremlinNob(1.0), Lagavulin(1.0), 3Sentries(1.0)
     let mut elites = vec![
-        MonsterInfo { encounter: EncounterId::GremlinNob, weight: 1.0 },
-        MonsterInfo { encounter: EncounterId::Lagavulin, weight: 1.0 },
-        MonsterInfo { encounter: EncounterId::ThreeSentries, weight: 1.0 },
+        MonsterInfo {
+            encounter: EncounterId::GremlinNob,
+            weight: 1.0,
+        },
+        MonsterInfo {
+            encounter: EncounterId::Lagavulin,
+            weight: 1.0,
+        },
+        MonsterInfo {
+            encounter: EncounterId::ThreeSentries,
+            weight: 1.0,
+        },
     ];
     normalize_weights(&mut elites);
     populate_monster_list(elite_list, &elites, 10, true, monster_rng);
@@ -180,15 +231,9 @@ fn exordium_exclusions(monster_list: &[EncounterId]) -> Vec<EncounterId> {
     let last = monster_list.last().copied();
     match last {
         Some(EncounterId::Looter) => vec![EncounterId::ExordiumThugs],
-        Some(EncounterId::BlueSlaver) => vec![
-            EncounterId::RedSlaver,
-            EncounterId::ExordiumThugs,
-        ],
+        Some(EncounterId::BlueSlaver) => vec![EncounterId::RedSlaver, EncounterId::ExordiumThugs],
         Some(EncounterId::TwoLouse) => vec![EncounterId::ThreeLouse],
-        Some(EncounterId::SmallSlimes) => vec![
-            EncounterId::LargeSlime,
-            EncounterId::LotsOfSlimes,
-        ],
+        Some(EncounterId::SmallSlimes) => vec![EncounterId::LargeSlime, EncounterId::LotsOfSlimes],
         _ => vec![],
     }
 }
@@ -205,11 +250,26 @@ fn generate_the_city(
     // Weak enemies (2)
     // Java: SphericGuardian(2.0), Chosen(2.0), ShellParasite(2.0), 3Byrds(2.0), 2Thieves(2.0)
     let mut weak = vec![
-        MonsterInfo { encounter: EncounterId::SphericGuardian, weight: 2.0 },
-        MonsterInfo { encounter: EncounterId::ChosenAlone, weight: 2.0 },
-        MonsterInfo { encounter: EncounterId::ShellParasite, weight: 2.0 },
-        MonsterInfo { encounter: EncounterId::ThreeByrds, weight: 2.0 },
-        MonsterInfo { encounter: EncounterId::TwoThieves, weight: 2.0 },
+        MonsterInfo {
+            encounter: EncounterId::SphericGuardian,
+            weight: 2.0,
+        },
+        MonsterInfo {
+            encounter: EncounterId::ChosenAlone,
+            weight: 2.0,
+        },
+        MonsterInfo {
+            encounter: EncounterId::ShellParasite,
+            weight: 2.0,
+        },
+        MonsterInfo {
+            encounter: EncounterId::ThreeByrds,
+            weight: 2.0,
+        },
+        MonsterInfo {
+            encounter: EncounterId::TwoThieves,
+            weight: 2.0,
+        },
     ];
     normalize_weights(&mut weak);
     populate_monster_list(monster_list, &weak, 2, false, monster_rng);
@@ -218,14 +278,38 @@ fn generate_the_city(
     // Java: ChosenAndByrds(2.0), SentryAndSphere(2.0), SnakePlant(6.0), Snecko(4.0),
     //       CenturionAndHealer(6.0), CultistAndChosen(3.0), 3Cultists(3.0), ShelledParasiteAndFungi(3.0)
     let mut strong = vec![
-        MonsterInfo { encounter: EncounterId::ChosenAndByrds, weight: 2.0 },
-        MonsterInfo { encounter: EncounterId::SentryAndSphere, weight: 2.0 },
-        MonsterInfo { encounter: EncounterId::SnakePlant, weight: 6.0 },
-        MonsterInfo { encounter: EncounterId::Snecko, weight: 4.0 },
-        MonsterInfo { encounter: EncounterId::CenturionAndHealer, weight: 6.0 },
-        MonsterInfo { encounter: EncounterId::CultistAndChosen, weight: 3.0 },
-        MonsterInfo { encounter: EncounterId::ThreeCultists, weight: 3.0 },
-        MonsterInfo { encounter: EncounterId::ShelledParasiteAndFungi, weight: 3.0 },
+        MonsterInfo {
+            encounter: EncounterId::ChosenAndByrds,
+            weight: 2.0,
+        },
+        MonsterInfo {
+            encounter: EncounterId::SentryAndSphere,
+            weight: 2.0,
+        },
+        MonsterInfo {
+            encounter: EncounterId::SnakePlant,
+            weight: 6.0,
+        },
+        MonsterInfo {
+            encounter: EncounterId::Snecko,
+            weight: 4.0,
+        },
+        MonsterInfo {
+            encounter: EncounterId::CenturionAndHealer,
+            weight: 6.0,
+        },
+        MonsterInfo {
+            encounter: EncounterId::CultistAndChosen,
+            weight: 3.0,
+        },
+        MonsterInfo {
+            encounter: EncounterId::ThreeCultists,
+            weight: 3.0,
+        },
+        MonsterInfo {
+            encounter: EncounterId::ShelledParasiteAndFungi,
+            weight: 3.0,
+        },
     ];
     normalize_weights(&mut strong);
     let exclusions = city_exclusions(monster_list);
@@ -235,9 +319,18 @@ fn generate_the_city(
     // Elites (10)
     // Java: GremlinLeader(1.0), Slavers(1.0), BookOfStabbing(1.0)
     let mut elites = vec![
-        MonsterInfo { encounter: EncounterId::GremlinLeader, weight: 1.0 },
-        MonsterInfo { encounter: EncounterId::Slavers, weight: 1.0 },
-        MonsterInfo { encounter: EncounterId::BookOfStabbing, weight: 1.0 },
+        MonsterInfo {
+            encounter: EncounterId::GremlinLeader,
+            weight: 1.0,
+        },
+        MonsterInfo {
+            encounter: EncounterId::Slavers,
+            weight: 1.0,
+        },
+        MonsterInfo {
+            encounter: EncounterId::BookOfStabbing,
+            weight: 1.0,
+        },
     ];
     normalize_weights(&mut elites);
     populate_monster_list(elite_list, &elites, 10, true, monster_rng);
@@ -249,10 +342,9 @@ fn city_exclusions(monster_list: &[EncounterId]) -> Vec<EncounterId> {
     match last {
         Some(EncounterId::SphericGuardian) => vec![EncounterId::SentryAndSphere],
         Some(EncounterId::ThreeByrds) => vec![EncounterId::ChosenAndByrds],
-        Some(EncounterId::ChosenAlone) => vec![
-            EncounterId::ChosenAndByrds,
-            EncounterId::CultistAndChosen,
-        ],
+        Some(EncounterId::ChosenAlone) => {
+            vec![EncounterId::ChosenAndByrds, EncounterId::CultistAndChosen]
+        }
         _ => vec![],
     }
 }
@@ -269,9 +361,18 @@ fn generate_the_beyond(
     // Weak enemies (2)
     // Java: 3Darklings(2.0), OrbWalker(2.0), 3Shapes(2.0)
     let mut weak = vec![
-        MonsterInfo { encounter: EncounterId::ThreeDarklings, weight: 2.0 },
-        MonsterInfo { encounter: EncounterId::OrbWalker, weight: 2.0 },
-        MonsterInfo { encounter: EncounterId::ThreeShapes, weight: 2.0 },
+        MonsterInfo {
+            encounter: EncounterId::ThreeDarklings,
+            weight: 2.0,
+        },
+        MonsterInfo {
+            encounter: EncounterId::OrbWalker,
+            weight: 2.0,
+        },
+        MonsterInfo {
+            encounter: EncounterId::ThreeShapes,
+            weight: 2.0,
+        },
     ];
     normalize_weights(&mut weak);
     populate_monster_list(monster_list, &weak, 2, false, monster_rng);
@@ -280,14 +381,38 @@ fn generate_the_beyond(
     // Java: SpireGrowth(1.0), Transient(1.0), 4Shapes(1.0), Maw(1.0),
     //       SphereAndTwoShapes(1.0), JawWormHorde(1.0), 3Darklings(1.0), WrithingMass(1.0)
     let mut strong = vec![
-        MonsterInfo { encounter: EncounterId::SpireGrowth, weight: 1.0 },
-        MonsterInfo { encounter: EncounterId::Transient, weight: 1.0 },
-        MonsterInfo { encounter: EncounterId::FourShapes, weight: 1.0 },
-        MonsterInfo { encounter: EncounterId::TheMaw, weight: 1.0 },
-        MonsterInfo { encounter: EncounterId::SphereAndTwoShapes, weight: 1.0 },
-        MonsterInfo { encounter: EncounterId::JawWormHorde, weight: 1.0 },
-        MonsterInfo { encounter: EncounterId::ThreeDarklings, weight: 1.0 },
-        MonsterInfo { encounter: EncounterId::WrithingMass, weight: 1.0 },
+        MonsterInfo {
+            encounter: EncounterId::SpireGrowth,
+            weight: 1.0,
+        },
+        MonsterInfo {
+            encounter: EncounterId::Transient,
+            weight: 1.0,
+        },
+        MonsterInfo {
+            encounter: EncounterId::FourShapes,
+            weight: 1.0,
+        },
+        MonsterInfo {
+            encounter: EncounterId::TheMaw,
+            weight: 1.0,
+        },
+        MonsterInfo {
+            encounter: EncounterId::SphereAndTwoShapes,
+            weight: 1.0,
+        },
+        MonsterInfo {
+            encounter: EncounterId::JawWormHorde,
+            weight: 1.0,
+        },
+        MonsterInfo {
+            encounter: EncounterId::ThreeDarklings,
+            weight: 1.0,
+        },
+        MonsterInfo {
+            encounter: EncounterId::WrithingMass,
+            weight: 1.0,
+        },
     ];
     normalize_weights(&mut strong);
     let exclusions = beyond_exclusions(monster_list);
@@ -297,9 +422,18 @@ fn generate_the_beyond(
     // Elites (10)
     // Java: GiantHead(2.0), Nemesis(2.0), Reptomancer(2.0)
     let mut elites = vec![
-        MonsterInfo { encounter: EncounterId::GiantHead, weight: 2.0 },
-        MonsterInfo { encounter: EncounterId::TheNemesis, weight: 2.0 },
-        MonsterInfo { encounter: EncounterId::Reptomancer, weight: 2.0 },
+        MonsterInfo {
+            encounter: EncounterId::GiantHead,
+            weight: 2.0,
+        },
+        MonsterInfo {
+            encounter: EncounterId::TheNemesis,
+            weight: 2.0,
+        },
+        MonsterInfo {
+            encounter: EncounterId::Reptomancer,
+            weight: 2.0,
+        },
     ];
     normalize_weights(&mut elites);
     populate_monster_list(elite_list, &elites, 10, true, monster_rng);

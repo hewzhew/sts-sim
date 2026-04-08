@@ -1,92 +1,114 @@
-use crate::state::core::{EngineState, ClientInput, CampfireChoice};
 use crate::combat::CombatState;
+use crate::state::core::{CampfireChoice, ClientInput, EngineState};
 
 pub fn parse_input(line: &str, es: &EngineState, _cs: &Option<CombatState>) -> Option<ClientInput> {
     let parts: Vec<&str> = line.split_whitespace().collect();
-    if parts.is_empty() { return None; }
+    if parts.is_empty() {
+        return None;
+    }
 
     match parts[0] {
         "play" | "p" => {
             let idx: usize = parts.get(1)?.parse().ok()?;
-            let target = parts.get(2).and_then(|s| s.parse::<usize>().ok()).and_then(|t_idx| {
-                _cs.as_ref().and_then(|combat| {
-                    combat.monsters.get(t_idx).map(|m| m.id)
-                })
-            });
-            Some(ClientInput::PlayCard { card_index: idx, target })
-        },
+            let target = parts
+                .get(2)
+                .and_then(|s| s.parse::<usize>().ok())
+                .and_then(|t_idx| {
+                    _cs.as_ref()
+                        .and_then(|combat| combat.monsters.get(t_idx).map(|m| m.id))
+                });
+            Some(ClientInput::PlayCard {
+                card_index: idx,
+                target,
+            })
+        }
         "end" | "e" => Some(ClientInput::EndTurn),
         "potion" => {
             let slot: usize = parts.get(1)?.parse().ok()?;
-            let target = parts.get(2).and_then(|s| s.parse::<usize>().ok());
-            Some(ClientInput::UsePotion { potion_index: slot, target })
-        },
+            let target = parts
+                .get(2)
+                .and_then(|s| s.parse::<usize>().ok())
+                .and_then(|t_idx| {
+                    _cs.as_ref()
+                        .and_then(|combat| combat.monsters.get(t_idx).map(|m| m.id))
+                });
+            Some(ClientInput::UsePotion {
+                potion_index: slot,
+                target,
+            })
+        }
         "go" => {
             let x: usize = parts.get(1)?.parse().ok()?;
             Some(ClientInput::SelectMapNode(x))
-        },
+        }
         "rest" => Some(ClientInput::CampfireOption(CampfireChoice::Rest)),
         "smith" => {
             let idx: usize = parts.get(1)?.parse().ok()?;
             Some(ClientInput::CampfireOption(CampfireChoice::Smith(idx)))
-        },
+        }
         "claim" => {
             let idx: usize = parts.get(1)?.parse().ok()?;
             Some(ClientInput::ClaimReward(idx))
-        },
+        }
         "pick" => {
             let idx: usize = parts.get(1)?.parse().ok()?;
             Some(ClientInput::SelectCard(idx))
-        },
+        }
         "proceed" | "leave" | "skip" => Some(ClientInput::Proceed),
         "relic" => {
             let idx: usize = parts.get(1)?.parse().ok()?;
             Some(ClientInput::SubmitRelicChoice(idx))
-        },
+        }
         "cancel" => Some(ClientInput::Cancel),
         "select" => {
-            let indices: Vec<usize> = parts[1..].iter()
-                .filter_map(|s| s.parse().ok())
-                .collect();
+            let indices: Vec<usize> = parts[1..].iter().filter_map(|s| s.parse().ok()).collect();
             Some(ClientInput::SubmitDeckSelect(indices))
-        },
+        }
         "choose" => {
-            let indices: Vec<usize> = parts[1..].iter()
-                .filter_map(|s| s.parse().ok())
-                .collect();
+            let indices: Vec<usize> = parts[1..].iter().filter_map(|s| s.parse().ok()).collect();
             match es {
-                EngineState::PendingChoice(crate::state::core::PendingChoice::HandSelect { .. }) => {
-                    if let Some(cs) = _cs {
-                        let uuids: Vec<u32> = indices.iter()
-                            .filter_map(|&i| cs.hand.get(i).map(|c| c.uuid))
-                            .collect();
-                        Some(ClientInput::SubmitHandSelect(uuids))
-                    } else { None }
-                },
+                EngineState::PendingChoice(crate::state::core::PendingChoice::HandSelect {
+                    candidate_uuids,
+                    ..
+                }) => {
+                    let uuids: Vec<u32> = indices
+                        .iter()
+                        .filter_map(|&i| candidate_uuids.get(i).copied())
+                        .collect();
+                    Some(ClientInput::SubmitHandSelect(uuids))
+                }
+                EngineState::PendingChoice(crate::state::core::PendingChoice::GridSelect {
+                    candidate_uuids,
+                    ..
+                }) => {
+                    let uuids: Vec<u32> = indices
+                        .iter()
+                        .filter_map(|&i| candidate_uuids.get(i).copied())
+                        .collect();
+                    Some(ClientInput::SubmitGridSelect(uuids))
+                }
                 _ => None,
             }
-        },
-        "buy" => {
-            match parts.get(1)? {
-                &"card" => {
-                    let idx: usize = parts.get(2)?.parse().ok()?;
-                    Some(ClientInput::BuyCard(idx))
-                },
-                &"relic" => {
-                    let idx: usize = parts.get(2)?.parse().ok()?;
-                    Some(ClientInput::BuyRelic(idx))
-                },
-                &"potion" => {
-                    let idx: usize = parts.get(2)?.parse().ok()?;
-                    Some(ClientInput::BuyPotion(idx))
-                },
-                _ => None,
+        }
+        "buy" => match parts.get(1)? {
+            &"card" => {
+                let idx: usize = parts.get(2)?.parse().ok()?;
+                Some(ClientInput::BuyCard(idx))
             }
+            &"relic" => {
+                let idx: usize = parts.get(2)?.parse().ok()?;
+                Some(ClientInput::BuyRelic(idx))
+            }
+            &"potion" => {
+                let idx: usize = parts.get(2)?.parse().ok()?;
+                Some(ClientInput::BuyPotion(idx))
+            }
+            _ => None,
         },
         "purge" => {
             let idx: usize = parts.get(1)?.parse().ok()?;
             Some(ClientInput::PurgeCard(idx))
-        },
+        }
         // Numeric input — context-dependent
         _ => {
             if let Ok(idx) = parts[0].parse::<usize>() {

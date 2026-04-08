@@ -4,10 +4,10 @@ use smallvec::SmallVec;
 /// Pen Nib: Every 10th Attack you play deals double damage.
 pub fn on_use_card(counter: i32) -> SmallVec<[ActionInfo; 4]> {
     let mut actions = SmallVec::new();
-    
+
     let current = if counter < 0 { 0 } else { counter };
     let next_counter = current + 1;
-    
+
     if next_counter == 10 {
         actions.push(ActionInfo {
             action: Action::UpdateRelicCounter {

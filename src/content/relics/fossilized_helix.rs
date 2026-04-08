@@ -1,6 +1,6 @@
 use crate::action::{Action, ActionInfo, AddTo};
-use smallvec::SmallVec;
 use crate::content::powers::PowerId;
+use smallvec::SmallVec;
 
 /// FossilizedHelix: At the start of each combat, gain 1 Buffer.
 /// Java: atBattleStart() → addToBot(ApplyPowerAction(BufferPower, 1))

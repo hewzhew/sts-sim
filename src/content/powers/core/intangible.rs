@@ -11,7 +11,11 @@ pub fn on_calculate_damage_received_from_attack(_damage: i32, amount: i32) -> i3
     }
 }
 
-pub fn at_damage_final_receive(damage: i32, amount: i32, _damage_type: crate::action::DamageType) -> i32 {
+pub fn at_damage_final_receive(
+    damage: i32,
+    amount: i32,
+    _damage_type: crate::action::DamageType,
+) -> i32 {
     if amount > 0 && damage > 1 {
         1
     } else {

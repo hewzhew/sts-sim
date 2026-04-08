@@ -21,4 +21,12 @@ impl CentennialPuzzle {
         }
         actions
     }
+
+    pub fn at_pre_battle(
+        relic_state: &mut crate::content::relics::RelicState,
+    ) -> SmallVec<[ActionInfo; 4]> {
+        // Java: usedThisCombat = false;
+        relic_state.used_up = false;
+        SmallVec::new()
+    }
 }

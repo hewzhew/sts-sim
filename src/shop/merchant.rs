@@ -1,6 +1,8 @@
-use crate::rng::RngPool;
+use crate::content::cards::{
+    colorless_pool_for_rarity, get_card_definition, ironclad_pool_for_rarity, java_id,
+};
 use crate::content::cards::{CardId, CardRarity, CardType};
-use crate::content::cards::{ironclad_pool_for_rarity, colorless_pool_for_rarity, get_card_definition, java_id};
+use crate::rng::RngPool;
 
 /// Equivalent to Java's `Merchant` class constructor.
 /// Generates 5 colored cards (2 Attack, 2 Skill, 1 Power) and 2 colorless cards (1 Uncommon, 1 Rare).
@@ -11,14 +13,16 @@ pub fn generate_cards(rng_pool: &mut RngPool, blizz_randomizer: i32) -> (Vec<Car
             let roll = rng_pool.card_rng.random_range(0, 99) + blizz_randomizer;
             let mut rarity = if roll < 9 {
                 CardRarity::Rare
-            } else if roll < 46 { // 9 + 37
+            } else if roll < 46 {
+                // 9 + 37
                 CardRarity::Uncommon
             } else {
                 CardRarity::Common
             };
 
             let mut pool = ironclad_pool_for_rarity(rarity);
-            let mut typed_pool: Vec<CardId> = pool.iter()
+            let mut typed_pool: Vec<CardId> = pool
+                .iter()
                 .copied()
                 .filter(|&id| get_card_definition(id).card_type == card_type)
                 .collect();
@@ -34,7 +38,8 @@ pub fn generate_cards(rng_pool: &mut RngPool, blizz_randomizer: i32) -> (Vec<Car
                         rarity
                     };
                     pool = ironclad_pool_for_rarity(rarity);
-                    typed_pool = pool.iter()
+                    typed_pool = pool
+                        .iter()
                         .copied()
                         .filter(|&id| get_card_definition(id).card_type == card_type)
                         .collect();
@@ -43,10 +48,10 @@ pub fn generate_cards(rng_pool: &mut RngPool, blizz_randomizer: i32) -> (Vec<Car
 
             // Emulate Collections.sort(tmp) mapping to Java cardID strings
             typed_pool.sort_by_key(|&id| java_id(id));
-            
+
             let idx = rng_pool.card_rng.random(typed_pool.len() as i32 - 1) as usize;
             let c = typed_pool[idx];
-            
+
             return c;
         }
     };

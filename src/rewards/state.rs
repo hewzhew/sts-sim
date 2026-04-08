@@ -1,12 +1,23 @@
-use crate::content::cards::CardId;
 use crate::content::potions::PotionId;
 use crate::content::relics::RelicId;
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct RewardCard {
+    pub id: crate::content::cards::CardId,
+    pub upgrades: u8,
+}
+
+impl RewardCard {
+    pub fn new(id: crate::content::cards::CardId, upgrades: u8) -> Self {
+        Self { id, upgrades }
+    }
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum RewardItem {
     Gold { amount: i32 },
     StolenGold { amount: i32 },
-    Card { cards: Vec<CardId> },
+    Card { cards: Vec<RewardCard> },
     Relic { relic_id: RelicId },
     Potion { potion_id: PotionId },
     EmeraldKey,
@@ -19,7 +30,7 @@ pub struct RewardState {
     pub skippable: bool,
     /// When a Card reward is claimed, the offered cards are stored here
     /// until the player picks one (SelectCard) or skips.
-    pub pending_card_choice: Option<Vec<CardId>>,
+    pub pending_card_choice: Option<Vec<RewardCard>>,
 }
 
 impl Default for RewardState {

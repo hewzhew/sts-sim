@@ -1,8 +1,12 @@
-use crate::combat::{CombatState, CombatCard};
 use crate::action::{Action, ActionInfo, AddTo};
+use crate::combat::{CombatCard, CombatState};
 use smallvec::SmallVec;
 
-pub fn wild_strike_play(_state: &CombatState, card: &CombatCard, target: Option<crate::core::EntityId>) -> SmallVec<[ActionInfo; 4]> {
+pub fn wild_strike_play(
+    _state: &CombatState,
+    card: &CombatCard,
+    target: Option<crate::core::EntityId>,
+) -> SmallVec<[ActionInfo; 4]> {
     let target = target.expect("Wild Strike requires a valid target!");
     smallvec::smallvec![
         ActionInfo {
@@ -17,7 +21,12 @@ pub fn wild_strike_play(_state: &CombatState, card: &CombatCard, target: Option<
             insertion_mode: AddTo::Bottom,
         },
         ActionInfo {
-            action: Action::MakeTempCardInDiscard { card_id: crate::content::cards::CardId::Wound, amount: 1, upgraded: false },
+            action: Action::MakeTempCardInDrawPile {
+                card_id: crate::content::cards::CardId::Wound,
+                amount: 1,
+                random_spot: true,
+                upgraded: false
+            },
             insertion_mode: AddTo::Bottom,
         }
     ]

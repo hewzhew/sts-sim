@@ -21,11 +21,16 @@ pub fn get_choices(run_state: &RunState, event_state: &EventState) -> Vec<EventC
         1 => {
             let has_removable = !run_state.master_deck.is_empty();
             if has_removable {
-                vec![EventChoiceMeta::new("[Offer] Sacrifice a card to the spirits.")]
+                vec![EventChoiceMeta::new(
+                    "[Offer] Sacrifice a card to the spirits.",
+                )]
             } else {
-                vec![EventChoiceMeta::disabled("[Offer] No cards to sacrifice.", "No purgeable cards")]
+                vec![EventChoiceMeta::disabled(
+                    "[Offer] No cards to sacrifice.",
+                    "No purgeable cards",
+                )]
             }
-        },
+        }
         _ => vec![EventChoiceMeta::new("[Leave]")],
     }
 }
@@ -37,7 +42,7 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, _
         0 => {
             // Approach → go to card sacrifice screen
             event_state.current_screen = 1;
-        },
+        }
         1 => {
             // Sacrifice a card via grid-select.
             // The Purge handler in run_loop.rs stores the removed card's rarity
@@ -51,7 +56,7 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, _
                 return_state: Box::new(EngineState::EventRoom),
             });
             return;
-        },
+        }
         2 => {
             // Returned from purge. Read rarity from internal_state
             // (set by Purge handler: 0=Curse, 1=Basic, 2=Common, 3=Special, 4=Uncommon, 5=Rare)
@@ -65,27 +70,27 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, _
                         RelicId::SpiritPoop
                     };
                     run_state.relics.push(RelicState::new(relic_id));
-                },
+                }
                 1 => {
                     // Basic → nothing
-                },
+                }
                 2 | 3 => {
                     // Common / Special → heal 5
                     run_state.current_hp = (run_state.current_hp + 5).min(run_state.max_hp);
-                },
+                }
                 4 => {
                     // Uncommon → heal to full
                     run_state.current_hp = run_state.max_hp;
-                },
+                }
                 5 => {
                     // Rare → +10 maxHP + heal to full
                     run_state.max_hp += 10;
                     run_state.current_hp = run_state.max_hp;
-                },
-                _ => {},
+                }
+                _ => {}
             }
             event_state.current_screen = 3;
-        },
+        }
         _ => {
             event_state.completed = true;
         }

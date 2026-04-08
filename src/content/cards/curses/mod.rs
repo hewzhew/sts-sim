@@ -1,4 +1,3 @@
-pub mod regret;
 pub mod ascenders_bane;
 pub mod clumsy;
 pub mod curse_of_the_bell;
@@ -8,7 +7,8 @@ pub mod injury;
 pub mod necronomicurse;
 pub mod normality;
 pub mod pain;
+pub mod parasite;
 pub mod pride;
+pub mod regret;
 pub mod shame;
 pub mod writhe;
-pub mod parasite;

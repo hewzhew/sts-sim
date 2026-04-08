@@ -1,4 +1,3 @@
-use crate::content::relics::RelicState;
 use crate::state::core::EngineState;
 use crate::state::events::{EventChoiceMeta, EventState};
 use crate::state::run::RunState;
@@ -23,7 +22,10 @@ pub fn get_choices(_run_state: &RunState, event_state: &EventState) -> Vec<Event
                     EventChoiceMeta::disabled("[Give Potion]", "No Potions")
                 },
                 if has_gold {
-                    EventChoiceMeta::new(format!("[Give Gold] Lose {} Gold. Obtain a Relic.", gold_amt))
+                    EventChoiceMeta::new(format!(
+                        "[Give Gold] Lose {} Gold. Obtain a Relic.",
+                        gold_amt
+                    ))
                 } else {
                     EventChoiceMeta::disabled("[Give Gold]", "Not enough Gold")
                 },
@@ -34,7 +36,7 @@ pub fn get_choices(_run_state: &RunState, event_state: &EventState) -> Vec<Event
                 },
                 EventChoiceMeta::new("[Attack]"),
             ]
-        },
+        }
         _ => vec![EventChoiceMeta::new("[Leave]")],
     }
 }
@@ -53,20 +55,24 @@ pub fn handle_choice(_engine_state: &mut EngineState, run_state: &mut RunState, 
                     }
                     let relic_id = run_state.random_relic();
                     event_state.current_screen = 1;
-                    if let Some(next_state) = run_state.obtain_relic(relic_id, EngineState::EventRoom) {
+                    if let Some(next_state) =
+                        run_state.obtain_relic(relic_id, EngineState::EventRoom)
+                    {
                         *_engine_state = next_state;
                     }
-                },
+                }
                 1 => {
                     // Give gold → relic
                     let amt = event_state.internal_state & 0xFF;
                     run_state.gold = (run_state.gold - amt).max(0);
                     let relic_id = run_state.random_relic();
                     event_state.current_screen = 1;
-                    if let Some(next_state) = run_state.obtain_relic(relic_id, EngineState::EventRoom) {
+                    if let Some(next_state) =
+                        run_state.obtain_relic(relic_id, EngineState::EventRoom)
+                    {
                         *_engine_state = next_state;
                     }
-                },
+                }
                 2 => {
                     // Give card → relic
                     let card_idx = ((event_state.internal_state >> 8) & 0xFF) as usize;
@@ -76,17 +82,21 @@ pub fn handle_choice(_engine_state: &mut EngineState, run_state: &mut RunState, 
                     }
                     let relic_id = run_state.random_relic();
                     event_state.current_screen = 1;
-                    if let Some(next_state) = run_state.obtain_relic(relic_id, EngineState::EventRoom) {
+                    if let Some(next_state) =
+                        run_state.obtain_relic(relic_id, EngineState::EventRoom)
+                    {
                         *_engine_state = next_state;
                     }
-                },
+                }
                 _ => {
                     // Attack (leave)
                     event_state.current_screen = 1;
-                },
+                }
             }
-        },
-        _ => { event_state.completed = true; }
+        }
+        _ => {
+            event_state.completed = true;
+        }
     }
 
     run_state.event_state = Some(event_state);
@@ -105,7 +115,9 @@ pub fn handle_choice(_engine_state: &mut EngineState, run_state: &mut RunState, 
 pub fn init_we_meet_again_state(run_state: &mut RunState) -> i32 {
     // 1. Random potion: Java getRandomPotion() shuffles via miscRng.randomLong()
     let potion_slot: u8 = {
-        let potion_indices: Vec<usize> = run_state.potions.iter()
+        let potion_indices: Vec<usize> = run_state
+            .potions
+            .iter()
             .enumerate()
             .filter(|(_, p)| p.is_some())
             .map(|(i, _)| i)
@@ -124,12 +136,19 @@ pub fn init_we_meet_again_state(run_state: &mut RunState) -> i32 {
     let gold_amount: u8 = if run_state.gold < 50 {
         0
     } else {
-        let cap = if run_state.gold > 150 { 150 } else { run_state.gold };
+        let cap = if run_state.gold > 150 {
+            150
+        } else {
+            run_state.gold
+        };
         run_state.rng_pool.misc_rng.random_range(50, cap) as u8
     };
 
     // 3. Random non-basic card: shuffle with randomLong then pick [0]
-    let mut eligible_indices: Vec<usize> = run_state.master_deck.iter().enumerate()
+    let mut eligible_indices: Vec<usize> = run_state
+        .master_deck
+        .iter()
+        .enumerate()
         .filter(|(_, c)| {
             let def = crate::content::cards::get_card_definition(c.id);
             def.rarity != crate::content::cards::CardRarity::Basic
@@ -142,7 +161,10 @@ pub fn init_we_meet_again_state(run_state: &mut RunState) -> i32 {
         // Still consume randomLong? No — Java returns null if list is empty, no shuffle
         0xFF
     } else {
-        crate::rng::shuffle_with_random_long(&mut eligible_indices, &mut run_state.rng_pool.misc_rng);
+        crate::rng::shuffle_with_random_long(
+            &mut eligible_indices,
+            &mut run_state.rng_pool.misc_rng,
+        );
         eligible_indices[0] as u8
     };
 

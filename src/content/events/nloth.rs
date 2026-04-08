@@ -10,14 +10,22 @@ pub fn get_choices(run_state: &RunState, event_state: &EventState) -> Vec<EventC
             // internal_state encodes: bits[0..7]=choice1_idx, bits[8..15]=choice2_idx
             let c1 = (event_state.internal_state & 0xFF) as usize;
             let c2 = ((event_state.internal_state >> 8) & 0xFF) as usize;
-            let r1_name = run_state.relics.get(c1).map(|r| format!("{:?}", r.id)).unwrap_or("???".into());
-            let r2_name = run_state.relics.get(c2).map(|r| format!("{:?}", r.id)).unwrap_or("???".into());
+            let r1_name = run_state
+                .relics
+                .get(c1)
+                .map(|r| format!("{:?}", r.id))
+                .unwrap_or("???".into());
+            let r2_name = run_state
+                .relics
+                .get(c2)
+                .map(|r| format!("{:?}", r.id))
+                .unwrap_or("???".into());
             vec![
                 EventChoiceMeta::new(format!("[Trade {}] Obtain N'loth's Gift.", r1_name)),
                 EventChoiceMeta::new(format!("[Trade {}] Obtain N'loth's Gift.", r2_name)),
                 EventChoiceMeta::new("[Leave]"),
             ]
-        },
+        }
         _ => vec![EventChoiceMeta::new("[Leave]")],
     }
 }
@@ -46,13 +54,15 @@ pub fn handle_choice(_engine_state: &mut EngineState, run_state: &mut RunState, 
                     };
                     run_state.relics.push(RelicState::new(gift_id));
                     event_state.current_screen = 1;
-                },
+                }
                 _ => {
                     event_state.current_screen = 1;
-                },
+                }
             }
-        },
-        _ => { event_state.completed = true; }
+        }
+        _ => {
+            event_state.completed = true;
+        }
     }
 
     run_state.event_state = Some(event_state);
@@ -62,7 +72,9 @@ pub fn handle_choice(_engine_state: &mut EngineState, run_state: &mut RunState, 
 /// Java: Collections.shuffle(relics, new Random(miscRng.randomLong()))
 /// then choice1 = relics[0], choice2 = relics[1]
 pub fn init_nloth_state(run_state: &mut RunState) -> i32 {
-    if run_state.relics.len() < 2 { return 0; }
+    if run_state.relics.len() < 2 {
+        return 0;
+    }
     // Build index list and shuffle with randomLong seed (matching Java exactly)
     let mut indices: Vec<usize> = (0..run_state.relics.len()).collect();
     crate::rng::shuffle_with_random_long(&mut indices, &mut run_state.rng_pool.misc_rng);

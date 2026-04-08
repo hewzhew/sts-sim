@@ -26,7 +26,11 @@ impl StsRng {
         let seed = if seed == 0 { i64::MIN as u64 } else { seed };
         let seed0 = murmur_hash3(seed);
         let seed1 = murmur_hash3(seed0);
-        Self { seed0, seed1, counter: 0 }
+        Self {
+            seed0,
+            seed1,
+            counter: 0,
+        }
     }
 
     /// Advance the RNG by `count` calls, used for save-file restoration.
@@ -100,7 +104,13 @@ impl StsRng {
         self.counter += 1;
         if std::env::var("RNG_TRACE").is_ok() {
             let loc = std::panic::Location::caller();
-            eprintln!("  [RNG] counter={} random({}) at {}:{}", self.counter, range, loc.file(), loc.line());
+            eprintln!(
+                "  [RNG] counter={} random({}) at {}:{}",
+                self.counter,
+                range,
+                loc.file(),
+                loc.line()
+            );
         }
         self.next_int_bounded(range + 1)
     }
@@ -111,7 +121,14 @@ impl StsRng {
         self.counter += 1;
         if std::env::var("RNG_TRACE").is_ok() {
             let loc = std::panic::Location::caller();
-            eprintln!("  [RNG] counter={} random_range({},{}) at {}:{}", self.counter, start, end, loc.file(), loc.line());
+            eprintln!(
+                "  [RNG] counter={} random_range({},{}) at {}:{}",
+                self.counter,
+                start,
+                end,
+                loc.file(),
+                loc.line()
+            );
         }
         start + self.next_int_bounded(end - start + 1)
     }
@@ -122,7 +139,12 @@ impl StsRng {
         self.counter += 1;
         if std::env::var("RNG_TRACE").is_ok() {
             let loc = std::panic::Location::caller();
-            eprintln!("  [RNG] counter={} random_boolean() at {}:{}", self.counter, loc.file(), loc.line());
+            eprintln!(
+                "  [RNG] counter={} random_boolean() at {}:{}",
+                self.counter,
+                loc.file(),
+                loc.line()
+            );
         }
         self.next_boolean()
     }
@@ -133,7 +155,13 @@ impl StsRng {
         self.counter += 1;
         if std::env::var("RNG_TRACE").is_ok() {
             let loc = std::panic::Location::caller();
-            eprintln!("  [RNG] counter={} random_boolean_chance({}) at {}:{}", self.counter, chance, loc.file(), loc.line());
+            eprintln!(
+                "  [RNG] counter={} random_boolean_chance({}) at {}:{}",
+                self.counter,
+                chance,
+                loc.file(),
+                loc.line()
+            );
         }
         self.next_float() < chance
     }
@@ -144,7 +172,12 @@ impl StsRng {
         self.counter += 1;
         if std::env::var("RNG_TRACE").is_ok() {
             let loc = std::panic::Location::caller();
-            eprintln!("  [RNG] counter={} random_f32() at {}:{}", self.counter, loc.file(), loc.line());
+            eprintln!(
+                "  [RNG] counter={} random_f32() at {}:{}",
+                self.counter,
+                loc.file(),
+                loc.line()
+            );
         }
         self.next_float()
     }
@@ -155,7 +188,13 @@ impl StsRng {
         self.counter += 1;
         if std::env::var("RNG_TRACE").is_ok() {
             let loc = std::panic::Location::caller();
-            eprintln!("  [RNG] counter={} random_f32_range({}) at {}:{}", self.counter, range, loc.file(), loc.line());
+            eprintln!(
+                "  [RNG] counter={} random_f32_range({}) at {}:{}",
+                self.counter,
+                range,
+                loc.file(),
+                loc.line()
+            );
         }
         self.next_float() * range
     }
@@ -166,7 +205,14 @@ impl StsRng {
         self.counter += 1;
         if std::env::var("RNG_TRACE").is_ok() {
             let loc = std::panic::Location::caller();
-            eprintln!("  [RNG] counter={} random_f32_min_max({},{}) at {}:{}", self.counter, min, max, loc.file(), loc.line());
+            eprintln!(
+                "  [RNG] counter={} random_f32_min_max({},{}) at {}:{}",
+                self.counter,
+                min,
+                max,
+                loc.file(),
+                loc.line()
+            );
         }
         min + self.next_float() * (max - min)
     }
@@ -177,7 +223,12 @@ impl StsRng {
         self.counter += 1;
         if std::env::var("RNG_TRACE").is_ok() {
             let loc = std::panic::Location::caller();
-            eprintln!("  [RNG] counter={} random_long() at {}:{}", self.counter, loc.file(), loc.line());
+            eprintln!(
+                "  [RNG] counter={} random_long() at {}:{}",
+                self.counter,
+                loc.file(),
+                loc.line()
+            );
         }
         self.next_long()
     }
@@ -209,17 +260,25 @@ const LCG_MASK: u64 = (1u64 << 48) - 1;
 
 impl JavaUtilRandom {
     pub fn new(seed: u64) -> Self {
-        Self { seed: (seed ^ LCG_MULTIPLIER) & LCG_MASK }
+        Self {
+            seed: (seed ^ LCG_MULTIPLIER) & LCG_MASK,
+        }
     }
 
     fn next(&mut self, bits: u32) -> i32 {
-        self.seed = self.seed.wrapping_mul(LCG_MULTIPLIER).wrapping_add(LCG_ADDEND) & LCG_MASK;
+        self.seed = self
+            .seed
+            .wrapping_mul(LCG_MULTIPLIER)
+            .wrapping_add(LCG_ADDEND)
+            & LCG_MASK;
         (self.seed >> (48 - bits)) as i32
     }
 
     /// `nextInt(bound)` with rejection sampling, matching Java exactly.
     pub fn next_int(&mut self, bound: i32) -> i32 {
-        if bound <= 0 { return 0; }
+        if bound <= 0 {
+            return 0;
+        }
         if bound & (bound - 1) == 0 {
             return ((bound as i64 * self.next(31) as i64) >> 31) as i32;
         }
@@ -286,18 +345,18 @@ impl RngPool {
     /// Initialize all streams from a single game seed (mirrors `generateSeeds()`).
     pub fn new(seed: u64) -> Self {
         Self {
-            monster_rng:     StsRng::new(seed),
-            event_rng:       StsRng::new(seed),
-            merchant_rng:    StsRng::new(seed),
-            card_rng:        StsRng::new(seed),
-            treasure_rng:    StsRng::new(seed),
-            relic_rng:       StsRng::new(seed),
-            potion_rng:      StsRng::new(seed),
-            monster_hp_rng:  StsRng::new(seed),
-            ai_rng:          StsRng::new(seed),
-            shuffle_rng:     StsRng::new(seed),
+            monster_rng: StsRng::new(seed),
+            event_rng: StsRng::new(seed),
+            merchant_rng: StsRng::new(seed),
+            card_rng: StsRng::new(seed),
+            treasure_rng: StsRng::new(seed),
+            relic_rng: StsRng::new(seed),
+            potion_rng: StsRng::new(seed),
+            monster_hp_rng: StsRng::new(seed),
+            ai_rng: StsRng::new(seed),
+            shuffle_rng: StsRng::new(seed),
             card_random_rng: StsRng::new(seed),
-            misc_rng:        StsRng::new(seed),
+            misc_rng: StsRng::new(seed),
         }
     }
 
@@ -312,11 +371,11 @@ impl RngPool {
     /// ```
     pub fn generate_floor_seeds(&mut self, seed: u64, floor_num: i32) {
         let floor_seed = seed.wrapping_add(floor_num as u64);
-        self.monster_hp_rng  = StsRng::new(floor_seed);
-        self.ai_rng          = StsRng::new(floor_seed);
-        self.shuffle_rng     = StsRng::new(floor_seed);
+        self.monster_hp_rng = StsRng::new(floor_seed);
+        self.ai_rng = StsRng::new(floor_seed);
+        self.shuffle_rng = StsRng::new(floor_seed);
         self.card_random_rng = StsRng::new(floor_seed);
-        self.misc_rng        = StsRng::new(floor_seed);
+        self.misc_rng = StsRng::new(floor_seed);
     }
 }
 

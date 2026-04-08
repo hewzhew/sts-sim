@@ -1,12 +1,15 @@
-use crate::combat::CombatState;
 use crate::action::{Action, ActionInfo, AddTo};
+use crate::combat::CombatState;
 use smallvec::SmallVec;
 
 /// Hand Drill: Whenever you break an enemy's Block, apply 2 Vulnerable.
 /// Check if the engine resolves "break" specifically in damage routing, or if we need an Observer.
 /// For now, we stub the `on_break_block` hook in `hooks.rs` which would be called from `apply_damage`.
 
-pub fn on_break_block(_state: &CombatState, target_id: crate::core::EntityId) -> SmallVec<[ActionInfo; 4]> {
+pub fn on_break_block(
+    _state: &CombatState,
+    target_id: crate::core::EntityId,
+) -> SmallVec<[ActionInfo; 4]> {
     let mut actions = SmallVec::new();
     actions.push(ActionInfo {
         action: Action::ApplyPower {

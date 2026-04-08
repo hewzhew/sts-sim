@@ -6,12 +6,19 @@ use crate::state::run::RunState;
 pub fn get_choices(run_state: &RunState, event_state: &EventState) -> Vec<EventChoiceMeta> {
     match event_state.current_screen {
         0 => {
-            let curse_chance = if run_state.ascension_level >= 15 { 100 } else { 50 };
+            let curse_chance = if run_state.ascension_level >= 15 {
+                100
+            } else {
+                50
+            };
             vec![
-                EventChoiceMeta::new(format!("[Open] {}% chance of Writhe. Obtain a random Relic.", curse_chance)),
+                EventChoiceMeta::new(format!(
+                    "[Open] {}% chance of Writhe. Obtain a random Relic.",
+                    curse_chance
+                )),
                 EventChoiceMeta::new("[Leave]"),
             ]
-        },
+        }
         _ => vec![EventChoiceMeta::new("[Leave]")],
     }
 }
@@ -33,14 +40,16 @@ pub fn handle_choice(_engine_state: &mut EngineState, run_state: &mut RunState, 
                         run_state.add_card_to_deck(CardId::Writhe);
                     }
                     let relic_id = run_state.random_relic();
-                    run_state.relics.push(crate::content::relics::RelicState::new(relic_id));
+                    run_state
+                        .relics
+                        .push(crate::content::relics::RelicState::new(relic_id));
                     event_state.current_screen = 1;
-                },
+                }
                 _ => {
                     event_state.completed = true;
-                },
+                }
             }
-        },
+        }
         _ => {
             event_state.completed = true;
         }

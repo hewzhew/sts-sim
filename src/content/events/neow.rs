@@ -1,3 +1,4 @@
+use crate::state::core::{EngineState, RunPendingChoiceReason, RunPendingChoiceState};
 /// Neow Event — the starting blessing event.
 ///
 /// Java: NeowEvent.java + NeowReward.java
@@ -14,33 +15,31 @@
 ///   0 = initial dialog (click to advance to choices)
 ///   1 = choices displayed
 ///   2 = completed
-
-use crate::state::events::{EventState, EventChoiceMeta};
+use crate::state::events::{EventChoiceMeta, EventState};
 use crate::state::run::RunState;
-use crate::state::core::{EngineState, RunPendingChoiceState, RunPendingChoiceReason};
 
 /// Neow reward types
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum NeowRewardType {
-    ThreeEnemyKill,      // NeowsLament relic
-    TenPercentHpBonus,   // +10% maxHP
+    ThreeEnemyKill,       // NeowsLament relic
+    TenPercentHpBonus,    // +10% maxHP
     ThreeCards,           // Choose from 3 cards
-    OneRandomRareCard,   // Obtain 1 random rare
-    RemoveCard,          // Remove 1 card
-    UpgradeCard,         // Upgrade 1 card
-    TransformCard,       // Transform 1 card
-    RandomColorless,     // Choose from 3 colorless
-    ThreeSmallPotions,   // Obtain 3 random potions
-    RandomCommonRelic,   // Obtain random common relic
-    HundredGold,         // +100 gold
-    RandomColorless2,    // Choose from 3 rare colorless (with drawback)
-    RemoveTwo,           // Remove 2 cards (with drawback)
-    OneRareRelic,        // Obtain random rare relic (with drawback)
-    ThreeRareCards,      // Choose from 3 rare cards (with drawback)
-    TwoFiftyGold,        // +250 gold (with drawback)
-    TransformTwoCards,   // Transform 2 cards (with drawback)
-    TwentyPercentHpBonus,// +20% maxHP (with drawback)
-    BossRelic,           // Swap starter relic for boss relic
+    OneRandomRareCard,    // Obtain 1 random rare
+    RemoveCard,           // Remove 1 card
+    UpgradeCard,          // Upgrade 1 card
+    TransformCard,        // Transform 1 card
+    RandomColorless,      // Choose from 3 colorless
+    ThreeSmallPotions,    // Obtain 3 random potions
+    RandomCommonRelic,    // Obtain random common relic
+    HundredGold,          // +100 gold
+    RandomColorless2,     // Choose from 3 rare colorless (with drawback)
+    RemoveTwo,            // Remove 2 cards (with drawback)
+    OneRareRelic,         // Obtain random rare relic (with drawback)
+    ThreeRareCards,       // Choose from 3 rare cards (with drawback)
+    TwoFiftyGold,         // +250 gold (with drawback)
+    TransformTwoCards,    // Transform 2 cards (with drawback)
+    TwentyPercentHpBonus, // +20% maxHP (with drawback)
+    BossRelic,            // Swap starter relic for boss relic
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -129,7 +128,9 @@ fn encode_drawback(d: NeowDrawback) -> i32 {
 
 fn reward_label(r: NeowRewardType, hp_bonus: i32) -> String {
     match r {
-        NeowRewardType::ThreeEnemyKill => "Enemies in your next three combats have 1 HP.".to_string(),
+        NeowRewardType::ThreeEnemyKill => {
+            "Enemies in your next three combats have 1 HP.".to_string()
+        }
         NeowRewardType::TenPercentHpBonus => format!("Max HP +{}", hp_bonus),
         NeowRewardType::ThreeCards => "Choose a card to obtain.".to_string(),
         NeowRewardType::OneRandomRareCard => "Obtain a random rare card.".to_string(),
@@ -147,7 +148,9 @@ fn reward_label(r: NeowRewardType, hp_bonus: i32) -> String {
         NeowRewardType::TwoFiftyGold => "Obtain 250 Gold.".to_string(),
         NeowRewardType::TransformTwoCards => "Transform 2 cards.".to_string(),
         NeowRewardType::TwentyPercentHpBonus => format!("Max HP +{}", hp_bonus * 2),
-        NeowRewardType::BossRelic => "Obtain a random Boss Relic. Lose your starter Relic.".to_string(),
+        NeowRewardType::BossRelic => {
+            "Obtain a random Boss Relic. Lose your starter Relic.".to_string()
+        }
     }
 }
 
@@ -209,7 +212,8 @@ pub fn setup_neow_choices(run_state: &mut RunState) {
             NeowDrawback::Curse,
             NeowDrawback::PercentDamage,
         ];
-        let drawback = drawback_options[neow_rng.random_range(0, drawback_options.len() as i32 - 1) as usize];
+        let drawback =
+            drawback_options[neow_rng.random_range(0, drawback_options.len() as i32 - 1) as usize];
 
         // Build cat2 options with conditional filtering based on drawback
         let mut cat2_options = vec![NeowRewardType::RandomColorless2];
@@ -259,7 +263,7 @@ pub fn get_choices(run_state: &RunState, event_state: &EventState) -> Vec<EventC
         0 => {
             // Initial dialog — single "proceed" button
             vec![EventChoiceMeta::new("[Proceed]")]
-        },
+        }
         1 => {
             // Display reward choices
             let count = event_state.extra_data[0] as usize;
@@ -272,7 +276,7 @@ pub fn get_choices(run_state: &RunState, event_state: &EventState) -> Vec<EventC
                 choices.push(EventChoiceMeta::new(format!("{}{}", db_label, rw_label)));
             }
             choices
-        },
+        }
         _ => {
             vec![EventChoiceMeta::new("[Leave]")]
         }
@@ -286,7 +290,7 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
         0 => {
             // Advance to choices screen
             event_state.current_screen = 1;
-        },
+        }
         1 => {
             let count = event_state.extra_data[0] as usize;
             if choice_idx < count {
@@ -301,7 +305,7 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
             }
             event_state.current_screen = 2;
             event_state.completed = true;
-        },
+        }
         _ => {
             // Leave — already completed
         }
@@ -313,28 +317,28 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
 fn apply_drawback(run_state: &mut RunState, drawback: NeowDrawback) {
     let hp_bonus = (run_state.max_hp as f32 * 0.1) as i32;
     match drawback {
-        NeowDrawback::None => {},
+        NeowDrawback::None => {}
         NeowDrawback::TenPercentHpLoss => {
             run_state.max_hp -= hp_bonus;
             if run_state.current_hp > run_state.max_hp {
                 run_state.current_hp = run_state.max_hp;
             }
-        },
+        }
         NeowDrawback::NoGold => {
             run_state.gold = 0;
-        },
+        }
         NeowDrawback::Curse => {
             // Add a random curse to deck
             // Java: AbstractDungeon.getCardWithoutRng(CardRarity.CURSE)
             run_state.add_card_to_deck(crate::content::cards::CardId::Regret);
-        },
+        }
         NeowDrawback::PercentDamage => {
             let dmg = run_state.current_hp / 10 * 3;
             run_state.current_hp -= dmg;
             if run_state.current_hp < 1 {
                 run_state.current_hp = 1;
             }
-        },
+        }
     }
 }
 
@@ -350,38 +354,44 @@ fn apply_reward(
         NeowRewardType::ThreeEnemyKill => {
             // Obtain NeowsLament relic
             let relic_id = crate::content::relics::RelicId::NeowsLament;
-            if let Some(next_state) = run_state.obtain_relic(relic_id, crate::state::core::EngineState::EventRoom) {
+            if let Some(next_state) =
+                run_state.obtain_relic(relic_id, crate::state::core::EngineState::EventRoom)
+            {
                 *engine_state = next_state;
             }
-        },
+        }
         NeowRewardType::TenPercentHpBonus => {
             run_state.max_hp += hp_bonus;
             run_state.current_hp += hp_bonus;
-        },
+        }
         NeowRewardType::TwentyPercentHpBonus => {
             run_state.max_hp += hp_bonus * 2;
             run_state.current_hp += hp_bonus * 2;
-        },
+        }
         NeowRewardType::HundredGold => {
             run_state.gold += 100;
-        },
+        }
         NeowRewardType::TwoFiftyGold => {
             run_state.gold += 250;
-        },
+        }
         NeowRewardType::RandomCommonRelic => {
             if let Some(relic_id) = run_state.common_relic_pool.pop() {
-                if let Some(next_state) = run_state.obtain_relic(relic_id, crate::state::core::EngineState::EventRoom) {
+                if let Some(next_state) =
+                    run_state.obtain_relic(relic_id, crate::state::core::EngineState::EventRoom)
+                {
                     *engine_state = next_state;
                 }
             }
-        },
+        }
         NeowRewardType::OneRareRelic => {
             if let Some(relic_id) = run_state.rare_relic_pool.pop() {
-                if let Some(next_state) = run_state.obtain_relic(relic_id, crate::state::core::EngineState::EventRoom) {
+                if let Some(next_state) =
+                    run_state.obtain_relic(relic_id, crate::state::core::EngineState::EventRoom)
+                {
                     *engine_state = next_state;
                 }
             }
-        },
+        }
         NeowRewardType::BossRelic => {
             // Remove starter relic (first relic)
             if !run_state.relics.is_empty() {
@@ -390,11 +400,13 @@ fn apply_reward(
             // Obtain random boss relic
             if let Some(relic_id) = run_state.boss_relic_pool.pop() {
                 // Trigger effects like Pandora's Box transforming the deck
-                if let Some(next_state) = run_state.obtain_relic(relic_id, crate::state::core::EngineState::EventRoom) {
+                if let Some(next_state) =
+                    run_state.obtain_relic(relic_id, crate::state::core::EngineState::EventRoom)
+                {
                     *engine_state = next_state;
                 }
             }
-        },
+        }
         NeowRewardType::OneRandomRareCard => {
             // Get a random rare card from the player's class pool and add to deck
             let pool = crate::engine::campfire_handler::card_pool_for_class(
@@ -402,10 +414,13 @@ fn apply_reward(
                 crate::content::cards::CardRarity::Rare,
             );
             if !pool.is_empty() {
-                let idx = run_state.rng_pool.card_rng.random_range(0, (pool.len() - 1) as i32) as usize;
+                let idx = run_state
+                    .rng_pool
+                    .card_rng
+                    .random_range(0, (pool.len() - 1) as i32) as usize;
                 run_state.add_card_to_deck(pool[idx]);
             }
-        },
+        }
         NeowRewardType::RemoveCard => {
             // Trigger RunPendingChoice for card removal
             *engine_state = EngineState::RunPendingChoice(RunPendingChoiceState {
@@ -414,7 +429,7 @@ fn apply_reward(
                 reason: RunPendingChoiceReason::Purge,
                 return_state: Box::new(EngineState::EventRoom),
             });
-        },
+        }
         NeowRewardType::RemoveTwo => {
             *engine_state = EngineState::RunPendingChoice(RunPendingChoiceState {
                 min_choices: 2,
@@ -422,7 +437,7 @@ fn apply_reward(
                 reason: RunPendingChoiceReason::Purge,
                 return_state: Box::new(EngineState::EventRoom),
             });
-        },
+        }
         NeowRewardType::UpgradeCard => {
             *engine_state = EngineState::RunPendingChoice(RunPendingChoiceState {
                 min_choices: 1,
@@ -430,16 +445,20 @@ fn apply_reward(
                 reason: RunPendingChoiceReason::Upgrade,
                 return_state: Box::new(EngineState::EventRoom),
             });
-        },
+        }
         NeowRewardType::TransformCard | NeowRewardType::TransformTwoCards => {
-            let count = if reward == NeowRewardType::TransformTwoCards { 2 } else { 1 };
+            let count = if reward == NeowRewardType::TransformTwoCards {
+                2
+            } else {
+                1
+            };
             *engine_state = EngineState::RunPendingChoice(RunPendingChoiceState {
                 min_choices: count,
                 max_choices: count,
                 reason: RunPendingChoiceReason::Transform,
                 return_state: Box::new(EngineState::EventRoom),
             });
-        },
+        }
         NeowRewardType::ThreeSmallPotions => {
             // Add 3 random potions to empty potion slots
             let pc = run_state.potion_class();
@@ -454,42 +473,53 @@ fn apply_reward(
                     *slot = Some(crate::content::potions::Potion::new(potion_id, 0));
                 }
             }
-        },
+        }
         NeowRewardType::ThreeCards => {
             // Generate 3 card choices from player's class pool (mixed rarity)
             let cards = generate_neow_class_cards(run_state, false);
-            let mut reward_state = crate::state::reward::RewardState::new();
-            reward_state.items.push(crate::state::RewardItem::Card { cards });
+            let mut reward_state = crate::rewards::state::RewardState::new();
+            reward_state
+                .items
+                .push(crate::rewards::state::RewardItem::Card { cards });
             *engine_state = EngineState::RewardScreen(reward_state);
-        },
+        }
         NeowRewardType::ThreeRareCards => {
             // Generate 3 rare card choices from player's class pool
             let cards = generate_neow_class_cards(run_state, true);
-            let mut reward_state = crate::state::reward::RewardState::new();
-            reward_state.items.push(crate::state::RewardItem::Card { cards });
+            let mut reward_state = crate::rewards::state::RewardState::new();
+            reward_state
+                .items
+                .push(crate::rewards::state::RewardItem::Card { cards });
             *engine_state = EngineState::RewardScreen(reward_state);
-        },
+        }
         NeowRewardType::RandomColorless => {
             // 3 colorless cards (uncommon or rare)
             let cards = generate_neow_colorless_cards(run_state, false);
-            let mut reward_state = crate::state::reward::RewardState::new();
-            reward_state.items.push(crate::state::RewardItem::Card { cards });
+            let mut reward_state = crate::rewards::state::RewardState::new();
+            reward_state
+                .items
+                .push(crate::rewards::state::RewardItem::Card { cards });
             *engine_state = EngineState::RewardScreen(reward_state);
-        },
+        }
         NeowRewardType::RandomColorless2 => {
             // 3 rare colorless cards
             let cards = generate_neow_colorless_cards(run_state, true);
-            let mut reward_state = crate::state::reward::RewardState::new();
-            reward_state.items.push(crate::state::RewardItem::Card { cards });
+            let mut reward_state = crate::rewards::state::RewardState::new();
+            reward_state
+                .items
+                .push(crate::rewards::state::RewardItem::Card { cards });
             *engine_state = EngineState::RewardScreen(reward_state);
-        },
+        }
     }
 }
 
 /// Generate 3 cards from the player's class card pool.
 /// If `rare_only` is true, all 3 cards come from the Rare pool.
 /// Otherwise, uses the same rarity roll as DreamCatcher (standard card reward rarity distribution).
-fn generate_neow_class_cards(run_state: &mut RunState, rare_only: bool) -> Vec<crate::content::cards::CardId> {
+fn generate_neow_class_cards(
+    run_state: &mut RunState,
+    rare_only: bool,
+) -> Vec<crate::rewards::state::RewardCard> {
     use crate::content::cards::CardRarity;
     let mut cards = Vec::new();
     for _ in 0..3 {
@@ -497,17 +527,22 @@ fn generate_neow_class_cards(run_state: &mut RunState, rare_only: bool) -> Vec<c
             CardRarity::Rare
         } else {
             let roll = run_state.rng_pool.card_rng.random_range(0, 99);
-            if roll < 3 { CardRarity::Rare }
-            else if roll < 40 { CardRarity::Uncommon }
-            else { CardRarity::Common }
+            if roll < 3 {
+                CardRarity::Rare
+            } else if roll < 40 {
+                CardRarity::Uncommon
+            } else {
+                CardRarity::Common
+            }
         };
-        let pool = crate::engine::campfire_handler::card_pool_for_class(
-            run_state.player_class,
-            rarity,
-        );
+        let pool =
+            crate::engine::campfire_handler::card_pool_for_class(run_state.player_class, rarity);
         if !pool.is_empty() {
-            let idx = run_state.rng_pool.card_rng.random_range(0, (pool.len() - 1) as i32) as usize;
-            cards.push(pool[idx]);
+            let idx = run_state
+                .rng_pool
+                .card_rng
+                .random_range(0, (pool.len() - 1) as i32) as usize;
+            cards.push(crate::rewards::state::RewardCard::new(pool[idx], 0));
         }
     }
     cards
@@ -557,18 +592,28 @@ const COLORLESS_RARE_POOL: &[crate::content::cards::CardId] = &[
 /// Generate 3 colorless cards for Neow rewards.
 /// If `rare_only` is true, picks from rare colorless pool only.
 /// Otherwise picks from uncommon + rare with standard rarity weighting.
-fn generate_neow_colorless_cards(run_state: &mut RunState, rare_only: bool) -> Vec<crate::content::cards::CardId> {
+fn generate_neow_colorless_cards(
+    run_state: &mut RunState,
+    rare_only: bool,
+) -> Vec<crate::rewards::state::RewardCard> {
     let mut cards = Vec::new();
     for _ in 0..3 {
         let pool = if rare_only {
             COLORLESS_RARE_POOL
         } else {
             let roll = run_state.rng_pool.card_rng.random_range(0, 99);
-            if roll < 30 { COLORLESS_RARE_POOL } else { COLORLESS_UNCOMMON_POOL }
+            if roll < 30 {
+                COLORLESS_RARE_POOL
+            } else {
+                COLORLESS_UNCOMMON_POOL
+            }
         };
         if !pool.is_empty() {
-            let idx = run_state.rng_pool.card_rng.random_range(0, (pool.len() - 1) as i32) as usize;
-            cards.push(pool[idx]);
+            let idx = run_state
+                .rng_pool
+                .card_rng
+                .random_range(0, (pool.len() - 1) as i32) as usize;
+            cards.push(crate::rewards::state::RewardCard::new(pool[idx], 0));
         }
     }
     cards

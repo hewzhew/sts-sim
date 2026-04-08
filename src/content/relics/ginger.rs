@@ -1,5 +1,5 @@
+use crate::action::ActionInfo;
 use crate::combat::CombatState;
-use crate::action::{ActionInfo};
 use crate::content::powers::PowerId;
 use smallvec::SmallVec;
 
@@ -12,7 +12,13 @@ pub fn check_immunity(power: PowerId) -> bool {
     power == PowerId::Weak
 }
 
+pub fn on_receive_power_modify(power_id: PowerId, amount: i32) -> i32 {
+    if power_id == PowerId::Weak {
+        return 0;
+    }
+    amount
+}
+
 pub fn on_apply_power(_state: &CombatState, _power_id: PowerId) -> SmallVec<[ActionInfo; 4]> {
-    // Currently relying on `check_immunity` being called by the Power application logic.
     SmallVec::new()
 }

@@ -18,7 +18,7 @@ pub fn get_choices(_run_state: &RunState, event_state: &EventState) -> Vec<Event
         1 => {
             // Offer a card to the bonfire
             vec![EventChoiceMeta::new("[Offer] Select a card to offer.")]
-        },
+        }
         _ => vec![EventChoiceMeta::new("[Leave]")],
     }
 }
@@ -29,7 +29,7 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, _
     match event_state.current_screen {
         0 => {
             event_state.current_screen = 1;
-        },
+        }
         1 => {
             // Transition to RunPendingChoice::Purge to select a card.
             // The Purge handler stores the removed card's rarity in
@@ -43,7 +43,7 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, _
                 return_state: Box::new(EngineState::EventRoom),
             });
             return;
-        },
+        }
         2 => {
             // Post-purge: apply rarity-based reward from internal_state
             // (set by Purge handler: 0=Curse, 1=Basic, 2=Common, 3=Special, 4=Uncommon, 5=Rare)
@@ -57,27 +57,27 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, _
                         RelicId::SpiritPoop
                     };
                     run_state.relics.push(RelicState::new(relic_id));
-                },
+                }
                 1 => {
                     // Basic → nothing
-                },
+                }
                 2 | 3 => {
                     // Common / Special → heal 5
                     run_state.current_hp = (run_state.current_hp + 5).min(run_state.max_hp);
-                },
+                }
                 4 => {
                     // Uncommon → heal to full
                     run_state.current_hp = run_state.max_hp;
-                },
+                }
                 5 => {
                     // Rare → +10 maxHP + heal to full
                     run_state.max_hp += 10;
                     run_state.current_hp = run_state.max_hp;
-                },
-                _ => {},
+                }
+                _ => {}
             }
             event_state.current_screen = 3;
-        },
+        }
         _ => {
             event_state.completed = true;
         }

@@ -1,6 +1,6 @@
 // ============================================================================
-// AUTO-GENERATED from protocol_schema.json by gen_mappings.py
-// DO NOT EDIT MANUALLY — edit protocol_schema.json and re-run gen_mappings.py
+// LEGACY SNAPSHOT of old schema generation output.
+// Runtime mapping now comes from tools/compiled_protocol_schema.json via build.rs.
 // ============================================================================
 
 // AUTO-GENERATED from protocol_schema.json — DO NOT EDIT

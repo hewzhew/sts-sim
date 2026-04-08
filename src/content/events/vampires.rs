@@ -16,15 +16,18 @@ pub fn get_choices(run_state: &RunState, event_state: &EventState) -> Vec<EventC
     if event_state.current_screen == 1 {
         return vec![EventChoiceMeta::new("[Leave]")];
     }
-    
+
     let hp_loss = get_hp_loss(run_state);
-    let mut choices = vec![
-        EventChoiceMeta::new(format!("[Accept] Lose {} Max HP. Replace all Strikes with 5 Bites.", hp_loss)),
-    ];
+    let mut choices = vec![EventChoiceMeta::new(format!(
+        "[Accept] Lose {} Max HP. Replace all Strikes with 5 Bites.",
+        hp_loss
+    ))];
 
     let has_vial = run_state.relics.iter().any(|r| r.id == RelicId::BloodVial);
     if has_vial {
-        choices.push(EventChoiceMeta::new("[Give Vial] Lose Blood Vial. Replace all Strikes with 5 Bites."));
+        choices.push(EventChoiceMeta::new(
+            "[Give Vial] Lose Blood Vial. Replace all Strikes with 5 Bites.",
+        ));
     } else {
         choices.push(EventChoiceMeta::disabled(
             "[Give Vial] Lose Blood Vial. Replace all Strikes with 5 Bites.",
@@ -42,7 +45,8 @@ pub fn handle_choice(_engine_state: &mut EngineState, run_state: &mut RunState, 
     match event_state.current_screen {
         0 => {
             match choice_idx {
-                0 => { // Accept: Max HP loss
+                0 => {
+                    // Accept: Max HP loss
                     let hp_loss = get_hp_loss(run_state);
                     run_state.max_hp -= hp_loss;
                     if run_state.current_hp > run_state.max_hp {
@@ -50,19 +54,25 @@ pub fn handle_choice(_engine_state: &mut EngineState, run_state: &mut RunState, 
                     }
                     replace_attacks(run_state);
                     event_state.current_screen = 1;
-                },
-                1 => { // Give Vial -> Requires BloodVial
-                    if let Some(pos) = run_state.relics.iter().position(|r| r.id == RelicId::BloodVial) {
+                }
+                1 => {
+                    // Give Vial -> Requires BloodVial
+                    if let Some(pos) = run_state
+                        .relics
+                        .iter()
+                        .position(|r| r.id == RelicId::BloodVial)
+                    {
                         run_state.relics.remove(pos);
                     }
                     replace_attacks(run_state);
                     event_state.current_screen = 1;
-                },
-                _ => { // Refuse
+                }
+                _ => {
+                    // Refuse
                     event_state.completed = true;
                 }
             }
-        },
+        }
         _ => {
             event_state.completed = true;
         }
@@ -73,14 +83,16 @@ pub fn handle_choice(_engine_state: &mut EngineState, run_state: &mut RunState, 
 
 fn replace_attacks(run_state: &mut RunState) {
     // Identify Strikes to remove
-    let strikes_to_remove: Vec<u32> = run_state.master_deck.iter()
+    let strikes_to_remove: Vec<u32> = run_state
+        .master_deck
+        .iter()
         .filter(|card| {
             let def = crate::content::cards::get_card_definition(card.id);
             def.tags.contains(&CardTag::StarterStrike)
         })
         .map(|card| card.uuid)
         .collect();
-        
+
     for uuid in strikes_to_remove {
         run_state.remove_card_from_deck(uuid);
     }

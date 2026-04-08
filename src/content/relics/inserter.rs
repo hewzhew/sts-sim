@@ -11,8 +11,12 @@ impl Inserter {
     pub fn at_turn_start(counter: i32) -> SmallVec<[ActionInfo; 4]> {
         let mut actions = SmallVec::new();
         // Java: this.counter = this.counter == -1 ? (this.counter += 2) : ++this.counter;
-        let new_counter = if counter == -1 { counter + 2 } else { counter + 1 };
-        
+        let new_counter = if counter == -1 {
+            counter + 2
+        } else {
+            counter + 1
+        };
+
         if new_counter == 2 {
             // Java: addToBot(IncreaseMaxOrbAction(1))
             actions.push(ActionInfo {

@@ -28,9 +28,16 @@ use crate::state::run::RunState;
 /// Curse pool matching Java CardLibrary.getCurse():
 /// Excludes AscendersBane, Necronomicurse, CurseOfTheBell, Pride
 const CURSE_POOL: &[CardId] = &[
-    CardId::Clumsy, CardId::Decay, CardId::Doubt, CardId::Injury,
-    CardId::Normality, CardId::Pain, CardId::Parasite, CardId::Regret,
-    CardId::Shame, CardId::Writhe,
+    CardId::Clumsy,
+    CardId::Decay,
+    CardId::Doubt,
+    CardId::Injury,
+    CardId::Normality,
+    CardId::Pain,
+    CardId::Parasite,
+    CardId::Regret,
+    CardId::Shame,
+    CardId::Writhe,
 ];
 
 /// CardId lookup table stored in extra_data[15..21]
@@ -51,14 +58,24 @@ pub fn init_match_game_board(run_state: &mut RunState, extra_data: &mut Vec<i32>
 
     if run_state.ascension_level >= 15 {
         // A15+: 2 curses, no colorless
-        let idx1 = run_state.rng_pool.card_rng.random_range(0, CURSE_POOL.len() as i32 - 1) as usize;
+        let idx1 = run_state
+            .rng_pool
+            .card_rng
+            .random_range(0, CURSE_POOL.len() as i32 - 1) as usize;
         card_types[3] = CURSE_POOL[idx1];
-        let idx2 = run_state.rng_pool.card_rng.random_range(0, CURSE_POOL.len() as i32 - 1) as usize;
+        let idx2 = run_state
+            .rng_pool
+            .card_rng
+            .random_range(0, CURSE_POOL.len() as i32 - 1) as usize;
         card_types[4] = CURSE_POOL[idx2];
     } else {
         // Non-A15: 1 colorless uncommon + 1 curse
-        card_types[3] = run_state.random_colorless_card(crate::content::cards::CardRarity::Uncommon);
-        let idx = run_state.rng_pool.card_rng.random_range(0, CURSE_POOL.len() as i32 - 1) as usize;
+        card_types[3] =
+            run_state.random_colorless_card(crate::content::cards::CardRarity::Uncommon);
+        let idx = run_state
+            .rng_pool
+            .card_rng
+            .random_range(0, CURSE_POOL.len() as i32 - 1) as usize;
         card_types[4] = CURSE_POOL[idx];
     }
 
@@ -138,7 +155,7 @@ pub fn get_choices(_run_state: &RunState, event_state: &EventState) -> Vec<Event
     match event_state.current_screen {
         0 => {
             vec![EventChoiceMeta::new("[Play Match and Keep!]")]
-        },
+        }
         1 | 2 => {
             // Show face-down card positions as choices
             let ed = &event_state.extra_data;
@@ -151,7 +168,7 @@ pub fn get_choices(_run_state: &RunState, event_state: &EventState) -> Vec<Event
                 if event_state.current_screen == 2 && first == pos as i32 {
                     continue; // can't pick the already-flipped card
                 }
-                
+
                 // Show face-up identity if this is the already flipped card in screen 2?
                 // The prompt asks us to flip a card. If we are on screen 2, we could show the first flipped card's name.
                 // But the user clicks "[Flip card X]".
@@ -160,20 +177,23 @@ pub fn get_choices(_run_state: &RunState, event_state: &EventState) -> Vec<Event
             if event_state.current_screen == 2 && first != -1 {
                 let first_card = card_at(ed, first as usize);
                 let def = crate::content::cards::get_card_definition(first_card);
-                choices.insert(0, EventChoiceMeta::disabled(format!("(First card: {})", def.name), ""));
+                choices.insert(
+                    0,
+                    EventChoiceMeta::disabled(format!("(First card: {})", def.name), ""),
+                );
             }
-            
+
             if choices.is_empty() {
                 vec![EventChoiceMeta::new("[Leave]")]
             } else {
                 choices
             }
-        },
+        }
         3 | 4 => {
             let ed = &event_state.extra_data;
             let remaining = attempts_remaining(ed);
             let all_matched = ed[12] == 0xFFF;
-            
+
             let mut prefix = "".to_string();
             if ed.len() > 22 && ed[21] != -1 && ed[22] != -1 {
                 let card1 = card_at(ed, ed[21] as usize);
@@ -188,11 +208,17 @@ pub fn get_choices(_run_state: &RunState, event_state: &EventState) -> Vec<Event
             }
 
             if remaining <= 0 || all_matched || event_state.current_screen == 4 {
-                vec![EventChoiceMeta::new(format!("{}[Leave] Game over. ({} attempts left)", prefix, remaining))]
+                vec![EventChoiceMeta::new(format!(
+                    "{}[Leave] Game over. ({} attempts left)",
+                    prefix, remaining
+                ))]
             } else {
-                vec![EventChoiceMeta::new(format!("{}[Continue] Flip more cards. ({} attempts left)", prefix, remaining))]
+                vec![EventChoiceMeta::new(format!(
+                    "{}[Continue] Flip more cards. ({} attempts left)",
+                    prefix, remaining
+                ))]
             }
-        },
+        }
         _ => vec![EventChoiceMeta::new("[Leave]")],
     }
 }
@@ -203,7 +229,7 @@ pub fn handle_choice(_engine_state: &mut EngineState, run_state: &mut RunState, 
     match event_state.current_screen {
         0 => {
             event_state.current_screen = 1;
-        },
+        }
         1 => {
             // First flip: map choice_idx to actual board position
             let mut available = Vec::new();
@@ -216,7 +242,7 @@ pub fn handle_choice(_engine_state: &mut EngineState, run_state: &mut RunState, 
                 event_state.extra_data[14] = pos as i32;
                 event_state.current_screen = 2;
             }
-        },
+        }
         2 => {
             // Because we inserted a disabled info text at index 0, choice_idx might be shifted if called natively,
             // but the bot skips disabled choices. Let's just adjust if choice_idx mapping is naive.
@@ -227,14 +253,14 @@ pub fn handle_choice(_engine_state: &mut EngineState, run_state: &mut RunState, 
                 // It's safer to recalculate. The bot sends the index corresponding to the choice array.
                 // If the first choice is disabled, choice_idx=0 is invalid. choice_idx=1 is the first valid.
             }
-            
+
             let first_pos = first_flipped(&event_state.extra_data) as usize;
-            
+
             // To be perfectly aligned with choices array:
             let mut choice_counter = 0;
             // The choices array inserted disabled at 0
             let mut found_pos = None;
-            
+
             if first_pos != std::usize::MAX {
                 choice_counter += 1; // skip the (First card: XXX) disabled choice
             }
@@ -248,7 +274,7 @@ pub fn handle_choice(_engine_state: &mut EngineState, run_state: &mut RunState, 
                     choice_counter += 1;
                 }
             }
-            
+
             // Fallback for non-adjusted choices (e.g. from tests)
             if found_pos.is_none() {
                 let mut avail: Vec<usize> = Vec::new();
@@ -265,7 +291,7 @@ pub fn handle_choice(_engine_state: &mut EngineState, run_state: &mut RunState, 
             if let Some(second_pos) = found_pos {
                 let type1 = event_state.extra_data[first_pos];
                 let type2 = event_state.extra_data[second_pos];
-                
+
                 if event_state.extra_data.len() > 22 {
                     event_state.extra_data[21] = first_pos as i32;
                     event_state.extra_data[22] = second_pos as i32;
@@ -279,7 +305,7 @@ pub fn handle_choice(_engine_state: &mut EngineState, run_state: &mut RunState, 
                 }
 
                 event_state.extra_data[13] -= 1; // consume attempt
-                event_state.extra_data[14] = -1;  // reset first flipped
+                event_state.extra_data[14] = -1; // reset first flipped
 
                 let remaining = attempts_remaining(&event_state.extra_data);
                 let all_matched = event_state.extra_data[12] == 0xFFF;
@@ -289,10 +315,10 @@ pub fn handle_choice(_engine_state: &mut EngineState, run_state: &mut RunState, 
                     event_state.current_screen = 3; // continue
                 }
             }
-        },
+        }
         3 => {
             event_state.current_screen = 1; // back to first flip
-        },
+        }
         _ => {
             event_state.completed = true;
         }

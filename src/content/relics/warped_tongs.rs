@@ -9,4 +9,3 @@ pub fn at_turn_start(_state: &crate::combat::CombatState) -> SmallVec<[ActionInf
         insertion_mode: AddTo::Bottom,
     }]
 }
-

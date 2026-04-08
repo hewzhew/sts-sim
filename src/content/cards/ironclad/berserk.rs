@@ -1,5 +1,5 @@
-use crate::combat::{CombatState, CombatCard};
 use crate::action::{Action, ActionInfo, AddTo};
+use crate::combat::{CombatCard, CombatState};
 use smallvec::SmallVec;
 
 pub fn berserk_play(_state: &CombatState, card: &CombatCard) -> SmallVec<[ActionInfo; 4]> {

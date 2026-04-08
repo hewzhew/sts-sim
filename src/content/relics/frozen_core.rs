@@ -1,7 +1,7 @@
+use crate::action::{Action, ActionInfo, AddTo};
 use crate::combat::CombatState;
 use crate::content::relics::RelicState;
 use smallvec::SmallVec;
-use crate::action::{Action, ActionInfo, AddTo};
 
 /// Frozen Core (Defect Boss)
 /// Java: onPlayerEndTurn() → if hasEmptyOrb(): channelOrb(new Frost())
@@ -9,7 +9,11 @@ use crate::action::{Action, ActionInfo, AddTo};
 pub fn at_end_of_turn(state: &CombatState, _relic: &mut RelicState) -> SmallVec<[ActionInfo; 4]> {
     let mut actions = SmallVec::new();
     // Java: hasEmptyOrb() — returns true if any orb slot is EmptyOrbSlot
-    let has_empty = state.player.orbs.iter().any(|o| o.id == crate::combat::OrbId::Empty);
+    let has_empty = state
+        .player
+        .orbs
+        .iter()
+        .any(|o| o.id == crate::combat::OrbId::Empty);
     if has_empty {
         actions.push(ActionInfo {
             action: Action::ChannelOrb(crate::combat::OrbId::Frost),

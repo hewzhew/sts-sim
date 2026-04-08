@@ -1,7 +1,11 @@
 pub mod agent;
-pub mod evaluator;
-pub mod search;
-pub mod coverage;
+mod agent_curiosity;
+mod agent_deck_ops;
+mod agent_run_policy;
+pub mod combat_heuristic;
 pub mod comm_mod;
-pub mod heuristic;
+pub mod coverage;
+pub mod evaluator;
 pub mod potions;
+pub mod reward_heuristics;
+pub mod search;

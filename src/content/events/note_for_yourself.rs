@@ -29,7 +29,9 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
     let mut event_state = run_state.event_state.take().unwrap();
 
     match event_state.current_screen {
-        0 => { event_state.current_screen = 1; },
+        0 => {
+            event_state.current_screen = 1;
+        }
         1 => {
             match choice_idx {
                 0 => {
@@ -45,11 +47,15 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
                         return_state: Box::new(EngineState::EventRoom),
                     });
                     return;
-                },
-                _ => { event_state.current_screen = 2; },
+                }
+                _ => {
+                    event_state.current_screen = 2;
+                }
             }
-        },
-        _ => { event_state.completed = true; }
+        }
+        _ => {
+            event_state.completed = true;
+        }
     }
 
     run_state.event_state = Some(event_state);

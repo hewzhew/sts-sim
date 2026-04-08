@@ -1,5 +1,5 @@
-use crate::combat::{CombatState, CombatCard};
 use crate::action::{Action, ActionInfo, AddTo, DamageType};
+use crate::combat::{CombatCard, CombatState};
 use smallvec::SmallVec;
 
 pub fn thunderclap_play(state: &CombatState, card: &CombatCard) -> SmallVec<[ActionInfo; 4]> {
@@ -19,7 +19,7 @@ pub fn thunderclap_play(state: &CombatState, card: &CombatCard) -> SmallVec<[Act
                     source: 0,
                     target: monster.id,
                     power_id: crate::content::powers::PowerId::Vulnerable,
-                    amount: card.base_magic_num_mut
+                    amount: card.base_magic_num_mut,
                 },
                 insertion_mode: AddTo::Bottom,
             });

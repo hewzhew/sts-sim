@@ -4,11 +4,11 @@ use smallvec::SmallVec;
 /// Nunchaku: Every time you play 10 Attacks, gain 1 Energy.
 pub fn on_use_card(counter: i32) -> SmallVec<[ActionInfo; 4]> {
     let mut actions = SmallVec::new();
-    
+
     // The dispatcher only triggers `on_use_card` here if the card is an Attack.
     let current = if counter < 0 { 0 } else { counter };
     let next_counter = current + 1;
-    
+
     if next_counter >= 10 {
         actions.push(ActionInfo {
             action: Action::UpdateRelicCounter {

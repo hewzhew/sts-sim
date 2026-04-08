@@ -1,7 +1,7 @@
+use crate::action::{Action, ActionInfo, AddTo};
 use crate::combat::CombatState;
 use crate::content::relics::RelicState;
 use smallvec::SmallVec;
-use crate::action::{Action, ActionInfo, AddTo};
 
 /// Face Of Cleric
 /// Event Relic

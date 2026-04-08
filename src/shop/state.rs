@@ -1,6 +1,6 @@
 use crate::content::cards::CardId;
-use crate::content::relics::RelicId;
 use crate::content::potions::PotionId;
+use crate::content::relics::RelicId;
 
 #[derive(Debug, Clone)]
 pub struct ShopConfig {

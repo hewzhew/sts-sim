@@ -1,8 +1,8 @@
-pub mod ironclad;
-pub mod silent;
-pub mod hooks;
 pub mod colorless;
 pub mod curses;
+pub mod hooks;
+pub mod ironclad;
+pub mod silent;
 pub mod status;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -249,10 +249,14 @@ fn build_curse(id: CardId, name: &'static str, cost: i8) -> CardDefinition {
         upgrade_magic: 0,
     };
 
-    if id == CardId::AscendersBane || id == CardId::CurseOfTheBell || id == CardId::Necronomicurse || id == CardId::Pride {
+    if id == CardId::AscendersBane
+        || id == CardId::CurseOfTheBell
+        || id == CardId::Necronomicurse
+        || id == CardId::Pride
+    {
         def.rarity = CardRarity::Special;
     }
-    
+
     if id == CardId::AscendersBane || id == CardId::Clumsy {
         def.ethereal = true;
     }
@@ -272,26 +276,25 @@ fn build_curse(id: CardId, name: &'static str, cost: i8) -> CardDefinition {
 /// Base Slay the Spire has only two cards that override `triggerOnExhaust()`:
 /// 1. Sentinel (Gain Energy)
 /// 2. Necronomicurse (Clone itself back to hand)
-pub fn resolve_card_on_exhaust(card: &crate::combat::CombatCard, _state: &crate::combat::CombatState) -> Vec<crate::action::ActionInfo> {
+pub fn resolve_card_on_exhaust(
+    card: &crate::combat::CombatCard,
+    _state: &crate::combat::CombatState,
+) -> Vec<crate::action::ActionInfo> {
     match card.id {
-        CardId::Necronomicurse => vec![
-            crate::action::ActionInfo {
-                action: crate::action::Action::MakeTempCardInHand {
-                    card_id: CardId::Necronomicurse,
-                    amount: 1,
-                    upgraded: false,
-                },
-                insertion_mode: crate::action::AddTo::Bottom,
-            }
-        ],
-        CardId::Sentinel => vec![
-            crate::action::ActionInfo {
-                action: crate::action::Action::GainEnergy {
-                    amount: if card.upgrades > 0 { 3 } else { 2 },
-                },
-                insertion_mode: crate::action::AddTo::Bottom,
-            }
-        ],
+        CardId::Necronomicurse => vec![crate::action::ActionInfo {
+            action: crate::action::Action::MakeTempCardInHand {
+                card_id: CardId::Necronomicurse,
+                amount: 1,
+                upgraded: false,
+            },
+            insertion_mode: crate::action::AddTo::Bottom,
+        }],
+        CardId::Sentinel => vec![crate::action::ActionInfo {
+            action: crate::action::Action::GainEnergy {
+                amount: if card.upgrades > 0 { 3 } else { 2 },
+            },
+            insertion_mode: crate::action::AddTo::Bottom,
+        }],
         _ => vec![],
     }
 }
@@ -406,40 +409,634 @@ pub fn get_card_definition(id: CardId) -> CardDefinition {
             upgrade_magic: 0,
         },
         // Colorless — Uncommon
-        CardId::BandageUp => CardDefinition { id, name: "Bandage Up", card_type: CardType::Skill, rarity: CardRarity::Uncommon, cost: 0, base_damage: 0, base_block: 0, base_magic: 4, target: CardTarget::SelfTarget, is_multi_damage: false, exhaust: false, ethereal: false, innate: false, tags: &[], upgrade_damage: 0, upgrade_block: 0, upgrade_magic: 2 },
-        CardId::Blind => CardDefinition { id, name: "Blind", card_type: CardType::Skill, rarity: CardRarity::Uncommon, cost: 0, base_damage: 0, base_block: 0, base_magic: 2, target: CardTarget::Enemy, is_multi_damage: false, exhaust: false, ethereal: false, innate: false, tags: &[], upgrade_damage: 0, upgrade_block: 0, upgrade_magic: 0 },
-        CardId::DarkShackles => CardDefinition { id, name: "Dark Shackles", card_type: CardType::Skill, rarity: CardRarity::Uncommon, cost: 0, base_damage: 0, base_block: 0, base_magic: 9, target: CardTarget::Enemy, is_multi_damage: false, exhaust: true, ethereal: false, innate: false, tags: &[], upgrade_damage: 0, upgrade_block: 0, upgrade_magic: 6 },
-        CardId::DeepBreath => CardDefinition { id, name: "Deep Breath", card_type: CardType::Skill, rarity: CardRarity::Uncommon, cost: 0, base_damage: 0, base_block: 0, base_magic: 0, target: CardTarget::SelfTarget, is_multi_damage: false, exhaust: false, ethereal: false, innate: false, tags: &[], upgrade_damage: 0, upgrade_block: 0, upgrade_magic: 1 },
-        CardId::Discovery => CardDefinition { id, name: "Discovery", card_type: CardType::Skill, rarity: CardRarity::Uncommon, cost: 1, base_damage: 0, base_block: 0, base_magic: 0, target: CardTarget::SelfTarget, is_multi_damage: false, exhaust: true, ethereal: false, innate: false, tags: &[], upgrade_damage: 0, upgrade_block: 0, upgrade_magic: 0 },
-        CardId::DramaticEntrance => CardDefinition { id, name: "Dramatic Entrance", card_type: CardType::Attack, rarity: CardRarity::Uncommon, cost: 0, base_damage: 8, base_block: 0, base_magic: 0, target: CardTarget::AllEnemy, is_multi_damage: false, exhaust: true, ethereal: false, innate: true, tags: &[], upgrade_damage: 4, upgrade_block: 0, upgrade_magic: 0 },
-        CardId::Enlightenment => CardDefinition { id, name: "Enlightenment", card_type: CardType::Skill, rarity: CardRarity::Uncommon, cost: 0, base_damage: 0, base_block: 0, base_magic: 0, target: CardTarget::SelfTarget, is_multi_damage: false, exhaust: false, ethereal: false, innate: false, tags: &[], upgrade_damage: 0, upgrade_block: 0, upgrade_magic: 0 },
-        CardId::FlashOfSteel => CardDefinition { id, name: "Flash of Steel", card_type: CardType::Attack, rarity: CardRarity::Uncommon, cost: 0, base_damage: 3, base_block: 0, base_magic: 0, target: CardTarget::Enemy, is_multi_damage: false, exhaust: false, ethereal: false, innate: false, tags: &[], upgrade_damage: 3, upgrade_block: 0, upgrade_magic: 0 },
-        CardId::Forethought => CardDefinition { id, name: "Forethought", card_type: CardType::Skill, rarity: CardRarity::Uncommon, cost: 0, base_damage: 0, base_block: 0, base_magic: 0, target: CardTarget::SelfTarget, is_multi_damage: false, exhaust: true, ethereal: false, innate: false, tags: &[], upgrade_damage: 0, upgrade_block: 0, upgrade_magic: 0 },
-        CardId::GoodInstincts => CardDefinition { id, name: "Good Instincts", card_type: CardType::Skill, rarity: CardRarity::Uncommon, cost: 0, base_damage: 0, base_block: 6, base_magic: 0, target: CardTarget::SelfTarget, is_multi_damage: false, exhaust: false, ethereal: false, innate: false, tags: &[], upgrade_damage: 0, upgrade_block: 3, upgrade_magic: 0 },
-        CardId::Impatience => CardDefinition { id, name: "Impatience", card_type: CardType::Skill, rarity: CardRarity::Uncommon, cost: 0, base_damage: 0, base_block: 0, base_magic: 2, target: CardTarget::SelfTarget, is_multi_damage: false, exhaust: false, ethereal: false, innate: false, tags: &[], upgrade_damage: 0, upgrade_block: 0, upgrade_magic: 1 },
-        CardId::JackOfAllTrades => CardDefinition { id, name: "Jack of All Trades", card_type: CardType::Skill, rarity: CardRarity::Uncommon, cost: 0, base_damage: 0, base_block: 0, base_magic: 0, target: CardTarget::SelfTarget, is_multi_damage: false, exhaust: true, ethereal: false, innate: false, tags: &[], upgrade_damage: 0, upgrade_block: 0, upgrade_magic: 1 },
-        CardId::MindBlast => CardDefinition { id, name: "Mind Blast", card_type: CardType::Attack, rarity: CardRarity::Uncommon, cost: 2, base_damage: 0, base_block: 0, base_magic: 0, target: CardTarget::Enemy, is_multi_damage: false, exhaust: false, ethereal: false, innate: true, tags: &[], upgrade_damage: 0, upgrade_block: 0, upgrade_magic: 0 },
-        CardId::Panacea => CardDefinition { id, name: "Panacea", card_type: CardType::Skill, rarity: CardRarity::Uncommon, cost: 0, base_damage: 0, base_block: 0, base_magic: 1, target: CardTarget::SelfTarget, is_multi_damage: false, exhaust: true, ethereal: false, innate: false, tags: &[], upgrade_damage: 0, upgrade_block: 0, upgrade_magic: 1 },
-        CardId::PanicButton => CardDefinition { id, name: "Panic Button", card_type: CardType::Skill, rarity: CardRarity::Uncommon, cost: 0, base_damage: 0, base_block: 30, base_magic: 0, target: CardTarget::SelfTarget, is_multi_damage: false, exhaust: true, ethereal: false, innate: false, tags: &[], upgrade_damage: 0, upgrade_block: 10, upgrade_magic: 0 },
-        CardId::Purity => CardDefinition { id, name: "Purity", card_type: CardType::Skill, rarity: CardRarity::Uncommon, cost: 0, base_damage: 0, base_block: 0, base_magic: 3, target: CardTarget::SelfTarget, is_multi_damage: false, exhaust: true, ethereal: false, innate: false, tags: &[], upgrade_damage: 0, upgrade_block: 0, upgrade_magic: 2 },
-        CardId::SwiftStrike => CardDefinition { id, name: "Swift Strike", card_type: CardType::Attack, rarity: CardRarity::Uncommon, cost: 0, base_damage: 7, base_block: 0, base_magic: 0, target: CardTarget::Enemy, is_multi_damage: false, exhaust: false, ethereal: false, innate: false, tags: &[], upgrade_damage: 3, upgrade_block: 0, upgrade_magic: 0 },
-        CardId::Trip => CardDefinition { id, name: "Trip", card_type: CardType::Skill, rarity: CardRarity::Uncommon, cost: 0, base_damage: 0, base_block: 0, base_magic: 2, target: CardTarget::Enemy, is_multi_damage: false, exhaust: false, ethereal: false, innate: false, tags: &[], upgrade_damage: 0, upgrade_block: 0, upgrade_magic: 0 },
+        CardId::BandageUp => CardDefinition {
+            id,
+            name: "Bandage Up",
+            card_type: CardType::Skill,
+            rarity: CardRarity::Uncommon,
+            cost: 0,
+            base_damage: 0,
+            base_block: 0,
+            base_magic: 4,
+            target: CardTarget::SelfTarget,
+            is_multi_damage: false,
+            exhaust: false,
+            ethereal: false,
+            innate: false,
+            tags: &[],
+            upgrade_damage: 0,
+            upgrade_block: 0,
+            upgrade_magic: 2,
+        },
+        CardId::Blind => CardDefinition {
+            id,
+            name: "Blind",
+            card_type: CardType::Skill,
+            rarity: CardRarity::Uncommon,
+            cost: 0,
+            base_damage: 0,
+            base_block: 0,
+            base_magic: 2,
+            target: CardTarget::Enemy,
+            is_multi_damage: false,
+            exhaust: false,
+            ethereal: false,
+            innate: false,
+            tags: &[],
+            upgrade_damage: 0,
+            upgrade_block: 0,
+            upgrade_magic: 0,
+        },
+        CardId::DarkShackles => CardDefinition {
+            id,
+            name: "Dark Shackles",
+            card_type: CardType::Skill,
+            rarity: CardRarity::Uncommon,
+            cost: 0,
+            base_damage: 0,
+            base_block: 0,
+            base_magic: 9,
+            target: CardTarget::Enemy,
+            is_multi_damage: false,
+            exhaust: true,
+            ethereal: false,
+            innate: false,
+            tags: &[],
+            upgrade_damage: 0,
+            upgrade_block: 0,
+            upgrade_magic: 6,
+        },
+        CardId::DeepBreath => CardDefinition {
+            id,
+            name: "Deep Breath",
+            card_type: CardType::Skill,
+            rarity: CardRarity::Uncommon,
+            cost: 0,
+            base_damage: 0,
+            base_block: 0,
+            base_magic: 0,
+            target: CardTarget::SelfTarget,
+            is_multi_damage: false,
+            exhaust: false,
+            ethereal: false,
+            innate: false,
+            tags: &[],
+            upgrade_damage: 0,
+            upgrade_block: 0,
+            upgrade_magic: 1,
+        },
+        CardId::Discovery => CardDefinition {
+            id,
+            name: "Discovery",
+            card_type: CardType::Skill,
+            rarity: CardRarity::Uncommon,
+            cost: 1,
+            base_damage: 0,
+            base_block: 0,
+            base_magic: 0,
+            target: CardTarget::SelfTarget,
+            is_multi_damage: false,
+            exhaust: true,
+            ethereal: false,
+            innate: false,
+            tags: &[],
+            upgrade_damage: 0,
+            upgrade_block: 0,
+            upgrade_magic: 0,
+        },
+        CardId::DramaticEntrance => CardDefinition {
+            id,
+            name: "Dramatic Entrance",
+            card_type: CardType::Attack,
+            rarity: CardRarity::Uncommon,
+            cost: 0,
+            base_damage: 8,
+            base_block: 0,
+            base_magic: 0,
+            target: CardTarget::AllEnemy,
+            is_multi_damage: false,
+            exhaust: true,
+            ethereal: false,
+            innate: true,
+            tags: &[],
+            upgrade_damage: 4,
+            upgrade_block: 0,
+            upgrade_magic: 0,
+        },
+        CardId::Enlightenment => CardDefinition {
+            id,
+            name: "Enlightenment",
+            card_type: CardType::Skill,
+            rarity: CardRarity::Uncommon,
+            cost: 0,
+            base_damage: 0,
+            base_block: 0,
+            base_magic: 0,
+            target: CardTarget::SelfTarget,
+            is_multi_damage: false,
+            exhaust: false,
+            ethereal: false,
+            innate: false,
+            tags: &[],
+            upgrade_damage: 0,
+            upgrade_block: 0,
+            upgrade_magic: 0,
+        },
+        CardId::FlashOfSteel => CardDefinition {
+            id,
+            name: "Flash of Steel",
+            card_type: CardType::Attack,
+            rarity: CardRarity::Uncommon,
+            cost: 0,
+            base_damage: 3,
+            base_block: 0,
+            base_magic: 0,
+            target: CardTarget::Enemy,
+            is_multi_damage: false,
+            exhaust: false,
+            ethereal: false,
+            innate: false,
+            tags: &[],
+            upgrade_damage: 3,
+            upgrade_block: 0,
+            upgrade_magic: 0,
+        },
+        CardId::Forethought => CardDefinition {
+            id,
+            name: "Forethought",
+            card_type: CardType::Skill,
+            rarity: CardRarity::Uncommon,
+            cost: 0,
+            base_damage: 0,
+            base_block: 0,
+            base_magic: 0,
+            target: CardTarget::SelfTarget,
+            is_multi_damage: false,
+            exhaust: true,
+            ethereal: false,
+            innate: false,
+            tags: &[],
+            upgrade_damage: 0,
+            upgrade_block: 0,
+            upgrade_magic: 0,
+        },
+        CardId::GoodInstincts => CardDefinition {
+            id,
+            name: "Good Instincts",
+            card_type: CardType::Skill,
+            rarity: CardRarity::Uncommon,
+            cost: 0,
+            base_damage: 0,
+            base_block: 6,
+            base_magic: 0,
+            target: CardTarget::SelfTarget,
+            is_multi_damage: false,
+            exhaust: false,
+            ethereal: false,
+            innate: false,
+            tags: &[],
+            upgrade_damage: 0,
+            upgrade_block: 3,
+            upgrade_magic: 0,
+        },
+        CardId::Impatience => CardDefinition {
+            id,
+            name: "Impatience",
+            card_type: CardType::Skill,
+            rarity: CardRarity::Uncommon,
+            cost: 0,
+            base_damage: 0,
+            base_block: 0,
+            base_magic: 2,
+            target: CardTarget::SelfTarget,
+            is_multi_damage: false,
+            exhaust: false,
+            ethereal: false,
+            innate: false,
+            tags: &[],
+            upgrade_damage: 0,
+            upgrade_block: 0,
+            upgrade_magic: 1,
+        },
+        CardId::JackOfAllTrades => CardDefinition {
+            id,
+            name: "Jack of All Trades",
+            card_type: CardType::Skill,
+            rarity: CardRarity::Uncommon,
+            cost: 0,
+            base_damage: 0,
+            base_block: 0,
+            base_magic: 0,
+            target: CardTarget::SelfTarget,
+            is_multi_damage: false,
+            exhaust: true,
+            ethereal: false,
+            innate: false,
+            tags: &[],
+            upgrade_damage: 0,
+            upgrade_block: 0,
+            upgrade_magic: 1,
+        },
+        CardId::MindBlast => CardDefinition {
+            id,
+            name: "Mind Blast",
+            card_type: CardType::Attack,
+            rarity: CardRarity::Uncommon,
+            cost: 2,
+            base_damage: 0,
+            base_block: 0,
+            base_magic: 0,
+            target: CardTarget::Enemy,
+            is_multi_damage: false,
+            exhaust: false,
+            ethereal: false,
+            innate: true,
+            tags: &[],
+            upgrade_damage: 0,
+            upgrade_block: 0,
+            upgrade_magic: 0,
+        },
+        CardId::Panacea => CardDefinition {
+            id,
+            name: "Panacea",
+            card_type: CardType::Skill,
+            rarity: CardRarity::Uncommon,
+            cost: 0,
+            base_damage: 0,
+            base_block: 0,
+            base_magic: 1,
+            target: CardTarget::SelfTarget,
+            is_multi_damage: false,
+            exhaust: true,
+            ethereal: false,
+            innate: false,
+            tags: &[],
+            upgrade_damage: 0,
+            upgrade_block: 0,
+            upgrade_magic: 1,
+        },
+        CardId::PanicButton => CardDefinition {
+            id,
+            name: "Panic Button",
+            card_type: CardType::Skill,
+            rarity: CardRarity::Uncommon,
+            cost: 0,
+            base_damage: 0,
+            base_block: 30,
+            base_magic: 0,
+            target: CardTarget::SelfTarget,
+            is_multi_damage: false,
+            exhaust: true,
+            ethereal: false,
+            innate: false,
+            tags: &[],
+            upgrade_damage: 0,
+            upgrade_block: 10,
+            upgrade_magic: 0,
+        },
+        CardId::Purity => CardDefinition {
+            id,
+            name: "Purity",
+            card_type: CardType::Skill,
+            rarity: CardRarity::Uncommon,
+            cost: 0,
+            base_damage: 0,
+            base_block: 0,
+            base_magic: 3,
+            target: CardTarget::SelfTarget,
+            is_multi_damage: false,
+            exhaust: true,
+            ethereal: false,
+            innate: false,
+            tags: &[],
+            upgrade_damage: 0,
+            upgrade_block: 0,
+            upgrade_magic: 2,
+        },
+        CardId::SwiftStrike => CardDefinition {
+            id,
+            name: "Swift Strike",
+            card_type: CardType::Attack,
+            rarity: CardRarity::Uncommon,
+            cost: 0,
+            base_damage: 7,
+            base_block: 0,
+            base_magic: 0,
+            target: CardTarget::Enemy,
+            is_multi_damage: false,
+            exhaust: false,
+            ethereal: false,
+            innate: false,
+            tags: &[],
+            upgrade_damage: 3,
+            upgrade_block: 0,
+            upgrade_magic: 0,
+        },
+        CardId::Trip => CardDefinition {
+            id,
+            name: "Trip",
+            card_type: CardType::Skill,
+            rarity: CardRarity::Uncommon,
+            cost: 0,
+            base_damage: 0,
+            base_block: 0,
+            base_magic: 2,
+            target: CardTarget::Enemy,
+            is_multi_damage: false,
+            exhaust: false,
+            ethereal: false,
+            innate: false,
+            tags: &[],
+            upgrade_damage: 0,
+            upgrade_block: 0,
+            upgrade_magic: 0,
+        },
         // Colorless — Rare
-        CardId::Apotheosis => CardDefinition { id, name: "Apotheosis", card_type: CardType::Skill, rarity: CardRarity::Rare, cost: 2, base_damage: 0, base_block: 0, base_magic: 0, target: CardTarget::SelfTarget, is_multi_damage: false, exhaust: true, ethereal: false, innate: false, tags: &[], upgrade_damage: 0, upgrade_block: 0, upgrade_magic: 0 },
-        CardId::Chrysalis => CardDefinition { id, name: "Chrysalis", card_type: CardType::Skill, rarity: CardRarity::Rare, cost: 2, base_damage: 0, base_block: 0, base_magic: 3, target: CardTarget::SelfTarget, is_multi_damage: false, exhaust: true, ethereal: false, innate: false, tags: &[], upgrade_damage: 0, upgrade_block: 0, upgrade_magic: 2 },
-        CardId::HandOfGreed => CardDefinition { id, name: "Hand of Greed", card_type: CardType::Attack, rarity: CardRarity::Rare, cost: 2, base_damage: 20, base_block: 0, base_magic: 20, target: CardTarget::Enemy, is_multi_damage: false, exhaust: false, ethereal: false, innate: false, tags: &[], upgrade_damage: 5, upgrade_block: 0, upgrade_magic: 5 },
-        CardId::Magnetism => CardDefinition { id, name: "Magnetism", card_type: CardType::Power, rarity: CardRarity::Rare, cost: 2, base_damage: 0, base_block: 0, base_magic: 0, target: CardTarget::SelfTarget, is_multi_damage: false, exhaust: false, ethereal: false, innate: false, tags: &[], upgrade_damage: 0, upgrade_block: 0, upgrade_magic: 0 },
-        CardId::MasterOfStrategy => CardDefinition { id, name: "Master of Strategy", card_type: CardType::Skill, rarity: CardRarity::Rare, cost: 0, base_damage: 0, base_block: 0, base_magic: 3, target: CardTarget::SelfTarget, is_multi_damage: false, exhaust: true, ethereal: false, innate: false, tags: &[], upgrade_damage: 0, upgrade_block: 0, upgrade_magic: 1 },
-        CardId::Mayhem => CardDefinition { id, name: "Mayhem", card_type: CardType::Power, rarity: CardRarity::Rare, cost: 2, base_damage: 0, base_block: 0, base_magic: 0, target: CardTarget::SelfTarget, is_multi_damage: false, exhaust: false, ethereal: false, innate: false, tags: &[], upgrade_damage: 0, upgrade_block: 0, upgrade_magic: 0 },
-        CardId::Metamorphosis => CardDefinition { id, name: "Metamorphosis", card_type: CardType::Skill, rarity: CardRarity::Rare, cost: 2, base_damage: 0, base_block: 0, base_magic: 3, target: CardTarget::SelfTarget, is_multi_damage: false, exhaust: true, ethereal: false, innate: false, tags: &[], upgrade_damage: 0, upgrade_block: 0, upgrade_magic: 2 },
-        CardId::Panache => CardDefinition { id, name: "Panache", card_type: CardType::Power, rarity: CardRarity::Rare, cost: 0, base_damage: 0, base_block: 0, base_magic: 10, target: CardTarget::SelfTarget, is_multi_damage: false, exhaust: false, ethereal: false, innate: false, tags: &[], upgrade_damage: 0, upgrade_block: 0, upgrade_magic: 4 },
-        CardId::SadisticNature => CardDefinition { id, name: "Sadistic Nature", card_type: CardType::Power, rarity: CardRarity::Rare, cost: 0, base_damage: 0, base_block: 0, base_magic: 5, target: CardTarget::SelfTarget, is_multi_damage: false, exhaust: false, ethereal: false, innate: false, tags: &[], upgrade_damage: 0, upgrade_block: 0, upgrade_magic: 2 },
-        CardId::SecretTechnique => CardDefinition { id, name: "Secret Technique", card_type: CardType::Skill, rarity: CardRarity::Rare, cost: 0, base_damage: 0, base_block: 0, base_magic: 0, target: CardTarget::SelfTarget, is_multi_damage: false, exhaust: true, ethereal: false, innate: false, tags: &[], upgrade_damage: 0, upgrade_block: 0, upgrade_magic: 0 },
-        CardId::SecretWeapon => CardDefinition { id, name: "Secret Weapon", card_type: CardType::Skill, rarity: CardRarity::Rare, cost: 0, base_damage: 0, base_block: 0, base_magic: 0, target: CardTarget::SelfTarget, is_multi_damage: false, exhaust: true, ethereal: false, innate: false, tags: &[], upgrade_damage: 0, upgrade_block: 0, upgrade_magic: 0 },
-        CardId::TheBomb => CardDefinition { id, name: "The Bomb", card_type: CardType::Skill, rarity: CardRarity::Rare, cost: 2, base_damage: 0, base_block: 0, base_magic: 40, target: CardTarget::SelfTarget, is_multi_damage: false, exhaust: false, ethereal: false, innate: false, tags: &[], upgrade_damage: 0, upgrade_block: 0, upgrade_magic: 10 },
-        CardId::ThinkingAhead => CardDefinition { id, name: "Thinking Ahead", card_type: CardType::Skill, rarity: CardRarity::Rare, cost: 0, base_damage: 0, base_block: 0, base_magic: 0, target: CardTarget::SelfTarget, is_multi_damage: false, exhaust: true, ethereal: false, innate: false, tags: &[], upgrade_damage: 0, upgrade_block: 0, upgrade_magic: 0 },
-        CardId::Transmutation => CardDefinition { id, name: "Transmutation", card_type: CardType::Skill, rarity: CardRarity::Rare, cost: -1, base_damage: 0, base_block: 0, base_magic: 0, target: CardTarget::SelfTarget, is_multi_damage: false, exhaust: true, ethereal: false, innate: false, tags: &[], upgrade_damage: 0, upgrade_block: 0, upgrade_magic: 0 },
-        CardId::Violence => CardDefinition { id, name: "Violence", card_type: CardType::Skill, rarity: CardRarity::Rare, cost: 0, base_damage: 0, base_block: 0, base_magic: 3, target: CardTarget::SelfTarget, is_multi_damage: false, exhaust: true, ethereal: false, innate: false, tags: &[], upgrade_damage: 0, upgrade_block: 0, upgrade_magic: 1 },
+        CardId::Apotheosis => CardDefinition {
+            id,
+            name: "Apotheosis",
+            card_type: CardType::Skill,
+            rarity: CardRarity::Rare,
+            cost: 2,
+            base_damage: 0,
+            base_block: 0,
+            base_magic: 0,
+            target: CardTarget::SelfTarget,
+            is_multi_damage: false,
+            exhaust: true,
+            ethereal: false,
+            innate: false,
+            tags: &[],
+            upgrade_damage: 0,
+            upgrade_block: 0,
+            upgrade_magic: 0,
+        },
+        CardId::Chrysalis => CardDefinition {
+            id,
+            name: "Chrysalis",
+            card_type: CardType::Skill,
+            rarity: CardRarity::Rare,
+            cost: 2,
+            base_damage: 0,
+            base_block: 0,
+            base_magic: 3,
+            target: CardTarget::SelfTarget,
+            is_multi_damage: false,
+            exhaust: true,
+            ethereal: false,
+            innate: false,
+            tags: &[],
+            upgrade_damage: 0,
+            upgrade_block: 0,
+            upgrade_magic: 2,
+        },
+        CardId::HandOfGreed => CardDefinition {
+            id,
+            name: "Hand of Greed",
+            card_type: CardType::Attack,
+            rarity: CardRarity::Rare,
+            cost: 2,
+            base_damage: 20,
+            base_block: 0,
+            base_magic: 20,
+            target: CardTarget::Enemy,
+            is_multi_damage: false,
+            exhaust: false,
+            ethereal: false,
+            innate: false,
+            tags: &[],
+            upgrade_damage: 5,
+            upgrade_block: 0,
+            upgrade_magic: 5,
+        },
+        CardId::Magnetism => CardDefinition {
+            id,
+            name: "Magnetism",
+            card_type: CardType::Power,
+            rarity: CardRarity::Rare,
+            cost: 2,
+            base_damage: 0,
+            base_block: 0,
+            base_magic: 0,
+            target: CardTarget::SelfTarget,
+            is_multi_damage: false,
+            exhaust: false,
+            ethereal: false,
+            innate: false,
+            tags: &[],
+            upgrade_damage: 0,
+            upgrade_block: 0,
+            upgrade_magic: 0,
+        },
+        CardId::MasterOfStrategy => CardDefinition {
+            id,
+            name: "Master of Strategy",
+            card_type: CardType::Skill,
+            rarity: CardRarity::Rare,
+            cost: 0,
+            base_damage: 0,
+            base_block: 0,
+            base_magic: 3,
+            target: CardTarget::SelfTarget,
+            is_multi_damage: false,
+            exhaust: true,
+            ethereal: false,
+            innate: false,
+            tags: &[],
+            upgrade_damage: 0,
+            upgrade_block: 0,
+            upgrade_magic: 1,
+        },
+        CardId::Mayhem => CardDefinition {
+            id,
+            name: "Mayhem",
+            card_type: CardType::Power,
+            rarity: CardRarity::Rare,
+            cost: 2,
+            base_damage: 0,
+            base_block: 0,
+            base_magic: 0,
+            target: CardTarget::SelfTarget,
+            is_multi_damage: false,
+            exhaust: false,
+            ethereal: false,
+            innate: false,
+            tags: &[],
+            upgrade_damage: 0,
+            upgrade_block: 0,
+            upgrade_magic: 0,
+        },
+        CardId::Metamorphosis => CardDefinition {
+            id,
+            name: "Metamorphosis",
+            card_type: CardType::Skill,
+            rarity: CardRarity::Rare,
+            cost: 2,
+            base_damage: 0,
+            base_block: 0,
+            base_magic: 3,
+            target: CardTarget::SelfTarget,
+            is_multi_damage: false,
+            exhaust: true,
+            ethereal: false,
+            innate: false,
+            tags: &[],
+            upgrade_damage: 0,
+            upgrade_block: 0,
+            upgrade_magic: 2,
+        },
+        CardId::Panache => CardDefinition {
+            id,
+            name: "Panache",
+            card_type: CardType::Power,
+            rarity: CardRarity::Rare,
+            cost: 0,
+            base_damage: 0,
+            base_block: 0,
+            base_magic: 10,
+            target: CardTarget::SelfTarget,
+            is_multi_damage: false,
+            exhaust: false,
+            ethereal: false,
+            innate: false,
+            tags: &[],
+            upgrade_damage: 0,
+            upgrade_block: 0,
+            upgrade_magic: 4,
+        },
+        CardId::SadisticNature => CardDefinition {
+            id,
+            name: "Sadistic Nature",
+            card_type: CardType::Power,
+            rarity: CardRarity::Rare,
+            cost: 0,
+            base_damage: 0,
+            base_block: 0,
+            base_magic: 5,
+            target: CardTarget::SelfTarget,
+            is_multi_damage: false,
+            exhaust: false,
+            ethereal: false,
+            innate: false,
+            tags: &[],
+            upgrade_damage: 0,
+            upgrade_block: 0,
+            upgrade_magic: 2,
+        },
+        CardId::SecretTechnique => CardDefinition {
+            id,
+            name: "Secret Technique",
+            card_type: CardType::Skill,
+            rarity: CardRarity::Rare,
+            cost: 0,
+            base_damage: 0,
+            base_block: 0,
+            base_magic: 0,
+            target: CardTarget::SelfTarget,
+            is_multi_damage: false,
+            exhaust: true,
+            ethereal: false,
+            innate: false,
+            tags: &[],
+            upgrade_damage: 0,
+            upgrade_block: 0,
+            upgrade_magic: 0,
+        },
+        CardId::SecretWeapon => CardDefinition {
+            id,
+            name: "Secret Weapon",
+            card_type: CardType::Skill,
+            rarity: CardRarity::Rare,
+            cost: 0,
+            base_damage: 0,
+            base_block: 0,
+            base_magic: 0,
+            target: CardTarget::SelfTarget,
+            is_multi_damage: false,
+            exhaust: true,
+            ethereal: false,
+            innate: false,
+            tags: &[],
+            upgrade_damage: 0,
+            upgrade_block: 0,
+            upgrade_magic: 0,
+        },
+        CardId::TheBomb => CardDefinition {
+            id,
+            name: "The Bomb",
+            card_type: CardType::Skill,
+            rarity: CardRarity::Rare,
+            cost: 2,
+            base_damage: 0,
+            base_block: 0,
+            base_magic: 40,
+            target: CardTarget::SelfTarget,
+            is_multi_damage: false,
+            exhaust: false,
+            ethereal: false,
+            innate: false,
+            tags: &[],
+            upgrade_damage: 0,
+            upgrade_block: 0,
+            upgrade_magic: 10,
+        },
+        CardId::ThinkingAhead => CardDefinition {
+            id,
+            name: "Thinking Ahead",
+            card_type: CardType::Skill,
+            rarity: CardRarity::Rare,
+            cost: 0,
+            base_damage: 0,
+            base_block: 0,
+            base_magic: 0,
+            target: CardTarget::SelfTarget,
+            is_multi_damage: false,
+            exhaust: true,
+            ethereal: false,
+            innate: false,
+            tags: &[],
+            upgrade_damage: 0,
+            upgrade_block: 0,
+            upgrade_magic: 0,
+        },
+        CardId::Transmutation => CardDefinition {
+            id,
+            name: "Transmutation",
+            card_type: CardType::Skill,
+            rarity: CardRarity::Rare,
+            cost: -1,
+            base_damage: 0,
+            base_block: 0,
+            base_magic: 0,
+            target: CardTarget::SelfTarget,
+            is_multi_damage: false,
+            exhaust: true,
+            ethereal: false,
+            innate: false,
+            tags: &[],
+            upgrade_damage: 0,
+            upgrade_block: 0,
+            upgrade_magic: 0,
+        },
+        CardId::Violence => CardDefinition {
+            id,
+            name: "Violence",
+            card_type: CardType::Skill,
+            rarity: CardRarity::Rare,
+            cost: 0,
+            base_damage: 0,
+            base_block: 0,
+            base_magic: 3,
+            target: CardTarget::SelfTarget,
+            is_multi_damage: false,
+            exhaust: true,
+            ethereal: false,
+            innate: false,
+            tags: &[],
+            upgrade_damage: 0,
+            upgrade_block: 0,
+            upgrade_magic: 1,
+        },
         CardId::Parasite => CardDefinition {
             id: CardId::Parasite,
             name: "Parasite",
@@ -479,747 +1076,1577 @@ pub fn get_card_definition(id: CardId) -> CardDefinition {
             upgrade_magic: 0,
         },
         CardId::Strike => CardDefinition {
-            id: CardId::Strike, name: "Strike", card_type: CardType::Attack, rarity: CardRarity::Basic,
-            cost: 1, base_damage: 6, base_block: 0, base_magic: 0, target: CardTarget::Enemy,
-            is_multi_damage: false, exhaust: false, ethereal: false, innate: false,
+            id: CardId::Strike,
+            name: "Strike",
+            card_type: CardType::Attack,
+            rarity: CardRarity::Basic,
+            cost: 1,
+            base_damage: 6,
+            base_block: 0,
+            base_magic: 0,
+            target: CardTarget::Enemy,
+            is_multi_damage: false,
+            exhaust: false,
+            ethereal: false,
+            innate: false,
             tags: &[CardTag::Strike, CardTag::StarterStrike],
             upgrade_damage: 3,
             upgrade_block: 0,
             upgrade_magic: 0,
         },
         CardId::Defend => CardDefinition {
-            id: CardId::Defend, name: "Defend", card_type: CardType::Skill, rarity: CardRarity::Basic,
-            cost: 1, base_damage: 0, base_block: 5, base_magic: 0, target: CardTarget::SelfTarget,
-            is_multi_damage: false, exhaust: false, ethereal: false, innate: false,
+            id: CardId::Defend,
+            name: "Defend",
+            card_type: CardType::Skill,
+            rarity: CardRarity::Basic,
+            cost: 1,
+            base_damage: 0,
+            base_block: 5,
+            base_magic: 0,
+            target: CardTarget::SelfTarget,
+            is_multi_damage: false,
+            exhaust: false,
+            ethereal: false,
+            innate: false,
             tags: &[],
             upgrade_damage: 0,
             upgrade_block: 3,
             upgrade_magic: 0,
         },
         CardId::Bash => CardDefinition {
-            id: CardId::Bash, name: "Bash", card_type: CardType::Attack, rarity: CardRarity::Basic,
-            cost: 2, base_damage: 8, base_block: 0, base_magic: 2, target: CardTarget::Enemy,
-            is_multi_damage: false, exhaust: false, ethereal: false, innate: false,
+            id: CardId::Bash,
+            name: "Bash",
+            card_type: CardType::Attack,
+            rarity: CardRarity::Basic,
+            cost: 2,
+            base_damage: 8,
+            base_block: 0,
+            base_magic: 2,
+            target: CardTarget::Enemy,
+            is_multi_damage: false,
+            exhaust: false,
+            ethereal: false,
+            innate: false,
             tags: &[],
             upgrade_damage: 2,
             upgrade_block: 0,
             upgrade_magic: 1,
         },
         CardId::Cleave => CardDefinition {
-            id: CardId::Cleave, name: "Cleave", card_type: CardType::Attack, rarity: CardRarity::Common,
-            cost: 1, base_damage: 8, base_block: 0, base_magic: 0, target: CardTarget::AllEnemy,
-            is_multi_damage: true, exhaust: false, ethereal: false, innate: false,
+            id: CardId::Cleave,
+            name: "Cleave",
+            card_type: CardType::Attack,
+            rarity: CardRarity::Common,
+            cost: 1,
+            base_damage: 8,
+            base_block: 0,
+            base_magic: 0,
+            target: CardTarget::AllEnemy,
+            is_multi_damage: true,
+            exhaust: false,
+            ethereal: false,
+            innate: false,
             tags: &[],
             upgrade_damage: 3,
             upgrade_block: 0,
             upgrade_magic: 0,
         },
         CardId::IronWave => CardDefinition {
-            id: CardId::IronWave, name: "Iron Wave", card_type: CardType::Attack, rarity: CardRarity::Common,
-            cost: 1, base_damage: 5, base_block: 5, base_magic: 0, target: CardTarget::Enemy,
-            is_multi_damage: false, exhaust: false, ethereal: false, innate: false,
+            id: CardId::IronWave,
+            name: "Iron Wave",
+            card_type: CardType::Attack,
+            rarity: CardRarity::Common,
+            cost: 1,
+            base_damage: 5,
+            base_block: 5,
+            base_magic: 0,
+            target: CardTarget::Enemy,
+            is_multi_damage: false,
+            exhaust: false,
+            ethereal: false,
+            innate: false,
             tags: &[],
             upgrade_damage: 2,
             upgrade_block: 2,
             upgrade_magic: 0,
         },
         CardId::PerfectedStrike => CardDefinition {
-            id: CardId::PerfectedStrike, name: "Perfected Strike", card_type: CardType::Attack, rarity: CardRarity::Common,
-            cost: 2, base_damage: 6, base_block: 0, base_magic: 2, target: CardTarget::Enemy,
-            is_multi_damage: false, exhaust: false, ethereal: false, innate: false,
+            id: CardId::PerfectedStrike,
+            name: "Perfected Strike",
+            card_type: CardType::Attack,
+            rarity: CardRarity::Common,
+            cost: 2,
+            base_damage: 6,
+            base_block: 0,
+            base_magic: 2,
+            target: CardTarget::Enemy,
+            is_multi_damage: false,
+            exhaust: false,
+            ethereal: false,
+            innate: false,
             tags: &[CardTag::Strike],
             upgrade_damage: 0,
             upgrade_block: 0,
             upgrade_magic: 1,
         },
         CardId::TwinStrike => CardDefinition {
-            id: CardId::TwinStrike, name: "Twin Strike", card_type: CardType::Attack, rarity: CardRarity::Common,
-            cost: 1, base_damage: 5, base_block: 0, base_magic: 0, target: CardTarget::Enemy,
-            is_multi_damage: false, exhaust: false, ethereal: false, innate: false,
+            id: CardId::TwinStrike,
+            name: "Twin Strike",
+            card_type: CardType::Attack,
+            rarity: CardRarity::Common,
+            cost: 1,
+            base_damage: 5,
+            base_block: 0,
+            base_magic: 0,
+            target: CardTarget::Enemy,
+            is_multi_damage: false,
+            exhaust: false,
+            ethereal: false,
+            innate: false,
             tags: &[CardTag::Strike],
             upgrade_damage: 2,
             upgrade_block: 0,
             upgrade_magic: 0,
         },
         CardId::ThunderClap => CardDefinition {
-            id: CardId::ThunderClap, name: "Thunderclap", card_type: CardType::Attack, rarity: CardRarity::Common,
-            cost: 1, base_damage: 4, base_block: 0, base_magic: 1, target: CardTarget::AllEnemy,
-            is_multi_damage: true, exhaust: false, ethereal: false, innate: false,
+            id: CardId::ThunderClap,
+            name: "Thunderclap",
+            card_type: CardType::Attack,
+            rarity: CardRarity::Common,
+            cost: 1,
+            base_damage: 4,
+            base_block: 0,
+            base_magic: 1,
+            target: CardTarget::AllEnemy,
+            is_multi_damage: true,
+            exhaust: false,
+            ethereal: false,
+            innate: false,
             tags: &[],
             upgrade_damage: 3,
             upgrade_block: 0,
             upgrade_magic: 0,
         },
         CardId::ShrugItOff => CardDefinition {
-            id: CardId::ShrugItOff, name: "Shrug It Off", card_type: CardType::Skill, rarity: CardRarity::Common,
-            cost: 1, base_damage: 0, base_block: 8, base_magic: 1, target: CardTarget::SelfTarget,
-            is_multi_damage: false, exhaust: false, ethereal: false, innate: false,
+            id: CardId::ShrugItOff,
+            name: "Shrug It Off",
+            card_type: CardType::Skill,
+            rarity: CardRarity::Common,
+            cost: 1,
+            base_damage: 0,
+            base_block: 8,
+            base_magic: 1,
+            target: CardTarget::SelfTarget,
+            is_multi_damage: false,
+            exhaust: false,
+            ethereal: false,
+            innate: false,
             tags: &[],
             upgrade_damage: 0,
             upgrade_block: 3,
             upgrade_magic: 0,
         },
         CardId::Flex => CardDefinition {
-            id: CardId::Flex, name: "Flex", card_type: CardType::Skill, rarity: CardRarity::Common,
-            cost: 0, base_damage: 0, base_block: 0, base_magic: 2, target: CardTarget::SelfTarget,
-            is_multi_damage: false, exhaust: false, ethereal: false, innate: false,
+            id: CardId::Flex,
+            name: "Flex",
+            card_type: CardType::Skill,
+            rarity: CardRarity::Common,
+            cost: 0,
+            base_damage: 0,
+            base_block: 0,
+            base_magic: 2,
+            target: CardTarget::SelfTarget,
+            is_multi_damage: false,
+            exhaust: false,
+            ethereal: false,
+            innate: false,
             tags: &[],
             upgrade_damage: 0,
             upgrade_block: 0,
             upgrade_magic: 2,
         },
         CardId::TrueGrit => CardDefinition {
-            id: CardId::TrueGrit, name: "True Grit", card_type: CardType::Skill, rarity: CardRarity::Common,
-            cost: 1, base_damage: 0, base_block: 7, base_magic: 0, target: CardTarget::SelfTarget,
-            is_multi_damage: false, exhaust: false, ethereal: false, innate: false,
+            id: CardId::TrueGrit,
+            name: "True Grit",
+            card_type: CardType::Skill,
+            rarity: CardRarity::Common,
+            cost: 1,
+            base_damage: 0,
+            base_block: 7,
+            base_magic: 0,
+            target: CardTarget::SelfTarget,
+            is_multi_damage: false,
+            exhaust: false,
+            ethereal: false,
+            innate: false,
             tags: &[],
             upgrade_damage: 0,
             upgrade_block: 2,
             upgrade_magic: 0,
         },
         CardId::Inflame => CardDefinition {
-            id: CardId::Inflame, name: "Inflame", card_type: CardType::Power, rarity: CardRarity::Uncommon,
-            cost: 1, base_damage: 0, base_block: 0, base_magic: 2, target: CardTarget::SelfTarget,
-            is_multi_damage: false, exhaust: false, ethereal: false, innate: false,
+            id: CardId::Inflame,
+            name: "Inflame",
+            card_type: CardType::Power,
+            rarity: CardRarity::Uncommon,
+            cost: 1,
+            base_damage: 0,
+            base_block: 0,
+            base_magic: 2,
+            target: CardTarget::SelfTarget,
+            is_multi_damage: false,
+            exhaust: false,
+            ethereal: false,
+            innate: false,
             tags: &[],
             upgrade_damage: 0,
             upgrade_block: 0,
             upgrade_magic: 1,
         },
         CardId::DemonForm => CardDefinition {
-            id: CardId::DemonForm, name: "Demon Form", card_type: CardType::Power, rarity: CardRarity::Rare,
-            cost: 3, base_damage: 0, base_block: 0, base_magic: 2, target: CardTarget::SelfTarget,
-            is_multi_damage: false, exhaust: false, ethereal: false, innate: false,
+            id: CardId::DemonForm,
+            name: "Demon Form",
+            card_type: CardType::Power,
+            rarity: CardRarity::Rare,
+            cost: 3,
+            base_damage: 0,
+            base_block: 0,
+            base_magic: 2,
+            target: CardTarget::SelfTarget,
+            is_multi_damage: false,
+            exhaust: false,
+            ethereal: false,
+            innate: false,
             tags: &[],
             upgrade_damage: 0,
             upgrade_block: 0,
             upgrade_magic: 1,
         },
         CardId::Corruption => CardDefinition {
-            id: CardId::Corruption, name: "Corruption", card_type: CardType::Power, rarity: CardRarity::Rare,
-            cost: 3, base_damage: 0, base_block: 0, base_magic: 0, target: CardTarget::SelfTarget,
-            is_multi_damage: false, exhaust: false, ethereal: false, innate: false,
+            id: CardId::Corruption,
+            name: "Corruption",
+            card_type: CardType::Power,
+            rarity: CardRarity::Rare,
+            cost: 3,
+            base_damage: 0,
+            base_block: 0,
+            base_magic: 0,
+            target: CardTarget::SelfTarget,
+            is_multi_damage: false,
+            exhaust: false,
+            ethereal: false,
+            innate: false,
             tags: &[],
             upgrade_damage: 0,
             upgrade_block: 0,
             upgrade_magic: 0,
         },
         CardId::HeavyBlade => CardDefinition {
-            id: CardId::HeavyBlade, name: "Heavy Blade", card_type: CardType::Attack, rarity: CardRarity::Common,
-            cost: 2, base_damage: 14, base_block: 0, base_magic: 3, target: CardTarget::Enemy,
-            is_multi_damage: false, exhaust: false, ethereal: false, innate: false,
+            id: CardId::HeavyBlade,
+            name: "Heavy Blade",
+            card_type: CardType::Attack,
+            rarity: CardRarity::Common,
+            cost: 2,
+            base_damage: 14,
+            base_block: 0,
+            base_magic: 3,
+            target: CardTarget::Enemy,
+            is_multi_damage: false,
+            exhaust: false,
+            ethereal: false,
+            innate: false,
             tags: &[],
             upgrade_damage: 0,
             upgrade_block: 0,
             upgrade_magic: 2,
         },
         CardId::Whirlwind => CardDefinition {
-            id: CardId::Whirlwind, name: "Whirlwind", card_type: CardType::Attack, rarity: CardRarity::Uncommon,
-            cost: -1, base_damage: 5, base_block: 0, base_magic: 0, target: CardTarget::AllEnemy,
-            is_multi_damage: true, exhaust: false, ethereal: false, innate: false,
+            id: CardId::Whirlwind,
+            name: "Whirlwind",
+            card_type: CardType::Attack,
+            rarity: CardRarity::Uncommon,
+            cost: -1,
+            base_damage: 5,
+            base_block: 0,
+            base_magic: 0,
+            target: CardTarget::AllEnemy,
+            is_multi_damage: true,
+            exhaust: false,
+            ethereal: false,
+            innate: false,
             tags: &[],
             upgrade_damage: 3,
             upgrade_block: 0,
             upgrade_magic: 0,
         },
         CardId::Bloodletting => CardDefinition {
-            id: CardId::Bloodletting, name: "Bloodletting", card_type: CardType::Skill, rarity: CardRarity::Uncommon,
-            cost: 0, base_damage: 0, base_block: 0, base_magic: 2, target: CardTarget::SelfTarget,
-            is_multi_damage: false, exhaust: false, ethereal: false, innate: false,
+            id: CardId::Bloodletting,
+            name: "Bloodletting",
+            card_type: CardType::Skill,
+            rarity: CardRarity::Uncommon,
+            cost: 0,
+            base_damage: 0,
+            base_block: 0,
+            base_magic: 2,
+            target: CardTarget::SelfTarget,
+            is_multi_damage: false,
+            exhaust: false,
+            ethereal: false,
+            innate: false,
             tags: &[],
             upgrade_damage: 0,
             upgrade_block: 0,
             upgrade_magic: 1,
         },
         CardId::Offering => CardDefinition {
-            id: CardId::Offering, name: "Offering", card_type: CardType::Skill, rarity: CardRarity::Rare,
-            cost: 0, base_damage: 0, base_block: 0, base_magic: 3, target: CardTarget::SelfTarget,
-            is_multi_damage: false, exhaust: true, ethereal: false, innate: false,
+            id: CardId::Offering,
+            name: "Offering",
+            card_type: CardType::Skill,
+            rarity: CardRarity::Rare,
+            cost: 0,
+            base_damage: 0,
+            base_block: 0,
+            base_magic: 3,
+            target: CardTarget::SelfTarget,
+            is_multi_damage: false,
+            exhaust: true,
+            ethereal: false,
+            innate: false,
             tags: &[],
             upgrade_damage: 0,
             upgrade_block: 0,
             upgrade_magic: 2,
         },
         CardId::SwordBoomerang => CardDefinition {
-            id: CardId::SwordBoomerang, name: "Sword Boomerang", card_type: CardType::Attack, rarity: CardRarity::Common,
-            cost: 1, base_damage: 3, base_block: 0, base_magic: 3, target: CardTarget::AllEnemy,
-            is_multi_damage: false, exhaust: false, ethereal: false, innate: false,
+            id: CardId::SwordBoomerang,
+            name: "Sword Boomerang",
+            card_type: CardType::Attack,
+            rarity: CardRarity::Common,
+            cost: 1,
+            base_damage: 3,
+            base_block: 0,
+            base_magic: 3,
+            target: CardTarget::AllEnemy,
+            is_multi_damage: false,
+            exhaust: false,
+            ethereal: false,
+            innate: false,
             tags: &[],
             upgrade_damage: 0,
             upgrade_block: 0,
             upgrade_magic: 1,
         },
         CardId::Dropkick => CardDefinition {
-            id: CardId::Dropkick, name: "Dropkick", card_type: CardType::Attack, rarity: CardRarity::Uncommon,
-            cost: 1, base_damage: 5, base_block: 0, base_magic: 0, target: CardTarget::Enemy,
-            is_multi_damage: false, exhaust: false, ethereal: false, innate: false,
+            id: CardId::Dropkick,
+            name: "Dropkick",
+            card_type: CardType::Attack,
+            rarity: CardRarity::Uncommon,
+            cost: 1,
+            base_damage: 5,
+            base_block: 0,
+            base_magic: 0,
+            target: CardTarget::Enemy,
+            is_multi_damage: false,
+            exhaust: false,
+            ethereal: false,
+            innate: false,
             tags: &[],
             upgrade_damage: 3,
             upgrade_block: 0,
             upgrade_magic: 0,
         },
         CardId::PommelStrike => CardDefinition {
-            id: CardId::PommelStrike, name: "Pommel Strike", card_type: CardType::Attack, rarity: CardRarity::Common,
-            cost: 1, base_damage: 9, base_block: 0, base_magic: 1, target: CardTarget::Enemy,
-            is_multi_damage: false, exhaust: false, ethereal: false, innate: false,
+            id: CardId::PommelStrike,
+            name: "Pommel Strike",
+            card_type: CardType::Attack,
+            rarity: CardRarity::Common,
+            cost: 1,
+            base_damage: 9,
+            base_block: 0,
+            base_magic: 1,
+            target: CardTarget::Enemy,
+            is_multi_damage: false,
+            exhaust: false,
+            ethereal: false,
+            innate: false,
             tags: &[CardTag::Strike],
             upgrade_damage: 1,
             upgrade_block: 0,
             upgrade_magic: 1,
         },
         CardId::Headbutt => CardDefinition {
-            id: CardId::Headbutt, name: "Headbutt", card_type: CardType::Attack, rarity: CardRarity::Common,
-            cost: 1, base_damage: 9, base_block: 0, base_magic: 0, target: CardTarget::Enemy,
-            is_multi_damage: false, exhaust: false, ethereal: false, innate: false,
+            id: CardId::Headbutt,
+            name: "Headbutt",
+            card_type: CardType::Attack,
+            rarity: CardRarity::Common,
+            cost: 1,
+            base_damage: 9,
+            base_block: 0,
+            base_magic: 0,
+            target: CardTarget::Enemy,
+            is_multi_damage: false,
+            exhaust: false,
+            ethereal: false,
+            innate: false,
             tags: &[],
             upgrade_damage: 3,
             upgrade_block: 0,
             upgrade_magic: 0,
         },
         CardId::Bludgeon => CardDefinition {
-            id: CardId::Bludgeon, name: "Bludgeon", card_type: CardType::Attack, rarity: CardRarity::Rare,
-            cost: 3, base_damage: 32, base_block: 0, base_magic: 0, target: CardTarget::Enemy,
-            is_multi_damage: false, exhaust: false, ethereal: false, innate: false,
+            id: CardId::Bludgeon,
+            name: "Bludgeon",
+            card_type: CardType::Attack,
+            rarity: CardRarity::Rare,
+            cost: 3,
+            base_damage: 32,
+            base_block: 0,
+            base_magic: 0,
+            target: CardTarget::Enemy,
+            is_multi_damage: false,
+            exhaust: false,
+            ethereal: false,
+            innate: false,
             tags: &[],
             upgrade_damage: 10,
             upgrade_block: 0,
             upgrade_magic: 0,
         },
         CardId::DoubleTap => CardDefinition {
-            id: CardId::DoubleTap, name: "Double Tap", card_type: CardType::Skill, rarity: CardRarity::Rare,
-            cost: 1, base_damage: 0, base_block: 0, base_magic: 1, target: CardTarget::SelfTarget,
-            is_multi_damage: false, exhaust: false, ethereal: false, innate: false,
+            id: CardId::DoubleTap,
+            name: "Double Tap",
+            card_type: CardType::Skill,
+            rarity: CardRarity::Rare,
+            cost: 1,
+            base_damage: 0,
+            base_block: 0,
+            base_magic: 1,
+            target: CardTarget::SelfTarget,
+            is_multi_damage: false,
+            exhaust: false,
+            ethereal: false,
+            innate: false,
             tags: &[],
             upgrade_damage: 0,
             upgrade_block: 0,
             upgrade_magic: 1,
         },
         CardId::FeelNoPain => CardDefinition {
-            id: CardId::FeelNoPain, name: "Feel No Pain", card_type: CardType::Power, rarity: CardRarity::Uncommon,
-            cost: 1, base_damage: 0, base_block: 0, base_magic: 3, target: CardTarget::SelfTarget,
-            is_multi_damage: false, exhaust: false, ethereal: false, innate: false,
+            id: CardId::FeelNoPain,
+            name: "Feel No Pain",
+            card_type: CardType::Power,
+            rarity: CardRarity::Uncommon,
+            cost: 1,
+            base_damage: 0,
+            base_block: 0,
+            base_magic: 3,
+            target: CardTarget::SelfTarget,
+            is_multi_damage: false,
+            exhaust: false,
+            ethereal: false,
+            innate: false,
             tags: &[],
             upgrade_damage: 0,
             upgrade_block: 0,
             upgrade_magic: 1,
         },
         CardId::DarkEmbrace => CardDefinition {
-            id: CardId::DarkEmbrace, name: "Dark Embrace", card_type: CardType::Power, rarity: CardRarity::Uncommon,
-            cost: 2, base_damage: 0, base_block: 0, base_magic: 1, target: CardTarget::SelfTarget,
-            is_multi_damage: false, exhaust: false, ethereal: false, innate: false,
+            id: CardId::DarkEmbrace,
+            name: "Dark Embrace",
+            card_type: CardType::Power,
+            rarity: CardRarity::Uncommon,
+            cost: 2,
+            base_damage: 0,
+            base_block: 0,
+            base_magic: 1,
+            target: CardTarget::SelfTarget,
+            is_multi_damage: false,
+            exhaust: false,
+            ethereal: false,
+            innate: false,
             tags: &[],
             upgrade_damage: 0,
             upgrade_block: 0,
             upgrade_magic: 0,
         },
         CardId::Sentinel => CardDefinition {
-            id: CardId::Sentinel, name: "Sentinel", card_type: CardType::Skill, rarity: CardRarity::Uncommon,
-            cost: 1, base_damage: 0, base_block: 5, base_magic: 2, target: CardTarget::SelfTarget,
-            is_multi_damage: false, exhaust: false, ethereal: false, innate: false,
+            id: CardId::Sentinel,
+            name: "Sentinel",
+            card_type: CardType::Skill,
+            rarity: CardRarity::Uncommon,
+            cost: 1,
+            base_damage: 0,
+            base_block: 5,
+            base_magic: 2,
+            target: CardTarget::SelfTarget,
+            is_multi_damage: false,
+            exhaust: false,
+            ethereal: false,
+            innate: false,
             tags: &[],
             upgrade_damage: 0,
             upgrade_block: 3,
             upgrade_magic: 0,
         },
         CardId::FiendFire => CardDefinition {
-            id: CardId::FiendFire, name: "Fiend Fire", card_type: CardType::Attack, rarity: CardRarity::Rare,
-            cost: 2, base_damage: 7, base_block: 0, base_magic: 0, target: CardTarget::Enemy,
-            is_multi_damage: false, exhaust: true, ethereal: false, innate: false,
+            id: CardId::FiendFire,
+            name: "Fiend Fire",
+            card_type: CardType::Attack,
+            rarity: CardRarity::Rare,
+            cost: 2,
+            base_damage: 7,
+            base_block: 0,
+            base_magic: 0,
+            target: CardTarget::Enemy,
+            is_multi_damage: false,
+            exhaust: true,
+            ethereal: false,
+            innate: false,
             tags: &[],
             upgrade_damage: 3,
             upgrade_block: 0,
             upgrade_magic: 0,
         },
         CardId::SeverSoul => CardDefinition {
-            id: CardId::SeverSoul, name: "Sever Soul", card_type: CardType::Attack, rarity: CardRarity::Uncommon,
-            cost: 2, base_damage: 16, base_block: 0, base_magic: 0, target: CardTarget::Enemy,
-            is_multi_damage: false, exhaust: false, ethereal: false, innate: false,
+            id: CardId::SeverSoul,
+            name: "Sever Soul",
+            card_type: CardType::Attack,
+            rarity: CardRarity::Uncommon,
+            cost: 2,
+            base_damage: 16,
+            base_block: 0,
+            base_magic: 0,
+            target: CardTarget::Enemy,
+            is_multi_damage: false,
+            exhaust: false,
+            ethereal: false,
+            innate: false,
             tags: &[],
             upgrade_damage: 6,
             upgrade_block: 0,
             upgrade_magic: 0,
         },
         CardId::SecondWind => CardDefinition {
-            id: CardId::SecondWind, name: "Second Wind", card_type: CardType::Skill, rarity: CardRarity::Uncommon,
-            cost: 1, base_damage: 0, base_block: 5, base_magic: 0, target: CardTarget::SelfTarget,
-            is_multi_damage: false, exhaust: false, ethereal: false, innate: false,
+            id: CardId::SecondWind,
+            name: "Second Wind",
+            card_type: CardType::Skill,
+            rarity: CardRarity::Uncommon,
+            cost: 1,
+            base_damage: 0,
+            base_block: 5,
+            base_magic: 0,
+            target: CardTarget::SelfTarget,
+            is_multi_damage: false,
+            exhaust: false,
+            ethereal: false,
+            innate: false,
             tags: &[],
             upgrade_damage: 0,
             upgrade_block: 2,
             upgrade_magic: 0,
         },
         CardId::Exhume => CardDefinition {
-            id: CardId::Exhume, name: "Exhume", card_type: CardType::Skill, rarity: CardRarity::Rare,
-            cost: 1, base_damage: 0, base_block: 0, base_magic: 0, target: CardTarget::None,
-            is_multi_damage: false, exhaust: true, ethereal: false, innate: false,
+            id: CardId::Exhume,
+            name: "Exhume",
+            card_type: CardType::Skill,
+            rarity: CardRarity::Rare,
+            cost: 1,
+            base_damage: 0,
+            base_block: 0,
+            base_magic: 0,
+            target: CardTarget::None,
+            is_multi_damage: false,
+            exhaust: true,
+            ethereal: false,
+            innate: false,
             tags: &[],
             upgrade_damage: 0,
             upgrade_block: 0,
             upgrade_magic: 0,
         },
         CardId::BurningPact => CardDefinition {
-            id: CardId::BurningPact, name: "Burning Pact", card_type: CardType::Skill, rarity: CardRarity::Uncommon,
-            cost: 1, base_damage: 0, base_block: 0, base_magic: 2, target: CardTarget::None,
-            is_multi_damage: false, exhaust: false, ethereal: false, innate: false,
+            id: CardId::BurningPact,
+            name: "Burning Pact",
+            card_type: CardType::Skill,
+            rarity: CardRarity::Uncommon,
+            cost: 1,
+            base_damage: 0,
+            base_block: 0,
+            base_magic: 2,
+            target: CardTarget::None,
+            is_multi_damage: false,
+            exhaust: false,
+            ethereal: false,
+            innate: false,
             tags: &[],
             upgrade_damage: 0,
             upgrade_block: 0,
             upgrade_magic: 1,
         },
         CardId::Reaper => CardDefinition {
-            id: CardId::Reaper, name: "Reaper", card_type: CardType::Attack, rarity: CardRarity::Rare,
-            cost: 2, base_damage: 4, base_block: 0, base_magic: 0, target: CardTarget::AllEnemy,
-            is_multi_damage: true, exhaust: true, ethereal: false, innate: false,
+            id: CardId::Reaper,
+            name: "Reaper",
+            card_type: CardType::Attack,
+            rarity: CardRarity::Rare,
+            cost: 2,
+            base_damage: 4,
+            base_block: 0,
+            base_magic: 0,
+            target: CardTarget::AllEnemy,
+            is_multi_damage: true,
+            exhaust: true,
+            ethereal: false,
+            innate: false,
             tags: &[CardTag::Healing],
             upgrade_damage: 1,
             upgrade_block: 0,
             upgrade_magic: 0,
         },
         CardId::Feed => CardDefinition {
-            id: CardId::Feed, name: "Feed", card_type: CardType::Attack, rarity: CardRarity::Rare,
-            cost: 1, base_damage: 10, base_block: 0, base_magic: 3, target: CardTarget::Enemy,
-            is_multi_damage: false, exhaust: true, ethereal: false, innate: false,
+            id: CardId::Feed,
+            name: "Feed",
+            card_type: CardType::Attack,
+            rarity: CardRarity::Rare,
+            cost: 1,
+            base_damage: 10,
+            base_block: 0,
+            base_magic: 3,
+            target: CardTarget::Enemy,
+            is_multi_damage: false,
+            exhaust: true,
+            ethereal: false,
+            innate: false,
             tags: &[CardTag::Healing],
             upgrade_damage: 2,
             upgrade_block: 0,
             upgrade_magic: 1,
         },
         CardId::BloodForBlood => CardDefinition {
-            id: CardId::BloodForBlood, name: "Blood for Blood", card_type: CardType::Attack, rarity: CardRarity::Uncommon,
-            cost: 4, base_damage: 18, base_block: 0, base_magic: 0, target: CardTarget::Enemy,
-            is_multi_damage: false, exhaust: false, ethereal: false, innate: false,
+            id: CardId::BloodForBlood,
+            name: "Blood for Blood",
+            card_type: CardType::Attack,
+            rarity: CardRarity::Uncommon,
+            cost: 4,
+            base_damage: 18,
+            base_block: 0,
+            base_magic: 0,
+            target: CardTarget::Enemy,
+            is_multi_damage: false,
+            exhaust: false,
+            ethereal: false,
+            innate: false,
             tags: &[],
             upgrade_damage: 4,
             upgrade_block: 0,
             upgrade_magic: 0,
         },
         CardId::Rupture => CardDefinition {
-            id: CardId::Rupture, name: "Rupture", card_type: CardType::Power, rarity: CardRarity::Uncommon,
-            cost: 1, base_damage: 0, base_block: 0, base_magic: 1, target: CardTarget::SelfTarget,
-            is_multi_damage: false, exhaust: false, ethereal: false, innate: false,
+            id: CardId::Rupture,
+            name: "Rupture",
+            card_type: CardType::Power,
+            rarity: CardRarity::Uncommon,
+            cost: 1,
+            base_damage: 0,
+            base_block: 0,
+            base_magic: 1,
+            target: CardTarget::SelfTarget,
+            is_multi_damage: false,
+            exhaust: false,
+            ethereal: false,
+            innate: false,
             tags: &[],
             upgrade_damage: 0,
             upgrade_block: 0,
             upgrade_magic: 1,
         },
         CardId::Hemokinesis => CardDefinition {
-            id: CardId::Hemokinesis, name: "Hemokinesis", card_type: CardType::Attack, rarity: CardRarity::Uncommon,
-            cost: 1, base_damage: 15, base_block: 0, base_magic: 2, target: CardTarget::Enemy,
-            is_multi_damage: false, exhaust: false, ethereal: false, innate: false,
+            id: CardId::Hemokinesis,
+            name: "Hemokinesis",
+            card_type: CardType::Attack,
+            rarity: CardRarity::Uncommon,
+            cost: 1,
+            base_damage: 15,
+            base_block: 0,
+            base_magic: 2,
+            target: CardTarget::Enemy,
+            is_multi_damage: false,
+            exhaust: false,
+            ethereal: false,
+            innate: false,
             tags: &[],
             upgrade_damage: 5,
             upgrade_block: 0,
             upgrade_magic: 0,
         },
         CardId::Combust => CardDefinition {
-            id: CardId::Combust, name: "Combust", card_type: CardType::Power, rarity: CardRarity::Uncommon,
-            cost: 1, base_damage: 0, base_block: 0, base_magic: 5, target: CardTarget::SelfTarget,
-            is_multi_damage: false, exhaust: false, ethereal: false, innate: false,
+            id: CardId::Combust,
+            name: "Combust",
+            card_type: CardType::Power,
+            rarity: CardRarity::Uncommon,
+            cost: 1,
+            base_damage: 0,
+            base_block: 0,
+            base_magic: 5,
+            target: CardTarget::SelfTarget,
+            is_multi_damage: false,
+            exhaust: false,
+            ethereal: false,
+            innate: false,
             tags: &[],
             upgrade_damage: 0,
             upgrade_block: 0,
             upgrade_magic: 2,
         },
         CardId::Brutality => CardDefinition {
-            id: CardId::Brutality, name: "Brutality", card_type: CardType::Power, rarity: CardRarity::Rare,
-            cost: 0, base_damage: 0, base_block: 0, base_magic: 0, target: CardTarget::SelfTarget,
-            is_multi_damage: false, exhaust: false, ethereal: false, innate: false,
+            id: CardId::Brutality,
+            name: "Brutality",
+            card_type: CardType::Power,
+            rarity: CardRarity::Rare,
+            cost: 0,
+            base_damage: 0,
+            base_block: 0,
+            base_magic: 0,
+            target: CardTarget::SelfTarget,
+            is_multi_damage: false,
+            exhaust: false,
+            ethereal: false,
+            innate: false,
             tags: &[],
             upgrade_damage: 0,
             upgrade_block: 0,
             upgrade_magic: 0,
         },
         CardId::LimitBreak => CardDefinition {
-            id: CardId::LimitBreak, name: "Limit Break", card_type: CardType::Skill, rarity: CardRarity::Rare,
-            cost: 1, base_damage: 0, base_block: 0, base_magic: 0, target: CardTarget::SelfTarget,
-            is_multi_damage: false, exhaust: true, ethereal: false, innate: false,
+            id: CardId::LimitBreak,
+            name: "Limit Break",
+            card_type: CardType::Skill,
+            rarity: CardRarity::Rare,
+            cost: 1,
+            base_damage: 0,
+            base_block: 0,
+            base_magic: 0,
+            target: CardTarget::SelfTarget,
+            is_multi_damage: false,
+            exhaust: true,
+            ethereal: false,
+            innate: false,
             tags: &[], // Note: Exhausts unless upgraded. We will handle upgrade later if possible,
             upgrade_damage: 0,
             upgrade_block: 0,
             upgrade_magic: 0,
         },
         CardId::SpotWeakness => CardDefinition {
-            id: CardId::SpotWeakness, name: "Spot Weakness", card_type: CardType::Skill, rarity: CardRarity::Uncommon,
-            cost: 1, base_damage: 0, base_block: 0, base_magic: 3, target: CardTarget::Enemy,
-            is_multi_damage: false, exhaust: false, ethereal: false, innate: false,
+            id: CardId::SpotWeakness,
+            name: "Spot Weakness",
+            card_type: CardType::Skill,
+            rarity: CardRarity::Uncommon,
+            cost: 1,
+            base_damage: 0,
+            base_block: 0,
+            base_magic: 3,
+            target: CardTarget::Enemy,
+            is_multi_damage: false,
+            exhaust: false,
+            ethereal: false,
+            innate: false,
             tags: &[],
             upgrade_damage: 0,
             upgrade_block: 0,
             upgrade_magic: 1,
         },
         CardId::Barricade => CardDefinition {
-            id: CardId::Barricade, name: "Barricade", card_type: CardType::Power, rarity: CardRarity::Rare,
-            cost: 3, base_damage: 0, base_block: 0, base_magic: 0, target: CardTarget::SelfTarget,
-            is_multi_damage: false, exhaust: false, ethereal: false, innate: false,
+            id: CardId::Barricade,
+            name: "Barricade",
+            card_type: CardType::Power,
+            rarity: CardRarity::Rare,
+            cost: 3,
+            base_damage: 0,
+            base_block: 0,
+            base_magic: 0,
+            target: CardTarget::SelfTarget,
+            is_multi_damage: false,
+            exhaust: false,
+            ethereal: false,
+            innate: false,
             tags: &[],
             upgrade_damage: 0,
             upgrade_block: 0,
             upgrade_magic: 0,
         },
         CardId::Entrench => CardDefinition {
-            id: CardId::Entrench, name: "Entrench", card_type: CardType::Skill, rarity: CardRarity::Uncommon,
-            cost: 2, base_damage: 0, base_block: 0, base_magic: 0, target: CardTarget::SelfTarget,
-            is_multi_damage: false, exhaust: false, ethereal: false, innate: false,
+            id: CardId::Entrench,
+            name: "Entrench",
+            card_type: CardType::Skill,
+            rarity: CardRarity::Uncommon,
+            cost: 2,
+            base_damage: 0,
+            base_block: 0,
+            base_magic: 0,
+            target: CardTarget::SelfTarget,
+            is_multi_damage: false,
+            exhaust: false,
+            ethereal: false,
+            innate: false,
             tags: &[],
             upgrade_damage: 0,
             upgrade_block: 0,
             upgrade_magic: 0,
         },
         CardId::Juggernaut => CardDefinition {
-            id: CardId::Juggernaut, name: "Juggernaut", card_type: CardType::Power, rarity: CardRarity::Rare,
-            cost: 2, base_damage: 0, base_block: 0, base_magic: 5, target: CardTarget::SelfTarget,
-            is_multi_damage: false, exhaust: false, ethereal: false, innate: false,
+            id: CardId::Juggernaut,
+            name: "Juggernaut",
+            card_type: CardType::Power,
+            rarity: CardRarity::Rare,
+            cost: 2,
+            base_damage: 0,
+            base_block: 0,
+            base_magic: 5,
+            target: CardTarget::SelfTarget,
+            is_multi_damage: false,
+            exhaust: false,
+            ethereal: false,
+            innate: false,
             tags: &[],
             upgrade_damage: 0,
             upgrade_block: 0,
             upgrade_magic: 2,
         },
         CardId::FlameBarrier => CardDefinition {
-            id: CardId::FlameBarrier, name: "Flame Barrier", card_type: CardType::Skill, rarity: CardRarity::Uncommon,
-            cost: 2, base_damage: 0, base_block: 12, base_magic: 4, target: CardTarget::SelfTarget,
-            is_multi_damage: false, exhaust: false, ethereal: false, innate: false,
+            id: CardId::FlameBarrier,
+            name: "Flame Barrier",
+            card_type: CardType::Skill,
+            rarity: CardRarity::Uncommon,
+            cost: 2,
+            base_damage: 0,
+            base_block: 12,
+            base_magic: 4,
+            target: CardTarget::SelfTarget,
+            is_multi_damage: false,
+            exhaust: false,
+            ethereal: false,
+            innate: false,
             tags: &[],
             upgrade_damage: 0,
             upgrade_block: 4,
             upgrade_magic: 2,
         },
         CardId::Metallicize => CardDefinition {
-            id: CardId::Metallicize, name: "Metallicize", card_type: CardType::Power, rarity: CardRarity::Uncommon,
-            cost: 1, base_damage: 0, base_block: 0, base_magic: 3, target: CardTarget::SelfTarget,
-            is_multi_damage: false, exhaust: false, ethereal: false, innate: false,
+            id: CardId::Metallicize,
+            name: "Metallicize",
+            card_type: CardType::Power,
+            rarity: CardRarity::Uncommon,
+            cost: 1,
+            base_damage: 0,
+            base_block: 0,
+            base_magic: 3,
+            target: CardTarget::SelfTarget,
+            is_multi_damage: false,
+            exhaust: false,
+            ethereal: false,
+            innate: false,
             tags: &[],
             upgrade_damage: 0,
             upgrade_block: 0,
             upgrade_magic: 1,
         },
         CardId::GhostlyArmor => CardDefinition {
-            id: CardId::GhostlyArmor, name: "Ghostly Armor", card_type: CardType::Skill, rarity: CardRarity::Uncommon,
-            cost: 1, base_damage: 0, base_block: 10, base_magic: 0, target: CardTarget::SelfTarget,
-            is_multi_damage: false, exhaust: false, ethereal: true, innate: false,
+            id: CardId::GhostlyArmor,
+            name: "Ghostly Armor",
+            card_type: CardType::Skill,
+            rarity: CardRarity::Uncommon,
+            cost: 1,
+            base_damage: 0,
+            base_block: 10,
+            base_magic: 0,
+            target: CardTarget::SelfTarget,
+            is_multi_damage: false,
+            exhaust: false,
+            ethereal: true,
+            innate: false,
             tags: &[],
             upgrade_damage: 0,
             upgrade_block: 3,
             upgrade_magic: 0,
         },
         CardId::Impervious => CardDefinition {
-            id: CardId::Impervious, name: "Impervious", card_type: CardType::Skill, rarity: CardRarity::Rare,
-            cost: 2, base_damage: 0, base_block: 30, base_magic: 0, target: CardTarget::SelfTarget,
-            is_multi_damage: false, exhaust: true, ethereal: false, innate: false,
+            id: CardId::Impervious,
+            name: "Impervious",
+            card_type: CardType::Skill,
+            rarity: CardRarity::Rare,
+            cost: 2,
+            base_damage: 0,
+            base_block: 30,
+            base_magic: 0,
+            target: CardTarget::SelfTarget,
+            is_multi_damage: false,
+            exhaust: true,
+            ethereal: false,
+            innate: false,
             tags: &[],
             upgrade_damage: 0,
             upgrade_block: 10,
             upgrade_magic: 0,
         },
         CardId::PowerThrough => CardDefinition {
-            id: CardId::PowerThrough, name: "Power Through", card_type: CardType::Skill, rarity: CardRarity::Uncommon,
-            cost: 1, base_damage: 0, base_block: 15, base_magic: 2, target: CardTarget::SelfTarget,
-            is_multi_damage: false, exhaust: false, ethereal: false, innate: false,
+            id: CardId::PowerThrough,
+            name: "Power Through",
+            card_type: CardType::Skill,
+            rarity: CardRarity::Uncommon,
+            cost: 1,
+            base_damage: 0,
+            base_block: 15,
+            base_magic: 2,
+            target: CardTarget::SelfTarget,
+            is_multi_damage: false,
+            exhaust: false,
+            ethereal: false,
+            innate: false,
             tags: &[],
             upgrade_damage: 0,
             upgrade_block: 5,
             upgrade_magic: 0,
         },
         CardId::Evolve => CardDefinition {
-            id: CardId::Evolve, name: "Evolve", card_type: CardType::Power, rarity: CardRarity::Uncommon,
-            cost: 1, base_damage: 0, base_block: 0, base_magic: 1, target: CardTarget::SelfTarget,
-            is_multi_damage: false, exhaust: false, ethereal: false, innate: false,
+            id: CardId::Evolve,
+            name: "Evolve",
+            card_type: CardType::Power,
+            rarity: CardRarity::Uncommon,
+            cost: 1,
+            base_damage: 0,
+            base_block: 0,
+            base_magic: 1,
+            target: CardTarget::SelfTarget,
+            is_multi_damage: false,
+            exhaust: false,
+            ethereal: false,
+            innate: false,
             tags: &[],
             upgrade_damage: 0,
             upgrade_block: 0,
             upgrade_magic: 1,
         },
         CardId::FireBreathing => CardDefinition {
-            id: CardId::FireBreathing, name: "Fire Breathing", card_type: CardType::Power, rarity: CardRarity::Uncommon,
-            cost: 1, base_damage: 0, base_block: 0, base_magic: 6, target: CardTarget::SelfTarget,
-            is_multi_damage: false, exhaust: false, ethereal: false, innate: false,
+            id: CardId::FireBreathing,
+            name: "Fire Breathing",
+            card_type: CardType::Power,
+            rarity: CardRarity::Uncommon,
+            cost: 1,
+            base_damage: 0,
+            base_block: 0,
+            base_magic: 6,
+            target: CardTarget::SelfTarget,
+            is_multi_damage: false,
+            exhaust: false,
+            ethereal: false,
+            innate: false,
             tags: &[],
             upgrade_damage: 0,
             upgrade_block: 0,
             upgrade_magic: 4,
         },
         CardId::Immolate => CardDefinition {
-            id: CardId::Immolate, name: "Immolate", card_type: CardType::Attack, rarity: CardRarity::Rare,
-            cost: 2, base_damage: 21, base_block: 0, base_magic: 0, target: CardTarget::AllEnemy,
-            is_multi_damage: true, exhaust: false, ethereal: false, innate: false,
+            id: CardId::Immolate,
+            name: "Immolate",
+            card_type: CardType::Attack,
+            rarity: CardRarity::Rare,
+            cost: 2,
+            base_damage: 21,
+            base_block: 0,
+            base_magic: 0,
+            target: CardTarget::AllEnemy,
+            is_multi_damage: true,
+            exhaust: false,
+            ethereal: false,
+            innate: false,
             tags: &[],
             upgrade_damage: 7,
             upgrade_block: 0,
             upgrade_magic: 0,
         },
         CardId::WildStrike => CardDefinition {
-            id: CardId::WildStrike, name: "Wild Strike", card_type: CardType::Attack, rarity: CardRarity::Common,
-            cost: 1, base_damage: 12, base_block: 0, base_magic: 0, target: CardTarget::Enemy,
-            is_multi_damage: false, exhaust: false, ethereal: false, innate: false,
+            id: CardId::WildStrike,
+            name: "Wild Strike",
+            card_type: CardType::Attack,
+            rarity: CardRarity::Common,
+            cost: 1,
+            base_damage: 12,
+            base_block: 0,
+            base_magic: 0,
+            target: CardTarget::Enemy,
+            is_multi_damage: false,
+            exhaust: false,
+            ethereal: false,
+            innate: false,
             tags: &[],
             upgrade_damage: 5,
             upgrade_block: 0,
             upgrade_magic: 0,
         },
         CardId::RecklessCharge => CardDefinition {
-            id: CardId::RecklessCharge, name: "Reckless Charge", card_type: CardType::Attack, rarity: CardRarity::Uncommon,
-            cost: 0, base_damage: 7, base_block: 0, base_magic: 0, target: CardTarget::Enemy,
-            is_multi_damage: false, exhaust: false, ethereal: false, innate: false,
+            id: CardId::RecklessCharge,
+            name: "Reckless Charge",
+            card_type: CardType::Attack,
+            rarity: CardRarity::Uncommon,
+            cost: 0,
+            base_damage: 7,
+            base_block: 0,
+            base_magic: 0,
+            target: CardTarget::Enemy,
+            is_multi_damage: false,
+            exhaust: false,
+            ethereal: false,
+            innate: false,
             tags: &[],
             upgrade_damage: 3,
             upgrade_block: 0,
             upgrade_magic: 0,
         },
         CardId::Havoc => CardDefinition {
-            id: CardId::Havoc, name: "Havoc", card_type: CardType::Skill, rarity: CardRarity::Common,
-            cost: 1, base_damage: 0, base_block: 0, base_magic: 0, target: CardTarget::None,
-            is_multi_damage: false, exhaust: false, ethereal: false, innate: false,
+            id: CardId::Havoc,
+            name: "Havoc",
+            card_type: CardType::Skill,
+            rarity: CardRarity::Common,
+            cost: 1,
+            base_damage: 0,
+            base_block: 0,
+            base_magic: 0,
+            target: CardTarget::None,
+            is_multi_damage: false,
+            exhaust: false,
+            ethereal: false,
+            innate: false,
             tags: &[],
             upgrade_damage: 0,
             upgrade_block: 0,
             upgrade_magic: 0,
         },
         CardId::Warcry => CardDefinition {
-            id: CardId::Warcry, name: "Warcry", card_type: CardType::Skill, rarity: CardRarity::Common,
-            cost: 0, base_damage: 0, base_block: 0, base_magic: 1, target: CardTarget::None,
-            is_multi_damage: false, exhaust: true, ethereal: false, innate: false,
+            id: CardId::Warcry,
+            name: "Warcry",
+            card_type: CardType::Skill,
+            rarity: CardRarity::Common,
+            cost: 0,
+            base_damage: 0,
+            base_block: 0,
+            base_magic: 1,
+            target: CardTarget::None,
+            is_multi_damage: false,
+            exhaust: true,
+            ethereal: false,
+            innate: false,
             tags: &[],
             upgrade_damage: 0,
             upgrade_block: 0,
             upgrade_magic: 1,
         },
         CardId::BattleTrance => CardDefinition {
-            id: CardId::BattleTrance, name: "Battle Trance", card_type: CardType::Skill, rarity: CardRarity::Uncommon,
-            cost: 0, base_damage: 0, base_block: 0, base_magic: 3, target: CardTarget::None,
-            is_multi_damage: false, exhaust: false, ethereal: false, innate: false,
+            id: CardId::BattleTrance,
+            name: "Battle Trance",
+            card_type: CardType::Skill,
+            rarity: CardRarity::Uncommon,
+            cost: 0,
+            base_damage: 0,
+            base_block: 0,
+            base_magic: 3,
+            target: CardTarget::None,
+            is_multi_damage: false,
+            exhaust: false,
+            ethereal: false,
+            innate: false,
             tags: &[],
             upgrade_damage: 0,
             upgrade_block: 0,
             upgrade_magic: 1,
         },
         CardId::Rampage => CardDefinition {
-            id: CardId::Rampage, name: "Rampage", card_type: CardType::Attack, rarity: CardRarity::Uncommon,
-            cost: 1, base_damage: 8, base_block: 0, base_magic: 8, target: CardTarget::Enemy,
-            is_multi_damage: false, exhaust: false, ethereal: false, innate: false,
+            id: CardId::Rampage,
+            name: "Rampage",
+            card_type: CardType::Attack,
+            rarity: CardRarity::Uncommon,
+            cost: 1,
+            base_damage: 8,
+            base_block: 0,
+            base_magic: 8,
+            target: CardTarget::Enemy,
+            is_multi_damage: false,
+            exhaust: false,
+            ethereal: false,
+            innate: false,
             tags: &[],
             upgrade_damage: 0,
             upgrade_block: 0,
             upgrade_magic: 3,
         },
         CardId::SearingBlow => CardDefinition {
-            id: CardId::SearingBlow, name: "Searing Blow", card_type: CardType::Attack, rarity: CardRarity::Uncommon,
-            cost: 2, base_damage: 12, base_block: 0, base_magic: 0, target: CardTarget::Enemy,
-            is_multi_damage: false, exhaust: false, ethereal: false, innate: false,
+            id: CardId::SearingBlow,
+            name: "Searing Blow",
+            card_type: CardType::Attack,
+            rarity: CardRarity::Uncommon,
+            cost: 2,
+            base_damage: 12,
+            base_block: 0,
+            base_magic: 0,
+            target: CardTarget::Enemy,
+            is_multi_damage: false,
+            exhaust: false,
+            ethereal: false,
+            innate: false,
             tags: &[],
             upgrade_damage: 0,
             upgrade_block: 0,
             upgrade_magic: 0,
         },
         CardId::Anger => CardDefinition {
-            id: CardId::Anger, name: "Anger", card_type: CardType::Attack, rarity: CardRarity::Common,
-            cost: 0, base_damage: 6, base_block: 0, base_magic: 0, target: CardTarget::Enemy,
-            is_multi_damage: false, exhaust: false, ethereal: false, innate: false,
+            id: CardId::Anger,
+            name: "Anger",
+            card_type: CardType::Attack,
+            rarity: CardRarity::Common,
+            cost: 0,
+            base_damage: 6,
+            base_block: 0,
+            base_magic: 0,
+            target: CardTarget::Enemy,
+            is_multi_damage: false,
+            exhaust: false,
+            ethereal: false,
+            innate: false,
             tags: &[],
             upgrade_damage: 2,
             upgrade_block: 0,
             upgrade_magic: 0,
         },
         CardId::Armaments => CardDefinition {
-            id: CardId::Armaments, name: "Armaments", card_type: CardType::Skill, rarity: CardRarity::Common,
-            cost: 1, base_damage: 0, base_block: 5, base_magic: 0, target: CardTarget::None,
-            is_multi_damage: false, exhaust: false, ethereal: false, innate: false,
+            id: CardId::Armaments,
+            name: "Armaments",
+            card_type: CardType::Skill,
+            rarity: CardRarity::Common,
+            cost: 1,
+            base_damage: 0,
+            base_block: 5,
+            base_magic: 0,
+            target: CardTarget::None,
+            is_multi_damage: false,
+            exhaust: false,
+            ethereal: false,
+            innate: false,
             tags: &[],
             upgrade_damage: 0,
             upgrade_block: 0,
             upgrade_magic: 0,
         },
         CardId::DualWield => CardDefinition {
-            id: CardId::DualWield, name: "Dual Wield", card_type: CardType::Skill, rarity: CardRarity::Uncommon,
-            cost: 1, base_damage: 0, base_block: 0, base_magic: 1, target: CardTarget::None,
-            is_multi_damage: false, exhaust: false, ethereal: false, innate: false,
+            id: CardId::DualWield,
+            name: "Dual Wield",
+            card_type: CardType::Skill,
+            rarity: CardRarity::Uncommon,
+            cost: 1,
+            base_damage: 0,
+            base_block: 0,
+            base_magic: 1,
+            target: CardTarget::None,
+            is_multi_damage: false,
+            exhaust: false,
+            ethereal: false,
+            innate: false,
             tags: &[],
             upgrade_damage: 0,
             upgrade_block: 0,
             upgrade_magic: 1,
         },
         CardId::InfernalBlade => CardDefinition {
-            id: CardId::InfernalBlade, name: "Infernal Blade", card_type: CardType::Skill, rarity: CardRarity::Uncommon,
-            cost: 1, base_damage: 0, base_block: 0, base_magic: 0, target: CardTarget::None,
-            is_multi_damage: false, exhaust: true, ethereal: false, innate: false,
+            id: CardId::InfernalBlade,
+            name: "Infernal Blade",
+            card_type: CardType::Skill,
+            rarity: CardRarity::Uncommon,
+            cost: 1,
+            base_damage: 0,
+            base_block: 0,
+            base_magic: 0,
+            target: CardTarget::None,
+            is_multi_damage: false,
+            exhaust: true,
+            ethereal: false,
+            innate: false,
             tags: &[],
             upgrade_damage: 0,
             upgrade_block: 0,
             upgrade_magic: 0,
         },
         CardId::SeeingRed => CardDefinition {
-            id: CardId::SeeingRed, name: "Seeing Red", card_type: CardType::Skill, rarity: CardRarity::Uncommon,
-            cost: 1, base_damage: 0, base_block: 0, base_magic: 0, target: CardTarget::None,
-            is_multi_damage: false, exhaust: true, ethereal: false, innate: false,
+            id: CardId::SeeingRed,
+            name: "Seeing Red",
+            card_type: CardType::Skill,
+            rarity: CardRarity::Uncommon,
+            cost: 1,
+            base_damage: 0,
+            base_block: 0,
+            base_magic: 0,
+            target: CardTarget::None,
+            is_multi_damage: false,
+            exhaust: true,
+            ethereal: false,
+            innate: false,
             tags: &[],
             upgrade_damage: 0,
             upgrade_block: 0,
             upgrade_magic: 0,
         },
         CardId::Rage => CardDefinition {
-            id: CardId::Rage, name: "Rage", card_type: CardType::Skill, rarity: CardRarity::Uncommon,
-            cost: 0, base_damage: 0, base_block: 0, base_magic: 3, target: CardTarget::None,
-            is_multi_damage: false, exhaust: false, ethereal: false, innate: false,
+            id: CardId::Rage,
+            name: "Rage",
+            card_type: CardType::Skill,
+            rarity: CardRarity::Uncommon,
+            cost: 0,
+            base_damage: 0,
+            base_block: 0,
+            base_magic: 3,
+            target: CardTarget::None,
+            is_multi_damage: false,
+            exhaust: false,
+            ethereal: false,
+            innate: false,
             tags: &[],
             upgrade_damage: 0,
             upgrade_block: 0,
             upgrade_magic: 2,
         },
         CardId::Berserk => CardDefinition {
-            id: CardId::Berserk, name: "Berserk", card_type: CardType::Power, rarity: CardRarity::Rare,
-            cost: 0, base_damage: 0, base_block: 0, base_magic: 2, target: CardTarget::None,
-            is_multi_damage: false, exhaust: false, ethereal: false, innate: false,
+            id: CardId::Berserk,
+            name: "Berserk",
+            card_type: CardType::Power,
+            rarity: CardRarity::Rare,
+            cost: 0,
+            base_damage: 0,
+            base_block: 0,
+            base_magic: 2,
+            target: CardTarget::None,
+            is_multi_damage: false,
+            exhaust: false,
+            ethereal: false,
+            innate: false,
             tags: &[],
             upgrade_damage: 0,
             upgrade_block: 0,
             upgrade_magic: -1,
         },
         CardId::Shockwave => CardDefinition {
-            id: CardId::Shockwave, name: "Shockwave", card_type: CardType::Skill, rarity: CardRarity::Uncommon,
-            cost: 2, base_damage: 0, base_block: 0, base_magic: 3, target: CardTarget::AllEnemy,
-            is_multi_damage: false, exhaust: true, ethereal: false, innate: false,
+            id: CardId::Shockwave,
+            name: "Shockwave",
+            card_type: CardType::Skill,
+            rarity: CardRarity::Uncommon,
+            cost: 2,
+            base_damage: 0,
+            base_block: 0,
+            base_magic: 3,
+            target: CardTarget::AllEnemy,
+            is_multi_damage: false,
+            exhaust: true,
+            ethereal: false,
+            innate: false,
             tags: &[],
             upgrade_damage: 0,
             upgrade_block: 0,
             upgrade_magic: 2,
         },
         CardId::Uppercut => CardDefinition {
-            id: CardId::Uppercut, name: "Uppercut", card_type: CardType::Attack, rarity: CardRarity::Uncommon,
-            cost: 2, base_damage: 13, base_block: 0, base_magic: 1, target: CardTarget::Enemy,
-            is_multi_damage: false, exhaust: false, ethereal: false, innate: false,
+            id: CardId::Uppercut,
+            name: "Uppercut",
+            card_type: CardType::Attack,
+            rarity: CardRarity::Uncommon,
+            cost: 2,
+            base_damage: 13,
+            base_block: 0,
+            base_magic: 1,
+            target: CardTarget::Enemy,
+            is_multi_damage: false,
+            exhaust: false,
+            ethereal: false,
+            innate: false,
             tags: &[],
             upgrade_damage: 0,
             upgrade_block: 0,
             upgrade_magic: 1,
         },
         CardId::Clothesline => CardDefinition {
-            id: CardId::Clothesline, name: "Clothesline", card_type: CardType::Attack, rarity: CardRarity::Common,
-            cost: 2, base_damage: 12, base_block: 0, base_magic: 2, target: CardTarget::Enemy,
-            is_multi_damage: false, exhaust: false, ethereal: false, innate: false,
+            id: CardId::Clothesline,
+            name: "Clothesline",
+            card_type: CardType::Attack,
+            rarity: CardRarity::Common,
+            cost: 2,
+            base_damage: 12,
+            base_block: 0,
+            base_magic: 2,
+            target: CardTarget::Enemy,
+            is_multi_damage: false,
+            exhaust: false,
+            ethereal: false,
+            innate: false,
             tags: &[],
             upgrade_damage: 2,
             upgrade_block: 0,
             upgrade_magic: 1,
         },
         CardId::Disarm => CardDefinition {
-            id: CardId::Disarm, name: "Disarm", card_type: CardType::Skill, rarity: CardRarity::Uncommon,
-            cost: 1, base_damage: 0, base_block: 0, base_magic: 2, target: CardTarget::Enemy,
-            is_multi_damage: false, exhaust: true, ethereal: false, innate: false,
+            id: CardId::Disarm,
+            name: "Disarm",
+            card_type: CardType::Skill,
+            rarity: CardRarity::Uncommon,
+            cost: 1,
+            base_damage: 0,
+            base_block: 0,
+            base_magic: 2,
+            target: CardTarget::Enemy,
+            is_multi_damage: false,
+            exhaust: true,
+            ethereal: false,
+            innate: false,
             tags: &[],
             upgrade_damage: 0,
             upgrade_block: 0,
             upgrade_magic: 1,
         },
         CardId::Intimidate => CardDefinition {
-            id: CardId::Intimidate, name: "Intimidate", card_type: CardType::Skill, rarity: CardRarity::Uncommon,
-            cost: 0, base_damage: 0, base_block: 0, base_magic: 1, target: CardTarget::AllEnemy,
-            is_multi_damage: false, exhaust: true, ethereal: false, innate: false,
+            id: CardId::Intimidate,
+            name: "Intimidate",
+            card_type: CardType::Skill,
+            rarity: CardRarity::Uncommon,
+            cost: 0,
+            base_damage: 0,
+            base_block: 0,
+            base_magic: 1,
+            target: CardTarget::AllEnemy,
+            is_multi_damage: false,
+            exhaust: true,
+            ethereal: false,
+            innate: false,
             tags: &[],
             upgrade_damage: 0,
             upgrade_block: 0,
             upgrade_magic: 1,
         },
         CardId::Carnage => CardDefinition {
-            id: CardId::Carnage, name: "Carnage", card_type: CardType::Attack, rarity: CardRarity::Uncommon,
-            cost: 2, base_damage: 20, base_block: 0, base_magic: 0, target: CardTarget::Enemy,
-            is_multi_damage: false, exhaust: false, ethereal: true, innate: false,
+            id: CardId::Carnage,
+            name: "Carnage",
+            card_type: CardType::Attack,
+            rarity: CardRarity::Uncommon,
+            cost: 2,
+            base_damage: 20,
+            base_block: 0,
+            base_magic: 0,
+            target: CardTarget::Enemy,
+            is_multi_damage: false,
+            exhaust: false,
+            ethereal: true,
+            innate: false,
             tags: &[],
             upgrade_damage: 8,
             upgrade_block: 0,
             upgrade_magic: 0,
         },
         CardId::Clash => CardDefinition {
-            id: CardId::Clash, name: "Clash", card_type: CardType::Attack, rarity: CardRarity::Common,
-            cost: 0, base_damage: 14, base_block: 0, base_magic: 0, target: CardTarget::Enemy,
-            is_multi_damage: false, exhaust: false, ethereal: false, innate: false,
+            id: CardId::Clash,
+            name: "Clash",
+            card_type: CardType::Attack,
+            rarity: CardRarity::Common,
+            cost: 0,
+            base_damage: 14,
+            base_block: 0,
+            base_magic: 0,
+            target: CardTarget::Enemy,
+            is_multi_damage: false,
+            exhaust: false,
+            ethereal: false,
+            innate: false,
             tags: &[],
             upgrade_damage: 4,
             upgrade_block: 0,
             upgrade_magic: 0,
         },
         CardId::BodySlam => CardDefinition {
-            id: CardId::BodySlam, name: "Body Slam", card_type: CardType::Attack, rarity: CardRarity::Common,
-            cost: 1, base_damage: 0, base_block: 0, base_magic: 0, target: CardTarget::Enemy,
-            is_multi_damage: false, exhaust: false, ethereal: false, innate: false,
+            id: CardId::BodySlam,
+            name: "Body Slam",
+            card_type: CardType::Attack,
+            rarity: CardRarity::Common,
+            cost: 1,
+            base_damage: 0,
+            base_block: 0,
+            base_magic: 0,
+            target: CardTarget::Enemy,
+            is_multi_damage: false,
+            exhaust: false,
+            ethereal: false,
+            innate: false,
             tags: &[],
             upgrade_damage: 0,
             upgrade_block: 0,
             upgrade_magic: 0,
         },
         CardId::Pummel => CardDefinition {
-            id: CardId::Pummel, name: "Pummel", card_type: CardType::Attack, rarity: CardRarity::Uncommon,
-            cost: 1, base_damage: 2, base_block: 0, base_magic: 4, target: CardTarget::Enemy,
-            is_multi_damage: false, exhaust: true, ethereal: false, innate: false,
+            id: CardId::Pummel,
+            name: "Pummel",
+            card_type: CardType::Attack,
+            rarity: CardRarity::Uncommon,
+            cost: 1,
+            base_damage: 2,
+            base_block: 0,
+            base_magic: 4,
+            target: CardTarget::Enemy,
+            is_multi_damage: false,
+            exhaust: true,
+            ethereal: false,
+            innate: false,
             tags: &[],
             upgrade_damage: 0,
             upgrade_block: 0,
             upgrade_magic: 1,
         },
         CardId::Wound => CardDefinition {
-            id: CardId::Wound, name: "Wound", card_type: CardType::Status, rarity: CardRarity::Common,
-            cost: -2, base_damage: 0, base_block: 0, base_magic: 0, target: CardTarget::None,
-            is_multi_damage: false, exhaust: false, ethereal: false, innate: false,
+            id: CardId::Wound,
+            name: "Wound",
+            card_type: CardType::Status,
+            rarity: CardRarity::Common,
+            cost: -2,
+            base_damage: 0,
+            base_block: 0,
+            base_magic: 0,
+            target: CardTarget::None,
+            is_multi_damage: false,
+            exhaust: false,
+            ethereal: false,
+            innate: false,
             tags: &[],
             upgrade_damage: 0,
             upgrade_block: 0,
             upgrade_magic: 0,
         },
         CardId::Burn => CardDefinition {
-            id: CardId::Burn, name: "Burn", card_type: CardType::Status, rarity: CardRarity::Common,
-            cost: -2, base_damage: 0, base_block: 0, base_magic: 0, target: CardTarget::None,
-            is_multi_damage: false, exhaust: false, ethereal: false, innate: false,
+            id: CardId::Burn,
+            name: "Burn",
+            card_type: CardType::Status,
+            rarity: CardRarity::Common,
+            cost: -2,
+            base_damage: 0,
+            base_block: 0,
+            base_magic: 0,
+            target: CardTarget::None,
+            is_multi_damage: false,
+            exhaust: false,
+            ethereal: false,
+            innate: false,
             tags: &[], // In STS, Burn damages you at end of turn. We'll need a hook for this eventually,
             upgrade_damage: 0,
             upgrade_block: 0,
             upgrade_magic: 2,
         },
         CardId::Dazed => CardDefinition {
-            id: CardId::Dazed, name: "Dazed", card_type: CardType::Status, rarity: CardRarity::Common,
-            cost: -2, base_damage: 0, base_block: 0, base_magic: 0, target: CardTarget::None,
-            is_multi_damage: false, exhaust: false, ethereal: true, innate: false,
+            id: CardId::Dazed,
+            name: "Dazed",
+            card_type: CardType::Status,
+            rarity: CardRarity::Common,
+            cost: -2,
+            base_damage: 0,
+            base_block: 0,
+            base_magic: 0,
+            target: CardTarget::None,
+            is_multi_damage: false,
+            exhaust: false,
+            ethereal: true,
+            innate: false,
             tags: &[], // Ethereal removes it,
             upgrade_damage: 0,
             upgrade_block: 0,
             upgrade_magic: 0,
         },
         CardId::Slimed => CardDefinition {
-            id: CardId::Slimed, name: "Slimed", card_type: CardType::Status, rarity: CardRarity::Common,
-            cost: 1, base_damage: 0, base_block: 0, base_magic: 0, target: CardTarget::None,
-            is_multi_damage: false, exhaust: true, ethereal: false, innate: false,
+            id: CardId::Slimed,
+            name: "Slimed",
+            card_type: CardType::Status,
+            rarity: CardRarity::Common,
+            cost: 1,
+            base_damage: 0,
+            base_block: 0,
+            base_magic: 0,
+            target: CardTarget::None,
+            is_multi_damage: false,
+            exhaust: true,
+            ethereal: false,
+            innate: false,
             tags: &[],
             upgrade_damage: 0,
             upgrade_block: 0,
             upgrade_magic: 0,
         },
         CardId::Void => CardDefinition {
-            id: CardId::Void, name: "Void", card_type: CardType::Status, rarity: CardRarity::Common,
-            cost: -2, base_damage: 0, base_block: 0, base_magic: 0, target: CardTarget::None,
-            is_multi_damage: false, exhaust: true, ethereal: true, innate: false,
+            id: CardId::Void,
+            name: "Void",
+            card_type: CardType::Status,
+            rarity: CardRarity::Common,
+            cost: -2,
+            base_damage: 0,
+            base_block: 0,
+            base_magic: 0,
+            target: CardTarget::None,
+            is_multi_damage: false,
+            exhaust: true,
+            ethereal: true,
+            innate: false,
             tags: &[],
             upgrade_damage: 0,
             upgrade_block: 0,
             upgrade_magic: 0,
         },
         CardId::Miracle => CardDefinition {
-            id: CardId::Miracle, name: "Miracle", card_type: CardType::Skill, rarity: CardRarity::Special,
-            cost: 0, base_damage: 0, base_block: 0, base_magic: 0, target: CardTarget::None,
-            is_multi_damage: false, exhaust: true, ethereal: true, innate: false,
+            id: CardId::Miracle,
+            name: "Miracle",
+            card_type: CardType::Skill,
+            rarity: CardRarity::Special,
+            cost: 0,
+            base_damage: 0,
+            base_block: 0,
+            base_magic: 0,
+            target: CardTarget::None,
+            is_multi_damage: false,
+            exhaust: true,
+            ethereal: true,
+            innate: false,
             tags: &[], // In game, Retain is actually hardcoded on Miracle,
             upgrade_damage: 0,
             upgrade_block: 0,
             upgrade_magic: 0,
         },
         CardId::Shiv => CardDefinition {
-            id: CardId::Shiv, name: "Shiv", card_type: CardType::Attack, rarity: CardRarity::Special,
-            cost: 0, base_damage: 4, base_block: 0, base_magic: 0, target: CardTarget::Enemy,
-            is_multi_damage: false, exhaust: true, ethereal: false, innate: false,
+            id: CardId::Shiv,
+            name: "Shiv",
+            card_type: CardType::Attack,
+            rarity: CardRarity::Special,
+            cost: 0,
+            base_damage: 4,
+            base_block: 0,
+            base_magic: 0,
+            target: CardTarget::Enemy,
+            is_multi_damage: false,
+            exhaust: true,
+            ethereal: false,
+            innate: false,
             tags: &[],
             upgrade_damage: 2,
             upgrade_block: 0,
             upgrade_magic: 0,
         },
         CardId::Bite => CardDefinition {
-            id: CardId::Bite, name: "Bite", card_type: CardType::Attack, rarity: CardRarity::Special,
-            cost: 1, base_damage: 7, base_block: 0, base_magic: 2, target: CardTarget::Enemy,
-            is_multi_damage: false, exhaust: false, ethereal: false, innate: false,
+            id: CardId::Bite,
+            name: "Bite",
+            card_type: CardType::Attack,
+            rarity: CardRarity::Special,
+            cost: 1,
+            base_damage: 7,
+            base_block: 0,
+            base_magic: 2,
+            target: CardTarget::Enemy,
+            is_multi_damage: false,
+            exhaust: false,
+            ethereal: false,
+            innate: false,
             tags: &[CardTag::Healing],
             upgrade_damage: 1,
             upgrade_block: 0,
@@ -1228,21 +2655,28 @@ pub fn get_card_definition(id: CardId) -> CardDefinition {
     }
 }
 
-use crate::combat::{CombatState, CombatCard};
 use crate::action::{Action, ActionInfo};
-use crate::core::EntityId;
+use crate::combat::{CombatCard, CombatState};
 use crate::content::powers::PowerId;
+use crate::core::EntityId;
 use smallvec::SmallVec;
 
 /// Central dispatch table for resolving card play mechanics.
-pub fn resolve_card_play(card_id: CardId, _state: &CombatState, _card: &CombatCard, target: Option<EntityId>) -> SmallVec<[ActionInfo; 4]> {
+pub fn resolve_card_play(
+    card_id: CardId,
+    _state: &CombatState,
+    _card: &CombatCard,
+    target: Option<EntityId>,
+) -> SmallVec<[ActionInfo; 4]> {
     let t = target;
     match card_id {
         CardId::Strike => ironclad::strike::strike_play(_state, _card, t),
         CardId::Bash => ironclad::bash::bash_play(_state, _card, t),
         CardId::Cleave => ironclad::cleave::cleave_play(_state, _card),
         CardId::IronWave => ironclad::iron_wave::iron_wave_play(_state, _card, t),
-        CardId::PerfectedStrike => ironclad::perfected_strike::perfected_strike_play(_state, _card, t),
+        CardId::PerfectedStrike => {
+            ironclad::perfected_strike::perfected_strike_play(_state, _card, t)
+        }
         CardId::TwinStrike => ironclad::twin_strike::twin_strike_play(_state, _card, t),
         CardId::ThunderClap => ironclad::thunderclap::thunderclap_play(_state, _card),
         CardId::Defend => ironclad::defend::defend_play(_state, _card),
@@ -1314,13 +2748,11 @@ pub fn resolve_card_play(card_id: CardId, _state: &CombatState, _card: &CombatCa
         CardId::BodySlam => ironclad::body_slam::body_slam_play(_state, _card, t),
         CardId::Pummel => ironclad::pummel::pummel_play(_state, _card, t),
         CardId::Miracle => {
-            smallvec::smallvec![
-                ActionInfo {
-                    action: crate::action::Action::GainEnergy { amount: 1 },
-                    insertion_mode: crate::action::AddTo::Bottom,
-                }
-            ]
-        },
+            smallvec::smallvec![ActionInfo {
+                action: crate::action::Action::GainEnergy { amount: 1 },
+                insertion_mode: crate::action::AddTo::Bottom,
+            }]
+        }
         CardId::Shiv => {
             let mut actions = smallvec::SmallVec::new();
             if let Some(t) = t {
@@ -1338,12 +2770,43 @@ pub fn resolve_card_play(card_id: CardId, _state: &CombatState, _card: &CombatCa
                 });
             }
             actions
-        },
+        }
         CardId::Bite => colorless::bite::bite_play(_state, _card, t),
         CardId::Pride => smallvec::smallvec![], // Coast 1 but does nothing on play
-        CardId::Finesse | CardId::BandageUp | CardId::Blind | CardId::DarkShackles | CardId::DeepBreath | CardId::Discovery | CardId::DramaticEntrance | CardId::Enlightenment | CardId::FlashOfSteel | CardId::Forethought | CardId::GoodInstincts | CardId::Impatience | CardId::JackOfAllTrades | CardId::MindBlast | CardId::Panacea | CardId::PanicButton | CardId::Purity | CardId::SwiftStrike | CardId::Trip
-        | CardId::Apotheosis | CardId::Chrysalis | CardId::HandOfGreed | CardId::Magnetism | CardId::MasterOfStrategy | CardId::Mayhem | CardId::Metamorphosis | CardId::Panache | CardId::SadisticNature | CardId::SecretTechnique | CardId::SecretWeapon | CardId::TheBomb | CardId::ThinkingAhead | CardId::Transmutation | CardId::Violence
-        => {
+        CardId::Finesse
+        | CardId::BandageUp
+        | CardId::Blind
+        | CardId::DarkShackles
+        | CardId::DeepBreath
+        | CardId::Discovery
+        | CardId::DramaticEntrance
+        | CardId::Enlightenment
+        | CardId::FlashOfSteel
+        | CardId::Forethought
+        | CardId::GoodInstincts
+        | CardId::Impatience
+        | CardId::JackOfAllTrades
+        | CardId::MindBlast
+        | CardId::Panacea
+        | CardId::PanicButton
+        | CardId::Purity
+        | CardId::SwiftStrike
+        | CardId::Trip
+        | CardId::Apotheosis
+        | CardId::Chrysalis
+        | CardId::HandOfGreed
+        | CardId::Magnetism
+        | CardId::MasterOfStrategy
+        | CardId::Mayhem
+        | CardId::Metamorphosis
+        | CardId::Panache
+        | CardId::SadisticNature
+        | CardId::SecretTechnique
+        | CardId::SecretWeapon
+        | CardId::TheBomb
+        | CardId::ThinkingAhead
+        | CardId::Transmutation
+        | CardId::Violence => {
             let _def = get_card_definition(_card.id);
             let dmg = _card.base_damage_mut;
             let blk = _card.base_block_mut;
@@ -1353,28 +2816,49 @@ pub fn resolve_card_play(card_id: CardId, _state: &CombatState, _card: &CombatCa
                 // ── Colorless Uncommon ──
                 CardId::BandageUp => {
                     // Heal magic HP
-                    acts.push(Action::Heal { target: 0, amount: mag });
-                },
+                    acts.push(Action::Heal {
+                        target: 0,
+                        amount: mag,
+                    });
+                }
                 CardId::Blind => {
                     // Apply 2 Weak to target
                     let target_id = t.expect("Blind requires a target!");
-                    acts.push(Action::ApplyPower { source: 0, target: target_id, power_id: PowerId::Weak, amount: mag });
-                },
+                    acts.push(Action::ApplyPower {
+                        source: 0,
+                        target: target_id,
+                        power_id: PowerId::Weak,
+                        amount: mag,
+                    });
+                }
                 CardId::DarkShackles => {
                     // Apply -9 Strength to target (temporary, lost at end of turn)
                     let target_id = t.expect("Dark Shackles requires a target!");
-                    acts.push(Action::ApplyPower { source: 0, target: target_id, power_id: PowerId::Strength, amount: -mag });
-                    acts.push(Action::ApplyPower { source: 0, target: target_id, power_id: PowerId::LoseStrength, amount: -mag });
-                },
+                    acts.push(Action::ApplyPower {
+                        source: 0,
+                        target: target_id,
+                        power_id: PowerId::Strength,
+                        amount: -mag,
+                    });
+                    acts.push(Action::ApplyPower {
+                        source: 0,
+                        target: target_id,
+                        power_id: PowerId::LoseStrength,
+                        amount: -mag,
+                    });
+                }
                 CardId::DeepBreath => {
                     // Shuffle discard into draw pile, draw 1
                     acts.push(Action::EmptyDeckShuffle);
                     acts.push(Action::DrawCards(1));
-                },
+                }
                 CardId::Discovery => {
                     // Java: DiscoveryAction — present 3 random cards to choose from, chosen card costs 0
-                    acts.push(Action::SuspendForDiscovery { card_type: None, cost_for_turn: Some(0) });
-                },
+                    acts.push(Action::SuspendForDiscovery {
+                        card_type: None,
+                        cost_for_turn: Some(0),
+                    });
+                }
                 CardId::DramaticEntrance => {
                     // Deal 8 damage to ALL enemies
                     acts.push(Action::DamageAllEnemies {
@@ -1383,193 +2867,323 @@ pub fn resolve_card_play(card_id: CardId, _state: &CombatState, _card: &CombatCa
                         damage_type: crate::action::DamageType::Normal,
                         is_modified: false,
                     });
-                },
+                }
                 CardId::Enlightenment => {
                     // Reduce cost of all cards in hand to 1 (this turn only)
                     acts.push(Action::ReduceAllHandCosts { amount: 1 });
-                },
+                }
                 CardId::Finesse => {
                     // Gain 2 Block, Draw 1
-                    acts.push(Action::GainBlock { target: 0, amount: blk });
+                    acts.push(Action::GainBlock {
+                        target: 0,
+                        amount: blk,
+                    });
                     acts.push(Action::DrawCards(1));
-                },
+                }
                 CardId::FlashOfSteel => {
                     // Deal 3 damage, Draw 1
                     let target_id = t.expect("Flash of Steel requires a target!");
                     acts.push(Action::Damage(crate::action::DamageInfo {
-                        source: 0, target: target_id, base: dmg, output: dmg,
-                        damage_type: crate::action::DamageType::Normal, is_modified: false,
+                        source: 0,
+                        target: target_id,
+                        base: dmg,
+                        output: dmg,
+                        damage_type: crate::action::DamageType::Normal,
+                        is_modified: false,
                     }));
                     acts.push(Action::DrawCards(1));
-                },
+                }
                 CardId::Forethought => {
                     // Put card(s) from hand to bottom of draw pile (cost 0 next time)
                     // Base: choose 1 card. Upgraded: choose any number.
-                    let max = if _card.upgrades > 0 { 99 } else { 1 };
-                    acts.push(Action::SuspendForHandSelect {
-                        min: 1, max, reason: crate::state::HandSelectReason::PutToBottomOfDraw,
-                    });
-                },
+                    if !_state.hand.is_empty() {
+                        let upgraded = _card.upgrades > 0;
+                        acts.push(Action::SuspendForHandSelect {
+                            min: if upgraded { 0 } else { 1 },
+                            max: if upgraded { 99 } else { 1 },
+                            can_cancel: upgraded,
+                            filter: crate::state::HandSelectFilter::Any,
+                            reason: crate::state::HandSelectReason::PutToBottomOfDraw,
+                        });
+                    }
+                }
                 CardId::GoodInstincts => {
                     // Gain 6 Block
-                    acts.push(Action::GainBlock { target: 0, amount: blk });
-                },
+                    acts.push(Action::GainBlock {
+                        target: 0,
+                        amount: blk,
+                    });
+                }
                 CardId::Impatience => {
                     // If no Attacks in hand, draw 2 cards
-                    let has_attack = _state.hand.iter().any(|c| {
-                        get_card_definition(c.id).card_type == CardType::Attack
-                    });
+                    let has_attack = _state
+                        .hand
+                        .iter()
+                        .any(|c| get_card_definition(c.id).card_type == CardType::Attack);
                     if !has_attack {
                         acts.push(Action::DrawCards(mag as u32));
                     }
-                },
+                }
                 CardId::JackOfAllTrades => {
                     // Add 1 random colorless card to hand
                     acts.push(Action::MakeRandomColorlessCardInHand {
                         rarity: CardRarity::Uncommon,
                         cost_for_turn: None,
                     });
-                },
+                }
                 CardId::MindBlast => {
                     // Deal damage equal to draw pile size
                     let draw_size = _state.draw_pile.len() as i32;
                     let target_id = t.expect("Mind Blast requires a target!");
                     acts.push(Action::Damage(crate::action::DamageInfo {
-                        source: 0, target: target_id, base: draw_size, output: draw_size,
-                        damage_type: crate::action::DamageType::Normal, is_modified: true,
+                        source: 0,
+                        target: target_id,
+                        base: draw_size,
+                        output: draw_size,
+                        damage_type: crate::action::DamageType::Normal,
+                        is_modified: true,
                     }));
-                },
+                }
                 CardId::Panacea => {
                     // Gain 1 Artifact
-                    acts.push(Action::ApplyPower { source: 0, target: 0, power_id: PowerId::Artifact, amount: mag });
-                },
+                    acts.push(Action::ApplyPower {
+                        source: 0,
+                        target: 0,
+                        power_id: PowerId::Artifact,
+                        amount: mag,
+                    });
+                }
                 CardId::PanicButton => {
                     // Gain 30 Block
-                    acts.push(Action::GainBlock { target: 0, amount: blk });
-                },
+                    acts.push(Action::GainBlock {
+                        target: 0,
+                        amount: blk,
+                    });
+                }
                 CardId::Purity => {
                     // Exhaust up to magic (3/5) cards from hand
-                    acts.push(Action::SuspendForHandSelect {
-                        min: 0, max: mag as u8, reason: crate::state::HandSelectReason::Exhaust,
-                    });
-                },
+                    if !_state.hand.is_empty() {
+                        acts.push(Action::SuspendForHandSelect {
+                            min: 0,
+                            max: mag as u8,
+                            can_cancel: true,
+                            filter: crate::state::HandSelectFilter::Any,
+                            reason: crate::state::HandSelectReason::Exhaust,
+                        });
+                    }
+                }
                 CardId::SwiftStrike => {
                     // Deal 7 damage
                     let target_id = t.expect("Swift Strike requires a target!");
                     acts.push(Action::Damage(crate::action::DamageInfo {
-                        source: 0, target: target_id, base: dmg, output: dmg,
-                        damage_type: crate::action::DamageType::Normal, is_modified: false,
+                        source: 0,
+                        target: target_id,
+                        base: dmg,
+                        output: dmg,
+                        damage_type: crate::action::DamageType::Normal,
+                        is_modified: false,
                     }));
-                },
+                }
                 CardId::Trip => {
                     // Apply 2 Vulnerable to target
                     let target_id = t.expect("Trip requires a target!");
-                    acts.push(Action::ApplyPower { source: 0, target: target_id, power_id: PowerId::Vulnerable, amount: mag });
-                },
+                    acts.push(Action::ApplyPower {
+                        source: 0,
+                        target: target_id,
+                        power_id: PowerId::Vulnerable,
+                        amount: mag,
+                    });
+                }
                 // ── Colorless Rare ──
                 CardId::Apotheosis => {
                     acts.push(Action::UpgradeAllInHand);
-                },
+                }
                 CardId::Chrysalis => {
                     for _ in 0..mag {
-                        acts.push(Action::MakeRandomCardInHand { card_type: Some(CardType::Skill), cost_for_turn: Some(0) });
+                        acts.push(Action::MakeRandomCardInHand {
+                            card_type: Some(CardType::Skill),
+                            cost_for_turn: Some(0),
+                        });
                     }
-                },
+                }
                 CardId::HandOfGreed => {
                     let target_id = t.expect("Hand of Greed requires a target!");
                     acts.push(Action::Damage(crate::action::DamageInfo {
-                        source: 0, target: target_id, base: dmg, output: dmg,
-                        damage_type: crate::action::DamageType::Normal, is_modified: false,
+                        source: 0,
+                        target: target_id,
+                        base: dmg,
+                        output: dmg,
+                        damage_type: crate::action::DamageType::Normal,
+                        is_modified: false,
                     }));
-                },
+                }
                 CardId::Magnetism => {
                     // Power: At start of each turn, add a random colorless card to hand
                     acts.push(Action::ApplyPower {
-                        source: 0, target: 0, power_id: PowerId::MagnetismPower, amount: 1,
+                        source: 0,
+                        target: 0,
+                        power_id: PowerId::MagnetismPower,
+                        amount: 1,
                     });
-                },
+                }
                 CardId::Mayhem => {
                     // Power: At start of each turn, play the top card of draw pile
                     acts.push(Action::ApplyPower {
-                        source: 0, target: 0, power_id: PowerId::MayhemPower, amount: 1,
+                        source: 0,
+                        target: 0,
+                        power_id: PowerId::MayhemPower,
+                        amount: 1,
                     });
-                },
+                }
                 CardId::Panache => {
                     // Power: Every 5th card played, deal magic (10/14) damage to ALL enemies
                     // amount=5 (counter), extra_data=damage
                     acts.push(Action::ApplyPower {
-                        source: 0, target: 0, power_id: PowerId::PanachePower, amount: 5,
+                        source: 0,
+                        target: 0,
+                        power_id: PowerId::PanachePower,
+                        amount: 5,
                     });
                     // Store damage value in extra_data
                     acts.push(Action::UpdatePowerExtraData {
-                        target: 0, power_id: PowerId::PanachePower, value: mag,
+                        target: 0,
+                        power_id: PowerId::PanachePower,
+                        value: mag,
                     });
-                },
+                }
                 CardId::SadisticNature => {
                     // Power: When applying a debuff, deal magic (5/7) damage to that enemy
                     acts.push(Action::ApplyPower {
-                        source: 0, target: 0, power_id: PowerId::SadisticPower, amount: mag,
+                        source: 0,
+                        target: 0,
+                        power_id: PowerId::SadisticPower,
+                        amount: mag,
                     });
-                },
+                }
                 CardId::TheBomb => {
                     // Power: At the end of 3 turns, deal magic (40/50) damage to ALL enemies
                     // amount=3 (countdown), extra_data=damage
                     acts.push(Action::ApplyPower {
-                        source: 0, target: 0, power_id: PowerId::TheBombPower, amount: 3,
+                        source: 0,
+                        target: 0,
+                        power_id: PowerId::TheBombPower,
+                        amount: 3,
                     });
                     acts.push(Action::UpdatePowerExtraData {
-                        target: 0, power_id: PowerId::TheBombPower, value: mag,
+                        target: 0,
+                        power_id: PowerId::TheBombPower,
+                        value: mag,
                     });
-                },
+                }
                 CardId::MasterOfStrategy => {
                     acts.push(Action::DrawCards(mag as u32));
-                },
+                }
                 CardId::Metamorphosis => {
                     for _ in 0..mag {
-                        acts.push(Action::MakeRandomCardInHand { card_type: Some(CardType::Attack), cost_for_turn: Some(0) });
+                        acts.push(Action::MakeRandomCardInHand {
+                            card_type: Some(CardType::Attack),
+                            cost_for_turn: Some(0),
+                        });
                     }
-                },
+                }
                 CardId::SecretTechnique => {
                     // Search draw pile for a Skill card and put it in hand
-                    acts.push(Action::SuspendForGridSelect {
-                        source_pile: crate::state::PileType::Draw,
-                        min: 1, max: 1, can_cancel: false,
-                        reason: crate::state::GridSelectReason::SkillFromDeckToHand,
-                    });
-                },
+                    let skills: Vec<_> = _state
+                        .draw_pile
+                        .iter()
+                        .filter(|c| get_card_definition(c.id).card_type == CardType::Skill)
+                        .map(|c| c.uuid)
+                        .collect();
+                    if skills.len() == 1 {
+                        acts.push(Action::MoveCard {
+                            card_uuid: skills[0],
+                            from: crate::state::PileType::Draw,
+                            to: crate::state::PileType::Hand,
+                        });
+                    } else if !skills.is_empty() {
+                        acts.push(Action::SuspendForGridSelect {
+                            source_pile: crate::state::PileType::Draw,
+                            min: 1,
+                            max: 1,
+                            can_cancel: false,
+                            filter: crate::state::GridSelectFilter::Skill,
+                            reason: crate::state::GridSelectReason::SkillFromDeckToHand,
+                        });
+                    }
+                }
                 CardId::SecretWeapon => {
                     // Search draw pile for an Attack card and put it in hand
-                    acts.push(Action::SuspendForGridSelect {
-                        source_pile: crate::state::PileType::Draw,
-                        min: 1, max: 1, can_cancel: false,
-                        reason: crate::state::GridSelectReason::AttackFromDeckToHand,
-                    });
-                },
+                    let attacks: Vec<_> = _state
+                        .draw_pile
+                        .iter()
+                        .filter(|c| get_card_definition(c.id).card_type == CardType::Attack)
+                        .map(|c| c.uuid)
+                        .collect();
+                    if attacks.len() == 1 {
+                        acts.push(Action::MoveCard {
+                            card_uuid: attacks[0],
+                            from: crate::state::PileType::Draw,
+                            to: crate::state::PileType::Hand,
+                        });
+                    } else if !attacks.is_empty() {
+                        acts.push(Action::SuspendForGridSelect {
+                            source_pile: crate::state::PileType::Draw,
+                            min: 1,
+                            max: 1,
+                            can_cancel: false,
+                            filter: crate::state::GridSelectFilter::Attack,
+                            reason: crate::state::GridSelectReason::AttackFromDeckToHand,
+                        });
+                    }
+                }
                 CardId::ThinkingAhead => {
                     acts.push(Action::DrawCards(2));
-                },
+                }
                 CardId::Transmutation => {
                     acts.push(Action::MakeRandomColorlessCardInHand {
                         rarity: CardRarity::Uncommon,
                         cost_for_turn: Some(0),
                     });
-                },
+                }
                 CardId::Violence => {
                     for _ in 0..mag {
                         acts.push(Action::DrawCards(1));
                     }
-                },
-                _ => {},
+                }
+                _ => {}
             }
-            acts.into_iter().map(|a| ActionInfo { action: a, insertion_mode: crate::action::AddTo::Bottom }).collect()
-        },
+            acts.into_iter()
+                .map(|a| ActionInfo {
+                    action: a,
+                    insertion_mode: crate::action::AddTo::Bottom,
+                })
+                .collect()
+        }
         // Unplayable stubs — curses, status, and special cards
-        CardId::Wound | CardId::Burn | CardId::Dazed | CardId::Slimed | CardId::Parasite | CardId::Void | CardId::Regret | CardId::AscendersBane | CardId::Clumsy | CardId::CurseOfTheBell | CardId::Decay | CardId::Doubt | CardId::Injury | CardId::Necronomicurse | CardId::Normality | CardId::Pain | CardId::Shame | CardId::Writhe | CardId::Apparition | CardId::Madness | CardId::RitualDagger | CardId::JAX
-        => smallvec::smallvec![], // Unplayable / Stub
+        CardId::Wound
+        | CardId::Burn
+        | CardId::Dazed
+        | CardId::Slimed
+        | CardId::Parasite
+        | CardId::Void
+        | CardId::Regret
+        | CardId::AscendersBane
+        | CardId::Clumsy
+        | CardId::CurseOfTheBell
+        | CardId::Decay
+        | CardId::Doubt
+        | CardId::Injury
+        | CardId::Necronomicurse
+        | CardId::Normality
+        | CardId::Pain
+        | CardId::Shame
+        | CardId::Writhe
+        | CardId::Apparition
+        | CardId::Madness
+        | CardId::RitualDagger
+        | CardId::JAX => smallvec::smallvec![], // Unplayable / Stub
     }
 }
-
-
 
 /// Evaluates a card's damage, block, and magic number based on player powers, target powers, and specific card rules.
 /// Maps directly to Java Spire's `applyPowers()` (when target is None) and `calculateCardDamage()` (when target is Some).
@@ -1578,20 +3192,38 @@ pub fn evaluate_card(card: &mut CombatCard, state: &CombatState, target: Option<
     let u = if card.upgrades > 0 { 1 } else { 0 };
     let mut damage = (def.base_damage + u * def.upgrade_damage) as f32;
     let mut block = (def.base_block + u * def.upgrade_block) as f32;
-    
+
     // 1. Card specific base overrides (Perfected Strike)
     if card.id == CardId::PerfectedStrike {
         let mut strike_count = 0;
         let is_strike = |id| get_card_definition(id).tags.contains(&CardTag::Strike);
-        
-        for c in &state.hand { if is_strike(c.id) && c.uuid != card.uuid { strike_count += 1; } }
-        for c in &state.draw_pile { if is_strike(c.id) && c.uuid != card.uuid { strike_count += 1; } }
-        for c in &state.discard_pile { if is_strike(c.id) && c.uuid != card.uuid { strike_count += 1; } }
-        for c in &state.limbo { if is_strike(c.id) && c.uuid != card.uuid { strike_count += 1; } }
-        
+
+        for c in &state.hand {
+            if is_strike(c.id) && c.uuid != card.uuid {
+                strike_count += 1;
+            }
+        }
+        for c in &state.draw_pile {
+            if is_strike(c.id) && c.uuid != card.uuid {
+                strike_count += 1;
+            }
+        }
+        for c in &state.discard_pile {
+            if is_strike(c.id) && c.uuid != card.uuid {
+                strike_count += 1;
+            }
+        }
+        for c in &state.limbo {
+            if is_strike(c.id) && c.uuid != card.uuid {
+                strike_count += 1;
+            }
+        }
+
         // Count the card itself definitively once
-        if is_strike(card.id) { strike_count += 1; }
-        
+        if is_strike(card.id) {
+            strike_count += 1;
+        }
+
         damage += (card.base_magic_num_mut as f32) * (strike_count as f32);
     } else if card.id == CardId::BloodForBlood {
         // Dynamic Cost Reduction based on hits taken (unblocked or blocked depending on earlier engine implementation; Java increments when hp lost)
@@ -1609,10 +3241,18 @@ pub fn evaluate_card(card: &mut CombatCard, state: &CombatState, target: Option<
     if let Some(powers) = state.power_db.get(&0) {
         for power in powers {
             damage = crate::content::powers::resolve_power_on_calculate_damage_to_enemy(
-                power.power_type, state, card, damage, power.amount
+                power.power_type,
+                state,
+                card,
+                damage,
+                power.amount,
             );
             block = crate::content::powers::resolve_power_on_calculate_block(
-                power.power_type, state, card, block, power.amount
+                power.power_type,
+                state,
+                card,
+                block,
+                power.amount,
             );
         }
     }
@@ -1634,11 +3274,18 @@ pub fn evaluate_card(card: &mut CombatCard, state: &CombatState, target: Option<
             if let Some(target_powers) = state.power_db.get(&m.id) {
                 for power in target_powers {
                     mdmg = crate::content::powers::resolve_power_on_calculate_damage_from_player(
-                        power.power_type, state, card, m.id, mdmg, power.amount
+                        power.power_type,
+                        state,
+                        card,
+                        m.id,
+                        mdmg,
+                        power.amount,
                     );
                 }
             }
-            if mdmg < 0.0 { mdmg = 0.0; }
+            if mdmg < 0.0 {
+                mdmg = 0.0;
+            }
             card.multi_damage.push(mdmg as i32);
         }
         if let Some(first) = card.multi_damage.first() {
@@ -1648,15 +3295,24 @@ pub fn evaluate_card(card: &mut CombatCard, state: &CombatState, target: Option<
         if let Some(target_powers) = state.power_db.get(&target_id) {
             for power in target_powers {
                 damage = crate::content::powers::resolve_power_on_calculate_damage_from_player(
-                    power.power_type, state, card, target_id, damage, power.amount
+                    power.power_type,
+                    state,
+                    card,
+                    target_id,
+                    damage,
+                    power.amount,
                 );
             }
         }
     }
 
-    if damage < 0.0 { damage = 0.0; }
-    if block < 0.0 { block = 0.0; }
-    
+    if damage < 0.0 {
+        damage = 0.0;
+    }
+    if block < 0.0 {
+        block = 0.0;
+    }
+
     card.base_damage_mut = damage as i32;
     card.base_block_mut = block as i32;
     card.base_magic_num_mut = def.base_magic + u * def.upgrade_magic;
@@ -1673,12 +3329,20 @@ pub fn can_play_card(card: &CombatCard, state: &CombatState) -> Result<(), &'sta
 
     let def = crate::content::cards::get_card_definition(card.id);
     let cost = card.get_cost();
-    
+
     // In Slay the Spire, internally cost -2 means the card is Unplayable.
     if cost < -1 {
-        if def.card_type == crate::content::cards::CardType::Curse && state.player.has_relic(crate::content::relics::RelicId::BlueCandle) {
+        if def.card_type == crate::content::cards::CardType::Curse
+            && state
+                .player
+                .has_relic(crate::content::relics::RelicId::BlueCandle)
+        {
             // Blue Candle override
-        } else if def.card_type == crate::content::cards::CardType::Status && state.player.has_relic(crate::content::relics::RelicId::MedicalKit) {
+        } else if def.card_type == crate::content::cards::CardType::Status
+            && state
+                .player
+                .has_relic(crate::content::relics::RelicId::MedicalKit)
+        {
             // Medical Kit override
         } else {
             return Err("Card is unplayable.");
@@ -1698,7 +3362,9 @@ pub fn can_play_card(card: &CombatCard, state: &CombatState) -> Result<(), &'sta
     // Java: hasEnoughEnergy() — Entangled hardcode (L857-860)
     // This is separate from the canPlayCard hook; Java checks it explicitly.
     if let Some(player_powers) = state.power_db.get(&0) {
-        if player_powers.iter().any(|p| p.power_type == crate::content::powers::PowerId::Entangle)
+        if player_powers
+            .iter()
+            .any(|p| p.power_type == crate::content::powers::PowerId::Entangle)
             && def.card_type == crate::content::cards::CardType::Attack
         {
             return Err("Entangled: Cannot play Attacks this turn.");
@@ -1728,18 +3394,17 @@ pub fn can_play_card(card: &CombatCard, state: &CombatState) -> Result<(), &'sta
     Ok(())
 }
 
-
 /// A global hook called immediately after a card is played to aggregate passive triggers from the state (e.g. Curses).
 pub fn on_play_card(played_card: &CombatCard, state: &CombatState) -> SmallVec<[ActionInfo; 4]> {
     let mut passive_actions = smallvec::SmallVec::new();
-    
+
     // Curse: Pain (Lose 1 HP for every card played)
     for card in &state.hand {
         if card.id == CardId::Pain && card.uuid != played_card.uuid {
             passive_actions.push(crate::content::cards::curses::pain::on_other_card_played());
         }
     }
-    
+
     // Other hooks (Time Eater, Velvet Choker, etc.) can be placed here later.
 
     passive_actions
@@ -1747,51 +3412,131 @@ pub fn on_play_card(played_card: &CombatCard, state: &CombatState) -> SmallVec<[
 
 /// Colorless pool — Uncommon tier (mirrors Java addColorlessCards: color=COLORLESS, rarity!=BASIC/SPECIAL)
 pub const COLORLESS_UNCOMMON_POOL: &[CardId] = &[
-    CardId::BandageUp, CardId::Blind, CardId::DarkShackles, CardId::DeepBreath,
-    CardId::Discovery, CardId::DramaticEntrance, CardId::Enlightenment, CardId::Finesse,
-    CardId::FlashOfSteel, CardId::Forethought, CardId::GoodInstincts, CardId::Impatience,
-    CardId::JackOfAllTrades, CardId::Madness, CardId::MindBlast, CardId::Panacea,
-    CardId::PanicButton, CardId::Purity, CardId::SwiftStrike, CardId::Trip,
+    CardId::BandageUp,
+    CardId::Blind,
+    CardId::DarkShackles,
+    CardId::DeepBreath,
+    CardId::Discovery,
+    CardId::DramaticEntrance,
+    CardId::Enlightenment,
+    CardId::Finesse,
+    CardId::FlashOfSteel,
+    CardId::Forethought,
+    CardId::GoodInstincts,
+    CardId::Impatience,
+    CardId::JackOfAllTrades,
+    CardId::Madness,
+    CardId::MindBlast,
+    CardId::Panacea,
+    CardId::PanicButton,
+    CardId::Purity,
+    CardId::SwiftStrike,
+    CardId::Trip,
 ];
 
 /// Colorless pool — Rare tier
 pub const COLORLESS_RARE_POOL: &[CardId] = &[
-    CardId::Apotheosis, CardId::Chrysalis, CardId::HandOfGreed, CardId::Magnetism,
-    CardId::MasterOfStrategy, CardId::Mayhem, CardId::Metamorphosis, CardId::Panache,
-    CardId::SadisticNature, CardId::SecretTechnique, CardId::SecretWeapon,
-    CardId::TheBomb, CardId::ThinkingAhead, CardId::Transmutation, CardId::Violence,
+    CardId::Apotheosis,
+    CardId::Chrysalis,
+    CardId::HandOfGreed,
+    CardId::Magnetism,
+    CardId::MasterOfStrategy,
+    CardId::Mayhem,
+    CardId::Metamorphosis,
+    CardId::Panache,
+    CardId::SadisticNature,
+    CardId::SecretTechnique,
+    CardId::SecretWeapon,
+    CardId::TheBomb,
+    CardId::ThinkingAhead,
+    CardId::Transmutation,
+    CardId::Violence,
 ];
 
 // ── Ironclad card pools (mirrors Java CardLibrary.addRedCards, excludes BASIC) ──
 
 /// Ironclad Common pool (17 cards)
 pub const IRONCLAD_COMMON_POOL: &[CardId] = &[
-    CardId::Anger, CardId::Armaments, CardId::BodySlam, CardId::Clash, CardId::Cleave,
-    CardId::Clothesline, CardId::Flex, CardId::Havoc, CardId::Headbutt, CardId::HeavyBlade,
-    CardId::IronWave, CardId::PerfectedStrike, CardId::PommelStrike, CardId::ShrugItOff,
-    CardId::SwordBoomerang, CardId::ThunderClap, CardId::TrueGrit, CardId::TwinStrike,
-    CardId::Warcry, CardId::WildStrike,
+    CardId::Anger,
+    CardId::Armaments,
+    CardId::BodySlam,
+    CardId::Clash,
+    CardId::Cleave,
+    CardId::Clothesline,
+    CardId::Flex,
+    CardId::Havoc,
+    CardId::Headbutt,
+    CardId::HeavyBlade,
+    CardId::IronWave,
+    CardId::PerfectedStrike,
+    CardId::PommelStrike,
+    CardId::ShrugItOff,
+    CardId::SwordBoomerang,
+    CardId::ThunderClap,
+    CardId::TrueGrit,
+    CardId::TwinStrike,
+    CardId::Warcry,
+    CardId::WildStrike,
 ];
 
 /// Ironclad Uncommon pool (33 cards)
 pub const IRONCLAD_UNCOMMON_POOL: &[CardId] = &[
-    CardId::BattleTrance, CardId::BloodForBlood, CardId::Bloodletting, CardId::BurningPact,
-    CardId::Carnage, CardId::Combust, CardId::DarkEmbrace, CardId::Disarm, CardId::Dropkick,
-    CardId::DualWield, CardId::Entrench, CardId::Evolve, CardId::FeelNoPain,
-    CardId::FireBreathing, CardId::FlameBarrier, CardId::GhostlyArmor, CardId::Hemokinesis,
-    CardId::InfernalBlade, CardId::Inflame, CardId::Intimidate, CardId::Metallicize,
-    CardId::PowerThrough, CardId::Pummel, CardId::Rage, CardId::Rampage,
-    CardId::RecklessCharge, CardId::Rupture, CardId::SearingBlow, CardId::SecondWind,
-    CardId::SeeingRed, CardId::Sentinel, CardId::SeverSoul, CardId::Shockwave,
-    CardId::SpotWeakness, CardId::Uppercut, CardId::Whirlwind,
+    CardId::BattleTrance,
+    CardId::BloodForBlood,
+    CardId::Bloodletting,
+    CardId::BurningPact,
+    CardId::Carnage,
+    CardId::Combust,
+    CardId::DarkEmbrace,
+    CardId::Disarm,
+    CardId::Dropkick,
+    CardId::DualWield,
+    CardId::Entrench,
+    CardId::Evolve,
+    CardId::FeelNoPain,
+    CardId::FireBreathing,
+    CardId::FlameBarrier,
+    CardId::GhostlyArmor,
+    CardId::Hemokinesis,
+    CardId::InfernalBlade,
+    CardId::Inflame,
+    CardId::Intimidate,
+    CardId::Metallicize,
+    CardId::PowerThrough,
+    CardId::Pummel,
+    CardId::Rage,
+    CardId::Rampage,
+    CardId::RecklessCharge,
+    CardId::Rupture,
+    CardId::SearingBlow,
+    CardId::SecondWind,
+    CardId::SeeingRed,
+    CardId::Sentinel,
+    CardId::SeverSoul,
+    CardId::Shockwave,
+    CardId::SpotWeakness,
+    CardId::Uppercut,
+    CardId::Whirlwind,
 ];
 
 /// Ironclad Rare pool (16 cards)
 pub const IRONCLAD_RARE_POOL: &[CardId] = &[
-    CardId::Barricade, CardId::Berserk, CardId::Bludgeon, CardId::Brutality,
-    CardId::Corruption, CardId::DemonForm, CardId::DoubleTap, CardId::Exhume,
-    CardId::Feed, CardId::FiendFire, CardId::Immolate, CardId::Impervious,
-    CardId::Juggernaut, CardId::LimitBreak, CardId::Offering, CardId::Reaper,
+    CardId::Barricade,
+    CardId::Berserk,
+    CardId::Bludgeon,
+    CardId::Brutality,
+    CardId::Corruption,
+    CardId::DemonForm,
+    CardId::DoubleTap,
+    CardId::Exhume,
+    CardId::Feed,
+    CardId::FiendFire,
+    CardId::Immolate,
+    CardId::Impervious,
+    CardId::Juggernaut,
+    CardId::LimitBreak,
+    CardId::Offering,
+    CardId::Reaper,
 ];
 
 /// Returns the pool for a given rarity (Ironclad).
@@ -1826,7 +3571,11 @@ pub fn ironclad_pool_for_rarity(rarity: CardRarity) -> &'static [CardId] {
 /// Returns all Ironclad cards of the given CardType from the pool matching the given rarity.
 pub fn ironclad_pool_for_type(card_type: CardType) -> Vec<CardId> {
     let mut result = Vec::new();
-    for &pool in &[IRONCLAD_COMMON_POOL, IRONCLAD_UNCOMMON_POOL, IRONCLAD_RARE_POOL] {
+    for &pool in &[
+        IRONCLAD_COMMON_POOL,
+        IRONCLAD_UNCOMMON_POOL,
+        IRONCLAD_RARE_POOL,
+    ] {
         for &id in pool {
             if get_card_definition(id).card_type == card_type {
                 result.push(id);
@@ -1837,13 +3586,19 @@ pub fn ironclad_pool_for_type(card_type: CardType) -> Vec<CardId> {
 }
 
 /// Returns the pool for a given rarity (Silent). Stub until Silent cards are implemented.
-pub fn silent_pool_for_rarity(_rarity: CardRarity) -> &'static [CardId] { &[] }
+pub fn silent_pool_for_rarity(_rarity: CardRarity) -> &'static [CardId] {
+    &[]
+}
 
 /// Returns the pool for a given rarity (Defect). Stub until Defect cards are implemented.
-pub fn defect_pool_for_rarity(_rarity: CardRarity) -> &'static [CardId] { &[] }
+pub fn defect_pool_for_rarity(_rarity: CardRarity) -> &'static [CardId] {
+    &[]
+}
 
 /// Returns the pool for a given rarity (Watcher). Stub until Watcher cards are implemented.
-pub fn watcher_pool_for_rarity(_rarity: CardRarity) -> &'static [CardId] { &[] }
+pub fn watcher_pool_for_rarity(_rarity: CardRarity) -> &'static [CardId] {
+    &[]
+}
 
 /// Returns the colorless pool for a given rarity.
 pub fn colorless_pool_for_rarity(rarity: CardRarity) -> &'static [CardId] {
@@ -2024,32 +3779,141 @@ pub fn java_id(id: CardId) -> &'static str {
 pub fn build_java_id_map() -> std::collections::HashMap<&'static str, CardId> {
     use CardId::*;
     let all_ids = [
-        Strike, Defend, Bash,
-        Anger, Armaments, BodySlam, Clash, Cleave, Clothesline, Flex,
-        Havoc, Headbutt, HeavyBlade, IronWave, PerfectedStrike,
-        PommelStrike, ShrugItOff, SwordBoomerang, ThunderClap, TrueGrit,
-        TwinStrike, Warcry, WildStrike,
-        BattleTrance, BloodForBlood, Bloodletting, BurningPact, Carnage,
-        Combust, Corruption, DarkEmbrace, Disarm, DoubleTap, Dropkick,
-        DualWield, Entrench, Evolve, FeelNoPain, FireBreathing,
-        FlameBarrier, GhostlyArmor, Hemokinesis, InfernalBlade, Inflame,
-        Intimidate, Metallicize, PowerThrough, Pummel, Rage, Rampage,
-        RecklessCharge, Rupture, SearingBlow, SecondWind, SeeingRed,
-        Sentinel, SeverSoul, Shockwave, SpotWeakness, Uppercut, Whirlwind,
-        Barricade, Berserk, Bludgeon, Brutality, DemonForm, Exhume,
-        Feed, FiendFire, Immolate, Impervious, Juggernaut, LimitBreak,
-        Offering, Reaper,
-        Burn, Dazed, Slimed, Wound, Void,
-        AscendersBane, Clumsy, CurseOfTheBell, Decay, Doubt, Injury,
-        Necronomicurse, Normality, Pain, Parasite, Pride, Regret, Shame, Writhe,
-        Miracle, Shiv, Bite, Apparition, Madness, RitualDagger, JAX, Finesse,
-        BandageUp, Blind, DarkShackles, DeepBreath, Discovery,
-        DramaticEntrance, Enlightenment, FlashOfSteel, Forethought,
-        GoodInstincts, Impatience, JackOfAllTrades, MindBlast, Panacea,
-        PanicButton, Purity, SwiftStrike, Trip,
-        Apotheosis, Chrysalis, HandOfGreed, Magnetism, MasterOfStrategy,
-        Mayhem, Metamorphosis, Panache, SadisticNature, SecretTechnique,
-        SecretWeapon, TheBomb, ThinkingAhead, Transmutation, Violence,
+        Strike,
+        Defend,
+        Bash,
+        Anger,
+        Armaments,
+        BodySlam,
+        Clash,
+        Cleave,
+        Clothesline,
+        Flex,
+        Havoc,
+        Headbutt,
+        HeavyBlade,
+        IronWave,
+        PerfectedStrike,
+        PommelStrike,
+        ShrugItOff,
+        SwordBoomerang,
+        ThunderClap,
+        TrueGrit,
+        TwinStrike,
+        Warcry,
+        WildStrike,
+        BattleTrance,
+        BloodForBlood,
+        Bloodletting,
+        BurningPact,
+        Carnage,
+        Combust,
+        Corruption,
+        DarkEmbrace,
+        Disarm,
+        DoubleTap,
+        Dropkick,
+        DualWield,
+        Entrench,
+        Evolve,
+        FeelNoPain,
+        FireBreathing,
+        FlameBarrier,
+        GhostlyArmor,
+        Hemokinesis,
+        InfernalBlade,
+        Inflame,
+        Intimidate,
+        Metallicize,
+        PowerThrough,
+        Pummel,
+        Rage,
+        Rampage,
+        RecklessCharge,
+        Rupture,
+        SearingBlow,
+        SecondWind,
+        SeeingRed,
+        Sentinel,
+        SeverSoul,
+        Shockwave,
+        SpotWeakness,
+        Uppercut,
+        Whirlwind,
+        Barricade,
+        Berserk,
+        Bludgeon,
+        Brutality,
+        DemonForm,
+        Exhume,
+        Feed,
+        FiendFire,
+        Immolate,
+        Impervious,
+        Juggernaut,
+        LimitBreak,
+        Offering,
+        Reaper,
+        Burn,
+        Dazed,
+        Slimed,
+        Wound,
+        Void,
+        AscendersBane,
+        Clumsy,
+        CurseOfTheBell,
+        Decay,
+        Doubt,
+        Injury,
+        Necronomicurse,
+        Normality,
+        Pain,
+        Parasite,
+        Pride,
+        Regret,
+        Shame,
+        Writhe,
+        Miracle,
+        Shiv,
+        Bite,
+        Apparition,
+        Madness,
+        RitualDagger,
+        JAX,
+        Finesse,
+        BandageUp,
+        Blind,
+        DarkShackles,
+        DeepBreath,
+        Discovery,
+        DramaticEntrance,
+        Enlightenment,
+        FlashOfSteel,
+        Forethought,
+        GoodInstincts,
+        Impatience,
+        JackOfAllTrades,
+        MindBlast,
+        Panacea,
+        PanicButton,
+        Purity,
+        SwiftStrike,
+        Trip,
+        Apotheosis,
+        Chrysalis,
+        HandOfGreed,
+        Magnetism,
+        MasterOfStrategy,
+        Mayhem,
+        Metamorphosis,
+        Panache,
+        SadisticNature,
+        SecretTechnique,
+        SecretWeapon,
+        TheBomb,
+        ThinkingAhead,
+        Transmutation,
+        Violence,
     ];
     let mut map = std::collections::HashMap::with_capacity(all_ids.len());
     for id in all_ids {

@@ -1,24 +1,32 @@
-use crate::combat::{CombatState, MonsterEntity, Intent, PowerId};
 use crate::action::{Action, DamageInfo, DamageType};
+use crate::combat::{CombatState, Intent, MonsterEntity, PowerId};
 use crate::content::monsters::MonsterBehavior;
 
 pub struct SlimeBoss;
 
 impl MonsterBehavior for SlimeBoss {
-    fn use_pre_battle_action(entity: &MonsterEntity, _hp_rng: &mut crate::rng::StsRng, _ascension_level: u8) -> Vec<Action> {
+    fn use_pre_battle_action(
+        entity: &MonsterEntity,
+        _hp_rng: &mut crate::rng::StsRng,
+        _ascension_level: u8,
+    ) -> Vec<Action> {
         // Starts with Split power
         vec![
             Action::ApplyPower {
                 target: entity.id,
                 source: entity.id,
                 power_id: PowerId::Split,
-                amount: 1, // Doesn't matter
-            }
-            // we omit the music/unlock actions for the simulator
+                amount: -1, // Java sentinel amount
+            }, // we omit the music/unlock actions for the simulator
         ]
     }
 
-    fn roll_move(_rng: &mut crate::rng::StsRng, entity: &MonsterEntity, ascension_level: u8, _num: i32) -> (u8, Intent) {
+    fn roll_move(
+        _rng: &mut crate::rng::StsRng,
+        entity: &MonsterEntity,
+        ascension_level: u8,
+        _num: i32,
+    ) -> (u8, Intent) {
         let slam_dmg = if ascension_level >= 4 { 38 } else { 35 };
 
         if entity.move_history.is_empty() {
@@ -28,7 +36,13 @@ impl MonsterBehavior for SlimeBoss {
         let last_move = *entity.move_history.back().unwrap();
         match last_move {
             4 | 3 => (2, Intent::Unknown), // After STICKY or SPLIT
-            2 => (1, Intent::Attack { damage: slam_dmg, hits: 1 }), // After PREP
+            2 => (
+                1,
+                Intent::Attack {
+                    damage: slam_dmg,
+                    hits: 1,
+                },
+            ), // After PREP
             1 => (4, Intent::StrongDebuff), // After SLAM
             _ => (4, Intent::StrongDebuff),
         }
@@ -39,17 +53,19 @@ impl MonsterBehavior for SlimeBoss {
         let mut actions = Vec::new();
 
         match entity.next_move_byte {
-            4 => { // STICKY
-                actions.push(Action::MakeTempCardInDiscard { 
-                    card_id: crate::content::cards::CardId::Slimed, 
+            4 => {
+                // STICKY
+                actions.push(Action::MakeTempCardInDiscard {
+                    card_id: crate::content::cards::CardId::Slimed,
                     amount: if state.ascension_level >= 19 { 5 } else { 3 },
                     upgraded: false,
                 });
             }
             2 => { // PREP_SLAM
-                // Just shouts, no logical effect in simulator other than intent.
+                 // Just shouts, no logical effect in simulator other than intent.
             }
-            1 => { // SLAM
+            1 => {
+                // SLAM
                 actions.push(Action::Damage(DamageInfo {
                     source: entity.id,
                     target: 0,
@@ -59,7 +75,8 @@ impl MonsterBehavior for SlimeBoss {
                     is_modified: false,
                 }));
             }
-            3 => { // SPLIT
+            3 => {
+                // SPLIT
                 // Java order: SuicideAction (Boss dies), THEN SpawnMonster actions.
                 // Java uses SpawnMonsterAction(m, false) → useSmartPositioning=true → drawX sort.
                 // SpikeSlime_L(x=-385) → leftmost → position 0 (before dead Boss at position 1).
@@ -92,10 +109,12 @@ impl MonsterBehavior for SlimeBoss {
                 // Don't roll next move — Boss is dead
                 return actions;
             }
-            _ => { }
+            _ => {}
         }
 
-        actions.push(Action::RollMonsterMove { monster_id: entity.id });
+        actions.push(Action::RollMonsterMove {
+            monster_id: entity.id,
+        });
         actions
     }
 }

@@ -1,62 +1,107 @@
-use crate::combat::{CombatState, MonsterEntity, Intent, PowerId};
 use crate::action::{Action, DamageInfo, DamageType};
+use crate::combat::{CombatState, Intent, MonsterEntity, PowerId};
 use crate::content::monsters::MonsterBehavior;
 
 pub struct AcidSlimeL;
 
 impl MonsterBehavior for AcidSlimeL {
-    fn use_pre_battle_action(entity: &MonsterEntity, _hp_rng: &mut crate::rng::StsRng, _ascension_level: u8) -> Vec<Action> {
-        vec![
-            Action::ApplyPower {
-                target: entity.id,
-                source: entity.id,
-                power_id: PowerId::Split,
-                amount: 1,
-            }
-        ]
+    fn use_pre_battle_action(
+        entity: &MonsterEntity,
+        _hp_rng: &mut crate::rng::StsRng,
+        _ascension_level: u8,
+    ) -> Vec<Action> {
+        vec![Action::ApplyPower {
+            target: entity.id,
+            source: entity.id,
+            power_id: PowerId::Split,
+            amount: 1,
+        }]
     }
 
-    fn roll_move(rng: &mut crate::rng::StsRng, entity: &MonsterEntity, ascension_level: u8, num: i32) -> (u8, Intent) {
+    fn roll_move(
+        rng: &mut crate::rng::StsRng,
+        entity: &MonsterEntity,
+        ascension_level: u8,
+        num: i32,
+    ) -> (u8, Intent) {
         let w_tackle_dmg = if ascension_level >= 2 { 12 } else { 11 };
         let n_tackle_dmg = if ascension_level >= 2 { 18 } else { 16 };
-        
+
         // 1: WOUND_TACKLE (Attack + Debuff), 2: NORMAL_TACKLE, 3: SPLIT, 4: WEAK_LICK
         let last_move = entity.move_history.back().copied();
         let last_move_before = if entity.move_history.len() >= 2 {
-            entity.move_history.get(entity.move_history.len() - 2).copied()
+            entity
+                .move_history
+                .get(entity.move_history.len() - 2)
+                .copied()
         } else {
             None
         };
-        let last_two_moves_were = |byte: u8| -> bool {
-            last_move == Some(byte) && last_move_before == Some(byte)
-        };
+        let last_two_moves_were =
+            |byte: u8| -> bool { last_move == Some(byte) && last_move_before == Some(byte) };
 
         if ascension_level >= 17 {
             if num < 40 {
                 if last_two_moves_were(1) {
                     if rng.random_boolean_chance(0.6) {
-                        (2, Intent::Attack { damage: n_tackle_dmg, hits: 1 })
+                        (
+                            2,
+                            Intent::Attack {
+                                damage: n_tackle_dmg,
+                                hits: 1,
+                            },
+                        )
                     } else {
                         (4, Intent::Debuff)
                     }
                 } else {
-                    (1, Intent::AttackDebuff { damage: w_tackle_dmg, hits: 1 })
+                    (
+                        1,
+                        Intent::AttackDebuff {
+                            damage: w_tackle_dmg,
+                            hits: 1,
+                        },
+                    )
                 }
             } else if num < 70 {
                 if last_two_moves_were(2) {
                     if rng.random_boolean_chance(0.6) {
-                        (1, Intent::AttackDebuff { damage: w_tackle_dmg, hits: 1 })
+                        (
+                            1,
+                            Intent::AttackDebuff {
+                                damage: w_tackle_dmg,
+                                hits: 1,
+                            },
+                        )
                     } else {
                         (4, Intent::Debuff)
                     }
                 } else {
-                    (2, Intent::Attack { damage: n_tackle_dmg, hits: 1 })
+                    (
+                        2,
+                        Intent::Attack {
+                            damage: n_tackle_dmg,
+                            hits: 1,
+                        },
+                    )
                 }
             } else if last_move == Some(4) {
                 if rng.random_boolean_chance(0.4) {
-                    (1, Intent::AttackDebuff { damage: w_tackle_dmg, hits: 1 })
+                    (
+                        1,
+                        Intent::AttackDebuff {
+                            damage: w_tackle_dmg,
+                            hits: 1,
+                        },
+                    )
                 } else {
-                    (2, Intent::Attack { damage: n_tackle_dmg, hits: 1 })
+                    (
+                        2,
+                        Intent::Attack {
+                            damage: n_tackle_dmg,
+                            hits: 1,
+                        },
+                    )
                 }
             } else {
                 (4, Intent::Debuff)
@@ -64,28 +109,64 @@ impl MonsterBehavior for AcidSlimeL {
         } else if num < 30 {
             if last_two_moves_were(1) {
                 if rng.random_boolean() {
-                    (2, Intent::Attack { damage: n_tackle_dmg, hits: 1 })
+                    (
+                        2,
+                        Intent::Attack {
+                            damage: n_tackle_dmg,
+                            hits: 1,
+                        },
+                    )
                 } else {
                     (4, Intent::Debuff)
                 }
             } else {
-                (1, Intent::AttackDebuff { damage: w_tackle_dmg, hits: 1 })
+                (
+                    1,
+                    Intent::AttackDebuff {
+                        damage: w_tackle_dmg,
+                        hits: 1,
+                    },
+                )
             }
         } else if num < 70 {
             if last_move == Some(2) {
                 if rng.random_boolean_chance(0.4) {
-                    (1, Intent::AttackDebuff { damage: w_tackle_dmg, hits: 1 })
+                    (
+                        1,
+                        Intent::AttackDebuff {
+                            damage: w_tackle_dmg,
+                            hits: 1,
+                        },
+                    )
                 } else {
                     (4, Intent::Debuff)
                 }
             } else {
-                (2, Intent::Attack { damage: n_tackle_dmg, hits: 1 })
+                (
+                    2,
+                    Intent::Attack {
+                        damage: n_tackle_dmg,
+                        hits: 1,
+                    },
+                )
             }
         } else if last_two_moves_were(4) {
             if rng.random_boolean_chance(0.4) {
-                (1, Intent::AttackDebuff { damage: w_tackle_dmg, hits: 1 })
+                (
+                    1,
+                    Intent::AttackDebuff {
+                        damage: w_tackle_dmg,
+                        hits: 1,
+                    },
+                )
             } else {
-                (2, Intent::Attack { damage: n_tackle_dmg, hits: 1 })
+                (
+                    2,
+                    Intent::Attack {
+                        damage: n_tackle_dmg,
+                        hits: 1,
+                    },
+                )
             }
         } else {
             (4, Intent::Debuff)
@@ -101,7 +182,8 @@ impl MonsterBehavior for AcidSlimeL {
         let mut actions = Vec::new();
 
         match entity.next_move_byte {
-            1 => { // WOUND_TACKLE
+            1 => {
+                // WOUND_TACKLE
                 actions.push(Action::Damage(DamageInfo {
                     source: entity.id,
                     target: 0,
@@ -116,7 +198,8 @@ impl MonsterBehavior for AcidSlimeL {
                     upgraded: false,
                 });
             }
-            2 => { // NORMAL_TACKLE
+            2 => {
+                // NORMAL_TACKLE
                 actions.push(Action::Damage(DamageInfo {
                     source: entity.id,
                     target: 0,
@@ -126,10 +209,9 @@ impl MonsterBehavior for AcidSlimeL {
                     is_modified: false,
                 }));
             }
-            3 => { // SPLIT
-                actions.push(Action::Suicide {
-                    target: entity.id,
-                });
+            3 => {
+                // SPLIT
+                actions.push(Action::Suicide { target: entity.id });
                 // Java uses smart positioning: first M at drawX-134 (position 0, before dead L)
                 actions.push(Action::SpawnMonsterSmart {
                     monster_id: crate::content::monsters::EnemyId::AcidSlimeM,
@@ -145,18 +227,21 @@ impl MonsterBehavior for AcidSlimeL {
                     max_hp: entity.current_hp,
                 });
             }
-            4 => { // WEAK_LICK
+            4 => {
+                // WEAK_LICK
                 actions.push(Action::ApplyPower {
-                    target: 0, 
+                    target: 0,
                     source: entity.id,
                     power_id: PowerId::Weak,
                     amount: weak_amt,
                 });
             }
-            _ => { }
+            _ => {}
         }
 
-        actions.push(Action::RollMonsterMove { monster_id: entity.id });
+        actions.push(Action::RollMonsterMove {
+            monster_id: entity.id,
+        });
         actions
     }
 }

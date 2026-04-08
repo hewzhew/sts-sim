@@ -1,5 +1,5 @@
-use crate::combat::CombatState;
 use crate::action::{Action, ActionInfo, AddTo};
+use crate::combat::CombatState;
 use smallvec::SmallVec;
 
 /// Preserved Insect: Enemies in Elite rooms have 25% less HP.
@@ -9,24 +9,25 @@ use smallvec::SmallVec;
 
 pub fn at_battle_start(state: &CombatState) -> SmallVec<[ActionInfo; 4]> {
     let mut actions = SmallVec::new();
-    
+
     // Check if the combat involves any elite. Slay the spire applies this to ALL
     // monsters in an elite room, so if there's an elite, everyone's HP goes down.
     let mut is_elite_combat = false;
     for m in &state.monsters {
         if let Some(enemy_id) = crate::content::monsters::EnemyId::from_id(m.monster_type) {
-            if matches!(enemy_id, 
-                crate::content::monsters::EnemyId::GremlinNob |
-                crate::content::monsters::EnemyId::Lagavulin |
-                crate::content::monsters::EnemyId::Sentry |
-                crate::content::monsters::EnemyId::GremlinLeader |
-                crate::content::monsters::EnemyId::BookOfStabbing |
-                crate::content::monsters::EnemyId::Taskmaster |
-                crate::content::monsters::EnemyId::GiantHead |
-                crate::content::monsters::EnemyId::Nemesis |
-                crate::content::monsters::EnemyId::Reptomancer |
-                crate::content::monsters::EnemyId::SpireShield |
-                crate::content::monsters::EnemyId::SpireSpear
+            if matches!(
+                enemy_id,
+                crate::content::monsters::EnemyId::GremlinNob
+                    | crate::content::monsters::EnemyId::Lagavulin
+                    | crate::content::monsters::EnemyId::Sentry
+                    | crate::content::monsters::EnemyId::GremlinLeader
+                    | crate::content::monsters::EnemyId::BookOfStabbing
+                    | crate::content::monsters::EnemyId::Taskmaster
+                    | crate::content::monsters::EnemyId::GiantHead
+                    | crate::content::monsters::EnemyId::Nemesis
+                    | crate::content::monsters::EnemyId::Reptomancer
+                    | crate::content::monsters::EnemyId::SpireShield
+                    | crate::content::monsters::EnemyId::SpireSpear
             ) {
                 is_elite_combat = true;
                 break;

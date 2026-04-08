@@ -1,36 +1,36 @@
 use crate::combat::Intent;
-use crate::content::potions::PotionId;
-use crate::content::relics::RelicId;
-use crate::content::powers::PowerId;
+use crate::content::cards::CardId;
 use crate::content::monsters::EnemyId;
+use crate::content::potions::PotionId;
+use crate::content::powers::PowerId;
+use crate::content::relics::RelicId;
 
 // ============================================================================
 // String → Enum Mappings (auto-generated where possible)
 // ============================================================================
 
-use std::collections::HashMap;
-use std::sync::LazyLock;
-use crate::content::cards::{CardId, build_java_id_map};
-
-// Java→Rust ID Mappings — AUTO-GENERATED from protocol_schema.json by build.rs
+// Java→Rust ID mappings — AUTO-GENERATED from compiled_protocol_schema.json by build.rs
 include!(concat!(env!("OUT_DIR"), "/generated_schema.rs"));
-
-static JAVA_CARD_MAP: LazyLock<HashMap<&'static str, CardId>> = LazyLock::new(|| build_java_id_map());
-
-pub fn card_id_from_java(s: &str) -> Option<CardId> {
-    JAVA_CARD_MAP.get(s).copied().or_else(|| {
-        eprintln!("  UNMAPPED card: {:?}", s);
-        None
-    })
-}
 
 /// Map Java intent strings to Rust Intent enum values.
 pub fn intent_from_java(intent_str: &str, damage: i32, hits: i32) -> Intent {
     match intent_str {
-        "ATTACK" => Intent::Attack { damage, hits: hits.max(1) as u8 },
-        "ATTACK_BUFF" => Intent::AttackBuff { damage, hits: hits.max(1) as u8 },
-        "ATTACK_DEBUFF" => Intent::AttackDebuff { damage, hits: hits.max(1) as u8 },
-        "ATTACK_DEFEND" => Intent::AttackDefend { damage, hits: hits.max(1) as u8 },
+        "ATTACK" => Intent::Attack {
+            damage,
+            hits: hits.max(1) as u8,
+        },
+        "ATTACK_BUFF" => Intent::AttackBuff {
+            damage,
+            hits: hits.max(1) as u8,
+        },
+        "ATTACK_DEBUFF" => Intent::AttackDebuff {
+            damage,
+            hits: hits.max(1) as u8,
+        },
+        "ATTACK_DEFEND" => Intent::AttackDefend {
+            damage,
+            hits: hits.max(1) as u8,
+        },
         "BUFF" => Intent::Buff,
         "DEBUFF" => Intent::Debuff,
         "STRONG_DEBUFF" => Intent::StrongDebuff,
@@ -44,5 +44,155 @@ pub fn intent_from_java(intent_str: &str, damage: i32, hits: i32) -> Intent {
         "SLEEP" => Intent::Sleep,
         "STUN" => Intent::Stun,
         "UNKNOWN" | _ => Intent::Unknown,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::Value;
+    use std::collections::{BTreeMap, BTreeSet};
+
+    fn compiled_schema() -> Value {
+        serde_json::from_str(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tools/compiled_protocol_schema.json"
+        )))
+        .expect("compiled schema should parse")
+    }
+
+    fn observed_ids() -> Value {
+        serde_json::from_str(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tools/artifacts/observed_ids.json"
+        )))
+        .expect("observed ids should parse")
+    }
+
+    #[test]
+    fn schema_regression_key_aliases_map_stably() {
+        assert_eq!(
+            relic_id_from_java("Fusion Hammer"),
+            Some(crate::content::relics::RelicId::FusionHammer)
+        );
+        assert_eq!(
+            relic_id_from_java("CeramicFish"),
+            Some(crate::content::relics::RelicId::CeramicFish)
+        );
+        assert_eq!(
+            relic_id_from_java("Smiling Mask"),
+            Some(crate::content::relics::RelicId::SmilingMask)
+        );
+        assert_eq!(
+            power_id_from_java("No Draw"),
+            Some(crate::content::powers::PowerId::NoDraw)
+        );
+        assert_eq!(
+            power_id_from_java("Sharp Hide"),
+            Some(crate::content::powers::PowerId::SharpHide)
+        );
+        assert_eq!(
+            power_id_from_java("Mode Shift"),
+            Some(crate::content::powers::PowerId::ModeShift)
+        );
+        assert_eq!(
+            power_id_from_java("Weakened"),
+            Some(crate::content::powers::PowerId::Weak)
+        );
+        assert_eq!(
+            power_id_from_java("Regeneration"),
+            Some(crate::content::powers::PowerId::Regeneration)
+        );
+        assert_eq!(
+            power_id_from_java("Regenerate"),
+            Some(crate::content::powers::PowerId::Regen)
+        );
+    }
+
+    #[test]
+    fn compiled_schema_aliases_match_runtime_mapper() {
+        let compiled = compiled_schema();
+        let enums = compiled["enums"]
+            .as_object()
+            .expect("compiled enums object");
+
+        for (enum_key, enum_def) in enums {
+            let entries = enum_def["entries"].as_object().expect("entries object");
+            for entry in entries.values() {
+                let status = entry["status"].as_str().unwrap_or("mapped");
+                let aliases = entry["java"].as_array().cloned().unwrap_or_default();
+                for alias in aliases
+                    .into_iter()
+                    .filter_map(|v| v.as_str().map(str::to_owned))
+                {
+                    let mapped = match enum_key.as_str() {
+                        "card_id" => card_id_from_java(&alias).is_some(),
+                        "power_id" => power_id_from_java(&alias).is_some(),
+                        "relic_id" => relic_id_from_java(&alias).is_some(),
+                        "monster_id" => monster_id_from_java(&alias).is_some(),
+                        "potion_id" => java_potion_id_to_rust(&alias).is_some(),
+                        _ => false,
+                    };
+                    if matches!(status, "mapped") {
+                        assert!(mapped, "expected alias {:?} in {} to map", alias, enum_key);
+                    } else {
+                        assert!(
+                            !mapped,
+                            "expected alias {:?} in {} to remain unmapped for status {}",
+                            alias, enum_key, status
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn observed_ids_are_covered_or_explicitly_unsupported() {
+        let compiled = compiled_schema();
+        let observed = observed_ids();
+        let enums = compiled["enums"]
+            .as_object()
+            .expect("compiled enums object");
+
+        let mut alias_status: BTreeMap<String, BTreeMap<String, String>> = BTreeMap::new();
+        for (enum_key, enum_def) in enums {
+            let category = enum_key.trim_end_matches("_id");
+            let entries = enum_def["entries"].as_object().expect("entries object");
+            let category_map = alias_status.entry(category.to_string()).or_default();
+            for entry in entries.values() {
+                let status = entry["status"].as_str().unwrap_or("mapped").to_string();
+                if let Some(java_ids) = entry["java"].as_array() {
+                    for java_id in java_ids.iter().filter_map(|v| v.as_str()) {
+                        category_map.insert(java_id.to_string(), status.clone());
+                    }
+                }
+            }
+        }
+
+        let mut unresolved = BTreeSet::new();
+        for (category, ids) in observed["categories"]
+            .as_object()
+            .expect("observed categories object")
+        {
+            for java_id in ids.as_object().expect("observed id object").keys() {
+                let status = alias_status
+                    .get(category)
+                    .and_then(|entries| entries.get(java_id))
+                    .map(|s| s.as_str());
+                if !matches!(
+                    status,
+                    Some("mapped") | Some("unsupported") | Some("internal_only")
+                ) {
+                    unresolved.insert(format!("{category}:{java_id}"));
+                }
+            }
+        }
+
+        assert!(
+            unresolved.is_empty(),
+            "observed ids not covered by compiled schema: {:?}",
+            unresolved
+        );
     }
 }

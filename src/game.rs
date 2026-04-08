@@ -59,16 +59,16 @@ pub struct DeckCard {
 #[derive(Clone, Debug, Default)]
 pub struct RelicInventory {
     pub active_relics: Vec<RelicState>,
-    pub max_energy_boost: u8, 
+    pub max_energy_boost: u8,
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum RelicState {
     Stateless(RelicId),
-    PenNib { attacks: u8 },       
-    IncenseBurner { turns: u8 },  
-    Sundial { shuffles: u8 },     
-    HappyFlower { turns: u8 },    
+    PenNib { attacks: u8 },
+    IncenseBurner { turns: u8 },
+    Sundial { shuffles: u8 },
+    HappyFlower { turns: u8 },
     Abacus,
     Girya { lift_count: u8 },
     Torii,
@@ -86,7 +86,8 @@ pub struct PotionInventory {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub enum PotionIdEnum { // Renamed from PotionId to avoid conflict with usize alias
+pub enum PotionIdEnum {
+    // Renamed from PotionId to avoid conflict with usize alias
     FirePotion,
     BlockPotion,
     EnergyPotion,

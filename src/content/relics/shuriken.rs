@@ -3,7 +3,10 @@ use smallvec::SmallVec;
 
 /// Shuriken: Every time you play 3 Attacks in a single turn, gain 1 Strength.
 /// Java: counter-based, resets each turn.
-pub fn on_use_card(card_id: crate::content::cards::CardId, counter: i32) -> SmallVec<[ActionInfo; 4]> {
+pub fn on_use_card(
+    card_id: crate::content::cards::CardId,
+    counter: i32,
+) -> SmallVec<[ActionInfo; 4]> {
     let mut actions = SmallVec::new();
     let def = crate::content::cards::get_card_definition(card_id);
 

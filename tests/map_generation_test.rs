@@ -1,6 +1,6 @@
+use sts_simulator::map::generate_maps;
 use sts_simulator::map::generator::dump_map;
 use sts_simulator::map::generator::format_map;
-use sts_simulator::map::generate_maps;
 
 const MAP_HEIGHT: i32 = 15;
 const MAP_WIDTH: i32 = 7;

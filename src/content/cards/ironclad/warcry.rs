@@ -1,5 +1,5 @@
-use crate::combat::{CombatState, CombatCard};
 use crate::action::{Action, ActionInfo, AddTo};
+use crate::combat::{CombatCard, CombatState};
 use smallvec::SmallVec;
 
 pub fn warcry_play(_state: &CombatState, card: &CombatCard) -> SmallVec<[ActionInfo; 4]> {
@@ -10,7 +10,11 @@ pub fn warcry_play(_state: &CombatState, card: &CombatCard) -> SmallVec<[ActionI
         },
         ActionInfo {
             action: Action::SuspendForHandSelect {
-                min: 1, max: 1, reason: crate::state::HandSelectReason::PutOnDrawPile,
+                min: 1,
+                max: 1,
+                can_cancel: false,
+                filter: crate::state::HandSelectFilter::Any,
+                reason: crate::state::HandSelectReason::PutOnDrawPile,
             },
             insertion_mode: AddTo::Bottom,
         }

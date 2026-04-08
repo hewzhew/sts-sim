@@ -6,6 +6,7 @@ pub fn on_block_gained(amount: i32) -> SmallVec<[Action; 2]> {
     actions.push(Action::AttackDamageRandomEnemy {
         base_damage: amount,
         damage_type: DamageType::Thorns,
+        applies_target_modifiers: false,
     });
     actions
 }

@@ -8,7 +8,7 @@
 //! Java outputs card.cardID as-is (e.g., "Strike_R"); mapping to Rust
 //! CardId happens via CardDefinition.java_id.
 
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 // ============================================================================
 // Top-Level Replay Events

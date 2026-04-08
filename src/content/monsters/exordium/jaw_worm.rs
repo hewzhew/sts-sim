@@ -1,22 +1,36 @@
-use crate::combat::{CombatState, MonsterEntity, Intent, PowerId};
-use crate::action::{Action, DamageType, DamageInfo};
+use crate::action::{Action, DamageInfo, DamageType};
+use crate::combat::{CombatState, Intent, MonsterEntity, PowerId};
 use crate::content::monsters::MonsterBehavior;
 
 pub struct JawWorm;
 
 impl MonsterBehavior for JawWorm {
-    fn roll_move(rng: &mut crate::rng::StsRng, entity: &MonsterEntity, ascension_level: u8, num: i32) -> (u8, Intent) {
+    fn roll_move(
+        rng: &mut crate::rng::StsRng,
+        entity: &MonsterEntity,
+        ascension_level: u8,
+        num: i32,
+    ) -> (u8, Intent) {
         let is_first_move = entity.move_history.is_empty();
 
         let chomp_dmg = if ascension_level >= 2 { 12 } else { 11 };
         let thrash_dmg = 7;
 
         if is_first_move {
-            return (1, Intent::Attack { damage: chomp_dmg, hits: 1 });
+            return (
+                1,
+                Intent::Attack {
+                    damage: chomp_dmg,
+                    hits: 1,
+                },
+            );
         }
         let last_move = entity.move_history.back().copied();
         let last_move_before = if entity.move_history.len() >= 2 {
-            entity.move_history.get(entity.move_history.len() - 2).copied()
+            entity
+                .move_history
+                .get(entity.move_history.len() - 2)
+                .copied()
         } else {
             None
         };
@@ -27,26 +41,62 @@ impl MonsterBehavior for JawWorm {
                 if rng.random_boolean_chance(0.5625) {
                     (2, Intent::DefendBuff)
                 } else {
-                    (3, Intent::AttackDefend { damage: thrash_dmg, hits: 1 })
+                    (
+                        3,
+                        Intent::AttackDefend {
+                            damage: thrash_dmg,
+                            hits: 1,
+                        },
+                    )
                 }
             } else {
-                (1, Intent::Attack { damage: chomp_dmg, hits: 1 })
+                (
+                    1,
+                    Intent::Attack {
+                        damage: chomp_dmg,
+                        hits: 1,
+                    },
+                )
             }
         } else if num < 55 {
             if last_two_moves && last_move == Some(3) {
                 if rng.random_boolean_chance(0.357) {
-                    (1, Intent::Attack { damage: chomp_dmg, hits: 1 })
+                    (
+                        1,
+                        Intent::Attack {
+                            damage: chomp_dmg,
+                            hits: 1,
+                        },
+                    )
                 } else {
                     (2, Intent::DefendBuff)
                 }
             } else {
-                (3, Intent::AttackDefend { damage: thrash_dmg, hits: 1 })
+                (
+                    3,
+                    Intent::AttackDefend {
+                        damage: thrash_dmg,
+                        hits: 1,
+                    },
+                )
             }
         } else if last_move == Some(2) {
             if rng.random_boolean_chance(0.416) {
-                (1, Intent::Attack { damage: chomp_dmg, hits: 1 })
+                (
+                    1,
+                    Intent::Attack {
+                        damage: chomp_dmg,
+                        hits: 1,
+                    },
+                )
             } else {
-                (3, Intent::AttackDefend { damage: thrash_dmg, hits: 1 })
+                (
+                    3,
+                    Intent::AttackDefend {
+                        damage: thrash_dmg,
+                        hits: 1,
+                    },
+                )
             }
         } else {
             (2, Intent::DefendBuff)
@@ -69,7 +119,8 @@ impl MonsterBehavior for JawWorm {
 
         // Enqueue actions based on the current locked-in byte from last turn
         match entity.next_move_byte {
-            1 => { // CHOMP
+            1 => {
+                // CHOMP
                 actions.push(Action::Damage(DamageInfo {
                     source: entity.id,
                     target: 0, // Player is always 0
@@ -79,7 +130,8 @@ impl MonsterBehavior for JawWorm {
                     is_modified: false,
                 }));
             }
-            2 => { // BELLOW
+            2 => {
+                // BELLOW
                 actions.push(Action::ApplyPower {
                     target: entity.id,
                     source: entity.id,
@@ -91,7 +143,8 @@ impl MonsterBehavior for JawWorm {
                     amount: bellow_block,
                 });
             }
-            3 => { // THRASH
+            3 => {
+                // THRASH
                 actions.push(Action::Damage(DamageInfo {
                     source: entity.id,
                     target: 0, // Player
@@ -115,9 +168,10 @@ impl MonsterBehavior for JawWorm {
         }
 
         // Always end a turn by rolling the NEXT move to update intent graphic!
-        actions.push(Action::RollMonsterMove { monster_id: entity.id });
+        actions.push(Action::RollMonsterMove {
+            monster_id: entity.id,
+        });
 
         actions
     }
 }
-

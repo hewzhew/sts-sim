@@ -1,10 +1,8 @@
-
-
-use std::collections::{HashMap, VecDeque};
-use crate::core::EntityId;
-use crate::content::cards::CardId;
 use crate::action::Action;
+use crate::content::cards::CardId;
 use crate::content::relics::RelicState;
+use crate::core::EntityId;
+use std::collections::{HashMap, VecDeque};
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum MetaChange {
@@ -57,11 +55,13 @@ pub struct EphemeralCounters {
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct EpsteinCounters {
-//  placeholder left open;
+    //  placeholder left open;
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct RelicBuses {
+    pub at_pre_battle: smallvec::SmallVec<[usize; 4]>,
+    pub at_battle_start_pre_draw: smallvec::SmallVec<[usize; 4]>,
     pub at_battle_start: smallvec::SmallVec<[usize; 4]>,
     pub at_turn_start: smallvec::SmallVec<[usize; 4]>,
     pub on_use_card: smallvec::SmallVec<[usize; 4]>,
@@ -78,7 +78,7 @@ pub struct RelicBuses {
     pub on_change_stance: smallvec::SmallVec<[usize; 4]>,
     pub on_attacked_to_change_damage: smallvec::SmallVec<[usize; 4]>,
     pub on_lose_hp_last: smallvec::SmallVec<[usize; 4]>,
-    
+
     // Core Engine Value Modifiers
     pub on_calculate_heal: smallvec::SmallVec<[usize; 4]>,
     pub on_calculate_x_cost: smallvec::SmallVec<[usize; 4]>,
@@ -91,7 +91,7 @@ pub struct RelicBuses {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum OrbId {
-    Empty,      // Placeholder for an empty orb slot
+    Empty, // Placeholder for an empty orb slot
     Lightning,
     Dark,
     Frost,
@@ -108,11 +108,31 @@ pub struct OrbEntity {
 impl OrbEntity {
     pub fn new(id: OrbId) -> Self {
         match id {
-            OrbId::Empty => OrbEntity { id, passive_amount: 0, evoke_amount: 0 },
-            OrbId::Lightning => OrbEntity { id, passive_amount: 3, evoke_amount: 8 },
-            OrbId::Dark => OrbEntity { id, passive_amount: 6, evoke_amount: 6 },
-            OrbId::Frost => OrbEntity { id, passive_amount: 2, evoke_amount: 5 },
-            OrbId::Plasma => OrbEntity { id, passive_amount: 1, evoke_amount: 2 },
+            OrbId::Empty => OrbEntity {
+                id,
+                passive_amount: 0,
+                evoke_amount: 0,
+            },
+            OrbId::Lightning => OrbEntity {
+                id,
+                passive_amount: 3,
+                evoke_amount: 8,
+            },
+            OrbId::Dark => OrbEntity {
+                id,
+                passive_amount: 6,
+                evoke_amount: 6,
+            },
+            OrbId::Frost => OrbEntity {
+                id,
+                passive_amount: 2,
+                evoke_amount: 5,
+            },
+            OrbId::Plasma => OrbEntity {
+                id,
+                passive_amount: 1,
+                evoke_amount: 2,
+            },
         }
     }
 }
@@ -163,43 +183,99 @@ impl PlayerEntity {
     pub fn add_relic(&mut self, state: RelicState) {
         let index = self.relics.len();
         let sub = crate::content::relics::get_relic_subscriptions(state.id);
-        
+
         // Java onEquip(): boss relics with ++energyMaster
         use crate::content::relics::RelicId;
         match state.id {
-            RelicId::BustedCrown | RelicId::CoffeeDripper | RelicId::CursedKey
-            | RelicId::Ectoplasm | RelicId::FusionHammer | RelicId::MarkOfPain
-            | RelicId::PhilosopherStone | RelicId::RunicDome | RelicId::Sozu
-            | RelicId::VelvetChoker => { self.energy_master += 1; }
+            RelicId::BustedCrown
+            | RelicId::CoffeeDripper
+            | RelicId::CursedKey
+            | RelicId::Ectoplasm
+            | RelicId::FusionHammer
+            | RelicId::MarkOfPain
+            | RelicId::PhilosopherStone
+            | RelicId::RunicDome
+            | RelicId::Sozu
+            | RelicId::VelvetChoker => {
+                self.energy_master += 1;
+            }
             _ => {}
         }
-        
-        self.relics.push(state);
-        
-        if sub.at_battle_start { self.relic_buses.at_battle_start.push(index); }
-        if sub.at_turn_start { self.relic_buses.at_turn_start.push(index); }
-        if sub.on_use_card { self.relic_buses.on_use_card.push(index); }
-        if sub.on_shuffle { self.relic_buses.on_shuffle.push(index); }
-        if sub.on_exhaust { self.relic_buses.on_exhaust.push(index); }
-        if sub.on_lose_hp { self.relic_buses.on_lose_hp.push(index); }
-        if sub.on_victory { self.relic_buses.on_victory.push(index); }
-        if sub.on_apply_power { self.relic_buses.on_apply_power.push(index); }
-        if sub.on_monster_death { self.relic_buses.on_monster_death.push(index); }
-        if sub.on_spawn_monster { self.relic_buses.on_spawn_monster.push(index); }
-        if sub.at_end_of_turn { self.relic_buses.at_end_of_turn.push(index); }
-        if sub.on_use_potion { self.relic_buses.on_use_potion.push(index); }
-        if sub.on_discard { self.relic_buses.on_discard.push(index); }
-        if sub.on_change_stance { self.relic_buses.on_change_stance.push(index); }
-        if sub.on_attacked_to_change_damage { self.relic_buses.on_attacked_to_change_damage.push(index); }
-        if sub.on_lose_hp_last { self.relic_buses.on_lose_hp_last.push(index); }
 
-        if sub.on_calculate_heal { self.relic_buses.on_calculate_heal.push(index); }
-        if sub.on_calculate_x_cost { self.relic_buses.on_calculate_x_cost.push(index); }
-        if sub.on_calculate_block_retained { self.relic_buses.on_calculate_block_retained.push(index); }
-        if sub.on_calculate_energy_retained { self.relic_buses.on_calculate_energy_retained.push(index); }
-        if sub.on_scry { self.relic_buses.on_scry.push(index); }
-        if sub.on_receive_power_modify { self.relic_buses.on_receive_power_modify.push(index); }
-        if sub.on_calculate_vulnerable_multiplier { self.relic_buses.on_calculate_vulnerable_multiplier.push(index); }
+        self.relics.push(state);
+
+        if sub.at_battle_start {
+            self.relic_buses.at_battle_start.push(index);
+        }
+        if sub.at_turn_start {
+            self.relic_buses.at_turn_start.push(index);
+        }
+        if sub.on_use_card {
+            self.relic_buses.on_use_card.push(index);
+        }
+        if sub.on_shuffle {
+            self.relic_buses.on_shuffle.push(index);
+        }
+        if sub.on_exhaust {
+            self.relic_buses.on_exhaust.push(index);
+        }
+        if sub.on_lose_hp {
+            self.relic_buses.on_lose_hp.push(index);
+        }
+        if sub.on_victory {
+            self.relic_buses.on_victory.push(index);
+        }
+        if sub.on_apply_power {
+            self.relic_buses.on_apply_power.push(index);
+        }
+        if sub.on_monster_death {
+            self.relic_buses.on_monster_death.push(index);
+        }
+        if sub.on_spawn_monster {
+            self.relic_buses.on_spawn_monster.push(index);
+        }
+        if sub.at_end_of_turn {
+            self.relic_buses.at_end_of_turn.push(index);
+        }
+        if sub.on_use_potion {
+            self.relic_buses.on_use_potion.push(index);
+        }
+        if sub.on_discard {
+            self.relic_buses.on_discard.push(index);
+        }
+        if sub.on_change_stance {
+            self.relic_buses.on_change_stance.push(index);
+        }
+        if sub.on_attacked_to_change_damage {
+            self.relic_buses.on_attacked_to_change_damage.push(index);
+        }
+        if sub.on_lose_hp_last {
+            self.relic_buses.on_lose_hp_last.push(index);
+        }
+
+        if sub.on_calculate_heal {
+            self.relic_buses.on_calculate_heal.push(index);
+        }
+        if sub.on_calculate_x_cost {
+            self.relic_buses.on_calculate_x_cost.push(index);
+        }
+        if sub.on_calculate_block_retained {
+            self.relic_buses.on_calculate_block_retained.push(index);
+        }
+        if sub.on_calculate_energy_retained {
+            self.relic_buses.on_calculate_energy_retained.push(index);
+        }
+        if sub.on_scry {
+            self.relic_buses.on_scry.push(index);
+        }
+        if sub.on_receive_power_modify {
+            self.relic_buses.on_receive_power_modify.push(index);
+        }
+        if sub.on_calculate_vulnerable_multiplier {
+            self.relic_buses
+                .on_calculate_vulnerable_multiplier
+                .push(index);
+        }
     }
 }
 
@@ -289,7 +365,9 @@ impl CombatCard {
                 return def.cost;
             }
             let mut c = def.cost as i8 + self.cost_modifier;
-            if c < 0 { c = 0; }
+            if c < 0 {
+                c = 0;
+            }
             c
         }
     }
@@ -312,14 +390,24 @@ impl CombatState {
             None
         }
     }
-    
+
     /// Looks everywhere for a card and removes it. Useful for UseCard when we don't know exactly where the card went.
     pub fn take_card_from_anywhere(&mut self, uuid: u32) -> Option<CombatCard> {
-        if let Some(c) = Self::remove_card_by_uuid(&mut self.hand, uuid) { return Some(c); }
-        if let Some(c) = Self::remove_card_by_uuid(&mut self.limbo, uuid) { return Some(c); }
-        if let Some(c) = Self::remove_card_by_uuid(&mut self.draw_pile, uuid) { return Some(c); }
-        if let Some(c) = Self::remove_card_by_uuid(&mut self.discard_pile, uuid) { return Some(c); }
-        if let Some(c) = Self::remove_card_by_uuid(&mut self.exhaust_pile, uuid) { return Some(c); }
+        if let Some(c) = Self::remove_card_by_uuid(&mut self.hand, uuid) {
+            return Some(c);
+        }
+        if let Some(c) = Self::remove_card_by_uuid(&mut self.limbo, uuid) {
+            return Some(c);
+        }
+        if let Some(c) = Self::remove_card_by_uuid(&mut self.draw_pile, uuid) {
+            return Some(c);
+        }
+        if let Some(c) = Self::remove_card_by_uuid(&mut self.discard_pile, uuid) {
+            return Some(c);
+        }
+        if let Some(c) = Self::remove_card_by_uuid(&mut self.exhaust_pile, uuid) {
+            return Some(c);
+        }
         None
     }
 

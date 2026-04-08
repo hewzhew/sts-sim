@@ -1,12 +1,17 @@
-use crate::combat::{CombatState, MonsterEntity, Intent};
-use crate::action::{Action, DamageType, DamageInfo};
+use crate::action::{Action, DamageInfo, DamageType};
+use crate::combat::{CombatState, Intent, MonsterEntity};
 use crate::content::monsters::MonsterBehavior;
 use crate::content::powers::PowerId;
 
 pub struct Snecko;
 
 impl MonsterBehavior for Snecko {
-    fn roll_move(_rng: &mut crate::rng::StsRng, entity: &MonsterEntity, ascension_level: u8, num: i32) -> (u8, Intent) {
+    fn roll_move(
+        _rng: &mut crate::rng::StsRng,
+        entity: &MonsterEntity,
+        ascension_level: u8,
+        num: i32,
+    ) -> (u8, Intent) {
         let tail_dmg = if ascension_level >= 2 { 10 } else { 8 };
         let bite_dmg = if ascension_level >= 2 { 18 } else { 15 };
 
@@ -14,16 +19,34 @@ impl MonsterBehavior for Snecko {
             return (1, Intent::StrongDebuff);
         }
         if num < 40 {
-            return (3, Intent::AttackDebuff { damage: tail_dmg, hits: 1 });
+            return (
+                3,
+                Intent::AttackDebuff {
+                    damage: tail_dmg,
+                    hits: 1,
+                },
+            );
         }
 
         if entity.move_history.len() >= 2
             && entity.move_history[entity.move_history.len() - 1] == 2
             && entity.move_history[entity.move_history.len() - 2] == 2
         {
-            return (3, Intent::AttackDebuff { damage: tail_dmg, hits: 1 });
+            return (
+                3,
+                Intent::AttackDebuff {
+                    damage: tail_dmg,
+                    hits: 1,
+                },
+            );
         } else {
-            return (2, Intent::Attack { damage: bite_dmg, hits: 1 });
+            return (
+                2,
+                Intent::Attack {
+                    damage: bite_dmg,
+                    hits: 1,
+                },
+            );
         }
     }
 
@@ -33,7 +56,8 @@ impl MonsterBehavior for Snecko {
         let bite_dmg = if state.ascension_level >= 2 { 18 } else { 15 };
 
         match entity.next_move_byte {
-            1 => { // GLARE
+            1 => {
+                // GLARE
                 actions.push(Action::ApplyPower {
                     source: entity.id,
                     target: 0,
@@ -41,7 +65,8 @@ impl MonsterBehavior for Snecko {
                     amount: 1,
                 });
             }
-            2 => { // BITE
+            2 => {
+                // BITE
                 actions.push(Action::Damage(DamageInfo {
                     source: entity.id,
                     target: 0,
@@ -51,7 +76,8 @@ impl MonsterBehavior for Snecko {
                     is_modified: false,
                 }));
             }
-            3 => { // TAIL
+            3 => {
+                // TAIL
                 actions.push(Action::Damage(DamageInfo {
                     source: entity.id,
                     target: 0,
@@ -78,7 +104,9 @@ impl MonsterBehavior for Snecko {
             _ => {}
         }
 
-        actions.push(Action::RollMonsterMove { monster_id: entity.id });
+        actions.push(Action::RollMonsterMove {
+            monster_id: entity.id,
+        });
         actions
     }
 }

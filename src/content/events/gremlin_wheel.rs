@@ -20,20 +20,28 @@ pub fn get_choices(run_state: &RunState, event_state: &EventState) -> Vec<EventC
             // Show result description
             let desc = match event_state.internal_state {
                 0 => {
-                    let gold = match run_state.act_num { 1 => 100, 2 => 200, _ => 300 };
+                    let gold = match run_state.act_num {
+                        1 => 100,
+                        2 => 200,
+                        _ => 300,
+                    };
                     format!("You gained {} Gold!", gold)
-                },
+                }
                 1 => "You obtained a random relic!".to_string(),
                 2 => "You healed to full HP!".to_string(),
                 3 => "A dark curse falls upon you... Gained Decay.".to_string(),
                 4 => "The spirits consume a card...".to_string(),
                 _ => {
-                    let pct = if run_state.ascension_level >= 15 { 15 } else { 10 };
+                    let pct = if run_state.ascension_level >= 15 {
+                        15
+                    } else {
+                        10
+                    };
                     format!("The wheel damages you! Lost {}% max HP.", pct)
-                },
+                }
             };
             vec![EventChoiceMeta::new(format!("{} [Leave]", desc))]
-        },
+        }
         _ => vec![EventChoiceMeta::new("[Leave]")],
     }
 }
@@ -53,44 +61,60 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, _
 
             // Apply result immediately
             match result {
-                0 => { // Gold
-                    let gold = match run_state.act_num { 1 => 100, 2 => 200, _ => 300 };
+                0 => {
+                    // Gold
+                    let gold = match run_state.act_num {
+                        1 => 100,
+                        2 => 200,
+                        _ => 300,
+                    };
                     run_state.gold += gold;
-                },
-                1 => { // Random relic — Java: addRelicToRewards(r) + combatRewardScreen.open()
+                }
+                1 => {
+                    // Random relic — Java: addRelicToRewards(r) + combatRewardScreen.open()
                     let relic = run_state.random_relic();
-                    let mut rewards = crate::state::reward::RewardState::new();
-                    rewards.items.push(crate::state::reward::RewardItem::Relic { relic_id: relic });
+                    let mut rewards = crate::rewards::state::RewardState::new();
+                    rewards
+                        .items
+                        .push(crate::rewards::state::RewardItem::Relic { relic_id: relic });
                     event_state.internal_state = result;
                     event_state.current_screen = 1;
                     run_state.event_state = Some(event_state);
                     *engine_state = EngineState::RewardScreen(rewards);
                     return;
-                },
-                2 => { // Heal to full
+                }
+                2 => {
+                    // Heal to full
                     run_state.current_hp = run_state.max_hp;
-                },
-                3 => { // Obtain Decay curse
+                }
+                3 => {
+                    // Obtain Decay curse
                     run_state.add_card_to_deck(crate::content::cards::CardId::Decay);
-                },
-                4 => { // Remove a card (Java: grid-select purge)
+                }
+                4 => {
+                    // Remove a card (Java: grid-select purge)
                     *engine_state = EngineState::RunPendingChoice(RunPendingChoiceState {
                         min_choices: 1,
                         max_choices: 1,
                         reason: RunPendingChoiceReason::Purge,
                         return_state: Box::new(EngineState::EventRoom),
                     });
-                },
-                _ => { // Lose HP
-                    let pct = if run_state.ascension_level >= 15 { 0.15f32 } else { 0.10f32 };
+                }
+                _ => {
+                    // Lose HP
+                    let pct = if run_state.ascension_level >= 15 {
+                        0.15f32
+                    } else {
+                        0.10f32
+                    };
                     let damage = (run_state.max_hp as f32 * pct) as i32;
                     run_state.current_hp = (run_state.current_hp - damage).max(1);
-                },
+                }
             }
 
             event_state.internal_state = result;
             event_state.current_screen = 1;
-        },
+        }
         _ => {
             event_state.completed = true;
         }

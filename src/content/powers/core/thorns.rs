@@ -1,4 +1,4 @@
-use crate::action::{Action, DamageType, DamageInfo};
+use crate::action::{Action, DamageInfo, DamageType};
 use crate::combat::CombatState;
 use crate::core::EntityId;
 
@@ -10,7 +10,7 @@ pub fn on_attacked(
     power_amount: i32,
 ) -> smallvec::SmallVec<[Action; 2]> {
     let mut actions = smallvec::smallvec![];
-    
+
     // Thorns only triggers if the source is not the owner (e.g., self-damage doesn't trigger it)
     if source != 0 && source != _owner {
         actions.push(Action::Damage(DamageInfo {

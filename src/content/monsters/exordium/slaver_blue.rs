@@ -1,31 +1,56 @@
-use crate::combat::{CombatState, MonsterEntity, Intent, PowerId};
 use crate::action::{Action, DamageInfo, DamageType};
+use crate::combat::{CombatState, Intent, MonsterEntity, PowerId};
 use crate::content::monsters::MonsterBehavior;
 
 pub struct SlaverBlue;
 
 impl MonsterBehavior for SlaverBlue {
-    fn roll_move(_rng: &mut crate::rng::StsRng, entity: &MonsterEntity, ascension_level: u8, num: i32) -> (u8, Intent) {
+    fn roll_move(
+        _rng: &mut crate::rng::StsRng,
+        entity: &MonsterEntity,
+        ascension_level: u8,
+        num: i32,
+    ) -> (u8, Intent) {
         let stab_dmg = if ascension_level >= 2 { 13 } else { 12 };
         let rake_dmg = if ascension_level >= 2 { 8 } else { 7 };
 
         // 1: STAB, 4: RAKE (Attack + Debuff)
         let last_move = entity.move_history.back().copied();
         let last_move_before = if entity.move_history.len() >= 2 {
-            entity.move_history.get(entity.move_history.len() - 2).copied()
+            entity
+                .move_history
+                .get(entity.move_history.len() - 2)
+                .copied()
         } else {
             None
         };
-        let last_two_moves_were = |byte: u8| -> bool {
-            last_move == Some(byte) && last_move_before == Some(byte)
-        };
+        let last_two_moves_were =
+            |byte: u8| -> bool { last_move == Some(byte) && last_move_before == Some(byte) };
 
         if num >= 40 && !last_two_moves_were(1) {
-            (1, Intent::Attack { damage: stab_dmg, hits: 1 })
+            (
+                1,
+                Intent::Attack {
+                    damage: stab_dmg,
+                    hits: 1,
+                },
+            )
         } else if !last_two_moves_were(4) {
-            (4, Intent::AttackDebuff { damage: rake_dmg, hits: 1 })
+            (
+                4,
+                Intent::AttackDebuff {
+                    damage: rake_dmg,
+                    hits: 1,
+                },
+            )
         } else {
-            (1, Intent::Attack { damage: stab_dmg, hits: 1 })
+            (
+                1,
+                Intent::Attack {
+                    damage: stab_dmg,
+                    hits: 1,
+                },
+            )
         }
     }
 
@@ -37,7 +62,8 @@ impl MonsterBehavior for SlaverBlue {
         let mut actions = Vec::new();
 
         match entity.next_move_byte {
-            1 => { // STAB
+            1 => {
+                // STAB
                 actions.push(Action::Damage(DamageInfo {
                     source: entity.id,
                     target: 0,
@@ -47,7 +73,8 @@ impl MonsterBehavior for SlaverBlue {
                     is_modified: false,
                 }));
             }
-            4 => { // RAKE
+            4 => {
+                // RAKE
                 actions.push(Action::Damage(DamageInfo {
                     source: entity.id,
                     target: 0,
@@ -63,10 +90,12 @@ impl MonsterBehavior for SlaverBlue {
                     amount: weak_amt,
                 });
             }
-            _ => { }
+            _ => {}
         }
 
-        actions.push(Action::RollMonsterMove { monster_id: entity.id });
+        actions.push(Action::RollMonsterMove {
+            monster_id: entity.id,
+        });
         actions
     }
 }

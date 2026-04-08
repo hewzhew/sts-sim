@@ -42,52 +42,86 @@ impl EventGenerator {
         // Act-specific event pool
         self.event_pool = match act_num {
             1 => vec![
-                EventId::BigFish, EventId::Cleric, EventId::DeadAdventurer,
-                EventId::GoldenIdol, EventId::GoldenWing, EventId::WorldOfGoop,
-                EventId::Ssssserpent, EventId::LivingWall, EventId::Mushrooms,
-                EventId::ScrapOoze, EventId::ShiningLight,
+                EventId::BigFish,
+                EventId::Cleric,
+                EventId::DeadAdventurer,
+                EventId::GoldenIdol,
+                EventId::GoldenWing,
+                EventId::WorldOfGoop,
+                EventId::Ssssserpent,
+                EventId::LivingWall,
+                EventId::Mushrooms,
+                EventId::ScrapOoze,
+                EventId::ShiningLight,
             ],
             2 => vec![
-                EventId::Addict, EventId::BackTotheBasics, EventId::Beggar,
-                EventId::Colosseum, EventId::CursedTome, EventId::DrugDealer,
-                EventId::ForgottenAltar, EventId::Ghosts, EventId::MaskedBandits,
-                EventId::Nest, EventId::TheLibrary, EventId::Mausoleum,
+                EventId::Addict,
+                EventId::BackTotheBasics,
+                EventId::Beggar,
+                EventId::Colosseum,
+                EventId::CursedTome,
+                EventId::DrugDealer,
+                EventId::ForgottenAltar,
+                EventId::Ghosts,
+                EventId::MaskedBandits,
+                EventId::Nest,
+                EventId::TheLibrary,
+                EventId::Mausoleum,
                 EventId::Vampires,
             ],
             _ => vec![
-                EventId::Falling, EventId::MindBloom, EventId::MoaiHead,
-                EventId::MysteriousSphere, EventId::SensoryStone,
-                EventId::TombRedMask, EventId::WindingHalls,
+                EventId::Falling,
+                EventId::MindBloom,
+                EventId::MoaiHead,
+                EventId::MysteriousSphere,
+                EventId::SensoryStone,
+                EventId::TombRedMask,
+                EventId::WindingHalls,
             ],
         };
 
         // Per-act shrine pool
         self.shrine_pool = match act_num {
             1 => vec![
-                EventId::MatchAndKeep, EventId::GoldenShrine,
-                EventId::Transmorgrifier, EventId::Purifier,
-                EventId::UpgradeShrine, EventId::GremlinWheelGame,
+                EventId::MatchAndKeep,
+                EventId::GoldenShrine,
+                EventId::Transmorgrifier,
+                EventId::Purifier,
+                EventId::UpgradeShrine,
+                EventId::GremlinWheelGame,
             ],
             2 => vec![
-                EventId::MatchAndKeep, EventId::GremlinWheelGame,
-                EventId::GoldenShrine, EventId::Transmorgrifier,
-                EventId::Purifier, EventId::UpgradeShrine,
+                EventId::MatchAndKeep,
+                EventId::GremlinWheelGame,
+                EventId::GoldenShrine,
+                EventId::Transmorgrifier,
+                EventId::Purifier,
+                EventId::UpgradeShrine,
             ],
             _ => vec![
-                EventId::MatchAndKeep, EventId::GremlinWheelGame,
-                EventId::GoldenShrine, EventId::Transmorgrifier,
-                EventId::Purifier, EventId::UpgradeShrine,
+                EventId::MatchAndKeep,
+                EventId::GremlinWheelGame,
+                EventId::GoldenShrine,
+                EventId::Transmorgrifier,
+                EventId::Purifier,
+                EventId::UpgradeShrine,
             ],
         };
 
         if self.one_time_event_pool.is_empty() {
             self.one_time_event_pool = vec![
-                EventId::AccursedBlacksmith, EventId::BonfireElementals,
-                EventId::Designer, EventId::Duplicator,
-                EventId::FaceTrader, EventId::FountainOfCurseCleansing,
-                EventId::KnowingSkull, EventId::Lab, EventId::Nloth,
+                EventId::AccursedBlacksmith,
+                EventId::BonfireElementals,
+                EventId::Designer,
+                EventId::Duplicator,
+                EventId::FaceTrader,
+                EventId::FountainOfCurseCleansing,
+                EventId::KnowingSkull,
+                EventId::Lab,
+                EventId::Nloth,
                 EventId::NoteForYourself,
-                EventId::TheJoust, EventId::WeMeetAgain,
+                EventId::TheJoust,
+                EventId::WeMeetAgain,
                 EventId::WomanInBlue,
             ];
         }
@@ -96,7 +130,7 @@ impl EventGenerator {
     /// Mirrors Java's EventHelper.roll(Random eventRng)
     pub fn roll_room_type(&mut self, rng: &mut RngPool, ctx: &EventContext) -> RoomRoll {
         let roll = rng.event_rng.random_f32();
-        
+
         let mut force_chest = false;
         if ctx.tiny_chest_counter == 3 {
             // Java computes eventRng.random() before checking the Tiny Chest counter.
@@ -106,9 +140,9 @@ impl EventGenerator {
         let monster_size = (self.monster_chance * 100.0) as i32;
         let shop_size = (self.shop_chance * 100.0) as i32;
         let treasure_size = (self.treasure_chance * 100.0) as i32;
-        
+
         let roll_idx = (roll * 100.0) as i32;
-        
+
         let mut choice = if roll_idx < monster_size {
             RoomRoll::Monster
         } else if roll_idx < monster_size + shop_size {
@@ -156,7 +190,7 @@ impl EventGenerator {
 
     /// Mirrors Java's AbstractDungeon.generateEvent(Random rng)
     pub fn generate_event(&mut self, rng: &mut RngPool, ctx: &EventContext) -> EventId {
-        let shrine_roll = rng.event_rng.random_f32_range(1.0); 
+        let shrine_roll = rng.event_rng.random_f32_range(1.0);
 
         if shrine_roll < self.shrine_chance {
             if !self.shrine_pool.is_empty() || !self.one_time_event_pool.is_empty() {
@@ -217,11 +251,16 @@ impl EventGenerator {
     }
 
     fn get_pool_event(&mut self, rng: &mut RngPool, ctx: &EventContext) -> EventId {
-        self.try_get_pool_event(rng, ctx).unwrap_or_else(|| self.generate_event_fallback(rng))
+        self.try_get_pool_event(rng, ctx)
+            .unwrap_or_else(|| self.generate_event_fallback(rng))
     }
 
     fn try_get_pool_event(&mut self, rng: &mut RngPool, ctx: &EventContext) -> Option<EventId> {
-        let hp_pct = if ctx.max_hp > 0 { ctx.current_hp as f32 / ctx.max_hp as f32 } else { 1.0 };
+        let hp_pct = if ctx.max_hp > 0 {
+            ctx.current_hp as f32 / ctx.max_hp as f32
+        } else {
+            1.0
+        };
         let map_midpoint = 7;
 
         let mut candidates: Vec<EventId> = Vec::new();
@@ -250,7 +289,7 @@ impl EventGenerator {
         if let Some(pos) = self.event_pool.iter().position(|&e| e == chosen) {
             self.event_pool.remove(pos);
             if self.event_pool.is_empty() {
-                self.repopulate_event_list(ctx.act_num); 
+                self.repopulate_event_list(ctx.act_num);
             }
         }
 
@@ -260,22 +299,41 @@ impl EventGenerator {
     fn repopulate_event_list(&mut self, act_num: u8) {
         self.event_pool = match act_num {
             1 => vec![
-                EventId::BigFish, EventId::Cleric, EventId::DeadAdventurer,
-                EventId::GoldenIdol, EventId::GoldenWing, EventId::WorldOfGoop,
-                EventId::Ssssserpent, EventId::LivingWall, EventId::Mushrooms,
-                EventId::ScrapOoze, EventId::ShiningLight,
+                EventId::BigFish,
+                EventId::Cleric,
+                EventId::DeadAdventurer,
+                EventId::GoldenIdol,
+                EventId::GoldenWing,
+                EventId::WorldOfGoop,
+                EventId::Ssssserpent,
+                EventId::LivingWall,
+                EventId::Mushrooms,
+                EventId::ScrapOoze,
+                EventId::ShiningLight,
             ],
             2 => vec![
-                EventId::Addict, EventId::BackTotheBasics, EventId::Beggar,
-                EventId::Colosseum, EventId::CursedTome, EventId::DrugDealer,
-                EventId::ForgottenAltar, EventId::Ghosts, EventId::MaskedBandits,
-                EventId::Nest, EventId::TheLibrary, EventId::Mausoleum,
+                EventId::Addict,
+                EventId::BackTotheBasics,
+                EventId::Beggar,
+                EventId::Colosseum,
+                EventId::CursedTome,
+                EventId::DrugDealer,
+                EventId::ForgottenAltar,
+                EventId::Ghosts,
+                EventId::MaskedBandits,
+                EventId::Nest,
+                EventId::TheLibrary,
+                EventId::Mausoleum,
                 EventId::Vampires,
             ],
             _ => vec![
-                EventId::Falling, EventId::MindBloom, EventId::MoaiHead,
-                EventId::MysteriousSphere, EventId::SensoryStone,
-                EventId::TombRedMask, EventId::WindingHalls,
+                EventId::Falling,
+                EventId::MindBloom,
+                EventId::MoaiHead,
+                EventId::MysteriousSphere,
+                EventId::SensoryStone,
+                EventId::TombRedMask,
+                EventId::WindingHalls,
             ],
         };
     }

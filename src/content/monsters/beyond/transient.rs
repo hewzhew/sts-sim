@@ -1,4 +1,4 @@
-use crate::action::{Action, DamageType, DamageInfo};
+use crate::action::{Action, DamageInfo, DamageType};
 use crate::combat::{CombatState, Intent};
 use crate::content::monsters::MonsterBehavior;
 use crate::content::powers::PowerId;
@@ -6,15 +6,30 @@ use crate::content::powers::PowerId;
 pub struct Transient;
 
 impl MonsterBehavior for Transient {
-    fn roll_move(_rng: &mut crate::rng::StsRng, entity: &crate::combat::MonsterEntity, ascension_level: u8, _num: i32) -> (u8, Intent) {
+    fn roll_move(
+        _rng: &mut crate::rng::StsRng,
+        entity: &crate::combat::MonsterEntity,
+        ascension_level: u8,
+        _num: i32,
+    ) -> (u8, Intent) {
         let starting_damage = if ascension_level >= 2 { 40 } else { 30 };
         let count = entity.move_history.len() as i32;
         let actual_damage = starting_damage + (count * 10);
-        
-        (1, Intent::Attack { damage: actual_damage, hits: 1 })
+
+        (
+            1,
+            Intent::Attack {
+                damage: actual_damage,
+                hits: 1,
+            },
+        )
     }
 
-    fn use_pre_battle_action(entity: &crate::combat::MonsterEntity, _hp_rng: &mut crate::rng::StsRng, ascension_level: u8) -> Vec<Action> {
+    fn use_pre_battle_action(
+        entity: &crate::combat::MonsterEntity,
+        _hp_rng: &mut crate::rng::StsRng,
+        ascension_level: u8,
+    ) -> Vec<Action> {
         let fading_turns = if ascension_level >= 17 { 6 } else { 5 };
         vec![
             Action::ApplyPower {
@@ -28,7 +43,7 @@ impl MonsterBehavior for Transient {
                 target: entity.id,
                 power_id: PowerId::Shifting,
                 amount: 1, // Represents presence
-            }
+            },
         ]
     }
 
@@ -51,7 +66,9 @@ impl MonsterBehavior for Transient {
             }));
         }
 
-        actions.push(Action::RollMonsterMove { monster_id: entity.id });
+        actions.push(Action::RollMonsterMove {
+            monster_id: entity.id,
+        });
         actions
     }
 }

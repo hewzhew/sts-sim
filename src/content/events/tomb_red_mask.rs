@@ -15,11 +15,14 @@ pub fn get_choices(run_state: &RunState, event_state: &EventState) -> Vec<EventC
             } else {
                 vec![
                     EventChoiceMeta::disabled("[Don the Mask] Requires Red Mask.", "No Red Mask"),
-                    EventChoiceMeta::new(format!("[Pay] Lose all ({}) Gold. Obtain Red Mask.", run_state.gold)),
+                    EventChoiceMeta::new(format!(
+                        "[Pay] Lose all ({}) Gold. Obtain Red Mask.",
+                        run_state.gold
+                    )),
                     EventChoiceMeta::new("[Leave]"),
                 ]
             }
-        },
+        }
         _ => vec![EventChoiceMeta::new("[Leave]")],
     }
 }
@@ -36,10 +39,10 @@ pub fn handle_choice(_engine_state: &mut EngineState, run_state: &mut RunState, 
                         // Don the Mask: +222 gold
                         run_state.gold += 222;
                         event_state.current_screen = 1;
-                    },
+                    }
                     _ => {
                         event_state.completed = true;
-                    },
+                    }
                 }
             } else {
                 match choice_idx {
@@ -48,13 +51,13 @@ pub fn handle_choice(_engine_state: &mut EngineState, run_state: &mut RunState, 
                         run_state.gold = 0;
                         run_state.relics.push(RelicState::new(RelicId::RedMask));
                         event_state.current_screen = 1;
-                    },
+                    }
                     _ => {
                         event_state.completed = true;
-                    },
+                    }
                 }
             }
-        },
+        }
         _ => {
             event_state.completed = true;
         }

@@ -6,9 +6,9 @@
 //   [Fight] → combat with "Colosseum Nobs" (rewards: RARE relic, UNCOMMON relic, 100g)
 // Screen 3 (LEAVE): [Leave] → openMap
 
+use crate::rewards::state::{RewardItem, RewardState};
 use crate::state::core::{EngineState, EventCombatState, PostCombatReturn};
 use crate::state::events::{EventChoiceMeta, EventState};
-use crate::state::reward::{RewardItem, RewardState};
 use crate::state::run::RunState;
 
 pub fn get_choices(_run_state: &RunState, event_state: &EventState) -> Vec<EventChoiceMeta> {
@@ -16,18 +16,18 @@ pub fn get_choices(_run_state: &RunState, event_state: &EventState) -> Vec<Event
         0 => {
             // Introduction
             vec![EventChoiceMeta::new("[Proceed]")]
-        },
+        }
         1 => {
             // Ready to fight
             vec![EventChoiceMeta::new("[Fight!]")]
-        },
+        }
         2 => {
             // Post-first-combat: choose to fight Nobs or flee
             vec![
                 EventChoiceMeta::new("[Flee] Leave the Colosseum."),
                 EventChoiceMeta::new("[Fight] Challenge the Nobs for riches!"),
             ]
-        },
+        }
         _ => vec![EventChoiceMeta::new("[Leave]")],
     }
 }
@@ -39,7 +39,7 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
         0 => {
             // Intro → ready to fight
             event_state.current_screen = 1;
-        },
+        }
         1 => {
             // First fight: Colosseum Slavers (no rewards)
             // Java: rewardAllowed = false, enterCombatFromImage()
@@ -54,23 +54,29 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
                 encounter_key: "Colosseum Slavers",
             });
             return;
-        },
+        }
         2 => {
             match choice_idx {
                 0 => {
                     // Flee — leave the Colosseum
                     event_state.completed = true;
-                },
+                }
                 _ => {
                     // Fight Nobs: set up rewards BEFORE combat (matches Java)
                     // Java: addRelicToRewards(RARE), addRelicToRewards(UNCOMMON), addGoldToRewards(100)
                     let mut rewards = RewardState::new();
 
-                    let rare_relic = run_state.random_screenless_relic(crate::content::relics::RelicTier::Rare);
-                    rewards.items.push(RewardItem::Relic { relic_id: rare_relic });
+                    let rare_relic =
+                        run_state.random_screenless_relic(crate::content::relics::RelicTier::Rare);
+                    rewards.items.push(RewardItem::Relic {
+                        relic_id: rare_relic,
+                    });
 
-                    let uncommon_relic = run_state.random_screenless_relic(crate::content::relics::RelicTier::Uncommon);
-                    rewards.items.push(RewardItem::Relic { relic_id: uncommon_relic });
+                    let uncommon_relic = run_state
+                        .random_screenless_relic(crate::content::relics::RelicTier::Uncommon);
+                    rewards.items.push(RewardItem::Relic {
+                        relic_id: uncommon_relic,
+                    });
 
                     // Gold reward
                     rewards.items.push(RewardItem::Gold { amount: 100 });
@@ -88,7 +94,7 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
                     return;
                 }
             }
-        },
+        }
         _ => {
             // Post-second-combat leave
             event_state.completed = true;

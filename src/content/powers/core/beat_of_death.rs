@@ -1,4 +1,4 @@
-use crate::action::{Action, DamageType, DamageInfo};
+use crate::action::{Action, DamageInfo, DamageType};
 use crate::combat::CombatCard;
 use crate::core::EntityId;
 
@@ -8,7 +8,7 @@ pub fn on_player_card_played(
     _card: &CombatCard,
 ) -> smallvec::SmallVec<[Action; 2]> {
     let mut actions = smallvec::SmallVec::new();
-    
+
     // Beat of Death deals direct damage to the player
     actions.push(Action::Damage(DamageInfo {
         source: owner,

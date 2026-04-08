@@ -12,6 +12,9 @@ tools/sts_tool/output/
 tools/hook_query_output/
 tools/monster_audit_output/
 tools/coverage_report.html
+tools/analysis_cache/
+tools/artifacts/
+tools/schema_audit_report.json
 
 # Replay data (large, user-specific)
 tools/replays/

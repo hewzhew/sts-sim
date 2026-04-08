@@ -8,8 +8,12 @@ impl HappyFlower {
         let mut actions = SmallVec::new();
         // Java: this.counter = this.counter == -1 ? (this.counter += 2) : ++this.counter;
         // if (this.counter == 3) { this.counter = 0; fire energy }
-        let new_counter = if counter == -1 { counter + 2 } else { counter + 1 };
-        
+        let new_counter = if counter == -1 {
+            counter + 2
+        } else {
+            counter + 1
+        };
+
         if new_counter == 3 {
             actions.push(ActionInfo {
                 action: Action::GainEnergy { amount: 1 },

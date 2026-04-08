@@ -22,7 +22,11 @@ pub fn get_choices(run_state: &RunState, event_state: &EventState) -> Vec<EventC
 
     let (chance, dmg) = if event_state.internal_state == 0 {
         // Initial state
-        let base_dmg = if run_state.ascension_level >= 15 { 5 } else { 3 };
+        let base_dmg = if run_state.ascension_level >= 15 {
+            5
+        } else {
+            3
+        };
         (25, base_dmg)
     } else {
         decode_state(event_state.internal_state)
@@ -30,7 +34,8 @@ pub fn get_choices(run_state: &RunState, event_state: &EventState) -> Vec<EventC
 
     vec![
         EventChoiceMeta::new(format!(
-            "[Reach In] Take {} damage. {}% chance to obtain a Relic.", dmg, chance
+            "[Reach In] Take {} damage. {}% chance to obtain a Relic.",
+            dmg, chance
         )),
         EventChoiceMeta::new("[Leave]"),
     ]
@@ -45,7 +50,11 @@ pub fn handle_choice(_engine_state: &mut EngineState, run_state: &mut RunState, 
                 0 => {
                     // Reach In
                     let (mut chance, mut dmg) = if event_state.internal_state == 0 {
-                        let base_dmg = if run_state.ascension_level >= 15 { 5 } else { 3 };
+                        let base_dmg = if run_state.ascension_level >= 15 {
+                            5
+                        } else {
+                            3
+                        };
                         (25, base_dmg)
                     } else {
                         decode_state(event_state.internal_state)
@@ -53,7 +62,11 @@ pub fn handle_choice(_engine_state: &mut EngineState, run_state: &mut RunState, 
 
                     // Take damage (DEFAULT type — Tungsten Rod reduces by 1)
                     let mut actual_dmg = dmg;
-                    if run_state.relics.iter().any(|r| r.id == RelicId::TungstenRod) {
+                    if run_state
+                        .relics
+                        .iter()
+                        .any(|r| r.id == RelicId::TungstenRod)
+                    {
                         actual_dmg = (actual_dmg - 1).max(0);
                     }
                     run_state.current_hp = (run_state.current_hp - actual_dmg).max(0);
@@ -72,13 +85,13 @@ pub fn handle_choice(_engine_state: &mut EngineState, run_state: &mut RunState, 
                         event_state.internal_state = encode_state(chance, dmg);
                         // Stay on screen 0
                     }
-                },
+                }
                 _ => {
                     // Flee
                     event_state.current_screen = 1;
                 }
             }
-        },
+        }
         _ => {
             event_state.completed = true;
         }

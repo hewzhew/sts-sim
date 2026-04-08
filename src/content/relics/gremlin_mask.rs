@@ -1,5 +1,5 @@
-use crate::combat::{CombatState, PlayerEntity};
 use crate::action::{Action, ActionInfo, AddTo};
+use crate::combat::{CombatState, PlayerEntity};
 use smallvec::SmallVec;
 
 /// Gremlin Mask: At the start of each combat, apply 1 Weak to yourself.

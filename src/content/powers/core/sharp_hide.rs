@@ -1,12 +1,17 @@
 use crate::action::{Action, DamageInfo, DamageType};
-use crate::combat::{CombatState, CombatCard};
+use crate::combat::{CombatCard, CombatState};
 use crate::content::cards::CardType;
 use crate::core::EntityId;
 use smallvec::{smallvec, SmallVec};
 
 /// Java SharpHidePower.onUseCard: fires once when an Attack card is played.
 /// Deals THORNS damage to the player equal to Sharp Hide amount.
-pub fn on_card_played(_state: &CombatState, owner: EntityId, card: &CombatCard, power_amount: i32) -> SmallVec<[Action; 2]> {
+pub fn on_card_played(
+    _state: &CombatState,
+    owner: EntityId,
+    card: &CombatCard,
+    power_amount: i32,
+) -> SmallVec<[Action; 2]> {
     let def = crate::content::cards::get_card_definition(card.id);
     if def.card_type == CardType::Attack {
         smallvec![Action::Damage(DamageInfo {

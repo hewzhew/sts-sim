@@ -1,7 +1,7 @@
-use crate::combat::CombatState;
-use crate::core::EntityId;
 use crate::action::Action;
+use crate::combat::CombatState;
 use crate::content::powers::PowerId;
+use crate::core::EntityId;
 
 pub fn on_monster_turn_ended(
     _state: &CombatState,
@@ -32,10 +32,7 @@ pub fn on_attacked(
     actions
 }
 
-pub fn on_remove(
-    _state: &CombatState,
-    owner: EntityId,
-) -> smallvec::SmallVec<[Action; 2]> {
+pub fn on_remove(_state: &CombatState, owner: EntityId) -> smallvec::SmallVec<[Action; 2]> {
     let mut actions = smallvec::smallvec![];
     // Trigger `ARMOR_BREAK` for Shelled Parasite
     if let Some(monster) = _state.monsters.iter().find(|m| m.id == owner) {

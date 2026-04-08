@@ -6,7 +6,11 @@ pub fn on_discard(_state: &crate::combat::CombatState) -> SmallVec<[ActionInfo; 
     // Java: addToBot(DamageRandomEnemyAction(DamageInfo(player, 3, THORNS)))
     // Target selection and RNG handled inside the engine's AttackDamageRandomEnemy handler.
     smallvec::smallvec![ActionInfo {
-        action: Action::AttackDamageRandomEnemy { base_damage: 3, damage_type: DamageType::Thorns },
+        action: Action::AttackDamageRandomEnemy {
+            base_damage: 3,
+            damage_type: DamageType::Thorns,
+            applies_target_modifiers: false,
+        },
         insertion_mode: AddTo::Bottom,
     }]
 }

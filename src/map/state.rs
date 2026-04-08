@@ -51,7 +51,9 @@ impl MapState {
         // WingBoots flight: allow traveling to any valid node above current position
         // Java: MapRoomNode.wingedIsConnected() — allows non-adjacent y as long as node exists
         if has_flight && target_y > self.current_y && target_y <= 14 {
-            if (target_y as usize) < self.graph.len() && (target_x as usize) < self.graph[target_y as usize].len() {
+            if (target_y as usize) < self.graph.len()
+                && (target_x as usize) < self.graph[target_y as usize].len()
+            {
                 let target_node = &self.graph[target_y as usize][target_x as usize];
                 // Node must have edges or be a valid room (not an empty/disconnected node)
                 if !target_node.edges.is_empty() || target_node.class.is_some() {
@@ -59,8 +61,8 @@ impl MapState {
                 }
             }
         }
-        
-        // Handling Boss Node Phase 
+
+        // Handling Boss Node Phase
         if target_y == 15 && self.current_y == 14 {
             return true;
         }
@@ -68,7 +70,12 @@ impl MapState {
         false
     }
 
-    pub fn travel_to(&mut self, target_x: i32, target_y: i32, has_flight: bool) -> Result<(), &'static str> {
+    pub fn travel_to(
+        &mut self,
+        target_x: i32,
+        target_y: i32,
+        has_flight: bool,
+    ) -> Result<(), &'static str> {
         if !self.can_travel_to(target_x, target_y, has_flight) {
             return Err("Invalid map traversal path");
         }
@@ -85,7 +92,10 @@ impl MapState {
     }
 
     pub fn get_current_node(&self) -> Option<&super::node::MapRoomNode> {
-        if self.current_y >= 0 && self.current_x >= 0 && (self.current_y as usize) < self.graph.len() {
+        if self.current_y >= 0
+            && self.current_x >= 0
+            && (self.current_y as usize) < self.graph.len()
+        {
             let row = &self.graph[self.current_y as usize];
             if (self.current_x as usize) < row.len() {
                 return Some(&row[self.current_x as usize]);

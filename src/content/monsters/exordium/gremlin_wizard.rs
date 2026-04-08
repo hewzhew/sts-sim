@@ -1,11 +1,16 @@
-use crate::combat::{CombatState, MonsterEntity, Intent};
 use crate::action::{Action, DamageInfo, DamageType};
+use crate::combat::{CombatState, Intent, MonsterEntity};
 use crate::content::monsters::MonsterBehavior;
 
 pub struct GremlinWizard;
 
 impl MonsterBehavior for GremlinWizard {
-    fn roll_move(_rng: &mut crate::rng::StsRng, _entity: &MonsterEntity, _ascension_level: u8, _num: i32) -> (u8, Intent) {
+    fn roll_move(
+        _rng: &mut crate::rng::StsRng,
+        _entity: &MonsterEntity,
+        _ascension_level: u8,
+        _num: i32,
+    ) -> (u8, Intent) {
         (2, Intent::Unknown) // First move is always CHARGE
     }
 
@@ -14,7 +19,8 @@ impl MonsterBehavior for GremlinWizard {
         let mut actions = Vec::new();
 
         match entity.next_move_byte {
-            1 => { // DOPE_MAGIC
+            1 => {
+                // DOPE_MAGIC
                 actions.push(Action::Damage(DamageInfo {
                     source: entity.id,
                     target: 0,
@@ -28,7 +34,10 @@ impl MonsterBehavior for GremlinWizard {
                     actions.push(Action::SetMonsterMove {
                         monster_id: entity.id,
                         next_move_byte: 1,
-                        intent: Intent::Attack { damage: magic_dmg, hits: 1 },
+                        intent: Intent::Attack {
+                            damage: magic_dmg,
+                            hits: 1,
+                        },
                     });
                 } else {
                     actions.push(Action::SetMonsterMove {
@@ -38,7 +47,8 @@ impl MonsterBehavior for GremlinWizard {
                     });
                 }
             }
-            2 => { // CHARGE
+            2 => {
+                // CHARGE
                 // Count how many times it has consecutively played '2'
                 let mut current_charge = 1;
                 for byte in entity.move_history.iter().rev() {
@@ -48,13 +58,16 @@ impl MonsterBehavior for GremlinWizard {
                         break;
                     }
                 }
-                
+
                 if current_charge >= 3 {
                     // Next turn it attacks
                     actions.push(Action::SetMonsterMove {
                         monster_id: entity.id,
                         next_move_byte: 1,
-                        intent: Intent::Attack { damage: magic_dmg, hits: 1 },
+                        intent: Intent::Attack {
+                            damage: magic_dmg,
+                            hits: 1,
+                        },
                     });
                 } else {
                     actions.push(Action::SetMonsterMove {
@@ -64,14 +77,12 @@ impl MonsterBehavior for GremlinWizard {
                     });
                 }
             }
-            99 => { // ESCAPE
+            99 => {
+                // ESCAPE
                 actions.push(Action::Escape { target: entity.id });
             }
-            _ => { }
+            _ => {}
         }
-
-        actions.push(Action::RollMonsterMove { monster_id: entity.id });
-
 
         actions
     }

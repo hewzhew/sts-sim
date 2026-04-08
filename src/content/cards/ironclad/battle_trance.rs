@@ -1,5 +1,5 @@
-use crate::combat::{CombatState, CombatCard};
 use crate::action::{Action, ActionInfo, AddTo};
+use crate::combat::{CombatCard, CombatState};
 use smallvec::SmallVec;
 
 pub fn battle_trance_play(_state: &CombatState, card: &CombatCard) -> SmallVec<[ActionInfo; 4]> {
@@ -13,7 +13,7 @@ pub fn battle_trance_play(_state: &CombatState, card: &CombatCard) -> SmallVec<[
                 source: 0,
                 target: 0,
                 power_id: crate::content::powers::PowerId::NoDraw,
-                amount: 1, // 1 turn of No Draw
+                amount: -1, // Java NoDrawPower uses a sentinel amount of -1
             },
             insertion_mode: AddTo::Bottom,
         }

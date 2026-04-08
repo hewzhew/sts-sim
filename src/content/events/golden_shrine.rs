@@ -7,8 +7,12 @@ pub fn get_choices(run_state: &RunState, event_state: &EventState) -> Vec<EventC
     if event_state.current_screen == 1 {
         return vec![EventChoiceMeta::new("[Leave]")];
     }
-    
-    let gold_amt = if run_state.ascension_level >= 15 { 50 } else { 100 };
+
+    let gold_amt = if run_state.ascension_level >= 15 {
+        50
+    } else {
+        100
+    };
     vec![
         EventChoiceMeta::new(format!("[Pray] Gain {} Gold.", gold_amt)),
         EventChoiceMeta::new("[Desecrate] Gain 275 Gold. Become Cursed - Regret."),
@@ -30,22 +34,29 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
 
         if current_screen == 0 {
             match choice_idx {
-                0 => { // Pray: +gold (100 or 50 at A15)
-                    let gold_amt = if run_state.ascension_level >= 15 { 50 } else { 100 };
+                0 => {
+                    // Pray: +gold (100 or 50 at A15)
+                    let gold_amt = if run_state.ascension_level >= 15 {
+                        50
+                    } else {
+                        100
+                    };
                     run_state.gold += gold_amt;
                     if let Some(es) = &mut run_state.event_state {
                         es.current_screen = 1; // Transition to leave screen
                     }
-                },
-                1 => { // Desecrate: +275 Gold, +Regret (via add_card_to_deck for Omamori check)
+                }
+                1 => {
+                    // Desecrate: +275 Gold, +Regret (via add_card_to_deck for Omamori check)
                     run_state.gold += 275;
                     run_state.add_card_to_deck(CardId::Regret);
 
                     if let Some(es) = &mut run_state.event_state {
                         es.current_screen = 1;
                     }
-                },
-                _ => { // Leave
+                }
+                _ => {
+                    // Leave
                     if let Some(es) = &mut run_state.event_state {
                         es.completed = true;
                     }

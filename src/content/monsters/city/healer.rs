@@ -1,5 +1,5 @@
-use crate::combat::{CombatState, MonsterEntity, Intent};
-use crate::action::{Action, DamageType, DamageInfo};
+use crate::action::{Action, DamageInfo, DamageType};
+use crate::combat::{CombatState, Intent, MonsterEntity};
 use crate::content::monsters::MonsterBehavior;
 use crate::content::powers::PowerId;
 
@@ -23,10 +23,16 @@ impl Healer {
 
         let num = rng.random_range(0, 99);
         let move_history = &entity.move_history;
-        
-        let last_two_moves_2 = move_history.len() >= 2 && move_history[move_history.len() - 1] == 2 && move_history[move_history.len() - 2] == 2;
-        let last_two_moves_3 = move_history.len() >= 2 && move_history[move_history.len() - 1] == 3 && move_history[move_history.len() - 2] == 3;
-        let last_two_moves_1 = move_history.len() >= 2 && move_history[move_history.len() - 1] == 1 && move_history[move_history.len() - 2] == 1;
+
+        let last_two_moves_2 = move_history.len() >= 2
+            && move_history[move_history.len() - 1] == 2
+            && move_history[move_history.len() - 2] == 2;
+        let last_two_moves_3 = move_history.len() >= 2
+            && move_history[move_history.len() - 1] == 3
+            && move_history[move_history.len() - 2] == 3;
+        let last_two_moves_1 = move_history.len() >= 2
+            && move_history[move_history.len() - 1] == 1
+            && move_history[move_history.len() - 2] == 1;
         let last_move_1 = move_history.len() >= 1 && move_history[move_history.len() - 1] == 1;
 
         if ascension_level >= 17 {
@@ -34,14 +40,26 @@ impl Healer {
                 return (2, Intent::Buff);
             }
             if num >= 40 && !last_move_1 {
-                return (1, Intent::AttackDebuff { damage: magic_dmg, hits: 1 });
+                return (
+                    1,
+                    Intent::AttackDebuff {
+                        damage: magic_dmg,
+                        hits: 1,
+                    },
+                );
             }
         } else {
             if need_to_heal > 15 && !last_two_moves_2 {
                 return (2, Intent::Buff);
             }
             if num >= 40 && !last_two_moves_1 {
-                return (1, Intent::AttackDebuff { damage: magic_dmg, hits: 1 });
+                return (
+                    1,
+                    Intent::AttackDebuff {
+                        damage: magic_dmg,
+                        hits: 1,
+                    },
+                );
             }
         }
 
@@ -49,12 +67,23 @@ impl Healer {
             return (3, Intent::Buff);
         }
 
-        (1, Intent::AttackDebuff { damage: magic_dmg, hits: 1 })
+        (
+            1,
+            Intent::AttackDebuff {
+                damage: magic_dmg,
+                hits: 1,
+            },
+        )
     }
 }
 
 impl MonsterBehavior for Healer {
-    fn roll_move(_rng: &mut crate::rng::StsRng, _entity: &MonsterEntity, _ascension_level: u8, _num: i32) -> (u8, Intent) {
+    fn roll_move(
+        _rng: &mut crate::rng::StsRng,
+        _entity: &MonsterEntity,
+        _ascension_level: u8,
+        _num: i32,
+    ) -> (u8, Intent) {
         unreachable!("Healer requires roll_move_custom with monsters slice");
     }
 
@@ -62,10 +91,17 @@ impl MonsterBehavior for Healer {
         let mut actions = Vec::new();
         let magic_dmg = if state.ascension_level >= 2 { 9 } else { 8 };
         let heal_amt = if state.ascension_level >= 17 { 20 } else { 16 };
-        let str_amt = if state.ascension_level >= 17 { 4 } else if state.ascension_level >= 2 { 3 } else { 2 };
+        let str_amt = if state.ascension_level >= 17 {
+            4
+        } else if state.ascension_level >= 2 {
+            3
+        } else {
+            2
+        };
 
         match entity.next_move_byte {
-            1 => { // ATTACK
+            1 => {
+                // ATTACK
                 actions.push(Action::Damage(DamageInfo {
                     source: entity.id,
                     target: 0, // Player
@@ -81,7 +117,8 @@ impl MonsterBehavior for Healer {
                     amount: 2,
                 });
             }
-            2 => { // HEAL
+            2 => {
+                // HEAL
                 for m in state.monsters.iter() {
                     if !m.is_dying && !m.is_escaped {
                         actions.push(Action::Heal {
@@ -91,7 +128,8 @@ impl MonsterBehavior for Healer {
                     }
                 }
             }
-            3 => { // BUFF
+            3 => {
+                // BUFF
                 for m in state.monsters.iter() {
                     if !m.is_dying && !m.is_escaped {
                         actions.push(Action::ApplyPower {
@@ -106,7 +144,9 @@ impl MonsterBehavior for Healer {
             _ => {}
         }
 
-        actions.push(Action::RollMonsterMove { monster_id: entity.id });
+        actions.push(Action::RollMonsterMove {
+            monster_id: entity.id,
+        });
         actions
     }
 }

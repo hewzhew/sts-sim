@@ -1,8 +1,8 @@
 pub mod core;
-pub mod reward;
-pub mod run;
-pub mod events;
 
+pub mod events;
+pub mod run;
+
+pub use crate::rewards::state::{BossRelicChoiceState, RewardCard, RewardItem, RewardState};
 pub use core::*;
-pub use reward::{RewardState, RewardItem};
 pub use run::RunState;

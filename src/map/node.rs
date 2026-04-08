@@ -46,7 +46,12 @@ pub struct MapEdge {
 
 impl MapEdge {
     pub fn new(src_x: i32, src_y: i32, dst_x: i32, dst_y: i32) -> Self {
-        Self { src_x, src_y, dst_x, dst_y }
+        Self {
+            src_x,
+            src_y,
+            dst_x,
+            dst_y,
+        }
     }
 }
 

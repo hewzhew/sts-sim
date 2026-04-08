@@ -1,4 +1,4 @@
-use crate::content::cards::{CardId, CardRarity, get_card_definition, ironclad_pool_for_rarity};
+use crate::content::cards::{get_card_definition, ironclad_pool_for_rarity, CardId, CardRarity};
 use crate::state::core::EngineState;
 use crate::state::events::{EventChoiceMeta, EventState};
 use crate::state::run::RunState;
@@ -15,13 +15,17 @@ use crate::state::run::RunState;
 pub fn get_choices(run_state: &RunState, event_state: &EventState) -> Vec<EventChoiceMeta> {
     match event_state.current_screen {
         0 => {
-            let heal_pct = if run_state.ascension_level >= 15 { 0.20 } else { 0.33 };
+            let heal_pct = if run_state.ascension_level >= 15 {
+                0.20
+            } else {
+                0.33
+            };
             let heal_amt = (run_state.max_hp as f32 * heal_pct).round() as i32;
             vec![
                 EventChoiceMeta::new("[Read] Choose a card from 20 offerings."),
                 EventChoiceMeta::new(format!("[Sleep] Heal {} HP.", heal_amt)),
             ]
-        },
+        }
         1 => {
             // Show 20 card offerings from extra_data
             let mut choices = Vec::with_capacity(20);
@@ -29,11 +33,12 @@ pub fn get_choices(run_state: &RunState, event_state: &EventState) -> Vec<EventC
                 let card_id: CardId = unsafe { std::mem::transmute::<i32, CardId>(card_disc) };
                 let def = get_card_definition(card_id);
                 choices.push(EventChoiceMeta::new(format!(
-                    "{} ({:?} {:?})", def.name, def.rarity, def.card_type
+                    "{} ({:?} {:?})",
+                    def.name, def.rarity, def.card_type
                 )));
             }
             choices
-        },
+        }
         _ => vec![EventChoiceMeta::new("[Leave]")],
     }
 }
@@ -48,16 +53,20 @@ pub fn handle_choice(_engine_state: &mut EngineState, run_state: &mut RunState, 
                     // Read: generate 20 cards and show them
                     generate_library_cards(run_state, &mut event_state.extra_data);
                     event_state.current_screen = 1;
-                },
+                }
                 _ => {
                     // Sleep: heal
-                    let heal_pct = if run_state.ascension_level >= 15 { 0.20 } else { 0.33 };
+                    let heal_pct = if run_state.ascension_level >= 15 {
+                        0.20
+                    } else {
+                        0.33
+                    };
                     let heal_amt = (run_state.max_hp as f32 * heal_pct).round() as i32;
                     run_state.current_hp = (run_state.current_hp + heal_amt).min(run_state.max_hp);
                     event_state.current_screen = 2;
-                },
+                }
             }
-        },
+        }
         1 => {
             // Pick one of the 20 cards
             if choice_idx < event_state.extra_data.len() {
@@ -66,7 +75,7 @@ pub fn handle_choice(_engine_state: &mut EngineState, run_state: &mut RunState, 
                 run_state.add_card_to_deck(card_id);
             }
             event_state.current_screen = 2;
-        },
+        }
         _ => {
             event_state.completed = true;
         }
@@ -134,6 +143,9 @@ fn roll_and_get_card(run_state: &mut RunState) -> CardId {
 
     // Step 2: getCard(rarity) — uses cardRng via pool.getRandomCard(true)
     let pool = ironclad_pool_for_rarity(rarity);
-    let idx = run_state.rng_pool.card_rng.random_range(0, pool.len() as i32 - 1) as usize;
+    let idx = run_state
+        .rng_pool
+        .card_rng
+        .random_range(0, pool.len() as i32 - 1) as usize;
     pool[idx]
 }

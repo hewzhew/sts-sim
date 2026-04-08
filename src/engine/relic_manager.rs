@@ -4,7 +4,11 @@ use crate::state::run::RunState;
 
 /// Central router for macro/out-of-combat relic hooks, modeling Java's AbstractRelic lifecycle.
 /// Primary hook: on_equip (called when a relic is added to the player's run state).
-pub fn on_equip(run_state: &mut RunState, relic_id: RelicId, return_state: EngineState) -> Option<EngineState> {
+pub fn on_equip(
+    run_state: &mut RunState,
+    relic_id: RelicId,
+    return_state: EngineState,
+) -> Option<EngineState> {
     // We will route specific on_equip logic to the individual relic modules.
     use crate::content::relics::*;
     match relic_id {
@@ -38,13 +42,13 @@ pub fn on_equip(run_state: &mut RunState, relic_id: RelicId, return_state: Engin
         RelicId::PandorasBox => {
             let results = pandoras_box::on_equip(run_state);
             if !results.is_empty() {
-                println!("  [Pandora's Box] Transformed {} cards:", results.len());
+                eprintln!("  [Pandora's Box] Transformed {} cards:", results.len());
                 for (old, new) in &results {
-                    println!("    {} → {}", old, new);
+                    eprintln!("    {} → {}", old, new);
                 }
             }
             None
-        },
+        }
         // CallingBell: Curse of the Bell + 3 Relics
         RelicId::CallingBell => calling_bell::on_equip(run_state, return_state),
         // Orrery: 5 Card Rewards

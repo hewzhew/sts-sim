@@ -23,16 +23,17 @@ pub struct CombatReplay {
 
 #[derive(Debug)]
 pub struct ReplayAction {
-    pub action_type: String,  // "play" | "end_turn" | "potion"
+    pub action_type: String, // "play" | "end_turn" | "potion"
     pub card_index: Option<usize>,
     pub target: Option<usize>,
     pub command: Option<String>,
-    pub result: Value,  // The Java state snapshot AFTER this action
+    pub result: Value, // The Java state snapshot AFTER this action
 }
 
 pub fn parse_replay(jsonl_path: &str) -> ReplayData {
     let content = std::fs::read_to_string(jsonl_path).expect("Failed to read JSONL");
-    let events: Vec<Value> = content.lines()
+    let events: Vec<Value> = content
+        .lines()
         .map(|l| serde_json::from_str(l).expect("Invalid JSON line"))
         .collect();
 
@@ -43,19 +44,25 @@ pub fn parse_replay(jsonl_path: &str) -> ReplayData {
 
     for event in &events {
         let event_type = event["type"].as_str().unwrap_or("");
-        
+
         match event_type {
             "init" => {
                 format_version = event["format_version"].as_u64().unwrap_or(1) as u32;
-                capabilities = event["capabilities"].as_array()
-                    .map(|arr| arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect())
+                capabilities = event["capabilities"]
+                    .as_array()
+                    .map(|arr| {
+                        arr.iter()
+                            .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                            .collect()
+                    })
                     .unwrap_or_default();
             }
             "combat_start" => {
                 if let Some(c) = current_combat.take() {
                     combats.push(c);
                 }
-                let monsters: Vec<String> = event["monsters"].as_array()
+                let monsters: Vec<String> = event["monsters"]
+                    .as_array()
                     .unwrap_or(&vec![])
                     .iter()
                     .map(|m| m["name"].as_str().unwrap_or("?").to_string())
@@ -124,5 +131,9 @@ pub fn parse_replay(jsonl_path: &str) -> ReplayData {
     if let Some(c) = current_combat.take() {
         combats.push(c);
     }
-    ReplayData { format_version, capabilities, combats }
+    ReplayData {
+        format_version,
+        capabilities,
+        combats,
+    }
 }

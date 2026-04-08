@@ -1,5 +1,5 @@
-use crate::combat::{CombatState, CombatCard};
 use crate::action::{Action, ActionInfo, AddTo, DamageType};
+use crate::combat::{CombatCard, CombatState};
 use smallvec::SmallVec;
 
 pub fn cleave_play(_state: &CombatState, card: &CombatCard) -> SmallVec<[ActionInfo; 4]> {

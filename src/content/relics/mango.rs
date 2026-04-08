@@ -1,6 +1,6 @@
+use crate::action::ActionInfo;
 use crate::state::core::EngineState;
 use crate::state::run::RunState;
-use crate::action::ActionInfo;
 use smallvec::SmallVec;
 
 pub fn on_equip(run_state: &mut RunState) -> Option<EngineState> {

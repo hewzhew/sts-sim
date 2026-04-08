@@ -11,7 +11,10 @@ pub fn at_battle_start(state: &CombatState, counter: i32) -> SmallVec<[ActionInf
         for monster in &state.monsters {
             if !monster.is_escaped && !monster.is_dying && monster.current_hp > 1 {
                 actions.push(ActionInfo {
-                    action: Action::LoseHp { target: monster.id, amount: monster.current_hp - 1 },
+                    action: Action::LoseHp {
+                        target: monster.id,
+                        amount: monster.current_hp - 1,
+                    },
                     insertion_mode: AddTo::Bottom,
                 });
             }

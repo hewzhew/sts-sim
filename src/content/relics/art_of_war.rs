@@ -1,11 +1,23 @@
-use crate::action::{ActionInfo, Action, AddTo};
-use smallvec::SmallVec;
+use crate::action::{Action, ActionInfo, AddTo};
 use crate::combat::CombatState;
+use smallvec::SmallVec;
+
+pub fn at_pre_battle(
+    relic_state: &mut crate::content::relics::RelicState,
+) -> SmallVec<[ActionInfo; 4]> {
+    // Java: firstTurn = true; gainEnergyNext = true;
+    // In our implementation, counter = -1 simulates firstTurn.
+    relic_state.counter = -1;
+    SmallVec::new()
+}
 
 /// Art of War: If you do not play any Attacks during your turn, gain an extra Energy next turn.
-pub fn at_turn_start(_state: &CombatState, relic_state: &mut crate::content::relics::RelicState) -> SmallVec<[ActionInfo; 4]> {
+pub fn at_turn_start(
+    _state: &CombatState,
+    relic_state: &mut crate::content::relics::RelicState,
+) -> SmallVec<[ActionInfo; 4]> {
     let mut actions = SmallVec::new();
-    
+
     // In Java, at PreBattle gainEnergyNext = true, firstTurn = true.
     // counter = 1 means gainEnergyNext. counter = 0 means don't.
     // We treat initially empty counter (-1) as first turn.
@@ -30,10 +42,14 @@ pub fn at_turn_start(_state: &CombatState, relic_state: &mut crate::content::rel
     actions
 }
 
-pub fn on_use_card(_state: &CombatState, _relic_state: &mut crate::content::relics::RelicState, card_id: crate::content::cards::CardId) -> SmallVec<[ActionInfo; 4]> {
+pub fn on_use_card(
+    _state: &CombatState,
+    _relic_state: &mut crate::content::relics::RelicState,
+    card_id: crate::content::cards::CardId,
+) -> SmallVec<[ActionInfo; 4]> {
     let mut actions = SmallVec::new();
     let def = crate::content::cards::get_card_definition(card_id);
-    
+
     if def.card_type == crate::content::cards::CardType::Attack {
         // Attack played -> disable energy gain next turn
         actions.push(ActionInfo {
@@ -44,6 +60,6 @@ pub fn on_use_card(_state: &CombatState, _relic_state: &mut crate::content::reli
             insertion_mode: AddTo::Bottom,
         });
     }
-    
+
     actions
 }

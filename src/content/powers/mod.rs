@@ -34,6 +34,7 @@ pub enum PowerId {
     FireBreathing,
     NoDraw,
     Regen,
+    Regeneration,
     Rage,
     Berserk,
     Angry,
@@ -88,7 +89,7 @@ pub enum PowerId {
     BackAttack,
 }
 
-use crate::combat::{CombatState, CombatCard};
+use crate::combat::{CombatCard, CombatState};
 
 pub struct PowerDefinition {
     pub id: PowerId,
@@ -103,10 +104,22 @@ pub fn is_debuff(id: PowerId, amount: i32) -> bool {
         // Dynamic: DEBUFF when amount < 0
         PowerId::Strength | PowerId::Focus | PowerId::Dexterity => amount < 0,
         // Fixed DEBUFFs (from Java constructor: this.type = PowerType.DEBUFF)
-        PowerId::Vulnerable | PowerId::Weak | PowerId::Frail | PowerId::Poison
-        | PowerId::Entangle | PowerId::NoDraw | PowerId::Constricted | PowerId::Confusion
-        | PowerId::Hex | PowerId::Slow | PowerId::LoseStrength | PowerId::DexterityDown
-        | PowerId::NoSkills | PowerId::Fading | PowerId::Shackled | PowerId::DrawReduction => true,
+        PowerId::Vulnerable
+        | PowerId::Weak
+        | PowerId::Frail
+        | PowerId::Poison
+        | PowerId::Entangle
+        | PowerId::NoDraw
+        | PowerId::Constricted
+        | PowerId::Confusion
+        | PowerId::Hex
+        | PowerId::Slow
+        | PowerId::LoseStrength
+        | PowerId::DexterityDown
+        | PowerId::NoSkills
+        | PowerId::Fading
+        | PowerId::Shackled
+        | PowerId::DrawReduction => true,
         // Everything else is BUFF
         _ => false,
     }
@@ -114,87 +127,270 @@ pub fn is_debuff(id: PowerId, amount: i32) -> bool {
 
 pub fn get_power_definition(id: PowerId) -> PowerDefinition {
     match id {
-        PowerId::Strength => PowerDefinition { id, name: "Strength" },
-        PowerId::Vulnerable => PowerDefinition { id, name: "Vulnerable" },
+        PowerId::Strength => PowerDefinition {
+            id,
+            name: "Strength",
+        },
+        PowerId::Vulnerable => PowerDefinition {
+            id,
+            name: "Vulnerable",
+        },
         PowerId::Weak => PowerDefinition { id, name: "Weak" },
         PowerId::Frail => PowerDefinition { id, name: "Frail" },
-        PowerId::Dexterity => PowerDefinition { id, name: "Dexterity" },
+        PowerId::Dexterity => PowerDefinition {
+            id,
+            name: "Dexterity",
+        },
         PowerId::Ritual => PowerDefinition { id, name: "Ritual" },
         PowerId::Poison => PowerDefinition { id, name: "Poison" },
-        PowerId::LoseStrength => PowerDefinition { id, name: "Lose Strength" },
-        PowerId::DemonForm => PowerDefinition { id, name: "Demon Form" },
-        PowerId::Corruption => PowerDefinition { id, name: "Corruption" },
-        PowerId::DoubleTap => PowerDefinition { id, name: "Double Tap" },
-        PowerId::DuplicationPower => PowerDefinition { id, name: "Duplication" },
-        PowerId::FeelNoPain => PowerDefinition { id, name: "Feel No Pain" },
-        PowerId::DarkEmbrace => PowerDefinition { id, name: "Dark Embrace" },
+        PowerId::LoseStrength => PowerDefinition {
+            id,
+            name: "Lose Strength",
+        },
+        PowerId::DemonForm => PowerDefinition {
+            id,
+            name: "Demon Form",
+        },
+        PowerId::Corruption => PowerDefinition {
+            id,
+            name: "Corruption",
+        },
+        PowerId::DoubleTap => PowerDefinition {
+            id,
+            name: "Double Tap",
+        },
+        PowerId::DuplicationPower => PowerDefinition {
+            id,
+            name: "Duplication",
+        },
+        PowerId::FeelNoPain => PowerDefinition {
+            id,
+            name: "Feel No Pain",
+        },
+        PowerId::DarkEmbrace => PowerDefinition {
+            id,
+            name: "Dark Embrace",
+        },
         PowerId::Minion => PowerDefinition { id, name: "Minion" },
-        PowerId::Rupture => PowerDefinition { id, name: "Rupture" },
-        PowerId::Combust => PowerDefinition { id, name: "Combust" },
-        PowerId::Brutality => PowerDefinition { id, name: "Brutality" },
-        PowerId::Barricade => PowerDefinition { id, name: "Barricade" },
-        PowerId::Juggernaut => PowerDefinition { id, name: "Juggernaut" },
-        PowerId::FlameBarrier => PowerDefinition { id, name: "Flame Barrier" },
-        PowerId::Metallicize => PowerDefinition { id, name: "Metallicize" },
-        PowerId::CurlUp => PowerDefinition { id, name: "Curl Up" },
-        PowerId::SporeCloud => PowerDefinition { id, name: "Spore Cloud" },
+        PowerId::Rupture => PowerDefinition {
+            id,
+            name: "Rupture",
+        },
+        PowerId::Combust => PowerDefinition {
+            id,
+            name: "Combust",
+        },
+        PowerId::Brutality => PowerDefinition {
+            id,
+            name: "Brutality",
+        },
+        PowerId::Barricade => PowerDefinition {
+            id,
+            name: "Barricade",
+        },
+        PowerId::Juggernaut => PowerDefinition {
+            id,
+            name: "Juggernaut",
+        },
+        PowerId::FlameBarrier => PowerDefinition {
+            id,
+            name: "Flame Barrier",
+        },
+        PowerId::Metallicize => PowerDefinition {
+            id,
+            name: "Metallicize",
+        },
+        PowerId::CurlUp => PowerDefinition {
+            id,
+            name: "Curl Up",
+        },
+        PowerId::SporeCloud => PowerDefinition {
+            id,
+            name: "Spore Cloud",
+        },
         PowerId::Split => PowerDefinition { id, name: "Split" },
-        PowerId::GenericStrengthUp => PowerDefinition { id, name: "Generic Strength Up" },
-        PowerId::Entangle => PowerDefinition { id, name: "Entangled" },
+        PowerId::GenericStrengthUp => PowerDefinition {
+            id,
+            name: "Generic Strength Up",
+        },
+        PowerId::Entangle => PowerDefinition {
+            id,
+            name: "Entangled",
+        },
         PowerId::Evolve => PowerDefinition { id, name: "Evolve" },
-        PowerId::FireBreathing => PowerDefinition { id, name: "Fire Breathing" },
-        PowerId::NoDraw => PowerDefinition { id, name: "No Draw" },
-        PowerId::Regen => PowerDefinition { id, name: "Regen" },
+        PowerId::FireBreathing => PowerDefinition {
+            id,
+            name: "Fire Breathing",
+        },
+        PowerId::NoDraw => PowerDefinition {
+            id,
+            name: "No Draw",
+        },
+        PowerId::Regen => PowerDefinition {
+            id,
+            name: "Regenerate",
+        },
+        PowerId::Regeneration => PowerDefinition {
+            id,
+            name: "Regeneration",
+        },
         PowerId::Rage => PowerDefinition { id, name: "Rage" },
-        PowerId::Berserk => PowerDefinition { id, name: "Berserk" },
+        PowerId::Berserk => PowerDefinition {
+            id,
+            name: "Berserk",
+        },
         PowerId::Angry => PowerDefinition { id, name: "Angry" },
         PowerId::Anger => PowerDefinition { id, name: "Anger" },
-        PowerId::ModeShift => PowerDefinition { id, name: "Mode Shift" },
-        PowerId::SharpHide => PowerDefinition { id, name: "Sharp Hide" },
-        PowerId::Artifact => PowerDefinition { id, name: "Artifact" },
-        PowerId::GuardianThreshold => PowerDefinition { id, name: "Guardian Threshold" },
+        // Java: Mode Shift is a display/state power. Guardian-specific behavior lives on the monster.
+        PowerId::ModeShift => PowerDefinition {
+            id,
+            name: "Mode Shift",
+        },
+        PowerId::SharpHide => PowerDefinition {
+            id,
+            name: "Sharp Hide",
+        },
+        PowerId::Artifact => PowerDefinition {
+            id,
+            name: "Artifact",
+        },
+        // Internal Rust-only tracker for The Guardian's next threshold; not exported by Java snapshots.
+        PowerId::GuardianThreshold => PowerDefinition {
+            id,
+            name: "Guardian Threshold",
+        },
         PowerId::Flight => PowerDefinition { id, name: "Flight" },
         PowerId::Hex => PowerDefinition { id, name: "Hex" },
-        PowerId::Malleable => PowerDefinition { id, name: "Malleable" },
-        PowerId::PlatedArmor => PowerDefinition { id, name: "Plated Armor" },
-        PowerId::Confusion => PowerDefinition { id, name: "Confusion" },
-        PowerId::Thievery => PowerDefinition { id, name: "Thievery" },
-        PowerId::PainfulStabs => PowerDefinition { id, name: "Painful Stabs" },
+        PowerId::Malleable => PowerDefinition {
+            id,
+            name: "Malleable",
+        },
+        PowerId::PlatedArmor => PowerDefinition {
+            id,
+            name: "Plated Armor",
+        },
+        PowerId::Confusion => PowerDefinition {
+            id,
+            name: "Confusion",
+        },
+        PowerId::Thievery => PowerDefinition {
+            id,
+            name: "Thievery",
+        },
+        PowerId::PainfulStabs => PowerDefinition {
+            id,
+            name: "Painful Stabs",
+        },
         PowerId::Stasis => PowerDefinition { id, name: "Stasis" },
-        PowerId::Explosive => PowerDefinition { id, name: "Explosive" },
+        PowerId::Explosive => PowerDefinition {
+            id,
+            name: "Explosive",
+        },
         PowerId::Thorns => PowerDefinition { id, name: "Thorns" },
         PowerId::Regrow => PowerDefinition { id, name: "Regrow" },
-        PowerId::Constricted => PowerDefinition { id, name: "Constricted" },
+        PowerId::Constricted => PowerDefinition {
+            id,
+            name: "Constricted",
+        },
         PowerId::Fading => PowerDefinition { id, name: "Fading" },
-        PowerId::Shifting => PowerDefinition { id, name: "Shifting" },
-        PowerId::Reactive => PowerDefinition { id, name: "Reactive" },
+        PowerId::Shifting => PowerDefinition {
+            id,
+            name: "Shifting",
+        },
+        PowerId::Reactive => PowerDefinition {
+            id,
+            name: "Reactive",
+        },
         PowerId::Slow => PowerDefinition { id, name: "Slow" },
-        PowerId::Intangible => PowerDefinition { id, name: "Intangible" },
-        PowerId::Curiosity => PowerDefinition { id, name: "Curiosity" },
-        PowerId::Unawakened => PowerDefinition { id, name: "Unawakened" },
-        PowerId::Shackled => PowerDefinition { id, name: "Shackled" },
-        PowerId::DrawReduction => PowerDefinition { id: PowerId::DrawReduction, name: "Draw Reduction" },
-        PowerId::Surrounded => PowerDefinition { id: PowerId::Surrounded, name: "Surrounded" },
-        PowerId::BackAttack => PowerDefinition { id: PowerId::BackAttack, name: "Back Attack" },
-        PowerId::TimeWarp => PowerDefinition { id, name: "Time Warp" },
-        PowerId::Invincible => PowerDefinition { id, name: "Invincible" },
-        PowerId::BeatOfDeath => PowerDefinition { id, name: "Beat of Death" },
+        PowerId::Intangible => PowerDefinition {
+            id,
+            name: "Intangible",
+        },
+        PowerId::Curiosity => PowerDefinition {
+            id,
+            name: "Curiosity",
+        },
+        PowerId::Unawakened => PowerDefinition {
+            id,
+            name: "Unawakened",
+        },
+        PowerId::Shackled => PowerDefinition {
+            id,
+            name: "Shackled",
+        },
+        PowerId::DrawReduction => PowerDefinition {
+            id: PowerId::DrawReduction,
+            name: "Draw Reduction",
+        },
+        PowerId::Surrounded => PowerDefinition {
+            id: PowerId::Surrounded,
+            name: "Surrounded",
+        },
+        PowerId::BackAttack => PowerDefinition {
+            id: PowerId::BackAttack,
+            name: "Back Attack",
+        },
+        PowerId::TimeWarp => PowerDefinition {
+            id,
+            name: "Time Warp",
+        },
+        PowerId::Invincible => PowerDefinition {
+            id,
+            name: "Invincible",
+        },
+        PowerId::BeatOfDeath => PowerDefinition {
+            id,
+            name: "Beat of Death",
+        },
         PowerId::Vigor => PowerDefinition { id, name: "Vigor" },
         PowerId::Mantra => PowerDefinition { id, name: "Mantra" },
         PowerId::Focus => PowerDefinition { id, name: "Focus" },
-        PowerId::DexterityDown => PowerDefinition { id, name: "Dexterity Down" },
-        PowerId::PenNibPower => PowerDefinition { id, name: "Pen Nib" },
-        PowerId::NextTurnBlock => PowerDefinition { id, name: "Next Turn Block" },
-        PowerId::Energized => PowerDefinition { id, name: "Energized" },
-        PowerId::MagnetismPower => PowerDefinition { id, name: "Magnetism" },
+        PowerId::DexterityDown => PowerDefinition {
+            id,
+            name: "Dexterity Down",
+        },
+        PowerId::PenNibPower => PowerDefinition {
+            id,
+            name: "Pen Nib",
+        },
+        PowerId::NextTurnBlock => PowerDefinition {
+            id,
+            name: "Next Turn Block",
+        },
+        PowerId::Energized => PowerDefinition {
+            id,
+            name: "Energized",
+        },
+        PowerId::MagnetismPower => PowerDefinition {
+            id,
+            name: "Magnetism",
+        },
         PowerId::MayhemPower => PowerDefinition { id, name: "Mayhem" },
-        PowerId::PanachePower => PowerDefinition { id, name: "Panache" },
-        PowerId::SadisticPower => PowerDefinition { id, name: "Sadistic Nature" },
-        PowerId::TheBombPower => PowerDefinition { id, name: "The Bomb" },
+        PowerId::PanachePower => PowerDefinition {
+            id,
+            name: "Panache",
+        },
+        PowerId::SadisticPower => PowerDefinition {
+            id,
+            name: "Sadistic Nature",
+        },
+        PowerId::TheBombPower => PowerDefinition {
+            id,
+            name: "The Bomb",
+        },
         PowerId::Buffer => PowerDefinition { id, name: "Buffer" },
-        PowerId::Electro => PowerDefinition { id, name: "Electrodynamics" },
-        PowerId::NoSkills => PowerDefinition { id, name: "No Skills" },
-        PowerId::ThousandCuts => PowerDefinition { id, name: "A Thousand Cuts" },
+        PowerId::Electro => PowerDefinition {
+            id,
+            name: "Electrodynamics",
+        },
+        PowerId::NoSkills => PowerDefinition {
+            id,
+            name: "No Skills",
+        },
+        PowerId::ThousandCuts => PowerDefinition {
+            id,
+            name: "A Thousand Cuts",
+        },
     }
 }
 
@@ -206,93 +402,141 @@ pub fn power_removes_at_zero(id: PowerId) -> bool {
 }
 
 // Global Power Hook Routers
-pub fn resolve_power_on_apply(id: PowerId, state: &mut CombatState, _target: crate::core::EntityId) {
+pub fn resolve_power_on_apply(
+    id: PowerId,
+    state: &mut CombatState,
+    _target: crate::core::EntityId,
+) {
     match id {
         PowerId::Corruption => ironclad::corruption::on_apply(state),
         _ => {}
     }
 }
 
-pub fn resolve_power_on_card_draw(id: PowerId, state: &CombatState, card: &mut CombatCard) {
+pub fn resolve_power_on_card_draw(id: PowerId, state: &mut CombatState, card: &mut CombatCard) {
     match id {
         PowerId::Corruption => ironclad::corruption::on_card_draw(state, card),
-        _ => {} 
+        PowerId::Confusion => core::confusion::on_card_draw(state, card),
+        _ => {}
     }
 }
 
-pub fn resolve_power_on_use_card(id: PowerId, state: &mut CombatState, card: &CombatCard, exhaust_override: &mut bool, purge: bool, target: Option<usize>) {
+pub fn resolve_power_on_use_card(
+    id: PowerId,
+    state: &mut CombatState,
+    card: &CombatCard,
+    exhaust_override: &mut bool,
+    purge: bool,
+    target: Option<usize>,
+) {
     match id {
         PowerId::Corruption => ironclad::corruption::on_use_card(state, card, exhaust_override),
         PowerId::DoubleTap => ironclad::double_tap::on_use_card(state, card, purge, target),
-        PowerId::DuplicationPower => core::duplication_power::on_use_card(state, card, purge, target),
+        PowerId::DuplicationPower => {
+            core::duplication_power::on_use_card(state, card, purge, target)
+        }
         PowerId::PenNibPower => {
             let actions = core::pen_nib::on_use_card(card);
             for action in actions {
                 state.action_queue.push_back(action);
             }
-        },
+        }
         PowerId::Vigor => {
             // Java: onUseCard — remove Vigor when an attack card is played
             let def = crate::content::cards::get_card_definition(card.id);
             if def.card_type == crate::content::cards::CardType::Attack {
-                state.action_queue.push_back(crate::action::Action::RemovePower {
-                    target: 0, // Player
-                    power_id: PowerId::Vigor,
-                });
+                state
+                    .action_queue
+                    .push_back(crate::action::Action::RemovePower {
+                        target: 0, // Player
+                        power_id: PowerId::Vigor,
+                    });
             }
-        },
+        }
         _ => {}
     }
 }
 
 pub fn resolve_power_on_player_card_played(
-    id: PowerId, owner: crate::core::EntityId, amount: i32, card: &CombatCard, state: &CombatState
+    id: PowerId,
+    owner: crate::core::EntityId,
+    amount: i32,
+    card: &CombatCard,
+    state: &CombatState,
 ) -> smallvec::SmallVec<[crate::action::Action; 2]> {
     match id {
         PowerId::Curiosity => core::curiosity::on_player_card_played(owner, amount, card),
         PowerId::TimeWarp => core::time_warp::on_player_card_played(owner, amount, card, state),
         PowerId::BeatOfDeath => core::beat_of_death::on_player_card_played(owner, amount, card),
-        _ => smallvec::smallvec![]
+        _ => smallvec::smallvec![],
     }
 }
 
-
-pub fn resolve_power_on_exhaust(id: PowerId, _state: &CombatState, owner: crate::core::EntityId, amount: i32, _card_uuid: u32, _card_id: crate::content::cards::CardId) -> smallvec::SmallVec<[crate::action::Action; 2]> {
+pub fn resolve_power_on_exhaust(
+    id: PowerId,
+    _state: &CombatState,
+    owner: crate::core::EntityId,
+    amount: i32,
+    _card_uuid: u32,
+    _card_id: crate::content::cards::CardId,
+) -> smallvec::SmallVec<[crate::action::Action; 2]> {
     match id {
         PowerId::FeelNoPain => ironclad::feel_no_pain::on_exhaust(owner, amount),
         PowerId::DarkEmbrace => ironclad::dark_embrace::on_exhaust(amount),
-        _ => smallvec::smallvec![]
+        _ => smallvec::smallvec![],
     }
 }
 
-pub fn resolve_power_on_hp_lost(id: PowerId, state: &CombatState, owner: crate::core::EntityId, amount: i32) -> smallvec::SmallVec<[crate::action::Action; 2]> {
+pub fn resolve_power_on_hp_lost(
+    id: PowerId,
+    state: &CombatState,
+    owner: crate::core::EntityId,
+    amount: i32,
+) -> smallvec::SmallVec<[crate::action::Action; 2]> {
     match id {
         PowerId::Rupture => ironclad::rupture::on_hp_lost(amount),
         PowerId::Split => core::split::on_hp_lost(state, owner, amount),
-        _ => smallvec::smallvec![]
+        _ => smallvec::smallvec![],
     }
 }
 
-pub fn resolve_power_on_card_played(id: PowerId, state: &CombatState, owner: crate::core::EntityId, card: &CombatCard, power_amount: i32) -> smallvec::SmallVec<[crate::action::Action; 2]> {
+pub fn resolve_power_on_card_played(
+    id: PowerId,
+    state: &CombatState,
+    owner: crate::core::EntityId,
+    card: &CombatCard,
+    power_amount: i32,
+) -> smallvec::SmallVec<[crate::action::Action; 2]> {
     match id {
+        // Java Gremlin Nob Enrage = AngerPower.onUseCard(SKILL).
         PowerId::Anger => core::anger::on_card_played(state, owner, card, power_amount),
-        PowerId::BeatOfDeath => core::beat_of_death::on_player_card_played(owner, power_amount, card),
+        PowerId::BeatOfDeath => {
+            core::beat_of_death::on_player_card_played(owner, power_amount, card)
+        }
+        PowerId::Rage => core::rage::on_card_played(owner, card, power_amount),
         PowerId::SharpHide => core::sharp_hide::on_card_played(state, owner, card, power_amount),
         PowerId::Hex => core::hex::on_card_played(state, owner, card, power_amount),
         PowerId::ThousandCuts => silent::thousand_cuts::on_after_card_played(owner, power_amount),
         PowerId::Curiosity => core::curiosity::on_player_card_played(owner, power_amount, card),
-        PowerId::TimeWarp => core::time_warp::on_player_card_played(owner, power_amount, card, state),
+        PowerId::TimeWarp => {
+            core::time_warp::on_player_card_played(owner, power_amount, card, state)
+        }
         PowerId::PanachePower => {
             // Every 5th card played, deal damage to ALL enemies
             // amount = countdown (decremented), extra_data = damage value
             let mut acts = smallvec::SmallVec::new();
             // Decrement counter via ApplyPower(-1)
             acts.push(crate::action::Action::ApplyPower {
-                source: owner, target: owner, power_id: PowerId::PanachePower, amount: -1,
+                source: owner,
+                target: owner,
+                power_id: PowerId::PanachePower,
+                amount: -1,
             });
             // Check if counter will hit 0 (current amount - 1 == 0 means we're at 1 now)
             if power_amount == 1 {
-                let damage = state.power_db.get(&owner)
+                let damage = state
+                    .power_db
+                    .get(&owner)
                     .and_then(|ps| ps.iter().find(|p| p.power_type == PowerId::PanachePower))
                     .map(|p| p.extra_data)
                     .unwrap_or(10);
@@ -304,18 +548,30 @@ pub fn resolve_power_on_card_played(id: PowerId, state: &CombatState, owner: cra
                 });
                 // Reset counter to 5
                 acts.push(crate::action::Action::UpdatePowerExtraData {
-                    target: owner, power_id: PowerId::PanachePower, value: 5,
+                    target: owner,
+                    power_id: PowerId::PanachePower,
+                    value: 5,
                 });
             }
             acts
-        },
-        _ => smallvec::smallvec![]
+        }
+        _ => smallvec::smallvec![],
     }
 }
 
-pub fn resolve_power_at_turn_start(id: PowerId, _state: &CombatState, owner: crate::core::EntityId, amount: i32) -> smallvec::SmallVec<[crate::action::Action; 2]> {
+pub fn resolve_power_at_turn_start(
+    id: PowerId,
+    _state: &CombatState,
+    owner: crate::core::EntityId,
+    amount: i32,
+) -> smallvec::SmallVec<[crate::action::Action; 2]> {
     match id {
-        PowerId::FlameBarrier | PowerId::Rage => smallvec::smallvec![crate::action::Action::RemovePower { target: owner, power_id: id }],
+        PowerId::FlameBarrier | PowerId::Rage => {
+            smallvec::smallvec![crate::action::Action::RemovePower {
+                target: owner,
+                power_id: id
+            }]
+        }
         PowerId::Berserk => smallvec::smallvec![crate::action::Action::GainEnergy { amount }],
         PowerId::NextTurnBlock => core::next_turn_block::at_turn_start(owner, amount),
         PowerId::Energized => core::energized::at_turn_start(owner, amount),
@@ -329,33 +585,49 @@ pub fn resolve_power_at_turn_start(id: PowerId, _state: &CombatState, owner: cra
                 });
             }
             acts
-        },
+        }
         PowerId::MayhemPower => {
             // Play top card of draw pile `amount` times
             let mut acts = smallvec::SmallVec::new();
             for _ in 0..amount {
-                acts.push(crate::action::Action::PlayTopCard { target: None, exhaust: false });
+                acts.push(crate::action::Action::PlayTopCard {
+                    target: None,
+                    exhaust: false,
+                });
             }
             acts
-        },
+        }
         PowerId::PanachePower => {
             // Reset counter to 5 at start of turn
             smallvec::smallvec![crate::action::Action::UpdatePowerExtraData {
-                target: owner, power_id: PowerId::PanachePower, value: 5,
+                target: owner,
+                power_id: PowerId::PanachePower,
+                value: 5,
             }]
-        },
-        _ => smallvec::smallvec![]
+        }
+        PowerId::Flight => core::flight::at_turn_start(_state, owner, amount),
+        _ => smallvec::smallvec![],
     }
 }
 
-pub fn resolve_power_on_post_draw(id: PowerId, _state: &CombatState, owner: crate::core::EntityId, amount: i32) -> smallvec::SmallVec<[crate::action::Action; 2]> {
+pub fn resolve_power_on_post_draw(
+    id: PowerId,
+    _state: &CombatState,
+    owner: crate::core::EntityId,
+    amount: i32,
+) -> smallvec::SmallVec<[crate::action::Action; 2]> {
     match id {
         PowerId::Brutality => ironclad::brutality::on_post_draw(owner, amount),
-        _ => smallvec::smallvec![]
+        _ => smallvec::smallvec![],
     }
 }
 
-pub fn resolve_power_at_end_of_turn(id: PowerId, _state: &CombatState, owner: crate::core::EntityId, amount: i32) -> smallvec::SmallVec<[crate::action::Action; 2]> {
+pub fn resolve_power_at_end_of_turn(
+    id: PowerId,
+    _state: &CombatState,
+    owner: crate::core::EntityId,
+    amount: i32,
+) -> smallvec::SmallVec<[crate::action::Action; 2]> {
     match id {
         PowerId::Combust => ironclad::combust::at_end_of_turn(_state, owner, amount),
         PowerId::Metallicize => ironclad::metallicize::at_end_of_turn(owner, amount),
@@ -368,6 +640,9 @@ pub fn resolve_power_at_end_of_turn(id: PowerId, _state: &CombatState, owner: cr
         PowerId::Constricted => core::constricted::at_end_of_turn(owner, amount),
         PowerId::Fading => core::fading::at_end_of_turn(owner, amount),
         PowerId::LoseStrength => core::lose_strength::at_end_of_turn(owner, amount),
+        PowerId::DexterityDown => core::dexterity_down::at_end_of_turn(owner, amount),
+        PowerId::NoDraw => core::no_draw::at_end_of_turn(owner),
+        PowerId::Shackled => core::shackled::at_end_of_turn(owner, amount),
         PowerId::Shifting => core::shifting::at_end_of_turn(owner),
         PowerId::Slow => core::slow::at_end_of_turn(owner),
         PowerId::Intangible => core::intangible::at_end_of_turn(owner, amount),
@@ -378,7 +653,9 @@ pub fn resolve_power_at_end_of_turn(id: PowerId, _state: &CombatState, owner: cr
                 // Explode! Deal damage (stored in extra_data) to all enemies
                 // For simplicity, we use the card's base magic (40) stored as extra_data
                 // Get extra_data for this power from power_db
-                let extra = _state.power_db.get(&owner)
+                let extra = _state
+                    .power_db
+                    .get(&owner)
                     .and_then(|ps| ps.iter().find(|p| p.power_type == PowerId::TheBombPower))
                     .map(|p| p.extra_data)
                     .unwrap_or(40);
@@ -388,44 +665,80 @@ pub fn resolve_power_at_end_of_turn(id: PowerId, _state: &CombatState, owner: cr
                     damage_type: crate::action::DamageType::Thorns,
                     is_modified: false,
                 });
-                acts.push(crate::action::Action::RemovePower { target: owner, power_id: PowerId::TheBombPower });
+                acts.push(crate::action::Action::RemovePower {
+                    target: owner,
+                    power_id: PowerId::TheBombPower,
+                });
             } else {
                 acts.push(crate::action::Action::ApplyPower {
-                    source: owner, target: owner, power_id: PowerId::TheBombPower, amount: -1,
+                    source: owner,
+                    target: owner,
+                    power_id: PowerId::TheBombPower,
+                    amount: -1,
                 });
             }
             acts
-        },
+        }
         PowerId::Regen => {
-            // Java: RegenerateMonsterPower.atEndOfTurn() → HealAction(amount), ReducePower(1)
+            // Java: RegenerateMonsterPower.atEndOfTurn() only heals; it does not tick down.
             let mut acts = smallvec::SmallVec::new();
-            acts.push(crate::action::Action::Heal { target: owner, amount });
-            acts.push(crate::action::Action::ApplyPower {
-                source: owner, target: owner, power_id: PowerId::Regen, amount: -1,
+            acts.push(crate::action::Action::Heal {
+                target: owner,
+                amount,
             });
             acts
-        },
-        _ => smallvec::smallvec![]
+        }
+        PowerId::Regeneration => {
+            // Java: RegenPower.atEndOfTurn() -> RegenAction(heal), then decrement/remove Regeneration.
+            let mut acts = smallvec::SmallVec::new();
+            acts.push(crate::action::Action::Heal {
+                target: owner,
+                amount,
+            });
+            acts.push(crate::action::Action::ApplyPower {
+                source: owner,
+                target: owner,
+                power_id: PowerId::Regeneration,
+                amount: -1,
+            });
+            acts
+        }
+        _ => smallvec::smallvec![],
     }
 }
 
-pub fn resolve_power_at_end_of_round(id: PowerId, _state: &CombatState, owner: crate::core::EntityId, amount: i32, just_applied: bool) -> smallvec::SmallVec<[crate::action::Action; 2]> {
+pub fn resolve_power_at_end_of_round(
+    id: PowerId,
+    _state: &CombatState,
+    owner: crate::core::EntityId,
+    amount: i32,
+    just_applied: bool,
+) -> smallvec::SmallVec<[crate::action::Action; 2]> {
     match id {
         PowerId::Vulnerable => core::vulnerable::at_end_of_round(owner, amount, just_applied),
         PowerId::Weak => core::weak::at_end_of_round(owner, amount, just_applied),
         PowerId::Frail => core::frail::at_end_of_round(owner, amount, just_applied),
         PowerId::Ritual => core::ritual::at_end_of_round(_state, owner, amount),
+        PowerId::GenericStrengthUp => core::generic_strength_up::at_end_of_round(owner, amount),
         // Other Powers that decay at end of round can be added here
-        _ => smallvec::smallvec![]
+        _ => smallvec::smallvec![],
     }
 }
 
-pub fn resolve_power_on_card_drawn(id: PowerId, state: &CombatState, owner: crate::core::EntityId, amount: i32, card_uuid: u32) -> smallvec::SmallVec<[crate::action::Action; 2]> {
+pub fn resolve_power_on_card_drawn(
+    id: PowerId,
+    state: &CombatState,
+    owner: crate::core::EntityId,
+    amount: i32,
+    card_uuid: u32,
+) -> smallvec::SmallVec<[crate::action::Action; 2]> {
     if let Some(card) = state.hand.iter().find(|c| c.uuid == card_uuid) {
         match id {
             PowerId::Evolve => ironclad::evolve::on_card_drawn(card.id, amount),
-            PowerId::FireBreathing => ironclad::fire_breathing::on_card_drawn(owner, card.id, amount),
-            _ => smallvec::smallvec![]
+            PowerId::FireBreathing => {
+                ironclad::fire_breathing::on_card_drawn(owner, card.id, amount)
+            }
+            _ => smallvec::smallvec![],
         }
     } else {
         smallvec::smallvec![]
@@ -447,78 +760,119 @@ pub fn resolve_power_on_inflict_damage(
     }
 }
 
-pub fn resolve_power_on_block_gained(id: PowerId, _state: &CombatState, _owner: crate::core::EntityId, amount: i32, _block_amount: i32) -> smallvec::SmallVec<[crate::action::Action; 2]> {
+pub fn resolve_power_on_block_gained(
+    id: PowerId,
+    _state: &CombatState,
+    _owner: crate::core::EntityId,
+    amount: i32,
+    _block_amount: i32,
+) -> smallvec::SmallVec<[crate::action::Action; 2]> {
     match id {
         PowerId::Juggernaut => ironclad::juggernaut::on_block_gained(amount),
-        _ => smallvec::smallvec![]
+        _ => smallvec::smallvec![],
     }
 }
 
-pub fn resolve_power_on_attacked(id: PowerId, state: &CombatState, owner: crate::core::EntityId, damage: i32, source: crate::core::EntityId, power_amount: i32) -> smallvec::SmallVec<[crate::action::Action; 2]> {
+pub fn resolve_power_on_attacked(
+    id: PowerId,
+    state: &CombatState,
+    owner: crate::core::EntityId,
+    damage: i32,
+    source: crate::core::EntityId,
+    power_amount: i32,
+) -> smallvec::SmallVec<[crate::action::Action; 2]> {
     match id {
+        PowerId::Angry => core::angry::on_attacked(state, owner, damage, source, power_amount),
         PowerId::FlameBarrier => ironclad::flame_barrier::on_attacked(source, power_amount),
         PowerId::CurlUp => core::curl_up::on_attacked(state, owner, damage, source, power_amount),
-        PowerId::Angry => core::angry::on_attacked(state, owner, damage, source, power_amount),
         // SharpHide: moved from on_attacked to on_card_played (Java uses onUseCard, not onAttacked)
         PowerId::Flight => core::flight::on_attacked(state, owner, damage, source, power_amount),
         PowerId::Malleable => core::malleable::on_attacked(state, owner, damage, power_amount),
         PowerId::PlatedArmor => core::plated_armor::on_attacked(state, owner, damage, power_amount),
         PowerId::Thorns => core::thorns::on_attacked(state, owner, damage, source, power_amount),
-        PowerId::Shifting => core::shifting::on_attacked(state, owner, damage, source, power_amount),
-        PowerId::Reactive => core::reactive::on_attacked(state, owner, damage, source, power_amount),
-        _ => smallvec::smallvec![]
+        PowerId::Shifting => {
+            core::shifting::on_attacked(state, owner, damage, source, power_amount)
+        }
+        PowerId::Reactive => {
+            core::reactive::on_attacked(state, owner, damage, source, power_amount)
+        }
+        _ => smallvec::smallvec![],
     }
 }
 
-pub fn resolve_power_on_death(id: PowerId, state: &CombatState, owner: crate::core::EntityId, amount: i32) -> smallvec::SmallVec<[crate::action::Action; 2]> {
+pub fn resolve_power_on_death(
+    id: PowerId,
+    state: &CombatState,
+    owner: crate::core::EntityId,
+    amount: i32,
+) -> smallvec::SmallVec<[crate::action::Action; 2]> {
     match id {
         PowerId::SporeCloud => core::spore_cloud::on_death(state, owner, amount),
         PowerId::Stasis => core::stasis::on_death(owner, amount),
         PowerId::Unawakened => core::unawakened::on_death(owner, amount),
         PowerId::Shackled => smallvec::smallvec![],
         PowerId::DrawReduction => smallvec::smallvec![],
-        _ => smallvec::smallvec![]
+        _ => smallvec::smallvec![],
     }
 }
 
-pub fn resolve_power_on_remove(id: PowerId, state: &CombatState, owner: crate::core::EntityId) -> smallvec::SmallVec<[crate::action::Action; 2]> {
+pub fn resolve_power_on_remove(
+    id: PowerId,
+    state: &CombatState,
+    owner: crate::core::EntityId,
+) -> smallvec::SmallVec<[crate::action::Action; 2]> {
     match id {
         PowerId::PlatedArmor => core::plated_armor::on_remove(state, owner),
-        _ => smallvec::smallvec![]
+        _ => smallvec::smallvec![],
     }
 }
 
-
-
 pub fn resolve_power_on_attack_to_change_damage(
-    id: PowerId, _state: &CombatState, _info: &crate::action::DamageInfo, current_damage: i32, amount: i32
+    id: PowerId,
+    _state: &CombatState,
+    _info: &crate::action::DamageInfo,
+    current_damage: i32,
+    amount: i32,
 ) -> i32 {
     match id {
         PowerId::Strength => core::strength::on_attack_to_change_damage(current_damage, amount),
-        _ => current_damage
+        _ => current_damage,
     }
 }
 
 pub fn resolve_power_on_attacked_to_change_damage(
-    id: PowerId, _state: &CombatState, _info: &crate::action::DamageInfo, current_damage: i32, _amount: i32
+    id: PowerId,
+    _state: &CombatState,
+    _info: &crate::action::DamageInfo,
+    current_damage: i32,
+    _amount: i32,
 ) -> i32 {
     match id {
-        _ => current_damage
+        _ => current_damage,
     }
 }
 
 pub fn resolve_power_on_calculate_damage_to_enemy(
-    id: PowerId, _state: &CombatState, card: &CombatCard, damage: f32, amount: i32
+    id: PowerId,
+    _state: &CombatState,
+    card: &CombatCard,
+    damage: f32,
+    amount: i32,
 ) -> f32 {
     let def = crate::content::cards::get_card_definition(card.id);
     if def.card_type == crate::content::cards::CardType::Attack {
         match id {
-            PowerId::Strength => core::strength::on_calculate_damage_to_enemy(card.id, card.base_magic_num_mut, damage, amount),
+            PowerId::Strength => core::strength::on_calculate_damage_to_enemy(
+                card.id,
+                card.base_magic_num_mut,
+                damage,
+                amount,
+            ),
             PowerId::PenNibPower => core::pen_nib::on_calculate_damage_to_enemy(damage),
-            PowerId::Weak => (damage * 0.75).floor(),
+            PowerId::Weak => damage * 0.75,
             // Java: atDamageGive — Vigor adds its amount to NORMAL attack damage
             PowerId::Vigor => damage + amount as f32,
-            _ => damage
+            _ => damage,
         }
     } else {
         damage
@@ -526,14 +880,18 @@ pub fn resolve_power_on_calculate_damage_to_enemy(
 }
 
 pub fn resolve_power_on_calculate_block(
-    id: PowerId, _state: &CombatState, card: &CombatCard, block: f32, amount: i32
+    id: PowerId,
+    _state: &CombatState,
+    card: &CombatCard,
+    block: f32,
+    amount: i32,
 ) -> f32 {
     let def = crate::content::cards::get_card_definition(card.id);
     if def.base_block > 0 || def.card_type == crate::content::cards::CardType::Skill {
         match id {
             PowerId::Dexterity => core::dexterity::on_calculate_block(block, amount),
             PowerId::Frail => core::frail::on_calculate_block(block, amount),
-            _ => block
+            _ => block,
         }
     } else {
         block
@@ -541,40 +899,66 @@ pub fn resolve_power_on_calculate_block(
 }
 
 pub fn resolve_power_on_calculate_damage_from_player(
-    id: PowerId, _state: &CombatState, card: &CombatCard, _target_id: crate::core::EntityId, damage: f32, amount: i32
+    id: PowerId,
+    _state: &CombatState,
+    card: &CombatCard,
+    _target_id: crate::core::EntityId,
+    damage: f32,
+    amount: i32,
 ) -> f32 {
     let mut updated_damage = damage;
     let def = crate::content::cards::get_card_definition(card.id);
-    
+
     // Slow modifies damage dynamically regardless of attack type, but only on normal damage hits usually
     if def.card_type == crate::content::cards::CardType::Attack {
         updated_damage = match id {
             PowerId::Vulnerable => {
-                let has_odd_mushroom = crate::content::relics::hooks::on_calculate_vulnerable_multiplier(_state);
-                core::vulnerable::on_calculate_damage_from_player(updated_damage, amount, has_odd_mushroom)
-            },
-            PowerId::Slow => core::slow::on_calculate_damage_from_player(_state, card, _target_id, updated_damage, amount),
-            PowerId::Flight => core::flight::on_calculate_damage_from_player(updated_damage, amount),
-            _ => updated_damage
+                let multiplier = crate::content::relics::hooks::on_calculate_vulnerable_multiplier(
+                    _state, false,
+                );
+                core::vulnerable::on_calculate_damage_from_player(
+                    updated_damage,
+                    amount,
+                    multiplier,
+                )
+            }
+            PowerId::Slow => core::slow::on_calculate_damage_from_player(
+                _state,
+                card,
+                _target_id,
+                updated_damage,
+                amount,
+            ),
+            PowerId::Flight => {
+                core::flight::on_calculate_damage_from_player(updated_damage, amount)
+            }
+            _ => updated_damage,
         };
     }
-    
+
     updated_damage
 }
 
 /// Java: AbstractMonster.calculateDamage() pipeline
 /// Evaluates the damage a monster will deal based on its base intent damage
 /// after adjusting for Strength, Weak, Vulnerable, Intangible, etc.
-pub fn calculate_monster_damage(base: i32, source_id: usize, target_id: usize, state: &CombatState) -> i32 {
+pub fn calculate_monster_damage(
+    base: i32,
+    source_id: usize,
+    target_id: usize,
+    state: &CombatState,
+) -> i32 {
     let mut tmp = base as f32;
 
     // 1. Monster powers (Strength, Weak, etc.) atDamageGive
     if let Some(owner_powers) = state.power_db.get(&source_id) {
         for p in owner_powers {
             tmp = match p.power_type {
-                PowerId::Strength => core::strength::on_attack_to_change_damage(tmp as i32, p.amount) as f32, // Strength is linear addition
+                PowerId::Strength => {
+                    core::strength::on_attack_to_change_damage(tmp as i32, p.amount) as f32
+                } // Strength is linear addition
                 PowerId::Weak => tmp * 0.75,
-                _ => tmp
+                _ => tmp,
             };
         }
     }
@@ -584,12 +968,17 @@ pub fn calculate_monster_damage(base: i32, source_id: usize, target_id: usize, s
         for p in target_powers {
             tmp = match p.power_type {
                 PowerId::Vulnerable => {
-                    let has_odd_mushroom = if target_id == 0 {
-                        crate::content::relics::hooks::on_calculate_vulnerable_multiplier(state)
-                    } else { false };
-                    core::vulnerable::on_calculate_damage_from_player(tmp, p.amount, has_odd_mushroom) // Same logic for monster vs player vulnerability
-                },
-                _ => tmp
+                    let multiplier = if target_id == 0 {
+                        crate::content::relics::hooks::on_calculate_vulnerable_multiplier(
+                            state, true,
+                        )
+                    } else {
+                        1.5
+                    };
+                    core::vulnerable::on_calculate_damage_from_player(tmp, p.amount, multiplier)
+                    // Same logic for monster vs player vulnerability
+                }
+                _ => tmp,
             };
         }
     }
@@ -605,13 +994,17 @@ pub fn calculate_monster_damage(base: i32, source_id: usize, target_id: usize, s
     if let Some(target_powers) = state.power_db.get(&target_id) {
         for p in target_powers {
             tmp = match p.power_type {
-                PowerId::Intangible => {
-                    core::intangible::at_damage_final_receive(tmp as i32, p.amount, crate::action::DamageType::Normal) as f32
-                },
-                PowerId::Flight => {
-                    core::flight::at_damage_final_receive(tmp as i32, p.amount, crate::action::DamageType::Normal) as f32
-                },
-                _ => tmp
+                PowerId::Intangible => core::intangible::at_damage_final_receive(
+                    tmp as i32,
+                    p.amount,
+                    crate::action::DamageType::Normal,
+                ) as f32,
+                PowerId::Flight => core::flight::at_damage_final_receive(
+                    tmp as i32,
+                    p.amount,
+                    crate::action::DamageType::Normal,
+                ) as f32,
+                _ => tmp,
             };
         }
     }
@@ -623,14 +1016,12 @@ pub fn calculate_monster_damage(base: i32, source_id: usize, target_id: usize, s
 /// Java: AbstractPower.canPlayCard(AbstractCard) — returns false to block card play.
 /// Called in AbstractCard.hasEnoughEnergy() for each power on the player.
 /// Currently only NoSkillsPower (Watcher) overrides this in Java.
-pub fn resolve_power_can_play_card(
-    id: PowerId, card: &CombatCard,
-) -> bool {
+pub fn resolve_power_can_play_card(id: PowerId, card: &CombatCard) -> bool {
     match id {
         PowerId::NoSkills => {
             let def = crate::content::cards::get_card_definition(card.id);
             def.card_type != crate::content::cards::CardType::Skill
-        },
+        }
         _ => true,
     }
 }
@@ -675,8 +1066,8 @@ pub fn resolve_power_on_apply_power(
                     insertion_mode: crate::action::AddTo::Bottom,
                 });
             }
-        },
-        _ => {},
+        }
+        _ => {}
     }
     actions
 }
@@ -690,7 +1081,9 @@ pub fn resolve_power_at_damage_final_receive(
     damage_type: crate::action::DamageType,
 ) -> i32 {
     match id {
-        PowerId::Intangible => core::intangible::at_damage_final_receive(damage, amount, damage_type),
+        PowerId::Intangible => {
+            core::intangible::at_damage_final_receive(damage, amount, damage_type)
+        }
         PowerId::Flight => core::flight::at_damage_final_receive(damage, amount, damage_type),
         _ => damage,
     }

@@ -1,22 +1,28 @@
-use crate::state::core::{EngineState, ClientInput};
-use crate::map::node::RoomType;
-use crate::state::run::RunState;
 use crate::combat::CombatState;
+use crate::map::node::RoomType;
+use crate::state::core::{ClientInput, EngineState};
+use crate::state::run::RunState;
 
-use super::shop_handler;
 use super::campfire_handler;
-use super::reward_handler;
+use super::shop_handler;
 
-pub fn tick_run(engine_state: &mut EngineState, run_state: &mut RunState, combat_state: &mut Option<CombatState>, input: Option<ClientInput>) -> bool {
+pub fn tick_run(
+    engine_state: &mut EngineState,
+    run_state: &mut RunState,
+    combat_state: &mut Option<CombatState>,
+    input: Option<ClientInput>,
+) -> bool {
     // Top level controller redirecting inputs
     match engine_state {
-        EngineState::CombatPlayerTurn | EngineState::CombatProcessing | EngineState::PendingChoice(_) => {
+        EngineState::CombatPlayerTurn
+        | EngineState::CombatProcessing
+        | EngineState::PendingChoice(_) => {
             if let Some(cs) = combat_state.as_mut() {
                 let keep_running = super::core::tick_engine(engine_state, cs, input.clone());
                 if !keep_running {
                     // Absorb combat player state back to RunState (HP, gold, relic counters)
                     run_state.absorb_combat_player(cs.player.clone());
-                    
+
                     for change in cs.meta_changes.drain(..) {
                         match change {
                             crate::combat::MetaChange::AddCardToMasterDeck(card_id) => {
@@ -24,18 +30,23 @@ pub fn tick_run(engine_state: &mut EngineState, run_state: &mut RunState, combat
                             }
                         }
                     }
-                    
+
                     // Check for Act 3 boss victory → Act 4 transition
                     // Java: AbstractRoom:317 — if BossRoom + TheBeyond/TheEnding + 3 keys → skip rewards
                     if let EngineState::RewardScreen(rs) = engine_state {
                         let is_boss = cs.is_boss_fight;
                         let is_elite = cs.is_elite_fight;
                         // Populate the actual dropped rewards
-                        *rs = run_state.generate_combat_rewards(is_elite, is_boss);
+                        *rs = crate::rewards::generator::generate_combat_rewards(
+                            run_state, is_elite, is_boss,
+                        );
 
-                        if is_boss && run_state.act_num == 3
+                        if is_boss
+                            && run_state.act_num == 3
                             && run_state.is_final_act_available
-                            && run_state.keys[0] && run_state.keys[1] && run_state.keys[2]
+                            && run_state.keys[0]
+                            && run_state.keys[1]
+                            && run_state.keys[2]
                         {
                             // All 3 keys collected — transition to Act 4 (TheEnding)
                             let ending_map = crate::map::generator::generate_ending_map();
@@ -47,20 +58,22 @@ pub fn tick_run(engine_state: &mut EngineState, run_state: &mut RunState, combat
                             run_state.pending_boss_reward = true;
                         } else if is_boss && run_state.act_num == 3 {
                             // Act 3 boss defeated without all keys → game victory (no Act 4)
-                            *engine_state = EngineState::GameOver(crate::state::core::RunResult::Victory);
+                            *engine_state =
+                                EngineState::GameOver(crate::state::core::RunResult::Victory);
                         } else {
                             // Normal (non-boss) elite reward generation adds emerald key if present
                             if is_elite && run_state.is_final_act_available && !run_state.keys[2] {
                                 if let Some(node) = run_state.map.get_current_node() {
                                     if node.has_emerald_key {
-                                        rs.items.push(crate::state::RewardItem::EmeraldKey);
+                                        rs.items
+                                            .push(crate::rewards::state::RewardItem::EmeraldKey);
                                     }
                                 }
                             }
                         }
                     }
                     if let EngineState::GameOver(_) = engine_state {
-                        return false; 
+                        return false;
                     }
                 }
                 true
@@ -68,7 +81,7 @@ pub fn tick_run(engine_state: &mut EngineState, run_state: &mut RunState, combat
                 eprintln!("Error: EngineState designates Combat but no CombatState was provided.");
                 false
             }
-        },
+        }
         EngineState::RunPendingChoice(rpc_state) => {
             if let Some(ClientInput::SubmitDeckSelect(indices)) = input {
                 // Validation against min/max would securely happen here or in the UI client.
@@ -87,7 +100,9 @@ pub fn tick_run(engine_state: &mut EngineState, run_state: &mut RunState, combat
                                 // rarity-based rewards after purge returns.
                                 // Encoding: 0=Curse, 1=Basic, 2=Common, 3=Special, 4=Uncommon, 5=Rare
                                 if let Some(ref mut es) = run_state.event_state {
-                                    let def = crate::content::cards::get_card_definition(run_state.master_deck[idx].id);
+                                    let def = crate::content::cards::get_card_definition(
+                                        run_state.master_deck[idx].id,
+                                    );
                                     es.internal_state = match def.rarity {
                                         crate::content::cards::CardRarity::Curse => 0,
                                         crate::content::cards::CardRarity::Basic => 1,
@@ -101,72 +116,92 @@ pub fn tick_run(engine_state: &mut EngineState, run_state: &mut RunState, combat
                                 run_state.remove_card_from_deck(uuid);
                             }
                         }
-                    },
+                    }
                     crate::state::core::RunPendingChoiceReason::Upgrade => {
                         for idx in sorted_indices {
                             if idx < run_state.master_deck.len() {
                                 run_state.master_deck[idx].upgrades += 1;
                             }
                         }
-                    },
+                    }
                     crate::state::core::RunPendingChoiceReason::Transform => {
                         for idx in sorted_indices {
                             if idx < run_state.master_deck.len() {
-                                run_state.transform_card(idx);
+                                run_state.transform_card(idx, false);
                             }
                         }
-                    },
+                    }
+                    crate::state::core::RunPendingChoiceReason::TransformUpgraded => {
+                        for idx in sorted_indices {
+                            if idx < run_state.master_deck.len() {
+                                run_state.transform_card(idx, true);
+                            }
+                        }
+                    }
                     crate::state::core::RunPendingChoiceReason::Duplicate => {
                         // Duplicate: copy the selected card(s) and add to deck
-                        let cards_to_copy: Vec<_> = sorted_indices.iter()
-                            .filter_map(|&idx| {
-                                run_state.master_deck.get(idx).map(|c| c.id)
-                            })
+                        let cards_to_copy: Vec<_> = sorted_indices
+                            .iter()
+                            .filter_map(|&idx| run_state.master_deck.get(idx).map(|c| c.id))
                             .collect();
                         for card_id in cards_to_copy {
                             run_state.add_card_to_deck(card_id);
                         }
-                    },
+                    }
                 }
 
                 // Return to the previous stashed state (e.g. Map, Event, or Shop)
                 *engine_state = *rpc_state.return_state.clone();
             } else if let Some(ClientInput::Cancel) = input {
-                 // Return to stashed state without mutating deck
-                 *engine_state = *rpc_state.return_state.clone();
+                // Return to stashed state without mutating deck
+                *engine_state = *rpc_state.return_state.clone();
             } else {
-                 // Input wasn't matched, preserve State
+                // Input wasn't matched, preserve State
             }
             true
-        },
+        }
         EngineState::MapNavigation => {
             // Extract travel target from input: normal adjacency or WingBoots flight
             let travel_target = match &input {
                 Some(ClientInput::SelectMapNode(target_x)) => {
-                    let target_y = if run_state.map.current_y == -1 { 0 } else { run_state.map.current_y + 1 };
+                    let target_y = if run_state.map.current_y == -1 {
+                        0
+                    } else {
+                        run_state.map.current_y + 1
+                    };
                     Some((*target_x as i32, target_y, false))
-                },
+                }
                 Some(ClientInput::FlyToNode(target_x, target_y)) => {
                     Some((*target_x as i32, *target_y as i32, true))
-                },
+                }
                 _ => None,
             };
 
             if let Some((target_x, target_y, is_flight)) = travel_target {
                 // WingBoots: check if player has charges for flight
                 let has_flight = if is_flight {
-                    run_state.relics.iter().any(|r| r.id == crate::content::relics::RelicId::WingBoots && r.counter > 0)
+                    run_state.relics.iter().any(|r| {
+                        r.id == crate::content::relics::RelicId::WingBoots && r.counter > 0
+                    })
                 } else {
                     false
                 };
 
-                if run_state.map.travel_to(target_x, target_y, has_flight).is_ok() {
+                if run_state
+                    .map
+                    .travel_to(target_x, target_y, has_flight)
+                    .is_ok()
+                {
                     // Increment floor number successfully entering a new room
                     run_state.floor_num += 1;
 
                     // WingBoots: decrement counter on successful flight (non-adjacent travel)
                     if is_flight {
-                        if let Some(wb) = run_state.relics.iter_mut().find(|r| r.id == crate::content::relics::RelicId::WingBoots) {
+                        if let Some(wb) = run_state
+                            .relics
+                            .iter_mut()
+                            .find(|r| r.id == crate::content::relics::RelicId::WingBoots)
+                        {
                             wb.counter -= 1;
                             if wb.counter == 0 {
                                 wb.counter = -2;
@@ -177,7 +212,11 @@ pub fn tick_run(engine_state: &mut EngineState, run_state: &mut RunState, combat
 
                     // --- onEnterRoom() relic hooks (fire for ALL room types) ---
                     // MawBank: +12 gold each room entered (unless used up from spending gold)
-                    if let Some(maw) = run_state.relics.iter().find(|r| r.id == crate::content::relics::RelicId::MawBank && !r.used_up) {
+                    if let Some(maw) = run_state
+                        .relics
+                        .iter()
+                        .find(|r| r.id == crate::content::relics::RelicId::MawBank && !r.used_up)
+                    {
                         let _ = maw; // borrow satisfied
                         run_state.gold += 12;
                     }
@@ -186,25 +225,40 @@ pub fn tick_run(engine_state: &mut EngineState, run_state: &mut RunState, combat
                         // --- Room-type-specific onEnterRoom hooks ---
                         // EternalFeather: heal (deck_size / 5 * 3) on entering RestRoom
                         if room_type == RoomType::RestRoom {
-                            if run_state.relics.iter().any(|r| r.id == crate::content::relics::RelicId::EternalFeather) {
+                            if run_state
+                                .relics
+                                .iter()
+                                .any(|r| r.id == crate::content::relics::RelicId::EternalFeather)
+                            {
                                 let heal = (run_state.master_deck.len() / 5 * 3) as i32;
-                                if heal > 0 && !run_state.relics.iter().any(|r| r.id == crate::content::relics::RelicId::MarkOfTheBloom) {
-                                    run_state.current_hp = (run_state.current_hp + heal).min(run_state.max_hp);
+                                if heal > 0
+                                    && !run_state.relics.iter().any(|r| {
+                                        r.id == crate::content::relics::RelicId::MarkOfTheBloom
+                                    })
+                                {
+                                    run_state.current_hp =
+                                        (run_state.current_hp + heal).min(run_state.max_hp);
                                 }
                             }
                         }
                         // SsserpentHead: +50 gold on entering EventRoom
                         if room_type == RoomType::EventRoom {
-                            if run_state.relics.iter().any(|r| r.id == crate::content::relics::RelicId::SsserpentHead) {
+                            if run_state
+                                .relics
+                                .iter()
+                                .any(|r| r.id == crate::content::relics::RelicId::SsserpentHead)
+                            {
                                 run_state.gold += 50;
                             }
                         }
 
                         match room_type {
-                            RoomType::MonsterRoom | RoomType::MonsterRoomElite | RoomType::MonsterRoomBoss => {
+                            RoomType::MonsterRoom
+                            | RoomType::MonsterRoomElite
+                            | RoomType::MonsterRoomBoss => {
                                 // Instantiate combat
                                 *engine_state = EngineState::CombatPlayerTurn;
-                            },
+                            }
                             RoomType::RestRoom => {
                                 // Java: onEnterRestRoom() for all relics
                                 // AncientTeaSet: set counter = -2 → at_turn_start grants +2 energy
@@ -214,17 +268,23 @@ pub fn tick_run(engine_state: &mut EngineState, run_state: &mut RunState, combat
                                     }
                                 }
                                 *engine_state = EngineState::Campfire;
-                            },
+                            }
                             RoomType::ShopRoom => {
                                 // MealTicket: heal 15 HP on shop entry
-                                if run_state.relics.iter().any(|r| r.id == crate::content::relics::RelicId::MealTicket) {
-                                    run_state.current_hp = (run_state.current_hp + 15).min(run_state.max_hp);
+                                if run_state
+                                    .relics
+                                    .iter()
+                                    .any(|r| r.id == crate::content::relics::RelicId::MealTicket)
+                                {
+                                    run_state.current_hp =
+                                        (run_state.current_hp + 15).min(run_state.max_hp);
                                 }
                                 *engine_state = EngineState::Shop(run_state.generate_shop());
-                            },
+                            }
                             RoomType::EventRoom => {
                                 let event_id = run_state.generate_event();
-                                let mut event_state = crate::state::events::EventState::new(event_id);
+                                let mut event_state =
+                                    crate::state::events::EventState::new(event_id);
                                 // Wire init functions for events with constructor-time RNG
                                 use crate::state::events::EventId;
                                 event_state.internal_state = match event_id {
@@ -239,49 +299,66 @@ pub fn tick_run(engine_state: &mut EngineState, run_state: &mut RunState, combat
                                 // Events with extra_data init (complex state)
                                 if event_id == EventId::MatchAndKeep {
                                     crate::content::events::match_and_keep::init_match_game_board(
-                                        run_state, &mut event_state.extra_data
+                                        run_state,
+                                        &mut event_state.extra_data,
                                     );
                                 }
                                 run_state.event_state = Some(event_state);
                                 *engine_state = EngineState::EventRoom;
-                            },
+                            }
                             RoomType::TreasureRoom => {
-                                let mut reward = crate::state::reward::RewardState::new();
+                                let mut reward = crate::rewards::state::RewardState::new();
                                 // Generate chest relic reward (simplified chest logic)
                                 let relic_id = run_state.random_relic();
-                                reward.items.push(crate::state::RewardItem::Relic { relic_id });
+                                reward
+                                    .items
+                                    .push(crate::rewards::state::RewardItem::Relic { relic_id });
                                 // Sapphire key: paired with relic (Java: AbstractChest:87)
                                 if run_state.is_final_act_available && !run_state.keys[1] {
-                                    reward.items.push(crate::state::RewardItem::SapphireKey);
+                                    reward
+                                        .items
+                                        .push(crate::rewards::state::RewardItem::SapphireKey);
                                 }
 
                                 // --- onChestOpen() relic hooks (non-boss chest) ---
                                 // CursedKey: add a random curse to deck
-                                if run_state.relics.iter().any(|r| r.id == crate::content::relics::RelicId::CursedKey) {
+                                if run_state
+                                    .relics
+                                    .iter()
+                                    .any(|r| r.id == crate::content::relics::RelicId::CursedKey)
+                                {
                                     let curse_pool = crate::content::cards::get_curse_pool();
                                     if !curse_pool.is_empty() {
-                                        let idx = run_state.rng_pool.misc_rng.random_range(0, (curse_pool.len() - 1) as i32) as usize;
+                                        let idx = run_state
+                                            .rng_pool
+                                            .misc_rng
+                                            .random_range(0, (curse_pool.len() - 1) as i32)
+                                            as usize;
                                         run_state.add_card_to_deck(curse_pool[idx]);
                                     }
                                 }
 
                                 // Matryoshka: add an extra relic reward (75% Common, 25% Uncommon)
-                                if let Some(mat) = run_state.relics.iter_mut().find(
-                                    |r| r.id == crate::content::relics::RelicId::Matryoshka && r.counter > 0
-                                ) {
+                                if let Some(mat) = run_state.relics.iter_mut().find(|r| {
+                                    r.id == crate::content::relics::RelicId::Matryoshka
+                                        && r.counter > 0
+                                }) {
                                     mat.counter -= 1;
                                     if mat.counter == 0 {
                                         mat.counter = -2;
                                         mat.used_up = true;
                                     }
                                     let extra_relic = run_state.random_relic();
-                                    reward.items.push(crate::state::RewardItem::Relic { relic_id: extra_relic });
+                                    reward.items.push(crate::rewards::state::RewardItem::Relic {
+                                        relic_id: extra_relic,
+                                    });
                                 }
 
                                 // NlothsMask: remove one relic from rewards (onChestOpenAfter)
-                                if let Some(mask) = run_state.relics.iter_mut().find(
-                                    |r| r.id == crate::content::relics::RelicId::NlothsMask && r.counter > 0
-                                ) {
+                                if let Some(mask) = run_state.relics.iter_mut().find(|r| {
+                                    r.id == crate::content::relics::RelicId::NlothsMask
+                                        && r.counter > 0
+                                }) {
                                     mask.counter -= 1;
                                     if mask.counter == 0 {
                                         mask.counter = -2;
@@ -289,24 +366,28 @@ pub fn tick_run(engine_state: &mut EngineState, run_state: &mut RunState, combat
                                     }
                                     // Remove the first relic reward
                                     if let Some(pos) = reward.items.iter().position(|item| {
-                                        matches!(item, crate::state::RewardItem::Relic { .. })
+                                        matches!(
+                                            item,
+                                            crate::rewards::state::RewardItem::Relic { .. }
+                                        )
                                     }) {
                                         reward.items.remove(pos);
                                     }
                                 }
 
                                 *engine_state = EngineState::RewardScreen(reward);
-                            },
+                            }
                             RoomType::TrueVictoryRoom => {
                                 // Act 4 ending — true victory after defeating the Heart
-                                *engine_state = EngineState::GameOver(crate::state::core::RunResult::Victory);
-                            },
+                                *engine_state =
+                                    EngineState::GameOver(crate::state::core::RunResult::Victory);
+                            }
                         }
                     }
                 }
             }
             true
-        },
+        }
         EngineState::Campfire => campfire_handler::handle(engine_state, run_state, input),
         EngineState::Shop(_) => {
             let mut transition = None;
@@ -319,19 +400,25 @@ pub fn tick_run(engine_state: &mut EngineState, run_state: &mut RunState, combat
                 *engine_state = new_state;
             }
             true
-        },
+        }
         EngineState::EventRoom => {
             if let Some(ClientInput::EventChoice(choice_idx)) = input {
-                if let Err(e) = crate::engine::event_handler::handle_event_choice(engine_state, run_state, choice_idx) {
+                if let Err(e) = crate::engine::event_handler::handle_event_choice(
+                    engine_state,
+                    run_state,
+                    choice_idx,
+                ) {
                     eprintln!("Event Error: {}", e);
                 }
             }
             true
-        },
+        }
         EngineState::RewardScreen(_) => {
             let mut transition = None;
             if let EngineState::RewardScreen(rs) = engine_state {
-                if let Some(new_state) = reward_handler::handle(run_state, rs, input.clone()) {
+                if let Some(new_state) =
+                    crate::rewards::handler::handle(run_state, rs, input.clone())
+                {
                     transition = Some(new_state);
                 }
             }
@@ -339,11 +426,13 @@ pub fn tick_run(engine_state: &mut EngineState, run_state: &mut RunState, combat
                 *engine_state = new_state;
             }
             true
-        },
+        }
         EngineState::BossRelicSelect(_) => {
             let mut transition = None;
             if let EngineState::BossRelicSelect(bs) = engine_state {
-                if let Some(new_state) = super::boss_relic_handler::handle(run_state, bs, input.clone()) {
+                if let Some(new_state) =
+                    crate::rewards::boss_handler::handle(run_state, bs, input.clone())
+                {
                     transition = Some(new_state);
                 }
             }
@@ -351,7 +440,7 @@ pub fn tick_run(engine_state: &mut EngineState, run_state: &mut RunState, combat
                 *engine_state = new_state;
             }
             true
-        },
+        }
         EngineState::EventCombat(ecs) => {
             // Event combat delegates to normal combat tick.
             // When combat ends (engine transitions away from Combat states),
@@ -364,7 +453,7 @@ pub fn tick_run(engine_state: &mut EngineState, run_state: &mut RunState, combat
                 if !keep_running {
                     // Absorb combat player state back to RunState (HP, gold, relic counters)
                     run_state.absorb_combat_player(cs.player.clone());
-                    
+
                     for change in cs.meta_changes.drain(..) {
                         match change {
                             crate::combat::MetaChange::AddCardToMasterDeck(card_id) => {
@@ -384,10 +473,12 @@ pub fn tick_run(engine_state: &mut EngineState, run_state: &mut RunState, combat
                         // Generate standard card rewards unless suppressed
                         let mut rewards = ecs.rewards.clone();
                         if !ecs.no_cards_in_rewards {
-                            let card_reward = run_state.generate_combat_rewards(false, false);
+                            let card_reward = crate::rewards::generator::generate_combat_rewards(
+                                run_state, false, false,
+                            );
                             // Merge card reward items into pre-populated rewards
                             for item in card_reward.items {
-                                if matches!(item, crate::state::RewardItem::Card { .. }) {
+                                if matches!(item, crate::rewards::state::RewardItem::Card { .. }) {
                                     rewards.items.push(item);
                                 }
                             }
@@ -398,10 +489,10 @@ pub fn tick_run(engine_state: &mut EngineState, run_state: &mut RunState, combat
                         match ecs.post_combat_return {
                             crate::state::core::PostCombatReturn::EventRoom => {
                                 *engine_state = EngineState::EventRoom;
-                            },
+                            }
                             crate::state::core::PostCombatReturn::MapNavigation => {
                                 *engine_state = EngineState::MapNavigation;
-                            },
+                            }
                         }
                     }
                 }
@@ -411,7 +502,7 @@ pub fn tick_run(engine_state: &mut EngineState, run_state: &mut RunState, combat
                 eprintln!("Error: EventCombat but no CombatState provided.");
                 false
             }
-        },
+        }
         EngineState::GameOver(_) => false,
     }
 }

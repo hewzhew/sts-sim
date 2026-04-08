@@ -5,7 +5,10 @@ use smallvec::SmallVec;
 pub fn on_discard() -> SmallVec<[ActionInfo; 4]> {
     let mut actions = SmallVec::new();
     actions.push(ActionInfo {
-        action: Action::GainBlock { target: 0, amount: 3 },
+        action: Action::GainBlock {
+            target: 0,
+            amount: 3,
+        },
         insertion_mode: AddTo::Bottom,
     });
     actions

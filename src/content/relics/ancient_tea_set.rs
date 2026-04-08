@@ -5,6 +5,15 @@ use smallvec::SmallVec;
 pub struct AncientTeaSet;
 
 impl AncientTeaSet {
+    pub fn at_pre_battle(
+        _relic_state: &mut crate::content::relics::RelicState,
+    ) -> SmallVec<[ActionInfo; 4]> {
+        // Java: firstTurn = true;
+        // Rust's counter system (-2 / -1) implicitly prevents duplicate triggers,
+        // so no explicit state reset is strictly needed for parity given the engine constraints,
+        // but included here structurally to mirror Java's architecture.
+        SmallVec::new()
+    }
     pub fn at_turn_start(counter: i32) -> SmallVec<[ActionInfo; 4]> {
         let mut actions = SmallVec::new();
         if counter == -2 {

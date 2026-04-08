@@ -1,11 +1,16 @@
-use crate::combat::{CombatState, MonsterEntity, Intent, PowerId};
 use crate::action::{Action, DamageInfo, DamageType};
+use crate::combat::{CombatState, Intent, MonsterEntity, PowerId};
 use crate::content::monsters::MonsterBehavior;
 
 pub struct GremlinNob;
 
 impl MonsterBehavior for GremlinNob {
-    fn roll_move(_rng: &mut crate::rng::StsRng, entity: &MonsterEntity, ascension_level: u8, num: i32) -> (u8, Intent) {
+    fn roll_move(
+        _rng: &mut crate::rng::StsRng,
+        entity: &MonsterEntity,
+        ascension_level: u8,
+        num: i32,
+    ) -> (u8, Intent) {
         let bash_dmg = if ascension_level >= 3 { 8 } else { 6 };
         let rush_dmg = if ascension_level >= 3 { 16 } else { 14 };
 
@@ -15,7 +20,8 @@ impl MonsterBehavior for GremlinNob {
 
         let last_move = |byte: u8| entity.move_history.back() == Some(&byte);
         let last_move_before = |byte: u8| {
-            entity.move_history.len() >= 2 && entity.move_history[entity.move_history.len() - 2] == byte
+            entity.move_history.len() >= 2
+                && entity.move_history[entity.move_history.len() - 2] == byte
         };
         let last_two_moves = |byte: u8| {
             entity.move_history.len() >= 2
@@ -26,22 +32,58 @@ impl MonsterBehavior for GremlinNob {
         // Java Asc 18+: deterministic Skull Bash / Bull Rush rotation
         if ascension_level >= 18 {
             if !last_move(2) && !last_move_before(2) {
-                return (2, Intent::AttackDebuff { damage: bash_dmg, hits: 1 });
+                return (
+                    2,
+                    Intent::AttackDebuff {
+                        damage: bash_dmg,
+                        hits: 1,
+                    },
+                );
             }
             if last_two_moves(1) {
-                return (2, Intent::AttackDebuff { damage: bash_dmg, hits: 1 });
+                return (
+                    2,
+                    Intent::AttackDebuff {
+                        damage: bash_dmg,
+                        hits: 1,
+                    },
+                );
             }
-            return (1, Intent::Attack { damage: rush_dmg, hits: 1 });
+            return (
+                1,
+                Intent::Attack {
+                    damage: rush_dmg,
+                    hits: 1,
+                },
+            );
         }
 
         // Below Asc 18: probability-based
         if num < 33 {
-            (2, Intent::AttackDebuff { damage: bash_dmg, hits: 1 })
+            (
+                2,
+                Intent::AttackDebuff {
+                    damage: bash_dmg,
+                    hits: 1,
+                },
+            )
         } else {
             if last_two_moves(1) {
-                (2, Intent::AttackDebuff { damage: bash_dmg, hits: 1 })
+                (
+                    2,
+                    Intent::AttackDebuff {
+                        damage: bash_dmg,
+                        hits: 1,
+                    },
+                )
             } else {
-                (1, Intent::Attack { damage: rush_dmg, hits: 1 })
+                (
+                    1,
+                    Intent::Attack {
+                        damage: rush_dmg,
+                        hits: 1,
+                    },
+                )
             }
         }
     }
@@ -52,15 +94,17 @@ impl MonsterBehavior for GremlinNob {
         let mut actions = Vec::new();
 
         match entity.next_move_byte {
-            3 => { // BELLOW
+            3 => {
+                // BELLOW
                 actions.push(Action::ApplyPower {
                     target: entity.id,
                     source: entity.id,
-                    power_id: PowerId::Angry, // Enrage in-game
+                    power_id: PowerId::Anger,
                     amount: if state.ascension_level >= 18 { 3 } else { 2 },
                 });
             }
-            2 => { // SKULL BASH
+            2 => {
+                // SKULL BASH
                 actions.push(Action::Damage(DamageInfo {
                     source: entity.id,
                     target: 0,
@@ -77,7 +121,8 @@ impl MonsterBehavior for GremlinNob {
                     amount: 2,
                 });
             }
-            1 => { // BULL RUSH
+            1 => {
+                // BULL RUSH
                 actions.push(Action::Damage(DamageInfo {
                     source: entity.id,
                     target: 0,
@@ -87,10 +132,12 @@ impl MonsterBehavior for GremlinNob {
                     is_modified: false,
                 }));
             }
-            _ => { }
+            _ => {}
         }
 
-        actions.push(Action::RollMonsterMove { monster_id: entity.id });
+        actions.push(Action::RollMonsterMove {
+            monster_id: entity.id,
+        });
         actions
     }
 }

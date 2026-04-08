@@ -1,5 +1,5 @@
-use crate::combat::{CombatState, PlayerEntity};
 use crate::action::{Action, ActionInfo, AddTo};
+use crate::combat::{CombatState, PlayerEntity};
 use smallvec::SmallVec;
 
 /// Gold-Plated Cables: Your rightmost Orb's passive triggers an additional time.
@@ -10,39 +10,48 @@ use smallvec::SmallVec;
 
 pub fn at_end_of_turn(_state: &CombatState, player: &PlayerEntity) -> SmallVec<[ActionInfo; 4]> {
     let mut actions = SmallVec::new();
-    
+
     // Rightmost orb is index 0 in our logic (it's the next to be evoked).
     if !player.orbs.is_empty() && player.orbs[0].id != crate::combat::OrbId::Empty {
         let orb = &player.orbs[0];
         match orb.id {
             crate::combat::OrbId::Lightning => {
                 actions.push(ActionInfo {
-                    action: Action::AttackDamageRandomEnemy { base_damage: orb.passive_amount, damage_type: crate::action::DamageType::Thorns },
+                    action: Action::AttackDamageRandomEnemy {
+                        base_damage: orb.passive_amount,
+                        damage_type: crate::action::DamageType::Thorns,
+                        applies_target_modifiers: false,
+                    },
                     insertion_mode: AddTo::Bottom,
                 });
-            },
+            }
             crate::combat::OrbId::Dark => {
-                // Dark Orb doesn't "trigger" actively, it just grows. 
+                // Dark Orb doesn't "trigger" actively, it just grows.
                 // We'll queue a custom power modification to increase it again.
                 // However, `TriggerPassiveOrbs` handles Dark manually.
                 // To keep it simple, we use a specialized Action or inline mutation...
                 // But passive hook runs AFTER triggers, so modifying it dynamically is tricky.
-                // Let's rely on `Action::TriggerPassiveOrbs` directly checking `GoldenCables` 
+                // Let's rely on `Action::TriggerPassiveOrbs` directly checking `GoldenCables`
                 // in the engine to double its growth for safety.
-            },
+            }
             crate::combat::OrbId::Frost => {
                 actions.push(ActionInfo {
-                    action: Action::GainBlock { target: player.id, amount: orb.passive_amount },
+                    action: Action::GainBlock {
+                        target: player.id,
+                        amount: orb.passive_amount,
+                    },
                     insertion_mode: AddTo::Bottom,
                 });
-            },
+            }
             crate::combat::OrbId::Plasma => {
                 actions.push(ActionInfo {
-                    action: Action::GainEnergy { amount: orb.passive_amount },
+                    action: Action::GainEnergy {
+                        amount: orb.passive_amount,
+                    },
                     insertion_mode: AddTo::Bottom,
                 });
-            },
-            crate::combat::OrbId::Empty => {},
+            }
+            crate::combat::OrbId::Empty => {}
         }
     }
     actions
