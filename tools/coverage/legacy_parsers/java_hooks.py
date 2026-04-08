@@ -1,4 +1,8 @@
-"""Parse hooks.md to extract Java hook methods per entity."""
+"""Legacy parser for hooks.md.
+
+Normal coverage paths should consume analysis_cache/source_extractor JSON facts first.
+This module remains only as historical compatibility code.
+"""
 import re
 from pathlib import Path
 from ..models import JavaEntity, JavaHook, EntityCategory, SKIPPABLE_HOOKS, HookStatus

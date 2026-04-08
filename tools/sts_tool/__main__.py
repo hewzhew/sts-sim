@@ -6,6 +6,8 @@ Usage:
     python -m sts_tool ast ApplyPower        # Just the structured AST extraction
     python -m sts_tool overrides onApplyPower # Find all overrides of a hook method
     python -m sts_tool find Corruption       # Find Java files matching a name
+    python -m sts_tool cache                 # Build structured analysis cache
+    python -m sts_tool family guardian       # Emit JSON + Markdown for a bug family
 
 Java source:  d:\\rust\\cardcrawl
 Rust source:  d:\\rust\\sts_simulator\\src
@@ -25,6 +27,14 @@ from .java_parser import parse_file, extract_class, find_java_files, find_action
 from .ast_format import format_method_body
 from .call_chain import analyze_method, format_call_chain, resolve_overrides, CallChainResult
 from .rust_scan import check_rust_parity, format_rust_parity, RUST_SRC
+try:
+    from tools.analysis.cache_builder import build_analysis_cache
+    from tools.analysis.common import ANALYSIS_CACHE_DIR
+    from tools.analysis.family_audit import FAMILY_CONFIG, build_family_audit
+except ImportError:
+    from analysis.cache_builder import build_analysis_cache  # type: ignore
+    from analysis.common import ANALYSIS_CACHE_DIR  # type: ignore
+    from analysis.family_audit import FAMILY_CONFIG, build_family_audit  # type: ignore
 
 
 OUTPUT_DIR = Path(r"d:\rust\sts_simulator\tools\sts_tool\output")
@@ -114,7 +124,7 @@ def cmd_query(args):
     out_file = OUTPUT_DIR / f"{name.lower()}_report.md"
     out_file.write_text(combined, encoding="utf-8")
     print(f"\n{'='*60}")
-    print(f"Saved → {out_file}")
+    print(f"Saved: {out_file}")
 
 
 def _pick_methods(cls) -> list[str]:
@@ -209,6 +219,18 @@ def cmd_find(args):
             print(f"    Methods: {methods}")
 
 
+def cmd_cache(args):
+    paths = build_analysis_cache(Path(args.java_dir), Path(args.rust_dir), ANALYSIS_CACHE_DIR)
+    for label, path in paths.items():
+        print(f"{label}: {path}")
+
+
+def cmd_family(args):
+    json_path, md_path = build_family_audit(args.family, ANALYSIS_CACHE_DIR, Path(args.java_dir), Path(args.rust_dir))
+    print(f"JSON: {json_path}")
+    print(f"Markdown: {md_path}")
+
+
 # ── Main ───────────────────────────────────────────────────────────────────
 
 def main():
@@ -241,6 +263,15 @@ def main():
     p_find = sub.add_parser("find", help="Find Java files matching a name")
     p_find.add_argument("name", help="Search term")
     p_find.set_defaults(func=cmd_find)
+
+    # cache
+    p_cache = sub.add_parser("cache", help="Build the structured analysis cache")
+    p_cache.set_defaults(func=cmd_cache)
+
+    # family
+    p_family = sub.add_parser("family", help="Build a bug-family audit report")
+    p_family.add_argument("family", choices=sorted(FAMILY_CONFIG))
+    p_family.set_defaults(func=cmd_family)
 
     args = parser.parse_args()
     args.func(args)

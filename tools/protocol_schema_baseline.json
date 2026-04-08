@@ -70,9 +70,14 @@
                 "Regen": {
                     "java": [
                         "Regen",
-                        "Regeneration",
                         "Regenerate",
                         "RegenerateMonster"
+                    ],
+                    "scope": "combat"
+                },
+                "Regeneration": {
+                    "java": [
+                        "Regeneration"
                     ],
                     "scope": "combat"
                 },
@@ -288,8 +293,7 @@
                 },
                 "Angry": {
                     "java": [
-                        "Angry",
-                        "Anger"
+                        "Angry"
                     ],
                     "scope": "combat",
                     "owner": "monster"

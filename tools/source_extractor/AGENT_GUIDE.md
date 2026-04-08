@@ -2,9 +2,21 @@
 
 ## 这些文件是什么
 
-这些 `.md` 文件是从杀戮尖塔（Slay the Spire）反编译 Java 源码中**程序化提取**的结构化信息。
+这些产物是从杀戮尖塔（Slay the Spire）反编译 Java 源码中**程序化提取**的结构化信息。
 所有内容都由 AST 分析器直接从源码提取，不含任何人工总结或 LLM 生成内容。
-**请将这些文件视为唯一的 source of truth**，不要依赖记忆或猜测。
+优先使用结构化 JSON 事实层；Markdown 主要用于人工阅读、索引和人工核对。
+不要依赖记忆或猜测。
+
+## 当前真相层
+
+- 结构化真相优先：
+  - `output/hooks.json`
+  - `output/scattered_logic.json`
+  - `output/relics.json`
+- Markdown 是渲染层：
+  - `output/hooks.md`
+  - `output/scattered_logic.md`
+  - `output/relics.md`
 
 ## 文件清单
 
@@ -12,12 +24,15 @@
 |---|---|---|
 | `summary.md` | 类数量统计、hook 方法使用频率 | 开始任何新任务前先看一眼 |
 | `inheritance.md` | 所有类的继承关系，按类别分组 | 需要知道某个类属于什么类别时 |
-| `hooks.md` | 每个 power/relic/card 覆盖了哪些 hook | 实现任何 power/relic/card 之前**必看** |
+| `hooks.json` | 每个 power/relic/card 覆盖了哪些 hook 的结构化事实 | 实现任何 power/relic/card 前优先查 |
+| `hooks.md` | `hooks.json` 的阅读版索引 | 需要人工浏览时 |
 | `actions.md` | 每个 Action 的 update() 逻辑、子 Action 创建链 | 实现 Action 时 |
 | `cards.md` | 每张卡的 use() 方法、Action 入队顺序 | 实现卡牌时 |
 | `powers.md` | 每个 Power 的 hook 方法实现体 | 实现 Power 时 |
-| `relics.md` | 每个 Relic 的 hook 方法实现体 | 实现 Relic 时 |
-| `scattered_logic.md` | **关键！** 遗物/能力逻辑散落在引擎中的位置 | 实现任何 relic/power 时**必看** |
+| `relics.json` | Relic hook / call / queue insertion 的结构化事实 | 实现 Relic / 检查 addToTop/addToBot 时优先查 |
+| `relics.md` | `relics.json` 的阅读版索引 | 需要人工浏览完整方法体时 |
+| `scattered_logic.json` | **关键！** 遗物/能力逻辑散落在引擎中的结构化索引 | 实现任何 relic/power 时优先查 |
+| `scattered_logic.md` | `scattered_logic.json` 的阅读版索引 | 需要人工浏览时 |
 | `completeness_checklist.md` | 实现进度追踪表（自身逻辑 + 引擎侧逻辑） | 每次开始新组件前检查 |
 | `taint_report.md` | 逐行标注：哪些是纯逻辑、纯表现层、还是混合的 | 实现 Action 时**必看**，跳过前验证 |
 | `call_graph.md` | 核心引擎类的方法调用序列 | 实现引擎调度逻辑时**必看** |
@@ -46,12 +61,12 @@
 
 ### 规则三：交叉验证（含散落逻辑检查）
 
-实现一个组件时，至少查两个文件，**并且必须查 `scattered_logic.md`**：
+实现一个组件时，至少查两个文件，**并且必须查 `scattered_logic.json`**：
 
 - **实现一个 Power**:
-  1. 查 `hooks.md` → 确认它覆盖了哪些 hook
+  1. 查 `hooks.json` → 确认它覆盖了哪些 hook
   2. 查 `powers.md` → 看每个 hook 方法的具体实现
-  3. **查 `scattered_logic.md` → 看引擎中是否有 `hasPower("XxxPower")` 的检查**
+  3. **查 `scattered_logic.json` → 看引擎中是否有 `hasPower("XxxPower")` 的检查**
   4. 如果有引擎侧检查 → 这些检查点的逻辑也必须在 Rust 中实现
   5. 如果涉及伤害 → 额外查 `damage_pipeline.md`
 
@@ -61,11 +76,12 @@
   3. 如果 Action 未实现 → **先停下来去实现 Action**
 
 - **实现一个 Relic**:
-  1. 查 `hooks.md` → 确认它覆盖了哪些 hook
-  2. 查 `relics.md` → 看每个 hook 的实现体
-  3. **查 `scattered_logic.md` → 看引擎中是否有 `hasRelic("XxxRelic")` 的检查**
-  4. **如果标注为 "NO hooks in own class — logic is ENTIRELY engine-side"，则遗物类本身可能只需要一个空壳，但引擎中的所有检查点必须实现**
-  5. 查 `call_graph.md` → 确认 hook 被调用的时机和顺序
+  1. 查 `hooks.json` → 确认它覆盖了哪些 hook
+  2. 查 `relics.json` → 看每个 hook 的结构化 facts、calls、queue insertion
+  3. 如需完整方法体，再查 `relics.md`
+  4. **查 `scattered_logic.json` → 看引擎中是否有 `hasRelic("XxxRelic")` 的检查**
+  5. **如果标注为 "NO hooks in own class — logic is ENTIRELY engine-side"，则遗物类本身可能只需要一个空壳，但引擎中的所有检查点必须实现**
+  6. 查 `call_graph.md` → 确认 hook 被调用的时机和顺序
 
 - **涉及伤害计算**:
   1. 查 `damage_pipeline.md` → 这是**唯一可信来源**
@@ -106,11 +122,11 @@ StS 中大量遗物和能力的真实逻辑**不在它们自己的 Java 类里**
 - 某些遗物类里只有 `flash()` 调用（控制图标闪烁），真正的游戏效果在引擎某处的 if 判断里
 - 某些能力的部分效果通过 hook 方法实现，另一部分效果在伤害计算管线里用 `hasPower()` 检查
 
-**`scattered_logic.md` 列出了所有这种情况。** 如果一个遗物被标注为 "NO hooks in own class — logic is ENTIRELY engine-side"，
+**`scattered_logic.json` / `scattered_logic.md` 列出了所有这种情况。** 如果一个遗物被标注为 "NO hooks in own class — logic is ENTIRELY engine-side"，
 意味着翻译遗物类本身基本没用，真正的实现工作在引擎侧。
 
 这是导致"以为实现了其实没实现"和"在引擎不同位置写重复逻辑"的根源。
-每实现一个 relic/power，**必须同时检查 `scattered_logic.md`**。
+每实现一个 relic/power，**必须同时检查 `scattered_logic.json`**。
 
 ### Action 队列语义
 

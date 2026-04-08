@@ -11,13 +11,16 @@ Usage:
 Outputs:
     inheritance.md   - Class hierarchy (who extends what)
     hooks.md         - Which classes override which hook methods
+    hooks.json       - Structured hook facts for powers/relics/cards
     actions.md       - Action call chains per card/power/relic
     call_graph.md    - Method-level call graph for key classes
     damage_pipeline.md - Damage calculation flow details
     cards.md         - Per-card use() breakdown
     powers.md        - Per-power hook implementations
     relics.md        - Per-relic hook implementations
+    relics.json      - Structured relic hook/call/insertion facts
     scattered_logic.md - CRITICAL: where relic/power logic lives OUTSIDE their own class
+    scattered_logic.json - Structured engine-side hasRelic/hasPower checks
     completeness_checklist.md - Tracking table: own-class vs engine-side implementation status
     taint_report.md  - Line-level presentation vs logic classification (MIXED = needs review)
 """
@@ -515,6 +518,89 @@ def scan_scattered_logic(src_dir: Path) -> dict[str, list[dict]]:
     return dict(refs)
 
 
+def build_hooks_structured(classes: list[ClassInfo]) -> dict:
+    """Build structured hook facts for powers/relics/cards."""
+    categories = {}
+    for cat in ["power", "relic", "card"]:
+        items = []
+        for c in sorted((cls for cls in classes if cls.category == cat), key=lambda x: x.name):
+            hooks_found = []
+            for m in c.methods:
+                if m["name"] in KNOWN_HOOKS:
+                    hooks_found.append(
+                        {
+                            "name": m["name"],
+                            "params": m["params"],
+                            "start_line": m["start_line"],
+                            "end_line": m["end_line"],
+                        }
+                    )
+            if hooks_found:
+                items.append(
+                    {
+                        "class_name": c.name,
+                        "category": c.category,
+                        "file": c.file_path,
+                        "hooks": hooks_found,
+                    }
+                )
+        categories[cat] = items
+
+    return {
+        "entities": categories,
+        "known_hooks": sorted(KNOWN_HOOKS),
+    }
+
+
+def write_hooks_json(classes: list[ClassInfo], out_dir: Path):
+    payload = build_hooks_structured(classes)
+    with open(out_dir / "hooks.json", "w", encoding="utf-8") as f:
+        json.dump(payload, f, indent=2, ensure_ascii=False)
+    total_entities = sum(len(v) for v in payload["entities"].values())
+    print(f"  hooks.json: {total_entities} entities")
+
+
+def build_scattered_logic_structured(classes: list[ClassInfo], scattered: dict) -> dict:
+    """Build structured engine-side hasRelic/hasPower check facts."""
+    entity_hooks: dict[str, list[str]] = {}
+    entity_categories: dict[str, str] = {}
+    for c in classes:
+        hooks = [m["name"] for m in c.methods if m["name"] in KNOWN_HOOKS]
+        entity_hooks[c.name] = hooks
+        entity_categories[c.name] = c.category
+
+    grouped = {"relic": [], "power": [], "other": []}
+    for entity, locs in sorted(scattered.items()):
+        check_types = sorted({loc["check_fn"] for loc in locs})
+        normalized = entity.replace(" ", "")
+        own_hooks = entity_hooks.get(entity, entity_hooks.get(normalized, []))
+        own_category = entity_categories.get(entity, entity_categories.get(normalized, "other"))
+        entry = {
+            "entity": entity,
+            "normalized_entity": normalized,
+            "check_types": check_types,
+            "own_hooks": own_hooks,
+            "own_category": own_category,
+            "locations": sorted(locs, key=lambda x: (x["file"], x["line"])),
+        }
+        if any("Relic" in ct for ct in check_types):
+            grouped["relic"].append(entry)
+        elif any("Power" in ct for ct in check_types):
+            grouped["power"].append(entry)
+        else:
+            grouped["other"].append(entry)
+
+    return {"entities": grouped}
+
+
+def write_scattered_logic_json(classes: list[ClassInfo], scattered: dict, out_dir: Path):
+    payload = build_scattered_logic_structured(classes, scattered)
+    with open(out_dir / "scattered_logic.json", "w", encoding="utf-8") as f:
+        json.dump(payload, f, indent=2, ensure_ascii=False)
+    total_entities = sum(len(v) for v in payload["entities"].values())
+    print(f"  scattered_logic.json: {total_entities} entities")
+
+
 def write_scattered_logic(classes: list[ClassInfo], scattered: dict, out_dir: Path):
     """Write scattered_logic.md - reverse index of where relic/power logic actually lives."""
     # Build a set of known relic/power class names for cross-referencing
@@ -883,6 +969,61 @@ def write_relics(classes: list[ClassInfo], out_dir: Path):
     print(f"  relics/: {total_written} relics across {len(by_letter)} files")
 
 
+def build_relics_structured(classes: list[ClassInfo]) -> dict:
+    """Build structured per-relic hook/call/insertion facts."""
+    relics = [c for c in classes if c.category == "relic"]
+    entities = []
+
+    for c in sorted(relics, key=lambda x: x.name):
+        hook_methods = [m for m in c.methods if m["name"] in KNOWN_HOOKS]
+        hook_entries = []
+        for m in hook_methods:
+            bot_top_calls = [
+                call for call in m.get("calls", [])
+                if call["method"] in ("addToBot", "addToTop", "addToBottom")
+            ]
+            queue_insertions = []
+            for call in bot_top_calls:
+                mode = "BOT" if "addToBot" in call["text"] else "TOP"
+                queue_insertions.append({
+                    "mode": mode,
+                    "text": call["text"],
+                    "line": call["line"],
+                })
+
+            hook_entries.append({
+                "name": m["name"],
+                "params": m["params"],
+                "start_line": m["start_line"],
+                "end_line": m["end_line"],
+                "calls": m.get("calls", []),
+                "creations": m.get("creations", []),
+                "queue_insertions": queue_insertions,
+                "body_text": m["body_text"],
+            })
+
+        entities.append({
+            "class_name": c.name,
+            "file_path": c.file_path,
+            "hook_count": len(hook_entries),
+            "hooks": hook_entries,
+        })
+
+    return {
+        "entity_type": "relic",
+        "entity_count": len(entities),
+        "entities": entities,
+    }
+
+
+def write_relics_json(classes: list[ClassInfo], out_dir: Path):
+    """Write structured relic facts as relics.json."""
+    payload = build_relics_structured(classes)
+    with open(out_dir / "relics.json", "w", encoding="utf-8") as f:
+        json.dump(payload, f, ensure_ascii=False, indent=2)
+    print(f"  relics.json: {payload['entity_count']} relics")
+
+
 def write_call_graph(classes: list[ClassInfo], out_dir: Path):
     """Write call_graph.md - method call sequences in critical classes."""
     critical_classes = {
@@ -1024,13 +1165,16 @@ def main():
 
     write_summary(classes, out_dir)
     write_inheritance(classes, out_dir)
+    write_hooks_json(classes, out_dir)
     write_hooks(classes, out_dir)
     write_actions(classes, out_dir)
     write_cards(classes, out_dir)
     write_powers(classes, out_dir)
+    write_relics_json(classes, out_dir)
     write_relics(classes, out_dir)
     write_call_graph(classes, out_dir)
     write_damage_pipeline(classes, out_dir)
+    write_scattered_logic_json(classes, scattered, out_dir)
     write_scattered_logic(classes, scattered, out_dir)
     write_taint_report(classes, out_dir)
 

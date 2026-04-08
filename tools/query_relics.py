@@ -17,25 +17,22 @@ import json
 import re
 import os
 import argparse
-import glob
-from collections import defaultdict
+
+if sys.platform == "win32":
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-SCHEMA_PATH = os.path.join(SCRIPT_DIR, "protocol_schema.json")
-SCATTERED_LOGIC_PATH = os.path.join(
-    SCRIPT_DIR, "source_extractor", "output", "scattered_logic.md"
+SCHEMA_PATH = os.path.join(SCRIPT_DIR, "compiled_protocol_schema.json")
+SCATTERED_LOGIC_JSON_PATH = os.path.join(
+    SCRIPT_DIR, "source_extractor", "output", "scattered_logic.json"
 )
-RELICS_DIR = os.path.join(
-    SCRIPT_DIR, "source_extractor", "output", "relics"
+HOOKS_JSON_PATH = os.path.join(
+    SCRIPT_DIR, "source_extractor", "output", "hooks.json"
 )
-# Fallback: monolithic relics.md
-RELICS_MD_PATH = os.path.join(
-    SCRIPT_DIR, "source_extractor", "output", "relics.md"
+RELICS_JSON_PATH = os.path.join(
+    SCRIPT_DIR, "source_extractor", "output", "relics.json"
 )
-HOOKS_MD_PATH = os.path.join(
-    SCRIPT_DIR, "source_extractor", "output", "hooks.md"
-)
-JAVA_SRC_ROOT = os.path.normpath(os.path.join(SCRIPT_DIR, "..", "..", "cardcrawl"))
 RUST_RELICS_DIR = os.path.normpath(
     os.path.join(SCRIPT_DIR, "..", "src", "content", "relics")
 )
@@ -78,15 +75,77 @@ def load_schema():
 
 
 def load_scattered_logic():
-    if not os.path.isfile(SCATTERED_LOGIC_PATH):
-        return ""
     for enc in ("utf-8", "utf-8-sig", "utf-16", "latin-1"):
         try:
-            with open(SCATTERED_LOGIC_PATH, "r", encoding=enc) as f:
-                return f.read()
+            with open(SCATTERED_LOGIC_JSON_PATH, "r", encoding=enc) as f:
+                data = json.load(f)
+            names = set()
+            for category_entries in data.get("entities", {}).values():
+                for entry in category_entries:
+                    entity = str(entry.get("entity", ""))
+                    normalized = str(entry.get("normalized_entity", entity))
+                    if entity:
+                        names.add(entity.lower())
+                        names.add(entity.replace(" ", "").lower())
+                    if normalized:
+                        names.add(normalized.lower())
+                        names.add(normalized.replace(" ", "").lower())
+            return names
         except (UnicodeDecodeError, UnicodeError):
             continue
-    return ""
+        except Exception:
+            return set()
+    return set()
+
+
+def has_scattered_logic(scattered, java_id: str, rust_enum: str = "") -> bool:
+    if isinstance(scattered, set):
+        candidates = {
+            java_id.lower(),
+            java_id.replace(" ", "").lower(),
+        }
+        if rust_enum:
+            candidates.add(rust_enum.lower())
+            candidates.add(rust_enum.replace(" ", "").lower())
+        if len(scattered) == 1:
+            only = next(iter(scattered))
+            if "\n" in only or "### " in only:
+                return any(candidate in only for candidate in candidates)
+        return any(candidate in scattered for candidate in candidates)
+    if isinstance(scattered, str):
+        text = scattered.lower()
+        return java_id.lower() in text or java_id.replace(" ", "").lower() in text
+    return False
+
+
+def load_hooks_map():
+    if os.path.isfile(HOOKS_JSON_PATH):
+        try:
+            with open(HOOKS_JSON_PATH, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            hooks_map = {}
+            for entries in data.get("entities", {}).values():
+                for entry in entries:
+                    hooks_map[entry["class_name"]] = [hook["name"] for hook in entry.get("hooks", [])]
+            return hooks_map
+        except Exception:
+            pass
+    return {}
+
+
+def load_relics_map():
+    if not os.path.isfile(RELICS_JSON_PATH):
+        return {}
+    try:
+        with open(RELICS_JSON_PATH, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return {
+            entry["class_name"]: entry
+            for entry in data.get("entities", [])
+            if entry.get("class_name")
+        }
+    except Exception:
+        return {}
 
 
 def get_java_ids(data):
@@ -125,35 +184,17 @@ def print_results(results, entity_type: str):
         print(f"  {rust_enum:<30} {snake + '.rs':<28} {java_id}")
 
 
-def get_relic_hooks_from_md(java_class_name: str) -> list[str]:
-    """Extract hook names for a relic from per-letter .md files or monolithic relics.md."""
-    letter = java_class_name[0].upper() if java_class_name else ""
-    # Try per-letter file first
-    letter_file = os.path.join(RELICS_DIR, f"{letter}.md")
-    if os.path.isfile(letter_file):
-        target_path = letter_file
-    elif os.path.isfile(RELICS_MD_PATH):
-        target_path = RELICS_MD_PATH
-    else:
-        return []
-
-    hooks = []
-    in_relic = False
-    try:
-        with open(target_path, "r", encoding="utf-8") as f:
-            for line in f:
-                line = line.strip()
-                if line.startswith("## ") and not line.startswith("### "):
-                    in_relic = line[3:].strip() == java_class_name
-                elif in_relic and line.startswith("### "):
-                    # Extract hook name from "### hookName(params)"
-                    hook = line[4:].split("(")[0].strip()
-                    if hook and hook not in ("makeCopy", "getUpdatedDescription",
-                                             "updateDescription", "setDescription"):
-                        hooks.append(hook)
-    except Exception:
-        pass
-    return hooks
+def get_relic_hooks(
+    java_class_name: str,
+    hooks_map: dict[str, list[str]] | None = None,
+    relics_map: dict[str, dict] | None = None,
+) -> list[str]:
+    """Extract hook names for a relic from structured JSON outputs."""
+    if relics_map and java_class_name in relics_map:
+        return [hook["name"] for hook in relics_map[java_class_name].get("hooks", [])]
+    if hooks_map and java_class_name in hooks_map:
+        return hooks_map[java_class_name]
+    return []
 
 
 # Cosmetic-only Java actions that have no game logic — skip in insertion mode counting
@@ -173,48 +214,22 @@ def _is_cosmetic_line(line: str) -> bool:
     return any(action in line for action in COSMETIC_ACTIONS)
 
 
-def get_java_insertion_modes(java_class_name: str) -> dict[str, list[str]]:
-    """Extract addToBot/addToTop calls per hook from per-letter .md files.
-    Filters out cosmetic-only actions (RelicAboveCreatureAction etc.)."""
-    letter = java_class_name[0].upper() if java_class_name else ""
-    letter_file = os.path.join(RELICS_DIR, f"{letter}.md")
-    if os.path.isfile(letter_file):
-        target_path = letter_file
-    elif os.path.isfile(RELICS_MD_PATH):
-        target_path = RELICS_MD_PATH
-    else:
-        return {}
-
-    result = {}  # hook_name -> list of "BOT" or "TOP"
-    in_relic = False
-    current_hook = None
-    in_code_block = False
-    try:
-        with open(target_path, "r", encoding="utf-8") as f:
-            for line in f:
-                stripped = line.strip()
-                if stripped.startswith("## ") and not stripped.startswith("### "):
-                    in_relic = stripped[3:].strip() == java_class_name
-                    current_hook = None
-                elif in_relic and stripped.startswith("### "):
-                    current_hook = stripped[4:].split("(")[0].strip()
-                    result[current_hook] = []
-                elif in_relic and current_hook:
-                    if stripped == "```java":
-                        in_code_block = True
-                    elif stripped == "```" and in_code_block:
-                        in_code_block = False
-                    elif in_code_block:
-                        # Skip cosmetic-only lines
-                        if _is_cosmetic_line(stripped):
-                            continue
-                        if "addToBot(" in stripped or "this.addToBot(" in stripped:
-                            result[current_hook].append("BOT")
-                        if "addToTop(" in stripped or "this.addToTop(" in stripped:
-                            result[current_hook].append("TOP")
-    except Exception:
-        pass
-    return result
+def get_java_insertion_modes(
+    java_class_name: str,
+    relics_map: dict[str, dict] | None = None,
+) -> dict[str, list[str]]:
+    """Extract addToBot/addToTop calls per hook from structured relic facts."""
+    if relics_map and java_class_name in relics_map:
+        result = {}
+        for hook in relics_map[java_class_name].get("hooks", []):
+            modes = [
+                insertion["mode"]
+                for insertion in hook.get("queue_insertions", [])
+                if not _is_cosmetic_line(insertion.get("text", ""))
+            ]
+            result[hook["name"]] = modes
+        return result
+    return {}
 
 
 # Rust actions that are internal bookkeeping with no Java equivalent — skip in counting
@@ -295,7 +310,8 @@ def cmd_audit(args, schema):
         return
 
     scattered = load_scattered_logic()
-    scattered_lower = scattered.lower()
+    hooks_map = load_hooks_map()
+    relics_map = load_relics_map()
 
     print(f"\n  Batch audit: {len(matches)} {entity_type}(s) matching '{args.search}'")
     print(f"  {'Rust Enum':<22} {'Java ID':<22} {'.rs?':<6} {'Hooks':<40} {'Scattered'}")
@@ -309,17 +325,17 @@ def cmd_audit(args, schema):
         # Check .rs file existence
         rs_path = os.path.join(RUST_RELICS_DIR, f"{snake}.rs")
         has_rs = os.path.isfile(rs_path)
-        rs_marker = "  ✓ " if has_rs else " ✗  "
+        rs_marker = "  Y " if has_rs else " N  "
 
         # Get hooks from extracted Java
         java_class = java_id.replace(" ", "")
-        hooks = get_relic_hooks_from_md(java_class)
+        hooks = get_relic_hooks(java_class, hooks_map, relics_map)
         hooks_str = ", ".join(hooks) if hooks else "(none)"
         if len(hooks_str) > 38:
             hooks_str = hooks_str[:35] + "..."
 
         # Check scattered logic
-        found = java_id.lower() in scattered_lower
+        found = has_scattered_logic(scattered, java_id, rust_enum)
         scattered_marker = ">>> YES" if found else "    no"
 
         print(f"  {rust_enum:<22} {java_id:<22} {rs_marker:<6} {hooks_str:<40} {scattered_marker}")
@@ -338,12 +354,12 @@ def cmd_audit(args, schema):
     print(f"  Missing .rs (has hooks):   {len(missing_rs)}")
 
     if needs_attention:
-        print(f"\n  ⚠ Entities requiring engine-level review:")
+        print(f"\n  Entities requiring engine-level review:")
         for rust_enum, snake, java_id in needs_attention:
             print(f"    - {rust_enum} ({java_id})")
 
     if missing_rs:
-        print(f"\n  ✗ Missing Rust implementation (have Java hooks):")
+        print(f"\n  Missing Rust implementation (have Java hooks):")
         for rust_enum, snake, java_id, hooks in missing_rs:
             print(f"    - {rust_enum} ({snake}.rs) — hooks: {', '.join(hooks)}")
 
@@ -365,6 +381,8 @@ def cmd_check_insertion(args, schema):
         print(f"No relics starting with '{args.search}'.")
         return
 
+    relics_map = load_relics_map()
+
     print(f"\n  Insertion mode check: {len(matches)} relic(s) matching '{args.search}'")
     print(f"  {'Relic':<22} {'Hook':<22} {'Java':<20} {'Rust':<20} {'Match?'}")
     print("  " + "-" * 100)
@@ -374,7 +392,7 @@ def cmd_check_insertion(args, schema):
 
     for rust_enum, snake, java_id in matches:
         java_class = java_id.replace(" ", "")
-        java_modes = get_java_insertion_modes(java_class)
+        java_modes = get_java_insertion_modes(java_class, relics_map)
         rust_modes = get_rust_insertion_modes(snake)
 
         if not java_modes or not rust_modes:
@@ -393,7 +411,7 @@ def cmd_check_insertion(args, schema):
         rust_bots = rust_modes.count("BOT")
 
         match = (java_tops == rust_tops and java_bots == rust_bots)
-        marker = "  ✓" if match else "  ✗ MISMATCH"
+        marker = "  OK" if match else "  MISMATCH"
 
         java_str = f"TOP:{java_tops} BOT:{java_bots}"
         rust_str = f"TOP:{rust_tops} BOT:{rust_bots}"
@@ -413,7 +431,7 @@ def cmd_check_insertion(args, schema):
     print(f"  Mismatches: {len(issues)}")
 
     if issues:
-        print(f"\n  ⚠ Insertion mode mismatches:")
+        print(f"\n  Insertion mode mismatches:")
         for rust_enum, snake, java_modes, rust_modes in issues:
             print(f"\n    {rust_enum} ({snake}.rs):")
             for hook, modes in java_modes.items():

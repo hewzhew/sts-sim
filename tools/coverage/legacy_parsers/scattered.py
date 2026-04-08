@@ -1,4 +1,8 @@
-"""Parse scattered_logic.md to find engine-level references to entities."""
+"""Legacy parser for scattered_logic.md.
+
+Normal coverage paths should consume analysis_cache/source_extractor JSON facts first.
+This module remains only as historical compatibility code.
+"""
 from pathlib import Path
 
 

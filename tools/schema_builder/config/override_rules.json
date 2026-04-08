@@ -115,9 +115,13 @@
         "Regen": {
             "java": [
                 "Regen",
-                "Regeneration",
                 "Regenerate",
                 "RegenerateMonster"
+            ]
+        },
+        "Regeneration": {
+            "java": [
+                "Regeneration"
             ]
         },
         "PlatedArmor": {
@@ -145,8 +149,7 @@
         },
         "Angry": {
             "java": [
-                "Angry",
-                "Anger"
+                "Angry"
             ],
             "owner": "monster"
         },
@@ -221,7 +224,10 @@
             "owner": "monster"
         },
         "Reactive": {
-            "owner": "monster"
+            "owner": "monster",
+            "java": [
+                "Compulsive"
+            ]
         },
         "Slow": {
             "owner": "monster"
@@ -239,7 +245,11 @@
             "owner": "monster"
         },
         "GenericStrengthUp": {
-            "owner": "monster"
+            "owner": "monster",
+            "java": [
+                "GenericStrengthUp",
+                "Generic Strength Up Power"
+            ]
         },
         "Strength": {},
         "Vulnerable": {},
@@ -261,14 +271,19 @@
         },
         "Energized": {},
         "Constricted": {},
-        "PainfulStabs": {},
+        "PainfulStabs": {
+            "java": [
+                "PainfulStabs",
+                "Painful Stabs"
+            ]
+        },
         "BeatOfDeath": {},
         "Mantra": {},
         "DuplicationPower": {},
         "Surrounded": {},
         "Anger": {
             "java": [
-                "UNKNOWN_PLEASE_MAP_MANUALLY"
+                "Anger"
             ]
         },
         "GuardianThreshold": {
@@ -293,7 +308,21 @@
         },
         "Shackled": {
             "java": [
-                "UNKNOWN_PLEASE_MAP_MANUALLY"
+                "Shackled"
+            ]
+        },
+        "LoseStrength": {
+            "java": [
+                "Flex",
+                "LoseStrength",
+                "Lose Strength"
+            ]
+        },
+        "Regrow": {
+            "owner": "monster",
+            "java": [
+                "Regrow",
+                "Life Link"
             ]
         },
         "BackAttack": {
@@ -2125,12 +2154,12 @@
         },
         "Strike": {
             "java": [
-                "UNKNOWN_PLEASE_MAP_MANUALLY"
+                "Strike_R"
             ]
         },
         "Defend": {
             "java": [
-                "UNKNOWN_PLEASE_MAP_MANUALLY"
+                "Defend_R"
             ]
         },
         "BurningPact": {

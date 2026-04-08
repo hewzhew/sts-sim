@@ -3,6 +3,10 @@ import sys
 import os
 from pathlib import Path
 
+if sys.platform == "win32":
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
 # Ensure the tools directory is on the path
 SCRIPT_DIR = Path(__file__).parent
 TOOLS_DIR = SCRIPT_DIR.parent
@@ -11,6 +15,11 @@ if str(TOOLS_DIR) not in sys.path:
 
 from coverage.matcher import CoverageAnalyzer
 from coverage.renderer import render_html
+
+try:
+    from tools.analysis.common import COVERAGE_REPORT_PATH
+except ImportError:
+    from analysis.common import COVERAGE_REPORT_PATH  # type: ignore
 
 
 def main():
@@ -21,7 +30,8 @@ def main():
         sys.exit(1)
 
     print(f"Project root: {project_root}")
-    print(f"Extractor output: {project_root / 'tools' / 'source_extractor' / 'output'}")
+    print(f"Analysis cache: {project_root / 'tools' / 'analysis_cache'}")
+    print(f"Legacy extractor output: {project_root / 'tools' / 'source_extractor' / 'output'}")
     print(f"Rust src: {project_root / 'src' / 'content'}")
     print()
 
@@ -46,7 +56,7 @@ def main():
                 print(f"    ... and {len(incomplete) - 10} more")
 
     # Generate HTML
-    output_path = project_root / "tools" / "coverage_report.html"
+    output_path = COVERAGE_REPORT_PATH
     java_root = str(project_root.parent / "cardcrawl").replace("\\", "/")
     render_html(results, output_path, java_root)
     print(f"\n✅ HTML report: {output_path}")

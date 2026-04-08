@@ -72,7 +72,7 @@ JAVA_TO_RUST_ACTION = {
 }
 
 def load_schema_mappings():
-    schema_path = Path(__file__).resolve().parent.parent / "protocol_schema.json"
+    schema_path = Path(__file__).resolve().parent.parent / "compiled_protocol_schema.json"
     if not schema_path.exists():
         return {}, {}
     
