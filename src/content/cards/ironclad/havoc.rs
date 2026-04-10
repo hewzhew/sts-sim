@@ -5,12 +5,11 @@ use smallvec::SmallVec;
 pub fn havoc_play(
     _state: &CombatState,
     _card: &CombatCard,
-    target: Option<crate::core::EntityId>,
+    _target: Option<crate::core::EntityId>,
 ) -> SmallVec<[ActionInfo; 4]> {
-    let target = target.expect("Havoc requires a valid target!");
     smallvec::smallvec![ActionInfo {
         action: Action::PlayTopCard {
-            target: Some(target),
+            target: None,
             exhaust: true
         },
         insertion_mode: AddTo::Bottom,

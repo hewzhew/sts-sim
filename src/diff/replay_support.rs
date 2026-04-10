@@ -13,7 +13,7 @@ pub fn tick_until_stable(es: &mut EngineState, cs: &mut CombatState, input: Clie
         return false;
     }
 
-    if *es == EngineState::CombatPlayerTurn && !cs.action_queue.is_empty() {
+    if *es == EngineState::CombatPlayerTurn && !cs.engine.action_queue.is_empty() {
         *es = EngineState::CombatProcessing;
     }
 
@@ -59,7 +59,7 @@ pub fn continue_deferred_pending_choice(
             let snapshot_hand = snapshot_hint
                 .get("hand")
                 .and_then(|v| v.as_array())
-                .ok_or("snapshot_hint.hand missing for deferred GamblingChip replay")?;
+                .ok_or("snapshot_hint.zones.hand missing for deferred GamblingChip replay")?;
 
             let remaining_uuids: HashSet<u32> = snapshot_hand
                 .iter()
@@ -79,7 +79,7 @@ pub fn continue_deferred_pending_choice(
                     selected.len(),
                     min_cards,
                     max_cards,
-                    cs.hand
+                    cs.zones.hand
                         .iter()
                         .map(|c| (c.id, c.uuid))
                         .collect::<Vec<_>>()
@@ -109,7 +109,7 @@ pub fn continue_deferred_pending_choice(
             // Replay snapshot sync drops the transient action queue, so re-queue those hooks
             // here before draining the deferred continuation.
             let deferred_relic_actions = crate::content::relics::hooks::on_use_potion(cs, 0);
-            crate::engine::core::queue_actions(&mut cs.action_queue, deferred_relic_actions);
+            crate::engine::core::queue_actions(&mut cs.engine.action_queue, deferred_relic_actions);
 
             Ok(drain_to_stable(&mut es, cs))
         }

@@ -1,0 +1,925 @@
+use std::collections::BTreeMap;
+use std::fs::File;
+use std::io::Write;
+use std::path::{Path, PathBuf};
+
+use serde::{Deserialize, Serialize};
+use serde_json::json;
+
+use crate::bot::agent::Agent;
+use crate::bot::evaluator::evaluate_state;
+use crate::combat::{CombatCard, CombatState, Intent, Power};
+use crate::content::cards::get_card_definition;
+use crate::diff::replay_support::tick_until_stable;
+use crate::rng::{shuffle_with_random_long, StsRng};
+use crate::state::core::{ClientInput, EngineState, RunResult};
+use crate::state::run::RunState;
+
+use super::scenario::{initialize_fixture_state, ScenarioFixture};
+
+const DEFAULT_ACTION_CAP: usize = 256;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum LabVariantMode {
+    Exact,
+    ReshuffleDraw,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum LabPolicyMode {
+    Bot,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum EpisodeOutcome {
+    Victory,
+    Defeat,
+    StepCap,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CombatLabMonsterSnapshot {
+    pub slot: usize,
+    pub id: String,
+    pub hp: i32,
+    pub max_hp: i32,
+    pub block: i32,
+    pub intent: String,
+    pub intent_damage: i32,
+    pub key_powers: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CombatLabStepTrace {
+    pub step_index: usize,
+    pub turn_index: u32,
+    pub player_hp_before: i32,
+    pub player_block_before: i32,
+    pub energy_before: u8,
+    pub hand_before: Vec<String>,
+    pub hand_size_before: usize,
+    pub draw_size_before: usize,
+    pub discard_size_before: usize,
+    pub monsters_before: Vec<CombatLabMonsterSnapshot>,
+    pub evaluate_state_before: f32,
+    pub state_features_preview: BTreeMap<String, f32>,
+    pub chosen_action: String,
+    pub action_kind: String,
+    pub action_payload: serde_json::Value,
+    pub player_hp_after: i32,
+    pub player_block_after: i32,
+    pub energy_after: u8,
+    pub hand_after: Vec<String>,
+    pub hand_size_after: usize,
+    pub draw_size_after: usize,
+    pub discard_size_after: usize,
+    pub monsters_after: Vec<CombatLabMonsterSnapshot>,
+    pub evaluate_state_after: f32,
+    pub remaining_monster_hp_after_step: i32,
+    pub remaining_player_hp_after_step: i32,
+    pub episode_outcome: Option<EpisodeOutcome>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CombatLabEpisodeTrace {
+    pub fixture_name: String,
+    pub episode_id: usize,
+    pub variant_mode: LabVariantMode,
+    pub seed: u64,
+    pub policy: LabPolicyMode,
+    pub depth: u32,
+    pub outcome: EpisodeOutcome,
+    pub final_player_hp: i32,
+    pub final_monster_hp: i32,
+    pub turns: u32,
+    pub path_score: f32,
+    pub steps: Vec<CombatLabStepTrace>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CombatLabEpisodeRecord {
+    pub episode_id: usize,
+    pub variant_mode: LabVariantMode,
+    pub seed: u64,
+    pub won: bool,
+    pub final_player_hp: i32,
+    pub final_monster_hp: i32,
+    pub turns: u32,
+    pub path_score: f32,
+    pub trace_path: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CombatLabSummary {
+    pub fixture_name: String,
+    pub total_episodes: usize,
+    pub wins: usize,
+    pub win_rate: f32,
+    pub average_final_hp: f32,
+    pub best_win_episode_id: Option<usize>,
+    pub best_attempt_episode_id: Option<usize>,
+}
+
+#[derive(Debug, Clone)]
+pub struct CombatLabConfig {
+    pub fixture: ScenarioFixture,
+    pub episodes: usize,
+    pub policy: LabPolicyMode,
+    pub depth: u32,
+    pub variant_mode: LabVariantMode,
+    pub base_seed: u64,
+    pub out_dir: PathBuf,
+}
+
+pub fn sanitize_fixture_for_local_lab(fixture: &ScenarioFixture) -> ScenarioFixture {
+    let mut sanitized = fixture.clone();
+    if !sanitized.name.ends_with("_start") {
+        sanitized.name = format!("{}_start", sanitized.name);
+    }
+    sanitized.steps.clear();
+    sanitized.assertions.clear();
+    sanitized.tags.push("local_lab_start".to_string());
+    sanitized.tags.sort();
+    sanitized.tags.dedup();
+
+    let mut provenance = sanitized.provenance.take().unwrap_or_default();
+    provenance.notes.push("sanitized_for_local_lab".to_string());
+    provenance.notes.sort();
+    provenance.notes.dedup();
+    sanitized.provenance = Some(provenance);
+    sanitized
+}
+
+pub fn write_sanitized_fixture_for_local_lab(
+    fixture: &ScenarioFixture,
+    out_path: &Path,
+) -> Result<ScenarioFixture, String> {
+    let sanitized = sanitize_fixture_for_local_lab(fixture);
+    let payload = serde_json::to_string_pretty(&sanitized).map_err(|err| err.to_string())?;
+    std::fs::write(out_path, payload).map_err(|err| err.to_string())?;
+    Ok(sanitized)
+}
+
+pub fn run_combat_lab(config: &CombatLabConfig) -> Result<CombatLabSummary, String> {
+    std::fs::create_dir_all(&config.out_dir).map_err(|err| err.to_string())?;
+    let fixture = sanitize_fixture_for_local_lab(&config.fixture);
+    let mut records = Vec::new();
+    let mut traces = Vec::new();
+
+    for episode_id in 0..config.episodes {
+        let episode_seed = config.base_seed.wrapping_add(episode_id as u64);
+        let trace = run_episode(
+            &fixture,
+            config.policy,
+            config.depth,
+            config.variant_mode,
+            episode_id,
+            episode_seed,
+        )?;
+        let trace_name = format!("trace_{episode_id:04}.json");
+        let trace_path = config.out_dir.join(&trace_name);
+        let trace_payload = serde_json::to_string_pretty(&trace).map_err(|err| err.to_string())?;
+        std::fs::write(&trace_path, trace_payload).map_err(|err| err.to_string())?;
+
+        let record = CombatLabEpisodeRecord {
+            episode_id,
+            variant_mode: config.variant_mode,
+            seed: episode_seed,
+            won: trace.outcome == EpisodeOutcome::Victory,
+            final_player_hp: trace.final_player_hp,
+            final_monster_hp: trace.final_monster_hp,
+            turns: trace.turns,
+            path_score: trace.path_score,
+            trace_path: trace_name,
+        };
+        records.push(record);
+        traces.push(trace);
+    }
+
+    let episodes_path = config.out_dir.join("episodes.jsonl");
+    let mut episodes_file = File::create(&episodes_path).map_err(|err| err.to_string())?;
+    for record in &records {
+        writeln!(
+            episodes_file,
+            "{}",
+            serde_json::to_string(record).map_err(|err| err.to_string())?
+        )
+        .map_err(|err| err.to_string())?;
+    }
+
+    let best_win_idx = records
+        .iter()
+        .enumerate()
+        .filter(|(_, record)| record.won)
+        .max_by(|(_, left), (_, right)| compare_episode_records(left, right))
+        .map(|(idx, _)| idx);
+    let best_attempt_idx = records
+        .iter()
+        .enumerate()
+        .max_by(|(_, left), (_, right)| compare_episode_records(left, right))
+        .map(|(idx, _)| idx);
+
+    if let Some(best_idx) = best_win_idx {
+        let markdown = render_trace_markdown(&traces[best_idx]);
+        std::fs::write(config.out_dir.join("best_win_trace.md"), markdown)
+            .map_err(|err| err.to_string())?;
+    } else if let Some(best_idx) = best_attempt_idx {
+        let markdown = render_trace_markdown(&traces[best_idx]);
+        std::fs::write(config.out_dir.join("best_attempt_trace.md"), markdown)
+            .map_err(|err| err.to_string())?;
+    }
+
+    let wins = records.iter().filter(|record| record.won).count();
+    let average_final_hp = if records.is_empty() {
+        0.0
+    } else {
+        records
+            .iter()
+            .map(|record| record.final_player_hp as f32)
+            .sum::<f32>()
+            / records.len() as f32
+    };
+    let summary = CombatLabSummary {
+        fixture_name: fixture.name.clone(),
+        total_episodes: records.len(),
+        wins,
+        win_rate: if records.is_empty() {
+            0.0
+        } else {
+            wins as f32 / records.len() as f32
+        },
+        average_final_hp,
+        best_win_episode_id: best_win_idx.map(|idx| records[idx].episode_id),
+        best_attempt_episode_id: best_attempt_idx.map(|idx| records[idx].episode_id),
+    };
+    let summary_payload = serde_json::to_string_pretty(&summary).map_err(|err| err.to_string())?;
+    std::fs::write(config.out_dir.join("summary.json"), summary_payload)
+        .map_err(|err| err.to_string())?;
+
+    Ok(summary)
+}
+
+fn run_episode(
+    fixture: &ScenarioFixture,
+    policy: LabPolicyMode,
+    depth: u32,
+    variant_mode: LabVariantMode,
+    episode_id: usize,
+    episode_seed: u64,
+) -> Result<CombatLabEpisodeTrace, String> {
+    let initial = initialize_fixture_state(fixture);
+    let mut combat = initial.combat;
+    let mut engine_state = initial.engine_state;
+    apply_variant(&mut combat, variant_mode, episode_seed);
+    let mut run_state = build_lab_run_state(fixture, &combat);
+    let mut agent = Agent::new();
+    agent.set_bot_depth(depth);
+
+    let mut steps = Vec::new();
+    let mut safety_counter = 0usize;
+    loop {
+        let outcome = current_outcome(&engine_state, &combat);
+        if let Some(outcome) = outcome {
+            let mut trace = build_episode_trace(
+                fixture,
+                episode_id,
+                variant_mode,
+                episode_seed,
+                policy,
+                depth,
+                outcome,
+                &combat,
+                &steps,
+                &engine_state,
+            );
+            for step in &mut trace.steps {
+                step.episode_outcome = Some(trace.outcome.clone());
+            }
+            return Ok(trace);
+        }
+
+        if safety_counter >= DEFAULT_ACTION_CAP {
+            let mut trace = build_episode_trace(
+                fixture,
+                episode_id,
+                variant_mode,
+                episode_seed,
+                policy,
+                depth,
+                EpisodeOutcome::StepCap,
+                &combat,
+                &steps,
+                &engine_state,
+            );
+            for step in &mut trace.steps {
+                step.episode_outcome = Some(trace.outcome.clone());
+            }
+            return Ok(trace);
+        }
+
+        let before_score = evaluate_state(&engine_state, &combat);
+        let input = match policy {
+            LabPolicyMode::Bot => {
+                agent.decide(&engine_state, &run_state, &Some(combat.clone()), false)
+            }
+        };
+        let step_trace = execute_step(
+            steps.len(),
+            &mut engine_state,
+            &mut combat,
+            input,
+            before_score,
+        )?;
+        steps.push(step_trace);
+        safety_counter += 1;
+
+        // Future-proofing: if Agent ever starts reading RunState in combat, keep core HP/gold synced.
+        run_state.current_hp = combat.entities.player.current_hp;
+        run_state.max_hp = combat.entities.player.max_hp;
+        run_state.gold = combat.entities.player.gold;
+    }
+}
+
+fn build_episode_trace(
+    fixture: &ScenarioFixture,
+    episode_id: usize,
+    variant_mode: LabVariantMode,
+    episode_seed: u64,
+    policy: LabPolicyMode,
+    depth: u32,
+    outcome: EpisodeOutcome,
+    combat: &CombatState,
+    steps: &[CombatLabStepTrace],
+    engine_state: &EngineState,
+) -> CombatLabEpisodeTrace {
+    CombatLabEpisodeTrace {
+        fixture_name: fixture.name.clone(),
+        episode_id,
+        variant_mode,
+        seed: episode_seed,
+        policy,
+        depth,
+        outcome,
+        final_player_hp: combat.entities.player.current_hp,
+        final_monster_hp: total_remaining_monster_hp(combat),
+        turns: combat.turn.turn_count,
+        path_score: evaluate_state(engine_state, combat),
+        steps: steps.to_vec(),
+    }
+}
+
+fn execute_step(
+    step_index: usize,
+    engine_state: &mut EngineState,
+    combat: &mut CombatState,
+    input: ClientInput,
+    before_score: f32,
+) -> Result<CombatLabStepTrace, String> {
+    let turn_index = combat.turn.turn_count;
+    let player_hp_before = combat.entities.player.current_hp;
+    let player_block_before = combat.entities.player.block;
+    let energy_before = combat.turn.energy;
+    let hand_before = card_names(&combat.zones.hand);
+    let hand_size_before = combat.zones.hand.len();
+    let draw_size_before = combat.zones.draw_pile.len();
+    let discard_size_before = combat.zones.discard_pile.len();
+    let monsters_before = monster_snapshots(combat);
+    let state_features_preview = preview_features(combat);
+    let chosen_action = format!("{input:?}");
+    let (action_kind, action_payload) = action_descriptor(&input, combat);
+
+    let _alive = tick_until_stable(engine_state, combat, input);
+    let after_score = evaluate_state(engine_state, combat);
+
+    Ok(CombatLabStepTrace {
+        step_index,
+        turn_index,
+        player_hp_before,
+        player_block_before,
+        energy_before,
+        hand_before,
+        hand_size_before,
+        draw_size_before,
+        discard_size_before,
+        monsters_before,
+        evaluate_state_before: before_score,
+        state_features_preview,
+        chosen_action,
+        action_kind,
+        action_payload,
+        player_hp_after: combat.entities.player.current_hp,
+        player_block_after: combat.entities.player.block,
+        energy_after: combat.turn.energy,
+        hand_after: card_names(&combat.zones.hand),
+        hand_size_after: combat.zones.hand.len(),
+        draw_size_after: combat.zones.draw_pile.len(),
+        discard_size_after: combat.zones.discard_pile.len(),
+        monsters_after: monster_snapshots(combat),
+        evaluate_state_after: after_score,
+        remaining_monster_hp_after_step: total_remaining_monster_hp(combat),
+        remaining_player_hp_after_step: combat.entities.player.current_hp,
+        episode_outcome: None,
+    })
+}
+
+fn current_outcome(engine_state: &EngineState, combat: &CombatState) -> Option<EpisodeOutcome> {
+    match engine_state {
+        EngineState::GameOver(RunResult::Victory) => Some(EpisodeOutcome::Victory),
+        EngineState::GameOver(RunResult::Defeat) => Some(EpisodeOutcome::Defeat),
+        _ => {
+            if combat.entities.player.current_hp <= 0 {
+                Some(EpisodeOutcome::Defeat)
+            } else if combat
+                .entities
+                .monsters
+                .iter()
+                .all(|monster| monster.is_dying || monster.is_escaped || monster.current_hp <= 0)
+            {
+                Some(EpisodeOutcome::Victory)
+            } else {
+                None
+            }
+        }
+    }
+}
+
+fn compare_episode_records(
+    left: &CombatLabEpisodeRecord,
+    right: &CombatLabEpisodeRecord,
+) -> std::cmp::Ordering {
+    match (left.won, right.won) {
+        (true, false) => std::cmp::Ordering::Greater,
+        (false, true) => std::cmp::Ordering::Less,
+        (true, true) => left
+            .final_player_hp
+            .cmp(&right.final_player_hp)
+            .then_with(|| right.turns.cmp(&left.turns)),
+        (false, false) => right
+            .final_monster_hp
+            .cmp(&left.final_monster_hp)
+            .then_with(|| right.turns.cmp(&left.turns)),
+    }
+}
+
+fn apply_variant(combat: &mut CombatState, variant_mode: LabVariantMode, seed: u64) {
+    match variant_mode {
+        LabVariantMode::Exact => {}
+        LabVariantMode::ReshuffleDraw => {
+            let mut shuffle_rng = StsRng::new(seed);
+            shuffle_with_random_long(&mut combat.zones.draw_pile, &mut shuffle_rng);
+        }
+    }
+}
+
+fn build_lab_run_state(fixture: &ScenarioFixture, combat: &CombatState) -> RunState {
+    let game_state = &fixture.initial_game_state;
+    let seed = game_state
+        .get("seed")
+        .and_then(|value| value.as_i64().map(|seed| seed as u64))
+        .or_else(|| game_state.get("seed").and_then(|value| value.as_u64()))
+        .unwrap_or(1);
+    let ascension_level = game_state
+        .get("ascension_level")
+        .and_then(|value| value.as_u64())
+        .and_then(|value| u8::try_from(value).ok())
+        .unwrap_or(0);
+    let player_class = game_state
+        .get("class")
+        .and_then(|value| value.as_str())
+        .map(static_player_class)
+        .unwrap_or("Ironclad");
+    let mut run_state = RunState::new(seed, ascension_level, false, player_class);
+    run_state.current_hp = combat.entities.player.current_hp;
+    run_state.max_hp = combat.entities.player.max_hp;
+    run_state.gold = combat.entities.player.gold;
+    run_state.relics = combat.entities.player.relics.clone();
+    run_state.potions = combat.entities.potions.clone();
+    run_state.master_deck = all_cards_in_combat(combat);
+    run_state
+}
+
+fn static_player_class(player_class: &str) -> &'static str {
+    match player_class {
+        "Silent" => "Silent",
+        "Defect" => "Defect",
+        "Watcher" => "Watcher",
+        _ => "Ironclad",
+    }
+}
+
+fn all_cards_in_combat(combat: &CombatState) -> Vec<CombatCard> {
+    combat
+        .zones
+        .hand
+        .iter()
+        .chain(combat.zones.draw_pile.iter())
+        .chain(combat.zones.discard_pile.iter())
+        .chain(combat.zones.exhaust_pile.iter())
+        .chain(combat.zones.limbo.iter())
+        .cloned()
+        .collect()
+}
+
+fn total_remaining_monster_hp(combat: &CombatState) -> i32 {
+    combat
+        .entities
+        .monsters
+        .iter()
+        .filter(|monster| !monster.is_dying && !monster.is_escaped && monster.current_hp > 0)
+        .map(|monster| monster.current_hp)
+        .sum()
+}
+
+fn card_names(cards: &[CombatCard]) -> Vec<String> {
+    cards.iter().map(card_label).collect()
+}
+
+fn card_label(card: &CombatCard) -> String {
+    let def = get_card_definition(card.id);
+    let upgrades = if card.upgrades > 0 {
+        format!("+{}", card.upgrades)
+    } else {
+        String::new()
+    };
+    format!("{}{}({})", def.name, upgrades, card.get_cost())
+}
+
+fn power_labels(powers: &[Power]) -> Vec<String> {
+    let mut labels = powers
+        .iter()
+        .filter(|power| power.amount != 0)
+        .map(|power| format!("{:?}={}", power.power_type, power.amount))
+        .collect::<Vec<_>>();
+    labels.sort();
+    labels
+}
+
+fn monster_snapshots(combat: &CombatState) -> Vec<CombatLabMonsterSnapshot> {
+    combat
+        .entities
+        .monsters
+        .iter()
+        .enumerate()
+        .filter(|(_, monster)| !monster.is_escaped)
+        .map(|(slot, monster)| CombatLabMonsterSnapshot {
+            slot,
+            id: format!("{:?}", monster.monster_type),
+            hp: monster.current_hp,
+            max_hp: monster.max_hp,
+            block: monster.block,
+            intent: intent_label(&monster.current_intent),
+            intent_damage: monster.intent_dmg,
+            key_powers: power_labels(
+                combat
+                    .entities
+                    .power_db
+                    .get(&monster.id)
+                    .map(Vec::as_slice)
+                    .unwrap_or(&[]),
+            ),
+        })
+        .collect()
+}
+
+fn intent_label(intent: &Intent) -> String {
+    match intent {
+        Intent::Attack { damage, hits } => format!("attack {}x{}", damage, hits),
+        Intent::AttackBuff { damage, hits } => format!("attack_buff {}x{}", damage, hits),
+        Intent::AttackDebuff { damage, hits } => format!("attack_debuff {}x{}", damage, hits),
+        Intent::AttackDefend { damage, hits } => format!("attack_defend {}x{}", damage, hits),
+        Intent::Buff => "buff".to_string(),
+        Intent::Debuff => "debuff".to_string(),
+        Intent::StrongDebuff => "strong_debuff".to_string(),
+        Intent::Defend => "defend".to_string(),
+        Intent::DefendDebuff => "defend_debuff".to_string(),
+        Intent::DefendBuff => "defend_buff".to_string(),
+        Intent::Escape => "escape".to_string(),
+        Intent::Magic => "magic".to_string(),
+        Intent::None => "none".to_string(),
+        Intent::Sleep => "sleep".to_string(),
+        Intent::Stun => "stun".to_string(),
+        Intent::Unknown => "unknown".to_string(),
+        Intent::Debug => "debug".to_string(),
+    }
+}
+
+fn preview_features(combat: &CombatState) -> BTreeMap<String, f32> {
+    let living_monsters = combat
+        .entities
+        .monsters
+        .iter()
+        .filter(|monster| !monster.is_dying && !monster.is_escaped && monster.current_hp > 0)
+        .count() as f32;
+    let incoming_damage = combat
+        .entities
+        .monsters
+        .iter()
+        .filter(|monster| !monster.is_dying && !monster.is_escaped && monster.current_hp > 0)
+        .map(|monster| match monster.current_intent {
+            Intent::Attack { hits, .. }
+            | Intent::AttackBuff { hits, .. }
+            | Intent::AttackDebuff { hits, .. }
+            | Intent::AttackDefend { hits, .. } => monster.intent_dmg * hits as i32,
+            _ => 0,
+        })
+        .sum::<i32>();
+
+    BTreeMap::from([
+        ("turn".to_string(), combat.turn.turn_count as f32),
+        (
+            "player_hp".to_string(),
+            combat.entities.player.current_hp as f32,
+        ),
+        (
+            "player_block".to_string(),
+            combat.entities.player.block as f32,
+        ),
+        ("energy".to_string(), combat.turn.energy as f32),
+        ("hand_size".to_string(), combat.zones.hand.len() as f32),
+        ("draw_size".to_string(), combat.zones.draw_pile.len() as f32),
+        (
+            "discard_size".to_string(),
+            combat.zones.discard_pile.len() as f32,
+        ),
+        (
+            "remaining_monster_hp".to_string(),
+            total_remaining_monster_hp(combat) as f32,
+        ),
+        ("living_monsters".to_string(), living_monsters),
+        ("incoming_damage".to_string(), incoming_damage as f32),
+    ])
+}
+
+fn action_descriptor(input: &ClientInput, combat: &CombatState) -> (String, serde_json::Value) {
+    match input {
+        ClientInput::PlayCard { card_index, target } => {
+            let card = combat.zones.hand.get(*card_index);
+            (
+                "play_card".to_string(),
+                json!({
+                    "card_index": card_index,
+                    "target": target,
+                    "card": card.map(card_label),
+                }),
+            )
+        }
+        ClientInput::UsePotion {
+            potion_index,
+            target,
+        } => (
+            "use_potion".to_string(),
+            json!({
+                "potion_index": potion_index,
+                "target": target,
+            }),
+        ),
+        ClientInput::EndTurn => ("end_turn".to_string(), json!({})),
+        ClientInput::Cancel => ("cancel".to_string(), json!({})),
+        ClientInput::SubmitDiscoverChoice(index) => (
+            "submit_discover_choice".to_string(),
+            json!({ "index": index }),
+        ),
+        ClientInput::SubmitHandSelect(uuids) => {
+            ("submit_hand_select".to_string(), json!({ "uuids": uuids }))
+        }
+        ClientInput::SubmitGridSelect(uuids) => {
+            ("submit_grid_select".to_string(), json!({ "uuids": uuids }))
+        }
+        other => (
+            "other".to_string(),
+            json!({ "debug": format!("{other:?}") }),
+        ),
+    }
+}
+
+pub fn render_trace_markdown(trace: &CombatLabEpisodeTrace) -> String {
+    let mut out = String::new();
+    out.push_str(&format!(
+        "# Combat Lab Trace\n\n- Fixture: `{}`\n- Episode: `{}`\n- Variant: `{:?}`\n- Seed: `{}`\n- Outcome: `{:?}`\n- Final player HP: `{}`\n- Final monster HP: `{}`\n- Turns: `{}`\n- Path score: `{:.2}`\n\n",
+        trace.fixture_name,
+        trace.episode_id,
+        trace.variant_mode,
+        trace.seed,
+        trace.outcome,
+        trace.final_player_hp,
+        trace.final_monster_hp,
+        trace.turns,
+        trace.path_score
+    ));
+
+    for step in &trace.steps {
+        out.push_str(&format!(
+            "## Turn {} Step {}\n\n",
+            step.turn_index, step.step_index
+        ));
+        out.push_str(&format!(
+            "- Before: hp=`{}` block=`{}` energy=`{}` hand_size=`{}` draw=`{}` discard=`{}` eval=`{:.2}`\n",
+            step.player_hp_before,
+            step.player_block_before,
+            step.energy_before,
+            step.hand_size_before,
+            step.draw_size_before,
+            step.discard_size_before,
+            step.evaluate_state_before
+        ));
+        out.push_str(&format!("- Hand before: {}\n", step.hand_before.join(", ")));
+        let monster_before = step
+            .monsters_before
+            .iter()
+            .map(|monster| {
+                format!(
+                    "{} hp={}/{} block={} intent={} powers=[{}]",
+                    monster.id,
+                    monster.hp,
+                    monster.max_hp,
+                    monster.block,
+                    monster.intent,
+                    monster.key_powers.join(", ")
+                )
+            })
+            .collect::<Vec<_>>();
+        out.push_str(&format!(
+            "- Monsters before: {}\n",
+            monster_before.join(" | ")
+        ));
+        out.push_str(&format!(
+            "- Action: `{}` kind=`{}` payload=`{}`\n",
+            step.chosen_action, step.action_kind, step.action_payload
+        ));
+        out.push_str(&format!(
+            "- After: hp=`{}` block=`{}` energy=`{}` hand_size=`{}` draw=`{}` discard=`{}` eval=`{:.2}` remaining_monster_hp=`{}`\n",
+            step.player_hp_after,
+            step.player_block_after,
+            step.energy_after,
+            step.hand_size_after,
+            step.draw_size_after,
+            step.discard_size_after,
+            step.evaluate_state_after,
+            step.remaining_monster_hp_after_step
+        ));
+        out.push_str(&format!("- Hand after: {}\n\n", step.hand_after.join(", ")));
+    }
+
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::testing::author_spec::{compile_combat_author_spec, CombatAuthorSpec};
+    use serde_json::json;
+
+    #[test]
+    fn sanitize_fixture_for_local_lab_strips_steps_assertions_and_marks_provenance() {
+        let fixture = ScenarioFixture {
+            name: "boss_handoff".to_string(),
+            steps: vec![super::super::scenario::ScenarioStep {
+                command: "HANDOFF HUMAN BOSS_COMBAT".to_string(),
+                ..Default::default()
+            }],
+            assertions: vec![super::super::scenario::ScenarioAssertion {
+                field: "player.hp".to_string(),
+                expected_kind: "number".to_string(),
+                expected_value: Some(json!(10)),
+                ..Default::default()
+            }],
+            provenance: Some(Default::default()),
+            ..compile_combat_author_spec(
+                &serde_json::from_value::<CombatAuthorSpec>(json!({
+                    "name": "boss_handoff",
+                    "monsters": [{"id": "JawWorm", "current_hp": 30}],
+                }))
+                .expect("spec parse"),
+            )
+            .expect("compile")
+        };
+
+        let sanitized = sanitize_fixture_for_local_lab(&fixture);
+        assert!(sanitized.steps.is_empty());
+        assert!(sanitized.assertions.is_empty());
+        assert!(sanitized.name.ends_with("_start"));
+        assert!(sanitized
+            .provenance
+            .as_ref()
+            .expect("provenance")
+            .notes
+            .contains(&"sanitized_for_local_lab".to_string()));
+    }
+
+    #[test]
+    fn reshuffle_draw_preserves_multiset_and_changes_order() {
+        let fixture = compile_combat_author_spec(
+            &serde_json::from_value::<CombatAuthorSpec>(json!({
+                "name": "reshuffle",
+                "monsters": [{"id": "JawWorm", "current_hp": 30}],
+                "draw_pile": ["Strike_R", "Defend_R", "Bash", "Inflame"],
+            }))
+            .expect("spec parse"),
+        )
+        .expect("compile");
+        let initial = initialize_fixture_state(&fixture);
+        let original = initial
+            .combat
+            .zones
+            .draw_pile
+            .iter()
+            .map(|card| card.id)
+            .collect::<Vec<_>>();
+        let mut reshuffled = initial.combat.clone();
+        apply_variant(&mut reshuffled, LabVariantMode::ReshuffleDraw, 99);
+        let reshuffled_ids = reshuffled
+            .zones
+            .draw_pile
+            .iter()
+            .map(|card| card.id)
+            .collect::<Vec<_>>();
+        let mut original_sorted = original.clone();
+        let mut reshuffled_sorted = reshuffled_ids.clone();
+        original_sorted.sort_by_key(|card| format!("{card:?}"));
+        reshuffled_sorted.sort_by_key(|card| format!("{card:?}"));
+        assert_eq!(original_sorted, reshuffled_sorted);
+        assert_ne!(original, reshuffled_ids);
+    }
+
+    #[test]
+    fn summary_prefers_wins_then_hp_then_failures_by_lower_monster_hp() {
+        let win_low = CombatLabEpisodeRecord {
+            episode_id: 1,
+            variant_mode: LabVariantMode::Exact,
+            seed: 1,
+            won: true,
+            final_player_hp: 3,
+            final_monster_hp: 0,
+            turns: 4,
+            path_score: 0.0,
+            trace_path: "a".to_string(),
+        };
+        let win_high = CombatLabEpisodeRecord {
+            final_player_hp: 7,
+            episode_id: 2,
+            ..win_low.clone()
+        };
+        let fail_close = CombatLabEpisodeRecord {
+            won: false,
+            final_player_hp: 0,
+            final_monster_hp: 5,
+            episode_id: 3,
+            ..win_low.clone()
+        };
+        let fail_far = CombatLabEpisodeRecord {
+            won: false,
+            final_player_hp: 0,
+            final_monster_hp: 15,
+            episode_id: 4,
+            ..win_low.clone()
+        };
+
+        assert!(compare_episode_records(&win_high, &win_low).is_gt());
+        assert!(compare_episode_records(&win_low, &fail_close).is_gt());
+        assert!(compare_episode_records(&fail_close, &fail_far).is_gt());
+    }
+
+    #[test]
+    fn exact_episode_run_emits_trace_with_consistent_first_step() {
+        let fixture = compile_combat_author_spec(
+            &serde_json::from_value::<CombatAuthorSpec>(json!({
+                "name": "lab_smoke",
+                "monsters": [{
+                    "id": "JawWorm",
+                    "current_hp": 20,
+                    "intent": "ATTACK",
+                    "move_adjusted_damage": 7,
+                    "move_base_damage": 7
+                }],
+                "hand": ["Strike_R", "Defend_R", "Bash"],
+                "draw_pile": ["Strike_R", "Defend_R"],
+            }))
+            .expect("spec parse"),
+        )
+        .expect("compile");
+
+        let trace = run_episode(
+            &fixture,
+            LabPolicyMode::Bot,
+            2,
+            LabVariantMode::Exact,
+            0,
+            123,
+        )
+        .expect("episode");
+        assert!(!trace.steps.is_empty());
+        let first = &trace.steps[0];
+        assert_eq!(first.turn_index, 1);
+        assert_eq!(first.hand_size_before, first.hand_before.len());
+        if first.action_kind == "play_card" {
+            assert!(first
+                .action_payload
+                .get("card")
+                .and_then(|value| value.as_str())
+                .is_some());
+        }
+    }
+}

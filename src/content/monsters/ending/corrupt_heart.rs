@@ -102,7 +102,7 @@ impl MonsterBehavior for CorruptHeart {
 
     fn take_turn(state: &mut crate::combat::CombatState, entity: &MonsterEntity) -> Vec<Action> {
         let mut actions = Vec::new();
-        let asc = state.ascension_level;
+        let asc = state.meta.ascension_level;
         let move_byte = entity.next_move_byte;
 
         let echo_dmg = if asc >= 4 { 45 } else { 40 };
@@ -179,7 +179,7 @@ impl MonsterBehavior for CorruptHeart {
                 // Buff
                 // Clear any negative strength first (Java: additionalAmount)
                 let mut additional = 0;
-                if let Some(powers) = state.power_db.get(&entity.id) {
+                if let Some(powers) = state.entities.power_db.get(&entity.id) {
                     if let Some(str_pow) = powers
                         .iter()
                         .find(|p| p.power_type == crate::content::powers::PowerId::Strength)

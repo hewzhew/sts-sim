@@ -21,12 +21,13 @@ pub fn at_end_of_turn(
 ) -> SmallVec<[ActionInfo; 4]> {
     let mut actions = SmallVec::new();
     if counter == 7 {
-        for monster in &state.monsters {
+        for monster in &state.entities.monsters {
             if !monster.is_escaped && !monster.is_dying && monster.current_hp > 0 {
                 actions.push(ActionInfo {
                     action: Action::LoseHp {
                         target: monster.id,
                         amount: 52,
+                        triggers_rupture: false,
                     },
                     insertion_mode: AddTo::Bottom,
                 });

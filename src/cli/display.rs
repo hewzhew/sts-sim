@@ -1,6 +1,7 @@
 use crate::combat::CombatState;
 use crate::content::cards;
 use crate::content::monsters::EnemyId;
+use crate::content::powers::store::powers_for;
 use crate::content::relics::RelicId;
 use crate::state::core::EngineState;
 use crate::state::run::RunState;
@@ -8,7 +9,10 @@ use crate::state::run::RunState;
 pub fn print_state(es: &EngineState, rs: &RunState, cs: &Option<CombatState>) {
     // Use combat HP if in combat, otherwise run-state HP
     let (hp, max_hp) = if let Some(combat) = cs {
-        (combat.player.current_hp, combat.player.max_hp)
+        (
+            combat.entities.player.current_hp,
+            combat.entities.player.max_hp,
+        )
     } else {
         (rs.current_hp, rs.max_hp)
     };
@@ -89,7 +93,8 @@ pub fn print_state(es: &EngineState, rs: &RunState, cs: &Option<CombatState>) {
                     );
                     if let Some(cs) = cs {
                         for (i, uuid) in candidate_uuids.iter().enumerate() {
-                            if let Some(card) = cs.hand.iter().find(|card| card.uuid == *uuid) {
+                            if let Some(card) = cs.zones.hand.iter().find(|card| card.uuid == *uuid)
+                            {
                                 let def = cards::get_card_definition(card.id);
                                 println!("    [{}] {} (uuid={})", i, def.name, card.uuid);
                             }
@@ -216,23 +221,27 @@ pub fn print_state(es: &EngineState, rs: &RunState, cs: &Option<CombatState>) {
 }
 
 fn find_combat_card_by_uuid(cs: &CombatState, uuid: u32) -> Option<&crate::combat::CombatCard> {
-    cs.hand
+    cs.zones
+        .hand
         .iter()
-        .chain(cs.draw_pile.iter())
-        .chain(cs.discard_pile.iter())
-        .chain(cs.exhaust_pile.iter())
-        .chain(cs.limbo.iter())
+        .chain(cs.zones.draw_pile.iter())
+        .chain(cs.zones.discard_pile.iter())
+        .chain(cs.zones.exhaust_pile.iter())
+        .chain(cs.zones.limbo.iter())
         .find(|card| card.uuid == uuid)
 }
 
 pub fn print_combat(cs: &CombatState) {
-    println!("  COMBAT — Turn {} | Energy: {}", cs.turn_count, cs.energy);
+    println!(
+        "  COMBAT — Turn {} | Energy: {}",
+        cs.turn.turn_count, cs.turn.energy
+    );
 
     println!(
         "  Player: HP {}/{} Block {} ",
-        cs.player.current_hp, cs.player.max_hp, cs.player.block
+        cs.entities.player.current_hp, cs.entities.player.max_hp, cs.entities.player.block
     );
-    if let Some(powers_list) = cs.power_db.get(&cs.player.id) {
+    if let Some(powers_list) = powers_for(cs, cs.entities.player.id) {
         if !powers_list.is_empty() {
             let powers: Vec<String> = powers_list
                 .iter()
@@ -242,9 +251,9 @@ pub fn print_combat(cs: &CombatState) {
         }
     }
 
-    let hide_intents = cs.player.has_relic(RelicId::RunicDome);
+    let hide_intents = cs.entities.player.has_relic(RelicId::RunicDome);
 
-    for m in &cs.monsters {
+    for m in &cs.entities.monsters {
         if m.is_dying {
             continue;
         }
@@ -280,7 +289,7 @@ pub fn print_combat(cs: &CombatState) {
             "  Monster[{}] {} (id={}): HP {}/{} Block {} Intent {}",
             m.slot, name, m.id, m.current_hp, m.max_hp, m.block, intent_str
         );
-        if let Some(powers_list) = cs.power_db.get(&m.id) {
+        if let Some(powers_list) = powers_for(cs, m.id) {
             if !powers_list.is_empty() {
                 let powers: Vec<String> = powers_list
                     .iter()
@@ -292,8 +301,9 @@ pub fn print_combat(cs: &CombatState) {
     }
 
     // Potion readout
-    if cs.potions.iter().any(|p| p.is_some()) {
+    if cs.entities.potions.iter().any(|p| p.is_some()) {
         let potion_strings: Vec<String> = cs
+            .entities
             .potions
             .iter()
             .enumerate()
@@ -302,8 +312,8 @@ pub fn print_combat(cs: &CombatState) {
         println!("  Potions: {}", potion_strings.join(", "));
     }
 
-    println!("  Hand ({}):", cs.hand.len());
-    for (i, card) in cs.hand.iter().enumerate() {
+    println!("  Hand ({}):", cs.zones.hand.len());
+    for (i, card) in cs.zones.hand.iter().enumerate() {
         let def = cards::get_card_definition(card.id);
         let c_cost = card.get_cost();
         let cost_str = if c_cost >= 0 {
@@ -322,9 +332,9 @@ pub fn print_combat(cs: &CombatState) {
 
     println!(
         "  Draw: {} | Discard: {} | Exhaust: {}",
-        cs.draw_pile.len(),
-        cs.discard_pile.len(),
-        cs.exhaust_pile.len()
+        cs.zones.draw_pile.len(),
+        cs.zones.discard_pile.len(),
+        cs.zones.exhaust_pile.len()
     );
 }
 

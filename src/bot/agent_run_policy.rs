@@ -7,6 +7,7 @@ impl Agent {
         if let Some(cmd) = self.curiosity_shop_pick(rs, shop) {
             return cmd;
         }
+        let profile = crate::bot::evaluator::CardEvaluator::deck_profile(rs);
 
         if let Some((idx, _)) = shop
             .relics
@@ -18,14 +19,6 @@ impl Agent {
             .max_by_key(|(_, score)| *score)
         {
             return ClientInput::BuyRelic(idx);
-        }
-
-        if shop.purge_available
-            && rs.gold >= shop.purge_cost
-            && !rs.master_deck.is_empty()
-            && self.should_purge_at_shop(rs, shop)
-        {
-            return ClientInput::PurgeCard(self.best_purge_index(rs));
         }
 
         if let Some((idx, _)) = shop
@@ -45,11 +38,20 @@ impl Agent {
             .iter()
             .enumerate()
             .filter(|(_, potion)| rs.gold >= potion.price && rs.potions.iter().any(|p| p.is_none()))
-            .map(|(idx, potion)| (idx, self.shop_potion_score(potion.potion_id)))
+            .map(|(idx, potion)| (idx, self.shop_potion_score(rs, potion.potion_id)))
             .filter(|(_, score)| *score >= 80)
             .max_by_key(|(_, score)| *score)
         {
             return ClientInput::BuyPotion(idx);
+        }
+
+        if shop.purge_available
+            && rs.gold >= shop.purge_cost
+            && !rs.master_deck.is_empty()
+            && self.should_purge_at_shop(rs, shop)
+            && self.searing_blow_plan_score(rs, &profile) <= 0
+        {
+            return ClientInput::PurgeCard(self.best_purge_index(rs));
         }
 
         ClientInput::Proceed
@@ -171,19 +173,33 @@ impl Agent {
         shop: &crate::shop::ShopState,
     ) -> bool {
         let profile = crate::bot::evaluator::CardEvaluator::deck_profile(rs);
+        let searing_plan = self.searing_blow_plan_score(rs, &profile);
         let worst_idx = self.best_purge_index(rs);
         let worst = &rs.master_deck[worst_idx];
         let worst_score = crate::bot::evaluator::CardEvaluator::evaluate_owned_card(worst.id, rs);
-        if matches!(
-            worst.id,
-            crate::content::cards::CardId::Strike | crate::content::cards::CardId::Defend
-        ) {
+        if crate::content::cards::is_starter_basic(worst.id) {
             return true;
         }
         if crate::content::cards::get_card_definition(worst.id).card_type
             == crate::content::cards::CardType::Curse
         {
             return true;
+        }
+        if crate::bot::evaluator::curse_remove_severity(worst.id) >= 8 {
+            return true;
+        }
+        if searing_plan > 0 {
+            let affordable_deficit_pick = shop.cards.iter().any(|card| {
+                rs.gold >= card.price + shop.purge_cost
+                    && self.shop_card_score(rs, card.card_id) >= 60
+            }) || shop.potions.iter().any(|potion| {
+                rs.gold >= potion.price + shop.purge_cost
+                    && rs.potions.iter().any(|slot| slot.is_none())
+                    && self.shop_potion_score(rs, potion.potion_id) >= 90
+            });
+            if affordable_deficit_pick {
+                return false;
+            }
         }
         if worst_score <= 10 {
             let affordable_high_value_card = shop.cards.iter().any(|card| {
@@ -206,6 +222,10 @@ impl Agent {
         use crate::content::relics::RelicId;
 
         let profile = crate::bot::evaluator::CardEvaluator::deck_profile(rs);
+        let searing_plan = self.searing_blow_plan_score(rs, &profile);
+        let output_gap = self.shop_needs_frontload_damage(rs, &profile);
+        let defense_gap = self.shop_needs_reliable_block(rs, &profile);
+        let control_gap = self.shop_needs_damage_control(rs);
 
         let mut score = match relic_id {
             RelicId::MembershipCard => 115,
@@ -266,17 +286,37 @@ impl Agent {
                 let bad_basics = rs
                     .master_deck
                     .iter()
-                    .filter(|c| {
-                        matches!(
-                            c.id,
-                            crate::content::cards::CardId::Strike
-                                | crate::content::cards::CardId::Defend
-                        )
-                    })
+                    .filter(|c| crate::content::cards::is_starter_basic(c.id))
                     .count() as i32;
                 score += bad_basics * 2;
             }
             _ => {}
+        }
+
+        if output_gap {
+            match relic_id {
+                RelicId::PenNib | RelicId::Shuriken => score += 8,
+                RelicId::PreservedInsect => score += 10,
+                _ => {}
+            }
+        }
+        if defense_gap {
+            match relic_id {
+                RelicId::IncenseBurner => score += 10,
+                RelicId::Calipers => score += 6,
+                _ => {}
+            }
+        }
+        if control_gap {
+            if relic_id == RelicId::ClockworkSouvenir {
+                score += 8;
+            }
+        }
+        if searing_plan > 0 {
+            match relic_id {
+                RelicId::PenNib | RelicId::Nunchaku => score += 10,
+                _ => {}
+            }
         }
 
         if let Some(target) = self.curiosity_archetype_target() {
@@ -297,6 +337,7 @@ impl Agent {
             score += 15;
         }
         score += self.shop_shell_card_bonus(card_id, &profile);
+        score += self.shop_deficit_card_bonus(rs, card_id, &profile);
         if let Some(target) = self.curiosity_archetype_target() {
             score += self.archetype_card_bonus(card_id, target);
         }
@@ -308,11 +349,18 @@ impl Agent {
         let shell_incomplete = (profile.strength_enablers > 0 && profile.strength_payoffs == 0)
             || (profile.exhaust_engines > 0 && profile.exhaust_outlets == 0)
             || (profile.block_core >= 2 && profile.block_payoffs == 0);
+        let acute_deficits = self.shop_needs_frontload_damage(rs, &profile) as i32
+            + self.shop_needs_reliable_block(rs, &profile) as i32
+            + self.shop_needs_damage_control(rs) as i32;
 
         if let Some(target) = self.curiosity_archetype_target() {
             if self.archetype_alignment_bonus(&profile, target) <= 0 {
                 return 45;
             }
+        }
+
+        if acute_deficits >= 2 {
+            return if score >= 60 { 42 } else { 46 };
         }
 
         if score >= 72 {
@@ -363,12 +411,18 @@ impl Agent {
         }
     }
 
-    pub(crate) fn shop_potion_score(&self, potion_id: crate::content::potions::PotionId) -> i32 {
+    pub(crate) fn shop_potion_score(
+        &self,
+        rs: &RunState,
+        potion_id: crate::content::potions::PotionId,
+    ) -> i32 {
         use crate::content::potions::PotionId;
-        match potion_id {
+        let profile = crate::bot::evaluator::CardEvaluator::deck_profile(rs);
+        let mut score = match potion_id {
             PotionId::AncientPotion => 100,
             PotionId::PowerPotion | PotionId::ColorlessPotion => 94,
             PotionId::DuplicationPotion | PotionId::GhostInAJar => 90,
+            PotionId::BlessingOfTheForge => 84,
             PotionId::StrengthPotion
             | PotionId::DexterityPotion
             | PotionId::SpeedPotion
@@ -378,7 +432,46 @@ impl Agent {
             | PotionId::RegenPotion => 85,
             PotionId::EnergyPotion | PotionId::SwiftPotion => 82,
             _ => 55,
+        };
+
+        if self.shop_needs_frontload_damage(rs, &profile) {
+            match potion_id {
+                PotionId::FearPotion
+                | PotionId::FirePotion
+                | PotionId::ExplosivePotion
+                | PotionId::AttackPotion => score += 16,
+                PotionId::StrengthPotion | PotionId::DuplicationPotion => score += 14,
+                _ => {}
+            }
         }
+        if self.shop_needs_reliable_block(rs, &profile) {
+            match potion_id {
+                PotionId::GhostInAJar => score += 24,
+                PotionId::BlockPotion
+                | PotionId::WeakenPotion
+                | PotionId::DexterityPotion
+                | PotionId::EssenceOfSteel
+                | PotionId::LiquidBronze => score += 16,
+                _ => {}
+            }
+        }
+        if self.shop_needs_damage_control(rs) {
+            match potion_id {
+                PotionId::WeakenPotion | PotionId::FearPotion => score += 12,
+                _ => {}
+            }
+        }
+        if self.searing_blow_plan_score(rs, &profile) > 0 {
+            match potion_id {
+                PotionId::DuplicationPotion => score += 20,
+                PotionId::StrengthPotion => score += 12,
+                PotionId::FearPotion => score += 10,
+                PotionId::BlessingOfTheForge => score += 18,
+                _ => {}
+            }
+        }
+
+        score
     }
 
     pub(crate) fn boss_relic_score(
@@ -395,7 +488,7 @@ impl Agent {
             .filter(|c| {
                 matches!(
                     c.id,
-                    crate::content::cards::CardId::Strike | crate::content::cards::CardId::Defend
+                    id if crate::content::cards::is_starter_basic(id)
                 )
             })
             .count() as i32;
@@ -643,7 +736,7 @@ impl Agent {
             .filter(|c| {
                 matches!(
                     c.id,
-                    crate::content::cards::CardId::Strike | crate::content::cards::CardId::Defend
+                    id if crate::content::cards::is_starter_basic(id)
                 )
             })
             .count() as i32;
@@ -703,6 +796,7 @@ impl Agent {
         let can_dig = has_relic(RelicId::Shovel);
         let can_recall = rs.is_final_act_available && !rs.keys[0];
         let profile = crate::bot::evaluator::CardEvaluator::deck_profile(rs);
+        let searing_plan = self.searing_blow_plan_score(rs, &profile);
 
         let hp_ratio = rs.current_hp as f32 / rs.max_hp.max(1) as f32;
         let pre_boss_floor = rs.floor_num % 17 == 15;
@@ -731,7 +825,7 @@ impl Agent {
             .filter(|c| {
                 matches!(
                     c.id,
-                    crate::content::cards::CardId::Strike | crate::content::cards::CardId::Defend
+                    id if crate::content::cards::is_starter_basic(id)
                 )
             })
             .count();
@@ -761,6 +855,18 @@ impl Agent {
         if can_rest && (hp_ratio < 0.5 || (rs.act_num != 1 && pre_boss_floor && hp_ratio < 0.9)) {
             ClientInput::CampfireOption(CampfireChoice::Rest)
         } else if can_smith {
+            if searing_plan > 0 {
+                if let Some((idx, _)) = rs
+                    .master_deck
+                    .iter()
+                    .enumerate()
+                    .find(|(_, c)| c.id == crate::content::cards::CardId::SearingBlow)
+                {
+                    if hp_ratio >= 0.4 || rs.act_num == 1 {
+                        return ClientInput::CampfireOption(CampfireChoice::Smith(idx));
+                    }
+                }
+            }
             ClientInput::CampfireOption(CampfireChoice::Smith(
                 self.best_upgrade_index(rs).unwrap_or(0),
             ))
@@ -940,6 +1046,113 @@ impl Agent {
             || (profile.block_core >= 2 && profile.block_payoffs == 0)
     }
 
+    pub(crate) fn shop_needs_frontload_damage(
+        &self,
+        rs: &RunState,
+        profile: &crate::bot::evaluator::DeckProfile,
+    ) -> bool {
+        let has_premium_damage = rs.master_deck.iter().any(|c| {
+            matches!(
+                c.id,
+                crate::content::cards::CardId::SearingBlow
+                    | crate::content::cards::CardId::Hemokinesis
+                    | crate::content::cards::CardId::Carnage
+                    | crate::content::cards::CardId::Immolate
+                    | crate::content::cards::CardId::Whirlwind
+                    | crate::content::cards::CardId::Pummel
+                    | crate::content::cards::CardId::Bludgeon
+            )
+        });
+        !has_premium_damage || (profile.attack_count <= 6 && profile.strength_payoffs == 0)
+    }
+
+    pub(crate) fn shop_needs_reliable_block(
+        &self,
+        rs: &RunState,
+        profile: &crate::bot::evaluator::DeckProfile,
+    ) -> bool {
+        let has_anchor_defense = rs.master_deck.iter().any(|c| {
+            matches!(
+                c.id,
+                crate::content::cards::CardId::ShrugItOff
+                    | crate::content::cards::CardId::FlameBarrier
+                    | crate::content::cards::CardId::GhostlyArmor
+                    | crate::content::cards::CardId::Impervious
+                    | crate::content::cards::CardId::PowerThrough
+            )
+        });
+        profile.block_core < 2 || !has_anchor_defense
+    }
+
+    pub(crate) fn shop_needs_damage_control(&self, rs: &RunState) -> bool {
+        !rs.master_deck.iter().any(|c| {
+            matches!(
+                c.id,
+                crate::content::cards::CardId::Disarm
+                    | crate::content::cards::CardId::Shockwave
+                    | crate::content::cards::CardId::Uppercut
+                    | crate::content::cards::CardId::Clothesline
+            )
+        })
+    }
+
+    pub(crate) fn shop_deficit_card_bonus(
+        &self,
+        rs: &RunState,
+        card_id: crate::content::cards::CardId,
+        profile: &crate::bot::evaluator::DeckProfile,
+    ) -> i32 {
+        use crate::content::cards::CardId;
+
+        let mut bonus = 0;
+        let searing_plan = self.searing_blow_plan_score(rs, profile);
+
+        if self.shop_needs_frontload_damage(rs, profile) {
+            bonus += match card_id {
+                CardId::Hemokinesis => 34,
+                CardId::Carnage => 28,
+                CardId::Pummel | CardId::Whirlwind => 22,
+                CardId::SearingBlow => 24,
+                CardId::Immolate => 26,
+                CardId::Uppercut => 12,
+                _ => 0,
+            };
+        }
+        if self.shop_needs_reliable_block(rs, profile) {
+            bonus += match card_id {
+                CardId::ShrugItOff => 20,
+                CardId::FlameBarrier => 22,
+                CardId::GhostlyArmor => 16,
+                CardId::Impervious => 26,
+                CardId::PowerThrough => 14,
+                CardId::Disarm => 12,
+                _ => 0,
+            };
+        }
+        if self.shop_needs_damage_control(rs) {
+            bonus += match card_id {
+                CardId::Disarm => 24,
+                CardId::Shockwave => 22,
+                CardId::Uppercut => 18,
+                CardId::Clothesline => 10,
+                _ => 0,
+            };
+        }
+        if searing_plan > 0 {
+            bonus += match card_id {
+                CardId::SearingBlow => 40 + profile.searing_blow_upgrades * 10,
+                CardId::Armaments => 18,
+                CardId::Offering => 18,
+                CardId::BattleTrance | CardId::Headbutt | CardId::SeeingRed => 12,
+                CardId::ShrugItOff => 8,
+                CardId::DoubleTap => 10,
+                _ => 0,
+            };
+        }
+
+        bonus
+    }
+
     pub(crate) fn profile_is_online(profile: &crate::bot::evaluator::DeckProfile) -> bool {
         (profile.strength_enablers >= 1 && profile.strength_payoffs >= 2)
             || (profile.exhaust_engines >= 2 && profile.exhaust_outlets >= 1)
@@ -952,7 +1165,7 @@ impl Agent {
             .filter(|c| {
                 matches!(
                     c.id,
-                    crate::content::cards::CardId::Strike | crate::content::cards::CardId::Defend
+                    id if crate::content::cards::is_starter_basic(id)
                 )
             })
             .count()
@@ -968,7 +1181,7 @@ impl Agent {
         let score = crate::bot::evaluator::CardEvaluator::evaluate_owned_card(card.id, rs);
         matches!(
             card.id,
-            crate::content::cards::CardId::Strike | crate::content::cards::CardId::Defend
+            id if crate::content::cards::is_starter_basic(id)
         ) || score <= 10
     }
 

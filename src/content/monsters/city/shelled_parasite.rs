@@ -153,9 +153,21 @@ impl MonsterBehavior for ShelledParasite {
 
     fn take_turn(state: &mut CombatState, entity: &MonsterEntity) -> Vec<Action> {
         let mut actions = Vec::new();
-        let double_strike_dmg = if state.ascension_level >= 2 { 7 } else { 6 };
-        let fell_dmg = if state.ascension_level >= 2 { 21 } else { 18 };
-        let suck_dmg = if state.ascension_level >= 2 { 12 } else { 10 };
+        let double_strike_dmg = if state.meta.ascension_level >= 2 {
+            7
+        } else {
+            6
+        };
+        let fell_dmg = if state.meta.ascension_level >= 2 {
+            21
+        } else {
+            18
+        };
+        let suck_dmg = if state.meta.ascension_level >= 2 {
+            12
+        } else {
+            10
+        };
 
         match entity.next_move_byte {
             1 => {

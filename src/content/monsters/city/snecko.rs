@@ -52,8 +52,16 @@ impl MonsterBehavior for Snecko {
 
     fn take_turn(state: &mut CombatState, entity: &MonsterEntity) -> Vec<Action> {
         let mut actions = Vec::new();
-        let tail_dmg = if state.ascension_level >= 2 { 10 } else { 8 };
-        let bite_dmg = if state.ascension_level >= 2 { 18 } else { 15 };
+        let tail_dmg = if state.meta.ascension_level >= 2 {
+            10
+        } else {
+            8
+        };
+        let bite_dmg = if state.meta.ascension_level >= 2 {
+            18
+        } else {
+            15
+        };
 
         match entity.next_move_byte {
             1 => {
@@ -86,7 +94,7 @@ impl MonsterBehavior for Snecko {
                     damage_type: DamageType::Normal,
                     is_modified: false,
                 }));
-                if state.ascension_level >= 17 {
+                if state.meta.ascension_level >= 17 {
                     actions.push(Action::ApplyPower {
                         source: entity.id,
                         target: 0,

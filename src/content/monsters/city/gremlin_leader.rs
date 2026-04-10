@@ -6,6 +6,29 @@ use crate::content::powers::PowerId;
 pub struct GremlinLeader;
 
 impl GremlinLeader {
+    pub const GREMLIN_SLOT_LOGICAL_POSITIONS: [i32; 3] = [1, 2, 0];
+    pub const LEADER_LOGICAL_POSITION: i32 = 3;
+
+    fn logical_position_for_summon_slot(slot: usize) -> i32 {
+        Self::GREMLIN_SLOT_LOGICAL_POSITIONS[slot]
+    }
+
+    fn occupied_summon_slots(state: &CombatState, leader_id: usize) -> [bool; 3] {
+        let mut occupied = [false; 3];
+        for monster in &state.entities.monsters {
+            if monster.id == leader_id || monster.is_dying {
+                continue;
+            }
+            for (slot, logical_position) in Self::GREMLIN_SLOT_LOGICAL_POSITIONS.iter().enumerate()
+            {
+                if monster.logical_position == *logical_position {
+                    occupied[slot] = true;
+                }
+            }
+        }
+        occupied
+    }
+
     pub fn roll_move_custom(
         rng: &mut crate::rng::StsRng,
         entity: &MonsterEntity,
@@ -120,52 +143,47 @@ impl MonsterBehavior for GremlinLeader {
         match entity.next_move_byte {
             2 => {
                 // RALLY
-                let mut minion_slots = vec![];
-                if !state.monsters.iter().any(|m| m.slot == 1 && !m.is_dying) {
-                    minion_slots.push(1);
-                }
-                if !state.monsters.iter().any(|m| m.slot == 2 && !m.is_dying) {
-                    minion_slots.push(2);
-                }
-
                 let variants = [
-                    crate::content::monsters::EnemyId::GremlinTsundere,
-                    crate::content::monsters::EnemyId::GremlinFat,
+                    crate::content::monsters::EnemyId::GremlinWarrior,
                     crate::content::monsters::EnemyId::GremlinWarrior,
                     crate::content::monsters::EnemyId::GremlinThief,
+                    crate::content::monsters::EnemyId::GremlinThief,
+                    crate::content::monsters::EnemyId::GremlinFat,
+                    crate::content::monsters::EnemyId::GremlinFat,
+                    crate::content::monsters::EnemyId::GremlinTsundere,
                     crate::content::monsters::EnemyId::GremlinWizard,
                 ];
 
-                let mut mock_max_id = state.monsters.iter().map(|m| m.id).max().unwrap_or(0);
-
-                for slot in minion_slots {
-                    mock_max_id += 1;
-                    let minion_id = variants[state.rng.ai_rng.random_range(0, 4) as usize];
+                let mut occupied_slots = Self::occupied_summon_slots(state, entity.id);
+                for _ in 0..2 {
+                    let Some(slot) = occupied_slots.iter().position(|occupied| !occupied) else {
+                        break;
+                    };
+                    occupied_slots[slot] = true;
+                    let minion_id = variants[state.rng.ai_rng.random_range(0, 7) as usize];
                     actions.push(Action::SpawnMonsterSmart {
                         monster_id: minion_id,
                         current_hp: 0,
                         max_hp: 0,
-                        logical_position: slot as i32,
-                    });
-
-                    actions.push(Action::ApplyPower {
-                        source: entity.id,
-                        target: mock_max_id,
-                        power_id: PowerId::Minion,
-                        amount: 1,
+                        logical_position: Self::logical_position_for_summon_slot(slot),
+                        is_minion: true,
                     });
                 }
             }
             3 => {
                 // ENCOURAGE
-                let str_amt = if state.ascension_level >= 18 {
+                let str_amt = if state.meta.ascension_level >= 18 {
                     5
-                } else if state.ascension_level >= 3 {
+                } else if state.meta.ascension_level >= 3 {
                     4
                 } else {
                     3
                 };
-                let block_amt = if state.ascension_level >= 18 { 10 } else { 6 };
+                let block_amt = if state.meta.ascension_level >= 18 {
+                    10
+                } else {
+                    6
+                };
 
                 actions.push(Action::ApplyPower {
                     source: entity.id,
@@ -174,7 +192,7 @@ impl MonsterBehavior for GremlinLeader {
                     amount: str_amt,
                 });
 
-                for m in state.monsters.iter() {
+                for m in state.entities.monsters.iter() {
                     if m.id != entity.id && !m.is_dying {
                         actions.push(Action::ApplyPower {
                             source: entity.id,

@@ -440,7 +440,7 @@ pub fn roll_monster_move(
                 beyond::orb_walker::OrbWalker::roll_move(rng, entity, ascension_level, num)
             }
             EnemyId::Darkling => {
-                beyond::darkling::Darkling::roll_move(rng, entity, ascension_level, num)
+                beyond::darkling::roll_move_custom(rng, entity, ascension_level, num, monsters)
             }
             EnemyId::Maw => beyond::maw::Maw::roll_move(rng, entity, ascension_level, num),
             EnemyId::SpireGrowth => {

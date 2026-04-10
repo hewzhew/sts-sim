@@ -15,7 +15,7 @@ pub fn parse_input(line: &str, es: &EngineState, _cs: &Option<CombatState>) -> O
                 .and_then(|s| s.parse::<usize>().ok())
                 .and_then(|t_idx| {
                     _cs.as_ref()
-                        .and_then(|combat| combat.monsters.get(t_idx).map(|m| m.id))
+                        .and_then(|combat| combat.entities.monsters.get(t_idx).map(|m| m.id))
                 });
             Some(ClientInput::PlayCard {
                 card_index: idx,
@@ -30,7 +30,7 @@ pub fn parse_input(line: &str, es: &EngineState, _cs: &Option<CombatState>) -> O
                 .and_then(|s| s.parse::<usize>().ok())
                 .and_then(|t_idx| {
                     _cs.as_ref()
-                        .and_then(|combat| combat.monsters.get(t_idx).map(|m| m.id))
+                        .and_then(|combat| combat.entities.monsters.get(t_idx).map(|m| m.id))
                 });
             Some(ClientInput::UsePotion {
                 potion_index: slot,

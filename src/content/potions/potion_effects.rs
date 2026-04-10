@@ -20,6 +20,7 @@ fn bottom(actions: &mut SmallVec<[ActionInfo; 4]>, action: Action) {
 /// `potency`: the effective potency (base * SacredBark multiplier).
 #[allow(unused)]
 pub fn get_potion_actions(
+    enemy_count: usize,
     potion: PotionId,
     target_idx: Option<usize>,
     potency: i32,
@@ -49,7 +50,7 @@ pub fn get_potion_actions(
                 &mut actions,
                 Action::DamageAllEnemies {
                     source: PLAYER,
-                    damages: smallvec::smallvec![potency; 5],
+                    damages: crate::action::repeated_damage_matrix(enemy_count, potency),
                     damage_type: DamageType::Normal,
                     is_modified: false,
                 },
@@ -307,7 +308,17 @@ pub fn get_potion_actions(
             );
         }
         PotionId::DistilledChaosPotion => {
-            // Handled natively in Action::UsePotion (action_handlers.rs) to maintain accurate RNG parity.
+            // Java DistilledChaosAction buffers the current top N cards, then
+            // plays them in reverse buffered order. Earlier played draw cards
+            // should not consume cards that were already chosen to be played.
+            bottom(
+                &mut actions,
+                Action::PlayTopCardsBuffered {
+                    count: potency.max(0) as u8,
+                    target: None,
+                    exhaust: false,
+                },
+            );
         }
         PotionId::DuplicationPotion => {
             // This turn, your next card is played twice
@@ -421,7 +432,7 @@ pub fn get_potion_actions(
                 Action::ApplyPower {
                     source: PLAYER,
                     target: PLAYER,
-                    power_id: PowerId::Intangible,
+                    power_id: PowerId::IntangiblePlayer,
                     amount: potency,
                 },
             );
@@ -456,9 +467,39 @@ pub fn get_potion_actions(
             bottom(&mut actions, Action::EnterStance("Divinity".to_string()));
         }
         PotionId::EssenceOfDarkness => {
-            // Handled natively in Action::UsePotion (action_handlers.rs) to maintain accurate multiplier parity.
+            for _ in 0..potency.max(0) {
+                bottom(&mut actions, Action::ChannelOrb(crate::combat::OrbId::Dark));
+            }
         }
     }
 
     actions
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn distilled_chaos_queues_play_top_card_actions() {
+        let actions = get_potion_actions(1, PotionId::DistilledChaosPotion, None, 3);
+        assert_eq!(actions.len(), 1);
+        assert!(matches!(
+            actions[0].action,
+            Action::PlayTopCardsBuffered {
+                count: 3,
+                target: None,
+                exhaust: false
+            }
+        ));
+    }
+
+    #[test]
+    fn essence_of_darkness_queues_dark_orbs() {
+        let actions = get_potion_actions(1, PotionId::EssenceOfDarkness, None, 2);
+        assert_eq!(actions.len(), 2);
+        assert!(actions
+            .iter()
+            .all(|a| matches!(a.action, Action::ChannelOrb(crate::combat::OrbId::Dark))));
+    }
 }

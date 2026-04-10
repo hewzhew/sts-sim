@@ -9,9 +9,9 @@ use smallvec::SmallVec;
 pub fn on_lose_hp(state: &CombatState, used: bool) -> SmallVec<[ActionInfo; 4]> {
     let mut actions = SmallVec::new();
 
-    if state.player.current_hp <= 0 && !used {
+    if state.entities.player.current_hp <= 0 && !used {
         // Java: int healAmt = maxHealth / 2; if (healAmt < 1) healAmt = 1;
-        let heal_amount = std::cmp::max(1, state.player.max_hp / 2);
+        let heal_amount = std::cmp::max(1, state.entities.player.max_hp / 2);
 
         actions.push(ActionInfo {
             action: Action::Heal {

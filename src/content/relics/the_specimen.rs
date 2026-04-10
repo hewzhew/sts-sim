@@ -11,6 +11,7 @@ pub fn on_monster_death(
 
     // Find dead monster's Poison amount from power_db
     let poison_amount = state
+        .entities
         .power_db
         .get(&dead_monster_id)
         .and_then(|powers| {
@@ -24,6 +25,7 @@ pub fn on_monster_death(
     if poison_amount > 0 {
         // Find a random alive enemy to transfer Poison to
         let alive: Vec<_> = state
+            .entities
             .monsters
             .iter()
             .filter(|m| m.id != dead_monster_id && m.current_hp > 0 && !m.is_dying && !m.is_escaped)
@@ -31,7 +33,7 @@ pub fn on_monster_death(
         if let Some(target) = alive.first() {
             actions.push(ActionInfo {
                 action: Action::ApplyPower {
-                    source: state.player.id,
+                    source: state.entities.player.id,
                     target: target.id,
                     power_id: crate::content::powers::PowerId::Poison,
                     amount: poison_amount,

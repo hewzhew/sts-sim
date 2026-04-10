@@ -27,7 +27,11 @@ impl MonsterBehavior for SpikeSlimeS {
         let mut actions = Vec::new();
         match entity.next_move_byte {
             1 => {
-                let dmg = if state.ascension_level >= 2 { 6 } else { 5 };
+                let dmg = if state.meta.ascension_level >= 2 {
+                    6
+                } else {
+                    5
+                };
                 actions.push(Action::Damage(DamageInfo {
                     source: entity.id,
                     target: 0,
@@ -124,7 +128,11 @@ impl MonsterBehavior for SpikeSlimeM {
         let mut actions = Vec::new();
         match entity.next_move_byte {
             1 => {
-                let dmg = if state.ascension_level >= 2 { 10 } else { 8 };
+                let dmg = if state.meta.ascension_level >= 2 {
+                    10
+                } else {
+                    8
+                };
                 actions.push(Action::Damage(DamageInfo {
                     source: entity.id,
                     target: 0,

@@ -32,6 +32,7 @@ pub fn on_attacked(
 ) -> smallvec::SmallVec<[Action; 2]> {
     let mut actions = smallvec::smallvec![];
     let owner_survived = state
+        .entities
         .monsters
         .iter()
         .find(|m| m.id == owner)
@@ -66,6 +67,7 @@ pub fn at_turn_start(
     amount: i32,
 ) -> smallvec::SmallVec<[Action; 2]> {
     let stored_amount = state
+        .entities
         .power_db
         .get(&owner)
         .and_then(|powers| {
@@ -82,6 +84,20 @@ pub fn at_turn_start(
             target: owner,
             power_id: crate::content::powers::PowerId::Flight,
             amount: stored_amount - amount,
+        }]
+    } else {
+        smallvec::smallvec![]
+    }
+}
+
+pub fn on_remove(state: &CombatState, owner: EntityId) -> smallvec::SmallVec<[Action; 2]> {
+    if state.entities.monsters.iter().any(|m| {
+        m.id == owner && m.monster_type == crate::content::monsters::EnemyId::Byrd as usize
+    }) {
+        smallvec::smallvec![Action::SetMonsterMove {
+            monster_id: owner,
+            next_move_byte: 4,
+            intent: crate::combat::Intent::Stun,
         }]
     } else {
         smallvec::smallvec![]

@@ -20,25 +20,7 @@ pub fn on_player_card_played(
             amount: 1,
         });
     } else {
-        // Phase 2: 12-Card Trigger
-        // 2.1 Reset counter to 0 (engine preservation handled in action_handlers.rs)
-        actions.push(Action::ApplyPower {
-            source: owner,
-            target: owner,
-            power_id: PowerId::TimeWarp,
-            amount: -amount,
-        });
-
-        // 2.2 Time Eater gains +2 Strength
-        actions.push(Action::ApplyPower {
-            source: owner,
-            target: owner,
-            power_id: PowerId::Strength,
-            amount: 2,
-        });
-
-        // 2.3 Forcefully end the player's turn
-        actions.push(Action::EndTurnTrigger);
+        actions.push(Action::TriggerTimeWarpEndTurn { owner });
     }
 
     actions

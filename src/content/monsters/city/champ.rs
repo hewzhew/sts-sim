@@ -97,7 +97,7 @@ impl MonsterBehavior for Champ {
 
     fn take_turn(state: &mut CombatState, entity: &crate::combat::MonsterEntity) -> Vec<Action> {
         let mut actions = Vec::new();
-        let ascension_level = state.ascension_level;
+        let ascension_level = state.meta.ascension_level;
 
         let block_amt = if ascension_level >= 19 {
             20

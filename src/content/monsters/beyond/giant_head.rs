@@ -90,7 +90,7 @@ impl MonsterBehavior for GiantHead {
 
     fn take_turn(state: &mut CombatState, entity: &crate::combat::MonsterEntity) -> Vec<Action> {
         let mut actions = Vec::new();
-        let asc = state.ascension_level;
+        let asc = state.meta.ascension_level;
 
         // Recover state calculation manually
         let mut count = 5;

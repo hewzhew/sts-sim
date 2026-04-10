@@ -409,7 +409,7 @@ fn apply_reward(
         }
         NeowRewardType::OneRandomRareCard => {
             // Get a random rare card from the player's class pool and add to deck
-            let pool = crate::engine::campfire_handler::card_pool_for_class(
+            let pool = crate::engine::campfire_handler::nonempty_card_pool_for_class(
                 run_state.player_class,
                 crate::content::cards::CardRarity::Rare,
             );
@@ -535,8 +535,10 @@ fn generate_neow_class_cards(
                 CardRarity::Common
             }
         };
-        let pool =
-            crate::engine::campfire_handler::card_pool_for_class(run_state.player_class, rarity);
+        let pool = crate::engine::campfire_handler::nonempty_card_pool_for_class(
+            run_state.player_class,
+            rarity,
+        );
         if !pool.is_empty() {
             let idx = run_state
                 .rng_pool

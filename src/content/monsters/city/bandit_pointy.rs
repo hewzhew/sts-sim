@@ -23,7 +23,7 @@ impl MonsterBehavior for BanditPointy {
 
     fn take_turn(state: &mut CombatState, entity: &crate::combat::MonsterEntity) -> Vec<Action> {
         let mut actions = Vec::new();
-        let asc = state.ascension_level;
+        let asc = state.meta.ascension_level;
         let atk_dmg = if asc >= 2 { 6 } else { 5 };
 
         if entity.next_move_byte == 1 {

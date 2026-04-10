@@ -5,7 +5,7 @@ use smallvec::SmallVec;
 pub fn at_battle_start(state: &CombatState) -> SmallVec<[ActionInfo; 4]> {
     let mut actions = SmallVec::new();
     let mut is_boss_combat = false;
-    for m in &state.monsters {
+    for m in &state.entities.monsters {
         if let Some(enemy_id) = crate::content::monsters::EnemyId::from_id(m.monster_type) {
             if matches!(
                 enemy_id,

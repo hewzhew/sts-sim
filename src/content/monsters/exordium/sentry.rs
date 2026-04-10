@@ -43,7 +43,11 @@ impl MonsterBehavior for Sentry {
     }
 
     fn take_turn(state: &mut CombatState, entity: &MonsterEntity) -> Vec<Action> {
-        let beam_dmg = if state.ascension_level >= 3 { 10 } else { 9 };
+        let beam_dmg = if state.meta.ascension_level >= 3 {
+            10
+        } else {
+            9
+        };
         let mut actions = Vec::new();
 
         match entity.next_move_byte {
@@ -52,7 +56,11 @@ impl MonsterBehavior for Sentry {
                 // Adds 2 Dazed to discard pile
                 actions.push(Action::MakeTempCardInDiscard {
                     card_id: crate::content::cards::CardId::Dazed,
-                    amount: if state.ascension_level >= 18 { 3 } else { 2 },
+                    amount: if state.meta.ascension_level >= 18 {
+                        3
+                    } else {
+                        2
+                    },
                     upgraded: false,
                 });
             }

@@ -5,6 +5,7 @@ use crate::content::relics::RelicId;
 #[derive(Debug, Clone)]
 pub struct ShopConfig {
     pub ascension_level: i32,
+    pub player_class: &'static str,
     pub has_courier: bool,
     pub has_membership_card: bool,
     pub has_smiling_mask: bool,

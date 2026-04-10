@@ -13,7 +13,7 @@ pub fn at_battle_start(state: &CombatState) -> SmallVec<[ActionInfo; 4]> {
     // Check if the combat involves any elite. Slay the spire applies this to ALL
     // monsters in an elite room, so if there's an elite, everyone's HP goes down.
     let mut is_elite_combat = false;
-    for m in &state.monsters {
+    for m in &state.entities.monsters {
         if let Some(enemy_id) = crate::content::monsters::EnemyId::from_id(m.monster_type) {
             if matches!(
                 enemy_id,
@@ -36,7 +36,7 @@ pub fn at_battle_start(state: &CombatState) -> SmallVec<[ActionInfo; 4]> {
     }
 
     if is_elite_combat {
-        for monster in &state.monsters {
+        for monster in &state.entities.monsters {
             let reduction = (monster.max_hp as f32 * 0.25).floor() as i32;
             if reduction > 0 {
                 actions.push(ActionInfo {

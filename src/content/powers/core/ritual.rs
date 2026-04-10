@@ -11,6 +11,7 @@ pub fn at_end_of_round(
 
     // Check extra_data to simulate skipFirst
     let extra = state
+        .entities
         .power_db
         .get(&owner)
         .and_then(|ps| ps.iter().find(|p| p.power_type == PowerId::Ritual))

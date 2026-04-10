@@ -20,9 +20,9 @@ impl MonsterBehavior for Taskmaster {
     fn take_turn(state: &mut CombatState, entity: &MonsterEntity) -> Vec<Action> {
         let mut actions = Vec::new();
 
-        let wound_count = if state.ascension_level >= 18 {
+        let wound_count = if state.meta.ascension_level >= 18 {
             3
-        } else if state.ascension_level >= 3 {
+        } else if state.meta.ascension_level >= 3 {
             2
         } else {
             1
@@ -44,7 +44,7 @@ impl MonsterBehavior for Taskmaster {
                 upgraded: false,
             });
 
-            if state.ascension_level >= 18 {
+            if state.meta.ascension_level >= 18 {
                 actions.push(Action::ApplyPower {
                     source: entity.id,
                     target: entity.id,

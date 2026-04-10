@@ -88,7 +88,11 @@ impl MonsterBehavior for SnakePlant {
 
     fn take_turn(state: &mut CombatState, entity: &MonsterEntity) -> Vec<Action> {
         let mut actions = Vec::new();
-        let chomp_dmg = if state.ascension_level >= 2 { 8 } else { 7 };
+        let chomp_dmg = if state.meta.ascension_level >= 2 {
+            8
+        } else {
+            7
+        };
 
         match entity.next_move_byte {
             1 => {

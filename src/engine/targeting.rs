@@ -21,6 +21,7 @@ pub fn validation_for_potion_target(target_required: bool) -> Option<TargetValid
 pub fn candidate_targets(state: &CombatState, validation: TargetValidation) -> Vec<EntityId> {
     match validation {
         TargetValidation::AnyEnemy | TargetValidation::AnyMonster => state
+            .entities
             .monsters
             .iter()
             .filter(|m| !m.is_dying && !m.is_escaped && !m.half_dead)
@@ -68,46 +69,59 @@ mod tests {
     use super::*;
     use crate::action::Action;
     use crate::combat::{
-        CombatPhase, CombatState, Intent, MonsterEntity, PlayerEntity, RelicBuses, StanceId,
+        CombatMeta, CombatPhase, CombatRng, CombatState, EngineRuntime, Intent, MonsterEntity,
+        PlayerEntity, RelicBuses, StanceId, TurnRuntime,
     };
     use crate::content::monsters::EnemyId;
     use std::collections::{HashMap, VecDeque};
 
     fn combat_with_monsters(monsters: Vec<MonsterEntity>) -> CombatState {
         CombatState {
-            ascension_level: 0,
-            turn_count: 1,
-            current_phase: CombatPhase::PlayerTurn,
-            energy: 3,
-            draw_pile: Vec::new(),
-            hand: Vec::new(),
-            discard_pile: Vec::new(),
-            exhaust_pile: Vec::new(),
-            limbo: Vec::new(),
-            player: PlayerEntity {
-                id: 0,
-                current_hp: 80,
-                max_hp: 80,
-                block: 0,
-                gold_delta_this_combat: 0,
-                gold: 99,
-                max_orbs: 0,
-                orbs: Vec::new(),
-                stance: StanceId::Neutral,
-                relics: Vec::new(),
-                relic_buses: RelicBuses::default(),
-                energy_master: 3,
+            meta: CombatMeta {
+                ascension_level: 0,
+                is_boss_fight: false,
+                is_elite_fight: false,
+                meta_changes: Vec::new(),
             },
-            monsters,
-            potions: vec![None, None, None],
-            power_db: HashMap::new(),
-            action_queue: VecDeque::<Action>::new(),
-            counters: Default::default(),
-            card_uuid_counter: 1,
-            rng: crate::rng::RngPool::new(123),
-            is_boss_fight: false,
-            is_elite_fight: false,
-            meta_changes: Vec::new(),
+            turn: TurnRuntime {
+                turn_count: 1,
+                current_phase: CombatPhase::PlayerTurn,
+                energy: 3,
+                turn_start_draw_modifier: 0,
+                counters: Default::default(),
+            },
+            zones: crate::combat::CardZones {
+                draw_pile: Vec::new(),
+                hand: Vec::new(),
+                discard_pile: Vec::new(),
+                exhaust_pile: Vec::new(),
+                limbo: Vec::new(),
+                queued_cards: VecDeque::new(),
+                card_uuid_counter: 1,
+            },
+            entities: crate::combat::EntityState {
+                player: PlayerEntity {
+                    id: 0,
+                    current_hp: 80,
+                    max_hp: 80,
+                    block: 0,
+                    gold_delta_this_combat: 0,
+                    gold: 99,
+                    max_orbs: 0,
+                    orbs: Vec::new(),
+                    stance: StanceId::Neutral,
+                    relics: Vec::new(),
+                    relic_buses: RelicBuses::default(),
+                    energy_master: 3,
+                },
+                monsters,
+                potions: vec![None, None, None],
+                power_db: HashMap::new(),
+            },
+            engine: EngineRuntime {
+                action_queue: VecDeque::<Action>::new(),
+            },
+            rng: CombatRng::new(crate::rng::RngPool::new(123)),
         }
     }
 
@@ -127,6 +141,8 @@ mod tests {
             move_history: VecDeque::new(),
             intent_dmg: 0,
             logical_position: 0,
+            hexaghost: Default::default(),
+            darkling: Default::default(),
         }
     }
 

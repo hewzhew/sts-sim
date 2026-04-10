@@ -75,7 +75,7 @@ impl MonsterBehavior for OrbWalker {
 
     fn take_turn(state: &mut CombatState, entity: &crate::combat::MonsterEntity) -> Vec<Action> {
         let mut actions = Vec::new();
-        let asc = state.ascension_level;
+        let asc = state.meta.ascension_level;
 
         let claw_dmg = if asc >= 2 { 16 } else { 15 };
         let laser_dmg = if asc >= 2 { 11 } else { 10 };

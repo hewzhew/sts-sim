@@ -22,7 +22,11 @@ impl MonsterBehavior for GremlinWarrior {
     }
 
     fn take_turn(state: &mut CombatState, entity: &MonsterEntity) -> Vec<Action> {
-        let dmg = if state.ascension_level >= 2 { 5 } else { 4 };
+        let dmg = if state.meta.ascension_level >= 2 {
+            5
+        } else {
+            4
+        };
         let mut actions = Vec::new();
 
         match entity.next_move_byte {

@@ -84,16 +84,28 @@ impl MonsterBehavior for TheCollector {
 
     fn take_turn(state: &mut CombatState, entity: &crate::combat::MonsterEntity) -> Vec<Action> {
         let mut actions = Vec::new();
-        let dmg = if state.ascension_level >= 4 { 21 } else { 18 };
-        let block_amt = if state.ascension_level >= 9 { 18 } else { 15 };
-        let str_amt = if state.ascension_level >= 19 {
+        let dmg = if state.meta.ascension_level >= 4 {
+            21
+        } else {
+            18
+        };
+        let block_amt = if state.meta.ascension_level >= 9 {
+            18
+        } else {
+            15
+        };
+        let str_amt = if state.meta.ascension_level >= 19 {
             5
-        } else if state.ascension_level >= 4 {
+        } else if state.meta.ascension_level >= 4 {
             4
         } else {
             3
         };
-        let mega_debuff_amt = if state.ascension_level >= 19 { 5 } else { 3 };
+        let mega_debuff_amt = if state.meta.ascension_level >= 19 {
+            5
+        } else {
+            3
+        };
 
         match entity.next_move_byte {
             1 => {
@@ -105,12 +117,14 @@ impl MonsterBehavior for TheCollector {
                     logical_position: -1,
                     current_hp: 0,
                     max_hp: 0,
+                    is_minion: true,
                 });
                 actions.push(Action::SpawnMonsterSmart {
                     monster_id: EnemyId::TorchHead,
                     logical_position: -2,
                     current_hp: 0,
                     max_hp: 0,
+                    is_minion: true,
                 });
             }
             2 => {
@@ -124,7 +138,7 @@ impl MonsterBehavior for TheCollector {
                 }));
             }
             3 => {
-                let actual_block = if state.ascension_level >= 19 {
+                let actual_block = if state.meta.ascension_level >= 19 {
                     block_amt + 5
                 } else {
                     block_amt
@@ -134,7 +148,7 @@ impl MonsterBehavior for TheCollector {
                     amount: actual_block,
                 });
 
-                for m in state.monsters.iter().filter(|m| !m.is_dying) {
+                for m in state.entities.monsters.iter().filter(|m| !m.is_dying) {
                     actions.push(Action::ApplyPower {
                         source: entity.id,
                         target: m.id,
@@ -167,7 +181,7 @@ impl MonsterBehavior for TheCollector {
             5 => {
                 // Revive — Java: for each slot with isDying TorchHead, spawn a new one
                 // Iterate monster list finding dead TorchHeads and respawn them
-                for m in &state.monsters {
+                for m in &state.entities.monsters {
                     if !m.is_dying
                         && crate::content::monsters::EnemyId::from_id(m.monster_type)
                             == Some(EnemyId::TorchHead)
@@ -179,6 +193,7 @@ impl MonsterBehavior for TheCollector {
                     }
                 }
                 let dead_torches: Vec<u8> = state
+                    .entities
                     .monsters
                     .iter()
                     .filter(|m| {
@@ -195,6 +210,7 @@ impl MonsterBehavior for TheCollector {
                         logical_position: -(slot as i32),
                         current_hp: 0, // Engine will roll HP via get_hp_range
                         max_hp: 0,
+                        is_minion: true,
                     });
                 }
             }

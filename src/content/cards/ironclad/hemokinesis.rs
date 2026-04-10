@@ -14,6 +14,7 @@ pub fn hemokinesis_play(
             action: Action::LoseHp {
                 target: 0,
                 amount: card.base_magic_num_mut,
+                triggers_rupture: true,
             },
             insertion_mode: AddTo::Bottom,
         },

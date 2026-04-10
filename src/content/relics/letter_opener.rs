@@ -25,7 +25,7 @@ pub fn on_use_card(
         if next_counter == 0 {
             // Java: addToBot(new DamageAllEnemiesAction(null, DamageInfo.createDamageMatrix(5, true), THORNS))
             let damages: smallvec::SmallVec<[i32; 5]> =
-                state.monsters.iter().map(|_| 5i32).collect();
+                state.entities.monsters.iter().map(|_| 5i32).collect();
             actions.push(ActionInfo {
                 action: Action::DamageAllEnemies {
                     source: 0,

@@ -53,7 +53,7 @@ impl MonsterBehavior for Maw {
 
     fn take_turn(state: &mut CombatState, entity: &crate::combat::MonsterEntity) -> Vec<Action> {
         let mut actions = Vec::new();
-        let asc = state.ascension_level;
+        let asc = state.meta.ascension_level;
 
         let terrify_dur = if asc >= 17 { 5 } else { 3 };
         let str_up = if asc >= 17 { 5 } else { 3 };

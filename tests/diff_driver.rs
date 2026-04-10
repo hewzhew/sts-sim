@@ -88,7 +88,8 @@ fn test_diff_all_combats() {
                     if parts.len() >= 3 && parts[0] == "potion" && parts[1] == "use" {
                         let slot = parts[2].parse::<usize>().unwrap_or(0);
                         // Skip if potion slot is empty (CommunicationMod doesn't output potion data yet)
-                        if slot >= cs.potions.len() || cs.potions[slot].is_none() {
+                        if slot >= cs.entities.potions.len() || cs.entities.potions[slot].is_none()
+                        {
                             total_skip += 1;
                             prev_snapshot = action.result.clone();
                             continue;
@@ -118,8 +119,9 @@ fn test_diff_all_combats() {
             // Identify card name for logging
             let card_name = if action.action_type == "play" {
                 let idx = action.card_index.unwrap_or(0);
-                if idx < cs.hand.len() {
-                    let def = sts_simulator::content::cards::get_card_definition(cs.hand[idx].id);
+                if idx < cs.zones.hand.len() {
+                    let def =
+                        sts_simulator::content::cards::get_card_definition(cs.zones.hand[idx].id);
                     def.name.to_string()
                 } else {
                     "???".to_string()
@@ -283,7 +285,7 @@ fn test_diff_rng_replay() {
                     let card_idx = action.card_index.unwrap_or(0);
                     // Map Java monster index to Rust entity_id by looking up cs.monsters
                     // Can't use t+1 because after SpawnMonster entity IDs don't match list indices
-                    let target = action.target.map(|t| cs.monsters[t as usize].id);
+                    let target = action.target.map(|t| cs.entities.monsters[t as usize].id);
                     ClientInput::PlayCard {
                         card_index: card_idx,
                         target,
@@ -295,7 +297,8 @@ fn test_diff_rng_replay() {
                     let parts: Vec<&str> = cmd.split_whitespace().collect();
                     if parts.len() >= 3 && parts[0] == "potion" && parts[1] == "use" {
                         let slot = parts[2].parse::<usize>().unwrap_or(0);
-                        if slot >= cs.potions.len() || cs.potions[slot].is_none() {
+                        if slot >= cs.entities.potions.len() || cs.entities.potions[slot].is_none()
+                        {
                             total_skip += 1;
                             prev_snapshot = action.result.clone();
                             continue;
@@ -324,8 +327,9 @@ fn test_diff_rng_replay() {
 
             let card_name = if action.action_type == "play" {
                 let idx = action.card_index.unwrap_or(0);
-                if idx < cs.hand.len() {
-                    let def = sts_simulator::content::cards::get_card_definition(cs.hand[idx].id);
+                if idx < cs.zones.hand.len() {
+                    let def =
+                        sts_simulator::content::cards::get_card_definition(cs.zones.hand[idx].id);
                     def.name.to_string()
                 } else {
                     "???".to_string()
@@ -501,7 +505,7 @@ fn test_diff_all_v2_replays() {
                 let input = match action.action_type.as_str() {
                     "play" => {
                         let card_idx = action.card_index.unwrap_or(0);
-                        let target = action.target.map(|t| cs.monsters[t as usize].id);
+                        let target = action.target.map(|t| cs.entities.monsters[t as usize].id);
                         ClientInput::PlayCard {
                             card_index: card_idx,
                             target,
@@ -513,7 +517,9 @@ fn test_diff_all_v2_replays() {
                         let parts: Vec<&str> = cmd.split_whitespace().collect();
                         if parts.len() >= 3 && parts[0] == "potion" && parts[1] == "use" {
                             let slot = parts[2].parse::<usize>().unwrap_or(0);
-                            if slot >= cs.potions.len() || cs.potions[slot].is_none() {
+                            if slot >= cs.entities.potions.len()
+                                || cs.entities.potions[slot].is_none()
+                            {
                                 file_skip += 1;
                                 prev_snapshot = action.result.clone();
                                 continue;
@@ -542,9 +548,10 @@ fn test_diff_all_v2_replays() {
 
                 let card_name = if action.action_type == "play" {
                     let idx = action.card_index.unwrap_or(0);
-                    if idx < cs.hand.len() {
-                        let def =
-                            sts_simulator::content::cards::get_card_definition(cs.hand[idx].id);
+                    if idx < cs.zones.hand.len() {
+                        let def = sts_simulator::content::cards::get_card_definition(
+                            cs.zones.hand[idx].id,
+                        );
                         def.name.to_string()
                     } else {
                         "???".to_string()

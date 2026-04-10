@@ -80,7 +80,7 @@ impl MonsterBehavior for LouseNormal {
     }
 
     fn take_turn(state: &mut CombatState, entity: &MonsterEntity) -> Vec<Action> {
-        let asc = state.ascension_level;
+        let asc = state.meta.ascension_level;
         let bite_dmg = entity.intent_dmg;
         let str_amount = if asc >= 17 { 4 } else { 3 };
         let mut actions = Vec::new();

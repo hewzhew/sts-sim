@@ -11,6 +11,7 @@
 use crate::action::{Action, ActionInfo, AddTo};
 use crate::combat::CombatState;
 use crate::content::cards::CardId;
+use crate::content::powers::store;
 use crate::content::powers::PowerId;
 use crate::engine::targeting;
 
@@ -19,7 +20,7 @@ fn queue_exhaust_triggers(card: &crate::combat::CombatCard, state: &mut CombatSt
     let card_hooks = crate::content::cards::resolve_card_on_exhaust(card, state);
     after_actions.extend(card_hooks);
 
-    for (owner, powers) in state.power_db.clone() {
+    for (owner, powers) in store::powers_snapshot_all(state) {
         for power in powers {
             let actions = crate::content::powers::resolve_power_on_exhaust(
                 power.power_type,
@@ -38,82 +39,85 @@ fn queue_exhaust_triggers(card: &crate::combat::CombatCard, state: &mut CombatSt
         }
     }
 
-    crate::engine::core::queue_actions(&mut state.action_queue, after_actions);
+    crate::engine::core::queue_actions(&mut state.engine.action_queue, after_actions);
+}
+
+pub fn move_card_to_exhaust_pile(card: crate::combat::CombatCard, state: &mut CombatState) {
+    queue_exhaust_triggers(&card, state);
+    state.zones.exhaust_pile.push(card);
 }
 
 pub fn handle_draw_cards(amount: u32, state: &mut CombatState) {
-    let has_no_draw = state.power_db.get(&0).map_or(false, |powers| {
-        powers.iter().any(|p| p.power_type == PowerId::NoDraw)
-    });
+    let has_no_draw = store::has_power(state, 0, PowerId::NoDraw);
     if has_no_draw {
         return;
     }
     for _ in 0..amount {
-        if state.hand.len() >= 10 {
+        if state.zones.hand.len() >= 10 {
             break;
         }
-        if state.draw_pile.is_empty() && !state.discard_pile.is_empty() {
-            state.draw_pile.append(&mut state.discard_pile);
-            crate::rng::shuffle_with_random_long(&mut state.draw_pile, &mut state.rng.shuffle_rng);
+        if state.zones.draw_pile.is_empty() && !state.zones.discard_pile.is_empty() {
+            state.zones.draw_pile.append(&mut state.zones.discard_pile);
+            crate::rng::shuffle_with_random_long(
+                &mut state.zones.draw_pile,
+                &mut state.rng.shuffle_rng,
+            );
+            state.zones.draw_pile.reverse();
             let shuffle_actions = crate::content::relics::hooks::on_shuffle(state);
-            crate::engine::core::queue_actions(&mut state.action_queue, shuffle_actions);
+            crate::engine::core::queue_actions(&mut state.engine.action_queue, shuffle_actions);
         }
-        if state.draw_pile.is_empty() {
+        if state.zones.draw_pile.is_empty() {
             break;
         }
-        let mut card = state.draw_pile.remove(0);
+        let mut card = state.zones.draw_pile.remove(0);
 
         if card.id == CardId::Void {
             let void_actions = crate::content::cards::status::void::on_drawn(state);
-            crate::engine::core::queue_actions(&mut state.action_queue, void_actions);
+            crate::engine::core::queue_actions(&mut state.engine.action_queue, void_actions);
         }
 
         // Apply pre-draw powers (like Corruption, Confusion)
-        if let Some(powers) = state.power_db.get(&0).cloned() {
-            for power in &powers {
-                crate::content::powers::resolve_power_on_card_draw(
-                    power.power_type,
-                    state,
-                    &mut card,
-                );
-            }
+        for power in &store::powers_snapshot_for(state, 0) {
+            crate::content::powers::resolve_power_on_card_draw(power.power_type, state, &mut card);
         }
 
-        state.hand.push(card.clone());
+        state.zones.hand.push(card.clone());
 
         // Post-draw actions for powers and specific card hooks
-        if let Some(powers) = state.power_db.get(&0).cloned() {
-            for power in &powers {
-                let actions = crate::content::powers::resolve_power_on_card_drawn(
-                    power.power_type,
-                    state,
-                    0,
-                    power.amount,
-                    card.uuid,
-                );
-                for a in actions {
-                    state.action_queue.push_back(a);
-                }
+        for power in &store::powers_snapshot_for(state, 0) {
+            let actions = crate::content::powers::resolve_power_on_card_drawn(
+                power.power_type,
+                state,
+                0,
+                power.amount,
+                card.uuid,
+            );
+            for a in actions {
+                state.engine.action_queue.push_back(a);
             }
         }
     }
 }
 
 pub fn handle_empty_deck_shuffle(state: &mut CombatState) {
-    if state.draw_pile.is_empty() && !state.discard_pile.is_empty() {
-        state.draw_pile.append(&mut state.discard_pile);
-        crate::rng::shuffle_with_random_long(&mut state.draw_pile, &mut state.rng.shuffle_rng);
+    if state.zones.draw_pile.is_empty() && !state.zones.discard_pile.is_empty() {
+        state.zones.draw_pile.append(&mut state.zones.discard_pile);
+        crate::rng::shuffle_with_random_long(
+            &mut state.zones.draw_pile,
+            &mut state.rng.shuffle_rng,
+        );
+        state.zones.draw_pile.reverse();
         let shuffle_actions = crate::content::relics::hooks::on_shuffle(state);
-        crate::engine::core::queue_actions(&mut state.action_queue, shuffle_actions);
+        crate::engine::core::queue_actions(&mut state.engine.action_queue, shuffle_actions);
     }
 }
 
 pub fn handle_discard_card(card_uuid: u32, state: &mut CombatState) {
-    if let Some(pos) = state.hand.iter().position(|c| c.uuid == card_uuid) {
-        let card = state.hand.remove(pos);
-        state.discard_pile.push(card);
+    if let Some(pos) = state.zones.hand.iter().position(|c| c.uuid == card_uuid) {
+        let card = state.zones.hand.remove(pos);
+        state.zones.discard_pile.push(card);
         let discard_actions = crate::content::relics::hooks::on_discard(state);
-        crate::engine::core::queue_actions(&mut state.action_queue, discard_actions);
+        crate::engine::core::queue_actions(&mut state.engine.action_queue, discard_actions);
     }
 }
 
@@ -125,30 +129,39 @@ pub fn handle_exhaust_card(
     let mut removed_card = None;
     match source_pile {
         crate::state::PileType::Hand => {
-            if let Some(pos) = state.hand.iter().position(|c| c.uuid == card_uuid) {
-                removed_card = Some(state.hand.remove(pos));
+            if let Some(pos) = state.zones.hand.iter().position(|c| c.uuid == card_uuid) {
+                removed_card = Some(state.zones.hand.remove(pos));
             }
         }
         crate::state::PileType::Draw => {
-            if let Some(pos) = state.draw_pile.iter().position(|c| c.uuid == card_uuid) {
-                removed_card = Some(state.draw_pile.remove(pos));
+            if let Some(pos) = state
+                .zones
+                .draw_pile
+                .iter()
+                .position(|c| c.uuid == card_uuid)
+            {
+                removed_card = Some(state.zones.draw_pile.remove(pos));
             }
         }
         crate::state::PileType::Discard => {
-            if let Some(pos) = state.discard_pile.iter().position(|c| c.uuid == card_uuid) {
-                removed_card = Some(state.discard_pile.remove(pos));
+            if let Some(pos) = state
+                .zones
+                .discard_pile
+                .iter()
+                .position(|c| c.uuid == card_uuid)
+            {
+                removed_card = Some(state.zones.discard_pile.remove(pos));
             }
         }
         crate::state::PileType::Limbo => {
-            if let Some(pos) = state.limbo.iter().position(|c| c.uuid == card_uuid) {
-                removed_card = Some(state.limbo.remove(pos));
+            if let Some(pos) = state.zones.limbo.iter().position(|c| c.uuid == card_uuid) {
+                removed_card = Some(state.zones.limbo.remove(pos));
             }
         }
         _ => {}
     }
     if let Some(card) = removed_card {
-        queue_exhaust_triggers(&card, state);
-        state.exhaust_pile.push(card);
+        move_card_to_exhaust_pile(card, state);
     }
 }
 
@@ -161,23 +174,43 @@ pub fn handle_move_card(
     let mut removed_card = None;
     match from {
         crate::state::PileType::Hand => {
-            if let Some(pos) = state.hand.iter().position(|c| c.uuid == card_uuid) {
-                removed_card = Some(state.hand.remove(pos));
+            if let Some(pos) = state.zones.hand.iter().position(|c| c.uuid == card_uuid) {
+                removed_card = Some(state.zones.hand.remove(pos));
             }
         }
         crate::state::PileType::Draw => {
-            if let Some(pos) = state.draw_pile.iter().position(|c| c.uuid == card_uuid) {
-                removed_card = Some(state.draw_pile.remove(pos));
+            if let Some(pos) = state
+                .zones
+                .draw_pile
+                .iter()
+                .position(|c| c.uuid == card_uuid)
+            {
+                removed_card = Some(state.zones.draw_pile.remove(pos));
             }
         }
         crate::state::PileType::Discard => {
-            if let Some(pos) = state.discard_pile.iter().position(|c| c.uuid == card_uuid) {
-                removed_card = Some(state.discard_pile.remove(pos));
+            if let Some(pos) = state
+                .zones
+                .discard_pile
+                .iter()
+                .position(|c| c.uuid == card_uuid)
+            {
+                removed_card = Some(state.zones.discard_pile.remove(pos));
             }
         }
         crate::state::PileType::Exhaust => {
-            if let Some(pos) = state.exhaust_pile.iter().position(|c| c.uuid == card_uuid) {
-                removed_card = Some(state.exhaust_pile.remove(pos));
+            if let Some(pos) = state
+                .zones
+                .exhaust_pile
+                .iter()
+                .position(|c| c.uuid == card_uuid)
+            {
+                removed_card = Some(state.zones.exhaust_pile.remove(pos));
+            }
+        }
+        crate::state::PileType::Limbo => {
+            if let Some(pos) = state.zones.limbo.iter().position(|c| c.uuid == card_uuid) {
+                removed_card = Some(state.zones.limbo.remove(pos));
             }
         }
         _ => {}
@@ -185,15 +218,21 @@ pub fn handle_move_card(
     if let Some(card) = removed_card {
         match to {
             crate::state::PileType::Hand => {
-                if state.hand.len() < 10 {
-                    state.hand.push(card);
+                if state.zones.hand.len() < 10 {
+                    state.zones.hand.push(card);
                 } else {
-                    state.discard_pile.push(card);
+                    state.zones.discard_pile.push(card);
                 }
             }
-            crate::state::PileType::Draw => state.draw_pile.insert(0, card),
-            crate::state::PileType::Discard => state.discard_pile.push(card),
-            crate::state::PileType::Exhaust => state.exhaust_pile.push(card),
+            crate::state::PileType::Draw => state.zones.draw_pile.insert(0, card),
+            crate::state::PileType::Discard => state.zones.discard_pile.push(card),
+            crate::state::PileType::Exhaust => {
+                if matches!(from, crate::state::PileType::Exhaust) {
+                    state.zones.exhaust_pile.push(card);
+                } else {
+                    move_card_to_exhaust_pile(card, state);
+                }
+            }
             _ => {}
         }
     }
@@ -206,15 +245,15 @@ pub fn handle_make_temp_card_in_hand(
     state: &mut CombatState,
 ) {
     for _ in 0..amount {
-        state.card_uuid_counter += 1;
-        let mut card = crate::combat::CombatCard::new(card_id, state.card_uuid_counter);
+        state.zones.card_uuid_counter += 1;
+        let mut card = crate::combat::CombatCard::new(card_id, state.zones.card_uuid_counter);
         if upgraded {
             card.upgrades = 1;
         }
-        if state.hand.len() < 10 {
-            state.hand.push(card);
+        if state.zones.hand.len() < 10 {
+            state.zones.hand.push(card);
         } else {
-            state.discard_pile.push(card);
+            state.zones.discard_pile.push(card);
         }
     }
 }
@@ -226,12 +265,12 @@ pub fn handle_make_temp_card_in_discard(
     state: &mut CombatState,
 ) {
     for _ in 0..amount {
-        state.card_uuid_counter += 1;
-        let mut card = crate::combat::CombatCard::new(card_id, state.card_uuid_counter);
+        state.zones.card_uuid_counter += 1;
+        let mut card = crate::combat::CombatCard::new(card_id, state.zones.card_uuid_counter);
         if upgraded {
             card.upgrades = 1;
         }
-        state.discard_pile.push(card);
+        state.zones.discard_pile.push(card);
     }
 }
 
@@ -243,19 +282,19 @@ pub fn handle_make_temp_card_in_draw_pile(
     state: &mut CombatState,
 ) {
     for _ in 0..amount {
-        state.card_uuid_counter += 1;
-        let mut card = crate::combat::CombatCard::new(card_id, state.card_uuid_counter);
+        state.zones.card_uuid_counter += 1;
+        let mut card = crate::combat::CombatCard::new(card_id, state.zones.card_uuid_counter);
         if upgraded {
             card.upgrades = 1;
         }
-        if random_spot && !state.draw_pile.is_empty() {
+        if random_spot && !state.zones.draw_pile.is_empty() {
             let idx = state
                 .rng
                 .card_random_rng
-                .random(state.draw_pile.len() as i32) as usize;
-            state.draw_pile.insert(idx, card);
+                .random(state.zones.draw_pile.len() as i32) as usize;
+            state.zones.draw_pile.insert(idx, card);
         } else {
-            state.draw_pile.push(card);
+            state.zones.draw_pile.push(card);
         }
     }
 }
@@ -266,13 +305,13 @@ pub fn handle_make_copy_in_hand(
     state: &mut CombatState,
 ) {
     for _ in 0..amount {
-        state.card_uuid_counter += 1;
+        state.zones.card_uuid_counter += 1;
         let mut card = (*original).clone();
-        card.uuid = state.card_uuid_counter;
-        if state.hand.len() < 10 {
-            state.hand.push(card);
+        card.uuid = state.zones.card_uuid_counter;
+        if state.zones.hand.len() < 10 {
+            state.zones.hand.push(card);
         } else {
-            state.discard_pile.push(card);
+            state.zones.discard_pile.push(card);
         }
     }
 }
@@ -283,10 +322,10 @@ pub fn handle_make_copy_in_discard(
     state: &mut CombatState,
 ) {
     for _ in 0..amount {
-        state.card_uuid_counter += 1;
+        state.zones.card_uuid_counter += 1;
         let mut card = (*original).clone();
-        card.uuid = state.card_uuid_counter;
-        state.discard_pile.push(card);
+        card.uuid = state.zones.card_uuid_counter;
+        state.zones.discard_pile.push(card);
     }
 }
 
@@ -296,19 +335,19 @@ pub fn handle_make_temp_card_in_discard_and_deck(
     state: &mut CombatState,
 ) {
     for _ in 0..amount {
-        state.card_uuid_counter += 1;
-        let card = crate::combat::CombatCard::new(card_id, state.card_uuid_counter);
-        state.discard_pile.push(card.clone());
+        state.zones.card_uuid_counter += 1;
+        let card = crate::combat::CombatCard::new(card_id, state.zones.card_uuid_counter);
+        state.zones.discard_pile.push(card.clone());
         let pos = state
             .rng
             .card_random_rng
-            .random(state.draw_pile.len() as i32) as usize;
-        state.draw_pile.insert(pos, card);
+            .random(state.zones.draw_pile.len() as i32) as usize;
+        state.zones.draw_pile.insert(pos, card);
     }
 }
 
 pub fn handle_reduce_all_hand_costs(amount: u8, state: &mut CombatState) {
-    for card in state.hand.iter_mut() {
+    for card in state.zones.hand.iter_mut() {
         let def = crate::content::cards::get_card_definition(card.id);
         if def.cost >= 0 {
             let current = card.cost_for_turn.unwrap_or(def.cost as u8);
@@ -318,17 +357,18 @@ pub fn handle_reduce_all_hand_costs(amount: u8, state: &mut CombatState) {
 }
 
 pub fn handle_upgrade_all_in_hand(state: &mut CombatState) {
-    for card in state.hand.iter_mut() {
+    for card in state.zones.hand.iter_mut() {
         card.upgrades += 1;
     }
 }
 
 pub fn handle_upgrade_all_burns(state: &mut CombatState) {
     for card in state
+        .zones
         .draw_pile
         .iter_mut()
-        .chain(state.discard_pile.iter_mut())
-        .chain(state.hand.iter_mut())
+        .chain(state.zones.discard_pile.iter_mut())
+        .chain(state.zones.hand.iter_mut())
     {
         if card.id == CardId::Burn {
             card.upgrades += 1;
@@ -338,10 +378,11 @@ pub fn handle_upgrade_all_burns(state: &mut CombatState) {
 
 pub fn handle_upgrade_card(card_uuid: u32, state: &mut CombatState) {
     for card in state
+        .zones
         .hand
         .iter_mut()
-        .chain(state.draw_pile.iter_mut())
-        .chain(state.discard_pile.iter_mut())
+        .chain(state.zones.draw_pile.iter_mut())
+        .chain(state.zones.discard_pile.iter_mut())
     {
         if card.uuid == card_uuid {
             card.upgrades += 1;
@@ -352,6 +393,7 @@ pub fn handle_upgrade_card(card_uuid: u32, state: &mut CombatState) {
 
 pub fn handle_upgrade_random_card(state: &mut CombatState) {
     let upgradeable_uuids: Vec<u32> = state
+        .zones
         .hand
         .iter()
         .filter(|c| {
@@ -365,7 +407,7 @@ pub fn handle_upgrade_random_card(state: &mut CombatState) {
         let mut shuffled = upgradeable_uuids;
         crate::rng::shuffle_with_random_long(&mut shuffled, &mut state.rng.shuffle_rng);
         let target_uuid = shuffled[0];
-        if let Some(card) = state.hand.iter_mut().find(|c| c.uuid == target_uuid) {
+        if let Some(card) = state.zones.hand.iter_mut().find(|c| c.uuid == target_uuid) {
             card.upgrades += 1;
         }
     }
@@ -373,12 +415,13 @@ pub fn handle_upgrade_random_card(state: &mut CombatState) {
 
 pub fn handle_modify_card_misc(card_uuid: u32, amount: i32, state: &mut CombatState) {
     for card in state
+        .zones
         .hand
         .iter_mut()
-        .chain(state.draw_pile.iter_mut())
-        .chain(state.discard_pile.iter_mut())
-        .chain(state.exhaust_pile.iter_mut())
-        .chain(state.limbo.iter_mut())
+        .chain(state.zones.draw_pile.iter_mut())
+        .chain(state.zones.discard_pile.iter_mut())
+        .chain(state.zones.exhaust_pile.iter_mut())
+        .chain(state.zones.limbo.iter_mut())
     {
         if card.uuid == card_uuid {
             card.misc_value += amount;
@@ -388,7 +431,7 @@ pub fn handle_modify_card_misc(card_uuid: u32, amount: i32, state: &mut CombatSt
 }
 
 pub fn handle_randomize_hand_costs(state: &mut CombatState) {
-    for card in state.hand.iter_mut() {
+    for card in state.zones.hand.iter_mut() {
         let base_cost = crate::content::cards::get_card_definition(card.id).cost;
         if base_cost >= 0 {
             let new_cost = state.rng.card_random_rng.random(3) as u8;
@@ -398,23 +441,25 @@ pub fn handle_randomize_hand_costs(state: &mut CombatState) {
 }
 
 pub fn handle_mummified_hand_effect(state: &mut CombatState) {
+    let reserved = state.reserved_card_uuids_for_queue_sensitive_effects();
     let eligible: Vec<usize> = state
+        .zones
         .hand
         .iter()
         .enumerate()
         .filter(|(_, c)| {
             let def = crate::content::cards::get_card_definition(c.id);
-            def.cost > 0
+            let current = c.cost_for_turn.unwrap_or(def.cost as u8);
+            def.cost > 0 && current > 0 && !c.free_to_play_once && !reserved.contains(&c.uuid)
         })
         .map(|(i, _)| i)
         .collect();
     if !eligible.is_empty() {
         let idx = state.rng.card_random_rng.random(eligible.len() as i32 - 1) as usize;
         let card_idx = eligible[idx];
-        let card = &mut state.hand[card_idx];
-        let def = crate::content::cards::get_card_definition(card.id);
-        let current = card.cost_for_turn.unwrap_or(def.cost as u8);
-        card.cost_for_turn = Some(current.saturating_sub(1));
+        let card = &mut state.zones.hand[card_idx];
+        // Java Mummified Hand sets costForTurn directly to 0.
+        card.cost_for_turn = Some(0);
     }
 }
 
@@ -442,15 +487,15 @@ pub fn handle_make_random_card_in_hand(
     if !pool.is_empty() {
         let idx = state.rng.card_random_rng.random(pool.len() as i32 - 1) as usize;
         let card_id = pool[idx];
-        state.card_uuid_counter += 1;
-        let mut card = crate::combat::CombatCard::new(card_id, state.card_uuid_counter);
+        state.zones.card_uuid_counter += 1;
+        let mut card = crate::combat::CombatCard::new(card_id, state.zones.card_uuid_counter);
         if let Some(cost) = cost_for_turn {
             card.cost_for_turn = Some(cost);
         }
-        if state.hand.len() < 10 {
-            state.hand.push(card);
+        if state.zones.hand.len() < 10 {
+            state.zones.hand.push(card);
         } else {
-            state.discard_pile.push(card);
+            state.zones.discard_pile.push(card);
         }
     }
 }
@@ -475,28 +520,71 @@ pub fn handle_make_random_colorless_card_in_hand(
     if !pool.is_empty() {
         let idx = state.rng.card_random_rng.random(pool.len() as i32 - 1) as usize;
         let card_id = pool[idx];
-        state.card_uuid_counter += 1;
-        let mut card = crate::combat::CombatCard::new(card_id, state.card_uuid_counter);
+        state.zones.card_uuid_counter += 1;
+        let mut card = crate::combat::CombatCard::new(card_id, state.zones.card_uuid_counter);
         if let Some(cost) = cost_for_turn {
             card.cost_for_turn = Some(cost);
         }
-        if state.hand.len() < 10 {
-            state.hand.push(card);
+        if state.zones.hand.len() < 10 {
+            state.zones.hand.push(card);
         } else {
-            state.discard_pile.push(card);
+            state.zones.discard_pile.push(card);
         }
     }
 }
 
 pub fn handle_use_card_done(should_exhaust: bool, state: &mut CombatState) {
-    if let Some(card) = state.limbo.pop() {
+    if let Some(card) = state.zones.limbo.pop() {
         if should_exhaust {
-            queue_exhaust_triggers(&card, state);
-            state.exhaust_pile.push(card);
+            move_card_to_exhaust_pile(card, state);
         } else {
-            state.discard_pile.push(card);
+            state.zones.discard_pile.push(card);
         }
     }
+
+    if state.turn.counters.early_end_turn_pending {
+        state.turn.counters.early_end_turn_pending = false;
+        state.turn.current_phase = crate::combat::CombatPhase::TurnTransition;
+        state.engine.action_queue.push_back(Action::EndTurnTrigger);
+    }
+}
+
+pub fn handle_queue_early_end_turn(state: &mut CombatState) {
+    state.turn.counters.early_end_turn_pending = true;
+}
+
+pub fn handle_enqueue_card_play(
+    item: crate::combat::QueuedCardPlay,
+    in_front: bool,
+    state: &mut CombatState,
+) {
+    state.enqueue_card_play(item, in_front);
+}
+
+pub fn handle_flush_next_queued_card(state: &mut CombatState) {
+    let Some(mut queued) = state.zones.queued_cards.pop_front() else {
+        return;
+    };
+
+    queued.card.energy_on_use = queued.energy_on_use;
+    if queued.autoplay {
+        queued.card.free_to_play_once = true;
+    }
+
+    if !state.zones.queued_cards.is_empty() {
+        state
+            .engine
+            .action_queue
+            .push_back(Action::FlushNextQueuedCard);
+    }
+    state
+        .engine
+        .action_queue
+        .push_front(Action::PlayCardDirect {
+            card: Box::new(queued.card),
+            target: queued.target,
+            purge: queued.purge_on_use,
+        });
 }
 
 pub fn handle_play_card_direct(
@@ -529,72 +617,71 @@ pub fn handle_play_card_direct(
 
     let card_actions =
         crate::content::cards::resolve_card_play(card_id, state, &played_card, target);
-    crate::engine::core::queue_actions(&mut state.action_queue, card_actions);
+    crate::engine::core::queue_actions(&mut state.engine.action_queue, card_actions);
 
-    let relic_actions = crate::content::relics::hooks::on_use_card(state, card_id);
-    crate::engine::core::queue_actions(&mut state.action_queue, relic_actions);
+    let relic_actions = crate::content::relics::hooks::on_use_card(state, &played_card, target);
+    crate::engine::core::queue_actions(&mut state.engine.action_queue, relic_actions);
 
-    for entity_id in std::iter::once(0usize).chain(state.monsters.iter().map(|m| m.id)) {
-        if let Some(powers) = state.power_db.get(&entity_id).cloned() {
-            for power in &powers {
-                let hook_actions = crate::content::powers::resolve_power_on_card_played(
-                    power.power_type,
-                    state,
-                    entity_id,
-                    &played_card,
-                    power.amount,
-                );
-                for a in hook_actions {
-                    state.action_queue.push_back(a);
-                }
+    for entity_id in std::iter::once(0usize).chain(state.entities.monsters.iter().map(|m| m.id)) {
+        for power in &store::powers_snapshot_for(state, entity_id) {
+            let hook_actions = crate::content::powers::resolve_power_on_card_played(
+                power.power_type,
+                state,
+                entity_id,
+                &played_card,
+                power.amount,
+            );
+            for a in hook_actions {
+                state.engine.action_queue.push_back(a);
             }
         }
     }
 
-    state.counters.cards_played_this_turn += 1;
+    state.turn.counters.cards_played_this_turn += 1;
     let def = crate::content::cards::get_card_definition(card_id);
     if def.card_type == crate::content::cards::CardType::Attack {
-        state.counters.attacks_played_this_turn += 1;
+        state.turn.counters.attacks_played_this_turn += 1;
     }
 
     if !purge {
-        state.discard_pile.push(played_card);
+        state.zones.discard_pile.push(played_card);
     }
 }
 
 pub fn handle_use_potion(slot: usize, target: Option<usize>, state: &mut CombatState) {
-    if let Some(Some(potion)) = state.potions.get(slot).cloned() {
+    if let Some(Some(potion)) = state.entities.potions.get(slot).cloned() {
         if potion.id == crate::content::potions::PotionId::FairyPotion {
             return;
         }
-        if potion.id == crate::content::potions::PotionId::SmokeBomb && state.is_boss_fight {
+        if potion.id == crate::content::potions::PotionId::SmokeBomb && state.meta.is_boss_fight {
             return;
         }
         let def = crate::content::potions::get_potion_definition(potion.id);
         let mut potency = def.base_potency;
         if state
+            .entities
             .player
             .has_relic(crate::content::relics::RelicId::SacredBark)
         {
             potency *= 2;
         }
         if potion.id == crate::content::potions::PotionId::LiquidMemories
-            && !state.discard_pile.is_empty()
-            && state.discard_pile.len() <= potency as usize
+            && !state.zones.discard_pile.is_empty()
+            && state.zones.discard_pile.len() <= potency as usize
         {
-            let uuids: Vec<u32> = state.discard_pile.iter().map(|c| c.uuid).collect();
+            let uuids: Vec<u32> = state.zones.discard_pile.iter().map(|c| c.uuid).collect();
             for uuid in uuids {
-                if let Some(pos) = state.discard_pile.iter().position(|c| c.uuid == uuid) {
-                    let mut card = state.discard_pile.remove(pos);
+                if let Some(pos) = state.zones.discard_pile.iter().position(|c| c.uuid == uuid) {
+                    let mut card = state.zones.discard_pile.remove(pos);
                     card.cost_for_turn = Some(0);
-                    if state.hand.len() < 10 {
-                        state.hand.push(card);
+                    if state.zones.hand.len() < 10 {
+                        state.zones.hand.push(card);
                     }
                 }
             }
             let relic_actions = crate::content::relics::hooks::on_use_potion(state, 0);
-            crate::engine::core::queue_actions(&mut state.action_queue, relic_actions);
-            state.potions[slot] = None;
+            crate::engine::core::queue_actions(&mut state.engine.action_queue, relic_actions);
+            state.entities.potions[slot] = None;
             return;
         }
         let resolved_target = match targeting::resolve_target_request(
@@ -606,6 +693,7 @@ pub fn handle_use_potion(slot: usize, target: Option<usize>, state: &mut CombatS
             Err(_) => return,
         };
         let actions = crate::content::potions::potion_effects::get_potion_actions(
+            state.entities.monsters.len(),
             potion.id,
             resolved_target,
             potency,
@@ -613,24 +701,32 @@ pub fn handle_use_potion(slot: usize, target: Option<usize>, state: &mut CombatS
         let relic_actions = crate::content::relics::hooks::on_use_potion(state, 0);
         let mut combined = actions;
         combined.extend(relic_actions);
-        crate::engine::core::queue_actions(&mut state.action_queue, combined);
-        state.potions[slot] = None;
+        crate::engine::core::queue_actions(&mut state.engine.action_queue, combined);
+        state.entities.potions[slot] = None;
     }
 }
 
 pub fn handle_play_top_card(target: Option<usize>, exhaust: bool, state: &mut CombatState) {
-    if state.draw_pile.is_empty() {
-        if state.discard_pile.is_empty() {
+    if state.zones.draw_pile.is_empty() {
+        if state.zones.discard_pile.is_empty() {
             return;
         }
         state
+            .engine
             .action_queue
             .push_front(Action::PlayTopCard { target, exhaust });
-        state.action_queue.push_front(Action::EmptyDeckShuffle);
+        state
+            .engine
+            .action_queue
+            .push_front(Action::EmptyDeckShuffle);
         return;
     }
 
-    let mut card = Box::new(state.draw_pile.remove(0));
+    let mut card = Box::new(state.zones.draw_pile.remove(0));
+    card.free_to_play_once = true;
+    if crate::content::cards::get_card_definition(card.id).cost == -1 {
+        card.energy_on_use = state.turn.energy as i32;
+    }
     let def = crate::content::cards::get_card_definition(card.id);
     let resolved_target =
         if let Some(validation) = targeting::validation_for_card_target(def.target) {
@@ -654,20 +750,63 @@ pub fn handle_play_top_card(target: Option<usize>, exhaust: bool, state: &mut Co
     handle_play_card_direct(card, resolved_target, false, state);
 }
 
+pub fn handle_play_top_cards_buffered(
+    count: u8,
+    target: Option<usize>,
+    exhaust: bool,
+    state: &mut CombatState,
+) {
+    let mut buffered: Vec<Box<crate::combat::CombatCard>> = Vec::new();
+
+    for _ in 0..count {
+        if state.zones.draw_pile.is_empty() {
+            if state.zones.discard_pile.is_empty() {
+                break;
+            }
+            handle_empty_deck_shuffle(state);
+            if state.zones.draw_pile.is_empty() {
+                break;
+            }
+        }
+
+        let mut card = Box::new(state.zones.draw_pile.remove(0));
+        card.free_to_play_once = true;
+        if crate::content::cards::get_card_definition(card.id).cost == -1 {
+            card.energy_on_use = state.turn.energy as i32;
+        }
+        if exhaust {
+            card.exhaust_override = Some(true);
+        }
+        buffered.push(card);
+    }
+
+    for card in buffered.into_iter().rev() {
+        state
+            .engine
+            .action_queue
+            .push_front(Action::PlayCardDirect {
+                card,
+                target,
+                purge: false,
+            });
+    }
+}
+
 pub fn handle_obtain_potion(state: &mut CombatState) {
     if state
+        .entities
         .player
         .has_relic(crate::content::relics::RelicId::Sozu)
     {
         return;
     }
-    if let Some(slot) = state.potions.iter().position(|p| p.is_none()) {
+    if let Some(slot) = state.entities.potions.iter().position(|p| p.is_none()) {
         let potion_id = crate::content::potions::random_potion(
             &mut state.rng.potion_rng,
             crate::content::potions::PotionClass::Ironclad,
             true,
         );
-        state.potions[slot] = Some(crate::content::potions::Potion::new(
+        state.entities.potions[slot] = Some(crate::content::potions::Potion::new(
             potion_id,
             40000 + slot as u32,
         ));
@@ -678,28 +817,25 @@ pub fn handle_end_turn_trigger(state: &mut CombatState) {
     let mut actions = smallvec::SmallVec::new();
 
     // 1. Player Powers
-    if let Some(player_powers) = state.power_db.get(&0) {
-        for power in player_powers.clone() {
-            actions.extend(
-                crate::content::powers::resolve_power_at_end_of_turn(
-                    power.power_type,
-                    state,
-                    0,
-                    power.amount,
-                )
-                .into_iter()
-                .map(|a| ActionInfo {
-                    action: a,
-                    insertion_mode: AddTo::Bottom,
-                }),
-            );
-        }
+    for power in store::powers_snapshot_for(state, 0) {
+        actions.extend(
+            crate::content::powers::resolve_power_at_end_of_turn(
+                power.power_type,
+                state,
+                0,
+                power.amount,
+            )
+            .into_iter()
+            .map(|a| ActionInfo {
+                action: a,
+                insertion_mode: AddTo::Bottom,
+            }),
+        );
     }
 
     // 2. Ethereal exhaust
-    for card in &state.hand {
-        let def = crate::content::cards::get_card_definition(card.id);
-        if def.ethereal {
+    for card in &state.zones.hand {
+        if crate::content::cards::is_ethereal(card) {
             actions.push(ActionInfo {
                 action: Action::ExhaustCard {
                     card_uuid: card.uuid,
@@ -717,7 +853,7 @@ pub fn handle_end_turn_trigger(state: &mut CombatState) {
     actions.extend(crate::content::orbs::hooks::trigger_end_of_turn_orbs(state));
 
     // 5. Curses and Burns in hand
-    for card in &state.hand {
+    for card in &state.zones.hand {
         if card.id == CardId::Burn {
             actions.extend(crate::content::cards::status::burn::on_end_turn_in_hand(
                 state, card,
@@ -753,21 +889,44 @@ pub fn handle_end_turn_trigger(state: &mut CombatState) {
     // 6. Stances
     actions.extend(crate::content::stances::hooks::on_end_of_turn(state));
 
-    crate::engine::core::queue_actions(&mut state.action_queue, actions);
+    crate::engine::core::queue_actions(&mut state.engine.action_queue, actions);
+}
+
+pub fn handle_post_draw_trigger(state: &mut CombatState) {
+    let mut actions = smallvec::SmallVec::new();
+
+    for power in &store::powers_snapshot_for(state, 0) {
+        for action in crate::content::powers::resolve_power_on_post_draw(
+            power.power_type,
+            state,
+            0,
+            power.amount,
+        ) {
+            actions.push(ActionInfo {
+                action,
+                insertion_mode: AddTo::Bottom,
+            });
+        }
+    }
+
+    crate::engine::core::queue_actions(&mut state.engine.action_queue, actions);
 }
 
 pub fn handle_clear_card_queue(state: &mut CombatState) {
-    state.action_queue.retain(|a| {
-        if let Action::PlayCardDirect { .. } = a {
-            false
-        } else {
-            true
-        }
+    state.zones.queued_cards.clear();
+    state.engine.action_queue.retain(|a| {
+        !matches!(
+            a,
+            Action::EnqueueCardPlay { .. }
+                | Action::PlayCardDirect { .. }
+                | Action::FlushNextQueuedCard
+        )
     });
 }
 
 pub fn handle_add_card_to_master_deck(card_id: CardId, state: &mut CombatState) {
     state
+        .meta
         .meta_changes
         .push(crate::combat::MetaChange::AddCardToMasterDeck(card_id));
 }
@@ -776,6 +935,7 @@ pub fn handle_pre_battle_trigger(state: &mut CombatState) {
     // 1. Monster pre-battle actions (CurlUp, ModeShift, etc.)
     // Java: AbstractRoom.initializeBattle() calls usePreBattleAction() for each monster
     let monsters_snapshot: Vec<_> = state
+        .entities
         .monsters
         .iter()
         .filter_map(|m| {
@@ -783,48 +943,52 @@ pub fn handle_pre_battle_trigger(state: &mut CombatState) {
         })
         .collect();
     for (enemy_id, monster_id) in &monsters_snapshot {
-        if let Some(entity) = state.monsters.iter().find(|m| m.id == *monster_id) {
+        if let Some(entity) = state.entities.monsters.iter().find(|m| m.id == *monster_id) {
             let entity_clone = entity.clone();
             let pre_actions = crate::content::monsters::resolve_pre_battle_action(
                 *enemy_id,
                 &entity_clone,
                 &mut state.rng.misc_rng,
-                state.ascension_level,
+                state.meta.ascension_level,
             );
             for action in pre_actions {
-                state.action_queue.push_back(action);
+                state.engine.action_queue.push_back(action);
             }
         }
     }
 
     // 2. Relic pre-battle hooks (e.g. Snecko Eye applying Confusion)
     let pre_battle_actions = crate::content::relics::hooks::at_pre_battle(state);
-    crate::engine::core::queue_actions(&mut state.action_queue, pre_battle_actions);
+    crate::engine::core::queue_actions(&mut state.engine.action_queue, pre_battle_actions);
 
     // Auto-chain Phase 2
     state
+        .engine
         .action_queue
         .push_back(crate::action::Action::BattleStartPreDrawTrigger);
 }
 
 pub fn handle_battle_start_pre_draw_trigger(state: &mut CombatState) {
     let pre_draw_actions = crate::content::relics::hooks::at_battle_start_pre_draw(state);
-    crate::engine::core::queue_actions(&mut state.action_queue, pre_draw_actions);
+    crate::engine::core::queue_actions(&mut state.engine.action_queue, pre_draw_actions);
 
     // Auto-chain Phase 3 Initial Draw
     let mut draw_amount = 5;
     if state
+        .entities
         .player
         .has_relic(crate::content::relics::RelicId::SneckoEye)
     {
         draw_amount += 2;
     }
     state
+        .engine
         .action_queue
         .push_back(crate::action::Action::DrawCards(draw_amount));
 
     // Auto-chain Phase 4
     state
+        .engine
         .action_queue
         .push_back(crate::action::Action::BattleStartTrigger);
 }
@@ -832,5 +996,5 @@ pub fn handle_battle_start_pre_draw_trigger(state: &mut CombatState) {
 pub fn handle_battle_start_trigger(state: &mut CombatState) {
     // Relic battle-start hooks (e.g. Akabeko, Marbles)
     let battle_start_actions = crate::content::relics::hooks::at_battle_start(state);
-    crate::engine::core::queue_actions(&mut state.action_queue, battle_start_actions);
+    crate::engine::core::queue_actions(&mut state.engine.action_queue, battle_start_actions);
 }

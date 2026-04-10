@@ -134,6 +134,7 @@ pub mod philosopher_stone;
 pub mod pocketwatch;
 pub mod shuriken;
 pub mod stone_calendar;
+pub mod strike_dummy;
 pub mod sundial;
 pub mod thread_and_needle;
 pub mod tingsha;
@@ -694,6 +695,47 @@ pub fn build_relic_pool(tier: RelicTier, player_class: &str) -> Vec<RelicId> {
     pool
 }
 
+/// Returns the permanent energy increase applied when a relic is equipped.
+///
+/// This keeps relic-specific on-equip bookkeeping in the relic domain instead
+/// of scattering rule tables into core combat/player state code.
+pub fn energy_master_delta(id: RelicId) -> u8 {
+    use RelicId::*;
+    match id {
+        BustedCrown | CoffeeDripper | CursedKey | Ectoplasm | FusionHammer | MarkOfPain
+        | PhilosopherStone | RunicDome | Sozu | VelvetChoker => 1,
+        _ => 0,
+    }
+}
+
+/// Rebuilds the player's effective per-turn energy from relic state after
+/// reconstructing combat truth from a Java snapshot.
+///
+/// This is intentionally a small, relic-domain entrypoint for runtime effects
+/// that are not fully visible in the snapshot but are still derivable from the
+/// current combat context.
+pub fn restore_combat_energy_master(state: &mut crate::combat::CombatState) {
+    let mut energy_master: u8 = 3;
+    let is_elite_or_boss = state.meta.is_elite_fight || state.meta.is_boss_fight;
+
+    for relic in state.entities.player.relics.iter_mut() {
+        energy_master = energy_master.saturating_add(energy_master_delta(relic.id));
+        match relic.id {
+            RelicId::SlaversCollar => {
+                if is_elite_or_boss {
+                    energy_master = energy_master.saturating_add(1);
+                    relic.counter = 1;
+                } else {
+                    relic.counter = 0;
+                }
+            }
+            _ => {}
+        }
+    }
+
+    state.entities.player.energy_master = energy_master;
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct RelicSubscriptions {
     pub at_pre_battle: bool,
@@ -884,9 +926,7 @@ pub fn get_relic_subscriptions(id: RelicId) -> RelicSubscriptions {
         RelicId::NlothsGift => {} // Evaluated passively during card rewards
         RelicId::NuclearBattery => sub.at_pre_battle = true,
         RelicId::Nunchaku => sub.on_use_card = true,
-        RelicId::OddMushroom | RelicId::PaperFrog => {
-            sub.on_calculate_vulnerable_multiplier = true
-        }
+        RelicId::OddMushroom | RelicId::PaperFrog => sub.on_calculate_vulnerable_multiplier = true,
         RelicId::OddlySmoothStone => sub.at_battle_start = true,
         RelicId::Omamori => {} // Passive evaluated out of combat
         RelicId::Orichalcum => sub.at_end_of_turn = true,
@@ -954,7 +994,10 @@ pub fn get_relic_subscriptions(id: RelicId) -> RelicSubscriptions {
             sub.on_lose_hp_last = true;
         }
         // Remaining P1 Relics
-        RelicId::Necronomicon => sub.on_use_card = true,
+        RelicId::Necronomicon => {
+            sub.on_use_card = true;
+            sub.at_turn_start = true;
+        }
         RelicId::VelvetChoker => {} // Passive — engine checks can_play_card
         RelicId::OrangePellets => sub.on_use_card = true,
         RelicId::Sling => sub.at_battle_start = true,

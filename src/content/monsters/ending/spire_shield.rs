@@ -80,7 +80,7 @@ impl MonsterBehavior for SpireShield {
 
     fn take_turn(state: &mut crate::combat::CombatState, entity: &MonsterEntity) -> Vec<Action> {
         let mut actions = Vec::new();
-        let asc = state.ascension_level;
+        let asc = state.meta.ascension_level;
 
         let bash_dmg = if asc >= 3 { 14 } else { 12 };
         let smash_dmg = if asc >= 3 { 38 } else { 34 };
@@ -98,7 +98,7 @@ impl MonsterBehavior for SpireShield {
                 }));
                 // Java: if player has orbs && aiRng.randomBoolean() → -1 Focus
                 // else → -1 Str.
-                if state.player.max_orbs > 0 && state.rng.ai_rng.random_boolean() {
+                if state.entities.player.max_orbs > 0 && state.rng.ai_rng.random_boolean() {
                     actions.push(Action::ApplyPower {
                         source: entity.id,
                         target: 0,
@@ -116,7 +116,7 @@ impl MonsterBehavior for SpireShield {
             }
             2 => {
                 // FORTIFY — block all monsters (Java uses flat 30, not Asc-scaled)
-                for m in &state.monsters {
+                for m in &state.entities.monsters {
                     if !m.is_dying {
                         actions.push(Action::GainBlock {
                             target: m.id,
@@ -155,11 +155,11 @@ impl MonsterBehavior for SpireShield {
     fn on_death(state: &mut crate::combat::CombatState, _entity: &MonsterEntity) -> Vec<Action> {
         let mut actions = Vec::new();
         // Java: if player has "Surrounded" power, remove it and adjust player facing
-        if state.power_db.get(&0).map_or(false, |powers| {
-            powers
-                .iter()
-                .any(|p| p.power_type == crate::content::powers::PowerId::Surrounded)
-        }) {
+        if crate::content::powers::store::has_power(
+            state,
+            0,
+            crate::content::powers::PowerId::Surrounded,
+        ) {
             actions.push(Action::RemovePower {
                 target: 0,
                 power_id: crate::content::powers::PowerId::Surrounded,
@@ -167,13 +167,13 @@ impl MonsterBehavior for SpireShield {
         }
 
         // Java: Remove "BackAttack" power from surviving monsters
-        for m in &state.monsters {
+        for m in &state.entities.monsters {
             if m.current_hp > 0 && !m.is_dying {
-                if state.power_db.get(&m.id).map_or(false, |powers| {
-                    powers
-                        .iter()
-                        .any(|p| p.power_type == crate::content::powers::PowerId::BackAttack)
-                }) {
+                if crate::content::powers::store::has_power(
+                    state,
+                    m.id,
+                    crate::content::powers::PowerId::BackAttack,
+                ) {
                     actions.push(Action::RemovePower {
                         target: m.id,
                         power_id: crate::content::powers::PowerId::BackAttack,

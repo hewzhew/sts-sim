@@ -60,7 +60,7 @@ pub fn power_id_from_java(s: &str) -> Option<PowerId> {
         "Painful Stabs" => Some(PowerId::PainfulStabs),
         "Stasis" => Some(PowerId::Stasis),
         "Explosive" => Some(PowerId::Explosive),
-        "Regrow" => Some(PowerId::Regrow),
+        "Regrow" | "Life Link" => Some(PowerId::Regrow),
         "Fading" => Some(PowerId::Fading),
         "Shifting" => Some(PowerId::Shifting),
         "Reactive" => Some(PowerId::Reactive),
@@ -332,3 +332,8 @@ pub fn java_potion_id_to_rust(s: &str) -> Option<PotionId> {
         }
     }
 }
+
+
+
+
+

@@ -154,6 +154,29 @@ pub fn card_pool_for_class(
     }
 }
 
+pub fn nonempty_card_pool_for_class(
+    player_class: &str,
+    rarity: crate::content::cards::CardRarity,
+) -> &'static [crate::content::cards::CardId] {
+    use crate::content::cards::CardRarity;
+
+    let fallbacks = match rarity {
+        CardRarity::Rare => [CardRarity::Rare, CardRarity::Uncommon, CardRarity::Common],
+        CardRarity::Uncommon => [CardRarity::Uncommon, CardRarity::Common, CardRarity::Rare],
+        CardRarity::Common => [CardRarity::Common, CardRarity::Uncommon, CardRarity::Rare],
+        _ => [CardRarity::Common, CardRarity::Uncommon, CardRarity::Rare],
+    };
+
+    for candidate_rarity in fallbacks {
+        let pool = card_pool_for_class(player_class, candidate_rarity);
+        if !pool.is_empty() {
+            return pool;
+        }
+    }
+
+    &[]
+}
+
 /// Returns the list of available campfire options for the current run state.
 /// Java: CampfireUI.initializeButtons() order:
 ///   1. Rest (unless CoffeeDripper)

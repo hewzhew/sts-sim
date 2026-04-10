@@ -134,14 +134,14 @@ fn summarize_state(
     combat_state: &Option<crate::combat::CombatState>,
 ) -> String {
     if let Some(cs) = combat_state {
-        let mon_hp: i32 = cs.monsters.iter().map(|m| m.current_hp).sum();
+        let mon_hp: i32 = cs.entities.monsters.iter().map(|m| m.current_hp).sum();
         return format!(
             "{:?} | Turn {} | Hand {} | E {} | HP {} | MonHP {}",
             engine_state,
-            cs.turn_count,
-            cs.hand.len(),
-            cs.energy,
-            cs.player.current_hp,
+            cs.turn.turn_count,
+            cs.zones.hand.len(),
+            cs.turn.energy,
+            cs.entities.player.current_hp,
             mon_hp
         );
     }

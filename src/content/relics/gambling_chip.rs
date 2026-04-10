@@ -17,7 +17,7 @@ pub fn at_turn_start(
 ) -> SmallVec<[ActionInfo; 4]> {
     let mut actions = SmallVec::new();
     // Java: activated flag — only fires on the first turn of combat
-    if state.turn_count == 1 {
+    if state.turn.turn_count == 1 {
         actions.push(ActionInfo {
             action: crate::action::Action::SuspendForHandSelect {
                 min: 0,

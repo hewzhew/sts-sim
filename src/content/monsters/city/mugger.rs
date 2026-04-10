@@ -40,9 +40,21 @@ impl MonsterBehavior for Mugger {
     fn take_turn(state: &mut CombatState, entity: &MonsterEntity) -> Vec<Action> {
         let mut actions = Vec::new();
 
-        let swipe_dmg = if state.ascension_level >= 2 { 11 } else { 10 };
-        let big_swipe_dmg = if state.ascension_level >= 2 { 18 } else { 16 };
-        let escape_def = if state.ascension_level >= 17 { 17 } else { 11 };
+        let swipe_dmg = if state.meta.ascension_level >= 2 {
+            11
+        } else {
+            10
+        };
+        let big_swipe_dmg = if state.meta.ascension_level >= 2 {
+            18
+        } else {
+            16
+        };
+        let escape_def = if state.meta.ascension_level >= 17 {
+            17
+        } else {
+            11
+        };
 
         let prior_slashes = entity
             .move_history

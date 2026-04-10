@@ -51,7 +51,11 @@ impl MonsterBehavior for AcidSlimeS {
 
     fn take_turn(state: &mut CombatState, entity: &MonsterEntity) -> Vec<Action> {
         let mut actions = Vec::new();
-        let dmg = if state.ascension_level >= 2 { 4 } else { 3 };
+        let dmg = if state.meta.ascension_level >= 2 {
+            4
+        } else {
+            3
+        };
         match entity.next_move_byte {
             1 => {
                 actions.push(Action::Damage(DamageInfo {
@@ -255,7 +259,11 @@ impl MonsterBehavior for AcidSlimeM {
         let mut actions = Vec::new();
         match entity.next_move_byte {
             1 => {
-                let dmg = if state.ascension_level >= 2 { 8 } else { 7 };
+                let dmg = if state.meta.ascension_level >= 2 {
+                    8
+                } else {
+                    7
+                };
                 actions.push(Action::Damage(DamageInfo {
                     source: entity.id,
                     target: 0,
@@ -272,7 +280,11 @@ impl MonsterBehavior for AcidSlimeM {
                 });
             }
             2 => {
-                let dmg = if state.ascension_level >= 2 { 12 } else { 10 };
+                let dmg = if state.meta.ascension_level >= 2 {
+                    12
+                } else {
+                    10
+                };
                 actions.push(Action::Damage(DamageInfo {
                     source: entity.id,
                     target: 0,

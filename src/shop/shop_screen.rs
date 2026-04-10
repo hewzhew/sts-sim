@@ -17,7 +17,8 @@ where
     let mut shop = ShopState::new();
 
     // 1. Ask Merchant to generate the raw card slots from cardRng
-    let (colored_cards, colorless_cards) = generate_cards(rng_pool, config.card_blizz_randomizer);
+    let (colored_cards, colorless_cards) =
+        generate_cards(rng_pool, config.player_class, config.card_blizz_randomizer);
 
     // Process Colored Cards Jitter (merchantRng)
     for c in colored_cards {

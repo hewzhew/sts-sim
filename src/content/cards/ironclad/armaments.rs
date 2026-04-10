@@ -18,7 +18,7 @@ pub fn armaments_play(state: &CombatState, _card: &CombatCard) -> SmallVec<[Acti
     // Armaments Upgrade logic
     if _card.upgrades > 0 {
         // Upgrade all
-        for c in &state.hand {
+        for c in &state.zones.hand {
             actions.push(ActionInfo {
                 action: Action::UpgradeCard { card_uuid: c.uuid },
                 insertion_mode: AddTo::Bottom,
@@ -26,6 +26,7 @@ pub fn armaments_play(state: &CombatState, _card: &CombatCard) -> SmallVec<[Acti
         }
     } else {
         let upgradeable: Vec<_> = state
+            .zones
             .hand
             .iter()
             .filter(|c| {

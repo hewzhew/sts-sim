@@ -31,9 +31,21 @@ tests/generated/
 /*_batch_report.md
 /monster_analysis_output.md
 /coverage.json
+/crash_trace_*.log
+/silent_auto_smoke*.log
 /live_comm_debug.txt
 /live_comm_raw.jsonl
 /live_comm_signatures.jsonl
+/live_comm_reward_audit.jsonl
+/live_comm_watch_*.jsonl
+/tmp/
+/tmp_*.json
+/tmp_*.jsonl
+/data/
+/data/*.md
+/data/*.json
+/data/*.jsonl
+/data/*.pkl
 /logs/
 
 # OS / IDE

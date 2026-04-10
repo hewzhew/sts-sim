@@ -98,8 +98,16 @@ impl MonsterBehavior for BookOfStabbing {
     fn take_turn(state: &mut CombatState, entity: &MonsterEntity) -> Vec<Action> {
         let mut actions = Vec::new();
 
-        let stab_dmg = if state.ascension_level >= 3 { 7 } else { 6 };
-        let big_stab_dmg = if state.ascension_level >= 3 { 24 } else { 21 };
+        let stab_dmg = if state.meta.ascension_level >= 3 {
+            7
+        } else {
+            6
+        };
+        let big_stab_dmg = if state.meta.ascension_level >= 3 {
+            24
+        } else {
+            21
+        };
 
         match entity.next_move_byte {
             1 => {
@@ -109,8 +117,11 @@ impl MonsterBehavior for BookOfStabbing {
                 // Let's just use the intent hits if possible, but STS engine recalculates hits.
                 // If the engine hasn't pushed the move to history yet, `is_next_move_stab` is TRUE because we ARE the stab move and haven't pushed ourselves yet.
                 // In my simulator, `entity.move_history` contains the history UP TO the current turn. The current turn is only added at Turn End!
-                let actual_hits =
-                    Self::calculate_stab_count(state.ascension_level, &entity.move_history, true);
+                let actual_hits = Self::calculate_stab_count(
+                    state.meta.ascension_level,
+                    &entity.move_history,
+                    true,
+                );
 
                 for _ in 0..actual_hits {
                     actions.push(Action::Damage(DamageInfo {

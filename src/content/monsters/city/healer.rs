@@ -89,11 +89,19 @@ impl MonsterBehavior for Healer {
 
     fn take_turn(state: &mut CombatState, entity: &MonsterEntity) -> Vec<Action> {
         let mut actions = Vec::new();
-        let magic_dmg = if state.ascension_level >= 2 { 9 } else { 8 };
-        let heal_amt = if state.ascension_level >= 17 { 20 } else { 16 };
-        let str_amt = if state.ascension_level >= 17 {
+        let magic_dmg = if state.meta.ascension_level >= 2 {
+            9
+        } else {
+            8
+        };
+        let heal_amt = if state.meta.ascension_level >= 17 {
+            20
+        } else {
+            16
+        };
+        let str_amt = if state.meta.ascension_level >= 17 {
             4
-        } else if state.ascension_level >= 2 {
+        } else if state.meta.ascension_level >= 2 {
             3
         } else {
             2
@@ -119,7 +127,7 @@ impl MonsterBehavior for Healer {
             }
             2 => {
                 // HEAL
-                for m in state.monsters.iter() {
+                for m in state.entities.monsters.iter() {
                     if !m.is_dying && !m.is_escaped {
                         actions.push(Action::Heal {
                             target: m.id,
@@ -130,7 +138,7 @@ impl MonsterBehavior for Healer {
             }
             3 => {
                 // BUFF
-                for m in state.monsters.iter() {
+                for m in state.entities.monsters.iter() {
                     if !m.is_dying && !m.is_escaped {
                         actions.push(Action::ApplyPower {
                             source: entity.id,

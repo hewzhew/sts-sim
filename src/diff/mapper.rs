@@ -12,6 +12,58 @@ use crate::content::relics::RelicId;
 // Java→Rust ID mappings — AUTO-GENERATED from compiled_protocol_schema.json by build.rs
 include!(concat!(env!("OUT_DIR"), "/generated_schema.rs"));
 
+fn normalize_java_alias(s: &str) -> String {
+    s.chars()
+        .filter(|c| c.is_ascii_alphanumeric())
+        .map(|c| c.to_ascii_lowercase())
+        .collect()
+}
+
+pub fn card_id_from_java(s: &str) -> Option<CardId> {
+    let map = crate::content::cards::build_java_id_map();
+    if let Some(card) = map.get(s).copied() {
+        return Some(card);
+    }
+    let normalized = normalize_java_alias(s);
+    if normalized.is_empty() {
+        return None;
+    }
+    map.into_iter()
+        .find_map(|(java, card)| (normalize_java_alias(java) == normalized).then_some(card))
+}
+
+pub fn power_id_from_java(s: &str) -> Option<PowerId> {
+    let normalized = normalize_java_alias(s);
+    if normalized.is_empty() {
+        return None;
+    }
+    power_id_from_java_raw(&normalized)
+}
+
+pub fn relic_id_from_java(s: &str) -> Option<RelicId> {
+    let normalized = normalize_java_alias(s);
+    if normalized.is_empty() {
+        return None;
+    }
+    relic_id_from_java_raw(&normalized)
+}
+
+pub fn monster_id_from_java(s: &str) -> Option<EnemyId> {
+    let normalized = normalize_java_alias(s);
+    if normalized.is_empty() {
+        return None;
+    }
+    monster_id_from_java_raw(&normalized)
+}
+
+pub fn java_potion_id_to_rust(s: &str) -> Option<PotionId> {
+    let normalized = normalize_java_alias(s);
+    if normalized.is_empty() {
+        return None;
+    }
+    java_potion_id_to_rust_raw(&normalized)
+}
+
 /// Map Java intent strings to Rust Intent enum values.
 pub fn intent_from_java(intent_str: &str, damage: i32, hits: i32) -> Intent {
     match intent_str {
@@ -88,12 +140,20 @@ mod tests {
             Some(crate::content::powers::PowerId::NoDraw)
         );
         assert_eq!(
+            power_id_from_java("NoDraw"),
+            Some(crate::content::powers::PowerId::NoDraw)
+        );
+        assert_eq!(
             power_id_from_java("Sharp Hide"),
             Some(crate::content::powers::PowerId::SharpHide)
         );
         assert_eq!(
             power_id_from_java("Mode Shift"),
             Some(crate::content::powers::PowerId::ModeShift)
+        );
+        assert_eq!(
+            power_id_from_java("IntangiblePlayer"),
+            Some(crate::content::powers::PowerId::IntangiblePlayer)
         );
         assert_eq!(
             power_id_from_java("Weakened"),
@@ -106,6 +166,18 @@ mod tests {
         assert_eq!(
             power_id_from_java("Regenerate"),
             Some(crate::content::powers::PowerId::Regen)
+        );
+        assert_eq!(
+            power_id_from_java("Life Link"),
+            Some(crate::content::powers::PowerId::Regrow)
+        );
+        assert_eq!(
+            relic_id_from_java("Clockwork Souvenir"),
+            Some(crate::content::relics::RelicId::ClockworkSouvenir)
+        );
+        assert_eq!(
+            card_id_from_java("StrikeG"),
+            Some(crate::content::cards::CardId::StrikeG)
         );
     }
 
@@ -145,6 +217,38 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn silent_manual_card_ids_map_from_java() {
+        assert_eq!(
+            card_id_from_java("Strike_G"),
+            Some(crate::content::cards::CardId::StrikeG)
+        );
+        assert_eq!(
+            card_id_from_java("Defend_G"),
+            Some(crate::content::cards::CardId::DefendG)
+        );
+        assert_eq!(
+            card_id_from_java("Neutralize"),
+            Some(crate::content::cards::CardId::Neutralize)
+        );
+        assert_eq!(
+            card_id_from_java("Noxious Fumes"),
+            Some(crate::content::cards::CardId::NoxiousFumes)
+        );
+        assert_eq!(
+            card_id_from_java("After Image"),
+            Some(crate::content::cards::CardId::AfterImage)
+        );
+        assert_eq!(
+            card_id_from_java("Burst"),
+            Some(crate::content::cards::CardId::Burst)
+        );
+        assert_eq!(
+            crate::content::cards::java_id(crate::content::cards::CardId::StrikeG),
+            "Strike_G"
+        );
     }
 
     #[test]

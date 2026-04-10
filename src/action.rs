@@ -37,6 +37,7 @@ pub enum Action {
     LoseHp {
         target: EntityId,
         amount: i32,
+        triggers_rupture: bool,
     },
     Heal {
         target: EntityId,
@@ -56,6 +57,11 @@ pub enum Action {
         base_damage: i32,
         damage_type: DamageType,
         applies_target_modifiers: bool,
+    },
+    BouncingFlask {
+        target: Option<EntityId>,
+        amount: i32,
+        num_times: u8,
     },
     DropkickDamageAndEffect {
         target: EntityId,
@@ -92,6 +98,11 @@ pub enum Action {
         target: Option<EntityId>,
         purge: bool,
     },
+    EnqueueCardPlay {
+        item: Box<crate::combat::QueuedCardPlay>,
+        in_front: bool,
+    },
+    FlushNextQueuedCard,
     UsePotion {
         slot: usize,
         target: Option<EntityId>,
@@ -212,6 +223,15 @@ pub enum Action {
         target: Option<EntityId>,
         exhaust: bool,
     },
+    /// Buffer the current top N cards from the draw pile, then play them in
+    /// reverse buffered order. This matches Java Distilled Chaos semantics:
+    /// the later buffered cards should still be played even if earlier cards
+    /// draw through the pile.
+    PlayTopCardsBuffered {
+        count: u8,
+        target: Option<EntityId>,
+        exhaust: bool,
+    },
     /// Java PlayTopCardAction with random target selection via cardRandomRng.
     /// Used by DistilledChaosPotion and similar.
     ModifyCardMisc {
@@ -232,6 +252,12 @@ pub enum Action {
         next_move_byte: u8,
         intent: crate::combat::Intent,
     },
+    UpdateHexaghostState {
+        monster_id: EntityId,
+        activated: Option<bool>,
+        orb_active_count: Option<u8>,
+        burn_upgraded: Option<bool>,
+    },
     AbortDeath {
         target: EntityId,
     },
@@ -245,12 +271,14 @@ pub enum Action {
         current_hp: i32,
         max_hp: i32,
         logical_position: i32,
+        is_minion: bool,
     },
     SpawnMonsterSmart {
         monster_id: crate::content::monsters::EnemyId,
         logical_position: i32,
         current_hp: i32,
         max_hp: i32,
+        is_minion: bool,
     },
     SpawnEncounter {
         encounter: crate::content::monsters::factory::EncounterId,
@@ -263,6 +291,10 @@ pub enum Action {
     /// Card is held in limbo until this action fires, then moved to discard/exhaust.
     UseCardDone {
         should_exhaust: bool,
+    },
+    QueueEarlyEndTurn,
+    TriggerTimeWarpEndTurn {
+        owner: EntityId,
     },
     StartTurnTrigger,
     PostDrawTrigger,
@@ -342,6 +374,10 @@ pub struct ActionInfo {
 pub enum AddTo {
     Top,
     Bottom,
+}
+
+pub fn repeated_damage_matrix(enemy_count: usize, amount: i32) -> smallvec::SmallVec<[i32; 5]> {
+    std::iter::repeat_n(amount, enemy_count).collect()
 }
 
 #[derive(Clone, Debug, PartialEq)]

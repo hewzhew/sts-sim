@@ -60,9 +60,9 @@ impl MonsterBehavior for FungiBeast {
 
     fn take_turn(state: &mut CombatState, entity: &MonsterEntity) -> Vec<Action> {
         let bite_dmg = 6;
-        let str_amt = if state.ascension_level >= 17 {
+        let str_amt = if state.meta.ascension_level >= 17 {
             5
-        } else if state.ascension_level >= 2 {
+        } else if state.meta.ascension_level >= 2 {
             4
         } else {
             3

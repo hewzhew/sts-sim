@@ -80,9 +80,21 @@ impl MonsterBehavior for Centurion {
 
     fn take_turn(state: &mut CombatState, entity: &MonsterEntity) -> Vec<Action> {
         let mut actions = Vec::new();
-        let slash_dmg = if state.ascension_level >= 2 { 14 } else { 12 };
-        let fury_dmg = if state.ascension_level >= 2 { 7 } else { 6 };
-        let block_amt = if state.ascension_level >= 17 { 20 } else { 15 };
+        let slash_dmg = if state.meta.ascension_level >= 2 {
+            14
+        } else {
+            12
+        };
+        let fury_dmg = if state.meta.ascension_level >= 2 {
+            7
+        } else {
+            6
+        };
+        let block_amt = if state.meta.ascension_level >= 17 {
+            20
+        } else {
+            15
+        };
 
         match entity.next_move_byte {
             1 => {

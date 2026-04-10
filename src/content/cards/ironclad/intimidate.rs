@@ -7,7 +7,7 @@ pub fn intimidate_play(state: &CombatState, card: &CombatCard) -> SmallVec<[Acti
     let mut actions = smallvec::SmallVec::new();
     let amount = card.base_magic_num_mut; // 1, upgraded 2
 
-    for m in &state.monsters {
+    for m in &state.entities.monsters {
         if !m.is_dying && !m.is_escaped {
             actions.push(ActionInfo {
                 action: Action::ApplyPower {

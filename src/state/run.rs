@@ -64,6 +64,12 @@ impl RunState {
         final_act: bool,
         player_class: &'static str,
     ) -> Self {
+        let base_max_hp = match player_class {
+            "Silent" => 70,
+            "Defect" => 75,
+            "Watcher" => 72,
+            _ => 80,
+        };
         // Generate Act 1 map; returns the consumed mapRng for emerald key placement.
         let (mut first_map, mut map_rng) =
             crate::map::generator::generate_map_for_act(seed, 1, ascension_level == 0);
@@ -82,8 +88,8 @@ impl RunState {
             rng_pool: RngPool::new(seed),
 
             // Typical Ironclad defaults
-            current_hp: 80,
-            max_hp: 80,
+            current_hp: base_max_hp,
+            max_hp: base_max_hp,
             gold: 99,
             shop_purge_count: 0,
             relics: Vec::new(),
@@ -124,6 +130,7 @@ impl RunState {
         rs.init_relic_pools();
         rs.init_encounter_lists();
         rs.init_boss_list();
+        rs.apply_starting_loadout();
 
         // --- Ascension metagame effects (Java: AbstractDungeon.java L2562-2580) ---
 
@@ -158,6 +165,57 @@ impl RunState {
         // Initialize Neow event for run start
         crate::content::events::neow::setup_neow_choices(&mut rs);
         rs
+    }
+
+    fn apply_starting_loadout(&mut self) {
+        use crate::content::cards::CardId;
+        use crate::content::relics::{RelicId, RelicState};
+
+        if self.master_deck.is_empty() {
+            let starter_cards: &'static [CardId] = match self.player_class {
+                "Silent" => &[
+                    CardId::StrikeG,
+                    CardId::StrikeG,
+                    CardId::StrikeG,
+                    CardId::StrikeG,
+                    CardId::StrikeG,
+                    CardId::DefendG,
+                    CardId::DefendG,
+                    CardId::DefendG,
+                    CardId::DefendG,
+                    CardId::DefendG,
+                    CardId::Survivor,
+                    CardId::Neutralize,
+                ],
+                _ => &[
+                    CardId::Strike,
+                    CardId::Strike,
+                    CardId::Strike,
+                    CardId::Strike,
+                    CardId::Strike,
+                    CardId::Defend,
+                    CardId::Defend,
+                    CardId::Defend,
+                    CardId::Defend,
+                    CardId::Bash,
+                ],
+            };
+
+            for (idx, &card_id) in starter_cards.iter().enumerate() {
+                self.master_deck
+                    .push(crate::combat::CombatCard::new(card_id, idx as u32));
+            }
+        }
+
+        if self.relics.is_empty() {
+            let starter_relic = match self.player_class {
+                "Silent" => RelicId::SnakeRing,
+                "Defect" => RelicId::CrackedCore,
+                "Watcher" => RelicId::PureWater,
+                _ => RelicId::BurningBlood,
+            };
+            self.relics.push(RelicState::new(starter_relic));
+        }
     }
 
     /// Maps player_class string to PotionClass enum for potion generation.
@@ -240,6 +298,7 @@ impl RunState {
     pub fn generate_shop(&mut self) -> crate::shop::ShopState {
         let config = crate::shop::state::ShopConfig {
             ascension_level: self.ascension_level as i32,
+            player_class: self.player_class,
             has_courier: self
                 .relics
                 .iter()
@@ -817,8 +876,17 @@ impl RunState {
         &mut self,
         rarity: crate::content::cards::CardRarity,
     ) -> crate::content::cards::CardId {
-        use crate::content::cards::*;
-        let pool = ironclad_pool_for_rarity(rarity);
+        use crate::content::cards::CardId;
+        let pool = crate::engine::campfire_handler::nonempty_card_pool_for_class(
+            self.player_class,
+            rarity,
+        );
+        if pool.is_empty() {
+            return match self.player_class {
+                "Silent" => CardId::StrikeG,
+                _ => CardId::Strike,
+            };
+        }
         let idx = self
             .rng_pool
             .misc_rng
@@ -833,9 +901,15 @@ impl RunState {
         card_type: crate::content::cards::CardType,
     ) -> crate::content::cards::CardId {
         use crate::content::cards::*;
-        let pool = ironclad_pool_for_type(card_type);
+        let pool = match self.player_class {
+            "Silent" => silent_pool_for_type(card_type),
+            _ => ironclad_pool_for_type(card_type),
+        };
         if pool.is_empty() {
-            return CardId::Strike; // fallback
+            return match self.player_class {
+                "Silent" => CardId::StrikeG,
+                _ => CardId::Strike,
+            };
         }
         let idx = self
             .rng_pool
@@ -938,13 +1012,28 @@ impl RunState {
             }
         } else {
             // Java: returnTrulyRandomCardFromAvailable(c, rng)
-            let pool: Vec<CardId> = IRONCLAD_COMMON_POOL
-                .iter()
-                .chain(IRONCLAD_UNCOMMON_POOL.iter())
-                .chain(IRONCLAD_RARE_POOL.iter())
-                .copied()
-                .filter(|&c| c != old_card_id)
-                .collect();
+            let pool: Vec<CardId> = crate::engine::campfire_handler::card_pool_for_class(
+                self.player_class,
+                CardRarity::Common,
+            )
+            .iter()
+            .chain(
+                crate::engine::campfire_handler::card_pool_for_class(
+                    self.player_class,
+                    CardRarity::Uncommon,
+                )
+                .iter(),
+            )
+            .chain(
+                crate::engine::campfire_handler::card_pool_for_class(
+                    self.player_class,
+                    CardRarity::Rare,
+                )
+                .iter(),
+            )
+            .copied()
+            .filter(|&c| c != old_card_id)
+            .collect();
             if pool.is_empty() {
                 old_card_id
             } else {
@@ -990,5 +1079,93 @@ impl RunState {
         // 4. Resolve Deck actions
         self.resolve_deck_actions(result.actions);
         self.dispatch_on_master_deck_change();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::action::Action;
+    use crate::combat::{CombatPhase, CombatState};
+    use crate::content::cards::CardId;
+    use crate::content::relics::{hooks, RelicId};
+    use std::collections::{HashMap, VecDeque};
+
+    #[test]
+    fn silent_new_run_has_expected_starter_loadout() {
+        let run = RunState::new(7, 0, false, "Silent");
+
+        assert_eq!(run.max_hp, 70);
+        assert_eq!(run.current_hp, 70);
+        assert_eq!(run.relics.len(), 1);
+        assert_eq!(run.relics[0].id, RelicId::SnakeRing);
+        assert_eq!(run.master_deck.len(), 12);
+        assert_eq!(
+            run.master_deck
+                .iter()
+                .filter(|c| c.id == CardId::StrikeG)
+                .count(),
+            5
+        );
+        assert_eq!(
+            run.master_deck
+                .iter()
+                .filter(|c| c.id == CardId::DefendG)
+                .count(),
+            5
+        );
+        assert!(run.master_deck.iter().any(|c| c.id == CardId::Neutralize));
+        assert!(run.master_deck.iter().any(|c| c.id == CardId::Survivor));
+    }
+
+    #[test]
+    fn silent_snake_ring_is_wired_into_battle_start_draw() {
+        let run = RunState::new(11, 0, false, "Silent");
+        let mut combat = CombatState {
+            meta: crate::combat::CombatMeta {
+                ascension_level: 0,
+                is_boss_fight: false,
+                is_elite_fight: false,
+                meta_changes: Vec::new(),
+            },
+            turn: crate::combat::TurnRuntime {
+                turn_count: 1,
+                current_phase: CombatPhase::PlayerTurn,
+                energy: 3,
+                turn_start_draw_modifier: 0,
+                counters: Default::default(),
+            },
+            zones: crate::combat::CardZones {
+                draw_pile: Vec::new(),
+                hand: Vec::new(),
+                discard_pile: Vec::new(),
+                exhaust_pile: Vec::new(),
+                limbo: Vec::new(),
+                queued_cards: VecDeque::new(),
+                card_uuid_counter: 1,
+            },
+            entities: crate::combat::EntityState {
+                player: run.build_combat_player(0),
+                monsters: Vec::new(),
+                potions: vec![None, None, None],
+                power_db: HashMap::new(),
+            },
+            engine: crate::combat::EngineRuntime {
+                action_queue: VecDeque::new(),
+            },
+            rng: crate::combat::CombatRng::new(crate::rng::RngPool::new(17)),
+        };
+
+        let actions = hooks::at_battle_start(&mut combat);
+        assert!(actions
+            .iter()
+            .any(|info| matches!(info.action, Action::DrawCards(2))));
+    }
+
+    #[test]
+    fn upgraded_after_image_is_treated_as_innate() {
+        let mut card = crate::combat::CombatCard::new(CardId::AfterImage, 42);
+        card.upgrades = 1;
+        assert!(crate::content::cards::is_innate_card(&card));
     }
 }

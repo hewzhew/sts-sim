@@ -9,7 +9,7 @@ impl CharonsAshes {
     pub fn on_exhaust(state: &CombatState) -> SmallVec<[ActionInfo; 4]> {
         let mut actions = SmallVec::new();
         let mut damages = SmallVec::new();
-        for _ in 0..state.monsters.len() {
+        for _ in 0..state.entities.monsters.len() {
             damages.push(3);
         }
 

@@ -7,7 +7,8 @@ pub fn bloodletting_play(_state: &CombatState, card: &CombatCard) -> SmallVec<[A
         ActionInfo {
             action: Action::LoseHp {
                 target: 0,
-                amount: 3
+                amount: 3,
+                triggers_rupture: true,
             },
             insertion_mode: AddTo::Bottom,
         },

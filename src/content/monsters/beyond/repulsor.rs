@@ -31,7 +31,7 @@ impl MonsterBehavior for Repulsor {
 
     fn take_turn(state: &mut CombatState, entity: &crate::combat::MonsterEntity) -> Vec<Action> {
         let mut actions = Vec::new();
-        let asc = state.ascension_level;
+        let asc = state.meta.ascension_level;
 
         match entity.next_move_byte {
             2 => {

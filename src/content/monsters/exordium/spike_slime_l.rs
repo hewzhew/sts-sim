@@ -89,7 +89,7 @@ impl MonsterBehavior for SpikeSlimeL {
     }
 
     fn take_turn(state: &mut CombatState, entity: &MonsterEntity) -> Vec<Action> {
-        let asc = state.ascension_level;
+        let asc = state.meta.ascension_level;
         let flame_tackle_dmg = if asc >= 2 { 18 } else { 16 };
         let slimed_amt = if asc >= 17 { 2 } else { 2 }; // Fixed 2 Slimed applied
         let frail_amt = if asc >= 17 { 3 } else { 2 };
@@ -115,19 +115,21 @@ impl MonsterBehavior for SpikeSlimeL {
             3 => {
                 // SPLIT
                 actions.push(Action::Suicide { target: entity.id });
-                // Java uses smart positioning: first M at drawX-134 (position 0, before dead L)
+                // Java uses smart positioning based on drawX. Preserve that ordering by
+                // carrying forward the parent's drawX-like logical position.
                 actions.push(Action::SpawnMonsterSmart {
                     monster_id: crate::content::monsters::EnemyId::SpikeSlimeM,
-                    logical_position: entity.logical_position - 1,
+                    logical_position: entity.logical_position - 134,
                     current_hp: entity.current_hp,
                     max_hp: entity.current_hp,
+                    is_minion: false,
                 });
-                // Second M at drawX+134 (position 2, after dead L)
                 actions.push(Action::SpawnMonsterSmart {
                     monster_id: crate::content::monsters::EnemyId::SpikeSlimeM,
-                    logical_position: entity.logical_position + 1,
+                    logical_position: entity.logical_position + 134,
                     current_hp: entity.current_hp,
                     max_hp: entity.current_hp,
+                    is_minion: false,
                 });
             }
             4 => {

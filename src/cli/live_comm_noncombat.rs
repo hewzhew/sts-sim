@@ -19,12 +19,38 @@ fn has_available_command(gs: &serde_json::Value, command: &str) -> bool {
 
 pub(crate) fn decide_noncombat_with_agent(
     agent: &mut crate::bot::agent::Agent,
-    gs: &serde_json::Value,
+    root: &serde_json::Value,
     screen: &str,
     choice_list: &[&str],
 ) -> Option<String> {
+    let gs = root.get("game_state").unwrap_or(root);
     let rs = build_live_run_state(gs)?;
     match screen {
+        "SHOP_ROOM" => {
+            let last_kind = root
+                .get("protocol_meta")
+                .and_then(|v| v.get("last_command_kind"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            if matches!(last_kind, "return" | "leave" | "cancel") {
+                if has_available_command(root, "proceed") {
+                    Some("PROCEED".to_string())
+                } else {
+                    None
+                }
+            } else if has_available_command(root, "choose") && !choice_list.is_empty() {
+                Some("CHOOSE 0".to_string())
+            } else if has_available_command(root, "proceed") {
+                Some("PROCEED".to_string())
+            } else {
+                None
+            }
+        }
+        "SHOP_SCREEN" => {
+            let shop = build_live_shop_state(gs)?;
+            let input = agent.decide(&EngineState::Shop(shop.clone()), &rs, &None, false);
+            shop_input_command(root, &rs, &shop, input)
+        }
         "CARD_REWARD" => {
             let cards = gs
                 .get("screen_state")
@@ -76,7 +102,7 @@ pub(crate) fn decide_noncombat_with_agent(
                 _ => None,
             }
         }
-        "GRID" => decide_live_grid_screen(gs, &rs),
+        "GRID" => decide_live_grid_screen(root, &rs),
         "MAP" => {
             let input = agent.decide(&EngineState::MapNavigation, &rs, &None, false);
             match input {
@@ -101,8 +127,166 @@ pub(crate) fn decide_noncombat_with_agent(
                 _ => None,
             }
         }
+        "EVENT" => crate::bot::noncombat_families::choose_event_choice(gs, &rs, choice_list)
+            .map(|idx| format!("CHOOSE {}", idx)),
         _ => None,
     }
+}
+
+fn shop_input_command(
+    root: &serde_json::Value,
+    rs: &crate::state::run::RunState,
+    shop: &crate::shop::ShopState,
+    input: crate::state::core::ClientInput,
+) -> Option<String> {
+    let choices = build_live_shop_choices(shop, rs);
+    match input {
+        crate::state::core::ClientInput::BuyCard(idx) => choices
+            .iter()
+            .position(|choice| matches!(choice, LiveShopChoice::Card(card_idx) if *card_idx == idx))
+            .map(|idx| format!("CHOOSE {}", idx)),
+        crate::state::core::ClientInput::BuyRelic(idx) => choices
+            .iter()
+            .position(
+                |choice| matches!(choice, LiveShopChoice::Relic(relic_idx) if *relic_idx == idx),
+            )
+            .map(|idx| format!("CHOOSE {}", idx)),
+        crate::state::core::ClientInput::BuyPotion(idx) => choices
+            .iter()
+            .position(
+                |choice| matches!(choice, LiveShopChoice::Potion(potion_idx) if *potion_idx == idx),
+            )
+            .map(|idx| format!("CHOOSE {}", idx)),
+        crate::state::core::ClientInput::PurgeCard(_) => choices
+            .iter()
+            .position(|choice| matches!(choice, LiveShopChoice::Purge))
+            .map(|idx| format!("CHOOSE {}", idx)),
+        crate::state::core::ClientInput::Proceed => {
+            if has_available_command(root, "leave") {
+                Some("LEAVE".to_string())
+            } else if has_available_command(root, "return") || has_available_command(root, "cancel")
+            {
+                Some("RETURN".to_string())
+            } else {
+                None
+            }
+        }
+        crate::state::core::ClientInput::Cancel => {
+            if has_available_command(root, "leave") {
+                Some("LEAVE".to_string())
+            } else if has_available_command(root, "return") || has_available_command(root, "cancel")
+            {
+                Some("RETURN".to_string())
+            } else {
+                None
+            }
+        }
+        _ => None,
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum LiveShopChoice {
+    Purge,
+    Card(usize),
+    Relic(usize),
+    Potion(usize),
+}
+
+fn build_live_shop_choices(
+    shop: &crate::shop::ShopState,
+    rs: &crate::state::run::RunState,
+) -> Vec<LiveShopChoice> {
+    let mut choices = Vec::new();
+    if shop.purge_available && rs.gold >= shop.purge_cost {
+        choices.push(LiveShopChoice::Purge);
+    }
+    for (idx, card) in shop.cards.iter().enumerate() {
+        if rs.gold >= card.price {
+            choices.push(LiveShopChoice::Card(idx));
+        }
+    }
+    for (idx, relic) in shop.relics.iter().enumerate() {
+        if rs.gold >= relic.price {
+            choices.push(LiveShopChoice::Relic(idx));
+        }
+    }
+    for (idx, potion) in shop.potions.iter().enumerate() {
+        if rs.gold >= potion.price {
+            choices.push(LiveShopChoice::Potion(idx));
+        }
+    }
+    choices
+}
+
+fn build_live_shop_state(gs: &serde_json::Value) -> Option<crate::shop::ShopState> {
+    let screen_state = gs.get("screen_state")?;
+    let mut shop = crate::shop::ShopState::new();
+
+    shop.cards = screen_state
+        .get("cards")
+        .and_then(|v| v.as_array())
+        .map(|cards| {
+            cards
+                .iter()
+                .filter_map(|card| {
+                    let card_id = card
+                        .get("id")
+                        .and_then(|v| v.as_str())
+                        .and_then(card_id_from_java)?;
+                    let price = card.get("price").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
+                    Some(crate::shop::ShopCard { card_id, price })
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+
+    shop.relics = screen_state
+        .get("relics")
+        .and_then(|v| v.as_array())
+        .map(|relics| {
+            relics
+                .iter()
+                .filter_map(|relic| {
+                    let relic_id = relic
+                        .get("id")
+                        .and_then(|v| v.as_str())
+                        .and_then(relic_id_from_java)?;
+                    let price = relic.get("price").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
+                    Some(crate::shop::ShopRelic { relic_id, price })
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+
+    shop.potions = screen_state
+        .get("potions")
+        .and_then(|v| v.as_array())
+        .map(|potions| {
+            potions
+                .iter()
+                .filter_map(|potion| {
+                    let potion_id = potion
+                        .get("id")
+                        .and_then(|v| v.as_str())
+                        .and_then(java_potion_id_to_rust)?;
+                    let price = potion.get("price").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
+                    Some(crate::shop::ShopPotion { potion_id, price })
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+
+    shop.purge_available = screen_state
+        .get("purge_available")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    shop.purge_cost = screen_state
+        .get("purge_cost")
+        .and_then(|v| v.as_i64())
+        .unwrap_or(shop.purge_cost as i64) as i32;
+
+    Some(shop)
 }
 
 fn campfire_choice_command(
@@ -185,16 +369,17 @@ fn build_live_reward_state(gs: &serde_json::Value) -> Option<crate::rewards::sta
 }
 
 fn decide_live_grid_screen(
-    gs: &serde_json::Value,
+    root: &serde_json::Value,
     rs: &crate::state::run::RunState,
 ) -> Option<String> {
+    let gs = root.get("game_state").unwrap_or(root);
     let screen_state = gs.get("screen_state")?;
-    let can_choose = has_available_command(gs, "choose");
-    let can_confirm = has_available_command(gs, "confirm")
-        || has_available_command(gs, "proceed");
-    let can_cancel = has_available_command(gs, "cancel")
-        || has_available_command(gs, "return")
-        || has_available_command(gs, "leave");
+    let can_choose = has_available_command(root, "choose");
+    let can_confirm =
+        has_available_command(root, "confirm") || has_available_command(root, "proceed");
+    let can_cancel = has_available_command(root, "cancel")
+        || has_available_command(root, "return")
+        || has_available_command(root, "leave");
 
     if !can_choose {
         if can_confirm {
@@ -309,8 +494,26 @@ fn live_upgrade_priority(
         CardId::Corruption | CardId::FeelNoPain | CardId::DarkEmbrace => 34,
         CardId::Barricade | CardId::Entrench | CardId::BodySlam => 30,
         CardId::LimitBreak | CardId::HeavyBlade | CardId::SwordBoomerang => 24,
-        CardId::Strike => -18,
-        CardId::Defend => -22,
+        CardId::Strike | CardId::StrikeG => -18,
+        CardId::Defend | CardId::DefendG => -22,
+        CardId::Neutralize => 26,
+        CardId::Survivor => 28,
+        CardId::DeadlyPoison => 26,
+        CardId::Prepared => 18,
+        CardId::DaggerThrow => 24,
+        CardId::PoisonedStab => 26,
+        CardId::DaggerSpray => 24,
+        CardId::BladeDance => 24,
+        CardId::Backflip => 24,
+        CardId::Acrobatics => 24,
+        CardId::CloakAndDagger => 22,
+        CardId::Catalyst => 20,
+        CardId::BouncingFlask => 24,
+        CardId::Footwork => 28,
+        CardId::NoxiousFumes => 28,
+        CardId::Adrenaline => 34,
+        CardId::AfterImage => 30,
+        CardId::Burst => 28,
         _ => 0,
     };
 
@@ -336,7 +539,7 @@ fn live_upgrade_priority(
     score
 }
 
-fn build_live_run_state(gs: &serde_json::Value) -> Option<crate::state::run::RunState> {
+pub(crate) fn build_live_run_state(gs: &serde_json::Value) -> Option<crate::state::run::RunState> {
     let seed = gs.get("seed").and_then(|v| v.as_u64()).unwrap_or(0);
     let ascension = gs
         .get("ascension_level")

@@ -1,37 +1,60 @@
 use crate::action::{Action, ActionInfo, AddTo};
+use crate::combat::{QueuedCardPlay, QueuedCardSource};
 use smallvec::SmallVec;
 
 /// Necronomicon: The first Attack you play each turn that costs 2 or more is played twice.
-/// Java: onUseCard() checks if card is Attack, cost >= 2, and counter == 0 (not yet used this turn).
-/// If conditions match, sets counter to 1, and queues a second play of the card.
+/// Java uses an internal `activated` boolean rather than the visible relic counter.
+/// We model this with `used_up = false` meaning available this turn.
+pub fn at_turn_start() -> SmallVec<[crate::action::ActionInfo; 4]> {
+    smallvec::smallvec![ActionInfo {
+        action: Action::UpdateRelicUsedUp {
+            relic_id: crate::content::relics::RelicId::Necronomicon,
+            used_up: false,
+        },
+        insertion_mode: AddTo::Bottom,
+    }]
+}
+
 pub fn on_use_card(
     card_id: crate::content::cards::CardId,
-    card_cost: i32,
-    counter: i32,
+    card_cost_for_turn: i32,
+    used_up: bool,
     card: &crate::combat::CombatCard,
     target: Option<crate::core::EntityId>,
-) -> SmallVec<[ActionInfo; 4]> {
-    let mut actions = SmallVec::new();
+) -> SmallVec<[crate::action::ActionInfo; 4]> {
     let def = crate::content::cards::get_card_definition(card_id);
+    let mut actions = SmallVec::new();
 
-    // Only triggers once per turn (counter=0 means not yet triggered)
-    if counter == 0 && def.card_type == crate::content::cards::CardType::Attack && card_cost >= 2 {
-        // Mark as used this turn
+    let meets_cost_threshold = (card_cost_for_turn >= 2 && !card.free_to_play_once)
+        || (def.cost == -1 && card.energy_on_use >= 2);
+
+    if !used_up && def.card_type == crate::content::cards::CardType::Attack && meets_cost_threshold
+    {
+        let mut clone = card.clone();
+        clone.energy_on_use = card.energy_on_use;
         actions.push(ActionInfo {
-            action: Action::UpdateRelicCounter {
+            action: Action::UpdateRelicUsedUp {
                 relic_id: crate::content::relics::RelicId::Necronomicon,
-                counter: 1,
+                used_up: true,
             },
-            insertion_mode: AddTo::Top,
+            insertion_mode: AddTo::Bottom,
         });
-        // Play the card again (without consuming it from hand — it's a free replay)
         actions.push(ActionInfo {
-            action: Action::PlayCardDirect {
-                card: Box::new(card.clone()),
-                target,
-                purge: true, // Don't add to discard again
+            action: Action::EnqueueCardPlay {
+                item: Box::new(QueuedCardPlay {
+                    card: clone.clone(),
+                    target,
+                    energy_on_use: clone.energy_on_use,
+                    ignore_energy_total: true,
+                    autoplay: true,
+                    random_target: false,
+                    is_end_turn_autoplay: false,
+                    purge_on_use: true,
+                    source: QueuedCardSource::Necronomicon,
+                }),
+                in_front: true,
             },
-            insertion_mode: AddTo::Top,
+            insertion_mode: AddTo::Bottom,
         });
     }
 

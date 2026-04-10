@@ -21,9 +21,10 @@ pub fn on_attacked(
 
     // Java: damageAmount < this.owner.currentHealth && damageAmount > 0
     let owner_hp = if owner == 0 {
-        state.player.current_hp
+        state.entities.player.current_hp
     } else {
         state
+            .entities
             .monsters
             .iter()
             .find(|m| m.id == owner)
@@ -48,7 +49,7 @@ pub fn on_monster_turn_ended(
     let mut actions = smallvec::smallvec![];
 
     // reset amount to extra_data (basePower in Java)
-    if let Some(power_list) = state.power_db.get(&owner) {
+    if let Some(power_list) = state.entities.power_db.get(&owner) {
         if let Some(power) = power_list
             .iter()
             .find(|p| p.power_type == PowerId::Malleable)

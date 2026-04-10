@@ -55,7 +55,7 @@ impl MonsterBehavior for SlaverBlue {
     }
 
     fn take_turn(state: &mut CombatState, entity: &MonsterEntity) -> Vec<Action> {
-        let asc = state.ascension_level;
+        let asc = state.meta.ascension_level;
         let stab_dmg = if asc >= 2 { 13 } else { 12 };
         let rake_dmg = if asc >= 2 { 8 } else { 7 };
         let weak_amt = if asc >= 17 { 2 } else { 1 };

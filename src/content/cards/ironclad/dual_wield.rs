@@ -8,6 +8,7 @@ pub fn dual_wield_play(_state: &CombatState, card: &CombatCard) -> SmallVec<[Act
     let mut actions = smallvec::SmallVec::new();
     let amount = card.base_magic_num_mut as u8; // 1, upgraded 2
     let valid_cards: Vec<_> = _state
+        .zones
         .hand
         .iter()
         .filter(|c| {

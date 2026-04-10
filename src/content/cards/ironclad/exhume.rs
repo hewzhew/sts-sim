@@ -4,6 +4,7 @@ use smallvec::SmallVec;
 
 pub fn exhume_play(state: &CombatState, card: &CombatCard) -> SmallVec<[ActionInfo; 4]> {
     let valid_count = state
+        .zones
         .exhaust_pile
         .iter()
         .filter(|c| c.id != crate::content::cards::CardId::Exhume)

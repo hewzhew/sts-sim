@@ -10,3 +10,8 @@ use crate::action::{Action, ActionInfo, AddTo};
 /// Energy is handled via `energy_master` increment at onEquip.
 /// Rest Site restriction handled via `RunState`.
 pub fn out_of_combat() {}
+
+
+
+
+

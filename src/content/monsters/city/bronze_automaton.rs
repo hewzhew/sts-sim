@@ -64,8 +64,16 @@ impl MonsterBehavior for BronzeAutomaton {
     fn take_turn(state: &mut CombatState, entity: &crate::combat::MonsterEntity) -> Vec<Action> {
         let mut actions = Vec::new();
 
-        let block_amt = if state.ascension_level >= 9 { 12 } else { 9 };
-        let str_amt = if state.ascension_level >= 4 { 4 } else { 3 };
+        let block_amt = if state.meta.ascension_level >= 9 {
+            12
+        } else {
+            9
+        };
+        let str_amt = if state.meta.ascension_level >= 4 {
+            4
+        } else {
+            3
+        };
 
         match entity.next_move_byte {
             4 => {
@@ -80,6 +88,7 @@ impl MonsterBehavior for BronzeAutomaton {
                     current_hp: 0,
                     max_hp: 0,
                     logical_position: -1,
+                    is_minion: true,
                 });
                 actions.push(Action::SpawnMonster {
                     monster_id: EnemyId::BronzeOrb,
@@ -87,10 +96,15 @@ impl MonsterBehavior for BronzeAutomaton {
                     current_hp: 0,
                     max_hp: 0,
                     logical_position: 1,
+                    is_minion: true,
                 });
             }
             1 => {
-                let dmg = if state.ascension_level >= 4 { 8 } else { 7 };
+                let dmg = if state.meta.ascension_level >= 4 {
+                    8
+                } else {
+                    7
+                };
                 actions.push(Action::Damage(DamageInfo {
                     source: entity.id,
                     target: 0,
@@ -121,7 +135,11 @@ impl MonsterBehavior for BronzeAutomaton {
                 });
             }
             2 => {
-                let dmg = if state.ascension_level >= 4 { 50 } else { 45 };
+                let dmg = if state.meta.ascension_level >= 4 {
+                    50
+                } else {
+                    45
+                };
                 actions.push(Action::Damage(DamageInfo {
                     source: entity.id,
                     target: 0,

@@ -1,6 +1,7 @@
 pub mod core;
 pub mod ironclad;
 pub mod silent;
+pub mod store;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum PowerId {
@@ -61,6 +62,7 @@ pub enum PowerId {
     Reactive,
     Slow,
     Intangible,
+    IntangiblePlayer,
     Curiosity,
     Unawakened,
     TimeWarp,
@@ -87,6 +89,9 @@ pub enum PowerId {
     DrawReduction,
     Surrounded,
     BackAttack,
+    NoxiousFumes,
+    AfterImage,
+    Burst,
 }
 
 use crate::combat::{CombatCard, CombatState};
@@ -94,6 +99,49 @@ use crate::combat::{CombatCard, CombatState};
 pub struct PowerDefinition {
     pub id: PowerId,
     pub name: &'static str,
+}
+
+/// Java powers whose runtime amount is a sentinel `-1` rather than a stack count.
+pub fn uses_sentinel_amount(id: PowerId) -> bool {
+    matches!(
+        id,
+        PowerId::NoDraw
+            | PowerId::Minion
+            | PowerId::Corruption
+            | PowerId::Split
+            | PowerId::Barricade
+            | PowerId::Stasis
+            | PowerId::BackAttack
+            | PowerId::PainfulStabs
+            | PowerId::Surrounded
+            | PowerId::Unawakened
+    )
+}
+
+pub fn canonicalize_applied_amount(id: PowerId, amount: i32) -> i32 {
+    if uses_sentinel_amount(id) {
+        -1
+    } else {
+        amount
+    }
+}
+
+pub fn allows_negative_amount(id: PowerId) -> bool {
+    matches!(id, PowerId::Strength | PowerId::Dexterity | PowerId::Focus)
+        || uses_sentinel_amount(id)
+}
+
+pub fn should_keep_power_instance(id: PowerId, amount: i32) -> bool {
+    if id == PowerId::TimeWarp {
+        return true;
+    }
+    if amount > 0 {
+        return true;
+    }
+    if amount < 0 {
+        return allows_negative_amount(id);
+    }
+    false
 }
 
 /// Java: AbstractPower.PowerType — BUFF or DEBUFF.
@@ -121,6 +169,39 @@ pub fn is_debuff(id: PowerId, amount: i32) -> bool {
         | PowerId::Shackled
         | PowerId::DrawReduction => true,
         // Everything else is BUFF
+        _ => false,
+    }
+}
+
+/// Returns true only when this ApplyPower is making the target meaningfully more debuffed.
+///
+/// This is narrower than `is_debuff(...)`:
+/// - fixed debuffs like Weak/Vulnerable are only debuff applications when `amount > 0`
+/// - dynamic debuffs like negative Strength are only debuff applications when `amount < 0`
+///
+/// End-of-round cleanup like `Weak -1` should not be blocked by Artifact or trigger
+/// "on apply debuff" hooks.
+pub fn is_debuff_application(id: PowerId, amount: i32) -> bool {
+    match id {
+        PowerId::Strength | PowerId::Focus | PowerId::Dexterity => amount < 0,
+        // Some Java debuffs use sentinel amounts instead of stacks. Artifact still
+        // blocks the application even when the constructor amount is -1.
+        PowerId::NoDraw => amount != 0,
+        PowerId::Vulnerable
+        | PowerId::Weak
+        | PowerId::Frail
+        | PowerId::Poison
+        | PowerId::Entangle
+        | PowerId::Constricted
+        | PowerId::Confusion
+        | PowerId::Hex
+        | PowerId::Slow
+        | PowerId::LoseStrength
+        | PowerId::DexterityDown
+        | PowerId::NoSkills
+        | PowerId::Fading
+        | PowerId::Shackled
+        | PowerId::DrawReduction => amount > 0,
         _ => false,
     }
 }
@@ -287,7 +368,10 @@ pub fn get_power_definition(id: PowerId) -> PowerDefinition {
             name: "Explosive",
         },
         PowerId::Thorns => PowerDefinition { id, name: "Thorns" },
-        PowerId::Regrow => PowerDefinition { id, name: "Regrow" },
+        PowerId::Regrow => PowerDefinition {
+            id,
+            name: "Life Link",
+        },
         PowerId::Constricted => PowerDefinition {
             id,
             name: "Constricted",
@@ -303,6 +387,10 @@ pub fn get_power_definition(id: PowerId) -> PowerDefinition {
         },
         PowerId::Slow => PowerDefinition { id, name: "Slow" },
         PowerId::Intangible => PowerDefinition {
+            id,
+            name: "Intangible",
+        },
+        PowerId::IntangiblePlayer => PowerDefinition {
             id,
             name: "Intangible",
         },
@@ -391,6 +479,15 @@ pub fn get_power_definition(id: PowerId) -> PowerDefinition {
             id,
             name: "A Thousand Cuts",
         },
+        PowerId::NoxiousFumes => PowerDefinition {
+            id,
+            name: "Noxious Fumes",
+        },
+        PowerId::AfterImage => PowerDefinition {
+            id,
+            name: "After Image",
+        },
+        PowerId::Burst => PowerDefinition { id, name: "Burst" },
     }
 }
 
@@ -435,10 +532,11 @@ pub fn resolve_power_on_use_card(
         PowerId::DuplicationPower => {
             core::duplication_power::on_use_card(state, card, purge, target)
         }
+        PowerId::Burst => silent::burst::on_use_card(state, card, purge, target),
         PowerId::PenNibPower => {
             let actions = core::pen_nib::on_use_card(card);
             for action in actions {
-                state.action_queue.push_back(action);
+                state.engine.action_queue.push_back(action);
             }
         }
         PowerId::Vigor => {
@@ -446,6 +544,7 @@ pub fn resolve_power_on_use_card(
             let def = crate::content::cards::get_card_definition(card.id);
             if def.card_type == crate::content::cards::CardType::Attack {
                 state
+                    .engine
                     .action_queue
                     .push_back(crate::action::Action::RemovePower {
                         target: 0, // Player
@@ -492,10 +591,16 @@ pub fn resolve_power_on_hp_lost(
     state: &CombatState,
     owner: crate::core::EntityId,
     amount: i32,
+    source: Option<crate::core::EntityId>,
+    damage_type: crate::action::DamageType,
+    triggers_rupture: bool,
 ) -> smallvec::SmallVec<[crate::action::Action; 2]> {
     match id {
-        PowerId::Rupture => ironclad::rupture::on_hp_lost(amount),
+        PowerId::Rupture if triggers_rupture => ironclad::rupture::on_hp_lost(amount),
         PowerId::Split => core::split::on_hp_lost(state, owner, amount),
+        PowerId::PlatedArmor => {
+            core::plated_armor::on_hp_lost(state, owner, amount, source, damage_type)
+        }
         _ => smallvec::smallvec![],
     }
 }
@@ -516,7 +621,10 @@ pub fn resolve_power_on_card_played(
         PowerId::Rage => core::rage::on_card_played(owner, card, power_amount),
         PowerId::SharpHide => core::sharp_hide::on_card_played(state, owner, card, power_amount),
         PowerId::Hex => core::hex::on_card_played(state, owner, card, power_amount),
-        PowerId::ThousandCuts => silent::thousand_cuts::on_after_card_played(owner, power_amount),
+        PowerId::ThousandCuts => {
+            silent::thousand_cuts::on_after_card_played(state, owner, power_amount)
+        }
+        PowerId::AfterImage => silent::after_image::on_card_played(owner, power_amount, card),
         PowerId::Curiosity => core::curiosity::on_player_card_played(owner, power_amount, card),
         PowerId::TimeWarp => {
             core::time_warp::on_player_card_played(owner, power_amount, card, state)
@@ -534,15 +642,16 @@ pub fn resolve_power_on_card_played(
             });
             // Check if counter will hit 0 (current amount - 1 == 0 means we're at 1 now)
             if power_amount == 1 {
-                let damage = state
-                    .power_db
-                    .get(&owner)
+                let damage = crate::content::powers::store::powers_for(state, owner)
                     .and_then(|ps| ps.iter().find(|p| p.power_type == PowerId::PanachePower))
                     .map(|p| p.extra_data)
                     .unwrap_or(10);
                 acts.push(crate::action::Action::DamageAllEnemies {
                     source: owner,
-                    damages: smallvec::smallvec![damage; 5],
+                    damages: crate::action::repeated_damage_matrix(
+                        state.entities.monsters.len(),
+                        damage,
+                    ),
                     damage_type: crate::action::DamageType::Thorns,
                     is_modified: false,
                 });
@@ -605,6 +714,7 @@ pub fn resolve_power_at_turn_start(
                 value: 5,
             }]
         }
+        PowerId::Poison => core::poison::at_turn_start(owner, amount),
         PowerId::Flight => core::flight::at_turn_start(_state, owner, amount),
         _ => smallvec::smallvec![],
     }
@@ -618,6 +728,8 @@ pub fn resolve_power_on_post_draw(
 ) -> smallvec::SmallVec<[crate::action::Action; 2]> {
     match id {
         PowerId::Brutality => ironclad::brutality::on_post_draw(owner, amount),
+        PowerId::DemonForm => ironclad::demon_form::on_post_draw(owner, amount),
+        PowerId::NoxiousFumes => silent::noxious_fumes::on_post_draw(_state, owner, amount),
         _ => smallvec::smallvec![],
     }
 }
@@ -629,6 +741,14 @@ pub fn resolve_power_at_end_of_turn(
     amount: i32,
 ) -> smallvec::SmallVec<[crate::action::Action; 2]> {
     match id {
+        PowerId::DoubleTap => smallvec::smallvec![crate::action::Action::RemovePower {
+            target: owner,
+            power_id: PowerId::DoubleTap,
+        }],
+        PowerId::Burst => smallvec::smallvec![crate::action::Action::RemovePower {
+            target: owner,
+            power_id: PowerId::Burst,
+        }],
         PowerId::Combust => ironclad::combust::at_end_of_turn(_state, owner, amount),
         PowerId::Metallicize => ironclad::metallicize::at_end_of_turn(owner, amount),
         PowerId::Entangle => core::entangle::at_end_of_turn(owner),
@@ -653,15 +773,16 @@ pub fn resolve_power_at_end_of_turn(
                 // Explode! Deal damage (stored in extra_data) to all enemies
                 // For simplicity, we use the card's base magic (40) stored as extra_data
                 // Get extra_data for this power from power_db
-                let extra = _state
-                    .power_db
-                    .get(&owner)
+                let extra = crate::content::powers::store::powers_for(_state, owner)
                     .and_then(|ps| ps.iter().find(|p| p.power_type == PowerId::TheBombPower))
                     .map(|p| p.extra_data)
                     .unwrap_or(40);
                 acts.push(crate::action::Action::DamageAllEnemies {
                     source: owner,
-                    damages: smallvec::smallvec![extra; 5],
+                    damages: crate::action::repeated_damage_matrix(
+                        _state.entities.monsters.len(),
+                        extra,
+                    ),
                     damage_type: crate::action::DamageType::Thorns,
                     is_modified: false,
                 });
@@ -715,9 +836,28 @@ pub fn resolve_power_at_end_of_round(
     just_applied: bool,
 ) -> smallvec::SmallVec<[crate::action::Action; 2]> {
     match id {
+        PowerId::DuplicationPower => {
+            if amount <= 1 {
+                smallvec::smallvec![crate::action::Action::RemovePower {
+                    target: owner,
+                    power_id: PowerId::DuplicationPower,
+                }]
+            } else {
+                smallvec::smallvec![crate::action::Action::ApplyPower {
+                    source: owner,
+                    target: owner,
+                    power_id: PowerId::DuplicationPower,
+                    amount: -1,
+                }]
+            }
+        }
         PowerId::Vulnerable => core::vulnerable::at_end_of_round(owner, amount, just_applied),
         PowerId::Weak => core::weak::at_end_of_round(owner, amount, just_applied),
         PowerId::Frail => core::frail::at_end_of_round(owner, amount, just_applied),
+        PowerId::DrawReduction => {
+            core::draw_reduction::at_end_of_round(owner, amount, just_applied)
+        }
+        PowerId::IntangiblePlayer => core::intangible::at_end_of_round(owner, amount),
         PowerId::Ritual => core::ritual::at_end_of_round(_state, owner, amount),
         PowerId::GenericStrengthUp => core::generic_strength_up::at_end_of_round(owner, amount),
         // Other Powers that decay at end of round can be added here
@@ -732,11 +872,11 @@ pub fn resolve_power_on_card_drawn(
     amount: i32,
     card_uuid: u32,
 ) -> smallvec::SmallVec<[crate::action::Action; 2]> {
-    if let Some(card) = state.hand.iter().find(|c| c.uuid == card_uuid) {
+    if let Some(card) = state.zones.hand.iter().find(|c| c.uuid == card_uuid) {
         match id {
             PowerId::Evolve => ironclad::evolve::on_card_drawn(card.id, amount),
             PowerId::FireBreathing => {
-                ironclad::fire_breathing::on_card_drawn(owner, card.id, amount)
+                ironclad::fire_breathing::on_card_drawn(state, owner, card.id, amount)
             }
             _ => smallvec::smallvec![],
         }
@@ -788,7 +928,6 @@ pub fn resolve_power_on_attacked(
         // SharpHide: moved from on_attacked to on_card_played (Java uses onUseCard, not onAttacked)
         PowerId::Flight => core::flight::on_attacked(state, owner, damage, source, power_amount),
         PowerId::Malleable => core::malleable::on_attacked(state, owner, damage, power_amount),
-        PowerId::PlatedArmor => core::plated_armor::on_attacked(state, owner, damage, power_amount),
         PowerId::Thorns => core::thorns::on_attacked(state, owner, damage, source, power_amount),
         PowerId::Shifting => {
             core::shifting::on_attacked(state, owner, damage, source, power_amount)
@@ -805,10 +944,11 @@ pub fn resolve_power_on_death(
     state: &CombatState,
     owner: crate::core::EntityId,
     amount: i32,
+    extra_data: i32,
 ) -> smallvec::SmallVec<[crate::action::Action; 2]> {
     match id {
         PowerId::SporeCloud => core::spore_cloud::on_death(state, owner, amount),
-        PowerId::Stasis => core::stasis::on_death(owner, amount),
+        PowerId::Stasis => core::stasis::on_death(owner, extra_data),
         PowerId::Unawakened => core::unawakened::on_death(owner, amount),
         PowerId::Shackled => smallvec::smallvec![],
         PowerId::DrawReduction => smallvec::smallvec![],
@@ -822,6 +962,7 @@ pub fn resolve_power_on_remove(
     owner: crate::core::EntityId,
 ) -> smallvec::SmallVec<[crate::action::Action; 2]> {
     match id {
+        PowerId::Flight => core::flight::on_remove(state, owner),
         PowerId::PlatedArmor => core::plated_armor::on_remove(state, owner),
         _ => smallvec::smallvec![],
     }
@@ -951,7 +1092,7 @@ pub fn calculate_monster_damage(
     let mut tmp = base as f32;
 
     // 1. Monster powers (Strength, Weak, etc.) atDamageGive
-    if let Some(owner_powers) = state.power_db.get(&source_id) {
+    if let Some(owner_powers) = crate::content::powers::store::powers_for(state, source_id) {
         for p in owner_powers {
             tmp = match p.power_type {
                 PowerId::Strength => {
@@ -964,7 +1105,7 @@ pub fn calculate_monster_damage(
     }
 
     // 2. Target powers (Vulnerable, Intangible, etc.) atDamageReceive
-    if let Some(target_powers) = state.power_db.get(&target_id) {
+    if let Some(target_powers) = crate::content::powers::store::powers_for(state, target_id) {
         for p in target_powers {
             tmp = match p.power_type {
                 PowerId::Vulnerable => {
@@ -985,20 +1126,22 @@ pub fn calculate_monster_damage(
 
     // 3. Player stance atDamageReceive
     if target_id == 0 {
-        if state.player.stance == crate::combat::StanceId::Wrath {
+        if state.entities.player.stance == crate::combat::StanceId::Wrath {
             tmp *= 2.0;
         }
     }
 
     // 4. Target powers atDamageFinalReceive (Intangible)
-    if let Some(target_powers) = state.power_db.get(&target_id) {
+    if let Some(target_powers) = crate::content::powers::store::powers_for(state, target_id) {
         for p in target_powers {
             tmp = match p.power_type {
-                PowerId::Intangible => core::intangible::at_damage_final_receive(
-                    tmp as i32,
-                    p.amount,
-                    crate::action::DamageType::Normal,
-                ) as f32,
+                PowerId::Intangible | PowerId::IntangiblePlayer => {
+                    core::intangible::at_damage_final_receive(
+                        tmp as i32,
+                        p.amount,
+                        crate::action::DamageType::Normal,
+                    ) as f32
+                }
                 PowerId::Flight => core::flight::at_damage_final_receive(
                     tmp as i32,
                     p.amount,
@@ -1047,12 +1190,10 @@ pub fn resolve_power_on_apply_power(
             //       && source == this.owner && target != this.owner
             //       && !target.hasPower("Artifact"))
             //     → addToBot(DamageAction(target, amount, THORNS))
-            if is_debuff(applied_power_id, applied_amount)
+            if is_debuff_application(applied_power_id, applied_amount)
                 // Java excludes "Shackled" (GainStrengthPower) — TODO: add PowerId::GainStrength
                 && target != source
-                && !state.power_db.get(&target).map_or(false, |powers| {
-                    powers.iter().any(|p| p.power_type == PowerId::Artifact)
-                })
+                && !crate::content::powers::store::has_power(state, target, PowerId::Artifact)
             {
                 actions.push(crate::action::ActionInfo {
                     action: crate::action::Action::Damage(crate::action::DamageInfo {
@@ -1081,7 +1222,7 @@ pub fn resolve_power_at_damage_final_receive(
     damage_type: crate::action::DamageType,
 ) -> i32 {
     match id {
-        PowerId::Intangible => {
+        PowerId::Intangible | PowerId::IntangiblePlayer => {
             core::intangible::at_damage_final_receive(damage, amount, damage_type)
         }
         PowerId::Flight => core::flight::at_damage_final_receive(damage, amount, damage_type),

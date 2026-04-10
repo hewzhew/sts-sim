@@ -53,7 +53,7 @@ impl MonsterBehavior for BronzeOrb {
                     is_modified: false,
                 }));
                 // Let's assume the Bronze Automaton is present and we can just add the block to it.
-                if let Some(automaton) = state.monsters.iter().find(|m| {
+                if let Some(automaton) = state.entities.monsters.iter().find(|m| {
                     crate::content::monsters::EnemyId::from_id(m.monster_type)
                         == Some(EnemyId::BronzeAutomaton)
                         && !m.is_dying
@@ -65,7 +65,7 @@ impl MonsterBehavior for BronzeOrb {
                 }
             }
             2 => {
-                if let Some(automaton) = state.monsters.iter().find(|m| {
+                if let Some(automaton) = state.entities.monsters.iter().find(|m| {
                     crate::content::monsters::EnemyId::from_id(m.monster_type)
                         == Some(EnemyId::BronzeAutomaton)
                         && !m.is_dying

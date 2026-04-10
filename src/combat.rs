@@ -2,7 +2,8 @@ use crate::action::Action;
 use crate::content::cards::CardId;
 use crate::content::relics::RelicState;
 use crate::core::EntityId;
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
+use std::ops::{Deref, DerefMut};
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum MetaChange {
@@ -15,26 +16,103 @@ pub type MonsterId = usize;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct CombatState {
+    pub meta: CombatMeta,
+    pub turn: TurnRuntime,
+    pub zones: CardZones,
+    pub entities: EntityState,
+    pub engine: EngineRuntime,
+    pub rng: CombatRng,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct CombatMeta {
     pub ascension_level: u8,
+    pub is_boss_fight: bool,
+    pub is_elite_fight: bool,
+    pub meta_changes: Vec<MetaChange>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct TurnRuntime {
     pub turn_count: u32,
     pub current_phase: CombatPhase,
     pub energy: u8,
+    /// Narrow Rust equivalent of Java's start-of-turn draw target adjustments.
+    /// This stores only modifier semantics for next turn draw count, not a
+    /// full copy of Java's mutable `player.gameHandSize`.
+    pub turn_start_draw_modifier: i32,
+    pub counters: EphemeralCounters,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct EngineRuntime {
+    pub action_queue: VecDeque<Action>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct CombatRng {
+    pub pool: crate::rng::RngPool,
+}
+
+impl CombatRng {
+    pub fn new(pool: crate::rng::RngPool) -> Self {
+        Self { pool }
+    }
+}
+
+impl Deref for CombatRng {
+    type Target = crate::rng::RngPool;
+
+    fn deref(&self) -> &Self::Target {
+        &self.pool
+    }
+}
+
+impl DerefMut for CombatRng {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.pool
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct CardZones {
     pub draw_pile: Vec<CombatCard>,
     pub hand: Vec<CombatCard>,
     pub discard_pile: Vec<CombatCard>,
     pub exhaust_pile: Vec<CombatCard>,
     pub limbo: Vec<CombatCard>,
+    pub queued_cards: VecDeque<QueuedCardPlay>,
+    pub card_uuid_counter: u32,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct EntityState {
     pub player: PlayerEntity,
     pub monsters: Vec<MonsterEntity>,
     pub potions: Vec<Option<crate::content::potions::Potion>>,
     pub power_db: HashMap<EntityId, Vec<Power>>,
-    pub action_queue: VecDeque<Action>,
-    pub counters: EphemeralCounters,
-    pub card_uuid_counter: u32,
-    pub rng: crate::rng::RngPool,
-    pub is_boss_fight: bool,
-    pub is_elite_fight: bool,
-    pub meta_changes: Vec<MetaChange>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum QueuedCardSource {
+    Normal,
+    Necronomicon,
+    DoubleTap,
+    Duplication,
+    Burst,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct QueuedCardPlay {
+    pub card: CombatCard,
+    pub target: Option<EntityId>,
+    pub energy_on_use: i32,
+    pub ignore_energy_total: bool,
+    pub autoplay: bool,
+    pub random_target: bool,
+    pub is_end_turn_autoplay: bool,
+    pub purge_on_use: bool,
+    pub source: QueuedCardSource,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -51,11 +129,7 @@ pub struct EphemeralCounters {
     pub times_damaged_this_combat: u8,
     pub victory_triggered: bool,
     pub discovery_cost_for_turn: Option<u8>,
-}
-
-#[derive(Clone, Debug, Default, PartialEq)]
-pub struct EpsteinCounters {
-    //  placeholder left open;
+    pub early_end_turn_pending: bool,
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -183,27 +257,17 @@ impl PlayerEntity {
     pub fn add_relic(&mut self, state: RelicState) {
         let index = self.relics.len();
         let sub = crate::content::relics::get_relic_subscriptions(state.id);
-
-        // Java onEquip(): boss relics with ++energyMaster
-        use crate::content::relics::RelicId;
-        match state.id {
-            RelicId::BustedCrown
-            | RelicId::CoffeeDripper
-            | RelicId::CursedKey
-            | RelicId::Ectoplasm
-            | RelicId::FusionHammer
-            | RelicId::MarkOfPain
-            | RelicId::PhilosopherStone
-            | RelicId::RunicDome
-            | RelicId::Sozu
-            | RelicId::VelvetChoker => {
-                self.energy_master += 1;
-            }
-            _ => {}
-        }
+        self.energy_master += crate::content::relics::energy_master_delta(state.id);
 
         self.relics.push(state);
+        self.register_relic_subscriptions(index, sub);
+    }
 
+    fn register_relic_subscriptions(
+        &mut self,
+        index: usize,
+        sub: crate::content::relics::RelicSubscriptions,
+    ) {
         if sub.at_battle_start {
             self.relic_buses.at_battle_start.push(index);
         }
@@ -316,6 +380,21 @@ pub struct MonsterEntity {
     pub move_history: VecDeque<u8>,
     pub intent_dmg: i32,
     pub logical_position: i32,
+    pub hexaghost: HexaghostRuntimeState,
+    pub darkling: DarklingRuntimeState,
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct HexaghostRuntimeState {
+    pub activated: bool,
+    pub orb_active_count: u8,
+    pub burn_upgraded: bool,
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct DarklingRuntimeState {
+    pub first_move: bool,
+    pub nip_dmg: i32,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -381,6 +460,24 @@ pub struct Power {
     pub just_applied: bool,
 }
 
+// Derived combat runtime state that is recomputed from other sources.
+impl CombatState {
+    pub fn recompute_turn_start_draw_modifier(&mut self) {
+        let mut modifier = 0;
+        if let Some(powers) = crate::content::powers::store::powers_for(self, 0) {
+            for power in powers {
+                match power.power_type {
+                    PowerId::DrawReduction => modifier -= power.amount,
+                    // Future DrawPower / similar effects should add their contribution here.
+                    _ => {}
+                }
+            }
+        }
+        self.turn.turn_start_draw_modifier = modifier;
+    }
+}
+
+// Card-zone utilities used by action handlers to reconcile card movement.
 impl CombatState {
     /// Helper to find a card by UUID in a specific slice and remove it. Returns the removed card.
     pub fn remove_card_by_uuid(pile: &mut Vec<CombatCard>, uuid: u32) -> Option<CombatCard> {
@@ -393,41 +490,90 @@ impl CombatState {
 
     /// Looks everywhere for a card and removes it. Useful for UseCard when we don't know exactly where the card went.
     pub fn take_card_from_anywhere(&mut self, uuid: u32) -> Option<CombatCard> {
-        if let Some(c) = Self::remove_card_by_uuid(&mut self.hand, uuid) {
+        if let Some(c) = Self::remove_card_by_uuid(&mut self.zones.hand, uuid) {
             return Some(c);
         }
-        if let Some(c) = Self::remove_card_by_uuid(&mut self.limbo, uuid) {
+        if let Some(c) = Self::remove_card_by_uuid(&mut self.zones.limbo, uuid) {
             return Some(c);
         }
-        if let Some(c) = Self::remove_card_by_uuid(&mut self.draw_pile, uuid) {
+        if let Some(c) = Self::remove_card_by_uuid(&mut self.zones.draw_pile, uuid) {
             return Some(c);
         }
-        if let Some(c) = Self::remove_card_by_uuid(&mut self.discard_pile, uuid) {
+        if let Some(c) = Self::remove_card_by_uuid(&mut self.zones.discard_pile, uuid) {
             return Some(c);
         }
-        if let Some(c) = Self::remove_card_by_uuid(&mut self.exhaust_pile, uuid) {
+        if let Some(c) = Self::remove_card_by_uuid(&mut self.zones.exhaust_pile, uuid) {
             return Some(c);
         }
         None
     }
+}
 
+// Lightweight read helpers over combat-owned runtime state.
+impl CombatState {
     /// Gets the current stack amount of a specific power on an entity
     pub fn get_power(&self, target: EntityId, power_id: PowerId) -> i32 {
-        if let Some(powers) = self.power_db.get(&target) {
-            if let Some(power) = powers.iter().find(|p| p.power_type == power_id) {
-                return power.amount;
+        crate::content::powers::store::power_amount(self, target, power_id)
+    }
+}
+
+// Queue-sensitive runtime helpers for Java cardQueue approximations.
+impl CombatState {
+    /// Best-effort approximation of Java's cardQueue membership for effects that
+    /// should avoid already-queued cards (for example Mummified Hand).
+    ///
+    /// We do not model AbstractDungeon.actionManager.cardQueue explicitly, but cards
+    /// already in limbo or already wrapped in queued play actions should not be treated
+    /// as normal in-hand candidates.
+    pub fn reserved_card_uuids_for_queue_sensitive_effects(&self) -> HashSet<u32> {
+        let mut reserved = HashSet::new();
+        for card in &self.zones.limbo {
+            reserved.insert(card.uuid);
+        }
+        for queued in &self.zones.queued_cards {
+            reserved.insert(queued.card.uuid);
+        }
+        for action in &self.engine.action_queue {
+            match action {
+                Action::EnqueueCardPlay { item, .. } => {
+                    reserved.insert(item.card.uuid);
+                }
+                Action::PlayCardDirect { card, .. } => {
+                    reserved.insert(card.uuid);
+                }
+                Action::UseCard { uuid, .. } => {
+                    reserved.insert(*uuid);
+                }
+                _ => {}
             }
         }
-        0
+        reserved
     }
 
+    pub fn enqueue_card_play(&mut self, item: QueuedCardPlay, in_front: bool) {
+        let was_empty = self.zones.queued_cards.is_empty();
+        if in_front {
+            self.zones.queued_cards.push_front(item);
+        } else {
+            self.zones.queued_cards.push_back(item);
+        }
+        if was_empty {
+            self.engine
+                .action_queue
+                .push_back(Action::FlushNextQueuedCard);
+        }
+    }
+}
+
+// Hand re-evaluation helpers used after state-changing effects.
+impl CombatState {
     /// Reparses all cards in the hand to dynamically calculate damage, block, and magic numbers.
     /// Clones the hand to satisfy borrow-checker while allowing `PerfectedStrike` to read `&self.hand`.
     pub fn update_hand_cards(&mut self) {
-        let mut new_hand = self.hand.clone();
+        let mut new_hand = self.zones.hand.clone();
         for card in &mut new_hand {
             crate::content::cards::evaluate_card(card, self, None);
         }
-        self.hand = new_hand;
+        self.zones.hand = new_hand;
     }
 }

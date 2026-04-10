@@ -183,7 +183,7 @@ impl MonsterBehavior for WrithingMass {
 
     fn take_turn(state: &mut CombatState, entity: &crate::combat::MonsterEntity) -> Vec<Action> {
         let mut actions = Vec::new();
-        let asc = state.ascension_level;
+        let asc = state.meta.ascension_level;
 
         let (big_dmg, multi_dmg, acc_dmg, debuff_dmg) = if asc >= 2 {
             (38, 9, 16, 12)

@@ -231,10 +231,10 @@ pub fn compare_states(
     let java_hp = java_player["current_hp"]
         .as_i64()
         .unwrap_or(java_player["hp"].as_i64().unwrap_or(0)) as i32;
-    if cs.player.current_hp != java_hp {
+    if cs.entities.player.current_hp != java_hp {
         diffs.push(DiffResult {
             field: "player.hp".into(),
-            rust_val: cs.player.current_hp.to_string(),
+            rust_val: cs.entities.player.current_hp.to_string(),
             java_val: java_hp.to_string(),
             category: if context.was_end_turn {
                 DiffCategory::ContentGap
@@ -245,10 +245,10 @@ pub fn compare_states(
     }
 
     let java_block = java_player["block"].as_i64().unwrap_or(0) as i32;
-    if cs.player.block != java_block {
+    if cs.entities.player.block != java_block {
         diffs.push(DiffResult {
             field: "player.block".into(),
-            rust_val: cs.player.block.to_string(),
+            rust_val: cs.entities.player.block.to_string(),
             java_val: java_block.to_string(),
             category: if context.was_end_turn {
                 DiffCategory::ContentGap
@@ -259,10 +259,10 @@ pub fn compare_states(
     }
 
     let java_energy = java_player["energy"].as_u64().unwrap_or(0) as u8;
-    if cs.energy != java_energy {
+    if cs.turn.energy != java_energy {
         diffs.push(DiffResult {
             field: "player.energy".into(),
-            rust_val: cs.energy.to_string(),
+            rust_val: cs.turn.energy.to_string(),
             java_val: java_energy.to_string(),
             category: DiffCategory::EngineBug,
         });
@@ -271,10 +271,10 @@ pub fn compare_states(
     let java_monsters = java_snapshot["monsters"].as_array();
     if let Some(java_ms) = java_monsters {
         for (i, jm) in java_ms.iter().enumerate() {
-            if i >= cs.monsters.len() {
+            if i >= cs.entities.monsters.len() {
                 continue;
             }
-            let rm = &cs.monsters[i];
+            let rm = &cs.entities.monsters[i];
             let jm_hp = jm["current_hp"]
                 .as_i64()
                 .unwrap_or(jm["hp"].as_i64().unwrap_or(0)) as i32;
@@ -313,10 +313,10 @@ pub fn compare_states(
                     .map(|a| a.len())
                     .unwrap_or(0)
             });
-        if cs.hand.len() != java_hand_size {
+        if cs.zones.hand.len() != java_hand_size {
             diffs.push(DiffResult {
                 field: "hand_size".into(),
-                rust_val: cs.hand.len().to_string(),
+                rust_val: cs.zones.hand.len().to_string(),
                 java_val: java_hand_size.to_string(),
                 category: DiffCategory::EngineBug,
             });
@@ -331,10 +331,10 @@ pub fn compare_states(
                     .map(|a| a.len())
                     .unwrap_or(0)
             });
-        if cs.discard_pile.len() != java_discard {
+        if cs.zones.discard_pile.len() != java_discard {
             diffs.push(DiffResult {
                 field: "discard_pile_size".into(),
-                rust_val: cs.discard_pile.len().to_string(),
+                rust_val: cs.zones.discard_pile.len().to_string(),
                 java_val: java_discard.to_string(),
                 category: DiffCategory::EngineBug,
             });
@@ -349,10 +349,10 @@ pub fn compare_states(
                     .map(|a| a.len())
                     .unwrap_or(0)
             });
-        if cs.exhaust_pile.len() != java_exhaust {
+        if cs.zones.exhaust_pile.len() != java_exhaust {
             diffs.push(DiffResult {
                 field: "exhaust_pile_size".into(),
-                rust_val: cs.exhaust_pile.len().to_string(),
+                rust_val: cs.zones.exhaust_pile.len().to_string(),
                 java_val: java_exhaust.to_string(),
                 category: DiffCategory::EngineBug,
             });
@@ -363,14 +363,14 @@ pub fn compare_states(
         &mut diffs,
         "player",
         0,
-        &cs.power_db,
+        &cs.entities.power_db,
         &java_player["powers"],
         context,
     );
 
     if let Some(java_ms) = java_monsters {
         for (i, jm) in java_ms.iter().enumerate() {
-            if i >= cs.monsters.len() {
+            if i >= cs.entities.monsters.len() {
                 continue;
             }
 
@@ -381,12 +381,12 @@ pub fn compare_states(
                 continue;
             }
 
-            let entity_id = cs.monsters[i].id;
+            let entity_id = cs.entities.monsters[i].id;
             compare_powers(
                 &mut diffs,
                 &format!("monster[{}]", i),
                 entity_id,
-                &cs.power_db,
+                &cs.entities.power_db,
                 &jm["powers"],
                 context,
             );
@@ -701,7 +701,7 @@ mod tests {
             let input = match action.action_type.as_str() {
                 "play" => ClientInput::PlayCard {
                     card_index: action.card_index.unwrap(),
-                    target: action.target.map(|t| cs.monsters[t as usize].id),
+                    target: action.target.map(|t| cs.entities.monsters[t as usize].id),
                 },
                 "end_turn" => ClientInput::EndTurn,
                 other => panic!("unexpected action type {other}"),
@@ -712,6 +712,7 @@ mod tests {
 
         let battle_trance_result = &combat.actions[5].result;
         let local_no_draw = cs
+            .entities
             .power_db
             .get(&0)
             .and_then(|powers| {
@@ -724,7 +725,7 @@ mod tests {
             local_no_draw,
             Some(-1),
             "expected local state to contain No Draw(-1), got {:?}",
-            cs.power_db.get(&0)
+            cs.entities.power_db.get(&0)
         );
         let context = ActionContext {
             last_command: "Battle Trance".into(),
@@ -767,7 +768,7 @@ mod tests {
             let input = match action.action_type.as_str() {
                 "play" => ClientInput::PlayCard {
                     card_index: action.card_index.unwrap(),
-                    target: action.target.map(|t| cs.monsters[t as usize].id),
+                    target: action.target.map(|t| cs.entities.monsters[t as usize].id),
                 },
                 "end_turn" => ClientInput::EndTurn,
                 other => panic!("unexpected action type {other}"),
@@ -777,8 +778,9 @@ mod tests {
         }
 
         let defend_result = &combat.actions[4].result;
-        let nob_id = cs.monsters[0].id;
+        let nob_id = cs.entities.monsters[0].id;
         let local_strength = cs
+            .entities
             .power_db
             .get(&nob_id)
             .and_then(|powers| {
@@ -791,7 +793,7 @@ mod tests {
             local_strength,
             Some(2),
             "expected Gremlin Nob to gain 2 Strength after player used a skill, got {:?}",
-            cs.power_db.get(&nob_id)
+            cs.entities.power_db.get(&nob_id)
         );
 
         let context = ActionContext {
@@ -834,7 +836,7 @@ mod tests {
             let input = match action.action_type.as_str() {
                 "play" => ClientInput::PlayCard {
                     card_index: action.card_index.unwrap(),
-                    target: action.target.map(|t| cs.monsters[t as usize].id),
+                    target: action.target.map(|t| cs.entities.monsters[t as usize].id),
                 },
                 "potion" => ClientInput::UsePotion {
                     potion_index: action
@@ -843,7 +845,7 @@ mod tests {
                         .and_then(|cmd| cmd.split_whitespace().nth(2))
                         .and_then(|slot| slot.parse::<usize>().ok())
                         .expect("expected replay potion command to include slot index"),
-                    target: action.target.map(|t| cs.monsters[t as usize].id),
+                    target: action.target.map(|t| cs.entities.monsters[t as usize].id),
                 },
                 "end_turn" => ClientInput::EndTurn,
                 other => panic!("unexpected action type {other}"),
@@ -854,18 +856,19 @@ mod tests {
 
         let dropkick_result = &combat.actions[7].result;
         assert_eq!(
-            cs.player.current_hp, 77,
+            cs.entities.player.current_hp, 77,
             "expected Sharp Hide to deal 3 damage before Centennial Puzzle draw, got hp={} with relics {:?}",
-            cs.player.current_hp, cs.player.relics
+            cs.entities.player.current_hp, cs.entities.player.relics
         );
         assert_eq!(
-            cs.hand.len(),
+            cs.zones.hand.len(),
             8,
             "expected Dropkick + Centennial Puzzle to leave 8 cards in hand, got {:?}",
-            cs.hand.iter().map(|c| c.id).collect::<Vec<_>>()
+            cs.zones.hand.iter().map(|c| c.id).collect::<Vec<_>>()
         );
 
         let puzzle_used = cs
+            .entities
             .player
             .relics
             .iter()
@@ -875,7 +878,7 @@ mod tests {
             puzzle_used,
             Some(true),
             "expected Centennial Puzzle to mark itself used after first HP loss, got {:?}",
-            cs.player.relics
+            cs.entities.player.relics
         );
 
         let context = ActionContext {
@@ -918,7 +921,7 @@ mod tests {
             let input = match action.action_type.as_str() {
                 "play" => ClientInput::PlayCard {
                     card_index: action.card_index.unwrap(),
-                    target: action.target.map(|t| cs.monsters[t as usize].id),
+                    target: action.target.map(|t| cs.entities.monsters[t as usize].id),
                 },
                 "end_turn" => ClientInput::EndTurn,
                 other => panic!("unexpected action type {other}"),
@@ -929,6 +932,7 @@ mod tests {
 
         let end_turn_result = &combat.actions[5].result;
         let has_fusion_hammer = cs
+            .entities
             .player
             .relics
             .iter()
@@ -938,14 +942,14 @@ mod tests {
             "expected Fusion Hammer relic in local state"
         );
         assert_eq!(
-            cs.player.energy_master, 4,
+            cs.entities.player.energy_master, 4,
             "expected Fusion Hammer to keep energy_master at 4, got relics {:?}",
-            cs.player.relics
+            cs.entities.player.relics
         );
         assert_eq!(
-            cs.energy, 4,
+            cs.turn.energy, 4,
             "expected new turn energy to recharge to 4, got energy={} energy_master={} relics {:?}",
-            cs.energy, cs.player.energy_master, cs.player.relics
+            cs.turn.energy, cs.entities.player.energy_master, cs.entities.player.relics
         );
 
         let context = ActionContext {
@@ -986,7 +990,7 @@ mod tests {
         let input = match action.action_type.as_str() {
             "play" => ClientInput::PlayCard {
                 card_index: action.card_index.unwrap(),
-                target: action.target.map(|t| cs.monsters[t as usize].id),
+                target: action.target.map(|t| cs.entities.monsters[t as usize].id),
             },
             other => panic!("unexpected action type {other}"),
         };
@@ -994,17 +998,19 @@ mod tests {
         prev_snapshot = action.result.clone();
 
         assert_eq!(
-            cs.monsters[0].current_hp,
+            cs.entities.monsters[0].current_hp,
             29,
             "expected Thunderclap to deal 2 damage to Byrd through Flight, got monsters {:?}",
-            cs.monsters
+            cs.entities
+                .monsters
                 .iter()
                 .map(|m| (m.id, m.current_hp, m.block))
                 .collect::<Vec<_>>()
         );
         let byrd_flight = cs
+            .entities
             .power_db
-            .get(&cs.monsters[0].id)
+            .get(&cs.entities.monsters[0].id)
             .and_then(|powers| {
                 powers
                     .iter()
@@ -1015,7 +1021,7 @@ mod tests {
             byrd_flight,
             Some(2),
             "expected Byrd Flight to drop from 3 to 2 after Thunderclap, got {:?}",
-            cs.power_db.get(&cs.monsters[0].id)
+            cs.entities.power_db.get(&cs.entities.monsters[0].id)
         );
 
         let context = ActionContext {
@@ -1057,15 +1063,16 @@ mod tests {
         let input = match action.action_type.as_str() {
             "play" => ClientInput::PlayCard {
                 card_index: action.card_index.unwrap(),
-                target: action.target.map(|t| cs.monsters[t as usize].id),
+                target: action.target.map(|t| cs.entities.monsters[t as usize].id),
             },
             other => panic!("unexpected action type {other}"),
         };
         tick_until_stable(&mut es, &mut cs, input);
         prev_snapshot = action.result.clone();
 
-        let mad_gremlin_id = cs.monsters[0].id;
+        let mad_gremlin_id = cs.entities.monsters[0].id;
         let local_strength = cs
+            .entities
             .power_db
             .get(&mad_gremlin_id)
             .and_then(|powers| {
@@ -1078,7 +1085,7 @@ mod tests {
             local_strength,
             None,
             "expected Battle Trance not to grant Mad Gremlin Strength, got {:?}",
-            cs.power_db.get(&mad_gremlin_id)
+            cs.entities.power_db.get(&mad_gremlin_id)
         );
 
         let context = ActionContext {
@@ -1135,7 +1142,7 @@ mod tests {
                 target: parts
                     .get(3)
                     .and_then(|s| s.parse::<usize>().ok())
-                    .map(|t| cs.monsters[t as usize].id),
+                    .map(|t| cs.entities.monsters[t as usize].id),
             };
             tick_until_stable(&mut es, &mut cs, input);
             carried_pending = match &es {
@@ -1146,10 +1153,11 @@ mod tests {
         }
 
         assert_eq!(
-            cs.discard_pile.len(),
+            cs.zones.discard_pile.len(),
             3,
             "expected deferred GamblingChip replay continuation to discard 3 cards, got {:?}",
-            cs.discard_pile
+            cs.zones
+                .discard_pile
                 .iter()
                 .map(|c| (c.id, c.uuid))
                 .collect::<Vec<_>>()
@@ -1195,6 +1203,7 @@ mod tests {
         prev_snapshot = combat.actions[6].result.clone();
 
         let local_order: Vec<_> = cs
+            .entities
             .monsters
             .iter()
             .map(|m| crate::content::monsters::EnemyId::from_id(m.monster_type))
@@ -1207,7 +1216,8 @@ mod tests {
                 Some(crate::content::monsters::EnemyId::TheCollector),
             ],
             "expected Collector summon order [TorchHead, TorchHead, TheCollector], got {:?}",
-            cs.monsters
+            cs.entities
+                .monsters
                 .iter()
                 .map(|m| (m.id, m.slot, m.logical_position, m.monster_type))
                 .collect::<Vec<_>>()
@@ -1271,7 +1281,7 @@ mod tests {
             target: parts
                 .get(3)
                 .and_then(|s| s.parse::<usize>().ok())
-                .map(|t| cs.monsters[t as usize].id),
+                .map(|t| cs.entities.monsters[t as usize].id),
         };
 
         let alive = tick_until_stable(&mut es, &mut cs, input);
@@ -1288,7 +1298,7 @@ mod tests {
             es
         );
         assert_eq!(
-            cs.player.current_hp, 64,
+            cs.entities.player.current_hp, 64,
             "expected Toy Ornithopter heal to remain queued until after Gambling Chip selection"
         );
 
@@ -1336,7 +1346,7 @@ mod tests {
             target: first_parts
                 .get(3)
                 .and_then(|s| s.parse::<usize>().ok())
-                .map(|t| cs.monsters[t as usize].id),
+                .map(|t| cs.entities.monsters[t as usize].id),
         };
         assert!(tick_until_stable(&mut es, &mut cs, first_input));
         let pending = match &es {
@@ -1360,12 +1370,12 @@ mod tests {
             target: second_parts
                 .get(3)
                 .and_then(|s| s.parse::<usize>().ok())
-                .map(|t| cs.monsters[t as usize].id),
+                .map(|t| cs.entities.monsters[t as usize].id),
         };
         let mut second_es = EngineState::CombatPlayerTurn;
         assert!(tick_until_stable(&mut second_es, &mut cs, second_input));
         assert_eq!(
-            cs.player.current_hp, 74,
+            cs.entities.player.current_hp, 74,
             "expected deferred Toy Ornithopter heal from Gamblers Brew plus Fire Potion heal"
         );
     }
@@ -1401,7 +1411,7 @@ mod tests {
             let input = match action.action_type.as_str() {
                 "play" => ClientInput::PlayCard {
                     card_index: action.card_index.unwrap(),
-                    target: action.target.map(|t| cs.monsters[t as usize].id),
+                    target: action.target.map(|t| cs.entities.monsters[t as usize].id),
                 },
                 "potion" => {
                     let cmd = action.command.as_deref().expect("potion command");
@@ -1411,7 +1421,7 @@ mod tests {
                         target: parts
                             .get(3)
                             .and_then(|s| s.parse::<usize>().ok())
-                            .map(|t| cs.monsters[t as usize].id),
+                            .map(|t| cs.entities.monsters[t as usize].id),
                     }
                 }
                 "end_turn" => ClientInput::EndTurn,
@@ -1427,8 +1437,8 @@ mod tests {
             prev_snapshot = action.result.clone();
         }
 
-        let awakened = &cs.monsters[2];
-        let regen = cs.power_db.get(&awakened.id).and_then(|powers| {
+        let awakened = &cs.entities.monsters[2];
+        let regen = cs.entities.power_db.get(&awakened.id).and_then(|powers| {
             powers
                 .iter()
                 .find(|p| p.power_type == crate::content::powers::PowerId::Regen)
@@ -1490,7 +1500,7 @@ mod tests {
             let input = match action.action_type.as_str() {
                 "play" => ClientInput::PlayCard {
                     card_index: action.card_index.unwrap(),
-                    target: action.target.map(|t| cs.monsters[t as usize].id),
+                    target: action.target.map(|t| cs.entities.monsters[t as usize].id),
                 },
                 "potion" => {
                     let cmd = action.command.as_deref().expect("potion command");
@@ -1500,7 +1510,7 @@ mod tests {
                         target: parts
                             .get(3)
                             .and_then(|s| s.parse::<usize>().ok())
-                            .map(|t| cs.monsters[t as usize].id),
+                            .map(|t| cs.entities.monsters[t as usize].id),
                     }
                 }
                 "end_turn" => ClientInput::EndTurn,
@@ -1516,11 +1526,11 @@ mod tests {
             prev_snapshot = action.result.clone();
         }
 
-        let awakened = &cs.monsters[2];
+        let awakened = &cs.entities.monsters[2];
         assert_eq!(awakened.current_hp, 0);
         assert!(awakened.half_dead, "expected Awakened One to be half-dead");
         assert_eq!(awakened.next_move_byte, 3);
-        let regen = cs.power_db.get(&awakened.id).and_then(|powers| {
+        let regen = cs.entities.power_db.get(&awakened.id).and_then(|powers| {
             powers
                 .iter()
                 .find(|p| p.power_type == crate::content::powers::PowerId::Regen)
@@ -1528,7 +1538,7 @@ mod tests {
         });
         assert_eq!(regen, Some(10));
         assert_eq!(
-            cs.discard_pile.len(),
+            cs.zones.discard_pile.len(),
             12,
             "expected current Perfected Strike to reach discard before rebirth"
         );
@@ -1557,7 +1567,7 @@ mod tests {
         let mut es = EngineState::CombatPlayerTurn;
         let alive = tick_until_stable(&mut es, &mut cs, ClientInput::EndTurn);
         assert!(alive, "expected rebirth end turn to keep combat alive");
-        let reborn = &cs.monsters[2];
+        let reborn = &cs.entities.monsters[2];
         assert_eq!(reborn.current_hp, 300);
         assert!(!reborn.half_dead);
         assert_eq!(reborn.next_move_byte, 5);
@@ -1617,7 +1627,7 @@ mod tests {
             let input = match action.action_type.as_str() {
                 "play" => ClientInput::PlayCard {
                     card_index: action.card_index.unwrap(),
-                    target: action.target.map(|t| cs.monsters[t as usize].id),
+                    target: action.target.map(|t| cs.entities.monsters[t as usize].id),
                 },
                 "potion" => {
                     let cmd = action.command.as_deref().expect("potion command");
@@ -1627,7 +1637,7 @@ mod tests {
                         target: parts
                             .get(3)
                             .and_then(|s| s.parse::<usize>().ok())
-                            .map(|t| cs.monsters[t as usize].id),
+                            .map(|t| cs.entities.monsters[t as usize].id),
                     }
                 }
                 "end_turn" => ClientInput::EndTurn,
@@ -1646,9 +1656,9 @@ mod tests {
         }
 
         assert_eq!(
-            cs.monsters[2].current_hp, 85,
+            cs.entities.monsters[2].current_hp, 85,
             "expected Dropkick under Weak + Vulnerable to deal 5 damage (5 * 0.75 * 1.5 floored once), got monsters {:?}",
-            cs.monsters
+            cs.entities.monsters
                 .iter()
                 .map(|m| (m.id, m.current_hp, m.block))
                 .collect::<Vec<_>>()
@@ -1691,7 +1701,7 @@ mod tests {
             let input = match action.action_type.as_str() {
                 "play" => ClientInput::PlayCard {
                     card_index: action.card_index.unwrap(),
-                    target: action.target.map(|t| cs.monsters[t as usize].id),
+                    target: action.target.map(|t| cs.entities.monsters[t as usize].id),
                 },
                 "end_turn" => ClientInput::EndTurn,
                 other => panic!("unexpected action type {other}"),
@@ -1702,10 +1712,11 @@ mod tests {
         }
 
         let strengths: Vec<_> = cs
+            .entities
             .monsters
             .iter()
             .map(|m| {
-                cs.power_db.get(&m.id).and_then(|powers| {
+                cs.entities.power_db.get(&m.id).and_then(|powers| {
                     powers
                         .iter()
                         .find(|p| p.power_type == crate::content::powers::PowerId::Strength)
@@ -1717,7 +1728,7 @@ mod tests {
             strengths,
             vec![Some(3), Some(3)],
             "expected both Orb Walkers to gain 3 Strength from GenericStrengthUp after end turn, got {:?}",
-            cs.power_db
+            cs.entities.power_db
         );
 
         let context = ActionContext {
@@ -1759,7 +1770,7 @@ mod tests {
             let input = match action.action_type.as_str() {
                 "play" => ClientInput::PlayCard {
                     card_index: action.card_index.unwrap(),
-                    target: action.target.map(|t| cs.monsters[t as usize].id),
+                    target: action.target.map(|t| cs.entities.monsters[t as usize].id),
                 },
                 "end_turn" => ClientInput::EndTurn,
                 other => panic!("unexpected action type {other}"),
@@ -1770,16 +1781,17 @@ mod tests {
         }
 
         assert_eq!(
-            cs.hand.len(),
+            cs.zones.hand.len(),
             10,
             "expected Battle Trance to stop at full hand size 10, got {:?}",
-            cs.hand.iter().map(|c| c.id).collect::<Vec<_>>()
+            cs.zones.hand.iter().map(|c| c.id).collect::<Vec<_>>()
         );
         assert_eq!(
-            cs.discard_pile.len(),
+            cs.zones.discard_pile.len(),
             2,
             "expected overflow draws to stop instead of discarding extra cards, got discard {:?}",
-            cs.discard_pile
+            cs.zones
+                .discard_pile
                 .iter()
                 .map(|c| (c.id, c.uuid))
                 .collect::<Vec<_>>()
@@ -1824,7 +1836,7 @@ mod tests {
             let input = match action.action_type.as_str() {
                 "play" => ClientInput::PlayCard {
                     card_index: action.card_index.unwrap(),
-                    target: action.target.map(|t| cs.monsters[t as usize].id),
+                    target: action.target.map(|t| cs.entities.monsters[t as usize].id),
                 },
                 "end_turn" => ClientInput::EndTurn,
                 other => panic!("unexpected action type {other}"),
@@ -1835,8 +1847,9 @@ mod tests {
         }
 
         let malleable = cs
+            .entities
             .power_db
-            .get(&cs.monsters[0].id)
+            .get(&cs.entities.monsters[0].id)
             .and_then(|powers| {
                 powers
                     .iter()
@@ -1847,7 +1860,7 @@ mod tests {
             malleable,
             Some((3, 3)),
             "expected Writhing Mass Malleable to reset to basePower 3 and remain present, got {:?}",
-            cs.power_db.get(&cs.monsters[0].id)
+            cs.entities.power_db.get(&cs.entities.monsters[0].id)
         );
 
         let context = ActionContext {
@@ -1890,7 +1903,7 @@ mod tests {
             let input = match action.action_type.as_str() {
                 "play" => ClientInput::PlayCard {
                     card_index: action.card_index.unwrap(),
-                    target: action.target.map(|t| cs.monsters[t as usize].id),
+                    target: action.target.map(|t| cs.entities.monsters[t as usize].id),
                 },
                 "end_turn" => ClientInput::EndTurn,
                 other => panic!("unexpected action type {other}"),
@@ -1900,13 +1913,13 @@ mod tests {
             prev_snapshot = action.result.clone();
         }
 
-        let writhing = &cs.monsters[0];
+        let writhing = &cs.entities.monsters[0];
         assert_eq!(
             writhing.block, 3,
             "expected Writhing Mass to gain 3 block from Malleable after Perfected Strike, got hp/block {:?}",
             (writhing.current_hp, writhing.block)
         );
-        let malleable_amount = cs.power_db.get(&writhing.id).and_then(|powers| {
+        let malleable_amount = cs.entities.power_db.get(&writhing.id).and_then(|powers| {
             powers
                 .iter()
                 .find(|p| p.power_type == crate::content::powers::PowerId::Malleable)
@@ -1916,7 +1929,7 @@ mod tests {
             malleable_amount,
             Some(4),
             "expected Malleable to increment from 3 to 4 after the hit, got {:?}",
-            cs.power_db.get(&writhing.id)
+            cs.entities.power_db.get(&writhing.id)
         );
 
         let context = ActionContext {
@@ -1956,7 +1969,7 @@ mod tests {
             let input = match action.action_type.as_str() {
                 "play" => ClientInput::PlayCard {
                     card_index: action.card_index.unwrap(),
-                    target: action.target.map(|t| cs.monsters[t as usize].id),
+                    target: action.target.map(|t| cs.entities.monsters[t as usize].id),
                 },
                 "end_turn" => ClientInput::EndTurn,
                 other => panic!("unexpected action type {other}"),
@@ -1966,8 +1979,8 @@ mod tests {
             prev_snapshot = action.result.clone();
         }
 
-        let transient = &cs.monsters[0];
-        let shackled = cs.power_db.get(&transient.id).and_then(|powers| {
+        let transient = &cs.entities.monsters[0];
+        let shackled = cs.entities.power_db.get(&transient.id).and_then(|powers| {
             powers
                 .iter()
                 .find(|p| p.power_type == crate::content::powers::PowerId::Shackled)
@@ -1977,7 +1990,7 @@ mod tests {
             shackled,
             Some(7),
             "expected Transient Shifting to add Shackled(7) after Dropkick, got {:?}",
-            cs.power_db.get(&transient.id)
+            cs.entities.power_db.get(&transient.id)
         );
 
         let context = ActionContext {
@@ -2019,7 +2032,7 @@ mod tests {
             let input = match action.action_type.as_str() {
                 "play" => ClientInput::PlayCard {
                     card_index: action.card_index.unwrap(),
-                    target: action.target.map(|t| cs.monsters[t as usize].id),
+                    target: action.target.map(|t| cs.entities.monsters[t as usize].id),
                 },
                 "end_turn" => ClientInput::EndTurn,
                 other => panic!("unexpected action type {other}"),
@@ -2029,8 +2042,9 @@ mod tests {
             prev_snapshot = action.result.clone();
         }
 
-        let transient = &cs.monsters[0];
+        let transient = &cs.entities.monsters[0];
         let powers = cs
+            .entities
             .power_db
             .get(&transient.id)
             .expect("expected Transient powers after Shrug It Off");

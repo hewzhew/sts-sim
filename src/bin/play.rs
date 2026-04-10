@@ -56,6 +56,18 @@ struct AppState {
     stashed_event_combat: Option<EventCombatState>,
 }
 
+fn print_end_turn_diagnostic(combat: &CombatState) {
+    let lines = sts_simulator::bot::combat_heuristic::describe_end_turn_options(combat);
+    if let Some(summary) = lines.first() {
+        println!("  [BOT] End Turn | {}", summary);
+        if let Some(best_alt) = lines.get(1) {
+            println!("  [BOT]   alt: {}", best_alt);
+        }
+    } else {
+        println!("  [BOT] End Turn");
+    }
+}
+
 impl AppState {
     pub fn evaluate_display_mode(&mut self, run: &RunState, _combat: Option<&CombatState>) {
         let mut target_mode = self.dashboard.base_mode;
@@ -65,7 +77,7 @@ impl AppState {
                 LogRule::HpBelowPercent(pct) => {
                     (run.current_hp as f32 / run.max_hp.max(1) as f32) < *pct
                 }
-                LogRule::BossCombat => _combat.map_or(false, |c| c.is_boss_fight),
+                LogRule::BossCombat => _combat.map_or(false, |c| c.meta.is_boss_fight),
             };
             if triggered && target_mode < DisplayMode::DeepDebug {
                 target_mode = DisplayMode::DeepDebug;
@@ -116,6 +128,30 @@ fn main() {
             .position(|a| a == flag)
             .and_then(|idx| args.get(idx + 1))
             .cloned()
+    };
+    let flag_values = |flag: &str| {
+        let mut values = Vec::new();
+        let mut idx = 0usize;
+        while idx < args.len() {
+            if args[idx] == flag {
+                if let Some(value) = args.get(idx + 1) {
+                    values.push(value.clone());
+                }
+                idx += 1;
+            }
+            idx += 1;
+        }
+        values
+    };
+    let player_class = match flag_value("--class")
+        .unwrap_or_else(|| "ironclad".to_string())
+        .to_ascii_lowercase()
+        .as_str()
+    {
+        "silent" => "Silent",
+        "defect" => "Defect",
+        "watcher" => "Watcher",
+        _ => "Ironclad",
     };
     let start_auto = has_flag("--auto");
     let coverage_mode = if has_flag("--coverage-off") {
@@ -194,13 +230,53 @@ fn main() {
     app.agent.set_curiosity_target(curiosity_target.clone());
 
     if has_flag("--live-comm") {
-        sts_simulator::cli::live_comm::run_live_comm_loop(app.agent);
+        let config = sts_simulator::cli::live_comm::LiveCommConfig {
+            human_card_reward_audit: has_flag("--live-comm-human-card-reward"),
+            human_boss_combat_handoff: has_flag("--live-comm-human-boss-combat"),
+            watch_capture: sts_simulator::cli::live_comm::LiveWatchCaptureConfig {
+                cards: flag_values("--live-watch-card"),
+                relics: flag_values("--live-watch-relic"),
+                powers: flag_values("--live-watch-power"),
+                monsters: flag_values("--live-watch-monster"),
+                screens: flag_values("--live-watch-screen"),
+                room_phases: flag_values("--live-watch-room-phase"),
+                command_kinds: flag_values("--live-watch-command-kind"),
+                match_mode: match flag_value("--live-watch-match")
+                    .unwrap_or_else(|| "any".to_string())
+                    .to_ascii_lowercase()
+                    .as_str()
+                {
+                    "all" => sts_simulator::cli::live_comm::LiveWatchMatchMode::All,
+                    _ => sts_simulator::cli::live_comm::LiveWatchMatchMode::Any,
+                },
+                window_responses: flag_value("--live-watch-window")
+                    .and_then(|v| v.parse().ok())
+                    .unwrap_or(6),
+                dedupe_window_responses: flag_value("--live-watch-dedupe-window")
+                    .and_then(|v| v.parse().ok())
+                    .unwrap_or(3),
+                max_captures: flag_value("--live-watch-max")
+                    .and_then(|v| v.parse().ok())
+                    .unwrap_or(20),
+                out_dir: flag_value("--live-watch-dir")
+                    .map(std::path::PathBuf::from)
+                    .unwrap_or_else(|| {
+                        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                            .join("tests")
+                            .join("live_captures")
+                    }),
+            },
+        };
+        sts_simulator::cli::live_comm::run_live_comm_loop(app.agent, config);
         return;
     }
 
     if !app.is_silence() {
         println!("=== Slay the Spire Simulator ===");
-        println!("Seed: {}  Ascension: {}  Class: Ironclad", seed, ascension);
+        println!(
+            "Seed: {}  Ascension: {}  Class: {}",
+            seed, ascension, player_class
+        );
         println!(
             "Mode: {}  Display: {:?}  Coverage: {:?}{}",
             if app.mode == InputMode::Auto {
@@ -218,33 +294,7 @@ fn main() {
         println!("Type 'help' for commands.\n");
     }
 
-    let mut run_state = RunState::new(seed, ascension, false, "Ironclad");
-
-    // Starter deck
-    use sts_simulator::content::cards::CardId;
-    let starter_cards = [
-        CardId::Strike,
-        CardId::Strike,
-        CardId::Strike,
-        CardId::Strike,
-        CardId::Strike,
-        CardId::Defend,
-        CardId::Defend,
-        CardId::Defend,
-        CardId::Defend,
-        CardId::Bash,
-    ];
-    for (i, &card_id) in starter_cards.iter().enumerate() {
-        run_state
-            .master_deck
-            .push(sts_simulator::combat::CombatCard::new(card_id, i as u32));
-    }
-
-    // Starter relic
-    use sts_simulator::content::relics::{RelicId, RelicState};
-    run_state
-        .relics
-        .push(RelicState::new(RelicId::BurningBlood));
+    let mut run_state = RunState::new(seed, ascension, false, player_class);
 
     let mut engine_state = EngineState::EventRoom;
     let mut combat_state: Option<CombatState> = None;
@@ -347,7 +397,11 @@ fn main() {
             let verbose = app.mode != InputMode::SkipCombat;
             if verbose && app.current_display >= DisplayMode::Summary {
                 if let Some(cs) = &combat_state {
-                    println!("  [BOT] Hand: {} Energy: {}", cs.hand.len(), cs.energy);
+                    println!(
+                        "  [BOT] Hand: {} Energy: {}",
+                        cs.zones.hand.len(),
+                        cs.turn.energy
+                    );
                 }
             }
             let decision =
@@ -359,12 +413,18 @@ fn main() {
                 match &decision {
                     ClientInput::PlayCard { card_index, .. } => {
                         if let Some(cs) = &combat_state {
-                            let c = &cs.hand[*card_index];
+                            let c = &cs.zones.hand[*card_index];
                             let def = sts_simulator::content::cards::get_card_definition(c.id);
                             println!("  [BOT] → {}", def.name);
                         }
                     }
-                    ClientInput::EndTurn => println!("  [BOT] End Turn"),
+                    ClientInput::EndTurn => {
+                        if let Some(cs) = &combat_state {
+                            print_end_turn_diagnostic(cs);
+                        } else {
+                            println!("  [BOT] End Turn");
+                        }
+                    }
                     ClientInput::Proceed => {}
                     ClientInput::UsePotion { potion_index, .. } => {
                         println!("  [BOT] Potion #{}", potion_index)
@@ -383,13 +443,15 @@ fn main() {
                         if let Some(cs) = &combat_state {
                             println!(
                                 "  Turn {} done — HP: {}/{}",
-                                cs.turn_count, cs.player.current_hp, cs.player.max_hp
+                                cs.turn.turn_count,
+                                cs.entities.player.current_hp,
+                                cs.entities.player.max_hp
                             );
                         }
                     }
                     ClientInput::UsePotion { potion_index, .. } => {
                         if let Some(cs) = &combat_state {
-                            if let Some(Some(p)) = cs.potions.get(*potion_index) {
+                            if let Some(Some(p)) = cs.entities.potions.get(*potion_index) {
                                 let def =
                                     sts_simulator::content::potions::get_potion_definition(p.id);
                                 println!("  [BOT] Used Potion: {}", def.name);
@@ -478,7 +540,7 @@ fn main() {
                 | EngineState::EventCombat(_)
         ) {
             if let Some(ref cs) = combat_state {
-                let end_hp = cs.player.current_hp;
+                let end_hp = cs.entities.player.current_hp;
                 if app.current_display >= DisplayMode::Summary {
                     println!(
                         "  [COMBAT END] HP: {} → {} | Cards played: {}",
@@ -659,9 +721,9 @@ fn handle_meta_command(
         "draw" | "discard" | "exhaust" => {
             if let Some(combat) = cs {
                 let pile = match line {
-                    "draw" => &combat.draw_pile,
-                    "discard" => &combat.discard_pile,
-                    "exhaust" => &combat.exhaust_pile,
+                    "draw" => &combat.zones.draw_pile,
+                    "discard" => &combat.zones.discard_pile,
+                    "exhaust" => &combat.zones.exhaust_pile,
                     _ => unreachable!(),
                 };
                 println!("  {} pile ({}):", line.to_uppercase(), pile.len());
@@ -757,41 +819,53 @@ fn init_combat(run_state: &mut RunState, current_display: DisplayMode) -> Combat
     );
 
     let mut cs = CombatState {
-        ascension_level: run_state.ascension_level,
-        turn_count: 0,
-        current_phase: sts_simulator::combat::CombatPhase::PlayerTurn,
-        energy: 3,
-        draw_pile: run_state.master_deck.clone(),
-        hand: Vec::new(),
-        discard_pile: Vec::new(),
-        exhaust_pile: Vec::new(),
-        limbo: Vec::new(),
-        player,
-        monsters,
-        potions: run_state.potions.clone(),
-        power_db: std::collections::HashMap::new(),
-        action_queue: std::collections::VecDeque::new(),
-        counters: sts_simulator::combat::EphemeralCounters::default(),
-        card_uuid_counter: 9999,
-        rng: run_state.rng_pool.clone(),
-        is_boss_fight: false,
-        is_elite_fight: false,
-        meta_changes: Vec::new(),
+        meta: sts_simulator::combat::CombatMeta {
+            ascension_level: run_state.ascension_level,
+            is_boss_fight: false,
+            is_elite_fight: false,
+            meta_changes: Vec::new(),
+        },
+        turn: sts_simulator::combat::TurnRuntime {
+            turn_count: 0,
+            current_phase: sts_simulator::combat::CombatPhase::PlayerTurn,
+            energy: 3,
+            turn_start_draw_modifier: 0,
+            counters: Default::default(),
+        },
+        zones: sts_simulator::combat::CardZones {
+            draw_pile: run_state.master_deck.clone(),
+            hand: Vec::new(),
+            discard_pile: Vec::new(),
+            exhaust_pile: Vec::new(),
+            limbo: Vec::new(),
+            queued_cards: std::collections::VecDeque::new(),
+            card_uuid_counter: 9999,
+        },
+        entities: sts_simulator::combat::EntityState {
+            player,
+            monsters,
+            potions: run_state.potions.clone(),
+            power_db: std::collections::HashMap::new(),
+        },
+        engine: sts_simulator::combat::EngineRuntime {
+            action_queue: std::collections::VecDeque::new(),
+        },
+        rng: sts_simulator::combat::CombatRng::new(run_state.rng_pool.clone()),
     };
 
     if let Some(room_type) = run_state.map.get_current_room_type() {
-        cs.is_boss_fight = room_type == RoomType::MonsterRoomBoss;
-        cs.is_elite_fight = room_type == RoomType::MonsterRoomElite;
+        cs.meta.is_boss_fight = room_type == RoomType::MonsterRoomBoss;
+        cs.meta.is_elite_fight = room_type == RoomType::MonsterRoomElite;
     }
 
     // Initialize initial monster intents
-    let monsters_clone = cs.monsters.clone();
-    for m in &mut cs.monsters {
+    let monsters_clone = cs.entities.monsters.clone();
+    for m in &mut cs.entities.monsters {
         let num = cs.rng.ai_rng.random(99);
         let (move_byte, intent) = sts_simulator::content::monsters::roll_monster_move(
             &mut cs.rng.ai_rng,
             m,
-            cs.ascension_level,
+            cs.meta.ascension_level,
             num,
             &monsters_clone,
         );
@@ -800,12 +874,24 @@ fn init_combat(run_state: &mut RunState, current_display: DisplayMode) -> Combat
         m.move_history.push_back(move_byte);
     }
 
-    cs.energy = cs.player.energy_master;
+    cs.turn.energy = cs.entities.player.energy_master;
 
     // Java: CardGroup.initializeDeck() calls shuffle(shuffleRng)
-    sts_simulator::rng::shuffle_with_random_long(&mut cs.draw_pile, &mut cs.rng.shuffle_rng);
+    sts_simulator::rng::shuffle_with_random_long(&mut cs.zones.draw_pile, &mut cs.rng.shuffle_rng);
+    let mut innate_cards = Vec::new();
+    let mut normal_cards = Vec::new();
+    for card in std::mem::take(&mut cs.zones.draw_pile) {
+        if sts_simulator::content::cards::is_innate_card(&card) {
+            innate_cards.push(card);
+        } else {
+            normal_cards.push(card);
+        }
+    }
+    innate_cards.extend(normal_cards);
+    cs.zones.draw_pile = innate_cards;
 
-    cs.action_queue
+    cs.engine
+        .action_queue
         .push_back(sts_simulator::action::Action::PreBattleTrigger);
 
     cs
@@ -849,36 +935,48 @@ fn init_event_combat(
     );
 
     let mut cs = CombatState {
-        ascension_level: run_state.ascension_level,
-        turn_count: 0,
-        current_phase: sts_simulator::combat::CombatPhase::PlayerTurn,
-        energy: 3,
-        draw_pile: run_state.master_deck.clone(),
-        hand: Vec::new(),
-        discard_pile: Vec::new(),
-        exhaust_pile: Vec::new(),
-        limbo: Vec::new(),
-        player,
-        monsters,
-        potions: run_state.potions.clone(),
-        power_db: std::collections::HashMap::new(),
-        action_queue: std::collections::VecDeque::new(),
-        counters: sts_simulator::combat::EphemeralCounters::default(),
-        card_uuid_counter: 9999,
-        rng: run_state.rng_pool.clone(),
-        is_boss_fight: false,
-        is_elite_fight: false,
-        meta_changes: Vec::new(),
+        meta: sts_simulator::combat::CombatMeta {
+            ascension_level: run_state.ascension_level,
+            is_boss_fight: false,
+            is_elite_fight: false,
+            meta_changes: Vec::new(),
+        },
+        turn: sts_simulator::combat::TurnRuntime {
+            turn_count: 0,
+            current_phase: sts_simulator::combat::CombatPhase::PlayerTurn,
+            energy: 3,
+            turn_start_draw_modifier: 0,
+            counters: Default::default(),
+        },
+        zones: sts_simulator::combat::CardZones {
+            draw_pile: run_state.master_deck.clone(),
+            hand: Vec::new(),
+            discard_pile: Vec::new(),
+            exhaust_pile: Vec::new(),
+            limbo: Vec::new(),
+            queued_cards: std::collections::VecDeque::new(),
+            card_uuid_counter: 9999,
+        },
+        entities: sts_simulator::combat::EntityState {
+            player,
+            monsters,
+            potions: run_state.potions.clone(),
+            power_db: std::collections::HashMap::new(),
+        },
+        engine: sts_simulator::combat::EngineRuntime {
+            action_queue: std::collections::VecDeque::new(),
+        },
+        rng: sts_simulator::combat::CombatRng::new(run_state.rng_pool.clone()),
     };
 
     // Initialize initial monster intents
-    let monsters_clone = cs.monsters.clone();
-    for m in &mut cs.monsters {
+    let monsters_clone = cs.entities.monsters.clone();
+    for m in &mut cs.entities.monsters {
         let num = cs.rng.ai_rng.random(99);
         let (move_byte, intent) = sts_simulator::content::monsters::roll_monster_move(
             &mut cs.rng.ai_rng,
             m,
-            cs.ascension_level,
+            cs.meta.ascension_level,
             num,
             &monsters_clone,
         );
@@ -887,12 +985,24 @@ fn init_event_combat(
         m.move_history.push_back(move_byte);
     }
 
-    cs.energy = cs.player.energy_master;
+    cs.turn.energy = cs.entities.player.energy_master;
 
     // Java: CardGroup.initializeDeck() calls shuffle(shuffleRng)
-    sts_simulator::rng::shuffle_with_random_long(&mut cs.draw_pile, &mut cs.rng.shuffle_rng);
+    sts_simulator::rng::shuffle_with_random_long(&mut cs.zones.draw_pile, &mut cs.rng.shuffle_rng);
+    let mut innate_cards = Vec::new();
+    let mut normal_cards = Vec::new();
+    for card in std::mem::take(&mut cs.zones.draw_pile) {
+        if sts_simulator::content::cards::is_innate_card(&card) {
+            innate_cards.push(card);
+        } else {
+            normal_cards.push(card);
+        }
+    }
+    innate_cards.extend(normal_cards);
+    cs.zones.draw_pile = innate_cards;
 
-    cs.action_queue
+    cs.engine
+        .action_queue
         .push_back(sts_simulator::action::Action::PreBattleTrigger);
 
     cs

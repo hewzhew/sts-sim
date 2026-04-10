@@ -115,7 +115,7 @@ pub fn build_encounter(
             _ => 0,
         };
 
-        MonsterEntity {
+        let mut monster = MonsterEntity {
             id,
             monster_type: enemy_id as usize,
             current_hp,
@@ -130,7 +130,19 @@ pub fn build_encounter(
             move_history: VecDeque::new(),
             intent_dmg,
             logical_position: slot as i32,
+            hexaghost: Default::default(),
+            darkling: Default::default(),
+        };
+
+        if enemy_id == EnemyId::Darkling {
+            crate::content::monsters::beyond::darkling::initialize_runtime_state(
+                &mut monster,
+                hp_rng,
+                ascension_level,
+            );
         }
+
+        monster
     };
 
     match encounter {
@@ -491,25 +503,33 @@ pub fn build_encounter(
         }
         EncounterId::GremlinLeader => {
             // Java: spawnGremlin() + spawnGremlin() + GremlinLeader
-            // spawnGremlin = random from Warrior/Thief/Fat/Tsundere/Wizard
+            // spawnGremlin = weighted random from the 8-entry pool used by MonsterHelper.
             let gremlin_pool = [
                 EnemyId::GremlinWarrior,
+                EnemyId::GremlinWarrior,
                 EnemyId::GremlinThief,
+                EnemyId::GremlinThief,
+                EnemyId::GremlinFat,
                 EnemyId::GremlinFat,
                 EnemyId::GremlinTsundere,
                 EnemyId::GremlinWizard,
             ];
-            let g1 = gremlin_pool[misc_rng.random_range(0, 4) as usize];
-            monsters.push(spawn_monster(g1, monster_hp_rng, slot_counter));
+            let g1 = gremlin_pool[misc_rng.random_range(0, 7) as usize];
+            let mut first = spawn_monster(g1, monster_hp_rng, slot_counter);
+            first.logical_position =
+                crate::content::monsters::city::gremlin_leader::GremlinLeader::GREMLIN_SLOT_LOGICAL_POSITIONS[0];
+            monsters.push(first);
             slot_counter += 1;
-            let g2 = gremlin_pool[misc_rng.random_range(0, 4) as usize];
-            monsters.push(spawn_monster(g2, monster_hp_rng, slot_counter));
+            let g2 = gremlin_pool[misc_rng.random_range(0, 7) as usize];
+            let mut second = spawn_monster(g2, monster_hp_rng, slot_counter);
+            second.logical_position =
+                crate::content::monsters::city::gremlin_leader::GremlinLeader::GREMLIN_SLOT_LOGICAL_POSITIONS[1];
+            monsters.push(second);
             slot_counter += 1;
-            monsters.push(spawn_monster(
-                EnemyId::GremlinLeader,
-                monster_hp_rng,
-                slot_counter,
-            ));
+            let mut leader = spawn_monster(EnemyId::GremlinLeader, monster_hp_rng, slot_counter);
+            leader.logical_position =
+                crate::content::monsters::city::gremlin_leader::GremlinLeader::LEADER_LOGICAL_POSITION;
+            monsters.push(leader);
         }
         EncounterId::Slavers => {
             // Java: SlaverBlue + Taskmaster + SlaverRed

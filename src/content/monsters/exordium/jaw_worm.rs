@@ -104,7 +104,7 @@ impl MonsterBehavior for JawWorm {
     }
 
     fn take_turn(state: &mut CombatState, entity: &MonsterEntity) -> Vec<Action> {
-        let asc = state.ascension_level;
+        let asc = state.meta.ascension_level;
         let (chomp_dmg, _thrash_dmg, thrash_block, bellow_block, bellow_str) = if asc >= 17 {
             (12, 7, 5, 9, 5)
         } else if asc >= 2 {

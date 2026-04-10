@@ -21,9 +21,9 @@ pub fn tick_run(
                 let keep_running = super::core::tick_engine(engine_state, cs, input.clone());
                 if !keep_running {
                     // Absorb combat player state back to RunState (HP, gold, relic counters)
-                    run_state.absorb_combat_player(cs.player.clone());
+                    run_state.absorb_combat_player(cs.entities.player.clone());
 
-                    for change in cs.meta_changes.drain(..) {
+                    for change in cs.meta.meta_changes.drain(..) {
                         match change {
                             crate::combat::MetaChange::AddCardToMasterDeck(card_id) => {
                                 run_state.add_card_to_deck(card_id);
@@ -34,8 +34,8 @@ pub fn tick_run(
                     // Check for Act 3 boss victory → Act 4 transition
                     // Java: AbstractRoom:317 — if BossRoom + TheBeyond/TheEnding + 3 keys → skip rewards
                     if let EngineState::RewardScreen(rs) = engine_state {
-                        let is_boss = cs.is_boss_fight;
-                        let is_elite = cs.is_elite_fight;
+                        let is_boss = cs.meta.is_boss_fight;
+                        let is_elite = cs.meta.is_elite_fight;
                         // Populate the actual dropped rewards
                         *rs = crate::rewards::generator::generate_combat_rewards(
                             run_state, is_elite, is_boss,
@@ -452,9 +452,9 @@ pub fn tick_run(
 
                 if !keep_running {
                     // Absorb combat player state back to RunState (HP, gold, relic counters)
-                    run_state.absorb_combat_player(cs.player.clone());
+                    run_state.absorb_combat_player(cs.entities.player.clone());
 
-                    for change in cs.meta_changes.drain(..) {
+                    for change in cs.meta.meta_changes.drain(..) {
                         match change {
                             crate::combat::MetaChange::AddCardToMasterDeck(card_id) => {
                                 run_state.add_card_to_deck(card_id);

@@ -1,4 +1,5 @@
 use serde_json::Value;
+use std::collections::BTreeSet;
 use std::env;
 use std::fs;
 use std::path::Path;
@@ -30,29 +31,39 @@ fn main() {
     );
 
     if let Some(enums) = parsed["enums"].as_object() {
-        for (_enum_key, enum_def) in enums {
+        for (enum_key, enum_def) in enums {
+            if enum_key == "card_id" {
+                continue;
+            }
             if let (Some(rust_type), Some(fn_name), Some(entries)) = (
                 enum_def["rust_type"].as_str(),
                 enum_def["fn_name"].as_str(),
                 enum_def["entries"].as_object(),
             ) {
                 generated_code.push_str(&format!(
-                    "pub fn {}(s: &str) -> Option<{}> {{\n",
+                    "pub(crate) fn {}_raw(s: &str) -> Option<{}> {{\n",
                     fn_name, rust_type
                 ));
                 generated_code.push_str("    match s {\n");
 
                 for (rust_variant, entry_def) in entries {
                     if let Some(java_names) = entry_def["java"].as_array() {
-                        let mut patterns = Vec::new();
+                        let mut patterns = BTreeSet::new();
                         for j in java_names {
                             if let Some(j_str) = j.as_str() {
-                                patterns.push(format!("\"{}\"", j_str));
+                                let normalized = j_str
+                                    .chars()
+                                    .filter(|c| c.is_ascii_alphanumeric())
+                                    .map(|c| c.to_ascii_lowercase())
+                                    .collect::<String>();
+                                if !normalized.is_empty() {
+                                    patterns.insert(format!("\"{}\"", normalized));
+                                }
                             }
                         }
 
                         if !patterns.is_empty() {
-                            let pattern_str = patterns.join(" | ");
+                            let pattern_str = patterns.into_iter().collect::<Vec<_>>().join(" | ");
                             let status = entry_def
                                 .get("status")
                                 .and_then(|v| v.as_str())

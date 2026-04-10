@@ -77,8 +77,16 @@ impl MonsterBehavior for Lagavulin {
     }
 
     fn take_turn(state: &mut CombatState, entity: &MonsterEntity) -> Vec<Action> {
-        let dmg = if state.ascension_level >= 3 { 20 } else { 18 };
-        let debuff = if state.ascension_level >= 18 { 2 } else { 1 }; // Dex/Str down
+        let dmg = if state.meta.ascension_level >= 3 {
+            20
+        } else {
+            18
+        };
+        let debuff = if state.meta.ascension_level >= 18 {
+            2
+        } else {
+            1
+        }; // Dex/Str down
         let mut actions = Vec::new();
 
         match entity.next_move_byte {

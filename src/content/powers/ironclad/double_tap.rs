@@ -1,4 +1,6 @@
-use crate::combat::{CombatCard, CombatState};
+use crate::action::Action;
+use crate::combat::{CombatCard, CombatState, QueuedCardPlay, QueuedCardSource};
+use crate::content::powers::store;
 use crate::content::powers::PowerId;
 
 pub fn on_use_card(state: &mut CombatState, card: &CombatCard, purge: bool, target: Option<usize>) {
@@ -9,27 +11,35 @@ pub fn on_use_card(state: &mut CombatState, card: &CombatCard, purge: bool, targ
         let mut clone = card.clone();
 
         // Correctly allocate a new UUID for the Temp card clone!
-        state.card_uuid_counter += 1;
-        clone.uuid = state.card_uuid_counter;
+        state.zones.card_uuid_counter += 1;
+        clone.uuid = state.zones.card_uuid_counter;
 
         // Deduct power
-        if let Some(powers) = state.power_db.get_mut(&0) {
-            // 0 is player EntityId
-            for p in powers.iter_mut() {
-                if p.power_type == PowerId::DoubleTap {
-                    p.amount -= 1;
-                    break;
-                }
+        if let Some(amount) = store::with_power_mut(state, 0, PowerId::DoubleTap, |p| {
+            p.amount -= 1;
+            p.amount
+        }) {
+            if !crate::content::powers::should_keep_power_instance(PowerId::DoubleTap, amount) {
+                store::remove_power_type(state, 0, PowerId::DoubleTap);
             }
-            powers.retain(|p| p.amount > 0);
         }
 
         state
+            .engine
             .action_queue
-            .push_back(crate::action::Action::PlayCardDirect {
-                card: Box::new(clone),
-                target,      // Propagate original target
-                purge: true, // The copied card naturally purges after playing.
+            .push_back(Action::EnqueueCardPlay {
+                item: Box::new(QueuedCardPlay {
+                    card: clone.clone(),
+                    target,
+                    energy_on_use: clone.energy_on_use,
+                    ignore_energy_total: true,
+                    autoplay: true,
+                    random_target: false,
+                    is_end_turn_autoplay: false,
+                    purge_on_use: true,
+                    source: QueuedCardSource::DoubleTap,
+                }),
+                in_front: true,
             });
     }
 }

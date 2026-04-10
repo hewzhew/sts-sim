@@ -22,7 +22,11 @@ impl MonsterBehavior for GremlinFat {
     }
 
     fn take_turn(state: &mut CombatState, entity: &MonsterEntity) -> Vec<Action> {
-        let dmg = if state.ascension_level >= 2 { 5 } else { 4 };
+        let dmg = if state.meta.ascension_level >= 2 {
+            5
+        } else {
+            4
+        };
         let mut actions = Vec::new();
 
         match entity.next_move_byte {
@@ -42,7 +46,7 @@ impl MonsterBehavior for GremlinFat {
                     power_id: PowerId::Weak,
                     amount: 1,
                 });
-                if state.ascension_level >= 17 {
+                if state.meta.ascension_level >= 17 {
                     actions.push(Action::ApplyPower {
                         target: 0,
                         source: entity.id,

@@ -7,7 +7,8 @@ pub fn offering_play(_state: &CombatState, card: &CombatCard) -> SmallVec<[Actio
         ActionInfo {
             action: Action::LoseHp {
                 target: 0,
-                amount: 6
+                amount: 6,
+                triggers_rupture: true,
             },
             insertion_mode: AddTo::Bottom,
         },

@@ -5,6 +5,7 @@ use smallvec::SmallVec;
 pub fn at_end_of_turn(state: &CombatState) -> SmallVec<[ActionInfo; 4]> {
     let mut actions = SmallVec::new();
     let all_dead = state
+        .entities
         .monsters
         .iter()
         .all(|m| m.current_hp <= 0 || m.is_dying || m.is_escaped);

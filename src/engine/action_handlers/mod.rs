@@ -13,47 +13,52 @@ pub mod spawning;
 
 use crate::action::Action;
 use crate::combat::CombatState;
+use crate::content::powers::store;
 
 /// Synchronously checks for and applies Fairy In A Bottle or Lizard Tail when player HP hits 0.
 pub fn try_revive(state: &mut CombatState) {
-    if state.player.current_hp > 0 {
+    if state.entities.player.current_hp > 0 {
         return;
     }
     if state
+        .entities
         .player
         .has_relic(crate::content::relics::RelicId::MarkOfTheBloom)
     {
         return;
     }
 
-    let fairy_slot = state.potions.iter().position(|p| {
+    let fairy_slot = state.entities.potions.iter().position(|p| {
         p.as_ref().map_or(false, |pot| {
             pot.id == crate::content::potions::PotionId::FairyPotion
         })
     });
     if let Some(slot) = fairy_slot {
-        state.potions[slot] = None;
+        state.entities.potions[slot] = None;
         let mut potency = 0.3_f32;
         if state
+            .entities
             .player
             .has_relic(crate::content::relics::RelicId::SacredBark)
         {
             potency *= 2.0;
         }
-        let heal_amount = (state.player.max_hp as f32 * potency) as i32;
-        state.player.current_hp = heal_amount.max(1);
+        let heal_amount = (state.entities.player.max_hp as f32 * potency) as i32;
+        state.entities.player.current_hp = heal_amount.max(1);
         return;
     }
 
     let lizard_unused = state
+        .entities
         .player
         .relics
         .iter()
         .find(|r| r.id == crate::content::relics::RelicId::LizardTail)
         .map_or(false, |r| !r.used_up);
     if lizard_unused {
-        state.player.current_hp = std::cmp::max(1, state.player.max_hp / 2);
+        state.entities.player.current_hp = std::cmp::max(1, state.entities.player.max_hp / 2);
         if let Some(lt) = state
+            .entities
             .player
             .relics
             .iter_mut()
@@ -68,18 +73,23 @@ pub fn try_revive(state: &mut CombatState) {
 /// Centralized monster death handler.
 /// Fires power on_death hooks, monster on_death, relic hooks, GremlinLeader/Darkling specials.
 pub fn check_and_trigger_monster_death(state: &mut CombatState, target_id: usize) {
-    let mut is_darkling_or_awakened = false;
+    let mut is_awakened_rebirth = false;
     let mut is_gremlin_leader = false;
     let mut triggered_death = false;
     let mut dying_monster_type: Option<crate::content::monsters::EnemyId> = None;
 
-    if let Some(m) = state.monsters.iter_mut().find(|m| m.id == target_id) {
+    if let Some(m) = state
+        .entities
+        .monsters
+        .iter_mut()
+        .find(|m| m.id == target_id)
+    {
         if m.current_hp <= 0 && !m.is_dying {
             m.is_dying = true;
             let m_id = crate::content::monsters::EnemyId::from_id(m.monster_type);
             dying_monster_type = m_id;
             is_gremlin_leader = m_id == Some(crate::content::monsters::EnemyId::GremlinLeader);
-            let has_rebirth_power = state.power_db.get(&target_id).is_some_and(|powers| {
+            let has_rebirth_power = store::powers_for(state, target_id).is_some_and(|powers| {
                 powers.iter().any(|p| {
                     matches!(
                         p.power_type,
@@ -88,32 +98,31 @@ pub fn check_and_trigger_monster_death(state: &mut CombatState, target_id: usize
                     )
                 })
             });
-            is_darkling_or_awakened = has_rebirth_power
-                && (m_id == Some(crate::content::monsters::EnemyId::Darkling)
-                    || m_id == Some(crate::content::monsters::EnemyId::AwakenedOne));
+            is_awakened_rebirth = has_rebirth_power
+                && m_id == Some(crate::content::monsters::EnemyId::AwakenedOne);
             triggered_death = true;
         }
     }
 
     if triggered_death {
         // Fire power on_death hooks BEFORE clearing (SporeCloud, Stasis, Unawakened, etc.)
-        if let Some(powers) = state.power_db.get(&target_id).cloned() {
-            for power in &powers {
-                let death_actions = crate::content::powers::resolve_power_on_death(
-                    power.power_type,
-                    state,
-                    target_id,
-                    power.amount,
-                );
-                for a in death_actions {
-                    state.action_queue.push_back(a);
-                }
+        for power in &store::powers_snapshot_for(state, target_id) {
+            let death_actions = crate::content::powers::resolve_power_on_death(
+                power.power_type,
+                state,
+                target_id,
+                power.amount,
+                power.extra_data,
+            );
+            for a in death_actions {
+                state.engine.action_queue.push_back(a);
             }
         }
 
         if let Some(m_id) = dying_monster_type {
-            if !is_darkling_or_awakened {
+            if !is_awakened_rebirth {
                 let m_clone = state
+                    .entities
                     .monsters
                     .iter()
                     .find(|m| m.id == target_id)
@@ -122,16 +131,17 @@ pub fn check_and_trigger_monster_death(state: &mut CombatState, target_id: usize
                 let death_actions_on_entity =
                     crate::content::monsters::resolve_on_death(m_id, state, &m_clone);
                 for a in death_actions_on_entity {
-                    state.action_queue.push_back(a);
+                    state.engine.action_queue.push_back(a);
                 }
             }
         }
 
         let death_actions = crate::content::relics::hooks::on_monster_death(state, target_id);
-        crate::engine::core::queue_actions(&mut state.action_queue, death_actions);
+        crate::engine::core::queue_actions(&mut state.engine.action_queue, death_actions);
 
         if is_gremlin_leader {
             let minion_ids: Vec<_> = state
+                .entities
                 .monsters
                 .iter()
                 .filter(|min| min.id != target_id && !min.is_dying)
@@ -139,12 +149,18 @@ pub fn check_and_trigger_monster_death(state: &mut CombatState, target_id: usize
                 .collect();
             for minion_id in minion_ids {
                 state
+                    .engine
                     .action_queue
                     .push_back(Action::Escape { target: minion_id });
             }
         }
-        if is_darkling_or_awakened {
-            if let Some(m) = state.monsters.iter_mut().find(|m| m.id == target_id) {
+        if is_awakened_rebirth {
+            if let Some(m) = state
+                .entities
+                .monsters
+                .iter_mut()
+                .find(|m| m.id == target_id)
+            {
                 m.current_hp = 0;
                 m.is_dying = false;
                 m.current_intent = crate::combat::Intent::Unknown;
@@ -193,11 +209,15 @@ pub fn execute_action(action: Action, state: &mut CombatState) {
         } => damage::handle_feed(target, damage_info, max_hp_amount, state),
         Action::VampireDamage(info) => damage::handle_vampire_damage(info, state),
         Action::VampireDamageAllEnemies {
-            source: _,
+            source,
             damages,
-            damage_type: _,
-        } => damage::handle_vampire_damage_all_enemies(damages, state),
-        Action::LoseHp { target, amount } => damage::handle_lose_hp(target, amount, state),
+            damage_type,
+        } => damage::handle_vampire_damage_all_enemies(source, damages, damage_type, state),
+        Action::LoseHp {
+            target,
+            amount,
+            triggers_rupture,
+        } => damage::handle_lose_hp(target, amount, triggers_rupture, state),
         Action::GainBlock { target, amount } => damage::handle_gain_block(target, amount, state),
         Action::GainBlockRandomMonster { source, amount } => {
             damage::handle_gain_block_random_monster(source, amount, state)
@@ -218,6 +238,11 @@ pub fn execute_action(action: Action, state: &mut CombatState) {
             power_id,
             amount,
         } => powers::handle_apply_power(source, target, power_id, amount, state),
+        Action::BouncingFlask {
+            target,
+            amount,
+            num_times,
+        } => powers::handle_bouncing_flask(target, amount, num_times, state),
         Action::RemovePower { target, power_id } => {
             powers::handle_remove_power(target, power_id, state)
         }
@@ -230,6 +255,9 @@ pub fn execute_action(action: Action, state: &mut CombatState) {
         } => powers::handle_update_power_extra_data(target, power_id, value, state),
         Action::AwakenedRebirthClear { target } => {
             powers::handle_awakened_rebirth_clear(target, state)
+        }
+        Action::TriggerTimeWarpEndTurn { owner } => {
+            powers::handle_trigger_time_warp_end_turn(owner, state)
         }
         Action::GainEnergy { amount } => powers::handle_gain_energy(amount, state),
         Action::GainMaxHp { amount } => powers::handle_gain_max_hp(amount, state),
@@ -296,6 +324,12 @@ pub fn execute_action(action: Action, state: &mut CombatState) {
         Action::UseCardDone { should_exhaust } => {
             cards::handle_use_card_done(should_exhaust, state)
         }
+        Action::QueueEarlyEndTurn => cards::handle_queue_early_end_turn(state),
+        Action::EnqueueCardPlay { item, in_front } => {
+            cards::handle_enqueue_card_play(*item, in_front, state)
+        }
+        Action::PostDrawTrigger => cards::handle_post_draw_trigger(state),
+        Action::FlushNextQueuedCard => cards::handle_flush_next_queued_card(state),
         Action::PlayCardDirect {
             card,
             target,
@@ -304,20 +338,26 @@ pub fn execute_action(action: Action, state: &mut CombatState) {
         Action::PlayTopCard { target, exhaust } => {
             cards::handle_play_top_card(target, exhaust, state)
         }
+        Action::PlayTopCardsBuffered {
+            count,
+            target,
+            exhaust,
+        } => cards::handle_play_top_cards_buffered(count, target, exhaust, state),
         Action::UsePotion { slot, target } => cards::handle_use_potion(slot, target, state),
         Action::DiscardPotion { slot } => {
-            if slot < state.potions.len() {
-                state.potions[slot] = None;
+            if slot < state.entities.potions.len() {
+                state.entities.potions[slot] = None;
             }
         }
         Action::ObtainPotion => cards::handle_obtain_potion(state),
         Action::ObtainSpecificPotion(potion_id) => {
             if !state
+                .entities
                 .player
                 .has_relic(crate::content::relics::RelicId::Sozu)
             {
-                if let Some(slot) = state.potions.iter().position(|p| p.is_none()) {
-                    state.potions[slot] = Some(crate::content::potions::Potion::new(
+                if let Some(slot) = state.entities.potions.iter().position(|p| p.is_none()) {
+                    state.entities.potions[slot] = Some(crate::content::potions::Potion::new(
                         potion_id,
                         40000 + slot as u32,
                     ));
@@ -340,12 +380,14 @@ pub fn execute_action(action: Action, state: &mut CombatState) {
             current_hp,
             max_hp,
             logical_position,
+            is_minion,
         } => spawning::handle_spawn_monster(
             monster_id,
             slot,
             current_hp,
             max_hp,
             logical_position,
+            is_minion,
             state,
         ),
         Action::SpawnMonsterSmart {
@@ -353,11 +395,13 @@ pub fn execute_action(action: Action, state: &mut CombatState) {
             logical_position,
             current_hp,
             max_hp,
+            is_minion,
         } => spawning::handle_spawn_monster_smart(
             monster_id,
             logical_position,
             current_hp,
             max_hp,
+            is_minion,
             state,
         ),
         Action::Suicide { target } => spawning::handle_suicide(target, state),
@@ -370,6 +414,18 @@ pub fn execute_action(action: Action, state: &mut CombatState) {
             next_move_byte,
             intent,
         } => spawning::handle_set_monster_move(monster_id, next_move_byte, intent, state),
+        Action::UpdateHexaghostState {
+            monster_id,
+            activated,
+            orb_active_count,
+            burn_upgraded,
+        } => spawning::handle_update_hexaghost_state(
+            monster_id,
+            activated,
+            orb_active_count,
+            burn_upgraded,
+            state,
+        ),
         Action::UpdateRelicCounter { relic_id, counter } => {
             spawning::handle_update_relic_counter(relic_id, counter, state)
         }
@@ -380,22 +436,22 @@ pub fn execute_action(action: Action, state: &mut CombatState) {
             spawning::handle_update_relic_used_up(relic_id, used_up, state)
         }
 
+        Action::IncreaseMaxOrb(amount) => handle_increase_max_orb(amount, state),
+        Action::ChannelOrb(orb_id) => handle_channel_orb(orb_id, state),
+        Action::EnterStance(stance) => handle_enter_stance(&stance, state),
+
         // === Pass-through / unhandled ===
         // These variants exist but have no handler yet or are handled inline elsewhere
         Action::PlayCard { .. }
         | Action::UseCard { .. }
         | Action::StartTurnTrigger
-        | Action::PostDrawTrigger
         | Action::AbortDeath { .. }
         | Action::FleeCombat
         | Action::ExecuteMonsterTurn(_)
         | Action::SpawnEncounter { .. }
         | Action::Scry(_)
-        | Action::ChannelOrb(_)
         | Action::EvokeOrb
         | Action::TriggerPassiveOrbs
-        | Action::IncreaseMaxOrb(_)
-        | Action::EnterStance(_)
         | Action::SuspendForHandSelect { .. }
         | Action::SuspendForGridSelect { .. }
         | Action::SuspendForDiscovery { .. }
@@ -404,5 +460,165 @@ pub fn execute_action(action: Action, state: &mut CombatState) {
             #[cfg(debug_assertions)]
             eprintln!("[action_handlers] Unhandled action: {:?}", action);
         }
+    }
+}
+
+fn handle_increase_max_orb(amount: u8, state: &mut CombatState) {
+    if amount == 0 {
+        return;
+    }
+    state.entities.player.max_orbs = state.entities.player.max_orbs.saturating_add(amount);
+    while state.entities.player.orbs.len() < state.entities.player.max_orbs as usize {
+        state
+            .entities
+            .player
+            .orbs
+            .push(crate::combat::OrbEntity::new(crate::combat::OrbId::Empty));
+    }
+}
+
+fn handle_channel_orb(orb_id: crate::combat::OrbId, state: &mut CombatState) {
+    if state.entities.player.max_orbs == 0 {
+        return;
+    }
+    while state.entities.player.orbs.len() < state.entities.player.max_orbs as usize {
+        state
+            .entities
+            .player
+            .orbs
+            .push(crate::combat::OrbEntity::new(crate::combat::OrbId::Empty));
+    }
+    let new_orb = crate::combat::OrbEntity::new(orb_id);
+    if let Some(empty_slot) = state
+        .entities
+        .player
+        .orbs
+        .iter()
+        .position(|orb| orb.id == crate::combat::OrbId::Empty)
+    {
+        state.entities.player.orbs[empty_slot] = new_orb;
+    } else {
+        state.entities.player.orbs.remove(0);
+        state.entities.player.orbs.push(new_orb);
+    }
+}
+
+fn handle_enter_stance(stance: &str, state: &mut CombatState) {
+    let new_stance = match stance {
+        "Wrath" => crate::combat::StanceId::Wrath,
+        "Calm" => crate::combat::StanceId::Calm,
+        "Divinity" => crate::combat::StanceId::Divinity,
+        _ => crate::combat::StanceId::Neutral,
+    };
+    let old_stance = state.entities.player.stance;
+    if old_stance == new_stance {
+        return;
+    }
+    if old_stance == crate::combat::StanceId::Calm {
+        state.turn.energy += 2;
+    }
+    if new_stance == crate::combat::StanceId::Divinity {
+        state.turn.energy += 3;
+    }
+    state.entities.player.stance = new_stance;
+    crate::content::relics::hooks::on_change_stance(state, old_stance, new_stance);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::action::Action;
+    use crate::combat::{
+        CombatMeta, CombatPhase, CombatRng, EngineRuntime, EntityState, Intent, MonsterEntity,
+        PlayerEntity, RelicBuses, StanceId, TurnRuntime,
+    };
+    use std::collections::{HashMap, VecDeque};
+
+    fn test_combat() -> CombatState {
+        CombatState {
+            meta: CombatMeta {
+                ascension_level: 0,
+                is_boss_fight: false,
+                is_elite_fight: false,
+                meta_changes: Vec::new(),
+            },
+            turn: TurnRuntime {
+                turn_count: 1,
+                current_phase: CombatPhase::PlayerTurn,
+                energy: 2,
+                turn_start_draw_modifier: 0,
+                counters: Default::default(),
+            },
+            zones: crate::combat::CardZones {
+                draw_pile: Vec::new(),
+                hand: Vec::new(),
+                discard_pile: Vec::new(),
+                exhaust_pile: Vec::new(),
+                limbo: Vec::new(),
+                queued_cards: VecDeque::new(),
+                card_uuid_counter: 50,
+            },
+            entities: EntityState {
+                player: PlayerEntity {
+                    id: 0,
+                    current_hp: 40,
+                    max_hp: 80,
+                    block: 0,
+                    gold_delta_this_combat: 0,
+                    gold: 99,
+                    max_orbs: 0,
+                    orbs: Vec::new(),
+                    stance: StanceId::Calm,
+                    relics: Vec::new(),
+                    relic_buses: RelicBuses::default(),
+                    energy_master: 3,
+                },
+                monsters: vec![MonsterEntity {
+                    id: 1,
+                    monster_type: crate::content::monsters::EnemyId::JawWorm as usize,
+                    current_hp: 30,
+                    max_hp: 30,
+                    block: 0,
+                    slot: 0,
+                    is_dying: false,
+                    is_escaped: false,
+                    half_dead: false,
+                    next_move_byte: 0,
+                    current_intent: Intent::Unknown,
+                    move_history: VecDeque::new(),
+                    intent_dmg: 0,
+                    logical_position: 0,
+                    hexaghost: Default::default(),
+                    darkling: Default::default(),
+                }],
+                potions: vec![None, None, None],
+                power_db: HashMap::new(),
+            },
+            engine: EngineRuntime {
+                action_queue: VecDeque::new(),
+            },
+            rng: CombatRng::new(crate::rng::RngPool::new(123)),
+        }
+    }
+
+    #[test]
+    fn enter_stance_updates_player_stance_and_grants_exit_calm_and_divinity_energy() {
+        let mut combat = test_combat();
+        execute_action(Action::EnterStance("Divinity".to_string()), &mut combat);
+        assert_eq!(combat.entities.player.stance, StanceId::Divinity);
+        assert_eq!(combat.turn.energy, 7);
+    }
+
+    #[test]
+    fn channel_and_increase_max_orb_update_player_orbs() {
+        let mut combat = test_combat();
+        execute_action(Action::IncreaseMaxOrb(2), &mut combat);
+        execute_action(Action::ChannelOrb(crate::combat::OrbId::Dark), &mut combat);
+        assert_eq!(combat.entities.player.max_orbs, 2);
+        assert_eq!(combat.entities.player.orbs.len(), 2);
+        assert_eq!(
+            combat.entities.player.orbs[0].id,
+            crate::combat::OrbId::Dark
+        );
     }
 }

@@ -8,12 +8,13 @@ pub fn at_battle_start(state: &CombatState, counter: i32) -> SmallVec<[ActionInf
     let mut actions = SmallVec::new();
     if counter > 0 {
         // Set all enemies HP to 1 by dealing (currentHP - 1) non-blockable damage
-        for monster in &state.monsters {
+        for monster in &state.entities.monsters {
             if !monster.is_escaped && !monster.is_dying && monster.current_hp > 1 {
                 actions.push(ActionInfo {
                     action: Action::LoseHp {
                         target: monster.id,
                         amount: monster.current_hp - 1,
+                        triggers_rupture: false,
                     },
                     insertion_mode: AddTo::Bottom,
                 });

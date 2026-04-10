@@ -19,7 +19,7 @@ pub fn on_attacked(
             power_id: PowerId::Strength,
             amount: -damage,
         });
-        let has_artifact = state.power_db.get(&owner).is_some_and(|powers| {
+        let has_artifact = state.entities.power_db.get(&owner).is_some_and(|powers| {
             powers
                 .iter()
                 .any(|p| p.power_type == PowerId::Artifact && p.amount > 0)

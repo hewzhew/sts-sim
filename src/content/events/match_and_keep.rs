@@ -80,11 +80,10 @@ pub fn init_match_game_board(run_state: &mut RunState, extra_data: &mut Vec<i32>
     }
 
     // Java: player.getStartCardForEvent()
-    card_types[5] = if run_state.player_class == "Ironclad" {
-        CardId::Bash
-    } else {
-        // Fallback for currently un-implemented characters in simulator
-        CardId::Strike
+    card_types[5] = match run_state.player_class {
+        "Ironclad" => CardId::Bash,
+        "Silent" => CardId::Neutralize,
+        _ => CardId::Strike,
     };
 
     extra_data.clear();

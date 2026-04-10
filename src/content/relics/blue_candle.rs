@@ -15,6 +15,7 @@ impl BlueCandle {
                 action: Action::LoseHp {
                     target: 0,
                     amount: 1,
+                    triggers_rupture: false,
                 },
                 insertion_mode: AddTo::Bottom,
             });

@@ -75,7 +75,7 @@ impl MonsterBehavior for SphericGuardian {
     fn take_turn(state: &mut CombatState, entity: &MonsterEntity) -> Vec<Action> {
         let mut actions = Vec::new();
         let target = 0; // Player
-        let asc = state.ascension_level;
+        let asc = state.meta.ascension_level;
         let dmg = if asc >= 2 { 11 } else { 10 };
 
         match entity.next_move_byte {

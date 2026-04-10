@@ -17,7 +17,7 @@ impl MonsterBehavior for GremlinTsundere {
     }
 
     fn take_turn(state: &mut CombatState, entity: &MonsterEntity) -> Vec<Action> {
-        let asc = state.ascension_level;
+        let asc = state.meta.ascension_level;
         let block_amt = if asc >= 17 {
             11
         } else if asc >= 7 {
@@ -35,6 +35,7 @@ impl MonsterBehavior for GremlinTsundere {
                 // which excludes: m == source, m.intent == ESCAPE, m.isDying
                 // It does NOT exclude m.current_hp == 0 or is_escaped
                 let alive_monsters: Vec<EntityId> = state
+                    .entities
                     .monsters
                     .iter()
                     .filter(|m| {
@@ -60,6 +61,7 @@ impl MonsterBehavior for GremlinTsundere {
                 // Java: checks aliveCount (all non-dying, non-escaping monsters)
                 // then decides next move based on whether >1 alive
                 let alive_count = state
+                    .entities
                     .monsters
                     .iter()
                     .filter(|m| !m.is_dying && !m.is_escaped)

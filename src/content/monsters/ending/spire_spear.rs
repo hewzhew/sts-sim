@@ -78,7 +78,7 @@ impl MonsterBehavior for SpireSpear {
 
     fn take_turn(state: &mut crate::combat::CombatState, entity: &MonsterEntity) -> Vec<Action> {
         let mut actions = Vec::new();
-        let asc = state.ascension_level;
+        let asc = state.meta.ascension_level;
         let move_byte = entity.next_move_byte;
 
         let burn_strike_dmg = if asc >= 18 { 6 } else { 5 };
@@ -115,7 +115,7 @@ impl MonsterBehavior for SpireSpear {
             }
             2 => {
                 // Buff (Strength +2 to all monsters)
-                for m in &state.monsters {
+                for m in &state.entities.monsters {
                     if m.current_hp > 0 && !m.is_dying {
                         actions.push(Action::ApplyPower {
                             source: entity.id,
@@ -152,11 +152,11 @@ impl MonsterBehavior for SpireSpear {
     fn on_death(state: &mut crate::combat::CombatState, _entity: &MonsterEntity) -> Vec<Action> {
         let mut actions = Vec::new();
         // Java: if player has "Surrounded" power, remove it and adjust player facing
-        if state.power_db.get(&0).map_or(false, |powers| {
-            powers
-                .iter()
-                .any(|p| p.power_type == crate::content::powers::PowerId::Surrounded)
-        }) {
+        if crate::content::powers::store::has_power(
+            state,
+            0,
+            crate::content::powers::PowerId::Surrounded,
+        ) {
             actions.push(Action::RemovePower {
                 target: 0,
                 power_id: crate::content::powers::PowerId::Surrounded,
@@ -164,13 +164,13 @@ impl MonsterBehavior for SpireSpear {
         }
 
         // Java: Remove "BackAttack" power from surviving monsters
-        for m in &state.monsters {
+        for m in &state.entities.monsters {
             if m.current_hp > 0 && !m.is_dying {
-                if state.power_db.get(&m.id).map_or(false, |powers| {
-                    powers
-                        .iter()
-                        .any(|p| p.power_type == crate::content::powers::PowerId::BackAttack)
-                }) {
+                if crate::content::powers::store::has_power(
+                    state,
+                    m.id,
+                    crate::content::powers::PowerId::BackAttack,
+                ) {
                     actions.push(Action::RemovePower {
                         target: m.id,
                         power_id: crate::content::powers::PowerId::BackAttack,

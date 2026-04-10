@@ -95,7 +95,7 @@ impl MonsterBehavior for TimeEater {
 
     fn take_turn(state: &mut CombatState, entity: &crate::combat::MonsterEntity) -> Vec<Action> {
         let mut actions = Vec::new();
-        let asc = state.ascension_level;
+        let asc = state.meta.ascension_level;
 
         let reverb_dmg = if asc >= 4 { 8 } else { 7 };
         let head_slam_dmg = if asc >= 4 { 32 } else { 26 };
@@ -151,12 +151,17 @@ impl MonsterBehavior for TimeEater {
                     damage_type: DamageType::Normal,
                     is_modified: false,
                 }));
+                actions.push(Action::ApplyPower {
+                    source: entity.id,
+                    target: 0,
+                    power_id: PowerId::DrawReduction,
+                    amount: 1,
+                });
                 if asc >= 19 {
-                    actions.push(Action::ApplyPower {
-                        source: entity.id,
-                        target: 0,
-                        power_id: PowerId::DrawReduction,
-                        amount: 1,
+                    actions.push(Action::MakeTempCardInDiscard {
+                        card_id: crate::content::cards::CardId::Slimed,
+                        amount: 2,
+                        upgraded: false,
                     });
                 }
             }

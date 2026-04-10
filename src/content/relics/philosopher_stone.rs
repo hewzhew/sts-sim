@@ -6,7 +6,7 @@ use smallvec::SmallVec;
 /// Also grants +1 Energy (passive, handled by base_energy in combat init).
 pub fn at_battle_start(state: &CombatState) -> SmallVec<[ActionInfo; 4]> {
     let mut actions = SmallVec::new();
-    for monster in &state.monsters {
+    for monster in &state.entities.monsters {
         if !monster.is_escaped && !monster.is_dying {
             actions.push(ActionInfo {
                 action: Action::ApplyPower {

@@ -11,8 +11,8 @@ impl Brimstone {
         // Give player 2 strength
         actions.push(ActionInfo {
             action: Action::ApplyPower {
-                source: state.player.id,
-                target: state.player.id,
+                source: state.entities.player.id,
+                target: state.entities.player.id,
                 power_id: crate::content::powers::PowerId::Strength,
                 amount: 2,
             },
@@ -20,11 +20,11 @@ impl Brimstone {
         });
 
         // Give all enemies 1 strength
-        for monster in &state.monsters {
+        for monster in &state.entities.monsters {
             if !monster.is_escaped && !monster.is_dying {
                 actions.push(ActionInfo {
                     action: Action::ApplyPower {
-                        source: state.player.id,
+                        source: state.entities.player.id,
                         target: monster.id,
                         power_id: crate::content::powers::PowerId::Strength,
                         amount: 1,

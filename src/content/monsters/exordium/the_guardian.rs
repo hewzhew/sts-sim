@@ -41,7 +41,7 @@ impl MonsterBehavior for TheGuardian {
     ) -> smallvec::SmallVec<[ActionInfo; 4]> {
         let mut triggered = false;
 
-        if let Some(powers) = state.power_db.get_mut(&entity.id) {
+        if let Some(powers) = state.entities.power_db.get_mut(&entity.id) {
             if let Some(pos) = powers
                 .iter()
                 .position(|p| p.power_type == PowerId::ModeShift)
@@ -57,8 +57,13 @@ impl MonsterBehavior for TheGuardian {
         }
 
         if triggered {
-            // Execute as a Guardian-specific state transition:
-            // increase the next threshold, gain block, then force CLOSE UP.
+            // Java queues the defensive-mode transition to the bottom of the action queue from
+            // TheGuardian.damage(). That means later hits from the same multi-hit card resolve
+            // before the Guardian actually gains 20 block and switches move/intent.
+            //
+            // We still remove Mode Shift immediately above so subsequent hits cannot retrigger,
+            // but the visible state transition itself must wait until the queued follow-up
+            // damage actions finish.
             return smallvec::smallvec![
                 ActionInfo {
                     action: Action::ApplyPower {
@@ -67,14 +72,14 @@ impl MonsterBehavior for TheGuardian {
                         power_id: PowerId::GuardianThreshold,
                         amount: 10
                     },
-                    insertion_mode: AddTo::Top
+                    insertion_mode: AddTo::Bottom
                 },
                 ActionInfo {
                     action: Action::GainBlock {
                         target: entity.id,
                         amount: 20
                     },
-                    insertion_mode: AddTo::Top
+                    insertion_mode: AddTo::Bottom
                 },
                 ActionInfo {
                     action: Action::SetMonsterMove {
@@ -82,7 +87,7 @@ impl MonsterBehavior for TheGuardian {
                         next_move_byte: 1,
                         intent: Intent::Buff
                     },
-                    insertion_mode: AddTo::Top
+                    insertion_mode: AddTo::Bottom
                 },
             ];
         }
@@ -142,16 +147,9 @@ impl MonsterBehavior for TheGuardian {
     }
 
     fn take_turn(state: &mut CombatState, entity: &MonsterEntity) -> Vec<Action> {
-        let asc = state.ascension_level;
+        let asc = state.meta.ascension_level;
         let fierce_bash_dmg = if asc >= 4 { 36 } else { 32 };
         let roll_dmg = if asc >= 4 { 10 } else { 9 };
-        let _shift_amt = if asc >= 19 {
-            40
-        } else if asc >= 9 {
-            35
-        } else {
-            30
-        };
         let mut actions = Vec::new();
 
         match entity.next_move_byte {
@@ -165,6 +163,14 @@ impl MonsterBehavior for TheGuardian {
                     power_id: PowerId::SharpHide,
                     amount: if asc >= 19 { 4 } else { 3 },
                 });
+                actions.push(Action::SetMonsterMove {
+                    monster_id: entity.id,
+                    next_move_byte: 3,
+                    intent: Intent::Attack {
+                        damage: roll_dmg,
+                        hits: 1,
+                    },
+                });
             }
             2 => {
                 // FIERCE BASH
@@ -176,6 +182,11 @@ impl MonsterBehavior for TheGuardian {
                     damage_type: DamageType::Normal,
                     is_modified: false,
                 }));
+                actions.push(Action::SetMonsterMove {
+                    monster_id: entity.id,
+                    next_move_byte: 7,
+                    intent: Intent::StrongDebuff,
+                });
             }
             3 => {
                 // ROLL ATTACK
@@ -187,6 +198,11 @@ impl MonsterBehavior for TheGuardian {
                     damage_type: DamageType::Normal,
                     is_modified: false,
                 }));
+                actions.push(Action::SetMonsterMove {
+                    monster_id: entity.id,
+                    next_move_byte: 4,
+                    intent: Intent::AttackBuff { damage: 8, hits: 2 },
+                });
             }
             4 => {
                 // TWIN SLAM (exits defensive mode)
@@ -222,6 +238,11 @@ impl MonsterBehavior for TheGuardian {
                     target: entity.id,
                     power_id: PowerId::SharpHide,
                 });
+                actions.push(Action::SetMonsterMove {
+                    monster_id: entity.id,
+                    next_move_byte: 5,
+                    intent: Intent::Attack { damage: 5, hits: 4 },
+                });
             }
             5 => {
                 // WHIRLWIND
@@ -235,12 +256,25 @@ impl MonsterBehavior for TheGuardian {
                         is_modified: false,
                     }));
                 }
+                actions.push(Action::SetMonsterMove {
+                    monster_id: entity.id,
+                    next_move_byte: 6,
+                    intent: Intent::Defend,
+                });
             }
             6 => {
                 // CHARGE UP
                 actions.push(Action::GainBlock {
                     target: entity.id,
                     amount: 9,
+                });
+                actions.push(Action::SetMonsterMove {
+                    monster_id: entity.id,
+                    next_move_byte: 2,
+                    intent: Intent::Attack {
+                        damage: fierce_bash_dmg,
+                        hits: 1,
+                    },
                 });
             }
             7 => {
@@ -257,13 +291,14 @@ impl MonsterBehavior for TheGuardian {
                     power_id: PowerId::Weak,
                     amount: 2,
                 });
+                actions.push(Action::SetMonsterMove {
+                    monster_id: entity.id,
+                    next_move_byte: 5,
+                    intent: Intent::Attack { damage: 5, hits: 4 },
+                });
             }
             _ => {}
         }
-
-        actions.push(Action::RollMonsterMove {
-            monster_id: entity.id,
-        });
         actions
     }
 }

@@ -10,6 +10,7 @@ pub fn at_end_of_turn(state: &CombatState, _relic: &mut RelicState) -> SmallVec<
     let mut actions = SmallVec::new();
     // Java: hasEmptyOrb() — returns true if any orb slot is EmptyOrbSlot
     let has_empty = state
+        .entities
         .player
         .orbs
         .iter()

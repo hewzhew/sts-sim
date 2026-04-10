@@ -5,7 +5,7 @@ use smallvec::SmallVec;
 /// Java: uses a counter flag to track. Simpler: at_end_of_turn checks, schedules extra draw.
 pub fn at_end_of_turn(state: &crate::combat::CombatState) -> SmallVec<[ActionInfo; 4]> {
     let mut actions = SmallVec::new();
-    if state.counters.cards_played_this_turn <= 3 {
+    if state.turn.counters.cards_played_this_turn <= 3 {
         // Queue extra draw for next turn — this will be added before the draw phase
         actions.push(ActionInfo {
             action: Action::UpdateRelicCounter {

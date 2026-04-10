@@ -7,7 +7,7 @@ pub fn at_turn_start(state: &CombatState) -> SmallVec<[ActionInfo; 4]> {
     let mut actions = SmallVec::new();
 
     // Create damages array for all alive monsters
-    let damages = vec![3; state.monsters.len()];
+    let damages = vec![3; state.entities.monsters.len()];
 
     actions.push(ActionInfo {
         action: Action::DamageAllEnemies {

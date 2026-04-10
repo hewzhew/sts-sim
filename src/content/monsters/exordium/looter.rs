@@ -75,8 +75,16 @@ impl MonsterBehavior for Looter {
     }
 
     fn take_turn(state: &mut CombatState, entity: &MonsterEntity) -> Vec<Action> {
-        let mug_dmg = if state.ascension_level >= 2 { 11 } else { 10 };
-        let lunge_dmg = if state.ascension_level >= 2 { 14 } else { 12 };
+        let mug_dmg = if state.meta.ascension_level >= 2 {
+            11
+        } else {
+            10
+        };
+        let lunge_dmg = if state.meta.ascension_level >= 2 {
+            14
+        } else {
+            12
+        };
         let escape_def = 6;
         let mut actions = Vec::new();
 

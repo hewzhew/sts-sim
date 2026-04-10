@@ -6,6 +6,8 @@ pub mod combat_heuristic;
 pub mod comm_mod;
 pub mod coverage;
 pub mod evaluator;
+pub mod noncombat_families;
 pub mod potions;
 pub mod reward_heuristics;
 pub mod search;
+mod strategy_families;

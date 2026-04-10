@@ -73,14 +73,14 @@ impl Agent {
                     // Live coverage tracking: mark executing moves as tested
                     match &chosen {
                         ClientInput::PlayCard { card_index, .. } => {
-                            if let Some(card) = combat.hand.get(*card_index) {
+                            if let Some(card) = combat.zones.hand.get(*card_index) {
                                 let def = crate::content::cards::get_card_definition(card.id);
                                 self.db.tested_cards.insert(def.name.to_string());
                                 self.db.save();
                             }
                         }
                         ClientInput::UsePotion { potion_index, .. } => {
-                            if let Some(Some(p)) = combat.potions.get(*potion_index) {
+                            if let Some(Some(p)) = combat.entities.potions.get(*potion_index) {
                                 let def = crate::content::potions::get_potion_definition(p.id);
                                 self.db.tested_potions.insert(def.name.to_string());
                                 self.db.save();
@@ -249,7 +249,10 @@ mod tests {
     use super::Agent;
     use crate::combat::CombatCard;
     use crate::content::cards::CardId;
+    use crate::content::potions::PotionId;
     use crate::content::relics::RelicId;
+    use crate::shop::{ShopCard, ShopState};
+    use crate::state::core::{CampfireChoice, ClientInput};
     use crate::state::run::RunState;
 
     fn run_with(cards: &[CardId]) -> RunState {
@@ -260,6 +263,18 @@ mod tests {
             .map(|(idx, &id)| CombatCard::new(id, idx as u32))
             .collect();
         rs
+    }
+
+    fn shop_with_cards(cards: &[(CardId, i32)]) -> ShopState {
+        let mut shop = ShopState::new();
+        shop.cards = cards
+            .iter()
+            .map(|(card_id, price)| ShopCard {
+                card_id: *card_id,
+                price: *price,
+            })
+            .collect();
+        shop
     }
 
     #[test]
@@ -324,6 +339,20 @@ mod tests {
     }
 
     #[test]
+    fn best_purge_prioritizes_parasite_over_basic_cards() {
+        let agent = Agent::new();
+        let rs = run_with(&[
+            CardId::Parasite,
+            CardId::Strike,
+            CardId::Defend,
+            CardId::Bash,
+        ]);
+
+        let idx = agent.best_purge_index(&rs);
+        assert_eq!(rs.master_deck[idx].id, CardId::Parasite);
+    }
+
+    #[test]
     fn best_upgrade_prefers_limit_break_in_strength_shell() {
         let agent = Agent::new();
         let rs = run_with(&[
@@ -352,6 +381,97 @@ mod tests {
         let high = agent.shop_card_score(&exhaust, CardId::DarkEmbrace);
 
         assert!(high > low);
+    }
+
+    #[test]
+    fn best_upgrade_prefers_searing_blow_on_early_route() {
+        let agent = Agent::new();
+        let mut rs = run_with(&[
+            CardId::SearingBlow,
+            CardId::Armaments,
+            CardId::BattleTrance,
+            CardId::ShrugItOff,
+        ]);
+        rs.floor_num = 6;
+
+        let idx = agent.best_upgrade_index(&rs).expect("upgrade target");
+        assert_eq!(rs.master_deck[idx].id, CardId::SearingBlow);
+    }
+
+    #[test]
+    fn best_upgrade_hard_commits_to_searing_blow_under_busted_crown() {
+        let agent = Agent::new();
+        let mut rs = run_with(&[
+            CardId::SearingBlow,
+            CardId::Armaments,
+            CardId::Offering,
+            CardId::FlameBarrier,
+            CardId::ShrugItOff,
+        ]);
+        rs.floor_num = 10;
+        rs.relics.push(crate::content::relics::RelicState::new(
+            RelicId::BustedCrown,
+        ));
+
+        let idx = agent.best_upgrade_index(&rs).expect("upgrade target");
+        assert_eq!(rs.master_deck[idx].id, CardId::SearingBlow);
+    }
+
+    #[test]
+    fn decide_shop_buys_deficit_solving_card_before_purge() {
+        let agent = Agent::new();
+        let mut rs = run_with(&[
+            CardId::Strike,
+            CardId::Strike,
+            CardId::Strike,
+            CardId::Defend,
+            CardId::Defend,
+            CardId::Bash,
+        ]);
+        rs.gold = 120;
+
+        let mut shop = shop_with_cards(&[(CardId::Hemokinesis, 75)]);
+        shop.purge_available = true;
+        shop.purge_cost = 75;
+
+        let choice = agent.decide_shop(&rs, &shop);
+        assert!(
+            matches!(choice, ClientInput::BuyCard(0)),
+            "unexpected shop choice: {:?}",
+            choice
+        );
+    }
+
+    #[test]
+    fn shop_potion_score_prefers_ghost_in_a_jar_when_block_gap_exists() {
+        let agent = Agent::new();
+        let weak = run_with(&[CardId::Strike, CardId::Strike, CardId::Bash]);
+        let sturdy = run_with(&[
+            CardId::ShrugItOff,
+            CardId::FlameBarrier,
+            CardId::GhostlyArmor,
+            CardId::Bash,
+        ]);
+
+        let weak_score = agent.shop_potion_score(&weak, PotionId::GhostInAJar);
+        let sturdy_score = agent.shop_potion_score(&sturdy, PotionId::GhostInAJar);
+
+        assert!(weak_score > sturdy_score);
+    }
+
+    #[test]
+    fn campfire_prefers_smithing_searing_blow_when_route_is_active_and_safe() {
+        let agent = Agent::new();
+        let mut rs = run_with(&[CardId::SearingBlow, CardId::Armaments, CardId::ShrugItOff]);
+        rs.current_hp = 58;
+        rs.max_hp = 80;
+        rs.floor_num = 10;
+
+        let choice = agent.decide_campfire(&rs);
+        assert!(matches!(
+            choice,
+            ClientInput::CampfireOption(CampfireChoice::Smith(0))
+        ));
     }
 
     #[test]

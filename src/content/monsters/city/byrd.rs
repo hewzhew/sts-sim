@@ -128,7 +128,7 @@ impl MonsterBehavior for Byrd {
     fn take_turn(state: &mut CombatState, entity: &MonsterEntity) -> Vec<Action> {
         let mut actions = Vec::new();
         let target = 0; // Player
-        let asc = state.ascension_level;
+        let asc = state.meta.ascension_level;
         let peck_dmg = 1;
         let peck_count = if asc >= 2 { 6 } else { 5 };
         let swoop_dmg = if asc >= 2 { 14 } else { 12 };

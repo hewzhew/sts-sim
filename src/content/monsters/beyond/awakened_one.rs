@@ -181,7 +181,7 @@ impl MonsterBehavior for AwakenedOne {
 
     fn take_turn(state: &mut CombatState, entity: &crate::combat::MonsterEntity) -> Vec<Action> {
         let mut actions = Vec::new();
-        let _asc = state.ascension_level;
+        let _asc = state.meta.ascension_level;
 
         match entity.next_move_byte {
             1 => {
@@ -210,10 +210,15 @@ impl MonsterBehavior for AwakenedOne {
             }
             3 => {
                 // REBIRTH TRIGGER
-                if let Some(monster) = state.monsters.iter_mut().find(|m| m.id == entity.id) {
+                if let Some(monster) = state
+                    .entities
+                    .monsters
+                    .iter_mut()
+                    .find(|m| m.id == entity.id)
+                {
                     monster.half_dead = false;
                 }
-                let asc = state.ascension_level;
+                let asc = state.meta.ascension_level;
                 let heal_amt = if asc >= 9 { 320 } else { 300 };
                 actions.push(Action::Heal {
                     target: entity.id,

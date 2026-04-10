@@ -11,7 +11,7 @@ pub fn clash_play(
     let mut actions = smallvec::SmallVec::new();
 
     // Unplayable if there are non-attacks in hand
-    let has_non_attacks = state.hand.iter().any(|c| {
+    let has_non_attacks = state.zones.hand.iter().any(|c| {
         crate::content::cards::get_card_definition(c.id).card_type
             != crate::content::cards::CardType::Attack
     });

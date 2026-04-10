@@ -8,10 +8,12 @@ pub mod events;
 pub mod game;
 pub mod interaction_coverage;
 pub mod map;
+pub mod ml;
 pub mod rewards;
 pub mod rng;
 pub mod shop;
 pub mod state;
+pub mod testing;
 pub mod utils;
 pub mod verification;
 

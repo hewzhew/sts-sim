@@ -30,7 +30,7 @@ impl MonsterBehavior for Cultist {
     }
 
     fn take_turn(state: &mut CombatState, entity: &MonsterEntity) -> Vec<Action> {
-        let asc = state.ascension_level;
+        let asc = state.meta.ascension_level;
         let attack_dmg = 6;
         let ritual_amount = if asc >= 17 {
             5

@@ -90,7 +90,7 @@ impl MonsterBehavior for Reptomancer {
 
     fn take_turn(state: &mut CombatState, entity: &crate::combat::MonsterEntity) -> Vec<Action> {
         let mut actions = Vec::new();
-        let asc = state.ascension_level;
+        let asc = state.meta.ascension_level;
 
         let scythe_dmg = if asc >= 3 { 16 } else { 13 };
         let big_bite_dmg = if asc >= 3 { 34 } else { 30 };
@@ -118,7 +118,12 @@ impl MonsterBehavior for Reptomancer {
             2 => {
                 // SPAWN_DAGGER
                 let daggers_per_spawn = if asc >= 18 { 2 } else { 1 };
-                let alive_count = state.monsters.iter().filter(|m| m.current_hp > 0).count();
+                let alive_count = state
+                    .entities
+                    .monsters
+                    .iter()
+                    .filter(|m| m.current_hp > 0)
+                    .count();
                 let summon_count = if alive_count <= 3 {
                     std::cmp::min(daggers_per_spawn, 4 - alive_count)
                 } else {
@@ -131,6 +136,7 @@ impl MonsterBehavior for Reptomancer {
                         current_hp: 25,
                         max_hp: 25,
                         logical_position: 0,
+                        is_minion: true,
                     });
                 }
             }

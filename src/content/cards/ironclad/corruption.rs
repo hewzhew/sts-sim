@@ -28,12 +28,13 @@ pub fn corruption_on_apply(state: &mut CombatState) {
             == crate::content::cards::CardType::Skill
     };
     for c in state
+        .zones
         .hand
         .iter_mut()
-        .chain(state.draw_pile.iter_mut())
-        .chain(state.discard_pile.iter_mut())
-        .chain(state.exhaust_pile.iter_mut())
-        .chain(state.limbo.iter_mut())
+        .chain(state.zones.draw_pile.iter_mut())
+        .chain(state.zones.discard_pile.iter_mut())
+        .chain(state.zones.exhaust_pile.iter_mut())
+        .chain(state.zones.limbo.iter_mut())
     {
         if is_skill(c.id) {
             c.cost_modifier -= 9;
@@ -54,7 +55,7 @@ pub fn corruption_on_card_draw(_state: &CombatState, card: &mut CombatCard) {
 /// Mimics `CorruptionPower.onUseCard(AbstractCard, UseCardAction)`: Forces skills to exhaust.
 pub fn corruption_on_use_card(state: &CombatState, card: &CombatCard, exhaust_override: &mut bool) {
     // Only active when the player actually has the Corruption power
-    let has_corruption = state.power_db.get(&0).map_or(false, |powers| {
+    let has_corruption = state.entities.power_db.get(&0).map_or(false, |powers| {
         powers
             .iter()
             .any(|p| p.power_type == crate::content::powers::PowerId::Corruption)

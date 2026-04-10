@@ -49,7 +49,7 @@ impl MonsterBehavior for Donu {
 
     fn take_turn(state: &mut CombatState, entity: &crate::combat::MonsterEntity) -> Vec<Action> {
         let mut actions = Vec::new();
-        let asc = state.ascension_level;
+        let asc = state.meta.ascension_level;
 
         let beam_dmg = if asc >= 4 { 12 } else { 10 };
 
@@ -70,6 +70,7 @@ impl MonsterBehavior for Donu {
             2 => {
                 // CIRCLE_OF_PROTECTION
                 let alive_monsters: Vec<crate::core::EntityId> = state
+                    .entities
                     .monsters
                     .iter()
                     .filter(|m| m.current_hp > 0 && !m.is_dying)

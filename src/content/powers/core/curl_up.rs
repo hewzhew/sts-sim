@@ -18,7 +18,7 @@ pub fn on_attacked(
     // power_amount > 0 serves as "not triggered" guard — action_handlers.rs
     // zeroes the CurlUp amount before dispatching on_attacked hooks, so
     // multi-hit cards (Twin Strike, Pummel) won't re-trigger.
-    if let Some(m) = state.monsters.iter().find(|m| m.id == target) {
+    if let Some(m) = state.entities.monsters.iter().find(|m| m.id == target) {
         if power_amount > 0 && amount > 0 && m.current_hp > 0 {
             actions.push(Action::GainBlock {
                 target,

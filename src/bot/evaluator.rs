@@ -13,17 +13,17 @@ pub fn evaluate_state(engine_state: &EngineState, combat_state: &CombatState) ->
     let mut score = 0.0;
 
     // Turn penalty to encourage fast kills
-    score -= combat_state.turn_count as f32 * 500.0;
+    score -= combat_state.turn.turn_count as f32 * 500.0;
 
     // Player Health is the most precious resource
-    score += combat_state.player.current_hp as f32 * 100.0;
+    score += combat_state.entities.player.current_hp as f32 * 100.0;
 
     // Score player block (but incoming intent damage will subtract it back)
-    score += combat_state.player.block as f32 * 5.0;
+    score += combat_state.entities.player.block as f32 * 5.0;
 
     let mut total_monster_expected_damage = 0;
 
-    for m in &combat_state.monsters {
+    for m in &combat_state.entities.monsters {
         if m.is_dying || m.is_escaped {
             // Massive bonus for a dead monster
             score += 15000.0;
@@ -56,12 +56,17 @@ pub fn evaluate_state(engine_state: &EngineState, combat_state: &CombatState) ->
     // However, since DFS evaluates the start of the *next* turn, we assume the player will
     // natively generate ~10 block from basic energy usage, softening the blow of large intents.
     let assumed_future_block = 10;
-    let expected_net_damage = (total_monster_expected_damage - combat_state.player.block).max(0);
+    let expected_net_damage =
+        (total_monster_expected_damage - combat_state.entities.player.block).max(0);
     let unblocked_damage = (expected_net_damage - assumed_future_block).max(0);
     score -= unblocked_damage as f32 * 120.0; // soften multiplier slightly
 
     // Add positive scoring for player powers/buffs
-    if let Some(powers) = combat_state.power_db.get(&combat_state.player.id) {
+    if let Some(powers) = combat_state
+        .entities
+        .power_db
+        .get(&combat_state.entities.player.id)
+    {
         for p in powers {
             // Very naive evaluation: +150 per stack of generic buff to encourage setup plays
             if !crate::content::powers::is_debuff(p.power_type, p.amount) {
@@ -71,8 +76,8 @@ pub fn evaluate_state(engine_state: &EngineState, combat_state: &CombatState) ->
     }
 
     // Add positive scoring for debuffs on enemies
-    for m in &combat_state.monsters {
-        if let Some(powers) = combat_state.power_db.get(&m.id) {
+    for m in &combat_state.entities.monsters {
+        if let Some(powers) = combat_state.entities.power_db.get(&m.id) {
             for p in powers {
                 if crate::content::powers::is_debuff(p.power_type, p.amount) {
                     score += p.amount as f32 * 80.0;
@@ -91,6 +96,16 @@ pub fn evaluate_state(engine_state: &EngineState, combat_state: &CombatState) ->
 use crate::content::cards::CardId;
 use crate::state::run::RunState;
 
+pub(crate) fn curse_remove_severity(card_id: CardId) -> i32 {
+    match card_id {
+        CardId::Parasite | CardId::Pain | CardId::Normality => 10,
+        CardId::Regret | CardId::Writhe | CardId::Decay => 8,
+        CardId::CurseOfTheBell => 7,
+        CardId::Doubt | CardId::Shame | CardId::Injury | CardId::Clumsy => 5,
+        _ => 0,
+    }
+}
+
 pub struct CardEvaluator;
 
 #[derive(Debug, Default, Clone, Copy)]
@@ -98,6 +113,8 @@ pub struct DeckProfile {
     pub attack_count: i32,
     pub skill_count: i32,
     pub power_count: i32,
+    pub searing_blow_count: i32,
+    pub searing_blow_upgrades: i32,
     pub strength_enablers: i32,
     pub strength_payoffs: i32,
     pub exhaust_engines: i32,
@@ -186,12 +203,13 @@ impl CardEvaluator {
     pub fn combat_profile(combat_state: &CombatState) -> DeckProfile {
         Self::deck_profile_from_cards(
             combat_state
+                .zones
                 .hand
                 .iter()
-                .chain(combat_state.draw_pile.iter())
-                .chain(combat_state.discard_pile.iter())
-                .chain(combat_state.exhaust_pile.iter())
-                .chain(combat_state.limbo.iter()),
+                .chain(combat_state.zones.draw_pile.iter())
+                .chain(combat_state.zones.discard_pile.iter())
+                .chain(combat_state.zones.exhaust_pile.iter())
+                .chain(combat_state.zones.limbo.iter()),
         )
     }
 
@@ -205,6 +223,7 @@ impl CardEvaluator {
         let draw_cycle_online = profile.draw_sources >= 3;
         let power_scaling_online = profile.power_scalers >= 2 || profile.power_count >= 4;
         let status_online = profile.status_generators >= 1 && profile.status_payoffs >= 1;
+        let searing_blow_online = profile.searing_blow_count > 0;
 
         if strength_online {
             tags.push("strength".to_string());
@@ -226,6 +245,9 @@ impl CardEvaluator {
         }
         if status_online {
             tags.push("status".to_string());
+        }
+        if searing_blow_online {
+            tags.push("searing_blow".to_string());
         }
 
         if tags.len() >= 2 {
@@ -304,6 +326,10 @@ impl CardEvaluator {
             }
             if card.id == CardId::Whirlwind {
                 profile.x_cost_payoffs += 1;
+            }
+            if card.id == CardId::SearingBlow {
+                profile.searing_blow_count += 1;
+                profile.searing_blow_upgrades += card.upgrades as i32;
             }
             if matches!(
                 card.id,
@@ -444,10 +470,20 @@ impl CardEvaluator {
             CardId::Corruption => {
                 10 + profile.exhaust_outlets * 4 + profile.exhaust_fodder * 2 + profile.block_core
             }
-            CardId::FeelNoPain => 8 + exhaust_level * 4 + profile.exhaust_fodder * 2,
-            CardId::DarkEmbrace => 8 + exhaust_level * 4,
+            CardId::FeelNoPain => {
+                8 + exhaust_level * 4
+                    + profile.exhaust_fodder * 2
+                    + profile.draw_sources
+                    + profile.block_core
+            }
+            CardId::DarkEmbrace => {
+                10 + exhaust_level * 5 + profile.draw_sources * 2 + profile.exhaust_fodder * 2
+            }
             CardId::SecondWind | CardId::FiendFire | CardId::SeverSoul | CardId::BurningPact => {
-                profile.exhaust_engines * 5 + profile.exhaust_fodder * 3
+                profile.exhaust_engines * 5
+                    + profile.exhaust_fodder * 3
+                    + profile.draw_sources
+                    + profile.status_generators * 2
             }
             CardId::TrueGrit => 4 + profile.exhaust_engines * 3 + profile.exhaust_fodder * 2,
             CardId::Exhume => {
@@ -491,6 +527,34 @@ impl CardEvaluator {
             | CardId::PowerThrough
             | CardId::GhostlyArmor
             | CardId::IronWave => profile.block_payoffs * 3 + profile.exhaust_engines * 2,
+            CardId::SearingBlow => {
+                if profile.searing_blow_count > 0 {
+                    8 + profile.searing_blow_upgrades * 6 + profile.draw_sources * 2
+                } else {
+                    6
+                }
+            }
+            CardId::Armaments => {
+                if profile.searing_blow_count > 0 {
+                    10 + profile.searing_blow_upgrades * 3
+                } else {
+                    0
+                }
+            }
+            CardId::Headbutt | CardId::SeeingRed => {
+                if profile.searing_blow_count > 0 {
+                    8 + profile.searing_blow_upgrades * 2
+                } else {
+                    0
+                }
+            }
+            CardId::DoubleTap => {
+                if profile.searing_blow_count > 0 {
+                    6 + profile.searing_blow_upgrades * 2
+                } else {
+                    0
+                }
+            }
             CardId::BattleTrance
             | CardId::PommelStrike
             | CardId::Finesse
@@ -640,10 +704,11 @@ impl CardEvaluator {
             },
             CardId::Strike
             | CardId::Defend
+            | CardId::StrikeG
+            | CardId::DefendG
             | CardId::Clash
             | CardId::WildStrike
             | CardId::Rampage
-            | CardId::SearingBlow
             | CardId::PerfectedStrike => MarginalValueProfile {
                 role: CardRole::Filler,
                 presence_value: -2,
@@ -729,10 +794,28 @@ impl CardEvaluator {
             CardId::Blind => 60,
             CardId::DarkShackles => 64,
             CardId::Trip => 56,
+            CardId::Neutralize => 52,
+            CardId::Survivor => 56,
+            CardId::DeadlyPoison => 54,
+            CardId::Prepared => 44,
+            CardId::DaggerThrow => 48,
+            CardId::PoisonedStab => 52,
+            CardId::DaggerSpray => 50,
+            CardId::BladeDance => 50,
+            CardId::CloakAndDagger => 48,
+            CardId::Backflip => 54,
+            CardId::Acrobatics => 56,
+            CardId::BouncingFlask => 56,
+            CardId::Footwork => 58,
+            CardId::NoxiousFumes => 58,
+            CardId::Catalyst => 46,
+            CardId::Adrenaline => 72,
+            CardId::AfterImage => 60,
+            CardId::Burst => 54,
 
             // --- Starters & Curses ---
-            CardId::Strike => -10,
-            CardId::Defend => -10,
+            CardId::Strike | CardId::StrikeG => -10,
+            CardId::Defend | CardId::DefendG => -10,
             // Skip tier cards
             CardId::Clash => 10,
             CardId::WildStrike => 10,
@@ -782,6 +865,7 @@ impl CardEvaluator {
             CardId::Disarm => 1,
             CardId::Apotheosis => 1,
             CardId::Barricade => 1,
+            CardId::SearingBlow => 1,
             CardId::Juggernaut => 1,
             CardId::MasterOfStrategy => 1,
             _ => 2, // Default limit is 2 for safety against bloat

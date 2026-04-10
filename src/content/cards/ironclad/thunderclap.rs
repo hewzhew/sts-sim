@@ -12,7 +12,7 @@ pub fn thunderclap_play(state: &CombatState, card: &CombatCard) -> SmallVec<[Act
         },
         insertion_mode: AddTo::Bottom,
     }];
-    for monster in &state.monsters {
+    for monster in &state.entities.monsters {
         if !monster.is_dying {
             actions.push(ActionInfo {
                 action: Action::ApplyPower {

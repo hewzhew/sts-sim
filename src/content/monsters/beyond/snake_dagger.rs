@@ -25,16 +25,11 @@ impl MonsterBehavior for SnakeDagger {
     }
 
     fn use_pre_battle_action(
-        entity: &crate::combat::MonsterEntity,
+        _entity: &crate::combat::MonsterEntity,
         _hp_rng: &mut crate::rng::StsRng,
         _ascension_level: u8,
     ) -> Vec<Action> {
-        vec![Action::ApplyPower {
-            source: entity.id,
-            target: entity.id,
-            power_id: crate::content::powers::PowerId::Minion,
-            amount: 1,
-        }]
+        Vec::new()
     }
 
     fn take_turn(_state: &mut CombatState, entity: &crate::combat::MonsterEntity) -> Vec<Action> {

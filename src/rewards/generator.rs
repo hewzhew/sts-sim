@@ -186,8 +186,10 @@ pub fn generate_card_reward(
             _ => {}
         }
 
-        let pool =
-            crate::engine::campfire_handler::card_pool_for_class(run_state.player_class, rarity);
+        let pool = crate::engine::campfire_handler::nonempty_card_pool_for_class(
+            run_state.player_class,
+            rarity,
+        );
         if !pool.is_empty() {
             let mut contains_dupe = true;
             let mut candidate = pool[0];

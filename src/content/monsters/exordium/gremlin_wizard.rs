@@ -15,7 +15,11 @@ impl MonsterBehavior for GremlinWizard {
     }
 
     fn take_turn(state: &mut CombatState, entity: &MonsterEntity) -> Vec<Action> {
-        let magic_dmg = if state.ascension_level >= 2 { 30 } else { 25 };
+        let magic_dmg = if state.meta.ascension_level >= 2 {
+            30
+        } else {
+            25
+        };
         let mut actions = Vec::new();
 
         match entity.next_move_byte {
@@ -30,7 +34,7 @@ impl MonsterBehavior for GremlinWizard {
                     is_modified: false,
                 }));
                 // After dope magic, optionally reset charge
-                if state.ascension_level >= 17 {
+                if state.meta.ascension_level >= 17 {
                     actions.push(Action::SetMonsterMove {
                         monster_id: entity.id,
                         next_move_byte: 1,

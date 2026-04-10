@@ -10,21 +10,22 @@ pub fn headbutt_play(
     target: Option<EntityId>,
 ) -> SmallVec<[ActionInfo; 4]> {
     let target = target.expect("Headbutt requires a valid target!");
+    let evaluated = crate::content::cards::evaluate_card_for_play(card, state, Some(target));
     let mut actions = SmallVec::new();
 
     actions.push(ActionInfo {
         action: Action::Damage(DamageInfo {
             source: 0,
             target,
-            base: card.base_damage_mut,
-            output: card.base_damage_mut,
+            base: evaluated.base_damage_mut,
+            output: evaluated.base_damage_mut,
             damage_type: DamageType::Normal,
-            is_modified: false,
+            is_modified: true,
         }),
         insertion_mode: AddTo::Bottom,
     });
 
-    let discard_size = state.discard_pile.len();
+    let discard_size = state.zones.discard_pile.len();
     if discard_size > 1 {
         actions.push(ActionInfo {
             action: Action::SuspendForGridSelect {
@@ -41,7 +42,7 @@ pub fn headbutt_play(
         // Just directly move the 1 card
         actions.push(ActionInfo {
             action: Action::MoveCard {
-                card_uuid: state.discard_pile[0].uuid,
+                card_uuid: state.zones.discard_pile[0].uuid,
                 from: PileType::Discard,
                 to: PileType::Draw,
             },

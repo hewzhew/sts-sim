@@ -14,14 +14,22 @@ pub fn on_monster_turn_ended(
     }]
 }
 
-pub fn on_attacked(
+pub fn on_hp_lost(
     _state: &CombatState,
     owner: EntityId,
     amount: i32,
-    _power_amount: i32,
+    source: Option<EntityId>,
+    damage_type: crate::action::DamageType,
 ) -> smallvec::SmallVec<[Action; 2]> {
     let mut actions = smallvec::smallvec![];
-    if amount > 0 {
+    if amount > 0
+        && !matches!(
+            damage_type,
+            crate::action::DamageType::HpLoss | crate::action::DamageType::Thorns
+        )
+        && source.is_some()
+        && source != Some(owner)
+    {
         actions.push(Action::ApplyPower {
             source: owner,
             target: owner,
@@ -35,7 +43,7 @@ pub fn on_attacked(
 pub fn on_remove(_state: &CombatState, owner: EntityId) -> smallvec::SmallVec<[Action; 2]> {
     let mut actions = smallvec::smallvec![];
     // Trigger `ARMOR_BREAK` for Shelled Parasite
-    if let Some(monster) = _state.monsters.iter().find(|m| m.id == owner) {
+    if let Some(monster) = _state.entities.monsters.iter().find(|m| m.id == owner) {
         if monster.monster_type == crate::content::monsters::EnemyId::ShelledParasite as usize {
             actions.push(Action::SetMonsterMove {
                 monster_id: owner,

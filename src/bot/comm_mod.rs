@@ -1,7 +1,7 @@
-use crate::state::core::{ClientInput, EngineState};
+use crate::state::core::{ClientInput, EngineState, PendingChoice};
 
 /// Translates a Rust ClientInput into the String format expected by Java's CommunicationMod over stdin/stdout.
-pub fn input_to_java_command(input: &ClientInput, _state: &EngineState) -> Option<String> {
+pub fn input_to_java_command(input: &ClientInput, state: &EngineState) -> Option<String> {
     match input {
         ClientInput::PlayCard { card_index, target } => {
             let mut cmd = format!("PLAY {}", card_index + 1); // Java expects 1-indexed cards
@@ -46,18 +46,86 @@ pub fn input_to_java_command(input: &ClientInput, _state: &EngineState) -> Optio
 
         // For complex selects where Rust atomicly expects array, picking the *first* unselected item is a naive shim 
         // to make Java advance one step and return a new intermediate frame.
-        ClientInput::SubmitHandSelect(_uuids) |
-        ClientInput::SubmitGridSelect(_uuids) => {
-            // A more advanced map is required to find the exact index in Java's choice_list corresponding to this UUID.
-            // For now, we print a placeholder or pick the first.
-            // In reality, diff_driver / mapping usually bridges this, but we'll panic/error cleanly if it hits complex logic unsupported by LiveComm.
-            eprintln!("WARNING: Array-based selection (Grid/Hand) is theoretically not supported in 1-pass by LiveComm. Defaulting to CHOOSE 0");
-            Some(format!("CHOOSE 0"))
-        },
+        ClientInput::SubmitHandSelect(uuids) => translate_pending_uuid_selection(uuids, state),
+        ClientInput::SubmitGridSelect(uuids) => translate_pending_uuid_selection(uuids, state),
 
         _ => {
             eprintln!("Unhandled input translation: {:?}", input);
             None
         }
+    }
+}
+
+fn translate_pending_uuid_selection(uuids: &[u32], state: &EngineState) -> Option<String> {
+    if uuids.is_empty() {
+        return Some("PROCEED".to_string());
+    }
+
+    let candidate_uuids = match state {
+        EngineState::PendingChoice(PendingChoice::HandSelect {
+            candidate_uuids, ..
+        })
+        | EngineState::PendingChoice(PendingChoice::GridSelect {
+            candidate_uuids, ..
+        }) => candidate_uuids,
+        _ => {
+            eprintln!(
+                "WARNING: selection input outside PendingChoice context: {:?}",
+                uuids
+            );
+            return Some("CHOOSE 0".to_string());
+        }
+    };
+
+    if let Some(choice_index) = uuids.iter().find_map(|uuid| {
+        candidate_uuids
+            .iter()
+            .position(|candidate| candidate == uuid)
+    }) {
+        Some(format!("CHOOSE {}", choice_index))
+    } else {
+        eprintln!(
+            "WARNING: failed to map selected UUIDs {:?} to current candidate list {:?}; defaulting to CHOOSE 0",
+            uuids, candidate_uuids
+        );
+        Some("CHOOSE 0".to_string())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::input_to_java_command;
+    use crate::state::core::{ClientInput, EngineState, HandSelectReason, PendingChoice};
+
+    #[test]
+    fn hand_select_maps_uuid_to_choose_index() {
+        let state = EngineState::PendingChoice(PendingChoice::HandSelect {
+            candidate_uuids: vec![101, 202, 303],
+            min_cards: 0,
+            max_cards: 3,
+            can_cancel: true,
+            reason: HandSelectReason::GamblingChip,
+        });
+
+        assert_eq!(
+            input_to_java_command(&ClientInput::SubmitHandSelect(vec![202]), &state),
+            Some("CHOOSE 1".to_string())
+        );
+    }
+
+    #[test]
+    fn empty_hand_select_uses_proceed() {
+        let state = EngineState::PendingChoice(PendingChoice::HandSelect {
+            candidate_uuids: vec![101, 202, 303],
+            min_cards: 0,
+            max_cards: 3,
+            can_cancel: true,
+            reason: HandSelectReason::GamblingChip,
+        });
+
+        assert_eq!(
+            input_to_java_command(&ClientInput::SubmitHandSelect(Vec::new()), &state),
+            Some("PROCEED".to_string())
+        );
     }
 }

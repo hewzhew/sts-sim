@@ -25,6 +25,7 @@ pub fn at_end_of_turn(
 
     // Get hpLoss from extra_data (defaults to 1 if somehow missing)
     let hp_loss = state
+        .entities
         .power_db
         .get(&owner)
         .and_then(|ps| ps.iter().find(|p| p.power_type == PowerId::Combust))
@@ -34,10 +35,11 @@ pub fn at_end_of_turn(
     actions.push(Action::LoseHp {
         target: owner,
         amount: hp_loss,
+        triggers_rupture: true,
     });
     actions.push(Action::DamageAllEnemies {
         source: owner,
-        damages: smallvec::smallvec![amount; 5],
+        damages: crate::action::repeated_damage_matrix(state.entities.monsters.len(), amount),
         damage_type: DamageType::Thorns, // Java: DamageInfo.DamageType.THORNS
         is_modified: false,
     });

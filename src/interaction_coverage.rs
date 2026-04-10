@@ -149,24 +149,26 @@ pub fn signature_from_transition(
     if spawned_monsters(before, after) {
         outcome_tags.insert("spawns".to_string());
     }
-    if after.hand.len() > before.hand.len() {
+    if after.zones.hand.len() > before.zones.hand.len() {
         pile_tags.insert("draw".to_string());
         outcome_tags.insert("draws_cards".to_string());
     }
-    if after.discard_pile.len() > before.discard_pile.len() {
+    if after.zones.discard_pile.len() > before.zones.discard_pile.len() {
         pile_tags.insert("discard".to_string());
     }
-    if after.exhaust_pile.len() > before.exhaust_pile.len() {
+    if after.zones.exhaust_pile.len() > before.zones.exhaust_pile.len() {
         pile_tags.insert("exhaust".to_string());
     }
-    if before.draw_pile.is_empty() && !before.discard_pile.is_empty() && !after.draw_pile.is_empty()
+    if before.zones.draw_pile.is_empty()
+        && !before.zones.discard_pile.is_empty()
+        && !after.zones.draw_pile.is_empty()
     {
         pile_tags.insert("shuffle".to_string());
     }
-    if after.limbo.len() != before.limbo.len() {
+    if after.zones.limbo.len() != before.zones.limbo.len() {
         pile_tags.insert("limbo".to_string());
     }
-    if after.energy > before.energy && !matches!(input, ClientInput::EndTurn) {
+    if after.turn.energy > before.turn.energy && !matches!(input, ClientInput::EndTurn) {
         outcome_tags.insert("gains_energy".to_string());
     }
     if matches!(after_engine, EngineState::PendingChoice(_)) {
@@ -490,7 +492,7 @@ fn replay_action_to_input(action: &ReplayAction, combat: &CombatState) -> Option
             card_index: action.card_index?,
             target: action
                 .target
-                .and_then(|idx| combat.monsters.get(idx).map(|m| m.id)),
+                .and_then(|idx| combat.entities.monsters.get(idx).map(|m| m.id)),
         }),
         "potion" => {
             let cmd = action.command.as_deref()?;
@@ -500,7 +502,7 @@ fn replay_action_to_input(action: &ReplayAction, combat: &CombatState) -> Option
                 let target = parts
                     .get(3)
                     .and_then(|s| s.parse::<usize>().ok())
-                    .and_then(|idx| combat.monsters.get(idx).map(|m| m.id));
+                    .and_then(|idx| combat.entities.monsters.get(idx).map(|m| m.id));
                 Some(ClientInput::UsePotion {
                     potion_index: slot,
                     target,
@@ -517,7 +519,7 @@ fn replay_action_to_input(action: &ReplayAction, combat: &CombatState) -> Option
 fn source_descriptor(combat: &CombatState, input: &ClientInput) -> (String, String, String) {
     match input {
         ClientInput::PlayCard { card_index, .. } => {
-            if let Some(card) = combat.hand.get(*card_index) {
+            if let Some(card) = combat.zones.hand.get(*card_index) {
                 let def = cards::get_card_definition(card.id);
                 (
                     "card".to_string(),
@@ -537,6 +539,7 @@ fn source_descriptor(combat: &CombatState, input: &ClientInput) -> (String, Stri
             target,
         } => {
             let source_id = combat
+                .entities
                 .potions
                 .get(*potion_index)
                 .and_then(|slot| slot.as_ref())
@@ -628,6 +631,7 @@ fn collect_key_power_tags(before: &CombatState, after: &CombatState) -> Vec<Stri
 
 fn state_has_power(state: &CombatState, power_id: PowerId) -> bool {
     state
+        .entities
         .power_db
         .values()
         .any(|powers| powers.iter().any(|p| p.power_type == power_id))
@@ -635,9 +639,10 @@ fn state_has_power(state: &CombatState, power_id: PowerId) -> bool {
 
 fn monsters_took_damage(before: &CombatState, after: &CombatState) -> bool {
     before
+        .entities
         .monsters
         .iter()
-        .zip(after.monsters.iter())
+        .zip(after.entities.monsters.iter())
         .any(|(b, a)| {
             a.current_hp < b.current_hp || (a.block < b.block && b.current_hp == a.current_hp)
         })
@@ -645,36 +650,40 @@ fn monsters_took_damage(before: &CombatState, after: &CombatState) -> bool {
 
 fn any_new_monster_death(before: &CombatState, after: &CombatState) -> bool {
     before
+        .entities
         .monsters
         .iter()
-        .zip(after.monsters.iter())
+        .zip(after.entities.monsters.iter())
         .any(|(b, a)| !monster_unavailable(b) && monster_unavailable(a) && !a.half_dead)
 }
 
 fn any_new_half_dead(before: &CombatState, after: &CombatState) -> bool {
     before
+        .entities
         .monsters
         .iter()
-        .zip(after.monsters.iter())
+        .zip(after.entities.monsters.iter())
         .any(|(b, a)| !b.half_dead && a.half_dead)
 }
 
 fn any_revive(before: &CombatState, after: &CombatState) -> bool {
     before
+        .entities
         .monsters
         .iter()
-        .zip(after.monsters.iter())
+        .zip(after.entities.monsters.iter())
         .any(|(b, a)| {
             (b.half_dead || monster_unavailable(b)) && !monster_unavailable(a) && a.current_hp > 0
         })
 }
 
 fn spawned_monsters(before: &CombatState, after: &CombatState) -> bool {
-    after.monsters.len() > before.monsters.len()
+    after.entities.monsters.len() > before.entities.monsters.len()
         || before
+            .entities
             .monsters
             .iter()
-            .zip(after.monsters.iter())
+            .zip(after.entities.monsters.iter())
             .any(|(b, a)| monster_unavailable(b) && !monster_unavailable(a) && a.current_hp > 0)
 }
 
@@ -849,54 +858,68 @@ mod tests {
         let mut card = CombatCard::new(card_id, 111);
         card.upgrades = 0;
         let state = CombatState {
-            ascension_level: 0,
-            turn_count: 1,
-            current_phase: CombatPhase::PlayerTurn,
-            energy: 3,
-            draw_pile: Vec::new(),
-            hand: vec![card],
-            discard_pile: Vec::new(),
-            exhaust_pile: Vec::new(),
-            limbo: Vec::new(),
-            player: PlayerEntity {
-                id: 0,
-                current_hp: 80,
-                max_hp: 80,
-                block: 0,
-                gold_delta_this_combat: 0,
-                gold: 99,
-                max_orbs: 0,
-                orbs: Vec::new(),
-                stance: StanceId::Neutral,
-                relics: Vec::new(),
-                relic_buses: RelicBuses::default(),
-                energy_master: 3,
+            meta: crate::combat::CombatMeta {
+                ascension_level: 0,
+                is_boss_fight: false,
+                is_elite_fight: false,
+                meta_changes: Vec::new(),
             },
-            monsters: vec![MonsterEntity {
-                id: 1,
-                monster_type: crate::content::monsters::EnemyId::JawWorm as usize,
-                current_hp: 30,
-                max_hp: 30,
-                block: 0,
-                slot: 0,
-                is_dying: false,
-                is_escaped: false,
-                half_dead: false,
-                next_move_byte: 0,
-                current_intent: Intent::Unknown,
-                move_history: VecDeque::new(),
-                intent_dmg: 0,
-                logical_position: 0,
-            }],
-            potions: vec![None, None, None],
-            power_db: HashMap::new(),
-            action_queue: VecDeque::new(),
-            counters: Default::default(),
-            card_uuid_counter: 222,
-            rng: crate::rng::RngPool::new(123),
-            is_boss_fight: false,
-            is_elite_fight: false,
-            meta_changes: Vec::new(),
+            turn: crate::combat::TurnRuntime {
+                turn_count: 1,
+                current_phase: CombatPhase::PlayerTurn,
+                energy: 3,
+                turn_start_draw_modifier: 0,
+                counters: Default::default(),
+            },
+            zones: crate::combat::CardZones {
+                draw_pile: Vec::new(),
+                hand: vec![card],
+                discard_pile: Vec::new(),
+                exhaust_pile: Vec::new(),
+                limbo: Vec::new(),
+                queued_cards: VecDeque::new(),
+                card_uuid_counter: 222,
+            },
+            entities: crate::combat::EntityState {
+                player: PlayerEntity {
+                    id: 0,
+                    current_hp: 80,
+                    max_hp: 80,
+                    block: 0,
+                    gold_delta_this_combat: 0,
+                    gold: 99,
+                    max_orbs: 0,
+                    orbs: Vec::new(),
+                    stance: StanceId::Neutral,
+                    relics: Vec::new(),
+                    relic_buses: RelicBuses::default(),
+                    energy_master: 3,
+                },
+                monsters: vec![MonsterEntity {
+                    id: 1,
+                    monster_type: crate::content::monsters::EnemyId::JawWorm as usize,
+                    current_hp: 30,
+                    max_hp: 30,
+                    block: 0,
+                    slot: 0,
+                    is_dying: false,
+                    is_escaped: false,
+                    half_dead: false,
+                    next_move_byte: 0,
+                    current_intent: Intent::Unknown,
+                    move_history: VecDeque::new(),
+                    intent_dmg: 0,
+                    logical_position: 0,
+                    hexaghost: Default::default(),
+                    darkling: Default::default(),
+                }],
+                potions: vec![None, None, None],
+                power_db: HashMap::new(),
+            },
+            engine: crate::combat::EngineRuntime {
+                action_queue: VecDeque::new(),
+            },
+            rng: crate::combat::CombatRng::new(crate::rng::RngPool::new(123)),
         };
         let def = cards::get_card_definition(card_id);
         assert_eq!(def.target, target);
@@ -907,18 +930,20 @@ mod tests {
     fn canonical_key_ignores_runtime_hp_and_uuid_noise() {
         let before = simple_combat(CardId::Strike, CardTarget::Enemy);
         let mut after_a = before.clone();
-        after_a.hand.clear();
+        after_a.zones.hand.clear();
         after_a
+            .zones
             .discard_pile
             .push(CombatCard::new(CardId::Strike, 9001));
-        after_a.monsters[0].current_hp = 24;
+        after_a.entities.monsters[0].current_hp = 24;
 
         let mut after_b = before.clone();
-        after_b.hand.clear();
+        after_b.zones.hand.clear();
         after_b
+            .zones
             .discard_pile
             .push(CombatCard::new(CardId::Strike, 42));
-        after_b.monsters[0].current_hp = 19;
+        after_b.entities.monsters[0].current_hp = 19;
 
         let sig_a = signature_from_transition(
             &EngineState::CombatPlayerTurn,

@@ -19,6 +19,27 @@ pub struct CardStatistics {
     pub pick_rate: f32,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct RewardCardScore {
+    pub card_id: CardId,
+    pub pick_rate: f32,
+    pub local_score: i32,
+    pub combined_score: f32,
+}
+
+#[derive(Debug, Clone)]
+pub struct RewardScreenEvaluation {
+    pub offered_cards: Vec<RewardCardScore>,
+    pub recommended_choice: Option<usize>,
+    pub best_pick_rate: f32,
+    pub best_local_score: i32,
+    pub best_combined_score: f32,
+    pub skip_probability: f32,
+    pub skip_margin: f32,
+    pub force_pick_in_act1: bool,
+    pub force_pick_for_shell: bool,
+}
+
 #[derive(Debug, Deserialize)]
 struct RawCardStatistics {
     card_id: String,
@@ -58,8 +79,25 @@ pub fn evaluate_reward_screen_for_run(
     offered_cards: &[CardId],
     run_state: &RunState,
 ) -> Option<usize> {
+    evaluate_reward_screen_for_run_detailed(offered_cards, run_state).recommended_choice
+}
+
+pub fn evaluate_reward_screen_for_run_detailed(
+    offered_cards: &[CardId],
+    run_state: &RunState,
+) -> RewardScreenEvaluation {
     if offered_cards.is_empty() {
-        return None;
+        return RewardScreenEvaluation {
+            offered_cards: Vec::new(),
+            recommended_choice: None,
+            best_pick_rate: 0.0,
+            best_local_score: i32::MIN,
+            best_combined_score: f32::MIN,
+            skip_probability: 1.0,
+            skip_margin: skip_margin_for_run(run_state),
+            force_pick_in_act1: false,
+            force_pick_for_shell: false,
+        };
     }
 
     let profile = CardEvaluator::deck_profile(run_state);
@@ -68,14 +106,20 @@ pub fn evaluate_reward_screen_for_run(
     let mut best_local_score = i32::MIN;
     let mut best_combined_score = f32::MIN;
     let mut skip_probability = 1.0f32;
+    let mut scored_cards = Vec::with_capacity(offered_cards.len());
 
     for (idx, &card_id) in offered_cards.iter().enumerate() {
         let pick_rate = pick_probability(card_id);
-        let local_score = CardEvaluator::evaluate_card(card_id, run_state)
-            + reward_shell_bonus(card_id, &profile);
+        let local_score = adjusted_reward_local_score(card_id, run_state, &profile);
         let combined_score = local_score as f32 + pick_rate * HISTORY_WEIGHT;
 
         skip_probability *= 1.0 - pick_rate;
+        scored_cards.push(RewardCardScore {
+            card_id,
+            pick_rate,
+            local_score,
+            combined_score,
+        });
 
         if combined_score > best_combined_score {
             best_idx = idx;
@@ -85,28 +129,53 @@ pub fn evaluate_reward_screen_for_run(
         }
     }
 
-    if should_force_pick_in_act1(run_state) {
-        return Some(best_idx);
-    }
+    let force_pick_in_act1 = should_force_pick_in_act1(run_state);
+    let force_pick_for_shell = should_force_pick_for_shell(offered_cards, &profile);
+    let skip_margin = skip_margin_for_run(run_state);
+    let best_card_id = offered_cards[best_idx];
 
-    if should_force_pick_for_shell(offered_cards, &profile) {
-        return Some(best_idx);
-    }
-
-    let skip_margin = if run_state.act_num <= 1 {
-        0.35
-    } else if run_state.master_deck.len() <= 15 {
-        0.20
+    let recommended_choice = if force_pick_in_act1 || force_pick_for_shell {
+        Some(best_idx)
     } else {
-        0.08
+        let should_skip = should_skip_reward(
+            run_state,
+            &profile,
+            best_card_id,
+            best_local_score,
+            skip_probability,
+            best_pick_rate,
+            skip_margin,
+        );
+        if should_skip {
+            None
+        } else {
+            Some(best_idx)
+        }
     };
 
-    let should_skip = best_local_score < 15 && skip_probability > best_pick_rate + skip_margin;
-    if should_skip {
-        None
-    } else {
-        Some(best_idx)
+    RewardScreenEvaluation {
+        offered_cards: scored_cards,
+        recommended_choice,
+        best_pick_rate,
+        best_local_score,
+        best_combined_score,
+        skip_probability,
+        skip_margin,
+        force_pick_in_act1,
+        force_pick_for_shell,
     }
+}
+
+fn adjusted_reward_local_score(
+    card_id: CardId,
+    run_state: &RunState,
+    profile: &crate::bot::evaluator::DeckProfile,
+) -> i32 {
+    let raw = CardEvaluator::evaluate_card(card_id, run_state);
+    let capped = if raw < -200 { -120 } else { raw };
+    capped
+        + reward_shell_bonus(card_id, profile)
+        + reward_stage_adjustment(card_id, run_state, profile)
 }
 
 fn reward_shell_bonus(card_id: CardId, profile: &crate::bot::evaluator::DeckProfile) -> i32 {
@@ -127,8 +196,28 @@ fn reward_shell_bonus(card_id: CardId, profile: &crate::bot::evaluator::DeckProf
         {
             16
         }
+        CardId::DarkEmbrace
+            if profile.exhaust_engines >= 1
+                || (profile.exhaust_outlets >= 1 && profile.draw_sources >= 1) =>
+        {
+            14
+        }
         CardId::SecondWind | CardId::BurningPact | CardId::SeverSoul | CardId::FiendFire
             if profile.exhaust_engines >= 2 =>
+        {
+            10
+        }
+        CardId::BurningPact
+            if profile.exhaust_engines >= 1
+                || (profile.exhaust_outlets >= 1 && profile.exhaust_fodder >= 1) =>
+        {
+            14
+        }
+        CardId::Offering if profile.exhaust_engines >= 1 || profile.draw_sources >= 2 => 10,
+        CardId::Armaments
+            if profile.power_scalers >= 1
+                || profile.block_core >= 2
+                || (profile.exhaust_engines >= 1 && profile.draw_sources >= 1) =>
         {
             10
         }
@@ -140,6 +229,146 @@ fn reward_shell_bonus(card_id: CardId, profile: &crate::bot::evaluator::DeckProf
         }
         _ => 0,
     }
+}
+
+fn reward_stage_adjustment(
+    card_id: CardId,
+    run_state: &RunState,
+    profile: &crate::bot::evaluator::DeckProfile,
+) -> i32 {
+    let late_game = run_state.act_num >= 2;
+    let no_strength_shell = profile.strength_enablers == 0;
+    let larger_deck = run_state.master_deck.len() >= 16;
+
+    let mut adj = 0;
+
+    match card_id {
+        CardId::Warcry => {
+            adj += 12;
+            if late_game {
+                adj += 6;
+            }
+            if profile.draw_sources >= 1 {
+                adj += 3;
+            }
+        }
+        CardId::SecondWind => {
+            if run_state.act_num == 1 && run_state.master_deck.len() <= 12 {
+                adj += 10;
+            }
+            if profile.exhaust_engines >= 1 || profile.status_generators >= 1 {
+                adj += 6;
+            }
+        }
+        CardId::BurningPact => {
+            if profile.exhaust_engines >= 1 || profile.exhaust_fodder >= 1 {
+                adj += 10;
+            }
+            if profile.draw_sources >= 2 {
+                adj += 4;
+            }
+        }
+        CardId::DarkEmbrace => {
+            if profile.exhaust_outlets >= 1 || profile.exhaust_fodder >= 1 {
+                adj += 10;
+            }
+            if profile.draw_sources >= 2 {
+                adj += 4;
+            }
+        }
+        CardId::Offering => {
+            if profile.exhaust_engines >= 1 || profile.power_scalers >= 1 {
+                adj += 6;
+            }
+        }
+        CardId::Armaments => {
+            if profile.power_scalers >= 1 || profile.block_core >= 2 {
+                adj += 6;
+            }
+        }
+        CardId::FireBreathing => {
+            if profile.status_generators >= 1 {
+                adj += 10;
+            } else if run_state.act_num == 1 {
+                adj += 4;
+            }
+        }
+        CardId::TwinStrike => {
+            if late_game && no_strength_shell {
+                adj -= 16;
+            }
+        }
+        CardId::SwordBoomerang => {
+            if late_game && no_strength_shell {
+                adj -= 18;
+            }
+        }
+        CardId::HeavyBlade => {
+            if no_strength_shell {
+                adj -= if late_game { 24 } else { 14 };
+            }
+        }
+        CardId::Clothesline => {
+            if late_game {
+                adj -= 14;
+            }
+        }
+        CardId::Headbutt => {
+            if late_game && larger_deck {
+                adj -= 12;
+            }
+        }
+        CardId::PerfectedStrike => {
+            if late_game {
+                adj -= 12;
+            }
+        }
+        CardId::IronWave | CardId::Cleave => {
+            if late_game && larger_deck {
+                adj -= 10;
+            }
+        }
+        _ => {}
+    }
+
+    adj
+}
+
+fn should_skip_reward(
+    run_state: &RunState,
+    profile: &crate::bot::evaluator::DeckProfile,
+    best_card_id: CardId,
+    best_local_score: i32,
+    skip_probability: f32,
+    best_pick_rate: f32,
+    skip_margin: f32,
+) -> bool {
+    if best_local_score < 15 && skip_probability > best_pick_rate + skip_margin {
+        return true;
+    }
+
+    let late_game = run_state.act_num >= 2;
+    let mediocre_attack = matches!(
+        best_card_id,
+        CardId::IronWave
+            | CardId::SwordBoomerang
+            | CardId::Cleave
+            | CardId::Headbutt
+            | CardId::Clothesline
+            | CardId::HeavyBlade
+            | CardId::TwinStrike
+            | CardId::PerfectedStrike
+    );
+    let no_strength_shell = profile.strength_enablers == 0;
+
+    late_game
+        && mediocre_attack
+        && (best_card_id != CardId::Headbutt || run_state.master_deck.len() >= 16)
+        && (best_card_id != CardId::HeavyBlade || no_strength_shell)
+        && (best_card_id != CardId::TwinStrike || no_strength_shell)
+        && (best_card_id != CardId::SwordBoomerang || no_strength_shell)
+        && best_local_score < 58
+        && skip_probability > 0.60
 }
 
 fn should_force_pick_for_shell(
@@ -162,6 +391,16 @@ fn should_force_pick_in_act1(run_state: &RunState) -> bool {
     run_state.act_num == 1
         && run_state.floor_num <= ACT1_FORCE_PICK_FLOOR
         && run_state.master_deck.len() <= ACT1_FORCE_PICK_DECK_SIZE
+}
+
+fn skip_margin_for_run(run_state: &RunState) -> f32 {
+    if run_state.act_num <= 1 {
+        0.35
+    } else if run_state.master_deck.len() <= 15 {
+        0.20
+    } else {
+        0.08
+    }
 }
 
 fn card_statistics() -> &'static HashMap<CardId, CardStatistics> {
@@ -299,6 +538,128 @@ mod tests {
         ];
 
         let offered = [CardId::Entrench, CardId::Clash, CardId::Havoc];
+        assert_eq!(evaluate_reward_screen_for_run(&offered, &rs), Some(0));
+    }
+
+    #[test]
+    fn detailed_reward_evaluation_matches_final_choice() {
+        let mut rs = sample_run_state();
+        rs.act_num = 2;
+        rs.floor_num = 25;
+        let offered = [CardId::Clash, CardId::WildStrike, CardId::Havoc];
+
+        let detailed = evaluate_reward_screen_for_run_detailed(&offered, &rs);
+        assert_eq!(
+            detailed.recommended_choice,
+            evaluate_reward_screen_for_run(&offered, &rs)
+        );
+        assert_eq!(detailed.offered_cards.len(), offered.len());
+    }
+
+    #[test]
+    fn late_game_can_skip_mediocre_attack_bundle() {
+        let mut rs = sample_run_state();
+        rs.act_num = 2;
+        rs.floor_num = 21;
+        rs.master_deck = (0..17)
+            .map(|i| CombatCard::new(CardId::Strike, i))
+            .collect();
+
+        let offered = [CardId::IronWave, CardId::SwordBoomerang, CardId::Cleave];
+        assert_eq!(evaluate_reward_screen_for_run(&offered, &rs), None);
+    }
+
+    #[test]
+    fn warcry_gets_late_game_reward_bump() {
+        let mut rs = sample_run_state();
+        rs.act_num = 2;
+        rs.floor_num = 30;
+        rs.master_deck = vec![
+            CombatCard::new(CardId::ShrugItOff, 1),
+            CombatCard::new(CardId::BattleTrance, 2),
+            CombatCard::new(CardId::Armaments, 3),
+            CombatCard::new(CardId::Shockwave, 4),
+            CombatCard::new(CardId::TrueGrit, 5),
+            CombatCard::new(CardId::Strike, 6),
+            CombatCard::new(CardId::Defend, 7),
+            CombatCard::new(CardId::Strike, 8),
+            CombatCard::new(CardId::Defend, 9),
+            CombatCard::new(CardId::Strike, 10),
+            CombatCard::new(CardId::Defend, 11),
+            CombatCard::new(CardId::Strike, 12),
+            CombatCard::new(CardId::Defend, 13),
+            CombatCard::new(CardId::Strike, 14),
+            CombatCard::new(CardId::Defend, 15),
+            CombatCard::new(CardId::Strike, 16),
+            CombatCard::new(CardId::Defend, 17),
+            CombatCard::new(CardId::Strike, 18),
+            CombatCard::new(CardId::Defend, 19),
+            CombatCard::new(CardId::Strike, 20),
+            CombatCard::new(CardId::Defend, 21),
+        ];
+
+        let offered = [CardId::PerfectedStrike, CardId::Clothesline, CardId::Warcry];
+        assert_eq!(evaluate_reward_screen_for_run(&offered, &rs), Some(2));
+    }
+
+    #[test]
+    fn duplicate_armaments_reward_score_is_clamped() {
+        let mut rs = sample_run_state();
+        rs.act_num = 2;
+        rs.floor_num = 28;
+        rs.master_deck = vec![
+            CombatCard::new(CardId::Armaments, 1),
+            CombatCard::new(CardId::ShrugItOff, 2),
+            CombatCard::new(CardId::Shockwave, 3),
+            CombatCard::new(CardId::TrueGrit, 4),
+            CombatCard::new(CardId::Strike, 5),
+            CombatCard::new(CardId::Defend, 6),
+        ];
+
+        let detailed = evaluate_reward_screen_for_run_detailed(
+            &[CardId::DemonForm, CardId::Combust, CardId::Armaments],
+            &rs,
+        );
+        let armaments = detailed
+            .offered_cards
+            .iter()
+            .find(|c| c.card_id == CardId::Armaments)
+            .unwrap();
+        assert!(armaments.local_score > -200);
+    }
+
+    #[test]
+    fn shell_progression_prefers_dark_embrace_over_generic_attack() {
+        let mut rs = sample_run_state();
+        rs.act_num = 2;
+        rs.floor_num = 22;
+        rs.master_deck = vec![
+            CombatCard::new(CardId::FeelNoPain, 1),
+            CombatCard::new(CardId::BurningPact, 2),
+            CombatCard::new(CardId::TrueGrit, 3),
+            CombatCard::new(CardId::Offering, 4),
+            CombatCard::new(CardId::ShrugItOff, 5),
+            CombatCard::new(CardId::Defend, 6),
+        ];
+
+        let offered = [CardId::DarkEmbrace, CardId::TwinStrike, CardId::Clash];
+        assert_eq!(evaluate_reward_screen_for_run(&offered, &rs), Some(0));
+    }
+
+    #[test]
+    fn shell_progression_prefers_burning_pact_as_bridge_piece() {
+        let mut rs = sample_run_state();
+        rs.act_num = 2;
+        rs.floor_num = 20;
+        rs.master_deck = vec![
+            CombatCard::new(CardId::FeelNoPain, 1),
+            CombatCard::new(CardId::PowerThrough, 2),
+            CombatCard::new(CardId::ShrugItOff, 3),
+            CombatCard::new(CardId::Defend, 4),
+            CombatCard::new(CardId::Defend, 5),
+        ];
+
+        let offered = [CardId::BurningPact, CardId::Headbutt, CardId::Clash];
         assert_eq!(evaluate_reward_screen_for_run(&offered, &rs), Some(0));
     }
 }

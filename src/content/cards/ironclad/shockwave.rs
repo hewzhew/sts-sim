@@ -7,7 +7,7 @@ pub fn shockwave_play(state: &CombatState, card: &CombatCard) -> SmallVec<[Actio
     let mut actions = smallvec::SmallVec::new();
     let amount = card.base_magic_num_mut; // 3, upgraded 5
 
-    for m in &state.monsters {
+    for m in &state.entities.monsters {
         if !m.is_dying && !m.is_escaped {
             actions.push(ActionInfo {
                 action: Action::ApplyPower {

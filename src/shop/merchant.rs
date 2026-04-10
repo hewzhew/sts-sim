@@ -1,17 +1,28 @@
-use crate::content::cards::{
-    colorless_pool_for_rarity, get_card_definition, ironclad_pool_for_rarity, java_id,
-};
+use crate::content::cards::{colorless_pool_for_rarity, get_card_definition, java_id};
 use crate::content::cards::{CardId, CardRarity, CardType};
 use crate::rng::RngPool;
 
 /// Equivalent to Java's `Merchant` class constructor.
 /// Generates 5 colored cards (2 Attack, 2 Skill, 1 Power) and 2 colorless cards (1 Uncommon, 1 Rare).
-pub fn generate_cards(rng_pool: &mut RngPool, blizz_randomizer: i32) -> (Vec<CardId>, Vec<CardId>) {
+pub fn generate_cards(
+    rng_pool: &mut RngPool,
+    player_class: &str,
+    blizz_randomizer: i32,
+) -> (Vec<CardId>, Vec<CardId>) {
     let get_colored_card = |rng_pool: &mut RngPool, card_type: CardType| -> CardId {
+        use crate::content::cards::CardRarity;
+
+        let rarity_fallbacks = |rarity: CardRarity| match rarity {
+            CardRarity::Rare => [CardRarity::Rare, CardRarity::Uncommon, CardRarity::Common],
+            CardRarity::Uncommon => [CardRarity::Uncommon, CardRarity::Common, CardRarity::Rare],
+            CardRarity::Common => [CardRarity::Common, CardRarity::Uncommon, CardRarity::Rare],
+            _ => [CardRarity::Common, CardRarity::Uncommon, CardRarity::Rare],
+        };
+
         loop {
             // Rarity roll: Java AbstractDungeon.rollRarity uses cardRng + cardBlizzRandomizer
             let roll = rng_pool.card_rng.random_range(0, 99) + blizz_randomizer;
-            let mut rarity = if roll < 9 {
+            let rarity = if roll < 9 {
                 CardRarity::Rare
             } else if roll < 46 {
                 // 9 + 37
@@ -20,30 +31,39 @@ pub fn generate_cards(rng_pool: &mut RngPool, blizz_randomizer: i32) -> (Vec<Car
                 CardRarity::Common
             };
 
-            let mut pool = ironclad_pool_for_rarity(rarity);
-            let mut typed_pool: Vec<CardId> = pool
+            let mut typed_pool = Vec::new();
+            for candidate_rarity in rarity_fallbacks(rarity) {
+                typed_pool = crate::engine::campfire_handler::card_pool_for_class(
+                    player_class,
+                    candidate_rarity,
+                )
                 .iter()
                 .copied()
                 .filter(|&id| get_card_definition(id).card_type == card_type)
                 .collect();
-
-            // If pool is empty, emulate getCardFromPool fallback
-            if typed_pool.is_empty() {
-                if card_type == CardType::Power {
-                    rarity = if rarity == CardRarity::Common {
-                        CardRarity::Uncommon
-                    } else if rarity == CardRarity::Uncommon {
-                        CardRarity::Rare
-                    } else {
-                        rarity
-                    };
-                    pool = ironclad_pool_for_rarity(rarity);
-                    typed_pool = pool
-                        .iter()
-                        .copied()
-                        .filter(|&id| get_card_definition(id).card_type == card_type)
-                        .collect();
+                if !typed_pool.is_empty() {
+                    break;
                 }
+            }
+            if typed_pool.is_empty() {
+                return match (player_class, card_type) {
+                    ("Silent", CardType::Attack) => {
+                        if rng_pool.card_rng.random_boolean() {
+                            CardId::StrikeG
+                        } else {
+                            CardId::Neutralize
+                        }
+                    }
+                    ("Silent", CardType::Skill) => {
+                        if rng_pool.card_rng.random_boolean() {
+                            CardId::DefendG
+                        } else {
+                            CardId::Survivor
+                        }
+                    }
+                    ("Silent", CardType::Power) => CardId::Footwork,
+                    _ => CardId::Strike,
+                };
             }
 
             // Emulate Collections.sort(tmp) mapping to Java cardID strings
@@ -58,14 +78,18 @@ pub fn generate_cards(rng_pool: &mut RngPool, blizz_randomizer: i32) -> (Vec<Car
 
     let c1_atk = get_colored_card(rng_pool, CardType::Attack);
     let mut c2_atk = get_colored_card(rng_pool, CardType::Attack);
-    while c2_atk == c1_atk {
+    let mut attack_attempts = 0;
+    while c2_atk == c1_atk && attack_attempts < 12 {
         c2_atk = get_colored_card(rng_pool, CardType::Attack);
+        attack_attempts += 1;
     }
 
     let c3_skl = get_colored_card(rng_pool, CardType::Skill);
     let mut c4_skl = get_colored_card(rng_pool, CardType::Skill);
-    while c4_skl == c3_skl {
+    let mut skill_attempts = 0;
+    while c4_skl == c3_skl && skill_attempts < 12 {
         c4_skl = get_colored_card(rng_pool, CardType::Skill);
+        skill_attempts += 1;
     }
 
     let c5_pwr = get_colored_card(rng_pool, CardType::Power);

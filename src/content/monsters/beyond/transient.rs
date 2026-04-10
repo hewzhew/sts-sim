@@ -49,7 +49,7 @@ impl MonsterBehavior for Transient {
 
     fn take_turn(state: &mut CombatState, entity: &crate::combat::MonsterEntity) -> Vec<Action> {
         let mut actions = Vec::new();
-        let asc = state.ascension_level;
+        let asc = state.meta.ascension_level;
 
         if entity.next_move_byte == 1 {
             let starting_damage = if asc >= 2 { 40 } else { 30 };

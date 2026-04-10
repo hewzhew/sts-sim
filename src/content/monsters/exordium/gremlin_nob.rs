@@ -89,8 +89,16 @@ impl MonsterBehavior for GremlinNob {
     }
 
     fn take_turn(state: &mut CombatState, entity: &MonsterEntity) -> Vec<Action> {
-        let bash_dmg = if state.ascension_level >= 3 { 8 } else { 6 };
-        let rush_dmg = if state.ascension_level >= 3 { 16 } else { 14 };
+        let bash_dmg = if state.meta.ascension_level >= 3 {
+            8
+        } else {
+            6
+        };
+        let rush_dmg = if state.meta.ascension_level >= 3 {
+            16
+        } else {
+            14
+        };
         let mut actions = Vec::new();
 
         match entity.next_move_byte {
@@ -100,7 +108,11 @@ impl MonsterBehavior for GremlinNob {
                     target: entity.id,
                     source: entity.id,
                     power_id: PowerId::Anger,
-                    amount: if state.ascension_level >= 18 { 3 } else { 2 },
+                    amount: if state.meta.ascension_level >= 18 {
+                        3
+                    } else {
+                        2
+                    },
                 });
             }
             2 => {

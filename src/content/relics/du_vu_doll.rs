@@ -14,6 +14,7 @@ pub fn at_battle_start(
 
     // Count curses in draw pile (which at combat start contains the full deck)
     let curse_count = state
+        .zones
         .draw_pile
         .iter()
         .filter(|c| {

@@ -12,18 +12,18 @@ pub fn spot_weakness_play(
     let mut actions = smallvec::SmallVec::new();
 
     // Check if target intends to attack
-    let is_attacking = if let Some(target_monster) = state.monsters.iter().find(|m| m.id == target)
-    {
-        match target_monster.current_intent {
-            Intent::Attack { .. }
-            | Intent::AttackDefend { .. }
-            | Intent::AttackBuff { .. }
-            | Intent::AttackDebuff { .. } => true,
-            _ => false,
-        }
-    } else {
-        false
-    };
+    let is_attacking =
+        if let Some(target_monster) = state.entities.monsters.iter().find(|m| m.id == target) {
+            match target_monster.current_intent {
+                Intent::Attack { .. }
+                | Intent::AttackDefend { .. }
+                | Intent::AttackBuff { .. }
+                | Intent::AttackDebuff { .. } => true,
+                _ => false,
+            }
+        } else {
+            false
+        };
 
     if is_attacking {
         actions.push(ActionInfo {

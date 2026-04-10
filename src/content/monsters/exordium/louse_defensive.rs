@@ -80,7 +80,7 @@ impl MonsterBehavior for LouseDefensive {
     }
 
     fn take_turn(state: &mut CombatState, entity: &MonsterEntity) -> Vec<Action> {
-        let _asc = state.ascension_level;
+        let _asc = state.meta.ascension_level;
         let bite_dmg = entity.intent_dmg;
         let mut actions = Vec::new();
 

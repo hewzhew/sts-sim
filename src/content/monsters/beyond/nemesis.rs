@@ -162,7 +162,7 @@ impl MonsterBehavior for Nemesis {
 
     fn take_turn(state: &mut CombatState, entity: &crate::combat::MonsterEntity) -> Vec<Action> {
         let mut actions = Vec::new();
-        let asc = state.ascension_level;
+        let asc = state.meta.ascension_level;
 
         let fire_dmg = if asc >= 3 { 7 } else { 6 };
 
@@ -205,6 +205,7 @@ impl MonsterBehavior for Nemesis {
 
         // Java: if (!this.hasPower("Intangible")) { apply }
         let has_intangible = state
+            .entities
             .power_db
             .get(&entity.id)
             .map(|powers| {

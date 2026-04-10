@@ -8,29 +8,83 @@
 
 use crate::action::{Action, ActionInfo, AddTo, DamageType};
 use crate::combat::{CombatState, Intent};
+use crate::content::powers::store;
 use crate::content::powers::PowerId;
 
-fn queue_player_hp_loss_hooks(state: &mut CombatState, amount: i32) {
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+struct MonsterDamageOutcome {
+    hp_lost: i32,
+    died: bool,
+}
+
+fn queue_player_hp_loss_hooks(
+    state: &mut CombatState,
+    amount: i32,
+    source: Option<crate::core::EntityId>,
+    damage_type: DamageType,
+    triggers_rupture: bool,
+) {
     if amount <= 0 {
         return;
     }
 
-    if let Some(powers) = state.power_db.get(&0).cloned() {
-        for power in &powers {
-            let hook_actions = crate::content::powers::resolve_power_on_hp_lost(
-                power.power_type,
-                state,
-                0,
-                amount,
-            );
-            for action in hook_actions {
-                state.action_queue.push_back(action);
-            }
+    for power in &store::powers_snapshot_for(state, 0) {
+        let hook_actions = crate::content::powers::resolve_power_on_hp_lost(
+            power.power_type,
+            state,
+            0,
+            amount,
+            source,
+            damage_type,
+            triggers_rupture,
+        );
+        for action in hook_actions {
+            state.engine.action_queue.push_back(action);
         }
     }
 
     let relic_actions = crate::content::relics::hooks::on_lose_hp(state, amount);
-    crate::engine::core::queue_actions(&mut state.action_queue, relic_actions);
+    crate::engine::core::queue_actions(&mut state.engine.action_queue, relic_actions);
+}
+
+fn queue_red_skull_threshold_actions(state: &mut CombatState, previous_hp: i32, current_hp: i32) {
+    if !state
+        .entities
+        .player
+        .has_relic(crate::content::relics::RelicId::RedSkull)
+    {
+        return;
+    }
+
+    let actions = crate::content::relics::red_skull::on_player_hp_changed(
+        previous_hp,
+        current_hp,
+        state.entities.player.max_hp,
+    );
+    crate::engine::core::queue_actions(&mut state.engine.action_queue, actions);
+}
+
+fn queue_on_block_gained_hooks(
+    state: &mut CombatState,
+    owner: crate::core::EntityId,
+    gained_block: i32,
+) {
+    if gained_block <= 0 {
+        return;
+    }
+
+    for power in &store::powers_snapshot_for(state, owner) {
+        let hook_actions = crate::content::powers::resolve_power_on_block_gained(
+            power.power_type,
+            state,
+            owner,
+            power.amount,
+            gained_block,
+        );
+        for action in hook_actions {
+            state.engine.action_queue.push_back(action);
+        }
+    }
 }
 
 /// Shared block-deduction logic. Returns unblocked damage.
@@ -59,7 +113,12 @@ pub fn apply_raw_damage_to_monster(
     raw_damage: i32,
 ) -> i32 {
     let mut hp_lost = 0;
-    if let Some(m) = state.monsters.iter_mut().find(|m| m.id == target_id) {
+    if let Some(m) = state
+        .entities
+        .monsters
+        .iter_mut()
+        .find(|m| m.id == target_id)
+    {
         let mut final_damage = raw_damage.max(0);
         final_damage = deduct_block(&mut m.block, final_damage);
         if final_damage > 0 {
@@ -69,6 +128,169 @@ pub fn apply_raw_damage_to_monster(
     }
     super::check_and_trigger_monster_death(state, target_id);
     hp_lost
+}
+
+fn apply_damage_to_monster_via_pipeline(
+    state: &mut CombatState,
+    info: &crate::action::DamageInfo,
+    mut final_damage: i32,
+) -> MonsterDamageOutcome {
+    let target_id = info.target;
+    let source_id = info.source;
+    let mut outcome = MonsterDamageOutcome::default();
+
+    if let Some(mut m) = state
+        .entities
+        .monsters
+        .iter()
+        .find(|m| m.id == target_id)
+        .cloned()
+    {
+        if m.is_dying {
+            return outcome;
+        }
+
+        let target_hp_before_damage = m.current_hp;
+        let had_block = m.block > 0;
+        final_damage = deduct_block(&mut m.block, final_damage);
+
+        if source_id == 0
+            && info.damage_type == DamageType::Normal
+            && final_damage > 0
+            && final_damage < 5
+            && state
+                .entities
+                .player
+                .has_relic(crate::content::relics::RelicId::Boot)
+        {
+            final_damage = 5;
+        }
+
+        for power in &store::powers_snapshot_for(state, target_id) {
+            final_damage = crate::content::powers::resolve_power_on_attacked_to_change_damage(
+                power.power_type,
+                state,
+                info,
+                final_damage,
+                power.amount,
+            );
+        }
+
+        if let Some(real_m) = state
+            .entities
+            .monsters
+            .iter_mut()
+            .find(|monster| monster.id == target_id)
+        {
+            real_m.block = m.block;
+            if final_damage > 0 {
+                real_m.current_hp = (real_m.current_hp - final_damage).max(0);
+                outcome.hp_lost = final_damage;
+                outcome.died = real_m.current_hp <= 0;
+            }
+        }
+
+        super::check_and_trigger_monster_death(state, target_id);
+
+        if had_block
+            && m.block == 0
+            && state
+                .entities
+                .player
+                .has_relic(crate::content::relics::RelicId::HandDrill)
+        {
+            let hand_drill_actions =
+                crate::content::relics::hand_drill::on_break_block(state, target_id);
+            crate::engine::core::queue_actions(&mut state.engine.action_queue, hand_drill_actions);
+        }
+
+        if outcome.hp_lost > 0 {
+            for power in &store::powers_snapshot_for(state, target_id) {
+                let hook_actions = crate::content::powers::resolve_power_on_hp_lost(
+                    power.power_type,
+                    state,
+                    target_id,
+                    outcome.hp_lost,
+                    Some(source_id),
+                    info.damage_type,
+                    false,
+                );
+                for a in hook_actions.into_iter().rev() {
+                    state.engine.action_queue.push_front(a);
+                }
+            }
+
+            if let Some(m) = state
+                .entities
+                .monsters
+                .iter()
+                .find(|m| m.id == target_id)
+                .cloned()
+            {
+                if let Some(eid) = crate::content::monsters::EnemyId::from_id(m.monster_type) {
+                    let monster_actions = crate::content::monsters::dispatch_on_damaged(
+                        eid,
+                        state,
+                        &m,
+                        outcome.hp_lost,
+                    );
+                    crate::engine::core::queue_actions(
+                        &mut state.engine.action_queue,
+                        monster_actions,
+                    );
+                }
+            }
+        }
+
+        for power in &store::powers_snapshot_for(state, target_id) {
+            let should_fire_this_power = match info.damage_type {
+                DamageType::HpLoss => false,
+                DamageType::Thorns => power.power_type == PowerId::Shifting,
+                _ => true,
+            };
+            if !should_fire_this_power {
+                continue;
+            }
+
+            if power.power_type == PowerId::Malleable {
+                if outcome.hp_lost > 0 && outcome.hp_lost < target_hp_before_damage {
+                    state.engine.action_queue.push_back(Action::GainBlock {
+                        target: target_id,
+                        amount: power.amount,
+                    });
+                    let _ = store::with_power_mut(state, target_id, PowerId::Malleable, |mal| {
+                        mal.amount += 1;
+                    });
+                }
+                continue;
+            }
+
+            let hook_actions = crate::content::powers::resolve_power_on_attacked(
+                power.power_type,
+                state,
+                target_id,
+                outcome.hp_lost,
+                source_id,
+                power.amount,
+            );
+            if matches!(power.power_type, PowerId::Malleable | PowerId::CurlUp) {
+                for a in hook_actions {
+                    state.engine.action_queue.push_back(a);
+                }
+                let _ = store::with_power_mut(state, target_id, PowerId::CurlUp, |curl| {
+                    if curl.amount > 0 && outcome.hp_lost > 0 {
+                        curl.amount = 0;
+                    }
+                });
+            } else {
+                for a in hook_actions {
+                    state.engine.action_queue.push_front(a);
+                }
+            }
+        }
+    }
+
+    outcome
 }
 
 pub fn handle_damage(info: crate::action::DamageInfo, state: &mut CombatState) {
@@ -97,53 +319,47 @@ pub fn handle_damage(info: crate::action::DamageInfo, state: &mut CombatState) {
 
     // 1. Final Receive / Intangible Pre-Check
     if !damage_already_includes_final_receive {
-        if let Some(target_powers) = state.power_db.get(&target_id).cloned() {
-            for power in &target_powers {
-                final_damage = crate::content::powers::resolve_power_at_damage_final_receive(
-                    power.power_type,
-                    final_damage,
-                    power.amount,
-                    info.damage_type,
-                );
-            }
+        for power in &store::powers_snapshot_for(state, target_id) {
+            final_damage = crate::content::powers::resolve_power_at_damage_final_receive(
+                power.power_type,
+                final_damage,
+                power.amount,
+                info.damage_type,
+            );
         }
     }
 
     if target_is_player {
         // 2. Block Deduction
-        let _had_block = state.player.block > 0;
-        final_damage = deduct_block(&mut state.player.block, final_damage);
+        let _had_block = state.entities.player.block > 0;
+        final_damage = deduct_block(&mut state.entities.player.block, final_damage);
 
         // 3. onAttackedToChangeDamage (Relics then Powers)
         final_damage =
             crate::content::relics::hooks::on_attacked_to_change_damage(state, final_damage, &info);
-        if let Some(powers) = state.power_db.get(&0).cloned() {
-            for power in &powers {
-                final_damage = crate::content::powers::resolve_power_on_attacked_to_change_damage(
-                    power.power_type,
-                    state,
-                    &info,
-                    final_damage,
-                    power.amount,
-                );
-            }
+        for power in &store::powers_snapshot_for(state, 0) {
+            final_damage = crate::content::powers::resolve_power_on_attacked_to_change_damage(
+                power.power_type,
+                state,
+                &info,
+                final_damage,
+                power.amount,
+            );
         }
 
         // 4. on_attacked (Target Powers + Relics)
         if source_id != 0 || info.damage_type == DamageType::Normal {
-            if let Some(powers) = state.power_db.get(&0).cloned() {
-                for power in &powers {
-                    let hook_actions = crate::content::powers::resolve_power_on_attacked(
-                        power.power_type,
-                        state,
-                        0,
-                        final_damage,
-                        source_id,
-                        power.amount,
-                    );
-                    for a in hook_actions.into_iter().rev() {
-                        state.action_queue.push_front(a);
-                    }
+            for power in &store::powers_snapshot_for(state, 0) {
+                let hook_actions = crate::content::powers::resolve_power_on_attacked(
+                    power.power_type,
+                    state,
+                    0,
+                    final_damage,
+                    source_id,
+                    power.amount,
+                );
+                for a in hook_actions.into_iter().rev() {
+                    state.engine.action_queue.push_front(a);
                 }
             }
         }
@@ -152,169 +368,26 @@ pub fn handle_damage(info: crate::action::DamageInfo, state: &mut CombatState) {
         final_damage = crate::content::relics::hooks::on_lose_hp_last(state, final_damage);
 
         if final_damage > 0 {
-            state.player.current_hp = (state.player.current_hp - final_damage).max(0);
-            state.counters.times_damaged_this_combat += 1;
-            queue_player_hp_loss_hooks(state, final_damage);
+            let previous_hp = state.entities.player.current_hp;
+            state.entities.player.current_hp =
+                (state.entities.player.current_hp - final_damage).max(0);
+            state.turn.counters.times_damaged_this_combat += 1;
+            queue_red_skull_threshold_actions(state, previous_hp, state.entities.player.current_hp);
+            queue_player_hp_loss_hooks(
+                state,
+                final_damage,
+                Some(source_id),
+                info.damage_type,
+                false,
+            );
 
             // 7. Death Check
-            if state.player.current_hp <= 0 {
+            if state.entities.player.current_hp <= 0 {
                 super::try_revive(state);
             }
         }
-    } else if let Some(mut m) = state.monsters.iter().find(|m| m.id == target_id).cloned() {
-        // Skip damage to dying/escaping monsters
-        if m.is_dying {
-            return;
-        }
-
-        // Damage to monster
-        let target_hp_before_damage = m.current_hp;
-        let had_block = m.block > 0;
-        final_damage = deduct_block(&mut m.block, final_damage);
-
-        // Boot relic
-        if source_id == 0
-            && info.damage_type == DamageType::Normal
-            && final_damage > 0
-            && final_damage < 5
-            && state
-                .player
-                .has_relic(crate::content::relics::RelicId::Boot)
-        {
-            final_damage = 5;
-        }
-
-        // Monster powers onAttackedToChangeDamage
-        if let Some(powers) = state.power_db.get(&target_id).cloned() {
-            for power in &powers {
-                final_damage = crate::content::powers::resolve_power_on_attacked_to_change_damage(
-                    power.power_type,
-                    state,
-                    &info,
-                    final_damage,
-                    power.amount,
-                );
-            }
-        }
-
-        // Write back block to real monster and apply HP loss
-        if let Some(real_m) = state
-            .monsters
-            .iter_mut()
-            .find(|monster| monster.id == target_id)
-        {
-            real_m.block = m.block;
-            if final_damage > 0 {
-                real_m.current_hp = (real_m.current_hp - final_damage).max(0);
-            }
-        }
-
-        // Centralized death mechanics
-        super::check_and_trigger_monster_death(state, target_id);
-
-        // HandDrill: if block broke, apply 2 Vulnerable
-        if had_block
-            && m.block == 0
-            && state
-                .player
-                .has_relic(crate::content::relics::RelicId::HandDrill)
-        {
-            let hand_drill_actions =
-                crate::content::relics::hand_drill::on_break_block(state, target_id);
-            crate::engine::core::queue_actions(&mut state.action_queue, hand_drill_actions);
-        }
-
-        // on_hp_lost power hooks (Split, Rupture, etc.)
-        if final_damage > 0 {
-            if let Some(powers) = state.power_db.get(&target_id).cloned() {
-                for power in &powers {
-                    let hook_actions = crate::content::powers::resolve_power_on_hp_lost(
-                        power.power_type,
-                        state,
-                        target_id,
-                        final_damage,
-                    );
-                    for a in hook_actions.into_iter().rev() {
-                        state.action_queue.push_front(a);
-                    }
-                }
-            }
-
-            // Monster trait hooks (takes care of Java's damage() overrides for behavior)
-            if let Some(m) = state.monsters.iter().find(|m| m.id == target_id).cloned() {
-                if let Some(eid) = crate::content::monsters::EnemyId::from_id(m.monster_type) {
-                    let monster_actions =
-                        crate::content::monsters::dispatch_on_damaged(eid, state, &m, final_damage);
-                    crate::engine::core::queue_actions(&mut state.action_queue, monster_actions);
-                }
-            }
-        }
-
-        // Monster onAttacked (Thorns, CurlUp, Angry, etc.)
-        if let Some(powers) = state.power_db.get(&target_id).cloned() {
-            for power in &powers {
-                let should_fire_this_power = match info.damage_type {
-                    DamageType::HpLoss => false,
-                    // Java's ShiftingPower reacts to any positive damageAmount, including
-                    // Letter Opener's THORNS damage, while most other monster onAttacked
-                    // hooks should continue to ignore THORNS.
-                    DamageType::Thorns => power.power_type == PowerId::Shifting,
-                    _ => true,
-                };
-                if !should_fire_this_power {
-                    continue;
-                }
-
-                if power.power_type == PowerId::Malleable {
-                    if final_damage > 0 && final_damage < target_hp_before_damage {
-                        state.action_queue.push_back(Action::GainBlock {
-                            target: target_id,
-                            amount: power.amount,
-                        });
-                        if let Some(powers_mut) = state.power_db.get_mut(&target_id) {
-                            if let Some(mal) = powers_mut
-                                .iter_mut()
-                                .find(|p| p.power_type == PowerId::Malleable)
-                            {
-                                mal.amount += 1;
-                            }
-                        }
-                    }
-                    continue;
-                }
-
-                let hook_actions = crate::content::powers::resolve_power_on_attacked(
-                    power.power_type,
-                    state,
-                    target_id,
-                    final_damage,
-                    source_id,
-                    power.amount,
-                );
-                if matches!(power.power_type, PowerId::Malleable | PowerId::CurlUp) {
-                    for a in hook_actions {
-                        state.action_queue.push_back(a);
-                    }
-                    if let Some(powers_mut) = state.power_db.get_mut(&target_id) {
-                        if let Some(curl) = powers_mut
-                            .iter_mut()
-                            .find(|p| p.power_type == PowerId::CurlUp)
-                        {
-                            if curl.amount > 0 && final_damage > 0 {
-                                // Java uses an internal `triggered` flag so the second hit
-                                // of multi-hit attacks does not re-trigger before the queued
-                                // RemoveSpecificPowerAction resolves.
-                                curl.amount = 0;
-                            }
-                        }
-                    }
-                } else {
-                    for a in hook_actions {
-                        state.action_queue.push_front(a);
-                    }
-                }
-            }
-        }
+    } else {
+        let _ = apply_damage_to_monster_via_pipeline(state, &info, final_damage);
     }
 }
 
@@ -327,10 +400,10 @@ pub fn handle_damage_all_enemies(
 ) {
     let mut individual_damages: smallvec::SmallVec<[Action; 5]> = smallvec::SmallVec::new();
     for (i, &dmg) in damages.iter().enumerate() {
-        if i >= state.monsters.len() {
+        if i >= state.entities.monsters.len() {
             break;
         }
-        let m = &state.monsters[i];
+        let m = &state.entities.monsters[i];
         if m.current_hp <= 0 || m.is_dying || m.is_escaped {
             continue;
         }
@@ -344,7 +417,7 @@ pub fn handle_damage_all_enemies(
         }));
     }
     for action in individual_damages.into_iter().rev() {
-        state.action_queue.push_front(action);
+        state.engine.action_queue.push_front(action);
     }
 }
 
@@ -355,6 +428,7 @@ pub fn handle_attack_damage_random_enemy(
     state: &mut CombatState,
 ) {
     let alive: Vec<usize> = state
+        .entities
         .monsters
         .iter()
         .filter(|m| m.current_hp > 0 && !m.is_dying && !m.is_escaped)
@@ -363,21 +437,20 @@ pub fn handle_attack_damage_random_enemy(
     if !alive.is_empty() {
         let idx = state.rng.card_random_rng.random(alive.len() as i32 - 1) as usize;
         let target_id = alive[idx];
-        let final_damage = if applies_target_modifiers && matches!(damage_type, DamageType::Normal) {
+        let final_damage = if applies_target_modifiers && matches!(damage_type, DamageType::Normal)
+        {
             let mut damage = base_damage as f32;
             let pseudo_card =
                 crate::combat::CombatCard::new(crate::content::cards::CardId::SwordBoomerang, 0);
-            if let Some(monster_powers) = state.power_db.get(&target_id).cloned() {
-                for power in &monster_powers {
-                    damage = crate::content::powers::resolve_power_on_calculate_damage_from_player(
-                        power.power_type,
-                        state,
-                        &pseudo_card,
-                        target_id,
-                        damage,
-                        power.amount,
-                    );
-                }
+            for power in &store::powers_snapshot_for(state, target_id) {
+                damage = crate::content::powers::resolve_power_on_calculate_damage_from_player(
+                    power.power_type,
+                    state,
+                    &pseudo_card,
+                    target_id,
+                    damage,
+                    power.amount,
+                );
             }
             damage.max(0.0) as i32
         } else {
@@ -402,18 +475,18 @@ pub fn handle_dropkick(
     damage_info: crate::action::DamageInfo,
     state: &mut CombatState,
 ) {
-    let has_vulnerable = state.power_db.get(&target).map_or(false, |powers| {
-        powers
-            .iter()
-            .any(|p| p.power_type == PowerId::Vulnerable && p.amount > 0)
-    });
+    let has_vulnerable = store::power_amount(state, target, PowerId::Vulnerable) > 0;
     if has_vulnerable {
-        state.action_queue.push_front(Action::DrawCards(1));
+        state.engine.action_queue.push_front(Action::DrawCards(1));
         state
+            .engine
             .action_queue
             .push_front(Action::GainEnergy { amount: 1 });
     }
-    state.action_queue.push_front(Action::Damage(damage_info));
+    state
+        .engine
+        .action_queue
+        .push_front(Action::Damage(damage_info));
 }
 
 pub fn handle_fiend_fire(
@@ -421,15 +494,15 @@ pub fn handle_fiend_fire(
     damage_info: crate::action::DamageInfo,
     state: &mut CombatState,
 ) {
-    let hand_cards: Vec<crate::combat::CombatCard> = state.hand.drain(..).collect();
+    let hand_cards: Vec<crate::combat::CombatCard> = state.zones.hand.drain(..).collect();
     let count = hand_cards.len();
     for card in hand_cards {
-        state.exhaust_pile.push(card);
-        let exhaust_actions = crate::content::relics::hooks::on_exhaust(state);
-        crate::engine::core::queue_actions(&mut state.action_queue, exhaust_actions);
+        super::cards::move_card_to_exhaust_pile(card, state);
     }
     for _ in 0..count {
-        apply_raw_damage_to_monster(state, target, damage_info.output);
+        let mut info = damage_info.clone();
+        info.target = target;
+        let _ = apply_damage_to_monster_via_pipeline(state, &info, info.output.max(0));
     }
 }
 
@@ -439,67 +512,81 @@ pub fn handle_feed(
     max_hp_amount: i32,
     state: &mut CombatState,
 ) {
-    let mut killed = false;
-    if let Some(m) = state.monsters.iter_mut().find(|m| m.id == target) {
-        let mut final_damage = damage_info.output.max(0);
-        final_damage = deduct_block(&mut m.block, final_damage);
-        if final_damage > 0 {
-            m.current_hp = (m.current_hp - final_damage).max(0);
-        }
-        if m.current_hp <= 0 {
-            killed = true;
-        }
-    }
-    super::check_and_trigger_monster_death(state, target);
-    if killed {
-        state.player.max_hp += max_hp_amount;
-        state.player.current_hp += max_hp_amount;
+    let mut info = damage_info;
+    info.target = target;
+    let outcome = apply_damage_to_monster_via_pipeline(state, &info, info.output.max(0));
+    if outcome.died {
+        state.entities.player.max_hp += max_hp_amount;
+        state.entities.player.current_hp += max_hp_amount;
     }
 }
 
 pub fn handle_vampire_damage(info: crate::action::DamageInfo, state: &mut CombatState) {
-    let hp_lost = apply_raw_damage_to_monster(state, info.target, info.output);
-    if hp_lost > 0 {
-        state.player.current_hp = (state.player.current_hp + hp_lost).min(state.player.max_hp);
+    let outcome = apply_damage_to_monster_via_pipeline(state, &info, info.output.max(0));
+    if outcome.hp_lost > 0 {
+        state.entities.player.current_hp =
+            (state.entities.player.current_hp + outcome.hp_lost).min(state.entities.player.max_hp);
     }
 }
 
 pub fn handle_vampire_damage_all_enemies(
+    source: usize,
     damages: smallvec::SmallVec<[i32; 5]>,
+    damage_type: DamageType,
     state: &mut CombatState,
 ) {
     let mut total_hp_lost = 0;
     for (i, &dmg) in damages.iter().enumerate() {
         let target_id = i + 1;
-        if let Some(m) = state.monsters.iter().find(|m| m.id == target_id) {
+        if let Some(m) = state.entities.monsters.iter().find(|m| m.id == target_id) {
             if m.current_hp <= 0 || m.is_dying {
                 continue;
             }
         } else {
             continue;
         }
-        total_hp_lost += apply_raw_damage_to_monster(state, target_id, dmg);
+        let outcome = apply_damage_to_monster_via_pipeline(
+            state,
+            &crate::action::DamageInfo {
+                source,
+                target: target_id,
+                base: dmg,
+                output: dmg,
+                damage_type,
+                is_modified: true,
+            },
+            dmg.max(0),
+        );
+        total_hp_lost += outcome.hp_lost;
     }
     if total_hp_lost > 0 {
-        state.player.current_hp =
-            (state.player.current_hp + total_hp_lost).min(state.player.max_hp);
+        state.entities.player.current_hp =
+            (state.entities.player.current_hp + total_hp_lost).min(state.entities.player.max_hp);
     }
 }
 
-pub fn handle_lose_hp(target: usize, amount: i32, state: &mut CombatState) {
+pub fn handle_lose_hp(target: usize, amount: i32, triggers_rupture: bool, state: &mut CombatState) {
     if target == 0 {
         let final_amount = crate::content::relics::hooks::on_lose_hp_last(state, amount.max(0));
-        state.player.current_hp = (state.player.current_hp - final_amount).max(0);
+        let previous_hp = state.entities.player.current_hp;
+        state.entities.player.current_hp = (state.entities.player.current_hp - final_amount).max(0);
         if final_amount > 0 {
-            state.counters.times_damaged_this_combat += 1;
-            queue_player_hp_loss_hooks(state, final_amount);
+            state.turn.counters.times_damaged_this_combat += 1;
+            queue_red_skull_threshold_actions(state, previous_hp, state.entities.player.current_hp);
+            queue_player_hp_loss_hooks(
+                state,
+                final_amount,
+                None,
+                DamageType::HpLoss,
+                triggers_rupture,
+            );
         }
-        if state.player.current_hp <= 0 {
+        if state.entities.player.current_hp <= 0 {
             super::try_revive(state);
         }
     } else {
         let mut actual_lost = 0;
-        if let Some(m) = state.monsters.iter_mut().find(|m| m.id == target) {
+        if let Some(m) = state.entities.monsters.iter_mut().find(|m| m.id == target) {
             let prev = m.current_hp;
             m.current_hp = (m.current_hp - amount).max(0);
             actual_lost = prev - m.current_hp;
@@ -508,11 +595,20 @@ pub fn handle_lose_hp(target: usize, amount: i32, state: &mut CombatState) {
 
         if actual_lost > 0 {
             // Trait hook for Wakeup by Poison/Thorns (equivalent of calling damage() in Java)
-            if let Some(m) = state.monsters.iter().find(|m| m.id == target).cloned() {
+            if let Some(m) = state
+                .entities
+                .monsters
+                .iter()
+                .find(|m| m.id == target)
+                .cloned()
+            {
                 if let Some(eid) = crate::content::monsters::EnemyId::from_id(m.monster_type) {
                     let monster_actions =
                         crate::content::monsters::dispatch_on_damaged(eid, state, &m, actual_lost);
-                    crate::engine::core::queue_actions(&mut state.action_queue, monster_actions);
+                    crate::engine::core::queue_actions(
+                        &mut state.engine.action_queue,
+                        monster_actions,
+                    );
                 }
             }
         }
@@ -521,10 +617,11 @@ pub fn handle_lose_hp(target: usize, amount: i32, state: &mut CombatState) {
 
 pub fn handle_gain_block(target: usize, amount: i32, state: &mut CombatState) {
     if target == 0 {
-        if state.player.current_hp > 0 {
-            state.player.block += amount;
+        if state.entities.player.current_hp > 0 {
+            state.entities.player.block += amount;
+            queue_on_block_gained_hooks(state, 0, amount);
         }
-    } else if let Some(m) = state.monsters.iter_mut().find(|m| m.id == target) {
+    } else if let Some(m) = state.entities.monsters.iter_mut().find(|m| m.id == target) {
         if m.current_hp > 0 {
             m.block += amount;
         }
@@ -533,6 +630,7 @@ pub fn handle_gain_block(target: usize, amount: i32, state: &mut CombatState) {
 
 pub fn handle_gain_block_random_monster(source: usize, amount: i32, state: &mut CombatState) {
     let alive: Vec<usize> = state
+        .entities
         .monsters
         .iter()
         .filter(|m| m.id != source && m.current_intent != Intent::Escape && !m.is_dying)
@@ -544,15 +642,20 @@ pub fn handle_gain_block_random_monster(source: usize, amount: i32, state: &mut 
     } else {
         source
     };
-    if let Some(m) = state.monsters.iter_mut().find(|m| m.id == target_id) {
+    if let Some(m) = state
+        .entities
+        .monsters
+        .iter_mut()
+        .find(|m| m.id == target_id)
+    {
         m.block += amount;
     }
 }
 
 pub fn handle_lose_block(target: usize, amount: i32, state: &mut CombatState) {
     if target == 0 {
-        state.player.block = (state.player.block - amount).max(0);
-    } else if let Some(m) = state.monsters.iter_mut().find(|m| m.id == target) {
+        state.entities.player.block = (state.entities.player.block - amount).max(0);
+    } else if let Some(m) = state.entities.monsters.iter_mut().find(|m| m.id == target) {
         m.block = (m.block - amount).max(0);
     }
 }
@@ -561,31 +664,30 @@ pub fn handle_heal(target: usize, mut amount: i32, state: &mut CombatState) {
     if amount < 0 {
         let pct = (-amount) as f32 / 100.0;
         if target == 0 {
-            amount = std::cmp::max(1, (state.player.max_hp as f32 * pct) as i32);
-        } else if let Some(m) = state.monsters.iter().find(|m| m.id == target) {
+            amount = std::cmp::max(1, (state.entities.player.max_hp as f32 * pct) as i32);
+        } else if let Some(m) = state.entities.monsters.iter().find(|m| m.id == target) {
             amount = std::cmp::max(1, (m.max_hp as f32 * pct) as i32);
         }
     }
     if target == 0 {
-        state.player.current_hp = (state.player.current_hp + amount).min(state.player.max_hp);
-    } else if let Some(m) = state.monsters.iter_mut().find(|m| m.id == target) {
+        let previous_hp = state.entities.player.current_hp;
+        state.entities.player.current_hp =
+            (state.entities.player.current_hp + amount).min(state.entities.player.max_hp);
+        queue_red_skull_threshold_actions(state, previous_hp, state.entities.player.current_hp);
+    } else if let Some(m) = state.entities.monsters.iter_mut().find(|m| m.id == target) {
         m.current_hp = (m.current_hp + amount).min(m.max_hp);
     }
 }
 
 pub fn handle_limit_break(state: &mut CombatState) {
-    if let Some(powers) = state.power_db.get_mut(&0) {
-        if let Some(str_power) = powers
-            .iter_mut()
-            .find(|p| p.power_type == PowerId::Strength)
-        {
-            str_power.amount *= 2;
-        }
-    }
+    let _ = store::with_power_mut(state, 0, PowerId::Strength, |str_power| {
+        str_power.amount *= 2;
+    });
 }
 
 pub fn handle_block_per_non_attack(block_per_card: i32, state: &mut CombatState) {
     let non_attacks: Vec<u32> = state
+        .zones
         .hand
         .iter()
         .filter(|c| {
@@ -594,24 +696,32 @@ pub fn handle_block_per_non_attack(block_per_card: i32, state: &mut CombatState)
         })
         .map(|c| c.uuid)
         .collect();
-    let count = non_attacks.len() as i32;
-    state.player.block += block_per_card * count;
-    for uuid in non_attacks {
-        crate::engine::core::queue_actions(
-            &mut state.action_queue,
-            smallvec::smallvec![ActionInfo {
-                action: Action::ExhaustCard {
-                    card_uuid: uuid,
-                    source_pile: crate::state::PileType::Hand
-                },
-                insertion_mode: AddTo::Bottom
-            }],
-        );
+
+    // Java BlockPerNonAttackAction queues one ExhaustSpecificCardAction per non-attack,
+    // then one GainBlockAction per exhausted card. That matters for on-exhaust and
+    // on-gained-block hooks such as Feel No Pain and Juggernaut.
+    let mut queued_actions = Vec::new();
+    for uuid in &non_attacks {
+        queued_actions.push(Action::ExhaustCard {
+            card_uuid: *uuid,
+            source_pile: crate::state::PileType::Hand,
+        });
+    }
+    for _ in &non_attacks {
+        queued_actions.push(Action::GainBlock {
+            target: 0,
+            amount: block_per_card,
+        });
+    }
+
+    for action in queued_actions.into_iter().rev() {
+        state.engine.action_queue.push_front(action);
     }
 }
 
 pub fn handle_exhaust_all_non_attack(state: &mut CombatState) {
     let non_attacks: Vec<u32> = state
+        .zones
         .hand
         .iter()
         .filter(|c| {
@@ -622,7 +732,7 @@ pub fn handle_exhaust_all_non_attack(state: &mut CombatState) {
         .collect();
     for uuid in non_attacks {
         crate::engine::core::queue_actions(
-            &mut state.action_queue,
+            &mut state.engine.action_queue,
             smallvec::smallvec![ActionInfo {
                 action: Action::ExhaustCard {
                     card_uuid: uuid,
@@ -636,14 +746,14 @@ pub fn handle_exhaust_all_non_attack(state: &mut CombatState) {
 
 pub fn handle_exhaust_random_card(amount: usize, state: &mut CombatState) {
     for _ in 0..amount {
-        if state.hand.is_empty() {
+        if state.zones.hand.is_empty() {
             break;
         }
         let idx = state
             .rng
             .card_random_rng
-            .random(state.hand.len() as i32 - 1) as usize;
-        let card_uuid = state.hand[idx].uuid;
+            .random(state.zones.hand.len() as i32 - 1) as usize;
+        let card_uuid = state.zones.hand[idx].uuid;
         super::cards::handle_exhaust_card(card_uuid, crate::state::PileType::Hand, state);
     }
 }

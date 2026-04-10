@@ -12,15 +12,15 @@ pub fn true_grit_play(_state: &CombatState, card: &CombatCard) -> SmallVec<[Acti
     }];
 
     if card.upgrades > 0 {
-        if _state.hand.len() == 1 {
+        if _state.zones.hand.len() == 1 {
             actions.push(ActionInfo {
                 action: Action::ExhaustCard {
-                    card_uuid: _state.hand[0].uuid,
+                    card_uuid: _state.zones.hand[0].uuid,
                     source_pile: crate::state::PileType::Hand,
                 },
                 insertion_mode: AddTo::Bottom,
             });
-        } else if _state.hand.len() > 1 {
+        } else if _state.zones.hand.len() > 1 {
             actions.push(ActionInfo {
                 action: Action::SuspendForHandSelect {
                     min: 1,

@@ -49,7 +49,11 @@ impl MonsterBehavior for SlimeBoss {
     }
 
     fn take_turn(state: &mut CombatState, entity: &MonsterEntity) -> Vec<Action> {
-        let slam_dmg = if state.ascension_level >= 4 { 38 } else { 35 };
+        let slam_dmg = if state.meta.ascension_level >= 4 {
+            38
+        } else {
+            35
+        };
         let mut actions = Vec::new();
 
         match entity.next_move_byte {
@@ -57,7 +61,11 @@ impl MonsterBehavior for SlimeBoss {
                 // STICKY
                 actions.push(Action::MakeTempCardInDiscard {
                     card_id: crate::content::cards::CardId::Slimed,
-                    amount: if state.ascension_level >= 19 { 5 } else { 3 },
+                    amount: if state.meta.ascension_level >= 19 {
+                        5
+                    } else {
+                        3
+                    },
                     upgraded: false,
                 });
             }
@@ -79,9 +87,10 @@ impl MonsterBehavior for SlimeBoss {
                 // SPLIT
                 // Java order: SuicideAction (Boss dies), THEN SpawnMonster actions.
                 // Java uses SpawnMonsterAction(m, false) → useSmartPositioning=true → drawX sort.
-                // SpikeSlime_L(x=-385) → leftmost → position 0 (before dead Boss at position 1).
-                // AcidSlime_L(x=120)  → rightmost → position 2 (after dead Boss).
-                // Final order: [SpikeSlime_L, SlimeBoss(dead), AcidSlime_L]
+                // SpikeSlime_L(drawX=-385) → leftmost → before dead Boss(drawX=0).
+                // AcidSlime_L(drawX=120)   → rightmost → after dead Boss.
+                // We encode smart-position ordering using drawX-like logical positions so
+                // later large-slime splits can keep a stable relative ordering too.
 
                 // 1. Boss suicides first
                 actions.push(Action::Damage(DamageInfo {
@@ -95,16 +104,18 @@ impl MonsterBehavior for SlimeBoss {
                 // 2. Spawn SpikeSlime_L on the left
                 actions.push(Action::SpawnMonsterSmart {
                     monster_id: crate::content::monsters::EnemyId::SpikeSlimeL,
-                    logical_position: entity.logical_position - 1,
+                    logical_position: entity.logical_position - 385,
                     current_hp: entity.current_hp,
                     max_hp: entity.current_hp,
+                    is_minion: false,
                 });
                 // 3. Spawn AcidSlime_L on the right
                 actions.push(Action::SpawnMonsterSmart {
                     monster_id: crate::content::monsters::EnemyId::AcidSlimeL,
-                    logical_position: entity.logical_position + 1,
+                    logical_position: entity.logical_position + 120,
                     current_hp: entity.current_hp,
                     max_hp: entity.current_hp,
+                    is_minion: false,
                 });
                 // Don't roll next move — Boss is dead
                 return actions;

@@ -73,7 +73,7 @@ impl MonsterBehavior for BanditLeader {
 
     fn take_turn(state: &mut CombatState, entity: &crate::combat::MonsterEntity) -> Vec<Action> {
         let mut actions = Vec::new();
-        let asc = state.ascension_level;
+        let asc = state.meta.ascension_level;
         let weak_amount = if asc >= 17 { 3 } else { 2 };
         let slash_dmg = if asc >= 2 { 17 } else { 15 };
         let agonize_dmg = if asc >= 2 { 12 } else { 10 };
