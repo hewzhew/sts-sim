@@ -1,4 +1,4 @@
-use crate::combat::CombatState;
+use crate::runtime::combat::CombatState;
 use crate::content::relics::RelicState;
 
 // Note: Cultist Mask is purely a cosmetic/UI relic ("CAW CAW!").

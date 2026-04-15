@@ -1,4 +1,4 @@
-use crate::combat::CombatCard;
+use crate::runtime::combat::CombatCard;
 
 pub fn modify_attack_damage_for_card(card: &CombatCard, damage: f32) -> f32 {
     let def = crate::content::cards::get_card_definition(card.id);

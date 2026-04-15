@@ -1,12 +1,12 @@
-use crate::action::{Action, DamageInfo, DamageType};
-use crate::combat::{CombatState, Intent, MonsterEntity};
+use crate::runtime::action::{Action, DamageInfo, DamageType};
+use crate::runtime::combat::{CombatState, Intent, MonsterEntity};
 use crate::content::monsters::MonsterBehavior;
 
 pub struct GremlinWizard;
 
 impl MonsterBehavior for GremlinWizard {
     fn roll_move(
-        _rng: &mut crate::rng::StsRng,
+        _rng: &mut crate::runtime::rng::StsRng,
         _entity: &MonsterEntity,
         _ascension_level: u8,
         _num: i32,

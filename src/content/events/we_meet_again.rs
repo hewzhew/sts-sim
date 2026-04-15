@@ -127,7 +127,7 @@ pub fn init_we_meet_again_state(run_state: &mut RunState) -> i32 {
         } else {
             // Consume miscRng.randomLong() for shuffle seed, pick first after shuffle
             let mut shuffled = potion_indices;
-            crate::rng::shuffle_with_random_long(&mut shuffled, &mut run_state.rng_pool.misc_rng);
+            crate::runtime::rng::shuffle_with_random_long(&mut shuffled, &mut run_state.rng_pool.misc_rng);
             shuffled[0] as u8
         }
     };
@@ -161,7 +161,7 @@ pub fn init_we_meet_again_state(run_state: &mut RunState) -> i32 {
         // Still consume randomLong? No — Java returns null if list is empty, no shuffle
         0xFF
     } else {
-        crate::rng::shuffle_with_random_long(
+        crate::runtime::rng::shuffle_with_random_long(
             &mut eligible_indices,
             &mut run_state.rng_pool.misc_rng,
         );

@@ -98,7 +98,7 @@ pub fn init_match_game_board(run_state: &mut RunState, extra_data: &mut Vec<i32>
     // Java: Collections.shuffle(cards, new Random(miscRng.randomLong()))
     let seed = run_state.rng_pool.misc_rng.random_long();
     {
-        let mut jur = crate::rng::JavaUtilRandom::new(seed as u64);
+        let mut jur = crate::runtime::rng::JavaUtilRandom::new(seed as u64);
         let slice = &mut extra_data[0..12];
         for i in (1..slice.len()).rev() {
             let j = jur.next_int((i + 1) as i32) as usize;

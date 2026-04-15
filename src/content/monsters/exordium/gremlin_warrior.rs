@@ -1,12 +1,12 @@
-use crate::action::{Action, DamageInfo, DamageType};
-use crate::combat::{CombatState, Intent, MonsterEntity};
+use crate::runtime::action::{Action, DamageInfo, DamageType};
+use crate::runtime::combat::{CombatState, Intent, MonsterEntity};
 use crate::content::monsters::MonsterBehavior;
 
 pub struct GremlinWarrior;
 
 impl MonsterBehavior for GremlinWarrior {
     fn roll_move(
-        _rng: &mut crate::rng::StsRng,
+        _rng: &mut crate::runtime::rng::StsRng,
         _entity: &MonsterEntity,
         ascension_level: u8,
         _num: i32,
@@ -61,16 +61,15 @@ impl MonsterBehavior for GremlinWarrior {
 
     fn use_pre_battle_action(
         entity: &MonsterEntity,
-        _hp_rng: &mut crate::rng::StsRng,
+        _hp_rng: &mut crate::runtime::rng::StsRng,
         ascension_level: u8,
     ) -> Vec<Action> {
         let amt = if ascension_level >= 17 { 2 } else { 1 };
         vec![Action::ApplyPower {
             target: entity.id,
             source: entity.id,
-            power_id: crate::combat::PowerId::Angry,
+            power_id: crate::runtime::combat::PowerId::Angry,
             amount: amt,
         }]
     }
 }
-

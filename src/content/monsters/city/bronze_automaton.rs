@@ -1,5 +1,5 @@
-use crate::action::{Action, DamageInfo, DamageType};
-use crate::combat::{CombatState, Intent};
+use crate::runtime::action::{Action, DamageInfo, DamageType};
+use crate::runtime::combat::{CombatState, Intent};
 use crate::content::monsters::{EnemyId, MonsterBehavior};
 use crate::content::powers::PowerId;
 
@@ -7,8 +7,8 @@ pub struct BronzeAutomaton;
 
 impl MonsterBehavior for BronzeAutomaton {
     fn use_pre_battle_action(
-        entity: &crate::combat::MonsterEntity,
-        _hp_rng: &mut crate::rng::StsRng,
+        entity: &crate::runtime::combat::MonsterEntity,
+        _hp_rng: &mut crate::runtime::rng::StsRng,
         _ascension_level: u8,
     ) -> Vec<Action> {
         vec![Action::ApplyPower {
@@ -20,8 +20,8 @@ impl MonsterBehavior for BronzeAutomaton {
     }
 
     fn roll_move(
-        _rng: &mut crate::rng::StsRng,
-        entity: &crate::combat::MonsterEntity,
+        _rng: &mut crate::runtime::rng::StsRng,
+        entity: &crate::runtime::combat::MonsterEntity,
         ascension_level: u8,
         _num: i32,
     ) -> (u8, Intent) {
@@ -61,7 +61,10 @@ impl MonsterBehavior for BronzeAutomaton {
         }
     }
 
-    fn take_turn(state: &mut CombatState, entity: &crate::combat::MonsterEntity) -> Vec<Action> {
+    fn take_turn(
+        state: &mut CombatState,
+        entity: &crate::runtime::combat::MonsterEntity,
+    ) -> Vec<Action> {
         let mut actions = Vec::new();
 
         let block_amt = if state.meta.ascension_level >= 9 {
@@ -169,7 +172,10 @@ impl MonsterBehavior for BronzeAutomaton {
     }
 }
 
-fn bronze_orb_spawn_hp(hp_rng: &mut crate::rng::StsRng, ascension_level: u8) -> i32 {
+fn bronze_orb_spawn_hp(
+    hp_rng: &mut crate::runtime::rng::StsRng,
+    ascension_level: u8,
+) -> i32 {
     // Java BronzeOrb constructor consumes monsterHpRng twice:
     // once in super(... random(52,58) ...), then again in setHp(...)
     let _unused_ctor_roll = hp_rng.random_range(52, 58);

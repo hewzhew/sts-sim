@@ -1,4 +1,4 @@
-use crate::action::Action;
+use crate::runtime::action::Action;
 use crate::content::powers::PowerId;
 use crate::core::EntityId;
 

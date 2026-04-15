@@ -1,5 +1,5 @@
-use crate::action::{Action, DamageInfo, DamageType};
-use crate::combat::{CombatState, Intent};
+use crate::runtime::action::{Action, DamageInfo, DamageType};
+use crate::runtime::combat::{CombatState, Intent};
 use crate::content::monsters::{EnemyId, MonsterBehavior};
 use crate::content::powers::PowerId;
 
@@ -12,11 +12,11 @@ impl TheCollector {
     const TORCH_DRAW_X: [i32; 2] = [770, 647];
 
     pub fn roll_move_custom(
-        rng: &mut crate::rng::StsRng,
-        entity: &crate::combat::MonsterEntity,
+        rng: &mut crate::runtime::rng::StsRng,
+        entity: &crate::runtime::combat::MonsterEntity,
         ascension_level: u8,
         _num: i32,
-        monsters: &[crate::combat::MonsterEntity],
+        monsters: &[crate::runtime::combat::MonsterEntity],
     ) -> (u8, Intent) {
         let turn = entity.move_history.len();
 
@@ -79,15 +79,18 @@ impl TheCollector {
 
 impl MonsterBehavior for TheCollector {
     fn roll_move(
-        _rng: &mut crate::rng::StsRng,
-        _entity: &crate::combat::MonsterEntity,
+        _rng: &mut crate::runtime::rng::StsRng,
+        _entity: &crate::runtime::combat::MonsterEntity,
         _ascension_level: u8,
         _num: i32,
     ) -> (u8, Intent) {
         (2, Intent::Unknown)
     }
 
-    fn take_turn(state: &mut CombatState, entity: &crate::combat::MonsterEntity) -> Vec<Action> {
+    fn take_turn(
+        state: &mut CombatState,
+        entity: &crate::runtime::combat::MonsterEntity,
+    ) -> Vec<Action> {
         let mut actions = Vec::new();
         let dmg = if state.meta.ascension_level >= 4 {
             21
@@ -235,4 +238,3 @@ impl MonsterBehavior for TheCollector {
         actions
     }
 }
-

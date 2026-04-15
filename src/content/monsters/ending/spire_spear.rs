@@ -1,12 +1,12 @@
-use crate::action::{Action, DamageInfo, DamageType};
-use crate::combat::{Intent, MonsterEntity};
+use crate::runtime::action::{Action, DamageInfo, DamageType};
+use crate::runtime::combat::{Intent, MonsterEntity};
 use crate::content::monsters::MonsterBehavior;
 
 pub struct SpireSpear;
 
 impl MonsterBehavior for SpireSpear {
     fn roll_move(
-        rng: &mut crate::rng::StsRng,
+        rng: &mut crate::runtime::rng::StsRng,
         entity: &MonsterEntity,
         ascension_level: u8,
         _num: i32,
@@ -64,7 +64,7 @@ impl MonsterBehavior for SpireSpear {
 
     fn use_pre_battle_action(
         _entity: &MonsterEntity,
-        _hp_rng: &mut crate::rng::StsRng,
+        _hp_rng: &mut crate::runtime::rng::StsRng,
         ascension_level: u8,
     ) -> Vec<Action> {
         let artifact_amt = if ascension_level >= 18 { 2 } else { 1 };
@@ -76,7 +76,10 @@ impl MonsterBehavior for SpireSpear {
         }]
     }
 
-    fn take_turn(state: &mut crate::combat::CombatState, entity: &MonsterEntity) -> Vec<Action> {
+    fn take_turn(
+        state: &mut crate::runtime::combat::CombatState,
+        entity: &MonsterEntity,
+    ) -> Vec<Action> {
         let mut actions = Vec::new();
         let asc = state.meta.ascension_level;
         let move_byte = entity.next_move_byte;
@@ -149,7 +152,10 @@ impl MonsterBehavior for SpireSpear {
         actions
     }
 
-    fn on_death(state: &mut crate::combat::CombatState, _entity: &MonsterEntity) -> Vec<Action> {
+    fn on_death(
+        state: &mut crate::runtime::combat::CombatState,
+        _entity: &MonsterEntity,
+    ) -> Vec<Action> {
         let mut actions = Vec::new();
         // Java: if player has "Surrounded" power, remove it and adjust player facing
         if crate::content::powers::store::has_power(

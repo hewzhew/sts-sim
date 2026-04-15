@@ -1,11 +1,11 @@
-use crate::action::{Action, DamageInfo, DamageType};
-use crate::combat::{CombatState, Intent, MonsterEntity};
+use crate::runtime::action::{Action, DamageInfo, DamageType};
+use crate::runtime::combat::{CombatState, Intent, MonsterEntity};
 use crate::content::monsters::MonsterBehavior;
 use crate::content::powers::PowerId;
 
 pub struct Darkling;
 
-pub fn roll_nip_damage(hp_rng: &mut crate::rng::StsRng, ascension_level: u8) -> i32 {
+pub fn roll_nip_damage(hp_rng: &mut crate::runtime::rng::StsRng, ascension_level: u8) -> i32 {
     hp_rng.random_range(
         if ascension_level >= 2 { 9 } else { 7 },
         if ascension_level >= 2 { 13 } else { 11 },
@@ -14,7 +14,7 @@ pub fn roll_nip_damage(hp_rng: &mut crate::rng::StsRng, ascension_level: u8) -> 
 
 pub fn initialize_runtime_state(
     entity: &mut MonsterEntity,
-    hp_rng: &mut crate::rng::StsRng,
+    hp_rng: &mut crate::runtime::rng::StsRng,
     ascension_level: u8,
 ) {
     if crate::content::monsters::EnemyId::from_id(entity.monster_type)
@@ -52,8 +52,8 @@ fn current_nip_damage(entity: &MonsterEntity, ascension_level: u8) -> i32 {
 }
 
 pub fn roll_move_custom(
-    rng: &mut crate::rng::StsRng,
-    entity: &crate::combat::MonsterEntity,
+    rng: &mut crate::runtime::rng::StsRng,
+    entity: &crate::runtime::combat::MonsterEntity,
     ascension_level: u8,
     num: i32,
     monsters: &[MonsterEntity],
@@ -144,8 +144,8 @@ pub fn roll_move_custom(
 
 impl MonsterBehavior for Darkling {
     fn roll_move(
-        rng: &mut crate::rng::StsRng,
-        entity: &crate::combat::MonsterEntity,
+        rng: &mut crate::runtime::rng::StsRng,
+        entity: &crate::runtime::combat::MonsterEntity,
         ascension_level: u8,
         num: i32,
     ) -> (u8, Intent) {
@@ -159,8 +159,8 @@ impl MonsterBehavior for Darkling {
     }
 
     fn use_pre_battle_action(
-        entity: &crate::combat::MonsterEntity,
-        _hp_rng: &mut crate::rng::StsRng,
+        entity: &crate::runtime::combat::MonsterEntity,
+        _hp_rng: &mut crate::runtime::rng::StsRng,
         _ascension_level: u8,
     ) -> Vec<Action> {
         vec![Action::ApplyPower {
@@ -171,7 +171,10 @@ impl MonsterBehavior for Darkling {
         }]
     }
 
-    fn take_turn(state: &mut CombatState, entity: &crate::combat::MonsterEntity) -> Vec<Action> {
+    fn take_turn(
+        state: &mut CombatState,
+        entity: &crate::runtime::combat::MonsterEntity,
+    ) -> Vec<Action> {
         let mut actions = Vec::new();
         let asc = state.meta.ascension_level;
 
@@ -260,7 +263,10 @@ impl MonsterBehavior for Darkling {
         actions
     }
 
-    fn on_death(state: &mut CombatState, entity: &crate::combat::MonsterEntity) -> Vec<Action> {
+    fn on_death(
+        state: &mut CombatState,
+        entity: &crate::runtime::combat::MonsterEntity,
+    ) -> Vec<Action> {
         let darkling_ids: Vec<_> = state
             .entities
             .monsters
@@ -313,4 +319,3 @@ impl MonsterBehavior for Darkling {
         }]
     }
 }
-

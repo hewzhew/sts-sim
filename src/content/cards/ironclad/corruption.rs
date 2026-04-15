@@ -1,5 +1,5 @@
-use crate::action::{Action, ActionInfo, AddTo};
-use crate::combat::{CombatCard, CombatState};
+use crate::runtime::action::{Action, ActionInfo, AddTo};
+use crate::runtime::combat::{CombatCard, CombatState};
 use smallvec::SmallVec;
 
 pub fn corruption_play(state: &CombatState, _card: &CombatCard) -> SmallVec<[ActionInfo; 4]> {

@@ -1,12 +1,12 @@
-use crate::action::{Action, DamageInfo, DamageType};
-use crate::combat::{CombatState, Intent, MonsterEntity};
+use crate::runtime::action::{Action, DamageInfo, DamageType};
+use crate::runtime::combat::{CombatState, Intent, MonsterEntity};
 use crate::content::monsters::MonsterBehavior;
 
 pub struct Centurion;
 
 impl Centurion {
     pub fn roll_move_custom(
-        rng: &mut crate::rng::StsRng,
+        rng: &mut crate::runtime::rng::StsRng,
         entity: &MonsterEntity,
         ascension_level: u8,
         _num: i32,
@@ -70,7 +70,7 @@ impl Centurion {
 
 impl MonsterBehavior for Centurion {
     fn roll_move(
-        _rng: &mut crate::rng::StsRng,
+        _rng: &mut crate::runtime::rng::StsRng,
         _entity: &MonsterEntity,
         _ascension_level: u8,
         _num: i32,

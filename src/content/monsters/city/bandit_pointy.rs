@@ -1,13 +1,13 @@
-use crate::action::{Action, DamageInfo, DamageType};
-use crate::combat::{CombatState, Intent};
+use crate::runtime::action::{Action, DamageInfo, DamageType};
+use crate::runtime::combat::{CombatState, Intent};
 use crate::content::monsters::MonsterBehavior;
 
 pub struct BanditPointy;
 
 impl MonsterBehavior for BanditPointy {
     fn roll_move(
-        _rng: &mut crate::rng::StsRng,
-        _entity: &crate::combat::MonsterEntity,
+        _rng: &mut crate::runtime::rng::StsRng,
+        _entity: &crate::runtime::combat::MonsterEntity,
         ascension_level: u8,
         _num: i32,
     ) -> (u8, Intent) {
@@ -21,7 +21,10 @@ impl MonsterBehavior for BanditPointy {
         ) // POINTY_SPECIAL
     }
 
-    fn take_turn(state: &mut CombatState, entity: &crate::combat::MonsterEntity) -> Vec<Action> {
+    fn take_turn(
+        state: &mut CombatState,
+        entity: &crate::runtime::combat::MonsterEntity,
+    ) -> Vec<Action> {
         let mut actions = Vec::new();
         let asc = state.meta.ascension_level;
         let atk_dmg = if asc >= 2 { 6 } else { 5 };

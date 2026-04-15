@@ -16,7 +16,7 @@ pub fn on_equip(run_state: &mut RunState) -> Option<EngineState> {
         .map(|(i, _)| i)
         .collect();
     if !upgradable.is_empty() {
-        crate::rng::shuffle_with_random_long(&mut upgradable, &mut run_state.rng_pool.misc_rng);
+        crate::runtime::rng::shuffle_with_random_long(&mut upgradable, &mut run_state.rng_pool.misc_rng);
         run_state.master_deck[upgradable[0]].upgrades += 1;
     }
     run_state.gold += 50;

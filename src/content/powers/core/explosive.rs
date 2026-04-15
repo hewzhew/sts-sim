@@ -1,4 +1,4 @@
-use crate::action::{Action, DamageInfo, DamageType};
+use crate::runtime::action::{Action, DamageInfo, DamageType};
 use crate::content::powers::PowerId;
 use crate::core::EntityId;
 

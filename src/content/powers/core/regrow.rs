@@ -1,4 +1,4 @@
-use crate::action::Action;
+use crate::runtime::action::Action;
 use crate::core::EntityId;
 
 // Regrow power. Note: For the basic engine, triggering this requires the monster to not be flagged

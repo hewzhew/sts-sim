@@ -1,5 +1,5 @@
-use crate::action::{Action, DamageInfo, DamageType};
-use crate::combat::{CombatState, Intent, MonsterEntity};
+use crate::runtime::action::{Action, DamageInfo, DamageType};
+use crate::runtime::combat::{CombatState, Intent, MonsterEntity};
 use crate::content::monsters::MonsterBehavior;
 use crate::content::powers::PowerId;
 
@@ -8,7 +8,7 @@ pub struct Byrd;
 impl MonsterBehavior for Byrd {
     fn use_pre_battle_action(
         entity: &MonsterEntity,
-        _hp_rng: &mut crate::rng::StsRng,
+        _hp_rng: &mut crate::runtime::rng::StsRng,
         ascension_level: u8,
     ) -> Vec<Action> {
         let flight_amt = if ascension_level >= 17 { 4 } else { 3 };
@@ -21,7 +21,7 @@ impl MonsterBehavior for Byrd {
     }
 
     fn roll_move(
-        rng: &mut crate::rng::StsRng,
+        rng: &mut crate::runtime::rng::StsRng,
         entity: &MonsterEntity,
         ascension_level: u8,
         num: i32,

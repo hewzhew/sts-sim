@@ -1,5 +1,5 @@
-use crate::action::{Action, DamageInfo, DamageType};
-use crate::combat::{CombatState, Intent};
+use crate::runtime::action::{Action, DamageInfo, DamageType};
+use crate::runtime::combat::{CombatState, Intent};
 use crate::content::cards::CardId;
 use crate::content::monsters::MonsterBehavior;
 
@@ -7,8 +7,8 @@ pub struct SnakeDagger;
 
 impl MonsterBehavior for SnakeDagger {
     fn roll_move(
-        _rng: &mut crate::rng::StsRng,
-        entity: &crate::combat::MonsterEntity,
+        _rng: &mut crate::runtime::rng::StsRng,
+        entity: &crate::runtime::combat::MonsterEntity,
         _ascension_level: u8,
         _num: i32,
     ) -> (u8, Intent) {
@@ -25,14 +25,17 @@ impl MonsterBehavior for SnakeDagger {
     }
 
     fn use_pre_battle_action(
-        _entity: &crate::combat::MonsterEntity,
-        _hp_rng: &mut crate::rng::StsRng,
+        _entity: &crate::runtime::combat::MonsterEntity,
+        _hp_rng: &mut crate::runtime::rng::StsRng,
         _ascension_level: u8,
     ) -> Vec<Action> {
         Vec::new()
     }
 
-    fn take_turn(_state: &mut CombatState, entity: &crate::combat::MonsterEntity) -> Vec<Action> {
+    fn take_turn(
+        _state: &mut CombatState,
+        entity: &crate::runtime::combat::MonsterEntity,
+    ) -> Vec<Action> {
         let mut actions = Vec::new();
 
         match entity.next_move_byte {

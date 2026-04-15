@@ -1,5 +1,5 @@
-use crate::action::{Action, DamageInfo, DamageType};
-use crate::combat::CombatCard;
+use crate::runtime::action::{Action, DamageInfo, DamageType};
+use crate::runtime::combat::CombatCard;
 use crate::core::EntityId;
 
 pub fn on_player_card_played(

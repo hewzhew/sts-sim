@@ -1,5 +1,5 @@
-use crate::action::{Action, DamageInfo, DamageType};
-use crate::combat::{CombatState, Intent, MonsterEntity, PowerId};
+use crate::runtime::action::{Action, DamageInfo, DamageType};
+use crate::runtime::combat::{CombatState, Intent, MonsterEntity, PowerId};
 use crate::content::monsters::MonsterBehavior;
 
 // Helper to calculate divider damage: (player.currentHealth / 12) + 1
@@ -12,7 +12,7 @@ pub struct Hexaghost;
 
 impl MonsterBehavior for Hexaghost {
     fn roll_move(
-        _rng: &mut crate::rng::StsRng,
+        _rng: &mut crate::runtime::rng::StsRng,
         entity: &MonsterEntity,
         ascension_level: u8,
         _num: i32,

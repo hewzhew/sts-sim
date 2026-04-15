@@ -1,4 +1,4 @@
-use crate::action::Action;
+use crate::runtime::action::Action;
 use crate::content::powers::PowerId;
 use crate::core::EntityId;
 
@@ -14,7 +14,7 @@ pub fn on_calculate_damage_received_from_attack(_damage: i32, amount: i32) -> i3
 pub fn at_damage_final_receive(
     damage: i32,
     amount: i32,
-    _damage_type: crate::action::DamageType,
+    _damage_type: crate::runtime::action::DamageType,
 ) -> i32 {
     if amount > 0 && damage > 1 {
         1

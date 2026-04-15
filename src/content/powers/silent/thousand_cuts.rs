@@ -1,5 +1,5 @@
-use crate::action::{repeated_damage_matrix, Action};
-use crate::combat::CombatState;
+use crate::runtime::action::{repeated_damage_matrix, Action};
+use crate::runtime::combat::CombatState;
 use crate::core::EntityId;
 
 pub fn on_after_card_played(
@@ -14,7 +14,7 @@ pub fn on_after_card_played(
         actions.push(Action::DamageAllEnemies {
             source: owner,
             damages: repeated_damage_matrix(state.entities.monsters.len(), amount),
-            damage_type: crate::action::DamageType::Normal,
+            damage_type: crate::runtime::action::DamageType::Normal,
             is_modified: false,
         });
     }

@@ -619,7 +619,11 @@ impl Potion {
 /// Returns a random potion with rarity weighting, matching Java's `AbstractDungeon.returnRandomPotion()`.
 /// Rolls 0-99: <65 = Common, 65-89 = Uncommon, ≥90 = Rare.
 /// When `limited=true`, excludes FruitJuice (Java behavior for EntropicBrew).
-pub fn random_potion(rng: &mut crate::rng::StsRng, class: PotionClass, limited: bool) -> PotionId {
+pub fn random_potion(
+    rng: &mut crate::runtime::rng::StsRng,
+    class: PotionClass,
+    limited: bool,
+) -> PotionId {
     let roll = rng.random_range(0, 99);
     let rarity = if roll < 65 {
         PotionRarity::Common
@@ -635,7 +639,7 @@ pub fn random_potion(rng: &mut crate::rng::StsRng, class: PotionClass, limited: 
 /// Java: `AbstractDungeon.returnRandomPotion(rarity, limited)` — rejection-samples from flat pool.
 /// When `limited=true`, excludes FruitJuice.
 pub fn random_potion_by_rarity(
-    rng: &mut crate::rng::StsRng,
+    rng: &mut crate::runtime::rng::StsRng,
     class: PotionClass,
     rarity: PotionRarity,
     limited: bool,
@@ -655,7 +659,10 @@ pub fn random_potion_by_rarity(
 }
 
 /// Returns a totally random potion (no rarity weighting). Java: `AbstractDungeon.returnTotallyRandomPotion()`.
-pub fn random_potion_any(rng: &mut crate::rng::StsRng, class: PotionClass) -> PotionId {
+pub fn random_potion_any(
+    rng: &mut crate::runtime::rng::StsRng,
+    class: PotionClass,
+) -> PotionId {
     let pool = potions_for_class(class);
     let idx = rng.random(pool.len() as i32 - 1) as usize;
     pool[idx]

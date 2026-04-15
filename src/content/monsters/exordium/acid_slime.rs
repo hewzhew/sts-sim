@@ -1,5 +1,5 @@
-use crate::action::{Action, DamageInfo, DamageType};
-use crate::combat::{CombatState, Intent, MonsterEntity, PowerId};
+use crate::runtime::action::{Action, DamageInfo, DamageType};
+use crate::runtime::combat::{CombatState, Intent, MonsterEntity, PowerId};
 use crate::content::monsters::MonsterBehavior;
 
 // AcidSlime_S
@@ -7,7 +7,7 @@ pub struct AcidSlimeS;
 
 impl MonsterBehavior for AcidSlimeS {
     fn roll_move(
-        rng: &mut crate::rng::StsRng,
+        rng: &mut crate::runtime::rng::StsRng,
         entity: &MonsterEntity,
         ascension_level: u8,
         _num: i32,
@@ -101,7 +101,7 @@ pub struct AcidSlimeM;
 
 impl MonsterBehavior for AcidSlimeM {
     fn roll_move(
-        rng: &mut crate::rng::StsRng,
+        rng: &mut crate::runtime::rng::StsRng,
         entity: &MonsterEntity,
         ascension_level: u8,
         num: i32,

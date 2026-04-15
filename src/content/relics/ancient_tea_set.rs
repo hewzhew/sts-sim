@@ -1,4 +1,4 @@
-use crate::action::{Action, ActionInfo, AddTo};
+use crate::runtime::action::{Action, ActionInfo, AddTo};
 use crate::content::relics::RelicId;
 use smallvec::SmallVec;
 

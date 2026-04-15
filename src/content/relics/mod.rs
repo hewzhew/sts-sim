@@ -714,7 +714,7 @@ pub fn energy_master_delta(id: RelicId) -> u8 {
 /// This is intentionally a small, relic-domain entrypoint for runtime effects
 /// that are not fully visible in the snapshot but are still derivable from the
 /// current combat context.
-pub fn restore_combat_energy_master(state: &mut crate::combat::CombatState) {
+pub fn restore_combat_energy_master(state: &mut crate::runtime::combat::CombatState) {
     let mut energy_master: u8 = 3;
     let is_elite_or_boss = state.meta.is_elite_fight || state.meta.is_boss_fight;
 

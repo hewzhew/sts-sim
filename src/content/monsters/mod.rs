@@ -1,5 +1,5 @@
-use crate::action::{Action, ActionInfo};
-use crate::combat::{CombatState, Intent, MonsterEntity, MonsterId};
+use crate::runtime::action::{Action, ActionInfo};
+use crate::runtime::combat::{CombatState, Intent, MonsterEntity, MonsterId};
 
 pub mod beyond;
 pub mod city;
@@ -15,7 +15,7 @@ pub mod factory;
 pub trait MonsterBehavior {
     /// Evaluates RNG and move history to determine the intent and byte code for the NEXT turn.
     fn roll_move(
-        rng: &mut crate::rng::StsRng,
+        rng: &mut crate::runtime::rng::StsRng,
         entity: &MonsterEntity,
         ascension_level: u8,
         num: i32,
@@ -27,7 +27,7 @@ pub trait MonsterBehavior {
     /// Optional sequence of actions to be executed immediately upon spawning (equivalent to usePreBattleAction in Java).
     fn use_pre_battle_action(
         _entity: &MonsterEntity,
-        _hp_rng: &mut crate::rng::StsRng,
+        _hp_rng: &mut crate::runtime::rng::StsRng,
         _ascension_level: u8,
     ) -> Vec<Action> {
         Vec::new()
@@ -263,7 +263,7 @@ impl EnemyId {
 }
 
 pub fn roll_monster_move(
-    rng: &mut crate::rng::StsRng,
+    rng: &mut crate::runtime::rng::StsRng,
     entity: &MonsterEntity,
     ascension_level: u8,
     num: i32,
@@ -582,7 +582,7 @@ pub fn resolve_monster_turn(state: &mut CombatState, entity: &MonsterEntity) -> 
 pub fn resolve_pre_battle_action(
     id: EnemyId,
     entity: &MonsterEntity,
-    hp_rng: &mut crate::rng::StsRng,
+    hp_rng: &mut crate::runtime::rng::StsRng,
     ascension_level: u8,
 ) -> Vec<Action> {
     match id {

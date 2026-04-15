@@ -1,5 +1,5 @@
-use crate::action::Action;
-use crate::combat::PowerId;
+use crate::runtime::action::Action;
+use crate::runtime::combat::PowerId;
 use crate::core::EntityId;
 
 const PLAYER_CONTROLLED_FLAG: i32 = 1 << 0;
@@ -38,7 +38,7 @@ pub fn at_end_of_turn(
 }
 
 pub fn at_end_of_round(
-    state: &crate::combat::CombatState,
+    state: &crate::runtime::combat::CombatState,
     owner: EntityId,
     amount: i32,
 ) -> smallvec::SmallVec<[Action; 2]> {

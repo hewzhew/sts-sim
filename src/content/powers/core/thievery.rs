@@ -1,5 +1,5 @@
-use crate::action::Action;
-use crate::combat::CombatState;
+use crate::runtime::action::Action;
+use crate::runtime::combat::CombatState;
 use crate::core::EntityId;
 
 // Thievery power tracks the amount of gold stolen. Doesn't heavily impact combat interactions.

@@ -1,5 +1,5 @@
-use crate::action::{Action, DamageType};
-use crate::combat::CombatState;
+use crate::runtime::action::{Action, DamageType};
+use crate::runtime::combat::CombatState;
 use crate::content::powers::PowerId;
 use smallvec::SmallVec;
 
@@ -39,7 +39,7 @@ pub fn at_end_of_turn(
     });
     actions.push(Action::DamageAllEnemies {
         source: owner,
-        damages: crate::action::repeated_damage_matrix(state.entities.monsters.len(), amount),
+        damages: crate::runtime::action::repeated_damage_matrix(state.entities.monsters.len(), amount),
         damage_type: DamageType::Thorns, // Java: DamageInfo.DamageType.THORNS
         is_modified: false,
     });

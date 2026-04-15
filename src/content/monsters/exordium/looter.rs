@@ -1,5 +1,5 @@
-use crate::action::{Action, DamageInfo, DamageType};
-use crate::combat::{CombatState, Intent, MonsterEntity};
+use crate::runtime::action::{Action, DamageInfo, DamageType};
+use crate::runtime::combat::{CombatState, Intent, MonsterEntity};
 use crate::content::monsters::MonsterBehavior;
 
 pub struct Looter;
@@ -7,19 +7,19 @@ pub struct Looter;
 impl MonsterBehavior for Looter {
     fn use_pre_battle_action(
         entity: &MonsterEntity,
-        _hp_rng: &mut crate::rng::StsRng,
+        _hp_rng: &mut crate::runtime::rng::StsRng,
         ascension_level: u8,
     ) -> Vec<Action> {
         vec![Action::ApplyPower {
             target: entity.id,
             source: entity.id,
-            power_id: crate::combat::PowerId::Thievery,
+            power_id: crate::runtime::combat::PowerId::Thievery,
             amount: if ascension_level >= 17 { 20 } else { 15 },
         }]
     }
 
     fn roll_move(
-        rng: &mut crate::rng::StsRng,
+        rng: &mut crate::runtime::rng::StsRng,
         entity: &MonsterEntity,
         ascension_level: u8,
         _num: i32,

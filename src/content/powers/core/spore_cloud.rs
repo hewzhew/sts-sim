@@ -1,5 +1,5 @@
-use crate::action::Action;
-use crate::combat::{CombatState, PowerId};
+use crate::runtime::action::Action;
+use crate::runtime::combat::{CombatState, PowerId};
 use crate::core::EntityId;
 
 pub fn on_death(

@@ -95,7 +95,7 @@ pub enum PowerId {
     Burst,
 }
 
-use crate::combat::{CombatCard, CombatState};
+use crate::runtime::combat::{CombatCard, CombatState};
 
 pub struct PowerDefinition {
     pub id: PowerId,
@@ -561,7 +561,7 @@ pub fn resolve_power_on_use_card(
                 state
                     .engine
                     .action_queue
-                    .push_back(crate::action::Action::RemovePower {
+                    .push_back(crate::runtime::action::Action::RemovePower {
                         target: 0, // Player
                         power_id: PowerId::Vigor,
                     });
@@ -577,7 +577,7 @@ pub fn resolve_power_on_player_card_played(
     amount: i32,
     card: &CombatCard,
     state: &CombatState,
-) -> smallvec::SmallVec<[crate::action::Action; 2]> {
+) -> smallvec::SmallVec<[crate::runtime::action::Action; 2]> {
     match id {
         PowerId::Curiosity => core::curiosity::on_player_card_played(owner, amount, card),
         PowerId::TimeWarp => core::time_warp::on_player_card_played(owner, amount, card, state),
@@ -593,7 +593,7 @@ pub fn resolve_power_on_exhaust(
     amount: i32,
     _card_uuid: u32,
     _card_id: crate::content::cards::CardId,
-) -> smallvec::SmallVec<[crate::action::Action; 2]> {
+) -> smallvec::SmallVec<[crate::runtime::action::Action; 2]> {
     match id {
         PowerId::FeelNoPain => ironclad::feel_no_pain::on_exhaust(owner, amount),
         PowerId::DarkEmbrace => ironclad::dark_embrace::on_exhaust(amount),
@@ -607,9 +607,9 @@ pub fn resolve_power_on_hp_lost(
     owner: crate::core::EntityId,
     amount: i32,
     source: Option<crate::core::EntityId>,
-    damage_type: crate::action::DamageType,
+    damage_type: crate::runtime::action::DamageType,
     triggers_rupture: bool,
-) -> smallvec::SmallVec<[crate::action::Action; 2]> {
+) -> smallvec::SmallVec<[crate::runtime::action::Action; 2]> {
     match id {
         PowerId::Rupture if triggers_rupture => ironclad::rupture::on_hp_lost(amount),
         PowerId::Split => core::split::on_hp_lost(state, owner, amount),
@@ -626,7 +626,7 @@ pub fn resolve_power_on_card_played(
     owner: crate::core::EntityId,
     card: &CombatCard,
     power_amount: i32,
-) -> smallvec::SmallVec<[crate::action::Action; 2]> {
+) -> smallvec::SmallVec<[crate::runtime::action::Action; 2]> {
     match id {
         // Java Gremlin Nob Enrage = AngerPower.onUseCard(SKILL).
         PowerId::Anger => core::anger::on_card_played(state, owner, card, power_amount),
@@ -652,23 +652,23 @@ pub fn resolve_power_on_card_played(
                     .and_then(|ps| ps.iter().find(|p| p.power_type == PowerId::PanachePower))
                     .map(|p| p.extra_data)
                     .unwrap_or(10);
-                acts.push(crate::action::Action::DamageAllEnemies {
+                acts.push(crate::runtime::action::Action::DamageAllEnemies {
                     source: owner,
-                    damages: crate::action::repeated_damage_matrix(
+                    damages: crate::runtime::action::repeated_damage_matrix(
                         state.entities.monsters.len(),
                         damage,
                     ),
-                    damage_type: crate::action::DamageType::Thorns,
+                    damage_type: crate::runtime::action::DamageType::Thorns,
                     is_modified: false,
                 });
-                acts.push(crate::action::Action::ApplyPower {
+                acts.push(crate::runtime::action::Action::ApplyPower {
                     source: owner,
                     target: owner,
                     power_id: PowerId::PanachePower,
                     amount: 4,
                 });
             } else {
-                acts.push(crate::action::Action::ApplyPower {
+                acts.push(crate::runtime::action::Action::ApplyPower {
                     source: owner,
                     target: owner,
                     power_id: PowerId::PanachePower,
@@ -686,22 +686,24 @@ pub fn resolve_power_at_turn_start(
     _state: &CombatState,
     owner: crate::core::EntityId,
     amount: i32,
-) -> smallvec::SmallVec<[crate::action::Action; 2]> {
+) -> smallvec::SmallVec<[crate::runtime::action::Action; 2]> {
     match id {
         PowerId::FlameBarrier | PowerId::Rage => {
-            smallvec::smallvec![crate::action::Action::RemovePower {
+            smallvec::smallvec![crate::runtime::action::Action::RemovePower {
                 target: owner,
                 power_id: id
             }]
         }
-        PowerId::Berserk => smallvec::smallvec![crate::action::Action::GainEnergy { amount }],
+        PowerId::Berserk => {
+            smallvec::smallvec![crate::runtime::action::Action::GainEnergy { amount }]
+        }
         PowerId::NextTurnBlock => core::next_turn_block::at_turn_start(owner, amount),
         PowerId::Energized => core::energized::at_turn_start(owner, amount),
         PowerId::MagnetismPower => {
             // Add `amount` random colorless cards to hand
             let mut acts = smallvec::SmallVec::new();
             for _ in 0..amount {
-                acts.push(crate::action::Action::MakeRandomColorlessCardInHand {
+                acts.push(crate::runtime::action::Action::MakeRandomColorlessCardInHand {
                     cost_for_turn: None,
                     upgraded: false,
                 });
@@ -712,7 +714,7 @@ pub fn resolve_power_at_turn_start(
             // Play top card of draw pile `amount` times
             let mut acts = smallvec::SmallVec::new();
             for _ in 0..amount {
-                acts.push(crate::action::Action::PlayTopCard {
+                acts.push(crate::runtime::action::Action::PlayTopCard {
                     target: None,
                     exhaust: false,
                 });
@@ -723,7 +725,7 @@ pub fn resolve_power_at_turn_start(
             if amount == 5 {
                 smallvec::smallvec![]
             } else {
-                smallvec::smallvec![crate::action::Action::ApplyPower {
+                smallvec::smallvec![crate::runtime::action::Action::ApplyPower {
                     source: owner,
                     target: owner,
                     power_id: PowerId::PanachePower,
@@ -742,7 +744,7 @@ pub fn resolve_power_on_post_draw(
     _state: &CombatState,
     owner: crate::core::EntityId,
     amount: i32,
-) -> smallvec::SmallVec<[crate::action::Action; 2]> {
+) -> smallvec::SmallVec<[crate::runtime::action::Action; 2]> {
     match id {
         PowerId::Brutality => ironclad::brutality::on_post_draw(owner, amount),
         PowerId::DemonForm => ironclad::demon_form::on_post_draw(owner, amount),
@@ -752,18 +754,18 @@ pub fn resolve_power_on_post_draw(
 }
 
 pub fn resolve_power_at_end_of_turn(
-    power: &crate::combat::Power,
+    power: &crate::runtime::combat::Power,
     _state: &CombatState,
     owner: crate::core::EntityId,
-) -> smallvec::SmallVec<[crate::action::Action; 2]> {
+) -> smallvec::SmallVec<[crate::runtime::action::Action; 2]> {
     let id = power.power_type;
     let amount = power.amount;
     match id {
-        PowerId::DoubleTap => smallvec::smallvec![crate::action::Action::RemovePower {
+        PowerId::DoubleTap => smallvec::smallvec![crate::runtime::action::Action::RemovePower {
             target: owner,
             power_id: PowerId::DoubleTap,
         }],
-        PowerId::Burst => smallvec::smallvec![crate::action::Action::RemovePower {
+        PowerId::Burst => smallvec::smallvec![crate::runtime::action::Action::RemovePower {
             target: owner,
             power_id: PowerId::Burst,
         }],
@@ -788,38 +790,38 @@ pub fn resolve_power_at_end_of_turn(
             let mut acts = smallvec::SmallVec::new();
             if amount == 1 {
                 if let Some(instance_id) = power.instance_id {
-                    acts.push(crate::action::Action::ReducePowerInstance {
+                    acts.push(crate::runtime::action::Action::ReducePowerInstance {
                         target: owner,
                         power_id: PowerId::TheBombPower,
                         instance_id,
                         amount: 1,
                     });
                 } else {
-                    acts.push(crate::action::Action::ReducePower {
+                    acts.push(crate::runtime::action::Action::ReducePower {
                         target: owner,
                         power_id: PowerId::TheBombPower,
                         amount: 1,
                     });
                 }
-                acts.push(crate::action::Action::DamageAllEnemies {
+                acts.push(crate::runtime::action::Action::DamageAllEnemies {
                     source: owner,
-                    damages: crate::action::repeated_damage_matrix(
+                    damages: crate::runtime::action::repeated_damage_matrix(
                         _state.entities.monsters.len(),
                         power.extra_data.max(0),
                     ),
-                    damage_type: crate::action::DamageType::Thorns,
+                    damage_type: crate::runtime::action::DamageType::Thorns,
                     is_modified: false,
                 });
             } else {
                 if let Some(instance_id) = power.instance_id {
-                    acts.push(crate::action::Action::ReducePowerInstance {
+                    acts.push(crate::runtime::action::Action::ReducePowerInstance {
                         target: owner,
                         power_id: PowerId::TheBombPower,
                         instance_id,
                         amount: 1,
                     });
                 } else {
-                    acts.push(crate::action::Action::ReducePower {
+                    acts.push(crate::runtime::action::Action::ReducePower {
                         target: owner,
                         power_id: PowerId::TheBombPower,
                         amount: 1,
@@ -831,7 +833,7 @@ pub fn resolve_power_at_end_of_turn(
         PowerId::Regen => {
             // Java: RegenerateMonsterPower.atEndOfTurn() only heals; it does not tick down.
             let mut acts = smallvec::SmallVec::new();
-            acts.push(crate::action::Action::Heal {
+            acts.push(crate::runtime::action::Action::Heal {
                 target: owner,
                 amount,
             });
@@ -840,11 +842,11 @@ pub fn resolve_power_at_end_of_turn(
         PowerId::Regeneration => {
             // Java: RegenPower.atEndOfTurn() -> RegenAction(heal), then decrement/remove Regeneration.
             let mut acts = smallvec::SmallVec::new();
-            acts.push(crate::action::Action::Heal {
+            acts.push(crate::runtime::action::Action::Heal {
                 target: owner,
                 amount,
             });
-            acts.push(crate::action::Action::ApplyPower {
+            acts.push(crate::runtime::action::Action::ApplyPower {
                 source: owner,
                 target: owner,
                 power_id: PowerId::Regeneration,
@@ -862,16 +864,16 @@ pub fn resolve_power_at_end_of_round(
     owner: crate::core::EntityId,
     amount: i32,
     just_applied: bool,
-) -> smallvec::SmallVec<[crate::action::Action; 2]> {
+) -> smallvec::SmallVec<[crate::runtime::action::Action; 2]> {
     match id {
         PowerId::DuplicationPower => {
             if amount <= 1 {
-                smallvec::smallvec![crate::action::Action::RemovePower {
+                smallvec::smallvec![crate::runtime::action::Action::RemovePower {
                     target: owner,
                     power_id: PowerId::DuplicationPower,
                 }]
             } else {
-                smallvec::smallvec![crate::action::Action::ApplyPower {
+                smallvec::smallvec![crate::runtime::action::Action::ApplyPower {
                     source: owner,
                     target: owner,
                     power_id: PowerId::DuplicationPower,
@@ -901,7 +903,7 @@ pub fn resolve_power_on_card_drawn(
     owner: crate::core::EntityId,
     amount: i32,
     card_uuid: u32,
-) -> smallvec::SmallVec<[crate::action::Action; 2]> {
+) -> smallvec::SmallVec<[crate::runtime::action::Action; 2]> {
     if let Some(card) = state.zones.hand.iter().find(|c| c.uuid == card_uuid) {
         match id {
             PowerId::Evolve => ironclad::evolve::on_card_drawn(card.id, amount),
@@ -922,8 +924,8 @@ pub fn resolve_power_on_card_drawn(
 pub fn resolve_power_on_inflict_damage(
     id: PowerId,
     damage: i32,
-    damage_type: crate::action::DamageType,
-) -> smallvec::SmallVec<[crate::action::Action; 2]> {
+    damage_type: crate::runtime::action::DamageType,
+) -> smallvec::SmallVec<[crate::runtime::action::Action; 2]> {
     match id {
         PowerId::PainfulStabs => core::painful_stabs::on_inflict_damage(damage, damage_type),
         _ => smallvec::smallvec![],
@@ -936,7 +938,7 @@ pub fn resolve_power_on_block_gained(
     _owner: crate::core::EntityId,
     amount: i32,
     _block_amount: i32,
-) -> smallvec::SmallVec<[crate::action::Action; 2]> {
+) -> smallvec::SmallVec<[crate::runtime::action::Action; 2]> {
     match id {
         PowerId::Juggernaut => ironclad::juggernaut::on_block_gained(amount),
         _ => smallvec::smallvec![],
@@ -950,7 +952,7 @@ pub fn resolve_power_on_attacked(
     damage: i32,
     source: crate::core::EntityId,
     power_amount: i32,
-) -> smallvec::SmallVec<[crate::action::Action; 2]> {
+) -> smallvec::SmallVec<[crate::runtime::action::Action; 2]> {
     match id {
         PowerId::Angry => core::angry::on_attacked(state, owner, damage, source, power_amount),
         PowerId::FlameBarrier => ironclad::flame_barrier::on_attacked(source, power_amount),
@@ -975,7 +977,7 @@ pub fn resolve_power_on_death(
     owner: crate::core::EntityId,
     amount: i32,
     extra_data: i32,
-) -> smallvec::SmallVec<[crate::action::Action; 2]> {
+) -> smallvec::SmallVec<[crate::runtime::action::Action; 2]> {
     match id {
         PowerId::SporeCloud => core::spore_cloud::on_death(state, owner, amount),
         PowerId::Stasis => core::stasis::on_death(state, owner, extra_data),
@@ -990,7 +992,7 @@ pub fn resolve_power_on_remove(
     id: PowerId,
     state: &CombatState,
     owner: crate::core::EntityId,
-) -> smallvec::SmallVec<[crate::action::Action; 2]> {
+) -> smallvec::SmallVec<[crate::runtime::action::Action; 2]> {
     match id {
         PowerId::Flight => core::flight::on_remove(state, owner),
         PowerId::PlatedArmor => core::plated_armor::on_remove(state, owner),
@@ -1001,7 +1003,7 @@ pub fn resolve_power_on_remove(
 pub fn resolve_power_on_attack_to_change_damage(
     id: PowerId,
     _state: &CombatState,
-    _info: &crate::action::DamageInfo,
+    _info: &crate::runtime::action::DamageInfo,
     current_damage: i32,
     amount: i32,
 ) -> i32 {
@@ -1014,7 +1016,7 @@ pub fn resolve_power_on_attack_to_change_damage(
 pub fn resolve_power_on_attacked_to_change_damage(
     id: PowerId,
     state: &mut CombatState,
-    info: &crate::action::DamageInfo,
+    info: &crate::runtime::action::DamageInfo,
     current_damage: i32,
     _amount: i32,
 ) -> i32 {
@@ -1173,7 +1175,7 @@ pub fn calculate_monster_damage(
 
     // 3. Player stance atDamageReceive
     if target_id == 0 {
-        if state.entities.player.stance == crate::combat::StanceId::Wrath {
+        if state.entities.player.stance == crate::runtime::combat::StanceId::Wrath {
             tmp *= 2.0;
         }
     }
@@ -1186,13 +1188,13 @@ pub fn calculate_monster_damage(
                     core::intangible::at_damage_final_receive(
                         tmp as i32,
                         p.amount,
-                        crate::action::DamageType::Normal,
+                        crate::runtime::action::DamageType::Normal,
                     ) as f32
                 }
                 PowerId::Flight => core::flight::at_damage_final_receive(
                     tmp as i32,
                     p.amount,
-                    crate::action::DamageType::Normal,
+                    crate::runtime::action::DamageType::Normal,
                 ) as f32,
                 _ => tmp,
             };
@@ -1228,7 +1230,7 @@ pub fn resolve_power_on_apply_power(
     target: usize,
     source: usize,
     state: &CombatState,
-) -> smallvec::SmallVec<[crate::action::ActionInfo; 2]> {
+) -> smallvec::SmallVec<[crate::runtime::action::ActionInfo; 2]> {
     let mut actions = smallvec::SmallVec::new();
     match id {
         PowerId::SadisticPower => {
@@ -1242,16 +1244,18 @@ pub fn resolve_power_on_apply_power(
                 && target != source
                 && !crate::content::powers::store::has_power(state, target, PowerId::Artifact)
             {
-                actions.push(crate::action::ActionInfo {
-                    action: crate::action::Action::Damage(crate::action::DamageInfo {
+                actions.push(crate::runtime::action::ActionInfo {
+                    action: crate::runtime::action::Action::Damage(
+                        crate::runtime::action::DamageInfo {
                         source,
                         target,
                         base: owner_amount,
                         output: owner_amount,
-                        damage_type: crate::action::DamageType::Thorns,
+                        damage_type: crate::runtime::action::DamageType::Thorns,
                         is_modified: true,
-                    }),
-                    insertion_mode: crate::action::AddTo::Bottom,
+                    },
+                    ),
+                    insertion_mode: crate::runtime::action::AddTo::Bottom,
                 });
             }
         }
@@ -1266,7 +1270,7 @@ pub fn resolve_power_at_damage_final_receive(
     id: PowerId,
     damage: i32,
     amount: i32,
-    damage_type: crate::action::DamageType,
+    damage_type: crate::runtime::action::DamageType,
 ) -> i32 {
     match id {
         PowerId::Intangible | PowerId::IntangiblePlayer => {

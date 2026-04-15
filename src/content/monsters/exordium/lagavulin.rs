@@ -1,5 +1,5 @@
-use crate::action::{Action, DamageInfo, DamageType};
-use crate::combat::{CombatState, Intent, MonsterEntity, PowerId};
+use crate::runtime::action::{Action, DamageInfo, DamageType};
+use crate::runtime::combat::{CombatState, Intent, MonsterEntity, PowerId};
 use crate::content::monsters::MonsterBehavior;
 
 pub struct Lagavulin;
@@ -7,7 +7,7 @@ pub struct Lagavulin;
 impl MonsterBehavior for Lagavulin {
     fn use_pre_battle_action(
         entity: &MonsterEntity,
-        _hp_rng: &mut crate::rng::StsRng,
+        _hp_rng: &mut crate::runtime::rng::StsRng,
         _ascension_level: u8,
     ) -> Vec<Action> {
         // Starts asleep with 8 block, 8 Metallicize
@@ -26,7 +26,7 @@ impl MonsterBehavior for Lagavulin {
     }
 
     fn roll_move(
-        _rng: &mut crate::rng::StsRng,
+        _rng: &mut crate::runtime::rng::StsRng,
         entity: &MonsterEntity,
         ascension_level: u8,
         _num: i32,
@@ -153,7 +153,7 @@ impl MonsterBehavior for Lagavulin {
         state: &mut CombatState,
         entity: &MonsterEntity,
         actual_lost: i32,
-    ) -> smallvec::SmallVec<[crate::action::ActionInfo; 4]> {
+    ) -> smallvec::SmallVec<[crate::runtime::action::ActionInfo; 4]> {
         if actual_lost > 0
             && entity.current_intent == Intent::Sleep
             && !entity.lagavulin.is_out_triggered
@@ -168,23 +168,23 @@ impl MonsterBehavior for Lagavulin {
                 monster.lagavulin.is_out_triggered = true;
             }
             smallvec::smallvec![
-                crate::action::ActionInfo {
+                crate::runtime::action::ActionInfo {
                     action: Action::SetMonsterMove {
                         monster_id: entity.id,
                         next_move_byte: 4,
-                        intent: crate::combat::Intent::Stun,
+                        intent: crate::runtime::combat::Intent::Stun,
                     },
-                    insertion_mode: crate::action::AddTo::Top,
+                    insertion_mode: crate::runtime::action::AddTo::Top,
                 },
                 // Java queues ReducePowerAction to BOTTOM via ChangeStateAction("OPEN")
                 // Using exactly RemovePower reproduces the correct queue logic without injecting Rust-specific ApplyPower calls.
-                crate::action::ActionInfo {
+                crate::runtime::action::ActionInfo {
                     action: Action::ReducePower {
                         target: entity.id,
                         power_id: PowerId::Metallicize,
                         amount: 8,
                     },
-                    insertion_mode: crate::action::AddTo::Bottom,
+                    insertion_mode: crate::runtime::action::AddTo::Bottom,
                 }
             ]
         } else {
@@ -192,4 +192,3 @@ impl MonsterBehavior for Lagavulin {
         }
     }
 }
-

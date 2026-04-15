@@ -1,5 +1,5 @@
-use crate::action::{Action, ActionInfo, AddTo};
-use crate::combat::{CombatCard, CombatState, Intent};
+use crate::runtime::action::{Action, ActionInfo, AddTo};
+use crate::runtime::combat::{CombatCard, CombatState, Intent};
 use crate::core::EntityId;
 use smallvec::SmallVec;
 

@@ -1,5 +1,5 @@
-use crate::action::{Action, NO_SOURCE};
-use crate::combat::{CombatState, PowerId};
+use crate::runtime::action::{Action, NO_SOURCE};
+use crate::runtime::combat::{CombatState, PowerId};
 use crate::core::EntityId;
 
 pub fn on_attacked(

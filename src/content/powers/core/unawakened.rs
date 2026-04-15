@@ -1,4 +1,4 @@
-use crate::action::Action;
+use crate::runtime::action::Action;
 use crate::core::EntityId;
 
 pub fn on_death(owner: EntityId, _amount: i32) -> smallvec::SmallVec<[Action; 2]> {
@@ -15,7 +15,7 @@ pub fn on_death(owner: EntityId, _amount: i32) -> smallvec::SmallVec<[Action; 2]
     actions.push(Action::SetMonsterMove {
         monster_id: owner,
         next_move_byte: 3,
-        intent: crate::combat::Intent::Unknown,
+        intent: crate::runtime::combat::Intent::Unknown,
     });
 
     actions

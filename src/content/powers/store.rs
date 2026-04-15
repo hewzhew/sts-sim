@@ -1,4 +1,4 @@
-use crate::combat::{CombatState, Power, PowerId};
+use crate::runtime::combat::{CombatState, Power, PowerId};
 use crate::core::EntityId;
 
 pub fn powers_for(state: &CombatState, entity: EntityId) -> Option<&[Power]> {

@@ -1,6 +1,6 @@
-use crate::action::DamageType;
-use crate::action::{Action, ActionInfo, AddTo};
-use crate::combat::CombatState;
+use crate::runtime::action::DamageType;
+use crate::runtime::action::{Action, ActionInfo, AddTo};
+use crate::runtime::combat::CombatState;
 use smallvec::SmallVec;
 
 pub struct CharonsAshes;

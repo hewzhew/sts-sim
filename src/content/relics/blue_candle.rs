@@ -1,4 +1,4 @@
-use crate::action::{Action, ActionInfo, AddTo};
+use crate::runtime::action::{Action, ActionInfo, AddTo};
 use crate::content::cards::{CardId, CardType};
 use smallvec::SmallVec;
 
@@ -27,4 +27,3 @@ impl BlueCandle {
         actions
     }
 }
-

@@ -1,5 +1,5 @@
-use crate::action::{Action, DamageInfo, DamageType};
-use crate::combat::{CombatState, Intent, MonsterEntity};
+use crate::runtime::action::{Action, DamageInfo, DamageType};
+use crate::runtime::combat::{CombatState, Intent, MonsterEntity};
 use crate::content::cards::CardId;
 use crate::content::monsters::MonsterBehavior;
 use crate::content::powers::PowerId;
@@ -8,7 +8,7 @@ pub struct Taskmaster;
 
 impl MonsterBehavior for Taskmaster {
     fn roll_move(
-        _rng: &mut crate::rng::StsRng,
+        _rng: &mut crate::runtime::rng::StsRng,
         _entity: &MonsterEntity,
         _ascension_level: u8,
         _num: i32,

@@ -1,4 +1,4 @@
-use crate::combat::CombatState;
+use crate::runtime::combat::CombatState;
 use crate::content::relics::RelicState;
 
 // Note: Cursed Key is primarily an out-of-combat relic.

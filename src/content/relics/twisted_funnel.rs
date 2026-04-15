@@ -1,5 +1,5 @@
-use crate::action::{Action, ActionInfo, AddTo};
-use crate::combat::CombatState;
+use crate::runtime::action::{Action, ActionInfo, AddTo};
+use crate::runtime::combat::CombatState;
 use smallvec::SmallVec;
 
 /// TwistedFunnel: At the start of combat, apply 4 Poison to ALL enemies.

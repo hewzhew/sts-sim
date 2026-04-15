@@ -1,4 +1,4 @@
-use crate::action::{DamageInfo, DamageType};
+use crate::runtime::action::{DamageInfo, DamageType};
 
 pub fn on_attacked_to_change_damage(info: &DamageInfo, damage_amount: i32) -> i32 {
     if damage_amount > 1

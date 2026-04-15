@@ -1,5 +1,5 @@
-use crate::action::Action;
-use crate::combat::CombatState;
+use crate::runtime::action::Action;
+use crate::runtime::combat::CombatState;
 use crate::core::EntityId;
 use smallvec::{smallvec, SmallVec};
 
@@ -13,7 +13,7 @@ pub fn on_hp_lost(state: &CombatState, owner: EntityId, _amount: i32) -> SmallVe
             actions.push(Action::SetMonsterMove {
                 monster_id: owner,
                 next_move_byte: 3,
-                intent: crate::combat::Intent::Unknown,
+                intent: crate::runtime::combat::Intent::Unknown,
             });
         }
     }

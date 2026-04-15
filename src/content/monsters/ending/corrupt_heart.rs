@@ -1,12 +1,12 @@
-use crate::action::{Action, DamageInfo, DamageType};
-use crate::combat::{Intent, MonsterEntity};
+use crate::runtime::action::{Action, DamageInfo, DamageType};
+use crate::runtime::combat::{Intent, MonsterEntity};
 use crate::content::monsters::MonsterBehavior;
 
 pub struct CorruptHeart;
 
 impl MonsterBehavior for CorruptHeart {
     fn roll_move(
-        rng: &mut crate::rng::StsRng,
+        rng: &mut crate::runtime::rng::StsRng,
         entity: &MonsterEntity,
         ascension_level: u8,
         _num: i32,
@@ -78,7 +78,7 @@ impl MonsterBehavior for CorruptHeart {
 
     fn use_pre_battle_action(
         _entity: &MonsterEntity,
-        _hp_rng: &mut crate::rng::StsRng,
+        _hp_rng: &mut crate::runtime::rng::StsRng,
         ascension_level: u8,
     ) -> Vec<Action> {
         let max_dmg = if ascension_level >= 19 { 200 } else { 300 };
@@ -100,7 +100,10 @@ impl MonsterBehavior for CorruptHeart {
         ]
     }
 
-    fn take_turn(state: &mut crate::combat::CombatState, entity: &MonsterEntity) -> Vec<Action> {
+    fn take_turn(
+        state: &mut crate::runtime::combat::CombatState,
+        entity: &MonsterEntity,
+    ) -> Vec<Action> {
         let mut actions = Vec::new();
         let asc = state.meta.ascension_level;
         let move_byte = entity.next_move_byte;

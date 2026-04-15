@@ -1,5 +1,5 @@
-use crate::action::Action;
-use crate::combat::CombatState;
+use crate::runtime::action::Action;
+use crate::runtime::combat::CombatState;
 use crate::content::powers::PowerId;
 use crate::core::EntityId;
 
@@ -19,13 +19,13 @@ pub fn on_hp_lost(
     owner: EntityId,
     amount: i32,
     source: Option<EntityId>,
-    damage_type: crate::action::DamageType,
+    damage_type: crate::runtime::action::DamageType,
 ) -> smallvec::SmallVec<[Action; 2]> {
     let mut actions = smallvec::smallvec![];
     if amount > 0
         && !matches!(
             damage_type,
-            crate::action::DamageType::HpLoss | crate::action::DamageType::Thorns
+            crate::runtime::action::DamageType::HpLoss | crate::runtime::action::DamageType::Thorns
         )
         && source.is_some()
         && source != Some(owner)
@@ -48,7 +48,7 @@ pub fn on_remove(_state: &CombatState, owner: EntityId) -> smallvec::SmallVec<[A
             actions.push(Action::SetMonsterMove {
                 monster_id: owner,
                 next_move_byte: 4,
-                intent: crate::combat::Intent::Stun,
+                intent: crate::runtime::combat::Intent::Stun,
             });
         }
     }

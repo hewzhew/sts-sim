@@ -1,13 +1,13 @@
-use crate::action::{Action, DamageInfo, DamageType};
-use crate::combat::{CombatState, Intent};
+use crate::runtime::action::{Action, DamageInfo, DamageType};
+use crate::runtime::combat::{CombatState, Intent};
 use crate::content::monsters::{EnemyId, MonsterBehavior};
 
 pub struct BronzeOrb;
 
 impl MonsterBehavior for BronzeOrb {
     fn roll_move(
-        _rng: &mut crate::rng::StsRng,
-        entity: &crate::combat::MonsterEntity,
+        _rng: &mut crate::runtime::rng::StsRng,
+        entity: &crate::runtime::combat::MonsterEntity,
         _ascension_level: u8,
         num: i32,
     ) -> (u8, Intent) {
@@ -40,7 +40,10 @@ impl MonsterBehavior for BronzeOrb {
         (id_of_2, Intent::Defend)
     }
 
-    fn take_turn(state: &mut CombatState, entity: &crate::combat::MonsterEntity) -> Vec<Action> {
+    fn take_turn(
+        state: &mut CombatState,
+        entity: &crate::runtime::combat::MonsterEntity,
+    ) -> Vec<Action> {
         let mut actions = Vec::new();
         match entity.next_move_byte {
             1 => {
@@ -78,4 +81,3 @@ impl MonsterBehavior for BronzeOrb {
         actions
     }
 }
-

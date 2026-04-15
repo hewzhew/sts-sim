@@ -1,5 +1,5 @@
-use crate::action::{Action, ActionInfo, AddTo, DamageInfo, DamageType};
-use crate::combat::{CombatState, Intent, MonsterEntity, PowerId};
+use crate::runtime::action::{Action, ActionInfo, AddTo, DamageInfo, DamageType};
+use crate::runtime::combat::{CombatState, Intent, MonsterEntity, PowerId};
 use crate::content::monsters::MonsterBehavior;
 
 pub struct TheGuardian;
@@ -7,7 +7,7 @@ pub struct TheGuardian;
 impl MonsterBehavior for TheGuardian {
     fn use_pre_battle_action(
         entity: &MonsterEntity,
-        _hp_rng: &mut crate::rng::StsRng,
+        _hp_rng: &mut crate::runtime::rng::StsRng,
         ascension_level: u8,
     ) -> Vec<Action> {
         // Mode Shift amount based on Ascension. We use 30 as base.
@@ -96,7 +96,7 @@ impl MonsterBehavior for TheGuardian {
     }
 
     fn roll_move(
-        _rng: &mut crate::rng::StsRng,
+        _rng: &mut crate::runtime::rng::StsRng,
         entity: &MonsterEntity,
         ascension_level: u8,
         _num: i32,

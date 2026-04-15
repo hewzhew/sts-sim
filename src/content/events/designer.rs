@@ -142,7 +142,7 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
                             .collect();
                         // Shuffle and upgrade up to 2
                         if !upgradable.is_empty() {
-                            crate::rng::shuffle_with_random_long(
+                            crate::runtime::rng::shuffle_with_random_long(
                                 &mut upgradable,
                                 &mut run_state.rng_pool.misc_rng,
                             );
@@ -228,7 +228,7 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
                     .map(|(i, _)| i)
                     .collect();
                 if !upgradable.is_empty() {
-                    crate::rng::shuffle_with_random_long(
+                    crate::runtime::rng::shuffle_with_random_long(
                         &mut upgradable,
                         &mut run_state.rng_pool.misc_rng,
                     );

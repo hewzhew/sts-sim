@@ -1,28 +1,31 @@
-use crate::action::{Action, DamageInfo, DamageType};
-use crate::combat::{CombatState, Intent};
+use crate::runtime::action::{Action, DamageInfo, DamageType};
+use crate::runtime::combat::{CombatState, Intent};
 use crate::content::monsters::MonsterBehavior;
 
 pub struct TorchHead;
 
 impl MonsterBehavior for TorchHead {
     fn use_pre_battle_action(
-        _entity: &crate::combat::MonsterEntity,
-        _hp_rng: &mut crate::rng::StsRng,
+        _entity: &crate::runtime::combat::MonsterEntity,
+        _hp_rng: &mut crate::runtime::rng::StsRng,
         _ascension_level: u8,
     ) -> Vec<Action> {
         Vec::new()
     }
 
     fn roll_move(
-        _rng: &mut crate::rng::StsRng,
-        _entity: &crate::combat::MonsterEntity,
+        _rng: &mut crate::runtime::rng::StsRng,
+        _entity: &crate::runtime::combat::MonsterEntity,
         _ascension_level: u8,
         _num: i32,
     ) -> (u8, Intent) {
         (1, Intent::Attack { damage: 7, hits: 1 })
     }
 
-    fn take_turn(_state: &mut CombatState, entity: &crate::combat::MonsterEntity) -> Vec<Action> {
+    fn take_turn(
+        _state: &mut CombatState,
+        entity: &crate::runtime::combat::MonsterEntity,
+    ) -> Vec<Action> {
         let mut actions = Vec::new();
         if entity.next_move_byte == 1 {
             actions.push(Action::Damage(DamageInfo {

@@ -1,11 +1,11 @@
-use crate::action::{Action, ActionInfo, AddTo};
-use crate::combat::{QueuedCardPlay, QueuedCardSource};
+use crate::runtime::action::{Action, ActionInfo, AddTo};
+use crate::runtime::combat::{QueuedCardPlay, QueuedCardSource};
 use smallvec::SmallVec;
 
 /// Necronomicon: The first Attack you play each turn that costs 2 or more is played twice.
 /// Java uses an internal `activated` boolean rather than the visible relic counter.
 /// We model this with `used_up = false` meaning available this turn.
-pub fn at_turn_start() -> SmallVec<[crate::action::ActionInfo; 4]> {
+pub fn at_turn_start() -> SmallVec<[crate::runtime::action::ActionInfo; 4]> {
     smallvec::smallvec![ActionInfo {
         action: Action::UpdateRelicUsedUp {
             relic_id: crate::content::relics::RelicId::Necronomicon,
@@ -19,9 +19,9 @@ pub fn on_use_card(
     card_id: crate::content::cards::CardId,
     card_cost_for_turn: i32,
     used_up: bool,
-    card: &crate::combat::CombatCard,
+    card: &crate::runtime::combat::CombatCard,
     target: Option<crate::core::EntityId>,
-) -> SmallVec<[crate::action::ActionInfo; 4]> {
+) -> SmallVec<[crate::runtime::action::ActionInfo; 4]> {
     let def = crate::content::cards::get_card_definition(card_id);
     let mut actions = SmallVec::new();
 

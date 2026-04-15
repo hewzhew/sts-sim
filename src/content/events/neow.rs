@@ -182,7 +182,7 @@ pub fn setup_neow_choices(run_state: &mut RunState) {
         extra.push(encode_drawback(NeowDrawback::None));
     } else {
         // blessing: 4 categories, each pick one reward
-        let mut neow_rng = crate::rng::StsRng::new(run_state.seed);
+        let mut neow_rng = crate::runtime::rng::StsRng::new(run_state.seed);
 
         // Category 0: small bonuses
         let cat0_options = [

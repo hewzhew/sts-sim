@@ -33,7 +33,7 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
                     // Fight: battle Act 1 boss
                     // Java: shuffle boss list with miscRng.randomLong()
                     let mut boss_indices = [0u8, 1, 2]; // Guardian, Hexaghost, SlimeBoss
-                    crate::rng::shuffle_with_random_long(
+                    crate::runtime::rng::shuffle_with_random_long(
                         &mut boss_indices,
                         &mut run_state.rng_pool.misc_rng,
                     );

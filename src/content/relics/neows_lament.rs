@@ -1,5 +1,5 @@
-use crate::action::{Action, ActionInfo, AddTo};
-use crate::combat::CombatState;
+use crate::runtime::action::{Action, ActionInfo, AddTo};
+use crate::runtime::combat::CombatState;
 use smallvec::SmallVec;
 
 /// NeowsLament: Enemies in your first 3 combats have 1 HP.
@@ -39,4 +39,3 @@ pub fn at_battle_start(state: &CombatState, counter: i32) -> SmallVec<[ActionInf
     }
     actions
 }
-

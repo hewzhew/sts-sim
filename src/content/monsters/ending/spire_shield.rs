@@ -1,12 +1,12 @@
-use crate::action::{Action, DamageInfo, DamageType};
-use crate::combat::{Intent, MonsterEntity};
+use crate::runtime::action::{Action, DamageInfo, DamageType};
+use crate::runtime::combat::{Intent, MonsterEntity};
 use crate::content::monsters::MonsterBehavior;
 
 pub struct SpireShield;
 
 impl MonsterBehavior for SpireShield {
     fn roll_move(
-        _rng: &mut crate::rng::StsRng,
+        _rng: &mut crate::runtime::rng::StsRng,
         entity: &MonsterEntity,
         ascension_level: u8,
         _num: i32,
@@ -65,7 +65,7 @@ impl MonsterBehavior for SpireShield {
 
     fn use_pre_battle_action(
         _entity: &MonsterEntity,
-        _hp_rng: &mut crate::rng::StsRng,
+        _hp_rng: &mut crate::runtime::rng::StsRng,
         ascension_level: u8,
     ) -> Vec<Action> {
         // Java: Apply Surrounded to player (positional, not modeled) + Artifact to self
@@ -78,7 +78,10 @@ impl MonsterBehavior for SpireShield {
         }]
     }
 
-    fn take_turn(state: &mut crate::combat::CombatState, entity: &MonsterEntity) -> Vec<Action> {
+    fn take_turn(
+        state: &mut crate::runtime::combat::CombatState,
+        entity: &MonsterEntity,
+    ) -> Vec<Action> {
         let mut actions = Vec::new();
         let asc = state.meta.ascension_level;
 
@@ -152,7 +155,10 @@ impl MonsterBehavior for SpireShield {
         actions
     }
 
-    fn on_death(state: &mut crate::combat::CombatState, _entity: &MonsterEntity) -> Vec<Action> {
+    fn on_death(
+        state: &mut crate::runtime::combat::CombatState,
+        _entity: &MonsterEntity,
+    ) -> Vec<Action> {
         let mut actions = Vec::new();
         // Java: if player has "Surrounded" power, remove it and adjust player facing
         if crate::content::powers::store::has_power(

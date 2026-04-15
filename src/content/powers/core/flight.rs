@@ -1,6 +1,6 @@
-use crate::action::Action;
-use crate::action::{DamageType, NO_SOURCE};
-use crate::combat::CombatState;
+use crate::runtime::action::Action;
+use crate::runtime::action::{DamageType, NO_SOURCE};
+use crate::runtime::combat::CombatState;
 use crate::core::EntityId;
 
 pub fn on_calculate_damage_from_player(mut damage: f32, amount: i32) -> f32 {
@@ -84,7 +84,7 @@ pub fn on_remove(state: &CombatState, owner: EntityId) -> smallvec::SmallVec<[Ac
         smallvec::smallvec![Action::SetMonsterMove {
             monster_id: owner,
             next_move_byte: 4,
-            intent: crate::combat::Intent::Stun,
+            intent: crate::runtime::combat::Intent::Stun,
         }]
     } else {
         smallvec::smallvec![]

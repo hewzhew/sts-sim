@@ -1,10 +1,10 @@
-use crate::action::{Action, ActionInfo, AddTo};
+use crate::runtime::action::{Action, ActionInfo, AddTo};
 use smallvec::SmallVec;
 
 /// TheSpecimen: Whenever an enemy dies, transfer its Poison to a random enemy.
 /// Java: onMonsterDeath(m) → if m has Poison, find alive enemy, apply that Poison.
 pub fn on_monster_death(
-    state: &crate::combat::CombatState,
+    state: &crate::runtime::combat::CombatState,
     dead_monster_id: crate::core::EntityId,
 ) -> SmallVec<[ActionInfo; 4]> {
     let mut actions = SmallVec::new();

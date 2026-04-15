@@ -1,5 +1,5 @@
-use crate::action::{Action, DamageInfo, DamageType};
-use crate::combat::{CombatState, Intent, MonsterEntity, PowerId};
+use crate::runtime::action::{Action, DamageInfo, DamageType};
+use crate::runtime::combat::{CombatState, Intent, MonsterEntity, PowerId};
 use crate::content::monsters::MonsterBehavior;
 
 // LouseNormal
@@ -7,7 +7,7 @@ pub struct LouseNormal;
 
 impl MonsterBehavior for LouseNormal {
     fn roll_move(
-        _rng: &mut crate::rng::StsRng,
+        _rng: &mut crate::runtime::rng::StsRng,
         entity: &MonsterEntity,
         ascension_level: u8,
         num: i32,
@@ -117,7 +117,7 @@ impl MonsterBehavior for LouseNormal {
 
     fn use_pre_battle_action(
         entity: &MonsterEntity,
-        hp_rng: &mut crate::rng::StsRng,
+        hp_rng: &mut crate::runtime::rng::StsRng,
         ascension_level: u8,
     ) -> Vec<Action> {
         let curl_up_amount = if ascension_level >= 17 {

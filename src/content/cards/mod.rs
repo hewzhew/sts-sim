@@ -274,23 +274,23 @@ fn build_curse(id: CardId, name: &'static str, cost: i8) -> CardDefinition {
 /// 1. Sentinel (Gain Energy)
 /// 2. Necronomicurse (Clone itself back to hand)
 pub fn resolve_card_on_exhaust(
-    card: &crate::combat::CombatCard,
-    _state: &crate::combat::CombatState,
-) -> Vec<crate::action::ActionInfo> {
+    card: &crate::runtime::combat::CombatCard,
+    _state: &crate::runtime::combat::CombatState,
+) -> Vec<crate::runtime::action::ActionInfo> {
     match card.id {
-        CardId::Necronomicurse => vec![crate::action::ActionInfo {
-            action: crate::action::Action::MakeTempCardInHand {
+        CardId::Necronomicurse => vec![crate::runtime::action::ActionInfo {
+            action: crate::runtime::action::Action::MakeTempCardInHand {
                 card_id: CardId::Necronomicurse,
                 amount: 1,
                 upgraded: false,
             },
-            insertion_mode: crate::action::AddTo::Bottom,
+            insertion_mode: crate::runtime::action::AddTo::Bottom,
         }],
-        CardId::Sentinel => vec![crate::action::ActionInfo {
-            action: crate::action::Action::GainEnergy {
+        CardId::Sentinel => vec![crate::runtime::action::ActionInfo {
+            action: crate::runtime::action::Action::GainEnergy {
                 amount: if card.upgrades > 0 { 3 } else { 2 },
             },
-            insertion_mode: crate::action::AddTo::Bottom,
+            insertion_mode: crate::runtime::action::AddTo::Bottom,
         }],
         _ => vec![],
     }
@@ -308,7 +308,7 @@ pub fn is_starter_basic(id: CardId) -> bool {
     is_starter_strike(id) || is_starter_defend(id)
 }
 
-pub fn is_innate_card(card: &crate::combat::CombatCard) -> bool {
+pub fn is_innate_card(card: &crate::runtime::combat::CombatCard) -> bool {
     get_card_definition(card.id).innate
         || matches!(card.id, CardId::AfterImage) && card.upgrades > 0
 }
@@ -3049,8 +3049,8 @@ pub fn get_card_definition(id: CardId) -> CardDefinition {
     }
 }
 
-use crate::action::{Action, ActionInfo};
-use crate::combat::{CombatCard, CombatState};
+use crate::runtime::action::{Action, ActionInfo};
+use crate::runtime::combat::{CombatCard, CombatState};
 use crate::content::powers::PowerId;
 use crate::core::EntityId;
 use smallvec::SmallVec;
@@ -3145,8 +3145,8 @@ pub fn resolve_card_play(
         CardId::Pummel => ironclad::pummel::pummel_play(_state, _card, t),
         CardId::Miracle => {
             smallvec::smallvec![ActionInfo {
-                action: crate::action::Action::GainEnergy { amount: 1 },
-                insertion_mode: crate::action::AddTo::Bottom,
+                action: crate::runtime::action::Action::GainEnergy { amount: 1 },
+                insertion_mode: crate::runtime::action::AddTo::Bottom,
             }]
         }
         CardId::Shiv => {
@@ -3154,15 +3154,17 @@ pub fn resolve_card_play(
             if let Some(t) = t {
                 let def = get_card_definition(CardId::Shiv);
                 actions.push(ActionInfo {
-                    action: crate::action::Action::Damage(crate::action::DamageInfo {
+                    action: crate::runtime::action::Action::Damage(
+                        crate::runtime::action::DamageInfo {
                         source: _card.uuid as usize,
                         target: t,
                         base: def.base_damage,
                         output: _card.base_damage_mut,
-                        damage_type: crate::action::DamageType::Normal,
+                        damage_type: crate::runtime::action::DamageType::Normal,
                         is_modified: _card.base_damage_mut != def.base_damage,
-                    }),
-                    insertion_mode: crate::action::AddTo::Bottom,
+                    },
+                    ),
+                    insertion_mode: crate::runtime::action::AddTo::Bottom,
                 });
             }
             actions
@@ -3175,7 +3177,7 @@ pub fn resolve_card_play(
                 power_id: PowerId::IntangiblePlayer,
                 amount: _card.base_magic_num_mut.max(1),
             },
-            insertion_mode: crate::action::AddTo::Bottom,
+            insertion_mode: crate::runtime::action::AddTo::Bottom,
         }],
         CardId::DeadlyPoison => silent::deadly_poison::deadly_poison_play(_state, _card, t),
         CardId::BouncingFlask => silent::bouncing_flask::bouncing_flask_play(_state, _card),
@@ -3251,7 +3253,7 @@ pub fn resolve_card_play(
         | CardId::Writhe => smallvec::smallvec![], // Unplayable / Stub
         CardId::Madness => smallvec::smallvec![ActionInfo {
             action: Action::Madness,
-            insertion_mode: crate::action::AddTo::Bottom,
+            insertion_mode: crate::runtime::action::AddTo::Bottom,
         }],
     }
 }
@@ -3343,8 +3345,8 @@ pub fn evaluate_card(card: &mut CombatCard, state: &CombatState, target: Option<
     // 4. Stance
     if def.card_type == crate::content::cards::CardType::Attack {
         match state.entities.player.stance {
-            crate::combat::StanceId::Wrath => damage *= 2.0,
-            crate::combat::StanceId::Divinity => damage *= 3.0,
+            crate::runtime::combat::StanceId::Wrath => damage *= 2.0,
+            crate::runtime::combat::StanceId::Divinity => damage *= 3.0,
             _ => {}
         }
     }
@@ -3371,7 +3373,7 @@ pub fn evaluate_card(card: &mut CombatCard, state: &CombatState, target: Option<
                         power.power_type,
                         final_receive,
                         power.amount,
-                        crate::action::DamageType::Normal,
+                        crate::runtime::action::DamageType::Normal,
                     );
                 }
                 mdmg = final_receive as f32;
@@ -3402,7 +3404,7 @@ pub fn evaluate_card(card: &mut CombatCard, state: &CombatState, target: Option<
                     power.power_type,
                     final_receive,
                     power.amount,
-                    crate::action::DamageType::Normal,
+                    crate::runtime::action::DamageType::Normal,
                 );
             }
             damage = final_receive as f32;

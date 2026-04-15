@@ -1,4 +1,4 @@
-use crate::action::{Action, ActionInfo, AddTo};
+use crate::runtime::action::{Action, ActionInfo, AddTo};
 use smallvec::SmallVec;
 
 /// Java StoneCalendar:
@@ -16,7 +16,7 @@ pub fn at_turn_start(counter: i32) -> SmallVec<[ActionInfo; 4]> {
 }
 
 pub fn at_end_of_turn(
-    state: &crate::combat::CombatState,
+    state: &crate::runtime::combat::CombatState,
     counter: i32,
 ) -> SmallVec<[ActionInfo; 4]> {
     let mut actions = SmallVec::new();
@@ -27,7 +27,7 @@ pub fn at_end_of_turn(
             action: Action::DamageAllEnemies {
                 source: 0,
                 damages,
-                damage_type: crate::action::DamageType::Thorns,
+                damage_type: crate::runtime::action::DamageType::Thorns,
                 is_modified: false,
             },
             insertion_mode: AddTo::Bottom,
@@ -35,4 +35,3 @@ pub fn at_end_of_turn(
     }
     actions
 }
-

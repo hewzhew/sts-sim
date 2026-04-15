@@ -1,5 +1,5 @@
-use crate::action::{Action, DamageInfo, DamageType};
-use crate::combat::{CombatState, Intent};
+use crate::runtime::action::{Action, DamageInfo, DamageType};
+use crate::runtime::combat::{CombatState, Intent};
 use crate::content::cards::CardId;
 use crate::content::monsters::MonsterBehavior;
 use crate::content::powers::PowerId;
@@ -8,8 +8,8 @@ pub struct OrbWalker;
 
 impl MonsterBehavior for OrbWalker {
     fn roll_move(
-        _rng: &mut crate::rng::StsRng,
-        entity: &crate::combat::MonsterEntity,
+        _rng: &mut crate::runtime::rng::StsRng,
+        entity: &crate::runtime::combat::MonsterEntity,
         ascension_level: u8,
         num: i32,
     ) -> (u8, Intent) {
@@ -59,8 +59,8 @@ impl MonsterBehavior for OrbWalker {
     }
 
     fn use_pre_battle_action(
-        entity: &crate::combat::MonsterEntity,
-        _hp_rng: &mut crate::rng::StsRng,
+        entity: &crate::runtime::combat::MonsterEntity,
+        _hp_rng: &mut crate::runtime::rng::StsRng,
         ascension_level: u8,
     ) -> Vec<Action> {
         let str_amount = if ascension_level >= 17 { 5 } else { 3 };
@@ -73,7 +73,10 @@ impl MonsterBehavior for OrbWalker {
         }]
     }
 
-    fn take_turn(state: &mut CombatState, entity: &crate::combat::MonsterEntity) -> Vec<Action> {
+    fn take_turn(
+        state: &mut CombatState,
+        entity: &crate::runtime::combat::MonsterEntity,
+    ) -> Vec<Action> {
         let mut actions = Vec::new();
         let asc = state.meta.ascension_level;
 

@@ -1,4 +1,4 @@
-use crate::action::{Action, ActionInfo, AddTo};
+use crate::runtime::action::{Action, ActionInfo, AddTo};
 use crate::content::relics::RelicState;
 use smallvec::SmallVec;
 
@@ -47,4 +47,3 @@ pub fn on_victory(relic_state: &mut RelicState) {
     relic_state.counter = -1;
     set_first_turn_flag(relic_state, false);
 }
-

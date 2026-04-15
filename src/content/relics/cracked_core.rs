@@ -1,5 +1,5 @@
-use crate::action::ActionInfo;
-use crate::combat::CombatState;
+use crate::runtime::action::ActionInfo;
+use crate::runtime::combat::CombatState;
 use crate::content::relics::RelicState;
 
 // Note: Defect Orb mechanics are unimplemented.

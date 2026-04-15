@@ -162,7 +162,7 @@ pub fn init_dead_adventurer_state(run_state: &mut RunState) -> i32 {
     // Shuffle reward types: [Gold(0), Nothing(1), Relic(2)]
     // Java: Collections.shuffle(rewards, new Random(miscRng.randomLong()))
     let mut rewards = [0i32, 1, 2];
-    crate::rng::shuffle_with_random_long(&mut rewards, &mut run_state.rng_pool.misc_rng);
+    crate::runtime::rng::shuffle_with_random_long(&mut rewards, &mut run_state.rng_pool.misc_rng);
     let mut s = 0i32;
     set_num_rewards(&mut s, 0);
     set_encounter_chance(&mut s, base_chance);

@@ -1,5 +1,5 @@
-use crate::action::{Action, ActionInfo, AddTo, DamageInfo, DamageType};
-use crate::combat::CombatState;
+use crate::runtime::action::{Action, ActionInfo, AddTo, DamageInfo, DamageType};
+use crate::runtime::combat::CombatState;
 use smallvec::SmallVec;
 
 /// Regret: Unplayable. At the end of your turn, lose HP equal to the number of cards in your hand.

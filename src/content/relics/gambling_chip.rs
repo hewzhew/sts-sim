@@ -1,5 +1,5 @@
-use crate::action::{ActionInfo, AddTo};
-use crate::combat::CombatState;
+use crate::runtime::action::{ActionInfo, AddTo};
+use crate::runtime::combat::CombatState;
 use smallvec::SmallVec;
 
 /// Gambling Chip: At the start of each combat, after drawing cards,
@@ -13,13 +13,13 @@ use smallvec::SmallVec;
 /// so the hand will already be drawn when this executes.
 pub fn at_turn_start(
     state: &CombatState,
-    _player: &crate::combat::PlayerEntity,
+    _player: &crate::runtime::combat::PlayerEntity,
 ) -> SmallVec<[ActionInfo; 4]> {
     let mut actions = SmallVec::new();
     // Java: activated flag — only fires on the first turn of combat
     if state.turn.turn_count == 1 {
         actions.push(ActionInfo {
-            action: crate::action::Action::SuspendForHandSelect {
+            action: crate::runtime::action::Action::SuspendForHandSelect {
                 min: 0,
                 max: 99,
                 can_cancel: true,

@@ -1,5 +1,5 @@
-use crate::action::ActionInfo;
-use crate::combat::CombatState;
+use crate::runtime::action::ActionInfo;
+use crate::runtime::combat::CombatState;
 use smallvec::SmallVec;
 
 pub fn at_battle_start(state: &CombatState) -> SmallVec<[ActionInfo; 4]> {
@@ -28,11 +28,11 @@ pub fn at_battle_start(state: &CombatState) -> SmallVec<[ActionInfo; 4]> {
     }
     if is_boss_combat {
         actions.push(ActionInfo {
-            action: crate::action::Action::Heal {
+            action: crate::runtime::action::Action::Heal {
                 target: 0,
                 amount: 25,
             },
-            insertion_mode: crate::action::AddTo::Bottom,
+            insertion_mode: crate::runtime::action::AddTo::Bottom,
         });
     }
     actions

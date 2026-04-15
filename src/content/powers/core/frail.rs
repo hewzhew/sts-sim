@@ -1,5 +1,5 @@
-use crate::action::Action;
-use crate::combat::PowerId;
+use crate::runtime::action::Action;
+use crate::runtime::combat::PowerId;
 use crate::core::EntityId;
 
 pub fn on_calculate_block(mut block: f32, amount: i32) -> f32 {

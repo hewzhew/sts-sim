@@ -1,5 +1,5 @@
-use crate::action::{Action, ActionInfo, AddTo};
-use crate::combat::CombatState;
+use crate::runtime::action::{Action, ActionInfo, AddTo};
+use crate::runtime::combat::CombatState;
 use crate::content::relics::RelicState;
 use smallvec::SmallVec;
 
@@ -14,10 +14,10 @@ pub fn at_end_of_turn(state: &CombatState, _relic: &mut RelicState) -> SmallVec<
         .player
         .orbs
         .iter()
-        .any(|o| o.id == crate::combat::OrbId::Empty);
+        .any(|o| o.id == crate::runtime::combat::OrbId::Empty);
     if has_empty {
         actions.push(ActionInfo {
-            action: Action::ChannelOrb(crate::combat::OrbId::Frost),
+            action: Action::ChannelOrb(crate::runtime::combat::OrbId::Frost),
             insertion_mode: AddTo::Bottom, // Java: channelOrb is direct call, but fires via action queue
         });
     }

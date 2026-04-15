@@ -1,5 +1,5 @@
-use crate::combat::{Intent, MonsterEntity};
-use crate::rng::StsRng;
+use crate::runtime::combat::{Intent, MonsterEntity};
+use crate::runtime::rng::StsRng;
 use std::collections::VecDeque;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

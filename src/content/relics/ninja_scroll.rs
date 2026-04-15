@@ -1,4 +1,4 @@
-use crate::action::{Action, ActionInfo, AddTo};
+use crate::runtime::action::{Action, ActionInfo, AddTo};
 use smallvec::SmallVec;
 
 /// Ninja Scroll: Start each combat with 3 Shivs in hand.

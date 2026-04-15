@@ -1,4 +1,4 @@
-use crate::combat::CombatState;
+use crate::runtime::combat::CombatState;
 use crate::content::relics::RelicState;
 
 // Note: The Courier is strictly an out-of-combat relic.

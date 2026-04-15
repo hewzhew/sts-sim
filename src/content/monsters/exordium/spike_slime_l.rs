@@ -1,5 +1,5 @@
-use crate::action::{Action, DamageInfo, DamageType};
-use crate::combat::{CombatState, Intent, MonsterEntity, PowerId};
+use crate::runtime::action::{Action, DamageInfo, DamageType};
+use crate::runtime::combat::{CombatState, Intent, MonsterEntity, PowerId};
 use crate::content::monsters::MonsterBehavior;
 
 pub struct SpikeSlimeL;
@@ -9,7 +9,7 @@ const SPIKE_SLIME_M_SPLIT_OFFSET_X: i32 = 134;
 impl MonsterBehavior for SpikeSlimeL {
     fn use_pre_battle_action(
         entity: &MonsterEntity,
-        _hp_rng: &mut crate::rng::StsRng,
+        _hp_rng: &mut crate::runtime::rng::StsRng,
         _ascension_level: u8,
     ) -> Vec<Action> {
         vec![Action::ApplyPower {
@@ -21,7 +21,7 @@ impl MonsterBehavior for SpikeSlimeL {
     }
 
     fn roll_move(
-        _rng: &mut crate::rng::StsRng,
+        _rng: &mut crate::runtime::rng::StsRng,
         entity: &MonsterEntity,
         ascension_level: u8,
         num: i32,
@@ -156,4 +156,3 @@ impl MonsterBehavior for SpikeSlimeL {
         actions
     }
 }
-

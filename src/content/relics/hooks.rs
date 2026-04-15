@@ -1,5 +1,5 @@
-use crate::action::{Action, ActionInfo};
-use crate::combat::{CombatCard, CombatState};
+use crate::runtime::action::{Action, ActionInfo};
+use crate::runtime::combat::{CombatCard, CombatState};
 use crate::content::relics::RelicId;
 use smallvec::SmallVec;
 
@@ -781,7 +781,7 @@ pub fn on_calculate_heal(state: &CombatState, mut amount: i32) -> i32 {
 pub fn on_attacked_to_change_damage(
     state: &CombatState,
     mut amount: i32,
-    info: &crate::action::DamageInfo,
+    info: &crate::runtime::action::DamageInfo,
 ) -> i32 {
     let buses = &state.entities.player.relic_buses;
     for &relic_index in &buses.on_attacked_to_change_damage {
@@ -924,9 +924,9 @@ pub fn modify_player_attack_damage_for_card(
 }
 
 pub fn on_use_potion(
-    state: &crate::combat::CombatState,
+    state: &crate::runtime::combat::CombatState,
     player_id: crate::core::EntityId,
-) -> smallvec::SmallVec<[crate::action::ActionInfo; 4]> {
+) -> smallvec::SmallVec<[crate::runtime::action::ActionInfo; 4]> {
     let mut actions = smallvec::SmallVec::new();
     for &relic_index in &state.entities.player.relic_buses.on_use_potion {
         let relic_state = &state.entities.player.relics[relic_index];
@@ -944,10 +944,11 @@ pub fn on_use_potion(
 
 pub fn on_change_stance(
     state: &mut CombatState,
-    old_stance: crate::combat::StanceId,
-    new_stance: crate::combat::StanceId,
+    old_stance: crate::runtime::combat::StanceId,
+    new_stance: crate::runtime::combat::StanceId,
 ) {
-    let mut actions: smallvec::SmallVec<[crate::action::ActionInfo; 4]> = smallvec::SmallVec::new();
+    let mut actions: smallvec::SmallVec<[crate::runtime::action::ActionInfo; 4]> =
+        smallvec::SmallVec::new();
     let old_stance_str = old_stance.as_str();
     let new_stance_str = new_stance.as_str();
 

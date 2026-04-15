@@ -1,10 +1,10 @@
-use crate::action::Action;
+use crate::runtime::action::Action;
 use crate::core::EntityId;
 
 pub struct StasisPower;
 
 pub fn on_death(
-    state: &crate::combat::CombatState,
+    state: &crate::runtime::combat::CombatState,
     _owner: EntityId,
     card_uuid: i32,
 ) -> smallvec::SmallVec<[Action; 2]> {

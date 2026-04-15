@@ -1,5 +1,5 @@
 use super::PotionId;
-use crate::action::{Action, ActionInfo, AddTo, DamageInfo, DamageType, NO_SOURCE};
+use crate::runtime::action::{Action, ActionInfo, AddTo, DamageInfo, DamageType, NO_SOURCE};
 use crate::content::powers::PowerId;
 use crate::core::EntityId;
 use smallvec::SmallVec;
@@ -52,7 +52,7 @@ pub fn get_potion_actions(
                     // damage should not look like a player-owned normal attack for
                     // hooks such as Curl Up.
                     source: NO_SOURCE,
-                    damages: crate::action::repeated_damage_matrix(enemy_count, potency),
+                    damages: crate::runtime::action::repeated_damage_matrix(enemy_count, potency),
                     damage_type: DamageType::Normal,
                     is_modified: false,
                 },
@@ -478,7 +478,7 @@ pub fn get_potion_actions(
         }
         PotionId::EssenceOfDarkness => {
             for _ in 0..potency.max(0) {
-                bottom(&mut actions, Action::ChannelOrb(crate::combat::OrbId::Dark));
+                bottom(&mut actions, Action::ChannelOrb(crate::runtime::combat::OrbId::Dark));
             }
         }
     }
