@@ -382,10 +382,10 @@ fn main() {
             println!("Records: {}", records.len());
         }
         Commands::Logs { command } => {
-            let paths = sts_simulator::cli::live_comm_logs::LiveLogPaths::default_paths();
+            let paths = sts_simulator::cli::live_comm_admin::LiveLogPaths::default_paths();
             match command {
                 LogCommands::Status => {
-                    let status = sts_simulator::cli::live_comm_logs::logs_status(&paths)
+                    let status = sts_simulator::cli::live_comm_admin::logs_status(&paths)
                         .expect("logs status should load");
                     println!("runs={}", status.total_runs);
                     println!("clean_runs={}", status.clean_runs);
@@ -401,7 +401,8 @@ fn main() {
                 }
                 LogCommands::Gc => {
                     let summary =
-                        sts_simulator::cli::live_comm_logs::gc_runs(&paths).expect("gc should run");
+                        sts_simulator::cli::live_comm_admin::gc_runs(&paths)
+                            .expect("gc should run");
                     println!(
                         "gc pruned_runs={} pruned_debug={} pruned_replay={} pruned_watch={}",
                         summary.pruned_run_artifacts,
@@ -416,13 +417,13 @@ fn main() {
                     fixture_specs,
                 } => {
                     let entries =
-                        sts_simulator::cli::live_comm_logs::list_run_manifests_for_audit(&paths)
+                        sts_simulator::cli::live_comm_admin::list_run_manifests_for_audit(&paths)
                             .expect("manifest listing should succeed");
                     let mut entries = entries;
                     entries.sort_by(|left, right| right.1.run_id.cmp(&left.1.run_id));
 
                     let run_selection_score =
-                        |manifest: &sts_simulator::cli::live_comm_logs::LiveRunManifest| {
+                        |manifest: &sts_simulator::cli::live_comm_admin::LiveRunManifest| {
                             let mut score = 0i32;
                             let clean = manifest.counts.engine_bugs == 0
                                 && manifest.counts.replay_failures == 0
@@ -497,7 +498,7 @@ fn main() {
                         .map(|(manifest_path, manifest)| {
                             let run_dir = manifest_path.parent().expect("run dir");
                             let artifact_path = |record: &Option<
-                                sts_simulator::cli::live_comm_logs::LiveArtifactRecord,
+                                sts_simulator::cli::live_comm_admin::LiveArtifactRecord,
                             >| {
                                 record.as_ref().filter(|artifact| artifact.present).map(
                                     |artifact| {
@@ -596,7 +597,7 @@ fn main() {
 
                     let baseline = LearningBaselineManifest {
                         version: 1,
-                        generated_at: sts_simulator::cli::live_comm_logs::timestamp_string(),
+                        generated_at: sts_simulator::cli::live_comm_admin::timestamp_string(),
                         source: "sts_dev_tool logs freeze-baseline",
                         selected_runs: selected,
                         accepted_run_ids,
@@ -623,33 +624,35 @@ fn main() {
                 }
                 LogCommands::Pin { run_id } => {
                     let path =
-                        sts_simulator::cli::live_comm_logs::set_run_pin(&paths, run_id, true)
+                        sts_simulator::cli::live_comm_admin::set_run_pin(&paths, run_id, true)
                             .expect("pin should succeed");
                     println!("pinned {} -> {}", run_id, path.display());
                 }
                 LogCommands::Unpin { run_id } => {
                     let path =
-                        sts_simulator::cli::live_comm_logs::set_run_pin(&paths, run_id, false)
+                        sts_simulator::cli::live_comm_admin::set_run_pin(&paths, run_id, false)
                             .expect("unpin should succeed");
                     println!("unpinned {} -> {}", run_id, path.display());
                 }
                 LogCommands::Replay { run_id } => {
                     let path =
-                        sts_simulator::cli::live_comm_logs::regenerate_run_replay(&paths, run_id)
+                        sts_simulator::cli::live_comm_admin::regenerate_run_replay(&paths, run_id)
                             .expect("replay regeneration should succeed");
                     println!("replay regenerated: {}", path.display());
                 }
                 LogCommands::Latest { label, artifact } => {
-                    let path = sts_simulator::cli::live_comm_logs::latest_run_artifact_path(
+                    let path = sts_simulator::cli::live_comm_admin::latest_run_artifact_path(
                         &paths,
                         label.as_deref(),
                         artifact,
                     )
                     .or_else(|| {
                         if artifact == "raw" {
-                            sts_simulator::cli::live_comm_logs::latest_raw_path(&paths)
+                            sts_simulator::cli::live_comm_admin::latest_raw_path(&paths)
                         } else if artifact == "combat_suspects" {
-                            sts_simulator::cli::live_comm_logs::latest_combat_suspect_path(&paths)
+                            sts_simulator::cli::live_comm_admin::latest_combat_suspect_path(
+                                &paths,
+                            )
                         } else {
                             None
                         }

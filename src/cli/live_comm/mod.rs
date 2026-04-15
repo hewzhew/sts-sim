@@ -197,7 +197,7 @@ pub fn run_live_comm_loop(mut agent: crate::bot::agent::Agent, config: LiveCommC
 }
 
 fn bootstrap_message() -> String {
-    let provenance = crate::cli::live_comm_logs::runtime_provenance();
+    let provenance = crate::cli::live_comm_runtime::runtime_provenance();
     format!(
         "{prefix}{payload}",
         prefix = LIVE_COMM_BOOTSTRAP_PREFIX,
@@ -228,4 +228,3 @@ fn should_clear_combat_context(is_combat: bool, room_phase: &str, _screen: &str)
     // Only clear once we have actually left the combat room phase.
     !is_combat && room_phase != "COMBAT"
 }
-

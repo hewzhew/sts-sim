@@ -4,9 +4,9 @@ use super::{
     RAW_PATH, REPLAY_PATH, REWARD_AUDIT_PATH, SIDECAR_SHADOW_AUDIT_PATH, SIG_PATH,
     WATCH_AUDIT_PATH, WATCH_NONCOMBAT_AUDIT_PATH,
 };
-use crate::cli::live_comm_logs::{
-    finalize_live_run, runtime_provenance, timestamp_string, verify_replay_counts,
-    FinalizeRunInput, LiveLogPaths,
+use crate::cli::live_comm_admin::{timestamp_string, LiveLogPaths};
+use crate::cli::live_comm_runtime::{
+    finalize_live_run, runtime_provenance, verify_replay_counts, FinalizeRunInput,
 };
 use crate::diff::replay::live_comm_replay::generate_live_session_replay_sidecar;
 use std::io::{BufRead, Write};

@@ -1249,12 +1249,12 @@ fn resolve_recent_raw_path(explicit: Option<PathBuf>) -> Result<PathBuf, String>
     if let Some(path) = explicit {
         return Ok(path);
     }
-    sts_simulator::cli::live_comm_logs::latest_valid_raw_path(
-        &sts_simulator::cli::live_comm_logs::LiveLogPaths::default_paths(),
+    sts_simulator::cli::live_comm_admin::latest_valid_raw_path(
+        &sts_simulator::cli::live_comm_admin::LiveLogPaths::default_paths(),
     )
     .or_else(|| {
-        sts_simulator::cli::live_comm_logs::latest_raw_path(
-            &sts_simulator::cli::live_comm_logs::LiveLogPaths::default_paths(),
+        sts_simulator::cli::live_comm_admin::latest_raw_path(
+            &sts_simulator::cli::live_comm_admin::LiveLogPaths::default_paths(),
         )
     })
     .ok_or_else(|| "no recent livecomm raw log found".to_string())
@@ -1265,8 +1265,8 @@ fn resolve_recent_suspect_path(explicit: Option<PathBuf>) -> Result<Option<PathB
         return Ok(Some(path));
     }
     Ok(
-        sts_simulator::cli::live_comm_logs::latest_combat_suspect_path(
-            &sts_simulator::cli::live_comm_logs::LiveLogPaths::default_paths(),
+        sts_simulator::cli::live_comm_admin::latest_combat_suspect_path(
+            &sts_simulator::cli::live_comm_admin::LiveLogPaths::default_paths(),
         ),
     )
 }
