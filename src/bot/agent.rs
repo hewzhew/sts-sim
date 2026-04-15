@@ -297,15 +297,15 @@ impl Agent {
         if !alive && !matches!(after_engine, EngineState::GameOver(_)) {
             return;
         }
-        let signature = crate::interaction_coverage::signature_from_transition(
+        let signature = crate::interaction_coverage::signature_from_transition_with_archetypes(
             &before_engine,
             &before_state,
             input,
             &after_engine,
             &after_state,
+            crate::bot::coverage::archetype_tags_for_combat(&before_state),
         );
         self.db.record_signature(&signature);
         self.db.save();
     }
 }
-

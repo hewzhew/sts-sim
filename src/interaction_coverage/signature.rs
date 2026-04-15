@@ -90,6 +90,24 @@ pub fn signature_from_transition(
     after_engine: &EngineState,
     after: &CombatState,
 ) -> InteractionSignature {
+    signature_from_transition_with_archetypes(
+        before_engine,
+        before,
+        input,
+        after_engine,
+        after,
+        Vec::new(),
+    )
+}
+
+pub fn signature_from_transition_with_archetypes(
+    before_engine: &EngineState,
+    before: &CombatState,
+    input: &ClientInput,
+    after_engine: &EngineState,
+    after: &CombatState,
+    archetype_tags: Vec<String>,
+) -> InteractionSignature {
     let (source_kind, source_id, target_shape) = source_descriptor(before, input);
     let mut hook_tags = BTreeSet::new();
     let mut pile_tags = BTreeSet::new();
@@ -156,9 +174,7 @@ pub fn signature_from_transition(
         source_id,
         target_shape,
         pending_choice: pending_choice_descriptor(before_engine, after_engine),
-        archetype_tags: crate::bot::evaluator::CardEvaluator::archetype_tags(
-            &crate::bot::evaluator::CardEvaluator::combat_profile(before),
-        ),
+        archetype_tags,
         hook_tags: hook_tags.into_iter().collect(),
         pile_tags: pile_tags.into_iter().collect(),
         power_tags: collect_key_power_tags(before, after),

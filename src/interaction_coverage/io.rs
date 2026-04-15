@@ -6,7 +6,9 @@ use crate::diff::replay::replay_support::{continue_deferred_pending_choice, tick
 use crate::diff::state_sync::{build_combat_state, sync_state};
 use crate::state::core::{ClientInput, EngineState, PendingChoice};
 
-use super::signature::{command_string, signature_from_transition, ObservedInteractionRecord};
+use super::signature::{
+    command_string, signature_from_transition_with_archetypes, ObservedInteractionRecord,
+};
 
 pub fn replay_records_from_path(path: &Path) -> Vec<ObservedInteractionRecord> {
     let replay = parse_replay(path.to_string_lossy().as_ref());
@@ -40,12 +42,13 @@ pub fn replay_records_from_path(path: &Path) -> Vec<ObservedInteractionRecord> {
                 let before_state = combat_state.clone();
                 let mut after_engine = EngineState::CombatPlayerTurn;
                 let _alive = tick_until_stable(&mut after_engine, &mut combat_state, input.clone());
-                let signature = signature_from_transition(
+                let signature = signature_from_transition_with_archetypes(
                     &before_engine,
                     &before_state,
                     &input,
                     &after_engine,
                     &combat_state,
+                    crate::bot::coverage::archetype_tags_for_combat(&before_state),
                 );
                 records.push(ObservedInteractionRecord {
                     observed_from: "replay".to_string(),

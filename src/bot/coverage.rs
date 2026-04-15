@@ -1,6 +1,12 @@
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 
+pub fn archetype_tags_for_combat(combat: &crate::combat::CombatState) -> Vec<String> {
+    crate::bot::evaluator::CardEvaluator::archetype_tags(
+        &crate::bot::evaluator::CardEvaluator::combat_profile(combat),
+    )
+}
+
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CoverageMode {
     Off,

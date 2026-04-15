@@ -1259,12 +1259,13 @@ pub(super) fn handle_live_combat_frame<W: Write>(
         &combat_runtime.last_input,
     ) {
         let after_engine = EngineState::CombatPlayerTurn;
-        let signature = crate::interaction_coverage::signature_from_transition(
+        let signature = crate::interaction_coverage::signature_from_transition_with_archetypes(
             &EngineState::CombatPlayerTurn,
             prev_truth,
             prev_input,
             &after_engine,
             &truth,
+            crate::bot::coverage::archetype_tags_for_combat(prev_truth),
         );
         let signature_key = signature.canonical_key();
         let is_novel = !coverage_db.tested_signatures.contains(&signature_key);

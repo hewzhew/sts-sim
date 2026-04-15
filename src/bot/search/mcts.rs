@@ -747,12 +747,13 @@ fn transition_bonus(
     coverage_mode: crate::bot::coverage::CoverageMode,
     curiosity_target: Option<&crate::bot::coverage::CuriosityTarget>,
 ) -> f32 {
-    let signature = crate::interaction_coverage::signature_from_transition(
+    let signature = crate::interaction_coverage::signature_from_transition_with_archetypes(
         engine,
         combat,
         input,
         next_engine,
         next_combat,
+        crate::bot::coverage::archetype_tags_for_combat(combat),
     );
 
     let mut bonus = tactical_move_bonus(combat, input);
