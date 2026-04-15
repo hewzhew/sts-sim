@@ -42,14 +42,12 @@ pub fn sync_player_relics_from_snapshot(
                         .iter_mut()
                         .find(|r| r.id == relic_id)
                     {
-                        let previous = rs.clone();
                         let snapshot_counter = r_val
                             .get("counter")
                             .and_then(|c| c.as_i64())
                             .map(|counter| counter as i32)
-                            .unwrap_or(previous.counter);
+                            .unwrap_or(rs.counter);
                         sync_relic_runtime_state_from_snapshot(
-                            Some(&previous),
                             rs,
                             snapshot_counter,
                             snapshot_runtime_counter_for_relic(relic_id, r_val),

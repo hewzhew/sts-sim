@@ -1,76 +1,87 @@
 use serde_json::Value;
 
 use crate::diff::protocol::{intent_from_java, monster_id_from_java};
+use crate::content::monsters::EnemyId;
 use crate::runtime::combat::MonsterEntity;
 
+fn runtime_state<'a>(monster: &'a Value, monster_type: EnemyId) -> &'a Value {
+    monster
+        .get("runtime_state")
+        .unwrap_or_else(|| panic!("strict state_sync: monster.runtime_state missing for {monster_type:?}"))
+}
+
+fn runtime_state_bool(monster: &Value, monster_type: EnemyId, key: &str) -> bool {
+    runtime_state(monster, monster_type)
+        .get(key)
+        .and_then(|value| value.as_bool())
+        .unwrap_or_else(|| {
+            panic!("strict state_sync: monster.runtime_state.{key} missing for {monster_type:?}")
+        })
+}
+
+fn runtime_state_u8(monster: &Value, monster_type: EnemyId, key: &str) -> u8 {
+    runtime_state(monster, monster_type)
+        .get(key)
+        .and_then(|value| value.as_u64())
+        .map(|value| value as u8)
+        .unwrap_or_else(|| {
+            panic!("strict state_sync: monster.runtime_state.{key} missing for {monster_type:?}")
+        })
+}
+
+fn runtime_state_i32(monster: &Value, monster_type: EnemyId, key: &str) -> i32 {
+    runtime_state(monster, monster_type)
+        .get(key)
+        .and_then(|value| value.as_i64())
+        .map(|value| value as i32)
+        .unwrap_or_else(|| {
+            panic!("strict state_sync: monster.runtime_state.{key} missing for {monster_type:?}")
+        })
+}
+
 pub(crate) fn seed_hexaghost_runtime_from_snapshot(monster: &Value, entity: &mut MonsterEntity) {
-    if entity.monster_type != crate::content::monsters::EnemyId::Hexaghost as usize {
+    let monster_type = EnemyId::Hexaghost;
+    if entity.monster_type != monster_type as usize {
         return;
     }
 
-    if let Some(value) = monster.get("hexaghost_activated").and_then(|v| v.as_bool()) {
-        entity.hexaghost.activated = value;
-    }
-    if let Some(value) = monster
-        .get("hexaghost_orb_active_count")
-        .and_then(|v| v.as_u64())
-    {
-        entity.hexaghost.orb_active_count = value as u8;
-    }
-    if let Some(value) = monster
-        .get("hexaghost_burn_upgraded")
-        .and_then(|v| v.as_bool())
-    {
-        entity.hexaghost.burn_upgraded = value;
-    }
+    entity.hexaghost.activated = runtime_state_bool(monster, monster_type, "activated");
+    entity.hexaghost.orb_active_count =
+        runtime_state_u8(monster, monster_type, "orb_active_count");
+    entity.hexaghost.burn_upgraded =
+        runtime_state_bool(monster, monster_type, "burn_upgraded");
 }
 
 pub(crate) fn seed_darkling_runtime_from_snapshot(monster: &Value, entity: &mut MonsterEntity) {
-    if entity.monster_type != crate::content::monsters::EnemyId::Darkling as usize {
+    let monster_type = EnemyId::Darkling;
+    if entity.monster_type != monster_type as usize {
         return;
     }
 
-    if let Some(value) = monster.get("darkling_first_move").and_then(|v| v.as_bool()) {
-        entity.darkling.first_move = value;
-    }
-    if let Some(value) = monster.get("darkling_nip_dmg").and_then(|v| v.as_i64()) {
-        entity.darkling.nip_dmg = value as i32;
-    }
+    entity.darkling.first_move = runtime_state_bool(monster, monster_type, "first_move");
+    entity.darkling.nip_dmg = runtime_state_i32(monster, monster_type, "nip_dmg");
 }
 
 pub(crate) fn seed_chosen_runtime_from_snapshot(monster: &Value, entity: &mut MonsterEntity) {
-    if entity.monster_type != crate::content::monsters::EnemyId::Chosen as usize {
+    let monster_type = EnemyId::Chosen;
+    if entity.monster_type != monster_type as usize {
         return;
     }
 
-    let mut seeded = false;
-    if let Some(value) = monster.get("chosen_first_turn").and_then(|v| v.as_bool()) {
-        seeded = true;
-        entity.chosen.first_turn = value;
-    }
-    if let Some(value) = monster.get("chosen_used_hex").and_then(|v| v.as_bool()) {
-        seeded = true;
-        entity.chosen.used_hex = value;
-    }
-    if seeded {
-        entity.chosen.protocol_seeded = true;
-    }
+    entity.chosen.first_turn = runtime_state_bool(monster, monster_type, "first_turn");
+    entity.chosen.used_hex = runtime_state_bool(monster, monster_type, "used_hex");
+    entity.chosen.protocol_seeded = true;
 }
 
 pub(crate) fn seed_lagavulin_runtime_from_snapshot(monster: &Value, entity: &mut MonsterEntity) {
-    if entity.monster_type != crate::content::monsters::EnemyId::Lagavulin as usize {
+    let monster_type = EnemyId::Lagavulin;
+    if entity.monster_type != monster_type as usize {
         return;
     }
 
-    if let Some(value) = monster.get("lagavulin_idle_count").and_then(|v| v.as_u64()) {
-        entity.lagavulin.idle_count = value as u8;
-    }
-    if let Some(value) = monster
-        .get("lagavulin_is_out_triggered")
-        .and_then(|v| v.as_bool())
-    {
-        entity.lagavulin.is_out_triggered = value;
-    }
+    entity.lagavulin.idle_count = runtime_state_u8(monster, monster_type, "idle_count");
+    entity.lagavulin.is_out_triggered =
+        runtime_state_bool(monster, monster_type, "is_out_triggered");
 }
 
 pub(crate) fn seed_move_history_from_snapshot(monster: &Value, entity: &mut MonsterEntity) {

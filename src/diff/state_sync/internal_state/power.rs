@@ -1,3 +1,8 @@
+//! Power hidden-state import is strict for migrated runtime_state-backed fields.
+//!
+//! Do not reintroduce `misc`/carry fallback for migrated slices after protocol
+//! truth has landed upstream.
+
 use crate::content::powers::PowerId;
 use crate::runtime::combat::Power;
 use serde_json::Value;
@@ -31,14 +36,6 @@ const POWER_EXTRA_DATA_POLICIES: &[PowerExtraDataPolicy] = &[
 ];
 
 fn initialize_power_internal_state(power: &mut Power) {
-    if power.power_type == PowerId::Combust {
-        // Java CombustPower has hidden `hpLoss` state that is not fully exposed in
-        // the current live-comm protocol. Seed a conservative default of 1 and rely
-        // on carry/sync to preserve the true stacked value across snapshots.
-        power.extra_data = 1;
-        return;
-    }
-
     if POWER_EXTRA_DATA_POLICIES
         .iter()
         .any(|policy| policy.power_type == power.power_type)
@@ -53,22 +50,31 @@ pub fn initialize_power_internal_state_from_snapshot(power: &mut Power, snapshot
 }
 
 pub fn sync_power_extra_data_from_snapshot_power(power: &mut Power, snapshot_power: &Value) {
+    let power_id = snapshot_power
+        .get("id")
+        .and_then(|value| value.as_str())
+        .unwrap_or("<unknown>");
+
     if power.power_type == PowerId::Combust {
-        // Java snapshots currently expose CombustPower.hpLoss as `misc` in combat
-        // snapshots. Prefer an explicit `hp_loss` field if protocol gains one later,
-        // then fall back to `misc`.
-        if let Some(hp_loss) = snapshot_power.get("hp_loss").and_then(|v| v.as_i64()) {
-            power.extra_data = hp_loss as i32;
-        } else if let Some(hp_loss) = snapshot_power.get("misc").and_then(|v| v.as_i64()) {
-            power.extra_data = hp_loss as i32;
-        }
+        power.extra_data = snapshot_power
+            .get("runtime_state")
+            .and_then(|runtime| runtime.get("hp_loss"))
+            .and_then(|value| value.as_i64())
+            .map(|value| value as i32)
+            .unwrap_or_else(|| {
+                panic!("strict state_sync: power.runtime_state.hp_loss missing for {power_id}")
+            });
         return;
     }
 
     if power.power_type == PowerId::Stasis {
-        if let Some(card_uuid) = snapshot_power.get("card").and_then(|card| card.get("uuid")) {
-            power.extra_data = snapshot_uuid(card_uuid, 0) as i32;
-        }
+        let card_uuid = snapshot_power
+            .get("runtime_state")
+            .and_then(|runtime| runtime.get("card_uuid"))
+            .unwrap_or_else(|| {
+                panic!("strict state_sync: power.runtime_state.card_uuid missing for {power_id}")
+            });
+        power.extra_data = snapshot_uuid(card_uuid, 0) as i32;
         return;
     }
 

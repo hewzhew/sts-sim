@@ -47,11 +47,14 @@ Data explicitly exported by Java and directly consumed by Rust importer logic.
 Examples:
 
 - `power.just_applied`
-- `power.misc`
-- `power.damage`
-- `power.card.uuid`
-- `monster.hexaghost_activated`
+- `power.runtime_state.hp_loss`
+- `power.runtime_state.card_uuid`
+- `monster.runtime_state.guardian_threshold`
+- `monster.runtime_state.angry_amount`
+- `monster.runtime_state.activated`
 - `relic.runtime_state.used_this_combat`
+- `relic.runtime_state.used_up`
+- `relic.runtime_state.counter`
 
 ### Importer
 
@@ -71,8 +74,8 @@ Previous-Rust-state inheritance used to repair missing or ambiguous runtime stat
 
 Carry is not a source of truth.
 
-Carry may exist temporarily for old fixtures or one-off migration periods, but it
-must not remain in the main live path.
+Carry may exist temporarily during a narrow migration slice, but it must not
+remain in the main live path.
 
 ## Current Boundary
 
@@ -88,6 +91,9 @@ This is intentional.
 
 If parity now fails because a field is missing, that is a protocol/importer issue
 to fix, not a reason to restore shadow-state carry.
+
+Old traces are now considered disposable. Strict importer failures on missing
+`runtime_state` are an expected signal that protocol truth has not landed yet.
 
 ## Decision Rule For New Bugs
 
@@ -134,13 +140,14 @@ fallback must move toward deletion.
 Acceptable temporary state:
 
 - protocol truth exists
-- fallback remains only for old fixtures or old logs
+- fallback remains only for a short-lived migration slice
 - fallback is clearly marked as compatibility-only
 
 Unacceptable long-term state:
 
 - protocol truth exists
 - live path still depends on fallback
+- old traces are still treated as supported by default
 - nobody knows which path actually won
 
 ## Review Checklist

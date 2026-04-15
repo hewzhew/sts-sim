@@ -25,6 +25,10 @@ This means live parity work should now treat missing runtime state as:
 
 not as something to silently repair from the previous Rust frame.
 
+As of the current hard-reset batch, old traces are no longer treated as
+supported by default. Missing `runtime_state` for migrated slices should fail
+fast instead of triggering carry/shim repair.
+
 ## What Rust Already Imports Directly
 
 ### Powers
@@ -32,9 +36,9 @@ not as something to silently repair from the previous Rust frame.
 Rust currently consumes protocol truth for:
 
 - `power.just_applied`
-- `power.misc` for supported runtime-backed powers
-- `power.damage` for supported runtime-backed powers
-- `power.card.uuid` for `Stasis`
+- `power.runtime_state.hp_loss` for `Combust`
+- `power.runtime_state.card_uuid` for `Stasis`
+- `power.damage` / `power.misc` for non-migrated extra-data slices
 
 Examples already wired:
 
@@ -50,36 +54,36 @@ Examples already wired:
 
 Rust currently consumes explicit Java runtime fields for:
 
+- `Guardian.guardian_threshold`
+- `GremlinWarrior.angry_amount`
 - `Hexaghost.activated`
-- `Hexaghost.orbActiveCount`
-- `Hexaghost.burnUpgraded`
+- `Hexaghost.orb_active_count`
+- `Hexaghost.burn_upgraded`
+- `Darkling.first_move`
+- `Darkling.nip_dmg`
+- `Chosen.first_turn`
+- `Chosen.used_hex`
+- `Lagavulin.idle_count`
+- `Lagavulin.is_out_triggered`
 
 ### Relics
 
 Rust currently consumes explicit protocol runtime state for:
 
 - `Centennial Puzzle.used_this_combat`
+- `ArtOfWar.gain_energy_next`
+- `ArtOfWar.first_turn`
+- `Pocketwatch.first_turn`
+- runtime-only `used_up` for `HoveringKite`, `LizardTail`, `Necronomicon`
 
 ## What Is Still Outstanding
-
-### Java already exports it, Rust still needs to consume it
-
-- `Pocketwatch.first_turn`
-
-### Java does not yet export enough truth
-
-These should move to protocol fields instead of remaining Rust guesses:
-
-- `Darkling.first_move`
-- `Darkling.nip_dmg`
-- `Lagavulin.idle_count`
-- `Lagavulin.is_out_triggered`
 
 ### Rust representation or adapter debt still present
 
 - `seed_move_history_from_snapshot`
-- some monster-specific runtime reconstruction paths
-- legacy `used_up` fallback policies still present in code
+- top-level legacy monster fields still exist in CommunicationMod alongside
+  `monster.runtime_state`
+- non-migrated power extra-data slices still rely on `damage` / `misc`
 
 These are no longer part of the preferred live truth path, but they still exist
 as debt and should keep shrinking.
@@ -97,10 +101,9 @@ or importer coverage is still incomplete.
 
 ## Next Recommended Order
 
-1. consume `Pocketwatch.first_turn`
-2. add protocol fields for `Darkling`
-3. add protocol fields for `Lagavulin`
-4. delete any fallback path that becomes redundant after those land
+1. finish migrating remaining power extra-data slices onto `power.runtime_state`
+2. remove legacy top-level monster hidden-state exports once new traces are in place
+3. delete any remaining runtime-only relic fallback path after strict trace refresh
 
 ## Related Docs
 

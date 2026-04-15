@@ -65,6 +65,8 @@ This file defines the hard dependency direction for `src/`.
   - thin facade over replay execution, inspection, and comparator surfaces
 - `diff::state_sync`
   - thin facade over protocol -> runtime state construction and sync
+  - must behave as a strict importer for migrated `runtime_state` slices, not as
+    a shadow-state repair layer
 
 ## Enforcement
 

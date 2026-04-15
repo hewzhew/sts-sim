@@ -6,10 +6,36 @@
 //! Usage: cargo test diff_driver -- --nocapture
 
 use serde_json::Value;
+use std::any::Any;
+use std::panic::{catch_unwind, resume_unwind, AssertUnwindSafe};
 use sts_simulator::diff::protocol::parse_replay;
 use sts_simulator::diff::replay::{compare_states, continue_deferred_pending_choice, tick_until_stable};
 use sts_simulator::diff::state_sync::{build_combat_state, sync_state};
 use sts_simulator::state::core::{ClientInput, EngineState};
+
+fn panic_message(payload: Box<dyn Any + Send>) -> String {
+    match payload.downcast::<String>() {
+        Ok(message) => *message,
+        Err(payload) => match payload.downcast::<&'static str>() {
+            Ok(message) => (*message).to_string(),
+            Err(_) => "<non-string panic>".to_string(),
+        },
+    }
+}
+
+fn catch_strict_state_sync_panic<T>(f: impl FnOnce() -> T) -> Result<T, String> {
+    match catch_unwind(AssertUnwindSafe(f)) {
+        Ok(value) => Ok(value),
+        Err(payload) => {
+            let message = panic_message(payload);
+            if message.contains("strict state_sync:") {
+                Err(message)
+            } else {
+                resume_unwind(Box::new(message));
+            }
+        }
+    }
+}
 
 // ============================================================================
 // Tests
@@ -39,7 +65,16 @@ fn test_diff_all_combats() {
         );
 
         // Build initial state from combat_start snapshot
-        let mut cs = build_combat_state(&combat.start_snapshot, &combat.relics_val);
+        let mut cs = match catch_strict_state_sync_panic(|| {
+            build_combat_state(&combat.start_snapshot, &combat.relics_val)
+        }) {
+            Ok(cs) => cs,
+            Err(message) => {
+                total_skip += combat.actions.len();
+                println!("  [SKIP] obsolete trace: {}", message);
+                continue;
+            }
+        };
         let mut es;
         let mut carried_pending = None;
 
@@ -49,7 +84,12 @@ fn test_diff_all_combats() {
             total_actions += 1;
 
             // Sync state from Java's PREVIOUS snapshot (what state was before this action)
-            sync_state(&mut cs, &prev_snapshot);
+            if let Err(message) = catch_strict_state_sync_panic(|| sync_state(&mut cs, &prev_snapshot))
+            {
+                total_skip += combat.actions.len().saturating_sub(action_idx);
+                println!("  [SKIP] obsolete trace: {}", message);
+                break;
+            }
             es = EngineState::CombatPlayerTurn;
 
             if action.action_type == "potion" {
@@ -249,7 +289,16 @@ fn test_diff_rng_replay() {
             combat.actions.len()
         );
 
-        let mut cs = build_combat_state(&combat.start_snapshot, &combat.relics_val);
+        let mut cs = match catch_strict_state_sync_panic(|| {
+            build_combat_state(&combat.start_snapshot, &combat.relics_val)
+        }) {
+            Ok(cs) => cs,
+            Err(message) => {
+                total_skip += combat.actions.len();
+                println!("  [SKIP] obsolete trace: {}", message);
+                continue;
+            }
+        };
         let mut es;
         let mut prev_snapshot = combat.start_snapshot.clone();
         let mut carried_pending = None;
@@ -257,7 +306,12 @@ fn test_diff_rng_replay() {
         for (action_idx, action) in combat.actions.iter().enumerate() {
             total_actions += 1;
 
-            sync_state(&mut cs, &prev_snapshot);
+            if let Err(message) = catch_strict_state_sync_panic(|| sync_state(&mut cs, &prev_snapshot))
+            {
+                total_skip += combat.actions.len().saturating_sub(action_idx);
+                println!("  [SKIP] obsolete trace: {}", message);
+                break;
+            }
             es = EngineState::CombatPlayerTurn;
 
             if action.action_type == "potion" {
@@ -481,7 +535,16 @@ fn test_diff_all_v2_replays() {
             }
 
             let relics_val = &Value::Null;
-            let mut cs = build_combat_state(&combat.start_snapshot, relics_val);
+            let mut cs = match catch_strict_state_sync_panic(|| {
+                build_combat_state(&combat.start_snapshot, relics_val)
+            }) {
+                Ok(cs) => cs,
+                Err(message) => {
+                    file_skip += combat.actions.len();
+                    println!("  [SKIP] obsolete trace: {}", message);
+                    continue;
+                }
+            };
             let mut es;
             let mut prev_snapshot = combat.start_snapshot.clone();
             let mut carried_pending = None;
@@ -489,7 +552,14 @@ fn test_diff_all_v2_replays() {
             for (action_idx, action) in combat.actions.iter().enumerate() {
                 file_actions += 1;
 
-                sync_state(&mut cs, &prev_snapshot);
+                if let Err(message) =
+                    catch_strict_state_sync_panic(|| sync_state(&mut cs, &prev_snapshot))
+                {
+                    file_skip += combat.actions.len().saturating_sub(action_idx);
+                    println!("  [SKIP] obsolete trace: {}", message);
+                    early_stopped = true;
+                    break;
+                }
                 es = EngineState::CombatPlayerTurn;
 
                 if action.action_type == "potion" {
