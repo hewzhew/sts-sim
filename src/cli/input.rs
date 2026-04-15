@@ -1,7 +1,7 @@
-use crate::combat::CombatState;
-use crate::state::core::{CampfireChoice, ClientInput, EngineState};
-use crate::state::run::RunState;
-use crate::state::selection::{SelectionResolution, SelectionScope, SelectionTargetRef};
+use sts_simulator::combat::CombatState;
+use sts_simulator::state::core::{CampfireChoice, ClientInput, EngineState, PendingChoice};
+use sts_simulator::state::run::RunState;
+use sts_simulator::state::selection::{SelectionResolution, SelectionScope, SelectionTargetRef};
 
 pub fn parse_input(
     line: &str,
@@ -47,7 +47,7 @@ pub fn parse_input(
         "go" => {
             let x: usize = parts.get(1)?.parse().ok()?;
             Some(ClientInput::SelectMapNode(
-                crate::cli::display::normalize_map_choice_x(rs, x),
+                crate::display::normalize_map_choice_x(rs, x),
             ))
         }
         "rest" => Some(ClientInput::CampfireOption(CampfireChoice::Rest)),
@@ -88,7 +88,7 @@ pub fn parse_input(
         "choose" => {
             let indices: Vec<usize> = parts[1..].iter().filter_map(|s| s.parse().ok()).collect();
             match es {
-                EngineState::PendingChoice(crate::state::core::PendingChoice::HandSelect {
+                EngineState::PendingChoice(PendingChoice::HandSelect {
                     candidate_uuids,
                     ..
                 }) => Some(ClientInput::SubmitSelection(SelectionResolution {
@@ -99,7 +99,7 @@ pub fn parse_input(
                         .map(SelectionTargetRef::CardUuid)
                         .collect(),
                 })),
-                EngineState::PendingChoice(crate::state::core::PendingChoice::GridSelect {
+                EngineState::PendingChoice(PendingChoice::GridSelect {
                     candidate_uuids,
                     ..
                 }) => Some(ClientInput::SubmitSelection(SelectionResolution {
@@ -138,7 +138,7 @@ pub fn parse_input(
                 match es {
                     EngineState::EventRoom => Some(ClientInput::EventChoice(idx)),
                     EngineState::MapNavigation => Some(ClientInput::SelectMapNode(
-                        crate::cli::display::normalize_map_choice_x(rs, idx),
+                        crate::display::normalize_map_choice_x(rs, idx),
                     )),
                     _ => None,
                 }

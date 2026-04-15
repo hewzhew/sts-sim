@@ -1,14 +1,14 @@
-use crate::combat::CombatState;
-use crate::content::cards;
-use crate::content::cards::CardTarget;
-use crate::content::monsters::EnemyId;
-use crate::content::potions::PotionId;
-use crate::content::powers::store::powers_for;
-use crate::content::relics::RelicId;
-use crate::map::node::RoomType;
-use crate::state::core::EngineState;
-use crate::state::run::RunState;
-use crate::state::selection::{
+use sts_simulator::combat::{CombatCard, CombatState, Intent};
+use sts_simulator::content::cards;
+use sts_simulator::content::cards::CardTarget;
+use sts_simulator::content::monsters::EnemyId;
+use sts_simulator::content::potions::PotionId;
+use sts_simulator::content::powers::store::powers_for;
+use sts_simulator::content::relics::RelicId;
+use sts_simulator::map::node::RoomType;
+use sts_simulator::state::core::EngineState;
+use sts_simulator::state::run::RunState;
+use sts_simulator::state::selection::{
     DomainCardSnapshot, DomainEvent, EngineDiagnostic, EngineDiagnosticClass, SelectionScope,
     SelectionTargetRef,
 };
@@ -31,7 +31,7 @@ pub fn print_state(es: &EngineState, rs: &RunState, cs: &Option<CombatState>) {
     match es {
         EngineState::EventRoom => {
             if let Some(event) = &rs.event_state {
-                let choices = crate::engine::event_handler::get_event_choices(rs);
+                let choices = sts_simulator::engine::event_handler::get_event_choices(rs);
                 println!("  EVENT: {:?} (screen {})", event.id, event.current_screen);
                 for (i, c) in choices.iter().enumerate() {
                     if c.disabled {
@@ -254,7 +254,7 @@ pub fn next_map_choices(rs: &RunState) -> Vec<MapChoiceEntry> {
     choices
 }
 
-fn find_combat_card_by_uuid(cs: &CombatState, uuid: u32) -> Option<&crate::combat::CombatCard> {
+fn find_combat_card_by_uuid(cs: &CombatState, uuid: u32) -> Option<&CombatCard> {
     cs.zones
         .hand
         .iter()
@@ -363,7 +363,7 @@ pub fn describe_potion_use_choice(
     target: Option<usize>,
 ) -> Option<String> {
     let potion = combat.entities.potions.get(potion_index)?.as_ref()?;
-    let def = crate::content::potions::get_potion_definition(potion.id);
+    let def = sts_simulator::content::potions::get_potion_definition(potion.id);
     let mut text = format!("Use {} [slot {}]", def.name, potion_index);
     if def.target_required {
         if let Some(target_id) = target.and_then(|id| describe_monster_target(combat, id)) {
@@ -406,7 +406,7 @@ fn describe_relic_id(relic_id: RelicId) -> String {
 }
 
 fn describe_potion_id(potion_id: PotionId) -> String {
-    crate::content::potions::get_potion_definition(potion_id)
+    sts_simulator::content::potions::get_potion_definition(potion_id)
         .name
         .to_string()
 }
@@ -535,7 +535,6 @@ pub fn print_combat(cs: &CombatState) {
         let intent_str = if hide_intents {
             "Hidden".to_string()
         } else {
-            use crate::combat::Intent;
             match m.current_intent {
                 Intent::Attack { hits, .. } => {
                     format!("Attack {{ damage: {}, hits: {} }}", m.intent_dmg, hits)
@@ -637,4 +636,3 @@ pub fn print_detailed_state(es: &EngineState, rs: &RunState, _cs: &Option<Combat
     }
     println!("  Engine: {:?}", std::mem::discriminant(es));
 }
-

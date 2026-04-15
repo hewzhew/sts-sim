@@ -1,3 +1,8 @@
+#[path = "../../cli/display.rs"]
+mod display;
+#[path = "../../cli/input.rs"]
+mod input;
+
 use std::io::{self, BufRead, Write};
 use sts_simulator::combat::CombatState;
 use sts_simulator::engine::run_loop::tick_run;
@@ -84,7 +89,7 @@ fn describe_selection_resolution(
                     .iter()
                     .find(|card| card.uuid == *uuid)
                     .map(|card| {
-                        sts_simulator::cli::display::describe_card_snapshot(
+                        display::describe_card_snapshot(
                             &sts_simulator::state::selection::DomainCardSnapshot {
                                 id: card.id,
                                 upgrades: card.upgrades,
@@ -103,7 +108,7 @@ fn describe_selection_resolution(
                             .chain(cs.zones.limbo.iter())
                             .find(|card| card.uuid == *uuid)
                             .map(|card| {
-                                sts_simulator::cli::display::describe_card_snapshot(
+                                display::describe_card_snapshot(
                                     &sts_simulator::state::selection::DomainCardSnapshot {
                                         id: card.id,
                                         upgrades: card.upgrades,
@@ -130,16 +135,16 @@ fn describe_bot_decision(
 ) -> Option<String> {
     match decision {
         ClientInput::PlayCard { card_index, target } => combat_state.as_ref().and_then(|combat| {
-            sts_simulator::cli::display::describe_play_card_choice(combat, *card_index, *target)
+            display::describe_play_card_choice(combat, *card_index, *target)
         }),
         ClientInput::UsePotion {
             potion_index,
             target,
         } => combat_state.as_ref().and_then(|combat| {
-            sts_simulator::cli::display::describe_potion_use_choice(combat, *potion_index, *target)
+            display::describe_potion_use_choice(combat, *potion_index, *target)
         }),
         ClientInput::SelectMapNode(x) => Some(
-            sts_simulator::cli::display::describe_bot_map_choice(run_state, *x),
+            display::describe_bot_map_choice(run_state, *x),
         ),
         _ => None,
     }
@@ -262,7 +267,7 @@ fn describe_shop_screen_decision(
             };
             format!(
                 "Shop Purge: {} [cost {}]",
-                sts_simulator::cli::display::describe_card_snapshot(&snapshot),
+                display::describe_card_snapshot(&snapshot),
                 shop.purge_cost
             )
         }),
@@ -285,7 +290,7 @@ fn print_emitted_outputs(
         {
             println!(
                 "{}",
-                sts_simulator::cli::display::render_user_feed_event(&event)
+                display::render_user_feed_event(&event)
             );
         }
     }
@@ -299,7 +304,7 @@ fn print_emitted_outputs(
             {
                 println!(
                     "{}",
-                    sts_simulator::cli::display::render_user_feed_event(&event)
+                    display::render_user_feed_event(&event)
                 );
             }
         }
@@ -307,7 +312,7 @@ fn print_emitted_outputs(
             for diagnostic in combat.take_engine_diagnostics() {
                 println!(
                     "{}",
-                    sts_simulator::cli::display::render_engine_diagnostic(&diagnostic)
+                    display::render_engine_diagnostic(&diagnostic)
                 );
             }
         } else {
@@ -658,7 +663,7 @@ fn main() {
 
         // ── Print state (always for manual, gated for bot) ──
         if !app.is_bot_active(&engine_state) || app.is_debug() {
-            sts_simulator::cli::display::print_state(&engine_state, &run_state, &combat_state);
+            display::print_state(&engine_state, &run_state, &combat_state);
         }
 
         // ── Get input: bot or human ──
@@ -802,7 +807,7 @@ fn main() {
                                     };
                                 println!(
                                     "  [BOT] Camp Smith: {}",
-                                    sts_simulator::cli::display::describe_card_snapshot(&snapshot)
+                                    display::describe_card_snapshot(&snapshot)
                                 );
                             } else {
                                 println!("  [BOT] Camp: {:?}", choice);
@@ -818,7 +823,7 @@ fn main() {
                                     };
                                 println!(
                                     "  [BOT] Camp Toke: {}",
-                                    sts_simulator::cli::display::describe_card_snapshot(&snapshot)
+                                    display::describe_card_snapshot(&snapshot)
                                 );
                             } else {
                                 println!("  [BOT] Camp: {:?}", choice);
@@ -884,7 +889,7 @@ fn main() {
                 MetaResult::Step(input) => input,
                 MetaResult::PassThrough => {
                     // Normal game input
-                    if let Some(c) = sts_simulator::cli::input::parse_input(
+                    if let Some(c) = input::parse_input(
                         &line,
                         &engine_state,
                         &run_state,
@@ -1076,11 +1081,11 @@ fn handle_meta_command(
             MetaResult::Quit
         }
         "help" | "h" => {
-            sts_simulator::cli::input::print_help();
+            input::print_help();
             MetaResult::Handled
         }
         "state" | "s" => {
-            sts_simulator::cli::display::print_detailed_state(es, rs, cs);
+            display::print_detailed_state(es, rs, cs);
             MetaResult::Handled
         }
         "relics" => {
