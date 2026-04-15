@@ -27,19 +27,18 @@ fn lib_root_public_surface_matches_expected_whitelist() {
     let public_uses = collect_prefixed_lines("src/lib.rs", "pub use ");
 
     let expected_mods = BTreeSet::from([
-        "pub mod action;".to_string(),
         "pub mod bot;".to_string(),
         "pub mod cli;".to_string(),
-        "pub mod combat;".to_string(),
         "pub mod content;".to_string(),
         "pub mod diff;".to_string(),
         "pub mod engine;".to_string(),
         "pub mod map;".to_string(),
-        "pub mod rng;".to_string(),
+        "pub mod runtime;".to_string(),
         "pub mod state;".to_string(),
     ]);
     let expected_uses = BTreeSet::from([
         "pub use core::EntityId;".to_string(),
+        "pub use runtime::{action, combat, rng};".to_string(),
         "pub use testing::fixtures;".to_string(),
         "pub use utils::SimulationWatchdog;".to_string(),
     ]);
@@ -70,6 +69,18 @@ fn bot_public_surface_matches_expected_whitelist() {
 
     assert_eq!(public_mods, expected_mods, "unexpected bot pub mod surface");
     assert_eq!(public_uses, expected_uses, "unexpected bot pub use surface");
+}
+
+#[test]
+fn runtime_public_surface_matches_expected_whitelist() {
+    let public_mods = collect_prefixed_lines("src/runtime/mod.rs", "pub mod ");
+    let expected_mods = BTreeSet::from([
+        "pub mod action;".to_string(),
+        "pub mod combat;".to_string(),
+        "pub mod rng;".to_string(),
+    ]);
+
+    assert_eq!(public_mods, expected_mods, "unexpected runtime pub mod surface");
 }
 
 #[test]

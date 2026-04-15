@@ -63,14 +63,12 @@ fn assert_forbidden_deps(files: &[PathBuf], forbidden: &[&str], label: &str) {
 #[test]
 fn core_does_not_depend_on_integration_or_app_layers() {
     let files = layer_files(&[
-        "src/action.rs",
-        "src/combat.rs",
         "src/content",
         "src/core",
         "src/engine",
         "src/map",
         "src/rewards",
-        "src/rng.rs",
+        "src/runtime",
         "src/state",
     ]);
 
