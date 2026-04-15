@@ -3,7 +3,7 @@ use super::unix_time_millis;
 use crate::runtime::action::CardDestination;
 use crate::cli::live_comm_noncombat::build_live_run_state;
 use crate::runtime::combat::CombatState;
-use crate::diff::protocol::mapper::card_id_from_java;
+use crate::diff::protocol::card_id_from_java;
 use crate::state::core::{ClientInput, EngineState, PendingChoice};
 use serde_json::{json, Map, Value};
 use std::io::Write;

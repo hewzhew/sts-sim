@@ -112,6 +112,28 @@ fn cli_coverage_tools_public_surface_matches_expected_whitelist() {
 }
 
 #[test]
+fn diff_protocol_public_surface_matches_expected_whitelist() {
+    let contents = fs::read_to_string("src/diff/protocol/mod.rs").expect("read diff protocol mod");
+    assert!(
+        !contents.contains("pub mod delta;")
+            && !contents.contains("pub mod mapper;")
+            && !contents.contains("pub mod parser;")
+            && !contents.contains("pub mod snapshot;"),
+        "diff::protocol should expose a thin facade, not raw public submodules:\n{contents}"
+    );
+    for expected in [
+        "pub use mapper::{",
+        "pub use parser::{",
+        "pub use snapshot::build_live_combat_snapshot;",
+    ] {
+        assert!(
+            contents.contains(expected),
+            "missing expected diff::protocol re-export `{expected}` in:\n{contents}"
+        );
+    }
+}
+
+#[test]
 fn bot_coverage_signatures_surface_matches_expected_whitelist() {
     let header = source_lines("src/bot/coverage_signatures.rs");
     let expected_prefix = vec![

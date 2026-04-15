@@ -5,8 +5,10 @@ use crate::runtime::action::CardDestination;
 use crate::runtime::combat::{CombatCard, CombatState, Power};
 use crate::content::cards::java_id as card_java_id;
 use crate::content::cards::CardId;
-use crate::diff::protocol::mapper::{card_id_from_java, power_id_from_java, relic_id_from_java};
-use crate::diff::protocol::snapshot::build_live_combat_snapshot as build_protocol_live_combat_snapshot;
+use crate::diff::protocol::{
+    build_live_combat_snapshot as build_protocol_live_combat_snapshot, card_id_from_java,
+    power_id_from_java, relic_id_from_java,
+};
 use crate::diff::replay::replay_support::tick_until_stable;
 use crate::diff::state_sync::build_combat_state;
 use crate::state::core::{ClientInput, EngineState, PendingChoice, PileType};

@@ -860,7 +860,7 @@ impl LiveCommSession {
                                 .filter_map(|card| {
                                     card.get("id")
                                         .and_then(|v| v.as_str())
-                                        .and_then(crate::diff::protocol::mapper::card_id_from_java)
+                                        .and_then(crate::diff::protocol::card_id_from_java)
                                 })
                                 .collect::<Vec<_>>();
                             if !offered_ids.is_empty() {

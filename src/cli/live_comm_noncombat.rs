@@ -1,6 +1,4 @@
-use crate::diff::protocol::mapper::{
-    card_id_from_java, java_potion_id_to_rust, relic_id_from_java,
-};
+use crate::diff::protocol::{card_id_from_java, java_potion_id_to_rust, relic_id_from_java};
 use crate::diff::state_sync::snapshot_uuid;
 use crate::state::core::{EngineState, RunPendingChoiceReason, RunPendingChoiceState};
 use serde_json::Value;

@@ -1,5 +1,5 @@
 use super::{unix_time_millis, LiveWatchCaptureConfig, LiveWatchMatchMode, RAW_PATH};
-use crate::diff::protocol::mapper::{card_id_from_java, power_id_from_java, relic_id_from_java};
+use crate::diff::protocol::{card_id_from_java, power_id_from_java, relic_id_from_java};
 use crate::testing::fixtures::live_capture::build_fixture_from_record_window;
 use crate::testing::fixtures::scenario::{ScenarioAssertion, ScenarioProvenance};
 use serde_json::{json, Value};

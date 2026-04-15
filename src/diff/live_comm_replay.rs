@@ -4,7 +4,7 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::diff::protocol::snapshot::build_live_combat_snapshot;
+use crate::diff::protocol::build_live_combat_snapshot;
 use crate::diff::replay::comparator::{compare_states, ActionContext, DiffResult};
 use crate::diff::replay::replay_support::{continue_deferred_pending_choice, tick_until_stable};
 use crate::diff::state_sync::{build_combat_state, sync_state};

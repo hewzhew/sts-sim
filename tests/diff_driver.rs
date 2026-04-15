@@ -6,7 +6,7 @@
 //! Usage: cargo test diff_driver -- --nocapture
 
 use serde_json::Value;
-use sts_simulator::diff::protocol::parser::parse_replay;
+use sts_simulator::diff::protocol::parse_replay;
 use sts_simulator::diff::replay::comparator::compare_states;
 use sts_simulator::diff::replay::replay_support::{
     continue_deferred_pending_choice, tick_until_stable,

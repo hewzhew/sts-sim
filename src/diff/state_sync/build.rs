@@ -9,7 +9,7 @@ use crate::content::cards::CardId;
 use crate::content::relics::{RelicId, RelicState};
 use crate::runtime::rng::RngPool;
 
-use crate::diff::protocol::mapper::{
+use crate::diff::protocol::{
     card_id_from_java, intent_from_java, java_potion_id_to_rust, monster_id_from_java,
     power_id_from_java, power_instance_id_from_java, relic_id_from_java,
 };

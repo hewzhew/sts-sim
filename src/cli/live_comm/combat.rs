@@ -12,8 +12,10 @@ use crate::bot::search::{
 use crate::bot::sidecar::CombatTopCandidateRecord;
 use crate::runtime::combat::CombatState;
 use crate::content::monsters::EnemyId;
-use crate::diff::protocol::mapper::{card_id_from_java, monster_id_from_java, power_id_from_java};
-use crate::diff::protocol::snapshot::build_live_combat_snapshot as build_protocol_live_combat_snapshot;
+use crate::diff::protocol::{
+    build_live_combat_snapshot as build_protocol_live_combat_snapshot, card_id_from_java,
+    monster_id_from_java, power_id_from_java,
+};
 use crate::diff::replay::comparator::{ActionContext, DiffCategory, DiffResult};
 use crate::state::core::{ClientInput, EngineState};
 use serde::Serialize;

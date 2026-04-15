@@ -2,7 +2,7 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 
 use crate::content::cards::get_card_definition;
-use crate::diff::protocol::mapper::card_id_from_java;
+use crate::diff::protocol::card_id_from_java;
 
 use crate::testing::fixtures::scenario::{
     ScenarioAssertion, ScenarioCardSelector, ScenarioFixture, ScenarioKind, ScenarioOracleKind,
@@ -864,4 +864,3 @@ fn default_relic_counter() -> i32 {
 fn default_occurrence() -> usize {
     1
 }
-

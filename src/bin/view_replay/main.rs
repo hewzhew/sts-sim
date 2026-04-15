@@ -1,4 +1,4 @@
-use sts_simulator::diff::protocol::parser::parse_replay;
+use sts_simulator::diff::protocol::parse_replay;
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();

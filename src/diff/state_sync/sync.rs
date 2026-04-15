@@ -3,7 +3,7 @@ use std::collections::VecDeque;
 
 use crate::runtime::combat::{CombatPhase, Intent, MonsterEntity};
 
-use crate::diff::protocol::mapper::{
+use crate::diff::protocol::{
     intent_from_java, java_potion_id_to_rust, monster_id_from_java, power_id_from_java,
     power_instance_id_from_java, relic_id_from_java,
 };
