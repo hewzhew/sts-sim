@@ -162,3 +162,22 @@ fn bot_harness_public_surface_matches_expected_whitelist() {
         "unexpected bot::harness pub use surface"
     );
 }
+
+#[test]
+fn bot_search_public_surface_matches_expected_whitelist() {
+    let public_uses = collect_prefixed_lines("src/bot/search/mod.rs", "pub use ");
+
+    let expected_uses = BTreeSet::from([
+        "pub use decision_audit::{".to_string(),
+        "pub use equivalence::{SearchEquivalenceKind, SearchEquivalenceMode};".to_string(),
+        "pub use mcts::{".to_string(),
+        "pub use profile::{".to_string(),
+        "pub use root_prior::{LookupRootPriorProvider, RootPriorConfig, RootPriorQueryKey};"
+            .to_string(),
+    ]);
+
+    assert_eq!(
+        public_uses, expected_uses,
+        "unexpected bot::search pub use surface"
+    );
+}

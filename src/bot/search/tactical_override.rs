@@ -1,9 +1,9 @@
 use crate::bot::potions::choose_immediate_potion_candidate;
 use crate::bot::search::{get_legal_moves, tactical_move_bonus};
-use crate::runtime::combat::{CombatState, Intent};
 use crate::content::cards::{get_card_definition, CardType};
 use crate::content::monsters::EnemyId;
 use crate::content::potions::get_potion_definition;
+use crate::runtime::combat::{CombatState, Intent};
 use crate::state::core::ClientInput;
 use crate::state::EngineState;
 
@@ -13,73 +13,32 @@ pub struct TacticalChoice {
     pub reason: String,
 }
 
-#[derive(Clone, Debug)]
-pub struct TacticalMoveStat {
-    pub input: ClientInput,
-    pub score: f32,
-    pub detail: String,
-}
-
-#[derive(Clone, Debug)]
-pub struct TacticalDiagnostics {
-    pub chosen: Option<TacticalChoice>,
-    pub top_moves: Vec<TacticalMoveStat>,
-}
-
 pub fn tactical_override(engine: &EngineState, combat: &CombatState) -> Option<TacticalChoice> {
-    diagnose_tactical_override(engine, combat).chosen
-}
-
-pub fn diagnose_tactical_override(
-    engine: &EngineState,
-    combat: &CombatState,
-) -> TacticalDiagnostics {
     if !matches!(engine, EngineState::CombatPlayerTurn) {
-        return TacticalDiagnostics {
-            chosen: None,
-            top_moves: Vec::new(),
-        };
+        return None;
     }
 
     if let Some(candidate) = choose_immediate_potion_candidate(combat) {
-        return TacticalDiagnostics {
-            chosen: Some(TacticalChoice {
-                input: candidate.input.clone(),
-                reason: format!(
-                    "potion {}: {}",
-                    crate::bot::potions::category_label(candidate.category),
-                    candidate.reason
-                ),
-            }),
-            top_moves: vec![TacticalMoveStat {
-                input: candidate.input,
-                score: candidate.priority as f32,
-                detail: format!(
-                    "potion category={} reason={}",
-                    crate::bot::potions::category_label(candidate.category),
-                    candidate.reason
-                ),
-            }],
-        };
+        return Some(TacticalChoice {
+            input: candidate.input.clone(),
+            reason: format!(
+                "potion {}: {}",
+                crate::bot::potions::category_label(candidate.category),
+                candidate.reason
+            ),
+        });
     }
 
     let legal_moves = get_legal_moves(engine, combat);
     if legal_moves.len() <= 1 {
-        return TacticalDiagnostics {
-            chosen: None,
-            top_moves: Vec::new(),
-        };
+        return None;
     }
 
-    let stable_lethal_stats = collect_stable_lethal_stats(engine, combat, &legal_moves);
-    if let Some(choice) = stable_lethal_stats.first() {
-        return TacticalDiagnostics {
-            chosen: Some(TacticalChoice {
-                input: choice.input.clone(),
-                reason: "stable lethal".to_string(),
-            }),
-            top_moves: stable_lethal_stats,
-        };
+    if let Some(choice) = collect_stable_lethal_choice(engine, combat, &legal_moves) {
+        return Some(TacticalChoice {
+            input: choice,
+            reason: "stable lethal".to_string(),
+        });
     }
 
     if incoming_damage(combat) >= combat.entities.player.current_hp + combat.entities.player.block {
@@ -92,40 +51,26 @@ pub fn diagnose_tactical_override(
                 survival_margin(&sim_engine, &sim_combat)
             })
             .unwrap_or(i32::MIN);
-        let survival_stats = collect_survival_stats(engine, combat, &legal_moves, end_turn_margin);
-        if let Some(choice) = survival_stats.first() {
-            return TacticalDiagnostics {
-                chosen: Some(TacticalChoice {
-                    input: choice.input.clone(),
-                    reason: "survival override".to_string(),
-                }),
-                top_moves: survival_stats,
-            };
+        if let Some(choice) = collect_survival_choice(engine, combat, &legal_moves, end_turn_margin)
+        {
+            return Some(TacticalChoice {
+                input: choice,
+                reason: "survival override".to_string(),
+            });
         }
     }
 
-    let priority_target_stats = collect_priority_target_stats(combat, &legal_moves);
-    if let Some(choice) = priority_target_stats.first() {
-        return TacticalDiagnostics {
-            chosen: Some(TacticalChoice {
-                input: choice.input.clone(),
-                reason: "priority target".to_string(),
-            }),
-            top_moves: priority_target_stats,
-        };
-    }
-
-    TacticalDiagnostics {
-        chosen: None,
-        top_moves: Vec::new(),
-    }
+    collect_priority_target_choice(combat, &legal_moves).map(|input| TacticalChoice {
+        input,
+        reason: "priority target".to_string(),
+    })
 }
 
-fn collect_stable_lethal_stats(
+fn collect_stable_lethal_choice(
     engine: &EngineState,
     combat: &CombatState,
     legal_moves: &[ClientInput],
-) -> Vec<TacticalMoveStat> {
+) -> Option<ClientInput> {
     let mut scored = Vec::new();
 
     for candidate in legal_moves {
@@ -139,25 +84,21 @@ fn collect_stable_lethal_stats(
             continue;
         }
 
-        let score = crate::bot::evaluator::evaluate_state(&sim_engine, &sim_combat)
+        let score = crate::bot::evaluate_state(&sim_engine, &sim_combat)
             + tactical_move_bonus(combat, candidate);
-        scored.push(TacticalMoveStat {
-            input: candidate.clone(),
-            score,
-            detail: "combat clears".to_string(),
-        });
+        scored.push((candidate.clone(), score));
     }
 
-    scored.sort_by(|a, b| b.score.total_cmp(&a.score));
-    scored
+    scored.sort_by(|a, b| b.1.total_cmp(&a.1));
+    scored.into_iter().next().map(|(input, _)| input)
 }
 
-fn collect_survival_stats(
+fn collect_survival_choice(
     engine: &EngineState,
     combat: &CombatState,
     legal_moves: &[ClientInput],
     end_turn_margin: i32,
-) -> Vec<TacticalMoveStat> {
+) -> Option<ClientInput> {
     let mut scored = Vec::new();
 
     for candidate in legal_moves {
@@ -173,24 +114,17 @@ fn collect_survival_stats(
         if boosted_margin <= end_turn_margin {
             continue;
         }
-        scored.push(TacticalMoveStat {
-            input: candidate.clone(),
-            score: boosted_margin as f32,
-            detail: format!(
-                "margin={} tactical_bonus={} end_margin={}",
-                margin, tactical_bonus, end_turn_margin
-            ),
-        });
+        scored.push((candidate.clone(), boosted_margin as f32));
     }
 
-    scored.sort_by(|a, b| b.score.total_cmp(&a.score));
-    scored
+    scored.sort_by(|a, b| b.1.total_cmp(&a.1));
+    scored.into_iter().next().map(|(input, _)| input)
 }
 
-fn collect_priority_target_stats(
+fn collect_priority_target_choice(
     combat: &CombatState,
     legal_moves: &[ClientInput],
-) -> Vec<TacticalMoveStat> {
+) -> Option<ClientInput> {
     let mut scored = Vec::new();
 
     for candidate in legal_moves {
@@ -218,19 +152,11 @@ fn collect_priority_target_stats(
 
         let action_score = targeted_action_score(combat, candidate);
         let tactical_bonus = tactical_move_bonus(combat, candidate);
-        let total = priority + action_score + tactical_bonus;
-        scored.push(TacticalMoveStat {
-            input: candidate.clone(),
-            score: total,
-            detail: format!(
-                "monster_priority={:.1} action_score={:.1} tactical_bonus={:.1}",
-                priority, action_score, tactical_bonus
-            ),
-        });
+        scored.push((candidate.clone(), priority + action_score + tactical_bonus));
     }
 
-    scored.sort_by(|a, b| b.score.total_cmp(&a.score));
-    scored
+    scored.sort_by(|a, b| b.1.total_cmp(&a.1));
+    scored.into_iter().next().map(|(input, _)| input)
 }
 
 fn simulate_to_decision_point(
