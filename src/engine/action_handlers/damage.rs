@@ -6,8 +6,8 @@
 //          Heal, GainMaxHp, LoseMaxHp,
 //          LimitBreak, BlockPerNonAttack, ExhaustAllNonAttack, ExhaustRandomCard
 
-use crate::action::{Action, ActionInfo, AddTo, DamageType, NO_SOURCE};
-use crate::combat::{CombatState, Intent};
+use crate::runtime::action::{Action, ActionInfo, AddTo, DamageType, NO_SOURCE};
+use crate::runtime::combat::{CombatState, Intent};
 use crate::content::powers::store;
 use crate::content::powers::PowerId;
 
@@ -132,7 +132,7 @@ pub fn apply_raw_damage_to_monster(
 
 fn apply_damage_to_monster_via_pipeline(
     state: &mut CombatState,
-    info: &crate::action::DamageInfo,
+    info: &crate::runtime::action::DamageInfo,
     mut final_damage: i32,
 ) -> MonsterDamageOutcome {
     let target_id = info.target;
@@ -296,7 +296,7 @@ fn apply_damage_to_monster_via_pipeline(
     outcome
 }
 
-pub fn handle_damage(info: crate::action::DamageInfo, state: &mut CombatState) {
+pub fn handle_damage(info: crate::runtime::action::DamageInfo, state: &mut CombatState) {
     let target_id = info.target;
     let source_id = info.source;
 
@@ -413,7 +413,7 @@ pub fn handle_damage_all_enemies(
         if m.current_hp <= 0 || m.is_dying || m.is_escaped {
             continue;
         }
-        individual_damages.push(Action::Damage(crate::action::DamageInfo {
+        individual_damages.push(Action::Damage(crate::runtime::action::DamageInfo {
             source,
             target: m.id,
             base: dmg,
@@ -447,7 +447,10 @@ pub fn handle_attack_damage_random_enemy(
         {
             let mut damage = base_damage as f32;
             let pseudo_card =
-                crate::combat::CombatCard::new(crate::content::cards::CardId::SwordBoomerang, 0);
+                crate::runtime::combat::CombatCard::new(
+                    crate::content::cards::CardId::SwordBoomerang,
+                    0,
+                );
             for power in &store::powers_snapshot_for(state, target_id) {
                 damage = crate::content::powers::resolve_power_on_calculate_damage_from_player(
                     power.power_type,
@@ -472,7 +475,7 @@ pub fn handle_attack_damage_random_enemy(
             base_damage
         };
         handle_damage(
-            crate::action::DamageInfo {
+            crate::runtime::action::DamageInfo {
                 source: 0,
                 target: target_id,
                 base: base_damage,
@@ -487,7 +490,7 @@ pub fn handle_attack_damage_random_enemy(
 
 pub fn handle_dropkick(
     target: usize,
-    damage_info: crate::action::DamageInfo,
+    damage_info: crate::runtime::action::DamageInfo,
     state: &mut CombatState,
 ) {
     let has_vulnerable = store::power_amount(state, target, PowerId::Vulnerable) > 0;
@@ -506,10 +509,10 @@ pub fn handle_dropkick(
 
 pub fn handle_fiend_fire(
     target: usize,
-    damage_info: crate::action::DamageInfo,
+    damage_info: crate::runtime::action::DamageInfo,
     state: &mut CombatState,
 ) {
-    let hand_cards: Vec<crate::combat::CombatCard> = state.zones.hand.drain(..).collect();
+    let hand_cards: Vec<crate::runtime::combat::CombatCard> = state.zones.hand.drain(..).collect();
     let count = hand_cards.len();
     for card in hand_cards {
         super::cards::move_card_to_exhaust_pile(card, state);
@@ -523,7 +526,7 @@ pub fn handle_fiend_fire(
 
 pub fn handle_feed(
     target: usize,
-    damage_info: crate::action::DamageInfo,
+    damage_info: crate::runtime::action::DamageInfo,
     max_hp_amount: i32,
     state: &mut CombatState,
 ) {
@@ -538,7 +541,7 @@ pub fn handle_feed(
 
 pub fn handle_hand_of_greed(
     target: usize,
-    damage_info: crate::action::DamageInfo,
+    damage_info: crate::runtime::action::DamageInfo,
     gold_amount: i32,
     state: &mut CombatState,
 ) {
@@ -554,7 +557,7 @@ pub fn handle_hand_of_greed(
 
 pub fn handle_ritual_dagger(
     target: usize,
-    damage_info: crate::action::DamageInfo,
+    damage_info: crate::runtime::action::DamageInfo,
     misc_amount: i32,
     card_uuid: u32,
     state: &mut CombatState,
@@ -591,7 +594,7 @@ pub fn handle_gain_gold(amount: i32, state: &mut CombatState) {
     }
 }
 
-pub fn handle_vampire_damage(info: crate::action::DamageInfo, state: &mut CombatState) {
+pub fn handle_vampire_damage(info: crate::runtime::action::DamageInfo, state: &mut CombatState) {
     let source = info.source;
     if info.target == 0 {
         let previous_hp = state.entities.player.current_hp;
@@ -626,7 +629,7 @@ pub fn handle_vampire_damage_all_enemies(
         }
         let outcome = apply_damage_to_monster_via_pipeline(
             state,
-            &crate::action::DamageInfo {
+            &crate::runtime::action::DamageInfo {
                 source,
                 target: target_id,
                 base: dmg,
@@ -872,4 +875,3 @@ pub fn handle_exhaust_random_card(amount: usize, state: &mut CombatState) {
         super::cards::handle_exhaust_card(card_uuid, crate::state::PileType::Hand, state);
     }
 }
-

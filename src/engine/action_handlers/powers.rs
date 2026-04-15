@@ -3,8 +3,8 @@
 // Handles: ApplyPower, RemovePower, RemoveAllDebuffs, ApplyStasis,
 //          UpdatePowerExtraData, AwakenedRebirthClear, GainEnergy
 
-use crate::action::Action;
-use crate::combat::CombatState;
+use crate::runtime::action::Action;
+use crate::runtime::combat::CombatState;
 use crate::content::powers::store;
 use crate::content::powers::PowerId;
 
@@ -65,7 +65,7 @@ pub fn handle_apply_power_detailed(
                     source,
                     state,
                 );
-                let hook_actions_4: smallvec::SmallVec<[crate::action::ActionInfo; 4]> =
+                let hook_actions_4: smallvec::SmallVec<[crate::runtime::action::ActionInfo; 4]> =
                     hook_actions.into_iter().collect();
                 crate::engine::core::queue_actions(&mut state.engine.action_queue, hook_actions_4);
             }
@@ -136,7 +136,7 @@ pub fn handle_apply_power_detailed(
                     should_remove_existing = true;
                 }
             } else if crate::content::powers::should_keep_power_instance(power_id, amount) {
-                powers.push(crate::combat::Power {
+                powers.push(crate::runtime::combat::Power {
                     power_type: power_id,
                     instance_id: Some(instance_id),
                     amount,
@@ -153,7 +153,7 @@ pub fn handle_apply_power_detailed(
                 should_remove_existing = true;
             }
         } else if crate::content::powers::should_keep_power_instance(power_id, amount) {
-            powers.push(crate::combat::Power {
+            powers.push(crate::runtime::combat::Power {
                 power_type: power_id,
                 instance_id: None,
                 amount,
@@ -199,7 +199,7 @@ pub fn handle_apply_power_detailed(
                 _ if extra_data.is_some() => (amount, extra_data.unwrap_or(0)),
                 _ => (amount, 0),
             };
-            powers.push(crate::combat::Power {
+            powers.push(crate::runtime::combat::Power {
                 power_type: power_id,
                 instance_id: None,
                 amount: stored_amount,
@@ -541,4 +541,3 @@ pub fn handle_lose_max_hp(target: usize, amount: i32, state: &mut CombatState) {
             .min(state.entities.player.max_hp);
     }
 }
-

@@ -409,7 +409,7 @@ fn load_spec_from_replay_frame(
 
 fn build_action_candidates(
     mask: &ActionMask,
-    combat: &sts_simulator::combat::CombatState,
+    combat: &sts_simulator::runtime::combat::CombatState,
 ) -> Vec<DriverActionCandidate> {
     mask.candidate_actions
         .iter()

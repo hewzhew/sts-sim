@@ -4,7 +4,7 @@ mod display;
 mod input;
 
 use std::io::{self, BufRead, Write};
-use sts_simulator::combat::CombatState;
+use sts_simulator::runtime::combat::CombatState;
 use sts_simulator::engine::run_loop::tick_run;
 use sts_simulator::state::core::*;
 use sts_simulator::state::run::RunState;
@@ -1226,21 +1226,21 @@ fn init_combat(run_state: &mut RunState, current_display: DisplayMode) -> Combat
     );
 
     let mut cs = CombatState {
-        meta: sts_simulator::combat::CombatMeta {
+        meta: sts_simulator::runtime::combat::CombatMeta {
             ascension_level: run_state.ascension_level,
             player_class: run_state.player_class,
             is_boss_fight: false,
             is_elite_fight: false,
             meta_changes: Vec::new(),
         },
-        turn: sts_simulator::combat::TurnRuntime {
+        turn: sts_simulator::runtime::combat::TurnRuntime {
             turn_count: 0,
-            current_phase: sts_simulator::combat::CombatPhase::PlayerTurn,
+            current_phase: sts_simulator::runtime::combat::CombatPhase::PlayerTurn,
             energy: 3,
             turn_start_draw_modifier: 0,
             counters: Default::default(),
         },
-        zones: sts_simulator::combat::CardZones {
+        zones: sts_simulator::runtime::combat::CardZones {
             draw_pile: run_state.master_deck.clone(),
             hand: Vec::new(),
             discard_pile: Vec::new(),
@@ -1249,16 +1249,16 @@ fn init_combat(run_state: &mut RunState, current_display: DisplayMode) -> Combat
             queued_cards: std::collections::VecDeque::new(),
             card_uuid_counter: 9999,
         },
-        entities: sts_simulator::combat::EntityState {
+        entities: sts_simulator::runtime::combat::EntityState {
             player,
             monsters,
             potions: run_state.potions.clone(),
             power_db: std::collections::HashMap::new(),
         },
-        engine: sts_simulator::combat::EngineRuntime {
+        engine: sts_simulator::runtime::combat::EngineRuntime {
             action_queue: std::collections::VecDeque::new(),
         },
-        rng: sts_simulator::combat::CombatRng::new(run_state.rng_pool.clone()),
+        rng: sts_simulator::runtime::combat::CombatRng::new(run_state.rng_pool.clone()),
         runtime: Default::default(),
     };
 
@@ -1286,7 +1286,10 @@ fn init_combat(run_state: &mut RunState, current_display: DisplayMode) -> Combat
     cs.turn.energy = cs.entities.player.energy_master;
 
     // Java: CardGroup.initializeDeck() calls shuffle(shuffleRng)
-    sts_simulator::rng::shuffle_with_random_long(&mut cs.zones.draw_pile, &mut cs.rng.shuffle_rng);
+    sts_simulator::runtime::rng::shuffle_with_random_long(
+        &mut cs.zones.draw_pile,
+        &mut cs.rng.shuffle_rng,
+    );
     let mut innate_cards = Vec::new();
     let mut normal_cards = Vec::new();
     for card in std::mem::take(&mut cs.zones.draw_pile) {
@@ -1301,7 +1304,7 @@ fn init_combat(run_state: &mut RunState, current_display: DisplayMode) -> Combat
 
     cs.engine
         .action_queue
-        .push_back(sts_simulator::action::Action::PreBattleTrigger);
+        .push_back(sts_simulator::runtime::action::Action::PreBattleTrigger);
 
     cs
 }
@@ -1344,21 +1347,21 @@ fn init_event_combat(
     );
 
     let mut cs = CombatState {
-        meta: sts_simulator::combat::CombatMeta {
+        meta: sts_simulator::runtime::combat::CombatMeta {
             ascension_level: run_state.ascension_level,
             player_class: run_state.player_class,
             is_boss_fight: false,
             is_elite_fight: false,
             meta_changes: Vec::new(),
         },
-        turn: sts_simulator::combat::TurnRuntime {
+        turn: sts_simulator::runtime::combat::TurnRuntime {
             turn_count: 0,
-            current_phase: sts_simulator::combat::CombatPhase::PlayerTurn,
+            current_phase: sts_simulator::runtime::combat::CombatPhase::PlayerTurn,
             energy: 3,
             turn_start_draw_modifier: 0,
             counters: Default::default(),
         },
-        zones: sts_simulator::combat::CardZones {
+        zones: sts_simulator::runtime::combat::CardZones {
             draw_pile: run_state.master_deck.clone(),
             hand: Vec::new(),
             discard_pile: Vec::new(),
@@ -1367,16 +1370,16 @@ fn init_event_combat(
             queued_cards: std::collections::VecDeque::new(),
             card_uuid_counter: 9999,
         },
-        entities: sts_simulator::combat::EntityState {
+        entities: sts_simulator::runtime::combat::EntityState {
             player,
             monsters,
             potions: run_state.potions.clone(),
             power_db: std::collections::HashMap::new(),
         },
-        engine: sts_simulator::combat::EngineRuntime {
+        engine: sts_simulator::runtime::combat::EngineRuntime {
             action_queue: std::collections::VecDeque::new(),
         },
-        rng: sts_simulator::combat::CombatRng::new(run_state.rng_pool.clone()),
+        rng: sts_simulator::runtime::combat::CombatRng::new(run_state.rng_pool.clone()),
         runtime: Default::default(),
     };
 
@@ -1399,7 +1402,10 @@ fn init_event_combat(
     cs.turn.energy = cs.entities.player.energy_master;
 
     // Java: CardGroup.initializeDeck() calls shuffle(shuffleRng)
-    sts_simulator::rng::shuffle_with_random_long(&mut cs.zones.draw_pile, &mut cs.rng.shuffle_rng);
+    sts_simulator::runtime::rng::shuffle_with_random_long(
+        &mut cs.zones.draw_pile,
+        &mut cs.rng.shuffle_rng,
+    );
     let mut innate_cards = Vec::new();
     let mut normal_cards = Vec::new();
     for card in std::mem::take(&mut cs.zones.draw_pile) {
@@ -1414,7 +1420,7 @@ fn init_event_combat(
 
     cs.engine
         .action_queue
-        .push_back(sts_simulator::action::Action::PreBattleTrigger);
+        .push_back(sts_simulator::runtime::action::Action::PreBattleTrigger);
 
     cs
 }

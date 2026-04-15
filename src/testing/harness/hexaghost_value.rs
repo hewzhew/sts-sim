@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::combat::{CombatState, Intent, MonsterEntity, PowerId};
+use crate::runtime::combat::{CombatState, Intent, MonsterEntity, PowerId};
 use crate::content::monsters::{EnemyId, MonsterBehavior};
 use crate::content::powers::store;
 use crate::state::core::EngineState;
@@ -289,7 +289,7 @@ fn advance_projection_state(
 
     let (next_move_byte, next_intent) =
         crate::content::monsters::exordium::hexaghost::Hexaghost::roll_move(
-            &mut crate::rng::StsRng::new(0),
+            &mut crate::runtime::rng::StsRng::new(0),
             monster,
             ascension_level,
             0,
@@ -301,4 +301,3 @@ fn advance_projection_state(
 fn divider_damage(player_current_hp: i32) -> i32 {
     (player_current_hp / 12) + 1
 }
-

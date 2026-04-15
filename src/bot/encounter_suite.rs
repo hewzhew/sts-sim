@@ -1,6 +1,8 @@
-use crate::combat::{CombatPhase, CombatRng, CombatState, EngineRuntime, EntityState, TurnRuntime};
+use crate::runtime::combat::{
+    CombatPhase, CombatRng, CombatState, EngineRuntime, EntityState, TurnRuntime,
+};
 use crate::content::monsters::factory::{self, EncounterId};
-use crate::rng::{self, RngPool};
+use crate::runtime::rng::{self, RngPool};
 use crate::state::core::EngineState;
 use crate::state::run::RunState;
 use std::collections::{HashMap, VecDeque};
@@ -177,7 +179,7 @@ pub(crate) fn start_suite_encounter(
     );
 
     let mut combat = CombatState {
-        meta: crate::combat::CombatMeta {
+        meta: crate::runtime::combat::CombatMeta {
             ascension_level: seeded.ascension_level,
             player_class: seeded.player_class,
             is_boss_fight: entry.is_boss,
@@ -191,7 +193,7 @@ pub(crate) fn start_suite_encounter(
             turn_start_draw_modifier: 0,
             counters: Default::default(),
         },
-        zones: crate::combat::CardZones {
+        zones: crate::runtime::combat::CardZones {
             draw_pile: seeded.master_deck.clone(),
             hand: Vec::new(),
             discard_pile: Vec::new(),
@@ -244,7 +246,7 @@ pub(crate) fn start_suite_encounter(
     combat
         .engine
         .action_queue
-        .push_back(crate::action::Action::PreBattleTrigger);
+        .push_back(crate::runtime::action::Action::PreBattleTrigger);
 
     let mut engine = EngineState::CombatProcessing;
     advance_suite_engine(&mut engine, &mut combat);
@@ -280,4 +282,3 @@ pub(crate) fn advance_suite_engine(engine: &mut EngineState, combat: &mut Combat
         }
     }
 }
-

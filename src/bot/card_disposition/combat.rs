@@ -1,5 +1,5 @@
 use crate::bot::card_taxonomy::{is_strength_enabler, is_strength_payoff};
-use crate::combat::CombatState;
+use crate::runtime::combat::CombatState;
 use crate::content::cards::{self, CardId, CardType};
 
 use super::helpers::{

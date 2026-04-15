@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 
-pub fn archetype_tags_for_combat(combat: &crate::combat::CombatState) -> Vec<String> {
+pub fn archetype_tags_for_combat(combat: &crate::runtime::combat::CombatState) -> Vec<String> {
     crate::bot::evaluator::CardEvaluator::archetype_tags(
         &crate::bot::evaluator::CardEvaluator::combat_profile(combat),
     )

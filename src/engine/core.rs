@@ -1,5 +1,5 @@
-use crate::action::{Action, ActionInfo};
-use crate::combat::{CombatPhase, CombatState};
+use crate::runtime::action::{Action, ActionInfo};
+use crate::runtime::combat::{CombatPhase, CombatState};
 use crate::content::powers::store;
 use crate::state::core::{ClientInput, EngineState, PendingChoice, RunResult};
 use crate::state::selection::{EngineDiagnostic, EngineDiagnosticClass, EngineDiagnosticSeverity};
@@ -333,7 +333,7 @@ pub fn tick_engine(
                     can_skip,
                 } => {
                     // Generate 3 unique random cards from pool
-                    use crate::action::CardRewardPool;
+                    use crate::runtime::action::CardRewardPool;
                     let mut card_pool: Vec<crate::content::cards::CardId> = Vec::new();
                     match pool {
                         CardRewardPool::ClassAll => {
@@ -946,7 +946,7 @@ fn resolve_pending_choice(
                     let uuid = 50000
                         + combat_state.zones.hand.len() as u32
                         + combat_state.zones.discard_pile.len() as u32;
-                    let mut card = crate::combat::CombatCard::new(card_id, uuid);
+                    let mut card = crate::runtime::combat::CombatCard::new(card_id, uuid);
                     // Apply cost override from the SuspendForDiscovery action
                     if let Some(cost) = combat_state.turn.counters.discovery_cost_for_turn.take() {
                         card.cost_for_turn = Some(cost);
@@ -976,9 +976,9 @@ fn resolve_pending_choice(
                             + combat_state.zones.hand.len() as u32
                             + combat_state.zones.discard_pile.len() as u32
                             + combat_state.zones.draw_pile.len() as u32;
-                        let card = crate::combat::CombatCard::new(card_id, uuid);
+                        let card = crate::runtime::combat::CombatCard::new(card_id, uuid);
                         match destination {
-                            crate::action::CardDestination::Hand => {
+                            crate::runtime::action::CardDestination::Hand => {
                                 // Java ChooseOneColorless: hand (or discard if full)
                                 if combat_state.zones.hand.len() < 10 {
                                     combat_state.zones.hand.push(card);
@@ -986,7 +986,7 @@ fn resolve_pending_choice(
                                     combat_state.zones.discard_pile.push(card);
                                 }
                             }
-                            crate::action::CardDestination::DrawPileRandom => {
+                            crate::runtime::action::CardDestination::DrawPileRandom => {
                                 // Java CodexAction: add to draw pile at random position
                                 if combat_state.zones.draw_pile.is_empty() {
                                     combat_state.zones.draw_pile.push(card);
@@ -1052,7 +1052,7 @@ fn hand_select_candidates(
 }
 
 fn hand_candidate_matches(
-    card: &crate::combat::CombatCard,
+    card: &crate::runtime::combat::CombatCard,
     filter: crate::state::HandSelectFilter,
 ) -> bool {
     let def = crate::content::cards::get_card_definition(card.id);
@@ -1077,7 +1077,7 @@ fn grid_select_candidates(
     source_pile: crate::state::PileType,
     filter: crate::state::GridSelectFilter,
 ) -> Vec<u32> {
-    let pile: &[crate::combat::CombatCard] = match source_pile {
+    let pile: &[crate::runtime::combat::CombatCard] = match source_pile {
         crate::state::PileType::Draw => &combat_state.zones.draw_pile,
         crate::state::PileType::Discard => &combat_state.zones.discard_pile,
         crate::state::PileType::Exhaust => &combat_state.zones.exhaust_pile,
@@ -1093,7 +1093,7 @@ fn grid_select_candidates(
 }
 
 fn grid_candidate_matches(
-    card: &crate::combat::CombatCard,
+    card: &crate::runtime::combat::CombatCard,
     filter: crate::state::GridSelectFilter,
 ) -> bool {
     let def = crate::content::cards::get_card_definition(card.id);
@@ -1120,8 +1120,8 @@ pub fn queue_actions(
 
     for a in actions {
         match a.insertion_mode {
-            crate::action::AddTo::Top => to_front.push(a.action),
-            crate::action::AddTo::Bottom => to_bottom.push(a.action),
+            crate::runtime::action::AddTo::Top => to_front.push(a.action),
+            crate::runtime::action::AddTo::Bottom => to_bottom.push(a.action),
         }
     }
 
@@ -1152,10 +1152,10 @@ pub fn update_monster_intents(combat_state: &mut CombatState) {
 
         // Temporarily extract current intent (cannot borrow mutably directly since we need state)
         if let Some(monster) = combat_state.entities.monsters.iter().find(|m| m.id == mid) {
-            if let crate::combat::Intent::Attack { damage, .. }
-            | crate::combat::Intent::AttackBuff { damage, .. }
-            | crate::combat::Intent::AttackDebuff { damage, .. }
-            | crate::combat::Intent::AttackDefend { damage, .. } = monster.current_intent
+            if let crate::runtime::combat::Intent::Attack { damage, .. }
+            | crate::runtime::combat::Intent::AttackBuff { damage, .. }
+            | crate::runtime::combat::Intent::AttackDebuff { damage, .. }
+            | crate::runtime::combat::Intent::AttackDefend { damage, .. } = monster.current_intent
             {
                 // `damage` in the enum represents the pure base damage
                 new_intent_dmg =

@@ -7,10 +7,10 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 use crate::bot::evaluator::evaluate_state;
-use crate::combat::{CombatCard, CombatState, Intent, Power};
+use crate::runtime::combat::{CombatCard, CombatState, Intent, Power};
 use crate::content::cards::get_card_definition;
 use crate::diff::replay::replay_support::tick_until_stable;
-use crate::rng::{shuffle_with_random_long, StsRng};
+use crate::runtime::rng::{shuffle_with_random_long, StsRng};
 use crate::state::core::{ClientInput, EngineState, RunResult};
 use crate::state::run::RunState;
 use crate::testing::fixtures::scenario::{initialize_fixture_state, ScenarioFixture};

@@ -4,7 +4,7 @@ use super::reward_audit::{
 };
 use crate::bot::agent::Agent;
 use crate::cli::live_comm_noncombat::{choose_best_index, decide_noncombat_with_agent};
-use crate::combat::CombatState;
+use crate::runtime::combat::CombatState;
 use serde_json::Value;
 use std::io::Write;
 
@@ -136,4 +136,3 @@ pub(super) fn route_noncombat_command(
         "STATE".to_string()
     }
 }
-

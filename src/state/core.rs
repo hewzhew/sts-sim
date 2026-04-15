@@ -98,7 +98,7 @@ pub enum PendingChoice {
     /// If `can_skip`, player can Cancel to skip without picking.
     CardRewardSelect {
         cards: Vec<CardId>,
-        destination: crate::action::CardDestination,
+        destination: crate::runtime::action::CardDestination,
         can_skip: bool,
     },
     /// StancePotion: player chooses Wrath or Calm. Index 0 = Wrath, 1 = Calm.

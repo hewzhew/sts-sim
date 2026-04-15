@@ -5,8 +5,8 @@
 //          RollMonsterMove, SetMonsterMove, ExecuteMonsterTurn,
 //          UpdateRelicCounter, UpdateRelicAmount, UpdateRelicUsedUp
 
-use crate::action::Action;
-use crate::combat::CombatState;
+use crate::runtime::action::Action;
+use crate::runtime::combat::CombatState;
 
 fn normalize_monster_slots(state: &mut CombatState) {
     for (idx, monster) in state.entities.monsters.iter_mut().enumerate() {
@@ -28,7 +28,7 @@ fn next_protocol_sequence(state: &CombatState) -> u64 {
 
 fn spawn_hp_for_monster(
     monster_id: crate::content::monsters::EnemyId,
-    hp_rng: &mut crate::rng::StsRng,
+    hp_rng: &mut crate::runtime::rng::StsRng,
     ascension_level: u8,
 ) -> i32 {
     match monster_id {
@@ -82,7 +82,7 @@ pub fn handle_spawn_monster(
         (current_hp, max_hp)
     };
 
-    let mut new_monster = crate::combat::MonsterEntity {
+    let mut new_monster = crate::runtime::combat::MonsterEntity {
         id: new_entity_id,
         monster_type: enemy_id as usize,
         current_hp: actual_hp,
@@ -93,11 +93,11 @@ pub fn handle_spawn_monster(
         is_escaped: false,
         half_dead: false,
         next_move_byte: 0,
-        current_intent: crate::combat::Intent::Unknown,
+        current_intent: crate::runtime::combat::Intent::Unknown,
         move_history: std::collections::VecDeque::new(),
         intent_dmg: 0,
         logical_position,
-        protocol_identity: crate::combat::MonsterProtocolIdentity {
+        protocol_identity: crate::runtime::combat::MonsterProtocolIdentity {
             instance_id: Some(next_protocol_id),
             spawn_order: Some(next_protocol_id),
             draw_x: protocol_draw_x,
@@ -229,7 +229,7 @@ pub fn handle_roll_monster_move(monster_id: usize, state: &mut CombatState) {
 pub fn handle_set_monster_move(
     monster_id: usize,
     next_move_byte: u8,
-    intent: crate::combat::Intent,
+    intent: crate::runtime::combat::Intent,
     state: &mut CombatState,
 ) {
     if let Some(m) = state

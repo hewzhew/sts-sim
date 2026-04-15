@@ -8,14 +8,14 @@
 //          EndTurnTrigger, StartTurnTrigger, PostDrawTrigger, BattleStartTrigger, ClearCardQueue,
 //          AddCardToMasterDeck, MakeTempCardInDiscardAndDeck, SuspendForCardReward
 
-use crate::action::{Action, ActionInfo, AddTo};
-use crate::combat::CombatState;
+use crate::runtime::action::{Action, ActionInfo, AddTo};
+use crate::runtime::combat::CombatState;
 use crate::content::cards::CardId;
 use crate::content::powers::store;
 use crate::content::powers::PowerId;
 use crate::engine::targeting;
 
-fn queue_exhaust_triggers(card: &crate::combat::CombatCard, state: &mut CombatState) {
+fn queue_exhaust_triggers(card: &crate::runtime::combat::CombatCard, state: &mut CombatState) {
     let mut after_actions = crate::content::relics::hooks::on_exhaust(state);
     let card_hooks = crate::content::cards::resolve_card_on_exhaust(card, state);
     after_actions.extend(card_hooks);
@@ -42,7 +42,10 @@ fn queue_exhaust_triggers(card: &crate::combat::CombatCard, state: &mut CombatSt
     crate::engine::core::queue_actions(&mut state.engine.action_queue, after_actions);
 }
 
-pub fn move_card_to_exhaust_pile(card: crate::combat::CombatCard, state: &mut CombatState) {
+pub fn move_card_to_exhaust_pile(
+    card: crate::runtime::combat::CombatCard,
+    state: &mut CombatState,
+) {
     queue_exhaust_triggers(&card, state);
     state.zones.exhaust_pile.push(card);
 }
@@ -58,7 +61,7 @@ pub fn handle_draw_cards(amount: u32, state: &mut CombatState) {
         }
         if state.zones.draw_pile.is_empty() && !state.zones.discard_pile.is_empty() {
             state.zones.draw_pile.append(&mut state.zones.discard_pile);
-            crate::rng::shuffle_with_random_long(
+            crate::runtime::rng::shuffle_with_random_long(
                 &mut state.zones.draw_pile,
                 &mut state.rng.shuffle_rng,
             );
@@ -102,7 +105,7 @@ pub fn handle_draw_cards(amount: u32, state: &mut CombatState) {
 pub fn handle_empty_deck_shuffle(state: &mut CombatState) {
     if state.zones.draw_pile.is_empty() && !state.zones.discard_pile.is_empty() {
         state.zones.draw_pile.append(&mut state.zones.discard_pile);
-        crate::rng::shuffle_with_random_long(
+        crate::runtime::rng::shuffle_with_random_long(
             &mut state.zones.draw_pile,
             &mut state.rng.shuffle_rng,
         );
@@ -117,7 +120,10 @@ pub fn handle_shuffle_discard_into_draw(state: &mut CombatState) {
         return;
     }
     state.zones.draw_pile.append(&mut state.zones.discard_pile);
-    crate::rng::shuffle_with_random_long(&mut state.zones.draw_pile, &mut state.rng.shuffle_rng);
+    crate::runtime::rng::shuffle_with_random_long(
+        &mut state.zones.draw_pile,
+        &mut state.rng.shuffle_rng,
+    );
     state.zones.draw_pile.reverse();
     let shuffle_actions = crate::content::relics::hooks::on_shuffle(state);
     crate::engine::core::queue_actions(&mut state.engine.action_queue, shuffle_actions);
@@ -275,7 +281,10 @@ pub fn handle_make_temp_card_in_hand(
 ) {
     for _ in 0..amount {
         state.zones.card_uuid_counter += 1;
-        let mut card = crate::combat::CombatCard::new(card_id, state.zones.card_uuid_counter);
+        let mut card = crate::runtime::combat::CombatCard::new(
+            card_id,
+            state.zones.card_uuid_counter,
+        );
         if upgraded {
             card.upgrades = 1;
         }
@@ -295,7 +304,10 @@ pub fn handle_make_temp_card_in_discard(
 ) {
     for _ in 0..amount {
         state.zones.card_uuid_counter += 1;
-        let mut card = crate::combat::CombatCard::new(card_id, state.zones.card_uuid_counter);
+        let mut card = crate::runtime::combat::CombatCard::new(
+            card_id,
+            state.zones.card_uuid_counter,
+        );
         if upgraded {
             card.upgrades = 1;
         }
@@ -312,7 +324,10 @@ pub fn handle_make_temp_card_in_draw_pile(
 ) {
     for _ in 0..amount {
         state.zones.card_uuid_counter += 1;
-        let mut card = crate::combat::CombatCard::new(card_id, state.zones.card_uuid_counter);
+        let mut card = crate::runtime::combat::CombatCard::new(
+            card_id,
+            state.zones.card_uuid_counter,
+        );
         if upgraded {
             card.upgrades = 1;
         }
@@ -329,7 +344,7 @@ pub fn handle_make_temp_card_in_draw_pile(
 }
 
 pub fn handle_make_copy_in_hand(
-    original: Box<crate::combat::CombatCard>,
+    original: Box<crate::runtime::combat::CombatCard>,
     amount: u8,
     state: &mut CombatState,
 ) {
@@ -346,7 +361,7 @@ pub fn handle_make_copy_in_hand(
 }
 
 pub fn handle_make_copy_in_discard(
-    original: Box<crate::combat::CombatCard>,
+    original: Box<crate::runtime::combat::CombatCard>,
     amount: u8,
     state: &mut CombatState,
 ) {
@@ -365,7 +380,7 @@ pub fn handle_make_temp_card_in_discard_and_deck(
 ) {
     for _ in 0..amount {
         state.zones.card_uuid_counter += 1;
-        let card = crate::combat::CombatCard::new(card_id, state.zones.card_uuid_counter);
+        let card = crate::runtime::combat::CombatCard::new(card_id, state.zones.card_uuid_counter);
         state.zones.discard_pile.push(card.clone());
         let pos = state
             .rng
@@ -498,7 +513,7 @@ pub fn handle_upgrade_random_card(state: &mut CombatState) {
         .collect();
     if !upgradeable_uuids.is_empty() {
         let mut shuffled = upgradeable_uuids;
-        crate::rng::shuffle_with_random_long(&mut shuffled, &mut state.rng.shuffle_rng);
+        crate::runtime::rng::shuffle_with_random_long(&mut shuffled, &mut state.rng.shuffle_rng);
         let target_uuid = shuffled[0];
         if let Some(card) = state.zones.hand.iter_mut().find(|c| c.uuid == target_uuid) {
             card.upgrades += 1;
@@ -607,7 +622,10 @@ pub fn handle_make_random_card_in_hand(
         let idx = state.rng.card_random_rng.random(pool.len() as i32 - 1) as usize;
         let card_id = pool[idx];
         state.zones.card_uuid_counter += 1;
-        let mut card = crate::combat::CombatCard::new(card_id, state.zones.card_uuid_counter);
+        let mut card = crate::runtime::combat::CombatCard::new(
+            card_id,
+            state.zones.card_uuid_counter,
+        );
         if let Some(cost) = cost_for_turn {
             card.cost_for_turn = Some(cost);
         }
@@ -645,7 +663,10 @@ pub fn handle_make_random_card_in_draw_pile(
         let idx = state.rng.card_random_rng.random(pool.len() as i32 - 1) as usize;
         let card_id = pool[idx];
         state.zones.card_uuid_counter += 1;
-        let mut card = crate::combat::CombatCard::new(card_id, state.zones.card_uuid_counter);
+        let mut card = crate::runtime::combat::CombatCard::new(
+            card_id,
+            state.zones.card_uuid_counter,
+        );
         if let Some(cost) = cost_for_turn {
             card.cost_for_turn = Some(cost);
         }
@@ -709,7 +730,10 @@ pub fn handle_make_random_colorless_card_in_hand(
         let idx = state.rng.card_random_rng.random(pool.len() as i32 - 1) as usize;
         let card_id = pool[idx];
         state.zones.card_uuid_counter += 1;
-        let mut card = crate::combat::CombatCard::new(card_id, state.zones.card_uuid_counter);
+        let mut card = crate::runtime::combat::CombatCard::new(
+            card_id,
+            state.zones.card_uuid_counter,
+        );
         if upgraded {
             card.upgrades = 1;
         }
@@ -735,7 +759,7 @@ pub fn handle_use_card_done(should_exhaust: bool, state: &mut CombatState) {
 
     if state.turn.counters.early_end_turn_pending {
         state.turn.counters.early_end_turn_pending = false;
-        state.turn.current_phase = crate::combat::CombatPhase::TurnTransition;
+        state.turn.current_phase = crate::runtime::combat::CombatPhase::TurnTransition;
         state.engine.action_queue.push_back(Action::EndTurnTrigger);
     }
 }
@@ -745,7 +769,7 @@ pub fn handle_queue_early_end_turn(state: &mut CombatState) {
 }
 
 fn execute_played_card(
-    mut played_card: crate::combat::CombatCard,
+    mut played_card: crate::runtime::combat::CombatCard,
     target: Option<usize>,
     purge: bool,
     state: &mut CombatState,
@@ -915,7 +939,7 @@ pub fn handle_play_card_from_hand(
 }
 
 pub fn handle_enqueue_card_play(
-    item: crate::combat::QueuedCardPlay,
+    item: crate::runtime::combat::QueuedCardPlay,
     in_front: bool,
     state: &mut CombatState,
 ) {
@@ -955,7 +979,7 @@ pub fn handle_flush_next_queued_card(state: &mut CombatState) {
 }
 
 pub fn handle_play_card_direct(
-    card: Box<crate::combat::CombatCard>,
+    card: Box<crate::runtime::combat::CombatCard>,
     target: Option<usize>,
     purge: bool,
     state: &mut CombatState,
@@ -1083,7 +1107,7 @@ pub fn handle_play_top_card(target: Option<usize>, exhaust: bool, state: &mut Co
         .engine
         .action_queue
         .push_front(Action::EnqueueCardPlay {
-            item: Box::new(crate::combat::QueuedCardPlay {
+            item: Box::new(crate::runtime::combat::QueuedCardPlay {
                 card: *card,
                 target: resolved_target,
                 energy_on_use: state.turn.energy as i32,
@@ -1092,7 +1116,7 @@ pub fn handle_play_top_card(target: Option<usize>, exhaust: bool, state: &mut Co
                 random_target: false,
                 is_end_turn_autoplay: false,
                 purge_on_use: false,
-                source: crate::combat::QueuedCardSource::Normal,
+                source: crate::runtime::combat::QueuedCardSource::Normal,
             }),
             in_front: true,
         });
@@ -1104,7 +1128,7 @@ pub fn handle_play_top_cards_buffered(
     exhaust: bool,
     state: &mut CombatState,
 ) {
-    let mut buffered: Vec<(Box<crate::combat::CombatCard>, Option<usize>)> = Vec::new();
+    let mut buffered: Vec<(Box<crate::runtime::combat::CombatCard>, Option<usize>)> = Vec::new();
 
     for _ in 0..count {
         if state.zones.draw_pile.is_empty() {
@@ -1151,7 +1175,7 @@ pub fn handle_play_top_cards_buffered(
             .engine
             .action_queue
             .push_front(Action::EnqueueCardPlay {
-                item: Box::new(crate::combat::QueuedCardPlay {
+                item: Box::new(crate::runtime::combat::QueuedCardPlay {
                     card: *card,
                     target: resolved_target,
                     energy_on_use: state.turn.energy as i32,
@@ -1160,7 +1184,7 @@ pub fn handle_play_top_cards_buffered(
                     random_target: false,
                     is_end_turn_autoplay: false,
                     purge_on_use: false,
-                    source: crate::combat::QueuedCardSource::Normal,
+                    source: crate::runtime::combat::QueuedCardSource::Normal,
                 }),
                 in_front: true,
             });
@@ -1305,7 +1329,7 @@ pub fn handle_add_card_to_master_deck(card_id: CardId, state: &mut CombatState) 
     state
         .meta
         .meta_changes
-        .push(crate::combat::MetaChange::AddCardToMasterDeck(card_id));
+        .push(crate::runtime::combat::MetaChange::AddCardToMasterDeck(card_id));
 }
 
 pub fn handle_pre_battle_trigger(state: &mut CombatState) {
@@ -1342,7 +1366,7 @@ pub fn handle_pre_battle_trigger(state: &mut CombatState) {
     state
         .engine
         .action_queue
-        .push_back(crate::action::Action::BattleStartPreDrawTrigger);
+        .push_back(crate::runtime::action::Action::BattleStartPreDrawTrigger);
 }
 
 pub fn handle_battle_start_pre_draw_trigger(state: &mut CombatState) {
@@ -1361,13 +1385,13 @@ pub fn handle_battle_start_pre_draw_trigger(state: &mut CombatState) {
     state
         .engine
         .action_queue
-        .push_back(crate::action::Action::DrawCards(draw_amount));
+        .push_back(crate::runtime::action::Action::DrawCards(draw_amount));
 
     // Auto-chain Phase 4
     state
         .engine
         .action_queue
-        .push_back(crate::action::Action::BattleStartTrigger);
+        .push_back(crate::runtime::action::Action::BattleStartTrigger);
 }
 
 pub fn handle_battle_start_trigger(state: &mut CombatState) {
@@ -1375,4 +1399,3 @@ pub fn handle_battle_start_trigger(state: &mut CombatState) {
     let battle_start_actions = crate::content::relics::hooks::at_battle_start(state);
     crate::engine::core::queue_actions(&mut state.engine.action_queue, battle_start_actions);
 }
-

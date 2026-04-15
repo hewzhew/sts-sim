@@ -1,5 +1,5 @@
 use super::context::DeckContext;
-use crate::combat::CombatCard;
+use crate::runtime::combat::CombatCard;
 use crate::content::cards::{get_card_definition, CardId, CardType};
 use crate::content::relics::RelicId;
 

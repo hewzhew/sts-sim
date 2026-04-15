@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use crate::combat::CombatState;
+use crate::runtime::combat::CombatState;
 use crate::diff::protocol::parser::{parse_replay, ReplayAction};
 use crate::diff::replay::replay_support::{continue_deferred_pending_choice, tick_until_stable};
 use crate::diff::state_sync::{build_combat_state, sync_state};

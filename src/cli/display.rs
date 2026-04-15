@@ -1,4 +1,4 @@
-use sts_simulator::combat::{CombatCard, CombatState, Intent};
+use sts_simulator::runtime::combat::{CombatCard, CombatState, Intent};
 use sts_simulator::content::cards;
 use sts_simulator::content::cards::CardTarget;
 use sts_simulator::content::monsters::EnemyId;

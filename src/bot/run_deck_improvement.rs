@@ -1,5 +1,5 @@
 use crate::bot::evaluator::{CardEvaluator, DeckProfile};
-use crate::combat::CombatCard;
+use crate::runtime::combat::CombatCard;
 use crate::content::cards::{self, CardId, CardType};
 use crate::state::run::RunState;
 
@@ -360,4 +360,3 @@ pub(crate) fn is_upgradable(card: &CombatCard) -> bool {
     card.id == CardId::SearingBlow
         || (card.upgrades == 0 && !matches!(def.card_type, CardType::Status | CardType::Curse))
 }
-

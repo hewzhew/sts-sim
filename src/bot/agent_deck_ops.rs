@@ -7,7 +7,7 @@ impl Agent {
         &self,
         rs: &RunState,
         profile: &crate::bot::evaluator::DeckProfile,
-        card: &crate::combat::CombatCard,
+        card: &crate::runtime::combat::CombatCard,
         mode: DeckCutMode,
     ) -> i32 {
         let bash_preservation_bonus = if card.id == crate::content::cards::CardId::Bash {

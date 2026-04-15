@@ -8,7 +8,7 @@ use crate::bot::strategy_families::{
     hand_shaping_next_draw_window_score, hand_shaping_play_now_score, reaper_hand_shaping_score,
     ApparitionTimingContext, SurvivalTimingContext,
 };
-use crate::combat::CombatState;
+use crate::runtime::combat::CombatState;
 use crate::content::cards::{get_card_definition, CardId, CardType};
 use crate::content::relics::RelicId;
 
@@ -44,8 +44,8 @@ pub(super) fn score_exhaust_candidate(combat: &CombatState, uuid: u32) -> i32 {
         safe_block_turn,
         can_play_now,
         timing_hold_score,
-        combat.get_power(0, crate::combat::PowerId::FeelNoPain),
-        combat.get_power(0, crate::combat::PowerId::DarkEmbrace) > 0,
+        combat.get_power(0, crate::runtime::combat::PowerId::FeelNoPain),
+        combat.get_power(0, crate::runtime::combat::PowerId::DarkEmbrace) > 0,
     );
 
     score += exhaust_future_fuel_reserve_score(
@@ -75,7 +75,8 @@ pub(super) fn score_discard_candidate(combat: &CombatState, uuid: u32) -> i32 {
         .filter(|other| other.id == card.id && other.uuid != uuid)
         .count() as i32;
     let playable_block =
-        (def.base_block as i32 + combat.get_power(0, crate::combat::PowerId::Dexterity)).max(0);
+        (def.base_block as i32 + combat.get_power(0, crate::runtime::combat::PowerId::Dexterity))
+            .max(0);
 
     let mut score = hand_shaping_delay_quality_score(
         card.id,
@@ -233,7 +234,7 @@ fn total_incoming_damage(combat: &CombatState) -> i32 {
 
 fn topdeck_badness_for_card(
     combat: &CombatState,
-    card: &crate::combat::CombatCard,
+    card: &crate::runtime::combat::CombatCard,
     def: &crate::content::cards::CardDefinition,
 ) -> i32 {
     let incoming = total_incoming_damage(combat);
@@ -256,7 +257,7 @@ fn topdeck_badness_for_card(
 
 fn keep_in_hand_urgency(
     combat: &CombatState,
-    card: &crate::combat::CombatCard,
+    card: &crate::runtime::combat::CombatCard,
     def: &crate::content::cards::CardDefinition,
 ) -> i32 {
     let incoming = total_incoming_damage(combat);
@@ -278,7 +279,7 @@ fn keep_in_hand_urgency(
 
 fn card_specific_timing_hold_score(
     combat: &CombatState,
-    card: &crate::combat::CombatCard,
+    card: &crate::runtime::combat::CombatCard,
     unblocked_incoming: i32,
     incoming: i32,
     missing_hp: i32,
@@ -311,7 +312,7 @@ fn card_specific_timing_hold_score(
         }
         CardId::Inflame => {
             if crate::content::cards::can_play_card(card, combat).is_ok()
-                && combat.get_power(0, crate::combat::PowerId::Strength) <= 3
+                && combat.get_power(0, crate::runtime::combat::PowerId::Strength) <= 3
             {
                 4_500
             } else {
@@ -342,8 +343,8 @@ fn card_specific_timing_hold_score(
         CardId::Apparition => apparition_hand_shaping_score(&ApparitionTimingContext {
             current_hp: combat.entities.player.current_hp,
             current_intangible: combat
-                .get_power(0, crate::combat::PowerId::Intangible)
-                .max(combat.get_power(0, crate::combat::PowerId::IntangiblePlayer)),
+                .get_power(0, crate::runtime::combat::PowerId::Intangible)
+                .max(combat.get_power(0, crate::runtime::combat::PowerId::IntangiblePlayer)),
             imminent_unblocked_damage: unblocked_incoming,
             total_incoming_damage: incoming,
             apparitions_in_hand: combat
@@ -369,7 +370,7 @@ fn card_specific_timing_hold_score(
                 .filter(|m| !m.is_dying && !m.is_escaped && m.current_hp > 0)
                 .map(|m| {
                     combat
-                        .get_power(m.id, crate::combat::PowerId::Strength)
+                        .get_power(m.id, crate::runtime::combat::PowerId::Strength)
                         .max(0)
                         * 2
                         + 2
@@ -434,8 +435,8 @@ fn remaining_low_value_fuel_after_exhaust(combat: &CombatState, exhausted_uuid: 
                 safe_block_turn,
                 can_play_now,
                 timing_hold_score,
-                combat.get_power(0, crate::combat::PowerId::FeelNoPain),
-                combat.get_power(0, crate::combat::PowerId::DarkEmbrace) > 0,
+                combat.get_power(0, crate::runtime::combat::PowerId::FeelNoPain),
+                combat.get_power(0, crate::runtime::combat::PowerId::DarkEmbrace) > 0,
             ) + combat_exhaust_score_for_uuid(combat, card.uuid)
                 > 0
         })

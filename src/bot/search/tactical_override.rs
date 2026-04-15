@@ -1,6 +1,6 @@
 use crate::bot::potions::choose_immediate_potion_candidate;
 use crate::bot::search::{get_legal_moves, tactical_move_bonus};
-use crate::combat::{CombatState, Intent};
+use crate::runtime::combat::{CombatState, Intent};
 use crate::content::cards::{get_card_definition, CardType};
 use crate::content::monsters::EnemyId;
 use crate::content::potions::get_potion_definition;
@@ -283,7 +283,10 @@ fn incoming_damage(combat: &CombatState) -> i32 {
         .sum()
 }
 
-fn monster_priority_score(combat: &CombatState, monster: &crate::combat::MonsterEntity) -> f32 {
+fn monster_priority_score(
+    combat: &CombatState,
+    monster: &crate::runtime::combat::MonsterEntity,
+) -> f32 {
     let enemy = EnemyId::from_id(monster.monster_type);
     let mut score = 0.0;
 
@@ -306,7 +309,7 @@ fn monster_priority_score(combat: &CombatState, monster: &crate::combat::Monster
     };
 
     score += (combat
-        .get_power(monster.id, crate::combat::PowerId::Strength)
+        .get_power(monster.id, crate::runtime::combat::PowerId::Strength)
         .max(0) as f32)
         * 350.0;
 
@@ -356,4 +359,3 @@ fn targeted_action_score(combat: &CombatState, input: &ClientInput) -> f32 {
         _ => 0.0,
     }
 }
-

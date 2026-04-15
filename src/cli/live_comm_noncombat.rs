@@ -983,7 +983,7 @@ pub(crate) fn build_live_run_state(gs: &serde_json::Value) -> Option<crate::stat
                         .and_then(|v| v.as_str())
                         .and_then(card_id_from_java)?;
                     let upgrades = card.get("upgrades").and_then(|v| v.as_u64()).unwrap_or(0) as u8;
-                    let mut combat_card = crate::combat::CombatCard::new(id, idx as u32);
+                    let mut combat_card = crate::runtime::combat::CombatCard::new(id, idx as u32);
                     combat_card.upgrades = upgrades;
                     Some(combat_card)
                 })

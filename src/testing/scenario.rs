@@ -1,8 +1,8 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::action::CardDestination;
-use crate::combat::{CombatCard, CombatState, Power};
+use crate::runtime::action::CardDestination;
+use crate::runtime::combat::{CombatCard, CombatState, Power};
 use crate::content::cards::java_id as card_java_id;
 use crate::content::cards::CardId;
 use crate::diff::protocol::mapper::{card_id_from_java, power_id_from_java, relic_id_from_java};
@@ -752,4 +752,3 @@ fn screen_card_to_rust_id(card: &Value) -> Option<CardId> {
     let java_id = card.get("id").and_then(|v| v.as_str())?;
     card_id_from_java(java_id)
 }
-

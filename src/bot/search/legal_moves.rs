@@ -1,7 +1,7 @@
 use crate::bot::card_disposition::{
     combat_copy_score_for_uuid, combat_exhaust_score_for_uuid, combat_retention_score_for_uuid,
 };
-use crate::combat::CombatState;
+use crate::runtime::combat::CombatState;
 use crate::engine::targeting;
 use crate::state::core::{ClientInput, GridSelectReason, HandSelectReason, PendingChoice};
 use crate::state::EngineState;
@@ -92,10 +92,10 @@ pub(crate) fn get_legal_moves(engine: &EngineState, combat: &CombatState) -> Vec
                     .iter()
                     .filter(|m| !m.is_dying && !m.is_escaped && !m.half_dead)
                     .map(|m| match m.current_intent {
-                        crate::combat::Intent::Attack { hits, .. }
-                        | crate::combat::Intent::AttackBuff { hits, .. }
-                        | crate::combat::Intent::AttackDebuff { hits, .. }
-                        | crate::combat::Intent::AttackDefend { hits, .. } => {
+                        crate::runtime::combat::Intent::Attack { hits, .. }
+                        | crate::runtime::combat::Intent::AttackBuff { hits, .. }
+                        | crate::runtime::combat::Intent::AttackDebuff { hits, .. }
+                        | crate::runtime::combat::Intent::AttackDefend { hits, .. } => {
                             (m.intent_dmg * (hits as i32)).max(0)
                         }
                         _ => 0,
@@ -430,4 +430,3 @@ fn contains_grid_select(moves: &[ClientInput], selection: &[u32]) -> bool {
         )
     })
 }
-

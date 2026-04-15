@@ -1,13 +1,13 @@
 use serde_json::Value;
 use std::collections::{HashMap, VecDeque};
 
-use crate::combat::{
+use crate::runtime::combat::{
     CombatCard, CombatMeta, CombatPhase, CombatRng, CombatRuntimeHints, CombatState, EngineRuntime,
     EphemeralCounters, MonsterEntity, PlayerEntity, Power, QueuedCardHint, RelicBuses, TurnRuntime,
 };
 use crate::content::cards::CardId;
 use crate::content::relics::{RelicId, RelicState};
-use crate::rng::RngPool;
+use crate::runtime::rng::RngPool;
 
 use crate::diff::protocol::mapper::{
     card_id_from_java, intent_from_java, java_potion_id_to_rust, monster_id_from_java,
@@ -473,7 +473,7 @@ pub fn build_combat_state(snapshot: &Value, relics_val: &Value) -> CombatState {
         gold: 99,
         max_orbs: 0,
         orbs: vec![],
-        stance: crate::combat::StanceId::Neutral,
+        stance: crate::runtime::combat::StanceId::Neutral,
         relics: vec![],
         relic_buses: RelicBuses::default(),
         energy_master: 3,
@@ -612,8 +612,8 @@ pub fn build_combat_state(snapshot: &Value, relics_val: &Value) -> CombatState {
 
     let mut rng_pool = RngPool::new(12345);
     if let Some(rng_state) = snapshot.get("rng_state") {
-        let parse_rng = |name: &str| -> Option<crate::rng::StsRng> {
-            rng_state.get(name).map(|v| crate::rng::StsRng {
+        let parse_rng = |name: &str| -> Option<crate::runtime::rng::StsRng> {
+            rng_state.get(name).map(|v| crate::runtime::rng::StsRng {
                 seed0: v.get("seed0").and_then(|x| x.as_i64()).unwrap_or(0) as u64,
                 seed1: v.get("seed1").and_then(|x| x.as_i64()).unwrap_or(0) as u64,
                 counter: v.get("counter").and_then(|x| x.as_u64()).unwrap_or(0) as u32,
@@ -658,7 +658,7 @@ pub fn build_combat_state(snapshot: &Value, relics_val: &Value) -> CombatState {
             turn_start_draw_modifier: 0,
             counters: EphemeralCounters::default(),
         },
-        zones: crate::combat::CardZones {
+        zones: crate::runtime::combat::CardZones {
             draw_pile,
             hand,
             discard_pile,
@@ -667,7 +667,7 @@ pub fn build_combat_state(snapshot: &Value, relics_val: &Value) -> CombatState {
             queued_cards: VecDeque::new(),
             card_uuid_counter: 5000,
         },
-        entities: crate::combat::EntityState {
+        entities: crate::runtime::combat::EntityState {
             player,
             monsters,
             potions: parsed_potions,
@@ -684,4 +684,3 @@ pub fn build_combat_state(snapshot: &Value, relics_val: &Value) -> CombatState {
     cs.update_hand_cards();
     cs
 }
-

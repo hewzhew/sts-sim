@@ -11,8 +11,8 @@ pub mod damage;
 pub mod powers;
 pub mod spawning;
 
-use crate::action::Action;
-use crate::combat::CombatState;
+use crate::runtime::action::Action;
+use crate::runtime::combat::CombatState;
 use crate::content::powers::store;
 
 /// Synchronously checks for and applies Fairy In A Bottle or Lizard Tail when player HP hits 0.
@@ -163,7 +163,7 @@ pub fn check_and_trigger_monster_death(state: &mut CombatState, target_id: usize
             {
                 m.current_hp = 0;
                 m.is_dying = false;
-                m.current_intent = crate::combat::Intent::Unknown;
+                m.current_intent = crate::runtime::combat::Intent::Unknown;
                 if dying_monster_type == Some(crate::content::monsters::EnemyId::AwakenedOne) {
                     m.half_dead = true;
                 }
@@ -559,11 +559,13 @@ fn handle_increase_max_orb(amount: u8, state: &mut CombatState) {
             .entities
             .player
             .orbs
-            .push(crate::combat::OrbEntity::new(crate::combat::OrbId::Empty));
+            .push(crate::runtime::combat::OrbEntity::new(
+                crate::runtime::combat::OrbId::Empty,
+            ));
     }
 }
 
-fn handle_channel_orb(orb_id: crate::combat::OrbId, state: &mut CombatState) {
+fn handle_channel_orb(orb_id: crate::runtime::combat::OrbId, state: &mut CombatState) {
     if state.entities.player.max_orbs == 0 {
         return;
     }
@@ -572,15 +574,17 @@ fn handle_channel_orb(orb_id: crate::combat::OrbId, state: &mut CombatState) {
             .entities
             .player
             .orbs
-            .push(crate::combat::OrbEntity::new(crate::combat::OrbId::Empty));
+            .push(crate::runtime::combat::OrbEntity::new(
+                crate::runtime::combat::OrbId::Empty,
+            ));
     }
-    let new_orb = crate::combat::OrbEntity::new(orb_id);
+    let new_orb = crate::runtime::combat::OrbEntity::new(orb_id);
     if let Some(empty_slot) = state
         .entities
         .player
         .orbs
         .iter()
-        .position(|orb| orb.id == crate::combat::OrbId::Empty)
+        .position(|orb| orb.id == crate::runtime::combat::OrbId::Empty)
     {
         state.entities.player.orbs[empty_slot] = new_orb;
     } else {
@@ -591,22 +595,21 @@ fn handle_channel_orb(orb_id: crate::combat::OrbId, state: &mut CombatState) {
 
 fn handle_enter_stance(stance: &str, state: &mut CombatState) {
     let new_stance = match stance {
-        "Wrath" => crate::combat::StanceId::Wrath,
-        "Calm" => crate::combat::StanceId::Calm,
-        "Divinity" => crate::combat::StanceId::Divinity,
-        _ => crate::combat::StanceId::Neutral,
+        "Wrath" => crate::runtime::combat::StanceId::Wrath,
+        "Calm" => crate::runtime::combat::StanceId::Calm,
+        "Divinity" => crate::runtime::combat::StanceId::Divinity,
+        _ => crate::runtime::combat::StanceId::Neutral,
     };
     let old_stance = state.entities.player.stance;
     if old_stance == new_stance {
         return;
     }
-    if old_stance == crate::combat::StanceId::Calm {
+    if old_stance == crate::runtime::combat::StanceId::Calm {
         state.turn.energy += 2;
     }
-    if new_stance == crate::combat::StanceId::Divinity {
+    if new_stance == crate::runtime::combat::StanceId::Divinity {
         state.turn.energy += 3;
     }
     state.entities.player.stance = new_stance;
     crate::content::relics::hooks::on_change_stance(state, old_stance, new_stance);
 }
-

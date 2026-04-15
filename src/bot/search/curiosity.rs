@@ -1,4 +1,4 @@
-use crate::combat::CombatState;
+use crate::runtime::combat::CombatState;
 use crate::state::core::ClientInput;
 
 pub(crate) fn curiosity_archetype_move_bonus(

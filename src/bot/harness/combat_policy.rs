@@ -8,7 +8,7 @@ use crate::bot::combat_heuristic::{self, HeuristicDiagnostics};
 use crate::bot::combat_posture::posture_features;
 use crate::bot::coverage::CoverageMode;
 use crate::bot::search::{self, SearchDiagnostics};
-use crate::combat::{CombatState, Intent};
+use crate::runtime::combat::{CombatState, Intent};
 use crate::content::cards::{get_card_definition, CardType};
 use crate::state::core::{ClientInput, EngineState};
 use crate::state::run::RunState;
@@ -551,4 +551,3 @@ pub fn incoming_damage(combat: &CombatState) -> i32 {
         })
         .sum()
 }
-

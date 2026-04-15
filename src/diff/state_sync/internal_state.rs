@@ -1,4 +1,4 @@
-use crate::combat::Power;
+use crate::runtime::combat::Power;
 use crate::content::monsters::EnemyId;
 use crate::content::powers::PowerId;
 use crate::content::relics::{RelicId, RelicState};
@@ -416,4 +416,3 @@ fn mode_shift_amount(powers: &[Power]) -> Option<i32> {
         .find(|power| power.power_type == PowerId::ModeShift)
         .map(|power| power.amount)
 }
-

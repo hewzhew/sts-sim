@@ -1,4 +1,4 @@
-use crate::combat::CombatState;
+use crate::runtime::combat::CombatState;
 use crate::state::core::ClientInput;
 use crate::state::EngineState;
 use std::time::Instant;
@@ -727,7 +727,7 @@ fn describe_root_prior_move_label(combat: &CombatState, input: &ClientInput) -> 
     }
 }
 
-fn format_root_prior_card(card: &crate::combat::CombatCard) -> String {
+fn format_root_prior_card(card: &crate::runtime::combat::CombatCard) -> String {
     let mut label = crate::content::cards::get_card_definition(card.id)
         .name
         .to_string();

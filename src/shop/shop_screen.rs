@@ -7,7 +7,7 @@ use crate::shop::state::{ShopCard, ShopConfig, ShopPotion, ShopRelic, ShopState}
 /// Equivalent to Java's `ShopScreen.init(...)` + associated methods.
 /// Consumes rng sequences and populates the ShopState, determining prices and discounts.
 pub fn generate_shop<F>(
-    rng_pool: &mut crate::rng::RngPool,
+    rng_pool: &mut crate::runtime::rng::RngPool,
     config: &ShopConfig,
     mut get_relic: F,
 ) -> ShopState

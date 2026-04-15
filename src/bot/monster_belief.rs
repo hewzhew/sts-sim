@@ -1,4 +1,4 @@
-use crate::combat::{CombatState, Intent, MonsterEntity, PowerId};
+use crate::runtime::combat::{CombatState, Intent, MonsterEntity, PowerId};
 use crate::content::monsters::EnemyId;
 use crate::content::relics::RelicId;
 
@@ -1393,4 +1393,3 @@ fn predict_awakened_one(observation: &MonsterObservation) -> MonsterBeliefState 
         Some("awakened_one_phase2_split"),
     )
 }
-

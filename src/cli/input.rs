@@ -1,4 +1,4 @@
-use sts_simulator::combat::CombatState;
+use sts_simulator::runtime::combat::CombatState;
 use sts_simulator::state::core::{CampfireChoice, ClientInput, EngineState, PendingChoice};
 use sts_simulator::state::run::RunState;
 use sts_simulator::state::selection::{SelectionResolution, SelectionScope, SelectionTargetRef};

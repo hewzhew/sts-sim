@@ -1,4 +1,4 @@
-use crate::combat::{CombatCard, CombatState, Intent};
+use crate::runtime::combat::{CombatCard, CombatState, Intent};
 use crate::content::cards::{self, CardId, CardType};
 
 pub(super) fn total_incoming_damage(combat: &CombatState) -> i32 {
@@ -21,7 +21,7 @@ pub(super) fn intent_hits(intent: &Intent) -> i32 {
     }
 }
 
-pub(super) fn monster_is_attacking(monster: &crate::combat::MonsterEntity) -> bool {
+pub(super) fn monster_is_attacking(monster: &crate::runtime::combat::MonsterEntity) -> bool {
     !monster.is_dying
         && !monster.is_escaped
         && !monster.half_dead
@@ -44,7 +44,7 @@ pub(super) fn effective_block(
     } else {
         def.base_block
     };
-    (base + combat.get_power(0, crate::combat::PowerId::Dexterity)).max(0)
+    (base + combat.get_power(0, crate::runtime::combat::PowerId::Dexterity)).max(0)
 }
 
 pub(super) fn effective_damage(

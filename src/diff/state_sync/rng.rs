@@ -1,6 +1,6 @@
 use serde_json::Value;
 
-use crate::rng::{RngPool, StsRng};
+use crate::runtime::rng::{RngPool, StsRng};
 
 pub fn sync_rng(rng: &mut RngPool, snapshot: &Value) {
     let rng_state = match snapshot.get("rng_state") {

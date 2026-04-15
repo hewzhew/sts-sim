@@ -3,7 +3,7 @@ mod policy;
 mod signals;
 mod targets;
 
-use crate::combat::CombatState;
+use crate::runtime::combat::CombatState;
 use crate::content::potions::{get_potion_definition, PotionId};
 use crate::state::core::ClientInput;
 

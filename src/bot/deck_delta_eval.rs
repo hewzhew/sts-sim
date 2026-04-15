@@ -327,7 +327,7 @@ fn run_conservative_rollout(
 
 fn choose_conservative_action(
     engine: &EngineState,
-    combat: &crate::combat::CombatState,
+    combat: &crate::runtime::combat::CombatState,
     legal_moves: &[ClientInput],
 ) -> ClientInput {
     if legal_moves.len() == 1 {
@@ -363,7 +363,7 @@ fn choose_conservative_action(
 
 fn conservative_choice_score(
     engine: &EngineState,
-    combat: &crate::combat::CombatState,
+    combat: &crate::runtime::combat::CombatState,
     candidate: &ClientInput,
     has_alternative: bool,
     alive: bool,
@@ -396,7 +396,7 @@ fn conservative_choice_score(
     score
 }
 
-fn combat_cleared(combat: &crate::combat::CombatState) -> bool {
+fn combat_cleared(combat: &crate::runtime::combat::CombatState) -> bool {
     combat
         .entities
         .monsters
@@ -404,7 +404,7 @@ fn combat_cleared(combat: &crate::combat::CombatState) -> bool {
         .all(|monster| monster.is_dying || monster.is_escaped || monster.current_hp <= 0)
 }
 
-fn total_monster_hp(combat: &crate::combat::CombatState) -> i32 {
+fn total_monster_hp(combat: &crate::runtime::combat::CombatState) -> i32 {
     combat
         .entities
         .monsters
@@ -414,23 +414,25 @@ fn total_monster_hp(combat: &crate::combat::CombatState) -> i32 {
         .sum()
 }
 
-fn incoming_damage(combat: &crate::combat::CombatState) -> i32 {
+fn incoming_damage(combat: &crate::runtime::combat::CombatState) -> i32 {
     combat
         .entities
         .monsters
         .iter()
         .filter(|monster| !monster.is_dying && !monster.is_escaped && monster.current_hp > 0)
         .map(|monster| match monster.current_intent {
-            crate::combat::Intent::Attack { hits, .. }
-            | crate::combat::Intent::AttackBuff { hits, .. }
-            | crate::combat::Intent::AttackDebuff { hits, .. }
-            | crate::combat::Intent::AttackDefend { hits, .. } => monster.intent_dmg * hits as i32,
+            crate::runtime::combat::Intent::Attack { hits, .. }
+            | crate::runtime::combat::Intent::AttackBuff { hits, .. }
+            | crate::runtime::combat::Intent::AttackDebuff { hits, .. }
+            | crate::runtime::combat::Intent::AttackDefend { hits, .. } => {
+                monster.intent_dmg * hits as i32
+            }
             _ => 0,
         })
         .sum()
 }
 
-fn filled_potion_slots(combat: &crate::combat::CombatState) -> i32 {
+fn filled_potion_slots(combat: &crate::runtime::combat::CombatState) -> i32 {
     combat
         .entities
         .potions
@@ -440,7 +442,7 @@ fn filled_potion_slots(combat: &crate::combat::CombatState) -> i32 {
 }
 
 fn rollout_terminal_score(
-    combat: &crate::combat::CombatState,
+    combat: &crate::runtime::combat::CombatState,
     victory: bool,
     baseline_hp: i32,
     potions_before: i32,
@@ -459,7 +461,7 @@ fn rollout_terminal_score(
 }
 
 fn rollout_timeout_score(
-    combat: &crate::combat::CombatState,
+    combat: &crate::runtime::combat::CombatState,
     baseline_hp: i32,
     potions_before: i32,
     steps: i32,
@@ -594,4 +596,3 @@ fn cards_like_scaling_patch(card_id: CardId) -> bool {
             | CardId::LimitBreak
     )
 }
-

@@ -272,7 +272,7 @@ pub fn build_ledger_record(
 
 fn execute_steps(
     engine_state: &mut EngineState,
-    combat: &mut crate::combat::CombatState,
+    combat: &mut crate::runtime::combat::CombatState,
     steps: &[StructuredScenarioStep],
 ) -> Result<CandidateLineSummary, String> {
     let mut summary = CandidateLineSummary::default();
@@ -424,7 +424,7 @@ fn resolve_relative(base: &Path, relative: &Path) -> PathBuf {
     }
 }
 
-fn summarize_state(combat: &crate::combat::CombatState) -> BossValidationStateSummary {
+fn summarize_state(combat: &crate::runtime::combat::CombatState) -> BossValidationStateSummary {
     let pressure = StatePressureFeatures::from_combat(combat);
     let mut attack_cards = 0usize;
     let mut skill_cards = 0usize;
@@ -478,4 +478,3 @@ fn summarize_deck(start_spec: &CombatStartSpec) -> String {
         .collect::<Vec<_>>()
         .join(",")
 }
-

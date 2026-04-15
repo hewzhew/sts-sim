@@ -1,7 +1,7 @@
 use serde_json::Value;
 use std::collections::VecDeque;
 
-use crate::combat::{CombatPhase, Intent, MonsterEntity};
+use crate::runtime::combat::{CombatPhase, Intent, MonsterEntity};
 
 use crate::diff::protocol::mapper::{
     intent_from_java, java_potion_id_to_rust, monster_id_from_java, power_id_from_java,
@@ -23,7 +23,7 @@ use super::internal_state::{
 use super::rng::sync_rng;
 use crate::content::powers::store;
 
-fn snapshot_power_matches(power: &crate::combat::Power, snapshot_power: &Value) -> bool {
+fn snapshot_power_matches(power: &crate::runtime::combat::Power, snapshot_power: &Value) -> bool {
     let Some(pid_str) = snapshot_power.get("id").and_then(|v| v.as_str()) else {
         return false;
     };
@@ -39,7 +39,7 @@ fn snapshot_power_matches(power: &crate::combat::Power, snapshot_power: &Value) 
     true
 }
 
-pub fn sync_state(cs: &mut crate::combat::CombatState, snapshot: &Value) {
+pub fn sync_state(cs: &mut crate::runtime::combat::CombatState, snapshot: &Value) {
     let player_val = &snapshot["player"];
 
     cs.entities.player.current_hp = player_val["current_hp"].as_i64().unwrap_or(

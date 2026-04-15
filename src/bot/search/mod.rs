@@ -47,17 +47,17 @@ pub(super) use tactical_bonus::tactical_move_bonus;
 
 pub fn legal_moves_for_audit(
     engine: &crate::state::EngineState,
-    combat: &crate::combat::CombatState,
+    combat: &crate::runtime::combat::CombatState,
 ) -> Vec<crate::state::core::ClientInput> {
     legal_moves::get_legal_moves(engine, combat)
 }
 
-fn intent_hits(intent: &crate::combat::Intent) -> i32 {
+fn intent_hits(intent: &crate::runtime::combat::Intent) -> i32 {
     match intent {
-        crate::combat::Intent::Attack { hits, .. }
-        | crate::combat::Intent::AttackBuff { hits, .. }
-        | crate::combat::Intent::AttackDebuff { hits, .. }
-        | crate::combat::Intent::AttackDefend { hits, .. } => (*hits as i32).max(1),
+        crate::runtime::combat::Intent::Attack { hits, .. }
+        | crate::runtime::combat::Intent::AttackBuff { hits, .. }
+        | crate::runtime::combat::Intent::AttackDebuff { hits, .. }
+        | crate::runtime::combat::Intent::AttackDefend { hits, .. } => (*hits as i32).max(1),
         _ => 0,
     }
 }

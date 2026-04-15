@@ -8,8 +8,8 @@ use crate::bot::strategy_families::{
     OrderingConstraint, RiskProfile, TurnActionRole, TurnOrderingHint, TurnRiskContext,
     TurnSequencingContext,
 };
-use crate::combat::CombatState;
-use crate::combat::Intent;
+use crate::runtime::combat::CombatState;
+use crate::runtime::combat::Intent;
 use crate::content::cards::{get_card_definition, CardId, CardType};
 use crate::content::potions::PotionId;
 use crate::state::core::ClientInput;
@@ -553,7 +553,7 @@ fn branch_opening_estimate(
 
     let draw_ctx = crate::bot::strategy_families::DrawTimingContext {
         current_energy: combat.turn.energy as i32,
-        player_no_draw: combat.get_power(0, crate::combat::PowerId::NoDraw) > 0,
+        player_no_draw: combat.get_power(0, crate::runtime::combat::PowerId::NoDraw) > 0,
         current_hand_size: combat.zones.hand.len() as i32,
         future_zero_cost_cards,
         future_one_cost_cards,
@@ -585,7 +585,7 @@ fn branch_opening_estimate(
     }))
 }
 
-fn current_card_energy_cost(card: &crate::combat::CombatCard) -> i32 {
+fn current_card_energy_cost(card: &crate::runtime::combat::CombatCard) -> i32 {
     match card.get_cost() {
         cost if cost < 0 => 0,
         cost => cost.into(),
@@ -653,7 +653,7 @@ fn immediate_action_payoff(combat: &CombatState, input: &ClientInput) -> i32 {
     let block = (def.base_block + card.upgrades as i32 * def.upgrade_block).max(0);
     let damage = (def.base_damage
         + card.upgrades as i32 * def.upgrade_damage
-        + combat.get_power(0, crate::combat::PowerId::Strength))
+        + combat.get_power(0, crate::runtime::combat::PowerId::Strength))
     .max(0);
     match def.card_type {
         CardType::Attack => damage * hits_for_card(card.id),
@@ -725,7 +725,7 @@ fn followup_payoff_estimate(combat: &CombatState, current_idx: usize, input: &Cl
         let card_def = get_card_definition(card.id);
         let damage = (card_def.base_damage
             + card.upgrades as i32 * card_def.upgrade_damage
-            + combat.get_power(0, crate::combat::PowerId::Strength))
+            + combat.get_power(0, crate::runtime::combat::PowerId::Strength))
         .max(0)
             * hits_for_card(card.id);
         let card_cost = i32::from(card.get_cost());
@@ -768,7 +768,7 @@ fn growth_window_available(combat: &CombatState, input: &ClientInput) -> bool {
     let def = get_card_definition(card.id);
     let damage = (def.base_damage
         + card.upgrades as i32 * def.upgrade_damage
-        + combat.get_power(0, crate::combat::PowerId::Strength))
+        + combat.get_power(0, crate::runtime::combat::PowerId::Strength))
     .max(0);
     combat
         .entities
@@ -822,4 +822,3 @@ fn key_delay_weight(card_id: CardId) -> i32 {
 pub(super) fn total_incoming_damage(combat: &CombatState) -> i32 {
     StatePressureFeatures::from_combat(combat).value_incoming
 }
-

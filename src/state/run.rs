@@ -1,7 +1,7 @@
-use crate::combat::{CombatCard, PlayerEntity};
+use crate::runtime::combat::{CombatCard, PlayerEntity};
 use crate::content::relics::RelicState;
 use crate::map::state::MapState;
-use crate::rng::RngPool;
+use crate::runtime::rng::RngPool;
 use crate::state::selection::{DomainCardSnapshot, DomainEvent, DomainEventSource};
 use std::cell::Cell;
 
@@ -173,7 +173,7 @@ impl RunState {
         // Asc 10: Add Ascender's Bane (unremovable curse) to starting deck
         if ascension_level >= 10 {
             let uuid = 9999; // High UUID to avoid conflicts with starter deck
-            rs.master_deck.push(crate::combat::CombatCard::new(
+            rs.master_deck.push(crate::runtime::combat::CombatCard::new(
                 crate::content::cards::CardId::AscendersBane,
                 uuid,
             ));
@@ -220,7 +220,7 @@ impl RunState {
 
             for (idx, &card_id) in starter_cards.iter().enumerate() {
                 self.master_deck
-                    .push(crate::combat::CombatCard::new(card_id, idx as u32));
+                    .push(crate::runtime::combat::CombatCard::new(card_id, idx as u32));
             }
         }
 
@@ -257,7 +257,7 @@ impl RunState {
             gold: self.gold,
             max_orbs: 0,
             orbs: Vec::new(),
-            stance: crate::combat::StanceId::Neutral,
+            stance: crate::runtime::combat::StanceId::Neutral,
             relics: Vec::new(),
             relic_buses: Default::default(),
             energy_master: 3,
@@ -764,23 +764,23 @@ impl RunState {
         }
 
         // Shuffle each pool with relicRng.randomLong() as seed (Java pattern)
-        crate::rng::shuffle_with_random_long(
+        crate::runtime::rng::shuffle_with_random_long(
             &mut self.common_relic_pool,
             &mut self.rng_pool.relic_rng,
         );
-        crate::rng::shuffle_with_random_long(
+        crate::runtime::rng::shuffle_with_random_long(
             &mut self.uncommon_relic_pool,
             &mut self.rng_pool.relic_rng,
         );
-        crate::rng::shuffle_with_random_long(
+        crate::runtime::rng::shuffle_with_random_long(
             &mut self.rare_relic_pool,
             &mut self.rng_pool.relic_rng,
         );
-        crate::rng::shuffle_with_random_long(
+        crate::runtime::rng::shuffle_with_random_long(
             &mut self.shop_relic_pool,
             &mut self.rng_pool.relic_rng,
         );
-        crate::rng::shuffle_with_random_long(
+        crate::runtime::rng::shuffle_with_random_long(
             &mut self.boss_relic_pool,
             &mut self.rng_pool.relic_rng,
         );
@@ -1138,7 +1138,10 @@ impl RunState {
             .collect();
 
         // Shuffle using miscRng.randomLong() seed (mirrors Java's Collections.shuffle)
-        crate::rng::shuffle_with_random_long(&mut upgradable_indices, &mut self.rng_pool.misc_rng);
+        crate::runtime::rng::shuffle_with_random_long(
+            &mut upgradable_indices,
+            &mut self.rng_pool.misc_rng,
+        );
 
         // Upgrade up to `count` cards
         for &idx in upgradable_indices.iter().take(count) {

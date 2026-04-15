@@ -1,6 +1,6 @@
 use crate::bot::combat_posture::CombatPostureFeatures;
-use crate::combat::CombatState;
-use crate::combat::PowerId;
+use crate::runtime::combat::CombatState;
+use crate::runtime::combat::PowerId;
 use crate::content::cards::CardId;
 use crate::state::core::ClientInput;
 use crate::state::EngineState;
@@ -916,4 +916,3 @@ fn transition_exhaust_payoff(before: &CombatState, after: &CombatState) -> (i32,
         exhausted_cards * dark_embrace,
     )
 }
-

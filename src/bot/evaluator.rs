@@ -1,4 +1,4 @@
-use crate::combat::{CombatCard, CombatState, Intent, PowerId};
+use crate::runtime::combat::{CombatCard, CombatState, Intent, PowerId};
 use crate::content::cards::{get_card_definition, CardType};
 use crate::content::monsters::EnemyId;
 use crate::state::{EngineState, RunResult};
@@ -159,7 +159,10 @@ fn estimated_attack_hits(card_id: crate::content::cards::CardId) -> i32 {
     }
 }
 
-fn monster_role_penalty(combat_state: &CombatState, monster: &crate::combat::MonsterEntity) -> f32 {
+fn monster_role_penalty(
+    combat_state: &CombatState,
+    monster: &crate::runtime::combat::MonsterEntity,
+) -> f32 {
     let Some(enemy) = EnemyId::from_id(monster.monster_type) else {
         return 0.0;
     };
@@ -188,7 +191,7 @@ fn monster_role_penalty(combat_state: &CombatState, monster: &crate::combat::Mon
     penalty
 }
 
-fn attack_pressure_penalty(monster: &crate::combat::MonsterEntity) -> f32 {
+fn attack_pressure_penalty(monster: &crate::runtime::combat::MonsterEntity) -> f32 {
     match monster.current_intent {
         Intent::Attack { hits, .. }
         | Intent::AttackBuff { hits, .. }
@@ -204,7 +207,7 @@ fn attack_pressure_penalty(monster: &crate::combat::MonsterEntity) -> f32 {
 
 fn kill_window_bonus(
     combat_state: &CombatState,
-    monster: &crate::combat::MonsterEntity,
+    monster: &crate::runtime::combat::MonsterEntity,
     reachable_damage: i32,
 ) -> f32 {
     let mut bonus = 2_400.0 + (reachable_damage - monster.current_hp).max(0) as f32 * 35.0;

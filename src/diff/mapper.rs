@@ -1,4 +1,4 @@
-use crate::combat::Intent;
+use crate::runtime::combat::Intent;
 use crate::content::cards::CardId;
 use crate::content::monsters::EnemyId;
 use crate::content::potions::PotionId;
@@ -117,4 +117,3 @@ pub fn intent_from_java(intent_str: &str, damage: i32, hits: i32) -> Intent {
         "UNKNOWN" | _ => Intent::Unknown,
     }
 }
-

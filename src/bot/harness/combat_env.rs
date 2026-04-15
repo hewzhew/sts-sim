@@ -4,7 +4,7 @@ use crate::bot::monster_belief::{
     build_combat_belief_state, CombatBeliefState, MonsterBeliefCertainty,
 };
 use crate::bot::search::{legal_moves_for_audit, StatePressureFeatures};
-use crate::combat::{CombatCard, CombatPhase, CombatState};
+use crate::runtime::combat::{CombatCard, CombatPhase, CombatState};
 use crate::content::cards::{can_play_card, effective_target, get_card_definition};
 use crate::core::EntityId;
 use crate::engine::core::tick_until_stable_turn;
@@ -857,4 +857,3 @@ fn format_card(card: &CombatCard) -> String {
     }
     label
 }
-

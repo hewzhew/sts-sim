@@ -1,4 +1,4 @@
-use crate::combat::CombatState;
+use crate::runtime::combat::CombatState;
 use crate::content::cards::CardTarget;
 use crate::core::EntityId;
 use crate::state::TargetValidation;
@@ -63,4 +63,3 @@ pub fn pick_random_target(
         .random(targetable.len() as i32 - 1) as usize;
     targetable.get(idx).copied()
 }
-

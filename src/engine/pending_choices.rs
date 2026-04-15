@@ -1,5 +1,5 @@
-use crate::action::{Action, ActionInfo, AddTo};
-use crate::combat::CombatState;
+use crate::runtime::action::{Action, ActionInfo, AddTo};
+use crate::runtime::combat::CombatState;
 use crate::state::core::{ClientInput, EngineState, GridSelectReason, HandSelectReason, PileType};
 use crate::state::selection::{
     DomainCardSnapshot, DomainEvent, DomainEventSource, SelectionResolution, SelectionScope,
@@ -348,4 +348,3 @@ pub fn handle_grid_select(
         }
     }
 }
-

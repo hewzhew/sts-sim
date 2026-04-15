@@ -2,7 +2,7 @@ use super::catalog::{category_for, DONT_PLAY_POTIONS};
 use super::signals::{analyze_combat, CombatSignals};
 use super::targets;
 use super::{PotionCandidate, PotionCategory, PotionDecisionSnapshot};
-use crate::combat::{CombatState, StanceId};
+use crate::runtime::combat::{CombatState, StanceId};
 use crate::content::cards::{get_card_definition, CardId, CardType};
 use crate::content::potions::{get_potion_definition, PotionId};
 use crate::engine::targeting;
@@ -685,7 +685,7 @@ fn duplication_anchor_score(combat: &CombatState, signals: &CombatSignals) -> i3
 }
 
 fn duplication_follow_up_score(
-    card: &crate::combat::CombatCard,
+    card: &crate::runtime::combat::CombatCard,
     combat: &CombatState,
     signals: &CombatSignals,
 ) -> i32 {
@@ -757,7 +757,7 @@ fn all_live_targets_have_artifact(combat: &CombatState) -> bool {
             continue;
         }
         any_live_target = true;
-        if combat.get_power(monster.id, crate::combat::PowerId::Artifact) <= 0 {
+        if combat.get_power(monster.id, crate::runtime::combat::PowerId::Artifact) <= 0 {
             return false;
         }
     }
@@ -783,7 +783,7 @@ fn gambler_hand_liability(combat: &CombatState, signals: &CombatSignals) -> i32 
 }
 
 fn gambler_card_liability(
-    card: &crate::combat::CombatCard,
+    card: &crate::runtime::combat::CombatCard,
     combat: &CombatState,
     signals: &CombatSignals,
 ) -> i32 {
@@ -907,7 +907,7 @@ fn gambler_redraw_upside_score(combat: &CombatState, signals: &CombatSignals) ->
 }
 
 fn gambler_card_turn_value(
-    card: &crate::combat::CombatCard,
+    card: &crate::runtime::combat::CombatCard,
     combat: &CombatState,
     signals: &CombatSignals,
 ) -> i32 {

@@ -1,4 +1,4 @@
-use crate::combat::CombatState;
+use crate::runtime::combat::CombatState;
 use crate::state::core::ClientInput;
 use crate::state::EngineState;
 use std::time::Instant;

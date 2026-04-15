@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::bot::combat_heuristic;
-use crate::combat::{CombatCard, CombatState};
+use crate::runtime::combat::{CombatCard, CombatState};
 use crate::content::cards::{self, CardType};
 use crate::content::powers::{store, PowerId};
 use crate::diff::replay::live_comm_replay::{
@@ -1454,10 +1454,12 @@ fn incoming_damage(combat: &CombatState) -> i32 {
         .iter()
         .filter(|monster| !monster.is_dying && !monster.is_escaped && monster.current_hp > 0)
         .map(|monster| match monster.current_intent {
-            crate::combat::Intent::Attack { hits, .. }
-            | crate::combat::Intent::AttackBuff { hits, .. }
-            | crate::combat::Intent::AttackDebuff { hits, .. }
-            | crate::combat::Intent::AttackDefend { hits, .. } => monster.intent_dmg * hits as i32,
+            crate::runtime::combat::Intent::Attack { hits, .. }
+            | crate::runtime::combat::Intent::AttackBuff { hits, .. }
+            | crate::runtime::combat::Intent::AttackDebuff { hits, .. }
+            | crate::runtime::combat::Intent::AttackDefend { hits, .. } => {
+                monster.intent_dmg * hits as i32
+            }
             _ => 0,
         })
         .sum()
@@ -1606,4 +1608,3 @@ fn trajectory_rank_key(candidate: &TrajectoryCandidate) -> (i32, i32, i32, i32, 
         candidate.score,
     )
 }
-

@@ -122,12 +122,12 @@ pub enum Action {
         target: Option<EntityId>,
     },
     PlayCardDirect {
-        card: Box<crate::combat::CombatCard>,
+        card: Box<crate::runtime::combat::CombatCard>,
         target: Option<EntityId>,
         purge: bool,
     },
     EnqueueCardPlay {
-        item: Box<crate::combat::QueuedCardPlay>,
+        item: Box<crate::runtime::combat::QueuedCardPlay>,
         in_front: bool,
     },
     FlushNextQueuedCard,
@@ -230,12 +230,12 @@ pub enum Action {
     },
     UpdatePowerExtraData {
         target: EntityId,
-        power_id: crate::combat::PowerId,
+        power_id: crate::runtime::combat::PowerId,
         value: i32,
     },
     UpdatePowerExtraDataInstance {
         target: EntityId,
-        power_id: crate::combat::PowerId,
+        power_id: crate::runtime::combat::PowerId,
         instance_id: u32,
         value: i32,
     },
@@ -250,11 +250,11 @@ pub enum Action {
         upgraded: bool,
     },
     MakeCopyInHand {
-        original: Box<crate::combat::CombatCard>,
+        original: Box<crate::runtime::combat::CombatCard>,
         amount: u8,
     },
     MakeCopyInDiscard {
-        original: Box<crate::combat::CombatCard>,
+        original: Box<crate::runtime::combat::CombatCard>,
         amount: u8,
     },
     MakeTempCardInDiscardAndDeck {
@@ -330,7 +330,7 @@ pub enum Action {
     SetMonsterMove {
         monster_id: EntityId,
         next_move_byte: u8,
-        intent: crate::combat::Intent,
+        intent: crate::runtime::combat::Intent,
     },
     UpdateHexaghostState {
         monster_id: EntityId,
@@ -403,7 +403,7 @@ pub enum Action {
         relic_id: crate::content::relics::RelicId,
         used_up: bool,
     },
-    ChannelOrb(crate::combat::OrbId),
+    ChannelOrb(crate::runtime::combat::OrbId),
     EvokeOrb,
     TriggerPassiveOrbs,
     Scry(usize),

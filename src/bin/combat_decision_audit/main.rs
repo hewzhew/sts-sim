@@ -12,7 +12,7 @@ use sts_simulator::bot::search::{
     DecisionAuditConfig, DecisionAuditEngineState, LookupRootPriorProvider, RootPriorConfig,
     RootPriorQueryKey, SearchEquivalenceMode, SearchProfileBreakdown, TrajectoryOutcomeKind,
 };
-use sts_simulator::combat::CombatCard;
+use sts_simulator::runtime::combat::CombatCard;
 use sts_simulator::diff::replay::live_comm_replay::{
     derive_combat_replay_view, find_combat_step_index_by_before_frame_id,
     load_live_session_replay_path, mapped_command_to_input, reconstruct_combat_replay_step,
@@ -811,10 +811,10 @@ fn export_preferences_from_raw(
             .iter()
             .filter(|monster| !monster.is_dying && !monster.is_escaped && monster.current_hp > 0)
             .map(|monster| match monster.current_intent {
-                sts_simulator::combat::Intent::Attack { hits, .. }
-                | sts_simulator::combat::Intent::AttackBuff { hits, .. }
-                | sts_simulator::combat::Intent::AttackDebuff { hits, .. }
-                | sts_simulator::combat::Intent::AttackDefend { hits, .. } => {
+                sts_simulator::runtime::combat::Intent::Attack { hits, .. }
+                | sts_simulator::runtime::combat::Intent::AttackBuff { hits, .. }
+                | sts_simulator::runtime::combat::Intent::AttackDebuff { hits, .. }
+                | sts_simulator::runtime::combat::Intent::AttackDefend { hits, .. } => {
                     monster.intent_dmg * hits as i32
                 }
                 _ => 0,
@@ -1793,7 +1793,7 @@ fn search_baseline_record_from_diagnostics(
     frame: u64,
     depth_limit: u32,
     top_k: usize,
-    combat: &sts_simulator::combat::CombatState,
+    combat: &sts_simulator::runtime::combat::CombatState,
     diagnostics: sts_simulator::bot::search::SearchDiagnostics,
 ) -> SearchBaselineRecord {
     SearchBaselineRecord {
@@ -2036,7 +2036,7 @@ fn render_search_baseline_record(record: &SearchBaselineRecord) -> String {
 }
 
 fn describe_client_input(
-    combat: &sts_simulator::combat::CombatState,
+    combat: &sts_simulator::runtime::combat::CombatState,
     input: &ClientInput,
 ) -> String {
     match input {
@@ -2075,7 +2075,7 @@ fn format_card(card: &CombatCard) -> String {
 }
 
 fn input_branch_family(
-    combat: &sts_simulator::combat::CombatState,
+    combat: &sts_simulator::runtime::combat::CombatState,
     input: &ClientInput,
 ) -> Option<String> {
     let ClientInput::PlayCard { card_index, .. } = input else {

@@ -1,5 +1,5 @@
 use crate::bot::monster_belief::build_combat_belief_state;
-use crate::combat::{CombatState, Intent, PowerId};
+use crate::runtime::combat::{CombatState, Intent, PowerId};
 use crate::content::cards::{get_card_definition, CardId, CardTarget, CardType};
 use crate::content::monsters::EnemyId;
 use crate::content::relics::RelicId;
@@ -563,4 +563,3 @@ pub(super) fn fast_hash(state: &SimState) -> u64 {
 fn fnv(h: u64, v: u64) -> u64 {
     (h ^ v).wrapping_mul(0x100000001b3)
 }
-

@@ -208,9 +208,9 @@ pub struct CombatReconstructedStep {
     pub before_root: Value,
     pub mapped_command: CombatMappedCommand,
     pub before_engine: EngineState,
-    pub before_combat: crate::combat::CombatState,
+    pub before_combat: crate::runtime::combat::CombatState,
     pub after_engine: EngineState,
-    pub after_combat: crate::combat::CombatState,
+    pub after_combat: crate::runtime::combat::CombatState,
     pub java_after_snapshot: Value,
     pub diffs: Vec<SerializableDiffResult>,
 }
@@ -766,7 +766,7 @@ fn step_is_combat_related(step: &LiveReplayStep) -> bool {
     root_is_combat_related(&step.before_root) || root_is_combat_related(&step.after_root)
 }
 
-fn summarize_combat_state(combat: &crate::combat::CombatState) -> CombatStateSummary {
+fn summarize_combat_state(combat: &crate::runtime::combat::CombatState) -> CombatStateSummary {
     CombatStateSummary {
         player_hp: combat.entities.player.current_hp,
         player_block: combat.entities.player.block,
@@ -1083,7 +1083,7 @@ fn parse_mapped_command(command_text: &str) -> Option<CombatMappedCommand> {
 
 pub fn mapped_command_to_input(
     command: &CombatMappedCommand,
-    combat: &crate::combat::CombatState,
+    combat: &crate::runtime::combat::CombatState,
 ) -> Result<ClientInput, String> {
     match command {
         CombatMappedCommand::Play {
@@ -1192,4 +1192,3 @@ pub fn root_state_frame_id(root: &Value) -> Option<u64> {
         .and_then(|meta| meta.get("state_frame_id").or_else(|| meta.get("frame_id")))
         .and_then(json_u64)
 }
-

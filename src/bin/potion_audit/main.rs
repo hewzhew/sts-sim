@@ -2,7 +2,7 @@ use clap::{Parser, ValueEnum};
 use std::collections::{BTreeMap, HashMap};
 
 use std::collections::{HashMap as StdHashMap, VecDeque};
-use sts_simulator::combat::{
+use sts_simulator::runtime::combat::{
     CardZones, CombatMeta, CombatPhase, CombatRng, CombatState, EngineRuntime, EntityState, Intent,
     MonsterEntity, PlayerEntity, RelicBuses, StanceId, TurnRuntime,
 };
@@ -13,7 +13,7 @@ use sts_simulator::content::potions::{
 };
 use sts_simulator::EntityId;
 use sts_simulator::engine::action_handlers::cards::handle_obtain_potion;
-use sts_simulator::rng::RngPool;
+use sts_simulator::runtime::rng::RngPool;
 
 #[derive(Clone, Copy, Debug, ValueEnum)]
 enum PotionAuditClassArg {
@@ -130,7 +130,7 @@ fn sample_direct(
     seed: u64,
     limited: bool,
 ) -> HashMap<PotionId, usize> {
-    let mut rng = sts_simulator::rng::StsRng::new(seed);
+    let mut rng = sts_simulator::runtime::rng::StsRng::new(seed);
     let mut counts = HashMap::new();
     for _ in 0..trials {
         let potion_id = random_potion(&mut rng, class.as_potion_class(), limited);
@@ -200,7 +200,10 @@ fn audit_combat(seed: u64, player_class: &'static str) -> CombatState {
         },
         zones: CardZones {
             draw_pile: Vec::new(),
-            hand: vec![sts_simulator::combat::CombatCard::new(CardId::Strike, 1)],
+            hand: vec![sts_simulator::runtime::combat::CombatCard::new(
+                CardId::Strike,
+                1,
+            )],
             discard_pile: Vec::new(),
             exhaust_pile: Vec::new(),
             limbo: Vec::new(),

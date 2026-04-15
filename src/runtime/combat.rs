@@ -1,4 +1,4 @@
-use crate::action::Action;
+use crate::runtime::action::Action;
 use crate::content::cards::CardId;
 use crate::content::relics::RelicState;
 use crate::core::EntityId;
@@ -54,17 +54,17 @@ pub struct EngineRuntime {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct CombatRng {
-    pub pool: crate::rng::RngPool,
+    pub pool: crate::runtime::rng::RngPool,
 }
 
 impl CombatRng {
-    pub fn new(pool: crate::rng::RngPool) -> Self {
+    pub fn new(pool: crate::runtime::rng::RngPool) -> Self {
         Self { pool }
     }
 }
 
 impl Deref for CombatRng {
-    type Target = crate::rng::RngPool;
+    type Target = crate::runtime::rng::RngPool;
 
     fn deref(&self) -> &Self::Target {
         &self.pool

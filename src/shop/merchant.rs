@@ -1,6 +1,6 @@
 use crate::content::cards::{colorless_pool_for_rarity, get_card_definition, java_id};
 use crate::content::cards::{CardId, CardRarity, CardType};
-use crate::rng::RngPool;
+use crate::runtime::rng::RngPool;
 
 /// Equivalent to Java's `Merchant` class constructor.
 /// Generates 5 colored cards (2 Attack, 2 Skill, 1 Power) and 2 colorless cards (1 Uncommon, 1 Rare).

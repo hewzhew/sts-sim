@@ -1,4 +1,4 @@
-use crate::combat::CombatState;
+use crate::runtime::combat::CombatState;
 use crate::content::cards::{get_card_definition, CardId, CardType};
 use crate::content::powers::PowerId;
 
@@ -72,17 +72,17 @@ pub fn analyze_combat(combat: &CombatState) -> CombatSignals {
         alive_monsters += 1;
         total_enemy_hp += monster.current_hp + monster.block;
         let hits = match monster.current_intent {
-            crate::combat::Intent::Attack { hits, .. }
-            | crate::combat::Intent::AttackBuff { hits, .. }
-            | crate::combat::Intent::AttackDebuff { hits, .. }
-            | crate::combat::Intent::AttackDefend { hits, .. } => hits as i32,
+            crate::runtime::combat::Intent::Attack { hits, .. }
+            | crate::runtime::combat::Intent::AttackBuff { hits, .. }
+            | crate::runtime::combat::Intent::AttackDebuff { hits, .. }
+            | crate::runtime::combat::Intent::AttackDefend { hits, .. } => hits as i32,
             _ => 0,
         };
         if matches!(
             monster.current_intent,
-            crate::combat::Intent::Debuff
-                | crate::combat::Intent::StrongDebuff
-                | crate::combat::Intent::AttackDebuff { .. }
+            crate::runtime::combat::Intent::Debuff
+                | crate::runtime::combat::Intent::StrongDebuff
+                | crate::runtime::combat::Intent::AttackDebuff { .. }
         ) {
             debuffing_monsters += 1;
         }

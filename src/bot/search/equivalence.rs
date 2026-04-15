@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use crate::bot::card_taxonomy::taxonomy;
-use crate::combat::{CombatCard, CombatState, Power, PowerId};
+use crate::runtime::combat::{CombatCard, CombatState, Power, PowerId};
 use crate::content::cards::{get_card_definition, CardType};
 use crate::state::core::ClientInput;
 use crate::state::EngineState;
@@ -771,4 +771,3 @@ fn power_fingerprint(powers: &[Power]) -> Vec<(u32, i32, i32, bool)> {
     fingerprint.sort();
     fingerprint
 }
-

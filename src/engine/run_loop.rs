@@ -1,4 +1,4 @@
-use crate::combat::CombatState;
+use crate::runtime::combat::CombatState;
 use crate::map::node::RoomType;
 use crate::state::core::{ClientInput, EngineState};
 use crate::state::run::RunState;
@@ -69,7 +69,7 @@ pub fn tick_run(
 
                     for change in cs.meta.meta_changes.drain(..) {
                         match change {
-                            crate::combat::MetaChange::AddCardToMasterDeck(card_id) => {
+                            crate::runtime::combat::MetaChange::AddCardToMasterDeck(card_id) => {
                                 run_state.add_card_to_deck(card_id);
                             }
                         }
@@ -544,7 +544,7 @@ pub fn tick_run(
 
                     for change in cs.meta.meta_changes.drain(..) {
                         match change {
-                            crate::combat::MetaChange::AddCardToMasterDeck(card_id) => {
+                            crate::runtime::combat::MetaChange::AddCardToMasterDeck(card_id) => {
                                 run_state.add_card_to_deck(card_id);
                             }
                         }
@@ -594,4 +594,3 @@ pub fn tick_run(
         EngineState::GameOver(_) => false,
     }
 }
-

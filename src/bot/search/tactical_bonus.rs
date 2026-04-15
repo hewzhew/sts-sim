@@ -16,8 +16,8 @@ use crate::bot::strategy_families::{
     reaper_hand_shaping_score, reaper_timing_score, status_loop_cycle_score,
     ApparitionTimingContext, DrawTimingContext, MassExhaustProfile, SurvivalTimingContext,
 };
-use crate::combat::CombatState;
-use crate::combat::PowerId;
+use crate::runtime::combat::CombatState;
+use crate::runtime::combat::PowerId;
 use crate::content::cards::{get_card_definition, CardId, CardType};
 use crate::content::monsters::EnemyId;
 use crate::content::relics::RelicId;
@@ -1098,7 +1098,10 @@ fn target_progress_move_bonus(
     bonus
 }
 
-fn double_tap_followup_value(combat: &CombatState, card: &crate::combat::CombatCard) -> f32 {
+fn double_tap_followup_value(
+    combat: &CombatState,
+    card: &crate::runtime::combat::CombatCard,
+) -> f32 {
     let base = estimated_attack_damage(combat, card) * card_hits(card);
     (base as f32 * 300.0)
         + match card.id {
@@ -1144,7 +1147,10 @@ fn armaments_upgrade_value(card_id: CardId) -> i32 {
     score
 }
 
-fn gremlin_nob_skill_penalty(combat: &CombatState, card: &crate::combat::CombatCard) -> f32 {
+fn gremlin_nob_skill_penalty(
+    combat: &CombatState,
+    card: &crate::runtime::combat::CombatCard,
+) -> f32 {
     if get_card_definition(card.id).card_type != CardType::Skill {
         return 0.0;
     }
@@ -1165,10 +1171,12 @@ fn gremlin_nob_skill_penalty(combat: &CombatState, card: &crate::combat::CombatC
         .iter()
         .filter(|m| !m.is_dying && !m.is_escaped)
         .map(|m| match m.current_intent {
-            crate::combat::Intent::Attack { hits, .. }
-            | crate::combat::Intent::AttackBuff { hits, .. }
-            | crate::combat::Intent::AttackDebuff { hits, .. }
-            | crate::combat::Intent::AttackDefend { hits, .. } => m.intent_dmg * hits as i32,
+            crate::runtime::combat::Intent::Attack { hits, .. }
+            | crate::runtime::combat::Intent::AttackBuff { hits, .. }
+            | crate::runtime::combat::Intent::AttackDebuff { hits, .. }
+            | crate::runtime::combat::Intent::AttackDefend { hits, .. } => {
+                m.intent_dmg * hits as i32
+            }
             _ => 0,
         })
         .sum();
@@ -1190,7 +1198,7 @@ fn gremlin_nob_skill_penalty(combat: &CombatState, card: &crate::combat::CombatC
 
 fn sharp_hide_attack_penalty(
     combat: &CombatState,
-    card: &crate::combat::CombatCard,
+    card: &crate::runtime::combat::CombatCard,
     target: Option<usize>,
 ) -> f32 {
     if get_card_definition(card.id).card_type != CardType::Attack {
@@ -1230,10 +1238,12 @@ fn sharp_hide_attack_penalty(
         .iter()
         .filter(|m| !m.is_dying && !m.is_escaped && !m.half_dead)
         .map(|m| match m.current_intent {
-            crate::combat::Intent::Attack { hits, .. }
-            | crate::combat::Intent::AttackBuff { hits, .. }
-            | crate::combat::Intent::AttackDebuff { hits, .. }
-            | crate::combat::Intent::AttackDefend { hits, .. } => m.intent_dmg * hits as i32,
+            crate::runtime::combat::Intent::Attack { hits, .. }
+            | crate::runtime::combat::Intent::AttackBuff { hits, .. }
+            | crate::runtime::combat::Intent::AttackDebuff { hits, .. }
+            | crate::runtime::combat::Intent::AttackDefend { hits, .. } => {
+                m.intent_dmg * hits as i32
+            }
             _ => 0,
         })
         .sum();
@@ -1287,7 +1297,10 @@ fn sharp_hide_attack_penalty(
     penalty
 }
 
-fn slimed_cleanup_move_bonus(combat: &CombatState, card: &crate::combat::CombatCard) -> f32 {
+fn slimed_cleanup_move_bonus(
+    combat: &CombatState,
+    card: &crate::runtime::combat::CombatCard,
+) -> f32 {
     if card.id != CardId::Slimed {
         return 0.0;
     }
@@ -1326,7 +1339,7 @@ fn slimed_cleanup_move_bonus(combat: &CombatState, card: &crate::combat::CombatC
 
 fn slime_boss_split_timing_bonus(
     combat: &CombatState,
-    card: &crate::combat::CombatCard,
+    card: &crate::runtime::combat::CombatCard,
     target: Option<usize>,
 ) -> f32 {
     if get_card_definition(card.id).card_type != CardType::Attack {
@@ -1359,10 +1372,10 @@ fn slime_boss_split_timing_bonus(
     let imminent = combat_unblocked_incoming_damage(combat);
     let slam_pressure = if matches!(
         monster.current_intent,
-        crate::combat::Intent::Attack { .. }
-            | crate::combat::Intent::AttackBuff { .. }
-            | crate::combat::Intent::AttackDebuff { .. }
-            | crate::combat::Intent::AttackDefend { .. }
+        crate::runtime::combat::Intent::Attack { .. }
+            | crate::runtime::combat::Intent::AttackBuff { .. }
+            | crate::runtime::combat::Intent::AttackDebuff { .. }
+            | crate::runtime::combat::Intent::AttackDefend { .. }
     ) {
         monster.intent_dmg * intent_hits(&monster.current_intent)
     } else {
@@ -1402,7 +1415,7 @@ fn slime_boss_split_timing_bonus(
 
 fn guardian_phase_timing_bonus(
     combat: &CombatState,
-    card: &crate::combat::CombatCard,
+    card: &crate::runtime::combat::CombatCard,
     target: Option<usize>,
 ) -> f32 {
     if get_card_definition(card.id).card_type != CardType::Attack {
@@ -1460,16 +1473,20 @@ fn guardian_sharp_hide_extra_penalty(
     thorns_damage: i32,
     projected_hp: i32,
     owner_next_move: u8,
-    owner_intent: &crate::combat::Intent,
+    owner_intent: &crate::runtime::combat::Intent,
 ) -> f32 {
     let mut penalty = -2_500.0;
     let incoming = combat_total_incoming_damage(combat);
     let unblocked = combat_unblocked_incoming_damage(combat);
 
-    if owner_next_move == 4 || matches!(owner_intent, crate::combat::Intent::AttackBuff { .. }) {
+    if owner_next_move == 4
+        || matches!(owner_intent, crate::runtime::combat::Intent::AttackBuff { .. })
+    {
         // Twin Slam is the clearest "just wait one enemy turn and reflect disappears" window.
         penalty -= 5_000.0;
-    } else if owner_next_move == 3 || matches!(owner_intent, crate::combat::Intent::Attack { .. }) {
+    } else if owner_next_move == 3
+        || matches!(owner_intent, crate::runtime::combat::Intent::Attack { .. })
+    {
         penalty -= 2_000.0;
     }
 
@@ -1487,7 +1504,10 @@ fn guardian_sharp_hide_extra_penalty(
     penalty
 }
 
-fn estimated_attack_damage(combat: &CombatState, card: &crate::combat::CombatCard) -> i32 {
+fn estimated_attack_damage(
+    combat: &CombatState,
+    card: &crate::runtime::combat::CombatCard,
+) -> i32 {
     let def = get_card_definition(card.id);
     let mut damage = match card.id {
         CardId::BodySlam => combat.entities.player.block,
@@ -1610,7 +1630,7 @@ fn build_mass_exhaust_profile(
 
 fn exhaust_card_timing_hold_score(
     combat: &CombatState,
-    card: &crate::combat::CombatCard,
+    card: &crate::runtime::combat::CombatCard,
     unblocked_incoming: i32,
     incoming: i32,
 ) -> i32 {
@@ -1828,7 +1848,7 @@ fn remaining_low_value_fuel_after_mass_exhaust(
 
 fn fiend_fire_closeout_bonus(
     combat: &CombatState,
-    card: &crate::combat::CombatCard,
+    card: &crate::runtime::combat::CombatCard,
     exhausted_cards: i32,
 ) -> i32 {
     let per_hit = estimated_attack_damage(combat, card).max(0);
@@ -2074,7 +2094,10 @@ fn combat_missing_hp(combat: &CombatState) -> i32 {
     (combat.entities.player.max_hp - combat.entities.player.current_hp).max(0)
 }
 
-fn estimated_reaper_heal(combat: &CombatState, card: &crate::combat::CombatCard) -> i32 {
+fn estimated_reaper_heal(
+    combat: &CombatState,
+    card: &crate::runtime::combat::CombatCard,
+) -> i32 {
     let base = estimated_attack_damage(combat, card).max(0);
     if base <= 0 {
         return 0;
@@ -2096,7 +2119,10 @@ fn estimated_reaper_heal(combat: &CombatState, card: &crate::combat::CombatCard)
         .sum()
 }
 
-fn estimated_reaper_kills(combat: &CombatState, card: &crate::combat::CombatCard) -> i32 {
+fn estimated_reaper_kills(
+    combat: &CombatState,
+    card: &crate::runtime::combat::CombatCard,
+) -> i32 {
     let base = estimated_attack_damage(combat, card).max(0);
     if base <= 0 {
         return 0;
@@ -2118,7 +2144,10 @@ fn estimated_reaper_kills(combat: &CombatState, card: &crate::combat::CombatCard
         .sum()
 }
 
-fn estimated_reaper_kill_prevention(combat: &CombatState, card: &crate::combat::CombatCard) -> i32 {
+fn estimated_reaper_kill_prevention(
+    combat: &CombatState,
+    card: &crate::runtime::combat::CombatCard,
+) -> i32 {
     let base = estimated_attack_damage(combat, card).max(0);
     if base <= 0 {
         return 0;
@@ -2145,7 +2174,7 @@ fn estimated_reaper_kill_prevention(combat: &CombatState, card: &crate::combat::
         .sum()
 }
 
-fn card_hits(card: &crate::combat::CombatCard) -> i32 {
+fn card_hits(card: &crate::runtime::combat::CombatCard) -> i32 {
     match card.id {
         CardId::TwinStrike => 2,
         CardId::Pummel => card.base_magic_num_mut.max(4),
@@ -2153,4 +2182,3 @@ fn card_hits(card: &crate::combat::CombatCard) -> i32 {
         _ => 1,
     }
 }
-

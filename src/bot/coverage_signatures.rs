@@ -2,7 +2,7 @@ use std::collections::BTreeSet;
 
 use serde::{Deserialize, Serialize};
 
-use crate::combat::CombatState;
+use crate::runtime::combat::CombatState;
 use crate::content::cards::{self, CardTarget};
 use crate::content::potions;
 use crate::content::powers::PowerId;
@@ -362,6 +362,6 @@ fn spawned_monsters(before: &CombatState, after: &CombatState) -> bool {
             .any(|(b, a)| monster_unavailable(b) && !monster_unavailable(a) && a.current_hp > 0)
 }
 
-fn monster_unavailable(monster: &crate::combat::MonsterEntity) -> bool {
+fn monster_unavailable(monster: &crate::runtime::combat::MonsterEntity) -> bool {
     monster.is_dying || monster.is_escaped || monster.current_hp <= 0
 }

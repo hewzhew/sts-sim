@@ -10,7 +10,7 @@ use crate::bot::search::{
     sequencing_assessment_for_input, SearchDiagnostics, SearchMoveStat, StatePressureFeatures,
 };
 use crate::bot::sidecar::CombatTopCandidateRecord;
-use crate::combat::CombatState;
+use crate::runtime::combat::CombatState;
 use crate::content::monsters::EnemyId;
 use crate::diff::protocol::mapper::{card_id_from_java, monster_id_from_java, power_id_from_java};
 use crate::diff::protocol::snapshot::build_live_combat_snapshot as build_protocol_live_combat_snapshot;
@@ -296,7 +296,7 @@ fn describe_client_input(combat: &CombatState, input: &ClientInput) -> String {
     }
 }
 
-fn format_card(card: &crate::combat::CombatCard) -> String {
+fn format_card(card: &crate::runtime::combat::CombatCard) -> String {
     let mut label = crate::content::cards::get_card_definition(card.id)
         .name
         .to_string();
@@ -1027,7 +1027,7 @@ fn format_java_powers(monster: &Value) -> String {
 fn format_rust_monster_line(
     cs: &CombatState,
     index: usize,
-    monster: &crate::combat::MonsterEntity,
+    monster: &crate::runtime::combat::MonsterEntity,
 ) -> String {
     let mut flags = Vec::new();
     if monster.is_dying || monster.is_escaped {

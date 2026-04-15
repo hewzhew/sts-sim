@@ -2,9 +2,11 @@ use std::collections::{HashMap, VecDeque};
 
 use serde::Deserialize;
 
-use crate::action::Action;
-use crate::combat::{CardZones, CombatMeta, TurnRuntime};
-use crate::combat::{CombatCard, CombatPhase, CombatRng, CombatState, EngineRuntime, EntityState};
+use crate::runtime::action::Action;
+use crate::runtime::combat::{CardZones, CombatMeta, TurnRuntime};
+use crate::runtime::combat::{
+    CombatCard, CombatPhase, CombatRng, CombatState, EngineRuntime, EntityState,
+};
 use crate::content::cards::{get_card_definition, upgraded_base_cost_override, CardId};
 use crate::content::monsters::factory::{self, EncounterId};
 use crate::content::potions::Potion;
@@ -15,7 +17,7 @@ use crate::diff::protocol::mapper::{
 use crate::diff::replay::replay_support::drain_to_stable;
 use crate::engine::core::with_suppressed_engine_warnings;
 use crate::map::node::RoomType;
-use crate::rng;
+use crate::runtime::rng;
 use crate::state::core::EngineState;
 use crate::state::run::RunState;
 
@@ -288,4 +290,3 @@ fn normalize_identifier(raw: &str) -> String {
         .map(|c| c.to_ascii_lowercase())
         .collect()
 }
-

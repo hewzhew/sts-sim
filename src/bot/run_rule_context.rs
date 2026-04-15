@@ -1,6 +1,6 @@
 use crate::bot::card_taxonomy::taxonomy;
 use crate::bot::evaluator::{CardEvaluator, DeckProfile};
-use crate::combat::CombatCard;
+use crate::runtime::combat::CombatCard;
 use crate::content::cards::{self, CardId, CardType};
 use crate::content::relics::{self, RelicId};
 use crate::state::run::RunState;

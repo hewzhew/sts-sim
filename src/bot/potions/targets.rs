@@ -1,5 +1,5 @@
 use super::signals::CombatSignals;
-use crate::combat::CombatState;
+use crate::runtime::combat::CombatState;
 use crate::content::potions::{get_potion_definition, PotionId};
 use crate::content::powers::PowerId;
 
@@ -29,10 +29,10 @@ pub fn target_score(
         .map(|monster| {
             let artifact = state.get_power(monster.id, PowerId::Artifact);
             let intent_hits = match monster.current_intent {
-                crate::combat::Intent::Attack { hits, .. }
-                | crate::combat::Intent::AttackBuff { hits, .. }
-                | crate::combat::Intent::AttackDebuff { hits, .. }
-                | crate::combat::Intent::AttackDefend { hits, .. } => hits as i32,
+                crate::runtime::combat::Intent::Attack { hits, .. }
+                | crate::runtime::combat::Intent::AttackBuff { hits, .. }
+                | crate::runtime::combat::Intent::AttackDebuff { hits, .. }
+                | crate::runtime::combat::Intent::AttackDefend { hits, .. } => hits as i32,
                 _ => 0,
             }
             .max(1);

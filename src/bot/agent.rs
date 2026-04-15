@@ -1,4 +1,4 @@
-use crate::combat::CombatState;
+use crate::runtime::combat::CombatState;
 use crate::state::core::{ClientInput, EngineState};
 use crate::state::run::RunState;
 use crate::state::selection::{SelectionResolution, SelectionScope, SelectionTargetRef};

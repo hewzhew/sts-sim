@@ -1,6 +1,6 @@
 use crate::bot::card_taxonomy::{is_multi_attack_payoff, is_strength_enabler, is_strength_payoff};
 use crate::bot::evaluator::{CardEvaluator, DeckProfile};
-use crate::combat::CombatCard;
+use crate::runtime::combat::CombatCard;
 use crate::content::cards::{self, CardId, CardType};
 use crate::state::run::RunState;
 

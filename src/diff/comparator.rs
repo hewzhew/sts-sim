@@ -1,7 +1,7 @@
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 
-use crate::combat::{CombatState, Power};
+use crate::runtime::combat::{CombatState, Power};
 use crate::diff::protocol::mapper::{
     monster_id_from_java, power_id_from_java, power_instance_id_from_java,
 };
@@ -144,7 +144,7 @@ pub fn compare_powers(
         });
         if !has_match {
             // GuardianThreshold is an internal Rust-only tracker, Java never exports it
-            if rp.power_type == crate::combat::PowerId::GuardianThreshold {
+            if rp.power_type == crate::runtime::combat::PowerId::GuardianThreshold {
                 continue;
             }
             // Rust has a power that Java doesn't → always an engine bug
@@ -527,4 +527,3 @@ fn filter_nondiagnostic_random_target_diffs(
 
     diffs
 }
-
