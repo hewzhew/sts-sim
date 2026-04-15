@@ -3,7 +3,7 @@ use super::live_comm_admin::{
     LiveLogPaths, LiveProfileMetadata, LiveRetentionFlags, LiveRunArtifacts, LiveRunCounts,
     LiveRunManifest, LiveRunProvenance, LiveRunValidation,
 };
-use crate::diff::replay::live_comm_replay::{derive_combat_replay_view, verify_combat_replay_view};
+use crate::diff::replay::{derive_combat_replay_view, verify_combat_replay_view};
 use serde_json::Value;
 use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
@@ -632,7 +632,7 @@ fn copy_if_nonempty(source: &Path, target: &Path) -> Result<bool, String> {
 }
 
 pub(crate) fn verify_replay_counts(replay_path: &Path) -> Result<(usize, usize), String> {
-    let replay = crate::diff::replay::live_comm_replay::load_live_session_replay_path(replay_path)?;
+    let replay = crate::diff::replay::load_live_session_replay_path(replay_path)?;
     let view = derive_combat_replay_view(&replay);
     let report = verify_combat_replay_view(&view, false)?;
     let mut timing = 0;

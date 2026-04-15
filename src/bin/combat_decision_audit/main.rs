@@ -13,7 +13,7 @@ use sts_simulator::bot::search::{
     RootPriorQueryKey, SearchEquivalenceMode, SearchProfileBreakdown, TrajectoryOutcomeKind,
 };
 use sts_simulator::runtime::combat::CombatCard;
-use sts_simulator::diff::replay::live_comm_replay::{
+use sts_simulator::diff::replay::{
     derive_combat_replay_view, find_combat_step_index_by_before_frame_id,
     load_live_session_replay_path, mapped_command_to_input, reconstruct_combat_replay_step,
     CombatReplayStepStatus,
@@ -792,7 +792,7 @@ fn export_preferences_from_raw(
     for (step_index, step) in view.steps.iter().enumerate() {
         summary.considered_steps += 1;
         if step.status
-            != sts_simulator::diff::replay::live_comm_replay::CombatReplayStepStatus::Executable
+            != sts_simulator::diff::replay::CombatReplayStepStatus::Executable
         {
             continue;
         }
@@ -1358,7 +1358,7 @@ fn render_search_move_detail(stat: &sts_simulator::bot::search::SearchMoveStat) 
 }
 
 fn session_outcome_label(
-    replay: &sts_simulator::diff::replay::live_comm_replay::LiveSessionReplay,
+    replay: &sts_simulator::diff::replay::LiveSessionReplay,
 ) -> &'static str {
     let Some(last) = replay.steps.last() else {
         return "unknown";

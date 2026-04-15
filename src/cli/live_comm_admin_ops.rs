@@ -1,4 +1,4 @@
-use crate::diff::replay::live_comm_replay::{
+use crate::diff::replay::{
     build_live_session_replay_from_raw_path, write_live_session_replay_to_path,
 };
 use std::collections::BTreeMap;

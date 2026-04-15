@@ -9,7 +9,7 @@ use crate::diff::protocol::{
     build_live_combat_snapshot as build_protocol_live_combat_snapshot, card_id_from_java,
     power_id_from_java, relic_id_from_java,
 };
-use crate::diff::replay::replay_support::tick_until_stable;
+use crate::diff::replay::tick_until_stable;
 use crate::diff::state_sync::build_combat_state;
 use crate::state::core::{ClientInput, EngineState, PendingChoice, PileType};
 

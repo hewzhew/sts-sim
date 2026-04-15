@@ -16,7 +16,7 @@ use crate::diff::protocol::{
     build_live_combat_snapshot as build_protocol_live_combat_snapshot, card_id_from_java,
     monster_id_from_java, power_id_from_java,
 };
-use crate::diff::replay::comparator::{ActionContext, DiffCategory, DiffResult};
+use crate::diff::replay::{ActionContext, DiffCategory, DiffResult};
 use crate::state::core::{ClientInput, EngineState};
 use serde::Serialize;
 use serde_json::Value;
@@ -1368,7 +1368,7 @@ pub(super) fn handle_live_combat_frame<W: Write>(
 
     let mut saw_action_diff = false;
     if let Some(expected_cs) = combat_runtime.expected_combat_state.take() {
-        let action_diffs = crate::diff::replay::comparator::compare_states(
+        let action_diffs = crate::diff::replay::compare_states(
             &expected_cs,
             cv,
             combat_runtime.action_context.was_end_turn,

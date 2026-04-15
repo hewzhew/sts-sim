@@ -289,7 +289,7 @@ impl Agent {
         let before_state = combat.clone();
         let mut after_engine = engine.clone();
         let mut after_state = combat.clone();
-        let alive = crate::diff::replay::replay_support::tick_until_stable(
+        let alive = crate::diff::replay::tick_until_stable(
             &mut after_engine,
             &mut after_state,
             input.clone(),

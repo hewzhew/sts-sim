@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use clap::Parser;
 
-use sts_simulator::diff::replay::live_comm_replay::{
+use sts_simulator::diff::replay::{
     derive_combat_replay_view, full_run_command_kind_counts, inspect_combat_replay_step,
     load_live_session_replay_path, verify_combat_replay_view, write_live_session_replay_to_path,
 };
@@ -104,7 +104,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn print_failure(
-    failure: &sts_simulator::diff::replay::live_comm_replay::CombatVerificationFailure,
+    failure: &sts_simulator::diff::replay::CombatVerificationFailure,
 ) {
     println!(
         "FAIL step_index={} command_id={} response_id={:?} frame_id={:?} command={}",

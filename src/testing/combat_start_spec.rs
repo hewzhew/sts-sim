@@ -12,7 +12,7 @@ use crate::content::monsters::factory::{self, EncounterId};
 use crate::content::potions::Potion;
 use crate::content::relics::RelicState;
 use crate::diff::protocol::{card_id_from_java, java_potion_id_to_rust, relic_id_from_java};
-use crate::diff::replay::replay_support::drain_to_stable;
+use crate::diff::replay::drain_to_stable;
 use crate::engine::core::with_suppressed_engine_warnings;
 use crate::map::node::RoomType;
 use crate::runtime::rng;

@@ -134,6 +134,41 @@ fn diff_protocol_public_surface_matches_expected_whitelist() {
 }
 
 #[test]
+fn diff_replay_public_surface_matches_expected_whitelist() {
+    let contents = fs::read_to_string("src/diff/replay/mod.rs").expect("read diff replay mod");
+    assert!(
+        !contents.contains("pub mod comparator;")
+            && !contents.contains("pub mod live_comm_replay;")
+            && !contents.contains("pub mod replay_support;"),
+        "diff::replay should expose a thin facade, not raw public submodules:\n{contents}"
+    );
+    for expected in [
+        "pub use comparator::{ActionContext, DiffCategory, DiffResult, compare_states};",
+        "pub use live_comm_replay::{",
+        "pub use replay_support::{continue_deferred_pending_choice, drain_to_stable, tick_until_stable};",
+    ] {
+        assert!(
+            contents.contains(expected),
+            "missing expected diff::replay re-export `{expected}` in:\n{contents}"
+        );
+    }
+}
+
+#[test]
+fn diff_state_sync_public_surface_matches_expected_whitelist() {
+    let public_uses = collect_prefixed_lines("src/diff/state_sync/mod.rs", "pub use ");
+    let expected_uses = BTreeSet::from([
+        "pub use build::{build_combat_state, snapshot_uuid};".to_string(),
+        "pub use sync::sync_state;".to_string(),
+    ]);
+
+    assert_eq!(
+        public_uses, expected_uses,
+        "unexpected diff::state_sync public surface"
+    );
+}
+
+#[test]
 fn bot_coverage_signatures_surface_matches_expected_whitelist() {
     let header = source_lines("src/bot/coverage_signatures.rs");
     let expected_prefix = vec![

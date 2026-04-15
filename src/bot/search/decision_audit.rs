@@ -8,7 +8,7 @@ use crate::bot::combat_heuristic;
 use crate::runtime::combat::{CombatCard, CombatState};
 use crate::content::cards::{self, CardType};
 use crate::content::powers::{store, PowerId};
-use crate::diff::replay::live_comm_replay::{
+use crate::diff::replay::{
     mapped_command_to_input, CombatMappedCommand, CombatReconstructedStep,
 };
 use crate::diff::state_sync::build_combat_state;
@@ -280,7 +280,7 @@ pub fn build_fixture_from_reconstructed_step(
 ) -> Result<DecisionAuditFixture, String> {
     let before_root = reconstructed.before_root.clone();
     let combat_snapshot =
-        crate::diff::replay::live_comm_replay::build_live_combat_snapshot_from_root(&before_root)?;
+        crate::diff::replay::build_live_combat_snapshot_from_root(&before_root)?;
     let relics = before_root
         .get("game_state")
         .and_then(|gs| gs.get("relics"))

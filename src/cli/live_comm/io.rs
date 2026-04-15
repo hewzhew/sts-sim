@@ -8,7 +8,7 @@ use crate::cli::live_comm_admin::{timestamp_string, LiveLogPaths};
 use crate::cli::live_comm_runtime::{
     finalize_live_run, runtime_provenance, verify_replay_counts, FinalizeRunInput,
 };
-use crate::diff::replay::live_comm_replay::generate_live_session_replay_sidecar;
+use crate::diff::replay::generate_live_session_replay_sidecar;
 use std::io::{BufRead, Write};
 
 pub(super) enum ProtocolReadFrame {
