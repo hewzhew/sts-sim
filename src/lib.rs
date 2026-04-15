@@ -18,7 +18,6 @@ pub mod bot;
 pub mod cli;
 
 pub use core::EntityId;
-pub use runtime::{action, combat, rng};
 mod rewards;
 mod utils;
 pub use utils::SimulationWatchdog;

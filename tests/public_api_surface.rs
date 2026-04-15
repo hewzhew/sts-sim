@@ -38,7 +38,6 @@ fn lib_root_public_surface_matches_expected_whitelist() {
     ]);
     let expected_uses = BTreeSet::from([
         "pub use core::EntityId;".to_string(),
-        "pub use runtime::{action, combat, rng};".to_string(),
         "pub use testing::fixtures;".to_string(),
         "pub use utils::SimulationWatchdog;".to_string(),
     ]);
