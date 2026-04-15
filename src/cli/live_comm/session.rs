@@ -15,7 +15,7 @@ use super::{
     should_clear_combat_context, LiveCommConfig, LoopExitReason, ENGINE_BUG_SUMMARY_INTERVAL,
     SIG_PATH,
 };
-use crate::bot::agent::Agent;
+use crate::bot::Agent;
 use serde_json::Value;
 use std::io::Write;
 
@@ -864,7 +864,7 @@ impl LiveCommSession {
                                 })
                                 .collect::<Vec<_>>();
                             if !offered_ids.is_empty() {
-                                let evaluation = crate::bot::reward_heuristics::evaluate_reward_screen_for_run_detailed(
+                                let evaluation = crate::bot::evaluate_reward_screen_for_run_detailed(
                                     &offered_ids,
                                     &rs,
                                 );
@@ -917,4 +917,3 @@ impl LiveCommSession {
         live_io.send_line(stdout, &cmd);
     }
 }
-

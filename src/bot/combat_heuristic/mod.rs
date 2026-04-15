@@ -31,10 +31,6 @@ pub struct HeuristicDiagnostics {
     pub top_moves: Vec<HeuristicMoveStat>,
 }
 
-pub fn decide_heuristic(combat: &CombatState) -> ClientInput {
-    diagnose_decision(combat).chosen_move
-}
-
 pub fn evaluate_combat_state(combat: &CombatState) -> i64 {
     evaluate(&build_sim_state(combat))
 }

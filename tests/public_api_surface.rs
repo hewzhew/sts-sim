@@ -52,17 +52,17 @@ fn bot_public_surface_matches_expected_whitelist() {
     let public_uses = collect_prefixed_lines("src/bot/mod.rs", "pub use ");
 
     let expected_mods = BTreeSet::from([
-        "pub mod agent;".to_string(),
-        "pub mod combat_heuristic;".to_string(),
         "pub mod coverage;".to_string(),
-        "pub mod deck_delta_eval;".to_string(),
-        "pub mod evaluator;".to_string(),
-        "pub mod event_policy;".to_string(),
         "pub mod harness;".to_string(),
-        "pub mod reward_heuristics;".to_string(),
         "pub mod search;".to_string(),
     ]);
     let expected_uses = BTreeSet::from([
+        "pub use agent::Agent;".to_string(),
+        "pub use combat_heuristic::{".to_string(),
+        "pub use deck_delta_eval::{compare_pick_vs_skip, DeltaScore};".to_string(),
+        "pub use evaluator::{evaluate_state, CardEvaluator, DeckProfile};".to_string(),
+        "pub use event_policy::{".to_string(),
+        "pub use reward_heuristics::{".to_string(),
         "pub use strategy_families::{branch_family_for_card, BranchFamily};".to_string(),
     ]);
 

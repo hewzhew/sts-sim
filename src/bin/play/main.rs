@@ -54,7 +54,7 @@ struct AppState {
     mode: InputMode,
     dashboard: DashboardConfig,
     current_display: DisplayMode,
-    agent: sts_simulator::bot::agent::Agent,
+    agent: sts_simulator::bot::Agent,
     combat_cards_played: usize,
     combat_start_hp: i32,
     /// Stashed EventCombatState so event-triggered combat can route through
@@ -63,7 +63,7 @@ struct AppState {
 }
 
 fn print_end_turn_diagnostic(combat: &CombatState) {
-    let lines = sts_simulator::bot::combat_heuristic::describe_end_turn_options(combat);
+    let lines = sts_simulator::bot::describe_end_turn_options(combat);
     if let Some(summary) = lines.first() {
         println!("  [BOT] End Turn | {}", summary);
         if let Some(best_alt) = lines.get(1) {
@@ -186,7 +186,7 @@ fn describe_reward_screen_decision(
             let cards = reward.pending_card_choice.as_ref()?;
             let offered_ids = cards.iter().map(|card| card.id).collect::<Vec<_>>();
             let evaluation =
-                sts_simulator::bot::reward_heuristics::evaluate_reward_screen_for_run_detailed(
+                sts_simulator::bot::evaluate_reward_screen_for_run_detailed(
                     &offered_ids,
                     run_state,
                 );
@@ -237,7 +237,7 @@ fn describe_shop_screen_decision(
             let card = shop.cards.get(*idx)?;
             let def = sts_simulator::content::cards::get_card_definition(card.card_id);
             let delta =
-                sts_simulator::bot::deck_delta_eval::compare_pick_vs_skip(run_state, card.card_id);
+                sts_simulator::bot::compare_pick_vs_skip(run_state, card.card_id);
             Some(format!(
                 "Shop Card: {} [price {}]{}",
                 def.name,
@@ -474,7 +474,7 @@ fn main() {
         },
         dashboard: db_config,
         current_display: initial_display,
-        agent: sts_simulator::bot::agent::Agent::new(),
+        agent: sts_simulator::bot::Agent::new(),
         combat_cards_played: 0,
         combat_start_hp: 0,
         stashed_event_combat: None,
@@ -729,18 +729,18 @@ fn main() {
                             let choices =
                                 sts_simulator::engine::event_handler::get_event_choices(&run_state);
                             if let Some(decision) =
-                                sts_simulator::bot::event_policy::choose_local_event_choice(
+                                sts_simulator::bot::choose_local_event_choice(
                                     &run_state, event, &choices,
                                 )
                             {
                                 if decision.option_index == *choice_idx {
                                     let context =
-                                        sts_simulator::bot::event_policy::local_event_context(
+                                        sts_simulator::bot::local_event_context(
                                             &run_state, event, &choices,
                                         );
                                     println!(
                                         "  [BOT] Event: {}",
-                                        sts_simulator::bot::event_policy::describe_choice(
+                                        sts_simulator::bot::describe_choice(
                                             &context, &decision
                                         )
                                     );
@@ -1008,14 +1008,14 @@ fn main() {
 }
 
 fn print_run_summary(rs: &RunState) {
-    let profile = sts_simulator::bot::evaluator::CardEvaluator::deck_profile(rs);
+    let profile = sts_simulator::bot::CardEvaluator::deck_profile(rs);
     println!("\n--- RUN SUMMARY ---");
     println!("  Floor: {} (Act {})", rs.floor_num, rs.act_num);
     println!("  HP: {} / {}", rs.current_hp, rs.max_hp);
     println!("  Gold: {}", rs.gold);
     println!(
         "  Archetype: {}",
-        sts_simulator::bot::evaluator::CardEvaluator::archetype_summary(&profile)
+        sts_simulator::bot::CardEvaluator::archetype_summary(&profile)
     );
 
     let mut potion_count = 0;

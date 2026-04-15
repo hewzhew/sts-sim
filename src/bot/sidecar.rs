@@ -1,4 +1,4 @@
-use crate::bot::reward_heuristics::RewardScreenEvaluation;
+use crate::bot::RewardScreenEvaluation;
 use crate::bot::search::SearchDiagnostics;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};

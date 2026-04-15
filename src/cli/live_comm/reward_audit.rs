@@ -105,7 +105,7 @@ pub(super) fn build_human_card_reward_pending(
     }
 
     let evaluation =
-        crate::bot::reward_heuristics::evaluate_reward_screen_for_run_detailed(&offered_ids, &rs);
+        crate::bot::evaluate_reward_screen_for_run_detailed(&offered_ids, &rs);
     let meta = root.get("protocol_meta");
     let mut payload = Map::new();
     payload.insert("logged_at_unix_ms".to_string(), json!(unix_time_millis()));
@@ -347,7 +347,7 @@ pub(super) fn emit_bot_card_reward_audit(
     }
 
     let evaluation =
-        crate::bot::reward_heuristics::evaluate_reward_screen_for_run_detailed(&offered_ids, &rs);
+        crate::bot::evaluate_reward_screen_for_run_detailed(&offered_ids, &rs);
     let chosen_choice = parse_bot_reward_choice(command);
     let payload = json!({
         "kind": "bot_reward_decision",
@@ -577,7 +577,7 @@ fn apply_human_card_reward_to_prediction(
 }
 
 fn reward_screen_evaluation_to_json(
-    evaluation: &crate::bot::reward_heuristics::RewardScreenEvaluation,
+    evaluation: &crate::bot::RewardScreenEvaluation,
 ) -> Value {
     let cards = evaluation
         .offered_cards

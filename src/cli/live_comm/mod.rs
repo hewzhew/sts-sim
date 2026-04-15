@@ -139,7 +139,7 @@ fn hex_prefix(bytes: &[u8], limit: usize) -> String {
 
 // ─── Main Loop ───────────────────────────────────────────────
 
-pub fn run_live_comm_loop(mut agent: crate::bot::agent::Agent, config: LiveCommConfig) {
+pub fn run_live_comm_loop(mut agent: crate::bot::Agent, config: LiveCommConfig) {
     let stdin = std::io::stdin();
     let mut stdin_lock = stdin.lock();
     let mut stdout = std::io::stdout();

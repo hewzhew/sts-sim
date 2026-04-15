@@ -411,7 +411,7 @@ fn maybe_record_search_suspect(
     frame_count: u64,
     frame: &LiveFrame,
     combat: &CombatState,
-    heuristic_diag: &crate::bot::combat_heuristic::HeuristicDiagnostics,
+    heuristic_diag: &crate::bot::HeuristicDiagnostics,
     search_diag: &SearchDiagnostics,
 ) {
     let Some(chosen_stat) = search_diag.top_moves.first() else {
@@ -1446,7 +1446,7 @@ pub(super) fn handle_live_combat_frame<W: Write>(
 
     log_hidden_intent_belief(live_io, &truth);
 
-    let heuristic_diag = crate::bot::combat_heuristic::diagnose_decision(&truth);
+    let heuristic_diag = crate::bot::diagnose_decision(&truth);
     let mut search_diag = crate::bot::search::diagnose_root_search(
         &EngineState::CombatPlayerTurn,
         &truth,
@@ -1549,7 +1549,7 @@ pub(super) fn handle_live_combat_frame<W: Write>(
 
     writeln!(live_io.log, "  → {:?}", input).unwrap();
     if matches!(input, crate::state::core::ClientInput::EndTurn) {
-        let end_diag_lines = crate::bot::combat_heuristic::describe_end_turn_options(&truth);
+        let end_diag_lines = crate::bot::describe_end_turn_options(&truth);
         let has_non_end_legal_play = end_diag_lines
             .first()
             .is_some_and(|line| line.contains("legal_plays="));

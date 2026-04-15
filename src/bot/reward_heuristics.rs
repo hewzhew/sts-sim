@@ -14,7 +14,6 @@ const ACT1_FORCE_PICK_DECK_SIZE: usize = 14;
 
 #[derive(Debug, Clone, Copy)]
 pub struct CardStatistics {
-    pub card_id: CardId,
     /// Pick probability normalized to the `[0.0, 1.0]` range.
     pub pick_rate: f32,
 }
@@ -472,7 +471,7 @@ fn card_statistics() -> &'static HashMap<CardId, CardStatistics> {
                 continue;
             };
 
-            stats.insert(card_id, CardStatistics { card_id, pick_rate });
+            stats.insert(card_id, CardStatistics { pick_rate });
         }
 
         stats
@@ -517,4 +516,3 @@ fn parse_pick_rate(value: &str) -> Option<f32> {
         .ok()
         .map(|percent| (percent / 100.0).clamp(0.0, 1.0))
 }
-

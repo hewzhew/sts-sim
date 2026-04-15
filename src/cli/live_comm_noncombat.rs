@@ -17,13 +17,13 @@ pub(crate) fn choose_live_event_command_with_trace(
     gs: &serde_json::Value,
     rs: &crate::state::run::RunState,
 ) -> Option<LiveEventPolicyTrace> {
-    let context = crate::bot::event_policy::live_event_context(gs, rs)?;
-    let decision = crate::bot::event_policy::choose_event_option(rs, &context)?;
+    let context = crate::bot::live_event_context(gs, rs)?;
+    let decision = crate::bot::choose_event_option(rs, &context)?;
     Some(LiveEventPolicyTrace {
         command: format!("CHOOSE {}", decision.command_index),
-        summary: crate::bot::event_policy::compact_choice_summary(&context, &decision),
-        detail: crate::bot::event_policy::describe_choice(&context, &decision),
-        audit: crate::bot::event_policy::decision_trace_json(&context, &decision),
+        summary: crate::bot::compact_choice_summary(&context, &decision),
+        detail: crate::bot::describe_choice(&context, &decision),
+        audit: crate::bot::decision_trace_json(&context, &decision),
     })
 }
 
@@ -43,7 +43,7 @@ fn has_available_command(gs: &serde_json::Value, command: &str) -> bool {
 }
 
 pub(crate) fn decide_noncombat_with_agent(
-    agent: &mut crate::bot::agent::Agent,
+    agent: &mut crate::bot::Agent,
     root: &serde_json::Value,
     screen: &str,
     choice_list: &[&str],
@@ -565,7 +565,7 @@ fn reward_choice_command_with_protocol(
 }
 
 fn blocked_potion_replacement_command(
-    agent: &crate::bot::agent::Agent,
+    agent: &crate::bot::Agent,
     root: &serde_json::Value,
     rs: &crate::state::run::RunState,
 ) -> Option<String> {
@@ -632,7 +632,7 @@ fn blocked_replaceable_reward_potion_id(
 }
 
 fn reward_potion_score(
-    agent: &crate::bot::agent::Agent,
+    agent: &crate::bot::Agent,
     rs: &crate::state::run::RunState,
     potion_id: crate::content::potions::PotionId,
 ) -> i32 {
@@ -663,7 +663,7 @@ fn base_reward_potion_score(potion_id: crate::content::potions::PotionId) -> i32
 }
 
 fn decide_live_grid_screen(
-    agent: &mut crate::bot::agent::Agent,
+    agent: &mut crate::bot::Agent,
     root: &serde_json::Value,
     rs: &crate::state::run::RunState,
 ) -> Option<String> {
@@ -794,7 +794,7 @@ fn decide_live_grid_screen(
             continue;
         };
 
-        let mut score = crate::bot::evaluator::CardEvaluator::evaluate_owned_card(card_id, rs);
+        let mut score = crate::bot::CardEvaluator::evaluate_owned_card(card_id, rs);
         if current_action == "DiscardPileToTopOfDeckAction" {
             score += 15;
         } else if current_action.contains("DiscardPileToHandAction")
@@ -873,7 +873,7 @@ fn live_upgrade_priority(
 ) -> i32 {
     use crate::content::cards::CardId;
 
-    let profile = crate::bot::evaluator::CardEvaluator::deck_profile(rs);
+    let profile = crate::bot::CardEvaluator::deck_profile(rs);
     let mut score = match card_id {
         CardId::Whirlwind => 42,
         CardId::DemonForm => 38,

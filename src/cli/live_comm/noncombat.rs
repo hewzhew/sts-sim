@@ -2,7 +2,7 @@ use super::reward_audit::{
     build_human_card_reward_pending, manual_card_reward_followup_command, reward_session_is_live,
     reward_session_protocol_supported, PendingHumanCardRewardAudit,
 };
-use crate::bot::agent::Agent;
+use crate::bot::Agent;
 use crate::cli::live_comm_noncombat::{choose_best_index, decide_noncombat_with_agent};
 use crate::runtime::combat::CombatState;
 use serde_json::Value;
