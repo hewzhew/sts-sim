@@ -82,25 +82,40 @@ variant, with hook behavior dispatched via `match` in centralized handler functi
 
 ```
 src/
+├── runtime/               # Core runtime primitives
+│   ├── action.rs          # Action enum definition
+│   ├── combat.rs          # CombatState and runtime entities
+│   └── rng.rs             # Java-compatible RNG
 ├── engine/                # Core game loop, action dispatch, turn management
 │   ├── core.rs            # Action queue tick loop (mirrors Java GameActionManager)
-│   ├── action_handlers.rs # ~120 Action::* variant handlers (the biggest file)
-│   ├── run_loop.rs        # Full run state machine
-│   └── ...                # campfire, shop, event, reward handlers
-├── state/                 # Pure data, no logic
-│   ├── run.rs             # RunState: HP, gold, deck, relics, map position
-│   └── core.rs            # CombatState: hand, piles, monsters, orbs
+│   └── action_handlers/   # Action::* variant handlers
 ├── content/               # Game content (per-entity logic)
 │   ├── cards/             # Card use() implementations
 │   ├── powers/            # Power hook dispatch functions
 │   ├── relics/            # Relic hook dispatch functions
 │   ├── monsters/          # Monster AI (intent selection, takeTurn)
 │   └── ...                # potions, events, orbs, stances
-├── map/                   # Procedural map generation (seed-deterministic)
-├── rng.rs                 # Java-compatible RNG
-├── action.rs              # Action enum definition
-└── verification.rs        # State comparison utilities
+├── state/                 # Run / combat / pending-choice state
+├── diff/                  # Protocol mapping, replay, and state sync
+│   ├── protocol/          # Java/protocol parsing + snapshot shaping
+│   ├── replay/            # Replay execution + diff verification
+│   └── state_sync/        # Protocol -> runtime state construction
+├── bot/                   # Search, policy, harness, sidecars
+├── cli/                   # Live-comm runtime/admin/tooling
+└── map/                   # Procedural map generation (seed-deterministic)
 ```
+
+The current structure is intentionally layered:
+
+- `runtime / engine / content / state / map`
+  - core runtime truth
+- `diff / fixtures`
+  - integration layers around protocol sync, replay, and verification
+- `bot / cli / src/bin/*`
+  - app-layer consumers and workbenches
+
+For the up-to-date ownership map, read [docs/REPOSITORY_MAP.md](docs/REPOSITORY_MAP.md).
+For the hard dependency rules, read [docs/LAYER_BOUNDARIES.md](docs/LAYER_BOUNDARIES.md).
 
 ## Verification methodology
 

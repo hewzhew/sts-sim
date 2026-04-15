@@ -15,10 +15,10 @@ Read these first:
 
 - `REPOSITORY_MAP.md`
   - top-level repository map, ownership tags, and RL main path
-- `architecture.md`
-  - system architecture and verification context
 - `LAYER_BOUNDARIES.md`
   - hard dependency direction for `core / integration / app`
+- `architecture.md`
+  - system architecture and verification context
 - `PROTOCOL_TRUTH_RULES.md`
   - hard rules for Java truth, protocol export, and importer boundaries
 - `STATE_SYNC_STATUS.md`
@@ -38,6 +38,19 @@ Active design docs still kept in root:
 - `LEARNING_TRUTH_SOURCES.md`
 - `WATCH_PRESET_SCHEMA_DRAFT.md`
 - `MINIMAL_COMBAT_LOCAL_RL_EXPERIMENT.md`
+
+Current structural anchors:
+
+- `runtime`
+  - base runtime primitives (`action`, `combat`, `rng`)
+- `diff`
+  - protocol / replay / state_sync integration layer
+- `bot`
+  - search, harness, policy, sidecar app layer
+- `cli`
+  - live-comm runtime/admin/tooling app layer
+- `fixtures`
+  - integration fixture/spec entry exported from `lib.rs`
 
 Move a doc out of the root when it is mostly one of:
 

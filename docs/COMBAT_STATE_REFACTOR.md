@@ -2,7 +2,7 @@
 
 ## Problem
 
-[`CombatState`](D:/rust/sts_simulator/src/combat.rs) is currently the default landing zone for almost every new combat concern:
+[`CombatState`](D:/rust/sts_simulator/src/runtime/combat.rs) is currently the default landing zone for almost every new combat concern:
 
 - turn flow
 - card zones

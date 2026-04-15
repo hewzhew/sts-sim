@@ -26,11 +26,11 @@ The RL-facing path through the repo is:
 1. state build / sync
    - `src/state/`
    - `src/state/semantics.rs`
-   - `src/combat.rs`
+   - `src/runtime/combat.rs`
    - `src/diff/state_sync/`
 2. engine progression
    - `src/engine/`
-   - `src/action.rs`
+   - `src/runtime/action.rs`
 3. content semantics
    - `src/content/cards/`
    - `src/content/powers/`
@@ -69,6 +69,8 @@ Anything outside that path should be treated as support infrastructure, not as t
 
 ## `src/` Ownership
 
+- `src/runtime/` — `core`
+  - base runtime primitives: `action`, `combat`, `rng`
 - `src/engine/` — `core`
   - turn progression, queue driving, action dispatch, room handlers
 - `src/content/` — `core`
@@ -85,8 +87,24 @@ Anything outside that path should be treated as support infrastructure, not as t
   - explicit binary entrypoints, now one directory per binary
 - `src/bot/` — `experiment`
   - search, policy, and sidecar logic
-- `src/generated/` — `generated`
-  - generated tables and protocol-adapter support
+- `src/cli/coverage_tools/` — `experiment`
+  - offline replay/live-comm coverage record extraction and report output
+
+## Current Notes
+
+- `src/` root now intentionally keeps only a small number of top-level modules:
+  - `runtime`
+  - `engine`
+  - `content`
+  - `state`
+  - `map`
+  - `diff`
+  - `bot`
+  - `cli`
+- legacy implementation snapshots and unused generated assets have been moved under:
+  - `tools/legacy/rust/`
+- `fixtures` is exported from `lib.rs`, but its implementation still lives under:
+  - `src/testing/`
 
 ## Root Rules
 

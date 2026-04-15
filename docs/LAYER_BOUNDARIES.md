@@ -6,14 +6,12 @@ This file defines the hard dependency direction for `src/`.
 
 - `core`
   - runtime truth and RL-facing semantics
-  - `src/action.rs`
-  - `src/combat.rs`
+  - `src/runtime/`
   - `src/content/`
   - `src/core/`
   - `src/engine/`
   - `src/map/`
   - `src/rewards/`
-  - `src/rng.rs`
   - `src/state/`
 - `integration`
   - protocol mapping, replay, sync, fixtures, and analysis helpers around the runtime
@@ -40,8 +38,14 @@ This file defines the hard dependency direction for `src/`.
 
 ## Current Ownership Notes
 
+- `runtime`
+  - base runtime primitives
+  - `runtime::action`
+  - `runtime::combat`
+  - `runtime::rng`
 - `fixtures`
   - integration-only fixture/spec assembly
+  - exported from `lib.rs` as `sts_simulator::fixtures`
 - `testing::harness`
   - integration-side analysis helpers
   - currently `hexaghost_value`
@@ -55,6 +59,12 @@ This file defines the hard dependency direction for `src/`.
   - bot-side shared signature extraction for coverage/curiosity and live combat logging
 - `cli::coverage_tools`
   - offline replay/live-comm coverage record extraction and report output for devtool flows
+- `diff::protocol`
+  - thin protocol-facing facade over mapping, parsing, and snapshot shaping
+- `diff::replay`
+  - thin facade over replay execution, inspection, and comparator surfaces
+- `diff::state_sync`
+  - thin facade over protocol -> runtime state construction and sync
 
 ## Enforcement
 
