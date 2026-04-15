@@ -35,6 +35,7 @@ fn lib_root_public_surface_matches_expected_whitelist() {
         "pub mod diff;".to_string(),
         "pub mod engine;".to_string(),
         "pub mod interaction_coverage;".to_string(),
+        "pub mod interaction_signatures;".to_string(),
         "pub mod map;".to_string(),
         "pub mod rng;".to_string(),
         "pub mod state;".to_string(),
@@ -79,19 +80,42 @@ fn interaction_coverage_public_surface_matches_expected_whitelist() {
     let expected_header = vec![
         "mod io;".to_string(),
         "mod report;".to_string(),
-        "mod signature;".to_string(),
         "".to_string(),
         "pub use io::{default_replay_inputs, load_live_comm_records, replay_records_from_path};"
             .to_string(),
         "pub use report::{write_coverage_outputs, InteractionCoverageReport};".to_string(),
-        "pub use signature::{".to_string(),
-        "command_string, signature_from_transition, signature_from_transition_with_archetypes,"
-            .to_string(),
-        "InteractionSignature, ObservedInteractionRecord,".to_string(),
-        "};".to_string(),
     ];
     assert_eq!(
         header, expected_header,
         "unexpected interaction_coverage module surface"
     );
+}
+
+#[test]
+fn interaction_signatures_public_surface_matches_expected_whitelist() {
+    let header = source_lines("src/interaction_signatures.rs");
+    let expected_prefix = vec![
+        "use std::collections::BTreeSet;".to_string(),
+        "".to_string(),
+        "use serde::{Deserialize, Serialize};".to_string(),
+    ];
+    assert_eq!(
+        header[..3].to_vec(),
+        expected_prefix,
+        "unexpected interaction_signatures module prefix"
+    );
+
+    let required_exports = [
+        "pub struct InteractionSignature {",
+        "pub struct ObservedInteractionRecord {",
+        "pub fn signature_from_transition(",
+        "pub fn signature_from_transition_with_archetypes(",
+        "pub fn command_string(input: &ClientInput) -> String {",
+    ];
+    for export in required_exports {
+        assert!(
+            header.iter().any(|line| line == export),
+            "missing interaction_signatures export: {export}"
+        );
+    }
 }

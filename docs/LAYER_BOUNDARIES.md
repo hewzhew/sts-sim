@@ -24,6 +24,7 @@ This file defines the hard dependency direction for `src/`.
   - `src/bot/`
   - `src/cli/`
   - `src/interaction_coverage.rs`
+  - `src/interaction_signatures.rs`
   - `src/bin/`
 
 ## Allowed Dependency Direction

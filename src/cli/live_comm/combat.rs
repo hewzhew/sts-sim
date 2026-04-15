@@ -1259,7 +1259,7 @@ pub(super) fn handle_live_combat_frame<W: Write>(
         &combat_runtime.last_input,
     ) {
         let after_engine = EngineState::CombatPlayerTurn;
-        let signature = crate::interaction_coverage::signature_from_transition_with_archetypes(
+        let signature = crate::interaction_signatures::signature_from_transition_with_archetypes(
             &EngineState::CombatPlayerTurn,
             prev_truth,
             prev_input,
@@ -1277,12 +1277,12 @@ pub(super) fn handle_live_combat_frame<W: Write>(
             .collect();
         coverage_db.record_signature(&signature);
         coverage_db.save();
-        let record = crate::interaction_coverage::ObservedInteractionRecord {
+        let record = crate::interaction_signatures::ObservedInteractionRecord {
             observed_from: "live_comm".to_string(),
             source_file: signature_source_file.to_string(),
             combat_idx: None,
             action_idx: Some(frame_count as usize),
-            command: crate::interaction_coverage::command_string(prev_input),
+            command: crate::interaction_signatures::command_string(prev_input),
             signature_key,
             source_combo_key: signature.source_combo_key(),
             signature,

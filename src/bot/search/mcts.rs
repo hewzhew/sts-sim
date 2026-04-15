@@ -747,7 +747,7 @@ fn transition_bonus(
     coverage_mode: crate::bot::coverage::CoverageMode,
     curiosity_target: Option<&crate::bot::coverage::CuriosityTarget>,
 ) -> f32 {
-    let signature = crate::interaction_coverage::signature_from_transition_with_archetypes(
+    let signature = crate::interaction_signatures::signature_from_transition_with_archetypes(
         engine,
         combat,
         input,

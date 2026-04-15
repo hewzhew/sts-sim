@@ -297,7 +297,7 @@ impl Agent {
         if !alive && !matches!(after_engine, EngineState::GameOver(_)) {
             return;
         }
-        let signature = crate::interaction_coverage::signature_from_transition_with_archetypes(
+        let signature = crate::interaction_signatures::signature_from_transition_with_archetypes(
             &before_engine,
             &before_state,
             input,

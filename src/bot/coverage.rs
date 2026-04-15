@@ -124,7 +124,7 @@ impl CoverageDb {
 
     pub fn record_signature(
         &mut self,
-        signature: &crate::interaction_coverage::InteractionSignature,
+        signature: &crate::interaction_signatures::InteractionSignature,
     ) {
         let key = signature.canonical_key();
         let source_key = signature.source_combo_key();
@@ -138,7 +138,7 @@ impl CoverageDb {
 
     pub fn record_source_combo(
         &mut self,
-        signature: &crate::interaction_coverage::InteractionSignature,
+        signature: &crate::interaction_signatures::InteractionSignature,
     ) {
         let source_key = signature.source_combo_key();
         *self.source_signature_counts.entry(source_key).or_insert(0) += 1;
@@ -185,7 +185,7 @@ pub fn novelty_bonus(
 }
 
 pub fn curiosity_bonus(
-    signature: Option<&crate::interaction_coverage::InteractionSignature>,
+    signature: Option<&crate::interaction_signatures::InteractionSignature>,
     target: Option<&CuriosityTarget>,
 ) -> f32 {
     if let (Some(signature), Some(target)) = (signature, target) {
@@ -197,7 +197,7 @@ pub fn curiosity_bonus(
 }
 
 pub fn curiosity_target_matches(
-    signature: &crate::interaction_coverage::InteractionSignature,
+    signature: &crate::interaction_signatures::InteractionSignature,
     target: &CuriosityTarget,
 ) -> bool {
     match target {

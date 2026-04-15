@@ -3,7 +3,7 @@ use std::path::Path;
 
 use serde::Serialize;
 
-use super::signature::{InteractionSignature, ObservedInteractionRecord};
+use crate::interaction_signatures::{InteractionSignature, ObservedInteractionRecord};
 
 #[derive(Default, Debug, Serialize)]
 pub struct InteractionCoverageReport {

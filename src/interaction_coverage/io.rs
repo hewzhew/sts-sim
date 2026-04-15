@@ -6,7 +6,7 @@ use crate::diff::replay::replay_support::{continue_deferred_pending_choice, tick
 use crate::diff::state_sync::{build_combat_state, sync_state};
 use crate::state::core::{ClientInput, EngineState, PendingChoice};
 
-use super::signature::{
+use crate::interaction_signatures::{
     command_string, signature_from_transition_with_archetypes, ObservedInteractionRecord,
 };
 
