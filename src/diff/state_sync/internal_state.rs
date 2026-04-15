@@ -4,24 +4,7 @@ use crate::content::powers::PowerId;
 use crate::content::relics::{RelicId, RelicState};
 use serde_json::Value;
 
-fn stable_u32_from_str(s: &str) -> u32 {
-    let mut hash = 0x811C9DC5u32;
-    for &byte in s.as_bytes() {
-        hash ^= byte as u32;
-        hash = hash.wrapping_mul(0x01000193);
-    }
-    hash
-}
-
-fn snapshot_uuid(raw: &Value, fallback: u32) -> u32 {
-    if let Some(uuid) = raw.as_u64() {
-        uuid as u32
-    } else if let Some(uuid) = raw.as_str() {
-        stable_u32_from_str(uuid)
-    } else {
-        fallback
-    }
-}
+use super::build::snapshot_uuid;
 
 #[derive(Clone, Copy)]
 struct MissingMonsterPowerPolicy {

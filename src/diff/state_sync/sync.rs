@@ -4,21 +4,18 @@ use std::collections::VecDeque;
 use crate::runtime::combat::{CombatPhase, Intent, MonsterEntity};
 
 use crate::diff::protocol::{
-    intent_from_java, java_potion_id_to_rust, monster_id_from_java, power_id_from_java,
-    power_instance_id_from_java, relic_id_from_java,
+    java_potion_id_to_rust, power_id_from_java, power_instance_id_from_java, relic_id_from_java,
 };
 use super::build::{
-    build_draw_pile_from_snapshot, build_hand_from_snapshot, build_limbo_from_snapshot,
-    build_pile_from_ids, build_powers_from_snapshot_for_owner, build_runtime_hints_from_snapshot,
-    seed_chosen_runtime_from_snapshot, seed_darkling_runtime_from_snapshot,
-    seed_hexaghost_runtime_from_snapshot, seed_lagavulin_runtime_from_snapshot,
-    seed_monster_protocol_identity_from_snapshot, seed_move_history_from_snapshot,
-    snapshot_monster_is_half_dead,
+    apply_monster_entity_snapshot, build_draw_pile_from_snapshot, build_hand_from_snapshot,
+    build_limbo_from_snapshot, build_pile_from_ids, build_powers_from_snapshot_for_owner,
+    build_runtime_hints_from_snapshot,
 };
 use super::internal_state::{
     snapshot_runtime_amount_for_relic, snapshot_runtime_counter_for_relic,
     snapshot_runtime_used_up_for_relic, sync_monster_internal_state_from_snapshot,
-    sync_power_extra_data_from_snapshot_power, sync_relic_runtime_state_from_snapshot,
+    sync_power_extra_data_from_snapshot, sync_power_extra_data_from_snapshot_power,
+    sync_relic_runtime_state_from_snapshot,
 };
 use super::rng::sync_rng;
 use crate::content::powers::store;
@@ -41,6 +38,7 @@ fn snapshot_power_matches(power: &crate::runtime::combat::Power, snapshot_power:
 
 pub fn sync_state(cs: &mut crate::runtime::combat::CombatState, snapshot: &Value) {
     let player_val = &snapshot["player"];
+    let previous_player_powers = store::powers_for(cs, 0).map(|powers| powers.to_vec());
 
     cs.entities.player.current_hp = player_val["current_hp"].as_i64().unwrap_or(
         player_val["hp"]
@@ -54,6 +52,7 @@ pub fn sync_state(cs: &mut crate::runtime::combat::CombatState, snapshot: &Value
     cs.turn.energy = player_val["energy"].as_u64().unwrap_or(3) as u8;
 
     let mut player_powers = build_powers_from_snapshot_for_owner(0, &player_val["powers"]);
+    sync_power_extra_data_from_snapshot(previous_player_powers.as_deref(), &mut player_powers);
     if let Some(snapshot_powers) = player_val["powers"].as_array() {
         for snapshot_power in snapshot_powers {
             if let Some(power) = player_powers
@@ -99,48 +98,15 @@ pub fn sync_state(cs: &mut crate::runtime::combat::CombatState, snapshot: &Value
     }
 
     for (i, m_val) in monsters_arr.iter().enumerate() {
-        let half_dead = snapshot_monster_is_half_dead(m_val);
-        let is_gone = m_val
-            .get("is_gone")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false);
-
-        cs.entities.monsters[i].current_hp = m_val["current_hp"]
-            .as_i64()
-            .unwrap_or(m_val["hp"].as_i64().unwrap_or(0))
-            as i32;
-        cs.entities.monsters[i].max_hp = m_val["max_hp"].as_i64().unwrap_or(0) as i32;
-        cs.entities.monsters[i].block = m_val["block"].as_i64().unwrap_or(0) as i32;
-        cs.entities.monsters[i].slot = i as u8;
-        cs.entities.monsters[i].is_dying = is_gone && !half_dead;
-        cs.entities.monsters[i].half_dead = half_dead;
-        cs.entities.monsters[i].monster_type =
-            monster_id_from_java(m_val["id"].as_str().unwrap_or(""))
-                .map(|e| e as usize)
-                .unwrap_or(0);
-
-        if let Some(move_id) = m_val.get("move_id").and_then(|v| v.as_u64()) {
-            cs.entities.monsters[i].next_move_byte = move_id as u8;
-        }
-        let intent_dmg = m_val["move_base_damage"].as_i64().unwrap_or(-1) as i32;
-        let intent_hits = m_val["move_hits"].as_i64().unwrap_or(1) as i32;
-        let intent_str = m_val["intent"].as_str().unwrap_or("UNKNOWN");
-        cs.entities.monsters[i].current_intent =
-            intent_from_java(intent_str, intent_dmg, intent_hits);
-        cs.entities.monsters[i].intent_dmg =
-            m_val["move_adjusted_damage"].as_i64().unwrap_or(0) as i32;
-        seed_monster_protocol_identity_from_snapshot(m_val, i, &mut cs.entities.monsters[i]);
-        seed_move_history_from_snapshot(m_val, &mut cs.entities.monsters[i]);
-        seed_hexaghost_runtime_from_snapshot(m_val, &mut cs.entities.monsters[i]);
-        seed_chosen_runtime_from_snapshot(m_val, &mut cs.entities.monsters[i]);
-        seed_darkling_runtime_from_snapshot(m_val, &mut cs.entities.monsters[i]);
-        seed_lagavulin_runtime_from_snapshot(m_val, &mut cs.entities.monsters[i]);
-
         let entity_id = cs.entities.monsters[i].id;
+        let previous_powers = store::powers_for(cs, entity_id).map(|powers| powers.to_vec());
+
+        apply_monster_entity_snapshot(m_val, i, &mut cs.entities.monsters[i]);
+
         let mut powers = build_powers_from_snapshot_for_owner(entity_id, &m_val["powers"]);
         sync_monster_internal_state_from_snapshot(
             cs.entities.monsters[i].monster_type,
-            None,
+            previous_powers.as_deref(),
             m_val,
             &mut powers,
         );
@@ -198,17 +164,20 @@ pub fn sync_state(cs: &mut crate::runtime::combat::CombatState, snapshot: &Value
                         .find(|r| r.id == relic_id)
                     {
                         let previous = rs.clone();
-                        if let Some(counter) = r_val.get("counter").and_then(|c| c.as_i64()) {
-                            sync_relic_runtime_state_from_snapshot(
-                                Some(&previous),
-                                rs,
-                                counter as i32,
-                                snapshot_runtime_counter_for_relic(relic_id, r_val),
-                                r_val.get("used_up").and_then(|v| v.as_bool()),
-                                snapshot_runtime_used_up_for_relic(relic_id, r_val),
-                                snapshot_runtime_amount_for_relic(relic_id, r_val),
-                            );
-                        }
+                        let snapshot_counter = r_val
+                            .get("counter")
+                            .and_then(|c| c.as_i64())
+                            .map(|counter| counter as i32)
+                            .unwrap_or(previous.counter);
+                        sync_relic_runtime_state_from_snapshot(
+                            Some(&previous),
+                            rs,
+                            snapshot_counter,
+                            snapshot_runtime_counter_for_relic(relic_id, r_val),
+                            r_val.get("used_up").and_then(|v| v.as_bool()),
+                            snapshot_runtime_used_up_for_relic(relic_id, r_val),
+                            snapshot_runtime_amount_for_relic(relic_id, r_val),
+                        );
                     }
                 }
             }
