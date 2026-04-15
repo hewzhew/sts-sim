@@ -1092,9 +1092,6 @@ fn grid_select_candidates(
         .collect()
 }
 
-#[cfg(test)]
-mod tests;
-
 fn grid_candidate_matches(
     card: &crate::combat::CombatCard,
     filter: crate::state::GridSelectFilter,

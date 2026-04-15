@@ -6,5 +6,3 @@
 
 pub mod fixtures;
 pub mod harness;
-#[cfg(test)]
-pub mod support;

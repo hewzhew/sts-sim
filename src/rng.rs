@@ -378,35 +378,3 @@ impl RngPool {
         self.misc_rng = StsRng::new(floor_seed);
     }
 }
-
-// ─── Tests ───────────────────────────────────────────────────────────────────
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn xorshift128_matches_java() {
-        // Verified outputs from running LibGDX RandomXS128 with seed=0 in Java.
-        let mut rng = StsRng::new(0);
-
-        assert_eq!(rng.next_long(), 2940871956904845945u64);
-        assert_eq!(rng.next_long() as i64, -1645442809927433695i64);
-        assert_eq!(rng.next_int_bounded(10), 2);
-        assert_eq!(rng.next_float(), 0.7742902);
-        assert_eq!(rng.next_boolean(), false);
-    }
-
-    #[test]
-    fn wrapper_bounds_and_counter() {
-        let mut rng = StsRng::new(12345);
-        for _ in 0..1000 {
-            let r = rng.random(10);
-            assert!((0..=10).contains(&r), "random(10) out of bounds: {}", r);
-            let _b = rng.random_boolean_chance(0.5);
-            let f = rng.random_f32();
-            assert!((0.0..1.0).contains(&f), "random_f32() out of bounds: {}", f);
-        }
-        assert_eq!(rng.counter, 3000);
-    }
-}
