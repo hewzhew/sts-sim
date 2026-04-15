@@ -124,7 +124,7 @@ pub struct LiveRunManifest {
 }
 
 #[derive(Clone, Debug, Default)]
-pub struct FinalizeRunInput {
+pub(crate) struct FinalizeRunInput {
     pub run_id: String,
     pub timestamp: String,
     pub build_tag: String,
@@ -140,7 +140,7 @@ pub struct FinalizeRunInput {
 }
 
 #[derive(Clone, Debug, Default)]
-pub struct FinalizeRunOutcome {
+pub(crate) struct FinalizeRunOutcome {
     pub run_dir: PathBuf,
     pub manifest_path: PathBuf,
     pub classification_label: String,
@@ -182,63 +182,63 @@ impl LiveLogPaths {
         }
     }
 
-    pub fn current_raw(&self) -> PathBuf {
+    pub(crate) fn current_raw(&self) -> PathBuf {
         self.current.join("live_comm_raw.jsonl")
     }
 
-    pub fn current_debug(&self) -> PathBuf {
+    pub(crate) fn current_debug(&self) -> PathBuf {
         self.current.join("live_comm_debug.txt")
     }
 
-    pub fn current_focus(&self) -> PathBuf {
+    pub(crate) fn current_focus(&self) -> PathBuf {
         self.current.join("live_comm_focus.txt")
     }
 
-    pub fn current_signatures(&self) -> PathBuf {
+    pub(crate) fn current_signatures(&self) -> PathBuf {
         self.current.join("live_comm_signatures.jsonl")
     }
 
-    pub fn current_replay(&self) -> PathBuf {
+    pub(crate) fn current_replay(&self) -> PathBuf {
         self.current.join("live_comm_replay.json")
     }
 
-    pub fn current_reward_audit(&self) -> PathBuf {
+    pub(crate) fn current_reward_audit(&self) -> PathBuf {
         self.current.join("live_comm_reward_audit.jsonl")
     }
 
-    pub fn current_event_audit(&self) -> PathBuf {
+    pub(crate) fn current_event_audit(&self) -> PathBuf {
         self.current.join("live_comm_event_audit.jsonl")
     }
 
-    pub fn current_sidecar_shadow(&self) -> PathBuf {
+    pub(crate) fn current_sidecar_shadow(&self) -> PathBuf {
         self.current.join("live_comm_sidecar_shadow.jsonl")
     }
 
-    pub fn current_validation(&self) -> PathBuf {
+    pub(crate) fn current_validation(&self) -> PathBuf {
         self.current.join("live_comm_validation.json")
     }
 
-    pub fn current_watch_audit(&self) -> PathBuf {
+    pub(crate) fn current_watch_audit(&self) -> PathBuf {
         self.current.join("live_comm_watch_audit.jsonl")
     }
 
-    pub fn current_watch_noncombat(&self) -> PathBuf {
+    pub(crate) fn current_watch_noncombat(&self) -> PathBuf {
         self.current.join("live_comm_watch_noncombat.jsonl")
     }
 
-    pub fn current_combat_suspects(&self) -> PathBuf {
+    pub(crate) fn current_combat_suspects(&self) -> PathBuf {
         self.current.join("live_comm_combat_suspects.jsonl")
     }
 
-    pub fn current_failure_snapshots(&self) -> PathBuf {
+    pub(crate) fn current_failure_snapshots(&self) -> PathBuf {
         self.current.join("live_comm_failure_snapshots.jsonl")
     }
 
-    pub fn current_manifest(&self) -> PathBuf {
+    pub(crate) fn current_manifest(&self) -> PathBuf {
         PathBuf::from(CURRENT_MANIFEST_PATH)
     }
 
-    pub fn run_dir(&self, run_id: &str) -> PathBuf {
+    pub(crate) fn run_dir(&self, run_id: &str) -> PathBuf {
         self.runs.join(run_id)
     }
 }
@@ -255,14 +255,14 @@ pub fn timestamp_string() -> String {
     }
 }
 
-pub fn ensure_log_dirs(paths: &LiveLogPaths) -> std::io::Result<()> {
+pub(crate) fn ensure_log_dirs(paths: &LiveLogPaths) -> std::io::Result<()> {
     std::fs::create_dir_all(&paths.root)?;
     std::fs::create_dir_all(&paths.current)?;
     std::fs::create_dir_all(&paths.runs)?;
     Ok(())
 }
 
-pub fn load_profile_metadata() -> LiveProfileMetadata {
+pub(crate) fn load_profile_metadata() -> LiveProfileMetadata {
     let Ok(text) = std::fs::read_to_string(PROFILE_PATH) else {
         return LiveProfileMetadata::default();
     };
@@ -304,7 +304,7 @@ fn current_exe_mtime_fallback() -> Option<String> {
     Some(format!("unix:{secs}"))
 }
 
-pub fn runtime_provenance() -> LiveRunProvenance {
+pub(crate) fn runtime_provenance() -> LiveRunProvenance {
     let profile = load_profile_metadata();
     let git_short = option_env!("LIVE_COMM_GIT_SHORT")
         .map(|s| s.to_string())
@@ -638,7 +638,7 @@ fn validate_run_artifacts(run_dir: &Path, manifest: &LiveRunManifest) -> LiveRun
     }
 }
 
-pub fn finalize_live_run(
+pub(crate) fn finalize_live_run(
     paths: &LiveLogPaths,
     input: FinalizeRunInput,
 ) -> Result<FinalizeRunOutcome, String> {
@@ -1224,7 +1224,7 @@ fn remove_run_artifact(manifest_path: &Path, record: &mut Option<LiveArtifactRec
     existed
 }
 
-pub fn verify_replay_counts(replay_path: &Path) -> Result<(usize, usize), String> {
+pub(crate) fn verify_replay_counts(replay_path: &Path) -> Result<(usize, usize), String> {
     let replay = crate::diff::replay::live_comm_replay::load_live_session_replay_path(replay_path)?;
     let view = derive_combat_replay_view(&replay);
     let report = verify_combat_replay_view(&view, false)?;
@@ -1238,4 +1238,3 @@ pub fn verify_replay_counts(replay_path: &Path) -> Result<(usize, usize), String
     }
     Ok((report.failures.len(), timing))
 }
-
