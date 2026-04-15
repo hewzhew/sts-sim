@@ -4,7 +4,7 @@ use super::snapshot::write_failure_snapshot;
 use super::LiveParityMode;
 use crate::bot::branch_family_for_card;
 use crate::bot::comm_mod;
-use crate::bot::coverage::CoverageDb;
+use crate::bot::CoverageDb;
 use crate::bot::monster_belief::{build_combat_belief_state, MonsterBeliefCertainty};
 use crate::bot::search::{
     sequencing_assessment_for_input, SearchDiagnostics, SearchMoveStat, StatePressureFeatures,
@@ -1265,7 +1265,7 @@ pub(super) fn handle_live_combat_frame<W: Write>(
             prev_input,
             &after_engine,
             &truth,
-            crate::bot::coverage::archetype_tags_for_combat(prev_truth),
+            crate::bot::archetype_tags_for_combat(prev_truth),
         );
         let signature_key = signature.canonical_key();
         let is_novel = !coverage_db.tested_signatures.contains(&signature_key);
@@ -1451,7 +1451,7 @@ pub(super) fn handle_live_combat_frame<W: Write>(
         &EngineState::CombatPlayerTurn,
         &truth,
         coverage_db,
-        crate::bot::coverage::CoverageMode::Off,
+        crate::bot::CoverageMode::Off,
         None,
         combat_search_budget,
     );

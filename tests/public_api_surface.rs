@@ -52,13 +52,13 @@ fn bot_public_surface_matches_expected_whitelist() {
     let public_uses = collect_prefixed_lines("src/bot/mod.rs", "pub use ");
 
     let expected_mods = BTreeSet::from([
-        "pub mod coverage;".to_string(),
         "pub mod harness;".to_string(),
         "pub mod search;".to_string(),
     ]);
     let expected_uses = BTreeSet::from([
         "pub use agent::Agent;".to_string(),
         "pub use combat_heuristic::{".to_string(),
+        "pub use coverage::{".to_string(),
         "pub use deck_delta_eval::{compare_pick_vs_skip, DeltaScore};".to_string(),
         "pub use evaluator::{evaluate_state, CardEvaluator, DeckProfile};".to_string(),
         "pub use event_policy::{".to_string(),
@@ -137,4 +137,28 @@ fn bot_coverage_signatures_surface_matches_expected_whitelist() {
             "missing bot::coverage_signatures export: {export}"
         );
     }
+}
+
+#[test]
+fn bot_harness_public_surface_matches_expected_whitelist() {
+    let public_mods = collect_prefixed_lines("src/bot/harness/mod.rs", "pub mod ");
+    let public_uses = collect_prefixed_lines("src/bot/harness/mod.rs", "pub use ");
+
+    let expected_mods = BTreeSet::from([
+        "pub mod combat_env;".to_string(),
+        "pub mod combat_lab;".to_string(),
+    ]);
+    let expected_uses = BTreeSet::from([
+        "pub use boss_validation::{build_ledger_record, validate_case};".to_string(),
+        "pub use combat_policy::PolicyKind;".to_string(),
+    ]);
+
+    assert_eq!(
+        public_mods, expected_mods,
+        "unexpected bot::harness pub mod surface"
+    );
+    assert_eq!(
+        public_uses, expected_uses,
+        "unexpected bot::harness pub use surface"
+    );
 }

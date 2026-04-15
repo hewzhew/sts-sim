@@ -1459,7 +1459,7 @@ fn audit_recent_live_session(
 
     shortlisted.sort_by_key(|entry| entry.frame);
 
-    let coverage = sts_simulator::bot::coverage::CoverageDb::load_or_default();
+    let coverage = sts_simulator::bot::CoverageDb::load_or_default();
     let mut lines = Vec::new();
     lines.push("recent live session audit".to_string());
     lines.push(format!(
@@ -1507,7 +1507,7 @@ fn audit_recent_live_session(
             &reconstructed.before_engine,
             &reconstructed.before_combat,
             &coverage,
-            sts_simulator::bot::coverage::CoverageMode::Off,
+            sts_simulator::bot::CoverageMode::Off,
             None,
             depth_limit,
             0,
@@ -1732,8 +1732,8 @@ fn build_search_baseline_record(
     let diagnostics = diagnose_root_search_with_depth_and_mode_and_root_prior(
         &reconstructed.before_engine,
         &reconstructed.before_combat,
-        &sts_simulator::bot::coverage::CoverageDb::load_or_default(),
-        sts_simulator::bot::coverage::CoverageMode::Off,
+        &sts_simulator::bot::CoverageDb::load_or_default(),
+        sts_simulator::bot::CoverageMode::Off,
         None,
         depth_limit,
         0,
@@ -1766,8 +1766,8 @@ fn build_search_baseline_record_from_fixture(
     let diagnostics = diagnose_root_search_with_depth_and_mode_and_root_prior(
         &engine,
         &combat,
-        &sts_simulator::bot::coverage::CoverageDb::load_or_default(),
-        sts_simulator::bot::coverage::CoverageMode::Off,
+        &sts_simulator::bot::CoverageDb::load_or_default(),
+        sts_simulator::bot::CoverageMode::Off,
         None,
         depth_limit,
         0,

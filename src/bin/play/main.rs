@@ -408,41 +408,41 @@ fn main() {
     };
     let start_auto = has_flag("--auto");
     let coverage_mode = if has_flag("--coverage-off") {
-        sts_simulator::bot::coverage::CoverageMode::Off
+        sts_simulator::bot::CoverageMode::Off
     } else if has_flag("--coverage-aggressive") {
-        sts_simulator::bot::coverage::CoverageMode::AggressiveNovel
+        sts_simulator::bot::CoverageMode::AggressiveNovel
     } else {
-        sts_simulator::bot::coverage::CoverageMode::PreferNovel
+        sts_simulator::bot::CoverageMode::PreferNovel
     };
     let curiosity_target = flag_value("--curiosity-card")
-        .map(sts_simulator::bot::coverage::CuriosityTarget::card)
+        .map(sts_simulator::bot::CuriosityTarget::card)
         .or_else(|| {
             flag_value("--curiosity-relic")
-                .map(sts_simulator::bot::coverage::CuriosityTarget::relic)
+                .map(sts_simulator::bot::CuriosityTarget::relic)
         })
         .or_else(|| {
             flag_value("--curiosity-potion")
-                .map(sts_simulator::bot::coverage::CuriosityTarget::potion)
+                .map(sts_simulator::bot::CuriosityTarget::potion)
         })
         .or_else(|| {
             flag_value("--curiosity-archetype")
-                .map(sts_simulator::bot::coverage::CuriosityTarget::archetype)
+                .map(sts_simulator::bot::CuriosityTarget::archetype)
         })
         .or_else(|| {
             flag_value("--curiosity-power")
-                .map(sts_simulator::bot::coverage::CuriosityTarget::power_tag)
+                .map(sts_simulator::bot::CuriosityTarget::power_tag)
         })
         .or_else(|| {
             flag_value("--curiosity-pile")
-                .map(sts_simulator::bot::coverage::CuriosityTarget::pile_tag)
+                .map(sts_simulator::bot::CuriosityTarget::pile_tag)
         })
         .or_else(|| {
             flag_value("--curiosity-pending")
-                .map(sts_simulator::bot::coverage::CuriosityTarget::pending_choice)
+                .map(sts_simulator::bot::CuriosityTarget::pending_choice)
         })
         .or_else(|| {
             flag_value("--curiosity-source")
-                .map(sts_simulator::bot::coverage::CuriosityTarget::source)
+                .map(sts_simulator::bot::CuriosityTarget::source)
         });
 
     // Parse Dashboard Configuration

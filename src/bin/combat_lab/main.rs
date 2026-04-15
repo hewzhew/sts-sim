@@ -7,7 +7,7 @@ use sts_simulator::fixtures::scenario::ScenarioFixture;
 use sts_simulator::bot::harness::combat_lab::{
     run_combat_lab, write_sanitized_fixture_for_local_lab, CombatLabConfig, LabVariantMode,
 };
-use sts_simulator::bot::harness::combat_policy::PolicyKind;
+use sts_simulator::bot::harness::PolicyKind;
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
 enum CliPolicy {

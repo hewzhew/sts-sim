@@ -48,7 +48,7 @@ pub fn replay_records_from_path(path: &Path) -> Vec<ObservedInteractionRecord> {
                     &input,
                     &after_engine,
                     &combat_state,
-                    crate::bot::coverage::archetype_tags_for_combat(&before_state),
+                    crate::bot::archetype_tags_for_combat(&before_state),
                 );
                 records.push(ObservedInteractionRecord {
                     observed_from: "replay".to_string(),

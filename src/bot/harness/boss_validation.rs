@@ -56,34 +56,6 @@ pub struct BossPreferenceCaseSpec {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct NaturalStartTraceRecord {
-    pub start_spec_name: String,
-    pub seed: u64,
-    pub episode_id: String,
-    pub turn_count: u32,
-    pub encounter_name: String,
-    pub observation: serde_json::Value,
-    pub legal_actions: Vec<String>,
-    pub action_labels: Vec<String>,
-    pub belief_summary: serde_json::Value,
-    pub pressure_summary: serde_json::Value,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct BossPreferenceCaseRecord {
-    pub case_name: String,
-    pub start_spec_name: String,
-    pub seed: u64,
-    pub prefix_actions: Vec<StructuredScenarioStep>,
-    pub candidate_a: Vec<StructuredScenarioStep>,
-    pub candidate_b: Vec<StructuredScenarioStep>,
-    #[serde(default)]
-    pub candidate_c: Option<Vec<StructuredScenarioStep>>,
-    pub expected_verdict: BossPreferenceVerdict,
-    pub expected_rationale_tags: Vec<BossRationaleTag>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BossValidationCandidateResult {
     pub name: String,
     pub outcome: TrajectoryOutcomeKind,

@@ -7,7 +7,7 @@ pub(crate) mod card_taxonomy;
 mod combat_heuristic;
 pub(crate) mod combat_posture;
 pub(crate) mod comm_mod;
-pub mod coverage;
+mod coverage;
 pub(crate) mod coverage_signatures;
 mod deck_delta_eval;
 pub(crate) mod encounter_suite;
@@ -27,6 +27,10 @@ mod strategy_families;
 pub use agent::Agent;
 pub use combat_heuristic::{
     describe_end_turn_options, diagnose_decision, evaluate_combat_state, HeuristicDiagnostics,
+};
+pub use coverage::{
+    archetype_tags_for_combat, curiosity_bonus, curiosity_target_matches, novelty_bonus,
+    CoverageDb, CoverageMode, CuriosityTarget,
 };
 pub use deck_delta_eval::{compare_pick_vs_skip, DeltaScore};
 pub use evaluator::{evaluate_state, CardEvaluator, DeckProfile};
