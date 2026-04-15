@@ -76,6 +76,32 @@ fn combust_requires_runtime_state_hp_loss() {
 }
 
 #[test]
+#[should_panic(expected = "power.runtime_state.base_power missing for Malleable")]
+fn malleable_requires_runtime_state_base_power() {
+    let mut snapshot = base_snapshot();
+    snapshot["player"]["powers"] = json!([{
+        "id": "Malleable",
+        "name": "Malleable",
+        "amount": 3
+    }]);
+
+    let _ = build_combat_state(&snapshot, &json!([]));
+}
+
+#[test]
+#[should_panic(expected = "power.runtime_state.stored_amount missing for Flight")]
+fn flight_requires_runtime_state_stored_amount() {
+    let mut snapshot = base_snapshot();
+    snapshot["player"]["powers"] = json!([{
+        "id": "Flight",
+        "name": "Flight",
+        "amount": 3
+    }]);
+
+    let _ = build_combat_state(&snapshot, &json!([]));
+}
+
+#[test]
 #[should_panic(expected = "power.runtime_state.card_uuid missing for Stasis")]
 fn stasis_requires_runtime_state_card_uuid() {
     let mut snapshot = base_snapshot();
@@ -83,6 +109,32 @@ fn stasis_requires_runtime_state_card_uuid() {
         "id": "Stasis",
         "name": "Stasis",
         "amount": 1
+    }]);
+
+    let _ = build_combat_state(&snapshot, &json!([]));
+}
+
+#[test]
+#[should_panic(expected = "power.runtime_state.damage missing for Panache")]
+fn panache_requires_runtime_state_damage() {
+    let mut snapshot = base_snapshot();
+    snapshot["player"]["powers"] = json!([{
+        "id": "Panache",
+        "name": "Panache",
+        "amount": 4
+    }]);
+
+    let _ = build_combat_state(&snapshot, &json!([]));
+}
+
+#[test]
+#[should_panic(expected = "power.runtime_state.damage missing for The Bomb")]
+fn the_bomb_requires_runtime_state_damage() {
+    let mut snapshot = base_snapshot();
+    snapshot["player"]["powers"] = json!([{
+        "id": "The Bomb",
+        "name": "The Bomb",
+        "amount": 3
     }]);
 
     let _ = build_combat_state(&snapshot, &json!([]));
@@ -97,6 +149,49 @@ fn relic_runtime_flags_require_runtime_state() {
         "name": "Centennial Puzzle",
         "counter": -1,
         "used_up": false
+    }]);
+
+    let _ = build_combat_state(&snapshot, &relics);
+}
+
+#[test]
+#[should_panic(expected = "relic.runtime_state.counter missing for ArtOfWar")]
+fn art_of_war_requires_runtime_state_counter() {
+    let snapshot = base_snapshot();
+    let relics = json!([{
+        "id": "Art of War",
+        "name": "Art of War",
+        "counter": -1,
+        "runtime_state": {}
+    }]);
+
+    let _ = build_combat_state(&snapshot, &relics);
+}
+
+#[test]
+#[should_panic(expected = "relic.runtime_state.amount missing for Pocketwatch")]
+fn pocketwatch_requires_runtime_state_amount() {
+    let snapshot = base_snapshot();
+    let relics = json!([{
+        "id": "Pocketwatch",
+        "name": "Pocketwatch",
+        "counter": -1,
+        "runtime_state": {}
+    }]);
+
+    let _ = build_combat_state(&snapshot, &relics);
+}
+
+#[test]
+#[should_panic(expected = "relic.runtime_state.used_up missing for Necronomicon")]
+fn necronomicon_requires_runtime_state_used_up() {
+    let snapshot = base_snapshot();
+    let relics = json!([{
+        "id": "Necronomicon",
+        "name": "Necronomicon",
+        "counter": -1,
+        "used_up": false,
+        "runtime_state": {}
     }]);
 
     let _ = build_combat_state(&snapshot, &relics);

@@ -18,6 +18,7 @@ use super::internal_state::{
     initialize_power_internal_state_from_snapshot, initialize_relic_runtime_state,
     seed_monster_internal_state_from_snapshot, snapshot_runtime_amount_for_relic,
     snapshot_runtime_counter_for_relic, snapshot_runtime_used_up_for_relic,
+    sync_relic_runtime_state_from_snapshot,
 };
 use super::rng::sync_rng;
 pub(crate) use cards::{
@@ -121,24 +122,20 @@ pub fn build_combat_state(snapshot: &Value, relics_val: &Value) -> CombatState {
             };
             if let Some(relic_id) = relic_id_from_java(relic_name) {
                 let mut rs = RelicState::new(relic_id);
-                if let Some(counter) = r.get("counter").and_then(|c| c.as_i64()) {
-                    rs.counter = counter as i32;
-                    initialize_relic_runtime_state(&mut rs);
-                }
-                if let Some(runtime_counter) = snapshot_runtime_counter_for_relic(relic_id, r) {
-                    rs.counter = runtime_counter;
-                }
-                let snapshot_used_up = r.get("used_up").and_then(|v| v.as_bool());
-                let runtime_used_up = snapshot_runtime_used_up_for_relic(relic_id, r);
-                let runtime_amount = snapshot_runtime_amount_for_relic(relic_id, r);
-                if let Some(runtime_used_up) = runtime_used_up {
-                    rs.used_up = runtime_used_up;
-                } else if let Some(used_up) = snapshot_used_up {
-                    rs.used_up = used_up;
-                }
-                if let Some(runtime_amount) = runtime_amount {
-                    rs.amount = runtime_amount;
-                }
+                initialize_relic_runtime_state(&mut rs);
+                let snapshot_counter = r
+                    .get("counter")
+                    .and_then(|c| c.as_i64())
+                    .map(|counter| counter as i32)
+                    .unwrap_or(rs.counter);
+                sync_relic_runtime_state_from_snapshot(
+                    &mut rs,
+                    snapshot_counter,
+                    snapshot_runtime_counter_for_relic(relic_id, r),
+                    r.get("used_up").and_then(|v| v.as_bool()),
+                    snapshot_runtime_used_up_for_relic(relic_id, r),
+                    snapshot_runtime_amount_for_relic(relic_id, r),
+                );
                 player.add_relic(rs);
             }
         }

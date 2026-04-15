@@ -49,6 +49,9 @@ Examples:
 - `power.just_applied`
 - `power.runtime_state.hp_loss`
 - `power.runtime_state.card_uuid`
+- `power.runtime_state.base_power`
+- `power.runtime_state.stored_amount`
+- `power.runtime_state.damage`
 - `monster.runtime_state.guardian_threshold`
 - `monster.runtime_state.angry_amount`
 - `monster.runtime_state.activated`

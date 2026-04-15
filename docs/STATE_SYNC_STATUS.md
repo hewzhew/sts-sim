@@ -38,6 +38,9 @@ Rust currently consumes protocol truth for:
 - `power.just_applied`
 - `power.runtime_state.hp_loss` for `Combust`
 - `power.runtime_state.card_uuid` for `Stasis`
+- `power.runtime_state.base_power` for `Malleable`
+- `power.runtime_state.stored_amount` for `Flight`
+- `power.runtime_state.damage` for `Panache` and `The Bomb`
 - `power.damage` / `power.misc` for non-migrated extra-data slices
 
 Examples already wired:
@@ -101,9 +104,9 @@ or importer coverage is still incomplete.
 
 ## Next Recommended Order
 
-1. finish migrating remaining power extra-data slices onto `power.runtime_state`
-2. remove legacy top-level monster hidden-state exports once new traces are in place
-3. delete any remaining runtime-only relic fallback path after strict trace refresh
+1. remove legacy top-level monster hidden-state exports once new traces are in place
+2. migrate any remaining non-slice power extra-data debt off `damage` / `misc`
+3. delete any remaining top-level relic `used_up/counter` reliance after strict trace refresh
 
 ## Related Docs
 

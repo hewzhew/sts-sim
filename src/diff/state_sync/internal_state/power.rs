@@ -55,15 +55,19 @@ pub fn sync_power_extra_data_from_snapshot_power(power: &mut Power, snapshot_pow
         .and_then(|value| value.as_str())
         .unwrap_or("<unknown>");
 
-    if power.power_type == PowerId::Combust {
-        power.extra_data = snapshot_power
+    let runtime_state_i32 = |key: &str| {
+        snapshot_power
             .get("runtime_state")
-            .and_then(|runtime| runtime.get("hp_loss"))
+            .and_then(|runtime| runtime.get(key))
             .and_then(|value| value.as_i64())
             .map(|value| value as i32)
             .unwrap_or_else(|| {
-                panic!("strict state_sync: power.runtime_state.hp_loss missing for {power_id}")
-            });
+                panic!("strict state_sync: power.runtime_state.{key} missing for {power_id}")
+            })
+    };
+
+    if power.power_type == PowerId::Combust {
+        power.extra_data = runtime_state_i32("hp_loss");
         return;
     }
 
@@ -75,6 +79,21 @@ pub fn sync_power_extra_data_from_snapshot_power(power: &mut Power, snapshot_pow
                 panic!("strict state_sync: power.runtime_state.card_uuid missing for {power_id}")
             });
         power.extra_data = snapshot_uuid(card_uuid, 0) as i32;
+        return;
+    }
+
+    if power.power_type == PowerId::Malleable {
+        power.extra_data = runtime_state_i32("base_power");
+        return;
+    }
+
+    if power.power_type == PowerId::Flight {
+        power.extra_data = runtime_state_i32("stored_amount");
+        return;
+    }
+
+    if power.power_type == PowerId::PanachePower || power.power_type == PowerId::TheBombPower {
+        power.extra_data = runtime_state_i32("damage");
         return;
     }
 
