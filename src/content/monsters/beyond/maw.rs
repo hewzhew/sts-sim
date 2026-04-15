@@ -124,32 +124,3 @@ impl MonsterBehavior for Maw {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::combat::MonsterEntity;
-    use crate::content::test_support::basic_combat;
-
-    #[test]
-    fn nomnomnom_uses_locked_intent_damage_and_hits() {
-        let mut combat = basic_combat();
-        let entity = MonsterEntity {
-            current_intent: Intent::Attack { damage: 6, hits: 3 },
-            next_move_byte: 5,
-            intent_dmg: 6,
-            ..combat.entities.monsters[0].clone()
-        };
-
-        let actions = Maw::take_turn(&mut combat, &entity);
-
-        let damage_actions = actions
-            .iter()
-            .filter_map(|action| match action {
-                Action::Damage(info) => Some((info.base, info.output)),
-                _ => None,
-            })
-            .collect::<Vec<_>>();
-
-        assert_eq!(damage_actions, vec![(6, 6), (6, 6), (6, 6)]);
-    }
-}

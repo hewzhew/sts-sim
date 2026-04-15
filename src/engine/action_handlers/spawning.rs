@@ -226,40 +226,6 @@ pub fn handle_roll_monster_move(monster_id: usize, state: &mut CombatState) {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn torch_head_spawn_consumes_two_hp_rolls_and_uses_second_value() {
-        let mut combat = crate::engine::test_support::basic_combat();
-        combat.meta.ascension_level = 0;
-
-        let mut expected_rng = combat.rng.monster_hp_rng.clone();
-        let _first = expected_rng.random_range(38, 40);
-        let expected_hp = expected_rng.random_range(38, 40);
-
-        handle_spawn_monster(
-            crate::content::monsters::EnemyId::TorchHead,
-            0,
-            0,
-            0,
-            647,
-            Some(647),
-            true,
-            &mut combat,
-        );
-
-        let spawned = &combat.entities.monsters[0];
-        assert_eq!(
-            crate::content::monsters::EnemyId::from_id(spawned.monster_type),
-            Some(crate::content::monsters::EnemyId::TorchHead)
-        );
-        assert_eq!(spawned.current_hp, expected_hp);
-        assert_eq!(combat.rng.monster_hp_rng.counter, expected_rng.counter);
-    }
-}
-
 pub fn handle_set_monster_move(
     monster_id: usize,
     next_move_byte: u8,

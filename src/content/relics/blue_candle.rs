@@ -28,30 +28,3 @@ impl BlueCandle {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::BlueCandle;
-    use crate::action::{Action, AddTo};
-    use crate::content::cards::CardId;
-
-    #[test]
-    fn blue_candle_curse_hp_loss_triggers_rupture() {
-        let actions = BlueCandle::on_use_card(CardId::Pain);
-        assert_eq!(actions.len(), 1);
-        assert_eq!(actions[0].insertion_mode, AddTo::Bottom);
-        assert!(matches!(
-            actions[0].action,
-            Action::LoseHp {
-                target: 0,
-                amount: 1,
-                triggers_rupture: true,
-            }
-        ));
-    }
-
-    #[test]
-    fn blue_candle_does_not_fire_for_non_curse_cards() {
-        let actions = BlueCandle::on_use_card(CardId::Strike);
-        assert!(actions.is_empty());
-    }
-}

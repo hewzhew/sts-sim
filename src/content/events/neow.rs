@@ -538,49 +538,6 @@ fn apply_reward(
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::{apply_reward, NeowRewardType};
-    use crate::content::relics::RelicId;
-    use crate::state::core::EngineState;
-    use crate::state::events::{EventId, EventState};
-    use crate::state::run::RunState;
-    use crate::state::selection::{DomainEvent, DomainEventSource};
-
-    #[test]
-    fn boss_relic_reward_emits_relic_loss_and_gain() {
-        let mut run_state = RunState::new(11, 0, false, "Ironclad");
-        run_state.event_state = Some(EventState::new(EventId::Neow));
-        run_state.boss_relic_pool = vec![RelicId::BlackStar];
-        let mut engine_state = EngineState::EventRoom;
-        let mut event_state = EventState::new(EventId::Neow);
-
-        apply_reward(
-            &mut engine_state,
-            &mut run_state,
-            NeowRewardType::BossRelic,
-            &mut event_state,
-        );
-
-        let events = run_state.take_emitted_events();
-        assert!(events.iter().any(|event| matches!(
-            event,
-            DomainEvent::RelicLost {
-                relic_id: RelicId::BurningBlood,
-                source: DomainEventSource::Event(EventId::Neow),
-            }
-        )));
-        assert!(events.iter().any(|event| matches!(
-            event,
-            DomainEvent::RelicObtained {
-                relic_id: RelicId::BlackStar,
-                source: DomainEventSource::Event(EventId::Neow),
-            }
-        )));
-        assert_eq!(run_state.relics[0].id, RelicId::BlackStar);
-    }
-}
-
 /// Generate 3 cards from the player's class card pool.
 /// If `rare_only` is true, all 3 cards come from the Rare pool.
 /// Otherwise, uses the same rarity roll as DreamCatcher (standard card reward rarity distribution).

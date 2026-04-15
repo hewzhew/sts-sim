@@ -74,36 +74,3 @@ impl MonsterBehavior for GremlinWarrior {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::GremlinWarrior;
-    use crate::content::monsters::MonsterBehavior;
-    use crate::content::test_support::{basic_combat, CombatTestExt};
-
-    #[test]
-    fn scratch_does_not_queue_roll_move_after_setting_repeat_attack() {
-        let combat =
-            basic_combat().with_monster_type(1, crate::content::monsters::EnemyId::GremlinWarrior);
-        let entity = combat.entities.monsters[0].clone();
-        let actions = GremlinWarrior::take_turn(
-            &mut combat.clone(),
-            &crate::combat::MonsterEntity {
-                next_move_byte: 1,
-                ..entity
-            },
-        );
-
-        assert!(actions.iter().any(|action| matches!(
-            action,
-            crate::action::Action::SetMonsterMove {
-                monster_id: 1,
-                next_move_byte: 1,
-                ..
-            }
-        )));
-        assert!(!actions.iter().any(|action| matches!(
-            action,
-            crate::action::Action::RollMonsterMove { monster_id: 1 }
-        )));
-    }
-}

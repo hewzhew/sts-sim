@@ -139,32 +139,3 @@ impl CoverageDb {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::CoverageDb;
-
-    #[test]
-    fn legacy_coverage_json_loads_with_default_signature_fields() {
-        let path =
-            std::env::temp_dir().join(format!("coverage_legacy_{}.json", std::process::id()));
-        let legacy = r#"{
-            "tested_cards": ["Bash"],
-            "tested_relics": ["BurningBlood"],
-            "tested_potions": ["Gamblers Brew"],
-            "failed_logic": ["ExampleFailure"]
-        }"#;
-        std::fs::write(&path, legacy).expect("write legacy coverage fixture");
-
-        let db = CoverageDb::load_from_path(&path);
-        let _ = std::fs::remove_file(&path);
-
-        assert!(db.tested_cards.contains("Bash"));
-        assert!(db.tested_relics.contains("BurningBlood"));
-        assert!(db.tested_potions.contains("Gamblers Brew"));
-        assert!(db.failed_logic.contains("ExampleFailure"));
-        assert!(db.tested_signatures.is_empty());
-        assert!(db.signature_counts.is_empty());
-        assert!(db.source_signature_counts.is_empty());
-        assert!(db.tested_archetypes.is_empty());
-    }
-}

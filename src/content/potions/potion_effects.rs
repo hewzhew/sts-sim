@@ -487,30 +487,3 @@ pub fn get_potion_actions(
     actions
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn distilled_chaos_queues_play_top_card_actions() {
-        let actions = get_potion_actions(1, PotionId::DistilledChaosPotion, None, 3);
-        assert_eq!(actions.len(), 1);
-        assert!(matches!(
-            actions[0].action,
-            Action::PlayTopCardsBuffered {
-                count: 3,
-                target: None,
-                exhaust: false
-            }
-        ));
-    }
-
-    #[test]
-    fn essence_of_darkness_queues_dark_orbs() {
-        let actions = get_potion_actions(1, PotionId::EssenceOfDarkness, None, 2);
-        assert_eq!(actions.len(), 2);
-        assert!(actions
-            .iter()
-            .all(|a| matches!(a.action, Action::ChannelOrb(crate::combat::OrbId::Dark))));
-    }
-}

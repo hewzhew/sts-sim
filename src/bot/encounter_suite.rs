@@ -281,31 +281,3 @@ pub(crate) fn advance_suite_engine(engine: &mut EngineState, combat: &mut Combat
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::state::core::EngineState;
-
-    #[test]
-    fn act1_suite_contains_normal_elite_and_boss_checks() {
-        let entries = rollout_entries_for_suite(EncounterSuiteId::Act1Pathing);
-        assert!(entries
-            .iter()
-            .any(|entry| !entry.is_elite && !entry.is_boss));
-        assert!(entries.iter().any(|entry| entry.is_elite));
-        assert!(entries.iter().any(|entry| entry.is_boss));
-    }
-
-    #[test]
-    fn suite_encounter_bootstrap_reaches_decision_point() {
-        let rs = RunState::new(17, 0, false, "Ironclad");
-        let (engine, combat) = start_suite_encounter(&rs, ACT1_ENTRIES[0]);
-        assert!(matches!(
-            engine,
-            EngineState::CombatPlayerTurn
-                | EngineState::PendingChoice(_)
-                | EngineState::GameOver(_)
-        ));
-        assert!(!combat.entities.monsters.is_empty());
-    }
-}

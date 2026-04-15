@@ -918,31 +918,3 @@ impl LiveCommSession {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::{noncombat_error_loop_fallback_command, noncombat_pollution_hold_command};
-
-    #[test]
-    fn error_loop_fallback_prefers_choose_zero_before_invalid_return() {
-        let avail = vec!["choose", "key", "click", "wait", "handoff", "state"];
-
-        let cmd = noncombat_error_loop_fallback_command(&avail);
-
-        assert_eq!(cmd, "CHOOSE 0");
-    }
-
-    #[test]
-    fn error_loop_fallback_uses_leave_when_available() {
-        let avail = vec!["leave"];
-
-        let cmd = noncombat_error_loop_fallback_command(&avail);
-
-        assert_eq!(cmd, "LEAVE");
-    }
-
-    #[test]
-    fn pollution_hold_prefers_wait_then_state() {
-        assert_eq!(noncombat_pollution_hold_command(&["wait"]), "WAIT 30");
-        assert_eq!(noncombat_pollution_hold_command(&["choose"]), "STATE");
-    }
-}

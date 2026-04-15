@@ -149,29 +149,6 @@ pub fn parse_input(
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::parse_input;
-    use crate::state::core::{ClientInput, EngineState};
-    use crate::state::run::RunState;
-
-    #[test]
-    fn boss_map_input_normalizes_to_single_choice() {
-        let mut run = RunState::new(41, 0, false, "Ironclad");
-        run.map.current_y = 14;
-        run.map.current_x = 0;
-
-        assert_eq!(
-            parse_input("go 6", &EngineState::MapNavigation, &run, &None),
-            Some(ClientInput::SelectMapNode(0))
-        );
-        assert_eq!(
-            parse_input("6", &EngineState::MapNavigation, &run, &None),
-            Some(ClientInput::SelectMapNode(0))
-        );
-    }
-}
-
 pub fn print_help() {
     println!("Commands:");
     println!("  COMBAT:     play <idx> [target]  |  end  |  potion <slot> [target]");

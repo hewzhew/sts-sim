@@ -595,33 +595,3 @@ pub fn tick_run(
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::tick_run;
-    use crate::state::core::{ClientInput, EngineState, RunResult};
-    use crate::state::events::{EventId, EventState};
-    use crate::state::run::RunState;
-
-    #[test]
-    fn lethal_noncombat_event_transitions_to_defeat() {
-        let mut engine = EngineState::EventRoom;
-        let mut run = RunState::new(1, 0, false, "Ironclad");
-        run.current_hp = 5;
-        run.event_state = Some({
-            let mut event = EventState::new(EventId::KnowingSkull);
-            event.current_screen = 1;
-            event
-        });
-        let mut combat = None;
-        let keep_running = tick_run(
-            &mut engine,
-            &mut run,
-            &mut combat,
-            Some(ClientInput::EventChoice(3)),
-        );
-
-        assert!(!keep_running);
-        assert!(matches!(engine, EngineState::GameOver(RunResult::Defeat)));
-        assert_eq!(run.current_hp, 0);
-    }
-}

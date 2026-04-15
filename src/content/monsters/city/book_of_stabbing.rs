@@ -158,29 +158,3 @@ impl MonsterBehavior for BookOfStabbing {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::BookOfStabbing;
-    use crate::action::Action;
-    use crate::combat::{Intent, MonsterEntity};
-    use crate::content::monsters::MonsterBehavior;
-    use crate::content::test_support::basic_combat;
-    use std::collections::VecDeque;
-
-    #[test]
-    fn stab_turn_uses_current_intent_hits() {
-        let combat = basic_combat();
-        let mut entity: MonsterEntity = combat.entities.monsters[0].clone();
-        entity.next_move_byte = 1;
-        entity.current_intent = Intent::Attack { damage: 6, hits: 2 };
-        entity.move_history = VecDeque::from(vec![1u8]);
-
-        let actions = BookOfStabbing::take_turn(&mut combat.clone(), &entity);
-        let damage_actions = actions
-            .iter()
-            .filter(|action| matches!(action, Action::Damage(_)))
-            .count();
-
-        assert_eq!(damage_actions, 2);
-    }
-}

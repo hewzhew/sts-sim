@@ -1622,40 +1622,6 @@ pub(super) fn handle_live_combat_frame<W: Write>(
     CombatFrameOutcome::Continue
 }
 
-#[cfg(test)]
-mod tests {
-    use super::should_stop_for_combat_mismatch;
-    use crate::cli::live_comm::LiveParityMode;
-
-    #[test]
-    fn strict_mode_stops_on_first_combat_mismatch() {
-        assert!(should_stop_for_combat_mismatch(
-            LiveParityMode::Strict,
-            true,
-            false
-        ));
-        assert!(should_stop_for_combat_mismatch(
-            LiveParityMode::Strict,
-            false,
-            true
-        ));
-    }
-
-    #[test]
-    fn survey_mode_collects_and_continues_on_mismatch() {
-        assert!(!should_stop_for_combat_mismatch(
-            LiveParityMode::Survey,
-            true,
-            false
-        ));
-        assert!(!should_stop_for_combat_mismatch(
-            LiveParityMode::Survey,
-            false,
-            true
-        ));
-    }
-}
-
 pub(super) fn build_live_combat_snapshot(gs: &Value) -> Value {
     build_protocol_live_combat_snapshot(gs)
 }

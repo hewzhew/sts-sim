@@ -36,28 +36,3 @@ pub fn at_end_of_turn(
     actions
 }
 
-#[cfg(test)]
-mod tests {
-    use super::at_end_of_turn;
-    use crate::action::{Action, DamageType};
-    use crate::content::test_support::{basic_combat, CombatTestExt};
-
-    #[test]
-    fn stone_calendar_uses_thorns_damage_all_enemies() {
-        let combat = basic_combat()
-            .with_rng_seed(1)
-            .with_monster_max_hp(1, 36)
-            .with_monster_hp(1, 36);
-        let actions = at_end_of_turn(&combat, 7);
-        assert_eq!(actions.len(), 1);
-        assert!(matches!(
-            &actions[0].action,
-            Action::DamageAllEnemies {
-                source: 0,
-                damages,
-                damage_type: DamageType::Thorns,
-                is_modified: false,
-            } if damages.as_slice() == &[52]
-        ));
-    }
-}

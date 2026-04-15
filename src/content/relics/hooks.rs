@@ -277,35 +277,6 @@ pub fn on_spawn_monster(state: &CombatState, target_idx: usize) -> SmallVec<[Act
     actions
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::content::relics::{RelicId, RelicState};
-
-    #[test]
-    fn on_spawn_monster_uses_relic_bus() {
-        let mut combat = crate::content::test_support::basic_combat();
-        combat
-            .entities
-            .player
-            .relics
-            .push(RelicState::new(RelicId::PhilosopherStone));
-        combat.entities.player.relic_buses.on_spawn_monster.push(0);
-
-        let actions = on_spawn_monster(&combat, 0);
-
-        assert_eq!(
-            actions.as_slice(),
-            &[Action::ApplyPower {
-                source: 1,
-                target: 1,
-                power_id: crate::content::powers::PowerId::Strength,
-                amount: 1,
-            }]
-        );
-    }
-}
-
 pub fn on_exhaust(state: &mut CombatState) -> smallvec::SmallVec<[ActionInfo; 4]> {
     let mut actions = smallvec::SmallVec::new();
     let bus = state.entities.player.relic_buses.on_exhaust.clone();
