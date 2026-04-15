@@ -14,7 +14,7 @@ use crate::rng::{shuffle_with_random_long, StsRng};
 use crate::state::core::{ClientInput, EngineState, RunResult};
 use crate::state::run::RunState;
 use crate::testing::fixtures::scenario::{initialize_fixture_state, ScenarioFixture};
-use crate::testing::harness::combat_policy::{
+use crate::bot::harness::combat_policy::{
     decide_policy_action, extract_state_features, flag_bad_action_tags, EvalMetrics,
     PolicyDecision, PolicyKind,
 };
@@ -839,4 +839,3 @@ pub fn render_trace_markdown(trace: &CombatLabEpisodeTrace) -> String {
 
     out
 }
-

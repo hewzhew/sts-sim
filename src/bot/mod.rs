@@ -12,6 +12,7 @@ pub mod deck_delta_eval;
 pub(crate) mod encounter_suite;
 pub mod evaluator;
 pub mod event_policy;
+pub mod harness;
 pub(crate) mod monster_belief;
 pub(crate) mod noncombat_families;
 pub(crate) mod potions;

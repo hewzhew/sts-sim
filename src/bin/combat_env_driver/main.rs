@@ -11,7 +11,7 @@ use sts_simulator::diff::replay::live_comm_replay::{
 use sts_simulator::diff::state_sync::build_combat_state;
 use sts_simulator::testing::fixtures::author_spec::{compile_combat_author_spec, CombatAuthorSpec};
 use sts_simulator::testing::fixtures::combat_start_spec::CombatStartSpec;
-use sts_simulator::testing::harness::combat_env::{
+use sts_simulator::bot::harness::combat_env::{
     ActionMask, CombatAction, CombatEnv, CombatEnvSpec, CombatEpisodeOutcome, CombatObservation,
     CombatRewardBreakdown,
 };

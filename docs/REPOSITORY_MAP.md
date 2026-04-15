@@ -78,7 +78,9 @@ Anything outside that path should be treated as support infrastructure, not as t
 - `src/diff/` — `integration`
   - protocol mapping in `diff::protocol`, replay/verification in `diff::replay`, sync support in `diff::state_sync`
 - `src/testing/` — `integration`
-  - fixtures in `testing::fixtures`, harnesses in `testing::harness`, test-only helpers in `testing::support`
+  - fixtures in `testing::fixtures`, integration analysis in `testing::harness`
+- `src/bot/harness/` — `experiment`
+  - bot-coupled workbenches and validation harnesses promoted out of `testing`
 - `src/bin/` — `integration`
   - explicit binary entrypoints, now one directory per binary
 - `src/bot/` — `experiment`

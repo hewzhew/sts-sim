@@ -17,6 +17,8 @@ Read these first:
   - top-level repository map, ownership tags, and RL main path
 - `architecture.md`
   - system architecture and verification context
+- `LAYER_BOUNDARIES.md`
+  - hard dependency direction for `core / integration / app`
 - `PROTOCOL_TRUTH_RULES.md`
   - hard rules for Java truth, protocol export, and importer boundaries
 - `STATE_SYNC_STATUS.md`

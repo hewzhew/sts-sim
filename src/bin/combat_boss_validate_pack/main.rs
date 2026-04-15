@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use clap::Parser;
 
 use sts_simulator::bot::search::DecisionAuditConfig;
-use sts_simulator::testing::harness::boss_validation::{build_ledger_record, validate_case};
+use sts_simulator::bot::harness::boss_validation::{build_ledger_record, validate_case};
 
 #[derive(Parser, Debug)]
 struct Args {
