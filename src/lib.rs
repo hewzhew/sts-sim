@@ -18,8 +18,6 @@ pub use testing::fixtures;
 // User-facing and experimental surfaces.
 pub mod bot;
 pub mod cli;
-pub mod interaction_coverage;
-pub mod interaction_signatures;
 
 pub use core::EntityId;
 mod rewards;

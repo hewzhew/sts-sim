@@ -8,6 +8,7 @@ pub mod combat_heuristic;
 pub(crate) mod combat_posture;
 pub(crate) mod comm_mod;
 pub mod coverage;
+pub(crate) mod coverage_signatures;
 pub mod deck_delta_eval;
 pub(crate) mod encounter_suite;
 pub mod evaluator;

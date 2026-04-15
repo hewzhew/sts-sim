@@ -339,7 +339,7 @@ fn main() {
             let live_comm_sidecar = manifest_dir.join("logs/current/live_comm_signatures.jsonl");
 
             let replay_inputs =
-                sts_simulator::interaction_coverage::default_replay_inputs(&manifest_dir);
+                sts_simulator::cli::coverage_tools::default_replay_inputs(&manifest_dir);
             let mut generated_from: Vec<String> = replay_inputs
                 .iter()
                 .map(|path| path.to_string_lossy().into_owned())
@@ -348,13 +348,14 @@ fn main() {
             let mut records = Vec::new();
 
             for replay in &replay_inputs {
-                records
-                    .extend(sts_simulator::interaction_coverage::replay_records_from_path(replay));
+                records.extend(sts_simulator::cli::coverage_tools::replay_records_from_path(
+                    replay,
+                ));
             }
 
             if live_comm_sidecar.exists() {
                 generated_from.push(live_comm_sidecar.to_string_lossy().into_owned());
-                records.extend(sts_simulator::interaction_coverage::load_live_comm_records(
+                records.extend(sts_simulator::cli::coverage_tools::load_live_comm_records(
                     &live_comm_sidecar,
                 ));
             } else if live_comm_raw.exists() {
@@ -364,7 +365,7 @@ fn main() {
                 ));
             }
 
-            if let Err(err) = sts_simulator::interaction_coverage::write_coverage_outputs(
+            if let Err(err) = sts_simulator::cli::coverage_tools::write_coverage_outputs(
                 &records,
                 generated_from,
                 &coverage_path,

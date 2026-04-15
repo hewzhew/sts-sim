@@ -83,23 +83,6 @@ pub struct ObservedInteractionRecord {
     pub signature: InteractionSignature,
 }
 
-pub fn signature_from_transition(
-    before_engine: &EngineState,
-    before: &CombatState,
-    input: &ClientInput,
-    after_engine: &EngineState,
-    after: &CombatState,
-) -> InteractionSignature {
-    signature_from_transition_with_archetypes(
-        before_engine,
-        before,
-        input,
-        after_engine,
-        after,
-        Vec::new(),
-    )
-}
-
 pub fn signature_from_transition_with_archetypes(
     before_engine: &EngineState,
     before: &CombatState,

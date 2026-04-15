@@ -81,8 +81,6 @@ fn core_does_not_depend_on_integration_or_app_layers() {
             "crate::diff",
             "crate::bot",
             "crate::cli",
-            "crate::interaction_coverage",
-            "crate::interaction_signatures",
         ],
         "core",
     );
@@ -94,12 +92,7 @@ fn integration_does_not_depend_on_app_layer() {
 
     assert_forbidden_deps(
         &files,
-        &[
-            "crate::bot",
-            "crate::cli",
-            "crate::interaction_coverage",
-            "crate::interaction_signatures",
-        ],
+        &["crate::bot", "crate::cli"],
         "integration",
     );
 }

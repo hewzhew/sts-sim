@@ -34,8 +34,6 @@ fn lib_root_public_surface_matches_expected_whitelist() {
         "pub mod content;".to_string(),
         "pub mod diff;".to_string(),
         "pub mod engine;".to_string(),
-        "pub mod interaction_coverage;".to_string(),
-        "pub mod interaction_signatures;".to_string(),
         "pub mod map;".to_string(),
         "pub mod rng;".to_string(),
         "pub mod state;".to_string(),
@@ -75,8 +73,20 @@ fn bot_public_surface_matches_expected_whitelist() {
 }
 
 #[test]
-fn interaction_coverage_public_surface_matches_expected_whitelist() {
-    let header = source_lines("src/interaction_coverage.rs");
+fn cli_public_surface_matches_expected_whitelist() {
+    let public_mods = collect_prefixed_lines("src/cli/mod.rs", "pub mod ");
+    let expected_mods = BTreeSet::from([
+        "pub mod coverage_tools;".to_string(),
+        "pub mod live_comm;".to_string(),
+        "pub mod live_comm_admin;".to_string(),
+    ]);
+
+    assert_eq!(public_mods, expected_mods, "unexpected cli pub mod surface");
+}
+
+#[test]
+fn cli_coverage_tools_public_surface_matches_expected_whitelist() {
+    let header = source_lines("src/cli/coverage_tools/mod.rs");
     let expected_header = vec![
         "mod io;".to_string(),
         "mod report;".to_string(),
@@ -87,13 +97,13 @@ fn interaction_coverage_public_surface_matches_expected_whitelist() {
     ];
     assert_eq!(
         header, expected_header,
-        "unexpected interaction_coverage module surface"
+        "unexpected cli::coverage_tools module surface"
     );
 }
 
 #[test]
-fn interaction_signatures_public_surface_matches_expected_whitelist() {
-    let header = source_lines("src/interaction_signatures.rs");
+fn bot_coverage_signatures_surface_matches_expected_whitelist() {
+    let header = source_lines("src/bot/coverage_signatures.rs");
     let expected_prefix = vec![
         "use std::collections::BTreeSet;".to_string(),
         "".to_string(),
@@ -102,20 +112,19 @@ fn interaction_signatures_public_surface_matches_expected_whitelist() {
     assert_eq!(
         header[..3].to_vec(),
         expected_prefix,
-        "unexpected interaction_signatures module prefix"
+        "unexpected bot::coverage_signatures module prefix"
     );
 
     let required_exports = [
         "pub struct InteractionSignature {",
         "pub struct ObservedInteractionRecord {",
-        "pub fn signature_from_transition(",
         "pub fn signature_from_transition_with_archetypes(",
         "pub fn command_string(input: &ClientInput) -> String {",
     ];
     for export in required_exports {
         assert!(
             header.iter().any(|line| line == export),
-            "missing interaction_signatures export: {export}"
+            "missing bot::coverage_signatures export: {export}"
         );
     }
 }
