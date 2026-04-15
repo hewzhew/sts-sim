@@ -4,7 +4,7 @@ use clap::{Parser, ValueEnum};
 
 use sts_simulator::fixtures::author_spec::{compile_combat_author_spec, CombatAuthorSpec};
 use sts_simulator::fixtures::scenario::ScenarioFixture;
-use sts_simulator::bot::harness::combat_lab::{
+use sts_simulator::bot::harness::{
     run_combat_lab, write_sanitized_fixture_for_local_lab, CombatLabConfig, LabVariantMode,
 };
 use sts_simulator::bot::harness::PolicyKind;

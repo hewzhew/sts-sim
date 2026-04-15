@@ -201,12 +201,11 @@ fn bot_harness_public_surface_matches_expected_whitelist() {
     let public_mods = collect_prefixed_lines("src/bot/harness/mod.rs", "pub mod ");
     let public_uses = collect_prefixed_lines("src/bot/harness/mod.rs", "pub use ");
 
-    let expected_mods = BTreeSet::from([
-        "pub mod combat_env;".to_string(),
-        "pub mod combat_lab;".to_string(),
-    ]);
+    let expected_mods = BTreeSet::new();
     let expected_uses = BTreeSet::from([
         "pub use boss_validation::{build_ledger_record, validate_case};".to_string(),
+        "pub use combat_env::{".to_string(),
+        "pub use combat_lab::{".to_string(),
         "pub use combat_policy::PolicyKind;".to_string(),
     ]);
 
@@ -237,4 +236,18 @@ fn bot_search_public_surface_matches_expected_whitelist() {
         public_uses, expected_uses,
         "unexpected bot::search pub use surface"
     );
+
+    let contents = fs::read_to_string("src/bot/search/mod.rs").expect("read bot search mod");
+    for forbidden in [
+        "diagnose_root_search_with_mode,",
+        "diagnose_root_search_with_mode_and_profiling,",
+        "diagnose_root_search_with_depth_and_mode_and_profiling,",
+        "find_best_move_with_mode,",
+        "find_best_move_with_mode_and_profiling,",
+    ] {
+        assert!(
+            !contents.contains(forbidden),
+            "unexpected bot::search export still present: {forbidden}\n{contents}"
+        );
+    }
 }

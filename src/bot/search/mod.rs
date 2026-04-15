@@ -20,12 +20,9 @@ pub use decision_audit::{
 };
 pub use equivalence::{SearchEquivalenceKind, SearchEquivalenceMode};
 pub use mcts::{
-    diagnose_root_search, diagnose_root_search_with_depth,
-    diagnose_root_search_with_depth_and_mode,
-    diagnose_root_search_with_depth_and_mode_and_profiling,
-    diagnose_root_search_with_depth_and_mode_and_root_prior, diagnose_root_search_with_mode,
-    diagnose_root_search_with_mode_and_profiling, find_best_move, find_best_move_with_mode,
-    find_best_move_with_mode_and_profiling, SearchDiagnostics, SearchMoveStat,
+    diagnose_root_search, diagnose_root_search_with_depth, diagnose_root_search_with_depth_and_mode,
+    diagnose_root_search_with_depth_and_mode_and_root_prior, find_best_move, SearchDiagnostics,
+    SearchMoveStat,
 };
 pub use profile::{
     SearchNodeCounters, SearchPhaseProfile, SearchProfileBreakdown, SearchProfilingLevel,

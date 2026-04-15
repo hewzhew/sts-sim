@@ -125,29 +125,6 @@ pub fn find_best_move(
     )
 }
 
-pub fn find_best_move_with_mode(
-    engine: &EngineState,
-    combat: &CombatState,
-    equivalence_mode: SearchEquivalenceMode,
-    depth_limit: u32,
-    _verbose: bool,
-    db: &crate::bot::coverage::CoverageDb,
-    coverage_mode: crate::bot::coverage::CoverageMode,
-    curiosity_target: Option<&crate::bot::coverage::CuriosityTarget>,
-) -> ClientInput {
-    find_best_move_with_mode_and_profiling(
-        engine,
-        combat,
-        equivalence_mode,
-        depth_limit,
-        _verbose,
-        db,
-        coverage_mode,
-        curiosity_target,
-        SearchProfilingLevel::Summary,
-    )
-}
-
 pub fn find_best_move_with_mode_and_profiling(
     engine: &EngineState,
     combat: &CombatState,
@@ -189,27 +166,6 @@ pub fn diagnose_root_search(
         curiosity_target,
         num_simulations,
         default_equivalence_mode(),
-        SearchProfilingLevel::Summary,
-    )
-}
-
-pub fn diagnose_root_search_with_mode(
-    engine: &EngineState,
-    combat: &CombatState,
-    db: &crate::bot::coverage::CoverageDb,
-    coverage_mode: crate::bot::coverage::CoverageMode,
-    curiosity_target: Option<&crate::bot::coverage::CuriosityTarget>,
-    num_simulations: u32,
-    equivalence_mode: SearchEquivalenceMode,
-) -> SearchDiagnostics {
-    diagnose_root_search_with_mode_and_profiling(
-        engine,
-        combat,
-        db,
-        coverage_mode,
-        curiosity_target,
-        num_simulations,
-        equivalence_mode,
         SearchProfilingLevel::Summary,
     )
 }
