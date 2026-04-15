@@ -53,7 +53,7 @@ Use:
 
 For battle-local training work, the current approved environment entrypoint is:
 
-- `sts_simulator::testing::combat_env::CombatEnv`
+- `sts_simulator::bot::harness::combat_env::CombatEnv`
 
 This is a headless Rust-only combat environment. It is intended for fixture-driven
 training and evaluation, not as a `livecomm` replacement.

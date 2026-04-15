@@ -1,10 +1,10 @@
 use std::io::{self, BufRead, Write};
 use sts_simulator::combat::CombatState;
 use sts_simulator::engine::run_loop::tick_run;
-use sts_simulator::rewards::state::RewardItem;
 use sts_simulator::state::core::*;
 use sts_simulator::state::run::RunState;
 use sts_simulator::state::selection::{SelectionResolution, SelectionScope, SelectionTargetRef};
+use sts_simulator::state::RewardItem;
 
 // ─── Smart Silence System ───────────────────────────────────────────────────
 
@@ -573,7 +573,7 @@ fn main() {
     let mut stdout = io::stdout();
 
     let mut last_floor_num = 0;
-    let mut watchdog = sts_simulator::utils::SimulationWatchdog::new(100, 5);
+    let mut watchdog = sts_simulator::SimulationWatchdog::new(100, 5);
 
     'outer: loop {
         app.evaluate_display_mode(&run_state, combat_state.as_ref());

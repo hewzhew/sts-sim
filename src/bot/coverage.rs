@@ -139,3 +139,95 @@ impl CoverageDb {
     }
 }
 
+pub fn novelty_bonus(
+    signature_key: Option<&str>,
+    source_combo_key: Option<&str>,
+    db: &CoverageDb,
+    mode: CoverageMode,
+) -> f32 {
+    match mode {
+        CoverageMode::Off => 0.0,
+        CoverageMode::PreferNovel => {
+            let mut bonus = 0.0;
+            if let Some(sig) = signature_key {
+                if !db.tested_signatures.contains(sig) {
+                    bonus += 120_000.0;
+                }
+            }
+            if let Some(source_combo) = source_combo_key {
+                if !db.source_signature_counts.contains_key(source_combo) {
+                    bonus += 45_000.0;
+                }
+            }
+            bonus
+        }
+        CoverageMode::AggressiveNovel => {
+            let mut bonus = 0.0;
+            if let Some(sig) = signature_key {
+                if !db.tested_signatures.contains(sig) {
+                    bonus += 180_000.0;
+                }
+            }
+            if let Some(source_combo) = source_combo_key {
+                if !db.source_signature_counts.contains_key(source_combo) {
+                    bonus += 70_000.0;
+                }
+            }
+            bonus
+        }
+    }
+}
+
+pub fn curiosity_bonus(
+    signature: Option<&crate::interaction_coverage::InteractionSignature>,
+    target: Option<&CuriosityTarget>,
+) -> f32 {
+    if let (Some(signature), Some(target)) = (signature, target) {
+        if curiosity_target_matches(signature, target) {
+            return 95_000.0;
+        }
+    }
+    0.0
+}
+
+pub fn curiosity_target_matches(
+    signature: &crate::interaction_coverage::InteractionSignature,
+    target: &CuriosityTarget,
+) -> bool {
+    match target {
+        CuriosityTarget::Card(name) => {
+            signature.source_kind == "card" && equals_ignore_ascii_case(&signature.source_id, name)
+        }
+        CuriosityTarget::Relic(name) => {
+            signature.source_kind == "relic" && equals_ignore_ascii_case(&signature.source_id, name)
+        }
+        CuriosityTarget::Potion(name) => {
+            signature.source_kind == "potion"
+                && equals_ignore_ascii_case(&signature.source_id, name)
+        }
+        CuriosityTarget::Archetype(tag) => signature
+            .archetype_tags
+            .iter()
+            .any(|value| equals_ignore_ascii_case(value, tag)),
+        CuriosityTarget::PowerTag(tag) => signature
+            .power_tags
+            .iter()
+            .any(|value| equals_ignore_ascii_case(value, tag)),
+        CuriosityTarget::PileTag(tag) => signature
+            .pile_tags
+            .iter()
+            .any(|value| equals_ignore_ascii_case(value, tag)),
+        CuriosityTarget::PendingChoice(tag) => {
+            signature.pending_choice != "none"
+                && signature
+                    .pending_choice
+                    .to_ascii_lowercase()
+                    .contains(&tag.to_ascii_lowercase())
+        }
+        CuriosityTarget::Source(name) => equals_ignore_ascii_case(&signature.source_id, name),
+    }
+}
+
+fn equals_ignore_ascii_case(left: &str, right: &str) -> bool {
+    left.eq_ignore_ascii_case(right)
+}

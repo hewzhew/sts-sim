@@ -23,11 +23,11 @@ Rough groups:
 
 Supporting module ownership for these binaries now lives in:
 
-- `sts_simulator::testing::fixtures`
+- `sts_simulator::fixtures`
   - scenario and author/start-spec inputs
 - `sts_simulator::bot::harness`
   - combat env, lab, and bot-coupled validation workbenches
-- `sts_simulator::testing::harness`
+- `crate::testing::harness`
   - integration-side analysis helpers consumed internally by app-layer harnesses
 - `sts_simulator::diff::protocol`
   - protocol parsing and live snapshot shaping

@@ -41,7 +41,7 @@ This file defines the hard dependency direction for `src/`.
 
 ## Current Ownership Notes
 
-- `testing::fixtures`
+- `fixtures`
   - integration-only fixture/spec assembly
 - `testing::harness`
   - integration-side analysis helpers

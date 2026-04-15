@@ -345,10 +345,10 @@ To avoid mixing surfaces:
 ### Long-term: AI Research Platform
 
 - **Battle-local training environment**: the repo now includes a headless Rust combat
-  environment at `sts_simulator::testing::combat_env::CombatEnv`. This is the current
+  environment at `sts_simulator::bot::harness::combat_env::CombatEnv`. This is the current
   entrypoint for fixture-driven combat learning work:
   ```rust
-  use sts_simulator::testing::combat_env::{CombatAction, CombatEnv, CombatEnvSpec};
+  use sts_simulator::bot::harness::combat_env::{CombatAction, CombatEnv, CombatEnvSpec};
   ```
   A future Python/Gym wrapper can sit on top of this interface instead of inventing
   a second combat stepping path.

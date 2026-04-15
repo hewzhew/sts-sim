@@ -1,4 +1,4 @@
-use sts_simulator::testing::fixtures::scenario::{assert_fixture, ScenarioFixture};
+use sts_simulator::fixtures::scenario::{assert_fixture, ScenarioFixture};
 
 #[test]
 fn replay_fixtures() {

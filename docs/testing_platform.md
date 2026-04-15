@@ -9,7 +9,7 @@ Operational workflow for live runs:
 
 ## Current Layering
 
-- `sts_simulator::testing::scenario`
+- `sts_simulator::fixtures::scenario`
   - Canonical fixture schema
   - Shared replay/assertion logic
   - Backward-compatible with existing live regression fixtures

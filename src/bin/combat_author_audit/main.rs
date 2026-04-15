@@ -3,8 +3,8 @@ use std::path::PathBuf;
 use clap::Parser;
 
 use sts_simulator::bot::search::{audit_state, render_text_report, DecisionAuditConfig};
-use sts_simulator::testing::fixtures::author_spec::{compile_combat_author_spec, CombatAuthorSpec};
-use sts_simulator::testing::fixtures::scenario::initialize_fixture_state;
+use sts_simulator::fixtures::author_spec::{compile_combat_author_spec, CombatAuthorSpec};
+use sts_simulator::fixtures::scenario::initialize_fixture_state;
 
 #[derive(Parser, Debug)]
 struct Args {

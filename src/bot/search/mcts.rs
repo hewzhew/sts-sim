@@ -756,13 +756,13 @@ fn transition_bonus(
     );
 
     let mut bonus = tactical_move_bonus(combat, input);
-    bonus += crate::interaction_coverage::novelty_bonus(
+    bonus += crate::bot::coverage::novelty_bonus(
         Some(signature.canonical_key().as_str()),
         Some(signature.source_combo_key().as_str()),
         db,
         coverage_mode,
     );
-    bonus += crate::interaction_coverage::curiosity_bonus(Some(&signature), curiosity_target);
+    bonus += crate::bot::coverage::curiosity_bonus(Some(&signature), curiosity_target);
     bonus += curiosity_archetype_move_bonus(combat, input, curiosity_target);
     bonus += motif_transition_bonus(combat, input, next_combat);
 
@@ -962,4 +962,3 @@ fn should_skip_recursive_transition(combat: &CombatState, transition: &RankedTra
         && next_player.block <= player.block
         && next_player.current_hp <= player.current_hp
 }
-
