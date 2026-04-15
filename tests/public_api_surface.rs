@@ -72,3 +72,26 @@ fn bot_public_surface_matches_expected_whitelist() {
     assert_eq!(public_mods, expected_mods, "unexpected bot pub mod surface");
     assert_eq!(public_uses, expected_uses, "unexpected bot pub use surface");
 }
+
+#[test]
+fn interaction_coverage_public_surface_matches_expected_whitelist() {
+    let header = source_lines("src/interaction_coverage.rs");
+    let expected_header = vec![
+        "mod io;".to_string(),
+        "mod report;".to_string(),
+        "mod signature;".to_string(),
+        "".to_string(),
+        "pub use io::{default_replay_inputs, load_live_comm_records, replay_records_from_path};"
+            .to_string(),
+        "pub use report::{write_coverage_outputs, InteractionCoverageReport};".to_string(),
+        "pub use signature::{".to_string(),
+        "command_string, signature_from_transition, signature_from_transition_with_archetypes,"
+            .to_string(),
+        "InteractionSignature, ObservedInteractionRecord,".to_string(),
+        "};".to_string(),
+    ];
+    assert_eq!(
+        header, expected_header,
+        "unexpected interaction_coverage module surface"
+    );
+}
