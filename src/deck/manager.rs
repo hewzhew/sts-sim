@@ -18,7 +18,6 @@ pub struct ObtainResult {
 }
 
 pub struct RemoveResult {
-    pub removed_successfully: bool,
     pub actions: Vec<DeckAction>,
 }
 
@@ -125,7 +124,6 @@ impl DeckManager {
         }
 
         RemoveResult {
-            removed_successfully: true,
             actions,
         }
     }

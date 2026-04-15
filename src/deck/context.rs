@@ -16,6 +16,4 @@ pub struct DeckContext {
     pub has_toxic_egg: bool,
     pub has_frozen_egg: bool,
 
-    // Necronomicurse triggers
-    pub has_necronomicon: bool,
 }

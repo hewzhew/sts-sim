@@ -696,7 +696,6 @@ impl RunState {
             has_molten_egg: self.relics.iter().any(|r| r.id == RelicId::MoltenEgg),
             has_toxic_egg: self.relics.iter().any(|r| r.id == RelicId::ToxicEgg),
             has_frozen_egg: self.relics.iter().any(|r| r.id == RelicId::FrozenEgg),
-            has_necronomicon: self.relics.iter().any(|r| r.id == RelicId::Necronomicon),
         }
     }
 
@@ -1327,4 +1326,3 @@ impl RunState {
         }
     }
 }
-

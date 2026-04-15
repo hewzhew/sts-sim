@@ -1,14 +1,14 @@
 pub mod action;
 pub mod combat;
 pub mod content;
-pub mod core;
-pub mod deck;
+mod core;
+mod deck;
 pub mod engine;
-pub mod events;
+mod events;
 pub mod map;
 pub mod rewards;
 pub mod rng;
-pub mod shop;
+mod shop;
 pub mod state;
 
 // Integration layers around the runtime path.
@@ -21,3 +21,5 @@ pub mod cli;
 pub mod interaction_coverage;
 
 pub mod utils;
+
+pub use core::EntityId;

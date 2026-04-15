@@ -11,7 +11,7 @@ use sts_simulator::content::monsters::EnemyId;
 use sts_simulator::content::potions::{
     get_potion_definition, random_potion, PotionClass, PotionId, PotionRarity,
 };
-use sts_simulator::core::EntityId;
+use sts_simulator::EntityId;
 use sts_simulator::engine::action_handlers::cards::handle_obtain_potion;
 use sts_simulator::rng::RngPool;
 

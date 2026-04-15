@@ -573,7 +573,7 @@ fn main() {
     let mut stdout = io::stdout();
 
     let mut last_floor_num = 0;
-    let mut watchdog = sts_simulator::utils::watchdog::SimulationWatchdog::new(100, 5);
+    let mut watchdog = sts_simulator::utils::SimulationWatchdog::new(100, 5);
 
     'outer: loop {
         app.evaluate_display_mode(&run_state, combat_state.as_ref());
