@@ -6,11 +6,23 @@ use crate::content::powers::PowerId;
 pub struct GremlinLeader;
 
 impl GremlinLeader {
-    pub const GREMLIN_SLOT_LOGICAL_POSITIONS: [i32; 3] = [1, 2, 0];
+    pub const GREMLIN_SLOT_DRAW_X: [i32; 3] = [-366, -170, -532];
+    pub const GREMLIN_SLOT_LOGICAL_POSITIONS: [i32; 3] = Self::GREMLIN_SLOT_DRAW_X;
     pub const LEADER_LOGICAL_POSITION: i32 = 3;
 
-    fn logical_position_for_summon_slot(slot: usize) -> i32 {
-        Self::GREMLIN_SLOT_LOGICAL_POSITIONS[slot]
+    fn draw_x_for_summon_slot(slot: usize) -> i32 {
+        Self::GREMLIN_SLOT_DRAW_X[slot]
+    }
+
+    fn protocol_draw_x_for_minion(
+        slot: usize,
+        monster_id: crate::content::monsters::EnemyId,
+    ) -> i32 {
+        let slot_draw_x = Self::draw_x_for_summon_slot(slot);
+        match monster_id {
+            crate::content::monsters::EnemyId::GremlinWizard => slot_draw_x - 35,
+            _ => slot_draw_x,
+        }
     }
 
     fn occupied_summon_slots(state: &CombatState, leader_id: usize) -> [bool; 3] {
@@ -19,9 +31,10 @@ impl GremlinLeader {
             if monster.id == leader_id || monster.is_dying {
                 continue;
             }
-            for (slot, logical_position) in Self::GREMLIN_SLOT_LOGICAL_POSITIONS.iter().enumerate()
-            {
-                if monster.logical_position == *logical_position {
+            for (slot, draw_x) in Self::GREMLIN_SLOT_DRAW_X.iter().enumerate() {
+                if monster.protocol_identity.draw_x == Some(*draw_x)
+                    || monster.logical_position == *draw_x
+                {
                     occupied[slot] = true;
                 }
             }
@@ -161,11 +174,13 @@ impl MonsterBehavior for GremlinLeader {
                     };
                     occupied_slots[slot] = true;
                     let minion_id = variants[state.rng.ai_rng.random_range(0, 7) as usize];
+                    let draw_x = Self::protocol_draw_x_for_minion(slot, minion_id);
                     actions.push(Action::SpawnMonsterSmart {
                         monster_id: minion_id,
                         current_hp: 0,
                         max_hp: 0,
-                        logical_position: Self::logical_position_for_summon_slot(slot),
+                        logical_position: draw_x,
+                        protocol_draw_x: Some(draw_x),
                         is_minion: true,
                     });
                 }

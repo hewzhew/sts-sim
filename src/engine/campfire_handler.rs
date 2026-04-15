@@ -1,6 +1,7 @@
 use crate::content::relics::{RelicId, RelicState};
 use crate::state::core::{CampfireChoice, ClientInput, EngineState};
 use crate::state::run::RunState;
+use crate::state::selection::DomainEventSource;
 
 /// Campfire (Rest Site) handler.
 ///
@@ -68,7 +69,8 @@ pub fn handle(
             CampfireChoice::Smith(idx) => {
                 // Java: SmithOption → card upgrade on master_deck
                 if idx < run_state.master_deck.len() {
-                    run_state.master_deck[idx].upgrades += 1;
+                    let uuid = run_state.master_deck[idx].uuid;
+                    run_state.upgrade_card_with_source(uuid, DomainEventSource::CampfireSmith);
                 }
                 *engine_state = EngineState::MapNavigation;
             }
@@ -103,7 +105,10 @@ pub fn handle(
                     let card = &run_state.master_deck[idx];
                     if !is_card_bottled(card, &run_state.relics) {
                         let uuid = card.uuid;
-                        run_state.remove_card_from_deck(uuid);
+                        run_state.remove_card_from_deck_with_source(
+                            uuid,
+                            DomainEventSource::CampfireToke,
+                        );
                     }
                 }
                 *engine_state = EngineState::MapNavigation;

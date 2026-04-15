@@ -1,9 +1,9 @@
+use crate::bot::monster_belief::build_combat_belief_state;
 use crate::combat::{CombatState, Intent, PowerId};
 use crate::content::cards::{get_card_definition, CardId, CardTarget, CardType};
 use crate::content::monsters::EnemyId;
 use crate::content::relics::RelicId;
 
-pub(super) const MAX_MONSTERS: usize = 8;
 const MAX_HAND: usize = 12;
 pub(super) const MAX_STATES: usize = 50_000;
 pub(super) const DRAW_VALUE: i64 = 550;
@@ -80,7 +80,7 @@ impl Default for SimCard {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub(super) struct SimState {
     pub energy: i32,
     pub player_hp: i32,
@@ -112,6 +112,7 @@ pub(super) struct SimState {
     pub is_boss_fight: bool,
     pub is_elite_fight: bool,
     pub double_tap_active: bool,
+    pub future_growth_value: i32,
     pub future_status_cards: i32,
     pub future_zero_cost_cards: i32,
     pub future_one_cost_cards: i32,
@@ -127,8 +128,7 @@ pub(super) struct SimState {
     pub status_in_draw: i32,
     pub status_in_discard: i32,
     pub draw_bonus: i64,
-    pub monsters: [SimMonster; MAX_MONSTERS],
-    pub monster_count: u8,
+    pub monsters: Vec<SimMonster>,
     pub hand: [SimCard; MAX_HAND],
     pub hand_mask: u16,
 }
@@ -175,6 +175,87 @@ pub(super) fn active_hand_cards(state: &SimState) -> impl Iterator<Item = (usize
         .filter(move |(i, _)| (state.hand_mask & (1u16 << i)) != 0)
 }
 
+pub(super) fn active_monsters(state: &SimState) -> impl Iterator<Item = (usize, &SimMonster)> {
+    state
+        .monsters
+        .iter()
+        .enumerate()
+        .filter(|(_, monster)| !monster.is_gone)
+}
+
+fn build_sim_monsters(combat: &CombatState) -> Vec<SimMonster> {
+    let belief = build_combat_belief_state(combat);
+    let mut monsters: Vec<_> = combat
+        .entities
+        .monsters
+        .iter()
+        .filter(|m| !m.is_dying && !m.is_escaped && !m.half_dead && m.current_hp > 0)
+        .map(|m| {
+            let belief_entry = belief
+                .monsters
+                .iter()
+                .find(|belief_monster| belief_monster.entity_id == m.id);
+            let (is_attacking, intent_dmg, intent_hits) = if belief.hidden_intent_active {
+                let attack_probability = belief_entry
+                    .map(|belief_monster| belief_monster.attack_probability)
+                    .unwrap_or(0.0);
+                let expected_total = belief_entry
+                    .map(|belief_monster| belief_monster.expected_incoming_damage.round() as i32)
+                    .unwrap_or(0);
+                (
+                    attack_probability > 0.25,
+                    expected_total.max(0),
+                    if expected_total > 0 { 1 } else { 0 },
+                )
+            } else {
+                let is_attacking = matches!(
+                    m.current_intent,
+                    Intent::Attack { .. }
+                        | Intent::AttackBuff { .. }
+                        | Intent::AttackDebuff { .. }
+                        | Intent::AttackDefend { .. }
+                );
+                let hits = match m.current_intent {
+                    Intent::Attack { hits, .. }
+                    | Intent::AttackBuff { hits, .. }
+                    | Intent::AttackDebuff { hits, .. }
+                    | Intent::AttackDefend { hits, .. } => hits as i32,
+                    _ => 0,
+                };
+                (is_attacking, m.intent_dmg, hits)
+            };
+            (
+                !is_attacking,
+                m.protocol_identity.draw_x.is_none(),
+                m.protocol_identity.draw_x.unwrap_or_default(),
+                m.protocol_identity.group_index.unwrap_or(usize::MAX),
+                m.slot as usize,
+                m.id,
+                SimMonster {
+                    entity_id: m.id,
+                    monster_type: m.monster_type,
+                    hp: m.current_hp,
+                    block: m.block,
+                    flight: combat.get_power(m.id, PowerId::Flight),
+                    strength: combat.get_power(m.id, PowerId::Strength),
+                    vulnerable: combat.get_power(m.id, PowerId::Vulnerable),
+                    weak: combat.get_power(m.id, PowerId::Weak),
+                    is_attacking,
+                    is_gone: false,
+                    nob_enrage: combat.get_power(m.id, PowerId::Anger) != 0,
+                    persistent_block: combat.get_power(m.id, PowerId::Barricade) != 0,
+                    sharp_hide: combat.get_power(m.id, PowerId::SharpHide),
+                    thorns: combat.get_power(m.id, PowerId::Thorns),
+                    intent_dmg,
+                    intent_hits,
+                },
+            )
+        })
+        .collect();
+    monsters.sort_by_key(|entry| (entry.0, entry.1, entry.2, entry.3, entry.4, entry.5));
+    monsters.into_iter().map(|entry| entry.6).collect()
+}
+
 pub(super) fn build_sim_state(combat: &CombatState) -> SimState {
     let p_str = combat.get_power(0, PowerId::Strength);
     let p_dex = combat.get_power(0, PowerId::Dexterity);
@@ -213,48 +294,7 @@ pub(super) fn build_sim_state(combat: &CombatState) -> SimState {
         .map(|card| key_card_delay_weight(card.id))
         .sum();
 
-    let mut monsters = [SimMonster::default(); MAX_MONSTERS];
-    let mc = combat.entities.monsters.len().min(MAX_MONSTERS);
-    for (i, m) in combat
-        .entities
-        .monsters
-        .iter()
-        .take(MAX_MONSTERS)
-        .enumerate()
-    {
-        let is_atk = matches!(
-            m.current_intent,
-            Intent::Attack { .. }
-                | Intent::AttackBuff { .. }
-                | Intent::AttackDebuff { .. }
-                | Intent::AttackDefend { .. }
-        );
-        let hits = match m.current_intent {
-            Intent::Attack { hits, .. }
-            | Intent::AttackBuff { hits, .. }
-            | Intent::AttackDebuff { hits, .. }
-            | Intent::AttackDefend { hits, .. } => hits as i32,
-            _ => 0,
-        };
-        monsters[i] = SimMonster {
-            entity_id: m.id,
-            monster_type: m.monster_type,
-            hp: m.current_hp,
-            block: m.block,
-            flight: combat.get_power(m.id, PowerId::Flight),
-            strength: combat.get_power(m.id, PowerId::Strength),
-            vulnerable: combat.get_power(m.id, PowerId::Vulnerable),
-            weak: combat.get_power(m.id, PowerId::Weak),
-            is_attacking: is_atk,
-            is_gone: m.is_dying || m.is_escaped || m.current_hp <= 0,
-            nob_enrage: combat.get_power(m.id, PowerId::Anger) != 0,
-            persistent_block: combat.get_power(m.id, PowerId::Barricade) != 0,
-            sharp_hide: combat.get_power(m.id, PowerId::SharpHide),
-            thorns: combat.get_power(m.id, PowerId::Thorns),
-            intent_dmg: m.intent_dmg,
-            intent_hits: hits,
-        };
-    }
+    let monsters = build_sim_monsters(combat);
 
     let mut hand = [SimCard::default(); MAX_HAND];
     let mut hand_mask: u16 = 0;
@@ -275,7 +315,7 @@ pub(super) fn build_sim_state(combat: &CombatState) -> SimState {
             base_block: def.base_block + def.upgrade_block * u,
             base_magic: def.base_magic + def.upgrade_magic * u,
             card_type: def.card_type,
-            target: def.target,
+            target: crate::content::cards::effective_target(card),
             hits,
         };
         hand_mask |= 1 << i;
@@ -314,6 +354,7 @@ pub(super) fn build_sim_state(combat: &CombatState) -> SimState {
         is_boss_fight: combat.meta.is_boss_fight,
         is_elite_fight: combat.meta.is_elite_fight,
         double_tap_active: combat.get_power(0, PowerId::DoubleTap) > 0,
+        future_growth_value: 0,
         future_status_cards: combat
             .zones
             .draw_pile
@@ -344,14 +385,20 @@ pub(super) fn build_sim_state(combat: &CombatState) -> SimState {
             .entities
             .monsters
             .iter()
-            .filter(|m| !m.is_dying && !m.is_escaped && m.current_hp > 0)
+            .filter(|m| !m.is_dying && !m.is_escaped && !m.half_dead && m.current_hp > 0)
             .map(|m| combat.get_power(m.id, PowerId::Strength).max(0))
             .sum(),
         sentry_count: combat
             .entities
             .monsters
             .iter()
-            .filter(|m| !m.is_dying && !m.is_escaped && m.monster_type == EnemyId::Sentry as usize)
+            .filter(|m| {
+                !m.is_dying
+                    && !m.is_escaped
+                    && !m.half_dead
+                    && m.current_hp > 0
+                    && m.monster_type == EnemyId::Sentry as usize
+            })
             .count() as i32,
         card_pool_size: (combat.zones.draw_pile.len()
             + combat.zones.discard_pile.len()
@@ -382,7 +429,6 @@ pub(super) fn build_sim_state(combat: &CombatState) -> SimState {
             .count() as i32,
         draw_bonus: 0,
         monsters,
-        monster_count: mc as u8,
         hand,
         hand_mask,
     }
@@ -437,10 +483,8 @@ pub(super) fn get_plays(state: &SimState) -> Vec<Play> {
 
         match card.target {
             CardTarget::Enemy => {
-                for mi in 0..state.monster_count as usize {
-                    if !state.monsters[mi].is_gone {
-                        plays.push((i, Some(state.monsters[mi].entity_id)));
-                    }
+                for (_, monster) in active_monsters(state) {
+                    plays.push((i, Some(monster.entity_id)));
                 }
             }
             _ => plays.push((i, None)),
@@ -461,8 +505,7 @@ pub(super) fn get_plays(state: &SimState) -> Vec<Play> {
 }
 
 pub(super) fn gremlin_nob_enrage_active(state: &SimState) -> bool {
-    (0..state.monster_count as usize)
-        .any(|i| !state.monsters[i].is_gone && state.monsters[i].nob_enrage)
+    active_monsters(state).any(|(_, monster)| monster.nob_enrage)
 }
 
 fn skill_allowed_vs_nob(state: &SimState, card: &SimCard) -> bool {
@@ -499,19 +542,19 @@ pub(super) fn fast_hash(state: &SimState) -> u64 {
         h = fnv(h, card.base_block as u64);
         h = fnv(h, card.base_magic as u64);
     }
-    for i in 0..state.monster_count as usize {
-        h = fnv(h, state.monsters[i].entity_id as u64);
-        h = fnv(h, state.monsters[i].monster_type as u64);
-        h = fnv(h, state.monsters[i].hp as u64);
-        h = fnv(h, state.monsters[i].block as u64);
-        h = fnv(h, state.monsters[i].flight as u64);
-        h = fnv(h, state.monsters[i].strength as u64);
-        h = fnv(h, state.monsters[i].vulnerable as u64);
-        h = fnv(h, state.monsters[i].weak as u64);
-        h = fnv(h, state.monsters[i].is_attacking as u64);
-        h = fnv(h, state.monsters[i].is_gone as u64);
-        h = fnv(h, state.monsters[i].intent_dmg as u64);
-        h = fnv(h, state.monsters[i].intent_hits as u64);
+    for monster in &state.monsters {
+        h = fnv(h, monster.entity_id as u64);
+        h = fnv(h, monster.monster_type as u64);
+        h = fnv(h, monster.hp as u64);
+        h = fnv(h, monster.block as u64);
+        h = fnv(h, monster.flight as u64);
+        h = fnv(h, monster.strength as u64);
+        h = fnv(h, monster.vulnerable as u64);
+        h = fnv(h, monster.weak as u64);
+        h = fnv(h, monster.is_attacking as u64);
+        h = fnv(h, monster.is_gone as u64);
+        h = fnv(h, monster.intent_dmg as u64);
+        h = fnv(h, monster.intent_hits as u64);
     }
     h
 }
@@ -519,4 +562,155 @@ pub(super) fn fast_hash(state: &SimState) -> u64 {
 #[inline(always)]
 fn fnv(h: u64, v: u64) -> u64 {
     (h ^ v).wrapping_mul(0x100000001b3)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::build_sim_state;
+    use crate::combat::{
+        CardZones, CombatMeta, CombatPhase, CombatRng, CombatState, EngineRuntime, EntityState,
+        Intent, MonsterEntity, PlayerEntity, RelicBuses, StanceId, TurnRuntime,
+    };
+    use crate::content::monsters::EnemyId;
+    use std::collections::{HashMap, VecDeque};
+
+    #[test]
+    fn build_sim_state_keeps_live_monsters_and_drops_dead_prefix_corpses() {
+        let mut monsters = Vec::new();
+        for i in 0..10usize {
+            monsters.push(MonsterEntity {
+                id: i + 1,
+                monster_type: EnemyId::GremlinFat as usize,
+                current_hp: 0,
+                max_hp: 10,
+                block: 0,
+                slot: i as u8,
+                is_dying: true,
+                is_escaped: false,
+                half_dead: false,
+                next_move_byte: 0,
+                current_intent: Intent::Unknown,
+                move_history: VecDeque::new(),
+                intent_dmg: 0,
+                logical_position: i as i32,
+                protocol_identity: crate::combat::MonsterProtocolIdentity {
+                    instance_id: Some(i as u64 + 1),
+                    spawn_order: Some(i as u64 + 1),
+                    draw_x: Some(i as i32),
+                    group_index: Some(i),
+                },
+                hexaghost: Default::default(),
+                chosen: Default::default(),
+                darkling: Default::default(),
+                lagavulin: Default::default(),
+            });
+        }
+        monsters.push(MonsterEntity {
+            id: 11,
+            monster_type: EnemyId::GremlinWarrior as usize,
+            current_hp: 20,
+            max_hp: 20,
+            block: 0,
+            slot: 10,
+            is_dying: false,
+            is_escaped: false,
+            half_dead: false,
+            next_move_byte: 0,
+            current_intent: Intent::Attack { damage: 6, hits: 1 },
+            move_history: VecDeque::new(),
+            intent_dmg: 6,
+            logical_position: 693,
+            protocol_identity: crate::combat::MonsterProtocolIdentity {
+                instance_id: Some(11),
+                spawn_order: Some(11),
+                draw_x: Some(693),
+                group_index: Some(10),
+            },
+            hexaghost: Default::default(),
+            chosen: Default::default(),
+            darkling: Default::default(),
+            lagavulin: Default::default(),
+        });
+        monsters.push(MonsterEntity {
+            id: 13,
+            monster_type: EnemyId::GremlinLeader as usize,
+            current_hp: 140,
+            max_hp: 140,
+            block: 0,
+            slot: 11,
+            is_dying: false,
+            is_escaped: false,
+            half_dead: false,
+            next_move_byte: 0,
+            current_intent: Intent::Buff,
+            move_history: VecDeque::new(),
+            intent_dmg: 0,
+            logical_position: 900,
+            protocol_identity: crate::combat::MonsterProtocolIdentity {
+                instance_id: Some(13),
+                spawn_order: Some(13),
+                draw_x: Some(900),
+                group_index: Some(11),
+            },
+            hexaghost: Default::default(),
+            chosen: Default::default(),
+            darkling: Default::default(),
+            lagavulin: Default::default(),
+        });
+
+        let combat = CombatState {
+            meta: CombatMeta {
+                ascension_level: 0,
+                player_class: "Ironclad",
+                is_boss_fight: false,
+                is_elite_fight: true,
+                meta_changes: Vec::new(),
+            },
+            turn: TurnRuntime {
+                turn_count: 1,
+                current_phase: CombatPhase::PlayerTurn,
+                energy: 3,
+                turn_start_draw_modifier: 0,
+                counters: Default::default(),
+            },
+            zones: CardZones {
+                draw_pile: Vec::new(),
+                hand: Vec::new(),
+                discard_pile: Vec::new(),
+                exhaust_pile: Vec::new(),
+                limbo: Vec::new(),
+                queued_cards: VecDeque::new(),
+                card_uuid_counter: 1,
+            },
+            entities: EntityState {
+                player: PlayerEntity {
+                    id: 0,
+                    current_hp: 50,
+                    max_hp: 80,
+                    block: 0,
+                    gold_delta_this_combat: 0,
+                    gold: 0,
+                    max_orbs: 0,
+                    orbs: Vec::new(),
+                    stance: StanceId::Neutral,
+                    relics: Vec::new(),
+                    relic_buses: RelicBuses::default(),
+                    energy_master: 3,
+                },
+                monsters,
+                potions: vec![None, None, None],
+                power_db: HashMap::new(),
+            },
+            engine: EngineRuntime {
+                action_queue: VecDeque::new(),
+            },
+            rng: CombatRng::new(crate::rng::RngPool::new(1)),
+            runtime: Default::default(),
+        };
+
+        let state = build_sim_state(&combat);
+        assert_eq!(state.monsters.len(), 2);
+        assert_eq!(state.monsters[0].entity_id, 11);
+        assert_eq!(state.monsters[1].entity_id, 13);
+    }
 }

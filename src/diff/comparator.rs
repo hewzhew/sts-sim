@@ -1,8 +1,10 @@
 use serde_json::Value;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
-use super::mapper::power_id_from_java;
 use crate::combat::{CombatState, Power};
+use crate::diff::protocol::mapper::{
+    monster_id_from_java, power_id_from_java, power_instance_id_from_java,
+};
 
 // ============================================================================
 // Diff Classification
@@ -95,7 +97,17 @@ pub fn compare_powers(
             let java_amount = p["amount"].as_i64().unwrap_or(0) as i32;
 
             if let Some(rust_pid) = power_id_from_java(java_id) {
-                if let Some(rust_p) = rust_powers.iter().find(|rp| rp.power_type == rust_pid) {
+                let java_instance_id = if crate::content::powers::uses_distinct_instances(rust_pid)
+                {
+                    power_instance_id_from_java(java_id)
+                } else {
+                    None
+                };
+                if let Some(rust_p) = rust_powers.iter().find(|rp| {
+                    rp.power_type == rust_pid
+                        && (!crate::content::powers::uses_distinct_instances(rust_pid)
+                            || rp.instance_id == java_instance_id)
+                }) {
                     if rust_p.amount != java_amount {
                         diffs.push(DiffResult {
                             field: format!("{}.power[{}].amount", prefix, java_id),
@@ -126,6 +138,8 @@ pub fn compare_powers(
             arr.iter().any(|jp| {
                 let jid = jp["id"].as_str().unwrap_or("");
                 power_id_from_java(jid) == Some(rp.power_type)
+                    && (!crate::content::powers::uses_distinct_instances(rp.power_type)
+                        || rp.instance_id == power_instance_id_from_java(jid))
             })
         });
         if !has_match {
@@ -219,6 +233,79 @@ fn classify_missing_power(
     DiffCategory::EngineBug
 }
 
+fn java_monster_instance_id(monster: &Value) -> Option<u64> {
+    monster.get("monster_instance_id").and_then(|v| v.as_u64())
+}
+
+fn java_monster_draw_x(monster: &Value) -> Option<i32> {
+    monster
+        .get("draw_x")
+        .and_then(|v| v.as_i64().map(|value| value as i32))
+        .or_else(|| {
+            monster
+                .get("draw_x")
+                .and_then(|v| v.as_f64().map(|value| value.round() as i32))
+        })
+}
+
+fn align_rust_monsters_to_java(cs: &CombatState, java_ms: &[Value]) -> Vec<Option<usize>> {
+    let mut used = HashSet::new();
+    let mut aligned = Vec::with_capacity(java_ms.len());
+
+    for (java_index, java_monster) in java_ms.iter().enumerate() {
+        let matched = {
+            let java_type = monster_id_from_java(java_monster["id"].as_str().unwrap_or(""));
+            let java_draw_x = java_monster_draw_x(java_monster);
+            cs.entities
+                .monsters
+                .iter()
+                .enumerate()
+                .find(|(idx, monster)| {
+                    !used.contains(idx)
+                        && Some(monster.monster_type) == java_type.map(|id| id as usize)
+                        && monster.protocol_identity.draw_x == java_draw_x
+                        && monster.is_dying
+                            == (java_monster["is_gone"].as_bool().unwrap_or(false)
+                                && !java_monster["half_dead"].as_bool().unwrap_or(false))
+                        && monster.half_dead == java_monster["half_dead"].as_bool().unwrap_or(false)
+                })
+                .map(|(idx, _)| idx)
+        }
+        .or_else(|| {
+            java_monster_instance_id(java_monster).and_then(|instance_id| {
+                cs.entities
+                    .monsters
+                    .iter()
+                    .enumerate()
+                    .find(|(idx, monster)| {
+                        !used.contains(idx)
+                            && monster.protocol_identity.instance_id == Some(instance_id)
+                    })
+                    .map(|(idx, _)| idx)
+            })
+        })
+        .or_else(|| {
+            (java_index < cs.entities.monsters.len() && !used.contains(&java_index))
+                .then_some(java_index)
+        })
+        .or_else(|| {
+            cs.entities
+                .monsters
+                .iter()
+                .enumerate()
+                .find(|(idx, _)| !used.contains(idx))
+                .map(|(idx, _)| idx)
+        });
+
+        if let Some(idx) = matched {
+            used.insert(idx);
+        }
+        aligned.push(matched);
+    }
+
+    aligned
+}
+
 pub fn compare_states(
     cs: &CombatState,
     java_snapshot: &Value,
@@ -270,11 +357,12 @@ pub fn compare_states(
 
     let java_monsters = java_snapshot["monsters"].as_array();
     if let Some(java_ms) = java_monsters {
+        let aligned_indices = align_rust_monsters_to_java(cs, java_ms);
         for (i, jm) in java_ms.iter().enumerate() {
-            if i >= cs.entities.monsters.len() {
+            let Some(rust_idx) = aligned_indices.get(i).and_then(|idx| *idx) else {
                 continue;
-            }
-            let rm = &cs.entities.monsters[i];
+            };
+            let rm = &cs.entities.monsters[rust_idx];
             let jm_hp = jm["current_hp"]
                 .as_i64()
                 .unwrap_or(jm["hp"].as_i64().unwrap_or(0)) as i32;
@@ -369,10 +457,11 @@ pub fn compare_states(
     );
 
     if let Some(java_ms) = java_monsters {
+        let aligned_indices = align_rust_monsters_to_java(cs, java_ms);
         for (i, jm) in java_ms.iter().enumerate() {
-            if i >= cs.entities.monsters.len() {
+            let Some(rust_idx) = aligned_indices.get(i).and_then(|idx| *idx) else {
                 continue;
-            }
+            };
 
             // Skip power comparison for dead monsters (Java clears them asynchronously after death animations)
             let is_dead = jm["is_gone"].as_bool().unwrap_or(false)
@@ -381,7 +470,7 @@ pub fn compare_states(
                 continue;
             }
 
-            let entity_id = cs.entities.monsters[i].id;
+            let entity_id = cs.entities.monsters[rust_idx].id;
             compare_powers(
                 &mut diffs,
                 &format!("monster[{}]", i),
@@ -442,8 +531,10 @@ fn filter_nondiagnostic_random_target_diffs(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::diff::parser::parse_replay;
-    use crate::diff::replay_support::{continue_deferred_pending_choice, tick_until_stable};
+    use crate::diff::protocol::parser::parse_replay;
+    use crate::diff::replay::replay_support::{
+        continue_deferred_pending_choice, tick_until_stable,
+    };
     use crate::diff::state_sync::{build_combat_state, sync_state};
     use crate::state::core::{ClientInput, EngineState, PendingChoice};
 

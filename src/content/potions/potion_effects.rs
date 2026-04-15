@@ -1,5 +1,5 @@
 use super::PotionId;
-use crate::action::{Action, ActionInfo, AddTo, DamageInfo, DamageType};
+use crate::action::{Action, ActionInfo, AddTo, DamageInfo, DamageType, NO_SOURCE};
 use crate::content::powers::PowerId;
 use crate::core::EntityId;
 use smallvec::SmallVec;
@@ -49,7 +49,10 @@ pub fn get_potion_actions(
             bottom(
                 &mut actions,
                 Action::DamageAllEnemies {
-                    source: PLAYER,
+                    // Java uses DamageAllEnemiesAction(null, ..., NORMAL), so this
+                    // damage should not look like a player-owned normal attack for
+                    // hooks such as Curl Up.
+                    source: NO_SOURCE,
                     damages: crate::action::repeated_damage_matrix(enemy_count, potency),
                     damage_type: DamageType::Normal,
                     is_modified: false,
@@ -203,6 +206,7 @@ pub fn get_potion_actions(
             bottom(
                 &mut actions,
                 Action::SuspendForDiscovery {
+                    colorless: false,
                     card_type: Some(crate::content::cards::CardType::Attack),
                     cost_for_turn: Some(0),
                 },
@@ -213,6 +217,7 @@ pub fn get_potion_actions(
             bottom(
                 &mut actions,
                 Action::SuspendForDiscovery {
+                    colorless: false,
                     card_type: Some(crate::content::cards::CardType::Skill),
                     cost_for_turn: Some(0),
                 },
@@ -225,6 +230,7 @@ pub fn get_potion_actions(
             bottom(
                 &mut actions,
                 Action::SuspendForDiscovery {
+                    colorless: false,
                     card_type: Some(crate::content::cards::CardType::Power),
                     cost_for_turn: Some(0),
                 },
@@ -237,7 +243,8 @@ pub fn get_potion_actions(
             bottom(
                 &mut actions,
                 Action::SuspendForDiscovery {
-                    card_type: None, // Signal for colorless discovery
+                    colorless: true,
+                    card_type: None,
                     cost_for_turn: Some(0),
                 },
             );
@@ -453,11 +460,15 @@ pub fn get_potion_actions(
             // Gain 1 Ritual
             bottom(
                 &mut actions,
-                Action::ApplyPower {
+                Action::ApplyPowerDetailed {
                     source: PLAYER,
                     target: PLAYER,
                     power_id: PowerId::Ritual,
                     amount: potency,
+                    instance_id: None,
+                    extra_data: Some(crate::content::powers::core::ritual::extra_data(
+                        true, false,
+                    )),
                 },
             );
         }

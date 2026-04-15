@@ -3,7 +3,7 @@ use super::unix_time_millis;
 use crate::action::CardDestination;
 use crate::cli::live_comm_noncombat::build_live_run_state;
 use crate::combat::CombatState;
-use crate::diff::mapper::card_id_from_java;
+use crate::diff::protocol::mapper::card_id_from_java;
 use crate::state::core::{ClientInput, EngineState, PendingChoice};
 use serde_json::{json, Map, Value};
 use std::io::Write;
@@ -26,36 +26,79 @@ pub(super) enum HumanCardRewardAuditDisposition {
     Abandon { reason: &'static str },
 }
 
+pub(super) fn human_card_reward_audit_reason_source(reason: &str) -> &'static str {
+    match reason {
+        "reward_session_active"
+        | "reward_session_closed_without_choice"
+        | "reward_session_resolved_without_choice_payload"
+        | "reward_session_unknown_state"
+        | "reward_session_absent" => "protocol_truth",
+        _ => "legacy_fallback",
+    }
+}
+
 pub(super) fn build_human_card_reward_pending(
     root: &Value,
     last_combat_truth: Option<&CombatState>,
 ) -> Option<PendingHumanCardRewardAudit> {
     let gs = root.get("game_state")?;
+    let protocol_reward_session = reward_session_protocol_supported(root);
+    let reward_session = extract_reward_session(root);
+    if protocol_reward_session && reward_session.is_none() {
+        return None;
+    }
     let rs = build_live_run_state(gs)?;
     let cards = gs
         .get("screen_state")
         .and_then(|v| v.get("cards"))
-        .and_then(|v| v.as_array())?;
+        .and_then(|v| v.as_array());
 
     let mut offered_ids = Vec::new();
     let mut offered_signature = Vec::new();
     let mut offered_cards_json = Vec::new();
-    for card in cards {
-        let java_id = card.get("id").and_then(|v| v.as_str())?;
-        let card_id = card_id_from_java(java_id)?;
-        let upgrades = card.get("upgrades").and_then(|v| v.as_u64()).unwrap_or(0) as u8;
-        let name = card
-            .get("name")
-            .and_then(|v| v.as_str())
-            .unwrap_or(crate::content::cards::get_card_definition(card_id).name);
-        offered_ids.push(card_id);
-        offered_signature.push(format!("{java_id}+{upgrades}"));
-        offered_cards_json.push(json!({
-            "java_id": java_id,
-            "rust_card_id": format!("{:?}", card_id),
-            "name": name,
-            "upgrades": upgrades
-        }));
+    if let Some(cards) = cards {
+        for card in cards {
+            let java_id = card.get("id").and_then(|v| v.as_str())?;
+            let card_id = card_id_from_java(java_id)?;
+            let upgrades = card.get("upgrades").and_then(|v| v.as_u64()).unwrap_or(0) as u8;
+            let name = card
+                .get("name")
+                .and_then(|v| v.as_str())
+                .unwrap_or(crate::content::cards::get_card_definition(card_id).name);
+            offered_ids.push(card_id);
+            offered_signature.push(format!("{java_id}+{upgrades}"));
+            offered_cards_json.push(json!({
+                "java_id": java_id,
+                "rust_card_id": format!("{:?}", card_id),
+                "name": name,
+                "upgrades": upgrades,
+                "source": "screen_state"
+            }));
+        }
+    } else {
+        let reward_session = reward_session?;
+        let reward_state = reward_session.get("state").and_then(|v| v.as_str())?;
+        if !matches!(reward_state, "active" | "temporarily_offscreen") {
+            return None;
+        }
+
+        let session_cards = reward_session
+            .get("offered_card_ids")
+            .and_then(|v| v.as_array())?;
+        for card in session_cards {
+            let java_id = card.as_str()?;
+            let card_id = card_id_from_java(java_id)?;
+            let name = crate::content::cards::get_card_definition(card_id).name;
+            offered_ids.push(card_id);
+            offered_signature.push(format!("{java_id}+session"));
+            offered_cards_json.push(json!({
+                "java_id": java_id,
+                "rust_card_id": format!("{:?}", card_id),
+                "name": name,
+                "upgrades": 0,
+                "source": "reward_session"
+            }));
+        }
     }
     if offered_ids.is_empty() {
         return None;
@@ -64,7 +107,6 @@ pub(super) fn build_human_card_reward_pending(
     let evaluation =
         crate::bot::reward_heuristics::evaluate_reward_screen_for_run_detailed(&offered_ids, &rs);
     let meta = root.get("protocol_meta");
-    let reward_session = extract_reward_session(root);
     let mut payload = Map::new();
     payload.insert("logged_at_unix_ms".to_string(), json!(unix_time_millis()));
     payload.insert(
@@ -122,6 +164,20 @@ pub(super) fn build_human_card_reward_pending(
     payload.insert(
         "reward_session".to_string(),
         reward_session.cloned().unwrap_or(Value::Null),
+    );
+    payload.insert(
+        "audit_source".to_string(),
+        json!(if cards.is_some() {
+            "screen_state"
+        } else if reward_session.is_some() {
+            "reward_session"
+        } else {
+            "legacy"
+        }),
+    );
+    payload.insert(
+        "protocol_reward_session_supported".to_string(),
+        json!(protocol_reward_session),
     );
 
     let (replay_truth, replay_engine_state) =
@@ -207,6 +263,7 @@ pub(super) fn finalize_human_card_reward_audit_without_choice(
     log: &mut std::fs::File,
     reason: &str,
 ) {
+    let reason_source = human_card_reward_audit_reason_source(reason);
     pending
         .payload
         .insert("human_choice".to_string(), Value::Null);
@@ -226,19 +283,127 @@ pub(super) fn finalize_human_card_reward_audit_without_choice(
     pending
         .payload
         .insert("audit_reason".to_string(), json!(reason));
+    pending
+        .payload
+        .insert("audit_reason_source".to_string(), json!(reason_source));
 
     let line = Value::Object(pending.payload);
     let _ = writeln!(reward_audit, "{}", line);
     let _ = reward_audit.flush();
     let _ = writeln!(
         log,
-        "  [CARD_AUDIT ABANDONED] reason={} offered={}",
+        "  [CARD_AUDIT ABANDONED] source={} reason={} offered={}",
+        reason_source,
         reason,
         pending.offered_signature.join(", ")
     );
 }
 
+pub(super) fn emit_bot_card_reward_audit(
+    root: &Value,
+    frame: u64,
+    command: &str,
+    reward_audit: &mut std::fs::File,
+) {
+    let Some(gs) = root.get("game_state") else {
+        return;
+    };
+    let Some(rs) = build_live_run_state(gs) else {
+        return;
+    };
+    let Some(cards) = gs
+        .get("screen_state")
+        .and_then(|v| v.get("cards"))
+        .and_then(|v| v.as_array())
+    else {
+        return;
+    };
+
+    let mut offered_ids = Vec::new();
+    let mut offered_cards_json = Vec::new();
+    for card in cards {
+        let Some(java_id) = card.get("id").and_then(|v| v.as_str()) else {
+            return;
+        };
+        let Some(card_id) = card_id_from_java(java_id) else {
+            return;
+        };
+        let upgrades = card.get("upgrades").and_then(|v| v.as_u64()).unwrap_or(0) as u8;
+        let name = card
+            .get("name")
+            .and_then(|v| v.as_str())
+            .unwrap_or(crate::content::cards::get_card_definition(card_id).name);
+        offered_ids.push(card_id);
+        offered_cards_json.push(json!({
+            "java_id": java_id,
+            "rust_card_id": format!("{:?}", card_id),
+            "name": name,
+            "upgrades": upgrades,
+            "source": "screen_state"
+        }));
+    }
+    if offered_ids.is_empty() {
+        return;
+    }
+
+    let evaluation =
+        crate::bot::reward_heuristics::evaluate_reward_screen_for_run_detailed(&offered_ids, &rs);
+    let chosen_choice = parse_bot_reward_choice(command);
+    let payload = json!({
+        "kind": "bot_reward_decision",
+        "logged_at_unix_ms": unix_time_millis(),
+        "frame": frame,
+        "response_id": root
+            .get("protocol_meta")
+            .and_then(|m| m.get("response_id"))
+            .and_then(|v| v.as_i64()),
+        "state_frame_id": root
+            .get("protocol_meta")
+            .and_then(|m| m.get("state_frame_id"))
+            .and_then(|v| v.as_i64()),
+        "floor": gs.get("floor").and_then(|v| v.as_i64()).unwrap_or(0),
+        "act": gs.get("act").and_then(|v| v.as_i64()).unwrap_or(0),
+        "class": gs.get("class").and_then(|v| v.as_str()).unwrap_or("IRONCLAD"),
+        "current_hp": gs.get("current_hp").and_then(|v| v.as_i64()).unwrap_or(0),
+        "max_hp": gs.get("max_hp").and_then(|v| v.as_i64()).unwrap_or(0),
+        "gold": gs.get("gold").and_then(|v| v.as_i64()).unwrap_or(0),
+        "deck_size": rs.master_deck.len(),
+        "offered_cards": offered_cards_json,
+        "bot_command": command,
+        "bot_choice": recommended_choice_to_json(chosen_choice),
+        "bot_evaluation": reward_screen_evaluation_to_json(&evaluation),
+    });
+    let _ = writeln!(reward_audit, "{}", payload);
+    let _ = reward_audit.flush();
+}
+
+fn parse_bot_reward_choice(command: &str) -> Option<usize> {
+    let trimmed = command.trim();
+    if trimmed.eq_ignore_ascii_case("SKIP") || trimmed.eq_ignore_ascii_case("PROCEED") {
+        return None;
+    }
+    trimmed
+        .strip_prefix("CHOOSE ")
+        .and_then(|rest| rest.trim().parse::<usize>().ok())
+}
+
 pub(super) fn human_card_reward_hold_context(root: &Value) -> String {
+    if let Some(reward_session) = extract_reward_session(root) {
+        let session_id = reward_session
+            .get("session_id")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        let state = reward_session
+            .get("state")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        let offscreen_screen = reward_session
+            .get("offscreen_screen_name")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        return format!("reward_session:{session_id}:{state}:{offscreen_screen}");
+    }
+
     let gs = match root.get("game_state") {
         Some(gs) => gs,
         None => return "missing_game_state".to_string(),
@@ -270,6 +435,12 @@ pub(super) fn classify_human_card_reward_audit_disposition(
             _ => HumanCardRewardAuditDisposition::Hold {
                 reason: "reward_session_unknown_state",
             },
+        };
+    }
+
+    if reward_session_protocol_supported(root) {
+        return HumanCardRewardAuditDisposition::Abandon {
+            reason: "reward_session_absent",
         };
     }
 
@@ -318,7 +489,7 @@ pub(super) fn classify_human_card_reward_audit_disposition(
 fn build_human_card_reward_replay_context(
     root: &Value,
     offered_ids: Vec<crate::content::cards::CardId>,
-    last_combat_truth: Option<&CombatState>,
+    _last_combat_truth: Option<&CombatState>,
 ) -> (Option<CombatState>, Option<EngineState>) {
     let gs = match root.get("game_state") {
         Some(gs) => gs,
@@ -337,9 +508,6 @@ fn build_human_card_reward_replay_context(
     let rv = gs.get("relics").unwrap_or(&Value::Null);
     let combat_snapshot = build_live_combat_snapshot(gs);
     let mut truth = crate::diff::state_sync::build_combat_state(&combat_snapshot, rv);
-    if let Some(prev_truth) = last_combat_truth {
-        crate::diff::state_sync::carry_internal_runtime_state(prev_truth, &mut truth);
-    }
 
     let last_command_kind = root
         .get("protocol_meta")
@@ -419,6 +587,14 @@ fn reward_screen_evaluation_to_json(
                 "rust_card_id": format!("{:?}", card.card_id),
                 "pick_rate": card.pick_rate,
                 "local_score": card.local_score,
+                "delta_suite": format!("{:?}", card.delta_suite),
+                "delta_prior": card.delta_prior,
+                "delta_bias": card.delta_bias,
+                "delta_rollout": card.delta_rollout,
+                "delta_context": card.delta_context,
+                "delta_context_rationale_key": card.delta_context_rationale_key,
+                "delta_rule_context_summary": card.delta_rule_context_summary,
+                "delta_score": card.delta_score,
                 "combined_score": card.combined_score
             })
         })
@@ -521,6 +697,14 @@ pub(super) fn reward_session_id(root: &Value) -> Option<&str> {
         .and_then(|v| v.as_str())
 }
 
+pub(super) fn reward_session_protocol_supported(root: &Value) -> bool {
+    root.get("protocol_meta")
+        .and_then(|meta| meta.get("capabilities"))
+        .and_then(|caps| caps.get("reward_session"))
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false)
+}
+
 pub(super) fn human_choice_session_id(choice: &Value) -> Option<&str> {
     choice.get("session_id").and_then(|v| v.as_str())
 }
@@ -536,4 +720,11 @@ pub(super) fn reward_choice_matches_pending_session(
         (Some(expected), Some(actual)) => expected == actual,
         _ => true,
     }
+}
+
+pub(super) fn reward_session_is_live(root: &Value) -> bool {
+    matches!(
+        reward_session_state(root),
+        Some("active" | "temporarily_offscreen")
+    )
 }

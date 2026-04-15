@@ -1,19 +1,22 @@
-use super::combat::{handle_live_combat_frame, CombatRuntime};
+use super::combat::{handle_live_combat_frame, CombatFrameOutcome, CombatRuntime};
 use super::frame::LiveFrame;
 use super::io::LiveCommIo;
 use super::noncombat::{maybe_arm_human_card_reward_audit, route_noncombat_command};
 use super::reward_audit::{
-    classify_human_card_reward_audit_disposition, extract_human_card_reward_choice,
-    finalize_human_card_reward_audit, finalize_human_card_reward_audit_without_choice,
+    classify_human_card_reward_audit_disposition, emit_bot_card_reward_audit,
+    extract_human_card_reward_choice, finalize_human_card_reward_audit,
+    finalize_human_card_reward_audit_without_choice, human_card_reward_audit_reason_source,
     human_card_reward_hold_context, reward_choice_matches_pending_session,
     HumanCardRewardAuditDisposition, PendingHumanCardRewardAudit,
 };
+use super::snapshot::write_failure_snapshot;
 use super::watch::{maybe_capture_live_watch, remember_live_record, LiveWatchRuntime};
 use super::{
     should_clear_combat_context, LiveCommConfig, LoopExitReason, ENGINE_BUG_SUMMARY_INTERVAL,
     SIG_PATH,
 };
 use crate::bot::agent::Agent;
+use serde_json::Value;
 use std::io::Write;
 
 pub(super) struct LiveCommSession {
@@ -35,6 +38,12 @@ pub(super) struct LiveCommSession {
     pub(super) combat_runtime: CombatRuntime,
     pub(super) game_over_seen: bool,
     pub(super) final_victory: bool,
+    pub(super) noncombat_loop_screen: String,
+    pub(super) noncombat_loop_cmd: String,
+    pub(super) noncombat_loop_count: u32,
+    pub(super) noncombat_polluted: bool,
+    pub(super) noncombat_pollution_frame: Option<u64>,
+    pub(super) reward_loop_signatures: Vec<String>,
 }
 
 fn should_log_card_reward_hold_poll_count(offscreen_hold_polls: u32) -> bool {
@@ -63,6 +72,70 @@ fn combat_handoff_hold_command(frame: &LiveFrame) -> &'static str {
     }
 }
 
+fn noncombat_error_loop_fallback_command(avail: &[&str]) -> String {
+    if avail.contains(&"skip") {
+        "SKIP".to_string()
+    } else if avail.contains(&"proceed") {
+        "PROCEED".to_string()
+    } else if avail.contains(&"choose") {
+        "CHOOSE 0".to_string()
+    } else if avail.contains(&"leave") {
+        "LEAVE".to_string()
+    } else if avail.contains(&"cancel") || avail.contains(&"return") {
+        "RETURN".to_string()
+    } else if avail.contains(&"wait") {
+        "WAIT 30".to_string()
+    } else {
+        "STATE".to_string()
+    }
+}
+
+fn noncombat_pollution_hold_command(avail: &[&str]) -> &'static str {
+    if avail.contains(&"wait") {
+        "WAIT 30"
+    } else {
+        "STATE"
+    }
+}
+
+fn reward_loop_signature(root: &Value, screen: &str) -> Option<String> {
+    let gs = root.get("game_state")?;
+    match screen {
+        "COMBAT_REWARD" => {
+            let rewards = gs.get("screen_state")?.get("rewards")?.as_array()?;
+            let active = rewards
+                .iter()
+                .map(|reward| {
+                    let reward_type = reward
+                        .get("reward_type")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("UNKNOWN");
+                    let choice_index = reward
+                        .get("choice_index")
+                        .and_then(|v| v.as_u64())
+                        .map(|v| v.to_string())
+                        .unwrap_or_else(|| "?".to_string());
+                    format!("{reward_type}@{choice_index}")
+                })
+                .collect::<Vec<_>>();
+            Some(format!("COMBAT_REWARD:{}", active.join(",")))
+        }
+        "CARD_REWARD" => {
+            let cards = gs.get("screen_state")?.get("cards")?.as_array()?;
+            let offered = cards
+                .iter()
+                .filter_map(|card| {
+                    card.get("id")
+                        .and_then(|v| v.as_str())
+                        .or_else(|| card.get("name").and_then(|v| v.as_str()))
+                })
+                .collect::<Vec<_>>();
+            Some(format!("CARD_REWARD:{}", offered.join(",")))
+        }
+        _ => None,
+    }
+}
+
 impl LiveCommSession {
     pub(super) fn new(config: LiveCommConfig) -> Self {
         Self {
@@ -84,6 +157,12 @@ impl LiveCommSession {
             combat_runtime: CombatRuntime::default(),
             game_over_seen: false,
             final_victory: false,
+            noncombat_loop_screen: String::new(),
+            noncombat_loop_cmd: String::new(),
+            noncombat_loop_count: 0,
+            noncombat_polluted: false,
+            noncombat_pollution_frame: None,
+            reward_loop_signatures: Vec::new(),
         }
     }
 
@@ -108,7 +187,7 @@ impl LiveCommSession {
         }
 
         if let Some(err) = frame.error() {
-            self.handle_java_error(err, live_io, stdout);
+            self.handle_java_error(frame, err, live_io, stdout);
             return None;
         }
         self.clear_recovered_error_flood(live_io);
@@ -186,8 +265,11 @@ impl LiveCommSession {
         }
 
         if screen == "GAME_OVER" || screen == "DEATH" {
-            self.combat_runtime
-                .flush_summary_on_game_over(&mut live_io.log, self.frame_count);
+            self.combat_runtime.flush_summary_on_game_over(
+                &mut live_io.log,
+                &mut live_io.focus_log,
+                self.frame_count,
+            );
             let score = frame
                 .screen_state()
                 .and_then(|s| s["score"].as_i64())
@@ -202,23 +284,54 @@ impl LiveCommSession {
                 self.frame_count, victory, score
             )
             .unwrap();
+            let _ = writeln!(
+                live_io.focus_log,
+                "[GAME_OVER] frame={} victory={} score={} floor={} act={} gold={}",
+                self.frame_count,
+                victory,
+                score,
+                gs.get("floor").and_then(|v| v.as_i64()).unwrap_or(0),
+                gs.get("act").and_then(|v| v.as_i64()).unwrap_or(0),
+                gs.get("gold").and_then(|v| v.as_i64()).unwrap_or(0)
+            );
             self.game_over_seen = true;
             self.final_victory = victory;
+            if !victory {
+                let _ = write_failure_snapshot(
+                    live_io,
+                    self.frame_count,
+                    frame,
+                    "terminal_loss",
+                    vec!["terminal_game_over".to_string(), format!("score={score}")],
+                    serde_json::json!({
+                        "chosen_command": self.last_sent_cmd,
+                        "last_command_kind": self.last_protocol_command_kind,
+                        "victory": victory,
+                        "score": score,
+                    }),
+                );
+            }
             let _ = live_io.log.flush();
             let _ = live_io.raw.flush();
             return Some(LoopExitReason::GameOver);
         }
 
         if should_clear_combat_context(is_combat, room_phase, screen) {
-            self.combat_runtime
-                .clear_after_combat_if_needed(&mut live_io.log, self.frame_count);
+            self.combat_runtime.clear_after_combat_if_needed(
+                &mut live_io.log,
+                &mut live_io.focus_log,
+                self.frame_count,
+            );
         }
 
         if is_combat && screen == "NONE" && (has("play") || has("end")) {
-            handle_live_combat_frame(
+            self.reset_noncombat_loop_guard();
+            let outcome = handle_live_combat_frame(
                 frame,
                 gs,
                 self.frame_count,
+                self.config.parity_mode,
+                self.config.combat_search_budget,
                 &mut self.last_sent_cmd,
                 &mut self.cmd_failed_count,
                 &mut self.engine_bug_total,
@@ -230,6 +343,14 @@ impl LiveCommSession {
                 ENGINE_BUG_SUMMARY_INTERVAL,
                 SIG_PATH,
             );
+            if matches!(outcome, CombatFrameOutcome::StopForParityFailure) {
+                self.combat_runtime.flush_summary_on_game_over(
+                    &mut live_io.log,
+                    &mut live_io.focus_log,
+                    self.frame_count,
+                );
+                return Some(LoopExitReason::ParityFail);
+            }
         } else {
             self.handle_noncombat_frame(agent, frame, &avail, screen, room_phase, live_io, stdout);
         }
@@ -318,7 +439,13 @@ impl LiveCommSession {
         true
     }
 
-    fn handle_java_error<W: Write>(&mut self, err: &str, live_io: &mut LiveCommIo, stdout: &mut W) {
+    fn handle_java_error<W: Write>(
+        &mut self,
+        frame: &LiveFrame,
+        err: &str,
+        live_io: &mut LiveCommIo,
+        stdout: &mut W,
+    ) {
         self.combat_runtime.on_java_error();
         self.consecutive_errors += 1;
         self.cmd_failed_count += 1;
@@ -340,6 +467,22 @@ impl LiveCommSession {
                 self.consecutive_errors
             )
             .unwrap();
+            let _ = write_failure_snapshot(
+                live_io,
+                self.frame_count,
+                frame,
+                "protocol_error",
+                vec![
+                    "java_error_flood".to_string(),
+                    err.to_string(),
+                    format!("repeats={}", self.consecutive_errors),
+                ],
+                serde_json::json!({
+                    "chosen_command": self.last_sent_cmd,
+                    "last_command_kind": self.last_protocol_command_kind,
+                    "error": err,
+                }),
+            );
             std::thread::sleep(std::time::Duration::from_secs(1));
         }
         live_io.send_line(stdout, "STATE");
@@ -358,6 +501,15 @@ impl LiveCommSession {
             self.consecutive_errors = 0;
             self.last_error_msg.clear();
         }
+    }
+
+    fn reset_noncombat_loop_guard(&mut self) {
+        self.noncombat_loop_screen.clear();
+        self.noncombat_loop_cmd.clear();
+        self.noncombat_loop_count = 0;
+        self.noncombat_polluted = false;
+        self.noncombat_pollution_frame = None;
+        self.reward_loop_signatures.clear();
     }
 
     fn handle_pending_reward_audit<W: Write>(
@@ -422,8 +574,9 @@ impl LiveCommSession {
                         if should_log_hold {
                             writeln!(
                                 live_io.log,
-                                "[F{}] CARD_REWARD human audit pending; reason={} offscreen_polls={} screen={} screen_name={} room_phase={} → {}",
+                                "[F{}] CARD_REWARD human audit pending; source={} reason={} offscreen_polls={} screen={} screen_name={} room_phase={} → {}",
                                 self.frame_count,
+                                human_card_reward_audit_reason_source(reason),
                                 reason,
                                 pending.offscreen_hold_polls,
                                 screen,
@@ -468,6 +621,77 @@ impl LiveCommSession {
             return;
         }
 
+        if self.noncombat_polluted && screen != self.noncombat_loop_screen {
+            writeln!(
+                live_io.log,
+                "[F{}] SESSION POLLUTION CLEARED screen={} last_loop_screen={} last_loop_cmd={}",
+                self.frame_count, screen, self.noncombat_loop_screen, self.noncombat_loop_cmd
+            )
+            .unwrap();
+            self.reset_noncombat_loop_guard();
+        }
+
+        if self.noncombat_polluted {
+            let hold_cmd = noncombat_pollution_hold_command(avail);
+            writeln!(
+                live_io.log,
+                "[F{}] SESSION POLLUTED noncombat_loop since F{:?} screen={} → {}",
+                self.frame_count, self.noncombat_pollution_frame, screen, hold_cmd
+            )
+            .unwrap();
+            self.last_sent_cmd = hold_cmd.to_string();
+            live_io.send_line(stdout, hold_cmd);
+            return;
+        }
+
+        if let Some(signature) = reward_loop_signature(parsed, screen) {
+            self.reward_loop_signatures.push(signature);
+            if self.reward_loop_signatures.len() > 8 {
+                self.reward_loop_signatures
+                    .drain(0..self.reward_loop_signatures.len() - 8);
+            }
+            let n = self.reward_loop_signatures.len();
+            if n >= 4
+                && self.reward_loop_signatures[n - 1] == self.reward_loop_signatures[n - 3]
+                && self.reward_loop_signatures[n - 2] == self.reward_loop_signatures[n - 4]
+                && self.reward_loop_signatures[n - 1] != self.reward_loop_signatures[n - 2]
+            {
+                let hold_cmd = noncombat_pollution_hold_command(avail).to_string();
+                self.noncombat_polluted = true;
+                self.noncombat_pollution_frame = Some(self.frame_count);
+                writeln!(
+                    live_io.log,
+                    "[F{}] SESSION POLLUTED protocol_reward_loop screens={:?} → {}",
+                    self.frame_count, self.reward_loop_signatures, hold_cmd
+                )
+                .unwrap();
+                let _ = write_failure_snapshot(
+                    live_io,
+                    self.frame_count,
+                    frame,
+                    "session_polluted",
+                    vec![
+                        "protocol_reward_loop".to_string(),
+                        format!("screens={}", self.reward_loop_signatures.join(" -> ")),
+                    ],
+                    serde_json::json!({
+                        "chosen_command": hold_cmd,
+                        "last_command": self.last_sent_cmd,
+                        "reward_session": parsed
+                            .get("protocol_meta")
+                            .and_then(|v| v.get("reward_session"))
+                            .cloned()
+                            .unwrap_or(serde_json::Value::Null),
+                    }),
+                );
+                self.last_sent_cmd = hold_cmd.clone();
+                live_io.send_line(stdout, &hold_cmd);
+                return;
+            }
+        } else {
+            self.reward_loop_signatures.clear();
+        }
+
         let mut cmd = route_noncombat_command(agent, parsed, screen, avail);
         if cmd == "STATE" && !has("wait") {
             writeln!(
@@ -479,13 +703,195 @@ impl LiveCommSession {
         }
 
         if cmd == self.last_sent_cmd && self.cmd_failed_count > 0 {
-            writeln!(live_io.log, "  [!] ERROR LOOP DETECTED, FALLING BACK").unwrap();
-            if has("skip") {
-                cmd = "SKIP".to_string();
-            } else if has("proceed") {
-                cmd = "PROCEED".to_string();
+            if self.noncombat_loop_screen == screen && self.noncombat_loop_cmd == cmd {
+                self.noncombat_loop_count += 1;
             } else {
-                cmd = "RETURN".to_string();
+                self.noncombat_loop_screen = screen.to_string();
+                self.noncombat_loop_cmd = cmd.clone();
+                self.noncombat_loop_count = 1;
+            }
+
+            if self.noncombat_loop_count >= 3 {
+                let hold_cmd = noncombat_pollution_hold_command(avail).to_string();
+                self.noncombat_polluted = true;
+                self.noncombat_pollution_frame = Some(self.frame_count);
+                writeln!(
+                    live_io.log,
+                    "[F{}] SESSION POLLUTED repeated noncombat command loop screen={} cmd={} repeats={} → {}",
+                    self.frame_count,
+                    screen,
+                    cmd,
+                    self.noncombat_loop_count,
+                    hold_cmd
+                )
+                .unwrap();
+                let _ = write_failure_snapshot(
+                    live_io,
+                    self.frame_count,
+                    frame,
+                    "session_polluted",
+                    vec![
+                        "repeated_noncombat_command_loop".to_string(),
+                        format!("screen={screen}"),
+                        format!("cmd={cmd}"),
+                        format!("repeats={}", self.noncombat_loop_count),
+                    ],
+                    serde_json::json!({
+                        "chosen_command": hold_cmd,
+                        "last_command": self.last_sent_cmd,
+                        "loop_screen": screen,
+                        "loop_command": cmd,
+                    }),
+                );
+                self.last_sent_cmd = hold_cmd.clone();
+                live_io.send_line(stdout, &hold_cmd);
+                return;
+            }
+
+            writeln!(live_io.log, "  [!] ERROR LOOP DETECTED, FALLING BACK").unwrap();
+            cmd = noncombat_error_loop_fallback_command(avail);
+        } else {
+            self.noncombat_loop_screen = screen.to_string();
+            self.noncombat_loop_cmd = cmd.clone();
+            self.noncombat_loop_count = 0;
+        }
+
+        if screen == "EVENT" {
+            if let Some(gs) = parsed.get("game_state") {
+                if let Some(rs) = crate::cli::live_comm_noncombat::build_live_run_state(gs) {
+                    if let Some(trace) =
+                        crate::cli::live_comm_noncombat::choose_live_event_command_with_trace(
+                            gs, &rs,
+                        )
+                    {
+                        if trace.command == cmd {
+                            writeln!(
+                                live_io.log,
+                                "[F{}] EVENT POLICY {}",
+                                self.frame_count, trace.detail
+                            )
+                            .unwrap();
+                            writeln!(
+                                live_io.focus_log,
+                                "[EVENT] frame={} {}",
+                                self.frame_count, trace.summary
+                            )
+                            .unwrap();
+                            let encoded = serde_json::to_string(&serde_json::json!({
+                                "frame": self.frame_count,
+                                "room_phase": room_phase,
+                                "screen": screen,
+                                "command": cmd,
+                                "decision": trace.audit,
+                            }))
+                            .unwrap();
+                            let _ = writeln!(live_io.event_audit, "{}", encoded);
+                            let _ = live_io.event_audit.flush();
+                            let family = trace
+                                .audit
+                                .get("family")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("");
+                            let event_name = trace
+                                .audit
+                                .get("event_name")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("");
+                            let screen_key = trace.audit.get("screen_key");
+                            let suspicious_multistage = matches!(
+                                event_name,
+                                "Neow"
+                                    | "Shining Light"
+                                    | "Golden Idol"
+                                    | "Knowing Skull"
+                                    | "Living Wall"
+                                    | "Big Fish"
+                            ) && screen_key
+                                .is_none_or(|value| value.is_null());
+                            if family == "compatibility_fallback" || suspicious_multistage {
+                                let mut reasons = Vec::new();
+                                if family == "compatibility_fallback" {
+                                    reasons.push("compatibility_fallback".to_string());
+                                }
+                                if suspicious_multistage {
+                                    reasons.push("event_screen_semantics_incomplete".to_string());
+                                }
+                                let _ = write_failure_snapshot(
+                                    live_io,
+                                    self.frame_count,
+                                    frame,
+                                    "validation_failure",
+                                    reasons,
+                                    serde_json::json!({
+                                        "chosen_command": cmd,
+                                        "event_decision": trace.audit.clone(),
+                                    }),
+                                );
+                            }
+                            if self.config.sidecar_shadow {
+                                let shadow = serde_json::json!({
+                                    "kind": "event_shadow",
+                                    "frame": self.frame_count,
+                                    "source": "live_comm_event",
+                                    "decision": trace.audit,
+                                    "suggestion": serde_json::Value::Null,
+                                });
+                                crate::bot::sidecar::write_shadow_record(
+                                    &mut live_io.sidecar_shadow,
+                                    &shadow,
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+        } else if screen == "CARD_REWARD" {
+            emit_bot_card_reward_audit(parsed, self.frame_count, &cmd, &mut live_io.reward_audit);
+            if self.config.sidecar_shadow {
+                if let Some(gs) = parsed.get("game_state") {
+                    if let Some(rs) = crate::cli::live_comm_noncombat::build_live_run_state(gs) {
+                        if let Some(cards) = gs
+                            .get("screen_state")
+                            .and_then(|v| v.get("cards"))
+                            .and_then(|v| v.as_array())
+                        {
+                            let offered_ids = cards
+                                .iter()
+                                .filter_map(|card| {
+                                    card.get("id")
+                                        .and_then(|v| v.as_str())
+                                        .and_then(crate::diff::protocol::mapper::card_id_from_java)
+                                })
+                                .collect::<Vec<_>>();
+                            if !offered_ids.is_empty() {
+                                let evaluation = crate::bot::reward_heuristics::evaluate_reward_screen_for_run_detailed(
+                                    &offered_ids,
+                                    &rs,
+                                );
+                                let chosen_choice = if cmd.trim().eq_ignore_ascii_case("SKIP")
+                                    || cmd.trim().eq_ignore_ascii_case("PROCEED")
+                                {
+                                    None
+                                } else {
+                                    cmd.trim()
+                                        .strip_prefix("CHOOSE ")
+                                        .and_then(|rest| rest.trim().parse::<usize>().ok())
+                                };
+                                let shadow = crate::bot::sidecar::reward_shadow_json(
+                                    self.frame_count,
+                                    "live_comm_reward",
+                                    &evaluation,
+                                    chosen_choice,
+                                    None,
+                                );
+                                crate::bot::sidecar::write_shadow_record(
+                                    &mut live_io.sidecar_shadow,
+                                    &shadow,
+                                );
+                            }
+                        }
+                    }
+                }
             }
         }
 
@@ -509,5 +915,34 @@ impl LiveCommSession {
             return;
         }
         live_io.send_line(stdout, &cmd);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{noncombat_error_loop_fallback_command, noncombat_pollution_hold_command};
+
+    #[test]
+    fn error_loop_fallback_prefers_choose_zero_before_invalid_return() {
+        let avail = vec!["choose", "key", "click", "wait", "handoff", "state"];
+
+        let cmd = noncombat_error_loop_fallback_command(&avail);
+
+        assert_eq!(cmd, "CHOOSE 0");
+    }
+
+    #[test]
+    fn error_loop_fallback_uses_leave_when_available() {
+        let avail = vec!["leave"];
+
+        let cmd = noncombat_error_loop_fallback_command(&avail);
+
+        assert_eq!(cmd, "LEAVE");
+    }
+
+    #[test]
+    fn pollution_hold_prefers_wait_then_state() {
+        assert_eq!(noncombat_pollution_hold_command(&["wait"]), "WAIT 30");
+        assert_eq!(noncombat_pollution_hold_command(&["choose"]), "STATE");
     }
 }

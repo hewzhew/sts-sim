@@ -1,12 +1,20 @@
+use crate::bot::card_disposition::{
+    best_exhaust_candidate_uuid, combat_exhaust_score_for_uuid, combat_retention_score_for_uuid,
+    count_remaining_low_value_exhaust_candidates, exhaust_disposition_stats,
+};
+use crate::bot::card_taxonomy::{is_multi_attack_payoff, is_strength_payoff};
+use crate::bot::combat_posture::posture_features;
+use crate::bot::monster_belief::build_combat_belief_state;
 use crate::bot::strategy_families::{
     apotheosis_timing_score, apparition_hand_shaping_score, apparition_timing_score,
     battle_trance_timing_score, body_slam_delay_score, deck_cycle_thinning_score,
-    draw_action_timing_score, draw_continuity_score, exhaust_engine_payoff_score,
-    exhaust_engine_setup_score, exhaust_finish_window_score, exhaust_fuel_value_score,
-    exhaust_future_fuel_reserve_score, exhaust_mass_play_score, exhaust_random_core_risk_score,
-    exhaust_random_play_score, flight_break_progress_score, forced_mass_exhaust_selectivity_score,
-    persistent_block_progress_score, reaper_hand_shaping_score, reaper_timing_score,
-    status_loop_cycle_score,
+    draw_action_timing_score, draw_continuity_score, exhaust_engine_setup_score,
+    exhaust_finish_window_score, exhaust_fuel_value_score, exhaust_future_fuel_reserve_score,
+    exhaust_mass_play_score, exhaust_random_core_risk_score, exhaust_random_play_score,
+    flight_break_progress_score, mass_exhaust_base_score, mass_exhaust_keeper_penalty,
+    mass_exhaust_second_wind_selectivity_score, persistent_block_progress_score,
+    reaper_hand_shaping_score, reaper_timing_score, status_loop_cycle_score,
+    ApparitionTimingContext, DrawTimingContext, MassExhaustProfile, SurvivalTimingContext,
 };
 use crate::combat::CombatState;
 use crate::combat::PowerId;
@@ -16,6 +24,7 @@ use crate::content::relics::RelicId;
 use crate::state::core::ClientInput;
 
 use super::intent_hits;
+use super::root_policy::same_turn_exhaust_setup_bonus_excluding;
 
 pub(crate) fn tactical_move_bonus(combat: &CombatState, chosen_move: &ClientInput) -> f32 {
     match chosen_move {
@@ -33,12 +42,14 @@ pub(crate) fn tactical_move_bonus(combat: &CombatState, chosen_move: &ClientInpu
                 + exhaust_timing_move_bonus(combat, *card_index)
                 + battle_trance_move_bonus(combat, *card_index)
                 + generic_draw_move_bonus(combat, *card_index)
+                + resource_conversion_move_bonus(combat, *card_index)
                 + body_slam_move_bonus(combat, *card_index)
                 + flame_barrier_move_bonus(combat, *card_index)
                 + limit_break_move_bonus(combat, *card_index)
                 + hold_commit_timing_bonus(combat, *card_index)
                 + survival_swing_move_bonus(combat, *card_index)
                 + target_progress_move_bonus(combat, *card_index, *target)
+                + posture_move_bonus(combat, *card_index)
                 + gremlin_nob_skill_penalty(combat, card)
                 + slimed_cleanup_move_bonus(combat, card)
                 + sharp_hide_attack_penalty(combat, card, *target)
@@ -171,8 +182,46 @@ fn dark_embrace_move_bonus(combat: &CombatState, card_index: usize) -> f32 {
         status_cards_in_hand(combat),
         future_status_card_count(combat),
         sentry_count(combat),
-        0,
+        same_turn_exhaust_setup_bonus(combat, card_index, true),
     ) as f32
+}
+
+fn resource_conversion_move_bonus(combat: &CombatState, card_index: usize) -> f32 {
+    let Some(card) = combat.zones.hand.get(card_index) else {
+        return 0.0;
+    };
+    match card.id {
+        CardId::Bloodletting => resource_conversion_bonus_inner(combat, card_index, 3),
+        CardId::SeeingRed => resource_conversion_bonus_inner(combat, card_index, 0),
+        _ => 0.0,
+    }
+}
+
+fn posture_move_bonus(combat: &CombatState, card_index: usize) -> f32 {
+    let Some(card) = combat.zones.hand.get(card_index) else {
+        return 0.0;
+    };
+    let posture = posture_features(combat);
+
+    match card.id {
+        CardId::FireBreathing => {
+            posture.future_pollution_risk as f32 * 700.0
+                + posture.expected_fight_length_bucket as f32 * 1_500.0
+                + posture.setup_payoff_density as f32 * 500.0
+                - posture.immediate_survival_pressure.min(24) as f32 * 120.0
+        }
+        CardId::DarkEmbrace => {
+            posture.future_pollution_risk as f32 * 320.0
+                + posture.expected_fight_length_bucket as f32 * 900.0
+                + posture.setup_payoff_density as f32 * 420.0
+                - posture.immediate_survival_pressure.min(20) as f32 * 140.0
+        }
+        CardId::PowerThrough => {
+            posture.immediate_survival_pressure.min(30) as f32 * 250.0
+                - posture.resource_preservation_pressure as f32 * 820.0
+        }
+        _ => 0.0,
+    }
 }
 
 fn corruption_move_bonus(combat: &CombatState, card_index: usize) -> f32 {
@@ -209,6 +258,92 @@ fn corruption_move_bonus(combat: &CombatState, card_index: usize) -> f32 {
         sentry_count(combat),
         skill_targets * 1_000,
     ) as f32
+}
+
+fn resource_conversion_bonus_inner(combat: &CombatState, card_index: usize, hp_cost: i32) -> f32 {
+    let Some(card) = combat.zones.hand.get(card_index) else {
+        return 0.0;
+    };
+    let post_energy = (combat.turn.energy as i32 - card.get_cost() as i32
+        + get_card_definition(card.id).base_magic
+        + get_card_definition(card.id).upgrade_magic * card.upgrades as i32)
+        .max(0);
+    let imminent = combat_unblocked_incoming_damage(combat);
+
+    let mut playable_before = 0;
+    let mut playable_after = 0;
+    let mut newly_unlocked = 0;
+    let mut unlocked_damage = 0;
+    let mut unlocked_block = 0;
+    let mut key_followups = 0;
+
+    for (idx, other) in combat.zones.hand.iter().enumerate() {
+        if idx == card_index
+            || matches!(
+                get_card_definition(other.id).card_type,
+                CardType::Curse | CardType::Status
+            )
+        {
+            continue;
+        }
+        let other_cost = other.get_cost() as i32;
+        let before = other_cost >= 0 && other_cost <= combat.turn.energy as i32;
+        let after = other_cost >= 0 && other_cost <= post_energy;
+        if before {
+            playable_before += 1;
+        }
+        if after {
+            playable_after += 1;
+        }
+        if !before && after {
+            newly_unlocked += 1;
+            let def = get_card_definition(other.id);
+            let upgrades = other.upgrades as i32;
+            unlocked_damage += (def.base_damage + def.upgrade_damage * upgrades).max(0)
+                * intent_hits_like(other.id, upgrades);
+            unlocked_block += (def.base_block + def.upgrade_block * upgrades).max(0);
+            key_followups += match other.id {
+                CardId::Carnage
+                | CardId::Offering
+                | CardId::Impervious
+                | CardId::DarkEmbrace
+                | CardId::FeelNoPain
+                | CardId::Corruption
+                | CardId::Shockwave
+                | CardId::FlameBarrier
+                | CardId::Bash
+                | CardId::Clothesline
+                | CardId::Uppercut => 1,
+                _ => 0,
+            };
+        }
+    }
+
+    let mut bonus = 1_000.0
+        + newly_unlocked as f32 * 3_200.0
+        + unlocked_damage.min(30) as f32 * 220.0
+        + unlocked_block.min(imminent.max(0)).min(20) as f32 * 250.0
+        + key_followups as f32 * 1_500.0;
+
+    if newly_unlocked <= 0 {
+        bonus -= 5_500.0;
+    }
+    if playable_after <= 0 {
+        bonus -= 8_000.0;
+    }
+    if playable_before > 0 && newly_unlocked <= 0 {
+        bonus -= 2_000.0;
+    }
+    if hp_cost > 0 {
+        bonus -= hp_cost as f32 * 1_000.0;
+        if imminent >= combat.entities.player.current_hp.saturating_sub(4) {
+            bonus -= hp_cost as f32 * 1_300.0 + 1_800.0;
+        } else if combat.entities.player.current_hp <= 12 {
+            bonus -= hp_cost as f32 * 900.0;
+        }
+    }
+
+    bonus
 }
 
 fn evolve_move_bonus(combat: &CombatState, card_index: usize) -> f32 {
@@ -309,25 +444,28 @@ fn battle_trance_move_bonus(combat: &CombatState, card_index: usize) -> f32 {
         .count() as i32;
 
     battle_trance_timing_score(
-        combat.turn.energy as i32,
-        combat.get_power(0, PowerId::NoDraw) != 0,
+        &DrawTimingContext {
+            current_energy: combat.turn.energy as i32,
+            player_no_draw: combat.get_power(0, PowerId::NoDraw) != 0,
+            current_hand_size: combat.zones.hand.len() as i32,
+            future_zero_cost_cards,
+            future_one_cost_cards,
+            future_two_plus_cost_cards,
+            future_key_delay_weight: future_drawable_cards
+                .iter()
+                .map(|card| key_card_delay_weight(card.id))
+                .sum(),
+            future_high_cost_key_delay_weight: future_drawable_cards
+                .iter()
+                .filter(|card| card.get_cost() >= 1)
+                .map(|card| key_card_delay_weight(card.id))
+                .sum(),
+            future_status_cards: status_cards_in_draw_pile(combat)
+                + status_cards_in_discard_pile(combat),
+            other_draw_sources_in_hand,
+        },
         get_card_definition(card.id).base_magic
             + get_card_definition(card.id).upgrade_magic * card.upgrades as i32,
-        combat.zones.hand.len() as i32,
-        future_zero_cost_cards,
-        future_one_cost_cards,
-        future_two_plus_cost_cards,
-        future_drawable_cards
-            .iter()
-            .map(|card| key_card_delay_weight(card.id))
-            .sum(),
-        future_drawable_cards
-            .iter()
-            .filter(|card| card.get_cost() >= 1)
-            .map(|card| key_card_delay_weight(card.id))
-            .sum(),
-        status_cards_in_draw_pile(combat) + status_cards_in_discard_pile(combat),
-        other_draw_sources_in_hand,
     ) as f32
 }
 
@@ -382,25 +520,28 @@ fn generic_draw_move_bonus(combat: &CombatState, card_index: usize) -> f32 {
         .count() as i32;
 
     draw_action_timing_score(
-        combat.turn.energy as i32,
-        combat.get_power(0, PowerId::NoDraw) != 0,
+        &DrawTimingContext {
+            current_energy: combat.turn.energy as i32,
+            player_no_draw: combat.get_power(0, PowerId::NoDraw) != 0,
+            current_hand_size: combat.zones.hand.len() as i32,
+            future_zero_cost_cards,
+            future_one_cost_cards,
+            future_two_plus_cost_cards,
+            future_key_delay_weight: future_drawable_cards
+                .iter()
+                .map(|card| key_card_delay_weight(card.id))
+                .sum(),
+            future_high_cost_key_delay_weight: future_drawable_cards
+                .iter()
+                .filter(|card| card.get_cost() >= 1)
+                .map(|card| key_card_delay_weight(card.id))
+                .sum(),
+            future_status_cards: status_cards_in_draw_pile(combat)
+                + status_cards_in_discard_pile(combat),
+            other_draw_sources_in_hand,
+        },
         false,
         draw_count,
-        combat.zones.hand.len() as i32,
-        future_zero_cost_cards,
-        future_one_cost_cards,
-        future_two_plus_cost_cards,
-        future_drawable_cards
-            .iter()
-            .map(|card| key_card_delay_weight(card.id))
-            .sum(),
-        future_drawable_cards
-            .iter()
-            .filter(|card| card.get_cost() >= 1)
-            .map(|card| key_card_delay_weight(card.id))
-            .sum(),
-        status_cards_in_draw_pile(combat) + status_cards_in_discard_pile(combat),
-        other_draw_sources_in_hand,
     ) as f32
 }
 
@@ -449,6 +590,26 @@ fn key_card_delay_weight(card_id: CardId) -> i32 {
         | CardId::SeeingRed => 2,
         _ => 0,
     }
+}
+
+fn intent_hits_like(card_id: CardId, upgrades: i32) -> i32 {
+    match card_id {
+        CardId::TwinStrike => 2,
+        CardId::Pummel => 4 + upgrades,
+        CardId::SwordBoomerang => {
+            let def = get_card_definition(card_id);
+            def.base_magic + def.upgrade_magic * upgrades
+        }
+        _ => 1,
+    }
+}
+
+fn same_turn_exhaust_setup_bonus(
+    combat: &CombatState,
+    card_index: usize,
+    draw_engine: bool,
+) -> i32 {
+    same_turn_exhaust_setup_bonus_excluding(combat, card_index, draw_engine)
 }
 
 fn exhaust_timing_move_bonus(combat: &CombatState, card_index: usize) -> f32 {
@@ -551,68 +712,25 @@ fn exhaust_timing_move_bonus(combat: &CombatState, card_index: usize) -> f32 {
             if targets.is_empty() {
                 return -4_500.0;
             }
-            let total_fuel = targets
-                .iter()
-                .map(|uuid| exhaust_fuel_value_for_uuid(combat, *uuid))
-                .sum::<i32>();
-            let remaining_cards_after = combat.zones.draw_pile.len() as i32
-                + combat.zones.discard_pile.len() as i32
-                + combat.zones.hand.len() as i32
-                - targets.len() as i32;
             let finish_window = second_wind_finish_window_bonus(combat, targets.len() as i32);
-            (exhaust_mass_play_score(
-                total_fuel,
-                targets.len() as i32,
-                remaining_cards_after,
-                remaining_low_value_fuel_after_mass_exhaust(combat, card_index, &targets),
+            let profile = build_mass_exhaust_profile(
+                combat,
+                card_index,
+                &targets,
                 finish_window,
-            ) + second_wind_selectivity_bonus(combat, &targets, finish_window > 0)
-                + exhaust_engine_payoff_bonus(combat, targets.len() as i32, targets.len() as i32)
-                + deck_cycle_thinning_score(
-                    total_cycle_cards(combat),
-                    remaining_cards_after,
-                    if combat.get_power(0, PowerId::DarkEmbrace) > 0 {
-                        targets.len() as i32
-                    } else {
-                        0
-                    },
-                    0,
-                    0,
-                    0,
-                )) as f32
+                finish_window > 0,
+            );
+            (mass_exhaust_base_score(&profile, total_cycle_cards(combat))
+                + mass_exhaust_second_wind_selectivity_score(&profile)) as f32
         }
         CardId::SeverSoul => {
             let targets = exhaust_candidate_uuids_for_card(combat, card_index);
             if targets.is_empty() {
                 return -2_500.0;
             }
-            let total_fuel = targets
-                .iter()
-                .map(|uuid| exhaust_fuel_value_for_uuid(combat, *uuid))
-                .sum::<i32>();
-            let remaining_cards_after = combat.zones.draw_pile.len() as i32
-                + combat.zones.discard_pile.len() as i32
-                + combat.zones.hand.len() as i32
-                - targets.len() as i32;
-            (exhaust_mass_play_score(
-                total_fuel,
-                targets.len() as i32,
-                remaining_cards_after,
-                remaining_low_value_fuel_after_mass_exhaust(combat, card_index, &targets),
-                0,
-            ) + exhaust_engine_payoff_bonus(combat, targets.len() as i32, targets.len() as i32)
-                + deck_cycle_thinning_score(
-                    total_cycle_cards(combat),
-                    remaining_cards_after,
-                    if combat.get_power(0, PowerId::DarkEmbrace) > 0 {
-                        targets.len() as i32
-                    } else {
-                        0
-                    },
-                    0,
-                    0,
-                    0,
-                )) as f32
+            let profile = build_mass_exhaust_profile(combat, card_index, &targets, 0, false);
+            ((mass_exhaust_base_score(&profile, total_cycle_cards(combat))
+                - mass_exhaust_keeper_penalty(&profile, 500, 3_000)) as f32)
                 * 0.8
         }
         CardId::FiendFire => {
@@ -620,59 +738,29 @@ fn exhaust_timing_move_bonus(combat: &CombatState, card_index: usize) -> f32 {
             if targets.is_empty() {
                 return -3_500.0;
             }
-            let total_fuel = targets
-                .iter()
-                .map(|uuid| exhaust_fuel_value_for_uuid(combat, *uuid))
-                .sum::<i32>();
-            let remaining_cards_after = combat.zones.draw_pile.len() as i32
-                + combat.zones.discard_pile.len() as i32
-                + combat.zones.hand.len() as i32
-                - targets.len() as i32;
             let closeout_bonus = fiend_fire_closeout_bonus(combat, card, targets.len() as i32);
-            (exhaust_mass_play_score(
-                total_fuel,
-                targets.len() as i32,
-                remaining_cards_after,
-                remaining_low_value_fuel_after_mass_exhaust(combat, card_index, &targets),
-                closeout_bonus,
-            ) + exhaust_engine_payoff_bonus(combat, targets.len() as i32, targets.len() as i32)
-                + deck_cycle_thinning_score(
-                    total_cycle_cards(combat),
-                    remaining_cards_after,
-                    if combat.get_power(0, PowerId::DarkEmbrace) > 0 {
-                        targets.len() as i32
-                    } else {
-                        0
-                    },
-                    0,
-                    0,
-                    0,
-                )) as f32
+            let profile =
+                build_mass_exhaust_profile(combat, card_index, &targets, closeout_bonus, false);
+            (mass_exhaust_base_score(&profile, total_cycle_cards(combat))
+                - mass_exhaust_keeper_penalty(&profile, 300, 2_200)) as f32
         }
         CardId::TrueGrit if card.upgrades == 0 => {
             let candidates = exhaust_candidate_uuids_for_card(combat, card_index);
-            let low_value = candidates
-                .iter()
-                .filter(|uuid| exhaust_fuel_value_for_uuid(combat, **uuid) > 0)
-                .count() as i32;
-            let protected = candidates.len() as i32 - low_value;
-            let core = candidates
-                .iter()
-                .filter(|uuid| exhaust_fuel_value_for_uuid(combat, **uuid) <= -8_000)
-                .count() as i32;
-            let near_core = candidates
-                .iter()
-                .filter(|uuid| {
-                    let value = exhaust_fuel_value_for_uuid(combat, **uuid);
-                    value > -8_000 && value <= -2_000
-                })
-                .count() as i32;
+            let stats = exhaust_disposition_stats(combat, &candidates);
             let remaining_cards_after = combat.zones.draw_pile.len() as i32
                 + combat.zones.discard_pile.len() as i32
                 + combat.zones.hand.len() as i32
                 - 1;
-            exhaust_random_play_score(low_value, protected, remaining_cards_after) as f32
-                + exhaust_random_core_risk_score(low_value, core, near_core) as f32
+            exhaust_random_play_score(
+                stats.junk_count,
+                stats.protected_count,
+                remaining_cards_after,
+            ) as f32
+                + exhaust_random_core_risk_score(
+                    stats.junk_count,
+                    stats.core_count,
+                    stats.near_core_count,
+                ) as f32
                 + exhaust_future_fuel_reserve_score(
                     remaining_low_value_fuel_after_best_single_exhaust(combat, card_index),
                     future_exhaust_demand(combat, card_index),
@@ -834,59 +922,15 @@ fn hold_commit_timing_bonus(combat: &CombatState, card_index: usize) -> f32 {
                 .count() as i32,
             combat_unblocked_incoming_damage(combat),
         ) as f32,
-        CardId::Apparition => apparition_timing_score(
-            combat.entities.player.current_hp,
-            combat
-                .get_power(0, PowerId::Intangible)
-                .max(combat.get_power(0, PowerId::IntangiblePlayer)),
-            combat_unblocked_incoming_damage(combat),
-            combat_total_incoming_damage(combat),
-            combat
-                .zones
-                .hand
-                .iter()
-                .filter(|c| c.id == CardId::Apparition)
-                .count() as i32,
-            combat
-                .zones
-                .hand
-                .iter()
-                .chain(combat.zones.draw_pile.iter())
-                .chain(combat.zones.discard_pile.iter())
-                .filter(|c| c.id == CardId::Apparition)
-                .count() as i32,
-            card.upgrades > 0,
-            combat.entities.player.has_relic(RelicId::RunicPyramid),
-            combat
-                .entities
-                .monsters
-                .iter()
-                .filter(|m| !m.is_dying && !m.is_escaped && m.current_hp > 0)
-                .map(|m| combat.get_power(m.id, PowerId::Strength).max(0) * 2 + 2)
-                .sum::<i32>()
-                + if combat.meta.is_boss_fight {
-                    6
-                } else if combat.meta.is_elite_fight {
-                    3
-                } else {
-                    0
-                },
-        ) as f32,
+        CardId::Apparition => {
+            apparition_timing_score(&combat_apparition_timing_context(combat, card.upgrades > 0))
+                as f32
+        }
         CardId::BurningPact => {
             let imminent = combat_unblocked_incoming_damage(combat);
             let bad_fuel = exhaust_candidate_uuids_for_card(combat, card_index)
                 .into_iter()
-                .filter_map(|uuid| combat.zones.hand.iter().find(|c| c.uuid == uuid))
-                .filter(|c| {
-                    matches!(
-                        c.id,
-                        CardId::Burn
-                            | CardId::Dazed
-                            | CardId::Slimed
-                            | CardId::Wound
-                            | CardId::Injury
-                    )
-                })
+                .filter(|uuid| combat_exhaust_score_for_uuid(combat, *uuid) >= 8_000)
                 .count() as i32;
             let future_save_cards = combat
                 .zones
@@ -920,6 +964,80 @@ fn hold_commit_timing_bonus(combat: &CombatState, card_index: usize) -> f32 {
             }
             score
         }
+        CardId::SpotWeakness => {
+            let attacking_target_exists = combat.entities.monsters.iter().any(|m| {
+                !m.is_dying && !m.is_escaped && !m.half_dead && intent_hits(&m.current_intent) > 0
+            });
+            if !attacking_target_exists {
+                return -5_500.0;
+            }
+            let followup_attack_count = combat
+                .zones
+                .hand
+                .iter()
+                .enumerate()
+                .filter(|(idx, other)| {
+                    *idx != card_index
+                        && crate::content::cards::can_play_card(other, combat).is_ok()
+                        && get_card_definition(other.id).card_type == CardType::Attack
+                })
+                .count() as i32;
+            let followup_payoff_count = combat
+                .zones
+                .hand
+                .iter()
+                .enumerate()
+                .filter(|(idx, other)| {
+                    *idx != card_index
+                        && crate::content::cards::can_play_card(other, combat).is_ok()
+                        && is_strength_payoff(other.id)
+                })
+                .count() as i32;
+            4_500.0
+                + (followup_attack_count * 1_200) as f32
+                + (followup_payoff_count * 1_500) as f32
+                + if combat.meta.is_boss_fight || combat.meta.is_elite_fight {
+                    1_200.0
+                } else {
+                    0.0
+                }
+        }
+        CardId::Rage => {
+            let followup_attack_count = combat
+                .zones
+                .hand
+                .iter()
+                .enumerate()
+                .filter(|(idx, other)| {
+                    *idx != card_index
+                        && crate::content::cards::can_play_card(other, combat).is_ok()
+                        && get_card_definition(other.id).card_type == CardType::Attack
+                })
+                .count() as i32;
+            let multi_attack_count = combat
+                .zones
+                .hand
+                .iter()
+                .enumerate()
+                .filter(|(idx, other)| {
+                    *idx != card_index
+                        && crate::content::cards::can_play_card(other, combat).is_ok()
+                        && is_multi_attack_payoff(other.id)
+                })
+                .count() as i32;
+            if followup_attack_count <= 0 {
+                -4_500.0
+            } else {
+                3_500.0
+                    + (followup_attack_count * 1_600) as f32
+                    + (multi_attack_count * 2_000) as f32
+                    + if combat_unblocked_incoming_damage(combat) > 0 {
+                        2_000.0
+                    } else {
+                        0.0
+                    }
+            }
+        }
         _ => 0.0,
     }
 }
@@ -934,9 +1052,7 @@ fn survival_swing_move_bonus(combat: &CombatState, card_index: usize) -> f32 {
             let kills = estimated_reaper_kills(combat, card);
             let prevented = estimated_reaper_kill_prevention(combat, card);
             reaper_timing_score(
-                combat.entities.player.current_hp,
-                combat_unblocked_incoming_damage(combat),
-                combat_missing_hp(combat),
+                &combat_survival_timing_context(combat),
                 heal,
                 prevented,
                 kills,
@@ -1429,54 +1545,67 @@ fn exhaust_fuel_value_for_uuid(combat: &CombatState, uuid: u32) -> i32 {
         exhaust_card_timing_hold_score(combat, card, unblocked, incoming),
         combat.get_power(0, PowerId::FeelNoPain),
         combat.get_power(0, PowerId::DarkEmbrace) > 0,
-    )
+    ) + combat_exhaust_score_for_uuid(combat, uuid)
 }
 
-fn second_wind_selectivity_bonus(
+fn build_mass_exhaust_profile(
     combat: &CombatState,
+    card_index: usize,
     exhausted_targets: &[u32],
+    closeout_bonus: i32,
     exact_stabilize: bool,
-) -> i32 {
-    let fuel_values: Vec<i32> = exhausted_targets
+) -> MassExhaustProfile {
+    let exhausted_count = exhausted_targets.len() as i32;
+    let total_fuel = exhausted_targets
         .iter()
         .map(|uuid| exhaust_fuel_value_for_uuid(combat, *uuid))
-        .collect();
-    let junk_fuel_count = fuel_values.iter().filter(|&&value| value >= 8_000).count() as i32;
-    let protected_piece_count = fuel_values.iter().filter(|&&value| value <= -2_000).count() as i32;
-    let core_piece_count = fuel_values.iter().filter(|&&value| value <= -8_000).count() as i32;
+        .sum::<i32>();
+    let stats = exhaust_disposition_stats(combat, exhausted_targets);
     let engine_support_level = i32::from(combat.get_power(0, PowerId::DarkEmbrace) > 0)
         + i32::from(combat.get_power(0, PowerId::FeelNoPain) > 0)
         + i32::from(combat.get_power(0, PowerId::Evolve) > 0);
-    let mut score = forced_mass_exhaust_selectivity_score(
-        junk_fuel_count,
-        protected_piece_count,
-        core_piece_count,
-        exact_stabilize,
-        combat_unblocked_incoming_damage(combat),
-        engine_support_level,
-    );
+    let unblocked_incoming = combat_unblocked_incoming_damage(combat);
+    let remaining_cards_after = combat.zones.draw_pile.len() as i32
+        + combat.zones.discard_pile.len() as i32
+        + combat.zones.hand.len() as i32
+        - exhausted_count;
     let playable_block_lost = exhausted_targets
         .iter()
         .filter_map(|uuid| combat.zones.hand.iter().find(|c| c.uuid == *uuid))
         .filter(|card| {
             crate::content::cards::can_play_card(card, combat).is_ok()
+                && combat_retention_score_for_uuid(combat, card.uuid) >= 2_500
                 && get_card_definition(card.id).base_block > 0
         })
         .count() as i32;
-    if playable_block_lost > 0 {
-        let emergency_relief = if exact_stabilize {
-            0
+    let low_pressure_high_hp = unblocked_incoming <= 12
+        && combat.entities.player.current_hp >= 30
+        && combat.entities.player.current_hp > unblocked_incoming * 2 + 10;
+    MassExhaustProfile {
+        exhausted_count,
+        total_fuel,
+        remaining_cards_after,
+        remaining_low_value_fuel_after: remaining_low_value_fuel_after_mass_exhaust(
+            combat,
+            card_index,
+            exhausted_targets,
+        ),
+        closeout_bonus,
+        junk_fuel_count: stats.junk_count,
+        protected_piece_count: stats.protected_count,
+        core_piece_count: stats.core_count,
+        engine_support_level,
+        block_per_exhaust: combat.get_power(0, PowerId::FeelNoPain),
+        imminent_unblocked_damage: unblocked_incoming,
+        playable_block_lost,
+        exact_stabilize,
+        low_pressure_high_hp,
+        dark_embrace_draw_count: if combat.get_power(0, PowerId::DarkEmbrace) > 0 {
+            exhausted_count
         } else {
-            combat_unblocked_incoming_damage(combat).min(18) * 180
-        };
-        let preserve_penalty =
-            (playable_block_lost * 6_200) - junk_fuel_count * 650 - emergency_relief;
-        score -= preserve_penalty.max(0);
-        if junk_fuel_count >= 1 && playable_block_lost >= 2 && !exact_stabilize {
-            score -= 12_000 + playable_block_lost * 2_500;
-        }
+            0
+        },
     }
-    score
 }
 
 fn exhaust_card_timing_hold_score(
@@ -1485,6 +1614,7 @@ fn exhaust_card_timing_hold_score(
     unblocked_incoming: i32,
     incoming: i32,
 ) -> i32 {
+    let can_play_now = crate::content::cards::can_play_card(card, combat).is_ok();
     match card.id {
         CardId::Defend | CardId::DefendG => {
             let junk_fuel_count = combat
@@ -1512,10 +1642,28 @@ fn exhaust_card_timing_hold_score(
             }
         }
         CardId::Inflame => {
-            if crate::content::cards::can_play_card(card, combat).is_ok()
-                && combat.get_power(0, PowerId::Strength) <= 3
-            {
+            if can_play_now && combat.get_power(0, PowerId::Strength) <= 3 {
                 4_500
+            } else {
+                0
+            }
+        }
+        CardId::Disarm | CardId::Shockwave | CardId::Uppercut | CardId::Intimidate => {
+            if incoming > 0 && can_play_now {
+                5_400 + incoming.min(24) * 180
+            } else if can_play_now {
+                1_800
+            } else {
+                0
+            }
+        }
+        CardId::BattleTrance
+        | CardId::BurningPact
+        | CardId::Offering
+        | CardId::SeeingRed
+        | CardId::Warcry => {
+            if can_play_now {
+                3_200 + unblocked_incoming.min(18) * 120
             } else {
                 0
             }
@@ -1539,25 +1687,25 @@ fn exhaust_card_timing_hold_score(
                 unblocked_incoming,
             )
         }
-        CardId::Reaper => reaper_hand_shaping_score(
-            combat.entities.player.current_hp,
-            unblocked_incoming,
-            combat_missing_hp(combat),
-        ),
-        CardId::Apparition => apparition_hand_shaping_score(
-            combat.entities.player.current_hp,
-            combat
+        CardId::Reaper => reaper_hand_shaping_score(&SurvivalTimingContext {
+            current_hp: combat.entities.player.current_hp,
+            imminent_unblocked_damage: unblocked_incoming,
+            missing_hp: combat_missing_hp(combat),
+        }),
+        CardId::Apparition => apparition_hand_shaping_score(&ApparitionTimingContext {
+            current_hp: combat.entities.player.current_hp,
+            current_intangible: combat
                 .get_power(0, PowerId::Intangible)
                 .max(combat.get_power(0, PowerId::IntangiblePlayer)),
-            unblocked_incoming,
-            incoming,
-            combat
+            imminent_unblocked_damage: unblocked_incoming,
+            total_incoming_damage: incoming,
+            apparitions_in_hand: combat
                 .zones
                 .hand
                 .iter()
                 .filter(|c| c.id == CardId::Apparition)
                 .count() as i32,
-            combat
+            remaining_apparitions_total: combat
                 .zones
                 .hand
                 .iter()
@@ -1565,9 +1713,9 @@ fn exhaust_card_timing_hold_score(
                 .chain(combat.zones.discard_pile.iter())
                 .filter(|c| c.id == CardId::Apparition)
                 .count() as i32,
-            card.upgrades > 0,
-            combat.entities.player.has_relic(RelicId::RunicPyramid),
-            combat
+            upgraded: card.upgrades > 0,
+            has_runic_pyramid: combat.entities.player.has_relic(RelicId::RunicPyramid),
+            encounter_pressure: combat
                 .entities
                 .monsters
                 .iter()
@@ -1581,8 +1729,60 @@ fn exhaust_card_timing_hold_score(
                 } else {
                     0
                 },
-        ),
+        }),
         _ => 0,
+    }
+}
+
+fn combat_survival_timing_context(combat: &CombatState) -> SurvivalTimingContext {
+    SurvivalTimingContext {
+        current_hp: combat.entities.player.current_hp,
+        imminent_unblocked_damage: combat_unblocked_incoming_damage(combat),
+        missing_hp: combat_missing_hp(combat),
+    }
+}
+
+fn combat_apparition_timing_context(
+    combat: &CombatState,
+    upgraded: bool,
+) -> ApparitionTimingContext {
+    ApparitionTimingContext {
+        current_hp: combat.entities.player.current_hp,
+        current_intangible: combat
+            .get_power(0, PowerId::Intangible)
+            .max(combat.get_power(0, PowerId::IntangiblePlayer)),
+        imminent_unblocked_damage: combat_unblocked_incoming_damage(combat),
+        total_incoming_damage: combat_total_incoming_damage(combat),
+        apparitions_in_hand: combat
+            .zones
+            .hand
+            .iter()
+            .filter(|c| c.id == CardId::Apparition)
+            .count() as i32,
+        remaining_apparitions_total: combat
+            .zones
+            .hand
+            .iter()
+            .chain(combat.zones.draw_pile.iter())
+            .chain(combat.zones.discard_pile.iter())
+            .filter(|c| c.id == CardId::Apparition)
+            .count() as i32,
+        upgraded,
+        has_runic_pyramid: combat.entities.player.has_relic(RelicId::RunicPyramid),
+        encounter_pressure: combat
+            .entities
+            .monsters
+            .iter()
+            .filter(|m| !m.is_dying && !m.is_escaped && m.current_hp > 0)
+            .map(|m| combat.get_power(m.id, PowerId::Strength).max(0) * 2 + 2)
+            .sum::<i32>()
+            + if combat.meta.is_boss_fight {
+                6
+            } else if combat.meta.is_elite_fight {
+                3
+            } else {
+                0
+            },
     }
 }
 
@@ -1591,16 +1791,10 @@ fn remaining_low_value_fuel_after_best_single_exhaust(
     card_index: usize,
 ) -> i32 {
     let targets = exhaust_candidate_uuids_for_card(combat, card_index);
-    let best = targets
-        .iter()
-        .max_by_key(|uuid| exhaust_fuel_value_for_uuid(combat, **uuid))
-        .copied();
-
-    targets
-        .into_iter()
-        .filter(|uuid| Some(*uuid) != best)
-        .filter(|uuid| exhaust_fuel_value_for_uuid(combat, *uuid) > 0)
-        .count() as i32
+    let excluded = best_exhaust_candidate_uuid(combat, &targets)
+        .map(|uuid| vec![uuid])
+        .unwrap_or_default();
+    count_remaining_low_value_exhaust_candidates(combat, &targets, &excluded)
 }
 
 fn future_exhaust_demand(combat: &CombatState, current_card_index: usize) -> i32 {
@@ -1628,12 +1822,8 @@ fn remaining_low_value_fuel_after_mass_exhaust(
     card_index: usize,
     exhausted_targets: &[u32],
 ) -> i32 {
-    let exhausted_set: std::collections::HashSet<u32> = exhausted_targets.iter().copied().collect();
-    exhaust_candidate_uuids_for_card(combat, card_index)
-        .into_iter()
-        .filter(|uuid| !exhausted_set.contains(uuid))
-        .filter(|uuid| exhaust_fuel_value_for_uuid(combat, *uuid) > 0)
-        .count() as i32
+    let candidates = exhaust_candidate_uuids_for_card(combat, card_index);
+    count_remaining_low_value_exhaust_candidates(combat, &candidates, exhausted_targets)
 }
 
 fn fiend_fire_closeout_bonus(
@@ -1675,36 +1865,6 @@ fn fiend_fire_closeout_bonus(
     } else {
         0
     }
-}
-
-fn exhaust_engine_payoff_bonus(
-    combat: &CombatState,
-    exhaust_count: i32,
-    status_fuel_count: i32,
-) -> i32 {
-    exhaust_engine_payoff_score(
-        exhaust_count,
-        combat.get_power(0, PowerId::FeelNoPain),
-        i32::from(combat.get_power(0, PowerId::DarkEmbrace) > 0),
-        status_fuel_count,
-        if combat.get_power(0, PowerId::Evolve) > 0 {
-            combat
-                .zones
-                .draw_pile
-                .iter()
-                .chain(combat.zones.discard_pile.iter())
-                .chain(combat.zones.hand.iter())
-                .filter(|card| {
-                    matches!(
-                        get_card_definition(card.id).card_type,
-                        CardType::Status | CardType::Curse
-                    )
-                })
-                .count() as i32
-        } else {
-            0
-        },
-    )
 }
 
 fn total_cycle_cards(combat: &CombatState) -> i32 {
@@ -1901,13 +2061,9 @@ fn estimated_kill_prevention_from_damage(combat: &CombatState, total_damage: i32
 }
 
 fn combat_total_incoming_damage(combat: &CombatState) -> i32 {
-    combat
-        .entities
-        .monsters
-        .iter()
-        .filter(|m| !m.is_dying && !m.is_escaped && !m.half_dead)
-        .map(|m| m.intent_dmg * intent_hits(&m.current_intent))
-        .sum()
+    build_combat_belief_state(combat)
+        .expected_incoming_damage
+        .round() as i32
 }
 
 fn combat_unblocked_incoming_damage(combat: &CombatState) -> i32 {
@@ -1995,5 +2151,93 @@ fn card_hits(card: &crate::combat::CombatCard) -> i32 {
         CardId::Pummel => card.base_magic_num_mut.max(4),
         CardId::SwordBoomerang => card.base_magic_num_mut.max(3),
         _ => 1,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::tactical_move_bonus;
+    use crate::combat::CombatCard;
+    use crate::state::core::ClientInput;
+    use crate::testing::support::test_support::{combat_with_attacking_monster, CombatTestExt};
+
+    #[test]
+    fn true_grit_bonus_prefers_hands_with_real_junk_fuel() {
+        let mut junk_hand =
+            combat_with_attacking_monster(crate::content::monsters::EnemyId::JawWorm, 36, 12)
+                .with_rng_seed(7)
+                .with_player_hp(40);
+        junk_hand.zones.hand = vec![
+            CombatCard::new(crate::content::cards::CardId::TrueGrit, 1),
+            CombatCard::new(crate::content::cards::CardId::Wound, 2),
+            CombatCard::new(crate::content::cards::CardId::DemonForm, 3),
+        ];
+
+        let mut clean_hand =
+            combat_with_attacking_monster(crate::content::monsters::EnemyId::JawWorm, 36, 12)
+                .with_rng_seed(7)
+                .with_player_hp(40);
+        clean_hand.zones.hand = vec![
+            CombatCard::new(crate::content::cards::CardId::TrueGrit, 4),
+            CombatCard::new(crate::content::cards::CardId::Defend, 5),
+            CombatCard::new(crate::content::cards::CardId::DemonForm, 6),
+        ];
+
+        let junk_bonus = tactical_move_bonus(
+            &junk_hand,
+            &ClientInput::PlayCard {
+                card_index: 0,
+                target: None,
+            },
+        );
+        let clean_bonus = tactical_move_bonus(
+            &clean_hand,
+            &ClientInput::PlayCard {
+                card_index: 0,
+                target: None,
+            },
+        );
+
+        assert!(junk_bonus > clean_bonus);
+    }
+
+    #[test]
+    fn burning_pact_bonus_prefers_junk_fuel_over_keeper_only_hands() {
+        let mut junk_hand =
+            combat_with_attacking_monster(crate::content::monsters::EnemyId::JawWorm, 36, 12)
+                .with_rng_seed(9)
+                .with_player_hp(42);
+        junk_hand.zones.hand = vec![
+            CombatCard::new(crate::content::cards::CardId::BurningPact, 11),
+            CombatCard::new(crate::content::cards::CardId::Burn, 12),
+            CombatCard::new(crate::content::cards::CardId::DemonForm, 13),
+        ];
+
+        let mut keeper_only =
+            combat_with_attacking_monster(crate::content::monsters::EnemyId::JawWorm, 36, 12)
+                .with_rng_seed(9)
+                .with_player_hp(42);
+        keeper_only.zones.hand = vec![
+            CombatCard::new(crate::content::cards::CardId::BurningPact, 21),
+            CombatCard::new(crate::content::cards::CardId::Defend, 22),
+            CombatCard::new(crate::content::cards::CardId::DemonForm, 23),
+        ];
+
+        let junk_bonus = tactical_move_bonus(
+            &junk_hand,
+            &ClientInput::PlayCard {
+                card_index: 0,
+                target: None,
+            },
+        );
+        let keeper_bonus = tactical_move_bonus(
+            &keeper_only,
+            &ClientInput::PlayCard {
+                card_index: 0,
+                target: None,
+            },
+        );
+
+        assert!(junk_bonus > keeper_bonus);
     }
 }

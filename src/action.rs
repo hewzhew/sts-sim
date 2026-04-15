@@ -3,6 +3,8 @@ use crate::state::{
     GridSelectFilter, GridSelectReason, HandSelectFilter, HandSelectReason, PileType,
 };
 
+pub const NO_SOURCE: EntityId = EntityId::MAX;
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct DamageInfo {
     pub source: EntityId,
@@ -34,13 +36,27 @@ pub enum Action {
         target: EntityId,
         amount: i32,
     },
+    /// Rust migration shim for Java `LoseHPAction` provenance.
+    ///
+    /// In Java, whether HP loss triggers `RupturePower.wasHPLost(...)` is determined
+    /// by the concrete action path and `DamageInfo.owner`, not by a standalone flag.
+    /// Our unified action model loses that provenance, so `triggers_rupture` must be
+    /// set only for player-authored self HP loss sources that Java routes through a
+    /// `LoseHPAction(player, player, ...)`-equivalent path.
     LoseHp {
         target: EntityId,
         amount: i32,
         triggers_rupture: bool,
     },
+    SetCurrentHp {
+        target: EntityId,
+        hp: i32,
+    },
     Heal {
         target: EntityId,
+        amount: i32,
+    },
+    GainGold {
         amount: i32,
     },
     GainEnergy {
@@ -80,6 +96,17 @@ pub enum Action {
         damage_info: DamageInfo,
         max_hp_amount: i32,
     },
+    HandOfGreed {
+        target: EntityId,
+        damage_info: DamageInfo,
+        gold_amount: i32,
+    },
+    RitualDagger {
+        target: EntityId,
+        damage_info: DamageInfo,
+        misc_amount: i32,
+        card_uuid: u32,
+    },
     VampireDamage(DamageInfo),
     VampireDamageAllEnemies {
         source: EntityId,
@@ -89,6 +116,7 @@ pub enum Action {
     LimitBreak,
     DrawCards(u32),
     EmptyDeckShuffle,
+    ShuffleDiscardIntoDraw,
     PlayCard {
         card_index: usize,
         target: Option<EntityId>,
@@ -134,6 +162,10 @@ pub enum Action {
         from: PileType,
         to: PileType,
     },
+    RemoveCardFromPile {
+        card_uuid: u32,
+        from: PileType,
+    },
     SuspendForHandSelect {
         min: u8,
         max: u8,
@@ -150,6 +182,7 @@ pub enum Action {
         reason: GridSelectReason,
     },
     SuspendForDiscovery {
+        colorless: bool,
         card_type: Option<crate::content::cards::CardType>,
         cost_for_turn: Option<u8>,
     },
@@ -161,9 +194,33 @@ pub enum Action {
         power_id: crate::content::powers::PowerId,
         amount: i32,
     },
+    ApplyPowerDetailed {
+        source: EntityId,
+        target: EntityId,
+        power_id: crate::content::powers::PowerId,
+        amount: i32,
+        instance_id: Option<u32>,
+        extra_data: Option<i32>,
+    },
+    ReducePower {
+        target: EntityId,
+        power_id: crate::content::powers::PowerId,
+        amount: i32,
+    },
+    ReducePowerInstance {
+        target: EntityId,
+        power_id: crate::content::powers::PowerId,
+        instance_id: u32,
+        amount: i32,
+    },
     RemovePower {
         target: EntityId,
         power_id: crate::content::powers::PowerId,
+    },
+    RemovePowerInstance {
+        target: EntityId,
+        power_id: crate::content::powers::PowerId,
+        instance_id: u32,
     },
     RemoveAllDebuffs {
         target: EntityId,
@@ -174,6 +231,12 @@ pub enum Action {
     UpdatePowerExtraData {
         target: EntityId,
         power_id: crate::combat::PowerId,
+        value: i32,
+    },
+    UpdatePowerExtraDataInstance {
+        target: EntityId,
+        power_id: crate::combat::PowerId,
+        instance_id: u32,
         value: i32,
     },
     MakeTempCardInHand {
@@ -202,13 +265,26 @@ pub enum Action {
         card_type: Option<crate::content::cards::CardType>,
         cost_for_turn: Option<u8>,
     },
-    MakeRandomColorlessCardInHand {
-        rarity: crate::content::cards::CardRarity,
+    MakeRandomCardInDrawPile {
+        card_type: Option<crate::content::cards::CardType>,
         cost_for_turn: Option<u8>,
+        random_spot: bool,
+    },
+    DrawPileToHandByType {
+        amount: u8,
+        card_type: crate::content::cards::CardType,
+    },
+    MakeRandomColorlessCardInHand {
+        cost_for_turn: Option<u8>,
+        upgraded: bool,
     },
     ReduceAllHandCosts {
         amount: u8,
     },
+    Enlightenment {
+        permanent: bool,
+    },
+    Madness,
     RandomizeHandCosts,
     UpgradeAllInHand,
     /// Hexaghost's BurnIncreaseAction: upgrades all Burn cards in draw pile and discard pile.
@@ -235,6 +311,10 @@ pub enum Action {
     /// Java PlayTopCardAction with random target selection via cardRandomRng.
     /// Used by DistilledChaosPotion and similar.
     ModifyCardMisc {
+        card_uuid: u32,
+        amount: i32,
+    },
+    ModifyCardDamage {
         card_uuid: u32,
         amount: i32,
     },
@@ -271,6 +351,7 @@ pub enum Action {
         current_hp: i32,
         max_hp: i32,
         logical_position: i32,
+        protocol_draw_x: Option<i32>,
         is_minion: bool,
     },
     SpawnMonsterSmart {
@@ -278,6 +359,7 @@ pub enum Action {
         logical_position: i32,
         current_hp: i32,
         max_hp: i32,
+        protocol_draw_x: Option<i32>,
         is_minion: bool,
     },
     SpawnEncounter {

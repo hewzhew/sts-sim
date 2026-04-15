@@ -1,4 +1,5 @@
 use crate::state::core::{ClientInput, EngineState};
+use crate::state::selection::DomainEventSource;
 
 pub fn handle(
     run_state: &mut crate::state::run::RunState,
@@ -9,18 +10,22 @@ pub fn handle(
         match in_val {
             ClientInput::BuyCard(idx) => {
                 if idx < shop.cards.len() && run_state.gold >= shop.cards[idx].price {
-                    run_state.gold -= shop.cards[idx].price;
+                    run_state
+                        .change_gold_with_source(-shop.cards[idx].price, DomainEventSource::Shop);
                     let c = shop.cards.remove(idx);
                     run_state.add_card_to_deck(c.card_id);
                 }
             }
             ClientInput::BuyRelic(idx) => {
                 if idx < shop.relics.len() && run_state.gold >= shop.relics[idx].price {
-                    run_state.gold -= shop.relics[idx].price;
+                    run_state
+                        .change_gold_with_source(-shop.relics[idx].price, DomainEventSource::Shop);
                     let r = shop.relics.remove(idx);
-                    if let Some(next_state) =
-                        run_state.obtain_relic(r.relic_id, EngineState::Shop(shop.clone()))
-                    {
+                    if let Some(next_state) = run_state.obtain_relic_with_source(
+                        r.relic_id,
+                        EngineState::Shop(shop.clone()),
+                        DomainEventSource::Shop,
+                    ) {
                         return Some(next_state);
                     }
                 }
@@ -34,13 +39,19 @@ pub fn handle(
                         .any(|r| r.id == crate::content::relics::RelicId::Sozu)
                     {
                         // Sozu prevents potion acquisition — do nothing
-                    } else if let Some(empty_slot) =
-                        run_state.potions.iter().position(|p| p.is_none())
-                    {
-                        run_state.gold -= shop.potions[idx].price;
+                    } else if let Some(empty_slot) = run_state.find_empty_potion_slot() {
+                        run_state.change_gold_with_source(
+                            -shop.potions[idx].price,
+                            DomainEventSource::Shop,
+                        );
                         let bought = shop.potions.remove(idx);
-                        run_state.potions[empty_slot] =
-                            Some(crate::content::potions::Potion::new(bought.potion_id, 0));
+                        run_state.obtain_potion_with_source(
+                            crate::content::potions::Potion::new(
+                                bought.potion_id,
+                                empty_slot as u32,
+                            ),
+                            DomainEventSource::Shop,
+                        );
                     }
                     // If no empty slot, purchase fails silently (matches Java behavior)
                 }
@@ -49,7 +60,8 @@ pub fn handle(
                 if shop.purge_available && run_state.gold >= shop.purge_cost {
                     if idx < run_state.master_deck.len() {
                         let uuid = run_state.master_deck[idx].uuid;
-                        run_state.gold -= shop.purge_cost;
+                        run_state
+                            .change_gold_with_source(-shop.purge_cost, DomainEventSource::Shop);
                         shop.purge_available = false;
                         run_state.remove_card_from_deck(uuid);
                         run_state.shop_purge_count += 1;

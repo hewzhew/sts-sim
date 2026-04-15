@@ -2,10 +2,35 @@ use crate::action::{Action, ActionInfo};
 use crate::combat::{CombatPhase, CombatState};
 use crate::content::powers::store;
 use crate::state::core::{ClientInput, EngineState, PendingChoice, RunResult};
+use crate::state::selection::{EngineDiagnostic, EngineDiagnosticClass, EngineDiagnosticSeverity};
 use smallvec::SmallVec;
+use std::cell::Cell;
 
 use super::pending_choices;
 use super::targeting;
+
+thread_local! {
+    static SUPPRESS_ENGINE_WARNINGS_DEPTH: Cell<usize> = const { Cell::new(0) };
+}
+
+fn engine_warnings_enabled() -> bool {
+    SUPPRESS_ENGINE_WARNINGS_DEPTH.with(|depth| depth.get() == 0)
+}
+
+fn record_engine_diagnostic(combat_state: &mut CombatState, diagnostic: EngineDiagnostic) {
+    if engine_warnings_enabled() {
+        combat_state.emit_diagnostic(diagnostic);
+    }
+}
+
+pub(crate) fn with_suppressed_engine_warnings<T>(f: impl FnOnce() -> T) -> T {
+    SUPPRESS_ENGINE_WARNINGS_DEPTH.with(|depth| {
+        depth.set(depth.get() + 1);
+        let result = f();
+        depth.set(depth.get().saturating_sub(1));
+        result
+    })
+}
 
 fn compute_player_turn_start_draw_count(combat_state: &CombatState) -> i32 {
     let mut draw_count: i32 = 5 + combat_state.turn.turn_start_draw_modifier;
@@ -17,6 +42,26 @@ fn compute_player_turn_start_draw_count(combat_state: &CombatState) -> i32 {
         draw_count += 2;
     }
     draw_count
+}
+
+fn resolve_victory_hooks_immediately(combat_state: &mut CombatState) {
+    let actions = crate::content::relics::hooks::on_victory(combat_state);
+    if actions.is_empty() {
+        return;
+    }
+
+    queue_actions(&mut combat_state.engine.action_queue, actions);
+    while let Some(action) = combat_state.engine.action_queue.pop_front() {
+        crate::engine::action_handlers::execute_action(action, combat_state);
+        if combat_state.engine.action_queue.is_empty()
+            && !combat_state.zones.queued_cards.is_empty()
+        {
+            combat_state
+                .engine
+                .action_queue
+                .push_back(Action::FlushNextQueuedCard);
+        }
+    }
 }
 
 pub fn tick_engine(
@@ -81,9 +126,24 @@ pub fn tick_engine(
                     let candidate_uuids = hand_select_candidates(combat_state, filter);
                     let available = candidate_uuids.len() as u8;
                     if available == 0 {
-                        eprintln!(
-                            "WARNING: Auto-skipping empty hand select for {:?} with filter {:?} (requested min={}, max={})",
-                            reason, filter, min, max
+                        record_engine_diagnostic(
+                            combat_state,
+                            EngineDiagnostic {
+                                severity: if min == 0 {
+                                    EngineDiagnosticSeverity::Info
+                                } else {
+                                    EngineDiagnosticSeverity::Error
+                                },
+                                class: if min == 0 {
+                                    EngineDiagnosticClass::Normalization
+                                } else {
+                                    EngineDiagnosticClass::Broken
+                                },
+                                message: format!(
+                                    "auto-skipped empty hand select for {:?} with filter {:?} (requested min={}, max={})",
+                                    reason, filter, min, max
+                                ),
+                            },
                         );
                         return true;
                     }
@@ -105,9 +165,24 @@ pub fn tick_engine(
                     let min_cards = min.min(available);
                     let max_cards = max.min(available);
                     if min_cards != min || max_cards != max {
-                        eprintln!(
-                            "WARNING: Clamping hand select for {:?} with filter {:?} from min/max {}/{} to {}/{} because only {} candidates remain",
-                            reason, filter, min, max, min_cards, max_cards, available
+                        record_engine_diagnostic(
+                            combat_state,
+                            EngineDiagnostic {
+                                severity: if min > available {
+                                    EngineDiagnosticSeverity::Warning
+                                } else {
+                                    EngineDiagnosticSeverity::Info
+                                },
+                                class: if min > available {
+                                    EngineDiagnosticClass::Suspicious
+                                } else {
+                                    EngineDiagnosticClass::Normalization
+                                },
+                                message: format!(
+                                    "normalized hand select for {:?} with filter {:?} from min/max {}/{} to {}/{} because only {} candidates remain",
+                                    reason, filter, min, max, min_cards, max_cards, available
+                                ),
+                            },
                         );
                     }
 
@@ -132,9 +207,24 @@ pub fn tick_engine(
                     let candidate_uuids = grid_select_candidates(combat_state, source_pile, filter);
                     let available = candidate_uuids.len() as u8;
                     if available == 0 {
-                        eprintln!(
-                            "WARNING: Auto-skipping empty grid select for {:?} on {:?} with filter {:?} (requested min={}, max={})",
-                            reason, source_pile, filter, min, max
+                        record_engine_diagnostic(
+                            combat_state,
+                            EngineDiagnostic {
+                                severity: if min == 0 {
+                                    EngineDiagnosticSeverity::Info
+                                } else {
+                                    EngineDiagnosticSeverity::Error
+                                },
+                                class: if min == 0 {
+                                    EngineDiagnosticClass::Normalization
+                                } else {
+                                    EngineDiagnosticClass::Broken
+                                },
+                                message: format!(
+                                    "auto-skipped empty grid select for {:?} on {:?} with filter {:?} (requested min={}, max={})",
+                                    reason, source_pile, filter, min, max
+                                ),
+                            },
                         );
                         return true;
                     }
@@ -157,9 +247,24 @@ pub fn tick_engine(
                     let min_cards = min.min(available);
                     let max_cards = max.min(available);
                     if min_cards != min || max_cards != max {
-                        eprintln!(
-                            "WARNING: Clamping grid select for {:?} on {:?} with filter {:?} from min/max {}/{} to {}/{} because only {} candidates remain",
-                            reason, source_pile, filter, min, max, min_cards, max_cards, available
+                        record_engine_diagnostic(
+                            combat_state,
+                            EngineDiagnostic {
+                                severity: if min > available {
+                                    EngineDiagnosticSeverity::Warning
+                                } else {
+                                    EngineDiagnosticSeverity::Info
+                                },
+                                class: if min > available {
+                                    EngineDiagnosticClass::Suspicious
+                                } else {
+                                    EngineDiagnosticClass::Normalization
+                                },
+                                message: format!(
+                                    "normalized grid select for {:?} on {:?} with filter {:?} from min/max {}/{} to {}/{} because only {} candidates remain",
+                                    reason, source_pile, filter, min, max, min_cards, max_cards, available
+                                ),
+                            },
                         );
                     }
 
@@ -175,33 +280,32 @@ pub fn tick_engine(
                     return true;
                 }
                 Action::SuspendForDiscovery {
+                    colorless,
                     card_type,
                     cost_for_turn,
                 } => {
                     // Generate 3 unique random cards from pool, filtered by card_type
-                    // Java: DiscoveryAction.generateCardChoices(type) -> 3 unique cards.
-                    let mut pool: Vec<crate::content::cards::CardId> = Vec::new();
-                    let is_colorless = card_type.is_none();
-                    for &rarity in &[
-                        crate::content::cards::CardRarity::Common,
-                        crate::content::cards::CardRarity::Uncommon,
-                        crate::content::cards::CardRarity::Rare,
-                    ] {
-                        let current_pool = if is_colorless {
-                            crate::content::cards::colorless_pool_for_rarity(rarity)
-                        } else {
-                            crate::content::cards::ironclad_pool_for_rarity(rarity)
-                        };
-
-                        for &id in current_pool {
-                            if let Some(ct) = card_type {
-                                let def = crate::content::cards::get_card_definition(id);
-                                if def.card_type != ct {
-                                    continue;
-                                }
-                            }
-                            pool.push(id);
+                    // Java: DiscoveryAction.generateCardChoices(type) or
+                    // generateColorlessCardChoices() -> 3 unique cards.
+                    let mut pool: Vec<crate::content::cards::CardId> = if colorless {
+                        combat_state.colorless_combat_pool()
+                    } else {
+                        let mut class_pool = Vec::new();
+                        for &rarity in &[
+                            crate::content::cards::CardRarity::Common,
+                            crate::content::cards::CardRarity::Uncommon,
+                            crate::content::cards::CardRarity::Rare,
+                        ] {
+                            class_pool
+                                .extend(crate::content::cards::ironclad_pool_for_rarity(rarity));
                         }
+                        class_pool
+                    };
+
+                    if let Some(ct) = card_type {
+                        pool.retain(|&id| {
+                            crate::content::cards::get_card_definition(id).card_type == ct
+                        });
                     }
                     let mut cards = Vec::new();
                     while cards.len() < 3 && !pool.is_empty() {
@@ -287,15 +391,21 @@ pub fn tick_engine(
                 }
 
                 Action::FleeCombat => {
-                    // Escape combat immediately (SmokeBomb). No rewards.
-                    // Java: marks current room as smoked, sets player.isEscaping = true, then combat loop exits.
-                    // Returning false from tick_engine ends combat execution.
-                    *engine_state = EngineState::MapNavigation;
-                    return false;
+                    // Java SmokeBomb does not instantly jump to rewards. It flips the
+                    // room/player into an escaping state, then the combat UI lingers
+                    // through end-of-turn processing before rewards appear.
+                    combat_state.turn.counters.player_escaping = true;
+                    combat_state.turn.counters.escape_pending_reward = false;
+                    return true;
                 }
                 _ => {
                     super::action_handlers::execute_action(next_action, combat_state);
                 }
+            }
+            if combat_state.entities.player.current_hp <= 0 {
+                combat_state.engine.action_queue.clear();
+                *engine_state = EngineState::GameOver(RunResult::Defeat);
+                return false;
             }
             if matches!(engine_state, EngineState::PendingChoice(_)) {
                 return true;
@@ -328,8 +438,34 @@ pub fn tick_engine(
                                 discarded.push(card);
                             }
                         }
+                        // Java end-of-turn discard repeatedly removes hand.getTopCard(),
+                        // so the surviving non-retained hand is discarded from top to bottom.
+                        discarded.reverse();
                         combat_state.zones.discard_pile.extend(discarded);
                         combat_state.zones.hand = retained;
+                    }
+
+                    // Smoke Bomb escape path: Java leaves an intermediate combat
+                    // snapshot after end-of-turn effects and discarding, but before
+                    // any monster actions or player turn refresh. Emit that state
+                    // first, then finish escaping on the following tick.
+                    if combat_state.turn.counters.player_escaping {
+                        if !combat_state.turn.counters.victory_triggered {
+                            combat_state.turn.counters.victory_triggered = true;
+                            resolve_victory_hooks_immediately(combat_state);
+                            combat_state.turn.counters.escape_pending_reward = true;
+                            *engine_state = EngineState::CombatProcessing;
+                            return true;
+                        }
+                        if combat_state.turn.counters.escape_pending_reward {
+                            *engine_state = EngineState::RewardScreen(
+                                crate::rewards::state::RewardState::new(),
+                            );
+                            return false;
+                        }
+                        combat_state.turn.counters.escape_pending_reward = true;
+                        *engine_state = EngineState::CombatProcessing;
+                        return true;
                     }
 
                     // 1.5 === MONSTER PRE-TURN LOGIC ===
@@ -439,10 +575,9 @@ pub fn tick_engine(
                             &crate::content::powers::store::powers_snapshot_for(combat_state, *mid)
                         {
                             let hook_actions = crate::content::powers::resolve_power_at_end_of_turn(
-                                power.power_type,
+                                power,
                                 combat_state,
                                 *mid,
-                                power.amount,
                             );
                             for a in hook_actions {
                                 combat_state.engine.action_queue.push_back(a);
@@ -555,11 +690,10 @@ pub fn tick_engine(
                     // 7. Reset per-turn counters
                     combat_state.turn.counters.cards_played_this_turn = 0;
                     combat_state.turn.counters.attacks_played_this_turn = 0;
-                    // Reset per-turn relic counters (OrangePellets, Pocketwatch)
+                    // Reset per-turn relic counters (OrangePellets)
                     for relic in combat_state.entities.player.relics.iter_mut() {
                         match relic.id {
                             crate::content::relics::RelicId::OrangePellets => relic.counter = 0,
-                            crate::content::relics::RelicId::Pocketwatch => relic.counter = 0,
                             _ => {}
                         }
                     }
@@ -661,6 +795,7 @@ pub fn tick_engine(
     }) {
         if !combat_state.turn.counters.victory_triggered {
             combat_state.turn.counters.victory_triggered = true;
+            resolve_victory_hooks_immediately(combat_state);
         }
 
         // Java does not cut off queued onUseCard / onDeath aftermath when the last monster dies.
@@ -685,187 +820,12 @@ fn handle_player_turn_input(
     cmd: ClientInput,
 ) -> Result<(), &'static str> {
     match cmd {
-        ClientInput::PlayCard {
-            card_index,
-            mut target,
-        } => {
-            // 1. Validate card in hand
-            if card_index >= combat_state.zones.hand.len() {
-                return Err("Card index out of range");
-            }
-
-            // VelvetChoker: cannot play more than 6 cards per turn (Java: canPlay returns false if counter >= 6)
-            if combat_state
-                .entities
-                .player
-                .has_relic(crate::content::relics::RelicId::VelvetChoker)
-                && combat_state.turn.counters.cards_played_this_turn >= 6
-            {
-                return Err("VelvetChoker: card play limit reached (6)");
-            }
-
-            let card = &combat_state.zones.hand[card_index];
-            let card_id = card.id;
-            let _card_uuid = card.uuid;
-            let def = crate::content::cards::get_card_definition(card_id);
-
-            // 1.2 Card-Specific Play Conditions (Clash, Normality, etc.)
-            crate::content::cards::can_play_card(card, combat_state)?;
-
-            target = targeting::resolve_target_request(
-                combat_state,
-                targeting::validation_for_card_target(def.target),
+        ClientInput::PlayCard { card_index, target } => {
+            crate::engine::action_handlers::cards::handle_play_card_from_hand(
+                card_index,
                 target,
-            )?;
-
-            // 2. Compute effective cost
-            let effective_cost = if card.free_to_play_once {
-                0
-            } else if let Some(cft) = card.cost_for_turn {
-                cft as i32
-            } else {
-                (def.cost as i32 + card.cost_modifier as i32).max(0)
-            };
-
-            // X-cost cards: cost = all remaining energy (Java: cost == -1)
-            let is_x_cost = def.cost == -1;
-            let energy_to_spend = if is_x_cost {
-                combat_state.turn.energy as i32
-            } else {
-                effective_cost
-            };
-
-            // 3. Energy check (skip for X-cost, they spend whatever is available)
-            if !is_x_cost && energy_to_spend > combat_state.turn.energy as i32 {
-                return Err("Not enough energy");
-            }
-
-            // 4. Spend energy
-            combat_state.turn.energy =
-                (combat_state.turn.energy as i32 - energy_to_spend).max(0) as u8;
-
-            // 5. Store energy_on_use for X-cost cards (e.g. Whirlwind)
-            let card_mut = &mut combat_state.zones.hand[card_index];
-            if is_x_cost {
-                card_mut.energy_on_use = energy_to_spend;
-            }
-
-            // 5b. Re-evaluate card with target so Vulnerable/etc apply to base_damage_mut
-            {
-                let mut card_copy = combat_state.zones.hand[card_index].clone();
-                crate::content::cards::evaluate_card(&mut card_copy, combat_state, target);
-                combat_state.zones.hand[card_index] = card_copy;
-            }
-
-            // 6. Remove card from hand
-            let mut played_card = combat_state.zones.hand.remove(card_index);
-
-            // 7. Generate card play actions
-            let card_actions = crate::content::cards::resolve_card_play(
-                card_id,
                 combat_state,
-                &played_card,
-                target,
-            );
-            queue_actions(&mut combat_state.engine.action_queue, card_actions);
-
-            // 8. on_use_card relic hooks (Kunai, Nunchaku, PenNib, etc.)
-            let relic_actions =
-                crate::content::relics::hooks::on_use_card(combat_state, &played_card, target);
-            queue_actions(&mut combat_state.engine.action_queue, relic_actions);
-
-            // 8b. on_card_played power hooks for ALL creatures (Java: UseCardAction triggers onUseCard)
-            // This dispatches powers like Sharp Hide (Guardian), Anger, Hex on monsters,
-            // and any player powers that respond to card plays.
-            for entity_id in
-                std::iter::once(0usize).chain(combat_state.entities.monsters.iter().map(|m| m.id))
-            {
-                for power in
-                    &crate::content::powers::store::powers_snapshot_for(combat_state, entity_id)
-                {
-                    let hook_actions = crate::content::powers::resolve_power_on_card_played(
-                        power.power_type,
-                        combat_state,
-                        entity_id,
-                        &played_card,
-                        power.amount,
-                    );
-                    for a in hook_actions {
-                        combat_state.engine.action_queue.push_back(a);
-                    }
-                }
-            }
-
-            // 8c. on_use_card power hooks that need &mut state (DoubleTap, DuplicationPower, Corruption)
-            // These powers clone/modify cards directly, requiring mutable access.
-            {
-                let player_powers =
-                    crate::content::powers::store::powers_snapshot_for(combat_state, 0);
-                let mut exhaust_override = false;
-                for power in &player_powers {
-                    use crate::content::powers::PowerId;
-                    match power.power_type {
-                        PowerId::DoubleTap
-                        | PowerId::DuplicationPower
-                        | PowerId::Burst
-                        | PowerId::Corruption
-                        | PowerId::PenNibPower
-                        | PowerId::Vigor => {
-                            crate::content::powers::resolve_power_on_use_card(
-                                power.power_type,
-                                combat_state,
-                                &played_card,
-                                &mut exhaust_override,
-                                false,
-                                target,
-                            );
-                        }
-                        _ => {}
-                    }
-                }
-                if exhaust_override {
-                    // Corruption forces skills to exhaust
-                    played_card.exhaust_override = Some(true);
-                }
-            }
-
-            // 9. Update counters
-            combat_state.turn.counters.cards_played_this_turn += 1;
-            if def.card_type == crate::content::cards::CardType::Attack {
-                combat_state.turn.counters.attacks_played_this_turn += 1;
-            }
-
-            // 10. Determine exhaust/discard, but DEFER the actual card-to-pile move
-            //     Java's UseCardAction moves the card AFTER all sub-actions complete.
-            //     If we move it now, DrawCards shuffle would sweep it from discard to draw.
-            let mut should_exhaust = played_card
-                .exhaust_override
-                .unwrap_or(crate::content::cards::exhausts_when_played(&played_card))
-                // MedicalKit: Status cards exhaust when played
-                || (def.card_type == crate::content::cards::CardType::Status
-                    && combat_state.entities.player.has_relic(crate::content::relics::RelicId::MedicalKit))
-                // BlueCandle: Curses exhaust when played
-                || (def.card_type == crate::content::cards::CardType::Curse
-                    && combat_state.entities.player.has_relic(crate::content::relics::RelicId::BlueCandle));
-            // Corruption power: Skill cards exhaust when played
-            crate::content::cards::ironclad::corruption::corruption_on_use_card(
-                combat_state,
-                &played_card,
-                &mut should_exhaust,
-            );
-            if def.card_type == crate::content::cards::CardType::Power {
-                // Power cards are purged after play (removed from game)
-                // Card is dropped and not added to any pile or limbo.
-            } else {
-                // Hold card in limbo until UseCardDone fires
-                combat_state.zones.limbo.push(played_card);
-                combat_state
-                    .engine
-                    .action_queue
-                    .push_back(Action::UseCardDone { should_exhaust });
-            }
-
-            Ok(())
+            )
         }
 
         ClientInput::UsePotion {
@@ -1260,7 +1220,14 @@ pub fn tick_until_stable_turn(
         }
         iterations += 1;
         if iterations > 1000 {
-            eprintln!("  WARNING: tick loop exceeded 1000 iterations");
+            record_engine_diagnostic(
+                cs,
+                EngineDiagnostic {
+                    severity: EngineDiagnosticSeverity::Warning,
+                    class: EngineDiagnosticClass::Suspicious,
+                    message: "tick loop exceeded 1000 iterations".to_string(),
+                },
+            );
             break;
         }
     }

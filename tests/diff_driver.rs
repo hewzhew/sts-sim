@@ -6,12 +6,13 @@
 //! Usage: cargo test diff_driver -- --nocapture
 
 use serde_json::Value;
-use sts_simulator::diff::replay_support::{continue_deferred_pending_choice, tick_until_stable};
-use sts_simulator::state::core::{ClientInput, EngineState};
-
-use sts_simulator::diff::comparator::compare_states;
-use sts_simulator::diff::parser::parse_replay;
+use sts_simulator::diff::protocol::parser::parse_replay;
+use sts_simulator::diff::replay::comparator::compare_states;
+use sts_simulator::diff::replay::replay_support::{
+    continue_deferred_pending_choice, tick_until_stable,
+};
 use sts_simulator::diff::state_sync::{build_combat_state, sync_state};
+use sts_simulator::state::core::{ClientInput, EngineState};
 
 // ============================================================================
 // Tests
@@ -140,7 +141,7 @@ fn test_diff_all_combats() {
             };
 
             // Compare with Java result (skip pile sizes for end_turn since RNG not synced)
-            let mut context = sts_simulator::diff::comparator::ActionContext {
+            let mut context = sts_simulator::diff::replay::comparator::ActionContext {
                 last_command: card_name.clone(),
                 was_end_turn: is_end_turn,
                 has_rng_state: action.result.get("rng_state").is_some(),
@@ -345,7 +346,7 @@ fn test_diff_rng_replay() {
                 EngineState::PendingChoice(choice) => Some(choice.clone()),
                 _ => None,
             };
-            let mut context = sts_simulator::diff::comparator::ActionContext {
+            let mut context = sts_simulator::diff::replay::comparator::ActionContext {
                 last_command: card_name.clone(),
                 was_end_turn: is_end_turn,
                 has_rng_state: action.result.get("rng_state").is_some(),
@@ -567,7 +568,7 @@ fn test_diff_all_v2_replays() {
                     EngineState::PendingChoice(choice) => Some(choice.clone()),
                     _ => None,
                 };
-                let mut context = sts_simulator::diff::comparator::ActionContext {
+                let mut context = sts_simulator::diff::replay::comparator::ActionContext {
                     last_command: card_name.clone(),
                     was_end_turn: is_end_turn,
                     has_rng_state: action.result.get("rng_state").is_some(),

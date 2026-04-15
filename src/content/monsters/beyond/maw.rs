@@ -57,6 +57,10 @@ impl MonsterBehavior for Maw {
 
         let terrify_dur = if asc >= 17 { 5 } else { 3 };
         let str_up = if asc >= 17 { 5 } else { 3 };
+        let (intent_damage, intent_hits) = match entity.current_intent {
+            Intent::Attack { damage, hits } => (damage, hits),
+            _ => (entity.intent_dmg.max(0), 1),
+        };
 
         match entity.next_move_byte {
             2 => {
@@ -76,7 +80,7 @@ impl MonsterBehavior for Maw {
             }
             3 => {
                 // SLAM
-                let dmg = if asc >= 2 { 30 } else { 25 };
+                let dmg = intent_damage.max(if asc >= 2 { 30 } else { 25 });
                 actions.push(Action::Damage(DamageInfo {
                     source: entity.id,
                     target: 0,
@@ -97,18 +101,14 @@ impl MonsterBehavior for Maw {
             }
             5 => {
                 // NOMNOMNOM
-                let turn_count = (entity.move_history.len() as i32) + 1; // +1 since move already added during sequence
-                let hits = if (turn_count / 2) <= 1 {
-                    1
-                } else {
-                    turn_count / 2
-                } as u8;
+                let hits = intent_hits.max(1);
+                let damage = intent_damage.max(5);
                 for _ in 0..hits {
                     actions.push(Action::Damage(DamageInfo {
                         source: entity.id,
                         target: 0,
-                        base: 5,
-                        output: 5,
+                        base: damage,
+                        output: damage,
                         damage_type: DamageType::Normal,
                         is_modified: false,
                     }));
@@ -121,5 +121,35 @@ impl MonsterBehavior for Maw {
             monster_id: entity.id,
         });
         actions
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::combat::MonsterEntity;
+    use crate::content::test_support::basic_combat;
+
+    #[test]
+    fn nomnomnom_uses_locked_intent_damage_and_hits() {
+        let mut combat = basic_combat();
+        let entity = MonsterEntity {
+            current_intent: Intent::Attack { damage: 6, hits: 3 },
+            next_move_byte: 5,
+            intent_dmg: 6,
+            ..combat.entities.monsters[0].clone()
+        };
+
+        let actions = Maw::take_turn(&mut combat, &entity);
+
+        let damage_actions = actions
+            .iter()
+            .filter_map(|action| match action {
+                Action::Damage(info) => Some((info.base, info.output)),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(damage_actions, vec![(6, 6), (6, 6), (6, 6)]);
     }
 }

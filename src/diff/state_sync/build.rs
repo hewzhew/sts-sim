@@ -2,20 +2,21 @@ use serde_json::Value;
 use std::collections::{HashMap, VecDeque};
 
 use crate::combat::{
-    CombatCard, CombatMeta, CombatPhase, CombatRng, CombatState, EngineRuntime, EphemeralCounters,
-    MonsterEntity, PlayerEntity, Power, RelicBuses, TurnRuntime,
+    CombatCard, CombatMeta, CombatPhase, CombatRng, CombatRuntimeHints, CombatState, EngineRuntime,
+    EphemeralCounters, MonsterEntity, PlayerEntity, Power, QueuedCardHint, RelicBuses, TurnRuntime,
 };
 use crate::content::cards::CardId;
 use crate::content::relics::{RelicId, RelicState};
 use crate::rng::RngPool;
 
-use super::super::mapper::{
+use crate::diff::protocol::mapper::{
     card_id_from_java, intent_from_java, java_potion_id_to_rust, monster_id_from_java,
-    power_id_from_java, relic_id_from_java,
+    power_id_from_java, power_instance_id_from_java, relic_id_from_java,
 };
 use super::internal_state::{
     initialize_power_internal_state_from_snapshot, initialize_relic_runtime_state,
-    seed_monster_internal_state_from_snapshot,
+    seed_monster_internal_state_from_snapshot, snapshot_runtime_amount_for_relic,
+    snapshot_runtime_counter_for_relic, snapshot_runtime_used_up_for_relic,
 };
 
 pub(crate) fn seed_hexaghost_runtime_from_snapshot(monster: &Value, entity: &mut MonsterEntity) {
@@ -25,27 +26,18 @@ pub(crate) fn seed_hexaghost_runtime_from_snapshot(monster: &Value, entity: &mut
 
     if let Some(value) = monster.get("hexaghost_activated").and_then(|v| v.as_bool()) {
         entity.hexaghost.activated = value;
-    } else {
-        entity.hexaghost.activated =
-            monster.get("move_id").and_then(|v| v.as_u64()).unwrap_or(0) != 0;
     }
-
     if let Some(value) = monster
         .get("hexaghost_orb_active_count")
         .and_then(|v| v.as_u64())
     {
         entity.hexaghost.orb_active_count = value as u8;
-    } else {
-        entity.hexaghost.orb_active_count = infer_hexaghost_orb_active_count(monster);
     }
-
     if let Some(value) = monster
         .get("hexaghost_burn_upgraded")
         .and_then(|v| v.as_bool())
     {
         entity.hexaghost.burn_upgraded = value;
-    } else {
-        entity.hexaghost.burn_upgraded = infer_hexaghost_burn_upgraded(monster);
     }
 }
 
@@ -54,33 +46,46 @@ pub(crate) fn seed_darkling_runtime_from_snapshot(monster: &Value, entity: &mut 
         return;
     }
 
-    let current_move_id = monster.get("move_id").and_then(|v| v.as_u64()).unwrap_or(0) as u8;
-    let last_move_id = monster
-        .get("last_move_id")
-        .and_then(|v| v.as_u64())
-        .unwrap_or(0) as u8;
-    let second_last_move_id = monster
-        .get("second_last_move_id")
-        .and_then(|v| v.as_u64())
-        .unwrap_or(0) as u8;
-
-    entity.darkling.first_move = current_move_id == 0 && last_move_id == 0 && second_last_move_id == 0;
-
+    if let Some(value) = monster.get("darkling_first_move").and_then(|v| v.as_bool()) {
+        entity.darkling.first_move = value;
+    }
     if let Some(value) = monster.get("darkling_nip_dmg").and_then(|v| v.as_i64()) {
         entity.darkling.nip_dmg = value as i32;
+    }
+}
+
+pub(crate) fn seed_chosen_runtime_from_snapshot(monster: &Value, entity: &mut MonsterEntity) {
+    if entity.monster_type != crate::content::monsters::EnemyId::Chosen as usize {
         return;
     }
 
-    if current_move_id == 3 {
-        let adjusted = monster
-            .get("move_adjusted_damage")
-            .and_then(|v| v.as_i64())
-            .unwrap_or(0) as i32;
-        let base = monster
-            .get("move_base_damage")
-            .and_then(|v| v.as_i64())
-            .unwrap_or(0) as i32;
-        entity.darkling.nip_dmg = adjusted.max(base);
+    let mut seeded = false;
+    if let Some(value) = monster.get("chosen_first_turn").and_then(|v| v.as_bool()) {
+        seeded = true;
+        entity.chosen.first_turn = value;
+    }
+    if let Some(value) = monster.get("chosen_used_hex").and_then(|v| v.as_bool()) {
+        seeded = true;
+        entity.chosen.used_hex = value;
+    }
+    if seeded {
+        entity.chosen.protocol_seeded = true;
+    }
+}
+
+pub(crate) fn seed_lagavulin_runtime_from_snapshot(monster: &Value, entity: &mut MonsterEntity) {
+    if entity.monster_type != crate::content::monsters::EnemyId::Lagavulin as usize {
+        return;
+    }
+
+    if let Some(value) = monster.get("lagavulin_idle_count").and_then(|v| v.as_u64()) {
+        entity.lagavulin.idle_count = value as u8;
+    }
+    if let Some(value) = monster
+        .get("lagavulin_is_out_triggered")
+        .and_then(|v| v.as_bool())
+    {
+        entity.lagavulin.is_out_triggered = value;
     }
 }
 
@@ -112,52 +117,6 @@ pub(crate) fn seed_move_history_from_snapshot(monster: &Value, entity: &mut Mons
     if current_move_id != 0 {
         entity.move_history.push_back(current_move_id);
     }
-}
-
-fn infer_hexaghost_orb_active_count(monster: &Value) -> u8 {
-    let move_id = monster.get("move_id").and_then(|v| v.as_u64()).unwrap_or(0) as u8;
-    let last_move_id = monster
-        .get("last_move_id")
-        .and_then(|v| v.as_u64())
-        .unwrap_or(0) as u8;
-    let second_last_move_id = monster
-        .get("second_last_move_id")
-        .and_then(|v| v.as_u64())
-        .unwrap_or(0) as u8;
-
-    match move_id {
-        1 | 6 => 6,
-        3 => 3,
-        5 => 0,
-        2 => {
-            if last_move_id == 3 {
-                4
-            } else {
-                1
-            }
-        }
-        4 => {
-            if last_move_id == 1 || last_move_id == 6 {
-                0
-            } else if last_move_id == 2 && second_last_move_id == 3 {
-                5
-            } else {
-                2
-            }
-        }
-        _ => 0,
-    }
-}
-
-fn infer_hexaghost_burn_upgraded(monster: &Value) -> bool {
-    monster
-        .get("last_move_id")
-        .and_then(|v| v.as_u64())
-        .is_some_and(|v| v == 6)
-        || monster
-            .get("second_last_move_id")
-            .and_then(|v| v.as_u64())
-            .is_some_and(|v| v == 6)
 }
 
 fn stable_u32_from_str(s: &str) -> u32 {
@@ -202,6 +161,42 @@ pub(crate) fn snapshot_monster_is_half_dead(monster: &Value) -> bool {
         || (monster_id == "Darkling" && matches!(move_id, 4 | 5))
 }
 
+fn snapshot_i32(monster: &Value, key: &str) -> Option<i32> {
+    monster
+        .get(key)
+        .and_then(|v| v.as_i64().map(|value| value as i32))
+        .or_else(|| {
+            monster
+                .get(key)
+                .and_then(|v| v.as_f64().map(|value| value.round() as i32))
+        })
+}
+
+pub(crate) fn seed_monster_protocol_identity_from_snapshot(
+    monster: &Value,
+    index: usize,
+    entity: &mut MonsterEntity,
+) {
+    entity.protocol_identity.instance_id =
+        monster.get("monster_instance_id").and_then(|v| v.as_u64());
+    entity.protocol_identity.spawn_order = monster
+        .get("spawn_order")
+        .and_then(|v| v.as_u64())
+        .or(entity.protocol_identity.instance_id);
+    entity.protocol_identity.draw_x = snapshot_i32(monster, "draw_x");
+    entity.protocol_identity.group_index = monster
+        .get("monster_index")
+        .and_then(|v| v.as_u64())
+        .map(|value| value as usize)
+        .or(Some(index));
+
+    if let Some(draw_x) = entity.protocol_identity.draw_x {
+        entity.logical_position = draw_x;
+    } else if entity.logical_position == 0 {
+        entity.logical_position = index as i32;
+    }
+}
+
 pub fn build_pile_from_ids(ids_key: &str, snapshot: &Value, base_uuid: u32) -> Vec<CombatCard> {
     let obj_key = ids_key.replace("_ids", "");
 
@@ -216,6 +211,9 @@ pub fn build_pile_from_ids(ids_key: &str, snapshot: &Value, base_uuid: u32) -> V
                 );
                 card.upgrades = card_val["upgrades"].as_u64().unwrap_or(0) as u8;
                 card.misc_value = card_val["misc"].as_i64().unwrap_or(0) as i32;
+                if let Some(base_damage) = card_val.get("base_damage").and_then(|v| v.as_i64()) {
+                    card.base_damage_override = Some(base_damage as i32);
+                }
                 if let Some(cost) = card_val["cost"].as_i64() {
                     let def = crate::content::cards::get_card_definition(card_id);
                     if cost != def.cost as i64 {
@@ -250,6 +248,145 @@ pub fn build_pile_from_ids(ids_key: &str, snapshot: &Value, base_uuid: u32) -> V
         .collect()
 }
 
+fn build_card_from_snapshot_value(card_val: &Value, fallback_uuid: u32) -> Option<CombatCard> {
+    let id_str = card_val
+        .get("id")
+        .and_then(|v| v.as_str())
+        .unwrap_or("Defend_R");
+    let card_id = card_id_from_java(id_str)?;
+    let mut card = CombatCard::new(
+        card_id,
+        card_val
+            .get("uuid")
+            .map(|uuid| snapshot_uuid(uuid, fallback_uuid))
+            .unwrap_or(fallback_uuid),
+    );
+    card.upgrades = card_val
+        .get("upgrades")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0) as u8;
+    card.misc_value = card_val.get("misc").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
+    if let Some(base_damage) = card_val.get("base_damage").and_then(|v| v.as_i64()) {
+        card.base_damage_override = Some(base_damage as i32);
+    }
+    if let Some(cost) = card_val.get("cost").and_then(|v| v.as_i64()) {
+        let def = crate::content::cards::get_card_definition(card_id);
+        if cost != def.cost as i64 {
+            card.cost_for_turn = Some(cost as u8);
+        }
+    }
+    Some(card)
+}
+
+pub fn build_limbo_from_snapshot(snapshot: &Value) -> Vec<CombatCard> {
+    let mut limbo = Vec::new();
+    let mut next_fallback_uuid = 4500u32;
+
+    let mut collect_from_powers = |powers: &Value| {
+        if let Some(arr) = powers.as_array() {
+            for power in arr {
+                if power.get("id").and_then(|v| v.as_str()) != Some("Stasis") {
+                    continue;
+                }
+                let Some(card_val) = power.get("card") else {
+                    continue;
+                };
+                if let Some(card) = build_card_from_snapshot_value(card_val, next_fallback_uuid) {
+                    if !limbo
+                        .iter()
+                        .any(|existing: &CombatCard| existing.uuid == card.uuid)
+                    {
+                        limbo.push(card);
+                        next_fallback_uuid = next_fallback_uuid.saturating_add(1);
+                    }
+                }
+            }
+        }
+    };
+
+    collect_from_powers(&snapshot["player"]["powers"]);
+    if let Some(monsters) = snapshot.get("monsters").and_then(|v| v.as_array()) {
+        for monster in monsters {
+            collect_from_powers(&monster["powers"]);
+        }
+    }
+
+    limbo
+}
+
+pub(crate) fn build_runtime_hints_from_snapshot(snapshot: &Value) -> CombatRuntimeHints {
+    let using_card = snapshot
+        .get("using_card")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+
+    let colorless_combat_pool = snapshot
+        .get("colorless_combat_pool")
+        .and_then(|v| v.as_array())
+        .map(|cards| {
+            cards
+                .iter()
+                .filter_map(|card| card.get("id").and_then(|v| v.as_str()))
+                .filter_map(card_id_from_java)
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+
+    let card_queue = snapshot
+        .get("card_queue")
+        .and_then(|v| v.as_array())
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(|item| {
+                    let card = item.get("card")?;
+                    let card_id = card.get("id").and_then(|v| v.as_str())?;
+                    let card_id = card_id_from_java(card_id)?;
+                    Some(QueuedCardHint {
+                        card_uuid: snapshot_uuid(&card["uuid"], 0),
+                        card_id,
+                        target_monster_index: item
+                            .get("monster_index")
+                            .and_then(|v| v.as_u64())
+                            .map(|v| v as usize),
+                        energy_on_use: item
+                            .get("energy_on_use")
+                            .and_then(|v| v.as_i64())
+                            .unwrap_or(0) as i32,
+                        ignore_energy_total: item
+                            .get("ignore_energy_total")
+                            .and_then(|v| v.as_bool())
+                            .unwrap_or(false),
+                        autoplay: item
+                            .get("autoplay")
+                            .and_then(|v| v.as_bool())
+                            .unwrap_or(false),
+                        random_target: item
+                            .get("random_target")
+                            .and_then(|v| v.as_bool())
+                            .unwrap_or(false),
+                        is_end_turn_autoplay: item
+                            .get("is_end_turn_autoplay")
+                            .and_then(|v| v.as_bool())
+                            .unwrap_or(false),
+                        purge_on_use: item
+                            .get("purge_on_use")
+                            .and_then(|v| v.as_bool())
+                            .unwrap_or(false),
+                    })
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+
+    CombatRuntimeHints {
+        using_card,
+        card_queue,
+        colorless_combat_pool,
+        ..CombatRuntimeHints::default()
+    }
+}
+
 pub fn build_draw_pile_from_snapshot(snapshot: &Value) -> Vec<CombatCard> {
     let mut pile = build_pile_from_ids("draw_pile_ids", snapshot, 2000);
     // Java combat snapshots serialize draw_pile from bottom to top, while the
@@ -269,6 +406,9 @@ pub fn build_hand_from_snapshot(snapshot: &Value) -> Vec<CombatCard> {
                 CombatCard::new(card_id, snapshot_uuid(&card_val["uuid"], i as u32 + 1000));
             card.upgrades = card_val["upgrades"].as_u64().unwrap_or(0) as u8;
             card.misc_value = card_val["misc"].as_i64().unwrap_or(0) as i32;
+            if let Some(base_damage) = card_val.get("base_damage").and_then(|v| v.as_i64()) {
+                card.base_damage_override = Some(base_damage as i32);
+            }
             if let Some(cost) = card_val["cost"].as_i64() {
                 let def = crate::content::cards::get_card_definition(card_id);
                 if cost != def.cost as i64 {
@@ -289,13 +429,31 @@ pub fn build_powers_from_snapshot(powers_arr: &Value) -> Vec<Power> {
                 let amount = p["amount"].as_i64().unwrap_or(0) as i32;
                 let mut power = Power {
                     power_type: pid,
+                    instance_id: p["id"].as_str().and_then(power_instance_id_from_java),
                     amount,
                     extra_data: 0,
-                    just_applied: false,
+                    just_applied: p
+                        .get("just_applied")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(false),
                 };
                 initialize_power_internal_state_from_snapshot(&mut power, p);
                 powers.push(power);
             }
+        }
+    }
+    powers
+}
+
+pub fn build_powers_from_snapshot_for_owner(
+    owner: crate::core::EntityId,
+    powers_arr: &Value,
+) -> Vec<Power> {
+    let mut powers = build_powers_from_snapshot(powers_arr);
+    for power in &mut powers {
+        if power.power_type == crate::content::powers::PowerId::Ritual {
+            power.extra_data =
+                crate::content::powers::core::ritual::infer_extra_data(owner, power.just_applied);
         }
     }
     powers
@@ -343,6 +501,20 @@ pub fn build_combat_state(snapshot: &Value, relics_val: &Value) -> CombatState {
                     rs.counter = counter as i32;
                     initialize_relic_runtime_state(&mut rs);
                 }
+                if let Some(runtime_counter) = snapshot_runtime_counter_for_relic(relic_id, r) {
+                    rs.counter = runtime_counter;
+                }
+                let snapshot_used_up = r.get("used_up").and_then(|v| v.as_bool());
+                let runtime_used_up = snapshot_runtime_used_up_for_relic(relic_id, r);
+                let runtime_amount = snapshot_runtime_amount_for_relic(relic_id, r);
+                if let Some(runtime_used_up) = runtime_used_up {
+                    rs.used_up = runtime_used_up;
+                } else if let Some(used_up) = snapshot_used_up {
+                    rs.used_up = used_up;
+                }
+                if let Some(runtime_amount) = runtime_amount {
+                    rs.amount = runtime_amount;
+                }
                 player.add_relic(rs);
             }
         }
@@ -366,7 +538,7 @@ pub fn build_combat_state(snapshot: &Value, relics_val: &Value) -> CombatState {
         let intent_str = m["intent"].as_str().unwrap_or("UNKNOWN");
         let half_dead = snapshot_monster_is_half_dead(m);
         let is_gone = m.get("is_gone").and_then(|v| v.as_bool()).unwrap_or(false);
-        monsters.push(MonsterEntity {
+        let mut entity = MonsterEntity {
             id: entity_id,
             monster_type: monster_id_from_java(m["id"].as_str().unwrap_or(""))
                 .map(|e| e as usize)
@@ -385,19 +557,29 @@ pub fn build_combat_state(snapshot: &Value, relics_val: &Value) -> CombatState {
             move_history: VecDeque::new(),
             intent_dmg: m["move_adjusted_damage"].as_i64().unwrap_or(0) as i32,
             logical_position: i as i32,
+            protocol_identity: Default::default(),
             hexaghost: Default::default(),
+            chosen: Default::default(),
             darkling: Default::default(),
-        });
-        seed_move_history_from_snapshot(m, monsters.last_mut().unwrap());
-        seed_hexaghost_runtime_from_snapshot(m, monsters.last_mut().unwrap());
-        seed_darkling_runtime_from_snapshot(m, monsters.last_mut().unwrap());
+            lagavulin: Default::default(),
+        };
+        seed_monster_protocol_identity_from_snapshot(m, i, &mut entity);
+        seed_move_history_from_snapshot(m, &mut entity);
+        seed_hexaghost_runtime_from_snapshot(m, &mut entity);
+        seed_chosen_runtime_from_snapshot(m, &mut entity);
+        seed_darkling_runtime_from_snapshot(m, &mut entity);
+        seed_lagavulin_runtime_from_snapshot(m, &mut entity);
+        monsters.push(entity);
     }
 
     let mut power_db: HashMap<usize, Vec<Power>> = HashMap::new();
-    power_db.insert(0, build_powers_from_snapshot(&player_val["powers"]));
+    power_db.insert(
+        0,
+        build_powers_from_snapshot_for_owner(0, &player_val["powers"]),
+    );
     for (i, m) in monsters_arr.iter().enumerate() {
         let entity_id = i + 1;
-        let mut powers = build_powers_from_snapshot(&m["powers"]);
+        let mut powers = build_powers_from_snapshot_for_owner(entity_id, &m["powers"]);
         seed_monster_internal_state_from_snapshot(monsters[i].monster_type, m, &mut powers);
         if !powers.is_empty() {
             power_db.insert(entity_id, powers);
@@ -460,6 +642,7 @@ pub fn build_combat_state(snapshot: &Value, relics_val: &Value) -> CombatState {
     let mut cs = CombatState {
         meta: CombatMeta {
             ascension_level: 0,
+            player_class: "Ironclad",
             is_boss_fight: snapshot
                 .get("room_type")
                 .map_or(false, |s| s.as_str() == Some("MonsterRoomBoss")),
@@ -480,7 +663,7 @@ pub fn build_combat_state(snapshot: &Value, relics_val: &Value) -> CombatState {
             hand,
             discard_pile,
             exhaust_pile,
-            limbo: vec![],
+            limbo: build_limbo_from_snapshot(snapshot),
             queued_cards: VecDeque::new(),
             card_uuid_counter: 5000,
         },
@@ -494,9 +677,470 @@ pub fn build_combat_state(snapshot: &Value, relics_val: &Value) -> CombatState {
             action_queue: VecDeque::new(),
         },
         rng: CombatRng::new(rng_pool),
+        runtime: build_runtime_hints_from_snapshot(snapshot),
     };
     crate::content::relics::restore_combat_energy_master(&mut cs);
     cs.recompute_turn_start_draw_modifier();
     cs.update_hand_cards();
     cs
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn build_powers_from_snapshot_preserves_the_bomb_instance_and_damage() {
+        let powers = serde_json::json!([
+            {"id": "TheBomb0", "amount": 3, "damage": 40},
+            {"id": "TheBomb17", "amount": 2, "damage": 50}
+        ]);
+
+        let built = build_powers_from_snapshot(&powers);
+
+        assert_eq!(built.len(), 2);
+        assert_eq!(
+            built[0].power_type,
+            crate::content::powers::PowerId::TheBombPower
+        );
+        assert_eq!(built[0].instance_id, Some(0));
+        assert_eq!(built[0].extra_data, 40);
+        assert_eq!(built[1].instance_id, Some(17));
+        assert_eq!(built[1].extra_data, 50);
+    }
+
+    #[test]
+    fn build_powers_from_snapshot_reads_just_applied() {
+        let powers = serde_json::json!([
+            {"id": "Weak", "amount": 2, "just_applied": true}
+        ]);
+
+        let built = build_powers_from_snapshot(&powers);
+
+        assert_eq!(built.len(), 1);
+        assert!(built[0].just_applied);
+    }
+
+    #[test]
+    fn build_powers_from_snapshot_reads_stasis_card_uuid() {
+        let powers = serde_json::json!([
+            {"id": "Stasis", "amount": -1, "card": {"id": "Strike_R", "uuid": "stasis-card"}}
+        ]);
+
+        let built = build_powers_from_snapshot(&powers);
+
+        assert_eq!(built.len(), 1);
+        assert_eq!(built[0].power_type, crate::content::powers::PowerId::Stasis);
+        assert_eq!(
+            built[0].extra_data,
+            snapshot_uuid(&serde_json::json!("stasis-card"), 0) as i32
+        );
+    }
+
+    #[test]
+    fn build_limbo_from_snapshot_reconstructs_stasis_cards() {
+        let snapshot = serde_json::json!({
+            "player": {"powers": []},
+            "monsters": [{
+                "powers": [{
+                    "id": "Stasis",
+                    "amount": -1,
+                    "card": {"id": "Pommel Strike", "uuid": "stasis-pommel", "upgrades": 0, "cost": 1}
+                }]
+            }]
+        });
+
+        let limbo = build_limbo_from_snapshot(&snapshot);
+
+        assert_eq!(limbo.len(), 1);
+        assert_eq!(limbo[0].id, CardId::PommelStrike);
+        assert_eq!(
+            limbo[0].uuid,
+            snapshot_uuid(&serde_json::json!("stasis-pommel"), 4500)
+        );
+    }
+
+    #[test]
+    fn build_powers_from_snapshot_reads_misc_backed_power_extra_data() {
+        let powers = serde_json::json!([
+            {"id": "Malleable", "amount": 5, "misc": 3},
+            {"id": "Flight", "amount": 2, "misc": 10}
+        ]);
+
+        let built = build_powers_from_snapshot(&powers);
+
+        assert_eq!(built.len(), 2);
+        assert_eq!(
+            built[0].power_type,
+            crate::content::powers::PowerId::Malleable
+        );
+        assert_eq!(built[0].extra_data, 3);
+        assert_eq!(built[1].power_type, crate::content::powers::PowerId::Flight);
+        assert_eq!(built[1].extra_data, 10);
+    }
+
+    #[test]
+    fn build_powers_from_snapshot_reads_damage_backed_power_extra_data() {
+        let powers = serde_json::json!([
+            {"id": "Panache", "amount": 5, "damage": 14}
+        ]);
+
+        let built = build_powers_from_snapshot(&powers);
+
+        assert_eq!(built.len(), 1);
+        assert_eq!(
+            built[0].power_type,
+            crate::content::powers::PowerId::PanachePower
+        );
+        assert_eq!(built[0].extra_data, 14);
+    }
+
+    #[test]
+    fn build_powers_from_snapshot_for_player_marks_ritual_player_controlled() {
+        let powers = serde_json::json!([
+            {"id": "Ritual", "amount": 3, "just_applied": true}
+        ]);
+
+        let built = build_powers_from_snapshot_for_owner(0, &powers);
+
+        assert_eq!(built.len(), 1);
+        assert!(built[0].just_applied);
+        assert_eq!(
+            built[0].extra_data,
+            crate::content::powers::core::ritual::extra_data(true, false)
+        );
+    }
+
+    #[test]
+    fn build_powers_from_snapshot_for_monster_seeds_ritual_skip_first() {
+        let powers = serde_json::json!([
+            {"id": "Ritual", "amount": 3, "just_applied": true}
+        ]);
+
+        let built = build_powers_from_snapshot_for_owner(1, &powers);
+
+        assert_eq!(built.len(), 1);
+        assert!(built[0].just_applied);
+        assert_eq!(
+            built[0].extra_data,
+            crate::content::powers::core::ritual::extra_data(false, true)
+        );
+    }
+
+    #[test]
+    fn build_combat_state_reads_relic_used_up_from_snapshot() {
+        let snapshot = serde_json::json!({
+            "turn": 1,
+            "player": {
+                "current_hp": 40,
+                "max_hp": 80,
+                "block": 0,
+                "energy": 3,
+                "powers": [],
+                "orbs": []
+            },
+            "monsters": [{
+                "id": "JawWorm",
+                "current_hp": 36,
+                "max_hp": 36,
+                "block": 0,
+                "intent": "ATTACK",
+                "move_id": 1,
+                "move_base_damage": 11,
+                "move_adjusted_damage": 11,
+                "move_hits": 1,
+                "powers": []
+            }],
+            "hand": [],
+            "draw_pile": [],
+            "discard_pile": [],
+            "exhaust_pile": [],
+            "limbo": []
+        });
+        let relics = serde_json::json!([
+            {"id": "Centennial Puzzle", "counter": -1, "used_up": true}
+        ]);
+
+        let built = build_combat_state(&snapshot, &relics);
+
+        assert_eq!(built.entities.player.relics.len(), 1);
+        assert_eq!(
+            built.entities.player.relics[0].id,
+            crate::content::relics::RelicId::CentennialPuzzle
+        );
+        assert!(built.entities.player.relics[0].used_up);
+    }
+
+    #[test]
+    fn build_combat_state_prefers_centennial_runtime_used_this_combat() {
+        let snapshot = serde_json::json!({
+            "turn": 1,
+            "player": {
+                "current_hp": 40,
+                "max_hp": 80,
+                "block": 0,
+                "energy": 3,
+                "powers": [],
+                "orbs": []
+            },
+            "monsters": [{
+                "id": "JawWorm",
+                "current_hp": 36,
+                "max_hp": 36,
+                "block": 0,
+                "intent": "ATTACK",
+                "move_id": 1,
+                "move_base_damage": 11,
+                "move_adjusted_damage": 11,
+                "move_hits": 1,
+                "powers": []
+            }],
+            "hand": [],
+            "draw_pile": [],
+            "discard_pile": [],
+            "exhaust_pile": [],
+            "limbo": []
+        });
+        let relics = serde_json::json!([
+            {
+                "id": "Centennial Puzzle",
+                "counter": -1,
+                "used_up": false,
+                "runtime_state": {"used_this_combat": true}
+            }
+        ]);
+
+        let built = build_combat_state(&snapshot, &relics);
+
+        assert_eq!(built.entities.player.relics.len(), 1);
+        assert!(built.entities.player.relics[0].used_up);
+    }
+
+    #[test]
+    fn build_combat_state_reads_pocketwatch_runtime_first_turn() {
+        let snapshot = serde_json::json!({
+            "turn": 1,
+            "player": {
+                "current_hp": 40,
+                "max_hp": 80,
+                "block": 0,
+                "energy": 3,
+                "powers": [],
+                "orbs": []
+            },
+            "monsters": [{
+                "id": "JawWorm",
+                "current_hp": 36,
+                "max_hp": 36,
+                "block": 0,
+                "intent": "ATTACK",
+                "move_id": 1,
+                "move_base_damage": 11,
+                "move_adjusted_damage": 11,
+                "move_hits": 1,
+                "powers": []
+            }],
+            "hand": [],
+            "draw_pile": [],
+            "discard_pile": [],
+            "exhaust_pile": [],
+            "limbo": []
+        });
+        let relics = serde_json::json!([{
+            "id": "Pocketwatch",
+            "counter": 2,
+            "used_up": false,
+            "runtime_state": {"first_turn": true}
+        }]);
+
+        let built = build_combat_state(&snapshot, &relics);
+
+        assert_eq!(built.entities.player.relics[0].id, RelicId::Pocketwatch);
+        assert_eq!(built.entities.player.relics[0].counter, 2);
+        assert_eq!(built.entities.player.relics[0].amount, 1);
+    }
+
+    #[test]
+    fn build_combat_state_reads_darkling_runtime_from_protocol_truth() {
+        let snapshot = serde_json::json!({
+            "turn": 5,
+            "player": {
+                "current_hp": 40,
+                "max_hp": 80,
+                "block": 0,
+                "energy": 3,
+                "powers": [],
+                "orbs": []
+            },
+            "monsters": [{
+                "id": "Darkling",
+                "current_hp": 52,
+                "max_hp": 52,
+                "block": 0,
+                "intent": "ATTACK",
+                "move_id": 3,
+                "move_base_damage": 8,
+                "move_adjusted_damage": 11,
+                "move_hits": 1,
+                "darkling_first_move": true,
+                "darkling_nip_dmg": 13,
+                "powers": []
+            }],
+            "hand": [],
+            "draw_pile": [],
+            "discard_pile": [],
+            "exhaust_pile": [],
+            "limbo": []
+        });
+
+        let built = build_combat_state(&snapshot, &Value::Null);
+
+        assert!(built.entities.monsters[0].darkling.first_move);
+        assert_eq!(built.entities.monsters[0].darkling.nip_dmg, 13);
+    }
+
+    #[test]
+    fn build_combat_state_reads_lagavulin_runtime_from_protocol_truth() {
+        let snapshot = serde_json::json!({
+            "turn": 2,
+            "player": {
+                "current_hp": 40,
+                "max_hp": 80,
+                "block": 0,
+                "energy": 3,
+                "powers": [],
+                "orbs": []
+            },
+            "monsters": [{
+                "id": "Lagavulin",
+                "current_hp": 112,
+                "max_hp": 112,
+                "block": 8,
+                "intent": "SLEEP",
+                "move_id": 5,
+                "move_base_damage": 0,
+                "move_adjusted_damage": 0,
+                "move_hits": 1,
+                "lagavulin_idle_count": 2,
+                "lagavulin_is_out_triggered": false,
+                "powers": []
+            }],
+            "hand": [],
+            "draw_pile": [],
+            "discard_pile": [],
+            "exhaust_pile": [],
+            "limbo": []
+        });
+
+        let built = build_combat_state(&snapshot, &Value::Null);
+
+        assert_eq!(built.entities.monsters[0].lagavulin.idle_count, 2);
+        assert!(!built.entities.monsters[0].lagavulin.is_out_triggered);
+    }
+
+    #[test]
+    fn build_combat_state_reads_chosen_runtime_from_protocol_truth() {
+        let snapshot = serde_json::json!({
+            "turn": 3,
+            "player": {
+                "current_hp": 40,
+                "max_hp": 80,
+                "block": 0,
+                "energy": 3,
+                "powers": [],
+                "orbs": []
+            },
+            "monsters": [{
+                "id": "Chosen",
+                "current_hp": 98,
+                "max_hp": 98,
+                "block": 0,
+                "intent": "STRONG_DEBUFF",
+                "move_id": 4,
+                "move_base_damage": 0,
+                "move_adjusted_damage": 0,
+                "move_hits": 1,
+                "chosen_first_turn": false,
+                "chosen_used_hex": false,
+                "powers": []
+            }],
+            "hand": [],
+            "draw_pile": [],
+            "discard_pile": [],
+            "exhaust_pile": [],
+            "limbo": []
+        });
+
+        let built = build_combat_state(&snapshot, &Value::Null);
+
+        assert!(built.entities.monsters[0].chosen.protocol_seeded);
+        assert!(!built.entities.monsters[0].chosen.first_turn);
+        assert!(!built.entities.monsters[0].chosen.used_hex);
+    }
+
+    #[test]
+    fn build_combat_state_reads_runtime_hints_from_snapshot() {
+        let snapshot = serde_json::json!({
+            "turn": 1,
+            "using_card": true,
+            "colorless_combat_pool": [
+                {"id": "Good Instincts", "uuid": "a"},
+                {"id": "Dramatic Entrance", "uuid": "b"}
+            ],
+            "card_queue": [
+                {
+                    "card": {"id": "Pummel", "uuid": "queue-card"},
+                    "monster_index": 0,
+                    "energy_on_use": 2,
+                    "ignore_energy_total": true,
+                    "autoplay": true,
+                    "random_target": false,
+                    "is_end_turn_autoplay": false,
+                    "purge_on_use": true
+                }
+            ],
+            "player": {
+                "current_hp": 40,
+                "max_hp": 80,
+                "block": 0,
+                "energy": 3,
+                "powers": [],
+                "orbs": []
+            },
+            "monsters": [{
+                "id": "JawWorm",
+                "current_hp": 36,
+                "max_hp": 36,
+                "block": 0,
+                "intent": "BUFF",
+                "move_id": 1,
+                "move_base_damage": 0,
+                "move_adjusted_damage": 0,
+                "move_hits": 1,
+                "powers": []
+            }],
+            "draw_pile": [],
+            "hand": [],
+            "discard_pile": [],
+            "exhaust_pile": [],
+            "limbo": [],
+            "potions": []
+        });
+
+        let built = build_combat_state(&snapshot, &Value::Null);
+
+        assert!(built.runtime.using_card);
+        assert_eq!(
+            built.runtime.colorless_combat_pool,
+            vec![CardId::GoodInstincts, CardId::DramaticEntrance]
+        );
+        assert_eq!(built.runtime.card_queue.len(), 1);
+        let queued = &built.runtime.card_queue[0];
+        assert_eq!(queued.card_id, CardId::Pummel);
+        assert_eq!(queued.target_monster_index, Some(0));
+        assert_eq!(queued.energy_on_use, 2);
+        assert!(queued.ignore_energy_total);
+        assert!(queued.autoplay);
+        assert!(queued.purge_on_use);
+    }
 }

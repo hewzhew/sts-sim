@@ -12,7 +12,19 @@ pub fn handle_apply_power(
     source: usize,
     target: usize,
     power_id: PowerId,
+    amount: i32,
+    state: &mut CombatState,
+) {
+    handle_apply_power_detailed(source, target, power_id, amount, None, None, state);
+}
+
+pub fn handle_apply_power_detailed(
+    source: usize,
+    target: usize,
+    power_id: PowerId,
     mut amount: i32,
+    instance_id: Option<u32>,
+    extra_data: Option<i32>,
     state: &mut CombatState,
 ) {
     amount = crate::content::powers::canonicalize_applied_amount(power_id, amount);
@@ -110,14 +122,66 @@ pub fn handle_apply_power(
     // Core power application
     let powers = store::ensure_powers_for_mut(state, target);
     let mut should_remove_existing = false;
-    if let Some(existing) = powers.iter_mut().find(|p| p.power_type == power_id) {
-        existing.amount += amount;
+    if crate::content::powers::uses_distinct_instances(power_id) {
+        if let Some(instance_id) = instance_id {
+            if let Some(existing) = powers
+                .iter_mut()
+                .find(|p| p.power_type == power_id && p.instance_id == Some(instance_id))
+            {
+                existing.amount += amount;
+                if let Some(extra_data) = extra_data {
+                    existing.extra_data = extra_data;
+                }
+                if !crate::content::powers::should_keep_power_instance(power_id, existing.amount) {
+                    should_remove_existing = true;
+                }
+            } else if crate::content::powers::should_keep_power_instance(power_id, amount) {
+                powers.push(crate::combat::Power {
+                    power_type: power_id,
+                    instance_id: Some(instance_id),
+                    amount,
+                    extra_data: extra_data.unwrap_or(0),
+                    just_applied: true,
+                });
+            }
+        } else if let Some(existing) = powers.iter_mut().find(|p| p.power_type == power_id) {
+            existing.amount += amount;
+            if let Some(extra_data) = extra_data {
+                existing.extra_data = extra_data;
+            }
+            if !crate::content::powers::should_keep_power_instance(power_id, existing.amount) {
+                should_remove_existing = true;
+            }
+        } else if crate::content::powers::should_keep_power_instance(power_id, amount) {
+            powers.push(crate::combat::Power {
+                power_type: power_id,
+                instance_id: None,
+                amount,
+                extra_data: extra_data.unwrap_or(0),
+                just_applied: true,
+            });
+        }
+    } else if let Some(existing) = powers.iter_mut().find(|p| p.power_type == power_id) {
         if power_id == PowerId::Combust {
+            existing.amount += amount;
             existing.extra_data += 1;
+        } else if power_id == PowerId::PanachePower && amount > 0 {
+            // Panache has two distinct positive-amount paths:
+            //   1. card application / stacking: amount is damage (10/14), damage stacks
+            //   2. countdown reset: internal ApplyPower(+1..+4), amount should reset countdown
+            if amount <= 4 && existing.amount < 5 {
+                existing.amount = (existing.amount + amount).min(5);
+            } else {
+                existing.extra_data += amount;
+            }
         } else if power_id == PowerId::Malleable && amount > 0 {
+            existing.amount += amount;
             existing.extra_data += amount;
         } else if power_id == PowerId::Flight && amount > 0 {
+            existing.amount += amount;
             existing.extra_data = existing.amount.max(existing.extra_data);
+        } else {
+            existing.amount += amount;
         }
 
         // Strength/Dexterity/Focus can go negative, but Java still removes them at exactly 0.
@@ -127,22 +191,29 @@ pub fn handle_apply_power(
     } else {
         // If they don't have it, we only add it if amount > 0, OR if it's a negative amount of a power that CAN go negative
         if crate::content::powers::should_keep_power_instance(power_id, amount) {
-            let extra_data = match power_id {
-                PowerId::Combust => 1,
-                PowerId::Malleable => amount,
-                PowerId::Flight => amount,
-                _ => 0,
+            let (stored_amount, extra_data) = match power_id {
+                PowerId::PanachePower => (5, amount),
+                PowerId::Combust => (amount, 1),
+                PowerId::Malleable => (amount, amount),
+                PowerId::Flight => (amount, amount),
+                _ if extra_data.is_some() => (amount, extra_data.unwrap_or(0)),
+                _ => (amount, 0),
             };
             powers.push(crate::combat::Power {
                 power_type: power_id,
-                amount,
+                instance_id: None,
+                amount: stored_amount,
                 extra_data,
                 just_applied: true,
             });
         }
     }
     if should_remove_existing {
-        store::remove_power_type(state, target, power_id);
+        if let Some(instance_id) = instance_id {
+            store::remove_power_instance(state, target, power_id, instance_id);
+        } else {
+            store::remove_power_type(state, target, power_id);
+        }
     }
 
     // C2: Corruption on-apply hook
@@ -252,6 +323,81 @@ pub fn handle_remove_power(target: usize, power_id: PowerId, state: &mut CombatS
     store::remove_power_type(state, target, power_id);
 }
 
+pub fn handle_remove_power_instance(
+    target: usize,
+    power_id: PowerId,
+    instance_id: u32,
+    state: &mut CombatState,
+) {
+    let power_snapshot = store::powers_for(state, target).and_then(|powers| {
+        powers
+            .iter()
+            .find(|p| p.power_type == power_id && p.instance_id == Some(instance_id))
+            .cloned()
+    });
+    let Some(power_snapshot) = power_snapshot else {
+        return;
+    };
+
+    let on_remove_actions =
+        crate::content::powers::resolve_power_on_remove(power_snapshot.power_type, state, target);
+    for action in on_remove_actions {
+        state.engine.action_queue.push_back(action);
+    }
+
+    store::remove_power_instance(state, target, power_id, instance_id);
+}
+
+pub fn handle_reduce_power(target: usize, power_id: PowerId, amount: i32, state: &mut CombatState) {
+    if amount <= 0 {
+        return;
+    }
+
+    let Some(remaining) = store::with_power_mut(state, target, power_id, |power| {
+        power.amount -= amount;
+        power.amount
+    }) else {
+        return;
+    };
+
+    if !crate::content::powers::should_keep_power_instance(power_id, remaining) {
+        handle_remove_power(target, power_id, state);
+    }
+
+    if target == 0 {
+        state.recompute_turn_start_draw_modifier();
+    }
+}
+
+pub fn handle_reduce_power_instance(
+    target: usize,
+    power_id: PowerId,
+    instance_id: u32,
+    amount: i32,
+    state: &mut CombatState,
+) {
+    if amount <= 0 {
+        return;
+    }
+
+    let Some(remaining) =
+        store::with_power_instance_mut(state, target, power_id, instance_id, |power| {
+            power.amount -= amount;
+            power.amount
+        })
+    else {
+        return;
+    };
+
+    if !crate::content::powers::should_keep_power_instance(power_id, remaining) {
+        handle_remove_power_instance(target, power_id, instance_id, state);
+    }
+
+    if target == 0 {
+        state.recompute_turn_start_draw_modifier();
+    }
+}
+
 pub fn handle_remove_all_debuffs(target: usize, state: &mut CombatState) {
     let debuffs = store::powers_for(state, target)
         .map(|powers| {
@@ -354,6 +500,18 @@ pub fn handle_update_power_extra_data(
     });
 }
 
+pub fn handle_update_power_extra_data_instance(
+    target: usize,
+    power_id: PowerId,
+    instance_id: u32,
+    value: i32,
+    state: &mut CombatState,
+) {
+    let _ = store::with_power_instance_mut(state, target, power_id, instance_id, |power| {
+        power.extra_data = value;
+    });
+}
+
 pub fn handle_awakened_rebirth_clear(target: usize, state: &mut CombatState) {
     store::retain_entity_powers(state, target, |p| {
         p.power_type != PowerId::Curiosity
@@ -381,5 +539,391 @@ pub fn handle_lose_max_hp(target: usize, amount: i32, state: &mut CombatState) {
             .player
             .current_hp
             .min(state.entities.player.max_hp);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::action::Action;
+    use crate::combat::Intent;
+    use crate::content::monsters::EnemyId;
+    use crate::engine::test_support::{basic_combat, CombatTestExt};
+
+    #[test]
+    fn reduce_power_subtracts_without_removing_when_amount_remains() {
+        let mut combat = basic_combat()
+            .with_monster_type(1, EnemyId::Lagavulin)
+            .with_monster_max_hp(1, 109)
+            .with_monster_hp(1, 109)
+            .with_monster_intent(1, Intent::Sleep);
+        handle_apply_power(1, 1, PowerId::Metallicize, 12, &mut combat);
+
+        handle_reduce_power(1, PowerId::Metallicize, 8, &mut combat);
+
+        assert_eq!(store::power_amount(&combat, 1, PowerId::Metallicize), 4);
+    }
+
+    #[test]
+    fn panache_stacking_increases_damage_without_touching_countdown() {
+        let mut combat = basic_combat()
+            .with_monster_type(1, EnemyId::Lagavulin)
+            .with_monster_max_hp(1, 109)
+            .with_monster_hp(1, 109)
+            .with_monster_intent(1, Intent::Sleep);
+
+        handle_apply_power(0, 0, PowerId::PanachePower, 10, &mut combat);
+        handle_apply_power(0, 0, PowerId::PanachePower, 14, &mut combat);
+
+        let panache = store::powers_for(&combat, 0)
+            .and_then(|powers| {
+                powers
+                    .iter()
+                    .find(|p| p.power_type == PowerId::PanachePower)
+            })
+            .expect("panache should exist");
+        assert_eq!(panache.amount, 5);
+        assert_eq!(panache.extra_data, 24);
+    }
+
+    #[test]
+    fn panache_turn_start_resets_countdown_without_changing_damage() {
+        let combat = basic_combat()
+            .with_monster_type(1, EnemyId::Lagavulin)
+            .with_monster_max_hp(1, 109)
+            .with_monster_hp(1, 109)
+            .with_monster_intent(1, Intent::Sleep);
+
+        let acts = crate::content::powers::resolve_power_at_turn_start(
+            PowerId::PanachePower,
+            &combat,
+            0,
+            2,
+        );
+
+        assert_eq!(acts.len(), 1);
+        assert!(matches!(
+            acts[0],
+            Action::ApplyPower {
+                source: 0,
+                target: 0,
+                power_id: PowerId::PanachePower,
+                amount: 3,
+            }
+        ));
+    }
+
+    #[test]
+    fn panache_positive_reset_amount_restores_countdown_not_damage() {
+        let mut combat = basic_combat()
+            .with_monster_type(1, EnemyId::Lagavulin)
+            .with_monster_max_hp(1, 109)
+            .with_monster_hp(1, 109)
+            .with_monster_intent(1, Intent::Sleep);
+
+        handle_apply_power(0, 0, PowerId::PanachePower, 10, &mut combat);
+        let _ = store::with_power_mut(&mut combat, 0, PowerId::PanachePower, |panache| {
+            panache.amount = 1;
+        });
+
+        handle_apply_power(0, 0, PowerId::PanachePower, 4, &mut combat);
+
+        let panache = store::powers_for(&combat, 0)
+            .and_then(|powers| {
+                powers
+                    .iter()
+                    .find(|p| p.power_type == PowerId::PanachePower)
+            })
+            .expect("panache should exist");
+        assert_eq!(panache.amount, 5);
+        assert_eq!(panache.extra_data, 10);
+    }
+
+    #[test]
+    fn the_bomb_supports_multiple_runtime_instances() {
+        let mut combat = basic_combat();
+
+        handle_apply_power_detailed(
+            0,
+            0,
+            PowerId::TheBombPower,
+            3,
+            Some(101),
+            Some(40),
+            &mut combat,
+        );
+        handle_apply_power_detailed(
+            0,
+            0,
+            PowerId::TheBombPower,
+            3,
+            Some(202),
+            Some(50),
+            &mut combat,
+        );
+
+        let bombs = store::powers_for(&combat, 0)
+            .expect("player powers should exist")
+            .iter()
+            .filter(|power| power.power_type == PowerId::TheBombPower)
+            .collect::<Vec<_>>();
+        assert_eq!(bombs.len(), 2);
+        assert!(bombs
+            .iter()
+            .any(|power| power.instance_id == Some(101) && power.extra_data == 40));
+        assert!(bombs
+            .iter()
+            .any(|power| power.instance_id == Some(202) && power.extra_data == 50));
+    }
+
+    #[test]
+    fn the_bomb_end_of_turn_ticks_specific_instance_and_uses_its_damage() {
+        let mut combat = basic_combat();
+        combat.entities.monsters[0].current_hp = 60;
+
+        handle_apply_power_detailed(
+            0,
+            0,
+            PowerId::TheBombPower,
+            1,
+            Some(101),
+            Some(40),
+            &mut combat,
+        );
+        handle_apply_power_detailed(
+            0,
+            0,
+            PowerId::TheBombPower,
+            3,
+            Some(202),
+            Some(50),
+            &mut combat,
+        );
+
+        let bomb = store::powers_for(&combat, 0)
+            .expect("player powers should exist")
+            .iter()
+            .find(|power| {
+                power.power_type == PowerId::TheBombPower && power.instance_id == Some(101)
+            })
+            .cloned()
+            .expect("bomb instance 101 should exist");
+
+        let actions = crate::content::powers::resolve_power_at_end_of_turn(&bomb, &combat, 0);
+        for action in actions {
+            crate::engine::action_handlers::execute_action(action, &mut combat);
+        }
+        while let Some(action) = combat.engine.action_queue.pop_front() {
+            crate::engine::action_handlers::execute_action(action, &mut combat);
+        }
+
+        assert_eq!(combat.entities.monsters[0].current_hp, 20);
+        let bombs = store::powers_for(&combat, 0)
+            .expect("player powers should remain")
+            .iter()
+            .filter(|power| power.power_type == PowerId::TheBombPower)
+            .collect::<Vec<_>>();
+        assert_eq!(bombs.len(), 1);
+        assert_eq!(bombs[0].instance_id, Some(202));
+        assert_eq!(bombs[0].amount, 3);
+        assert_eq!(bombs[0].extra_data, 50);
+    }
+
+    #[test]
+    fn confusion_is_stored_with_sentinel_amount() {
+        let mut combat = basic_combat();
+
+        handle_apply_power(1, 0, PowerId::Confusion, 1, &mut combat);
+
+        assert_eq!(store::power_amount(&combat, 0, PowerId::Confusion), -1);
+    }
+
+    #[test]
+    fn artifact_blocks_confusion_even_with_sentinel_amount() {
+        let mut combat = basic_combat().with_player_power(PowerId::Artifact, 1);
+
+        handle_apply_power(1, 0, PowerId::Confusion, 1, &mut combat);
+
+        assert_eq!(store::power_amount(&combat, 0, PowerId::Confusion), 0);
+        assert_eq!(store::power_amount(&combat, 0, PowerId::Artifact), 0);
+    }
+
+    #[test]
+    fn player_ritual_grants_strength_at_end_of_turn() {
+        let mut combat = basic_combat();
+        handle_apply_power_detailed(
+            0,
+            0,
+            PowerId::Ritual,
+            2,
+            None,
+            Some(crate::content::powers::core::ritual::extra_data(
+                true, false,
+            )),
+            &mut combat,
+        );
+
+        let ritual = store::powers_for(&combat, 0)
+            .and_then(|powers| powers.iter().find(|p| p.power_type == PowerId::Ritual))
+            .cloned()
+            .expect("ritual should exist");
+
+        let actions = crate::content::powers::resolve_power_at_end_of_turn(&ritual, &combat, 0);
+        for action in actions {
+            crate::engine::action_handlers::execute_action(action, &mut combat);
+        }
+
+        assert_eq!(store::power_amount(&combat, 0, PowerId::Strength), 2);
+    }
+
+    #[test]
+    fn monster_ritual_skips_first_round_then_grants_strength() {
+        let mut combat = basic_combat()
+            .with_monster_type(1, EnemyId::Cultist)
+            .with_monster_max_hp(1, 50)
+            .with_monster_hp(1, 50);
+        handle_apply_power_detailed(
+            1,
+            1,
+            PowerId::Ritual,
+            3,
+            None,
+            Some(crate::content::powers::core::ritual::extra_data(
+                false, true,
+            )),
+            &mut combat,
+        );
+        let _ = store::with_power_mut(&mut combat, 1, PowerId::Ritual, |ritual| {
+            ritual.just_applied = false;
+        });
+
+        let first_round_actions = crate::content::powers::resolve_power_at_end_of_round(
+            PowerId::Ritual,
+            &combat,
+            1,
+            3,
+            false,
+        );
+        for action in first_round_actions {
+            crate::engine::action_handlers::execute_action(action, &mut combat);
+        }
+        while let Some(action) = combat.engine.action_queue.pop_front() {
+            crate::engine::action_handlers::execute_action(action, &mut combat);
+        }
+
+        assert_eq!(store::power_amount(&combat, 1, PowerId::Strength), 0);
+        let ritual = store::powers_for(&combat, 1)
+            .and_then(|powers| powers.iter().find(|p| p.power_type == PowerId::Ritual))
+            .expect("ritual should remain");
+        assert_eq!(
+            ritual.extra_data,
+            crate::content::powers::core::ritual::extra_data(false, false)
+        );
+
+        let second_round_actions = crate::content::powers::resolve_power_at_end_of_round(
+            PowerId::Ritual,
+            &combat,
+            1,
+            3,
+            false,
+        );
+        for action in second_round_actions {
+            crate::engine::action_handlers::execute_action(action, &mut combat);
+        }
+
+        assert_eq!(store::power_amount(&combat, 1, PowerId::Strength), 3);
+    }
+
+    #[test]
+    fn slow_power_is_kept_at_zero_for_giant_head_semantics() {
+        let mut combat = basic_combat()
+            .with_monster_type(1, EnemyId::GiantHead)
+            .with_monster_max_hp(1, 500)
+            .with_monster_hp(1, 500);
+
+        handle_apply_power(1, 1, PowerId::Slow, 0, &mut combat);
+
+        assert_eq!(store::power_amount(&combat, 1, PowerId::Slow), 0);
+        assert!(store::powers_for(&combat, 1)
+            .is_some_and(|powers| powers.iter().any(|power| power.power_type == PowerId::Slow)));
+    }
+
+    #[test]
+    fn slow_power_gains_one_stack_after_each_card_played() {
+        let mut combat = basic_combat()
+            .with_monster_type(1, EnemyId::GiantHead)
+            .with_monster_max_hp(1, 500)
+            .with_monster_hp(1, 500);
+
+        handle_apply_power(1, 1, PowerId::Slow, 0, &mut combat);
+
+        let actions = crate::content::powers::resolve_power_on_card_played(
+            PowerId::Slow,
+            &combat,
+            1,
+            &crate::combat::CombatCard::new(crate::content::cards::CardId::Strike, 100),
+            0,
+        );
+        for action in actions {
+            crate::engine::action_handlers::execute_action(action, &mut combat);
+        }
+
+        assert_eq!(store::power_amount(&combat, 1, PowerId::Slow), 1);
+    }
+
+    #[test]
+    fn slow_power_resets_to_zero_at_end_of_round_without_removing_power() {
+        let mut combat = basic_combat()
+            .with_monster_type(1, EnemyId::GiantHead)
+            .with_monster_max_hp(1, 500)
+            .with_monster_hp(1, 500)
+            .with_monster_power(1, PowerId::Slow, 4);
+
+        let actions = crate::content::powers::resolve_power_at_end_of_round(
+            PowerId::Slow,
+            &combat,
+            1,
+            4,
+            false,
+        );
+        for action in actions {
+            crate::engine::action_handlers::execute_action(action, &mut combat);
+        }
+
+        assert_eq!(store::power_amount(&combat, 1, PowerId::Slow), 0);
+        assert!(store::powers_for(&combat, 1)
+            .is_some_and(|powers| powers.iter().any(|power| power.power_type == PowerId::Slow)));
+    }
+
+    #[test]
+    fn stasis_on_death_returns_copied_card_to_hand_and_clears_limbo() {
+        let mut combat = basic_combat()
+            .with_monster_type(1, EnemyId::BronzeOrb)
+            .with_monster_max_hp(1, 54)
+            .with_monster_hp(1, 54)
+            .with_card_uuid_counter(1000);
+        let stasis_card =
+            crate::combat::CombatCard::new(crate::content::cards::CardId::PommelStrike, 777);
+        combat.zones.limbo.push(stasis_card.clone());
+        store::ensure_powers_for_mut(&mut combat, 1).push(crate::combat::Power {
+            power_type: PowerId::Stasis,
+            instance_id: None,
+            amount: -1,
+            extra_data: stasis_card.uuid as i32,
+            just_applied: false,
+        });
+
+        combat.entities.monsters[0].current_hp = 0;
+        crate::engine::action_handlers::check_and_trigger_monster_death(&mut combat, 1);
+        while let Some(action) = combat.engine.action_queue.pop_front() {
+            crate::engine::action_handlers::execute_action(action, &mut combat);
+        }
+
+        assert!(combat
+            .zones
+            .hand
+            .iter()
+            .any(|card| card.id == crate::content::cards::CardId::PommelStrike));
+        assert!(combat.zones.limbo.iter().all(|card| card.uuid != 777));
     }
 }

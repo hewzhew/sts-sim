@@ -4,8 +4,9 @@ use std::collections::HashSet;
 use crate::combat::CombatState;
 use crate::engine::{core::tick_engine, pending_choices};
 use crate::state::core::{ClientInput, EngineState, HandSelectReason, PendingChoice};
+use crate::state::selection::{EngineDiagnostic, EngineDiagnosticClass, EngineDiagnosticSeverity};
 
-use super::state_sync::snapshot_uuid;
+use crate::diff::state_sync::snapshot_uuid;
 
 pub fn tick_until_stable(es: &mut EngineState, cs: &mut CombatState, input: ClientInput) -> bool {
     let alive = tick_engine(es, cs, Some(input));
@@ -36,7 +37,11 @@ pub fn drain_to_stable(es: &mut EngineState, cs: &mut CombatState) -> bool {
         }
         iterations += 1;
         if iterations > 1000 {
-            eprintln!("  WARNING: tick loop exceeded 1000 iterations");
+            cs.emit_diagnostic(EngineDiagnostic {
+                severity: EngineDiagnosticSeverity::Warning,
+                class: EngineDiagnosticClass::Suspicious,
+                message: "tick loop exceeded 1000 iterations".to_string(),
+            });
             break;
         }
     }

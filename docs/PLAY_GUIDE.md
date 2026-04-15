@@ -195,7 +195,15 @@ The bot makes one decision, you see what it chose, and you're back in control.
 ## The Bot (Agent)
 
 The built-in bot uses **MCTS (Monte Carlo Tree Search)** with 4000 simulations per
-combat decision and heuristic rollouts for non-combat screens.
+combat decision and heuristic / policy-driven handling for non-combat screens.
+
+Important scope distinction:
+
+- This section describes what the **bot/runtime** can currently do.
+- The manual terminal client in [`src/bin/play.rs`](../src/bin/play.rs) exposes a
+  narrower command surface.
+- In particular, manual `play` input and bot/live non-combat support are **not**
+  identical.
 
 ### Combat AI
 - UCB1 selection with exploration constant 150.0
@@ -206,9 +214,12 @@ combat decision and heuristic rollouts for non-combat screens.
 - **Map**: Dynamic programming over the full act map, weighted by room type
   (Act 1: favor Rest rooms, Act 2: favor Elites, Act 3: favor Rest/Shop)
 - **Rewards**: Score-based card evaluation, always claims gold/relics/keys
-- **Campfire**: Rest if HP < 50%, otherwise smith the highest-value upgradeable card
-- **Events**: Hardcoded per-event choice table
-- **Shop**: Always leaves (TODO: implement shop buying logic)
+- **Campfire**: Bot/runtime supports `Rest`, `Smith`, and relic-dependent options such
+  as `Dig`, `Lift`, `Toke`, and `Recall` when those paths are available
+- **Events**: Event evaluation is implemented, but still uneven; some events are
+  meaningfully scored, others still fall back to simpler/default handling
+- **Shop**: Shop buying logic exists for cards, relics, potions, and purge; this is no
+  longer a "always leave" path
 - **Boss Relics**: Hardcoded priority list (Sozu > CursedKey > Astrolabe > ...)
 
 ## Known Bugs & Issues
@@ -235,31 +246,54 @@ combat decision and heuristic rollouts for non-combat screens.
    `[Option 1]`, etc., because `get_event_choices()` in `display.rs` only has readable
    text for the Neow event. All other events fall through to the generic placeholder.
 
-4. **Bot skips shops entirely**: The agent always returns `Proceed` for shop screens,
-   never buying cards, relics, or potions. This significantly hurts run success rate.
+4. **Shop behavior is implemented but still heuristic-heavy**: The bot can buy cards,
+   relics, potions, and purge cards, but shop quality still depends on the current
+   non-combat evaluation stack and is not yet a fully trustworthy run-level planner.
 
 5. **SkipCombat mode display glitch**: When using `skip`, the base display mode gets
    overwritten to Summary. If you were previously in DeepDebug, you need to type `fast`
    to toggle back.
 
-6. **Campfire options incomplete**: Only `rest` and `smith` are shown. Missing options:
-   `dig` (Shovel relic), `lift` (Girya relic), `toke` (Peace Pipe relic),
-   `recall` (Ruby Key). The campfire_handler may support them but the display doesn't
-   show them and the CLI parser doesn't accept them.
+6. **Manual `play` campfire commands are incomplete**: The terminal parser in
+   [`src/cli/input.rs`](../src/cli/input.rs) only accepts `rest` and `smith <deck_idx>`.
+   Bot/live non-combat paths support additional campfire choices such as `dig`, `lift`,
+   `toke`, and `recall`, but the manual CLI help and parser do not currently expose
+   those commands.
+
+7. **Manual event text is still generic in many rooms**: Event evaluation exists, but
+   the terminal client still often presents generic numeric options rather than rich
+   human-readable descriptions.
 
 ### 🟢 Missing / Incomplete
 
-7. **No Act 4 support in play.rs**: `RunState::new()` is called with `final_act: false`.
+8. **No Act 4 support in play.rs**: `RunState::new()` is called with `final_act: false`.
    The run always ends at Act 3 boss.
 
-8. **Floor seed generation not called**: `rng_pool.generate_floor_seeds()` may not be
+9. **Floor seed generation not called**: `rng_pool.generate_floor_seeds()` may not be
    called at every floor transition in `play.rs`, causing per-floor RNG to use stale
    seeds.
 
-9. **No save/load**: Can't save mid-run and resume later.
+10. **No save/load**: Can't save mid-run and resume later.
 
-10. **No deck view during combat**: The `state` command shows master deck, but there's
+11. **No deck view during combat**: The `state` command shows master deck, but there's
     no quick way to see your full combat deck (draw + hand + discard + exhaust) sorted.
+
+## Capability Boundaries
+
+To avoid mixing surfaces:
+
+- **Manual terminal client (`play`)**
+  - Supports the commands listed in this guide's input tables.
+  - Campfire input is currently limited to `rest` and `smith`.
+  - Event handling is numeric-choice driven.
+- **Bot/runtime**
+  - Supports richer non-combat decisions than the manual CLI exposes.
+  - Shop buying, purge decisions, and broader campfire logic are implemented here.
+- **Live communication path**
+  - Uses `src/cli/live_comm_noncombat.rs` to adapt bot decisions back into Java-side
+    commands.
+  - This path supports broader campfire/shop/event handling than the manual terminal
+    parser in `play`.
 
 ## Future Directions
 
@@ -310,15 +344,14 @@ combat decision and heuristic rollouts for non-combat screens.
 
 ### Long-term: AI Research Platform
 
-- **Gym-like Python API**: `pip install sts-sim`, then:
-  ```python
-  import sts_sim
-  env = sts_sim.CombatEnv(seed=42, ascension=15)
-  obs = env.reset()
-  while not done:
-      action = my_agent.act(obs)
-      obs, reward, done, info = env.step(action)
+- **Battle-local training environment**: the repo now includes a headless Rust combat
+  environment at `sts_simulator::testing::combat_env::CombatEnv`. This is the current
+  entrypoint for fixture-driven combat learning work:
+  ```rust
+  use sts_simulator::testing::combat_env::{CombatAction, CombatEnv, CombatEnvSpec};
   ```
+  A future Python/Gym wrapper can sit on top of this interface instead of inventing
+  a second combat stepping path.
 
 - **Multi-character support**: Silent, Defect, Watcher card pools + AI evaluation.
 

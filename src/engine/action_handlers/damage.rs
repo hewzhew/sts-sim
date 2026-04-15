@@ -6,7 +6,7 @@
 //          Heal, GainMaxHp, LoseMaxHp,
 //          LimitBreak, BlockPerNonAttack, ExhaustAllNonAttack, ExhaustRandomCard
 
-use crate::action::{Action, ActionInfo, AddTo, DamageType};
+use crate::action::{Action, ActionInfo, AddTo, DamageType, NO_SOURCE};
 use crate::combat::{CombatState, Intent};
 use crate::content::powers::store;
 use crate::content::powers::PowerId;
@@ -273,12 +273,15 @@ fn apply_damage_to_monster_via_pipeline(
                 source_id,
                 power.amount,
             );
-            if matches!(power.power_type, PowerId::Malleable | PowerId::CurlUp) {
+            if matches!(
+                power.power_type,
+                PowerId::Malleable | PowerId::CurlUp | PowerId::Flight
+            ) {
                 for a in hook_actions {
                     state.engine.action_queue.push_back(a);
                 }
                 let _ = store::with_power_mut(state, target_id, PowerId::CurlUp, |curl| {
-                    if curl.amount > 0 && outcome.hp_lost > 0 {
+                    if curl.amount > 0 && outcome.hp_lost > 0 && source_id != NO_SOURCE {
                         curl.amount = 0;
                     }
                 });
@@ -300,19 +303,22 @@ pub fn handle_damage(info: crate::action::DamageInfo, state: &mut CombatState) {
     // Java passes a fully-evaluated DamageInfo.output into creature.damage().
     // In our engine, monster-origin Normal damage is calculated here, while player-origin
     // Normal damage is precomputed during card evaluation / damage-matrix creation.
-    let (calculated_output, damage_already_includes_final_receive) =
-        if !info.is_modified && source_id != 0 && info.damage_type == DamageType::Normal {
-            (
-                crate::content::powers::calculate_monster_damage(
-                    info.base, source_id, target_id, state,
-                ),
-                true,
-            )
-        } else if source_id == 0 && info.damage_type == DamageType::Normal {
-            (info.output.max(0), true)
-        } else {
-            (info.output.max(0), false)
-        };
+    let (calculated_output, damage_already_includes_final_receive) = if !info.is_modified
+        && source_id != 0
+        && source_id != NO_SOURCE
+        && info.damage_type == DamageType::Normal
+    {
+        (
+            crate::content::powers::calculate_monster_damage(
+                info.base, source_id, target_id, state,
+            ),
+            true,
+        )
+    } else if (source_id == 0 || source_id == NO_SOURCE) && info.damage_type == DamageType::Normal {
+        (info.output.max(0), true)
+    } else {
+        (info.output.max(0), false)
+    };
 
     let mut final_damage = calculated_output;
     let target_is_player = target_id == 0;
@@ -452,7 +458,16 @@ pub fn handle_attack_damage_random_enemy(
                     power.amount,
                 );
             }
-            damage.max(0.0) as i32
+            let mut damage_i = damage.max(0.0).floor() as i32;
+            for power in &store::powers_snapshot_for(state, target_id) {
+                damage_i = crate::content::powers::resolve_power_at_damage_final_receive(
+                    power.power_type,
+                    damage_i,
+                    power.amount,
+                    damage_type,
+                );
+            }
+            damage_i.max(0)
         } else {
             base_damage
         };
@@ -521,11 +536,75 @@ pub fn handle_feed(
     }
 }
 
-pub fn handle_vampire_damage(info: crate::action::DamageInfo, state: &mut CombatState) {
+pub fn handle_hand_of_greed(
+    target: usize,
+    damage_info: crate::action::DamageInfo,
+    gold_amount: i32,
+    state: &mut CombatState,
+) {
+    let mut info = damage_info;
+    info.target = target;
     let outcome = apply_damage_to_monster_via_pipeline(state, &info, info.output.max(0));
-    if outcome.hp_lost > 0 {
-        state.entities.player.current_hp =
-            (state.entities.player.current_hp + outcome.hp_lost).min(state.entities.player.max_hp);
+    if outcome.died {
+        state.engine.action_queue.push_front(Action::GainGold {
+            amount: gold_amount,
+        });
+    }
+}
+
+pub fn handle_ritual_dagger(
+    target: usize,
+    damage_info: crate::action::DamageInfo,
+    misc_amount: i32,
+    card_uuid: u32,
+    state: &mut CombatState,
+) {
+    let mut info = damage_info;
+    info.target = target;
+    let outcome = apply_damage_to_monster_via_pipeline(state, &info, info.output.max(0));
+    if outcome.died {
+        state
+            .engine
+            .action_queue
+            .push_front(Action::ModifyCardMisc {
+                card_uuid,
+                amount: misc_amount,
+            });
+    }
+}
+
+pub fn handle_gain_gold(amount: i32, state: &mut CombatState) {
+    if amount <= 0 {
+        return;
+    }
+
+    state.entities.player.gold += amount;
+    state.entities.player.gold_delta_this_combat += amount;
+
+    if state
+        .entities
+        .player
+        .has_relic(crate::content::relics::RelicId::BloodyIdol)
+    {
+        let actions = crate::content::relics::bloody_idol::BloodyIdol::on_gain_gold();
+        crate::engine::core::queue_actions(&mut state.engine.action_queue, actions);
+    }
+}
+
+pub fn handle_vampire_damage(info: crate::action::DamageInfo, state: &mut CombatState) {
+    let source = info.source;
+    if info.target == 0 {
+        let previous_hp = state.entities.player.current_hp;
+        handle_damage(info, state);
+        let hp_lost = (previous_hp - state.entities.player.current_hp).max(0);
+        if hp_lost > 0 {
+            heal_vampire_source(state, source, hp_lost);
+        }
+    } else {
+        let outcome = apply_damage_to_monster_via_pipeline(state, &info, info.output.max(0));
+        if outcome.hp_lost > 0 {
+            heal_vampire_source(state, source, outcome.hp_lost);
+        }
     }
 }
 
@@ -560,8 +639,22 @@ pub fn handle_vampire_damage_all_enemies(
         total_hp_lost += outcome.hp_lost;
     }
     if total_hp_lost > 0 {
+        heal_vampire_source(state, source, total_hp_lost);
+    }
+}
+
+fn heal_vampire_source(state: &mut CombatState, source: usize, amount: i32) {
+    if amount <= 0 {
+        return;
+    }
+
+    if source == 0 {
+        let previous_hp = state.entities.player.current_hp;
         state.entities.player.current_hp =
-            (state.entities.player.current_hp + total_hp_lost).min(state.entities.player.max_hp);
+            (state.entities.player.current_hp + amount).min(state.entities.player.max_hp);
+        queue_red_skull_threshold_actions(state, previous_hp, state.entities.player.current_hp);
+    } else if let Some(monster) = state.entities.monsters.iter_mut().find(|m| m.id == source) {
+        monster.current_hp = (monster.current_hp + amount).min(monster.max_hp);
     }
 }
 
@@ -615,6 +708,22 @@ pub fn handle_lose_hp(target: usize, amount: i32, triggers_rupture: bool, state:
     }
 }
 
+pub fn handle_set_current_hp(target: usize, hp: i32, state: &mut CombatState) {
+    let clamped_hp = hp.max(0);
+    if target == 0 {
+        state.entities.player.current_hp = clamped_hp.min(state.entities.player.max_hp);
+        if state.entities.player.current_hp <= 0 {
+            super::try_revive(state);
+        }
+        return;
+    }
+
+    if let Some(monster) = state.entities.monsters.iter_mut().find(|m| m.id == target) {
+        monster.current_hp = clamped_hp.min(monster.max_hp);
+    }
+    super::check_and_trigger_monster_death(state, target);
+}
+
 pub fn handle_gain_block(target: usize, amount: i32, state: &mut CombatState) {
     if target == 0 {
         if state.entities.player.current_hp > 0 {
@@ -633,7 +742,13 @@ pub fn handle_gain_block_random_monster(source: usize, amount: i32, state: &mut 
         .entities
         .monsters
         .iter()
-        .filter(|m| m.id != source && m.current_intent != Intent::Escape && !m.is_dying)
+        .filter(|m| {
+            m.id != source
+                && m.current_hp > 0
+                && !m.is_escaped
+                && m.current_intent != Intent::Escape
+                && !m.is_dying
+        })
         .map(|m| m.id)
         .collect();
     let target_id = if !alive.is_empty() {
@@ -755,5 +870,220 @@ pub fn handle_exhaust_random_card(amount: usize, state: &mut CombatState) {
             .random(state.zones.hand.len() as i32 - 1) as usize;
         let card_uuid = state.zones.hand[idx].uuid;
         super::cards::handle_exhaust_card(card_uuid, crate::state::PileType::Hand, state);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        handle_attack_damage_random_enemy, handle_damage, handle_gain_block_random_monster,
+        handle_set_current_hp, handle_vampire_damage,
+    };
+    use crate::action::{DamageInfo, DamageType, NO_SOURCE};
+    use crate::combat::{Intent, MonsterEntity};
+    use crate::content::monsters::EnemyId;
+    use crate::content::powers::{store, PowerId};
+    use crate::engine::test_support::{basic_combat, CombatTestExt};
+
+    #[test]
+    fn monster_vampire_damage_heals_monster_not_player() {
+        let mut combat = basic_combat()
+            .with_rng_seed(1)
+            .with_player_hp(50)
+            .with_monster_type(1, EnemyId::ShelledParasite)
+            .with_monster_max_hp(1, 72)
+            .with_monster_hp(1, 30);
+
+        handle_vampire_damage(
+            DamageInfo {
+                source: 1,
+                target: 0,
+                base: 10,
+                output: 10,
+                damage_type: DamageType::Normal,
+                is_modified: false,
+            },
+            &mut combat,
+        );
+
+        assert_eq!(combat.entities.player.current_hp, 40);
+        assert_eq!(combat.entities.monsters[0].current_hp, 40);
+    }
+
+    #[test]
+    fn set_current_hp_updates_monster_directly_without_loss_pipeline() {
+        let mut combat = basic_combat()
+            .with_rng_seed(1)
+            .with_monster_type(1, EnemyId::ShelledParasite)
+            .with_monster_max_hp(1, 72)
+            .with_monster_hp(1, 30);
+
+        handle_set_current_hp(1, 1, &mut combat);
+
+        assert_eq!(combat.entities.monsters[0].current_hp, 1);
+        assert!(!combat.entities.monsters[0].is_dying);
+    }
+
+    #[test]
+    fn ownerless_normal_damage_does_not_trigger_curl_up() {
+        let mut combat = basic_combat()
+            .with_monster_type(1, EnemyId::LouseNormal)
+            .with_monster_max_hp(1, 11)
+            .with_monster_hp(1, 11)
+            .with_monster_power(1, PowerId::CurlUp, 3);
+
+        handle_damage(
+            DamageInfo {
+                source: NO_SOURCE,
+                target: 1,
+                base: 10,
+                output: 10,
+                damage_type: DamageType::Normal,
+                is_modified: false,
+            },
+            &mut combat,
+        );
+
+        assert_eq!(combat.entities.monsters[0].current_hp, 1);
+        assert_eq!(combat.entities.monsters[0].block, 0);
+        assert_eq!(store::power_amount(&combat, 1, PowerId::CurlUp), 3);
+    }
+
+    #[test]
+    fn ownerless_normal_damage_does_not_gain_vulnerable_bonus() {
+        let mut combat = basic_combat()
+            .with_monster_type(1, EnemyId::AcidSlimeM)
+            .with_monster_max_hp(1, 31)
+            .with_monster_hp(1, 24)
+            .with_monster_power(1, PowerId::Vulnerable, 3);
+
+        handle_damage(
+            DamageInfo {
+                source: NO_SOURCE,
+                target: 1,
+                base: 10,
+                output: 10,
+                damage_type: DamageType::Normal,
+                is_modified: false,
+            },
+            &mut combat,
+        );
+
+        assert_eq!(combat.entities.monsters[0].current_hp, 14);
+    }
+
+    #[test]
+    fn sword_boomerang_hits_do_not_reduce_flight_until_queued_reductions_resolve() {
+        let mut combat = basic_combat()
+            .with_monster_type(1, EnemyId::Byrd)
+            .with_monster_max_hp(1, 26)
+            .with_monster_hp(1, 24)
+            .with_monster_power(1, PowerId::Flight, 3);
+
+        for _ in 0..4 {
+            handle_attack_damage_random_enemy(3, DamageType::Normal, true, &mut combat);
+        }
+
+        assert_eq!(combat.entities.monsters[0].current_hp, 20);
+        assert_eq!(store::power_amount(&combat, 1, PowerId::Flight), 3);
+        assert_eq!(combat.engine.action_queue.len(), 4);
+    }
+
+    #[test]
+    fn player_buffer_negates_next_hp_loss_and_is_consumed() {
+        let mut combat = basic_combat()
+            .with_player_hp(50)
+            .with_player_power(PowerId::Buffer, 1);
+
+        handle_damage(
+            DamageInfo {
+                source: 1,
+                target: 0,
+                base: 10,
+                output: 10,
+                damage_type: DamageType::Normal,
+                is_modified: false,
+            },
+            &mut combat,
+        );
+
+        assert_eq!(combat.entities.player.current_hp, 50);
+        assert_eq!(store::power_amount(&combat, 0, PowerId::Buffer), 0);
+    }
+
+    #[test]
+    fn player_buffer_does_not_consume_when_block_fully_absorbs_hit() {
+        let mut combat = basic_combat()
+            .with_player_hp(50)
+            .with_player_block(12)
+            .with_player_power(PowerId::Buffer, 1);
+
+        handle_damage(
+            DamageInfo {
+                source: 1,
+                target: 0,
+                base: 10,
+                output: 10,
+                damage_type: DamageType::Normal,
+                is_modified: false,
+            },
+            &mut combat,
+        );
+
+        assert_eq!(combat.entities.player.current_hp, 50);
+        assert_eq!(combat.entities.player.block, 2);
+        assert_eq!(store::power_amount(&combat, 0, PowerId::Buffer), 1);
+    }
+
+    #[test]
+    fn gain_block_random_monster_skips_dead_targets_when_selecting_ally() {
+        let template = basic_combat().entities.monsters[0].clone();
+        let monster =
+            |base: &MonsterEntity, id: usize, enemy_id: EnemyId, hp: i32, intent: Intent| {
+                let mut monster = base.clone();
+                monster.id = id;
+                monster.monster_type = enemy_id as usize;
+                monster.current_hp = hp;
+                monster.max_hp = hp.max(1);
+                monster.block = 0;
+                monster.slot = (id - 1) as u8;
+                monster.logical_position = monster.slot as i32;
+                monster.current_intent = intent;
+                monster.intent_dmg = 0;
+                monster.is_dying = false;
+                monster.is_escaped = false;
+                monster
+            };
+
+        let mut combat = basic_combat().with_rng_seed(2);
+        combat.entities.monsters = vec![
+            monster(
+                &template,
+                1,
+                EnemyId::GremlinThief,
+                0,
+                Intent::Attack { damage: 9, hits: 1 },
+            ),
+            monster(
+                &template,
+                2,
+                EnemyId::GremlinWarrior,
+                24,
+                Intent::Attack { damage: 4, hits: 1 },
+            ),
+            monster(
+                &template,
+                3,
+                EnemyId::GremlinFat,
+                14,
+                Intent::AttackDebuff { damage: 4, hits: 1 },
+            ),
+            monster(&template, 4, EnemyId::GremlinTsundere, 13, Intent::Defend),
+        ];
+
+        handle_gain_block_random_monster(4, 7, &mut combat);
+
+        assert_eq!(combat.entities.monsters[1].block, 0);
+        assert_eq!(combat.entities.monsters[2].block, 7);
     }
 }

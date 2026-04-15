@@ -12,6 +12,10 @@ pub fn power_amount(state: &CombatState, entity: EntityId, power_id: PowerId) ->
         .unwrap_or(0)
 }
 
+fn matches_instance(power: &Power, power_id: PowerId, instance_id: u32) -> bool {
+    power.power_type == power_id && power.instance_id == Some(instance_id)
+}
+
 pub fn has_power(state: &CombatState, entity: EntityId, power_id: PowerId) -> bool {
     powers_for(state, entity).is_some_and(|powers| powers.iter().any(|p| p.power_type == power_id))
 }
@@ -75,6 +79,29 @@ pub fn remove_power_type(state: &mut CombatState, entity: EntityId, power_id: Po
     removed
 }
 
+pub fn remove_power_instance(
+    state: &mut CombatState,
+    entity: EntityId,
+    power_id: PowerId,
+    instance_id: u32,
+) -> bool {
+    let mut removed = false;
+    let mut became_empty = false;
+    if let Some(powers) = state.entities.power_db.get_mut(&entity) {
+        let before = powers.len();
+        powers.retain(|p| !matches_instance(p, power_id, instance_id));
+        removed = powers.len() != before;
+        became_empty = powers.is_empty();
+    }
+    if became_empty {
+        state.entities.power_db.remove(&entity);
+    }
+    if removed && entity == 0 {
+        state.recompute_turn_start_draw_modifier();
+    }
+    removed
+}
+
 pub fn retain_entity_powers<F>(state: &mut CombatState, entity: EntityId, mut keep: F)
 where
     F: FnMut(&Power) -> bool,
@@ -106,6 +133,32 @@ where
         .power_db
         .get_mut(&entity)
         .and_then(|powers| powers.iter_mut().find(|p| p.power_type == power_id))
+        .map(f);
+    if result.is_some() && entity == 0 {
+        state.recompute_turn_start_draw_modifier();
+    }
+    result
+}
+
+pub fn with_power_instance_mut<T, F>(
+    state: &mut CombatState,
+    entity: EntityId,
+    power_id: PowerId,
+    instance_id: u32,
+    f: F,
+) -> Option<T>
+where
+    F: FnOnce(&mut Power) -> T,
+{
+    let result = state
+        .entities
+        .power_db
+        .get_mut(&entity)
+        .and_then(|powers| {
+            powers
+                .iter_mut()
+                .find(|p| matches_instance(p, power_id, instance_id))
+        })
         .map(f);
     if result.is_some() && entity == 0 {
         state.recompute_turn_start_draw_modifier();

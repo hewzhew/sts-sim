@@ -1,6 +1,6 @@
 use super::reward_audit::{
-    build_human_card_reward_pending, manual_card_reward_followup_command,
-    PendingHumanCardRewardAudit,
+    build_human_card_reward_pending, manual_card_reward_followup_command, reward_session_is_live,
+    reward_session_protocol_supported, PendingHumanCardRewardAudit,
 };
 use crate::bot::agent::Agent;
 use crate::cli::live_comm_noncombat::{choose_best_index, decide_noncombat_with_agent};
@@ -17,7 +17,13 @@ pub(super) fn maybe_arm_human_card_reward_audit(
     frame_count: u64,
 ) -> bool {
     let screen = parsed["game_state"]["screen_type"].as_str().unwrap_or("");
-    if !enabled || screen != "CARD_REWARD" {
+    let protocol_reward_session = reward_session_protocol_supported(parsed);
+    let should_arm = if protocol_reward_session {
+        reward_session_is_live(parsed)
+    } else {
+        screen == "CARD_REWARD" || reward_session_is_live(parsed)
+    };
+    if !enabled || !should_arm {
         return false;
     }
 
@@ -33,8 +39,13 @@ pub(super) fn maybe_arm_human_card_reward_audit(
             if should_log_pending {
                 writeln!(
                     log,
-                    "[F{}] CARD_REWARD human audit armed → waiting for manual choice",
-                    frame_count
+                    "[F{}] CARD_REWARD human audit armed via {} → waiting for manual choice",
+                    frame_count,
+                    if screen == "CARD_REWARD" {
+                        "screen_state"
+                    } else {
+                        "reward_session"
+                    }
                 )
                 .unwrap();
                 writeln!(
@@ -96,7 +107,7 @@ pub(super) fn route_noncombat_command(
     {
         agent_cmd
     } else if has("leave") && screen != "SHOP_ROOM" {
-        "RETURN".to_string()
+        "LEAVE".to_string()
     } else if screen == "SHOP_ROOM" && has("choose") && !choice_list.is_empty() {
         "CHOOSE 0".to_string()
     } else if screen == "SHOP_ROOM" && has("proceed") {
@@ -115,7 +126,9 @@ pub(super) fn route_noncombat_command(
         "CONFIRM".to_string()
     } else if has("skip") {
         "SKIP".to_string()
-    } else if has("leave") || has("cancel") || has("return") {
+    } else if has("leave") {
+        "LEAVE".to_string()
+    } else if has("cancel") || has("return") {
         "RETURN".to_string()
     } else if has("wait") {
         "WAIT 30".to_string()
@@ -166,6 +179,58 @@ mod tests {
     }
 
     #[test]
+    fn route_noncombat_maps_claimable_combat_reward_index_past_blocked_potion() {
+        let parsed = serde_json::json!({
+            "game_state": {
+                "screen_type": "COMBAT_REWARD",
+                "choice_list": ["potion", "card"],
+                "potions": [
+                    {"id": "Dexterity Potion"},
+                    {"id": "Strength Potion"},
+                    {"id": "Fire Potion"}
+                ],
+                "screen_state": {
+                    "rewards": [
+                        {
+                            "reward_type": "POTION",
+                            "claimable": false,
+                            "blocked_reason": "potion_slots_full",
+                            "can_discard": true,
+                            "potion": { "id": "PowerPotion" }
+                        },
+                        {
+                            "reward_type": "CARD",
+                            "claimable": true
+                        }
+                    ]
+                }
+            }
+        });
+        let mut agent = crate::bot::agent::Agent::new();
+        let avail = vec!["choose", "potion", "proceed"];
+
+        let cmd = route_noncombat_command(&mut agent, &parsed, "COMBAT_REWARD", &avail);
+
+        assert_eq!(cmd, "CHOOSE 1");
+    }
+
+    #[test]
+    fn route_noncombat_prefers_leave_command_when_available() {
+        let parsed = serde_json::json!({
+            "game_state": {
+                "screen_type": "EVENT",
+                "choice_list": []
+            }
+        });
+        let mut agent = crate::bot::agent::Agent::new();
+        let avail = vec!["leave"];
+
+        let cmd = route_noncombat_command(&mut agent, &parsed, "EVENT", &avail);
+
+        assert_eq!(cmd, "LEAVE");
+    }
+
+    #[test]
     fn maybe_arm_human_card_reward_audit_only_triggers_for_card_reward() {
         let parsed = serde_json::json!({
             "game_state": {
@@ -183,5 +248,30 @@ mod tests {
         assert!(!armed);
         assert!(pending.is_none());
         let _ = std::fs::remove_file(log_path);
+    }
+
+    #[test]
+    fn live_event_trace_includes_family_and_rationale() {
+        let rs = crate::state::run::RunState::new(1, 0, false, "Ironclad");
+        let gs = serde_json::json!({
+            "screen_state": {
+                "event_id": "Golden Idol",
+                "event_name": "Golden Idol",
+                "current_screen": 0,
+                "options": [
+                    {"text": "[Take] Obtain Golden Idol.", "label": "Take", "disabled": false, "choice_index": 0},
+                    {"text": "[Leave]", "label": "Leave", "disabled": false, "choice_index": 1}
+                ]
+            }
+        });
+
+        let trace = crate::cli::live_comm_noncombat::choose_live_event_command_with_trace(&gs, &rs)
+            .expect("trace");
+
+        assert_eq!(trace.command, "CHOOSE 0");
+        assert!(trace.summary.contains("family=cost_tradeoff"));
+        assert!(trace.detail.contains("rationale=cost_tradeoff_take_relic"));
+        assert_eq!(trace.audit["family"], "cost_tradeoff");
+        assert_eq!(trace.audit["rationale_key"], "cost_tradeoff_take_relic");
     }
 }

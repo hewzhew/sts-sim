@@ -1,7 +1,8 @@
-use crate::content::relics::{RelicId, RelicState};
+use crate::content::relics::RelicId;
 use crate::state::core::EngineState;
-use crate::state::events::{EventChoiceMeta, EventState};
+use crate::state::events::{EventChoiceMeta, EventId, EventState};
 use crate::state::run::RunState;
+use crate::state::selection::DomainEventSource;
 
 // internal_state encodes: lower 16 bits = relic_chance, upper 16 bits = current_dmg
 
@@ -69,14 +70,23 @@ pub fn handle_choice(_engine_state: &mut EngineState, run_state: &mut RunState, 
                     {
                         actual_dmg = (actual_dmg - 1).max(0);
                     }
-                    run_state.current_hp = (run_state.current_hp - actual_dmg).max(0);
+                    run_state.change_hp_with_source(
+                        -actual_dmg,
+                        DomainEventSource::Event(EventId::ScrapOoze),
+                    );
 
                     // Roll for relic
                     let roll = run_state.rng_pool.misc_rng.random_range(0, 99);
                     if roll >= 99 - chance {
                         // Success! Get a relic
                         let relic_id = run_state.random_relic();
-                        run_state.relics.push(RelicState::new(relic_id));
+                        if let Some(next_state) = run_state.obtain_relic_with_source(
+                            relic_id,
+                            EngineState::EventRoom,
+                            DomainEventSource::Event(EventId::ScrapOoze),
+                        ) {
+                            *_engine_state = next_state;
+                        }
                         event_state.current_screen = 1;
                     } else {
                         // Fail: escalate

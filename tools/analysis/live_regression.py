@@ -11,11 +11,11 @@ from pathlib import Path
 from typing import Any
 
 
-DEFAULT_RAW_PATH = Path(r"D:\rust\sts_simulator\live_comm_raw.jsonl")
-DEFAULT_DEBUG_PATH = Path(r"D:\rust\sts_simulator\live_comm_debug.txt")
-DEFAULT_WATCH_AUDIT_PATH = Path(r"D:\rust\sts_simulator\live_comm_watch_audit.jsonl")
+DEFAULT_RAW_PATH = Path(r"D:\rust\sts_simulator\logs\current\live_comm_raw.jsonl")
+DEFAULT_DEBUG_PATH = Path(r"D:\rust\sts_simulator\logs\current\live_comm_debug.txt")
+DEFAULT_WATCH_AUDIT_PATH = Path(r"D:\rust\sts_simulator\logs\current\live_comm_watch_audit.jsonl")
 DEFAULT_WATCH_NONCOMBAT_AUDIT_PATH = Path(
-    r"D:\rust\sts_simulator\live_comm_watch_noncombat.jsonl"
+    r"D:\rust\sts_simulator\logs\current\live_comm_watch_noncombat.jsonl"
 )
 
 FRAME_RE = re.compile(r"^\[F(\d+)\]")

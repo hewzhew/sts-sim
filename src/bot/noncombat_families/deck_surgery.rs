@@ -54,18 +54,26 @@ pub(super) fn deck_surgery_option_score(rs: &RunState, text: &str) -> i32 {
         ],
     ) {
         score += 3_000 + remove_targets * 420 + curse_pressure * 55;
+        score += crate::bot::deck_delta_eval::compare_purge_vs_keep(rs).total * 12;
     }
     if contains_any(&lower, &["transform a card"]) {
         score += 2_200 + transform_targets * 320;
+        score += crate::bot::deck_delta_eval::compare_transform_vs_decline(rs, 1, false).total * 10;
     }
     if contains_any(&lower, &["transform 2 cards"]) {
         score += 2_800 + transform_targets * 450;
+        score += crate::bot::deck_delta_eval::compare_transform_vs_decline(rs, 2, false).total * 10;
     }
     if contains_any(&lower, &["upgrade a card", "upgrade 1 card", "grow"]) {
         score += 2_000 + upgradable_cards * 280;
+        score += crate::bot::deck_delta_eval::compare_upgrade_vs_decline(rs, 1).total * 10;
     }
     if contains_any(&lower, &["upgrade 2 random cards"]) {
         score += 2_300 + upgradable_cards * 220;
+        score += crate::bot::deck_delta_eval::compare_upgrade_vs_decline(rs, 2).total * 8;
+    }
+    if contains_any(&lower, &["duplicate", "copy a card"]) {
+        score += 2_000 + crate::bot::deck_delta_eval::compare_duplicate_vs_decline(rs).total * 10;
     }
     if contains_any(&lower, &["heal to full", "heal"]) {
         score += missing_hp * 35;

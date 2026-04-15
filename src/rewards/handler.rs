@@ -2,6 +2,7 @@ use crate::content::relics::RelicId;
 use crate::rewards::state::{RewardItem, RewardState};
 use crate::state::core::{ClientInput, EngineState};
 use crate::state::run::RunState;
+use crate::state::selection::DomainEventSource;
 
 /// Determines the post-reward destination: EventRoom if an event-combat is pending, else MapNavigation.
 /// If pending_boss_reward is set, advances to the next act before returning MapNavigation.
@@ -62,19 +63,24 @@ pub fn handle(
                                 } else {
                                     0
                                 };
-                            run_state.gold += amount + bonus;
+                            run_state.change_gold_with_source(
+                                amount + bonus,
+                                DomainEventSource::RewardScreen,
+                            );
                         }
                         RewardItem::StolenGold { amount } => {
                             // Java: applyGoldBonus(theft=true) — no GoldenIdol bonus for stolen gold
-                            run_state.gold += amount;
+                            run_state
+                                .change_gold_with_source(amount, DomainEventSource::RewardScreen);
                         }
                         RewardItem::Relic { relic_id: id } => {
                             if let Some(next_state) =
-                                run_state.obtain_relic(
+                                run_state.obtain_relic_with_source(
                                     id,
                                     EngineState::RewardScreen(
                                         crate::rewards::state::RewardState::new(),
                                     ),
+                                    DomainEventSource::RewardScreen,
                                 )
                             {
                                 return Some(next_state);
@@ -84,14 +90,14 @@ pub fn handle(
                             // Check Sozu — blocks obtaining potions
                             if run_state.relics.iter().any(|r| r.id == RelicId::Sozu) {
                                 // Sozu prevents obtaining — discard the potion
-                            } else if let Some(slot) =
-                                run_state.potions.iter().position(|p| p.is_none())
-                            {
-                                run_state.potions[slot] =
-                                    Some(crate::content::potions::Potion::new(
+                            } else if let Some(slot) = run_state.find_empty_potion_slot() {
+                                run_state.obtain_potion_with_source(
+                                    crate::content::potions::Potion::new(
                                         potion_id,
                                         50000 + slot as u32,
-                                    ));
+                                    ),
+                                    DomainEventSource::RewardScreen,
+                                );
                             } else {
                                 // All slots full — put item back
                                 reward_state
@@ -151,8 +157,11 @@ fn handle_card_choice(
                             .iter()
                             .any(|r| r.id == RelicId::SingingBowl)
                         {
-                            run_state.max_hp += 2;
-                            run_state.current_hp = (run_state.current_hp + 2).min(run_state.max_hp);
+                            run_state.gain_max_hp_with_source(
+                                2,
+                                2,
+                                DomainEventSource::RewardScreen,
+                            );
                         }
                     }
                 }

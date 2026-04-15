@@ -52,17 +52,6 @@ impl MonsterBehavior for BronzeOrb {
                     damage_type: DamageType::Normal,
                     is_modified: false,
                 }));
-                // Let's assume the Bronze Automaton is present and we can just add the block to it.
-                if let Some(automaton) = state.entities.monsters.iter().find(|m| {
-                    crate::content::monsters::EnemyId::from_id(m.monster_type)
-                        == Some(EnemyId::BronzeAutomaton)
-                        && !m.is_dying
-                }) {
-                    actions.push(Action::GainBlock {
-                        target: automaton.id,
-                        amount: 12,
-                    });
-                }
             }
             2 => {
                 if let Some(automaton) = state.entities.monsters.iter().find(|m| {
@@ -87,5 +76,74 @@ impl MonsterBehavior for BronzeOrb {
             monster_id: entity.id,
         });
         actions
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::content::monsters::EnemyId;
+
+    #[test]
+    fn beam_does_not_grant_block_to_automaton() {
+        let mut combat = crate::content::test_support::basic_combat();
+        combat.entities.monsters = vec![
+            crate::combat::MonsterEntity {
+                id: 1,
+                monster_type: EnemyId::BronzeOrb as usize,
+                current_hp: 55,
+                max_hp: 55,
+                block: 0,
+                slot: 0,
+                is_dying: false,
+                is_escaped: false,
+                half_dead: false,
+                next_move_byte: 1,
+                current_intent: Intent::Attack { damage: 8, hits: 1 },
+                move_history: std::collections::VecDeque::new(),
+                intent_dmg: 8,
+                logical_position: 0,
+                protocol_identity: Default::default(),
+                hexaghost: Default::default(),
+                chosen: Default::default(),
+                darkling: Default::default(),
+                lagavulin: Default::default(),
+            },
+            crate::combat::MonsterEntity {
+                id: 2,
+                monster_type: EnemyId::BronzeAutomaton as usize,
+                current_hp: 190,
+                max_hp: 190,
+                block: 0,
+                slot: 1,
+                is_dying: false,
+                is_escaped: false,
+                half_dead: false,
+                next_move_byte: 0,
+                current_intent: Intent::Unknown,
+                move_history: std::collections::VecDeque::new(),
+                intent_dmg: 0,
+                logical_position: 1,
+                protocol_identity: Default::default(),
+                hexaghost: Default::default(),
+                chosen: Default::default(),
+                darkling: Default::default(),
+                lagavulin: Default::default(),
+            },
+        ];
+
+        let entity = combat.entities.monsters[0].clone();
+        let actions = BronzeOrb::take_turn(&mut combat, &entity);
+
+        assert!(actions
+            .iter()
+            .any(|action| matches!(action, Action::Damage(_))));
+        assert!(!actions.iter().any(|action| matches!(
+            action,
+            Action::GainBlock {
+                target: 2,
+                amount: 12
+            }
+        )));
     }
 }

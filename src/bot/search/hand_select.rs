@@ -1,13 +1,16 @@
+use crate::bot::card_disposition::{
+    combat_exhaust_score_for_uuid, combat_retention_score_for_uuid,
+};
+use crate::bot::monster_belief::build_combat_belief_state;
 use crate::bot::strategy_families::{
     apotheosis_hand_shaping_score, apparition_hand_shaping_score, exhaust_fuel_value_score,
     exhaust_future_fuel_reserve_score, hand_shaping_delay_quality_score,
     hand_shaping_next_draw_window_score, hand_shaping_play_now_score, reaper_hand_shaping_score,
+    ApparitionTimingContext, SurvivalTimingContext,
 };
 use crate::combat::CombatState;
 use crate::content::cards::{get_card_definition, CardId, CardType};
 use crate::content::relics::RelicId;
-
-use super::intent_hits;
 
 pub(super) fn score_put_on_draw_pile_candidate(combat: &CombatState, uuid: u32) -> i32 {
     let Some(card) = combat.zones.hand.iter().find(|c| c.uuid == uuid) else {
@@ -49,6 +52,7 @@ pub(super) fn score_exhaust_candidate(combat: &CombatState, uuid: u32) -> i32 {
         remaining_low_value_fuel_after_exhaust(combat, uuid),
         future_exhaust_demand(combat),
     );
+    score += combat_exhaust_score_for_uuid(combat, uuid);
     score
 }
 
@@ -150,6 +154,9 @@ pub(super) fn score_discard_candidate(combat: &CombatState, uuid: u32) -> i32 {
         _ => {}
     }
 
+    score += combat_exhaust_score_for_uuid(combat, uuid) / 2;
+    score -= combat_retention_score_for_uuid(combat, uuid) / 2;
+
     score
 }
 
@@ -219,13 +226,9 @@ pub(super) fn score_discard_to_hand_candidate(combat: &CombatState, uuid: u32) -
 }
 
 fn total_incoming_damage(combat: &CombatState) -> i32 {
-    combat
-        .entities
-        .monsters
-        .iter()
-        .filter(|m| !m.is_dying && !m.is_escaped)
-        .map(|m| m.intent_dmg * intent_hits(&m.current_intent))
-        .sum::<i32>()
+    build_combat_belief_state(combat)
+        .expected_incoming_damage
+        .round() as i32
 }
 
 fn topdeck_badness_for_card(
@@ -331,25 +334,25 @@ fn card_specific_timing_hold_score(
                 .count() as i32;
             apotheosis_hand_shaping_score(upgrade_targets, unblocked_incoming)
         }
-        CardId::Reaper => reaper_hand_shaping_score(
-            combat.entities.player.current_hp,
-            unblocked_incoming,
+        CardId::Reaper => reaper_hand_shaping_score(&SurvivalTimingContext {
+            current_hp: combat.entities.player.current_hp,
+            imminent_unblocked_damage: unblocked_incoming,
             missing_hp,
-        ),
-        CardId::Apparition => apparition_hand_shaping_score(
-            combat.entities.player.current_hp,
-            combat
+        }),
+        CardId::Apparition => apparition_hand_shaping_score(&ApparitionTimingContext {
+            current_hp: combat.entities.player.current_hp,
+            current_intangible: combat
                 .get_power(0, crate::combat::PowerId::Intangible)
                 .max(combat.get_power(0, crate::combat::PowerId::IntangiblePlayer)),
-            unblocked_incoming,
-            incoming,
-            combat
+            imminent_unblocked_damage: unblocked_incoming,
+            total_incoming_damage: incoming,
+            apparitions_in_hand: combat
                 .zones
                 .hand
                 .iter()
                 .filter(|c| c.id == CardId::Apparition)
                 .count() as i32,
-            combat
+            remaining_apparitions_total: combat
                 .zones
                 .hand
                 .iter()
@@ -357,9 +360,9 @@ fn card_specific_timing_hold_score(
                 .chain(combat.zones.discard_pile.iter())
                 .filter(|c| c.id == CardId::Apparition)
                 .count() as i32,
-            card.upgrades > 0,
-            combat.entities.player.has_relic(RelicId::RunicPyramid),
-            combat
+            upgraded: card.upgrades > 0,
+            has_runic_pyramid: combat.entities.player.has_relic(RelicId::RunicPyramid),
+            encounter_pressure: combat
                 .entities
                 .monsters
                 .iter()
@@ -379,7 +382,7 @@ fn card_specific_timing_hold_score(
                 } else {
                     0
                 },
-        ),
+        }),
         _ => 0,
     }
 }
@@ -433,7 +436,8 @@ fn remaining_low_value_fuel_after_exhaust(combat: &CombatState, exhausted_uuid: 
                 timing_hold_score,
                 combat.get_power(0, crate::combat::PowerId::FeelNoPain),
                 combat.get_power(0, crate::combat::PowerId::DarkEmbrace) > 0,
-            ) > 0
+            ) + combat_exhaust_score_for_uuid(combat, card.uuid)
+                > 0
         })
         .count() as i32
 }

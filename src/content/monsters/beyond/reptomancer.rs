@@ -6,6 +6,32 @@ use crate::content::powers::PowerId;
 
 pub struct Reptomancer;
 
+impl Reptomancer {
+    pub const DAGGER_DRAW_X: [i32; 4] = [210, -220, 180, -250];
+
+    fn occupied_dagger_slots(state: &CombatState, reptomancer_id: usize) -> [bool; 4] {
+        let mut occupied = [false; 4];
+        for monster in &state.entities.monsters {
+            if monster.id == reptomancer_id
+                || monster.is_dying
+                || EnemyId::from_id(monster.monster_type) != Some(EnemyId::SnakeDagger)
+            {
+                continue;
+            }
+            let key = monster
+                .protocol_identity
+                .draw_x
+                .unwrap_or(monster.logical_position);
+            for (slot, draw_x) in Self::DAGGER_DRAW_X.iter().enumerate() {
+                if key == *draw_x {
+                    occupied[slot] = true;
+                }
+            }
+        }
+        occupied
+    }
+}
+
 impl MonsterBehavior for Reptomancer {
     fn roll_move(
         _rng: &mut crate::rng::StsRng,
@@ -118,26 +144,29 @@ impl MonsterBehavior for Reptomancer {
             2 => {
                 // SPAWN_DAGGER
                 let daggers_per_spawn = if asc >= 18 { 2 } else { 1 };
-                let alive_count = state
+                let other_alive_count = state
                     .entities
                     .monsters
                     .iter()
-                    .filter(|m| m.current_hp > 0)
+                    .filter(|m| m.id != entity.id && !m.is_dying)
                     .count();
-                let summon_count = if alive_count <= 3 {
-                    std::cmp::min(daggers_per_spawn, 4 - alive_count)
-                } else {
-                    0
-                };
-
-                for _ in 0..summon_count {
-                    actions.push(Action::SpawnMonsterSmart {
-                        monster_id: EnemyId::SnakeDagger,
-                        current_hp: 25,
-                        max_hp: 25,
-                        logical_position: 0,
-                        is_minion: true,
-                    });
+                if other_alive_count <= 3 {
+                    let occupied_slots = Self::occupied_dagger_slots(state, entity.id);
+                    let mut daggers_spawned = 0;
+                    for (slot, draw_x) in Self::DAGGER_DRAW_X.iter().enumerate() {
+                        if daggers_spawned >= daggers_per_spawn || occupied_slots[slot] {
+                            continue;
+                        }
+                        daggers_spawned += 1;
+                        actions.push(Action::SpawnMonsterSmart {
+                            monster_id: EnemyId::SnakeDagger,
+                            current_hp: 0,
+                            max_hp: 0,
+                            logical_position: *draw_x,
+                            protocol_draw_x: Some(*draw_x),
+                            is_minion: true,
+                        });
+                    }
                 }
             }
             3 => {
@@ -158,5 +187,102 @@ impl MonsterBehavior for Reptomancer {
             monster_id: entity.id,
         });
         actions
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::content::monsters::EnemyId;
+
+    #[test]
+    fn spawn_dagger_uses_first_open_java_slots() {
+        let mut combat = crate::content::test_support::basic_combat();
+        combat.entities.monsters = vec![
+            crate::combat::MonsterEntity {
+                id: 1,
+                monster_type: EnemyId::SnakeDagger as usize,
+                current_hp: 22,
+                max_hp: 22,
+                block: 0,
+                slot: 0,
+                is_dying: false,
+                is_escaped: false,
+                half_dead: false,
+                next_move_byte: 0,
+                current_intent: Intent::Unknown,
+                move_history: std::collections::VecDeque::new(),
+                intent_dmg: 0,
+                logical_position: Reptomancer::DAGGER_DRAW_X[1],
+                protocol_identity: crate::combat::MonsterProtocolIdentity {
+                    draw_x: Some(Reptomancer::DAGGER_DRAW_X[1]),
+                    ..Default::default()
+                },
+                hexaghost: Default::default(),
+                chosen: Default::default(),
+                darkling: Default::default(),
+                lagavulin: Default::default(),
+            },
+            crate::combat::MonsterEntity {
+                id: 2,
+                monster_type: EnemyId::Reptomancer as usize,
+                current_hp: 190,
+                max_hp: 190,
+                block: 0,
+                slot: 1,
+                is_dying: false,
+                is_escaped: false,
+                half_dead: false,
+                next_move_byte: 2,
+                current_intent: Intent::Unknown,
+                move_history: std::collections::VecDeque::from(vec![2]),
+                intent_dmg: 0,
+                logical_position: 0,
+                protocol_identity: crate::combat::MonsterProtocolIdentity {
+                    draw_x: Some(0),
+                    ..Default::default()
+                },
+                hexaghost: Default::default(),
+                chosen: Default::default(),
+                darkling: Default::default(),
+                lagavulin: Default::default(),
+            },
+            crate::combat::MonsterEntity {
+                id: 3,
+                monster_type: EnemyId::SnakeDagger as usize,
+                current_hp: 24,
+                max_hp: 24,
+                block: 0,
+                slot: 2,
+                is_dying: false,
+                is_escaped: false,
+                half_dead: false,
+                next_move_byte: 0,
+                current_intent: Intent::Unknown,
+                move_history: std::collections::VecDeque::new(),
+                intent_dmg: 0,
+                logical_position: Reptomancer::DAGGER_DRAW_X[0],
+                protocol_identity: crate::combat::MonsterProtocolIdentity {
+                    draw_x: Some(Reptomancer::DAGGER_DRAW_X[0]),
+                    ..Default::default()
+                },
+                hexaghost: Default::default(),
+                chosen: Default::default(),
+                darkling: Default::default(),
+                lagavulin: Default::default(),
+            },
+        ];
+
+        let entity = combat.entities.monsters[1].clone();
+        let actions = Reptomancer::take_turn(&mut combat, &entity);
+
+        assert!(actions.contains(&Action::SpawnMonsterSmart {
+            monster_id: EnemyId::SnakeDagger,
+            current_hp: 0,
+            max_hp: 0,
+            logical_position: Reptomancer::DAGGER_DRAW_X[2],
+            protocol_draw_x: Some(Reptomancer::DAGGER_DRAW_X[2]),
+            is_minion: true,
+        }));
     }
 }

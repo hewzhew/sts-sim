@@ -1,5 +1,5 @@
-use sts_simulator::testing::author_spec::{compile_combat_author_spec, CombatAuthorSpec};
-use sts_simulator::testing::scenario::assert_fixture;
+use sts_simulator::testing::fixtures::author_spec::{compile_combat_author_spec, CombatAuthorSpec};
+use sts_simulator::testing::fixtures::scenario::assert_fixture;
 
 #[test]
 fn replay_synthetic_scenarios() {

@@ -1,4 +1,5 @@
 use crate::state::core::{ClientInput, EngineState, PendingChoice};
+use crate::state::selection::{SelectionResolution, SelectionTargetRef};
 
 /// Translates a Rust ClientInput into the String format expected by Java's CommunicationMod over stdin/stdout.
 pub fn input_to_java_command(input: &ClientInput, state: &EngineState) -> Option<String> {
@@ -48,6 +49,15 @@ pub fn input_to_java_command(input: &ClientInput, state: &EngineState) -> Option
         // to make Java advance one step and return a new intermediate frame.
         ClientInput::SubmitHandSelect(uuids) => translate_pending_uuid_selection(uuids, state),
         ClientInput::SubmitGridSelect(uuids) => translate_pending_uuid_selection(uuids, state),
+        ClientInput::SubmitSelection(SelectionResolution { selected, .. }) => {
+            let uuids = selected
+                .iter()
+                .map(|target| match target {
+                    SelectionTargetRef::CardUuid(uuid) => *uuid,
+                })
+                .collect::<Vec<_>>();
+            translate_pending_uuid_selection(&uuids, state)
+        }
 
         _ => {
             eprintln!("Unhandled input translation: {:?}", input);

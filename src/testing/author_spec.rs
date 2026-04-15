@@ -2,9 +2,9 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 
 use crate::content::cards::get_card_definition;
-use crate::diff::mapper::card_id_from_java;
+use crate::diff::protocol::mapper::card_id_from_java;
 
-use super::scenario::{
+use crate::testing::fixtures::scenario::{
     ScenarioAssertion, ScenarioCardSelector, ScenarioFixture, ScenarioKind, ScenarioOracleKind,
     ScenarioProvenance, ScenarioStep, StructuredScenarioStep,
 };
@@ -32,6 +32,8 @@ pub struct CombatAuthorSpec {
     pub exhaust_pile: Vec<AuthorCardSpec>,
     #[serde(default)]
     pub relics: Vec<AuthorRelicSpec>,
+    #[serde(default)]
+    pub potions: Vec<String>,
     #[serde(default)]
     pub steps: Vec<AuthorStepSpec>,
     #[serde(default, alias = "expect")]
@@ -355,7 +357,7 @@ pub fn compile_combat_author_spec(spec: &CombatAuthorSpec) -> Result<ScenarioFix
         "class": spec.player_class,
         "room_type": spec.room_type,
         "relics": compile_relics(&spec.relics),
-        "potions": [],
+        "potions": compile_potions(&spec.potions),
         "combat_state": {
             "turn": spec.turn,
             "room_type": spec.room_type,
@@ -372,7 +374,7 @@ pub fn compile_combat_author_spec(spec: &CombatAuthorSpec) -> Result<ScenarioFix
             "draw_pile": draw_pile,
             "discard_pile": discard_pile,
             "exhaust_pile": exhaust_pile,
-            "potions": [],
+            "potions": compile_potions(&spec.potions),
         }
     });
 
@@ -464,6 +466,17 @@ fn compile_relics(relics: &[AuthorRelicSpec]) -> Vec<Value> {
             }),
         })
         .collect()
+}
+
+fn compile_potions(potions: &[String]) -> Vec<Value> {
+    let mut compiled = potions
+        .iter()
+        .map(|id| json!({ "id": id }))
+        .collect::<Vec<_>>();
+    while compiled.len() < 3 {
+        compiled.push(json!({ "id": "Potion Slot" }));
+    }
+    compiled
 }
 
 fn compile_step(step: &AuthorStepSpec) -> Result<ScenarioStep, String> {
@@ -855,7 +868,7 @@ fn default_occurrence() -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::testing::scenario::{assert_fixture, replay_fixture};
+    use crate::testing::fixtures::scenario::{assert_fixture, replay_fixture};
 
     #[test]
     fn compile_minimal_silent_spec_into_synthetic_fixture() {
@@ -1073,6 +1086,25 @@ mod tests {
 
         let fixture = compile_combat_author_spec(&spec).expect("spec should compile");
         assert_fixture(&fixture).expect("compiled fixture should pass");
+    }
+
+    #[test]
+    fn author_spec_compiles_potions_into_three_slots() {
+        let spec: CombatAuthorSpec = serde_json::from_value(json!({
+            "name": "potions",
+            "monsters": [{"id": "JawWorm", "current_hp": 40}],
+            "potions": ["Attack Potion"]
+        }))
+        .expect("author spec should parse");
+
+        let fixture = compile_combat_author_spec(&spec).expect("spec should compile");
+        let potions = fixture.initial_game_state["combat_state"]["potions"]
+            .as_array()
+            .expect("potions should be an array");
+        assert_eq!(potions.len(), 3);
+        assert_eq!(potions[0]["id"], "Attack Potion");
+        assert_eq!(potions[1]["id"], "Potion Slot");
+        assert_eq!(potions[2]["id"], "Potion Slot");
     }
 
     #[test]

@@ -130,9 +130,16 @@ pub fn build_encounter(
             move_history: VecDeque::new(),
             intent_dmg,
             logical_position: slot as i32,
+            protocol_identity: Default::default(),
             hexaghost: Default::default(),
+            chosen: Default::default(),
             darkling: Default::default(),
+            lagavulin: Default::default(),
         };
+
+        if enemy_id == EnemyId::Chosen {
+            monster.chosen.first_turn = true;
+        }
 
         if enemy_id == EnemyId::Darkling {
             crate::content::monsters::beyond::darkling::initialize_runtime_state(
@@ -743,23 +750,25 @@ pub fn build_encounter(
         }
         EncounterId::Reptomancer => {
             // Java: SnakeDagger + Reptomancer + SnakeDagger
-            monsters.push(spawn_monster(
-                EnemyId::SnakeDagger,
-                monster_hp_rng,
-                slot_counter,
-            ));
+            let mut left_dagger = spawn_monster(EnemyId::SnakeDagger, monster_hp_rng, slot_counter);
+            left_dagger.logical_position =
+                crate::content::monsters::beyond::reptomancer::Reptomancer::DAGGER_DRAW_X[1];
+            left_dagger.protocol_identity.draw_x =
+                Some(crate::content::monsters::beyond::reptomancer::Reptomancer::DAGGER_DRAW_X[1]);
+            monsters.push(left_dagger);
             slot_counter += 1;
-            monsters.push(spawn_monster(
-                EnemyId::Reptomancer,
-                monster_hp_rng,
-                slot_counter,
-            ));
+            let mut reptomancer = spawn_monster(EnemyId::Reptomancer, monster_hp_rng, slot_counter);
+            reptomancer.logical_position = 0;
+            reptomancer.protocol_identity.draw_x = Some(0);
+            monsters.push(reptomancer);
             slot_counter += 1;
-            monsters.push(spawn_monster(
-                EnemyId::SnakeDagger,
-                monster_hp_rng,
-                slot_counter,
-            ));
+            let mut right_dagger =
+                spawn_monster(EnemyId::SnakeDagger, monster_hp_rng, slot_counter);
+            right_dagger.logical_position =
+                crate::content::monsters::beyond::reptomancer::Reptomancer::DAGGER_DRAW_X[0];
+            right_dagger.protocol_identity.draw_x =
+                Some(crate::content::monsters::beyond::reptomancer::Reptomancer::DAGGER_DRAW_X[0]);
+            monsters.push(right_dagger);
         }
         EncounterId::AwakenedOne => {
             // Java: 2 Cultists + AwakenedOne

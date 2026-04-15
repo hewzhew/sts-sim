@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use serde_json::{json, Value};
 
-use super::scenario::{
+use crate::testing::fixtures::scenario::{
     ScenarioAssertion, ScenarioFixture, ScenarioKind, ScenarioOracleKind, ScenarioProvenance,
     ScenarioStep,
 };

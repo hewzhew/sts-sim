@@ -1,3 +1,4 @@
+use serde_json::json;
 use std::io::Write;
 use std::path::PathBuf;
 use std::process::Command;
@@ -9,37 +10,53 @@ mod io;
 mod noncombat;
 mod reward_audit;
 mod session;
+mod snapshot;
 mod watch;
 
 use frame::LiveFrame;
 use io::{LiveCommIo, ProtocolReadFrame};
 use session::LiveCommSession;
 
-pub(crate) const LOG_PATH: &str = r"d:\rust\sts_simulator\live_comm_debug.txt";
-pub(crate) const RAW_PATH: &str = r"d:\rust\sts_simulator\live_comm_raw.jsonl";
-pub(crate) const SIG_PATH: &str = r"d:\rust\sts_simulator\live_comm_signatures.jsonl";
-pub(crate) const REWARD_AUDIT_PATH: &str = r"d:\rust\sts_simulator\live_comm_reward_audit.jsonl";
-pub(crate) const WATCH_AUDIT_PATH: &str = r"d:\rust\sts_simulator\live_comm_watch_audit.jsonl";
+pub(crate) const CURRENT_LOG_ROOT: &str = r"d:\rust\sts_simulator\logs\current";
+pub(crate) const LOG_PATH: &str = r"d:\rust\sts_simulator\logs\current\live_comm_debug.txt";
+pub(crate) const RAW_PATH: &str = r"d:\rust\sts_simulator\logs\current\live_comm_raw.jsonl";
+pub(crate) const REPLAY_PATH: &str = r"d:\rust\sts_simulator\logs\current\live_comm_replay.json";
+pub(crate) const SIG_PATH: &str = r"d:\rust\sts_simulator\logs\current\live_comm_signatures.jsonl";
+pub(crate) const FOCUS_LOG_PATH: &str = r"d:\rust\sts_simulator\logs\current\live_comm_focus.txt";
+pub(crate) const REWARD_AUDIT_PATH: &str =
+    r"d:\rust\sts_simulator\logs\current\live_comm_reward_audit.jsonl";
+pub(crate) const EVENT_AUDIT_PATH: &str =
+    r"d:\rust\sts_simulator\logs\current\live_comm_event_audit.jsonl";
+pub(crate) const SIDECAR_SHADOW_AUDIT_PATH: &str =
+    r"d:\rust\sts_simulator\logs\current\live_comm_sidecar_shadow.jsonl";
+pub(crate) const WATCH_AUDIT_PATH: &str =
+    r"d:\rust\sts_simulator\logs\current\live_comm_watch_audit.jsonl";
 pub(crate) const WATCH_NONCOMBAT_AUDIT_PATH: &str =
-    r"d:\rust\sts_simulator\live_comm_watch_noncombat.jsonl";
-const LIVE_COMM_BUILD_TAG: &str = "rust-live-comm-2026-04-10-a";
+    r"d:\rust\sts_simulator\logs\current\live_comm_watch_noncombat.jsonl";
+pub(crate) const COMBAT_SUSPECT_AUDIT_PATH: &str =
+    r"d:\rust\sts_simulator\logs\current\live_comm_combat_suspects.jsonl";
+pub(crate) const FAILURE_SNAPSHOT_AUDIT_PATH: &str =
+    r"d:\rust\sts_simulator\logs\current\live_comm_failure_snapshots.jsonl";
+const LIVE_COMM_BUILD_TAG: &str = env!("LIVE_COMM_BUILD_TAG");
+pub(crate) const LIVE_COMM_PROTOCOL_VERSION: u32 = 2;
+pub(crate) const LIVE_COMM_BOOTSTRAP_PREFIX: &str = "__LIVE_COMM_BOOTSTRAP__ ";
 const ENGINE_BUG_SUMMARY_INTERVAL: usize = 5;
-pub(crate) const ARCHIVE_ROOT: &str = r"d:\rust\sts_simulator\logs";
-pub(crate) const MAX_DEBUG_ARCHIVES: usize = 40;
-pub(crate) const MAX_RAW_ARCHIVES: usize = 20;
-pub(crate) const MAX_SIGNATURE_ARCHIVES: usize = 40;
-
-pub(crate) struct ArchiveOutcome {
-    pub(crate) should_archive: bool,
-    pub(crate) reason: String,
-    pub(crate) archived: Vec<PathBuf>,
-}
 
 #[derive(Clone, Debug, Default)]
 pub struct LiveCommConfig {
     pub human_card_reward_audit: bool,
     pub human_boss_combat_handoff: bool,
+    pub sidecar_shadow: bool,
+    pub parity_mode: LiveParityMode,
+    pub combat_search_budget: u32,
     pub watch_capture: LiveWatchCaptureConfig,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum LiveParityMode {
+    #[default]
+    Survey,
+    Strict,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -80,6 +97,7 @@ impl LiveWatchCaptureConfig {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum LoopExitReason {
     GameOver,
+    ParityFail,
     StdinError,
     StdinEof,
 }
@@ -128,7 +146,7 @@ pub fn run_live_comm_loop(mut agent: crate::bot::agent::Agent, config: LiveCommC
     let mut live_io = LiveCommIo::new(&config);
     let mut session = LiveCommSession::new(config);
 
-    live_io.send_line(&mut stdout, "ready");
+    live_io.send_line(&mut stdout, &bootstrap_message());
 
     let loop_exit_reason = loop {
         let line = match live_io.read_protocol_frame(&mut stdin_lock) {
@@ -165,6 +183,7 @@ pub fn run_live_comm_loop(mut agent: crate::bot::agent::Agent, config: LiveCommC
         }
     };
     live_io.finish_session(
+        &session.config,
         &loop_exit_reason,
         &session.last_sent_cmd,
         session.last_response_id,
@@ -175,6 +194,25 @@ pub fn run_live_comm_loop(mut agent: crate::bot::agent::Agent, config: LiveCommC
         session.game_over_seen,
         session.final_victory,
     );
+}
+
+fn bootstrap_message() -> String {
+    let provenance = crate::cli::live_comm_logs::runtime_provenance();
+    format!(
+        "{prefix}{payload}",
+        prefix = LIVE_COMM_BOOTSTRAP_PREFIX,
+        payload = json!({
+            "kind": "live_comm_bootstrap",
+            "protocol_version": LIVE_COMM_PROTOCOL_VERSION,
+            "build_tag": LIVE_COMM_BUILD_TAG,
+            "git_short_sha": provenance.git_short_sha,
+            "build_unix": provenance.build_unix,
+            "exe_path": provenance.exe_path,
+            "exe_mtime_utc": provenance.exe_mtime_utc,
+            "profile_name": provenance.profile_name,
+            "profile_path": provenance.profile_path,
+        })
+    )
 }
 
 fn unix_time_millis() -> u128 {
@@ -197,7 +235,7 @@ mod tests {
         combat, reward_audit, should_clear_combat_context, watch, LiveWatchCaptureConfig,
         LiveWatchMatchMode,
     };
-    use crate::diff::comparator::{compare_states, ActionContext};
+    use crate::diff::replay::comparator::{compare_states, ActionContext};
     use crate::state::core::{ClientInput, EngineState};
     use serde_json::Map;
     use std::path::Path;
@@ -465,6 +503,160 @@ mod tests {
     }
 
     #[test]
+    fn human_card_reward_audit_prefers_reward_session_absence_over_screen_heuristic() {
+        let root = serde_json::json!({
+            "protocol_meta": {
+                "response_id": 278,
+                "capabilities": {
+                    "reward_session": true
+                }
+            },
+            "game_state": {
+                "screen_type": "MAP",
+                "screen_name": "MAP",
+                "room_phase": "COMPLETE"
+            }
+        });
+        assert_eq!(
+            reward_audit::classify_human_card_reward_audit_disposition(&root),
+            reward_audit::HumanCardRewardAuditDisposition::Abandon {
+                reason: "reward_session_absent"
+            }
+        );
+    }
+
+    #[test]
+    fn build_human_card_reward_pending_can_use_reward_session_when_offscreen() {
+        let root = serde_json::json!({
+            "protocol_meta": {
+                "response_id": 301,
+                "state_frame_id": 77,
+                "reward_session": {
+                    "session_id": "reward-11",
+                    "state": "temporarily_offscreen",
+                    "offered_card_ids": ["Shrug It Off", "Warcry", "Pommel Strike"]
+                }
+            },
+            "game_state": {
+                "screen_type": "MAP",
+                "screen_name": "MAP",
+                "room_phase": "COMPLETE",
+                "floor": 12,
+                "act": 1,
+                "class": "IRONCLAD",
+                "current_hp": 40,
+                "max_hp": 80,
+                "gold": 99,
+                "deck": []
+            }
+        });
+
+        let pending = reward_audit::build_human_card_reward_pending(&root, None)
+            .expect("reward_session should seed pending audit");
+
+        assert_eq!(pending.session_id.as_deref(), Some("reward-11"));
+        assert_eq!(pending.offered_signature.len(), 3);
+        assert!(pending
+            .offered_signature
+            .iter()
+            .all(|sig| sig.ends_with("+session")));
+    }
+
+    #[test]
+    fn maybe_arm_human_card_reward_audit_uses_reward_session_when_offscreen() {
+        let parsed = serde_json::json!({
+            "protocol_meta": {
+                "response_id": 302,
+                "state_frame_id": 88,
+                "reward_session": {
+                    "session_id": "reward-12",
+                    "state": "temporarily_offscreen",
+                    "offered_card_ids": ["Shrug It Off", "Warcry", "Pommel Strike"]
+                }
+            },
+            "game_state": {
+                "screen_type": "MAP",
+                "screen_name": "MAP",
+                "room_phase": "COMPLETE",
+                "floor": 12,
+                "act": 1,
+                "class": "IRONCLAD",
+                "current_hp": 40,
+                "max_hp": 80,
+                "gold": 99,
+                "deck": []
+            }
+        });
+
+        let path = std::env::temp_dir().join("reward_session_offscreen_arm_test.txt");
+        let mut log = std::fs::File::create(path).unwrap();
+        let mut pending = None;
+
+        let armed = crate::cli::live_comm::noncombat::maybe_arm_human_card_reward_audit(
+            true,
+            &mut pending,
+            &parsed,
+            None,
+            &mut log,
+            123,
+        );
+
+        assert!(armed);
+        assert_eq!(
+            pending.as_ref().and_then(|p| p.session_id.as_deref()),
+            Some("reward-12")
+        );
+    }
+
+    #[test]
+    fn maybe_arm_human_card_reward_audit_does_not_fallback_to_screen_when_protocol_session_is_absent(
+    ) {
+        let parsed = serde_json::json!({
+            "protocol_meta": {
+                "response_id": 303,
+                "capabilities": {
+                    "reward_session": true
+                }
+            },
+            "game_state": {
+                "screen_type": "CARD_REWARD",
+                "screen_name": "CARD_REWARD",
+                "room_phase": "COMPLETE",
+                "floor": 12,
+                "act": 1,
+                "class": "IRONCLAD",
+                "current_hp": 40,
+                "max_hp": 80,
+                "gold": 99,
+                "deck": [],
+                "screen_state": {
+                    "cards": [
+                        {"id": "Shrug It Off", "name": "Shrug It Off", "upgrades": 0},
+                        {"id": "Warcry", "name": "Warcry", "upgrades": 0},
+                        {"id": "Pommel Strike", "name": "Pommel Strike", "upgrades": 0}
+                    ]
+                }
+            }
+        });
+
+        let path = std::env::temp_dir().join("reward_session_no_fallback_arm_test.txt");
+        let mut log = std::fs::File::create(path).unwrap();
+        let mut pending = None;
+
+        let armed = crate::cli::live_comm::noncombat::maybe_arm_human_card_reward_audit(
+            true,
+            &mut pending,
+            &parsed,
+            None,
+            &mut log,
+            124,
+        );
+
+        assert!(!armed);
+        assert!(pending.is_none());
+    }
+
+    #[test]
     fn human_card_reward_audit_keeps_pending_for_map_inspection() {
         let root = serde_json::json!({
             "protocol_meta": { "response_id": 274 },
@@ -528,7 +720,34 @@ mod tests {
         let written = std::fs::read_to_string(&reward_path).unwrap();
         assert!(written.contains("\"audit_status\":\"incomplete\""));
         assert!(written.contains("\"audit_reason\":\"reward_context_closed_without_human_choice\""));
+        assert!(written.contains("\"audit_reason_source\":\"legacy_fallback\""));
         assert!(written.contains("\"human_choice\":null"));
+    }
+
+    #[test]
+    fn human_card_reward_reason_source_marks_protocol_truth_reasons() {
+        assert_eq!(
+            reward_audit::human_card_reward_audit_reason_source("reward_session_absent"),
+            "protocol_truth"
+        );
+        assert_eq!(
+            reward_audit::human_card_reward_audit_reason_source(
+                "reward_session_closed_without_choice"
+            ),
+            "protocol_truth"
+        );
+    }
+
+    #[test]
+    fn human_card_reward_reason_source_marks_legacy_fallback_reasons() {
+        assert_eq!(
+            reward_audit::human_card_reward_audit_reason_source("temporary_reward_inspect_screen"),
+            "legacy_fallback"
+        );
+        assert_eq!(
+            reward_audit::human_card_reward_audit_reason_source("screen_left_without_human_choice"),
+            "legacy_fallback"
+        );
     }
 
     #[test]

@@ -8,8 +8,8 @@ from pathlib import Path
 
 
 DEFAULT_REPO_ROOT = Path(r"D:\rust\sts_simulator")
-DEFAULT_RAW_PATH = DEFAULT_REPO_ROOT / "live_comm_raw.jsonl"
-DEFAULT_DEBUG_PATH = DEFAULT_REPO_ROOT / "live_comm_debug.txt"
+DEFAULT_RAW_PATH = DEFAULT_REPO_ROOT / "logs" / "current" / "live_comm_raw.jsonl"
+DEFAULT_DEBUG_PATH = DEFAULT_REPO_ROOT / "logs" / "current" / "live_comm_debug.txt"
 DEFAULT_OUT_DIR = DEFAULT_REPO_ROOT / "tests" / "live_regressions"
 
 

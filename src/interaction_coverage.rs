@@ -7,8 +7,8 @@ use crate::combat::CombatState;
 use crate::content::cards::{self, CardTarget};
 use crate::content::potions;
 use crate::content::powers::PowerId;
-use crate::diff::parser::{parse_replay, ReplayAction};
-use crate::diff::replay_support::{continue_deferred_pending_choice, tick_until_stable};
+use crate::diff::protocol::parser::{parse_replay, ReplayAction};
+use crate::diff::replay::replay_support::{continue_deferred_pending_choice, tick_until_stable};
 use crate::diff::state_sync::{build_combat_state, sync_state};
 use crate::state::core::{ClientInput, EngineState, PendingChoice};
 
@@ -860,6 +860,7 @@ mod tests {
         let state = CombatState {
             meta: crate::combat::CombatMeta {
                 ascension_level: 0,
+                player_class: "Ironclad",
                 is_boss_fight: false,
                 is_elite_fight: false,
                 meta_changes: Vec::new(),
@@ -910,8 +911,11 @@ mod tests {
                     move_history: VecDeque::new(),
                     intent_dmg: 0,
                     logical_position: 0,
+                    protocol_identity: Default::default(),
                     hexaghost: Default::default(),
+                    chosen: Default::default(),
                     darkling: Default::default(),
+                    lagavulin: Default::default(),
                 }],
                 potions: vec![None, None, None],
                 power_db: HashMap::new(),
@@ -920,6 +924,7 @@ mod tests {
                 action_queue: VecDeque::new(),
             },
             rng: crate::combat::CombatRng::new(crate::rng::RngPool::new(123)),
+            runtime: Default::default(),
         };
         let def = cards::get_card_definition(card_id);
         assert_eq!(def.target, target);

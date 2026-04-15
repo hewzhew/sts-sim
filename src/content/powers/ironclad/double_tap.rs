@@ -8,11 +8,7 @@ pub fn on_use_card(state: &mut CombatState, card: &CombatCard, purge: bool, targ
         && crate::content::cards::get_card_definition(card.id).card_type
             == crate::content::cards::CardType::Attack
     {
-        let mut clone = card.clone();
-
-        // Correctly allocate a new UUID for the Temp card clone!
-        state.zones.card_uuid_counter += 1;
-        clone.uuid = state.zones.card_uuid_counter;
+        let clone = card.clone();
 
         // Deduct power
         if let Some(amount) = store::with_power_mut(state, 0, PowerId::DoubleTap, |p| {

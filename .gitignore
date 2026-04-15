@@ -34,6 +34,7 @@ tests/synthetic_scenarios/
 /*_batch_report.md
 /monster_analysis_output.md
 /coverage.json
+/ledger.jsonl
 /crash_trace_*.log
 /silent_auto_smoke*.log
 /live_comm_debug.txt

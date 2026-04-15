@@ -1064,11 +1064,11 @@ pub fn get_hp_range(id: EnemyId, ascension_level: u8) -> (i32, i32) {
         }
         EnemyId::GremlinWizard => {
             if asc_hp {
-                (24, 28)
+                (22, 26)
             } else {
-                (23, 25)
+                (21, 25)
             }
-        } // Approximated HP spread based on base game ranges
+        }
         EnemyId::GremlinNob => {
             if asc_elite_hp {
                 (85, 90)

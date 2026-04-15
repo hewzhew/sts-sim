@@ -8,41 +8,54 @@ impl Agent {
             return cmd;
         }
         let profile = crate::bot::evaluator::CardEvaluator::deck_profile(rs);
+        let mut best: Option<(ClientInput, i32)> =
+            Some((ClientInput::Proceed, self.shop_save_gold_score(rs, shop)));
 
-        if let Some((idx, _)) = shop
+        for (idx, relic) in shop
             .relics
             .iter()
             .enumerate()
             .filter(|(_, relic)| rs.gold >= relic.price)
-            .map(|(idx, relic)| (idx, self.shop_relic_score(rs, relic.relic_id)))
-            .filter(|(_, score)| *score >= 88)
-            .max_by_key(|(_, score)| *score)
         {
-            return ClientInput::BuyRelic(idx);
+            let score = self.shop_purchase_score(
+                rs,
+                shop,
+                relic.price,
+                self.shop_relic_score(rs, relic.relic_id),
+                ShopPurchaseKind::Relic,
+            );
+            if score >= 52 {
+                update_best_shop_choice(&mut best, ClientInput::BuyRelic(idx), score);
+            }
         }
 
-        if let Some((idx, _)) = shop
+        for (idx, card) in shop
             .cards
             .iter()
             .enumerate()
             .filter(|(_, card)| rs.gold >= card.price)
-            .map(|(idx, card)| (idx, self.shop_card_score(rs, card.card_id)))
-            .filter(|(_, score)| *score >= self.shop_card_buy_threshold(rs, *score))
-            .max_by_key(|(_, score)| *score)
         {
-            return ClientInput::BuyCard(idx);
+            let score = self.shop_card_purchase_score(rs, shop, card.card_id, card.price);
+            if score >= self.shop_card_buy_threshold(rs, score) {
+                update_best_shop_choice(&mut best, ClientInput::BuyCard(idx), score);
+            }
         }
 
-        if let Some((idx, _)) = shop
-            .potions
-            .iter()
-            .enumerate()
-            .filter(|(_, potion)| rs.gold >= potion.price && rs.potions.iter().any(|p| p.is_none()))
-            .map(|(idx, potion)| (idx, self.shop_potion_score(rs, potion.potion_id)))
-            .filter(|(_, score)| *score >= 80)
-            .max_by_key(|(_, score)| *score)
+        for (idx, potion) in
+            shop.potions.iter().enumerate().filter(|(_, potion)| {
+                rs.gold >= potion.price && rs.potions.iter().any(|p| p.is_none())
+            })
         {
-            return ClientInput::BuyPotion(idx);
+            let score = self.shop_purchase_score(
+                rs,
+                shop,
+                potion.price,
+                self.shop_potion_score(rs, potion.potion_id),
+                ShopPurchaseKind::Potion,
+            );
+            if score >= 72 {
+                update_best_shop_choice(&mut best, ClientInput::BuyPotion(idx), score);
+            }
         }
 
         if shop.purge_available
@@ -51,10 +64,17 @@ impl Agent {
             && self.should_purge_at_shop(rs, shop)
             && self.searing_blow_plan_score(rs, &profile) <= 0
         {
-            return ClientInput::PurgeCard(self.best_purge_index(rs));
+            let score = self.shop_purge_score(rs, shop);
+            if score >= 52 {
+                update_best_shop_choice(
+                    &mut best,
+                    ClientInput::PurgeCard(self.best_purge_index(rs)),
+                    score,
+                );
+            }
         }
 
-        ClientInput::Proceed
+        best.map(|(cmd, _)| cmd).unwrap_or(ClientInput::Proceed)
     }
 
     pub(crate) fn curiosity_shop_pick(
@@ -62,7 +82,7 @@ impl Agent {
         rs: &RunState,
         shop: &crate::shop::ShopState,
     ) -> Option<ClientInput> {
-        match self.curiosity_target.as_ref()? {
+        match self.active_curiosity_target()? {
             crate::bot::coverage::CuriosityTarget::Card(target_name) => shop
                 .cards
                 .iter()
@@ -333,13 +353,31 @@ impl Agent {
     ) -> i32 {
         let profile = crate::bot::evaluator::CardEvaluator::deck_profile(rs);
         let mut score = crate::bot::evaluator::CardEvaluator::evaluate_card(card_id, rs);
+        let delta = crate::bot::deck_delta_eval::compare_pick_vs_skip(rs, card_id);
         if self.is_high_value_tactical_card(card_id) {
             score += 15;
         }
         score += self.shop_shell_card_bonus(card_id, &profile);
         score += self.shop_deficit_card_bonus(rs, card_id, &profile);
+        score += shop_delta_priority_bonus(delta);
         if let Some(target) = self.curiosity_archetype_target() {
             score += self.archetype_card_bonus(card_id, target);
+        }
+        score
+    }
+
+    pub(crate) fn shop_purge_score(&self, rs: &RunState, shop: &crate::shop::ShopState) -> i32 {
+        let delta = crate::bot::deck_delta_eval::compare_purge_vs_keep(rs);
+        let improvement = shop_delta_priority_bonus(delta);
+        let mut score = 52 + improvement.clamp(0, 56);
+        score -= shop.purge_cost / 12;
+        if rs.master_deck.iter().any(|card| {
+            matches!(
+                crate::content::cards::get_card_definition(card.id).card_type,
+                crate::content::cards::CardType::Curse | crate::content::cards::CardType::Status
+            )
+        }) {
+            score += 18;
         }
         score
     }
@@ -355,21 +393,102 @@ impl Agent {
 
         if let Some(target) = self.curiosity_archetype_target() {
             if self.archetype_alignment_bonus(&profile, target) <= 0 {
-                return 45;
+                return 58;
             }
         }
 
         if acute_deficits >= 2 {
-            return if score >= 60 { 42 } else { 46 };
+            return if score >= 80 { 58 } else { 62 };
         }
 
-        if score >= 72 {
-            55
+        if score >= 110 {
+            60
         } else if shell_incomplete || rs.act_num == 1 {
-            48
+            66
         } else {
-            52
+            70
         }
+    }
+
+    pub(crate) fn shop_card_purchase_score(
+        &self,
+        rs: &RunState,
+        shop: &crate::shop::ShopState,
+        card_id: crate::content::cards::CardId,
+        price: i32,
+    ) -> i32 {
+        let profile = crate::bot::evaluator::CardEvaluator::deck_profile(rs);
+        let shell_bonus = self.shop_shell_card_bonus(card_id, &profile);
+        let deficit_bonus = self.shop_deficit_card_bonus(rs, card_id, &profile);
+        let mut score = self.shop_card_score(rs, card_id);
+        score = self.shop_purchase_score(rs, shop, price, score, ShopPurchaseKind::Card);
+        if shell_bonus + deficit_bonus < 16 {
+            score -= 10;
+        }
+        if shell_bonus == 0 && deficit_bonus == 0 && score < 100 {
+            score -= 18;
+        }
+        if rs.act_num == 1 && shell_bonus + deficit_bonus < 28 {
+            score -= 8;
+        }
+        score
+    }
+
+    pub(crate) fn shop_save_gold_score(&self, rs: &RunState, shop: &crate::shop::ShopState) -> i32 {
+        let mut score = 38;
+        if rs.act_num == 1 {
+            score += 6;
+        }
+        if rs.gold < 150 {
+            score += 4;
+        }
+        if rs.gold < 100 {
+            score += 4;
+        }
+        if shop.purge_available
+            && rs.gold >= shop.purge_cost
+            && !rs.master_deck.is_empty()
+            && self.should_purge_at_shop(rs, shop)
+        {
+            score += 8;
+        }
+        score
+    }
+
+    pub(crate) fn shop_purchase_score(
+        &self,
+        rs: &RunState,
+        shop: &crate::shop::ShopState,
+        price: i32,
+        base_score: i32,
+        kind: ShopPurchaseKind,
+    ) -> i32 {
+        let reserve = self.shop_reserve_budget(rs, shop);
+        let remaining_gold = rs.gold - price;
+        let shortfall = (reserve - remaining_gold).max(0);
+        let price_penalty = match kind {
+            ShopPurchaseKind::Card => price / 3,
+            ShopPurchaseKind::Relic => price / 7,
+            ShopPurchaseKind::Potion => price / 5,
+        };
+        let shortfall_penalty = match kind {
+            ShopPurchaseKind::Card => shortfall / 2,
+            ShopPurchaseKind::Relic => shortfall / 4,
+            ShopPurchaseKind::Potion => shortfall / 3,
+        };
+        base_score - price_penalty - shortfall_penalty
+    }
+
+    pub(crate) fn shop_reserve_budget(&self, rs: &RunState, shop: &crate::shop::ShopState) -> i32 {
+        let mut reserve = if rs.act_num == 1 { 75 } else { 50 };
+        if shop.purge_available
+            && rs.gold >= shop.purge_cost
+            && !rs.master_deck.is_empty()
+            && self.should_purge_at_shop(rs, shop)
+        {
+            reserve = reserve.max(shop.purge_cost);
+        }
+        reserve.min(rs.gold)
     }
 
     pub(crate) fn shop_shell_card_bonus(
@@ -588,7 +707,7 @@ impl Agent {
 
     pub(crate) fn decide_map(&mut self, rs: &RunState) -> ClientInput {
         if rs.map.current_y < 0 {
-            self.map_path = Self::compute_map_path_with_target(rs, self.curiosity_target.as_ref());
+            self.map_path = Self::compute_map_path_with_target(rs, self.active_curiosity_target());
             let archetypes = crate::bot::evaluator::CardEvaluator::archetype_tags(
                 &crate::bot::evaluator::CardEvaluator::deck_profile(rs),
             );
@@ -878,160 +997,12 @@ impl Agent {
     }
 
     pub(crate) fn decide_event(&self, rs: &RunState) -> ClientInput {
-        use crate::content::relics::RelicId;
-        use crate::state::events::EventId;
-
         if let Some(event) = &rs.event_state {
-            let hp_per = (rs.current_hp as f32 / rs.max_hp.max(1) as f32) * 100.0;
-            let profile = crate::bot::evaluator::CardEvaluator::deck_profile(rs);
-            let choice = match event.id {
-                EventId::ScrapOoze => {
-                    if rs.current_hp < 25 && event.current_screen == 0 {
-                        1
-                    } else if event.current_screen == 1 {
-                        0
-                    } else {
-                        0
-                    }
-                }
-                EventId::BigFish => {
-                    if hp_per <= 30.0 {
-                        0
-                    } else {
-                        1
-                    }
-                }
-                EventId::Cleric => {
-                    if hp_per <= 65.0 {
-                        0
-                    } else if hp_per >= 90.0 {
-                        2
-                    } else {
-                        1
-                    }
-                }
-                EventId::DeadAdventurer => 1,
-                EventId::GoldenIdol => {
-                    if rs.relics.iter().any(|r| r.id == RelicId::Ectoplasm) {
-                        1
-                    } else if hp_per >= 90.0 {
-                        1
-                    } else {
-                        2
-                    }
-                }
-                EventId::Mushrooms => {
-                    if hp_per >= 40.0 {
-                        0
-                    } else {
-                        1
-                    }
-                }
-                EventId::LivingWall => {
-                    if event.current_screen > 0 {
-                        0
-                    } else if self.has_good_purge_target(rs) && self.profile_has_too_many_basics(rs)
-                    {
-                        0
-                    } else if self.best_upgrade_index(rs).is_some() {
-                        2
-                    } else {
-                        1
-                    }
-                }
-                EventId::ShiningLight => {
-                    if hp_per >= 70.0 {
-                        0
-                    } else {
-                        1
-                    }
-                }
-                EventId::Ssssserpent => 1,
-                EventId::WorldOfGoop => {
-                    if hp_per >= 80.0 {
-                        0
-                    } else {
-                        1
-                    }
-                }
-                EventId::MatchAndKeep => 0,
-                EventId::GoldenWing => {
-                    if hp_per >= 70.0 {
-                        0
-                    } else {
-                        1
-                    }
-                }
-                EventId::GoldenShrine => 0,
-                EventId::Purifier => {
-                    if event.current_screen > 0 || self.has_good_purge_target(rs) {
-                        0
-                    } else {
-                        1
-                    }
-                }
-                EventId::UpgradeShrine => {
-                    if event.current_screen > 0 || self.best_upgrade_index(rs).is_some() {
-                        0
-                    } else {
-                        1
-                    }
-                }
-                EventId::Transmorgrifier => {
-                    if event.current_screen > 0 || self.has_good_purge_target(rs) {
-                        0
-                    } else {
-                        1
-                    }
-                }
-                EventId::Lab => 0,
-                EventId::Duplicator => {
-                    if event.current_screen > 0 || self.has_good_duplicate_target(rs, &profile) {
-                        0
-                    } else {
-                        1
-                    }
-                }
-                EventId::MaskedBandits => {
-                    if hp_per >= 65.0 {
-                        1
-                    } else {
-                        0
-                    }
-                }
-                EventId::Vampires => 2,
-                EventId::Ghosts => 1,
-                EventId::TheLibrary => {
-                    if event.current_screen > 0 {
-                        0
-                    } else if hp_per < 45.0 && !Self::profile_needs_support(&profile) {
-                        1
-                    } else {
-                        0
-                    }
-                }
-                EventId::CursedTome => 1,
-                EventId::ForgottenAltar => 1,
-                EventId::KnowingSkull => 3,
-                EventId::Beggar => 0,
-                EventId::Falling => 0,
-                EventId::MindBloom => 0,
-                EventId::Colosseum => 0,
-                EventId::MysteriousSphere => {
-                    if hp_per >= 70.0 {
-                        0
-                    } else {
-                        1
-                    }
-                }
-                EventId::TombRedMask => 1,
-                EventId::WindingHalls => 2,
-                EventId::Nest => 0,
-                EventId::FaceTrader => 2,
-                EventId::Nloth => 2,
-                EventId::WomanInBlue => 0,
-                _ => 0,
-            };
+            let choices = crate::engine::event_handler::get_event_choices(rs);
+            let choice = crate::bot::event_policy::choose_local_event_choice(rs, event, &choices)
+                .map(|decision| decision.option_index)
+                .or_else(|| choices.iter().position(|choice| !choice.disabled))
+                .unwrap_or(0);
             ClientInput::EventChoice(choice)
         } else {
             ClientInput::EventChoice(0)
@@ -1158,42 +1129,25 @@ impl Agent {
             || (profile.exhaust_engines >= 2 && profile.exhaust_outlets >= 1)
             || (profile.block_core >= 3 && profile.block_payoffs >= 1)
     }
+}
 
-    pub(crate) fn profile_has_too_many_basics(&self, rs: &RunState) -> bool {
-        rs.master_deck
-            .iter()
-            .filter(|c| {
-                matches!(
-                    c.id,
-                    id if crate::content::cards::is_starter_basic(id)
-                )
-            })
-            .count()
-            >= 4
+fn update_best_shop_choice(best: &mut Option<(ClientInput, i32)>, cmd: ClientInput, score: i32) {
+    match best {
+        Some((_, best_score)) if *best_score >= score => {}
+        _ => *best = Some((cmd, score)),
     }
+}
 
-    pub(crate) fn has_good_purge_target(&self, rs: &RunState) -> bool {
-        if rs.master_deck.is_empty() {
-            return false;
-        }
-        let idx = self.best_purge_index(rs);
-        let card = &rs.master_deck[idx];
-        let score = crate::bot::evaluator::CardEvaluator::evaluate_owned_card(card.id, rs);
-        matches!(
-            card.id,
-            id if crate::content::cards::is_starter_basic(id)
-        ) || score <= 10
-    }
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum ShopPurchaseKind {
+    Card,
+    Relic,
+    Potion,
+}
 
-    pub(crate) fn has_good_duplicate_target(
-        &self,
-        rs: &RunState,
-        profile: &crate::bot::evaluator::DeckProfile,
-    ) -> bool {
-        rs.master_deck.iter().any(|card| {
-            crate::bot::evaluator::CardEvaluator::evaluate_owned_card(card.id, rs)
-                + self.upgrade_shell_bonus(card.id, profile)
-                >= 70
-        })
-    }
+fn shop_delta_priority_bonus(delta: crate::bot::deck_delta_eval::DeltaScore) -> i32 {
+    delta.prior_delta.clamp(-12, 28)
+        + delta.rollout_delta.clamp(-20, 36)
+        + (delta.suite_bias / 2).clamp(-6, 10)
+        + delta.context_delta.clamp(-40, 44)
 }

@@ -100,7 +100,16 @@ impl MonsterBehavior for Hexaghost {
             }
             1 => {
                 // DIVIDER
-                let d = get_divider_damage(state);
+                // Java locks Divider damage during ACTIVATE by mutating damage[2] and
+                // setting the next move immediately. Execution should use that locked
+                // intent damage, not recompute from the player's current HP.
+                let d = match entity.current_intent {
+                    Intent::Attack { damage, .. }
+                    | Intent::AttackBuff { damage, .. }
+                    | Intent::AttackDebuff { damage, .. }
+                    | Intent::AttackDefend { damage, .. } => damage,
+                    _ => entity.intent_dmg.max(0),
+                };
                 for _ in 0..6 {
                     actions.push(Action::Damage(DamageInfo {
                         source: entity.id,

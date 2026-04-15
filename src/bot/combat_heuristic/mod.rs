@@ -3,22 +3,59 @@ use crate::state::core::ClientInput;
 use std::collections::HashSet;
 
 mod apply;
+mod attack;
+mod debuff;
+mod draw;
+mod exhaust;
+mod posture;
+mod power;
 mod scoring;
 mod sim;
+mod support;
 
 use apply::apply_play;
 use scoring::{evaluate, play_priority};
-use sim::{build_sim_state, fast_hash, get_plays, Play, SimState, MAX_STATES};
+use sim::{active_monsters, build_sim_state, fast_hash, get_plays, Play, SimState, MAX_STATES};
+
+#[derive(Clone, Debug)]
+pub struct HeuristicMoveStat {
+    pub input: ClientInput,
+    pub score: i64,
+    pub priority: i32,
+}
+
+#[derive(Clone, Debug)]
+pub struct HeuristicDiagnostics {
+    pub chosen_move: ClientInput,
+    pub baseline_score: i64,
+    pub top_moves: Vec<HeuristicMoveStat>,
+}
 
 pub fn decide_heuristic(combat: &CombatState) -> ClientInput {
+    diagnose_decision(combat).chosen_move
+}
+
+pub fn evaluate_combat_state(combat: &CombatState) -> i64 {
+    evaluate(&build_sim_state(combat))
+}
+
+pub fn diagnose_decision(combat: &CombatState) -> HeuristicDiagnostics {
     let init = build_sim_state(combat);
 
-    if (0..init.monster_count as usize).all(|i| init.monsters[i].is_gone) {
-        return ClientInput::EndTurn;
+    if active_monsters(&init).next().is_none() {
+        return HeuristicDiagnostics {
+            chosen_move: ClientInput::EndTurn,
+            baseline_score: evaluate(&init),
+            top_moves: Vec::new(),
+        };
     }
 
-    if let Some(potion_input) = super::potions::should_use_potion(combat) {
-        return potion_input;
+    if let Some(potion_input) = super::potions::choose_immediate_potion(combat) {
+        return HeuristicDiagnostics {
+            chosen_move: potion_input,
+            baseline_score: evaluate(&init),
+            top_moves: Vec::new(),
+        };
     }
 
     let mut best_score = evaluate(&init);
@@ -31,7 +68,7 @@ pub fn decide_heuristic(combat: &CombatState) -> ClientInput {
     if best_first.is_none() {
         let mut fallback: Option<(Play, i64, i32)> = None;
         for (card_idx, target) in get_plays(&init) {
-            let mut next = init;
+            let mut next = init.clone();
             apply_play(&mut next, card_idx, target);
             let score = evaluate(&next);
             let priority = play_priority(&init, card_idx);
@@ -50,12 +87,45 @@ pub fn decide_heuristic(combat: &CombatState) -> ClientInput {
         }
     }
 
-    match best_first {
+    let chosen_move = match best_first {
         Some((idx, target)) => ClientInput::PlayCard {
             card_index: idx,
             target,
         },
         None => ClientInput::EndTurn,
+    };
+
+    let mut top_moves = get_plays(&init)
+        .into_iter()
+        .map(|(card_idx, target)| {
+            let mut next = init.clone();
+            apply_play(&mut next, card_idx, target);
+            HeuristicMoveStat {
+                input: ClientInput::PlayCard {
+                    card_index: card_idx,
+                    target,
+                },
+                score: evaluate(&next),
+                priority: play_priority(&init, card_idx),
+            }
+        })
+        .collect::<Vec<_>>();
+    top_moves.push(HeuristicMoveStat {
+        input: ClientInput::EndTurn,
+        score: evaluate(&init),
+        priority: 0,
+    });
+    top_moves.sort_by(|a, b| {
+        b.score
+            .cmp(&a.score)
+            .then_with(|| b.priority.cmp(&a.priority))
+    });
+    top_moves.truncate(8);
+
+    HeuristicDiagnostics {
+        chosen_move,
+        baseline_score: best_score,
+        top_moves,
     }
 }
 
@@ -75,7 +145,7 @@ pub fn describe_end_turn_options(combat: &CombatState) -> Vec<String> {
     let mut scored: Vec<(i64, i32, usize, Option<usize>)> = plays
         .into_iter()
         .map(|(card_idx, target)| {
-            let mut next = state;
+            let mut next = state.clone();
             apply_play(&mut next, card_idx, target);
             (
                 evaluate(&next),
@@ -114,7 +184,7 @@ fn dfs(
     plays.sort_unstable_by(|a, b| play_priority(state, b.0).cmp(&play_priority(state, a.0)));
 
     for &(card_idx, target) in &plays {
-        let mut ns = *state;
+        let mut ns = state.clone();
         apply_play(&mut ns, card_idx, target);
 
         let h = fast_hash(&ns);

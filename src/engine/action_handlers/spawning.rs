@@ -11,6 +11,42 @@ use crate::combat::CombatState;
 fn normalize_monster_slots(state: &mut CombatState) {
     for (idx, monster) in state.entities.monsters.iter_mut().enumerate() {
         monster.slot = idx as u8;
+        monster.protocol_identity.group_index = Some(idx);
+    }
+}
+
+fn next_protocol_sequence(state: &CombatState) -> u64 {
+    state
+        .entities
+        .monsters
+        .iter()
+        .filter_map(|monster| monster.protocol_identity.spawn_order)
+        .max()
+        .unwrap_or(0)
+        + 1
+}
+
+fn spawn_hp_for_monster(
+    monster_id: crate::content::monsters::EnemyId,
+    hp_rng: &mut crate::rng::StsRng,
+    ascension_level: u8,
+) -> i32 {
+    match monster_id {
+        crate::content::monsters::EnemyId::TorchHead => {
+            // Java TorchHead constructor consumes monsterHpRng twice:
+            // once in super(... random(38,40) ...), then again in setHp(...).
+            let _unused_ctor_roll = hp_rng.random_range(38, 40);
+            if ascension_level >= 9 {
+                hp_rng.random_range(40, 45)
+            } else {
+                hp_rng.random_range(38, 40)
+            }
+        }
+        _ => {
+            let (hp_min, hp_max) =
+                crate::content::monsters::get_hp_range(monster_id, ascension_level);
+            hp_rng.random_range(hp_min, hp_max)
+        }
     }
 }
 
@@ -20,6 +56,7 @@ pub fn handle_spawn_monster(
     current_hp: i32,
     max_hp: i32,
     logical_position: i32,
+    protocol_draw_x: Option<i32>,
     is_minion: bool,
     state: &mut CombatState,
 ) {
@@ -32,12 +69,14 @@ pub fn handle_spawn_monster(
         .unwrap_or(0)
         + 1;
     let enemy_id = monster_id;
+    let next_protocol_id = next_protocol_sequence(state);
 
     let (actual_hp, actual_max_hp) = if current_hp == 0 {
-        let (hp_min, hp_max) =
-            crate::content::monsters::get_hp_range(enemy_id, state.meta.ascension_level);
-        let _ = state.rng.monster_hp_rng.random_range(hp_min, hp_max); // constructor's unused roll
-        let rolled = state.rng.monster_hp_rng.random_range(hp_min, hp_max); // setHp's actual roll
+        let rolled = spawn_hp_for_monster(
+            enemy_id,
+            &mut state.rng.monster_hp_rng,
+            state.meta.ascension_level,
+        );
         (rolled, rolled)
     } else {
         (current_hp, max_hp)
@@ -58,8 +97,16 @@ pub fn handle_spawn_monster(
         move_history: std::collections::VecDeque::new(),
         intent_dmg: 0,
         logical_position,
+        protocol_identity: crate::combat::MonsterProtocolIdentity {
+            instance_id: Some(next_protocol_id),
+            spawn_order: Some(next_protocol_id),
+            draw_x: protocol_draw_x,
+            group_index: Some(slot as usize),
+        },
         hexaghost: Default::default(),
+        chosen: Default::default(),
         darkling: Default::default(),
+        lagavulin: Default::default(),
     };
 
     if enemy_id == crate::content::monsters::EnemyId::Darkling {
@@ -72,6 +119,10 @@ pub fn handle_spawn_monster(
 
     state.entities.monsters.insert(slot as usize, new_monster);
     normalize_monster_slots(state);
+
+    for action in crate::content::relics::hooks::on_spawn_monster(state, slot as usize) {
+        state.engine.action_queue.push_back(action);
+    }
 
     let pre_battle_actions = crate::content::monsters::resolve_pre_battle_action(
         enemy_id,
@@ -105,12 +156,15 @@ pub fn handle_spawn_monster_smart(
     logical_position: i32,
     current_hp: i32,
     max_hp: i32,
+    protocol_draw_x: Option<i32>,
     is_minion: bool,
     state: &mut CombatState,
 ) {
+    let spawn_sort_key = protocol_draw_x.unwrap_or(logical_position);
     let mut target_slot = 0;
     for m in &state.entities.monsters {
-        if logical_position > m.logical_position {
+        let existing_sort_key = m.protocol_identity.draw_x.unwrap_or(m.logical_position);
+        if spawn_sort_key > existing_sort_key {
             target_slot += 1;
         }
     }
@@ -120,6 +174,7 @@ pub fn handle_spawn_monster_smart(
         current_hp,
         max_hp,
         logical_position,
+        protocol_draw_x,
         is_minion,
     });
 }
@@ -168,6 +223,40 @@ pub fn handle_roll_monster_move(monster_id: usize, state: &mut CombatState) {
                 m.darkling.first_move = false;
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn torch_head_spawn_consumes_two_hp_rolls_and_uses_second_value() {
+        let mut combat = crate::engine::test_support::basic_combat();
+        combat.meta.ascension_level = 0;
+
+        let mut expected_rng = combat.rng.monster_hp_rng.clone();
+        let _first = expected_rng.random_range(38, 40);
+        let expected_hp = expected_rng.random_range(38, 40);
+
+        handle_spawn_monster(
+            crate::content::monsters::EnemyId::TorchHead,
+            0,
+            0,
+            0,
+            647,
+            Some(647),
+            true,
+            &mut combat,
+        );
+
+        let spawned = &combat.entities.monsters[0];
+        assert_eq!(
+            crate::content::monsters::EnemyId::from_id(spawned.monster_type),
+            Some(crate::content::monsters::EnemyId::TorchHead)
+        );
+        assert_eq!(spawned.current_hp, expected_hp);
+        assert_eq!(combat.rng.monster_hp_rng.counter, expected_rng.counter);
     }
 }
 

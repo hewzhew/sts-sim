@@ -24,6 +24,14 @@ pub struct RewardCardScore {
     pub card_id: CardId,
     pub pick_rate: f32,
     pub local_score: i32,
+    pub delta_suite: crate::bot::encounter_suite::EncounterSuiteId,
+    pub delta_prior: i32,
+    pub delta_bias: i32,
+    pub delta_rollout: i32,
+    pub delta_context: i32,
+    pub delta_context_rationale_key: Option<&'static str>,
+    pub delta_rule_context_summary: Option<&'static str>,
+    pub delta_score: i32,
     pub combined_score: f32,
 }
 
@@ -110,7 +118,9 @@ pub fn evaluate_reward_screen_for_run_detailed(
 
     for (idx, &card_id) in offered_cards.iter().enumerate() {
         let pick_rate = pick_probability(card_id);
-        let local_score = adjusted_reward_local_score(card_id, run_state, &profile);
+        let delta = crate::bot::deck_delta_eval::compare_pick_vs_skip(run_state, card_id);
+        let local_score =
+            adjusted_reward_local_score(card_id, run_state, &profile) + delta.total.clamp(-20, 36);
         let combined_score = local_score as f32 + pick_rate * HISTORY_WEIGHT;
 
         skip_probability *= 1.0 - pick_rate;
@@ -118,6 +128,14 @@ pub fn evaluate_reward_screen_for_run_detailed(
             card_id,
             pick_rate,
             local_score,
+            delta_suite: delta.suite,
+            delta_prior: delta.prior_delta,
+            delta_bias: delta.suite_bias,
+            delta_rollout: delta.rollout_delta,
+            delta_context: delta.context_delta,
+            delta_context_rationale_key: delta.context_rationale_key,
+            delta_rule_context_summary: delta.rule_context_summary,
+            delta_score: delta.total,
             combined_score,
         });
 
@@ -293,6 +311,18 @@ fn reward_stage_adjustment(
                 adj += 4;
             }
         }
+        CardId::Havoc => {
+            if run_state.act_num == 1 && run_state.floor_num <= 10 {
+                adj += 26;
+            } else if late_game {
+                adj -= 10;
+            }
+        }
+        CardId::WildStrike | CardId::Clash => {
+            if late_game {
+                adj -= if larger_deck { 24 } else { 18 };
+            }
+        }
         CardId::TwinStrike => {
             if late_game && no_strength_shell {
                 adj -= 16;
@@ -318,14 +348,19 @@ fn reward_stage_adjustment(
                 adj -= 12;
             }
         }
+        CardId::Cleave => {
+            if late_game && larger_deck {
+                adj -= 24;
+            }
+        }
         CardId::PerfectedStrike => {
             if late_game {
                 adj -= 12;
             }
         }
-        CardId::IronWave | CardId::Cleave => {
+        CardId::IronWave => {
             if late_game && larger_deck {
-                adj -= 10;
+                adj -= 22;
             }
         }
         _ => {}
@@ -359,7 +394,24 @@ fn should_skip_reward(
             | CardId::TwinStrike
             | CardId::PerfectedStrike
     );
+    let low_quality_bundle_card = matches!(
+        best_card_id,
+        CardId::Clash
+            | CardId::WildStrike
+            | CardId::Havoc
+            | CardId::IronWave
+            | CardId::SwordBoomerang
+            | CardId::Cleave
+            | CardId::Clothesline
+            | CardId::HeavyBlade
+            | CardId::TwinStrike
+            | CardId::PerfectedStrike
+    );
     let no_strength_shell = profile.strength_enablers == 0;
+
+    if late_game && low_quality_bundle_card && best_local_score < 66 && skip_probability > 0.55 {
+        return true;
+    }
 
     late_game
         && mediocre_attack
@@ -557,6 +609,44 @@ mod tests {
     }
 
     #[test]
+    fn detailed_reward_evaluation_exposes_delta_score() {
+        let mut rs = sample_run_state();
+        rs.act_num = 1;
+        rs.floor_num = 6;
+
+        let detailed =
+            evaluate_reward_screen_for_run_detailed(&[CardId::Hemokinesis, CardId::Clash], &rs);
+        assert_eq!(detailed.offered_cards.len(), 2);
+        assert!(detailed.offered_cards.iter().all(|card| {
+            card.delta_score
+                == card.delta_prior + card.delta_bias + card.delta_rollout + card.delta_context
+        }));
+    }
+
+    #[test]
+    fn snecko_reward_prefers_expensive_scaler_over_low_cost_filler() {
+        let mut rs = sample_run_state();
+        rs.act_num = 2;
+        rs.floor_num = 20;
+        rs.relics.push(crate::content::relics::RelicState::new(
+            crate::content::relics::RelicId::SneckoEye,
+        ));
+
+        let detailed = evaluate_reward_screen_for_run_detailed(
+            &[CardId::Anger, CardId::DemonForm, CardId::IronWave],
+            &rs,
+        );
+        assert_eq!(detailed.recommended_choice, Some(1));
+        let anger = detailed
+            .offered_cards
+            .iter()
+            .find(|card| card.card_id == CardId::Anger)
+            .unwrap();
+        assert!(anger.delta_context < 0);
+        assert_eq!(anger.delta_rule_context_summary, Some("cost_randomized"));
+    }
+
+    #[test]
     fn late_game_can_skip_mediocre_attack_bundle() {
         let mut rs = sample_run_state();
         rs.act_num = 2;
@@ -571,10 +661,10 @@ mod tests {
 
     #[test]
     fn warcry_gets_late_game_reward_bump() {
-        let mut rs = sample_run_state();
-        rs.act_num = 2;
-        rs.floor_num = 30;
-        rs.master_deck = vec![
+        let mut late_rs = sample_run_state();
+        late_rs.act_num = 2;
+        late_rs.floor_num = 30;
+        late_rs.master_deck = vec![
             CombatCard::new(CardId::ShrugItOff, 1),
             CombatCard::new(CardId::BattleTrance, 2),
             CombatCard::new(CardId::Armaments, 3),
@@ -597,9 +687,17 @@ mod tests {
             CombatCard::new(CardId::Strike, 20),
             CombatCard::new(CardId::Defend, 21),
         ];
+        let mut early_rs = late_rs.clone();
+        early_rs.act_num = 1;
+        early_rs.floor_num = 3;
 
-        let offered = [CardId::PerfectedStrike, CardId::Clothesline, CardId::Warcry];
-        assert_eq!(evaluate_reward_screen_for_run(&offered, &rs), Some(2));
+        let late_profile = CardEvaluator::deck_profile(&late_rs);
+        let early_profile = CardEvaluator::deck_profile(&early_rs);
+
+        assert!(
+            adjusted_reward_local_score(CardId::Warcry, &late_rs, &late_profile)
+                > adjusted_reward_local_score(CardId::Warcry, &early_rs, &early_profile)
+        );
     }
 
     #[test]

@@ -1,4 +1,6 @@
 use crate::combat::{CombatCard, CombatState, Intent, PowerId};
+use crate::content::cards::{get_card_definition, CardType};
+use crate::content::monsters::EnemyId;
 use crate::state::{EngineState, RunResult};
 
 /// Static heuristic evaluation of the current Engine and Combat state from the AI's perspective.
@@ -22,13 +24,17 @@ pub fn evaluate_state(engine_state: &EngineState, combat_state: &CombatState) ->
     score += combat_state.entities.player.block as f32 * 5.0;
 
     let mut total_monster_expected_damage = 0;
+    let mut alive_monster_count = 0;
+    let mut alive_monster_hp_sum = 0;
+    let reachable_damage = approx_reachable_damage_this_turn(combat_state);
 
     for m in &combat_state.entities.monsters {
-        if m.is_dying || m.is_escaped {
-            // Massive bonus for a dead monster
-            score += 15000.0;
+        if m.is_dying || m.is_escaped || m.half_dead || m.current_hp <= 0 {
             continue;
         }
+
+        alive_monster_count += 1;
+        alive_monster_hp_sum += m.current_hp.max(0);
 
         // Massive penalty to compel the AI to deal damage
         score -= m.current_hp as f32 * 50.0;
@@ -37,6 +43,14 @@ pub fn evaluate_state(engine_state: &EngineState, combat_state: &CombatState) ->
         let enemy_strength = combat_state.get_power(m.id, PowerId::Strength).max(0);
         if enemy_strength > 0 {
             score -= enemy_strength as f32 * 260.0;
+        }
+        score -= monster_role_penalty(combat_state, m);
+        score -= attack_pressure_penalty(m);
+        if reachable_damage > 0 && m.current_hp <= reachable_damage {
+            score += kill_window_bonus(combat_state, m, reachable_damage);
+        }
+        if combat_state.get_power(m.id, PowerId::Split) > 0 && m.current_hp <= 18 {
+            score -= 850.0;
         }
 
         // Calculate expected damage purely from attacks
@@ -49,6 +63,14 @@ pub fn evaluate_state(engine_state: &EngineState, combat_state: &CombatState) ->
             }
             _ => {}
         }
+    }
+
+    score -= alive_monster_count as f32 * 4500.0;
+    score -= alive_monster_hp_sum as f32 * 8.0;
+    if combat_state.meta.is_boss_fight {
+        score -= alive_monster_count as f32 * 1500.0;
+    } else if combat_state.meta.is_elite_fight {
+        score -= alive_monster_count as f32 * 750.0;
     }
 
     // Heavily penalize unblocked incoming damage to prioritize mitigation
@@ -89,6 +111,240 @@ pub fn evaluate_state(engine_state: &EngineState, combat_state: &CombatState) ->
     // Minor score adjustments for deck quality / hand size could go here
 
     score
+}
+
+fn approx_reachable_damage_this_turn(combat_state: &CombatState) -> i32 {
+    let mut energy = combat_state.turn.energy as i32;
+    let mut damages = combat_state
+        .zones
+        .hand
+        .iter()
+        .filter_map(|card| {
+            let def = get_card_definition(card.id);
+            if def.card_type != CardType::Attack {
+                return None;
+            }
+            let cost = card.get_cost() as i32;
+            if cost < 0 || cost > energy {
+                return None;
+            }
+            let base_damage = if card.base_damage_mut > 0 {
+                card.base_damage_mut
+            } else {
+                def.base_damage
+            };
+            let hits = estimated_attack_hits(card.id);
+            Some((cost.max(0), base_damage.max(0) * hits))
+        })
+        .collect::<Vec<_>>();
+
+    damages.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+    let mut total = 0;
+    for (cost, damage) in damages {
+        if cost > energy {
+            continue;
+        }
+        energy -= cost;
+        total += damage;
+    }
+    total
+}
+
+fn estimated_attack_hits(card_id: crate::content::cards::CardId) -> i32 {
+    match card_id {
+        crate::content::cards::CardId::TwinStrike => 2,
+        crate::content::cards::CardId::Pummel => 4,
+        crate::content::cards::CardId::SwordBoomerang => 3,
+        _ => 1,
+    }
+}
+
+fn monster_role_penalty(combat_state: &CombatState, monster: &crate::combat::MonsterEntity) -> f32 {
+    let Some(enemy) = EnemyId::from_id(monster.monster_type) else {
+        return 0.0;
+    };
+
+    let mut penalty = 0.0;
+    penalty += match enemy {
+        EnemyId::GremlinLeader
+        | EnemyId::TheCollector
+        | EnemyId::Reptomancer
+        | EnemyId::BronzeAutomaton
+        | EnemyId::TimeEater
+        | EnemyId::Hexaghost
+        | EnemyId::SlimeBoss
+        | EnemyId::TheGuardian => 2800.0,
+        EnemyId::Darkling => 1800.0,
+        EnemyId::GremlinWizard => 1200.0,
+        _ => 0.0,
+    };
+
+    if combat_state.meta.is_boss_fight {
+        penalty += 900.0;
+    } else if combat_state.meta.is_elite_fight {
+        penalty += 450.0;
+    }
+
+    penalty
+}
+
+fn attack_pressure_penalty(monster: &crate::combat::MonsterEntity) -> f32 {
+    match monster.current_intent {
+        Intent::Attack { hits, .. }
+        | Intent::AttackBuff { hits, .. }
+        | Intent::AttackDebuff { hits, .. }
+        | Intent::AttackDefend { hits, .. } => {
+            (monster.intent_dmg.max(0) * hits as i32) as f32 * 42.0
+        }
+        Intent::Buff => 180.0,
+        Intent::StrongDebuff | Intent::Debuff => 120.0,
+        _ => 0.0,
+    }
+}
+
+fn kill_window_bonus(
+    combat_state: &CombatState,
+    monster: &crate::combat::MonsterEntity,
+    reachable_damage: i32,
+) -> f32 {
+    let mut bonus = 2_400.0 + (reachable_damage - monster.current_hp).max(0) as f32 * 35.0;
+    if combat_state.meta.is_boss_fight || combat_state.meta.is_elite_fight {
+        bonus += 1_000.0;
+    }
+    bonus + monster_role_penalty(combat_state, monster) * 0.5
+}
+
+#[cfg(test)]
+mod regression_tests {
+    use super::evaluate_state;
+    use crate::combat::{CombatState, Intent, MonsterEntity};
+    use crate::content::monsters::EnemyId;
+    use crate::state::EngineState;
+    use crate::testing::support::test_support::{
+        combat_with_monsters as shared_combat_with_monsters, CombatTestExt,
+    };
+    use std::collections::VecDeque;
+
+    fn monster(
+        id: usize,
+        monster_type: EnemyId,
+        hp: i32,
+        is_dying: bool,
+        intent: Intent,
+        intent_dmg: i32,
+    ) -> MonsterEntity {
+        MonsterEntity {
+            id,
+            monster_type: monster_type as usize,
+            current_hp: hp,
+            max_hp: hp.max(1),
+            block: 0,
+            slot: 0,
+            is_dying,
+            is_escaped: false,
+            half_dead: false,
+            next_move_byte: 0,
+            current_intent: intent,
+            move_history: VecDeque::new(),
+            intent_dmg,
+            logical_position: id as i32,
+            protocol_identity: Default::default(),
+            hexaghost: Default::default(),
+            chosen: Default::default(),
+            darkling: Default::default(),
+            lagavulin: Default::default(),
+        }
+    }
+
+    fn combat_with_monsters(monsters: Vec<MonsterEntity>) -> CombatState {
+        shared_combat_with_monsters(monsters)
+            .with_elite_fight(true)
+            .with_turn_count(3)
+            .with_energy(2)
+            .with_player_hp(60)
+            .with_player_gold(0)
+            .with_rng_seed(1)
+    }
+
+    #[test]
+    fn evaluator_does_not_prefer_states_with_extra_corpses_over_killing_the_last_live_target() {
+        let corpse_pile = combat_with_monsters(vec![
+            monster(1, EnemyId::GremlinFat, 0, true, Intent::Unknown, 0),
+            monster(2, EnemyId::GremlinFat, 0, true, Intent::Unknown, 0),
+            monster(
+                3,
+                EnemyId::GremlinLeader,
+                8,
+                false,
+                Intent::Attack { damage: 6, hits: 3 },
+                6,
+            ),
+        ]);
+        let finished = combat_with_monsters(vec![
+            monster(1, EnemyId::GremlinFat, 0, true, Intent::Unknown, 0),
+            monster(2, EnemyId::GremlinFat, 0, true, Intent::Unknown, 0),
+            monster(3, EnemyId::GremlinLeader, 0, true, Intent::Unknown, 0),
+        ]);
+
+        let corpse_score = evaluate_state(&EngineState::CombatPlayerTurn, &corpse_pile);
+        let finished_score = evaluate_state(&EngineState::CombatPlayerTurn, &finished);
+
+        assert!(finished_score > corpse_score);
+    }
+
+    #[test]
+    fn evaluator_penalizes_boss_presence_more_than_normal_enemy() {
+        let normal = combat_with_monsters(vec![monster(
+            1,
+            EnemyId::JawWorm,
+            60,
+            false,
+            Intent::Buff,
+            0,
+        )]);
+        let mut boss = combat_with_monsters(vec![monster(
+            1,
+            EnemyId::TheGuardian,
+            60,
+            false,
+            Intent::Buff,
+            0,
+        )]);
+        boss.meta.is_boss_fight = true;
+
+        let normal_score = evaluate_state(&EngineState::CombatPlayerTurn, &normal);
+        let boss_score = evaluate_state(&EngineState::CombatPlayerTurn, &boss);
+
+        assert!(boss_score < normal_score);
+    }
+
+    #[test]
+    fn evaluator_penalizes_high_threat_attacker_more_than_low_threat_buffer() {
+        let attacker = combat_with_monsters(vec![monster(
+            1,
+            EnemyId::JawWorm,
+            30,
+            false,
+            Intent::Attack {
+                damage: 14,
+                hits: 2,
+            },
+            14,
+        )]);
+        let buffer = combat_with_monsters(vec![monster(
+            1,
+            EnemyId::JawWorm,
+            30,
+            false,
+            Intent::Buff,
+            0,
+        )]);
+
+        let attacker_score = evaluate_state(&EngineState::CombatPlayerTurn, &attacker);
+        let buffer_score = evaluate_state(&EngineState::CombatPlayerTurn, &buffer);
+
+        assert!(attacker_score < buffer_score);
+    }
 }
 
 // ─── Card Evaluator ──────────────────────────────────────────────────────────

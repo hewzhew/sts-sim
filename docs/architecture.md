@@ -48,14 +48,45 @@ The absolute source of truth is the **Java Engine**. We rely exclusively on data
 - **Trace Generation**: The Java `CommunicationMod` exports rigorous `.jsonl` trace files during actual gameplay. Each action outputs the resulting exact gamestate snapshot.
 - **Verification Engine**: `diff_driver.rs` loads states sequentially from the trace, resolves the recorded player actions inside the Rust engine, and strictly asserts bit-for-bit parity across all state fields (HP, cards, buffs, RNG seed advancements).
 
+### 4.1 Protocol Truth Rule
+
+Combat parity work must follow this chain:
+
+1. Java engine runtime field
+2. Java protocol export
+3. Rust importer (`build` / `sync`)
+4. Rust engine runtime
+
+Do not insert a second semantic layer in between.
+
+In particular:
+
+- do not treat `state_sync` carry logic as a source of truth
+- do not invent Rust-side generic fields such as `move_history` or logical slot abstractions as replacements for Java runtime fields when Java already has dedicated state
+- if a hidden Java counter/flag matters for combat parity, export it through `CommunicationMod`
+
+See also:
+
+- [PROTOCOL_TRUTH_RULES.md](d:\rust\sts_simulator\docs\PROTOCOL_TRUTH_RULES.md)
+- [COMM_PROTOCOL_DEBT_BACKLOG_2026-04-12.md](d:\rust\sts_simulator\docs\COMM_PROTOCOL_DEBT_BACKLOG_2026-04-12.md)
+
 ## 5. Standard Contribution Workflow
 
 To add or modify a new Card, Relic, or mechanic, adhere to this strict feedback loop:
 
 1. **Implement in Rust**: You MUST consult `tools/source_extractor/AGENT_GUIDE.md` and the extracted AST reports (especially `scattered_logic.md`) *before* writing Rust code to avoid missing hidden game engine dependencies. Then add the entity hooks to `src/content/` or `src/engine/action_handlers.rs`.
-2. **Generate Java Ground Truth**: Boot the actual Java game with `CommunicationMod` enabled. Trigger your newly added mechanic in-game to generate the rigorous `.jsonl` trace in the `/tools/replays/` folder.
+2. **Generate Java Ground Truth**: Boot the actual Java game with `CommunicationMod` enabled. Trigger your newly added mechanic in-game to generate a rigorous `.jsonl` trace. Depending on workflow, these traces may live under `tools/replays/` or under the `live_comm` raw-log path in `logs/raw/`.
 3. **Run Differential Test**: Run the trace through the parity checker:
    ```bash
    cargo test test_diff_rng_replay -- --nocapture
    ```
 4. **Iterate**: If assertions fail (e.g., RNG seed mismatch or buff counts differ), adjust the Rust logic and re-run the verification until 100% parity is achieved.
+
+If the failure depends on hidden Java runtime state:
+
+1. inspect Java source first
+2. add or confirm protocol export in `CommunicationMod`
+3. fix the Rust importer
+4. only then touch Rust engine code
+
+Do not default to sync/carry heuristics.

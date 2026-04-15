@@ -9,5 +9,8 @@ pub mod targeting;
 
 pub mod relic_manager;
 
+#[cfg(test)]
+pub(crate) mod test_support;
+
 pub use core::*;
 pub use run_loop::*;

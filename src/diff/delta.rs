@@ -36,7 +36,9 @@ pub fn calculate_entity_delta(prev: &Value, curr: &Value) -> EntityDelta {
                 curr_powers.insert(id, amount);
                 if let Some(&prev_amt) = prev_powers.get(id) {
                     if amount != prev_amt {
-                        delta.power_changes.push(format!("[~] {}: {} -> {}", id, prev_amt, amount));
+                        delta
+                            .power_changes
+                            .push(format!("[~] {}: {} -> {}", id, prev_amt, amount));
                     }
                 } else {
                     delta.power_changes.push(format!("[+] {}({})", id, amount));
@@ -67,8 +69,3 @@ pub fn resolve_card_name(state: &Value, hand_index: usize) -> String {
     }
     format!("Card {}", hand_index)
 }
-
-
-
-
-

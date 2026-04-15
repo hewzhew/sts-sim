@@ -19,7 +19,9 @@ if (-not $sourcePath) {
     throw "Profile '$Name' not found. Available profiles: $($available -join ', ')"
 }
 
-$sourceContent = Get-Content $sourcePath -Raw
+$sourceJson = Get-Content $sourcePath -Raw | ConvertFrom-Json
+$sourceJson | Add-Member -NotePropertyName activated_profile -NotePropertyValue (Split-Path $sourcePath -Leaf) -Force
+$sourceContent = $sourceJson | ConvertTo-Json -Depth 32
 if ($DryRun) {
     [pscustomobject]@{
         source = $sourcePath

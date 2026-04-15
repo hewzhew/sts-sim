@@ -33,20 +33,7 @@ impl MonsterBehavior for Lagavulin {
     ) -> (u8, Intent) {
         let dmg = if ascension_level >= 3 { 20 } else { 18 };
 
-        if entity.move_history.is_empty() {
-            // Initial intent corresponds to SLEEP
-            return (5, Intent::Sleep);
-        }
-
-        // Check if there are any non-SLEEP moves in the history.
-        let mut awake = false;
-        for &move_b in &entity.move_history {
-            if move_b != 5 {
-                awake = true;
-                break;
-            }
-        }
-        if !awake {
+        if !entity.lagavulin.is_out_triggered && entity.lagavulin.idle_count < 3 {
             return (5, Intent::Sleep);
         }
 
@@ -120,22 +107,25 @@ impl MonsterBehavior for Lagavulin {
                  // Do nothing while stunned.
             }
             5 => {
-                // SLEEP
-                // Count consecutive sleep turns.
-                let mut idle_count = 1; // Includes current turn
-                for &b in entity.move_history.iter().rev() {
-                    if b == 5 {
-                        idle_count += 1;
-                    } else {
-                        break;
+                let mut should_wake = false;
+                if let Some(monster) = state
+                    .entities
+                    .monsters
+                    .iter_mut()
+                    .find(|m| m.id == entity.id)
+                {
+                    monster.lagavulin.idle_count = monster.lagavulin.idle_count.saturating_add(1);
+                    if monster.lagavulin.idle_count >= 3 {
+                        monster.lagavulin.is_out_triggered = true;
+                        should_wake = true;
                     }
                 }
 
-                // Natural wake up triggers upon reaching 3 sleep cycles.
-                if idle_count >= 3 {
-                    actions.push(Action::RemovePower {
+                if should_wake {
+                    actions.push(Action::ReducePower {
                         target: entity.id,
                         power_id: PowerId::Metallicize,
+                        amount: 8,
                     });
 
                     // Queue next intent immediately to Attack (3) to skip RollMonsterMove.
@@ -160,11 +150,23 @@ impl MonsterBehavior for Lagavulin {
     }
 
     fn on_damaged(
-        _state: &mut CombatState,
+        state: &mut CombatState,
         entity: &MonsterEntity,
         actual_lost: i32,
     ) -> smallvec::SmallVec<[crate::action::ActionInfo; 4]> {
-        if actual_lost > 0 && entity.current_intent == Intent::Sleep {
+        if actual_lost > 0
+            && entity.current_intent == Intent::Sleep
+            && !entity.lagavulin.is_out_triggered
+        {
+            if let Some(monster) = state
+                .entities
+                .monsters
+                .iter_mut()
+                .find(|m| m.id == entity.id)
+            {
+                monster.lagavulin.idle_count = 3;
+                monster.lagavulin.is_out_triggered = true;
+            }
             smallvec::smallvec![
                 crate::action::ActionInfo {
                     action: Action::SetMonsterMove {
@@ -177,9 +179,10 @@ impl MonsterBehavior for Lagavulin {
                 // Java queues ReducePowerAction to BOTTOM via ChangeStateAction("OPEN")
                 // Using exactly RemovePower reproduces the correct queue logic without injecting Rust-specific ApplyPower calls.
                 crate::action::ActionInfo {
-                    action: Action::RemovePower {
+                    action: Action::ReducePower {
                         target: entity.id,
-                        power_id: PowerId::Metallicize
+                        power_id: PowerId::Metallicize,
+                        amount: 8,
                     },
                     insertion_mode: crate::action::AddTo::Bottom,
                 }
@@ -187,5 +190,80 @@ impl MonsterBehavior for Lagavulin {
         } else {
             smallvec::SmallVec::new()
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Lagavulin;
+    use crate::combat::{Intent, MonsterEntity};
+    use crate::content::monsters::EnemyId;
+    use crate::content::monsters::MonsterBehavior;
+    use crate::content::test_support::{basic_combat, CombatTestExt};
+
+    #[test]
+    fn second_sleep_turn_does_not_wake_lagavulin_early() {
+        let mut combat = basic_combat()
+            .with_monster_type(1, EnemyId::Lagavulin)
+            .with_monster_intent(1, Intent::Sleep);
+        let entity = combat
+            .entities
+            .monsters
+            .iter_mut()
+            .find(|monster| monster.id == 1)
+            .expect("lagavulin missing");
+        entity.next_move_byte = 5;
+        entity.lagavulin.idle_count = 1;
+
+        let snapshot: MonsterEntity = entity.clone();
+        let actions = Lagavulin::take_turn(&mut combat, &snapshot);
+
+        assert!(
+            actions.iter().all(|action| !matches!(
+                action,
+                crate::action::Action::ReducePower { .. }
+                    | crate::action::Action::SetMonsterMove { .. }
+            )),
+            "lagavulin woke a turn early: {:?}",
+            actions
+        );
+        assert!(actions
+            .iter()
+            .any(|action| matches!(action, crate::action::Action::RollMonsterMove { .. })));
+    }
+
+    #[test]
+    fn third_sleep_turn_remains_asleep_until_after_execution() {
+        let mut combat = basic_combat()
+            .with_monster_type(1, EnemyId::Lagavulin)
+            .with_monster_intent(1, Intent::Sleep)
+            .with_turn_count(3);
+        let entity = combat
+            .entities
+            .monsters
+            .iter_mut()
+            .find(|monster| monster.id == 1)
+            .expect("lagavulin missing");
+        entity.next_move_byte = 5;
+        entity.lagavulin.idle_count = 2;
+
+        let (move_byte, intent) =
+            Lagavulin::roll_move(&mut crate::rng::StsRng::new(123), entity, 0, 0);
+        assert_eq!(move_byte, 5);
+        assert_eq!(intent, Intent::Sleep);
+
+        let snapshot: MonsterEntity = entity.clone();
+        let actions = Lagavulin::take_turn(&mut combat, &snapshot);
+
+        assert!(actions
+            .iter()
+            .any(|action| matches!(action, crate::action::Action::ReducePower { .. })));
+        assert!(actions.iter().any(|action| matches!(
+            action,
+            crate::action::Action::SetMonsterMove {
+                next_move_byte: 3,
+                ..
+            }
+        )));
     }
 }

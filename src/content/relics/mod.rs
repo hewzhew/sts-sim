@@ -742,6 +742,7 @@ pub struct RelicSubscriptions {
     pub at_battle_start_pre_draw: bool,
     pub at_battle_start: bool,
     pub at_turn_start: bool,
+    pub at_turn_start_post_draw: bool,
     pub on_use_card: bool,
     pub on_shuffle: bool,
     pub on_exhaust: bool,
@@ -906,7 +907,10 @@ pub fn get_relic_subscriptions(id: RelicId) -> RelicSubscriptions {
             sub.at_turn_start = true;
         }
         RelicId::Inserter => sub.at_turn_start = true,
-        RelicId::Kunai => sub.on_use_card = true,
+        RelicId::Kunai => {
+            sub.on_use_card = true;
+            sub.at_turn_start = true;
+        }
         RelicId::Lantern => {
             sub.at_pre_battle = true;
             sub.at_turn_start = true;
@@ -975,7 +979,10 @@ pub fn get_relic_subscriptions(id: RelicId) -> RelicSubscriptions {
         RelicId::MutagenicStrength => sub.at_battle_start = true,
         RelicId::NeowsLament => sub.at_battle_start = true,
         RelicId::TwistedFunnel => sub.at_battle_start = true,
-        RelicId::Shuriken => sub.on_use_card = true,
+        RelicId::Shuriken => {
+            sub.on_use_card = true;
+            sub.at_turn_start = true;
+        }
         RelicId::LetterOpener => sub.on_use_card = true,
         RelicId::ToughBandages => sub.on_discard = true,
         RelicId::Tingsha => sub.on_discard = true,
@@ -984,8 +991,10 @@ pub fn get_relic_subscriptions(id: RelicId) -> RelicSubscriptions {
             sub.at_end_of_turn = true;
         }
         RelicId::Pocketwatch => {
-            sub.at_end_of_turn = true;
-            sub.at_turn_start = true;
+            sub.at_battle_start = true;
+            sub.at_turn_start_post_draw = true;
+            sub.on_use_card = true;
+            sub.on_victory = true;
         }
         RelicId::Sundial => sub.on_shuffle = true,
         RelicId::WarpedTongs => sub.at_turn_start = true,

@@ -1,6 +1,7 @@
 use crate::state::core::EngineState;
-use crate::state::events::{EventChoiceMeta, EventState};
+use crate::state::events::{EventChoiceMeta, EventId, EventState};
 use crate::state::run::RunState;
+use crate::state::selection::DomainEventSource;
 
 const GOLD_GAIN: i32 = 75;
 const DAMAGE: i32 = 11;
@@ -29,14 +30,23 @@ pub fn handle_choice(_engine_state: &mut EngineState, run_state: &mut RunState, 
             match choice_idx {
                 0 => {
                     // Gather Gold: +75g, take 11 damage
-                    run_state.gold += GOLD_GAIN;
-                    run_state.current_hp = (run_state.current_hp - DAMAGE).max(0);
+                    run_state.change_gold_with_source(
+                        GOLD_GAIN,
+                        DomainEventSource::Event(EventId::WorldOfGoop),
+                    );
+                    run_state.change_hp_with_source(
+                        -DAMAGE,
+                        DomainEventSource::Event(EventId::WorldOfGoop),
+                    );
                 }
                 _ => {
                     // Leave: lose pre-rolled gold amount
                     let gold_loss = event_state.internal_state;
                     let actual_loss = gold_loss.min(run_state.gold);
-                    run_state.gold -= actual_loss;
+                    run_state.change_gold_with_source(
+                        -actual_loss,
+                        DomainEventSource::Event(EventId::WorldOfGoop),
+                    );
                 }
             }
             event_state.current_screen = 1;

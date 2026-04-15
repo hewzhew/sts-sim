@@ -8,10 +8,11 @@
 //   maxHpLoss = (int)(maxHP * 0.08f) or 0.10f at A15+, min 1
 
 use crate::content::cards::CardId;
-use crate::content::relics::{RelicId, RelicState};
+use crate::content::relics::RelicId;
 use crate::state::core::EngineState;
-use crate::state::events::{EventChoiceMeta, EventState};
+use crate::state::events::{EventChoiceMeta, EventId, EventState};
 use crate::state::run::RunState;
+use crate::state::selection::DomainEventSource;
 
 fn calc_damage(run_state: &RunState) -> i32 {
     if run_state.ascension_level >= 15 {
@@ -65,7 +66,13 @@ pub fn handle_choice(_engine_state: &mut EngineState, run_state: &mut RunState, 
                     } else {
                         RelicId::GoldenIdol
                     };
-                    run_state.relics.push(RelicState::new(relic_id));
+                    if let Some(next_state) = run_state.obtain_relic_with_source(
+                        relic_id,
+                        EngineState::EventRoom,
+                        DomainEventSource::Event(EventId::GoldenIdol),
+                    ) {
+                        *_engine_state = next_state;
+                    }
                     event_state.current_screen = 1;
                 }
                 _ => {
@@ -91,15 +98,18 @@ pub fn handle_choice(_engine_state: &mut EngineState, run_state: &mut RunState, 
                     {
                         damage = (damage - 1).max(0);
                     }
-                    run_state.current_hp = (run_state.current_hp - damage).max(0);
+                    run_state.change_hp_with_source(
+                        -damage,
+                        DomainEventSource::Event(EventId::GoldenIdol),
+                    );
                 }
                 _ => {
                     // Lose Max HP
                     let max_hp_loss = calc_max_hp_loss(run_state);
-                    run_state.max_hp = (run_state.max_hp - max_hp_loss).max(1);
-                    if run_state.current_hp > run_state.max_hp {
-                        run_state.current_hp = run_state.max_hp;
-                    }
+                    run_state.lose_max_hp_with_source(
+                        max_hp_loss,
+                        DomainEventSource::Event(EventId::GoldenIdol),
+                    );
                 }
             }
             event_state.current_screen = 2;

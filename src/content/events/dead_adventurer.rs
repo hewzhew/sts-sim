@@ -1,7 +1,7 @@
-use crate::content::relics::RelicState;
 use crate::state::core::EngineState;
-use crate::state::events::{EventChoiceMeta, EventState};
+use crate::state::events::{EventChoiceMeta, EventId, EventState};
 use crate::state::run::RunState;
+use crate::state::selection::DomainEventSource;
 
 // internal_state packing:
 // bits[0..3]  = numRewards (how many times player has looted, 0-3)
@@ -134,12 +134,19 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
 fn apply_reward(run_state: &mut RunState, reward_type: i32) {
     match reward_type {
         0 => {
-            run_state.gold += GOLD_REWARD;
+            run_state.change_gold_with_source(
+                GOLD_REWARD,
+                DomainEventSource::Event(EventId::DeadAdventurer),
+            );
         } // Gold
         2 => {
             // Relic
             let relic_id = run_state.random_relic();
-            run_state.relics.push(RelicState::new(relic_id));
+            let _ = run_state.obtain_relic_with_source(
+                relic_id,
+                EngineState::EventRoom,
+                DomainEventSource::Event(EventId::DeadAdventurer),
+            );
         }
         _ => {} // Nothing
     }

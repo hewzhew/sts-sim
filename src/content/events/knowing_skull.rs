@@ -1,6 +1,7 @@
 use crate::state::core::EngineState;
-use crate::state::events::{EventChoiceMeta, EventState};
+use crate::state::events::{EventChoiceMeta, EventId, EventState};
 use crate::state::run::RunState;
+use crate::state::selection::DomainEventSource;
 
 // Java KnowingSkull has 4 independent cost counters:
 //   potionCost, goldCost, cardCost — each starts at 6, incremented independently per purchase
@@ -72,6 +73,7 @@ pub fn get_choices(_run_state: &RunState, event_state: &EventState) -> Vec<Event
 
 pub fn handle_choice(_engine_state: &mut EngineState, run_state: &mut RunState, choice_idx: usize) {
     let mut event_state = run_state.event_state.take().unwrap();
+    let source = DomainEventSource::Event(EventId::KnowingSkull);
 
     match event_state.current_screen {
         0 => {
@@ -83,37 +85,43 @@ pub fn handle_choice(_engine_state: &mut EngineState, run_state: &mut RunState, 
                 0 => {
                     // Potion: take potionCost damage, get potion, ++potionCost
                     let cost = potion_cost(event_state.internal_state);
-                    run_state.current_hp = (run_state.current_hp - cost).max(0);
+                    run_state.change_hp_with_source(-cost, source);
                     inc_potion(&mut event_state.internal_state);
-                    let pid = run_state.random_potion();
-                    let potion = crate::content::potions::Potion::new(
-                        pid,
-                        20000 + potion_n(event_state.internal_state) as u32,
-                    );
-                    run_state.obtain_potion(potion);
+                    if !run_state
+                        .relics
+                        .iter()
+                        .any(|relic| relic.id == crate::content::relics::RelicId::Sozu)
+                    {
+                        let pid = run_state.random_potion();
+                        let potion = crate::content::potions::Potion::new(
+                            pid,
+                            20000 + potion_n(event_state.internal_state) as u32,
+                        );
+                        let _ = run_state.obtain_potion_with_source(potion, source);
+                    }
                     // Stay on ASK screen (repeatable)
                 }
                 1 => {
                     // Gold: take goldCost damage, gain 90g, ++goldCost
                     let cost = gold_cost(event_state.internal_state);
-                    run_state.current_hp = (run_state.current_hp - cost).max(0);
+                    run_state.change_hp_with_source(-cost, source);
                     inc_gold(&mut event_state.internal_state);
-                    run_state.gold += GOLD_REWARD;
+                    run_state.change_gold_with_source(GOLD_REWARD, source);
                     // Stay on ASK screen
                 }
                 2 => {
                     // Card: take cardCost damage, get colorless card, ++cardCost
                     let cost = card_cost(event_state.internal_state);
-                    run_state.current_hp = (run_state.current_hp - cost).max(0);
+                    run_state.change_hp_with_source(-cost, source);
                     inc_card(&mut event_state.internal_state);
                     let card_id = run_state
                         .random_colorless_card(crate::content::cards::CardRarity::Uncommon);
-                    run_state.add_card_to_deck(card_id);
+                    run_state.add_card_to_deck_with_upgrades_from(card_id, 0, source);
                     // Stay on ASK screen
                 }
                 _ => {
                     // Leave: take fixed 6 damage, transition to COMPLETE
-                    run_state.current_hp = (run_state.current_hp - BASE_COST).max(0);
+                    run_state.change_hp_with_source(-BASE_COST, source);
                     event_state.current_screen = 2;
                 }
             }
@@ -124,4 +132,82 @@ pub fn handle_choice(_engine_state: &mut EngineState, run_state: &mut RunState, 
     }
 
     run_state.event_state = Some(event_state);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{card_cost, get_choices, gold_cost, handle_choice, potion_cost};
+    use crate::content::relics::RelicId;
+    use crate::state::core::{EngineState, RunResult};
+    use crate::state::events::{EventId, EventState};
+    use crate::state::run::RunState;
+    use crate::state::selection::{DomainEvent, DomainEventSource};
+
+    #[test]
+    fn java_cost_counters_are_independent() {
+        let mut event = EventState::new(EventId::KnowingSkull);
+        event.current_screen = 1;
+        event.internal_state = 0;
+        assert_eq!(potion_cost(event.internal_state), 6);
+        assert_eq!(gold_cost(event.internal_state), 6);
+        assert_eq!(card_cost(event.internal_state), 6);
+    }
+
+    #[test]
+    fn potion_option_respects_sozu_like_java() {
+        let mut run = RunState::new(1, 0, false, "Ironclad");
+        run.event_state = Some({
+            let mut event = EventState::new(EventId::KnowingSkull);
+            event.current_screen = 1;
+            event
+        });
+        run.obtain_relic(RelicId::Sozu, EngineState::EventRoom);
+        let mut engine = EngineState::EventRoom;
+
+        handle_choice(&mut engine, &mut run, 0);
+
+        assert!(run.potions.iter().all(|slot| slot.is_none()));
+        assert_eq!(run.current_hp, 74);
+    }
+
+    #[test]
+    fn choices_match_java_screen_structure() {
+        let run = RunState::new(1, 0, false, "Ironclad");
+        let intro = EventState::new(EventId::KnowingSkull);
+        let ask = {
+            let mut event = EventState::new(EventId::KnowingSkull);
+            event.current_screen = 1;
+            event
+        };
+        assert_eq!(get_choices(&run, &intro).len(), 1);
+        assert_eq!(get_choices(&run, &ask).len(), 4);
+    }
+
+    #[test]
+    fn lethal_knowing_skull_click_emits_hp_loss_event() {
+        let mut run = RunState::new(1, 0, false, "Ironclad");
+        run.current_hp = 5;
+        run.event_state = Some({
+            let mut event = EventState::new(EventId::KnowingSkull);
+            event.current_screen = 1;
+            event
+        });
+        let mut engine = EngineState::EventRoom;
+
+        handle_choice(&mut engine, &mut run, 3);
+
+        assert_eq!(run.current_hp, 0);
+        assert!(run.emitted_events.iter().any(|event| {
+            matches!(
+                event,
+                DomainEvent::HpChanged {
+                    delta: -5,
+                    current_hp: 0,
+                    max_hp: _,
+                    source: DomainEventSource::Event(EventId::KnowingSkull),
+                }
+            )
+        }));
+        assert!(!matches!(engine, EngineState::GameOver(RunResult::Defeat)));
+    }
 }

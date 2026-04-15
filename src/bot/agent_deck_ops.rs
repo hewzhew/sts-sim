@@ -1,7 +1,111 @@
 use crate::bot::agent::Agent;
+use crate::bot::card_disposition::{self, DeckDispositionMode};
 use crate::state::run::RunState;
 
 impl Agent {
+    fn deck_cut_score(
+        &self,
+        rs: &RunState,
+        profile: &crate::bot::evaluator::DeckProfile,
+        card: &crate::combat::CombatCard,
+        mode: DeckCutMode,
+    ) -> i32 {
+        let bash_preservation_bonus = if card.id == crate::content::cards::CardId::Bash {
+            self.bash_preservation_bonus(rs, profile, mode)
+        } else {
+            0
+        };
+        card_disposition::deck_cut_score(
+            rs,
+            profile,
+            card,
+            match mode {
+                DeckCutMode::Purge => DeckDispositionMode::Purge,
+                DeckCutMode::Transform => DeckDispositionMode::Transform,
+                DeckCutMode::TransformUpgraded => DeckDispositionMode::TransformUpgraded,
+            },
+            bash_preservation_bonus,
+        )
+    }
+
+    fn bash_preservation_bonus(
+        &self,
+        rs: &RunState,
+        profile: &crate::bot::evaluator::DeckProfile,
+        mode: DeckCutMode,
+    ) -> i32 {
+        let early_opening = rs.act_num <= 1 && rs.floor_num <= 4;
+        let deck_is_thin = rs.master_deck.len() <= 14;
+        let vuln_sources = rs
+            .master_deck
+            .iter()
+            .filter(|card| {
+                matches!(
+                    card.id,
+                    crate::content::cards::CardId::Bash
+                        | crate::content::cards::CardId::Uppercut
+                        | crate::content::cards::CardId::Shockwave
+                        | crate::content::cards::CardId::ThunderClap
+                )
+            })
+            .count() as i32;
+        let frontload_gap = self.shop_needs_frontload_damage(rs, profile);
+
+        let mut bonus = 0;
+        if early_opening && deck_is_thin {
+            bonus += 260;
+        }
+        if vuln_sources <= 1 {
+            bonus += 120;
+        }
+        if frontload_gap {
+            bonus += 80;
+        }
+        if matches!(mode, DeckCutMode::TransformUpgraded) {
+            bonus += 80;
+        }
+        if rs
+            .master_deck
+            .iter()
+            .filter(|card| crate::content::cards::is_starter_basic(card.id))
+            .count()
+            >= 4
+        {
+            bonus += 40;
+        }
+
+        bonus
+    }
+
+    fn ranked_deck_cut_indices(
+        &self,
+        rs: &RunState,
+        count: usize,
+        mode: DeckCutMode,
+    ) -> Vec<usize> {
+        let profile = crate::bot::evaluator::CardEvaluator::deck_profile(rs);
+        let mut ranked = rs
+            .master_deck
+            .iter()
+            .enumerate()
+            .filter(|(_, card)| {
+                !matches!(
+                    mode,
+                    DeckCutMode::TransformUpgraded
+                        if matches!(
+                            crate::content::cards::get_card_definition(card.id).card_type,
+                            crate::content::cards::CardType::Curse
+                                | crate::content::cards::CardType::Status
+                        )
+                )
+            })
+            .map(|(idx, card)| (idx, self.deck_cut_score(rs, &profile, card, mode)))
+            .collect::<Vec<_>>();
+
+        ranked.sort_by(|a, b| a.1.cmp(&b.1).then_with(|| a.0.cmp(&b.0)));
+        ranked.into_iter().take(count).map(|(idx, _)| idx).collect()
+    }
+
     pub(crate) fn searing_blow_plan_score(
         &self,
         rs: &RunState,
@@ -44,34 +148,19 @@ impl Agent {
     }
 
     pub(crate) fn best_purge_index(&self, rs: &RunState) -> usize {
-        let profile = crate::bot::evaluator::CardEvaluator::deck_profile(rs);
-        let mut best_score = i32::MAX;
-        let mut best_idx = 0;
-        for (i, c) in rs.master_deck.iter().enumerate() {
-            let mut score = crate::bot::evaluator::CardEvaluator::evaluate_owned_card(c.id, rs);
-            let def = crate::content::cards::get_card_definition(c.id);
-            if matches!(
-                def.card_type,
-                crate::content::cards::CardType::Curse | crate::content::cards::CardType::Status
-            ) {
-                score -= 2_000;
-            }
-            score -= crate::bot::evaluator::curse_remove_severity(c.id) * 450;
-            if crate::content::cards::is_starter_basic(c.id) {
-                score -= 200;
-            }
-            score += self.shell_core_preservation_penalty(c.id, &profile);
-            if score < best_score {
-                best_score = score;
-                best_idx = i;
-            }
-        }
-        best_idx
+        self.best_purge_indices(rs, 1)
+            .into_iter()
+            .next()
+            .unwrap_or(0)
+    }
+
+    pub(crate) fn best_purge_indices(&self, rs: &RunState, count: usize) -> Vec<usize> {
+        self.ranked_deck_cut_indices(rs, count.min(rs.master_deck.len()), DeckCutMode::Purge)
     }
 
     pub(crate) fn best_upgrade_index(&self, rs: &RunState) -> Option<usize> {
         if let Some(crate::bot::coverage::CuriosityTarget::Card(target_name)) =
-            self.curiosity_target.as_ref()
+            self.active_curiosity_target()
         {
             if let Some(idx) = rs.master_deck.iter().position(|c| {
                 c.upgrades == 0
@@ -219,33 +308,26 @@ impl Agent {
         }
     }
 
+    #[allow(dead_code)]
     pub(crate) fn best_transform_index(&self, rs: &RunState) -> usize {
-        let profile = crate::bot::evaluator::CardEvaluator::deck_profile(rs);
-        let mut best_score = i32::MAX;
-        let mut best_idx = 0;
+        self.best_transform_indices(rs, 1, false)
+            .into_iter()
+            .next()
+            .unwrap_or(0)
+    }
 
-        for (i, c) in rs.master_deck.iter().enumerate() {
-            let mut score = crate::bot::evaluator::CardEvaluator::evaluate_owned_card(c.id, rs);
-            let def = crate::content::cards::get_card_definition(c.id);
-
-            if matches!(
-                def.card_type,
-                crate::content::cards::CardType::Curse | crate::content::cards::CardType::Status
-            ) {
-                score -= 2_000;
-            }
-            if crate::content::cards::is_starter_basic(c.id) {
-                score -= 180;
-            }
-            score += self.shell_core_preservation_penalty(c.id, &profile);
-
-            if score < best_score {
-                best_score = score;
-                best_idx = i;
-            }
-        }
-
-        best_idx
+    pub(crate) fn best_transform_indices(
+        &self,
+        rs: &RunState,
+        count: usize,
+        upgraded_context: bool,
+    ) -> Vec<usize> {
+        let mode = if upgraded_context {
+            DeckCutMode::TransformUpgraded
+        } else {
+            DeckCutMode::Transform
+        };
+        self.ranked_deck_cut_indices(rs, count.min(rs.master_deck.len()), mode)
     }
 
     pub(crate) fn best_duplicate_index(&self, rs: &RunState) -> Option<usize> {
@@ -254,14 +336,9 @@ impl Agent {
         let mut best_idx = None;
 
         for (i, c) in rs.master_deck.iter().enumerate() {
-            let mut score = crate::bot::evaluator::CardEvaluator::evaluate_owned_card(c.id, rs);
-            score += self.duplicate_shell_bonus(c.id, &profile);
+            let mut score = card_disposition::duplicate_score(rs, &profile, c);
             if let Some(target) = self.curiosity_archetype_target() {
                 score += self.archetype_card_bonus(c.id, target);
-            }
-
-            if crate::content::cards::is_starter_basic(c.id) {
-                score -= 120;
             }
 
             if score > best_score {
@@ -278,67 +355,7 @@ impl Agent {
         card_id: crate::content::cards::CardId,
         profile: &crate::bot::evaluator::DeckProfile,
     ) -> i32 {
-        use crate::content::cards::CardId;
-
-        match card_id {
-            CardId::Inflame | CardId::SpotWeakness | CardId::DemonForm | CardId::Rupture
-                if profile.strength_payoffs >= 2 =>
-            {
-                80
-            }
-            CardId::HeavyBlade | CardId::SwordBoomerang | CardId::TwinStrike | CardId::Pummel
-                if profile.strength_enablers >= 2 =>
-            {
-                45
-            }
-            CardId::Corruption | CardId::FeelNoPain | CardId::DarkEmbrace
-                if profile.exhaust_outlets >= 2 || profile.exhaust_fodder >= 1 =>
-            {
-                90
-            }
-            CardId::SecondWind
-            | CardId::FiendFire
-            | CardId::SeverSoul
-            | CardId::BurningPact
-            | CardId::TrueGrit
-                if profile.exhaust_engines >= 2 =>
-            {
-                55
-            }
-            CardId::Barricade | CardId::Entrench if profile.block_core >= 3 => 85,
-            CardId::BodySlam | CardId::Juggernaut if profile.block_core >= 3 => 55,
-            _ => 0,
-        }
-    }
-
-    pub(crate) fn duplicate_shell_bonus(
-        &self,
-        card_id: crate::content::cards::CardId,
-        profile: &crate::bot::evaluator::DeckProfile,
-    ) -> i32 {
-        use crate::content::cards::CardId;
-
-        match card_id {
-            CardId::LimitBreak if profile.strength_enablers >= 1 => 18,
-            CardId::HeavyBlade | CardId::SwordBoomerang | CardId::Whirlwind
-                if profile.strength_enablers >= 2 =>
-            {
-                10
-            }
-            CardId::FeelNoPain | CardId::DarkEmbrace if profile.exhaust_outlets >= 2 => 14,
-            CardId::SecondWind | CardId::BurningPact | CardId::FiendFire
-                if profile.exhaust_engines >= 2 =>
-            {
-                12
-            }
-            CardId::BodySlam | CardId::Impervious | CardId::FlameBarrier
-                if profile.block_payoffs >= 1 =>
-            {
-                10
-            }
-            CardId::Offering | CardId::Shockwave | CardId::Apotheosis => 18,
-            _ => 0,
-        }
+        card_disposition::shell_core_preservation_penalty(card_id, profile)
     }
 
     pub(crate) fn upgrade_shell_bonus(
@@ -374,4 +391,11 @@ impl Agent {
             _ => 0,
         }
     }
+}
+
+#[derive(Clone, Copy)]
+enum DeckCutMode {
+    Purge,
+    Transform,
+    TransformUpgraded,
 }

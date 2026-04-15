@@ -23,6 +23,7 @@ pub mod lose_strength;
 pub mod malleable;
 pub mod minion;
 pub mod next_turn_block;
+pub mod no_block;
 pub mod no_draw;
 pub mod painful_stabs;
 pub mod pen_nib;

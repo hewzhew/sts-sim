@@ -149,7 +149,13 @@ impl MonsterBehavior for Darkling {
         ascension_level: u8,
         num: i32,
     ) -> (u8, Intent) {
-        roll_move_custom(rng, entity, ascension_level, num, std::slice::from_ref(entity))
+        roll_move_custom(
+            rng,
+            entity,
+            ascension_level,
+            num,
+            std::slice::from_ref(entity),
+        )
     }
 
     fn use_pre_battle_action(
@@ -161,7 +167,7 @@ impl MonsterBehavior for Darkling {
             source: entity.id,
             target: entity.id,
             power_id: PowerId::Regrow,
-            amount: 1, // Start logic placeholder
+            amount: -1,
         }]
     }
 
@@ -215,7 +221,12 @@ impl MonsterBehavior for Darkling {
                 // COUNT / regrow countdown line
             }
             5 => {
-                if let Some(monster) = state.entities.monsters.iter_mut().find(|m| m.id == entity.id) {
+                if let Some(monster) = state
+                    .entities
+                    .monsters
+                    .iter_mut()
+                    .find(|m| m.id == entity.id)
+                {
                     monster.half_dead = false;
                 }
                 actions.push(Action::Heal {
@@ -226,8 +237,19 @@ impl MonsterBehavior for Darkling {
                     source: entity.id,
                     target: entity.id,
                     power_id: PowerId::Regrow,
-                    amount: 1,
+                    amount: -1,
                 });
+                if let Some(target_idx) = state
+                    .entities
+                    .monsters
+                    .iter()
+                    .position(|m| m.id == entity.id)
+                {
+                    actions.extend(
+                        crate::content::relics::hooks::on_spawn_monster(state, target_idx)
+                            .into_iter(),
+                    );
+                }
             }
             _ => {}
         }
@@ -270,7 +292,12 @@ impl MonsterBehavior for Darkling {
             return Vec::new();
         }
 
-        if let Some(monster) = state.entities.monsters.iter_mut().find(|m| m.id == entity.id) {
+        if let Some(monster) = state
+            .entities
+            .monsters
+            .iter_mut()
+            .find(|m| m.id == entity.id)
+        {
             monster.half_dead = true;
             monster.is_dying = false;
             monster.current_hp = 0;
@@ -284,5 +311,47 @@ impl MonsterBehavior for Darkling {
             next_move_byte: 4,
             intent: Intent::Unknown,
         }]
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::content::monsters::EnemyId;
+    use crate::content::relics::{RelicId, RelicState};
+
+    #[test]
+    fn revive_turn_triggers_on_spawn_monster_relic_actions() {
+        let mut combat = crate::content::test_support::basic_combat();
+        combat.entities.monsters[0].monster_type = EnemyId::Darkling as usize;
+        combat.entities.monsters[0].half_dead = true;
+        combat.entities.monsters[0].next_move_byte = 5;
+        combat.entities.monsters[0].max_hp = 44;
+        combat
+            .entities
+            .player
+            .relics
+            .push(RelicState::new(RelicId::PhilosopherStone));
+        combat.entities.player.relic_buses.on_spawn_monster.push(0);
+
+        let entity = combat.entities.monsters[0].clone();
+        let actions = Darkling::take_turn(&mut combat, &entity);
+
+        assert!(actions.contains(&Action::Heal {
+            target: entity.id,
+            amount: entity.max_hp / 2,
+        }));
+        assert!(actions.contains(&Action::ApplyPower {
+            source: entity.id,
+            target: entity.id,
+            power_id: PowerId::Regrow,
+            amount: -1,
+        }));
+        assert!(actions.contains(&Action::ApplyPower {
+            source: entity.id,
+            target: entity.id,
+            power_id: PowerId::Strength,
+            amount: 1,
+        }));
     }
 }

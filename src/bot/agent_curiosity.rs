@@ -7,7 +7,7 @@ impl Agent {
         offered_cards: &[crate::content::cards::CardId],
         rs: &RunState,
     ) -> Option<usize> {
-        let target_name = match self.curiosity_target.as_ref()? {
+        let target_name = match self.active_curiosity_target()? {
             crate::bot::coverage::CuriosityTarget::Card(target_name)
             | crate::bot::coverage::CuriosityTarget::Source(target_name) => target_name,
             crate::bot::coverage::CuriosityTarget::Archetype(target_name) => {
@@ -92,7 +92,7 @@ impl Agent {
         &self,
         reward_items: &[crate::rewards::state::RewardItem],
     ) -> Option<usize> {
-        let target_name = match self.curiosity_target.as_ref()? {
+        let target_name = match self.active_curiosity_target()? {
             crate::bot::coverage::CuriosityTarget::Relic(target_name)
             | crate::bot::coverage::CuriosityTarget::Source(target_name) => target_name,
             _ => return None,
@@ -110,7 +110,7 @@ impl Agent {
         &self,
         relics: &[crate::content::relics::RelicId],
     ) -> Option<usize> {
-        let target_name = match self.curiosity_target.as_ref()? {
+        let target_name = match self.active_curiosity_target()? {
             crate::bot::coverage::CuriosityTarget::Relic(target_name)
             | crate::bot::coverage::CuriosityTarget::Source(target_name) => target_name,
             _ => return None,
@@ -138,7 +138,7 @@ impl Agent {
     }
 
     pub(crate) fn curiosity_archetype_target(&self) -> Option<&str> {
-        match self.curiosity_target.as_ref()? {
+        match self.active_curiosity_target()? {
             crate::bot::coverage::CuriosityTarget::Archetype(target) => Some(target.as_str()),
             _ => None,
         }

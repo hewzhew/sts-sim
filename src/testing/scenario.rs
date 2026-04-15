@@ -5,8 +5,9 @@ use crate::action::CardDestination;
 use crate::combat::{CombatCard, CombatState, Power};
 use crate::content::cards::java_id as card_java_id;
 use crate::content::cards::CardId;
-use crate::diff::mapper::{card_id_from_java, power_id_from_java, relic_id_from_java};
-use crate::diff::replay_support::tick_until_stable;
+use crate::diff::protocol::mapper::{card_id_from_java, power_id_from_java, relic_id_from_java};
+use crate::diff::protocol::snapshot::build_live_combat_snapshot as build_protocol_live_combat_snapshot;
+use crate::diff::replay::replay_support::tick_until_stable;
 use crate::diff::state_sync::build_combat_state;
 use crate::state::core::{ClientInput, EngineState, PendingChoice, PileType};
 
@@ -165,19 +166,7 @@ pub struct ScenarioSnapshot {
 }
 
 pub fn build_live_combat_snapshot(gs: &Value) -> Value {
-    let mut snapshot = gs
-        .get("combat_state")
-        .cloned()
-        .unwrap_or_else(|| serde_json::json!({}));
-    if let Some(obj) = snapshot.as_object_mut() {
-        if let Some(room_type) = gs.get("room_type").cloned() {
-            obj.insert("room_type".to_string(), room_type);
-        }
-        if let Some(potions) = gs.get("potions").cloned() {
-            obj.insert("potions".to_string(), potions);
-        }
-    }
-    snapshot
+    build_protocol_live_combat_snapshot(gs)
 }
 
 pub fn build_initial_engine_state(
@@ -902,6 +891,7 @@ mod tests {
             0,
             vec![Power {
                 power_type: PowerId::Strength,
+                instance_id: None,
                 amount: 2,
                 extra_data: 0,
                 just_applied: false,
@@ -968,6 +958,7 @@ mod tests {
         CombatState {
             meta: crate::combat::CombatMeta {
                 ascension_level: 0,
+                player_class: "Ironclad",
                 is_boss_fight: false,
                 is_elite_fight: false,
                 meta_changes: Vec::new(),
@@ -1018,8 +1009,11 @@ mod tests {
                     move_history: VecDeque::new(),
                     intent_dmg: 0,
                     logical_position: 0,
+                    protocol_identity: Default::default(),
                     hexaghost: Default::default(),
+                    chosen: Default::default(),
                     darkling: Default::default(),
+                    lagavulin: Default::default(),
                 }],
                 potions: vec![None, None, None],
                 power_db: HashMap::new(),
@@ -1028,6 +1022,7 @@ mod tests {
                 action_queue: VecDeque::new(),
             },
             rng: crate::combat::CombatRng::new(crate::rng::RngPool::new(1)),
+            runtime: Default::default(),
         }
     }
 }

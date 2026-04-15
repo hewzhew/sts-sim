@@ -90,7 +90,10 @@ pub(super) fn nearby_shop_conversion_bonus(rs: &RunState) -> i32 {
 }
 
 pub(super) fn generic_remove_value(rs: &RunState) -> i32 {
-    1_500 + count_remove_targets(rs) * 420 + curse_pressure_score(rs) * 90
+    1_500
+        + count_remove_targets(rs) * 420
+        + curse_pressure_score(rs) * 90
+        + crate::bot::deck_delta_eval::compare_purge_vs_keep(rs).total * 12
 }
 
 pub(super) fn contains_any(text: &str, needles: &[&str]) -> bool {

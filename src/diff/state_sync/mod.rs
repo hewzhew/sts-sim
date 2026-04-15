@@ -7,6 +7,5 @@ pub use build::{
     build_combat_state, build_hand_from_snapshot, build_pile_from_ids, build_powers_from_snapshot,
     snapshot_uuid,
 };
-pub use internal_state::carry_internal_runtime_state;
 pub use rng::sync_rng;
 pub use sync::sync_state;

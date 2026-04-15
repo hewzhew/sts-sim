@@ -724,6 +724,30 @@
           "confidence": 1.0,
           "status": "mapped"
         },
+        "IntangiblePlayer": {
+          "rust": "IntangiblePlayer",
+          "java": [
+            "IntangiblePlayer",
+            "IntangiblePlayerPower"
+          ],
+          "sources": [
+            "java_crawler",
+            "rust_crawler"
+          ],
+          "candidates": [
+            {
+              "java": "IntangiblePlayerPower",
+              "class_name": "IntangiblePlayerPower",
+              "rule": "exact",
+              "confidence": 1.0,
+              "observed": true
+            }
+          ],
+          "scope": "combat",
+          "match_rule": "exact",
+          "confidence": 1.0,
+          "status": "mapped"
+        },
         "Invincible": {
           "rust": "Invincible",
           "java": [

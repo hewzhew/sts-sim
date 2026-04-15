@@ -1,5 +1,9 @@
 use crate::content::cards::CardId;
 use crate::core::EntityId;
+use crate::state::selection::{
+    SelectionConstraint, SelectionReason, SelectionRequest, SelectionResolution, SelectionScope,
+    SelectionTargetRef,
+};
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum EngineState {
@@ -152,7 +156,7 @@ pub enum TargetValidation {
     AnyMonster,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum ClientInput {
     PlayCard {
         card_index: usize,
@@ -172,11 +176,12 @@ pub enum ClientInput {
     CampfireOption(CampfireChoice),
     EventChoice(usize),
     SubmitScryDiscard(Vec<usize>), // Array of indices (0 to N-1) to discard
-    SubmitHandSelect(Vec<u32>),    // Array of card UUIDs selected
-    SubmitGridSelect(Vec<u32>),    // Array of card UUIDs selected from grid (discard/draw)
-    SubmitDeckSelect(Vec<usize>),  // Array of absolute master_deck indices selected
-    ClaimReward(usize),            // Index of the RewardItem to claim
-    SelectCard(usize),             // Pick card at index from pending_card_choice
+    SubmitSelection(SelectionResolution),
+    SubmitHandSelect(Vec<u32>),   // Array of card UUIDs selected
+    SubmitGridSelect(Vec<u32>),   // Array of card UUIDs selected from grid (discard/draw)
+    SubmitDeckSelect(Vec<usize>), // Array of absolute master_deck indices selected
+    ClaimReward(usize),           // Index of the RewardItem to claim
+    SelectCard(usize),            // Pick card at index from pending_card_choice
     BuyCard(usize),
     BuyRelic(usize),
     BuyPotion(usize),
@@ -204,4 +209,114 @@ pub enum TopLevelState {
     InShop,
     OnRewardScreen,
     OnEvent,
+}
+
+impl From<RunPendingChoiceReason> for SelectionReason {
+    fn from(value: RunPendingChoiceReason) -> Self {
+        match value {
+            RunPendingChoiceReason::Purge => SelectionReason::Purge,
+            RunPendingChoiceReason::Upgrade => SelectionReason::Upgrade,
+            RunPendingChoiceReason::Transform => SelectionReason::Transform,
+            RunPendingChoiceReason::TransformUpgraded => SelectionReason::TransformUpgraded,
+            RunPendingChoiceReason::Duplicate => SelectionReason::Duplicate,
+        }
+    }
+}
+
+impl From<HandSelectReason> for SelectionReason {
+    fn from(value: HandSelectReason) -> Self {
+        match value {
+            HandSelectReason::Exhaust => SelectionReason::Exhaust,
+            HandSelectReason::Discard => SelectionReason::Discard,
+            HandSelectReason::Retain => SelectionReason::Retain,
+            HandSelectReason::PutOnDrawPile => SelectionReason::PutOnDrawPile,
+            HandSelectReason::PutToBottomOfDraw => SelectionReason::PutToBottomOfDraw,
+            HandSelectReason::Copy { .. } => SelectionReason::Copy,
+            HandSelectReason::Upgrade => SelectionReason::Upgrade,
+            HandSelectReason::GamblingChip => SelectionReason::GamblingChip,
+        }
+    }
+}
+
+impl From<GridSelectReason> for SelectionReason {
+    fn from(value: GridSelectReason) -> Self {
+        match value {
+            GridSelectReason::MoveToDrawPile => SelectionReason::MoveToDrawPile,
+            GridSelectReason::Exhume { .. } => SelectionReason::Exhume,
+            GridSelectReason::SkillFromDeckToHand => SelectionReason::SkillFromDeckToHand,
+            GridSelectReason::AttackFromDeckToHand => SelectionReason::AttackFromDeckToHand,
+            GridSelectReason::DiscardToHand => SelectionReason::DiscardToHand,
+        }
+    }
+}
+
+impl PendingChoice {
+    pub fn selection_request(&self) -> Option<SelectionRequest> {
+        match self {
+            PendingChoice::HandSelect {
+                candidate_uuids,
+                min_cards,
+                max_cards,
+                can_cancel,
+                reason,
+            } => Some(SelectionRequest {
+                scope: SelectionScope::Hand,
+                reason: (*reason).into(),
+                constraint: SelectionConstraint::from_bounds(
+                    *min_cards as usize,
+                    *max_cards as usize,
+                    candidate_uuids.len(),
+                ),
+                can_cancel: *can_cancel,
+                targets: candidate_uuids
+                    .iter()
+                    .copied()
+                    .map(SelectionTargetRef::CardUuid)
+                    .collect(),
+            }),
+            PendingChoice::GridSelect {
+                candidate_uuids,
+                min_cards,
+                max_cards,
+                can_cancel,
+                reason,
+                ..
+            } => Some(SelectionRequest {
+                scope: SelectionScope::Grid,
+                reason: (*reason).into(),
+                constraint: SelectionConstraint::from_bounds(
+                    *min_cards as usize,
+                    *max_cards as usize,
+                    candidate_uuids.len(),
+                ),
+                can_cancel: *can_cancel,
+                targets: candidate_uuids
+                    .iter()
+                    .copied()
+                    .map(SelectionTargetRef::CardUuid)
+                    .collect(),
+            }),
+            _ => None,
+        }
+    }
+}
+
+impl RunPendingChoiceState {
+    pub fn selection_request(&self, run_state: &crate::state::run::RunState) -> SelectionRequest {
+        SelectionRequest {
+            scope: SelectionScope::Deck,
+            reason: self.reason.clone().into(),
+            constraint: SelectionConstraint::from_bounds(
+                self.min_choices,
+                self.max_choices,
+                run_state.master_deck.len(),
+            ),
+            can_cancel: self.min_choices == 0,
+            targets: run_state
+                .master_deck
+                .iter()
+                .map(|card| SelectionTargetRef::CardUuid(card.uuid))
+                .collect(),
+        }
+    }
 }

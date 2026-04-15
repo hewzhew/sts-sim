@@ -1,6 +1,6 @@
 use crate::content::cards::{get_card_definition, CardId, CardTarget, CardType};
 
-use super::sim::{active_hand_cards, SimCard, SimState, MAX_MONSTERS};
+use super::sim::{active_hand_cards, active_monsters, SimCard, SimState};
 
 pub(super) fn apply_play(state: &mut SimState, card_idx: usize, target: Option<usize>) {
     let card = state.hand[card_idx];
@@ -80,15 +80,10 @@ fn apply_attack_damage(
             }
         }
         CardTarget::AllEnemy => {
-            let mut ids = [0usize; MAX_MONSTERS];
-            let mut count = 0;
-            for mi in 0..state.monster_count as usize {
-                if !state.monsters[mi].is_gone {
-                    ids[count] = state.monsters[mi].entity_id;
-                    count += 1;
-                }
-            }
-            for target_id in ids.into_iter().take(count) {
+            let ids: Vec<_> = active_monsters(state)
+                .map(|(_, monster)| monster.entity_id)
+                .collect();
+            for target_id in ids {
                 hit_monster(state, target_id, eff_dmg, hits);
             }
             apply_reflect_damage(state, card, None, hits);
@@ -116,24 +111,24 @@ fn apply_special(state: &mut SimState, card: &SimCard, target: Option<usize>) {
             }
         }
         CardId::ThunderClap => {
-            for mi in 0..state.monster_count as usize {
-                if !state.monsters[mi].is_gone {
-                    state.monsters[mi].vulnerable += 1;
+            for monster in &mut state.monsters {
+                if !monster.is_gone {
+                    monster.vulnerable += 1;
                 }
             }
         }
         CardId::Shockwave => {
-            for mi in 0..state.monster_count as usize {
-                if !state.monsters[mi].is_gone {
-                    state.monsters[mi].vulnerable += card.base_magic;
-                    state.monsters[mi].weak += card.base_magic;
+            for monster in &mut state.monsters {
+                if !monster.is_gone {
+                    monster.vulnerable += card.base_magic;
+                    monster.weak += card.base_magic;
                 }
             }
         }
         CardId::Intimidate => {
-            for mi in 0..state.monster_count as usize {
-                if !state.monsters[mi].is_gone {
-                    state.monsters[mi].weak += card.base_magic;
+            for monster in &mut state.monsters {
+                if !monster.is_gone {
+                    monster.weak += card.base_magic;
                 }
             }
         }
@@ -235,6 +230,13 @@ fn apply_special(state: &mut SimState, card: &SimCard, target: Option<usize>) {
             add_draw_bonus(state, card.base_magic as i64 * super::sim::DRAW_VALUE);
             state.player_no_draw = true;
         }
+        CardId::Feed => {
+            if let Some(t) = target {
+                if find(state, t).is_some_and(|m| m.is_gone) {
+                    state.future_growth_value += 14_000;
+                }
+            }
+        }
         CardId::MasterOfStrategy => {
             add_draw_bonus(state, card.base_magic as i64 * super::sim::DRAW_VALUE);
         }
@@ -251,8 +253,7 @@ fn apply_special(state: &mut SimState, card: &SimCard, target: Option<usize>) {
     }
 
     if card.card_type == CardType::Skill {
-        for mi in 0..state.monster_count as usize {
-            let monster = &mut state.monsters[mi];
+        for monster in &mut state.monsters {
             if monster.is_gone || !monster.nob_enrage {
                 continue;
             }
@@ -321,7 +322,7 @@ pub(super) fn expected_reflect_damage(
                     .map(|m| m.sharp_hide.max(0) + m.thorns.max(0) * hits.max(0))
                     .unwrap_or(0)
             } else {
-                (0..state.monster_count as usize)
+                (0..state.monsters.len())
                     .filter_map(|i| {
                         let m = &state.monsters[i];
                         (!m.is_gone).then_some(m.sharp_hide.max(0) + m.thorns.max(0) * hits.max(0))
@@ -330,7 +331,7 @@ pub(super) fn expected_reflect_damage(
                     .unwrap_or(0)
             }
         }
-        CardTarget::AllEnemy => (0..state.monster_count as usize)
+        CardTarget::AllEnemy => (0..state.monsters.len())
             .filter_map(|i| {
                 let m = &state.monsters[i];
                 (!m.is_gone).then_some(m.sharp_hide.max(0) + m.thorns.max(0) * hits.max(0))
@@ -352,13 +353,13 @@ fn apply_reflect_damage(state: &mut SimState, card: &SimCard, target: Option<usi
 }
 
 pub(super) fn find(state: &SimState, eid: usize) -> Option<&super::sim::SimMonster> {
-    (0..state.monster_count as usize)
+    (0..state.monsters.len())
         .find(|&i| state.monsters[i].entity_id == eid)
         .map(|i| &state.monsters[i])
 }
 
 fn find_mut(state: &mut SimState, eid: usize) -> Option<&mut super::sim::SimMonster> {
-    (0..state.monster_count as usize)
+    (0..state.monsters.len())
         .find(|&i| state.monsters[i].entity_id == eid)
         .map(move |i| &mut state.monsters[i])
 }

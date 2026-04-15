@@ -6,6 +6,11 @@ use crate::content::powers::PowerId;
 pub struct TheCollector;
 
 impl TheCollector {
+    // Java summons the nearer Torch Head first, then the farther-left one.
+    // The resulting protocol draw_x values are [770, 647], and smart
+    // positioning reorders the final group to [647, 770, Collector].
+    const TORCH_DRAW_X: [i32; 2] = [770, 647];
+
     pub fn roll_move_custom(
         rng: &mut crate::rng::StsRng,
         entity: &crate::combat::MonsterEntity,
@@ -109,21 +114,22 @@ impl MonsterBehavior for TheCollector {
 
         match entity.next_move_byte {
             1 => {
-                // Java uses SpawnMonsterAction(m, true) with drawX values that place both
-                // Torch Heads to the left of The Collector. Because the second summon is
-                // farther left, the final order becomes [TorchHead(2), TorchHead(1), Collector].
+                // Java protocol identity for Collector minions is keyed by the final
+                // draw_x ordering, not by our local relative x values.
                 actions.push(Action::SpawnMonsterSmart {
                     monster_id: EnemyId::TorchHead,
-                    logical_position: -1,
+                    logical_position: Self::TORCH_DRAW_X[0],
                     current_hp: 0,
                     max_hp: 0,
+                    protocol_draw_x: Some(Self::TORCH_DRAW_X[0]),
                     is_minion: true,
                 });
                 actions.push(Action::SpawnMonsterSmart {
                     monster_id: EnemyId::TorchHead,
-                    logical_position: -2,
+                    logical_position: Self::TORCH_DRAW_X[1],
                     current_hp: 0,
                     max_hp: 0,
+                    protocol_draw_x: Some(Self::TORCH_DRAW_X[1]),
                     is_minion: true,
                 });
             }
@@ -192,7 +198,7 @@ impl MonsterBehavior for TheCollector {
                         });
                     }
                 }
-                let dead_torches: Vec<u8> = state
+                let dead_torches: Vec<i32> = state
                     .entities
                     .monsters
                     .iter()
@@ -201,15 +207,21 @@ impl MonsterBehavior for TheCollector {
                             && crate::content::monsters::EnemyId::from_id(m.monster_type)
                                 == Some(EnemyId::TorchHead)
                     })
-                    .map(|m| m.slot)
+                    .map(|m| m.protocol_identity.draw_x.unwrap_or(m.logical_position))
                     .collect();
 
-                for slot in dead_torches {
+                // Java revives via enemySlots entry iteration, which preserves the
+                // original summon slot order [770, 647] rather than current group order.
+                let mut dead_torches = dead_torches;
+                dead_torches.sort_by(|a, b| b.cmp(a));
+
+                for draw_x in dead_torches {
                     actions.push(Action::SpawnMonsterSmart {
                         monster_id: EnemyId::TorchHead,
-                        logical_position: -(slot as i32),
+                        logical_position: draw_x,
                         current_hp: 0, // Engine will roll HP via get_hp_range
                         max_hp: 0,
+                        protocol_draw_x: Some(draw_x),
                         is_minion: true,
                     });
                 }
@@ -221,5 +233,198 @@ impl MonsterBehavior for TheCollector {
             monster_id: entity.id,
         });
         actions
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::content::monsters::EnemyId;
+
+    #[test]
+    fn revive_respawns_torch_head_at_same_draw_x() {
+        let mut combat = crate::content::test_support::basic_combat();
+        combat.entities.monsters = vec![
+            crate::combat::MonsterEntity {
+                id: 1,
+                monster_type: EnemyId::TorchHead as usize,
+                current_hp: 0,
+                max_hp: 40,
+                block: 0,
+                slot: 0,
+                is_dying: true,
+                is_escaped: false,
+                half_dead: false,
+                next_move_byte: 0,
+                current_intent: Intent::Unknown,
+                move_history: std::collections::VecDeque::new(),
+                intent_dmg: 0,
+                logical_position: TheCollector::TORCH_DRAW_X[1],
+                protocol_identity: crate::combat::MonsterProtocolIdentity {
+                    draw_x: Some(TheCollector::TORCH_DRAW_X[1]),
+                    ..Default::default()
+                },
+                hexaghost: Default::default(),
+                chosen: Default::default(),
+                darkling: Default::default(),
+                lagavulin: Default::default(),
+            },
+            crate::combat::MonsterEntity {
+                id: 2,
+                monster_type: EnemyId::TheCollector as usize,
+                current_hp: 282,
+                max_hp: 282,
+                block: 0,
+                slot: 1,
+                is_dying: false,
+                is_escaped: false,
+                half_dead: false,
+                next_move_byte: 5,
+                current_intent: Intent::Unknown,
+                move_history: std::collections::VecDeque::new(),
+                intent_dmg: 0,
+                logical_position: 0,
+                protocol_identity: crate::combat::MonsterProtocolIdentity {
+                    draw_x: Some(0),
+                    ..Default::default()
+                },
+                hexaghost: Default::default(),
+                chosen: Default::default(),
+                darkling: Default::default(),
+                lagavulin: Default::default(),
+            },
+            crate::combat::MonsterEntity {
+                id: 3,
+                monster_type: EnemyId::TorchHead as usize,
+                current_hp: 40,
+                max_hp: 40,
+                block: 0,
+                slot: 2,
+                is_dying: false,
+                is_escaped: false,
+                half_dead: false,
+                next_move_byte: 0,
+                current_intent: Intent::Unknown,
+                move_history: std::collections::VecDeque::new(),
+                intent_dmg: 0,
+                logical_position: TheCollector::TORCH_DRAW_X[0],
+                protocol_identity: crate::combat::MonsterProtocolIdentity {
+                    draw_x: Some(TheCollector::TORCH_DRAW_X[0]),
+                    ..Default::default()
+                },
+                hexaghost: Default::default(),
+                chosen: Default::default(),
+                darkling: Default::default(),
+                lagavulin: Default::default(),
+            },
+        ];
+
+        let entity = combat.entities.monsters[1].clone();
+        let actions = TheCollector::take_turn(&mut combat, &entity);
+
+        assert!(actions.contains(&Action::SpawnMonsterSmart {
+            monster_id: EnemyId::TorchHead,
+            logical_position: TheCollector::TORCH_DRAW_X[1],
+            current_hp: 0,
+            max_hp: 0,
+            protocol_draw_x: Some(TheCollector::TORCH_DRAW_X[1]),
+            is_minion: true,
+        }));
+    }
+
+    #[test]
+    fn revive_uses_java_slot_order_for_two_dead_torch_heads() {
+        let mut combat = crate::content::test_support::basic_combat();
+        combat.entities.monsters = vec![
+            crate::combat::MonsterEntity {
+                id: 1,
+                monster_type: EnemyId::TorchHead as usize,
+                current_hp: 0,
+                max_hp: 39,
+                block: 0,
+                slot: 0,
+                is_dying: true,
+                is_escaped: false,
+                half_dead: false,
+                next_move_byte: 0,
+                current_intent: Intent::Unknown,
+                move_history: std::collections::VecDeque::new(),
+                intent_dmg: 0,
+                logical_position: TheCollector::TORCH_DRAW_X[1],
+                protocol_identity: crate::combat::MonsterProtocolIdentity {
+                    draw_x: Some(TheCollector::TORCH_DRAW_X[1]),
+                    ..Default::default()
+                },
+                hexaghost: Default::default(),
+                chosen: Default::default(),
+                darkling: Default::default(),
+                lagavulin: Default::default(),
+            },
+            crate::combat::MonsterEntity {
+                id: 2,
+                monster_type: EnemyId::TorchHead as usize,
+                current_hp: 0,
+                max_hp: 38,
+                block: 0,
+                slot: 1,
+                is_dying: true,
+                is_escaped: false,
+                half_dead: false,
+                next_move_byte: 0,
+                current_intent: Intent::Unknown,
+                move_history: std::collections::VecDeque::new(),
+                intent_dmg: 0,
+                logical_position: TheCollector::TORCH_DRAW_X[0],
+                protocol_identity: crate::combat::MonsterProtocolIdentity {
+                    draw_x: Some(TheCollector::TORCH_DRAW_X[0]),
+                    ..Default::default()
+                },
+                hexaghost: Default::default(),
+                chosen: Default::default(),
+                darkling: Default::default(),
+                lagavulin: Default::default(),
+            },
+            crate::combat::MonsterEntity {
+                id: 3,
+                monster_type: EnemyId::TheCollector as usize,
+                current_hp: 200,
+                max_hp: 282,
+                block: 0,
+                slot: 2,
+                is_dying: false,
+                is_escaped: false,
+                half_dead: false,
+                next_move_byte: 5,
+                current_intent: Intent::Unknown,
+                move_history: std::collections::VecDeque::new(),
+                intent_dmg: 0,
+                logical_position: 1000,
+                protocol_identity: crate::combat::MonsterProtocolIdentity {
+                    draw_x: Some(1000),
+                    ..Default::default()
+                },
+                hexaghost: Default::default(),
+                chosen: Default::default(),
+                darkling: Default::default(),
+                lagavulin: Default::default(),
+            },
+        ];
+
+        let entity = combat.entities.monsters[2].clone();
+        let actions = TheCollector::take_turn(&mut combat, &entity);
+        let revive_draw_xs: Vec<i32> = actions
+            .into_iter()
+            .filter_map(|action| match action {
+                Action::SpawnMonsterSmart {
+                    logical_position, ..
+                } => Some(logical_position),
+                _ => None,
+            })
+            .collect();
+
+        assert_eq!(
+            revive_draw_xs,
+            vec![TheCollector::TORCH_DRAW_X[0], TheCollector::TORCH_DRAW_X[1]]
+        );
     }
 }

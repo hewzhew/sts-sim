@@ -28,10 +28,50 @@ pub(crate) fn choose_event_choice(
     let options = screen_state.get("options").and_then(|v| v.as_array())?;
 
     if let Some(idx) = choose_event_specific(event_id, event_name, rs, options) {
-        return Some(idx);
+        return event_option_choice_index(options, idx);
     }
 
     choose_by_cost_family(options, choice_list)
+        .and_then(|idx| event_option_choice_index(options, idx))
+}
+
+fn event_option_choice_index(options: &[Value], option_idx: usize) -> Option<usize> {
+    let option = options.get(option_idx)?;
+    if option
+        .get("disabled")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false)
+    {
+        return None;
+    }
+
+    if let Some(choice_index) = option.get("choice_index").and_then(|v| v.as_u64()) {
+        return Some(choice_index as usize);
+    }
+
+    Some(
+        options
+            .iter()
+            .take(option_idx + 1)
+            .filter(|option| {
+                !option
+                    .get("disabled")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false)
+            })
+            .count()
+            .saturating_sub(1),
+    )
+}
+
+fn event_choice_name_for_option<'a>(
+    choice_list: &'a [&str],
+    options: &[Value],
+    option_idx: usize,
+) -> &'a str {
+    event_option_choice_index(options, option_idx)
+        .and_then(|choice_idx| choice_list.get(choice_idx).copied())
+        .unwrap_or("")
 }
 
 fn choose_event_specific(
@@ -733,6 +773,18 @@ fn choose_drug_dealer_option(rs: &RunState, options: &[Value]) -> Option<usize> 
                 | crate::content::cards::CardId::Reaper
         )
     });
+    let transform_value = crate::bot::deck_delta_eval::compare_transform_vs_decline(rs, 2, false);
+    let jax_delta =
+        crate::bot::deck_delta_eval::compare_pick_vs_skip(rs, crate::content::cards::CardId::JAX);
+    let jax_value =
+        1_150 + jax_delta.prior_delta * 10 + jax_delta.rollout_delta * 6 + jax_delta.suite_bias * 3;
+    let relic_value = if has_strength_scaling { 2_400 } else { 2_050 };
+
+    if let Some(idx) = transform_idx {
+        if transform_targets >= 2 && !has_strength_scaling {
+            return Some(idx);
+        }
+    }
 
     let mut best: Option<(usize, i32)> = None;
     for (idx, _) in labels.iter().enumerate() {
@@ -744,18 +796,18 @@ fn choose_drug_dealer_option(rs: &RunState, options: &[Value]) -> Option<usize> 
             continue;
         }
         let score = if Some(idx) == transform_idx {
-            1_900 + transform_targets * 320
+            1_800
+                + transform_targets * 260
+                + transform_value.prior_delta * 10
+                + transform_value.rollout_delta * 8
+                + transform_value.suite_bias * 4
         } else if Some(idx) == relic_idx {
-            if has_strength_scaling {
-                2_400
-            } else {
-                2_050
-            }
+            relic_value
         } else if Some(idx) == jax_idx {
             if has_strength_scaling {
-                1_850
+                jax_value + 220
             } else {
-                1_350
+                jax_value
             }
         } else {
             -100
@@ -820,7 +872,10 @@ fn choose_by_cost_family(options: &[Value], choice_list: &[&str]) -> Option<usiz
             continue;
         }
         let text = option_text(option);
-        let cost = classify_event_cost(text, choice_list.get(idx).copied().unwrap_or(""));
+        let cost = classify_event_cost(
+            text,
+            event_choice_name_for_option(choice_list, options, idx),
+        );
         match best {
             Some((_, best_cost)) if cost >= best_cost => {}
             _ => best = Some((idx, cost)),
@@ -868,7 +923,26 @@ fn choose_vampires_option(rs: &RunState, options: &[Value]) -> Option<usize> {
 
     let strike_count = count_starter_strikes(rs);
     let hp_ratio = rs.current_hp as f32 / rs.max_hp.max(1) as f32;
-    if strike_count >= 4 && hp_ratio >= 0.60 {
+    let nearby_shop_bonus = nearby_shop_conversion_bonus(rs);
+    let max_hp_loss = labels
+        .iter()
+        .find(|t| contains_any(t, &["lose", "max hp"]))
+        .map(|t| first_number(t))
+        .unwrap_or_else(|| {
+            if rs.ascension_level >= 15 {
+                ((rs.max_hp as f32) * 0.35).round() as i32
+            } else {
+                ((rs.max_hp as f32) * 0.30).round() as i32
+            }
+        });
+    let bite_exchange = crate::bot::deck_delta_eval::compare_vampires_vs_refuse(rs);
+    let bite_trade_score =
+        bite_exchange.total * 12 + strike_count * 85 + i32::from(rs.act_num <= 2) * 220
+            - nearby_shop_bonus
+            - max_hp_loss * 42
+            - i32::from(hp_ratio < 0.55) * 260;
+
+    if bite_trade_score >= 1_150 && strike_count >= 4 {
         labels
             .iter()
             .position(|t| contains_any(t, &["accept", "replace all strikes with 5 bites"]))
@@ -1058,7 +1132,7 @@ fn choose_bonfire_option(rs: &RunState, options: &[Value]) -> Option<usize> {
 
 #[cfg(test)]
 mod tests {
-    use super::choose_event_choice;
+    use super::{choose_event_choice, event_option_choice_index};
     use crate::map::node::{MapEdge, MapRoomNode, RoomType};
     use crate::map::state::MapState;
     use crate::state::run::RunState;
@@ -1087,6 +1161,38 @@ mod tests {
             boss_node_available: false,
             has_emerald_key: false,
         };
+    }
+
+    #[test]
+    fn event_choice_uses_java_choice_index_instead_of_option_position() {
+        let gs = json!({
+            "screen_state": {
+                "event_id": "Forgotten Altar",
+                "event_name": "Forgotten Altar",
+                "options": [
+                    {"disabled": true, "text": "[Locked] Offer Idol"},
+                    {"choice_index": 0, "disabled": false, "text": "[Pray] Gain 5 Max HP."},
+                    {"choice_index": 1, "disabled": false, "text": "[Desecrate] Become Cursed - Decay."}
+                ]
+            }
+        });
+        let rs = run_state(40, 87);
+
+        let choice = choose_event_choice(&gs, &rs, &["sacrifice", "desecrate"]);
+
+        assert_eq!(choice, Some(1));
+    }
+
+    #[test]
+    fn event_option_choice_index_falls_back_to_enabled_ordinal_when_missing() {
+        let options = vec![
+            json!({"disabled": true, "text": "[Locked]"}),
+            json!({"disabled": false, "text": "[Leave]"}),
+            json!({"disabled": false, "text": "[Take]"}),
+        ];
+
+        assert_eq!(event_option_choice_index(&options, 1), Some(0));
+        assert_eq!(event_option_choice_index(&options, 2), Some(1));
     }
 
     #[test]
@@ -1438,6 +1544,36 @@ mod tests {
     }
 
     #[test]
+    fn vampires_accepts_when_strikes_are_still_dense_and_remove_path_is_bad() {
+        let gs = json!({
+            "screen_state": {
+                "event_id": "Vampires",
+                "event_name": "Vampires",
+                "options": [
+                    {"text": "[Accept] Lose 24 Max HP. Replace all Strikes with 5 Bites.", "label": "Accept", "disabled": false},
+                    {"text": "[Refuse] Leave.", "label": "Refuse", "disabled": false}
+                ]
+            }
+        });
+        let mut rs = run_state(58, 80);
+        rs.act_num = 2;
+        rs.master_deck = vec![
+            crate::combat::CombatCard::new(crate::content::cards::CardId::Strike, 1),
+            crate::combat::CombatCard::new(crate::content::cards::CardId::Strike, 2),
+            crate::combat::CombatCard::new(crate::content::cards::CardId::Strike, 3),
+            crate::combat::CombatCard::new(crate::content::cards::CardId::Strike, 4),
+            crate::combat::CombatCard::new(crate::content::cards::CardId::Strike, 5),
+            crate::combat::CombatCard::new(crate::content::cards::CardId::Defend, 6),
+            crate::combat::CombatCard::new(crate::content::cards::CardId::Defend, 7),
+            crate::combat::CombatCard::new(crate::content::cards::CardId::Defend, 8),
+            crate::combat::CombatCard::new(crate::content::cards::CardId::Defend, 9),
+            crate::combat::CombatCard::new(crate::content::cards::CardId::Bash, 10),
+        ];
+        let idx = choose_event_choice(&gs, &rs, &["accept", "refuse"]);
+        assert_eq!(idx, Some(0));
+    }
+
+    #[test]
     fn ghosts_accepts_when_early_and_healthy() {
         let gs = json!({
             "screen_state": {
@@ -1755,5 +1891,30 @@ mod tests {
         rs.add_card_to_deck(crate::content::cards::CardId::HeavyBlade);
         let idx = choose_event_choice(&gs, &rs, &["jax", "transform", "relic"]);
         assert_eq!(idx, Some(2));
+    }
+
+    #[test]
+    fn drug_dealer_prefers_transform_when_deck_is_clogged_with_basics() {
+        let gs = json!({
+            "screen_state": {
+                "event_id": "Drug Dealer",
+                "event_name": "Drug Dealer",
+                "options": [
+                    {"text": "[Ingest Mutagens] Obtain J.A.X.", "label": "JAX", "disabled": false},
+                    {"text": "[Become a Test Subject] Transform 2 cards.", "label": "Transform", "disabled": false},
+                    {"text": "[Inject Mutagens] Obtain Mutagenic Strength relic.", "label": "Relic", "disabled": false}
+                ]
+            }
+        });
+        let mut rs = run_state(70, 80);
+        rs.master_deck.clear();
+        rs.add_card_to_deck(crate::content::cards::CardId::Strike);
+        rs.add_card_to_deck(crate::content::cards::CardId::Strike);
+        rs.add_card_to_deck(crate::content::cards::CardId::Strike);
+        rs.add_card_to_deck(crate::content::cards::CardId::Defend);
+        rs.add_card_to_deck(crate::content::cards::CardId::Defend);
+        rs.add_card_to_deck(crate::content::cards::CardId::Bash);
+        let idx = choose_event_choice(&gs, &rs, &["jax", "transform", "relic"]);
+        assert_eq!(idx, Some(1));
     }
 }

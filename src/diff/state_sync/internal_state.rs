@@ -1,9 +1,27 @@
-use crate::combat::{CombatState, Power};
+use crate::combat::Power;
 use crate::content::monsters::EnemyId;
-use crate::content::powers::store;
 use crate::content::powers::PowerId;
 use crate::content::relics::{RelicId, RelicState};
 use serde_json::Value;
+
+fn stable_u32_from_str(s: &str) -> u32 {
+    let mut hash = 0x811C9DC5u32;
+    for &byte in s.as_bytes() {
+        hash ^= byte as u32;
+        hash = hash.wrapping_mul(0x01000193);
+    }
+    hash
+}
+
+fn snapshot_uuid(raw: &Value, fallback: u32) -> u32 {
+    if let Some(uuid) = raw.as_u64() {
+        uuid as u32
+    } else if let Some(uuid) = raw.as_str() {
+        stable_u32_from_str(uuid)
+    } else {
+        fallback
+    }
+}
 
 #[derive(Clone, Copy)]
 struct MissingMonsterPowerPolicy {
@@ -15,11 +33,6 @@ struct MissingMonsterPowerPolicy {
 #[derive(Clone, Copy)]
 struct PowerExtraDataPolicy {
     power_type: PowerId,
-}
-
-#[derive(Clone, Copy)]
-struct RelicCounterPolicy {
-    relic_id: RelicId,
 }
 
 #[derive(Clone, Copy)]
@@ -42,6 +55,9 @@ const MISSING_MONSTER_POWER_POLICIES: &[MissingMonsterPowerPolicy] = &[
 
 const POWER_EXTRA_DATA_POLICIES: &[PowerExtraDataPolicy] = &[
     PowerExtraDataPolicy {
+        power_type: PowerId::Combust,
+    },
+    PowerExtraDataPolicy {
         power_type: PowerId::Malleable,
     },
     PowerExtraDataPolicy {
@@ -50,17 +66,35 @@ const POWER_EXTRA_DATA_POLICIES: &[PowerExtraDataPolicy] = &[
     PowerExtraDataPolicy {
         power_type: PowerId::Stasis,
     },
+    PowerExtraDataPolicy {
+        power_type: PowerId::PanachePower,
+    },
+    PowerExtraDataPolicy {
+        power_type: PowerId::TheBombPower,
+    },
 ];
 
-const RELIC_COUNTER_POLICIES: &[RelicCounterPolicy] = &[RelicCounterPolicy {
-    relic_id: RelicId::ArtOfWar,
-}];
-
-const RELIC_USED_UP_POLICIES: &[RelicUsedUpPolicy] = &[RelicUsedUpPolicy {
-    relic_id: RelicId::Necronomicon,
-}];
+const RELIC_USED_UP_POLICIES: &[RelicUsedUpPolicy] = &[
+    RelicUsedUpPolicy {
+        relic_id: RelicId::HoveringKite,
+    },
+    RelicUsedUpPolicy {
+        relic_id: RelicId::LizardTail,
+    },
+    RelicUsedUpPolicy {
+        relic_id: RelicId::Necronomicon,
+    },
+];
 
 pub fn initialize_power_internal_state(power: &mut Power) {
+    if power.power_type == PowerId::Combust {
+        // Java CombustPower has hidden `hpLoss` state that is not fully exposed in
+        // the current live-comm protocol. Seed a conservative default of 1 and rely
+        // on carry/sync to preserve the true stacked value across snapshots.
+        power.extra_data = 1;
+        return;
+    }
+
     if POWER_EXTRA_DATA_POLICIES
         .iter()
         .any(|policy| policy.power_type == power.power_type)
@@ -75,10 +109,33 @@ pub fn initialize_power_internal_state_from_snapshot(power: &mut Power, snapshot
 }
 
 pub fn sync_power_extra_data_from_snapshot_power(power: &mut Power, snapshot_power: &Value) {
+    if power.power_type == PowerId::Combust {
+        // Java snapshots currently expose CombustPower.hpLoss as `misc` in combat
+        // snapshots. Prefer an explicit `hp_loss` field if protocol gains one later,
+        // then fall back to `misc`.
+        if let Some(hp_loss) = snapshot_power.get("hp_loss").and_then(|v| v.as_i64()) {
+            power.extra_data = hp_loss as i32;
+        } else if let Some(hp_loss) = snapshot_power.get("misc").and_then(|v| v.as_i64()) {
+            power.extra_data = hp_loss as i32;
+        }
+        return;
+    }
+
+    if power.power_type == PowerId::Stasis {
+        if let Some(card_uuid) = snapshot_power.get("card").and_then(|card| card.get("uuid")) {
+            power.extra_data = snapshot_uuid(card_uuid, 0) as i32;
+        }
+        return;
+    }
+
     if POWER_EXTRA_DATA_POLICIES
         .iter()
         .any(|policy| policy.power_type == power.power_type)
     {
+        if let Some(damage) = snapshot_power.get("damage").and_then(|v| v.as_i64()) {
+            power.extra_data = damage as i32;
+            return;
+        }
         if let Some(misc) = snapshot_power.get("misc").and_then(|v| v.as_i64()) {
             power.extra_data = misc as i32;
         }
@@ -120,6 +177,7 @@ pub fn seed_monster_internal_state_from_snapshot(
 
         powers.push(Power {
             power_type: policy.power_type,
+            instance_id: None,
             amount: source_amount,
             extra_data: 0,
             just_applied: false,
@@ -148,211 +206,87 @@ pub fn sync_relic_runtime_state_from_snapshot(
     existing_relic: Option<&RelicState>,
     next_relic: &mut RelicState,
     snapshot_counter: i32,
+    snapshot_runtime_counter: Option<i32>,
+    snapshot_used_up: Option<bool>,
+    snapshot_runtime_used_up: Option<bool>,
+    snapshot_runtime_amount: Option<i32>,
 ) {
     next_relic.counter = snapshot_counter;
-    if next_relic.id == RelicId::ArtOfWar && snapshot_counter == -1 {
+    if let Some(runtime_counter) = snapshot_runtime_counter {
+        next_relic.counter = runtime_counter;
+    }
+    if let Some(runtime_amount) = snapshot_runtime_amount {
+        next_relic.amount = runtime_amount;
+    }
+    if next_relic.id == RelicId::ArtOfWar
+        && snapshot_runtime_counter.is_none()
+        && snapshot_counter == -1
+    {
         next_relic.counter = existing_relic
             .map(|relic| relic.counter)
             .filter(|counter| *counter >= 0)
             .unwrap_or(-1);
     }
-    apply_relic_used_up_policies(existing_relic, next_relic);
-}
-
-pub fn carry_internal_runtime_state(previous: &CombatState, next: &mut CombatState) {
-    carry_monster_logical_positions(previous, next);
-    carry_hidden_monster_turn_state(previous, next);
-    carry_internal_monster_power_state(previous, next);
-    carry_internal_limbo_state(previous, next);
-    carry_internal_relic_state(previous, next);
-}
-
-fn carry_monster_logical_positions(previous: &CombatState, next: &mut CombatState) {
-    if contains_gremlin_leader(previous) || contains_gremlin_leader(next) {
-        carry_gremlin_leader_logical_positions(previous, next);
-        return;
-    }
-
-    for next_monster in &mut next.entities.monsters {
-        if let Some(previous_monster) = previous
-            .entities
-            .monsters
-            .iter()
-            .find(|monster| monster.id == next_monster.id)
-        {
-            next_monster.logical_position = previous_monster.logical_position;
+    if let Some(runtime_used_up) = snapshot_runtime_used_up {
+        next_relic.used_up = runtime_used_up;
+    } else if relic_uses_runtime_only_activation_flag(next_relic.id) {
+        apply_relic_used_up_policies(existing_relic, next_relic);
+        if snapshot_used_up == Some(true) {
+            next_relic.used_up = true;
         }
+    } else if let Some(used_up) = snapshot_used_up {
+        next_relic.used_up = used_up;
+    } else {
+        apply_relic_used_up_policies(existing_relic, next_relic);
     }
 }
 
-fn contains_gremlin_leader(state: &CombatState) -> bool {
-    state
-        .entities
-        .monsters
-        .iter()
-        .any(|monster| EnemyId::from_id(monster.monster_type) == Some(EnemyId::GremlinLeader))
-}
-
-fn is_gremlin_leader_minion(monster_type: usize) -> bool {
-    matches!(
-        EnemyId::from_id(monster_type),
-        Some(EnemyId::GremlinFat)
-            | Some(EnemyId::GremlinWarrior)
-            | Some(EnemyId::GremlinThief)
-            | Some(EnemyId::GremlinTsundere)
-            | Some(EnemyId::GremlinWizard)
-    )
-}
-
-fn carry_gremlin_leader_logical_positions(previous: &CombatState, next: &mut CombatState) {
-    let mut previous_used = vec![false; previous.entities.monsters.len()];
-    let mut next_used = vec![false; next.entities.monsters.len()];
-
-    // Keep the leader anchored first.
-    for (next_idx, next_monster) in next.entities.monsters.iter_mut().enumerate() {
-        if EnemyId::from_id(next_monster.monster_type) != Some(EnemyId::GremlinLeader) {
-            continue;
-        }
-        if let Some((idx, previous_monster)) =
-            previous
-                .entities
-                .monsters
-                .iter()
-                .enumerate()
-                .find(|(_, monster)| {
-                    EnemyId::from_id(monster.monster_type) == Some(EnemyId::GremlinLeader)
-                })
-        {
-            previous_used[idx] = true;
-            next_used[next_idx] = true;
-            next_monster.logical_position = previous_monster.logical_position;
-        } else {
-            next_used[next_idx] = true;
-            next_monster.logical_position =
-                crate::content::monsters::city::gremlin_leader::GremlinLeader::LEADER_LOGICAL_POSITION;
-        }
-    }
-
-    for strict_status_match in [true, false] {
-        for (next_idx, next_monster) in next.entities.monsters.iter_mut().enumerate() {
-            if next_used[next_idx]
-                || EnemyId::from_id(next_monster.monster_type) == Some(EnemyId::GremlinLeader)
-            {
-                continue;
-            }
-
-            let maybe_match =
-                previous
-                    .entities
-                    .monsters
-                    .iter()
-                    .enumerate()
-                    .find(|(idx, monster)| {
-                        !previous_used[*idx]
-                            && monster.monster_type == next_monster.monster_type
-                            && (!strict_status_match
-                                || (monster.is_dying == next_monster.is_dying
-                                    && monster.half_dead == next_monster.half_dead))
-                    });
-
-            if let Some((idx, previous_monster)) = maybe_match {
-                previous_used[idx] = true;
-                next_used[next_idx] = true;
-                next_monster.logical_position = previous_monster.logical_position;
-            }
-        }
-    }
-
-    let mut occupied_living_slots = [false; 3];
-    for monster in &next.entities.monsters {
-        if !is_gremlin_leader_minion(monster.monster_type) || monster.is_dying {
-            continue;
-        }
-        for (slot_idx, logical_position) in crate::content::monsters::city::gremlin_leader::GremlinLeader::GREMLIN_SLOT_LOGICAL_POSITIONS
-            .iter()
-            .enumerate()
-        {
-            if monster.logical_position == *logical_position {
-                occupied_living_slots[slot_idx] = true;
-            }
-        }
-    }
-
-    for (next_idx, next_monster) in next.entities.monsters.iter_mut().enumerate() {
-        if next_used[next_idx]
-            || !is_gremlin_leader_minion(next_monster.monster_type)
-            || next_monster.is_dying
-        {
-            continue;
-        }
-
-        let next_slot = occupied_living_slots
-            .iter()
-            .position(|occupied| !occupied)
-            .unwrap_or(0);
-        occupied_living_slots[next_slot] = true;
-        next_used[next_idx] = true;
-        next_monster.logical_position =
-            crate::content::monsters::city::gremlin_leader::GremlinLeader::GREMLIN_SLOT_LOGICAL_POSITIONS[next_slot];
+pub fn snapshot_runtime_used_up_for_relic(
+    relic_id: RelicId,
+    snapshot_relic: &Value,
+) -> Option<bool> {
+    let runtime_state = snapshot_relic.get("runtime_state")?;
+    match relic_id {
+        RelicId::CentennialPuzzle => runtime_state
+            .get("used_this_combat")
+            .and_then(|value| value.as_bool()),
+        _ => None,
     }
 }
 
-fn carry_hidden_monster_turn_state(previous: &CombatState, next: &mut CombatState) {
-    for next_monster in &mut next.entities.monsters {
-        let Some(previous_monster) = previous
-            .entities
-            .monsters
-            .iter()
-            .find(|monster| monster.id == next_monster.id)
-        else {
-            continue;
-        };
-
-        // Some live snapshots omit the current monster move entirely (for example
-        // under Runic Dome). Preserve the internal next_move_byte and move
-        // history from the previous runtime state so END can still execute the
-        // hidden monster turn faithfully.
-        if next_monster.next_move_byte == 0 && previous_monster.next_move_byte != 0 {
-            next_monster.next_move_byte = previous_monster.next_move_byte;
-            next_monster.move_history = previous_monster.move_history.clone();
+pub fn snapshot_runtime_counter_for_relic(
+    relic_id: RelicId,
+    snapshot_relic: &Value,
+) -> Option<i32> {
+    let runtime_state = snapshot_relic.get("runtime_state")?;
+    match relic_id {
+        RelicId::ArtOfWar => {
+            let gain_energy_next = runtime_state
+                .get("gain_energy_next")
+                .and_then(|value| value.as_bool())?;
+            let first_turn = runtime_state
+                .get("first_turn")
+                .and_then(|value| value.as_bool())?;
+            Some(if first_turn {
+                -1
+            } else if gain_energy_next {
+                1
+            } else {
+                0
+            })
         }
-
-        if EnemyId::from_id(next_monster.monster_type) == Some(EnemyId::Hexaghost)
-            && !next_monster.hexaghost.activated
-            && previous_monster.hexaghost.activated
-        {
-            next_monster.hexaghost = previous_monster.hexaghost.clone();
-        }
-
-        if EnemyId::from_id(next_monster.monster_type) == Some(EnemyId::Darkling) {
-            if next_monster.darkling.nip_dmg == 0 && previous_monster.darkling.nip_dmg > 0 {
-                next_monster.darkling.nip_dmg = previous_monster.darkling.nip_dmg;
-            }
-            if !next_monster.move_history.is_empty() || next_monster.next_move_byte != 0 {
-                next_monster.darkling.first_move = false;
-            } else if previous_monster.darkling.first_move {
-                next_monster.darkling.first_move = true;
-            }
-        }
+        _ => None,
     }
 }
 
-fn carry_internal_monster_power_state(previous: &CombatState, next: &mut CombatState) {
-    let monsters: Vec<(usize, usize)> = next
-        .entities
-        .monsters
-        .iter()
-        .map(|monster| (monster.id, monster.monster_type))
-        .collect();
-
-    for (monster_id, monster_type) in monsters {
-        let Some(prev_powers) = previous.entities.power_db.get(&monster_id) else {
-            continue;
-        };
-        let next_powers = store::ensure_powers_for_mut(next, monster_id);
-
-        apply_missing_monster_power_policies(monster_type, prev_powers, next_powers);
-        apply_power_extra_data_policies(prev_powers, next_powers);
+pub fn snapshot_runtime_amount_for_relic(relic_id: RelicId, snapshot_relic: &Value) -> Option<i32> {
+    let runtime_state = snapshot_relic.get("runtime_state")?;
+    match relic_id {
+        RelicId::Pocketwatch => runtime_state
+            .get("first_turn")
+            .and_then(|value| value.as_bool())
+            .map(i32::from),
+        _ => None,
     }
 }
 
@@ -400,68 +334,30 @@ fn apply_missing_monster_power_policies(
 
 fn apply_power_extra_data_policies(prev_powers: &[Power], next_powers: &mut [Power]) {
     for policy in POWER_EXTRA_DATA_POLICIES {
-        let Some(previous_power) = prev_powers
-            .iter()
-            .find(|power| power.power_type == policy.power_type)
-        else {
-            continue;
-        };
-
-        let Some(next_power) = next_powers
+        for next_power in next_powers
             .iter_mut()
-            .find(|power| power.power_type == policy.power_type)
-        else {
-            continue;
-        };
-
-        next_power.extra_data = previous_power.extra_data;
-    }
-}
-
-fn carry_internal_relic_state(previous: &CombatState, next: &mut CombatState) {
-    for next_relic in &mut next.entities.player.relics {
-        let Some(previous_relic) = previous
-            .entities
-            .player
-            .relics
-            .iter()
-            .find(|relic| relic.id == next_relic.id)
-        else {
-            continue;
-        };
-
-        apply_relic_counter_policies(previous_relic.counter, next_relic);
-        apply_relic_used_up_policies(Some(previous_relic), next_relic);
-    }
-}
-
-fn carry_internal_limbo_state(previous: &CombatState, next: &mut CombatState) {
-    let stasis_uuids = next
-        .entities
-        .power_db
-        .values()
-        .flat_map(|powers| powers.iter())
-        .filter(|power| power.power_type == PowerId::Stasis && power.extra_data > 0)
-        .map(|power| power.extra_data as u32)
-        .collect::<Vec<_>>();
-
-    for uuid in stasis_uuids {
-        if next.zones.limbo.iter().any(|card| card.uuid == uuid) {
-            continue;
-        }
-        if let Some(card) = previous.zones.limbo.iter().find(|card| card.uuid == uuid) {
-            next.zones.limbo.push(card.clone());
-        }
-    }
-}
-
-fn apply_relic_counter_policies(
-    previous_counter: i32,
-    next_relic: &mut crate::content::relics::RelicState,
-) {
-    for policy in RELIC_COUNTER_POLICIES {
-        if next_relic.id == policy.relic_id {
-            next_relic.counter = previous_counter;
+            .filter(|power| power.power_type == policy.power_type)
+        {
+            let previous_power = prev_powers
+                .iter()
+                .find(|power| {
+                    power.power_type == policy.power_type
+                        && power.instance_id == next_power.instance_id
+                })
+                .or_else(|| {
+                    next_power
+                        .instance_id
+                        .is_none()
+                        .then(|| {
+                            prev_powers
+                                .iter()
+                                .find(|power| power.power_type == policy.power_type)
+                        })
+                        .flatten()
+                });
+            if let Some(previous_power) = previous_power {
+                next_power.extra_data = previous_power.extra_data;
+            }
         }
     }
 }
@@ -475,6 +371,12 @@ fn apply_relic_used_up_policies(
             next_relic.used_up = previous_relic.map(|relic| relic.used_up).unwrap_or(false);
         }
     }
+}
+
+fn relic_uses_runtime_only_activation_flag(relic_id: RelicId) -> bool {
+    RELIC_USED_UP_POLICIES
+        .iter()
+        .any(|policy| policy.relic_id == relic_id)
 }
 
 fn monster_internal_seed_amount(
@@ -513,4 +415,232 @@ fn mode_shift_amount(powers: &[Power]) -> Option<i32> {
         .iter()
         .find(|power| power.power_type == PowerId::ModeShift)
         .map(|power| power.amount)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        snapshot_runtime_counter_for_relic, sync_power_extra_data_from_snapshot_power,
+        sync_relic_runtime_state_from_snapshot, RELIC_USED_UP_POLICIES,
+    };
+    use crate::combat::Power;
+    use crate::content::powers::PowerId;
+    use crate::content::relics::{RelicId, RelicState};
+    use serde_json::json;
+
+    #[test]
+    fn relic_used_up_policies_cover_runtime_only_activation_flags() {
+        let policy_ids: Vec<RelicId> = RELIC_USED_UP_POLICIES
+            .iter()
+            .map(|policy| policy.relic_id)
+            .collect();
+
+        assert!(policy_ids.contains(&RelicId::HoveringKite));
+        assert!(policy_ids.contains(&RelicId::LizardTail));
+        assert!(policy_ids.contains(&RelicId::Necronomicon));
+    }
+
+    #[test]
+    fn sync_relic_runtime_state_preserves_hovering_kite_used_up() {
+        let mut previous = RelicState::new(RelicId::HoveringKite);
+        previous.used_up = true;
+
+        let mut next = RelicState::new(RelicId::HoveringKite);
+        next.used_up = false;
+
+        sync_relic_runtime_state_from_snapshot(
+            Some(&previous),
+            &mut next,
+            -1,
+            None,
+            None,
+            None,
+            None,
+        );
+
+        assert!(next.used_up);
+    }
+
+    #[test]
+    fn sync_relic_runtime_state_ignores_false_snapshot_for_runtime_only_flags() {
+        let mut previous = RelicState::new(RelicId::HoveringKite);
+        previous.used_up = true;
+
+        let mut next = RelicState::new(RelicId::HoveringKite);
+        next.used_up = false;
+
+        sync_relic_runtime_state_from_snapshot(
+            Some(&previous),
+            &mut next,
+            -1,
+            None,
+            Some(false),
+            None,
+            None,
+        );
+
+        assert!(next.used_up);
+    }
+
+    #[test]
+    fn sync_relic_runtime_state_still_accepts_true_snapshot_for_runtime_only_flags() {
+        let previous = RelicState::new(RelicId::HoveringKite);
+
+        let mut next = RelicState::new(RelicId::HoveringKite);
+        next.used_up = false;
+
+        sync_relic_runtime_state_from_snapshot(
+            Some(&previous),
+            &mut next,
+            -1,
+            None,
+            Some(true),
+            None,
+            None,
+        );
+
+        assert!(next.used_up);
+    }
+
+    #[test]
+    fn sync_relic_runtime_state_prefers_runtime_protocol_truth_for_centennial_puzzle() {
+        let mut previous = RelicState::new(RelicId::CentennialPuzzle);
+        previous.used_up = true;
+
+        let mut next = RelicState::new(RelicId::CentennialPuzzle);
+        next.used_up = false;
+
+        sync_relic_runtime_state_from_snapshot(
+            Some(&previous),
+            &mut next,
+            -1,
+            None,
+            Some(false),
+            Some(false),
+            None,
+        );
+
+        assert!(!next.used_up);
+    }
+
+    #[test]
+    fn sync_relic_runtime_state_reads_pocketwatch_first_turn_protocol_truth() {
+        let previous = RelicState::new(RelicId::Pocketwatch);
+        let mut next = RelicState::new(RelicId::Pocketwatch);
+        next.amount = 0;
+
+        sync_relic_runtime_state_from_snapshot(
+            Some(&previous),
+            &mut next,
+            2,
+            None,
+            Some(false),
+            None,
+            Some(1),
+        );
+
+        assert_eq!(next.counter, 2);
+        assert_eq!(next.amount, 1);
+    }
+
+    #[test]
+    fn sync_relic_runtime_state_preserves_art_of_war_counter_when_snapshot_counter_is_sentinel() {
+        let mut previous = RelicState::new(RelicId::ArtOfWar);
+        previous.counter = 1;
+
+        let mut next = RelicState::new(RelicId::ArtOfWar);
+
+        sync_relic_runtime_state_from_snapshot(
+            Some(&previous),
+            &mut next,
+            -1,
+            None,
+            None,
+            None,
+            None,
+        );
+
+        assert_eq!(next.counter, 1);
+    }
+
+    #[test]
+    fn snapshot_runtime_counter_reads_art_of_war_protocol_truth() {
+        let snapshot = json!({
+            "runtime_state": {
+                "gain_energy_next": false,
+                "first_turn": false
+            }
+        });
+
+        assert_eq!(
+            snapshot_runtime_counter_for_relic(RelicId::ArtOfWar, &snapshot),
+            Some(0)
+        );
+    }
+
+    #[test]
+    fn sync_combust_extra_data_from_snapshot_misc() {
+        let mut power = Power {
+            power_type: PowerId::Combust,
+            instance_id: None,
+            amount: 10,
+            extra_data: 1,
+            just_applied: false,
+        };
+
+        sync_power_extra_data_from_snapshot_power(
+            &mut power,
+            &json!({
+                "id": "Combust",
+                "amount": 10,
+                "misc": 2
+            }),
+        );
+
+        assert_eq!(power.extra_data, 2);
+    }
+
+    #[test]
+    fn sync_stasis_extra_data_from_snapshot_card_uuid() {
+        let mut power = Power {
+            power_type: PowerId::Stasis,
+            instance_id: None,
+            amount: -1,
+            extra_data: 0,
+            just_applied: false,
+        };
+
+        sync_power_extra_data_from_snapshot_power(
+            &mut power,
+            &json!({
+                "id": "Stasis",
+                "amount": -1,
+                "card": {"id": "Strike_R", "uuid": "stasis-card"}
+            }),
+        );
+
+        assert_ne!(power.extra_data, 0);
+    }
+
+    #[test]
+    fn sync_ritual_extra_data_from_snapshot_is_noop() {
+        let mut power = Power {
+            power_type: PowerId::Ritual,
+            instance_id: None,
+            amount: 3,
+            extra_data: 7,
+            just_applied: true,
+        };
+
+        sync_power_extra_data_from_snapshot_power(
+            &mut power,
+            &json!({
+                "id": "Ritual",
+                "amount": 3,
+                "just_applied": true
+            }),
+        );
+
+        assert_eq!(power.extra_data, 7);
+    }
 }

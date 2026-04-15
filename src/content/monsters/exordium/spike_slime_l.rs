@@ -4,6 +4,8 @@ use crate::content::monsters::MonsterBehavior;
 
 pub struct SpikeSlimeL;
 
+const SPIKE_SLIME_M_SPLIT_OFFSET_X: i32 = 134;
+
 impl MonsterBehavior for SpikeSlimeL {
     fn use_pre_battle_action(
         entity: &MonsterEntity,
@@ -14,7 +16,7 @@ impl MonsterBehavior for SpikeSlimeL {
             target: entity.id,
             source: entity.id,
             power_id: PowerId::Split,
-            amount: 1,
+            amount: -1,
         }]
     }
 
@@ -114,21 +116,25 @@ impl MonsterBehavior for SpikeSlimeL {
             }
             3 => {
                 // SPLIT
+                let base_draw_x = entity
+                    .protocol_identity
+                    .draw_x
+                    .unwrap_or(entity.logical_position);
                 actions.push(Action::Suicide { target: entity.id });
-                // Java uses smart positioning based on drawX. Preserve that ordering by
-                // carrying forward the parent's drawX-like logical position.
                 actions.push(Action::SpawnMonsterSmart {
                     monster_id: crate::content::monsters::EnemyId::SpikeSlimeM,
-                    logical_position: entity.logical_position - 134,
+                    logical_position: base_draw_x - SPIKE_SLIME_M_SPLIT_OFFSET_X,
                     current_hp: entity.current_hp,
                     max_hp: entity.current_hp,
+                    protocol_draw_x: Some(base_draw_x - SPIKE_SLIME_M_SPLIT_OFFSET_X),
                     is_minion: false,
                 });
                 actions.push(Action::SpawnMonsterSmart {
                     monster_id: crate::content::monsters::EnemyId::SpikeSlimeM,
-                    logical_position: entity.logical_position + 134,
+                    logical_position: base_draw_x + SPIKE_SLIME_M_SPLIT_OFFSET_X,
                     current_hp: entity.current_hp,
                     max_hp: entity.current_hp,
+                    protocol_draw_x: Some(base_draw_x + SPIKE_SLIME_M_SPLIT_OFFSET_X),
                     is_minion: false,
                 });
             }
@@ -148,5 +154,50 @@ impl MonsterBehavior for SpikeSlimeL {
             monster_id: entity.id,
         });
         actions
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::content::monsters::EnemyId;
+    use crate::content::test_support::{basic_combat, CombatTestExt};
+
+    #[test]
+    fn split_preserves_java_draw_x_offsets_for_medium_spike_slimes() {
+        let combat = basic_combat()
+            .with_monster_type(1, EnemyId::SpikeSlimeL)
+            .with_monster_max_hp(1, 67)
+            .with_monster_hp(1, 29);
+        let mut entity = combat.entities.monsters[0].clone();
+        entity.next_move_byte = 3;
+        entity.logical_position = 400;
+        entity.protocol_identity.draw_x = Some(-220);
+
+        let actions = SpikeSlimeL::take_turn(&mut combat.clone(), &entity);
+
+        assert_eq!(actions[0], Action::Suicide { target: 1 });
+        assert_eq!(
+            actions[1],
+            Action::SpawnMonsterSmart {
+                monster_id: EnemyId::SpikeSlimeM,
+                logical_position: -220 - SPIKE_SLIME_M_SPLIT_OFFSET_X,
+                current_hp: 29,
+                max_hp: 29,
+                protocol_draw_x: Some(-220 - SPIKE_SLIME_M_SPLIT_OFFSET_X),
+                is_minion: false,
+            }
+        );
+        assert_eq!(
+            actions[2],
+            Action::SpawnMonsterSmart {
+                monster_id: EnemyId::SpikeSlimeM,
+                logical_position: -220 + SPIKE_SLIME_M_SPLIT_OFFSET_X,
+                current_hp: 29,
+                max_hp: 29,
+                protocol_draw_x: Some(-220 + SPIKE_SLIME_M_SPLIT_OFFSET_X),
+                is_minion: false,
+            }
+        );
     }
 }

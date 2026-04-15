@@ -46,16 +46,15 @@ impl MonsterBehavior for Cultist {
             3 => {
                 // INCANTATION
                 // In a full implementation, we could have TalkAction too.
-                actions.push(Action::ApplyPower {
-                    target: entity.id,
+                actions.push(Action::ApplyPowerDetailed {
                     source: entity.id,
+                    target: entity.id,
                     power_id: PowerId::Ritual,
                     amount: ritual_amount,
-                });
-                actions.push(Action::UpdatePowerExtraData {
-                    target: entity.id,
-                    power_id: PowerId::Ritual,
-                    value: 1, // 1 = skip first turn
+                    instance_id: None,
+                    extra_data: Some(crate::content::powers::core::ritual::extra_data(
+                        false, true,
+                    )),
                 });
             }
             1 => {

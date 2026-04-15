@@ -229,8 +229,11 @@ fn noxious_fumes_hits_all_enemies_after_post_draw() {
         move_history: VecDeque::new(),
         intent_dmg: 0,
         logical_position: 1,
+        protocol_identity: Default::default(),
         hexaghost: Default::default(),
+        chosen: Default::default(),
         darkling: Default::default(),
+        lagavulin: Default::default(),
     });
     combat
         .zones
@@ -368,8 +371,11 @@ fn dagger_spray_hits_all_enemies_twice() {
         move_history: VecDeque::new(),
         intent_dmg: 0,
         logical_position: 1,
+        protocol_identity: Default::default(),
         hexaghost: Default::default(),
+        chosen: Default::default(),
         darkling: Default::default(),
+        lagavulin: Default::default(),
     });
     combat
         .zones

@@ -77,6 +77,12 @@ impl MonsterBehavior for BronzeAutomaton {
 
         match entity.next_move_byte {
             4 => {
+                let left_hp =
+                    bronze_orb_spawn_hp(&mut state.rng.monster_hp_rng, state.meta.ascension_level);
+                let right_hp =
+                    bronze_orb_spawn_hp(&mut state.rng.monster_hp_rng, state.meta.ascension_level);
+                let automaton_draw_x = entity.protocol_identity.draw_x;
+
                 // Spawn 2 Orbs
                 // Java uses smart positioning based on drawX:
                 //   BronzeOrb(-300, 200, 0) -> drawX < Automaton(-50) -> inserts at position 0
@@ -85,17 +91,19 @@ impl MonsterBehavior for BronzeAutomaton {
                 actions.push(Action::SpawnMonster {
                     monster_id: EnemyId::BronzeOrb,
                     slot: 0, // Inserted BEFORE automaton (Java drawX=-300 < automaton drawX=-50)
-                    current_hp: 0,
-                    max_hp: 0,
+                    current_hp: left_hp,
+                    max_hp: left_hp,
                     logical_position: -1,
+                    protocol_draw_x: automaton_draw_x.map(|x| x - 167),
                     is_minion: true,
                 });
                 actions.push(Action::SpawnMonster {
                     monster_id: EnemyId::BronzeOrb,
                     slot: 2, // Inserted AFTER automaton (Java drawX=200 > automaton drawX=-50)
-                    current_hp: 0,
-                    max_hp: 0,
+                    current_hp: right_hp,
+                    max_hp: right_hp,
                     logical_position: 1,
+                    protocol_draw_x: automaton_draw_x.map(|x| x + 166),
                     is_minion: true,
                 });
             }
@@ -158,5 +166,16 @@ impl MonsterBehavior for BronzeAutomaton {
             monster_id: entity.id,
         });
         actions
+    }
+}
+
+fn bronze_orb_spawn_hp(hp_rng: &mut crate::rng::StsRng, ascension_level: u8) -> i32 {
+    // Java BronzeOrb constructor consumes monsterHpRng twice:
+    // once in super(... random(52,58) ...), then again in setHp(...)
+    let _unused_ctor_roll = hp_rng.random_range(52, 58);
+    if ascension_level >= 9 {
+        hp_rng.random_range(54, 60)
+    } else {
+        hp_rng.random_range(52, 58)
     }
 }

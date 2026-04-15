@@ -37,7 +37,23 @@ pub fn power_id_from_java(s: &str) -> Option<PowerId> {
     if normalized.is_empty() {
         return None;
     }
+    if normalized.starts_with("thebomb") {
+        return Some(PowerId::TheBombPower);
+    }
     power_id_from_java_raw(&normalized)
+}
+
+pub fn power_instance_id_from_java(s: &str) -> Option<u32> {
+    let normalized = normalize_java_alias(s);
+    if normalized.is_empty() {
+        return None;
+    }
+    if let Some(suffix) = normalized.strip_prefix("thebomb") {
+        if !suffix.is_empty() {
+            return suffix.parse::<u32>().ok();
+        }
+    }
+    None
 }
 
 pub fn relic_id_from_java(s: &str) -> Option<RelicId> {
@@ -52,6 +68,9 @@ pub fn monster_id_from_java(s: &str) -> Option<EnemyId> {
     let normalized = normalize_java_alias(s);
     if normalized.is_empty() {
         return None;
+    }
+    if normalized == "serpent" {
+        return Some(EnemyId::SpireGrowth);
     }
     monster_id_from_java_raw(&normalized)
 }
@@ -172,8 +191,22 @@ mod tests {
             Some(crate::content::powers::PowerId::Regrow)
         );
         assert_eq!(
+            power_id_from_java("TheBomb0"),
+            Some(crate::content::powers::PowerId::TheBombPower)
+        );
+        assert_eq!(
+            power_id_from_java("TheBomb17"),
+            Some(crate::content::powers::PowerId::TheBombPower)
+        );
+        assert_eq!(power_instance_id_from_java("TheBomb0"), Some(0));
+        assert_eq!(power_instance_id_from_java("TheBomb17"), Some(17));
+        assert_eq!(
             relic_id_from_java("Clockwork Souvenir"),
             Some(crate::content::relics::RelicId::ClockworkSouvenir)
+        );
+        assert_eq!(
+            monster_id_from_java("Serpent"),
+            Some(crate::content::monsters::EnemyId::SpireGrowth)
         );
         assert_eq!(
             card_id_from_java("StrikeG"),

@@ -34,6 +34,7 @@ pub enum PowerId {
     Evolve,
     FireBreathing,
     NoDraw,
+    NoBlock,
     Regen,
     Regeneration,
     Rage,
@@ -113,9 +114,15 @@ pub fn uses_sentinel_amount(id: PowerId) -> bool {
             | PowerId::Stasis
             | PowerId::BackAttack
             | PowerId::PainfulStabs
+            | PowerId::Regrow
             | PowerId::Surrounded
             | PowerId::Unawakened
+            | PowerId::Confusion
     )
+}
+
+pub fn uses_distinct_instances(id: PowerId) -> bool {
+    matches!(id, PowerId::TheBombPower)
 }
 
 pub fn canonicalize_applied_amount(id: PowerId, amount: i32) -> i32 {
@@ -132,6 +139,9 @@ pub fn allows_negative_amount(id: PowerId) -> bool {
 }
 
 pub fn should_keep_power_instance(id: PowerId, amount: i32) -> bool {
+    if id == PowerId::Slow {
+        return amount >= 0;
+    }
     if id == PowerId::TimeWarp {
         return true;
     }
@@ -158,6 +168,7 @@ pub fn is_debuff(id: PowerId, amount: i32) -> bool {
         | PowerId::Poison
         | PowerId::Entangle
         | PowerId::NoDraw
+        | PowerId::NoBlock
         | PowerId::Constricted
         | PowerId::Confusion
         | PowerId::Hex
@@ -186,14 +197,14 @@ pub fn is_debuff_application(id: PowerId, amount: i32) -> bool {
         PowerId::Strength | PowerId::Focus | PowerId::Dexterity => amount < 0,
         // Some Java debuffs use sentinel amounts instead of stacks. Artifact still
         // blocks the application even when the constructor amount is -1.
-        PowerId::NoDraw => amount != 0,
+        PowerId::NoDraw | PowerId::Confusion => amount != 0,
+        PowerId::NoBlock => amount > 0,
         PowerId::Vulnerable
         | PowerId::Weak
         | PowerId::Frail
         | PowerId::Poison
         | PowerId::Entangle
         | PowerId::Constricted
-        | PowerId::Confusion
         | PowerId::Hex
         | PowerId::Slow
         | PowerId::LoseStrength
@@ -401,6 +412,10 @@ pub fn get_power_definition(id: PowerId) -> PowerDefinition {
         PowerId::Unawakened => PowerDefinition {
             id,
             name: "Unawakened",
+        },
+        PowerId::NoBlock => PowerDefinition {
+            id,
+            name: "No Block",
         },
         PowerId::Shackled => PowerDefinition {
             id,
@@ -629,18 +644,9 @@ pub fn resolve_power_on_card_played(
         PowerId::TimeWarp => {
             core::time_warp::on_player_card_played(owner, power_amount, card, state)
         }
+        PowerId::Slow => core::slow::on_card_played(owner),
         PowerId::PanachePower => {
-            // Every 5th card played, deal damage to ALL enemies
-            // amount = countdown (decremented), extra_data = damage value
             let mut acts = smallvec::SmallVec::new();
-            // Decrement counter via ApplyPower(-1)
-            acts.push(crate::action::Action::ApplyPower {
-                source: owner,
-                target: owner,
-                power_id: PowerId::PanachePower,
-                amount: -1,
-            });
-            // Check if counter will hit 0 (current amount - 1 == 0 means we're at 1 now)
             if power_amount == 1 {
                 let damage = crate::content::powers::store::powers_for(state, owner)
                     .and_then(|ps| ps.iter().find(|p| p.power_type == PowerId::PanachePower))
@@ -655,11 +661,18 @@ pub fn resolve_power_on_card_played(
                     damage_type: crate::action::DamageType::Thorns,
                     is_modified: false,
                 });
-                // Reset counter to 5
-                acts.push(crate::action::Action::UpdatePowerExtraData {
+                acts.push(crate::action::Action::ApplyPower {
+                    source: owner,
                     target: owner,
                     power_id: PowerId::PanachePower,
-                    value: 5,
+                    amount: 4,
+                });
+            } else {
+                acts.push(crate::action::Action::ApplyPower {
+                    source: owner,
+                    target: owner,
+                    power_id: PowerId::PanachePower,
+                    amount: -1,
                 });
             }
             acts
@@ -689,8 +702,8 @@ pub fn resolve_power_at_turn_start(
             let mut acts = smallvec::SmallVec::new();
             for _ in 0..amount {
                 acts.push(crate::action::Action::MakeRandomColorlessCardInHand {
-                    rarity: crate::content::cards::CardRarity::Uncommon,
                     cost_for_turn: None,
+                    upgraded: false,
                 });
             }
             acts
@@ -707,12 +720,16 @@ pub fn resolve_power_at_turn_start(
             acts
         }
         PowerId::PanachePower => {
-            // Reset counter to 5 at start of turn
-            smallvec::smallvec![crate::action::Action::UpdatePowerExtraData {
-                target: owner,
-                power_id: PowerId::PanachePower,
-                value: 5,
-            }]
+            if amount == 5 {
+                smallvec::smallvec![]
+            } else {
+                smallvec::smallvec![crate::action::Action::ApplyPower {
+                    source: owner,
+                    target: owner,
+                    power_id: PowerId::PanachePower,
+                    amount: 5 - amount,
+                }]
+            }
         }
         PowerId::Poison => core::poison::at_turn_start(owner, amount),
         PowerId::Flight => core::flight::at_turn_start(_state, owner, amount),
@@ -735,11 +752,12 @@ pub fn resolve_power_on_post_draw(
 }
 
 pub fn resolve_power_at_end_of_turn(
-    id: PowerId,
+    power: &crate::combat::Power,
     _state: &CombatState,
     owner: crate::core::EntityId,
-    amount: i32,
 ) -> smallvec::SmallVec<[crate::action::Action; 2]> {
+    let id = power.power_type;
+    let amount = power.amount;
     match id {
         PowerId::DoubleTap => smallvec::smallvec![crate::action::Action::RemovePower {
             target: owner,
@@ -762,41 +780,51 @@ pub fn resolve_power_at_end_of_turn(
         PowerId::LoseStrength => core::lose_strength::at_end_of_turn(owner, amount),
         PowerId::DexterityDown => core::dexterity_down::at_end_of_turn(owner, amount),
         PowerId::NoDraw => core::no_draw::at_end_of_turn(owner),
+        PowerId::Ritual => core::ritual::at_end_of_turn(owner, amount, power.extra_data),
         PowerId::Shackled => core::shackled::at_end_of_turn(owner, amount),
         PowerId::Shifting => core::shifting::at_end_of_turn(owner),
-        PowerId::Slow => core::slow::at_end_of_turn(owner),
         PowerId::Intangible => core::intangible::at_end_of_turn(owner, amount),
         PowerId::TheBombPower => {
-            // Countdown: reduce by 1, at amount==1 -> DamageAllEnemies then remove
             let mut acts = smallvec::SmallVec::new();
             if amount == 1 {
-                // Explode! Deal damage (stored in extra_data) to all enemies
-                // For simplicity, we use the card's base magic (40) stored as extra_data
-                // Get extra_data for this power from power_db
-                let extra = crate::content::powers::store::powers_for(_state, owner)
-                    .and_then(|ps| ps.iter().find(|p| p.power_type == PowerId::TheBombPower))
-                    .map(|p| p.extra_data)
-                    .unwrap_or(40);
+                if let Some(instance_id) = power.instance_id {
+                    acts.push(crate::action::Action::ReducePowerInstance {
+                        target: owner,
+                        power_id: PowerId::TheBombPower,
+                        instance_id,
+                        amount: 1,
+                    });
+                } else {
+                    acts.push(crate::action::Action::ReducePower {
+                        target: owner,
+                        power_id: PowerId::TheBombPower,
+                        amount: 1,
+                    });
+                }
                 acts.push(crate::action::Action::DamageAllEnemies {
                     source: owner,
                     damages: crate::action::repeated_damage_matrix(
                         _state.entities.monsters.len(),
-                        extra,
+                        power.extra_data.max(0),
                     ),
                     damage_type: crate::action::DamageType::Thorns,
                     is_modified: false,
                 });
-                acts.push(crate::action::Action::RemovePower {
-                    target: owner,
-                    power_id: PowerId::TheBombPower,
-                });
             } else {
-                acts.push(crate::action::Action::ApplyPower {
-                    source: owner,
-                    target: owner,
-                    power_id: PowerId::TheBombPower,
-                    amount: -1,
-                });
+                if let Some(instance_id) = power.instance_id {
+                    acts.push(crate::action::Action::ReducePowerInstance {
+                        target: owner,
+                        power_id: PowerId::TheBombPower,
+                        instance_id,
+                        amount: 1,
+                    });
+                } else {
+                    acts.push(crate::action::Action::ReducePower {
+                        target: owner,
+                        power_id: PowerId::TheBombPower,
+                        amount: 1,
+                    });
+                }
             }
             acts
         }
@@ -854,9 +882,11 @@ pub fn resolve_power_at_end_of_round(
         PowerId::Vulnerable => core::vulnerable::at_end_of_round(owner, amount, just_applied),
         PowerId::Weak => core::weak::at_end_of_round(owner, amount, just_applied),
         PowerId::Frail => core::frail::at_end_of_round(owner, amount, just_applied),
+        PowerId::NoBlock => core::no_block::at_end_of_round(owner, amount, just_applied),
         PowerId::DrawReduction => {
             core::draw_reduction::at_end_of_round(owner, amount, just_applied)
         }
+        PowerId::Slow => core::slow::at_end_of_round(owner, amount),
         PowerId::IntangiblePlayer => core::intangible::at_end_of_round(owner, amount),
         PowerId::Ritual => core::ritual::at_end_of_round(_state, owner, amount),
         PowerId::GenericStrengthUp => core::generic_strength_up::at_end_of_round(owner, amount),
@@ -948,7 +978,7 @@ pub fn resolve_power_on_death(
 ) -> smallvec::SmallVec<[crate::action::Action; 2]> {
     match id {
         PowerId::SporeCloud => core::spore_cloud::on_death(state, owner, amount),
-        PowerId::Stasis => core::stasis::on_death(owner, extra_data),
+        PowerId::Stasis => core::stasis::on_death(state, owner, extra_data),
         PowerId::Unawakened => core::unawakened::on_death(owner, amount),
         PowerId::Shackled => smallvec::smallvec![],
         PowerId::DrawReduction => smallvec::smallvec![],
@@ -983,12 +1013,31 @@ pub fn resolve_power_on_attack_to_change_damage(
 
 pub fn resolve_power_on_attacked_to_change_damage(
     id: PowerId,
-    _state: &CombatState,
-    _info: &crate::action::DamageInfo,
+    state: &mut CombatState,
+    info: &crate::action::DamageInfo,
     current_damage: i32,
     _amount: i32,
 ) -> i32 {
     match id {
+        PowerId::Buffer => {
+            if current_damage > 0 {
+                let target = info.target;
+                let Some(remaining) =
+                    store::with_power_mut(state, target, PowerId::Buffer, |power| {
+                        power.amount -= 1;
+                        power.amount
+                    })
+                else {
+                    return current_damage;
+                };
+                if !should_keep_power_instance(PowerId::Buffer, remaining) {
+                    store::remove_power_type(state, target, PowerId::Buffer);
+                }
+                0
+            } else {
+                current_damage
+            }
+        }
         _ => current_damage,
     }
 }
@@ -1032,6 +1081,7 @@ pub fn resolve_power_on_calculate_block(
         match id {
             PowerId::Dexterity => core::dexterity::on_calculate_block(block, amount),
             PowerId::Frail => core::frail::on_calculate_block(block, amount),
+            PowerId::NoBlock => core::no_block::on_calculate_block(block, amount),
             _ => block,
         }
     } else {
@@ -1070,9 +1120,6 @@ pub fn resolve_power_on_calculate_damage_from_player(
                 updated_damage,
                 amount,
             ),
-            PowerId::Flight => {
-                core::flight::on_calculate_damage_from_player(updated_damage, amount)
-            }
             _ => updated_damage,
         };
     }

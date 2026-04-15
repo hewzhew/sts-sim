@@ -1,8 +1,9 @@
 use crate::content::relics::RelicId;
 use crate::rewards::state::{RewardItem, RewardState};
 use crate::state::core::EngineState;
-use crate::state::events::{EventChoiceMeta, EventState};
+use crate::state::events::{EventChoiceMeta, EventId, EventState};
 use crate::state::run::RunState;
+use crate::state::selection::DomainEventSource;
 
 pub fn get_choices(run_state: &RunState, event_state: &EventState) -> Vec<EventChoiceMeta> {
     match event_state.current_screen {
@@ -47,15 +48,15 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
             }
         },
         1 => {
-            run_state.current_hp = (run_state.current_hp - 1).max(0);
+            run_state.change_hp_with_source(-1, DomainEventSource::Event(EventId::CursedTome));
             event_state.current_screen = 2;
         }
         2 => {
-            run_state.current_hp = (run_state.current_hp - 2).max(0);
+            run_state.change_hp_with_source(-2, DomainEventSource::Event(EventId::CursedTome));
             event_state.current_screen = 3;
         }
         3 => {
-            run_state.current_hp = (run_state.current_hp - 3).max(0);
+            run_state.change_hp_with_source(-3, DomainEventSource::Event(EventId::CursedTome));
             event_state.current_screen = 4;
         }
         4 => {
@@ -67,7 +68,10 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
                     } else {
                         10
                     };
-                    run_state.current_hp = (run_state.current_hp - final_dmg).max(0);
+                    run_state.change_hp_with_source(
+                        -final_dmg,
+                        DomainEventSource::Event(EventId::CursedTome),
+                    );
                     // Random book relic (Java randomBook)
                     let book_relics = [
                         RelicId::Necronomicon,
@@ -99,7 +103,8 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
                 }
                 _ => {
                     // Stop reading: 3 damage
-                    run_state.current_hp = (run_state.current_hp - 3).max(0);
+                    run_state
+                        .change_hp_with_source(-3, DomainEventSource::Event(EventId::CursedTome));
                     event_state.current_screen = 5;
                 }
             }

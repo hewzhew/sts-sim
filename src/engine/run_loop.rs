@@ -2,9 +2,53 @@ use crate::combat::CombatState;
 use crate::map::node::RoomType;
 use crate::state::core::{ClientInput, EngineState};
 use crate::state::run::RunState;
+use crate::state::selection::{
+    DomainEvent, DomainEventSource, SelectionReason, SelectionResolution, SelectionScope,
+    SelectionTargetRef,
+};
 
 use super::campfire_handler;
 use super::shop_handler;
+
+fn run_selection_source(
+    run_state: &RunState,
+    reason: crate::state::core::RunPendingChoiceReason,
+) -> DomainEventSource {
+    run_state
+        .event_state
+        .as_ref()
+        .map(|event| DomainEventSource::Event(event.id))
+        .unwrap_or_else(|| DomainEventSource::Selection(reason.into()))
+}
+
+fn resolve_run_pending_selection(input: ClientInput, run_state: &RunState) -> Option<Vec<usize>> {
+    match input {
+        ClientInput::SubmitSelection(SelectionResolution {
+            scope: SelectionScope::Deck,
+            selected,
+        }) => Some(
+            selected
+                .into_iter()
+                .filter_map(|target| match target {
+                    SelectionTargetRef::CardUuid(uuid) => run_state
+                        .master_deck
+                        .iter()
+                        .position(|card| card.uuid == uuid),
+                })
+                .collect(),
+        ),
+        ClientInput::SubmitDeckSelect(indices) => Some(indices),
+        _ => None,
+    }
+}
+
+fn resolve_out_of_combat_defeat(engine_state: &mut EngineState, run_state: &RunState) -> bool {
+    if run_state.current_hp <= 0 && !matches!(engine_state, EngineState::GameOver(_)) {
+        *engine_state = EngineState::GameOver(crate::state::core::RunResult::Defeat);
+        return true;
+    }
+    false
+}
 
 pub fn tick_run(
     engine_state: &mut EngineState,
@@ -83,13 +127,29 @@ pub fn tick_run(
             }
         }
         EngineState::RunPendingChoice(rpc_state) => {
-            if let Some(ClientInput::SubmitDeckSelect(indices)) = input {
+            if let Some(indices) = input
+                .clone()
+                .and_then(|value| resolve_run_pending_selection(value, run_state))
+            {
                 // Validation against min/max would securely happen here or in the UI client.
                 // Assuming it's valid:
-                let _removed_count = 0;
                 let mut sorted_indices = indices.clone();
                 sorted_indices.sort_unstable();
                 sorted_indices.reverse(); // Remove from highest index to lowest
+                let source = run_selection_source(run_state, rpc_state.reason.clone());
+                let selection_reason: SelectionReason = rpc_state.reason.clone().into();
+                let selected_refs = sorted_indices
+                    .iter()
+                    .filter_map(|&idx| run_state.master_deck.get(idx))
+                    .map(|card| SelectionTargetRef::CardUuid(card.uuid))
+                    .collect::<Vec<_>>();
+
+                run_state.emit_event(DomainEvent::SelectionResolved {
+                    scope: SelectionScope::Deck,
+                    reason: selection_reason,
+                    selected: selected_refs,
+                    source,
+                });
 
                 match rpc_state.reason {
                     crate::state::core::RunPendingChoiceReason::Purge => {
@@ -113,28 +173,29 @@ pub fn tick_run(
                                     };
                                 }
                                 let uuid = run_state.master_deck[idx].uuid;
-                                run_state.remove_card_from_deck(uuid);
+                                run_state.remove_card_from_deck_with_source(uuid, source);
                             }
                         }
                     }
                     crate::state::core::RunPendingChoiceReason::Upgrade => {
                         for idx in sorted_indices {
                             if idx < run_state.master_deck.len() {
-                                run_state.master_deck[idx].upgrades += 1;
+                                let uuid = run_state.master_deck[idx].uuid;
+                                run_state.upgrade_card_with_source(uuid, source);
                             }
                         }
                     }
                     crate::state::core::RunPendingChoiceReason::Transform => {
                         for idx in sorted_indices {
                             if idx < run_state.master_deck.len() {
-                                run_state.transform_card(idx, false);
+                                run_state.transform_card_with_source(idx, false, source);
                             }
                         }
                     }
                     crate::state::core::RunPendingChoiceReason::TransformUpgraded => {
                         for idx in sorted_indices {
                             if idx < run_state.master_deck.len() {
-                                run_state.transform_card(idx, true);
+                                run_state.transform_card_with_source(idx, true, source);
                             }
                         }
                     }
@@ -142,10 +203,13 @@ pub fn tick_run(
                         // Duplicate: copy the selected card(s) and add to deck
                         let cards_to_copy: Vec<_> = sorted_indices
                             .iter()
-                            .filter_map(|&idx| run_state.master_deck.get(idx).map(|c| c.id))
+                            .filter_map(|&idx| {
+                                run_state.master_deck.get(idx).map(|c| (c.id, c.upgrades))
+                            })
                             .collect();
-                        for card_id in cards_to_copy {
-                            run_state.add_card_to_deck(card_id);
+                        for (card_id, upgrades) in cards_to_copy {
+                            run_state
+                                .add_card_to_deck_with_upgrades_from(card_id, upgrades, source);
                         }
                     }
                 }
@@ -386,9 +450,21 @@ pub fn tick_run(
                     }
                 }
             }
+            if resolve_out_of_combat_defeat(engine_state, run_state) {
+                return false;
+            }
             true
         }
-        EngineState::Campfire => campfire_handler::handle(engine_state, run_state, input),
+        EngineState::Campfire => {
+            let keep_running = campfire_handler::handle(engine_state, run_state, input);
+            if !keep_running {
+                return false;
+            }
+            if resolve_out_of_combat_defeat(engine_state, run_state) {
+                return false;
+            }
+            true
+        }
         EngineState::Shop(_) => {
             let mut transition = None;
             if let EngineState::Shop(shop) = engine_state {
@@ -398,6 +474,9 @@ pub fn tick_run(
             }
             if let Some(new_state) = transition {
                 *engine_state = new_state;
+            }
+            if resolve_out_of_combat_defeat(engine_state, run_state) {
+                return false;
             }
             true
         }
@@ -410,6 +489,9 @@ pub fn tick_run(
                 ) {
                     eprintln!("Event Error: {}", e);
                 }
+            }
+            if resolve_out_of_combat_defeat(engine_state, run_state) {
+                return false;
             }
             true
         }
@@ -425,6 +507,9 @@ pub fn tick_run(
             if let Some(new_state) = transition {
                 *engine_state = new_state;
             }
+            if resolve_out_of_combat_defeat(engine_state, run_state) {
+                return false;
+            }
             true
         }
         EngineState::BossRelicSelect(_) => {
@@ -438,6 +523,9 @@ pub fn tick_run(
             }
             if let Some(new_state) = transition {
                 *engine_state = new_state;
+            }
+            if resolve_out_of_combat_defeat(engine_state, run_state) {
+                return false;
             }
             true
         }
@@ -504,5 +592,36 @@ pub fn tick_run(
             }
         }
         EngineState::GameOver(_) => false,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::tick_run;
+    use crate::state::core::{ClientInput, EngineState, RunResult};
+    use crate::state::events::{EventId, EventState};
+    use crate::state::run::RunState;
+
+    #[test]
+    fn lethal_noncombat_event_transitions_to_defeat() {
+        let mut engine = EngineState::EventRoom;
+        let mut run = RunState::new(1, 0, false, "Ironclad");
+        run.current_hp = 5;
+        run.event_state = Some({
+            let mut event = EventState::new(EventId::KnowingSkull);
+            event.current_screen = 1;
+            event
+        });
+        let mut combat = None;
+        let keep_running = tick_run(
+            &mut engine,
+            &mut run,
+            &mut combat,
+            Some(ClientInput::EventChoice(3)),
+        );
+
+        assert!(!keep_running);
+        assert!(matches!(engine, EngineState::GameOver(RunResult::Defeat)));
+        assert_eq!(run.current_hp, 0);
     }
 }

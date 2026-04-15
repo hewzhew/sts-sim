@@ -2,6 +2,119 @@ use super::super::*;
 use super::support::*;
 
 #[test]
+fn panache_resets_to_five_across_turn_transition() {
+    let mut engine_state = EngineState::CombatPlayerTurn;
+    let mut combat = test_combat();
+    combat.entities.power_db.insert(
+        0,
+        vec![Power {
+            power_type: PowerId::PanachePower,
+            instance_id: None,
+            amount: 1,
+            extra_data: 10,
+            just_applied: false,
+        }],
+    );
+
+    let alive = tick_until_stable_turn(&mut engine_state, &mut combat, ClientInput::EndTurn);
+
+    assert!(alive);
+    assert!(matches!(engine_state, EngineState::CombatPlayerTurn));
+    assert_eq!(combat.get_power(0, PowerId::PanachePower), 5);
+}
+
+#[test]
+fn panache_resets_from_live_style_end_turn_snapshot() {
+    let snapshot = serde_json::json!({
+        "turn": 32,
+        "room_type": "MonsterRoomElite",
+        "player": {
+            "current_hp": 73,
+            "max_hp": 80,
+            "block": 1,
+            "energy": 0,
+            "powers": [
+                {"id": "Brutality", "amount": 1},
+                {"id": "Metallicize", "amount": 3},
+                {"id": "Strength", "amount": 3},
+                {"id": "Vulnerable", "amount": 2},
+                {"id": "Panache", "amount": 1},
+                {"id": "Magnetism", "amount": 1},
+                {"id": "Frail", "amount": 2}
+            ]
+        },
+        "monsters": [
+            {
+                "id": "Champ",
+                "current_hp": 298,
+                "max_hp": 420,
+                "block": 0,
+                "intent": "ATTACK",
+                "move_base_damage": 16,
+                "move_adjusted_damage": 20,
+                "move_hits": 1,
+                "move_id": 1,
+                "powers": [
+                    {"id": "Strength", "amount": 2},
+                    {"id": "Vulnerable", "amount": 3},
+                    {"id": "Weakened", "amount": 3}
+                ]
+            }
+        ],
+        "hand": [
+            {"id": "Ghostly Armor", "uuid": "h1", "upgrades": 0, "cost": 1},
+            {"id": "Strike_R", "uuid": "h2", "upgrades": 0, "cost": 1},
+            {"id": "Defend_R", "uuid": "h3", "upgrades": 0, "cost": 1},
+            {"id": "Defend_R", "uuid": "h4", "upgrades": 0, "cost": 1},
+            {"id": "Rampage", "uuid": "h5", "upgrades": 0, "cost": 1}
+        ],
+        "draw_pile": [
+            {"id": "Mayhem", "uuid": "d1", "upgrades": 0, "cost": 2},
+            {"id": "Armaments", "uuid": "d2", "upgrades": 0, "cost": 1},
+            {"id": "Pommel Strike", "uuid": "d3", "upgrades": 1, "cost": 1},
+            {"id": "Defend_R", "uuid": "d4", "upgrades": 0, "cost": 1},
+            {"id": "Pummel", "uuid": "d5", "upgrades": 0, "cost": 1},
+            {"id": "Pommel Strike", "uuid": "d6", "upgrades": 1, "cost": 1},
+            {"id": "Dark Shackles", "uuid": "d7", "upgrades": 0, "cost": 0},
+            {"id": "Strike_R", "uuid": "d8", "upgrades": 0, "cost": 1},
+            {"id": "Bash", "uuid": "d9", "upgrades": 1, "cost": 2},
+            {"id": "Whirlwind", "uuid": "d10", "upgrades": 1, "cost": -1}
+        ],
+        "discard_pile": [
+            {"id": "Strike_R", "uuid": "x1", "upgrades": 0, "cost": 1},
+            {"id": "Defend_R", "uuid": "x2", "upgrades": 0, "cost": 1},
+            {"id": "Shockwave", "uuid": "x3", "upgrades": 0, "cost": 2}
+        ],
+        "exhaust_pile": [
+            {"id": "Good Instincts", "uuid": "e1", "upgrades": 0, "cost": 0}
+        ],
+        "potions": [],
+        "relics": [
+            {"id": "Burning Blood", "counter": -1}
+        ]
+    });
+
+    let mut engine_state = EngineState::CombatPlayerTurn;
+    let mut combat = crate::engine::test_support::build_combat_state(&snapshot, &snapshot["relics"]);
+
+    let alive = tick_until_stable_turn(&mut engine_state, &mut combat, ClientInput::EndTurn);
+
+    assert!(alive);
+    assert!(matches!(engine_state, EngineState::CombatPlayerTurn));
+    let panache_powers = combat
+        .entities
+        .power_db
+        .get(&0)
+        .cloned()
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|p| p.power_type == PowerId::PanachePower)
+        .collect::<Vec<_>>();
+    assert_eq!(panache_powers.len(), 1);
+    assert_eq!(panache_powers[0].amount, 5);
+}
+
+#[test]
 fn bloodletting_from_live_style_snapshot_keeps_next_turn_block() {
     let snapshot = serde_json::json!({
         "turn": 7,
@@ -50,7 +163,7 @@ fn bloodletting_from_live_style_snapshot_keeps_next_turn_block() {
     });
 
     let mut engine_state = EngineState::CombatPlayerTurn;
-    let mut combat = crate::diff::state_sync::build_combat_state(&snapshot, &snapshot["relics"]);
+    let mut combat = crate::engine::test_support::build_combat_state(&snapshot, &snapshot["relics"]);
 
     let alive = tick_until_stable_turn(
         &mut engine_state,
@@ -123,7 +236,7 @@ fn cloned_live_style_state_keeps_self_forming_clay_bus_for_bloodletting() {
         ]
     });
 
-    let truth = crate::diff::state_sync::build_combat_state(&snapshot, &snapshot["relics"]);
+    let truth = crate::engine::test_support::build_combat_state(&snapshot, &snapshot["relics"]);
     let mut combat = truth.clone();
     let mut engine_state = EngineState::CombatPlayerTurn;
 
@@ -186,7 +299,7 @@ fn hexaghost_snapshot_with_explicit_orb_state_rolls_inflame_after_sear_two() {
     });
 
     let mut engine_state = EngineState::CombatPlayerTurn;
-    let mut combat = crate::diff::state_sync::build_combat_state(&snapshot, &snapshot["relics"]);
+    let mut combat = crate::engine::test_support::build_combat_state(&snapshot, &snapshot["relics"]);
 
     let alive = tick_until_stable_turn(&mut engine_state, &mut combat, ClientInput::EndTurn);
 
@@ -195,6 +308,59 @@ fn hexaghost_snapshot_with_explicit_orb_state_rolls_inflame_after_sear_two() {
     assert_eq!(monster.next_move_byte, 3);
     assert_eq!(monster.current_intent, Intent::DefendBuff);
     assert_eq!(monster.hexaghost.orb_active_count, 3);
+}
+
+#[test]
+fn hexaghost_divider_uses_locked_damage_from_activate_not_current_hp() {
+    let snapshot = json!({
+        "turn": 2,
+        "room_type": "MonsterRoomBoss",
+        "player": {
+            "current_hp": 64,
+            "max_hp": 87,
+            "block": 5,
+            "energy": 0,
+            "powers": []
+        },
+        "monsters": [{
+            "id": "Hexaghost",
+            "current_hp": 212,
+            "max_hp": 250,
+            "block": 0,
+            "intent": "ATTACK",
+            "move_base_damage": 4,
+            "move_adjusted_damage": 4,
+            "move_hits": 6,
+            "move_id": 1,
+            "last_move_id": 5,
+            "hexaghost_activated": true,
+            "hexaghost_orb_active_count": 6,
+            "hexaghost_burn_upgraded": false,
+            "powers": []
+        }],
+        "hand": [
+            {"id": "Defend_R", "uuid": "h1", "upgrades": 0, "cost": 1}
+        ],
+        "draw_pile": [],
+        "discard_pile": [],
+        "exhaust_pile": [],
+        "potions": [],
+        "relics": []
+    });
+
+    let mut engine_state = EngineState::CombatPlayerTurn;
+    let mut combat = crate::engine::test_support::build_combat_state(&snapshot, &snapshot["relics"]);
+
+    let alive = tick_until_stable_turn(&mut engine_state, &mut combat, ClientInput::EndTurn);
+
+    assert!(alive);
+    assert_eq!(combat.entities.player.current_hp, 45);
+    let monster = &combat.entities.monsters[0];
+    assert_eq!(monster.next_move_byte, 4);
+    assert_eq!(
+        monster.current_intent,
+        Intent::AttackDebuff { damage: 6, hits: 1 }
+    );
 }
 
 #[test]
@@ -426,7 +592,7 @@ fn distilled_chaos_live_snapshot_buffers_top_cards_before_play() {
         ]
     });
 
-    let mut combat = crate::diff::state_sync::build_combat_state(&snapshot, &snapshot["relics"]);
+    let mut combat = crate::engine::test_support::build_combat_state(&snapshot, &snapshot["relics"]);
     crate::engine::action_handlers::execute_action(
         Action::UsePotion {
             slot: 0,
@@ -461,6 +627,83 @@ fn distilled_chaos_live_snapshot_buffers_top_cards_before_play() {
 }
 
 #[test]
+fn distilled_chaos_live_snapshot_plays_targeted_top_cards_with_random_targets() {
+    let snapshot = serde_json::json!({
+        "turn": 1,
+        "room_type": "MonsterRoomElite",
+        "player": {
+            "current_hp": 60,
+            "max_hp": 80,
+            "block": 0,
+            "energy": 3,
+            "powers": []
+        },
+        "monsters": [
+            {
+                "id": "Sentry",
+                "current_hp": 39,
+                "max_hp": 39,
+                "block": 0,
+                "intent": "ATTACK",
+                "move_base_damage": 9,
+                "move_adjusted_damage": 9,
+                "move_hits": 1,
+                "move_id": 4,
+                "powers": [{"id": "Artifact", "amount": 1}]
+            },
+            {
+                "id": "Sentry",
+                "current_hp": 39,
+                "max_hp": 39,
+                "block": 0,
+                "intent": "DEBUFF",
+                "move_base_damage": -1,
+                "move_adjusted_damage": -1,
+                "move_hits": 0,
+                "move_id": 3,
+                "powers": [{"id": "Artifact", "amount": 1}]
+            }
+        ],
+        "relics": [],
+        "hand": [],
+        "draw_pile": [
+            {"id": "Strike_R", "uuid": "d1", "upgrades": 0, "cost": 1},
+            {"id": "Strike_R", "uuid": "d2", "upgrades": 0, "cost": 1},
+            {"id": "Strike_R", "uuid": "d3", "upgrades": 0, "cost": 1}
+        ],
+        "discard_pile": [],
+        "exhaust_pile": [],
+        "potions": [
+            {"id": "Distilled Chaos", "name": "Distilled Chaos", "can_use": true, "can_discard": true, "requires_target": false},
+            {"id": "Potion Slot"},
+            {"id": "Potion Slot"}
+        ]
+    });
+
+    let mut combat = crate::engine::test_support::build_combat_state(&snapshot, &snapshot["relics"]);
+    combat.rng.card_random_rng = crate::rng::StsRng::new(17);
+    crate::engine::action_handlers::execute_action(
+        Action::UsePotion {
+            slot: 0,
+            target: None,
+        },
+        &mut combat,
+    );
+    while let Some(action) = combat.engine.action_queue.pop_front() {
+        crate::engine::action_handlers::execute_action(action, &mut combat);
+    }
+
+    let total_hp: i32 = combat
+        .entities
+        .monsters
+        .iter()
+        .map(|m| m.current_hp.max(0))
+        .sum();
+    assert_eq!(total_hp, 60);
+    assert_eq!(combat.zones.discard_pile.len(), 3);
+}
+
+#[test]
 fn strike_dummy_adds_three_damage_to_strike_plus_after_building_from_live_snapshot() {
     let snapshot = live_snapshot_with_strike_dummy(
         serde_json::json!([
@@ -481,7 +724,7 @@ fn strike_dummy_adds_three_damage_to_strike_plus_after_building_from_live_snapsh
         }]),
     );
 
-    let mut combat = crate::diff::state_sync::build_combat_state(&snapshot, &snapshot["relics"]);
+    let mut combat = crate::engine::test_support::build_combat_state(&snapshot, &snapshot["relics"]);
     let mut engine_state = EngineState::CombatPlayerTurn;
     let ok = tick_until_stable_turn(
         &mut engine_state,
@@ -519,7 +762,7 @@ fn strike_dummy_adds_three_damage_to_pommel_strike_after_building_from_live_snap
         }]),
     );
 
-    let mut combat = crate::diff::state_sync::build_combat_state(&snapshot, &snapshot["relics"]);
+    let mut combat = crate::engine::test_support::build_combat_state(&snapshot, &snapshot["relics"]);
     let mut engine_state = EngineState::CombatPlayerTurn;
     let ok = tick_until_stable_turn(
         &mut engine_state,
@@ -573,7 +816,7 @@ fn strike_dummy_damage_is_modified_before_weak_rounding() {
         "exhaust_pile": []
     });
 
-    let mut combat = crate::diff::state_sync::build_combat_state(&snapshot, &snapshot["relics"]);
+    let mut combat = crate::engine::test_support::build_combat_state(&snapshot, &snapshot["relics"]);
     let mut engine_state = EngineState::CombatPlayerTurn;
     let ok = tick_until_stable_turn(
         &mut engine_state,
@@ -625,7 +868,7 @@ fn strike_dummy_applies_when_targeting_second_monster_from_live_snapshot() {
         ]),
     );
 
-    let mut combat = crate::diff::state_sync::build_combat_state(&snapshot, &snapshot["relics"]);
+    let mut combat = crate::engine::test_support::build_combat_state(&snapshot, &snapshot["relics"]);
     let mut engine_state = EngineState::CombatPlayerTurn;
     let ok = tick_until_stable_turn(
         &mut engine_state,

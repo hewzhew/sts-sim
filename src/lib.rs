@@ -5,19 +5,19 @@ pub mod core;
 pub mod deck;
 pub mod engine;
 pub mod events;
-pub mod game;
-pub mod interaction_coverage;
 pub mod map;
-pub mod ml;
 pub mod rewards;
 pub mod rng;
 pub mod shop;
 pub mod state;
-pub mod testing;
-pub mod utils;
-pub mod verification;
 
-pub use engine::*;
+// Integration layers around the runtime path.
+pub mod diff;
+pub mod testing;
+
+// User-facing and experimental surfaces.
 pub mod bot;
 pub mod cli;
-pub mod diff;
+pub mod interaction_coverage;
+
+pub mod utils;

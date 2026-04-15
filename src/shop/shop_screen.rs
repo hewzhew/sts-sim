@@ -31,7 +31,12 @@ where
         };
         let tmp_price = base_price * rng_pool.merchant_rng.random_f32_min_max(0.9, 1.1);
         let price = tmp_price.trunc() as i32;
-        shop.cards.push(ShopCard { card_id: c, price });
+        shop.cards.push(ShopCard {
+            card_id: c,
+            price,
+            can_buy: true,
+            blocked_reason: None,
+        });
     }
 
     // Process Colorless Cards Jitter (merchantRng)
@@ -46,7 +51,12 @@ where
         let mut tmp_price = base_price * rng_pool.merchant_rng.random_f32_min_max(0.9, 1.1);
         tmp_price *= 1.2; // Colorless bump
         let price = tmp_price.trunc() as i32;
-        shop.cards.push(ShopCard { card_id: c, price });
+        shop.cards.push(ShopCard {
+            card_id: c,
+            price,
+            can_buy: true,
+            blocked_reason: None,
+        });
     }
 
     // Apply Sale tag via integer division on a random colored card (0-4)
@@ -79,7 +89,12 @@ where
 
         let jitter_mult = rng_pool.merchant_rng.random_f32_min_max(0.95, 1.05);
         let price = (base_price * jitter_mult).round() as i32;
-        shop.relics.push(ShopRelic { relic_id, price });
+        shop.relics.push(ShopRelic {
+            relic_id,
+            price,
+            can_buy: true,
+            blocked_reason: None,
+        });
     }
 
     // 3. Potions (3 slots via potionRng & merchantRng)
@@ -89,7 +104,12 @@ where
         let base_price = potions::get_potion_price(potion_id) as f32;
         let jitter_mult = rng_pool.merchant_rng.random_f32_min_max(0.95, 1.05);
         let price = (base_price * jitter_mult).round() as i32;
-        shop.potions.push(ShopPotion { potion_id, price });
+        shop.potions.push(ShopPotion {
+            potion_id,
+            price,
+            can_buy: true,
+            blocked_reason: None,
+        });
     }
 
     // 4. Initial Purge Cost

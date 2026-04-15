@@ -6,16 +6,18 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
-use crate::bot::agent::Agent;
 use crate::bot::evaluator::evaluate_state;
 use crate::combat::{CombatCard, CombatState, Intent, Power};
 use crate::content::cards::get_card_definition;
-use crate::diff::replay_support::tick_until_stable;
+use crate::diff::replay::replay_support::tick_until_stable;
 use crate::rng::{shuffle_with_random_long, StsRng};
 use crate::state::core::{ClientInput, EngineState, RunResult};
 use crate::state::run::RunState;
-
-use super::scenario::{initialize_fixture_state, ScenarioFixture};
+use crate::testing::fixtures::scenario::{initialize_fixture_state, ScenarioFixture};
+use crate::testing::harness::combat_policy::{
+    decide_policy_action, extract_state_features, flag_bad_action_tags, EvalMetrics,
+    PolicyDecision, PolicyKind,
+};
 
 const DEFAULT_ACTION_CAP: usize = 256;
 
@@ -24,12 +26,6 @@ const DEFAULT_ACTION_CAP: usize = 256;
 pub enum LabVariantMode {
     Exact,
     ReshuffleDraw,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum LabPolicyMode {
-    Bot,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -66,6 +62,9 @@ pub struct CombatLabStepTrace {
     pub monsters_before: Vec<CombatLabMonsterSnapshot>,
     pub evaluate_state_before: f32,
     pub state_features_preview: BTreeMap<String, f32>,
+    pub state_features_full: BTreeMap<String, f32>,
+    pub policy_decision: PolicyDecision,
+    pub bad_action_tags: Vec<String>,
     pub chosen_action: String,
     pub action_kind: String,
     pub action_payload: serde_json::Value,
@@ -89,7 +88,7 @@ pub struct CombatLabEpisodeTrace {
     pub episode_id: usize,
     pub variant_mode: LabVariantMode,
     pub seed: u64,
-    pub policy: LabPolicyMode,
+    pub policy: PolicyKind,
     pub depth: u32,
     pub outcome: EpisodeOutcome,
     pub final_player_hp: i32,
@@ -115,10 +114,12 @@ pub struct CombatLabEpisodeRecord {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CombatLabSummary {
     pub fixture_name: String,
+    pub policy: PolicyKind,
     pub total_episodes: usize,
     pub wins: usize,
     pub win_rate: f32,
     pub average_final_hp: f32,
+    pub metrics: EvalMetrics,
     pub best_win_episode_id: Option<usize>,
     pub best_attempt_episode_id: Option<usize>,
 }
@@ -127,7 +128,7 @@ pub struct CombatLabSummary {
 pub struct CombatLabConfig {
     pub fixture: ScenarioFixture,
     pub episodes: usize,
-    pub policy: LabPolicyMode,
+    pub policy: PolicyKind,
     pub depth: u32,
     pub variant_mode: LabVariantMode,
     pub base_seed: u64,
@@ -171,7 +172,7 @@ pub fn run_combat_lab(config: &CombatLabConfig) -> Result<CombatLabSummary, Stri
 
     for episode_id in 0..config.episodes {
         let episode_seed = config.base_seed.wrapping_add(episode_id as u64);
-        let trace = run_episode(
+        let episode = run_episode(
             &fixture,
             config.policy,
             config.depth,
@@ -179,6 +180,7 @@ pub fn run_combat_lab(config: &CombatLabConfig) -> Result<CombatLabSummary, Stri
             episode_id,
             episode_seed,
         )?;
+        let trace = episode.trace;
         let trace_name = format!("trace_{episode_id:04}.json");
         let trace_path = config.out_dir.join(&trace_name);
         let trace_payload = serde_json::to_string_pretty(&trace).map_err(|err| err.to_string())?;
@@ -244,6 +246,7 @@ pub fn run_combat_lab(config: &CombatLabConfig) -> Result<CombatLabSummary, Stri
     };
     let summary = CombatLabSummary {
         fixture_name: fixture.name.clone(),
+        policy: config.policy,
         total_episodes: records.len(),
         wins,
         win_rate: if records.is_empty() {
@@ -252,6 +255,7 @@ pub fn run_combat_lab(config: &CombatLabConfig) -> Result<CombatLabSummary, Stri
             wins as f32 / records.len() as f32
         },
         average_final_hp,
+        metrics: aggregate_metrics(&traces),
         best_win_episode_id: best_win_idx.map(|idx| records[idx].episode_id),
         best_attempt_episode_id: best_attempt_idx.map(|idx| records[idx].episode_id),
     };
@@ -262,21 +266,24 @@ pub fn run_combat_lab(config: &CombatLabConfig) -> Result<CombatLabSummary, Stri
     Ok(summary)
 }
 
+struct EpisodeArtifacts {
+    trace: CombatLabEpisodeTrace,
+}
+
 fn run_episode(
     fixture: &ScenarioFixture,
-    policy: LabPolicyMode,
+    policy: PolicyKind,
     depth: u32,
     variant_mode: LabVariantMode,
     episode_id: usize,
     episode_seed: u64,
-) -> Result<CombatLabEpisodeTrace, String> {
+) -> Result<EpisodeArtifacts, String> {
     let initial = initialize_fixture_state(fixture);
     let mut combat = initial.combat;
     let mut engine_state = initial.engine_state;
     apply_variant(&mut combat, variant_mode, episode_seed);
     let mut run_state = build_lab_run_state(fixture, &combat);
-    let mut agent = Agent::new();
-    agent.set_bot_depth(depth);
+    let mut agent = crate::bot::agent::Agent::new();
 
     let mut steps = Vec::new();
     let mut safety_counter = 0usize;
@@ -298,7 +305,7 @@ fn run_episode(
             for step in &mut trace.steps {
                 step.episode_outcome = Some(trace.outcome.clone());
             }
-            return Ok(trace);
+            return Ok(EpisodeArtifacts { trace });
         }
 
         if safety_counter >= DEFAULT_ACTION_CAP {
@@ -317,20 +324,23 @@ fn run_episode(
             for step in &mut trace.steps {
                 step.episode_outcome = Some(trace.outcome.clone());
             }
-            return Ok(trace);
+            return Ok(EpisodeArtifacts { trace });
         }
 
         let before_score = evaluate_state(&engine_state, &combat);
-        let input = match policy {
-            LabPolicyMode::Bot => {
-                agent.decide(&engine_state, &run_state, &Some(combat.clone()), false)
-            }
-        };
+        let policy_decision = decide_policy_action(
+            policy,
+            &engine_state,
+            &combat,
+            &run_state,
+            &mut agent,
+            depth,
+        );
         let step_trace = execute_step(
             steps.len(),
             &mut engine_state,
             &mut combat,
-            input,
+            &policy_decision,
             before_score,
         )?;
         steps.push(step_trace);
@@ -348,7 +358,7 @@ fn build_episode_trace(
     episode_id: usize,
     variant_mode: LabVariantMode,
     episode_seed: u64,
-    policy: LabPolicyMode,
+    policy: PolicyKind,
     depth: u32,
     outcome: EpisodeOutcome,
     combat: &CombatState,
@@ -375,7 +385,7 @@ fn execute_step(
     step_index: usize,
     engine_state: &mut EngineState,
     combat: &mut CombatState,
-    input: ClientInput,
+    policy_decision: &PolicyDecision,
     before_score: f32,
 ) -> Result<CombatLabStepTrace, String> {
     let turn_index = combat.turn.turn_count;
@@ -388,7 +398,10 @@ fn execute_step(
     let discard_size_before = combat.zones.discard_pile.len();
     let monsters_before = monster_snapshots(combat);
     let state_features_preview = preview_features(combat);
-    let chosen_action = format!("{input:?}");
+    let state_features_full = extract_state_features(combat);
+    let bad_action_tags = flag_bad_action_tags(combat, policy_decision);
+    let input = decode_policy_input(policy_decision)?;
+    let chosen_action = policy_decision.final_input_debug.clone();
     let (action_kind, action_payload) = action_descriptor(&input, combat);
 
     let _alive = tick_until_stable(engine_state, combat, input);
@@ -407,6 +420,9 @@ fn execute_step(
         monsters_before,
         evaluate_state_before: before_score,
         state_features_preview,
+        state_features_full,
+        policy_decision: policy_decision.clone(),
+        bad_action_tags,
         chosen_action,
         action_kind,
         action_payload,
@@ -423,6 +439,56 @@ fn execute_step(
         remaining_player_hp_after_step: combat.entities.player.current_hp,
         episode_outcome: None,
     })
+}
+
+fn decode_policy_input(policy_decision: &PolicyDecision) -> Result<ClientInput, String> {
+    match policy_decision.final_action.kind.as_str() {
+        "play_card" => Ok(ClientInput::PlayCard {
+            card_index: policy_decision
+                .final_action
+                .card_index
+                .ok_or_else(|| "missing card_index for play_card".to_string())?,
+            target: policy_decision.final_action.target,
+        }),
+        "use_potion" => Ok(ClientInput::UsePotion {
+            potion_index: policy_decision
+                .final_action
+                .potion_index
+                .ok_or_else(|| "missing potion_index for use_potion".to_string())?,
+            target: policy_decision.final_action.target,
+        }),
+        "end_turn" => Ok(ClientInput::EndTurn),
+        "submit_hand_select" => Ok(ClientInput::SubmitHandSelect(
+            policy_decision
+                .final_action
+                .selected_uuids
+                .clone()
+                .ok_or_else(|| "missing selected_uuids for submit_hand_select".to_string())?,
+        )),
+        "submit_grid_select" => Ok(ClientInput::SubmitGridSelect(
+            policy_decision
+                .final_action
+                .selected_uuids
+                .clone()
+                .ok_or_else(|| "missing selected_uuids for submit_grid_select".to_string())?,
+        )),
+        "submit_discover_choice" => Ok(ClientInput::SubmitDiscoverChoice(
+            policy_decision
+                .final_action
+                .card_index
+                .ok_or_else(|| "missing discover index".to_string())?,
+        )),
+        "submit_card_choice" => Ok(ClientInput::SubmitCardChoice(
+            policy_decision
+                .final_action
+                .selected_indices
+                .clone()
+                .ok_or_else(|| "missing selected_indices for submit_card_choice".to_string())?,
+        )),
+        "proceed" => Ok(ClientInput::Proceed),
+        "cancel" => Ok(ClientInput::Cancel),
+        other => Err(format!("unsupported policy action kind: {other}")),
+    }
 }
 
 fn current_outcome(engine_state: &EngineState, combat: &CombatState) -> Option<EpisodeOutcome> {
@@ -607,50 +673,58 @@ fn intent_label(intent: &Intent) -> String {
 }
 
 fn preview_features(combat: &CombatState) -> BTreeMap<String, f32> {
-    let living_monsters = combat
-        .entities
-        .monsters
-        .iter()
-        .filter(|monster| !monster.is_dying && !monster.is_escaped && monster.current_hp > 0)
-        .count() as f32;
-    let incoming_damage = combat
-        .entities
-        .monsters
-        .iter()
-        .filter(|monster| !monster.is_dying && !monster.is_escaped && monster.current_hp > 0)
-        .map(|monster| match monster.current_intent {
-            Intent::Attack { hits, .. }
-            | Intent::AttackBuff { hits, .. }
-            | Intent::AttackDebuff { hits, .. }
-            | Intent::AttackDefend { hits, .. } => monster.intent_dmg * hits as i32,
-            _ => 0,
-        })
-        .sum::<i32>();
+    let mut preview = extract_state_features(combat);
+    preview.retain(|key, _| {
+        matches!(
+            key.as_str(),
+            "turn"
+                | "player_hp"
+                | "player_block"
+                | "energy"
+                | "hand_size"
+                | "draw_size"
+                | "discard_size"
+                | "remaining_monster_hp"
+                | "living_monsters"
+                | "incoming_damage"
+        )
+    });
+    preview
+}
 
-    BTreeMap::from([
-        ("turn".to_string(), combat.turn.turn_count as f32),
-        (
-            "player_hp".to_string(),
-            combat.entities.player.current_hp as f32,
-        ),
-        (
-            "player_block".to_string(),
-            combat.entities.player.block as f32,
-        ),
-        ("energy".to_string(), combat.turn.energy as f32),
-        ("hand_size".to_string(), combat.zones.hand.len() as f32),
-        ("draw_size".to_string(), combat.zones.draw_pile.len() as f32),
-        (
-            "discard_size".to_string(),
-            combat.zones.discard_pile.len() as f32,
-        ),
-        (
-            "remaining_monster_hp".to_string(),
-            total_remaining_monster_hp(combat) as f32,
-        ),
-        ("living_monsters".to_string(), living_monsters),
-        ("incoming_damage".to_string(), incoming_damage as f32),
-    ])
+fn aggregate_metrics(traces: &[CombatLabEpisodeTrace]) -> EvalMetrics {
+    let mut action_kind_counts = BTreeMap::new();
+    let mut policy_source_counts = BTreeMap::new();
+    let mut total_damage_taken = 0i32;
+    let mut total_potion_uses = 0usize;
+    let mut bad_action_count = 0u32;
+
+    for trace in traces {
+        if let Some(first_step) = trace.steps.first() {
+            total_damage_taken += (first_step.player_hp_before - trace.final_player_hp).max(0);
+        }
+        for step in &trace.steps {
+            *action_kind_counts
+                .entry(step.action_kind.clone())
+                .or_insert(0) += 1;
+            *policy_source_counts
+                .entry(step.policy_decision.source.clone())
+                .or_insert(0) += 1;
+            if step.action_kind == "use_potion" {
+                total_potion_uses += 1;
+            }
+            bad_action_count += step.bad_action_tags.len() as u32;
+        }
+    }
+
+    let episodes = traces.len().max(1) as f32;
+    EvalMetrics {
+        average_damage_taken_per_episode: total_damage_taken as f32 / episodes,
+        average_potion_uses_per_episode: total_potion_uses as f32 / episodes,
+        bad_action_count,
+        action_kind_counts,
+        policy_source_counts,
+    }
 }
 
 fn action_descriptor(input: &ClientInput, combat: &CombatState) -> (String, serde_json::Value) {
@@ -769,18 +843,18 @@ pub fn render_trace_markdown(trace: &CombatLabEpisodeTrace) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::testing::author_spec::{compile_combat_author_spec, CombatAuthorSpec};
+    use crate::testing::fixtures::author_spec::{compile_combat_author_spec, CombatAuthorSpec};
     use serde_json::json;
 
     #[test]
     fn sanitize_fixture_for_local_lab_strips_steps_assertions_and_marks_provenance() {
         let fixture = ScenarioFixture {
             name: "boss_handoff".to_string(),
-            steps: vec![super::super::scenario::ScenarioStep {
+            steps: vec![crate::testing::fixtures::scenario::ScenarioStep {
                 command: "HANDOFF HUMAN BOSS_COMBAT".to_string(),
                 ..Default::default()
             }],
-            assertions: vec![super::super::scenario::ScenarioAssertion {
+            assertions: vec![crate::testing::fixtures::scenario::ScenarioAssertion {
                 field: "player.hp".to_string(),
                 expected_kind: "number".to_string(),
                 expected_value: Some(json!(10)),
@@ -901,17 +975,10 @@ mod tests {
         )
         .expect("compile");
 
-        let trace = run_episode(
-            &fixture,
-            LabPolicyMode::Bot,
-            2,
-            LabVariantMode::Exact,
-            0,
-            123,
-        )
-        .expect("episode");
-        assert!(!trace.steps.is_empty());
-        let first = &trace.steps[0];
+        let trace = run_episode(&fixture, PolicyKind::Bot, 2, LabVariantMode::Exact, 0, 123)
+            .expect("episode");
+        assert!(!trace.trace.steps.is_empty());
+        let first = &trace.trace.steps[0];
         assert_eq!(first.turn_index, 1);
         assert_eq!(first.hand_size_before, first.hand_before.len());
         if first.action_kind == "play_card" {

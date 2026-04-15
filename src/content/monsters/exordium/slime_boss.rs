@@ -4,6 +4,9 @@ use crate::content::monsters::MonsterBehavior;
 
 pub struct SlimeBoss;
 
+const SPIKE_SLIME_L_SPLIT_OFFSET_X: i32 = -385;
+const ACID_SLIME_L_SPLIT_OFFSET_X: i32 = 120;
+
 impl MonsterBehavior for SlimeBoss {
     fn use_pre_battle_action(
         entity: &MonsterEntity,
@@ -89,32 +92,31 @@ impl MonsterBehavior for SlimeBoss {
                 // Java uses SpawnMonsterAction(m, false) → useSmartPositioning=true → drawX sort.
                 // SpikeSlime_L(drawX=-385) → leftmost → before dead Boss(drawX=0).
                 // AcidSlime_L(drawX=120)   → rightmost → after dead Boss.
-                // We encode smart-position ordering using drawX-like logical positions so
-                // later large-slime splits can keep a stable relative ordering too.
+                let base_draw_x = entity
+                    .protocol_identity
+                    .draw_x
+                    .unwrap_or(entity.logical_position);
+                let spike_draw_x = base_draw_x + SPIKE_SLIME_L_SPLIT_OFFSET_X;
+                let acid_draw_x = base_draw_x + ACID_SLIME_L_SPLIT_OFFSET_X;
 
                 // 1. Boss suicides first
-                actions.push(Action::Damage(DamageInfo {
-                    source: entity.id,
-                    target: entity.id,
-                    base: 99999,
-                    output: 99999,
-                    damage_type: DamageType::HpLoss,
-                    is_modified: false,
-                }));
+                actions.push(Action::Suicide { target: entity.id });
                 // 2. Spawn SpikeSlime_L on the left
                 actions.push(Action::SpawnMonsterSmart {
                     monster_id: crate::content::monsters::EnemyId::SpikeSlimeL,
-                    logical_position: entity.logical_position - 385,
+                    logical_position: spike_draw_x,
                     current_hp: entity.current_hp,
                     max_hp: entity.current_hp,
+                    protocol_draw_x: Some(spike_draw_x),
                     is_minion: false,
                 });
                 // 3. Spawn AcidSlime_L on the right
                 actions.push(Action::SpawnMonsterSmart {
                     monster_id: crate::content::monsters::EnemyId::AcidSlimeL,
-                    logical_position: entity.logical_position + 120,
+                    logical_position: acid_draw_x,
                     current_hp: entity.current_hp,
                     max_hp: entity.current_hp,
+                    protocol_draw_x: Some(acid_draw_x),
                     is_minion: false,
                 });
                 // Don't roll next move — Boss is dead
@@ -127,5 +129,50 @@ impl MonsterBehavior for SlimeBoss {
             monster_id: entity.id,
         });
         actions
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::content::monsters::EnemyId;
+    use crate::content::test_support::{basic_combat, CombatTestExt};
+
+    #[test]
+    fn split_uses_suicide_and_java_child_offsets() {
+        let combat = basic_combat()
+            .with_monster_type(1, EnemyId::SlimeBoss)
+            .with_monster_max_hp(1, 140)
+            .with_monster_hp(1, 63);
+        let mut entity = combat.entities.monsters[0].clone();
+        entity.next_move_byte = 3;
+        entity.logical_position = 0;
+        entity.protocol_identity.draw_x = Some(0);
+
+        let actions = SlimeBoss::take_turn(&mut combat.clone(), &entity);
+
+        assert_eq!(actions[0], Action::Suicide { target: 1 });
+        assert_eq!(
+            actions[1],
+            Action::SpawnMonsterSmart {
+                monster_id: EnemyId::SpikeSlimeL,
+                logical_position: SPIKE_SLIME_L_SPLIT_OFFSET_X,
+                current_hp: 63,
+                max_hp: 63,
+                protocol_draw_x: Some(SPIKE_SLIME_L_SPLIT_OFFSET_X),
+                is_minion: false,
+            }
+        );
+        assert_eq!(
+            actions[2],
+            Action::SpawnMonsterSmart {
+                monster_id: EnemyId::AcidSlimeL,
+                logical_position: ACID_SLIME_L_SPLIT_OFFSET_X,
+                current_hp: 63,
+                max_hp: 63,
+                protocol_draw_x: Some(ACID_SLIME_L_SPLIT_OFFSET_X),
+                is_minion: false,
+            }
+        );
     }
 }

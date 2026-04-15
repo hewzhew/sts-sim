@@ -15,13 +15,21 @@ impl MonsterBehavior for Chosen {
         let zap_dmg = if ascension_level >= 2 { 21 } else { 18 };
         let debilitate_dmg = if ascension_level >= 2 { 12 } else { 10 };
         let poke_dmg = if ascension_level >= 2 { 6 } else { 5 };
+        let (first_turn, used_hex) = if entity.chosen.protocol_seeded {
+            (entity.chosen.first_turn, entity.chosen.used_hex)
+        } else {
+            (
+                entity.move_history.is_empty(),
+                entity.move_history.contains(&4),
+            )
+        };
 
         if ascension_level >= 17 {
-            if !entity.move_history.contains(&4) {
+            if !used_hex {
                 return (4, Intent::StrongDebuff);
             }
         } else {
-            if entity.move_history.is_empty() {
+            if first_turn {
                 return (
                     5,
                     Intent::Attack {
@@ -30,7 +38,7 @@ impl MonsterBehavior for Chosen {
                     },
                 );
             }
-            if !entity.move_history.contains(&4) {
+            if !used_hex {
                 return (4, Intent::StrongDebuff);
             }
         }
@@ -155,5 +163,59 @@ impl MonsterBehavior for Chosen {
         });
 
         actions
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::combat::{ChosenRuntimeState, MonsterProtocolIdentity};
+    use std::collections::VecDeque;
+
+    fn chosen_entity() -> MonsterEntity {
+        MonsterEntity {
+            id: 1,
+            monster_type: crate::content::monsters::EnemyId::Chosen as usize,
+            current_hp: 90,
+            max_hp: 96,
+            block: 0,
+            slot: 0,
+            is_dying: false,
+            is_escaped: false,
+            half_dead: false,
+            next_move_byte: 0,
+            current_intent: Intent::Unknown,
+            move_history: VecDeque::new(),
+            intent_dmg: 0,
+            logical_position: 0,
+            protocol_identity: MonsterProtocolIdentity::default(),
+            hexaghost: Default::default(),
+            chosen: ChosenRuntimeState::default(),
+            darkling: Default::default(),
+            lagavulin: Default::default(),
+        }
+    }
+
+    #[test]
+    fn chosen_protocol_runtime_can_force_hex_after_rebuild_without_move_history() {
+        let mut entity = chosen_entity();
+        entity.chosen.protocol_seeded = true;
+        entity.chosen.first_turn = false;
+        entity.chosen.used_hex = false;
+
+        let (move_id, intent) = Chosen::roll_move(&mut crate::rng::StsRng::new(1), &entity, 0, 12);
+
+        assert_eq!(move_id, 4);
+        assert_eq!(intent, Intent::StrongDebuff);
+    }
+
+    #[test]
+    fn chosen_without_protocol_seed_uses_move_history_fallback() {
+        let entity = chosen_entity();
+
+        let (move_id, intent) = Chosen::roll_move(&mut crate::rng::StsRng::new(1), &entity, 0, 12);
+
+        assert_eq!(move_id, 5);
+        assert_eq!(intent, Intent::Attack { damage: 5, hits: 2 });
     }
 }

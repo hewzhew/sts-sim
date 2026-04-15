@@ -1,7 +1,6 @@
 use crate::action::{Action, DamageInfo, DamageType};
 use crate::combat::{CombatState, Intent, MonsterEntity};
 use crate::content::monsters::MonsterBehavior;
-use crate::core::EntityId;
 
 pub struct GremlinTsundere;
 
@@ -31,30 +30,8 @@ impl MonsterBehavior for GremlinTsundere {
         match entity.next_move_byte {
             1 => {
                 // PROTECT
-                // Java uses GainBlockRandomMonsterAction(this, blockAmt)
-                // which excludes: m == source, m.intent == ESCAPE, m.isDying
-                // It does NOT exclude m.current_hp == 0 or is_escaped
-                let alive_monsters: Vec<EntityId> = state
-                    .entities
-                    .monsters
-                    .iter()
-                    .filter(|m| {
-                        m.id != entity.id  // exclude self (source)
-                        && m.current_intent != Intent::Escape
-                        && !m.is_dying
-                    })
-                    .map(|m| m.id)
-                    .collect();
-
-                let target_id = if alive_monsters.is_empty() {
-                    entity.id // fallback to self if no valid targets
-                } else {
-                    let idx = state.rng.ai_rng.random(alive_monsters.len() as i32 - 1) as usize;
-                    alive_monsters[idx]
-                };
-
-                actions.push(Action::GainBlock {
-                    target: target_id,
+                actions.push(Action::GainBlockRandomMonster {
+                    source: entity.id,
                     amount: block_amt,
                 });
 

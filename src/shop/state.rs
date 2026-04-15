@@ -18,18 +18,24 @@ pub struct ShopConfig {
 pub struct ShopCard {
     pub card_id: CardId,
     pub price: i32,
+    pub can_buy: bool,
+    pub blocked_reason: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ShopRelic {
     pub relic_id: RelicId,
     pub price: i32,
+    pub can_buy: bool,
+    pub blocked_reason: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ShopPotion {
     pub potion_id: PotionId,
     pub price: i32,
+    pub can_buy: bool,
+    pub blocked_reason: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq)]

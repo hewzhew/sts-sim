@@ -111,17 +111,20 @@ impl MonsterBehavior for BookOfStabbing {
 
         match entity.next_move_byte {
             1 => {
-                // STAB
-                // Note: The Engine pushes to move history prior to `take_turn` execution.
-                // We calculate `skewer_hits` incrementally from the history pool to strictly sync with the resolved Intent.
-                // Let's just use the intent hits if possible, but STS engine recalculates hits.
-                // If the engine hasn't pushed the move to history yet, `is_next_move_stab` is TRUE because we ARE the stab move and haven't pushed ourselves yet.
-                // In my simulator, `entity.move_history` contains the history UP TO the current turn. The current turn is only added at Turn End!
-                let actual_hits = Self::calculate_stab_count(
-                    state.meta.ascension_level,
-                    &entity.move_history,
-                    true,
-                );
+                // Java uses the already-resolved stabCount for the current turn.
+                // Re-projecting from move history here overcounts by one when the
+                // current intent is itself a STAB move.
+                let actual_hits = match entity.current_intent {
+                    Intent::Attack { hits, .. }
+                    | Intent::AttackBuff { hits, .. }
+                    | Intent::AttackDebuff { hits, .. }
+                    | Intent::AttackDefend { hits, .. } => hits,
+                    _ => Self::calculate_stab_count(
+                        state.meta.ascension_level,
+                        &entity.move_history,
+                        false,
+                    ),
+                };
 
                 for _ in 0..actual_hits {
                     actions.push(Action::Damage(DamageInfo {
@@ -152,5 +155,32 @@ impl MonsterBehavior for BookOfStabbing {
         });
 
         actions
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::BookOfStabbing;
+    use crate::action::Action;
+    use crate::combat::{Intent, MonsterEntity};
+    use crate::content::monsters::MonsterBehavior;
+    use crate::content::test_support::basic_combat;
+    use std::collections::VecDeque;
+
+    #[test]
+    fn stab_turn_uses_current_intent_hits() {
+        let combat = basic_combat();
+        let mut entity: MonsterEntity = combat.entities.monsters[0].clone();
+        entity.next_move_byte = 1;
+        entity.current_intent = Intent::Attack { damage: 6, hits: 2 };
+        entity.move_history = VecDeque::from(vec![1u8]);
+
+        let actions = BookOfStabbing::take_turn(&mut combat.clone(), &entity);
+        let damage_actions = actions
+            .iter()
+            .filter(|action| matches!(action, Action::Damage(_)))
+            .count();
+
+        assert_eq!(damage_actions, 2);
     }
 }

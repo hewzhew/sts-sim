@@ -1,7 +1,14 @@
 use crate::combat::CombatState;
 use crate::state::core::{CampfireChoice, ClientInput, EngineState};
+use crate::state::run::RunState;
+use crate::state::selection::{SelectionResolution, SelectionScope, SelectionTargetRef};
 
-pub fn parse_input(line: &str, es: &EngineState, _cs: &Option<CombatState>) -> Option<ClientInput> {
+pub fn parse_input(
+    line: &str,
+    es: &EngineState,
+    rs: &RunState,
+    _cs: &Option<CombatState>,
+) -> Option<ClientInput> {
     let parts: Vec<&str> = line.split_whitespace().collect();
     if parts.is_empty() {
         return None;
@@ -39,7 +46,9 @@ pub fn parse_input(line: &str, es: &EngineState, _cs: &Option<CombatState>) -> O
         }
         "go" => {
             let x: usize = parts.get(1)?.parse().ok()?;
-            Some(ClientInput::SelectMapNode(x))
+            Some(ClientInput::SelectMapNode(
+                crate::cli::display::normalize_map_choice_x(rs, x),
+            ))
         }
         "rest" => Some(ClientInput::CampfireOption(CampfireChoice::Rest)),
         "smith" => {
@@ -62,7 +71,19 @@ pub fn parse_input(line: &str, es: &EngineState, _cs: &Option<CombatState>) -> O
         "cancel" => Some(ClientInput::Cancel),
         "select" => {
             let indices: Vec<usize> = parts[1..].iter().filter_map(|s| s.parse().ok()).collect();
-            Some(ClientInput::SubmitDeckSelect(indices))
+            match es {
+                EngineState::RunPendingChoice(_) => {
+                    Some(ClientInput::SubmitSelection(SelectionResolution {
+                        scope: SelectionScope::Deck,
+                        selected: indices
+                            .into_iter()
+                            .filter_map(|idx| rs.master_deck.get(idx))
+                            .map(|card| SelectionTargetRef::CardUuid(card.uuid))
+                            .collect(),
+                    }))
+                }
+                _ => Some(ClientInput::SubmitDeckSelect(indices)),
+            }
         }
         "choose" => {
             let indices: Vec<usize> = parts[1..].iter().filter_map(|s| s.parse().ok()).collect();
@@ -70,23 +91,25 @@ pub fn parse_input(line: &str, es: &EngineState, _cs: &Option<CombatState>) -> O
                 EngineState::PendingChoice(crate::state::core::PendingChoice::HandSelect {
                     candidate_uuids,
                     ..
-                }) => {
-                    let uuids: Vec<u32> = indices
+                }) => Some(ClientInput::SubmitSelection(SelectionResolution {
+                    scope: SelectionScope::Hand,
+                    selected: indices
                         .iter()
                         .filter_map(|&i| candidate_uuids.get(i).copied())
-                        .collect();
-                    Some(ClientInput::SubmitHandSelect(uuids))
-                }
+                        .map(SelectionTargetRef::CardUuid)
+                        .collect(),
+                })),
                 EngineState::PendingChoice(crate::state::core::PendingChoice::GridSelect {
                     candidate_uuids,
                     ..
-                }) => {
-                    let uuids: Vec<u32> = indices
+                }) => Some(ClientInput::SubmitSelection(SelectionResolution {
+                    scope: SelectionScope::Grid,
+                    selected: indices
                         .iter()
                         .filter_map(|&i| candidate_uuids.get(i).copied())
-                        .collect();
-                    Some(ClientInput::SubmitGridSelect(uuids))
-                }
+                        .map(SelectionTargetRef::CardUuid)
+                        .collect(),
+                })),
                 _ => None,
             }
         }
@@ -114,13 +137,38 @@ pub fn parse_input(line: &str, es: &EngineState, _cs: &Option<CombatState>) -> O
             if let Ok(idx) = parts[0].parse::<usize>() {
                 match es {
                     EngineState::EventRoom => Some(ClientInput::EventChoice(idx)),
-                    EngineState::MapNavigation => Some(ClientInput::SelectMapNode(idx)),
+                    EngineState::MapNavigation => Some(ClientInput::SelectMapNode(
+                        crate::cli::display::normalize_map_choice_x(rs, idx),
+                    )),
                     _ => None,
                 }
             } else {
                 None
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_input;
+    use crate::state::core::{ClientInput, EngineState};
+    use crate::state::run::RunState;
+
+    #[test]
+    fn boss_map_input_normalizes_to_single_choice() {
+        let mut run = RunState::new(41, 0, false, "Ironclad");
+        run.map.current_y = 14;
+        run.map.current_x = 0;
+
+        assert_eq!(
+            parse_input("go 6", &EngineState::MapNavigation, &run, &None),
+            Some(ClientInput::SelectMapNode(0))
+        );
+        assert_eq!(
+            parse_input("6", &EngineState::MapNavigation, &run, &None),
+            Some(ClientInput::SelectMapNode(0))
+        );
     }
 }
 

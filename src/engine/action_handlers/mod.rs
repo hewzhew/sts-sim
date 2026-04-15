@@ -98,8 +98,8 @@ pub fn check_and_trigger_monster_death(state: &mut CombatState, target_id: usize
                     )
                 })
             });
-            is_awakened_rebirth = has_rebirth_power
-                && m_id == Some(crate::content::monsters::EnemyId::AwakenedOne);
+            is_awakened_rebirth =
+                has_rebirth_power && m_id == Some(crate::content::monsters::EnemyId::AwakenedOne);
             triggered_death = true;
         }
     }
@@ -207,6 +207,17 @@ pub fn execute_action(action: Action, state: &mut CombatState) {
             damage_info,
             max_hp_amount,
         } => damage::handle_feed(target, damage_info, max_hp_amount, state),
+        Action::HandOfGreed {
+            target,
+            damage_info,
+            gold_amount,
+        } => damage::handle_hand_of_greed(target, damage_info, gold_amount, state),
+        Action::RitualDagger {
+            target,
+            damage_info,
+            misc_amount,
+            card_uuid,
+        } => damage::handle_ritual_dagger(target, damage_info, misc_amount, card_uuid, state),
         Action::VampireDamage(info) => damage::handle_vampire_damage(info, state),
         Action::VampireDamageAllEnemies {
             source,
@@ -218,12 +229,14 @@ pub fn execute_action(action: Action, state: &mut CombatState) {
             amount,
             triggers_rupture,
         } => damage::handle_lose_hp(target, amount, triggers_rupture, state),
+        Action::SetCurrentHp { target, hp } => damage::handle_set_current_hp(target, hp, state),
         Action::GainBlock { target, amount } => damage::handle_gain_block(target, amount, state),
         Action::GainBlockRandomMonster { source, amount } => {
             damage::handle_gain_block_random_monster(source, amount, state)
         }
         Action::LoseBlock { target, amount } => damage::handle_lose_block(target, amount, state),
         Action::Heal { target, amount } => damage::handle_heal(target, amount, state),
+        Action::GainGold { amount } => damage::handle_gain_gold(amount, state),
         Action::LimitBreak => damage::handle_limit_break(state),
         Action::BlockPerNonAttack { block_per_card } => {
             damage::handle_block_per_non_attack(block_per_card, state)
@@ -238,6 +251,33 @@ pub fn execute_action(action: Action, state: &mut CombatState) {
             power_id,
             amount,
         } => powers::handle_apply_power(source, target, power_id, amount, state),
+        Action::ApplyPowerDetailed {
+            source,
+            target,
+            power_id,
+            amount,
+            instance_id,
+            extra_data,
+        } => powers::handle_apply_power_detailed(
+            source,
+            target,
+            power_id,
+            amount,
+            instance_id,
+            extra_data,
+            state,
+        ),
+        Action::ReducePower {
+            target,
+            power_id,
+            amount,
+        } => powers::handle_reduce_power(target, power_id, amount, state),
+        Action::ReducePowerInstance {
+            target,
+            power_id,
+            instance_id,
+            amount,
+        } => powers::handle_reduce_power_instance(target, power_id, instance_id, amount, state),
         Action::BouncingFlask {
             target,
             amount,
@@ -246,6 +286,11 @@ pub fn execute_action(action: Action, state: &mut CombatState) {
         Action::RemovePower { target, power_id } => {
             powers::handle_remove_power(target, power_id, state)
         }
+        Action::RemovePowerInstance {
+            target,
+            power_id,
+            instance_id,
+        } => powers::handle_remove_power_instance(target, power_id, instance_id, state),
         Action::RemoveAllDebuffs { target } => powers::handle_remove_all_debuffs(target, state),
         Action::ApplyStasis { target_id } => powers::handle_apply_stasis(target_id, state),
         Action::UpdatePowerExtraData {
@@ -253,6 +298,18 @@ pub fn execute_action(action: Action, state: &mut CombatState) {
             power_id,
             value,
         } => powers::handle_update_power_extra_data(target, power_id, value, state),
+        Action::UpdatePowerExtraDataInstance {
+            target,
+            power_id,
+            instance_id,
+            value,
+        } => powers::handle_update_power_extra_data_instance(
+            target,
+            power_id,
+            instance_id,
+            value,
+            state,
+        ),
         Action::AwakenedRebirthClear { target } => {
             powers::handle_awakened_rebirth_clear(target, state)
         }
@@ -266,6 +323,7 @@ pub fn execute_action(action: Action, state: &mut CombatState) {
         // === Card domain ===
         Action::DrawCards(amount) => cards::handle_draw_cards(amount, state),
         Action::EmptyDeckShuffle => cards::handle_empty_deck_shuffle(state),
+        Action::ShuffleDiscardIntoDraw => cards::handle_shuffle_discard_into_draw(state),
         Action::DiscardCard { card_uuid } => cards::handle_discard_card(card_uuid, state),
         Action::ExhaustCard {
             card_uuid,
@@ -276,6 +334,9 @@ pub fn execute_action(action: Action, state: &mut CombatState) {
             from,
             to,
         } => cards::handle_move_card(card_uuid, from, to, state),
+        Action::RemoveCardFromPile { card_uuid, from } => {
+            cards::handle_remove_card_from_pile(card_uuid, from, state)
+        }
         Action::MakeTempCardInHand {
             card_id,
             amount,
@@ -304,6 +365,8 @@ pub fn execute_action(action: Action, state: &mut CombatState) {
             cards::handle_make_temp_card_in_discard_and_deck(card_id, amount, state)
         }
         Action::ReduceAllHandCosts { amount } => cards::handle_reduce_all_hand_costs(amount, state),
+        Action::Enlightenment { permanent } => cards::handle_enlightenment(permanent, state),
+        Action::Madness => cards::handle_madness(state),
         Action::UpgradeAllInHand => cards::handle_upgrade_all_in_hand(state),
         Action::UpgradeAllBurns => cards::handle_upgrade_all_burns(state),
         Action::UpgradeCard { card_uuid } => cards::handle_upgrade_card(card_uuid, state),
@@ -311,16 +374,32 @@ pub fn execute_action(action: Action, state: &mut CombatState) {
         Action::ModifyCardMisc { card_uuid, amount } => {
             cards::handle_modify_card_misc(card_uuid, amount, state)
         }
+        Action::ModifyCardDamage { card_uuid, amount } => {
+            cards::handle_modify_card_damage(card_uuid, amount, state)
+        }
         Action::RandomizeHandCosts => cards::handle_randomize_hand_costs(state),
         Action::MummifiedHandEffect => cards::handle_mummified_hand_effect(state),
         Action::MakeRandomCardInHand {
             card_type,
             cost_for_turn,
         } => cards::handle_make_random_card_in_hand(card_type, cost_for_turn, state),
-        Action::MakeRandomColorlessCardInHand {
-            rarity: _,
+        Action::MakeRandomCardInDrawPile {
+            card_type,
             cost_for_turn,
-        } => cards::handle_make_random_colorless_card_in_hand(cost_for_turn, state),
+            random_spot,
+        } => cards::handle_make_random_card_in_draw_pile(
+            card_type,
+            cost_for_turn,
+            random_spot,
+            state,
+        ),
+        Action::DrawPileToHandByType { amount, card_type } => {
+            cards::handle_draw_pile_to_hand_by_type(amount, card_type, state)
+        }
+        Action::MakeRandomColorlessCardInHand {
+            cost_for_turn,
+            upgraded,
+        } => cards::handle_make_random_colorless_card_in_hand(cost_for_turn, upgraded, state),
         Action::UseCardDone { should_exhaust } => {
             cards::handle_use_card_done(should_exhaust, state)
         }
@@ -380,6 +459,7 @@ pub fn execute_action(action: Action, state: &mut CombatState) {
             current_hp,
             max_hp,
             logical_position,
+            protocol_draw_x,
             is_minion,
         } => spawning::handle_spawn_monster(
             monster_id,
@@ -387,6 +467,7 @@ pub fn execute_action(action: Action, state: &mut CombatState) {
             current_hp,
             max_hp,
             logical_position,
+            protocol_draw_x,
             is_minion,
             state,
         ),
@@ -395,12 +476,14 @@ pub fn execute_action(action: Action, state: &mut CombatState) {
             logical_position,
             current_hp,
             max_hp,
+            protocol_draw_x,
             is_minion,
         } => spawning::handle_spawn_monster_smart(
             monster_id,
             logical_position,
             current_hp,
             max_hp,
+            protocol_draw_x,
             is_minion,
             state,
         ),
@@ -451,14 +534,17 @@ pub fn execute_action(action: Action, state: &mut CombatState) {
         | Action::SpawnEncounter { .. }
         | Action::Scry(_)
         | Action::EvokeOrb
-        | Action::TriggerPassiveOrbs
-        | Action::SuspendForHandSelect { .. }
+        | Action::TriggerPassiveOrbs => {
+            #[cfg(debug_assertions)]
+            eprintln!("[action_handlers] Unhandled action: {:?}", action);
+        }
+        Action::SuspendForHandSelect { .. }
         | Action::SuspendForGridSelect { .. }
         | Action::SuspendForDiscovery { .. }
         | Action::SuspendForStanceChoice
         | Action::SuspendForCardReward { .. } => {
-            #[cfg(debug_assertions)]
-            eprintln!("[action_handlers] Unhandled action: {:?}", action);
+            // These suspend actions are intercepted in engine::core and converted into
+            // PendingChoice states. Reaching the thin dispatcher is not actionable noise.
         }
     }
 }
@@ -528,82 +614,18 @@ fn handle_enter_stance(stance: &str, state: &mut CombatState) {
 mod tests {
     use super::*;
     use crate::action::Action;
-    use crate::combat::{
-        CombatMeta, CombatPhase, CombatRng, EngineRuntime, EntityState, Intent, MonsterEntity,
-        PlayerEntity, RelicBuses, StanceId, TurnRuntime,
-    };
-    use std::collections::{HashMap, VecDeque};
-
-    fn test_combat() -> CombatState {
-        CombatState {
-            meta: CombatMeta {
-                ascension_level: 0,
-                is_boss_fight: false,
-                is_elite_fight: false,
-                meta_changes: Vec::new(),
-            },
-            turn: TurnRuntime {
-                turn_count: 1,
-                current_phase: CombatPhase::PlayerTurn,
-                energy: 2,
-                turn_start_draw_modifier: 0,
-                counters: Default::default(),
-            },
-            zones: crate::combat::CardZones {
-                draw_pile: Vec::new(),
-                hand: Vec::new(),
-                discard_pile: Vec::new(),
-                exhaust_pile: Vec::new(),
-                limbo: Vec::new(),
-                queued_cards: VecDeque::new(),
-                card_uuid_counter: 50,
-            },
-            entities: EntityState {
-                player: PlayerEntity {
-                    id: 0,
-                    current_hp: 40,
-                    max_hp: 80,
-                    block: 0,
-                    gold_delta_this_combat: 0,
-                    gold: 99,
-                    max_orbs: 0,
-                    orbs: Vec::new(),
-                    stance: StanceId::Calm,
-                    relics: Vec::new(),
-                    relic_buses: RelicBuses::default(),
-                    energy_master: 3,
-                },
-                monsters: vec![MonsterEntity {
-                    id: 1,
-                    monster_type: crate::content::monsters::EnemyId::JawWorm as usize,
-                    current_hp: 30,
-                    max_hp: 30,
-                    block: 0,
-                    slot: 0,
-                    is_dying: false,
-                    is_escaped: false,
-                    half_dead: false,
-                    next_move_byte: 0,
-                    current_intent: Intent::Unknown,
-                    move_history: VecDeque::new(),
-                    intent_dmg: 0,
-                    logical_position: 0,
-                    hexaghost: Default::default(),
-                    darkling: Default::default(),
-                }],
-                potions: vec![None, None, None],
-                power_db: HashMap::new(),
-            },
-            engine: EngineRuntime {
-                action_queue: VecDeque::new(),
-            },
-            rng: CombatRng::new(crate::rng::RngPool::new(123)),
-        }
-    }
+    use crate::combat::StanceId;
+    use crate::engine::test_support::{basic_combat, CombatTestExt};
 
     #[test]
     fn enter_stance_updates_player_stance_and_grants_exit_calm_and_divinity_energy() {
-        let mut combat = test_combat();
+        let mut combat = basic_combat()
+            .with_energy(2)
+            .with_card_uuid_counter(50)
+            .with_player_hp(40)
+            .with_player_stance(StanceId::Calm)
+            .with_monster_max_hp(1, 30)
+            .with_monster_hp(1, 30);
         execute_action(Action::EnterStance("Divinity".to_string()), &mut combat);
         assert_eq!(combat.entities.player.stance, StanceId::Divinity);
         assert_eq!(combat.turn.energy, 7);
@@ -611,7 +633,13 @@ mod tests {
 
     #[test]
     fn channel_and_increase_max_orb_update_player_orbs() {
-        let mut combat = test_combat();
+        let mut combat = basic_combat()
+            .with_energy(2)
+            .with_card_uuid_counter(50)
+            .with_player_hp(40)
+            .with_player_stance(StanceId::Calm)
+            .with_monster_max_hp(1, 30)
+            .with_monster_hp(1, 30);
         execute_action(Action::IncreaseMaxOrb(2), &mut combat);
         execute_action(Action::ChannelOrb(crate::combat::OrbId::Dark), &mut combat);
         assert_eq!(combat.entities.player.max_orbs, 2);

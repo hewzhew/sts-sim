@@ -2,6 +2,7 @@ use crate::action::Action;
 use crate::content::cards::CardId;
 use crate::content::relics::RelicState;
 use crate::core::EntityId;
+use crate::state::selection::{DomainEvent, EngineDiagnostic};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::ops::{Deref, DerefMut};
 
@@ -22,11 +23,13 @@ pub struct CombatState {
     pub entities: EntityState,
     pub engine: EngineRuntime,
     pub rng: CombatRng,
+    pub runtime: CombatRuntimeHints,
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct CombatMeta {
     pub ascension_level: u8,
+    pub player_class: &'static str,
     pub is_boss_fight: bool,
     pub is_elite_fight: bool,
     pub meta_changes: Vec<MetaChange>,
@@ -115,6 +118,28 @@ pub struct QueuedCardPlay {
     pub source: QueuedCardSource,
 }
 
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct CombatRuntimeHints {
+    pub using_card: bool,
+    pub card_queue: Vec<QueuedCardHint>,
+    pub colorless_combat_pool: Vec<CardId>,
+    pub emitted_events: Vec<DomainEvent>,
+    pub engine_diagnostics: Vec<EngineDiagnostic>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct QueuedCardHint {
+    pub card_uuid: u32,
+    pub card_id: CardId,
+    pub target_monster_index: Option<usize>,
+    pub energy_on_use: i32,
+    pub ignore_energy_total: bool,
+    pub autoplay: bool,
+    pub random_target: bool,
+    pub is_end_turn_autoplay: bool,
+    pub purge_on_use: bool,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum CombatPhase {
     PlayerTurn,
@@ -130,6 +155,8 @@ pub struct EphemeralCounters {
     pub victory_triggered: bool,
     pub discovery_cost_for_turn: Option<u8>,
     pub early_end_turn_pending: bool,
+    pub player_escaping: bool,
+    pub escape_pending_reward: bool,
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -138,6 +165,7 @@ pub struct RelicBuses {
     pub at_battle_start_pre_draw: smallvec::SmallVec<[usize; 4]>,
     pub at_battle_start: smallvec::SmallVec<[usize; 4]>,
     pub at_turn_start: smallvec::SmallVec<[usize; 4]>,
+    pub at_turn_start_post_draw: smallvec::SmallVec<[usize; 4]>,
     pub on_use_card: smallvec::SmallVec<[usize; 4]>,
     pub on_shuffle: smallvec::SmallVec<[usize; 4]>,
     pub on_exhaust: smallvec::SmallVec<[usize; 4]>,
@@ -161,6 +189,24 @@ pub struct RelicBuses {
     pub on_scry: smallvec::SmallVec<[usize; 4]>,
     pub on_receive_power_modify: smallvec::SmallVec<[usize; 4]>,
     pub on_calculate_vulnerable_multiplier: smallvec::SmallVec<[usize; 4]>,
+}
+
+impl CombatState {
+    pub fn emit_event(&mut self, event: DomainEvent) {
+        self.runtime.emitted_events.push(event);
+    }
+
+    pub fn take_emitted_events(&mut self) -> Vec<DomainEvent> {
+        std::mem::take(&mut self.runtime.emitted_events)
+    }
+
+    pub fn emit_diagnostic(&mut self, diagnostic: EngineDiagnostic) {
+        self.runtime.engine_diagnostics.push(diagnostic);
+    }
+
+    pub fn take_engine_diagnostics(&mut self) -> Vec<EngineDiagnostic> {
+        std::mem::take(&mut self.runtime.engine_diagnostics)
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -274,6 +320,9 @@ impl PlayerEntity {
         if sub.at_turn_start {
             self.relic_buses.at_turn_start.push(index);
         }
+        if sub.at_turn_start_post_draw {
+            self.relic_buses.at_turn_start_post_draw.push(index);
+        }
         if sub.on_use_card {
             self.relic_buses.on_use_card.push(index);
         }
@@ -380,8 +429,19 @@ pub struct MonsterEntity {
     pub move_history: VecDeque<u8>,
     pub intent_dmg: i32,
     pub logical_position: i32,
+    pub protocol_identity: MonsterProtocolIdentity,
     pub hexaghost: HexaghostRuntimeState,
+    pub chosen: ChosenRuntimeState,
     pub darkling: DarklingRuntimeState,
+    pub lagavulin: LagavulinRuntimeState,
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct MonsterProtocolIdentity {
+    pub instance_id: Option<u64>,
+    pub spawn_order: Option<u64>,
+    pub draw_x: Option<i32>,
+    pub group_index: Option<usize>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -392,9 +452,22 @@ pub struct HexaghostRuntimeState {
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
+pub struct ChosenRuntimeState {
+    pub protocol_seeded: bool,
+    pub first_turn: bool,
+    pub used_hex: bool,
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct DarklingRuntimeState {
     pub first_move: bool,
     pub nip_dmg: i32,
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct LagavulinRuntimeState {
+    pub idle_count: u8,
+    pub is_out_triggered: bool,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -403,6 +476,7 @@ pub struct CombatCard {
     pub uuid: u32,
     pub upgrades: u8,
     pub misc_value: i32,
+    pub base_damage_override: Option<i32>,
     pub cost_modifier: i8,
     pub cost_for_turn: Option<u8>,
     pub base_damage_mut: i32,
@@ -422,6 +496,7 @@ impl CombatCard {
             uuid,
             upgrades: 0,
             misc_value: 0,
+            base_damage_override: None,
             cost_modifier: 0,
             cost_for_turn: None,
             base_damage_mut: 0,
@@ -440,10 +515,12 @@ impl CombatCard {
             c as i8
         } else {
             let def = crate::content::cards::get_card_definition(self.id);
-            if def.cost < 0 {
-                return def.cost;
+            let base_cost =
+                crate::content::cards::upgraded_base_cost_override(self).unwrap_or(def.cost);
+            if base_cost < 0 {
+                return base_cost;
             }
-            let mut c = def.cost as i8 + self.cost_modifier;
+            let mut c = base_cost as i8 + self.cost_modifier;
             if c < 0 {
                 c = 0;
             }
@@ -455,6 +532,7 @@ impl CombatCard {
 #[derive(Clone, Debug, PartialEq)]
 pub struct Power {
     pub power_type: PowerId,
+    pub instance_id: Option<u32>,
     pub amount: i32,
     pub extra_data: i32,
     pub just_applied: bool,
@@ -533,6 +611,9 @@ impl CombatState {
         for queued in &self.zones.queued_cards {
             reserved.insert(queued.card.uuid);
         }
+        for queued in &self.runtime.card_queue {
+            reserved.insert(queued.card_uuid);
+        }
         for action in &self.engine.action_queue {
             match action {
                 Action::EnqueueCardPlay { item, .. } => {
@@ -561,6 +642,14 @@ impl CombatState {
             self.engine
                 .action_queue
                 .push_back(Action::FlushNextQueuedCard);
+        }
+    }
+
+    pub fn colorless_combat_pool(&self) -> Vec<CardId> {
+        if !self.runtime.colorless_combat_pool.is_empty() {
+            self.runtime.colorless_combat_pool.clone()
+        } else {
+            crate::content::cards::random_colorless_in_combat_pool()
         }
     }
 }
