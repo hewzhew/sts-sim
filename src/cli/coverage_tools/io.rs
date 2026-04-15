@@ -73,16 +73,24 @@ pub fn replay_records_from_path(path: &Path) -> Vec<ObservedInteractionRecord> {
     records
 }
 
-pub fn load_live_comm_records(path: &Path) -> Vec<ObservedInteractionRecord> {
-    if !path.exists() {
-        return Vec::new();
-    }
-    let Ok(content) = std::fs::read_to_string(path) else {
-        return Vec::new();
-    };
+pub fn load_live_comm_records(path: &Path) -> std::io::Result<Vec<ObservedInteractionRecord>> {
+    let content = std::fs::read_to_string(path)?;
     content
         .lines()
-        .filter_map(|line| serde_json::from_str::<ObservedInteractionRecord>(line).ok())
+        .enumerate()
+        .map(|(line_idx, line)| {
+            serde_json::from_str::<ObservedInteractionRecord>(line).map_err(|err| {
+                std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    format!(
+                        "failed to parse live_comm signature record {}:{}: {}",
+                        path.display(),
+                        line_idx + 1,
+                        err
+                    ),
+                )
+            })
+        })
         .collect()
 }
 
@@ -94,15 +102,15 @@ pub fn default_replay_inputs(manifest_dir: &Path) -> Vec<PathBuf> {
     }
     let replays_dir = manifest_dir.join("tools/replays");
     if replays_dir.exists() {
-        let mut replay_files: Vec<_> = std::fs::read_dir(replays_dir)
-            .into_iter()
-            .flatten()
-            .filter_map(|entry| entry.ok())
-            .map(|entry| entry.path())
-            .filter(|path| path.extension().and_then(|ext| ext.to_str()) == Some("jsonl"))
-            .collect();
-        replay_files.sort();
-        inputs.extend(replay_files);
+        if let Ok(entries) = std::fs::read_dir(&replays_dir) {
+            let mut replay_files: Vec<_> = entries
+                .filter_map(|entry| entry.ok())
+                .map(|entry| entry.path())
+                .filter(|path| path.extension().and_then(|ext| ext.to_str()) == Some("jsonl"))
+                .collect();
+            replay_files.sort();
+            inputs.extend(replay_files);
+        }
     }
     inputs
 }

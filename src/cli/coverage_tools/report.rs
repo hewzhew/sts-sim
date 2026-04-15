@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::io;
 use std::path::Path;
 
 use serde::Serialize;
@@ -140,11 +141,13 @@ pub fn write_coverage_outputs(
         std::fs::create_dir_all(parent)?;
     }
 
-    std::fs::write(
-        coverage_path,
-        serde_json::to_string_pretty(records).unwrap(),
-    )?;
-    std::fs::write(report_path, serde_json::to_string_pretty(&report).unwrap())?;
+    let coverage_json = serde_json::to_string_pretty(records)
+        .map_err(|err| io::Error::other(format!("serialize coverage records failed: {err}")))?;
+    let report_json = serde_json::to_string_pretty(&report)
+        .map_err(|err| io::Error::other(format!("serialize coverage report failed: {err}")))?;
+
+    std::fs::write(coverage_path, coverage_json)?;
+    std::fs::write(report_path, report_json)?;
     Ok(())
 }
 

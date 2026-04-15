@@ -355,9 +355,15 @@ fn main() {
 
             if live_comm_sidecar.exists() {
                 generated_from.push(live_comm_sidecar.to_string_lossy().into_owned());
-                records.extend(sts_simulator::cli::coverage_tools::load_live_comm_records(
+                match sts_simulator::cli::coverage_tools::load_live_comm_records(
                     &live_comm_sidecar,
-                ));
+                ) {
+                    Ok(live_records) => records.extend(live_records),
+                    Err(err) => {
+                        eprintln!("Failed to load live_comm signature records: {}", err);
+                        std::process::exit(1);
+                    }
+                }
             } else if live_comm_raw.exists() {
                 notes.push(format!(
                     "{} present but omitted from strict signature extraction because it lacks command context",
