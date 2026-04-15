@@ -1278,18 +1278,6 @@ pub(crate) fn exhaust_random_core_risk_score(
     score
 }
 
-#[allow(dead_code)]
-pub(crate) fn exhaust_engine_payoff_score(
-    exhaust_count: i32,
-    block_per_exhaust: i32,
-    draw_per_exhaust: i32,
-    status_fuel_count: i32,
-    future_status_cards: i32,
-) -> i32 {
-    exhaust_engine_immediate_payoff_score(exhaust_count, block_per_exhaust, draw_per_exhaust)
-        + exhaust_engine_future_payoff_score(status_fuel_count, future_status_cards, 0)
-}
-
 pub(crate) fn exhaust_engine_immediate_payoff_score(
     exhaust_count: i32,
     block_per_exhaust: i32,
@@ -1515,4 +1503,3 @@ pub(crate) fn flight_break_progress_score(hits: i32, flight: i32, prevented_dama
 pub(crate) fn persistent_block_progress_score(block_damage: i32) -> f32 {
     block_damage.max(0) as f32 * 90.0
 }
-

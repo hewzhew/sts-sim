@@ -18,7 +18,6 @@ fn bottom(actions: &mut SmallVec<[ActionInfo; 4]>, action: Action) {
 /// Generates the actions applied when a potion is used in combat.
 /// `target_idx`: Some(enemy_entity_id) for targeted/thrown potions, None for self.
 /// `potency`: the effective potency (base * SacredBark multiplier).
-#[allow(unused)]
 pub fn get_potion_actions(
     enemy_count: usize,
     potion: PotionId,
@@ -486,4 +485,3 @@ pub fn get_potion_actions(
 
     actions
 }
-

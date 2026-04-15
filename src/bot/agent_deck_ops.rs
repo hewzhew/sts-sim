@@ -308,14 +308,6 @@ impl Agent {
         }
     }
 
-    #[allow(dead_code)]
-    pub(crate) fn best_transform_index(&self, rs: &RunState) -> usize {
-        self.best_transform_indices(rs, 1, false)
-            .into_iter()
-            .next()
-            .unwrap_or(0)
-    }
-
     pub(crate) fn best_transform_indices(
         &self,
         rs: &RunState,

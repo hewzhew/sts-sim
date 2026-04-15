@@ -225,30 +225,6 @@ pub struct CardDefinition {
     pub upgrade_magic: i32,
 }
 
-#[allow(dead_code)]
-fn build_status(id: CardId, name: &'static str, cost: i8) -> CardDefinition {
-    CardDefinition {
-        id,
-        name,
-        card_type: CardType::Status,
-        rarity: CardRarity::Special,
-        cost,
-        base_damage: 0,
-        base_block: 0,
-        base_magic: 0,
-        target: CardTarget::None,
-        is_multi_damage: false,
-        exhaust: false,
-        ethereal: false,
-        innate: false,
-        tags: &[],
-        upgrade_damage: 0,
-        upgrade_block: 0,
-        upgrade_magic: 0,
-    }
-}
-
-#[allow(dead_code)]
 fn build_curse(id: CardId, name: &'static str, cost: i8) -> CardDefinition {
     let mut def = CardDefinition {
         id,

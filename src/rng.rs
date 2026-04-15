@@ -69,12 +69,6 @@ impl StsRng {
         }
     }
 
-    #[allow(dead_code)]
-    #[inline]
-    fn next_int(&mut self) -> i32 {
-        self.next_long() as i32
-    }
-
     #[inline]
     fn next_int_bounded(&mut self, n: i32) -> i32 {
         self.next_long_bounded(n as u64) as i32
@@ -83,12 +77,6 @@ impl StsRng {
     #[inline]
     fn next_float(&mut self) -> f32 {
         (self.next_long() >> 40) as f32 * (1.0 / (1u64 << 24) as f32)
-    }
-
-    #[allow(dead_code)]
-    #[inline]
-    fn next_double(&mut self) -> f64 {
-        (self.next_long() >> 11) as f64 * (1.0 / (1u64 << 53) as f64)
     }
 
     #[inline]

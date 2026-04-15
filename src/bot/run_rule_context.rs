@@ -57,18 +57,12 @@ impl RuleRegimeSummary {
 }
 
 #[derive(Debug, Clone, Copy)]
-#[allow(dead_code)]
 pub(crate) struct RunRuleContext {
     pub summary: RuleRegimeSummary,
     pub profile: DeckProfile,
     pub high_cost_goodstuff_density: i32,
     pub low_cost_filler_density: i32,
-    pub draw_slot_waste: i32,
-    pub randomized_cost_upside_density: i32,
-    pub randomized_cost_downside_density: i32,
-    pub expected_playable_value_under_randomized_cost: i32,
     pub self_clog_replication_risk: i32,
-    pub deck_size: i32,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -88,7 +82,6 @@ pub(crate) struct ConditionedCardFeatures {
     pub draw_slot_pressure: i32,
     pub future_clog_risk: i32,
     pub snecko_roll_upside: i32,
-    pub snecko_roll_downside: i32,
     pub shell_alignment: i32,
     pub shell_disruption: i32,
 }
@@ -124,10 +117,6 @@ pub(crate) fn build_run_rule_context(rs: &RunState) -> RunRuleContext {
 
     let mut high_cost_goodstuff_density = 0;
     let mut low_cost_filler_density = 0;
-    let mut draw_slot_waste = 0;
-    let mut randomized_cost_upside_density = 0;
-    let mut randomized_cost_downside_density = 0;
-    let mut expected_playable_value_under_randomized_cost = 0;
     let mut self_clog_replication_risk = 0;
 
     for card in &rs.master_deck {
@@ -139,11 +128,6 @@ pub(crate) fn build_run_rule_context(rs: &RunState) -> RunRuleContext {
         if features.is_zero_one_cost && owned_value <= 30 && !features.is_draw {
             low_cost_filler_density += 1;
         }
-        draw_slot_waste += features.draw_slot_pressure;
-        randomized_cost_upside_density += features.snecko_roll_upside.max(0) / 8;
-        randomized_cost_downside_density += features.snecko_roll_downside.max(0) / 8;
-        expected_playable_value_under_randomized_cost +=
-            features.snecko_roll_upside - features.snecko_roll_downside / 2;
         self_clog_replication_risk += if features.is_self_replicating {
             features.future_clog_risk.max(1)
         } else {
@@ -156,12 +140,7 @@ pub(crate) fn build_run_rule_context(rs: &RunState) -> RunRuleContext {
         profile,
         high_cost_goodstuff_density,
         low_cost_filler_density,
-        draw_slot_waste,
-        randomized_cost_upside_density,
-        randomized_cost_downside_density,
-        expected_playable_value_under_randomized_cost,
         self_clog_replication_risk,
-        deck_size: rs.master_deck.len() as i32,
     }
 }
 
@@ -300,15 +279,6 @@ pub(crate) fn conditioned_card_features(
     };
 
     let snecko_roll_upside = snecko_roll_upside(def.cost, is_draw, is_setup, is_scaling, is_payoff);
-    let snecko_roll_downside = snecko_roll_downside(
-        def.cost,
-        is_draw,
-        is_self_replicating,
-        is_cost_manipulation_dependent,
-        is_random_generation,
-        matches!(def.card_type, CardType::Attack | CardType::Skill),
-    );
-
     let shell_alignment = shell_alignment_bonus(profile, card_id, is_draw, is_setup, is_payoff);
     let shell_disruption = shell_disruption_penalty(profile, card_id, future_clog_risk);
 
@@ -328,7 +298,6 @@ pub(crate) fn conditioned_card_features(
         draw_slot_pressure,
         future_clog_risk,
         snecko_roll_upside,
-        snecko_roll_downside,
         shell_alignment,
         shell_disruption,
     }
@@ -512,40 +481,6 @@ fn snecko_roll_upside(
     score
 }
 
-fn snecko_roll_downside(
-    cost: i8,
-    is_draw: bool,
-    is_self_replicating: bool,
-    is_cost_manipulation_dependent: bool,
-    is_random_generation: bool,
-    is_action_card: bool,
-) -> i32 {
-    let mut score = match cost {
-        0 => 18,
-        1 => 12,
-        2 => 4,
-        3..=i8::MAX => 0,
-        -1 => 18,
-        _ => 0,
-    };
-    if is_draw {
-        score -= 6;
-    }
-    if is_self_replicating {
-        score += 18;
-    }
-    if is_cost_manipulation_dependent {
-        score += 12;
-    }
-    if is_random_generation {
-        score += 8;
-    }
-    if is_action_card && cost <= 1 {
-        score += 4;
-    }
-    score.max(0)
-}
-
 fn shell_alignment_bonus(
     profile: &DeckProfile,
     card_id: CardId,
@@ -620,4 +555,3 @@ fn has_relic(rs: &RunState, relic_id: RelicId) -> bool {
 fn has_card(rs: &RunState, card_id: CardId) -> bool {
     rs.master_deck.iter().any(|card| card.id == card_id)
 }
-

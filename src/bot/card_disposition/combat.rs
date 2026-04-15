@@ -112,12 +112,6 @@ pub(crate) fn build_context(combat: &CombatState) -> CardRoleContext {
     }
 }
 
-#[allow(dead_code)]
-pub(crate) fn classify_hand_card(combat: &CombatState, hand_index: usize) -> HandCardRole {
-    let context = build_context(combat);
-    classify_hand_card_with_context(combat, hand_index, &context)
-}
-
 pub(crate) fn classify_hand_card_with_context(
     combat: &CombatState,
     hand_index: usize,

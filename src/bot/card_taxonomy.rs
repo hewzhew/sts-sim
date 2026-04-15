@@ -3,7 +3,6 @@ use crate::content::cards::CardId;
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(crate) struct CardTaxonomy(u32);
 
-#[allow(dead_code)]
 impl CardTaxonomy {
     const STRENGTH_ENABLER: u32 = 1 << 0;
     const STRENGTH_PAYOFF: u32 = 1 << 1;
@@ -321,4 +320,3 @@ pub(crate) const fn is_strength_payoff(card_id: CardId) -> bool {
 pub(crate) const fn is_multi_attack_payoff(card_id: CardId) -> bool {
     taxonomy(card_id).is_multi_attack_payoff()
 }
-

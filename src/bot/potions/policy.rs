@@ -1,4 +1,4 @@
-use super::catalog::{category_for, category_label, DONT_PLAY_POTIONS};
+use super::catalog::{category_for, DONT_PLAY_POTIONS};
 use super::signals::{analyze_combat, CombatSignals};
 use super::targets;
 use super::{PotionCandidate, PotionCategory, PotionDecisionSnapshot};
@@ -1007,9 +1007,3 @@ fn candidate_reason(
         },
     }
 }
-
-#[allow(dead_code)]
-fn _debug_label(category: PotionCategory) -> &'static str {
-    category_label(category)
-}
-
