@@ -250,7 +250,7 @@ fn build_live_shop_choices(
     choices
 }
 
-fn build_live_shop_state(gs: &serde_json::Value) -> Option<crate::shop::ShopState> {
+pub(crate) fn build_live_shop_state(gs: &serde_json::Value) -> Option<crate::shop::ShopState> {
     let screen_state = gs.get("screen_state")?;
     let mut shop = crate::shop::ShopState::new();
 
@@ -438,7 +438,7 @@ fn reward_matches_recently_closed_card_session(
     claimable_reward_count == 1
 }
 
-fn build_live_reward_state_with_protocol(
+pub(crate) fn build_live_reward_state_with_protocol(
     root: &serde_json::Value,
     gs: &serde_json::Value,
 ) -> Option<crate::rewards::state::RewardState> {
@@ -594,7 +594,7 @@ fn blocked_replaceable_reward_potion_offer(
     Some(crate::bot::BlockedPotionOffer { potion_id })
 }
 
-fn blocked_replaceable_reward_potion_offers(
+pub(crate) fn blocked_replaceable_reward_potion_offers(
     root: &serde_json::Value,
 ) -> Vec<crate::bot::BlockedPotionOffer> {
     if !has_available_command(root, "potion") {

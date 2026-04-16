@@ -829,13 +829,25 @@ impl LiveCommSession {
                                 );
                             }
                             if self.config.sidecar_shadow {
-                                let shadow = serde_json::json!({
-                                    "kind": "event_shadow",
-                                    "frame": self.frame_count,
-                                    "source": "live_comm_event",
-                                    "decision": trace.audit,
-                                    "suggestion": serde_json::Value::Null,
-                                });
+                                let fallback_used = matches!(family, "compatibility_fallback");
+                                let meta = crate::bot::DecisionMetadata::new(
+                                    crate::bot::DecisionDomain::Event,
+                                    "event_policy",
+                                    if fallback_used {
+                                        Some("compatibility_fallback_adapter")
+                                    } else {
+                                        None
+                                    },
+                                    None,
+                                    fallback_used,
+                                );
+                                let shadow = crate::bot::sidecar::noncombat_decision_shadow_json(
+                                    self.frame_count,
+                                    "live_comm_event",
+                                    &meta,
+                                    cmd.clone(),
+                                    trace.audit.clone(),
+                                );
                                 crate::bot::sidecar::write_shadow_record(
                                     &mut live_io.sidecar_shadow,
                                     &shadow,
@@ -898,6 +910,104 @@ impl LiveCommSession {
                                     &shadow,
                                 );
                             }
+                        }
+                    }
+                }
+            }
+        } else if screen == "COMBAT_REWARD" {
+            if self.config.sidecar_shadow {
+                if let Some(gs) = parsed.get("game_state") {
+                    if let Some(rs) = crate::cli::live_comm_noncombat::build_live_run_state(gs) {
+                        if let Some(reward) =
+                            crate::cli::live_comm_noncombat::build_live_reward_state_with_protocol(
+                                parsed, gs,
+                            )
+                        {
+                            let blocked_potion_offers =
+                                crate::cli::live_comm_noncombat::blocked_replaceable_reward_potion_offers(parsed);
+                            let decision = agent.decide_reward_claim_policy(
+                                &rs,
+                                crate::bot::RewardClaimDecisionContext {
+                                    reward: &reward,
+                                    blocked_potion_offers: &blocked_potion_offers,
+                                },
+                            );
+                            let action = match decision.action {
+                                crate::bot::RewardClaimDecisionAction::Claim(idx) => {
+                                    format!("claim:{idx}")
+                                }
+                                crate::bot::RewardClaimDecisionAction::DiscardPotion(idx) => {
+                                    format!("discard_potion:{idx}")
+                                }
+                                crate::bot::RewardClaimDecisionAction::Proceed => {
+                                    "proceed".to_string()
+                                }
+                            };
+                            let shadow = crate::bot::sidecar::noncombat_decision_shadow_json(
+                                self.frame_count,
+                                "live_comm_reward_claim",
+                                &decision.meta,
+                                cmd.clone(),
+                                serde_json::json!({
+                                    "action": action,
+                                    "reward_item_count": reward.items.len(),
+                                    "blocked_potion_offer_count": blocked_potion_offers.len(),
+                                }),
+                            );
+                            crate::bot::sidecar::write_shadow_record(
+                                &mut live_io.sidecar_shadow,
+                                &shadow,
+                            );
+                        }
+                    }
+                }
+            }
+        } else if screen == "SHOP_SCREEN" {
+            if self.config.sidecar_shadow {
+                if let Some(gs) = parsed.get("game_state") {
+                    if let Some(rs) = crate::cli::live_comm_noncombat::build_live_run_state(gs) {
+                        if let Some(shop) =
+                            crate::cli::live_comm_noncombat::build_live_shop_state(gs)
+                        {
+                            let decision = agent.decide_shop_policy(
+                                &rs,
+                                crate::bot::ShopDecisionContext { shop: &shop },
+                            );
+                            let action = match decision.action {
+                                crate::bot::ShopDecisionAction::BuyCard(idx) => {
+                                    format!("buy_card:{idx}")
+                                }
+                                crate::bot::ShopDecisionAction::BuyRelic(idx) => {
+                                    format!("buy_relic:{idx}")
+                                }
+                                crate::bot::ShopDecisionAction::BuyPotion(idx) => {
+                                    format!("buy_potion:{idx}")
+                                }
+                                crate::bot::ShopDecisionAction::PurgeCard(idx) => {
+                                    format!("purge_card:{idx}")
+                                }
+                                crate::bot::ShopDecisionAction::DiscardPotion(idx) => {
+                                    format!("discard_potion:{idx}")
+                                }
+                                crate::bot::ShopDecisionAction::Leave => "leave".to_string(),
+                            };
+                            let shadow = crate::bot::sidecar::noncombat_decision_shadow_json(
+                                self.frame_count,
+                                "live_comm_shop",
+                                &decision.meta,
+                                cmd.clone(),
+                                serde_json::json!({
+                                    "action": action,
+                                    "card_count": shop.cards.len(),
+                                    "relic_count": shop.relics.len(),
+                                    "potion_count": shop.potions.len(),
+                                    "purge_available": shop.purge_available,
+                                }),
+                            );
+                            crate::bot::sidecar::write_shadow_record(
+                                &mut live_io.sidecar_shadow,
+                                &shadow,
+                            );
                         }
                     }
                 }

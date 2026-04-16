@@ -88,6 +88,19 @@ pub(crate) struct CombatShadowRecord {
     pub(crate) pressure: Option<CombatPressureSidecarSuggestion>,
 }
 
+#[derive(Clone, Debug, Serialize)]
+pub(crate) struct NoncombatDecisionShadowRecord {
+    pub(crate) kind: &'static str,
+    pub(crate) frame: u64,
+    pub(crate) source: &'static str,
+    pub(crate) decision_domain: &'static str,
+    pub(crate) decision_source: &'static str,
+    pub(crate) decision_rationale_key: Option<&'static str>,
+    pub(crate) fallback_used: bool,
+    pub(crate) chosen_command: String,
+    pub(crate) payload: Value,
+}
+
 pub(crate) fn write_shadow_record<W: Write>(sink: &mut W, record: &impl Serialize) {
     if let Ok(line) = serde_json::to_string(record) {
         let _ = writeln!(sink, "{}", line);
@@ -164,6 +177,34 @@ pub(crate) fn combat_shadow_json(
         suggestion_confidence,
         suggestion,
         pressure,
+    })
+}
+
+pub(crate) fn noncombat_decision_shadow_json(
+    frame: u64,
+    source: &'static str,
+    meta: &DecisionMetadata,
+    chosen_command: String,
+    payload: Value,
+) -> Value {
+    let decision_domain = match meta.domain {
+        crate::bot::DecisionDomain::Combat => "combat",
+        crate::bot::DecisionDomain::RewardCard => "reward_card",
+        crate::bot::DecisionDomain::RewardClaim => "reward_claim",
+        crate::bot::DecisionDomain::Shop => "shop",
+        crate::bot::DecisionDomain::Event => "event",
+        crate::bot::DecisionDomain::LegacyInput => "legacy_input",
+    };
+    json!(NoncombatDecisionShadowRecord {
+        kind: "noncombat_decision_shadow",
+        frame,
+        source,
+        decision_domain,
+        decision_source: meta.source,
+        decision_rationale_key: meta.rationale_key,
+        fallback_used: meta.fallback_used,
+        chosen_command,
+        payload,
     })
 }
 
