@@ -53,12 +53,18 @@ pub struct LiveRunArtifacts {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, Default)]
+#[serde(default)]
 pub struct LiveRunProvenance {
     pub exe_path: Option<String>,
     pub exe_mtime_utc: Option<String>,
     pub git_short_sha: Option<String>,
+    pub repo_head_short_sha: Option<String>,
+    pub binary_matches_head: Option<bool>,
+    pub binary_is_fresh: Option<bool>,
     pub build_unix: Option<u64>,
     pub build_time_utc: Option<String>,
+    pub source_inputs_latest_path: Option<String>,
+    pub source_inputs_latest_mtime_utc: Option<String>,
     pub profile_path: Option<String>,
     pub profile_name: Option<String>,
 }

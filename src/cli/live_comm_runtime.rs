@@ -83,17 +83,32 @@ pub(crate) fn runtime_provenance() -> LiveRunProvenance {
     let profile = load_profile_metadata();
     let git_short = option_env!("LIVE_COMM_GIT_SHORT")
         .map(|s| s.to_string())
-        .filter(|s| !s.is_empty())
-        .or_else(|| env_opt("LIVE_COMM_LAUNCH_GIT_SHORT"));
+        .filter(|s| !s.is_empty());
+    let repo_head_short = env_opt("LIVE_COMM_LAUNCH_REPO_HEAD_SHORT");
     let build_unix = option_env!("LIVE_COMM_BUILD_UNIX").and_then(|s| s.parse::<u64>().ok());
+    let binary_matches_head = match (git_short.as_deref(), repo_head_short.as_deref()) {
+        (Some(binary), Some(head)) => Some(binary == head),
+        _ => None,
+    };
+    let binary_is_fresh = env_opt("LIVE_COMM_LAUNCH_BINARY_IS_FRESH")
+        .and_then(|value| match value.to_ascii_lowercase().as_str() {
+            "true" => Some(true),
+            "false" => Some(false),
+            _ => None,
+        });
 
     LiveRunProvenance {
         exe_path: env_opt("LIVE_COMM_LAUNCH_EXE_PATH").or_else(current_exe_path_string),
         exe_mtime_utc: env_opt("LIVE_COMM_LAUNCH_EXE_MTIME_UTC")
             .or_else(current_exe_mtime_fallback),
         git_short_sha: git_short,
+        repo_head_short_sha: repo_head_short,
+        binary_matches_head,
+        binary_is_fresh,
         build_unix,
         build_time_utc: build_unix.map(|secs| format!("unix:{secs}")),
+        source_inputs_latest_path: env_opt("LIVE_COMM_LAUNCH_SOURCE_LATEST_PATH"),
+        source_inputs_latest_mtime_utc: env_opt("LIVE_COMM_LAUNCH_SOURCE_LATEST_MTIME_UTC"),
         profile_path: env_opt("LIVE_COMM_LAUNCH_PROFILE_PATH")
             .or_else(|| Some(PROFILE_PATH.to_string())),
         profile_name: env_opt("LIVE_COMM_LAUNCH_PROFILE_NAME").or(profile.profile_name),

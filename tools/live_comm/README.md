@@ -3,6 +3,13 @@
 Use this wrapper so `CommunicationMod` does not need a new command in
 `config.properties` every time the Rust-side `live_comm` args change.
 
+The launcher now treats stale runtime binaries as a first-class failure mode:
+
+- by default it checks whether `play.exe` is older than Rust-side build inputs
+- if stale, it rebuilds `play.exe` before launching
+- run provenance records both the binary git sha and the repo head sha, plus
+  whether the launcher considered the binary fresh
+
 Full day-to-day workflow:
 
 - [docs/live_comm/LIVE_COMM_RUNBOOK.md](D:\rust\sts_simulator\docs\live_comm\LIVE_COMM_RUNBOOK.md)
@@ -274,6 +281,22 @@ Before launching the game, you can verify what the wrapper will run:
 ```powershell
 powershell -ExecutionPolicy Bypass -File D:\rust\sts_simulator\tools\live_comm\launch_live_comm.ps1 -DryRun
 ```
+
+`-DryRun` now also shows:
+
+- `repo_head_short`
+- `latest_input_path`
+- `latest_input_write_utc`
+- `binary_is_fresh`
+
+If you intentionally want to bypass the freshness gate:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File D:\rust\sts_simulator\tools\live_comm\launch_live_comm.ps1 -SkipFreshBuild
+```
+
+That should be rare. The default workflow is to let the launcher rebuild a stale
+`target/release/play.exe` or `target/debug/play.exe` automatically.
 
 You can also preview the exact `config.properties` update without writing:
 

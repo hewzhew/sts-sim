@@ -24,4 +24,16 @@ Current log-reading defaults:
 - drop to `debug.txt` / `raw.jsonl` / `replay.json` only when following a specific finding
 - if an older run has no archived `findings.json`, `inspect-findings` will synthesize a report from `failure_snapshots.jsonl`
 
+Current launch defaults:
+
+- `tools/live_comm/launch_live_comm.ps1` now checks whether the selected
+  `play.exe` is stale relative to Rust build inputs
+- stale repo-local binaries are rebuilt automatically before the game is allowed
+  to attach
+- run provenance now records:
+  - compiled binary git sha
+  - launcher repo-head sha
+  - `binary_matches_head`
+  - `binary_is_fresh`
+
 These files are active workflow docs, but they are not repo-wide architecture entrypoints.

@@ -66,10 +66,24 @@ impl LiveCommIo {
         let provenance = runtime_provenance();
         writeln!(
             log,
-            "[PROVENANCE] exe_path={} exe_mtime_utc={} git_short_sha={} build_unix={:?} build_time_utc={} profile_name={} profile_path={}",
+            "[PROVENANCE] exe_path={} exe_mtime_utc={} git_short_sha={} repo_head_short_sha={} binary_matches_head={:?} binary_is_fresh={:?} source_inputs_latest_path={} source_inputs_latest_mtime_utc={} build_unix={:?} build_time_utc={} profile_name={} profile_path={}",
             provenance.exe_path.as_deref().unwrap_or("<unknown>"),
             provenance.exe_mtime_utc.as_deref().unwrap_or("<unknown>"),
             provenance.git_short_sha.as_deref().unwrap_or("<unknown>"),
+            provenance
+                .repo_head_short_sha
+                .as_deref()
+                .unwrap_or("<unknown>"),
+            provenance.binary_matches_head,
+            provenance.binary_is_fresh,
+            provenance
+                .source_inputs_latest_path
+                .as_deref()
+                .unwrap_or("<unknown>"),
+            provenance
+                .source_inputs_latest_mtime_utc
+                .as_deref()
+                .unwrap_or("<unknown>"),
             provenance.build_unix,
             provenance.build_time_utc.as_deref().unwrap_or("<unknown>"),
             provenance.profile_name.as_deref().unwrap_or("<unknown>"),
@@ -78,9 +92,15 @@ impl LiveCommIo {
         .unwrap();
         writeln!(
             focus_log,
-            "[PROVENANCE] exe={} git={} profile={}",
+            "[PROVENANCE] exe={} binary_git={} repo_head={} binary_matches_head={:?} binary_is_fresh={:?} profile={}",
             provenance.exe_path.as_deref().unwrap_or("<unknown>"),
             provenance.git_short_sha.as_deref().unwrap_or("<unknown>"),
+            provenance
+                .repo_head_short_sha
+                .as_deref()
+                .unwrap_or("<unknown>"),
+            provenance.binary_matches_head,
+            provenance.binary_is_fresh,
             provenance.profile_name.as_deref().unwrap_or("<unknown>")
         )
         .unwrap();
