@@ -43,6 +43,39 @@ The latest raw frame is mirrored to:
 
 - `logs/current/manual_client_latest.json`
 
+## Current safe boundary
+
+At the moment, the most reliable scenario path is:
+
+- `START`
+- `STATE`
+- `scenario state`
+- `scenario fight`
+
+These are the commands to trust first when rebuilding strict protocol samples.
+
+Commands that exist but should be treated as secondary helpers for now:
+
+- `scenario deck add`
+- `scenario relic add`
+- `scenario hp set`
+- `scenario event`
+
+Why:
+
+- `scenario deck add` only changes `masterDeck`; it does not backfill the
+  current combat hand/draw/discard piles
+- `scenario event` currently uses a more hand-built room transition path
+- `scenario hp set` is useful for setup, but should not be used to force
+  edge states like death
+- `scenario relic add` is usable, but is less stable as a first recording path
+
+For the first recording pass, prefer:
+
+- entering the target fight
+- observing existing runtime truth
+- using `scenario power add` only when you specifically need to force a power slice
+
 ## Known encounter IDs
 
 These are confirmed from the base game encounter list and normalize
@@ -111,8 +144,9 @@ Recommended path:
 ```text
 START ironclad 0
 scenario fight jaw_worm
+STATE
 scenario power add player combust 1
-WAIT 5
+WAIT 10
 STATE
 ```
 
@@ -120,6 +154,14 @@ Notes:
 
 - `scenario power add` queues a normal in-game power application
 - `WAIT` is used here only to let the queued action resolve before the next `STATE`
+- do **not** use `scenario deck add combust ...` as the primary path for this slice
+  during combat; `deck add` only updates `masterDeck`, not the current combat zones
+- if `Combust` is still missing after one `WAIT 10`, repeat:
+
+```text
+WAIT 10
+STATE
+```
 
 Success criteria:
 
@@ -193,9 +235,12 @@ If `scenario` commands do not work:
 
 If `Combust` does not appear after `scenario power add`:
 
-1. run `WAIT 10`
-2. run `STATE` again
-3. use `/show` to inspect whether the queued action has resolved
+1. make sure you are already in `room=MonsterRoom/COMBAT`
+2. run `WAIT 10`
+3. run `STATE` again
+4. use `/show` to inspect whether the queued action has resolved
+5. do not switch to `scenario deck add` for this slice unless you also plan to
+   start a fresh combat afterward
 
 If `Stasis` does not appear quickly:
 

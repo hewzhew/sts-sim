@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import queue
 import secrets
 import socket
@@ -63,6 +62,82 @@ def summarize_frame(payload: dict[str, Any]) -> str:
     if avail:
         parts.append("commands=" + ",".join(str(x) for x in avail))
     return " | ".join(parts)
+
+
+def print_json(value: Any) -> None:
+    print(json.dumps(value, ensure_ascii=False, indent=2))
+
+
+def get_latest_payload(latest_holder: dict[str, Any]) -> dict[str, Any] | None:
+    payload = latest_holder.get("payload")
+    return payload if isinstance(payload, dict) else None
+
+
+def get_path(root: Any, path: str) -> Any:
+    current = root
+    if not path.strip():
+        return current
+    for segment in path.split("."):
+        if not segment:
+            continue
+        if isinstance(current, list):
+            try:
+                index = int(segment)
+            except ValueError as exc:
+                raise KeyError(f"list index required for segment '{segment}'") from exc
+            try:
+                current = current[index]
+            except IndexError as exc:
+                raise KeyError(f"list index out of range: {index}") from exc
+            continue
+        if not isinstance(current, dict):
+            raise KeyError(f"cannot descend into non-object at segment '{segment}'")
+        if segment not in current:
+            raise KeyError(f"missing key '{segment}'")
+        current = current[segment]
+    return current
+
+
+def monster_summary(monster: dict[str, Any], index: int) -> dict[str, Any]:
+    powers = monster.get("powers") or []
+    return {
+        "index": index,
+        "id": monster.get("id"),
+        "name": monster.get("name"),
+        "hp": f"{monster.get('current_hp')}/{monster.get('max_hp')}",
+        "block": monster.get("block"),
+        "intent": monster.get("intent"),
+        "move_id": monster.get("move_id"),
+        "powers": [
+            {
+                "id": power.get("id"),
+                "amount": power.get("amount"),
+            }
+            for power in powers
+            if isinstance(power, dict)
+        ],
+        "runtime_state": monster.get("runtime_state"),
+    }
+
+
+def find_matches(value: Any, needle: str, path: str = "$", out: list[dict[str, Any]] | None = None) -> list[dict[str, Any]]:
+    if out is None:
+        out = []
+    lowered = needle.lower()
+    if isinstance(value, dict):
+        for key, child in value.items():
+            child_path = f"{path}.{key}"
+            if lowered in str(key).lower():
+                out.append({"path": child_path, "match": "key", "value": child})
+            find_matches(child, needle, child_path, out)
+    elif isinstance(value, list):
+        for index, child in enumerate(value):
+            find_matches(child, needle, f"{path}.{index}", out)
+    else:
+        rendered = str(value)
+        if lowered in rendered.lower():
+            out.append({"path": path, "match": "value", "value": value})
+    return out
 
 
 class BridgeState:
@@ -264,6 +339,8 @@ def terminal_reader(sock: socket.socket, latest_holder: dict[str, Any]) -> None:
                     print("manual> ", end="", flush=True)
             else:
                 print(f"[manual] {message}")
+    except (TimeoutError, OSError):
+        pass
     finally:
         sock_file.close()
         print("\n[manual] bridge connection closed")
@@ -272,6 +349,7 @@ def terminal_reader(sock: socket.socket, latest_holder: dict[str, Any]) -> None:
 def terminal_main(port: int, token: str) -> int:
     ensure_utf8_stdio()
     sock = socket.create_connection((HOST, port), timeout=10.0)
+    sock.settimeout(None)
     sock.sendall(
         (json.dumps({"type": "hello", "token": token}, ensure_ascii=False) + "\n").encode("utf-8")
     )
@@ -285,7 +363,7 @@ def terminal_main(port: int, token: str) -> int:
     print("  STATE")
     print("  scenario fight jaw_worm")
     print("  scenario deck add combust 1 0")
-    print("Local commands: /help /show /commands /state /quit")
+    print("Local commands: /help /show /commands /state /combat /player /monsters /monster N /relics /protocol /path a.b.c /find term /quit")
 
     try:
         while True:
@@ -297,19 +375,125 @@ def terminal_main(port: int, token: str) -> int:
                 continue
             if command == "/help":
                 print("Raw commands are forwarded to CommunicationMod.")
-                print("Local commands: /help /show /commands /state /quit")
+                print("Local commands:")
+                print("  /show")
+                print("  /commands")
+                print("  /combat")
+                print("  /player")
+                print("  /monsters")
+                print("  /monster N")
+                print("  /relics")
+                print("  /protocol")
+                print("  /path game_state.combat_state.monsters.0.runtime_state")
+                print("  /find guardian_threshold")
+                print("  /state")
+                print("  /quit")
                 continue
+            payload = get_latest_payload(latest_holder)
             if command == "/show":
-                payload = latest_holder.get("payload")
                 if payload is None:
                     print("No frame received yet.")
                 else:
-                    print(json.dumps(payload, ensure_ascii=False, indent=2))
+                    print_json(payload)
                 continue
             if command == "/commands":
-                payload = latest_holder.get("payload") or {}
+                payload = payload or {}
                 commands = payload.get("available_commands") or []
-                print(json.dumps(commands, ensure_ascii=False, indent=2))
+                print_json(commands)
+                continue
+            if command == "/combat":
+                if payload is None:
+                    print("No frame received yet.")
+                    continue
+                try:
+                    print_json(get_path(payload, "game_state.combat_state"))
+                except KeyError as exc:
+                    print(f"Missing combat_state: {exc}")
+                continue
+            if command == "/player":
+                if payload is None:
+                    print("No frame received yet.")
+                    continue
+                try:
+                    print_json(get_path(payload, "game_state.combat_state.player"))
+                except KeyError as exc:
+                    print(f"Missing player combat state: {exc}")
+                continue
+            if command == "/monsters":
+                if payload is None:
+                    print("No frame received yet.")
+                    continue
+                try:
+                    monsters = get_path(payload, "game_state.combat_state.monsters")
+                except KeyError as exc:
+                    print(f"Missing monsters: {exc}")
+                    continue
+                if not isinstance(monsters, list):
+                    print("combat_state.monsters is not a list")
+                    continue
+                print_json([monster_summary(monster, index) for index, monster in enumerate(monsters) if isinstance(monster, dict)])
+                continue
+            if command.startswith("/monster "):
+                if payload is None:
+                    print("No frame received yet.")
+                    continue
+                parts = command.split(maxsplit=1)
+                try:
+                    monster_index = int(parts[1])
+                except (IndexError, ValueError):
+                    print("Usage: /monster <index>")
+                    continue
+                try:
+                    monster = get_path(payload, f"game_state.combat_state.monsters.{monster_index}")
+                except KeyError as exc:
+                    print(f"Missing monster {monster_index}: {exc}")
+                    continue
+                print_json(monster)
+                continue
+            if command == "/relics":
+                if payload is None:
+                    print("No frame received yet.")
+                    continue
+                try:
+                    print_json(get_path(payload, "game_state.relics"))
+                except KeyError as exc:
+                    print(f"Missing relics: {exc}")
+                continue
+            if command == "/protocol":
+                if payload is None:
+                    print("No frame received yet.")
+                    continue
+                try:
+                    print_json(get_path(payload, "protocol_meta"))
+                except KeyError as exc:
+                    print(f"Missing protocol_meta: {exc}")
+                continue
+            if command.startswith("/path "):
+                if payload is None:
+                    print("No frame received yet.")
+                    continue
+                path = command.split(maxsplit=1)[1].strip()
+                if not path:
+                    print("Usage: /path a.b.c")
+                    continue
+                try:
+                    print_json(get_path(payload, path))
+                except KeyError as exc:
+                    print(f"Missing path {path}: {exc}")
+                continue
+            if command.startswith("/find "):
+                if payload is None:
+                    print("No frame received yet.")
+                    continue
+                needle = command.split(maxsplit=1)[1].strip()
+                if not needle:
+                    print("Usage: /find term")
+                    continue
+                matches = find_matches(payload, needle)
+                if not matches:
+                    print(f"No matches for '{needle}'.")
+                else:
+                    print_json(matches[:50])
                 continue
             if command == "/state":
                 command = "STATE"
