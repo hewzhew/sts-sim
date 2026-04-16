@@ -5,11 +5,12 @@ use crate::bot::combat_card_knowledge::{
     default_ordering_constraint, default_ordering_hint, default_risk_profile, ChanceProfile,
     OrderingConstraint, RiskProfile, TurnActionRole, TurnOrderingHint,
 };
-use crate::bot::monster_belief::{build_combat_belief_state, total_damage_for_intent};
-use crate::bot::strategy_families::{
+use crate::bot::combat_families::draw::DrawTimingContext;
+use crate::bot::combat_families::sequencing::{
     assess_branch_opening, assess_turn_action, BranchOpeningContext, BranchOpeningEstimate,
-    TurnRiskContext, TurnSequencingContext,
+    SequencingAssessment, TurnRiskContext, TurnSequencingContext,
 };
+use crate::bot::monster_belief::{build_combat_belief_state, total_damage_for_intent};
 use crate::runtime::combat::CombatState;
 use crate::runtime::combat::Intent;
 use crate::content::cards::{get_card_definition, CardId, CardType};
@@ -370,7 +371,7 @@ pub(crate) fn sequencing_assessment_for_input(
     combat: &CombatState,
     input: &ClientInput,
     has_safe_line: bool,
-) -> Option<crate::bot::strategy_families::SequencingAssessment> {
+) -> Option<SequencingAssessment> {
     let tags = action_semantic_tags(combat, input);
     let ClientInput::PlayCard { card_index, .. } = input else {
         return None;
@@ -553,7 +554,7 @@ fn branch_opening_estimate(
         })
         .count() as i32;
 
-    let draw_ctx = crate::bot::strategy_families::DrawTimingContext {
+    let draw_ctx = DrawTimingContext {
         current_energy: combat.turn.energy as i32,
         player_no_draw: combat.get_power(0, crate::runtime::combat::PowerId::NoDraw) > 0,
         current_hand_size: combat.zones.hand.len() as i32,

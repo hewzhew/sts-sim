@@ -3,9 +3,13 @@ use crate::bot::combat_card_knowledge::{
     branch_family_for_card, classify_turn_action, default_chance_profile,
     default_ordering_constraint, default_ordering_hint, default_risk_profile,
 };
-use crate::bot::strategy_families::{
-    apotheosis_timing_score, apparition_timing_score, assess_branch_opening, assess_turn_action,
-    ApparitionTimingContext, BranchOpeningContext, BranchOpeningEstimate, DrawTimingContext,
+use crate::bot::combat_families::apotheosis::apotheosis_timing_score;
+use crate::bot::combat_families::apparition::{
+    apparition_timing_score, ApparitionTimingContext,
+};
+use crate::bot::combat_families::draw::DrawTimingContext;
+use crate::bot::combat_families::sequencing::{
+    assess_branch_opening, assess_turn_action, BranchOpeningContext, BranchOpeningEstimate,
     TurnRiskContext, TurnSequencingContext,
 };
 use crate::content::cards::{get_card_definition, CardId, CardType};

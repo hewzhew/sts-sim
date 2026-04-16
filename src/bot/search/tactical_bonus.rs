@@ -3,19 +3,27 @@ use crate::bot::card_disposition::{
     count_remaining_low_value_exhaust_candidates, exhaust_disposition_stats,
 };
 use crate::bot::card_taxonomy::{is_multi_attack_payoff, is_strength_payoff};
+use crate::bot::combat_families::apotheosis::apotheosis_timing_score;
+use crate::bot::combat_families::apparition::{
+    apparition_hand_shaping_score, apparition_timing_score, ApparitionTimingContext,
+};
+use crate::bot::combat_families::draw::{
+    battle_trance_timing_score, deck_cycle_thinning_score, draw_action_timing_score,
+    draw_continuity_score, status_loop_cycle_score, DrawTimingContext,
+};
+use crate::bot::combat_families::exhaust::{
+    exhaust_engine_setup_score, exhaust_fuel_value_score, exhaust_future_fuel_reserve_score,
+    exhaust_mass_play_score, exhaust_random_core_risk_score, exhaust_random_play_score,
+    mass_exhaust_base_score, mass_exhaust_keeper_penalty,
+    mass_exhaust_second_wind_selectivity_score, MassExhaustProfile,
+};
+use crate::bot::combat_families::survival::{
+    body_slam_delay_score, exhaust_finish_window_score, flight_break_progress_score,
+    persistent_block_progress_score, reaper_hand_shaping_score, reaper_timing_score,
+    SurvivalTimingContext,
+};
 use crate::bot::combat_posture::posture_features;
 use crate::bot::monster_belief::build_combat_belief_state;
-use crate::bot::strategy_families::{
-    apotheosis_timing_score, apparition_hand_shaping_score, apparition_timing_score,
-    battle_trance_timing_score, body_slam_delay_score, deck_cycle_thinning_score,
-    draw_action_timing_score, draw_continuity_score, exhaust_engine_setup_score,
-    exhaust_finish_window_score, exhaust_fuel_value_score, exhaust_future_fuel_reserve_score,
-    exhaust_mass_play_score, exhaust_random_core_risk_score, exhaust_random_play_score,
-    flight_break_progress_score, mass_exhaust_base_score, mass_exhaust_keeper_penalty,
-    mass_exhaust_second_wind_selectivity_score, persistent_block_progress_score,
-    reaper_hand_shaping_score, reaper_timing_score, status_loop_cycle_score,
-    ApparitionTimingContext, DrawTimingContext, MassExhaustProfile, SurvivalTimingContext,
-};
 use crate::runtime::combat::CombatState;
 use crate::runtime::combat::PowerId;
 use crate::content::cards::{get_card_definition, CardId, CardType};
@@ -1702,7 +1710,7 @@ fn exhaust_card_timing_hold_score(
                         )
                 })
                 .count() as i32;
-            crate::bot::strategy_families::apotheosis_hand_shaping_score(
+            crate::bot::combat_families::apotheosis::apotheosis_hand_shaping_score(
                 upgrade_targets,
                 unblocked_incoming,
             )

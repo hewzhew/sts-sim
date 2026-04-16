@@ -1,5 +1,5 @@
 use crate::bot::card_taxonomy::{is_multi_attack_payoff, is_strength_payoff, taxonomy};
-use crate::bot::strategy_families::{
+use crate::bot::combat_families::survival::{
     body_slam_delay_score, reaper_timing_score, SurvivalTimingContext,
 };
 use crate::content::cards::{CardId, CardType};

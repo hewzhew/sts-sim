@@ -1,5 +1,6 @@
 use crate::bot::card_taxonomy::taxonomy;
-use crate::bot::strategy_families::{exhaust_engine_setup_score, status_loop_cycle_score};
+use crate::bot::combat_families::draw::status_loop_cycle_score;
+use crate::bot::combat_families::exhaust::exhaust_engine_setup_score;
 use crate::content::cards::{CardId, CardType};
 
 use super::posture::HeuristicPostureFeatures;

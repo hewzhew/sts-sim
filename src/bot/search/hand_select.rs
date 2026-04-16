@@ -2,11 +2,16 @@ use crate::bot::card_disposition::{
     combat_exhaust_score_for_uuid, combat_retention_score_for_uuid,
 };
 use crate::bot::monster_belief::build_combat_belief_state;
-use crate::bot::strategy_families::{
-    apotheosis_hand_shaping_score, apparition_hand_shaping_score, exhaust_fuel_value_score,
-    exhaust_future_fuel_reserve_score, hand_shaping_delay_quality_score,
-    hand_shaping_next_draw_window_score, hand_shaping_play_now_score, reaper_hand_shaping_score,
-    ApparitionTimingContext, SurvivalTimingContext,
+use crate::bot::combat_families::apotheosis::apotheosis_hand_shaping_score;
+use crate::bot::combat_families::apparition::{
+    apparition_hand_shaping_score, ApparitionTimingContext,
+};
+use crate::bot::combat_families::exhaust::{
+    exhaust_fuel_value_score, exhaust_future_fuel_reserve_score,
+};
+use crate::bot::combat_families::survival::{
+    hand_shaping_delay_quality_score, hand_shaping_next_draw_window_score,
+    hand_shaping_play_now_score, reaper_hand_shaping_score, SurvivalTimingContext,
 };
 use crate::runtime::combat::CombatState;
 use crate::content::cards::{get_card_definition, CardId, CardType};

@@ -1,10 +1,15 @@
-use crate::bot::strategy_families::{
-    apotheosis_hand_shaping_score, apparition_hand_shaping_score, deck_cycle_thinning_score,
-    exhaust_finish_window_score, exhaust_fuel_value_score, exhaust_future_fuel_reserve_score,
-    exhaust_mass_play_score, exhaust_random_core_risk_score, exhaust_random_play_score,
-    mass_exhaust_base_score, mass_exhaust_keeper_penalty,
-    mass_exhaust_second_wind_selectivity_score, reaper_hand_shaping_score, ApparitionTimingContext,
-    MassExhaustProfile, SurvivalTimingContext,
+use crate::bot::combat_families::apotheosis::apotheosis_hand_shaping_score;
+use crate::bot::combat_families::apparition::{
+    apparition_hand_shaping_score, ApparitionTimingContext,
+};
+use crate::bot::combat_families::draw::deck_cycle_thinning_score;
+use crate::bot::combat_families::exhaust::{
+    exhaust_fuel_value_score, exhaust_future_fuel_reserve_score, exhaust_mass_play_score,
+    exhaust_random_core_risk_score, exhaust_random_play_score, mass_exhaust_base_score,
+    mass_exhaust_keeper_penalty, mass_exhaust_second_wind_selectivity_score, MassExhaustProfile,
+};
+use crate::bot::combat_families::survival::{
+    exhaust_finish_window_score, reaper_hand_shaping_score, SurvivalTimingContext,
 };
 use crate::content::cards::{CardId, CardType};
 
