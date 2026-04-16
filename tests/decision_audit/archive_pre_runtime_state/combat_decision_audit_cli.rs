@@ -3,7 +3,9 @@ use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 fn fixture_178() -> &'static Path {
-    Path::new(r"d:\rust\sts_simulator\tests\decision_audit\hexaghost_frame_178.json")
+    Path::new(
+        r"d:\rust\sts_simulator\tests\decision_audit\archive_pre_runtime_state\hexaghost_frame_178.json",
+    )
 }
 
 fn raw_214122() -> &'static Path {

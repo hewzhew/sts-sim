@@ -39,7 +39,6 @@
       "using_card": false,
       "monsters": [
         {
-          "guardian_is_open": true,
           "is_gone": false,
           "move_hits": 1,
           "draw_x": 927,
@@ -53,9 +52,7 @@
           },
           "max_hp": 240,
           "intent": "DEFEND",
-          "guardian_close_up_triggered": false,
           "move_id": 6,
-          "guardian_dmg_taken": 0,
           "name": "The Guardian",
           "monster_instance_id": 1,
           "spawn_order": 1,
@@ -69,8 +66,7 @@
               "id": "Mode Shift"
             }
           ],
-          "is_escaping": false,
-          "guardian_dmg_threshold": 30
+          "is_escaping": false
         }
       ],
       "turn": 1,

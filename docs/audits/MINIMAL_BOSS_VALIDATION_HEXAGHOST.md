@@ -34,8 +34,8 @@ care about:
 
 It is also already represented in repo assets:
 
-- `tests/decision_audit/hexaghost_frame_178.json`
-- `tests/decision_audit/hexaghost_frame_203.json`
+- `tests/decision_audit/archive_pre_runtime_state/hexaghost_frame_178.json`
+- `tests/decision_audit/archive_pre_runtime_state/hexaghost_frame_203.json`
 - preference seed samples around frame `202` in
   `data/combat_lab/policy_seed_set_20260412_214122.jsonl`
 
@@ -147,7 +147,7 @@ Status: ready from existing fixture
 
 Primary source:
 
-- `tests/decision_audit/hexaghost_frame_203.json`
+- `tests/decision_audit/archive_pre_runtime_state/hexaghost_frame_203.json`
 
 Observed state summary:
 
