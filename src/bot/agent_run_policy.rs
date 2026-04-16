@@ -594,6 +594,15 @@ impl Agent {
         score
     }
 
+    pub(crate) fn reward_potion_score(
+        &self,
+        rs: &RunState,
+        potion_id: crate::content::potions::PotionId,
+    ) -> i32 {
+        self.shop_potion_score(rs, potion_id)
+            .max(base_reward_potion_score(potion_id))
+    }
+
     pub(crate) fn shop_potion_purchase_score(
         &self,
         rs: &RunState,
@@ -603,6 +612,29 @@ impl Agent {
     ) -> i32 {
         let base_score = self.shop_potion_score(rs, potion_id);
         self.shop_purchase_score(rs, shop, price, base_score, ShopPurchaseKind::Potion)
+    }
+
+    pub(crate) fn best_potion_discard_for_score<F>(
+        &self,
+        rs: &RunState,
+        offered_score: i32,
+        mut scorer: F,
+    ) -> Option<usize>
+    where
+        F: FnMut(&Self, &RunState, crate::content::potions::PotionId) -> i32,
+    {
+        let (discard_idx, kept_score) = rs
+            .potions
+            .iter()
+            .enumerate()
+            .filter_map(|(idx, potion)| {
+                potion
+                    .as_ref()
+                    .map(|potion| (idx, scorer(self, rs, potion.id)))
+            })
+            .min_by_key(|(_, score)| *score)?;
+
+        (offered_score > kept_score).then_some(discard_idx)
     }
 
     pub(crate) fn boss_relic_score(
@@ -1155,6 +1187,28 @@ pub(crate) enum ShopPurchaseKind {
     Card,
     Relic,
     Potion,
+}
+
+fn base_reward_potion_score(potion_id: crate::content::potions::PotionId) -> i32 {
+    use crate::content::potions::PotionId;
+
+    match potion_id {
+        PotionId::AncientPotion => 100,
+        PotionId::PowerPotion | PotionId::ColorlessPotion => 94,
+        PotionId::DuplicationPotion | PotionId::GhostInAJar => 90,
+        PotionId::FruitJuice | PotionId::BloodPotion | PotionId::FairyPotion => 88,
+        PotionId::Elixir => 84,
+        PotionId::BlessingOfTheForge => 84,
+        PotionId::StrengthPotion
+        | PotionId::DexterityPotion
+        | PotionId::SpeedPotion
+        | PotionId::SteroidPotion
+        | PotionId::EssenceOfSteel
+        | PotionId::LiquidBronze
+        | PotionId::RegenPotion => 85,
+        PotionId::EnergyPotion | PotionId::SwiftPotion => 82,
+        _ => 55,
+    }
 }
 
 fn shop_delta_priority_bonus(delta: crate::bot::deck_delta_eval::DeltaScore) -> i32 {

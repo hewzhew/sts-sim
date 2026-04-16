@@ -249,22 +249,11 @@ fn blocked_shop_potion_replacement_command(
         })
         .max_by_key(|(score, purchase_score)| (*purchase_score, *score))?;
 
-    let (discard_idx, kept_score) = rs
-        .potions
-        .iter()
-        .enumerate()
-        .filter_map(|(idx, potion)| {
-            potion
-                .as_ref()
-                .map(|potion| (idx, agent.shop_potion_score(rs, potion.id)))
+    agent
+        .best_potion_discard_for_score(rs, offered_score, |agent, rs, potion_id| {
+            agent.shop_potion_score(rs, potion_id)
         })
-        .min_by_key(|(_, score)| *score)?;
-
-    if offered_score > kept_score {
-        Some(format!("POTION DISCARD {}", discard_idx))
-    } else {
-        None
-    }
+        .map(|discard_idx| format!("POTION DISCARD {}", discard_idx))
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -633,25 +622,14 @@ fn blocked_potion_replacement_command(
     let offered_potion = rewards
         .iter()
         .filter_map(blocked_replaceable_reward_potion_id)
-        .max_by_key(|potion_id| reward_potion_score(agent, rs, *potion_id))?;
+        .max_by_key(|potion_id| agent.reward_potion_score(rs, *potion_id))?;
 
-    let offered_score = reward_potion_score(agent, rs, offered_potion);
-    let (discard_idx, kept_score) = rs
-        .potions
-        .iter()
-        .enumerate()
-        .filter_map(|(idx, potion)| {
-            potion
-                .as_ref()
-                .map(|potion| (idx, reward_potion_score(agent, rs, potion.id)))
+    let offered_score = agent.reward_potion_score(rs, offered_potion);
+    agent
+        .best_potion_discard_for_score(rs, offered_score, |agent, rs, potion_id| {
+            agent.reward_potion_score(rs, potion_id)
         })
-        .min_by_key(|(_, score)| *score)?;
-
-    if offered_score > kept_score {
-        Some(format!("POTION DISCARD {}", discard_idx))
-    } else {
-        None
-    }
+        .map(|discard_idx| format!("POTION DISCARD {}", discard_idx))
 }
 
 fn blocked_replaceable_reward_potion_id(
@@ -680,38 +658,6 @@ fn blocked_replaceable_reward_potion_id(
         .and_then(|v| v.get("id"))
         .and_then(|v| v.as_str())
         .and_then(java_potion_id_to_rust)
-}
-
-fn reward_potion_score(
-    agent: &crate::bot::Agent,
-    rs: &crate::state::run::RunState,
-    potion_id: crate::content::potions::PotionId,
-) -> i32 {
-    agent
-        .shop_potion_score(rs, potion_id)
-        .max(base_reward_potion_score(potion_id))
-}
-
-fn base_reward_potion_score(potion_id: crate::content::potions::PotionId) -> i32 {
-    use crate::content::potions::PotionId;
-
-    match potion_id {
-        PotionId::AncientPotion => 100,
-        PotionId::PowerPotion | PotionId::ColorlessPotion => 94,
-        PotionId::DuplicationPotion | PotionId::GhostInAJar => 90,
-        PotionId::FruitJuice | PotionId::BloodPotion | PotionId::FairyPotion => 88,
-        PotionId::Elixir => 84,
-        PotionId::BlessingOfTheForge => 84,
-        PotionId::StrengthPotion
-        | PotionId::DexterityPotion
-        | PotionId::SpeedPotion
-        | PotionId::SteroidPotion
-        | PotionId::EssenceOfSteel
-        | PotionId::LiquidBronze
-        | PotionId::RegenPotion => 85,
-        PotionId::EnergyPotion | PotionId::SwiftPotion => 82,
-        _ => 55,
-    }
 }
 
 fn conservative_live_card_reward_choice_after_skip(
@@ -747,7 +693,6 @@ mod tests {
     use super::{
         blocked_shop_potion_replacement_command,
         conservative_live_card_reward_choice_after_skip,
-        reward_potion_score,
     };
     use crate::bot::Agent;
     use crate::content::cards::CardId;
@@ -812,8 +757,8 @@ mod tests {
         let agent = Agent::new();
         let rs = RunState::new(1, 0, false, "Ironclad");
 
-        let elixir = reward_potion_score(&agent, &rs, PotionId::Elixir);
-        let energy = reward_potion_score(&agent, &rs, PotionId::EnergyPotion);
+        let elixir = agent.reward_potion_score(&rs, PotionId::Elixir);
+        let energy = agent.reward_potion_score(&rs, PotionId::EnergyPotion);
 
         assert!(elixir > energy, "expected Elixir ({elixir}) > Energy Potion ({energy})");
     }
