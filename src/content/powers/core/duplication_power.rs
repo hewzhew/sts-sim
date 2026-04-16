@@ -27,22 +27,19 @@ pub fn on_use_card(state: &mut CombatState, card: &CombatCard, purge: bool, targ
             }
         }
 
-        state
-            .engine
-            .action_queue
-            .push_back(Action::EnqueueCardPlay {
-                item: Box::new(QueuedCardPlay {
-                    card: clone.clone(),
-                    target,
-                    energy_on_use: clone.energy_on_use,
-                    ignore_energy_total: true,
-                    autoplay: true,
-                    random_target: false,
-                    is_end_turn_autoplay: false,
-                    purge_on_use: true,
-                    source: QueuedCardSource::Duplication,
-                }),
-                in_front: true,
-            });
+        state.queue_action_back(Action::EnqueueCardPlay {
+            item: Box::new(QueuedCardPlay {
+                card: clone.clone(),
+                target,
+                energy_on_use: clone.energy_on_use,
+                ignore_energy_total: true,
+                autoplay: true,
+                random_target: false,
+                is_end_turn_autoplay: false,
+                purge_on_use: true,
+                source: QueuedCardSource::Duplication,
+            }),
+            in_front: true,
+        });
     }
 }

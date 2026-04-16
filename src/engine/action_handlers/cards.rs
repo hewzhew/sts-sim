@@ -951,19 +951,13 @@ pub fn handle_flush_next_queued_card(state: &mut CombatState) {
     };
 
     if !state.zones.queued_cards.is_empty() {
-        state
-            .engine
-            .action_queue
-            .push_back(Action::FlushNextQueuedCard);
+        state.queue_action_back(Action::FlushNextQueuedCard);
     }
-    state
-        .engine
-        .action_queue
-        .push_front(Action::PlayCardDirect {
-            card: Box::new(queued.card),
-            target,
-            purge: queued.purge_on_use,
-        });
+    state.queue_action_front(Action::PlayCardDirect {
+        card: Box::new(queued.card),
+        target,
+        purge: queued.purge_on_use,
+    });
 }
 
 pub fn handle_play_card_direct(
@@ -1055,13 +1049,8 @@ pub fn handle_play_top_card(target: Option<usize>, exhaust: bool, state: &mut Co
             return;
         }
         state
-            .engine
-            .action_queue
-            .push_front(Action::PlayTopCard { target, exhaust });
-        state
-            .engine
-            .action_queue
-            .push_front(Action::EmptyDeckShuffle);
+            .queue_action_front(Action::PlayTopCard { target, exhaust });
+        state.queue_action_front(Action::EmptyDeckShuffle);
         return;
     }
 
@@ -1091,23 +1080,20 @@ pub fn handle_play_top_card(target: Option<usize>, exhaust: bool, state: &mut Co
     if exhaust {
         card.exhaust_override = Some(true);
     }
-    state
-        .engine
-        .action_queue
-        .push_front(Action::EnqueueCardPlay {
-            item: Box::new(crate::runtime::combat::QueuedCardPlay {
-                card: *card,
-                target: resolved_target,
-                energy_on_use: state.turn.energy as i32,
-                ignore_energy_total: true,
-                autoplay: true,
-                random_target: false,
-                is_end_turn_autoplay: false,
-                purge_on_use: false,
-                source: crate::runtime::combat::QueuedCardSource::Normal,
-            }),
-            in_front: true,
-        });
+    state.queue_action_front(Action::EnqueueCardPlay {
+        item: Box::new(crate::runtime::combat::QueuedCardPlay {
+            card: *card,
+            target: resolved_target,
+            energy_on_use: state.turn.energy as i32,
+            ignore_energy_total: true,
+            autoplay: true,
+            random_target: false,
+            is_end_turn_autoplay: false,
+            purge_on_use: false,
+            source: crate::runtime::combat::QueuedCardSource::Normal,
+        }),
+        in_front: true,
+    });
 }
 
 pub fn handle_play_top_cards_buffered(
@@ -1159,23 +1145,20 @@ pub fn handle_play_top_cards_buffered(
     }
 
     for (card, resolved_target) in buffered.into_iter().rev() {
-        state
-            .engine
-            .action_queue
-            .push_front(Action::EnqueueCardPlay {
-                item: Box::new(crate::runtime::combat::QueuedCardPlay {
-                    card: *card,
-                    target: resolved_target,
-                    energy_on_use: state.turn.energy as i32,
-                    ignore_energy_total: true,
-                    autoplay: true,
-                    random_target: false,
-                    is_end_turn_autoplay: false,
-                    purge_on_use: false,
-                    source: crate::runtime::combat::QueuedCardSource::Normal,
-                }),
-                in_front: true,
-            });
+        state.queue_action_front(Action::EnqueueCardPlay {
+            item: Box::new(crate::runtime::combat::QueuedCardPlay {
+                card: *card,
+                target: resolved_target,
+                energy_on_use: state.turn.energy as i32,
+                ignore_energy_total: true,
+                autoplay: true,
+                random_target: false,
+                is_end_turn_autoplay: false,
+                purge_on_use: false,
+                source: crate::runtime::combat::QueuedCardSource::Normal,
+            }),
+            in_front: true,
+        });
     }
 }
 
@@ -1353,10 +1336,7 @@ pub fn handle_pre_battle_trigger(state: &mut CombatState) {
     state.queue_actions(pre_battle_actions);
 
     // Auto-chain Phase 2
-    state
-        .engine
-        .action_queue
-        .push_back(crate::runtime::action::Action::BattleStartPreDrawTrigger);
+    state.queue_action_back(crate::runtime::action::Action::BattleStartPreDrawTrigger);
 }
 
 pub fn handle_battle_start_pre_draw_trigger(state: &mut CombatState) {
@@ -1372,16 +1352,10 @@ pub fn handle_battle_start_pre_draw_trigger(state: &mut CombatState) {
     {
         draw_amount += 2;
     }
-    state
-        .engine
-        .action_queue
-        .push_back(crate::runtime::action::Action::DrawCards(draw_amount));
+    state.queue_action_back(crate::runtime::action::Action::DrawCards(draw_amount));
 
     // Auto-chain Phase 4
-    state
-        .engine
-        .action_queue
-        .push_back(crate::runtime::action::Action::BattleStartTrigger);
+    state.queue_action_back(crate::runtime::action::Action::BattleStartTrigger);
 }
 
 pub fn handle_battle_start_trigger(state: &mut CombatState) {

@@ -551,20 +551,17 @@ pub fn resolve_power_on_use_card(
         PowerId::PenNibPower => {
             let actions = core::pen_nib::on_use_card(card);
             for action in actions {
-                state.engine.action_queue.push_back(action);
+                state.queue_action_back(action);
             }
         }
         PowerId::Vigor => {
             // Java: onUseCard — remove Vigor when an attack card is played
             let def = crate::content::cards::get_card_definition(card.id);
             if def.card_type == crate::content::cards::CardType::Attack {
-                state
-                    .engine
-                    .action_queue
-                    .push_back(crate::runtime::action::Action::RemovePower {
-                        target: 0, // Player
-                        power_id: PowerId::Vigor,
-                    });
+                state.queue_action_back(crate::runtime::action::Action::RemovePower {
+                    target: 0, // Player
+                    power_id: PowerId::Vigor,
+                });
             }
         }
         _ => {}

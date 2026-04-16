@@ -969,6 +969,6 @@ pub fn on_change_stance(
     }
 
     for action in actions {
-        state.engine.action_queue.push_back(action.action);
+        state.queue_action_back(action.action);
     }
 }
