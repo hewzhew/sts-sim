@@ -21,7 +21,8 @@ pub use decision_audit::{
 };
 pub use equivalence::{SearchEquivalenceKind, SearchEquivalenceMode};
 pub use mcts::{
-    diagnose_root_search, diagnose_root_search_with_depth, diagnose_root_search_with_depth_and_mode,
+    diagnose_root_search, diagnose_root_search_with_depth,
+    diagnose_root_search_with_depth_and_mode,
     diagnose_root_search_with_depth_and_mode_and_root_prior, find_best_move, SearchDiagnostics,
     SearchMoveStat,
 };
@@ -33,9 +34,9 @@ pub use root_prior::{LookupRootPriorProvider, RootPriorConfig, RootPriorQueryKey
 pub(super) use curiosity::curiosity_archetype_move_bonus;
 pub(crate) use equivalence::{default_equivalence_mode, reduce_search_moves};
 pub(crate) use legal_moves::get_legal_moves;
-pub(crate) use root_policy::{sequencing_assessment_for_input, StatePressureFeatures};
-pub(crate) use tactical_override::tactical_override;
+pub(crate) use root_policy::StatePressureFeatures;
 pub(super) use tactical_bonus::tactical_move_bonus;
+pub(crate) use tactical_override::tactical_override;
 
 pub fn legal_moves_for_audit(
     engine: &crate::state::EngineState,

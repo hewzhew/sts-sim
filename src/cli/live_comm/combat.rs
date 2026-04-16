@@ -3,20 +3,19 @@ use super::io::LiveCommIo;
 use super::snapshot::write_failure_snapshot;
 use super::LiveParityMode;
 use crate::bot::branch_family_for_card;
+use crate::bot::combat::{diagnose_root_search, SearchDiagnostics, SearchMoveStat};
 use crate::bot::comm_mod;
-use crate::bot::CoverageDb;
 use crate::bot::monster_belief::{build_combat_belief_state, MonsterBeliefCertainty};
-use crate::bot::search::{
-    sequencing_assessment_for_input, SearchDiagnostics, SearchMoveStat, StatePressureFeatures,
-};
+use crate::bot::search::StatePressureFeatures;
 use crate::bot::sidecar::CombatTopCandidateRecord;
-use crate::runtime::combat::CombatState;
+use crate::bot::CoverageDb;
 use crate::content::monsters::EnemyId;
 use crate::diff::protocol::{
     build_live_combat_snapshot as build_protocol_live_combat_snapshot, card_id_from_java,
     monster_id_from_java, power_id_from_java,
 };
 use crate::diff::replay::{ActionContext, DiffCategory, DiffResult};
+use crate::runtime::combat::CombatState;
 use crate::state::core::{ClientInput, EngineState};
 use serde::Serialize;
 use serde_json::Value;
@@ -67,9 +66,6 @@ struct CombatSearchSuspectRecord {
     realized_exhaust_block: i32,
     realized_exhaust_draw: i32,
     branch_family: Option<String>,
-    sequencing_rationale_key: Option<String>,
-    branch_rationale_key: Option<String>,
-    downside_rationale_key: Option<String>,
     hidden_intent_active: bool,
     visible_incoming: i32,
     visible_unblocked: i32,
@@ -243,7 +239,32 @@ fn verbose_search_outcome_logging_enabled() -> bool {
         .unwrap_or(false)
 }
 
-fn same_client_input(left: &ClientInput, right: &ClientInput) -> bool {
+fn same_card_play_signature(
+    left: &crate::runtime::combat::CombatCard,
+    right: &crate::runtime::combat::CombatCard,
+) -> bool {
+    left.id == right.id
+        && left.upgrades == right.upgrades
+        && left.misc_value == right.misc_value
+        && left.base_damage_override == right.base_damage_override
+        && left.cost_modifier == right.cost_modifier
+        && left.cost_for_turn == right.cost_for_turn
+        && left.base_damage_mut == right.base_damage_mut
+        && left.base_block_mut == right.base_block_mut
+        && left.base_magic_num_mut == right.base_magic_num_mut
+        && left.multi_damage == right.multi_damage
+        && left.exhaust_override == right.exhaust_override
+        && left.retain_override == right.retain_override
+        && left.free_to_play_once == right.free_to_play_once
+        && left.energy_on_use == right.energy_on_use
+}
+
+fn same_or_equivalent_client_input_with_state(
+    hand: &[crate::runtime::combat::CombatCard],
+    potions: &[Option<crate::content::potions::Potion>],
+    left: &ClientInput,
+    right: &ClientInput,
+) -> bool {
     match (left, right) {
         (
             ClientInput::PlayCard {
@@ -254,7 +275,17 @@ fn same_client_input(left: &ClientInput, right: &ClientInput) -> bool {
                 card_index: right_card,
                 target: right_target,
             },
-        ) => left_card == right_card && left_target == right_target,
+        ) => {
+            if left_target != right_target {
+                return false;
+            }
+            match (hand.get(*left_card), hand.get(*right_card)) {
+                (Some(left_card), Some(right_card)) => {
+                    left_card == right_card || same_card_play_signature(left_card, right_card)
+                }
+                _ => left_card == right_card,
+            }
+        }
         (
             ClientInput::UsePotion {
                 potion_index: left_potion,
@@ -264,12 +295,35 @@ fn same_client_input(left: &ClientInput, right: &ClientInput) -> bool {
                 potion_index: right_potion,
                 target: right_target,
             },
-        ) => left_potion == right_potion && left_target == right_target,
+        ) => {
+            if left_target != right_target {
+                return false;
+            }
+            match (potions.get(*left_potion), potions.get(*right_potion)) {
+                (Some(Some(left_potion)), Some(Some(right_potion))) => {
+                    left_potion == right_potion || left_potion.id == right_potion.id
+                }
+                _ => left_potion == right_potion,
+            }
+        }
         (ClientInput::EndTurn, ClientInput::EndTurn)
         | (ClientInput::Proceed, ClientInput::Proceed)
         | (ClientInput::Cancel, ClientInput::Cancel) => true,
         _ => false,
     }
+}
+
+fn same_or_equivalent_client_input(
+    combat: &CombatState,
+    left: &ClientInput,
+    right: &ClientInput,
+) -> bool {
+    same_or_equivalent_client_input_with_state(
+        &combat.zones.hand,
+        &combat.entities.potions,
+        left,
+        right,
+    )
 }
 
 fn describe_client_input(combat: &CombatState, input: &ClientInput) -> String {
@@ -309,11 +363,6 @@ fn format_card(card: &crate::runtime::combat::CombatCard) -> String {
 }
 
 fn format_search_move_diag(combat: &CombatState, stat: &SearchMoveStat) -> String {
-    let sequencing = sequencing_assessment_for_input(
-        combat,
-        &stat.input,
-        total_incoming_damage_for_log(combat) <= combat.entities.player.block,
-    );
     let branch_family = branch_family_for_input(combat, &stat.input)
         .map(|family| family.as_str())
         .unwrap_or("none");
@@ -335,7 +384,7 @@ fn format_search_move_diag(combat: &CombatState, stat: &SearchMoveStat) -> Strin
         String::new()
     };
     format!(
-        "move={} visits={} avg_score={:.2} order={:.1} leaf={:.1} policy={:.1} sequence={:.1} frontload={:.1} defer={:.1} branch={:.1} downside={:.1} survival_window={:.1} exhaust_evidence={:.1} projected_hp={} projected_block={} projected_unblocked={} projected_enemy_total={} survives={} exhaust_block={} exhaust_draw={} branch_family={} rationale={} branch_rationale={} downside_rationale={}",
+        "move={} visits={} avg_score={:.2} order={:.1} leaf={:.1} policy={:.1} sequence={:.1} frontload={:.1} defer={:.1} branch={:.1} downside={:.1} survival_window={:.1} exhaust_evidence={:.1} projected_hp={} projected_block={} projected_unblocked={} projected_enemy_total={} survives={} exhaust_block={} exhaust_draw={} branch_family={}",
         describe_client_input(combat, &stat.input),
         stat.visits,
         stat.avg_score,
@@ -356,19 +405,7 @@ fn format_search_move_diag(combat: &CombatState, stat: &SearchMoveStat) -> Strin
         stat.survives,
         stat.realized_exhaust_block,
         stat.realized_exhaust_draw,
-        branch_family,
-        sequencing
-            .as_ref()
-            .map(|assessment| assessment.rationale_key)
-            .unwrap_or(""),
-        sequencing
-            .as_ref()
-            .map(|assessment| assessment.branch_rationale_key)
-            .unwrap_or(""),
-        sequencing
-            .as_ref()
-            .map(|assessment| assessment.downside_rationale_key)
-            .unwrap_or("")
+        branch_family
     ) + &cluster_suffix
 }
 
@@ -463,7 +500,8 @@ fn decision_audit_root_summary(audit: &Value) -> Option<String> {
         if let Some(branch_family) = json_str(branch_opening.get("branch_family")) {
             parts.push(format!("family={branch_family}"));
         }
-        if let Some(continuation_value) = json_number_as_i64(branch_opening.get("continuation_value"))
+        if let Some(continuation_value) =
+            json_number_as_i64(branch_opening.get("continuation_value"))
         {
             if continuation_value != 0 {
                 parts.push(format!("continue={continuation_value}"));
@@ -547,7 +585,9 @@ fn decision_audit_hand_select_summary(audit: &Value) -> Option<String> {
 }
 
 fn json_str(value: Option<&Value>) -> Option<&str> {
-    value.and_then(|value| value.as_str()).filter(|value| !value.is_empty())
+    value
+        .and_then(|value| value.as_str())
+        .filter(|value| !value.is_empty())
 }
 
 fn json_number_as_i64(value: Option<&Value>) -> Option<i64> {
@@ -575,30 +615,31 @@ fn maybe_record_search_suspect(
     combat: &CombatState,
     heuristic_diag: &crate::bot::HeuristicDiagnostics,
     search_diag: &SearchDiagnostics,
-) {
+) -> Option<Vec<String>> {
     let Some(chosen_stat) = search_diag.top_moves.first() else {
-        return;
+        return None;
     };
 
     let top_gap = search_diag
         .top_moves
         .get(1)
         .map(|second| chosen_stat.avg_score - second.avg_score);
-    let heuristic_search_gap =
-        if same_client_input(&heuristic_diag.chosen_move, &search_diag.chosen_move) {
-            false
-        } else {
-            let heuristic_rank_of_search = heuristic_diag
-                .top_moves
-                .iter()
-                .position(|stat| same_client_input(&stat.input, &search_diag.chosen_move));
-            let search_rank_of_heuristic = search_diag
-                .top_moves
-                .iter()
-                .position(|stat| same_client_input(&stat.input, &heuristic_diag.chosen_move));
-            heuristic_rank_of_search.is_none_or(|rank| rank >= 2)
-                || search_rank_of_heuristic.is_none_or(|rank| rank >= 2)
-        };
+    let heuristic_search_gap = if same_or_equivalent_client_input(
+        combat,
+        &heuristic_diag.chosen_move,
+        &search_diag.chosen_move,
+    ) {
+        false
+    } else {
+        let heuristic_rank_of_search = heuristic_diag.top_moves.iter().position(|stat| {
+            same_or_equivalent_client_input(combat, &stat.input, &search_diag.chosen_move)
+        });
+        let search_rank_of_heuristic = search_diag.top_moves.iter().position(|stat| {
+            same_or_equivalent_client_input(combat, &stat.input, &heuristic_diag.chosen_move)
+        });
+        heuristic_rank_of_search.is_none_or(|rank| rank >= 2)
+            || search_rank_of_heuristic.is_none_or(|rank| rank >= 2)
+    };
     let large_sequence_bonus = chosen_stat.sequence_bonus.abs() >= SUSPICIOUS_SEQUENCE_THRESHOLD
         || chosen_stat.sequence_survival_bonus.abs() >= SUSPICIOUS_SEQUENCE_THRESHOLD
         || chosen_stat.sequence_exhaust_bonus.abs() >= SUSPICIOUS_EXHAUST_THRESHOLD
@@ -630,14 +671,9 @@ fn maybe_record_search_suspect(
         reasons.push("branch_opening_conflict".to_string());
     }
     if reasons.is_empty() {
-        return;
+        return None;
     }
 
-    let sequencing = sequencing_assessment_for_input(
-        combat,
-        &search_diag.chosen_move,
-        total_incoming_damage_for_log(combat) <= combat.entities.player.block,
-    );
     let pressure = StatePressureFeatures::from_combat(combat);
     let top_candidates = search_diag
         .top_moves
@@ -667,18 +703,6 @@ fn maybe_record_search_suspect(
         realized_exhaust_block: chosen_stat.realized_exhaust_block,
         realized_exhaust_draw: chosen_stat.realized_exhaust_draw,
         branch_family,
-        sequencing_rationale_key: sequencing
-            .as_ref()
-            .map(|assessment| assessment.rationale_key.to_string())
-            .filter(|value| !value.is_empty()),
-        branch_rationale_key: sequencing
-            .as_ref()
-            .map(|assessment| assessment.branch_rationale_key.to_string())
-            .filter(|value| !value.is_empty()),
-        downside_rationale_key: sequencing
-            .as_ref()
-            .map(|assessment| assessment.downside_rationale_key.to_string())
-            .filter(|value| !value.is_empty()),
         hidden_intent_active: pressure.hidden_intent_active,
         visible_incoming: pressure.visible_incoming,
         visible_unblocked: pressure.visible_unblocked,
@@ -720,7 +744,7 @@ fn maybe_record_search_suspect(
             frame_count,
             frame,
             "high_risk_suspect",
-            reasons,
+            reasons.clone(),
             serde_json::json!({
                 "chosen_command": describe_client_input(combat, &search_diag.chosen_move),
                 "heuristic_move": describe_client_input(combat, &heuristic_diag.chosen_move),
@@ -734,9 +758,6 @@ fn maybe_record_search_suspect(
                     "downside_penalty": chosen_stat.sequence_downside_penalty,
                     "survival_window_delta": chosen_stat.sequence_survival_bonus,
                     "exhaust_evidence_delta": chosen_stat.sequence_exhaust_bonus,
-                    "sequencing_rationale_key": record.sequencing_rationale_key,
-                    "branch_rationale_key": record.branch_rationale_key,
-                    "downside_rationale_key": record.downside_rationale_key,
                 },
                 "belief_summary": {
                     "hidden_intent_active": belief.hidden_intent_active,
@@ -767,7 +788,10 @@ fn maybe_record_search_suspect(
                 "top_candidates": top_candidates,
             }),
         );
+        return Some(reasons);
     }
+
+    None
 }
 
 fn combat_top_candidate_record(
@@ -807,6 +831,20 @@ fn branch_family_for_input(
 pub(super) enum CombatFrameOutcome {
     Continue,
     StopForParityFailure,
+    StopForFailFast,
+}
+
+fn should_fail_fast_on_combat_snapshot(trigger_kind: &str, reasons: &[String]) -> bool {
+    match trigger_kind {
+        "validation_failure" | "engine_bug" => true,
+        "high_risk_suspect" => reasons.iter().any(|reason| {
+            matches!(
+                reason.as_str(),
+                "large_sequence_bonus" | "branch_opening_conflict" | "sequencing_conflict"
+            )
+        }),
+        _ => false,
+    }
 }
 
 fn should_stop_for_combat_mismatch(
@@ -1375,6 +1413,7 @@ pub(super) fn handle_live_combat_frame<W: Write>(
     gs: &Value,
     frame_count: u64,
     parity_mode: LiveParityMode,
+    fail_fast_debug: bool,
     combat_search_budget: u32,
     last_sent_cmd: &mut String,
     cmd_failed_count: &mut u32,
@@ -1489,6 +1528,23 @@ pub(super) fn handle_live_combat_frame<W: Write>(
                 "diffs": sync_diffs,
             }),
         );
+        if fail_fast_debug
+            && should_fail_fast_on_combat_snapshot(
+                "validation_failure",
+                &[
+                    "combat_parse_diff".to_string(),
+                    format!("count={}", sync_diffs.len()),
+                ],
+            )
+        {
+            writeln!(live_io.log, "  [FAIL_FAST] stopping on combat parse diff").unwrap();
+            writeln!(
+                live_io.focus_log,
+                "  [FAIL_FAST] stopping on combat parse diff"
+            )
+            .unwrap();
+            return CombatFrameOutcome::StopForFailFast;
+        }
         if should_stop_for_combat_mismatch(parity_mode, true, false) {
             writeln!(
                 live_io.log,
@@ -1565,6 +1621,23 @@ pub(super) fn handle_live_combat_frame<W: Write>(
                     }).collect::<Vec<_>>(),
                 }),
             );
+            if fail_fast_debug
+                && should_fail_fast_on_combat_snapshot(
+                    "engine_bug",
+                    &[
+                        "combat_action_diff".to_string(),
+                        format!("count={}", action_diffs.len()),
+                    ],
+                )
+            {
+                writeln!(live_io.log, "  [FAIL_FAST] stopping on combat action diff").unwrap();
+                writeln!(
+                    live_io.focus_log,
+                    "  [FAIL_FAST] stopping on combat action diff"
+                )
+                .unwrap();
+                return CombatFrameOutcome::StopForFailFast;
+            }
             saw_action_diff = true;
         } else {
             writeln!(live_io.log, "  >>> PARITY OK <<<").unwrap();
@@ -1587,7 +1660,7 @@ pub(super) fn handle_live_combat_frame<W: Write>(
     log_hidden_intent_belief(live_io, &truth);
 
     let heuristic_diag = crate::bot::diagnose_decision(&truth);
-    let mut search_diag = crate::bot::search::diagnose_root_search(
+    let mut search_diag = diagnose_root_search(
         &EngineState::CombatPlayerTurn,
         &truth,
         coverage_db,
@@ -1640,14 +1713,31 @@ pub(super) fn handle_live_combat_frame<W: Write>(
     )
     .unwrap();
     log_combat_decision_audit_summary(live_io, &search_diag);
-    maybe_record_search_suspect(
+    if let Some(reasons) = maybe_record_search_suspect(
         live_io,
         frame_count,
         frame,
         &truth,
         &heuristic_diag,
         &search_diag,
-    );
+    ) {
+        if fail_fast_debug && should_fail_fast_on_combat_snapshot("high_risk_suspect", &reasons) {
+            writeln!(
+                live_io.log,
+                "  [FAIL_FAST] stopping on high_risk_suspect reasons={}",
+                reasons.join(",")
+            )
+            .unwrap();
+            writeln!(
+                live_io.focus_log,
+                "[FAIL_FAST] frame={} trigger=high_risk_suspect reasons={}",
+                frame_count,
+                reasons.join(",")
+            )
+            .unwrap();
+            return CombatFrameOutcome::StopForFailFast;
+        }
+    }
     if live_io.log.metadata().is_ok() {
         let top_candidates = search_diag
             .top_moves
@@ -1674,7 +1764,11 @@ pub(super) fn handle_live_combat_frame<W: Write>(
         );
         crate::bot::sidecar::write_shadow_record(&mut live_io.sidecar_shadow, &shadow);
     }
-    if !same_client_input(&heuristic_diag.chosen_move, &search_diag.chosen_move) {
+    if !same_or_equivalent_client_input(
+        &truth,
+        &heuristic_diag.chosen_move,
+        &search_diag.chosen_move,
+    ) {
         writeln!(
             live_io.log,
             "  [HEURISTIC DIAG] disagrees chosen={:?} baseline_score={}",
@@ -2024,4 +2118,57 @@ fn align_rust_monsters_for_parse(cs: &CombatState, java_ms: &[Value]) -> Vec<Opt
     }
 
     aligned
+}
+
+#[cfg(test)]
+mod tests {
+    use super::same_or_equivalent_client_input_with_state;
+    use crate::content::cards::CardId;
+    use crate::runtime::combat::CombatCard;
+    use crate::state::core::ClientInput;
+
+    #[test]
+    fn identical_hand_cards_with_different_indices_count_as_equivalent_actions() {
+        let hand = vec![
+            CombatCard::new(CardId::Strike, 1),
+            CombatCard::new(CardId::Defend, 2),
+            CombatCard::new(CardId::Defend, 3),
+        ];
+        let potions = Vec::new();
+
+        assert!(same_or_equivalent_client_input_with_state(
+            &hand,
+            &potions,
+            &ClientInput::PlayCard {
+                card_index: 1,
+                target: None,
+            },
+            &ClientInput::PlayCard {
+                card_index: 2,
+                target: None,
+            },
+        ));
+    }
+
+    #[test]
+    fn different_hand_cards_do_not_count_as_equivalent_actions() {
+        let hand = vec![
+            CombatCard::new(CardId::Strike, 1),
+            CombatCard::new(CardId::Defend, 2),
+        ];
+        let potions = Vec::new();
+
+        assert!(!same_or_equivalent_client_input_with_state(
+            &hand,
+            &potions,
+            &ClientInput::PlayCard {
+                card_index: 0,
+                target: Some(1),
+            },
+            &ClientInput::PlayCard {
+                card_index: 1,
+                target: Some(1),
+            },
+        ));
+    }
 }

@@ -1,7 +1,7 @@
 use crate::bot::agent::Agent;
+use crate::bot::combat::{self, SearchDiagnostics};
 use crate::bot::event_policy::{EventChoiceDecision, EventDecisionContext as EventPolicyContext};
 use crate::bot::reward_heuristics::RewardScreenEvaluation;
-use crate::bot::search::{self, SearchDiagnostics};
 use crate::content::potions::PotionId;
 use crate::rewards::state::{RewardCard, RewardState};
 use crate::runtime::combat::CombatState;
@@ -18,6 +18,7 @@ pub enum DecisionDomain {
     RewardClaim,
     Shop,
     Event,
+    DeckImprovement,
     LegacyInput,
 }
 
@@ -75,6 +76,12 @@ pub struct RewardClaimDecisionContext<'a> {
 #[derive(Clone, Copy, Debug)]
 pub struct ShopDecisionContext<'a> {
     pub shop: &'a ShopState,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct DeckImprovementDecisionContext<'a> {
+    pub run_state: &'a RunState,
+    pub operation: crate::bot::run_deck_improvement::DeckOperationKind,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -136,12 +143,19 @@ pub struct EventDecision {
 }
 
 #[derive(Clone, Debug)]
+pub struct DeckImprovementDecision {
+    pub meta: DecisionMetadata,
+    pub assessment: crate::bot::run_deck_improvement::DeckOperationAssessment,
+}
+
+#[derive(Clone, Debug)]
 pub enum BotPolicyDecision {
     Combat(CombatDecision),
     RewardCard(RewardCardDecision),
     RewardClaim(RewardClaimDecision),
     Shop(ShopDecision),
     Event(EventDecision),
+    DeckImprovement(DeckImprovementDecision),
     LegacyInput {
         meta: DecisionMetadata,
         input: ClientInput,
@@ -156,6 +170,7 @@ impl BotPolicyDecision {
             Self::RewardClaim(decision) => &decision.meta,
             Self::Shop(decision) => &decision.meta,
             Self::Event(decision) => &decision.meta,
+            Self::DeckImprovement(decision) => &decision.meta,
             Self::LegacyInput { meta, .. } => meta,
         }
     }
@@ -192,13 +207,11 @@ impl Agent {
             | EngineState::PendingChoice(_)
             | EngineState::EventCombat(_) => {
                 if let Some(combat) = combat {
-                    BotPolicyDecision::Combat(self.decide_combat_policy(
-                        CombatDecisionContext {
-                            engine,
-                            combat,
-                            verbose,
-                        },
-                    ))
+                    BotPolicyDecision::Combat(self.decide_combat_policy(CombatDecisionContext {
+                        engine,
+                        combat,
+                        verbose,
+                    }))
                 } else {
                     BotPolicyDecision::LegacyInput {
                         meta: DecisionMetadata::new(
@@ -214,36 +227,34 @@ impl Agent {
             }
             EngineState::RewardScreen(reward) => {
                 if let Some(cards) = &reward.pending_card_choice {
-                    BotPolicyDecision::RewardCard(
-                        self.decide_reward_card_policy(
-                            run_state,
-                            RewardCardDecisionContext {
-                                reward_cards: cards,
-                                can_skip: reward.skippable,
-                            },
-                        ),
-                    )
+                    BotPolicyDecision::RewardCard(self.decide_reward_card_policy(
+                        run_state,
+                        RewardCardDecisionContext {
+                            reward_cards: cards,
+                            can_skip: reward.skippable,
+                        },
+                    ))
                 } else {
-                    BotPolicyDecision::RewardClaim(
-                        self.decide_reward_claim_policy(
-                            run_state,
-                            RewardClaimDecisionContext {
-                                reward,
-                                blocked_potion_offers: &[],
-                            },
-                        ),
-                    )
+                    BotPolicyDecision::RewardClaim(self.decide_reward_claim_policy(
+                        run_state,
+                        RewardClaimDecisionContext {
+                            reward,
+                            blocked_potion_offers: &[],
+                        },
+                    ))
                 }
             }
-            EngineState::Shop(shop) => BotPolicyDecision::Shop(self.decide_shop_policy(
-                run_state,
-                ShopDecisionContext { shop },
-            )),
+            EngineState::Shop(shop) => BotPolicyDecision::Shop(
+                self.decide_shop_policy(run_state, ShopDecisionContext { shop }),
+            ),
             EngineState::EventRoom => {
                 if let Some(event_state) = &run_state.event_state {
-                    let choices = crate::engine::event_handler::get_event_choices(run_state);
-                    let context =
-                        crate::bot::event_policy::local_event_context(run_state, event_state, &choices);
+                    let options = crate::engine::event_handler::get_event_options(run_state);
+                    let context = crate::bot::event_policy::local_event_context(
+                        run_state,
+                        event_state,
+                        &options,
+                    );
                     BotPolicyDecision::Event(self.decide_event_policy(run_state, &context))
                 } else {
                     BotPolicyDecision::LegacyInput {
@@ -322,7 +333,7 @@ impl Agent {
     }
 
     pub fn decide_combat_policy(&mut self, ctx: CombatDecisionContext<'_>) -> CombatDecision {
-        let diagnostics = search::diagnose_root_search_with_depth(
+        let diagnostics = combat::diagnose_root_search_with_depth(
             ctx.engine,
             ctx.combat,
             &self.db,
@@ -335,8 +346,8 @@ impl Agent {
         CombatDecision {
             meta: DecisionMetadata::new(
                 DecisionDomain::Combat,
-                "combat_search",
-                Some("search_root_policy"),
+                "combat_baseline",
+                Some("projected_turn_close"),
                 combat_search_confidence(&diagnostics),
                 false,
             ),
@@ -350,8 +361,13 @@ impl Agent {
         run_state: &RunState,
         ctx: RewardCardDecisionContext<'_>,
     ) -> RewardCardDecision {
-        let offered_cards: Vec<_> = ctx.reward_cards.iter().map(|reward_card| reward_card.id).collect();
-        let evaluation = crate::bot::evaluate_reward_screen_for_run_detailed(&offered_cards, run_state);
+        let offered_cards: Vec<_> = ctx
+            .reward_cards
+            .iter()
+            .map(|reward_card| reward_card.id)
+            .collect();
+        let evaluation =
+            crate::bot::evaluate_reward_screen_for_run_detailed(&offered_cards, run_state);
 
         if let Some(idx) = self
             .active_curiosity_target()
@@ -574,6 +590,7 @@ impl Agent {
                 score: None,
                 safety_override_applied: false,
                 rationale: Some("compatibility_fallback_adapter"),
+                deck_improvement_assessment: None,
             }
         });
         EventDecision {
@@ -591,6 +608,24 @@ impl Agent {
         }
     }
 
+    pub fn assess_deck_improvement_policy(
+        &self,
+        ctx: DeckImprovementDecisionContext<'_>,
+    ) -> DeckImprovementDecision {
+        let assessment =
+            crate::bot::run_deck_improvement::assess_deck_operation(ctx.run_state, ctx.operation);
+        DeckImprovementDecision {
+            meta: DecisionMetadata::new(
+                DecisionDomain::DeckImprovement,
+                "deck_improvement_policy",
+                Some(assessment.rationale_key),
+                Some(assessment.total_prior_delta as f32),
+                false,
+            ),
+            assessment,
+        }
+    }
+
     fn best_blocked_shop_potion_replacement(
         &self,
         run_state: &RunState,
@@ -605,8 +640,12 @@ impl Agent {
             })
             .filter_map(|potion| {
                 let score = self.shop_potion_score(run_state, potion.potion_id);
-                let purchase_score =
-                    self.shop_potion_purchase_score(run_state, shop, potion.potion_id, potion.price);
+                let purchase_score = self.shop_potion_purchase_score(
+                    run_state,
+                    shop,
+                    potion.potion_id,
+                    potion.price,
+                );
                 (purchase_score >= 72).then_some((score, purchase_score))
             })
             .max_by_key(|(score, purchase_score)| (*purchase_score, *score))?;
@@ -620,7 +659,10 @@ impl Agent {
 
 fn combat_search_confidence(diagnostics: &SearchDiagnostics) -> Option<f32> {
     if diagnostics.top_moves.len() < 2 {
-        return diagnostics.top_moves.first().map(|move_stat| move_stat.avg_score);
+        return diagnostics
+            .top_moves
+            .first()
+            .map(|move_stat| move_stat.avg_score);
     }
     Some(diagnostics.top_moves[0].avg_score - diagnostics.top_moves[1].avg_score)
 }
@@ -668,8 +710,12 @@ mod tests {
 
         let mut card_reward = RewardState::new();
         card_reward.pending_card_choice = Some(vec![RewardCard::new(CardId::Strike, 0)]);
-        let card_decision =
-            agent.decide_policy(&EngineState::RewardScreen(card_reward), &run_state, None, false);
+        let card_decision = agent.decide_policy(
+            &EngineState::RewardScreen(card_reward),
+            &run_state,
+            None,
+            false,
+        );
         match card_decision {
             BotPolicyDecision::RewardCard(decision) => {
                 assert_eq!(decision.meta.domain, DecisionDomain::RewardCard);
@@ -679,8 +725,12 @@ mod tests {
 
         let mut claim_reward = RewardState::new();
         claim_reward.items.push(RewardItem::Gold { amount: 25 });
-        let claim_decision =
-            agent.decide_policy(&EngineState::RewardScreen(claim_reward), &run_state, None, false);
+        let claim_decision = agent.decide_policy(
+            &EngineState::RewardScreen(claim_reward),
+            &run_state,
+            None,
+            false,
+        );
         match claim_decision {
             BotPolicyDecision::RewardClaim(decision) => {
                 assert_eq!(decision.meta.domain, DecisionDomain::RewardClaim);
@@ -694,8 +744,12 @@ mod tests {
         let mut agent = crate::bot::Agent::new();
 
         let run_state = crate::state::run::RunState::new(1, 0, false, "Ironclad");
-        let shop_decision =
-            agent.decide_policy(&EngineState::Shop(crate::shop::ShopState::new()), &run_state, None, false);
+        let shop_decision = agent.decide_policy(
+            &EngineState::Shop(crate::shop::ShopState::new()),
+            &run_state,
+            None,
+            false,
+        );
         match shop_decision {
             BotPolicyDecision::Shop(decision) => {
                 assert_eq!(decision.meta.domain, DecisionDomain::Shop);
@@ -704,8 +758,9 @@ mod tests {
         }
 
         let mut event_run_state = crate::state::run::RunState::new(1, 0, false, "Ironclad");
-        event_run_state.event_state =
-            Some(crate::state::events::EventState::new(crate::state::events::EventId::Neow));
+        event_run_state.event_state = Some(crate::state::events::EventState::new(
+            crate::state::events::EventId::Neow,
+        ));
         let event_decision =
             agent.decide_policy(&EngineState::EventRoom, &event_run_state, None, false);
         match event_decision {
@@ -720,11 +775,12 @@ mod tests {
     fn pending_card_reward_select_routes_to_reward_card_domain() {
         let mut agent = crate::bot::Agent::new();
         let run_state = crate::state::run::RunState::new(1, 0, false, "Ironclad");
-        let engine = EngineState::PendingChoice(crate::state::core::PendingChoice::CardRewardSelect {
-            cards: vec![CardId::Strike, CardId::Defend],
-            destination: crate::runtime::action::CardDestination::Hand,
-            can_skip: true,
-        });
+        let engine =
+            EngineState::PendingChoice(crate::state::core::PendingChoice::CardRewardSelect {
+                cards: vec![CardId::Strike, CardId::Defend],
+                destination: crate::runtime::action::CardDestination::Hand,
+                can_skip: true,
+            });
 
         let decision = agent.decide_policy(&engine, &run_state, None, false);
         match decision {
@@ -733,5 +789,30 @@ mod tests {
             }
             other => panic!("expected RewardCard decision, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn deck_improvement_policy_exposes_typed_domain() {
+        let agent = crate::bot::Agent::new();
+        let mut run_state = crate::state::run::RunState::new(1, 0, false, "Ironclad");
+        run_state
+            .master_deck
+            .push(crate::runtime::combat::CombatCard::new(
+                CardId::Parasite,
+                73_001,
+            ));
+        let decision =
+            agent.assess_deck_improvement_policy(super::DeckImprovementDecisionContext {
+                run_state: &run_state,
+                operation: crate::bot::run_deck_improvement::DeckOperationKind::Remove,
+            });
+        assert_eq!(decision.meta.domain, DecisionDomain::DeckImprovement);
+        assert_eq!(
+            decision
+                .assessment
+                .best_candidate
+                .and_then(|candidate| candidate.target_uuid),
+            Some(73_001)
+        );
     }
 }
