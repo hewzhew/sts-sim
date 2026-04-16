@@ -374,7 +374,7 @@ pub fn handle_damage(info: crate::runtime::action::DamageInfo, state: &mut Comba
             let previous_hp = state.entities.player.current_hp;
             state.entities.player.current_hp =
                 (state.entities.player.current_hp - final_damage).max(0);
-            state.turn.counters.times_damaged_this_combat += 1;
+            state.turn.increment_times_damaged_this_combat();
             queue_red_skull_threshold_actions(state, previous_hp, state.entities.player.current_hp);
             queue_player_hp_loss_hooks(
                 state,
@@ -655,7 +655,7 @@ pub fn handle_lose_hp(target: usize, amount: i32, triggers_rupture: bool, state:
         let previous_hp = state.entities.player.current_hp;
         state.entities.player.current_hp = (state.entities.player.current_hp - final_amount).max(0);
         if final_amount > 0 {
-            state.turn.counters.times_damaged_this_combat += 1;
+            state.turn.increment_times_damaged_this_combat();
             queue_red_skull_threshold_actions(state, previous_hp, state.entities.player.current_hp);
             queue_player_hp_loss_hooks(
                 state,

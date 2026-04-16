@@ -283,6 +283,50 @@ impl TurnRuntime {
         self.adjust_energy(-amount);
     }
 
+    pub fn increment_cards_played(&mut self) {
+        self.counters.cards_played_this_turn += 1;
+    }
+
+    pub fn increment_attacks_played(&mut self) {
+        self.counters.attacks_played_this_turn += 1;
+    }
+
+    pub fn increment_times_damaged_this_combat(&mut self) {
+        self.counters.times_damaged_this_combat += 1;
+    }
+
+    pub fn mark_early_end_turn_pending(&mut self) {
+        self.counters.early_end_turn_pending = true;
+    }
+
+    pub fn clear_early_end_turn_pending(&mut self) {
+        self.counters.early_end_turn_pending = false;
+    }
+
+    pub fn set_discovery_cost_for_turn(&mut self, cost: Option<u8>) {
+        self.counters.discovery_cost_for_turn = cost;
+    }
+
+    pub fn take_discovery_cost_for_turn(&mut self) -> Option<u8> {
+        self.counters.discovery_cost_for_turn.take()
+    }
+
+    pub fn mark_player_escaping(&mut self) {
+        self.counters.player_escaping = true;
+    }
+
+    pub fn clear_escape_pending_reward(&mut self) {
+        self.counters.escape_pending_reward = false;
+    }
+
+    pub fn mark_escape_pending_reward(&mut self) {
+        self.counters.escape_pending_reward = true;
+    }
+
+    pub fn mark_victory_triggered(&mut self) {
+        self.counters.victory_triggered = true;
+    }
+
     pub fn begin_player_phase(&mut self) {
         self.current_phase = CombatPhase::PlayerTurn;
     }
@@ -899,5 +943,44 @@ mod tests {
             "unrelated flags should not be reset by turn-start setup"
         );
         assert_eq!(turn.turn_start_draw_modifier, -1);
+    }
+
+    #[test]
+    fn turn_runtime_counter_helpers_update_expected_flags() {
+        let mut turn = TurnRuntime::fresh_player_turn(3);
+
+        turn.mark_early_end_turn_pending();
+        turn.mark_player_escaping();
+        turn.mark_escape_pending_reward();
+        turn.mark_victory_triggered();
+        turn.increment_cards_played();
+        turn.increment_attacks_played();
+        turn.increment_times_damaged_this_combat();
+        turn.set_discovery_cost_for_turn(Some(1));
+
+        assert!(turn.counters.early_end_turn_pending);
+        assert!(turn.counters.player_escaping);
+        assert!(turn.counters.escape_pending_reward);
+        assert!(turn.counters.victory_triggered);
+        assert_eq!(turn.counters.cards_played_this_turn, 1);
+        assert_eq!(turn.counters.attacks_played_this_turn, 1);
+        assert_eq!(turn.counters.times_damaged_this_combat, 1);
+        assert_eq!(turn.take_discovery_cost_for_turn(), Some(1));
+        assert_eq!(turn.take_discovery_cost_for_turn(), None);
+    }
+
+    #[test]
+    fn turn_runtime_can_clear_transition_flags_without_touching_other_counters() {
+        let mut turn = TurnRuntime::fresh_player_turn(3);
+        turn.mark_early_end_turn_pending();
+        turn.mark_escape_pending_reward();
+        turn.increment_times_damaged_this_combat();
+
+        turn.clear_early_end_turn_pending();
+        turn.clear_escape_pending_reward();
+
+        assert!(!turn.counters.early_end_turn_pending);
+        assert!(!turn.counters.escape_pending_reward);
+        assert_eq!(turn.counters.times_damaged_this_combat, 1);
     }
 }

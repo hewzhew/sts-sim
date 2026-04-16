@@ -305,7 +305,7 @@ pub fn tick_engine(
                     }
                     // Store cost_for_turn in the first element of limbo as a signal
                     // (it will be applied when the choice is resolved)
-                    combat_state.turn.counters.discovery_cost_for_turn = cost_for_turn;
+                    combat_state.turn.set_discovery_cost_for_turn(cost_for_turn);
                     update_monster_intents(combat_state);
                     *engine_state =
                         EngineState::PendingChoice(PendingChoice::DiscoverySelect(cards));
@@ -378,8 +378,8 @@ pub fn tick_engine(
                     // Java SmokeBomb does not instantly jump to rewards. It flips the
                     // room/player into an escaping state, then the combat UI lingers
                     // through end-of-turn processing before rewards appear.
-                    combat_state.turn.counters.player_escaping = true;
-                    combat_state.turn.counters.escape_pending_reward = false;
+                    combat_state.turn.mark_player_escaping();
+                    combat_state.turn.clear_escape_pending_reward();
                     return true;
                 }
                 _ => {
@@ -435,9 +435,9 @@ pub fn tick_engine(
                     // first, then finish escaping on the following tick.
                     if combat_state.turn.counters.player_escaping {
                         if !combat_state.turn.counters.victory_triggered {
-                            combat_state.turn.counters.victory_triggered = true;
+                            combat_state.turn.mark_victory_triggered();
                             resolve_victory_hooks_immediately(combat_state);
-                            combat_state.turn.counters.escape_pending_reward = true;
+                            combat_state.turn.mark_escape_pending_reward();
                             *engine_state = EngineState::CombatProcessing;
                             return true;
                         }
@@ -447,7 +447,7 @@ pub fn tick_engine(
                             );
                             return false;
                         }
-                        combat_state.turn.counters.escape_pending_reward = true;
+                        combat_state.turn.mark_escape_pending_reward();
                         *engine_state = EngineState::CombatProcessing;
                         return true;
                     }
@@ -764,7 +764,7 @@ pub fn tick_engine(
         !is_pending_rebirth
     }) {
         if !combat_state.turn.counters.victory_triggered {
-            combat_state.turn.counters.victory_triggered = true;
+            combat_state.turn.mark_victory_triggered();
             resolve_victory_hooks_immediately(combat_state);
         }
 
@@ -906,7 +906,7 @@ fn resolve_pending_choice(
                         + combat_state.zones.discard_pile.len() as u32;
                     let mut card = crate::runtime::combat::CombatCard::new(card_id, uuid);
                     // Apply cost override from the SuspendForDiscovery action
-                    if let Some(cost) = combat_state.turn.counters.discovery_cost_for_turn.take() {
+                    if let Some(cost) = combat_state.turn.take_discovery_cost_for_turn() {
                         card.cost_for_turn = Some(cost);
                     }
                     if combat_state.zones.hand.len() < 10 {

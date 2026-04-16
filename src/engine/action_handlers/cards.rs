@@ -746,14 +746,14 @@ pub fn handle_use_card_done(should_exhaust: bool, state: &mut CombatState) {
     }
 
     if state.turn.counters.early_end_turn_pending {
-        state.turn.counters.early_end_turn_pending = false;
+        state.turn.clear_early_end_turn_pending();
         state.begin_turn_transition();
         state.queue_action_back(Action::EndTurnTrigger);
     }
 }
 
 pub fn handle_queue_early_end_turn(state: &mut CombatState) {
-    state.turn.counters.early_end_turn_pending = true;
+    state.turn.mark_early_end_turn_pending();
 }
 
 fn execute_played_card(
@@ -824,9 +824,9 @@ fn execute_played_card(
         }
     }
 
-    state.turn.counters.cards_played_this_turn += 1;
+    state.turn.increment_cards_played();
     if def.card_type == crate::content::cards::CardType::Attack {
-        state.turn.counters.attacks_played_this_turn += 1;
+        state.turn.increment_attacks_played();
     }
 
     let mut should_exhaust = played_card
