@@ -1,6 +1,6 @@
+use crate::content::powers::store;
 use crate::runtime::action::{Action, ActionInfo};
 use crate::runtime::combat::{CombatPhase, CombatState};
-use crate::content::powers::store;
 use crate::state::core::{ClientInput, EngineState, PendingChoice, RunResult};
 use crate::state::selection::{EngineDiagnostic, EngineDiagnosticClass, EngineDiagnosticSeverity};
 use smallvec::SmallVec;
@@ -50,17 +50,10 @@ fn resolve_victory_hooks_immediately(combat_state: &mut CombatState) {
         return;
     }
 
-    queue_actions(&mut combat_state.engine.action_queue, actions);
-    while let Some(action) = combat_state.engine.action_queue.pop_front() {
+    combat_state.queue_actions(actions);
+    while let Some(action) = combat_state.pop_next_action() {
         crate::engine::action_handlers::execute_action(action, combat_state);
-        if combat_state.engine.action_queue.is_empty()
-            && !combat_state.zones.queued_cards.is_empty()
-        {
-            combat_state
-                .engine
-                .action_queue
-                .push_back(Action::FlushNextQueuedCard);
-        }
+        combat_state.ensure_flush_next_queued_card();
     }
 }
 
@@ -87,9 +80,7 @@ pub fn tick_engine(
             if handle_player_turn_input(engine_state, combat_state, cmd).is_ok() {
                 // After a card play, actions (damage, block, etc.) are queued.
                 // Transition to CombatProcessing to drain the queue.
-                if (!combat_state.engine.action_queue.is_empty()
-                    || !combat_state.zones.queued_cards.is_empty())
-                    && *engine_state == EngineState::CombatPlayerTurn
+                if combat_state.has_pending_actions() || !combat_state.zones.queued_cards.is_empty()
                 {
                     *engine_state = EngineState::CombatProcessing;
                 }
@@ -103,16 +94,9 @@ pub fn tick_engine(
 
     // Phase 3: execute action queue
     if *engine_state == EngineState::CombatProcessing {
-        if combat_state.engine.action_queue.is_empty()
-            && !combat_state.zones.queued_cards.is_empty()
-        {
-            combat_state
-                .engine
-                .action_queue
-                .push_back(Action::FlushNextQueuedCard);
-        }
-        if !combat_state.engine.action_queue.is_empty() {
-            let next_action = combat_state.engine.action_queue.pop_front().unwrap();
+        combat_state.ensure_flush_next_queued_card();
+        if combat_state.has_pending_actions() {
+            let next_action = combat_state.pop_next_action().unwrap();
 
             // Intercept SuspendFor* actions and transition to PendingChoice.
             match next_action {
@@ -403,7 +387,7 @@ pub fn tick_engine(
                 }
             }
             if combat_state.entities.player.current_hp <= 0 {
-                combat_state.engine.action_queue.clear();
+                combat_state.clear_pending_actions();
                 *engine_state = EngineState::GameOver(RunResult::Defeat);
                 return false;
             }
@@ -506,22 +490,22 @@ pub fn tick_engine(
                                 power.amount,
                             );
                             for a in hook_actions {
-                                combat_state.engine.action_queue.push_back(a);
+                                combat_state.queue_action_back(a);
                             }
                         }
                     }
                     // 3. Drain pre-turn actions instantly
-                    while let Some(action) = combat_state.engine.action_queue.pop_front() {
+                    while let Some(action) = combat_state.pop_next_action() {
                         super::action_handlers::execute_action(action, combat_state);
                         if combat_state.entities.player.current_hp <= 0 {
-                            combat_state.engine.action_queue.clear();
+                            combat_state.clear_pending_actions();
                             *engine_state = EngineState::GameOver(RunResult::Defeat);
                             return false;
                         }
                     }
 
                     // 2. Execute each alive monster's turn (player block absorbs damage)
-                    combat_state.turn.current_phase = CombatPhase::MonsterTurn;
+                    combat_state.begin_monster_turn();
                     let mut monster_snapshots = Vec::new();
                     let mut dead_ids = Vec::new();
                     for m in &combat_state.entities.monsters {
@@ -547,13 +531,13 @@ pub fn tick_engine(
                         let actions =
                             crate::content::monsters::resolve_monster_turn(combat_state, monster);
                         for action in actions {
-                            combat_state.engine.action_queue.push_back(action);
+                            combat_state.queue_action_back(action);
                         }
                         // Drain this monster's turn actions
-                        while let Some(action) = combat_state.engine.action_queue.pop_front() {
+                        while let Some(action) = combat_state.pop_next_action() {
                             super::action_handlers::execute_action(action, combat_state);
                             if combat_state.entities.player.current_hp <= 0 {
-                                combat_state.engine.action_queue.clear();
+                                combat_state.clear_pending_actions();
                                 *engine_state = EngineState::GameOver(RunResult::Defeat);
                                 return false;
                             }
@@ -580,15 +564,15 @@ pub fn tick_engine(
                                 *mid,
                             );
                             for a in hook_actions {
-                                combat_state.engine.action_queue.push_back(a);
+                                combat_state.queue_action_back(a);
                             }
                         }
                     }
                     // Drain atEndOfTurn collective actions
-                    while let Some(action) = combat_state.engine.action_queue.pop_front() {
+                    while let Some(action) = combat_state.pop_next_action() {
                         super::action_handlers::execute_action(action, combat_state);
                         if combat_state.entities.player.current_hp <= 0 {
-                            combat_state.engine.action_queue.clear();
+                            combat_state.clear_pending_actions();
                             *engine_state = EngineState::GameOver(RunResult::Defeat);
                             return false;
                         }
@@ -608,7 +592,7 @@ pub fn tick_engine(
                             power.just_applied,
                         );
                         for a in hook_actions {
-                            combat_state.engine.action_queue.push_back(a);
+                            combat_state.queue_action_back(a);
                         }
                     }
                     // Monster powers:
@@ -632,12 +616,12 @@ pub fn tick_engine(
                                     power.just_applied,
                                 );
                             for a in hook_actions {
-                                combat_state.engine.action_queue.push_back(a);
+                                combat_state.queue_action_back(a);
                             }
                         }
                     }
                     // Drain at_end_of_round actions
-                    while let Some(action) = combat_state.engine.action_queue.pop_front() {
+                    while let Some(action) = combat_state.pop_next_action() {
                         super::action_handlers::execute_action(action, combat_state);
                     }
 
@@ -646,7 +630,7 @@ pub fn tick_engine(
 
                     // If player died during monster turn, immediate game over
                     if combat_state.entities.player.current_hp <= 0 {
-                        combat_state.engine.action_queue.clear();
+                        combat_state.clear_pending_actions();
                         *engine_state = EngineState::GameOver(RunResult::Defeat);
                         return false;
                     }
@@ -681,15 +665,7 @@ pub fn tick_engine(
 
                     // (Monster blocks are cleared per-monster at the start of each monster's turn above)
 
-                    combat_state.turn.turn_count += 1;
-                    combat_state.turn.current_phase = CombatPhase::PlayerTurn;
-
-                    // 6. Reset energy -> Java: EnergyManager.recharge() -> this.energy = this.energyMaster.
-                    combat_state.turn.energy = combat_state.entities.player.energy_master;
-
-                    // 7. Reset per-turn counters
-                    combat_state.turn.counters.cards_played_this_turn = 0;
-                    combat_state.turn.counters.attacks_played_this_turn = 0;
+                    combat_state.begin_next_player_turn();
                     // Reset per-turn relic counters (OrangePellets)
                     for relic in combat_state.entities.player.relics.iter_mut() {
                         match relic.id {
@@ -712,7 +688,7 @@ pub fn tick_engine(
                     // Java: relics fire atTurnStart BEFORE draw cards
                     let turn_start_actions =
                         crate::content::relics::hooks::at_turn_start(combat_state);
-                    queue_actions(&mut combat_state.engine.action_queue, turn_start_actions);
+                    combat_state.queue_actions(turn_start_actions);
 
                     // 8.1. at_turn_start power hooks (Player)
                     // Java: player.applyStartOfTurnPowers()
@@ -726,18 +702,18 @@ pub fn tick_engine(
                             power.amount,
                         );
                         for a in pa {
-                            combat_state.engine.action_queue.push_back(a);
+                            combat_state.queue_action_back(a);
                         }
                     }
 
                     // 8.2. applyStartOfTurnOrbs
                     let orb_actions = crate::content::orbs::hooks::at_turn_start(combat_state);
-                    queue_actions(&mut combat_state.engine.action_queue, orb_actions);
+                    combat_state.queue_actions(orb_actions);
 
                     // 8.3. applyStartOfTurnCards (For Curses in hand)
                     let card_actions =
                         crate::content::cards::hooks::at_turn_start_in_hand(combat_state);
-                    queue_actions(&mut combat_state.engine.action_queue, card_actions);
+                    combat_state.queue_actions(card_actions);
 
                     // 9. Draw cards (default 5, reduced by DrawReduction power)
                     // Java consumes AbstractDungeon.player.gameHandSize here.
@@ -745,21 +721,15 @@ pub fn tick_engine(
                     // draw-target state is justified.
                     let draw_count = compute_player_turn_start_draw_count(combat_state);
                     if draw_count > 0 {
-                        combat_state
-                            .engine
-                            .action_queue
-                            .push_back(Action::DrawCards(draw_count as u32));
+                        combat_state.queue_action_back(Action::DrawCards(draw_count as u32));
                     }
-                    combat_state
-                        .engine
-                        .action_queue
-                        .push_back(Action::PostDrawTrigger);
+                    combat_state.queue_action_back(Action::PostDrawTrigger);
 
                     *engine_state = EngineState::CombatProcessing;
                 }
                 CombatPhase::MonsterTurn => {
                     // Monster actions drained, transition to player turn start
-                    combat_state.turn.current_phase = CombatPhase::PlayerTurn;
+                    combat_state.turn.begin_player_phase();
                     *engine_state = EngineState::CombatProcessing;
                 }
             }
@@ -801,7 +771,7 @@ pub fn tick_engine(
         // Java does not cut off queued onUseCard / onDeath aftermath when the last monster dies.
         // Finish draining any already-queued actions (e.g. Rage block, relic hooks, death hooks)
         // before transitioning to rewards.
-        if combat_state.engine.action_queue.is_empty()
+        if !combat_state.has_pending_actions()
             && combat_state.zones.limbo.is_empty()
             && combat_state.zones.queued_cards.is_empty()
         {
@@ -845,42 +815,30 @@ fn handle_player_turn_input(
                 target,
             )?;
             // Queue UsePotion action; action_handlers.rs performs the actual work.
-            combat_state
-                .engine
-                .action_queue
-                .push_back(Action::UsePotion {
-                    slot: potion_index,
-                    target: target.map(|t| t as usize),
-                });
+            combat_state.queue_action_back(Action::UsePotion {
+                slot: potion_index,
+                target: target.map(|t| t as usize),
+            });
             Ok(())
         }
 
         ClientInput::DiscardPotion(slot) => {
-            combat_state
-                .engine
-                .action_queue
-                .push_back(Action::DiscardPotion { slot });
+            combat_state.queue_action_back(Action::DiscardPotion { slot });
             Ok(())
         }
 
         ClientInput::EndTurn => {
             // Queue end-of-turn processing
             // 1. EndTurnTrigger handles in-hand card effects (Burn, Decay, ethereal exhaust, etc.)
-            combat_state
-                .engine
-                .action_queue
-                .push_back(Action::EndTurnTrigger);
+            combat_state.queue_action_back(Action::EndTurnTrigger);
             // 2. Relic at_end_of_turn hooks (Orichalcum, CloakClasp, ArtOfWar, etc.)
             let end_turn_relic_actions =
                 crate::content::relics::hooks::at_end_of_turn(combat_state);
-            queue_actions(
-                &mut combat_state.engine.action_queue,
-                end_turn_relic_actions,
-            );
+            combat_state.queue_actions(end_turn_relic_actions);
             // 3. Transition: the engine loop will detect CombatProcessing and handle
             //    discarding hand, applying power at_end_of_turn, enemy turns, draw, etc.
             *engine_state = EngineState::CombatProcessing;
-            combat_state.turn.current_phase = CombatPhase::TurnTransition;
+            combat_state.begin_turn_transition();
             Ok(())
         }
 
@@ -1025,10 +983,7 @@ fn resolve_pending_choice(
                     1 => "Calm",
                     _ => return Err("Invalid stance choice (expected 0=Wrath or 1=Calm)"),
                 };
-                combat_state
-                    .engine
-                    .action_queue
-                    .push_back(Action::EnterStance(stance.to_string()));
+                combat_state.queue_action_back(Action::EnterStance(stance.to_string()));
                 *engine_state = EngineState::CombatProcessing;
                 Ok(())
             } else {
@@ -1155,7 +1110,8 @@ pub fn update_monster_intents(combat_state: &mut CombatState) {
             if let crate::runtime::combat::Intent::Attack { damage, .. }
             | crate::runtime::combat::Intent::AttackBuff { damage, .. }
             | crate::runtime::combat::Intent::AttackDebuff { damage, .. }
-            | crate::runtime::combat::Intent::AttackDefend { damage, .. } = monster.current_intent
+            | crate::runtime::combat::Intent::AttackDefend { damage, .. } =
+                monster.current_intent
             {
                 // `damage` in the enum represents the pure base damage
                 new_intent_dmg =
@@ -1196,7 +1152,7 @@ pub fn tick_until_stable_turn(
     // After any input: engine stays at CombatPlayerTurn but actions may be queued.
     // We need to force CombatProcessing to drain the action queue.
     if *es == EngineState::CombatPlayerTurn
-        && (!cs.engine.action_queue.is_empty() || !cs.zones.queued_cards.is_empty())
+        && (cs.has_pending_actions() || !cs.zones.queued_cards.is_empty())
     {
         *es = EngineState::CombatProcessing;
     }

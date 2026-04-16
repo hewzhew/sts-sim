@@ -2,11 +2,6 @@ use std::collections::{HashMap, VecDeque};
 
 use serde::Deserialize;
 
-use crate::runtime::action::Action;
-use crate::runtime::combat::{CardZones, CombatMeta, TurnRuntime};
-use crate::runtime::combat::{
-    CombatCard, CombatPhase, CombatRng, CombatState, EngineRuntime, EntityState,
-};
 use crate::content::cards::{get_card_definition, upgraded_base_cost_override, CardId};
 use crate::content::monsters::factory::{self, EncounterId};
 use crate::content::potions::Potion;
@@ -15,6 +10,11 @@ use crate::diff::protocol::{card_id_from_java, java_potion_id_to_rust, relic_id_
 use crate::diff::replay::drain_to_stable;
 use crate::engine::core::with_suppressed_engine_warnings;
 use crate::map::node::RoomType;
+use crate::runtime::action::Action;
+use crate::runtime::combat::{CardZones, CombatMeta, TurnRuntime};
+use crate::runtime::combat::{
+    CombatCard, CombatPhase, CombatRng, CombatState, EngineRuntime, EntityState,
+};
 use crate::runtime::rng;
 use crate::state::core::EngineState;
 use crate::state::run::RunState;
@@ -143,10 +143,7 @@ pub fn build_natural_start_state(
     }
     innate_cards.extend(normal_cards);
     combat.zones.draw_pile = innate_cards;
-    combat
-        .engine
-        .action_queue
-        .push_back(Action::PreBattleTrigger);
+    combat.queue_action_back(Action::PreBattleTrigger);
 
     let mut engine_state = EngineState::CombatProcessing;
     let alive = with_suppressed_engine_warnings(|| drain_to_stable(&mut engine_state, &mut combat));

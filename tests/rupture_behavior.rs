@@ -44,7 +44,7 @@ fn jaw_worm_combat() -> CombatState {
 }
 
 fn drain_action_queue(state: &mut CombatState) {
-    while let Some(action) = state.engine.action_queue.pop_front() {
+    while let Some(action) = state.pop_next_action() {
         execute_action(action, state);
     }
 }
@@ -63,12 +63,12 @@ fn rupture_hp_loss_triggers_before_following_bottom_actions() {
         &mut combat,
     );
 
-    combat.engine.action_queue.push_back(Action::LoseHp {
+    combat.queue_action_back(Action::LoseHp {
         target: 0,
         amount: 1,
         triggers_rupture: true,
     });
-    combat.engine.action_queue.push_back(Action::LimitBreak);
+    combat.queue_action_back(Action::LimitBreak);
 
     drain_action_queue(&mut combat);
 

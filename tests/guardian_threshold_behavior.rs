@@ -49,7 +49,9 @@ fn guardian_id(state: &CombatState) -> EntityId {
         .entities
         .monsters
         .iter()
-        .find(|monster| monster.monster_type == sts_simulator::content::monsters::EnemyId::TheGuardian as usize)
+        .find(|monster| {
+            monster.monster_type == sts_simulator::content::monsters::EnemyId::TheGuardian as usize
+        })
         .map(|monster| monster.id)
         .expect("guardian should exist")
 }
@@ -65,7 +67,7 @@ fn guardian(state: &CombatState) -> &sts_simulator::runtime::combat::MonsterEnti
 }
 
 fn drain_action_queue(state: &mut CombatState) {
-    while let Some(action) = state.engine.action_queue.pop_front() {
+    while let Some(action) = state.pop_next_action() {
         execute_action(action, state);
     }
 }
@@ -74,7 +76,7 @@ fn run_guardian_turn_once(state: &mut CombatState) {
     let guardian = guardian(state).clone();
     let actions = sts_simulator::content::monsters::resolve_monster_turn(state, &guardian);
     for action in actions {
-        state.engine.action_queue.push_back(action);
+        state.queue_action_back(action);
     }
     drain_action_queue(state);
 }
@@ -107,8 +109,11 @@ fn guardian_below_threshold_hit_does_not_switch_modes() {
     assert_eq!(guardian.current_intent, Intent::Defend);
     assert_eq!(guardian.next_move_byte, 6);
     assert_eq!(combat.get_power(guardian_id, PowerId::ModeShift), 21);
-    assert_eq!(combat.get_power(guardian_id, PowerId::GuardianThreshold), 30);
-    assert!(combat.engine.action_queue.is_empty());
+    assert_eq!(
+        combat.get_power(guardian_id, PowerId::GuardianThreshold),
+        30
+    );
+    assert!(!combat.has_pending_actions());
 }
 
 #[test]
@@ -124,8 +129,11 @@ fn guardian_exact_threshold_hit_triggers_queued_defensive_mode_switch() {
     assert_eq!(guardian_entity.current_intent, Intent::Defend);
     assert_eq!(guardian_entity.next_move_byte, 6);
     assert_eq!(combat.get_power(guardian_id, PowerId::ModeShift), 0);
-    assert_eq!(combat.get_power(guardian_id, PowerId::GuardianThreshold), 30);
-    assert_eq!(combat.engine.action_queue.len(), 3);
+    assert_eq!(
+        combat.get_power(guardian_id, PowerId::GuardianThreshold),
+        30
+    );
+    assert_eq!(combat.action_queue_len(), 3);
 
     drain_action_queue(&mut combat);
 
@@ -135,7 +143,10 @@ fn guardian_exact_threshold_hit_triggers_queued_defensive_mode_switch() {
     assert_eq!(guardian_entity.current_intent, Intent::Buff);
     assert_eq!(guardian_entity.next_move_byte, 1);
     assert_eq!(combat.get_power(guardian_id, PowerId::ModeShift), 0);
-    assert_eq!(combat.get_power(guardian_id, PowerId::GuardianThreshold), 40);
+    assert_eq!(
+        combat.get_power(guardian_id, PowerId::GuardianThreshold),
+        40
+    );
 }
 
 #[test]
@@ -151,21 +162,24 @@ fn guardian_threshold_overflow_hit_applies_full_damage_before_switch_queue_resol
     assert_eq!(guardian_entity.current_intent, Intent::Defend);
     assert_eq!(guardian_entity.next_move_byte, 6);
     assert_eq!(combat.get_power(guardian_id, PowerId::ModeShift), 0);
-    assert_eq!(combat.get_power(guardian_id, PowerId::GuardianThreshold), 30);
-    assert_eq!(combat.engine.action_queue.len(), 3);
+    assert_eq!(
+        combat.get_power(guardian_id, PowerId::GuardianThreshold),
+        30
+    );
+    assert_eq!(combat.action_queue_len(), 3);
 
     drain_action_queue(&mut combat);
 
     let guardian_entity = guardian(&combat);
-    assert_eq!(
-        guardian_entity.current_hp,
-        guardian_entity.max_hp - 35
-    );
+    assert_eq!(guardian_entity.current_hp, guardian_entity.max_hp - 35);
     assert_eq!(guardian_entity.block, 20);
     assert_eq!(guardian_entity.current_intent, Intent::Buff);
     assert_eq!(guardian_entity.next_move_byte, 1);
     assert_eq!(combat.get_power(guardian_id, PowerId::ModeShift), 0);
-    assert_eq!(combat.get_power(guardian_id, PowerId::GuardianThreshold), 40);
+    assert_eq!(
+        combat.get_power(guardian_id, PowerId::GuardianThreshold),
+        40
+    );
 }
 
 #[test]
@@ -176,13 +190,19 @@ fn guardian_reapplies_mode_shift_from_increased_threshold_after_defensive_cycle(
     player_hits_guardian(&mut combat, 35);
     drain_action_queue(&mut combat);
 
-    assert_eq!(combat.get_power(guardian_id, PowerId::GuardianThreshold), 40);
+    assert_eq!(
+        combat.get_power(guardian_id, PowerId::GuardianThreshold),
+        40
+    );
     assert_eq!(combat.get_power(guardian_id, PowerId::ModeShift), 0);
     assert_eq!(guardian(&combat).next_move_byte, 1);
 
     run_guardian_turn_once(&mut combat);
     assert_eq!(guardian(&combat).next_move_byte, 3);
-    assert_eq!(guardian(&combat).current_intent, Intent::Attack { damage: 9, hits: 1 });
+    assert_eq!(
+        guardian(&combat).current_intent,
+        Intent::Attack { damage: 9, hits: 1 }
+    );
 
     run_guardian_turn_once(&mut combat);
     assert_eq!(guardian(&combat).next_move_byte, 4);
@@ -200,7 +220,10 @@ fn guardian_reapplies_mode_shift_from_increased_threshold_after_defensive_cycle(
         guardian_entity.current_intent,
         Intent::Attack { damage: 5, hits: 4 }
     );
-    assert_eq!(combat.get_power(guardian_id, PowerId::GuardianThreshold), 40);
+    assert_eq!(
+        combat.get_power(guardian_id, PowerId::GuardianThreshold),
+        40
+    );
     assert_eq!(combat.get_power(guardian_id, PowerId::ModeShift), 40);
     assert!(!store::has_power(&combat, guardian_id, PowerId::SharpHide));
 }
@@ -218,7 +241,10 @@ fn guardian_second_trigger_raises_threshold_to_fifty_and_reapplies_mode_shift() 
     run_guardian_turn_once(&mut combat);
 
     assert_eq!(guardian(&combat).next_move_byte, 5);
-    assert_eq!(combat.get_power(guardian_id, PowerId::GuardianThreshold), 40);
+    assert_eq!(
+        combat.get_power(guardian_id, PowerId::GuardianThreshold),
+        40
+    );
     assert_eq!(combat.get_power(guardian_id, PowerId::ModeShift), 40);
 
     player_hits_guardian(&mut combat, 40);
@@ -226,11 +252,17 @@ fn guardian_second_trigger_raises_threshold_to_fifty_and_reapplies_mode_shift() 
     let guardian_entity = guardian(&combat);
     assert_eq!(guardian_entity.current_hp, guardian_entity.max_hp - 75);
     assert_eq!(guardian_entity.block, 0);
-    assert_eq!(guardian_entity.current_intent, Intent::Attack { damage: 5, hits: 4 });
+    assert_eq!(
+        guardian_entity.current_intent,
+        Intent::Attack { damage: 5, hits: 4 }
+    );
     assert_eq!(guardian_entity.next_move_byte, 5);
     assert_eq!(combat.get_power(guardian_id, PowerId::ModeShift), 0);
-    assert_eq!(combat.get_power(guardian_id, PowerId::GuardianThreshold), 40);
-    assert_eq!(combat.engine.action_queue.len(), 3);
+    assert_eq!(
+        combat.get_power(guardian_id, PowerId::GuardianThreshold),
+        40
+    );
+    assert_eq!(combat.action_queue_len(), 3);
 
     drain_action_queue(&mut combat);
 
@@ -240,7 +272,10 @@ fn guardian_second_trigger_raises_threshold_to_fifty_and_reapplies_mode_shift() 
     assert_eq!(guardian_entity.current_intent, Intent::Buff);
     assert_eq!(guardian_entity.next_move_byte, 1);
     assert_eq!(combat.get_power(guardian_id, PowerId::ModeShift), 0);
-    assert_eq!(combat.get_power(guardian_id, PowerId::GuardianThreshold), 50);
+    assert_eq!(
+        combat.get_power(guardian_id, PowerId::GuardianThreshold),
+        50
+    );
 
     run_guardian_turn_once(&mut combat);
     run_guardian_turn_once(&mut combat);
@@ -252,7 +287,10 @@ fn guardian_second_trigger_raises_threshold_to_fifty_and_reapplies_mode_shift() 
         guardian_entity.current_intent,
         Intent::Attack { damage: 5, hits: 4 }
     );
-    assert_eq!(combat.get_power(guardian_id, PowerId::GuardianThreshold), 50);
+    assert_eq!(
+        combat.get_power(guardian_id, PowerId::GuardianThreshold),
+        50
+    );
     assert_eq!(combat.get_power(guardian_id, PowerId::ModeShift), 50);
     assert!(!store::has_power(&combat, guardian_id, PowerId::SharpHide));
 }

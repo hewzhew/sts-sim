@@ -1,5 +1,23 @@
 # `CombatState` Refactor Plan
 
+## Status
+
+Phase 1 is already complete:
+
+- `CombatState` is already a composition root
+- `turn`, `engine`, `zones`, `entities`, `meta`, and `rng` already exist as sub-objects
+
+The current problem is no longer “introduce sub-structs”. It is:
+
+- too many call sites still mutate those sub-objects like a semi-flat bag of fields
+- ownership is still implicit even though the layout is no longer flat
+
+This document therefore describes the ongoing **phase 2 ownership cleanup**:
+
+- keep the current nested layout
+- narrow mutation surfaces
+- move common queue/turn operations behind subsystem-owned APIs
+
 ## Problem
 
 [`CombatState`](D:/rust/sts_simulator/src/runtime/combat.rs) is currently the default landing zone for almost every new combat concern:
@@ -29,9 +47,9 @@ That keeps momentum in the short term, but it steadily makes:
 - test fixtures more expensive to construct
 - live parity bugs harder to localize
 
-## Current State Buckets Hidden in `CombatState`
+## Current State Buckets Inside `CombatState`
 
-The existing top-level fields already imply several different subsystems:
+The current nested fields already imply several different ownership domains:
 
 ### 1. Turn / player-turn runtime
 
@@ -108,9 +126,9 @@ Because `CombatState` is flat, tests and builders must know too much about unrel
 
 ## Refactor Goal
 
-Do **not** delete `CombatState`.
+Do **not** delete `CombatState` or flatten it again.
 
-Instead, turn it into a composition root with explicit sub-objects:
+Keep it as a composition root with explicit sub-objects:
 
 ```rust
 pub struct CombatState {
@@ -123,11 +141,11 @@ pub struct CombatState {
 }
 ```
 
-The key idea is:
+That structural split is already present. The current key idea is:
 
 - `CombatState` remains the external handle
-- ownership moves into narrower internal structs
-- future mechanics must first choose a subsystem, not a random top-level slot
+- routine operations should stop reaching through it into raw nested fields
+- future mechanics must first choose a subsystem-owned operation, not a random nested slot
 
 ## Proposed Target Structure
 
@@ -255,21 +273,14 @@ Before moving fields, freeze the grouping plan in this document. New state addit
 
 ### Phase 1: introduce sub-structs with facade access
 
-First refactor target:
+Completed.
 
-- `TurnRuntime`
-- `EngineRuntime`
+`TurnRuntime` and `EngineRuntime` already exist, along with the other major sub-objects.
 
-Reason:
+The new migration rule is:
 
-- highest leverage
-- lowest semantic risk
-- directly touches recent pain points (`turn_start_draw_modifier`, `action_queue`, `counters`)
-
-Short-term compatibility rule:
-
-- it is acceptable to add accessors/helpers during the migration
-- it is **not** acceptable to duplicate sources of truth
+- it is acceptable to add narrow subsystem operations during the cleanup
+- it is **not** acceptable to reintroduce flattened convenience access or duplicate truth
 
 ### Phase 2: move `CardZones`
 
@@ -347,40 +358,32 @@ must update the relevant docs:
 - [LIVE_COMM_RUNBOOK.md](../live_comm/LIVE_COMM_RUNBOOK.md) only if live/debug workflow changes
 - this file when subsystem boundaries or migration order change
 
-## Recommended First Real Refactor
+## Recommended Next Real Refactor
 
-Start with:
+Start with a bounded ownership cleanup:
 
 ### Step 1
 
-Introduce:
+Add narrow helper APIs around:
 
-- `TurnRuntime`
-- `EngineRuntime`
-
-Move:
-
-- `turn_count`
-- `current_phase`
-- `energy`
-- `counters`
-- `turn_start_draw_modifier`
-- `action_queue`
+- queue enqueue/dequeue/order-preserving batching
+- turn phase transitions
+- next-player-turn setup/reset
 
 ### Step 2
 
 Update only:
 
 - [core.rs](D:/rust/sts_simulator/src/engine/core.rs)
-- [powers.rs](D:/rust/sts_simulator/src/engine/action_handlers/powers.rs)
+- selected action handlers that directly participate in queue/turn flow
 - state sync build/sync
 - test builders
 
 ### Step 3
 
-Do not touch `CardZones` or `EntityState` in the same pass.
+Do not broaden the pass into `CardZones` or `EntityState` ownership cleanup yet.
 
-That keeps the first migration bounded enough to validate the architecture without turning into a repo-wide churn bomb.
+That keeps the first cleanup bounded enough to validate the ownership direction without turning into a repo-wide churn bomb.
 
 ## Expected Benefits
 

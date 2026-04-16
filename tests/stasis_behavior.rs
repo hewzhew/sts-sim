@@ -36,9 +36,12 @@ fn automaton_combat() -> CombatState {
         CombatCard::new(CardId::Bash, 10_009),
     ];
 
-    let (_engine_state, combat) =
-        build_natural_start_state(&mut run_state, EncounterId::Automaton, RoomType::MonsterRoomBoss)
-            .expect("compile automaton spec");
+    let (_engine_state, combat) = build_natural_start_state(
+        &mut run_state,
+        EncounterId::Automaton,
+        RoomType::MonsterRoomBoss,
+    )
+    .expect("compile automaton spec");
     combat
 }
 
@@ -63,7 +66,7 @@ fn automaton_id(state: &CombatState) -> usize {
 }
 
 fn drain_action_queue(state: &mut CombatState) {
-    while let Some(action) = state.engine.action_queue.pop_front() {
+    while let Some(action) = state.pop_next_action() {
         execute_action(action, state);
     }
 }
@@ -91,7 +94,7 @@ fn spawn_bronze_orbs(state: &mut CombatState) {
         .clone();
     let actions = sts_simulator::content::monsters::resolve_monster_turn(state, &automaton);
     for action in actions {
-        state.engine.action_queue.push_back(action);
+        state.queue_action_back(action);
     }
     drain_action_queue(state);
 }
@@ -121,7 +124,11 @@ fn stasis_captures_a_real_card_into_limbo_and_tracks_its_uuid() {
     assert_eq!(captured.uuid, 20_001);
 
     let stasis = store::powers_for(&combat, orb_id)
-        .and_then(|powers| powers.iter().find(|power| power.power_type == PowerId::Stasis))
+        .and_then(|powers| {
+            powers
+                .iter()
+                .find(|power| power.power_type == PowerId::Stasis)
+        })
         .expect("BronzeOrb should gain Stasis");
     assert_eq!(stasis.amount, -1);
     assert_eq!(stasis.extra_data, 20_001);
@@ -232,7 +239,9 @@ fn stasis_prefers_rare_then_uncommon_then_common_when_selecting_from_draw_pile()
     assert_eq!(combat.zones.limbo[0].uuid, 22_003);
     assert_eq!(combat.zones.draw_pile.len(), 2);
     combat.zones.limbo.clear();
-    store::retain_entity_powers(&mut combat, orb_id, |power| power.power_type != PowerId::Stasis);
+    store::retain_entity_powers(&mut combat, orb_id, |power| {
+        power.power_type != PowerId::Stasis
+    });
 
     combat.zones.draw_pile = vec![card(CardId::Clash, 22_011), card(CardId::Inflame, 22_012)];
     execute_action(Action::ApplyStasis { target_id: orb_id }, &mut combat);
@@ -242,7 +251,9 @@ fn stasis_prefers_rare_then_uncommon_then_common_when_selecting_from_draw_pile()
     assert_eq!(combat.zones.limbo[0].uuid, 22_012);
     assert_eq!(combat.zones.draw_pile.len(), 1);
     combat.zones.limbo.clear();
-    store::retain_entity_powers(&mut combat, orb_id, |power| power.power_type != PowerId::Stasis);
+    store::retain_entity_powers(&mut combat, orb_id, |power| {
+        power.power_type != PowerId::Stasis
+    });
 
     combat.zones.draw_pile = vec![card(CardId::Clash, 22_021)];
     execute_action(Action::ApplyStasis { target_id: orb_id }, &mut combat);
@@ -276,7 +287,11 @@ fn stasis_uses_discard_pile_when_draw_pile_is_empty() {
     assert_eq!(combat.zones.limbo[0].uuid, 23_001);
 
     let stasis = store::powers_for(&combat, orb_id)
-        .and_then(|powers| powers.iter().find(|power| power.power_type == PowerId::Stasis))
+        .and_then(|powers| {
+            powers
+                .iter()
+                .find(|power| power.power_type == PowerId::Stasis)
+        })
         .expect("BronzeOrb should gain Stasis from discard");
     assert_eq!(stasis.extra_data, 23_001);
 }

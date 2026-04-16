@@ -5,8 +5,6 @@ mod relic;
 
 use serde_json::Value;
 
-use crate::runtime::combat::CombatPhase;
-
 use super::build::{
     build_draw_pile_from_snapshot, build_hand_from_snapshot, build_limbo_from_snapshot,
     build_pile_from_ids, build_runtime_hints_from_snapshot,
@@ -33,7 +31,7 @@ pub fn sync_state(cs: &mut crate::runtime::combat::CombatState, snapshot: &Value
     relic::sync_player_relics_from_snapshot(cs, snapshot);
     crate::content::relics::restore_combat_energy_master(cs);
 
-    cs.engine.action_queue.clear();
-    cs.turn.current_phase = CombatPhase::PlayerTurn;
+    cs.clear_pending_actions();
+    cs.turn.begin_player_phase();
     cs.runtime = build_runtime_hints_from_snapshot(snapshot);
 }

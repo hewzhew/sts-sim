@@ -1,7 +1,7 @@
-use crate::runtime::action::Action;
 use crate::content::cards::CardId;
 use crate::content::relics::RelicState;
 use crate::core::EntityId;
+use crate::runtime::action::{Action, ActionInfo, AddTo};
 use crate::state::selection::{DomainEvent, EngineDiagnostic};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::ops::{Deref, DerefMut};
@@ -206,6 +206,124 @@ impl CombatState {
 
     pub fn take_engine_diagnostics(&mut self) -> Vec<EngineDiagnostic> {
         std::mem::take(&mut self.runtime.engine_diagnostics)
+    }
+
+    pub fn queue_action_front(&mut self, action: Action) {
+        self.engine.push_front(action);
+    }
+
+    pub fn queue_action_back(&mut self, action: Action) {
+        self.engine.push_back(action);
+    }
+
+    pub fn queue_actions(&mut self, actions: smallvec::SmallVec<[ActionInfo; 4]>) {
+        self.engine.queue_actions(actions);
+    }
+
+    pub fn pop_next_action(&mut self) -> Option<Action> {
+        self.engine.pop_front()
+    }
+
+    pub fn has_pending_actions(&self) -> bool {
+        self.engine.has_actions()
+    }
+
+    pub fn action_queue_len(&self) -> usize {
+        self.engine.len()
+    }
+
+    pub fn clear_pending_actions(&mut self) {
+        self.engine.clear();
+    }
+
+    pub fn ensure_flush_next_queued_card(&mut self) {
+        if !self.engine.has_actions() && !self.zones.queued_cards.is_empty() {
+            self.engine.push_back(Action::FlushNextQueuedCard);
+        }
+    }
+
+    pub fn begin_turn_transition(&mut self) {
+        self.turn.begin_turn_transition();
+    }
+
+    pub fn begin_monster_turn(&mut self) {
+        self.turn.begin_monster_turn();
+    }
+
+    pub fn begin_next_player_turn(&mut self) {
+        self.turn
+            .begin_next_player_turn(self.entities.player.energy_master);
+    }
+}
+
+impl TurnRuntime {
+    pub fn begin_player_phase(&mut self) {
+        self.current_phase = CombatPhase::PlayerTurn;
+    }
+
+    pub fn begin_turn_transition(&mut self) {
+        self.current_phase = CombatPhase::TurnTransition;
+    }
+
+    pub fn begin_monster_turn(&mut self) {
+        self.current_phase = CombatPhase::MonsterTurn;
+    }
+
+    pub fn begin_next_player_turn(&mut self, energy: u8) {
+        self.turn_count += 1;
+        self.begin_player_phase();
+        self.energy = energy;
+        self.counters.cards_played_this_turn = 0;
+        self.counters.attacks_played_this_turn = 0;
+    }
+}
+
+impl EngineRuntime {
+    pub fn push_front(&mut self, action: Action) {
+        self.action_queue.push_front(action);
+    }
+
+    pub fn push_back(&mut self, action: Action) {
+        self.action_queue.push_back(action);
+    }
+
+    pub fn pop_front(&mut self) -> Option<Action> {
+        self.action_queue.pop_front()
+    }
+
+    pub fn has_actions(&self) -> bool {
+        !self.action_queue.is_empty()
+    }
+
+    pub fn len(&self) -> usize {
+        self.action_queue.len()
+    }
+
+    pub fn clear(&mut self) {
+        self.action_queue.clear();
+    }
+
+    pub fn retain(&mut self, f: impl FnMut(&Action) -> bool) {
+        self.action_queue.retain(f);
+    }
+
+    pub fn queue_actions(&mut self, actions: smallvec::SmallVec<[ActionInfo; 4]>) {
+        let mut to_bottom = vec![];
+        let mut to_front = vec![];
+
+        for a in actions {
+            match a.insertion_mode {
+                AddTo::Top => to_front.push(a.action),
+                AddTo::Bottom => to_bottom.push(a.action),
+            }
+        }
+
+        for action in to_front.into_iter().rev() {
+            self.push_front(action);
+        }
+        for action in to_bottom {
+            self.push_back(action);
+        }
     }
 }
 
@@ -639,9 +757,7 @@ impl CombatState {
             self.zones.queued_cards.push_back(item);
         }
         if was_empty {
-            self.engine
-                .action_queue
-                .push_back(Action::FlushNextQueuedCard);
+            self.queue_action_back(Action::FlushNextQueuedCard);
         }
     }
 
@@ -664,5 +780,92 @@ impl CombatState {
             crate::content::cards::evaluate_card(card, self, None);
         }
         self.zones.hand = new_hand;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::runtime::action::ActionInfo;
+
+    #[test]
+    fn engine_runtime_queue_actions_preserves_top_before_bottom_order() {
+        let mut engine = EngineRuntime {
+            action_queue: VecDeque::new(),
+        };
+
+        engine.queue_actions(smallvec::smallvec![
+            ActionInfo {
+                action: Action::DrawCards(1),
+                insertion_mode: AddTo::Bottom,
+            },
+            ActionInfo {
+                action: Action::GainEnergy { amount: 2 },
+                insertion_mode: AddTo::Top,
+            },
+            ActionInfo {
+                action: Action::GainBlock {
+                    target: 0,
+                    amount: 3,
+                },
+                insertion_mode: AddTo::Top,
+            },
+        ]);
+
+        assert_eq!(
+            engine.pop_front(),
+            Some(Action::GainEnergy { amount: 2 }),
+            "first top action should execute first"
+        );
+        assert_eq!(
+            engine.pop_front(),
+            Some(Action::GainBlock {
+                target: 0,
+                amount: 3,
+            }),
+            "subsequent top actions should preserve insertion order"
+        );
+        assert_eq!(
+            engine.pop_front(),
+            Some(Action::DrawCards(1)),
+            "bottom actions should remain after top actions"
+        );
+    }
+
+    #[test]
+    fn turn_runtime_begin_next_player_turn_resets_turn_counters_and_energy() {
+        let mut turn = TurnRuntime {
+            turn_count: 2,
+            current_phase: CombatPhase::MonsterTurn,
+            energy: 1,
+            turn_start_draw_modifier: -1,
+            counters: EphemeralCounters {
+                cards_played_this_turn: 4,
+                attacks_played_this_turn: 2,
+                times_damaged_this_combat: 3,
+                victory_triggered: false,
+                discovery_cost_for_turn: None,
+                early_end_turn_pending: true,
+                player_escaping: false,
+                escape_pending_reward: false,
+            },
+        };
+
+        turn.begin_next_player_turn(3);
+
+        assert_eq!(turn.turn_count, 3);
+        assert_eq!(turn.current_phase, CombatPhase::PlayerTurn);
+        assert_eq!(turn.energy, 3);
+        assert_eq!(turn.counters.cards_played_this_turn, 0);
+        assert_eq!(turn.counters.attacks_played_this_turn, 0);
+        assert_eq!(
+            turn.counters.times_damaged_this_combat, 3,
+            "combat-wide counters should remain untouched"
+        );
+        assert!(
+            turn.counters.early_end_turn_pending,
+            "unrelated flags should not be reset by turn-start setup"
+        );
+        assert_eq!(turn.turn_start_draw_modifier, -1);
     }
 }
