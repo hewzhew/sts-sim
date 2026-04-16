@@ -2,8 +2,10 @@ mod agent;
 mod agent_curiosity;
 mod agent_deck_ops;
 pub(crate) mod card_knowledge;
+mod combat_card_knowledge;
 pub(crate) mod card_disposition;
 pub(crate) mod card_taxonomy;
+mod combat_families;
 mod combat_heuristic;
 pub(crate) mod combat_posture;
 pub(crate) mod comm_mod;
@@ -51,4 +53,4 @@ pub use reward_heuristics::{
     evaluate_reward_screen, evaluate_reward_screen_for_run, evaluate_reward_screen_for_run_detailed,
     pick_probability, RewardCardScore, RewardScreenEvaluation,
 };
-pub use strategy_families::{branch_family_for_card, BranchFamily};
+pub use combat_card_knowledge::{branch_family_for_card, BranchFamily};
