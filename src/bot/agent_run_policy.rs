@@ -312,11 +312,21 @@ impl Agent {
     }
 
     pub(crate) fn decide_campfire(&self, rs: &RunState) -> ClientInput {
+        let context = self.build_campfire_decision_context(rs);
+        self.campfire_candidates(&context)
+            .into_iter()
+            .max_by_key(|candidate| candidate.score)
+            .map(CampfireCandidate::into_input)
+            .unwrap_or(ClientInput::Proceed)
+    }
+
+    fn build_campfire_decision_context(&self, rs: &RunState) -> CampfireDecisionContext {
         use crate::content::relics::RelicId;
 
         let has_relic = |id: RelicId| rs.relics.iter().any(|r| r.id == id);
         let can_rest = !has_relic(RelicId::CoffeeDripper);
-        let can_smith = !has_relic(RelicId::FusionHammer) && self.best_upgrade_index(rs).is_some();
+        let best_upgrade_index = self.best_upgrade_index(rs);
+        let can_smith = !has_relic(RelicId::FusionHammer) && best_upgrade_index.is_some();
         let can_toke = has_relic(RelicId::PeacePipe) && !rs.master_deck.is_empty();
         let can_lift = rs
             .relics
@@ -359,51 +369,133 @@ impl Agent {
             })
             .count();
 
-        if can_recall && rs.act_num >= 3 && hp_ratio >= 0.45 && !pre_boss_floor {
-            return ClientInput::CampfireOption(CampfireChoice::Recall);
-        }
-
-        if can_toke
-            && hp_ratio >= 0.75
-            && worst_card_score <= 10
-            && !strong_upgrade_exists
-            && !shell_needs_smith
-            && bad_basic_count >= 3
-        {
-            return ClientInput::CampfireOption(CampfireChoice::Toke(self.best_purge_index(rs)));
-        }
-
-        if can_lift && hp_ratio >= 0.75 {
-            return ClientInput::CampfireOption(CampfireChoice::Lift);
-        }
-
-        if can_dig && hp_ratio >= 0.85 {
-            return ClientInput::CampfireOption(CampfireChoice::Dig);
-        }
-
-        if can_rest && (hp_ratio < 0.5 || (rs.act_num != 1 && pre_boss_floor && hp_ratio < 0.9)) {
-            ClientInput::CampfireOption(CampfireChoice::Rest)
-        } else if can_smith {
-            if searing_plan > 0 {
-                if let Some((idx, _)) = rs
-                    .master_deck
-                    .iter()
-                    .enumerate()
-                    .find(|(_, c)| c.id == crate::content::cards::CardId::SearingBlow)
-                {
-                    if hp_ratio >= 0.4 || rs.act_num == 1 {
-                        return ClientInput::CampfireOption(CampfireChoice::Smith(idx));
-                    }
-                }
-            }
-            ClientInput::CampfireOption(CampfireChoice::Smith(
-                self.best_upgrade_index(rs).unwrap_or(0),
-            ))
-        } else if can_rest {
-            ClientInput::CampfireOption(CampfireChoice::Rest)
+        let searing_blow_index = if searing_plan > 0 {
+            rs.master_deck
+                .iter()
+                .enumerate()
+                .find(|(_, c)| c.id == crate::content::cards::CardId::SearingBlow)
+                .map(|(idx, _)| idx)
         } else {
-            ClientInput::Proceed
+            None
+        };
+
+        CampfireDecisionContext {
+            act_num: rs.act_num,
+            hp_ratio,
+            pre_boss_floor,
+            can_recall,
+            can_toke,
+            can_lift,
+            can_dig,
+            can_rest,
+            can_smith,
+            best_purge_index: self.best_purge_index(rs),
+            best_upgrade_index,
+            searing_blow_index,
+            searing_plan,
+            worst_card_score,
+            strong_upgrade_exists,
+            shell_needs_smith,
+            bad_basic_count,
         }
+    }
+
+    fn campfire_candidates(&self, context: &CampfireDecisionContext) -> Vec<CampfireCandidate> {
+        let mut candidates = Vec::new();
+
+        if context.can_recall
+            && context.act_num >= 3
+            && context.hp_ratio >= 0.45
+            && !context.pre_boss_floor
+        {
+            candidates.push(CampfireCandidate {
+                action: CampfireAction::Recall,
+                score: 1000,
+                rationale: "recall_when_final_act_key_window_is_safe",
+            });
+        }
+
+        if context.can_toke
+            && context.hp_ratio >= 0.75
+            && context.worst_card_score <= 10
+            && !context.strong_upgrade_exists
+            && !context.shell_needs_smith
+            && context.bad_basic_count >= 3
+        {
+            candidates.push(CampfireCandidate {
+                action: CampfireAction::Toke(context.best_purge_index),
+                score: 900 + context.bad_basic_count as i32 * 5,
+                rationale: "toke_when_trim_is_cleaner_than_other_campfire_value",
+            });
+        }
+
+        if context.can_lift && context.hp_ratio >= 0.75 {
+            candidates.push(CampfireCandidate {
+                action: CampfireAction::Lift,
+                score: 800,
+                rationale: "lift_when_safe_and_scaling_is_free",
+            });
+        }
+
+        if context.can_dig && context.hp_ratio >= 0.85 {
+            candidates.push(CampfireCandidate {
+                action: CampfireAction::Dig,
+                score: 700,
+                rationale: "dig_when_safe_and_relic_value_is_free",
+            });
+        }
+
+        if context.can_rest
+            && (context.hp_ratio < 0.5
+                || (context.act_num != 1
+                    && context.pre_boss_floor
+                    && context.hp_ratio < 0.9))
+        {
+            candidates.push(CampfireCandidate {
+                action: CampfireAction::Rest,
+                score: 600,
+                rationale: "rest_when_hp_window_is_dangerous",
+            });
+        }
+
+        if context.can_smith {
+            let smith_index = if context.searing_plan > 0
+                && (context.hp_ratio >= 0.4 || context.act_num == 1)
+            {
+                context.searing_blow_index.or(context.best_upgrade_index)
+            } else {
+                context.best_upgrade_index
+            };
+            if let Some(idx) = smith_index {
+                let score = if context.searing_plan > 0 { 560 } else { 500 };
+                let rationale = if context.searing_plan > 0 {
+                    "smith_searing_blow_when_upgrade_plan_is_active"
+                } else {
+                    "smith_best_upgrade_when_rest_is_not_urgent"
+                };
+                candidates.push(CampfireCandidate {
+                    action: CampfireAction::Smith(idx),
+                    score,
+                    rationale,
+                });
+            }
+        }
+
+        if context.can_rest {
+            candidates.push(CampfireCandidate {
+                action: CampfireAction::Rest,
+                score: 200,
+                rationale: "rest_as_safe_fallback",
+            });
+        }
+
+        candidates.push(CampfireCandidate {
+            action: CampfireAction::Proceed,
+            score: 0,
+            rationale: "no_campfire_option_beats_proceed",
+        });
+
+        candidates
     }
 
     pub(crate) fn profile_needs_support(profile: &crate::bot::evaluator::DeckProfile) -> bool {
@@ -468,5 +560,65 @@ impl Agent {
         (profile.strength_enablers >= 1 && profile.strength_payoffs >= 2)
             || (profile.exhaust_engines >= 2 && profile.exhaust_outlets >= 1)
             || (profile.block_core >= 3 && profile.block_payoffs >= 1)
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+struct CampfireDecisionContext {
+    act_num: u8,
+    hp_ratio: f32,
+    pre_boss_floor: bool,
+    can_recall: bool,
+    can_toke: bool,
+    can_lift: bool,
+    can_dig: bool,
+    can_rest: bool,
+    can_smith: bool,
+    best_purge_index: usize,
+    best_upgrade_index: Option<usize>,
+    searing_blow_index: Option<usize>,
+    searing_plan: i32,
+    worst_card_score: i32,
+    strong_upgrade_exists: bool,
+    shell_needs_smith: bool,
+    bad_basic_count: usize,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct CampfireCandidate {
+    action: CampfireAction,
+    score: i32,
+    rationale: &'static str,
+}
+
+impl CampfireCandidate {
+    fn into_input(self) -> ClientInput {
+        let _ = self.rationale;
+        self.action.into_input()
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+enum CampfireAction {
+    Recall,
+    Toke(usize),
+    Lift,
+    Dig,
+    Rest,
+    Smith(usize),
+    Proceed,
+}
+
+impl CampfireAction {
+    fn into_input(self) -> ClientInput {
+        match self {
+            Self::Recall => ClientInput::CampfireOption(CampfireChoice::Recall),
+            Self::Toke(idx) => ClientInput::CampfireOption(CampfireChoice::Toke(idx)),
+            Self::Lift => ClientInput::CampfireOption(CampfireChoice::Lift),
+            Self::Dig => ClientInput::CampfireOption(CampfireChoice::Dig),
+            Self::Rest => ClientInput::CampfireOption(CampfireChoice::Rest),
+            Self::Smith(idx) => ClientInput::CampfireOption(CampfireChoice::Smith(idx)),
+            Self::Proceed => ClientInput::Proceed,
+        }
     }
 }
