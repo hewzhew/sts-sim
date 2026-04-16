@@ -541,6 +541,7 @@ impl Agent {
             PotionId::AncientPotion => 100,
             PotionId::PowerPotion | PotionId::ColorlessPotion => 94,
             PotionId::DuplicationPotion | PotionId::GhostInAJar => 90,
+            PotionId::Elixir => 84,
             PotionId::BlessingOfTheForge => 84,
             PotionId::StrengthPotion
             | PotionId::DexterityPotion

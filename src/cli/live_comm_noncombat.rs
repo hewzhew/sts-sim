@@ -695,6 +695,7 @@ fn base_reward_potion_score(potion_id: crate::content::potions::PotionId) -> i32
         PotionId::PowerPotion | PotionId::ColorlessPotion => 94,
         PotionId::DuplicationPotion | PotionId::GhostInAJar => 90,
         PotionId::FruitJuice | PotionId::BloodPotion | PotionId::FairyPotion => 88,
+        PotionId::Elixir => 84,
         PotionId::BlessingOfTheForge => 84,
         PotionId::StrengthPotion
         | PotionId::DexterityPotion
@@ -710,7 +711,7 @@ fn base_reward_potion_score(potion_id: crate::content::potions::PotionId) -> i32
 
 #[cfg(test)]
 mod tests {
-    use super::blocked_shop_potion_replacement_command;
+    use super::{blocked_shop_potion_replacement_command, reward_potion_score};
     use crate::bot::Agent;
     use crate::content::potions::{Potion, PotionId};
     use crate::shop::{ShopPotion, ShopState};
@@ -765,6 +766,17 @@ mod tests {
 
         let command = blocked_shop_potion_replacement_command(&agent, &root, &rs, &shop);
         assert_eq!(command, None);
+    }
+
+    #[test]
+    fn reward_potion_score_rates_elixir_above_energy_potion() {
+        let agent = Agent::new();
+        let rs = RunState::new(1, 0, false, "Ironclad");
+
+        let elixir = reward_potion_score(&agent, &rs, PotionId::Elixir);
+        let energy = reward_potion_score(&agent, &rs, PotionId::EnergyPotion);
+
+        assert!(elixir > energy, "expected Elixir ({elixir}) > Energy Potion ({energy})");
     }
 }
 
