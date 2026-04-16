@@ -1,8 +1,13 @@
 use crate::map::node::RoomType;
+use crate::bot::noncombat_families::helpers::{
+    best_we_meet_again_card_give_score, best_we_meet_again_potion_give_score, contains_any,
+    count_remove_targets, count_transform_targets, count_upgradable_cards, curse_pressure_score,
+    curse_tractability_score, first_number, generic_remove_value, nearby_shop_conversion_bonus,
+    nth_number, reachable_room_distance,
+};
 use crate::state::events::{EventChoiceMeta, EventId, EventState};
 use crate::state::run::RunState;
 use serde_json::{json, Value};
-use std::collections::{HashSet, VecDeque};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum EventOptionTag {
@@ -248,17 +253,75 @@ pub fn choose_event_option(
         return Some(decision);
     }
 
-    compatibility_fallback_event_choice(rs, context).or_else(|| {
-        let option_index = fallback_option_index(context)?;
-        Some(EventChoiceDecision {
-            option_index,
-            command_index: option_command_index(context, option_index)?,
-            family: EventPolicyFamily::GenericSafe,
-            rationale_key: Some("generic_safe_first_enabled"),
-            score: None,
-            safety_override_applied: false,
-            rationale: Some("generic_safe_first_enabled"),
-        })
+    if family == EventPolicyFamily::CompatibilityFallback
+        && supports_legacy_compatibility_fallback(context)
+    {
+        if let Some(decision) = compatibility_fallback_event_choice(rs, context) {
+            return Some(decision);
+        }
+    }
+
+    Some(EventChoiceDecision {
+        option_index: fallback_option_index(context)?,
+        command_index: option_command_index(context, fallback_option_index(context)?)?,
+        family: EventPolicyFamily::GenericSafe,
+        rationale_key: Some("generic_safe_first_enabled"),
+        score: None,
+        safety_override_applied: false,
+        rationale: Some("generic_safe_first_enabled"),
+    })
+}
+
+fn supports_legacy_compatibility_fallback(context: &EventDecisionContext) -> bool {
+    matches!(
+        canonical_family_event_name(context).as_str(),
+        "Neow" | "Note For Yourself" | "Bonfire Spirits" | "Bonfire Elementals"
+    )
+}
+
+fn legacy_fallback_rationale_key(context: &EventDecisionContext) -> &'static str {
+    match canonical_family_event_name(context).as_str() {
+        "Neow" => "legacy_fallback_neow",
+        "Note For Yourself" => "legacy_fallback_note_for_yourself",
+        "Bonfire Spirits" | "Bonfire Elementals" => "legacy_fallback_bonfire",
+        _ => "legacy_fallback_adapter",
+    }
+}
+
+fn compatibility_fallback_event_choice(
+    rs: &RunState,
+    context: &EventDecisionContext,
+) -> Option<EventChoiceDecision> {
+    let screen_state = json!({
+        "event_id": context.event_id,
+        "event_name": context.event_name,
+        "current_screen": context.current_screen,
+        "options": context.options.iter().map(|option| {
+            json!({
+                "text": option.text,
+                "label": option.label,
+                "disabled": option.disabled,
+                "choice_index": option.choice_index,
+            })
+        }).collect::<Vec<_>>(),
+    });
+    let root = json!({ "screen_state": screen_state });
+    let choice_names = derived_choice_names(context);
+    let choice_refs = choice_names.iter().map(String::as_str).collect::<Vec<_>>();
+    let command_index =
+        crate::bot::noncombat_families::choose_event_choice(&root, rs, &choice_refs)
+            .or_else(|| fallback_command_index(context))?;
+    let option_index = command_index_to_option_index(context, command_index)
+        .or_else(|| fallback_option_index(context))?;
+    let rationale_key = legacy_fallback_rationale_key(context);
+    Some(EventChoiceDecision {
+        option_index,
+        command_index,
+        family: EventPolicyFamily::CompatibilityFallback,
+        rationale_key: Some(rationale_key),
+        score: None,
+        safety_override_applied: false,
+        rationale: Some(rationale_key),
     })
 }
 
@@ -780,41 +843,6 @@ fn choose_best_scored_option(
     })
 }
 
-fn compatibility_fallback_event_choice(
-    rs: &RunState,
-    context: &EventDecisionContext,
-) -> Option<EventChoiceDecision> {
-    let screen_state = json!({
-        "event_id": context.event_id,
-        "event_name": context.event_name,
-        "current_screen": context.current_screen,
-        "options": context.options.iter().map(|option| {
-            json!({
-                "text": option.text,
-                "label": option.label,
-                "disabled": option.disabled,
-                "choice_index": option.choice_index,
-            })
-        }).collect::<Vec<_>>(),
-    });
-    let root = json!({ "screen_state": screen_state });
-    let choice_names = derived_choice_names(context);
-    let choice_refs = choice_names.iter().map(String::as_str).collect::<Vec<_>>();
-    let command_index =
-        crate::bot::noncombat_families::choose_event_choice(&root, rs, &choice_refs)
-            .or_else(|| fallback_command_index(context))?;
-    let option_index = command_index_to_option_index(context, command_index)
-        .or_else(|| fallback_option_index(context))?;
-    Some(EventChoiceDecision {
-        option_index,
-        command_index,
-        family: EventPolicyFamily::CompatibilityFallback,
-        rationale_key: Some("compatibility_fallback_adapter"),
-        score: None,
-        safety_override_applied: false,
-        rationale: Some("compatibility_fallback_adapter"),
-    })
-}
 
 fn score_press_your_luck_options(
     rs: &RunState,
@@ -1478,87 +1506,6 @@ fn context_curse_drag(rs: &RunState) -> f32 {
     40.0 + curse_pressure_score(rs) as f32 * 14.0
 }
 
-fn nearby_shop_conversion_bonus(rs: &RunState) -> i32 {
-    match reachable_room_distance(rs, RoomType::ShopRoom, 3) {
-        Some(1) => 380,
-        Some(2) => 260,
-        Some(3) => 120,
-        _ => 0,
-    }
-}
-
-fn curse_tractability_score(rs: &RunState) -> i32 {
-    let profile = crate::bot::evaluator::CardEvaluator::deck_profile(rs);
-    let purge_cost = 75 + rs.shop_purge_count.max(0) * 25;
-    let mut score = 0;
-    if let Some(distance) = reachable_room_distance(rs, RoomType::ShopRoom, 4) {
-        if distance <= 2 && rs.gold >= purge_cost {
-            score += 4;
-        } else if distance <= 4 && rs.gold >= purge_cost {
-            score += 2;
-        } else if distance <= 2 {
-            score += 1;
-        }
-    }
-    if profile.exhaust_outlets >= 1 || profile.exhaust_engines >= 2 {
-        score += 1;
-    }
-    score
-}
-
-fn best_we_meet_again_card_give_score(rs: &RunState) -> i32 {
-    rs.master_deck
-        .iter()
-        .map(|card| {
-            let def = crate::content::cards::get_card_definition(card.id);
-            if def.card_type == crate::content::cards::CardType::Curse {
-                2_500 + crate::bot::evaluator::curse_remove_severity(card.id) * 120
-            } else if def
-                .tags
-                .contains(&crate::content::cards::CardTag::StarterStrike)
-                || def.name == "Defend"
-                || def.rarity == crate::content::cards::CardRarity::Basic
-            {
-                1_900
-            } else {
-                let owned_value =
-                    crate::bot::evaluator::CardEvaluator::evaluate_owned_card(card.id, rs);
-                (1_450 - owned_value * 18).max(-200)
-            }
-        })
-        .max()
-        .unwrap_or(-200)
-}
-
-fn potion_keep_value(potion_id: crate::content::potions::PotionId) -> i32 {
-    use crate::content::potions::PotionId;
-    match potion_id {
-        PotionId::AncientPotion => 100,
-        PotionId::PowerPotion | PotionId::ColorlessPotion => 94,
-        PotionId::DuplicationPotion | PotionId::GhostInAJar => 90,
-        PotionId::BlessingOfTheForge => 84,
-        PotionId::StrengthPotion
-        | PotionId::DexterityPotion
-        | PotionId::SpeedPotion
-        | PotionId::SteroidPotion
-        | PotionId::EssenceOfSteel
-        | PotionId::LiquidBronze
-        | PotionId::RegenPotion => 85,
-        PotionId::EnergyPotion | PotionId::SwiftPotion => 82,
-        PotionId::FruitJuice | PotionId::BloodPotion | PotionId::FairyPotion => 88,
-        _ => 55,
-    }
-}
-
-fn best_we_meet_again_potion_give_score(rs: &RunState) -> i32 {
-    rs.potions
-        .iter()
-        .flatten()
-        .map(|p| 1_850 - potion_keep_value(p.id) * 12)
-        .max()
-        .unwrap_or(-300)
-}
-
 fn scrap_ooze_continue_score(rs: &RunState, damage: i32, chance: i32) -> f32 {
     let success = chance as f32 / 100.0;
     let hp_cost = hp_point_value(rs);
@@ -1682,137 +1629,11 @@ fn safety_gap_penalty(rs: &RunState, immediate_damage: i32) -> f32 {
     gap * hp_point_value(rs) * 0.65
 }
 
-fn reachable_room_distance(rs: &RunState, target: RoomType, max_depth: i32) -> Option<i32> {
-    if rs.map.current_y < 0 || rs.map.current_x < 0 {
-        return None;
-    }
-
-    let start = (rs.map.current_x as usize, rs.map.current_y as usize);
-    let mut q = VecDeque::from([(start, 0i32)]);
-    let mut seen = HashSet::from([start]);
-
-    while let Some(((x, y), depth)) = q.pop_front() {
-        if depth > 0
-            && rs
-                .map
-                .graph
-                .get(y)
-                .and_then(|row| row.get(x))
-                .and_then(|node| node.class)
-                == Some(target)
-        {
-            return Some(depth);
-        }
-        if depth >= max_depth {
-            continue;
-        }
-        let Some(node) = rs.map.graph.get(y).and_then(|row| row.get(x)) else {
-            continue;
-        };
-        for edge in &node.edges {
-            if edge.dst_x < 0 || edge.dst_y < 0 {
-                continue;
-            }
-            let next = (edge.dst_x as usize, edge.dst_y as usize);
-            if seen.insert(next) {
-                q.push_back((next, depth + 1));
-            }
-        }
-    }
-
-    None
-}
-
-fn first_number(text: &str) -> i32 {
-    nth_number(text, 0)
-}
-
-fn nth_number(text: &str, index: usize) -> i32 {
-    text.split(|c: char| !c.is_ascii_digit())
-        .filter(|segment| !segment.is_empty())
-        .nth(index)
-        .and_then(|segment| segment.parse::<i32>().ok())
-        .unwrap_or(0)
-}
-
 fn extract_numbers(text: &str) -> Vec<i32> {
     text.split(|c: char| !c.is_ascii_digit())
         .filter(|segment| !segment.is_empty())
         .filter_map(|segment| segment.parse::<i32>().ok())
         .collect()
-}
-
-fn count_upgradable_cards(rs: &RunState) -> i32 {
-    rs.master_deck
-        .iter()
-        .filter(|card| {
-            let def = crate::content::cards::get_card_definition(card.id);
-            card.id == crate::content::cards::CardId::SearingBlow
-                || (card.upgrades == 0
-                    && def.card_type != crate::content::cards::CardType::Status
-                    && def.card_type != crate::content::cards::CardType::Curse)
-        })
-        .count() as i32
-}
-
-fn count_remove_targets(rs: &RunState) -> i32 {
-    rs.master_deck
-        .iter()
-        .filter(|card| {
-            let def = crate::content::cards::get_card_definition(card.id);
-            def.card_type == crate::content::cards::CardType::Curse
-                || def.card_type == crate::content::cards::CardType::Status
-                || def
-                    .tags
-                    .contains(&crate::content::cards::CardTag::StarterStrike)
-                || def.name == "Defend"
-                || (def.rarity == crate::content::cards::CardRarity::Basic
-                    && !def.tags.contains(&crate::content::cards::CardTag::Healing))
-        })
-        .count() as i32
-}
-
-fn count_transform_targets(rs: &RunState) -> i32 {
-    rs.master_deck
-        .iter()
-        .filter(|card| {
-            let def = crate::content::cards::get_card_definition(card.id);
-            def.card_type == crate::content::cards::CardType::Curse
-                || def
-                    .tags
-                    .contains(&crate::content::cards::CardTag::StarterStrike)
-                || def.name == "Defend"
-                || def.rarity == crate::content::cards::CardRarity::Basic
-                || (def.rarity == crate::content::cards::CardRarity::Common
-                    && def.card_type != crate::content::cards::CardType::Power)
-        })
-        .count() as i32
-}
-
-fn curse_pressure_score(rs: &RunState) -> i32 {
-    rs.master_deck
-        .iter()
-        .map(|card| {
-            let def = crate::content::cards::get_card_definition(card.id);
-            if def.card_type == crate::content::cards::CardType::Curse {
-                let severity = crate::bot::evaluator::curse_remove_severity(card.id);
-                if severity > 0 {
-                    severity
-                } else {
-                    3
-                }
-            } else {
-                0
-            }
-        })
-        .sum()
-}
-
-fn generic_remove_value(rs: &RunState) -> i32 {
-    1_500
-        + count_remove_targets(rs) * 420
-        + curse_pressure_score(rs) * 90
-        + crate::bot::deck_delta_eval::compare_purge_vs_keep(rs).total * 12
 }
 
 fn contains_tag(option: &EventOptionView, tag: EventOptionTag) -> bool {
@@ -1821,11 +1642,6 @@ fn contains_tag(option: &EventOptionView, tag: EventOptionTag) -> bool {
 
 fn is_named_event(context: &EventDecisionContext, name: &str) -> bool {
     context.event_id.eq_ignore_ascii_case(name) || context.event_name.eq_ignore_ascii_case(name)
-}
-
-fn contains_any(text: &str, needles: &[&str]) -> bool {
-    let lower = text.to_ascii_lowercase();
-    needles.iter().any(|needle| lower.contains(needle))
 }
 
 fn canonical_event_name(event_id: EventId) -> &'static str {
@@ -1882,6 +1698,65 @@ fn canonical_event_name(event_id: EventId) -> &'static str {
         EventId::WeMeetAgain => "We Meet Again",
         EventId::WomanInBlue => "Woman in Blue",
         EventId::Neow => "Neow",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn unknown_event_falls_back_to_generic_safe_instead_of_legacy_adapter() {
+        let rs = RunState::new(1, 0, true, "Ironclad");
+        let context = EventDecisionContext {
+            event_id: "Totally Unknown".to_string(),
+            event_name: "Totally Unknown".to_string(),
+            current_screen: 0,
+            current_screen_index: Some(0),
+            current_screen_key: None,
+            screen_source: Some("test".to_string()),
+            options: vec![EventOptionView {
+                index: 0,
+                text: "Leave".to_string(),
+                label: Some("Leave".to_string()),
+                disabled: false,
+                choice_index: Some(0),
+                semantic_tags: vec![EventOptionTag::Leave],
+                payload: EventOptionPayload::default(),
+            }],
+            features: EventDecisionFeatures::default(),
+        };
+
+        let decision = choose_event_option(&rs, &context).unwrap();
+        assert_eq!(decision.family, EventPolicyFamily::GenericSafe);
+        assert_eq!(decision.rationale_key, Some("generic_safe_first_enabled"));
+    }
+
+    #[test]
+    fn legacy_neow_keeps_compatibility_fallback_path() {
+        let rs = RunState::new(1, 0, true, "Ironclad");
+        let context = EventDecisionContext {
+            event_id: "Neow".to_string(),
+            event_name: "Neow".to_string(),
+            current_screen: 0,
+            current_screen_index: Some(0),
+            current_screen_key: None,
+            screen_source: Some("test".to_string()),
+            options: vec![EventOptionView {
+                index: 0,
+                text: "Proceed".to_string(),
+                label: Some("Proceed".to_string()),
+                disabled: false,
+                choice_index: Some(0),
+                semantic_tags: vec![EventOptionTag::Leave],
+                payload: EventOptionPayload::default(),
+            }],
+            features: EventDecisionFeatures::default(),
+        };
+
+        let decision = choose_event_option(&rs, &context).unwrap();
+        assert_eq!(decision.family, EventPolicyFamily::CompatibilityFallback);
+        assert_eq!(decision.rationale_key, Some("legacy_fallback_neow"));
     }
 }
 

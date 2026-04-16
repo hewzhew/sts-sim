@@ -2,7 +2,7 @@ mod boss_relics;
 mod campfire;
 mod deck_surgery;
 mod facade;
-mod helpers;
+pub(crate) mod helpers;
 mod map_pathing;
 mod model;
 mod shop;

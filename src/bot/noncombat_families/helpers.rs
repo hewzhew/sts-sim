@@ -15,7 +15,7 @@ pub(super) fn next_purge_cost(rs: &RunState) -> i32 {
     75 + rs.shop_purge_count.max(0) * 25
 }
 
-pub(super) fn reachable_room_distance(
+pub(crate) fn reachable_room_distance(
     rs: &RunState,
     target: RoomType,
     max_depth: i32,
@@ -61,7 +61,7 @@ pub(super) fn reachable_room_distance(
     None
 }
 
-pub(super) fn curse_tractability_score(rs: &RunState) -> i32 {
+pub(crate) fn curse_tractability_score(rs: &RunState) -> i32 {
     let profile = crate::bot::evaluator::CardEvaluator::deck_profile(rs);
     let mut score = 0;
     let purge_cost = next_purge_cost(rs);
@@ -80,7 +80,7 @@ pub(super) fn curse_tractability_score(rs: &RunState) -> i32 {
     score
 }
 
-pub(super) fn nearby_shop_conversion_bonus(rs: &RunState) -> i32 {
+pub(crate) fn nearby_shop_conversion_bonus(rs: &RunState) -> i32 {
     match reachable_room_distance(rs, RoomType::ShopRoom, 3) {
         Some(1) => 380,
         Some(2) => 260,
@@ -89,7 +89,7 @@ pub(super) fn nearby_shop_conversion_bonus(rs: &RunState) -> i32 {
     }
 }
 
-pub(super) fn generic_remove_value(rs: &RunState) -> i32 {
+pub(crate) fn generic_remove_value(rs: &RunState) -> i32 {
     let need = super::model::build_noncombat_need_snapshot_for_run(rs);
     800 + need.purge_value * 9
         + count_remove_targets(rs) * 180
@@ -97,16 +97,16 @@ pub(super) fn generic_remove_value(rs: &RunState) -> i32 {
         + crate::bot::deck_delta_eval::compare_purge_vs_keep(rs).total * 12
 }
 
-pub(super) fn contains_any(text: &str, needles: &[&str]) -> bool {
+pub(crate) fn contains_any(text: &str, needles: &[&str]) -> bool {
     let lower = text.to_ascii_lowercase();
     needles.iter().any(|needle| lower.contains(needle))
 }
 
-pub(super) fn first_number(text: &str) -> i32 {
+pub(crate) fn first_number(text: &str) -> i32 {
     nth_number(text, 0)
 }
 
-pub(super) fn nth_number(text: &str, index: usize) -> i32 {
+pub(crate) fn nth_number(text: &str, index: usize) -> i32 {
     text.split(|c: char| !c.is_ascii_digit())
         .filter(|s| !s.is_empty())
         .nth(index)
@@ -137,7 +137,7 @@ pub(super) fn count_curses(rs: &RunState) -> i32 {
         .count() as i32
 }
 
-pub(super) fn curse_pressure_score(rs: &RunState) -> i32 {
+pub(crate) fn curse_pressure_score(rs: &RunState) -> i32 {
     rs.master_deck
         .iter()
         .map(|card| {
@@ -167,7 +167,7 @@ pub(super) fn count_starter_strikes(rs: &RunState) -> i32 {
         .count() as i32
 }
 
-pub(super) fn count_upgradable_cards(rs: &RunState) -> i32 {
+pub(crate) fn count_upgradable_cards(rs: &RunState) -> i32 {
     rs.master_deck
         .iter()
         .filter(|card| {
@@ -180,7 +180,7 @@ pub(super) fn count_upgradable_cards(rs: &RunState) -> i32 {
         .count() as i32
 }
 
-pub(super) fn count_remove_targets(rs: &RunState) -> i32 {
+pub(crate) fn count_remove_targets(rs: &RunState) -> i32 {
     rs.master_deck
         .iter()
         .filter(|card| {
@@ -197,7 +197,7 @@ pub(super) fn count_remove_targets(rs: &RunState) -> i32 {
         .count() as i32
 }
 
-pub(super) fn count_transform_targets(rs: &RunState) -> i32 {
+pub(crate) fn count_transform_targets(rs: &RunState) -> i32 {
     rs.master_deck
         .iter()
         .filter(|card| {
@@ -255,7 +255,7 @@ pub(super) fn best_bonfire_fuel_score(rs: &RunState) -> i32 {
         .unwrap_or(0)
 }
 
-pub(super) fn best_we_meet_again_card_give_score(rs: &RunState) -> i32 {
+pub(crate) fn best_we_meet_again_card_give_score(rs: &RunState) -> i32 {
     rs.master_deck
         .iter()
         .map(|card| {
@@ -299,7 +299,7 @@ pub(super) fn potion_keep_value(potion_id: crate::content::potions::PotionId) ->
     }
 }
 
-pub(super) fn best_we_meet_again_potion_give_score(rs: &RunState) -> i32 {
+pub(crate) fn best_we_meet_again_potion_give_score(rs: &RunState) -> i32 {
     rs.potions
         .iter()
         .flatten()
