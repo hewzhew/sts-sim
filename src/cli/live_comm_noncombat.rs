@@ -93,6 +93,7 @@ pub(crate) fn decide_noncombat_with_agent(
             if reward_cards.is_empty() {
                 return None;
             }
+            let fallback_reward_cards = reward_cards.clone();
             let reward = crate::rewards::state::RewardState {
                 items: Vec::new(),
                 skippable: gs
@@ -109,7 +110,11 @@ pub(crate) fn decide_noncombat_with_agent(
                     Some(format!("CHOOSE {}", idx))
                 }
                 crate::state::core::ClientInput::Proceed
-                | crate::state::core::ClientInput::Cancel => Some("SKIP".to_string()),
+                | crate::state::core::ClientInput::Cancel => {
+                    conservative_live_card_reward_choice_after_skip(&fallback_reward_cards, &rs)
+                        .map(|idx| format!("CHOOSE {}", idx))
+                        .or_else(|| Some("SKIP".to_string()))
+                }
                 _ => None,
             }
         }
@@ -709,11 +714,45 @@ fn base_reward_potion_score(potion_id: crate::content::potions::PotionId) -> i32
     }
 }
 
+fn conservative_live_card_reward_choice_after_skip(
+    reward_cards: &[crate::rewards::state::RewardCard],
+    rs: &crate::state::run::RunState,
+) -> Option<usize> {
+    let offered_cards: Vec<_> = reward_cards.iter().map(|reward_card| reward_card.id).collect();
+    if offered_cards.is_empty() {
+        return None;
+    }
+
+    let detailed = crate::bot::evaluate_reward_screen_for_run_detailed(&offered_cards, rs);
+    if detailed.recommended_choice.is_some() {
+        return detailed.recommended_choice;
+    }
+
+    let best_idx = detailed
+        .offered_cards
+        .iter()
+        .enumerate()
+        .max_by(|(_, lhs), (_, rhs)| lhs.combined_score.total_cmp(&rhs.combined_score))
+        .map(|(idx, _)| idx)?;
+
+    if detailed.best_local_score >= 35 && detailed.best_combined_score >= 35.0 {
+        return Some(best_idx);
+    }
+
+    crate::bot::evaluate_reward_screen(&offered_cards)
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{blocked_shop_potion_replacement_command, reward_potion_score};
+    use super::{
+        blocked_shop_potion_replacement_command,
+        conservative_live_card_reward_choice_after_skip,
+        reward_potion_score,
+    };
     use crate::bot::Agent;
+    use crate::content::cards::CardId;
     use crate::content::potions::{Potion, PotionId};
+    use crate::rewards::state::RewardCard;
     use crate::shop::{ShopPotion, ShopState};
     use crate::state::run::RunState;
     use serde_json::json;
@@ -777,6 +816,35 @@ mod tests {
         let energy = reward_potion_score(&agent, &rs, PotionId::EnergyPotion);
 
         assert!(elixir > energy, "expected Elixir ({elixir}) > Energy Potion ({energy})");
+    }
+
+    #[test]
+    fn conservative_card_reward_fallback_picks_when_global_heuristic_disagrees_with_skip() {
+        let mut rs = RunState::new(1, 0, false, "Ironclad");
+        rs.act_num = 2;
+        rs.floor_num = 25;
+        rs.master_deck = (0..18)
+            .map(|idx| {
+                let card_id = if idx < 8 {
+                    CardId::Strike
+                } else {
+                    CardId::Defend
+                };
+                crate::runtime::combat::CombatCard::new(card_id, idx as u32)
+            })
+            .collect();
+        let reward_cards = vec![
+            RewardCard::new(CardId::Havoc, 0),
+            RewardCard::new(CardId::Clash, 0),
+            RewardCard::new(CardId::WildStrike, 0),
+        ];
+
+        let offered_cards: Vec<_> = reward_cards.iter().map(|reward_card| reward_card.id).collect();
+        let detailed = crate::bot::evaluate_reward_screen_for_run_detailed(&offered_cards, &rs);
+        assert_eq!(detailed.recommended_choice, None);
+
+        let fallback = conservative_live_card_reward_choice_after_skip(&reward_cards, &rs);
+        assert_eq!(fallback, Some(0));
     }
 }
 
