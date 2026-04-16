@@ -29,7 +29,7 @@ As of the current hard-reset batch, old traces are no longer treated as
 supported by default. Missing `runtime_state` for migrated slices should fail
 fast instead of triggering carry/shim repair.
 
-Manual scenario truth samples now exist for:
+Manual scenario protocol truth samples now exist for:
 
 - `GuardianThreshold`
 - `Angry`
@@ -38,6 +38,9 @@ Manual scenario truth samples now exist for:
 See:
 
 - [MANUAL_SCENARIO_SAMPLE_INDEX.md](d:\rust\sts_simulator\docs\MANUAL_SCENARIO_SAMPLE_INDEX.md)
+
+These samples prove protocol/importer truth only. They should not be read as
+full mechanic regression coverage for the corresponding content.
 
 ## What Rust Already Imports Directly
 

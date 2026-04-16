@@ -1,0 +1,157 @@
+# Guardian Threshold Test Matrix
+
+This document is **not** about protocol existence.
+
+It is about the actual Guardian mechanic:
+
+- threshold consumption
+- mode switch timing
+- overflow damage behavior
+- post-switch intent/state updates
+- threshold reset / growth rules
+
+The manual scenario sample for `guardian_threshold` only proves that the new
+protocol path exports and imports the field. It does **not** prove that the
+full Guardian mechanic is behaviorally correct in Rust.
+
+## Scope
+
+Questions this matrix is meant to answer:
+
+1. Does Rust receive the correct initial threshold value?
+2. Does Guardian remain in attack mode while below threshold?
+3. On the threshold-crossing hit, how is damage split between:
+   - pre-switch HP loss
+   - the 20 block from Defensive Mode
+   - any overflow damage
+4. Does the intent change at the correct time after switching?
+5. Does the next threshold value reset or increase correctly?
+6. Is there an upper bound or repeated-step rule, and does Rust match it?
+
+## What Is Already Proven
+
+Already proven by the manual protocol sample:
+
+- `monster.runtime_state.guardian_threshold` exists in protocol truth
+- `state_sync` strict importer reads it
+
+Reference sample:
+
+- [guardian_threshold_20260416_123846](/d:/rust/sts_simulator/logs/manual_scenario_samples/guardian_threshold_20260416_123846)
+
+## What Is Not Yet Proven
+
+Not yet proven by current samples:
+
+- threshold-crossing combat resolution
+- overflow damage behavior on the switching hit
+- Defensive Mode block interaction
+- next-turn intent update after switching
+- next threshold progression across multiple switches
+
+## Recommended Behavior Cases
+
+### Case A: Below Threshold
+
+Setup:
+
+- Guardian in initial attack mode
+- threshold known
+- hit for less than threshold
+
+Expected:
+
+- no mode switch
+- no Defensive Mode block granted yet
+- threshold decreases or internal tracking updates exactly as base game expects
+
+### Case B: Exact Threshold Hit
+
+Setup:
+
+- Guardian threshold known
+- hit for exactly the remaining threshold amount
+
+Expected:
+
+- switch occurs at the correct point in resolution
+- no ambiguous extra overflow damage
+- next visible intent/state matches base game
+
+### Case C: Threshold Overflow Hit
+
+Setup:
+
+- threshold known
+- hit for more than remaining threshold
+
+Expected questions to pin down:
+
+- does overflow continue into HP before the switch?
+- does overflow get eaten by the 20 Defensive Mode block?
+- is overflow discarded entirely after the switch trigger?
+
+This is the highest-value unresolved case right now.
+
+### Case D: Post-Switch Intent
+
+Setup:
+
+- force or reach Defensive Mode
+
+Expected:
+
+- visible intent changes on the correct turn boundary
+- Rust and Java agree on both:
+  - current visible intent
+  - hidden threshold/runtime state
+
+### Case E: Repeated Threshold Cycles
+
+Setup:
+
+- run the fight long enough to trigger multiple threshold transitions
+
+Expected:
+
+- next threshold value matches base game after each cycle
+- any growth/reset rule is reproduced exactly
+- any upper bound is respected
+
+## Suggested Execution Order
+
+1. Case C: threshold overflow hit
+2. Case D: post-switch intent
+3. Case E: repeated threshold cycles
+4. Case A/B as control cases if needed
+
+Why:
+
+- overflow behavior is the least obvious and easiest place for Rust/Java drift
+- intent timing is the next most visible regression
+- repeated cycles validate the long-tail state machine
+
+## Recommended Test Vehicle
+
+Do not try to prove these cases with protocol-only samples.
+
+Preferred vehicles:
+
+- controlled combat fixture / author spec
+- `combat_lab` style deterministic harness
+- targeted live/manual scenario recording only when necessary
+
+Protocol samples should remain narrow:
+
+- field exists
+- field imports
+
+Behavior tests should remain separate:
+
+- mechanic resolves correctly
+
+## Related Docs
+
+- [MANUAL_SCENARIO_SAMPLE_INDEX.md](/d:/rust/sts_simulator/docs/MANUAL_SCENARIO_SAMPLE_INDEX.md:1)
+- [STATE_SYNC_STATUS.md](/d:/rust/sts_simulator/docs/STATE_SYNC_STATUS.md:1)
+- [LIVE_COMM_MANUAL_SCENARIO_RUNBOOK.md](/d:/rust/sts_simulator/docs/LIVE_COMM_MANUAL_SCENARIO_RUNBOOK.md:1)
