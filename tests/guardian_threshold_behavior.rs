@@ -1,3 +1,11 @@
+// Oracle: Java source + invariant checks
+// Evidence:
+// - docs/protocol/GUARDIAN_THRESHOLD_TEST_MATRIX.md
+// - Java Guardian / Mode Shift source inspection used during test design
+//
+// This file intentionally avoids exact boundary cases whose oracle has not yet
+// been separately confirmed by Java source or live runtime evidence.
+
 use sts_simulator::content::powers::store;
 use sts_simulator::engine::action_handlers::execute_action;
 use sts_simulator::fixtures::author_spec::AuthorCardSpec;

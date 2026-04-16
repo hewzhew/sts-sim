@@ -48,6 +48,16 @@ The absolute source of truth is the **Java Engine**. We rely exclusively on data
 - **Trace Generation**: The Java `CommunicationMod` exports rigorous `.jsonl` trace files during actual gameplay. Each action outputs the resulting exact gamestate snapshot.
 - **Verification Engine**: `diff_driver.rs` loads states sequentially from the trace, resolves the recorded player actions inside the Rust engine, and strictly asserts bit-for-bit parity across all state fields (HP, cards, buffs, RNG seed advancements).
 
+Not every correctness-sensitive test should use the same oracle strength.
+Protocol truth fixtures, behavior tests, differential replay checks, and simple
+invariant tests all play different roles. The key rule is that exact behavior
+tests must name an external oracle source rather than silently deriving expected
+values from current Rust behavior.
+
+See also:
+
+- [TEST_ORACLE_STRATEGY.md](TEST_ORACLE_STRATEGY.md)
+
 ### 4.1 Protocol Truth Rule
 
 Combat parity work must follow this chain:
@@ -69,6 +79,7 @@ See also:
 
 - [PROTOCOL_TRUTH_RULES.md](protocol/PROTOCOL_TRUTH_RULES.md)
 - [COMM_PROTOCOL_DEBT_BACKLOG_2026-04-12.md](protocol/COMM_PROTOCOL_DEBT_BACKLOG_2026-04-12.md)
+- [TEST_ORACLE_STRATEGY.md](TEST_ORACLE_STRATEGY.md)
 - [RL_READINESS_CHECKLIST.md](RL_READINESS_CHECKLIST.md)
 
 ## 5. Standard Contribution Workflow

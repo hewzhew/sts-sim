@@ -27,6 +27,9 @@ Read these first:
   - hard dependency direction for `core / integration / app`
 - `architecture.md`
   - system architecture and verification context
+- `TEST_ORACLE_STRATEGY.md`
+  - how correctness tests should declare and source their oracle, and when to
+    use Java source, live samples, parity, invariants, or `tools/sts_tool`
 - `RL_READINESS_CHECKLIST.md`
   - what still needs to be true before the simulator should be treated as a
     stable RL environment
