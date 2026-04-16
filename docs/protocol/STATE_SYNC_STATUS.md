@@ -34,6 +34,7 @@ Manual scenario protocol truth samples now exist for:
 - `GuardianThreshold`
 - `Angry`
 - `Combust`
+- `Stasis`
 
 See:
 

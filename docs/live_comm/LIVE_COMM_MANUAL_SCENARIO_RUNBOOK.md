@@ -37,6 +37,9 @@ Useful local REPL commands:
 - `/show`
 - `/commands`
 - `/state`
+- `/monsters`
+- `/monster N`
+- `/find term`
 - `/quit`
 
 The latest raw frame is mirrored to:
@@ -102,7 +105,7 @@ correctly through `scenario fight`:
 - `cultist_and_chosen`
 - `chosen_and_byrds`
 - `3_darklings`
-- `bronze_automaton`
+- `automaton`
 
 ## Slice 1: GuardianThreshold
 
@@ -191,17 +194,18 @@ Recommended path:
 
 ```text
 START ironclad 0
-scenario fight bronze_automaton
+scenario fight automaton
 STATE
 END
-WAIT 10
 STATE
 ```
 
 Notes:
 
 - `Stasis` is less deterministic than the first three slices
-- use `bronze_automaton` because `Bronze Orb` is the practical source of `Stasis`
+- use `automaton` because `Bronze Orb` is the practical source of `Stasis`
+- `WAIT 10` is optional here; if the monster actions have visibly resolved and
+  a fresh `STATE` already returns the next frame, you do not need an extra wait
 - if the first enemy turn is not enough, repeat:
 
 ```text

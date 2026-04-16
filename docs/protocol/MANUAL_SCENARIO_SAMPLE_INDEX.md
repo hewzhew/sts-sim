@@ -77,16 +77,33 @@ the canonical checked-in fixture copy now lives under:
   - [combust_20260416_124432](/d:/rust/sts_simulator/logs/manual_scenario_samples/combust_20260416_124432)
   - [frame.json](/d:/rust/sts_simulator/logs/manual_scenario_samples/combust_20260416_124432/frame.json:1)
 
+### Stasis
+
+- slice: `Stasis`
+- encounter: `automaton`
+- sample type: `protocol existence / importer proof`
+- path:
+  - `START ironclad 0`
+  - `scenario fight automaton`
+  - `STATE`
+  - `END`
+  - `STATE`
+- proof:
+  - some `BronzeOrb` has power `id == "Stasis"`
+  - that power has `runtime_state.card_uuid`
+- sample:
+  - checked-in fixture: [`tests/protocol_truth_samples/stasis/frame.json`](../../tests/protocol_truth_samples/stasis/frame.json)
+  - [stasis_20260416_132231](/d:/rust/sts_simulator/logs/manual_scenario_samples/stasis_20260416_132231)
+  - [frame.json](/d:/rust/sts_simulator/logs/manual_scenario_samples/stasis_20260416_132231/frame.json:1)
+
 ## Current Status
 
-These three slices are the current stable manual protocol truth set:
+These four slices are the current stable manual protocol truth set:
 
 - `GuardianThreshold`
 - `Angry`
 - `Combust`
-
-`Stasis` is intentionally not listed yet. It remains a later slice because the
-shortest stable path is less deterministic than the three above.
+- `Stasis`
 
 ## Next Expected Use
 
