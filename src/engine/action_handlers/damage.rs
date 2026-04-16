@@ -38,8 +38,8 @@ fn queue_player_hp_loss_hooks(
             damage_type,
             triggers_rupture,
         );
-        for action in hook_actions {
-            state.engine.action_queue.push_back(action);
+        for action in hook_actions.into_iter().rev() {
+            state.engine.action_queue.push_front(action);
         }
     }
 
