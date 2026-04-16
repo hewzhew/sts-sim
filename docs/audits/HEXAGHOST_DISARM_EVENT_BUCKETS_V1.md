@@ -98,7 +98,7 @@ From the Rust-side `hexaghost_v1` audit:
 
 Source:
 
-- [ironclad_hexaghost_disarm_v1_script_value_summary.json](/d:/rust/sts_simulator/tools/artifacts/learning_dataset/ironclad_hexaghost_disarm_v1_script_value_summary.json:1)
+- [ironclad_hexaghost_disarm_v1_script_value_summary.json](/d:/rust/sts_simulator/tools/artifacts/archive/hexaghost_disarm/ironclad_hexaghost_disarm_v1_script_value_summary.json:1)
 
 This is not a bucket label.
 It is supporting evidence that the mitigation resource has genuine persistent
@@ -178,7 +178,7 @@ On the more realistic `hexaghost_v2` natural-start deck:
 
 Source:
 
-- [ironclad_hexaghost_disarm_v2_rl_metrics.json](/d:/rust/sts_simulator/tools/artifacts/learning_dataset/ironclad_hexaghost_disarm_v2_rl_metrics.json:1)
+- [ironclad_hexaghost_disarm_v2_rl_metrics.json](/d:/rust/sts_simulator/tools/artifacts/archive/hexaghost_disarm/ironclad_hexaghost_disarm_v2_rl_metrics.json:1)
 
 `script-credit`:
 
@@ -188,7 +188,7 @@ Source:
 
 Source:
 
-- [ironclad_hexaghost_disarm_v2_script_credit_rl_metrics.json](/d:/rust/sts_simulator/tools/artifacts/learning_dataset/ironclad_hexaghost_disarm_v2_script_credit_rl_metrics.json:1)
+- [ironclad_hexaghost_disarm_v2_script_credit_rl_metrics.json](/d:/rust/sts_simulator/tools/artifacts/archive/hexaghost_disarm/ironclad_hexaghost_disarm_v2_script_credit_rl_metrics.json:1)
 
 Interpretation:
 
