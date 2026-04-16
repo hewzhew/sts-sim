@@ -29,6 +29,16 @@ As of the current hard-reset batch, old traces are no longer treated as
 supported by default. Missing `runtime_state` for migrated slices should fail
 fast instead of triggering carry/shim repair.
 
+Manual scenario truth samples now exist for:
+
+- `GuardianThreshold`
+- `Angry`
+- `Combust`
+
+See:
+
+- [MANUAL_SCENARIO_SAMPLE_INDEX.md](d:\rust\sts_simulator\docs\MANUAL_SCENARIO_SAMPLE_INDEX.md)
+
 ## What Rust Already Imports Directly
 
 ### Powers
