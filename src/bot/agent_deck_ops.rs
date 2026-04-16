@@ -31,7 +31,7 @@ impl Agent {
     fn bash_preservation_bonus(
         &self,
         rs: &RunState,
-        profile: &crate::bot::evaluator::DeckProfile,
+        _profile: &crate::bot::evaluator::DeckProfile,
         mode: DeckCutMode,
     ) -> i32 {
         let early_opening = rs.act_num <= 1 && rs.floor_num <= 4;
@@ -49,7 +49,7 @@ impl Agent {
                 )
             })
             .count() as i32;
-        let frontload_gap = self.shop_needs_frontload_damage(rs, profile);
+        let frontload_gap = self.build_shop_need_profile(rs).damage_gap >= 24;
 
         let mut bonus = 0;
         if early_opening && deck_is_thin {

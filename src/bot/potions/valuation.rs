@@ -9,6 +9,7 @@ impl Agent {
     ) -> i32 {
         use crate::content::potions::PotionId;
         let profile = crate::bot::evaluator::CardEvaluator::deck_profile(rs);
+        let shop_need = self.build_shop_need_profile(rs);
         let mut score = match potion_id {
             PotionId::AncientPotion => 100,
             PotionId::PowerPotion | PotionId::ColorlessPotion => 94,
@@ -26,30 +27,34 @@ impl Agent {
             _ => 55,
         };
 
-        if self.shop_needs_frontload_damage(rs, &profile) {
+        if shop_need.damage_gap > 0 {
             match potion_id {
                 PotionId::FearPotion
                 | PotionId::FirePotion
                 | PotionId::ExplosivePotion
-                | PotionId::AttackPotion => score += 16,
-                PotionId::StrengthPotion | PotionId::DuplicationPotion => score += 14,
+                | PotionId::AttackPotion => score += 10 + shop_need.damage_gap / 2,
+                PotionId::StrengthPotion | PotionId::DuplicationPotion => {
+                    score += 10 + shop_need.damage_gap / 3
+                }
                 _ => {}
             }
         }
-        if self.shop_needs_reliable_block(rs, &profile) {
+        if shop_need.block_gap > 0 {
             match potion_id {
-                PotionId::GhostInAJar => score += 24,
+                PotionId::GhostInAJar => score += 14 + shop_need.block_gap / 2,
                 PotionId::BlockPotion
                 | PotionId::WeakenPotion
                 | PotionId::DexterityPotion
                 | PotionId::EssenceOfSteel
-                | PotionId::LiquidBronze => score += 16,
+                | PotionId::LiquidBronze => score += 10 + shop_need.block_gap / 3,
                 _ => {}
             }
         }
-        if self.shop_needs_damage_control(rs) {
+        if shop_need.control_gap > 0 {
             match potion_id {
-                PotionId::WeakenPotion | PotionId::FearPotion => score += 12,
+                PotionId::WeakenPotion | PotionId::FearPotion => {
+                    score += 8 + shop_need.control_gap / 3
+                }
                 _ => {}
             }
         }

@@ -1,4 +1,5 @@
 use crate::bot::agent::Agent;
+use crate::bot::noncombat_families::model::ShopNeedProfile;
 use crate::state::core::ClientInput;
 use crate::state::run::RunState;
 
@@ -196,6 +197,7 @@ impl Agent {
         rs: &RunState,
         shop: &crate::shop::ShopState,
     ) -> bool {
+        let need = self.build_noncombat_need_snapshot(rs);
         let profile = crate::bot::evaluator::CardEvaluator::deck_profile(rs);
         let searing_plan = self.searing_blow_plan_score(rs, &profile);
         let worst_idx = self.best_purge_index(rs);
@@ -212,7 +214,7 @@ impl Agent {
         if crate::bot::evaluator::curse_remove_severity(worst.id) >= 8 {
             return true;
         }
-        if searing_plan > 0 {
+        if searing_plan > 0 || need.best_upgrade_value >= need.purge_value + 80 {
             let affordable_deficit_pick = shop.cards.iter().any(|card| {
                 rs.gold >= card.price + shop.purge_cost
                     && self.shop_card_score(rs, card.card_id) >= 60
@@ -225,7 +227,7 @@ impl Agent {
                 return false;
             }
         }
-        if worst_score <= 10 {
+        if worst_score <= 10 || need.purge_value >= need.best_upgrade_value + 50 {
             let affordable_high_value_card = shop.cards.iter().any(|card| {
                 rs.gold >= card.price + shop.purge_cost
                     && self.shop_card_score(rs, card.card_id) >= 65
@@ -246,10 +248,9 @@ impl Agent {
         use crate::content::relics::RelicId;
 
         let profile = crate::bot::evaluator::CardEvaluator::deck_profile(rs);
+        let need = self.build_noncombat_need_snapshot(rs);
+        let shop_need = self.build_shop_need_profile(rs);
         let searing_plan = self.searing_blow_plan_score(rs, &profile);
-        let output_gap = self.shop_needs_frontload_damage(rs, &profile);
-        let defense_gap = self.shop_needs_reliable_block(rs, &profile);
-        let control_gap = self.shop_needs_damage_control(rs);
 
         let mut score = match relic_id {
             RelicId::MembershipCard => 115,
@@ -312,27 +313,27 @@ impl Agent {
                     .iter()
                     .filter(|c| crate::content::cards::is_starter_basic(c.id))
                     .count() as i32;
-                score += bad_basics * 2;
+                score += bad_basics * 2 + need.purge_value / 10;
             }
             _ => {}
         }
 
-        if output_gap {
+        if shop_need.damage_gap >= 24 {
             match relic_id {
-                RelicId::PenNib | RelicId::Shuriken => score += 8,
-                RelicId::PreservedInsect => score += 10,
+                RelicId::PenNib | RelicId::Shuriken => score += 8 + shop_need.damage_gap / 8,
+                RelicId::PreservedInsect => score += 10 + shop_need.damage_gap / 6,
                 _ => {}
             }
         }
-        if defense_gap {
+        if shop_need.block_gap >= 24 {
             match relic_id {
-                RelicId::IncenseBurner => score += 10,
-                RelicId::Calipers => score += 6,
+                RelicId::IncenseBurner => score += 10 + shop_need.block_gap / 8,
+                RelicId::Calipers => score += 6 + shop_need.block_gap / 10,
                 _ => {}
             }
         }
-        if control_gap && relic_id == RelicId::ClockworkSouvenir {
-            score += 8;
+        if shop_need.control_gap >= 20 && relic_id == RelicId::ClockworkSouvenir {
+            score += 8 + shop_need.control_gap / 8;
         }
         if searing_plan > 0 {
             match relic_id {
@@ -340,6 +341,7 @@ impl Agent {
                 _ => {}
             }
         }
+        score += need.long_term_meta_value / 16;
 
         if let Some(target) = self.curiosity_archetype_target() {
             score += self.archetype_relic_bonus(relic_id, target);
@@ -354,13 +356,14 @@ impl Agent {
         card_id: crate::content::cards::CardId,
     ) -> i32 {
         let profile = crate::bot::evaluator::CardEvaluator::deck_profile(rs);
+        let shop_need = self.build_shop_need_profile(rs);
         let mut score = crate::bot::evaluator::CardEvaluator::evaluate_card(card_id, rs);
         let delta = crate::bot::deck_delta_eval::compare_pick_vs_skip(rs, card_id);
         if self.is_high_value_tactical_card(card_id) {
             score += 15;
         }
         score += self.shop_shell_card_bonus(card_id, &profile);
-        score += self.shop_deficit_card_bonus(rs, card_id, &profile);
+        score += self.shop_deficit_card_bonus(rs, card_id, &profile, &shop_need);
         score += shop_delta_priority_bonus(delta);
         if let Some(target) = self.curiosity_archetype_target() {
             score += self.archetype_card_bonus(card_id, target);
@@ -386,12 +389,10 @@ impl Agent {
 
     pub(crate) fn shop_card_buy_threshold(&self, rs: &RunState, score: i32) -> i32 {
         let profile = crate::bot::evaluator::CardEvaluator::deck_profile(rs);
-        let shell_incomplete = (profile.strength_enablers > 0 && profile.strength_payoffs == 0)
-            || (profile.exhaust_engines > 0 && profile.exhaust_outlets == 0)
-            || (profile.block_core >= 2 && profile.block_payoffs == 0);
-        let acute_deficits = self.shop_needs_frontload_damage(rs, &profile) as i32
-            + self.shop_needs_reliable_block(rs, &profile) as i32
-            + self.shop_needs_damage_control(rs) as i32;
+        let shop_need = self.build_shop_need_profile(rs);
+        let acute_deficits = i32::from(shop_need.damage_gap >= 24)
+            + i32::from(shop_need.block_gap >= 24)
+            + i32::from(shop_need.control_gap >= 20);
 
         if let Some(target) = self.curiosity_archetype_target() {
             if self.archetype_alignment_bonus(&profile, target) <= 0 {
@@ -405,7 +406,7 @@ impl Agent {
 
         if score >= 110 {
             60
-        } else if shell_incomplete || rs.act_num == 1 {
+        } else if shop_need.shell_incomplete || rs.act_num == 1 || shop_need.upgrade_hunger >= 24 {
             66
         } else {
             70
@@ -420,8 +421,9 @@ impl Agent {
         price: i32,
     ) -> i32 {
         let profile = crate::bot::evaluator::CardEvaluator::deck_profile(rs);
+        let shop_need = self.build_shop_need_profile(rs);
         let shell_bonus = self.shop_shell_card_bonus(card_id, &profile);
-        let deficit_bonus = self.shop_deficit_card_bonus(rs, card_id, &profile);
+        let deficit_bonus = self.shop_deficit_card_bonus(rs, card_id, &profile, &shop_need);
         let mut score = self.shop_card_score(rs, card_id);
         score = self.shop_purchase_score(rs, shop, price, score, ShopPurchaseKind::Card);
         if shell_bonus + deficit_bonus < 16 {
@@ -437,6 +439,8 @@ impl Agent {
     }
 
     pub(crate) fn shop_save_gold_score(&self, rs: &RunState, shop: &crate::shop::ShopState) -> i32 {
+        let need = self.build_noncombat_need_snapshot(rs);
+        let shop_need = self.build_shop_need_profile(rs);
         let mut score = 38;
         if rs.act_num == 1 {
             score += 6;
@@ -454,6 +458,9 @@ impl Agent {
         {
             score += 8;
         }
+        score += need.best_upgrade_value / 80;
+        score += need.purge_value / 90;
+        score += shop_need.purge_hunger / 40;
         score
     }
 
@@ -537,40 +544,41 @@ impl Agent {
         rs: &RunState,
         card_id: crate::content::cards::CardId,
         profile: &crate::bot::evaluator::DeckProfile,
+        shop_need: &ShopNeedProfile,
     ) -> i32 {
         use crate::content::cards::CardId;
 
         let mut bonus = 0;
         let searing_plan = self.searing_blow_plan_score(rs, profile);
 
-        if self.shop_needs_frontload_damage(rs, profile) {
+        if shop_need.damage_gap > 0 {
             bonus += match card_id {
-                CardId::Hemokinesis => 34,
-                CardId::Carnage => 28,
-                CardId::Pummel | CardId::Whirlwind => 22,
-                CardId::SearingBlow => 24,
-                CardId::Immolate => 26,
-                CardId::Uppercut => 12,
+                CardId::Hemokinesis => 24 + shop_need.damage_gap / 3,
+                CardId::Carnage => 20 + shop_need.damage_gap / 4,
+                CardId::Pummel | CardId::Whirlwind => 18 + shop_need.damage_gap / 5,
+                CardId::SearingBlow => 20 + shop_need.damage_gap / 4,
+                CardId::Immolate => 22 + shop_need.damage_gap / 4,
+                CardId::Uppercut => 8 + shop_need.damage_gap / 6,
                 _ => 0,
             };
         }
-        if self.shop_needs_reliable_block(rs, profile) {
+        if shop_need.block_gap > 0 {
             bonus += match card_id {
-                CardId::ShrugItOff => 20,
-                CardId::FlameBarrier => 22,
-                CardId::GhostlyArmor => 16,
-                CardId::Impervious => 26,
-                CardId::PowerThrough => 14,
-                CardId::Disarm => 12,
+                CardId::ShrugItOff => 14 + shop_need.block_gap / 3,
+                CardId::FlameBarrier => 16 + shop_need.block_gap / 3,
+                CardId::GhostlyArmor => 12 + shop_need.block_gap / 4,
+                CardId::Impervious => 20 + shop_need.block_gap / 3,
+                CardId::PowerThrough => 10 + shop_need.block_gap / 4,
+                CardId::Disarm => 8 + shop_need.block_gap / 6,
                 _ => 0,
             };
         }
-        if self.shop_needs_damage_control(rs) {
+        if shop_need.control_gap > 0 {
             bonus += match card_id {
-                CardId::Disarm => 24,
-                CardId::Shockwave => 22,
-                CardId::Uppercut => 18,
-                CardId::Clothesline => 10,
+                CardId::Disarm => 16 + shop_need.control_gap / 3,
+                CardId::Shockwave => 16 + shop_need.control_gap / 3,
+                CardId::Uppercut => 12 + shop_need.control_gap / 4,
+                CardId::Clothesline => 8 + shop_need.control_gap / 5,
                 _ => 0,
             };
         }
@@ -609,4 +617,29 @@ fn shop_delta_priority_bonus(delta: crate::bot::deck_delta_eval::DeltaScore) -> 
         + delta.rollout_delta.clamp(-20, 36)
         + (delta.suite_bias / 2).clamp(-6, 10)
         + delta.context_delta.clamp(-40, 44)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::bot::Agent;
+    use crate::content::cards::CardId;
+
+    #[test]
+    fn shop_threshold_relaxes_when_need_profile_has_multiple_gaps() {
+        let agent = Agent::new();
+        let mut weak = RunState::new(21, 0, true, "Ironclad");
+        weak.current_hp = 22;
+        weak.max_hp = 80;
+
+        let mut stable = weak.clone();
+        stable.master_deck.push(crate::runtime::combat::CombatCard::new(CardId::Hemokinesis, 21_001));
+        stable.master_deck.push(crate::runtime::combat::CombatCard::new(CardId::ShrugItOff, 21_002));
+        stable.master_deck.push(crate::runtime::combat::CombatCard::new(CardId::Disarm, 21_003));
+
+        assert!(
+            agent.shop_card_buy_threshold(&weak, 75)
+                < agent.shop_card_buy_threshold(&stable, 75)
+        );
+    }
 }

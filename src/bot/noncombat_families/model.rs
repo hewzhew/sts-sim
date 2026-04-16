@@ -42,6 +42,16 @@ pub(crate) struct NoncombatNeedSnapshot {
     pub purge: PurgeAssessment,
 }
 
+#[derive(Clone, Copy, Debug, Default)]
+pub(crate) struct ShopNeedProfile {
+    pub damage_gap: i32,
+    pub block_gap: i32,
+    pub control_gap: i32,
+    pub upgrade_hunger: i32,
+    pub purge_hunger: i32,
+    pub shell_incomplete: bool,
+}
+
 impl Agent {
     pub(crate) fn build_noncombat_need_snapshot(&self, rs: &RunState) -> NoncombatNeedSnapshot {
         let profile = crate::bot::evaluator::CardEvaluator::deck_profile(rs);
@@ -75,6 +85,91 @@ impl Agent {
             best_purge_index: purge.best_purge_index,
             upgrade,
             purge,
+        }
+    }
+
+    pub(crate) fn build_shop_need_profile(&self, rs: &RunState) -> ShopNeedProfile {
+        let profile = crate::bot::evaluator::CardEvaluator::deck_profile(rs);
+        let has_premium_damage = rs.master_deck.iter().any(|card| {
+            matches!(
+                card.id,
+                crate::content::cards::CardId::SearingBlow
+                    | crate::content::cards::CardId::Hemokinesis
+                    | crate::content::cards::CardId::Carnage
+                    | crate::content::cards::CardId::Immolate
+                    | crate::content::cards::CardId::Whirlwind
+                    | crate::content::cards::CardId::Pummel
+                    | crate::content::cards::CardId::Bludgeon
+            )
+        });
+        let has_anchor_defense = rs.master_deck.iter().any(|card| {
+            matches!(
+                card.id,
+                crate::content::cards::CardId::ShrugItOff
+                    | crate::content::cards::CardId::FlameBarrier
+                    | crate::content::cards::CardId::GhostlyArmor
+                    | crate::content::cards::CardId::Impervious
+                    | crate::content::cards::CardId::PowerThrough
+            )
+        });
+        let has_damage_control = rs.master_deck.iter().any(|card| {
+            matches!(
+                card.id,
+                crate::content::cards::CardId::Disarm
+                    | crate::content::cards::CardId::Shockwave
+                    | crate::content::cards::CardId::Uppercut
+                    | crate::content::cards::CardId::Clothesline
+            )
+        });
+        let shell_incomplete = (profile.strength_enablers > 0 && profile.strength_payoffs == 0)
+            || (profile.exhaust_engines > 0 && profile.exhaust_outlets == 0)
+            || (profile.block_core >= 2 && profile.block_payoffs == 0);
+        let mut damage_gap = 0;
+        if !has_premium_damage {
+            damage_gap += 28;
+        }
+        if profile.attack_count <= 6 && profile.strength_payoffs == 0 {
+            damage_gap += 18;
+        }
+        if rs.act_num == 1 {
+            damage_gap += 8;
+        }
+
+        let mut block_gap = 0;
+        if profile.block_core < 2 {
+            block_gap += 22;
+        }
+        if !has_anchor_defense {
+            block_gap += 18;
+        }
+        block_gap += i32::from(rs.act_num >= 2) * 6;
+
+        let mut control_gap = 0;
+        if !has_damage_control {
+            control_gap += 20;
+        }
+        control_gap += i32::from(rs.act_num >= 2) * 4;
+
+        let upgrade_hunger = crate::bot::run_deck_improvement::best_upgrade_improvement(rs).max(0) * 2
+            + self
+                .best_upgrade_index(rs)
+                .map(|idx| {
+                    crate::bot::evaluator::CardEvaluator::evaluate_owned_card(
+                        rs.master_deck[idx].id,
+                        rs,
+                    ) / 3
+                })
+                .unwrap_or(0);
+        let purge_hunger =
+            crate::bot::deck_delta_eval::compare_purge_vs_keep(rs).total.max(0) * 2;
+
+        ShopNeedProfile {
+            damage_gap,
+            block_gap,
+            control_gap,
+            upgrade_hunger,
+            purge_hunger,
+            shell_incomplete,
         }
     }
 
@@ -177,11 +272,9 @@ impl Agent {
         profile: &crate::bot::evaluator::DeckProfile,
         route: &RoutePressureSummary,
     ) -> i32 {
+        let shop_need = self.build_shop_need_profile(rs);
         let hp_ratio = rs.current_hp as f32 / rs.max_hp.max(1) as f32;
         let missing_hp_ratio = (1.0 - hp_ratio).max(0.0);
-        let output_gap = i32::from(self.shop_needs_frontload_damage(rs, profile));
-        let defense_gap = i32::from(self.shop_needs_reliable_block(rs, profile));
-        let control_gap = i32::from(self.shop_needs_damage_control(rs));
         let potion_slack = rs.potions.iter().flatten().count() as i32;
 
         let mut pressure = (missing_hp_ratio * 260.0).round() as i32;
@@ -190,7 +283,9 @@ impl Agent {
         pressure += route.upcoming_boss_pressure * 2;
         pressure -= route.nearby_recovery_windows * 35;
         pressure -= route.nearby_shop_windows * 18;
-        pressure += output_gap * 30 + defense_gap * 55 + control_gap * 28;
+        pressure += shop_need.damage_gap * 3 / 2
+            + shop_need.block_gap * 2
+            + shop_need.control_gap;
         pressure -= potion_slack * 14;
         pressure -= profile.block_core.min(3) * 12;
         pressure -= profile.block_payoffs.min(2) * 15;
@@ -449,6 +544,46 @@ mod tests {
         assert!(dangerous.purge_value > safe.purge_value);
         assert!(dangerous.key_urgency >= safe.key_urgency);
         assert!(dangerous.route.upcoming_elite_pressure > safe.route.upcoming_elite_pressure);
+    }
+
+    #[test]
+    fn shop_need_profile_surfaces_gaps_and_hunger() {
+        let agent = Agent::new();
+        let mut weak_run = RunState::new(3, 0, true, "Ironclad");
+        weak_run.current_hp = 20;
+        weak_run.max_hp = 80;
+        weak_run.map = linear_map_state(
+            &[
+                RoomType::MonsterRoomElite,
+                RoomType::MonsterRoom,
+                RoomType::ShopRoom,
+            ],
+            0,
+        );
+
+        let mut stronger_run = weak_run.clone();
+        stronger_run.current_hp = 72;
+        stronger_run.master_deck.push(crate::runtime::combat::CombatCard::new(
+            CardId::Hemokinesis,
+            10_101,
+        ));
+        stronger_run.master_deck.push(crate::runtime::combat::CombatCard::new(
+            CardId::ShrugItOff,
+            10_102,
+        ));
+        stronger_run.master_deck.push(crate::runtime::combat::CombatCard::new(
+            CardId::Disarm,
+            10_103,
+        ));
+
+        let weak = agent.build_shop_need_profile(&weak_run);
+        let strong = agent.build_shop_need_profile(&stronger_run);
+
+        assert!(weak.damage_gap > strong.damage_gap);
+        assert!(weak.block_gap > strong.block_gap);
+        assert!(weak.control_gap > strong.control_gap);
+        assert!(weak.upgrade_hunger >= 0);
+        assert!(weak.purge_hunger >= 0);
     }
 
     #[test]
