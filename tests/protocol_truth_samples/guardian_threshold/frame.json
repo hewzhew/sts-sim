@@ -863,13 +863,11 @@
     "relics": [
       {
         "name": "Burning Blood",
-        "used_up": false,
         "runtime_state": {
           "used_up": false,
           "counter": -1
         },
-        "id": "Burning Blood",
-        "counter": -1
+        "id": "Burning Blood"
       }
     ],
     "max_hp": 80,

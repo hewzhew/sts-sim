@@ -1,7 +1,7 @@
-//! Power hidden-state import is strict for migrated runtime_state-backed fields.
+//! Power hidden-state import is strict for current runtime_state-backed slices.
 //!
-//! Do not reintroduce `misc`/carry fallback for migrated slices after protocol
-//! truth has landed upstream.
+//! Do not reintroduce `damage`/`misc` importer fallback for migrated slices
+//! after protocol truth has landed upstream.
 
 use crate::content::powers::PowerId;
 use crate::runtime::combat::Power;
@@ -97,18 +97,6 @@ pub fn sync_power_extra_data_from_snapshot_power(power: &mut Power, snapshot_pow
         return;
     }
 
-    if POWER_EXTRA_DATA_POLICIES
-        .iter()
-        .any(|policy| policy.power_type == power.power_type)
-    {
-        if let Some(damage) = snapshot_power.get("damage").and_then(|v| v.as_i64()) {
-            power.extra_data = damage as i32;
-            return;
-        }
-        if let Some(misc) = snapshot_power.get("misc").and_then(|v| v.as_i64()) {
-            power.extra_data = misc as i32;
-        }
-    }
 }
 
 pub fn sync_power_extra_data_from_snapshot(

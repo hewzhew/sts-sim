@@ -916,11 +916,21 @@ fn summarize_java_snapshot(snapshot: &Value) -> CombatStateSummary {
                     .iter()
                     .filter_map(|relic| {
                         let id = relic["id"].as_str()?;
-                        let counter = relic["counter"].as_i64().unwrap_or(0);
-                        let used_up = relic
+                        let runtime_state = relic.get("runtime_state").unwrap_or_else(|| {
+                            panic!("strict live_comm_replay: relic.runtime_state missing for {id}")
+                        });
+                        let counter = runtime_state
+                            .get("counter")
+                            .and_then(|v| v.as_i64())
+                            .unwrap_or_else(|| {
+                                panic!("strict live_comm_replay: relic.runtime_state.counter missing for {id}")
+                            });
+                        let used_up = runtime_state
                             .get("used_up")
                             .and_then(|value| value.as_bool())
-                            .unwrap_or(false);
+                            .unwrap_or_else(|| {
+                                panic!("strict live_comm_replay: relic.runtime_state.used_up missing for {id}")
+                            });
                         Some(format!("{id}:counter={counter},used_up={used_up}"))
                     })
                     .collect()

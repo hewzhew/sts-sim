@@ -123,16 +123,9 @@ pub fn build_combat_state(snapshot: &Value, relics_val: &Value) -> CombatState {
             if let Some(relic_id) = relic_id_from_java(relic_name) {
                 let mut rs = RelicState::new(relic_id);
                 initialize_relic_runtime_state(&mut rs);
-                let snapshot_counter = r
-                    .get("counter")
-                    .and_then(|c| c.as_i64())
-                    .map(|counter| counter as i32)
-                    .unwrap_or(rs.counter);
                 sync_relic_runtime_state_from_snapshot(
                     &mut rs,
-                    snapshot_counter,
                     snapshot_runtime_counter_for_relic(relic_id, r),
-                    r.get("used_up").and_then(|v| v.as_bool()),
                     snapshot_runtime_used_up_for_relic(relic_id, r),
                     snapshot_runtime_amount_for_relic(relic_id, r),
                 );

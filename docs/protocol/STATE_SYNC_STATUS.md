@@ -63,7 +63,6 @@ Rust currently consumes protocol truth for:
 - `power.runtime_state.base_power` for `Malleable`
 - `power.runtime_state.stored_amount` for `Flight`
 - `power.runtime_state.damage` for `Panache` and `The Bomb`
-- `power.damage` / `power.misc` for non-migrated extra-data slices
 
 Examples already wired:
 
@@ -95,18 +94,19 @@ Rust currently consumes explicit Java runtime fields for:
 
 Rust currently consumes explicit protocol runtime state for:
 
+- `relic.runtime_state.counter` as the canonical relic counter field
+- `relic.runtime_state.used_up` as the canonical relic activation flag field
 - `Centennial Puzzle.used_this_combat`
 - `ArtOfWar.gain_energy_next`
 - `ArtOfWar.first_turn`
 - `Pocketwatch.first_turn`
-- runtime-only `used_up` for `HoveringKite`, `LizardTail`, `Necronomicon`
+- runtime-only semantics for `HoveringKite`, `LizardTail`, `Necronomicon`
 
 ## What Is Still Outstanding
 
 ### Rust representation or adapter debt still present
 
 - `seed_move_history_from_snapshot`
-- non-migrated power extra-data slices still rely on `damage` / `misc`
 
 These are no longer part of the preferred live truth path, but they still exist
 as debt and should keep shrinking.
@@ -124,9 +124,9 @@ or importer coverage is still incomplete.
 
 ## Next Recommended Order
 
-1. migrate any remaining non-slice power extra-data debt off `damage` / `misc`
-2. delete any remaining top-level relic `used_up/counter` reliance after strict trace refresh
-3. prune or refresh old historical traces that still encode retired top-level monster fields
+1. prune or refresh old historical traces that still encode retired top-level relic fields
+2. prune or refresh old historical traces that still encode retired top-level monster fields
+3. start landing the first Guardian behavior cases from `GUARDIAN_THRESHOLD_TEST_MATRIX.md`
 
 ## Related Docs
 

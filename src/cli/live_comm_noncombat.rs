@@ -1000,12 +1000,21 @@ pub(crate) fn build_live_run_state(gs: &serde_json::Value) -> Option<crate::stat
                         .and_then(|v| v.as_str())
                         .and_then(relic_id_from_java)?;
                     let mut state = crate::content::relics::RelicState::new(id);
-                    state.counter =
-                        relic.get("counter").and_then(|v| v.as_i64()).unwrap_or(-1) as i32;
-                    state.used_up = relic
+                    let runtime_state = relic.get("runtime_state").unwrap_or_else(|| {
+                        panic!("strict live_comm: relic.runtime_state missing for {:?}", id)
+                    });
+                    state.counter = runtime_state
+                        .get("counter")
+                        .and_then(|v| v.as_i64())
+                        .unwrap_or_else(|| {
+                            panic!("strict live_comm: relic.runtime_state.counter missing for {:?}", id)
+                        }) as i32;
+                    state.used_up = runtime_state
                         .get("used_up")
                         .and_then(|v| v.as_bool())
-                        .unwrap_or(false);
+                        .unwrap_or_else(|| {
+                            panic!("strict live_comm: relic.runtime_state.used_up missing for {:?}", id)
+                        });
                     Some(state)
                 })
                 .collect()

@@ -146,23 +146,65 @@ fn relic_runtime_flags_require_runtime_state() {
     let snapshot = base_snapshot();
     let relics = json!([{
         "id": "Centennial Puzzle",
-        "name": "Centennial Puzzle",
-        "counter": -1,
-        "used_up": false
+        "name": "Centennial Puzzle"
     }]);
 
     let _ = build_combat_state(&snapshot, &relics);
 }
 
 #[test]
-#[should_panic(expected = "relic.runtime_state.counter missing for ArtOfWar")]
+#[should_panic(expected = "relic.runtime_state missing for BurningBlood")]
+fn generic_relic_requires_runtime_state() {
+    let snapshot = base_snapshot();
+    let relics = json!([{
+        "id": "Burning Blood",
+        "name": "Burning Blood"
+    }]);
+
+    let _ = build_combat_state(&snapshot, &relics);
+}
+
+#[test]
+#[should_panic(expected = "relic.runtime_state.counter missing for BurningBlood")]
+fn generic_relic_requires_runtime_state_counter() {
+    let snapshot = base_snapshot();
+    let relics = json!([{
+        "id": "Burning Blood",
+        "name": "Burning Blood",
+        "runtime_state": {
+            "used_up": false
+        }
+    }]);
+
+    let _ = build_combat_state(&snapshot, &relics);
+}
+
+#[test]
+#[should_panic(expected = "relic.runtime_state.used_up missing for BurningBlood")]
+fn generic_relic_requires_runtime_state_used_up() {
+    let snapshot = base_snapshot();
+    let relics = json!([{
+        "id": "Burning Blood",
+        "name": "Burning Blood",
+        "runtime_state": {
+            "counter": -1
+        }
+    }]);
+
+    let _ = build_combat_state(&snapshot, &relics);
+}
+
+#[test]
+#[should_panic(expected = "relic.runtime_state.gain_energy_next missing for ArtOfWar")]
 fn art_of_war_requires_runtime_state_counter() {
     let snapshot = base_snapshot();
     let relics = json!([{
         "id": "Art of War",
         "name": "Art of War",
-        "counter": -1,
-        "runtime_state": {}
+        "runtime_state": {
+            "counter": -1,
+            "used_up": false
+        }
     }]);
 
     let _ = build_combat_state(&snapshot, &relics);
@@ -175,8 +217,10 @@ fn pocketwatch_requires_runtime_state_amount() {
     let relics = json!([{
         "id": "Pocketwatch",
         "name": "Pocketwatch",
-        "counter": -1,
-        "runtime_state": {}
+        "runtime_state": {
+            "counter": -1,
+            "used_up": false
+        }
     }]);
 
     let _ = build_combat_state(&snapshot, &relics);
@@ -189,9 +233,9 @@ fn necronomicon_requires_runtime_state_used_up() {
     let relics = json!([{
         "id": "Necronomicon",
         "name": "Necronomicon",
-        "counter": -1,
-        "used_up": false,
-        "runtime_state": {}
+        "runtime_state": {
+            "counter": -1
+        }
     }]);
 
     let _ = build_combat_state(&snapshot, &relics);
