@@ -2,7 +2,7 @@ use serde_json::Value;
 use std::collections::BTreeSet;
 use std::env;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -29,6 +29,36 @@ fn build_live_comm_tag(version: &str, git_short: &str, build_unix: u64) -> Strin
     format!("rust-live-comm-v{}-{}-{}", version, git_short, build_unix)
 }
 
+fn emit_git_rerun_watchers() {
+    let git_dir = Command::new("git")
+        .args(["rev-parse", "--git-dir"])
+        .output()
+        .ok()
+        .filter(|output| output.status.success())
+        .and_then(|output| String::from_utf8(output.stdout).ok())
+        .map(|stdout| stdout.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| ".git".to_string());
+
+    let git_dir_path = PathBuf::from(&git_dir);
+    let head_path = git_dir_path.join("HEAD");
+    println!("cargo:rerun-if-changed={}", head_path.display());
+
+    if let Ok(head_text) = fs::read_to_string(&head_path) {
+        if let Some(ref_path) = head_text.strip_prefix("ref: ").map(str::trim) {
+            println!(
+                "cargo:rerun-if-changed={}",
+                git_dir_path.join(ref_path).display()
+            );
+        }
+    }
+
+    let packed_refs_path = git_dir_path.join("packed-refs");
+    if packed_refs_path.exists() {
+        println!("cargo:rerun-if-changed={}", packed_refs_path.display());
+    }
+}
+
 fn main() {
     let version = env::var("CARGO_PKG_VERSION").unwrap_or_else(|_| "0.0.0".to_string());
     let git_short = git_short_sha();
@@ -39,8 +69,8 @@ fn main() {
     );
     println!("cargo:rustc-env=LIVE_COMM_GIT_SHORT={git_short}");
     println!("cargo:rustc-env=LIVE_COMM_BUILD_UNIX={build_unix}");
-    println!("cargo:rerun-if-changed=.git/HEAD");
     println!("cargo:rerun-if-changed=build.rs");
+    emit_git_rerun_watchers();
 
     let out_dir = env::var_os("OUT_DIR").unwrap();
     let dest_path = Path::new(&out_dir).join("generated_schema.rs");
