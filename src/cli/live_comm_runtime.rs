@@ -668,6 +668,22 @@ fn build_finding_report(
     })
 }
 
+pub fn build_finding_report_json(
+    run_id: &str,
+    classification_label: &str,
+    counts: &LiveRunCounts,
+    failure_snapshots_path: &Path,
+) -> Result<Value, String> {
+    let report = build_finding_report(
+        run_id,
+        classification_label,
+        counts,
+        failure_snapshots_path,
+    )?;
+    serde_json::to_value(report)
+        .map_err(|err| format!("failed to convert findings report to json: {err}"))
+}
+
 fn category_sort_key(category: &str) -> u8 {
     match category {
         "engine_bug" => 0,

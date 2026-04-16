@@ -148,22 +148,36 @@ struct FindingsReport {
     families: Vec<FindingsFamily>,
 }
 
-fn findings_path_for_run(
-    paths: &sts_simulator::cli::live_comm_admin::LiveLogPaths,
-    run_id: &str,
+fn artifact_path_for_record(
+    manifest_path: &std::path::Path,
+    artifact: &Option<sts_simulator::cli::live_comm_admin::LiveArtifactRecord>,
 ) -> Option<PathBuf> {
-    let entries =
-        sts_simulator::cli::live_comm_admin::list_run_manifests_for_audit(paths).ok()?;
+    let artifact = artifact.as_ref()?;
+    if !artifact.present {
+        return None;
+    }
+    let run_dir = manifest_path.parent()?;
+    Some(run_dir.join(&artifact.relative_path))
+}
+
+fn manifest_entry_for_run_or_latest(
+    paths: &sts_simulator::cli::live_comm_admin::LiveLogPaths,
+    run_id: Option<&str>,
+    label: Option<&str>,
+) -> Option<(PathBuf, sts_simulator::cli::live_comm_admin::LiveRunManifest)> {
+    let mut entries = sts_simulator::cli::live_comm_admin::list_run_manifests_for_audit(paths).ok()?;
+    entries.sort_by(|left, right| right.1.run_id.cmp(&left.1.run_id));
     for (manifest_path, manifest) in entries {
-        if manifest.run_id != run_id {
-            continue;
+        if let Some(run_id) = run_id {
+            if manifest.run_id != run_id {
+                continue;
+            }
+        } else if let Some(label) = label {
+            if manifest.classification_label != label {
+                continue;
+            }
         }
-        let run_dir = manifest_path.parent()?;
-        let artifact = manifest.artifacts.findings.as_ref()?;
-        if !artifact.present {
-            return None;
-        }
-        return Some(run_dir.join(&artifact.relative_path));
+        return Some((manifest_path, manifest));
     }
     None
 }
@@ -173,6 +187,107 @@ fn load_findings_report(path: &PathBuf) -> Result<FindingsReport, String> {
         .map_err(|err| format!("failed to read findings '{}': {err}", path.display()))?;
     serde_json::from_str(&text)
         .map_err(|err| format!("failed to parse findings '{}': {err}", path.display()))
+}
+
+fn build_findings_report_from_snapshots(
+    manifest_path: &std::path::Path,
+    manifest: &sts_simulator::cli::live_comm_admin::LiveRunManifest,
+) -> Result<(FindingsReport, PathBuf), String> {
+    let snapshots_path = artifact_path_for_record(manifest_path, &manifest.artifacts.failure_snapshots)
+        .ok_or_else(|| {
+            format!(
+                "run '{}' has neither findings.json nor failure_snapshots.jsonl",
+                manifest.run_id
+            )
+        })?;
+    let report_json = sts_simulator::cli::build_finding_report_json(
+        &manifest.run_id,
+        &manifest.classification_label,
+        &manifest.counts,
+        &snapshots_path,
+    )?;
+    let report: FindingsReport = serde_json::from_value(report_json)
+        .map_err(|err| format!("failed to decode synthesized findings report: {err}"))?;
+    Ok((report, snapshots_path))
+}
+
+fn recommended_source_files(family: &FindingsFamily) -> Vec<&'static str> {
+    let key_lower = family.key.to_ascii_lowercase();
+    let combat_labels = family
+        .combat_labels
+        .iter()
+        .map(|label| label.to_ascii_lowercase())
+        .collect::<Vec<_>>();
+    let event_labels = family
+        .event_labels
+        .iter()
+        .map(|label| label.to_ascii_lowercase())
+        .collect::<Vec<_>>();
+
+    let has_combat_label = |needle: &str| combat_labels.iter().any(|label| label.contains(needle));
+    let has_event_label = |needle: &str| event_labels.iter().any(|label| label.contains(needle));
+
+    let mut files = Vec::new();
+    let mut push = |path: &'static str| {
+        if !files.contains(&path) {
+            files.push(path);
+        }
+    };
+
+    match family.category.as_str() {
+        "engine_bug" | "content_gap" | "timing" => {
+            push("src/engine/action_handlers/damage.rs");
+            push("src/content/powers/mod.rs");
+            push("../cardcrawl/powers/");
+        }
+        "validation_failure" => {
+            push("src/cli/live_comm_noncombat.rs");
+            push("src/cli/live_comm/combat.rs");
+            push("../CommunicationMod/src/main/java/communicationmod/GameStateConverter.java");
+        }
+        _ => {}
+    }
+
+    if key_lower.contains("power[strength]") || key_lower.contains("strength") {
+        push("src/engine/action_handlers/damage.rs");
+        push("src/content/powers/ironclad/rupture.rs");
+        push("src/content/powers/core/lose_strength.rs");
+        push("src/content/cards/ironclad/flex.rs");
+        push("../cardcrawl/powers/RupturePower.java");
+        push("../cardcrawl/powers/LoseStrengthPower.java");
+        push("../cardcrawl/cards/red/Flex.java");
+    }
+
+    if key_lower.contains("modeshift")
+        || key_lower.contains("guardianthreshold")
+        || has_combat_label("guardian")
+    {
+        push("src/content/monsters/exordium/the_guardian.rs");
+        push("src/content/powers/core/mode_shift.rs");
+        push("../cardcrawl/monsters/exordium/TheGuardian.java");
+    }
+
+    if key_lower.contains("stasis")
+        || has_combat_label("bronze orb")
+        || has_combat_label("bronze automaton")
+    {
+        push("src/content/monsters/city/bronze_orb.rs");
+        push("src/engine/action_handlers/cards.rs");
+        push("../cardcrawl/actions/unique/ApplyStasisAction.java");
+        push("../cardcrawl/powers/StasisPower.java");
+    }
+
+    if key_lower.contains("potion")
+        || key_lower.contains("elixir")
+        || key_lower.contains("blocked_reason")
+        || has_event_label("shop")
+    {
+        push("src/cli/live_comm_noncombat.rs");
+        push("src/bot/agent_run_policy.rs");
+        push("../CommunicationMod/src/main/java/communicationmod/GameStateConverter.java");
+    }
+
+    files
 }
 
 fn render_findings_family(family: &FindingsFamily) -> String {
@@ -214,9 +329,17 @@ fn render_findings_family(family: &FindingsFamily) -> String {
     } else {
         family.suggested_artifacts.join(", ")
     };
+    let source_files = {
+        let files = recommended_source_files(family);
+        if files.is_empty() {
+            "n/a".to_string()
+        } else {
+            files.join(", ")
+        }
+    };
 
     format!(
-        "- [{category}] {key}\n  count={count} frames={first}-{last} labels={labels}\n  example_frames={frames}\n  example_snapshots={snapshots}\n  suggested_artifacts={artifacts}\n  example_values={examples}",
+        "- [{category}] {key}\n  count={count} frames={first}-{last} labels={labels}\n  example_frames={frames}\n  example_snapshots={snapshots}\n  suggested_artifacts={artifacts}\n  suggested_source_files={source_files}\n  example_values={examples}",
         category = family.category,
         key = family.key,
         count = family.count,
@@ -808,19 +931,30 @@ fn main() {
                     category,
                     limit,
                 } => {
-                    let findings_path = if let Some(run_id) = run_id {
-                        findings_path_for_run(&paths, run_id)
-                    } else {
-                        sts_simulator::cli::live_comm_admin::latest_run_artifact_path(
-                            &paths,
-                            label.as_deref(),
-                            "findings",
-                        )
-                    }
-                    .expect("no matching findings artifact found");
+                    let (manifest_path, manifest) = manifest_entry_for_run_or_latest(
+                        &paths,
+                        run_id.as_deref(),
+                        label.as_deref(),
+                    )
+                    .expect("no matching run manifest found");
 
-                    let mut report =
-                        load_findings_report(&findings_path).expect("findings report should load");
+                    let (mut report, findings_path, synthesized) = match artifact_path_for_record(
+                        &manifest_path,
+                        &manifest.artifacts.findings,
+                    ) {
+                        Some(findings_path) => (
+                            load_findings_report(&findings_path)
+                                .expect("findings report should load"),
+                            findings_path,
+                            false,
+                        ),
+                        None => {
+                            let (report, snapshots_path) =
+                                build_findings_report_from_snapshots(&manifest_path, &manifest)
+                                    .expect("failure snapshots fallback should build findings");
+                            (report, snapshots_path, true)
+                        }
+                    };
 
                     if let Some(category_filter) = category.as_ref() {
                         report.families.retain(|entry| entry.category == *category_filter);
@@ -849,10 +983,15 @@ fn main() {
                     });
 
                     println!(
-                        "run={} classification={} findings_path={}",
+                        "run={} classification={} findings_source={}{}",
                         report.run_id,
                         report.classification_label,
-                        findings_path.display()
+                        findings_path.display(),
+                        if synthesized {
+                            " (synthesized from failure_snapshots.jsonl)"
+                        } else {
+                            ""
+                        }
                     );
                     println!(
                         "counts: engine_bugs={} content_gaps={} timing_diffs={} replay_failures={}",

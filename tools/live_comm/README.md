@@ -247,6 +247,12 @@ cargo run --bin sts_dev_tool -- logs inspect-findings --category engine_bug --fa
 cargo run --bin sts_dev_tool -- logs replay <run_id>
 ```
 
+`inspect-findings` behavior:
+
+- prefers archived `findings.json`
+- if a run predates `findings.json` but still has `failure_snapshots.jsonl`, it synthesizes a temporary findings view on the fly
+- prints both suggested artifacts and suggested Rust/Java source files for the family
+
 Recommended triage flow:
 
 1. open archived `focus.txt`
