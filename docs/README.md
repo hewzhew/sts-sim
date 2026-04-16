@@ -27,6 +27,9 @@ Read these first:
   - hard dependency direction for `core / integration / app`
 - `architecture.md`
   - system architecture and verification context
+- `RL_READINESS_CHECKLIST.md`
+  - what still needs to be true before the simulator should be treated as a
+    stable RL environment
 - `protocol/PROTOCOL_TRUTH_RULES.md`
   - hard rules for Java truth, protocol export, and importer boundaries
 - `protocol/STATE_SYNC_STATUS.md`
