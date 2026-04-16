@@ -106,8 +106,6 @@ Rust currently consumes explicit protocol runtime state for:
 ### Rust representation or adapter debt still present
 
 - `seed_move_history_from_snapshot`
-- top-level legacy monster fields still exist in CommunicationMod alongside
-  `monster.runtime_state`
 - non-migrated power extra-data slices still rely on `damage` / `misc`
 
 These are no longer part of the preferred live truth path, but they still exist
@@ -126,9 +124,9 @@ or importer coverage is still incomplete.
 
 ## Next Recommended Order
 
-1. remove legacy top-level monster hidden-state exports once new traces are in place
-2. migrate any remaining non-slice power extra-data debt off `damage` / `misc`
-3. delete any remaining top-level relic `used_up/counter` reliance after strict trace refresh
+1. migrate any remaining non-slice power extra-data debt off `damage` / `misc`
+2. delete any remaining top-level relic `used_up/counter` reliance after strict trace refresh
+3. prune or refresh old historical traces that still encode retired top-level monster fields
 
 ## Related Docs
 
