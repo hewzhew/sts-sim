@@ -1,5 +1,5 @@
 use clap::{Parser, Subcommand};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::env;
 use std::path::PathBuf;
 use std::process::Command;
@@ -95,6 +95,134 @@ enum LogCommands {
         #[arg(long, default_value = "raw")]
         artifact: String,
     },
+    InspectFindings {
+        /// Explicit run id to inspect. If omitted, uses the latest matching run.
+        run_id: Option<String>,
+        /// Restrict to runs carrying this classification label when run_id is omitted.
+        #[arg(long)]
+        label: Option<String>,
+        /// Case-insensitive substring filter on finding family key.
+        #[arg(long)]
+        family: Option<String>,
+        /// Restrict to a single category such as engine_bug, content_gap, validation_failure, timing.
+        #[arg(long)]
+        category: Option<String>,
+        /// Maximum families to print.
+        #[arg(long, default_value_t = 10)]
+        limit: usize,
+    },
+}
+
+#[derive(Debug, Deserialize)]
+struct FindingsValueExample {
+    rust: String,
+    java: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct FindingsFamily {
+    category: String,
+    key: String,
+    count: usize,
+    first_frame: u64,
+    last_frame: u64,
+    #[serde(default)]
+    example_frames: Vec<u64>,
+    #[serde(default)]
+    example_snapshot_ids: Vec<String>,
+    #[serde(default)]
+    example_rust_java_values: Vec<FindingsValueExample>,
+    #[serde(default)]
+    combat_labels: Vec<String>,
+    #[serde(default)]
+    event_labels: Vec<String>,
+    #[serde(default)]
+    suggested_artifacts: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct FindingsReport {
+    run_id: String,
+    classification_label: String,
+    counts: sts_simulator::cli::live_comm_admin::LiveRunCounts,
+    families: Vec<FindingsFamily>,
+}
+
+fn findings_path_for_run(
+    paths: &sts_simulator::cli::live_comm_admin::LiveLogPaths,
+    run_id: &str,
+) -> Option<PathBuf> {
+    let entries =
+        sts_simulator::cli::live_comm_admin::list_run_manifests_for_audit(paths).ok()?;
+    for (manifest_path, manifest) in entries {
+        if manifest.run_id != run_id {
+            continue;
+        }
+        let run_dir = manifest_path.parent()?;
+        let artifact = manifest.artifacts.findings.as_ref()?;
+        if !artifact.present {
+            return None;
+        }
+        return Some(run_dir.join(&artifact.relative_path));
+    }
+    None
+}
+
+fn load_findings_report(path: &PathBuf) -> Result<FindingsReport, String> {
+    let text = std::fs::read_to_string(path)
+        .map_err(|err| format!("failed to read findings '{}': {err}", path.display()))?;
+    serde_json::from_str(&text)
+        .map_err(|err| format!("failed to parse findings '{}': {err}", path.display()))
+}
+
+fn render_findings_family(family: &FindingsFamily) -> String {
+    let labels = if !family.combat_labels.is_empty() {
+        family.combat_labels.join(", ")
+    } else if !family.event_labels.is_empty() {
+        family.event_labels.join(", ")
+    } else {
+        "n/a".to_string()
+    };
+    let examples = if family.example_rust_java_values.is_empty() {
+        "n/a".to_string()
+    } else {
+        family
+            .example_rust_java_values
+            .iter()
+            .take(2)
+            .map(|value| format!("Rust={} Java={}", value.rust, value.java))
+            .collect::<Vec<_>>()
+            .join(" | ")
+    };
+    let frames = if family.example_frames.is_empty() {
+        "n/a".to_string()
+    } else {
+        family
+            .example_frames
+            .iter()
+            .map(|frame| frame.to_string())
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+    let snapshots = if family.example_snapshot_ids.is_empty() {
+        "n/a".to_string()
+    } else {
+        family.example_snapshot_ids.join(", ")
+    };
+    let artifacts = if family.suggested_artifacts.is_empty() {
+        "n/a".to_string()
+    } else {
+        family.suggested_artifacts.join(", ")
+    };
+
+    format!(
+        "- [{category}] {key}\n  count={count} frames={first}-{last} labels={labels}\n  example_frames={frames}\n  example_snapshots={snapshots}\n  suggested_artifacts={artifacts}\n  example_values={examples}",
+        category = family.category,
+        key = family.key,
+        count = family.count,
+        first = family.first_frame,
+        last = family.last_frame,
+    )
 }
 
 #[derive(Debug, Serialize)]
@@ -672,6 +800,73 @@ fn main() {
                     })
                     .expect("no matching artifact found");
                     println!("{}", path.display());
+                }
+                LogCommands::InspectFindings {
+                    run_id,
+                    label,
+                    family,
+                    category,
+                    limit,
+                } => {
+                    let findings_path = if let Some(run_id) = run_id {
+                        findings_path_for_run(&paths, run_id)
+                    } else {
+                        sts_simulator::cli::live_comm_admin::latest_run_artifact_path(
+                            &paths,
+                            label.as_deref(),
+                            "findings",
+                        )
+                    }
+                    .expect("no matching findings artifact found");
+
+                    let mut report =
+                        load_findings_report(&findings_path).expect("findings report should load");
+
+                    if let Some(category_filter) = category.as_ref() {
+                        report.families.retain(|entry| entry.category == *category_filter);
+                    }
+                    if let Some(family_filter) = family.as_ref() {
+                        let needle = family_filter.to_ascii_lowercase();
+                        report.families.retain(|entry| {
+                            entry.key.to_ascii_lowercase().contains(&needle)
+                                || entry
+                                    .combat_labels
+                                    .iter()
+                                    .any(|label| label.to_ascii_lowercase().contains(&needle))
+                                || entry
+                                    .event_labels
+                                    .iter()
+                                    .any(|label| label.to_ascii_lowercase().contains(&needle))
+                        });
+                    }
+
+                    report.families.sort_by(|left, right| {
+                        right
+                            .count
+                            .cmp(&left.count)
+                            .then_with(|| left.first_frame.cmp(&right.first_frame))
+                            .then_with(|| left.key.cmp(&right.key))
+                    });
+
+                    println!(
+                        "run={} classification={} findings_path={}",
+                        report.run_id,
+                        report.classification_label,
+                        findings_path.display()
+                    );
+                    println!(
+                        "counts: engine_bugs={} content_gaps={} timing_diffs={} replay_failures={}",
+                        report.counts.engine_bugs,
+                        report.counts.content_gaps,
+                        report.counts.timing_diffs,
+                        report.counts.replay_failures
+                    );
+                    println!("matching_families={}", report.families.len());
+
+                    for finding in report.families.iter().take(*limit) {
+                        println!();
+                        println!("{}", render_findings_family(finding));
+                    }
                 }
             }
         }

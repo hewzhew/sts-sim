@@ -20,6 +20,7 @@ Current log-reading defaults:
 
 - start with archived `focus.txt` for grouped triage
 - use `findings.json` for machine-readable families and counts
+- use `cargo run --bin sts_dev_tool -- logs inspect-findings ...` to collapse from grouped findings to one bug family
 - drop to `debug.txt` / `raw.jsonl` / `replay.json` only when following a specific finding
 
 These files are active workflow docs, but they are not repo-wide architecture entrypoints.

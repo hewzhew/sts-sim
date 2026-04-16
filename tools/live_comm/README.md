@@ -242,8 +242,16 @@ Useful commands:
 cargo run --bin sts_dev_tool -- logs gc
 cargo run --bin sts_dev_tool -- logs latest --artifact raw
 cargo run --bin sts_dev_tool -- logs latest --artifact findings
+cargo run --bin sts_dev_tool -- logs inspect-findings
+cargo run --bin sts_dev_tool -- logs inspect-findings --category engine_bug --family Strength
 cargo run --bin sts_dev_tool -- logs replay <run_id>
 ```
+
+Recommended triage flow:
+
+1. open archived `focus.txt`
+2. use `logs inspect-findings` to narrow to one family
+3. only then open `debug.txt`, `failure_snapshots.jsonl`, or `replay.json`
 
 ## Why this is better
 
