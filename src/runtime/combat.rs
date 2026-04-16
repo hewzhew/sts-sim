@@ -257,6 +257,10 @@ impl CombatState {
 }
 
 impl TurnRuntime {
+    pub fn adjust_energy(&mut self, amount: i32) {
+        self.energy = (self.energy as i32 + amount).max(0) as u8;
+    }
+
     pub fn begin_player_phase(&mut self) {
         self.current_phase = CombatPhase::PlayerTurn;
     }

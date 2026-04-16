@@ -67,7 +67,7 @@ pub fn handle_apply_power_detailed(
                 );
                 let hook_actions_4: smallvec::SmallVec<[crate::runtime::action::ActionInfo; 4]> =
                     hook_actions.into_iter().collect();
-                crate::engine::core::queue_actions(&mut state.engine.action_queue, hook_actions_4);
+                state.queue_actions(hook_actions_4);
             }
         }
     }
@@ -75,7 +75,7 @@ pub fn handle_apply_power_detailed(
     // U4: Champion Belt
     let champion_belt_actions =
         crate::content::relics::hooks::on_apply_power(state, power_id, target);
-    crate::engine::core::queue_actions(&mut state.engine.action_queue, champion_belt_actions);
+    state.queue_actions(champion_belt_actions);
 
     // U5: Monster re-check after hooks
     if target != 0 {
@@ -248,7 +248,7 @@ pub fn handle_trigger_time_warp_end_turn(owner: usize, state: &mut CombatState) 
         .map(|m| m.id)
         .collect();
     for monster_id in alive_monster_ids {
-        state.engine.action_queue.push_back(Action::ApplyPower {
+        state.queue_action_back(Action::ApplyPower {
             source: monster_id,
             target: monster_id,
             power_id: PowerId::Strength,
@@ -285,7 +285,7 @@ pub fn handle_bouncing_flask(
 
     if num_times > 1 {
         let next_target = random_alive_monster(state);
-        state.engine.action_queue.push_front(Action::BouncingFlask {
+        state.queue_action_front(Action::BouncingFlask {
             target: next_target,
             amount,
             num_times: num_times - 1,
@@ -298,7 +298,7 @@ pub fn handle_bouncing_flask(
         .iter()
         .any(|m| m.id == target_id && m.current_hp > 0 && !m.is_dying && !m.is_escaped)
     {
-        state.engine.action_queue.push_front(Action::ApplyPower {
+        state.queue_action_front(Action::ApplyPower {
             source: 0,
             target: target_id,
             power_id: PowerId::Poison,
@@ -317,7 +317,7 @@ pub fn handle_remove_power(target: usize, power_id: PowerId, state: &mut CombatS
     let on_remove_actions =
         crate::content::powers::resolve_power_on_remove(power_id, state, target);
     for action in on_remove_actions {
-        state.engine.action_queue.push_back(action);
+        state.queue_action_back(action);
     }
 
     store::remove_power_type(state, target, power_id);
@@ -342,7 +342,7 @@ pub fn handle_remove_power_instance(
     let on_remove_actions =
         crate::content::powers::resolve_power_on_remove(power_snapshot.power_type, state, target);
     for action in on_remove_actions {
-        state.engine.action_queue.push_back(action);
+        state.queue_action_back(action);
     }
 
     store::remove_power_instance(state, target, power_id, instance_id);
@@ -411,9 +411,7 @@ pub fn handle_remove_all_debuffs(target: usize, state: &mut CombatState) {
 
     for power_id in debuffs {
         state
-            .engine
-            .action_queue
-            .push_front(Action::RemovePower { target, power_id });
+            .queue_action_front(Action::RemovePower { target, power_id });
     }
 }
 
@@ -473,15 +471,12 @@ pub fn handle_apply_stasis(target_id: usize, state: &mut CombatState) {
     let uuid = card.uuid as i32;
     state.zones.limbo.push(card);
 
-    state
-        .engine
-        .action_queue
-        .push_front(Action::UpdatePowerExtraData {
-            target: target_id,
-            power_id: PowerId::Stasis,
-            value: uuid,
-        });
-    state.engine.action_queue.push_front(Action::ApplyPower {
+    state.queue_action_front(Action::UpdatePowerExtraData {
+        target: target_id,
+        power_id: PowerId::Stasis,
+        value: uuid,
+    });
+    state.queue_action_front(Action::ApplyPower {
         source: target_id,
         target: target_id,
         power_id: PowerId::Stasis,
@@ -522,7 +517,7 @@ pub fn handle_awakened_rebirth_clear(target: usize, state: &mut CombatState) {
 }
 
 pub fn handle_gain_energy(amount: i32, state: &mut CombatState) {
-    state.turn.energy = (state.turn.energy as i32 + amount).max(0) as u8;
+    state.turn.adjust_energy(amount);
 }
 
 pub fn handle_gain_max_hp(amount: i32, state: &mut CombatState) {

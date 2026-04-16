@@ -39,12 +39,12 @@ fn queue_player_hp_loss_hooks(
             triggers_rupture,
         );
         for action in hook_actions.into_iter().rev() {
-            state.engine.action_queue.push_front(action);
+            state.queue_action_front(action);
         }
     }
 
     let relic_actions = crate::content::relics::hooks::on_lose_hp(state, amount);
-    crate::engine::core::queue_actions(&mut state.engine.action_queue, relic_actions);
+    state.queue_actions(relic_actions);
 }
 
 fn queue_red_skull_threshold_actions(state: &mut CombatState, previous_hp: i32, current_hp: i32) {
@@ -61,7 +61,7 @@ fn queue_red_skull_threshold_actions(state: &mut CombatState, previous_hp: i32, 
         current_hp,
         state.entities.player.max_hp,
     );
-    crate::engine::core::queue_actions(&mut state.engine.action_queue, actions);
+    state.queue_actions(actions);
 }
 
 fn queue_on_block_gained_hooks(
@@ -82,7 +82,7 @@ fn queue_on_block_gained_hooks(
             gained_block,
         );
         for action in hook_actions {
-            state.engine.action_queue.push_back(action);
+            state.queue_action_back(action);
         }
     }
 }
@@ -201,7 +201,7 @@ fn apply_damage_to_monster_via_pipeline(
         {
             let hand_drill_actions =
                 crate::content::relics::hand_drill::on_break_block(state, target_id);
-            crate::engine::core::queue_actions(&mut state.engine.action_queue, hand_drill_actions);
+            state.queue_actions(hand_drill_actions);
         }
 
         if outcome.hp_lost > 0 {
@@ -216,7 +216,7 @@ fn apply_damage_to_monster_via_pipeline(
                     false,
                 );
                 for a in hook_actions.into_iter().rev() {
-                    state.engine.action_queue.push_front(a);
+                    state.queue_action_front(a);
                 }
             }
 
@@ -234,10 +234,7 @@ fn apply_damage_to_monster_via_pipeline(
                         &m,
                         outcome.hp_lost,
                     );
-                    crate::engine::core::queue_actions(
-                        &mut state.engine.action_queue,
-                        monster_actions,
-                    );
+                    state.queue_actions(monster_actions);
                 }
             }
         }
@@ -254,7 +251,7 @@ fn apply_damage_to_monster_via_pipeline(
 
             if power.power_type == PowerId::Malleable {
                 if outcome.hp_lost > 0 && outcome.hp_lost < target_hp_before_damage {
-                    state.engine.action_queue.push_back(Action::GainBlock {
+                    state.queue_action_back(Action::GainBlock {
                         target: target_id,
                         amount: power.amount,
                     });
@@ -278,7 +275,7 @@ fn apply_damage_to_monster_via_pipeline(
                 PowerId::Malleable | PowerId::CurlUp | PowerId::Flight
             ) {
                 for a in hook_actions {
-                    state.engine.action_queue.push_back(a);
+                    state.queue_action_back(a);
                 }
                 let _ = store::with_power_mut(state, target_id, PowerId::CurlUp, |curl| {
                     if curl.amount > 0 && outcome.hp_lost > 0 && source_id != NO_SOURCE {
@@ -287,7 +284,7 @@ fn apply_damage_to_monster_via_pipeline(
                 });
             } else {
                 for a in hook_actions {
-                    state.engine.action_queue.push_front(a);
+                    state.queue_action_front(a);
                 }
             }
         }
@@ -365,7 +362,7 @@ pub fn handle_damage(info: crate::runtime::action::DamageInfo, state: &mut Comba
                     power.amount,
                 );
                 for a in hook_actions.into_iter().rev() {
-                    state.engine.action_queue.push_front(a);
+                    state.queue_action_front(a);
                 }
             }
         }
@@ -423,7 +420,7 @@ pub fn handle_damage_all_enemies(
         }));
     }
     for action in individual_damages.into_iter().rev() {
-        state.engine.action_queue.push_front(action);
+        state.queue_action_front(action);
     }
 }
 
@@ -495,16 +492,10 @@ pub fn handle_dropkick(
 ) {
     let has_vulnerable = store::power_amount(state, target, PowerId::Vulnerable) > 0;
     if has_vulnerable {
-        state.engine.action_queue.push_front(Action::DrawCards(1));
-        state
-            .engine
-            .action_queue
-            .push_front(Action::GainEnergy { amount: 1 });
+        state.queue_action_front(Action::DrawCards(1));
+        state.queue_action_front(Action::GainEnergy { amount: 1 });
     }
-    state
-        .engine
-        .action_queue
-        .push_front(Action::Damage(damage_info));
+    state.queue_action_front(Action::Damage(damage_info));
 }
 
 pub fn handle_fiend_fire(
@@ -549,7 +540,7 @@ pub fn handle_hand_of_greed(
     info.target = target;
     let outcome = apply_damage_to_monster_via_pipeline(state, &info, info.output.max(0));
     if outcome.died {
-        state.engine.action_queue.push_front(Action::GainGold {
+        state.queue_action_front(Action::GainGold {
             amount: gold_amount,
         });
     }
@@ -566,13 +557,10 @@ pub fn handle_ritual_dagger(
     info.target = target;
     let outcome = apply_damage_to_monster_via_pipeline(state, &info, info.output.max(0));
     if outcome.died {
-        state
-            .engine
-            .action_queue
-            .push_front(Action::ModifyCardMisc {
-                card_uuid,
-                amount: misc_amount,
-            });
+        state.queue_action_front(Action::ModifyCardMisc {
+            card_uuid,
+            amount: misc_amount,
+        });
     }
 }
 
@@ -590,7 +578,7 @@ pub fn handle_gain_gold(amount: i32, state: &mut CombatState) {
         .has_relic(crate::content::relics::RelicId::BloodyIdol)
     {
         let actions = crate::content::relics::bloody_idol::BloodyIdol::on_gain_gold();
-        crate::engine::core::queue_actions(&mut state.engine.action_queue, actions);
+        state.queue_actions(actions);
     }
 }
 
@@ -701,10 +689,7 @@ pub fn handle_lose_hp(target: usize, amount: i32, triggers_rupture: bool, state:
                 if let Some(eid) = crate::content::monsters::EnemyId::from_id(m.monster_type) {
                     let monster_actions =
                         crate::content::monsters::dispatch_on_damaged(eid, state, &m, actual_lost);
-                    crate::engine::core::queue_actions(
-                        &mut state.engine.action_queue,
-                        monster_actions,
-                    );
+                    state.queue_actions(monster_actions);
                 }
             }
         }
@@ -833,7 +818,7 @@ pub fn handle_block_per_non_attack(block_per_card: i32, state: &mut CombatState)
     }
 
     for action in queued_actions.into_iter().rev() {
-        state.engine.action_queue.push_front(action);
+        state.queue_action_front(action);
     }
 }
 
@@ -849,16 +834,13 @@ pub fn handle_exhaust_all_non_attack(state: &mut CombatState) {
         .map(|c| c.uuid)
         .collect();
     for uuid in non_attacks {
-        crate::engine::core::queue_actions(
-            &mut state.engine.action_queue,
-            smallvec::smallvec![ActionInfo {
-                action: Action::ExhaustCard {
-                    card_uuid: uuid,
-                    source_pile: crate::state::PileType::Hand
-                },
-                insertion_mode: AddTo::Bottom
-            }],
-        );
+        state.queue_actions(smallvec::smallvec![ActionInfo {
+            action: Action::ExhaustCard {
+                card_uuid: uuid,
+                source_pile: crate::state::PileType::Hand
+            },
+            insertion_mode: AddTo::Bottom
+        }]);
     }
 }
 
