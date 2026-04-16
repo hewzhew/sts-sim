@@ -230,5 +230,5 @@ Longer-term workflow:
 
 See also:
 
-- `docs/LIVE_COMM_RUNBOOK.md`
-- `docs/WATCH_PRESET_SCHEMA_DRAFT.md`
+- `docs/live_comm/LIVE_COMM_RUNBOOK.md`
+- `docs/live_comm/WATCH_PRESET_SCHEMA_DRAFT.md`

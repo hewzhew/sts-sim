@@ -194,7 +194,7 @@ cd tools && python -m sts_tool query ApplyPower
 There is no active learned policy path in the repo right now. Older reward-ranker and
 local combat learner experiments were removed because they had fallen behind the
 current audit-driven strategy stack. If ML/RL work resumes, it should start from the
-current audit truth sources documented in [docs/LEARNING_TRUTH_SOURCES.md](docs/LEARNING_TRUTH_SOURCES.md),
+current audit truth sources documented in [docs/design/LEARNING_TRUTH_SOURCES.md](docs/design/LEARNING_TRUTH_SOURCES.md),
 not from restored legacy scripts. For the current repo structure and RL-facing main
 path, start with [docs/REPOSITORY_MAP.md](docs/REPOSITORY_MAP.md).
 

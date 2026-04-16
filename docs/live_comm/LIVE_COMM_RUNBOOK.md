@@ -6,10 +6,10 @@ If the workflow changes, update this file in the same change.
 
 Also update these when relevant:
 - `tools/live_comm/README.md`
-- `docs/testing_platform.md`
-- `docs/COMM_PROTOCOL_REWARD_SESSION_DRAFT.md`
-- `docs/LIVE_COMM_MODES.md`
-- `docs/PROTOCOL_TRUTH_RULES.md`
+- `docs/testing/testing_platform.md`
+- `docs/protocol/COMM_PROTOCOL_REWARD_SESSION_DRAFT.md`
+- `docs/live_comm/LIVE_COMM_MODES.md`
+- `docs/protocol/PROTOCOL_TRUTH_RULES.md`
 - `tools/live_comm/profile.json` examples
 
 ## One-Time Setup
@@ -47,8 +47,8 @@ To avoid forgetting scattered updates, use these ownership rules:
   - `src/cli/live_comm/`
 - Live testing / watch / capture docs:
   - this file
-  - `docs/testing_platform.md`
-  - `docs/LIVE_COMM_MODES.md`
+  - `docs/testing/testing_platform.md`
+  - `docs/live_comm/LIVE_COMM_MODES.md`
 
 ## Mode First
 
@@ -61,7 +61,7 @@ Before changing watch targets, choose the mode for the run:
 
 See:
 
-- `docs/LIVE_COMM_MODES.md`
+- `docs/live_comm/LIVE_COMM_MODES.md`
 
 Expected workflow:
 

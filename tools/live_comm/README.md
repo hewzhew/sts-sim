@@ -5,10 +5,10 @@ Use this wrapper so `CommunicationMod` does not need a new command in
 
 Full day-to-day workflow:
 
-- [docs/LIVE_COMM_RUNBOOK.md](D:\rust\sts_simulator\docs\LIVE_COMM_RUNBOOK.md)
-- [docs/LIVE_COMM_MANUAL_SCENARIO_RUNBOOK.md](D:\rust\sts_simulator\docs\LIVE_COMM_MANUAL_SCENARIO_RUNBOOK.md)
-- [docs/LIVE_COMM_MODES.md](D:\rust\sts_simulator\docs\LIVE_COMM_MODES.md)
-- [docs/WATCH_PRESET_SCHEMA_DRAFT.md](D:\rust\sts_simulator\docs\WATCH_PRESET_SCHEMA_DRAFT.md)
+- [docs/live_comm/LIVE_COMM_RUNBOOK.md](D:\rust\sts_simulator\docs\live_comm\LIVE_COMM_RUNBOOK.md)
+- [docs/live_comm/LIVE_COMM_MANUAL_SCENARIO_RUNBOOK.md](D:\rust\sts_simulator\docs\live_comm\LIVE_COMM_MANUAL_SCENARIO_RUNBOOK.md)
+- [docs/live_comm/LIVE_COMM_MODES.md](D:\rust\sts_simulator\docs\live_comm\LIVE_COMM_MODES.md)
+- [docs/live_comm/WATCH_PRESET_SCHEMA_DRAFT.md](D:\rust\sts_simulator\docs\live_comm\WATCH_PRESET_SCHEMA_DRAFT.md)
 
 ## One-time `config.properties` setup
 
@@ -135,8 +135,8 @@ Terminology:
 
 - these JSON files are currently best thought of as `run profiles`
 - the watch/capture portion inside them is the beginning of a `watch preset`
-- mode selection is documented separately in `docs/LIVE_COMM_MODES.md`
-- future schema direction is documented in `docs/WATCH_PRESET_SCHEMA_DRAFT.md`
+- mode selection is documented separately in `docs/live_comm/LIVE_COMM_MODES.md`
+- future schema direction is documented in `docs/live_comm/WATCH_PRESET_SCHEMA_DRAFT.md`
 
 Example:
 

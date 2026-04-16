@@ -2,10 +2,10 @@
 
 Operational workflow for live runs:
 
-- `docs/LIVE_COMM_RUNBOOK.md`
-- `docs/LIVE_COMM_MODES.md`
+- `docs/live_comm/LIVE_COMM_RUNBOOK.md`
+- `docs/live_comm/LIVE_COMM_MODES.md`
 - watch-preset terminology and schema draft:
-  - `docs/WATCH_PRESET_SCHEMA_DRAFT.md`
+  - `docs/live_comm/WATCH_PRESET_SCHEMA_DRAFT.md`
 
 ## Current Layering
 
@@ -58,7 +58,7 @@ Notes:
 - Should support both failure-driven extraction and watchpoint-driven capture.
 - Python can remain a wrapper, but schema validation should stay in Rust.
 - The first Rust-side watchpoint implementation now exists under `src/cli/live_comm/`.
-- If launch steps, watch flags, capture locations, or minimize workflow change, update `docs/LIVE_COMM_RUNBOOK.md` in the same change.
+- If launch steps, watch flags, capture locations, or minimize workflow change, update `docs/live_comm/LIVE_COMM_RUNBOOK.md` in the same change.
 - Current flags:
   - `--live-watch-card <java_id>`
   - `--live-watch-relic <java_id>`
@@ -267,5 +267,5 @@ Status:
 
 For protocol evolution around human reward audit and future debug/scenario hooks, see:
 
-- [COMM_PROTOCOL_REWARD_SESSION_DRAFT.md](D:/rust/sts_simulator/docs/COMM_PROTOCOL_REWARD_SESSION_DRAFT.md)
+- [COMM_PROTOCOL_REWARD_SESSION_DRAFT.md](D:/rust/sts_simulator/docs/protocol/COMM_PROTOCOL_REWARD_SESSION_DRAFT.md)
 5. Only then consider a richer interactive UI.

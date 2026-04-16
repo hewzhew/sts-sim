@@ -343,8 +343,8 @@ Any phase that changes:
 
 must update the relevant docs:
 
-- [DRAW_HAND_SIZE_DESIGN.md](D:/rust/sts_simulator/docs/DRAW_HAND_SIZE_DESIGN.md) when draw-target semantics move
-- [LIVE_COMM_RUNBOOK.md](D:/rust/sts_simulator/docs/LIVE_COMM_RUNBOOK.md) only if live/debug workflow changes
+- [DRAW_HAND_SIZE_DESIGN.md](D:/rust/sts_simulator/docs/design/DRAW_HAND_SIZE_DESIGN.md) when draw-target semantics move
+- [LIVE_COMM_RUNBOOK.md](D:/rust/sts_simulator/docs/live_comm/LIVE_COMM_RUNBOOK.md) only if live/debug workflow changes
 - this file when subsystem boundaries or migration order change
 
 ## Recommended First Real Refactor

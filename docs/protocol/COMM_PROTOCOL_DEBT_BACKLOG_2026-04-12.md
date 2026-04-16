@@ -1,6 +1,6 @@
 # Communication Protocol Debt Backlog
 
-This is the concrete follow-up to [COMM_PROTOCOL_EXPANSION_AUDIT_2026-04-12.md](/d:/rust/sts_simulator/docs/COMM_PROTOCOL_EXPANSION_AUDIT_2026-04-12.md).
+This is the concrete follow-up to [COMM_PROTOCOL_EXPANSION_AUDIT_2026-04-12.md](/d:/rust/sts_simulator/docs/protocol/COMM_PROTOCOL_EXPANSION_AUDIT_2026-04-12.md).
 
 ## Status Update
 
