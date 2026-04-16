@@ -61,6 +61,23 @@ python hook_query.py onApplyPower
 
 ## Active Tools
 
+### `run_high_value_tests.ps1`
+
+Default entrypoint for the current high-value correctness suite.
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\tools\run_high_value_tests.ps1
+powershell -ExecutionPolicy Bypass -File .\tools\run_high_value_tests.ps1 -IncludeParity
+```
+
+Runs:
+
+- `protocol_truth_samples`
+- `state_sync_strictness`
+- `guardian_threshold_behavior`
+- `stasis_behavior`
+- optional `diff_driver` when `-IncludeParity` is set
+
 ### `sts_tool/`
 
 Primary entrypoint for Java→Rust analysis.
