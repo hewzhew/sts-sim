@@ -653,3 +653,66 @@ fn shop_action_from_input(input: ClientInput) -> Option<ShopDecisionAction> {
         _ => None,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{BotPolicyDecision, DecisionDomain};
+    use crate::content::cards::CardId;
+    use crate::rewards::state::{RewardCard, RewardItem, RewardState};
+    use crate::state::core::EngineState;
+
+    #[test]
+    fn reward_screen_routes_to_card_or_claim_domain_based_on_pending_choice() {
+        let mut agent = crate::bot::Agent::new();
+        let run_state = crate::state::run::RunState::new(1, 0, false, "Ironclad");
+
+        let mut card_reward = RewardState::new();
+        card_reward.pending_card_choice = Some(vec![RewardCard::new(CardId::Strike, 0)]);
+        let card_decision =
+            agent.decide_policy(&EngineState::RewardScreen(card_reward), &run_state, None, false);
+        match card_decision {
+            BotPolicyDecision::RewardCard(decision) => {
+                assert_eq!(decision.meta.domain, DecisionDomain::RewardCard);
+            }
+            other => panic!("expected RewardCard decision, got {other:?}"),
+        }
+
+        let mut claim_reward = RewardState::new();
+        claim_reward.items.push(RewardItem::Gold { amount: 25 });
+        let claim_decision =
+            agent.decide_policy(&EngineState::RewardScreen(claim_reward), &run_state, None, false);
+        match claim_decision {
+            BotPolicyDecision::RewardClaim(decision) => {
+                assert_eq!(decision.meta.domain, DecisionDomain::RewardClaim);
+            }
+            other => panic!("expected RewardClaim decision, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn shop_and_event_room_route_to_typed_domains() {
+        let mut agent = crate::bot::Agent::new();
+
+        let run_state = crate::state::run::RunState::new(1, 0, false, "Ironclad");
+        let shop_decision =
+            agent.decide_policy(&EngineState::Shop(crate::shop::ShopState::new()), &run_state, None, false);
+        match shop_decision {
+            BotPolicyDecision::Shop(decision) => {
+                assert_eq!(decision.meta.domain, DecisionDomain::Shop);
+            }
+            other => panic!("expected Shop decision, got {other:?}"),
+        }
+
+        let mut event_run_state = crate::state::run::RunState::new(1, 0, false, "Ironclad");
+        event_run_state.event_state =
+            Some(crate::state::events::EventState::new(crate::state::events::EventId::Neow));
+        let event_decision =
+            agent.decide_policy(&EngineState::EventRoom, &event_run_state, None, false);
+        match event_decision {
+            BotPolicyDecision::Event(decision) => {
+                assert_eq!(decision.meta.domain, DecisionDomain::Event);
+            }
+            other => panic!("expected Event decision, got {other:?}"),
+        }
+    }
+}
