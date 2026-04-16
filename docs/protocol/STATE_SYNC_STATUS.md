@@ -42,6 +42,14 @@ See:
 These samples prove protocol/importer truth only. They should not be read as
 full mechanic regression coverage for the corresponding content.
 
+Checked-in fixture copies now live under:
+
+- `tests/protocol_truth_samples/`
+
+and are exercised by:
+
+- `tests/protocol_truth_samples.rs`
+
 ## What Rust Already Imports Directly
 
 ### Powers
