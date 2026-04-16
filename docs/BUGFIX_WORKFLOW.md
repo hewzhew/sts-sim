@@ -16,7 +16,7 @@ Always go through:
 
 Also follow:
 
-- [PROTOCOL_TRUTH_RULES.md](d:\rust\sts_simulator\docs\protocol\PROTOCOL_TRUTH_RULES.md)
+- [PROTOCOL_TRUTH_RULES.md](protocol/PROTOCOL_TRUTH_RULES.md)
 
 ## Wrapper
 

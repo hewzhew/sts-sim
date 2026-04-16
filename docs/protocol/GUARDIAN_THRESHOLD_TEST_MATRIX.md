@@ -152,6 +152,6 @@ Behavior tests should remain separate:
 
 ## Related Docs
 
-- [MANUAL_SCENARIO_SAMPLE_INDEX.md](/d:/rust/sts_simulator/docs/protocol/MANUAL_SCENARIO_SAMPLE_INDEX.md:1)
-- [STATE_SYNC_STATUS.md](/d:/rust/sts_simulator/docs/protocol/STATE_SYNC_STATUS.md:1)
-- [LIVE_COMM_MANUAL_SCENARIO_RUNBOOK.md](/d:/rust/sts_simulator/docs/live_comm/LIVE_COMM_MANUAL_SCENARIO_RUNBOOK.md:1)
+- [MANUAL_SCENARIO_SAMPLE_INDEX.md](MANUAL_SCENARIO_SAMPLE_INDEX.md)
+- [STATE_SYNC_STATUS.md](STATE_SYNC_STATUS.md)
+- [LIVE_COMM_MANUAL_SCENARIO_RUNBOOK.md](../live_comm/LIVE_COMM_MANUAL_SCENARIO_RUNBOOK.md)

@@ -234,7 +234,7 @@ Recommendation:
 
 ### B3. Reward / interaction session protocol
 
-This work is already partly designed in [COMM_PROTOCOL_REWARD_SESSION_DRAFT.md](/d:/rust/sts_simulator/docs/protocol/COMM_PROTOCOL_REWARD_SESSION_DRAFT.md).
+This work is already partly designed in [COMM_PROTOCOL_REWARD_SESSION_DRAFT.md](COMM_PROTOCOL_REWARD_SESSION_DRAFT.md).
 
 This is still worth doing because it removes inference around temporary reward-screen exits and human intervention.
 

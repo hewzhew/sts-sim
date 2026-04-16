@@ -1,7 +1,7 @@
 # Hexaghost Intimidate Event Buckets v0.1
 
 This document is the second concrete instance of
-[Key Resource Event Bucket Template v0.1](/d:/rust/sts_simulator/docs/templates/KEY_RESOURCE_EVENT_BUCKET_TEMPLATE.md:1).
+[Key Resource Event Bucket Template v0.1](../templates/KEY_RESOURCE_EVENT_BUCKET_TEMPLATE.md).
 
 It is intentionally parallel to the `Disarm` instance, but it tests a
 different mitigation shape:

@@ -200,7 +200,7 @@ combat decision and heuristic / policy-driven handling for non-combat screens.
 Important scope distinction:
 
 - This section describes what the **bot/runtime** can currently do.
-- The manual terminal client in [`src/bin/play.rs`](../src/bin/play.rs) exposes a
+- The manual terminal client in [`src/bin/play/main.rs`](../src/bin/play/main.rs) exposes a
   narrower command surface.
 - In particular, manual `play` input and bot/live non-combat support are **not**
   identical.

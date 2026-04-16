@@ -37,7 +37,7 @@ Manual scenario protocol truth samples now exist for:
 
 See:
 
-- [MANUAL_SCENARIO_SAMPLE_INDEX.md](d:\rust\sts_simulator\docs\protocol\MANUAL_SCENARIO_SAMPLE_INDEX.md)
+- [MANUAL_SCENARIO_SAMPLE_INDEX.md](MANUAL_SCENARIO_SAMPLE_INDEX.md)
 
 These samples prove protocol/importer truth only. They should not be read as
 full mechanic regression coverage for the corresponding content.
@@ -123,6 +123,6 @@ or importer coverage is still incomplete.
 
 ## Related Docs
 
-- [PROTOCOL_TRUTH_RULES.md](d:\rust\sts_simulator\docs\protocol\PROTOCOL_TRUTH_RULES.md)
-- [COMM_PROTOCOL_DEBT_BACKLOG_2026-04-12.md](d:\rust\sts_simulator\docs\protocol\COMM_PROTOCOL_DEBT_BACKLOG_2026-04-12.md)
-- [COMM_PROTOCOL_EXPANSION_AUDIT_2026-04-12.md](d:\rust\sts_simulator\docs\protocol\COMM_PROTOCOL_EXPANSION_AUDIT_2026-04-12.md)
+- [PROTOCOL_TRUTH_RULES.md](PROTOCOL_TRUTH_RULES.md)
+- [COMM_PROTOCOL_DEBT_BACKLOG_2026-04-12.md](COMM_PROTOCOL_DEBT_BACKLOG_2026-04-12.md)
+- [COMM_PROTOCOL_EXPANSION_AUDIT_2026-04-12.md](COMM_PROTOCOL_EXPANSION_AUDIT_2026-04-12.md)

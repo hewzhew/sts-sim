@@ -67,8 +67,8 @@ In particular:
 
 See also:
 
-- [PROTOCOL_TRUTH_RULES.md](d:\rust\sts_simulator\docs\protocol\PROTOCOL_TRUTH_RULES.md)
-- [COMM_PROTOCOL_DEBT_BACKLOG_2026-04-12.md](d:\rust\sts_simulator\docs\protocol\COMM_PROTOCOL_DEBT_BACKLOG_2026-04-12.md)
+- [PROTOCOL_TRUTH_RULES.md](protocol/PROTOCOL_TRUTH_RULES.md)
+- [COMM_PROTOCOL_DEBT_BACKLOG_2026-04-12.md](protocol/COMM_PROTOCOL_DEBT_BACKLOG_2026-04-12.md)
 
 ## 5. Standard Contribution Workflow
 

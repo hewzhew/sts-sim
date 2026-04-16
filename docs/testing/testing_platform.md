@@ -267,5 +267,5 @@ Status:
 
 For protocol evolution around human reward audit and future debug/scenario hooks, see:
 
-- [COMM_PROTOCOL_REWARD_SESSION_DRAFT.md](D:/rust/sts_simulator/docs/protocol/COMM_PROTOCOL_REWARD_SESSION_DRAFT.md)
+- [COMM_PROTOCOL_REWARD_SESSION_DRAFT.md](../protocol/COMM_PROTOCOL_REWARD_SESSION_DRAFT.md)
 5. Only then consider a richer interactive UI.

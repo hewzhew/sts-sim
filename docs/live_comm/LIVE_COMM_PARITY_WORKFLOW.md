@@ -21,8 +21,8 @@ The key architectural rule is:
 
 See also:
 
-- [PROTOCOL_TRUTH_RULES.md](d:\rust\sts_simulator\docs\protocol\PROTOCOL_TRUTH_RULES.md)
-- [STATE_SYNC_STATUS.md](d:\rust\sts_simulator\docs\protocol\STATE_SYNC_STATUS.md)
+- [PROTOCOL_TRUTH_RULES.md](../protocol/PROTOCOL_TRUTH_RULES.md)
+- [STATE_SYNC_STATUS.md](../protocol/STATE_SYNC_STATUS.md)
 
 ## Startup Chain
 

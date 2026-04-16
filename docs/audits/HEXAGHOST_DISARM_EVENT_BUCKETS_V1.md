@@ -1,7 +1,7 @@
 # Hexaghost Disarm Event Buckets v0.1
 
 This document is the first concrete instance of
-[Key Resource Event Bucket Template v0.1](/d:/rust/sts_simulator/docs/templates/KEY_RESOURCE_EVENT_BUCKET_TEMPLATE.md:1).
+[Key Resource Event Bucket Template v0.1](../templates/KEY_RESOURCE_EVENT_BUCKET_TEMPLATE.md).
 
 It stays inside the narrow scope:
 
