@@ -121,7 +121,7 @@ pub fn handle_spawn_monster(
     normalize_monster_slots(state);
 
     for action in crate::content::relics::hooks::on_spawn_monster(state, slot as usize) {
-        state.engine.action_queue.push_back(action);
+        state.queue_action_back(action);
     }
 
     let pre_battle_actions = crate::content::monsters::resolve_pre_battle_action(
@@ -131,11 +131,11 @@ pub fn handle_spawn_monster(
         state.meta.ascension_level,
     );
     for a in pre_battle_actions {
-        state.engine.action_queue.push_back(a);
+        state.queue_action_back(a);
     }
 
     if is_minion {
-        state.engine.action_queue.push_front(Action::ApplyPower {
+        state.queue_action_front(Action::ApplyPower {
             source: new_entity_id,
             target: new_entity_id,
             power_id: crate::content::powers::PowerId::Minion,
@@ -143,12 +143,9 @@ pub fn handle_spawn_monster(
         });
     }
 
-    state
-        .engine
-        .action_queue
-        .push_back(Action::RollMonsterMove {
-            monster_id: new_entity_id,
-        });
+    state.queue_action_back(Action::RollMonsterMove {
+        monster_id: new_entity_id,
+    });
 }
 
 pub fn handle_spawn_monster_smart(
@@ -168,7 +165,7 @@ pub fn handle_spawn_monster_smart(
             target_slot += 1;
         }
     }
-    state.engine.action_queue.push_front(Action::SpawnMonster {
+    state.queue_action_front(Action::SpawnMonster {
         monster_id,
         slot: target_slot,
         current_hp,

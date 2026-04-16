@@ -14,7 +14,7 @@ pub fn tick_until_stable(es: &mut EngineState, cs: &mut CombatState, input: Clie
         return false;
     }
 
-    if *es == EngineState::CombatPlayerTurn && !cs.engine.action_queue.is_empty() {
+    if *es == EngineState::CombatPlayerTurn && cs.has_pending_actions() {
         *es = EngineState::CombatProcessing;
     }
 
@@ -114,7 +114,7 @@ pub fn continue_deferred_pending_choice(
             // Replay snapshot sync drops the transient action queue, so re-queue those hooks
             // here before draining the deferred continuation.
             let deferred_relic_actions = crate::content::relics::hooks::on_use_potion(cs, 0);
-            crate::engine::core::queue_actions(&mut cs.engine.action_queue, deferred_relic_actions);
+            cs.queue_actions(deferred_relic_actions);
 
             Ok(drain_to_stable(&mut es, cs))
         }

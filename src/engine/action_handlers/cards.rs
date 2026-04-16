@@ -908,7 +908,7 @@ pub fn handle_play_card_from_hand(
         return Err("Not enough energy");
     }
 
-    state.turn.energy = (state.turn.energy as i32 - energy_to_spend).max(0) as u8;
+    state.turn.spend_energy(energy_to_spend);
 
     let card_mut = &mut state.zones.hand[card_index];
     if is_x_cost {

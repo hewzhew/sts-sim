@@ -117,10 +117,7 @@ pub fn handle_hand_select(
                             action: Action::DrawCards(num_selected as u32),
                             insertion_mode: AddTo::Top,
                         };
-                        crate::engine::core::queue_actions(
-                            &mut combat_state.engine.action_queue,
-                            smallvec::smallvec![action],
-                        );
+                        combat_state.queue_actions(smallvec::smallvec![action]);
                     }
                 }
                 HandSelectReason::Exhaust => {

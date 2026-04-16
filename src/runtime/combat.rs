@@ -257,8 +257,16 @@ impl CombatState {
 }
 
 impl TurnRuntime {
+    pub fn set_energy(&mut self, energy: u8) {
+        self.energy = energy;
+    }
+
     pub fn adjust_energy(&mut self, amount: i32) {
         self.energy = (self.energy as i32 + amount).max(0) as u8;
+    }
+
+    pub fn spend_energy(&mut self, amount: i32) {
+        self.adjust_energy(-amount);
     }
 
     pub fn begin_player_phase(&mut self) {

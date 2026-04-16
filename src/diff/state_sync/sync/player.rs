@@ -17,7 +17,8 @@ pub fn sync_player_from_snapshot(
         .as_i64()
         .unwrap_or(cs.entities.player.max_hp as i64) as i32;
     cs.entities.player.block = player_val["block"].as_i64().unwrap_or(0) as i32;
-    cs.turn.energy = player_val["energy"].as_u64().unwrap_or(3) as u8;
+    cs.turn
+        .set_energy(player_val["energy"].as_u64().unwrap_or(3) as u8);
 
     sync_player_powers_from_snapshot(cs, snapshot);
 }

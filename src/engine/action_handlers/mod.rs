@@ -115,7 +115,7 @@ pub fn check_and_trigger_monster_death(state: &mut CombatState, target_id: usize
                 power.extra_data,
             );
             for a in death_actions {
-                state.engine.action_queue.push_back(a);
+                state.queue_action_back(a);
             }
         }
 
@@ -131,13 +131,13 @@ pub fn check_and_trigger_monster_death(state: &mut CombatState, target_id: usize
                 let death_actions_on_entity =
                     crate::content::monsters::resolve_on_death(m_id, state, &m_clone);
                 for a in death_actions_on_entity {
-                    state.engine.action_queue.push_back(a);
+                    state.queue_action_back(a);
                 }
             }
         }
 
         let death_actions = crate::content::relics::hooks::on_monster_death(state, target_id);
-        crate::engine::core::queue_actions(&mut state.engine.action_queue, death_actions);
+        state.queue_actions(death_actions);
 
         if is_gremlin_leader {
             let minion_ids: Vec<_> = state
@@ -148,10 +148,7 @@ pub fn check_and_trigger_monster_death(state: &mut CombatState, target_id: usize
                 .map(|min| min.id)
                 .collect();
             for minion_id in minion_ids {
-                state
-                    .engine
-                    .action_queue
-                    .push_back(Action::Escape { target: minion_id });
+                state.queue_action_back(Action::Escape { target: minion_id });
             }
         }
         if is_awakened_rebirth {
@@ -605,10 +602,10 @@ fn handle_enter_stance(stance: &str, state: &mut CombatState) {
         return;
     }
     if old_stance == crate::runtime::combat::StanceId::Calm {
-        state.turn.energy += 2;
+        state.turn.adjust_energy(2);
     }
     if new_stance == crate::runtime::combat::StanceId::Divinity {
-        state.turn.energy += 3;
+        state.turn.adjust_energy(3);
     }
     state.entities.player.stance = new_stance;
     crate::content::relics::hooks::on_change_stance(state, old_stance, new_stance);
