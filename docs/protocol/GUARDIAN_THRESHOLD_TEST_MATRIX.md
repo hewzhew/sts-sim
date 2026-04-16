@@ -43,11 +43,29 @@ Reference sample:
 
 Not yet proven by current samples:
 
-- threshold-crossing combat resolution
-- overflow damage behavior on the switching hit
-- Defensive Mode block interaction
-- next-turn intent update after switching
+- exact-threshold crossing combat resolution
+- full Java parity for the post-switch turn boundary
 - next threshold progression across multiple switches
+
+## First Implemented Behavior Coverage
+
+The first Rust behavior tests now live in:
+
+- [tests/guardian_threshold_behavior.rs](../../tests/guardian_threshold_behavior.rs)
+
+Currently covered:
+
+- below-threshold hit does not switch mode
+- overflow hit applies full HP loss before queued Defensive Mode transition resolves
+- queued switch grants 20 block and updates the visible intent to `Buff`
+- after the defensive sequence reaches Twin Slam, `Mode Shift` is reapplied from the
+  increased internal threshold (`40` at A0 after one trigger)
+
+Still not covered:
+
+- exact-threshold hit as a dedicated control case
+- Java parity for the visible turn boundary after switching
+- repeated multi-cycle threshold growth / upper-bound behavior
 
 ## Recommended Behavior Cases
 
