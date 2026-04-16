@@ -593,6 +593,17 @@ impl Agent {
         score
     }
 
+    pub(crate) fn shop_potion_purchase_score(
+        &self,
+        rs: &RunState,
+        shop: &crate::shop::ShopState,
+        potion_id: crate::content::potions::PotionId,
+        price: i32,
+    ) -> i32 {
+        let base_score = self.shop_potion_score(rs, potion_id);
+        self.shop_purchase_score(rs, shop, price, base_score, ShopPurchaseKind::Potion)
+    }
+
     pub(crate) fn boss_relic_score(
         &self,
         rs: &RunState,

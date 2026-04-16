@@ -72,7 +72,7 @@ pub(crate) fn decide_noncombat_with_agent(
         "SHOP_SCREEN" => {
             let shop = build_live_shop_state(gs)?;
             let input = agent.decide(&EngineState::Shop(shop.clone()), &rs, &None, false);
-            shop_input_command(root, &rs, &shop, input)
+            shop_input_command(agent, root, &rs, &shop, input)
         }
         "CARD_REWARD" => {
             let cards = gs
@@ -163,6 +163,7 @@ pub(crate) fn decide_noncombat_with_agent(
 }
 
 fn shop_input_command(
+    agent: &crate::bot::Agent,
     root: &serde_json::Value,
     rs: &crate::state::run::RunState,
     shop: &crate::shop::ShopState,
@@ -191,7 +192,9 @@ fn shop_input_command(
             .position(|choice| matches!(choice, LiveShopChoice::Purge))
             .map(|idx| format!("CHOOSE {}", idx)),
         crate::state::core::ClientInput::Proceed => {
-            if has_available_command(root, "leave") {
+            if let Some(command) = blocked_shop_potion_replacement_command(agent, root, rs, shop) {
+                Some(command)
+            } else if has_available_command(root, "leave") {
                 Some("LEAVE".to_string())
             } else if has_available_command(root, "return") || has_available_command(root, "cancel")
             {
@@ -201,7 +204,9 @@ fn shop_input_command(
             }
         }
         crate::state::core::ClientInput::Cancel => {
-            if has_available_command(root, "leave") {
+            if let Some(command) = blocked_shop_potion_replacement_command(agent, root, rs, shop) {
+                Some(command)
+            } else if has_available_command(root, "leave") {
                 Some("LEAVE".to_string())
             } else if has_available_command(root, "return") || has_available_command(root, "cancel")
             {
@@ -211,6 +216,49 @@ fn shop_input_command(
             }
         }
         _ => None,
+    }
+}
+
+fn blocked_shop_potion_replacement_command(
+    agent: &crate::bot::Agent,
+    root: &serde_json::Value,
+    rs: &crate::state::run::RunState,
+    shop: &crate::shop::ShopState,
+) -> Option<String> {
+    if !has_available_command(root, "potion") {
+        return None;
+    }
+
+    let (offered_score, _) = shop
+        .potions
+        .iter()
+        .filter(|potion| {
+            rs.gold >= potion.price
+                && potion.blocked_reason.as_deref() == Some("potion_slots_full")
+        })
+        .filter_map(|potion| {
+            let score = agent.shop_potion_score(rs, potion.potion_id);
+            let purchase_score =
+                agent.shop_potion_purchase_score(rs, shop, potion.potion_id, potion.price);
+            (purchase_score >= 72).then_some((score, purchase_score))
+        })
+        .max_by_key(|(score, purchase_score)| (*purchase_score, *score))?;
+
+    let (discard_idx, kept_score) = rs
+        .potions
+        .iter()
+        .enumerate()
+        .filter_map(|(idx, potion)| {
+            potion
+                .as_ref()
+                .map(|potion| (idx, agent.shop_potion_score(rs, potion.id)))
+        })
+        .min_by_key(|(_, score)| *score)?;
+
+    if offered_score > kept_score {
+        Some(format!("POTION DISCARD {}", discard_idx))
+    } else {
+        None
     }
 }
 
@@ -657,6 +705,66 @@ fn base_reward_potion_score(potion_id: crate::content::potions::PotionId) -> i32
         | PotionId::RegenPotion => 85,
         PotionId::EnergyPotion | PotionId::SwiftPotion => 82,
         _ => 55,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::blocked_shop_potion_replacement_command;
+    use crate::bot::Agent;
+    use crate::content::potions::{Potion, PotionId};
+    use crate::shop::{ShopPotion, ShopState};
+    use crate::state::run::RunState;
+    use serde_json::json;
+
+    #[test]
+    fn shop_blocked_potion_replacement_discards_when_blocked_offer_is_worth_buying() {
+        let agent = Agent::new();
+        let root = json!({
+            "available_commands": ["choose", "potion", "leave"],
+        });
+        let mut rs = RunState::new(1, 0, false, "Ironclad");
+        rs.gold = 100;
+        rs.potions = vec![
+            Some(Potion::new(PotionId::FruitJuice, 1)),
+            Some(Potion::new(PotionId::SmokeBomb, 2)),
+            Some(Potion::new(PotionId::WeakenPotion, 3)),
+        ];
+        let mut shop = ShopState::new();
+        shop.potions = vec![ShopPotion {
+            potion_id: PotionId::PowerPotion,
+            price: 49,
+            can_buy: false,
+            blocked_reason: Some("potion_slots_full".to_string()),
+        }];
+
+        let command = blocked_shop_potion_replacement_command(&agent, &root, &rs, &shop);
+        assert_eq!(command, Some("POTION DISCARD 0".to_string()));
+    }
+
+    #[test]
+    fn shop_blocked_potion_replacement_skips_when_blocked_offer_is_weaker_than_kept_potions() {
+        let agent = Agent::new();
+        let root = json!({
+            "available_commands": ["choose", "potion", "leave"],
+        });
+        let mut rs = RunState::new(1, 0, false, "Ironclad");
+        rs.gold = 100;
+        rs.potions = vec![
+            Some(Potion::new(PotionId::AncientPotion, 1)),
+            Some(Potion::new(PotionId::PowerPotion, 2)),
+            Some(Potion::new(PotionId::EnergyPotion, 3)),
+        ];
+        let mut shop = ShopState::new();
+        shop.potions = vec![ShopPotion {
+            potion_id: PotionId::SmokeBomb,
+            price: 50,
+            can_buy: false,
+            blocked_reason: Some("potion_slots_full".to_string()),
+        }];
+
+        let command = blocked_shop_potion_replacement_command(&agent, &root, &rs, &shop);
+        assert_eq!(command, None);
     }
 }
 
