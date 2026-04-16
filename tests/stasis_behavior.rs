@@ -207,3 +207,76 @@ fn stasis_returns_a_copy_to_discard_when_orb_dies_and_hand_is_full() {
     assert_eq!(returned.id, CardId::Strike);
     assert_ne!(returned.uuid, 20_001);
 }
+
+#[test]
+fn stasis_prefers_rare_then_uncommon_then_common_when_selecting_from_draw_pile() {
+    let mut combat = automaton_combat();
+    spawn_bronze_orbs(&mut combat);
+    let orb_id = bronze_orb_id(&combat);
+
+    combat.zones.hand.clear();
+    combat.zones.discard_pile.clear();
+    combat.zones.exhaust_pile.clear();
+    combat.zones.limbo.clear();
+    combat.zones.card_uuid_counter = 30_000;
+
+    combat.zones.draw_pile = vec![
+        card(CardId::Clash, 22_001),
+        card(CardId::Inflame, 22_002),
+        card(CardId::DemonForm, 22_003),
+    ];
+    execute_action(Action::ApplyStasis { target_id: orb_id }, &mut combat);
+    drain_action_queue(&mut combat);
+    assert_eq!(combat.zones.limbo.len(), 1);
+    assert_eq!(combat.zones.limbo[0].id, CardId::DemonForm);
+    assert_eq!(combat.zones.limbo[0].uuid, 22_003);
+    assert_eq!(combat.zones.draw_pile.len(), 2);
+    combat.zones.limbo.clear();
+    store::retain_entity_powers(&mut combat, orb_id, |power| power.power_type != PowerId::Stasis);
+
+    combat.zones.draw_pile = vec![card(CardId::Clash, 22_011), card(CardId::Inflame, 22_012)];
+    execute_action(Action::ApplyStasis { target_id: orb_id }, &mut combat);
+    drain_action_queue(&mut combat);
+    assert_eq!(combat.zones.limbo.len(), 1);
+    assert_eq!(combat.zones.limbo[0].id, CardId::Inflame);
+    assert_eq!(combat.zones.limbo[0].uuid, 22_012);
+    assert_eq!(combat.zones.draw_pile.len(), 1);
+    combat.zones.limbo.clear();
+    store::retain_entity_powers(&mut combat, orb_id, |power| power.power_type != PowerId::Stasis);
+
+    combat.zones.draw_pile = vec![card(CardId::Clash, 22_021)];
+    execute_action(Action::ApplyStasis { target_id: orb_id }, &mut combat);
+    drain_action_queue(&mut combat);
+    assert_eq!(combat.zones.limbo.len(), 1);
+    assert_eq!(combat.zones.limbo[0].id, CardId::Clash);
+    assert_eq!(combat.zones.limbo[0].uuid, 22_021);
+    assert!(combat.zones.draw_pile.is_empty());
+}
+
+#[test]
+fn stasis_uses_discard_pile_when_draw_pile_is_empty() {
+    let mut combat = automaton_combat();
+    spawn_bronze_orbs(&mut combat);
+    let orb_id = bronze_orb_id(&combat);
+
+    combat.zones.hand.clear();
+    combat.zones.draw_pile.clear();
+    combat.zones.discard_pile = vec![card(CardId::Inflame, 23_001)];
+    combat.zones.exhaust_pile.clear();
+    combat.zones.limbo.clear();
+    combat.zones.card_uuid_counter = 30_000;
+
+    execute_action(Action::ApplyStasis { target_id: orb_id }, &mut combat);
+    drain_action_queue(&mut combat);
+
+    assert!(combat.zones.draw_pile.is_empty());
+    assert!(combat.zones.discard_pile.is_empty());
+    assert_eq!(combat.zones.limbo.len(), 1);
+    assert_eq!(combat.zones.limbo[0].id, CardId::Inflame);
+    assert_eq!(combat.zones.limbo[0].uuid, 23_001);
+
+    let stasis = store::powers_for(&combat, orb_id)
+        .and_then(|powers| powers.iter().find(|power| power.power_type == PowerId::Stasis))
+        .expect("BronzeOrb should gain Stasis from discard");
+    assert_eq!(stasis.extra_data, 23_001);
+}

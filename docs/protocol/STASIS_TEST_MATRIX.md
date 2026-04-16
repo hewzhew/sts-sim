@@ -17,6 +17,10 @@ and what is still only protocol-level truth.
 
 - Bronze Orb captures a real card from draw pile or discard pile, not an invented
   placeholder.
+- Bronze Orb uses draw pile when available, and falls back to discard pile only
+  when draw pile is empty.
+- Within the chosen source pile, selection follows Java rarity priority:
+  `RARE -> UNCOMMON -> COMMON -> any`.
 - The captured card is removed from its original pile and placed into `limbo`.
 - `Stasis` power runtime data tracks the captured card UUID.
 - When the orb dies and hand has space, the captured card returns as a copy to
@@ -27,10 +31,10 @@ and what is still only protocol-level truth.
 
 ## Not Yet Proven
 
-- Java parity for rarity-priority selection when more than one eligible card is
-  present in draw or discard.
+- Java parity for random selection when more than one eligible card is present in
+  the chosen rarity bucket.
 - Behavior when draw pile is empty and discard pile contains multiple rarity
-  buckets.
+  buckets with more than one candidate in the winning bucket.
 - Full live parity for the visible `ShowCardAction` sequencing.
 - Interactions with edge cases such as simultaneous orb death ordering in larger
   action queues.
