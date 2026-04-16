@@ -29,28 +29,64 @@ fn average_deck_cost(rs: &RunState) -> f32 {
 }
 
 fn base_tier(relic_id: crate::content::relics::RelicId, player_class: &str) -> i32 {
+    base_tier_band(relic_id).score() + class_tier_adjustment(relic_id, player_class)
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum BossRelicTierBand {
+    Premium,
+    Strong,
+    AboveAverage,
+    Solid,
+    LeanPositive,
+    RiskyUpside,
+    Narrow,
+    Weak,
+    Unknown,
+}
+
+impl BossRelicTierBand {
+    const fn score(self) -> i32 {
+        match self {
+            Self::Premium => 100,
+            Self::Strong => 90,
+            Self::AboveAverage => 80,
+            Self::Solid => 70,
+            Self::LeanPositive => 60,
+            Self::RiskyUpside => 50,
+            Self::Narrow => 40,
+            Self::Weak => 20,
+            Self::Unknown => 0,
+        }
+    }
+}
+
+fn base_tier_band(relic_id: crate::content::relics::RelicId) -> BossRelicTierBand {
     use crate::content::relics::RelicId;
 
-    let base = match relic_id {
-        RelicId::Sozu => 100,
-        RelicId::CursedKey => 90,
-        RelicId::Astrolabe => 80,
-        RelicId::SneckoEye => 70,
-        RelicId::BustedCrown => 60,
-        RelicId::CoffeeDripper => 50,
-        RelicId::FusionHammer => 45,
-        RelicId::Ectoplasm => 40,
-        RelicId::PhilosopherStone => 35,
-        RelicId::VelvetChoker => 30,
-        RelicId::EmptyCage => 20,
-        RelicId::CallingBell => 10,
-        _ => 0,
-    };
+    match relic_id {
+        RelicId::Sozu => BossRelicTierBand::Premium,
+        RelicId::CursedKey => BossRelicTierBand::Strong,
+        RelicId::Astrolabe => BossRelicTierBand::AboveAverage,
+        RelicId::SneckoEye => BossRelicTierBand::Solid,
+        RelicId::BustedCrown => BossRelicTierBand::LeanPositive,
+        RelicId::CoffeeDripper => BossRelicTierBand::RiskyUpside,
+        RelicId::FusionHammer => BossRelicTierBand::Narrow,
+        RelicId::Ectoplasm => BossRelicTierBand::Narrow,
+        RelicId::PhilosopherStone => BossRelicTierBand::Narrow,
+        RelicId::VelvetChoker => BossRelicTierBand::Narrow,
+        RelicId::EmptyCage => BossRelicTierBand::Weak,
+        RelicId::CallingBell => BossRelicTierBand::Weak,
+        _ => BossRelicTierBand::Unknown,
+    }
+}
 
-    if player_class == "Ironclad" && relic_id == RelicId::CoffeeDripper {
-        base + 8
-    } else {
-        base
+fn class_tier_adjustment(relic_id: crate::content::relics::RelicId, player_class: &str) -> i32 {
+    use crate::content::relics::RelicId;
+
+    match (player_class, relic_id) {
+        ("Ironclad", RelicId::CoffeeDripper) => 8,
+        _ => 0,
     }
 }
 
@@ -132,6 +168,20 @@ mod tests {
     use crate::bot::Agent;
     use crate::content::cards::CardId;
     use crate::content::relics::RelicId;
+
+    #[test]
+    fn base_tier_uses_explicit_band_ordering_and_class_adjustments() {
+        assert!(base_tier(RelicId::Sozu, "Ironclad") > base_tier(RelicId::CursedKey, "Ironclad"));
+        assert!(
+            base_tier(RelicId::CursedKey, "Ironclad")
+                > base_tier(RelicId::SneckoEye, "Ironclad")
+        );
+        assert!(
+            base_tier(RelicId::CoffeeDripper, "Ironclad")
+                > base_tier(RelicId::CoffeeDripper, "Silent")
+        );
+        assert_eq!(base_tier(RelicId::CallingBell, "Ironclad"), BossRelicTierBand::Weak.score());
+    }
 
     #[test]
     fn boss_relic_scoring_uses_base_tier_and_need_modifiers() {
