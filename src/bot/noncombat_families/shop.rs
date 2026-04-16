@@ -1,5 +1,6 @@
 use crate::bot::agent::Agent;
-use crate::bot::card_knowledge;
+use crate::bot::card_facts::facts as card_facts;
+use crate::bot::card_structure::structure as card_structure;
 use crate::state::core::ClientInput;
 use crate::state::run::RunState;
 
@@ -359,11 +360,9 @@ impl Agent {
         let shop_need = self.build_shop_need_profile(rs);
         let mut score = crate::bot::evaluator::CardEvaluator::evaluate_card(card_id, rs);
         let delta = crate::bot::deck_delta_eval::compare_pick_vs_skip(rs, card_id);
-        if card_knowledge::is_high_value_tactical_card(card_id) {
-            score += 15;
-        }
-        score += card_knowledge::shop_shell_bonus(card_id, &profile);
-        score += card_knowledge::shop_need_bonus(
+        score += shop_consistency_bonus(card_id, rs, &shop_need);
+        score += shop_shell_bonus(card_id, &profile);
+        score += shop_need_bonus(
             card_id,
             &profile,
             &shop_need,
@@ -428,9 +427,8 @@ impl Agent {
         let profile = crate::bot::evaluator::CardEvaluator::deck_profile(rs);
         let shop_need = self.build_shop_need_profile(rs);
         let searing_plan = self.searing_blow_plan_score(rs, &profile);
-        let shell_bonus = card_knowledge::shop_shell_bonus(card_id, &profile);
-        let deficit_bonus =
-            card_knowledge::shop_need_bonus(card_id, &profile, &shop_need, searing_plan);
+        let shell_bonus = shop_shell_bonus(card_id, &profile);
+        let deficit_bonus = shop_need_bonus(card_id, &profile, &shop_need, searing_plan);
         let mut score = self.shop_card_score(rs, card_id);
         score = self.shop_purchase_score(rs, shop, price, score, ShopPurchaseKind::Card);
         if shell_bonus + deficit_bonus < 16 {
@@ -529,6 +527,151 @@ fn shop_delta_priority_bonus(delta: crate::bot::deck_delta_eval::DeltaScore) -> 
         + delta.context_delta.clamp(-40, 44)
 }
 
+fn shop_consistency_bonus(
+    card_id: crate::content::cards::CardId,
+    rs: &RunState,
+    shop_need: &crate::bot::noncombat_families::ShopNeedProfile,
+) -> i32 {
+    let facts = card_facts(card_id);
+    let structure = card_structure(card_id);
+    let mut bonus = 0;
+    if facts.draws_cards {
+        bonus += 8;
+    }
+    if facts.gains_energy {
+        bonus += 10;
+    }
+    if facts.applies_weak || facts.applies_vuln {
+        bonus += 8;
+    }
+    if structure.is_engine_piece() || structure.is_exhaust_engine() {
+        bonus += 6;
+    }
+    if shop_need.control_gap > 0 && (facts.applies_weak || facts.applies_vuln) {
+        bonus += 6;
+    }
+    if rs.current_hp * 10 < rs.max_hp * 6 && facts.combat_heal {
+        bonus += 10;
+    }
+    bonus
+}
+
+fn shop_shell_bonus(
+    card_id: crate::content::cards::CardId,
+    profile: &crate::bot::evaluator::DeckProfile,
+) -> i32 {
+    let structure = card_structure(card_id);
+    let facts = card_facts(card_id);
+    let mut bonus = 0;
+
+    if structure.is_strength_payoff() && profile.strength_enablers >= 1 {
+        bonus += 12;
+    }
+    if structure.is_strength_enabler() && profile.strength_payoffs >= 1 {
+        bonus += 10;
+    }
+    if structure.is_exhaust_engine()
+        && (profile.exhaust_outlets >= 1 || profile.exhaust_fodder >= 1)
+    {
+        bonus += 16;
+    }
+    if structure.is_exhaust_outlet() && profile.exhaust_engines >= 1 {
+        bonus += 10;
+    }
+    if structure.is_block_payoff() && profile.block_core >= 2 {
+        bonus += 12;
+    }
+    if structure.is_block_core() && profile.block_payoffs >= 1 {
+        bonus += 10;
+    }
+    if facts.draws_cards
+        && (profile.exhaust_engines > 0 || profile.block_core > 0 || profile.strength_payoffs > 0)
+    {
+        bonus += 8;
+    }
+
+    bonus
+}
+
+fn shop_need_bonus(
+    card_id: crate::content::cards::CardId,
+    profile: &crate::bot::evaluator::DeckProfile,
+    shop_need: &crate::bot::noncombat_families::ShopNeedProfile,
+    searing_plan: i32,
+) -> i32 {
+    use crate::content::cards::CardId;
+
+    let facts = card_facts(card_id);
+    let structure = card_structure(card_id);
+    let mut bonus = 0;
+
+    if shop_need.damage_gap > 0
+        && (structure.is_strength_payoff()
+            || matches!(
+                card_id,
+                CardId::Hemokinesis
+                    | CardId::Carnage
+                    | CardId::Immolate
+                    | CardId::SearingBlow
+                    | CardId::Uppercut
+            ))
+    {
+        bonus += match card_id {
+            CardId::Hemokinesis => 24 + shop_need.damage_gap / 3,
+            CardId::Carnage | CardId::Immolate => 20 + shop_need.damage_gap / 4,
+            CardId::Pummel | CardId::Whirlwind => 18 + shop_need.damage_gap / 5,
+            CardId::SearingBlow => 20 + shop_need.damage_gap / 4,
+            CardId::Uppercut => 8 + shop_need.damage_gap / 6,
+            _ => 0,
+        };
+    }
+
+    if shop_need.block_gap > 0
+        && (structure.is_block_core()
+            || matches!(
+                card_id,
+                CardId::Disarm
+                    | CardId::ShrugItOff
+                    | CardId::FlameBarrier
+                    | CardId::GhostlyArmor
+                    | CardId::Impervious
+                    | CardId::PowerThrough
+            ))
+    {
+        bonus += match card_id {
+            CardId::ShrugItOff => 14 + shop_need.block_gap / 3,
+            CardId::FlameBarrier => 16 + shop_need.block_gap / 3,
+            CardId::GhostlyArmor => 12 + shop_need.block_gap / 4,
+            CardId::Impervious => 20 + shop_need.block_gap / 3,
+            CardId::PowerThrough => 10 + shop_need.block_gap / 4,
+            CardId::Disarm => 8 + shop_need.block_gap / 6,
+            _ => 0,
+        };
+    }
+
+    if shop_need.control_gap > 0 && (facts.applies_weak || facts.applies_vuln) {
+        bonus += match card_id {
+            CardId::Disarm | CardId::Shockwave => 16 + shop_need.control_gap / 3,
+            CardId::Uppercut => 12 + shop_need.control_gap / 4,
+            CardId::Clothesline => 8 + shop_need.control_gap / 5,
+            _ => 0,
+        };
+    }
+
+    if searing_plan > 0 {
+        bonus += match card_id {
+            CardId::SearingBlow => 40 + profile.searing_blow_upgrades * 10,
+            CardId::Armaments | CardId::Offering => 18,
+            CardId::BattleTrance | CardId::Headbutt | CardId::SeeingRed => 12,
+            CardId::ShrugItOff => 8,
+            CardId::DoubleTap => 10,
+            _ => 0,
+        };
+    }
+
+    bonus
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -543,13 +686,27 @@ mod tests {
         weak.max_hp = 80;
 
         let mut stable = weak.clone();
-        stable.master_deck.push(crate::runtime::combat::CombatCard::new(CardId::Hemokinesis, 21_001));
-        stable.master_deck.push(crate::runtime::combat::CombatCard::new(CardId::ShrugItOff, 21_002));
-        stable.master_deck.push(crate::runtime::combat::CombatCard::new(CardId::Disarm, 21_003));
+        stable
+            .master_deck
+            .push(crate::runtime::combat::CombatCard::new(
+                CardId::Hemokinesis,
+                21_001,
+            ));
+        stable
+            .master_deck
+            .push(crate::runtime::combat::CombatCard::new(
+                CardId::ShrugItOff,
+                21_002,
+            ));
+        stable
+            .master_deck
+            .push(crate::runtime::combat::CombatCard::new(
+                CardId::Disarm,
+                21_003,
+            ));
 
         assert!(
-            agent.shop_card_buy_threshold(&weak, 75)
-                < agent.shop_card_buy_threshold(&stable, 75)
+            agent.shop_card_buy_threshold(&weak, 75) < agent.shop_card_buy_threshold(&stable, 75)
         );
     }
 }

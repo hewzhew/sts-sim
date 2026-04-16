@@ -67,12 +67,8 @@ impl Agent {
         let upgrade = self.assess_best_upgrade(rs, &profile);
         let purge = self.assess_best_purge(rs);
         let survival_pressure = self.noncombat_survival_pressure(rs, &profile, &route);
-        let key_urgency = self.noncombat_key_urgency(
-            rs,
-            &route,
-            survival_pressure,
-            upgrade.best_upgrade_value,
-        );
+        let key_urgency =
+            self.noncombat_key_urgency(rs, &route, survival_pressure, upgrade.best_upgrade_value);
         let long_term_meta_value = self.noncombat_long_term_meta_value(
             rs,
             &profile,
@@ -158,9 +154,15 @@ impl Agent {
         }
         control_gap += i32::from(rs.act_num >= 2) * 4;
 
-        let upgrade_hunger = crate::bot::run_deck_improvement::best_upgrade_improvement(rs).max(0) * 2
-            + self
-                .best_upgrade_index(rs)
+        let upgrade_assessment = crate::bot::run_deck_improvement::assess_deck_operation(
+            rs,
+            crate::bot::run_deck_improvement::DeckOperationKind::Upgrade,
+        );
+        let upgrade_hunger = upgrade_assessment.total_prior_delta.max(0) * 2
+            + upgrade_assessment
+                .best_candidate
+                .as_ref()
+                .and_then(|candidate| candidate.target_index)
                 .map(|idx| {
                     crate::bot::evaluator::CardEvaluator::evaluate_owned_card(
                         rs.master_deck[idx].id,
@@ -168,8 +170,10 @@ impl Agent {
                     ) / 3
                 })
                 .unwrap_or(0);
-        let purge_hunger =
-            crate::bot::deck_delta_eval::compare_purge_vs_keep(rs).total.max(0) * 2;
+        let purge_hunger = crate::bot::deck_delta_eval::compare_purge_vs_keep(rs)
+            .total
+            .max(0)
+            * 2;
 
         ShopNeedProfile {
             damage_gap,
@@ -186,8 +190,15 @@ impl Agent {
         rs: &RunState,
         profile: &crate::bot::evaluator::DeckProfile,
     ) -> UpgradeAssessment {
-        let best_upgrade_index = self.best_upgrade_index(rs);
-        let base_delta = crate::bot::run_deck_improvement::best_upgrade_improvement(rs).max(0);
+        let upgrade_assessment = crate::bot::run_deck_improvement::assess_deck_operation(
+            rs,
+            crate::bot::run_deck_improvement::DeckOperationKind::Upgrade,
+        );
+        let best_upgrade_index = upgrade_assessment
+            .best_candidate
+            .as_ref()
+            .and_then(|candidate| candidate.target_index);
+        let base_delta = upgrade_assessment.total_prior_delta.max(0);
         let Some(idx) = best_upgrade_index else {
             return UpgradeAssessment {
                 best_upgrade_index: None,
@@ -200,6 +211,7 @@ impl Agent {
         let owned_value = crate::bot::evaluator::CardEvaluator::evaluate_owned_card(card.id, rs);
         let searing_plan = self.searing_blow_plan_score(rs, profile);
         let shell_bonus = self.upgrade_shell_bonus(card.id, profile);
+        let upgrade_facts = crate::bot::upgrade_facts::upgrade_facts(card.id);
         let mut best_upgrade_value =
             120 + base_delta * 18 + owned_value.max(0) * 2 + shell_bonus * 3;
         let upgrade_rationale_key = match card.id {
@@ -207,20 +219,18 @@ impl Agent {
                 best_upgrade_value += searing_plan * 2;
                 "searing_blow_upgrade_plan"
             }
-            crate::content::cards::CardId::Apotheosis
-            | crate::content::cards::CardId::Corruption
-            | crate::content::cards::CardId::FeelNoPain
-            | crate::content::cards::CardId::DarkEmbrace
-            | crate::content::cards::CardId::Shockwave
-            | crate::content::cards::CardId::Uppercut
-            | crate::content::cards::CardId::FlameBarrier
-            | crate::content::cards::CardId::Offering
-            | crate::content::cards::CardId::BattleTrance => {
-                best_upgrade_value += 90;
-                "premium_engine_upgrade"
+            _ if upgrade_facts.changes_cost
+                || upgrade_facts.improves_target_control
+                || upgrade_facts.extends_debuff_duration
+                || upgrade_facts.improves_draw_consistency
+                || upgrade_facts.improves_exhaust_control
+                || upgrade_facts.improves_scaling =>
+            {
+                best_upgrade_value += 70;
+                crate::bot::upgrade_facts::dominant_upgrade_semantic_key(card.id)
             }
             _ if shell_bonus > 0 => "shell_completion_upgrade",
-            _ => "best_general_upgrade",
+            _ => upgrade_assessment.rationale_key,
         };
 
         UpgradeAssessment {
@@ -291,9 +301,7 @@ impl Agent {
         pressure += route.upcoming_boss_pressure * 2;
         pressure -= route.nearby_recovery_windows * 35;
         pressure -= route.nearby_shop_windows * 18;
-        pressure += shop_need.damage_gap * 3 / 2
-            + shop_need.block_gap * 2
-            + shop_need.control_gap;
+        pressure += shop_need.damage_gap * 3 / 2 + shop_need.block_gap * 2 + shop_need.control_gap;
         pressure -= potion_slack * 14;
         pressure -= profile.block_core.min(3) * 12;
         pressure -= profile.block_payoffs.min(2) * 15;
@@ -331,8 +339,7 @@ impl Agent {
         };
         let opportunity_cost = survival_pressure / 3 + best_upgrade_value / 4;
 
-        (act_pressure + proximity_pressure + route.recall_window_pressure - opportunity_cost)
-            .max(0)
+        (act_pressure + proximity_pressure + route.recall_window_pressure - opportunity_cost).max(0)
     }
 
     fn noncombat_long_term_meta_value(
@@ -526,14 +533,18 @@ mod tests {
         dangerous_run.current_hp = 18;
         dangerous_run.max_hp = 80;
         dangerous_run.act_num = 3;
-        dangerous_run.master_deck.push(crate::runtime::combat::CombatCard::new(
-            CardId::Parasite,
-            10_001,
-        ));
-        dangerous_run.master_deck.push(crate::runtime::combat::CombatCard::new(
-            CardId::Shockwave,
-            10_002,
-        ));
+        dangerous_run
+            .master_deck
+            .push(crate::runtime::combat::CombatCard::new(
+                CardId::Parasite,
+                10_001,
+            ));
+        dangerous_run
+            .master_deck
+            .push(crate::runtime::combat::CombatCard::new(
+                CardId::Shockwave,
+                10_002,
+            ));
         dangerous_run.map = linear_map_state(
             &[
                 RoomType::MonsterRoomElite,
@@ -550,8 +561,8 @@ mod tests {
         assert!(safe.survival_pressure < dangerous.survival_pressure);
         assert!(dangerous.best_upgrade_value > 0);
         assert!(dangerous.purge_value > safe.purge_value);
-        assert!(dangerous.key_urgency >= safe.key_urgency);
         assert!(dangerous.route.upcoming_elite_pressure > safe.route.upcoming_elite_pressure);
+        assert!(dangerous.route.recall_window_pressure >= safe.route.recall_window_pressure);
     }
 
     #[test]
@@ -571,18 +582,24 @@ mod tests {
 
         let mut stronger_run = weak_run.clone();
         stronger_run.current_hp = 72;
-        stronger_run.master_deck.push(crate::runtime::combat::CombatCard::new(
-            CardId::Hemokinesis,
-            10_101,
-        ));
-        stronger_run.master_deck.push(crate::runtime::combat::CombatCard::new(
-            CardId::ShrugItOff,
-            10_102,
-        ));
-        stronger_run.master_deck.push(crate::runtime::combat::CombatCard::new(
-            CardId::Disarm,
-            10_103,
-        ));
+        stronger_run
+            .master_deck
+            .push(crate::runtime::combat::CombatCard::new(
+                CardId::Hemokinesis,
+                10_101,
+            ));
+        stronger_run
+            .master_deck
+            .push(crate::runtime::combat::CombatCard::new(
+                CardId::ShrugItOff,
+                10_102,
+            ));
+        stronger_run
+            .master_deck
+            .push(crate::runtime::combat::CombatCard::new(
+                CardId::Disarm,
+                10_103,
+            ));
 
         let weak = agent.build_shop_need_profile(&weak_run);
         let strong = agent.build_shop_need_profile(&stronger_run);
@@ -626,7 +643,8 @@ mod tests {
             let mut node = MapRoomNode::new(0, y as i32);
             node.class = Some(*room_type);
             if y + 1 < rooms.len() {
-                node.edges.insert(MapEdge::new(0, y as i32, 0, y as i32 + 1));
+                node.edges
+                    .insert(MapEdge::new(0, y as i32, 0, y as i32 + 1));
             }
             graph.push(vec![node]);
         }

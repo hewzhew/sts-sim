@@ -1,10 +1,12 @@
 mod agent;
 mod agent_curiosity;
 mod agent_deck_ops;
-pub(crate) mod card_knowledge;
-mod combat_card_knowledge;
 pub(crate) mod card_disposition;
+pub(crate) mod card_facts;
+pub(crate) mod card_knowledge;
+pub(crate) mod card_structure;
 pub(crate) mod card_taxonomy;
+mod combat_card_knowledge;
 mod combat_families;
 mod combat_heuristic;
 pub(crate) mod combat_posture;
@@ -18,15 +20,17 @@ mod event_policy;
 pub mod harness;
 pub(crate) mod monster_belief;
 pub(crate) mod noncombat_families;
-pub(crate) mod potions;
 mod policy_spine;
+pub(crate) mod potions;
 mod reward_heuristics;
 pub(crate) mod run_deck_improvement;
 pub(crate) mod run_rule_context;
 pub mod search;
 pub(crate) mod sidecar;
+pub(crate) mod upgrade_facts;
 
 pub use agent::Agent;
+pub use combat_card_knowledge::{branch_family_for_card, BranchFamily};
 pub use combat_heuristic::{
     describe_end_turn_options, diagnose_decision, evaluate_combat_state, HeuristicDiagnostics,
 };
@@ -44,12 +48,13 @@ pub use event_policy::{
 };
 pub use policy_spine::{
     BlockedPotionOffer, BotPolicyDecision, CombatDecision, CombatDecisionContext, DecisionDomain,
-    DecisionMetadata, EventDecision, RewardCardDecision, RewardCardDecisionAction,
-    RewardCardDecisionContext, RewardClaimDecision, RewardClaimDecisionAction,
-    RewardClaimDecisionContext, ShopDecision, ShopDecisionAction, ShopDecisionContext,
+    DecisionMetadata, DeckImprovementDecision, DeckImprovementDecisionContext, EventDecision,
+    RewardCardDecision, RewardCardDecisionAction, RewardCardDecisionContext, RewardClaimDecision,
+    RewardClaimDecisionAction, RewardClaimDecisionContext, ShopDecision, ShopDecisionAction,
+    ShopDecisionContext,
 };
 pub use reward_heuristics::{
-    evaluate_reward_screen, evaluate_reward_screen_for_run, evaluate_reward_screen_for_run_detailed,
-    pick_probability, RewardCardScore, RewardScreenEvaluation,
+    evaluate_reward_screen, evaluate_reward_screen_for_run,
+    evaluate_reward_screen_for_run_detailed, pick_probability, RewardCardScore,
+    RewardScreenEvaluation,
 };
-pub use combat_card_knowledge::{branch_family_for_card, BranchFamily};

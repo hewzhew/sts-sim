@@ -3,11 +3,12 @@ use std::sync::OnceLock;
 
 use serde::Deserialize;
 
-use crate::bot::card_knowledge;
+use crate::bot::card_facts::facts as card_facts;
+use crate::bot::card_structure::structure as card_structure;
 use crate::bot::evaluator::CardEvaluator;
 use crate::bot::noncombat_families::{
-    build_noncombat_need_snapshot_for_run, build_shop_need_profile_for_run,
-    NoncombatNeedSnapshot, ShopNeedProfile,
+    build_noncombat_need_snapshot_for_run, build_shop_need_profile_for_run, NoncombatNeedSnapshot,
+    ShopNeedProfile,
 };
 use crate::content::cards::{self, CardId};
 use crate::state::run::RunState;
@@ -23,19 +24,21 @@ pub struct CardStatistics {
     pub pick_rate: f32,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct RewardCardScore {
     pub card_id: CardId,
     pub pick_rate: f32,
     pub local_score: i32,
     pub delta_suite: crate::bot::encounter_suite::EncounterSuiteId,
     pub delta_prior: i32,
+    pub delta_prior_rationale_key: Option<&'static str>,
     pub delta_bias: i32,
     pub delta_rollout: i32,
     pub delta_context: i32,
     pub delta_context_rationale_key: Option<&'static str>,
     pub delta_rule_context_summary: Option<&'static str>,
     pub delta_score: i32,
+    pub deck_improvement_assessment: crate::bot::run_deck_improvement::DeckOperationAssessment,
     pub combined_score: f32,
 }
 
@@ -127,8 +130,9 @@ pub fn evaluate_reward_screen_for_run_detailed(
     for (idx, &card_id) in offered_cards.iter().enumerate() {
         let pick_rate = pick_probability(card_id);
         let delta = crate::bot::deck_delta_eval::compare_pick_vs_skip(run_state, card_id);
-        let local_score = adjusted_reward_local_score(card_id, run_state, &profile, &need, &shop_need)
-            + delta.total.clamp(-20, 36);
+        let local_score =
+            adjusted_reward_local_score(card_id, run_state, &profile, &need, &shop_need)
+                + delta.total.clamp(-20, 36);
         let combined_score = local_score as f32 + pick_rate * HISTORY_WEIGHT;
 
         skip_probability *= 1.0 - pick_rate;
@@ -138,12 +142,14 @@ pub fn evaluate_reward_screen_for_run_detailed(
             local_score,
             delta_suite: delta.suite,
             delta_prior: delta.prior_delta,
+            delta_prior_rationale_key: delta.prior_rationale_key,
             delta_bias: delta.suite_bias,
             delta_rollout: delta.rollout_delta,
             delta_context: delta.context_delta,
             delta_context_rationale_key: delta.context_rationale_key,
             delta_rule_context_summary: delta.rule_context_summary,
             delta_score: delta.total,
+            deck_improvement_assessment: delta.prior_assessment.clone(),
             combined_score,
         });
 
@@ -156,7 +162,7 @@ pub fn evaluate_reward_screen_for_run_detailed(
     }
 
     let force_pick_in_act1 = should_force_pick_in_act1(run_state);
-    let force_pick_for_shell = should_force_pick_for_shell(offered_cards, &profile);
+    let force_pick_for_shell = should_force_pick_for_shell(offered_cards, &profile, &need);
     let skip_margin = skip_margin_for_run(run_state, &need, &shop_need);
     let best_card_id = offered_cards[best_idx];
 
@@ -204,7 +210,7 @@ fn adjusted_reward_local_score(
     let raw = CardEvaluator::evaluate_card(card_id, run_state);
     let capped = if raw < -200 { -120 } else { raw };
     capped
-        + card_knowledge::reward_shell_bonus(card_id, profile)
+        + reward_shell_bonus(card_id, profile, need)
         + reward_stage_adjustment(card_id, run_state, profile)
         + reward_need_adjustment(card_id, run_state, profile, need, shop_need)
 }
@@ -222,9 +228,7 @@ fn reward_need_adjustment(
         adj += match card_id {
             CardId::Hemokinesis => 14 + shop_need.damage_gap / 3,
             CardId::Carnage | CardId::Immolate => 12 + shop_need.damage_gap / 4,
-            CardId::Whirlwind | CardId::Pummel | CardId::Uppercut => {
-                8 + shop_need.damage_gap / 5
-            }
+            CardId::Whirlwind | CardId::Pummel | CardId::Uppercut => 8 + shop_need.damage_gap / 5,
             _ => 0,
         };
     }
@@ -252,7 +256,9 @@ fn reward_need_adjustment(
             | CardId::Disarm
             | CardId::Shockwave
             | CardId::Uppercut => 18,
-            CardId::Barricade | CardId::LimitBreak | CardId::DemonForm if profile.draw_sources == 0 => {
+            CardId::Barricade | CardId::LimitBreak | CardId::DemonForm
+                if profile.draw_sources == 0 =>
+            {
                 -14
             }
             _ => 0,
@@ -470,10 +476,7 @@ fn should_skip_reward(
         && skip_probability > 0.60
 }
 
-fn reward_patches_current_need(
-    card_id: CardId,
-    shop_need: &ShopNeedProfile,
-) -> bool {
+fn reward_patches_current_need(card_id: CardId, shop_need: &ShopNeedProfile) -> bool {
     (shop_need.damage_gap > 0
         && matches!(
             card_id,
@@ -503,10 +506,58 @@ fn reward_patches_current_need(
 fn should_force_pick_for_shell(
     offered_cards: &[CardId],
     profile: &crate::bot::evaluator::DeckProfile,
+    need: &NoncombatNeedSnapshot,
 ) -> bool {
     offered_cards
         .iter()
-        .any(|&card_id| card_knowledge::reward_shell_bonus(card_id, profile) >= 14)
+        .any(|&card_id| reward_shell_bonus(card_id, profile, need) >= 14)
+}
+
+fn reward_shell_bonus(
+    card_id: CardId,
+    profile: &crate::bot::evaluator::DeckProfile,
+    need: &NoncombatNeedSnapshot,
+) -> i32 {
+    let structure = card_structure(card_id);
+    let facts = card_facts(card_id);
+    let mut bonus = 0;
+
+    if structure.is_strength_payoff() && profile.strength_enablers >= 1 {
+        bonus += 12;
+    }
+    if structure.is_strength_enabler() && profile.strength_payoffs >= 1 {
+        bonus += 10;
+    }
+    if structure.is_exhaust_engine()
+        && (profile.exhaust_outlets >= 1 || profile.exhaust_fodder >= 1)
+    {
+        bonus += 14;
+    }
+    if structure.is_exhaust_outlet() && profile.exhaust_engines >= 1 {
+        bonus += 10;
+    }
+    if structure.is_block_payoff() && profile.block_core >= 2 {
+        bonus += 12;
+    }
+    if structure.is_block_core() && profile.block_payoffs >= 1 {
+        bonus += 8;
+    }
+    if facts.draws_cards
+        && (profile.exhaust_engines > 0 || profile.strength_payoffs > 0 || profile.block_core > 0)
+    {
+        bonus += 8;
+    }
+    if facts.gains_energy && (profile.draw_sources >= 2 || profile.power_scalers >= 1) {
+        bonus += 8;
+    }
+    if (facts.applies_weak || facts.applies_vuln) && need.survival_pressure >= 140 {
+        bonus += 10;
+    }
+    if facts.combat_heal && need.survival_pressure >= 160 {
+        bonus += 12;
+    }
+
+    bonus
 }
 
 pub fn pick_probability(card_id: CardId) -> f32 {
@@ -631,7 +682,11 @@ mod tests {
         dangerous.current_hp = 18;
         dangerous.act_num = 2;
         dangerous.map = linear_map_state(
-            &[RoomType::MonsterRoomElite, RoomType::MonsterRoom, RoomType::MonsterRoomElite],
+            &[
+                RoomType::MonsterRoomElite,
+                RoomType::MonsterRoom,
+                RoomType::MonsterRoomElite,
+            ],
             0,
         );
 
@@ -653,20 +708,28 @@ mod tests {
         weak.max_hp = 80;
         weak.act_num = 2;
         weak.map = linear_map_state(
-            &[RoomType::MonsterRoomElite, RoomType::MonsterRoom, RoomType::RestRoom],
+            &[
+                RoomType::MonsterRoomElite,
+                RoomType::MonsterRoom,
+                RoomType::RestRoom,
+            ],
             0,
         );
 
         let mut stable = weak.clone();
         stable.current_hp = 74;
-        stable.master_deck.push(crate::runtime::combat::CombatCard::new(
-            CardId::ShrugItOff,
-            12_001,
-        ));
-        stable.master_deck.push(crate::runtime::combat::CombatCard::new(
-            CardId::Disarm,
-            12_002,
-        ));
+        stable
+            .master_deck
+            .push(crate::runtime::combat::CombatCard::new(
+                CardId::ShrugItOff,
+                12_001,
+            ));
+        stable
+            .master_deck
+            .push(crate::runtime::combat::CombatCard::new(
+                CardId::Disarm,
+                12_002,
+            ));
 
         let weak_profile = CardEvaluator::deck_profile(&weak);
         let stable_profile = CardEvaluator::deck_profile(&stable);
@@ -698,7 +761,8 @@ mod tests {
             let mut node = MapRoomNode::new(0, y as i32);
             node.class = Some(*room_type);
             if y + 1 < rooms.len() {
-                node.edges.insert(MapEdge::new(0, y as i32, 0, y as i32 + 1));
+                node.edges
+                    .insert(MapEdge::new(0, y as i32, 0, y as i32 + 1));
             }
             graph.push(vec![node]);
         }

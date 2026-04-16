@@ -1,8 +1,9 @@
-use crate::bot::card_taxonomy::taxonomy;
+use crate::bot::card_facts::{facts, CostBand as FactCostBand};
+use crate::bot::card_structure::structure;
 use crate::bot::evaluator::{CardEvaluator, DeckProfile};
-use crate::runtime::combat::CombatCard;
 use crate::content::cards::{self, CardId, CardType};
 use crate::content::relics::{self, RelicId};
+use crate::runtime::combat::CombatCard;
 use crate::state::run::RunState;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -223,23 +224,24 @@ pub(crate) fn conditioned_card_features(
     card_id: CardId,
 ) -> ConditionedCardFeatures {
     let def = cards::get_card_definition(card_id);
-    let tax = taxonomy(card_id);
-    let base_cost_band = match def.cost {
-        -1 => BaseCostBand::XCost,
-        i8::MIN..=-2 => BaseCostBand::Unplayable,
-        0 | 1 => BaseCostBand::ZeroOne,
-        2 => BaseCostBand::Two,
-        _ => BaseCostBand::ThreePlus,
+    let structure = structure(card_id);
+    let facts = facts(card_id);
+    let base_cost_band = match facts.cost_band {
+        FactCostBand::XCost => BaseCostBand::XCost,
+        FactCostBand::ZeroOne => BaseCostBand::ZeroOne,
+        FactCostBand::Two => BaseCostBand::Two,
+        FactCostBand::ThreePlus => BaseCostBand::ThreePlus,
+        FactCostBand::Unplayable => BaseCostBand::Unplayable,
     };
-    let is_draw = tax.is_draw_core();
-    let is_energy_bridge = tax.is_resource_conversion();
-    let is_setup = tax.is_setup_power() || tax.is_engine_piece();
-    let is_scaling = tax.is_scaling_power() || tax.is_strength_enabler();
-    let is_payoff = tax.is_strength_payoff()
-        || tax.is_multi_attack_payoff()
-        || tax.is_block_payoff()
-        || tax.is_combat_heal()
-        || tax.is_vuln_payoff();
+    let is_draw = facts.draws_cards || structure.is_draw_core();
+    let is_energy_bridge = facts.gains_energy || structure.is_resource_conversion();
+    let is_setup = structure.is_setup_piece() || structure.is_engine_piece();
+    let is_scaling = structure.is_scaling_piece() || structure.is_strength_enabler();
+    let is_payoff = structure.is_strength_payoff()
+        || structure.is_multi_attack_payoff()
+        || structure.is_block_payoff()
+        || facts.combat_heal
+        || structure.is_vuln_payoff();
     let is_self_replicating = matches!(card_id, CardId::Anger);
     let is_random_generation = matches!(
         card_id,
@@ -248,7 +250,7 @@ pub(crate) fn conditioned_card_features(
     let is_cost_manipulation_dependent = matches!(
         card_id,
         CardId::BloodForBlood | CardId::Dropkick | CardId::SeverSoul | CardId::SeeingRed
-    ) || tax.is_conditional_free();
+    ) || facts.conditional_free;
 
     let draw_slot_pressure = if is_self_replicating {
         4
@@ -488,23 +490,23 @@ fn shell_alignment_bonus(
     is_setup: bool,
     is_payoff: bool,
 ) -> i32 {
-    let tax = taxonomy(card_id);
     let mut score = 0;
-    if tax.is_strength_payoff() && profile.strength_enablers > 0 {
+    let structure = structure(card_id);
+    if structure.is_strength_payoff() && profile.strength_enablers > 0 {
         score += 3;
     }
-    if tax.is_strength_enabler() && profile.strength_payoffs > 0 {
+    if structure.is_strength_enabler() && profile.strength_payoffs > 0 {
         score += 2;
     }
-    if (tax.is_exhaust_engine() || tax.is_exhaust_outlet())
+    if (structure.is_exhaust_engine() || structure.is_exhaust_outlet())
         && profile.exhaust_outlets + profile.exhaust_engines > 0
     {
         score += 3;
     }
-    if tax.is_block_core() && profile.block_payoffs > 0 {
+    if structure.is_block_core() && profile.block_payoffs > 0 {
         score += 2;
     }
-    if tax.is_block_payoff() && profile.block_core >= 2 {
+    if structure.is_block_payoff() && profile.block_core >= 2 {
         score += 3;
     }
     if is_draw
@@ -523,6 +525,7 @@ fn shell_alignment_bonus(
 
 fn shell_disruption_penalty(profile: &DeckProfile, card_id: CardId, future_clog_risk: i32) -> i32 {
     let def = cards::get_card_definition(card_id);
+    let structure = structure(card_id);
     let mut penalty = future_clog_risk;
     if cards::is_starter_basic(card_id) {
         penalty += 2;
@@ -530,9 +533,9 @@ fn shell_disruption_penalty(profile: &DeckProfile, card_id: CardId, future_clog_
     if profile.draw_sources >= 2
         && matches!(def.card_type, CardType::Attack | CardType::Skill)
         && def.cost <= 1
-        && !taxonomy(card_id).is_draw_core()
-        && !taxonomy(card_id).is_strength_payoff()
-        && !taxonomy(card_id).is_exhaust_outlet()
+        && !structure.is_draw_core()
+        && !structure.is_strength_payoff()
+        && !structure.is_exhaust_outlet()
     {
         penalty += 2;
     }
@@ -542,9 +545,7 @@ fn shell_disruption_penalty(profile: &DeckProfile, card_id: CardId, future_clog_
 fn count_multi_hit_cards(cards: &[CombatCard]) -> i32 {
     cards
         .iter()
-        .filter(|card| {
-            taxonomy(card.id).is_multi_hit() || taxonomy(card.id).is_multi_attack_payoff()
-        })
+        .filter(|card| facts(card.id).multi_hit || structure(card.id).is_multi_attack_payoff())
         .count() as i32
 }
 
