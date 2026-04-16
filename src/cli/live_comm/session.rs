@@ -864,9 +864,17 @@ impl LiveCommSession {
                                 })
                                 .collect::<Vec<_>>();
                             if !offered_ids.is_empty() {
-                                let evaluation = crate::bot::evaluate_reward_screen_for_run_detailed(
-                                    &offered_ids,
+                                let reward_cards = offered_ids
+                                    .iter()
+                                    .copied()
+                                    .map(|card_id| crate::rewards::state::RewardCard::new(card_id, 0))
+                                    .collect::<Vec<_>>();
+                                let decision = agent.decide_reward_card_policy(
                                     &rs,
+                                    crate::bot::RewardCardDecisionContext {
+                                        reward_cards: &reward_cards,
+                                        can_skip: true,
+                                    },
                                 );
                                 let chosen_choice = if cmd.trim().eq_ignore_ascii_case("SKIP")
                                     || cmd.trim().eq_ignore_ascii_case("PROCEED")
@@ -880,7 +888,8 @@ impl LiveCommSession {
                                 let shadow = crate::bot::sidecar::reward_shadow_json(
                                     self.frame_count,
                                     "live_comm_reward",
-                                    &evaluation,
+                                    &decision.meta,
+                                    &decision.evaluation,
                                     chosen_choice,
                                     None,
                                 );

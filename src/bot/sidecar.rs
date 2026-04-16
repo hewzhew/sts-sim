@@ -1,3 +1,4 @@
+use crate::bot::DecisionMetadata;
 use crate::bot::RewardScreenEvaluation;
 use crate::bot::search::SearchDiagnostics;
 use serde::{Deserialize, Serialize};
@@ -53,6 +54,10 @@ pub(crate) struct RewardShadowRecord {
     pub(crate) kind: &'static str,
     pub(crate) frame: u64,
     pub(crate) source: &'static str,
+    pub(crate) decision_domain: &'static str,
+    pub(crate) decision_source: &'static str,
+    pub(crate) decision_rationale_key: Option<&'static str>,
+    pub(crate) fallback_used: bool,
     pub(crate) recommended_choice: Option<usize>,
     pub(crate) chosen_choice: Option<usize>,
     pub(crate) skip_chosen: bool,
@@ -66,6 +71,10 @@ pub(crate) struct CombatShadowRecord {
     pub(crate) kind: &'static str,
     pub(crate) frame: u64,
     pub(crate) source: &'static str,
+    pub(crate) decision_domain: &'static str,
+    pub(crate) decision_source: &'static str,
+    pub(crate) decision_rationale_key: Option<&'static str>,
+    pub(crate) fallback_used: bool,
     pub(crate) chosen_move: String,
     pub(crate) top_gap: Option<f32>,
     pub(crate) legal_moves: usize,
@@ -89,6 +98,7 @@ pub(crate) fn write_shadow_record<W: Write>(sink: &mut W, record: &impl Serializ
 pub(crate) fn reward_shadow_json(
     frame: u64,
     source: &'static str,
+    meta: &DecisionMetadata,
     evaluation: &RewardScreenEvaluation,
     chosen_choice: Option<usize>,
     suggestion: Option<RewardSidecarSuggestion>,
@@ -97,6 +107,10 @@ pub(crate) fn reward_shadow_json(
         kind: "reward_shadow",
         frame,
         source,
+        decision_domain: "reward_card",
+        decision_source: meta.source,
+        decision_rationale_key: meta.rationale_key,
+        fallback_used: meta.fallback_used,
         recommended_choice: evaluation.recommended_choice,
         chosen_choice,
         skip_chosen: chosen_choice.is_none(),
@@ -109,6 +123,7 @@ pub(crate) fn reward_shadow_json(
 pub(crate) fn combat_shadow_json(
     frame: u64,
     source: &'static str,
+    meta: &DecisionMetadata,
     chosen_move: String,
     search: &SearchDiagnostics,
     top_candidates: Vec<CombatTopCandidateRecord>,
@@ -131,6 +146,10 @@ pub(crate) fn combat_shadow_json(
         kind: "combat_shadow",
         frame,
         source,
+        decision_domain: "combat",
+        decision_source: meta.source,
+        decision_rationale_key: meta.rationale_key,
+        fallback_used: meta.fallback_used,
         chosen_move,
         top_gap: search
             .top_moves

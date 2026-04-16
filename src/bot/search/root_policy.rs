@@ -714,6 +714,7 @@ fn followup_payoff_estimate(combat: &CombatState, current_idx: usize, input: &Cl
     let mut best_attack_followup = 0;
     let mut best_high_cost_followup = 0;
     let mut best_multi_hit_followup = 0;
+    let mut playable_attack_followups = Vec::new();
     for (idx, card) in combat.zones.hand.iter().enumerate() {
         if idx == current_idx {
             continue;
@@ -731,6 +732,7 @@ fn followup_payoff_estimate(combat: &CombatState, current_idx: usize, input: &Cl
         let card_cost = i32::from(card.get_cost());
         if card_cost <= energy_after || (card_cost < 0 && energy_after > 0) {
             best_attack_followup = best_attack_followup.max(damage);
+            playable_attack_followups.push(damage);
             if taxonomy(card.id).is_multi_hit() || taxonomy(card.id).is_attack_followup_priority() {
                 best_multi_hit_followup = best_multi_hit_followup.max(damage);
             }
@@ -739,6 +741,8 @@ fn followup_payoff_estimate(combat: &CombatState, current_idx: usize, input: &Cl
             best_high_cost_followup = best_high_cost_followup.max(damage);
         }
     }
+    playable_attack_followups.sort_unstable_by(|lhs, rhs| rhs.cmp(lhs));
+    let cumulative_attack_followup: i32 = playable_attack_followups.iter().take(3).sum();
     match current_card.id {
         CardId::Offering | CardId::SeeingRed | CardId::Bloodletting => best_high_cost_followup,
         CardId::Bash
@@ -746,10 +750,11 @@ fn followup_payoff_estimate(combat: &CombatState, current_idx: usize, input: &Cl
         | CardId::Uppercut
         | CardId::ThunderClap
         | CardId::Trip => best_multi_hit_followup.max(best_attack_followup),
+        CardId::Rage | CardId::Flex => cumulative_attack_followup.max(best_attack_followup),
         _ if taxonomy(current_card.id).is_setup_power()
-            || matches!(current_card.id, CardId::Rage | CardId::Flex) =>
+            =>
         {
-            best_attack_followup
+            cumulative_attack_followup.max(best_attack_followup)
         }
         _ => best_attack_followup / 2,
     }

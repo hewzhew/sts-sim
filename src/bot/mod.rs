@@ -17,6 +17,7 @@ pub mod harness;
 pub(crate) mod monster_belief;
 pub(crate) mod noncombat_families;
 pub(crate) mod potions;
+mod policy_spine;
 mod reward_heuristics;
 pub(crate) mod run_deck_improvement;
 pub(crate) mod run_rule_context;
@@ -39,6 +40,12 @@ pub use event_policy::{
     compact_choice_summary, decision_trace_json, describe_choice, live_event_context,
     local_event_context, EventChoiceDecision, EventDecisionContext, EventDecisionFeatures,
     EventOptionPayload, EventOptionScore, EventOptionTag, EventOptionView, EventPolicyFamily,
+};
+pub use policy_spine::{
+    BlockedPotionOffer, BotPolicyDecision, CombatDecision, CombatDecisionContext, DecisionDomain,
+    DecisionMetadata, EventDecision, RewardCardDecision, RewardCardDecisionAction,
+    RewardCardDecisionContext, RewardClaimDecision, RewardClaimDecisionAction,
+    RewardClaimDecisionContext, ShopDecision, ShopDecisionAction, ShopDecisionContext,
 };
 pub use reward_heuristics::{
     evaluate_reward_screen, evaluate_reward_screen_for_run, evaluate_reward_screen_for_run_detailed,

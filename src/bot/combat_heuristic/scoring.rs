@@ -322,6 +322,7 @@ fn followup_payoff_estimate(state: &SimState, current_idx: usize) -> i32 {
     let mut best_attack_followup = 0;
     let mut best_high_cost_followup = 0;
     let mut best_multi_hit_followup = 0;
+    let mut playable_attack_followups = Vec::new();
     for (idx, card) in active_hand_cards(state) {
         if idx == current_idx || card.card_type != CardType::Attack {
             continue;
@@ -336,6 +337,7 @@ fn followup_payoff_estimate(state: &SimState, current_idx: usize) -> i32 {
         }
         let damage = effective_damage(state, card) * effective_hits(card, energy_for_card);
         best_attack_followup = best_attack_followup.max(damage);
+        playable_attack_followups.push(damage);
         if card.cost >= 2 || card.cost < 0 {
             best_high_cost_followup = best_high_cost_followup.max(damage);
         }
@@ -345,6 +347,8 @@ fn followup_payoff_estimate(state: &SimState, current_idx: usize) -> i32 {
             best_multi_hit_followup = best_multi_hit_followup.max(damage);
         }
     }
+    playable_attack_followups.sort_unstable_by(|lhs, rhs| rhs.cmp(lhs));
+    let cumulative_attack_followup: i32 = playable_attack_followups.iter().take(3).sum();
     match current.card_id {
         CardId::Offering | CardId::SeeingRed | CardId::Bloodletting => best_high_cost_followup,
         CardId::Bash
@@ -352,10 +356,11 @@ fn followup_payoff_estimate(state: &SimState, current_idx: usize) -> i32 {
         | CardId::Uppercut
         | CardId::ThunderClap
         | CardId::Trip => best_multi_hit_followup.max(best_attack_followup),
+        CardId::Rage | CardId::Flex => cumulative_attack_followup.max(best_attack_followup),
         _ if taxonomy(current.card_id).is_setup_power()
-            || matches!(current.card_id, CardId::Rage | CardId::Flex) =>
+            =>
         {
-            best_attack_followup
+            cumulative_attack_followup.max(best_attack_followup)
         }
         _ => best_attack_followup / 2,
     }

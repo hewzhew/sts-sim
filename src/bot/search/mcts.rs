@@ -9,7 +9,8 @@ use super::profile::{
 };
 use super::root_policy::StatePressureFeatures;
 use super::root_policy::{
-    motif_transition_bonus, sequencing_order_bonus, tactical_hint_bonus, total_incoming_damage,
+    motif_transition_bonus, sequencing_assessment_for_input, sequencing_order_bonus,
+    tactical_hint_bonus, total_incoming_damage,
 };
 use super::root_prior::RootPriorConfig;
 use super::root_rollout::{is_terminal, project_turn_close_state_profiled, total_enemy_hp};
@@ -351,10 +352,13 @@ fn run_root_search(
         assess_root_moves(combat, &ranked.transitions, max_engine_steps, &mut profiler);
 
     let root_cut = root_width.max(1).min(ranked.transitions.len());
+    let root_survivors =
+        root_survivor_indices(combat, &ranked.transitions, &root_assessments, root_cut);
     let mut explored_nodes = 0;
-    let mut top_moves = Vec::with_capacity(root_cut);
+    let mut top_moves = Vec::with_capacity(root_survivors.len());
 
-    for transition in ranked.transitions.iter().take(root_cut) {
+    for idx in root_survivors {
+        let transition = &ranked.transitions[idx];
         let leaf_after_move = transition.leaf_score;
         let policy_bonus = transition.order_score - leaf_after_move;
         let (score, explored) = search_from_state(
@@ -370,10 +374,7 @@ fn run_root_search(
             &mut profiler,
         );
         explored_nodes += explored + 1;
-        let assessment = root_assessments
-            .iter()
-            .find(|assessment| assessment.input == transition.input)
-            .expect("root assessment for ranked transition");
+        let assessment = &root_assessments[idx];
         top_moves.push(SearchMoveStat {
             input: transition.input.clone(),
             visits: explored + 1,
@@ -449,6 +450,43 @@ fn run_root_search(
         top_moves,
         profile: profiler.finish(),
     }
+}
+
+fn root_survivor_indices(
+    combat: &CombatState,
+    transitions: &[RankedTransition],
+    assessments: &[SequenceCandidate],
+    root_cut: usize,
+) -> Vec<usize> {
+    let mut survivors: Vec<usize> = (0..root_cut).collect();
+    if transitions.len() <= root_cut {
+        return survivors;
+    }
+
+    let has_safe_line = assessments
+        .iter()
+        .any(|assessment| assessment.survives && assessment.projected_unblocked <= 0);
+    let mut protected: Vec<(usize, i32, f32)> = transitions
+        .iter()
+        .enumerate()
+        .skip(root_cut)
+        .filter_map(|(idx, transition)| {
+            let sequencing =
+                sequencing_assessment_for_input(combat, &transition.input, has_safe_line)?;
+            (sequencing.rationale_key == "setup_before_payoff" && sequencing.frontload_bonus > 0)
+                .then_some((idx, sequencing.frontload_bonus, transition.order_score))
+        })
+        .collect();
+
+    protected.sort_by(|lhs, rhs| {
+        rhs.1
+            .cmp(&lhs.1)
+            .then_with(|| rhs.2.total_cmp(&lhs.2))
+            .then_with(|| lhs.0.cmp(&rhs.0))
+    });
+
+    survivors.extend(protected.into_iter().take(2).map(|(idx, _, _)| idx));
+    survivors
 }
 
 fn search_from_state(

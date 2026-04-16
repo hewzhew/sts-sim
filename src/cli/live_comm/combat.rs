@@ -1494,9 +1494,17 @@ pub(super) fn handle_live_combat_frame<W: Write>(
             .take(SEARCH_DIAG_TOP_K)
             .map(|stat| combat_top_candidate_record(&truth, stat))
             .collect::<Vec<_>>();
+        let meta = crate::bot::DecisionMetadata::new(
+            crate::bot::DecisionDomain::Combat,
+            "combat_search",
+            Some("search_root_policy"),
+            None,
+            false,
+        );
         let shadow = crate::bot::sidecar::combat_shadow_json(
             frame_count,
             "live_comm_combat",
+            &meta,
             describe_client_input(&truth, &search_diag.chosen_move),
             &search_diag,
             top_candidates,

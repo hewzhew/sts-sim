@@ -6,8 +6,7 @@ use crate::bot::agent::Agent;
 use crate::bot::card_disposition::{build_context, classify_hand_card_with_context, HandCardRole};
 use crate::bot::combat_heuristic::{self, HeuristicDiagnostics};
 use crate::bot::combat_posture::posture_features;
-use crate::bot::coverage::CoverageMode;
-use crate::bot::search::{self, SearchDiagnostics};
+use crate::bot::search;
 use crate::runtime::combat::{CombatState, Intent};
 use crate::content::cards::{get_card_definition, CardType};
 use crate::state::core::{ClientInput, EngineState};
@@ -88,7 +87,7 @@ pub fn decide_policy_action(
     }
 
     match kind {
-        PolicyKind::Bot => decide_bot_action(engine, combat, depth),
+        PolicyKind::Bot => decide_bot_action(engine, combat, agent, depth),
         PolicyKind::Heuristic => decide_heuristic_action(engine, combat),
     }
 }
@@ -430,7 +429,12 @@ pub fn flag_bad_action_tags(combat: &CombatState, decision: &PolicyDecision) -> 
     tags
 }
 
-fn decide_bot_action(engine: &EngineState, combat: &CombatState, depth: u32) -> PolicyDecision {
+fn decide_bot_action(
+    engine: &EngineState,
+    combat: &CombatState,
+    agent: &mut Agent,
+    depth: u32,
+) -> PolicyDecision {
     if let Some(choice) = search::tactical_override(engine, combat) {
         let final_action = encode_action(combat, &choice.input);
         return PolicyDecision {
@@ -445,31 +449,29 @@ fn decide_bot_action(engine: &EngineState, combat: &CombatState, depth: u32) -> 
         };
     }
 
-    let diagnostics = search::diagnose_root_search_with_depth(
+    agent.set_bot_depth(depth);
+    let decision = agent.decide_combat_policy(crate::bot::CombatDecisionContext {
         engine,
         combat,
-        &crate::bot::coverage::CoverageDb::default(),
-        CoverageMode::PreferNovel,
-        None,
-        depth,
-        4000,
-    );
-    let final_action = encode_action(combat, &diagnostics.chosen_move);
+        verbose: false,
+    });
+    let final_action = encode_action(combat, &decision.chosen_input);
     PolicyDecision {
         policy_kind: PolicyKind::Bot,
         final_input_debug: final_action.debug.clone(),
         final_action,
-        source: "search".to_string(),
-        confidence: search_confidence(&diagnostics),
-        fallback_used: false,
+        source: decision.meta.source.to_string(),
+        confidence: decision.meta.confidence,
+        fallback_used: decision.meta.fallback_used,
         tactical_reason: None,
-        candidate_scores: diagnostics
+        candidate_scores: decision
+            .diagnostics
             .top_moves
             .iter()
             .map(|stat| CandidateActionScore {
                 action: encode_action(combat, &stat.input),
                 score: stat.avg_score,
-                source: "search".to_string(),
+                source: decision.meta.source.to_string(),
                 visits: Some(stat.visits),
                 avg_score: Some(stat.avg_score),
             })
@@ -514,16 +516,6 @@ fn decide_heuristic_action(engine: &EngineState, combat: &CombatState) -> Policy
             })
             .collect(),
     }
-}
-
-fn search_confidence(diagnostics: &SearchDiagnostics) -> Option<f32> {
-    if diagnostics.top_moves.len() < 2 {
-        return diagnostics
-            .top_moves
-            .first()
-            .map(|move_stat| move_stat.avg_score);
-    }
-    Some(diagnostics.top_moves[0].avg_score - diagnostics.top_moves[1].avg_score)
 }
 
 fn heuristic_confidence(diagnostics: &HeuristicDiagnostics) -> Option<f32> {

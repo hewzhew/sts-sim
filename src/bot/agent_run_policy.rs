@@ -3,7 +3,11 @@ use crate::state::core::{CampfireChoice, ClientInput};
 use crate::state::run::RunState;
 
 impl Agent {
-    pub(crate) fn decide_shop(&self, rs: &RunState, shop: &crate::shop::ShopState) -> ClientInput {
+    pub(crate) fn decide_shop_input(
+        &self,
+        rs: &RunState,
+        shop: &crate::shop::ShopState,
+    ) -> ClientInput {
         if let Some(cmd) = self.curiosity_shop_pick(rs, shop) {
             return cmd;
         }
@@ -1037,19 +1041,6 @@ impl Agent {
             ClientInput::CampfireOption(CampfireChoice::Rest)
         } else {
             ClientInput::Proceed
-        }
-    }
-
-    pub(crate) fn decide_event(&self, rs: &RunState) -> ClientInput {
-        if let Some(event) = &rs.event_state {
-            let choices = crate::engine::event_handler::get_event_choices(rs);
-            let choice = crate::bot::event_policy::choose_local_event_choice(rs, event, &choices)
-                .map(|decision| decision.option_index)
-                .or_else(|| choices.iter().position(|choice| !choice.disabled))
-                .unwrap_or(0);
-            ClientInput::EventChoice(choice)
-        } else {
-            ClientInput::EventChoice(0)
         }
     }
 

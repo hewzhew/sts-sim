@@ -31,8 +31,16 @@ impl Agent {
         self.bot_depth = depth;
     }
 
+    pub(crate) const fn bot_depth(&self) -> u32 {
+        self.bot_depth
+    }
+
     pub fn set_coverage_mode(&mut self, mode: crate::bot::coverage::CoverageMode) {
         self.coverage_mode = mode;
+    }
+
+    pub(crate) const fn coverage_mode(&self) -> crate::bot::coverage::CoverageMode {
+        self.coverage_mode
     }
 
     pub fn set_curiosity_target(&mut self, target: Option<crate::bot::coverage::CuriosityTarget>) {
@@ -59,223 +67,179 @@ impl Agent {
         cs: &Option<CombatState>,
         verbose: bool,
     ) -> ClientInput {
-        match es {
-            EngineState::PendingChoice(crate::state::core::PendingChoice::CardRewardSelect {
-                cards,
-                can_skip,
-                ..
-            }) => match crate::bot::reward_heuristics::evaluate_reward_screen(cards) {
-                Some(idx) => ClientInput::SubmitDiscoverChoice(
-                    self.active_curiosity_target()
-                        .and_then(|_| self.curiosity_reward_pick(cards, rs))
-                        .unwrap_or(idx),
-                ),
-                None if *can_skip => ClientInput::Cancel,
-                None => ClientInput::SubmitDiscoverChoice(0),
+        match self.decide_policy(es, rs, cs.as_ref(), verbose) {
+            crate::bot::BotPolicyDecision::Combat(decision) => {
+                self.record_live_coverage(decision.chosen_input.clone(), decision.diagnostics.chosen_move.clone(), cs.as_ref());
+                if let Some(combat) = cs.as_ref() {
+                    self.record_signature_for_choice(es, combat, &decision.chosen_input);
+                }
+                decision.chosen_input
+            }
+            crate::bot::BotPolicyDecision::RewardCard(decision) => match decision.action {
+                crate::bot::RewardCardDecisionAction::Pick(idx) => match es {
+                    EngineState::PendingChoice(crate::state::core::PendingChoice::CardRewardSelect { .. }) => {
+                        ClientInput::SubmitDiscoverChoice(idx)
+                    }
+                    _ => ClientInput::SelectCard(idx),
+                },
+                crate::bot::RewardCardDecisionAction::Skip => match es {
+                    EngineState::PendingChoice(crate::state::core::PendingChoice::CardRewardSelect { .. }) => {
+                        ClientInput::Cancel
+                    }
+                    _ => ClientInput::Proceed,
+                },
             },
-            EngineState::CombatPlayerTurn
-            | EngineState::PendingChoice(_)
-            | EngineState::EventCombat(_) => {
-                if let Some(combat) = cs {
-                    let chosen = crate::bot::search::find_best_move(
-                        es,
-                        combat,
-                        self.bot_depth,
-                        verbose,
-                        &self.db,
-                        self.coverage_mode,
-                        self.active_curiosity_target(),
+            crate::bot::BotPolicyDecision::RewardClaim(decision) => match decision.action {
+                crate::bot::RewardClaimDecisionAction::Claim(idx) => ClientInput::ClaimReward(idx),
+                crate::bot::RewardClaimDecisionAction::DiscardPotion(idx) => {
+                    ClientInput::DiscardPotion(idx)
+                }
+                crate::bot::RewardClaimDecisionAction::Proceed => ClientInput::Proceed,
+            },
+            crate::bot::BotPolicyDecision::Shop(decision) => match decision.action {
+                crate::bot::ShopDecisionAction::BuyCard(idx) => ClientInput::BuyCard(idx),
+                crate::bot::ShopDecisionAction::BuyRelic(idx) => ClientInput::BuyRelic(idx),
+                crate::bot::ShopDecisionAction::BuyPotion(idx) => ClientInput::BuyPotion(idx),
+                crate::bot::ShopDecisionAction::PurgeCard(idx) => ClientInput::PurgeCard(idx),
+                crate::bot::ShopDecisionAction::DiscardPotion(idx) => {
+                    ClientInput::DiscardPotion(idx)
+                }
+                crate::bot::ShopDecisionAction::Leave => ClientInput::Proceed,
+            },
+            crate::bot::BotPolicyDecision::Event(decision) => {
+                ClientInput::EventChoice(decision.decision.option_index)
+            }
+            crate::bot::BotPolicyDecision::LegacyInput { input, .. } => input,
+        }
+    }
+
+    fn record_live_coverage(
+        &mut self,
+        chosen: ClientInput,
+        executed: ClientInput,
+        combat: Option<&CombatState>,
+    ) {
+        let _ = chosen;
+        let Some(combat) = combat else {
+            return;
+        };
+        match &executed {
+            ClientInput::PlayCard { card_index, .. } => {
+                if let Some(card) = combat.zones.hand.get(*card_index) {
+                    let def = crate::content::cards::get_card_definition(card.id);
+                    self.db.tested_cards.insert(def.name.to_string());
+                    self.db.save();
+                }
+            }
+            ClientInput::UsePotion { potion_index, .. } => {
+                if let Some(Some(p)) = combat.entities.potions.get(*potion_index) {
+                    let def = crate::content::potions::get_potion_definition(p.id);
+                    self.db.tested_potions.insert(def.name.to_string());
+                    self.db.save();
+                }
+            }
+            _ => {}
+        }
+    }
+
+    pub(crate) fn decide_boss_relic_policy(
+        &self,
+        rs: &RunState,
+        bs: &crate::rewards::state::BossRelicChoiceState,
+    ) -> ClientInput {
+        if let Some(idx) = self
+            .active_curiosity_target()
+            .and_then(|_| self.curiosity_boss_relic_pick(&bs.relics))
+        {
+            return ClientInput::SubmitRelicChoice(idx);
+        }
+
+        let mut best_idx = 0;
+        let mut best_score = i32::MIN;
+        for (i, relic) in bs.relics.iter().enumerate() {
+            let score = self.boss_relic_score(rs, *relic);
+            if score > best_score {
+                best_score = score;
+                best_idx = i;
+            }
+        }
+
+        ClientInput::SubmitRelicChoice(best_idx)
+    }
+
+    pub(crate) fn decide_run_pending_choice(
+        &self,
+        rs: &RunState,
+        choice_state: &crate::state::core::RunPendingChoiceState,
+    ) -> ClientInput {
+        use crate::state::core::RunPendingChoiceReason;
+        match choice_state.reason {
+            RunPendingChoiceReason::Purge => {
+                if rs.master_deck.is_empty() {
+                    ClientInput::Cancel
+                } else {
+                    let indices =
+                        self.best_purge_indices(rs, choice_state.max_choices.min(rs.master_deck.len()));
+                    ClientInput::SubmitSelection(SelectionResolution {
+                        scope: SelectionScope::Deck,
+                        selected: indices
+                            .into_iter()
+                            .filter_map(|idx| rs.master_deck.get(idx))
+                            .map(|card| SelectionTargetRef::CardUuid(card.uuid))
+                            .collect(),
+                    })
+                }
+            }
+            RunPendingChoiceReason::Upgrade => {
+                if let Some(best_idx) = self.best_upgrade_index(rs) {
+                    ClientInput::SubmitSelection(SelectionResolution {
+                        scope: SelectionScope::Deck,
+                        selected: rs
+                            .master_deck
+                            .get(best_idx)
+                            .map(|card| vec![SelectionTargetRef::CardUuid(card.uuid)])
+                            .unwrap_or_default(),
+                    })
+                } else {
+                    ClientInput::Cancel
+                }
+            }
+            RunPendingChoiceReason::Transform | RunPendingChoiceReason::TransformUpgraded => {
+                if rs.master_deck.is_empty() {
+                    ClientInput::Cancel
+                } else {
+                    let indices = self.best_transform_indices(
+                        rs,
+                        choice_state.max_choices.min(rs.master_deck.len()),
+                        matches!(
+                            choice_state.reason,
+                            RunPendingChoiceReason::TransformUpgraded
+                        ),
                     );
-
-                    // Live coverage tracking: mark executing moves as tested
-                    match &chosen {
-                        ClientInput::PlayCard { card_index, .. } => {
-                            if let Some(card) = combat.zones.hand.get(*card_index) {
-                                let def = crate::content::cards::get_card_definition(card.id);
-                                self.db.tested_cards.insert(def.name.to_string());
-                                self.db.save();
-                            }
-                        }
-                        ClientInput::UsePotion { potion_index, .. } => {
-                            if let Some(Some(p)) = combat.entities.potions.get(*potion_index) {
-                                let def = crate::content::potions::get_potion_definition(p.id);
-                                self.db.tested_potions.insert(def.name.to_string());
-                                self.db.save();
-                            }
-                        }
-                        _ => {}
-                    }
-
-                    self.record_signature_for_choice(es, combat, &chosen);
-
-                    chosen
+                    ClientInput::SubmitSelection(SelectionResolution {
+                        scope: SelectionScope::Deck,
+                        selected: indices
+                            .into_iter()
+                            .filter_map(|idx| rs.master_deck.get(idx))
+                            .map(|card| SelectionTargetRef::CardUuid(card.uuid))
+                            .collect(),
+                    })
+                }
+            }
+            RunPendingChoiceReason::Duplicate => {
+                if let Some(best_idx) = self.best_duplicate_index(rs) {
+                    ClientInput::SubmitSelection(SelectionResolution {
+                        scope: SelectionScope::Deck,
+                        selected: rs
+                            .master_deck
+                            .get(best_idx)
+                            .map(|card| vec![SelectionTargetRef::CardUuid(card.uuid)])
+                            .unwrap_or_default(),
+                    })
                 } else {
-                    ClientInput::Proceed
+                    ClientInput::Cancel
                 }
             }
-            EngineState::MapNavigation => self.decide_map(rs),
-            EngineState::RewardScreen(reward) => {
-                use crate::rewards::state::RewardItem;
-
-                // 1. Handle pending card choice
-                if let Some(cards) = &reward.pending_card_choice {
-                    let offered_cards: Vec<_> =
-                        cards.iter().map(|reward_card| reward_card.id).collect();
-
-                    if let Some(idx) = self
-                        .active_curiosity_target()
-                        .and_then(|_| self.curiosity_reward_pick(&offered_cards, rs))
-                        .or_else(|| {
-                            crate::bot::reward_heuristics::evaluate_reward_screen_for_run(
-                                &offered_cards,
-                                rs,
-                            )
-                        })
-                    {
-                        ClientInput::SelectCard(idx)
-                    } else {
-                        ClientInput::Proceed
-                    }
-                } else if !reward.items.is_empty() {
-                    if let Some(idx) = self
-                        .active_curiosity_target()
-                        .and_then(|_| self.curiosity_reward_claim(&reward.items))
-                    {
-                        return ClientInput::ClaimReward(idx);
-                    }
-
-                    // 2. Handle claiming items
-                    let mut claimed = false;
-                    let mut claim_idx = 0;
-
-                    for (i, item) in reward.items.iter().enumerate() {
-                        match item {
-                            RewardItem::Potion { .. } => {
-                                // Claim potion only if we have an empty slot
-                                if rs.potions.iter().any(|p| p.is_none()) {
-                                    claim_idx = i;
-                                    claimed = true;
-                                    break;
-                                }
-                            }
-                            // Always claim gold/relics/cards/etc.
-                            _ => {
-                                claim_idx = i;
-                                claimed = true;
-                                break;
-                            }
-                        }
-                    }
-
-                    if claimed {
-                        ClientInput::ClaimReward(claim_idx)
-                    } else {
-                        // Leftover items (e.g. potions when full), proceed
-                        ClientInput::Proceed
-                    }
-                } else {
-                    ClientInput::Proceed
-                }
-            }
-            EngineState::BossRelicSelect(bs) => {
-                if let Some(idx) = self
-                    .active_curiosity_target()
-                    .and_then(|_| self.curiosity_boss_relic_pick(&bs.relics))
-                {
-                    return ClientInput::SubmitRelicChoice(idx);
-                }
-
-                let mut best_idx = 0;
-                let mut best_score = i32::MIN;
-                for (i, relic) in bs.relics.iter().enumerate() {
-                    let score = self.boss_relic_score(rs, *relic);
-                    if score > best_score {
-                        best_score = score;
-                        best_idx = i;
-                    }
-                }
-
-                ClientInput::SubmitRelicChoice(best_idx)
-            }
-            EngineState::Campfire => self.decide_campfire(rs),
-            EngineState::EventRoom => self.decide_event(rs),
-            EngineState::Shop(shop) => self.decide_shop(rs, shop),
-            EngineState::RunPendingChoice(choice_state) => {
-                use crate::state::core::RunPendingChoiceReason;
-                match choice_state.reason {
-                    RunPendingChoiceReason::Purge => {
-                        if rs.master_deck.is_empty() {
-                            ClientInput::Cancel
-                        } else {
-                            let indices = self.best_purge_indices(
-                                rs,
-                                choice_state.max_choices.min(rs.master_deck.len()),
-                            );
-                            ClientInput::SubmitSelection(SelectionResolution {
-                                scope: SelectionScope::Deck,
-                                selected: indices
-                                    .into_iter()
-                                    .filter_map(|idx| rs.master_deck.get(idx))
-                                    .map(|card| SelectionTargetRef::CardUuid(card.uuid))
-                                    .collect(),
-                            })
-                        }
-                    }
-                    RunPendingChoiceReason::Upgrade => {
-                        if let Some(best_idx) = self.best_upgrade_index(rs) {
-                            ClientInput::SubmitSelection(SelectionResolution {
-                                scope: SelectionScope::Deck,
-                                selected: rs
-                                    .master_deck
-                                    .get(best_idx)
-                                    .map(|card| vec![SelectionTargetRef::CardUuid(card.uuid)])
-                                    .unwrap_or_default(),
-                            })
-                        } else {
-                            ClientInput::Cancel
-                        }
-                    }
-                    RunPendingChoiceReason::Transform
-                    | RunPendingChoiceReason::TransformUpgraded => {
-                        if rs.master_deck.is_empty() {
-                            ClientInput::Cancel
-                        } else {
-                            let indices = self.best_transform_indices(
-                                rs,
-                                choice_state.max_choices.min(rs.master_deck.len()),
-                                matches!(
-                                    choice_state.reason,
-                                    RunPendingChoiceReason::TransformUpgraded
-                                ),
-                            );
-                            ClientInput::SubmitSelection(SelectionResolution {
-                                scope: SelectionScope::Deck,
-                                selected: indices
-                                    .into_iter()
-                                    .filter_map(|idx| rs.master_deck.get(idx))
-                                    .map(|card| SelectionTargetRef::CardUuid(card.uuid))
-                                    .collect(),
-                            })
-                        }
-                    }
-                    RunPendingChoiceReason::Duplicate => {
-                        if let Some(best_idx) = self.best_duplicate_index(rs) {
-                            ClientInput::SubmitSelection(SelectionResolution {
-                                scope: SelectionScope::Deck,
-                                selected: rs
-                                    .master_deck
-                                    .get(best_idx)
-                                    .map(|card| vec![SelectionTargetRef::CardUuid(card.uuid)])
-                                    .unwrap_or_default(),
-                            })
-                        } else {
-                            ClientInput::Cancel
-                        }
-                    }
-                }
-            }
-            EngineState::GameOver(_) => ClientInput::Proceed,
-            _ => ClientInput::Proceed,
         }
     }
 
