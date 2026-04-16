@@ -30,41 +30,77 @@ use crate::content::cards::{get_card_definition, CardId, CardType};
 use crate::content::monsters::EnemyId;
 use crate::content::relics::RelicId;
 use crate::state::core::ClientInput;
+use serde_json::{json, Value};
 
 use super::intent_hits;
 use super::root_policy::same_turn_exhaust_setup_bonus_excluding;
 
 pub(crate) fn tactical_move_bonus(combat: &CombatState, chosen_move: &ClientInput) -> f32 {
+    tactical_bonus_breakdown(combat, chosen_move)
+        .iter()
+        .map(|(_, value)| *value)
+        .sum()
+}
+
+pub(crate) fn decision_audit_json(combat: &CombatState, chosen_move: &ClientInput) -> Value {
+    let components = tactical_bonus_breakdown(combat, chosen_move)
+        .into_iter()
+        .map(|(name, value)| {
+            json!({
+                "name": name,
+                "value": value,
+            })
+        })
+        .collect::<Vec<_>>();
+    let total = components
+        .iter()
+        .map(|component| component["value"].as_f64().unwrap_or(0.0) as f32)
+        .sum::<f32>();
+    json!({
+        "total": total,
+        "components": components,
+    })
+}
+
+fn tactical_bonus_breakdown(
+    combat: &CombatState,
+    chosen_move: &ClientInput,
+) -> Vec<(&'static str, f32)> {
     match chosen_move {
         ClientInput::PlayCard { card_index, target } => {
             let Some(card) = combat.zones.hand.get(*card_index) else {
-                return 0.0;
+                return Vec::new();
             };
-            armaments_move_bonus(combat, *card_index)
-                + double_tap_move_bonus(combat, *card_index)
-                + feel_no_pain_move_bonus(combat, *card_index)
-                + dark_embrace_move_bonus(combat, *card_index)
-                + corruption_move_bonus(combat, *card_index)
-                + evolve_move_bonus(combat, *card_index)
-                + deep_breath_move_bonus(combat, *card_index)
-                + exhaust_timing_move_bonus(combat, *card_index)
-                + battle_trance_move_bonus(combat, *card_index)
-                + generic_draw_move_bonus(combat, *card_index)
-                + resource_conversion_move_bonus(combat, *card_index)
-                + body_slam_move_bonus(combat, *card_index)
-                + flame_barrier_move_bonus(combat, *card_index)
-                + limit_break_move_bonus(combat, *card_index)
-                + hold_commit_timing_bonus(combat, *card_index)
-                + survival_swing_move_bonus(combat, *card_index)
-                + target_progress_move_bonus(combat, *card_index, *target)
-                + posture_move_bonus(combat, *card_index)
-                + gremlin_nob_skill_penalty(combat, card)
-                + slimed_cleanup_move_bonus(combat, card)
-                + sharp_hide_attack_penalty(combat, card, *target)
-                + slime_boss_split_timing_bonus(combat, card, *target)
-                + guardian_phase_timing_bonus(combat, card, *target)
+            vec![
+                ("armaments", armaments_move_bonus(combat, *card_index)),
+                ("double_tap", double_tap_move_bonus(combat, *card_index)),
+                ("feel_no_pain", feel_no_pain_move_bonus(combat, *card_index)),
+                ("dark_embrace", dark_embrace_move_bonus(combat, *card_index)),
+                ("corruption", corruption_move_bonus(combat, *card_index)),
+                ("evolve", evolve_move_bonus(combat, *card_index)),
+                ("deep_breath", deep_breath_move_bonus(combat, *card_index)),
+                ("exhaust_timing", exhaust_timing_move_bonus(combat, *card_index)),
+                ("battle_trance", battle_trance_move_bonus(combat, *card_index)),
+                ("generic_draw", generic_draw_move_bonus(combat, *card_index)),
+                ("resource_conversion", resource_conversion_move_bonus(combat, *card_index)),
+                ("body_slam", body_slam_move_bonus(combat, *card_index)),
+                ("flame_barrier", flame_barrier_move_bonus(combat, *card_index)),
+                ("limit_break", limit_break_move_bonus(combat, *card_index)),
+                ("hold_commit", hold_commit_timing_bonus(combat, *card_index)),
+                ("survival_swing", survival_swing_move_bonus(combat, *card_index)),
+                ("target_progress", target_progress_move_bonus(combat, *card_index, *target)),
+                ("posture", posture_move_bonus(combat, *card_index)),
+                ("gremlin_nob_penalty", gremlin_nob_skill_penalty(combat, card)),
+                ("slimed_cleanup", slimed_cleanup_move_bonus(combat, card)),
+                ("sharp_hide_penalty", sharp_hide_attack_penalty(combat, card, *target)),
+                ("slime_boss_split", slime_boss_split_timing_bonus(combat, card, *target)),
+                ("guardian_phase", guardian_phase_timing_bonus(combat, card, *target)),
+            ]
+            .into_iter()
+            .filter(|(_, value)| *value != 0.0)
+            .collect()
         }
-        _ => 0.0,
+        _ => Vec::new(),
     }
 }
 

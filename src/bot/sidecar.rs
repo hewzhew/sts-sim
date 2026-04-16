@@ -86,6 +86,7 @@ pub(crate) struct CombatShadowRecord {
     pub(crate) suggestion_confidence: Option<f32>,
     pub(crate) suggestion: Option<CombatRootSidecarSuggestion>,
     pub(crate) pressure: Option<CombatPressureSidecarSuggestion>,
+    pub(crate) decision_audit: Value,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -177,6 +178,7 @@ pub(crate) fn combat_shadow_json(
         suggestion_confidence,
         suggestion,
         pressure,
+        decision_audit: search.decision_audit.clone(),
     })
 }
 

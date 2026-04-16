@@ -16,6 +16,7 @@ use crate::runtime::combat::Intent;
 use crate::content::cards::{get_card_definition, CardId, CardType};
 use crate::content::potions::PotionId;
 use crate::state::core::ClientInput;
+use serde_json::{json, Value};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) struct StatePressureFeatures {
@@ -402,6 +403,100 @@ pub(crate) fn sequencing_assessment_for_input(
         growth_window: growth_window_available(combat, input),
     };
     Some(assess_turn_action(&sequencing, &risk, branch.as_ref()))
+}
+
+pub(crate) fn decision_audit_json(
+    combat: &CombatState,
+    input: &ClientInput,
+    has_safe_line: bool,
+) -> Value {
+    let pressure = StatePressureFeatures::from_combat(combat);
+    let tags = action_semantic_tags(combat, input);
+    let sequencing = sequencing_assessment_for_input(combat, input, has_safe_line);
+    let branch = branch_opening_estimate(
+        combat,
+        input,
+        &TurnRiskContext {
+            current_hp: combat.entities.player.current_hp,
+            unblocked_damage: pressure.value_unblocked,
+            defense_gap: pressure.value_unblocked,
+            lethal_pressure: pressure.lethal_pressure,
+            urgent_pressure: pressure.urgent_pressure,
+            current_energy: combat.turn.energy as i32,
+            remaining_actions: combat.zones.hand.len().saturating_sub(1) as i32,
+            has_safe_line,
+        },
+    );
+
+    json!({
+        "pressure": {
+            "visible_incoming": pressure.visible_incoming,
+            "visible_unblocked": pressure.visible_unblocked,
+            "belief_expected_incoming": pressure.belief_expected_incoming,
+            "belief_expected_unblocked": pressure.belief_expected_unblocked,
+            "belief_max_incoming": pressure.belief_max_incoming,
+            "belief_max_unblocked": pressure.belief_max_unblocked,
+            "value_incoming": pressure.value_incoming,
+            "value_unblocked": pressure.value_unblocked,
+            "survival_guard_incoming": pressure.survival_guard_incoming,
+            "survival_guard_unblocked": pressure.survival_guard_unblocked,
+            "lethal_pressure": pressure.lethal_pressure,
+            "urgent_pressure": pressure.urgent_pressure,
+            "hidden_intent_active": pressure.hidden_intent_active,
+            "attack_probability": pressure.attack_probability,
+            "lethal_probability": pressure.lethal_probability,
+            "urgent_probability": pressure.urgent_probability,
+            "encounter_risk": pressure.encounter_risk,
+        },
+        "semantic_tags": {
+            "attack_like": tags.attack_like,
+            "persistent_setup": tags.persistent_setup,
+            "defensive_potion": tags.defensive_potion,
+            "exhaust_engine": tags.exhaust_engine,
+            "exhaust_trigger": tags.exhaust_trigger,
+            "block_core": tags.block_core,
+            "draw_core": tags.draw_core,
+            "resource_bridge": tags.resource_bridge,
+            "role": format!("{:?}", tags.role),
+            "ordering_hint": format!("{:?}", tags.ordering_hint),
+            "chance_profile": format!("{:?}", tags.chance_profile),
+            "risk_profile": format!("{:?}", tags.risk_profile),
+            "ordering_constraint": tags.ordering_constraint.map(|constraint| format!("{:?}", constraint)),
+        },
+        "sequencing": sequencing.map(|assessment| {
+            json!({
+                "total_delta": assessment.total_delta(),
+                "frontload_bonus": assessment.frontload_bonus,
+                "defer_bonus": assessment.defer_bonus,
+                "branch_value": assessment.branch_value,
+                "downside_penalty": assessment.downside_penalty,
+                "rationale_key": empty_to_none(assessment.rationale_key),
+                "branch_rationale_key": empty_to_none(assessment.branch_rationale_key),
+                "downside_rationale_key": empty_to_none(assessment.downside_rationale_key),
+            })
+        }),
+        "branch_opening": branch.map(|estimate| {
+            json!({
+                "playable_hit_prob": estimate.playable_hit_prob,
+                "high_value_hit_prob": estimate.high_value_hit_prob,
+                "dead_draw_prob": estimate.dead_draw_prob,
+                "followup_energy_feasible": estimate.followup_energy_feasible,
+                "defensive_hit_prob": estimate.defensive_hit_prob,
+                "stabilizing_hit_prob": estimate.stabilizing_hit_prob,
+                "overdraw_risk": estimate.overdraw_risk,
+                "energy_strand_prob": estimate.energy_strand_prob,
+                "bad_branch_lethal_risk": estimate.bad_branch_lethal_risk,
+                "good_branch_escape_value": estimate.good_branch_escape_value,
+                "branch_family": format!("{:?}", estimate.branch_family),
+                "continuation_value": estimate.continuation_value,
+                "downside_value": estimate.downside_value,
+            })
+        }),
+    })
+}
+
+fn empty_to_none(value: &'static str) -> Option<&'static str> {
+    (!value.is_empty()).then_some(value)
 }
 
 pub(super) fn sequencing_order_bonus(

@@ -1,3 +1,4 @@
+mod combat_trace;
 mod curiosity;
 mod decision_audit;
 mod equivalence;

@@ -79,6 +79,7 @@ pub struct SearchDiagnostics {
     pub root_prior_hits: usize,
     pub root_prior_reordered: bool,
     pub top_moves: Vec<SearchMoveStat>,
+    pub decision_audit: serde_json::Value,
     pub profile: SearchProfileBreakdown,
 }
 
@@ -331,6 +332,11 @@ fn run_root_search(
             root_prior_hits: 0,
             root_prior_reordered: false,
             top_moves: Vec::new(),
+            decision_audit: super::combat_trace::build_decision_audit(
+                engine,
+                combat,
+                &ClientInput::EndTurn,
+            ),
             profile: profiler.finish(),
         };
     }
@@ -430,6 +436,7 @@ fn run_root_search(
         .unwrap_or_else(|| ranked.transitions[0].input.clone());
 
     profiler.record_search_total_ms(started.elapsed().as_millis());
+    let decision_audit = super::combat_trace::build_decision_audit(engine, combat, &chosen_move);
     SearchDiagnostics {
         chosen_move,
         legal_moves: legal_moves.len(),
@@ -448,6 +455,7 @@ fn run_root_search(
         root_prior_hits: ranked.root_prior_hits,
         root_prior_reordered: ranked.root_prior_reordered,
         top_moves,
+        decision_audit,
         profile: profiler.finish(),
     }
 }

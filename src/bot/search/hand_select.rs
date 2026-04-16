@@ -16,6 +16,9 @@ use crate::bot::combat_families::survival::{
 use crate::runtime::combat::CombatState;
 use crate::content::cards::{get_card_definition, CardId, CardType};
 use crate::content::relics::RelicId;
+use crate::state::core::{ClientInput, GridSelectReason, HandSelectReason, PendingChoice};
+use crate::state::EngineState;
+use serde_json::{json, Value};
 
 pub(super) fn score_put_on_draw_pile_candidate(combat: &CombatState, uuid: u32) -> i32 {
     let Some(card) = combat.zones.hand.iter().find(|c| c.uuid == uuid) else {
@@ -231,10 +234,154 @@ pub(super) fn score_discard_to_hand_candidate(combat: &CombatState, uuid: u32) -
     score
 }
 
+pub(crate) fn decision_audit_json(
+    engine: &EngineState,
+    combat: &CombatState,
+    chosen_input: &ClientInput,
+) -> Option<Value> {
+    match engine {
+        EngineState::PendingChoice(PendingChoice::HandSelect {
+            min_cards,
+            max_cards,
+            candidate_uuids,
+            reason,
+            ..
+        }) => Some(json!({
+            "selection_kind": "hand_select",
+            "reason": format!("{:?}", reason),
+            "min_cards": min_cards,
+            "max_cards": max_cards,
+            "chosen_uuids": match chosen_input {
+                ClientInput::SubmitHandSelect(selected) => selected.clone(),
+                _ => Vec::<u32>::new(),
+            },
+            "top_candidates": build_hand_select_candidates(combat, candidate_uuids, *reason, chosen_input),
+        })),
+        EngineState::PendingChoice(PendingChoice::GridSelect {
+            min_cards,
+            max_cards,
+            candidate_uuids,
+            reason,
+            ..
+        }) => Some(json!({
+            "selection_kind": "grid_select",
+            "reason": format!("{:?}", reason),
+            "min_cards": min_cards,
+            "max_cards": max_cards,
+            "chosen_uuids": match chosen_input {
+                ClientInput::SubmitGridSelect(selected) => selected.clone(),
+                _ => Vec::<u32>::new(),
+            },
+            "top_candidates": build_grid_select_candidates(combat, candidate_uuids, *reason, chosen_input),
+        })),
+        _ => None,
+    }
+}
+
 fn total_incoming_damage(combat: &CombatState) -> i32 {
     build_combat_belief_state(combat)
         .expected_incoming_damage
         .round() as i32
+}
+
+fn build_hand_select_candidates(
+    combat: &CombatState,
+    candidate_uuids: &[u32],
+    reason: HandSelectReason,
+    chosen_input: &ClientInput,
+) -> Vec<Value> {
+    let chosen = match chosen_input {
+        ClientInput::SubmitHandSelect(selected) => selected.as_slice(),
+        _ => &[],
+    };
+    let mut candidates = candidate_uuids
+        .iter()
+        .filter_map(|uuid| {
+            combat
+                .zones
+                .hand
+                .iter()
+                .find(|card| card.uuid == *uuid)
+                .map(|card| {
+                    let score = match reason {
+                        HandSelectReason::PutOnDrawPile | HandSelectReason::PutToBottomOfDraw => {
+                            score_put_on_draw_pile_candidate(combat, *uuid)
+                        }
+                        HandSelectReason::Exhaust => score_exhaust_candidate(combat, *uuid),
+                        HandSelectReason::Discard | HandSelectReason::GamblingChip => {
+                            score_discard_candidate(combat, *uuid)
+                        }
+                        HandSelectReason::Copy { .. } => {
+                            crate::bot::card_disposition::combat_copy_score_for_uuid(combat, *uuid)
+                        }
+                        HandSelectReason::Retain | HandSelectReason::Upgrade => {
+                            crate::bot::card_disposition::combat_retention_score_for_uuid(combat, *uuid)
+                        }
+                    };
+                    json!({
+                        "uuid": uuid,
+                        "card_id": format!("{:?}", card.id),
+                        "label": get_card_definition(card.id).name,
+                        "score": score,
+                        "chosen": chosen.contains(uuid),
+                    })
+                })
+        })
+        .collect::<Vec<_>>();
+    candidates.sort_by(|lhs, rhs| {
+        let lhs_score = lhs["score"].as_i64().unwrap_or(i64::MIN);
+        let rhs_score = rhs["score"].as_i64().unwrap_or(i64::MIN);
+        rhs_score.cmp(&lhs_score)
+    });
+    candidates.truncate(8);
+    candidates
+}
+
+fn build_grid_select_candidates(
+    combat: &CombatState,
+    candidate_uuids: &[u32],
+    reason: GridSelectReason,
+    chosen_input: &ClientInput,
+) -> Vec<Value> {
+    let chosen = match chosen_input {
+        ClientInput::SubmitGridSelect(selected) => selected.as_slice(),
+        _ => &[],
+    };
+    let mut candidates = candidate_uuids
+        .iter()
+        .filter_map(|uuid| {
+            combat
+                .zones
+                .discard_pile
+                .iter()
+                .chain(combat.zones.hand.iter())
+                .chain(combat.zones.draw_pile.iter())
+                .find(|card| card.uuid == *uuid)
+                .map(|card| {
+                    let score = match reason {
+                        GridSelectReason::DiscardToHand => score_discard_to_hand_candidate(combat, *uuid),
+                        GridSelectReason::MoveToDrawPile
+                        | GridSelectReason::Exhume { .. }
+                        | GridSelectReason::SkillFromDeckToHand
+                        | GridSelectReason::AttackFromDeckToHand => 0,
+                    };
+                    json!({
+                        "uuid": uuid,
+                        "card_id": format!("{:?}", card.id),
+                        "label": get_card_definition(card.id).name,
+                        "score": score,
+                        "chosen": chosen.contains(uuid),
+                    })
+                })
+        })
+        .collect::<Vec<_>>();
+    candidates.sort_by(|lhs, rhs| {
+        let lhs_score = lhs["score"].as_i64().unwrap_or(i64::MIN);
+        let rhs_score = rhs["score"].as_i64().unwrap_or(i64::MIN);
+        rhs_score.cmp(&lhs_score)
+    });
+    candidates.truncate(8);
+    candidates
 }
 
 fn topdeck_badness_for_card(
