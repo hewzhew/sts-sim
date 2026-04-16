@@ -283,7 +283,8 @@ fn recommended_source_files(family: &FindingsFamily) -> Vec<&'static str> {
         || has_event_label("shop")
     {
         push("src/cli/live_comm_noncombat.rs");
-        push("src/bot/agent_run_policy.rs");
+        push("src/bot/card_knowledge.rs");
+        push("src/bot/noncombat_families/shop.rs");
         push("../CommunicationMod/src/main/java/communicationmod/GameStateConverter.java");
     }
 

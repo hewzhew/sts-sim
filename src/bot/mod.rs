@@ -1,7 +1,7 @@
 mod agent;
 mod agent_curiosity;
 mod agent_deck_ops;
-pub(crate) mod agent_run_policy;
+pub(crate) mod card_knowledge;
 pub(crate) mod card_disposition;
 pub(crate) mod card_taxonomy;
 mod combat_heuristic;

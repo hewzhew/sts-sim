@@ -3,6 +3,7 @@ use std::sync::OnceLock;
 
 use serde::Deserialize;
 
+use crate::bot::card_knowledge;
 use crate::bot::evaluator::CardEvaluator;
 use crate::bot::noncombat_families::{
     build_noncombat_need_snapshot_for_run, build_shop_need_profile_for_run,
@@ -203,7 +204,7 @@ fn adjusted_reward_local_score(
     let raw = CardEvaluator::evaluate_card(card_id, run_state);
     let capped = if raw < -200 { -120 } else { raw };
     capped
-        + reward_shell_bonus(card_id, profile)
+        + card_knowledge::reward_shell_bonus(card_id, profile)
         + reward_stage_adjustment(card_id, run_state, profile)
         + reward_need_adjustment(card_id, run_state, profile, need, shop_need)
 }
@@ -276,59 +277,6 @@ fn reward_need_adjustment(
     }
 
     adj
-}
-
-fn reward_shell_bonus(card_id: CardId, profile: &crate::bot::evaluator::DeckProfile) -> i32 {
-    match card_id {
-        CardId::LimitBreak if profile.strength_enablers >= 1 => 18,
-        CardId::Inflame | CardId::SpotWeakness | CardId::DemonForm
-            if profile.strength_payoffs >= 2 =>
-        {
-            12
-        }
-        CardId::HeavyBlade | CardId::SwordBoomerang | CardId::Pummel | CardId::Whirlwind
-            if profile.strength_enablers >= 2 =>
-        {
-            8
-        }
-        CardId::Corruption | CardId::FeelNoPain | CardId::DarkEmbrace
-            if profile.exhaust_outlets >= 1 || profile.exhaust_fodder >= 1 =>
-        {
-            16
-        }
-        CardId::DarkEmbrace
-            if profile.exhaust_engines >= 1
-                || (profile.exhaust_outlets >= 1 && profile.draw_sources >= 1) =>
-        {
-            14
-        }
-        CardId::SecondWind | CardId::BurningPact | CardId::SeverSoul | CardId::FiendFire
-            if profile.exhaust_engines >= 2 =>
-        {
-            10
-        }
-        CardId::BurningPact
-            if profile.exhaust_engines >= 1
-                || (profile.exhaust_outlets >= 1 && profile.exhaust_fodder >= 1) =>
-        {
-            14
-        }
-        CardId::Offering if profile.exhaust_engines >= 1 || profile.draw_sources >= 2 => 10,
-        CardId::Armaments
-            if profile.power_scalers >= 1
-                || profile.block_core >= 2
-                || (profile.exhaust_engines >= 1 && profile.draw_sources >= 1) =>
-        {
-            10
-        }
-        CardId::Barricade | CardId::Entrench if profile.block_core >= 3 => 16,
-        CardId::BodySlam | CardId::FlameBarrier | CardId::Impervious
-            if profile.block_payoffs >= 1 =>
-        {
-            10
-        }
-        _ => 0,
-    }
 }
 
 fn reward_stage_adjustment(
@@ -558,7 +506,7 @@ fn should_force_pick_for_shell(
 ) -> bool {
     offered_cards
         .iter()
-        .any(|&card_id| reward_shell_bonus(card_id, profile) >= 14)
+        .any(|&card_id| card_knowledge::reward_shell_bonus(card_id, profile) >= 14)
 }
 
 pub fn pick_probability(card_id: CardId) -> f32 {

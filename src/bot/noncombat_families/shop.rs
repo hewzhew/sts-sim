@@ -1,5 +1,5 @@
 use crate::bot::agent::Agent;
-use crate::bot::noncombat_families::model::ShopNeedProfile;
+use crate::bot::card_knowledge;
 use crate::state::core::ClientInput;
 use crate::state::run::RunState;
 
@@ -359,11 +359,16 @@ impl Agent {
         let shop_need = self.build_shop_need_profile(rs);
         let mut score = crate::bot::evaluator::CardEvaluator::evaluate_card(card_id, rs);
         let delta = crate::bot::deck_delta_eval::compare_pick_vs_skip(rs, card_id);
-        if self.is_high_value_tactical_card(card_id) {
+        if card_knowledge::is_high_value_tactical_card(card_id) {
             score += 15;
         }
-        score += self.shop_shell_card_bonus(card_id, &profile);
-        score += self.shop_deficit_card_bonus(rs, card_id, &profile, &shop_need);
+        score += card_knowledge::shop_shell_bonus(card_id, &profile);
+        score += card_knowledge::shop_need_bonus(
+            card_id,
+            &profile,
+            &shop_need,
+            self.searing_blow_plan_score(rs, &profile),
+        );
         score += shop_delta_priority_bonus(delta);
         if let Some(target) = self.curiosity_archetype_target() {
             score += self.archetype_card_bonus(card_id, target);
@@ -422,8 +427,10 @@ impl Agent {
     ) -> i32 {
         let profile = crate::bot::evaluator::CardEvaluator::deck_profile(rs);
         let shop_need = self.build_shop_need_profile(rs);
-        let shell_bonus = self.shop_shell_card_bonus(card_id, &profile);
-        let deficit_bonus = self.shop_deficit_card_bonus(rs, card_id, &profile, &shop_need);
+        let searing_plan = self.searing_blow_plan_score(rs, &profile);
+        let shell_bonus = card_knowledge::shop_shell_bonus(card_id, &profile);
+        let deficit_bonus =
+            card_knowledge::shop_need_bonus(card_id, &profile, &shop_need, searing_plan);
         let mut score = self.shop_card_score(rs, card_id);
         score = self.shop_purchase_score(rs, shop, price, score, ShopPurchaseKind::Card);
         if shell_bonus + deficit_bonus < 16 {
@@ -498,103 +505,6 @@ impl Agent {
             reserve = reserve.max(shop.purge_cost);
         }
         reserve.min(rs.gold)
-    }
-
-    pub(crate) fn shop_shell_card_bonus(
-        &self,
-        card_id: crate::content::cards::CardId,
-        profile: &crate::bot::evaluator::DeckProfile,
-    ) -> i32 {
-        use crate::content::cards::CardId;
-
-        match card_id {
-            CardId::LimitBreak if profile.strength_enablers >= 1 => 18,
-            CardId::Inflame | CardId::SpotWeakness | CardId::DemonForm
-                if profile.strength_payoffs >= 2 =>
-            {
-                12
-            }
-            CardId::HeavyBlade | CardId::SwordBoomerang | CardId::Pummel | CardId::Whirlwind
-                if profile.strength_enablers >= 2 =>
-            {
-                8
-            }
-            CardId::Corruption | CardId::FeelNoPain | CardId::DarkEmbrace
-                if profile.exhaust_outlets >= 1 || profile.exhaust_fodder >= 1 =>
-            {
-                18
-            }
-            CardId::SecondWind | CardId::BurningPact | CardId::SeverSoul | CardId::FiendFire
-                if profile.exhaust_engines >= 2 =>
-            {
-                10
-            }
-            CardId::Barricade | CardId::Entrench if profile.block_core >= 3 => 16,
-            CardId::BodySlam | CardId::FlameBarrier | CardId::Impervious
-                if profile.block_payoffs >= 1 =>
-            {
-                10
-            }
-            _ => 0,
-        }
-    }
-
-    pub(crate) fn shop_deficit_card_bonus(
-        &self,
-        rs: &RunState,
-        card_id: crate::content::cards::CardId,
-        profile: &crate::bot::evaluator::DeckProfile,
-        shop_need: &ShopNeedProfile,
-    ) -> i32 {
-        use crate::content::cards::CardId;
-
-        let mut bonus = 0;
-        let searing_plan = self.searing_blow_plan_score(rs, profile);
-
-        if shop_need.damage_gap > 0 {
-            bonus += match card_id {
-                CardId::Hemokinesis => 24 + shop_need.damage_gap / 3,
-                CardId::Carnage => 20 + shop_need.damage_gap / 4,
-                CardId::Pummel | CardId::Whirlwind => 18 + shop_need.damage_gap / 5,
-                CardId::SearingBlow => 20 + shop_need.damage_gap / 4,
-                CardId::Immolate => 22 + shop_need.damage_gap / 4,
-                CardId::Uppercut => 8 + shop_need.damage_gap / 6,
-                _ => 0,
-            };
-        }
-        if shop_need.block_gap > 0 {
-            bonus += match card_id {
-                CardId::ShrugItOff => 14 + shop_need.block_gap / 3,
-                CardId::FlameBarrier => 16 + shop_need.block_gap / 3,
-                CardId::GhostlyArmor => 12 + shop_need.block_gap / 4,
-                CardId::Impervious => 20 + shop_need.block_gap / 3,
-                CardId::PowerThrough => 10 + shop_need.block_gap / 4,
-                CardId::Disarm => 8 + shop_need.block_gap / 6,
-                _ => 0,
-            };
-        }
-        if shop_need.control_gap > 0 {
-            bonus += match card_id {
-                CardId::Disarm => 16 + shop_need.control_gap / 3,
-                CardId::Shockwave => 16 + shop_need.control_gap / 3,
-                CardId::Uppercut => 12 + shop_need.control_gap / 4,
-                CardId::Clothesline => 8 + shop_need.control_gap / 5,
-                _ => 0,
-            };
-        }
-        if searing_plan > 0 {
-            bonus += match card_id {
-                CardId::SearingBlow => 40 + profile.searing_blow_upgrades * 10,
-                CardId::Armaments => 18,
-                CardId::Offering => 18,
-                CardId::BattleTrance | CardId::Headbutt | CardId::SeeingRed => 12,
-                CardId::ShrugItOff => 8,
-                CardId::DoubleTap => 10,
-                _ => 0,
-            };
-        }
-
-        bonus
     }
 }
 
