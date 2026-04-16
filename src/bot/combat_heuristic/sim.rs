@@ -1,8 +1,8 @@
 use crate::bot::monster_belief::build_combat_belief_state;
-use crate::runtime::combat::{CombatState, Intent, PowerId};
 use crate::content::cards::{get_card_definition, CardId, CardTarget, CardType};
 use crate::content::monsters::EnemyId;
 use crate::content::relics::RelicId;
+use crate::runtime::combat::{CombatState, Intent, PowerId};
 
 const MAX_HAND: usize = 12;
 pub(super) const MAX_STATES: usize = 50_000;

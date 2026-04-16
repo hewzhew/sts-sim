@@ -1,6 +1,6 @@
-use crate::runtime::action::Action;
 use crate::content::powers::PowerId;
 use crate::core::EntityId;
+use crate::runtime::action::Action;
 
 pub fn on_calculate_damage_received_from_attack(_damage: i32, amount: i32) -> i32 {
     // Intangible caps attack damage received to 1

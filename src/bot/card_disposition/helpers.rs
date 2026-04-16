@@ -1,5 +1,5 @@
-use crate::runtime::combat::{CombatCard, CombatState, Intent};
 use crate::content::cards::{self, CardId, CardType};
+use crate::runtime::combat::{CombatCard, CombatState, Intent};
 
 pub(super) fn total_incoming_damage(combat: &CombatState) -> i32 {
     combat

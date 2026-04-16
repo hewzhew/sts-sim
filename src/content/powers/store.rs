@@ -1,5 +1,5 @@
-use crate::runtime::combat::{CombatState, Power, PowerId};
 use crate::core::EntityId;
+use crate::runtime::combat::{CombatState, Power, PowerId};
 
 pub fn powers_for(state: &CombatState, entity: EntityId) -> Option<&[Power]> {
     state.entities.power_db.get(&entity).map(Vec::as_slice)

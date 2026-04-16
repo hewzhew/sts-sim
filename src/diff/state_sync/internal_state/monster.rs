@@ -44,11 +44,9 @@ pub fn seed_monster_internal_state_from_snapshot(
             continue;
         }
 
-        let Some(source_amount) = monster_internal_seed_amount(
-            policy.monster_type,
-            policy.power_type,
-            snapshot_monster,
-        ) else {
+        let Some(source_amount) =
+            monster_internal_seed_amount(policy.monster_type, policy.power_type, snapshot_monster)
+        else {
             continue;
         };
 
@@ -73,9 +71,9 @@ pub fn sync_monster_internal_state_from_snapshot(
 }
 
 fn runtime_state<'a>(snapshot_monster: &'a Value, monster_type: EnemyId) -> &'a Value {
-    snapshot_monster
-        .get("runtime_state")
-        .unwrap_or_else(|| panic!("strict state_sync: monster.runtime_state missing for {monster_type:?}"))
+    snapshot_monster.get("runtime_state").unwrap_or_else(|| {
+        panic!("strict state_sync: monster.runtime_state missing for {monster_type:?}")
+    })
 }
 
 fn runtime_state_i32(snapshot_monster: &Value, monster_type: EnemyId, key: &str) -> i32 {
@@ -84,9 +82,7 @@ fn runtime_state_i32(snapshot_monster: &Value, monster_type: EnemyId, key: &str)
         .and_then(|value| value.as_i64())
         .map(|value| value as i32)
         .unwrap_or_else(|| {
-            panic!(
-                "strict state_sync: monster.runtime_state.{key} missing for {monster_type:?}"
-            )
+            panic!("strict state_sync: monster.runtime_state.{key} missing for {monster_type:?}")
         })
 }
 
@@ -96,10 +92,16 @@ fn monster_internal_seed_amount(
     snapshot_monster: &Value,
 ) -> Option<i32> {
     match power_type {
-        PowerId::GuardianThreshold => {
-            Some(runtime_state_i32(snapshot_monster, monster_type, "guardian_threshold"))
-        }
-        PowerId::Angry => Some(runtime_state_i32(snapshot_monster, monster_type, "angry_amount")),
+        PowerId::GuardianThreshold => Some(runtime_state_i32(
+            snapshot_monster,
+            monster_type,
+            "guardian_threshold",
+        )),
+        PowerId::Angry => Some(runtime_state_i32(
+            snapshot_monster,
+            monster_type,
+            "angry_amount",
+        )),
         _ => None,
     }
 }

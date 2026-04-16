@@ -1,7 +1,7 @@
-use crate::runtime::action::Action;
-use crate::runtime::combat::CombatState;
 use crate::content::powers::PowerId;
 use crate::core::EntityId;
+use crate::runtime::action::Action;
+use crate::runtime::combat::CombatState;
 
 pub fn on_monster_turn_ended(
     _state: &CombatState,

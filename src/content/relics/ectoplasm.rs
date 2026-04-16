@@ -1,6 +1,6 @@
+use crate::content::relics::RelicState;
 use crate::runtime::action::ActionInfo;
 use crate::runtime::combat::CombatState;
-use crate::content::relics::RelicState;
 use smallvec::SmallVec;
 
 /// Ectoplasm

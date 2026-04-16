@@ -1,12 +1,40 @@
 use super::combat::build_live_combat_snapshot;
 use super::unix_time_millis;
-use crate::runtime::action::CardDestination;
 use crate::cli::live_comm_noncombat::build_live_run_state;
-use crate::runtime::combat::CombatState;
 use crate::diff::protocol::card_id_from_java;
+use crate::runtime::action::CardDestination;
+use crate::runtime::combat::CombatState;
 use crate::state::core::{ClientInput, EngineState, PendingChoice};
 use serde_json::{json, Map, Value};
 use std::io::Write;
+
+pub(super) fn reward_deck_improvement_summary(
+    evaluation: &crate::bot::RewardScreenEvaluation,
+    chosen_choice: Option<usize>,
+) -> Option<String> {
+    let fallback_idx = evaluation
+        .offered_cards
+        .iter()
+        .enumerate()
+        .max_by(|(_, lhs), (_, rhs)| lhs.combined_score.total_cmp(&rhs.combined_score))
+        .map(|(idx, _)| idx)?;
+    let target_idx = chosen_choice
+        .or(evaluation.recommended_choice)
+        .unwrap_or(fallback_idx);
+    let card = evaluation.offered_cards.get(target_idx)?;
+    Some(format!(
+        "{} {:?} {}",
+        if chosen_choice.is_none() {
+            "skip_vs"
+        } else {
+            "pick"
+        },
+        card.card_id,
+        crate::bot::run_deck_improvement::deck_operation_focus_summary(
+            &card.deck_improvement_assessment
+        )
+    ))
+}
 
 pub(super) struct PendingHumanCardRewardAudit {
     pub(super) session_id: Option<String>,
@@ -104,8 +132,7 @@ pub(super) fn build_human_card_reward_pending(
         return None;
     }
 
-    let evaluation =
-        crate::bot::evaluate_reward_screen_for_run_detailed(&offered_ids, &rs);
+    let evaluation = crate::bot::evaluate_reward_screen_for_run_detailed(&offered_ids, &rs);
     let meta = root.get("protocol_meta");
     let mut payload = Map::new();
     payload.insert("logged_at_unix_ms".to_string(), json!(unix_time_millis()));
@@ -346,8 +373,7 @@ pub(super) fn emit_bot_card_reward_audit(
         return;
     }
 
-    let evaluation =
-        crate::bot::evaluate_reward_screen_for_run_detailed(&offered_ids, &rs);
+    let evaluation = crate::bot::evaluate_reward_screen_for_run_detailed(&offered_ids, &rs);
     let chosen_choice = parse_bot_reward_choice(command);
     let payload = json!({
         "kind": "bot_reward_decision",
@@ -576,9 +602,7 @@ fn apply_human_card_reward_to_prediction(
     true
 }
 
-fn reward_screen_evaluation_to_json(
-    evaluation: &crate::bot::RewardScreenEvaluation,
-) -> Value {
+fn reward_screen_evaluation_to_json(evaluation: &crate::bot::RewardScreenEvaluation) -> Value {
     let cards = evaluation
         .offered_cards
         .iter()
@@ -589,12 +613,14 @@ fn reward_screen_evaluation_to_json(
                 "local_score": card.local_score,
                 "delta_suite": format!("{:?}", card.delta_suite),
                 "delta_prior": card.delta_prior,
+                "delta_prior_rationale_key": card.delta_prior_rationale_key,
                 "delta_bias": card.delta_bias,
                 "delta_rollout": card.delta_rollout,
                 "delta_context": card.delta_context,
                 "delta_context_rationale_key": card.delta_context_rationale_key,
                 "delta_rule_context_summary": card.delta_rule_context_summary,
                 "delta_score": card.delta_score,
+                "deck_improvement_assessment": crate::bot::run_deck_improvement::deck_operation_assessment_json(&card.deck_improvement_assessment),
                 "combined_score": card.combined_score
             })
         })

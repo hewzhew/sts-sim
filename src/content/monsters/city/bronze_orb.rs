@@ -1,6 +1,6 @@
+use crate::content::monsters::{EnemyId, MonsterBehavior};
 use crate::runtime::action::{Action, DamageInfo, DamageType};
 use crate::runtime::combat::{CombatState, Intent};
-use crate::content::monsters::{EnemyId, MonsterBehavior};
 
 pub struct BronzeOrb;
 

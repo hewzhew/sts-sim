@@ -3049,10 +3049,10 @@ pub fn get_card_definition(id: CardId) -> CardDefinition {
     }
 }
 
-use crate::runtime::action::{Action, ActionInfo};
-use crate::runtime::combat::{CombatCard, CombatState};
 use crate::content::powers::PowerId;
 use crate::core::EntityId;
+use crate::runtime::action::{Action, ActionInfo};
+use crate::runtime::combat::{CombatCard, CombatState};
 use smallvec::SmallVec;
 
 /// Central dispatch table for resolving card play mechanics.
@@ -3156,13 +3156,13 @@ pub fn resolve_card_play(
                 actions.push(ActionInfo {
                     action: crate::runtime::action::Action::Damage(
                         crate::runtime::action::DamageInfo {
-                        source: _card.uuid as usize,
-                        target: t,
-                        base: def.base_damage,
-                        output: _card.base_damage_mut,
-                        damage_type: crate::runtime::action::DamageType::Normal,
-                        is_modified: _card.base_damage_mut != def.base_damage,
-                    },
+                            source: _card.uuid as usize,
+                            target: t,
+                            base: def.base_damage,
+                            output: _card.base_damage_mut,
+                            damage_type: crate::runtime::action::DamageType::Normal,
+                            is_modified: _card.base_damage_mut != def.base_damage,
+                        },
                     ),
                     insertion_mode: crate::runtime::action::AddTo::Bottom,
                 });

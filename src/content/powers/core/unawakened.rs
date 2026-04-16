@@ -1,5 +1,5 @@
-use crate::runtime::action::Action;
 use crate::core::EntityId;
+use crate::runtime::action::Action;
 
 pub fn on_death(owner: EntityId, _amount: i32) -> smallvec::SmallVec<[Action; 2]> {
     let mut actions = smallvec::SmallVec::new();

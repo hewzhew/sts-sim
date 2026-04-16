@@ -4,11 +4,11 @@ use crate::bot::monster_belief::{
     build_combat_belief_state, CombatBeliefState, MonsterBeliefCertainty,
 };
 use crate::bot::search::{legal_moves_for_audit, StatePressureFeatures};
-use crate::runtime::combat::{CombatCard, CombatPhase, CombatState};
 use crate::content::cards::{can_play_card, effective_target, get_card_definition};
 use crate::core::EntityId;
 use crate::engine::core::tick_until_stable_turn;
 use crate::engine::targeting;
+use crate::runtime::combat::{CombatCard, CombatPhase, CombatState};
 use crate::state::core::{ClientInput, EngineState, PendingChoice};
 
 use crate::testing::fixtures::combat_start_spec::CombatStartSpec;

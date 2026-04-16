@@ -1,6 +1,6 @@
+use crate::core::EntityId;
 use crate::runtime::action::Action;
 use crate::runtime::combat::{CombatCard, CombatState};
-use crate::core::EntityId;
 
 // Confusion randomizes card costs when drawn.
 pub fn on_card_draw(state: &mut CombatState, card: &mut CombatCard) {

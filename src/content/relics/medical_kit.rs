@@ -1,6 +1,6 @@
+use crate::content::cards::CardId;
 use crate::runtime::action::ActionInfo;
 use crate::runtime::combat::CombatState;
-use crate::content::cards::CardId;
 use smallvec::SmallVec;
 
 /// Medical Kit: Status cards can now be played. Playing a Status will Exhaust the card.

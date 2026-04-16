@@ -106,9 +106,10 @@ impl LiveCommIo {
         .unwrap();
         writeln!(
             log,
-            "[CONFIG] human_card_reward_audit={} human_boss_combat_handoff={} watch_capture_enabled={} watch_match_mode={:?} watch_cards={:?} watch_relics={:?} watch_powers={:?} watch_monsters={:?} watch_screens={:?} watch_room_phases={:?} watch_command_kinds={:?} watch_window={} watch_dedupe_window={} watch_max={} watch_out_dir={}",
+            "[CONFIG] human_card_reward_audit={} human_boss_combat_handoff={} fail_fast_debug={} watch_capture_enabled={} watch_match_mode={:?} watch_cards={:?} watch_relics={:?} watch_powers={:?} watch_monsters={:?} watch_screens={:?} watch_room_phases={:?} watch_command_kinds={:?} watch_window={} watch_dedupe_window={} watch_max={} watch_out_dir={}",
             config.human_card_reward_audit,
             config.human_boss_combat_handoff,
+            config.fail_fast_debug,
             config.watch_capture.enabled(),
             config.watch_capture.match_mode,
             config.watch_capture.cards,
@@ -246,6 +247,10 @@ impl LiveCommIo {
             super::LoopExitReason::ParityFail => {
                 let _ = writeln!(self.log, "=== Loop exited: PARITY_FAIL ===");
                 let _ = writeln!(self.focus_log, "=== Loop exited: PARITY_FAIL ===");
+            }
+            super::LoopExitReason::FailFast => {
+                let _ = writeln!(self.log, "=== Loop exited: FAIL_FAST ===");
+                let _ = writeln!(self.focus_log, "=== Loop exited: FAIL_FAST ===");
             }
             super::LoopExitReason::StdinError => {
                 let _ = writeln!(self.log, "=== Loop exited: STDIN_ERROR ===");
@@ -407,6 +412,7 @@ fn loop_exit_reason_string(reason: &super::LoopExitReason) -> &'static str {
     match reason {
         super::LoopExitReason::GameOver => "GAME_OVER",
         super::LoopExitReason::ParityFail => "PARITY_FAIL",
+        super::LoopExitReason::FailFast => "FAIL_FAST",
         super::LoopExitReason::StdinError => "STDIN_ERROR",
         super::LoopExitReason::StdinEof => "STDIN_EOF",
     }

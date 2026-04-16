@@ -1,7 +1,7 @@
-use crate::runtime::action::Action;
-use crate::runtime::combat::{CombatCard, CombatState, QueuedCardPlay, QueuedCardSource};
 use crate::content::powers::store;
 use crate::content::powers::PowerId;
+use crate::runtime::action::Action;
+use crate::runtime::combat::{CombatCard, CombatState, QueuedCardPlay, QueuedCardSource};
 
 pub fn on_use_card(state: &mut CombatState, card: &CombatCard, purge: bool, target: Option<usize>) {
     if purge

@@ -7,8 +7,8 @@ use crate::bot::card_disposition::{build_context, classify_hand_card_with_contex
 use crate::bot::combat_heuristic::{self, HeuristicDiagnostics};
 use crate::bot::combat_posture::posture_features;
 use crate::bot::search;
-use crate::runtime::combat::{CombatState, Intent};
 use crate::content::cards::{get_card_definition, CardType};
+use crate::runtime::combat::{CombatState, Intent};
 use crate::state::core::{ClientInput, EngineState};
 use crate::state::run::RunState;
 

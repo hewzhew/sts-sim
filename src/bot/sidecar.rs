@@ -1,6 +1,6 @@
+use crate::bot::search::SearchDiagnostics;
 use crate::bot::DecisionMetadata;
 use crate::bot::RewardScreenEvaluation;
-use crate::bot::search::SearchDiagnostics;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::io::Write;
@@ -195,6 +195,7 @@ pub(crate) fn noncombat_decision_shadow_json(
         crate::bot::DecisionDomain::RewardClaim => "reward_claim",
         crate::bot::DecisionDomain::Shop => "shop",
         crate::bot::DecisionDomain::Event => "event",
+        crate::bot::DecisionDomain::DeckImprovement => "deck_improvement",
         crate::bot::DecisionDomain::LegacyInput => "legacy_input",
     };
     json!(NoncombatDecisionShadowRecord {
@@ -221,12 +222,14 @@ fn reward_screen_evaluation_json(evaluation: &RewardScreenEvaluation) -> Value {
                 "local_score": card.local_score,
                 "delta_suite": format!("{:?}", card.delta_suite),
                 "delta_prior": card.delta_prior,
+                "delta_prior_rationale_key": card.delta_prior_rationale_key,
                 "delta_bias": card.delta_bias,
                 "delta_rollout": card.delta_rollout,
                 "delta_context": card.delta_context,
                 "delta_context_rationale_key": card.delta_context_rationale_key,
                 "delta_rule_context_summary": card.delta_rule_context_summary,
                 "delta_score": card.delta_score,
+                "deck_improvement_assessment": crate::bot::run_deck_improvement::deck_operation_assessment_json(&card.deck_improvement_assessment),
                 "combined_score": card.combined_score
             })
         })

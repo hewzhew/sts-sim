@@ -15,5 +15,4 @@ pub struct DeckContext {
     pub has_molten_egg: bool,
     pub has_toxic_egg: bool,
     pub has_frozen_egg: bool,
-
 }

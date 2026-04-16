@@ -1,6 +1,6 @@
+use crate::content::monsters::MonsterBehavior;
 use crate::runtime::action::{Action, DamageInfo, DamageType};
 use crate::runtime::combat::{Intent, MonsterEntity};
-use crate::content::monsters::MonsterBehavior;
 
 pub struct SpireSpear;
 

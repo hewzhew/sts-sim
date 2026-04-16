@@ -128,10 +128,7 @@ pub fn handle(
 /// Java stores the card UUID in the relic's `misc` field; our RelicState uses `amount` for this.
 /// For now: RelicState.amount stores the bottled card's UUID.
 /// A value of 0 means no card is bottled (since UUIDs start at 1).
-fn is_card_bottled(
-    card: &crate::runtime::combat::CombatCard,
-    relics: &[RelicState],
-) -> bool {
+fn is_card_bottled(card: &crate::runtime::combat::CombatCard, relics: &[RelicState]) -> bool {
     if card.uuid == 0 {
         return false;
     } // UUID 0 = not a real bottled target

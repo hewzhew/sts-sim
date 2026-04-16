@@ -9,7 +9,9 @@ use serde_json::Value;
 use std::any::Any;
 use std::panic::{catch_unwind, resume_unwind, AssertUnwindSafe};
 use sts_simulator::diff::protocol::parse_replay;
-use sts_simulator::diff::replay::{compare_states, continue_deferred_pending_choice, tick_until_stable};
+use sts_simulator::diff::replay::{
+    compare_states, continue_deferred_pending_choice, tick_until_stable,
+};
 use sts_simulator::diff::state_sync::{build_combat_state, sync_state};
 use sts_simulator::state::core::{ClientInput, EngineState};
 
@@ -84,7 +86,8 @@ fn test_diff_all_combats() {
             total_actions += 1;
 
             // Sync state from Java's PREVIOUS snapshot (what state was before this action)
-            if let Err(message) = catch_strict_state_sync_panic(|| sync_state(&mut cs, &prev_snapshot))
+            if let Err(message) =
+                catch_strict_state_sync_panic(|| sync_state(&mut cs, &prev_snapshot))
             {
                 total_skip += combat.actions.len().saturating_sub(action_idx);
                 println!("  [SKIP] obsolete trace: {}", message);
@@ -306,7 +309,8 @@ fn test_diff_rng_replay() {
         for (action_idx, action) in combat.actions.iter().enumerate() {
             total_actions += 1;
 
-            if let Err(message) = catch_strict_state_sync_panic(|| sync_state(&mut cs, &prev_snapshot))
+            if let Err(message) =
+                catch_strict_state_sync_panic(|| sync_state(&mut cs, &prev_snapshot))
             {
                 total_skip += combat.actions.len().saturating_sub(action_idx);
                 println!("  [SKIP] obsolete trace: {}", message);

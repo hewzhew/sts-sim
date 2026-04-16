@@ -3,10 +3,10 @@
 // Handles: ApplyPower, RemovePower, RemoveAllDebuffs, ApplyStasis,
 //          UpdatePowerExtraData, AwakenedRebirthClear, GainEnergy
 
-use crate::runtime::action::Action;
-use crate::runtime::combat::CombatState;
 use crate::content::powers::store;
 use crate::content::powers::PowerId;
+use crate::runtime::action::Action;
+use crate::runtime::combat::CombatState;
 
 pub fn handle_apply_power(
     source: usize,
@@ -410,8 +410,7 @@ pub fn handle_remove_all_debuffs(target: usize, state: &mut CombatState) {
         .unwrap_or_default();
 
     for power_id in debuffs {
-        state
-            .queue_action_front(Action::RemovePower { target, power_id });
+        state.queue_action_front(Action::RemovePower { target, power_id });
     }
 }
 

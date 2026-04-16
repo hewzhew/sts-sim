@@ -1,7 +1,7 @@
 use crate::bot::combat_posture::CombatPostureFeatures;
+use crate::content::cards::CardId;
 use crate::runtime::combat::CombatState;
 use crate::runtime::combat::PowerId;
-use crate::content::cards::CardId;
 use crate::state::core::ClientInput;
 use crate::state::EngineState;
 
@@ -119,6 +119,7 @@ pub(super) struct SequenceJudge<'a> {
     has_meaningful_non_end: bool,
     best_active_idx: Option<usize>,
     best_non_potion_idx: Option<usize>,
+    best_progress_idx: Option<usize>,
     max_followup_decisions: usize,
     max_followup_branch_width: usize,
     max_engine_steps: usize,
@@ -175,6 +176,21 @@ impl<'a> SequenceJudge<'a> {
                 )
             })
             .map(|(idx, _)| idx);
+        let best_progress_idx = candidates
+            .iter()
+            .enumerate()
+            .filter(|(_, candidate)| !matches!(candidate.input, ClientInput::EndTurn))
+            .filter(|(_, candidate)| !is_pure_defensive_line(combat, &candidate.input))
+            .max_by_key(|(_, candidate)| {
+                (
+                    candidate.survives,
+                    -candidate.projected_unblocked,
+                    candidate.projected_hp,
+                    candidate.projected_block,
+                    -candidate.projected_enemy_total,
+                )
+            })
+            .map(|(idx, _)| idx);
 
         Self {
             combat,
@@ -188,6 +204,7 @@ impl<'a> SequenceJudge<'a> {
             has_meaningful_non_end,
             best_active_idx,
             best_non_potion_idx,
+            best_progress_idx,
             max_followup_decisions: 2,
             max_followup_branch_width: 3,
             max_engine_steps: 80,
@@ -236,6 +253,7 @@ impl<'a> SequenceJudge<'a> {
     ) -> SequenceScoreBreakdown {
         let mut breakdown = SequenceScoreBreakdown::default();
         breakdown.add_survival(self.survive_now_delta(candidate));
+        breakdown.add_survival(self.progress_now_delta(candidate));
         let (setup_survival, setup_exhaust) =
             self.setup_then_survive_components(candidate, evidence);
         breakdown.add_survival(setup_survival);
@@ -325,6 +343,52 @@ impl<'a> SequenceJudge<'a> {
             {
                 delta -= 3_000_000.0;
             }
+        }
+
+        delta
+    }
+
+    fn progress_now_delta(&self, candidate: &SequenceCandidate) -> f32 {
+        if !candidate.survives || matches!(candidate.input, ClientInput::EndTurn) {
+            return 0.0;
+        }
+
+        let mut delta = 0.0;
+        if candidate.projected_enemy_total == 0 {
+            delta += if self.pressure.value_unblocked <= 0 {
+                1_500.0
+            } else {
+                1_200.0
+            };
+        }
+
+        if self.pressure.lethal_pressure || !is_pure_defensive_line(self.combat, &candidate.input) {
+            return delta;
+        }
+
+        let Some(best_progress) = self.best_progress() else {
+            return delta;
+        };
+        if best_progress.input == candidate.input || !best_progress.survives {
+            return delta;
+        }
+
+        let clears_combat = best_progress.projected_enemy_total == 0
+            && best_progress.projected_unblocked <= candidate.projected_unblocked + 2;
+        let safer_progress = best_progress.projected_unblocked + 2 < candidate.projected_unblocked
+            && best_progress.projected_enemy_total <= candidate.projected_enemy_total;
+        let same_safety_more_progress = best_progress.projected_unblocked
+            <= candidate.projected_unblocked
+            && best_progress.projected_enemy_total + 4 < candidate.projected_enemy_total;
+        let zero_pressure_stall = self.pressure.value_unblocked == 0
+            && best_progress.projected_enemy_total < candidate.projected_enemy_total;
+
+        if clears_combat {
+            delta -= 1_400.0;
+        } else if safer_progress {
+            delta -= if self.high_pressure { 900.0 } else { 1_300.0 };
+        } else if same_safety_more_progress || zero_pressure_stall {
+            delta -= if self.high_pressure { 700.0 } else { 1_000.0 };
         }
 
         delta
@@ -512,6 +576,10 @@ impl<'a> SequenceJudge<'a> {
 
     fn best_non_potion(&self) -> Option<&SequenceCandidate> {
         self.best_non_potion_idx.map(|idx| &self.candidates[idx])
+    }
+
+    fn best_progress(&self) -> Option<&SequenceCandidate> {
+        self.best_progress_idx.map(|idx| &self.candidates[idx])
     }
 
     fn best_deferred_setup_outcome(
@@ -915,4 +983,201 @@ fn transition_exhaust_payoff(before: &CombatState, after: &CombatState) -> (i32,
         exhausted_cards * feel_no_pain,
         exhausted_cards * dark_embrace,
     )
+}
+
+fn is_pure_defensive_line(combat: &CombatState, input: &ClientInput) -> bool {
+    let tags = action_semantic_tags(combat, input);
+    tags.block_core
+        && !tags.attack_like
+        && !tags.draw_core
+        && !tags.resource_bridge
+        && !tags.persistent_setup
+        && !tags.exhaust_trigger
+        && !tags.defensive_potion
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::runtime::combat::{
+        CardZones, CombatMeta, CombatPhase, CombatRng, CombatRuntimeHints, CombatState,
+        EngineRuntime, EntityState, Intent, MonsterEntity, MonsterProtocolIdentity, PlayerEntity,
+        RelicBuses, StanceId, TurnRuntime,
+    };
+    use crate::runtime::rng::RngPool;
+    use std::collections::{HashMap, VecDeque};
+
+    fn test_combat(hand: Vec<crate::runtime::combat::CombatCard>, intent: Intent) -> CombatState {
+        CombatState {
+            meta: CombatMeta {
+                ascension_level: 0,
+                player_class: "Ironclad",
+                is_boss_fight: false,
+                is_elite_fight: false,
+                meta_changes: Vec::new(),
+            },
+            turn: TurnRuntime {
+                turn_count: 1,
+                current_phase: CombatPhase::PlayerTurn,
+                energy: 1,
+                turn_start_draw_modifier: 0,
+                counters: Default::default(),
+            },
+            zones: CardZones {
+                draw_pile: Vec::new(),
+                hand,
+                discard_pile: Vec::new(),
+                exhaust_pile: Vec::new(),
+                limbo: Vec::new(),
+                queued_cards: VecDeque::new(),
+                card_uuid_counter: 99,
+            },
+            entities: EntityState {
+                player: PlayerEntity {
+                    id: 0,
+                    current_hp: 40,
+                    max_hp: 40,
+                    block: 0,
+                    gold_delta_this_combat: 0,
+                    gold: 0,
+                    max_orbs: 0,
+                    orbs: Vec::new(),
+                    stance: StanceId::Neutral,
+                    relics: Vec::new(),
+                    relic_buses: RelicBuses::default(),
+                    energy_master: 3,
+                },
+                monsters: vec![MonsterEntity {
+                    id: 1,
+                    monster_type: 0,
+                    current_hp: 10,
+                    max_hp: 10,
+                    block: 0,
+                    slot: 0,
+                    is_dying: false,
+                    is_escaped: false,
+                    half_dead: false,
+                    next_move_byte: 0,
+                    current_intent: intent,
+                    move_history: VecDeque::new(),
+                    intent_dmg: 0,
+                    logical_position: 0,
+                    protocol_identity: MonsterProtocolIdentity::default(),
+                    hexaghost: Default::default(),
+                    chosen: Default::default(),
+                    darkling: Default::default(),
+                    lagavulin: Default::default(),
+                }],
+                potions: Vec::new(),
+                power_db: HashMap::new(),
+            },
+            engine: EngineRuntime {
+                action_queue: VecDeque::new(),
+            },
+            rng: CombatRng::new(RngPool::default()),
+            runtime: CombatRuntimeHints::default(),
+        }
+    }
+
+    #[test]
+    fn pure_block_gets_penalized_when_equally_safe_attack_advances_board() {
+        let combat = test_combat(
+            vec![
+                crate::runtime::combat::CombatCard::new(crate::content::cards::CardId::Defend, 1),
+                crate::runtime::combat::CombatCard::new(crate::content::cards::CardId::Strike, 2),
+            ],
+            Intent::Attack { damage: 6, hits: 1 },
+        );
+        let defend = SequenceCandidate {
+            input: ClientInput::PlayCard {
+                card_index: 0,
+                target: None,
+            },
+            after_engine: EngineState::CombatPlayerTurn,
+            after_combat: combat.clone(),
+            passive: false,
+            projected_hp: 40,
+            projected_block: 5,
+            projected_enemy_total: 10,
+            projected_unblocked: 0,
+            survives: true,
+        };
+        let strike = SequenceCandidate {
+            input: ClientInput::PlayCard {
+                card_index: 1,
+                target: Some(1),
+            },
+            after_engine: EngineState::CombatPlayerTurn,
+            after_combat: combat.clone(),
+            passive: false,
+            projected_hp: 40,
+            projected_block: 0,
+            projected_enemy_total: 4,
+            projected_unblocked: 0,
+            survives: true,
+        };
+
+        let adjustments = SequenceJudge::new(&combat, &[defend, strike]).adjustments();
+        let defend_delta = adjustments[0].total_delta;
+        let strike_delta = adjustments[1].total_delta;
+        assert!(defend_delta < strike_delta);
+    }
+
+    #[test]
+    fn immediate_clear_gets_positive_progress_credit() {
+        let combat = test_combat(
+            vec![
+                crate::runtime::combat::CombatCard::new(crate::content::cards::CardId::Defend, 1),
+                crate::runtime::combat::CombatCard::new(crate::content::cards::CardId::Strike, 2),
+            ],
+            Intent::None,
+        );
+        let defend = SequenceCandidate {
+            input: ClientInput::PlayCard {
+                card_index: 0,
+                target: None,
+            },
+            after_engine: EngineState::CombatPlayerTurn,
+            after_combat: combat.clone(),
+            passive: false,
+            projected_hp: 40,
+            projected_block: 5,
+            projected_enemy_total: 10,
+            projected_unblocked: 0,
+            survives: true,
+        };
+        let strike = SequenceCandidate {
+            input: ClientInput::PlayCard {
+                card_index: 1,
+                target: Some(1),
+            },
+            after_engine: EngineState::CombatPlayerTurn,
+            after_combat: combat,
+            passive: false,
+            projected_hp: 40,
+            projected_block: 0,
+            projected_enemy_total: 0,
+            projected_unblocked: 0,
+            survives: true,
+        };
+
+        let adjustments = SequenceJudge::new(
+            &test_combat(
+                vec![
+                    crate::runtime::combat::CombatCard::new(
+                        crate::content::cards::CardId::Defend,
+                        1,
+                    ),
+                    crate::runtime::combat::CombatCard::new(
+                        crate::content::cards::CardId::Strike,
+                        2,
+                    ),
+                ],
+                Intent::None,
+            ),
+            &[defend, strike],
+        )
+        .adjustments();
+        assert!(adjustments[1].total_delta > adjustments[0].total_delta);
+    }
 }

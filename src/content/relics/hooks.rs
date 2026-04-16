@@ -1,6 +1,6 @@
+use crate::content::relics::RelicId;
 use crate::runtime::action::{Action, ActionInfo};
 use crate::runtime::combat::{CombatCard, CombatState};
-use crate::content::relics::RelicId;
 use smallvec::SmallVec;
 
 /// Triggers relics before the battle formally begins (Phase 1).

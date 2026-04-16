@@ -3,6 +3,10 @@ use std::path::PathBuf;
 
 use clap::Parser;
 use serde::{Deserialize, Serialize};
+use sts_simulator::bot::harness::{
+    ActionMask, CombatAction, CombatEnv, CombatEnvSpec, CombatEpisodeOutcome, CombatObservation,
+    CombatRewardBreakdown,
+};
 use sts_simulator::bot::search::{load_fixture_path, DecisionAuditEngineState};
 use sts_simulator::diff::replay::{
     derive_combat_replay_view, find_combat_step_index_by_before_frame_id,
@@ -11,10 +15,6 @@ use sts_simulator::diff::replay::{
 use sts_simulator::diff::state_sync::build_combat_state;
 use sts_simulator::fixtures::author_spec::{compile_combat_author_spec, CombatAuthorSpec};
 use sts_simulator::fixtures::combat_start_spec::CombatStartSpec;
-use sts_simulator::bot::harness::{
-    ActionMask, CombatAction, CombatEnv, CombatEnvSpec, CombatEpisodeOutcome, CombatObservation,
-    CombatRewardBreakdown,
-};
 
 #[derive(Parser, Debug)]
 struct Args {

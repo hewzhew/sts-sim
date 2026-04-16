@@ -1,8 +1,8 @@
 use std::collections::BTreeMap;
 
 use crate::bot::card_taxonomy::taxonomy;
-use crate::runtime::combat::{CombatCard, CombatState, Power, PowerId};
 use crate::content::cards::{get_card_definition, CardType};
+use crate::runtime::combat::{CombatCard, CombatState, Power, PowerId};
 use crate::state::core::ClientInput;
 use crate::state::EngineState;
 

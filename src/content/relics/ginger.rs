@@ -1,6 +1,6 @@
+use crate::content::powers::PowerId;
 use crate::runtime::action::ActionInfo;
 use crate::runtime::combat::CombatState;
-use crate::content::powers::PowerId;
 use smallvec::SmallVec;
 
 /// Ginger: You can no longer become Weakened.

@@ -90,12 +90,14 @@ pub(crate) fn runtime_provenance() -> LiveRunProvenance {
         (Some(binary), Some(head)) => Some(binary == head),
         _ => None,
     };
-    let binary_is_fresh = env_opt("LIVE_COMM_LAUNCH_BINARY_IS_FRESH")
-        .and_then(|value| match value.to_ascii_lowercase().as_str() {
-            "true" => Some(true),
-            "false" => Some(false),
-            _ => None,
-        });
+    let binary_is_fresh = env_opt("LIVE_COMM_LAUNCH_BINARY_IS_FRESH").and_then(|value| match value
+        .to_ascii_lowercase()
+        .as_str()
+    {
+        "true" => Some(true),
+        "false" => Some(false),
+        _ => None,
+    });
 
     LiveRunProvenance {
         exe_path: env_opt("LIVE_COMM_LAUNCH_EXE_PATH").or_else(current_exe_path_string),
@@ -156,7 +158,11 @@ fn raw_contains_event_frames(path: &Path) -> bool {
         };
         let screen_type = root
             .get("game_state")
-            .and_then(|state| state.get("screen_type").or_else(|| state.get("screen_name")))
+            .and_then(|state| {
+                state
+                    .get("screen_type")
+                    .or_else(|| state.get("screen_name"))
+            })
             .and_then(Value::as_str);
         if screen_type.is_some_and(|screen| screen.eq_ignore_ascii_case("EVENT")) {
             return true;
@@ -299,7 +305,9 @@ fn event_screen_validation(path: &Path) -> (bool, bool) {
             event_name,
             "Neow" | "Shining Light" | "Golden Idol" | "Knowing Skull" | "Living Wall" | "Big Fish"
         ) {
-            *multistage_counts.entry(event_name.to_string()).or_insert(0usize) += 1;
+            *multistage_counts
+                .entry(event_name.to_string())
+                .or_insert(0usize) += 1;
             let progressed = decision
                 .get("screen_index")
                 .and_then(Value::as_u64)
@@ -689,12 +697,8 @@ pub fn build_finding_report_json(
     counts: &LiveRunCounts,
     failure_snapshots_path: &Path,
 ) -> Result<Value, String> {
-    let report = build_finding_report(
-        run_id,
-        classification_label,
-        counts,
-        failure_snapshots_path,
-    )?;
+    let report =
+        build_finding_report(run_id, classification_label, counts, failure_snapshots_path)?;
     serde_json::to_value(report)
         .map_err(|err| format!("failed to convert findings report to json: {err}"))
 }
@@ -1170,10 +1174,8 @@ mod tests {
 
     #[test]
     fn parse_diff_entry_handles_power_paths() {
-        let parsed = parse_diff_entry(
-            "player.power[Strength].amount [ENGINE_BUG] Rust=9 Java=5",
-        )
-        .expect("diff should parse");
+        let parsed = parse_diff_entry("player.power[Strength].amount [ENGINE_BUG] Rust=9 Java=5")
+            .expect("diff should parse");
         assert_eq!(parsed.field, "player.power[Strength].amount");
         assert_eq!(parsed.category, "engine_bug");
         assert_eq!(parsed.rust, "9");
@@ -1215,8 +1217,7 @@ mod tests {
             .families
             .iter()
             .find(|family| {
-                family.category == "engine_bug"
-                    && family.key == "player.power[Strength].amount"
+                family.category == "engine_bug" && family.key == "player.power[Strength].amount"
             })
             .expect("strength family should exist");
         assert_eq!(strength.count, 1);
@@ -1226,8 +1227,7 @@ mod tests {
             .families
             .iter()
             .find(|family| {
-                family.category == "validation_failure"
-                    && family.key == "compatibility_fallback"
+                family.category == "validation_failure" && family.key == "compatibility_fallback"
             })
             .expect("compatibility family should exist");
         assert_eq!(fallback.count, 1);

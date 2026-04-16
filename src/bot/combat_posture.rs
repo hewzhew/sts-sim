@@ -1,7 +1,7 @@
 use crate::bot::monster_belief::build_combat_belief_state;
-use crate::runtime::combat::CombatState;
 use crate::content::cards::{get_card_definition, CardId, CardType};
 use crate::content::monsters::EnemyId;
+use crate::runtime::combat::CombatState;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct CombatPostureFeatures {

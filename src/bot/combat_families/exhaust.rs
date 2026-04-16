@@ -223,8 +223,9 @@ pub(crate) fn mass_exhaust_second_wind_selectivity_score(profile: &MassExhaustPr
         } else {
             profile.imminent_unblocked_damage.min(18) * 180
         };
-        let preserve_penalty =
-            (profile.playable_block_lost * 6_200) - profile.junk_fuel_count * 650 - emergency_relief;
+        let preserve_penalty = (profile.playable_block_lost * 6_200)
+            - profile.junk_fuel_count * 650
+            - emergency_relief;
         score -= preserve_penalty.max(0);
         if profile.junk_fuel_count >= 1
             && profile.playable_block_lost >= 2

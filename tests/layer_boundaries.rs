@@ -9,7 +9,8 @@ fn collect_rs_files(path: &Path, out: &mut Vec<PathBuf>) {
         return;
     }
 
-    let entries = fs::read_dir(path).unwrap_or_else(|err| panic!("read_dir failed for {path:?}: {err}"));
+    let entries =
+        fs::read_dir(path).unwrap_or_else(|err| panic!("read_dir failed for {path:?}: {err}"));
     for entry in entries {
         let entry = entry.unwrap_or_else(|err| panic!("dir entry failed for {path:?}: {err}"));
         collect_rs_files(&entry.path(), out);
@@ -74,12 +75,7 @@ fn core_does_not_depend_on_integration_or_app_layers() {
 
     assert_forbidden_deps(
         &files,
-        &[
-            "crate::testing",
-            "crate::diff",
-            "crate::bot",
-            "crate::cli",
-        ],
+        &["crate::testing", "crate::diff", "crate::bot", "crate::cli"],
         "core",
     );
 }
@@ -88,9 +84,5 @@ fn core_does_not_depend_on_integration_or_app_layers() {
 fn integration_does_not_depend_on_app_layer() {
     let files = layer_files(&["src/diff", "src/testing"]);
 
-    assert_forbidden_deps(
-        &files,
-        &["crate::bot", "crate::cli"],
-        "integration",
-    );
+    assert_forbidden_deps(&files, &["crate::bot", "crate::cli"], "integration");
 }

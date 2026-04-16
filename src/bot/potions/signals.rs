@@ -1,6 +1,6 @@
-use crate::runtime::combat::CombatState;
 use crate::content::cards::{get_card_definition, CardId, CardType};
 use crate::content::powers::PowerId;
+use crate::runtime::combat::CombatState;
 
 #[derive(Clone, Copy, Debug)]
 pub struct ThreatSignals {

@@ -4,14 +4,17 @@ use crate::bot::encounter_suite::{
     advance_suite_engine, rollout_entries_for_suite, start_suite_encounter, suite_for_run,
     weights_for_suite, EncounterSuiteId,
 };
+use crate::bot::noncombat_card_signals::signals as noncombat_card_signals;
 use crate::content::cards::CardId;
 use crate::state::core::{ClientInput, EngineState, RunResult};
 use crate::state::run::RunState;
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct DeltaScore {
     pub suite: EncounterSuiteId,
     pub prior_delta: i32,
+    pub prior_rationale_key: Option<&'static str>,
+    pub prior_assessment: crate::bot::run_deck_improvement::DeckOperationAssessment,
     pub suite_bias: i32,
     pub rollout_delta: i32,
     pub context_delta: i32,
@@ -22,13 +25,16 @@ pub struct DeltaScore {
 
 pub fn compare_pick_vs_skip(rs: &RunState, card_id: CardId) -> DeltaScore {
     let suite = suite_for_run(rs);
-    let prior_delta = crate::bot::run_deck_improvement::card_add_improvement_delta(rs, card_id);
+    let prior = crate::bot::run_deck_improvement::assess_deck_operation(
+        rs,
+        crate::bot::run_deck_improvement::DeckOperationKind::Add(card_id),
+    );
     let suite_bias = suite_pick_bias(rs, suite, card_id);
     let rollout_delta = rollout_pick_delta(rs, suite, card_id);
     let conditioned = crate::bot::run_rule_context::conditioned_card_addition_value(rs, card_id);
     build_delta_score(
         suite,
-        prior_delta,
+        prior,
         suite_bias,
         rollout_delta,
         conditioned.total,
@@ -39,10 +45,13 @@ pub fn compare_pick_vs_skip(rs: &RunState, card_id: CardId) -> DeltaScore {
 
 pub(crate) fn compare_purge_vs_keep(rs: &RunState) -> DeltaScore {
     let suite = suite_for_run(rs);
-    let prior_delta = crate::bot::run_deck_improvement::best_remove_improvement(rs);
+    let prior = crate::bot::run_deck_improvement::assess_deck_operation(
+        rs,
+        crate::bot::run_deck_improvement::DeckOperationKind::Remove,
+    );
     let suite_bias = suite_purge_bias(rs, suite);
     let rollout_delta = rollout_purge_delta(rs, suite);
-    build_delta_score(suite, prior_delta, suite_bias, rollout_delta, 0, None, None)
+    build_delta_score(suite, prior, suite_bias, rollout_delta, 0, None, None)
 }
 
 pub(crate) fn compare_transform_vs_decline(
@@ -51,49 +60,66 @@ pub(crate) fn compare_transform_vs_decline(
     upgraded_context: bool,
 ) -> DeltaScore {
     let suite = suite_for_run(rs);
-    let prior_delta =
-        crate::bot::run_deck_improvement::best_transform_improvement(rs, count, upgraded_context);
+    let prior = crate::bot::run_deck_improvement::assess_deck_operation(
+        rs,
+        crate::bot::run_deck_improvement::DeckOperationKind::Transform {
+            count,
+            upgraded_context,
+        },
+    );
     let suite_bias = suite_transform_bias(rs, suite, count, upgraded_context);
     let rollout_delta = rollout_transform_delta(rs, suite, count, upgraded_context);
-    build_delta_score(suite, prior_delta, suite_bias, rollout_delta, 0, None, None)
+    build_delta_score(suite, prior, suite_bias, rollout_delta, 0, None, None)
 }
 
 pub(crate) fn compare_upgrade_vs_decline(rs: &RunState, random_upgrades: usize) -> DeltaScore {
     let suite = suite_for_run(rs);
-    let prior_delta = crate::bot::run_deck_improvement::best_upgrade_improvement(rs);
+    let prior = crate::bot::run_deck_improvement::assess_deck_operation(
+        rs,
+        crate::bot::run_deck_improvement::DeckOperationKind::Upgrade,
+    );
     let suite_bias = suite_upgrade_bias(rs, suite, random_upgrades);
     let rollout_delta = rollout_upgrade_delta(rs, suite, random_upgrades);
-    build_delta_score(suite, prior_delta, suite_bias, rollout_delta, 0, None, None)
+    build_delta_score(suite, prior, suite_bias, rollout_delta, 0, None, None)
 }
 
 pub(crate) fn compare_duplicate_vs_decline(rs: &RunState) -> DeltaScore {
     let suite = suite_for_run(rs);
-    let prior_delta = crate::bot::run_deck_improvement::best_duplicate_improvement(rs);
+    let prior = crate::bot::run_deck_improvement::assess_deck_operation(
+        rs,
+        crate::bot::run_deck_improvement::DeckOperationKind::Duplicate,
+    );
     let suite_bias = suite_duplicate_bias(rs, suite);
     let rollout_delta = rollout_duplicate_delta(rs, suite);
-    build_delta_score(suite, prior_delta, suite_bias, rollout_delta, 0, None, None)
+    build_delta_score(suite, prior, suite_bias, rollout_delta, 0, None, None)
 }
 
 pub(crate) fn compare_vampires_vs_refuse(rs: &RunState) -> DeltaScore {
     let suite = suite_for_run(rs);
-    let prior_delta = crate::bot::run_deck_improvement::vampires_bite_exchange_value(rs);
+    let prior = crate::bot::run_deck_improvement::assess_deck_operation(
+        rs,
+        crate::bot::run_deck_improvement::DeckOperationKind::VampiresExchange,
+    );
     let suite_bias = suite_vampires_bias(rs, suite);
-    build_delta_score(suite, prior_delta, suite_bias, 0, 0, None, None)
+    build_delta_score(suite, prior, suite_bias, 0, 0, None, None)
 }
 
 fn build_delta_score(
     suite: EncounterSuiteId,
-    prior_delta: i32,
+    prior_assessment: crate::bot::run_deck_improvement::DeckOperationAssessment,
     suite_bias: i32,
     rollout_delta: i32,
     context_delta: i32,
     context_rationale_key: Option<&'static str>,
     rule_context_summary: Option<&'static str>,
 ) -> DeltaScore {
+    let prior_delta = prior_assessment.total_prior_delta;
     let rollout_delta = stabilized_rollout_delta(prior_delta, suite_bias, rollout_delta);
     DeltaScore {
         suite,
         prior_delta,
+        prior_rationale_key: Some(prior_assessment.rationale_key),
+        prior_assessment,
         suite_bias,
         rollout_delta,
         context_delta,
@@ -474,6 +500,7 @@ fn rollout_timeout_score(
 fn suite_pick_bias(rs: &RunState, suite: EncounterSuiteId, card_id: CardId) -> i32 {
     let weights = weights_for_suite(suite);
     let tax = taxonomy(card_id);
+    let signals = noncombat_card_signals(card_id);
     let mut score = 0;
 
     if tax.is_strength_payoff() || tax.is_multi_attack_payoff() || tax.is_attack_followup_priority()
@@ -490,10 +517,10 @@ fn suite_pick_bias(rs: &RunState, suite: EncounterSuiteId, card_id: CardId) -> i
         score += weights.deck_thinning / 3;
     }
 
-    if rs.act_num == 1 && rs.floor_num <= 16 && cards_like_frontload_patch(card_id) {
+    if rs.act_num == 1 && rs.floor_num <= 16 && signals.frontload_patch_strength >= 14 {
         score += weights.frontload;
     }
-    if rs.act_num >= 2 && cards_like_scaling_patch(card_id) {
+    if rs.act_num >= 2 && signals.scaling_signal >= 10 {
         score += weights.scaling;
     }
 
@@ -568,31 +595,26 @@ fn suite_vampires_bias(rs: &RunState, suite: EncounterSuiteId) -> i32 {
     strike_count * (weights.deck_thinning / 2) + i32::from(hp_ratio >= 0.60) * weights.block
 }
 
-fn cards_like_frontload_patch(card_id: CardId) -> bool {
-    matches!(
-        card_id,
-        CardId::Hemokinesis
-            | CardId::Carnage
-            | CardId::Immolate
-            | CardId::Pummel
-            | CardId::Whirlwind
-            | CardId::ShrugItOff
-            | CardId::FlameBarrier
-            | CardId::Disarm
-            | CardId::Shockwave
-            | CardId::Uppercut
-    )
-}
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::content::cards::CardId;
 
-fn cards_like_scaling_patch(card_id: CardId) -> bool {
-    matches!(
-        card_id,
-        CardId::Corruption
-            | CardId::FeelNoPain
-            | CardId::DarkEmbrace
-            | CardId::DemonForm
-            | CardId::Barricade
-            | CardId::Entrench
-            | CardId::LimitBreak
-    )
+    #[test]
+    fn delta_score_carries_typed_prior_assessment() {
+        let mut rs = RunState::new(1, 0, true, "Ironclad");
+        rs.master_deck.push(crate::runtime::combat::CombatCard::new(
+            CardId::Shockwave,
+            81_001,
+        ));
+        let delta = compare_pick_vs_skip(&rs, CardId::Armaments);
+        assert_eq!(
+            delta.prior_assessment.operation,
+            crate::bot::run_deck_improvement::DeckOperationKind::Add(CardId::Armaments)
+        );
+        assert_eq!(
+            delta.prior_rationale_key,
+            Some(delta.prior_assessment.rationale_key)
+        );
+    }
 }

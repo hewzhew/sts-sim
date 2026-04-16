@@ -700,10 +700,12 @@ pub fn resolve_power_at_turn_start(
             // Add `amount` random colorless cards to hand
             let mut acts = smallvec::SmallVec::new();
             for _ in 0..amount {
-                acts.push(crate::runtime::action::Action::MakeRandomColorlessCardInHand {
-                    cost_for_turn: None,
-                    upgraded: false,
-                });
+                acts.push(
+                    crate::runtime::action::Action::MakeRandomColorlessCardInHand {
+                        cost_for_turn: None,
+                        upgraded: false,
+                    },
+                );
             }
             acts
         }
@@ -1244,13 +1246,13 @@ pub fn resolve_power_on_apply_power(
                 actions.push(crate::runtime::action::ActionInfo {
                     action: crate::runtime::action::Action::Damage(
                         crate::runtime::action::DamageInfo {
-                        source,
-                        target,
-                        base: owner_amount,
-                        output: owner_amount,
-                        damage_type: crate::runtime::action::DamageType::Thorns,
-                        is_modified: true,
-                    },
+                            source,
+                            target,
+                            base: owner_amount,
+                            output: owner_amount,
+                            damage_type: crate::runtime::action::DamageType::Thorns,
+                            is_modified: true,
+                        },
                     ),
                     insertion_mode: crate::runtime::action::AddTo::Bottom,
                 });

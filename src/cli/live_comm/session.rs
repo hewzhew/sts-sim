@@ -7,7 +7,7 @@ use super::reward_audit::{
     extract_human_card_reward_choice, finalize_human_card_reward_audit,
     finalize_human_card_reward_audit_without_choice, human_card_reward_audit_reason_source,
     human_card_reward_hold_context, reward_choice_matches_pending_session,
-    HumanCardRewardAuditDisposition, PendingHumanCardRewardAudit,
+    reward_deck_improvement_summary, HumanCardRewardAuditDisposition, PendingHumanCardRewardAudit,
 };
 use super::snapshot::write_failure_snapshot;
 use super::watch::{maybe_capture_live_watch, remember_live_record, LiveWatchRuntime};
@@ -69,6 +69,79 @@ fn combat_handoff_hold_command(frame: &LiveFrame) -> &'static str {
         "WAIT 30"
     } else {
         "STATE"
+    }
+}
+
+fn is_expected_live_event_compatibility_fallback(event_name: &str) -> bool {
+    matches!(
+        event_name,
+        "Neow" | "Note For Yourself" | "Bonfire Spirits" | "Bonfire Elementals"
+    )
+}
+
+fn multistage_event_has_meaningful_screen_semantics(trace_audit: &Value) -> bool {
+    if trace_audit
+        .get("screen_key")
+        .is_some_and(|value| !value.is_null())
+    {
+        return true;
+    }
+
+    trace_audit
+        .get("screen_index")
+        .or_else(|| trace_audit.get("screen"))
+        .and_then(Value::as_u64)
+        .is_some_and(|screen| screen > 0)
+}
+
+fn event_validation_failure_reasons(trace_audit: &Value) -> Vec<String> {
+    let family = trace_audit
+        .get("family")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    let event_name = trace_audit
+        .get("event_name")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    let unexpected_fallback = family == "compatibility_fallback"
+        && !is_expected_live_event_compatibility_fallback(event_name);
+    let suspicious_multistage = trace_audit
+        .get("live_event_protocol")
+        .and_then(|value| value.get("screen_semantics_incomplete"))
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
+        || (trace_audit.get("live_event_protocol").is_none()
+            && matches!(
+                event_name,
+                "Neow"
+                    | "Shining Light"
+                    | "Golden Idol"
+                    | "Knowing Skull"
+                    | "Living Wall"
+                    | "Big Fish"
+            )
+            && !multistage_event_has_meaningful_screen_semantics(trace_audit));
+
+    let mut reasons = Vec::new();
+    if unexpected_fallback {
+        reasons.push("compatibility_fallback".to_string());
+    }
+    if suspicious_multistage {
+        reasons.push("event_screen_semantics_incomplete".to_string());
+    }
+    reasons
+}
+
+fn should_fail_fast_on_snapshot(trigger_kind: &str, reasons: &[String]) -> bool {
+    match trigger_kind {
+        "validation_failure" | "engine_bug" | "session_polluted" | "protocol_error" => true,
+        "high_risk_suspect" => reasons.iter().any(|reason| {
+            matches!(
+                reason.as_str(),
+                "large_sequence_bonus" | "branch_opening_conflict" | "sequencing_conflict"
+            )
+        }),
+        _ => false,
     }
 }
 
@@ -187,8 +260,7 @@ impl LiveCommSession {
         }
 
         if let Some(err) = frame.error() {
-            self.handle_java_error(frame, err, live_io, stdout);
-            return None;
+            return self.handle_java_error(frame, err, live_io, stdout);
         }
         self.clear_recovered_error_flood(live_io);
 
@@ -331,6 +403,7 @@ impl LiveCommSession {
                 gs,
                 self.frame_count,
                 self.config.parity_mode,
+                self.config.fail_fast_debug,
                 self.config.combat_search_budget,
                 &mut self.last_sent_cmd,
                 &mut self.cmd_failed_count,
@@ -350,9 +423,20 @@ impl LiveCommSession {
                     self.frame_count,
                 );
                 return Some(LoopExitReason::ParityFail);
+            } else if matches!(outcome, CombatFrameOutcome::StopForFailFast) {
+                self.combat_runtime.flush_summary_on_game_over(
+                    &mut live_io.log,
+                    &mut live_io.focus_log,
+                    self.frame_count,
+                );
+                return Some(LoopExitReason::FailFast);
             }
         } else {
-            self.handle_noncombat_frame(agent, frame, &avail, screen, room_phase, live_io, stdout);
+            if let Some(exit_reason) = self
+                .handle_noncombat_frame(agent, frame, &avail, screen, room_phase, live_io, stdout)
+            {
+                return Some(exit_reason);
+            }
         }
 
         let _ = live_io.log.flush();
@@ -445,7 +529,7 @@ impl LiveCommSession {
         err: &str,
         live_io: &mut LiveCommIo,
         stdout: &mut W,
-    ) {
+    ) -> Option<LoopExitReason> {
         self.combat_runtime.on_java_error();
         self.consecutive_errors += 1;
         self.cmd_failed_count += 1;
@@ -483,9 +567,30 @@ impl LiveCommSession {
                     "error": err,
                 }),
             );
+            if self.config.fail_fast_debug
+                && should_fail_fast_on_snapshot(
+                    "protocol_error",
+                    &[
+                        "java_error_flood".to_string(),
+                        err.to_string(),
+                        format!("repeats={}", self.consecutive_errors),
+                    ],
+                )
+            {
+                let _ = writeln!(live_io.log, "  [FAIL_FAST] stopping on protocol_error");
+                let _ = writeln!(
+                    live_io.focus_log,
+                    "[FAIL_FAST] frame={} trigger=protocol_error",
+                    self.frame_count
+                );
+                let _ = live_io.log.flush();
+                let _ = live_io.focus_log.flush();
+                return Some(LoopExitReason::FailFast);
+            }
             std::thread::sleep(std::time::Duration::from_secs(1));
         }
         live_io.send_line(stdout, "STATE");
+        None
     }
 
     fn clear_recovered_error_flood(&mut self, live_io: &mut LiveCommIo) {
@@ -605,7 +710,7 @@ impl LiveCommSession {
         room_phase: &str,
         live_io: &mut LiveCommIo,
         stdout: &mut W,
-    ) {
+    ) -> Option<LoopExitReason> {
         let parsed = frame.root();
         let has = |c: &str| avail.contains(&c);
 
@@ -618,7 +723,7 @@ impl LiveCommSession {
             self.frame_count,
         ) {
             let _ = live_io.log.flush();
-            return;
+            return None;
         }
 
         if self.noncombat_polluted && screen != self.noncombat_loop_screen {
@@ -641,7 +746,7 @@ impl LiveCommSession {
             .unwrap();
             self.last_sent_cmd = hold_cmd.to_string();
             live_io.send_line(stdout, hold_cmd);
-            return;
+            return None;
         }
 
         if let Some(signature) = reward_loop_signature(parsed, screen) {
@@ -684,9 +789,27 @@ impl LiveCommSession {
                             .unwrap_or(serde_json::Value::Null),
                     }),
                 );
+                if self.config.fail_fast_debug
+                    && should_fail_fast_on_snapshot(
+                        "session_polluted",
+                        &[
+                            "protocol_reward_loop".to_string(),
+                            format!("screens={}", self.reward_loop_signatures.join(" -> ")),
+                        ],
+                    )
+                {
+                    let _ = writeln!(
+                        live_io.focus_log,
+                        "[FAIL_FAST] frame={} trigger=session_polluted",
+                        self.frame_count
+                    );
+                    let _ = live_io.log.flush();
+                    let _ = live_io.focus_log.flush();
+                    return Some(LoopExitReason::FailFast);
+                }
                 self.last_sent_cmd = hold_cmd.clone();
                 live_io.send_line(stdout, &hold_cmd);
-                return;
+                return None;
             }
         } else {
             self.reward_loop_signatures.clear();
@@ -743,9 +866,29 @@ impl LiveCommSession {
                         "loop_command": cmd,
                     }),
                 );
+                if self.config.fail_fast_debug
+                    && should_fail_fast_on_snapshot(
+                        "session_polluted",
+                        &[
+                            "repeated_noncombat_command_loop".to_string(),
+                            format!("screen={screen}"),
+                            format!("cmd={cmd}"),
+                            format!("repeats={}", self.noncombat_loop_count),
+                        ],
+                    )
+                {
+                    let _ = writeln!(
+                        live_io.focus_log,
+                        "[FAIL_FAST] frame={} trigger=session_polluted",
+                        self.frame_count
+                    );
+                    let _ = live_io.log.flush();
+                    let _ = live_io.focus_log.flush();
+                    return Some(LoopExitReason::FailFast);
+                }
                 self.last_sent_cmd = hold_cmd.clone();
                 live_io.send_line(stdout, &hold_cmd);
-                return;
+                return None;
             }
 
             writeln!(live_io.log, "  [!] ERROR LOOP DETECTED, FALLING BACK").unwrap();
@@ -777,6 +920,14 @@ impl LiveCommSession {
                                 self.frame_count, trace.summary
                             )
                             .unwrap();
+                            if let Some(deck_summary) = &trace.deck_improvement_summary {
+                                writeln!(
+                                    live_io.focus_log,
+                                    "[EVENT AUDIT] frame={} deck={}",
+                                    self.frame_count, deck_summary
+                                )
+                                .unwrap();
+                            }
                             let encoded = serde_json::to_string(&serde_json::json!({
                                 "frame": self.frame_count,
                                 "room_phase": room_phase,
@@ -792,41 +943,32 @@ impl LiveCommSession {
                                 .get("family")
                                 .and_then(|v| v.as_str())
                                 .unwrap_or("");
-                            let event_name = trace
-                                .audit
-                                .get("event_name")
-                                .and_then(|v| v.as_str())
-                                .unwrap_or("");
-                            let screen_key = trace.audit.get("screen_key");
-                            let suspicious_multistage = matches!(
-                                event_name,
-                                "Neow"
-                                    | "Shining Light"
-                                    | "Golden Idol"
-                                    | "Knowing Skull"
-                                    | "Living Wall"
-                                    | "Big Fish"
-                            ) && screen_key
-                                .is_none_or(|value| value.is_null());
-                            if family == "compatibility_fallback" || suspicious_multistage {
-                                let mut reasons = Vec::new();
-                                if family == "compatibility_fallback" {
-                                    reasons.push("compatibility_fallback".to_string());
-                                }
-                                if suspicious_multistage {
-                                    reasons.push("event_screen_semantics_incomplete".to_string());
-                                }
+                            let reasons = event_validation_failure_reasons(&trace.audit);
+                            if !reasons.is_empty() {
                                 let _ = write_failure_snapshot(
                                     live_io,
                                     self.frame_count,
                                     frame,
                                     "validation_failure",
-                                    reasons,
+                                    reasons.clone(),
                                     serde_json::json!({
                                         "chosen_command": cmd,
                                         "event_decision": trace.audit.clone(),
                                     }),
                                 );
+                                if self.config.fail_fast_debug
+                                    && should_fail_fast_on_snapshot("validation_failure", &reasons)
+                                {
+                                    let _ = writeln!(
+                                        live_io.focus_log,
+                                        "[FAIL_FAST] frame={} trigger=validation_failure reasons={}",
+                                        self.frame_count,
+                                        reasons.join(",")
+                                    );
+                                    let _ = live_io.log.flush();
+                                    let _ = live_io.focus_log.flush();
+                                    return Some(LoopExitReason::FailFast);
+                                }
                             }
                             if self.config.sidecar_shadow {
                                 let fallback_used = matches!(family, "compatibility_fallback");
@@ -879,7 +1021,9 @@ impl LiveCommSession {
                                 let reward_cards = offered_ids
                                     .iter()
                                     .copied()
-                                    .map(|card_id| crate::rewards::state::RewardCard::new(card_id, 0))
+                                    .map(|card_id| {
+                                        crate::rewards::state::RewardCard::new(card_id, 0)
+                                    })
                                     .collect::<Vec<_>>();
                                 let decision = agent.decide_reward_card_policy(
                                     &rs,
@@ -897,6 +1041,17 @@ impl LiveCommSession {
                                         .strip_prefix("CHOOSE ")
                                         .and_then(|rest| rest.trim().parse::<usize>().ok())
                                 };
+                                if let Some(deck_summary) = reward_deck_improvement_summary(
+                                    &decision.evaluation,
+                                    chosen_choice,
+                                ) {
+                                    writeln!(
+                                        live_io.focus_log,
+                                        "[REWARD] frame={} cmd={} deck={}",
+                                        self.frame_count, cmd, deck_summary
+                                    )
+                                    .unwrap();
+                                }
                                 let shadow = crate::bot::sidecar::reward_shadow_json(
                                     self.frame_count,
                                     "live_comm_reward",
@@ -1031,8 +1186,60 @@ impl LiveCommSession {
             )
             .unwrap();
             live_io.send_line(stdout, "STATE");
-            return;
+            return None;
         }
         live_io.send_line(stdout, &cmd);
+        None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::event_validation_failure_reasons;
+    use serde_json::json;
+
+    #[test]
+    fn neow_legacy_fallback_with_screen_progress_is_not_validation_failure() {
+        let audit = json!({
+            "family": "compatibility_fallback",
+            "event_name": "Neow",
+            "screen": 3,
+            "screen_index": 3,
+            "screen_key": null,
+        });
+
+        assert!(event_validation_failure_reasons(&audit).is_empty());
+    }
+
+    #[test]
+    fn unexpected_compatibility_fallback_still_flags_validation_failure() {
+        let audit = json!({
+            "family": "compatibility_fallback",
+            "event_name": "Living Wall",
+            "screen": 0,
+            "screen_index": 0,
+            "screen_key": "INTRO",
+        });
+
+        assert_eq!(
+            event_validation_failure_reasons(&audit),
+            vec!["compatibility_fallback".to_string()]
+        );
+    }
+
+    #[test]
+    fn multistage_intro_without_key_still_flags_incomplete_screen_semantics() {
+        let audit = json!({
+            "family": "cost_tradeoff",
+            "event_name": "Golden Idol",
+            "screen": 0,
+            "screen_index": 0,
+            "screen_key": null,
+        });
+
+        assert_eq!(
+            event_validation_failure_reasons(&audit),
+            vec!["event_screen_semantics_incomplete".to_string()]
+        );
     }
 }

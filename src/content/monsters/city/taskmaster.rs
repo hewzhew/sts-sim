@@ -1,8 +1,8 @@
-use crate::runtime::action::{Action, DamageInfo, DamageType};
-use crate::runtime::combat::{CombatState, Intent, MonsterEntity};
 use crate::content::cards::CardId;
 use crate::content::monsters::MonsterBehavior;
 use crate::content::powers::PowerId;
+use crate::runtime::action::{Action, DamageInfo, DamageType};
+use crate::runtime::combat::{CombatState, Intent, MonsterEntity};
 
 pub struct Taskmaster;
 

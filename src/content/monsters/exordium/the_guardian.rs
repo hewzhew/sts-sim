@@ -1,6 +1,6 @@
+use crate::content::monsters::MonsterBehavior;
 use crate::runtime::action::{Action, ActionInfo, AddTo, DamageInfo, DamageType};
 use crate::runtime::combat::{CombatState, Intent, MonsterEntity, PowerId};
-use crate::content::monsters::MonsterBehavior;
 
 pub struct TheGuardian;
 

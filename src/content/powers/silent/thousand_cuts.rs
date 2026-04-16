@@ -1,6 +1,6 @@
+use crate::core::EntityId;
 use crate::runtime::action::{repeated_damage_matrix, Action};
 use crate::runtime::combat::CombatState;
-use crate::core::EntityId;
 
 pub fn on_after_card_played(
     state: &CombatState,

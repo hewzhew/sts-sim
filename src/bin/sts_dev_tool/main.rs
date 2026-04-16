@@ -164,8 +164,12 @@ fn manifest_entry_for_run_or_latest(
     paths: &sts_simulator::cli::live_comm_admin::LiveLogPaths,
     run_id: Option<&str>,
     label: Option<&str>,
-) -> Option<(PathBuf, sts_simulator::cli::live_comm_admin::LiveRunManifest)> {
-    let mut entries = sts_simulator::cli::live_comm_admin::list_run_manifests_for_audit(paths).ok()?;
+) -> Option<(
+    PathBuf,
+    sts_simulator::cli::live_comm_admin::LiveRunManifest,
+)> {
+    let mut entries =
+        sts_simulator::cli::live_comm_admin::list_run_manifests_for_audit(paths).ok()?;
     entries.sort_by(|left, right| right.1.run_id.cmp(&left.1.run_id));
     for (manifest_path, manifest) in entries {
         if let Some(run_id) = run_id {
@@ -193,13 +197,15 @@ fn build_findings_report_from_snapshots(
     manifest_path: &std::path::Path,
     manifest: &sts_simulator::cli::live_comm_admin::LiveRunManifest,
 ) -> Result<(FindingsReport, PathBuf), String> {
-    let snapshots_path = artifact_path_for_record(manifest_path, &manifest.artifacts.failure_snapshots)
-        .ok_or_else(|| {
-            format!(
-                "run '{}' has neither findings.json nor failure_snapshots.jsonl",
-                manifest.run_id
-            )
-        })?;
+    let snapshots_path =
+        artifact_path_for_record(manifest_path, &manifest.artifacts.failure_snapshots).ok_or_else(
+            || {
+                format!(
+                    "run '{}' has neither findings.json nor failure_snapshots.jsonl",
+                    manifest.run_id
+                )
+            },
+        )?;
     let report_json = sts_simulator::cli::build_finding_report_json(
         &manifest.run_id,
         &manifest.classification_label,
@@ -600,16 +606,14 @@ fn main() {
             let mut records = Vec::new();
 
             for replay in &replay_inputs {
-                records.extend(sts_simulator::cli::coverage_tools::replay_records_from_path(
-                    replay,
-                ));
+                records
+                    .extend(sts_simulator::cli::coverage_tools::replay_records_from_path(replay));
             }
 
             if live_comm_sidecar.exists() {
                 generated_from.push(live_comm_sidecar.to_string_lossy().into_owned());
-                match sts_simulator::cli::coverage_tools::load_live_comm_records(
-                    &live_comm_sidecar,
-                ) {
+                match sts_simulator::cli::coverage_tools::load_live_comm_records(&live_comm_sidecar)
+                {
                     Ok(live_records) => records.extend(live_records),
                     Err(err) => {
                         eprintln!("Failed to load live_comm signature records: {}", err);
@@ -659,9 +663,8 @@ fn main() {
                     }
                 }
                 LogCommands::Gc => {
-                    let summary =
-                        sts_simulator::cli::live_comm_admin::gc_runs(&paths)
-                            .expect("gc should run");
+                    let summary = sts_simulator::cli::live_comm_admin::gc_runs(&paths)
+                        .expect("gc should run");
                     println!(
                         "gc pruned_runs={} pruned_debug={} pruned_replay={} pruned_watch={}",
                         summary.pruned_run_artifacts,
@@ -909,9 +912,7 @@ fn main() {
                         if artifact == "raw" {
                             sts_simulator::cli::live_comm_admin::latest_raw_path(&paths)
                         } else if artifact == "combat_suspects" {
-                            sts_simulator::cli::live_comm_admin::latest_combat_suspect_path(
-                                &paths,
-                            )
+                            sts_simulator::cli::live_comm_admin::latest_combat_suspect_path(&paths)
                         } else if artifact == "findings" {
                             sts_simulator::cli::live_comm_admin::latest_run_artifact_path(
                                 &paths,
@@ -958,7 +959,9 @@ fn main() {
                     };
 
                     if let Some(category_filter) = category.as_ref() {
-                        report.families.retain(|entry| entry.category == *category_filter);
+                        report
+                            .families
+                            .retain(|entry| entry.category == *category_filter);
                     }
                     if let Some(family_filter) = family.as_ref() {
                         let needle = family_filter.to_ascii_lowercase();

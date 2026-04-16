@@ -136,4 +136,3 @@ pub fn build_fixture_from_record_window(
         tags,
     })
 }
-

@@ -1,7 +1,7 @@
 use super::context::DeckContext;
-use crate::runtime::combat::CombatCard;
 use crate::content::cards::{get_card_definition, CardId, CardType};
 use crate::content::relics::RelicId;
+use crate::runtime::combat::CombatCard;
 
 pub enum DeckAction {
     PreventObtain,
@@ -123,8 +123,6 @@ impl DeckManager {
             actions.push(DeckAction::TriggerObtainCard(CardId::Necronomicurse));
         }
 
-        RemoveResult {
-            actions,
-        }
+        RemoveResult { actions }
     }
 }

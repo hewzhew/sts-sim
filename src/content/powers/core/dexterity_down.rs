@@ -1,6 +1,6 @@
-use crate::runtime::action::Action;
 use crate::content::powers::PowerId;
 use crate::core::EntityId;
+use crate::runtime::action::Action;
 
 /// Java: LoseDexterityPower.atEndOfTurn() applies negative Dexterity,
 /// then removes the temporary Lose Dex power itself.

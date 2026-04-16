@@ -23,7 +23,11 @@ fn average_deck_cost(rs: &RunState) -> f32 {
     let total_cost: i32 = rs
         .master_deck
         .iter()
-        .map(|card| crate::content::cards::get_card_definition(card.id).cost.max(0) as i32)
+        .map(|card| {
+            crate::content::cards::get_card_definition(card.id)
+                .cost
+                .max(0) as i32
+        })
         .sum();
     total_cost as f32 / rs.master_deck.len() as f32
 }
@@ -173,32 +177,38 @@ mod tests {
     fn base_tier_uses_explicit_band_ordering_and_class_adjustments() {
         assert!(base_tier(RelicId::Sozu, "Ironclad") > base_tier(RelicId::CursedKey, "Ironclad"));
         assert!(
-            base_tier(RelicId::CursedKey, "Ironclad")
-                > base_tier(RelicId::SneckoEye, "Ironclad")
+            base_tier(RelicId::CursedKey, "Ironclad") > base_tier(RelicId::SneckoEye, "Ironclad")
         );
         assert!(
             base_tier(RelicId::CoffeeDripper, "Ironclad")
                 > base_tier(RelicId::CoffeeDripper, "Silent")
         );
-        assert_eq!(base_tier(RelicId::CallingBell, "Ironclad"), BossRelicTierBand::Weak.score());
+        assert_eq!(
+            base_tier(RelicId::CallingBell, "Ironclad"),
+            BossRelicTierBand::Weak.score()
+        );
     }
 
     #[test]
     fn boss_relic_scoring_uses_base_tier_and_need_modifiers() {
         let agent = Agent::new();
         let mut thin_run = RunState::new(11, 0, true, "Ironclad");
-        thin_run.master_deck.push(crate::runtime::combat::CombatCard::new(
-            CardId::Shockwave,
-            11_001,
-        ));
+        thin_run
+            .master_deck
+            .push(crate::runtime::combat::CombatCard::new(
+                CardId::Shockwave,
+                11_001,
+            ));
 
         let mut cluttered_run = thin_run.clone();
         cluttered_run.current_hp = 24;
         cluttered_run.max_hp = 80;
-        cluttered_run.master_deck.push(crate::runtime::combat::CombatCard::new(
-            CardId::Parasite,
-            11_002,
-        ));
+        cluttered_run
+            .master_deck
+            .push(crate::runtime::combat::CombatCard::new(
+                CardId::Parasite,
+                11_002,
+            ));
 
         assert!(
             agent.boss_relic_score(&cluttered_run, RelicId::EmptyCage)

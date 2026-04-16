@@ -1,5 +1,4 @@
 use crate::bot::card_taxonomy::taxonomy;
-use crate::bot::combat_posture::{posture_features, CombatPostureFeatures};
 use crate::bot::combat_card_knowledge::{
     branch_family_for_card, classify_turn_action, default_chance_profile,
     default_ordering_constraint, default_ordering_hint, default_risk_profile, ChanceProfile,
@@ -10,11 +9,12 @@ use crate::bot::combat_families::sequencing::{
     assess_branch_opening, assess_turn_action, BranchOpeningContext, BranchOpeningEstimate,
     SequencingAssessment, TurnRiskContext, TurnSequencingContext,
 };
+use crate::bot::combat_posture::{posture_features, CombatPostureFeatures};
 use crate::bot::monster_belief::{build_combat_belief_state, total_damage_for_intent};
-use crate::runtime::combat::CombatState;
-use crate::runtime::combat::Intent;
 use crate::content::cards::{get_card_definition, CardId, CardType};
 use crate::content::potions::PotionId;
+use crate::runtime::combat::CombatState;
+use crate::runtime::combat::Intent;
 use crate::state::core::ClientInput;
 use serde_json::{json, Value};
 
@@ -849,9 +849,7 @@ fn followup_payoff_estimate(combat: &CombatState, current_idx: usize, input: &Cl
         | CardId::ThunderClap
         | CardId::Trip => best_multi_hit_followup.max(best_attack_followup),
         CardId::Rage | CardId::Flex => cumulative_attack_followup.max(best_attack_followup),
-        _ if taxonomy(current_card.id).is_setup_power()
-            =>
-        {
+        _ if taxonomy(current_card.id).is_setup_power() => {
             cumulative_attack_followup.max(best_attack_followup)
         }
         _ => best_attack_followup / 2,

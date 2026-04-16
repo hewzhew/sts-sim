@@ -1,6 +1,6 @@
-use crate::runtime::combat::{CombatState, Intent, MonsterEntity, PowerId};
 use crate::content::monsters::EnemyId;
 use crate::content::relics::RelicId;
+use crate::runtime::combat::{CombatState, Intent, MonsterEntity, PowerId};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum MonsterBeliefCertainty {

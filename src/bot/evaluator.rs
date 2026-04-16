@@ -1,6 +1,6 @@
-use crate::runtime::combat::{CombatCard, CombatState, Intent, PowerId};
 use crate::content::cards::{get_card_definition, CardType};
 use crate::content::monsters::EnemyId;
+use crate::runtime::combat::{CombatCard, CombatState, Intent, PowerId};
 use crate::state::{EngineState, RunResult};
 
 /// Static heuristic evaluation of the current Engine and Combat state from the AI's perspective.

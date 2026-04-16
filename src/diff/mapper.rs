@@ -1,9 +1,9 @@
-use crate::runtime::combat::Intent;
 use crate::content::cards::CardId;
 use crate::content::monsters::EnemyId;
 use crate::content::potions::PotionId;
 use crate::content::powers::PowerId;
 use crate::content::relics::RelicId;
+use crate::runtime::combat::Intent;
 
 // ============================================================================
 // String → Enum Mappings (auto-generated where possible)

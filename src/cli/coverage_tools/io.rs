@@ -1,9 +1,9 @@
 use std::path::{Path, PathBuf};
 
-use crate::runtime::combat::CombatState;
-use crate::diff::protocol::{ReplayAction, parse_replay};
+use crate::diff::protocol::{parse_replay, ReplayAction};
 use crate::diff::replay::{continue_deferred_pending_choice, tick_until_stable};
 use crate::diff::state_sync::{build_combat_state, sync_state};
+use crate::runtime::combat::CombatState;
 use crate::state::core::{ClientInput, EngineState, PendingChoice};
 
 use crate::bot::coverage_signatures::{

@@ -51,6 +51,8 @@ pub(super) fn deck_surgery_option_score(
 
     let mut score = 0;
 
+    let assessment = deck_surgery_option_assessment(rs, need, &lower);
+
     if contains_any(
         &lower,
         &[
@@ -62,33 +64,65 @@ pub(super) fn deck_surgery_option_score(
         ],
     ) {
         score += 1_800 + need.purge_value * 8 + remove_targets * 180 + curse_pressure * 55;
-        score += crate::bot::deck_delta_eval::compare_purge_vs_keep(rs).total * 12;
+        score += assessment
+            .as_ref()
+            .map(|value| value.total_prior_delta)
+            .unwrap_or_else(|| crate::bot::deck_delta_eval::compare_purge_vs_keep(rs).total)
+            * 12;
     }
     if contains_any(&lower, &["transform a card"]) {
         score += 1_400
             + transform_targets * 180
             + need.purge_value * 3 / 2
             + need.best_upgrade_value / 3;
-        score += crate::bot::deck_delta_eval::compare_transform_vs_decline(rs, 1, false).total * 10;
+        score += assessment
+            .as_ref()
+            .map(|value| value.total_prior_delta)
+            .unwrap_or_else(|| {
+                crate::bot::deck_delta_eval::compare_transform_vs_decline(rs, 1, false).total
+            })
+            * 10;
     }
     if contains_any(&lower, &["transform 2 cards"]) {
-        score += 1_900
-            + transform_targets * 240
-            + need.purge_value * 2
-            + need.best_upgrade_value / 2;
-        score += crate::bot::deck_delta_eval::compare_transform_vs_decline(rs, 2, false).total * 10;
+        score +=
+            1_900 + transform_targets * 240 + need.purge_value * 2 + need.best_upgrade_value / 2;
+        score += assessment
+            .as_ref()
+            .map(|value| value.total_prior_delta)
+            .unwrap_or_else(|| {
+                crate::bot::deck_delta_eval::compare_transform_vs_decline(rs, 2, false).total
+            })
+            * 10;
     }
     if contains_any(&lower, &["upgrade a card", "upgrade 1 card", "grow"]) {
         score += 1_300 + need.best_upgrade_value * 8 + upgradable_cards * 120;
-        score += crate::bot::deck_delta_eval::compare_upgrade_vs_decline(rs, 1).total * 10;
+        score += assessment
+            .as_ref()
+            .map(|value| value.total_prior_delta)
+            .unwrap_or_else(|| {
+                crate::bot::deck_delta_eval::compare_upgrade_vs_decline(rs, 1).total
+            })
+            * 10;
     }
     if contains_any(&lower, &["upgrade 2 random cards"]) {
         score += 1_600 + need.best_upgrade_value * 5 + upgradable_cards * 100;
-        score += crate::bot::deck_delta_eval::compare_upgrade_vs_decline(rs, 2).total * 8;
+        score += assessment
+            .as_ref()
+            .map(|value| value.total_prior_delta)
+            .unwrap_or_else(|| {
+                crate::bot::deck_delta_eval::compare_upgrade_vs_decline(rs, 2).total
+            })
+            * 8;
     }
     if contains_any(&lower, &["duplicate", "copy a card"]) {
         score += 1_400
-            + crate::bot::deck_delta_eval::compare_duplicate_vs_decline(rs).total * 10
+            + assessment
+                .as_ref()
+                .map(|value| value.total_prior_delta)
+                .unwrap_or_else(|| {
+                    crate::bot::deck_delta_eval::compare_duplicate_vs_decline(rs).total
+                })
+                * 10
             + need.long_term_meta_value / 2
             + need.best_upgrade_value / 4
             - need.purge_value / 5;
@@ -135,6 +169,54 @@ pub(super) fn deck_surgery_option_score(
     }
 
     score
+}
+
+pub(crate) fn deck_surgery_option_assessment(
+    rs: &RunState,
+    need: &NoncombatNeedSnapshot,
+    lower_text: &str,
+) -> Option<crate::bot::run_deck_improvement::DeckOperationAssessment> {
+    let operation = if contains_any(
+        lower_text,
+        &[
+            "remove a card",
+            "remove 1 card",
+            "purify",
+            "forget",
+            "simplicity",
+        ],
+    ) {
+        Some(crate::bot::run_deck_improvement::DeckOperationKind::Remove)
+    } else if contains_any(lower_text, &["transform 2 cards"]) {
+        Some(
+            crate::bot::run_deck_improvement::DeckOperationKind::Transform {
+                count: 2,
+                upgraded_context: false,
+            },
+        )
+    } else if contains_any(lower_text, &["transform a card"]) {
+        Some(
+            crate::bot::run_deck_improvement::DeckOperationKind::Transform {
+                count: 1,
+                upgraded_context: false,
+            },
+        )
+    } else if contains_any(
+        lower_text,
+        &[
+            "upgrade a card",
+            "upgrade 1 card",
+            "grow",
+            "upgrade 2 random cards",
+        ],
+    ) {
+        Some(crate::bot::run_deck_improvement::DeckOperationKind::Upgrade)
+    } else if contains_any(lower_text, &["duplicate", "copy a card"]) {
+        Some(crate::bot::run_deck_improvement::DeckOperationKind::Duplicate)
+    } else {
+        None
+    }?;
+    Some(crate::bot::run_deck_improvement::assess_deck_operation_with_need(rs, need, operation))
 }
 
 #[cfg(test)]

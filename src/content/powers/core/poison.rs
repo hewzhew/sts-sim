@@ -1,6 +1,6 @@
-use crate::runtime::action::Action;
 use crate::content::powers::PowerId;
 use crate::core::EntityId;
+use crate::runtime::action::Action;
 
 pub fn at_turn_start(owner: EntityId, amount: i32) -> smallvec::SmallVec<[Action; 2]> {
     if amount <= 0 {

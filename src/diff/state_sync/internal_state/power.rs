@@ -96,7 +96,6 @@ pub fn sync_power_extra_data_from_snapshot_power(power: &mut Power, snapshot_pow
         power.extra_data = runtime_state_i32("damage");
         return;
     }
-
 }
 
 pub fn sync_power_extra_data_from_snapshot(

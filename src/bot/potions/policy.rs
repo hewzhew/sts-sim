@@ -2,10 +2,10 @@ use super::catalog::{category_for, DONT_PLAY_POTIONS};
 use super::signals::{analyze_combat, CombatSignals};
 use super::targets;
 use super::{PotionCandidate, PotionCategory, PotionDecisionSnapshot};
-use crate::runtime::combat::{CombatState, StanceId};
 use crate::content::cards::{get_card_definition, CardId, CardType};
 use crate::content::potions::{get_potion_definition, PotionId};
 use crate::engine::targeting;
+use crate::runtime::combat::{CombatState, StanceId};
 use crate::state::core::ClientInput;
 
 #[derive(Clone, Copy)]

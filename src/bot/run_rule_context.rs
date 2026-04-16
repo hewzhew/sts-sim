@@ -66,6 +66,13 @@ pub(crate) struct RunRuleContext {
     pub self_clog_replication_risk: i32,
 }
 
+#[derive(Debug, Clone, Copy, Default)]
+struct RuleContextDensities {
+    high_cost_goodstuff_density: i32,
+    low_cost_filler_density: i32,
+    self_clog_replication_risk: i32,
+}
+
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct ConditionedCardFeatures {
     pub base_cost_band: BaseCostBand,
@@ -87,6 +94,35 @@ pub(crate) struct ConditionedCardFeatures {
     pub shell_disruption: i32,
 }
 
+#[derive(Debug, Clone, Copy)]
+struct BaseCardSemantics {
+    base_cost_band: BaseCostBand,
+    is_draw: bool,
+    is_energy_bridge: bool,
+    is_setup: bool,
+    is_payoff: bool,
+    is_scaling: bool,
+    is_x_cost: bool,
+    is_zero_one_cost: bool,
+    is_high_cost: bool,
+    is_self_replicating: bool,
+    is_random_generation: bool,
+    is_cost_manipulation_dependent: bool,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct ShellSemantics {
+    alignment: i32,
+    disruption: i32,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct RegimeDerivedSemantics {
+    draw_slot_pressure: i32,
+    future_clog_risk: i32,
+    snecko_roll_upside: i32,
+}
+
 #[derive(Debug, Clone, Copy, Default)]
 pub(crate) struct ConditionedDelta {
     pub total: i32,
@@ -96,7 +132,20 @@ pub(crate) struct ConditionedDelta {
 
 pub(crate) fn build_run_rule_context(rs: &RunState) -> RunRuleContext {
     let profile = CardEvaluator::deck_profile(rs);
-    let summary = RuleRegimeSummary {
+    let summary = build_rule_regime_summary(rs, &profile);
+    let densities = derive_rule_context_densities(rs, &summary, &profile);
+
+    RunRuleContext {
+        summary,
+        profile,
+        high_cost_goodstuff_density: densities.high_cost_goodstuff_density,
+        low_cost_filler_density: densities.low_cost_filler_density,
+        self_clog_replication_risk: densities.self_clog_replication_risk,
+    }
+}
+
+fn build_rule_regime_summary(rs: &RunState, profile: &DeckProfile) -> RuleRegimeSummary {
+    RuleRegimeSummary {
         cost_randomized: has_relic(rs, RelicId::SneckoEye),
         retain_heavy: has_relic(rs, RelicId::RunicPyramid),
         skills_free: has_card(rs, CardId::Corruption),
@@ -114,35 +163,31 @@ pub(crate) fn build_run_rule_context(rs: &RunState) -> RunRuleContext {
         strength_scaling: profile.strength_enablers >= 1,
         multi_hit_scaling: count_multi_hit_cards(&rs.master_deck) >= 2
             && profile.strength_enablers >= 1,
-    };
+    }
+}
 
-    let mut high_cost_goodstuff_density = 0;
-    let mut low_cost_filler_density = 0;
-    let mut self_clog_replication_risk = 0;
-
+fn derive_rule_context_densities(
+    rs: &RunState,
+    summary: &RuleRegimeSummary,
+    profile: &DeckProfile,
+) -> RuleContextDensities {
+    let mut densities = RuleContextDensities::default();
     for card in &rs.master_deck {
         let features = conditioned_card_features(rs, &summary, &profile, card.id);
         let owned_value = CardEvaluator::evaluate_owned_card(card.id, rs);
         if features.is_high_cost && owned_value >= 45 {
-            high_cost_goodstuff_density += 1;
+            densities.high_cost_goodstuff_density += 1;
         }
         if features.is_zero_one_cost && owned_value <= 30 && !features.is_draw {
-            low_cost_filler_density += 1;
+            densities.low_cost_filler_density += 1;
         }
-        self_clog_replication_risk += if features.is_self_replicating {
+        densities.self_clog_replication_risk += if features.is_self_replicating {
             features.future_clog_risk.max(1)
         } else {
             0
         };
     }
-
-    RunRuleContext {
-        summary,
-        profile,
-        high_cost_goodstuff_density,
-        low_cost_filler_density,
-        self_clog_replication_risk,
-    }
+    densities
 }
 
 pub(crate) fn conditioned_card_addition_value(rs: &RunState, card_id: CardId) -> ConditionedDelta {
@@ -223,7 +268,32 @@ pub(crate) fn conditioned_card_features(
     profile: &DeckProfile,
     card_id: CardId,
 ) -> ConditionedCardFeatures {
-    let def = cards::get_card_definition(card_id);
+    let base = base_card_semantics(card_id);
+    let regime = regime_derived_semantics(summary, card_id, base);
+    let shell = shell_semantics(profile, card_id, base, regime.future_clog_risk);
+
+    ConditionedCardFeatures {
+        base_cost_band: base.base_cost_band,
+        is_zero_one_cost: base.is_zero_one_cost,
+        is_high_cost: base.is_high_cost,
+        is_draw: base.is_draw,
+        is_energy_bridge: base.is_energy_bridge,
+        is_setup: base.is_setup,
+        is_payoff: base.is_payoff,
+        is_scaling: base.is_scaling,
+        is_x_cost: base.is_x_cost,
+        is_self_replicating: base.is_self_replicating,
+        is_random_generation: base.is_random_generation,
+        is_cost_manipulation_dependent: base.is_cost_manipulation_dependent,
+        draw_slot_pressure: regime.draw_slot_pressure,
+        future_clog_risk: regime.future_clog_risk,
+        snecko_roll_upside: regime.snecko_roll_upside,
+        shell_alignment: shell.alignment,
+        shell_disruption: shell.disruption,
+    }
+}
+
+fn base_card_semantics(card_id: CardId) -> BaseCardSemantics {
     let structure = structure(card_id);
     let facts = facts(card_id);
     let base_cost_band = match facts.cost_band {
@@ -233,6 +303,7 @@ pub(crate) fn conditioned_card_features(
         FactCostBand::ThreePlus => BaseCostBand::ThreePlus,
         FactCostBand::Unplayable => BaseCostBand::Unplayable,
     };
+
     let is_draw = facts.draws_cards || structure.is_draw_core();
     let is_energy_bridge = facts.gains_energy || structure.is_resource_conversion();
     let is_setup = structure.is_setup_piece() || structure.is_engine_piece();
@@ -242,37 +313,50 @@ pub(crate) fn conditioned_card_features(
         || structure.is_block_payoff()
         || facts.combat_heal
         || structure.is_vuln_payoff();
-    let is_self_replicating = matches!(card_id, CardId::Anger);
-    let is_random_generation = matches!(
-        card_id,
-        CardId::Discovery | CardId::InfernalBlade | CardId::Metamorphosis | CardId::Mayhem
-    );
-    let is_cost_manipulation_dependent = matches!(
-        card_id,
-        CardId::BloodForBlood | CardId::Dropkick | CardId::SeverSoul | CardId::SeeingRed
-    ) || facts.conditional_free;
 
-    let draw_slot_pressure = if is_self_replicating {
+    BaseCardSemantics {
+        base_cost_band,
+        is_draw,
+        is_energy_bridge,
+        is_setup,
+        is_payoff,
+        is_scaling,
+        is_x_cost: matches!(base_cost_band, BaseCostBand::XCost),
+        is_zero_one_cost: matches!(base_cost_band, BaseCostBand::ZeroOne),
+        is_high_cost: matches!(base_cost_band, BaseCostBand::Two | BaseCostBand::ThreePlus),
+        is_self_replicating: facts.self_replicating,
+        is_random_generation: facts.random_generation,
+        is_cost_manipulation_dependent: facts.cost_manipulation_sensitive || facts.conditional_free,
+    }
+}
+
+fn regime_derived_semantics(
+    summary: &RuleRegimeSummary,
+    card_id: CardId,
+    base: BaseCardSemantics,
+) -> RegimeDerivedSemantics {
+    let def = cards::get_card_definition(card_id);
+    let draw_slot_pressure = if base.is_self_replicating {
         4
-    } else if is_random_generation {
+    } else if base.is_random_generation {
         2
     } else if matches!(def.card_type, CardType::Attack | CardType::Skill)
-        && !is_draw
-        && !is_setup
-        && !is_scaling
-        && !is_payoff
+        && !base.is_draw
+        && !base.is_setup
+        && !base.is_scaling
+        && !base.is_payoff
         && def.cost <= 1
     {
         3
-    } else if !is_draw && !is_setup && !is_scaling {
+    } else if !base.is_draw && !base.is_setup && !base.is_scaling {
         1
     } else {
         0
     };
 
-    let future_clog_risk = if is_self_replicating {
+    let future_clog_risk = if base.is_self_replicating {
         5
-    } else if summary.retain_heavy && !is_draw && !is_energy_bridge && !is_payoff {
+    } else if summary.retain_heavy && !base.is_draw && !base.is_energy_bridge && !base.is_payoff {
         2
     } else if matches!(def.card_type, CardType::Power) && def.cost >= 2 {
         1
@@ -280,28 +364,34 @@ pub(crate) fn conditioned_card_features(
         0
     };
 
-    let snecko_roll_upside = snecko_roll_upside(def.cost, is_draw, is_setup, is_scaling, is_payoff);
-    let shell_alignment = shell_alignment_bonus(profile, card_id, is_draw, is_setup, is_payoff);
-    let shell_disruption = shell_disruption_penalty(profile, card_id, future_clog_risk);
-
-    ConditionedCardFeatures {
-        base_cost_band,
-        is_zero_one_cost: matches!(base_cost_band, BaseCostBand::ZeroOne),
-        is_high_cost: matches!(base_cost_band, BaseCostBand::Two | BaseCostBand::ThreePlus),
-        is_draw,
-        is_energy_bridge,
-        is_setup,
-        is_payoff,
-        is_scaling,
-        is_x_cost: matches!(base_cost_band, BaseCostBand::XCost),
-        is_self_replicating,
-        is_random_generation,
-        is_cost_manipulation_dependent,
+    RegimeDerivedSemantics {
         draw_slot_pressure,
         future_clog_risk,
-        snecko_roll_upside,
-        shell_alignment,
-        shell_disruption,
+        snecko_roll_upside: snecko_roll_upside(
+            def.cost,
+            base.is_draw,
+            base.is_setup,
+            base.is_scaling,
+            base.is_payoff,
+        ),
+    }
+}
+
+fn shell_semantics(
+    profile: &DeckProfile,
+    card_id: CardId,
+    base: BaseCardSemantics,
+    future_clog_risk: i32,
+) -> ShellSemantics {
+    ShellSemantics {
+        alignment: shell_alignment_bonus(
+            profile,
+            card_id,
+            base.is_draw,
+            base.is_setup,
+            base.is_payoff,
+        ),
+        disruption: shell_disruption_penalty(profile, card_id, future_clog_risk),
     }
 }
 
@@ -555,4 +645,40 @@ fn has_relic(rs: &RunState, relic_id: RelicId) -> bool {
 
 fn has_card(rs: &RunState, card_id: CardId) -> bool {
     rs.master_deck.iter().any(|card| card.id == card_id)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn conditioned_features_separate_base_semantics_from_regime_effects() {
+        let profile = DeckProfile::default();
+        let neutral = RuleRegimeSummary::default();
+        let retain_heavy = RuleRegimeSummary {
+            retain_heavy: true,
+            ..RuleRegimeSummary::default()
+        };
+
+        let neutral_features = conditioned_card_features(
+            &RunState::new(1, 0, true, "Ironclad"),
+            &neutral,
+            &profile,
+            CardId::Warcry,
+        );
+        let retain_features = conditioned_card_features(
+            &RunState::new(1, 0, true, "Ironclad"),
+            &retain_heavy,
+            &profile,
+            CardId::Warcry,
+        );
+
+        assert_eq!(
+            neutral_features.base_cost_band,
+            retain_features.base_cost_band
+        );
+        assert_eq!(neutral_features.is_draw, retain_features.is_draw);
+        assert_eq!(neutral_features.is_setup, retain_features.is_setup);
+        assert!(retain_features.future_clog_risk >= neutral_features.future_clog_risk);
+    }
 }

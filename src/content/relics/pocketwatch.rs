@@ -1,5 +1,5 @@
-use crate::runtime::action::{Action, ActionInfo, AddTo};
 use crate::content::relics::RelicState;
+use crate::runtime::action::{Action, ActionInfo, AddTo};
 use smallvec::SmallVec;
 
 fn first_turn_flag(relic_state: &RelicState) -> bool {

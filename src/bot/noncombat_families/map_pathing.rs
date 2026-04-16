@@ -152,8 +152,8 @@ impl Agent {
         weights[1] += need.survival_pressure / 2 + need.best_upgrade_value / 5
             - need.long_term_meta_value / 6
             + need.key_urgency / 6;
-        weights[2] += need.purge_value / 12 + need.long_term_meta_value / 8
-            - need.survival_pressure / 10;
+        weights[2] +=
+            need.purge_value / 12 + need.long_term_meta_value / 8 - need.survival_pressure / 10;
         weights[3] += need.long_term_meta_value / 7 + need.best_upgrade_value / 10
             - need.survival_pressure / 4
             - need.key_urgency / 5;
@@ -165,7 +165,9 @@ impl Agent {
             weights[1] += 45;
             weights[0] += 25;
         }
-        if need.route.upcoming_elite_pressure > 0 && need.survival_pressure < need.best_upgrade_value {
+        if need.route.upcoming_elite_pressure > 0
+            && need.survival_pressure < need.best_upgrade_value
+        {
             weights[3] += 35;
         }
 
@@ -216,10 +218,12 @@ mod tests {
 
         let mut pressured = safe.clone();
         pressured.current_hp = 18;
-        pressured.master_deck.push(crate::runtime::combat::CombatCard::new(
-            CardId::Parasite,
-            13_001,
-        ));
+        pressured
+            .master_deck
+            .push(crate::runtime::combat::CombatCard::new(
+                CardId::Parasite,
+                13_001,
+            ));
         pressured.map = linear_map_state(
             &[
                 RoomType::MonsterRoomElite,
@@ -242,7 +246,8 @@ mod tests {
             let mut node = MapRoomNode::new(0, y as i32);
             node.class = Some(*room_type);
             if y + 1 < rooms.len() {
-                node.edges.insert(MapEdge::new(0, y as i32, 0, y as i32 + 1));
+                node.edges
+                    .insert(MapEdge::new(0, y as i32, 0, y as i32 + 1));
             }
             graph.push(vec![node]);
         }

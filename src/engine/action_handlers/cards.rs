@@ -1048,8 +1048,7 @@ pub fn handle_play_top_card(target: Option<usize>, exhaust: bool, state: &mut Co
         if state.zones.discard_pile.is_empty() {
             return;
         }
-        state
-            .queue_action_front(Action::PlayTopCard { target, exhaust });
+        state.queue_action_front(Action::PlayTopCard { target, exhaust });
         state.queue_action_front(Action::EmptyDeckShuffle);
         return;
     }

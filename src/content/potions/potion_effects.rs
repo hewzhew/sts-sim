@@ -1,7 +1,7 @@
 use super::PotionId;
-use crate::runtime::action::{Action, ActionInfo, AddTo, DamageInfo, DamageType, NO_SOURCE};
 use crate::content::powers::PowerId;
 use crate::core::EntityId;
+use crate::runtime::action::{Action, ActionInfo, AddTo, DamageInfo, DamageType, NO_SOURCE};
 use smallvec::SmallVec;
 
 /// Player entity ID constant
@@ -478,7 +478,10 @@ pub fn get_potion_actions(
         }
         PotionId::EssenceOfDarkness => {
             for _ in 0..potency.max(0) {
-                bottom(&mut actions, Action::ChannelOrb(crate::runtime::combat::OrbId::Dark));
+                bottom(
+                    &mut actions,
+                    Action::ChannelOrb(crate::runtime::combat::OrbId::Dark),
+                );
             }
         }
     }

@@ -1,8 +1,8 @@
 use crate::bot::card_disposition::{
     combat_copy_score_for_uuid, combat_exhaust_score_for_uuid, combat_retention_score_for_uuid,
 };
-use crate::runtime::combat::CombatState;
 use crate::engine::targeting;
+use crate::runtime::combat::CombatState;
 use crate::state::core::{ClientInput, GridSelectReason, HandSelectReason, PendingChoice};
 use crate::state::EngineState;
 

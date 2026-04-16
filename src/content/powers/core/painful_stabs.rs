@@ -1,5 +1,5 @@
-use crate::runtime::action::Action;
 use crate::content::cards::CardId;
+use crate::runtime::action::Action;
 
 pub fn on_inflict_damage(
     damage: i32,

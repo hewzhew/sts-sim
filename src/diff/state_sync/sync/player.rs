@@ -2,10 +2,7 @@ use serde_json::Value;
 
 use super::power::sync_player_powers_from_snapshot;
 
-pub fn sync_player_from_snapshot(
-    cs: &mut crate::runtime::combat::CombatState,
-    snapshot: &Value,
-) {
+pub fn sync_player_from_snapshot(cs: &mut crate::runtime::combat::CombatState, snapshot: &Value) {
     let player_val = &snapshot["player"];
 
     cs.entities.player.current_hp = player_val["current_hp"].as_i64().unwrap_or(

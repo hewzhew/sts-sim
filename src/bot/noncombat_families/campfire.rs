@@ -167,13 +167,9 @@ impl Agent {
         let urgent_boss_window = i32::from(context.pre_boss_floor) * 80;
         let shell_support_penalty = i32::from(context.needs_smith_shell_support) * 30;
         let critical_hp_bonus = i32::from(context.hp_ratio < 0.35) * 180;
-        let survival_floor = i32::from(
-            context.hp_ratio < 0.40 || context.need.survival_pressure >= 140,
-        ) * 220;
-        context.need.survival_pressure * 2
-            + urgent_boss_window
-            + critical_hp_bonus
-            + survival_floor
+        let survival_floor =
+            i32::from(context.hp_ratio < 0.40 || context.need.survival_pressure >= 140) * 220;
+        context.need.survival_pressure * 2 + urgent_boss_window + critical_hp_bonus + survival_floor
             - context.need.best_upgrade_value / 3
             - context.need.purge_value / 4
             - context.need.long_term_meta_value / 5
@@ -217,8 +213,7 @@ impl Agent {
     }
 
     fn dig_score(&self, context: &CampfireDecisionContext) -> i32 {
-        context.need.long_term_meta_value * 4 / 5
-            + context.need.route.nearby_recovery_windows * 20
+        context.need.long_term_meta_value * 4 / 5 + context.need.route.nearby_recovery_windows * 20
             - context.need.survival_pressure
             - context.need.best_upgrade_value / 2
             - context.need.key_urgency / 3
@@ -338,7 +333,8 @@ mod tests {
             let mut node = MapRoomNode::new(0, y as i32);
             node.class = Some(*room_type);
             if y + 1 < rooms.len() {
-                node.edges.insert(MapEdge::new(0, y as i32, 0, y as i32 + 1));
+                node.edges
+                    .insert(MapEdge::new(0, y as i32, 0, y as i32 + 1));
             }
             graph.push(vec![node]);
         }

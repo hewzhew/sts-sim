@@ -838,6 +838,18 @@ pub(crate) fn best_remove_uuid(rs: &RunState) -> Option<u32> {
         .and_then(|candidate| candidate.target_uuid)
 }
 
+pub(crate) fn evaluate_remove_target(
+    rs: &RunState,
+    target_uuid: u32,
+) -> Option<DeckOperationCandidate> {
+    let ctx = build_deck_improvement_context(rs, None);
+    let target_index = rs
+        .master_deck
+        .iter()
+        .position(|card| card.uuid == target_uuid)?;
+    Some(rank_remove_candidate(rs, &ctx, target_index).candidate)
+}
+
 #[allow(dead_code)]
 pub(crate) fn best_upgrade_improvement(rs: &RunState) -> i32 {
     assess_deck_operation(rs, DeckOperationKind::Upgrade).total_prior_delta

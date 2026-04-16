@@ -201,6 +201,24 @@ fn compact_screen_state(screen_state: Option<&Value>) -> Value {
     let Some(screen_state) = screen_state else {
         return Value::Null;
     };
+    let event_id = screen_state
+        .get("event_name")
+        .and_then(Value::as_str)
+        .or_else(|| screen_state.get("event_id").and_then(Value::as_str))
+        .and_then(crate::engine::event_handler::event_id_from_name);
+    let current_screen = screen_state
+        .get("current_screen_index")
+        .or_else(|| screen_state.get("current_screen"))
+        .and_then(Value::as_u64)
+        .unwrap_or(0) as usize;
+    let semantics_required = event_id
+        .map(|event_id| {
+            crate::engine::event_handler::live_event_requires_semantics_state(
+                event_id,
+                current_screen,
+            )
+        })
+        .unwrap_or(false);
     json!({
         "event_id": screen_state.get("event_id").and_then(Value::as_str),
         "event_name": screen_state.get("event_name").and_then(Value::as_str),
@@ -208,6 +226,12 @@ fn compact_screen_state(screen_state: Option<&Value>) -> Value {
         "current_screen_index": screen_state.get("current_screen_index").and_then(Value::as_i64),
         "current_screen_key": screen_state.get("current_screen_key").and_then(Value::as_str),
         "screen_source": screen_state.get("screen_source").and_then(Value::as_str),
+        "event_semantics_state": screen_state.get("event_semantics_state").cloned().unwrap_or(Value::Null),
+        "event_semantics_required": semantics_required,
+        "event_semantics_keys": event_id
+            .and_then(|event_id| crate::engine::event_handler::live_event_semantics_state_keys(event_id, current_screen))
+            .map(|keys| keys.to_vec())
+            .unwrap_or_default(),
         "reward_count": screen_state.get("rewards").and_then(Value::as_array).map(|rewards| rewards.len()),
         "card_count": screen_state.get("cards").and_then(Value::as_array).map(|cards| cards.len()),
         "choice_count": screen_state.get("options").and_then(Value::as_array).map(|options| options.len()),

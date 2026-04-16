@@ -73,9 +73,7 @@ impl BranchFamily {
 pub(crate) fn classify_turn_action(card_id: CardId, card_type: CardType) -> TurnActionRole {
     match card_id {
         CardId::Feed | CardId::Reaper => TurnActionRole::Finisher,
-        CardId::Offering | CardId::SeeingRed | CardId::Bloodletting => {
-            TurnActionRole::EnergyBridge
-        }
+        CardId::Offering | CardId::SeeingRed | CardId::Bloodletting => TurnActionRole::EnergyBridge,
         CardId::PommelStrike
         | CardId::ShrugItOff
         | CardId::Warcry
@@ -97,9 +95,7 @@ pub(crate) fn classify_turn_action(card_id: CardId, card_type: CardType) -> Turn
         | CardId::Clothesline
         | CardId::Intimidate
         | CardId::SpotWeakness => TurnActionRole::Utility,
-        CardId::Rage | CardId::Flex | CardId::Inflame | CardId::DemonForm => {
-            TurnActionRole::Setup
-        }
+        CardId::Rage | CardId::Flex | CardId::Inflame | CardId::DemonForm => TurnActionRole::Setup,
         _ => match card_type {
             CardType::Power => TurnActionRole::Setup,
             CardType::Attack => TurnActionRole::Payoff,
@@ -122,7 +118,8 @@ pub(crate) fn default_ordering_hint(card_id: CardId, role: TurnActionRole) -> Tu
             | CardId::GhostlyArmor => TurnOrderingHint::PreferEarly,
             _ => TurnOrderingHint::OrderConditional,
         },
-        TurnActionRole::Payoff | TurnActionRole::Finisher => TurnOrderingHint::PreferLate,
+        TurnActionRole::Payoff => TurnOrderingHint::OrderFlexible,
+        TurnActionRole::Finisher => TurnOrderingHint::PreferLate,
         TurnActionRole::Utility => match card_id {
             CardId::Bash
             | CardId::Shockwave
@@ -189,6 +186,43 @@ pub fn branch_family_for_card(card_id: CardId) -> Option<BranchFamily> {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn generic_payoff_attack_is_not_forced_late() {
+        assert_eq!(
+            default_ordering_hint(CardId::Strike, TurnActionRole::Payoff),
+            TurnOrderingHint::OrderFlexible
+        );
+    }
+
+    #[test]
+    fn finisher_keeps_prefer_late_hint() {
+        assert_eq!(
+            default_ordering_hint(CardId::Feed, TurnActionRole::Finisher),
+            TurnOrderingHint::PreferLate
+        );
+    }
+
+    #[test]
+    fn generic_payoff_attack_uses_safe_risk_profile() {
+        assert_eq!(
+            default_risk_profile(CardId::Strike, TurnActionRole::Payoff),
+            RiskProfile::Safe
+        );
+    }
+
+    #[test]
+    fn finisher_keeps_window_sensitive_risk_profile() {
+        assert_eq!(
+            default_risk_profile(CardId::Feed, TurnActionRole::Finisher),
+            RiskProfile::WindowSensitive
+        );
+    }
+}
+
 pub(crate) fn default_risk_profile(card_id: CardId, role: TurnActionRole) -> RiskProfile {
     match role {
         TurnActionRole::Cycling | TurnActionRole::EnergyBridge => RiskProfile::DownsideSensitive,
@@ -198,7 +232,8 @@ pub(crate) fn default_risk_profile(card_id: CardId, role: TurnActionRole) -> Ris
             }
             _ => RiskProfile::Safe,
         },
-        TurnActionRole::Payoff | TurnActionRole::Finisher => RiskProfile::WindowSensitive,
+        TurnActionRole::Payoff => RiskProfile::Safe,
+        TurnActionRole::Finisher => RiskProfile::WindowSensitive,
         _ => RiskProfile::Safe,
     }
 }

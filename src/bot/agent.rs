@@ -79,7 +79,11 @@ impl Agent {
     ) -> ClientInput {
         match self.decide_policy(es, rs, cs.as_ref(), verbose) {
             crate::bot::BotPolicyDecision::Combat(decision) => {
-                self.record_live_coverage(decision.chosen_input.clone(), decision.diagnostics.chosen_move.clone(), cs.as_ref());
+                self.record_live_coverage(
+                    decision.chosen_input.clone(),
+                    decision.diagnostics.chosen_move.clone(),
+                    cs.as_ref(),
+                );
                 if let Some(combat) = cs.as_ref() {
                     self.record_signature_for_choice(es, combat, &decision.chosen_input);
                 }
@@ -87,15 +91,15 @@ impl Agent {
             }
             crate::bot::BotPolicyDecision::RewardCard(decision) => match decision.action {
                 crate::bot::RewardCardDecisionAction::Pick(idx) => match es {
-                    EngineState::PendingChoice(crate::state::core::PendingChoice::CardRewardSelect { .. }) => {
-                        ClientInput::SubmitDiscoverChoice(idx)
-                    }
+                    EngineState::PendingChoice(
+                        crate::state::core::PendingChoice::CardRewardSelect { .. },
+                    ) => ClientInput::SubmitDiscoverChoice(idx),
                     _ => ClientInput::SelectCard(idx),
                 },
                 crate::bot::RewardCardDecisionAction::Skip => match es {
-                    EngineState::PendingChoice(crate::state::core::PendingChoice::CardRewardSelect { .. }) => {
-                        ClientInput::Cancel
-                    }
+                    EngineState::PendingChoice(
+                        crate::state::core::PendingChoice::CardRewardSelect { .. },
+                    ) => ClientInput::Cancel,
                     _ => ClientInput::Proceed,
                 },
             },
@@ -119,6 +123,7 @@ impl Agent {
             crate::bot::BotPolicyDecision::Event(decision) => {
                 ClientInput::EventChoice(decision.decision.option_index)
             }
+            crate::bot::BotPolicyDecision::DeckImprovement(_) => ClientInput::Proceed,
             crate::bot::BotPolicyDecision::LegacyInput { input, .. } => input,
         }
     }
@@ -188,8 +193,8 @@ impl Agent {
                 if rs.master_deck.is_empty() {
                     ClientInput::Cancel
                 } else {
-                    let indices =
-                        self.best_purge_indices(rs, choice_state.max_choices.min(rs.master_deck.len()));
+                    let indices = self
+                        .best_purge_indices(rs, choice_state.max_choices.min(rs.master_deck.len()));
                     ClientInput::SubmitSelection(SelectionResolution {
                         scope: SelectionScope::Deck,
                         selected: indices

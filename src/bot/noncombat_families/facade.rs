@@ -558,8 +558,7 @@ fn choose_shining_light_option(rs: &RunState, options: &[Value]) -> Option<usize
         .position(|t| contains_any(t, &["enter the light", "upgrade 2 random cards"]));
     let leave_idx = labels.iter().position(|t| contains_any(t, &["leave"]));
 
-    let enter_value = need.best_upgrade_value * 2
-        + upgradable_cards * 110
+    let enter_value = need.best_upgrade_value * 2 + upgradable_cards * 110
         - need.survival_pressure * 2
         - i32::from(hp_ratio < 0.55) * 320;
 
@@ -799,7 +798,8 @@ fn choose_drug_dealer_option(rs: &RunState, options: &[Value]) -> Option<usize> 
         + jax_delta.rollout_delta * 6
         + jax_delta.suite_bias * 3
         + need.survival_pressure / 8;
-    let relic_value = if has_strength_scaling { 2_400 } else { 2_050 } + need.long_term_meta_value / 6;
+    let relic_value =
+        if has_strength_scaling { 2_400 } else { 2_050 } + need.long_term_meta_value / 6;
 
     if let Some(idx) = transform_idx {
         if transform_targets >= 2 && !has_strength_scaling {
@@ -1188,4 +1188,3 @@ mod tests {
         assert_eq!(choose_beggar_option(&rs, &options), Some(0));
     }
 }
-

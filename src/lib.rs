@@ -4,9 +4,9 @@ mod deck;
 pub mod engine;
 mod events;
 pub mod map;
+pub mod runtime;
 mod shop;
 pub mod state;
-pub mod runtime;
 
 // Integration layers around the runtime path.
 pub mod diff;

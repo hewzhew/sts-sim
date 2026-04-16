@@ -1,13 +1,13 @@
 use serde_json::Value;
 
-use crate::diff::protocol::{intent_from_java, monster_id_from_java};
 use crate::content::monsters::EnemyId;
+use crate::diff::protocol::{intent_from_java, monster_id_from_java};
 use crate::runtime::combat::MonsterEntity;
 
 fn runtime_state<'a>(monster: &'a Value, monster_type: EnemyId) -> &'a Value {
-    monster
-        .get("runtime_state")
-        .unwrap_or_else(|| panic!("strict state_sync: monster.runtime_state missing for {monster_type:?}"))
+    monster.get("runtime_state").unwrap_or_else(|| {
+        panic!("strict state_sync: monster.runtime_state missing for {monster_type:?}")
+    })
 }
 
 fn runtime_state_bool(monster: &Value, monster_type: EnemyId, key: &str) -> bool {
@@ -46,10 +46,8 @@ pub(crate) fn seed_hexaghost_runtime_from_snapshot(monster: &Value, entity: &mut
     }
 
     entity.hexaghost.activated = runtime_state_bool(monster, monster_type, "activated");
-    entity.hexaghost.orb_active_count =
-        runtime_state_u8(monster, monster_type, "orb_active_count");
-    entity.hexaghost.burn_upgraded =
-        runtime_state_bool(monster, monster_type, "burn_upgraded");
+    entity.hexaghost.orb_active_count = runtime_state_u8(monster, monster_type, "orb_active_count");
+    entity.hexaghost.burn_upgraded = runtime_state_bool(monster, monster_type, "burn_upgraded");
 }
 
 pub(crate) fn seed_darkling_runtime_from_snapshot(monster: &Value, entity: &mut MonsterEntity) {

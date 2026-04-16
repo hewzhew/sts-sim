@@ -1,5 +1,5 @@
-use crate::runtime::action::Action;
 use crate::content::powers::PowerId;
+use crate::runtime::action::Action;
 use smallvec::SmallVec;
 
 pub fn on_hp_lost(amount: i32) -> SmallVec<[Action; 2]> {

@@ -4,16 +4,13 @@ mod monster;
 use serde_json::Value;
 use std::collections::{HashMap, VecDeque};
 
-use crate::runtime::combat::{
-    CombatMeta, CombatRng, CombatState, EngineRuntime, Intent, MonsterEntity, PlayerEntity,
-    Power, RelicBuses, TurnRuntime,
-};
 use crate::content::relics::{RelicId, RelicState};
+use crate::runtime::combat::{
+    CombatMeta, CombatRng, CombatState, EngineRuntime, Intent, MonsterEntity, PlayerEntity, Power,
+    RelicBuses, TurnRuntime,
+};
 use crate::runtime::rng::RngPool;
 
-use crate::diff::protocol::{
-    java_potion_id_to_rust, power_id_from_java, power_instance_id_from_java, relic_id_from_java,
-};
 use super::internal_state::{
     initialize_power_internal_state_from_snapshot, initialize_relic_runtime_state,
     seed_monster_internal_state_from_snapshot, snapshot_runtime_amount_for_relic,
@@ -21,6 +18,9 @@ use super::internal_state::{
     sync_relic_runtime_state_from_snapshot,
 };
 use super::rng::sync_rng;
+use crate::diff::protocol::{
+    java_potion_id_to_rust, power_id_from_java, power_instance_id_from_java, relic_id_from_java,
+};
 pub(crate) use cards::{
     build_draw_pile_from_snapshot, build_hand_from_snapshot, build_limbo_from_snapshot,
     build_pile_from_ids, build_runtime_hints_from_snapshot,

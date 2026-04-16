@@ -1,10 +1,13 @@
 use crate::content::cards::CardId;
 use crate::content::relics::{RelicId, RelicState};
 use crate::state::core::EngineState;
-use crate::state::events::{EventChoiceMeta, EventState};
+use crate::state::events::{
+    EventActionKind, EventCardKind, EventChoiceMeta, EventEffect, EventOption,
+    EventOptionSemantics, EventOptionTransition, EventRelicKind, EventState,
+};
 use crate::state::run::RunState;
 
-pub fn get_choices(run_state: &RunState, event_state: &EventState) -> Vec<EventChoiceMeta> {
+pub fn get_options(run_state: &RunState, event_state: &EventState) -> Vec<EventOption> {
     match event_state.current_screen {
         0 => {
             // Java: 3rd option depends on floorNum % 50
@@ -14,13 +17,92 @@ pub fn get_choices(run_state: &RunState, event_state: &EventState) -> Vec<EventC
                 "[Desire] Heal to full HP. Obtain Doubt."
             };
             vec![
-                EventChoiceMeta::new("[Fight] Battle a boss for rewards."),
-                EventChoiceMeta::new("[Remember] Upgrade all cards. Obtain Mark of the Bloom."),
-                EventChoiceMeta::new(desire_text),
+                EventOption::new(
+                    EventChoiceMeta::new("[Fight] Battle a boss for rewards."),
+                    EventOptionSemantics {
+                        action: EventActionKind::Fight,
+                        effects: vec![],
+                        constraints: vec![],
+                        transition: EventOptionTransition::StartCombat,
+                        repeatable: false,
+                        terminal: false,
+                    },
+                ),
+                EventOption::new(
+                    EventChoiceMeta::new("[Remember] Upgrade all cards. Obtain Mark of the Bloom."),
+                    EventOptionSemantics {
+                        action: EventActionKind::Accept,
+                        effects: vec![
+                            EventEffect::UpgradeCard { count: usize::MAX },
+                            EventEffect::ObtainRelic {
+                                count: 1,
+                                kind: EventRelicKind::Specific(RelicId::MarkOfTheBloom),
+                            },
+                        ],
+                        constraints: vec![],
+                        transition: EventOptionTransition::AdvanceScreen,
+                        repeatable: false,
+                        terminal: false,
+                    },
+                ),
+                if run_state.floor_num % 50 <= 40 {
+                    EventOption::new(
+                        EventChoiceMeta::new(desire_text),
+                        EventOptionSemantics {
+                            action: EventActionKind::Accept,
+                            effects: vec![
+                                EventEffect::GainGold(999),
+                                EventEffect::ObtainCurse {
+                                    count: 2,
+                                    kind: EventCardKind::Specific(CardId::Normality),
+                                },
+                            ],
+                            constraints: vec![],
+                            transition: EventOptionTransition::AdvanceScreen,
+                            repeatable: false,
+                            terminal: false,
+                        },
+                    )
+                } else {
+                    EventOption::new(
+                        EventChoiceMeta::new(desire_text),
+                        EventOptionSemantics {
+                            action: EventActionKind::Accept,
+                            effects: vec![
+                                EventEffect::Heal((run_state.max_hp - run_state.current_hp).max(0)),
+                                EventEffect::ObtainCurse {
+                                    count: 1,
+                                    kind: EventCardKind::Specific(CardId::Doubt),
+                                },
+                            ],
+                            constraints: vec![],
+                            transition: EventOptionTransition::AdvanceScreen,
+                            repeatable: false,
+                            terminal: false,
+                        },
+                    )
+                },
             ]
         }
-        _ => vec![EventChoiceMeta::new("[Leave]")],
+        _ => vec![EventOption::new(
+            EventChoiceMeta::new("[Leave]"),
+            EventOptionSemantics {
+                action: EventActionKind::Leave,
+                effects: vec![],
+                constraints: vec![],
+                transition: EventOptionTransition::Complete,
+                repeatable: false,
+                terminal: true,
+            },
+        )],
     }
+}
+
+pub fn get_choices(run_state: &RunState, event_state: &EventState) -> Vec<EventChoiceMeta> {
+    get_options(run_state, event_state)
+        .into_iter()
+        .map(|option| option.ui)
+        .collect()
 }
 
 pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, choice_idx: usize) {
@@ -113,4 +195,29 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
     }
 
     run_state.event_state = Some(event_state);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::state::events::{EventOptionTransition, EventRelicKind};
+
+    #[test]
+    fn remember_option_exposes_mark_of_the_bloom_semantics() {
+        let mut rs = RunState::new(1, 0, true, "Ironclad");
+        rs.floor_num = 20;
+        let state = EventState::new(crate::state::events::EventId::MindBloom);
+        let options = get_options(&rs, &state);
+        assert!(options[1]
+            .semantics
+            .effects
+            .contains(&EventEffect::ObtainRelic {
+                count: 1,
+                kind: EventRelicKind::Specific(RelicId::MarkOfTheBloom),
+            }));
+        assert_eq!(
+            options[0].semantics.transition,
+            EventOptionTransition::StartCombat
+        );
+    }
 }

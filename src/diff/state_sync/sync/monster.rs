@@ -6,10 +6,7 @@ use crate::runtime::combat::{Intent, MonsterEntity};
 use super::super::build::apply_monster_entity_snapshot;
 use super::power::sync_monster_powers_from_snapshot;
 
-pub fn sync_monsters_from_snapshot(
-    cs: &mut crate::runtime::combat::CombatState,
-    snapshot: &Value,
-) {
+pub fn sync_monsters_from_snapshot(cs: &mut crate::runtime::combat::CombatState, snapshot: &Value) {
     let monsters_arr = snapshot["monsters"].as_array().unwrap();
 
     while cs.entities.monsters.len() < monsters_arr.len() {

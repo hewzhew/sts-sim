@@ -1,6 +1,6 @@
+use crate::content::monsters::MonsterBehavior;
 use crate::runtime::action::{Action, DamageInfo, DamageType};
 use crate::runtime::combat::{CombatState, Intent, MonsterEntity, PowerId};
-use crate::content::monsters::MonsterBehavior;
 
 // Helper to calculate divider damage: (player.currentHealth / 12) + 1
 fn get_divider_damage(state: &CombatState) -> i32 {

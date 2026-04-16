@@ -16,4 +16,3 @@ pub fn build_live_combat_snapshot(game_state: &Value) -> Value {
     }
     snapshot
 }
-

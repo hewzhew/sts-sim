@@ -1,5 +1,5 @@
-use crate::runtime::action::Action;
 use crate::core::EntityId;
+use crate::runtime::action::Action;
 
 // Regrow power. Note: For the basic engine, triggering this requires the monster to not be flagged
 // as removed entirely. Currently mocked as a simplified hook since multi-monster sync requires more engine support.

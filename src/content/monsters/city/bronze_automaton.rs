@@ -1,7 +1,7 @@
-use crate::runtime::action::{Action, DamageInfo, DamageType};
-use crate::runtime::combat::{CombatState, Intent};
 use crate::content::monsters::{EnemyId, MonsterBehavior};
 use crate::content::powers::PowerId;
+use crate::runtime::action::{Action, DamageInfo, DamageType};
+use crate::runtime::combat::{CombatState, Intent};
 
 pub struct BronzeAutomaton;
 
@@ -172,10 +172,7 @@ impl MonsterBehavior for BronzeAutomaton {
     }
 }
 
-fn bronze_orb_spawn_hp(
-    hp_rng: &mut crate::runtime::rng::StsRng,
-    ascension_level: u8,
-) -> i32 {
+fn bronze_orb_spawn_hp(hp_rng: &mut crate::runtime::rng::StsRng, ascension_level: u8) -> i32 {
     // Java BronzeOrb constructor consumes monsterHpRng twice:
     // once in super(... random(52,58) ...), then again in setHp(...)
     let _unused_ctor_roll = hp_rng.random_range(52, 58);

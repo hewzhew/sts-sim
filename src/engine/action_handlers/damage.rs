@@ -6,10 +6,10 @@
 //          Heal, GainMaxHp, LoseMaxHp,
 //          LimitBreak, BlockPerNonAttack, ExhaustAllNonAttack, ExhaustRandomCard
 
-use crate::runtime::action::{Action, ActionInfo, AddTo, DamageType, NO_SOURCE};
-use crate::runtime::combat::{CombatState, Intent};
 use crate::content::powers::store;
 use crate::content::powers::PowerId;
+use crate::runtime::action::{Action, ActionInfo, AddTo, DamageType, NO_SOURCE};
+use crate::runtime::combat::{CombatState, Intent};
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 struct MonsterDamageOutcome {
@@ -443,11 +443,10 @@ pub fn handle_attack_damage_random_enemy(
         let final_damage = if applies_target_modifiers && matches!(damage_type, DamageType::Normal)
         {
             let mut damage = base_damage as f32;
-            let pseudo_card =
-                crate::runtime::combat::CombatCard::new(
-                    crate::content::cards::CardId::SwordBoomerang,
-                    0,
-                );
+            let pseudo_card = crate::runtime::combat::CombatCard::new(
+                crate::content::cards::CardId::SwordBoomerang,
+                0,
+            );
             for power in &store::powers_snapshot_for(state, target_id) {
                 damage = crate::content::powers::resolve_power_on_calculate_damage_from_player(
                     power.power_type,

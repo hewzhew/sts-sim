@@ -5,14 +5,12 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::bot::combat_heuristic;
-use crate::runtime::combat::{CombatCard, CombatState};
 use crate::content::cards::{self, CardType};
 use crate::content::powers::{store, PowerId};
-use crate::diff::replay::{
-    mapped_command_to_input, CombatMappedCommand, CombatReconstructedStep,
-};
+use crate::diff::replay::{mapped_command_to_input, CombatMappedCommand, CombatReconstructedStep};
 use crate::diff::state_sync::build_combat_state;
 use crate::engine::core::tick_until_stable_turn;
+use crate::runtime::combat::{CombatCard, CombatState};
 use crate::state::core::{ClientInput, EngineState, RunResult};
 
 const DEFAULT_DECISION_DEPTH: usize = 4;
@@ -279,8 +277,7 @@ pub fn build_fixture_from_reconstructed_step(
     name: impl Into<String>,
 ) -> Result<DecisionAuditFixture, String> {
     let before_root = reconstructed.before_root.clone();
-    let combat_snapshot =
-        crate::diff::replay::build_live_combat_snapshot_from_root(&before_root)?;
+    let combat_snapshot = crate::diff::replay::build_live_combat_snapshot_from_root(&before_root)?;
     let relics = before_root
         .get("game_state")
         .and_then(|gs| gs.get("relics"))

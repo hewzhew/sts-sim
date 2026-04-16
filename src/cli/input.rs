@@ -89,8 +89,7 @@ pub fn parse_input(
             let indices: Vec<usize> = parts[1..].iter().filter_map(|s| s.parse().ok()).collect();
             match es {
                 EngineState::PendingChoice(PendingChoice::HandSelect {
-                    candidate_uuids,
-                    ..
+                    candidate_uuids, ..
                 }) => Some(ClientInput::SubmitSelection(SelectionResolution {
                     scope: SelectionScope::Hand,
                     selected: indices
@@ -100,8 +99,7 @@ pub fn parse_input(
                         .collect(),
                 })),
                 EngineState::PendingChoice(PendingChoice::GridSelect {
-                    candidate_uuids,
-                    ..
+                    candidate_uuids, ..
                 }) => Some(ClientInput::SubmitSelection(SelectionResolution {
                     scope: SelectionScope::Grid,
                     selected: indices

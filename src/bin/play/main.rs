@@ -4,8 +4,8 @@ mod display;
 mod input;
 
 use std::io::{self, BufRead, Write};
-use sts_simulator::runtime::combat::CombatState;
 use sts_simulator::engine::run_loop::tick_run;
+use sts_simulator::runtime::combat::CombatState;
 use sts_simulator::state::core::*;
 use sts_simulator::state::run::RunState;
 use sts_simulator::state::selection::{SelectionResolution, SelectionScope, SelectionTargetRef};
@@ -134,18 +134,16 @@ fn describe_bot_decision(
     combat_state: &Option<CombatState>,
 ) -> Option<String> {
     match decision {
-        ClientInput::PlayCard { card_index, target } => combat_state.as_ref().and_then(|combat| {
-            display::describe_play_card_choice(combat, *card_index, *target)
-        }),
+        ClientInput::PlayCard { card_index, target } => combat_state
+            .as_ref()
+            .and_then(|combat| display::describe_play_card_choice(combat, *card_index, *target)),
         ClientInput::UsePotion {
             potion_index,
             target,
-        } => combat_state.as_ref().and_then(|combat| {
-            display::describe_potion_use_choice(combat, *potion_index, *target)
-        }),
-        ClientInput::SelectMapNode(x) => Some(
-            display::describe_bot_map_choice(run_state, *x),
-        ),
+        } => combat_state
+            .as_ref()
+            .and_then(|combat| display::describe_potion_use_choice(combat, *potion_index, *target)),
+        ClientInput::SelectMapNode(x) => Some(display::describe_bot_map_choice(run_state, *x)),
         _ => None,
     }
 }
@@ -185,11 +183,10 @@ fn describe_reward_screen_decision(
         ClientInput::SelectCard(idx) | ClientInput::SubmitDiscoverChoice(idx) => {
             let cards = reward.pending_card_choice.as_ref()?;
             let offered_ids = cards.iter().map(|card| card.id).collect::<Vec<_>>();
-            let evaluation =
-                sts_simulator::bot::evaluate_reward_screen_for_run_detailed(
-                    &offered_ids,
-                    run_state,
-                );
+            let evaluation = sts_simulator::bot::evaluate_reward_screen_for_run_detailed(
+                &offered_ids,
+                run_state,
+            );
             let card_eval = evaluation.offered_cards.get(*idx)?;
             let reward_card = cards.get(*idx)?;
             let def = sts_simulator::content::cards::get_card_definition(reward_card.id);
@@ -236,8 +233,7 @@ fn describe_shop_screen_decision(
         ClientInput::BuyCard(idx) => {
             let card = shop.cards.get(*idx)?;
             let def = sts_simulator::content::cards::get_card_definition(card.card_id);
-            let delta =
-                sts_simulator::bot::compare_pick_vs_skip(run_state, card.card_id);
+            let delta = sts_simulator::bot::compare_pick_vs_skip(run_state, card.card_id);
             Some(format!(
                 "Shop Card: {} [price {}]{}",
                 def.name,
@@ -288,10 +284,7 @@ fn print_emitted_outputs(
                 sts_simulator::state::selection::DomainEvent::SelectionResolved { .. }
             )
         {
-            println!(
-                "{}",
-                display::render_user_feed_event(&event)
-            );
+            println!("{}", display::render_user_feed_event(&event));
         }
     }
     if let Some(combat) = combat_state.as_mut() {
@@ -302,18 +295,12 @@ fn print_emitted_outputs(
                     sts_simulator::state::selection::DomainEvent::SelectionResolved { .. }
                 )
             {
-                println!(
-                    "{}",
-                    display::render_user_feed_event(&event)
-                );
+                println!("{}", display::render_user_feed_event(&event));
             }
         }
         if debug {
             for diagnostic in combat.take_engine_diagnostics() {
-                println!(
-                    "{}",
-                    display::render_engine_diagnostic(&diagnostic)
-                );
+                println!("{}", display::render_engine_diagnostic(&diagnostic));
             }
         } else {
             let _ = combat.take_engine_diagnostics();
@@ -416,33 +403,25 @@ fn main() {
     };
     let curiosity_target = flag_value("--curiosity-card")
         .map(sts_simulator::bot::CuriosityTarget::card)
+        .or_else(|| flag_value("--curiosity-relic").map(sts_simulator::bot::CuriosityTarget::relic))
         .or_else(|| {
-            flag_value("--curiosity-relic")
-                .map(sts_simulator::bot::CuriosityTarget::relic)
+            flag_value("--curiosity-potion").map(sts_simulator::bot::CuriosityTarget::potion)
         })
         .or_else(|| {
-            flag_value("--curiosity-potion")
-                .map(sts_simulator::bot::CuriosityTarget::potion)
+            flag_value("--curiosity-archetype").map(sts_simulator::bot::CuriosityTarget::archetype)
         })
         .or_else(|| {
-            flag_value("--curiosity-archetype")
-                .map(sts_simulator::bot::CuriosityTarget::archetype)
+            flag_value("--curiosity-power").map(sts_simulator::bot::CuriosityTarget::power_tag)
         })
         .or_else(|| {
-            flag_value("--curiosity-power")
-                .map(sts_simulator::bot::CuriosityTarget::power_tag)
-        })
-        .or_else(|| {
-            flag_value("--curiosity-pile")
-                .map(sts_simulator::bot::CuriosityTarget::pile_tag)
+            flag_value("--curiosity-pile").map(sts_simulator::bot::CuriosityTarget::pile_tag)
         })
         .or_else(|| {
             flag_value("--curiosity-pending")
                 .map(sts_simulator::bot::CuriosityTarget::pending_choice)
         })
         .or_else(|| {
-            flag_value("--curiosity-source")
-                .map(sts_simulator::bot::CuriosityTarget::source)
+            flag_value("--curiosity-source").map(sts_simulator::bot::CuriosityTarget::source)
         });
 
     // Parse Dashboard Configuration
@@ -497,9 +476,12 @@ fn main() {
             "strict" => sts_simulator::cli::live_comm::LiveParityMode::Strict,
             _ => sts_simulator::cli::live_comm::LiveParityMode::Survey,
         };
+        let fail_fast_debug = has_flag("--live-comm-fail-fast");
         let config = sts_simulator::cli::live_comm::LiveCommConfig {
-            human_card_reward_audit: has_flag("--live-comm-human-card-reward"),
-            human_boss_combat_handoff: has_flag("--live-comm-human-boss-combat"),
+            human_card_reward_audit: !fail_fast_debug && has_flag("--live-comm-human-card-reward"),
+            human_boss_combat_handoff: !fail_fast_debug
+                && has_flag("--live-comm-human-boss-combat"),
+            fail_fast_debug,
             sidecar_shadow: has_flag("--sidecar-shadow"),
             parity_mode,
             combat_search_budget: flag_value("--live-comm-search-budget")
@@ -726,31 +708,26 @@ fn main() {
                     }
                     ClientInput::EventChoice(choice_idx) => {
                         if let Some(event) = run_state.event_state.as_ref() {
-                            let choices =
-                                sts_simulator::engine::event_handler::get_event_choices(&run_state);
-                            if let Some(decision) =
-                                sts_simulator::bot::choose_local_event_choice(
-                                    &run_state, event, &choices,
-                                )
-                            {
+                            let options =
+                                sts_simulator::engine::event_handler::get_event_options(&run_state);
+                            if let Some(decision) = sts_simulator::bot::choose_local_event_choice(
+                                &run_state, event, &options,
+                            ) {
                                 if decision.option_index == *choice_idx {
-                                    let context =
-                                        sts_simulator::bot::local_event_context(
-                                            &run_state, event, &choices,
-                                        );
+                                    let context = sts_simulator::bot::local_event_context(
+                                        &run_state, event, &options,
+                                    );
                                     println!(
                                         "  [BOT] Event: {}",
-                                        sts_simulator::bot::describe_choice(
-                                            &context, &decision
-                                        )
+                                        sts_simulator::bot::describe_choice(&context, &decision)
                                     );
-                                } else if let Some(choice) = choices.get(*choice_idx) {
-                                    println!("  [BOT] Event: {}", choice.text);
+                                } else if let Some(option) = options.get(*choice_idx) {
+                                    println!("  [BOT] Event: {}", option.ui.text);
                                 } else {
                                     println!("  [BOT] Event choice #{}", choice_idx);
                                 }
-                            } else if let Some(choice) = choices.get(*choice_idx) {
-                                println!("  [BOT] Event: {}", choice.text);
+                            } else if let Some(option) = options.get(*choice_idx) {
+                                println!("  [BOT] Event: {}", option.ui.text);
                             } else {
                                 println!("  [BOT] Event choice #{}", choice_idx);
                             }
@@ -889,12 +866,9 @@ fn main() {
                 MetaResult::Step(input) => input,
                 MetaResult::PassThrough => {
                     // Normal game input
-                    if let Some(c) = input::parse_input(
-                        &line,
-                        &engine_state,
-                        &run_state,
-                        &combat_state,
-                    ) {
+                    if let Some(c) =
+                        input::parse_input(&line, &engine_state, &run_state, &combat_state)
+                    {
                         c
                     } else {
                         println!("  Invalid input.");

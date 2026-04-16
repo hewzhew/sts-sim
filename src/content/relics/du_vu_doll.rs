@@ -1,6 +1,6 @@
+use crate::content::relics::RelicState;
 use crate::runtime::action::{Action, ActionInfo, AddTo};
 use crate::runtime::combat::CombatState;
-use crate::content::relics::RelicState;
 
 /// Du-Vu Doll: At the start of each combat, gain 1 Strength for each Curse in your deck.
 /// Java: atBattleStart() → count curses in masterDeck → applyPower(Strength, count)

@@ -1,7 +1,7 @@
-use crate::runtime::action::{Action, DamageInfo, DamageType};
-use crate::runtime::combat::{CombatCard, CombatState};
 use crate::content::cards::CardType;
 use crate::core::EntityId;
+use crate::runtime::action::{Action, DamageInfo, DamageType};
+use crate::runtime::combat::{CombatCard, CombatState};
 use smallvec::{smallvec, SmallVec};
 
 /// Java SharpHidePower.onUseCard: fires once when an Attack card is played.

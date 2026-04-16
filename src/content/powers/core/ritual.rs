@@ -1,6 +1,6 @@
+use crate::core::EntityId;
 use crate::runtime::action::Action;
 use crate::runtime::combat::PowerId;
-use crate::core::EntityId;
 
 const PLAYER_CONTROLLED_FLAG: i32 = 1 << 0;
 const SKIP_FIRST_FLAG: i32 = 1 << 1;

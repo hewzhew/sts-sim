@@ -6,6 +6,7 @@ use serde::Deserialize;
 use crate::bot::card_facts::facts as card_facts;
 use crate::bot::card_structure::structure as card_structure;
 use crate::bot::evaluator::CardEvaluator;
+use crate::bot::noncombat_card_signals::signals as noncombat_card_signals;
 use crate::bot::noncombat_families::{
     build_noncombat_need_snapshot_for_run, build_shop_need_profile_for_run, NoncombatNeedSnapshot,
     ShopNeedProfile,
@@ -222,47 +223,29 @@ fn reward_need_adjustment(
     need: &NoncombatNeedSnapshot,
     shop_need: &ShopNeedProfile,
 ) -> i32 {
+    let signals = noncombat_card_signals(card_id);
     let mut adj = 0;
 
     if shop_need.damage_gap > 0 {
-        adj += match card_id {
-            CardId::Hemokinesis => 14 + shop_need.damage_gap / 3,
-            CardId::Carnage | CardId::Immolate => 12 + shop_need.damage_gap / 4,
-            CardId::Whirlwind | CardId::Pummel | CardId::Uppercut => 8 + shop_need.damage_gap / 5,
-            _ => 0,
-        };
+        adj += scaled_gap_patch_bonus(signals.damage_patch_strength, shop_need.damage_gap, 2);
     }
     if shop_need.block_gap > 0 {
-        adj += match card_id {
-            CardId::ShrugItOff | CardId::FlameBarrier => 12 + shop_need.block_gap / 3,
-            CardId::GhostlyArmor | CardId::PowerThrough => 8 + shop_need.block_gap / 4,
-            CardId::Impervious | CardId::Disarm => 10 + shop_need.block_gap / 4,
-            _ => 0,
-        };
+        adj += scaled_gap_patch_bonus(signals.block_patch_strength, shop_need.block_gap, 2);
     }
     if shop_need.control_gap > 0 {
-        adj += match card_id {
-            CardId::Shockwave | CardId::Disarm => 12 + shop_need.control_gap / 3,
-            CardId::Uppercut | CardId::Clothesline => 8 + shop_need.control_gap / 4,
-            _ => 0,
-        };
+        adj += scaled_gap_patch_bonus(signals.control_patch_strength, shop_need.control_gap, 3);
     }
 
     if need.survival_pressure >= 180 {
-        adj += match card_id {
-            CardId::ShrugItOff
-            | CardId::FlameBarrier
-            | CardId::Impervious
-            | CardId::Disarm
-            | CardId::Shockwave
-            | CardId::Uppercut => 18,
-            CardId::Barricade | CardId::LimitBreak | CardId::DemonForm
-                if profile.draw_sources == 0 =>
-            {
-                -14
-            }
-            _ => 0,
-        };
+        let survival_patch =
+            (signals.block_patch_strength + signals.control_patch_strength).min(18);
+        adj += survival_patch;
+        if signals.scaling_signal >= 10
+            && signals.frontload_patch_strength < 12
+            && profile.draw_sources == 0
+        {
+            adj -= 14;
+        }
     }
 
     if need.purge_value >= need.best_upgrade_value + 80
@@ -271,15 +254,7 @@ fn reward_need_adjustment(
         && shop_need.block_gap == 0
         && shop_need.control_gap == 0
     {
-        adj += match card_id {
-            CardId::IronWave
-            | CardId::WildStrike
-            | CardId::TwinStrike
-            | CardId::Clothesline
-            | CardId::Cleave
-            | CardId::PerfectedStrike => -18,
-            _ => 0,
-        };
+        adj -= signals.filler_attack_risk * 5;
     }
 
     adj
@@ -290,116 +265,73 @@ fn reward_stage_adjustment(
     run_state: &RunState,
     profile: &crate::bot::evaluator::DeckProfile,
 ) -> i32 {
+    let facts = card_facts(card_id);
+    let structure = card_structure(card_id);
+    let def = cards::get_card_definition(card_id);
+    let signals = noncombat_card_signals(card_id);
     let late_game = run_state.act_num >= 2;
     let no_strength_shell = profile.strength_enablers == 0;
     let larger_deck = run_state.master_deck.len() >= 16;
 
     let mut adj = 0;
 
-    match card_id {
-        CardId::Warcry => {
-            adj += 12;
-            if late_game {
-                adj += 6;
-            }
-            if profile.draw_sources >= 1 {
-                adj += 3;
-            }
+    if facts.draws_cards {
+        adj += 8;
+        if late_game {
+            adj += 4;
         }
-        CardId::SecondWind => {
-            if run_state.act_num == 1 && run_state.master_deck.len() <= 12 {
-                adj += 10;
-            }
-            if profile.exhaust_engines >= 1 || profile.status_generators >= 1 {
-                adj += 6;
-            }
+        if profile.draw_sources >= 1 {
+            adj += 3;
         }
-        CardId::BurningPact => {
-            if profile.exhaust_engines >= 1 || profile.exhaust_fodder >= 1 {
-                adj += 10;
-            }
-            if profile.draw_sources >= 2 {
-                adj += 4;
-            }
+    }
+
+    if structure.is_exhaust_outlet()
+        && (profile.exhaust_engines >= 1
+            || profile.exhaust_fodder >= 1
+            || profile.status_generators >= 1)
+    {
+        adj += if run_state.act_num == 1 && run_state.master_deck.len() <= 12 {
+            10
+        } else {
+            6
+        };
+    }
+
+    if structure.is_exhaust_engine()
+        && (profile.exhaust_outlets >= 1 || profile.exhaust_fodder >= 1)
+    {
+        adj += 10;
+        if profile.draw_sources >= 2 {
+            adj += 4;
         }
-        CardId::DarkEmbrace => {
-            if profile.exhaust_outlets >= 1 || profile.exhaust_fodder >= 1 {
-                adj += 10;
-            }
-            if profile.draw_sources >= 2 {
-                adj += 4;
-            }
+    }
+
+    if facts.gains_energy && (profile.exhaust_engines >= 1 || profile.power_scalers >= 1) {
+        adj += 6;
+    }
+
+    if facts.produces_status {
+        if profile.status_generators >= 1 {
+            adj += 10;
+        } else if run_state.act_num == 1 {
+            adj += 4;
         }
-        CardId::Offering => {
-            if profile.exhaust_engines >= 1 || profile.power_scalers >= 1 {
-                adj += 6;
-            }
-        }
-        CardId::Armaments => {
-            if profile.power_scalers >= 1 || profile.block_core >= 2 {
-                adj += 6;
-            }
-        }
-        CardId::FireBreathing => {
-            if profile.status_generators >= 1 {
-                adj += 10;
-            } else if run_state.act_num == 1 {
-                adj += 4;
-            }
-        }
-        CardId::Havoc => {
-            if run_state.act_num == 1 && run_state.floor_num <= 10 {
-                adj += 26;
-            } else if late_game {
-                adj -= 10;
-            }
-        }
-        CardId::WildStrike | CardId::Clash => {
-            if late_game {
-                adj -= if larger_deck { 24 } else { 18 };
-            }
-        }
-        CardId::TwinStrike => {
-            if late_game && no_strength_shell {
-                adj -= 16;
-            }
-        }
-        CardId::SwordBoomerang => {
-            if late_game && no_strength_shell {
-                adj -= 18;
-            }
-        }
-        CardId::HeavyBlade => {
-            if no_strength_shell {
-                adj -= if late_game { 24 } else { 14 };
-            }
-        }
-        CardId::Clothesline => {
-            if late_game {
-                adj -= 14;
-            }
-        }
-        CardId::Headbutt => {
-            if late_game && larger_deck {
-                adj -= 12;
-            }
-        }
-        CardId::Cleave => {
-            if late_game && larger_deck {
-                adj -= 24;
-            }
-        }
-        CardId::PerfectedStrike => {
-            if late_game {
-                adj -= 12;
-            }
-        }
-        CardId::IronWave => {
-            if late_game && larger_deck {
-                adj -= 22;
-            }
-        }
-        _ => {}
+    }
+
+    if def.exhaust && def.cost <= 1 && run_state.act_num == 1 && run_state.floor_num <= 10 {
+        adj += 12;
+    } else if late_game && def.exhaust && signals.filler_attack_risk > 0 {
+        adj -= 8;
+    }
+
+    if late_game {
+        adj -= signals.filler_attack_risk * if larger_deck { 6 } else { 4 };
+    }
+    if structure.is_strength_payoff() && no_strength_shell {
+        adj -= if late_game { 18 } else { 10 };
+    }
+    if structure.is_discard_retrieval() && late_game && larger_deck && !facts.draws_cards {
+        adj -= 10;
     }
 
     adj
@@ -416,6 +348,8 @@ fn should_skip_reward(
     need: &NoncombatNeedSnapshot,
     shop_need: &ShopNeedProfile,
 ) -> bool {
+    let signals = noncombat_card_signals(best_card_id);
+    let structure = card_structure(best_card_id);
     if need.survival_pressure >= 180
         && reward_patches_current_need(best_card_id, shop_need)
         && best_local_score >= 20
@@ -428,30 +362,8 @@ fn should_skip_reward(
     }
 
     let late_game = run_state.act_num >= 2;
-    let mediocre_attack = matches!(
-        best_card_id,
-        CardId::IronWave
-            | CardId::SwordBoomerang
-            | CardId::Cleave
-            | CardId::Headbutt
-            | CardId::Clothesline
-            | CardId::HeavyBlade
-            | CardId::TwinStrike
-            | CardId::PerfectedStrike
-    );
-    let low_quality_bundle_card = matches!(
-        best_card_id,
-        CardId::Clash
-            | CardId::WildStrike
-            | CardId::Havoc
-            | CardId::IronWave
-            | CardId::SwordBoomerang
-            | CardId::Cleave
-            | CardId::Clothesline
-            | CardId::HeavyBlade
-            | CardId::TwinStrike
-            | CardId::PerfectedStrike
-    );
+    let mediocre_attack = signals.filler_attack_risk >= 3;
+    let low_quality_bundle_card = signals.filler_attack_risk >= 4;
     let no_strength_shell = profile.strength_enablers == 0;
 
     if late_game && low_quality_bundle_card && best_local_score < 66 && skip_probability > 0.55 {
@@ -468,39 +380,17 @@ fn should_skip_reward(
 
     late_game
         && mediocre_attack
-        && (best_card_id != CardId::Headbutt || run_state.master_deck.len() >= 16)
-        && (best_card_id != CardId::HeavyBlade || no_strength_shell)
-        && (best_card_id != CardId::TwinStrike || no_strength_shell)
-        && (best_card_id != CardId::SwordBoomerang || no_strength_shell)
+        && (!structure.is_discard_retrieval() || run_state.master_deck.len() >= 16)
+        && (!structure.is_strength_payoff() || no_strength_shell)
         && best_local_score < 58
         && skip_probability > 0.60
 }
 
 fn reward_patches_current_need(card_id: CardId, shop_need: &ShopNeedProfile) -> bool {
-    (shop_need.damage_gap > 0
-        && matches!(
-            card_id,
-            CardId::Hemokinesis
-                | CardId::Carnage
-                | CardId::Immolate
-                | CardId::Whirlwind
-                | CardId::Uppercut
-        ))
-        || (shop_need.block_gap > 0
-            && matches!(
-                card_id,
-                CardId::ShrugItOff
-                    | CardId::FlameBarrier
-                    | CardId::GhostlyArmor
-                    | CardId::Impervious
-                    | CardId::PowerThrough
-                    | CardId::Disarm
-            ))
-        || (shop_need.control_gap > 0
-            && matches!(
-                card_id,
-                CardId::Disarm | CardId::Shockwave | CardId::Uppercut | CardId::Clothesline
-            ))
+    let signals = noncombat_card_signals(card_id);
+    (shop_need.damage_gap > 0 && signals.damage_patch_strength >= 14)
+        || (shop_need.block_gap > 0 && signals.block_patch_strength >= 12)
+        || (shop_need.control_gap > 0 && signals.control_patch_strength >= 10)
 }
 
 fn should_force_pick_for_shell(
@@ -558,6 +448,14 @@ fn reward_shell_bonus(
     }
 
     bonus
+}
+
+fn scaled_gap_patch_bonus(signal: i32, gap: i32, gap_divisor: i32) -> i32 {
+    if signal <= 0 {
+        0
+    } else {
+        signal + gap / gap_divisor.max(1)
+    }
 }
 
 pub fn pick_probability(card_id: CardId) -> f32 {

@@ -1,6 +1,6 @@
+use crate::content::powers::PowerId;
 use crate::runtime::action::{Action, ActionInfo, AddTo};
 use crate::runtime::combat::{CombatCard, CombatState};
-use crate::content::powers::PowerId;
 use smallvec::SmallVec;
 
 pub fn noxious_fumes_play(_state: &CombatState, card: &CombatCard) -> SmallVec<[ActionInfo; 4]> {

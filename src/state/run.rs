@@ -1,6 +1,6 @@
-use crate::runtime::combat::{CombatCard, PlayerEntity};
 use crate::content::relics::RelicState;
 use crate::map::state::MapState;
+use crate::runtime::combat::{CombatCard, PlayerEntity};
 use crate::runtime::rng::RngPool;
 use crate::state::selection::{DomainCardSnapshot, DomainEvent, DomainEventSource};
 use std::cell::Cell;

@@ -1,6 +1,7 @@
 use crate::bot::agent::Agent;
 use crate::bot::card_facts::facts as card_facts;
 use crate::bot::card_structure::structure as card_structure;
+use crate::bot::noncombat_card_signals::signals as noncombat_card_signals;
 use crate::state::core::ClientInput;
 use crate::state::run::RunState;
 
@@ -603,73 +604,52 @@ fn shop_need_bonus(
 
     let facts = card_facts(card_id);
     let structure = card_structure(card_id);
+    let signals = noncombat_card_signals(card_id);
     let mut bonus = 0;
 
-    if shop_need.damage_gap > 0
-        && (structure.is_strength_payoff()
-            || matches!(
-                card_id,
-                CardId::Hemokinesis
-                    | CardId::Carnage
-                    | CardId::Immolate
-                    | CardId::SearingBlow
-                    | CardId::Uppercut
-            ))
-    {
-        bonus += match card_id {
-            CardId::Hemokinesis => 24 + shop_need.damage_gap / 3,
-            CardId::Carnage | CardId::Immolate => 20 + shop_need.damage_gap / 4,
-            CardId::Pummel | CardId::Whirlwind => 18 + shop_need.damage_gap / 5,
-            CardId::SearingBlow => 20 + shop_need.damage_gap / 4,
-            CardId::Uppercut => 8 + shop_need.damage_gap / 6,
-            _ => 0,
-        };
+    if shop_need.damage_gap > 0 {
+        let damage_signal =
+            signals.damage_patch_strength + i32::from(card_id == CardId::SearingBlow) * 4;
+        bonus += shop_gap_bonus(damage_signal, shop_need.damage_gap, 2);
     }
 
-    if shop_need.block_gap > 0
-        && (structure.is_block_core()
-            || matches!(
-                card_id,
-                CardId::Disarm
-                    | CardId::ShrugItOff
-                    | CardId::FlameBarrier
-                    | CardId::GhostlyArmor
-                    | CardId::Impervious
-                    | CardId::PowerThrough
-            ))
-    {
-        bonus += match card_id {
-            CardId::ShrugItOff => 14 + shop_need.block_gap / 3,
-            CardId::FlameBarrier => 16 + shop_need.block_gap / 3,
-            CardId::GhostlyArmor => 12 + shop_need.block_gap / 4,
-            CardId::Impervious => 20 + shop_need.block_gap / 3,
-            CardId::PowerThrough => 10 + shop_need.block_gap / 4,
-            CardId::Disarm => 8 + shop_need.block_gap / 6,
-            _ => 0,
-        };
+    if shop_need.block_gap > 0 {
+        bonus += shop_gap_bonus(signals.block_patch_strength, shop_need.block_gap, 2);
     }
 
-    if shop_need.control_gap > 0 && (facts.applies_weak || facts.applies_vuln) {
-        bonus += match card_id {
-            CardId::Disarm | CardId::Shockwave => 16 + shop_need.control_gap / 3,
-            CardId::Uppercut => 12 + shop_need.control_gap / 4,
-            CardId::Clothesline => 8 + shop_need.control_gap / 5,
-            _ => 0,
-        };
+    if shop_need.control_gap > 0 {
+        bonus += shop_gap_bonus(signals.control_patch_strength, shop_need.control_gap, 3);
     }
 
     if searing_plan > 0 {
         bonus += match card_id {
             CardId::SearingBlow => 40 + profile.searing_blow_upgrades * 10,
-            CardId::Armaments | CardId::Offering => 18,
-            CardId::BattleTrance | CardId::Headbutt | CardId::SeeingRed => 12,
-            CardId::ShrugItOff => 8,
             CardId::DoubleTap => 10,
             _ => 0,
         };
+        if facts.draws_cards {
+            bonus += 8;
+        }
+        if facts.gains_energy || structure.is_resource_conversion() {
+            bonus += 10;
+        }
+        if structure.is_discard_retrieval() {
+            bonus += 8;
+        }
+        if structure.is_draw_core() {
+            bonus += 4;
+        }
     }
 
     bonus
+}
+
+fn shop_gap_bonus(signal: i32, gap: i32, gap_divisor: i32) -> i32 {
+    if signal <= 0 {
+        0
+    } else {
+        signal + gap / gap_divisor.max(1)
+    }
 }
 
 #[cfg(test)]

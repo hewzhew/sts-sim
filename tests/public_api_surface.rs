@@ -42,8 +42,14 @@ fn lib_root_public_surface_matches_expected_whitelist() {
         "pub use utils::SimulationWatchdog;".to_string(),
     ]);
 
-    assert_eq!(public_mods, expected_mods, "unexpected root pub mod surface");
-    assert_eq!(public_uses, expected_uses, "unexpected root pub use surface");
+    assert_eq!(
+        public_mods, expected_mods,
+        "unexpected root pub mod surface"
+    );
+    assert_eq!(
+        public_uses, expected_uses,
+        "unexpected root pub use surface"
+    );
 }
 
 #[test]
@@ -79,7 +85,10 @@ fn runtime_public_surface_matches_expected_whitelist() {
         "pub mod rng;".to_string(),
     ]);
 
-    assert_eq!(public_mods, expected_mods, "unexpected runtime pub mod surface");
+    assert_eq!(
+        public_mods, expected_mods,
+        "unexpected runtime pub mod surface"
+    );
 }
 
 #[test]

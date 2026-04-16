@@ -12,13 +12,13 @@ use sts_simulator::bot::search::{
     DecisionAuditConfig, DecisionAuditEngineState, LookupRootPriorProvider, RootPriorConfig,
     RootPriorQueryKey, SearchEquivalenceMode, SearchProfileBreakdown, TrajectoryOutcomeKind,
 };
-use sts_simulator::runtime::combat::CombatCard;
 use sts_simulator::diff::replay::{
     derive_combat_replay_view, find_combat_step_index_by_before_frame_id,
     load_live_session_replay_path, mapped_command_to_input, reconstruct_combat_replay_step,
     CombatReplayStepStatus,
 };
 use sts_simulator::diff::state_sync::build_combat_state;
+use sts_simulator::runtime::combat::CombatCard;
 use sts_simulator::state::core::ClientInput;
 use sts_simulator::state::EngineState;
 
@@ -791,9 +791,7 @@ fn export_preferences_from_raw(
 
     for (step_index, step) in view.steps.iter().enumerate() {
         summary.considered_steps += 1;
-        if step.status
-            != sts_simulator::diff::replay::CombatReplayStepStatus::Executable
-        {
+        if step.status != sts_simulator::diff::replay::CombatReplayStepStatus::Executable {
             continue;
         }
         let reconstructed = reconstruct_combat_replay_step(&view, step_index)?;
@@ -1357,9 +1355,7 @@ fn render_search_move_detail(stat: &sts_simulator::bot::search::SearchMoveStat) 
     ) + &cluster_suffix
 }
 
-fn session_outcome_label(
-    replay: &sts_simulator::diff::replay::LiveSessionReplay,
-) -> &'static str {
+fn session_outcome_label(replay: &sts_simulator::diff::replay::LiveSessionReplay) -> &'static str {
     let Some(last) = replay.steps.last() else {
         return "unknown";
     };

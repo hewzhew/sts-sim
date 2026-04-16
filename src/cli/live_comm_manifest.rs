@@ -290,7 +290,11 @@ pub(crate) fn artifact_absolute_path(
     }
     let run_dir = manifest_path.parent()?;
     let path = run_dir.join(&record.relative_path);
-    if path.exists() { Some(path) } else { None }
+    if path.exists() {
+        Some(path)
+    } else {
+        None
+    }
 }
 
 pub(crate) fn artifact_present(record: &Option<LiveArtifactRecord>) -> bool {

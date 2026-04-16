@@ -1,8 +1,8 @@
 use serde::{Deserialize, Serialize};
 
-use crate::runtime::combat::{CombatState, Intent, MonsterEntity, PowerId};
 use crate::content::monsters::{EnemyId, MonsterBehavior};
 use crate::content::powers::store;
+use crate::runtime::combat::{CombatState, Intent, MonsterEntity, PowerId};
 use crate::state::core::EngineState;
 
 const MAX_PROJECTED_WINDOWS: usize = 9;

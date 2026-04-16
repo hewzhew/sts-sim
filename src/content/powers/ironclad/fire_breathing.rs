@@ -1,6 +1,6 @@
+use crate::content::cards::{get_card_definition, CardType};
 use crate::runtime::action::{repeated_damage_matrix, Action, DamageType};
 use crate::runtime::combat::CombatState;
-use crate::content::cards::{get_card_definition, CardType};
 use smallvec::SmallVec;
 
 pub fn on_card_drawn(

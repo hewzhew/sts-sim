@@ -1,5 +1,5 @@
-use crate::runtime::combat::{CombatRng, CombatState, EngineRuntime, EntityState, TurnRuntime};
 use crate::content::monsters::factory::{self, EncounterId};
+use crate::runtime::combat::{CombatRng, CombatState, EngineRuntime, EntityState, TurnRuntime};
 use crate::runtime::rng::{self, RngPool};
 use crate::state::core::EngineState;
 use crate::state::run::RunState;

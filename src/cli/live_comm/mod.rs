@@ -46,6 +46,7 @@ const ENGINE_BUG_SUMMARY_INTERVAL: usize = 5;
 pub struct LiveCommConfig {
     pub human_card_reward_audit: bool,
     pub human_boss_combat_handoff: bool,
+    pub fail_fast_debug: bool,
     pub sidecar_shadow: bool,
     pub parity_mode: LiveParityMode,
     pub combat_search_budget: u32,
@@ -98,6 +99,7 @@ impl LiveWatchCaptureConfig {
 enum LoopExitReason {
     GameOver,
     ParityFail,
+    FailFast,
     StdinError,
     StdinEof,
 }
@@ -194,6 +196,10 @@ pub fn run_live_comm_loop(mut agent: crate::bot::Agent, config: LiveCommConfig) 
         session.game_over_seen,
         session.final_victory,
     );
+
+    if matches!(loop_exit_reason, LoopExitReason::FailFast) {
+        std::process::exit(2);
+    }
 }
 
 fn bootstrap_message() -> String {

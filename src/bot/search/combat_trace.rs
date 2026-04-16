@@ -8,8 +8,8 @@ pub(crate) fn build_decision_audit(
     combat: &CombatState,
     chosen_input: &ClientInput,
 ) -> Value {
-    let has_safe_line = super::root_policy::StatePressureFeatures::from_combat(combat).value_unblocked
-        <= 0;
+    let has_safe_line =
+        super::root_policy::StatePressureFeatures::from_combat(combat).value_unblocked <= 0;
     json!({
         "engine_context": engine_context_label(engine),
         "chosen_input": format!("{chosen_input:?}"),

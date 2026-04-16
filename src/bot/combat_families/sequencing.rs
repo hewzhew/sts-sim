@@ -1,6 +1,5 @@
 use crate::bot::combat_card_knowledge::{
-    BranchFamily, ChanceProfile, OrderingConstraint, RiskProfile, TurnActionRole,
-    TurnOrderingHint,
+    BranchFamily, ChanceProfile, OrderingConstraint, RiskProfile, TurnActionRole, TurnOrderingHint,
 };
 use crate::bot::combat_families::draw::DrawTimingContext;
 
@@ -188,7 +187,7 @@ pub(crate) fn assess_branch_opening(ctx: &BranchOpeningContext) -> BranchOpening
     ) {
         bad_branch_lethal_risk = (bad_branch_lethal_risk + 0.10).clamp(0.0, 1.0);
     }
-    let good_branch_escape_value = if !ctx.current_safe_line_exists || risk.lethal_pressure {
+    let good_branch_escape_value = if risk.urgent_pressure || risk.lethal_pressure {
         ((stabilizing_hit_prob * 6_000.0)
             + (defensive_hit_prob * 4_200.0)
             + (playable_hit_prob * 2_200.0)
@@ -257,7 +256,7 @@ pub(crate) fn assess_turn_action(
             assessment.rationale_key = "setup_before_payoff";
         }
         Some(OrderingConstraint::CyclingBeforeTerminalAttack) if branch.is_some() => {
-            assessment.frontload_bonus += 2_400;
+            assessment.frontload_bonus += 1_200;
             assessment.rationale_key = "cycling_before_terminal_attack";
         }
         Some(OrderingConstraint::EnergyBridgeBeforeHighCostPayoff) if ctx.followup_payoff > 0 => {
@@ -298,21 +297,38 @@ pub(crate) fn assess_turn_action(
     }
 
     if let Some(branch) = branch {
-        assessment.branch_value += branch.continuation_value;
-        assessment.downside_penalty += branch.downside_value;
-        assessment.branch_value += (branch.playable_hit_prob * 1_200.0) as i32;
-        assessment.branch_value += (branch.followup_energy_feasible * 900.0) as i32;
-        assessment.branch_value += (branch.defensive_hit_prob * 1_100.0) as i32;
-        assessment.branch_value += (branch.stabilizing_hit_prob * 1_400.0) as i32;
-        assessment.branch_value += (branch.good_branch_escape_value as f32 * 0.35) as i32;
+        let continuation_weight = if risk.lethal_pressure {
+            0.45
+        } else if risk.urgent_pressure {
+            0.25
+        } else {
+            0.18
+        };
+        let downside_weight = if risk.has_safe_line {
+            0.90
+        } else if risk.urgent_pressure {
+            0.75
+        } else {
+            0.65
+        };
+        assessment.branch_value +=
+            (branch.continuation_value as f32 * continuation_weight).round() as i32;
+        assessment.downside_penalty +=
+            (branch.downside_value as f32 * downside_weight).round() as i32;
         if matches!(
             branch.branch_family,
             BranchFamily::RandomCombatCard | BranchFamily::RandomAttackCard
         ) {
             assessment.downside_penalty += 400;
         }
+        if branch.playable_hit_prob >= 0.55 && branch.followup_energy_feasible >= 0.45 {
+            assessment.branch_value += 450;
+        }
+        if risk.urgent_pressure && branch.defensive_hit_prob >= 0.55 {
+            assessment.branch_value += 500;
+        }
         if branch.high_value_hit_prob >= 0.45 && branch.dead_draw_prob <= 0.35 {
-            assessment.frontload_bonus += 1_400;
+            assessment.frontload_bonus += 400;
             assessment.branch_rationale_key = "branch_opening_positive_ev";
             if assessment.rationale_key.is_empty() {
                 assessment.rationale_key = "branch_opening_positive_ev";
@@ -381,4 +397,121 @@ pub(crate) fn assess_turn_action(
     }
 
     assessment
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::bot::combat_card_knowledge::{
+        ChanceProfile, OrderingConstraint, RiskProfile, TurnActionRole, TurnOrderingHint,
+    };
+
+    #[test]
+    fn safe_line_draw_branch_no_longer_overwhelms_order_score() {
+        let ctx = TurnSequencingContext {
+            role: TurnActionRole::Cycling,
+            ordering_hint: TurnOrderingHint::PreferEarly,
+            chance_profile: ChanceProfile::DrawBranch,
+            risk_profile: RiskProfile::WindowSensitive,
+            ordering_constraint: Some(OrderingConstraint::CyclingBeforeTerminalAttack),
+            immediate_payoff: 6,
+            followup_payoff: 18,
+            growth_window: false,
+        };
+        let risk = TurnRiskContext {
+            current_hp: 66,
+            unblocked_damage: 13,
+            defense_gap: 13,
+            lethal_pressure: false,
+            urgent_pressure: true,
+            current_energy: 3,
+            remaining_actions: 3,
+            has_safe_line: true,
+        };
+        let branch = BranchOpeningEstimate {
+            playable_hit_prob: 0.80,
+            high_value_hit_prob: 0.55,
+            dead_draw_prob: 0.10,
+            followup_energy_feasible: 0.70,
+            defensive_hit_prob: 0.65,
+            stabilizing_hit_prob: 0.85,
+            overdraw_risk: 0.05,
+            energy_strand_prob: 0.05,
+            bad_branch_lethal_risk: 0.05,
+            good_branch_escape_value: 0,
+            branch_family: BranchFamily::Draw,
+            continuation_value: 16_904,
+            downside_value: 735,
+        };
+
+        let assessment = assess_turn_action(&ctx, &risk, Some(&branch));
+
+        assert!(assessment.branch_value < 7_000);
+        assert!(assessment.total_delta() < 8_000);
+    }
+
+    #[test]
+    fn non_urgent_random_branch_without_full_block_does_not_get_escape_credit() {
+        let branch = assess_branch_opening(&BranchOpeningContext {
+            draw: DrawTimingContext {
+                current_energy: 3,
+                player_no_draw: false,
+                current_hand_size: 5,
+                future_zero_cost_cards: 0,
+                future_one_cost_cards: 2,
+                future_two_plus_cost_cards: 1,
+                future_key_delay_weight: 4,
+                future_high_cost_key_delay_weight: 2,
+                future_status_cards: 0,
+                other_draw_sources_in_hand: 0,
+            },
+            risk: TurnRiskContext {
+                current_hp: 69,
+                unblocked_damage: 7,
+                defense_gap: 7,
+                lethal_pressure: false,
+                urgent_pressure: false,
+                current_energy: 3,
+                remaining_actions: 4,
+                has_safe_line: false,
+            },
+            draw_count: 1,
+            applies_no_draw: false,
+            current_safe_line_exists: false,
+            current_defensive_floor: 0,
+            energy_after_play: 2,
+            hand_space_after_play: 6,
+            immediate_action_value: 6,
+            remaining_attack_followups: 2,
+            remaining_defensive_followups: 1,
+            branch_family: BranchFamily::RandomAttackCard,
+        });
+
+        let assessment = assess_turn_action(
+            &TurnSequencingContext {
+                role: TurnActionRole::Cycling,
+                ordering_hint: TurnOrderingHint::PreferEarly,
+                chance_profile: ChanceProfile::RandomGeneration,
+                risk_profile: RiskProfile::DownsideSensitive,
+                ordering_constraint: Some(OrderingConstraint::CyclingBeforeTerminalAttack),
+                immediate_payoff: 0,
+                followup_payoff: 0,
+                growth_window: false,
+            },
+            &TurnRiskContext {
+                current_hp: 69,
+                unblocked_damage: 7,
+                defense_gap: 7,
+                lethal_pressure: false,
+                urgent_pressure: false,
+                current_energy: 3,
+                remaining_actions: 4,
+                has_safe_line: false,
+            },
+            Some(&branch),
+        );
+
+        assert_eq!(branch.good_branch_escape_value, 0);
+        assert!(assessment.branch_value < 4_000);
+    }
 }

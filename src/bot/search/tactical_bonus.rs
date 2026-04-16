@@ -24,11 +24,11 @@ use crate::bot::combat_families::survival::{
 };
 use crate::bot::combat_posture::posture_features;
 use crate::bot::monster_belief::build_combat_belief_state;
-use crate::runtime::combat::CombatState;
-use crate::runtime::combat::PowerId;
 use crate::content::cards::{get_card_definition, CardId, CardType};
 use crate::content::monsters::EnemyId;
 use crate::content::relics::RelicId;
+use crate::runtime::combat::CombatState;
+use crate::runtime::combat::PowerId;
 use crate::state::core::ClientInput;
 use serde_json::{json, Value};
 
@@ -79,22 +79,52 @@ fn tactical_bonus_breakdown(
                 ("corruption", corruption_move_bonus(combat, *card_index)),
                 ("evolve", evolve_move_bonus(combat, *card_index)),
                 ("deep_breath", deep_breath_move_bonus(combat, *card_index)),
-                ("exhaust_timing", exhaust_timing_move_bonus(combat, *card_index)),
-                ("battle_trance", battle_trance_move_bonus(combat, *card_index)),
+                (
+                    "exhaust_timing",
+                    exhaust_timing_move_bonus(combat, *card_index),
+                ),
+                (
+                    "battle_trance",
+                    battle_trance_move_bonus(combat, *card_index),
+                ),
                 ("generic_draw", generic_draw_move_bonus(combat, *card_index)),
-                ("resource_conversion", resource_conversion_move_bonus(combat, *card_index)),
+                (
+                    "resource_conversion",
+                    resource_conversion_move_bonus(combat, *card_index),
+                ),
                 ("body_slam", body_slam_move_bonus(combat, *card_index)),
-                ("flame_barrier", flame_barrier_move_bonus(combat, *card_index)),
+                (
+                    "flame_barrier",
+                    flame_barrier_move_bonus(combat, *card_index),
+                ),
                 ("limit_break", limit_break_move_bonus(combat, *card_index)),
                 ("hold_commit", hold_commit_timing_bonus(combat, *card_index)),
-                ("survival_swing", survival_swing_move_bonus(combat, *card_index)),
-                ("target_progress", target_progress_move_bonus(combat, *card_index, *target)),
+                (
+                    "survival_swing",
+                    survival_swing_move_bonus(combat, *card_index),
+                ),
+                (
+                    "target_progress",
+                    target_progress_move_bonus(combat, *card_index, *target),
+                ),
                 ("posture", posture_move_bonus(combat, *card_index)),
-                ("gremlin_nob_penalty", gremlin_nob_skill_penalty(combat, card)),
+                (
+                    "gremlin_nob_penalty",
+                    gremlin_nob_skill_penalty(combat, card),
+                ),
                 ("slimed_cleanup", slimed_cleanup_move_bonus(combat, card)),
-                ("sharp_hide_penalty", sharp_hide_attack_penalty(combat, card, *target)),
-                ("slime_boss_split", slime_boss_split_timing_bonus(combat, card, *target)),
-                ("guardian_phase", guardian_phase_timing_bonus(combat, card, *target)),
+                (
+                    "sharp_hide_penalty",
+                    sharp_hide_attack_penalty(combat, card, *target),
+                ),
+                (
+                    "slime_boss_split",
+                    slime_boss_split_timing_bonus(combat, card, *target),
+                ),
+                (
+                    "guardian_phase",
+                    guardian_phase_timing_bonus(combat, card, *target),
+                ),
             ]
             .into_iter()
             .filter(|(_, value)| *value != 0.0)
@@ -1524,7 +1554,10 @@ fn guardian_sharp_hide_extra_penalty(
     let unblocked = combat_unblocked_incoming_damage(combat);
 
     if owner_next_move == 4
-        || matches!(owner_intent, crate::runtime::combat::Intent::AttackBuff { .. })
+        || matches!(
+            owner_intent,
+            crate::runtime::combat::Intent::AttackBuff { .. }
+        )
     {
         // Twin Slam is the clearest "just wait one enemy turn and reflect disappears" window.
         penalty -= 5_000.0;
@@ -1548,10 +1581,7 @@ fn guardian_sharp_hide_extra_penalty(
     penalty
 }
 
-fn estimated_attack_damage(
-    combat: &CombatState,
-    card: &crate::runtime::combat::CombatCard,
-) -> i32 {
+fn estimated_attack_damage(combat: &CombatState, card: &crate::runtime::combat::CombatCard) -> i32 {
     let def = get_card_definition(card.id);
     let mut damage = match card.id {
         CardId::BodySlam => combat.entities.player.block,
@@ -2138,10 +2168,7 @@ fn combat_missing_hp(combat: &CombatState) -> i32 {
     (combat.entities.player.max_hp - combat.entities.player.current_hp).max(0)
 }
 
-fn estimated_reaper_heal(
-    combat: &CombatState,
-    card: &crate::runtime::combat::CombatCard,
-) -> i32 {
+fn estimated_reaper_heal(combat: &CombatState, card: &crate::runtime::combat::CombatCard) -> i32 {
     let base = estimated_attack_damage(combat, card).max(0);
     if base <= 0 {
         return 0;
@@ -2163,10 +2190,7 @@ fn estimated_reaper_heal(
         .sum()
 }
 
-fn estimated_reaper_kills(
-    combat: &CombatState,
-    card: &crate::runtime::combat::CombatCard,
-) -> i32 {
+fn estimated_reaper_kills(combat: &CombatState, card: &crate::runtime::combat::CombatCard) -> i32 {
     let base = estimated_attack_damage(combat, card).max(0);
     if base <= 0 {
         return 0;

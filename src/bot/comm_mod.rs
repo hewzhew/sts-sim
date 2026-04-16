@@ -101,4 +101,3 @@ fn translate_pending_uuid_selection(uuids: &[u32], state: &EngineState) -> Optio
         Some("CHOOSE 0".to_string())
     }
 }
-

@@ -1,8 +1,6 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::runtime::action::CardDestination;
-use crate::runtime::combat::{CombatCard, CombatState, Power};
 use crate::content::cards::java_id as card_java_id;
 use crate::content::cards::CardId;
 use crate::diff::protocol::{
@@ -11,6 +9,8 @@ use crate::diff::protocol::{
 };
 use crate::diff::replay::tick_until_stable;
 use crate::diff::state_sync::build_combat_state;
+use crate::runtime::action::CardDestination;
+use crate::runtime::combat::{CombatCard, CombatState, Power};
 use crate::state::core::{ClientInput, EngineState, PendingChoice, PileType};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]

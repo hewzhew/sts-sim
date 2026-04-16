@@ -103,9 +103,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     Err("combat verification found divergence(s)".into())
 }
 
-fn print_failure(
-    failure: &sts_simulator::diff::replay::CombatVerificationFailure,
-) {
+fn print_failure(failure: &sts_simulator::diff::replay::CombatVerificationFailure) {
     println!(
         "FAIL step_index={} command_id={} response_id={:?} frame_id={:?} command={}",
         failure.step_index,

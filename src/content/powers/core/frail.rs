@@ -1,6 +1,6 @@
+use crate::core::EntityId;
 use crate::runtime::action::Action;
 use crate::runtime::combat::PowerId;
-use crate::core::EntityId;
 
 pub fn on_calculate_block(mut block: f32, amount: i32) -> f32 {
     if amount > 0 {

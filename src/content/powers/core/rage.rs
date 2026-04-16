@@ -1,6 +1,6 @@
+use crate::core::EntityId;
 use crate::runtime::action::Action;
 use crate::runtime::combat::CombatCard;
-use crate::core::EntityId;
 
 pub fn on_card_played(
     owner: EntityId,

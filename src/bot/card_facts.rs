@@ -30,6 +30,9 @@ pub(crate) struct CardFacts {
     pub target_sensitive: bool,
     pub combat_heal: bool,
     pub conditional_free: bool,
+    pub self_replicating: bool,
+    pub random_generation: bool,
+    pub cost_manipulation_sensitive: bool,
 }
 
 pub(crate) fn facts(card_id: CardId) -> CardFacts {
@@ -105,6 +108,12 @@ pub(crate) fn facts(card_id: CardId) -> CardFacts {
         ),
         combat_heal: matches!(card_id, Reaper | Bite | Feed | BandageUp),
         conditional_free: matches!(card_id, BloodForBlood | Dropkick | SeeingRed),
+        self_replicating: matches!(card_id, Anger),
+        random_generation: matches!(card_id, Discovery | InfernalBlade | Metamorphosis | Mayhem),
+        cost_manipulation_sensitive: matches!(
+            card_id,
+            BloodForBlood | Dropkick | SeverSoul | SeeingRed
+        ),
     }
 }
 
@@ -127,5 +136,11 @@ mod tests {
         assert!(shockwave.applies_weak);
         assert!(shockwave.applies_vuln);
         assert!(shockwave.target_sensitive);
+
+        let anger = facts(CardId::Anger);
+        assert!(anger.self_replicating);
+
+        let discovery = facts(CardId::Discovery);
+        assert!(discovery.random_generation);
     }
 }

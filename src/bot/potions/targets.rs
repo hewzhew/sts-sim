@@ -1,7 +1,7 @@
 use super::signals::CombatSignals;
-use crate::runtime::combat::CombatState;
 use crate::content::potions::{get_potion_definition, PotionId};
 use crate::content::powers::PowerId;
+use crate::runtime::combat::CombatState;
 
 pub fn best_target(
     state: &CombatState,

@@ -1,7 +1,7 @@
-use crate::runtime::action::Action;
-use crate::runtime::combat::{CombatCard, CombatState};
 use crate::content::powers::PowerId;
 use crate::core::EntityId;
+use crate::runtime::action::Action;
+use crate::runtime::combat::{CombatCard, CombatState};
 
 pub fn on_player_card_played(
     owner: EntityId,

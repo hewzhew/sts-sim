@@ -4,8 +4,8 @@ mod signals;
 mod targets;
 mod valuation;
 
-use crate::runtime::combat::CombatState;
 use crate::content::potions::{get_potion_definition, PotionId};
+use crate::runtime::combat::CombatState;
 use crate::state::core::ClientInput;
 
 pub(crate) use catalog::category_label;

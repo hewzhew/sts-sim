@@ -1,6 +1,6 @@
+use crate::core::EntityId;
 use crate::runtime::action::{Action, ActionInfo, AddTo};
 use crate::runtime::combat::{CombatCard, CombatState};
-use crate::core::EntityId;
 use smallvec::SmallVec;
 
 pub fn double_tap_play(

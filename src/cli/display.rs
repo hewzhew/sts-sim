@@ -1,4 +1,3 @@
-use sts_simulator::runtime::combat::{CombatCard, CombatState, Intent};
 use sts_simulator::content::cards;
 use sts_simulator::content::cards::CardTarget;
 use sts_simulator::content::monsters::EnemyId;
@@ -6,6 +5,7 @@ use sts_simulator::content::potions::PotionId;
 use sts_simulator::content::powers::store::powers_for;
 use sts_simulator::content::relics::RelicId;
 use sts_simulator::map::node::RoomType;
+use sts_simulator::runtime::combat::{CombatCard, CombatState, Intent};
 use sts_simulator::state::core::EngineState;
 use sts_simulator::state::run::RunState;
 use sts_simulator::state::selection::{

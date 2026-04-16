@@ -659,10 +659,7 @@ pub fn random_potion_by_rarity(
 }
 
 /// Returns a totally random potion (no rarity weighting). Java: `AbstractDungeon.returnTotallyRandomPotion()`.
-pub fn random_potion_any(
-    rng: &mut crate::runtime::rng::StsRng,
-    class: PotionClass,
-) -> PotionId {
+pub fn random_potion_any(rng: &mut crate::runtime::rng::StsRng, class: PotionClass) -> PotionId {
     let pool = potions_for_class(class);
     let idx = rng.random(pool.len() as i32 - 1) as usize;
     pool[idx]

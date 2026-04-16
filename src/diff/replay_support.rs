@@ -1,8 +1,8 @@
 use serde_json::Value;
 use std::collections::HashSet;
 
-use crate::runtime::combat::CombatState;
 use crate::engine::{core::tick_engine, pending_choices};
+use crate::runtime::combat::CombatState;
 use crate::state::core::{ClientInput, EngineState, HandSelectReason, PendingChoice};
 use crate::state::selection::{EngineDiagnostic, EngineDiagnosticClass, EngineDiagnosticSeverity};
 

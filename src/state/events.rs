@@ -1,3 +1,6 @@
+use crate::content::cards::CardId;
+use crate::content::relics::RelicId;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum EventId {
     // Act 1
@@ -91,7 +94,7 @@ impl EventState {
 }
 
 /// Represents a single UI button option in an event. E.g "Take 12 Damage, Obtain Golden Idol"
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct EventChoiceMeta {
     pub text: String,
     pub disabled: bool,
@@ -114,4 +117,151 @@ impl EventChoiceMeta {
             disabled_reason: Some(reason.into()),
         }
     }
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct EventOptionSemantics {
+    pub action: EventActionKind,
+    pub effects: Vec<EventEffect>,
+    pub constraints: Vec<EventOptionConstraint>,
+    pub transition: EventOptionTransition,
+    pub repeatable: bool,
+    pub terminal: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct EventOption {
+    pub ui: EventChoiceMeta,
+    pub semantics: EventOptionSemantics,
+}
+
+impl EventOption {
+    pub fn unknown(ui: EventChoiceMeta) -> Self {
+        EventOption {
+            ui,
+            semantics: EventOptionSemantics::default(),
+        }
+    }
+
+    pub fn new(ui: EventChoiceMeta, semantics: EventOptionSemantics) -> Self {
+        EventOption { ui, semantics }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum EventActionKind {
+    #[default]
+    Unknown,
+    Leave,
+    Continue,
+    Accept,
+    Decline,
+    Fight,
+    Trade,
+    DeckOperation,
+    Gain,
+    Special,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum EventEffect {
+    GainGold(i32),
+    LoseGold(i32),
+    LoseHp(i32),
+    LoseMaxHp(i32),
+    Heal(i32),
+    GainMaxHp(i32),
+    ObtainRelic {
+        count: usize,
+        kind: EventRelicKind,
+    },
+    ObtainPotion {
+        count: usize,
+    },
+    ObtainCard {
+        count: usize,
+        kind: EventCardKind,
+    },
+    ObtainColorlessCard {
+        count: usize,
+        kind: EventCardKind,
+    },
+    ObtainCurse {
+        count: usize,
+        kind: EventCardKind,
+    },
+    RemoveCard {
+        count: usize,
+        target_uuid: Option<u32>,
+        kind: EventCardKind,
+    },
+    UpgradeCard {
+        count: usize,
+    },
+    TransformCard {
+        count: usize,
+    },
+    DuplicateCard {
+        count: usize,
+    },
+    LoseRelic {
+        specific: Option<RelicId>,
+        starter_only: bool,
+    },
+    LoseStarterRelic {
+        specific: Option<RelicId>,
+    },
+    StartCombat,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum EventOptionTransition {
+    #[default]
+    None,
+    AdvanceScreen,
+    Complete,
+    OpenSelection(EventSelectionKind),
+    OpenReward,
+    StartCombat,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum EventOptionConstraint {
+    RequiresGold(i32),
+    RequiresRelic(RelicId),
+    RequiresRemovableCard,
+    RequiresUpgradeableCard,
+    RequiresTransformableCard,
+    RequiresPotion,
+    RequiresPotionSlotValue,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum EventSelectionKind {
+    #[default]
+    None,
+    RemoveCard,
+    UpgradeCard,
+    TransformCard,
+    DuplicateCard,
+    OfferCard,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum EventCardKind {
+    #[default]
+    Unknown,
+    Specific(CardId),
+    RandomColorless,
+    RandomClassCard,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum EventRelicKind {
+    #[default]
+    Unknown,
+    Specific(RelicId),
+    RandomRelic,
+    RandomBook,
+    RandomFace,
 }

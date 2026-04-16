@@ -1,6 +1,6 @@
+use crate::content::relics::RelicState;
 use crate::runtime::action::ActionInfo;
 use crate::runtime::combat::CombatState;
-use crate::content::relics::RelicState;
 
 // Note: Defect Orb mechanics are unimplemented.
 // This is currently a mock simulation for Cracked Core (Channels 1 Lightning).

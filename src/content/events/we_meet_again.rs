@@ -1,8 +1,11 @@
 use crate::state::core::EngineState;
-use crate::state::events::{EventChoiceMeta, EventState};
+use crate::state::events::{
+    EventActionKind, EventCardKind, EventChoiceMeta, EventEffect, EventOption,
+    EventOptionConstraint, EventOptionSemantics, EventOptionTransition, EventRelicKind, EventState,
+};
 use crate::state::run::RunState;
 
-pub fn get_choices(_run_state: &RunState, event_state: &EventState) -> Vec<EventChoiceMeta> {
+pub fn get_options(_run_state: &RunState, event_state: &EventState) -> Vec<EventOption> {
     match event_state.current_screen {
         0 => {
             // Potion option: stored potion slot in byte 2
@@ -17,28 +20,143 @@ pub fn get_choices(_run_state: &RunState, event_state: &EventState) -> Vec<Event
 
             vec![
                 if has_potion {
-                    EventChoiceMeta::new("[Give Potion] Obtain a Relic.")
+                    EventOption::new(
+                        EventChoiceMeta::new("[Give Potion] Obtain a Relic."),
+                        EventOptionSemantics {
+                            action: EventActionKind::Trade,
+                            effects: vec![EventEffect::ObtainRelic {
+                                count: 1,
+                                kind: EventRelicKind::RandomRelic,
+                            }],
+                            constraints: vec![EventOptionConstraint::RequiresPotion],
+                            transition: EventOptionTransition::AdvanceScreen,
+                            repeatable: false,
+                            terminal: false,
+                        },
+                    )
                 } else {
-                    EventChoiceMeta::disabled("[Give Potion]", "No Potions")
+                    EventOption::new(
+                        EventChoiceMeta::disabled("[Give Potion]", "No Potions"),
+                        EventOptionSemantics {
+                            action: EventActionKind::Trade,
+                            effects: vec![EventEffect::ObtainRelic {
+                                count: 1,
+                                kind: EventRelicKind::RandomRelic,
+                            }],
+                            constraints: vec![EventOptionConstraint::RequiresPotion],
+                            transition: EventOptionTransition::AdvanceScreen,
+                            repeatable: false,
+                            terminal: false,
+                        },
+                    )
                 },
                 if has_gold {
-                    EventChoiceMeta::new(format!(
-                        "[Give Gold] Lose {} Gold. Obtain a Relic.",
-                        gold_amt
-                    ))
+                    EventOption::new(
+                        EventChoiceMeta::new(format!(
+                            "[Give Gold] Lose {} Gold. Obtain a Relic.",
+                            gold_amt
+                        )),
+                        EventOptionSemantics {
+                            action: EventActionKind::Trade,
+                            effects: vec![
+                                EventEffect::LoseGold(gold_amt),
+                                EventEffect::ObtainRelic {
+                                    count: 1,
+                                    kind: EventRelicKind::RandomRelic,
+                                },
+                            ],
+                            constraints: vec![EventOptionConstraint::RequiresGold(gold_amt)],
+                            transition: EventOptionTransition::AdvanceScreen,
+                            repeatable: false,
+                            terminal: false,
+                        },
+                    )
                 } else {
-                    EventChoiceMeta::disabled("[Give Gold]", "Not enough Gold")
+                    EventOption::new(
+                        EventChoiceMeta::disabled("[Give Gold]", "Not enough Gold"),
+                        EventOptionSemantics {
+                            action: EventActionKind::Trade,
+                            effects: vec![EventEffect::ObtainRelic {
+                                count: 1,
+                                kind: EventRelicKind::RandomRelic,
+                            }],
+                            constraints: vec![EventOptionConstraint::RequiresGold(50)],
+                            transition: EventOptionTransition::AdvanceScreen,
+                            repeatable: false,
+                            terminal: false,
+                        },
+                    )
                 },
                 if has_card {
-                    EventChoiceMeta::new("[Give Card] Remove a card. Obtain a Relic.")
+                    EventOption::new(
+                        EventChoiceMeta::new("[Give Card] Remove a card. Obtain a Relic."),
+                        EventOptionSemantics {
+                            action: EventActionKind::Trade,
+                            effects: vec![
+                                EventEffect::RemoveCard {
+                                    count: 1,
+                                    target_uuid: None,
+                                    kind: EventCardKind::Unknown,
+                                },
+                                EventEffect::ObtainRelic {
+                                    count: 1,
+                                    kind: EventRelicKind::RandomRelic,
+                                },
+                            ],
+                            constraints: vec![EventOptionConstraint::RequiresRemovableCard],
+                            transition: EventOptionTransition::AdvanceScreen,
+                            repeatable: false,
+                            terminal: false,
+                        },
+                    )
                 } else {
-                    EventChoiceMeta::disabled("[Give Card]", "No eligible cards")
+                    EventOption::new(
+                        EventChoiceMeta::disabled("[Give Card]", "No eligible cards"),
+                        EventOptionSemantics {
+                            action: EventActionKind::Trade,
+                            effects: vec![EventEffect::ObtainRelic {
+                                count: 1,
+                                kind: EventRelicKind::RandomRelic,
+                            }],
+                            constraints: vec![EventOptionConstraint::RequiresRemovableCard],
+                            transition: EventOptionTransition::AdvanceScreen,
+                            repeatable: false,
+                            terminal: false,
+                        },
+                    )
                 },
-                EventChoiceMeta::new("[Attack]"),
+                EventOption::new(
+                    EventChoiceMeta::new("[Attack]"),
+                    EventOptionSemantics {
+                        action: EventActionKind::Decline,
+                        effects: vec![],
+                        constraints: vec![],
+                        transition: EventOptionTransition::AdvanceScreen,
+                        repeatable: false,
+                        terminal: false,
+                    },
+                ),
             ]
         }
-        _ => vec![EventChoiceMeta::new("[Leave]")],
+        _ => vec![EventOption::new(
+            EventChoiceMeta::new("[Leave]"),
+            EventOptionSemantics {
+                action: EventActionKind::Leave,
+                effects: vec![],
+                constraints: vec![],
+                transition: EventOptionTransition::Complete,
+                repeatable: false,
+                terminal: true,
+            },
+        )],
     }
+}
+
+pub fn get_choices(run_state: &RunState, event_state: &EventState) -> Vec<EventChoiceMeta> {
+    get_options(run_state, event_state)
+        .into_iter()
+        .map(|option| option.ui)
+        .collect()
 }
 
 pub fn handle_choice(_engine_state: &mut EngineState, run_state: &mut RunState, choice_idx: usize) {
@@ -127,7 +245,10 @@ pub fn init_we_meet_again_state(run_state: &mut RunState) -> i32 {
         } else {
             // Consume miscRng.randomLong() for shuffle seed, pick first after shuffle
             let mut shuffled = potion_indices;
-            crate::runtime::rng::shuffle_with_random_long(&mut shuffled, &mut run_state.rng_pool.misc_rng);
+            crate::runtime::rng::shuffle_with_random_long(
+                &mut shuffled,
+                &mut run_state.rng_pool.misc_rng,
+            );
             shuffled[0] as u8
         }
     };
@@ -169,4 +290,28 @@ pub fn init_we_meet_again_state(run_state: &mut RunState) -> i32 {
     };
 
     (gold_amount as i32) | ((card_idx as i32) << 8) | ((potion_slot as i32) << 16)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::state::events::EventOptionConstraint;
+
+    #[test]
+    fn gold_trade_option_exposes_required_gold_constraint() {
+        let rs = RunState::new(1, 0, true, "Ironclad");
+        let event_state = EventState {
+            id: crate::state::events::EventId::WeMeetAgain,
+            current_screen: 0,
+            internal_state: 75,
+            completed: false,
+            combat_pending: false,
+            extra_data: Vec::new(),
+        };
+        let options = get_options(&rs, &event_state);
+        assert_eq!(
+            options[1].semantics.constraints,
+            vec![EventOptionConstraint::RequiresGold(75)]
+        );
+    }
 }

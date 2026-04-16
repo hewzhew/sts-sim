@@ -1,7 +1,7 @@
-use crate::runtime::action::{Action, DamageInfo, DamageType};
-use crate::runtime::combat::{CombatState, Intent};
 use crate::content::monsters::MonsterBehavior;
 use crate::content::powers::PowerId;
+use crate::runtime::action::{Action, DamageInfo, DamageType};
+use crate::runtime::combat::{CombatState, Intent};
 
 pub struct SpireGrowth;
 

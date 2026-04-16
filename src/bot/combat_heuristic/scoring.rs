@@ -4,9 +4,7 @@ use crate::bot::combat_card_knowledge::{
     default_ordering_constraint, default_ordering_hint, default_risk_profile,
 };
 use crate::bot::combat_families::apotheosis::apotheosis_timing_score;
-use crate::bot::combat_families::apparition::{
-    apparition_timing_score, ApparitionTimingContext,
-};
+use crate::bot::combat_families::apparition::{apparition_timing_score, ApparitionTimingContext};
 use crate::bot::combat_families::draw::DrawTimingContext;
 use crate::bot::combat_families::sequencing::{
     assess_branch_opening, assess_turn_action, BranchOpeningContext, BranchOpeningEstimate,
@@ -363,9 +361,7 @@ fn followup_payoff_estimate(state: &SimState, current_idx: usize) -> i32 {
         | CardId::ThunderClap
         | CardId::Trip => best_multi_hit_followup.max(best_attack_followup),
         CardId::Rage | CardId::Flex => cumulative_attack_followup.max(best_attack_followup),
-        _ if taxonomy(current.card_id).is_setup_power()
-            =>
-        {
+        _ if taxonomy(current.card_id).is_setup_power() => {
             cumulative_attack_followup.max(best_attack_followup)
         }
         _ => best_attack_followup / 2,
@@ -969,4 +965,3 @@ fn gremlin_nob_skill_penalty_value(state: &SimState, card: &SimCard) -> i32 {
     }
     penalty
 }
-

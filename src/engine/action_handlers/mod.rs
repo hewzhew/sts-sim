@@ -11,9 +11,9 @@ pub mod damage;
 pub mod powers;
 pub mod spawning;
 
+use crate::content::powers::store;
 use crate::runtime::action::Action;
 use crate::runtime::combat::CombatState;
-use crate::content::powers::store;
 
 /// Synchronously checks for and applies Fairy In A Bottle or Lizard Tail when player HP hits 0.
 pub fn try_revive(state: &mut CombatState) {

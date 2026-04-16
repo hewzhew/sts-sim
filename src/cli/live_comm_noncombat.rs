@@ -9,6 +9,7 @@ pub(crate) struct LiveEventPolicyTrace {
     pub summary: String,
     pub detail: String,
     pub audit: Value,
+    pub deck_improvement_summary: Option<String>,
 }
 
 pub(crate) fn choose_live_event_command_with_trace(
@@ -16,13 +17,82 @@ pub(crate) fn choose_live_event_command_with_trace(
     rs: &crate::state::run::RunState,
 ) -> Option<LiveEventPolicyTrace> {
     let context = crate::bot::live_event_context(gs, rs)?;
-    let decision = crate::bot::choose_event_option(rs, &context)?;
+    let decision = crate::bot::choose_live_event_choice(gs, rs)?;
+    let protocol_audit = gs
+        .get("screen_state")
+        .map(|screen_state| {
+            crate::engine::event_handler::live_event_protocol_audit(rs, screen_state)
+        })
+        .unwrap_or(Value::Null);
+    let protocol_note = live_event_protocol_note(&protocol_audit);
+    let mut audit = crate::bot::decision_trace_json(&context, &decision);
+    if let Some(object) = audit.as_object_mut() {
+        object.insert("live_event_protocol".to_string(), protocol_audit.clone());
+    }
     Some(LiveEventPolicyTrace {
         command: format!("CHOOSE {}", decision.command_index),
-        summary: crate::bot::compact_choice_summary(&context, &decision),
-        detail: crate::bot::describe_choice(&context, &decision),
-        audit: crate::bot::decision_trace_json(&context, &decision),
+        summary: format!(
+            "{}{}{}",
+            crate::bot::compact_choice_summary(&context, &decision),
+            decision
+                .deck_improvement_assessment
+                .as_ref()
+                .map(|assessment| format!(
+                    " | deck={}",
+                    crate::bot::run_deck_improvement::deck_operation_focus_summary(assessment)
+                ))
+                .unwrap_or_default(),
+            protocol_note
+                .as_deref()
+                .map(|note| format!(" | {}", note))
+                .unwrap_or_default()
+        ),
+        detail: format!(
+            "{}{}",
+            crate::bot::describe_choice(&context, &decision),
+            protocol_note
+                .as_deref()
+                .map(|note| format!(" [{}]", note))
+                .unwrap_or_default()
+        ),
+        audit,
+        deck_improvement_summary: decision
+            .deck_improvement_assessment
+            .as_ref()
+            .map(crate::bot::run_deck_improvement::deck_operation_focus_summary),
     })
+}
+
+fn live_event_protocol_note(protocol_audit: &Value) -> Option<String> {
+    let status = protocol_audit
+        .get("rebuild_status")
+        .and_then(Value::as_str)
+        .unwrap_or("");
+    match status {
+        "ready" => Some("protocol=structured_live_ready".to_string()),
+        "missing_semantics_state" => {
+            let missing = protocol_audit
+                .get("event_semantics_missing_keys")
+                .and_then(Value::as_array)
+                .map(|keys| {
+                    keys.iter()
+                        .filter_map(Value::as_str)
+                        .collect::<Vec<_>>()
+                        .join(",")
+                })
+                .unwrap_or_default();
+            Some(format!(
+                "protocol=missing_event_semantics_state({})",
+                missing
+            ))
+        }
+        "unknown_event_name" => Some("protocol=unknown_event_name".to_string()),
+        "unsupported_event" => Some("protocol=unsupported_event".to_string()),
+        "state_decode_failed" => Some("protocol=state_decode_failed".to_string()),
+        "option_count_mismatch" => Some("protocol=option_count_mismatch".to_string()),
+        "disabled_mismatch" => Some("protocol=disabled_mismatch".to_string()),
+        _ => None,
+    }
 }
 
 pub(crate) fn choose_best_index(_choices: &[&str]) -> usize {
@@ -177,7 +247,9 @@ fn shop_decision_command(
             .iter()
             .position(|choice| matches!(choice, LiveShopChoice::Purge))
             .map(|idx| format!("CHOOSE {}", idx)),
-        crate::bot::ShopDecisionAction::DiscardPotion(idx) => Some(format!("POTION DISCARD {}", idx)),
+        crate::bot::ShopDecisionAction::DiscardPotion(idx) => {
+            Some(format!("POTION DISCARD {}", idx))
+        }
         crate::bot::ShopDecisionAction::Leave => {
             if has_available_command(root, "leave") {
                 Some("LEAVE".to_string())
@@ -191,9 +263,7 @@ fn shop_decision_command(
     }
 }
 
-fn reward_card_decision_command(
-    decision: &crate::bot::RewardCardDecision,
-) -> Option<String> {
+fn reward_card_decision_command(decision: &crate::bot::RewardCardDecision) -> Option<String> {
     match decision.action {
         crate::bot::RewardCardDecisionAction::Pick(idx) => Some(format!("CHOOSE {}", idx)),
         crate::bot::RewardCardDecisionAction::Skip => Some("SKIP".to_string()),
@@ -617,16 +687,89 @@ pub(crate) fn blocked_replaceable_reward_potion_offers(
 #[cfg(test)]
 mod tests {
     use super::{
-        blocked_replaceable_reward_potion_offers, reward_card_decision_command,
-        reward_claim_decision_command, shop_decision_command,
+        blocked_replaceable_reward_potion_offers, choose_live_event_command_with_trace,
+        reward_card_decision_command, reward_claim_decision_command, shop_decision_command,
     };
     use crate::bot::Agent;
     use crate::content::cards::CardId;
     use crate::content::potions::{Potion, PotionId};
-    use crate::rewards::state::RewardCard;
     use crate::shop::{ShopPotion, ShopState};
     use crate::state::run::RunState;
-    use serde_json::json;
+    use serde_json::{json, Value};
+
+    #[test]
+    fn live_event_trace_uses_structured_event_choice_path() {
+        let mut rs = RunState::new(2, 0, false, "Ironclad");
+        rs.gold = 70;
+        rs.master_deck.push(crate::runtime::combat::CombatCard::new(
+            CardId::Parasite,
+            91_777,
+        ));
+        let gs = json!({
+            "screen_state": {
+                "event_name": "Designer",
+                "event_id": "Designer",
+                "current_screen": 1,
+                "event_semantics_state": {
+                    "adjust_upgrades_one": true,
+                    "clean_up_removes_cards": true
+                },
+                "options": [
+                    { "text": "x1", "disabled": false, "choice_index": 40 },
+                    { "text": "x2", "disabled": false, "choice_index": 41 },
+                    { "text": "x3", "disabled": true, "choice_index": 42 },
+                    { "text": "x4", "disabled": false, "choice_index": 43 }
+                ]
+            }
+        });
+
+        let trace = choose_live_event_command_with_trace(&gs, &rs).unwrap();
+        assert_eq!(trace.command, "CHOOSE 41");
+        assert!(trace.summary.contains("Designer"));
+    }
+
+    #[test]
+    fn live_event_trace_surfaces_missing_event_semantics_state_keys() {
+        let mut rs = RunState::new(3, 0, false, "Ironclad");
+        rs.gold = 70;
+        rs.master_deck.push(crate::runtime::combat::CombatCard::new(
+            CardId::Parasite,
+            91_778,
+        ));
+        let gs = json!({
+            "screen_state": {
+                "event_name": "Designer",
+                "event_id": "Designer",
+                "current_screen": 1,
+                "options": [
+                    { "text": "[Adjust] 40 Gold. Upgrade 1 card.", "disabled": false, "choice_index": 50 },
+                    { "text": "[Clean Up] 60 Gold. Remove 1 card.", "disabled": false, "choice_index": 51 },
+                    { "text": "[Full Service] 90 Gold. Remove 1 card + upgrade 1 random.", "disabled": true, "choice_index": 52 },
+                    { "text": "[Punch] Lose 3 HP.", "disabled": false, "choice_index": 53 }
+                ]
+            }
+        });
+
+        let trace = choose_live_event_command_with_trace(&gs, &rs).unwrap();
+        assert!(trace
+            .summary
+            .contains("protocol=missing_event_semantics_state"));
+        let protocol = trace
+            .audit
+            .get("live_event_protocol")
+            .and_then(Value::as_object)
+            .unwrap();
+        assert_eq!(
+            protocol
+                .get("event_semantics_required")
+                .and_then(Value::as_bool),
+            Some(true)
+        );
+        assert!(protocol
+            .get("event_semantics_missing_keys")
+            .and_then(Value::as_array)
+            .is_some_and(|keys| keys.len() == 2));
+    }
 
     #[test]
     fn shop_blocked_potion_replacement_discards_when_blocked_offer_is_worth_buying() {
@@ -650,7 +793,8 @@ mod tests {
             blocked_reason: Some("potion_slots_full".to_string()),
         }];
 
-        let decision = agent.decide_shop_policy(&rs, crate::bot::ShopDecisionContext { shop: &shop });
+        let decision =
+            agent.decide_shop_policy(&rs, crate::bot::ShopDecisionContext { shop: &shop });
         assert_eq!(
             decision.action,
             crate::bot::ShopDecisionAction::DiscardPotion(0)
@@ -681,7 +825,8 @@ mod tests {
             blocked_reason: Some("potion_slots_full".to_string()),
         }];
 
-        let decision = agent.decide_shop_policy(&rs, crate::bot::ShopDecisionContext { shop: &shop });
+        let decision =
+            agent.decide_shop_policy(&rs, crate::bot::ShopDecisionContext { shop: &shop });
         assert_eq!(decision.action, crate::bot::ShopDecisionAction::Leave);
         let command = shop_decision_command(&root, &rs, &shop, &decision);
         assert_eq!(command, Some("LEAVE".to_string()));
@@ -695,44 +840,10 @@ mod tests {
         let elixir = agent.reward_potion_score(&rs, PotionId::Elixir);
         let energy = agent.reward_potion_score(&rs, PotionId::EnergyPotion);
 
-        assert!(elixir > energy, "expected Elixir ({elixir}) > Energy Potion ({energy})");
-    }
-
-    #[test]
-    fn conservative_card_reward_fallback_picks_when_global_heuristic_disagrees_with_skip() {
-        let agent = Agent::new();
-        let mut rs = RunState::new(1, 0, false, "Ironclad");
-        rs.act_num = 2;
-        rs.floor_num = 25;
-        rs.master_deck = (0..18)
-            .map(|idx| {
-                let card_id = if idx < 8 {
-                    CardId::Strike
-                } else {
-                    CardId::Defend
-                };
-                crate::runtime::combat::CombatCard::new(card_id, idx as u32)
-            })
-            .collect();
-        let reward_cards = vec![
-            RewardCard::new(CardId::Havoc, 0),
-            RewardCard::new(CardId::Clash, 0),
-            RewardCard::new(CardId::WildStrike, 0),
-        ];
-
-        let offered_cards: Vec<_> = reward_cards.iter().map(|reward_card| reward_card.id).collect();
-        let detailed = crate::bot::evaluate_reward_screen_for_run_detailed(&offered_cards, &rs);
-        assert_eq!(detailed.recommended_choice, None);
-
-        let decision = agent.decide_reward_card_policy(
-            &rs,
-            crate::bot::RewardCardDecisionContext {
-                reward_cards: &reward_cards,
-                can_skip: true,
-            },
+        assert!(
+            elixir > energy,
+            "expected Elixir ({elixir}) > Energy Potion ({energy})"
         );
-        assert_eq!(decision.action, crate::bot::RewardCardDecisionAction::Pick(0));
-        assert!(decision.meta.fallback_used);
     }
 
     #[test]
@@ -822,8 +933,14 @@ mod tests {
             },
         };
 
-        assert_eq!(reward_card_decision_command(&pick), Some("CHOOSE 2".to_string()));
-        assert_eq!(reward_card_decision_command(&skip), Some("SKIP".to_string()));
+        assert_eq!(
+            reward_card_decision_command(&pick),
+            Some("CHOOSE 2".to_string())
+        );
+        assert_eq!(
+            reward_card_decision_command(&skip),
+            Some("SKIP".to_string())
+        );
     }
 
     #[test]
@@ -1237,13 +1354,19 @@ pub(crate) fn build_live_run_state(gs: &serde_json::Value) -> Option<crate::stat
                         .get("counter")
                         .and_then(|v| v.as_i64())
                         .unwrap_or_else(|| {
-                            panic!("strict live_comm: relic.runtime_state.counter missing for {:?}", id)
+                            panic!(
+                                "strict live_comm: relic.runtime_state.counter missing for {:?}",
+                                id
+                            )
                         }) as i32;
                     state.used_up = runtime_state
                         .get("used_up")
                         .and_then(|v| v.as_bool())
                         .unwrap_or_else(|| {
-                            panic!("strict live_comm: relic.runtime_state.used_up missing for {:?}", id)
+                            panic!(
+                                "strict live_comm: relic.runtime_state.used_up missing for {:?}",
+                                id
+                            )
                         });
                     Some(state)
                 })

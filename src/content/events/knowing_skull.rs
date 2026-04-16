@@ -133,4 +133,3 @@ pub fn handle_choice(_engine_state: &mut EngineState, run_state: &mut RunState, 
 
     run_state.event_state = Some(event_state);
 }
-

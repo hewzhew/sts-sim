@@ -1,6 +1,6 @@
+use crate::core::EntityId;
 use crate::runtime::action::Action;
 use crate::runtime::combat::CombatState;
-use crate::core::EntityId;
 
 // Thievery power tracks the amount of gold stolen. Doesn't heavily impact combat interactions.
 pub fn on_monster_turn_ended(

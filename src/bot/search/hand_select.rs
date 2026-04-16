@@ -1,7 +1,6 @@
 use crate::bot::card_disposition::{
     combat_exhaust_score_for_uuid, combat_retention_score_for_uuid,
 };
-use crate::bot::monster_belief::build_combat_belief_state;
 use crate::bot::combat_families::apotheosis::apotheosis_hand_shaping_score;
 use crate::bot::combat_families::apparition::{
     apparition_hand_shaping_score, ApparitionTimingContext,
@@ -13,9 +12,10 @@ use crate::bot::combat_families::survival::{
     hand_shaping_delay_quality_score, hand_shaping_next_draw_window_score,
     hand_shaping_play_now_score, reaper_hand_shaping_score, SurvivalTimingContext,
 };
-use crate::runtime::combat::CombatState;
+use crate::bot::monster_belief::build_combat_belief_state;
 use crate::content::cards::{get_card_definition, CardId, CardType};
 use crate::content::relics::RelicId;
+use crate::runtime::combat::CombatState;
 use crate::state::core::{ClientInput, GridSelectReason, HandSelectReason, PendingChoice};
 use crate::state::EngineState;
 use serde_json::{json, Value};
@@ -82,9 +82,9 @@ pub(super) fn score_discard_candidate(combat: &CombatState, uuid: u32) -> i32 {
         .iter()
         .filter(|other| other.id == card.id && other.uuid != uuid)
         .count() as i32;
-    let playable_block =
-        (def.base_block as i32 + combat.get_power(0, crate::runtime::combat::PowerId::Dexterity))
-            .max(0);
+    let playable_block = (def.base_block as i32
+        + combat.get_power(0, crate::runtime::combat::PowerId::Dexterity))
+    .max(0);
 
     let mut score = hand_shaping_delay_quality_score(
         card.id,
@@ -315,7 +315,9 @@ fn build_hand_select_candidates(
                             crate::bot::card_disposition::combat_copy_score_for_uuid(combat, *uuid)
                         }
                         HandSelectReason::Retain | HandSelectReason::Upgrade => {
-                            crate::bot::card_disposition::combat_retention_score_for_uuid(combat, *uuid)
+                            crate::bot::card_disposition::combat_retention_score_for_uuid(
+                                combat, *uuid,
+                            )
                         }
                     };
                     json!({
@@ -359,7 +361,9 @@ fn build_grid_select_candidates(
                 .find(|card| card.uuid == *uuid)
                 .map(|card| {
                     let score = match reason {
-                        GridSelectReason::DiscardToHand => score_discard_to_hand_candidate(combat, *uuid),
+                        GridSelectReason::DiscardToHand => {
+                            score_discard_to_hand_candidate(combat, *uuid)
+                        }
                         GridSelectReason::MoveToDrawPile
                         | GridSelectReason::Exhume { .. }
                         | GridSelectReason::SkillFromDeckToHand
