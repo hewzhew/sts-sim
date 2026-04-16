@@ -408,6 +408,166 @@ fn format_search_profile_summary(search_diag: &SearchDiagnostics) -> String {
     )
 }
 
+fn log_combat_decision_audit_summary(live_io: &mut LiveCommIo, search_diag: &SearchDiagnostics) {
+    let root_summary = decision_audit_root_summary(&search_diag.decision_audit);
+    let tactical_summary = decision_audit_tactical_summary(&search_diag.decision_audit);
+    let hand_select_summary = decision_audit_hand_select_summary(&search_diag.decision_audit);
+
+    if let Some(summary) = root_summary.as_deref() {
+        writeln!(live_io.log, "  [AUDIT] root {}", summary).unwrap();
+    }
+    if let Some(summary) = tactical_summary.as_deref() {
+        writeln!(live_io.log, "  [AUDIT] tactical {}", summary).unwrap();
+    }
+    if let Some(summary) = hand_select_summary.as_deref() {
+        writeln!(live_io.log, "  [AUDIT] hand_select {}", summary).unwrap();
+    }
+
+    let mut focus_parts = Vec::new();
+    if let Some(summary) = root_summary {
+        focus_parts.push(format!("root {}", summary));
+    }
+    if let Some(summary) = tactical_summary {
+        focus_parts.push(format!("tactical {}", summary));
+    }
+    if let Some(summary) = hand_select_summary {
+        focus_parts.push(format!("hand_select {}", summary));
+    }
+    if !focus_parts.is_empty() {
+        writeln!(live_io.focus_log, "[AUDIT] {}", focus_parts.join(" | ")).unwrap();
+    }
+}
+
+fn decision_audit_root_summary(audit: &Value) -> Option<String> {
+    let sequencing = audit.get("root_policy")?.get("sequencing")?;
+    if sequencing.is_null() {
+        return None;
+    }
+
+    let mut parts = Vec::new();
+    if let Some(total_delta) = json_number_as_i64(sequencing.get("total_delta")) {
+        parts.push(format!("delta={total_delta}"));
+    }
+    if let Some(rationale_key) = json_str(sequencing.get("rationale_key")) {
+        parts.push(format!("rationale={rationale_key}"));
+    }
+    if let Some(branch_rationale_key) = json_str(sequencing.get("branch_rationale_key")) {
+        parts.push(format!("branch={branch_rationale_key}"));
+    }
+    if let Some(downside_rationale_key) = json_str(sequencing.get("downside_rationale_key")) {
+        parts.push(format!("downside={downside_rationale_key}"));
+    }
+
+    let branch_opening = audit.get("root_policy")?.get("branch_opening")?;
+    if !branch_opening.is_null() {
+        if let Some(branch_family) = json_str(branch_opening.get("branch_family")) {
+            parts.push(format!("family={branch_family}"));
+        }
+        if let Some(continuation_value) = json_number_as_i64(branch_opening.get("continuation_value"))
+        {
+            if continuation_value != 0 {
+                parts.push(format!("continue={continuation_value}"));
+            }
+        }
+        if let Some(downside_value) = json_number_as_i64(branch_opening.get("downside_value")) {
+            if downside_value != 0 {
+                parts.push(format!("risk={downside_value}"));
+            }
+        }
+    }
+
+    (!parts.is_empty()).then(|| parts.join(" "))
+}
+
+fn decision_audit_tactical_summary(audit: &Value) -> Option<String> {
+    let tactical = audit.get("tactical_bonus")?;
+    let total = json_number_as_f64(tactical.get("total"))?;
+    let components = tactical.get("components")?.as_array()?;
+
+    let mut ranked = components
+        .iter()
+        .filter_map(|component| {
+            let name = json_str(component.get("name"))?;
+            let value = json_number_as_f64(component.get("value"))?;
+            (value != 0.0).then_some((name.to_string(), value))
+        })
+        .collect::<Vec<_>>();
+    ranked.sort_by(|lhs, rhs| {
+        rhs.1
+            .abs()
+            .partial_cmp(&lhs.1.abs())
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+
+    let top_components = ranked
+        .iter()
+        .take(3)
+        .map(|(name, value)| format!("{name}={value:.0}"))
+        .collect::<Vec<_>>();
+
+    if total == 0.0 && top_components.is_empty() {
+        return None;
+    }
+
+    Some(if top_components.is_empty() {
+        format!("total={total:.0}")
+    } else {
+        format!("total={total:.0} top=[{}]", top_components.join(", "))
+    })
+}
+
+fn decision_audit_hand_select_summary(audit: &Value) -> Option<String> {
+    let hand_select = audit.get("hand_select")?;
+    if hand_select.is_null() {
+        return None;
+    }
+
+    let selection_kind = json_str(hand_select.get("selection_kind"))?;
+    let reason = json_str(hand_select.get("reason")).unwrap_or("unknown");
+    let chosen_count = hand_select
+        .get("chosen_uuids")
+        .and_then(|value| value.as_array())
+        .map_or(0, |entries| entries.len());
+    let top_candidate = hand_select
+        .get("top_candidates")
+        .and_then(|value| value.as_array())
+        .and_then(|candidates| candidates.first())
+        .map(|candidate| {
+            let label = json_str(candidate.get("label")).unwrap_or("?");
+            let score = json_number_as_i64(candidate.get("score")).unwrap_or(0);
+            format!("{label}:{score}")
+        });
+
+    Some(match top_candidate {
+        Some(candidate) => {
+            format!("kind={selection_kind} reason={reason} chosen={chosen_count} top={candidate}")
+        }
+        None => format!("kind={selection_kind} reason={reason} chosen={chosen_count}"),
+    })
+}
+
+fn json_str(value: Option<&Value>) -> Option<&str> {
+    value.and_then(|value| value.as_str()).filter(|value| !value.is_empty())
+}
+
+fn json_number_as_i64(value: Option<&Value>) -> Option<i64> {
+    value.and_then(|value| {
+        value
+            .as_i64()
+            .or_else(|| value.as_u64().map(|number| number as i64))
+            .or_else(|| value.as_f64().map(|number| number.round() as i64))
+    })
+}
+
+fn json_number_as_f64(value: Option<&Value>) -> Option<f64> {
+    value.and_then(|value| {
+        value
+            .as_f64()
+            .or_else(|| value.as_i64().map(|number| number as f64))
+            .or_else(|| value.as_u64().map(|number| number as f64))
+    })
+}
+
 fn maybe_record_search_suspect(
     live_io: &mut LiveCommIo,
     frame_count: u64,
@@ -1479,6 +1639,7 @@ pub(super) fn handle_live_combat_frame<W: Write>(
         format_search_profile_summary(&search_diag)
     )
     .unwrap();
+    log_combat_decision_audit_summary(live_io, &search_diag);
     maybe_record_search_suspect(
         live_io,
         frame_count,
