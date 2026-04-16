@@ -6,6 +6,7 @@ Use this wrapper so `CommunicationMod` does not need a new command in
 Full day-to-day workflow:
 
 - [docs/LIVE_COMM_RUNBOOK.md](D:\rust\sts_simulator\docs\LIVE_COMM_RUNBOOK.md)
+- [docs/LIVE_COMM_MANUAL_SCENARIO_RUNBOOK.md](D:\rust\sts_simulator\docs\LIVE_COMM_MANUAL_SCENARIO_RUNBOOK.md)
 - [docs/LIVE_COMM_MODES.md](D:\rust\sts_simulator\docs\LIVE_COMM_MODES.md)
 - [docs/WATCH_PRESET_SCHEMA_DRAFT.md](D:\rust\sts_simulator\docs\WATCH_PRESET_SCHEMA_DRAFT.md)
 
@@ -24,6 +25,52 @@ powershell -ExecutionPolicy Bypass -File D:\rust\sts_simulator\tools\live_comm\i
 ```
 
 After that, leave `C:\Users\17239\AppData\Local\ModTheSpire\CommunicationMod\config.properties` alone.
+
+## Manual scenario console
+
+For protocol-truth recording and `scenario ...` testing, switch
+`CommunicationMod` to the manual bridge instead of the normal Rust
+`play.exe` loop:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File D:\rust\sts_simulator\tools\live_comm\install_manual_client_config.ps1
+```
+
+This points `config.properties` at:
+
+```text
+powershell -ExecutionPolicy Bypass -File D:\rust\sts_simulator\tools\live_comm\launch_manual_client.ps1
+```
+
+When the game starts, the bridge opens a separate console window. That
+console accepts raw `CommunicationMod` commands and keeps a live copy of
+the latest frame at:
+
+- `logs/current/manual_client_latest.json`
+
+Useful first commands:
+
+```text
+START ironclad 0
+STATE
+scenario state
+scenario fight jaw_worm
+scenario deck add combust 1 0
+```
+
+Local REPL commands:
+
+- `/help`
+- `/show`
+- `/commands`
+- `/state`
+- `/quit`
+
+To switch back to the normal Rust live-comm client:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File D:\rust\sts_simulator\tools\live_comm\install_communicationmod_config.ps1
+```
 
 ## Day-to-day usage
 
