@@ -1,6 +1,4 @@
-use crate::runtime::combat::{
-    CombatPhase, CombatRng, CombatState, EngineRuntime, EntityState, TurnRuntime,
-};
+use crate::runtime::combat::{CombatRng, CombatState, EngineRuntime, EntityState, TurnRuntime};
 use crate::content::monsters::factory::{self, EncounterId};
 use crate::runtime::rng::{self, RngPool};
 use crate::state::core::EngineState;
@@ -186,13 +184,7 @@ pub(crate) fn start_suite_encounter(
             is_elite_fight: entry.is_elite,
             meta_changes: Vec::new(),
         },
-        turn: TurnRuntime {
-            turn_count: 0,
-            current_phase: CombatPhase::PlayerTurn,
-            energy: 3,
-            turn_start_draw_modifier: 0,
-            counters: Default::default(),
-        },
+        turn: TurnRuntime::fresh_player_turn(3),
         zones: crate::runtime::combat::CardZones {
             draw_pile: seeded.master_deck.clone(),
             hand: Vec::new(),
@@ -208,9 +200,7 @@ pub(crate) fn start_suite_encounter(
             potions: seeded.potions.clone(),
             power_db: HashMap::new(),
         },
-        engine: EngineRuntime {
-            action_queue: VecDeque::new(),
-        },
+        engine: EngineRuntime::new(),
         rng: CombatRng::new(seeded.rng_pool.clone()),
         runtime: Default::default(),
     };
@@ -230,7 +220,7 @@ pub(crate) fn start_suite_encounter(
         monster.move_history.push_back(move_byte);
     }
 
-    combat.turn.energy = combat.entities.player.energy_master;
+    combat.reset_turn_energy_from_player();
     rng::shuffle_with_random_long(&mut combat.zones.draw_pile, &mut combat.rng.shuffle_rng);
     let mut innate = Vec::new();
     let mut normal = Vec::new();
@@ -243,10 +233,7 @@ pub(crate) fn start_suite_encounter(
     }
     innate.extend(normal);
     combat.zones.draw_pile = innate;
-    combat
-        .engine
-        .action_queue
-        .push_back(crate::runtime::action::Action::PreBattleTrigger);
+    combat.queue_action_back(crate::runtime::action::Action::PreBattleTrigger);
 
     let mut engine = EngineState::CombatProcessing;
     advance_suite_engine(&mut engine, &mut combat);
@@ -271,7 +258,7 @@ pub(crate) fn advance_suite_engine(engine: &mut EngineState, combat: &mut Combat
         }
 
         if *engine == EngineState::CombatPlayerTurn
-            && (!combat.engine.action_queue.is_empty() || !combat.zones.queued_cards.is_empty())
+            && (combat.has_pending_actions() || !combat.zones.queued_cards.is_empty())
         {
             *engine = EngineState::CombatProcessing;
         }

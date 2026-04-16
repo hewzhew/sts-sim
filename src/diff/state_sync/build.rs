@@ -5,8 +5,8 @@ use serde_json::Value;
 use std::collections::{HashMap, VecDeque};
 
 use crate::runtime::combat::{
-    CombatMeta, CombatPhase, CombatRng, CombatState, EngineRuntime, EphemeralCounters, Intent,
-    MonsterEntity, PlayerEntity, Power, RelicBuses, TurnRuntime,
+    CombatMeta, CombatRng, CombatState, EngineRuntime, Intent, MonsterEntity, PlayerEntity,
+    Power, RelicBuses, TurnRuntime,
 };
 use crate::content::relics::{RelicId, RelicState};
 use crate::runtime::rng::RngPool;
@@ -227,10 +227,7 @@ pub fn build_combat_state(snapshot: &Value, relics_val: &Value) -> CombatState {
         },
         turn: TurnRuntime {
             turn_count: snapshot["turn"].as_u64().unwrap_or(1) as u32,
-            current_phase: CombatPhase::PlayerTurn,
-            energy: player_val["energy"].as_u64().unwrap_or(3) as u8,
-            turn_start_draw_modifier: 0,
-            counters: EphemeralCounters::default(),
+            ..TurnRuntime::fresh_player_turn(player_val["energy"].as_u64().unwrap_or(3) as u8)
         },
         zones: crate::runtime::combat::CardZones {
             draw_pile,
@@ -247,9 +244,7 @@ pub fn build_combat_state(snapshot: &Value, relics_val: &Value) -> CombatState {
             potions: parsed_potions,
             power_db,
         },
-        engine: EngineRuntime {
-            action_queue: VecDeque::new(),
-        },
+        engine: EngineRuntime::new(),
         rng: CombatRng::new(rng_pool),
         runtime: build_runtime_hints_from_snapshot(snapshot),
     };

@@ -254,9 +254,23 @@ impl CombatState {
         self.turn
             .begin_next_player_turn(self.entities.player.energy_master);
     }
+
+    pub fn reset_turn_energy_from_player(&mut self) {
+        self.turn.set_energy(self.entities.player.energy_master);
+    }
 }
 
 impl TurnRuntime {
+    pub fn fresh_player_turn(energy: u8) -> Self {
+        Self {
+            turn_count: 0,
+            current_phase: CombatPhase::PlayerTurn,
+            energy,
+            turn_start_draw_modifier: 0,
+            counters: Default::default(),
+        }
+    }
+
     pub fn set_energy(&mut self, energy: u8) {
         self.energy = energy;
     }
@@ -291,6 +305,12 @@ impl TurnRuntime {
 }
 
 impl EngineRuntime {
+    pub fn new() -> Self {
+        Self {
+            action_queue: VecDeque::new(),
+        }
+    }
+
     pub fn push_front(&mut self, action: Action) {
         self.action_queue.push_front(action);
     }

@@ -12,9 +12,7 @@ use crate::engine::core::with_suppressed_engine_warnings;
 use crate::map::node::RoomType;
 use crate::runtime::action::Action;
 use crate::runtime::combat::{CardZones, CombatMeta, TurnRuntime};
-use crate::runtime::combat::{
-    CombatCard, CombatPhase, CombatRng, CombatState, EngineRuntime, EntityState,
-};
+use crate::runtime::combat::{CombatCard, CombatRng, CombatState, EngineRuntime, EntityState};
 use crate::runtime::rng;
 use crate::state::core::EngineState;
 use crate::state::run::RunState;
@@ -86,13 +84,7 @@ pub fn build_natural_start_state(
             is_elite_fight: room_type == RoomType::MonsterRoomElite,
             meta_changes: Vec::new(),
         },
-        turn: TurnRuntime {
-            turn_count: 0,
-            current_phase: CombatPhase::PlayerTurn,
-            energy: 3,
-            turn_start_draw_modifier: 0,
-            counters: Default::default(),
-        },
+        turn: TurnRuntime::fresh_player_turn(3),
         zones: CardZones {
             draw_pile: run_state.master_deck.clone(),
             hand: Vec::new(),
@@ -108,9 +100,7 @@ pub fn build_natural_start_state(
             potions: run_state.potions.clone(),
             power_db: HashMap::new(),
         },
-        engine: EngineRuntime {
-            action_queue: VecDeque::new(),
-        },
+        engine: EngineRuntime::new(),
         rng: CombatRng::new(run_state.rng_pool.clone()),
         runtime: Default::default(),
     };
@@ -130,7 +120,7 @@ pub fn build_natural_start_state(
         monster.move_history.push_back(move_byte);
     }
 
-    combat.turn.energy = combat.entities.player.energy_master;
+    combat.reset_turn_energy_from_player();
     rng::shuffle_with_random_long(&mut combat.zones.draw_pile, &mut combat.rng.shuffle_rng);
     let mut innate_cards = Vec::new();
     let mut normal_cards = Vec::new();
