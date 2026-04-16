@@ -38,6 +38,7 @@ pub fn latest_run_artifact_path(
         let candidate = match artifact {
             "raw" => artifact_absolute_path(&manifest_path, &manifest.artifacts.raw),
             "focus" => artifact_absolute_path(&manifest_path, &manifest.artifacts.focus),
+            "findings" => artifact_absolute_path(&manifest_path, &manifest.artifacts.findings),
             "signatures" => artifact_absolute_path(&manifest_path, &manifest.artifacts.signatures),
             "combat_suspects" => {
                 artifact_absolute_path(&manifest_path, &manifest.artifacts.combat_suspects)

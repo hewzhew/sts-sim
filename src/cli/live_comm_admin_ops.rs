@@ -81,6 +81,7 @@ pub fn gc_runs(paths: &LiveLogPaths) -> Result<GcSummary, String> {
             let mut changed = false;
             changed |= remove_run_artifact(manifest_path, &mut manifest.artifacts.raw);
             changed |= remove_run_artifact(manifest_path, &mut manifest.artifacts.focus);
+            changed |= remove_run_artifact(manifest_path, &mut manifest.artifacts.findings);
             changed |= remove_run_artifact(manifest_path, &mut manifest.artifacts.signatures);
             changed |= remove_run_artifact(manifest_path, &mut manifest.artifacts.combat_suspects);
             changed |= remove_run_artifact(manifest_path, &mut manifest.artifacts.reward_audit);

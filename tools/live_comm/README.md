@@ -205,7 +205,24 @@ and no `--live-watch-*` flags. That means:
   - `logs/runs/<run_id>/manifest.json`
   - `logs/runs/<run_id>/raw.jsonl`
   - `logs/runs/<run_id>/focus.txt`
+  - `logs/runs/<run_id>/findings.json`
+  - `logs/runs/<run_id>/combat_suspects.jsonl`
   - `logs/runs/<run_id>/signatures.jsonl`
+
+Artifact roles:
+
+- `focus.txt`
+  - human triage entrypoint
+  - starts with grouped findings and “where to look next”
+  - keeps a chronological appendix underneath
+- `findings.json`
+  - machine-readable problem index
+  - grouped by engine bug/content gap/validation failure family
+- `debug.txt`, `raw.jsonl`, `replay.json`
+  - evidence layer for deep inspection
+
+Heuristic/search disagreement records such as `high_risk_suspect` stay in
+`combat_suspects.jsonl` and `failure_snapshots.jsonl`, not in `focus.txt`.
 
 Derived artifacts such as `replay.json` are now cache-like:
 
@@ -224,6 +241,7 @@ Useful commands:
 ```powershell
 cargo run --bin sts_dev_tool -- logs gc
 cargo run --bin sts_dev_tool -- logs latest --artifact raw
+cargo run --bin sts_dev_tool -- logs latest --artifact findings
 cargo run --bin sts_dev_tool -- logs replay <run_id>
 ```
 

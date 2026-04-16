@@ -542,28 +542,6 @@ fn maybe_record_search_suspect(
         let _ = writeln!(live_io.combat_suspects, "{}", encoded);
         let _ = live_io.combat_suspects.flush();
     }
-    let _ = writeln!(
-        live_io.focus_log,
-        "[SUSPECT] frame={} state_frame_id={:?} reasons={} chosen={} heuristic={} top_gap={:?} sequence={:.1} frontload={:.1} defer={:.1} branch={:.1} downside={:.1} survival_window={:.1} exhaust_evidence={:.1} exhaust_block={} exhaust_draw={} branch_family={}",
-        frame_count,
-        frame.state_frame_id(),
-        reasons.join(","),
-        describe_client_input(combat, &search_diag.chosen_move),
-        describe_client_input(combat, &heuristic_diag.chosen_move),
-        top_gap,
-        chosen_stat.sequence_bonus,
-        chosen_stat.sequence_frontload_bonus,
-        chosen_stat.sequence_defer_bonus,
-        chosen_stat.sequence_branch_bonus,
-        chosen_stat.sequence_downside_penalty,
-        chosen_stat.sequence_survival_bonus,
-        chosen_stat.sequence_exhaust_bonus,
-        chosen_stat.realized_exhaust_block,
-        chosen_stat.realized_exhaust_draw,
-        branch_family_for_input(combat, &search_diag.chosen_move)
-            .map(|family| family.as_str())
-            .unwrap_or("none")
-    );
     let belief = build_combat_belief_state(combat);
     let hidden_intent_high_risk = belief.hidden_intent_active
         && belief.urgent_probability >= 0.35

@@ -660,6 +660,12 @@ fn main() {
                             sts_simulator::cli::live_comm_admin::latest_combat_suspect_path(
                                 &paths,
                             )
+                        } else if artifact == "findings" {
+                            sts_simulator::cli::live_comm_admin::latest_run_artifact_path(
+                                &paths,
+                                label.as_deref(),
+                                "findings",
+                            )
                         } else {
                             None
                         }

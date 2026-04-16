@@ -118,7 +118,7 @@ impl LiveCommIo {
         .unwrap();
         writeln!(
             focus_log,
-            "[CONFIG] focused log keeps only parse diffs, parity failures, flagged combat summaries, and session end markers"
+            "[CONFIG] focused log keeps only validation failures, parity failures, combat bug summaries, and session end markers"
         )
         .unwrap();
 

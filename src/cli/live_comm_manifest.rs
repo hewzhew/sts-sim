@@ -38,6 +38,7 @@ impl LiveArtifactRecord {
 pub struct LiveRunArtifacts {
     pub raw: Option<LiveArtifactRecord>,
     pub focus: Option<LiveArtifactRecord>,
+    pub findings: Option<LiveArtifactRecord>,
     pub signatures: Option<LiveArtifactRecord>,
     pub combat_suspects: Option<LiveArtifactRecord>,
     pub failure_snapshots: Option<LiveArtifactRecord>,
