@@ -48,6 +48,12 @@ the latest frame at:
 
 - `logs/current/manual_client_latest.json`
 
+To archive the current manual frame into a named sample:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File D:\rust\sts_simulator\tools\live_comm\save_manual_sample.ps1 guardian_threshold
+```
+
 Useful first commands:
 
 ```text

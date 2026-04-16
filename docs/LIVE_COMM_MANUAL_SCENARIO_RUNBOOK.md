@@ -43,6 +43,18 @@ The latest raw frame is mirrored to:
 
 - `logs/current/manual_client_latest.json`
 
+To archive the current manual frame into a named sample:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File D:\rust\sts_simulator\tools\live_comm\save_manual_sample.ps1 guardian_threshold
+```
+
+Optional note:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File D:\rust\sts_simulator\tools\live_comm\save_manual_sample.ps1 combust -Note "player power runtime_state.hp_loss present"
+```
+
 ## Current safe boundary
 
 At the moment, the most reliable scenario path is:
