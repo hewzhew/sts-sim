@@ -1,5 +1,6 @@
 use super::deck_surgery::{choose_best_deck_surgery_option, deck_surgery_option_score};
 use super::helpers::*;
+use super::model::build_noncombat_need_snapshot_for_run;
 use crate::state::run::RunState;
 use serde_json::Value;
 
@@ -551,14 +552,24 @@ fn choose_shining_light_option(rs: &RunState, options: &[Value]) -> Option<usize
     let labels = options.iter().map(option_text).collect::<Vec<_>>();
     let upgradable_cards = count_upgradable_cards(rs);
     let hp_ratio = rs.current_hp as f32 / rs.max_hp.max(1) as f32;
+    let need = build_noncombat_need_snapshot_for_run(rs);
     let enter_idx = labels
         .iter()
         .position(|t| contains_any(t, &["enter the light", "upgrade 2 random cards"]));
     let leave_idx = labels.iter().position(|t| contains_any(t, &["leave"]));
 
-    if upgradable_cards >= 2 && hp_ratio >= 0.55 {
+    let enter_value = need.best_upgrade_value * 2
+        + upgradable_cards * 110
+        - need.survival_pressure * 2
+        - i32::from(hp_ratio < 0.55) * 320;
+
+    if need.survival_pressure >= 180 && hp_ratio < 0.35 {
+        return leave_idx.or(enter_idx);
+    }
+
+    if enter_value >= 1_050 || (upgradable_cards >= 2 && hp_ratio >= 0.55) {
         enter_idx.or(leave_idx)
-    } else if upgradable_cards >= 1 && hp_ratio >= 0.75 {
+    } else if enter_value >= 650 || (upgradable_cards >= 1 && hp_ratio >= 0.75) {
         enter_idx.or(leave_idx)
     } else {
         leave_idx.or(enter_idx)
@@ -571,6 +582,7 @@ fn choose_living_wall_option(rs: &RunState, options: &[Value]) -> Option<usize> 
 
 fn choose_designer_option(rs: &RunState, options: &[Value]) -> Option<usize> {
     let labels = options.iter().map(option_text).collect::<Vec<_>>();
+    let need = build_noncombat_need_snapshot_for_run(rs);
     let leave_like = labels
         .iter()
         .all(|t| contains_any(t, &["proceed", "leave"]));
@@ -588,7 +600,7 @@ fn choose_designer_option(rs: &RunState, options: &[Value]) -> Option<usize> {
             continue;
         }
 
-        let mut score = deck_surgery_option_score(rs, label);
+        let mut score = deck_surgery_option_score(rs, &need, label);
         let gold_cost = first_number(label);
         if gold_cost > 0 {
             score -= gold_cost * 20;
@@ -615,6 +627,7 @@ fn choose_designer_option(rs: &RunState, options: &[Value]) -> Option<usize> {
 
 fn choose_beggar_option(rs: &RunState, options: &[Value]) -> Option<usize> {
     let labels = options.iter().map(option_text).collect::<Vec<_>>();
+    let need = build_noncombat_need_snapshot_for_run(rs);
     let donate_idx = labels
         .iter()
         .position(|t| contains_any(t, &["donate", "remove a card"]));
@@ -624,7 +637,8 @@ fn choose_beggar_option(rs: &RunState, options: &[Value]) -> Option<usize> {
         .map(|t| first_number(t))
         .unwrap_or(75);
 
-    if count_remove_targets(rs) >= 1 && rs.gold >= gold_cost + 40 {
+    let donate_value = need.purge_value + generic_remove_value(rs) / 2 - gold_cost * 16;
+    if donate_value >= 0 && rs.gold >= gold_cost + 20 {
         donate_idx.or(leave_idx)
     } else {
         leave_idx.or(donate_idx)
@@ -685,6 +699,7 @@ fn choose_back_to_basics_option(rs: &RunState, options: &[Value]) -> Option<usiz
 
 fn choose_we_meet_again_option(rs: &RunState, options: &[Value]) -> Option<usize> {
     let labels = options.iter().map(option_text).collect::<Vec<_>>();
+    let need = build_noncombat_need_snapshot_for_run(rs);
     let potion_idx = labels
         .iter()
         .position(|t| contains_any(t, &["give potion"]));
@@ -698,7 +713,9 @@ fn choose_we_meet_again_option(rs: &RunState, options: &[Value]) -> Option<usize
         .and_then(|idx| labels.get(idx))
         .map(|t| first_number(t))
         .unwrap_or(0);
-    let gold_value = 1_450 - gold_cost * 18 - nearby_shop_conversion_bonus(rs);
+    let gold_value = 1_450 - gold_cost * 18 - nearby_shop_conversion_bonus(rs)
+        + need.long_term_meta_value / 8
+        - need.survival_pressure / 10;
 
     let mut best: Option<(usize, i32)> = None;
     for (idx, _) in labels.iter().enumerate() {
@@ -752,6 +769,7 @@ fn choose_note_for_yourself_option(rs: &RunState, options: &[Value]) -> Option<u
 
 fn choose_drug_dealer_option(rs: &RunState, options: &[Value]) -> Option<usize> {
     let labels = options.iter().map(option_text).collect::<Vec<_>>();
+    let need = build_noncombat_need_snapshot_for_run(rs);
     let jax_idx = labels
         .iter()
         .position(|t| contains_any(t, &["j.a.x", "jax"]));
@@ -776,9 +794,12 @@ fn choose_drug_dealer_option(rs: &RunState, options: &[Value]) -> Option<usize> 
     let transform_value = crate::bot::deck_delta_eval::compare_transform_vs_decline(rs, 2, false);
     let jax_delta =
         crate::bot::deck_delta_eval::compare_pick_vs_skip(rs, crate::content::cards::CardId::JAX);
-    let jax_value =
-        1_150 + jax_delta.prior_delta * 10 + jax_delta.rollout_delta * 6 + jax_delta.suite_bias * 3;
-    let relic_value = if has_strength_scaling { 2_400 } else { 2_050 };
+    let jax_value = 1_150
+        + jax_delta.prior_delta * 10
+        + jax_delta.rollout_delta * 6
+        + jax_delta.suite_bias * 3
+        + need.survival_pressure / 8;
+    let relic_value = if has_strength_scaling { 2_400 } else { 2_050 } + need.long_term_meta_value / 6;
 
     if let Some(idx) = transform_idx {
         if transform_targets >= 2 && !has_strength_scaling {
@@ -801,6 +822,7 @@ fn choose_drug_dealer_option(rs: &RunState, options: &[Value]) -> Option<usize> 
                 + transform_value.prior_delta * 10
                 + transform_value.rollout_delta * 8
                 + transform_value.suite_bias * 4
+                + need.purge_value * 2
         } else if Some(idx) == relic_idx {
             relic_value
         } else if Some(idx) == jax_idx {
@@ -1128,5 +1150,42 @@ fn choose_bonfire_option(rs: &RunState, options: &[Value]) -> Option<usize> {
     }
 
     leave_idx
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::content::cards::CardId;
+    use serde_json::json;
+
+    #[test]
+    fn shining_light_respects_survival_pressure() {
+        let mut rs = RunState::new(1, 0, true, "Ironclad");
+        rs.act_num = 2;
+        rs.current_hp = 14;
+        rs.max_hp = 80;
+        let options = vec![
+            json!({"text":"Enter the light. Upgrade 2 random cards.", "disabled":false}),
+            json!({"text":"Leave", "disabled":false}),
+        ];
+
+        assert_eq!(choose_shining_light_option(&rs, &options), Some(1));
+    }
+
+    #[test]
+    fn beggar_prefers_remove_when_purge_value_is_high() {
+        let mut rs = RunState::new(1, 0, true, "Ironclad");
+        rs.gold = 160;
+        rs.master_deck.push(crate::runtime::combat::CombatCard::new(
+            CardId::Parasite,
+            41_001,
+        ));
+        let options = vec![
+            json!({"text":"Donate 75 gold. Remove a card.", "disabled":false}),
+            json!({"text":"Leave", "disabled":false}),
+        ];
+
+        assert_eq!(choose_beggar_option(&rs, &options), Some(0));
+    }
 }
 

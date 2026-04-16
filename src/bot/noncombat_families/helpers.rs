@@ -90,8 +90,9 @@ pub(super) fn nearby_shop_conversion_bonus(rs: &RunState) -> i32 {
 }
 
 pub(super) fn generic_remove_value(rs: &RunState) -> i32 {
-    1_500
-        + count_remove_targets(rs) * 420
+    let need = super::model::build_noncombat_need_snapshot_for_run(rs);
+    800 + need.purge_value * 9
+        + count_remove_targets(rs) * 180
         + curse_pressure_score(rs) * 90
         + crate::bot::deck_delta_eval::compare_purge_vs_keep(rs).total * 12
 }

@@ -26,6 +26,16 @@ impl Agent {
         }
     }
 
+    pub(crate) fn new_policy_model() -> Self {
+        Self {
+            bot_depth: 6,
+            map_path: Vec::new(),
+            db: crate::bot::coverage::CoverageDb::default(),
+            coverage_mode: crate::bot::coverage::CoverageMode::PreferNovel,
+            curiosity_target: None,
+        }
+    }
+
     /// Sets the search depth for combat decision tree.
     pub fn set_bot_depth(&mut self, depth: u32) {
         self.bot_depth = depth;

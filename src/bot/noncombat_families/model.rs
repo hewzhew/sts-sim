@@ -52,6 +52,14 @@ pub(crate) struct ShopNeedProfile {
     pub shell_incomplete: bool,
 }
 
+pub(crate) fn build_noncombat_need_snapshot_for_run(rs: &RunState) -> NoncombatNeedSnapshot {
+    crate::bot::Agent::new_policy_model().build_noncombat_need_snapshot(rs)
+}
+
+pub(crate) fn build_shop_need_profile_for_run(rs: &RunState) -> ShopNeedProfile {
+    crate::bot::Agent::new_policy_model().build_shop_need_profile(rs)
+}
+
 impl Agent {
     pub(crate) fn build_noncombat_need_snapshot(&self, rs: &RunState) -> NoncombatNeedSnapshot {
         let profile = crate::bot::evaluator::CardEvaluator::deck_profile(rs);
