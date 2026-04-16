@@ -105,10 +105,7 @@ pub(crate) fn decide_noncombat_with_agent(
                         .unwrap_or(true),
                 },
             );
-            match decision.action {
-                crate::bot::RewardCardDecisionAction::Pick(idx) => Some(format!("CHOOSE {}", idx)),
-                crate::bot::RewardCardDecisionAction::Skip => Some("SKIP".to_string()),
-            }
+            reward_card_decision_command(&decision)
         }
         "COMBAT_REWARD" => {
             let rewards = build_live_reward_state_with_protocol(root, gs)?;
@@ -120,15 +117,7 @@ pub(crate) fn decide_noncombat_with_agent(
                     blocked_potion_offers: &blocked_potion_offers,
                 },
             );
-            match decision.action {
-                crate::bot::RewardClaimDecisionAction::Claim(idx) => {
-                    reward_choice_command_with_protocol(root, gs, idx)
-                }
-                crate::bot::RewardClaimDecisionAction::DiscardPotion(idx) => {
-                    Some(format!("POTION DISCARD {}", idx))
-                }
-                crate::bot::RewardClaimDecisionAction::Proceed => Some("PROCEED".to_string()),
-            }
+            reward_claim_decision_command(root, gs, &decision)
         }
         "GRID" => decide_live_grid_screen(agent, root, &rs),
         "MAP" => {
@@ -199,6 +188,31 @@ fn shop_decision_command(
                 None
             }
         }
+    }
+}
+
+fn reward_card_decision_command(
+    decision: &crate::bot::RewardCardDecision,
+) -> Option<String> {
+    match decision.action {
+        crate::bot::RewardCardDecisionAction::Pick(idx) => Some(format!("CHOOSE {}", idx)),
+        crate::bot::RewardCardDecisionAction::Skip => Some("SKIP".to_string()),
+    }
+}
+
+fn reward_claim_decision_command(
+    root: &serde_json::Value,
+    gs: &serde_json::Value,
+    decision: &crate::bot::RewardClaimDecision,
+) -> Option<String> {
+    match decision.action {
+        crate::bot::RewardClaimDecisionAction::Claim(idx) => {
+            reward_choice_command_with_protocol(root, gs, idx)
+        }
+        crate::bot::RewardClaimDecisionAction::DiscardPotion(idx) => {
+            Some(format!("POTION DISCARD {}", idx))
+        }
+        crate::bot::RewardClaimDecisionAction::Proceed => Some("PROCEED".to_string()),
     }
 }
 
@@ -602,7 +616,10 @@ fn blocked_replaceable_reward_potion_offers(
 
 #[cfg(test)]
 mod tests {
-    use super::{blocked_replaceable_reward_potion_offers, shop_decision_command};
+    use super::{
+        blocked_replaceable_reward_potion_offers, reward_card_decision_command,
+        reward_claim_decision_command, shop_decision_command,
+    };
     use crate::bot::Agent;
     use crate::content::cards::CardId;
     use crate::content::potions::{Potion, PotionId};
@@ -758,6 +775,118 @@ mod tests {
             decision.action,
             crate::bot::RewardClaimDecisionAction::DiscardPotion(_)
         ));
+    }
+
+    #[test]
+    fn reward_card_decision_command_maps_pick_and_skip() {
+        let pick = crate::bot::RewardCardDecision {
+            meta: crate::bot::DecisionMetadata::new(
+                crate::bot::DecisionDomain::RewardCard,
+                "test",
+                Some("pick"),
+                None,
+                false,
+            ),
+            action: crate::bot::RewardCardDecisionAction::Pick(2),
+            evaluation: crate::bot::RewardScreenEvaluation {
+                offered_cards: Vec::new(),
+                recommended_choice: Some(2),
+                best_pick_rate: 0.0,
+                best_local_score: 0,
+                best_combined_score: 0.0,
+                skip_probability: 0.0,
+                skip_margin: 0.0,
+                force_pick_in_act1: false,
+                force_pick_for_shell: false,
+            },
+        };
+        let skip = crate::bot::RewardCardDecision {
+            meta: crate::bot::DecisionMetadata::new(
+                crate::bot::DecisionDomain::RewardCard,
+                "test",
+                Some("skip"),
+                None,
+                false,
+            ),
+            action: crate::bot::RewardCardDecisionAction::Skip,
+            evaluation: crate::bot::RewardScreenEvaluation {
+                offered_cards: Vec::new(),
+                recommended_choice: None,
+                best_pick_rate: 0.0,
+                best_local_score: 0,
+                best_combined_score: 0.0,
+                skip_probability: 0.0,
+                skip_margin: 0.0,
+                force_pick_in_act1: false,
+                force_pick_for_shell: false,
+            },
+        };
+
+        assert_eq!(reward_card_decision_command(&pick), Some("CHOOSE 2".to_string()));
+        assert_eq!(reward_card_decision_command(&skip), Some("SKIP".to_string()));
+    }
+
+    #[test]
+    fn reward_claim_decision_command_maps_claim_discard_and_proceed() {
+        let root = json!({
+            "game_state": {
+                "screen_state": {
+                    "rewards": [
+                        {
+                            "reward_type": "GOLD",
+                            "choice_index": 7,
+                            "claimable": true,
+                            "gold": 25
+                        }
+                    ]
+                }
+            }
+        });
+        let gs = root.get("game_state").unwrap();
+
+        let claim = crate::bot::RewardClaimDecision {
+            meta: crate::bot::DecisionMetadata::new(
+                crate::bot::DecisionDomain::RewardClaim,
+                "test",
+                Some("claim"),
+                None,
+                false,
+            ),
+            action: crate::bot::RewardClaimDecisionAction::Claim(0),
+        };
+        let discard = crate::bot::RewardClaimDecision {
+            meta: crate::bot::DecisionMetadata::new(
+                crate::bot::DecisionDomain::RewardClaim,
+                "test",
+                Some("discard"),
+                None,
+                false,
+            ),
+            action: crate::bot::RewardClaimDecisionAction::DiscardPotion(1),
+        };
+        let proceed = crate::bot::RewardClaimDecision {
+            meta: crate::bot::DecisionMetadata::new(
+                crate::bot::DecisionDomain::RewardClaim,
+                "test",
+                Some("proceed"),
+                None,
+                false,
+            ),
+            action: crate::bot::RewardClaimDecisionAction::Proceed,
+        };
+
+        assert_eq!(
+            reward_claim_decision_command(&root, gs, &claim),
+            Some("CHOOSE 7".to_string())
+        );
+        assert_eq!(
+            reward_claim_decision_command(&root, gs, &discard),
+            Some("POTION DISCARD 1".to_string())
+        );
+        assert_eq!(
+            reward_claim_decision_command(&root, gs, &proceed),
+            Some("PROCEED".to_string())
+        );
     }
 }
 

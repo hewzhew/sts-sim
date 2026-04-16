@@ -715,4 +715,23 @@ mod tests {
             other => panic!("expected Event decision, got {other:?}"),
         }
     }
+
+    #[test]
+    fn pending_card_reward_select_routes_to_reward_card_domain() {
+        let mut agent = crate::bot::Agent::new();
+        let run_state = crate::state::run::RunState::new(1, 0, false, "Ironclad");
+        let engine = EngineState::PendingChoice(crate::state::core::PendingChoice::CardRewardSelect {
+            cards: vec![CardId::Strike, CardId::Defend],
+            destination: crate::runtime::action::CardDestination::Hand,
+            can_skip: true,
+        });
+
+        let decision = agent.decide_policy(&engine, &run_state, None, false);
+        match decision {
+            BotPolicyDecision::RewardCard(decision) => {
+                assert_eq!(decision.meta.domain, DecisionDomain::RewardCard);
+            }
+            other => panic!("expected RewardCard decision, got {other:?}"),
+        }
+    }
 }
