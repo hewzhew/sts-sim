@@ -9,30 +9,27 @@ use serde_json::{json, Map, Value};
 use std::io::Write;
 
 pub(super) fn reward_deck_improvement_summary(
-    evaluation: &crate::bot::RewardScreenEvaluation,
+    diagnostics: &crate::bot::RewardDecisionDiagnostics,
     chosen_choice: Option<usize>,
 ) -> Option<String> {
-    let fallback_idx = evaluation
-        .offered_cards
-        .iter()
-        .enumerate()
-        .max_by(|(_, lhs), (_, rhs)| lhs.combined_score.total_cmp(&rhs.combined_score))
-        .map(|(idx, _)| idx)?;
     let target_idx = chosen_choice
-        .or(evaluation.recommended_choice)
-        .unwrap_or(fallback_idx);
-    let card = evaluation.offered_cards.get(target_idx)?;
+        .or(diagnostics.recommended_choice)
+        .or_else(|| diagnostics.candidates.first().map(|card| card.index))?;
+    let card = diagnostics
+        .candidates
+        .iter()
+        .find(|card| card.index == target_idx)
+        .or_else(|| diagnostics.candidates.first())?;
     Some(format!(
-        "{} {:?} {}",
+        "{} {} score={} rationale={}",
         if chosen_choice.is_none() {
             "skip_vs"
         } else {
             "pick"
         },
         card.card_id,
-        crate::bot::run_deck_improvement::deck_operation_focus_summary(
-            &card.deck_improvement_assessment
-        )
+        card.score,
+        card.rationale_key,
     ))
 }
 
@@ -132,7 +129,7 @@ pub(super) fn build_human_card_reward_pending(
         return None;
     }
 
-    let evaluation = crate::bot::evaluate_reward_screen_for_run_detailed(&offered_ids, &rs);
+    let diagnostics = reward_diagnostics_for_offered_ids(&offered_ids, &rs, true);
     let meta = root.get("protocol_meta");
     let mut payload = Map::new();
     payload.insert("logged_at_unix_ms".to_string(), json!(unix_time_millis()));
@@ -182,11 +179,11 @@ pub(super) fn build_human_card_reward_pending(
     );
     payload.insert(
         "bot_evaluation".to_string(),
-        reward_screen_evaluation_to_json(&evaluation),
+        reward_diagnostics_to_json(&diagnostics),
     );
     payload.insert(
         "bot_recommended_choice".to_string(),
-        recommended_choice_to_json(evaluation.recommended_choice),
+        recommended_choice_to_json(diagnostics.recommended_choice),
     );
     payload.insert(
         "reward_session".to_string(),
@@ -217,7 +214,7 @@ pub(super) fn build_human_card_reward_pending(
             .and_then(|v| v.as_i64()),
         offered_signature,
         payload,
-        bot_recommended_choice: evaluation.recommended_choice,
+        bot_recommended_choice: diagnostics.recommended_choice,
         replay_truth,
         replay_engine_state,
         offscreen_hold_polls: 0,
@@ -373,7 +370,7 @@ pub(super) fn emit_bot_card_reward_audit(
         return;
     }
 
-    let evaluation = crate::bot::evaluate_reward_screen_for_run_detailed(&offered_ids, &rs);
+    let diagnostics = reward_diagnostics_for_offered_ids(&offered_ids, &rs, true);
     let chosen_choice = parse_bot_reward_choice(command);
     let payload = json!({
         "kind": "bot_reward_decision",
@@ -397,7 +394,7 @@ pub(super) fn emit_bot_card_reward_audit(
         "offered_cards": offered_cards_json,
         "bot_command": command,
         "bot_choice": recommended_choice_to_json(chosen_choice),
-        "bot_evaluation": reward_screen_evaluation_to_json(&evaluation),
+        "bot_evaluation": reward_diagnostics_to_json(&diagnostics),
     });
     let _ = writeln!(reward_audit, "{}", payload);
     let _ = reward_audit.flush();
@@ -602,40 +599,53 @@ fn apply_human_card_reward_to_prediction(
     true
 }
 
-fn reward_screen_evaluation_to_json(evaluation: &crate::bot::RewardScreenEvaluation) -> Value {
-    let cards = evaluation
-        .offered_cards
+fn reward_diagnostics_to_json(diagnostics: &crate::bot::RewardDecisionDiagnostics) -> Value {
+    let cards = diagnostics
+        .candidates
         .iter()
         .map(|card| {
             json!({
-                "rust_card_id": format!("{:?}", card.card_id),
-                "pick_rate": card.pick_rate,
-                "local_score": card.local_score,
-                "delta_suite": format!("{:?}", card.delta_suite),
-                "delta_prior": card.delta_prior,
-                "delta_prior_rationale_key": card.delta_prior_rationale_key,
-                "delta_bias": card.delta_bias,
-                "delta_rollout": card.delta_rollout,
-                "delta_context": card.delta_context,
-                "delta_context_rationale_key": card.delta_context_rationale_key,
-                "delta_rule_context_summary": card.delta_rule_context_summary,
-                "delta_score": card.delta_score,
-                "deck_improvement_assessment": crate::bot::run_deck_improvement::deck_operation_assessment_json(&card.deck_improvement_assessment),
-                "combined_score": card.combined_score
+                "index": card.index,
+                "card_name": card.card_name,
+                "card_id": card.card_id,
+                "score": card.score,
+                "base_score": card.base_score,
+                "gap_bonus": card.gap_bonus,
+                "survival_bonus": card.survival_bonus,
+                "situational_bonus": card.situational_bonus,
+                "benefit_score": card.benefit_score,
+                "clutter_penalty": card.clutter_penalty,
+                "penalty_score": card.penalty_score,
+                "rationale_key": card.rationale_key,
             })
         })
         .collect::<Vec<_>>();
     json!({
         "cards": cards,
-        "recommended_choice": recommended_choice_to_json(evaluation.recommended_choice),
-        "best_pick_rate": evaluation.best_pick_rate,
-        "best_local_score": evaluation.best_local_score,
-        "best_combined_score": evaluation.best_combined_score,
-        "skip_probability": evaluation.skip_probability,
-        "skip_margin": evaluation.skip_margin,
-        "force_pick_in_act1": evaluation.force_pick_in_act1,
-        "force_pick_for_shell": evaluation.force_pick_for_shell
+        "recommended_choice": recommended_choice_to_json(diagnostics.recommended_choice),
+        "recommended_rationale_key": diagnostics.recommended_rationale_key,
+        "best_score": diagnostics.best_score,
+        "skip_score": diagnostics.skip_score,
+        "skip_rationale_key": diagnostics.skip_rationale_key,
+        "skip_benefit_score": diagnostics.skip_benefit_score,
+        "skip_penalty_score": diagnostics.skip_penalty_score,
+        "skip_situational_bonus": diagnostics.skip_situational_bonus,
+        "force_pick": diagnostics.force_pick,
+        "can_skip": diagnostics.can_skip
     })
+}
+
+fn reward_diagnostics_for_offered_ids(
+    offered_ids: &[crate::content::cards::CardId],
+    run_state: &crate::state::run::RunState,
+    can_skip: bool,
+) -> crate::bot::RewardDecisionDiagnostics {
+    let reward_cards = offered_ids
+        .iter()
+        .copied()
+        .map(|card_id| crate::rewards::state::RewardCard::new(card_id, 0))
+        .collect::<Vec<_>>();
+    crate::bot::reward::decide_cards(run_state, &reward_cards, can_skip).1
 }
 
 fn recommended_choice_to_json(recommended_choice: Option<usize>) -> Value {

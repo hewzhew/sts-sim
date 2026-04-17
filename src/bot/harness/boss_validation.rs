@@ -4,9 +4,10 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 
-use crate::bot::search::{
-    audit_state, DecisionAuditConfig, DecisionAuditReport, ScoreBreakdown, StatePressureFeatures,
-    TrajectoryOutcomeKind, TrajectoryReport,
+use crate::bot::combat::pressure::StatePressureFeatures;
+use crate::bot::combat::{
+    audit_state, DecisionAuditConfig, DecisionAuditReport, ScoreBreakdown, TrajectoryOutcomeKind,
+    TrajectoryReport,
 };
 use crate::content::cards::{get_card_definition, CardType};
 use crate::engine::core::tick_until_stable_turn;

@@ -28,17 +28,9 @@ pub fn target_score(
         .find(|m| m.id == target)
         .map(|monster| {
             let artifact = state.get_power(monster.id, PowerId::Artifact);
-            let intent_hits = match monster.current_intent {
-                crate::runtime::combat::Intent::Attack { hits, .. }
-                | crate::runtime::combat::Intent::AttackBuff { hits, .. }
-                | crate::runtime::combat::Intent::AttackDebuff { hits, .. }
-                | crate::runtime::combat::Intent::AttackDefend { hits, .. } => hits as i32,
-                _ => 0,
-            }
-            .max(1);
             match potion_id {
                 PotionId::WeakenPotion => {
-                    monster.intent_dmg.max(0) * intent_hits * 12
+                    monster.intent_preview_total_damage() * 12
                         - artifact
                             * if signals.threat.imminent_lethal {
                                 120

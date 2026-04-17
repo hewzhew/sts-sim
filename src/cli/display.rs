@@ -537,18 +537,24 @@ pub fn print_combat(cs: &CombatState) {
         } else {
             match m.current_intent {
                 Intent::Attack { hits, .. } => {
-                    format!("Attack {{ damage: {}, hits: {} }}", m.intent_dmg, hits)
+                    format!(
+                        "Attack {{ damage: {}, hits: {} }}",
+                        m.intent_preview_damage, hits
+                    )
                 }
                 Intent::AttackBuff { hits, .. } => {
-                    format!("AttackBuff {{ damage: {}, hits: {} }}", m.intent_dmg, hits)
+                    format!(
+                        "AttackBuff {{ damage: {}, hits: {} }}",
+                        m.intent_preview_damage, hits
+                    )
                 }
                 Intent::AttackDebuff { hits, .. } => format!(
                     "AttackDebuff {{ damage: {}, hits: {} }}",
-                    m.intent_dmg, hits
+                    m.intent_preview_damage, hits
                 ),
                 Intent::AttackDefend { hits, .. } => format!(
                     "AttackDefend {{ damage: {}, hits: {} }}",
-                    m.intent_dmg, hits
+                    m.intent_preview_damage, hits
                 ),
                 _ => format!("{:?}", m.current_intent),
             }

@@ -8,14 +8,6 @@ use super::helpers::{
     is_status_or_curse_card, monster_is_attacking, total_incoming_damage,
 };
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub(crate) struct ExhaustDispositionStats {
-    pub junk_count: i32,
-    pub protected_count: i32,
-    pub core_count: i32,
-    pub near_core_count: i32,
-}
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum HandCardRole {
     CoreKeeper,
@@ -179,51 +171,6 @@ pub(crate) fn combat_retention_score_for_uuid(combat: &CombatState, uuid: u32) -
         .position(|card| card.uuid == uuid)
         .map(|idx| keeper_score_with_context(combat, idx, &context))
         .unwrap_or(i32::MIN / 4)
-}
-
-pub(crate) fn exhaust_disposition_stats(
-    combat: &CombatState,
-    candidate_uuids: &[u32],
-) -> ExhaustDispositionStats {
-    let mut stats = ExhaustDispositionStats::default();
-    for uuid in candidate_uuids {
-        let exhaust = combat_exhaust_score_for_uuid(combat, *uuid);
-        let retention = combat_retention_score_for_uuid(combat, *uuid);
-        if exhaust > 0 {
-            stats.junk_count += 1;
-        }
-        if retention > 0 {
-            stats.protected_count += 1;
-        }
-        if retention >= 8_000 {
-            stats.core_count += 1;
-        } else if retention >= 2_500 {
-            stats.near_core_count += 1;
-        }
-    }
-    stats
-}
-
-pub(crate) fn count_remaining_low_value_exhaust_candidates(
-    combat: &CombatState,
-    candidate_uuids: &[u32],
-    excluded_uuids: &[u32],
-) -> i32 {
-    candidate_uuids
-        .iter()
-        .filter(|uuid| !excluded_uuids.contains(uuid))
-        .filter(|uuid| combat_exhaust_score_for_uuid(combat, **uuid) > 0)
-        .count() as i32
-}
-
-pub(crate) fn best_exhaust_candidate_uuid(
-    combat: &CombatState,
-    candidate_uuids: &[u32],
-) -> Option<u32> {
-    candidate_uuids
-        .iter()
-        .max_by_key(|uuid| combat_exhaust_score_for_uuid(combat, **uuid))
-        .copied()
 }
 
 fn combat_copy_score(combat: &CombatState, hand_index: usize, context: &CardRoleContext) -> i32 {

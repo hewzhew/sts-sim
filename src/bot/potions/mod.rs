@@ -9,7 +9,7 @@ use crate::runtime::combat::CombatState;
 use crate::state::core::ClientInput;
 
 pub(crate) use catalog::category_label;
-pub(crate) use policy::{choose_immediate_potion_candidate, immediate_potion_snapshot};
+pub(crate) use policy::immediate_potion_snapshot;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PotionCategory {
@@ -66,10 +66,6 @@ impl PotionCandidate {
             self.reason
         )
     }
-}
-
-pub fn choose_immediate_potion(combat: &CombatState) -> Option<ClientInput> {
-    choose_immediate_potion_candidate(combat).map(|candidate| candidate.input)
 }
 
 pub fn candidate_potion_moves(combat: &CombatState) -> Vec<ClientInput> {

@@ -160,7 +160,7 @@ pub fn build_combat_state(snapshot: &Value, relics_val: &Value) -> CombatState {
             next_move_byte: 0,
             current_intent: Intent::Unknown,
             move_history: VecDeque::new(),
-            intent_dmg: 0,
+            intent_preview_damage: 0,
             logical_position: i as i32,
             protocol_identity: Default::default(),
             hexaghost: Default::default(),

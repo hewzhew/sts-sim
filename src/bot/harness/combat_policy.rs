@@ -4,9 +4,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::bot::agent::Agent;
 use crate::bot::card_disposition::{build_context, classify_hand_card_with_context, HandCardRole};
-use crate::bot::combat_heuristic::{self, HeuristicDiagnostics};
-use crate::bot::combat_posture::posture_features;
-use crate::bot::search;
+use crate::bot::combat;
+use crate::bot::combat::posture::posture_features;
 use crate::content::cards::{get_card_definition, CardType};
 use crate::runtime::combat::{CombatState, Intent};
 use crate::state::core::{ClientInput, EngineState};
@@ -88,7 +87,7 @@ pub fn decide_policy_action(
 
     match kind {
         PolicyKind::Bot => decide_bot_action(engine, combat, agent, depth),
-        PolicyKind::Heuristic => decide_heuristic_action(engine, combat),
+        PolicyKind::Heuristic => decide_heuristic_action(engine, combat, depth),
     }
 }
 
@@ -435,20 +434,6 @@ fn decide_bot_action(
     agent: &mut Agent,
     depth: u32,
 ) -> PolicyDecision {
-    if let Some(choice) = search::tactical_override(engine, combat) {
-        let final_action = encode_action(combat, &choice.input);
-        return PolicyDecision {
-            policy_kind: PolicyKind::Bot,
-            final_input_debug: final_action.debug.clone(),
-            final_action,
-            source: "tactical_override".to_string(),
-            confidence: None,
-            fallback_used: false,
-            tactical_reason: Some(choice.reason),
-            candidate_scores: Vec::new(),
-        };
-    }
-
     agent.set_bot_depth(depth);
     let decision = agent.decide_combat_policy(crate::bot::CombatDecisionContext {
         engine,
@@ -479,29 +464,19 @@ fn decide_bot_action(
     }
 }
 
-fn decide_heuristic_action(engine: &EngineState, combat: &CombatState) -> PolicyDecision {
-    if let Some(choice) = search::tactical_override(engine, combat) {
-        let final_action = encode_action(combat, &choice.input);
-        return PolicyDecision {
-            policy_kind: PolicyKind::Heuristic,
-            final_input_debug: final_action.debug.clone(),
-            final_action,
-            source: "tactical_override".to_string(),
-            confidence: None,
-            fallback_used: false,
-            tactical_reason: Some(choice.reason),
-            candidate_scores: Vec::new(),
-        };
-    }
-
-    let diagnostics = combat_heuristic::diagnose_decision(combat);
+fn decide_heuristic_action(
+    engine: &EngineState,
+    combat: &CombatState,
+    depth: u32,
+) -> PolicyDecision {
+    let diagnostics = combat::diagnose_root_search_with_depth(engine, combat, depth.max(2), 0);
     let final_action = encode_action(combat, &diagnostics.chosen_move);
     PolicyDecision {
         policy_kind: PolicyKind::Heuristic,
         final_input_debug: final_action.debug.clone(),
         final_action,
-        source: "heuristic".to_string(),
-        confidence: heuristic_confidence(&diagnostics),
+        source: "combat_baseline".to_string(),
+        confidence: baseline_confidence(&diagnostics),
         fallback_used: false,
         tactical_reason: None,
         candidate_scores: diagnostics
@@ -509,23 +484,23 @@ fn decide_heuristic_action(engine: &EngineState, combat: &CombatState) -> Policy
             .iter()
             .map(|stat| CandidateActionScore {
                 action: encode_action(combat, &stat.input),
-                score: stat.score as f32,
-                source: "heuristic".to_string(),
-                visits: None,
-                avg_score: None,
+                score: stat.avg_score,
+                source: "combat_baseline".to_string(),
+                visits: Some(stat.visits),
+                avg_score: Some(stat.avg_score),
             })
             .collect(),
     }
 }
 
-fn heuristic_confidence(diagnostics: &HeuristicDiagnostics) -> Option<f32> {
+fn baseline_confidence(diagnostics: &combat::CombatDiagnostics) -> Option<f32> {
     if diagnostics.top_moves.len() < 2 {
         return diagnostics
             .top_moves
             .first()
-            .map(|move_stat| move_stat.score as f32);
+            .map(|move_stat| move_stat.avg_score);
     }
-    Some((diagnostics.top_moves[0].score - diagnostics.top_moves[1].score) as f32)
+    Some(diagnostics.top_moves[0].avg_score - diagnostics.top_moves[1].avg_score)
 }
 
 pub fn incoming_damage(combat: &CombatState) -> i32 {
@@ -535,10 +510,10 @@ pub fn incoming_damage(combat: &CombatState) -> i32 {
         .iter()
         .filter(|monster| !monster.is_dying && !monster.is_escaped && monster.current_hp > 0)
         .map(|monster| match monster.current_intent {
-            Intent::Attack { hits, .. }
-            | Intent::AttackBuff { hits, .. }
-            | Intent::AttackDebuff { hits, .. }
-            | Intent::AttackDefend { hits, .. } => monster.intent_dmg * hits as i32,
+            Intent::Attack { .. }
+            | Intent::AttackBuff { .. }
+            | Intent::AttackDebuff { .. }
+            | Intent::AttackDefend { .. } => monster.intent_preview_total_damage(),
             _ => 0,
         })
         .sum()

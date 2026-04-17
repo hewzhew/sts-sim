@@ -7,6 +7,8 @@ This file defines the hard dependency direction for `src/`.
 - `core`
   - runtime truth and RL-facing semantics
   - `src/runtime/`
+  - `src/semantics/`
+  - `src/projection/`
   - `src/content/`
   - `src/core/`
   - `src/engine/`
@@ -43,6 +45,10 @@ This file defines the hard dependency direction for `src/`.
   - `runtime::action`
   - `runtime::combat`
   - `runtime::rng`
+- `semantics`
+  - explicit truth-side action and move specs derived from engine/runtime state
+- `projection`
+  - preview/audit views derived from truth-side specs
 - `fixtures`
   - integration-only fixture/spec assembly
   - exported from `lib.rs` as `sts_simulator::fixtures`

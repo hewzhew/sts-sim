@@ -16,8 +16,8 @@ pub(crate) fn choose_live_event_command_with_trace(
     gs: &serde_json::Value,
     rs: &crate::state::run::RunState,
 ) -> Option<LiveEventPolicyTrace> {
-    let context = crate::bot::live_event_context(gs, rs)?;
-    let decision = crate::bot::choose_live_event_choice(gs, rs)?;
+    let screen_state = gs.get("screen_state")?;
+    let decision = crate::bot::event::decide_live(screen_state, rs)?;
     let protocol_audit = gs
         .get("screen_state")
         .map(|screen_state| {
@@ -25,7 +25,7 @@ pub(crate) fn choose_live_event_command_with_trace(
         })
         .unwrap_or(Value::Null);
     let protocol_note = live_event_protocol_note(&protocol_audit);
-    let mut audit = crate::bot::decision_trace_json(&context, &decision);
+    let mut audit = crate::bot::event::audit_json(&decision);
     if let Some(object) = audit.as_object_mut() {
         object.insert("live_event_protocol".to_string(), protocol_audit.clone());
     }
@@ -33,13 +33,13 @@ pub(crate) fn choose_live_event_command_with_trace(
         command: format!("CHOOSE {}", decision.command_index),
         summary: format!(
             "{}{}{}",
-            crate::bot::compact_choice_summary(&context, &decision),
+            crate::bot::event::compact_choice_summary(&decision),
             decision
-                .deck_improvement_assessment
+                .deck_ops
                 .as_ref()
                 .map(|assessment| format!(
                     " | deck={}",
-                    crate::bot::run_deck_improvement::deck_operation_focus_summary(assessment)
+                    crate::bot::deck_ops::focus_summary(assessment)
                 ))
                 .unwrap_or_default(),
             protocol_note
@@ -49,7 +49,7 @@ pub(crate) fn choose_live_event_command_with_trace(
         ),
         detail: format!(
             "{}{}",
-            crate::bot::describe_choice(&context, &decision),
+            crate::bot::event::describe_choice(&decision),
             protocol_note
                 .as_deref()
                 .map(|note| format!(" [{}]", note))
@@ -57,9 +57,9 @@ pub(crate) fn choose_live_event_command_with_trace(
         ),
         audit,
         deck_improvement_summary: decision
-            .deck_improvement_assessment
+            .deck_ops
             .as_ref()
-            .map(crate::bot::run_deck_improvement::deck_operation_focus_summary),
+            .map(crate::bot::deck_ops::focus_summary),
     })
 }
 
@@ -899,16 +899,18 @@ mod tests {
                 false,
             ),
             action: crate::bot::RewardCardDecisionAction::Pick(2),
-            evaluation: crate::bot::RewardScreenEvaluation {
-                offered_cards: Vec::new(),
+            diagnostics: crate::bot::RewardDecisionDiagnostics {
                 recommended_choice: Some(2),
-                best_pick_rate: 0.0,
-                best_local_score: 0,
-                best_combined_score: 0.0,
-                skip_probability: 0.0,
-                skip_margin: 0.0,
-                force_pick_in_act1: false,
-                force_pick_for_shell: false,
+                recommended_rationale_key: Some("reward_best_offer"),
+                best_score: 10,
+                skip_score: 0,
+                skip_rationale_key: "reward_skip_baseline",
+                skip_benefit_score: 0,
+                skip_penalty_score: 0,
+                skip_situational_bonus: 0,
+                force_pick: false,
+                can_skip: true,
+                candidates: Vec::new(),
             },
         };
         let skip = crate::bot::RewardCardDecision {
@@ -920,16 +922,18 @@ mod tests {
                 false,
             ),
             action: crate::bot::RewardCardDecisionAction::Skip,
-            evaluation: crate::bot::RewardScreenEvaluation {
-                offered_cards: Vec::new(),
+            diagnostics: crate::bot::RewardDecisionDiagnostics {
                 recommended_choice: None,
-                best_pick_rate: 0.0,
-                best_local_score: 0,
-                best_combined_score: 0.0,
-                skip_probability: 0.0,
-                skip_margin: 0.0,
-                force_pick_in_act1: false,
-                force_pick_for_shell: false,
+                recommended_rationale_key: None,
+                best_score: 0,
+                skip_score: 10,
+                skip_rationale_key: "reward_skip_baseline",
+                skip_benefit_score: 10,
+                skip_penalty_score: 0,
+                skip_situational_bonus: 0,
+                force_pick: false,
+                can_skip: true,
+                candidates: Vec::new(),
             },
         };
 
@@ -970,6 +974,12 @@ mod tests {
                 false,
             ),
             action: crate::bot::RewardClaimDecisionAction::Claim(0),
+            diagnostics: crate::bot::RewardClaimDiagnostics {
+                chosen_index: Some(0),
+                chosen_kind: "claim",
+                blocked_potion_offer_count: 0,
+                rationale_key: "claim",
+            },
         };
         let discard = crate::bot::RewardClaimDecision {
             meta: crate::bot::DecisionMetadata::new(
@@ -980,6 +990,12 @@ mod tests {
                 false,
             ),
             action: crate::bot::RewardClaimDecisionAction::DiscardPotion(1),
+            diagnostics: crate::bot::RewardClaimDiagnostics {
+                chosen_index: None,
+                chosen_kind: "discard_potion",
+                blocked_potion_offer_count: 0,
+                rationale_key: "discard",
+            },
         };
         let proceed = crate::bot::RewardClaimDecision {
             meta: crate::bot::DecisionMetadata::new(
@@ -990,6 +1006,12 @@ mod tests {
                 false,
             ),
             action: crate::bot::RewardClaimDecisionAction::Proceed,
+            diagnostics: crate::bot::RewardClaimDiagnostics {
+                chosen_index: None,
+                chosen_kind: "proceed",
+                blocked_potion_offer_count: 0,
+                rationale_key: "proceed",
+            },
         };
 
         assert_eq!(
@@ -1139,7 +1161,7 @@ fn decide_live_grid_screen(
             continue;
         };
 
-        let mut score = crate::bot::CardEvaluator::evaluate_owned_card(card_id, rs);
+        let mut score = crate::bot::score_owned_card(card_id, rs);
         if current_action == "DiscardPileToTopOfDeckAction" {
             score += 15;
         } else if current_action.contains("DiscardPileToHandAction")
@@ -1218,7 +1240,7 @@ fn live_upgrade_priority(
 ) -> i32 {
     use crate::content::cards::CardId;
 
-    let profile = crate::bot::CardEvaluator::deck_profile(rs);
+    let profile = crate::bot::deck_profile(rs);
     let mut score = match card_id {
         CardId::Whirlwind => 42,
         CardId::DemonForm => 38,

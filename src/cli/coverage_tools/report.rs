@@ -4,7 +4,7 @@ use std::path::Path;
 
 use serde::Serialize;
 
-use crate::bot::coverage_signatures::{InteractionSignature, ObservedInteractionRecord};
+use crate::bot::infra::coverage_signatures::{InteractionSignature, ObservedInteractionRecord};
 
 #[derive(Default, Debug, Serialize)]
 pub struct InteractionCoverageReport {

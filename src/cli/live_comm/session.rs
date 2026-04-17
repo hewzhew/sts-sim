@@ -15,6 +15,7 @@ use super::{
     should_clear_combat_context, LiveCommConfig, LoopExitReason, ENGINE_BUG_SUMMARY_INTERVAL,
     SIG_PATH,
 };
+use crate::bot::infra::sidecar;
 use crate::bot::Agent;
 use serde_json::Value;
 use std::io::Write;
@@ -983,17 +984,14 @@ impl LiveCommSession {
                                     None,
                                     fallback_used,
                                 );
-                                let shadow = crate::bot::sidecar::noncombat_decision_shadow_json(
+                                let shadow = sidecar::noncombat_decision_shadow_json(
                                     self.frame_count,
                                     "live_comm_event",
                                     &meta,
                                     cmd.clone(),
                                     trace.audit.clone(),
                                 );
-                                crate::bot::sidecar::write_shadow_record(
-                                    &mut live_io.sidecar_shadow,
-                                    &shadow,
-                                );
+                                sidecar::write_shadow_record(&mut live_io.sidecar_shadow, &shadow);
                             }
                         }
                     }
@@ -1042,7 +1040,7 @@ impl LiveCommSession {
                                         .and_then(|rest| rest.trim().parse::<usize>().ok())
                                 };
                                 if let Some(deck_summary) = reward_deck_improvement_summary(
-                                    &decision.evaluation,
+                                    &decision.diagnostics,
                                     chosen_choice,
                                 ) {
                                     writeln!(
@@ -1052,18 +1050,15 @@ impl LiveCommSession {
                                     )
                                     .unwrap();
                                 }
-                                let shadow = crate::bot::sidecar::reward_shadow_json(
+                                let shadow = sidecar::reward_shadow_json(
                                     self.frame_count,
                                     "live_comm_reward",
                                     &decision.meta,
-                                    &decision.evaluation,
+                                    &decision.diagnostics,
                                     chosen_choice,
                                     None,
                                 );
-                                crate::bot::sidecar::write_shadow_record(
-                                    &mut live_io.sidecar_shadow,
-                                    &shadow,
-                                );
+                                sidecar::write_shadow_record(&mut live_io.sidecar_shadow, &shadow);
                             }
                         }
                     }
@@ -1098,7 +1093,7 @@ impl LiveCommSession {
                                     "proceed".to_string()
                                 }
                             };
-                            let shadow = crate::bot::sidecar::noncombat_decision_shadow_json(
+                            let shadow = sidecar::noncombat_decision_shadow_json(
                                 self.frame_count,
                                 "live_comm_reward_claim",
                                 &decision.meta,
@@ -1109,10 +1104,7 @@ impl LiveCommSession {
                                     "blocked_potion_offer_count": blocked_potion_offers.len(),
                                 }),
                             );
-                            crate::bot::sidecar::write_shadow_record(
-                                &mut live_io.sidecar_shadow,
-                                &shadow,
-                            );
+                            sidecar::write_shadow_record(&mut live_io.sidecar_shadow, &shadow);
                         }
                     }
                 }
@@ -1146,7 +1138,7 @@ impl LiveCommSession {
                                 }
                                 crate::bot::ShopDecisionAction::Leave => "leave".to_string(),
                             };
-                            let shadow = crate::bot::sidecar::noncombat_decision_shadow_json(
+                            let shadow = sidecar::noncombat_decision_shadow_json(
                                 self.frame_count,
                                 "live_comm_shop",
                                 &decision.meta,
@@ -1159,10 +1151,7 @@ impl LiveCommSession {
                                     "purge_available": shop.purge_available,
                                 }),
                             );
-                            crate::bot::sidecar::write_shadow_record(
-                                &mut live_io.sidecar_shadow,
-                                &shadow,
-                            );
+                            sidecar::write_shadow_record(&mut live_io.sidecar_shadow, &shadow);
                         }
                     }
                 }

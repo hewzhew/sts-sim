@@ -1,9 +1,10 @@
 use serde::{Deserialize, Serialize};
 
-use crate::bot::monster_belief::{
+use crate::bot::combat::legal_moves_for_audit;
+use crate::bot::combat::monster_belief::{
     build_combat_belief_state, CombatBeliefState, MonsterBeliefCertainty,
 };
-use crate::bot::search::{legal_moves_for_audit, StatePressureFeatures};
+use crate::bot::combat::pressure::StatePressureFeatures;
 use crate::content::cards::{can_play_card, effective_target, get_card_definition};
 use crate::core::EntityId;
 use crate::engine::core::tick_until_stable_turn;

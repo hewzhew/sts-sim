@@ -108,7 +108,7 @@ impl MonsterBehavior for Hexaghost {
                     | Intent::AttackBuff { damage, .. }
                     | Intent::AttackDebuff { damage, .. }
                     | Intent::AttackDefend { damage, .. } => damage,
-                    _ => entity.intent_dmg.max(0),
+                    _ => entity.intent_preview_damage.max(0),
                 };
                 for _ in 0..6 {
                     actions.push(Action::Damage(DamageInfo {

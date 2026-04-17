@@ -1,77 +1,110 @@
+mod audit;
+mod card_knowledge;
+mod diag;
+mod equivalence;
+mod hand_select;
+pub(crate) mod legal_moves;
+pub(crate) mod monster_belief;
 mod ordering;
+mod planner;
+pub(crate) mod posture;
+pub(crate) mod pressure;
+mod profile;
+mod root_prior;
+mod search;
 mod terminal;
 mod types;
 mod value;
 
-use crate::bot::search::{default_equivalence_mode, get_legal_moves, SearchProfileBreakdown};
-use crate::diff::replay::tick_until_stable;
 use crate::runtime::combat::CombatState;
 use crate::state::core::ClientInput;
 use crate::state::EngineState;
 use serde_json::json;
 use std::time::Instant;
 
-use ordering::compare_candidates;
-use terminal::{survives, terminal_kind};
-use types::CombatCandidate;
-use value::{
-    display_score, incoming_damage, project_turn_close_state, projected_unblocked, total_enemy_hp,
-};
+use self::equivalence::default_equivalence_mode;
+use self::legal_moves::get_legal_moves;
+use search::ExploredCandidate;
+use value::{diagnostic_score, incoming_damage, total_enemy_hp};
 
-pub use crate::bot::search::{SearchDiagnostics, SearchMoveStat};
+pub use audit::{
+    audit_fixture, audit_state, build_fixture_from_reconstructed_step, extract_preference_samples,
+    load_fixture_path, render_text_report, write_fixture_path, CombatPreferenceSample,
+    CombatPreferenceState, DecisionAuditConfig, DecisionAuditEngineState, DecisionAuditFixture,
+    DecisionAuditReport, ScoreBreakdown, TrajectoryOutcomeKind, TrajectoryReport,
+};
+pub use card_knowledge::{branch_family_for_card, BranchFamily};
+pub use diag::{CombatDiagnostics, CombatMoveStat};
+pub use equivalence::{SearchEquivalenceKind, SearchEquivalenceMode};
+pub use legal_moves::legal_moves_for_audit;
+pub use profile::{
+    SearchNodeCounters, SearchPhaseProfile, SearchProfileBreakdown, SearchProfilingLevel,
+};
+pub use root_prior::{LookupRootPriorProvider, RootPriorConfig, RootPriorQueryKey};
 
 pub fn find_best_move(
     engine: &EngineState,
     combat: &CombatState,
     depth_limit: u32,
     _verbose: bool,
-    db: &crate::bot::coverage::CoverageDb,
-    coverage_mode: crate::bot::coverage::CoverageMode,
-    curiosity_target: Option<&crate::bot::coverage::CuriosityTarget>,
 ) -> ClientInput {
-    let _ = (db, coverage_mode, curiosity_target);
-    diagnose_root_search_with_depth(
-        engine,
-        combat,
-        db,
-        coverage_mode,
-        curiosity_target,
-        depth_limit,
-        0,
-    )
-    .chosen_move
+    diagnose_root_search_with_depth(engine, combat, depth_limit, 0).chosen_move
+}
+
+pub fn describe_end_turn_options(combat: &CombatState) -> Vec<String> {
+    let engine = EngineState::CombatPlayerTurn;
+    let diagnostics = diagnose_root_search_with_depth(&engine, combat, 2, 0);
+    let legal_plays = get_legal_moves(&engine, combat)
+        .into_iter()
+        .filter(|input| !matches!(input, ClientInput::EndTurn))
+        .count();
+
+    let end_score = diagnostics
+        .top_moves
+        .iter()
+        .find(|stat| matches!(stat.input, ClientInput::EndTurn))
+        .map(|stat| stat.avg_score);
+    if legal_plays == 0 {
+        return vec![format!(
+            "END score={:.1} no_legal_plays",
+            end_score.unwrap_or(0.0)
+        )];
+    }
+
+    let mut lines = vec![format!(
+        "END score={:.1} legal_plays={}",
+        end_score.unwrap_or(0.0),
+        legal_plays
+    )];
+    for stat in diagnostics
+        .top_moves
+        .iter()
+        .filter(|stat| !matches!(stat.input, ClientInput::EndTurn))
+        .take(8)
+    {
+        lines.push(format!(
+            "play move={:?} score={:.1} visits={}",
+            stat.input, stat.avg_score, stat.visits
+        ));
+    }
+    lines
 }
 
 pub fn diagnose_root_search(
     engine: &EngineState,
     combat: &CombatState,
-    db: &crate::bot::coverage::CoverageDb,
-    coverage_mode: crate::bot::coverage::CoverageMode,
-    curiosity_target: Option<&crate::bot::coverage::CuriosityTarget>,
     num_simulations: u32,
-) -> SearchDiagnostics {
+) -> CombatDiagnostics {
     let depth_limit = search_depth_for_budget(num_simulations);
-    diagnose_root_search_with_depth(
-        engine,
-        combat,
-        db,
-        coverage_mode,
-        curiosity_target,
-        depth_limit,
-        num_simulations,
-    )
+    diagnose_root_search_with_depth(engine, combat, depth_limit, num_simulations)
 }
 
 pub fn diagnose_root_search_with_depth(
     engine: &EngineState,
     combat: &CombatState,
-    db: &crate::bot::coverage::CoverageDb,
-    coverage_mode: crate::bot::coverage::CoverageMode,
-    curiosity_target: Option<&crate::bot::coverage::CuriosityTarget>,
     depth_limit: u32,
     _num_simulations: u32,
-) -> SearchDiagnostics {
-    let _ = (db, coverage_mode, curiosity_target);
+) -> CombatDiagnostics {
     let started = Instant::now();
     let legal_moves = get_legal_moves(engine, combat);
     let (max_decision_depth, root_width, branch_width, max_engine_steps) =
@@ -79,7 +112,7 @@ pub fn diagnose_root_search_with_depth(
     let equivalence_mode = default_equivalence_mode();
 
     if legal_moves.is_empty() {
-        return SearchDiagnostics {
+        return CombatDiagnostics {
             chosen_move: ClientInput::EndTurn,
             legal_moves: 0,
             reduced_legal_moves: 0,
@@ -102,39 +135,45 @@ pub fn diagnose_root_search_with_depth(
         };
     }
 
-    let mut candidates = legal_moves
-        .iter()
-        .map(|input| simulate_candidate(engine, combat, input, max_engine_steps))
-        .collect::<Vec<_>>();
+    let explored = search::explore_root(
+        engine,
+        combat,
+        max_decision_depth,
+        root_width,
+        branch_width,
+        max_engine_steps,
+    );
 
-    candidates.sort_by(compare_candidates);
-
-    let top_moves = candidates
+    let top_moves = explored
         .iter()
-        .take(root_width.max(1))
         .enumerate()
         .map(|(idx, candidate)| build_move_stat(candidate, idx))
         .collect::<Vec<_>>();
 
-    let chosen_move = candidates
+    let chosen_move = explored
         .first()
-        .map(|candidate| candidate.input.clone())
+        .map(|candidate| candidate.candidate.input.clone())
         .unwrap_or(ClientInput::EndTurn);
+    let simulations = explored
+        .iter()
+        .map(|candidate| candidate.explored_nodes)
+        .sum::<u32>()
+        .max(legal_moves.len() as u32);
 
     let mut profile = SearchProfileBreakdown::default();
     profile.search_total_ms = started.elapsed().as_millis();
     profile.root.legal_move_gen_calls = 1;
     profile.root.transition_reduce_inputs = legal_moves.len() as u32;
-    profile.root.transition_reduce_outputs = legal_moves.len() as u32;
+    profile.root.transition_reduce_outputs = explored.len() as u32;
     profile.root.avg_branch_before_reduce = legal_moves.len() as f32;
-    profile.root.avg_branch_after_reduce = legal_moves.len() as f32;
-    profile.nodes.nodes_expanded = legal_moves.len() as u32;
+    profile.root.avg_branch_after_reduce = explored.len().max(1) as f32;
+    profile.nodes.nodes_expanded = simulations;
 
-    SearchDiagnostics {
+    CombatDiagnostics {
         chosen_move,
         legal_moves: legal_moves.len(),
-        reduced_legal_moves: legal_moves.len(),
-        simulations: legal_moves.len() as u32,
+        reduced_legal_moves: explored.len(),
+        simulations,
         elapsed_ms: started.elapsed().as_millis(),
         depth_limit,
         max_decision_depth,
@@ -150,64 +189,48 @@ pub fn diagnose_root_search_with_depth(
         top_moves,
         decision_audit: json!({
             "planner": "combat_baseline",
-            "kind": "projected_turn_close"
+            "kind": "frontier_driven_best_line"
         }),
         profile,
     }
 }
 
-fn simulate_candidate(
+pub fn diagnose_root_search_with_depth_and_mode(
     engine: &EngineState,
     combat: &CombatState,
-    input: &ClientInput,
-    max_engine_steps: usize,
-) -> CombatCandidate {
-    let mut next_engine = engine.clone();
-    let mut next_combat = combat.clone();
-    let _ = tick_until_stable(&mut next_engine, &mut next_combat, input.clone());
-
-    let (projected_engine, projected_combat) =
-        project_turn_close_state(&next_engine, &next_combat, max_engine_steps);
-    let terminal_kind = terminal_kind(&projected_engine, &projected_combat);
-    let projected_hp = projected_combat.entities.player.current_hp;
-    let projected_block = projected_combat.entities.player.block;
-    let projected_enemy_total = total_enemy_hp(&projected_combat);
-    let projected_unblocked = projected_unblocked(&projected_combat);
-    let survives = survives(terminal_kind, projected_hp);
-    let display_score = display_score(
-        terminal_kind,
-        projected_unblocked,
-        projected_enemy_total,
-        projected_hp,
-        projected_block,
-        input,
-    );
-
-    CombatCandidate {
-        input: input.clone(),
-        next_combat,
-        terminal_kind,
-        projected_hp,
-        projected_block,
-        projected_enemy_total,
-        projected_unblocked,
-        survives,
-        display_score,
-    }
+    depth_limit: u32,
+    num_simulations: u32,
+    _equivalence_mode: SearchEquivalenceMode,
+) -> CombatDiagnostics {
+    diagnose_root_search_with_depth(engine, combat, depth_limit, num_simulations)
 }
 
-fn build_move_stat(candidate: &CombatCandidate, idx: usize) -> SearchMoveStat {
+pub fn diagnose_root_search_with_depth_and_mode_and_root_prior(
+    engine: &EngineState,
+    combat: &CombatState,
+    depth_limit: u32,
+    num_simulations: u32,
+    _equivalence_mode: SearchEquivalenceMode,
+    _profiling_level: SearchProfilingLevel,
+    _root_prior: Option<&RootPriorConfig>,
+) -> CombatDiagnostics {
+    diagnose_root_search_with_depth(engine, combat, depth_limit, num_simulations)
+}
+
+fn build_move_stat(explored: &ExploredCandidate, idx: usize) -> CombatMoveStat {
+    let candidate = &explored.candidate;
     let immediate_incoming = incoming_damage(&candidate.next_combat);
-    SearchMoveStat {
+    let search_score = diagnostic_score(explored.search_value, &candidate.input);
+    CombatMoveStat {
         input: candidate.input.clone(),
-        visits: 1,
-        avg_score: candidate.display_score,
-        base_order_score: candidate.display_score,
-        order_score: candidate.display_score,
+        visits: explored.explored_nodes.max(1),
+        avg_score: search_score,
+        base_order_score: candidate.diagnostic_score,
+        order_score: search_score,
         root_prior_score: 0.0,
         root_prior_hit: false,
-        leaf_score: candidate.display_score,
-        policy_bonus: 0.0,
+        leaf_score: candidate.diagnostic_score,
+        policy_bonus: search_score - candidate.diagnostic_score,
         sequence_bonus: 0.0,
         sequence_survival_bonus: 0.0,
         sequence_exhaust_bonus: 0.0,
@@ -231,9 +254,9 @@ fn build_move_stat(candidate: &CombatCandidate, idx: usize) -> SearchMoveStat {
         immediate_exhaust_len: candidate.next_combat.zones.exhaust_pile.len(),
         immediate_incoming,
         immediate_enemy_total: total_enemy_hp(&candidate.next_combat),
-        cluster_id: format!("direct-{idx}"),
+        cluster_id: format!("frontier-{idx}-len{}", candidate.local_plan.len()),
         cluster_size: 1,
-        collapsed_inputs: Vec::new(),
+        collapsed_inputs: candidate.local_plan.iter().skip(1).cloned().collect(),
         equivalence_kind: None,
     }
 }

@@ -95,7 +95,7 @@ pub fn handle_spawn_monster(
         next_move_byte: 0,
         current_intent: crate::runtime::combat::Intent::Unknown,
         move_history: std::collections::VecDeque::new(),
-        intent_dmg: 0,
+        intent_preview_damage: 0,
         logical_position,
         protocol_identity: crate::runtime::combat::MonsterProtocolIdentity {
             instance_id: Some(next_protocol_id),

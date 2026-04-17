@@ -1091,7 +1091,8 @@ pub fn queue_actions(
 
 /// Java: AbstractMonster.applyPowers()
 /// Interrogates each living monster, extracts base Damage from its `current_intent`,
-/// runs it through `calculate_monster_damage()`, and stores the mutated result in `intent_dmg`.
+/// runs it through `calculate_monster_damage()`, and stores the mutated result in
+/// `intent_preview_damage`.
 /// This is purely for updating the UI visually before user interaction.
 pub fn update_monster_intents(combat_state: &mut CombatState) {
     let alive_monsters: Vec<_> = combat_state
@@ -1103,7 +1104,7 @@ pub fn update_monster_intents(combat_state: &mut CombatState) {
         .collect();
 
     for mid in alive_monsters {
-        let mut new_intent_dmg = 0;
+        let mut new_intent_preview_damage = 0;
 
         // Temporarily extract current intent (cannot borrow mutably directly since we need state)
         if let Some(monster) = combat_state.entities.monsters.iter().find(|m| m.id == mid) {
@@ -1114,10 +1115,10 @@ pub fn update_monster_intents(combat_state: &mut CombatState) {
                 monster.current_intent
             {
                 // `damage` in the enum represents the pure base damage
-                new_intent_dmg =
+                new_intent_preview_damage =
                     crate::content::powers::calculate_monster_damage(damage, mid, 0, combat_state);
             } else {
-                new_intent_dmg = -1; // Not an attack intent
+                new_intent_preview_damage = -1; // Not an attack intent
             }
         }
 
@@ -1128,10 +1129,10 @@ pub fn update_monster_intents(combat_state: &mut CombatState) {
             .iter_mut()
             .find(|m| m.id == mid)
         {
-            if new_intent_dmg != -1 {
-                monster.intent_dmg = new_intent_dmg;
+            if new_intent_preview_damage != -1 {
+                monster.intent_preview_damage = new_intent_preview_damage;
             } else {
-                monster.intent_dmg = 0;
+                monster.intent_preview_damage = 0;
             }
         }
     }

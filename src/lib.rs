@@ -4,7 +4,9 @@ mod deck;
 pub mod engine;
 mod events;
 pub mod map;
+mod projection;
 pub mod runtime;
+mod semantics;
 mod shop;
 pub mod state;
 

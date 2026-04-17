@@ -19,13 +19,6 @@ enum GateDecision {
     Forbidden,
 }
 
-pub(crate) fn choose_immediate_potion_candidate(combat: &CombatState) -> Option<PotionCandidate> {
-    let signals = analyze_combat(combat);
-    collect_candidates(combat, &signals, DecisionMode::Immediate)
-        .into_iter()
-        .find(|candidate| candidate.priority >= minimum_priority(&signals, DecisionMode::Immediate))
-}
-
 pub(crate) fn immediate_potion_snapshot(combat: &CombatState) -> PotionDecisionSnapshot {
     let signals = analyze_combat(combat);
     let minimum_priority = minimum_priority(&signals, DecisionMode::Immediate);

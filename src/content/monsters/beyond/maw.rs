@@ -62,7 +62,7 @@ impl MonsterBehavior for Maw {
         let str_up = if asc >= 17 { 5 } else { 3 };
         let (intent_damage, intent_hits) = match entity.current_intent {
             Intent::Attack { damage, hits } => (damage, hits),
-            _ => (entity.intent_dmg.max(0), 1),
+            _ => (entity.intent_preview_damage.max(0), 1),
         };
 
         match entity.next_move_byte {

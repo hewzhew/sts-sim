@@ -238,7 +238,7 @@ fn audit_combat(seed: u64, player_class: &'static str) -> CombatState {
                 next_move_byte: 0,
                 current_intent: Intent::Buff,
                 move_history: VecDeque::new(),
-                intent_dmg: 0,
+                intent_preview_damage: 0,
                 logical_position: 0,
                 protocol_identity: Default::default(),
                 hexaghost: Default::default(),

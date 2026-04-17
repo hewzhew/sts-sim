@@ -1,5 +1,5 @@
 use crate::bot::card_taxonomy::{is_multi_attack_payoff, is_strength_enabler, is_strength_payoff};
-use crate::bot::evaluator::{CardEvaluator, DeckProfile};
+use crate::bot::DeckProfile;
 use crate::content::cards::{self, CardId, CardType};
 use crate::runtime::combat::CombatCard;
 use crate::state::run::RunState;
@@ -29,7 +29,7 @@ pub(crate) fn deck_cut_score(
     if matches!(def.card_type, CardType::Curse | CardType::Status) {
         score -= 2_000;
     }
-    score -= crate::bot::evaluator::curse_remove_severity(card.id) * 450;
+    score -= crate::bot::curse_remove_severity(card.id) * 450;
 
     if cards::is_starter_basic(card.id) {
         score -= match mode {
@@ -100,7 +100,7 @@ pub(crate) fn retention_value(
     card: &CombatCard,
     bash_preservation_bonus: i32,
 ) -> i32 {
-    let mut score = CardEvaluator::evaluate_owned_card(card.id, rs);
+    let mut score = crate::bot::score_owned_card(card.id, rs);
     let def = cards::get_card_definition(card.id);
 
     if card.id == CardId::Bash {

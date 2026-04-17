@@ -6,7 +6,7 @@ use crate::diff::state_sync::{build_combat_state, sync_state};
 use crate::runtime::combat::CombatState;
 use crate::state::core::{ClientInput, EngineState, PendingChoice};
 
-use crate::bot::coverage_signatures::{
+use crate::bot::infra::coverage_signatures::{
     command_string, signature_from_transition_with_archetypes, ObservedInteractionRecord,
 };
 

@@ -68,8 +68,10 @@ fn core_does_not_depend_on_integration_or_app_layers() {
         "src/core",
         "src/engine",
         "src/map",
+        "src/projection",
         "src/rewards",
         "src/runtime",
+        "src/semantics",
         "src/state",
     ]);
 

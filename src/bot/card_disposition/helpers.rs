@@ -7,18 +7,8 @@ pub(super) fn total_incoming_damage(combat: &CombatState) -> i32 {
         .monsters
         .iter()
         .filter(|monster| !monster.is_dying && !monster.is_escaped && !monster.half_dead)
-        .map(|monster| monster.intent_dmg * intent_hits(&monster.current_intent))
+        .map(|monster| monster.intent_preview_total_damage())
         .sum()
-}
-
-pub(super) fn intent_hits(intent: &Intent) -> i32 {
-    match intent {
-        Intent::Attack { hits, .. }
-        | Intent::AttackBuff { hits, .. }
-        | Intent::AttackDebuff { hits, .. }
-        | Intent::AttackDefend { hits, .. } => (*hits as i32).max(1),
-        _ => 0,
-    }
 }
 
 pub(super) fn monster_is_attacking(monster: &crate::runtime::combat::MonsterEntity) -> bool {

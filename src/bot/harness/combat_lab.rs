@@ -6,11 +6,12 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
-use crate::bot::evaluator::evaluate_state;
+use crate::bot::combat;
 use crate::bot::harness::combat_policy::{
     decide_policy_action, extract_state_features, flag_bad_action_tags, EvalMetrics,
     PolicyDecision, PolicyKind,
 };
+use crate::bot::CoverageDb;
 use crate::content::cards::get_card_definition;
 use crate::diff::replay::tick_until_stable;
 use crate::runtime::combat::{CombatCard, CombatState, Intent, Power};
@@ -284,6 +285,7 @@ fn run_episode(
     apply_variant(&mut combat, variant_mode, episode_seed);
     let mut run_state = build_lab_run_state(fixture, &combat);
     let mut agent = crate::bot::agent::Agent::new();
+    let coverage = CoverageDb::default();
 
     let mut steps = Vec::new();
     let mut safety_counter = 0usize;
@@ -301,6 +303,7 @@ fn run_episode(
                 &combat,
                 &steps,
                 &engine_state,
+                &coverage,
             );
             for step in &mut trace.steps {
                 step.episode_outcome = Some(trace.outcome.clone());
@@ -320,6 +323,7 @@ fn run_episode(
                 &combat,
                 &steps,
                 &engine_state,
+                &coverage,
             );
             for step in &mut trace.steps {
                 step.episode_outcome = Some(trace.outcome.clone());
@@ -327,7 +331,7 @@ fn run_episode(
             return Ok(EpisodeArtifacts { trace });
         }
 
-        let before_score = evaluate_state(&engine_state, &combat);
+        let before_score = combat_search_score(&engine_state, &combat, depth, &coverage);
         let policy_decision = decide_policy_action(
             policy,
             &engine_state,
@@ -342,6 +346,8 @@ fn run_episode(
             &mut combat,
             &policy_decision,
             before_score,
+            depth,
+            &coverage,
         )?;
         steps.push(step_trace);
         safety_counter += 1;
@@ -364,6 +370,7 @@ fn build_episode_trace(
     combat: &CombatState,
     steps: &[CombatLabStepTrace],
     engine_state: &EngineState,
+    coverage: &CoverageDb,
 ) -> CombatLabEpisodeTrace {
     CombatLabEpisodeTrace {
         fixture_name: fixture.name.clone(),
@@ -376,7 +383,7 @@ fn build_episode_trace(
         final_player_hp: combat.entities.player.current_hp,
         final_monster_hp: total_remaining_monster_hp(combat),
         turns: combat.turn.turn_count,
-        path_score: evaluate_state(engine_state, combat),
+        path_score: combat_search_score(engine_state, combat, depth, coverage),
         steps: steps.to_vec(),
     }
 }
@@ -387,6 +394,8 @@ fn execute_step(
     combat: &mut CombatState,
     policy_decision: &PolicyDecision,
     before_score: f32,
+    depth: u32,
+    coverage: &CoverageDb,
 ) -> Result<CombatLabStepTrace, String> {
     let turn_index = combat.turn.turn_count;
     let player_hp_before = combat.entities.player.current_hp;
@@ -405,7 +414,7 @@ fn execute_step(
     let (action_kind, action_payload) = action_descriptor(&input, combat);
 
     let _alive = tick_until_stable(engine_state, combat, input);
-    let after_score = evaluate_state(engine_state, combat);
+    let after_score = combat_search_score(engine_state, combat, depth, coverage);
 
     Ok(CombatLabStepTrace {
         step_index,
@@ -510,6 +519,34 @@ fn current_outcome(engine_state: &EngineState, combat: &CombatState) -> Option<E
             }
         }
     }
+}
+
+fn combat_search_score(
+    engine_state: &EngineState,
+    combat: &CombatState,
+    depth: u32,
+    _coverage: &CoverageDb,
+) -> f32 {
+    let diagnostics =
+        combat::diagnose_root_search_with_depth(engine_state, combat, depth.max(2), 0);
+    diagnostics
+        .top_moves
+        .first()
+        .map(|stat| stat.avg_score)
+        .unwrap_or_else(|| {
+            if combat.entities.player.current_hp <= 0 {
+                -20.0
+            } else if combat
+                .entities
+                .monsters
+                .iter()
+                .all(|monster| monster.is_dying || monster.is_escaped || monster.current_hp <= 0)
+            {
+                20.0
+            } else {
+                0.0
+            }
+        })
 }
 
 fn compare_episode_records(
@@ -637,7 +674,7 @@ fn monster_snapshots(combat: &CombatState) -> Vec<CombatLabMonsterSnapshot> {
             max_hp: monster.max_hp,
             block: monster.block,
             intent: intent_label(&monster.current_intent),
-            intent_damage: monster.intent_dmg,
+            intent_damage: monster.intent_preview_damage,
             key_powers: power_labels(
                 combat
                     .entities

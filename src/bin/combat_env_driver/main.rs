@@ -3,11 +3,11 @@ use std::path::PathBuf;
 
 use clap::Parser;
 use serde::{Deserialize, Serialize};
+use sts_simulator::bot::combat::{load_fixture_path, DecisionAuditEngineState};
 use sts_simulator::bot::harness::{
     ActionMask, CombatAction, CombatEnv, CombatEnvSpec, CombatEpisodeOutcome, CombatObservation,
     CombatRewardBreakdown,
 };
-use sts_simulator::bot::search::{load_fixture_path, DecisionAuditEngineState};
 use sts_simulator::diff::replay::{
     derive_combat_replay_view, find_combat_step_index_by_before_frame_id,
     load_live_session_replay_path, reconstruct_combat_replay_step,

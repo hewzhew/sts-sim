@@ -63,7 +63,7 @@ struct AppState {
 }
 
 fn print_end_turn_diagnostic(combat: &CombatState) {
-    let lines = sts_simulator::bot::describe_end_turn_options(combat);
+    let lines = sts_simulator::bot::combat::describe_end_turn_options(combat);
     if let Some(summary) = lines.first() {
         println!("  [BOT] End Turn | {}", summary);
         if let Some(best_alt) = lines.get(1) {
@@ -182,12 +182,12 @@ fn describe_reward_screen_decision(
     match decision {
         ClientInput::SelectCard(idx) | ClientInput::SubmitDiscoverChoice(idx) => {
             let cards = reward.pending_card_choice.as_ref()?;
-            let offered_ids = cards.iter().map(|card| card.id).collect::<Vec<_>>();
-            let evaluation = sts_simulator::bot::evaluate_reward_screen_for_run_detailed(
-                &offered_ids,
-                run_state,
-            );
-            let card_eval = evaluation.offered_cards.get(*idx)?;
+            let (_, diagnostics) =
+                sts_simulator::bot::reward::decide_cards(run_state, cards, reward.skippable);
+            let card_eval = diagnostics
+                .candidates
+                .iter()
+                .find(|candidate| candidate.index == *idx)?;
             let reward_card = cards.get(*idx)?;
             let def = sts_simulator::content::cards::get_card_definition(reward_card.id);
             Some(format!(
@@ -200,9 +200,9 @@ fn describe_reward_screen_decision(
                 },
                 idx,
                 format_context_suffix(
-                    card_eval.delta_rule_context_summary,
-                    card_eval.delta_context_rationale_key,
-                    card_eval.delta_context
+                    Some("reward_candidate"),
+                    Some(card_eval.rationale_key),
+                    card_eval.score
                 )
             ))
         }
@@ -233,15 +233,15 @@ fn describe_shop_screen_decision(
         ClientInput::BuyCard(idx) => {
             let card = shop.cards.get(*idx)?;
             let def = sts_simulator::content::cards::get_card_definition(card.card_id);
-            let delta = sts_simulator::bot::compare_pick_vs_skip(run_state, card.card_id);
+            let offer_score = sts_simulator::bot::score_card_offer(card.card_id, run_state);
             Some(format!(
                 "Shop Card: {} [price {}]{}",
                 def.name,
                 card.price,
                 format_context_suffix(
-                    delta.rule_context_summary,
-                    delta.context_rationale_key,
-                    delta.context_delta
+                    Some("shop_offer_value"),
+                    Some("buy_card_offer_value"),
+                    offer_score
                 )
             ))
         }
@@ -710,16 +710,13 @@ fn main() {
                         if let Some(event) = run_state.event_state.as_ref() {
                             let options =
                                 sts_simulator::engine::event_handler::get_event_options(&run_state);
-                            if let Some(decision) = sts_simulator::bot::choose_local_event_choice(
-                                &run_state, event, &options,
-                            ) {
+                            if let Some(decision) =
+                                sts_simulator::bot::event::decide_local(&run_state, event)
+                            {
                                 if decision.option_index == *choice_idx {
-                                    let context = sts_simulator::bot::local_event_context(
-                                        &run_state, event, &options,
-                                    );
                                     println!(
                                         "  [BOT] Event: {}",
-                                        sts_simulator::bot::describe_choice(&context, &decision)
+                                        sts_simulator::bot::event::describe_choice(&decision)
                                     );
                                 } else if let Some(option) = options.get(*choice_idx) {
                                     println!("  [BOT] Event: {}", option.ui.text);
@@ -982,14 +979,14 @@ fn main() {
 }
 
 fn print_run_summary(rs: &RunState) {
-    let profile = sts_simulator::bot::CardEvaluator::deck_profile(rs);
+    let profile = sts_simulator::bot::deck_profile(rs);
     println!("\n--- RUN SUMMARY ---");
     println!("  Floor: {} (Act {})", rs.floor_num, rs.act_num);
     println!("  HP: {} / {}", rs.current_hp, rs.max_hp);
     println!("  Gold: {}", rs.gold);
     println!(
         "  Archetype: {}",
-        sts_simulator::bot::CardEvaluator::archetype_summary(&profile)
+        sts_simulator::bot::archetype_summary(&profile)
     );
 
     let mut potion_count = 0;

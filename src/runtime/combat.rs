@@ -1,7 +1,11 @@
 use crate::content::cards::CardId;
 use crate::content::relics::RelicState;
 use crate::core::EntityId;
+use crate::projection::combat::MonsterMovePreview;
 use crate::runtime::action::{Action, ActionInfo, AddTo};
+use crate::semantics::combat::{
+    AttackSpec, BuffSpec, DamageKind, DebuffSpec, DefendSpec, MonsterMoveSpec, MonsterTurnPlan,
+};
 use crate::state::selection::{DomainEvent, EngineDiagnostic};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::ops::{Deref, DerefMut};
@@ -607,6 +611,79 @@ pub enum Intent {
     Unknown,
 }
 
+impl Intent {
+    pub fn base_damage(&self) -> Option<i32> {
+        match self {
+            Intent::Attack { damage, .. }
+            | Intent::AttackBuff { damage, .. }
+            | Intent::AttackDebuff { damage, .. }
+            | Intent::AttackDefend { damage, .. } => Some(*damage),
+            _ => None,
+        }
+    }
+
+    pub fn hits(&self) -> i32 {
+        match self {
+            Intent::Attack { hits, .. }
+            | Intent::AttackBuff { hits, .. }
+            | Intent::AttackDebuff { hits, .. }
+            | Intent::AttackDefend { hits, .. } => (*hits as i32).max(1),
+            _ => 0,
+        }
+    }
+
+    pub fn to_move_spec(&self) -> MonsterMoveSpec {
+        match self {
+            Intent::Attack { damage, hits } => MonsterMoveSpec::Attack(AttackSpec {
+                base_damage: *damage,
+                hits: *hits,
+                damage_kind: DamageKind::Normal,
+            }),
+            Intent::AttackBuff { damage, hits } => MonsterMoveSpec::AttackBuff(
+                AttackSpec {
+                    base_damage: *damage,
+                    hits: *hits,
+                    damage_kind: DamageKind::Normal,
+                },
+                BuffSpec::unknown(),
+            ),
+            Intent::AttackDebuff { damage, hits } => MonsterMoveSpec::AttackDebuff(
+                AttackSpec {
+                    base_damage: *damage,
+                    hits: *hits,
+                    damage_kind: DamageKind::Normal,
+                },
+                DebuffSpec::unknown(),
+            ),
+            Intent::AttackDefend { damage, hits } => MonsterMoveSpec::AttackDefend(
+                AttackSpec {
+                    base_damage: *damage,
+                    hits: *hits,
+                    damage_kind: DamageKind::Normal,
+                },
+                DefendSpec::default(),
+            ),
+            Intent::Buff => MonsterMoveSpec::Buff(BuffSpec::unknown()),
+            Intent::Debuff => MonsterMoveSpec::Debuff(DebuffSpec::unknown()),
+            Intent::StrongDebuff => MonsterMoveSpec::StrongDebuff(DebuffSpec::strong_unknown()),
+            Intent::Debug => MonsterMoveSpec::Debug,
+            Intent::Defend => MonsterMoveSpec::Defend(DefendSpec::default()),
+            Intent::DefendDebuff => {
+                MonsterMoveSpec::DefendDebuff(DefendSpec::default(), DebuffSpec::unknown())
+            }
+            Intent::DefendBuff => {
+                MonsterMoveSpec::DefendBuff(DefendSpec::default(), BuffSpec::unknown())
+            }
+            Intent::Escape => MonsterMoveSpec::Escape,
+            Intent::Magic => MonsterMoveSpec::Magic,
+            Intent::None => MonsterMoveSpec::None,
+            Intent::Sleep => MonsterMoveSpec::Sleep,
+            Intent::Stun => MonsterMoveSpec::Stun,
+            Intent::Unknown => MonsterMoveSpec::Unknown,
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct MonsterEntity {
     pub id: EntityId,
@@ -621,13 +698,47 @@ pub struct MonsterEntity {
     pub next_move_byte: u8,
     pub current_intent: Intent,
     pub move_history: VecDeque<u8>,
-    pub intent_dmg: i32,
+    /// UI / protocol preview damage after monster damage modifiers are applied.
+    /// This is not an executable damage base and must not be fed back into
+    /// combat resolution.
+    pub intent_preview_damage: i32,
     pub logical_position: i32,
     pub protocol_identity: MonsterProtocolIdentity,
     pub hexaghost: HexaghostRuntimeState,
     pub chosen: ChosenRuntimeState,
     pub darkling: DarklingRuntimeState,
     pub lagavulin: LagavulinRuntimeState,
+}
+
+impl MonsterEntity {
+    pub fn intent_base_damage(&self) -> Option<i32> {
+        self.current_intent.base_damage()
+    }
+
+    pub fn intent_hits(&self) -> i32 {
+        self.current_intent.hits()
+    }
+
+    pub fn intent_preview_total_damage(&self) -> i32 {
+        self.intent_preview_damage.max(0) * self.intent_hits()
+    }
+
+    pub fn turn_plan(&self) -> MonsterTurnPlan {
+        MonsterTurnPlan {
+            move_id: self.next_move_byte,
+            spec: self.current_intent.to_move_spec(),
+        }
+    }
+
+    pub fn move_preview(&self) -> MonsterMovePreview {
+        let plan = self.turn_plan();
+        let damage_per_hit = if plan.spec.attack().is_some() {
+            Some(self.intent_preview_damage.max(0))
+        } else {
+            None
+        };
+        MonsterMovePreview::from_spec(&plan.spec, damage_per_hit)
+    }
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]

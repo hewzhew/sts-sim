@@ -104,7 +104,7 @@ pub fn build_encounter(
         let (min, max) = crate::content::monsters::get_hp_range(enemy_id, ascension_level);
         let current_hp = hp_rng.random_range(min as i32, max as i32) as i32;
         let id = (slot + 1) as usize; // Naive unique engine IDs for this batch
-        let intent_dmg = match enemy_id {
+        let intent_preview_damage = match enemy_id {
             EnemyId::LouseNormal | EnemyId::LouseDefensive => {
                 if ascension_level >= 2 {
                     hp_rng.random_range(6, 8) as i32
@@ -128,7 +128,7 @@ pub fn build_encounter(
             next_move_byte: 0,
             current_intent: Intent::Unknown,
             move_history: VecDeque::new(),
-            intent_dmg,
+            intent_preview_damage,
             logical_position: slot as i32,
             protocol_identity: Default::default(),
             hexaghost: Default::default(),

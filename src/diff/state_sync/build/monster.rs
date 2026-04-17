@@ -181,7 +181,7 @@ pub(crate) fn apply_monster_entity_snapshot(
         .get("is_gone")
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
-    let intent_dmg = monster["move_base_damage"].as_i64().unwrap_or(-1) as i32;
+    let intent_base_damage = monster["move_base_damage"].as_i64().unwrap_or(-1) as i32;
     let intent_hits = monster["move_hits"].as_i64().unwrap_or(1) as i32;
     let intent_str = monster["intent"].as_str().unwrap_or("UNKNOWN");
 
@@ -197,8 +197,8 @@ pub(crate) fn apply_monster_entity_snapshot(
         .map(|e| e as usize)
         .unwrap_or(0);
     entity.next_move_byte = monster["move_id"].as_u64().unwrap_or(0) as u8;
-    entity.current_intent = intent_from_java(intent_str, intent_dmg, intent_hits);
-    entity.intent_dmg = monster["move_adjusted_damage"].as_i64().unwrap_or(0) as i32;
+    entity.current_intent = intent_from_java(intent_str, intent_base_damage, intent_hits);
+    entity.intent_preview_damage = monster["move_adjusted_damage"].as_i64().unwrap_or(0) as i32;
 
     seed_monster_protocol_identity_from_snapshot(monster, index, entity);
     seed_move_history_from_snapshot(monster, entity);

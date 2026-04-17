@@ -1,14 +1,19 @@
 use crate::bot::agent::Agent;
-use crate::bot::combat::{self, SearchDiagnostics};
-use crate::bot::event_policy::{EventChoiceDecision, EventDecisionContext as EventPolicyContext};
-use crate::bot::reward_heuristics::RewardScreenEvaluation;
-use crate::content::potions::PotionId;
+use crate::bot::combat::{self, CombatDiagnostics};
+use crate::bot::deck_ops::{self, DeckOperationKind, DeckOpsAssessment};
+use crate::bot::{
+    boss_relic, campfire, event, map, reward, shop, BossRelicDecisionDiagnostics,
+    CampfireDecisionDiagnostics, EventDecision as EventDomainDecision, MapDecisionDiagnostics,
+    RewardClaimDiagnostics, RewardDecisionDiagnostics, ShopDecisionDiagnostics,
+};
 use crate::rewards::state::{RewardCard, RewardState};
 use crate::runtime::combat::CombatState;
 use crate::shop::ShopState;
-use crate::state::core::{ClientInput, EngineState};
+use crate::state::core::{CampfireChoice, ClientInput, EngineState};
 use crate::state::run::RunState;
 use serde::{Deserialize, Serialize};
+
+pub use crate::bot::reward::BlockedPotionOffer;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -19,6 +24,9 @@ pub enum DecisionDomain {
     Shop,
     Event,
     DeckImprovement,
+    Map,
+    BossRelic,
+    Campfire,
     LegacyInput,
 }
 
@@ -49,11 +57,6 @@ impl DecisionMetadata {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct BlockedPotionOffer {
-    pub potion_id: PotionId,
-}
-
 #[derive(Clone, Copy, Debug)]
 pub struct CombatDecisionContext<'a> {
     pub engine: &'a EngineState,
@@ -81,71 +84,68 @@ pub struct ShopDecisionContext<'a> {
 #[derive(Clone, Copy, Debug)]
 pub struct DeckImprovementDecisionContext<'a> {
     pub run_state: &'a RunState,
-    pub operation: crate::bot::run_deck_improvement::DeckOperationKind,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum RewardCardDecisionAction {
-    Pick(usize),
-    Skip,
+    pub operation: DeckOperationKind,
 }
 
 #[derive(Clone, Debug)]
 pub struct RewardCardDecision {
     pub meta: DecisionMetadata,
-    pub action: RewardCardDecisionAction,
-    pub evaluation: RewardScreenEvaluation,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum RewardClaimDecisionAction {
-    Claim(usize),
-    DiscardPotion(usize),
-    Proceed,
+    pub action: reward::RewardCardAction,
+    pub diagnostics: RewardDecisionDiagnostics,
 }
 
 #[derive(Clone, Debug)]
 pub struct RewardClaimDecision {
     pub meta: DecisionMetadata,
-    pub action: RewardClaimDecisionAction,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ShopDecisionAction {
-    BuyCard(usize),
-    BuyRelic(usize),
-    BuyPotion(usize),
-    PurgeCard(usize),
-    DiscardPotion(usize),
-    Leave,
+    pub action: reward::RewardClaimAction,
+    pub diagnostics: RewardClaimDiagnostics,
 }
 
 #[derive(Clone, Debug)]
 pub struct ShopDecision {
     pub meta: DecisionMetadata,
-    pub action: ShopDecisionAction,
+    pub action: shop::ShopAction,
+    pub diagnostics: ShopDecisionDiagnostics,
 }
 
 #[derive(Clone, Debug)]
 pub struct CombatDecision {
     pub meta: DecisionMetadata,
     pub chosen_input: ClientInput,
-    pub diagnostics: SearchDiagnostics,
+    pub diagnostics: CombatDiagnostics,
 }
 
 #[derive(Clone, Debug)]
-pub struct EventDecision {
+pub struct EventDecisionPolicy {
     pub meta: DecisionMetadata,
-    pub decision: EventChoiceDecision,
+    pub decision: EventDomainDecision,
 }
 
 #[derive(Clone, Debug)]
 pub struct DeckImprovementDecision {
     pub meta: DecisionMetadata,
-    pub assessment: crate::bot::run_deck_improvement::DeckOperationAssessment,
+    pub assessment: DeckOpsAssessment,
+}
+
+#[derive(Clone, Debug)]
+pub struct MapDecision {
+    pub meta: DecisionMetadata,
+    pub chosen_x: i32,
+    pub diagnostics: MapDecisionDiagnostics,
+}
+
+#[derive(Clone, Debug)]
+pub struct BossRelicDecision {
+    pub meta: DecisionMetadata,
+    pub chosen_index: usize,
+    pub diagnostics: BossRelicDecisionDiagnostics,
+}
+
+#[derive(Clone, Debug)]
+pub struct CampfireDecision {
+    pub meta: DecisionMetadata,
+    pub choice: CampfireChoice,
+    pub diagnostics: CampfireDecisionDiagnostics,
 }
 
 #[derive(Clone, Debug)]
@@ -154,8 +154,11 @@ pub enum BotPolicyDecision {
     RewardCard(RewardCardDecision),
     RewardClaim(RewardClaimDecision),
     Shop(ShopDecision),
-    Event(EventDecision),
+    Event(EventDecisionPolicy),
     DeckImprovement(DeckImprovementDecision),
+    Map(MapDecision),
+    BossRelic(BossRelicDecision),
+    Campfire(CampfireDecision),
     LegacyInput {
         meta: DecisionMetadata,
         input: ClientInput,
@@ -171,6 +174,9 @@ impl BotPolicyDecision {
             Self::Shop(decision) => &decision.meta,
             Self::Event(decision) => &decision.meta,
             Self::DeckImprovement(decision) => &decision.meta,
+            Self::Map(decision) => &decision.meta,
+            Self::BossRelic(decision) => &decision.meta,
+            Self::Campfire(decision) => &decision.meta,
             Self::LegacyInput { meta, .. } => meta,
         }
     }
@@ -190,11 +196,11 @@ impl Agent {
                 can_skip,
                 ..
             }) => {
-                let reward_cards: Vec<_> = cards
+                let reward_cards = cards
                     .iter()
                     .copied()
                     .map(|card_id| RewardCard::new(card_id, 0))
-                    .collect();
+                    .collect::<Vec<_>>();
                 BotPolicyDecision::RewardCard(self.decide_reward_card_policy(
                     run_state,
                     RewardCardDecisionContext {
@@ -244,18 +250,12 @@ impl Agent {
                     ))
                 }
             }
-            EngineState::Shop(shop) => BotPolicyDecision::Shop(
-                self.decide_shop_policy(run_state, ShopDecisionContext { shop }),
+            EngineState::Shop(shop_state) => BotPolicyDecision::Shop(
+                self.decide_shop_policy(run_state, ShopDecisionContext { shop: shop_state }),
             ),
             EngineState::EventRoom => {
                 if let Some(event_state) = &run_state.event_state {
-                    let options = crate::engine::event_handler::get_event_options(run_state);
-                    let context = crate::bot::event_policy::local_event_context(
-                        run_state,
-                        event_state,
-                        &options,
-                    );
-                    BotPolicyDecision::Event(self.decide_event_policy(run_state, &context))
+                    BotPolicyDecision::Event(self.decide_event_policy(run_state, event_state))
                 } else {
                     BotPolicyDecision::LegacyInput {
                         meta: DecisionMetadata::new(
@@ -269,46 +269,19 @@ impl Agent {
                     }
                 }
             }
-            EngineState::MapNavigation => BotPolicyDecision::LegacyInput {
-                meta: DecisionMetadata::new(
-                    DecisionDomain::LegacyInput,
-                    "map_policy",
-                    Some("map_navigation"),
-                    None,
-                    false,
-                ),
-                input: self.decide_map(run_state),
-            },
-            EngineState::BossRelicSelect(state) => BotPolicyDecision::LegacyInput {
-                meta: DecisionMetadata::new(
-                    DecisionDomain::LegacyInput,
-                    "boss_relic_policy",
-                    Some("boss_relic_choice"),
-                    None,
-                    false,
-                ),
-                input: self.decide_boss_relic_policy(run_state, state),
-            },
-            EngineState::Campfire => BotPolicyDecision::LegacyInput {
-                meta: DecisionMetadata::new(
-                    DecisionDomain::LegacyInput,
-                    "campfire_policy",
-                    Some("campfire_choice"),
-                    None,
-                    false,
-                ),
-                input: self.decide_campfire(run_state),
-            },
-            EngineState::RunPendingChoice(choice_state) => BotPolicyDecision::LegacyInput {
-                meta: DecisionMetadata::new(
-                    DecisionDomain::LegacyInput,
-                    "pending_choice_policy",
-                    Some("run_pending_choice"),
-                    None,
-                    false,
-                ),
-                input: self.decide_run_pending_choice(run_state, choice_state),
-            },
+            EngineState::MapNavigation => BotPolicyDecision::Map(self.decide_map_policy(run_state)),
+            EngineState::BossRelicSelect(state) => {
+                BotPolicyDecision::BossRelic(self.decide_boss_relic_policy(run_state, state))
+            }
+            EngineState::Campfire => {
+                BotPolicyDecision::Campfire(self.decide_campfire_policy(run_state))
+            }
+            EngineState::RunPendingChoice(choice_state) => BotPolicyDecision::DeckImprovement(
+                self.assess_deck_improvement_policy(DeckImprovementDecisionContext {
+                    run_state,
+                    operation: deck_operation_for_pending_choice(choice_state.reason.clone()),
+                }),
+            ),
             EngineState::GameOver(_) => BotPolicyDecision::LegacyInput {
                 meta: DecisionMetadata::new(
                     DecisionDomain::LegacyInput,
@@ -333,15 +306,8 @@ impl Agent {
     }
 
     pub fn decide_combat_policy(&mut self, ctx: CombatDecisionContext<'_>) -> CombatDecision {
-        let diagnostics = combat::diagnose_root_search_with_depth(
-            ctx.engine,
-            ctx.combat,
-            &self.db,
-            self.coverage_mode(),
-            self.active_curiosity_target(),
-            self.bot_depth(),
-            4000,
-        );
+        let diagnostics =
+            combat::diagnose_root_search_with_depth(ctx.engine, ctx.combat, self.bot_depth(), 4000);
         let chosen_input = diagnostics.chosen_move.clone();
         CombatDecision {
             meta: DecisionMetadata::new(
@@ -361,79 +327,21 @@ impl Agent {
         run_state: &RunState,
         ctx: RewardCardDecisionContext<'_>,
     ) -> RewardCardDecision {
-        let offered_cards: Vec<_> = ctx
-            .reward_cards
-            .iter()
-            .map(|reward_card| reward_card.id)
-            .collect();
-        let evaluation =
-            crate::bot::evaluate_reward_screen_for_run_detailed(&offered_cards, run_state);
-
-        if let Some(idx) = self
-            .active_curiosity_target()
-            .and_then(|_| self.curiosity_reward_pick(&offered_cards, run_state))
-        {
-            return RewardCardDecision {
-                meta: DecisionMetadata::new(
-                    DecisionDomain::RewardCard,
-                    "curiosity_reward_override",
-                    Some("curiosity_reward_override"),
-                    None,
-                    true,
-                ),
-                action: RewardCardDecisionAction::Pick(idx),
-                evaluation,
-            };
-        }
-
-        if let Some(idx) = evaluation.recommended_choice {
-            return RewardCardDecision {
-                meta: DecisionMetadata::new(
-                    DecisionDomain::RewardCard,
-                    "reward_policy",
-                    Some("reward_recommended_pick"),
-                    Some(evaluation.best_combined_score),
-                    false,
-                ),
-                action: RewardCardDecisionAction::Pick(idx),
-                evaluation,
-            };
-        }
-
-        if let Some(idx) = conservative_reward_pick_after_skip(&evaluation) {
-            return RewardCardDecision {
-                meta: DecisionMetadata::new(
-                    DecisionDomain::RewardCard,
-                    "reward_policy",
-                    Some("conservative_skip_fallback"),
-                    Some(evaluation.best_combined_score),
-                    true,
-                ),
-                action: RewardCardDecisionAction::Pick(idx),
-                evaluation,
-            };
-        }
-
-        let action = if ctx.can_skip {
-            RewardCardDecisionAction::Skip
-        } else {
-            RewardCardDecisionAction::Pick(0)
-        };
-        let rationale_key = if ctx.can_skip {
-            Some("reward_intentional_skip")
-        } else {
-            Some("reward_forced_pick")
+        let (action, diagnostics) = reward::decide_cards(run_state, ctx.reward_cards, ctx.can_skip);
+        let rationale_key = match action {
+            reward::RewardCardAction::Pick(_) => diagnostics.recommended_rationale_key,
+            reward::RewardCardAction::Skip => Some(diagnostics.skip_rationale_key),
         };
         RewardCardDecision {
             meta: DecisionMetadata::new(
                 DecisionDomain::RewardCard,
-                "reward_policy",
+                "reward_baseline",
                 rationale_key,
-                Some(evaluation.best_combined_score),
+                Some((diagnostics.best_score - diagnostics.skip_score).abs() as f32),
                 false,
             ),
             action,
-            evaluation,
+            diagnostics,
         }
     }
 
@@ -442,86 +350,18 @@ impl Agent {
         run_state: &RunState,
         ctx: RewardClaimDecisionContext<'_>,
     ) -> RewardClaimDecision {
-        if let Some(idx) = self
-            .active_curiosity_target()
-            .and_then(|_| self.curiosity_reward_claim(&ctx.reward.items))
-        {
-            return RewardClaimDecision {
-                meta: DecisionMetadata::new(
-                    DecisionDomain::RewardClaim,
-                    "curiosity_reward_claim_override",
-                    Some("curiosity_reward_claim_override"),
-                    None,
-                    true,
-                ),
-                action: RewardClaimDecisionAction::Claim(idx),
-            };
-        }
-
-        if let Some(offered_potion) = ctx
-            .blocked_potion_offers
-            .iter()
-            .max_by_key(|offer| self.reward_potion_score(run_state, offer.potion_id))
-        {
-            let offered_score = self.reward_potion_score(run_state, offered_potion.potion_id);
-            if let Some(discard_idx) = self.best_potion_discard_for_score(
-                run_state,
-                offered_score,
-                |agent, rs, potion_id| agent.reward_potion_score(rs, potion_id),
-            ) {
-                return RewardClaimDecision {
-                    meta: DecisionMetadata::new(
-                        DecisionDomain::RewardClaim,
-                        "reward_claim_policy",
-                        Some("replace_blocked_reward_potion"),
-                        Some(offered_score as f32),
-                        false,
-                    ),
-                    action: RewardClaimDecisionAction::DiscardPotion(discard_idx),
-                };
-            }
-        }
-
-        for (idx, item) in ctx.reward.items.iter().enumerate() {
-            match item {
-                crate::rewards::state::RewardItem::Potion { .. } => {
-                    if run_state.potions.iter().any(|slot| slot.is_none()) {
-                        return RewardClaimDecision {
-                            meta: DecisionMetadata::new(
-                                DecisionDomain::RewardClaim,
-                                "reward_claim_policy",
-                                Some("claim_potion_empty_slot"),
-                                None,
-                                false,
-                            ),
-                            action: RewardClaimDecisionAction::Claim(idx),
-                        };
-                    }
-                }
-                _ => {
-                    return RewardClaimDecision {
-                        meta: DecisionMetadata::new(
-                            DecisionDomain::RewardClaim,
-                            "reward_claim_policy",
-                            Some("claim_non_potion_reward"),
-                            None,
-                            false,
-                        ),
-                        action: RewardClaimDecisionAction::Claim(idx),
-                    };
-                }
-            }
-        }
-
+        let (action, diagnostics) =
+            reward::decide_claim(run_state, ctx.reward, ctx.blocked_potion_offers);
         RewardClaimDecision {
             meta: DecisionMetadata::new(
                 DecisionDomain::RewardClaim,
-                "reward_claim_policy",
-                Some("reward_proceed"),
+                "reward_claim_baseline",
+                Some(diagnostics.rationale_key),
                 None,
                 false,
             ),
-            action: RewardClaimDecisionAction::Proceed,
+            action,
+            diagnostics,
         }
     }
 
@@ -530,79 +370,67 @@ impl Agent {
         run_state: &RunState,
         ctx: ShopDecisionContext<'_>,
     ) -> ShopDecision {
-        if let Some(cmd) = self.curiosity_shop_pick(run_state, ctx.shop) {
-            return ShopDecision {
-                meta: DecisionMetadata::new(
-                    DecisionDomain::Shop,
-                    "curiosity_shop_override",
-                    Some("curiosity_shop_override"),
-                    None,
-                    true,
-                ),
-                action: shop_action_from_input(cmd).unwrap_or(ShopDecisionAction::Leave),
-            };
+        let (action, diagnostics) = shop::decide(run_state, ctx.shop);
+        let rationale_key = diagnostics
+            .top_options
+            .first()
+            .map(|option| option.rationale_key)
+            .or(Some("leave_shop"));
+        ShopDecision {
+            meta: DecisionMetadata::new(
+                DecisionDomain::Shop,
+                "shop_baseline",
+                rationale_key,
+                diagnostics
+                    .top_options
+                    .first()
+                    .map(|option| option.normalized_score as f32),
+                false,
+            ),
+            action,
+            diagnostics,
         }
-
-        let input = self.decide_shop_input(run_state, ctx.shop);
-        let mut action = shop_action_from_input(input).unwrap_or(ShopDecisionAction::Leave);
-        let mut meta = DecisionMetadata::new(
-            DecisionDomain::Shop,
-            "shop_policy",
-            Some("shop_standard_decision"),
-            None,
-            false,
-        );
-
-        if matches!(action, ShopDecisionAction::Leave) {
-            if let Some((discard_idx, offered_score)) =
-                self.best_blocked_shop_potion_replacement(run_state, ctx.shop)
-            {
-                action = ShopDecisionAction::DiscardPotion(discard_idx);
-                meta = DecisionMetadata::new(
-                    DecisionDomain::Shop,
-                    "shop_policy",
-                    Some("replace_blocked_shop_potion"),
-                    Some(offered_score as f32),
-                    false,
-                );
-            }
-        }
-
-        ShopDecision { meta, action }
     }
 
     pub fn decide_event_policy(
         &self,
         run_state: &RunState,
-        context: &EventPolicyContext,
-    ) -> EventDecision {
-        let decision = crate::bot::choose_event_option(run_state, context).unwrap_or_else(|| {
-            let fallback_index = context
-                .options
-                .iter()
-                .position(|option| !option.disabled)
-                .unwrap_or(0);
-            EventChoiceDecision {
-                option_index: fallback_index,
-                command_index: fallback_index,
-                family: crate::bot::EventPolicyFamily::CompatibilityFallback,
-                rationale_key: Some("compatibility_fallback_adapter"),
-                score: None,
-                safety_override_applied: false,
-                rationale: Some("compatibility_fallback_adapter"),
-                deck_improvement_assessment: None,
-            }
+        event_state: &crate::state::events::EventState,
+    ) -> EventDecisionPolicy {
+        let decision = event::decide_local(run_state, event_state).unwrap_or(EventDomainDecision {
+            option_index: 0,
+            command_index: 0,
+            summary: "fallback option=0".to_string(),
+            detail: "fallback option=0".to_string(),
+            diagnostics: event::EventDecisionDiagnostics {
+                chosen_index: 0,
+                fallback_used: true,
+                protocol_status: "missing_event_state",
+                options: Vec::new(),
+                audit: serde_json::json!({"planner":"event_baseline","mode":"fallback"}),
+            },
+            deck_ops: None,
         });
-        EventDecision {
+        EventDecisionPolicy {
             meta: DecisionMetadata::new(
                 DecisionDomain::Event,
-                "event_policy",
-                decision.rationale_key,
-                decision.score.map(|score| score as f32),
-                matches!(
-                    decision.family,
-                    crate::bot::EventPolicyFamily::CompatibilityFallback
+                "event_baseline",
+                Some(
+                    decision
+                        .diagnostics
+                        .options
+                        .iter()
+                        .find(|option| option.option_index == decision.option_index)
+                        .map(|option| option.rationale_key)
+                        .unwrap_or("event_baseline"),
                 ),
+                decision
+                    .diagnostics
+                    .options
+                    .iter()
+                    .find(|option| option.option_index == decision.option_index)
+                    .map(|option| option.score as f32),
+                decision.diagnostics.fallback_used,
             ),
             decision,
         }
@@ -612,52 +440,95 @@ impl Agent {
         &self,
         ctx: DeckImprovementDecisionContext<'_>,
     ) -> DeckImprovementDecision {
-        let assessment =
-            crate::bot::run_deck_improvement::assess_deck_operation(ctx.run_state, ctx.operation);
+        let assessment = deck_ops::assess(ctx.run_state, ctx.operation);
         DeckImprovementDecision {
             meta: DecisionMetadata::new(
                 DecisionDomain::DeckImprovement,
-                "deck_improvement_policy",
+                "deck_ops_baseline",
                 Some(assessment.rationale_key),
-                Some(assessment.total_prior_delta as f32),
+                Some(assessment.total_score as f32),
                 false,
             ),
             assessment,
         }
     }
 
-    fn best_blocked_shop_potion_replacement(
+    pub fn decide_map_policy(&mut self, run_state: &RunState) -> MapDecision {
+        let (chosen_x, diagnostics) = map::decide(run_state).unwrap_or((
+            0,
+            MapDecisionDiagnostics {
+                chosen_x: Some(0),
+                chosen_y: None,
+                top_options: Vec::new(),
+            },
+        ));
+        MapDecision {
+            meta: DecisionMetadata::new(
+                DecisionDomain::Map,
+                "map_baseline",
+                diagnostics
+                    .top_options
+                    .first()
+                    .map(|option| option.rationale_key),
+                diagnostics
+                    .top_options
+                    .first()
+                    .map(|option| option.total_score as f32),
+                false,
+            ),
+            chosen_x,
+            diagnostics,
+        }
+    }
+
+    pub fn decide_boss_relic_policy(
         &self,
         run_state: &RunState,
-        shop: &ShopState,
-    ) -> Option<(usize, i32)> {
-        let (offered_score, _) = shop
-            .potions
-            .iter()
-            .filter(|potion| {
-                run_state.gold >= potion.price
-                    && potion.blocked_reason.as_deref() == Some("potion_slots_full")
-            })
-            .filter_map(|potion| {
-                let score = self.shop_potion_score(run_state, potion.potion_id);
-                let purchase_score = self.shop_potion_purchase_score(
-                    run_state,
-                    shop,
-                    potion.potion_id,
-                    potion.price,
-                );
-                (purchase_score >= 72).then_some((score, purchase_score))
-            })
-            .max_by_key(|(score, purchase_score)| (*purchase_score, *score))?;
+        state: &crate::rewards::state::BossRelicChoiceState,
+    ) -> BossRelicDecision {
+        let (chosen_index, diagnostics) = boss_relic::decide(run_state, &state.relics);
+        BossRelicDecision {
+            meta: DecisionMetadata::new(
+                DecisionDomain::BossRelic,
+                "boss_relic_baseline",
+                diagnostics
+                    .top_candidates
+                    .first()
+                    .map(|candidate| candidate.primary_reason),
+                diagnostics
+                    .top_candidates
+                    .first()
+                    .map(|candidate| candidate.confidence as f32),
+                false,
+            ),
+            chosen_index,
+            diagnostics,
+        }
+    }
 
-        self.best_potion_discard_for_score(run_state, offered_score, |agent, rs, potion_id| {
-            agent.shop_potion_score(rs, potion_id)
-        })
-        .map(|discard_idx| (discard_idx, offered_score))
+    pub fn decide_campfire_policy(&self, run_state: &RunState) -> CampfireDecision {
+        let (choice, diagnostics) = campfire::decide(run_state);
+        CampfireDecision {
+            meta: DecisionMetadata::new(
+                DecisionDomain::Campfire,
+                "campfire_baseline",
+                diagnostics
+                    .top_options
+                    .first()
+                    .map(|option| option.rationale_key),
+                diagnostics
+                    .top_options
+                    .first()
+                    .map(|option| option.score as f32),
+                false,
+            ),
+            choice,
+            diagnostics,
+        }
     }
 }
 
-fn combat_search_confidence(diagnostics: &SearchDiagnostics) -> Option<f32> {
+fn combat_search_confidence(diagnostics: &CombatDiagnostics) -> Option<f32> {
     if diagnostics.top_moves.len() < 2 {
         return diagnostics
             .top_moves
@@ -667,38 +538,31 @@ fn combat_search_confidence(diagnostics: &SearchDiagnostics) -> Option<f32> {
     Some(diagnostics.top_moves[0].avg_score - diagnostics.top_moves[1].avg_score)
 }
 
-fn conservative_reward_pick_after_skip(evaluation: &RewardScreenEvaluation) -> Option<usize> {
-    if evaluation.recommended_choice.is_some() {
-        return evaluation.recommended_choice;
-    }
-    let best_idx = evaluation
-        .offered_cards
-        .iter()
-        .enumerate()
-        .max_by(|(_, lhs), (_, rhs)| lhs.combined_score.total_cmp(&rhs.combined_score))
-        .map(|(idx, _)| idx)?;
-    if evaluation.best_local_score >= 35 && evaluation.best_combined_score >= 35.0 {
-        Some(best_idx)
-    } else {
-        None
-    }
-}
-
-fn shop_action_from_input(input: ClientInput) -> Option<ShopDecisionAction> {
-    match input {
-        ClientInput::BuyCard(idx) => Some(ShopDecisionAction::BuyCard(idx)),
-        ClientInput::BuyRelic(idx) => Some(ShopDecisionAction::BuyRelic(idx)),
-        ClientInput::BuyPotion(idx) => Some(ShopDecisionAction::BuyPotion(idx)),
-        ClientInput::PurgeCard(idx) => Some(ShopDecisionAction::PurgeCard(idx)),
-        ClientInput::DiscardPotion(idx) => Some(ShopDecisionAction::DiscardPotion(idx)),
-        ClientInput::Proceed | ClientInput::Cancel => Some(ShopDecisionAction::Leave),
-        _ => None,
+fn deck_operation_for_pending_choice(
+    reason: crate::state::core::RunPendingChoiceReason,
+) -> DeckOperationKind {
+    match reason {
+        crate::state::core::RunPendingChoiceReason::Purge => DeckOperationKind::Remove,
+        crate::state::core::RunPendingChoiceReason::Upgrade => DeckOperationKind::Upgrade,
+        crate::state::core::RunPendingChoiceReason::Transform => DeckOperationKind::Transform {
+            count: 1,
+            upgraded_context: false,
+        },
+        crate::state::core::RunPendingChoiceReason::TransformUpgraded => {
+            DeckOperationKind::Transform {
+                count: 1,
+                upgraded_context: true,
+            }
+        }
+        crate::state::core::RunPendingChoiceReason::Duplicate => DeckOperationKind::Duplicate,
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{BotPolicyDecision, DecisionDomain};
+    use super::{
+        BotPolicyDecision, DecisionDomain, DeckImprovementDecisionContext, DeckOperationKind,
+    };
     use crate::content::cards::CardId;
     use crate::rewards::state::{RewardCard, RewardItem, RewardState};
     use crate::state::core::EngineState;
@@ -772,26 +636,6 @@ mod tests {
     }
 
     #[test]
-    fn pending_card_reward_select_routes_to_reward_card_domain() {
-        let mut agent = crate::bot::Agent::new();
-        let run_state = crate::state::run::RunState::new(1, 0, false, "Ironclad");
-        let engine =
-            EngineState::PendingChoice(crate::state::core::PendingChoice::CardRewardSelect {
-                cards: vec![CardId::Strike, CardId::Defend],
-                destination: crate::runtime::action::CardDestination::Hand,
-                can_skip: true,
-            });
-
-        let decision = agent.decide_policy(&engine, &run_state, None, false);
-        match decision {
-            BotPolicyDecision::RewardCard(decision) => {
-                assert_eq!(decision.meta.domain, DecisionDomain::RewardCard);
-            }
-            other => panic!("expected RewardCard decision, got {other:?}"),
-        }
-    }
-
-    #[test]
     fn deck_improvement_policy_exposes_typed_domain() {
         let agent = crate::bot::Agent::new();
         let mut run_state = crate::state::run::RunState::new(1, 0, false, "Ironclad");
@@ -801,11 +645,10 @@ mod tests {
                 CardId::Parasite,
                 73_001,
             ));
-        let decision =
-            agent.assess_deck_improvement_policy(super::DeckImprovementDecisionContext {
-                run_state: &run_state,
-                operation: crate::bot::run_deck_improvement::DeckOperationKind::Remove,
-            });
+        let decision = agent.assess_deck_improvement_policy(DeckImprovementDecisionContext {
+            run_state: &run_state,
+            operation: DeckOperationKind::Remove,
+        });
         assert_eq!(decision.meta.domain, DecisionDomain::DeckImprovement);
         assert_eq!(
             decision

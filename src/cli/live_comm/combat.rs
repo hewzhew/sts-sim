@@ -2,12 +2,17 @@ use super::frame::LiveFrame;
 use super::io::LiveCommIo;
 use super::snapshot::write_failure_snapshot;
 use super::LiveParityMode;
-use crate::bot::branch_family_for_card;
-use crate::bot::combat::{diagnose_root_search, SearchDiagnostics, SearchMoveStat};
-use crate::bot::comm_mod;
-use crate::bot::monster_belief::{build_combat_belief_state, MonsterBeliefCertainty};
-use crate::bot::search::StatePressureFeatures;
-use crate::bot::sidecar::CombatTopCandidateRecord;
+use crate::bot::combat::monster_belief::{build_combat_belief_state, MonsterBeliefCertainty};
+use crate::bot::combat::pressure::StatePressureFeatures;
+use crate::bot::combat::{
+    branch_family_for_card, describe_end_turn_options, diagnose_root_search,
+    diagnose_root_search_with_depth, BranchFamily, CombatDiagnostics, CombatMoveStat,
+};
+use crate::bot::infra::comm as comm_mod;
+use crate::bot::infra::coverage_signatures::{
+    command_string, signature_from_transition_with_archetypes, ObservedInteractionRecord,
+};
+use crate::bot::infra::sidecar::{self, CombatTopCandidateRecord};
 use crate::bot::CoverageDb;
 use crate::content::monsters::EnemyId;
 use crate::diff::protocol::{
@@ -194,7 +199,7 @@ fn log_hidden_intent_belief(live_io: &mut LiveCommIo, combat: &CombatState) {
     }
 }
 
-fn summarize_cached_candidate_outcome(combat: &CombatState, stat: &SearchMoveStat) -> String {
+fn summarize_cached_candidate_outcome(combat: &CombatState, stat: &CombatMoveStat) -> String {
     format!(
         "cached_outcome hp {}->{}, block {}->{}, energy {}->{}, hand {}->{}, draw {}->{}, disc {}->{}, exhaust {}->{}, incoming {}->{}, enemy_total {}->{}",
         combat.entities.player.current_hp,
@@ -362,7 +367,7 @@ fn format_card(card: &crate::runtime::combat::CombatCard) -> String {
     label
 }
 
-fn format_search_move_diag(combat: &CombatState, stat: &SearchMoveStat) -> String {
+fn format_search_move_diag(combat: &CombatState, stat: &CombatMoveStat) -> String {
     let branch_family = branch_family_for_input(combat, &stat.input)
         .map(|family| family.as_str())
         .unwrap_or("none");
@@ -409,7 +414,7 @@ fn format_search_move_diag(combat: &CombatState, stat: &SearchMoveStat) -> Strin
     ) + &cluster_suffix
 }
 
-fn format_search_profile_summary(search_diag: &SearchDiagnostics) -> String {
+fn format_search_profile_summary(search_diag: &CombatDiagnostics) -> String {
     let profile = &search_diag.profile;
     format!(
         "search_ms={} render_ms={} root(legal_ms={} reduce_ms={} reduce={}=>{} clones={} leaf_ms={} leaf_calls={} avg_branch={:.1}->{:.1}) recursive(legal_ms={} reduce_ms={} reduce={}=>{} clones={} leaf_ms={} leaf_calls={} avg_branch={:.1}->{:.1}) advance(ms={} calls={} steps={} p50={} p95={} max={}) sequence_judge_ms={} nodes={} terminal_nodes={}",
@@ -445,7 +450,7 @@ fn format_search_profile_summary(search_diag: &SearchDiagnostics) -> String {
     )
 }
 
-fn log_combat_decision_audit_summary(live_io: &mut LiveCommIo, search_diag: &SearchDiagnostics) {
+fn log_combat_decision_audit_summary(live_io: &mut LiveCommIo, search_diag: &CombatDiagnostics) {
     let root_summary = decision_audit_root_summary(&search_diag.decision_audit);
     let tactical_summary = decision_audit_tactical_summary(&search_diag.decision_audit);
     let hand_select_summary = decision_audit_hand_select_summary(&search_diag.decision_audit);
@@ -613,8 +618,8 @@ fn maybe_record_search_suspect(
     frame_count: u64,
     frame: &LiveFrame,
     combat: &CombatState,
-    heuristic_diag: &crate::bot::HeuristicDiagnostics,
-    search_diag: &SearchDiagnostics,
+    baseline_diag: &CombatDiagnostics,
+    search_diag: &CombatDiagnostics,
 ) -> Option<Vec<String>> {
     let Some(chosen_stat) = search_diag.top_moves.first() else {
         return None;
@@ -626,16 +631,16 @@ fn maybe_record_search_suspect(
         .map(|second| chosen_stat.avg_score - second.avg_score);
     let heuristic_search_gap = if same_or_equivalent_client_input(
         combat,
-        &heuristic_diag.chosen_move,
+        &baseline_diag.chosen_move,
         &search_diag.chosen_move,
     ) {
         false
     } else {
-        let heuristic_rank_of_search = heuristic_diag.top_moves.iter().position(|stat| {
+        let heuristic_rank_of_search = baseline_diag.top_moves.iter().position(|stat| {
             same_or_equivalent_client_input(combat, &stat.input, &search_diag.chosen_move)
         });
         let search_rank_of_heuristic = search_diag.top_moves.iter().position(|stat| {
-            same_or_equivalent_client_input(combat, &stat.input, &heuristic_diag.chosen_move)
+            same_or_equivalent_client_input(combat, &stat.input, &baseline_diag.chosen_move)
         });
         heuristic_rank_of_search.is_none_or(|rank| rank >= 2)
             || search_rank_of_heuristic.is_none_or(|rank| rank >= 2)
@@ -689,7 +694,7 @@ fn maybe_record_search_suspect(
         response_id: frame.response_id(),
         state_frame_id: frame.state_frame_id(),
         chosen_move: describe_client_input(combat, &search_diag.chosen_move),
-        heuristic_move: describe_client_input(combat, &heuristic_diag.chosen_move),
+        heuristic_move: describe_client_input(combat, &baseline_diag.chosen_move),
         search_move: describe_client_input(combat, &search_diag.chosen_move),
         top_candidates: top_candidates.clone(),
         top_gap,
@@ -747,7 +752,7 @@ fn maybe_record_search_suspect(
             reasons.clone(),
             serde_json::json!({
                 "chosen_command": describe_client_input(combat, &search_diag.chosen_move),
-                "heuristic_move": describe_client_input(combat, &heuristic_diag.chosen_move),
+                "heuristic_move": describe_client_input(combat, &baseline_diag.chosen_move),
                 "search_move": describe_client_input(combat, &search_diag.chosen_move),
                 "top_gap": top_gap,
                 "sequencing": {
@@ -796,7 +801,7 @@ fn maybe_record_search_suspect(
 
 fn combat_top_candidate_record(
     combat: &CombatState,
-    stat: &SearchMoveStat,
+    stat: &CombatMoveStat,
 ) -> CombatTopCandidateRecord {
     CombatTopCandidateRecord {
         move_label: describe_client_input(combat, &stat.input),
@@ -817,10 +822,7 @@ fn combat_top_candidate_record(
     }
 }
 
-fn branch_family_for_input(
-    combat: &CombatState,
-    input: &ClientInput,
-) -> Option<crate::bot::BranchFamily> {
+fn branch_family_for_input(combat: &CombatState, input: &ClientInput) -> Option<BranchFamily> {
     let ClientInput::PlayCard { card_index, .. } = input else {
         return None;
     };
@@ -1373,14 +1375,14 @@ fn log_hexaghost_end_turn_debug(log: &mut std::fs::File, expected_cs: &CombatSta
     if let Some(rust_hex) = rust_hex {
         writeln!(
             log,
-            "    rust_post_end: hp={}/{} blk={} next_move_byte={} intent={:?} move_history=[{}] intent_dmg={}",
+            "    rust_post_end: hp={}/{} blk={} next_move_byte={} intent={:?} move_history=[{}] intent_preview_damage={}",
             rust_hex.current_hp,
             rust_hex.max_hp,
             rust_hex.block,
             rust_hex.next_move_byte,
             rust_hex.current_intent,
             format_move_history(&rust_hex.move_history),
-            rust_hex.intent_dmg
+            rust_hex.intent_preview_damage
         )
         .unwrap();
     }
@@ -1438,7 +1440,7 @@ pub(super) fn handle_live_combat_frame<W: Write>(
         &combat_runtime.last_input,
     ) {
         let after_engine = EngineState::CombatPlayerTurn;
-        let signature = crate::bot::coverage_signatures::signature_from_transition_with_archetypes(
+        let signature = signature_from_transition_with_archetypes(
             &EngineState::CombatPlayerTurn,
             prev_truth,
             prev_input,
@@ -1456,12 +1458,12 @@ pub(super) fn handle_live_combat_frame<W: Write>(
             .collect();
         coverage_db.record_signature(&signature);
         coverage_db.save();
-        let record = crate::bot::coverage_signatures::ObservedInteractionRecord {
+        let record = ObservedInteractionRecord {
             observed_from: "live_comm".to_string(),
             source_file: signature_source_file.to_string(),
             combat_idx: None,
             action_idx: Some(frame_count as usize),
-            command: crate::bot::coverage_signatures::command_string(prev_input),
+            command: command_string(prev_input),
             signature_key,
             source_combo_key: signature.source_combo_key(),
             signature,
@@ -1659,15 +1661,10 @@ pub(super) fn handle_live_combat_frame<W: Write>(
 
     log_hidden_intent_belief(live_io, &truth);
 
-    let heuristic_diag = crate::bot::diagnose_decision(&truth);
-    let mut search_diag = diagnose_root_search(
-        &EngineState::CombatPlayerTurn,
-        &truth,
-        coverage_db,
-        crate::bot::CoverageMode::Off,
-        None,
-        combat_search_budget,
-    );
+    let baseline_diag =
+        diagnose_root_search_with_depth(&EngineState::CombatPlayerTurn, &truth, 2, 0);
+    let mut search_diag =
+        diagnose_root_search(&EngineState::CombatPlayerTurn, &truth, combat_search_budget);
     let verbose_outcome_logging = verbose_search_outcome_logging_enabled();
     let render_started = std::time::Instant::now();
     writeln!(
@@ -1718,7 +1715,7 @@ pub(super) fn handle_live_combat_frame<W: Write>(
         frame_count,
         frame,
         &truth,
-        &heuristic_diag,
+        &baseline_diag,
         &search_diag,
     ) {
         if fail_fast_debug && should_fail_fast_on_combat_snapshot("high_risk_suspect", &reasons) {
@@ -1752,7 +1749,7 @@ pub(super) fn handle_live_combat_frame<W: Write>(
             None,
             false,
         );
-        let shadow = crate::bot::sidecar::combat_shadow_json(
+        let shadow = sidecar::combat_shadow_json(
             frame_count,
             "live_comm_combat",
             &meta,
@@ -1762,24 +1759,29 @@ pub(super) fn handle_live_combat_frame<W: Write>(
             None,
             None,
         );
-        crate::bot::sidecar::write_shadow_record(&mut live_io.sidecar_shadow, &shadow);
+        sidecar::write_shadow_record(&mut live_io.sidecar_shadow, &shadow);
     }
     if !same_or_equivalent_client_input(
         &truth,
-        &heuristic_diag.chosen_move,
+        &baseline_diag.chosen_move,
         &search_diag.chosen_move,
     ) {
         writeln!(
             live_io.log,
-            "  [HEURISTIC DIAG] disagrees chosen={:?} baseline_score={}",
-            heuristic_diag.chosen_move, heuristic_diag.baseline_score
+            "  [BASELINE DIAG] disagrees chosen={:?} baseline_score={:.1}",
+            baseline_diag.chosen_move,
+            baseline_diag
+                .top_moves
+                .first()
+                .map(|stat| stat.avg_score)
+                .unwrap_or(0.0)
         )
         .unwrap();
-        for move_stat in heuristic_diag.top_moves.iter().take(3) {
+        for move_stat in baseline_diag.top_moves.iter().take(3) {
             writeln!(
                 live_io.log,
-                "  [HEURISTIC DIAG] move={:?} score={} priority={}",
-                move_stat.input, move_stat.score, move_stat.priority
+                "  [BASELINE DIAG] move={:?} score={:.1} visits={}",
+                move_stat.input, move_stat.avg_score, move_stat.visits
             )
             .unwrap();
         }
@@ -1792,7 +1794,7 @@ pub(super) fn handle_live_combat_frame<W: Write>(
 
     writeln!(live_io.log, "  → {:?}", input).unwrap();
     if matches!(input, crate::state::core::ClientInput::EndTurn) {
-        let end_diag_lines = crate::bot::describe_end_turn_options(&truth);
+        let end_diag_lines = describe_end_turn_options(&truth);
         let has_non_end_legal_play = end_diag_lines
             .first()
             .is_some_and(|line| line.contains("legal_plays="));

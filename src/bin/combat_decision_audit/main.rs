@@ -5,13 +5,15 @@ use clap::{Args as ClapArgs, Parser, Subcommand, ValueEnum};
 use serde::{Deserialize, Serialize};
 
 use sts_simulator::bot::branch_family_for_card;
-use sts_simulator::bot::search::{
+use sts_simulator::bot::combat::{
     audit_fixture, build_fixture_from_reconstructed_step, diagnose_root_search_with_depth_and_mode,
     diagnose_root_search_with_depth_and_mode_and_root_prior, extract_preference_samples,
-    load_fixture_path, render_text_report, write_fixture_path, CombatPreferenceSample,
-    DecisionAuditConfig, DecisionAuditEngineState, LookupRootPriorProvider, RootPriorConfig,
-    RootPriorQueryKey, SearchEquivalenceMode, SearchProfileBreakdown, TrajectoryOutcomeKind,
+    load_fixture_path, render_text_report, write_fixture_path, CombatDiagnostics, CombatMoveStat,
+    CombatPreferenceSample, DecisionAuditConfig, DecisionAuditEngineState, LookupRootPriorProvider,
+    RootPriorConfig, RootPriorQueryKey, TrajectoryOutcomeKind,
 };
+use sts_simulator::bot::legal_moves_for_audit;
+use sts_simulator::bot::{SearchEquivalenceMode, SearchProfileBreakdown, SearchProfilingLevel};
 use sts_simulator::diff::replay::{
     derive_combat_replay_view, find_combat_step_index_by_before_frame_id,
     load_live_session_replay_path, mapped_command_to_input, reconstruct_combat_replay_step,
@@ -320,7 +322,7 @@ struct SearchBaselineMove {
 
 #[derive(Debug, Serialize)]
 struct AuditFixtureShadowOutput {
-    report: sts_simulator::bot::search::DecisionAuditReport,
+    report: sts_simulator::bot::combat::DecisionAuditReport,
     search_baseline: SearchBaselineRecord,
 }
 
@@ -337,7 +339,7 @@ struct AuditFrameBatchReport {
 struct AuditFrameBatchItem {
     frame: u64,
     status: String,
-    report: Option<sts_simulator::bot::search::DecisionAuditReport>,
+    report: Option<sts_simulator::bot::combat::DecisionAuditReport>,
     error: Option<String>,
 }
 
@@ -725,7 +727,7 @@ fn fixture_from_raw_frame(
     raw: &PathBuf,
     frame: u64,
     explicit_name: Option<String>,
-) -> Result<sts_simulator::bot::search::DecisionAuditFixture, String> {
+) -> Result<sts_simulator::bot::combat::DecisionAuditFixture, String> {
     let replay = load_live_session_replay_path(raw)?;
     let view = derive_combat_replay_view(&replay);
     let step_index = find_combat_step_index_by_before_frame_id(&view, frame)
@@ -739,7 +741,7 @@ fn audit_frame_report(
     raw: &PathBuf,
     frame: u64,
     config: DecisionAuditConfig,
-) -> Result<sts_simulator::bot::search::DecisionAuditReport, String> {
+) -> Result<sts_simulator::bot::combat::DecisionAuditReport, String> {
     let fixture = fixture_from_raw_frame(raw, frame, None)?;
     audit_fixture(&fixture, config)
 }
@@ -795,10 +797,8 @@ fn export_preferences_from_raw(
             continue;
         }
         let reconstructed = reconstruct_combat_replay_step(&view, step_index)?;
-        let legal_moves = sts_simulator::bot::search::legal_moves_for_audit(
-            &reconstructed.before_engine,
-            &reconstructed.before_combat,
-        );
+        let legal_moves =
+            legal_moves_for_audit(&reconstructed.before_engine, &reconstructed.before_combat);
         if legal_moves.len() <= 1 {
             continue;
         }
@@ -809,11 +809,11 @@ fn export_preferences_from_raw(
             .iter()
             .filter(|monster| !monster.is_dying && !monster.is_escaped && monster.current_hp > 0)
             .map(|monster| match monster.current_intent {
-                sts_simulator::runtime::combat::Intent::Attack { hits, .. }
-                | sts_simulator::runtime::combat::Intent::AttackBuff { hits, .. }
-                | sts_simulator::runtime::combat::Intent::AttackDebuff { hits, .. }
-                | sts_simulator::runtime::combat::Intent::AttackDefend { hits, .. } => {
-                    monster.intent_dmg * hits as i32
+                sts_simulator::runtime::combat::Intent::Attack { .. }
+                | sts_simulator::runtime::combat::Intent::AttackBuff { .. }
+                | sts_simulator::runtime::combat::Intent::AttackDebuff { .. }
+                | sts_simulator::runtime::combat::Intent::AttackDefend { .. } => {
+                    monster.intent_preview_total_damage()
                 }
                 _ => 0,
             })
@@ -1319,7 +1319,7 @@ fn same_client_input(left: &ClientInput, right: &ClientInput) -> bool {
     }
 }
 
-fn render_search_move_detail(stat: &sts_simulator::bot::search::SearchMoveStat) -> String {
+fn render_search_move_detail(stat: &CombatMoveStat) -> String {
     let cluster_suffix = if stat.cluster_size > 1 {
         format!(
             " cluster_id={} cluster_size={} reduced_kind={} collapsed_members={}",
@@ -1455,7 +1455,7 @@ fn audit_recent_live_session(
 
     shortlisted.sort_by_key(|entry| entry.frame);
 
-    let coverage = sts_simulator::bot::CoverageDb::load_or_default();
+    let _coverage = sts_simulator::bot::CoverageDb::load_or_default();
     let mut lines = Vec::new();
     lines.push("recent live session audit".to_string());
     lines.push(format!(
@@ -1502,9 +1502,6 @@ fn audit_recent_live_session(
         let diagnostics = diagnose_root_search_with_depth_and_mode(
             &reconstructed.before_engine,
             &reconstructed.before_combat,
-            &coverage,
-            sts_simulator::bot::CoverageMode::Off,
-            None,
             depth_limit,
             0,
             equivalence_mode,
@@ -1728,13 +1725,10 @@ fn build_search_baseline_record(
     let diagnostics = diagnose_root_search_with_depth_and_mode_and_root_prior(
         &reconstructed.before_engine,
         &reconstructed.before_combat,
-        &sts_simulator::bot::CoverageDb::load_or_default(),
-        sts_simulator::bot::CoverageMode::Off,
-        None,
         depth_limit,
         0,
         equivalence_mode,
-        sts_simulator::bot::search::SearchProfilingLevel::Summary,
+        SearchProfilingLevel::Summary,
         root_prior,
     );
 
@@ -1749,7 +1743,7 @@ fn build_search_baseline_record(
 }
 
 fn build_search_baseline_record_from_fixture(
-    fixture: &sts_simulator::bot::search::DecisionAuditFixture,
+    fixture: &sts_simulator::bot::combat::DecisionAuditFixture,
     depth_limit: u32,
     top_k: usize,
     equivalence_mode: SearchEquivalenceMode,
@@ -1762,13 +1756,10 @@ fn build_search_baseline_record_from_fixture(
     let diagnostics = diagnose_root_search_with_depth_and_mode_and_root_prior(
         &engine,
         &combat,
-        &sts_simulator::bot::CoverageDb::load_or_default(),
-        sts_simulator::bot::CoverageMode::Off,
-        None,
         depth_limit,
         0,
         equivalence_mode,
-        sts_simulator::bot::search::SearchProfilingLevel::Summary,
+        SearchProfilingLevel::Summary,
         root_prior,
     );
     Ok(search_baseline_record_from_diagnostics(
@@ -1790,7 +1781,7 @@ fn search_baseline_record_from_diagnostics(
     depth_limit: u32,
     top_k: usize,
     combat: &sts_simulator::runtime::combat::CombatState,
-    diagnostics: sts_simulator::bot::search::SearchDiagnostics,
+    diagnostics: CombatDiagnostics,
 ) -> SearchBaselineRecord {
     SearchBaselineRecord {
         frame,
@@ -1852,7 +1843,7 @@ fn load_root_prior_provider(
 }
 
 fn default_root_prior_key_for_fixture(
-    fixture: &sts_simulator::bot::search::DecisionAuditFixture,
+    fixture: &sts_simulator::bot::combat::DecisionAuditFixture,
 ) -> Result<Option<RootPriorQueryKey>, String> {
     if let (Some(source_path), Some(frame)) = (&fixture.source_path, fixture.before_frame_id) {
         return Ok(Some(RootPriorQueryKey::ReplayFrame {

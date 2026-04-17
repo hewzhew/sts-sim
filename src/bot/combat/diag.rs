@@ -1,0 +1,67 @@
+use crate::state::core::ClientInput;
+
+use super::equivalence::{SearchEquivalenceKind, SearchEquivalenceMode};
+use super::profile::SearchProfileBreakdown;
+
+#[derive(Clone, Debug)]
+pub struct CombatMoveStat {
+    pub input: ClientInput,
+    pub visits: u32,
+    pub avg_score: f32,
+    pub base_order_score: f32,
+    pub order_score: f32,
+    pub root_prior_score: f32,
+    pub root_prior_hit: bool,
+    pub leaf_score: f32,
+    pub policy_bonus: f32,
+    pub sequence_bonus: f32,
+    pub sequence_survival_bonus: f32,
+    pub sequence_exhaust_bonus: f32,
+    pub sequence_frontload_bonus: f32,
+    pub sequence_defer_bonus: f32,
+    pub sequence_branch_bonus: f32,
+    pub sequence_downside_penalty: f32,
+    pub projected_hp: i32,
+    pub projected_block: i32,
+    pub projected_enemy_total: i32,
+    pub projected_unblocked: i32,
+    pub survives: bool,
+    pub realized_exhaust_block: i32,
+    pub realized_exhaust_draw: i32,
+    pub immediate_hp: i32,
+    pub immediate_block: i32,
+    pub immediate_energy: u8,
+    pub immediate_hand_len: usize,
+    pub immediate_draw_len: usize,
+    pub immediate_discard_len: usize,
+    pub immediate_exhaust_len: usize,
+    pub immediate_incoming: i32,
+    pub immediate_enemy_total: i32,
+    pub cluster_id: String,
+    pub cluster_size: usize,
+    pub collapsed_inputs: Vec<ClientInput>,
+    pub equivalence_kind: Option<SearchEquivalenceKind>,
+}
+
+#[derive(Clone, Debug)]
+pub struct CombatDiagnostics {
+    pub chosen_move: ClientInput,
+    pub legal_moves: usize,
+    pub reduced_legal_moves: usize,
+    pub simulations: u32,
+    pub elapsed_ms: u128,
+    pub depth_limit: u32,
+    pub max_decision_depth: usize,
+    pub root_width: usize,
+    pub branch_width: usize,
+    pub max_engine_steps: usize,
+    pub equivalence_mode: SearchEquivalenceMode,
+    pub root_prior_enabled: bool,
+    pub root_prior_key: Option<String>,
+    pub root_prior_weight: f32,
+    pub root_prior_hits: usize,
+    pub root_prior_reordered: bool,
+    pub top_moves: Vec<CombatMoveStat>,
+    pub decision_audit: serde_json::Value,
+    pub profile: SearchProfileBreakdown,
+}

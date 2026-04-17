@@ -87,7 +87,7 @@ pub fn analyze_combat(combat: &CombatState) -> CombatSignals {
             debuffing_monsters += 1;
         }
         if hits > 0 {
-            incoming_damage += monster.intent_dmg.max(0) * hits.max(1);
+            incoming_damage += monster.intent_preview_total_damage();
             max_intent_hits = max_intent_hits.max(hits.max(1));
         }
     }

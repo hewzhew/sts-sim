@@ -42,8 +42,8 @@ fn is_even_position(entity: &MonsterEntity, monsters: &[MonsterEntity]) -> bool 
 fn current_nip_damage(entity: &MonsterEntity, ascension_level: u8) -> i32 {
     if entity.darkling.nip_dmg > 0 {
         entity.darkling.nip_dmg
-    } else if entity.intent_dmg > 0 {
-        entity.intent_dmg
+    } else if entity.intent_preview_damage > 0 {
+        entity.intent_preview_damage
     } else if ascension_level >= 2 {
         11
     } else {
