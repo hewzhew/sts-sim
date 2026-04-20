@@ -225,7 +225,7 @@ pub fn get_potion_actions(
         PotionId::PowerPotion => {
             // Java: DiscoveryAction(CardType.POWER, potency) — opens choice screen with 3 Power cards.
             // SuspendForDiscovery consumes the correct 3+ cardRandomRng calls.
-            // diff_driver auto-resolves the discovery choice by matching Java snapshot.
+            // Replay continuation now depends on typed protocol continuation truth.
             bottom(
                 &mut actions,
                 Action::SuspendForDiscovery {

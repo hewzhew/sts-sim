@@ -1,12 +1,15 @@
 use super::frame::LiveFrame;
 use super::io::LiveCommIo;
 use super::snapshot::write_failure_snapshot;
-use super::LiveParityMode;
-use crate::bot::combat::monster_belief::{build_combat_belief_state, MonsterBeliefCertainty};
+use super::{LiveCombatMode, LiveExactTurnMode, LiveParityMode};
+use crate::bot::combat::legal_moves::protocol_root_moves;
+use crate::bot::combat::monster_belief::build_combat_belief_state;
 use crate::bot::combat::pressure::StatePressureFeatures;
 use crate::bot::combat::{
-    branch_family_for_card, describe_end_turn_options, diagnose_root_search,
-    diagnose_root_search_with_depth, BranchFamily, CombatDiagnostics, CombatMoveStat,
+    branch_family_for_card, describe_end_turn_options,
+    diagnose_root_search_with_depth_and_runtime_and_root_inputs,
+    diagnose_root_search_with_runtime_and_root_inputs, BranchFamily, CombatDiagnostics,
+    CombatMoveStat, SearchExactTurnMode, SearchRuntimeBudget,
 };
 use crate::bot::infra::comm as comm_mod;
 use crate::bot::infra::coverage_signatures::{
@@ -14,22 +17,71 @@ use crate::bot::infra::coverage_signatures::{
 };
 use crate::bot::infra::sidecar::{self, CombatTopCandidateRecord};
 use crate::bot::CoverageDb;
-use crate::content::monsters::EnemyId;
-use crate::diff::protocol::{
-    build_live_combat_snapshot as build_protocol_live_combat_snapshot, card_id_from_java,
+use crate::content::monsters::{resolve_monster_turn_plan, EnemyId};
+use crate::protocol::java::{
+    build_combat_affordance_snapshot,
+    build_live_observation_snapshot as build_protocol_live_observation_snapshot,
+    build_live_truth_snapshot as build_protocol_live_truth_snapshot, card_id_from_java,
     monster_id_from_java, power_id_from_java,
 };
-use crate::diff::replay::{ActionContext, DiffCategory, DiffResult};
 use crate::runtime::combat::CombatState;
 use crate::state::core::{ClientInput, EngineState};
-use serde::Serialize;
+use crate::verification::combat::{
+    build_combat_state_from_snapshots, compare_combat_states_from_snapshots, ActionContext,
+    DiffCategory, DiffResult,
+};
 use serde_json::Value;
 use std::io::Write;
+use std::time::{Duration, Instant};
 
 const SEARCH_DIAG_TOP_K: usize = 5;
-const SUSPICIOUS_SEQUENCE_THRESHOLD: f32 = 150_000.0;
-const SUSPICIOUS_EXHAUST_THRESHOLD: f32 = 80_000.0;
-const SUSPICIOUS_TOP_GAP_THRESHOLD: f32 = 3.0;
+const LIVE_BASELINE_SEARCH_TIMEOUT_MS: u64 = 250;
+const LIVE_ROOT_SEARCH_TIMEOUT_MS: u64 = 2_500;
+const LIVE_ROOT_EXACT_TURN_MAX_NODES: usize = 1_200;
+const LIVE_SAMPLED_AUDIT_INTERVAL: u64 = 8;
+
+fn log_combat_stage_enter(
+    live_io: &mut LiveCommIo,
+    frame_count: u64,
+    stage: &'static str,
+    detail: impl AsRef<str>,
+) -> Instant {
+    let detail = detail.as_ref();
+    writeln!(live_io.log, "  [STAGE] enter {stage} {detail}").unwrap();
+    writeln!(
+        live_io.focus_log,
+        "[STAGE] frame={frame_count} enter {stage} {detail}"
+    )
+    .unwrap();
+    let _ = live_io.log.flush();
+    let _ = live_io.focus_log.flush();
+    Instant::now()
+}
+
+fn log_combat_stage_exit(
+    live_io: &mut LiveCommIo,
+    frame_count: u64,
+    stage: &'static str,
+    started: Instant,
+    detail: impl AsRef<str>,
+) {
+    let elapsed_ms = started.elapsed().as_millis();
+    let detail = detail.as_ref();
+    writeln!(
+        live_io.log,
+        "  [STAGE] exit {stage} elapsed_ms={elapsed_ms} {detail}"
+    )
+    .unwrap();
+    if elapsed_ms >= 100 || matches!(stage, "baseline_search" | "root_search") {
+        writeln!(
+            live_io.focus_log,
+            "[STAGE] frame={frame_count} exit {stage} elapsed_ms={elapsed_ms} {detail}"
+        )
+        .unwrap();
+    }
+    let _ = live_io.log.flush();
+    let _ = live_io.focus_log.flush();
+}
 
 struct CombatDiffRecord {
     _frame: u64,
@@ -49,46 +101,6 @@ struct CombatStats {
     search_elapsed_max_ms: u128,
     diag_render_total_ms: u128,
     diag_render_max_ms: u128,
-}
-
-#[derive(Serialize)]
-struct CombatSearchSuspectRecord {
-    frame_count: u64,
-    response_id: Option<i64>,
-    state_frame_id: Option<i64>,
-    chosen_move: String,
-    heuristic_move: String,
-    search_move: String,
-    top_candidates: Vec<CombatTopCandidateRecord>,
-    top_gap: Option<f32>,
-    sequence_bonus: f32,
-    sequence_frontload_bonus: f32,
-    sequence_defer_bonus: f32,
-    sequence_branch_bonus: f32,
-    sequence_downside_penalty: f32,
-    survival_window_delta: f32,
-    exhaust_evidence_delta: f32,
-    realized_exhaust_block: i32,
-    realized_exhaust_draw: i32,
-    branch_family: Option<String>,
-    hidden_intent_active: bool,
-    visible_incoming: i32,
-    visible_unblocked: i32,
-    belief_expected_incoming: i32,
-    belief_expected_unblocked: i32,
-    belief_max_incoming: i32,
-    belief_max_unblocked: i32,
-    value_incoming: i32,
-    value_unblocked: i32,
-    survival_guard_incoming: i32,
-    survival_guard_unblocked: i32,
-    belief_attack_probability: f32,
-    belief_lethal_probability: f32,
-    belief_urgent_probability: f32,
-    heuristic_search_gap: bool,
-    large_sequence_bonus: bool,
-    tight_root_gap: bool,
-    reasons: Vec<String>,
 }
 
 fn log_potion_decision_trace(live_io: &mut LiveCommIo, combat: &CombatState) {
@@ -158,45 +170,6 @@ fn log_hidden_intent_belief(live_io: &mut LiveCommIo, combat: &CombatState) {
         belief.urgent_probability,
         belief.public_state_complete
     );
-
-    for monster in &belief.monsters {
-        let certainty = match monster.certainty {
-            MonsterBeliefCertainty::Exact => "exact",
-            MonsterBeliefCertainty::Distribution => "distribution",
-            MonsterBeliefCertainty::Unknown => "unknown",
-        };
-        let moves = if monster.predicted_moves.is_empty() {
-            "unknown".to_string()
-        } else {
-            monster
-                .predicted_moves
-                .iter()
-                .map(|predicted| {
-                    format!(
-                        "{}:{:?} p={:.2} dmg={}x{}",
-                        predicted.move_id,
-                        predicted.intent,
-                        predicted.probability,
-                        predicted.base_damage,
-                        predicted.hits
-                    )
-                })
-                .collect::<Vec<_>>()
-                .join(" | ")
-        };
-        let _ = writeln!(
-            live_io.log,
-            "  [BELIEF] monster={} certainty={} source={:?} expected={:.1} max={} attack_prob={:.2} rationale={} moves=[{}]",
-            monster.monster_name,
-            certainty,
-            monster.inference_source,
-            monster.expected_incoming_damage,
-            monster.max_incoming_damage,
-            monster.attack_probability,
-            monster.rationale_key.unwrap_or(""),
-            moves
-        );
-    }
 }
 
 fn summarize_cached_candidate_outcome(combat: &CombatState, stat: &CombatMoveStat) -> String {
@@ -233,6 +206,58 @@ fn total_enemy_hp_for_log(combat: &CombatState) -> i32 {
         .sum()
 }
 
+fn log_slow_search_summary(
+    live_io: &mut LiveCommIo,
+    frame_count: u64,
+    combat: &CombatState,
+    baseline_diag: Option<&CombatDiagnostics>,
+    search_diag: &CombatDiagnostics,
+) {
+    let baseline_ms = baseline_diag.map(|diag| diag.elapsed_ms).unwrap_or(0);
+    let root_ms = search_diag.elapsed_ms;
+    if baseline_ms < 500 && root_ms < 500 {
+        return;
+    }
+
+    let exact_turn_summary = decision_audit_exact_turn_summary(&search_diag.decision_audit)
+        .unwrap_or_else(|| "none".to_string());
+    let hand = combat
+        .zones
+        .hand
+        .iter()
+        .map(format_card)
+        .collect::<Vec<_>>()
+        .join(", ");
+    let monsters = combat
+        .entities
+        .monsters
+        .iter()
+        .filter(|monster| !monster.is_dying && !monster.is_escaped && monster.current_hp > 0)
+        .map(|monster| {
+            format!(
+                "{:?}:hp{}/{}:intent={:?}",
+                monster.monster_type,
+                monster.current_hp,
+                monster.max_hp,
+                monster.move_state.planned_visible_spec
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(" | ");
+
+    writeln!(
+        live_io.focus_log,
+        "[SLOW SEARCH] frame={frame_count} baseline_ms={baseline_ms} root_ms={root_ms} legal_moves={} chosen={} hand=[{}] monsters=[{}] exact_turn={} audit={}",
+        search_diag.legal_moves,
+        describe_client_input(combat, &search_diag.chosen_move),
+        hand,
+        monsters,
+        exact_turn_summary,
+        if baseline_diag.is_some() { "sync" } else { "off" }
+    )
+    .unwrap();
+}
+
 fn verbose_search_outcome_logging_enabled() -> bool {
     std::env::var("STS_LIVECOMM_VERBOSE_SEARCH_OUTCOME")
         .map(|value| {
@@ -242,6 +267,84 @@ fn verbose_search_outcome_logging_enabled() -> bool {
             )
         })
         .unwrap_or(false)
+}
+
+fn root_node_budget_for_legacy_budget(legacy_budget: u32) -> usize {
+    match legacy_budget {
+        0..=300 => 24,
+        301..=900 => 48,
+        901..=2_000 => 72,
+        _ => 96,
+    }
+}
+
+fn engine_step_budget_for_legacy_budget(legacy_budget: u32) -> usize {
+    match legacy_budget {
+        0..=300 => 120,
+        301..=900 => 160,
+        901..=2_000 => 220,
+        _ => 260,
+    }
+}
+
+fn audit_node_budget_for_legacy_budget(legacy_budget: u32) -> usize {
+    match legacy_budget {
+        0..=300 => 8,
+        301..=900 => 12,
+        _ => 16,
+    }
+}
+
+fn exact_turn_mode_for_live(mode: LiveExactTurnMode) -> SearchExactTurnMode {
+    match mode {
+        LiveExactTurnMode::Off => SearchExactTurnMode::Off,
+        LiveExactTurnMode::Auto => SearchExactTurnMode::Auto,
+        LiveExactTurnMode::Force => SearchExactTurnMode::Force,
+    }
+}
+
+fn live_root_search_budget(
+    legacy_budget: u32,
+    exact_turn_mode: LiveExactTurnMode,
+) -> SearchRuntimeBudget {
+    SearchRuntimeBudget {
+        wall_clock_deadline: Some(
+            Instant::now() + Duration::from_millis(LIVE_ROOT_SEARCH_TIMEOUT_MS),
+        ),
+        root_node_budget: root_node_budget_for_legacy_budget(legacy_budget),
+        engine_step_budget: engine_step_budget_for_legacy_budget(legacy_budget),
+        exact_turn_node_budget: LIVE_ROOT_EXACT_TURN_MAX_NODES
+            .min(root_node_budget_for_legacy_budget(legacy_budget) * 25),
+        audit_budget: audit_node_budget_for_legacy_budget(legacy_budget),
+        exact_turn_mode: exact_turn_mode_for_live(exact_turn_mode),
+    }
+}
+
+fn live_baseline_search_budget(legacy_budget: u32) -> SearchRuntimeBudget {
+    SearchRuntimeBudget {
+        wall_clock_deadline: Some(
+            Instant::now() + Duration::from_millis(LIVE_BASELINE_SEARCH_TIMEOUT_MS),
+        ),
+        root_node_budget: audit_node_budget_for_legacy_budget(legacy_budget),
+        engine_step_budget: engine_step_budget_for_legacy_budget(legacy_budget).min(120),
+        exact_turn_node_budget: 0,
+        audit_budget: audit_node_budget_for_legacy_budget(legacy_budget),
+        exact_turn_mode: SearchExactTurnMode::Off,
+    }
+}
+
+fn should_run_sync_audit(
+    mode: LiveCombatMode,
+    frame_count: u64,
+    search_diag: &CombatDiagnostics,
+) -> bool {
+    match mode {
+        LiveCombatMode::ChooserOnly => false,
+        LiveCombatMode::ChooserPlusSampledAudit => {
+            frame_count % LIVE_SAMPLED_AUDIT_INTERVAL == 0 || search_diag.timed_out
+        }
+        LiveCombatMode::FullDebug => true,
+    }
 }
 
 fn same_card_play_signature(
@@ -417,8 +520,10 @@ fn format_search_move_diag(combat: &CombatState, stat: &CombatMoveStat) -> Strin
 fn format_search_profile_summary(search_diag: &CombatDiagnostics) -> String {
     let profile = &search_diag.profile;
     format!(
-        "search_ms={} render_ms={} root(legal_ms={} reduce_ms={} reduce={}=>{} clones={} leaf_ms={} leaf_calls={} avg_branch={:.1}->{:.1}) recursive(legal_ms={} reduce_ms={} reduce={}=>{} clones={} leaf_ms={} leaf_calls={} avg_branch={:.1}->{:.1}) advance(ms={} calls={} steps={} p50={} p95={} max={}) sequence_judge_ms={} nodes={} terminal_nodes={}",
+        "search_ms={} chooser_ms={} audit_ms={} render_ms={} root(legal_ms={} reduce_ms={} reduce={}=>{} clones={} leaf_ms={} leaf_calls={} avg_branch={:.1}->{:.1}) recursive(legal_ms={} reduce_ms={} reduce={}=>{} clones={} leaf_ms={} leaf_calls={} avg_branch={:.1}->{:.1}) planner(ms={} calls={}) projection(ms={} calls={}) exact_turn(ms={} calls={}) engine_steps(ms={} calls={} steps={} p50={} p95={} max={}) cache(hits={} misses={}) timeout_source={} sequence_judge_ms={} nodes={} terminal_nodes={}",
         profile.search_total_ms,
+        profile.chooser_ms,
+        profile.audit_ms,
         profile.root_diag_render_ms,
         profile.root.legal_move_gen_ms,
         profile.root.transition_reduce_ms,
@@ -438,12 +543,21 @@ fn format_search_profile_summary(search_diag: &CombatDiagnostics) -> String {
         profile.recursive.leaf_eval_calls,
         profile.recursive.avg_branch_before_reduce,
         profile.recursive.avg_branch_after_reduce,
+        profile.planner.elapsed_ms,
+        profile.planner.calls,
+        profile.turn_close_projection.elapsed_ms,
+        profile.turn_close_projection.calls,
+        profile.exact_turn.elapsed_ms,
+        profile.exact_turn.calls,
         profile.advance_ms,
         profile.advance_calls,
         profile.advance_engine_steps,
         profile.advance_steps_p50,
         profile.advance_steps_p95,
         profile.advance_steps_max,
+        profile.cache_hits,
+        profile.cache_misses,
+        profile.timeout_source.as_deref().unwrap_or("none"),
         profile.sequence_judge_ms,
         profile.nodes.nodes_expanded,
         profile.nodes.terminal_nodes
@@ -454,6 +568,7 @@ fn log_combat_decision_audit_summary(live_io: &mut LiveCommIo, search_diag: &Com
     let root_summary = decision_audit_root_summary(&search_diag.decision_audit);
     let tactical_summary = decision_audit_tactical_summary(&search_diag.decision_audit);
     let hand_select_summary = decision_audit_hand_select_summary(&search_diag.decision_audit);
+    let exact_turn_summary = decision_audit_exact_turn_summary(&search_diag.decision_audit);
 
     if let Some(summary) = root_summary.as_deref() {
         writeln!(live_io.log, "  [AUDIT] root {}", summary).unwrap();
@@ -463,6 +578,9 @@ fn log_combat_decision_audit_summary(live_io: &mut LiveCommIo, search_diag: &Com
     }
     if let Some(summary) = hand_select_summary.as_deref() {
         writeln!(live_io.log, "  [AUDIT] hand_select {}", summary).unwrap();
+    }
+    if let Some(summary) = exact_turn_summary.as_deref() {
+        writeln!(live_io.log, "  [AUDIT] exact_turn {}", summary).unwrap();
     }
 
     let mut focus_parts = Vec::new();
@@ -474,6 +592,9 @@ fn log_combat_decision_audit_summary(live_io: &mut LiveCommIo, search_diag: &Com
     }
     if let Some(summary) = hand_select_summary {
         focus_parts.push(format!("hand_select {}", summary));
+    }
+    if let Some(summary) = exact_turn_summary {
+        focus_parts.push(format!("exact_turn {}", summary));
     }
     if !focus_parts.is_empty() {
         writeln!(live_io.focus_log, "[AUDIT] {}", focus_parts.join(" | ")).unwrap();
@@ -589,6 +710,66 @@ fn decision_audit_hand_select_summary(audit: &Value) -> Option<String> {
     })
 }
 
+fn decision_audit_exact_turn_summary(audit: &Value) -> Option<String> {
+    let exact_turn = audit.get("exact_turn_shadow")?;
+    if exact_turn.is_null() {
+        return None;
+    }
+
+    if exact_turn
+        .get("skipped")
+        .and_then(|value| value.as_bool())
+        .unwrap_or(false)
+    {
+        let reason = json_str(exact_turn.get("skip_reason")).unwrap_or("unknown");
+        let legal_moves = json_number_as_i64(exact_turn.get("legal_moves")).unwrap_or(0);
+        let living_monsters = json_number_as_i64(exact_turn.get("living_monsters")).unwrap_or(0);
+        let filled_potions = json_number_as_i64(exact_turn.get("filled_potions")).unwrap_or(0);
+        return Some(format!(
+            "skipped=true reason={reason} legal_moves={legal_moves} living_monsters={living_monsters} filled_potions={filled_potions}"
+        ));
+    }
+
+    let best = json_str(exact_turn.get("best_first_input")).unwrap_or("?");
+    let line_len = json_number_as_i64(exact_turn.get("best_line_len")).unwrap_or(0);
+    let end_states = json_number_as_i64(exact_turn.get("nondominated_end_states")).unwrap_or(0);
+    let nodes = json_number_as_i64(exact_turn.get("explored_nodes")).unwrap_or(0);
+    let prunes = json_number_as_i64(exact_turn.get("dominance_prunes")).unwrap_or(0);
+    let cycle_cuts = json_number_as_i64(exact_turn.get("cycle_cuts")).unwrap_or(0);
+    let truncated = exact_turn
+        .get("truncated")
+        .and_then(|value| value.as_bool())
+        .unwrap_or(false);
+    let agrees = exact_turn
+        .get("agrees_with_frontier")
+        .and_then(|value| value.as_bool())
+        .unwrap_or(false);
+
+    let mut parts = vec![
+        format!("best={best}"),
+        format!("line_len={line_len}"),
+        format!("ends={end_states}"),
+        format!("nodes={nodes}"),
+        format!("prunes={prunes}"),
+        format!("cycles={cycle_cuts}"),
+        format!("truncated={truncated}"),
+        format!("agrees={agrees}"),
+    ];
+
+    if let Some(resources) = exact_turn.get("best_resources") {
+        let final_hp = json_number_as_i64(resources.get("final_hp")).unwrap_or(0);
+        let final_block = json_number_as_i64(resources.get("final_block")).unwrap_or(0);
+        let spent_potions = json_number_as_i64(resources.get("spent_potions")).unwrap_or(0);
+        let hp_lost = json_number_as_i64(resources.get("hp_lost")).unwrap_or(0);
+        let exhausted_cards = json_number_as_i64(resources.get("exhausted_cards")).unwrap_or(0);
+        parts.push(format!(
+            "resources=hp{final_hp}/blk{final_block}/pots{spent_potions}/lost{hp_lost}/exh{exhausted_cards}"
+        ));
+    }
+
+    Some(parts.join(" "))
+}
+
 fn json_str(value: Option<&Value>) -> Option<&str> {
     value
         .and_then(|value| value.as_str())
@@ -611,192 +792,6 @@ fn json_number_as_f64(value: Option<&Value>) -> Option<f64> {
             .or_else(|| value.as_i64().map(|number| number as f64))
             .or_else(|| value.as_u64().map(|number| number as f64))
     })
-}
-
-fn maybe_record_search_suspect(
-    live_io: &mut LiveCommIo,
-    frame_count: u64,
-    frame: &LiveFrame,
-    combat: &CombatState,
-    baseline_diag: &CombatDiagnostics,
-    search_diag: &CombatDiagnostics,
-) -> Option<Vec<String>> {
-    let Some(chosen_stat) = search_diag.top_moves.first() else {
-        return None;
-    };
-
-    let top_gap = search_diag
-        .top_moves
-        .get(1)
-        .map(|second| chosen_stat.avg_score - second.avg_score);
-    let heuristic_search_gap = if same_or_equivalent_client_input(
-        combat,
-        &baseline_diag.chosen_move,
-        &search_diag.chosen_move,
-    ) {
-        false
-    } else {
-        let heuristic_rank_of_search = baseline_diag.top_moves.iter().position(|stat| {
-            same_or_equivalent_client_input(combat, &stat.input, &search_diag.chosen_move)
-        });
-        let search_rank_of_heuristic = search_diag.top_moves.iter().position(|stat| {
-            same_or_equivalent_client_input(combat, &stat.input, &baseline_diag.chosen_move)
-        });
-        heuristic_rank_of_search.is_none_or(|rank| rank >= 2)
-            || search_rank_of_heuristic.is_none_or(|rank| rank >= 2)
-    };
-    let large_sequence_bonus = chosen_stat.sequence_bonus.abs() >= SUSPICIOUS_SEQUENCE_THRESHOLD
-        || chosen_stat.sequence_survival_bonus.abs() >= SUSPICIOUS_SEQUENCE_THRESHOLD
-        || chosen_stat.sequence_exhaust_bonus.abs() >= SUSPICIOUS_EXHAUST_THRESHOLD
-        || chosen_stat.sequence_downside_penalty.abs() >= 8_000.0
-        || chosen_stat.sequence_branch_bonus.abs() >= 8_000.0;
-    let tight_root_gap = top_gap.is_some_and(|gap| gap.abs() <= SUSPICIOUS_TOP_GAP_THRESHOLD);
-    let sequencing_conflict = heuristic_search_gap
-        && (chosen_stat.sequence_frontload_bonus.abs() >= 3_000.0
-            || chosen_stat.sequence_defer_bonus.abs() >= 3_000.0
-            || chosen_stat.sequence_downside_penalty.abs() >= 3_000.0);
-    let branch_opening_conflict = heuristic_search_gap
-        && (chosen_stat.sequence_branch_bonus.abs() >= 3_500.0
-            || chosen_stat.sequence_downside_penalty.abs() >= 3_500.0);
-
-    let mut reasons = Vec::new();
-    if heuristic_search_gap {
-        reasons.push("heuristic_search_gap".to_string());
-    }
-    if large_sequence_bonus {
-        reasons.push("large_sequence_bonus".to_string());
-    }
-    if tight_root_gap {
-        reasons.push("tight_root_gap".to_string());
-    }
-    if sequencing_conflict {
-        reasons.push("sequencing_conflict".to_string());
-    }
-    if branch_opening_conflict {
-        reasons.push("branch_opening_conflict".to_string());
-    }
-    if reasons.is_empty() {
-        return None;
-    }
-
-    let pressure = StatePressureFeatures::from_combat(combat);
-    let top_candidates = search_diag
-        .top_moves
-        .iter()
-        .take(SEARCH_DIAG_TOP_K)
-        .map(|stat| combat_top_candidate_record(combat, stat))
-        .collect::<Vec<_>>();
-    let branch_family = branch_family_for_input(combat, &search_diag.chosen_move)
-        .map(|family| family.as_str().to_string());
-
-    let record = CombatSearchSuspectRecord {
-        frame_count,
-        response_id: frame.response_id(),
-        state_frame_id: frame.state_frame_id(),
-        chosen_move: describe_client_input(combat, &search_diag.chosen_move),
-        heuristic_move: describe_client_input(combat, &baseline_diag.chosen_move),
-        search_move: describe_client_input(combat, &search_diag.chosen_move),
-        top_candidates: top_candidates.clone(),
-        top_gap,
-        sequence_bonus: chosen_stat.sequence_bonus,
-        sequence_frontload_bonus: chosen_stat.sequence_frontload_bonus,
-        sequence_defer_bonus: chosen_stat.sequence_defer_bonus,
-        sequence_branch_bonus: chosen_stat.sequence_branch_bonus,
-        sequence_downside_penalty: chosen_stat.sequence_downside_penalty,
-        survival_window_delta: chosen_stat.sequence_survival_bonus,
-        exhaust_evidence_delta: chosen_stat.sequence_exhaust_bonus,
-        realized_exhaust_block: chosen_stat.realized_exhaust_block,
-        realized_exhaust_draw: chosen_stat.realized_exhaust_draw,
-        branch_family,
-        hidden_intent_active: pressure.hidden_intent_active,
-        visible_incoming: pressure.visible_incoming,
-        visible_unblocked: pressure.visible_unblocked,
-        belief_expected_incoming: pressure.belief_expected_incoming,
-        belief_expected_unblocked: pressure.belief_expected_unblocked,
-        belief_max_incoming: pressure.belief_max_incoming,
-        belief_max_unblocked: pressure.belief_max_unblocked,
-        value_incoming: pressure.value_incoming,
-        value_unblocked: pressure.value_unblocked,
-        survival_guard_incoming: pressure.survival_guard_incoming,
-        survival_guard_unblocked: pressure.survival_guard_unblocked,
-        belief_attack_probability: pressure.attack_probability,
-        belief_lethal_probability: pressure.lethal_probability,
-        belief_urgent_probability: pressure.urgent_probability,
-        heuristic_search_gap,
-        large_sequence_bonus,
-        tight_root_gap,
-        reasons: reasons.clone(),
-    };
-    if let Ok(encoded) = serde_json::to_string(&record) {
-        let _ = writeln!(live_io.combat_suspects, "{}", encoded);
-        let _ = live_io.combat_suspects.flush();
-    }
-    let belief = build_combat_belief_state(combat);
-    let hidden_intent_high_risk = belief.hidden_intent_active
-        && belief.urgent_probability >= 0.35
-        && belief
-            .monsters
-            .iter()
-            .any(|monster| monster.certainty != MonsterBeliefCertainty::Exact);
-    let high_risk_snapshot = sequencing_conflict
-        || branch_opening_conflict
-        || chosen_stat.sequence_downside_penalty.abs() >= 8_000.0
-        || top_gap.is_some_and(|gap| heuristic_search_gap && gap.abs() >= 12.0)
-        || hidden_intent_high_risk;
-    if high_risk_snapshot {
-        let _ = write_failure_snapshot(
-            live_io,
-            frame_count,
-            frame,
-            "high_risk_suspect",
-            reasons.clone(),
-            serde_json::json!({
-                "chosen_command": describe_client_input(combat, &search_diag.chosen_move),
-                "heuristic_move": describe_client_input(combat, &baseline_diag.chosen_move),
-                "search_move": describe_client_input(combat, &search_diag.chosen_move),
-                "top_gap": top_gap,
-                "sequencing": {
-                    "sequence_bonus": chosen_stat.sequence_bonus,
-                    "frontload_bonus": chosen_stat.sequence_frontload_bonus,
-                    "defer_bonus": chosen_stat.sequence_defer_bonus,
-                    "branch_bonus": chosen_stat.sequence_branch_bonus,
-                    "downside_penalty": chosen_stat.sequence_downside_penalty,
-                    "survival_window_delta": chosen_stat.sequence_survival_bonus,
-                    "exhaust_evidence_delta": chosen_stat.sequence_exhaust_bonus,
-                },
-                "belief_summary": {
-                    "hidden_intent_active": belief.hidden_intent_active,
-                    "expected_incoming": belief.expected_incoming_damage,
-                    "max_incoming": belief.max_incoming_damage,
-                    "attack_probability": belief.attack_probability,
-                    "lethal_probability": belief.lethal_probability,
-                    "urgent_probability": belief.urgent_probability,
-                },
-                "pressure_summary": {
-                    "hidden_intent_active": pressure.hidden_intent_active,
-                    "visible_incoming": pressure.visible_incoming,
-                    "visible_unblocked": pressure.visible_unblocked,
-                    "belief_expected_incoming": pressure.belief_expected_incoming,
-                    "belief_expected_unblocked": pressure.belief_expected_unblocked,
-                    "belief_max_incoming": pressure.belief_max_incoming,
-                    "belief_max_unblocked": pressure.belief_max_unblocked,
-                    "value_incoming": pressure.value_incoming,
-                    "value_unblocked": pressure.value_unblocked,
-                    "survival_guard_incoming": pressure.survival_guard_incoming,
-                    "survival_guard_unblocked": pressure.survival_guard_unblocked,
-                    "lethal_pressure": pressure.lethal_pressure,
-                    "urgent_pressure": pressure.urgent_pressure,
-                    "belief_attack_probability": pressure.attack_probability,
-                    "belief_lethal_probability": pressure.lethal_probability,
-                    "belief_urgent_probability": pressure.urgent_probability,
-                },
-                "top_candidates": top_candidates,
-            }),
-        );
-        return Some(reasons);
-    }
-
-    None
 }
 
 fn combat_top_candidate_record(
@@ -837,14 +832,9 @@ pub(super) enum CombatFrameOutcome {
 }
 
 fn should_fail_fast_on_combat_snapshot(trigger_kind: &str, reasons: &[String]) -> bool {
+    let _ = reasons;
     match trigger_kind {
         "validation_failure" | "engine_bug" => true,
-        "high_risk_suspect" => reasons.iter().any(|reason| {
-            matches!(
-                reason.as_str(),
-                "large_sequence_bonus" | "branch_opening_conflict" | "sequencing_conflict"
-            )
-        }),
         _ => false,
     }
 }
@@ -863,6 +853,10 @@ pub(super) struct CombatRuntime {
     pub(super) last_combat_truth: Option<CombatState>,
     pub(super) last_input: Option<ClientInput>,
     pub(super) action_context: ActionContext,
+    pub(super) last_root_action_source: Option<String>,
+    pub(super) last_root_action_id: Option<String>,
+    pub(super) last_root_action_command: Option<String>,
+    pub(super) last_protocol_root_action_count: Option<usize>,
     combat_stats: Option<CombatStats>,
 }
 
@@ -1000,6 +994,10 @@ impl CombatRuntime {
     ) {
         self.last_combat_truth = None;
         self.last_input = None;
+        self.last_root_action_source = None;
+        self.last_root_action_id = None;
+        self.last_root_action_command = None;
+        self.last_protocol_root_action_count = None;
         if let Some(stats) = self.combat_stats.take() {
             stats.write_summary(log, frame_count.saturating_sub(1));
             if stats.has_findings() {
@@ -1053,7 +1051,8 @@ impl CombatRuntime {
         response_id: Option<i64>,
         state_frame_id: Option<i64>,
         predicted: &CombatState,
-        java_snapshot: &Value,
+        truth_snapshot: &Value,
+        observation_snapshot: &Value,
         engine_bug_summary_interval: usize,
         engine_bug_total: &mut usize,
         content_gap_total: &mut usize,
@@ -1092,8 +1091,8 @@ impl CombatRuntime {
         .unwrap();
         writeln!(focus_log, "{}", parity_fail_line.trim_start()).unwrap();
         writeln!(focus_log, "{}", cause_line.trim_start()).unwrap();
-        write_failure_context(focus_log, predicted, java_snapshot);
-        write_failure_context(log, predicted, java_snapshot);
+        write_failure_context(focus_log, predicted, truth_snapshot, observation_snapshot);
+        write_failure_context(log, predicted, truth_snapshot, observation_snapshot);
 
         let stats = self.combat_stats.as_mut().unwrap();
         for d in action_diffs {
@@ -1217,11 +1216,12 @@ fn format_rust_monster_line(
         flags.push("half_dead");
     }
     let powers = format_powers(cs, monster.id);
+    let identity = cs.monster_protocol_identity(monster.id);
     let identity = format!(
         " inst={:?} spawn={:?} draw_x={:?}",
-        monster.protocol_identity.instance_id,
-        monster.protocol_identity.spawn_order,
-        monster.protocol_identity.draw_x
+        identity.and_then(|state| state.instance_id),
+        identity.and_then(|state| state.spawn_order),
+        identity.and_then(|state| state.draw_x)
     );
     format!(
         "    Rust M[{}] {} id={} hp={}/{} blk={} intent={:?}{}{}{}",
@@ -1231,7 +1231,7 @@ fn format_rust_monster_line(
         monster.current_hp,
         monster.max_hp,
         monster.block,
-        monster.current_intent,
+        resolve_monster_turn_plan(cs, monster).summary_spec(),
         if powers.is_empty() {
             String::new()
         } else {
@@ -1246,39 +1246,56 @@ fn format_rust_monster_line(
     )
 }
 
-fn format_java_monster_line(index: usize, monster: &Value) -> String {
+fn format_java_monster_line(
+    index: usize,
+    truth_monster: &Value,
+    observation_monster: Option<&Value>,
+) -> String {
+    let bool_field = |key: &str| {
+        observation_monster
+            .and_then(|monster| monster.get(key))
+            .or_else(|| truth_monster.get(key))
+            .and_then(|value| value.as_bool())
+            .unwrap_or(false)
+    };
+    let str_field = |key: &str| {
+        observation_monster
+            .and_then(|monster| monster.get(key))
+            .or_else(|| truth_monster.get(key))
+            .and_then(|value| value.as_str())
+            .unwrap_or("?")
+    };
     let mut flags = Vec::new();
-    if monster["is_gone"].as_bool().unwrap_or(false)
-        || monster["is_dying"].as_bool().unwrap_or(false)
-    {
+    if bool_field("is_gone") || bool_field("is_dying") {
         flags.push("dead");
     }
-    if monster["half_dead"].as_bool().unwrap_or(false) {
+    if bool_field("half_dead") {
         flags.push("half_dead");
     }
-    if monster["is_escaping"].as_bool().unwrap_or(false) {
+    if bool_field("is_escaping") {
         flags.push("escaping");
     }
-    let powers = format_java_powers(monster);
+    let powers = format_java_powers(truth_monster);
     format!(
         "    Java M[{}] {} id={} hp={}/{} blk={} intent={} move_id={} inst={:?} spawn={:?} draw_x={:?}{}{}",
         index,
-        monster["name"]
-            .as_str()
-            .or_else(|| monster["id"].as_str())
-            .unwrap_or("?"),
-        monster["id"].as_str().unwrap_or("?"),
-        monster["current_hp"].as_i64().unwrap_or(-1),
-        monster["max_hp"].as_i64().unwrap_or(-1),
-        monster["block"].as_i64().unwrap_or(-1),
-        monster["intent"].as_str().unwrap_or("?"),
-        monster["move_id"].as_i64().unwrap_or(-1),
-        monster["monster_instance_id"].as_u64(),
-        monster["spawn_order"].as_u64(),
-        monster
-            .get("draw_x")
+        str_field("name"),
+        truth_monster["id"].as_str().unwrap_or("?"),
+        truth_monster["current_hp"].as_i64().unwrap_or(-1),
+        truth_monster["max_hp"].as_i64().unwrap_or(-1),
+        truth_monster["block"].as_i64().unwrap_or(-1),
+        str_field("intent"),
+        truth_monster["move_id"].as_i64().unwrap_or(-1),
+        truth_monster["monster_instance_id"].as_u64(),
+        truth_monster["spawn_order"].as_u64(),
+        observation_monster
+            .and_then(|monster| monster.get("draw_x"))
             .and_then(|v| v.as_i64())
-            .or_else(|| monster.get("draw_x").and_then(|v| v.as_f64().map(|x| x.round() as i64))),
+            .or_else(|| {
+                observation_monster
+                    .and_then(|monster| monster.get("draw_x"))
+                    .and_then(|v| v.as_f64().map(|x| x.round() as i64))
+            }),
         if powers.is_empty() {
             String::new()
         } else {
@@ -1292,14 +1309,21 @@ fn format_java_monster_line(index: usize, monster: &Value) -> String {
     )
 }
 
-fn write_failure_context<W: Write>(log: &mut W, predicted: &CombatState, java_snapshot: &Value) {
+fn write_failure_context<W: Write>(
+    log: &mut W,
+    predicted: &CombatState,
+    truth_snapshot: &Value,
+    observation_snapshot: &Value,
+) {
     let rust_names: Vec<String> = predicted
         .entities
         .monsters
         .iter()
         .map(|monster| monster_display_name(monster.monster_type))
         .collect();
-    let java_names: Vec<String> = java_snapshot["monsters"]
+    let truth_monsters = truth_snapshot["monsters"].as_array();
+    let observation_monsters = observation_snapshot["monsters"].as_array();
+    let java_names: Vec<String> = truth_snapshot["monsters"]
         .as_array()
         .map_or(Vec::new(), |arr| {
             arr.iter()
@@ -1327,10 +1351,10 @@ fn write_failure_context<W: Write>(log: &mut W, predicted: &CombatState, java_sn
         predicted.zones.draw_pile.len(),
         predicted.zones.discard_pile.len(),
         predicted.zones.exhaust_pile.len(),
-        java_snapshot["hand"].as_array().map_or(0, |arr| arr.len()),
-        java_snapshot["draw_pile"].as_array().map_or(0, |arr| arr.len()),
-        java_snapshot["discard_pile"].as_array().map_or(0, |arr| arr.len()),
-        java_snapshot["exhaust_pile"].as_array().map_or(0, |arr| arr.len()),
+        truth_snapshot["hand"].as_array().map_or(0, |arr| arr.len()),
+        truth_snapshot["draw_pile"].as_array().map_or(0, |arr| arr.len()),
+        truth_snapshot["discard_pile"].as_array().map_or(0, |arr| arr.len()),
+        truth_snapshot["exhaust_pile"].as_array().map_or(0, |arr| arr.len()),
     )
     .unwrap();
     writeln!(log, "  [RUST PREDICTED]").unwrap();
@@ -1343,31 +1367,65 @@ fn write_failure_context<W: Write>(log: &mut W, predicted: &CombatState, java_sn
         .unwrap();
     }
     writeln!(log, "  [JAVA TRUTH]").unwrap();
-    if let Some(monsters) = java_snapshot["monsters"].as_array() {
+    if let Some(monsters) = truth_monsters {
         for (index, monster) in monsters.iter().enumerate() {
-            writeln!(log, "{}", format_java_monster_line(index, monster)).unwrap();
+            let observation_monster = observation_monsters.and_then(|entries| entries.get(index));
+            writeln!(
+                log,
+                "{}",
+                format_java_monster_line(index, monster, observation_monster)
+            )
+            .unwrap();
         }
     }
 }
 
-fn log_hexaghost_end_turn_debug(log: &mut std::fs::File, expected_cs: &CombatState, cv: &Value) {
+fn is_hexaghost_protocol_monster(monster: &Value) -> bool {
+    monster
+        .get("id")
+        .and_then(|v| v.as_str())
+        .is_some_and(|id| id.eq_ignore_ascii_case("Hexaghost"))
+}
+
+fn log_hexaghost_end_turn_debug(
+    log: &mut std::fs::File,
+    expected_cs: &CombatState,
+    truth_snapshot: &Value,
+    observation_snapshot: &Value,
+) {
     let rust_hex = expected_cs
         .entities
         .monsters
         .iter()
         .find(|m| is_hexaghost_monster_type(m.monster_type));
-    let java_hex = cv
+    let truth_hex_index = truth_snapshot
         .get("monsters")
         .and_then(|v| v.as_array())
-        .and_then(|arr| {
-            arr.iter().find(|m| {
-                m.get("id")
-                    .and_then(|v| v.as_str())
-                    .is_some_and(|id| id.eq_ignore_ascii_case("Hexaghost"))
-            })
+        .and_then(|arr| arr.iter().position(is_hexaghost_protocol_monster));
+    let truth_hex = truth_hex_index.and_then(|index| {
+        truth_snapshot
+            .get("monsters")
+            .and_then(|v| v.as_array())
+            .and_then(|arr| arr.get(index))
+    });
+    let observation_hex = truth_hex_index
+        .and_then(|index| {
+            observation_snapshot
+                .get("monsters")
+                .and_then(|v| v.as_array())
+                .and_then(|arr| arr.get(index))
+        })
+        .or_else(|| {
+            observation_snapshot
+                .get("monsters")
+                .and_then(|v| v.as_array())
+                .and_then(|arr| {
+                    arr.iter()
+                        .find(|monster| is_hexaghost_protocol_monster(monster))
+                })
         });
 
-    if rust_hex.is_none() && java_hex.is_none() {
+    if rust_hex.is_none() && truth_hex.is_none() && observation_hex.is_none() {
         return;
     }
 
@@ -1379,31 +1437,55 @@ fn log_hexaghost_end_turn_debug(log: &mut std::fs::File, expected_cs: &CombatSta
             rust_hex.current_hp,
             rust_hex.max_hp,
             rust_hex.block,
-            rust_hex.next_move_byte,
-            rust_hex.current_intent,
-            format_move_history(&rust_hex.move_history),
-            rust_hex.intent_preview_damage
+            rust_hex.planned_move_id(),
+            resolve_monster_turn_plan(expected_cs, rust_hex).summary_spec(),
+            format_move_history(rust_hex.move_history()),
+            crate::projection::combat::project_monster_move_preview_in_combat(expected_cs, rust_hex)
+                .damage_per_hit
+                .unwrap_or(0)
         )
         .unwrap();
     }
-    if let Some(java_hex) = java_hex {
+    if truth_hex.is_some() || observation_hex.is_some() {
         writeln!(
             log,
             "    java_post_end: hp={}/{} blk={} move_id={} intent={} base_dmg={} adj_dmg={} hits={}",
-            java_hex.get("current_hp").and_then(|v| v.as_i64()).unwrap_or(-1),
-            java_hex.get("max_hp").and_then(|v| v.as_i64()).unwrap_or(-1),
-            java_hex.get("block").and_then(|v| v.as_i64()).unwrap_or(-1),
-            java_hex.get("move_id").and_then(|v| v.as_i64()).unwrap_or(-1),
-            java_hex.get("intent").and_then(|v| v.as_str()).unwrap_or("?"),
-            java_hex
-                .get("move_base_damage")
+            truth_hex
+                .and_then(|monster| monster.get("current_hp"))
                 .and_then(|v| v.as_i64())
                 .unwrap_or(-1),
-            java_hex
-                .get("move_adjusted_damage")
+            truth_hex
+                .and_then(|monster| monster.get("max_hp"))
                 .and_then(|v| v.as_i64())
                 .unwrap_or(-1),
-            java_hex.get("move_hits").and_then(|v| v.as_i64()).unwrap_or(-1)
+            truth_hex
+                .and_then(|monster| monster.get("block"))
+                .and_then(|v| v.as_i64())
+                .unwrap_or(-1),
+            truth_hex
+                .and_then(|monster| monster.get("move_id"))
+                .and_then(|v| v.as_i64())
+                .unwrap_or(-1),
+            observation_hex
+                .and_then(|monster| monster.get("intent"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("?"),
+            truth_hex
+                .and_then(|monster| monster.get("move_base_damage"))
+                .and_then(|v| v.as_i64())
+                .unwrap_or(-1),
+            observation_hex
+                .and_then(|monster| monster.get("move_adjusted_damage"))
+                .and_then(|v| v.as_i64())
+                .unwrap_or(-1),
+            truth_hex
+                .and_then(|monster| monster.get("move_hits"))
+                .or_else(|| {
+                    observation_hex
+                        .and_then(|monster| monster.get("move_hits"))
+                })
+                .and_then(|v| v.as_i64())
+                .unwrap_or(-1)
         )
         .unwrap();
     }
@@ -1415,8 +1497,11 @@ pub(super) fn handle_live_combat_frame<W: Write>(
     gs: &Value,
     frame_count: u64,
     parity_mode: LiveParityMode,
+    combat_mode: LiveCombatMode,
+    exact_turn_mode: LiveExactTurnMode,
     fail_fast_debug: bool,
     combat_search_budget: u32,
+    legacy_root_legal_moves: bool,
     last_sent_cmd: &mut String,
     cmd_failed_count: &mut u32,
     engine_bug_total: &mut usize,
@@ -1428,12 +1513,23 @@ pub(super) fn handle_live_combat_frame<W: Write>(
     engine_bug_summary_interval: usize,
     signature_source_file: &str,
 ) -> CombatFrameOutcome {
-    let cv = frame
-        .combat_state()
-        .expect("combat branch requires combat_state");
     let rv = frame.relics();
-    let combat_snapshot = build_live_combat_snapshot(gs);
-    let truth = crate::diff::state_sync::build_combat_state(&combat_snapshot, rv);
+    let rebuild_started = log_combat_stage_enter(live_io, frame_count, "rebuild_truth", "");
+    let combat_truth_snapshot = build_live_truth_snapshot(gs);
+    let combat_observation_snapshot = build_live_observation_snapshot(gs);
+    let truth =
+        build_combat_state_from_snapshots(&combat_truth_snapshot, &combat_observation_snapshot, rv);
+    log_combat_stage_exit(
+        live_io,
+        frame_count,
+        "rebuild_truth",
+        rebuild_started,
+        format!(
+            "monsters={} hand={}",
+            truth.entities.monsters.len(),
+            truth.zones.hand.len()
+        ),
+    );
 
     if let (Some(prev_truth), Some(prev_input)) = (
         &combat_runtime.last_combat_truth,
@@ -1499,7 +1595,15 @@ pub(super) fn handle_live_combat_frame<W: Write>(
     combat_runtime.ensure_combat_stats(frame_count);
     log_combat_overview(&mut live_io.log, frame_count, &truth);
 
-    let sync_diffs = validate_parse(&truth, cv);
+    let validate_started = log_combat_stage_enter(live_io, frame_count, "validate_parse", "");
+    let sync_diffs = validate_parse(&truth, &combat_truth_snapshot, &combat_observation_snapshot);
+    log_combat_stage_exit(
+        live_io,
+        frame_count,
+        "validate_parse",
+        validate_started,
+        format!("diffs={}", sync_diffs.len()),
+    );
     if !sync_diffs.is_empty() {
         writeln!(live_io.log, "  >>> PARSE DIFF ({}) <<<", sync_diffs.len()).unwrap();
         writeln!(
@@ -1511,7 +1615,12 @@ pub(super) fn handle_live_combat_frame<W: Write>(
             frame.state_frame_id()
         )
         .unwrap();
-        write_failure_context(&mut live_io.focus_log, &truth, cv);
+        write_failure_context(
+            &mut live_io.focus_log,
+            &truth,
+            &combat_truth_snapshot,
+            &combat_observation_snapshot,
+        );
         for d in &sync_diffs {
             writeln!(live_io.log, "    {}", d).unwrap();
             writeln!(live_io.focus_log, "    {}", d).unwrap();
@@ -1564,11 +1673,20 @@ pub(super) fn handle_live_combat_frame<W: Write>(
 
     let mut saw_action_diff = false;
     if let Some(expected_cs) = combat_runtime.expected_combat_state.take() {
-        let action_diffs = crate::diff::replay::compare_states(
+        let parity_started = log_combat_stage_enter(live_io, frame_count, "action_parity", "");
+        let action_diffs = compare_combat_states_from_snapshots(
             &expected_cs,
-            cv,
+            &combat_truth_snapshot,
+            &combat_observation_snapshot,
             combat_runtime.action_context.was_end_turn,
             &combat_runtime.action_context,
+        );
+        log_combat_stage_exit(
+            live_io,
+            frame_count,
+            "action_parity",
+            parity_started,
+            format!("diffs={}", action_diffs.len()),
         );
 
         if !action_diffs.is_empty() {
@@ -1578,18 +1696,17 @@ pub(super) fn handle_live_combat_frame<W: Write>(
                     .monsters
                     .iter()
                     .any(|m| is_hexaghost_monster_type(m.monster_type))
-                    || cv
+                    || combat_truth_snapshot
                         .get("monsters")
                         .and_then(|v| v.as_array())
-                        .is_some_and(|arr| {
-                            arr.iter().any(|m| {
-                                m.get("id")
-                                    .and_then(|v| v.as_str())
-                                    .is_some_and(|id| id.eq_ignore_ascii_case("Hexaghost"))
-                            })
-                        }))
+                        .is_some_and(|arr| arr.iter().any(is_hexaghost_protocol_monster)))
             {
-                log_hexaghost_end_turn_debug(&mut live_io.log, &expected_cs, cv);
+                log_hexaghost_end_turn_debug(
+                    &mut live_io.log,
+                    &expected_cs,
+                    &combat_truth_snapshot,
+                    &combat_observation_snapshot,
+                );
             }
             combat_runtime.record_action_diffs(
                 &action_diffs,
@@ -1599,7 +1716,8 @@ pub(super) fn handle_live_combat_frame<W: Write>(
                 frame.response_id(),
                 frame.state_frame_id(),
                 &expected_cs,
-                cv,
+                &combat_truth_snapshot,
+                &combat_observation_snapshot,
                 engine_bug_summary_interval,
                 engine_bug_total,
                 content_gap_total,
@@ -1661,22 +1779,190 @@ pub(super) fn handle_live_combat_frame<W: Write>(
 
     log_hidden_intent_belief(live_io, &truth);
 
-    let baseline_diag =
-        diagnose_root_search_with_depth(&EngineState::CombatPlayerTurn, &truth, 2, 0);
-    let mut search_diag =
-        diagnose_root_search(&EngineState::CombatPlayerTurn, &truth, combat_search_budget);
+    let protocol_meta = frame.protocol_meta().unwrap_or(&Value::Null);
+    let protocol_affordance = match build_combat_affordance_snapshot(protocol_meta, &truth) {
+        Ok(snapshot) => snapshot,
+        Err(err) => {
+            writeln!(
+                live_io.log,
+                "  [PROTO ROOT BUG] invalid combat_action_space: {}",
+                err
+            )
+            .unwrap();
+            let _ = write_failure_snapshot(
+                live_io,
+                frame_count,
+                frame,
+                "protocol_root_action_space",
+                vec!["invalid_combat_action_space".to_string(), err.clone()],
+                serde_json::json!({
+                    "chosen_command": last_sent_cmd,
+                    "root_action_source": "protocol",
+                }),
+            );
+            if !legacy_root_legal_moves {
+                return CombatFrameOutcome::StopForFailFast;
+            }
+            None
+        }
+    };
+    let protocol_root_action_count = protocol_affordance
+        .as_ref()
+        .map(|snapshot| snapshot.len())
+        .unwrap_or(0);
+    if frame.has_combat_action_space_capability()
+        && protocol_affordance
+            .as_ref()
+            .is_some_and(|snapshot| snapshot.is_empty())
+    {
+        writeln!(
+            live_io.log,
+            "  [PROTO ROOT BUG] combat_action_space exported zero root actions"
+        )
+        .unwrap();
+        let _ = write_failure_snapshot(
+            live_io,
+            frame_count,
+            frame,
+            "protocol_root_action_space",
+            vec!["empty_combat_action_space".to_string()],
+            serde_json::json!({
+                "chosen_command": last_sent_cmd,
+                "root_action_source": "protocol",
+            }),
+        );
+        if !legacy_root_legal_moves {
+            return CombatFrameOutcome::StopForFailFast;
+        }
+    }
+    let root_inputs = protocol_affordance
+        .as_ref()
+        .filter(|snapshot| !snapshot.is_empty())
+        .map(protocol_root_moves);
+    let root_action_source = if root_inputs.is_some() {
+        "protocol"
+    } else if legacy_root_legal_moves {
+        "legacy"
+    } else if frame.has_combat_action_space_capability() {
+        writeln!(
+            live_io.log,
+            "  [PROTO ROOT BUG] combat_action_space missing while capability=true"
+        )
+        .unwrap();
+        let _ = write_failure_snapshot(
+            live_io,
+            frame_count,
+            frame,
+            "protocol_root_action_space",
+            vec!["missing_combat_action_space".to_string()],
+            serde_json::json!({
+                "chosen_command": last_sent_cmd,
+                "root_action_source": "protocol",
+            }),
+        );
+        return CombatFrameOutcome::StopForFailFast;
+    } else {
+        "legacy"
+    };
+
+    let root_started = log_combat_stage_enter(
+        live_io,
+        frame_count,
+        "root_search",
+        format!(
+            "legacy_budget={combat_search_budget} mode={:?} exact_turn={:?} root_source={} protocol_root_action_count={}",
+            combat_mode, exact_turn_mode, root_action_source, protocol_root_action_count
+        ),
+    );
+    let root_runtime = live_root_search_budget(combat_search_budget, exact_turn_mode);
+    let mut search_diag = diagnose_root_search_with_runtime_and_root_inputs(
+        &EngineState::CombatPlayerTurn,
+        &truth,
+        combat_search_budget,
+        root_runtime,
+        root_inputs.clone(),
+    );
+    log_combat_stage_exit(
+        live_io,
+        frame_count,
+        "root_search",
+        root_started,
+        format!(
+            "chosen={} legal_moves={} elapsed_ms={} timed_out={}",
+            describe_client_input(&truth, &search_diag.chosen_move),
+            search_diag.legal_moves,
+            search_diag.elapsed_ms,
+            search_diag.timed_out,
+        ),
+    );
+    if search_diag.timed_out {
+        writeln!(
+            live_io.log,
+            "  [SEARCH TIMEOUT] root_search hit live timeout/max-nodes; using best partial result"
+        )
+        .unwrap();
+        writeln!(
+            live_io.focus_log,
+            "[SEARCH TIMEOUT] frame={frame_count} root_search partial_result budget={combat_search_budget} elapsed_ms={}",
+            search_diag.elapsed_ms
+        )
+        .unwrap();
+    }
+    let baseline_diag = if should_run_sync_audit(combat_mode, frame_count, &search_diag) {
+        let baseline_started = log_combat_stage_enter(live_io, frame_count, "baseline_search", "");
+        let baseline_runtime = live_baseline_search_budget(combat_search_budget);
+        let mut baseline_diag = diagnose_root_search_with_depth_and_runtime_and_root_inputs(
+            &EngineState::CombatPlayerTurn,
+            &truth,
+            2,
+            0,
+            baseline_runtime,
+            root_inputs.clone(),
+        );
+        baseline_diag.profile.audit_ms = baseline_diag.elapsed_ms;
+        log_combat_stage_exit(
+            live_io,
+            frame_count,
+            "baseline_search",
+            baseline_started,
+            format!(
+                "chosen={} legal_moves={} timed_out={}",
+                describe_client_input(&truth, &baseline_diag.chosen_move),
+                baseline_diag.legal_moves,
+                baseline_diag.timed_out,
+            ),
+        );
+        if baseline_diag.timed_out {
+            writeln!(
+                live_io.log,
+                "  [SEARCH TIMEOUT] baseline_search fell back to partial frontier results"
+            )
+            .unwrap();
+        }
+        Some(baseline_diag)
+    } else {
+        None
+    };
+    if let Some(baseline_diag) = baseline_diag.as_ref() {
+        search_diag.profile.audit_ms = baseline_diag.elapsed_ms;
+    }
     let verbose_outcome_logging = verbose_search_outcome_logging_enabled();
-    let render_started = std::time::Instant::now();
+    let render_started = log_combat_stage_enter(live_io, frame_count, "search_render", "");
     writeln!(
         live_io.log,
-        "  [SEARCH DIAG] budget={} depth_limit={} max_depth={} root_width={} branch_width={} max_engine_steps={} elapsed_ms={} legal_moves={} reduced_legal_moves={} equivalence_mode={} simulations={} chosen={}",
+        "  [SEARCH DIAG] budget={} root_node_budget={} engine_step_budget={} exact_turn_node_budget={} audit_budget={} depth_limit={} max_depth={} root_width={} branch_width={} max_engine_steps={} elapsed_ms={} timed_out={} legal_moves={} reduced_legal_moves={} equivalence_mode={} simulations={} chosen={}",
         combat_search_budget,
+        root_runtime.root_node_budget,
+        root_runtime.engine_step_budget,
+        root_runtime.exact_turn_node_budget,
+        root_runtime.audit_budget,
         search_diag.depth_limit,
         search_diag.max_decision_depth,
         search_diag.root_width,
         search_diag.branch_width,
         search_diag.max_engine_steps,
         search_diag.elapsed_ms,
+        search_diag.timed_out,
         search_diag.legal_moves,
         search_diag.reduced_legal_moves,
         search_diag.equivalence_mode.as_str(),
@@ -1703,38 +1989,32 @@ pub(super) fn handle_live_combat_frame<W: Write>(
     let render_elapsed_ms = render_started.elapsed().as_millis();
     search_diag.profile.root_diag_render_ms = render_elapsed_ms;
     combat_runtime.record_search_timing(search_diag.elapsed_ms, render_elapsed_ms);
+    log_combat_stage_exit(
+        live_io,
+        frame_count,
+        "search_render",
+        render_started,
+        format!("top_moves={}", search_diag.top_moves.len()),
+    );
     writeln!(
         live_io.log,
         "  [SEARCH PROFILE] {}",
         format_search_profile_summary(&search_diag)
     )
     .unwrap();
+    writeln!(
+        live_io.log,
+        "  [ROOT ACTION] source={} protocol_root_action_count={}",
+        root_action_source, protocol_root_action_count
+    )
+    .unwrap();
+    writeln!(
+        live_io.focus_log,
+        "[ROOT ACTION] frame={} source={} protocol_root_action_count={}",
+        frame_count, root_action_source, protocol_root_action_count
+    )
+    .unwrap();
     log_combat_decision_audit_summary(live_io, &search_diag);
-    if let Some(reasons) = maybe_record_search_suspect(
-        live_io,
-        frame_count,
-        frame,
-        &truth,
-        &baseline_diag,
-        &search_diag,
-    ) {
-        if fail_fast_debug && should_fail_fast_on_combat_snapshot("high_risk_suspect", &reasons) {
-            writeln!(
-                live_io.log,
-                "  [FAIL_FAST] stopping on high_risk_suspect reasons={}",
-                reasons.join(",")
-            )
-            .unwrap();
-            writeln!(
-                live_io.focus_log,
-                "[FAIL_FAST] frame={} trigger=high_risk_suspect reasons={}",
-                frame_count,
-                reasons.join(",")
-            )
-            .unwrap();
-            return CombatFrameOutcome::StopForFailFast;
-        }
-    }
     if live_io.log.metadata().is_ok() {
         let top_candidates = search_diag
             .top_moves
@@ -1761,32 +2041,84 @@ pub(super) fn handle_live_combat_frame<W: Write>(
         );
         sidecar::write_shadow_record(&mut live_io.sidecar_shadow, &shadow);
     }
-    if !same_or_equivalent_client_input(
-        &truth,
-        &baseline_diag.chosen_move,
-        &search_diag.chosen_move,
-    ) {
-        writeln!(
-            live_io.log,
-            "  [BASELINE DIAG] disagrees chosen={:?} baseline_score={:.1}",
-            baseline_diag.chosen_move,
-            baseline_diag
-                .top_moves
-                .first()
-                .map(|stat| stat.avg_score)
-                .unwrap_or(0.0)
-        )
-        .unwrap();
-        for move_stat in baseline_diag.top_moves.iter().take(3) {
+    if let Some(baseline_diag) = baseline_diag.as_ref() {
+        if !same_or_equivalent_client_input(
+            &truth,
+            &baseline_diag.chosen_move,
+            &search_diag.chosen_move,
+        ) {
             writeln!(
                 live_io.log,
-                "  [BASELINE DIAG] move={:?} score={:.1} visits={}",
-                move_stat.input, move_stat.avg_score, move_stat.visits
+                "  [BASELINE DIAG] disagrees chosen={:?} baseline_score={:.1}",
+                baseline_diag.chosen_move,
+                baseline_diag
+                    .top_moves
+                    .first()
+                    .map(|stat| stat.avg_score)
+                    .unwrap_or(0.0)
             )
             .unwrap();
+            for move_stat in baseline_diag.top_moves.iter().take(3) {
+                writeln!(
+                    live_io.log,
+                    "  [BASELINE DIAG] move={:?} score={:.1} visits={}",
+                    move_stat.input, move_stat.avg_score, move_stat.visits
+                )
+                .unwrap();
+            }
         }
     }
+    log_slow_search_summary(
+        live_io,
+        frame_count,
+        &truth,
+        baseline_diag.as_ref(),
+        &search_diag,
+    );
     let input = search_diag.chosen_move.clone();
+    let chosen_protocol_action = protocol_affordance
+        .as_ref()
+        .and_then(|snapshot| snapshot.find_by_input(&input));
+    let chosen_action_id = chosen_protocol_action.map(|action| action.action_id.clone());
+    let chosen_command = chosen_protocol_action.map(|action| action.command.clone());
+    if root_action_source == "protocol" && chosen_command.is_none() {
+        writeln!(
+            live_io.log,
+            "  [PROTO ROOT BUG] chosen move {:?} missing action_id/command mapping",
+            input
+        )
+        .unwrap();
+        let _ = write_failure_snapshot(
+            live_io,
+            frame_count,
+            frame,
+            "protocol_root_action_space",
+            vec!["missing_chosen_protocol_action".to_string()],
+            serde_json::json!({
+                "chosen_move": format!("{:?}", input),
+                "root_action_source": "protocol",
+                "protocol_root_action_count": protocol_root_action_count,
+            }),
+        );
+        return CombatFrameOutcome::StopForFailFast;
+    }
+    if let Some(action_id) = chosen_action_id.as_ref() {
+        writeln!(
+            live_io.log,
+            "  [ROOT ACTION] chosen_action_id={} chosen_command={}",
+            action_id,
+            chosen_command.as_deref().unwrap_or("?")
+        )
+        .unwrap();
+        writeln!(
+            live_io.focus_log,
+            "[ROOT ACTION] frame={} chosen_action_id={} chosen_command={}",
+            frame_count,
+            action_id,
+            chosen_command.as_deref().unwrap_or("?")
+        )
+        .unwrap();
+    }
 
     if matches!(input, crate::state::core::ClientInput::UsePotion { .. }) {
         log_potion_decision_trace(live_io, &truth);
@@ -1812,13 +2144,24 @@ pub(super) fn handle_live_combat_frame<W: Write>(
     }
 
     combat_runtime.increment_action_count();
+    combat_runtime.last_root_action_source = Some(root_action_source.to_string());
+    combat_runtime.last_root_action_id = chosen_action_id.clone();
+    combat_runtime.last_root_action_command = chosen_command.clone();
+    combat_runtime.last_protocol_root_action_count = Some(protocol_root_action_count);
 
     let mut engine_state = EngineState::CombatPlayerTurn;
-    if let Some(cmd) = comm_mod::input_to_java_command(&input, &engine_state) {
+    let submit_command = if root_action_source == "protocol" {
+        chosen_command.clone()
+    } else {
+        comm_mod::input_to_java_command(&input, &engine_state)
+    };
+    if let Some(cmd) = submit_command {
         if cmd == *last_sent_cmd && *cmd_failed_count > 0 {
             writeln!(
                 live_io.log,
-                "  [!] AVOIDING REPEATED ERROR BY FORCING END TURN"
+                "  [!] AVOIDING REPEATED ERROR BY FORCING END TURN root_source={} action_id={}",
+                root_action_source,
+                chosen_action_id.as_deref().unwrap_or("<none>")
             )
             .unwrap();
             live_io.send_line(stdout, "END");
@@ -1836,7 +2179,7 @@ pub(super) fn handle_live_combat_frame<W: Write>(
                     .entities
                     .monsters
                     .iter()
-                    .map(|m| format!("{:?}", m.current_intent))
+                    .map(|m| format!("{:?}", resolve_monster_turn_plan(&truth, m).summary_spec()))
                     .collect(),
                 monster_names: truth
                     .entities
@@ -1844,7 +2187,7 @@ pub(super) fn handle_live_combat_frame<W: Write>(
                     .iter()
                     .map(|m| monster_display_name(m.monster_type))
                     .collect(),
-                has_rng_state: cv.get("rng_state").is_some(),
+                has_rng_state: combat_truth_snapshot.get("rng_state").is_some(),
             };
 
             let mut local_cs = truth.clone();
@@ -1860,6 +2203,7 @@ pub(super) fn handle_live_combat_frame<W: Write>(
         combat_runtime.last_input = Some(input.clone());
     } else {
         writeln!(live_io.log, "  SEND: END (fallback)").unwrap();
+        combat_runtime.last_root_action_command = Some("END".to_string());
         live_io.send_line(stdout, "END");
         *last_sent_cmd = "END".to_string();
         *cmd_failed_count = 0;
@@ -1868,8 +2212,12 @@ pub(super) fn handle_live_combat_frame<W: Write>(
     CombatFrameOutcome::Continue
 }
 
-pub(super) fn build_live_combat_snapshot(gs: &Value) -> Value {
-    build_protocol_live_combat_snapshot(gs)
+pub(super) fn build_live_truth_snapshot(gs: &Value) -> Value {
+    build_protocol_live_truth_snapshot(gs)
+}
+
+pub(super) fn build_live_observation_snapshot(gs: &Value) -> Value {
+    build_protocol_live_observation_snapshot(gs)
 }
 
 pub(super) fn log_combat_overview(log: &mut std::fs::File, frame_count: u64, truth: &CombatState) {
@@ -1903,7 +2251,7 @@ pub(super) fn log_combat_overview(log: &mut std::fs::File, frame_count: u64, tru
             m.current_hp,
             m.max_hp,
             m.block,
-            m.current_intent,
+            resolve_monster_turn_plan(truth, m).summary_spec(),
             if powers.is_empty() {
                 String::new()
             } else {
@@ -1950,9 +2298,13 @@ fn format_powers(cs: &CombatState, entity_id: usize) -> String {
         })
 }
 
-pub(super) fn validate_parse(cs: &CombatState, cv: &Value) -> Vec<String> {
+pub(super) fn validate_parse(
+    cs: &CombatState,
+    truth_snapshot: &Value,
+    observation_snapshot: &Value,
+) -> Vec<String> {
     let mut diffs = Vec::new();
-    let jp = &cv["player"];
+    let jp = &truth_snapshot["player"];
 
     let j_energy = jp["energy"].as_u64().unwrap_or(0) as u8;
     if cs.turn.energy != j_energy {
@@ -1975,7 +2327,7 @@ pub(super) fn validate_parse(cs: &CombatState, cv: &Value) -> Vec<String> {
         ));
     }
 
-    if let Some(j_hand) = cv["hand"].as_array() {
+    if let Some(j_hand) = truth_snapshot["hand"].as_array() {
         if cs.zones.hand.len() != j_hand.len() {
             diffs.push(format!(
                 "hand_size: rust={} java={}",
@@ -1995,7 +2347,7 @@ pub(super) fn validate_parse(cs: &CombatState, cv: &Value) -> Vec<String> {
         }
     }
 
-    if let Some(j_draw) = cv["draw_pile"].as_array() {
+    if let Some(j_draw) = truth_snapshot["draw_pile"].as_array() {
         for jc in j_draw {
             let jid = jc["id"].as_str().unwrap_or("?");
             if card_id_from_java(jid).is_none() {
@@ -2008,8 +2360,11 @@ pub(super) fn validate_parse(cs: &CombatState, cv: &Value) -> Vec<String> {
         }
     }
 
-    if let Some(j_monsters) = cv["monsters"].as_array() {
-        let aligned_indices = align_rust_monsters_for_parse(cs, j_monsters);
+    if let Some(j_monsters) = truth_snapshot["monsters"].as_array() {
+        let alignment_monsters = observation_snapshot["monsters"]
+            .as_array()
+            .unwrap_or(j_monsters);
+        let aligned_indices = align_rust_monsters_for_parse(cs, alignment_monsters);
         if cs.entities.monsters.len() != j_monsters.len() {
             diffs.push(format!(
                 "monster_count: rust={} java={}",
@@ -2090,7 +2445,10 @@ fn align_rust_monsters_for_parse(cs: &CombatState, java_ms: &[Value]) -> Vec<Opt
                     .enumerate()
                     .find(|(idx, monster)| {
                         !used.contains(idx)
-                            && monster.protocol_identity.instance_id == Some(instance_id)
+                            && cs
+                                .monster_protocol_identity(monster.id)
+                                .and_then(|identity| identity.instance_id)
+                                == Some(instance_id)
                     })
                     .map(|(idx, _)| idx)
             })
@@ -2104,7 +2462,10 @@ fn align_rust_monsters_for_parse(cs: &CombatState, java_ms: &[Value]) -> Vec<Opt
                     .find(|(idx, monster)| {
                         !used.contains(idx)
                             && Some(monster.monster_type) == java_type.map(|id| id as usize)
-                            && monster.protocol_identity.draw_x == java_draw_x
+                            && cs
+                                .monster_protocol_identity(monster.id)
+                                .and_then(|identity| identity.draw_x)
+                                == java_draw_x
                     })
                     .map(|(idx, _)| idx)
             })

@@ -1,7 +1,7 @@
 use serde_json::Value;
 
 use crate::content::cards::CardId;
-use crate::diff::protocol::card_id_from_java;
+use crate::protocol::java::card_id_from_java;
 use crate::runtime::combat::{CombatCard, CombatRuntimeHints, QueuedCardHint};
 
 use super::snapshot_uuid;
@@ -127,13 +127,17 @@ pub(crate) fn build_limbo_from_snapshot(snapshot: &Value) -> Vec<CombatCard> {
     limbo
 }
 
-pub(crate) fn build_runtime_hints_from_snapshot(snapshot: &Value) -> CombatRuntimeHints {
-    let using_card = snapshot
+pub(crate) fn build_runtime_hints_from_snapshots(
+    truth_snapshot: &Value,
+    observation_snapshot: &Value,
+) -> CombatRuntimeHints {
+    let using_card = observation_snapshot
         .get("using_card")
         .and_then(|v| v.as_bool())
+        .or_else(|| truth_snapshot.get("using_card").and_then(|v| v.as_bool()))
         .unwrap_or(false);
 
-    let colorless_combat_pool = snapshot
+    let colorless_combat_pool = truth_snapshot
         .get("colorless_combat_pool")
         .and_then(|v| v.as_array())
         .map(|cards| {
@@ -145,7 +149,7 @@ pub(crate) fn build_runtime_hints_from_snapshot(snapshot: &Value) -> CombatRunti
         })
         .unwrap_or_default();
 
-    let card_queue = snapshot
+    let card_queue = truth_snapshot
         .get("card_queue")
         .and_then(|v| v.as_array())
         .map(|items| {

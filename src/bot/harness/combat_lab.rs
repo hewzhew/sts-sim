@@ -13,11 +13,13 @@ use crate::bot::harness::combat_policy::{
 };
 use crate::bot::CoverageDb;
 use crate::content::cards::get_card_definition;
-use crate::diff::replay::tick_until_stable;
-use crate::runtime::combat::{CombatCard, CombatState, Intent, Power};
+use crate::engine::core::tick_until_stable_turn;
+use crate::runtime::combat::{CombatCard, CombatState, Power};
 use crate::runtime::rng::{shuffle_with_random_long, StsRng};
+use crate::semantics::combat::{EffectStrength, MonsterMoveSpec};
 use crate::state::core::{ClientInput, EngineState, RunResult};
 use crate::state::run::RunState;
+use crate::testing::fixtures::combat_case::{lower_case, write_case_to_path, CombatCase};
 use crate::testing::fixtures::scenario::{initialize_fixture_state, ScenarioFixture};
 
 const DEFAULT_ACTION_CAP: usize = 256;
@@ -136,6 +138,17 @@ pub struct CombatLabConfig {
     pub out_dir: PathBuf,
 }
 
+#[derive(Debug, Clone)]
+pub struct CombatCaseLabConfig {
+    pub case: CombatCase,
+    pub episodes: usize,
+    pub policy: PolicyKind,
+    pub depth: u32,
+    pub variant_mode: LabVariantMode,
+    pub base_seed: u64,
+    pub out_dir: PathBuf,
+}
+
 pub fn sanitize_fixture_for_local_lab(fixture: &ScenarioFixture) -> ScenarioFixture {
     let mut sanitized = fixture.clone();
     if !sanitized.name.ends_with("_start") {
@@ -162,6 +175,35 @@ pub fn write_sanitized_fixture_for_local_lab(
     let sanitized = sanitize_fixture_for_local_lab(fixture);
     let payload = serde_json::to_string_pretty(&sanitized).map_err(|err| err.to_string())?;
     std::fs::write(out_path, payload).map_err(|err| err.to_string())?;
+    Ok(sanitized)
+}
+
+pub fn sanitize_case_for_local_lab(case: &CombatCase) -> Result<CombatCase, String> {
+    let mut sanitized =
+        crate::testing::fixtures::combat_case::CombatCaseReducer::materialize(case)?;
+    if !sanitized.id.ends_with("_start") {
+        sanitized.id = format!("{}_start", sanitized.id);
+    }
+    sanitized.program.clear();
+    sanitized.expectations.clear();
+    sanitized.tags.push("local_lab_start".to_string());
+    sanitized.tags.sort();
+    sanitized.tags.dedup();
+    sanitized
+        .provenance
+        .notes
+        .push("sanitized_for_local_lab".to_string());
+    sanitized.provenance.notes.sort();
+    sanitized.provenance.notes.dedup();
+    Ok(sanitized)
+}
+
+pub fn write_sanitized_case_for_local_lab(
+    case: &CombatCase,
+    out_path: &Path,
+) -> Result<CombatCase, String> {
+    let sanitized = sanitize_case_for_local_lab(case)?;
+    write_case_to_path(&sanitized, out_path)?;
     Ok(sanitized)
 }
 
@@ -202,69 +244,53 @@ pub fn run_combat_lab(config: &CombatLabConfig) -> Result<CombatLabSummary, Stri
         traces.push(trace);
     }
 
-    let episodes_path = config.out_dir.join("episodes.jsonl");
-    let mut episodes_file = File::create(&episodes_path).map_err(|err| err.to_string())?;
-    for record in &records {
-        writeln!(
-            episodes_file,
-            "{}",
-            serde_json::to_string(record).map_err(|err| err.to_string())?
-        )
-        .map_err(|err| err.to_string())?;
+    write_lab_outputs(
+        &fixture.name,
+        config.policy,
+        &config.out_dir,
+        &records,
+        &traces,
+    )
+}
+
+pub fn run_combat_case_lab(config: &CombatCaseLabConfig) -> Result<CombatLabSummary, String> {
+    std::fs::create_dir_all(&config.out_dir).map_err(|err| err.to_string())?;
+    let case = sanitize_case_for_local_lab(&config.case)?;
+    let mut records = Vec::new();
+    let mut traces = Vec::new();
+
+    for episode_id in 0..config.episodes {
+        let episode_seed = config.base_seed.wrapping_add(episode_id as u64);
+        let episode = run_case_episode(
+            &case,
+            config.policy,
+            config.depth,
+            config.variant_mode,
+            episode_id,
+            episode_seed,
+        )?;
+        let trace = episode.trace;
+        let trace_name = format!("trace_{episode_id:04}.json");
+        let trace_path = config.out_dir.join(&trace_name);
+        let trace_payload = serde_json::to_string_pretty(&trace).map_err(|err| err.to_string())?;
+        std::fs::write(&trace_path, trace_payload).map_err(|err| err.to_string())?;
+
+        let record = CombatLabEpisodeRecord {
+            episode_id,
+            variant_mode: config.variant_mode,
+            seed: episode_seed,
+            won: trace.outcome == EpisodeOutcome::Victory,
+            final_player_hp: trace.final_player_hp,
+            final_monster_hp: trace.final_monster_hp,
+            turns: trace.turns,
+            path_score: trace.path_score,
+            trace_path: trace_name,
+        };
+        records.push(record);
+        traces.push(trace);
     }
 
-    let best_win_idx = records
-        .iter()
-        .enumerate()
-        .filter(|(_, record)| record.won)
-        .max_by(|(_, left), (_, right)| compare_episode_records(left, right))
-        .map(|(idx, _)| idx);
-    let best_attempt_idx = records
-        .iter()
-        .enumerate()
-        .max_by(|(_, left), (_, right)| compare_episode_records(left, right))
-        .map(|(idx, _)| idx);
-
-    if let Some(best_idx) = best_win_idx {
-        let markdown = render_trace_markdown(&traces[best_idx]);
-        std::fs::write(config.out_dir.join("best_win_trace.md"), markdown)
-            .map_err(|err| err.to_string())?;
-    } else if let Some(best_idx) = best_attempt_idx {
-        let markdown = render_trace_markdown(&traces[best_idx]);
-        std::fs::write(config.out_dir.join("best_attempt_trace.md"), markdown)
-            .map_err(|err| err.to_string())?;
-    }
-
-    let wins = records.iter().filter(|record| record.won).count();
-    let average_final_hp = if records.is_empty() {
-        0.0
-    } else {
-        records
-            .iter()
-            .map(|record| record.final_player_hp as f32)
-            .sum::<f32>()
-            / records.len() as f32
-    };
-    let summary = CombatLabSummary {
-        fixture_name: fixture.name.clone(),
-        policy: config.policy,
-        total_episodes: records.len(),
-        wins,
-        win_rate: if records.is_empty() {
-            0.0
-        } else {
-            wins as f32 / records.len() as f32
-        },
-        average_final_hp,
-        metrics: aggregate_metrics(&traces),
-        best_win_episode_id: best_win_idx.map(|idx| records[idx].episode_id),
-        best_attempt_episode_id: best_attempt_idx.map(|idx| records[idx].episode_id),
-    };
-    let summary_payload = serde_json::to_string_pretty(&summary).map_err(|err| err.to_string())?;
-    std::fs::write(config.out_dir.join("summary.json"), summary_payload)
-        .map_err(|err| err.to_string())?;
-
-    Ok(summary)
+    write_lab_outputs(&case.id, config.policy, &config.out_dir, &records, &traces)
 }
 
 struct EpisodeArtifacts {
@@ -293,7 +319,7 @@ fn run_episode(
         let outcome = current_outcome(&engine_state, &combat);
         if let Some(outcome) = outcome {
             let mut trace = build_episode_trace(
-                fixture,
+                &fixture.name,
                 episode_id,
                 variant_mode,
                 episode_seed,
@@ -313,7 +339,7 @@ fn run_episode(
 
         if safety_counter >= DEFAULT_ACTION_CAP {
             let mut trace = build_episode_trace(
-                fixture,
+                &fixture.name,
                 episode_id,
                 variant_mode,
                 episode_seed,
@@ -359,8 +385,106 @@ fn run_episode(
     }
 }
 
+fn run_case_episode(
+    case: &CombatCase,
+    policy: PolicyKind,
+    depth: u32,
+    variant_mode: LabVariantMode,
+    episode_id: usize,
+    episode_seed: u64,
+) -> Result<EpisodeArtifacts, String> {
+    let initial = lower_case(case)?;
+    let mut combat = initial.combat;
+    let mut engine_state = initial.engine_state;
+    apply_variant(&mut combat, variant_mode, episode_seed);
+    let mut run_state = build_lab_run_state_from_seed(
+        initial.seed_hint.unwrap_or(1),
+        initial
+            .ascension_level
+            .unwrap_or(combat.meta.ascension_level),
+        initial
+            .player_class
+            .as_deref()
+            .map(static_player_class)
+            .unwrap_or(combat.meta.player_class),
+        &combat,
+    );
+    let mut agent = crate::bot::agent::Agent::new();
+    let coverage = CoverageDb::default();
+
+    let mut steps = Vec::new();
+    let mut safety_counter = 0usize;
+    loop {
+        let outcome = current_outcome(&engine_state, &combat);
+        if let Some(outcome) = outcome {
+            let mut trace = build_episode_trace(
+                &case.id,
+                episode_id,
+                variant_mode,
+                episode_seed,
+                policy,
+                depth,
+                outcome,
+                &combat,
+                &steps,
+                &engine_state,
+                &coverage,
+            );
+            for step in &mut trace.steps {
+                step.episode_outcome = Some(trace.outcome.clone());
+            }
+            return Ok(EpisodeArtifacts { trace });
+        }
+
+        if safety_counter >= DEFAULT_ACTION_CAP {
+            let mut trace = build_episode_trace(
+                &case.id,
+                episode_id,
+                variant_mode,
+                episode_seed,
+                policy,
+                depth,
+                EpisodeOutcome::StepCap,
+                &combat,
+                &steps,
+                &engine_state,
+                &coverage,
+            );
+            for step in &mut trace.steps {
+                step.episode_outcome = Some(trace.outcome.clone());
+            }
+            return Ok(EpisodeArtifacts { trace });
+        }
+
+        let before_score = combat_search_score(&engine_state, &combat, depth, &coverage);
+        let policy_decision = decide_policy_action(
+            policy,
+            &engine_state,
+            &combat,
+            &run_state,
+            &mut agent,
+            depth,
+        );
+        let step_trace = execute_step(
+            steps.len(),
+            &mut engine_state,
+            &mut combat,
+            &policy_decision,
+            before_score,
+            depth,
+            &coverage,
+        )?;
+        steps.push(step_trace);
+        safety_counter += 1;
+
+        run_state.current_hp = combat.entities.player.current_hp;
+        run_state.max_hp = combat.entities.player.max_hp;
+        run_state.gold = combat.entities.player.gold;
+    }
+}
+
 fn build_episode_trace(
-    fixture: &ScenarioFixture,
+    fixture_name: &str,
     episode_id: usize,
     variant_mode: LabVariantMode,
     episode_seed: u64,
@@ -373,7 +497,7 @@ fn build_episode_trace(
     coverage: &CoverageDb,
 ) -> CombatLabEpisodeTrace {
     CombatLabEpisodeTrace {
-        fixture_name: fixture.name.clone(),
+        fixture_name: fixture_name.to_string(),
         episode_id,
         variant_mode,
         seed: episode_seed,
@@ -413,7 +537,7 @@ fn execute_step(
     let chosen_action = policy_decision.final_input_debug.clone();
     let (action_kind, action_payload) = action_descriptor(&input, combat);
 
-    let _alive = tick_until_stable(engine_state, combat, input);
+    let _alive = tick_until_stable_turn(engine_state, combat, input);
     let after_score = combat_search_score(engine_state, combat, depth, coverage);
 
     Ok(CombatLabStepTrace {
@@ -594,6 +718,15 @@ fn build_lab_run_state(fixture: &ScenarioFixture, combat: &CombatState) -> RunSt
         .and_then(|value| value.as_str())
         .map(static_player_class)
         .unwrap_or("Ironclad");
+    build_lab_run_state_from_seed(seed, ascension_level, player_class, combat)
+}
+
+fn build_lab_run_state_from_seed(
+    seed: u64,
+    ascension_level: u8,
+    player_class: &'static str,
+    combat: &CombatState,
+) -> RunState {
     let mut run_state = RunState::new(seed, ascension_level, false, player_class);
     run_state.current_hp = combat.entities.player.current_hp;
     run_state.max_hp = combat.entities.player.max_hp;
@@ -602,6 +735,76 @@ fn build_lab_run_state(fixture: &ScenarioFixture, combat: &CombatState) -> RunSt
     run_state.potions = combat.entities.potions.clone();
     run_state.master_deck = all_cards_in_combat(combat);
     run_state
+}
+
+fn write_lab_outputs(
+    fixture_name: &str,
+    policy: PolicyKind,
+    out_dir: &Path,
+    records: &[CombatLabEpisodeRecord],
+    traces: &[CombatLabEpisodeTrace],
+) -> Result<CombatLabSummary, String> {
+    let episodes_path = out_dir.join("episodes.jsonl");
+    let mut episodes_file = File::create(&episodes_path).map_err(|err| err.to_string())?;
+    for record in records {
+        writeln!(
+            episodes_file,
+            "{}",
+            serde_json::to_string(record).map_err(|err| err.to_string())?
+        )
+        .map_err(|err| err.to_string())?;
+    }
+
+    let best_win_idx = records
+        .iter()
+        .enumerate()
+        .filter(|(_, record)| record.won)
+        .max_by(|(_, left), (_, right)| compare_episode_records(left, right))
+        .map(|(idx, _)| idx);
+    let best_attempt_idx = records
+        .iter()
+        .enumerate()
+        .max_by(|(_, left), (_, right)| compare_episode_records(left, right))
+        .map(|(idx, _)| idx);
+
+    if let Some(best_idx) = best_win_idx {
+        let markdown = render_trace_markdown(&traces[best_idx]);
+        std::fs::write(out_dir.join("best_win_trace.md"), markdown)
+            .map_err(|err| err.to_string())?;
+    } else if let Some(best_idx) = best_attempt_idx {
+        let markdown = render_trace_markdown(&traces[best_idx]);
+        std::fs::write(out_dir.join("best_attempt_trace.md"), markdown)
+            .map_err(|err| err.to_string())?;
+    }
+
+    let wins = records.iter().filter(|record| record.won).count();
+    let average_final_hp = if records.is_empty() {
+        0.0
+    } else {
+        records
+            .iter()
+            .map(|record| record.final_player_hp as f32)
+            .sum::<f32>()
+            / records.len() as f32
+    };
+    let summary = CombatLabSummary {
+        fixture_name: fixture_name.to_string(),
+        policy,
+        total_episodes: records.len(),
+        wins,
+        win_rate: if records.is_empty() {
+            0.0
+        } else {
+            wins as f32 / records.len() as f32
+        },
+        average_final_hp,
+        metrics: aggregate_metrics(traces),
+        best_win_episode_id: best_win_idx.map(|idx| records[idx].episode_id),
+        best_attempt_episode_id: best_attempt_idx.map(|idx| records[idx].episode_id),
+    };
+    let summary_payload = serde_json::to_string_pretty(&summary).map_err(|err| err.to_string())?;
+    std::fs::write(out_dir.join("summary.json"), summary_payload).map_err(|err| err.to_string())?;
+    Ok(summary)
 }
 
 fn static_player_class(player_class: &str) -> &'static str {
@@ -673,8 +876,12 @@ fn monster_snapshots(combat: &CombatState) -> Vec<CombatLabMonsterSnapshot> {
             hp: monster.current_hp,
             max_hp: monster.max_hp,
             block: monster.block,
-            intent: intent_label(&monster.current_intent),
-            intent_damage: monster.intent_preview_damage,
+            intent: intent_label(combat, monster),
+            intent_damage: crate::projection::combat::project_monster_move_preview_in_combat(
+                combat, monster,
+            )
+            .damage_per_hit
+            .unwrap_or(0),
             key_powers: power_labels(
                 combat
                     .entities
@@ -687,25 +894,66 @@ fn monster_snapshots(combat: &CombatState) -> Vec<CombatLabMonsterSnapshot> {
         .collect()
 }
 
-fn intent_label(intent: &Intent) -> String {
-    match intent {
-        Intent::Attack { damage, hits } => format!("attack {}x{}", damage, hits),
-        Intent::AttackBuff { damage, hits } => format!("attack_buff {}x{}", damage, hits),
-        Intent::AttackDebuff { damage, hits } => format!("attack_debuff {}x{}", damage, hits),
-        Intent::AttackDefend { damage, hits } => format!("attack_defend {}x{}", damage, hits),
-        Intent::Buff => "buff".to_string(),
-        Intent::Debuff => "debuff".to_string(),
-        Intent::StrongDebuff => "strong_debuff".to_string(),
-        Intent::Defend => "defend".to_string(),
-        Intent::DefendDebuff => "defend_debuff".to_string(),
-        Intent::DefendBuff => "defend_buff".to_string(),
-        Intent::Escape => "escape".to_string(),
-        Intent::Magic => "magic".to_string(),
-        Intent::None => "none".to_string(),
-        Intent::Sleep => "sleep".to_string(),
-        Intent::Stun => "stun".to_string(),
-        Intent::Unknown => "unknown".to_string(),
-        Intent::Debug => "debug".to_string(),
+fn intent_label(combat: &CombatState, monster: &crate::runtime::combat::MonsterEntity) -> String {
+    let plan = crate::content::monsters::resolve_monster_turn_plan(combat, monster);
+    let preview =
+        crate::projection::combat::project_monster_move_preview_in_combat(combat, monster);
+    let spec = plan.summary_spec();
+
+    match spec {
+        MonsterMoveSpec::Attack(_) => format!(
+            "attack {}x{}",
+            preview.damage_per_hit.unwrap_or(0),
+            preview.hits
+        ),
+        MonsterMoveSpec::AttackAddCard(_, _) => format!(
+            "attack_debuff {}x{}",
+            preview.damage_per_hit.unwrap_or(0),
+            preview.hits
+        ),
+        MonsterMoveSpec::AttackUpgradeCards(_, _) => format!(
+            "attack_debuff {}x{}",
+            preview.damage_per_hit.unwrap_or(0),
+            preview.hits
+        ),
+        MonsterMoveSpec::AttackBuff(_, _) => format!(
+            "attack_buff {}x{}",
+            preview.damage_per_hit.unwrap_or(0),
+            preview.hits
+        ),
+        MonsterMoveSpec::AttackSustain(_) => format!(
+            "attack_buff {}x{}",
+            preview.damage_per_hit.unwrap_or(0),
+            preview.hits
+        ),
+        MonsterMoveSpec::AttackDebuff(_, _) => format!(
+            "attack_debuff {}x{}",
+            preview.damage_per_hit.unwrap_or(0),
+            preview.hits
+        ),
+        MonsterMoveSpec::AttackDefend(_, _) => format!(
+            "attack_defend {}x{}",
+            preview.damage_per_hit.unwrap_or(0),
+            preview.hits
+        ),
+        MonsterMoveSpec::AddCard(add_card) => match add_card.visible_strength {
+            EffectStrength::Strong => "strong_debuff".to_string(),
+            EffectStrength::Normal => "debuff".to_string(),
+        },
+        MonsterMoveSpec::Buff(_) => "buff".to_string(),
+        MonsterMoveSpec::Heal(_) => "heal".to_string(),
+        MonsterMoveSpec::Debuff(_) => "debuff".to_string(),
+        MonsterMoveSpec::StrongDebuff(_) => "strong_debuff".to_string(),
+        MonsterMoveSpec::Defend(_) => "defend".to_string(),
+        MonsterMoveSpec::DefendDebuff(_, _) => "defend_debuff".to_string(),
+        MonsterMoveSpec::DefendBuff(_, _) => "defend_buff".to_string(),
+        MonsterMoveSpec::Escape => "escape".to_string(),
+        MonsterMoveSpec::Magic => "magic".to_string(),
+        MonsterMoveSpec::None => "none".to_string(),
+        MonsterMoveSpec::Sleep => "sleep".to_string(),
+        MonsterMoveSpec::Stun => "stun".to_string(),
+        MonsterMoveSpec::Unknown => "unknown".to_string(),
+        MonsterMoveSpec::Debug => "debug".to_string(),
     }
 }
 

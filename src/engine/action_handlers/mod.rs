@@ -71,10 +71,9 @@ pub fn try_revive(state: &mut CombatState) {
 }
 
 /// Centralized monster death handler.
-/// Fires power on_death hooks, monster on_death, relic hooks, GremlinLeader/Darkling specials.
+/// Fires power on_death hooks, monster on_death, relic hooks, and Darkling specials.
 pub fn check_and_trigger_monster_death(state: &mut CombatState, target_id: usize) {
     let mut is_awakened_rebirth = false;
-    let mut is_gremlin_leader = false;
     let mut triggered_death = false;
     let mut dying_monster_type: Option<crate::content::monsters::EnemyId> = None;
 
@@ -88,7 +87,6 @@ pub fn check_and_trigger_monster_death(state: &mut CombatState, target_id: usize
             m.is_dying = true;
             let m_id = crate::content::monsters::EnemyId::from_id(m.monster_type);
             dying_monster_type = m_id;
-            is_gremlin_leader = m_id == Some(crate::content::monsters::EnemyId::GremlinLeader);
             let has_rebirth_power = store::powers_for(state, target_id).is_some_and(|powers| {
                 powers.iter().any(|p| {
                     matches!(
@@ -138,20 +136,8 @@ pub fn check_and_trigger_monster_death(state: &mut CombatState, target_id: usize
 
         let death_actions = crate::content::relics::hooks::on_monster_death(state, target_id);
         state.queue_actions(death_actions);
-
-        if is_gremlin_leader {
-            let minion_ids: Vec<_> = state
-                .entities
-                .monsters
-                .iter()
-                .filter(|min| min.id != target_id && !min.is_dying)
-                .map(|min| min.id)
-                .collect();
-            for minion_id in minion_ids {
-                state.queue_action_back(Action::Escape { target: minion_id });
-            }
-        }
         if is_awakened_rebirth {
+            let mut cleared_protocol_monster_id = None;
             if let Some(m) = state
                 .entities
                 .monsters
@@ -160,21 +146,24 @@ pub fn check_and_trigger_monster_death(state: &mut CombatState, target_id: usize
             {
                 m.current_hp = 0;
                 m.is_dying = false;
-                m.current_intent = crate::runtime::combat::Intent::Unknown;
+                cleared_protocol_monster_id = Some(m.id);
                 if dying_monster_type == Some(crate::content::monsters::EnemyId::AwakenedOne) {
                     m.half_dead = true;
                 }
+            }
+            if let Some(monster_id) = cleared_protocol_monster_id {
+                state.clear_monster_protocol_observation(monster_id);
             }
         }
     }
 }
 
-/// Executes a single atomic Action off the queue.
-/// This is the thin dispatcher — each arm delegates to the appropriate sub-module.
+/// Executes one queued action by delegating to the relevant domain handler.
 pub fn execute_action(action: Action, state: &mut CombatState) {
     match action {
         // === Damage domain ===
         Action::Damage(info) => damage::handle_damage(info, state),
+        #[rustfmt::skip] Action::MonsterAttack { source, target, base_damage, damage_kind } => damage::handle_monster_attack(source, target, base_damage, damage_kind, state),
         Action::DamageAllEnemies {
             source,
             damages,
@@ -234,6 +223,9 @@ pub fn execute_action(action: Action, state: &mut CombatState) {
         Action::LoseBlock { target, amount } => damage::handle_lose_block(target, amount, state),
         Action::Heal { target, amount } => damage::handle_heal(target, amount, state),
         Action::GainGold { amount } => damage::handle_gain_gold(amount, state),
+        Action::StealPlayerGold { thief_id, amount } => {
+            damage::handle_steal_player_gold(thief_id, amount, state)
+        }
         Action::LimitBreak => damage::handle_limit_break(state),
         Action::BlockPerNonAttack { block_per_card } => {
             damage::handle_block_per_non_attack(block_per_card, state)
@@ -471,41 +463,39 @@ pub fn execute_action(action: Action, state: &mut CombatState) {
         Action::SpawnMonsterSmart {
             monster_id,
             logical_position,
-            current_hp,
-            max_hp,
+            hp,
             protocol_draw_x,
             is_minion,
         } => spawning::handle_spawn_monster_smart(
             monster_id,
             logical_position,
-            current_hp,
-            max_hp,
+            hp,
             protocol_draw_x,
             is_minion,
             state,
         ),
         Action::Suicide { target } => spawning::handle_suicide(target, state),
         Action::Escape { target } => spawning::handle_escape(target, state),
+        Action::AddCombatReward { item } => spawning::handle_add_combat_reward(item, state),
         Action::RollMonsterMove { monster_id } => {
             spawning::handle_roll_monster_move(monster_id, state)
         }
         Action::SetMonsterMove {
             monster_id,
             next_move_byte,
-            intent,
-        } => spawning::handle_set_monster_move(monster_id, next_move_byte, intent, state),
-        Action::UpdateHexaghostState {
+            planned_steps,
+            planned_visible_spec,
+        } => spawning::handle_set_monster_move(
             monster_id,
-            activated,
-            orb_active_count,
-            burn_upgraded,
-        } => spawning::handle_update_hexaghost_state(
-            monster_id,
-            activated,
-            orb_active_count,
-            burn_upgraded,
+            next_move_byte,
+            planned_steps,
+            planned_visible_spec,
             state,
         ),
+        Action::UpdateMonsterRuntime { monster_id, patch } => {
+            spawning::handle_update_monster_runtime(monster_id, patch, state)
+        }
+        Action::ReviveMonster { target } => spawning::handle_revive_monster(target, state),
         Action::UpdateRelicCounter { relic_id, counter } => {
             spawning::handle_update_relic_counter(relic_id, counter, state)
         }
@@ -525,8 +515,8 @@ pub fn execute_action(action: Action, state: &mut CombatState) {
         Action::PlayCard { .. }
         | Action::UseCard { .. }
         | Action::StartTurnTrigger
-        | Action::AbortDeath { .. }
         | Action::FleeCombat
+        | Action::AbortDeath { .. }
         | Action::ExecuteMonsterTurn(_)
         | Action::SpawnEncounter { .. }
         | Action::Scry(_)

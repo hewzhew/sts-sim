@@ -6,10 +6,10 @@ use crate::content::cards::{get_card_definition, upgraded_base_cost_override, Ca
 use crate::content::monsters::factory::{self, EncounterId};
 use crate::content::potions::Potion;
 use crate::content::relics::RelicState;
-use crate::diff::protocol::{card_id_from_java, java_potion_id_to_rust, relic_id_from_java};
 use crate::diff::replay::drain_to_stable;
 use crate::engine::core::with_suppressed_engine_warnings;
 use crate::map::node::RoomType;
+use crate::protocol::java::{card_id_from_java, java_potion_id_to_rust, relic_id_from_java};
 use crate::runtime::action::Action;
 use crate::runtime::combat::{CardZones, CombatMeta, TurnRuntime};
 use crate::runtime::combat::{CombatCard, CombatRng, CombatState, EngineRuntime, EntityState};
@@ -106,18 +106,50 @@ pub fn build_natural_start_state(
     };
 
     let monsters_clone = combat.entities.monsters.clone();
-    for monster in &mut combat.entities.monsters {
+    let player_powers = crate::content::powers::store::powers_snapshot_for(&combat, 0);
+    let monster_ids = combat
+        .entities
+        .monsters
+        .iter()
+        .map(|monster| monster.id)
+        .collect::<Vec<_>>();
+    for monster_id in monster_ids {
+        let entity_snapshot = combat
+            .entities
+            .monsters
+            .iter()
+            .find(|monster| monster.id == monster_id)
+            .cloned()
+            .expect("initial monster should exist while rolling intent");
         let num = combat.rng.ai_rng.random(99);
-        let (move_byte, intent) = crate::content::monsters::roll_monster_move(
+        let outcome = crate::content::monsters::roll_monster_turn_outcome(
             &mut combat.rng.ai_rng,
-            monster,
+            &entity_snapshot,
             combat.meta.ascension_level,
             num,
             &monsters_clone,
+            &player_powers,
         );
-        monster.next_move_byte = move_byte;
-        monster.current_intent = intent;
-        monster.move_history.push_back(move_byte);
+        for action in outcome.setup_actions {
+            crate::engine::action_handlers::execute_action(action, &mut combat);
+        }
+        let plan = outcome.plan;
+        let monster = combat
+            .entities
+            .monsters
+            .iter_mut()
+            .find(|monster| monster.id == monster_id)
+            .expect("rolled monster should still exist");
+        monster.set_planned_move_id(plan.move_id);
+        monster.set_planned_steps(plan.steps);
+        monster.set_planned_visible_spec(plan.visible_spec);
+        monster.move_history_mut().push_back(plan.move_id);
+        combat
+            .runtime
+            .monster_protocol
+            .entry(monster_id)
+            .or_default()
+            .observation = Default::default();
     }
 
     combat.reset_turn_energy_from_player();
@@ -155,10 +187,23 @@ pub fn build_natural_start_state(
 pub fn encounter_id_from_spec(raw: &str) -> Result<EncounterId, String> {
     let normalized = normalize_identifier(raw);
     match normalized.as_str() {
+        "blueslaver" => Ok(EncounterId::BlueSlaver),
         "jawworm" => Ok(EncounterId::JawWorm),
+        "gremlinnob" | "nob" => Ok(EncounterId::GremlinNob),
+        "lagavulin" => Ok(EncounterId::Lagavulin),
+        "threesentries" | "sentries" => Ok(EncounterId::ThreeSentries),
         "hexaghost" => Ok(EncounterId::Hexaghost),
         "theguardian" | "guardian" => Ok(EncounterId::TheGuardian),
         "slimeboss" => Ok(EncounterId::SlimeBoss),
+        "bookofstabbing" => Ok(EncounterId::BookOfStabbing),
+        "collector" => Ok(EncounterId::Collector),
+        "thechamp" | "champ" => Ok(EncounterId::TheChamp),
+        "automaton" | "bronzeautomaton" => Ok(EncounterId::Automaton),
+        "awakenedone" => Ok(EncounterId::AwakenedOne),
+        "timeeater" => Ok(EncounterId::TimeEater),
+        "donuanddeca" => Ok(EncounterId::DonuAndDeca),
+        "shieldandspear" | "spearandshield" => Ok(EncounterId::ShieldAndSpear),
+        "theheart" | "corruptheart" | "heart" => Ok(EncounterId::TheHeart),
         _ => Err(format!("unsupported encounter_id '{raw}'")),
     }
 }

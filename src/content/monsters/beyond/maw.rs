@@ -1,125 +1,171 @@
+use crate::content::monsters::exordium::{apply_power_action, attack_actions, PLAYER};
 use crate::content::monsters::MonsterBehavior;
 use crate::content::powers::PowerId;
-use crate::runtime::action::{Action, DamageInfo, DamageType};
-use crate::runtime::combat::{CombatState, Intent};
+use crate::runtime::action::Action;
+use crate::runtime::combat::{CombatState, MonsterEntity};
+use crate::semantics::combat::{
+    ApplyPowerStep, AttackSpec, BuffSpec, DamageKind, DebuffSpec, EffectStrength, MonsterMoveSpec,
+    MonsterTurnPlan, MoveStep, MoveTarget, PowerEffectKind,
+};
+use smallvec::smallvec;
 
 pub struct Maw;
 
+const ROAR: u8 = 2;
+const SLAM: u8 = 3;
+const DROOL: u8 = 4;
+const NOMNOMNOM: u8 = 5;
+
+fn slam_damage(ascension_level: u8) -> i32 {
+    if ascension_level >= 2 {
+        30
+    } else {
+        25
+    }
+}
+
+fn strength_up(ascension_level: u8) -> i32 {
+    if ascension_level >= 17 {
+        5
+    } else {
+        3
+    }
+}
+
+fn terrify_duration(ascension_level: u8) -> i32 {
+    if ascension_level >= 17 {
+        5
+    } else {
+        3
+    }
+}
+
+fn nom_hits_for_roll(entity: &MonsterEntity) -> u8 {
+    (((entity.move_history().len() as i32) + 2) / 2).max(1) as u8
+}
+
+fn nom_hits_for_turn(entity: &MonsterEntity) -> u8 {
+    (((entity.move_history().len() as i32) + 1) / 2).max(1) as u8
+}
+
+fn roar_plan(ascension_level: u8) -> MonsterTurnPlan {
+    let terrify = terrify_duration(ascension_level);
+    MonsterTurnPlan::with_visible_spec(
+        ROAR,
+        smallvec![
+            MoveStep::ApplyPower(ApplyPowerStep {
+                target: MoveTarget::Player,
+                power_id: PowerId::Weak,
+                amount: terrify,
+                effect: PowerEffectKind::Debuff,
+                visible_strength: EffectStrength::Strong,
+            }),
+            MoveStep::ApplyPower(ApplyPowerStep {
+                target: MoveTarget::Player,
+                power_id: PowerId::Frail,
+                amount: terrify,
+                effect: PowerEffectKind::Debuff,
+                visible_strength: EffectStrength::Strong,
+            }),
+        ],
+        MonsterMoveSpec::StrongDebuff(DebuffSpec {
+            power_id: PowerId::Weak,
+            amount: terrify,
+            strength: EffectStrength::Strong,
+        }),
+    )
+}
+
+fn slam_plan(ascension_level: u8) -> MonsterTurnPlan {
+    MonsterTurnPlan::from_spec(
+        SLAM,
+        MonsterMoveSpec::Attack(AttackSpec {
+            base_damage: slam_damage(ascension_level),
+            hits: 1,
+            damage_kind: DamageKind::Normal,
+        }),
+    )
+}
+
+fn drool_plan(ascension_level: u8) -> MonsterTurnPlan {
+    MonsterTurnPlan::from_spec(
+        DROOL,
+        MonsterMoveSpec::Buff(BuffSpec {
+            power_id: PowerId::Strength,
+            amount: strength_up(ascension_level),
+        }),
+    )
+}
+
+fn nom_plan(hits: u8) -> MonsterTurnPlan {
+    MonsterTurnPlan::from_spec(
+        NOMNOMNOM,
+        MonsterMoveSpec::Attack(AttackSpec {
+            base_damage: 5,
+            hits,
+            damage_kind: DamageKind::Normal,
+        }),
+    )
+}
+
+fn has_roared(entity: &MonsterEntity) -> bool {
+    entity.move_history().contains(&ROAR)
+}
+
+fn plan_for(move_id: u8, ascension_level: u8, entity: &MonsterEntity) -> MonsterTurnPlan {
+    match move_id {
+        ROAR => roar_plan(ascension_level),
+        SLAM => slam_plan(ascension_level),
+        DROOL => drool_plan(ascension_level),
+        NOMNOMNOM => nom_plan(nom_hits_for_turn(entity)),
+        _ => MonsterTurnPlan::unknown(move_id),
+    }
+}
+
 impl MonsterBehavior for Maw {
-    fn roll_move(
+    fn roll_move_plan(
         _rng: &mut crate::runtime::rng::StsRng,
-        entity: &crate::runtime::combat::MonsterEntity,
+        entity: &MonsterEntity,
         ascension_level: u8,
         num: i32,
-    ) -> (u8, Intent) {
-        let slam_dmg = if ascension_level >= 2 { 30 } else { 25 };
-        let nom_dmg = 5;
-        let turn_count = (entity.move_history.len() as i32) + 2; // +1 for 1-index logic, +1 for impending turn
-
-        let roared = entity.move_history.iter().any(|&m| m == 2);
-
-        if !roared {
-            return (2, Intent::StrongDebuff);
-        }
-        let last_move = entity.move_history.back().copied().unwrap_or(0);
-
-        if num < 50 && last_move != 5 {
-            let hit_counts = if (turn_count / 2) <= 1 {
-                1
-            } else {
-                turn_count / 2
-            };
-            return (
-                5,
-                Intent::Attack {
-                    damage: nom_dmg,
-                    hits: hit_counts as u8,
-                },
-            );
+    ) -> MonsterTurnPlan {
+        if !has_roared(entity) {
+            return roar_plan(ascension_level);
         }
 
-        if last_move == 3 || last_move == 5 {
-            return (4, Intent::Buff);
+        let last_move = entity.move_history().back().copied();
+        if num < 50 && last_move != Some(NOMNOMNOM) {
+            return nom_plan(nom_hits_for_roll(entity));
         }
-
-        (
-            3,
-            Intent::Attack {
-                damage: slam_dmg,
-                hits: 1,
-            },
-        )
+        if matches!(last_move, Some(SLAM | NOMNOMNOM)) {
+            return drool_plan(ascension_level);
+        }
+        slam_plan(ascension_level)
     }
 
-    fn take_turn(
-        state: &mut CombatState,
-        entity: &crate::runtime::combat::MonsterEntity,
+    fn turn_plan(state: &CombatState, entity: &MonsterEntity) -> MonsterTurnPlan {
+        plan_for(entity.planned_move_id(), state.meta.ascension_level, entity)
+    }
+
+    fn take_turn_plan(
+        _state: &mut CombatState,
+        entity: &MonsterEntity,
+        plan: &MonsterTurnPlan,
     ) -> Vec<Action> {
-        let mut actions = Vec::new();
-        let asc = state.meta.ascension_level;
-
-        let terrify_dur = if asc >= 17 { 5 } else { 3 };
-        let str_up = if asc >= 17 { 5 } else { 3 };
-        let (intent_damage, intent_hits) = match entity.current_intent {
-            Intent::Attack { damage, hits } => (damage, hits),
-            _ => (entity.intent_preview_damage.max(0), 1),
+        let mut actions = match (plan.move_id, plan.steps.as_slice()) {
+            (ROAR, [MoveStep::ApplyPower(weak), MoveStep::ApplyPower(frail)]) => {
+                vec![
+                    apply_power_action(entity, weak),
+                    apply_power_action(entity, frail),
+                ]
+            }
+            (SLAM, [MoveStep::Attack(attack)]) => attack_actions(entity.id, PLAYER, &attack.attack),
+            (DROOL, [MoveStep::ApplyPower(power)]) => vec![apply_power_action(entity, power)],
+            (NOMNOMNOM, [MoveStep::Attack(attack)]) => {
+                attack_actions(entity.id, PLAYER, &attack.attack)
+            }
+            (move_id, steps) => panic!("maw plan/steps mismatch: {} {:?}", move_id, steps),
         };
-
-        match entity.next_move_byte {
-            2 => {
-                // ROAR
-                actions.push(Action::ApplyPower {
-                    source: entity.id,
-                    target: 0,
-                    power_id: PowerId::Weak,
-                    amount: terrify_dur,
-                });
-                actions.push(Action::ApplyPower {
-                    source: entity.id,
-                    target: 0,
-                    power_id: PowerId::Frail,
-                    amount: terrify_dur,
-                });
-            }
-            3 => {
-                // SLAM
-                let dmg = intent_damage.max(if asc >= 2 { 30 } else { 25 });
-                actions.push(Action::Damage(DamageInfo {
-                    source: entity.id,
-                    target: 0,
-                    base: dmg,
-                    output: dmg,
-                    damage_type: DamageType::Normal,
-                    is_modified: false,
-                }));
-            }
-            4 => {
-                // DROOL
-                actions.push(Action::ApplyPower {
-                    source: entity.id,
-                    target: entity.id,
-                    power_id: PowerId::Strength,
-                    amount: str_up,
-                });
-            }
-            5 => {
-                // NOMNOMNOM
-                let hits = intent_hits.max(1);
-                let damage = intent_damage.max(5);
-                for _ in 0..hits {
-                    actions.push(Action::Damage(DamageInfo {
-                        source: entity.id,
-                        target: 0,
-                        base: damage,
-                        output: damage,
-                        damage_type: DamageType::Normal,
-                        is_modified: false,
-                    }));
-                }
-            }
-            _ => {}
-        }
-
         actions.push(Action::RollMonsterMove {
             monster_id: entity.id,
         });

@@ -1,5 +1,7 @@
 use super::{unix_time_millis, LiveWatchCaptureConfig, LiveWatchMatchMode, RAW_PATH};
-use crate::diff::protocol::{card_id_from_java, power_id_from_java, relic_id_from_java};
+use crate::protocol::java::{
+    build_live_truth_snapshot, card_id_from_java, power_id_from_java, relic_id_from_java,
+};
 use crate::testing::fixtures::live_capture::build_fixture_from_record_window;
 use crate::testing::fixtures::scenario::{ScenarioAssertion, ScenarioProvenance};
 use serde_json::{json, Value};
@@ -123,8 +125,7 @@ pub(super) fn collect_live_watch_match(
         }
     }
 
-    let combat = gs.get("combat_state").filter(|v| !v.is_null());
-    if let Some(combat) = combat {
+    if let Some(combat) = live_watch_combat_truth(gs) {
         for (pile, cards) in [
             ("hand", combat.get("hand")),
             ("draw_pile", combat.get("draw_pile")),
@@ -458,10 +459,7 @@ pub(super) fn maybe_capture_live_watch(
         );
         return;
     }
-    let is_capture_eligible = root
-        .get("game_state")
-        .and_then(|gs| gs.get("combat_state"))
-        .is_some_and(|v| !v.is_null());
+    let is_capture_eligible = root.get("game_state").is_some_and(has_live_combat_payload);
     if !is_capture_eligible {
         write_noncombat_watch_sidecar(
             config,
@@ -614,11 +612,10 @@ pub(super) fn build_watch_minimize_suggestion(
 }
 
 pub(super) fn default_watch_context_assertions(root: &Value) -> Vec<ScenarioAssertion> {
-    let Some(combat) = root
-        .get("game_state")
-        .and_then(|gs| gs.get("combat_state"))
-        .filter(|v| !v.is_null())
-    else {
+    let Some(gs) = root.get("game_state") else {
+        return Vec::new();
+    };
+    let Some(combat) = live_watch_combat_truth(gs) else {
         return Vec::new();
     };
 
@@ -681,6 +678,20 @@ pub(super) fn default_watch_context_assertions(root: &Value) -> Vec<ScenarioAsse
         }
     }
     assertions
+}
+
+fn has_live_combat_payload(game_state: &Value) -> bool {
+    game_state.get("combat_truth").is_some_and(|v| !v.is_null())
+        || game_state
+            .get("combat_observation")
+            .is_some_and(|v| !v.is_null())
+}
+
+fn live_watch_combat_truth(game_state: &Value) -> Option<Value> {
+    if !has_live_combat_payload(game_state) {
+        return None;
+    }
+    Some(build_live_truth_snapshot(game_state))
 }
 
 fn number_assertion(field: &str, value: i64, note: &str) -> ScenarioAssertion {

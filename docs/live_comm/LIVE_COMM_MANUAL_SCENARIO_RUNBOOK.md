@@ -124,7 +124,7 @@ STATE
 Success criteria:
 
 - `manual_client_latest.json`
-- top-level `game_state.combat_state.monsters[*].id == "TheGuardian"`
+- top-level `game_state.combat_truth.monsters[*].id == "TheGuardian"`
 - same monster has:
   - `runtime_state.guardian_threshold`
 
@@ -180,7 +180,7 @@ STATE
 
 Success criteria:
 
-- `game_state.combat_state.player.powers[*].id == "Combust"`
+- `game_state.combat_truth.player.powers[*].id == "Combust"`
 - same power has:
   - `runtime_state.hp_loss`
 

@@ -9,7 +9,7 @@
 use crate::content::powers::store;
 use crate::content::powers::PowerId;
 use crate::runtime::action::{Action, ActionInfo, AddTo, DamageType, NO_SOURCE};
-use crate::runtime::combat::{CombatState, Intent};
+use crate::runtime::combat::CombatState;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 struct MonsterDamageOutcome {
@@ -297,9 +297,10 @@ pub fn handle_damage(info: crate::runtime::action::DamageInfo, state: &mut Comba
     let target_id = info.target;
     let source_id = info.source;
 
-    // Java passes a fully-evaluated DamageInfo.output into creature.damage().
-    // In our engine, monster-origin Normal damage is calculated here, while player-origin
-    // Normal damage is precomputed during card evaluation / damage-matrix creation.
+    // Damage contract:
+    // - Player-origin Normal damage arrives pre-evaluated in `output`.
+    // - Monster-origin Normal damage is re-resolved here from `base`.
+    // - Non-Normal damage kinds (`HpLoss`, `Thorns`, etc.) use the supplied numeric value.
     let (calculated_output, damage_already_includes_final_receive) = if !info.is_modified
         && source_id != 0
         && source_id != NO_SOURCE
@@ -349,7 +350,6 @@ pub fn handle_damage(info: crate::runtime::action::DamageInfo, state: &mut Comba
                 power.amount,
             );
         }
-
         // 4. on_attacked (Target Powers + Relics)
         if source_id != 0 || info.damage_type == DamageType::Normal {
             for power in &store::powers_snapshot_for(state, 0) {
@@ -392,6 +392,40 @@ pub fn handle_damage(info: crate::runtime::action::DamageInfo, state: &mut Comba
     } else {
         let _ = apply_damage_to_monster_via_pipeline(state, &info, final_damage);
     }
+}
+
+fn damage_type(kind: crate::semantics::combat::DamageKind) -> crate::runtime::action::DamageType {
+    match kind {
+        crate::semantics::combat::DamageKind::Normal => crate::runtime::action::DamageType::Normal,
+        crate::semantics::combat::DamageKind::Thorns => crate::runtime::action::DamageType::Thorns,
+        crate::semantics::combat::DamageKind::HpLoss => crate::runtime::action::DamageType::HpLoss,
+        crate::semantics::combat::DamageKind::Unknown => panic!("monster attack kind unknown"),
+    }
+}
+
+/// Executes the canonical monster attack contract.
+///
+/// `base_damage` is the truth input from monster planning. For `Normal` attacks the
+/// engine recalculates final damage from this base using the monster damage pipeline;
+/// monster content code must not precompute or guess a modified output value.
+pub fn handle_monster_attack(
+    source: usize,
+    target: usize,
+    base_damage: i32,
+    damage_kind: crate::semantics::combat::DamageKind,
+    state: &mut CombatState,
+) {
+    handle_damage(
+        crate::runtime::action::DamageInfo {
+            source,
+            target,
+            base: base_damage,
+            output: base_damage,
+            damage_type: damage_type(damage_kind),
+            is_modified: !matches!(damage_kind, crate::semantics::combat::DamageKind::Normal),
+        },
+        state,
+    );
 }
 
 pub fn handle_damage_all_enemies(
@@ -581,6 +615,36 @@ pub fn handle_gain_gold(amount: i32, state: &mut CombatState) {
     }
 }
 
+pub fn handle_steal_player_gold(thief_id: usize, amount: i32, state: &mut CombatState) {
+    if amount <= 0 {
+        if let Some(thief) = state
+            .entities
+            .monsters
+            .iter_mut()
+            .find(|m| m.id == thief_id)
+        {
+            thief.thief.protocol_seeded = true;
+            thief.thief.slash_count = thief.thief.slash_count.saturating_add(1);
+        }
+        return;
+    }
+
+    let actual = amount.min(state.entities.player.gold).max(0);
+    state.entities.player.gold = (state.entities.player.gold - actual).max(0);
+    state.entities.player.gold_delta_this_combat -= actual;
+
+    if let Some(thief) = state
+        .entities
+        .monsters
+        .iter_mut()
+        .find(|m| m.id == thief_id)
+    {
+        thief.thief.protocol_seeded = true;
+        thief.thief.slash_count = thief.thief.slash_count.saturating_add(1);
+        thief.thief.stolen_gold += actual;
+    }
+}
+
 pub fn handle_vampire_damage(info: crate::runtime::action::DamageInfo, state: &mut CombatState) {
     let source = info.source;
     if info.target == 0 {
@@ -733,7 +797,10 @@ pub fn handle_gain_block_random_monster(source: usize, amount: i32, state: &mut 
             m.id != source
                 && m.current_hp > 0
                 && !m.is_escaped
-                && m.current_intent != Intent::Escape
+                && !matches!(
+                    crate::content::monsters::resolve_monster_turn_plan(state, m).summary_spec(),
+                    crate::semantics::combat::MonsterMoveSpec::Escape
+                )
                 && !m.is_dying
         })
         .map(|m| m.id)
@@ -777,6 +844,9 @@ pub fn handle_heal(target: usize, mut amount: i32, state: &mut CombatState) {
             (state.entities.player.current_hp + amount).min(state.entities.player.max_hp);
         queue_red_skull_threshold_actions(state, previous_hp, state.entities.player.current_hp);
     } else if let Some(m) = state.entities.monsters.iter_mut().find(|m| m.id == target) {
+        if m.is_dying {
+            return;
+        }
         m.current_hp = (m.current_hp + amount).min(m.max_hp);
     }
 }

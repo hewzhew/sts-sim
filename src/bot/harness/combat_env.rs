@@ -1,17 +1,23 @@
 use serde::{Deserialize, Serialize};
+use serde_json::{json, Value};
 
 use crate::bot::combat::legal_moves_for_audit;
 use crate::bot::combat::monster_belief::{
     build_combat_belief_state, CombatBeliefState, MonsterBeliefCertainty,
 };
 use crate::bot::combat::pressure::StatePressureFeatures;
-use crate::content::cards::{can_play_card, effective_target, get_card_definition};
+use crate::content::cards::{
+    can_play_card, effective_target, exhausts_when_played, get_card_definition, is_ethereal,
+    CardTarget, CardType,
+};
+use crate::content::powers::{get_power_definition, is_debuff};
 use crate::core::EntityId;
 use crate::engine::core::tick_until_stable_turn;
 use crate::engine::targeting;
 use crate::runtime::combat::{CombatCard, CombatPhase, CombatState};
-use crate::state::core::{ClientInput, EngineState, PendingChoice};
+use crate::state::core::{ClientInput, EngineState, PendingChoice, PileType};
 
+use crate::testing::fixtures::combat_case::{lower_case, CombatCase};
 use crate::testing::fixtures::combat_start_spec::CombatStartSpec;
 use crate::testing::fixtures::scenario::{initialize_fixture_state, ScenarioFixture};
 use crate::testing::harness::hexaghost_value::{
@@ -32,6 +38,32 @@ pub struct CombatEnvSpec {
 }
 
 impl CombatEnvSpec {
+    pub fn from_case(case: &CombatCase, seed_hint_override: Option<u64>) -> Result<Self, String> {
+        let initial = lower_case(case)?;
+        let encounter_name = initial
+            .combat
+            .entities
+            .monsters
+            .first()
+            .and_then(|monster| crate::content::monsters::EnemyId::from_id(monster.monster_type))
+            .map(|enemy| enemy.get_name().to_string());
+        Ok(Self {
+            name: case.id.clone(),
+            player_class: initial
+                .player_class
+                .unwrap_or_else(|| initial.combat.meta.player_class.to_string()),
+            ascension_level: initial
+                .ascension_level
+                .map(i32::from)
+                .unwrap_or(initial.combat.meta.ascension_level as i32),
+            seed_hint: seed_hint_override.or(initial.seed_hint).unwrap_or(1),
+            encounter_name,
+            run_rule_context_summary: None,
+            initial_engine_state: initial.engine_state,
+            initial_combat: initial.combat,
+        })
+    }
+
     pub fn from_fixture(fixture: &ScenarioFixture, seed_hint: u64) -> Self {
         let initial = initialize_fixture_state(fixture);
         let encounter_name = initial
@@ -232,22 +264,97 @@ pub struct CombatObservationCard {
     pub uuid: u32,
     pub card_id: String,
     pub name: String,
+    pub card_type: String,
+    pub target_mode: String,
     pub cost_for_turn: i32,
     pub upgraded: bool,
     pub playable: bool,
+    pub exhausts_when_played: bool,
+    pub ethereal: bool,
+    pub retain: bool,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub struct CombatObservationPower {
+    pub id: String,
+    pub name: String,
+    pub amount: i32,
+    pub extra_data: i32,
+    pub just_applied: bool,
+    pub is_debuff: bool,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub struct CombatObservationPotion {
+    pub slot: usize,
+    pub uuid: u32,
+    pub potion_id: String,
+    pub name: String,
+    pub target_mode: String,
+    pub usable: bool,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub struct CombatObservationIntentPayload {
+    pub kind: String,
+    pub move_id: u8,
+    pub damage_per_hit: i32,
+    pub hits: i32,
+    pub total_damage: i32,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub struct CombatObservationPendingChoiceOption {
+    pub option_index: usize,
+    pub label: String,
+    pub card_id: Option<String>,
+    pub card_uuid: Option<u32>,
+    pub selection_uuids: Vec<u32>,
+    pub source_pile: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub struct CombatObservationPendingChoice {
+    pub kind: String,
+    pub min_select: u8,
+    pub max_select: u8,
+    pub can_cancel: bool,
+    pub reason: Option<String>,
+    pub source_pile: Option<String>,
+    pub options: Vec<CombatObservationPendingChoiceOption>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub struct CombatObservationTurnPrefix {
+    pub cards_played_this_turn: u8,
+    pub attacks_played_this_turn: u8,
+    pub skills_played_this_turn: u8,
+    pub powers_played_this_turn: u8,
+    pub energy_spent_this_turn: i32,
+    pub damage_dealt_this_turn: i32,
+    pub damage_taken_this_turn: i32,
+    pub last_action_family: Option<String>,
+    pub last_card_id: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct CombatObservationMonster {
+    pub slot: usize,
     pub entity_id: usize,
+    pub monster_id: String,
     pub name: String,
     pub current_hp: i32,
     pub max_hp: i32,
     pub block: i32,
+    pub alive: bool,
+    pub targetable: bool,
     pub visible_intent: String,
+    pub intent_payload: CombatObservationIntentPayload,
     pub belief_certainty: String,
     pub belief_expected_incoming: f32,
     pub belief_max_incoming: i32,
+    pub powers: Vec<CombatObservationPower>,
+    pub mechanic_state: Value,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
@@ -278,6 +385,7 @@ pub struct CombatPressureObservation {
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct CombatObservation {
+    pub contract_version: String,
     pub env_name: String,
     pub player_class: String,
     pub ascension_level: i32,
@@ -290,14 +398,18 @@ pub struct CombatObservation {
     pub player_max_hp: i32,
     pub player_block: i32,
     pub energy: u8,
+    pub player_powers: Vec<CombatObservationPower>,
     pub hand: Vec<CombatObservationCard>,
+    pub potions: Vec<CombatObservationPotion>,
     pub draw_count: usize,
     pub discard_count: usize,
     pub exhaust_count: usize,
     pub monsters: Vec<CombatObservationMonster>,
+    pub turn_prefix: CombatObservationTurnPrefix,
     pub belief: CombatBeliefObservation,
     pub pressure: CombatPressureObservation,
     pub pending_choice_kind: Option<String>,
+    pub pending_choice: Option<CombatObservationPendingChoice>,
     pub hexaghost_future_script: Option<HexaghostFutureScriptSummary>,
 }
 
@@ -338,11 +450,23 @@ pub struct CombatStepInfo {
     pub legal_actions_after: usize,
 }
 
+#[derive(Clone, Debug, Default, PartialEq)]
+struct CombatTurnPrefixTracker {
+    pub skills_played_this_turn: u8,
+    pub powers_played_this_turn: u8,
+    pub energy_spent_this_turn: i32,
+    pub damage_dealt_this_turn: i32,
+    pub damage_taken_this_turn: i32,
+    pub last_action_family: Option<String>,
+    pub last_card_id: Option<String>,
+}
+
 pub struct CombatEnv {
     spec: CombatEnvSpec,
     engine_state: EngineState,
     combat: CombatState,
     episode_steps: usize,
+    turn_prefix_tracker: CombatTurnPrefixTracker,
 }
 
 impl CombatEnv {
@@ -352,6 +476,7 @@ impl CombatEnv {
             combat: spec.initial_combat.clone(),
             spec,
             episode_steps: 0,
+            turn_prefix_tracker: CombatTurnPrefixTracker::default(),
         }
     }
 
@@ -362,11 +487,17 @@ impl CombatEnv {
         self.engine_state = self.spec.initial_engine_state.clone();
         self.combat = self.spec.initial_combat.clone();
         self.episode_steps = 0;
+        self.turn_prefix_tracker = CombatTurnPrefixTracker::default();
         self.observation()
     }
 
     pub fn observation(&self) -> CombatObservation {
-        build_observation(&self.spec, &self.engine_state, &self.combat)
+        build_observation(
+            &self.spec,
+            &self.engine_state,
+            &self.combat,
+            &self.turn_prefix_tracker,
+        )
     }
 
     pub fn action_mask(&self) -> ActionMask {
@@ -400,6 +531,12 @@ impl CombatEnv {
         let before_engine_state = self.engine_state.clone();
         let before_combat = self.combat.clone();
         let alive = tick_until_stable_turn(&mut self.engine_state, &mut self.combat, desired_input);
+        update_turn_prefix_tracker(
+            &mut self.turn_prefix_tracker,
+            &action,
+            &before_combat,
+            &self.combat,
+        );
         self.episode_steps += 1;
 
         let outcome = if !alive || self.combat.entities.player.current_hp <= 0 {
@@ -438,10 +575,12 @@ fn build_observation(
     spec: &CombatEnvSpec,
     engine_state: &EngineState,
     combat: &CombatState,
+    turn_prefix_tracker: &CombatTurnPrefixTracker,
 ) -> CombatObservation {
     let belief = build_combat_belief_state(combat);
     let pressure = StatePressureFeatures::from_combat(combat);
     CombatObservation {
+        contract_version: "combat_rl_v0".to_string(),
         env_name: spec.name.clone(),
         player_class: spec.player_class.clone(),
         ascension_level: spec.ascension_level,
@@ -454,6 +593,7 @@ fn build_observation(
         player_max_hp: combat.entities.player.max_hp,
         player_block: combat.entities.player.block,
         energy: combat.turn.energy,
+        player_powers: build_power_observations(combat, 0),
         hand: combat
             .zones
             .hand
@@ -464,18 +604,35 @@ fn build_observation(
                 uuid: card.uuid,
                 card_id: format!("{:?}", card.id),
                 name: format_card(card),
+                card_type: card_type_name(get_card_definition(card.id).card_type),
+                target_mode: card_target_mode_name(effective_target(card)),
                 cost_for_turn: card
                     .cost_for_turn
                     .map(i32::from)
                     .unwrap_or(get_card_definition(card.id).cost as i32),
                 upgraded: card.upgrades > 0,
                 playable: can_play_card(card, combat).is_ok(),
+                exhausts_when_played: exhausts_when_played(card),
+                ethereal: is_ethereal(card),
+                retain: effective_retain(card),
             })
             .collect(),
+        potions: build_potion_observations(engine_state, combat),
         draw_count: combat.zones.draw_pile.len(),
         discard_count: combat.zones.discard_pile.len(),
         exhaust_count: combat.zones.exhaust_pile.len(),
         monsters: build_monster_observations(combat, &belief),
+        turn_prefix: CombatObservationTurnPrefix {
+            cards_played_this_turn: combat.turn.counters.cards_played_this_turn,
+            attacks_played_this_turn: combat.turn.counters.attacks_played_this_turn,
+            skills_played_this_turn: turn_prefix_tracker.skills_played_this_turn,
+            powers_played_this_turn: turn_prefix_tracker.powers_played_this_turn,
+            energy_spent_this_turn: turn_prefix_tracker.energy_spent_this_turn,
+            damage_dealt_this_turn: turn_prefix_tracker.damage_dealt_this_turn,
+            damage_taken_this_turn: turn_prefix_tracker.damage_taken_this_turn,
+            last_action_family: turn_prefix_tracker.last_action_family.clone(),
+            last_card_id: turn_prefix_tracker.last_card_id.clone(),
+        },
         belief: CombatBeliefObservation {
             hidden_intent_active: belief.hidden_intent_active,
             expected_incoming_damage: belief.expected_incoming_damage,
@@ -499,6 +656,7 @@ fn build_observation(
             urgent_pressure: pressure.urgent_pressure,
         },
         pending_choice_kind: pending_choice_kind(engine_state),
+        pending_choice: build_pending_choice_observation(engine_state, combat),
         hexaghost_future_script: project_hexaghost_future_script(engine_state, combat),
     }
 }
@@ -512,20 +670,31 @@ fn build_monster_observations(
         .monsters
         .iter()
         .filter(|monster| !monster.is_dying && !monster.is_escaped && !monster.half_dead)
-        .map(|monster| {
+        .enumerate()
+        .map(|(slot, monster)| {
             let belief_state = belief
                 .monsters
                 .iter()
                 .find(|entry| entry.entity_id == monster.id);
+            let enemy_id = crate::content::monsters::EnemyId::from_id(monster.monster_type);
+            let turn_plan = crate::content::monsters::resolve_monster_turn_plan(combat, monster);
+            let summary_spec = turn_plan.summary_spec();
             CombatObservationMonster {
+                slot,
                 entity_id: monster.id,
-                name: crate::content::monsters::EnemyId::from_id(monster.monster_type)
+                monster_id: enemy_id
+                    .map(|enemy| format!("{enemy:?}"))
+                    .unwrap_or_else(|| "Unknown".to_string()),
+                name: enemy_id
                     .map(|enemy| enemy.get_name().to_string())
                     .unwrap_or_else(|| "Unknown".to_string()),
                 current_hp: monster.current_hp,
                 max_hp: monster.max_hp,
                 block: monster.block,
-                visible_intent: format!("{:?}", monster.current_intent),
+                alive: monster.current_hp > 0 && !monster.is_dying && !monster.half_dead,
+                targetable: !monster.is_dying && !monster.is_escaped && !monster.half_dead,
+                visible_intent: format!("{summary_spec:?}"),
+                intent_payload: build_intent_payload(monster, &summary_spec),
                 belief_certainty: belief_state
                     .map(|state| match state.certainty {
                         MonsterBeliefCertainty::Exact => "exact",
@@ -540,9 +709,180 @@ fn build_monster_observations(
                 belief_max_incoming: belief_state
                     .map(|state| state.max_incoming_damage)
                     .unwrap_or(0),
+                powers: build_power_observations(combat, monster.id),
+                mechanic_state: build_monster_mechanic_state(combat, monster),
             }
         })
         .collect()
+}
+
+fn build_power_observations(
+    combat: &CombatState,
+    entity_id: EntityId,
+) -> Vec<CombatObservationPower> {
+    crate::content::powers::store::powers_snapshot_for(combat, entity_id)
+        .into_iter()
+        .map(|power| CombatObservationPower {
+            id: format!("{:?}", power.power_type),
+            name: get_power_definition(power.power_type).name.to_string(),
+            amount: power.amount,
+            extra_data: power.extra_data,
+            just_applied: power.just_applied,
+            is_debuff: is_debuff(power.power_type, power.amount),
+        })
+        .collect()
+}
+
+fn build_potion_observations(
+    engine_state: &EngineState,
+    combat: &CombatState,
+) -> Vec<CombatObservationPotion> {
+    let legal_targeted = legal_moves_for_audit(engine_state, combat);
+    combat
+        .entities
+        .potions
+        .iter()
+        .enumerate()
+        .filter_map(|(slot, maybe_potion)| {
+            let potion = maybe_potion.as_ref()?;
+            let definition = crate::content::potions::get_potion_definition(potion.id);
+            let usable = legal_targeted.iter().any(|legal| match legal {
+                ClientInput::UsePotion {
+                    potion_index,
+                    target: _,
+                } => *potion_index == slot,
+                _ => false,
+            });
+            Some(CombatObservationPotion {
+                slot,
+                uuid: potion.uuid,
+                potion_id: format!("{:?}", potion.id),
+                name: definition.name.to_string(),
+                target_mode: potion_target_mode_name(definition.target_required),
+                usable,
+            })
+        })
+        .collect()
+}
+
+fn build_intent_payload(
+    monster: &crate::runtime::combat::MonsterEntity,
+    summary_spec: &crate::semantics::combat::MonsterMoveSpec,
+) -> CombatObservationIntentPayload {
+    let attack = summary_spec.attack();
+    let damage_per_hit = attack.map(|spec| spec.base_damage).unwrap_or(0);
+    let hits = attack.map(|spec| spec.hits as i32).unwrap_or(0);
+    CombatObservationIntentPayload {
+        kind: match summary_spec {
+            crate::semantics::combat::MonsterMoveSpec::Attack(_) => "attack",
+            crate::semantics::combat::MonsterMoveSpec::AttackAddCard(_, _) => "attack_add_card",
+            crate::semantics::combat::MonsterMoveSpec::AttackUpgradeCards(_, _) => {
+                "attack_upgrade_cards"
+            }
+            crate::semantics::combat::MonsterMoveSpec::AttackBuff(_, _) => "attack_buff",
+            crate::semantics::combat::MonsterMoveSpec::AttackSustain(_) => "attack_sustain",
+            crate::semantics::combat::MonsterMoveSpec::AttackDebuff(_, _) => "attack_debuff",
+            crate::semantics::combat::MonsterMoveSpec::AttackDefend(_, _) => "attack_defend",
+            crate::semantics::combat::MonsterMoveSpec::AddCard(_) => "add_card",
+            crate::semantics::combat::MonsterMoveSpec::Buff(_) => "buff",
+            crate::semantics::combat::MonsterMoveSpec::Debuff(_) => "debuff",
+            crate::semantics::combat::MonsterMoveSpec::StrongDebuff(_) => "strong_debuff",
+            crate::semantics::combat::MonsterMoveSpec::Defend(_) => "defend",
+            crate::semantics::combat::MonsterMoveSpec::DefendDebuff(_, _) => "defend_debuff",
+            crate::semantics::combat::MonsterMoveSpec::DefendBuff(_, _) => "defend_buff",
+            crate::semantics::combat::MonsterMoveSpec::Heal(_) => "heal",
+            crate::semantics::combat::MonsterMoveSpec::Escape => "escape",
+            crate::semantics::combat::MonsterMoveSpec::Magic => "magic",
+            crate::semantics::combat::MonsterMoveSpec::Sleep => "sleep",
+            crate::semantics::combat::MonsterMoveSpec::Stun => "stun",
+            crate::semantics::combat::MonsterMoveSpec::Debug => "debug",
+            crate::semantics::combat::MonsterMoveSpec::None => "none",
+            crate::semantics::combat::MonsterMoveSpec::Unknown => "unknown",
+        }
+        .to_string(),
+        move_id: monster.planned_move_id(),
+        damage_per_hit,
+        hits,
+        total_damage: damage_per_hit.saturating_mul(hits.max(1)),
+    }
+}
+
+fn build_monster_mechanic_state(
+    combat: &CombatState,
+    monster: &crate::runtime::combat::MonsterEntity,
+) -> Value {
+    let enemy_id = crate::content::monsters::EnemyId::from_id(monster.monster_type);
+    let has_split_power = crate::content::powers::store::has_power(
+        combat,
+        monster.id,
+        crate::content::powers::PowerId::Split,
+    );
+    let regrow_counter = crate::content::powers::store::power_amount(
+        combat,
+        monster.id,
+        crate::content::powers::PowerId::Regrow,
+    );
+    let mut mechanic_state = json!({
+        "planned_move_id": monster.planned_move_id(),
+        "move_history": monster.move_history().iter().copied().collect::<Vec<_>>(),
+    });
+    if let Some(object) = mechanic_state.as_object_mut() {
+        if has_split_power {
+            let split_threshold = monster.max_hp / 2;
+            object.insert("split_threshold".to_string(), json!(split_threshold));
+            object.insert(
+                "split_ready".to_string(),
+                json!(monster.current_hp <= split_threshold),
+            );
+        }
+        if regrow_counter != 0
+            || matches!(enemy_id, Some(crate::content::monsters::EnemyId::Darkling))
+        {
+            object.insert("regrow_counter".to_string(), json!(regrow_counter));
+        }
+        if let Some(bite_damage) = monster.louse_bite_damage() {
+            object.insert("bite_damage".to_string(), json!(bite_damage));
+        }
+        match enemy_id {
+            Some(crate::content::monsters::EnemyId::Lagavulin) => {
+                object.insert("sleeping".to_string(), json!(!monster.lagavulin.is_out));
+                object.insert(
+                    "idle_count".to_string(),
+                    json!(monster.lagavulin.idle_count),
+                );
+                object.insert(
+                    "debuff_turn_count".to_string(),
+                    json!(monster.lagavulin.debuff_turn_count),
+                );
+                object.insert(
+                    "wake_triggered".to_string(),
+                    json!(monster.lagavulin.is_out_triggered),
+                );
+            }
+            Some(crate::content::monsters::EnemyId::TheGuardian) => {
+                object.insert(
+                    "guardian_threshold".to_string(),
+                    json!(monster.guardian.damage_threshold),
+                );
+                object.insert(
+                    "guardian_damage_taken".to_string(),
+                    json!(monster.guardian.damage_taken),
+                );
+                object.insert("guardian_open".to_string(), json!(monster.guardian.is_open));
+                object.insert(
+                    "close_up_triggered".to_string(),
+                    json!(monster.guardian.close_up_triggered),
+                );
+            }
+            Some(crate::content::monsters::EnemyId::Darkling) => {
+                object.insert("half_dead".to_string(), json!(monster.half_dead));
+                object.insert("first_move".to_string(), json!(monster.darkling.first_move));
+                object.insert("nip_damage".to_string(), json!(monster.darkling.nip_dmg));
+            }
+            _ => {}
+        }
+    }
+    mechanic_state
 }
 
 fn build_action_mask(engine_state: &EngineState, combat: &CombatState) -> ActionMask {
@@ -643,9 +983,7 @@ fn enumerate_pending_choice_actions(
             cards, can_skip, ..
         } => {
             let mut actions = (0..cards.len())
-                .map(|index| CombatAction::SubmitCardChoice {
-                    indices: vec![index],
-                })
+                .map(|index| CombatAction::SubmitDiscoverChoice { index })
                 .collect::<Vec<_>>();
             if *can_skip {
                 actions.push(CombatAction::Cancel);
@@ -849,6 +1187,333 @@ fn pending_choice_kind(engine_state: &EngineState) -> Option<String> {
         ),
         _ => None,
     }
+}
+
+fn build_pending_choice_observation(
+    engine_state: &EngineState,
+    combat: &CombatState,
+) -> Option<CombatObservationPendingChoice> {
+    let EngineState::PendingChoice(choice) = engine_state else {
+        return None;
+    };
+    match choice {
+        PendingChoice::DiscoverySelect(cards) => Some(CombatObservationPendingChoice {
+            kind: "discovery_select".to_string(),
+            min_select: 1,
+            max_select: 1,
+            can_cancel: false,
+            reason: None,
+            source_pile: None,
+            options: cards
+                .iter()
+                .enumerate()
+                .map(
+                    |(option_index, card_id)| CombatObservationPendingChoiceOption {
+                        option_index,
+                        label: get_card_definition(*card_id).name.to_string(),
+                        card_id: Some(format!("{card_id:?}")),
+                        card_uuid: None,
+                        selection_uuids: Vec::new(),
+                        source_pile: None,
+                    },
+                )
+                .collect(),
+        }),
+        PendingChoice::CardRewardSelect {
+            cards,
+            destination,
+            can_skip,
+        } => Some(CombatObservationPendingChoice {
+            kind: "card_reward_select".to_string(),
+            min_select: 1,
+            max_select: 1,
+            can_cancel: *can_skip,
+            reason: Some(format!("{destination:?}")),
+            source_pile: None,
+            options: cards
+                .iter()
+                .enumerate()
+                .map(
+                    |(option_index, card_id)| CombatObservationPendingChoiceOption {
+                        option_index,
+                        label: get_card_definition(*card_id).name.to_string(),
+                        card_id: Some(format!("{card_id:?}")),
+                        card_uuid: None,
+                        selection_uuids: Vec::new(),
+                        source_pile: None,
+                    },
+                )
+                .collect(),
+        }),
+        PendingChoice::StanceChoice => Some(CombatObservationPendingChoice {
+            kind: "stance_choice".to_string(),
+            min_select: 1,
+            max_select: 1,
+            can_cancel: false,
+            reason: None,
+            source_pile: None,
+            options: vec![
+                CombatObservationPendingChoiceOption {
+                    option_index: 0,
+                    label: "Wrath".to_string(),
+                    card_id: None,
+                    card_uuid: None,
+                    selection_uuids: Vec::new(),
+                    source_pile: None,
+                },
+                CombatObservationPendingChoiceOption {
+                    option_index: 1,
+                    label: "Calm".to_string(),
+                    card_id: None,
+                    card_uuid: None,
+                    selection_uuids: Vec::new(),
+                    source_pile: None,
+                },
+            ],
+        }),
+        PendingChoice::HandSelect {
+            candidate_uuids,
+            min_cards,
+            max_cards,
+            can_cancel,
+            reason,
+        } => Some(CombatObservationPendingChoice {
+            kind: "hand_select".to_string(),
+            min_select: *min_cards,
+            max_select: *max_cards,
+            can_cancel: *can_cancel,
+            reason: Some(format!("{reason:?}")),
+            source_pile: Some("Hand".to_string()),
+            options: candidate_uuids
+                .iter()
+                .enumerate()
+                .map(|(option_index, uuid)| {
+                    let label = find_card_by_uuid(combat, *uuid)
+                        .map(format_card)
+                        .unwrap_or_else(|| format!("card#{uuid}"));
+                    let card_id =
+                        find_card_by_uuid(combat, *uuid).map(|card| format!("{:?}", card.id));
+                    CombatObservationPendingChoiceOption {
+                        option_index,
+                        label,
+                        card_id,
+                        card_uuid: Some(*uuid),
+                        selection_uuids: vec![*uuid],
+                        source_pile: Some("Hand".to_string()),
+                    }
+                })
+                .collect(),
+        }),
+        PendingChoice::GridSelect {
+            source_pile,
+            candidate_uuids,
+            min_cards,
+            max_cards,
+            can_cancel,
+            reason,
+        } => Some(CombatObservationPendingChoice {
+            kind: "grid_select".to_string(),
+            min_select: *min_cards,
+            max_select: *max_cards,
+            can_cancel: *can_cancel,
+            reason: Some(format!("{reason:?}")),
+            source_pile: Some(pile_type_name(*source_pile)),
+            options: candidate_uuids
+                .iter()
+                .enumerate()
+                .map(|(option_index, uuid)| {
+                    let label = find_card_by_uuid(combat, *uuid)
+                        .map(format_card)
+                        .unwrap_or_else(|| format!("card#{uuid}"));
+                    let card_id =
+                        find_card_by_uuid(combat, *uuid).map(|card| format!("{:?}", card.id));
+                    CombatObservationPendingChoiceOption {
+                        option_index,
+                        label,
+                        card_id,
+                        card_uuid: Some(*uuid),
+                        selection_uuids: vec![*uuid],
+                        source_pile: Some(pile_type_name(*source_pile)),
+                    }
+                })
+                .collect(),
+        }),
+        PendingChoice::ScrySelect { cards, card_uuids } => Some(CombatObservationPendingChoice {
+            kind: "scry_select".to_string(),
+            min_select: 0,
+            max_select: cards.len() as u8,
+            can_cancel: true,
+            reason: None,
+            source_pile: Some("Draw".to_string()),
+            options: cards
+                .iter()
+                .enumerate()
+                .map(
+                    |(option_index, card_id)| CombatObservationPendingChoiceOption {
+                        option_index,
+                        label: get_card_definition(*card_id).name.to_string(),
+                        card_id: Some(format!("{card_id:?}")),
+                        card_uuid: card_uuids.get(option_index).copied(),
+                        selection_uuids: card_uuids
+                            .get(option_index)
+                            .copied()
+                            .into_iter()
+                            .collect(),
+                        source_pile: Some("Draw".to_string()),
+                    },
+                )
+                .collect(),
+        }),
+    }
+}
+
+fn update_turn_prefix_tracker(
+    tracker: &mut CombatTurnPrefixTracker,
+    action: &CombatAction,
+    before: &CombatState,
+    after: &CombatState,
+) {
+    if after.turn.turn_count != before.turn.turn_count {
+        *tracker = CombatTurnPrefixTracker::default();
+        return;
+    }
+    tracker.damage_dealt_this_turn += (living_monster_hp(before) - living_monster_hp(after)).max(0);
+    tracker.damage_taken_this_turn +=
+        (before.entities.player.current_hp - after.entities.player.current_hp).max(0);
+    tracker.last_action_family = Some(action_family_name(action).to_string());
+    tracker.last_card_id = action_card_id(action, before);
+    match action {
+        CombatAction::PlayCard { card_index, .. } => {
+            if let Some(card) = before.zones.hand.get(*card_index) {
+                match get_card_definition(card.id).card_type {
+                    CardType::Skill => {
+                        tracker.skills_played_this_turn =
+                            tracker.skills_played_this_turn.saturating_add(1);
+                    }
+                    CardType::Power => {
+                        tracker.powers_played_this_turn =
+                            tracker.powers_played_this_turn.saturating_add(1);
+                    }
+                    _ => {}
+                }
+                tracker.energy_spent_this_turn += energy_spent_by_card(card, before);
+            }
+        }
+        CombatAction::UsePotion { .. }
+        | CombatAction::EndTurn
+        | CombatAction::SubmitDiscoverChoice { .. }
+        | CombatAction::SubmitCardChoice { .. }
+        | CombatAction::SubmitHandSelect { .. }
+        | CombatAction::SubmitGridSelect { .. }
+        | CombatAction::Proceed
+        | CombatAction::Cancel
+        | CombatAction::Raw { .. } => {}
+    }
+}
+
+fn living_monster_hp(combat: &CombatState) -> i32 {
+    combat
+        .entities
+        .monsters
+        .iter()
+        .filter(|monster| !monster.is_dying && !monster.is_escaped && !monster.half_dead)
+        .map(|monster| monster.current_hp.max(0))
+        .sum()
+}
+
+fn action_family_name(action: &CombatAction) -> &'static str {
+    match action {
+        CombatAction::EndTurn => "end_turn",
+        CombatAction::PlayCard { .. } => "play_card",
+        CombatAction::UsePotion { .. } => "use_potion",
+        CombatAction::SubmitDiscoverChoice { .. } => "choice_select",
+        CombatAction::SubmitCardChoice { .. } => "choice_select",
+        CombatAction::SubmitHandSelect { .. } => "choice_select",
+        CombatAction::SubmitGridSelect { .. } => "choice_select",
+        CombatAction::Proceed => "proceed",
+        CombatAction::Cancel => "cancel",
+        CombatAction::Raw { .. } => "raw",
+    }
+}
+
+fn action_card_id(action: &CombatAction, combat: &CombatState) -> Option<String> {
+    match action {
+        CombatAction::PlayCard { card_index, .. } => combat
+            .zones
+            .hand
+            .get(*card_index)
+            .map(|card| format!("{:?}", card.id)),
+        _ => None,
+    }
+}
+
+fn energy_spent_by_card(card: &CombatCard, combat: &CombatState) -> i32 {
+    if card.free_to_play_once {
+        return 0;
+    }
+    let cost = card.get_cost();
+    if cost == -1 {
+        return i32::from(combat.turn.energy);
+    }
+    cost.max(0) as i32
+}
+
+fn effective_retain(card: &CombatCard) -> bool {
+    card.retain_override
+        .unwrap_or(matches!(card.id, crate::content::cards::CardId::Miracle))
+}
+
+fn find_card_by_uuid(combat: &CombatState, uuid: u32) -> Option<&CombatCard> {
+    combat
+        .zones
+        .hand
+        .iter()
+        .chain(combat.zones.draw_pile.iter())
+        .chain(combat.zones.discard_pile.iter())
+        .chain(combat.zones.exhaust_pile.iter())
+        .chain(combat.zones.limbo.iter())
+        .find(|card| card.uuid == uuid)
+}
+
+fn card_type_name(card_type: CardType) -> String {
+    match card_type {
+        CardType::Attack => "attack",
+        CardType::Skill => "skill",
+        CardType::Power => "power",
+        CardType::Status => "status",
+        CardType::Curse => "curse",
+    }
+    .to_string()
+}
+
+fn card_target_mode_name(target: CardTarget) -> String {
+    match target {
+        CardTarget::Enemy => "single_enemy",
+        CardTarget::AllEnemy => "all_enemy",
+        CardTarget::SelfTarget => "self",
+        CardTarget::None => "none",
+    }
+    .to_string()
+}
+
+fn potion_target_mode_name(target_required: bool) -> String {
+    if target_required {
+        "single_enemy".to_string()
+    } else {
+        "none".to_string()
+    }
+}
+
+fn pile_type_name(pile: PileType) -> String {
+    match pile {
+        PileType::Draw => "Draw",
+        PileType::Discard => "Discard",
+        PileType::Exhaust => "Exhaust",
+        PileType::Hand => "Hand",
+        PileType::Limbo => "Limbo",
+        PileType::MasterDeck => "MasterDeck",
+    }
+    .to_string()
 }
 
 fn format_card(card: &CombatCard) -> String {

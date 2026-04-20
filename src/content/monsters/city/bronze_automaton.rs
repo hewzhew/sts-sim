@@ -1,16 +1,184 @@
-use crate::content::monsters::{EnemyId, MonsterBehavior};
+use crate::content::monsters::exordium::{attack_actions, PLAYER};
+use crate::content::monsters::MonsterBehavior;
 use crate::content::powers::PowerId;
-use crate::runtime::action::{Action, DamageInfo, DamageType};
-use crate::runtime::combat::{CombatState, Intent};
+use crate::runtime::action::{Action, MonsterRuntimePatch};
+use crate::runtime::combat::{CombatState, MonsterEntity};
+use crate::semantics::combat::{
+    ApplyPowerStep, AttackSpec, BlockStep, BuffSpec, DamageKind, DefendSpec, EffectStrength,
+    MonsterMoveSpec, MonsterTurnPlan, MoveStep, MoveTarget, PowerEffectKind, SpawnHpSpec,
+    SpawnHpValue,
+};
+use smallvec::smallvec;
 
 pub struct BronzeAutomaton;
 
+const FLAIL: u8 = 1;
+const HYPER_BEAM: u8 = 2;
+const STUNNED: u8 = 3;
+const SPAWN_ORBS: u8 = 4;
+const BOOST: u8 = 5;
+const LEFT_ORB_OFFSET: i32 = -167;
+const RIGHT_ORB_OFFSET: i32 = 166;
+
+fn flail_damage(ascension_level: u8) -> i32 {
+    if ascension_level >= 4 {
+        8
+    } else {
+        7
+    }
+}
+
+fn beam_damage(ascension_level: u8) -> i32 {
+    if ascension_level >= 4 {
+        50
+    } else {
+        45
+    }
+}
+
+fn block_amount(ascension_level: u8) -> i32 {
+    if ascension_level >= 9 {
+        12
+    } else {
+        9
+    }
+}
+
+fn strength_amount(ascension_level: u8) -> i32 {
+    if ascension_level >= 4 {
+        4
+    } else {
+        3
+    }
+}
+
+fn current_runtime(entity: &MonsterEntity) -> (bool, u8) {
+    assert!(
+        entity.bronze_automaton.protocol_seeded,
+        "bronze automaton runtime truth must be protocol-seeded or factory-seeded"
+    );
+    (
+        entity.bronze_automaton.first_turn,
+        entity.bronze_automaton.num_turns,
+    )
+}
+
+fn automaton_runtime_update(
+    entity: &MonsterEntity,
+    first_turn: Option<bool>,
+    num_turns: Option<u8>,
+) -> Action {
+    Action::UpdateMonsterRuntime {
+        monster_id: entity.id,
+        patch: MonsterRuntimePatch::BronzeAutomaton {
+            first_turn,
+            num_turns,
+            protocol_seeded: Some(true),
+        },
+    }
+}
+
+fn flail_plan(ascension_level: u8) -> MonsterTurnPlan {
+    MonsterTurnPlan::from_spec(
+        FLAIL,
+        MonsterMoveSpec::Attack(AttackSpec {
+            base_damage: flail_damage(ascension_level),
+            hits: 2,
+            damage_kind: DamageKind::Normal,
+        }),
+    )
+}
+
+fn hyper_beam_plan(ascension_level: u8) -> MonsterTurnPlan {
+    MonsterTurnPlan::from_spec(
+        HYPER_BEAM,
+        MonsterMoveSpec::Attack(AttackSpec {
+            base_damage: beam_damage(ascension_level),
+            hits: 1,
+            damage_kind: DamageKind::Normal,
+        }),
+    )
+}
+
+fn stunned_plan() -> MonsterTurnPlan {
+    MonsterTurnPlan::with_visible_spec(STUNNED, smallvec![], MonsterMoveSpec::Stun)
+}
+
+fn spawn_orbs_plan() -> MonsterTurnPlan {
+    MonsterTurnPlan::with_visible_spec(SPAWN_ORBS, smallvec![], MonsterMoveSpec::Unknown)
+}
+
+fn boost_plan(ascension_level: u8) -> MonsterTurnPlan {
+    MonsterTurnPlan::with_visible_spec(
+        BOOST,
+        smallvec![
+            MoveStep::GainBlock(BlockStep {
+                target: MoveTarget::SelfTarget,
+                amount: block_amount(ascension_level),
+            }),
+            MoveStep::ApplyPower(ApplyPowerStep {
+                target: MoveTarget::SelfTarget,
+                power_id: PowerId::Strength,
+                amount: strength_amount(ascension_level),
+                effect: PowerEffectKind::Buff,
+                visible_strength: EffectStrength::Normal,
+            }),
+        ],
+        MonsterMoveSpec::DefendBuff(
+            DefendSpec {
+                block: block_amount(ascension_level),
+            },
+            BuffSpec {
+                power_id: PowerId::Strength,
+                amount: strength_amount(ascension_level),
+            },
+        ),
+    )
+}
+
+fn plan_for(move_id: u8, ascension_level: u8) -> MonsterTurnPlan {
+    match move_id {
+        FLAIL => flail_plan(ascension_level),
+        HYPER_BEAM => hyper_beam_plan(ascension_level),
+        STUNNED => stunned_plan(),
+        SPAWN_ORBS => spawn_orbs_plan(),
+        BOOST => boost_plan(ascension_level),
+        _ => MonsterTurnPlan::unknown(move_id),
+    }
+}
+
+fn last_move(entity: &MonsterEntity, move_id: u8) -> bool {
+    entity.move_history().back().copied() == Some(move_id)
+}
+
+fn automaton_draw_x(state: &CombatState, entity: &MonsterEntity) -> i32 {
+    state
+        .monster_protocol_identity(entity.id)
+        .and_then(|identity| identity.draw_x)
+        .unwrap_or(entity.logical_position)
+}
+
+fn spawn_orb_action(draw_x: i32) -> Action {
+    Action::SpawnMonsterSmart {
+        monster_id: crate::content::monsters::EnemyId::BronzeOrb,
+        logical_position: draw_x,
+        hp: SpawnHpSpec {
+            current: SpawnHpValue::Rolled,
+            max: SpawnHpValue::Rolled,
+        },
+        protocol_draw_x: Some(draw_x),
+        is_minion: true,
+    }
+}
+
 impl MonsterBehavior for BronzeAutomaton {
-    fn use_pre_battle_action(
-        entity: &crate::runtime::combat::MonsterEntity,
-        _hp_rng: &mut crate::runtime::rng::StsRng,
-        _ascension_level: u8,
+    fn use_pre_battle_actions(
+        state: &mut CombatState,
+        entity: &MonsterEntity,
+        legacy_rng: crate::content::monsters::PreBattleLegacyRng,
     ) -> Vec<Action> {
+        let (_hp_rng, _ascension_level) =
+            crate::content::monsters::legacy_pre_battle_rng(state, legacy_rng);
         vec![Action::ApplyPower {
             source: entity.id,
             target: entity.id,
@@ -19,166 +187,140 @@ impl MonsterBehavior for BronzeAutomaton {
         }]
     }
 
-    fn roll_move(
+    fn roll_move_plan(
         _rng: &mut crate::runtime::rng::StsRng,
-        entity: &crate::runtime::combat::MonsterEntity,
+        entity: &MonsterEntity,
         ascension_level: u8,
         _num: i32,
-    ) -> (u8, Intent) {
-        let flail_dmg = if ascension_level >= 4 { 8 } else { 7 };
-        let beam_dmg = if ascension_level >= 4 { 50 } else { 45 };
-
-        let turn = entity.move_history.len();
-        if turn == 0 {
-            return (4, Intent::Unknown);
+    ) -> MonsterTurnPlan {
+        let (first_turn, num_turns) = current_runtime(entity);
+        if first_turn {
+            return spawn_orbs_plan();
         }
-
-        match turn % 6 {
-            1 | 3 => (
-                1,
-                Intent::Attack {
-                    damage: flail_dmg,
-                    hits: 2,
-                },
-            ), // Flail
-            2 | 4 => (5, Intent::DefendBuff), // Boost
-            5 => (
-                2,
-                Intent::Attack {
-                    damage: beam_dmg,
-                    hits: 1,
-                },
-            ), // Hyper Beam
-            0 => {
-                // After Beam
-                if ascension_level >= 19 {
-                    (5, Intent::DefendBuff) // A19 Boosts instead of Stunned
-                } else {
-                    (3, Intent::Stun)
-                }
+        if num_turns == 4 {
+            return hyper_beam_plan(ascension_level);
+        }
+        if last_move(entity, HYPER_BEAM) {
+            if ascension_level >= 19 {
+                return boost_plan(ascension_level);
             }
-            _ => (3, Intent::Stun), // Unreachable
+            return stunned_plan();
         }
+        if last_move(entity, STUNNED) || last_move(entity, BOOST) || last_move(entity, SPAWN_ORBS) {
+            return flail_plan(ascension_level);
+        }
+        boost_plan(ascension_level)
     }
 
-    fn take_turn(
-        state: &mut CombatState,
-        entity: &crate::runtime::combat::MonsterEntity,
+    fn on_roll_move(
+        _ascension_level: u8,
+        entity: &MonsterEntity,
+        _num: i32,
+        plan: &MonsterTurnPlan,
     ) -> Vec<Action> {
-        let mut actions = Vec::new();
-
-        let block_amt = if state.meta.ascension_level >= 9 {
-            12
-        } else {
-            9
-        };
-        let str_amt = if state.meta.ascension_level >= 4 {
-            4
-        } else {
-            3
-        };
-
-        match entity.next_move_byte {
-            4 => {
-                let left_hp =
-                    bronze_orb_spawn_hp(&mut state.rng.monster_hp_rng, state.meta.ascension_level);
-                let right_hp =
-                    bronze_orb_spawn_hp(&mut state.rng.monster_hp_rng, state.meta.ascension_level);
-                let automaton_draw_x = entity.protocol_identity.draw_x;
-
-                // Spawn 2 Orbs
-                // Java uses smart positioning based on drawX:
-                //   BronzeOrb(-300, 200, 0) -> drawX < Automaton(-50) -> inserts at position 0
-                //   BronzeOrb(200, 130, 1)  -> drawX > Automaton(-50) -> inserts at position 2
-                // After spawn: [Orb, Automaton, Orb]
-                actions.push(Action::SpawnMonster {
-                    monster_id: EnemyId::BronzeOrb,
-                    slot: 0, // Inserted BEFORE automaton (Java drawX=-300 < automaton drawX=-50)
-                    current_hp: left_hp,
-                    max_hp: left_hp,
-                    logical_position: -1,
-                    protocol_draw_x: automaton_draw_x.map(|x| x - 167),
-                    is_minion: true,
-                });
-                actions.push(Action::SpawnMonster {
-                    monster_id: EnemyId::BronzeOrb,
-                    slot: 2, // Inserted AFTER automaton (Java drawX=200 > automaton drawX=-50)
-                    current_hp: right_hp,
-                    max_hp: right_hp,
-                    logical_position: 1,
-                    protocol_draw_x: automaton_draw_x.map(|x| x + 166),
-                    is_minion: true,
-                });
+        let (first_turn, num_turns) = current_runtime(entity);
+        let next_first_turn = Some(false);
+        let next_num_turns = match plan.move_id {
+            HYPER_BEAM => Some(0),
+            FLAIL | BOOST if !first_turn && !last_move(entity, HYPER_BEAM) => {
+                Some(num_turns.saturating_add(1))
             }
-            1 => {
-                let dmg = if state.meta.ascension_level >= 4 {
-                    8
-                } else {
-                    7
-                };
-                actions.push(Action::Damage(DamageInfo {
-                    source: entity.id,
-                    target: 0,
-                    base: dmg,
-                    output: dmg,
-                    damage_type: DamageType::Normal,
-                    is_modified: false,
-                }));
-                actions.push(Action::Damage(DamageInfo {
-                    source: entity.id,
-                    target: 0,
-                    base: dmg,
-                    output: dmg,
-                    damage_type: DamageType::Normal,
-                    is_modified: false,
-                }));
+            _ => Some(num_turns),
+        };
+        vec![automaton_runtime_update(
+            entity,
+            next_first_turn,
+            next_num_turns,
+        )]
+    }
+
+    fn turn_plan(state: &CombatState, entity: &MonsterEntity) -> MonsterTurnPlan {
+        plan_for(entity.planned_move_id(), state.meta.ascension_level)
+    }
+
+    fn take_turn_plan(
+        state: &mut CombatState,
+        entity: &MonsterEntity,
+        plan: &MonsterTurnPlan,
+    ) -> Vec<Action> {
+        match plan.move_id {
+            SPAWN_ORBS => {
+                let center = automaton_draw_x(state, entity);
+                vec![
+                    spawn_orb_action(center + LEFT_ORB_OFFSET),
+                    spawn_orb_action(center + RIGHT_ORB_OFFSET),
+                    Action::RollMonsterMove {
+                        monster_id: entity.id,
+                    },
+                ]
             }
-            5 => {
-                actions.push(Action::GainBlock {
+            FLAIL => {
+                let mut actions = attack_actions(
+                    entity.id,
+                    PLAYER,
+                    &AttackSpec {
+                        base_damage: flail_damage(state.meta.ascension_level),
+                        hits: 2,
+                        damage_kind: DamageKind::Normal,
+                    },
+                );
+                actions.push(Action::RollMonsterMove {
+                    monster_id: entity.id,
+                });
+                actions
+            }
+            BOOST => vec![
+                Action::GainBlock {
                     target: entity.id,
-                    amount: block_amt,
-                });
-                actions.push(Action::ApplyPower {
+                    amount: block_amount(state.meta.ascension_level),
+                },
+                Action::ApplyPower {
                     source: entity.id,
                     target: entity.id,
                     power_id: PowerId::Strength,
-                    amount: str_amt,
+                    amount: strength_amount(state.meta.ascension_level),
+                },
+                Action::RollMonsterMove {
+                    monster_id: entity.id,
+                },
+            ],
+            HYPER_BEAM => {
+                let mut actions = attack_actions(
+                    entity.id,
+                    PLAYER,
+                    &AttackSpec {
+                        base_damage: beam_damage(state.meta.ascension_level),
+                        hits: 1,
+                        damage_kind: DamageKind::Normal,
+                    },
+                );
+                actions.push(Action::RollMonsterMove {
+                    monster_id: entity.id,
                 });
+                actions
             }
-            2 => {
-                let dmg = if state.meta.ascension_level >= 4 {
-                    50
-                } else {
-                    45
-                };
-                actions.push(Action::Damage(DamageInfo {
-                    source: entity.id,
-                    target: 0,
-                    base: dmg,
-                    output: dmg,
-                    damage_type: DamageType::Normal,
-                    is_modified: false,
-                }));
-            }
-            3 => {
-                // Stunned
-            }
-            _ => {}
+            STUNNED => vec![Action::RollMonsterMove {
+                monster_id: entity.id,
+            }],
+            _ => panic!(
+                "bronze automaton take_turn received unsupported move {}",
+                plan.move_id
+            ),
         }
-        actions.push(Action::RollMonsterMove {
-            monster_id: entity.id,
-        });
-        actions
     }
-}
 
-fn bronze_orb_spawn_hp(hp_rng: &mut crate::runtime::rng::StsRng, ascension_level: u8) -> i32 {
-    // Java BronzeOrb constructor consumes monsterHpRng twice:
-    // once in super(... random(52,58) ...), then again in setHp(...)
-    let _unused_ctor_roll = hp_rng.random_range(52, 58);
-    if ascension_level >= 9 {
-        hp_rng.random_range(54, 60)
-    } else {
-        hp_rng.random_range(52, 58)
+    fn on_death(state: &mut CombatState, entity: &MonsterEntity) -> Vec<Action> {
+        state
+            .entities
+            .monsters
+            .iter()
+            .filter(|monster| {
+                monster.id != entity.id
+                    && !monster.is_dying
+                    && !monster.is_escaped
+                    && monster.current_hp > 0
+            })
+            .map(|monster| Action::Suicide { target: monster.id })
+            .collect()
     }
 }

@@ -2,7 +2,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::content::monsters::{EnemyId, MonsterBehavior};
 use crate::content::powers::store;
-use crate::runtime::combat::{CombatState, Intent, MonsterEntity, PowerId};
+use crate::runtime::combat::{CombatState, MonsterEntity, PowerId};
+use crate::semantics::combat::{AttackSpec, DamageKind, MonsterMoveSpec, MonsterTurnPlan};
 use crate::state::core::EngineState;
 
 const MAX_PROJECTED_WINDOWS: usize = 9;
@@ -177,8 +178,8 @@ fn summarize_window(
     current_strength: i32,
     current_weak: i32,
 ) -> Option<HexaghostFutureWindowSummary> {
-    let move_kind = move_kind_name(monster.next_move_byte);
-    let (hits, base_damage, uses_locked_damage) = intent_shape(&monster.current_intent);
+    let move_kind = move_kind_name(monster.planned_move_id());
+    let (hits, base_damage, uses_locked_damage) = spec_shape(&monster.turn_plan().summary_spec());
     let mut damage_per_hit = if hits == 0 {
         0
     } else if uses_locked_damage {
@@ -200,12 +201,15 @@ fn summarize_window(
     })
 }
 
-fn intent_shape(intent: &Intent) -> (u8, i32, bool) {
-    match intent {
-        Intent::Attack { damage, hits }
-        | Intent::AttackBuff { damage, hits }
-        | Intent::AttackDebuff { damage, hits }
-        | Intent::AttackDefend { damage, hits } => (*hits, *damage, false),
+fn spec_shape(spec: &MonsterMoveSpec) -> (u8, i32, bool) {
+    match spec {
+        MonsterMoveSpec::Attack(attack)
+        | MonsterMoveSpec::AttackAddCard(attack, _)
+        | MonsterMoveSpec::AttackUpgradeCards(attack, _)
+        | MonsterMoveSpec::AttackBuff(attack, _)
+        | MonsterMoveSpec::AttackSustain(attack)
+        | MonsterMoveSpec::AttackDebuff(attack, _)
+        | MonsterMoveSpec::AttackDefend(attack, _) => (attack.hits, attack.base_damage, false),
         _ => (0, 0, false),
     }
 }
@@ -231,26 +235,34 @@ fn advance_projection_state(
     current_weak: &mut i32,
     weak_just_applied: &mut bool,
 ) {
-    let current_move = monster.next_move_byte;
+    let current_move = monster.planned_move_id();
     let mut forced_next_move = false;
-    monster.move_history.push_back(current_move);
-    while monster.move_history.len() > 8 {
-        monster.move_history.pop_front();
+    monster.move_history_mut().push_back(current_move);
+    while monster.move_history().len() > 8 {
+        monster.move_history_mut().pop_front();
     }
 
     match current_move {
         5 => {
             monster.hexaghost.activated = true;
             monster.hexaghost.orb_active_count = 6;
-            monster.next_move_byte = 1;
-            monster.current_intent = Intent::Attack {
-                damage: divider_damage(player_current_hp),
-                hits: 6,
-            };
+            monster.hexaghost.divider_damage = Some(divider_damage(player_current_hp));
+            let next_plan = MonsterTurnPlan::from_spec(
+                1,
+                MonsterMoveSpec::Attack(AttackSpec {
+                    base_damage: divider_damage(player_current_hp),
+                    hits: 6,
+                    damage_kind: DamageKind::Normal,
+                }),
+            );
+            monster.set_planned_move_id(next_plan.move_id);
+            monster.set_planned_steps(next_plan.steps);
+            monster.set_planned_visible_spec(next_plan.visible_spec);
             forced_next_move = true;
         }
         1 => {
             monster.hexaghost.orb_active_count = 0;
+            monster.hexaghost.divider_damage = None;
         }
         2 => {
             monster.hexaghost.orb_active_count =
@@ -287,15 +299,15 @@ fn advance_projection_state(
         return;
     }
 
-    let (next_move_byte, next_intent) =
-        crate::content::monsters::exordium::hexaghost::Hexaghost::roll_move(
-            &mut crate::runtime::rng::StsRng::new(0),
-            monster,
-            ascension_level,
-            0,
-        );
-    monster.next_move_byte = next_move_byte;
-    monster.current_intent = next_intent;
+    let next_plan = crate::content::monsters::exordium::hexaghost::Hexaghost::roll_move_plan(
+        &mut crate::runtime::rng::StsRng::new(0),
+        monster,
+        ascension_level,
+        0,
+    );
+    monster.set_planned_move_id(next_plan.move_id);
+    monster.set_planned_steps(next_plan.steps);
+    monster.set_planned_visible_spec(next_plan.visible_spec);
 }
 
 fn divider_damage(player_current_hp: i32) -> i32 {

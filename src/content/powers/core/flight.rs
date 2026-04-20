@@ -1,7 +1,8 @@
 use crate::core::EntityId;
-use crate::runtime::action::Action;
+use crate::runtime::action::{Action, MonsterRuntimePatch};
 use crate::runtime::action::{DamageType, NO_SOURCE};
 use crate::runtime::combat::CombatState;
+use crate::semantics::combat::{MonsterTurnPlan, MoveStep};
 
 pub fn on_calculate_damage_from_player(mut damage: f32, amount: i32) -> f32 {
     if amount > 0 {
@@ -81,11 +82,23 @@ pub fn on_remove(state: &CombatState, owner: EntityId) -> smallvec::SmallVec<[Ac
     if state.entities.monsters.iter().any(|m| {
         m.id == owner && m.monster_type == crate::content::monsters::EnemyId::Byrd as usize
     }) {
-        smallvec::smallvec![Action::SetMonsterMove {
-            monster_id: owner,
-            next_move_byte: 4,
-            intent: crate::runtime::combat::Intent::Stun,
-        }]
+        let plan = MonsterTurnPlan::single(4, MoveStep::Stun);
+        smallvec::smallvec![
+            Action::UpdateMonsterRuntime {
+                monster_id: owner,
+                patch: MonsterRuntimePatch::Byrd {
+                    first_move: None,
+                    is_flying: Some(false),
+                    protocol_seeded: Some(true),
+                },
+            },
+            Action::SetMonsterMove {
+                monster_id: owner,
+                next_move_byte: plan.move_id,
+                planned_steps: plan.steps,
+                planned_visible_spec: plan.visible_spec,
+            }
+        ]
     } else {
         smallvec::smallvec![]
     }

@@ -1,77 +1,103 @@
+use crate::content::monsters::exordium::{attack_actions, set_next_move_action, PLAYER};
 use crate::content::monsters::MonsterBehavior;
 use crate::content::powers::PowerId;
-use crate::runtime::action::{Action, DamageInfo, DamageType};
-use crate::runtime::combat::{CombatState, Intent};
+use crate::runtime::action::Action;
+use crate::runtime::combat::{CombatState, MonsterEntity};
+use crate::semantics::combat::{
+    AttackSpec, DamageKind, MonsterMoveSpec, MonsterTurnPlan, MoveStep,
+};
 
 pub struct Transient;
 
+const ATTACK: u8 = 1;
+
+fn starting_damage(ascension_level: u8) -> i32 {
+    if ascension_level >= 2 {
+        40
+    } else {
+        30
+    }
+}
+
+fn attack_damage_for_count(ascension_level: u8, count: usize) -> i32 {
+    starting_damage(ascension_level) + (count as i32 * 10)
+}
+
+fn attack_plan_for_count(ascension_level: u8, count: usize) -> MonsterTurnPlan {
+    MonsterTurnPlan::from_spec(
+        ATTACK,
+        MonsterMoveSpec::Attack(AttackSpec {
+            base_damage: attack_damage_for_count(ascension_level, count),
+            hits: 1,
+            damage_kind: DamageKind::Normal,
+        }),
+    )
+}
+
+fn current_attack_count(entity: &MonsterEntity) -> usize {
+    entity.move_history().len().saturating_sub(1)
+}
+
 impl MonsterBehavior for Transient {
-    fn roll_move(
+    fn roll_move_plan(
         _rng: &mut crate::runtime::rng::StsRng,
-        entity: &crate::runtime::combat::MonsterEntity,
+        entity: &MonsterEntity,
         ascension_level: u8,
         _num: i32,
-    ) -> (u8, Intent) {
-        let starting_damage = if ascension_level >= 2 { 40 } else { 30 };
-        let count = entity.move_history.len() as i32;
-        let actual_damage = starting_damage + (count * 10);
-
-        (
-            1,
-            Intent::Attack {
-                damage: actual_damage,
-                hits: 1,
-            },
-        )
+    ) -> MonsterTurnPlan {
+        attack_plan_for_count(ascension_level, entity.move_history().len())
     }
 
-    fn use_pre_battle_action(
-        entity: &crate::runtime::combat::MonsterEntity,
-        _hp_rng: &mut crate::runtime::rng::StsRng,
-        ascension_level: u8,
+    fn use_pre_battle_actions(
+        state: &mut CombatState,
+        entity: &MonsterEntity,
+        legacy_rng: crate::content::monsters::PreBattleLegacyRng,
     ) -> Vec<Action> {
-        let fading_turns = if ascension_level >= 17 { 6 } else { 5 };
+        let (_rng, ascension_level) =
+            crate::content::monsters::legacy_pre_battle_rng(state, legacy_rng);
         vec![
             Action::ApplyPower {
                 source: entity.id,
                 target: entity.id,
                 power_id: PowerId::Fading,
-                amount: fading_turns,
+                amount: if ascension_level >= 17 { 6 } else { 5 },
             },
             Action::ApplyPower {
                 source: entity.id,
                 target: entity.id,
                 power_id: PowerId::Shifting,
-                amount: 1, // Represents presence
+                amount: 1,
             },
         ]
     }
 
-    fn take_turn(
-        state: &mut CombatState,
-        entity: &crate::runtime::combat::MonsterEntity,
-    ) -> Vec<Action> {
-        let mut actions = Vec::new();
-        let asc = state.meta.ascension_level;
-
-        if entity.next_move_byte == 1 {
-            let starting_damage = if asc >= 2 { 40 } else { 30 };
-            let count = entity.move_history.len() as i32 - 1; // Since it's already in history
-            let actual_damage = starting_damage + (count * 10);
-
-            actions.push(Action::Damage(DamageInfo {
-                source: entity.id,
-                target: 0,
-                base: actual_damage,
-                output: actual_damage, // Output is managed downstream by engine modifiers typically
-                damage_type: DamageType::Normal,
-                is_modified: false,
-            }));
+    fn turn_plan(state: &CombatState, entity: &MonsterEntity) -> MonsterTurnPlan {
+        match entity.planned_move_id() {
+            ATTACK => {
+                attack_plan_for_count(state.meta.ascension_level, current_attack_count(entity))
+            }
+            other => MonsterTurnPlan::unknown(other),
         }
+    }
 
-        actions.push(Action::RollMonsterMove {
-            monster_id: entity.id,
-        });
-        actions
+    fn take_turn_plan(
+        state: &mut CombatState,
+        entity: &MonsterEntity,
+        plan: &MonsterTurnPlan,
+    ) -> Vec<Action> {
+        match (plan.move_id, plan.steps.as_slice()) {
+            (ATTACK, [MoveStep::Attack(attack)]) => {
+                let mut actions = attack_actions(entity.id, PLAYER, &attack.attack);
+                actions.push(set_next_move_action(
+                    entity,
+                    attack_plan_for_count(
+                        state.meta.ascension_level,
+                        current_attack_count(entity) + 1,
+                    ),
+                ));
+                actions
+            }
+            (move_id, steps) => panic!("transient plan/steps mismatch: {} {:?}", move_id, steps),
+        }
     }
 }

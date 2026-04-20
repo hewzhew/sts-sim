@@ -1,5 +1,5 @@
 use serde_json::json;
-use sts_simulator::diff::state_sync::build_combat_state;
+use sts_simulator::diff::state_sync::build_combat_state_from_snapshots;
 
 fn base_snapshot() -> serde_json::Value {
     json!({
@@ -36,7 +36,85 @@ fn guardian_threshold_requires_runtime_state() {
         "half_dead": false
     }]);
 
-    let _ = build_combat_state(&snapshot, &json!([]));
+    let _ = build_combat_state_from_snapshots(&snapshot, &snapshot, &json!([]));
+}
+
+#[test]
+#[should_panic(expected = "monster.runtime_state.damage_taken missing for TheGuardian")]
+fn guardian_runtime_requires_damage_taken() {
+    let mut snapshot = base_snapshot();
+    snapshot["monsters"] = json!([{
+        "id": "TheGuardian",
+        "current_hp": 250,
+        "max_hp": 250,
+        "block": 0,
+        "intent": "UNKNOWN",
+        "move_id": 0,
+        "move_base_damage": -1,
+        "move_adjusted_damage": -1,
+        "move_hits": 1,
+        "powers": [],
+        "runtime_state": {
+            "guardian_threshold": 30
+        },
+        "is_gone": false,
+        "half_dead": false
+    }]);
+
+    let _ = build_combat_state_from_snapshots(&snapshot, &snapshot, &json!([]));
+}
+
+#[test]
+#[should_panic(expected = "monster.runtime_state.divider_damage missing for Hexaghost")]
+fn hexaghost_runtime_requires_divider_damage() {
+    let mut snapshot = base_snapshot();
+    snapshot["monsters"] = json!([{
+        "id": "Hexaghost",
+        "current_hp": 250,
+        "max_hp": 250,
+        "block": 0,
+        "intent": "ATTACK",
+        "move_id": 1,
+        "move_base_damage": 2,
+        "move_adjusted_damage": 2,
+        "move_hits": 6,
+        "powers": [],
+        "runtime_state": {
+            "activated": true,
+            "orb_active_count": 6,
+            "burn_upgraded": false
+        },
+        "is_gone": false,
+        "half_dead": false
+    }]);
+
+    let _ = build_combat_state_from_snapshots(&snapshot, &snapshot, &json!([]));
+}
+
+#[test]
+#[should_panic(expected = "monster.runtime_state.is_open missing for TheGuardian")]
+fn guardian_runtime_requires_is_open() {
+    let mut snapshot = base_snapshot();
+    snapshot["monsters"] = json!([{
+        "id": "TheGuardian",
+        "current_hp": 250,
+        "max_hp": 250,
+        "block": 0,
+        "intent": "UNKNOWN",
+        "move_id": 0,
+        "move_base_damage": -1,
+        "move_adjusted_damage": -1,
+        "move_hits": 1,
+        "powers": [],
+        "runtime_state": {
+            "guardian_threshold": 30,
+            "damage_taken": 0
+        },
+        "is_gone": false,
+        "half_dead": false
+    }]);
+
+    let _ = build_combat_state_from_snapshots(&snapshot, &snapshot, &json!([]));
 }
 
 #[test]
@@ -59,7 +137,7 @@ fn angry_requires_runtime_state() {
         "half_dead": false
     }]);
 
-    let _ = build_combat_state(&snapshot, &json!([]));
+    let _ = build_combat_state_from_snapshots(&snapshot, &snapshot, &json!([]));
 }
 
 #[test]
@@ -72,7 +150,7 @@ fn combust_requires_runtime_state_hp_loss() {
         "amount": 1
     }]);
 
-    let _ = build_combat_state(&snapshot, &json!([]));
+    let _ = build_combat_state_from_snapshots(&snapshot, &snapshot, &json!([]));
 }
 
 #[test]
@@ -85,7 +163,7 @@ fn malleable_requires_runtime_state_base_power() {
         "amount": 3
     }]);
 
-    let _ = build_combat_state(&snapshot, &json!([]));
+    let _ = build_combat_state_from_snapshots(&snapshot, &snapshot, &json!([]));
 }
 
 #[test]
@@ -98,7 +176,7 @@ fn flight_requires_runtime_state_stored_amount() {
         "amount": 3
     }]);
 
-    let _ = build_combat_state(&snapshot, &json!([]));
+    let _ = build_combat_state_from_snapshots(&snapshot, &snapshot, &json!([]));
 }
 
 #[test]
@@ -111,7 +189,7 @@ fn stasis_requires_runtime_state_card_uuid() {
         "amount": 1
     }]);
 
-    let _ = build_combat_state(&snapshot, &json!([]));
+    let _ = build_combat_state_from_snapshots(&snapshot, &snapshot, &json!([]));
 }
 
 #[test]
@@ -124,7 +202,7 @@ fn panache_requires_runtime_state_damage() {
         "amount": 4
     }]);
 
-    let _ = build_combat_state(&snapshot, &json!([]));
+    let _ = build_combat_state_from_snapshots(&snapshot, &snapshot, &json!([]));
 }
 
 #[test]
@@ -137,7 +215,7 @@ fn the_bomb_requires_runtime_state_damage() {
         "amount": 3
     }]);
 
-    let _ = build_combat_state(&snapshot, &json!([]));
+    let _ = build_combat_state_from_snapshots(&snapshot, &snapshot, &json!([]));
 }
 
 #[test]
@@ -149,7 +227,7 @@ fn relic_runtime_flags_require_runtime_state() {
         "name": "Centennial Puzzle"
     }]);
 
-    let _ = build_combat_state(&snapshot, &relics);
+    let _ = build_combat_state_from_snapshots(&snapshot, &snapshot, &relics);
 }
 
 #[test]
@@ -161,7 +239,7 @@ fn generic_relic_requires_runtime_state() {
         "name": "Burning Blood"
     }]);
 
-    let _ = build_combat_state(&snapshot, &relics);
+    let _ = build_combat_state_from_snapshots(&snapshot, &snapshot, &relics);
 }
 
 #[test]
@@ -176,7 +254,7 @@ fn generic_relic_requires_runtime_state_counter() {
         }
     }]);
 
-    let _ = build_combat_state(&snapshot, &relics);
+    let _ = build_combat_state_from_snapshots(&snapshot, &snapshot, &relics);
 }
 
 #[test]
@@ -191,7 +269,7 @@ fn generic_relic_requires_runtime_state_used_up() {
         }
     }]);
 
-    let _ = build_combat_state(&snapshot, &relics);
+    let _ = build_combat_state_from_snapshots(&snapshot, &snapshot, &relics);
 }
 
 #[test]
@@ -207,7 +285,7 @@ fn art_of_war_requires_runtime_state_counter() {
         }
     }]);
 
-    let _ = build_combat_state(&snapshot, &relics);
+    let _ = build_combat_state_from_snapshots(&snapshot, &snapshot, &relics);
 }
 
 #[test]
@@ -223,7 +301,7 @@ fn pocketwatch_requires_runtime_state_amount() {
         }
     }]);
 
-    let _ = build_combat_state(&snapshot, &relics);
+    let _ = build_combat_state_from_snapshots(&snapshot, &snapshot, &relics);
 }
 
 #[test]
@@ -238,5 +316,5 @@ fn necronomicon_requires_runtime_state_used_up() {
         }
     }]);
 
-    let _ = build_combat_state(&snapshot, &relics);
+    let _ = build_combat_state_from_snapshots(&snapshot, &snapshot, &relics);
 }

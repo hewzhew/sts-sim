@@ -7,10 +7,9 @@ from pathlib import Path
 from typing import Any
 
 from combat_reranker_common import parse_move_label, stable_split, write_json, write_jsonl
+from curriculum_dynamic_teacher import TEACHER_SOURCE, dynamic_teacher_for_row
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-
-STATUS_TOKENS = ("Slimed", "Wound", "Dazed", "Burn", "Void", "Curse")
 
 
 def iter_rows(path: Path):
@@ -39,59 +38,17 @@ def sample_weight(label_strength: str) -> float:
 
 def curriculum_sample_weight(label_strength: str, tags: set[str], margin: float) -> float:
     weight = sample_weight(label_strength)
-    if "setup_flex_missed" in tags:
-        weight = max(weight, 0.45)
-    if "power_through_played_without_incoming" in tags:
+    if margin >= 0.35:
         weight = max(weight, 0.5)
-    if "kill_now_missed" in tags:
+    elif margin >= 0.20:
+        weight = max(weight, 0.4)
+    elif margin >= 0.12:
+        weight = max(weight, 0.3)
+    if "dynamic_semantic_disagreement" in tags:
         weight = max(weight, 0.35)
-    if "survival_override_played_status_or_curse" in tags:
-        weight = max(weight, 0.35)
-    if margin >= 5000.0:
-        weight += 0.05
-    return round(min(weight, 0.6), 4)
-
-
-def select_preferred_moves(row: dict[str, Any]) -> tuple[list[str], str, str]:
-    candidates = list(row.get("normalized_candidates") or [])
-    if len(candidates) < 2:
-        return ([], "combat_lab_curriculum_rule", "filtered_low_weight")
-
-    tags = set(str(tag) for tag in (row.get("sample_tags") or []))
-
-    def highest_bucket(predicate) -> list[str]:
-        filtered = [candidate for candidate in candidates if predicate(candidate)]
-        if not filtered:
-            return []
-        top_score = max(float(candidate.get("score") or 0.0) for candidate in filtered)
-        return [
-            str(candidate.get("move_label") or "")
-            for candidate in filtered
-            if abs(float(candidate.get("score") or 0.0) - top_score) <= 1.0
-        ]
-
-    if "power_through_played_without_incoming" in tags:
-        preferred = highest_bucket(
-            lambda candidate: "Power Through" not in str(candidate.get("move_label") or "") and str(candidate.get("move_label") or "") != "EndTurn"
-        )
-        return (preferred, "combat_lab_curriculum_guardrail", "oracle_preference")
-    if "setup_flex_missed" in tags:
-        preferred = highest_bucket(lambda candidate: "Flex" in str(candidate.get("move_label") or ""))
-        return (preferred, "combat_lab_curriculum_guardrail", "oracle_preference")
-    if "kill_now_missed" in tags:
-        preferred = highest_bucket(
-            lambda candidate: str(candidate.get("move_label") or "") != "EndTurn" and "Defend" not in str(candidate.get("move_label") or "")
-        )
-        return (preferred, "combat_lab_curriculum_guardrail", "oracle_preference")
-    if "survival_override_played_status_or_curse" in tags:
-        preferred = highest_bucket(
-            lambda candidate: str(candidate.get("move_label") or "") != "EndTurn"
-            and all(token not in str(candidate.get("move_label") or "") for token in STATUS_TOKENS)
-        )
-        return (preferred, "combat_lab_curriculum_guardrail", "oracle_preference")
-
-    preferred = highest_bucket(lambda candidate: True)
-    return (preferred, "combat_lab_search_top1", "oracle_preference")
+    if "oracle_save" in tags or "kill_now_missed" in tags:
+        weight = max(weight, 0.45)
+    return round(min(weight, 0.65), 4)
 
 
 def build_candidate_rows(row: dict[str, Any]) -> list[dict[str, Any]]:
@@ -99,18 +56,27 @@ def build_candidate_rows(row: dict[str, Any]) -> list[dict[str, Any]]:
     if len(candidates) < 2:
         return []
 
-    preferred_moves, teacher_source, label_strength = select_preferred_moves(row)
+    dynamic = dynamic_teacher_for_row(row)
+    preferred_moves = list(row.get("dynamic_teacher_preferred_moves") or dynamic.get("preferred_moves") or [])
+    teacher_source = str(row.get("dynamic_teacher_source") or dynamic.get("teacher_source") or TEACHER_SOURCE)
+    label_strength = str(row.get("dynamic_teacher_label_strength") or dynamic.get("label_strength") or "oracle_preference")
     chosen_move = str(row.get("chosen_move") or "")
     preferred_set = {move for move in preferred_moves if move}
     if not preferred_set or chosen_move in preferred_set:
+        return []
+    if not bool(row.get("dynamic_teacher_active") or dynamic.get("active")):
         return []
 
     score_by_move = {str(candidate.get("move_label") or ""): float(candidate.get("score") or 0.0) for candidate in candidates}
     preferred_score = max((score_by_move.get(move, float("-inf")) for move in preferred_set), default=float("-inf"))
     chosen_score = score_by_move.get(chosen_move, float("-inf"))
-    margin = preferred_score - chosen_score if preferred_score != float("-inf") and chosen_score != float("-inf") else 0.0
+    margin = float(row.get("dynamic_teacher_margin") or dynamic.get("oracle_margin") or 0.0)
     tags = set(str(tag) for tag in (row.get("sample_tags") or []))
     row_weight = curriculum_sample_weight(label_strength, tags, margin)
+    detail_by_move = {
+        str(detail.get("move_label") or ""): detail
+        for detail in (dynamic.get("candidate_details") or [])
+    }
 
     split = stable_split(str(row.get("sample_id") or row.get("spec_name") or "curriculum"))
     snapshot = row.get("snapshot_normalized_state") or {}
@@ -123,6 +89,7 @@ def build_candidate_rows(row: dict[str, Any]) -> list[dict[str, Any]]:
     for index, candidate in enumerate(candidates):
         move = str(candidate.get("move_label") or "")
         parsed = parse_move_label(move)
+        detail = detail_by_move.get(move) or {}
         result.append(
             {
                 "dataset_kind": "combat_reranker_candidate",
@@ -152,6 +119,7 @@ def build_candidate_rows(row: dict[str, Any]) -> list[dict[str, Any]]:
                 "candidate_target_index": parsed["target_index"],
                 "candidate_is_positive": move in preferred_set,
                 "candidate_is_equivalent_best": move in preferred_set,
+                "candidate_is_teacher_top": move in preferred_set,
                 "oracle_equivalent_best_moves": sorted(preferred_set),
                 "oracle_best_bucket_size": len(preferred_set),
                 "oracle_margin": round(margin, 3),
@@ -219,6 +187,10 @@ def build_candidate_rows(row: dict[str, Any]) -> list[dict[str, Any]]:
                 "candidate_projected_enemy_total": float(preview.get("remaining_monster_hp") or 0.0),
                 "candidate_survives": True,
                 "candidate_branch_family": None,
+                "candidate_semantics": detail.get("candidate_semantics"),
+                "chance_features": detail.get("chance_features"),
+                "curriculum_teacher_targets": detail.get("teacher_targets"),
+                "curriculum_teacher_score": detail.get("teacher_score"),
             }
         )
     return result
@@ -287,7 +259,7 @@ def main() -> int:
         "sample_tag_counts": dict(tag_counts),
         "notes": [
             "combat_lab curriculum dataset is a weak offline teacher derived from local tactical fixtures",
-            "only rows with multi-candidate choice and curriculum-rule disagreement against baseline are packed",
+            "only rows with multi-candidate choice and dynamic semantic disagreement against baseline are packed",
             "these rows are intended to complement offline_teacher, not replace stronger archived oracle labels",
         ],
     }

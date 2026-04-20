@@ -1,6 +1,4 @@
-use crate::diff::replay::{
-    build_live_session_replay_from_raw_path, write_live_session_replay_to_path,
-};
+use crate::verification::combat::{build_live_session_replay_from_raw, write_live_session_replay};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
@@ -166,8 +164,8 @@ pub fn regenerate_run_replay(paths: &LiveLogPaths, run_id: &str) -> Result<PathB
         .parent()
         .unwrap_or_else(|| Path::new("."))
         .join("replay.json");
-    let replay = build_live_session_replay_from_raw_path(&raw)?;
-    write_live_session_replay_to_path(&replay, &replay_path)?;
+    let replay = build_live_session_replay_from_raw(&raw)?;
+    write_live_session_replay(&replay, &replay_path)?;
     manifest.artifacts.replay = Some(LiveArtifactRecord::new("replay.json", true));
     rewrite_manifest(&manifest_path, &manifest)?;
     Ok(replay_path)

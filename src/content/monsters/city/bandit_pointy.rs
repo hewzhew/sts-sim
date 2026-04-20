@@ -1,56 +1,75 @@
+use crate::content::monsters::exordium::{attack_actions, set_next_move_action, PLAYER};
 use crate::content::monsters::MonsterBehavior;
-use crate::runtime::action::{Action, DamageInfo, DamageType};
-use crate::runtime::combat::{CombatState, Intent};
+use crate::runtime::action::Action;
+use crate::runtime::combat::{CombatState, MonsterEntity};
+use crate::semantics::combat::{
+    AttackSpec, DamageKind, MonsterMoveSpec, MonsterTurnPlan, MoveStep, MoveTarget,
+};
 
 pub struct BanditPointy;
 
+const POINTY_SPECIAL: u8 = 1;
+
+fn attack_damage(ascension_level: u8) -> i32 {
+    if ascension_level >= 2 {
+        6
+    } else {
+        5
+    }
+}
+
+fn pointy_special_plan(ascension_level: u8) -> MonsterTurnPlan {
+    MonsterTurnPlan::from_spec(
+        POINTY_SPECIAL,
+        MonsterMoveSpec::Attack(AttackSpec {
+            base_damage: attack_damage(ascension_level),
+            hits: 2,
+            damage_kind: DamageKind::Normal,
+        }),
+    )
+}
+
 impl MonsterBehavior for BanditPointy {
-    fn roll_move(
+    fn roll_move_plan(
         _rng: &mut crate::runtime::rng::StsRng,
-        _entity: &crate::runtime::combat::MonsterEntity,
+        _entity: &MonsterEntity,
         ascension_level: u8,
         _num: i32,
-    ) -> (u8, Intent) {
-        let atk_dmg = if ascension_level >= 2 { 6 } else { 5 };
-        (
-            1,
-            Intent::Attack {
-                damage: atk_dmg,
-                hits: 2,
-            },
-        ) // POINTY_SPECIAL
+    ) -> MonsterTurnPlan {
+        pointy_special_plan(ascension_level)
     }
 
-    fn take_turn(
-        state: &mut CombatState,
-        entity: &crate::runtime::combat::MonsterEntity,
-    ) -> Vec<Action> {
-        let mut actions = Vec::new();
-        let asc = state.meta.ascension_level;
-        let atk_dmg = if asc >= 2 { 6 } else { 5 };
-
-        if entity.next_move_byte == 1 {
-            actions.push(Action::Damage(DamageInfo {
-                source: entity.id,
-                target: 0,
-                base: atk_dmg,
-                output: atk_dmg,
-                damage_type: DamageType::Normal,
-                is_modified: false,
-            }));
-            actions.push(Action::Damage(DamageInfo {
-                source: entity.id,
-                target: 0,
-                base: atk_dmg,
-                output: atk_dmg,
-                damage_type: DamageType::Normal,
-                is_modified: false,
-            }));
+    fn turn_plan(state: &CombatState, entity: &MonsterEntity) -> MonsterTurnPlan {
+        match entity.planned_move_id() {
+            POINTY_SPECIAL => pointy_special_plan(state.meta.ascension_level),
+            other => MonsterTurnPlan::unknown(other),
         }
+    }
 
-        actions.push(Action::RollMonsterMove {
-            monster_id: entity.id,
-        });
-        actions
+    fn take_turn_plan(
+        state: &mut CombatState,
+        entity: &MonsterEntity,
+        plan: &MonsterTurnPlan,
+    ) -> Vec<Action> {
+        match (plan.move_id, plan.steps.as_slice()) {
+            (
+                POINTY_SPECIAL,
+                [MoveStep::Attack(crate::semantics::combat::AttackStep {
+                    target: MoveTarget::Player,
+                    attack,
+                })],
+            ) => {
+                let mut actions = attack_actions(entity.id, PLAYER, attack);
+                actions.push(set_next_move_action(
+                    entity,
+                    pointy_special_plan(state.meta.ascension_level),
+                ));
+                actions
+            }
+            (_, []) => panic!("bandit pointy plan missing locked truth"),
+            (move_id, steps) => {
+                panic!("bandit pointy plan/steps mismatch: {} {:?}", move_id, steps)
+            }
+        }
     }
 }

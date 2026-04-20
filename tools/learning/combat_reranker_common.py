@@ -408,6 +408,20 @@ def candidate_feature_dict(row: dict[str, Any]) -> dict[str, Any]:
     features["candidate::survives"] = int(bool(row.get("candidate_survives")))
     if row.get("candidate_branch_family"):
         features["candidate::branch_family"] = str(row["candidate_branch_family"])
+    candidate_semantics = row.get("candidate_semantics") or {}
+    for key, value in candidate_semantics.items():
+        if key in {"move_label", "move_family", "card_name", "card_type"}:
+            continue
+        if value is not None:
+            features[f"dynamic::candidate_semantics::{key}"] = float(value)
+    chance_features = row.get("chance_features") or {}
+    for key, value in chance_features.items():
+        if value is not None:
+            features[f"dynamic::chance::{key}"] = float(value)
+    teacher_targets = row.get("curriculum_teacher_targets") or {}
+    for key, value in teacher_targets.items():
+        if value is not None:
+            features[f"dynamic::teacher_proxy::{key}"] = float(value)
     if row.get("sample_origin"):
         features["meta::sample_origin"] = str(row["sample_origin"])
     if row.get("teacher_source"):

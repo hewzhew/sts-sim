@@ -1,170 +1,243 @@
 use crate::content::cards::CardId;
+use crate::content::monsters::exordium::{
+    apply_power_action, attack_actions, gain_block_action, PLAYER,
+};
 use crate::content::monsters::MonsterBehavior;
 use crate::content::powers::PowerId;
-use crate::runtime::action::{Action, DamageInfo, DamageType};
-use crate::runtime::combat::{CombatState, Intent};
+use crate::runtime::action::Action;
+use crate::runtime::combat::{CombatState, MonsterEntity};
+use crate::semantics::combat::{
+    AttackSpec, DamageKind, DebuffSpec, DefendSpec, EffectStrength, MonsterMoveSpec,
+    MonsterTurnPlan, MoveStep, PowerEffectKind,
+};
+use smallvec::smallvec;
 
 pub struct WrithingMass;
 
-impl MonsterBehavior for WrithingMass {
-    fn roll_move(
-        _rng: &mut crate::runtime::rng::StsRng,
-        entity: &crate::runtime::combat::MonsterEntity,
-        ascension_level: u8,
-        num: i32,
-    ) -> (u8, Intent) {
-        let (big_dmg, multi_dmg, acc_dmg, debuff_dmg) = if ascension_level >= 2 {
-            (38, 9, 16, 12)
-        } else {
-            (32, 7, 15, 10)
-        };
+const BIG_HIT: u8 = 0;
+const MULTI_HIT: u8 = 1;
+const ATTACK_BLOCK: u8 = 2;
+const ATTACK_DEBUFF: u8 = 3;
+const MEGA_DEBUFF: u8 = 4;
 
-        let last_move = entity.move_history.back().copied().unwrap_or(0);
-        let used_mega_debuff = entity.move_history.iter().any(|&m| m == 4);
+fn big_hit_damage(ascension_level: u8) -> i32 {
+    if ascension_level >= 2 {
+        38
+    } else {
+        32
+    }
+}
 
-        if entity.move_history.is_empty() {
-            if num < 33 {
-                return (
-                    1,
-                    Intent::Attack {
-                        damage: multi_dmg,
-                        hits: 3,
-                    },
-                );
-            } else if num < 66 {
-                return (
-                    2,
-                    Intent::AttackDefend {
-                        damage: acc_dmg,
-                        hits: 1,
-                    },
-                );
-            } else {
-                return (
-                    3,
-                    Intent::AttackDebuff {
-                        damage: debuff_dmg,
-                        hits: 1,
-                    },
-                );
-            }
-        }
-        if num < 10 {
-            if last_move != 0 {
-                return (
-                    0,
-                    Intent::Attack {
-                        damage: big_dmg,
-                        hits: 1,
-                    },
-                );
-            } else {
-                return (
-                    1,
-                    Intent::Attack {
-                        damage: multi_dmg,
-                        hits: 3,
-                    },
-                ); // Simplified fallback
-            }
-        } else if num < 20 {
-            if !used_mega_debuff && last_move != 4 {
-                return (4, Intent::StrongDebuff);
-            } else if _rng.random_range(0, 9) == 0 {
-                // 10% chance
-                return (
-                    0,
-                    Intent::Attack {
-                        damage: big_dmg,
-                        hits: 1,
-                    },
-                );
-            } else {
-                return (
-                    1,
-                    Intent::Attack {
-                        damage: multi_dmg,
-                        hits: 3,
-                    },
-                ); // Simplified fallback
-            }
-        } else if num < 40 {
-            if last_move != 3 {
-                return (
-                    3,
-                    Intent::AttackDebuff {
-                        damage: debuff_dmg,
-                        hits: 1,
-                    },
-                );
-            } else if _rng.random_range(0, 9) < 4 {
-                // 40% chance
-                return (
-                    2,
-                    Intent::AttackDefend {
-                        damage: acc_dmg,
-                        hits: 1,
-                    },
-                ); // fallback
-            } else {
-                return (
-                    1,
-                    Intent::Attack {
-                        damage: multi_dmg,
-                        hits: 3,
-                    },
-                ); // fallback
-            }
-        } else if num < 70 {
-            if last_move != 1 {
-                return (
-                    1,
-                    Intent::Attack {
-                        damage: multi_dmg,
-                        hits: 3,
-                    },
-                );
-            } else if _rng.random_range(0, 9) < 3 {
-                return (
-                    2,
-                    Intent::AttackDefend {
-                        damage: acc_dmg,
-                        hits: 1,
-                    },
-                );
-            } else {
-                return (
-                    3,
-                    Intent::AttackDebuff {
-                        damage: debuff_dmg,
-                        hits: 1,
-                    },
-                ); // fallback
-            }
-        } else if last_move != 2 {
-            return (
-                2,
-                Intent::AttackDefend {
-                    damage: acc_dmg,
+fn multi_hit_damage(ascension_level: u8) -> i32 {
+    if ascension_level >= 2 {
+        9
+    } else {
+        7
+    }
+}
+
+fn attack_block_damage(ascension_level: u8) -> i32 {
+    if ascension_level >= 2 {
+        16
+    } else {
+        15
+    }
+}
+
+fn attack_debuff_damage(ascension_level: u8) -> i32 {
+    if ascension_level >= 2 {
+        12
+    } else {
+        10
+    }
+}
+
+fn normal_debuff_amt() -> i32 {
+    2
+}
+
+fn big_hit_plan(ascension_level: u8) -> MonsterTurnPlan {
+    MonsterTurnPlan::from_spec(
+        BIG_HIT,
+        MonsterMoveSpec::Attack(AttackSpec {
+            base_damage: big_hit_damage(ascension_level),
+            hits: 1,
+            damage_kind: DamageKind::Normal,
+        }),
+    )
+}
+
+fn multi_hit_plan(ascension_level: u8) -> MonsterTurnPlan {
+    MonsterTurnPlan::from_spec(
+        MULTI_HIT,
+        MonsterMoveSpec::Attack(AttackSpec {
+            base_damage: multi_hit_damage(ascension_level),
+            hits: 3,
+            damage_kind: DamageKind::Normal,
+        }),
+    )
+}
+
+fn attack_block_plan(ascension_level: u8) -> MonsterTurnPlan {
+    MonsterTurnPlan::from_spec(
+        ATTACK_BLOCK,
+        MonsterMoveSpec::AttackDefend(
+            AttackSpec {
+                base_damage: attack_block_damage(ascension_level),
+                hits: 1,
+                damage_kind: DamageKind::Normal,
+            },
+            DefendSpec {
+                block: attack_block_damage(ascension_level),
+            },
+        ),
+    )
+}
+
+fn attack_debuff_plan(ascension_level: u8) -> MonsterTurnPlan {
+    MonsterTurnPlan::with_visible_spec(
+        ATTACK_DEBUFF,
+        smallvec![
+            MoveStep::Attack(crate::semantics::combat::AttackStep {
+                target: crate::semantics::combat::MoveTarget::Player,
+                attack: AttackSpec {
+                    base_damage: attack_debuff_damage(ascension_level),
                     hits: 1,
+                    damage_kind: DamageKind::Normal,
                 },
-            );
+            }),
+            MoveStep::ApplyPower(crate::semantics::combat::ApplyPowerStep {
+                target: crate::semantics::combat::MoveTarget::Player,
+                power_id: PowerId::Weak,
+                amount: normal_debuff_amt(),
+                effect: PowerEffectKind::Debuff,
+                visible_strength: EffectStrength::Normal,
+            }),
+            MoveStep::ApplyPower(crate::semantics::combat::ApplyPowerStep {
+                target: crate::semantics::combat::MoveTarget::Player,
+                power_id: PowerId::Vulnerable,
+                amount: normal_debuff_amt(),
+                effect: PowerEffectKind::Debuff,
+                visible_strength: EffectStrength::Normal,
+            }),
+        ],
+        MonsterMoveSpec::AttackDebuff(
+            AttackSpec {
+                base_damage: attack_debuff_damage(ascension_level),
+                hits: 1,
+                damage_kind: DamageKind::Normal,
+            },
+            DebuffSpec {
+                power_id: PowerId::Weak,
+                amount: normal_debuff_amt(),
+                strength: EffectStrength::Normal,
+            },
+        ),
+    )
+}
+
+fn mega_debuff_plan() -> MonsterTurnPlan {
+    MonsterTurnPlan::unknown(MEGA_DEBUFF)
+}
+
+fn plan_for(move_id: u8, ascension_level: u8) -> MonsterTurnPlan {
+    match move_id {
+        BIG_HIT => big_hit_plan(ascension_level),
+        MULTI_HIT => multi_hit_plan(ascension_level),
+        ATTACK_BLOCK => attack_block_plan(ascension_level),
+        ATTACK_DEBUFF => attack_debuff_plan(ascension_level),
+        MEGA_DEBUFF => mega_debuff_plan(),
+        _ => MonsterTurnPlan::unknown(move_id),
+    }
+}
+
+fn last_move(entity: &MonsterEntity, move_id: u8) -> bool {
+    entity.move_history().back().copied() == Some(move_id)
+}
+
+fn used_mega_debuff(entity: &MonsterEntity) -> bool {
+    entity
+        .move_history()
+        .iter()
+        .any(|&move_id| move_id == MEGA_DEBUFF)
+}
+
+fn roll_move_recursive(
+    rng: &mut crate::runtime::rng::StsRng,
+    entity: &MonsterEntity,
+    ascension_level: u8,
+    num: i32,
+) -> MonsterTurnPlan {
+    if entity.move_history().is_empty() {
+        return if num < 33 {
+            multi_hit_plan(ascension_level)
+        } else if num < 66 {
+            attack_block_plan(ascension_level)
         } else {
-            return (
-                1,
-                Intent::Attack {
-                    damage: multi_dmg,
-                    hits: 3,
-                },
-            ); // fallback
-        }
+            attack_debuff_plan(ascension_level)
+        };
     }
 
-    fn use_pre_battle_action(
-        entity: &crate::runtime::combat::MonsterEntity,
-        _hp_rng: &mut crate::runtime::rng::StsRng,
-        _ascension_level: u8,
+    if num < 10 {
+        if !last_move(entity, BIG_HIT) {
+            big_hit_plan(ascension_level)
+        } else {
+            let reroll = rng.random_range(10, 99);
+            roll_move_recursive(rng, entity, ascension_level, reroll)
+        }
+    } else if num < 20 {
+        if !used_mega_debuff(entity) && !last_move(entity, MEGA_DEBUFF) {
+            mega_debuff_plan()
+        } else if rng.random_boolean_chance(0.1) {
+            big_hit_plan(ascension_level)
+        } else {
+            let reroll = rng.random_range(20, 99);
+            roll_move_recursive(rng, entity, ascension_level, reroll)
+        }
+    } else if num < 40 {
+        if !last_move(entity, ATTACK_DEBUFF) {
+            attack_debuff_plan(ascension_level)
+        } else if rng.random_boolean_chance(0.4) {
+            let reroll = rng.random(19);
+            roll_move_recursive(rng, entity, ascension_level, reroll)
+        } else {
+            let reroll = rng.random_range(40, 99);
+            roll_move_recursive(rng, entity, ascension_level, reroll)
+        }
+    } else if num < 70 {
+        if !last_move(entity, MULTI_HIT) {
+            multi_hit_plan(ascension_level)
+        } else if rng.random_boolean_chance(0.3) {
+            attack_block_plan(ascension_level)
+        } else {
+            let reroll = rng.random(39);
+            roll_move_recursive(rng, entity, ascension_level, reroll)
+        }
+    } else if !last_move(entity, ATTACK_BLOCK) {
+        attack_block_plan(ascension_level)
+    } else {
+        let reroll = rng.random(69);
+        roll_move_recursive(rng, entity, ascension_level, reroll)
+    }
+}
+
+impl MonsterBehavior for WrithingMass {
+    fn roll_move_plan(
+        rng: &mut crate::runtime::rng::StsRng,
+        entity: &MonsterEntity,
+        ascension_level: u8,
+        num: i32,
+    ) -> MonsterTurnPlan {
+        roll_move_recursive(rng, entity, ascension_level, num)
+    }
+
+    fn use_pre_battle_actions(
+        state: &mut CombatState,
+        entity: &MonsterEntity,
+        legacy_rng: crate::content::monsters::PreBattleLegacyRng,
     ) -> Vec<Action> {
+        let (_hp_rng, _ascension_level) =
+            crate::content::monsters::legacy_pre_battle_rng(state, legacy_rng);
         vec![
             Action::ApplyPower {
                 source: entity.id,
@@ -181,92 +254,40 @@ impl MonsterBehavior for WrithingMass {
         ]
     }
 
-    fn take_turn(
-        state: &mut CombatState,
-        entity: &crate::runtime::combat::MonsterEntity,
+    fn turn_plan(state: &CombatState, entity: &MonsterEntity) -> MonsterTurnPlan {
+        plan_for(entity.planned_move_id(), state.meta.ascension_level)
+    }
+
+    fn take_turn_plan(
+        _state: &mut CombatState,
+        entity: &MonsterEntity,
+        plan: &MonsterTurnPlan,
     ) -> Vec<Action> {
-        let mut actions = Vec::new();
-        let asc = state.meta.ascension_level;
-
-        let (big_dmg, multi_dmg, acc_dmg, debuff_dmg) = if asc >= 2 {
-            (38, 9, 16, 12)
-        } else {
-            (32, 7, 15, 10)
+        let mut actions = match (plan.move_id, plan.steps.as_slice()) {
+            (BIG_HIT | MULTI_HIT, [MoveStep::Attack(attack)]) => {
+                attack_actions(entity.id, PLAYER, &attack.attack)
+            }
+            (ATTACK_BLOCK, [MoveStep::Attack(attack), MoveStep::GainBlock(block)]) => {
+                let mut actions = attack_actions(entity.id, PLAYER, &attack.attack);
+                actions.push(gain_block_action(entity, block));
+                actions
+            }
+            (
+                ATTACK_DEBUFF,
+                [MoveStep::Attack(attack), MoveStep::ApplyPower(weak), MoveStep::ApplyPower(vulnerable)],
+            ) => {
+                let mut actions = attack_actions(entity.id, PLAYER, &attack.attack);
+                actions.push(apply_power_action(entity, weak));
+                actions.push(apply_power_action(entity, vulnerable));
+                actions
+            }
+            (MEGA_DEBUFF, []) => vec![Action::AddCardToMasterDeck {
+                card_id: CardId::Parasite,
+            }],
+            (move_id, steps) => {
+                panic!("writhing mass plan/steps mismatch: {} {:?}", move_id, steps)
+            }
         };
-
-        let normal_debuff_amt = 2; // Vulnerable / Weak
-
-        match entity.next_move_byte {
-            0 => {
-                // BIG_HIT
-                actions.push(Action::Damage(DamageInfo {
-                    source: entity.id,
-                    target: 0,
-                    base: big_dmg,
-                    output: big_dmg,
-                    damage_type: DamageType::Normal,
-                    is_modified: false,
-                }));
-            }
-            1 => {
-                // MULTI_HIT
-                for _ in 0..3 {
-                    actions.push(Action::Damage(DamageInfo {
-                        source: entity.id,
-                        target: 0,
-                        base: multi_dmg,
-                        output: multi_dmg,
-                        damage_type: DamageType::Normal,
-                        is_modified: false,
-                    }));
-                }
-            }
-            2 => {
-                // ATTACK_BLOCK
-                actions.push(Action::Damage(DamageInfo {
-                    source: entity.id,
-                    target: 0,
-                    base: acc_dmg,
-                    output: acc_dmg,
-                    damage_type: DamageType::Normal,
-                    is_modified: false,
-                }));
-                actions.push(Action::GainBlock {
-                    target: entity.id,
-                    amount: acc_dmg,
-                });
-            }
-            3 => {
-                // ATTACK_DEBUFF
-                actions.push(Action::Damage(DamageInfo {
-                    source: entity.id,
-                    target: 0,
-                    base: debuff_dmg,
-                    output: debuff_dmg,
-                    damage_type: DamageType::Normal,
-                    is_modified: false,
-                }));
-                actions.push(Action::ApplyPower {
-                    source: entity.id,
-                    target: 0,
-                    power_id: PowerId::Weak,
-                    amount: normal_debuff_amt,
-                });
-                actions.push(Action::ApplyPower {
-                    source: entity.id,
-                    target: 0,
-                    power_id: PowerId::Vulnerable,
-                    amount: normal_debuff_amt,
-                });
-            }
-            4 => {
-                // MEGA_DEBUFF
-                actions.push(Action::AddCardToMasterDeck {
-                    card_id: CardId::Parasite,
-                });
-            }
-            _ => {}
-        }
 
         actions.push(Action::RollMonsterMove {
             monster_id: entity.id,

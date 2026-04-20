@@ -1,5 +1,7 @@
+use crate::content::powers::PowerId;
 use crate::runtime::action::{Action, ActionInfo};
-use crate::runtime::combat::{CombatState, Intent, MonsterEntity, MonsterId};
+use crate::runtime::combat::{CombatState, MonsterEntity, MonsterId, Power};
+use crate::semantics::combat::MonsterTurnPlan;
 
 pub mod beyond;
 pub mod city;
@@ -13,22 +15,76 @@ pub mod factory;
 /// Slay the Spire handles state dynamically through CombatState/MonsterEntity,
 /// so implementations are stateless trait objects or static dispatch endpoints.
 pub trait MonsterBehavior {
-    /// Evaluates RNG and move history to determine the intent and byte code for the NEXT turn.
-    fn roll_move(
+    fn roll_move_plan(
+        _rng: &mut crate::runtime::rng::StsRng,
+        _entity: &MonsterEntity,
+        _ascension_level: u8,
+        _num: i32,
+    ) -> MonsterTurnPlan {
+        panic!("semantic roll_move_plan required")
+    }
+
+    fn roll_move_plan_with_context(
         rng: &mut crate::runtime::rng::StsRng,
         entity: &MonsterEntity,
         ascension_level: u8,
         num: i32,
-    ) -> (u8, Intent);
+        _ctx: MonsterRollContext<'_>,
+    ) -> MonsterTurnPlan {
+        Self::roll_move_plan(rng, entity, ascension_level, num)
+    }
 
-    /// Translates the entity's `next_move_byte` into sequence of execution Actions (Damage, Block, Buff, etc.)
-    fn take_turn(state: &mut CombatState, entity: &MonsterEntity) -> Vec<Action>;
+    /// Optional actions emitted while resolving a new move.
+    ///
+    /// Use this for monsters whose hidden runtime truth mutates inside Java
+    /// `getMove()` rather than `takeTurn()`.
+    fn on_roll_move(
+        _ascension_level: u8,
+        _entity: &MonsterEntity,
+        _num: i32,
+        _plan: &MonsterTurnPlan,
+    ) -> Vec<Action> {
+        Vec::new()
+    }
+
+    fn roll_move_outcome(
+        rng: &mut crate::runtime::rng::StsRng,
+        entity: &MonsterEntity,
+        ascension_level: u8,
+        num: i32,
+        ctx: MonsterRollContext<'_>,
+    ) -> MonsterRollOutcome {
+        let plan = Self::roll_move_plan_with_context(rng, entity, ascension_level, num, ctx);
+        let setup_actions = Self::on_roll_move(ascension_level, entity, num, &plan);
+        MonsterRollOutcome {
+            plan,
+            setup_actions,
+        }
+    }
+
+    fn take_turn_plan(
+        _state: &mut CombatState,
+        _entity: &MonsterEntity,
+        _plan: &MonsterTurnPlan,
+    ) -> Vec<Action> {
+        panic!("semantic take_turn_plan required")
+    }
+
+    /// Semantic turn-plan entry point. The default remains observation-backed
+    /// during migration, but monsters can override this to define execution
+    /// truth from runtime state and combat rules instead of visible intent.
+    fn turn_plan(_state: &CombatState, entity: &MonsterEntity) -> MonsterTurnPlan {
+        entity.turn_plan()
+    }
 
     /// Optional sequence of actions to be executed immediately upon spawning (equivalent to usePreBattleAction in Java).
-    fn use_pre_battle_action(
+    ///
+    /// New semantic entry point: monsters can inspect full combat state but must
+    /// still return actions rather than mutating state directly.
+    fn use_pre_battle_actions(
+        _state: &mut CombatState,
         _entity: &MonsterEntity,
-        _hp_rng: &mut crate::runtime::rng::StsRng,
-        _ascension_level: u8,
+        _legacy_rng: PreBattleLegacyRng,
     ) -> Vec<Action> {
         Vec::new()
     }
@@ -262,571 +318,207 @@ impl EnemyId {
     }
 }
 
-pub fn roll_monster_move(
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PreBattleLegacyRng {
+    Misc,
+    MonsterHp,
+}
+
+pub fn legacy_pre_battle_rng(
+    state: &mut CombatState,
+    legacy_rng: PreBattleLegacyRng,
+) -> (&mut crate::runtime::rng::StsRng, u8) {
+    let ascension_level = state.meta.ascension_level;
+    let rng = match legacy_rng {
+        PreBattleLegacyRng::Misc => &mut state.rng.misc_rng,
+        PreBattleLegacyRng::MonsterHp => &mut state.rng.monster_hp_rng,
+    };
+    (rng, ascension_level)
+}
+
+#[derive(Clone, Copy)]
+pub struct MonsterRollContext<'a> {
+    pub monsters: &'a [MonsterEntity],
+    pub player_powers: &'a [Power],
+}
+
+impl MonsterRollContext<'_> {
+    pub fn player_has_power(self, power_id: PowerId) -> bool {
+        self.player_powers
+            .iter()
+            .any(|power| power.power_type == power_id)
+    }
+}
+
+pub struct MonsterRollOutcome {
+    pub plan: MonsterTurnPlan,
+    pub setup_actions: Vec<Action>,
+}
+
+fn enemy_type_for_monster(entity: &MonsterEntity, context: &str) -> EnemyId {
+    EnemyId::from_id(entity.monster_type).unwrap_or_else(|| {
+        panic!(
+            "unmapped monster_type in {}: {}",
+            context, entity.monster_type
+        )
+    })
+}
+
+macro_rules! dispatch_monster_behavior_method {
+    ($enemy_type:expr, $method:ident ( $($args:expr),* $(,)? )) => {
+        match $enemy_type {
+            EnemyId::Cultist => exordium::cultist::Cultist::$method($($args),*),
+            EnemyId::Lagavulin => exordium::lagavulin::Lagavulin::$method($($args),*),
+            EnemyId::Hexaghost => exordium::hexaghost::Hexaghost::$method($($args),*),
+            EnemyId::SpikeSlimeM => exordium::spike_slime::SpikeSlimeM::$method($($args),*),
+            EnemyId::AcidSlimeM => exordium::acid_slime::AcidSlimeM::$method($($args),*),
+            EnemyId::SpikeSlimeL => exordium::spike_slime::SpikeSlimeL::$method($($args),*),
+            EnemyId::AcidSlimeL => exordium::acid_slime::AcidSlimeL::$method($($args),*),
+            EnemyId::SlimeBoss => exordium::slime_boss::SlimeBoss::$method($($args),*),
+            EnemyId::TheGuardian => exordium::the_guardian::TheGuardian::$method($($args),*),
+            EnemyId::Sentry => exordium::sentry::Sentry::$method($($args),*),
+            EnemyId::JawWorm => exordium::jaw_worm::JawWorm::$method($($args),*),
+            EnemyId::LouseNormal => exordium::louse_normal::LouseNormal::$method($($args),*),
+            EnemyId::LouseDefensive => {
+                exordium::louse_defensive::LouseDefensive::$method($($args),*)
+            }
+            EnemyId::SpikeSlimeS => exordium::spike_slime::SpikeSlimeS::$method($($args),*),
+            EnemyId::AcidSlimeS => exordium::acid_slime::AcidSlimeS::$method($($args),*),
+            EnemyId::FungiBeast => exordium::fungi_beast::FungiBeast::$method($($args),*),
+            EnemyId::Looter => exordium::looter::Looter::$method($($args),*),
+            EnemyId::SlaverBlue => exordium::slaver_blue::SlaverBlue::$method($($args),*),
+            EnemyId::SlaverRed => exordium::slaver_red::SlaverRed::$method($($args),*),
+            EnemyId::GremlinFat => exordium::gremlin_fat::GremlinFat::$method($($args),*),
+            EnemyId::GremlinThief => exordium::gremlin_thief::GremlinThief::$method($($args),*),
+            EnemyId::GremlinTsundere => {
+                exordium::gremlin_tsundere::GremlinTsundere::$method($($args),*)
+            }
+            EnemyId::GremlinWarrior => {
+                exordium::gremlin_warrior::GremlinWarrior::$method($($args),*)
+            }
+            EnemyId::GremlinWizard => {
+                exordium::gremlin_wizard::GremlinWizard::$method($($args),*)
+            }
+            EnemyId::GremlinNob => exordium::gremlin_nob::GremlinNob::$method($($args),*),
+            EnemyId::SphericGuardian => {
+                city::spheric_guardian::SphericGuardian::$method($($args),*)
+            }
+            EnemyId::Byrd => city::byrd::Byrd::$method($($args),*),
+            EnemyId::Chosen => city::chosen::Chosen::$method($($args),*),
+            EnemyId::Snecko => city::snecko::Snecko::$method($($args),*),
+            EnemyId::Mugger => city::mugger::Mugger::$method($($args),*),
+            EnemyId::ShelledParasite => {
+                city::shelled_parasite::ShelledParasite::$method($($args),*)
+            }
+            EnemyId::Centurion => city::centurion::Centurion::$method($($args),*),
+            EnemyId::Healer => city::healer::Healer::$method($($args),*),
+            EnemyId::SnakePlant => city::snake_plant::SnakePlant::$method($($args),*),
+            EnemyId::GremlinLeader => city::gremlin_leader::GremlinLeader::$method($($args),*),
+            EnemyId::TheCollector => city::the_collector::TheCollector::$method($($args),*),
+            EnemyId::TorchHead => city::torch_head::TorchHead::$method($($args),*),
+            EnemyId::Taskmaster => city::taskmaster::Taskmaster::$method($($args),*),
+            EnemyId::BookOfStabbing => city::book_of_stabbing::BookOfStabbing::$method($($args),*),
+            EnemyId::BronzeAutomaton => {
+                city::bronze_automaton::BronzeAutomaton::$method($($args),*)
+            }
+            EnemyId::BronzeOrb => city::bronze_orb::BronzeOrb::$method($($args),*),
+            EnemyId::Champ => city::champ::Champ::$method($($args),*),
+            EnemyId::BanditBear => city::bandit_bear::BanditBear::$method($($args),*),
+            EnemyId::BanditLeader => city::bandit_leader::BanditLeader::$method($($args),*),
+            EnemyId::BanditPointy => city::bandit_pointy::BanditPointy::$method($($args),*),
+            EnemyId::Maw => beyond::maw::Maw::$method($($args),*),
+            EnemyId::SpireGrowth => beyond::spire_growth::SpireGrowth::$method($($args),*),
+            EnemyId::Transient => beyond::transient::Transient::$method($($args),*),
+            EnemyId::TimeEater => beyond::time_eater::TimeEater::$method($($args),*),
+            EnemyId::AwakenedOne => beyond::awakened_one::AwakenedOne::$method($($args),*),
+            EnemyId::Donu => beyond::donu::Donu::$method($($args),*),
+            EnemyId::Deca => beyond::deca::Deca::$method($($args),*),
+            EnemyId::SpireShield => ending::spire_shield::SpireShield::$method($($args),*),
+            EnemyId::SpireSpear => ending::spire_spear::SpireSpear::$method($($args),*),
+            EnemyId::CorruptHeart => ending::corrupt_heart::CorruptHeart::$method($($args),*),
+            EnemyId::Exploder => beyond::exploder::Exploder::$method($($args),*),
+            EnemyId::Repulsor => beyond::repulsor::Repulsor::$method($($args),*),
+            EnemyId::Spiker => beyond::spiker::Spiker::$method($($args),*),
+            EnemyId::OrbWalker => beyond::orb_walker::OrbWalker::$method($($args),*),
+            EnemyId::SnakeDagger => beyond::snake_dagger::SnakeDagger::$method($($args),*),
+            EnemyId::Darkling => beyond::darkling::Darkling::$method($($args),*),
+            EnemyId::WrithingMass => beyond::writhing_mass::WrithingMass::$method($($args),*),
+            EnemyId::GiantHead => beyond::giant_head::GiantHead::$method($($args),*),
+            EnemyId::Nemesis => beyond::nemesis::Nemesis::$method($($args),*),
+            EnemyId::Reptomancer => beyond::reptomancer::Reptomancer::$method($($args),*),
+        }
+    };
+}
+
+pub fn roll_monster_turn_plan(
     rng: &mut crate::runtime::rng::StsRng,
     entity: &MonsterEntity,
     ascension_level: u8,
     num: i32,
     monsters: &[MonsterEntity],
-) -> (u8, Intent) {
-    if let Some(enemy_type) = EnemyId::from_id(entity.monster_type) {
-        match enemy_type {
-            EnemyId::JawWorm => {
-                exordium::jaw_worm::JawWorm::roll_move(rng, entity, ascension_level, num)
-            }
-            EnemyId::Cultist => {
-                exordium::cultist::Cultist::roll_move(rng, entity, ascension_level, num)
-            }
-            EnemyId::LouseNormal => {
-                exordium::louse_normal::LouseNormal::roll_move(rng, entity, ascension_level, num)
-            }
-            EnemyId::LouseDefensive => exordium::louse_defensive::LouseDefensive::roll_move(
-                rng,
-                entity,
-                ascension_level,
-                num,
-            ),
-            EnemyId::SpikeSlimeS => {
-                exordium::spike_slime::SpikeSlimeS::roll_move(rng, entity, ascension_level, num)
-            }
-            EnemyId::SpikeSlimeM => {
-                exordium::spike_slime::SpikeSlimeM::roll_move(rng, entity, ascension_level, num)
-            }
-            EnemyId::AcidSlimeS => {
-                exordium::acid_slime::AcidSlimeS::roll_move(rng, entity, ascension_level, num)
-            }
-            EnemyId::AcidSlimeM => {
-                exordium::acid_slime::AcidSlimeM::roll_move(rng, entity, ascension_level, num)
-            }
-            EnemyId::FungiBeast => {
-                exordium::fungi_beast::FungiBeast::roll_move(rng, entity, ascension_level, num)
-            }
-            EnemyId::Looter => {
-                exordium::looter::Looter::roll_move(rng, entity, ascension_level, num)
-            }
-            EnemyId::SlaverBlue => {
-                exordium::slaver_blue::SlaverBlue::roll_move(rng, entity, ascension_level, num)
-            }
-            EnemyId::SlaverRed => {
-                exordium::slaver_red::SlaverRed::roll_move(rng, entity, ascension_level, num)
-            }
-            EnemyId::AcidSlimeL => {
-                exordium::acid_slime_l::AcidSlimeL::roll_move(rng, entity, ascension_level, num)
-            }
-            EnemyId::SpikeSlimeL => {
-                exordium::spike_slime_l::SpikeSlimeL::roll_move(rng, entity, ascension_level, num)
-            }
-            EnemyId::GremlinFat => {
-                exordium::gremlin_fat::GremlinFat::roll_move(rng, entity, ascension_level, num)
-            }
-            EnemyId::GremlinThief => {
-                exordium::gremlin_thief::GremlinThief::roll_move(rng, entity, ascension_level, num)
-            }
-            EnemyId::GremlinTsundere => exordium::gremlin_tsundere::GremlinTsundere::roll_move(
-                rng,
-                entity,
-                ascension_level,
-                num,
-            ),
-            EnemyId::GremlinWarrior => exordium::gremlin_warrior::GremlinWarrior::roll_move(
-                rng,
-                entity,
-                ascension_level,
-                num,
-            ),
-            EnemyId::GremlinWizard => exordium::gremlin_wizard::GremlinWizard::roll_move(
-                rng,
-                entity,
-                ascension_level,
-                num,
-            ),
-            EnemyId::GremlinNob => {
-                exordium::gremlin_nob::GremlinNob::roll_move(rng, entity, ascension_level, num)
-            }
-            EnemyId::Lagavulin => {
-                exordium::lagavulin::Lagavulin::roll_move(rng, entity, ascension_level, num)
-            }
-            EnemyId::Sentry => {
-                exordium::sentry::Sentry::roll_move(rng, entity, ascension_level, num)
-            }
-            EnemyId::SlimeBoss => {
-                exordium::slime_boss::SlimeBoss::roll_move(rng, entity, ascension_level, num)
-            }
-            EnemyId::Hexaghost => {
-                exordium::hexaghost::Hexaghost::roll_move(rng, entity, ascension_level, num)
-            }
-            EnemyId::TheGuardian => {
-                exordium::the_guardian::TheGuardian::roll_move(rng, entity, ascension_level, num)
-            }
-            EnemyId::SphericGuardian => city::spheric_guardian::SphericGuardian::roll_move(
-                rng,
-                entity,
-                ascension_level,
-                num,
-            ),
-            EnemyId::Byrd => city::byrd::Byrd::roll_move(rng, entity, ascension_level, num),
-            EnemyId::Chosen => city::chosen::Chosen::roll_move(rng, entity, ascension_level, num),
-            EnemyId::Snecko => city::snecko::Snecko::roll_move(rng, entity, ascension_level, num),
-            EnemyId::Centurion => city::centurion::Centurion::roll_move_custom(
-                rng,
-                entity,
-                ascension_level,
-                num,
-                monsters,
-            ),
-            EnemyId::Healer => {
-                city::healer::Healer::roll_move_custom(rng, entity, ascension_level, num, monsters)
-            }
-            EnemyId::SnakePlant => {
-                city::snake_plant::SnakePlant::roll_move(rng, entity, ascension_level, num)
-            }
-            EnemyId::ShelledParasite => city::shelled_parasite::ShelledParasite::roll_move(
-                rng,
-                entity,
-                ascension_level,
-                num,
-            ),
-            EnemyId::Mugger => city::mugger::Mugger::roll_move(rng, entity, ascension_level, num),
-            EnemyId::BookOfStabbing => {
-                city::book_of_stabbing::BookOfStabbing::roll_move(rng, entity, ascension_level, num)
-            }
-            EnemyId::Taskmaster => {
-                city::taskmaster::Taskmaster::roll_move(rng, entity, ascension_level, num)
-            }
-            EnemyId::GremlinLeader => city::gremlin_leader::GremlinLeader::roll_move_custom(
-                rng,
-                entity,
-                ascension_level,
-                num,
-                monsters,
-            ),
-            EnemyId::BronzeAutomaton => city::bronze_automaton::BronzeAutomaton::roll_move(
-                rng,
-                entity,
-                ascension_level,
-                num,
-            ),
-            EnemyId::BronzeOrb => {
-                city::bronze_orb::BronzeOrb::roll_move(rng, entity, ascension_level, num)
-            }
-            EnemyId::TheCollector => city::the_collector::TheCollector::roll_move_custom(
-                rng,
-                entity,
-                ascension_level,
-                num,
-                monsters,
-            ),
-            EnemyId::TorchHead => {
-                city::torch_head::TorchHead::roll_move(rng, entity, ascension_level, num)
-            }
-            EnemyId::Champ => city::champ::Champ::roll_move(rng, entity, ascension_level, num),
-            EnemyId::BanditBear => {
-                city::bandit_bear::BanditBear::roll_move(rng, entity, ascension_level, num)
-            }
-            EnemyId::BanditLeader => {
-                city::bandit_leader::BanditLeader::roll_move(rng, entity, ascension_level, num)
-            }
-            EnemyId::BanditPointy => {
-                city::bandit_pointy::BanditPointy::roll_move(rng, entity, ascension_level, num)
-            }
-            EnemyId::Exploder => {
-                beyond::exploder::Exploder::roll_move(rng, entity, ascension_level, num)
-            }
-            EnemyId::Repulsor => {
-                beyond::repulsor::Repulsor::roll_move(rng, entity, ascension_level, num)
-            }
-            EnemyId::Spiker => beyond::spiker::Spiker::roll_move(rng, entity, ascension_level, num),
-            EnemyId::OrbWalker => {
-                beyond::orb_walker::OrbWalker::roll_move(rng, entity, ascension_level, num)
-            }
-            EnemyId::Darkling => {
-                beyond::darkling::roll_move_custom(rng, entity, ascension_level, num, monsters)
-            }
-            EnemyId::Maw => beyond::maw::Maw::roll_move(rng, entity, ascension_level, num),
-            EnemyId::SpireGrowth => {
-                beyond::spire_growth::SpireGrowth::roll_move(rng, entity, ascension_level, num)
-            }
-            EnemyId::Transient => {
-                beyond::transient::Transient::roll_move(rng, entity, ascension_level, num)
-            }
-            EnemyId::WrithingMass => {
-                beyond::writhing_mass::WrithingMass::roll_move(rng, entity, ascension_level, num)
-            }
-            EnemyId::GiantHead => {
-                beyond::giant_head::GiantHead::roll_move(rng, entity, ascension_level, num)
-            }
-            EnemyId::Nemesis => {
-                beyond::nemesis::Nemesis::roll_move(rng, entity, ascension_level, num)
-            }
-            EnemyId::Reptomancer => {
-                beyond::reptomancer::Reptomancer::roll_move(rng, entity, ascension_level, num)
-            }
-            EnemyId::SnakeDagger => {
-                beyond::snake_dagger::SnakeDagger::roll_move(rng, entity, ascension_level, num)
-            }
-            EnemyId::AwakenedOne => {
-                beyond::awakened_one::AwakenedOne::roll_move(rng, entity, ascension_level, num)
-            }
-            EnemyId::TimeEater => {
-                beyond::time_eater::TimeEater::roll_move(rng, entity, ascension_level, num)
-            }
-            EnemyId::Donu => beyond::donu::Donu::roll_move(rng, entity, ascension_level, num),
-            EnemyId::Deca => beyond::deca::Deca::roll_move(rng, entity, ascension_level, num),
-            EnemyId::SpireShield => {
-                ending::spire_shield::SpireShield::roll_move(rng, entity, ascension_level, num)
-            }
-            EnemyId::SpireSpear => {
-                ending::spire_spear::SpireSpear::roll_move(rng, entity, ascension_level, num)
-            }
-            EnemyId::CorruptHeart => {
-                ending::corrupt_heart::CorruptHeart::roll_move(rng, entity, ascension_level, num)
-            }
-        }
-    } else {
-        (0, Intent::Unknown)
-    }
+    player_powers: &[Power],
+) -> MonsterTurnPlan {
+    let ctx = MonsterRollContext {
+        monsters,
+        player_powers,
+    };
+    let enemy_type = enemy_type_for_monster(entity, "roll_monster_turn_plan");
+    dispatch_monster_behavior_method!(
+        enemy_type,
+        roll_move_plan_with_context(rng, entity, ascension_level, num, ctx)
+    )
+}
+
+pub fn roll_monster_turn_outcome(
+    rng: &mut crate::runtime::rng::StsRng,
+    entity: &MonsterEntity,
+    ascension_level: u8,
+    num: i32,
+    monsters: &[MonsterEntity],
+    player_powers: &[Power],
+) -> MonsterRollOutcome {
+    let ctx = MonsterRollContext {
+        monsters,
+        player_powers,
+    };
+    let enemy_type = enemy_type_for_monster(entity, "roll_monster_turn_outcome");
+    dispatch_monster_behavior_method!(
+        enemy_type,
+        roll_move_outcome(rng, entity, ascension_level, num, ctx)
+    )
+}
+
+pub fn resolve_roll_move_actions(
+    state: &CombatState,
+    entity: &MonsterEntity,
+    num: i32,
+    plan: &MonsterTurnPlan,
+) -> Vec<Action> {
+    let enemy_type = enemy_type_for_monster(entity, "resolve_roll_move_actions");
+    dispatch_monster_behavior_method!(
+        enemy_type,
+        on_roll_move(state.meta.ascension_level, entity, num, plan)
+    )
 }
 
 pub fn resolve_monster_turn(state: &mut CombatState, entity: &MonsterEntity) -> Vec<Action> {
-    if let Some(enemy_type) = EnemyId::from_id(entity.monster_type) {
-        match enemy_type {
-            EnemyId::JawWorm => exordium::jaw_worm::JawWorm::take_turn(state, entity),
-            EnemyId::Cultist => exordium::cultist::Cultist::take_turn(state, entity),
-            EnemyId::LouseNormal => exordium::louse_normal::LouseNormal::take_turn(state, entity),
-            EnemyId::LouseDefensive => {
-                exordium::louse_defensive::LouseDefensive::take_turn(state, entity)
-            }
-            EnemyId::SpikeSlimeS => exordium::spike_slime::SpikeSlimeS::take_turn(state, entity),
-            EnemyId::SpikeSlimeM => exordium::spike_slime::SpikeSlimeM::take_turn(state, entity),
-            EnemyId::AcidSlimeS => exordium::acid_slime::AcidSlimeS::take_turn(state, entity),
-            EnemyId::AcidSlimeM => exordium::acid_slime::AcidSlimeM::take_turn(state, entity),
-            EnemyId::FungiBeast => exordium::fungi_beast::FungiBeast::take_turn(state, entity),
-            EnemyId::Looter => exordium::looter::Looter::take_turn(state, entity),
-            EnemyId::SlaverBlue => exordium::slaver_blue::SlaverBlue::take_turn(state, entity),
-            EnemyId::SlaverRed => exordium::slaver_red::SlaverRed::take_turn(state, entity),
-            EnemyId::AcidSlimeL => exordium::acid_slime_l::AcidSlimeL::take_turn(state, entity),
-            EnemyId::SpikeSlimeL => exordium::spike_slime_l::SpikeSlimeL::take_turn(state, entity),
-            EnemyId::GremlinFat => exordium::gremlin_fat::GremlinFat::take_turn(state, entity),
-            EnemyId::GremlinThief => {
-                exordium::gremlin_thief::GremlinThief::take_turn(state, entity)
-            }
-            EnemyId::GremlinTsundere => {
-                exordium::gremlin_tsundere::GremlinTsundere::take_turn(state, entity)
-            }
-            EnemyId::GremlinWarrior => {
-                exordium::gremlin_warrior::GremlinWarrior::take_turn(state, entity)
-            }
-            EnemyId::GremlinWizard => {
-                exordium::gremlin_wizard::GremlinWizard::take_turn(state, entity)
-            }
-            EnemyId::GremlinNob => exordium::gremlin_nob::GremlinNob::take_turn(state, entity),
-            EnemyId::Lagavulin => exordium::lagavulin::Lagavulin::take_turn(state, entity),
-            EnemyId::Sentry => exordium::sentry::Sentry::take_turn(state, entity),
-            EnemyId::SlimeBoss => exordium::slime_boss::SlimeBoss::take_turn(state, entity),
-            EnemyId::Hexaghost => exordium::hexaghost::Hexaghost::take_turn(state, entity),
-            EnemyId::TheGuardian => exordium::the_guardian::TheGuardian::take_turn(state, entity),
-            EnemyId::SphericGuardian => {
-                city::spheric_guardian::SphericGuardian::take_turn(state, entity)
-            }
-            EnemyId::Byrd => city::byrd::Byrd::take_turn(state, entity),
-            EnemyId::Chosen => city::chosen::Chosen::take_turn(state, entity),
-            EnemyId::Snecko => city::snecko::Snecko::take_turn(state, entity),
-            EnemyId::Centurion => city::centurion::Centurion::take_turn(state, entity),
-            EnemyId::Healer => city::healer::Healer::take_turn(state, entity),
-            EnemyId::SnakePlant => city::snake_plant::SnakePlant::take_turn(state, entity),
-            EnemyId::ShelledParasite => {
-                city::shelled_parasite::ShelledParasite::take_turn(state, entity)
-            }
-            EnemyId::Mugger => city::mugger::Mugger::take_turn(state, entity),
-            EnemyId::BookOfStabbing => {
-                city::book_of_stabbing::BookOfStabbing::take_turn(state, entity)
-            }
-            EnemyId::Taskmaster => city::taskmaster::Taskmaster::take_turn(state, entity),
-            EnemyId::GremlinLeader => city::gremlin_leader::GremlinLeader::take_turn(state, entity),
-            EnemyId::BronzeAutomaton => {
-                city::bronze_automaton::BronzeAutomaton::take_turn(state, entity)
-            }
-            EnemyId::BronzeOrb => city::bronze_orb::BronzeOrb::take_turn(state, entity),
-            EnemyId::TheCollector => city::the_collector::TheCollector::take_turn(state, entity),
-            EnemyId::TorchHead => city::torch_head::TorchHead::take_turn(state, entity),
-            EnemyId::Champ => city::champ::Champ::take_turn(state, entity),
-            EnemyId::BanditBear => city::bandit_bear::BanditBear::take_turn(state, entity),
-            EnemyId::BanditLeader => city::bandit_leader::BanditLeader::take_turn(state, entity),
-            EnemyId::BanditPointy => city::bandit_pointy::BanditPointy::take_turn(state, entity),
-            EnemyId::Exploder => beyond::exploder::Exploder::take_turn(state, entity),
-            EnemyId::Repulsor => beyond::repulsor::Repulsor::take_turn(state, entity),
-            EnemyId::Spiker => beyond::spiker::Spiker::take_turn(state, entity),
-            EnemyId::OrbWalker => beyond::orb_walker::OrbWalker::take_turn(state, entity),
-            EnemyId::Darkling => beyond::darkling::Darkling::take_turn(state, entity),
-            EnemyId::Maw => beyond::maw::Maw::take_turn(state, entity),
-            EnemyId::SpireGrowth => beyond::spire_growth::SpireGrowth::take_turn(state, entity),
-            EnemyId::Transient => beyond::transient::Transient::take_turn(state, entity),
-            EnemyId::WrithingMass => beyond::writhing_mass::WrithingMass::take_turn(state, entity),
-            EnemyId::GiantHead => beyond::giant_head::GiantHead::take_turn(state, entity),
-            EnemyId::Nemesis => beyond::nemesis::Nemesis::take_turn(state, entity),
-            EnemyId::Reptomancer => beyond::reptomancer::Reptomancer::take_turn(state, entity),
-            EnemyId::SnakeDagger => beyond::snake_dagger::SnakeDagger::take_turn(state, entity),
-            EnemyId::AwakenedOne => beyond::awakened_one::AwakenedOne::take_turn(state, entity),
-            EnemyId::TimeEater => beyond::time_eater::TimeEater::take_turn(state, entity),
-            EnemyId::Donu => beyond::donu::Donu::take_turn(state, entity),
-            EnemyId::Deca => beyond::deca::Deca::take_turn(state, entity),
-            EnemyId::SpireShield => ending::spire_shield::SpireShield::take_turn(state, entity),
-            EnemyId::SpireSpear => ending::spire_spear::SpireSpear::take_turn(state, entity),
-            EnemyId::CorruptHeart => ending::corrupt_heart::CorruptHeart::take_turn(state, entity),
-        }
-    } else {
-        Vec::new()
-    }
+    let plan = resolve_monster_turn_plan(state, entity);
+    let enemy_type = enemy_type_for_monster(entity, "resolve_monster_turn");
+    dispatch_monster_behavior_method!(enemy_type, take_turn_plan(state, entity, &plan))
 }
 
-pub fn resolve_pre_battle_action(
+pub fn resolve_monster_turn_plan(state: &CombatState, entity: &MonsterEntity) -> MonsterTurnPlan {
+    let enemy_type = enemy_type_for_monster(entity, "resolve_monster_turn_plan");
+    dispatch_monster_behavior_method!(enemy_type, turn_plan(state, entity))
+}
+
+pub fn resolve_pre_battle_actions(
+    state: &mut CombatState,
     id: EnemyId,
     entity: &MonsterEntity,
-    hp_rng: &mut crate::runtime::rng::StsRng,
-    ascension_level: u8,
+    legacy_rng: PreBattleLegacyRng,
 ) -> Vec<Action> {
-    match id {
-        EnemyId::JawWorm => {
-            exordium::jaw_worm::JawWorm::use_pre_battle_action(entity, hp_rng, ascension_level)
-        }
-        EnemyId::Cultist => {
-            exordium::cultist::Cultist::use_pre_battle_action(entity, hp_rng, ascension_level)
-        }
-        EnemyId::LouseNormal => exordium::louse_normal::LouseNormal::use_pre_battle_action(
-            entity,
-            hp_rng,
-            ascension_level,
-        ),
-        EnemyId::LouseDefensive => {
-            exordium::louse_defensive::LouseDefensive::use_pre_battle_action(
-                entity,
-                hp_rng,
-                ascension_level,
-            )
-        }
-        EnemyId::SpikeSlimeS => exordium::spike_slime::SpikeSlimeS::use_pre_battle_action(
-            entity,
-            hp_rng,
-            ascension_level,
-        ),
-        EnemyId::SpikeSlimeM => exordium::spike_slime::SpikeSlimeM::use_pre_battle_action(
-            entity,
-            hp_rng,
-            ascension_level,
-        ),
-        EnemyId::AcidSlimeS => {
-            exordium::acid_slime::AcidSlimeS::use_pre_battle_action(entity, hp_rng, ascension_level)
-        }
-        EnemyId::AcidSlimeM => {
-            exordium::acid_slime::AcidSlimeM::use_pre_battle_action(entity, hp_rng, ascension_level)
-        }
-        EnemyId::FungiBeast => exordium::fungi_beast::FungiBeast::use_pre_battle_action(
-            entity,
-            hp_rng,
-            ascension_level,
-        ),
-        EnemyId::Looter => {
-            exordium::looter::Looter::use_pre_battle_action(entity, hp_rng, ascension_level)
-        }
-        EnemyId::SlaverBlue => exordium::slaver_blue::SlaverBlue::use_pre_battle_action(
-            entity,
-            hp_rng,
-            ascension_level,
-        ),
-        EnemyId::SlaverRed => {
-            exordium::slaver_red::SlaverRed::use_pre_battle_action(entity, hp_rng, ascension_level)
-        }
-        EnemyId::AcidSlimeL => exordium::acid_slime_l::AcidSlimeL::use_pre_battle_action(
-            entity,
-            hp_rng,
-            ascension_level,
-        ),
-        EnemyId::SpikeSlimeL => exordium::spike_slime_l::SpikeSlimeL::use_pre_battle_action(
-            entity,
-            hp_rng,
-            ascension_level,
-        ),
-        EnemyId::GremlinFat => exordium::gremlin_fat::GremlinFat::use_pre_battle_action(
-            entity,
-            hp_rng,
-            ascension_level,
-        ),
-        EnemyId::GremlinThief => exordium::gremlin_thief::GremlinThief::use_pre_battle_action(
-            entity,
-            hp_rng,
-            ascension_level,
-        ),
-        EnemyId::GremlinTsundere => {
-            exordium::gremlin_tsundere::GremlinTsundere::use_pre_battle_action(
-                entity,
-                hp_rng,
-                ascension_level,
-            )
-        }
-        EnemyId::GremlinWarrior => {
-            exordium::gremlin_warrior::GremlinWarrior::use_pre_battle_action(
-                entity,
-                hp_rng,
-                ascension_level,
-            )
-        }
-        EnemyId::GremlinWizard => exordium::gremlin_wizard::GremlinWizard::use_pre_battle_action(
-            entity,
-            hp_rng,
-            ascension_level,
-        ),
-        EnemyId::GremlinNob => exordium::gremlin_nob::GremlinNob::use_pre_battle_action(
-            entity,
-            hp_rng,
-            ascension_level,
-        ),
-        EnemyId::Lagavulin => {
-            exordium::lagavulin::Lagavulin::use_pre_battle_action(entity, hp_rng, ascension_level)
-        }
-        EnemyId::Sentry => {
-            exordium::sentry::Sentry::use_pre_battle_action(entity, hp_rng, ascension_level)
-        }
-        EnemyId::SlimeBoss => {
-            exordium::slime_boss::SlimeBoss::use_pre_battle_action(entity, hp_rng, ascension_level)
-        }
-        EnemyId::Hexaghost => {
-            exordium::hexaghost::Hexaghost::use_pre_battle_action(entity, hp_rng, ascension_level)
-        }
-        EnemyId::TheGuardian => exordium::the_guardian::TheGuardian::use_pre_battle_action(
-            entity,
-            hp_rng,
-            ascension_level,
-        ),
-        EnemyId::SphericGuardian => city::spheric_guardian::SphericGuardian::use_pre_battle_action(
-            entity,
-            hp_rng,
-            ascension_level,
-        ),
-        EnemyId::Byrd => city::byrd::Byrd::use_pre_battle_action(entity, hp_rng, ascension_level),
-        EnemyId::Chosen => {
-            city::chosen::Chosen::use_pre_battle_action(entity, hp_rng, ascension_level)
-        }
-        EnemyId::Centurion => {
-            city::centurion::Centurion::use_pre_battle_action(entity, hp_rng, ascension_level)
-        }
-        EnemyId::Healer => {
-            city::healer::Healer::use_pre_battle_action(entity, hp_rng, ascension_level)
-        }
-        EnemyId::SnakePlant => {
-            city::snake_plant::SnakePlant::use_pre_battle_action(entity, hp_rng, ascension_level)
-        }
-        EnemyId::ShelledParasite => city::shelled_parasite::ShelledParasite::use_pre_battle_action(
-            entity,
-            hp_rng,
-            ascension_level,
-        ),
-        EnemyId::Mugger => {
-            city::mugger::Mugger::use_pre_battle_action(entity, hp_rng, ascension_level)
-        }
-        EnemyId::BookOfStabbing => city::book_of_stabbing::BookOfStabbing::use_pre_battle_action(
-            entity,
-            hp_rng,
-            ascension_level,
-        ),
-        EnemyId::Taskmaster => {
-            city::taskmaster::Taskmaster::use_pre_battle_action(entity, hp_rng, ascension_level)
-        }
-        EnemyId::GremlinLeader => city::gremlin_leader::GremlinLeader::use_pre_battle_action(
-            entity,
-            hp_rng,
-            ascension_level,
-        ),
-        EnemyId::BronzeAutomaton => city::bronze_automaton::BronzeAutomaton::use_pre_battle_action(
-            entity,
-            hp_rng,
-            ascension_level,
-        ),
-        EnemyId::BronzeOrb => {
-            city::bronze_orb::BronzeOrb::use_pre_battle_action(entity, hp_rng, ascension_level)
-        }
-        EnemyId::TheCollector => city::the_collector::TheCollector::use_pre_battle_action(
-            entity,
-            hp_rng,
-            ascension_level,
-        ),
-        EnemyId::TorchHead => {
-            city::torch_head::TorchHead::use_pre_battle_action(entity, hp_rng, ascension_level)
-        }
-        EnemyId::Champ => {
-            city::champ::Champ::use_pre_battle_action(entity, hp_rng, ascension_level)
-        }
-        EnemyId::BanditBear => {
-            city::bandit_bear::BanditBear::use_pre_battle_action(entity, hp_rng, ascension_level)
-        }
-        EnemyId::BanditLeader => city::bandit_leader::BanditLeader::use_pre_battle_action(
-            entity,
-            hp_rng,
-            ascension_level,
-        ),
-        EnemyId::BanditPointy => city::bandit_pointy::BanditPointy::use_pre_battle_action(
-            entity,
-            hp_rng,
-            ascension_level,
-        ),
-        EnemyId::Exploder => {
-            beyond::exploder::Exploder::use_pre_battle_action(entity, hp_rng, ascension_level)
-        }
-        EnemyId::Spiker => {
-            beyond::spiker::Spiker::use_pre_battle_action(entity, hp_rng, ascension_level)
-        }
-        EnemyId::OrbWalker => {
-            beyond::orb_walker::OrbWalker::use_pre_battle_action(entity, hp_rng, ascension_level)
-        }
-        EnemyId::Darkling => {
-            beyond::darkling::Darkling::use_pre_battle_action(entity, hp_rng, ascension_level)
-        }
-        EnemyId::Transient => {
-            beyond::transient::Transient::use_pre_battle_action(entity, hp_rng, ascension_level)
-        }
-        EnemyId::WrithingMass => beyond::writhing_mass::WrithingMass::use_pre_battle_action(
-            entity,
-            hp_rng,
-            ascension_level,
-        ),
-        EnemyId::GiantHead => {
-            beyond::giant_head::GiantHead::use_pre_battle_action(entity, hp_rng, ascension_level)
-        }
-        EnemyId::Nemesis => {
-            beyond::nemesis::Nemesis::use_pre_battle_action(entity, hp_rng, ascension_level)
-        }
-        EnemyId::Reptomancer => {
-            beyond::reptomancer::Reptomancer::use_pre_battle_action(entity, hp_rng, ascension_level)
-        }
-        EnemyId::SnakeDagger => beyond::snake_dagger::SnakeDagger::use_pre_battle_action(
-            entity,
-            hp_rng,
-            ascension_level,
-        ),
-        EnemyId::AwakenedOne => beyond::awakened_one::AwakenedOne::use_pre_battle_action(
-            entity,
-            hp_rng,
-            ascension_level,
-        ),
-        EnemyId::TimeEater => {
-            beyond::time_eater::TimeEater::use_pre_battle_action(entity, hp_rng, ascension_level)
-        }
-        EnemyId::Donu => beyond::donu::Donu::use_pre_battle_action(entity, hp_rng, ascension_level),
-        EnemyId::Deca => beyond::deca::Deca::use_pre_battle_action(entity, hp_rng, ascension_level),
-        EnemyId::SpireShield => ending::spire_shield::SpireShield::use_pre_battle_action(
-            entity,
-            hp_rng,
-            ascension_level,
-        ),
-        EnemyId::SpireSpear => {
-            ending::spire_spear::SpireSpear::use_pre_battle_action(entity, hp_rng, ascension_level)
-        }
-        EnemyId::CorruptHeart => ending::corrupt_heart::CorruptHeart::use_pre_battle_action(
-            entity,
-            hp_rng,
-            ascension_level,
-        ),
-        _ => Vec::new(),
-    }
+    dispatch_monster_behavior_method!(id, use_pre_battle_actions(state, entity, legacy_rng))
 }
 
 pub fn dispatch_on_damaged(
@@ -835,13 +527,7 @@ pub fn dispatch_on_damaged(
     entity: &MonsterEntity,
     amount: i32,
 ) -> smallvec::SmallVec<[ActionInfo; 4]> {
-    match id {
-        EnemyId::Lagavulin => exordium::lagavulin::Lagavulin::on_damaged(state, entity, amount),
-        EnemyId::TheGuardian => {
-            exordium::the_guardian::TheGuardian::on_damaged(state, entity, amount)
-        }
-        _ => smallvec::smallvec![],
-    }
+    dispatch_monster_behavior_method!(id, on_damaged(state, entity, amount))
 }
 
 pub fn resolve_on_death(
@@ -849,85 +535,7 @@ pub fn resolve_on_death(
     state: &mut CombatState,
     entity: &MonsterEntity,
 ) -> Vec<Action> {
-    match id {
-        EnemyId::JawWorm => exordium::jaw_worm::JawWorm::on_death(state, entity),
-        EnemyId::Cultist => exordium::cultist::Cultist::on_death(state, entity),
-        EnemyId::LouseNormal => exordium::louse_normal::LouseNormal::on_death(state, entity),
-        EnemyId::LouseDefensive => {
-            exordium::louse_defensive::LouseDefensive::on_death(state, entity)
-        }
-        EnemyId::SpikeSlimeS => exordium::spike_slime::SpikeSlimeS::on_death(state, entity),
-        EnemyId::SpikeSlimeM => exordium::spike_slime::SpikeSlimeM::on_death(state, entity),
-        EnemyId::AcidSlimeS => exordium::acid_slime::AcidSlimeS::on_death(state, entity),
-        EnemyId::AcidSlimeM => exordium::acid_slime::AcidSlimeM::on_death(state, entity),
-        EnemyId::FungiBeast => exordium::fungi_beast::FungiBeast::on_death(state, entity),
-        EnemyId::Looter => exordium::looter::Looter::on_death(state, entity),
-        EnemyId::SlaverBlue => exordium::slaver_blue::SlaverBlue::on_death(state, entity),
-        EnemyId::SlaverRed => exordium::slaver_red::SlaverRed::on_death(state, entity),
-        EnemyId::AcidSlimeL => exordium::acid_slime_l::AcidSlimeL::on_death(state, entity),
-        EnemyId::SpikeSlimeL => exordium::spike_slime_l::SpikeSlimeL::on_death(state, entity),
-        EnemyId::GremlinFat => exordium::gremlin_fat::GremlinFat::on_death(state, entity),
-        EnemyId::GremlinThief => exordium::gremlin_thief::GremlinThief::on_death(state, entity),
-        EnemyId::GremlinTsundere => {
-            exordium::gremlin_tsundere::GremlinTsundere::on_death(state, entity)
-        }
-        EnemyId::GremlinWarrior => {
-            exordium::gremlin_warrior::GremlinWarrior::on_death(state, entity)
-        }
-        EnemyId::GremlinWizard => exordium::gremlin_wizard::GremlinWizard::on_death(state, entity),
-        EnemyId::GremlinNob => exordium::gremlin_nob::GremlinNob::on_death(state, entity),
-        EnemyId::Lagavulin => exordium::lagavulin::Lagavulin::on_death(state, entity),
-        EnemyId::Sentry => exordium::sentry::Sentry::on_death(state, entity),
-        EnemyId::SlimeBoss => exordium::slime_boss::SlimeBoss::on_death(state, entity),
-        EnemyId::Hexaghost => exordium::hexaghost::Hexaghost::on_death(state, entity),
-        EnemyId::TheGuardian => exordium::the_guardian::TheGuardian::on_death(state, entity),
-        EnemyId::SphericGuardian => {
-            city::spheric_guardian::SphericGuardian::on_death(state, entity)
-        }
-        EnemyId::Byrd => city::byrd::Byrd::on_death(state, entity),
-        EnemyId::Chosen => city::chosen::Chosen::on_death(state, entity),
-        EnemyId::Snecko => city::snecko::Snecko::on_death(state, entity),
-        EnemyId::Centurion => city::centurion::Centurion::on_death(state, entity),
-        EnemyId::Healer => city::healer::Healer::on_death(state, entity),
-        EnemyId::SnakePlant => city::snake_plant::SnakePlant::on_death(state, entity),
-        EnemyId::ShelledParasite => {
-            city::shelled_parasite::ShelledParasite::on_death(state, entity)
-        }
-        EnemyId::Mugger => city::mugger::Mugger::on_death(state, entity),
-        EnemyId::BookOfStabbing => city::book_of_stabbing::BookOfStabbing::on_death(state, entity),
-        EnemyId::Taskmaster => city::taskmaster::Taskmaster::on_death(state, entity),
-        EnemyId::GremlinLeader => city::gremlin_leader::GremlinLeader::on_death(state, entity),
-        EnemyId::BronzeAutomaton => {
-            city::bronze_automaton::BronzeAutomaton::on_death(state, entity)
-        }
-        EnemyId::BronzeOrb => city::bronze_orb::BronzeOrb::on_death(state, entity),
-        EnemyId::TheCollector => city::the_collector::TheCollector::on_death(state, entity),
-        EnemyId::TorchHead => city::torch_head::TorchHead::on_death(state, entity),
-        EnemyId::Champ => city::champ::Champ::on_death(state, entity),
-        EnemyId::BanditBear => city::bandit_bear::BanditBear::on_death(state, entity),
-        EnemyId::BanditLeader => city::bandit_leader::BanditLeader::on_death(state, entity),
-        EnemyId::BanditPointy => city::bandit_pointy::BanditPointy::on_death(state, entity),
-        EnemyId::Exploder => beyond::exploder::Exploder::on_death(state, entity),
-        EnemyId::Repulsor => beyond::repulsor::Repulsor::on_death(state, entity),
-        EnemyId::Spiker => beyond::spiker::Spiker::on_death(state, entity),
-        EnemyId::OrbWalker => beyond::orb_walker::OrbWalker::on_death(state, entity),
-        EnemyId::Darkling => beyond::darkling::Darkling::on_death(state, entity),
-        EnemyId::Maw => beyond::maw::Maw::on_death(state, entity),
-        EnemyId::SpireGrowth => beyond::spire_growth::SpireGrowth::on_death(state, entity),
-        EnemyId::Transient => beyond::transient::Transient::on_death(state, entity),
-        EnemyId::WrithingMass => beyond::writhing_mass::WrithingMass::on_death(state, entity),
-        EnemyId::GiantHead => beyond::giant_head::GiantHead::on_death(state, entity),
-        EnemyId::Nemesis => beyond::nemesis::Nemesis::on_death(state, entity),
-        EnemyId::Reptomancer => beyond::reptomancer::Reptomancer::on_death(state, entity),
-        EnemyId::SnakeDagger => beyond::snake_dagger::SnakeDagger::on_death(state, entity),
-        EnemyId::AwakenedOne => beyond::awakened_one::AwakenedOne::on_death(state, entity),
-        EnemyId::TimeEater => beyond::time_eater::TimeEater::on_death(state, entity),
-        EnemyId::Donu => beyond::donu::Donu::on_death(state, entity),
-        EnemyId::Deca => beyond::deca::Deca::on_death(state, entity),
-        EnemyId::SpireShield => ending::spire_shield::SpireShield::on_death(state, entity),
-        EnemyId::SpireSpear => ending::spire_spear::SpireSpear::on_death(state, entity),
-        EnemyId::CorruptHeart => ending::corrupt_heart::CorruptHeart::on_death(state, entity),
-    }
+    dispatch_monster_behavior_method!(id, on_death(state, entity))
 }
 
 pub fn get_hp_range(id: EnemyId, ascension_level: u8) -> (i32, i32) {

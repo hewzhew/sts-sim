@@ -154,6 +154,9 @@ Useful first-pass profiles:
 - `Ironclad_Progression`
   - broader normal-climb sampling
   - intentionally noisier
+- `Ironclad_HumanPrimary_Capture`
+  - human-primary late-run data/debug collection
+  - Rust holds on high-leverage noncombat screens but still records `sidecar_shadow`, watch sidecars, and parity findings
 - `Ironclad_Reaper`
   - narrow combat/play capture for a high-value rare card
 - `Ironclad_Barricade`

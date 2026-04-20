@@ -46,7 +46,7 @@ pub fn handle_apply_power_detailed(
     if target == 0 {
         // Player target — always valid
     } else if let Some(m) = state.entities.monsters.iter().find(|m| m.id == target) {
-        if m.is_dying || m.current_hp <= 0 {
+        if m.is_dying || m.is_escaped || m.current_hp <= 0 {
             return;
         }
     }
@@ -80,7 +80,7 @@ pub fn handle_apply_power_detailed(
     // U5: Monster re-check after hooks
     if target != 0 {
         if let Some(m) = state.entities.monsters.iter().find(|m| m.id == target) {
-            if m.is_dying || m.current_hp <= 0 {
+            if m.is_dying || m.is_escaped || m.current_hp <= 0 {
                 return;
             }
         }

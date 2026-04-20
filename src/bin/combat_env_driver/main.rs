@@ -12,7 +12,7 @@ use sts_simulator::diff::replay::{
     derive_combat_replay_view, find_combat_step_index_by_before_frame_id,
     load_live_session_replay_path, reconstruct_combat_replay_step,
 };
-use sts_simulator::diff::state_sync::build_combat_state;
+use sts_simulator::diff::state_sync::build_combat_state_from_snapshots;
 use sts_simulator::fixtures::author_spec::{compile_combat_author_spec, CombatAuthorSpec};
 use sts_simulator::fixtures::combat_start_spec::CombatStartSpec;
 
@@ -51,9 +51,16 @@ struct DriverActionCandidate {
     legal: bool,
     label: String,
     action_family: String,
+    choice_kind: Option<String>,
+    card_id: Option<String>,
     card_name: Option<String>,
+    potion_id: Option<String>,
+    potion_name: Option<String>,
     slot_index: Option<usize>,
     target: Option<usize>,
+    target_slot: Option<usize>,
+    selection_indices: Vec<usize>,
+    selection_uuids: Vec<u32>,
 }
 
 #[derive(Debug, Serialize)]
@@ -315,10 +322,16 @@ fn state_response(
     let observation = env.observation();
     let action_mask = env.action_mask();
     let spec_name = Some(observation.env_name.clone());
+    let action_candidates = build_action_candidates(
+        &action_mask,
+        env.current_engine_state(),
+        &observation,
+        env.current_combat(),
+    );
     let payload = DriverStatePayload {
         observation,
         legal_action_count: action_mask.legal.iter().filter(|value| **value).count(),
-        action_candidates: build_action_candidates(&action_mask, env.current_combat()),
+        action_candidates,
         action_mask: action_mask.legal.clone(),
     };
     DriverResponse {
@@ -371,7 +384,11 @@ fn load_spec_from_start_spec(path: PathBuf, seed_hint: u64) -> Result<CombatEnvS
 
 fn load_spec_from_fixture_path(path: PathBuf, seed_hint: u64) -> Result<CombatEnvSpec, String> {
     let fixture = load_fixture_path(&path)?;
-    let combat = build_combat_state(&fixture.combat_snapshot, &fixture.relics);
+    let combat = build_combat_state_from_snapshots(
+        &fixture.truth_snapshot,
+        &fixture.observation_snapshot,
+        &fixture.relics,
+    );
     let engine = match fixture.engine_state {
         DecisionAuditEngineState::CombatPlayerTurn => {
             sts_simulator::state::core::EngineState::CombatPlayerTurn
@@ -409,8 +426,11 @@ fn load_spec_from_replay_frame(
 
 fn build_action_candidates(
     mask: &ActionMask,
+    engine_state: &sts_simulator::state::core::EngineState,
+    observation: &CombatObservation,
     combat: &sts_simulator::runtime::combat::CombatState,
 ) -> Vec<DriverActionCandidate> {
+    let pending_choice_kind = observation.pending_choice_kind.clone();
     mask.candidate_actions
         .iter()
         .enumerate()
@@ -420,15 +440,28 @@ fn build_action_candidates(
                 legal: mask.legal[index],
                 label: action.label(combat),
                 action_family: "end_turn".to_string(),
+                choice_kind: None,
+                card_id: None,
                 card_name: None,
+                potion_id: None,
+                potion_name: None,
                 slot_index: None,
                 target: None,
+                target_slot: None,
+                selection_indices: Vec::new(),
+                selection_uuids: Vec::new(),
             },
             CombatAction::PlayCard { card_index, target } => DriverActionCandidate {
                 index,
                 legal: mask.legal[index],
                 label: action.label(combat),
                 action_family: "play_card".to_string(),
+                choice_kind: None,
+                card_id: combat
+                    .zones
+                    .hand
+                    .get(*card_index)
+                    .map(|card| format!("{:?}", card.id)),
                 card_name: combat.zones.hand.get(*card_index).map(|card| {
                     let mut label = sts_simulator::content::cards::get_card_definition(card.id)
                         .name
@@ -438,8 +471,18 @@ fn build_action_candidates(
                     }
                     label
                 }),
+                potion_id: None,
+                potion_name: None,
                 slot_index: Some(*card_index),
                 target: *target,
+                target_slot: (*target).and_then(|entity_id| {
+                    observation
+                        .monsters
+                        .iter()
+                        .position(|monster| monster.entity_id == entity_id)
+                }),
+                selection_indices: Vec::new(),
+                selection_uuids: Vec::new(),
             },
             CombatAction::UsePotion {
                 potion_index,
@@ -449,9 +492,35 @@ fn build_action_candidates(
                 legal: mask.legal[index],
                 label: action.label(combat),
                 action_family: "use_potion".to_string(),
+                choice_kind: None,
+                card_id: None,
                 card_name: None,
+                potion_id: combat
+                    .entities
+                    .potions
+                    .get(*potion_index)
+                    .and_then(|potion| potion.as_ref())
+                    .map(|potion| format!("{:?}", potion.id)),
+                potion_name: combat
+                    .entities
+                    .potions
+                    .get(*potion_index)
+                    .and_then(|potion| potion.as_ref())
+                    .map(|potion| {
+                        sts_simulator::content::potions::get_potion_definition(potion.id)
+                            .name
+                            .to_string()
+                    }),
                 slot_index: Some(*potion_index),
                 target: *target,
+                target_slot: (*target).and_then(|entity_id| {
+                    observation
+                        .monsters
+                        .iter()
+                        .position(|monster| monster.entity_id == entity_id)
+                }),
+                selection_indices: Vec::new(),
+                selection_uuids: Vec::new(),
             },
             CombatAction::SubmitDiscoverChoice {
                 index: choice_index,
@@ -459,67 +528,130 @@ fn build_action_candidates(
                 index,
                 legal: mask.legal[index],
                 label: action.label(combat),
-                action_family: "discover_select".to_string(),
+                action_family: choice_family_name(engine_state, pending_choice_kind.as_deref()),
+                choice_kind: pending_choice_kind.clone(),
+                card_id: None,
                 card_name: None,
+                potion_id: None,
+                potion_name: None,
                 slot_index: Some(*choice_index),
                 target: None,
+                target_slot: None,
+                selection_indices: vec![*choice_index],
+                selection_uuids: Vec::new(),
             },
-            CombatAction::SubmitCardChoice { .. } => DriverActionCandidate {
+            CombatAction::SubmitCardChoice { indices } => DriverActionCandidate {
                 index,
                 legal: mask.legal[index],
                 label: action.label(combat),
                 action_family: "card_select".to_string(),
+                choice_kind: pending_choice_kind.clone(),
+                card_id: None,
                 card_name: None,
-                slot_index: None,
+                potion_id: None,
+                potion_name: None,
+                slot_index: indices.first().copied(),
                 target: None,
+                target_slot: None,
+                selection_indices: indices.clone(),
+                selection_uuids: Vec::new(),
             },
-            CombatAction::SubmitHandSelect { .. } => DriverActionCandidate {
+            CombatAction::SubmitHandSelect { uuids } => DriverActionCandidate {
                 index,
                 legal: mask.legal[index],
                 label: action.label(combat),
                 action_family: "hand_select".to_string(),
+                choice_kind: pending_choice_kind.clone(),
+                card_id: None,
                 card_name: None,
+                potion_id: None,
+                potion_name: None,
                 slot_index: None,
                 target: None,
+                target_slot: None,
+                selection_indices: Vec::new(),
+                selection_uuids: uuids.clone(),
             },
-            CombatAction::SubmitGridSelect { .. } => DriverActionCandidate {
+            CombatAction::SubmitGridSelect { uuids } => DriverActionCandidate {
                 index,
                 legal: mask.legal[index],
                 label: action.label(combat),
                 action_family: "grid_select".to_string(),
+                choice_kind: pending_choice_kind.clone(),
+                card_id: None,
                 card_name: None,
+                potion_id: None,
+                potion_name: None,
                 slot_index: None,
                 target: None,
+                target_slot: None,
+                selection_indices: Vec::new(),
+                selection_uuids: uuids.clone(),
             },
             CombatAction::Proceed => DriverActionCandidate {
                 index,
                 legal: mask.legal[index],
                 label: action.label(combat),
                 action_family: "proceed".to_string(),
+                choice_kind: None,
+                card_id: None,
                 card_name: None,
+                potion_id: None,
+                potion_name: None,
                 slot_index: None,
                 target: None,
+                target_slot: None,
+                selection_indices: Vec::new(),
+                selection_uuids: Vec::new(),
             },
             CombatAction::Cancel => DriverActionCandidate {
                 index,
                 legal: mask.legal[index],
                 label: action.label(combat),
                 action_family: "cancel".to_string(),
+                choice_kind: pending_choice_kind.clone(),
+                card_id: None,
                 card_name: None,
+                potion_id: None,
+                potion_name: None,
                 slot_index: None,
                 target: None,
+                target_slot: None,
+                selection_indices: Vec::new(),
+                selection_uuids: Vec::new(),
             },
             CombatAction::Raw { .. } => DriverActionCandidate {
                 index,
                 legal: mask.legal[index],
                 label: action.label(combat),
                 action_family: "raw".to_string(),
+                choice_kind: None,
+                card_id: None,
                 card_name: None,
+                potion_id: None,
+                potion_name: None,
                 slot_index: None,
                 target: None,
+                target_slot: None,
+                selection_indices: Vec::new(),
+                selection_uuids: Vec::new(),
             },
         })
         .collect()
+}
+
+fn choice_family_name(
+    _engine_state: &sts_simulator::state::core::EngineState,
+    pending_choice_kind: Option<&str>,
+) -> String {
+    match pending_choice_kind {
+        Some("card_reward_select") => "card_reward_select",
+        Some("stance_choice") => "stance_choice",
+        Some("scry_select") => "scry_select",
+        Some("discovery_select") => "discovery_select",
+        _ => "discover_select",
+    }
+    .to_string()
 }
 
 trait DriverResponseExt {

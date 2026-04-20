@@ -204,6 +204,9 @@ system. For now:
 - `Ironclad_Assisted_Progression_BossHandoff`
   - closest to `assisted_progression`
   - explicitly enables boss-combat handoff
+- `Ironclad_HumanPrimary_Capture`
+  - closest to `handoff`
+  - explicitly enables human-primary noncombat hold while preserving bot shadow evaluation
 - `Ironclad_Reaper`
   - targeted `survival`
 - `Ironclad_Barricade`

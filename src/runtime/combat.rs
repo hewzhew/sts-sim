@@ -1,11 +1,8 @@
 use crate::content::cards::CardId;
 use crate::content::relics::RelicState;
 use crate::core::EntityId;
-use crate::projection::combat::MonsterMovePreview;
 use crate::runtime::action::{Action, ActionInfo, AddTo};
-use crate::semantics::combat::{
-    AttackSpec, BuffSpec, DamageKind, DebuffSpec, DefendSpec, MonsterMoveSpec, MonsterTurnPlan,
-};
+use crate::semantics::combat::{AttackSpec, DamageKind, MonsterMoveSpec, MonsterTurnPlan};
 use crate::state::selection::{DomainEvent, EngineDiagnostic};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::ops::{Deref, DerefMut};
@@ -129,6 +126,18 @@ pub struct CombatRuntimeHints {
     pub colorless_combat_pool: Vec<CardId>,
     pub emitted_events: Vec<DomainEvent>,
     pub engine_diagnostics: Vec<EngineDiagnostic>,
+    pub pending_rewards: Vec<crate::rewards::state::RewardItem>,
+    pub monster_protocol: HashMap<EntityId, MonsterProtocolState>,
+    /// Java `AbstractRoom.mugged` equivalent at combat scope.
+    ///
+    /// Set when a thief escapes after actually stealing gold. This is not used
+    /// for reward contents, only for post-combat presentation/state.
+    pub combat_mugged: bool,
+    /// Java `AbstractRoom.smoked` equivalent at combat scope.
+    ///
+    /// Set when Smoke Bomb ends combat. This changes reward-screen behavior:
+    /// no normal combat rewards should be generated.
+    pub combat_smoked: bool,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -196,6 +205,69 @@ pub struct RelicBuses {
 }
 
 impl CombatState {
+    pub fn monster_protocol(&self, monster_id: EntityId) -> Option<&MonsterProtocolState> {
+        self.runtime.monster_protocol.get(&monster_id)
+    }
+
+    pub fn monster_protocol_mut(&mut self, monster_id: EntityId) -> &mut MonsterProtocolState {
+        self.runtime.monster_protocol.entry(monster_id).or_default()
+    }
+
+    pub fn clear_monster_protocol_observation(&mut self, monster_id: EntityId) {
+        self.monster_protocol_mut(monster_id).observation =
+            MonsterProtocolObservationState::default();
+    }
+
+    pub fn set_monster_protocol_visible_intent(&mut self, monster_id: EntityId, intent: Intent) {
+        self.monster_protocol_mut(monster_id)
+            .observation
+            .visible_intent = intent;
+    }
+
+    pub fn set_monster_protocol_preview_damage_per_hit(
+        &mut self,
+        monster_id: EntityId,
+        damage: i32,
+    ) {
+        self.monster_protocol_mut(monster_id)
+            .observation
+            .preview_damage_per_hit = damage;
+    }
+
+    pub fn monster_protocol_visible_intent(&self, monster_id: EntityId) -> &Intent {
+        self.monster_protocol(monster_id)
+            .map(|state| &state.observation.visible_intent)
+            .unwrap_or(&Intent::Unknown)
+    }
+
+    pub fn monster_protocol_preview_damage_per_hit(&self, monster_id: EntityId) -> i32 {
+        self.monster_protocol(monster_id)
+            .map(|state| state.observation.preview_damage_per_hit)
+            .unwrap_or(0)
+    }
+
+    pub fn monster_has_protocol_visible_intent(&self, monster_id: EntityId) -> bool {
+        !matches!(
+            self.monster_protocol_visible_intent(monster_id),
+            Intent::Unknown
+        )
+    }
+
+    pub fn monster_protocol_identity(
+        &self,
+        monster_id: EntityId,
+    ) -> Option<&MonsterProtocolIdentity> {
+        self.monster_protocol(monster_id)
+            .map(|state| &state.identity)
+    }
+
+    pub fn monster_protocol_identity_mut(
+        &mut self,
+        monster_id: EntityId,
+    ) -> &mut MonsterProtocolIdentity {
+        &mut self.monster_protocol_mut(monster_id).identity
+    }
+
     pub fn emit_event(&mut self, event: DomainEvent) {
         self.runtime.emitted_events.push(event);
     }
@@ -632,48 +704,26 @@ impl Intent {
         }
     }
 
-    pub fn to_move_spec(&self) -> MonsterMoveSpec {
+    /// Legacy protocol/old-monster bridge only.
+    ///
+    /// Semantic main paths must not derive move truth from `Intent`.
+    pub fn to_legacy_move_spec(&self) -> MonsterMoveSpec {
         match self {
             Intent::Attack { damage, hits } => MonsterMoveSpec::Attack(AttackSpec {
                 base_damage: *damage,
                 hits: *hits,
                 damage_kind: DamageKind::Normal,
             }),
-            Intent::AttackBuff { damage, hits } => MonsterMoveSpec::AttackBuff(
-                AttackSpec {
-                    base_damage: *damage,
-                    hits: *hits,
-                    damage_kind: DamageKind::Normal,
-                },
-                BuffSpec::unknown(),
-            ),
-            Intent::AttackDebuff { damage, hits } => MonsterMoveSpec::AttackDebuff(
-                AttackSpec {
-                    base_damage: *damage,
-                    hits: *hits,
-                    damage_kind: DamageKind::Normal,
-                },
-                DebuffSpec::unknown(),
-            ),
-            Intent::AttackDefend { damage, hits } => MonsterMoveSpec::AttackDefend(
-                AttackSpec {
-                    base_damage: *damage,
-                    hits: *hits,
-                    damage_kind: DamageKind::Normal,
-                },
-                DefendSpec::default(),
-            ),
-            Intent::Buff => MonsterMoveSpec::Buff(BuffSpec::unknown()),
-            Intent::Debuff => MonsterMoveSpec::Debuff(DebuffSpec::unknown()),
-            Intent::StrongDebuff => MonsterMoveSpec::StrongDebuff(DebuffSpec::strong_unknown()),
+            Intent::AttackBuff { .. }
+            | Intent::AttackDebuff { .. }
+            | Intent::AttackDefend { .. }
+            | Intent::Buff
+            | Intent::Debuff
+            | Intent::StrongDebuff
+            | Intent::Defend
+            | Intent::DefendDebuff
+            | Intent::DefendBuff => MonsterMoveSpec::Unknown,
             Intent::Debug => MonsterMoveSpec::Debug,
-            Intent::Defend => MonsterMoveSpec::Defend(DefendSpec::default()),
-            Intent::DefendDebuff => {
-                MonsterMoveSpec::DefendDebuff(DefendSpec::default(), DebuffSpec::unknown())
-            }
-            Intent::DefendBuff => {
-                MonsterMoveSpec::DefendBuff(DefendSpec::default(), BuffSpec::unknown())
-            }
             Intent::Escape => MonsterMoveSpec::Escape,
             Intent::Magic => MonsterMoveSpec::Magic,
             Intent::None => MonsterMoveSpec::None,
@@ -695,50 +745,85 @@ pub struct MonsterEntity {
     pub is_dying: bool,
     pub is_escaped: bool,
     pub half_dead: bool,
-    pub next_move_byte: u8,
-    pub current_intent: Intent,
-    pub move_history: VecDeque<u8>,
-    /// UI / protocol preview damage after monster damage modifiers are applied.
-    /// This is not an executable damage base and must not be fed back into
-    /// combat resolution.
-    pub intent_preview_damage: i32,
+    pub move_state: MonsterMoveState,
     pub logical_position: i32,
-    pub protocol_identity: MonsterProtocolIdentity,
     pub hexaghost: HexaghostRuntimeState,
+    pub louse: LouseRuntimeState,
+    pub jaw_worm: JawWormRuntimeState,
+    pub thief: ThiefRuntimeState,
+    pub byrd: ByrdRuntimeState,
     pub chosen: ChosenRuntimeState,
+    pub snecko: SneckoRuntimeState,
+    pub shelled_parasite: ShelledParasiteRuntimeState,
+    pub bronze_automaton: BronzeAutomatonRuntimeState,
+    pub bronze_orb: BronzeOrbRuntimeState,
+    pub book_of_stabbing: BookOfStabbingRuntimeState,
+    pub collector: CollectorRuntimeState,
+    pub champ: ChampRuntimeState,
+    pub awakened_one: AwakenedOneRuntimeState,
+    pub corrupt_heart: CorruptHeartRuntimeState,
     pub darkling: DarklingRuntimeState,
     pub lagavulin: LagavulinRuntimeState,
+    pub guardian: GuardianRuntimeState,
 }
 
 impl MonsterEntity {
-    pub fn intent_base_damage(&self) -> Option<i32> {
-        self.current_intent.base_damage()
-    }
-
-    pub fn intent_hits(&self) -> i32 {
-        self.current_intent.hits()
-    }
-
-    pub fn intent_preview_total_damage(&self) -> i32 {
-        self.intent_preview_damage.max(0) * self.intent_hits()
-    }
-
     pub fn turn_plan(&self) -> MonsterTurnPlan {
+        let move_id = self.planned_move_id();
+        if self.is_dying || self.half_dead {
+            return MonsterTurnPlan::unknown(move_id);
+        }
+
         MonsterTurnPlan {
-            move_id: self.next_move_byte,
-            spec: self.current_intent.to_move_spec(),
+            move_id,
+            steps: self.move_state.planned_steps.clone().unwrap_or_default(),
+            visible_spec: self.move_state.planned_visible_spec.clone(),
         }
     }
 
-    pub fn move_preview(&self) -> MonsterMovePreview {
-        let plan = self.turn_plan();
-        let damage_per_hit = if plan.spec.attack().is_some() {
-            Some(self.intent_preview_damage.max(0))
-        } else {
-            None
-        };
-        MonsterMovePreview::from_spec(&plan.spec, damage_per_hit)
+    pub fn planned_move_id(&self) -> u8 {
+        self.move_state.planned_move_id
     }
+
+    pub fn set_planned_move_id(&mut self, move_id: u8) {
+        self.move_state.planned_move_id = move_id;
+    }
+
+    pub fn set_planned_steps(&mut self, steps: crate::semantics::combat::MonsterTurnSteps) {
+        self.move_state.planned_steps = Some(steps);
+    }
+
+    pub fn set_planned_visible_spec(
+        &mut self,
+        visible_spec: Option<crate::semantics::combat::MonsterMoveSpec>,
+    ) {
+        self.move_state.planned_visible_spec = visible_spec;
+    }
+
+    pub fn record_planned_move(&mut self, move_id: u8) {
+        self.move_state.planned_move_id = move_id;
+        self.move_state.history.push_back(move_id);
+    }
+
+    pub fn move_history(&self) -> &VecDeque<u8> {
+        &self.move_state.history
+    }
+
+    pub fn move_history_mut(&mut self) -> &mut VecDeque<u8> {
+        &mut self.move_state.history
+    }
+
+    pub fn louse_bite_damage(&self) -> Option<i32> {
+        self.louse.bite_damage
+    }
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct MonsterMoveState {
+    pub planned_move_id: u8,
+    pub history: VecDeque<u8>,
+    pub planned_steps: Option<crate::semantics::combat::MonsterTurnSteps>,
+    pub planned_visible_spec: Option<crate::semantics::combat::MonsterMoveSpec>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -749,11 +834,60 @@ pub struct MonsterProtocolIdentity {
     pub group_index: Option<usize>,
 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub struct MonsterProtocolObservationState {
+    pub visible_intent: Intent,
+    /// UI / protocol preview damage after monster damage modifiers are applied.
+    /// This is not an executable damage base and must not be fed back into
+    /// combat resolution.
+    pub preview_damage_per_hit: i32,
+}
+
+impl Default for MonsterProtocolObservationState {
+    fn default() -> Self {
+        Self {
+            visible_intent: Intent::Unknown,
+            preview_damage_per_hit: 0,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct MonsterProtocolState {
+    pub observation: MonsterProtocolObservationState,
+    pub identity: MonsterProtocolIdentity,
+}
+
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct HexaghostRuntimeState {
     pub activated: bool,
     pub orb_active_count: u8,
     pub burn_upgraded: bool,
+    pub divider_damage: Option<i32>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct LouseRuntimeState {
+    pub bite_damage: Option<i32>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct JawWormRuntimeState {
+    pub hard_mode: bool,
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct ThiefRuntimeState {
+    pub protocol_seeded: bool,
+    pub slash_count: u8,
+    pub stolen_gold: i32,
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct ByrdRuntimeState {
+    pub protocol_seeded: bool,
+    pub first_move: bool,
+    pub is_flying: bool,
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -764,6 +898,141 @@ pub struct ChosenRuntimeState {
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
+pub struct SneckoRuntimeState {
+    pub protocol_seeded: bool,
+    pub first_turn: bool,
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct ShelledParasiteRuntimeState {
+    pub protocol_seeded: bool,
+    pub first_move: bool,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct BronzeAutomatonRuntimeState {
+    pub protocol_seeded: bool,
+    pub first_turn: bool,
+    pub num_turns: u8,
+}
+
+impl Default for BronzeAutomatonRuntimeState {
+    fn default() -> Self {
+        Self {
+            protocol_seeded: false,
+            first_turn: true,
+            num_turns: 0,
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct BronzeOrbRuntimeState {
+    pub protocol_seeded: bool,
+    pub used_stasis: bool,
+}
+
+impl Default for BronzeOrbRuntimeState {
+    fn default() -> Self {
+        Self {
+            protocol_seeded: false,
+            used_stasis: false,
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct BookOfStabbingRuntimeState {
+    pub protocol_seeded: bool,
+    pub stab_count: u8,
+}
+
+impl Default for BookOfStabbingRuntimeState {
+    fn default() -> Self {
+        Self {
+            protocol_seeded: false,
+            stab_count: 1,
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct CollectorRuntimeState {
+    pub protocol_seeded: bool,
+    pub initial_spawn: bool,
+    pub ult_used: bool,
+    pub turns_taken: u8,
+}
+
+impl Default for CollectorRuntimeState {
+    fn default() -> Self {
+        Self {
+            protocol_seeded: false,
+            initial_spawn: true,
+            ult_used: false,
+            turns_taken: 0,
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct ChampRuntimeState {
+    pub protocol_seeded: bool,
+    pub first_turn: bool,
+    pub num_turns: u8,
+    pub forge_times: u8,
+    pub threshold_reached: bool,
+}
+
+impl Default for ChampRuntimeState {
+    fn default() -> Self {
+        Self {
+            protocol_seeded: false,
+            first_turn: true,
+            num_turns: 0,
+            forge_times: 0,
+            threshold_reached: false,
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct AwakenedOneRuntimeState {
+    pub protocol_seeded: bool,
+    pub form1: bool,
+    pub first_turn: bool,
+}
+
+impl Default for AwakenedOneRuntimeState {
+    fn default() -> Self {
+        Self {
+            protocol_seeded: false,
+            form1: true,
+            first_turn: true,
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct CorruptHeartRuntimeState {
+    pub protocol_seeded: bool,
+    pub first_move: bool,
+    pub move_count: u8,
+    pub buff_count: u8,
+}
+
+impl Default for CorruptHeartRuntimeState {
+    fn default() -> Self {
+        Self {
+            protocol_seeded: false,
+            first_move: true,
+            move_count: 0,
+            buff_count: 0,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct DarklingRuntimeState {
     pub first_move: bool,
     pub nip_dmg: i32,
@@ -771,8 +1040,29 @@ pub struct DarklingRuntimeState {
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct LagavulinRuntimeState {
+    pub is_out: bool,
     pub idle_count: u8,
+    pub debuff_turn_count: u8,
     pub is_out_triggered: bool,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct GuardianRuntimeState {
+    pub damage_threshold: i32,
+    pub damage_taken: i32,
+    pub is_open: bool,
+    pub close_up_triggered: bool,
+}
+
+impl Default for GuardianRuntimeState {
+    fn default() -> Self {
+        Self {
+            damage_threshold: 0,
+            damage_taken: 0,
+            is_open: true,
+            close_up_triggered: false,
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -974,6 +1264,7 @@ impl CombatState {
 mod tests {
     use super::*;
     use crate::runtime::action::ActionInfo;
+    use std::collections::VecDeque;
 
     #[test]
     fn engine_runtime_queue_actions_preserves_top_before_bottom_order() {
@@ -1093,5 +1384,187 @@ mod tests {
         assert!(!turn.counters.early_end_turn_pending);
         assert!(!turn.counters.escape_pending_reward);
         assert_eq!(turn.counters.times_damaged_this_combat, 1);
+    }
+
+    #[test]
+    fn monster_turn_plan_and_preview_follow_planned_visible_spec() {
+        let spec = MonsterMoveSpec::Attack(AttackSpec {
+            base_damage: 6,
+            hits: 2,
+            damage_kind: DamageKind::Normal,
+        });
+        let monster = MonsterEntity {
+            id: 1,
+            monster_type: 0,
+            current_hp: 30,
+            max_hp: 30,
+            block: 0,
+            slot: 0,
+            is_dying: false,
+            is_escaped: false,
+            half_dead: false,
+            move_state: MonsterMoveState {
+                planned_move_id: 7,
+                history: VecDeque::from([1, 7]),
+                planned_steps: Some(spec.to_steps()),
+                planned_visible_spec: Some(spec.clone()),
+            },
+            logical_position: 0,
+            hexaghost: HexaghostRuntimeState::default(),
+            louse: LouseRuntimeState::default(),
+            jaw_worm: JawWormRuntimeState::default(),
+            thief: ThiefRuntimeState::default(),
+            byrd: ByrdRuntimeState::default(),
+            chosen: ChosenRuntimeState::default(),
+            snecko: SneckoRuntimeState::default(),
+            shelled_parasite: ShelledParasiteRuntimeState::default(),
+            bronze_automaton: BronzeAutomatonRuntimeState::default(),
+            bronze_orb: BronzeOrbRuntimeState::default(),
+            book_of_stabbing: BookOfStabbingRuntimeState::default(),
+            collector: CollectorRuntimeState::default(),
+            champ: ChampRuntimeState::default(),
+            awakened_one: AwakenedOneRuntimeState::default(),
+            corrupt_heart: CorruptHeartRuntimeState::default(),
+            darkling: DarklingRuntimeState::default(),
+            lagavulin: LagavulinRuntimeState::default(),
+            guardian: GuardianRuntimeState::default(),
+        };
+
+        let plan = monster.turn_plan();
+        let preview = crate::projection::combat::project_monster_move_preview(&monster);
+
+        assert_eq!(plan.move_id, 7);
+        assert!(matches!(plan.summary_spec(), MonsterMoveSpec::Attack(_)));
+        assert_eq!(preview.damage_per_hit, Some(6));
+        assert_eq!(preview.hits, 2);
+        assert_eq!(preview.total_damage, Some(12));
+        assert!(crate::projection::combat::monster_has_visible_attack(
+            &monster
+        ));
+        assert_eq!(
+            crate::projection::combat::monster_preview_total_damage(&monster),
+            12
+        );
+    }
+
+    #[test]
+    fn monster_turn_plan_uses_planned_steps_damage_without_visible_spec() {
+        let monster = MonsterEntity {
+            id: 1,
+            monster_type: 0,
+            current_hp: 12,
+            max_hp: 12,
+            block: 0,
+            slot: 0,
+            is_dying: false,
+            is_escaped: false,
+            half_dead: false,
+            move_state: MonsterMoveState {
+                planned_move_id: 3,
+                history: VecDeque::from([4, 3]),
+                planned_steps: Some(
+                    MonsterMoveSpec::Attack(AttackSpec {
+                        base_damage: 7,
+                        hits: 1,
+                        damage_kind: DamageKind::Normal,
+                    })
+                    .to_steps(),
+                ),
+                planned_visible_spec: None,
+            },
+            logical_position: 0,
+            hexaghost: HexaghostRuntimeState::default(),
+            louse: LouseRuntimeState::default(),
+            jaw_worm: JawWormRuntimeState::default(),
+            thief: ThiefRuntimeState::default(),
+            byrd: ByrdRuntimeState::default(),
+            chosen: ChosenRuntimeState::default(),
+            snecko: SneckoRuntimeState::default(),
+            shelled_parasite: ShelledParasiteRuntimeState::default(),
+            bronze_automaton: BronzeAutomatonRuntimeState::default(),
+            bronze_orb: BronzeOrbRuntimeState::default(),
+            book_of_stabbing: BookOfStabbingRuntimeState::default(),
+            collector: CollectorRuntimeState::default(),
+            champ: ChampRuntimeState::default(),
+            awakened_one: AwakenedOneRuntimeState::default(),
+            corrupt_heart: CorruptHeartRuntimeState::default(),
+            darkling: DarklingRuntimeState::default(),
+            lagavulin: LagavulinRuntimeState::default(),
+            guardian: GuardianRuntimeState::default(),
+        };
+
+        let plan = monster.turn_plan();
+
+        assert_eq!(plan.move_id, 3);
+        assert_eq!(plan.attack().map(|attack| attack.base_damage), Some(7));
+        assert_eq!(
+            crate::projection::combat::project_monster_move_preview(&monster).damage_per_hit,
+            Some(7)
+        );
+    }
+
+    #[test]
+    fn monster_turn_plan_hides_visible_spec_for_half_dead_or_dying_monsters() {
+        let monster = MonsterEntity {
+            id: 1,
+            monster_type: 0,
+            current_hp: 0,
+            max_hp: 56,
+            block: 0,
+            slot: 0,
+            is_dying: false,
+            is_escaped: false,
+            half_dead: true,
+            move_state: MonsterMoveState {
+                planned_move_id: 4,
+                history: VecDeque::from([3, 4]),
+                planned_steps: Some(
+                    MonsterMoveSpec::Attack(AttackSpec {
+                        base_damage: 13,
+                        hits: 1,
+                        damage_kind: DamageKind::Normal,
+                    })
+                    .to_steps(),
+                ),
+                planned_visible_spec: Some(MonsterMoveSpec::Attack(AttackSpec {
+                    base_damage: 13,
+                    hits: 1,
+                    damage_kind: DamageKind::Normal,
+                })),
+            },
+            logical_position: 0,
+            hexaghost: HexaghostRuntimeState::default(),
+            louse: LouseRuntimeState::default(),
+            jaw_worm: JawWormRuntimeState::default(),
+            thief: ThiefRuntimeState::default(),
+            byrd: ByrdRuntimeState::default(),
+            chosen: ChosenRuntimeState::default(),
+            snecko: SneckoRuntimeState::default(),
+            shelled_parasite: ShelledParasiteRuntimeState::default(),
+            bronze_automaton: BronzeAutomatonRuntimeState::default(),
+            bronze_orb: BronzeOrbRuntimeState::default(),
+            book_of_stabbing: BookOfStabbingRuntimeState::default(),
+            collector: CollectorRuntimeState::default(),
+            champ: ChampRuntimeState::default(),
+            awakened_one: AwakenedOneRuntimeState::default(),
+            corrupt_heart: CorruptHeartRuntimeState::default(),
+            darkling: DarklingRuntimeState::default(),
+            lagavulin: LagavulinRuntimeState::default(),
+            guardian: GuardianRuntimeState::default(),
+        };
+
+        let plan = monster.turn_plan();
+        let preview = crate::projection::combat::project_monster_move_preview(&monster);
+
+        assert_eq!(plan.move_id, 4);
+        assert!(matches!(plan.summary_spec(), MonsterMoveSpec::Unknown));
+        assert_eq!(preview.damage_per_hit, None);
+        assert!(!crate::projection::combat::monster_has_visible_attack(
+            &monster
+        ));
+        assert_eq!(
+            crate::projection::combat::monster_preview_total_damage(&monster),
+            0
+        );
     }
 }

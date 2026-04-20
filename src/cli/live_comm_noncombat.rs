@@ -1,5 +1,7 @@
-use crate::diff::protocol::{card_id_from_java, java_potion_id_to_rust, relic_id_from_java};
-use crate::diff::state_sync::snapshot_uuid;
+use crate::protocol::java::{
+    card_id_from_java, java_potion_id_to_rust, relic_id_from_java, snapshot_uuid,
+};
+use crate::rewards::state::BossRelicChoiceState;
 use crate::state::core::{EngineState, RunPendingChoiceReason, RunPendingChoiceState};
 use serde_json::Value;
 
@@ -18,6 +20,20 @@ pub(crate) fn choose_live_event_command_with_trace(
 ) -> Option<LiveEventPolicyTrace> {
     let screen_state = gs.get("screen_state")?;
     let decision = crate::bot::event::decide_live(screen_state, rs)?;
+    let event_label = screen_state
+        .get("event_name")
+        .or_else(|| screen_state.get("event_id"))
+        .and_then(Value::as_str)
+        .filter(|value| !value.is_empty())
+        .unwrap_or("Event");
+    let command_index = screen_state
+        .get("options")
+        .and_then(Value::as_array)
+        .and_then(|options| options.get(decision.option_index))
+        .and_then(|option| option.get("choice_index"))
+        .and_then(Value::as_u64)
+        .map(|value| value as usize)
+        .unwrap_or(decision.command_index);
     let protocol_audit = gs
         .get("screen_state")
         .map(|screen_state| {
@@ -30,9 +46,10 @@ pub(crate) fn choose_live_event_command_with_trace(
         object.insert("live_event_protocol".to_string(), protocol_audit.clone());
     }
     Some(LiveEventPolicyTrace {
-        command: format!("CHOOSE {}", decision.command_index),
+        command: format!("CHOOSE {}", command_index),
         summary: format!(
-            "{}{}{}",
+            "{} | {}{}{}",
+            event_label,
             crate::bot::event::compact_choice_summary(&decision),
             decision
                 .deck_ops
@@ -48,7 +65,8 @@ pub(crate) fn choose_live_event_command_with_trace(
                 .unwrap_or_default()
         ),
         detail: format!(
-            "{}{}",
+            "{} | {}{}",
+            event_label,
             crate::bot::event::describe_choice(&decision),
             protocol_note
                 .as_deref()
@@ -203,6 +221,11 @@ pub(crate) fn decide_noncombat_with_agent(
                 _ => None,
             }
         }
+        "BOSS_REWARD" => {
+            let state = build_live_boss_relic_state(gs)?;
+            let decision = agent.decide_boss_relic_policy(&rs, &state);
+            Some(format!("CHOOSE {}", decision.chosen_index))
+        }
         "REST" => {
             let input = agent.decide(&EngineState::Campfire, &rs, &None, false);
             match input {
@@ -216,6 +239,28 @@ pub(crate) fn decide_noncombat_with_agent(
         }
         "EVENT" => choose_live_event_command_with_trace(gs, &rs).map(|trace| trace.command),
         _ => None,
+    }
+}
+
+pub(crate) fn build_live_boss_relic_state(
+    gs: &serde_json::Value,
+) -> Option<crate::rewards::state::BossRelicChoiceState> {
+    let relics = gs
+        .get("screen_state")
+        .and_then(|v| v.get("relics"))
+        .and_then(|v| v.as_array())?
+        .iter()
+        .filter_map(|relic| {
+            relic
+                .get("id")
+                .and_then(|v| v.as_str())
+                .and_then(relic_id_from_java)
+        })
+        .collect::<Vec<_>>();
+    if relics.is_empty() {
+        None
+    } else {
+        Some(BossRelicChoiceState::new(relics))
     }
 }
 
@@ -797,10 +842,10 @@ mod tests {
             agent.decide_shop_policy(&rs, crate::bot::ShopDecisionContext { shop: &shop });
         assert_eq!(
             decision.action,
-            crate::bot::ShopDecisionAction::DiscardPotion(0)
+            crate::bot::ShopDecisionAction::DiscardPotion(1)
         );
         let command = shop_decision_command(&root, &rs, &shop, &decision);
-        assert_eq!(command, Some("POTION DISCARD 0".to_string()));
+        assert_eq!(command, Some("POTION DISCARD 1".to_string()));
     }
 
     #[test]
@@ -1075,11 +1120,6 @@ fn decide_live_grid_screen(
     let current_action = gs
         .get("current_action")
         .and_then(|v| v.as_str())
-        .or_else(|| {
-            gs.get("combat_state")
-                .and_then(|v| v.get("current_action"))
-                .and_then(|v| v.as_str())
-        })
         .unwrap_or("");
 
     let for_upgrade = screen_state

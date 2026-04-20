@@ -1,5 +1,9 @@
 mod monster_move;
 
 pub use monster_move::{
-    AttackSpec, BuffSpec, DamageKind, DebuffSpec, DefendSpec, MonsterMoveSpec, MonsterTurnPlan,
+    AddCardStep, ApplyPowerStep, AttackSpec, AttackStep, BlockStep, BuffSpec, CardDestination,
+    DamageKind, DebuffSpec, DefendSpec, EffectStrength, HealSpec, HealStep, MonsterMoveSpec,
+    MonsterTurnPlan, MonsterTurnSteps, MoveStep, MoveTarget, PowerEffectKind, RandomBlockStep,
+    RemovePowerStep, SpawnHpSpec, SpawnHpValue, SpawnMonsterStep, StealGoldStep, UpgradeCardsStep,
+    UtilityStep,
 };

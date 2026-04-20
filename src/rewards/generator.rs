@@ -129,6 +129,7 @@ pub fn generate_combat_rewards(
     RewardState {
         items,
         skippable: !is_boss,
+        screen_context: crate::rewards::state::RewardScreenContext::Standard,
         pending_card_choice: None,
     }
 }

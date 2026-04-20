@@ -477,19 +477,49 @@ fn main() {
             _ => sts_simulator::cli::live_comm::LiveParityMode::Survey,
         };
         let fail_fast_debug = has_flag("--live-comm-fail-fast");
+        let combat_mode = match flag_value("--live-comm-combat-mode")
+            .unwrap_or_else(|| {
+                if fail_fast_debug {
+                    "full_debug".to_string()
+                } else {
+                    "chooser_plus_sampled_audit".to_string()
+                }
+            })
+            .to_ascii_lowercase()
+            .as_str()
+        {
+            "chooser_only" | "choose_only" => {
+                sts_simulator::cli::live_comm::LiveCombatMode::ChooserOnly
+            }
+            "full_debug" | "debug" => sts_simulator::cli::live_comm::LiveCombatMode::FullDebug,
+            _ => sts_simulator::cli::live_comm::LiveCombatMode::ChooserPlusSampledAudit,
+        };
+        let exact_turn_mode = match flag_value("--live-comm-exact-turn-mode")
+            .unwrap_or_else(|| "auto".to_string())
+            .to_ascii_lowercase()
+            .as_str()
+        {
+            "off" => sts_simulator::cli::live_comm::LiveExactTurnMode::Off,
+            "force" => sts_simulator::cli::live_comm::LiveExactTurnMode::Force,
+            _ => sts_simulator::cli::live_comm::LiveExactTurnMode::Auto,
+        };
         let config = sts_simulator::cli::live_comm::LiveCommConfig {
             human_card_reward_audit: !fail_fast_debug && has_flag("--live-comm-human-card-reward"),
             human_boss_combat_handoff: !fail_fast_debug
                 && has_flag("--live-comm-human-boss-combat"),
+            human_noncombat_hold: !fail_fast_debug && has_flag("--live-comm-human-noncombat"),
             fail_fast_debug,
             sidecar_shadow: has_flag("--sidecar-shadow"),
             parity_mode,
+            combat_mode,
+            exact_turn_mode,
             combat_search_budget: flag_value("--live-comm-search-budget")
                 .and_then(|value| value.parse().ok())
                 .unwrap_or_else(|| match parity_mode {
                     sts_simulator::cli::live_comm::LiveParityMode::Strict => 1200,
                     sts_simulator::cli::live_comm::LiveParityMode::Survey => 900,
                 }),
+            legacy_root_legal_moves: has_flag("--live-comm-legacy-root-legal-moves"),
             watch_capture: sts_simulator::cli::live_comm::LiveWatchCaptureConfig {
                 cards: flag_values("--live-watch-card"),
                 relics: flag_values("--live-watch-relic"),
@@ -1232,18 +1262,49 @@ fn init_combat(run_state: &mut RunState, current_display: DisplayMode) -> Combat
 
     // Initialize initial monster intents
     let monsters_clone = cs.entities.monsters.clone();
-    for m in &mut cs.entities.monsters {
+    let player_powers = sts_simulator::content::powers::store::powers_snapshot_for(&cs, 0);
+    let monster_ids = cs
+        .entities
+        .monsters
+        .iter()
+        .map(|monster| monster.id)
+        .collect::<Vec<_>>();
+    for monster_id in monster_ids {
+        let entity_snapshot = cs
+            .entities
+            .monsters
+            .iter()
+            .find(|monster| monster.id == monster_id)
+            .cloned()
+            .expect("initial monster should exist while rolling intent");
         let num = cs.rng.ai_rng.random(99);
-        let (move_byte, intent) = sts_simulator::content::monsters::roll_monster_move(
+        let outcome = sts_simulator::content::monsters::roll_monster_turn_outcome(
             &mut cs.rng.ai_rng,
-            m,
+            &entity_snapshot,
             cs.meta.ascension_level,
             num,
             &monsters_clone,
+            &player_powers,
         );
-        m.next_move_byte = move_byte;
-        m.current_intent = intent;
-        m.move_history.push_back(move_byte);
+        for action in outcome.setup_actions {
+            sts_simulator::engine::action_handlers::execute_action(action, &mut cs);
+        }
+        let plan = outcome.plan;
+        let monster = cs
+            .entities
+            .monsters
+            .iter_mut()
+            .find(|monster| monster.id == monster_id)
+            .expect("rolled monster should still exist");
+        monster.set_planned_move_id(plan.move_id);
+        monster.set_planned_steps(plan.steps);
+        monster.set_planned_visible_spec(plan.visible_spec);
+        monster.move_history_mut().push_back(plan.move_id);
+        cs.runtime
+            .monster_protocol
+            .entry(monster_id)
+            .or_default()
+            .observation = Default::default();
     }
 
     cs.reset_turn_energy_from_player();
@@ -1338,18 +1399,49 @@ fn init_event_combat(
 
     // Initialize initial monster intents
     let monsters_clone = cs.entities.monsters.clone();
-    for m in &mut cs.entities.monsters {
+    let player_powers = sts_simulator::content::powers::store::powers_snapshot_for(&cs, 0);
+    let monster_ids = cs
+        .entities
+        .monsters
+        .iter()
+        .map(|monster| monster.id)
+        .collect::<Vec<_>>();
+    for monster_id in monster_ids {
+        let entity_snapshot = cs
+            .entities
+            .monsters
+            .iter()
+            .find(|monster| monster.id == monster_id)
+            .cloned()
+            .expect("initial monster should exist while rolling intent");
         let num = cs.rng.ai_rng.random(99);
-        let (move_byte, intent) = sts_simulator::content::monsters::roll_monster_move(
+        let outcome = sts_simulator::content::monsters::roll_monster_turn_outcome(
             &mut cs.rng.ai_rng,
-            m,
+            &entity_snapshot,
             cs.meta.ascension_level,
             num,
             &monsters_clone,
+            &player_powers,
         );
-        m.next_move_byte = move_byte;
-        m.current_intent = intent;
-        m.move_history.push_back(move_byte);
+        for action in outcome.setup_actions {
+            sts_simulator::engine::action_handlers::execute_action(action, &mut cs);
+        }
+        let plan = outcome.plan;
+        let monster = cs
+            .entities
+            .monsters
+            .iter_mut()
+            .find(|monster| monster.id == monster_id)
+            .expect("rolled monster should still exist");
+        monster.set_planned_move_id(plan.move_id);
+        monster.set_planned_steps(plan.steps);
+        monster.set_planned_visible_spec(plan.visible_spec);
+        monster.move_history_mut().push_back(plan.move_id);
+        cs.runtime
+            .monster_protocol
+            .entry(monster_id)
+            .or_default()
+            .observation = Default::default();
     }
 
     cs.reset_turn_energy_from_player();

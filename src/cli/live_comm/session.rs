@@ -1,5 +1,10 @@
 use super::combat::{handle_live_combat_frame, CombatFrameOutcome, CombatRuntime};
 use super::frame::LiveFrame;
+use super::human_noncombat_audit::{
+    build_pending_human_noncombat_audit, finalize_human_noncombat_audit,
+    human_noncombat_domain_for_frame, mark_human_noncombat_audit_polluted,
+    update_human_noncombat_audit, PendingHumanNoncombatAudit,
+};
 use super::io::LiveCommIo;
 use super::noncombat::{maybe_arm_human_card_reward_audit, route_noncombat_command};
 use super::reward_audit::{
@@ -31,6 +36,7 @@ pub(super) struct LiveCommSession {
     pub(super) last_state_frame_id: Option<i64>,
     pub(super) last_protocol_command_kind: Option<String>,
     pub(super) pending_human_card_reward_audit: Option<PendingHumanCardRewardAudit>,
+    pub(super) pending_human_noncombat_audit: Option<PendingHumanNoncombatAudit>,
     pub(super) combat_handoff_hold_polls: u32,
     pub(super) live_watch_runtime: LiveWatchRuntime,
     pub(super) engine_bug_total: usize,
@@ -172,6 +178,21 @@ fn noncombat_pollution_hold_command(avail: &[&str]) -> &'static str {
     }
 }
 
+fn should_hold_human_noncombat(screen: &str) -> bool {
+    matches!(
+        screen,
+        "CARD_REWARD"
+            | "COMBAT_REWARD"
+            | "SHOP_ROOM"
+            | "SHOP_SCREEN"
+            | "EVENT"
+            | "REST"
+            | "GRID"
+            | "MAP"
+            | "BOSS_REWARD"
+    )
+}
+
 fn reward_loop_signature(root: &Value, screen: &str) -> Option<String> {
     let gs = root.get("game_state")?;
     match screen {
@@ -210,6 +231,22 @@ fn reward_loop_signature(root: &Value, screen: &str) -> Option<String> {
     }
 }
 
+fn write_focus_combat_frame_marker(
+    frame_count: u64,
+    frame: &LiveFrame,
+    focus_log: &mut std::fs::File,
+) {
+    let _ = writeln!(
+        focus_log,
+        "[FRAME] frame={} response_id={:?} state_frame_id={:?} last_command_kind={:?} {}",
+        frame_count,
+        frame.response_id(),
+        frame.state_frame_id(),
+        frame.last_command_kind(),
+        frame.brief_summary()
+    );
+}
+
 impl LiveCommSession {
     pub(super) fn new(config: LiveCommConfig) -> Self {
         Self {
@@ -223,6 +260,7 @@ impl LiveCommSession {
             last_state_frame_id: None,
             last_protocol_command_kind: None,
             pending_human_card_reward_audit: None,
+            pending_human_noncombat_audit: None,
             combat_handoff_hold_polls: 0,
             live_watch_runtime: LiveWatchRuntime::default(),
             engine_bug_total: 0,
@@ -399,13 +437,18 @@ impl LiveCommSession {
 
         if is_combat && screen == "NONE" && (has("play") || has("end")) {
             self.reset_noncombat_loop_guard();
+            write_focus_combat_frame_marker(self.frame_count, frame, &mut live_io.focus_log);
+            let _ = live_io.focus_log.flush();
             let outcome = handle_live_combat_frame(
                 frame,
                 gs,
                 self.frame_count,
                 self.config.parity_mode,
+                self.config.combat_mode,
+                self.config.exact_turn_mode,
                 self.config.fail_fast_debug,
                 self.config.combat_search_budget,
+                self.config.legacy_root_legal_moves,
                 &mut self.last_sent_cmd,
                 &mut self.cmd_failed_count,
                 &mut self.engine_bug_total,
@@ -441,6 +484,8 @@ impl LiveCommSession {
         }
 
         let _ = live_io.log.flush();
+        let _ = live_io.focus_log.flush();
+        let _ = live_io.raw.flush();
         None
     }
 
@@ -541,11 +586,40 @@ impl LiveCommSession {
                 self.frame_count, self.consecutive_errors, err
             )
             .unwrap();
+            if self
+                .combat_runtime
+                .last_root_action_source
+                .as_deref()
+                .is_some_and(|source| source == "protocol")
+            {
+                writeln!(
+                    live_io.focus_log,
+                    "[PROTO EXECUTOR BUG] frame={} action_id={:?} command={:?} error={}",
+                    self.frame_count,
+                    self.combat_runtime.last_root_action_id,
+                    self.combat_runtime.last_root_action_command,
+                    err
+                )
+                .unwrap();
+            }
             self.last_error_msg = err.to_string();
         } else if self.consecutive_errors == 3 {
             writeln!(live_io.log, "  (suppressing repeated errors...)").unwrap();
         }
         if self.consecutive_errors >= 5 {
+            let protocol_root_error = self
+                .combat_runtime
+                .last_root_action_source
+                .as_deref()
+                .is_some_and(|source| source == "protocol");
+            let mut reasons = vec![
+                "java_error_flood".to_string(),
+                err.to_string(),
+                format!("repeats={}", self.consecutive_errors),
+            ];
+            if protocol_root_error {
+                reasons.push("executor_rejected_protocol_action".to_string());
+            }
             writeln!(
                 live_io.log,
                 "  ERROR FLOOD: {} repeats, sleeping 1s",
@@ -557,26 +631,19 @@ impl LiveCommSession {
                 self.frame_count,
                 frame,
                 "protocol_error",
-                vec![
-                    "java_error_flood".to_string(),
-                    err.to_string(),
-                    format!("repeats={}", self.consecutive_errors),
-                ],
+                reasons.clone(),
                 serde_json::json!({
                     "chosen_command": self.last_sent_cmd,
                     "last_command_kind": self.last_protocol_command_kind,
                     "error": err,
+                    "root_action_source": self.combat_runtime.last_root_action_source,
+                    "chosen_action_id": self.combat_runtime.last_root_action_id,
+                    "chosen_protocol_command": self.combat_runtime.last_root_action_command,
+                    "protocol_root_action_count": self.combat_runtime.last_protocol_root_action_count,
                 }),
             );
             if self.config.fail_fast_debug
-                && should_fail_fast_on_snapshot(
-                    "protocol_error",
-                    &[
-                        "java_error_flood".to_string(),
-                        err.to_string(),
-                        format!("repeats={}", self.consecutive_errors),
-                    ],
-                )
+                && should_fail_fast_on_snapshot("protocol_error", &reasons)
             {
                 let _ = writeln!(live_io.log, "  [FAIL_FAST] stopping on protocol_error");
                 let _ = writeln!(
@@ -616,6 +683,154 @@ impl LiveCommSession {
         self.noncombat_polluted = false;
         self.noncombat_pollution_frame = None;
         self.reward_loop_signatures.clear();
+    }
+
+    pub(super) fn finalize_pending_human_noncombat_audit(
+        &mut self,
+        live_io: &mut LiveCommIo,
+        reason: &str,
+    ) {
+        if let Some(pending) = self.pending_human_noncombat_audit.take() {
+            let status = if pending.polluted {
+                "polluted"
+            } else {
+                "incomplete"
+            };
+            finalize_human_noncombat_audit(
+                pending,
+                None,
+                self.frame_count,
+                &mut live_io.human_noncombat_audit,
+                &mut live_io.log,
+                status,
+                reason,
+            );
+        }
+    }
+
+    fn mark_pending_human_noncombat_polluted(&mut self, reason: impl Into<String>) {
+        if let Some(pending) = self.pending_human_noncombat_audit.as_mut() {
+            mark_human_noncombat_audit_polluted(pending, reason);
+        }
+    }
+
+    fn sync_human_noncombat_audit(
+        &mut self,
+        frame: &LiveFrame,
+        bot_recommendation: &str,
+        live_io: &mut LiveCommIo,
+    ) {
+        let current_domain = if self.config.human_noncombat_hold {
+            human_noncombat_domain_for_frame(frame, self.pending_human_noncombat_audit.as_ref())
+        } else {
+            None
+        };
+
+        let should_finalize = self
+            .pending_human_noncombat_audit
+            .as_ref()
+            .is_some_and(|pending| current_domain != Some(pending.domain));
+        if should_finalize {
+            if let Some(pending) = self.pending_human_noncombat_audit.take() {
+                let status = if pending.polluted {
+                    "polluted"
+                } else {
+                    "completed"
+                };
+                let reason = if pending.polluted {
+                    "screen_transition_after_pollution"
+                } else {
+                    "left_human_noncombat_domain"
+                };
+                finalize_human_noncombat_audit(
+                    pending,
+                    Some(frame),
+                    self.frame_count,
+                    &mut live_io.human_noncombat_audit,
+                    &mut live_io.log,
+                    status,
+                    reason,
+                );
+            }
+        }
+
+        let Some(domain) = current_domain else {
+            return;
+        };
+        if domain == "reward_card" {
+            return;
+        }
+
+        if self.pending_human_noncombat_audit.is_none() {
+            let pending = build_pending_human_noncombat_audit(
+                frame,
+                self.frame_count,
+                domain,
+                bot_recommendation,
+            );
+            writeln!(
+                live_io.log,
+                "[F{}] HUMAN NONCOMBAT ARM session={} domain={} screen={} room_type={} bot_recommendation={}",
+                self.frame_count,
+                pending.session_id,
+                pending.domain,
+                frame.screen(),
+                frame.room_type(),
+                bot_recommendation
+            )
+            .unwrap();
+            self.pending_human_noncombat_audit = Some(pending);
+            return;
+        }
+
+        if let Some(pending) = self.pending_human_noncombat_audit.as_mut() {
+            let previous_screen = pending.last_seen_screen.clone();
+            let previous_phase = pending.last_seen_room_phase.clone();
+            let previous_bot = pending.last_bot_recommendation.clone();
+            let observed_command =
+                update_human_noncombat_audit(pending, frame, self.frame_count, bot_recommendation);
+
+            if previous_screen != pending.last_seen_screen {
+                writeln!(
+                    live_io.log,
+                    "[F{}] HUMAN NONCOMBAT TRANSITION session={} {} -> {}",
+                    self.frame_count, pending.session_id, previous_screen, pending.last_seen_screen
+                )
+                .unwrap();
+            } else if previous_phase != pending.last_seen_room_phase {
+                writeln!(
+                    live_io.log,
+                    "[F{}] HUMAN NONCOMBAT PHASE session={} {} -> {}",
+                    self.frame_count,
+                    pending.session_id,
+                    previous_phase,
+                    pending.last_seen_room_phase
+                )
+                .unwrap();
+            }
+            if previous_bot != pending.last_bot_recommendation {
+                writeln!(
+                    live_io.log,
+                    "[F{}] HUMAN NONCOMBAT UPDATE session={} screen={} bot_recommendation={}",
+                    self.frame_count,
+                    pending.session_id,
+                    frame.screen(),
+                    pending.last_bot_recommendation
+                )
+                .unwrap();
+            }
+            if let Some(command) = observed_command {
+                writeln!(
+                    live_io.log,
+                    "[F{}] HUMAN NONCOMBAT COMMAND session={} cmd={} kind={:?}",
+                    self.frame_count,
+                    pending.session_id,
+                    command,
+                    frame.last_command_kind()
+                )
+                .unwrap();
+            }
+        }
     }
 
     fn handle_pending_reward_audit<W: Write>(
@@ -765,6 +980,10 @@ impl LiveCommSession {
                 let hold_cmd = noncombat_pollution_hold_command(avail).to_string();
                 self.noncombat_polluted = true;
                 self.noncombat_pollution_frame = Some(self.frame_count);
+                self.mark_pending_human_noncombat_polluted(format!(
+                    "protocol_reward_loop:{}",
+                    self.reward_loop_signatures.join(" -> ")
+                ));
                 writeln!(
                     live_io.log,
                     "[F{}] SESSION POLLUTED protocol_reward_loop screens={:?} → {}",
@@ -839,6 +1058,10 @@ impl LiveCommSession {
                 let hold_cmd = noncombat_pollution_hold_command(avail).to_string();
                 self.noncombat_polluted = true;
                 self.noncombat_pollution_frame = Some(self.frame_count);
+                self.mark_pending_human_noncombat_polluted(format!(
+                    "repeated_noncombat_command_loop:screen={screen}:cmd={cmd}:repeats={}",
+                    self.noncombat_loop_count
+                ));
                 writeln!(
                     live_io.log,
                     "[F{}] SESSION POLLUTED repeated noncombat command loop screen={} cmd={} repeats={} → {}",
@@ -1012,7 +1235,7 @@ impl LiveCommSession {
                                 .filter_map(|card| {
                                     card.get("id")
                                         .and_then(|v| v.as_str())
-                                        .and_then(crate::diff::protocol::card_id_from_java)
+                                        .and_then(crate::protocol::java::card_id_from_java)
                                 })
                                 .collect::<Vec<_>>();
                             if !offered_ids.is_empty() {
@@ -1156,6 +1379,101 @@ impl LiveCommSession {
                     }
                 }
             }
+        } else if screen == "MAP" {
+            if self.config.sidecar_shadow {
+                if let Some(gs) = parsed.get("game_state") {
+                    if let Some(rs) = crate::cli::live_comm_noncombat::build_live_run_state(gs) {
+                        let decision = agent.decide_map_policy(&rs);
+                        let shadow = sidecar::noncombat_decision_shadow_json(
+                            self.frame_count,
+                            "live_comm_map",
+                            &decision.meta,
+                            cmd.clone(),
+                            serde_json::json!({
+                                "chosen_x": decision.chosen_x,
+                                "top_option_count": decision.diagnostics.top_options.len(),
+                                "top_rationale": decision
+                                    .diagnostics
+                                    .top_options
+                                    .first()
+                                    .map(|option| option.rationale_key),
+                            }),
+                        );
+                        sidecar::write_shadow_record(&mut live_io.sidecar_shadow, &shadow);
+                    }
+                }
+            }
+        } else if screen == "REST" {
+            if self.config.sidecar_shadow {
+                if let Some(gs) = parsed.get("game_state") {
+                    if let Some(rs) = crate::cli::live_comm_noncombat::build_live_run_state(gs) {
+                        let decision = agent.decide_campfire_policy(&rs);
+                        let shadow = sidecar::noncombat_decision_shadow_json(
+                            self.frame_count,
+                            "live_comm_campfire",
+                            &decision.meta,
+                            cmd.clone(),
+                            serde_json::json!({
+                                "choice": format!("{:?}", decision.choice),
+                                "top_option_count": decision.diagnostics.top_options.len(),
+                                "top_rationale": decision
+                                    .diagnostics
+                                    .top_options
+                                    .first()
+                                    .map(|option| option.rationale_key),
+                            }),
+                        );
+                        sidecar::write_shadow_record(&mut live_io.sidecar_shadow, &shadow);
+                    }
+                }
+            }
+        } else if screen == "BOSS_REWARD" {
+            if self.config.sidecar_shadow {
+                if let Some(gs) = parsed.get("game_state") {
+                    if let Some(rs) = crate::cli::live_comm_noncombat::build_live_run_state(gs) {
+                        if let Some(state) =
+                            crate::cli::live_comm_noncombat::build_live_boss_relic_state(gs)
+                        {
+                            let decision = agent.decide_boss_relic_policy(&rs, &state);
+                            let shadow = sidecar::noncombat_decision_shadow_json(
+                                self.frame_count,
+                                "live_comm_boss_relic",
+                                &decision.meta,
+                                cmd.clone(),
+                                serde_json::json!({
+                                    "chosen_index": decision.chosen_index,
+                                    "option_count": state.relics.len(),
+                                    "top_confidence": decision
+                                        .diagnostics
+                                        .top_candidates
+                                        .first()
+                                        .map(|candidate| candidate.confidence),
+                                    "top_reason": decision
+                                        .diagnostics
+                                        .top_candidates
+                                        .first()
+                                        .map(|candidate| candidate.primary_reason),
+                                }),
+                            );
+                            sidecar::write_shadow_record(&mut live_io.sidecar_shadow, &shadow);
+                        }
+                    }
+                }
+            }
+        }
+
+        if self.config.human_noncombat_hold && should_hold_human_noncombat(screen) {
+            self.sync_human_noncombat_audit(frame, &cmd, live_io);
+            let hold_cmd = noncombat_pollution_hold_command(avail);
+            self.last_sent_cmd = hold_cmd.to_string();
+            self.cmd_failed_count = 0;
+            self.combat_runtime.expected_combat_state = None;
+            live_io.send_line(stdout, hold_cmd);
+            return None;
+        }
+
+        if self.pending_human_noncombat_audit.is_some() {
+            self.sync_human_noncombat_audit(frame, &cmd, live_io);
         }
 
         self.last_sent_cmd = cmd.clone();

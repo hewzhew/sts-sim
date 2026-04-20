@@ -4,7 +4,6 @@ use crate::state::{
 };
 
 pub const NO_SOURCE: EntityId = EntityId::MAX;
-
 #[derive(Clone, Debug, PartialEq)]
 pub struct DamageInfo {
     pub source: EntityId,
@@ -16,8 +15,111 @@ pub struct DamageInfo {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+pub enum MonsterRuntimePatch {
+    Hexaghost {
+        activated: Option<bool>,
+        orb_active_count: Option<u8>,
+        burn_upgraded: Option<bool>,
+        divider_damage: Option<i32>,
+        clear_divider_damage: bool,
+    },
+    Lagavulin {
+        idle_count: Option<u8>,
+        debuff_turn_count: Option<u8>,
+        is_out: Option<bool>,
+        is_out_triggered: Option<bool>,
+    },
+    Guardian {
+        damage_threshold: Option<i32>,
+        damage_taken: Option<i32>,
+        is_open: Option<bool>,
+        close_up_triggered: Option<bool>,
+    },
+    Byrd {
+        first_move: Option<bool>,
+        is_flying: Option<bool>,
+        protocol_seeded: Option<bool>,
+    },
+    Chosen {
+        first_turn: Option<bool>,
+        used_hex: Option<bool>,
+        protocol_seeded: Option<bool>,
+    },
+    Snecko {
+        first_turn: Option<bool>,
+        protocol_seeded: Option<bool>,
+    },
+    ShelledParasite {
+        first_move: Option<bool>,
+        protocol_seeded: Option<bool>,
+    },
+    BronzeAutomaton {
+        first_turn: Option<bool>,
+        num_turns: Option<u8>,
+        protocol_seeded: Option<bool>,
+    },
+    BronzeOrb {
+        used_stasis: Option<bool>,
+        protocol_seeded: Option<bool>,
+    },
+    BookOfStabbing {
+        stab_count: Option<u8>,
+        protocol_seeded: Option<bool>,
+    },
+    Collector {
+        initial_spawn: Option<bool>,
+        ult_used: Option<bool>,
+        turns_taken: Option<u8>,
+        protocol_seeded: Option<bool>,
+    },
+    Champ {
+        first_turn: Option<bool>,
+        num_turns: Option<u8>,
+        forge_times: Option<u8>,
+        threshold_reached: Option<bool>,
+        protocol_seeded: Option<bool>,
+    },
+    AwakenedOne {
+        form1: Option<bool>,
+        first_turn: Option<bool>,
+        protocol_seeded: Option<bool>,
+    },
+    CorruptHeart {
+        first_move: Option<bool>,
+        move_count: Option<u8>,
+        buff_count: Option<u8>,
+        protocol_seeded: Option<bool>,
+    },
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub enum Action {
     Damage(DamageInfo),
+    /// Canonical monster attack action.
+    ///
+    /// Contract:
+    /// - `base_damage` is the monster plan truth input.
+    /// - Monster content code should emit this action instead of constructing `DamageInfo`.
+    /// - For `Normal` monster attacks, engine execution re-resolves final damage from
+    ///   `base_damage`; content code must not guess a modified `output` value.
+    /// - Non-normal kinds such as `HpLoss` and `Thorns` use the provided numeric value
+    ///   directly via the damage pipeline.
+    MonsterAttack {
+        source: EntityId,
+        target: EntityId,
+        base_damage: i32,
+        damage_kind: crate::semantics::combat::DamageKind,
+    },
+    /// Canonical thief strike side effect.
+    ///
+    /// Contract:
+    /// - `amount` is the locked per-hit steal cap from monster plan truth.
+    /// - Execution steals `min(amount, player.gold)` immediately from the player.
+    /// - Execution also records the actual stolen amount on the thief runtime state.
+    StealPlayerGold {
+        thief_id: EntityId,
+        amount: i32,
+    },
     DamageAllEnemies {
         source: EntityId,
         damages: smallvec::SmallVec<[i32; 5]>,
@@ -58,6 +160,9 @@ pub enum Action {
     },
     GainGold {
         amount: i32,
+    },
+    AddCombatReward {
+        item: crate::rewards::state::RewardItem,
     },
     GainEnergy {
         amount: i32,
@@ -330,13 +435,15 @@ pub enum Action {
     SetMonsterMove {
         monster_id: EntityId,
         next_move_byte: u8,
-        intent: crate::runtime::combat::Intent,
+        planned_steps: crate::semantics::combat::MonsterTurnSteps,
+        planned_visible_spec: Option<crate::semantics::combat::MonsterMoveSpec>,
     },
-    UpdateHexaghostState {
+    UpdateMonsterRuntime {
         monster_id: EntityId,
-        activated: Option<bool>,
-        orb_active_count: Option<u8>,
-        burn_upgraded: Option<bool>,
+        patch: MonsterRuntimePatch,
+    },
+    ReviveMonster {
+        target: EntityId,
     },
     AbortDeath {
         target: EntityId,
@@ -357,8 +464,7 @@ pub enum Action {
     SpawnMonsterSmart {
         monster_id: crate::content::monsters::EnemyId,
         logical_position: i32,
-        current_hp: i32,
-        max_hp: i32,
+        hp: crate::semantics::combat::SpawnHpSpec,
         protocol_draw_x: Option<i32>,
         is_minion: bool,
     },

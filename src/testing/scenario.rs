@@ -3,12 +3,13 @@ use serde_json::Value;
 
 use crate::content::cards::java_id as card_java_id;
 use crate::content::cards::CardId;
-use crate::diff::protocol::{
-    build_live_combat_snapshot as build_protocol_live_combat_snapshot, card_id_from_java,
+use crate::diff::replay::tick_until_stable;
+use crate::diff::state_sync::build_combat_state_from_snapshots;
+use crate::protocol::java::{
+    build_live_observation_snapshot as build_protocol_live_observation_snapshot,
+    build_live_truth_snapshot as build_protocol_live_truth_snapshot, card_id_from_java,
     power_id_from_java, relic_id_from_java,
 };
-use crate::diff::replay::tick_until_stable;
-use crate::diff::state_sync::build_combat_state;
 use crate::runtime::action::CardDestination;
 use crate::runtime::combat::{CombatCard, CombatState, Power};
 use crate::state::core::{ClientInput, EngineState, PendingChoice, PileType};
@@ -167,8 +168,12 @@ pub struct ScenarioSnapshot {
     pub combat: CombatState,
 }
 
-pub fn build_live_combat_snapshot(gs: &Value) -> Value {
-    build_protocol_live_combat_snapshot(gs)
+pub fn build_live_truth_snapshot(gs: &Value) -> Value {
+    build_protocol_live_truth_snapshot(gs)
+}
+
+pub fn build_live_observation_snapshot(gs: &Value) -> Value {
+    build_protocol_live_observation_snapshot(gs)
 }
 
 pub fn build_initial_engine_state(
@@ -232,13 +237,15 @@ pub fn build_initial_engine_state(
 }
 
 pub fn initialize_fixture_state(fixture: &ScenarioFixture) -> ScenarioInitialState {
-    let snapshot = build_live_combat_snapshot(&fixture.initial_game_state);
+    let truth_snapshot = build_live_truth_snapshot(&fixture.initial_game_state);
+    let observation_snapshot = build_live_observation_snapshot(&fixture.initial_game_state);
     let relics = fixture
         .initial_game_state
         .get("relics")
         .cloned()
         .unwrap_or(Value::Null);
-    let mut combat = build_combat_state(&snapshot, &relics);
+    let mut combat =
+        build_combat_state_from_snapshots(&truth_snapshot, &observation_snapshot, &relics);
     let engine_state = build_initial_engine_state(fixture, &mut combat);
     let response_id = fixture
         .initial_protocol_meta

@@ -59,7 +59,6 @@ manually writing exact expected values first.
 
 Examples:
 
-- `diff_driver`
 - replay parity
 - live-comm parity checks
 
@@ -71,7 +70,7 @@ Use this for:
 
 Primary entrypoints:
 
-- `tests/diff_driver.rs`
+- `tests/live_comm_replay_driver.rs`
 - [live_comm/LIVE_COMM_PARITY_WORKFLOW.md](live_comm/LIVE_COMM_PARITY_WORKFLOW.md)
 
 ### 4. Invariant Oracle

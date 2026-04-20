@@ -1,6 +1,6 @@
-use crate::runtime::combat::{CombatState, Intent};
+use crate::runtime::combat::CombatState;
 
-use super::monster_belief::{build_combat_belief_state, total_damage_for_intent};
+use super::monster_belief::build_combat_belief_state;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) struct StatePressureFeatures {
@@ -111,8 +111,9 @@ fn visible_total_incoming_damage(combat: &CombatState) -> i32 {
         .filter(|monster| {
             !monster.is_dying && !monster.is_escaped && !monster.half_dead && monster.current_hp > 0
         })
-        .filter(|monster| !matches!(monster.current_intent, Intent::Unknown))
-        .map(|monster| total_damage_for_intent(&monster.current_intent))
+        .map(|monster| {
+            crate::projection::combat::monster_preview_total_damage_in_combat(combat, monster)
+        })
         .sum()
 }
 
@@ -125,13 +126,7 @@ fn visible_attack_probability(combat: &CombatState) -> f32 {
             !monster.is_dying && !monster.is_escaped && !monster.half_dead && monster.current_hp > 0
         })
         .any(|monster| {
-            matches!(
-                monster.current_intent,
-                Intent::Attack { .. }
-                    | Intent::AttackBuff { .. }
-                    | Intent::AttackDebuff { .. }
-                    | Intent::AttackDefend { .. }
-            )
+            crate::projection::combat::monster_has_visible_attack_in_combat(combat, monster)
         });
     if any_attack {
         1.0

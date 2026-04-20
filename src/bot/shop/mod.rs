@@ -155,7 +155,9 @@ fn build_shop_options(context: &ShopContext<'_>, shop: &ShopState) -> Vec<ShopOp
     }
 
     for (index, potion) in shop.potions.iter().enumerate() {
-        if !potion.can_buy {
+        let replaceable_blocked_offer = context.potion_slots_full
+            && potion.blocked_reason.as_deref() == Some("potion_slots_full");
+        if !potion.can_buy && !replaceable_blocked_offer {
             continue;
         }
         let evaluation = evaluate_shop_potion(context, potion.potion_id);

@@ -18,7 +18,9 @@ This file defines the hard dependency direction for `src/`.
 - `integration`
   - protocol mapping, replay, sync, fixtures, and analysis helpers around the runtime
   - `src/diff/`
+  - `src/protocol/`
   - `src/testing/`
+  - `src/verification/`
 - `app`
   - search, policy, CLI, coverage, and higher-level workbenches that consume core/integration
   - `src/bot/`
@@ -73,6 +75,13 @@ This file defines the hard dependency direction for `src/`.
   - thin facade over protocol -> runtime state construction and sync
   - must behave as a strict importer for migrated `runtime_state` slices, not as
     a shadow-state repair layer
+- `verification`
+  - integration-side facade for replay/reconstruction consumers that should not
+    reach into `diff::*` internals directly
+  - current first slice: `verification::combat`
+- `protocol`
+  - integration-side Java/protocol adapter facade
+  - `protocol::java`
 
 ## Enforcement
 

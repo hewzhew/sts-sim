@@ -6,11 +6,13 @@ use serde_json::Value;
 
 use crate::content::cards::{self, CardType};
 use crate::content::powers::{store, PowerId};
-use crate::diff::replay::{mapped_command_to_input, CombatMappedCommand, CombatReconstructedStep};
-use crate::diff::state_sync::build_combat_state;
 use crate::engine::core::tick_until_stable_turn;
 use crate::runtime::combat::{CombatCard, CombatState};
 use crate::state::core::{ClientInput, EngineState, RunResult};
+use crate::verification::combat::{
+    build_combat_state_from_snapshots, build_live_split_combat_snapshots_from_root,
+    mapped_command_to_input, CombatMappedCommand, CombatReconstructedStep,
+};
 
 const DEFAULT_DECISION_DEPTH: usize = 4;
 const DEFAULT_TOP_K: usize = 3;
@@ -44,7 +46,8 @@ pub struct DecisionAuditFixture {
     pub engine_state: DecisionAuditEngineState,
     pub chosen_command_text: String,
     pub chosen_command: CombatMappedCommand,
-    pub combat_snapshot: Value,
+    pub truth_snapshot: Value,
+    pub observation_snapshot: Value,
     pub relics: Value,
 }
 
@@ -276,7 +279,8 @@ pub fn build_fixture_from_reconstructed_step(
     name: impl Into<String>,
 ) -> Result<DecisionAuditFixture, String> {
     let before_root = reconstructed.before_root.clone();
-    let combat_snapshot = crate::diff::replay::build_live_combat_snapshot_from_root(&before_root)?;
+    let (truth_snapshot, observation_snapshot) =
+        build_live_split_combat_snapshots_from_root(&before_root)?;
     let relics = before_root
         .get("game_state")
         .and_then(|gs| gs.get("relics"))
@@ -291,7 +295,8 @@ pub fn build_fixture_from_reconstructed_step(
         engine_state: DecisionAuditEngineState::CombatPlayerTurn,
         chosen_command_text: reconstructed.command_text.clone(),
         chosen_command: reconstructed.mapped_command.clone(),
-        combat_snapshot,
+        truth_snapshot,
+        observation_snapshot,
         relics,
     })
 }
@@ -334,7 +339,11 @@ pub fn audit_fixture(
     fixture: &DecisionAuditFixture,
     config: DecisionAuditConfig,
 ) -> Result<DecisionAuditReport, String> {
-    let combat = build_combat_state(&fixture.combat_snapshot, &fixture.relics);
+    let combat = build_combat_state_from_snapshots(
+        &fixture.truth_snapshot,
+        &fixture.observation_snapshot,
+        &fixture.relics,
+    );
     let engine = match fixture.engine_state {
         DecisionAuditEngineState::CombatPlayerTurn => EngineState::CombatPlayerTurn,
     };
@@ -521,7 +530,11 @@ pub fn extract_preference_samples(
     report: &DecisionAuditReport,
     config: DecisionAuditConfig,
 ) -> Result<Vec<CombatPreferenceSample>, String> {
-    let combat = build_combat_state(&fixture.combat_snapshot, &fixture.relics);
+    let combat = build_combat_state_from_snapshots(
+        &fixture.truth_snapshot,
+        &fixture.observation_snapshot,
+        &fixture.relics,
+    );
     let state = build_preference_state(fixture, &combat);
     let Some(chosen_action) = report.chosen_first_move.as_ref() else {
         return Ok(Vec::new());
@@ -592,7 +605,7 @@ fn build_preference_state(
     combat: &CombatState,
 ) -> CombatPreferenceState {
     let player_max_hp = fixture
-        .combat_snapshot
+        .truth_snapshot
         .get("player")
         .and_then(|player| player.get("max_hp"))
         .and_then(Value::as_i64)
@@ -656,7 +669,11 @@ fn build_preference_state(
                     .unwrap_or_else(|| format!("Monster#{}", monster.monster_type)),
                 hp: monster.current_hp,
                 block: monster.block,
-                intent: format!("{:?}", monster.current_intent),
+                intent: format!(
+                    "{:?}",
+                    crate::content::monsters::resolve_monster_turn_plan(combat, monster)
+                        .summary_spec()
+                ),
                 powers: store::powers_for(combat, monster.id)
                     .map(|powers| {
                         powers
@@ -1448,14 +1465,8 @@ fn incoming_damage(combat: &CombatState) -> i32 {
         .monsters
         .iter()
         .filter(|monster| !monster.is_dying && !monster.is_escaped && monster.current_hp > 0)
-        .map(|monster| match monster.current_intent {
-            crate::runtime::combat::Intent::Attack { .. }
-            | crate::runtime::combat::Intent::AttackBuff { .. }
-            | crate::runtime::combat::Intent::AttackDebuff { .. }
-            | crate::runtime::combat::Intent::AttackDefend { .. } => {
-                monster.intent_preview_total_damage()
-            }
-            _ => 0,
+        .map(|monster| {
+            crate::projection::combat::monster_preview_total_damage_in_combat(combat, monster)
         })
         .sum()
 }

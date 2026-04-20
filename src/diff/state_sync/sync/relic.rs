@@ -1,6 +1,6 @@
 use serde_json::Value;
 
-use crate::diff::protocol::{java_potion_id_to_rust, relic_id_from_java};
+use crate::protocol::java::{java_potion_id_to_rust, relic_id_from_java, snapshot_uuid};
 
 use super::super::internal_state::{
     snapshot_runtime_amount_for_relic, snapshot_runtime_counter_for_relic,
@@ -18,7 +18,30 @@ pub fn sync_player_potions_from_snapshot(
                     .get("id")
                     .and_then(|v| v.as_str())
                     .and_then(java_potion_id_to_rust)
-                    .map(|id| crate::content::potions::Potion::new(id, 0));
+                    .map(|id| {
+                        crate::content::potions::Potion::with_affordance_truth(
+                            id,
+                            p_val
+                                .get("uuid")
+                                .map(|value| snapshot_uuid(value, i as u32))
+                                .unwrap_or(i as u32),
+                            p_val
+                                .get("can_use")
+                                .and_then(|v| v.as_bool())
+                                .unwrap_or(true),
+                            p_val
+                                .get("can_discard")
+                                .and_then(|v| v.as_bool())
+                                .unwrap_or(true),
+                            p_val
+                                .get("requires_target")
+                                .and_then(|v| v.as_bool())
+                                .unwrap_or_else(|| {
+                                    crate::content::potions::get_potion_definition(id)
+                                        .target_required
+                                }),
+                        )
+                    });
             }
         }
     }

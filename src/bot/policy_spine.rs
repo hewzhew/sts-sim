@@ -222,8 +222,8 @@ impl Agent {
                     BotPolicyDecision::LegacyInput {
                         meta: DecisionMetadata::new(
                             DecisionDomain::LegacyInput,
-                            "missing_combat_state",
-                            Some("missing_combat_state"),
+                            "missing_combat_snapshot",
+                            Some("missing_combat_snapshot"),
                             None,
                             false,
                         ),

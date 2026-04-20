@@ -36,6 +36,56 @@ The goal is to separate:
   - new home for preview and audit derivations
   - first slice landed: `combat::MonsterMovePreview`
 
+## Landed In Runtime
+
+- `MonsterObservationState`
+  - visible intent, preview damage, and protocol identity are no longer top-level `MonsterEntity` fields
+  - observation is now physically separated from executable monster truth
+- `MonsterMoveState`
+  - planned move id and move history are no longer top-level `MonsterEntity` fields
+  - truth-side move selection state is now grouped separately from observation
+- `LouseRuntimeState`
+  - Louse bite damage is now stored as runtime truth instead of living only in preview-shaped observation
+  - encounter/build paths seed preview from truth, not the other way around
+- `HexaghostRuntimeState.divider_damage`
+  - Divider damage is now an explicit runtime latch
+  - execution can stay correct even if later observation is stale, missing, or intentionally hidden
+- `MonsterEntity`
+  - consumers should read:
+    - `planned_move_id()`
+    - `move_history()`
+    - `turn_plan()`
+    - `move_preview()`
+    - `visible_intent()`
+  - mutators should write through:
+    - `set_planned_move_id(...)`
+    - `move_history_mut()`
+    - `record_planned_move(...)`
+    - `set_visible_intent(...)`
+
+## Landed In Content Execution
+
+- `MonsterBehavior`
+  - now has a semantic-side `take_turn_plan(...)` entry with a legacy default fallback to `take_turn(...)`
+  - this lets migrated monsters execute from `MonsterTurnPlan` without forcing a repo-wide signature rewrite
+- `MonsterBehavior::turn_plan(...)`
+  - content now has a semantic planning hook ahead of execution
+  - migrated monsters can define current-turn specs from runtime truth and combat rules instead of inheriting observation-derived plans
+- `resolve_monster_turn(...)`
+  - now computes a content-owned semantic plan first
+  - migrated monsters receive the plan explicitly at dispatch time instead of defaulting to `entity.turn_plan()`
+- migrated execution paths
+  - `LouseNormal`
+  - `LouseDefensive`
+  - `BookOfStabbing`
+  - `Maw`
+  - `Hexaghost`
+  - these now read `plan.attack()` instead of unpacking `visible_intent` during execution
+  - Louse execution no longer falls back to preview damage caches
+  - Hexaghost Divider now executes from a latched truth-side damage value
+  - Book of Stabbing and Maw now derive hit counts from truth-side move history in their semantic planner
+  - the migrated planners can stay correct even when visible intent is stale, hidden, or semantically weaker than runtime truth
+
 ## Move Behind Adapters
 
 - `src/diff/protocol/`
@@ -81,6 +131,14 @@ The goal is to separate:
   - target is a derived preview object, not a truth field
 - direct bot reads of `current_intent`, `next_move_byte`, and protocol-seeded runtime flags as a combined truth source
 - any replay/live sync code that needs to silently guess missing truth from prior Rust state
+
+## Remaining Transitional Debt
+
+- `src/content/monsters/beyond/darkling.rs`
+  - death/revive flow still mutates visible observation intent directly for compatibility
+- `src/diff/state_sync/build/monster.rs`
+  - Louse runtime bite damage imports only when protocol exports it
+  - old snapshots without `runtime_state.bite_damage` are still a protocol gap, not a truth source
 
 ## First Concrete Targets
 

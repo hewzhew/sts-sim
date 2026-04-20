@@ -53,6 +53,16 @@ pub struct RunState {
     pub event_state: Option<crate::state::events::EventState>,
 
     pub event_generator: crate::events::generator::EventGenerator,
+    /// Java `AbstractRoom.mugged` equivalent for the current room.
+    ///
+    /// Set when a thief escapes after stealing gold. Cleared when entering the
+    /// next room. Used for post-combat room/reward semantics and future parity.
+    pub room_mugged: bool,
+    /// Java `AbstractRoom.smoked` equivalent for the current room.
+    ///
+    /// Set when Smoke Bomb ends the current combat. Cleared when entering the
+    /// next room. Used for reward-screen semantics and future parity.
+    pub room_smoked: bool,
 
     // Relic pools — filled at dungeon init, popped from end when obtaining relics.
     // Java: commonRelicPool, uncommonRelicPool, rareRelicPool, shopRelicPool, bossRelicPool
@@ -128,6 +138,8 @@ impl RunState {
 
             // Subsystems
             event_generator: crate::events::generator::EventGenerator::new(1),
+            room_mugged: false,
+            room_smoked: false,
 
             // Relic pools (filled by init_relic_pools)
             common_relic_pool: Vec::new(),

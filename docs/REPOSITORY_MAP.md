@@ -19,34 +19,66 @@ This file is the current structure blueprint for the repo.
 - `generated`
   - machine-built code or schemas that should not own business rules
 
-## RL Main Path
+## Active Paths
 
-The RL-facing path through the repo is:
+### Engine Truth Path
 
-1. state build / sync
+Treat these as the truth-bearing core:
+
+1. runtime and state
+   - `src/runtime/`
    - `src/state/`
-   - `src/state/semantics.rs`
-   - `src/runtime/combat.rs`
-   - `src/diff/state_sync/`
+   - `src/core/`
 2. engine progression
    - `src/engine/`
-   - `src/runtime/action.rs`
 3. content semantics
-   - `src/content/cards/`
-   - `src/content/powers/`
-   - `src/content/relics/`
-   - `src/content/monsters/`
-4. rewards / terminal / run flow
+   - `src/content/`
+4. truth-side semantic and preview layers
+   - `src/semantics/`
+   - `src/projection/`
+5. run and reward flow
    - `src/rewards/`
    - `src/events/`
    - `src/shop/`
-   - `src/engine/run_loop.rs`
-5. observation / validation / replay surfaces
-   - `src/diff/`
-   - `src/testing/`
-   - selected `src/bin/*`
+   - `src/map/`
 
-Anything outside that path should be treated as support infrastructure, not as the source of engine truth.
+### Protocol / Verification Path
+
+Treat these as the integration layer around engine truth:
+
+1. Java/protocol adapter
+   - `src/protocol/`
+2. importer, replay, and sync
+   - `src/diff/`
+3. fixtures and scenario tests
+   - `src/testing/`
+   - `tests/`
+4. verification facades
+   - `src/verification/`
+
+### App / Workbench Path
+
+These are consumers, not the source of engine truth:
+
+- `src/bot/`
+- `src/cli/`
+- `src/bin/`
+
+### Current Learning Path
+
+The current RL-facing experiment path is:
+
+1. Rust combat environment truth
+   - `src/bot/harness/combat_env.rs`
+2. bridge binary
+   - `src/bin/combat_env_driver/`
+3. Python transport and policy experiments
+   - `tools/learning/structured_combat_env.py`
+   - `tools/learning/train_structured_combat_ppo.py`
+   - `tools/learning/build_combat_rl_datasets.py`
+   - `tools/learning/build_macro_counterfactual_dataset.py`
+
+This path is active, but still experimental. Do not treat it as a stable runtime policy stack.
 
 ## Top-Level Layout
 
@@ -64,23 +96,31 @@ Anything outside that path should be treated as support infrastructure, not as t
   - temporary local workspace
 - `data/` — `artifact`
   - user- or run-specific generated data
-- `tools/legacy/` — `legacy`
-  - preserved old scripts or implementation snapshots
 
 ## `src/` Ownership
 
 - `src/runtime/` — `core`
   - base runtime primitives: `action`, `combat`, `rng`
+- `src/core/` — `core`
+  - shared engine-side utility types that are still core truth, not tooling
 - `src/engine/` — `core`
   - turn progression, queue driving, action dispatch, room handlers
 - `src/content/` — `core`
   - per-entity behavior and hook logic
 - `src/state/` — `core`
   - structured run / combat / pending-choice state
+- `src/semantics/` — `core`
+  - explicit rule-critical semantic views derived from engine truth
+- `src/projection/` — `core`
+  - preview and presentation views derived from semantic truth
 - `src/diff/` — `integration`
   - protocol mapping in `diff::protocol`, replay/verification in `diff::replay`, sync support in `diff::state_sync`
+- `src/protocol/` — `integration`
+  - Java/protocol-facing facade and adapter surface
 - `src/testing/` — `integration`
   - fixtures in `testing::fixtures`, integration analysis in `testing::harness`
+- `src/verification/` — `integration`
+  - narrower facades for replay/reconstruction consumers
 - `src/bot/harness/` — `experiment`
   - bot-coupled workbenches and validation harnesses promoted out of `testing`
 - `src/bin/` — `integration`
@@ -92,19 +132,9 @@ Anything outside that path should be treated as support infrastructure, not as t
 
 ## Current Notes
 
-- `src/` root now intentionally keeps only a small number of top-level modules:
-  - `runtime`
-  - `engine`
-  - `content`
-  - `state`
-  - `map`
-  - `diff`
-  - `bot`
-  - `cli`
-- legacy implementation snapshots and unused generated assets have been moved under:
-  - `tools/legacy/rust/`
-- `fixtures` is exported from `lib.rs`, but its implementation still lives under:
-  - `src/testing/`
+- `fixtures` is exported from `lib.rs`, but its implementation still lives under `src/testing/`
+- `bot` and `cli` are important working surfaces, but they are downstream of protocol/importer truth
+- older design notes may still describe `diff::state_sync` as if it were a repair layer; current docs treat it as a strict importer
 
 ## Root Rules
 

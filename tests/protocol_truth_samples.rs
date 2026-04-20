@@ -1,11 +1,14 @@
 use std::fs;
 use std::path::Path;
 
-use serde_json::Value;
+use serde_json::{json, Value};
+use sts_simulator::content::monsters::resolve_monster_turn_plan;
 use sts_simulator::content::monsters::EnemyId;
 use sts_simulator::content::powers::store::{has_power, power_amount, powers_for};
 use sts_simulator::content::powers::PowerId;
-use sts_simulator::diff::state_sync::{build_combat_state, snapshot_uuid};
+use sts_simulator::diff::state_sync::{build_combat_state_from_snapshots, snapshot_uuid};
+use sts_simulator::engine::action_handlers::execute_action;
+use sts_simulator::runtime::action::{Action, DamageInfo, DamageType};
 
 fn load_sample(name: &str) -> Value {
     let path = Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -20,10 +23,17 @@ fn load_sample(name: &str) -> Value {
 }
 
 fn build_state_from_frame(frame: &Value) -> sts_simulator::runtime::combat::CombatState {
-    build_combat_state(
-        &frame["game_state"]["combat_state"],
+    build_combat_state_from_snapshots(
+        &frame["game_state"]["combat_truth"],
+        &frame["game_state"]["combat_observation"],
         &frame["game_state"]["relics"],
     )
+}
+
+fn drain_action_queue(state: &mut sts_simulator::runtime::combat::CombatState) {
+    while let Some(action) = state.pop_next_action() {
+        execute_action(action, state);
+    }
 }
 
 #[test]
@@ -43,6 +53,52 @@ fn guardian_threshold_sample_imports_runtime_state() {
     );
     assert!(has_power(&state, guardian.id, PowerId::ModeShift));
     assert_eq!(power_amount(&state, guardian.id, PowerId::ModeShift), 30);
+    assert_eq!(guardian.guardian.damage_threshold, 30);
+    assert_eq!(guardian.guardian.damage_taken, 0);
+    assert!(guardian.guardian.is_open);
+    assert!(!guardian.guardian.close_up_triggered);
+}
+
+#[test]
+fn guardian_threshold_sample_below_threshold_hit_stays_open() {
+    let frame = load_sample("guardian_threshold");
+    let mut state = build_state_from_frame(&frame);
+    let guardian_id = state
+        .entities
+        .monsters
+        .iter()
+        .find(|monster| monster.monster_type == EnemyId::TheGuardian as usize)
+        .map(|monster| monster.id)
+        .expect("guardian sample should contain TheGuardian");
+
+    execute_action(
+        Action::Damage(DamageInfo {
+            source: 0,
+            target: guardian_id,
+            base: 10,
+            output: 10,
+            damage_type: DamageType::Normal,
+            is_modified: false,
+        }),
+        &mut state,
+    );
+    drain_action_queue(&mut state);
+
+    let guardian = state
+        .entities
+        .monsters
+        .iter()
+        .find(|monster| monster.id == guardian_id)
+        .expect("guardian entity should still exist");
+
+    assert_eq!(guardian.current_hp, 230);
+    assert_eq!(guardian.block, 0);
+    assert_eq!(guardian.planned_move_id(), 6);
+    assert_eq!(guardian.guardian.damage_threshold, 30);
+    assert_eq!(guardian.guardian.damage_taken, 10);
+    assert!(guardian.guardian.is_open);
+    assert!(!guardian.guardian.close_up_triggered);
+    assert_eq!(power_amount(&state, guardian.id, PowerId::ModeShift), 20);
 }
 
 #[test]
@@ -101,7 +157,7 @@ fn stasis_sample_imports_runtime_state() {
                 .find(|power| power.power_type == PowerId::Stasis)
         })
         .expect("stasis sample should import Stasis onto BronzeOrb");
-    let expected_uuid = frame["game_state"]["combat_state"]["monsters"]
+    let expected_uuid = frame["game_state"]["combat_truth"]["monsters"]
         .as_array()
         .and_then(|monsters| {
             monsters.iter().find_map(|monster| {
@@ -124,7 +180,107 @@ fn stasis_sample_imports_runtime_state() {
             })
         })
         .expect("stasis sample should include power.runtime_state.card_uuid");
+    let bronze_automaton = state
+        .entities
+        .monsters
+        .iter()
+        .find(|monster| monster.monster_type == EnemyId::BronzeAutomaton as usize)
+        .expect("stasis sample should contain BronzeAutomaton");
 
     assert_eq!(stasis.amount, -1);
     assert_eq!(stasis.extra_data, snapshot_uuid(&expected_uuid, 0) as i32);
+    assert!(bronze_orb.bronze_orb.protocol_seeded);
+    assert!(bronze_orb.bronze_orb.used_stasis);
+    assert!(bronze_automaton.bronze_automaton.protocol_seeded);
+    assert!(!bronze_automaton.bronze_automaton.first_turn);
+    assert_eq!(bronze_automaton.bronze_automaton.num_turns, 2);
+}
+
+#[test]
+fn hexaghost_divider_runtime_imports_current_damage_lock() {
+    let frame = json!({
+        "game_state": {
+            "combat_truth": {
+                "turn": 2,
+                "player": {
+                    "current_hp": 17,
+                    "max_hp": 80,
+                    "block": 0,
+                    "energy": 3,
+                    "powers": []
+                },
+                "monsters": [{
+                    "id": "Hexaghost",
+                    "current_hp": 222,
+                    "max_hp": 250,
+                    "block": 0,
+                    "move_id": 1,
+                    "move_base_damage": 2,
+                    "move_hits": 6,
+                    "powers": [],
+                    "runtime_state": {
+                        "activated": true,
+                        "orb_active_count": 6,
+                        "burn_upgraded": false,
+                        "divider_damage": 2
+                    },
+                    "is_gone": false,
+                    "half_dead": false
+                }],
+                "hand": [],
+                "draw_pile": [],
+                "discard_pile": [],
+                "exhaust_pile": [],
+                "limbo": [],
+                "potions": []
+            },
+            "combat_observation": {
+                "turn": 2,
+                "player": {
+                    "current_hp": 17,
+                    "max_hp": 80,
+                    "block": 0,
+                    "energy": 3,
+                    "powers": []
+                },
+                "monsters": [{
+                    "id": "Hexaghost",
+                    "name": "Hexaghost",
+                    "current_hp": 222,
+                    "max_hp": 250,
+                    "block": 0,
+                    "intent": "ATTACK",
+                    "move_adjusted_damage": 2,
+                    "move_hits": 6,
+                    "draw_x": 960,
+                    "powers": [],
+                    "is_gone": false,
+                    "half_dead": false
+                }],
+                "hand": [],
+                "draw_pile_count": 0,
+                "discard_pile": [],
+                "exhaust_pile": [],
+                "limbo": [],
+                "potions": []
+            },
+            "relics": []
+        }
+    });
+
+    let state = build_state_from_frame(&frame);
+    let hexaghost = state
+        .entities
+        .monsters
+        .iter()
+        .find(|monster| monster.monster_type == EnemyId::Hexaghost as usize)
+        .expect("sample should contain Hexaghost");
+
+    assert_eq!(hexaghost.hexaghost.divider_damage, Some(2));
+    assert_eq!(
+        resolve_monster_turn_plan(&state, hexaghost)
+            .attack()
+            .map(|attack| (attack.base_damage, attack.hits)),
+        Some((2, 6))
+    );
 }

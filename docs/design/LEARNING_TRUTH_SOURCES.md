@@ -1,132 +1,104 @@
 # Learning Truth Sources
 
-This repo does not currently ship an active ML or RL policy path.
+Learning work is active again, but the truth policy is still strict:
 
-Previous reward-ranker and local combat learner experiments were removed because they had all of these problems at once:
+- learning stays downstream of engine truth
+- `live_comm` provides state truth, not automatic labels
+- stronger labels come from offline oracles, audits, and explicit contracts
 
-- not wired into the production bot
-- trained on tiny or stale datasets
-- built against features that no longer match the current strategy stack
-- misleading names like `LocalRl` that implied capability that did not exist
+## Truth Hierarchy
 
-## What Still Matters
+### 1. Engine and Protocol Truth
 
-If learning work resumes later, the only approved data sources should be current audit outputs from the live strategy stack.
+Highest-priority sources:
 
-### Reward
+- Java source in `cardcrawl`
+- current `CommunicationMod` protocol export
+- Rust importer plus parity/test surfaces
 
-Use:
+If this layer is unstable, learning output is not allowed to define correctness.
 
-- `live_comm_reward_audit.jsonl`
-- reward evaluation breakdown already emitted by:
-  - `reward_heuristics`
-  - `deck_delta_eval`
-  - `run_rule_context`
+### 2. Checked-In Protocol Samples and Behavior Tests
 
-Important fields now come from the live path itself:
+Use these to pin importer-sensitive mechanics:
 
-- `delta_prior`
-- `delta_bias`
-- `delta_rollout`
-- `delta_context`
-- `delta_context_rationale_key`
-- `delta_rule_context_summary`
+- `tests/protocol_truth_samples/`
+- `tests/protocol_truth_samples.rs`
+- behavior tests such as `guardian_threshold_behavior.rs` and `stasis_behavior.rs`
 
-### Event
+These are the small, explicit truth anchors that keep dataset assumptions honest.
 
-Use:
+### 3. Validated Archived Runs
+
+Approved real-state sources:
+
+- archived `live_comm` runs whose validation passed
+- frozen baselines created by `sts_dev_tool logs freeze-baseline`
+
+Use them for:
+
+- state distributions
+- audit streams
+- replay-first frame extraction
+
+Do not use tainted runs as if they were ground truth.
+
+### 4. Offline Combat Label Sources
+
+Approved stronger combat label sources:
+
+- `combat_decision_audit`
+- local oracle rollouts
+- structured benchmark cases
+- curated curriculum or seed datasets
+
+Important rule:
+
+- archived or live bot choices are baseline behavior
+- offline oracle outputs are candidate strong labels
+
+### 5. Local Curriculum and Contract Surfaces
+
+Approved local experiment sources:
+
+- `combat_lab` specs
+- `CombatEnv`
+- `combat_env_driver`
+- structured combat observation/action contract
+
+These are for controlled learning experiments, not for replacing protocol truth.
+
+## Approved Data Families
+
+Reward:
+
+- `reward_audit.jsonl`
+- derived hindsight/counterfactual datasets
+
+Event:
 
 - `event_audit.jsonl`
+- macro counterfactual datasets
 
-Only consume samples from runs whose validation passed and whose event trace fields are present.
+Combat:
 
-### Combat
-
-Use:
-
-- `combat_decision_audit`
-- validated `livecomm` runs
-- root diagnosis / suspect output
+- baseline manifests and archived clean runs
+- `combat_suspects.jsonl`
 - `failure_snapshots.jsonl`
-- belief summaries
-- sequencing breakdowns
+- `combat_lab` trace exports
+- local oracle datasets
 
-For battle-local training work, the current approved environment entrypoint is:
+## What Not To Do
 
-- `sts_simulator::bot::harness::combat_env::CombatEnv`
+Do not:
 
-This is a headless Rust-only combat environment. It is intended for fixture-driven
-training and evaluation, not as a `livecomm` replacement.
+- treat raw `live_comm` bot actions as oracle labels
+- restore stale legacy learning formats just because a script still exists
+- invent a second combat ontology outside the current contract docs
+- let a learner output dictate protocol or engine semantics
 
-Important distinction:
+## Canonical Learning Entry Docs
 
-- validated `livecomm` runs are the approved **state truth** source
-- stronger combat labels should come from offline oracle work, starting with
-  `combat_decision_audit audit-frame`
-
-Do not treat the raw baseline bot action from `livecomm` as oracle truth by default.
-
-Do not revive old hand-authored ranker formats or training-example dumps from `combat_lab`.
-
-## Current Approved Infrastructure
-
-The repo still intentionally keeps:
-
-- `combat_decision_audit`
-- validated `livecomm` run logs
-- reward / event audit streams
-- `combat_lab` as a regression and fixture-comparison harness
-
-These are the only supported foundations for future learned sidecars.
-
-## Readiness Gate Before New Learning Work
-
-Do not restart ML/RL work until these are true:
-
-- engine/protocol truth is stable enough that `VERDICT: ❌ Engine Bugs Found` is no longer common
-- `livecomm` validation is stable
-- audit schemas for reward/event/combat are no longer churning
-- the current symbolic policy layers are the ones we actually want to learn on top of:
-  - belief-driven combat pressure
-  - sequencing breakdowns
-  - regime-conditioned deck delta
-
-## Explicit Non-Goals
-
-This repo is not currently maintaining:
-
-- a reward-ranker training pipeline
-- a local combat RL policy
-- a production learned reranker
-- a placeholder ML scaffold
-
-Any future learning line should be reintroduced from current audit truth, not by restoring removed legacy scripts.
-
-## Current Dataset Workflow
-
-If learning work resumes, the approved first step is:
-
-1. freeze a baseline
-2. build datasets from existing audit artifacts
-3. evaluate offline before any runtime inference
-
-Commands:
-
-```powershell
-cargo run --bin sts_dev_tool -- logs freeze-baseline `
-  --out tools/artifacts/learning_baseline.json `
-  --latest-runs 3
-
-python tools/learning/build_sidecar_datasets.py `
-  --baseline tools/artifacts/learning_baseline.json `
-  --out-dir tools/artifacts/learning_dataset
-```
-
-This workflow is intentionally narrow:
-
-- no new `src/ml`
-- no placeholder trainer
-- no production inference path
-- no mixing rows from different frozen baselines
-
-It only converts validated audit truth into offline rows for future sidecar experiments.
+- [COMBAT_RL_CONTRACT_V0.md](COMBAT_RL_CONTRACT_V0.md)
+- [../RL_READINESS_CHECKLIST.md](../RL_READINESS_CHECKLIST.md)
+- [../../tools/learning/README.md](../../tools/learning/README.md)

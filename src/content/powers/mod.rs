@@ -1129,8 +1129,13 @@ pub fn resolve_power_on_calculate_damage_from_player(
 }
 
 /// Java: AbstractMonster.calculateDamage() pipeline
-/// Evaluates the damage a monster will deal based on its base intent damage
-/// after adjusting for Strength, Weak, Vulnerable, Intangible, etc.
+/// Evaluates a monster's Normal attack from its base truth input.
+///
+/// Contract:
+/// - `base` is the monster plan truth value supplied by `Action::MonsterAttack`.
+/// - Monster content code must not precompute a modified final damage output.
+/// - This function applies the shared monster attack pipeline: Strength, Weak,
+///   Vulnerable, player stance, and final receive effects such as Intangible.
 pub fn calculate_monster_damage(
     base: i32,
     source_id: usize,

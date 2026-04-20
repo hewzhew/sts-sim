@@ -169,6 +169,7 @@ def q_local_feature_dict(row: dict[str, Any]) -> dict[str, Any]:
     state = snapshot_state_features(snapshot)
     candidate = row.get("candidate_semantics") or candidate_semantics_from_move(row.get("candidate_move"))
     chance = row.get("chance_features") or chance_feature_dict(snapshot, row.get("candidate_move"))
+    dynamic_targets = row.get("dynamic_teacher_targets") or row.get("curriculum_teacher_targets") or {}
     for key, value in state.items():
         features[f"state::{key}"] = value
     for key, value in hand_semantics_counts(snapshot).items():
@@ -185,6 +186,8 @@ def q_local_feature_dict(row: dict[str, Any]) -> dict[str, Any]:
             features[f"candidate::{key}"] = float(value)
     for key, value in chance.items():
         features[f"chance::{key}"] = float(value)
+    for key, value in dynamic_targets.items():
+        features[f"dynamic_teacher::{key}"] = float(value)
     player_hp = float(state.get("player_current_hp", 0.0))
     player_max_hp = max(float(state.get("player_max_hp", 1.0)), 1.0)
     total_monster_hp = max(float(state.get("total_monster_hp", 0.0)), 1.0)
@@ -206,6 +209,21 @@ def q_local_feature_dict(row: dict[str, Any]) -> dict[str, Any]:
     features["interaction::setup_payoff_overlap"] = float(candidate.get("setup_tag", 0.0)) * float(
         chance.get("payoff_reachability_after_setup_proxy", 0.0)
     )
+    features["interaction::semantic_survival_alignment"] = float(
+        dynamic_targets.get("survival_score", 0.0)
+    ) * float(max(candidate.get("block_tag", 0.0), candidate.get("apply_weak", 0.0)))
+    features["interaction::semantic_tempo_alignment"] = float(
+        dynamic_targets.get("tempo_score", 0.0)
+    ) * float(max(candidate.get("attack_tag", 0.0), 1.0 if float(candidate.get("draw_count", 0.0)) > 0.0 else 0.0))
+    features["interaction::semantic_setup_alignment"] = float(
+        dynamic_targets.get("setup_payoff_score", 0.0)
+    ) * float(max(candidate.get("setup_tag", 0.0), candidate.get("consumes_status", 0.0)))
+    features["interaction::semantic_kill_alignment"] = float(
+        dynamic_targets.get("kill_window_score", 0.0)
+    ) * float(candidate.get("attack_tag", 0.0))
+    features["interaction::semantic_risk_alignment"] = float(
+        dynamic_targets.get("risk_score", 0.0)
+    ) * float(max(candidate.get("creates_status", 0.0), candidate.get("block_tag", 0.0)))
     features["interaction::attack_under_low_pressure"] = float(candidate.get("attack_tag", 0.0)) * float(
         1.0 if float(state.get("incoming_damage", 0.0)) <= 6.0 else 0.0
     )

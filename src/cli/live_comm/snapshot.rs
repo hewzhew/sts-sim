@@ -1,5 +1,6 @@
 use super::frame::LiveFrame;
 use super::io::LiveCommIo;
+use crate::protocol::java::{build_live_observation_snapshot, build_live_truth_snapshot};
 use serde::Serialize;
 use serde_json::{json, Value};
 use std::io::Write;
@@ -65,42 +66,65 @@ pub(crate) fn write_failure_snapshot(
 
 fn build_normalized_state(frame: &LiveFrame) -> Value {
     let gs = frame.game_state();
-    let combat_state = frame.combat_state();
-    let player = combat_state.and_then(|state| state.get("player"));
-    let hand = combat_state
+    let (truth_snapshot, observation_snapshot) = if frame.is_combat() {
+        (
+            Some(build_live_truth_snapshot(gs)),
+            Some(build_live_observation_snapshot(gs)),
+        )
+    } else {
+        (None, None)
+    };
+    let player = truth_snapshot
+        .as_ref()
+        .and_then(|state| state.get("player"));
+    let hand = truth_snapshot
+        .as_ref()
         .and_then(|state| state.get("hand"))
         .and_then(Value::as_array)
         .map(|cards| compact_card_entries(cards))
         .unwrap_or_default();
-    let draw = combat_state
+    let draw = truth_snapshot
+        .as_ref()
         .and_then(|state| state.get("draw_pile"))
         .and_then(Value::as_array)
         .map(|cards| compact_card_entries(cards))
         .unwrap_or_default();
-    let discard = combat_state
+    let discard = truth_snapshot
+        .as_ref()
         .and_then(|state| state.get("discard_pile"))
         .and_then(Value::as_array)
         .map(|cards| compact_card_entries(cards))
         .unwrap_or_default();
-    let exhaust = combat_state
+    let exhaust = truth_snapshot
+        .as_ref()
         .and_then(|state| state.get("exhaust_pile"))
         .and_then(Value::as_array)
         .map(|cards| compact_card_entries(cards))
         .unwrap_or_default();
-    let monsters = combat_state
+    let monsters = truth_snapshot
+        .as_ref()
         .and_then(|state| state.get("monsters"))
         .and_then(Value::as_array)
         .map(|monsters| {
+            let observation_monsters = observation_snapshot
+                .as_ref()
+                .and_then(|state| state.get("monsters"))
+                .and_then(Value::as_array);
             monsters
                 .iter()
-                .map(|monster| {
+                .enumerate()
+                .map(|(index, monster)| {
+                    let observation_monster =
+                        observation_monsters.and_then(|entries| entries.get(index));
                     json!({
                         "id": monster.get("id").and_then(Value::as_str),
                         "name": monster.get("name").and_then(Value::as_str),
                         "current_hp": monster.get("current_hp").or_else(|| monster.get("hp")).and_then(Value::as_i64),
                         "max_hp": monster.get("max_hp").and_then(Value::as_i64),
                         "block": monster.get("block").and_then(Value::as_i64),
-                        "intent": monster.get("intent").and_then(Value::as_str),
+                        "intent": observation_monster
+                            .and_then(|value| value.get("intent"))
+                            .and_then(Value::as_str),
                         "powers": compact_power_entries(monster.get("powers").and_then(Value::as_array)),
                     })
                 })
@@ -116,7 +140,8 @@ fn build_normalized_state(frame: &LiveFrame) -> Value {
             "current_hp": player.and_then(|value| value.get("current_hp").or_else(|| value.get("hp"))).and_then(Value::as_i64),
             "max_hp": player.and_then(|value| value.get("max_hp")).and_then(Value::as_i64),
             "block": player.and_then(|value| value.get("block")).and_then(Value::as_i64),
-            "energy": combat_state
+            "energy": truth_snapshot
+                .as_ref()
                 .and_then(|state| state.get("energy"))
                 .or_else(|| player.and_then(|value| value.get("energy")))
                 .or_else(|| gs.get("energy"))
@@ -128,10 +153,10 @@ fn build_normalized_state(frame: &LiveFrame) -> Value {
             "draw": draw,
             "discard": discard,
             "exhaust": exhaust,
-            "hand_count": combat_state.and_then(|state| state.get("hand")).and_then(Value::as_array).map(|cards| cards.len()),
-            "draw_count": combat_state.and_then(|state| state.get("draw_pile")).and_then(Value::as_array).map(|cards| cards.len()),
-            "discard_count": combat_state.and_then(|state| state.get("discard_pile")).and_then(Value::as_array).map(|cards| cards.len()),
-            "exhaust_count": combat_state.and_then(|state| state.get("exhaust_pile")).and_then(Value::as_array).map(|cards| cards.len()),
+            "hand_count": truth_snapshot.as_ref().and_then(|state| state.get("hand")).and_then(Value::as_array).map(|cards| cards.len()),
+            "draw_count": truth_snapshot.as_ref().and_then(|state| state.get("draw_pile")).and_then(Value::as_array).map(|cards| cards.len()),
+            "discard_count": truth_snapshot.as_ref().and_then(|state| state.get("discard_pile")).and_then(Value::as_array).map(|cards| cards.len()),
+            "exhaust_count": truth_snapshot.as_ref().and_then(|state| state.get("exhaust_pile")).and_then(Value::as_array).map(|cards| cards.len()),
         },
         "monsters": monsters,
         "relics": compact_id_entries(gs.get("relics").and_then(Value::as_array)),
@@ -145,6 +170,7 @@ fn build_protocol_context(frame: &LiveFrame) -> Value {
     json!({
         "available_commands": frame.available_commands(),
         "combat_session": frame.combat_session().cloned().unwrap_or(Value::Null),
+        "continuation_state": frame.continuation_state().cloned().unwrap_or(Value::Null),
         "reward_session": protocol_meta.get("reward_session").cloned().unwrap_or(Value::Null),
         "last_command_kind": frame.last_command_kind(),
         "protocol_meta": protocol_meta,

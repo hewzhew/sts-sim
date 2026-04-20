@@ -3,7 +3,9 @@ use super::live_comm_admin::{
     LiveLogPaths, LiveProfileMetadata, LiveRetentionFlags, LiveRunArtifacts, LiveRunCounts,
     LiveRunManifest, LiveRunProvenance, LiveRunValidation,
 };
-use crate::diff::replay::{derive_combat_replay_view, verify_combat_replay_view};
+use crate::verification::combat::{
+    derive_replay_view, load_live_session_replay, verify_replay_view,
+};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::BTreeMap;
@@ -945,6 +947,10 @@ pub(crate) fn finalize_live_run(
         &paths.current_event_audit(),
         &run_dir.join("event_audit.jsonl"),
     )?;
+    let human_noncombat_audit_present = copy_if_nonempty(
+        &paths.current_human_noncombat_audit(),
+        &run_dir.join("human_noncombat_audit.jsonl"),
+    )?;
     let sidecar_shadow_present = copy_if_nonempty(
         &paths.current_sidecar_shadow(),
         &run_dir.join("sidecar_shadow.jsonl"),
@@ -1033,6 +1039,10 @@ pub(crate) fn finalize_live_run(
             event_audit: Some(LiveArtifactRecord::new(
                 "event_audit.jsonl",
                 event_audit_present,
+            )),
+            human_noncombat_audit: Some(LiveArtifactRecord::new(
+                "human_noncombat_audit.jsonl",
+                human_noncombat_audit_present,
             )),
             sidecar_shadow: Some(LiveArtifactRecord::new(
                 "sidecar_shadow.jsonl",
@@ -1154,9 +1164,9 @@ fn copy_if_nonempty(source: &Path, target: &Path) -> Result<bool, String> {
 }
 
 pub(crate) fn verify_replay_counts(replay_path: &Path) -> Result<(usize, usize), String> {
-    let replay = crate::diff::replay::load_live_session_replay_path(replay_path)?;
-    let view = derive_combat_replay_view(&replay);
-    let report = verify_combat_replay_view(&view, false)?;
+    let replay = load_live_session_replay(replay_path)?;
+    let view = derive_replay_view(&replay);
+    let report = verify_replay_view(&view, false)?;
     let mut timing = 0;
     for failure in &report.failures {
         for diff in &failure.diffs {

@@ -1,6 +1,7 @@
 use crate::content::cards::{get_card_definition, CardId, CardType};
 use crate::content::powers::PowerId;
 use crate::runtime::combat::CombatState;
+use crate::semantics::combat::MonsterMoveSpec;
 
 #[derive(Clone, Copy, Debug)]
 pub struct ThreatSignals {
@@ -71,23 +72,24 @@ pub fn analyze_combat(combat: &CombatState) -> CombatSignals {
         }
         alive_monsters += 1;
         total_enemy_hp += monster.current_hp + monster.block;
-        let hits = match monster.current_intent {
-            crate::runtime::combat::Intent::Attack { hits, .. }
-            | crate::runtime::combat::Intent::AttackBuff { hits, .. }
-            | crate::runtime::combat::Intent::AttackDebuff { hits, .. }
-            | crate::runtime::combat::Intent::AttackDefend { hits, .. } => hits as i32,
-            _ => 0,
-        };
+        let plan = crate::content::monsters::resolve_monster_turn_plan(combat, monster);
+        let preview =
+            crate::projection::combat::project_monster_move_preview_in_combat(combat, monster);
+        let spec = plan.summary_spec();
+        let hits = i32::from(preview.hits);
         if matches!(
-            monster.current_intent,
-            crate::runtime::combat::Intent::Debuff
-                | crate::runtime::combat::Intent::StrongDebuff
-                | crate::runtime::combat::Intent::AttackDebuff { .. }
+            spec,
+            MonsterMoveSpec::AddCard(_)
+                | MonsterMoveSpec::Debuff(_)
+                | MonsterMoveSpec::StrongDebuff(_)
+                | MonsterMoveSpec::AttackAddCard(_, _)
+                | MonsterMoveSpec::AttackUpgradeCards(_, _)
+                | MonsterMoveSpec::AttackDebuff(_, _)
         ) {
             debuffing_monsters += 1;
         }
-        if hits > 0 {
-            incoming_damage += monster.intent_preview_total_damage();
+        if preview.damage_per_hit.is_some() {
+            incoming_damage += preview.total_damage.unwrap_or(0);
             max_intent_hits = max_intent_hits.max(hits.max(1));
         }
     }

@@ -10,8 +10,9 @@ protocol assets, or explicit interface contracts.
 
 ## Current Thesis
 
-The project no longer primarily lacks structure. It now mostly lacks a thick
-enough **correctness flywheel**:
+The repo already has active offline learning experiments. What it still lacks is
+a thick enough **correctness flywheel** to justify treating those experiments as
+a stable environment instead of a moving research harness:
 
 - protocol truth samples
 - strict importer coverage
@@ -191,9 +192,11 @@ following are true:
 
 ## Related Docs
 
-- [architecture.md](architecture.md)
+- [../README.md](../README.md)
 - [LAYER_BOUNDARIES.md](LAYER_BOUNDARIES.md)
 - [protocol/PROTOCOL_TRUTH_RULES.md](protocol/PROTOCOL_TRUTH_RULES.md)
 - [protocol/STATE_SYNC_STATUS.md](protocol/STATE_SYNC_STATUS.md)
 - [protocol/GUARDIAN_THRESHOLD_TEST_MATRIX.md](protocol/GUARDIAN_THRESHOLD_TEST_MATRIX.md)
 - [live_comm/LIVE_COMM_MANUAL_SCENARIO_RUNBOOK.md](live_comm/LIVE_COMM_MANUAL_SCENARIO_RUNBOOK.md)
+- [design/COMBAT_RL_CONTRACT_V0.md](design/COMBAT_RL_CONTRACT_V0.md)
+- [../tools/learning/README.md](../tools/learning/README.md)

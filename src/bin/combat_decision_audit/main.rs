@@ -19,7 +19,7 @@ use sts_simulator::diff::replay::{
     load_live_session_replay_path, mapped_command_to_input, reconstruct_combat_replay_step,
     CombatReplayStepStatus,
 };
-use sts_simulator::diff::state_sync::build_combat_state;
+use sts_simulator::diff::state_sync::build_combat_state_from_snapshots;
 use sts_simulator::runtime::combat::CombatCard;
 use sts_simulator::state::core::ClientInput;
 use sts_simulator::state::EngineState;
@@ -808,15 +808,7 @@ fn export_preferences_from_raw(
             .monsters
             .iter()
             .filter(|monster| !monster.is_dying && !monster.is_escaped && monster.current_hp > 0)
-            .map(|monster| match monster.current_intent {
-                sts_simulator::runtime::combat::Intent::Attack { .. }
-                | sts_simulator::runtime::combat::Intent::AttackBuff { .. }
-                | sts_simulator::runtime::combat::Intent::AttackDebuff { .. }
-                | sts_simulator::runtime::combat::Intent::AttackDefend { .. } => {
-                    monster.intent_preview_total_damage()
-                }
-                _ => 0,
-            })
+            .map(sts_simulator::projection::combat::monster_preview_total_damage)
             .sum::<i32>();
         let hp_ratio = if reconstructed.before_combat.entities.player.max_hp > 0 {
             reconstructed.before_combat.entities.player.current_hp as f32
@@ -1749,7 +1741,11 @@ fn build_search_baseline_record_from_fixture(
     equivalence_mode: SearchEquivalenceMode,
     root_prior: Option<&RootPriorConfig>,
 ) -> Result<SearchBaselineRecord, String> {
-    let combat = build_combat_state(&fixture.combat_snapshot, &fixture.relics);
+    let combat = build_combat_state_from_snapshots(
+        &fixture.truth_snapshot,
+        &fixture.observation_snapshot,
+        &fixture.relics,
+    );
     let engine = match fixture.engine_state {
         DecisionAuditEngineState::CombatPlayerTurn => EngineState::CombatPlayerTurn,
     };

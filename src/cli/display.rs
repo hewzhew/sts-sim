@@ -1,17 +1,17 @@
 use sts_simulator::content::cards;
 use sts_simulator::content::cards::CardTarget;
-use sts_simulator::content::monsters::EnemyId;
+use sts_simulator::content::monsters::{resolve_monster_turn_plan, EnemyId};
 use sts_simulator::content::potions::PotionId;
 use sts_simulator::content::powers::store::powers_for;
 use sts_simulator::content::relics::RelicId;
 use sts_simulator::map::node::RoomType;
-use sts_simulator::runtime::combat::{CombatCard, CombatState, Intent};
-use sts_simulator::state::core::EngineState;
+use sts_simulator::runtime::combat::{CombatCard, CombatState};
 use sts_simulator::state::run::RunState;
 use sts_simulator::state::selection::{
     DomainCardSnapshot, DomainEvent, EngineDiagnostic, EngineDiagnosticClass, SelectionScope,
     SelectionTargetRef,
 };
+use sts_simulator::state::{core::EngineState, RewardScreenContext};
 
 pub fn print_state(es: &EngineState, rs: &RunState, cs: &Option<CombatState>) {
     // Use combat HP if in combat, otherwise run-state HP
@@ -101,6 +101,15 @@ pub fn print_state(es: &EngineState, rs: &RunState, cs: &Option<CombatState>) {
         }
         EngineState::RewardScreen(reward) => {
             println!("  REWARDS:");
+            match reward.screen_context {
+                RewardScreenContext::MuggedCombat => {
+                    println!("    [note] A thief escaped with stolen gold.");
+                }
+                RewardScreenContext::SmokedCombat => {
+                    println!("    [note] You escaped with Smoke Bomb. No combat rewards.");
+                }
+                RewardScreenContext::Standard => {}
+            }
             for (i, item) in reward.items.iter().enumerate() {
                 println!("    [{}] {:?}", i, item);
             }
@@ -334,7 +343,10 @@ pub fn describe_monster_target(combat: &CombatState, target_id: usize) -> Option
                 .unwrap_or("Unknown Monster");
             format!(
                 "{} [slot {}, id {}, intent {:?}]",
-                monster_name, slot, monster.id, monster.current_intent
+                monster_name,
+                slot,
+                monster.id,
+                resolve_monster_turn_plan(combat, monster).summary_spec()
             )
         })
 }
@@ -535,28 +547,17 @@ pub fn print_combat(cs: &CombatState) {
         let intent_str = if hide_intents {
             "Hidden".to_string()
         } else {
-            match m.current_intent {
-                Intent::Attack { hits, .. } => {
-                    format!(
-                        "Attack {{ damage: {}, hits: {} }}",
-                        m.intent_preview_damage, hits
-                    )
-                }
-                Intent::AttackBuff { hits, .. } => {
-                    format!(
-                        "AttackBuff {{ damage: {}, hits: {} }}",
-                        m.intent_preview_damage, hits
-                    )
-                }
-                Intent::AttackDebuff { hits, .. } => format!(
-                    "AttackDebuff {{ damage: {}, hits: {} }}",
-                    m.intent_preview_damage, hits
+            let plan = resolve_monster_turn_plan(cs, m);
+            let preview = sts_simulator::projection::combat::project_monster_move_preview_from_plan(
+                cs, m, &plan,
+            );
+            let spec = plan.summary_spec();
+            match preview.damage_per_hit {
+                Some(damage) => format!(
+                    "{:?} {{ damage: {}, hits: {} }}",
+                    spec, damage, preview.hits
                 ),
-                Intent::AttackDefend { hits, .. } => format!(
-                    "AttackDefend {{ damage: {}, hits: {} }}",
-                    m.intent_preview_damage, hits
-                ),
-                _ => format!("{:?}", m.current_intent),
+                None => format!("{:?}", spec),
             }
         };
 

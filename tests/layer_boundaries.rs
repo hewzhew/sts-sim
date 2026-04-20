@@ -84,7 +84,12 @@ fn core_does_not_depend_on_integration_or_app_layers() {
 
 #[test]
 fn integration_does_not_depend_on_app_layer() {
-    let files = layer_files(&["src/diff", "src/testing"]);
+    let files = layer_files(&[
+        "src/diff",
+        "src/protocol",
+        "src/testing",
+        "src/verification",
+    ]);
 
     assert_forbidden_deps(&files, &["crate::bot", "crate::cli"], "integration");
 }

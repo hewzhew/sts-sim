@@ -1,189 +1,218 @@
+use crate::content::cards::CardId;
+use crate::content::monsters::exordium::{add_card_action, attack_actions, PLAYER};
 use crate::content::monsters::MonsterBehavior;
-use crate::runtime::action::{Action, DamageInfo, DamageType};
-use crate::runtime::combat::{Intent, MonsterEntity};
+use crate::content::powers::PowerId;
+use crate::runtime::action::Action;
+use crate::runtime::combat::{CombatState, MonsterEntity};
+use crate::semantics::combat::{
+    AddCardStep, ApplyPowerStep, AttackSpec, AttackStep, BuffSpec, DamageKind, EffectStrength,
+    MonsterMoveSpec, MonsterTurnPlan, MoveStep, MoveTarget, PowerEffectKind,
+};
+use smallvec::smallvec;
 
 pub struct SpireSpear;
 
+const BURN_STRIKE: u8 = 1;
+const PIERCER: u8 = 2;
+const SKEWER: u8 = 3;
+
+fn burn_strike_damage(ascension_level: u8) -> i32 {
+    if ascension_level >= 3 {
+        6
+    } else {
+        5
+    }
+}
+
+fn skewer_hits(ascension_level: u8) -> u8 {
+    if ascension_level >= 3 {
+        4
+    } else {
+        3
+    }
+}
+
+fn burn_destination(ascension_level: u8) -> crate::semantics::combat::CardDestination {
+    if ascension_level >= 18 {
+        crate::semantics::combat::CardDestination::DrawPileRandom
+    } else {
+        crate::semantics::combat::CardDestination::Discard
+    }
+}
+
+fn burn_strike_plan(ascension_level: u8) -> MonsterTurnPlan {
+    MonsterTurnPlan::with_visible_spec(
+        BURN_STRIKE,
+        smallvec![
+            MoveStep::Attack(AttackStep {
+                target: MoveTarget::Player,
+                attack: AttackSpec {
+                    base_damage: burn_strike_damage(ascension_level),
+                    hits: 2,
+                    damage_kind: DamageKind::Normal,
+                },
+            }),
+            MoveStep::AddCard(AddCardStep {
+                card_id: CardId::Burn,
+                amount: 2,
+                upgraded: false,
+                destination: burn_destination(ascension_level),
+                visible_strength: EffectStrength::Normal,
+            }),
+        ],
+        MonsterMoveSpec::AttackAddCard(
+            AttackSpec {
+                base_damage: burn_strike_damage(ascension_level),
+                hits: 2,
+                damage_kind: DamageKind::Normal,
+            },
+            AddCardStep {
+                card_id: CardId::Burn,
+                amount: 2,
+                upgraded: false,
+                destination: burn_destination(ascension_level),
+                visible_strength: EffectStrength::Normal,
+            },
+        ),
+    )
+}
+
+fn piercer_plan() -> MonsterTurnPlan {
+    MonsterTurnPlan::with_visible_spec(
+        PIERCER,
+        smallvec![MoveStep::ApplyPower(ApplyPowerStep {
+            target: MoveTarget::AllMonsters,
+            power_id: PowerId::Strength,
+            amount: 2,
+            effect: PowerEffectKind::Buff,
+            visible_strength: EffectStrength::Normal,
+        })],
+        MonsterMoveSpec::Buff(BuffSpec {
+            power_id: PowerId::Strength,
+            amount: 2,
+        }),
+    )
+}
+
+fn skewer_plan(ascension_level: u8) -> MonsterTurnPlan {
+    MonsterTurnPlan::from_spec(
+        SKEWER,
+        MonsterMoveSpec::Attack(AttackSpec {
+            base_damage: 10,
+            hits: skewer_hits(ascension_level),
+            damage_kind: DamageKind::Normal,
+        }),
+    )
+}
+
+fn plan_for(move_id: u8, ascension_level: u8) -> MonsterTurnPlan {
+    match move_id {
+        BURN_STRIKE => burn_strike_plan(ascension_level),
+        PIERCER => piercer_plan(),
+        SKEWER => skewer_plan(ascension_level),
+        _ => MonsterTurnPlan::unknown(move_id),
+    }
+}
+
 impl MonsterBehavior for SpireSpear {
-    fn roll_move(
+    fn use_pre_battle_actions(
+        state: &mut CombatState,
+        entity: &MonsterEntity,
+        legacy_rng: crate::content::monsters::PreBattleLegacyRng,
+    ) -> Vec<Action> {
+        let (_rng, ascension_level) =
+            crate::content::monsters::legacy_pre_battle_rng(state, legacy_rng);
+        vec![Action::ApplyPower {
+            source: entity.id,
+            target: entity.id,
+            power_id: PowerId::Artifact,
+            amount: if ascension_level >= 18 { 2 } else { 1 },
+        }]
+    }
+
+    fn roll_move_plan(
         rng: &mut crate::runtime::rng::StsRng,
         entity: &MonsterEntity,
         ascension_level: u8,
         _num: i32,
-    ) -> (u8, Intent) {
-        let history = &entity.move_history;
-        let _last_move = if history.len() > 0 {
-            history[history.len() - 1]
-        } else {
-            0
-        };
-        let count = entity.move_history.len();
-        let last_move = entity.move_history.back().copied().unwrap_or(0);
-
-        let burn_strike_dmg = if ascension_level >= 18 { 6 } else { 5 };
-        let _piercing_dmg = if ascension_level >= 18 { 10 } else { 5 };
-        let skewer_dmg = if ascension_level >= 18 { 10 } else { 10 };
-        let skewer_hits = if ascension_level >= 18 { 4 } else { 3 };
-
-        match count % 3 {
+    ) -> MonsterTurnPlan {
+        match entity.move_history().len() % 3 {
             0 => {
-                if last_move != 1 {
-                    (
-                        1,
-                        Intent::AttackDebuff {
-                            damage: burn_strike_dmg,
-                            hits: 2,
-                        },
-                    )
+                if entity.move_history().back().copied() == Some(BURN_STRIKE) {
+                    piercer_plan()
                 } else {
-                    (2, Intent::Buff)
+                    burn_strike_plan(ascension_level)
                 }
             }
-            1 => (
-                3,
-                Intent::Attack {
-                    damage: skewer_dmg,
-                    hits: skewer_hits,
-                },
-            ),
+            1 => skewer_plan(ascension_level),
             _ => {
                 if rng.random_boolean() {
-                    (2, Intent::Buff)
+                    piercer_plan()
                 } else {
-                    (
-                        1,
-                        Intent::AttackDebuff {
-                            damage: burn_strike_dmg,
-                            hits: 2,
-                        },
-                    )
+                    burn_strike_plan(ascension_level)
                 }
             }
         }
     }
 
-    fn use_pre_battle_action(
-        _entity: &MonsterEntity,
-        _hp_rng: &mut crate::runtime::rng::StsRng,
-        ascension_level: u8,
-    ) -> Vec<Action> {
-        let artifact_amt = if ascension_level >= 18 { 2 } else { 1 };
-        vec![Action::ApplyPower {
-            source: _entity.id,
-            target: _entity.id,
-            power_id: crate::content::powers::PowerId::Artifact,
-            amount: artifact_amt,
-        }]
+    fn turn_plan(state: &CombatState, entity: &MonsterEntity) -> MonsterTurnPlan {
+        plan_for(entity.planned_move_id(), state.meta.ascension_level)
     }
 
-    fn take_turn(
-        state: &mut crate::runtime::combat::CombatState,
+    fn take_turn_plan(
+        state: &mut CombatState,
         entity: &MonsterEntity,
+        plan: &MonsterTurnPlan,
     ) -> Vec<Action> {
-        let mut actions = Vec::new();
-        let asc = state.meta.ascension_level;
-        let move_byte = entity.next_move_byte;
-
-        let burn_strike_dmg = if asc >= 18 { 6 } else { 5 };
-        let skewer_dmg = if asc >= 18 { 10 } else { 10 };
-        let skewer_hits = if asc >= 18 { 4 } else { 3 };
-
-        match move_byte {
-            1 => {
-                // Burn Strike
-                for _ in 0..2 {
-                    actions.push(Action::Damage(DamageInfo {
-                        source: entity.id,
-                        target: 0,
-                        base: burn_strike_dmg,
-                        output: burn_strike_dmg,
-                        damage_type: DamageType::Normal,
-                        is_modified: false,
-                    }));
-                }
-                if asc >= 18 {
-                    actions.push(Action::MakeTempCardInDrawPile {
-                        card_id: crate::content::cards::CardId::Burn,
-                        amount: 2,
-                        random_spot: true,
-                        upgraded: false,
-                    });
-                } else {
-                    actions.push(Action::MakeTempCardInDiscard {
-                        card_id: crate::content::cards::CardId::Burn,
-                        amount: 2,
-                        upgraded: false,
-                    });
-                }
+        let mut actions = match (plan.move_id, plan.steps.as_slice()) {
+            (
+                BURN_STRIKE,
+                [MoveStep::Attack(AttackStep {
+                    target: MoveTarget::Player,
+                    attack,
+                }), MoveStep::AddCard(add_card)],
+            ) => {
+                let mut actions = attack_actions(entity.id, PLAYER, attack);
+                actions.push(add_card_action(add_card));
+                actions
             }
-            2 => {
-                // Buff (Strength +2 to all monsters)
-                for m in &state.entities.monsters {
-                    if m.current_hp > 0 && !m.is_dying {
-                        actions.push(Action::ApplyPower {
-                            source: entity.id,
-                            target: m.id,
-                            power_id: crate::content::powers::PowerId::Strength,
-                            amount: 2,
-                        });
-                    }
-                }
-            }
-            3 => {
-                // Skewer
-                for _ in 0..skewer_hits {
-                    actions.push(Action::Damage(DamageInfo {
-                        source: entity.id,
-                        target: 0,
-                        base: skewer_dmg,
-                        output: skewer_dmg,
-                        damage_type: DamageType::Normal,
-                        is_modified: false,
-                    }));
-                }
-            }
-            _ => {}
-        }
-
+            (
+                PIERCER,
+                [MoveStep::ApplyPower(ApplyPowerStep {
+                    target: MoveTarget::AllMonsters,
+                    power_id: PowerId::Strength,
+                    amount,
+                    effect: PowerEffectKind::Buff,
+                    ..
+                })],
+            ) => state
+                .entities
+                .monsters
+                .iter()
+                .map(|monster| Action::ApplyPower {
+                    source: entity.id,
+                    target: monster.id,
+                    power_id: PowerId::Strength,
+                    amount: *amount,
+                })
+                .collect(),
+            (
+                SKEWER,
+                [MoveStep::Attack(AttackStep {
+                    target: MoveTarget::Player,
+                    attack,
+                })],
+            ) => attack_actions(entity.id, PLAYER, attack),
+            (_, []) => panic!("spire spear plan missing locked truth"),
+            (move_id, steps) => panic!("spire spear plan/steps mismatch: {} {:?}", move_id, steps),
+        };
         actions.push(Action::RollMonsterMove {
             monster_id: entity.id,
         });
-
         actions
     }
 
-    fn on_death(
-        state: &mut crate::runtime::combat::CombatState,
-        _entity: &MonsterEntity,
-    ) -> Vec<Action> {
-        let mut actions = Vec::new();
-        // Java: if player has "Surrounded" power, remove it and adjust player facing
-        if crate::content::powers::store::has_power(
-            state,
-            0,
-            crate::content::powers::PowerId::Surrounded,
-        ) {
-            actions.push(Action::RemovePower {
-                target: 0,
-                power_id: crate::content::powers::PowerId::Surrounded,
-            });
-        }
-
-        // Java: Remove "BackAttack" power from surviving monsters
-        for m in &state.entities.monsters {
-            if m.current_hp > 0 && !m.is_dying {
-                if crate::content::powers::store::has_power(
-                    state,
-                    m.id,
-                    crate::content::powers::PowerId::BackAttack,
-                ) {
-                    actions.push(Action::RemovePower {
-                        target: m.id,
-                        power_id: crate::content::powers::PowerId::BackAttack,
-                    });
-                }
-            }
-        }
-        actions
+    fn on_death(state: &mut CombatState, _entity: &MonsterEntity) -> Vec<Action> {
+        super::surrounded_cleanup_actions(state)
     }
 }

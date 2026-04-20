@@ -4,9 +4,12 @@ use clap::{Parser, ValueEnum};
 
 use sts_simulator::bot::harness::PolicyKind;
 use sts_simulator::bot::harness::{
-    run_combat_lab, write_sanitized_fixture_for_local_lab, CombatLabConfig, LabVariantMode,
+    run_combat_case_lab, write_sanitized_case_for_local_lab, CombatCaseLabConfig, LabVariantMode,
 };
-use sts_simulator::fixtures::author_spec::{compile_combat_author_spec, CombatAuthorSpec};
+use sts_simulator::fixtures::author_spec::CombatAuthorSpec;
+use sts_simulator::fixtures::combat_case::{
+    case_from_scenario_fixture, compile_combat_author_case, CombatCase,
+};
 use sts_simulator::fixtures::scenario::ScenarioFixture;
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
@@ -46,6 +49,8 @@ impl From<CliVariantMode> for LabVariantMode {
 #[derive(Parser, Debug)]
 struct Args {
     #[arg(long)]
+    case: Option<PathBuf>,
+    #[arg(long)]
     fixture: Option<PathBuf>,
     #[arg(long)]
     author_spec: Option<PathBuf>,
@@ -65,14 +70,14 @@ struct Args {
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
-    let fixture = load_fixture(&args)?;
+    let case = load_case(&args)?;
 
     std::fs::create_dir_all(&args.out_dir)?;
-    let sanitized_path = args.out_dir.join("fixture_start.json");
-    let sanitized = write_sanitized_fixture_for_local_lab(&fixture, &sanitized_path)?;
+    let sanitized_path = args.out_dir.join("case_start.json");
+    let sanitized = write_sanitized_case_for_local_lab(&case, &sanitized_path)?;
 
-    let summary = run_combat_lab(&CombatLabConfig {
-        fixture: sanitized,
+    let summary = run_combat_case_lab(&CombatCaseLabConfig {
+        case: sanitized,
         episodes: args.episodes,
         policy: args.policy.into(),
         depth: args.depth,
@@ -98,18 +103,35 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn load_fixture(args: &Args) -> Result<ScenarioFixture, Box<dyn std::error::Error>> {
-    match (&args.fixture, &args.author_spec) {
-        (Some(_), Some(_)) => Err("use either --fixture or --author-spec, not both".into()),
-        (None, None) => Err("one of --fixture or --author-spec is required".into()),
-        (Some(path), None) => {
-            let fixture_payload = std::fs::read_to_string(path)?;
-            Ok(serde_json::from_str(&fixture_payload)?)
-        }
-        (None, Some(path)) => {
-            let spec_payload = std::fs::read_to_string(path)?;
-            let spec: CombatAuthorSpec = serde_json::from_str(&spec_payload)?;
-            Ok(compile_combat_author_spec(&spec)?)
-        }
+fn load_case(args: &Args) -> Result<CombatCase, Box<dyn std::error::Error>> {
+    let mut supplied = 0usize;
+    if args.case.is_some() {
+        supplied += 1;
     }
+    if args.fixture.is_some() {
+        supplied += 1;
+    }
+    if args.author_spec.is_some() {
+        supplied += 1;
+    }
+    if supplied != 1 {
+        return Err("use exactly one of --case, --fixture, or --author-spec".into());
+    }
+
+    if let Some(path) = &args.case {
+        let payload = std::fs::read_to_string(path)?;
+        return Ok(serde_json::from_str(&payload)?);
+    }
+    if let Some(path) = &args.fixture {
+        let fixture_payload = std::fs::read_to_string(path)?;
+        let fixture: ScenarioFixture = serde_json::from_str(&fixture_payload)?;
+        return Ok(case_from_scenario_fixture(&fixture)?);
+    }
+    if let Some(path) = &args.author_spec {
+        let spec_payload = std::fs::read_to_string(path)?;
+        let spec: CombatAuthorSpec = serde_json::from_str(&spec_payload)?;
+        return Ok(compile_combat_author_case(&spec)?);
+    }
+
+    Err("one of --case, --fixture, or --author-spec is required".into())
 }

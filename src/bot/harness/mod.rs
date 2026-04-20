@@ -11,6 +11,7 @@ pub use combat_env::{
     CombatRewardBreakdown,
 };
 pub use combat_lab::{
-    run_combat_lab, write_sanitized_fixture_for_local_lab, CombatLabConfig, LabVariantMode,
+    run_combat_case_lab, run_combat_lab, write_sanitized_case_for_local_lab,
+    write_sanitized_fixture_for_local_lab, CombatCaseLabConfig, CombatLabConfig, LabVariantMode,
 };
 pub use combat_policy::PolicyKind;

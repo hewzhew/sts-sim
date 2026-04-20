@@ -1,10 +1,13 @@
-use super::combat::build_live_combat_snapshot;
+use super::combat::{build_live_observation_snapshot, build_live_truth_snapshot};
 use super::unix_time_millis;
 use crate::cli::live_comm_noncombat::build_live_run_state;
-use crate::diff::protocol::card_id_from_java;
+use crate::diff::replay::{drain_to_stable, queue_deferred_post_potion_actions};
+use crate::engine::core::tick_engine;
+use crate::protocol::java::card_id_from_java;
 use crate::runtime::action::CardDestination;
 use crate::runtime::combat::CombatState;
 use crate::state::core::{ClientInput, EngineState, PendingChoice};
+use crate::verification::combat::build_combat_state_from_snapshots;
 use serde_json::{json, Map, Value};
 use std::io::Write;
 
@@ -235,6 +238,7 @@ pub(super) fn finalize_human_card_reward_audit(
     if let Some(choice) = human_choice.as_ref() {
         if apply_human_card_reward_to_prediction(
             &mut pending,
+            root,
             choice,
             last_combat_truth,
             last_input,
@@ -521,7 +525,9 @@ fn build_human_card_reward_replay_context(
     if gs.get("screen_type").and_then(|v| v.as_str()) != Some("CARD_REWARD") {
         return (None, None);
     }
-    if gs.get("combat_state").is_none_or(|v| v.is_null()) {
+    if gs.get("combat_truth").is_none_or(|v| v.is_null())
+        && gs.get("combat_observation").is_none_or(|v| v.is_null())
+    {
         return (None, None);
     }
     if offered_ids.is_empty() {
@@ -529,8 +535,10 @@ fn build_human_card_reward_replay_context(
     }
 
     let rv = gs.get("relics").unwrap_or(&Value::Null);
-    let combat_snapshot = build_live_combat_snapshot(gs);
-    let mut truth = crate::diff::state_sync::build_combat_state(&combat_snapshot, rv);
+    let combat_truth_snapshot = build_live_truth_snapshot(gs);
+    let combat_observation_snapshot = build_live_observation_snapshot(gs);
+    let mut truth =
+        build_combat_state_from_snapshots(&combat_truth_snapshot, &combat_observation_snapshot, rv);
 
     let last_command_kind = root
         .get("protocol_meta")
@@ -564,6 +572,7 @@ fn build_human_card_reward_replay_context(
 
 fn apply_human_card_reward_to_prediction(
     pending: &mut PendingHumanCardRewardAudit,
+    root: &Value,
     human_choice: &Value,
     last_combat_truth: &mut Option<CombatState>,
     last_input: &mut Option<ClientInput>,
@@ -575,6 +584,10 @@ fn apply_human_card_reward_to_prediction(
     let Some(mut engine_state) = pending.replay_engine_state.take() else {
         return false;
     };
+    let deferred_potion_followup = matches!(
+        engine_state,
+        EngineState::PendingChoice(PendingChoice::DiscoverySelect(_))
+    );
 
     let input = match human_choice.get("choice_kind").and_then(|v| v.as_str()) {
         Some("card") => {
@@ -587,8 +600,19 @@ fn apply_human_card_reward_to_prediction(
         _ => return false,
     };
 
-    let alive =
-        crate::engine::core::tick_until_stable_turn(&mut engine_state, &mut truth, input.clone());
+    let alive = tick_engine(&mut engine_state, &mut truth, Some(input.clone()));
+    if !alive {
+        return false;
+    }
+    if deferred_potion_followup {
+        if queue_deferred_post_potion_actions(&mut truth, root).is_err() {
+            return false;
+        }
+    }
+    if engine_state == EngineState::CombatPlayerTurn && truth.has_pending_actions() {
+        engine_state = EngineState::CombatProcessing;
+    }
+    let alive = drain_to_stable(&mut engine_state, &mut truth);
     if !alive {
         return false;
     }
@@ -755,6 +779,116 @@ pub(super) fn reward_choice_matches_pending_session(
     ) {
         (Some(expected), Some(actual)) => expected == actual,
         _ => true,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        apply_human_card_reward_to_prediction, build_human_card_reward_pending,
+        extract_human_card_reward_choice,
+    };
+    use crate::runtime::combat::CombatState;
+    use crate::state::core::ClientInput;
+    use serde_json::{json, Value};
+    use std::collections::BTreeMap;
+    use std::fs;
+    use std::path::Path;
+
+    fn load_run_records(run_id: &str) -> BTreeMap<i64, Value> {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("logs")
+            .join("runs")
+            .join(run_id)
+            .join("raw.jsonl");
+        let raw = fs::read_to_string(&path)
+            .unwrap_or_else(|err| panic!("failed to read {}: {err}", path.display()));
+        let mut rows = BTreeMap::new();
+        for line in raw.lines() {
+            if line.trim().is_empty() {
+                continue;
+            }
+            let root: Value = serde_json::from_str(line)
+                .unwrap_or_else(|err| panic!("failed to parse {}: {err}", path.display()));
+            let response_id = root
+                .get("protocol_meta")
+                .and_then(|meta| meta.get("response_id"))
+                .and_then(|value| value.as_i64())
+                .expect("raw record missing protocol_meta.response_id");
+            rows.insert(response_id, root);
+        }
+        rows
+    }
+
+    #[test]
+    fn human_reward_prediction_replays_deferred_toy_ornithopter_heal() {
+        let rows = load_run_records("20260420_001126");
+        let reward_root = rows.get(&159).expect("response 159 present");
+        let mut choice_root = rows.get(&160).expect("response 160 present").clone();
+        choice_root["protocol_meta"]["capabilities"]["continuation_state"] = json!(true);
+        choice_root["protocol_meta"]["continuation_state"] = json!({
+            "kind": "card_reward_continuation",
+            "state": "resolved",
+            "screen_type": "CARD_REWARD",
+            "choice_source": "colorless_potion",
+            "choice_destination": "hand",
+            "producer_kind": "potion",
+            "producer_id": "ColorlessPotion",
+            "deferred_hook_kinds": ["on_use_potion"]
+        });
+
+        let mut pending = build_human_card_reward_pending(reward_root, None)
+            .expect("pending reward audit for potion-triggered discovery");
+        let choice = extract_human_card_reward_choice(&choice_root)
+            .expect("recent human card reward choice");
+
+        let mut last_truth: Option<CombatState> = None;
+        let mut last_input: Option<ClientInput> = None;
+        let mut expected: Option<CombatState> = None;
+        assert!(apply_human_card_reward_to_prediction(
+            &mut pending,
+            &choice_root,
+            &choice,
+            &mut last_truth,
+            &mut last_input,
+            &mut expected,
+        ));
+
+        let expected = expected.expect("prediction chain updated");
+        assert_eq!(expected.entities.player.current_hp, 87);
+        assert!(
+            expected
+                .zones
+                .hand
+                .iter()
+                .any(|card| card.id == crate::content::cards::CardId::Magnetism),
+            "chosen discovery card should be in hand after deferred potion continuation"
+        );
+    }
+
+    #[test]
+    fn human_reward_prediction_requires_typed_continuation_truth() {
+        let rows = load_run_records("20260420_001126");
+        let reward_root = rows.get(&159).expect("response 159 present");
+        let choice_root = rows.get(&160).expect("response 160 present");
+
+        let mut pending = build_human_card_reward_pending(reward_root, None)
+            .expect("pending reward audit for potion-triggered discovery");
+        let choice =
+            extract_human_card_reward_choice(choice_root).expect("recent human card reward choice");
+
+        let mut last_truth: Option<CombatState> = None;
+        let mut last_input: Option<ClientInput> = None;
+        let mut expected: Option<CombatState> = None;
+        assert!(!apply_human_card_reward_to_prediction(
+            &mut pending,
+            choice_root,
+            &choice,
+            &mut last_truth,
+            &mut last_input,
+            &mut expected,
+        ));
+        assert!(expected.is_none());
     }
 }
 

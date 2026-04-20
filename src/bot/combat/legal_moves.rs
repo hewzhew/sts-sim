@@ -11,13 +11,35 @@ use super::hand_select::{
     score_put_on_draw_pile_candidate,
 };
 
-pub(crate) fn get_legal_moves(engine: &EngineState, combat: &CombatState) -> Vec<ClientInput> {
+pub(crate) fn engine_local_moves(engine: &EngineState, combat: &CombatState) -> Vec<ClientInput> {
     let mut moves = Vec::new();
 
     match engine {
         EngineState::CombatPlayerTurn => {
             moves.push(ClientInput::EndTurn);
-            moves.extend(crate::bot::potions::candidate_potion_moves(combat));
+            for (potion_index, maybe_potion) in combat.entities.potions.iter().enumerate() {
+                let Some(potion) = maybe_potion.as_ref() else {
+                    continue;
+                };
+                if !potion.can_use {
+                    continue;
+                }
+                if let Some(validation) =
+                    targeting::validation_for_potion_target(potion.requires_target)
+                {
+                    for target in targeting::candidate_targets(combat, validation) {
+                        moves.push(ClientInput::UsePotion {
+                            potion_index,
+                            target: Some(target),
+                        });
+                    }
+                } else {
+                    moves.push(ClientInput::UsePotion {
+                        potion_index,
+                        target: None,
+                    });
+                }
+            }
 
             for (i, card) in combat.zones.hand.iter().enumerate() {
                 if crate::content::cards::can_play_card(card, combat).is_ok() {
@@ -80,8 +102,15 @@ pub(crate) fn get_legal_moves(engine: &EngineState, combat: &CombatState) -> Vec
                 moves.push(ClientInput::SubmitDiscoverChoice(1));
                 moves.push(ClientInput::SubmitDiscoverChoice(2));
             }
-            PendingChoice::CardRewardSelect { .. } => {
-                moves.push(ClientInput::SubmitCardChoice(vec![0]));
+            PendingChoice::CardRewardSelect {
+                cards, can_skip, ..
+            } => {
+                for index in 0..cards.len() {
+                    moves.push(ClientInput::SubmitDiscoverChoice(index));
+                }
+                if *can_skip {
+                    moves.push(ClientInput::Cancel);
+                }
             }
             PendingChoice::StanceChoice => {
                 let hp_percent = (combat.entities.player.current_hp * 100)
@@ -91,14 +120,10 @@ pub(crate) fn get_legal_moves(engine: &EngineState, combat: &CombatState) -> Vec
                     .monsters
                     .iter()
                     .filter(|m| !m.is_dying && !m.is_escaped && !m.half_dead)
-                    .map(|m| match m.current_intent {
-                        crate::runtime::combat::Intent::Attack { .. }
-                        | crate::runtime::combat::Intent::AttackBuff { .. }
-                        | crate::runtime::combat::Intent::AttackDebuff { .. }
-                        | crate::runtime::combat::Intent::AttackDefend { .. } => {
-                            m.intent_preview_total_damage()
-                        }
-                        _ => 0,
+                    .map(|monster| {
+                        crate::projection::combat::monster_preview_total_damage_in_combat(
+                            combat, monster,
+                        )
                     })
                     .sum();
                 let unblocked = (expected_inc_damage - combat.entities.player.block).max(0);
@@ -132,6 +157,16 @@ pub(crate) fn get_legal_moves(engine: &EngineState, combat: &CombatState) -> Vec
     }
 
     moves
+}
+
+pub(crate) fn get_legal_moves(engine: &EngineState, combat: &CombatState) -> Vec<ClientInput> {
+    engine_local_moves(engine, combat)
+}
+
+pub(crate) fn protocol_root_moves(
+    snapshot: &crate::protocol::java::CombatAffordanceSnapshot,
+) -> Vec<ClientInput> {
+    snapshot.protocol_root_inputs()
 }
 
 pub fn legal_moves_for_audit(engine: &EngineState, combat: &CombatState) -> Vec<ClientInput> {
@@ -433,4 +468,128 @@ fn contains_grid_select(moves: &[ClientInput], selection: &[u32]) -> bool {
             ClientInput::SubmitGridSelect(existing) if existing == selection
         )
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::diff::state_sync::build_combat_state_from_snapshots;
+    use crate::protocol::java::{
+        build_combat_affordance_snapshot, build_live_observation_snapshot,
+        build_live_truth_snapshot,
+    };
+    use serde_json::{json, Value};
+    use std::path::PathBuf;
+
+    fn load_fixture_root() -> Value {
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("tests")
+            .join("protocol_truth_samples")
+            .join("sentry_livecomm")
+            .join("frame.json");
+        let text = std::fs::read_to_string(path).expect("fixture");
+        serde_json::from_str(&text).expect("fixture json")
+    }
+
+    fn build_fixture_combat() -> CombatState {
+        let root = load_fixture_root();
+        let game_state = root.get("game_state").expect("game_state");
+        let truth = build_live_truth_snapshot(game_state);
+        let observation = build_live_observation_snapshot(game_state);
+        let relics = game_state.get("relics").unwrap_or(&Value::Null);
+        build_combat_state_from_snapshots(&truth, &observation, relics)
+    }
+
+    #[test]
+    fn engine_local_moves_skip_unusable_potions() {
+        let root = load_fixture_root();
+        let game_state = root.get("game_state").expect("game_state");
+        let mut truth = build_live_truth_snapshot(game_state);
+        truth["potions"] = json!([
+            {
+                "id": "FairyPotion",
+                "name": "Fairy in a Bottle",
+                "uuid": "fairy-1",
+                "can_use": false,
+                "can_discard": true,
+                "requires_target": false
+            },
+            {
+                "id": "Potion Slot",
+                "name": "Potion Slot",
+                "can_use": false,
+                "can_discard": false,
+                "requires_target": false
+            },
+            {
+                "id": "Potion Slot",
+                "name": "Potion Slot",
+                "can_use": false,
+                "can_discard": false,
+                "requires_target": false
+            }
+        ]);
+        let observation = build_live_observation_snapshot(game_state);
+        let relics = game_state.get("relics").unwrap_or(&Value::Null);
+        let combat = build_combat_state_from_snapshots(&truth, &observation, relics);
+        let inputs = engine_local_moves(&EngineState::CombatPlayerTurn, &combat);
+        assert!(
+            !inputs
+                .iter()
+                .any(|input| matches!(input, ClientInput::UsePotion { .. })),
+            "engine-local enumeration should not emit can_use=false potion actions"
+        );
+    }
+
+    #[test]
+    fn protocol_root_moves_only_echo_protocol_affordance() {
+        let combat = build_fixture_combat();
+        let action_space = json!({
+            "combat_action_space": {
+                "screen_type": "NONE",
+                "actions": [
+                    {
+                        "action_id": "end_turn",
+                        "kind": "end_turn",
+                        "command": "END",
+                        "target_required": false,
+                        "target_options": []
+                    },
+                    {
+                        "action_id": "play-0",
+                        "kind": "play_card",
+                        "command": "PLAY 0 0",
+                        "target_required": true,
+                        "target_options": [0],
+                        "target_index": 0,
+                        "hand_index": 0,
+                        "card_uuid": "card-uuid-1",
+                        "card_id": "Strike_R"
+                    }
+                ]
+            }
+        });
+        let snapshot = build_combat_affordance_snapshot(&action_space, &combat)
+            .expect("affordance parse")
+            .expect("action space");
+        let inputs = protocol_root_moves(&snapshot);
+        assert_eq!(inputs.len(), 2);
+        assert!(inputs.contains(&ClientInput::EndTurn));
+        assert!(
+            inputs.iter().any(|input| matches!(
+                input,
+                ClientInput::PlayCard {
+                    card_index: 0,
+                    target: Some(_)
+                }
+            )),
+            "protocol-root chooser should consume protocol-exported play actions"
+        );
+        assert!(
+            !inputs
+                .iter()
+                .any(|input| matches!(input, ClientInput::UsePotion { .. })),
+            "protocol-root chooser must not synthesize extra potion actions"
+        );
+    }
 }

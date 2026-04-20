@@ -7,7 +7,7 @@ use crate::bot::card_disposition::{build_context, classify_hand_card_with_contex
 use crate::bot::combat;
 use crate::bot::combat::posture::posture_features;
 use crate::content::cards::{get_card_definition, CardType};
-use crate::runtime::combat::{CombatState, Intent};
+use crate::runtime::combat::CombatState;
 use crate::state::core::{ClientInput, EngineState};
 use crate::state::run::RunState;
 
@@ -509,12 +509,8 @@ pub fn incoming_damage(combat: &CombatState) -> i32 {
         .monsters
         .iter()
         .filter(|monster| !monster.is_dying && !monster.is_escaped && monster.current_hp > 0)
-        .map(|monster| match monster.current_intent {
-            Intent::Attack { .. }
-            | Intent::AttackBuff { .. }
-            | Intent::AttackDebuff { .. }
-            | Intent::AttackDefend { .. } => monster.intent_preview_total_damage(),
-            _ => 0,
+        .map(|monster| {
+            crate::projection::combat::monster_preview_total_damage_in_combat(combat, monster)
         })
         .sum()
 }

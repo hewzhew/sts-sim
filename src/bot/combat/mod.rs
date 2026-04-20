@@ -1,7 +1,10 @@
 mod audit;
 mod card_knowledge;
 mod diag;
+mod dominance;
 mod equivalence;
+pub mod exact_turn_solver;
+mod frontier_eval;
 mod hand_select;
 pub(crate) mod legal_moves;
 pub(crate) mod monster_belief;
@@ -12,7 +15,9 @@ pub(crate) mod pressure;
 mod profile;
 mod root_prior;
 mod search;
+mod stepping;
 mod terminal;
+mod turn_state_key;
 mod types;
 mod value;
 
@@ -22,7 +27,8 @@ use crate::state::EngineState;
 use serde_json::json;
 use std::time::Instant;
 
-use self::equivalence::default_equivalence_mode;
+use self::equivalence::{default_equivalence_mode, reduce_equivalent_inputs};
+use self::exact_turn_solver::{solve_exact_turn_with_config, ExactTurnConfig};
 use self::legal_moves::get_legal_moves;
 use search::ExploredCandidate;
 use value::{diagnostic_score, incoming_damage, total_enemy_hp};
@@ -41,6 +47,42 @@ pub use profile::{
     SearchNodeCounters, SearchPhaseProfile, SearchProfileBreakdown, SearchProfilingLevel,
 };
 pub use root_prior::{LookupRootPriorProvider, RootPriorConfig, RootPriorQueryKey};
+
+struct ExactTurnShadowDecision {
+    audit: serde_json::Value,
+    takeover_move: Option<ClientInput>,
+    timed_out: bool,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SearchExactTurnMode {
+    Off,
+    Auto,
+    Force,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct SearchRuntimeBudget {
+    pub wall_clock_deadline: Option<Instant>,
+    pub root_node_budget: usize,
+    pub engine_step_budget: usize,
+    pub exact_turn_node_budget: usize,
+    pub audit_budget: usize,
+    pub exact_turn_mode: SearchExactTurnMode,
+}
+
+impl Default for SearchRuntimeBudget {
+    fn default() -> Self {
+        Self {
+            wall_clock_deadline: None,
+            root_node_budget: 64,
+            engine_step_budget: 160,
+            exact_turn_node_budget: 8_000,
+            audit_budget: 16,
+            exact_turn_mode: SearchExactTurnMode::Auto,
+        }
+    }
+}
 
 pub fn find_best_move(
     engine: &EngineState,
@@ -95,20 +137,91 @@ pub fn diagnose_root_search(
     combat: &CombatState,
     num_simulations: u32,
 ) -> CombatDiagnostics {
+    diagnose_root_search_with_runtime(
+        engine,
+        combat,
+        num_simulations,
+        SearchRuntimeBudget::default(),
+    )
+}
+
+pub fn diagnose_root_search_with_runtime(
+    engine: &EngineState,
+    combat: &CombatState,
+    num_simulations: u32,
+    runtime: SearchRuntimeBudget,
+) -> CombatDiagnostics {
+    diagnose_root_search_with_runtime_and_root_inputs(
+        engine,
+        combat,
+        num_simulations,
+        runtime,
+        None,
+    )
+}
+
+pub fn diagnose_root_search_with_runtime_and_root_inputs(
+    engine: &EngineState,
+    combat: &CombatState,
+    num_simulations: u32,
+    runtime: SearchRuntimeBudget,
+    root_inputs: Option<Vec<ClientInput>>,
+) -> CombatDiagnostics {
     let depth_limit = search_depth_for_budget(num_simulations);
-    diagnose_root_search_with_depth(engine, combat, depth_limit, num_simulations)
+    diagnose_root_search_with_depth_and_runtime_and_root_inputs(
+        engine,
+        combat,
+        depth_limit,
+        num_simulations,
+        runtime,
+        root_inputs,
+    )
 }
 
 pub fn diagnose_root_search_with_depth(
     engine: &EngineState,
     combat: &CombatState,
     depth_limit: u32,
+    num_simulations: u32,
+) -> CombatDiagnostics {
+    diagnose_root_search_with_depth_and_runtime(
+        engine,
+        combat,
+        depth_limit,
+        num_simulations,
+        SearchRuntimeBudget::default(),
+    )
+}
+
+pub fn diagnose_root_search_with_depth_and_runtime(
+    engine: &EngineState,
+    combat: &CombatState,
+    depth_limit: u32,
     _num_simulations: u32,
+    runtime: SearchRuntimeBudget,
+) -> CombatDiagnostics {
+    diagnose_root_search_with_depth_and_runtime_and_root_inputs(
+        engine,
+        combat,
+        depth_limit,
+        _num_simulations,
+        runtime,
+        None,
+    )
+}
+
+pub fn diagnose_root_search_with_depth_and_runtime_and_root_inputs(
+    engine: &EngineState,
+    combat: &CombatState,
+    depth_limit: u32,
+    _num_simulations: u32,
+    runtime: SearchRuntimeBudget,
+    root_inputs: Option<Vec<ClientInput>>,
 ) -> CombatDiagnostics {
     let started = Instant::now();
-    let legal_moves = get_legal_moves(engine, combat);
-    let (max_decision_depth, root_width, branch_width, max_engine_steps) =
-        search_limits(depth_limit);
+    let legal_moves = root_inputs.unwrap_or_else(|| get_legal_moves(engine, combat));
+    let (max_decision_depth, root_width, branch_width, max_engine_steps, root_node_budget) =
+        search_limits(depth_limit, runtime);
     let equivalence_mode = default_equivalence_mode();
 
     if legal_moves.is_empty() {
@@ -118,6 +231,7 @@ pub fn diagnose_root_search_with_depth(
             reduced_legal_moves: 0,
             simulations: 0,
             elapsed_ms: started.elapsed().as_millis(),
+            timed_out: false,
             depth_limit,
             max_decision_depth,
             root_width,
@@ -130,51 +244,93 @@ pub fn diagnose_root_search_with_depth(
             root_prior_hits: 0,
             root_prior_reordered: false,
             top_moves: Vec::new(),
-            decision_audit: json!({}),
+            decision_audit: json!({
+                "exact_turn_shadow": serde_json::Value::Null,
+            }),
             profile: SearchProfileBreakdown::default(),
         };
     }
 
-    let explored = search::explore_root(
+    let mut profile = SearchProfileBreakdown::default();
+    let chooser_started = Instant::now();
+    let explored = search::explore_root_with_inputs(
         engine,
         combat,
+        legal_moves.clone(),
         max_decision_depth,
         root_width,
         branch_width,
         max_engine_steps,
+        root_node_budget,
+        runtime.wall_clock_deadline,
+        equivalence_mode,
+        &mut profile,
     );
+    profile.chooser_ms = chooser_started.elapsed().as_millis();
 
     let top_moves = explored
+        .explored
         .iter()
         .enumerate()
         .map(|(idx, candidate)| build_move_stat(candidate, idx))
         .collect::<Vec<_>>();
 
-    let chosen_move = explored
+    let frontier_chosen_move = explored
+        .explored
         .first()
         .map(|candidate| candidate.candidate.input.clone())
         .unwrap_or(ClientInput::EndTurn);
+    let exact_turn_shadow = if matches!(runtime.exact_turn_mode, SearchExactTurnMode::Off) {
+        ExactTurnShadowDecision {
+            audit: json!({
+                "frontier_chosen_move": format!("{:?}", frontier_chosen_move),
+                "disabled": true,
+                "reason": "exact_turn_off",
+            }),
+            takeover_move: None,
+            timed_out: false,
+        }
+    } else {
+        build_exact_turn_shadow(
+            engine,
+            combat,
+            max_engine_steps,
+            &legal_moves,
+            &frontier_chosen_move,
+            legal_moves.len(),
+            runtime.exact_turn_node_budget,
+            runtime.wall_clock_deadline,
+            runtime.exact_turn_mode,
+            &mut profile,
+        )
+    };
+    let chosen_move = exact_turn_shadow
+        .takeover_move
+        .clone()
+        .unwrap_or_else(|| frontier_chosen_move.clone());
     let simulations = explored
+        .explored
         .iter()
         .map(|candidate| candidate.explored_nodes)
         .sum::<u32>()
         .max(legal_moves.len() as u32);
 
-    let mut profile = SearchProfileBreakdown::default();
     profile.search_total_ms = started.elapsed().as_millis();
     profile.root.legal_move_gen_calls = 1;
     profile.root.transition_reduce_inputs = legal_moves.len() as u32;
-    profile.root.transition_reduce_outputs = explored.len() as u32;
+    profile.root.transition_reduce_outputs = explored.explored.len() as u32;
     profile.root.avg_branch_before_reduce = legal_moves.len() as f32;
-    profile.root.avg_branch_after_reduce = explored.len().max(1) as f32;
+    profile.root.avg_branch_after_reduce = explored.explored.len().max(1) as f32;
     profile.nodes.nodes_expanded = simulations;
+    profile.finalize_samples();
 
     CombatDiagnostics {
         chosen_move,
         legal_moves: legal_moves.len(),
-        reduced_legal_moves: explored.len(),
+        reduced_legal_moves: explored.explored.len(),
         simulations,
         elapsed_ms: started.elapsed().as_millis(),
+        timed_out: explored.timed_out || exact_turn_shadow.timed_out,
         depth_limit,
         max_decision_depth,
         root_width,
@@ -189,7 +345,8 @@ pub fn diagnose_root_search_with_depth(
         top_moves,
         decision_audit: json!({
             "planner": "combat_baseline",
-            "kind": "frontier_driven_best_line"
+            "kind": "frontier_driven_best_line",
+            "exact_turn_shadow": exact_turn_shadow.audit,
         }),
         profile,
     }
@@ -202,7 +359,13 @@ pub fn diagnose_root_search_with_depth_and_mode(
     num_simulations: u32,
     _equivalence_mode: SearchEquivalenceMode,
 ) -> CombatDiagnostics {
-    diagnose_root_search_with_depth(engine, combat, depth_limit, num_simulations)
+    diagnose_root_search_with_depth_and_runtime(
+        engine,
+        combat,
+        depth_limit,
+        num_simulations,
+        SearchRuntimeBudget::default(),
+    )
 }
 
 pub fn diagnose_root_search_with_depth_and_mode_and_root_prior(
@@ -214,7 +377,13 @@ pub fn diagnose_root_search_with_depth_and_mode_and_root_prior(
     _profiling_level: SearchProfilingLevel,
     _root_prior: Option<&RootPriorConfig>,
 ) -> CombatDiagnostics {
-    diagnose_root_search_with_depth(engine, combat, depth_limit, num_simulations)
+    diagnose_root_search_with_depth_and_runtime(
+        engine,
+        combat,
+        depth_limit,
+        num_simulations,
+        SearchRuntimeBudget::default(),
+    )
 }
 
 fn build_move_stat(explored: &ExploredCandidate, idx: usize) -> CombatMoveStat {
@@ -255,18 +424,246 @@ fn build_move_stat(explored: &ExploredCandidate, idx: usize) -> CombatMoveStat {
         immediate_incoming,
         immediate_enemy_total: total_enemy_hp(&candidate.next_combat),
         cluster_id: format!("frontier-{idx}-len{}", candidate.local_plan.len()),
-        cluster_size: 1,
-        collapsed_inputs: candidate.local_plan.iter().skip(1).cloned().collect(),
-        equivalence_kind: None,
+        cluster_size: candidate.cluster_size,
+        collapsed_inputs: candidate.collapsed_inputs.clone(),
+        equivalence_kind: if candidate.cluster_size > 1 {
+            Some(SearchEquivalenceKind::Exact)
+        } else {
+            None
+        },
     }
 }
 
-fn search_limits(depth_limit: u32) -> (usize, usize, usize, usize) {
+fn build_exact_turn_shadow(
+    engine: &EngineState,
+    combat: &CombatState,
+    max_engine_steps: usize,
+    root_inputs: &[ClientInput],
+    chosen_move: &ClientInput,
+    legal_move_count: usize,
+    max_nodes: usize,
+    deadline: Option<Instant>,
+    exact_turn_mode: SearchExactTurnMode,
+    profile: &mut SearchProfileBreakdown,
+) -> ExactTurnShadowDecision {
+    if !matches!(
+        engine,
+        EngineState::CombatPlayerTurn | EngineState::PendingChoice(_)
+    ) {
+        return ExactTurnShadowDecision {
+            audit: serde_json::Value::Null,
+            takeover_move: None,
+            timed_out: false,
+        };
+    }
+
+    if !matches!(exact_turn_mode, SearchExactTurnMode::Force) {
+        if let Some(skip_reason) = exact_turn_shadow_skip_reason(combat, legal_move_count) {
+            return ExactTurnShadowDecision {
+                takeover_move: None,
+                audit: json!({
+                    "frontier_chosen_move": format!("{:?}", chosen_move),
+                    "skipped": true,
+                    "skip_reason": skip_reason,
+                    "legal_moves": legal_move_count,
+                    "living_monsters": living_monster_count(combat),
+                    "filled_potions": combat.entities.potions.iter().flatten().count(),
+                }),
+                timed_out: false,
+            };
+        }
+    }
+
+    let exact_turn_started = Instant::now();
+    let solution = solve_exact_turn_with_config(
+        engine,
+        combat,
+        ExactTurnConfig {
+            max_nodes,
+            max_engine_steps,
+            deadline,
+            root_inputs: Some(root_inputs.to_vec()),
+        },
+    );
+    profile.record_exact_turn_call(exact_turn_started.elapsed().as_millis());
+    if solution.truncated {
+        profile.note_timeout_source("exact_turn");
+    }
+    for _ in 0..solution.cache_hits {
+        profile.record_cache_hit();
+    }
+    for _ in 0..solution.cache_misses {
+        profile.record_cache_miss();
+    }
+    let best_state = solution.nondominated_end_states.first();
+    let (takeover_move, takeover_reason, takeover_eligible) =
+        exact_turn_takeover_decision(engine, chosen_move, &solution);
+    let takeover_applied = takeover_move.is_some();
+    let takeover_move_audit = takeover_move.as_ref().map(|input| format!("{:?}", input));
+
+    ExactTurnShadowDecision {
+        takeover_move,
+        timed_out: solution.truncated,
+        audit: json!({
+            "frontier_chosen_move": format!("{:?}", chosen_move),
+            "best_first_input": solution.best_first_input.as_ref().map(|input| format!("{:?}", input)),
+            "best_line": solution
+                .best_line
+                .iter()
+                .map(|input| format!("{:?}", input))
+                .collect::<Vec<_>>(),
+            "best_line_len": solution.best_line.len(),
+            "elapsed_ms": solution.elapsed_ms,
+            "nondominated_end_states": solution.nondominated_end_states.len(),
+            "explored_nodes": solution.explored_nodes,
+            "dominance_prunes": solution.dominance_prunes,
+            "cycle_cuts": solution.cycle_cuts,
+            "cache_hits": solution.cache_hits,
+            "cache_misses": solution.cache_misses,
+            "truncated": solution.truncated,
+            "agrees_with_frontier": solution.best_first_input.as_ref() == Some(chosen_move),
+            "takeover_eligible": takeover_eligible,
+            "takeover_applied": takeover_applied,
+            "takeover_reason": takeover_reason,
+            "takeover_move": takeover_move_audit,
+            "best_resources": best_state.map(|state| {
+                json!({
+                    "spent_potions": state.resources.spent_potions,
+                    "hp_lost": state.resources.hp_lost,
+                    "exhausted_cards": state.resources.exhausted_cards,
+                    "final_hp": state.resources.final_hp,
+                    "final_block": state.resources.final_block,
+                })
+            }),
+        }),
+    }
+}
+
+fn exact_turn_shadow_skip_reason(
+    combat: &CombatState,
+    legal_move_count: usize,
+) -> Option<&'static str> {
+    let living_monsters = living_monster_count(combat);
+    let filled_potions = combat.entities.potions.iter().flatten().count();
+    let hand_len = combat.zones.hand.len();
+    let has_confusion = combat.entities.power_db.get(&0).is_some_and(|powers| {
+        powers
+            .iter()
+            .any(|power| power.power_type == crate::content::powers::PowerId::Confusion)
+    });
+    let duplicate_card_groups = duplicate_hand_card_groups(combat);
+
+    if has_confusion && hand_len >= 6 {
+        Some("confusion_high_entropy")
+    } else if duplicate_card_groups >= 3 && hand_len >= 6 {
+        Some("duplicate_card_permutations")
+    } else if legal_move_count >= 12 {
+        Some("high_root_branching")
+    } else if living_monsters >= 3 && legal_move_count >= 10 {
+        Some("multi_monster_branching")
+    } else if filled_potions >= 2 && legal_move_count >= 8 {
+        Some("potion_branching")
+    } else {
+        None
+    }
+}
+
+fn duplicate_hand_card_groups(combat: &CombatState) -> usize {
+    reduce_equivalent_inputs(
+        combat,
+        combat
+            .zones
+            .hand
+            .iter()
+            .enumerate()
+            .map(|(card_index, card)| ClientInput::PlayCard {
+                card_index,
+                target: if crate::engine::targeting::validation_for_card_target(
+                    crate::content::cards::effective_target(card),
+                )
+                .is_some()
+                {
+                    Some(0)
+                } else {
+                    None
+                },
+            })
+            .collect(),
+        SearchEquivalenceMode::Safe,
+    )
+    .into_iter()
+    .filter(|cluster| !cluster.collapsed_inputs.is_empty())
+    .count()
+}
+
+fn living_monster_count(combat: &CombatState) -> usize {
+    combat
+        .entities
+        .monsters
+        .iter()
+        .filter(|monster| {
+            !monster.is_dying && !monster.half_dead && !monster.is_escaped && monster.current_hp > 0
+        })
+        .count()
+}
+
+fn exact_turn_takeover_decision(
+    engine: &EngineState,
+    chosen_move: &ClientInput,
+    solution: &exact_turn_solver::ExactTurnSolution,
+) -> (Option<ClientInput>, &'static str, bool) {
+    let takeover_eligible =
+        solution.best_first_input.is_some() && !solution.truncated && solution.cycle_cuts == 0;
+    let exact_best = solution.best_first_input.as_ref();
+    let exact_disagrees = exact_best.is_some_and(|input| input != chosen_move);
+    let exact_best_is_non_endturn =
+        exact_best.is_some_and(|input| !matches!(input, ClientInput::EndTurn));
+    let frontier_is_endturn = matches!(chosen_move, ClientInput::EndTurn);
+    let allow_pending_choice_takeover = matches!(engine, EngineState::PendingChoice(_));
+    let takeover_move = if takeover_eligible
+        && exact_disagrees
+        && ((frontier_is_endturn && exact_best_is_non_endturn) || allow_pending_choice_takeover)
+    {
+        solution.best_first_input.clone()
+    } else {
+        None
+    };
+    let reason = if solution.best_first_input.is_none() {
+        "no_best_first_input"
+    } else if solution.truncated {
+        "truncated"
+    } else if solution.cycle_cuts > 0 {
+        "cycle_cuts"
+    } else if !exact_disagrees {
+        "frontier_agrees"
+    } else if frontier_is_endturn && exact_best_is_non_endturn {
+        "override_frontier_end_turn"
+    } else if allow_pending_choice_takeover {
+        "override_pending_choice"
+    } else {
+        "frontier_not_takeover_class"
+    };
+
+    (takeover_move, reason, takeover_eligible)
+}
+
+fn search_limits(
+    depth_limit: u32,
+    runtime: SearchRuntimeBudget,
+) -> (usize, usize, usize, usize, usize) {
     let depth = depth_limit.max(2) as usize;
-    let root_width = if depth >= 8 { 10 } else { 8 };
-    let branch_width = if depth >= 8 { 5 } else { 4 };
-    let max_engine_steps = (depth * 40).max(80);
-    (depth, root_width, branch_width, max_engine_steps)
+    let legacy_root_width = if depth >= 8 { 10 } else { 8 };
+    let legacy_branch_width = if depth >= 8 { 5 } else { 4 };
+    let root_width = legacy_root_width.min(runtime.root_node_budget.max(1));
+    let branch_width = legacy_branch_width.min(runtime.root_node_budget.max(1));
+    let max_engine_steps = runtime.engine_step_budget.max((depth * 20).max(80));
+    (
+        depth,
+        root_width,
+        branch_width,
+        max_engine_steps,
+        runtime.root_node_budget.max(root_width.max(branch_width)),
+    )
 }
 
 fn search_depth_for_budget(num_simulations: u32) -> u32 {
@@ -275,5 +672,90 @@ fn search_depth_for_budget(num_simulations: u32) -> u32 {
         301..=900 => 5,
         901..=2000 => 6,
         _ => 7,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{exact_turn_shadow_skip_reason, exact_turn_takeover_decision};
+    use crate::bot::combat::exact_turn_solver::ExactTurnSolution;
+    use crate::content::cards::CardId;
+    use crate::content::powers::PowerId;
+    use crate::runtime::combat::{CombatCard, Power};
+    use crate::state::core::{ClientInput, PendingChoice};
+    use crate::state::EngineState;
+    use crate::test_support::blank_test_combat;
+
+    fn solution(best_first_input: Option<ClientInput>) -> ExactTurnSolution {
+        ExactTurnSolution {
+            best_first_input,
+            best_line: Vec::new(),
+            nondominated_end_states: Vec::new(),
+            elapsed_ms: 0,
+            explored_nodes: 1,
+            dominance_prunes: 0,
+            cycle_cuts: 0,
+            cache_hits: 0,
+            cache_misses: 0,
+            truncated: false,
+        }
+    }
+
+    #[test]
+    fn exact_turn_takeover_stays_conservative_for_non_endturn_player_turn_disagreements() {
+        let (takeover, reason, eligible) = exact_turn_takeover_decision(
+            &EngineState::CombatPlayerTurn,
+            &ClientInput::PlayCard {
+                card_index: 0,
+                target: None,
+            },
+            &solution(Some(ClientInput::PlayCard {
+                card_index: 1,
+                target: None,
+            })),
+        );
+
+        assert!(eligible);
+        assert_eq!(takeover, None);
+        assert_eq!(reason, "frontier_not_takeover_class");
+    }
+
+    #[test]
+    fn exact_turn_takeover_can_override_pending_choice_disagreements() {
+        let (takeover, reason, eligible) = exact_turn_takeover_decision(
+            &EngineState::PendingChoice(PendingChoice::StanceChoice),
+            &ClientInput::SubmitDiscoverChoice(0),
+            &solution(Some(ClientInput::SubmitDiscoverChoice(1))),
+        );
+
+        assert!(eligible);
+        assert_eq!(takeover, Some(ClientInput::SubmitDiscoverChoice(1)));
+        assert_eq!(reason, "override_pending_choice");
+    }
+
+    #[test]
+    fn exact_turn_skip_reason_avoids_confusion_high_entropy_hands() {
+        let mut combat = blank_test_combat();
+        combat.entities.power_db.insert(
+            0,
+            vec![Power {
+                power_type: PowerId::Confusion,
+                instance_id: None,
+                amount: 0,
+                extra_data: 0,
+                just_applied: false,
+            }],
+        );
+        for uuid in 0..6 {
+            combat
+                .zones
+                .hand
+                .push(CombatCard::new(CardId::Defend, uuid + 1));
+        }
+
+        assert_eq!(
+            exact_turn_shadow_skip_reason(&combat, 9),
+            Some("confusion_high_entropy")
+        );
     }
 }

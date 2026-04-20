@@ -378,6 +378,7 @@ pub fn tick_engine(
                     // Java SmokeBomb does not instantly jump to rewards. It flips the
                     // room/player into an escaping state, then the combat UI lingers
                     // through end-of-turn processing before rewards appear.
+                    combat_state.runtime.combat_smoked = true;
                     combat_state.turn.mark_player_escaping();
                     combat_state.turn.clear_escape_pending_reward();
                     return true;
@@ -443,7 +444,9 @@ pub fn tick_engine(
                         }
                         if combat_state.turn.counters.escape_pending_reward {
                             *engine_state = EngineState::RewardScreen(
-                                crate::rewards::state::RewardState::new(),
+                                crate::rewards::state::RewardState::with_context(
+                                    crate::rewards::state::RewardScreenContext::SmokedCombat,
+                                ),
                             );
                             return false;
                         }
@@ -1089,54 +1092,8 @@ pub fn queue_actions(
     }
 }
 
-/// Java: AbstractMonster.applyPowers()
-/// Interrogates each living monster, extracts base Damage from its `current_intent`,
-/// runs it through `calculate_monster_damage()`, and stores the mutated result in
-/// `intent_preview_damage`.
-/// This is purely for updating the UI visually before user interaction.
-pub fn update_monster_intents(combat_state: &mut CombatState) {
-    let alive_monsters: Vec<_> = combat_state
-        .entities
-        .monsters
-        .iter()
-        .filter(|m| !m.is_dying && !m.is_escaped)
-        .map(|m| m.id)
-        .collect();
-
-    for mid in alive_monsters {
-        let mut new_intent_preview_damage = 0;
-
-        // Temporarily extract current intent (cannot borrow mutably directly since we need state)
-        if let Some(monster) = combat_state.entities.monsters.iter().find(|m| m.id == mid) {
-            if let crate::runtime::combat::Intent::Attack { damage, .. }
-            | crate::runtime::combat::Intent::AttackBuff { damage, .. }
-            | crate::runtime::combat::Intent::AttackDebuff { damage, .. }
-            | crate::runtime::combat::Intent::AttackDefend { damage, .. } =
-                monster.current_intent
-            {
-                // `damage` in the enum represents the pure base damage
-                new_intent_preview_damage =
-                    crate::content::powers::calculate_monster_damage(damage, mid, 0, combat_state);
-            } else {
-                new_intent_preview_damage = -1; // Not an attack intent
-            }
-        }
-
-        // Apply it back
-        if let Some(monster) = combat_state
-            .entities
-            .monsters
-            .iter_mut()
-            .find(|m| m.id == mid)
-        {
-            if new_intent_preview_damage != -1 {
-                monster.intent_preview_damage = new_intent_preview_damage;
-            } else {
-                monster.intent_preview_damage = 0;
-            }
-        }
-    }
-}
+/// Legacy Java UI preview refresh. Rust engine no longer mutates protocol observation caches here.
+pub fn update_monster_intents(_combat_state: &mut CombatState) {}
 
 /// Run tick_engine until it returns to CombatPlayerTurn or game over.
 pub fn tick_until_stable_turn(

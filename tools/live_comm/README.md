@@ -133,6 +133,9 @@ Current intended rotation:
   - current template keeps manual help on card rewards only
 - `Ironclad_Assisted_Progression_BossHandoff`
   - same as assisted progression, but also enables boss-combat handoff via `--live-comm-human-boss-combat`
+- `Ironclad_HumanPrimary_Capture`
+  - human-primary noncombat capture/debug mode
+  - Rust still computes shadow recommendations and watch captures, but holds on high-leverage noncombat screens via `--live-comm-human-noncombat`
 - `Ironclad_Reaper`
   - narrow rare-card capture
 - `Ironclad_Barricade`
@@ -156,6 +159,8 @@ Example:
     "--live-comm",
     "--live-comm-human-card-reward",
     "--live-comm-human-boss-combat",
+    "--live-comm-human-noncombat",
+    "--sidecar-shadow",
     "--live-watch-match",
     "all",
     "--live-watch-room-phase",
@@ -167,6 +172,33 @@ Example:
   ]
 }
 ```
+
+`--live-comm-human-noncombat` is a human-primary hold mode for high-value
+noncombat screens. Rust still evaluates the screen and emits
+`sidecar_shadow` / watch artifacts, but instead of sending the chosen command
+it holds with `WAIT 30` / `STATE` until the human resolves the screen.
+
+As of the current build, noncombat human-primary capture no longer relies on
+`debug.txt` spam as the primary truth source. It also emits a structured
+`human_noncombat_audit.jsonl` artifact with:
+
+- one session per held noncombat interaction
+- bot recommendation changes
+- observed human/external commands
+- final agreement/disagreement
+- pollution flags when wrapper-screen or loop issues are detected
+
+Current hold screens:
+
+- `CARD_REWARD`
+- `COMBAT_REWARD`
+- `SHOP_ROOM`
+- `SHOP_SCREEN`
+- `EVENT`
+- `REST`
+- `GRID`
+- `MAP`
+- `BOSS_REWARD`
 
 Strict engine-debug example:
 

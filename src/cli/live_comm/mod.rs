@@ -1,11 +1,14 @@
 use serde_json::json;
+use std::any::Any;
 use std::io::Write;
+use std::panic::AssertUnwindSafe;
 use std::path::PathBuf;
 use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 mod combat;
 mod frame;
+mod human_noncombat_audit;
 mod io;
 mod noncombat;
 mod reward_audit;
@@ -27,6 +30,8 @@ pub(crate) const REWARD_AUDIT_PATH: &str =
     r"d:\rust\sts_simulator\logs\current\live_comm_reward_audit.jsonl";
 pub(crate) const EVENT_AUDIT_PATH: &str =
     r"d:\rust\sts_simulator\logs\current\live_comm_event_audit.jsonl";
+pub(crate) const HUMAN_NONCOMBAT_AUDIT_PATH: &str =
+    r"d:\rust\sts_simulator\logs\current\live_comm_human_noncombat_audit.jsonl";
 pub(crate) const SIDECAR_SHADOW_AUDIT_PATH: &str =
     r"d:\rust\sts_simulator\logs\current\live_comm_sidecar_shadow.jsonl";
 pub(crate) const WATCH_AUDIT_PATH: &str =
@@ -46,10 +51,14 @@ const ENGINE_BUG_SUMMARY_INTERVAL: usize = 5;
 pub struct LiveCommConfig {
     pub human_card_reward_audit: bool,
     pub human_boss_combat_handoff: bool,
+    pub human_noncombat_hold: bool,
     pub fail_fast_debug: bool,
     pub sidecar_shadow: bool,
     pub parity_mode: LiveParityMode,
+    pub combat_mode: LiveCombatMode,
+    pub exact_turn_mode: LiveExactTurnMode,
     pub combat_search_budget: u32,
+    pub legacy_root_legal_moves: bool,
     pub watch_capture: LiveWatchCaptureConfig,
 }
 
@@ -58,6 +67,22 @@ pub enum LiveParityMode {
     #[default]
     Survey,
     Strict,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum LiveCombatMode {
+    ChooserOnly,
+    #[default]
+    ChooserPlusSampledAudit,
+    FullDebug,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum LiveExactTurnMode {
+    Off,
+    #[default]
+    Auto,
+    Force,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -102,6 +127,7 @@ enum LoopExitReason {
     FailFast,
     StdinError,
     StdinEof,
+    Panic,
 }
 
 fn java_process_status() -> &'static str {
@@ -137,6 +163,16 @@ fn hex_prefix(bytes: &[u8], limit: usize) -> String {
         .map(|b| format!("{:02X}", b))
         .collect::<Vec<_>>()
         .join(" ")
+}
+
+fn panic_payload_message(payload: &(dyn Any + Send)) -> String {
+    if let Some(message) = payload.downcast_ref::<&'static str>() {
+        (*message).to_string()
+    } else if let Some(message) = payload.downcast_ref::<String>() {
+        message.clone()
+    } else {
+        "non-string panic payload".to_string()
+    }
 }
 
 // ─── Main Loop ───────────────────────────────────────────────
@@ -178,12 +214,63 @@ pub fn run_live_comm_loop(mut agent: crate::bot::Agent, config: LiveCommConfig) 
                 continue;
             }
         };
-        if let Some(exit_reason) =
+        match std::panic::catch_unwind(AssertUnwindSafe(|| {
             session.handle_frame(&mut agent, &frame, &mut live_io, &mut stdout)
-        {
-            break exit_reason;
+        })) {
+            Ok(Some(exit_reason)) => break exit_reason,
+            Ok(None) => {}
+            Err(payload) => {
+                let panic_message = panic_payload_message(payload.as_ref());
+                let backtrace = std::backtrace::Backtrace::force_capture();
+                let _ = writeln!(
+                    live_io.log,
+                    "[F{}] PANIC: {}",
+                    session.frame_count, panic_message
+                );
+                let _ = writeln!(
+                    live_io.log,
+                    "[PANIC FRAME] response_id={:?} state_frame_id={:?} last_sent_cmd={} {}",
+                    session.last_response_id,
+                    session.last_state_frame_id,
+                    if session.last_sent_cmd.is_empty() {
+                        "<none>"
+                    } else {
+                        &session.last_sent_cmd
+                    },
+                    frame.brief_summary()
+                );
+                let _ = writeln!(live_io.log, "[PANIC BACKTRACE]\n{backtrace}");
+                let _ = writeln!(
+                    live_io.focus_log,
+                    "[PANIC] frame={} response_id={:?} state_frame_id={:?} last_sent_cmd={} last_command_kind={:?} message={} {}",
+                    session.frame_count,
+                    session.last_response_id,
+                    session.last_state_frame_id,
+                    if session.last_sent_cmd.is_empty() {
+                        "<none>"
+                    } else {
+                        &session.last_sent_cmd
+                    },
+                    session.last_protocol_command_kind,
+                    panic_message,
+                    frame.brief_summary()
+                );
+                live_io.flush_all();
+                break LoopExitReason::Panic;
+            }
         }
     };
+    session.finalize_pending_human_noncombat_audit(
+        &mut live_io,
+        match loop_exit_reason {
+            LoopExitReason::GameOver => "loop_exit_game_over",
+            LoopExitReason::ParityFail => "loop_exit_parity_fail",
+            LoopExitReason::FailFast => "loop_exit_fail_fast",
+            LoopExitReason::StdinError => "loop_exit_stdin_error",
+            LoopExitReason::StdinEof => "loop_exit_stdin_eof",
+            LoopExitReason::Panic => "loop_exit_panic",
+        },
+    );
     live_io.finish_session(
         &session.config,
         &loop_exit_reason,
@@ -197,7 +284,10 @@ pub fn run_live_comm_loop(mut agent: crate::bot::Agent, config: LiveCommConfig) 
         session.final_victory,
     );
 
-    if matches!(loop_exit_reason, LoopExitReason::FailFast) {
+    if matches!(
+        loop_exit_reason,
+        LoopExitReason::FailFast | LoopExitReason::Panic
+    ) {
         std::process::exit(2);
     }
 }
@@ -234,7 +324,7 @@ fn unix_time_millis() -> u128 {
 }
 
 fn should_clear_combat_context(is_combat: bool, room_phase: &str, _screen: &str) -> bool {
-    // Combat-internal pending screens can temporarily omit combat_state from the protocol,
+    // Combat-internal pending screens can temporarily omit split combat snapshots,
     // but they still belong to the same combat and must retain internal-only runtime state.
     // Only clear once we have actually left the combat room phase.
     !is_combat && room_phase != "COMBAT"

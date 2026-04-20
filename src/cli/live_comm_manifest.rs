@@ -46,6 +46,7 @@ pub struct LiveRunArtifacts {
     pub replay: Option<LiveArtifactRecord>,
     pub reward_audit: Option<LiveArtifactRecord>,
     pub event_audit: Option<LiveArtifactRecord>,
+    pub human_noncombat_audit: Option<LiveArtifactRecord>,
     pub sidecar_shadow: Option<LiveArtifactRecord>,
     pub validation: Option<LiveArtifactRecord>,
     pub watch_audit: Option<LiveArtifactRecord>,
@@ -156,6 +157,10 @@ impl LiveLogPaths {
 
     pub(crate) fn current_event_audit(&self) -> PathBuf {
         self.current.join("live_comm_event_audit.jsonl")
+    }
+
+    pub(crate) fn current_human_noncombat_audit(&self) -> PathBuf {
+        self.current.join("live_comm_human_noncombat_audit.jsonl")
     }
 
     pub(crate) fn current_sidecar_shadow(&self) -> PathBuf {

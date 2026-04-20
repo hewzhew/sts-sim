@@ -1,152 +1,226 @@
+use super::{apply_power_action, attack_actions, PLAYER};
 use crate::content::monsters::MonsterBehavior;
-use crate::runtime::action::{Action, DamageInfo, DamageType};
-use crate::runtime::combat::{CombatState, Intent, MonsterEntity, PowerId};
+use crate::content::powers::PowerId;
+use crate::runtime::action::Action;
+use crate::runtime::combat::{CombatState, MonsterEntity};
+use crate::semantics::combat::{
+    ApplyPowerStep, AttackSpec, AttackStep, DamageKind, DebuffSpec, EffectStrength,
+    MonsterMoveSpec, MonsterTurnPlan, MoveStep, MoveTarget, PowerEffectKind,
+};
+use smallvec::smallvec;
+
+const BULL_RUSH: u8 = 1;
+const SKULL_BASH: u8 = 2;
+const BELLOW: u8 = 3;
 
 pub struct GremlinNob;
 
+enum GremlinNobTurn<'a> {
+    BullRush(&'a AttackSpec),
+    SkullBash(&'a AttackSpec, &'a ApplyPowerStep),
+    Bellow(&'a ApplyPowerStep),
+}
+
+fn rush_damage(asc: u8) -> i32 {
+    if asc >= 3 {
+        16
+    } else {
+        14
+    }
+}
+
+fn bash_damage(asc: u8) -> i32 {
+    if asc >= 3 {
+        8
+    } else {
+        6
+    }
+}
+
+fn anger_amount(asc: u8) -> i32 {
+    if asc >= 18 {
+        3
+    } else {
+        2
+    }
+}
+
+fn bull_rush_plan(asc: u8) -> MonsterTurnPlan {
+    MonsterTurnPlan::single(
+        BULL_RUSH,
+        MoveStep::Attack(AttackStep {
+            target: MoveTarget::Player,
+            attack: AttackSpec {
+                base_damage: rush_damage(asc),
+                hits: 1,
+                damage_kind: DamageKind::Normal,
+            },
+        }),
+    )
+}
+
+fn skull_bash_plan(asc: u8) -> MonsterTurnPlan {
+    MonsterTurnPlan::with_visible_spec(
+        SKULL_BASH,
+        smallvec![
+            MoveStep::Attack(AttackStep {
+                target: MoveTarget::Player,
+                attack: AttackSpec {
+                    base_damage: bash_damage(asc),
+                    hits: 1,
+                    damage_kind: DamageKind::Normal,
+                },
+            }),
+            MoveStep::ApplyPower(ApplyPowerStep {
+                target: MoveTarget::Player,
+                power_id: PowerId::Vulnerable,
+                amount: 2,
+                effect: PowerEffectKind::Debuff,
+                visible_strength: EffectStrength::Normal,
+            }),
+        ],
+        MonsterMoveSpec::AttackDebuff(
+            AttackSpec {
+                base_damage: bash_damage(asc),
+                hits: 1,
+                damage_kind: DamageKind::Normal,
+            },
+            DebuffSpec {
+                power_id: PowerId::Vulnerable,
+                amount: 2,
+                strength: EffectStrength::Normal,
+            },
+        ),
+    )
+}
+
+fn bellow_plan(asc: u8) -> MonsterTurnPlan {
+    MonsterTurnPlan::single(
+        BELLOW,
+        MoveStep::ApplyPower(ApplyPowerStep {
+            target: MoveTarget::SelfTarget,
+            power_id: PowerId::Anger,
+            amount: anger_amount(asc),
+            effect: PowerEffectKind::Buff,
+            visible_strength: EffectStrength::Normal,
+        }),
+    )
+}
+
+fn plan_for(move_id: u8, asc: u8) -> MonsterTurnPlan {
+    match move_id {
+        BULL_RUSH => bull_rush_plan(asc),
+        SKULL_BASH => skull_bash_plan(asc),
+        BELLOW => bellow_plan(asc),
+        _ => MonsterTurnPlan::unknown(move_id),
+    }
+}
+
+fn last_move(entity: &MonsterEntity, move_id: u8) -> bool {
+    entity.move_history().back().copied() == Some(move_id)
+}
+
+fn last_move_before(entity: &MonsterEntity, move_id: u8) -> bool {
+    entity.move_history().iter().rev().nth(1).copied() == Some(move_id)
+}
+
+fn last_two_moves(entity: &MonsterEntity, move_id: u8) -> bool {
+    let mut history = entity.move_history().iter().rev();
+    matches!(
+        (history.next().copied(), history.next().copied()),
+        (Some(a), Some(b)) if a == move_id && b == move_id
+    )
+}
+
+fn decode_turn<'a>(plan: &'a MonsterTurnPlan) -> GremlinNobTurn<'a> {
+    match (plan.move_id, plan.steps.as_slice()) {
+        (
+            BULL_RUSH,
+            [MoveStep::Attack(AttackStep {
+                target: MoveTarget::Player,
+                attack,
+            })],
+        ) => GremlinNobTurn::BullRush(attack),
+        (
+            SKULL_BASH,
+            [MoveStep::Attack(AttackStep {
+                target: MoveTarget::Player,
+                attack,
+            }), MoveStep::ApplyPower(ApplyPowerStep {
+                target: MoveTarget::Player,
+                power_id: PowerId::Vulnerable,
+                effect: PowerEffectKind::Debuff,
+                ..
+            })],
+        ) => {
+            let MoveStep::ApplyPower(power) = &plan.steps[1] else {
+                unreachable!()
+            };
+            GremlinNobTurn::SkullBash(attack, power)
+        }
+        (
+            BELLOW,
+            [MoveStep::ApplyPower(ApplyPowerStep {
+                target: MoveTarget::SelfTarget,
+                power_id: PowerId::Anger,
+                effect: PowerEffectKind::Buff,
+                ..
+            })],
+        ) => {
+            let MoveStep::ApplyPower(power) = &plan.steps[0] else {
+                unreachable!()
+            };
+            GremlinNobTurn::Bellow(power)
+        }
+        (_, []) => panic!("gremlin nob plan missing locked truth"),
+        (move_id, steps) => panic!("gremlin nob plan/steps mismatch: {} {:?}", move_id, steps),
+    }
+}
+
 impl MonsterBehavior for GremlinNob {
-    fn roll_move(
+    fn roll_move_plan(
         _rng: &mut crate::runtime::rng::StsRng,
         entity: &MonsterEntity,
-        ascension_level: u8,
+        asc: u8,
         num: i32,
-    ) -> (u8, Intent) {
-        let bash_dmg = if ascension_level >= 3 { 8 } else { 6 };
-        let rush_dmg = if ascension_level >= 3 { 16 } else { 14 };
-
-        if entity.move_history.is_empty() {
-            return (3, Intent::Buff);
+    ) -> MonsterTurnPlan {
+        if entity.move_history().is_empty() {
+            return bellow_plan(asc);
         }
 
-        let last_move = |byte: u8| entity.move_history.back() == Some(&byte);
-        let last_move_before = |byte: u8| {
-            entity.move_history.len() >= 2
-                && entity.move_history[entity.move_history.len() - 2] == byte
-        };
-        let last_two_moves = |byte: u8| {
-            entity.move_history.len() >= 2
-                && *entity.move_history.back().unwrap() == byte
-                && entity.move_history[entity.move_history.len() - 2] == byte
-        };
-
-        // Java Asc 18+: deterministic Skull Bash / Bull Rush rotation
-        if ascension_level >= 18 {
-            if !last_move(2) && !last_move_before(2) {
-                return (
-                    2,
-                    Intent::AttackDebuff {
-                        damage: bash_dmg,
-                        hits: 1,
-                    },
-                );
-            }
-            if last_two_moves(1) {
-                return (
-                    2,
-                    Intent::AttackDebuff {
-                        damage: bash_dmg,
-                        hits: 1,
-                    },
-                );
-            }
-            return (
-                1,
-                Intent::Attack {
-                    damage: rush_dmg,
-                    hits: 1,
-                },
-            );
-        }
-
-        // Below Asc 18: probability-based
-        if num < 33 {
-            (
-                2,
-                Intent::AttackDebuff {
-                    damage: bash_dmg,
-                    hits: 1,
-                },
-            )
-        } else {
-            if last_two_moves(1) {
-                (
-                    2,
-                    Intent::AttackDebuff {
-                        damage: bash_dmg,
-                        hits: 1,
-                    },
-                )
+        if asc >= 18 {
+            if !last_move(entity, SKULL_BASH) && !last_move_before(entity, SKULL_BASH) {
+                skull_bash_plan(asc)
+            } else if last_two_moves(entity, BULL_RUSH) {
+                skull_bash_plan(asc)
             } else {
-                (
-                    1,
-                    Intent::Attack {
-                        damage: rush_dmg,
-                        hits: 1,
-                    },
-                )
+                bull_rush_plan(asc)
             }
+        } else if num < 33 || last_two_moves(entity, BULL_RUSH) {
+            skull_bash_plan(asc)
+        } else {
+            bull_rush_plan(asc)
         }
     }
 
-    fn take_turn(state: &mut CombatState, entity: &MonsterEntity) -> Vec<Action> {
-        let bash_dmg = if state.meta.ascension_level >= 3 {
-            8
-        } else {
-            6
-        };
-        let rush_dmg = if state.meta.ascension_level >= 3 {
-            16
-        } else {
-            14
-        };
-        let mut actions = Vec::new();
+    fn turn_plan(state: &CombatState, entity: &MonsterEntity) -> MonsterTurnPlan {
+        plan_for(entity.planned_move_id(), state.meta.ascension_level)
+    }
 
-        match entity.next_move_byte {
-            3 => {
-                // BELLOW
-                actions.push(Action::ApplyPower {
-                    target: entity.id,
-                    source: entity.id,
-                    power_id: PowerId::Anger,
-                    amount: if state.meta.ascension_level >= 18 {
-                        3
-                    } else {
-                        2
-                    },
-                });
+    fn take_turn_plan(
+        _state: &mut CombatState,
+        entity: &MonsterEntity,
+        plan: &MonsterTurnPlan,
+    ) -> Vec<Action> {
+        let mut actions = match decode_turn(plan) {
+            GremlinNobTurn::BullRush(attack) => attack_actions(entity.id, PLAYER, attack),
+            GremlinNobTurn::SkullBash(attack, vulnerable) => {
+                let mut actions = attack_actions(entity.id, PLAYER, attack);
+                actions.push(apply_power_action(entity, vulnerable));
+                actions
             }
-            2 => {
-                // SKULL BASH
-                actions.push(Action::Damage(DamageInfo {
-                    source: entity.id,
-                    target: 0,
-                    base: bash_dmg,
-                    output: bash_dmg,
-                    damage_type: DamageType::Normal,
-                    is_modified: false,
-                }));
-                // Applies Vulnerable 2
-                actions.push(Action::ApplyPower {
-                    target: 0,
-                    source: entity.id,
-                    power_id: PowerId::Vulnerable,
-                    amount: 2,
-                });
-            }
-            1 => {
-                // BULL RUSH
-                actions.push(Action::Damage(DamageInfo {
-                    source: entity.id,
-                    target: 0,
-                    base: rush_dmg,
-                    output: rush_dmg,
-                    damage_type: DamageType::Normal,
-                    is_modified: false,
-                }));
-            }
-            _ => {}
-        }
-
+            GremlinNobTurn::Bellow(anger) => vec![apply_power_action(entity, anger)],
+        };
         actions.push(Action::RollMonsterMove {
             monster_id: entity.id,
         });

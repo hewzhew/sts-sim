@@ -50,6 +50,7 @@ pub struct CombatDiagnostics {
     pub reduced_legal_moves: usize,
     pub simulations: u32,
     pub elapsed_ms: u128,
+    pub timed_out: bool,
     pub depth_limit: u32,
     pub max_decision_depth: usize,
     pub root_width: usize,

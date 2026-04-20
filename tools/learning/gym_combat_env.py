@@ -104,6 +104,17 @@ class CombatEnvDriver:
             proc.terminate()
         except Exception:
             pass
+        try:
+            proc.wait(timeout=1.0)
+        except Exception:
+            pass
+        for handle in (proc.stdin, proc.stdout, proc.stderr):
+            if handle is None:
+                continue
+            try:
+                handle.close()
+            except Exception:
+                pass
 
     def request(self, payload: dict[str, Any]) -> dict[str, Any]:
         self.start()

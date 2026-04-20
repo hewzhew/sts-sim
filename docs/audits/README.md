@@ -3,3 +3,7 @@
 This directory is for one-off investigations, narrow validation writeups, and dated findings.
 
 These files are useful context, but they are not default entrypoints for the repo. Promote a file back to `docs/` root only if it becomes part of the normal workflow or defines an active design.
+
+Recent entrypoints:
+
+- [MONSTER_RUNTIME_TRUTH_AUDIT_2026-04-18.md](./MONSTER_RUNTIME_TRUTH_AUDIT_2026-04-18.md)

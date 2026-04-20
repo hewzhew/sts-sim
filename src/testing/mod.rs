@@ -6,3 +6,4 @@
 
 pub mod fixtures;
 pub(crate) mod harness;
+pub mod support;

@@ -94,7 +94,11 @@ pub(crate) fn build_context(combat: &CombatState) -> CardRoleContext {
         unblocked_incoming,
         missing_hp: (combat.entities.player.max_hp - combat.entities.player.current_hp).max(0),
         energy: combat.turn.energy as i32,
-        has_attacking_target: combat.entities.monsters.iter().any(monster_is_attacking),
+        has_attacking_target: combat
+            .entities
+            .monsters
+            .iter()
+            .any(|monster| monster_is_attacking(combat, monster)),
         playable_attack_count: hand_attack_count,
         followup_attack_count: hand_attack_count,
         strength_payoff_count,

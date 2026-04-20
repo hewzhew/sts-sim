@@ -1,5 +1,5 @@
-use sts_simulator::fixtures::author_spec::{compile_combat_author_spec, CombatAuthorSpec};
-use sts_simulator::fixtures::scenario::assert_fixture;
+use sts_simulator::fixtures::author_spec::CombatAuthorSpec;
+use sts_simulator::fixtures::combat_case::{assert_case, compile_combat_author_case};
 
 #[test]
 fn replay_synthetic_scenarios() {
@@ -36,6 +36,6 @@ fn replay_single_synthetic_scenario_from_env() {
 fn run_scenario_path(path: &std::path::Path) {
     let text = std::fs::read_to_string(path).expect("read synthetic scenario");
     let spec: CombatAuthorSpec = serde_json::from_str(&text).expect("parse synthetic scenario");
-    let fixture = compile_combat_author_spec(&spec).expect("compile synthetic scenario");
-    assert_fixture(&fixture).unwrap_or_else(|err| panic!("{err}"));
+    let case = compile_combat_author_case(&spec).expect("compile synthetic scenario");
+    assert_case(&case).unwrap_or_else(|err| panic!("{err}"));
 }

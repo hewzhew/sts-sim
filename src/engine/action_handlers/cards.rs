@@ -1318,11 +1318,11 @@ pub fn handle_pre_battle_trigger(state: &mut CombatState) {
     for (enemy_id, monster_id) in &monsters_snapshot {
         if let Some(entity) = state.entities.monsters.iter().find(|m| m.id == *monster_id) {
             let entity_clone = entity.clone();
-            let pre_actions = crate::content::monsters::resolve_pre_battle_action(
+            let pre_actions = crate::content::monsters::resolve_pre_battle_actions(
+                state,
                 *enemy_id,
                 &entity_clone,
-                &mut state.rng.misc_rng,
-                state.meta.ascension_level,
+                crate::content::monsters::PreBattleLegacyRng::Misc,
             );
             for action in pre_actions {
                 state.queue_action_back(action);

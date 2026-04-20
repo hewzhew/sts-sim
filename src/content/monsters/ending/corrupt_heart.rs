@@ -1,256 +1,378 @@
+use crate::content::cards::CardId;
+use crate::content::monsters::exordium::{
+    add_card_action, apply_power_action, attack_actions, PLAYER,
+};
 use crate::content::monsters::MonsterBehavior;
-use crate::runtime::action::{Action, DamageInfo, DamageType};
-use crate::runtime::combat::{Intent, MonsterEntity};
+use crate::content::powers::PowerId;
+use crate::runtime::action::{Action, MonsterRuntimePatch};
+use crate::runtime::combat::{CombatState, MonsterEntity};
+use crate::semantics::combat::{
+    AddCardStep, ApplyPowerStep, AttackSpec, BuffSpec, DamageKind, DebuffSpec, EffectStrength,
+    MonsterMoveSpec, MonsterTurnPlan, MoveStep, MoveTarget, PowerEffectKind,
+};
+use smallvec::smallvec;
 
 pub struct CorruptHeart;
 
-impl MonsterBehavior for CorruptHeart {
-    fn roll_move(
-        rng: &mut crate::runtime::rng::StsRng,
-        entity: &MonsterEntity,
-        ascension_level: u8,
-        _num: i32,
-    ) -> (u8, Intent) {
-        let history = &entity.move_history;
+const BLOOD_SHOTS: u8 = 1;
+const ECHO_ATTACK: u8 = 2;
+const DEBILITATE: u8 = 3;
+const GAIN_ONE_STRENGTH: u8 = 4;
+const DEBUFF_AMOUNT: i32 = 2;
 
-        let echo_dmg = if ascension_level >= 4 { 45 } else { 40 };
-        let blood_dmg = 2;
-        let blood_hits = if ascension_level >= 4 { 15u8 } else { 12u8 };
-
-        // Java: isFirstMove → byte 3 (DEBILITATE)
-        if history.is_empty() {
-            return (3, Intent::StrongDebuff);
-        }
-
-        // Java: moveCount (starts at 0, incremented AFTER getMove).
-        // moveCount excludes the first Debilitate turn.
-        // Pattern: moveCount%3 → 0: attack, 1: attack (no same as last), 2: buff (byte 4)
-        let move_count = history.len() - 1; // subtract Debilitate first turn
-
-        match move_count % 3 {
-            0 => {
-                // 50/50 Blood Shots vs Echo
-                if rng.random_boolean() {
-                    (
-                        1,
-                        Intent::Attack {
-                            damage: blood_dmg,
-                            hits: blood_hits,
-                        },
-                    )
-                } else {
-                    (
-                        2,
-                        Intent::Attack {
-                            damage: echo_dmg,
-                            hits: 1,
-                        },
-                    )
-                }
-            }
-            1 => {
-                // If last was Echo (2), do Blood (1); if last was Blood (1), do Echo (2)
-                let last = history.back().copied().unwrap_or(0);
-                if last != 2 {
-                    (
-                        2,
-                        Intent::Attack {
-                            damage: echo_dmg,
-                            hits: 1,
-                        },
-                    )
-                } else {
-                    (
-                        1,
-                        Intent::Attack {
-                            damage: blood_dmg,
-                            hits: blood_hits,
-                        },
-                    )
-                }
-            }
-            _ => {
-                // Buff turn
-                (4, Intent::Buff)
-            }
-        }
+fn echo_attack_damage(ascension_level: u8) -> i32 {
+    if ascension_level >= 4 {
+        45
+    } else {
+        40
     }
+}
 
-    fn use_pre_battle_action(
-        _entity: &MonsterEntity,
-        _hp_rng: &mut crate::runtime::rng::StsRng,
-        ascension_level: u8,
+fn blood_hit_count(ascension_level: u8) -> u8 {
+    if ascension_level >= 4 {
+        15
+    } else {
+        12
+    }
+}
+
+fn current_runtime(entity: &MonsterEntity) -> (bool, u8, u8) {
+    (
+        entity.corrupt_heart.first_move,
+        entity.corrupt_heart.move_count,
+        entity.corrupt_heart.buff_count,
+    )
+}
+
+fn corrupt_heart_runtime_update(
+    entity: &MonsterEntity,
+    first_move: Option<bool>,
+    move_count: Option<u8>,
+    buff_count: Option<u8>,
+) -> Action {
+    Action::UpdateMonsterRuntime {
+        monster_id: entity.id,
+        patch: MonsterRuntimePatch::CorruptHeart {
+            first_move,
+            move_count,
+            buff_count,
+            protocol_seeded: Some(true),
+        },
+    }
+}
+
+fn last_move(entity: &MonsterEntity, move_id: u8) -> bool {
+    entity.move_history().back().copied() == Some(move_id)
+}
+
+fn debilitate_plan() -> MonsterTurnPlan {
+    MonsterTurnPlan::with_visible_spec(
+        DEBILITATE,
+        smallvec![
+            MoveStep::ApplyPower(ApplyPowerStep {
+                target: MoveTarget::Player,
+                power_id: PowerId::Vulnerable,
+                amount: DEBUFF_AMOUNT,
+                effect: PowerEffectKind::Debuff,
+                visible_strength: EffectStrength::Strong,
+            }),
+            MoveStep::ApplyPower(ApplyPowerStep {
+                target: MoveTarget::Player,
+                power_id: PowerId::Weak,
+                amount: DEBUFF_AMOUNT,
+                effect: PowerEffectKind::Debuff,
+                visible_strength: EffectStrength::Strong,
+            }),
+            MoveStep::ApplyPower(ApplyPowerStep {
+                target: MoveTarget::Player,
+                power_id: PowerId::Frail,
+                amount: DEBUFF_AMOUNT,
+                effect: PowerEffectKind::Debuff,
+                visible_strength: EffectStrength::Strong,
+            }),
+            MoveStep::AddCard(AddCardStep {
+                card_id: CardId::Dazed,
+                amount: 1,
+                upgraded: false,
+                destination: crate::semantics::combat::CardDestination::DrawPileRandom,
+                visible_strength: EffectStrength::Normal,
+            }),
+            MoveStep::AddCard(AddCardStep {
+                card_id: CardId::Slimed,
+                amount: 1,
+                upgraded: false,
+                destination: crate::semantics::combat::CardDestination::DrawPileRandom,
+                visible_strength: EffectStrength::Normal,
+            }),
+            MoveStep::AddCard(AddCardStep {
+                card_id: CardId::Wound,
+                amount: 1,
+                upgraded: false,
+                destination: crate::semantics::combat::CardDestination::DrawPileRandom,
+                visible_strength: EffectStrength::Normal,
+            }),
+            MoveStep::AddCard(AddCardStep {
+                card_id: CardId::Burn,
+                amount: 1,
+                upgraded: false,
+                destination: crate::semantics::combat::CardDestination::DrawPileRandom,
+                visible_strength: EffectStrength::Normal,
+            }),
+            MoveStep::AddCard(AddCardStep {
+                card_id: CardId::Void,
+                amount: 1,
+                upgraded: false,
+                destination: crate::semantics::combat::CardDestination::DrawPileRandom,
+                visible_strength: EffectStrength::Normal,
+            }),
+        ],
+        MonsterMoveSpec::StrongDebuff(DebuffSpec {
+            power_id: PowerId::Vulnerable,
+            amount: DEBUFF_AMOUNT,
+            strength: EffectStrength::Strong,
+        }),
+    )
+}
+
+fn blood_shots_plan(ascension_level: u8) -> MonsterTurnPlan {
+    MonsterTurnPlan::from_spec(
+        BLOOD_SHOTS,
+        MonsterMoveSpec::Attack(AttackSpec {
+            base_damage: 2,
+            hits: blood_hit_count(ascension_level),
+            damage_kind: DamageKind::Normal,
+        }),
+    )
+}
+
+fn echo_attack_plan(ascension_level: u8) -> MonsterTurnPlan {
+    MonsterTurnPlan::from_spec(
+        ECHO_ATTACK,
+        MonsterMoveSpec::Attack(AttackSpec {
+            base_damage: echo_attack_damage(ascension_level),
+            hits: 1,
+            damage_kind: DamageKind::Normal,
+        }),
+    )
+}
+
+fn strength_cleanse_bonus(state: &CombatState, entity: &MonsterEntity) -> i32 {
+    (-state.get_power(entity.id, PowerId::Strength)).max(0)
+}
+
+fn buff_followup_step(buff_count: u8) -> MoveStep {
+    match buff_count {
+        0 => MoveStep::ApplyPower(ApplyPowerStep {
+            target: MoveTarget::SelfTarget,
+            power_id: PowerId::Artifact,
+            amount: 2,
+            effect: PowerEffectKind::Buff,
+            visible_strength: EffectStrength::Normal,
+        }),
+        1 => MoveStep::ApplyPower(ApplyPowerStep {
+            target: MoveTarget::SelfTarget,
+            power_id: PowerId::BeatOfDeath,
+            amount: 1,
+            effect: PowerEffectKind::Buff,
+            visible_strength: EffectStrength::Normal,
+        }),
+        2 => MoveStep::ApplyPower(ApplyPowerStep {
+            target: MoveTarget::SelfTarget,
+            power_id: PowerId::PainfulStabs,
+            amount: 1,
+            effect: PowerEffectKind::Buff,
+            visible_strength: EffectStrength::Normal,
+        }),
+        3 => MoveStep::ApplyPower(ApplyPowerStep {
+            target: MoveTarget::SelfTarget,
+            power_id: PowerId::Strength,
+            amount: 10,
+            effect: PowerEffectKind::Buff,
+            visible_strength: EffectStrength::Normal,
+        }),
+        _ => MoveStep::ApplyPower(ApplyPowerStep {
+            target: MoveTarget::SelfTarget,
+            power_id: PowerId::Strength,
+            amount: 50,
+            effect: PowerEffectKind::Buff,
+            visible_strength: EffectStrength::Normal,
+        }),
+    }
+}
+
+fn buff_plan(entity: &MonsterEntity, strength_amount: i32) -> MonsterTurnPlan {
+    let (_, _, buff_count) = current_runtime(entity);
+    MonsterTurnPlan::with_visible_spec(
+        GAIN_ONE_STRENGTH,
+        smallvec![
+            MoveStep::ApplyPower(ApplyPowerStep {
+                target: MoveTarget::SelfTarget,
+                power_id: PowerId::Strength,
+                amount: strength_amount,
+                effect: PowerEffectKind::Buff,
+                visible_strength: EffectStrength::Normal,
+            }),
+            buff_followup_step(buff_count),
+        ],
+        MonsterMoveSpec::Buff(BuffSpec {
+            power_id: PowerId::Strength,
+            amount: strength_amount,
+        }),
+    )
+}
+
+fn roll_buff_plan(entity: &MonsterEntity) -> MonsterTurnPlan {
+    buff_plan(entity, 2)
+}
+
+fn turn_buff_plan(state: &CombatState, entity: &MonsterEntity) -> MonsterTurnPlan {
+    buff_plan(entity, strength_cleanse_bonus(state, entity) + 2)
+}
+
+fn plan_for(state: &CombatState, entity: &MonsterEntity, move_id: u8) -> MonsterTurnPlan {
+    match move_id {
+        DEBILITATE => debilitate_plan(),
+        BLOOD_SHOTS => blood_shots_plan(state.meta.ascension_level),
+        ECHO_ATTACK => echo_attack_plan(state.meta.ascension_level),
+        GAIN_ONE_STRENGTH => turn_buff_plan(state, entity),
+        _ => MonsterTurnPlan::unknown(move_id),
+    }
+}
+
+impl MonsterBehavior for CorruptHeart {
+    fn use_pre_battle_actions(
+        state: &mut CombatState,
+        entity: &MonsterEntity,
+        legacy_rng: crate::content::monsters::PreBattleLegacyRng,
     ) -> Vec<Action> {
-        let max_dmg = if ascension_level >= 19 { 200 } else { 300 };
-        let beat_amt = if ascension_level >= 19 { 2 } else { 1 };
-
+        let (_rng, ascension_level) =
+            crate::content::monsters::legacy_pre_battle_rng(state, legacy_rng);
+        let invincible_amount = if ascension_level >= 19 { 200 } else { 300 };
+        let beat_of_death_amount = if ascension_level >= 19 { 2 } else { 1 };
         vec![
             Action::ApplyPower {
-                source: _entity.id,
-                target: _entity.id,
-                power_id: crate::content::powers::PowerId::Invincible,
-                amount: max_dmg,
+                source: entity.id,
+                target: entity.id,
+                power_id: PowerId::Invincible,
+                amount: invincible_amount,
             },
             Action::ApplyPower {
-                source: _entity.id,
-                target: _entity.id,
-                power_id: crate::content::powers::PowerId::BeatOfDeath,
-                amount: beat_amt,
+                source: entity.id,
+                target: entity.id,
+                power_id: PowerId::BeatOfDeath,
+                amount: beat_of_death_amount,
             },
         ]
     }
 
-    fn take_turn(
-        state: &mut crate::runtime::combat::CombatState,
+    fn roll_move_plan(
+        rng: &mut crate::runtime::rng::StsRng,
         entity: &MonsterEntity,
-    ) -> Vec<Action> {
-        let mut actions = Vec::new();
-        let asc = state.meta.ascension_level;
-        let move_byte = entity.next_move_byte;
+        ascension_level: u8,
+        _num: i32,
+    ) -> MonsterTurnPlan {
+        let (first_move, move_count, _) = current_runtime(entity);
+        if first_move {
+            return debilitate_plan();
+        }
 
-        let echo_dmg = if asc >= 4 { 45 } else { 40 };
-        let blood_dmg = 2;
-        let blood_hits = if asc >= 4 { 15 } else { 12 };
-        let debuff_amt = 2;
-
-        // Buff count: how many times byte 4 has been played
-        let buff_count = entity.move_history.iter().filter(|&&m| m == 4).count();
-
-        match move_byte {
-            3 => {
-                // Debilitate
-                actions.push(Action::ApplyPower {
-                    source: entity.id,
-                    target: 0,
-                    power_id: crate::content::powers::PowerId::Vulnerable,
-                    amount: debuff_amt,
-                });
-                actions.push(Action::ApplyPower {
-                    source: entity.id,
-                    target: 0,
-                    power_id: crate::content::powers::PowerId::Weak,
-                    amount: debuff_amt,
-                });
-                actions.push(Action::ApplyPower {
-                    source: entity.id,
-                    target: 0,
-                    power_id: crate::content::powers::PowerId::Frail,
-                    amount: debuff_amt,
-                });
-
-                let statuses = vec![
-                    crate::content::cards::CardId::Dazed,
-                    crate::content::cards::CardId::Slimed,
-                    crate::content::cards::CardId::Wound,
-                    crate::content::cards::CardId::Burn,
-                    crate::content::cards::CardId::Void,
-                ];
-                for s in statuses {
-                    actions.push(Action::MakeTempCardInDrawPile {
-                        card_id: s,
-                        amount: 1,
-                        random_spot: true,
-                        upgraded: false,
-                    });
+        match move_count % 3 {
+            0 => {
+                if rng.random_boolean() {
+                    blood_shots_plan(ascension_level)
+                } else {
+                    echo_attack_plan(ascension_level)
                 }
             }
             1 => {
-                // Blood Shots
-                for _ in 0..blood_hits {
-                    actions.push(Action::Damage(DamageInfo {
-                        source: entity.id,
-                        target: 0,
-                        base: blood_dmg,
-                        output: blood_dmg,
-                        damage_type: DamageType::Normal,
-                        is_modified: false,
-                    }));
+                if !last_move(entity, ECHO_ATTACK) {
+                    echo_attack_plan(ascension_level)
+                } else {
+                    blood_shots_plan(ascension_level)
                 }
             }
-            2 => {
-                // Echo Strike
-                actions.push(Action::Damage(DamageInfo {
-                    source: entity.id,
-                    target: 0,
-                    base: echo_dmg,
-                    output: echo_dmg,
-                    damage_type: DamageType::Normal,
-                    is_modified: false,
-                }));
-            }
-            4 => {
-                // Buff
-                // Clear any negative strength first (Java: additionalAmount)
-                let mut additional = 0;
-                if let Some(powers) = state.entities.power_db.get(&entity.id) {
-                    if let Some(str_pow) = powers
-                        .iter()
-                        .find(|p| p.power_type == crate::content::powers::PowerId::Strength)
-                    {
-                        if str_pow.amount < 0 {
-                            additional = -str_pow.amount;
-                        }
-                    }
-                }
-
-                // Always +2 Str (plus clearing negative)
-                actions.push(Action::ApplyPower {
-                    source: entity.id,
-                    target: entity.id,
-                    power_id: crate::content::powers::PowerId::Strength,
-                    amount: additional + 2,
-                });
-
-                // Java buff cycle: 0→Artifact(2), 1→BeatOfDeath(1), 2→PainfulStabs, 3→+10Str, 4+→+50Str
-                match buff_count {
-                    0 => {
-                        actions.push(Action::ApplyPower {
-                            source: entity.id,
-                            target: entity.id,
-                            power_id: crate::content::powers::PowerId::Artifact,
-                            amount: 2,
-                        });
-                    }
-                    1 => {
-                        actions.push(Action::ApplyPower {
-                            source: entity.id,
-                            target: entity.id,
-                            power_id: crate::content::powers::PowerId::BeatOfDeath,
-                            amount: 1,
-                        });
-                    }
-                    2 => {
-                        actions.push(Action::ApplyPower {
-                            source: entity.id,
-                            target: entity.id,
-                            power_id: crate::content::powers::PowerId::PainfulStabs,
-                            amount: 1,
-                        });
-                    }
-                    3 => {
-                        actions.push(Action::ApplyPower {
-                            source: entity.id,
-                            target: entity.id,
-                            power_id: crate::content::powers::PowerId::Strength,
-                            amount: 10,
-                        });
-                    }
-                    _ => {
-                        actions.push(Action::ApplyPower {
-                            source: entity.id,
-                            target: entity.id,
-                            power_id: crate::content::powers::PowerId::Strength,
-                            amount: 50,
-                        });
-                    }
-                }
-            }
-            _ => {}
+            _ => roll_buff_plan(entity),
         }
+    }
+
+    fn on_roll_move(
+        _ascension_level: u8,
+        entity: &MonsterEntity,
+        _num: i32,
+        _plan: &MonsterTurnPlan,
+    ) -> Vec<Action> {
+        let (first_move, move_count, buff_count) = current_runtime(entity);
+        vec![if first_move {
+            corrupt_heart_runtime_update(entity, Some(false), None, None)
+        } else {
+            corrupt_heart_runtime_update(
+                entity,
+                None,
+                Some(move_count.saturating_add(1)),
+                Some(buff_count),
+            )
+        }]
+    }
+
+    fn turn_plan(state: &CombatState, entity: &MonsterEntity) -> MonsterTurnPlan {
+        plan_for(state, entity, entity.planned_move_id())
+    }
+
+    fn take_turn_plan(
+        _state: &mut CombatState,
+        entity: &MonsterEntity,
+        plan: &MonsterTurnPlan,
+    ) -> Vec<Action> {
+        let mut actions = match (plan.move_id, plan.steps.as_slice()) {
+            (
+                DEBILITATE,
+                [MoveStep::ApplyPower(vulnerable), MoveStep::ApplyPower(weak), MoveStep::ApplyPower(frail), MoveStep::AddCard(dazed), MoveStep::AddCard(slimed), MoveStep::AddCard(wound), MoveStep::AddCard(burn), MoveStep::AddCard(void)],
+            ) => vec![
+                apply_power_action(entity, vulnerable),
+                apply_power_action(entity, weak),
+                apply_power_action(entity, frail),
+                add_card_action(dazed),
+                add_card_action(slimed),
+                add_card_action(wound),
+                add_card_action(burn),
+                add_card_action(void),
+            ],
+            (
+                BLOOD_SHOTS | ECHO_ATTACK,
+                [MoveStep::Attack(crate::semantics::combat::AttackStep {
+                    target: MoveTarget::Player,
+                    attack,
+                })],
+            ) => attack_actions(entity.id, PLAYER, attack),
+            (
+                GAIN_ONE_STRENGTH,
+                [MoveStep::ApplyPower(strength_step), MoveStep::ApplyPower(followup_step)],
+            ) => {
+                let (_, _, buff_count) = current_runtime(entity);
+                vec![
+                    apply_power_action(entity, strength_step),
+                    apply_power_action(entity, followup_step),
+                    corrupt_heart_runtime_update(
+                        entity,
+                        None,
+                        None,
+                        Some(buff_count.saturating_add(1)),
+                    ),
+                ]
+            }
+            (_, []) => panic!("corrupt heart plan missing locked truth: {}", plan.move_id),
+            (move_id, steps) => {
+                panic!("corrupt heart plan/steps mismatch: {} {:?}", move_id, steps)
+            }
+        };
 
         actions.push(Action::RollMonsterMove {
             monster_id: entity.id,
         });
         actions
+    }
+
+    fn on_death(_state: &mut CombatState, _entity: &MonsterEntity) -> Vec<Action> {
+        Vec::new()
     }
 }

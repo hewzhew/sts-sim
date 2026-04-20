@@ -1,124 +1,229 @@
+use super::{apply_power_action, attack_actions, PLAYER};
 use crate::content::monsters::MonsterBehavior;
-use crate::runtime::action::{Action, DamageInfo, DamageType};
-use crate::runtime::combat::{CombatState, Intent, MonsterEntity, PowerId};
+use crate::content::powers::PowerId;
+use crate::runtime::action::Action;
+use crate::runtime::combat::{CombatState, MonsterEntity};
+use crate::semantics::combat::{
+    ApplyPowerStep, AttackSpec, AttackStep, DamageKind, DebuffSpec, EffectStrength,
+    MonsterMoveSpec, MonsterTurnPlan, MoveStep, MoveTarget, PowerEffectKind,
+};
+use smallvec::smallvec;
+
+const STAB: u8 = 1;
+const ENTANGLE: u8 = 2;
+const SCRAPE: u8 = 3;
 
 pub struct SlaverRed;
 
+enum SlaverRedTurn<'a> {
+    Stab(&'a AttackSpec),
+    Entangle(&'a ApplyPowerStep),
+    Scrape(&'a AttackSpec, &'a ApplyPowerStep),
+}
+
+fn stab_damage(asc: u8) -> i32 {
+    if asc >= 2 {
+        14
+    } else {
+        13
+    }
+}
+
+fn scrape_damage(asc: u8) -> i32 {
+    if asc >= 2 {
+        9
+    } else {
+        8
+    }
+}
+
+fn vulnerable_amount(asc: u8) -> i32 {
+    if asc >= 17 {
+        2
+    } else {
+        1
+    }
+}
+
+fn stab_plan(asc: u8) -> MonsterTurnPlan {
+    MonsterTurnPlan::single(
+        STAB,
+        MoveStep::Attack(AttackStep {
+            target: MoveTarget::Player,
+            attack: AttackSpec {
+                base_damage: stab_damage(asc),
+                hits: 1,
+                damage_kind: DamageKind::Normal,
+            },
+        }),
+    )
+}
+
+fn entangle_plan() -> MonsterTurnPlan {
+    MonsterTurnPlan::single(
+        ENTANGLE,
+        MoveStep::ApplyPower(ApplyPowerStep {
+            target: MoveTarget::Player,
+            power_id: PowerId::Entangle,
+            amount: 1,
+            effect: PowerEffectKind::Debuff,
+            visible_strength: EffectStrength::Strong,
+        }),
+    )
+}
+
+fn scrape_plan(asc: u8) -> MonsterTurnPlan {
+    MonsterTurnPlan::with_visible_spec(
+        SCRAPE,
+        smallvec![
+            MoveStep::Attack(AttackStep {
+                target: MoveTarget::Player,
+                attack: AttackSpec {
+                    base_damage: scrape_damage(asc),
+                    hits: 1,
+                    damage_kind: DamageKind::Normal,
+                },
+            }),
+            MoveStep::ApplyPower(ApplyPowerStep {
+                target: MoveTarget::Player,
+                power_id: PowerId::Vulnerable,
+                amount: vulnerable_amount(asc),
+                effect: PowerEffectKind::Debuff,
+                visible_strength: EffectStrength::Normal,
+            }),
+        ],
+        MonsterMoveSpec::AttackDebuff(
+            AttackSpec {
+                base_damage: scrape_damage(asc),
+                hits: 1,
+                damage_kind: DamageKind::Normal,
+            },
+            DebuffSpec {
+                power_id: PowerId::Vulnerable,
+                amount: vulnerable_amount(asc),
+                strength: EffectStrength::Normal,
+            },
+        ),
+    )
+}
+
+fn plan_for(move_id: u8, asc: u8) -> MonsterTurnPlan {
+    match move_id {
+        STAB => stab_plan(asc),
+        ENTANGLE => entangle_plan(),
+        SCRAPE => scrape_plan(asc),
+        _ => MonsterTurnPlan::unknown(move_id),
+    }
+}
+
+fn last_move(entity: &MonsterEntity, move_id: u8) -> bool {
+    entity.move_history().back().copied() == Some(move_id)
+}
+
+fn last_two_moves(entity: &MonsterEntity, move_id: u8) -> bool {
+    let mut history = entity.move_history().iter().rev();
+    matches!(
+        (history.next().copied(), history.next().copied()),
+        (Some(a), Some(b)) if a == move_id && b == move_id
+    )
+}
+
+fn has_used_entangle(entity: &MonsterEntity) -> bool {
+    entity.move_history().contains(&ENTANGLE)
+}
+
+fn decode_turn<'a>(plan: &'a MonsterTurnPlan) -> SlaverRedTurn<'a> {
+    match (plan.move_id, plan.steps.as_slice()) {
+        (
+            STAB,
+            [MoveStep::Attack(AttackStep {
+                target: MoveTarget::Player,
+                attack,
+            })],
+        ) => SlaverRedTurn::Stab(attack),
+        (
+            ENTANGLE,
+            [MoveStep::ApplyPower(ApplyPowerStep {
+                target: MoveTarget::Player,
+                power_id: PowerId::Entangle,
+                effect: PowerEffectKind::Debuff,
+                visible_strength: EffectStrength::Strong,
+                ..
+            })],
+        ) => {
+            let MoveStep::ApplyPower(entangle) = &plan.steps[0] else {
+                unreachable!()
+            };
+            SlaverRedTurn::Entangle(entangle)
+        }
+        (
+            SCRAPE,
+            [MoveStep::Attack(AttackStep {
+                target: MoveTarget::Player,
+                attack,
+            }), MoveStep::ApplyPower(ApplyPowerStep {
+                target: MoveTarget::Player,
+                power_id: PowerId::Vulnerable,
+                effect: PowerEffectKind::Debuff,
+                ..
+            })],
+        ) => {
+            let MoveStep::ApplyPower(vulnerable) = &plan.steps[1] else {
+                unreachable!()
+            };
+            SlaverRedTurn::Scrape(attack, vulnerable)
+        }
+        (_, []) => panic!("slaver red plan missing locked truth"),
+        (move_id, steps) => panic!("slaver red plan/steps mismatch: {} {:?}", move_id, steps),
+    }
+}
+
 impl MonsterBehavior for SlaverRed {
-    fn roll_move(
+    fn roll_move_plan(
         _rng: &mut crate::runtime::rng::StsRng,
         entity: &MonsterEntity,
-        ascension_level: u8,
+        asc: u8,
         num: i32,
-    ) -> (u8, Intent) {
-        let stab_dmg = if ascension_level >= 2 { 14 } else { 13 };
-        let scrape_dmg = if ascension_level >= 2 { 9 } else { 8 };
-
-        // 1: STAB, 2: ENTANGLE, 3: SCRAPE (Attack + Debuff)
-        let last_move = entity.move_history.back().copied();
-        let last_move_before = if entity.move_history.len() >= 2 {
-            entity
-                .move_history
-                .get(entity.move_history.len() - 2)
-                .copied()
-        } else {
-            None
-        };
-        let last_two_moves_were =
-            |byte: u8| -> bool { last_move == Some(byte) && last_move_before == Some(byte) };
-
-        // Track states based on history
-        let first_turn = entity.move_history.is_empty();
-        let used_entangle = entity.move_history.contains(&2);
-
-        if first_turn {
-            return (
-                1,
-                Intent::Attack {
-                    damage: stab_dmg,
-                    hits: 1,
-                },
-            );
+    ) -> MonsterTurnPlan {
+        if entity.move_history().is_empty() {
+            return stab_plan(asc);
         }
-        if num >= 75 && !used_entangle {
-            return (2, Intent::StrongDebuff);
+        if num >= 75 && !has_used_entangle(entity) {
+            return entangle_plan();
         }
-        if num >= 55 && used_entangle && !last_two_moves_were(1) {
-            return (
-                1,
-                Intent::Attack {
-                    damage: stab_dmg,
-                    hits: 1,
-                },
-            );
+        if num >= 55 && has_used_entangle(entity) && !last_two_moves(entity, STAB) {
+            return stab_plan(asc);
         }
-        if !last_two_moves_were(3) {
-            return (
-                3,
-                Intent::AttackDebuff {
-                    damage: scrape_dmg,
-                    hits: 1,
-                },
-            );
+        if asc >= 17 {
+            if !last_move(entity, SCRAPE) {
+                return scrape_plan(asc);
+            }
+            return stab_plan(asc);
         }
-
-        (
-            1,
-            Intent::Attack {
-                damage: stab_dmg,
-                hits: 1,
-            },
-        )
+        if !last_two_moves(entity, SCRAPE) {
+            return scrape_plan(asc);
+        }
+        stab_plan(asc)
     }
 
-    fn take_turn(state: &mut CombatState, entity: &MonsterEntity) -> Vec<Action> {
-        let asc = state.meta.ascension_level;
-        let stab_dmg = if asc >= 2 { 14 } else { 13 };
-        let scrape_dmg = if asc >= 2 { 9 } else { 8 };
-        let vuln_amt = if asc >= 17 { 2 } else { 1 };
-        let mut actions = Vec::new();
+    fn turn_plan(state: &CombatState, entity: &MonsterEntity) -> MonsterTurnPlan {
+        plan_for(entity.planned_move_id(), state.meta.ascension_level)
+    }
 
-        match entity.next_move_byte {
-            1 => {
-                // STAB
-                actions.push(Action::Damage(DamageInfo {
-                    source: entity.id,
-                    target: 0,
-                    base: stab_dmg,
-                    output: stab_dmg,
-                    damage_type: DamageType::Normal,
-                    is_modified: false,
-                }));
+    fn take_turn_plan(
+        _state: &mut CombatState,
+        entity: &MonsterEntity,
+        plan: &MonsterTurnPlan,
+    ) -> Vec<Action> {
+        let mut actions = match decode_turn(plan) {
+            SlaverRedTurn::Stab(attack) => attack_actions(entity.id, PLAYER, attack),
+            SlaverRedTurn::Entangle(entangle) => vec![apply_power_action(entity, entangle)],
+            SlaverRedTurn::Scrape(attack, vulnerable) => {
+                let mut actions = attack_actions(entity.id, PLAYER, attack);
+                actions.push(apply_power_action(entity, vulnerable));
+                actions
             }
-            2 => {
-                // ENTANGLE
-                actions.push(Action::ApplyPower {
-                    target: 0, // Player
-                    source: entity.id,
-                    power_id: PowerId::Entangle,
-                    amount: 1, // Doesn't stack usually, but amount is 1
-                });
-            }
-            3 => {
-                // SCRAPE
-                actions.push(Action::Damage(DamageInfo {
-                    source: entity.id,
-                    target: 0,
-                    base: scrape_dmg,
-                    output: scrape_dmg,
-                    damage_type: DamageType::Normal,
-                    is_modified: false,
-                }));
-                actions.push(Action::ApplyPower {
-                    target: 0,
-                    source: entity.id,
-                    power_id: PowerId::Vulnerable,
-                    amount: vuln_amt,
-                });
-            }
-            _ => {}
-        }
-
+        };
         actions.push(Action::RollMonsterMove {
             monster_id: entity.id,
         });

@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from combat_reranker_common import curriculum_tag_from_spec_name, parse_move_label, write_json, write_jsonl
+from curriculum_dynamic_teacher import dynamic_teacher_for_row
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -187,7 +188,7 @@ def row_from_step(spec_name: str, trace: dict[str, Any], step: dict[str, Any]) -
     normalized_candidates = normalize_candidates(step)
     tags = row_tags(step, chosen_move, normalized_candidates)
     final_action = ((step.get("policy_decision") or {}).get("final_action") or {})
-    return {
+    row = {
         "sample_origin": "combat_lab_spec",
         "teacher_source": "combat_lab_policy_trace",
         "curriculum_tag": curriculum_tag_from_spec_name(spec_name),
@@ -216,6 +217,19 @@ def row_from_step(spec_name: str, trace: dict[str, Any], step: dict[str, Any]) -
         "top_candidate_move": normalized_candidates[0]["move_label"] if normalized_candidates else None,
         "chosen_matches_top_candidate": bool(normalized_candidates and chosen_move == normalized_candidates[0]["move_label"]),
     }
+    dynamic = dynamic_teacher_for_row(row)
+    row["dynamic_teacher_preferred_moves"] = dynamic.get("preferred_moves") or []
+    row["dynamic_teacher_best_move"] = dynamic.get("oracle_best_move")
+    row["dynamic_teacher_margin"] = float(dynamic.get("oracle_margin") or 0.0)
+    row["dynamic_teacher_score"] = dynamic.get("best_teacher_score")
+    row["dynamic_teacher_chosen_score"] = dynamic.get("chosen_teacher_score")
+    row["dynamic_teacher_tie_tolerance"] = dynamic.get("tie_tolerance")
+    row["dynamic_teacher_label_strength"] = dynamic.get("label_strength")
+    row["dynamic_teacher_source"] = dynamic.get("teacher_source")
+    row["dynamic_teacher_active"] = bool(dynamic.get("active"))
+    if row["dynamic_teacher_active"]:
+        row["sample_tags"] = sorted(set([*row["sample_tags"], "dynamic_semantic_disagreement"]))
+    return row
 
 
 def main() -> int:
@@ -269,9 +283,16 @@ def main() -> int:
                     trace = json.load(handle)
                 for step in trace.get("steps") or []:
                     row = row_from_step(spec_name, trace, step)
-                    if row["sample_tags"] or (step.get("bad_action_tags") or []):
+                    if row["sample_tags"] or (step.get("bad_action_tags") or []) or row.get("dynamic_teacher_active"):
                         spec_rows.append(row)
-            spec_rows.sort(key=lambda row: (len(row.get("sample_tags") or []), float(row.get("path_score") or 0.0)), reverse=True)
+            spec_rows.sort(
+                key=lambda row: (
+                    float(row.get("dynamic_teacher_margin") or 0.0),
+                    len(row.get("sample_tags") or []),
+                    float(row.get("path_score") or 0.0),
+                ),
+                reverse=True,
+            )
             selected_rows = spec_rows[: args.sample_limit_per_spec]
             exported_rows.extend(selected_rows)
             spec_counts[spec_name] = len(selected_rows)
@@ -298,11 +319,12 @@ def main() -> int:
         "exported_rows": len(exported_rows),
         "rows_per_spec": dict(spec_counts),
         "sample_tag_counts": dict(tag_counts),
+        "dynamic_teacher_active_rows": int(sum(1 for row in exported_rows if row.get("dynamic_teacher_active"))),
         "candidate_count_histogram": dict(Counter(len(row.get("normalized_candidates") or []) for row in exported_rows)),
         "specs": summary_specs,
         "notes": [
             "combat_lab curriculum rows are local offline tactical curriculum samples",
-            "this exporter keeps only tagged high-value steps by default",
+            "this exporter keeps tagged rows and dynamic semantic disagreements against the chosen move",
             "rows keep normalized candidate move labels so they can feed offline curriculum packing",
             "rows are intended for review and weak curriculum teacher construction, not direct runtime use",
         ],

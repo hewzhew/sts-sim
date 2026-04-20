@@ -22,8 +22,6 @@
   - launch scripts, profiles, and operational helpers
 - `manual/`
   - hand-run helper scripts
-- `replays/`
-  - stored replay inputs
 - `rust_ast_extractor/`
   - Rust AST extraction helper crate
 - `schema_builder/`
@@ -37,7 +35,7 @@
 
 - generated reports and datasets belong under `tools/artifacts/`
 - cache files belong under `tools/analysis_cache/`
-- replay inputs belong under `tools/replays/`
+- live replay captures belong under `logs/replays/` or `logs/runs/`
 - loose live-comm captures do not belong in the repo root; they now live under `logs/live_comm/`
 - root-level one-off snapshots such as `coverage.json` or `ledger.jsonl` belong under `tools/artifacts/root_snapshots/`
 
@@ -76,7 +74,7 @@ Runs:
 - `state_sync_strictness`
 - `guardian_threshold_behavior`
 - `stasis_behavior`
-- optional `diff_driver` when `-IncludeParity` is set
+- optional `live_comm_replay_driver` when `-IncludeParity` is set
 
 ### `sts_tool/`
 

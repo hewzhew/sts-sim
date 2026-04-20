@@ -15,7 +15,7 @@ $commands = @(
 )
 
 if ($IncludeParity) {
-    $commands += "cargo test --test diff_driver"
+    $commands += "cargo test --test live_comm_replay_driver"
 }
 
 Write-Host "High-value correctness suite" -ForegroundColor Cyan

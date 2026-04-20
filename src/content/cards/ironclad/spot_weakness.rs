@@ -1,6 +1,6 @@
 use crate::core::EntityId;
 use crate::runtime::action::{Action, ActionInfo, AddTo};
-use crate::runtime::combat::{CombatCard, CombatState, Intent};
+use crate::runtime::combat::{CombatCard, CombatState};
 use smallvec::SmallVec;
 
 pub fn spot_weakness_play(
@@ -14,13 +14,7 @@ pub fn spot_weakness_play(
     // Check if target intends to attack
     let is_attacking =
         if let Some(target_monster) = state.entities.monsters.iter().find(|m| m.id == target) {
-            match target_monster.current_intent {
-                Intent::Attack { .. }
-                | Intent::AttackDefend { .. }
-                | Intent::AttackBuff { .. }
-                | Intent::AttackDebuff { .. } => true,
-                _ => false,
-            }
+            crate::projection::combat::monster_has_visible_attack_in_combat(state, target_monster)
         } else {
             false
         };

@@ -1,8 +1,8 @@
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
 use crate::content::cards::get_card_definition;
-use crate::diff::protocol::card_id_from_java;
+use crate::protocol::java::{card_id_from_java, relic_id_from_java};
 
 use crate::testing::fixtures::scenario::{
     ScenarioAssertion, ScenarioCardSelector, ScenarioFixture, ScenarioKind, ScenarioOracleKind,
@@ -88,14 +88,14 @@ pub struct AuthorPowerSpec {
     pub amount: i32,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(untagged)]
 pub enum AuthorCardSpec {
     Simple(String),
     Detailed(AuthorCardEntry),
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct AuthorCardEntry {
     pub id: String,
     #[serde(default)]
@@ -108,14 +108,14 @@ pub struct AuthorCardEntry {
     pub count: usize,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(untagged)]
 pub enum AuthorRelicSpec {
     Simple(String),
     Detailed(AuthorRelicEntry),
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct AuthorRelicEntry {
     pub id: String,
     #[serde(default = "default_relic_counter")]
@@ -333,21 +333,47 @@ pub fn compile_combat_author_spec(spec: &CombatAuthorSpec) -> Result<ScenarioFix
     let discard_pile = expand_cards(&spec.discard_pile, "discard", false)?;
     let exhaust_pile = expand_cards(&spec.exhaust_pile, "exhaust", false)?;
 
-    let monsters = spec
+    let truth_monsters = spec
         .monsters
         .iter()
         .map(|monster| {
+            let resolved_move_id = resolved_author_monster_move_id(monster);
+            let canonical_id = canonical_monster_java_id(&monster.id);
             Ok(json!({
-                "id": monster.id,
+                "id": canonical_id,
+                "current_hp": monster.current_hp,
+                "max_hp": monster.max_hp.unwrap_or(monster.current_hp),
+                "block": monster.block.unwrap_or(0),
+                "powers": compile_powers(&monster.powers),
+                "move_id": resolved_move_id,
+                "move_base_damage": monster.move_base_damage,
+                "move_hits": monster.move_hits,
+                "powers": compile_powers(&monster.powers),
+                "runtime_state": compile_monster_runtime_state(monster, resolved_move_id),
+                "is_dying": false,
+                "is_escaping": false,
+                "half_dead": false,
+                "is_gone": false,
+            }))
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+    let observation_monsters = spec
+        .monsters
+        .iter()
+        .map(|monster| {
+            let canonical_id = canonical_monster_java_id(&monster.id);
+            Ok(json!({
+                "id": canonical_id,
                 "current_hp": monster.current_hp,
                 "max_hp": monster.max_hp.unwrap_or(monster.current_hp),
                 "block": monster.block.unwrap_or(0),
                 "powers": compile_powers(&monster.powers),
                 "intent": monster.intent,
-                "move_base_damage": monster.move_base_damage,
                 "move_adjusted_damage": monster.move_adjusted_damage,
                 "move_hits": monster.move_hits,
-                "move_id": monster.move_id,
+                "is_dying": false,
+                "is_escaping": false,
+                "half_dead": false,
                 "is_gone": false,
             }))
         })
@@ -358,9 +384,8 @@ pub fn compile_combat_author_spec(spec: &CombatAuthorSpec) -> Result<ScenarioFix
         "room_type": spec.room_type,
         "relics": compile_relics(&spec.relics),
         "potions": compile_potions(&spec.potions),
-        "combat_state": {
+        "combat_truth": {
             "turn": spec.turn,
-            "room_type": spec.room_type,
             "player": {
                 "current_hp": player_current_hp,
                 "max_hp": player_max_hp,
@@ -369,12 +394,40 @@ pub fn compile_combat_author_spec(spec: &CombatAuthorSpec) -> Result<ScenarioFix
                 "gold": spec.player.gold.unwrap_or(99),
                 "powers": compile_powers(&spec.player.powers),
             },
-            "monsters": monsters,
+            "monsters": truth_monsters,
+            "hand": hand.clone(),
+            "draw_pile": draw_pile.clone(),
+            "discard_pile": discard_pile.clone(),
+            "exhaust_pile": exhaust_pile.clone(),
+            "limbo": [],
+            "card_queue": [],
+            "colorless_combat_pool": [],
+            "using_card": Value::Null,
+            "card_in_play": Value::Null,
+            "cards_discarded_this_turn": 0,
+            "times_damaged": 0,
+            "monster_turn_log": [],
+            "potions": compile_potions(&spec.potions),
+        },
+        "combat_observation": {
+            "player": {
+                "current_hp": player_current_hp,
+                "max_hp": player_max_hp,
+                "block": spec.player.block.unwrap_or(0),
+                "energy": spec.player.energy.unwrap_or(3),
+                "gold": spec.player.gold.unwrap_or(99),
+                "powers": compile_powers(&spec.player.powers),
+            },
+            "monsters": observation_monsters,
             "hand": hand,
-            "draw_pile": draw_pile,
             "discard_pile": discard_pile,
             "exhaust_pile": exhaust_pile,
-            "potions": compile_potions(&spec.potions),
+            "limbo": [],
+            "using_card": Value::Null,
+            "card_in_play": Value::Null,
+            "cards_discarded_this_turn": 0,
+            "times_damaged": 0,
+            "draw_pile_count": draw_pile.len(),
         }
     });
 
@@ -458,14 +511,38 @@ fn compile_relics(relics: &[AuthorRelicSpec]) -> Vec<Value> {
         .map(|relic| match relic {
             AuthorRelicSpec::Simple(id) => json!({
                 "id": id,
-                "counter": -1,
+                "runtime_state": compile_relic_runtime_state(id, -1),
             }),
             AuthorRelicSpec::Detailed(entry) => json!({
                 "id": entry.id,
-                "counter": entry.counter,
+                "runtime_state": compile_relic_runtime_state(&entry.id, entry.counter),
             }),
         })
         .collect()
+}
+
+fn compile_relic_runtime_state(id: &str, counter: i32) -> Value {
+    match relic_id_from_java(id) {
+        Some(crate::content::relics::RelicId::CentennialPuzzle) => json!({
+            "counter": counter,
+            "used_this_combat": false,
+        }),
+        Some(crate::content::relics::RelicId::ArtOfWar) => json!({
+            "counter": counter,
+            "used_up": false,
+            "gain_energy_next": false,
+            "first_turn": false,
+        }),
+        Some(crate::content::relics::RelicId::Pocketwatch) => json!({
+            "counter": counter,
+            "used_up": false,
+            "first_turn": false,
+        }),
+        _ => json!({
+            "counter": counter,
+            "used_up": false,
+        }),
+    }
 }
 
 fn compile_potions(potions: &[String]) -> Vec<Value> {
@@ -477,6 +554,141 @@ fn compile_potions(potions: &[String]) -> Vec<Value> {
         compiled.push(json!({ "id": "Potion Slot" }));
     }
     compiled
+}
+
+fn canonical_monster_java_id(id: &str) -> String {
+    match normalize_identifier(id).as_str() {
+        "redlouse" => "FuzzyLouseNormal".to_string(),
+        "greenlouse" => "FuzzyLouseDefensive".to_string(),
+        _ => id.to_string(),
+    }
+}
+
+fn resolved_author_monster_move_id(monster: &AuthorMonsterSpec) -> i32 {
+    if monster.move_id > 0 {
+        return monster.move_id;
+    }
+    infer_author_monster_move_id(monster).unwrap_or(0)
+}
+
+fn infer_author_monster_move_id(monster: &AuthorMonsterSpec) -> Option<i32> {
+    let id = normalize_identifier(&monster.id);
+    let intent = normalize_identifier(&monster.intent);
+    let damage = monster
+        .move_adjusted_damage
+        .max(monster.move_base_damage)
+        .max(0);
+    let hits = monster.move_hits.max(1);
+    match id.as_str() {
+        "jawworm" => {
+            if matches!(intent.as_str(), "buff" | "defendbuff" | "defend") {
+                Some(2)
+            } else if intent == "attack" && damage <= 8 {
+                Some(3)
+            } else if intent == "attack" {
+                Some(1)
+            } else {
+                None
+            }
+        }
+        "cultist" => {
+            if intent == "attack" {
+                Some(1)
+            } else if intent == "buff" {
+                Some(3)
+            } else {
+                None
+            }
+        }
+        "lagavulin" => match intent.as_str() {
+            "sleep" => Some(5),
+            "strongdebuff" | "debuff" => Some(1),
+            "attack" => Some(3),
+            "stun" => Some(4),
+            "magic" => Some(6),
+            _ => None,
+        },
+        "slimeboss" => match intent.as_str() {
+            "attack" => Some(1),
+            "strongdebuff" | "debuff" => Some(4),
+            "magic" => Some(2),
+            _ => None,
+        },
+        "theguardian" => match intent.as_str() {
+            "defend" => Some(6),
+            "debuff" | "strongdebuff" => Some(7),
+            "buff" | "defendbuff" => Some(1),
+            "attack" if hits >= 4 || damage <= 5 => Some(5),
+            "attack" if hits >= 2 || damage <= 8 => Some(4),
+            "attack" if damage >= 30 => Some(2),
+            "attack" => Some(3),
+            _ => None,
+        },
+        "redlouse" | "fuzzylousenormal" | "louse" => {
+            if intent == "attack" {
+                Some(3)
+            } else if intent == "buff" {
+                Some(4)
+            } else {
+                None
+            }
+        }
+        "greenlouse" | "fuzzylousedefensive" => {
+            if intent == "attack" {
+                Some(3)
+            } else if matches!(intent.as_str(), "debuff" | "strongdebuff") {
+                Some(4)
+            } else {
+                None
+            }
+        }
+        _ => None,
+    }
+}
+
+fn author_power_amount(powers: &[AuthorPowerSpec], power_id: &str) -> Option<i32> {
+    let needle = normalize_identifier(power_id);
+    powers
+        .iter()
+        .find(|power| normalize_identifier(&power.id) == needle)
+        .map(|power| power.amount)
+}
+
+fn compile_monster_runtime_state(monster: &AuthorMonsterSpec, move_id: i32) -> Value {
+    match normalize_identifier(&monster.id).as_str() {
+        "hexaghost" => json!({
+            "activated": move_id != 5,
+            "orb_active_count": 0,
+            "burn_upgraded": false,
+        }),
+        "darkling" => json!({
+            "first_move": false,
+            "nip_dmg": 7,
+        }),
+        "chosen" => json!({
+            "first_turn": false,
+            "used_hex": false,
+        }),
+        "lagavulin" => json!({
+            "idle_count": 0,
+            "debuff_turn_count": 0,
+            "is_out": move_id != 5,
+            "is_out_triggered": false,
+        }),
+        "theguardian" => json!({
+            "guardian_threshold": author_power_amount(&monster.powers, "Guardian Threshold").unwrap_or(30),
+            "damage_taken": 0,
+            "is_open": move_id != 1 && move_id != 3 && move_id != 4,
+            "close_up_triggered": false,
+        }),
+        "redlouse" | "greenlouse" | "louse" | "fuzzylousenormal" | "fuzzylousedefensive" => json!({
+            "bite_damage": monster
+                .move_adjusted_damage
+                .max(monster.move_base_damage)
+                .max(5),
+        }),
+        _ => json!({}),
+    }
 }
 
 fn compile_step(step: &AuthorStepSpec) -> Result<ScenarioStep, String> {
@@ -863,4 +1075,11 @@ fn default_relic_counter() -> i32 {
 
 fn default_occurrence() -> usize {
     1
+}
+
+fn normalize_identifier(raw: &str) -> String {
+    raw.chars()
+        .filter(|c| c.is_ascii_alphanumeric())
+        .map(|c| c.to_ascii_lowercase())
+        .collect()
 }

@@ -1,5 +1,5 @@
 use crate::content::cards::{self, CardId, CardType};
-use crate::runtime::combat::{CombatCard, CombatState, Intent};
+use crate::runtime::combat::{CombatCard, CombatState};
 
 pub(super) fn total_incoming_damage(combat: &CombatState) -> i32 {
     combat
@@ -7,21 +7,20 @@ pub(super) fn total_incoming_damage(combat: &CombatState) -> i32 {
         .monsters
         .iter()
         .filter(|monster| !monster.is_dying && !monster.is_escaped && !monster.half_dead)
-        .map(|monster| monster.intent_preview_total_damage())
+        .map(|monster| {
+            crate::projection::combat::monster_preview_total_damage_in_combat(combat, monster)
+        })
         .sum()
 }
 
-pub(super) fn monster_is_attacking(monster: &crate::runtime::combat::MonsterEntity) -> bool {
+pub(super) fn monster_is_attacking(
+    combat: &CombatState,
+    monster: &crate::runtime::combat::MonsterEntity,
+) -> bool {
     !monster.is_dying
         && !monster.is_escaped
         && !monster.half_dead
-        && matches!(
-            monster.current_intent,
-            Intent::Attack { .. }
-                | Intent::AttackBuff { .. }
-                | Intent::AttackDebuff { .. }
-                | Intent::AttackDefend { .. }
-        )
+        && crate::projection::combat::monster_has_visible_attack_in_combat(combat, monster)
 }
 
 pub(super) fn effective_block(

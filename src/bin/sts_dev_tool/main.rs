@@ -510,9 +510,7 @@ fn main() {
                 .join("tools/compiled_protocol_schema.json");
             let audit =
                 PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tools/schema_audit_report.json");
-            let replays_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tools/replays");
-            let replay_short =
-                PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tools/replay_short.jsonl");
+            let run_logs_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("logs/runs");
             let live_comm =
                 PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("logs/current/live_comm_raw.jsonl");
 
@@ -540,15 +538,13 @@ fn main() {
 
             println!(">> 0. Extracting observed IDs...");
             let mut observed_args_owned = vec![p_o.to_string()];
-            if replay_short.exists() {
-                observed_args_owned.push(replay_short.to_string_lossy().into_owned());
-            }
-            if replays_dir.exists() {
-                let mut replay_files: Vec<_> = std::fs::read_dir(&replays_dir)
-                    .expect("read_dir tools/replays should succeed")
+            if run_logs_dir.exists() {
+                let mut replay_files: Vec<_> = std::fs::read_dir(&run_logs_dir)
+                    .expect("read_dir logs/runs should succeed")
                     .filter_map(|entry| entry.ok())
                     .map(|entry| entry.path())
-                    .filter(|path| path.extension().and_then(|ext| ext.to_str()) == Some("jsonl"))
+                    .map(|path| path.join("raw.jsonl"))
+                    .filter(|path| path.exists())
                     .collect();
                 replay_files.sort();
                 let replay_args: Vec<String> = replay_files
@@ -596,19 +592,9 @@ fn main() {
             let live_comm_raw = manifest_dir.join("logs/current/live_comm_raw.jsonl");
             let live_comm_sidecar = manifest_dir.join("logs/current/live_comm_signatures.jsonl");
 
-            let replay_inputs =
-                sts_simulator::cli::coverage_tools::default_replay_inputs(&manifest_dir);
-            let mut generated_from: Vec<String> = replay_inputs
-                .iter()
-                .map(|path| path.to_string_lossy().into_owned())
-                .collect();
+            let mut generated_from: Vec<String> = Vec::new();
             let mut notes = Vec::new();
             let mut records = Vec::new();
-
-            for replay in &replay_inputs {
-                records
-                    .extend(sts_simulator::cli::coverage_tools::replay_records_from_path(replay));
-            }
 
             if live_comm_sidecar.exists() {
                 generated_from.push(live_comm_sidecar.to_string_lossy().into_owned());
@@ -625,6 +611,11 @@ fn main() {
                     "{} present but omitted from strict signature extraction because it lacks command context",
                     live_comm_raw.display()
                 ));
+            } else {
+                notes.push(
+                    "interaction coverage now only ingests live_comm_signatures.jsonl inputs"
+                        .to_string(),
+                );
             }
 
             if let Err(err) = sts_simulator::cli::coverage_tools::write_coverage_outputs(

@@ -1,14 +1,14 @@
 use super::{
     java_process_status, LiveCommConfig, COMBAT_SUSPECT_AUDIT_PATH, CURRENT_LOG_ROOT,
-    EVENT_AUDIT_PATH, FAILURE_SNAPSHOT_AUDIT_PATH, FOCUS_LOG_PATH, LIVE_COMM_BUILD_TAG, LOG_PATH,
-    RAW_PATH, REPLAY_PATH, REWARD_AUDIT_PATH, SIDECAR_SHADOW_AUDIT_PATH, SIG_PATH,
-    WATCH_AUDIT_PATH, WATCH_NONCOMBAT_AUDIT_PATH,
+    EVENT_AUDIT_PATH, FAILURE_SNAPSHOT_AUDIT_PATH, FOCUS_LOG_PATH, HUMAN_NONCOMBAT_AUDIT_PATH,
+    LIVE_COMM_BUILD_TAG, LOG_PATH, RAW_PATH, REPLAY_PATH, REWARD_AUDIT_PATH,
+    SIDECAR_SHADOW_AUDIT_PATH, SIG_PATH, WATCH_AUDIT_PATH, WATCH_NONCOMBAT_AUDIT_PATH,
 };
 use crate::cli::live_comm_admin::{timestamp_string, LiveLogPaths};
 use crate::cli::live_comm_runtime::{
     finalize_live_run, runtime_provenance, verify_replay_counts, FinalizeRunInput,
 };
-use crate::diff::replay::generate_live_session_replay_sidecar;
+use crate::verification::combat::generate_live_session_replay;
 use std::io::{BufRead, Write};
 
 pub(super) enum ProtocolReadFrame {
@@ -25,6 +25,7 @@ pub(super) struct LiveCommIo {
     pub(super) focus_log: std::fs::File,
     pub(super) reward_audit: std::fs::File,
     pub(super) event_audit: std::fs::File,
+    pub(super) human_noncombat_audit: std::fs::File,
     pub(super) sidecar_shadow: std::fs::File,
     pub(super) watch_audit: std::fs::File,
     pub(super) watch_noncombat_audit: std::fs::File,
@@ -41,6 +42,11 @@ impl LiveCommIo {
         let mut focus_log = std::fs::File::create(FOCUS_LOG_PATH).unwrap();
         let reward_audit = create_optional_sidecar(REWARD_AUDIT_PATH, true, "reward_audit");
         let event_audit = std::fs::File::create(EVENT_AUDIT_PATH).unwrap();
+        let human_noncombat_audit = create_optional_sidecar(
+            HUMAN_NONCOMBAT_AUDIT_PATH,
+            config.human_noncombat_hold,
+            "human_noncombat_audit",
+        );
         let sidecar_shadow = create_optional_sidecar(
             SIDECAR_SHADOW_AUDIT_PATH,
             config.sidecar_shadow,
@@ -106,9 +112,10 @@ impl LiveCommIo {
         .unwrap();
         writeln!(
             log,
-            "[CONFIG] human_card_reward_audit={} human_boss_combat_handoff={} fail_fast_debug={} watch_capture_enabled={} watch_match_mode={:?} watch_cards={:?} watch_relics={:?} watch_powers={:?} watch_monsters={:?} watch_screens={:?} watch_room_phases={:?} watch_command_kinds={:?} watch_window={} watch_dedupe_window={} watch_max={} watch_out_dir={}",
+            "[CONFIG] human_card_reward_audit={} human_boss_combat_handoff={} human_noncombat_hold={} fail_fast_debug={} watch_capture_enabled={} watch_match_mode={:?} watch_cards={:?} watch_relics={:?} watch_powers={:?} watch_monsters={:?} watch_screens={:?} watch_room_phases={:?} watch_command_kinds={:?} watch_window={} watch_dedupe_window={} watch_max={} watch_out_dir={}",
             config.human_card_reward_audit,
             config.human_boss_combat_handoff,
+            config.human_noncombat_hold,
             config.fail_fast_debug,
             config.watch_capture.enabled(),
             config.watch_capture.match_mode,
@@ -139,7 +146,7 @@ impl LiveCommIo {
         .unwrap();
         writeln!(
             focus_log,
-            "[CONFIG] focused log keeps only validation failures, parity failures, combat bug summaries, and session end markers"
+            "[CONFIG] focused log keeps validation/parity failures, compact combat frame breadcrumbs, combat summaries, panic markers, and session end markers"
         )
         .unwrap();
 
@@ -150,6 +157,7 @@ impl LiveCommIo {
             focus_log,
             reward_audit,
             event_audit,
+            human_noncombat_audit,
             sidecar_shadow,
             watch_audit,
             watch_noncombat_audit,
@@ -191,6 +199,7 @@ impl LiveCommIo {
 
     pub(super) fn write_raw_line(&mut self, line: &str) {
         let _ = writeln!(self.raw, "{}", line);
+        let _ = self.raw.flush();
     }
 
     pub(super) fn log_stdin_io_error(&mut self, err: &std::io::Error) {
@@ -216,6 +225,7 @@ impl LiveCommIo {
         let _ = self.focus_log.flush();
         let _ = self.reward_audit.flush();
         let _ = self.event_audit.flush();
+        let _ = self.human_noncombat_audit.flush();
         let _ = self.sidecar_shadow.flush();
         let _ = self.watch_audit.flush();
         let _ = self.watch_noncombat_audit.flush();
@@ -260,6 +270,10 @@ impl LiveCommIo {
                 let _ = writeln!(self.log, "=== Loop exited: STDIN_EOF ===");
                 let _ = writeln!(self.focus_log, "=== Loop exited: STDIN_EOF ===");
             }
+            super::LoopExitReason::Panic => {
+                let _ = writeln!(self.log, "=== Loop exited: PANIC ===");
+                let _ = writeln!(self.focus_log, "=== Loop exited: PANIC ===");
+            }
         }
         let _ = writeln!(
             self.log,
@@ -297,7 +311,7 @@ impl LiveCommIo {
             let _ = writeln!(self.focus_log, "[DISCONNECT] diagnosis={}", diagnosis);
         }
         self.flush_all();
-        let replay_generation_result = generate_live_session_replay_sidecar(
+        let replay_generation_result = generate_live_session_replay(
             std::path::Path::new(RAW_PATH),
             std::path::Path::new(REPLAY_PATH),
         );
@@ -415,5 +429,6 @@ fn loop_exit_reason_string(reason: &super::LoopExitReason) -> &'static str {
         super::LoopExitReason::FailFast => "FAIL_FAST",
         super::LoopExitReason::StdinError => "STDIN_ERROR",
         super::LoopExitReason::StdinEof => "STDIN_EOF",
+        super::LoopExitReason::Panic => "PANIC",
     }
 }

@@ -19,6 +19,7 @@ from combat_reranker_common import (
     sample_tags_from_preference_sample,
     stable_split,
 )
+from curriculum_dynamic_teacher import dynamic_teacher_for_row
 from gym_combat_env import CombatEnvDriver
 from q_local_common import (
     aggregate_q_local_score,
@@ -61,6 +62,29 @@ def load_policy_index(dataset_dir: Path) -> dict[tuple[str, int, int], dict[str,
             )
             group["candidate_by_move"][str(row.get("candidate_move") or "")] = row
     return groups
+
+
+def candidate_map_from_trace_step(step: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    candidate_by_move: dict[str, dict[str, Any]] = {}
+    legal_candidates = (
+        ((step.get("head_summary") or {}).get("legal_candidate_topk") or [])
+        if isinstance(step, dict)
+        else []
+    )
+    for rank, candidate in enumerate(legal_candidates):
+        move_label = str(candidate.get("label") or "")
+        if not move_label:
+            continue
+        candidate_by_move[move_label] = {
+            "candidate_rank": rank,
+            "candidate_score_hint": float(candidate.get("derived_probability") or 0.0),
+            "candidate_search_order_score": float(
+                candidate.get("derived_probability") or 0.0
+            ),
+            "action_family": candidate.get("action_family"),
+            "canonical": candidate.get("canonical"),
+        }
+    return candidate_by_move
 
 
 def choose_action_index(
@@ -106,6 +130,52 @@ def infer_replay_curriculum_tag(
     if float(preferred_semantics["attack_tag"]) > 0.0 and "Defend" in baseline_action:
         return "attack_over_defend"
     return "attack_over_defend"
+
+
+def dynamic_teacher_from_live_state(
+    observation: dict[str, Any],
+    legal_moves: list[str],
+    *,
+    baseline_action: str,
+    candidate_by_move: dict[str, Any],
+    sample_tags: list[str],
+) -> dict[str, Any]:
+    pressure = (observation.get("pressure") or {}) if isinstance(observation, dict) else {}
+    snapshot = observation_to_snapshot(observation)
+    normalized_candidates = []
+    for index, move_label in enumerate(legal_moves):
+        policy_row = dict(candidate_by_move.get(move_label) or {})
+        normalized_candidates.append(
+            {
+                "move_label": move_label,
+                "score": float(
+                    policy_row.get("candidate_score_hint")
+                    or policy_row.get("candidate_search_order_score")
+                    or 0.0
+                ),
+                "search_rank": int(policy_row.get("candidate_rank") or index),
+            }
+        )
+    row = {
+        "chosen_move": baseline_action,
+        "sample_tags": list(sample_tags or []),
+        "snapshot_normalized_state": snapshot,
+        "state_features_preview": {
+            "incoming_damage": int(pressure.get("visible_incoming") or pressure.get("value_incoming") or 0.0),
+            "player_hp": int(observation.get("player_hp") or 0),
+            "player_block": int(observation.get("player_block") or 0),
+            "remaining_monster_hp": sum(int(monster.get("current_hp") or 0) for monster in (observation.get("monsters") or [])),
+        },
+        "state_features_full": {
+            "unblocked_incoming": float(
+                pressure.get("visible_unblocked")
+                or pressure.get("value_unblocked")
+                or 0.0
+            ),
+        },
+        "normalized_candidates": normalized_candidates,
+    }
+    return dynamic_teacher_for_row(row)
 
 
 def rollout_action_score(
@@ -472,7 +542,8 @@ def select_target_groups(targets: list[dict[str, Any]], limit_groups: int) -> li
     source_priority = {
         "archived_clean_run": 0,
         "policy_seed_set": 1,
-        "combat_lab_spec": 2,
+        "structured_trace": 2,
+        "combat_lab_spec": 3,
     }
     replay_targets = [
         target for target in targets if str(target.get("key_kind") or "") == "replay_frame"
@@ -728,6 +799,70 @@ def collect_policy_seed_targets(
     return list(grouped.values())
 
 
+def collect_structured_trace_targets(
+    dataset_dir: Path,
+    requested_tags: set[str],
+) -> list[dict[str, Any]]:
+    targets: list[dict[str, Any]] = []
+    for path in sorted(dataset_dir.glob("*_structured_policy_trace.json")):
+        try:
+            trace = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        spec_name = str(trace.get("spec_name") or path.stem.replace("_structured_policy_trace", ""))
+        curriculum_tag = curriculum_tag_from_spec_name(spec_name)
+        if requested_tags and curriculum_tag not in requested_tags:
+            continue
+        spec_path = str(trace.get("spec_path") or "")
+        if not spec_path:
+            continue
+        seed = int(trace.get("seed") or 0)
+        prefix_actions: list[str] = []
+        for step_index, step in enumerate(trace.get("steps_data") or []):
+            baseline_action = str(
+                step.get("decoded_candidate_label")
+                or step.get("chosen_action_label")
+                or step.get("canonical_action_label")
+                or ""
+            )
+            if not baseline_action:
+                continue
+            candidate_by_move = candidate_map_from_trace_step(step)
+            targets.append(
+                {
+                    "group_id": (
+                        f"{spec_name}::structured_trace::{path.stem}::seed::{seed}"
+                        f"::step::{step_index}"
+                    ),
+                    "sample_origin": "structured_trace",
+                    "teacher_source": "structured_trace_local_oracle",
+                    "curriculum_tag": curriculum_tag,
+                    "state_source": "structured_policy_trace",
+                    "label_source": "local_rollout_oracle",
+                    "key_kind": "spec_trace_step",
+                    "spec_name": spec_name,
+                    "episode_id": seed,
+                    "step_index": step_index,
+                    "source_path": str(path),
+                    "before_frame_id": None,
+                    "before_response_id": None,
+                    "sample_tags": [],
+                    "baseline_action": baseline_action,
+                    "preferred_action": None,
+                    "candidate_by_move": candidate_by_move,
+                    "prefix_actions": list(prefix_actions),
+                    "seed_hint": seed,
+                    "reset_request": {
+                        "cmd": "reset",
+                        "author_spec": spec_path,
+                        "seed_hint": seed,
+                    },
+                }
+            )
+            prefix_actions.append(baseline_action)
+    return targets
+
+
 def collect_archived_targets(
     dataset_dir: Path,
     learning_baseline_path: Path,
@@ -827,12 +962,17 @@ def main() -> int:
     requested_tags = {
         tag.strip() for tag in str(args.curriculum_tags or "").split(",") if tag.strip()
     }
-    policy_seed_paths = sorted(
-        Path(args.policy_seed_glob).parent.glob(Path(args.policy_seed_glob).name)
-    )
+    policy_seed_glob = str(args.policy_seed_glob or "").strip()
+    if policy_seed_glob:
+        policy_seed_paths = sorted(
+            Path(policy_seed_glob).parent.glob(Path(policy_seed_glob).name)
+        )
+    else:
+        policy_seed_paths = []
 
     targets = []
     targets.extend(collect_spec_targets(args.dataset_dir, args.spec_dir, requested_tags))
+    targets.extend(collect_structured_trace_targets(args.dataset_dir, requested_tags))
     targets.extend(collect_policy_seed_targets(policy_seed_paths, requested_tags))
     targets.extend(
         collect_archived_targets(args.dataset_dir, args.learning_baseline, requested_tags)
@@ -893,6 +1033,22 @@ def main() -> int:
             if len(legal_moves) < 2:
                 skipped_groups["too_few_legal_moves"] += 1
                 continue
+            dynamic_teacher = dynamic_teacher_from_live_state(
+                observation,
+                legal_moves,
+                baseline_action=str(target.get("baseline_action") or ""),
+                candidate_by_move=dict(target.get("candidate_by_move") or {}),
+                sample_tags=list(target.get("sample_tags") or []),
+            )
+            dynamic_preferred_set = {
+                str(move) for move in (dynamic_teacher.get("preferred_moves") or []) if str(move)
+            }
+            dynamic_detail_by_move = {
+                str(detail.get("move_label") or ""): detail
+                for detail in (dynamic_teacher.get("candidate_details") or [])
+            }
+            dynamic_active = bool(dynamic_teacher.get("active"))
+            dynamic_margin = float(dynamic_teacher.get("oracle_margin") or 0.0)
             base_seed = int(target.get("seed_hint") or 0)
             group_rows: list[dict[str, Any]] = []
             for candidate_move in legal_moves:
@@ -921,6 +1077,7 @@ def main() -> int:
                     )
                 summary = summarize_candidate_trials(trial_results, candidate_move, state_before)
                 policy_row = (target.get("candidate_by_move") or {}).get(candidate_move) or {}
+                dynamic_detail = dynamic_detail_by_move.get(candidate_move) or {}
                 candidate_row = {
                     "dataset_kind": "combat_q_local",
                     "sample_origin": str(target.get("sample_origin") or "unknown"),
@@ -952,6 +1109,11 @@ def main() -> int:
                     "candidate_move": candidate_move,
                     "candidate_semantics": summary["candidate_semantics"],
                     "chance_features": chance_feature_dict(state_before, candidate_move),
+                    "dynamic_teacher_targets": dynamic_detail.get("teacher_targets") or {},
+                    "dynamic_teacher_score": float(dynamic_detail.get("teacher_score") or 0.0),
+                    "dynamic_teacher_active": dynamic_active,
+                    "dynamic_teacher_margin": dynamic_margin,
+                    "dynamic_teacher_is_top": candidate_move in dynamic_preferred_set,
                     "state_before": state_before,
                     "sample_tags": list(target.get("sample_tags") or []),
                     "candidate_rank": policy_row.get("candidate_rank"),
@@ -980,14 +1142,19 @@ def main() -> int:
             source_weight = {
                 "archived_clean_run": 2.0,
                 "policy_seed_set": 1.75,
+                "structured_trace": 1.5,
                 "combat_lab_spec": 1.0,
             }.get(sample_origin, 1.0)
             for candidate_row in group_rows:
                 candidate_row["uncertain"] = uncertain
-                candidate_row["training_weight"] = (
-                    (0.5 if uncertain and sample_origin != "combat_lab_spec" else 0.25 if uncertain else 1.0)
-                    * source_weight
+                base_weight = (
+                    0.5 if uncertain and sample_origin != "combat_lab_spec" else 0.25 if uncertain else 1.0
                 )
+                if dynamic_active:
+                    base_weight *= 1.15
+                if uncertain and dynamic_active:
+                    base_weight *= 1.10
+                candidate_row["training_weight"] = base_weight * source_weight
                 candidate_row["candidate_is_best"] = abs(
                     float(candidate_row["mean_return"]) - best
                 ) < 1e-6
@@ -1011,6 +1178,8 @@ def main() -> int:
                     "before_frame_id": target.get("before_frame_id"),
                     "legal_candidate_count": len(group_rows),
                     "uncertain": uncertain,
+                    "dynamic_teacher_active": dynamic_active,
+                    "dynamic_teacher_margin": dynamic_margin,
                     "best_move": group_rows[0]["candidate_move"],
                     "best_mean_return": best,
                     "second_mean_return": second,
@@ -1054,6 +1223,13 @@ def main() -> int:
             for group in group_summaries
             if str(group.get("key_kind") or "") == "replay_frame"
             and str(group.get("split") or "") == "test"
+        ),
+        "dynamic_teacher_active_group_count": sum(
+            1 for group in group_summaries if bool(group.get("dynamic_teacher_active"))
+        ),
+        "dynamic_teacher_active_rate": float(
+            sum(1 for group in group_summaries if bool(group.get("dynamic_teacher_active")))
+            / max(len(group_summaries), 1)
         ),
         "uncertain_group_count": sum(
             1 for group in group_summaries if group.get("uncertain")
@@ -1112,8 +1288,10 @@ def main() -> int:
         "limit_groups": args.limit_groups,
         "notes": [
             "local oracle uses shared stochastic rollout policy seeds over deterministic CombatEnv replays",
-            "teacher rows are generated from combat_lab_spec, policy_seed_set, and archived_clean_run sources",
+            "teacher rows are generated from combat_lab_spec, structured_trace, policy_seed_set, and archived_clean_run sources",
+            "structured policy trace artifacts can be replayed directly as spec-trace roots when baseline transition datasets are absent",
             "replay-backed rows emit replay_frame keys when source_path + before_frame_id are available",
+            "dynamic semantic teacher proxies are attached as auxiliary features and sample-weight hints, not as replacement rollout labels",
             "uncertain groups are retained for shadow coverage and downweighted during training",
             "replay groups are prioritized during target selection and reserved into the test split",
         ],

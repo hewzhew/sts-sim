@@ -608,11 +608,37 @@ pub const ALL_POTIONS: &[PotionId] = &[
 pub struct Potion {
     pub id: PotionId,
     pub uuid: u32,
+    pub can_use: bool,
+    pub can_discard: bool,
+    pub requires_target: bool,
 }
 
 impl Potion {
     pub fn new(id: PotionId, uuid: u32) -> Self {
-        Self { id, uuid }
+        let definition = get_potion_definition(id);
+        Self {
+            id,
+            uuid,
+            can_use: true,
+            can_discard: true,
+            requires_target: definition.target_required,
+        }
+    }
+
+    pub fn with_affordance_truth(
+        id: PotionId,
+        uuid: u32,
+        can_use: bool,
+        can_discard: bool,
+        requires_target: bool,
+    ) -> Self {
+        Self {
+            id,
+            uuid,
+            can_use,
+            can_discard,
+            requires_target,
+        }
     }
 }
 

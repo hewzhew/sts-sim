@@ -235,16 +235,26 @@ fn audit_combat(seed: u64, player_class: &'static str) -> CombatState {
                 is_dying: false,
                 is_escaped: false,
                 half_dead: false,
-                next_move_byte: 0,
-                current_intent: Intent::Buff,
-                move_history: VecDeque::new(),
-                intent_preview_damage: 0,
+                move_state: sts_simulator::runtime::combat::MonsterMoveState::default(),
                 logical_position: 0,
-                protocol_identity: Default::default(),
                 hexaghost: Default::default(),
+                louse: Default::default(),
+                jaw_worm: Default::default(),
+                thief: Default::default(),
+                byrd: Default::default(),
                 chosen: Default::default(),
+                snecko: Default::default(),
+                shelled_parasite: Default::default(),
+                bronze_automaton: Default::default(),
+                bronze_orb: Default::default(),
+                book_of_stabbing: Default::default(),
+                collector: Default::default(),
+                champ: Default::default(),
+                awakened_one: Default::default(),
+                corrupt_heart: Default::default(),
                 darkling: Default::default(),
                 lagavulin: Default::default(),
+                guardian: Default::default(),
             }],
             potions: vec![None, None, None],
             power_db: StdHashMap::new(),
@@ -253,6 +263,19 @@ fn audit_combat(seed: u64, player_class: &'static str) -> CombatState {
             action_queue: VecDeque::new(),
         },
         rng: CombatRng::new(RngPool::new(seed)),
-        runtime: Default::default(),
+        runtime: {
+            let mut runtime = sts_simulator::runtime::combat::CombatRuntimeHints::default();
+            runtime.monster_protocol.insert(
+                1,
+                sts_simulator::runtime::combat::MonsterProtocolState {
+                    observation: sts_simulator::runtime::combat::MonsterProtocolObservationState {
+                        visible_intent: Intent::Buff,
+                        preview_damage_per_hit: 0,
+                    },
+                    identity: Default::default(),
+                },
+            );
+            runtime
+        },
     }
 }

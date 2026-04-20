@@ -1,7 +1,7 @@
 use serde_json::Value;
 
 use crate::content::powers::store;
-use crate::diff::protocol::{power_id_from_java, power_instance_id_from_java};
+use crate::protocol::java::{power_id_from_java, power_instance_id_from_java};
 use crate::runtime::combat::Power;
 
 use super::super::build::build_powers_from_snapshot_for_owner;

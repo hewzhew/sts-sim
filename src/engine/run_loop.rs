@@ -1,4 +1,5 @@
 use crate::map::node::RoomType;
+use crate::rewards::state::RewardScreenContext;
 use crate::runtime::combat::CombatState;
 use crate::state::core::{ClientInput, EngineState};
 use crate::state::run::RunState;
@@ -66,6 +67,8 @@ pub fn tick_run(
                 if !keep_running {
                     // Absorb combat player state back to RunState (HP, gold, relic counters)
                     run_state.absorb_combat_player(cs.entities.player.clone());
+                    run_state.room_mugged |= cs.runtime.combat_mugged;
+                    run_state.room_smoked |= cs.runtime.combat_smoked;
 
                     for change in cs.meta.meta_changes.drain(..) {
                         match change {
@@ -80,10 +83,21 @@ pub fn tick_run(
                     if let EngineState::RewardScreen(rs) = engine_state {
                         let is_boss = cs.meta.is_boss_fight;
                         let is_elite = cs.meta.is_elite_fight;
-                        // Populate the actual dropped rewards
-                        *rs = crate::rewards::generator::generate_combat_rewards(
-                            run_state, is_elite, is_boss,
-                        );
+                        let screen_context = if run_state.room_mugged {
+                            RewardScreenContext::MuggedCombat
+                        } else if run_state.room_smoked {
+                            RewardScreenContext::SmokedCombat
+                        } else {
+                            RewardScreenContext::Standard
+                        };
+                        if !matches!(screen_context, RewardScreenContext::SmokedCombat) {
+                            // Populate the actual dropped rewards for normal/mugged combat.
+                            *rs = crate::rewards::generator::generate_combat_rewards(
+                                run_state, is_elite, is_boss,
+                            );
+                            rs.items.append(&mut cs.runtime.pending_rewards);
+                        }
+                        rs.screen_context = screen_context;
 
                         if is_boss
                             && run_state.act_num == 3
@@ -256,6 +270,8 @@ pub fn tick_run(
                     .travel_to(target_x, target_y, has_flight)
                     .is_ok()
                 {
+                    run_state.room_mugged = false;
+                    run_state.room_smoked = false;
                     // Increment floor number successfully entering a new room
                     run_state.floor_num += 1;
 
@@ -541,6 +557,8 @@ pub fn tick_run(
                 if !keep_running {
                     // Absorb combat player state back to RunState (HP, gold, relic counters)
                     run_state.absorb_combat_player(cs.entities.player.clone());
+                    run_state.room_mugged |= cs.runtime.combat_mugged;
+                    run_state.room_smoked |= cs.runtime.combat_smoked;
 
                     for change in cs.meta.meta_changes.drain(..) {
                         match change {
@@ -560,7 +578,19 @@ pub fn tick_run(
                     if ecs.reward_allowed {
                         // Generate standard card rewards unless suppressed
                         let mut rewards = ecs.rewards.clone();
-                        if !ecs.no_cards_in_rewards {
+                        rewards.screen_context = if run_state.room_mugged {
+                            RewardScreenContext::MuggedCombat
+                        } else if run_state.room_smoked {
+                            RewardScreenContext::SmokedCombat
+                        } else {
+                            RewardScreenContext::Standard
+                        };
+                        if !matches!(rewards.screen_context, RewardScreenContext::SmokedCombat) {
+                            rewards.items.append(&mut cs.runtime.pending_rewards);
+                        }
+                        if !ecs.no_cards_in_rewards
+                            && !matches!(rewards.screen_context, RewardScreenContext::SmokedCombat)
+                        {
                             let card_reward = crate::rewards::generator::generate_combat_rewards(
                                 run_state, false, false,
                             );

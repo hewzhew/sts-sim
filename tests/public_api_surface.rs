@@ -130,11 +130,7 @@ fn diff_protocol_public_surface_matches_expected_whitelist() {
             && !contents.contains("pub mod snapshot;"),
         "diff::protocol should expose a thin facade, not raw public submodules:\n{contents}"
     );
-    for expected in [
-        "pub use mapper::{",
-        "pub use parser::{",
-        "pub use snapshot::build_live_combat_snapshot;",
-    ] {
+    for expected in ["pub use crate::protocol::java::{"] {
         assert!(
             contents.contains(expected),
             "missing expected diff::protocol re-export `{expected}` in:\n{contents}"
@@ -167,8 +163,8 @@ fn diff_replay_public_surface_matches_expected_whitelist() {
 fn diff_state_sync_public_surface_matches_expected_whitelist() {
     let public_uses = collect_prefixed_lines("src/diff/state_sync/mod.rs", "pub use ");
     let expected_uses = BTreeSet::from([
-        "pub use build::{build_combat_state, snapshot_uuid};".to_string(),
-        "pub use sync::sync_state;".to_string(),
+        "pub use build::{build_combat_state_from_snapshots, snapshot_uuid};".to_string(),
+        "pub use sync::{sync_state, sync_state_from_snapshots};".to_string(),
     ]);
 
     assert_eq!(

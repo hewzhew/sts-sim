@@ -4,11 +4,12 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::diff::protocol::build_live_combat_snapshot;
 use crate::diff::replay::{
-    compare_states, continue_deferred_pending_choice, tick_until_stable, ActionContext, DiffResult,
+    compare_states_from_snapshots, continue_deferred_pending_choice, tick_until_stable,
+    ActionContext, DiffResult,
 };
-use crate::diff::state_sync::{build_combat_state, sync_state};
+use crate::diff::state_sync::{build_combat_state_from_snapshots, sync_state_from_snapshots};
+use crate::protocol::java::{build_live_observation_snapshot, build_live_truth_snapshot};
 use crate::state::core::{ClientInput, EngineState, PendingChoice};
 
 const LIVE_REPLAY_SCHEMA_VERSION: u32 = 1;
@@ -212,7 +213,8 @@ pub struct CombatReconstructedStep {
     pub before_combat: crate::runtime::combat::CombatState,
     pub after_engine: EngineState,
     pub after_combat: crate::runtime::combat::CombatState,
-    pub java_after_snapshot: Value,
+    pub java_after_truth_snapshot: Value,
+    pub java_after_observation_snapshot: Value,
     pub diffs: Vec<SerializableDiffResult>,
 }
 
@@ -485,14 +487,20 @@ pub fn verify_combat_replay_view(
         .before_root
         .get("game_state")
         .ok_or_else(|| "first executable step missing before_root.game_state".to_string())?;
-    let initial_snapshot = build_live_combat_snapshot_from_root(&first_executable.before_root)?;
+    let (initial_truth_snapshot, initial_observation_snapshot) =
+        build_live_split_combat_snapshots_from_root(&first_executable.before_root)?;
     let relics = initial_game_state
         .get("relics")
         .cloned()
         .unwrap_or(Value::Null);
 
-    let mut combat = build_combat_state(&initial_snapshot, &relics);
-    let mut previous_snapshot = initial_snapshot;
+    let mut combat = build_combat_state_from_snapshots(
+        &initial_truth_snapshot,
+        &initial_observation_snapshot,
+        &relics,
+    );
+    let mut previous_truth_snapshot = initial_truth_snapshot;
+    let mut previous_observation_snapshot = initial_observation_snapshot;
     let mut carried_pending: Option<PendingChoice> = None;
     let mut last_executed_response_id = root_response_id(&first_executable.before_root);
 
@@ -505,7 +513,11 @@ pub fn verify_combat_replay_view(
         let continuity_intact =
             last_executed_response_id.is_some() && before_response_id == last_executed_response_id;
         if continuity_intact {
-            sync_state(&mut combat, &previous_snapshot);
+            sync_state_from_snapshots(
+                &mut combat,
+                &previous_truth_snapshot,
+                &previous_observation_snapshot,
+            );
         } else {
             let before_game_state = step.before_root.get("game_state").ok_or_else(|| {
                 format!(
@@ -513,12 +525,17 @@ pub fn verify_combat_replay_view(
                     step.command_id
                 )
             })?;
-            let before_snapshot = build_live_combat_snapshot_from_root(&step.before_root)?;
+            let (before_truth_snapshot, before_observation_snapshot) =
+                build_live_split_combat_snapshots_from_root(&step.before_root)?;
             let before_relics = before_game_state
                 .get("relics")
                 .cloned()
                 .unwrap_or(Value::Null);
-            combat = build_combat_state(&before_snapshot, &before_relics);
+            combat = build_combat_state_from_snapshots(
+                &before_truth_snapshot,
+                &before_observation_snapshot,
+                &before_relics,
+            );
             carried_pending = None;
         }
         let mut engine_state = EngineState::CombatPlayerTurn;
@@ -528,14 +545,14 @@ pub fn verify_combat_replay_view(
             Some(CombatMappedCommand::PotionUse { .. })
         ) {
             if let Some(pending) = carried_pending.take() {
-                let java_after_snapshot = extract_combat_snapshot(&step.after_root).ok_or_else(|| {
-                    format!(
-                        "step command_id={} missing combat snapshot for deferred potion continuation",
-                        step.command_id
-                    )
-                })?;
-                let _ =
-                    continue_deferred_pending_choice(&pending, &mut combat, &java_after_snapshot);
+                continue_deferred_pending_choice(&pending, &mut combat, &step.after_root).map_err(
+                    |err| {
+                        format!(
+                            "step command_id={} deferred continuation replay failed: {err}",
+                            step.command_id
+                        )
+                    },
+                )?;
             }
         }
 
@@ -553,14 +570,25 @@ pub fn verify_combat_replay_view(
             _ => None,
         };
 
-        let java_after_snapshot = extract_combat_snapshot(&step.after_root).ok_or_else(|| {
-            format!(
-                "step command_id={} missing after_root.game_state.combat_state",
-                step.command_id
-            )
-        })?;
-        let context = action_context_for_step(step, &java_after_snapshot);
-        let diffs = compare_states(&combat, &java_after_snapshot, is_end_turn, &context);
+        let (java_after_truth_snapshot, java_after_observation_snapshot) =
+            extract_split_combat_snapshots(&step.after_root).ok_or_else(|| {
+                format!(
+                    "step command_id={} missing after_root.game_state.combat payload",
+                    step.command_id
+                )
+            })?;
+        let context = action_context_for_step(
+            step,
+            &java_after_truth_snapshot,
+            &java_after_observation_snapshot,
+        );
+        let diffs = compare_states_from_snapshots(
+            &combat,
+            &java_after_truth_snapshot,
+            &java_after_observation_snapshot,
+            is_end_turn,
+            &context,
+        );
         if !diffs.is_empty() {
             report.failures.push(CombatVerificationFailure {
                 step_index,
@@ -575,7 +603,8 @@ pub fn verify_combat_replay_view(
             }
         }
 
-        previous_snapshot = java_after_snapshot;
+        previous_truth_snapshot = java_after_truth_snapshot;
+        previous_observation_snapshot = java_after_observation_snapshot;
         last_executed_response_id = step.response_id;
     }
 
@@ -594,7 +623,10 @@ pub fn inspect_combat_replay_step(
         response_id: reconstructed.response_id,
         state_frame_id: reconstructed.state_frame_id,
         rust_after: summarize_combat_state(&reconstructed.after_combat),
-        java_after: summarize_java_snapshot(&reconstructed.java_after_snapshot),
+        java_after: summarize_java_snapshots(
+            &reconstructed.java_after_truth_snapshot,
+            &reconstructed.java_after_observation_snapshot,
+        ),
         diffs: reconstructed.diffs,
     })
 }
@@ -629,14 +661,20 @@ pub fn reconstruct_combat_replay_step(
         .before_root
         .get("game_state")
         .ok_or_else(|| "first executable step missing before_root.game_state".to_string())?;
-    let initial_snapshot = build_live_combat_snapshot_from_root(&first_executable.before_root)?;
+    let (initial_truth_snapshot, initial_observation_snapshot) =
+        build_live_split_combat_snapshots_from_root(&first_executable.before_root)?;
     let relics = initial_game_state
         .get("relics")
         .cloned()
         .unwrap_or(Value::Null);
 
-    let mut combat = build_combat_state(&initial_snapshot, &relics);
-    let mut previous_snapshot = initial_snapshot;
+    let mut combat = build_combat_state_from_snapshots(
+        &initial_truth_snapshot,
+        &initial_observation_snapshot,
+        &relics,
+    );
+    let mut previous_truth_snapshot = initial_truth_snapshot;
+    let mut previous_observation_snapshot = initial_observation_snapshot;
     let mut carried_pending: Option<PendingChoice> = None;
     let mut last_executed_response_id = root_response_id(&first_executable.before_root);
 
@@ -649,7 +687,11 @@ pub fn reconstruct_combat_replay_step(
         let continuity_intact =
             last_executed_response_id.is_some() && before_response_id == last_executed_response_id;
         if continuity_intact {
-            sync_state(&mut combat, &previous_snapshot);
+            sync_state_from_snapshots(
+                &mut combat,
+                &previous_truth_snapshot,
+                &previous_observation_snapshot,
+            );
         } else {
             let before_game_state = step.before_root.get("game_state").ok_or_else(|| {
                 format!(
@@ -657,12 +699,17 @@ pub fn reconstruct_combat_replay_step(
                     step.command_id
                 )
             })?;
-            let before_snapshot = build_live_combat_snapshot_from_root(&step.before_root)?;
+            let (before_truth_snapshot, before_observation_snapshot) =
+                build_live_split_combat_snapshots_from_root(&step.before_root)?;
             let before_relics = before_game_state
                 .get("relics")
                 .cloned()
                 .unwrap_or(Value::Null);
-            combat = build_combat_state(&before_snapshot, &before_relics);
+            combat = build_combat_state_from_snapshots(
+                &before_truth_snapshot,
+                &before_observation_snapshot,
+                &before_relics,
+            );
             carried_pending = None;
         }
         let mut engine_state = EngineState::CombatPlayerTurn;
@@ -674,14 +721,14 @@ pub fn reconstruct_combat_replay_step(
             Some(CombatMappedCommand::PotionUse { .. })
         ) {
             if let Some(pending) = carried_pending.take() {
-                let java_after_snapshot = extract_combat_snapshot(&step.after_root).ok_or_else(|| {
-                    format!(
-                        "step command_id={} missing combat snapshot for deferred potion continuation",
-                        step.command_id
-                    )
-                })?;
-                let _ =
-                    continue_deferred_pending_choice(&pending, &mut combat, &java_after_snapshot);
+                continue_deferred_pending_choice(&pending, &mut combat, &step.after_root).map_err(
+                    |err| {
+                        format!(
+                            "step command_id={} deferred continuation replay failed: {err}",
+                            step.command_id
+                        )
+                    },
+                )?;
             }
         }
 
@@ -699,14 +746,25 @@ pub fn reconstruct_combat_replay_step(
             _ => None,
         };
 
-        let java_after_snapshot = extract_combat_snapshot(&step.after_root).ok_or_else(|| {
-            format!(
-                "step command_id={} missing after_root.game_state.combat_state",
-                step.command_id
-            )
-        })?;
-        let context = action_context_for_step(step, &java_after_snapshot);
-        let diffs = compare_states(&combat, &java_after_snapshot, is_end_turn, &context);
+        let (java_after_truth_snapshot, java_after_observation_snapshot) =
+            extract_split_combat_snapshots(&step.after_root).ok_or_else(|| {
+                format!(
+                    "step command_id={} missing after_root.game_state.combat payload",
+                    step.command_id
+                )
+            })?;
+        let context = action_context_for_step(
+            step,
+            &java_after_truth_snapshot,
+            &java_after_observation_snapshot,
+        );
+        let diffs = compare_states_from_snapshots(
+            &combat,
+            &java_after_truth_snapshot,
+            &java_after_observation_snapshot,
+            is_end_turn,
+            &context,
+        );
 
         if step_index == target_step_index {
             return Ok(CombatReconstructedStep {
@@ -725,12 +783,14 @@ pub fn reconstruct_combat_replay_step(
                 before_combat,
                 after_engine: engine_state.clone(),
                 after_combat: combat.clone(),
-                java_after_snapshot,
+                java_after_truth_snapshot,
+                java_after_observation_snapshot,
                 diffs: diffs.iter().map(SerializableDiffResult::from).collect(),
             });
         }
 
-        previous_snapshot = java_after_snapshot;
+        previous_truth_snapshot = java_after_truth_snapshot;
+        previous_observation_snapshot = java_after_observation_snapshot;
         last_executed_response_id = step.response_id;
     }
 
@@ -830,7 +890,11 @@ fn summarize_combat_state(combat: &crate::runtime::combat::CombatState) -> Comba
                 id: monster.id,
                 hp: monster.current_hp,
                 block: monster.block,
-                intent: format!("{:?}", monster.current_intent),
+                intent: format!(
+                    "{:?}",
+                    crate::content::monsters::resolve_monster_turn_plan(combat, monster)
+                        .summary_spec()
+                ),
                 powers: crate::content::powers::store::powers_for(combat, monster.id)
                     .map(|powers| {
                         powers
@@ -851,9 +915,20 @@ fn summarize_combat_state(combat: &crate::runtime::combat::CombatState) -> Comba
     }
 }
 
-fn summarize_java_snapshot(snapshot: &Value) -> CombatStateSummary {
-    let player = &snapshot["player"];
-    let monsters = snapshot["monsters"].as_array().cloned().unwrap_or_default();
+fn summarize_java_snapshots(
+    truth_snapshot: &Value,
+    observation_snapshot: &Value,
+) -> CombatStateSummary {
+    let player = &truth_snapshot["player"];
+    let truth_monsters = truth_snapshot["monsters"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
+    let observation_monsters = observation_snapshot
+        .get("monsters")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
 
     CombatStateSummary {
         player_hp: player["current_hp"]
@@ -862,7 +937,7 @@ fn summarize_java_snapshot(snapshot: &Value) -> CombatStateSummary {
             .unwrap_or(0) as i32,
         player_block: player["block"].as_i64().unwrap_or(0) as i32,
         player_energy: player["energy"].as_u64().unwrap_or(0) as u8,
-        hand: snapshot["hand"]
+        hand: truth_snapshot["hand"]
             .as_array()
             .map(|cards| {
                 cards
@@ -871,7 +946,7 @@ fn summarize_java_snapshot(snapshot: &Value) -> CombatStateSummary {
                     .collect()
             })
             .unwrap_or_default(),
-        draw_pile: snapshot["draw_pile"]
+        draw_pile: truth_snapshot["draw_pile"]
             .as_array()
             .map(|cards| {
                 cards
@@ -880,7 +955,7 @@ fn summarize_java_snapshot(snapshot: &Value) -> CombatStateSummary {
                     .collect()
             })
             .unwrap_or_default(),
-        discard_pile: snapshot["discard_pile"]
+        discard_pile: truth_snapshot["discard_pile"]
             .as_array()
             .map(|cards| {
                 cards
@@ -889,7 +964,7 @@ fn summarize_java_snapshot(snapshot: &Value) -> CombatStateSummary {
                     .collect()
             })
             .unwrap_or_default(),
-        exhaust_pile: snapshot["exhaust_pile"]
+        exhaust_pile: truth_snapshot["exhaust_pile"]
             .as_array()
             .map(|cards| {
                 cards
@@ -911,7 +986,7 @@ fn summarize_java_snapshot(snapshot: &Value) -> CombatStateSummary {
                     .collect()
             })
             .unwrap_or_default(),
-        player_relics: snapshot["relics"]
+        player_relics: truth_snapshot["relics"]
             .as_array()
             .map(|relics| {
                 relics
@@ -938,14 +1013,18 @@ fn summarize_java_snapshot(snapshot: &Value) -> CombatStateSummary {
                     .collect()
             })
             .unwrap_or_default(),
-        monsters: monsters
+        monsters: truth_monsters
             .iter()
             .enumerate()
             .map(|(index, monster)| CombatMonsterSummary {
                 id: index + 1,
                 hp: monster["current_hp"].as_i64().unwrap_or(0) as i32,
                 block: monster["block"].as_i64().unwrap_or(0) as i32,
-                intent: monster["intent"].to_string(),
+                intent: observation_monsters
+                    .get(index)
+                    .and_then(|observation| observation.get("intent"))
+                    .map(Value::to_string)
+                    .unwrap_or_else(|| "null".to_string()),
                 powers: monster["powers"]
                     .as_array()
                     .map(|powers| {
@@ -968,7 +1047,7 @@ fn root_is_combat_related(root: &Value) -> bool {
     let Some(game_state) = root.get("game_state") else {
         return false;
     };
-    game_state.get("combat_state").is_some()
+    has_live_combat_payload(game_state)
         || game_state
             .get("room_phase")
             .and_then(Value::as_str)
@@ -982,8 +1061,8 @@ fn classify_combat_step(
     Option<String>,
     Option<CombatMappedCommand>,
 ) {
-    let has_before_snapshot = extract_combat_snapshot(&step.before_root).is_some();
-    let has_after_snapshot = extract_combat_snapshot(&step.after_root).is_some();
+    let has_before_snapshot = extract_split_combat_snapshots(&step.before_root).is_some();
+    let has_after_snapshot = extract_split_combat_snapshots(&step.after_root).is_some();
     if !has_before_snapshot || !has_after_snapshot {
         return if step.room_phase.as_deref() == Some("COMBAT") {
             (
@@ -1133,45 +1212,45 @@ pub fn mapped_command_to_input(
     }
 }
 
-fn extract_combat_snapshot(root: &Value) -> Option<Value> {
-    build_live_combat_snapshot_from_root(root).ok()
+fn extract_split_combat_snapshots(root: &Value) -> Option<(Value, Value)> {
+    build_live_split_combat_snapshots_from_root(root).ok()
 }
 
-pub fn build_live_combat_snapshot_from_root(root: &Value) -> Result<Value, String> {
+fn has_live_combat_payload(game_state: &Value) -> bool {
+    game_state.get("combat_truth").is_some_and(|v| !v.is_null())
+        && game_state
+            .get("combat_observation")
+            .is_some_and(|v| !v.is_null())
+}
+
+pub fn build_live_split_combat_snapshots_from_root(root: &Value) -> Result<(Value, Value), String> {
     let game_state = root
         .get("game_state")
         .ok_or_else(|| "root missing game_state".to_string())?;
-    game_state
-        .get("combat_state")
-        .ok_or_else(|| "game_state missing combat_state".to_string())?;
-    let mut snapshot = build_live_combat_snapshot(game_state);
-    if let Some(snapshot_obj) = snapshot.as_object_mut() {
-        if let Some(rng_state) = root
-            .get("rng_state")
-            .cloned()
-            .or_else(|| game_state.get("rng_state").cloned())
-        {
-            snapshot_obj.insert("rng_state".to_string(), rng_state);
-        }
+    if !has_live_combat_payload(game_state) {
+        return Err("game_state missing combat payload".to_string());
     }
-    Ok(snapshot)
+    Ok((
+        build_live_truth_snapshot(game_state),
+        build_live_observation_snapshot(game_state),
+    ))
 }
 
-fn action_context_for_step(step: &CombatReplayStep, java_after_snapshot: &Value) -> ActionContext {
+fn action_context_for_step(
+    step: &CombatReplayStep,
+    truth_snapshot: &Value,
+    observation_snapshot: &Value,
+) -> ActionContext {
     let mut context = ActionContext {
         last_command: step.command_text.clone(),
         was_end_turn: matches!(step.mapped_command, Some(CombatMappedCommand::End)),
-        has_rng_state: step
-            .after_root
-            .get("game_state")
-            .and_then(|gs| gs.get("combat_state"))
-            .and_then(|cs| cs.get("rng_state"))
-            .is_some()
+        has_rng_state: truth_snapshot.get("rng_state").is_some()
             || step.after_root.get("rng_state").is_some(),
         ..Default::default()
     };
-    if let Some(monsters) = java_after_snapshot
+    if let Some(monsters) = observation_snapshot
         .get("monsters")
+        .or_else(|| truth_snapshot.get("monsters"))
         .and_then(Value::as_array)
     {
         context.monster_intents = monsters

@@ -1,7 +1,7 @@
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 
-use crate::diff::protocol::{
+use crate::protocol::java::{
     monster_id_from_java, power_id_from_java, power_instance_id_from_java,
 };
 use crate::runtime::combat::{CombatState, Power};
@@ -263,7 +263,10 @@ fn align_rust_monsters_to_java(cs: &CombatState, java_ms: &[Value]) -> Vec<Optio
                 .find(|(idx, monster)| {
                     !used.contains(idx)
                         && Some(monster.monster_type) == java_type.map(|id| id as usize)
-                        && monster.protocol_identity.draw_x == java_draw_x
+                        && cs
+                            .monster_protocol_identity(monster.id)
+                            .and_then(|identity| identity.draw_x)
+                            == java_draw_x
                         && monster.is_dying
                             == (java_monster["is_gone"].as_bool().unwrap_or(false)
                                 && !java_monster["half_dead"].as_bool().unwrap_or(false))
@@ -279,7 +282,10 @@ fn align_rust_monsters_to_java(cs: &CombatState, java_ms: &[Value]) -> Vec<Optio
                     .enumerate()
                     .find(|(idx, monster)| {
                         !used.contains(idx)
-                            && monster.protocol_identity.instance_id == Some(instance_id)
+                            && cs
+                                .monster_protocol_identity(monster.id)
+                                .and_then(|identity| identity.instance_id)
+                                == Some(instance_id)
                     })
                     .map(|(idx, _)| idx)
             })
@@ -312,8 +318,18 @@ pub fn compare_states(
     skip_piles: bool,
     context: &ActionContext,
 ) -> Vec<DiffResult> {
+    compare_states_from_snapshots(cs, java_snapshot, java_snapshot, skip_piles, context)
+}
+
+pub fn compare_states_from_snapshots(
+    cs: &CombatState,
+    truth_snapshot: &Value,
+    observation_snapshot: &Value,
+    skip_piles: bool,
+    context: &ActionContext,
+) -> Vec<DiffResult> {
     let mut diffs = Vec::new();
-    let java_player = &java_snapshot["player"];
+    let java_player = &truth_snapshot["player"];
 
     let java_hp = java_player["current_hp"]
         .as_i64()
@@ -355,9 +371,11 @@ pub fn compare_states(
         });
     }
 
-    let java_monsters = java_snapshot["monsters"].as_array();
-    if let Some(java_ms) = java_monsters {
-        let aligned_indices = align_rust_monsters_to_java(cs, java_ms);
+    let truth_monsters = truth_snapshot["monsters"].as_array();
+    let observation_monsters = observation_snapshot["monsters"].as_array();
+    if let Some(java_ms) = truth_monsters {
+        let alignment_monsters = observation_monsters.unwrap_or(java_ms);
+        let aligned_indices = align_rust_monsters_to_java(cs, alignment_monsters);
         for (i, jm) in java_ms.iter().enumerate() {
             let Some(rust_idx) = aligned_indices.get(i).and_then(|idx| *idx) else {
                 continue;
@@ -392,11 +410,11 @@ pub fn compare_states(
     }
 
     if !skip_piles {
-        let java_hand_size = java_snapshot["hand_size"]
+        let java_hand_size = truth_snapshot["hand_size"]
             .as_u64()
             .map(|n| n as usize)
             .unwrap_or_else(|| {
-                java_snapshot["hand"]
+                truth_snapshot["hand"]
                     .as_array()
                     .map(|a| a.len())
                     .unwrap_or(0)
@@ -410,11 +428,11 @@ pub fn compare_states(
             });
         }
 
-        let java_discard = java_snapshot["discard_pile_size"]
+        let java_discard = truth_snapshot["discard_pile_size"]
             .as_u64()
             .map(|n| n as usize)
             .unwrap_or_else(|| {
-                java_snapshot["discard_pile"]
+                truth_snapshot["discard_pile"]
                     .as_array()
                     .map(|a| a.len())
                     .unwrap_or(0)
@@ -428,11 +446,11 @@ pub fn compare_states(
             });
         }
 
-        let java_exhaust = java_snapshot["exhaust_pile_size"]
+        let java_exhaust = truth_snapshot["exhaust_pile_size"]
             .as_u64()
             .map(|n| n as usize)
             .unwrap_or_else(|| {
-                java_snapshot["exhaust_pile"]
+                truth_snapshot["exhaust_pile"]
                     .as_array()
                     .map(|a| a.len())
                     .unwrap_or(0)
@@ -456,8 +474,9 @@ pub fn compare_states(
         context,
     );
 
-    if let Some(java_ms) = java_monsters {
-        let aligned_indices = align_rust_monsters_to_java(cs, java_ms);
+    if let Some(java_ms) = truth_monsters {
+        let alignment_monsters = observation_monsters.unwrap_or(java_ms);
+        let aligned_indices = align_rust_monsters_to_java(cs, alignment_monsters);
         for (i, jm) in java_ms.iter().enumerate() {
             let Some(rust_idx) = aligned_indices.get(i).and_then(|idx| *idx) else {
                 continue;

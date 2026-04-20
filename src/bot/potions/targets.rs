@@ -30,7 +30,9 @@ pub fn target_score(
             let artifact = state.get_power(monster.id, PowerId::Artifact);
             match potion_id {
                 PotionId::WeakenPotion => {
-                    monster.intent_preview_total_damage() * 12
+                    crate::projection::combat::monster_preview_total_damage_in_combat(
+                        state, monster,
+                    ) * 12
                         - artifact
                             * if signals.threat.imminent_lethal {
                                 120
