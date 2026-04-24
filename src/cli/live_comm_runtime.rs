@@ -917,9 +917,53 @@ fn suggested_artifacts_for_category(category: &str) -> Vec<String> {
             "failure_snapshots.jsonl".to_string(),
             "replay.json".to_string(),
         ],
+        "protocol_screen_action_space" => vec![
+            "failure_snapshots.jsonl".to_string(),
+            "debug.txt".to_string(),
+            "raw.jsonl".to_string(),
+        ],
         "validation_failure" => vec!["event_audit.jsonl".to_string(), "debug.txt".to_string()],
         _ => vec!["debug.txt".to_string()],
     }
+}
+
+fn classify_validation_reason(snapshot: &RuntimeFindingSnapshot, reason: &str) -> (String, String) {
+    if let Some(key) = protocol_screen_action_space_key(snapshot, reason) {
+        return ("protocol_screen_action_space".to_string(), key);
+    }
+    ("validation_failure".to_string(), reason.to_string())
+}
+
+fn protocol_screen_action_space_key(
+    snapshot: &RuntimeFindingSnapshot,
+    reason: &str,
+) -> Option<String> {
+    let known_kind = [
+        "missing_screen_action_space",
+        "invalid_screen_action_space",
+        "screen_action_space_screen_type_mismatch",
+        "missing_screen_action_space_screen_type",
+        "missing_screen_action_space_actions",
+        "empty_screen_action_space",
+        "invalid_screen_action_space_kind",
+        "invalid_screen_action_space_command",
+        "invalid_screen_action_space_choice_index",
+    ]
+    .into_iter()
+    .find(|kind| reason == *kind || reason.starts_with(&format!("{kind}:")))?;
+
+    let field = snapshot
+        .decision_context
+        .get("expected_field")
+        .and_then(Value::as_str)
+        .or_else(|| reason.split(':').nth(1))
+        .unwrap_or("unknown_field");
+    let screen = snapshot
+        .decision_context
+        .get("screen")
+        .and_then(Value::as_str)
+        .unwrap_or(snapshot.screen.as_str());
+    Some(format!("{known_kind}:{field}:screen={screen}"))
 }
 
 fn build_finding_report(
@@ -973,13 +1017,10 @@ fn build_finding_report(
                     .iter()
                     .filter(|reason| !reason.trim().is_empty() && !reason.starts_with("count="))
                 {
-                    let family_key = ("validation_failure".to_string(), reason.clone());
+                    let (category, key) = classify_validation_reason(&snapshot, reason);
+                    let family_key = (category.clone(), key.clone());
                     let builder = families.entry(family_key).or_insert_with(|| {
-                        RuntimeFindingFamilyBuilder::new(
-                            "validation_failure",
-                            reason,
-                            snapshot.frame,
-                        )
+                        RuntimeFindingFamilyBuilder::new(&category, &key, snapshot.frame)
                     });
                     builder.add_occurrence(snapshot.frame, &snapshot.snapshot_id, &labels, None);
                 }
@@ -1024,8 +1065,9 @@ fn category_sort_key(category: &str) -> u8 {
         "engine_bug" => 0,
         "content_gap" => 1,
         "timing" => 2,
-        "validation_failure" => 3,
-        _ => 4,
+        "protocol_screen_action_space" => 3,
+        "validation_failure" => 4,
+        _ => 5,
     }
 }
 
@@ -1270,23 +1312,36 @@ fn render_triage_summary(
     let top_validation = findings_for_category(report, "validation_failure")
         .take(5)
         .collect::<Vec<_>>();
+    let top_protocol_screen = findings_for_category(report, "protocol_screen_action_space")
+        .take(5)
+        .collect::<Vec<_>>();
     let top_gaps = findings_for_category(report, "content_gap")
         .take(5)
         .collect::<Vec<_>>();
 
     if top_engine.is_empty()
         && top_validation.is_empty()
+        && top_protocol_screen.is_empty()
         && top_gaps.is_empty()
         && validation.status.starts_with("ok")
     {
         out.push_str("\nPrimary Signal:\n- no combat parity failures captured in this run\n");
-    } else if top_engine.is_empty() && top_validation.is_empty() && top_gaps.is_empty() {
+    } else if top_engine.is_empty()
+        && top_validation.is_empty()
+        && top_protocol_screen.is_empty()
+        && top_gaps.is_empty()
+    {
         out.push_str(
             "\nPrimary Signal:\n- combat parity is clean, but validation/runtime quality still needs attention\n",
         );
     }
 
     let _ = write_triage_family_section(&mut out, "Top Engine Bug Families:", top_engine);
+    let _ = write_triage_family_section(
+        &mut out,
+        "Top Protocol Screen Action-Space Families:",
+        top_protocol_screen,
+    );
     let _ =
         write_triage_family_section(&mut out, "Top Validation Failure Families:", top_validation);
     let _ = write_triage_family_section(&mut out, "Top Content Gap Families:", top_gaps);
@@ -1354,6 +1409,10 @@ fn render_triage_summary(
         || report.counts.content_gaps > 0
         || report.counts.timing_diffs > 0
         || report.counts.replay_failures > 0
+        || report
+            .families
+            .iter()
+            .any(|family| family.category == "protocol_screen_action_space")
     {
         out.push_str(
             "- focus.txt\n- findings.json\n- failure_snapshots.jsonl\n- debug.txt\n- raw.jsonl\n",
@@ -2082,7 +2141,8 @@ mod tests {
         let snapshots_path = temp_root.join("failure_snapshots.jsonl");
         let content = concat!(
             "{\"snapshot_id\":\"snap_engine\",\"frame\":352,\"response_id\":352,\"state_frame_id\":352,\"screen\":\"NONE\",\"room_phase\":\"COMBAT\",\"room_type\":\"MonsterRoom\",\"trigger_kind\":\"engine_bug\",\"reasons\":[\"combat_action_diff\",\"count=1\"],\"normalized_state\":{\"monsters\":[{\"id\":\"Darkling\",\"name\":\"Darkling\",\"current_hp\":50}],\"screen_state\":{}},\"decision_context\":{\"diffs\":[\"player.power[Strength].amount [ENGINE_BUG] Rust=3 Java=2\"]},\"protocol_context\":{}}\n",
-            "{\"snapshot_id\":\"snap_validation\",\"frame\":2,\"response_id\":2,\"state_frame_id\":2,\"screen\":\"EVENT\",\"room_phase\":\"EVENT\",\"room_type\":\"EventRoom\",\"trigger_kind\":\"validation_failure\",\"reasons\":[\"compatibility_fallback\",\"event_screen_semantics_incomplete\"],\"normalized_state\":{\"monsters\":[],\"screen_state\":{\"event_name\":\"Neow\"}},\"decision_context\":{},\"protocol_context\":{}}\n"
+            "{\"snapshot_id\":\"snap_validation\",\"frame\":2,\"response_id\":2,\"state_frame_id\":2,\"screen\":\"EVENT\",\"room_phase\":\"EVENT\",\"room_type\":\"EventRoom\",\"trigger_kind\":\"validation_failure\",\"reasons\":[\"compatibility_fallback\",\"event_screen_semantics_incomplete\"],\"normalized_state\":{\"monsters\":[],\"screen_state\":{\"event_name\":\"Neow\"}},\"decision_context\":{},\"protocol_context\":{}}\n",
+            "{\"snapshot_id\":\"snap_protocol_screen\",\"frame\":9,\"response_id\":9,\"state_frame_id\":9,\"screen\":\"GRID\",\"room_phase\":\"COMBAT\",\"room_type\":\"MonsterRoom\",\"trigger_kind\":\"validation_failure\",\"reasons\":[\"missing_screen_action_space:combat_action_space\"],\"normalized_state\":{\"monsters\":[],\"screen_state\":{}},\"decision_context\":{\"validation\":\"screen_action_space\",\"expected_field\":\"combat_action_space\",\"screen\":\"GRID\",\"room_phase\":\"COMBAT\",\"available_commands\":[\"choose\"]},\"protocol_context\":{}}\n"
         );
         std::fs::write(&snapshots_path, content).expect("snapshots should write");
 
@@ -2118,6 +2178,52 @@ mod tests {
             .expect("compatibility family should exist");
         assert_eq!(fallback.count, 1);
         assert_eq!(fallback.event_labels, vec!["Neow"]);
+
+        let protocol_screen = report
+            .families
+            .iter()
+            .find(|family| {
+                family.category == "protocol_screen_action_space"
+                    && family.key == "missing_screen_action_space:combat_action_space:screen=GRID"
+            })
+            .expect("protocol screen action-space family should exist");
+        assert_eq!(protocol_screen.count, 1);
+        assert_eq!(protocol_screen.event_labels, vec!["GRID"]);
+        assert_eq!(
+            protocol_screen.suggested_artifacts,
+            vec![
+                "failure_snapshots.jsonl".to_string(),
+                "debug.txt".to_string(),
+                "raw.jsonl".to_string()
+            ]
+        );
+
+        let manifest = LiveRunManifest {
+            run_id: "run_x".to_string(),
+            timestamp: "20260420_000000".to_string(),
+            build_tag: "build".to_string(),
+            parity_mode: "Survey".to_string(),
+            watch_enabled: false,
+            session_exit_reason: "STDIN_EOF".to_string(),
+            classification_label: "survey_tainted".to_string(),
+            profile: LiveProfileMetadata::default(),
+            provenance: LiveRunProvenance::default(),
+            counts: LiveRunCounts::default(),
+            artifacts: LiveRunArtifacts::default(),
+            validation: None,
+            retention: LiveRetentionFlags::default(),
+        };
+        let summary = render_triage_summary(
+            &report,
+            &manifest,
+            &LiveRunValidation {
+                status: "ok".to_string(),
+                ..LiveRunValidation::default()
+            },
+            &RunTriageMetrics::default(),
+        );
+        assert!(summary.contains("Top Protocol Screen Action-Space Families:"));
+        assert!(summary.contains("missing_screen_action_space:combat_action_space:screen=GRID"));
 
         let _ = std::fs::remove_file(&snapshots_path);
         let _ = std::fs::remove_dir_all(&temp_root);
