@@ -352,6 +352,16 @@ impl RunState {
         let old_gold = self.gold;
         self.gold = (self.gold + delta).max(0);
         let actual_delta = self.gold - old_gold;
+        if actual_delta < 0 && matches!(source, DomainEventSource::Shop) {
+            if let Some(relic) = self
+                .relics
+                .iter_mut()
+                .find(|relic| relic.id == crate::content::relics::RelicId::MawBank)
+            {
+                relic.used_up = true;
+                relic.counter = -2;
+            }
+        }
         if actual_delta != 0 {
             self.emit_event(DomainEvent::GoldChanged {
                 delta: actual_delta,

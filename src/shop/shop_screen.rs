@@ -113,8 +113,8 @@ where
     }
 
     // 4. Initial Purge Cost
-    let actual_purge_cost = 75.0 + (config.previous_purge_count as f32 * 25.0);
-    shop.purge_cost = actual_purge_cost as i32;
+    let base_purge_cost = 75.0 + (config.previous_purge_count as f32 * 25.0);
+    shop.purge_cost = base_purge_cost as i32;
 
     // 5. Apply Discounts Sequentially (ShopScreen.init logic)
     let ascension_level = config.ascension_level;
@@ -133,7 +133,7 @@ where
             p.price = (p.price as f32 * mult).round() as i32;
         }
         if affect_purge {
-            shop.purge_cost = (shop.purge_cost as f32 * mult).round() as i32;
+            shop.purge_cost = (base_purge_cost * mult).round() as i32;
         }
     };
 
@@ -151,4 +151,63 @@ where
     }
 
     shop
+}
+
+#[cfg(test)]
+mod tests {
+    use super::generate_shop;
+    use crate::content::potions::PotionClass;
+    use crate::content::relics::{RelicId, RelicTier};
+    use crate::runtime::rng::RngPool;
+    use crate::shop::state::ShopConfig;
+
+    fn fixed_relic(tier: RelicTier) -> RelicId {
+        match tier {
+            RelicTier::Common => RelicId::Anchor,
+            RelicTier::Uncommon => RelicId::LetterOpener,
+            RelicTier::Rare => RelicId::LizardTail,
+            RelicTier::Shop => RelicId::MembershipCard,
+            _ => RelicId::Anchor,
+        }
+    }
+
+    #[test]
+    fn membership_card_overrides_courier_for_initial_purge_cost() {
+        let mut rng_pool = RngPool::new(1);
+        let shop = generate_shop(
+            &mut rng_pool,
+            &ShopConfig {
+                ascension_level: 0,
+                player_class: "Ironclad",
+                has_courier: true,
+                has_membership_card: true,
+                has_smiling_mask: false,
+                previous_purge_count: 1,
+                potion_class: PotionClass::Ironclad,
+                card_blizz_randomizer: 5,
+            },
+            fixed_relic,
+        );
+        assert_eq!(shop.purge_cost, 50);
+    }
+
+    #[test]
+    fn smiling_mask_overrides_discounted_initial_purge_cost() {
+        let mut rng_pool = RngPool::new(1);
+        let shop = generate_shop(
+            &mut rng_pool,
+            &ShopConfig {
+                ascension_level: 0,
+                player_class: "Ironclad",
+                has_courier: true,
+                has_membership_card: true,
+                has_smiling_mask: true,
+                previous_purge_count: 3,
+                potion_class: PotionClass::Ironclad,
+                card_blizz_randomizer: 5,
+            },
+            fixed_relic,
+        );
+        assert_eq!(shop.purge_cost, 50);
+    }
 }
