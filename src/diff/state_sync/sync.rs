@@ -41,5 +41,13 @@ pub fn sync_state_from_snapshots(
 
     cs.clear_pending_actions();
     cs.turn.begin_player_phase();
+    cs.turn.counters.player_escaping = truth_snapshot["player"]["is_escaping"]
+        .as_bool()
+        .unwrap_or(false);
+    // These counters describe transient escape continuation progress that old
+    // snapshots do not serialize. Reset them instead of carrying stale values
+    // across sync boundaries.
+    cs.turn.counters.escape_pending_reward = false;
+    cs.turn.counters.victory_triggered = false;
     cs.runtime = build_runtime_hints_from_snapshots(truth_snapshot, observation_snapshot);
 }

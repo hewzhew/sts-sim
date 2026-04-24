@@ -196,10 +196,21 @@ pub(crate) fn build_runtime_hints_from_snapshots(
         })
         .unwrap_or_default();
 
+    let combat_smoked = truth_snapshot
+        .get("room_smoked")
+        .and_then(|v| v.as_bool())
+        .or_else(|| {
+            observation_snapshot
+                .get("room_smoked")
+                .and_then(|v| v.as_bool())
+        })
+        .unwrap_or(false);
+
     CombatRuntimeHints {
         using_card,
         card_queue,
         colorless_combat_pool,
+        combat_smoked,
         ..CombatRuntimeHints::default()
     }
 }

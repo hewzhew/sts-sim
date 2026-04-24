@@ -57,6 +57,21 @@ fn resolve_victory_hooks_immediately(combat_state: &mut CombatState) {
     }
 }
 
+pub fn is_smoke_escape_stable_boundary(
+    engine_state: &EngineState,
+    combat_state: &CombatState,
+) -> bool {
+    matches!(engine_state, EngineState::CombatProcessing)
+        && matches!(combat_state.turn.current_phase, CombatPhase::TurnTransition)
+        && combat_state.runtime.combat_smoked
+        && combat_state.turn.counters.player_escaping
+        && combat_state.turn.counters.victory_triggered
+        && combat_state.turn.counters.escape_pending_reward
+        && !combat_state.has_pending_actions()
+        && combat_state.zones.queued_cards.is_empty()
+        && combat_state.zones.limbo.is_empty()
+}
+
 pub fn tick_engine(
     engine_state: &mut EngineState,
     combat_state: &mut CombatState,
@@ -1120,6 +1135,7 @@ pub fn tick_until_stable_turn(
     loop {
         match es {
             EngineState::CombatPlayerTurn => break,
+            EngineState::CombatProcessing if is_smoke_escape_stable_boundary(es, cs) => break,
             EngineState::CombatProcessing => {}
             EngineState::PendingChoice(_) => break, // Would need user input
             EngineState::GameOver(_) => return false,

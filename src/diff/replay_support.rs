@@ -1,7 +1,10 @@
 use serde_json::Value;
 use std::collections::HashSet;
 
-use crate::engine::{core::tick_engine, pending_choices};
+use crate::engine::{
+    core::{is_smoke_escape_stable_boundary, tick_engine},
+    pending_choices,
+};
 use crate::protocol::java::continuation_state_requests_on_use_potion_hooks;
 use crate::runtime::combat::CombatState;
 use crate::state::core::{ClientInput, EngineState, HandSelectReason, PendingChoice};
@@ -27,6 +30,7 @@ pub fn drain_to_stable(es: &mut EngineState, cs: &mut CombatState) -> bool {
     loop {
         match es {
             EngineState::CombatPlayerTurn => break,
+            EngineState::CombatProcessing if is_smoke_escape_stable_boundary(es, cs) => break,
             EngineState::CombatProcessing => {}
             EngineState::PendingChoice(_) => break,
             EngineState::GameOver(_) => return false,

@@ -90,6 +90,10 @@ pub fn build_combat_state_from_snapshots(
     relics_val: &Value,
 ) -> CombatState {
     let player_val = &truth_snapshot["player"];
+    let player_escaping = player_val
+        .get("is_escaping")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
 
     let mut player = PlayerEntity {
         id: 0,
@@ -298,6 +302,7 @@ pub fn build_combat_state_from_snapshots(
             runtime
         },
     };
+    cs.turn.counters.player_escaping = player_escaping;
     crate::content::relics::restore_combat_energy_master(&mut cs);
     cs.recompute_turn_start_draw_modifier();
     cs.update_hand_cards();
