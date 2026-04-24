@@ -47,26 +47,18 @@ Not yet proven by current samples:
 - full Java parity for the post-switch turn boundary
 - next threshold progression across multiple switches
 
-## First Implemented Behavior Coverage
+## Current Behavior Coverage
 
-The first Rust behavior tests now live in:
-
-- [tests/guardian_threshold_behavior.rs](../../tests/guardian_threshold_behavior.rs)
-
-Currently covered:
-
-- below-threshold hit does not switch mode
-- exact-threshold hit queues the Defensive Mode transition after full HP loss
-- overflow hit applies full HP loss before queued Defensive Mode transition resolves
-- queued switch grants 20 block and updates the visible intent to `Buff`
-- after the defensive sequence reaches Twin Slam, `Mode Shift` is reapplied from the
-  increased internal threshold (`40` at A0 after one trigger)
-- a second trigger after the next offensive cycle raises the internal threshold
-  from `40` to `50`, and the next `Mode Shift` is reapplied at `50`
+The previous synthetic Rust behavior test for this matrix was retired because
+it asserted through low-level action execution and stale intent APIs instead of
+a trustworthy Java-backed scenario boundary.
 
 Still not covered:
 
 - Java parity for the visible turn boundary after switching
+- exact-threshold crossing combat resolution
+- overflow damage plus defensive-mode queue timing
+- next threshold progression across multiple switches
 - repeated multi-cycle growth beyond the second confirmed trigger
 - a dedicated confirmation of whether any practical cap exists; current Java
   source inspection shows `dmgThreshold += dmgThresholdIncrease` with no cap

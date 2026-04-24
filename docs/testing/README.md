@@ -26,8 +26,6 @@ tools:
   - checked-in canonical combat regressions under `tests/combat_cases/`
 - `tests/state_sync_strictness.rs`
   - importer strictness and missing-field guardrails
-- `tests/guardian_threshold_behavior.rs`
-  - example behavior test file with explicit oracle annotation
 - `tests/stasis_behavior.rs`
   - example behavior test file for a power-driven hidden-state mechanic
 - [../live_comm/LIVE_COMM_MANUAL_SCENARIO_RUNBOOK.md](../live_comm/LIVE_COMM_MANUAL_SCENARIO_RUNBOOK.md)

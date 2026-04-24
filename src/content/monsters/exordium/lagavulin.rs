@@ -338,12 +338,32 @@ mod tests {
     use crate::content::cards::CardId;
     use crate::content::monsters::EnemyId;
     use crate::content::powers::PowerId;
-    use crate::diff::replay::drain_to_stable;
+    use crate::engine::core::{is_smoke_escape_stable_boundary, tick_engine};
     use crate::engine::action_handlers::damage::handle_fiend_fire;
     use crate::runtime::action::{DamageInfo, DamageType};
     use crate::runtime::combat::{CombatCard, Power};
     use crate::state::core::EngineState;
     use crate::test_support::planned_monster;
+
+    fn drain_to_stable(es: &mut EngineState, cs: &mut crate::runtime::combat::CombatState) -> bool {
+        let mut iterations = 0;
+        loop {
+            match es {
+                EngineState::CombatPlayerTurn => break,
+                EngineState::CombatProcessing if is_smoke_escape_stable_boundary(es, cs) => break,
+                EngineState::CombatProcessing => {}
+                EngineState::PendingChoice(_) => break,
+                EngineState::GameOver(_) => return false,
+                _ => break,
+            }
+            if !tick_engine(es, cs, None) {
+                return false;
+            }
+            iterations += 1;
+            assert!(iterations <= 1000, "tick loop exceeded 1000 iterations");
+        }
+        true
+    }
 
     #[test]
     fn fiend_fire_wakes_lagavulin_only_once() {

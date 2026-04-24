@@ -10,8 +10,9 @@ $repoRoot = Split-Path -Parent $PSScriptRoot
 $commands = @(
     "cargo test --test protocol_truth_samples",
     "cargo test --test state_sync_strictness",
-    "cargo test --test guardian_threshold_behavior",
-    "cargo test --test stasis_behavior"
+    "cargo test --test stasis_behavior",
+    "cargo test --test layer_boundaries",
+    "cargo test --test combat_case_driver"
 )
 
 if ($IncludeParity) {

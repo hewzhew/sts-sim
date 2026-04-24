@@ -24,7 +24,7 @@ Use these to pin importer-sensitive mechanics:
 
 - `tests/protocol_truth_samples/`
 - `tests/protocol_truth_samples.rs`
-- behavior tests such as `guardian_threshold_behavior.rs` and `stasis_behavior.rs`
+- behavior tests such as `stasis_behavior.rs`
 
 These are the small, explicit truth anchors that keep dataset assumptions honest.
 
