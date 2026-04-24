@@ -46,3 +46,7 @@ pub fn on_use_card(
 
     actions
 }
+
+pub fn on_victory(relic_state: &mut crate::content::relics::RelicState) {
+    relic_state.counter = -1;
+}

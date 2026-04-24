@@ -4,6 +4,10 @@ use smallvec::SmallVec;
 pub struct CaptainsWheel;
 
 impl CaptainsWheel {
+    pub fn at_battle_start(relic_state: &mut crate::content::relics::RelicState) {
+        relic_state.counter = 0;
+    }
+
     pub fn at_turn_start(counter: i32) -> SmallVec<[ActionInfo; 4]> {
         let mut actions = SmallVec::new();
         let current = if counter == -1 { 0 } else { counter };
@@ -33,5 +37,9 @@ impl CaptainsWheel {
             });
         }
         actions
+    }
+
+    pub fn on_victory(relic_state: &mut crate::content::relics::RelicState) {
+        relic_state.counter = -1;
     }
 }

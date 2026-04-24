@@ -134,10 +134,14 @@ pub fn at_battle_start(state: &mut CombatState) -> SmallVec<[ActionInfo; 4]> {
                     counter,
                 ));
             }
+            RelicId::CaptainsWheel => {
+                let mut rs = state.entities.player.relics[relic_index].clone();
+                crate::content::relics::captains_wheel::CaptainsWheel::at_battle_start(&mut rs);
+                state.entities.player.relics[relic_index] = rs;
+            }
             RelicId::HornCleat => {
                 actions.extend(crate::content::relics::horn_cleat::HornCleat::at_battle_start())
             }
-            RelicId::Mango => actions.extend(crate::content::relics::mango::at_battle_start()),
             RelicId::OddlySmoothStone => {
                 actions.extend(crate::content::relics::oddly_smooth_stone::at_battle_start())
             }
@@ -147,6 +151,11 @@ pub fn at_battle_start(state: &mut CombatState) -> SmallVec<[ActionInfo; 4]> {
             RelicId::Pocketwatch => {
                 let mut rs = state.entities.player.relics[relic_index].clone();
                 crate::content::relics::pocketwatch::at_battle_start(&mut rs);
+                state.entities.player.relics[relic_index] = rs;
+            }
+            RelicId::StoneCalendar => {
+                let mut rs = state.entities.player.relics[relic_index].clone();
+                crate::content::relics::stone_calendar::at_battle_start(&mut rs);
                 state.entities.player.relics[relic_index] = rs;
             }
             RelicId::PreservedInsect => actions.extend(
@@ -363,6 +372,26 @@ pub fn on_victory(state: &mut CombatState) -> smallvec::SmallVec<[ActionInfo; 4]
                 ));
                 state.entities.player.relics[relic_index] = rs;
             }
+            RelicId::Kunai => {
+                let mut rs = state.entities.player.relics[relic_index].clone();
+                crate::content::relics::kunai::on_victory(&mut rs);
+                state.entities.player.relics[relic_index] = rs;
+            }
+            RelicId::LetterOpener => {
+                let mut rs = state.entities.player.relics[relic_index].clone();
+                crate::content::relics::letter_opener::on_victory(&mut rs);
+                state.entities.player.relics[relic_index] = rs;
+            }
+            RelicId::CaptainsWheel => {
+                let mut rs = state.entities.player.relics[relic_index].clone();
+                crate::content::relics::captains_wheel::CaptainsWheel::on_victory(&mut rs);
+                state.entities.player.relics[relic_index] = rs;
+            }
+            RelicId::EmotionChip => {
+                let mut rs = state.entities.player.relics[relic_index].clone();
+                crate::content::relics::emotion_chip::on_victory(&mut rs);
+                state.entities.player.relics[relic_index] = rs;
+            }
             RelicId::MeatOnTheBone => {
                 let used_up = state.entities.player.relics[relic_index].used_up;
                 actions.extend(crate::content::relics::meat_on_the_bone::on_victory(
@@ -372,6 +401,21 @@ pub fn on_victory(state: &mut CombatState) -> smallvec::SmallVec<[ActionInfo; 4]
             RelicId::Pocketwatch => {
                 let mut rs = state.entities.player.relics[relic_index].clone();
                 crate::content::relics::pocketwatch::on_victory(&mut rs);
+                state.entities.player.relics[relic_index] = rs;
+            }
+            RelicId::OrnamentalFan => {
+                let mut rs = state.entities.player.relics[relic_index].clone();
+                crate::content::relics::ornamental_fan::on_victory(&mut rs);
+                state.entities.player.relics[relic_index] = rs;
+            }
+            RelicId::Shuriken => {
+                let mut rs = state.entities.player.relics[relic_index].clone();
+                crate::content::relics::shuriken::on_victory(&mut rs);
+                state.entities.player.relics[relic_index] = rs;
+            }
+            RelicId::StoneCalendar => {
+                let mut rs = state.entities.player.relics[relic_index].clone();
+                crate::content::relics::stone_calendar::on_victory(&mut rs);
                 state.entities.player.relics[relic_index] = rs;
             }
             RelicId::SlaversCollar => {
@@ -463,6 +507,12 @@ pub fn at_turn_start(state: &mut CombatState) -> SmallVec<[ActionInfo; 4]> {
                 ));
                 state.entities.player.relics[relic_index] = rs;
             }
+            RelicId::StoneCalendar => {
+                let counter = state.entities.player.relics[relic_index].counter;
+                actions.extend(crate::content::relics::stone_calendar::at_turn_start(
+                    counter,
+                ));
+            }
             // FrozenCore moved to at_end_of_turn (Java: onPlayerEndTurn)
             RelicId::HoveringKite => {
                 let mut rs = state.entities.player.relics[relic_index].clone();
@@ -470,12 +520,6 @@ pub fn at_turn_start(state: &mut CombatState) -> SmallVec<[ActionInfo; 4]> {
                     &mut rs,
                 ));
                 state.entities.player.relics[relic_index] = rs;
-            }
-            RelicId::StoneCalendar => {
-                let counter = state.entities.player.relics[relic_index].counter;
-                actions.extend(crate::content::relics::stone_calendar::at_turn_start(
-                    counter,
-                ));
             }
             RelicId::WarpedTongs => {
                 actions.extend(crate::content::relics::warped_tongs::at_turn_start(&*state))

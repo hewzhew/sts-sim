@@ -816,7 +816,11 @@ pub fn get_relic_subscriptions(id: RelicId) -> RelicSubscriptions {
         RelicId::CultistMask => sub.at_battle_start = true,
         RelicId::CursedKey => {}
 
-        RelicId::CaptainsWheel => sub.at_turn_start = true,
+        RelicId::CaptainsWheel => {
+            sub.at_battle_start = true;
+            sub.at_turn_start = true;
+            sub.on_victory = true;
+        }
         RelicId::CentennialPuzzle => {
             sub.at_pre_battle = true;
             sub.on_lose_hp = true;
@@ -847,6 +851,7 @@ pub fn get_relic_subscriptions(id: RelicId) -> RelicSubscriptions {
         RelicId::EmotionChip => {
             sub.at_turn_start = true;
             sub.on_lose_hp = true;
+            sub.on_victory = true;
         }
         RelicId::EmptyCage => {}
         RelicId::Enchiridion => {
@@ -910,6 +915,7 @@ pub fn get_relic_subscriptions(id: RelicId) -> RelicSubscriptions {
         RelicId::Kunai => {
             sub.on_use_card = true;
             sub.at_turn_start = true;
+            sub.on_victory = true;
         }
         RelicId::Lantern => {
             sub.at_pre_battle = true;
@@ -939,6 +945,7 @@ pub fn get_relic_subscriptions(id: RelicId) -> RelicSubscriptions {
         RelicId::OrnamentalFan => {
             sub.on_use_card = true;
             sub.at_turn_start = true; // resets counter
+            sub.on_victory = true;
         }
         RelicId::Pantograph => sub.at_battle_start = true, // checks boss combat
         RelicId::PeacePipe => {} // Passive evaluated out of combat at rest sites
@@ -984,13 +991,19 @@ pub fn get_relic_subscriptions(id: RelicId) -> RelicSubscriptions {
         RelicId::Shuriken => {
             sub.on_use_card = true;
             sub.at_turn_start = true;
+            sub.on_victory = true;
         }
-        RelicId::LetterOpener => sub.on_use_card = true,
+        RelicId::LetterOpener => {
+            sub.on_use_card = true;
+            sub.on_victory = true;
+        }
         RelicId::ToughBandages => sub.on_discard = true,
         RelicId::Tingsha => sub.on_discard = true,
         RelicId::StoneCalendar => {
+            sub.at_battle_start = true;
             sub.at_turn_start = true;
             sub.at_end_of_turn = true;
+            sub.on_victory = true;
         }
         RelicId::Pocketwatch => {
             sub.at_battle_start = true;
@@ -1019,6 +1032,7 @@ pub fn get_relic_subscriptions(id: RelicId) -> RelicSubscriptions {
         RelicId::Matryoshka => {} // Passive — treasure room check
         RelicId::SlaversCollar => {
             sub.at_battle_start = true;
+            sub.on_victory = true;
         } // Java: beforeEnergyPrep
         RelicId::RunicCapacitor => sub.at_pre_battle = true, // Java: atBattleStart → IncreaseMaxOrb(3)
         RelicId::NilrysCodex => sub.at_end_of_turn = true,   // Java: onPlayerEndTurn → CodexAction

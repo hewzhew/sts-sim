@@ -5,6 +5,10 @@ use smallvec::SmallVec;
 /// - atBattleStart() => counter = 0
 /// - atTurnStart() => ++counter
 /// - onPlayerEndTurn() => if counter == 7, deal 52 to all enemies
+pub fn at_battle_start(relic_state: &mut crate::content::relics::RelicState) {
+    relic_state.counter = 0;
+}
+
 pub fn at_turn_start(counter: i32) -> SmallVec<[ActionInfo; 4]> {
     smallvec::smallvec![ActionInfo {
         action: Action::UpdateRelicCounter {
@@ -34,4 +38,8 @@ pub fn at_end_of_turn(
         });
     }
     actions
+}
+
+pub fn on_victory(relic_state: &mut crate::content::relics::RelicState) {
+    relic_state.counter = -1;
 }

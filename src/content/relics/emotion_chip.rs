@@ -37,3 +37,8 @@ pub fn at_turn_start(_state: &CombatState, relic: &mut RelicState) -> SmallVec<[
     }
     actions
 }
+
+pub fn on_victory(relic: &mut RelicState) {
+    // Java: onVictory() — clear pulse so it does not leak into the next combat.
+    relic.counter = 0;
+}

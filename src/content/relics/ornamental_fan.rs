@@ -47,3 +47,7 @@ pub fn at_turn_start() -> SmallVec<[ActionInfo; 4]> {
     });
     actions
 }
+
+pub fn on_victory(relic_state: &mut crate::content::relics::RelicState) {
+    relic_state.counter = -1;
+}
