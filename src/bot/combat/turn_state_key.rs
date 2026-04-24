@@ -7,6 +7,7 @@ mod stable;
 mod tests;
 mod types;
 
+use crate::engine::core::is_smoke_escape_stable_boundary;
 use crate::runtime::combat::CombatState;
 use crate::state::EngineState;
 
@@ -21,7 +22,7 @@ pub(super) fn turn_state_key(engine: &EngineState, combat: &CombatState) -> Turn
 #[cfg_attr(not(test), allow(dead_code))]
 pub(super) fn stable_outcome_key(engine: &EngineState, combat: &CombatState) -> StableOutcomeKey {
     debug_assert_ne!(
-        stable_frontier_scope(engine),
+        stable_frontier_scope(engine, combat),
         StableFrontierScope::Unstable,
         "stable_outcome_key should only be requested for stable frontiers"
     );
@@ -32,7 +33,7 @@ pub(super) fn stable_dominance_bucket_key(
     engine: &EngineState,
     combat: &CombatState,
 ) -> Option<StableOutcomeKey> {
-    match stable_frontier_scope(engine) {
+    match stable_frontier_scope(engine, combat) {
         StableFrontierScope::Unstable => None,
         _ => Some(diagnostic_outcome_key(engine, combat)),
     }
@@ -51,10 +52,13 @@ enum StableFrontierScope {
     GameOver,
 }
 
-fn stable_frontier_scope(engine: &EngineState) -> StableFrontierScope {
+fn stable_frontier_scope(engine: &EngineState, combat: &CombatState) -> StableFrontierScope {
     match engine {
         EngineState::CombatPlayerTurn => StableFrontierScope::CombatReady,
         EngineState::PendingChoice(_) => StableFrontierScope::PendingChoice,
+        EngineState::CombatProcessing if is_smoke_escape_stable_boundary(engine, combat) => {
+            StableFrontierScope::PostCombat
+        }
         EngineState::CombatProcessing => StableFrontierScope::Unstable,
         EngineState::RewardScreen(_)
         | EngineState::Campfire

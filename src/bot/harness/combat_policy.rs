@@ -6,6 +6,7 @@ use crate::bot::agent::Agent;
 use crate::bot::card_disposition::{build_context, classify_hand_card_with_context, HandCardRole};
 use crate::bot::combat;
 use crate::bot::combat::posture::posture_features;
+use crate::bot::combat::{SearchExperimentFlags, SearchRuntimeBudget};
 use crate::content::cards::{get_card_definition, CardType};
 use crate::runtime::combat::CombatState;
 use crate::state::core::{ClientInput, EngineState};
@@ -15,6 +16,9 @@ use crate::state::run::RunState;
 #[serde(rename_all = "snake_case")]
 pub enum PolicyKind {
     Bot,
+    BotContestedTakeover,
+    BotNoIdleEndTurn,
+    BotCombined,
     Heuristic,
 }
 
@@ -86,7 +90,45 @@ pub fn decide_policy_action(
     }
 
     match kind {
-        PolicyKind::Bot => decide_bot_action(engine, combat, agent, depth),
+        PolicyKind::Bot => decide_bot_action(
+            engine,
+            combat,
+            depth,
+            SearchExperimentFlags::default(),
+            kind,
+        ),
+        PolicyKind::BotContestedTakeover => decide_bot_action(
+            engine,
+            combat,
+            depth,
+            SearchExperimentFlags {
+                contested_strict_dominance_takeover: true,
+                advantage_strict_dominance_takeover: true,
+                ..SearchExperimentFlags::default()
+            },
+            kind,
+        ),
+        PolicyKind::BotNoIdleEndTurn => decide_bot_action(
+            engine,
+            combat,
+            depth,
+            SearchExperimentFlags {
+                forbid_idle_end_turn_when_exact_prefers_play: true,
+                ..SearchExperimentFlags::default()
+            },
+            kind,
+        ),
+        PolicyKind::BotCombined => decide_bot_action(
+            engine,
+            combat,
+            depth,
+            SearchExperimentFlags {
+                contested_strict_dominance_takeover: true,
+                advantage_strict_dominance_takeover: true,
+                forbid_idle_end_turn_when_exact_prefers_play: true,
+            },
+            kind,
+        ),
         PolicyKind::Heuristic => decide_heuristic_action(engine, combat, depth),
     }
 }
@@ -431,32 +473,36 @@ pub fn flag_bad_action_tags(combat: &CombatState, decision: &PolicyDecision) -> 
 fn decide_bot_action(
     engine: &EngineState,
     combat: &CombatState,
-    agent: &mut Agent,
     depth: u32,
+    experiment_flags: SearchExperimentFlags,
+    policy_kind: PolicyKind,
 ) -> PolicyDecision {
-    agent.set_bot_depth(depth);
-    let decision = agent.decide_combat_policy(crate::bot::CombatDecisionContext {
+    let diagnostics = combat::diagnose_root_search_with_depth_and_runtime(
         engine,
         combat,
-        verbose: false,
-    });
-    let final_action = encode_action(combat, &decision.chosen_input);
+        depth,
+        4000,
+        SearchRuntimeBudget {
+            experiment_flags,
+            ..SearchRuntimeBudget::default()
+        },
+    );
+    let final_action = encode_action(combat, &diagnostics.chosen_move);
     PolicyDecision {
-        policy_kind: PolicyKind::Bot,
+        policy_kind,
         final_input_debug: final_action.debug.clone(),
         final_action,
-        source: decision.meta.source.to_string(),
-        confidence: decision.meta.confidence,
-        fallback_used: decision.meta.fallback_used,
+        source: "combat_baseline".to_string(),
+        confidence: baseline_confidence(&diagnostics),
+        fallback_used: false,
         tactical_reason: None,
-        candidate_scores: decision
-            .diagnostics
+        candidate_scores: diagnostics
             .top_moves
             .iter()
             .map(|stat| CandidateActionScore {
                 action: encode_action(combat, &stat.input),
                 score: stat.avg_score,
-                source: decision.meta.source.to_string(),
+                source: "combat_baseline".to_string(),
                 visits: Some(stat.visits),
                 avg_score: Some(stat.avg_score),
             })

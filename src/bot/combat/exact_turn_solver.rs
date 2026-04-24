@@ -184,9 +184,9 @@ fn enumerate_end_states(
     ctx.memo.insert(key.clone(), MemoEntry::InProgress);
     ctx.explored_nodes += 1;
 
-    let can_continue = can_continue_same_turn(engine, combat);
+    let can_continue = can_continue_same_turn(engine, combat, root_inputs);
     let mut end_states = Vec::new();
-    if should_emit_leaf_candidate(engine, combat, can_continue) {
+    if should_emit_leaf_candidate(engine, combat, can_continue, root_inputs) {
         let (base_end_state, base_truncated) = build_turn_close_end_state(
             engine,
             combat,
@@ -355,8 +355,9 @@ fn should_emit_leaf_candidate(
     engine: &EngineState,
     combat: &CombatState,
     can_continue_same_turn: bool,
+    root_inputs: Option<&[ClientInput]>,
 ) -> bool {
-    end_turn_available(engine, combat, None) || !can_continue_same_turn
+    end_turn_available(engine, combat, root_inputs) || !can_continue_same_turn
 }
 
 fn legal_non_endturn_moves(
@@ -391,11 +392,15 @@ fn end_turn_available(
         .any(|input| matches!(input, ClientInput::EndTurn))
 }
 
-fn can_continue_same_turn(engine: &EngineState, combat: &CombatState) -> bool {
+fn can_continue_same_turn(
+    engine: &EngineState,
+    combat: &CombatState,
+    root_inputs: Option<&[ClientInput]>,
+) -> bool {
     (matches!(engine, EngineState::CombatPlayerTurn)
         || matches!(
             engine,
             EngineState::PendingChoice(choice) if pending_choice_is_same_turn_frontier(choice)
         ))
-        && !legal_non_endturn_moves(engine, combat, None).is_empty()
+        && !legal_non_endturn_moves(engine, combat, root_inputs).is_empty()
 }

@@ -16,6 +16,12 @@ use sts_simulator::fixtures::scenario::ScenarioFixture;
 enum CliPolicy {
     #[value(name = "bot")]
     Bot,
+    #[value(name = "bot_contested_takeover")]
+    BotContestedTakeover,
+    #[value(name = "bot_no_idle_end_turn")]
+    BotNoIdleEndTurn,
+    #[value(name = "bot_combined")]
+    BotCombined,
     #[value(name = "heuristic")]
     Heuristic,
 }
@@ -32,6 +38,9 @@ impl From<CliPolicy> for PolicyKind {
     fn from(value: CliPolicy) -> Self {
         match value {
             CliPolicy::Bot => PolicyKind::Bot,
+            CliPolicy::BotContestedTakeover => PolicyKind::BotContestedTakeover,
+            CliPolicy::BotNoIdleEndTurn => PolicyKind::BotNoIdleEndTurn,
+            CliPolicy::BotCombined => PolicyKind::BotCombined,
             CliPolicy::Heuristic => PolicyKind::Heuristic,
         }
     }

@@ -1,5 +1,6 @@
 mod audit;
 mod card_knowledge;
+mod decision;
 mod diag;
 mod dominance;
 mod equivalence;
@@ -27,6 +28,12 @@ use crate::state::EngineState;
 use serde_json::json;
 use std::time::Instant;
 
+use self::decision::{
+    build_decision_trace, build_exact_turn_verdict, classify_proposal_class, classify_regime,
+    exact_turn_takeover_policy, frontier_outcome_from_candidate, CombatRegime, DecisionOutcome,
+    DecisionTrace, DominanceClaim, ExactTurnVerdict, ExactnessLevel, ProposalTrace,
+    ScreenRejection, TakeoverPolicy,
+};
 use self::equivalence::{default_equivalence_mode, reduce_equivalent_inputs};
 use self::exact_turn_solver::{solve_exact_turn_with_config, ExactTurnConfig};
 use self::legal_moves::get_legal_moves;
@@ -50,6 +57,11 @@ pub use root_prior::{LookupRootPriorProvider, RootPriorConfig, RootPriorQueryKey
 
 struct ExactTurnShadowDecision {
     audit: serde_json::Value,
+    regime: CombatRegime,
+    frontier_outcome: DecisionOutcome,
+    exact_turn_verdict: ExactTurnVerdict,
+    takeover_policy: TakeoverPolicy,
+    decision_trace: DecisionTrace,
     takeover_move: Option<ClientInput>,
     timed_out: bool,
 }
@@ -61,6 +73,13 @@ pub enum SearchExactTurnMode {
     Force,
 }
 
+#[derive(Clone, Copy, Debug, Default)]
+pub struct SearchExperimentFlags {
+    pub contested_strict_dominance_takeover: bool,
+    pub advantage_strict_dominance_takeover: bool,
+    pub forbid_idle_end_turn_when_exact_prefers_play: bool,
+}
+
 #[derive(Clone, Copy, Debug)]
 pub struct SearchRuntimeBudget {
     pub wall_clock_deadline: Option<Instant>,
@@ -69,6 +88,7 @@ pub struct SearchRuntimeBudget {
     pub exact_turn_node_budget: usize,
     pub audit_budget: usize,
     pub exact_turn_mode: SearchExactTurnMode,
+    pub experiment_flags: SearchExperimentFlags,
 }
 
 impl Default for SearchRuntimeBudget {
@@ -80,6 +100,7 @@ impl Default for SearchRuntimeBudget {
             exact_turn_node_budget: 8_000,
             audit_budget: 16,
             exact_turn_mode: SearchExactTurnMode::Auto,
+            experiment_flags: SearchExperimentFlags::default(),
         }
     }
 }
@@ -245,6 +266,11 @@ pub fn diagnose_root_search_with_depth_and_runtime_and_root_inputs(
             root_prior_reordered: false,
             top_moves: Vec::new(),
             decision_audit: json!({
+                "regime": serde_json::Value::Null,
+                "frontier_outcome": serde_json::Value::Null,
+                "exact_turn_verdict": serde_json::Value::Null,
+                "takeover_policy": serde_json::Value::Null,
+                "decision_trace": serde_json::Value::Null,
                 "exact_turn_shadow": serde_json::Value::Null,
             }),
             profile: SearchProfileBreakdown::default(),
@@ -275,19 +301,67 @@ pub fn diagnose_root_search_with_depth_and_runtime_and_root_inputs(
         .map(|(idx, candidate)| build_move_stat(candidate, idx))
         .collect::<Vec<_>>();
 
-    let frontier_chosen_move = explored
+    let frontier_candidate = explored
         .explored
         .first()
-        .map(|candidate| candidate.candidate.input.clone())
-        .unwrap_or(ClientInput::EndTurn);
+        .expect("non-empty legal move set should produce a frontier candidate");
+    let frontier_chosen_move = frontier_candidate.candidate.input.clone();
     let exact_turn_shadow = if matches!(runtime.exact_turn_mode, SearchExactTurnMode::Off) {
+        let regime = classify_regime(combat);
+        let frontier_outcome =
+            frontier_outcome_from_candidate(combat, &frontier_candidate.candidate);
+        let exact_turn_verdict = ExactTurnVerdict {
+            best_first_input: None,
+            best_outcome: None,
+            survival: frontier_outcome.survival,
+            dominance: DominanceClaim::Incomparable,
+            lethal_window: None,
+            confidence: ExactnessLevel::Unavailable,
+            truncated: false,
+        };
+        let (takeover_move, takeover_policy, chosen_by, rejection_reasons) =
+            exact_turn_takeover_policy(
+                engine,
+                &frontier_chosen_move,
+                regime,
+                &frontier_outcome,
+                &exact_turn_verdict,
+                &exact_turn_solver::ExactTurnSolution {
+                    best_first_input: None,
+                    best_line: Vec::new(),
+                    nondominated_end_states: Vec::new(),
+                    elapsed_ms: 0,
+                    explored_nodes: 0,
+                    dominance_prunes: 0,
+                    cycle_cuts: 0,
+                    cache_hits: 0,
+                    cache_misses: 0,
+                    truncated: false,
+                },
+                runtime.experiment_flags,
+            );
         ExactTurnShadowDecision {
             audit: json!({
                 "frontier_chosen_move": format!("{:?}", frontier_chosen_move),
                 "disabled": true,
                 "reason": "exact_turn_off",
             }),
-            takeover_move: None,
+            regime,
+            frontier_outcome: frontier_outcome.clone(),
+            exact_turn_verdict: exact_turn_verdict.clone(),
+            takeover_policy,
+            decision_trace: build_decision_trace(
+                &frontier_chosen_move,
+                chosen_by,
+                regime,
+                classify_proposal_class(combat, &frontier_chosen_move),
+                frontier_outcome,
+                exact_turn_verdict,
+                rejection_reasons,
+                explored.screened_out.clone(),
+                explored.proposal_trace.clone(),
+            ),
+            takeover_move,
             timed_out: false,
         }
     } else {
@@ -297,10 +371,14 @@ pub fn diagnose_root_search_with_depth_and_runtime_and_root_inputs(
             max_engine_steps,
             &legal_moves,
             &frontier_chosen_move,
+            &frontier_candidate.candidate,
             legal_moves.len(),
+            explored.screened_out.clone(),
+            explored.proposal_trace.clone(),
             runtime.exact_turn_node_budget,
             runtime.wall_clock_deadline,
             runtime.exact_turn_mode,
+            runtime.experiment_flags,
             &mut profile,
         )
     };
@@ -346,6 +424,19 @@ pub fn diagnose_root_search_with_depth_and_runtime_and_root_inputs(
         decision_audit: json!({
             "planner": "combat_baseline",
             "kind": "frontier_driven_best_line",
+            "root_pipeline": {
+                "regime": format!("{:?}", explored.regime).to_ascii_lowercase(),
+                "proposal_count": explored.proposal_count,
+                "screened_count": explored.screened_count,
+                "exact_adjudicated_count": explored.exact_adjudicated_count,
+                "proposal_class_counts": explored.proposal_class_counts,
+                "screened_out": explored.screened_out,
+            },
+            "regime": exact_turn_shadow.regime,
+            "frontier_outcome": exact_turn_shadow.frontier_outcome,
+            "exact_turn_verdict": exact_turn_shadow.exact_turn_verdict,
+            "takeover_policy": exact_turn_shadow.takeover_policy,
+            "decision_trace": exact_turn_shadow.decision_trace,
             "exact_turn_shadow": exact_turn_shadow.audit,
         }),
         profile,
@@ -440,18 +531,69 @@ fn build_exact_turn_shadow(
     max_engine_steps: usize,
     root_inputs: &[ClientInput],
     chosen_move: &ClientInput,
+    frontier_candidate: &types::CombatCandidate,
     legal_move_count: usize,
+    screened_out: Vec<ScreenRejection>,
+    proposal_trace: Vec<ProposalTrace>,
     max_nodes: usize,
     deadline: Option<Instant>,
     exact_turn_mode: SearchExactTurnMode,
+    experiment_flags: SearchExperimentFlags,
     profile: &mut SearchProfileBreakdown,
 ) -> ExactTurnShadowDecision {
+    let regime = classify_regime(combat);
+    let frontier_outcome = frontier_outcome_from_candidate(combat, frontier_candidate);
+
     if !matches!(
         engine,
         EngineState::CombatPlayerTurn | EngineState::PendingChoice(_)
     ) {
+        let exact_turn_verdict = ExactTurnVerdict {
+            best_first_input: None,
+            best_outcome: None,
+            survival: frontier_outcome.survival,
+            dominance: DominanceClaim::Incomparable,
+            lethal_window: None,
+            confidence: ExactnessLevel::Unavailable,
+            truncated: false,
+        };
+        let (_, takeover_policy, chosen_by, rejection_reasons) = exact_turn_takeover_policy(
+            engine,
+            chosen_move,
+            regime,
+            &frontier_outcome,
+            &exact_turn_verdict,
+            &exact_turn_solver::ExactTurnSolution {
+                best_first_input: None,
+                best_line: Vec::new(),
+                nondominated_end_states: Vec::new(),
+                elapsed_ms: 0,
+                explored_nodes: 0,
+                dominance_prunes: 0,
+                cycle_cuts: 0,
+                cache_hits: 0,
+                cache_misses: 0,
+                truncated: false,
+            },
+            experiment_flags,
+        );
         return ExactTurnShadowDecision {
             audit: serde_json::Value::Null,
+            regime,
+            frontier_outcome: frontier_outcome.clone(),
+            exact_turn_verdict: exact_turn_verdict.clone(),
+            takeover_policy,
+            decision_trace: build_decision_trace(
+                chosen_move,
+                chosen_by,
+                regime,
+                classify_proposal_class(combat, chosen_move),
+                frontier_outcome,
+                exact_turn_verdict,
+                rejection_reasons,
+                screened_out.clone(),
+                proposal_trace.clone(),
+            ),
             takeover_move: None,
             timed_out: false,
         };
@@ -459,6 +601,36 @@ fn build_exact_turn_shadow(
 
     if !matches!(exact_turn_mode, SearchExactTurnMode::Force) {
         if let Some(skip_reason) = exact_turn_shadow_skip_reason(combat, legal_move_count) {
+            let exact_turn_verdict = ExactTurnVerdict {
+                best_first_input: None,
+                best_outcome: None,
+                survival: frontier_outcome.survival,
+                dominance: DominanceClaim::Incomparable,
+                lethal_window: None,
+                confidence: ExactnessLevel::Unavailable,
+                truncated: false,
+            };
+            let (_, takeover_policy, chosen_by, mut rejection_reasons) = exact_turn_takeover_policy(
+                engine,
+                chosen_move,
+                regime,
+                &frontier_outcome,
+                &exact_turn_verdict,
+                &exact_turn_solver::ExactTurnSolution {
+                    best_first_input: None,
+                    best_line: Vec::new(),
+                    nondominated_end_states: Vec::new(),
+                    elapsed_ms: 0,
+                    explored_nodes: 0,
+                    dominance_prunes: 0,
+                    cycle_cuts: 0,
+                    cache_hits: 0,
+                    cache_misses: 0,
+                    truncated: false,
+                },
+                experiment_flags,
+            );
+            rejection_reasons.push(skip_reason.to_string());
             return ExactTurnShadowDecision {
                 takeover_move: None,
                 audit: json!({
@@ -469,6 +641,21 @@ fn build_exact_turn_shadow(
                     "living_monsters": living_monster_count(combat),
                     "filled_potions": combat.entities.potions.iter().flatten().count(),
                 }),
+                regime,
+                frontier_outcome: frontier_outcome.clone(),
+                exact_turn_verdict: exact_turn_verdict.clone(),
+                takeover_policy,
+                decision_trace: build_decision_trace(
+                    chosen_move,
+                    chosen_by,
+                    regime,
+                    classify_proposal_class(combat, chosen_move),
+                    frontier_outcome,
+                    exact_turn_verdict,
+                    rejection_reasons,
+                    screened_out.clone(),
+                    proposal_trace.clone(),
+                ),
                 timed_out: false,
             };
         }
@@ -496,8 +683,16 @@ fn build_exact_turn_shadow(
         profile.record_cache_miss();
     }
     let best_state = solution.nondominated_end_states.first();
-    let (takeover_move, takeover_reason, takeover_eligible) =
-        exact_turn_takeover_decision(engine, chosen_move, &solution);
+    let exact_turn_verdict = build_exact_turn_verdict(chosen_move, &frontier_outcome, &solution);
+    let (takeover_move, takeover_policy, chosen_by, rejection_reasons) = exact_turn_takeover_policy(
+        engine,
+        chosen_move,
+        regime,
+        &frontier_outcome,
+        &exact_turn_verdict,
+        &solution,
+        experiment_flags,
+    );
     let takeover_applied = takeover_move.is_some();
     let takeover_move_audit = takeover_move.as_ref().map(|input| format!("{:?}", input));
 
@@ -522,9 +717,9 @@ fn build_exact_turn_shadow(
             "cache_misses": solution.cache_misses,
             "truncated": solution.truncated,
             "agrees_with_frontier": solution.best_first_input.as_ref() == Some(chosen_move),
-            "takeover_eligible": takeover_eligible,
+            "takeover_eligible": takeover_policy.takeover_eligible,
             "takeover_applied": takeover_applied,
-            "takeover_reason": takeover_reason,
+            "takeover_reason": takeover_policy.takeover_reason,
             "takeover_move": takeover_move_audit,
             "best_resources": best_state.map(|state| {
                 json!({
@@ -536,6 +731,21 @@ fn build_exact_turn_shadow(
                 })
             }),
         }),
+        regime,
+        frontier_outcome: frontier_outcome.clone(),
+        exact_turn_verdict: exact_turn_verdict.clone(),
+        takeover_policy,
+        decision_trace: build_decision_trace(
+            chosen_move,
+            chosen_by,
+            regime,
+            classify_proposal_class(combat, chosen_move),
+            frontier_outcome,
+            exact_turn_verdict,
+            rejection_reasons,
+            screened_out,
+            proposal_trace,
+        ),
     }
 }
 
@@ -607,46 +817,6 @@ fn living_monster_count(combat: &CombatState) -> usize {
         .count()
 }
 
-fn exact_turn_takeover_decision(
-    engine: &EngineState,
-    chosen_move: &ClientInput,
-    solution: &exact_turn_solver::ExactTurnSolution,
-) -> (Option<ClientInput>, &'static str, bool) {
-    let takeover_eligible =
-        solution.best_first_input.is_some() && !solution.truncated && solution.cycle_cuts == 0;
-    let exact_best = solution.best_first_input.as_ref();
-    let exact_disagrees = exact_best.is_some_and(|input| input != chosen_move);
-    let exact_best_is_non_endturn =
-        exact_best.is_some_and(|input| !matches!(input, ClientInput::EndTurn));
-    let frontier_is_endturn = matches!(chosen_move, ClientInput::EndTurn);
-    let allow_pending_choice_takeover = matches!(engine, EngineState::PendingChoice(_));
-    let takeover_move = if takeover_eligible
-        && exact_disagrees
-        && ((frontier_is_endturn && exact_best_is_non_endturn) || allow_pending_choice_takeover)
-    {
-        solution.best_first_input.clone()
-    } else {
-        None
-    };
-    let reason = if solution.best_first_input.is_none() {
-        "no_best_first_input"
-    } else if solution.truncated {
-        "truncated"
-    } else if solution.cycle_cuts > 0 {
-        "cycle_cuts"
-    } else if !exact_disagrees {
-        "frontier_agrees"
-    } else if frontier_is_endturn && exact_best_is_non_endturn {
-        "override_frontier_end_turn"
-    } else if allow_pending_choice_takeover {
-        "override_pending_choice"
-    } else {
-        "frontier_not_takeover_class"
-    };
-
-    (takeover_move, reason, takeover_eligible)
-}
-
 fn search_limits(
     depth_limit: u32,
     runtime: SearchRuntimeBudget,
@@ -677,14 +847,20 @@ fn search_depth_for_budget(num_simulations: u32) -> u32 {
 
 #[cfg(test)]
 mod tests {
-    use super::{exact_turn_shadow_skip_reason, exact_turn_takeover_decision};
+    use super::{
+        diagnose_root_search_with_runtime, exact_turn_shadow_skip_reason,
+        exact_turn_takeover_policy, CombatRegime, DominanceClaim, ExactTurnVerdict, ExactnessLevel,
+        SearchExperimentFlags, SearchRuntimeBudget,
+    };
+    use crate::bot::combat::decision::SurvivalJudgement;
     use crate::bot::combat::exact_turn_solver::ExactTurnSolution;
     use crate::content::cards::CardId;
     use crate::content::powers::PowerId;
     use crate::runtime::combat::{CombatCard, Power};
     use crate::state::core::{ClientInput, PendingChoice};
     use crate::state::EngineState;
-    use crate::test_support::blank_test_combat;
+    use crate::test_support::{blank_test_combat, planned_monster};
+    use crate::{bot::combat::decision::DecisionOutcome, content::monsters::EnemyId};
 
     fn solution(best_first_input: Option<ClientInput>) -> ExactTurnSolution {
         ExactTurnSolution {
@@ -702,35 +878,261 @@ mod tests {
     }
 
     #[test]
-    fn exact_turn_takeover_stays_conservative_for_non_endturn_player_turn_disagreements() {
-        let (takeover, reason, eligible) = exact_turn_takeover_decision(
+    fn crisis_regime_allows_exact_turn_strict_dominance_takeover() {
+        let frontier = DecisionOutcome {
+            survival: SurvivalJudgement::SevereRisk,
+            position: crate::bot::combat::decision::PositionClass::Collapsing,
+            terminality: crate::bot::combat::decision::TerminalForecast::SurvivesWindow,
+            resource_delta: crate::bot::combat::decision::ResourceDeltaSummary {
+                spent_potions: 0,
+                hp_lost: 2,
+                exhausted_cards: 0,
+                final_hp: 4,
+                final_block: 0,
+            },
+            efficiency_score: 0.0,
+        };
+        let verdict = ExactTurnVerdict {
+            best_first_input: Some("PlayCard { card_index: 1, target: None }".to_string()),
+            best_outcome: None,
+            survival: SurvivalJudgement::Stable,
+            dominance: DominanceClaim::StrictlyBetterInWindow,
+            lethal_window: None,
+            confidence: ExactnessLevel::Exact,
+            truncated: false,
+        };
+        let (takeover, policy, authority, _) = exact_turn_takeover_policy(
             &EngineState::CombatPlayerTurn,
             &ClientInput::PlayCard {
                 card_index: 0,
                 target: None,
             },
+            CombatRegime::Crisis,
+            &frontier,
+            &verdict,
             &solution(Some(ClientInput::PlayCard {
                 card_index: 1,
                 target: None,
             })),
+            SearchExperimentFlags::default(),
         );
 
-        assert!(eligible);
-        assert_eq!(takeover, None);
-        assert_eq!(reason, "frontier_not_takeover_class");
+        assert_eq!(
+            takeover,
+            Some(ClientInput::PlayCard {
+                card_index: 1,
+                target: None,
+            })
+        );
+        assert_eq!(policy.takeover_reason, "crisis_strict_dominance");
+        assert!(matches!(
+            authority,
+            crate::bot::combat::decision::DecisionAuthority::ExactTurnTakeover
+        ));
     }
 
     #[test]
-    fn exact_turn_takeover_can_override_pending_choice_disagreements() {
-        let (takeover, reason, eligible) = exact_turn_takeover_decision(
+    fn fragile_regime_takeover_requires_survival_upgrade() {
+        let frontier = DecisionOutcome {
+            survival: SurvivalJudgement::RiskyButPlayable,
+            position: crate::bot::combat::decision::PositionClass::TempoNeutral,
+            terminality: crate::bot::combat::decision::TerminalForecast::SurvivesWindow,
+            resource_delta: crate::bot::combat::decision::ResourceDeltaSummary {
+                spent_potions: 0,
+                hp_lost: 1,
+                exhausted_cards: 0,
+                final_hp: 10,
+                final_block: 2,
+            },
+            efficiency_score: 1.0,
+        };
+        let verdict = ExactTurnVerdict {
+            best_first_input: Some("SubmitDiscoverChoice(1)".to_string()),
+            best_outcome: None,
+            survival: SurvivalJudgement::Stable,
+            dominance: DominanceClaim::Incomparable,
+            lethal_window: None,
+            confidence: ExactnessLevel::Exact,
+            truncated: false,
+        };
+        let (takeover, policy, _, _) = exact_turn_takeover_policy(
             &EngineState::PendingChoice(PendingChoice::StanceChoice),
             &ClientInput::SubmitDiscoverChoice(0),
+            CombatRegime::Fragile,
+            &frontier,
+            &verdict,
             &solution(Some(ClientInput::SubmitDiscoverChoice(1))),
+            SearchExperimentFlags::default(),
         );
 
-        assert!(eligible);
         assert_eq!(takeover, Some(ClientInput::SubmitDiscoverChoice(1)));
-        assert_eq!(reason, "override_pending_choice");
+        assert_eq!(policy.takeover_reason, "override_pending_choice");
+    }
+
+    #[test]
+    fn contested_regime_records_disagreement_without_takeover() {
+        let frontier = DecisionOutcome {
+            survival: SurvivalJudgement::Stable,
+            position: crate::bot::combat::decision::PositionClass::TempoNeutral,
+            terminality: crate::bot::combat::decision::TerminalForecast::SurvivesWindow,
+            resource_delta: crate::bot::combat::decision::ResourceDeltaSummary {
+                spent_potions: 0,
+                hp_lost: 0,
+                exhausted_cards: 0,
+                final_hp: 30,
+                final_block: 3,
+            },
+            efficiency_score: 4.0,
+        };
+        let verdict = ExactTurnVerdict {
+            best_first_input: Some("PlayCard { card_index: 1, target: None }".to_string()),
+            best_outcome: None,
+            survival: SurvivalJudgement::Stable,
+            dominance: DominanceClaim::StrictlyBetterInWindow,
+            lethal_window: None,
+            confidence: ExactnessLevel::Exact,
+            truncated: false,
+        };
+        let (takeover, policy, authority, reasons) = exact_turn_takeover_policy(
+            &EngineState::CombatPlayerTurn,
+            &ClientInput::PlayCard {
+                card_index: 0,
+                target: None,
+            },
+            CombatRegime::Contested,
+            &frontier,
+            &verdict,
+            &solution(Some(ClientInput::PlayCard {
+                card_index: 1,
+                target: None,
+            })),
+            SearchExperimentFlags::default(),
+        );
+
+        assert_eq!(takeover, None);
+        assert_eq!(policy.takeover_reason, "regime_not_takeover");
+        assert!(matches!(
+            authority,
+            crate::bot::combat::decision::DecisionAuthority::Frontier
+        ));
+        assert!(reasons.iter().any(|reason| reason == "regime_not_takeover"));
+    }
+
+    #[test]
+    fn contested_regime_can_takeover_with_experiment_flag() {
+        let frontier = DecisionOutcome {
+            survival: SurvivalJudgement::Stable,
+            position: crate::bot::combat::decision::PositionClass::TempoNeutral,
+            terminality: crate::bot::combat::decision::TerminalForecast::SurvivesWindow,
+            resource_delta: crate::bot::combat::decision::ResourceDeltaSummary {
+                spent_potions: 0,
+                hp_lost: 0,
+                exhausted_cards: 0,
+                final_hp: 30,
+                final_block: 2,
+            },
+            efficiency_score: 3.0,
+        };
+        let verdict = ExactTurnVerdict {
+            best_first_input: Some("PlayCard { card_index: 1, target: None }".to_string()),
+            best_outcome: None,
+            survival: SurvivalJudgement::Stable,
+            dominance: DominanceClaim::StrictlyBetterInWindow,
+            lethal_window: None,
+            confidence: ExactnessLevel::Exact,
+            truncated: false,
+        };
+        let (takeover, policy, authority, reasons) = exact_turn_takeover_policy(
+            &EngineState::CombatPlayerTurn,
+            &ClientInput::PlayCard {
+                card_index: 0,
+                target: None,
+            },
+            CombatRegime::Contested,
+            &frontier,
+            &verdict,
+            &solution(Some(ClientInput::PlayCard {
+                card_index: 1,
+                target: None,
+            })),
+            SearchExperimentFlags {
+                contested_strict_dominance_takeover: true,
+                ..SearchExperimentFlags::default()
+            },
+        );
+
+        assert_eq!(
+            takeover,
+            Some(ClientInput::PlayCard {
+                card_index: 1,
+                target: None,
+            })
+        );
+        assert_eq!(policy.takeover_reason, "contested_strict_dominance");
+        assert!(matches!(
+            authority,
+            crate::bot::combat::decision::DecisionAuthority::ExactTurnTakeover
+        ));
+        assert!(reasons
+            .iter()
+            .any(|reason| reason == "contested_strict_dominance"));
+    }
+
+    #[test]
+    fn idle_end_turn_guardrail_can_force_exact_turn_play() {
+        let frontier = DecisionOutcome {
+            survival: SurvivalJudgement::Stable,
+            position: crate::bot::combat::decision::PositionClass::TempoNeutral,
+            terminality: crate::bot::combat::decision::TerminalForecast::SurvivesWindow,
+            resource_delta: crate::bot::combat::decision::ResourceDeltaSummary {
+                spent_potions: 0,
+                hp_lost: 0,
+                exhausted_cards: 0,
+                final_hp: 40,
+                final_block: 0,
+            },
+            efficiency_score: 0.0,
+        };
+        let verdict = ExactTurnVerdict {
+            best_first_input: Some("PlayCard { card_index: 2, target: None }".to_string()),
+            best_outcome: None,
+            survival: SurvivalJudgement::Stable,
+            dominance: DominanceClaim::StrictlyBetterInWindow,
+            lethal_window: None,
+            confidence: ExactnessLevel::Exact,
+            truncated: false,
+        };
+        let (takeover, policy, authority, reasons) = exact_turn_takeover_policy(
+            &EngineState::CombatPlayerTurn,
+            &ClientInput::EndTurn,
+            CombatRegime::Advantage,
+            &frontier,
+            &verdict,
+            &solution(Some(ClientInput::PlayCard {
+                card_index: 2,
+                target: None,
+            })),
+            SearchExperimentFlags {
+                forbid_idle_end_turn_when_exact_prefers_play: true,
+                ..SearchExperimentFlags::default()
+            },
+        );
+
+        assert_eq!(
+            takeover,
+            Some(ClientInput::PlayCard {
+                card_index: 2,
+                target: None,
+            })
+        );
+        assert_eq!(policy.takeover_reason, "idle_end_turn_strict_dominance");
+        assert!(matches!(
+            authority,
+            crate::bot::combat::decision::DecisionAuthority::ExactTurnTakeover
+        ));
+        assert!(reasons
+            .iter()
+            .any(|reason| reason == "idle_end_turn_guardrail"));
     }
 
     #[test]
@@ -757,5 +1159,40 @@ mod tests {
             exact_turn_shadow_skip_reason(&combat, 9),
             Some("confusion_high_entropy")
         );
+    }
+
+    #[test]
+    fn decision_audit_keeps_legacy_shadow_and_adds_phase1_fields() {
+        let mut combat = blank_test_combat();
+        combat.turn.energy = 1;
+        combat.entities.player.current_hp = 5;
+        combat
+            .entities
+            .monsters
+            .push(planned_monster(EnemyId::Cultist, 1));
+        combat.zones.hand.push(CombatCard::new(CardId::Defend, 1));
+
+        let diagnostics = diagnose_root_search_with_runtime(
+            &EngineState::CombatPlayerTurn,
+            &combat,
+            300,
+            SearchRuntimeBudget {
+                exact_turn_node_budget: 128,
+                ..SearchRuntimeBudget::default()
+            },
+        );
+
+        assert!(diagnostics
+            .decision_audit
+            .get("exact_turn_shadow")
+            .is_some());
+        assert!(diagnostics.decision_audit.get("regime").is_some());
+        assert!(diagnostics.decision_audit.get("frontier_outcome").is_some());
+        assert!(diagnostics
+            .decision_audit
+            .get("exact_turn_verdict")
+            .is_some());
+        assert!(diagnostics.decision_audit.get("takeover_policy").is_some());
+        assert!(diagnostics.decision_audit.get("decision_trace").is_some());
     }
 }

@@ -20,7 +20,7 @@ pub(super) fn build_stable_outcome_key(
     engine: &EngineState,
     combat: &CombatState,
 ) -> StableOutcomeKey {
-    let scope = stable_frontier_scope(engine);
+    let scope = stable_frontier_scope(engine, combat);
     match scope {
         StableFrontierScope::CombatReady
         | StableFrontierScope::PendingChoice

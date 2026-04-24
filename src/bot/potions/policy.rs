@@ -8,12 +8,6 @@ use crate::engine::targeting;
 use crate::runtime::combat::{CombatState, StanceId};
 use crate::state::core::ClientInput;
 
-#[derive(Clone, Copy)]
-enum DecisionMode {
-    Immediate,
-    Search,
-}
-
 enum GateDecision {
     Allowed,
     Forbidden,
@@ -21,8 +15,8 @@ enum GateDecision {
 
 pub(crate) fn immediate_potion_snapshot(combat: &CombatState) -> PotionDecisionSnapshot {
     let signals = analyze_combat(combat);
-    let minimum_priority = minimum_priority(&signals, DecisionMode::Immediate);
-    let candidates = collect_candidates(combat, &signals, DecisionMode::Immediate);
+    let minimum_priority = minimum_priority(&signals);
+    let candidates = collect_candidates(combat, &signals);
     let chosen = candidates
         .iter()
         .find(|candidate| candidate.priority >= minimum_priority)
@@ -49,20 +43,7 @@ pub(crate) fn immediate_potion_snapshot(combat: &CombatState) -> PotionDecisionS
     }
 }
 
-pub fn candidate_potion_moves(combat: &CombatState) -> Vec<ClientInput> {
-    let signals = analyze_combat(combat);
-    collect_candidates(combat, &signals, DecisionMode::Search)
-        .into_iter()
-        .filter(|candidate| candidate.priority >= minimum_priority(&signals, DecisionMode::Search))
-        .map(|candidate| candidate.input)
-        .collect()
-}
-
-fn collect_candidates(
-    combat: &CombatState,
-    signals: &CombatSignals,
-    mode: DecisionMode,
-) -> Vec<PotionCandidate> {
+fn collect_candidates(combat: &CombatState, signals: &CombatSignals) -> Vec<PotionCandidate> {
     let mut candidates = combat
         .entities
         .potions
@@ -73,7 +54,7 @@ fn collect_candidates(
             if DONT_PLAY_POTIONS.contains(&potion.id) {
                 return None;
             }
-            evaluate_potion(combat, signals, mode, potion_index, potion.id)
+            evaluate_potion(combat, signals, potion_index, potion.id)
         })
         .collect::<Vec<_>>();
 
@@ -84,12 +65,11 @@ fn collect_candidates(
 fn evaluate_potion(
     combat: &CombatState,
     signals: &CombatSignals,
-    mode: DecisionMode,
     potion_index: usize,
     potion_id: PotionId,
 ) -> Option<PotionCandidate> {
     if matches!(
-        gate_potion_use(combat, signals, mode, potion_id),
+        gate_potion_use(combat, signals, potion_id),
         GateDecision::Forbidden
     ) {
         return None;
@@ -97,9 +77,7 @@ fn evaluate_potion(
 
     let def = get_potion_definition(potion_id);
     let category = category_for(potion_id);
-    if matches!(mode, DecisionMode::Immediate)
-        && category == PotionCategory::Setup
-        && !strong_setup_release_window(combat, signals, potion_id)
+    if category == PotionCategory::Setup && !strong_setup_release_window(combat, signals, potion_id)
     {
         return None;
     }
@@ -139,7 +117,6 @@ fn evaluate_potion(
 fn gate_potion_use(
     combat: &CombatState,
     signals: &CombatSignals,
-    mode: DecisionMode,
     potion_id: PotionId,
 ) -> GateDecision {
     match potion_id {
@@ -158,7 +135,7 @@ fn gate_potion_use(
             }
         }
         PotionId::WeakenPotion => {
-            if all_live_targets_have_artifact(combat) && matches!(mode, DecisionMode::Immediate) {
+            if all_live_targets_have_artifact(combat) {
                 GateDecision::Forbidden
             } else {
                 GateDecision::Allowed
@@ -182,28 +159,15 @@ fn gate_potion_use(
     }
 }
 
-fn minimum_priority(signals: &CombatSignals, mode: DecisionMode) -> i32 {
-    match mode {
-        DecisionMode::Immediate => {
-            if signals.threat.imminent_lethal {
-                34
-            } else if signals.fight.elite_or_boss
-                && (signals.threat.low_hp || signals.threat.unblocked_incoming > 0)
-            {
-                52
-            } else {
-                62
-            }
-        }
-        DecisionMode::Search => {
-            if signals.threat.imminent_lethal {
-                28
-            } else if signals.fight.elite_or_boss {
-                40
-            } else {
-                56
-            }
-        }
+fn minimum_priority(signals: &CombatSignals) -> i32 {
+    if signals.threat.imminent_lethal {
+        34
+    } else if signals.fight.elite_or_boss
+        && (signals.threat.low_hp || signals.threat.unblocked_incoming > 0)
+    {
+        52
+    } else {
+        62
     }
 }
 

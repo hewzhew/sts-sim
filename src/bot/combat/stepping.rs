@@ -1,4 +1,4 @@
-use crate::engine::core::tick_engine;
+use crate::engine::core::{is_smoke_escape_stable_boundary, tick_engine};
 use crate::runtime::combat::CombatState;
 use crate::state::core::{ClientInput, PendingChoice};
 use crate::state::EngineState;
@@ -60,7 +60,7 @@ pub(super) fn tick_until_stable_turn_bounded(
     normalize_player_turn_processing(engine_state, combat_state);
 
     loop {
-        if let Some(boundary) = stable_boundary_kind(engine_state) {
+        if let Some(boundary) = stable_boundary_kind(engine_state, combat_state) {
             profile.record_engine_step_advance(started.elapsed().as_millis(), steps as u32);
             return StepAdvanceResult {
                 alive: !matches!(boundary, StableBoundaryKind::GameOver),
@@ -166,11 +166,19 @@ fn normalize_player_turn_processing(engine_state: &mut EngineState, combat_state
     }
 }
 
-fn stable_boundary_kind(engine_state: &EngineState) -> Option<StableBoundaryKind> {
+fn stable_boundary_kind(
+    engine_state: &EngineState,
+    combat_state: &CombatState,
+) -> Option<StableBoundaryKind> {
     match engine_state {
         EngineState::CombatPlayerTurn => Some(StableBoundaryKind::PlayerTurnReady),
         EngineState::PendingChoice(choice) if pending_choice_is_same_turn_frontier(choice) => {
             Some(StableBoundaryKind::PendingChoice)
+        }
+        EngineState::CombatProcessing
+            if is_smoke_escape_stable_boundary(engine_state, combat_state) =>
+        {
+            Some(StableBoundaryKind::PostCombat)
         }
         EngineState::RewardScreen(_)
         | EngineState::Campfire

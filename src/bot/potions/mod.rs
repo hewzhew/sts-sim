@@ -5,9 +5,7 @@ mod targets;
 mod valuation;
 
 use crate::content::potions::{get_potion_definition, PotionId};
-use crate::runtime::combat::CombatState;
 use crate::state::core::ClientInput;
-
 pub(crate) use catalog::category_label;
 pub(crate) use policy::immediate_potion_snapshot;
 
@@ -66,8 +64,4 @@ impl PotionCandidate {
             self.reason
         )
     }
-}
-
-pub fn candidate_potion_moves(combat: &CombatState) -> Vec<ClientInput> {
-    policy::candidate_potion_moves(combat)
 }

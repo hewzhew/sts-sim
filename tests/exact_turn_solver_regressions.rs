@@ -16,6 +16,7 @@ fn exact_config() -> ExactTurnConfig {
     ExactTurnConfig {
         max_nodes: 20_000,
         max_engine_steps: 200,
+        ..ExactTurnConfig::default()
     }
 }
 
@@ -140,6 +141,7 @@ fn exact_turn_solver_reports_truncation_when_node_budget_is_tiny() {
         ExactTurnConfig {
             max_nodes: 1,
             max_engine_steps: 200,
+            ..ExactTurnConfig::default()
         },
     );
 
@@ -179,5 +181,44 @@ fn exact_turn_solver_does_not_treat_same_turn_pending_choice_as_leaf() {
             Some(ClientInput::SubmitDiscoverChoice(0 | 1 | 2))
         ),
         "solver should keep expanding through same-turn choice submissions"
+    );
+}
+
+#[test]
+fn exact_turn_solver_respects_root_inputs_without_synthetic_end_turn_leaf() {
+    let mut combat = blank_test_combat();
+    combat.turn.energy = 1;
+    combat.entities.player.current_hp = 24;
+    combat
+        .entities
+        .monsters
+        .push(planned_monster(EnemyId::Cultist, 1));
+    combat.zones.hand.push(card(CardId::Defend, 1));
+
+    let solution = solve_exact_turn_with_config(
+        &EngineState::CombatPlayerTurn,
+        &combat,
+        ExactTurnConfig {
+            root_inputs: Some(vec![ClientInput::PlayCard {
+                card_index: 0,
+                target: None,
+            }]),
+            ..exact_config()
+        },
+    );
+
+    assert_eq!(
+        solution.best_first_input,
+        Some(ClientInput::PlayCard {
+            card_index: 0,
+            target: None,
+        })
+    );
+    assert!(
+        solution
+            .nondominated_end_states
+            .iter()
+            .all(|state| !state.line.is_empty()),
+        "when root_inputs removes EndTurn, solver should not synthesize an empty or free turn-close candidate"
     );
 }
