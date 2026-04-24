@@ -4,6 +4,25 @@ use crate::rewards::state::RewardItem;
 use crate::rewards::state::RewardState;
 use crate::state::run::RunState;
 
+pub fn adjusted_card_reward_choice_count(run_state: &RunState, base_count: usize) -> usize {
+    let mut num_cards = base_count;
+    if run_state
+        .relics
+        .iter()
+        .any(|r| r.id == crate::content::relics::RelicId::BustedCrown)
+    {
+        num_cards = num_cards.saturating_sub(2).max(1);
+    }
+    if run_state
+        .relics
+        .iter()
+        .any(|r| r.id == crate::content::relics::RelicId::QuestionCard)
+    {
+        num_cards += 1;
+    }
+    num_cards
+}
+
 /// Generates post-combat loot transitioning into the RewardState
 pub fn generate_combat_rewards(
     run_state: &mut RunState,
@@ -16,14 +35,6 @@ pub fn generate_combat_rewards(
         .relics
         .iter()
         .any(|r| r.id == crate::content::relics::RelicId::GoldenIdol);
-    let has_busted_crown = run_state
-        .relics
-        .iter()
-        .any(|r| r.id == crate::content::relics::RelicId::BustedCrown);
-    let has_question_card = run_state
-        .relics
-        .iter()
-        .any(|r| r.id == crate::content::relics::RelicId::QuestionCard);
     let has_prayer_wheel = run_state
         .relics
         .iter()
@@ -89,14 +100,7 @@ pub fn generate_combat_rewards(
     }
 
     // 3. Generate Cards
-    let num_cards = 3_usize;
-    let mut num_cards_eff = num_cards;
-    if has_busted_crown {
-        num_cards_eff = num_cards_eff.saturating_sub(2).max(1);
-    }
-    if has_question_card {
-        num_cards_eff += 1;
-    }
+    let num_cards_eff = adjusted_card_reward_choice_count(run_state, 3);
 
     items.push(RewardItem::Card {
         cards: generate_card_reward(run_state, num_cards_eff, is_elite),
@@ -131,6 +135,42 @@ pub fn generate_combat_rewards(
         skippable: !is_boss,
         screen_context: crate::rewards::state::RewardScreenContext::Standard,
         pending_card_choice: None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::adjusted_card_reward_choice_count;
+    use crate::content::relics::{RelicId, RelicState};
+    use crate::state::run::RunState;
+
+    #[test]
+    fn question_card_adds_one_choice() {
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        run_state.relics.clear();
+        run_state
+            .relics
+            .push(RelicState::new(RelicId::QuestionCard));
+        assert_eq!(adjusted_card_reward_choice_count(&run_state, 3), 4);
+    }
+
+    #[test]
+    fn busted_crown_reduces_choices_with_floor_of_one() {
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        run_state.relics.clear();
+        run_state.relics.push(RelicState::new(RelicId::BustedCrown));
+        assert_eq!(adjusted_card_reward_choice_count(&run_state, 3), 1);
+    }
+
+    #[test]
+    fn question_card_and_busted_crown_still_net_one_choice() {
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        run_state.relics.clear();
+        run_state.relics.push(RelicState::new(RelicId::BustedCrown));
+        run_state
+            .relics
+            .push(RelicState::new(RelicId::QuestionCard));
+        assert_eq!(adjusted_card_reward_choice_count(&run_state, 3), 2);
     }
 }
 

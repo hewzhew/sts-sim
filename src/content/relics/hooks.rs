@@ -362,9 +362,6 @@ pub fn on_victory(state: &mut CombatState) -> smallvec::SmallVec<[ActionInfo; 4]
             RelicId::BlackBlood => {
                 actions.extend(crate::content::relics::black_blood::BlackBlood::on_victory())
             }
-            RelicId::BlackStar => {
-                actions.extend(crate::content::relics::black_star::BlackStar::on_victory())
-            }
             RelicId::FaceOfCleric => {
                 let mut rs = state.entities.player.relics[relic_index].clone();
                 actions.extend(crate::content::relics::face_of_cleric::on_victory(

@@ -53,8 +53,11 @@ pub fn handle(
                     .iter()
                     .any(|r| r.id == RelicId::DreamCatcher)
                 {
-                    let cards =
-                        crate::rewards::generator::generate_card_reward(run_state, 3, false);
+                    let cards = crate::rewards::generator::generate_card_reward(
+                        run_state,
+                        crate::rewards::generator::adjusted_card_reward_choice_count(run_state, 3),
+                        false,
+                    );
                     let mut reward_state = crate::rewards::state::RewardState::new();
                     reward_state
                         .items
@@ -122,6 +125,41 @@ pub fn handle(
         }
     }
     true
+}
+
+#[cfg(test)]
+mod tests {
+    use super::handle;
+    use crate::content::relics::{RelicId, RelicState};
+    use crate::state::core::{CampfireChoice, ClientInput, EngineState};
+    use crate::state::run::RunState;
+
+    #[test]
+    fn dream_catcher_reward_respects_question_card() {
+        let mut engine_state = EngineState::Campfire;
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        run_state.relics.clear();
+        run_state
+            .relics
+            .push(RelicState::new(RelicId::DreamCatcher));
+        run_state
+            .relics
+            .push(RelicState::new(RelicId::QuestionCard));
+
+        assert!(handle(
+            &mut engine_state,
+            &mut run_state,
+            Some(ClientInput::CampfireOption(CampfireChoice::Rest))
+        ));
+
+        match engine_state {
+            EngineState::RewardScreen(ref reward_state) => match &reward_state.items[0] {
+                crate::rewards::state::RewardItem::Card { cards } => assert_eq!(cards.len(), 4),
+                other => panic!("expected card reward, got {other:?}"),
+            },
+            other => panic!("expected reward screen, got {other:?}"),
+        }
+    }
 }
 
 /// Check if a card is bottled (attached to BottledFlame/Lightning/Tornado).

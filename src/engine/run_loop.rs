@@ -341,12 +341,7 @@ pub fn tick_run(
                             }
                             RoomType::RestRoom => {
                                 // Java: onEnterRestRoom() for all relics
-                                // AncientTeaSet: set counter = -2 → at_turn_start grants +2 energy
-                                for relic in run_state.relics.iter_mut() {
-                                    if relic.id == crate::content::relics::RelicId::AncientTeaSet {
-                                        relic.counter = -2;
-                                    }
-                                }
+                                run_state.on_enter_rest_room();
                                 *engine_state = EngineState::Campfire;
                             }
                             RoomType::ShopRoom => {
@@ -355,6 +350,9 @@ pub fn tick_run(
                                     .relics
                                     .iter()
                                     .any(|r| r.id == crate::content::relics::RelicId::MealTicket)
+                                    && !run_state.relics.iter().any(|r| {
+                                        r.id == crate::content::relics::RelicId::MarkOfTheBloom
+                                    })
                                 {
                                     run_state.current_hp =
                                         (run_state.current_hp + 15).min(run_state.max_hp);
@@ -428,7 +426,14 @@ pub fn tick_run(
                                         mat.counter = -2;
                                         mat.used_up = true;
                                     }
-                                    let extra_relic = run_state.random_relic();
+                                    let extra_tier =
+                                        if run_state.rng_pool.relic_rng.random_boolean_chance(0.75)
+                                        {
+                                            crate::content::relics::RelicTier::Common
+                                        } else {
+                                            crate::content::relics::RelicTier::Uncommon
+                                        };
+                                    let extra_relic = run_state.random_relic_by_tier(extra_tier);
                                     reward.items.push(crate::rewards::state::RewardItem::Relic {
                                         relic_id: extra_relic,
                                     });

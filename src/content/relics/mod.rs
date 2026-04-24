@@ -385,6 +385,8 @@ impl RelicState {
         let mut counter = -1;
         match id {
             RelicId::Omamori => counter = 2,
+            RelicId::Matryoshka => counter = 2,
+            RelicId::NlothsMask => counter = 1,
             RelicId::NeowsLament | RelicId::WingBoots => counter = 3,
             RelicId::PenNib
             | RelicId::Nunchaku
@@ -769,10 +771,6 @@ pub struct RelicSubscriptions {
 
     // Macro/Out-of-Combat Routing Hooks
     pub on_enter_rest_room: bool,
-    pub on_rest: bool,
-    pub on_enter_shop: bool,
-    pub on_purchase: bool,
-    pub on_reward_generation: bool,
 }
 
 pub fn get_relic_subscriptions(id: RelicId) -> RelicSubscriptions {
@@ -799,7 +797,7 @@ pub fn get_relic_subscriptions(id: RelicId) -> RelicSubscriptions {
         RelicId::BronzeScales => sub.at_battle_start = true,
         RelicId::BurningBlood => sub.on_victory = true,
         RelicId::BlackBlood => sub.on_victory = true,
-        RelicId::BlackStar => sub.on_victory = true,
+        RelicId::BlackStar => {} // reward generation handles the extra elite relic directly
         RelicId::BloodyIdol => {} // Requires an `on_gain_gold` hook! (Out of bounds for pure headless combat loop usually, or tracked specially)
         RelicId::BlueCandle => sub.on_use_card = true,
         RelicId::Boot => {} // Engine native query hook for on_attack_to_change_damage
