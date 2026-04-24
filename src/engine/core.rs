@@ -653,7 +653,9 @@ pub fn tick_engine(
                         return false;
                     }
 
-                    // 3. (Intent rolling is handled by Action::RollMonsterMove in the queue)
+                    // 3. Intent rolling is usually handled by Action::RollMonsterMove in the queue,
+                    //    but freshly spawned monsters may roll immediately during spawn to match
+                    //    Java SpawnMonsterAction.init() timing.
 
                     // === NEW PLAYER TURN START ===
                     // 4. Clear player block (Barricade: keep all, Calipers: retain up to 15)

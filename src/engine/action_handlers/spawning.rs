@@ -55,6 +55,16 @@ fn spawn_hp_for_monster(
                 hp_rng.random_range(38, 40)
             }
         }
+        crate::content::monsters::EnemyId::BronzeOrb => {
+            // Java BronzeOrb constructor consumes monsterHpRng twice:
+            // once in super(... random(52,58) ...), then again in setHp(...).
+            let _unused_ctor_roll = hp_rng.random_range(52, 58);
+            if ascension_level >= 9 {
+                hp_rng.random_range(54, 60)
+            } else {
+                hp_rng.random_range(52, 58)
+            }
+        }
         _ => {
             let (hp_min, hp_max) =
                 crate::content::monsters::get_hp_range(monster_id, ascension_level);
@@ -250,9 +260,10 @@ pub fn handle_spawn_monster(
         });
     }
 
-    state.queue_action_back(Action::RollMonsterMove {
-        monster_id: new_entity_id,
-    });
+    // Java SpawnMonsterAction calls m.init() during the spawn update, so a freshly
+    // spawned monster rolls its first move immediately instead of waiting behind
+    // the rest of the current action queue.
+    handle_roll_monster_move(new_entity_id, state);
 }
 
 pub fn handle_spawn_monster_smart(
