@@ -262,6 +262,20 @@ mod tests {
     use super::route_noncombat_command;
     use crate::bot::Agent;
     use serde_json::json;
+    use serde_json::Value;
+    use std::fs;
+    use std::path::Path;
+
+    fn load_screen_action_fixture(name: &str) -> Value {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests")
+            .join("protocol_screen_action_space")
+            .join(format!("{name}.json"));
+        let raw = fs::read_to_string(&path)
+            .unwrap_or_else(|err| panic!("failed to read fixture {}: {err}", path.display()));
+        serde_json::from_str(&raw)
+            .unwrap_or_else(|err| panic!("failed to parse fixture {}: {err}", path.display()))
+    }
 
     #[test]
     fn noncombat_route_uses_protocol_action_space_without_choice_list() {
@@ -349,6 +363,26 @@ mod tests {
         let mut agent = Agent::new();
 
         let command = route_noncombat_command(&mut agent, &parsed, "GRID", &[]);
+
+        assert_eq!(command, "CHOOSE 0");
+    }
+
+    #[test]
+    fn noncombat_route_uses_grid_contract_fixture_without_legacy_choice_list() {
+        let parsed = load_screen_action_fixture("combat_grid_select");
+        let mut agent = Agent::new();
+
+        let command = route_noncombat_command(&mut agent, &parsed, "GRID", &[]);
+
+        assert_eq!(command, "CHOOSE 0");
+    }
+
+    #[test]
+    fn noncombat_route_uses_discovery_contract_fixture_without_legacy_choice_list() {
+        let parsed = load_screen_action_fixture("combat_discovery_card_reward");
+        let mut agent = Agent::new();
+
+        let command = route_noncombat_command(&mut agent, &parsed, "CARD_REWARD", &[]);
 
         assert_eq!(command, "CHOOSE 0");
     }

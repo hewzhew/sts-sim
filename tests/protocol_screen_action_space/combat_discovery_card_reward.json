@@ -1,0 +1,77 @@
+{
+  "available_commands": [],
+  "ready_for_command": true,
+  "in_game": true,
+  "protocol_meta": {
+    "protocol_version": 7,
+    "capabilities": {
+      "combat_action_space": true,
+      "noncombat_action_space": true,
+      "continuation_state": true
+    },
+    "continuation_state": {
+      "kind": "card_reward_continuation",
+      "state": "active",
+      "screen_type": "CARD_REWARD",
+      "choice_source": "discovery",
+      "choice_destination": "hand",
+      "producer_kind": "potion",
+      "producer_id": "ColorlessPotion",
+      "deferred_hook_kinds": [
+        "on_use_potion"
+      ]
+    },
+    "combat_action_space": {
+      "screen_type": "CARD_REWARD",
+      "actions": [
+        {
+          "action_id": "choice:card_reward:0",
+          "kind": "submit_choice",
+          "command": "CHOOSE 0",
+          "target_required": false,
+          "target_options": [],
+          "choice_index": 0,
+          "choice_label": "flash of steel",
+          "card_uuid": "discovery-card-0",
+          "card_id": "Flash of Steel"
+        },
+        {
+          "action_id": "choice:card_reward:1",
+          "kind": "submit_choice",
+          "command": "CHOOSE 1",
+          "target_required": false,
+          "target_options": [],
+          "choice_index": 1,
+          "choice_label": "finesse",
+          "card_uuid": "discovery-card-1",
+          "card_id": "Finesse"
+        },
+        {
+          "action_id": "cancel:card_reward",
+          "kind": "cancel",
+          "command": "SKIP",
+          "target_required": false,
+          "target_options": []
+        }
+      ]
+    }
+  },
+  "game_state": {
+    "screen_type": "CARD_REWARD",
+    "room_phase": "COMBAT",
+    "is_screen_up": true,
+    "screen_state": {
+      "cards": [
+        {
+          "id": "Flash of Steel",
+          "upgrades": 0
+        },
+        {
+          "id": "Finesse",
+          "upgrades": 0
+        }
+      ],
+      "skip_available": true
+    }
+  }
+}

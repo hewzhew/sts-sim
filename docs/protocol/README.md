@@ -14,6 +14,9 @@ The active combat schema is split:
 Rust screen-command routing treats `noncombat_action_space` as the preferred
 source for ordinary non-combat screens, and falls back to `combat_action_space`
 for combat-internal pending screens such as grid or discovery choices.
+Small action-space contract fixtures live in
+`tests/protocol_screen_action_space`; they intentionally avoid
+`game_state.choice_list` so tests exercise the typed command surface directly.
 
 The legacy merged `combat_state` payload is historical and should not be treated
 as the live contract.
