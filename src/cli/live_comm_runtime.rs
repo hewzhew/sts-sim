@@ -344,6 +344,282 @@ fn last_failure_snapshot_frame(path: &Path) -> Option<u64> {
         .last()
 }
 
+#[derive(Clone, Debug, Default)]
+struct RunTriageMetrics {
+    highest_floor: Option<i64>,
+    highest_act: Option<i64>,
+    deepest_room_type: Option<String>,
+    reached_boss_acts: Vec<i64>,
+    terminal_frame: Option<u64>,
+    terminal_floor: Option<i64>,
+    terminal_act: Option<i64>,
+    terminal_room_type: Option<String>,
+    terminal_screen: Option<String>,
+    terminal_score: Option<i64>,
+    terminal_victory: Option<bool>,
+    terminal_monsters: Vec<String>,
+    slow_search_count: usize,
+    slow_search_max_ms: u64,
+    exact_turn_disagree_count: usize,
+    exact_turn_skip_count: usize,
+    exact_turn_takeover_count: usize,
+    strict_dominance_disagreement_count: usize,
+    high_threat_disagreement_count: usize,
+    survival_downgrade_avoided_count: usize,
+    regime_counts: BTreeMap<String, usize>,
+    search_timeout_count: usize,
+    event_fallback_count: usize,
+    terminal_snapshot_present: bool,
+}
+
+impl RunTriageMetrics {
+    fn has_quality_warnings(&self) -> bool {
+        self.slow_search_count > 0
+            || self.exact_turn_disagree_count > 0
+            || self.exact_turn_skip_count > 0
+            || self.exact_turn_takeover_count > 0
+            || self.strict_dominance_disagreement_count > 0
+            || self.high_threat_disagreement_count > 0
+            || self.survival_downgrade_avoided_count > 0
+            || self.search_timeout_count > 0
+            || self.event_fallback_count > 0
+    }
+}
+
+fn derive_run_triage_metrics(run_dir: &Path, focus_text: &str) -> RunTriageMetrics {
+    let mut metrics = RunTriageMetrics::default();
+    derive_progression_metrics(&run_dir.join("raw.jsonl"), &mut metrics);
+    derive_focus_quality_metrics(focus_text, &mut metrics);
+    derive_terminal_outcome_metrics(run_dir, &mut metrics);
+    metrics
+}
+
+fn derive_progression_metrics(raw_path: &Path, metrics: &mut RunTriageMetrics) {
+    let Ok(text) = std::fs::read_to_string(raw_path) else {
+        return;
+    };
+
+    for line in text.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        let Ok(root) = serde_json::from_str::<Value>(trimmed) else {
+            continue;
+        };
+        let Some(game_state) = root.get("game_state") else {
+            continue;
+        };
+        let floor = game_state.get("floor").and_then(Value::as_i64);
+        let act = game_state.get("act").and_then(Value::as_i64);
+        let room_type = game_state
+            .get("room_type")
+            .and_then(Value::as_str)
+            .unwrap_or("unknown");
+
+        if let (Some(floor), Some(act)) = (floor, act) {
+            let should_replace = metrics.highest_floor.is_none()
+                || metrics.highest_floor.is_some_and(|current| floor > current)
+                || (metrics.highest_floor == Some(floor)
+                    && metrics.highest_act.is_some_and(|current| act > current));
+            if should_replace {
+                metrics.highest_floor = Some(floor);
+                metrics.highest_act = Some(act);
+                metrics.deepest_room_type = Some(room_type.to_string());
+            }
+            if room_type == "MonsterRoomBoss" && !metrics.reached_boss_acts.contains(&act) {
+                metrics.reached_boss_acts.push(act);
+                metrics.reached_boss_acts.sort_unstable();
+            }
+        }
+    }
+}
+
+fn derive_focus_quality_metrics(focus_text: &str, metrics: &mut RunTriageMetrics) {
+    for line in focus_text.lines() {
+        if line.contains("[SLOW SEARCH]") {
+            metrics.slow_search_count += 1;
+            if let Some(root_ms) = parse_u64_field(line, "root_ms=") {
+                metrics.slow_search_max_ms = metrics.slow_search_max_ms.max(root_ms);
+            }
+        }
+        if line.contains("[SEARCH TIMEOUT]") {
+            metrics.search_timeout_count += 1;
+        }
+        if line.contains("[AUDIT]") && line.contains("agrees=false") {
+            metrics.exact_turn_disagree_count += 1;
+        }
+        if line.contains("[AUDIT]") && line.contains("skipped=true") {
+            metrics.exact_turn_skip_count += 1;
+        }
+        if line.contains("[AUDIT]") {
+            if let Some(regime) = parse_word_field(line, "regime=") {
+                *metrics.regime_counts.entry(regime.to_string()).or_insert(0) += 1;
+            }
+            if line.contains("takeover=true") {
+                metrics.exact_turn_takeover_count += 1;
+            }
+            if line.contains("dominance=strictly_better_in_window") {
+                metrics.strict_dominance_disagreement_count += 1;
+            }
+            if (line.contains("regime=crisis") || line.contains("regime=fragile"))
+                && line.contains("agrees=false")
+            {
+                metrics.high_threat_disagreement_count += 1;
+            }
+            if parse_survival_field(line, "frontier_survival=")
+                .zip(parse_survival_field(line, "exact_survival="))
+                .is_some_and(|(frontier, exact)| exact > frontier)
+            {
+                metrics.survival_downgrade_avoided_count += 1;
+            }
+        }
+        if line.starts_with("[EVENT]")
+            && (line.contains(" fallback ")
+                || line.contains("protocol=unsupported_event")
+                || line.contains("protocol=unknown_event_name"))
+        {
+            metrics.event_fallback_count += 1;
+        }
+    }
+}
+
+fn failure_snapshots_only_terminal_loss(path: &Path) -> bool {
+    let Ok(text) = std::fs::read_to_string(path) else {
+        return false;
+    };
+    let mut saw_snapshot = false;
+    for line in text.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        let Ok(root) = serde_json::from_str::<Value>(trimmed) else {
+            return false;
+        };
+        saw_snapshot = true;
+        if root
+            .get("trigger_kind")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            != "terminal_loss"
+        {
+            return false;
+        }
+    }
+    saw_snapshot
+}
+
+fn derive_terminal_outcome_metrics(run_dir: &Path, metrics: &mut RunTriageMetrics) {
+    let terminal_path = run_dir.join("terminal_snapshot.json");
+    if let Ok(text) = std::fs::read_to_string(&terminal_path) {
+        if let Ok(root) = serde_json::from_str::<Value>(&text) {
+            populate_terminal_metrics_from_value(&root, metrics);
+            metrics.terminal_snapshot_present = true;
+            return;
+        }
+    }
+
+    let failure_path = run_dir.join("failure_snapshots.jsonl");
+    if !failure_snapshots_only_terminal_loss(&failure_path) {
+        return;
+    }
+    let Ok(text) = std::fs::read_to_string(&failure_path) else {
+        return;
+    };
+    let Some(line) = text.lines().find(|line| !line.trim().is_empty()) else {
+        return;
+    };
+    let Ok(root) = serde_json::from_str::<Value>(line.trim()) else {
+        return;
+    };
+    populate_terminal_metrics_from_value(&root, metrics);
+    metrics.terminal_snapshot_present = true;
+}
+
+fn populate_terminal_metrics_from_value(root: &Value, metrics: &mut RunTriageMetrics) {
+    metrics.terminal_frame = root.get("frame").and_then(Value::as_u64);
+    metrics.terminal_screen = root
+        .get("screen")
+        .and_then(Value::as_str)
+        .map(|value| value.to_string());
+
+    let normalized_state = root.get("normalized_state");
+    metrics.terminal_floor = normalized_state
+        .and_then(|state| state.get("floor"))
+        .and_then(Value::as_i64);
+    metrics.terminal_act = normalized_state
+        .and_then(|state| state.get("act"))
+        .and_then(Value::as_i64);
+    metrics.terminal_room_type = root
+        .get("room_type")
+        .and_then(Value::as_str)
+        .map(|value| value.to_string())
+        .or_else(|| {
+            normalized_state
+                .and_then(|state| state.get("room_type"))
+                .and_then(Value::as_str)
+                .map(|value| value.to_string())
+        });
+    metrics.terminal_score = root
+        .get("decision_context")
+        .and_then(|ctx| ctx.get("score"))
+        .and_then(Value::as_i64);
+    metrics.terminal_victory = root
+        .get("decision_context")
+        .and_then(|ctx| ctx.get("victory"))
+        .and_then(Value::as_bool);
+    metrics.terminal_monsters = normalized_state
+        .and_then(|state| state.get("monsters"))
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|monster| {
+            monster
+                .get("name")
+                .and_then(Value::as_str)
+                .or_else(|| monster.get("id").and_then(Value::as_str))
+        })
+        .map(|value| value.to_string())
+        .take(3)
+        .collect();
+}
+
+fn parse_u64_field(line: &str, key: &str) -> Option<u64> {
+    let tail = line.split_once(key)?.1;
+    let digits = tail
+        .chars()
+        .take_while(|ch| ch.is_ascii_digit())
+        .collect::<String>();
+    if digits.is_empty() {
+        None
+    } else {
+        digits.parse::<u64>().ok()
+    }
+}
+
+fn parse_word_field<'a>(line: &'a str, key: &str) -> Option<&'a str> {
+    let tail = line.split_once(key)?.1;
+    let token = tail
+        .chars()
+        .take_while(|ch| ch.is_ascii_alphanumeric() || *ch == '_' || *ch == '-')
+        .collect::<String>();
+    (!token.is_empty())
+        .then_some(tail.get(..token.len())?)
+        .or(None)
+}
+
+fn parse_survival_field(line: &str, key: &str) -> Option<u8> {
+    match parse_word_field(line, key)? {
+        "forced_loss" => Some(0),
+        "severe_risk" => Some(1),
+        "risky_but_playable" => Some(2),
+        "stable" => Some(3),
+        "safe" => Some(4),
+        _ => None,
+    }
+}
+
 #[derive(Clone, Debug, Deserialize)]
 struct RuntimeFindingSnapshot {
     snapshot_id: String,
@@ -382,6 +658,44 @@ struct RuntimeFindingReport {
     classification_label: String,
     counts: LiveRunCounts,
     families: Vec<RuntimeFindingFamily>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+struct BotStrengthSummary {
+    run_id: String,
+    classification_label: String,
+    validation_status: String,
+    parity_clean: bool,
+    session_exit_reason: String,
+    highest_floor: Option<i64>,
+    highest_act: Option<i64>,
+    deepest_room_type: Option<String>,
+    reached_boss_acts: Vec<i64>,
+    terminal_outcome: Option<BotTerminalOutcome>,
+    slow_search_count: usize,
+    slow_search_max_ms: u64,
+    exact_turn_disagree_count: usize,
+    exact_turn_skip_count: usize,
+    exact_turn_takeover_count: usize,
+    strict_dominance_disagreement_count: usize,
+    high_threat_disagreement_count: usize,
+    survival_downgrade_avoided_count: usize,
+    regime_counts: BTreeMap<String, usize>,
+    search_timeout_count: usize,
+    event_fallback_count: usize,
+    primary_signals: Vec<String>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+struct BotTerminalOutcome {
+    frame: Option<u64>,
+    floor: Option<i64>,
+    act: Option<i64>,
+    room_type: Option<String>,
+    screen: Option<String>,
+    score: Option<i64>,
+    victory: Option<bool>,
+    monsters: Vec<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -725,12 +1039,172 @@ fn findings_for_category<'a>(
         .filter(move |family| family.category == category)
 }
 
-fn render_triage_summary(report: &RuntimeFindingReport) -> String {
+fn build_empty_finding_report(
+    run_id: &str,
+    classification_label: &str,
+    counts: &LiveRunCounts,
+) -> RuntimeFindingReport {
+    RuntimeFindingReport {
+        run_id: run_id.to_string(),
+        classification_label: classification_label.to_string(),
+        counts: counts.clone(),
+        families: Vec::new(),
+    }
+}
+
+fn build_bot_strength_summary(
+    report: &RuntimeFindingReport,
+    manifest: &LiveRunManifest,
+    validation: &LiveRunValidation,
+    metrics: &RunTriageMetrics,
+) -> BotStrengthSummary {
+    let parity_clean = report.counts.engine_bugs == 0
+        && report.counts.content_gaps == 0
+        && report.counts.timing_diffs == 0
+        && report.counts.replay_failures == 0;
+    let mut primary_signals = Vec::new();
+    if !parity_clean {
+        primary_signals.push("parity_not_clean".to_string());
+    }
+    if metrics.search_timeout_count > 0 {
+        primary_signals.push(format!("search_timeouts={}", metrics.search_timeout_count));
+    }
+    if metrics.slow_search_count > 0 {
+        primary_signals.push(format!(
+            "slow_searches={} max_root_ms={}",
+            metrics.slow_search_count, metrics.slow_search_max_ms
+        ));
+    }
+    if metrics.exact_turn_disagree_count > 0 || metrics.exact_turn_skip_count > 0 {
+        primary_signals.push(format!(
+            "exact_turn_disagree={} skip={}",
+            metrics.exact_turn_disagree_count, metrics.exact_turn_skip_count
+        ));
+    }
+    if metrics.exact_turn_takeover_count > 0 {
+        primary_signals.push(format!(
+            "exact_turn_takeovers={}",
+            metrics.exact_turn_takeover_count
+        ));
+    }
+    if metrics.high_threat_disagreement_count > 0 {
+        primary_signals.push(format!(
+            "high_threat_disagreements={}",
+            metrics.high_threat_disagreement_count
+        ));
+    }
+    if metrics.event_fallback_count > 0 {
+        primary_signals.push(format!("event_fallbacks={}", metrics.event_fallback_count));
+    }
+    if metrics.terminal_snapshot_present {
+        let room = metrics
+            .terminal_room_type
+            .as_deref()
+            .unwrap_or("unknown_room");
+        let floor = metrics
+            .terminal_floor
+            .map(|value| value.to_string())
+            .unwrap_or_else(|| "?".to_string());
+        let act = metrics
+            .terminal_act
+            .map(|value| value.to_string())
+            .unwrap_or_else(|| "?".to_string());
+        primary_signals.push(format!("terminal_outcome=floor_{floor}_act_{act}_{room}"));
+    }
+    if primary_signals.is_empty() {
+        primary_signals.push("no_primary_strength_warnings".to_string());
+    }
+
+    BotStrengthSummary {
+        run_id: report.run_id.clone(),
+        classification_label: report.classification_label.clone(),
+        validation_status: validation.status.clone(),
+        parity_clean,
+        session_exit_reason: manifest.session_exit_reason.clone(),
+        highest_floor: metrics.highest_floor,
+        highest_act: metrics.highest_act,
+        deepest_room_type: metrics.deepest_room_type.clone(),
+        reached_boss_acts: metrics.reached_boss_acts.clone(),
+        terminal_outcome: metrics
+            .terminal_snapshot_present
+            .then(|| BotTerminalOutcome {
+                frame: metrics.terminal_frame,
+                floor: metrics.terminal_floor,
+                act: metrics.terminal_act,
+                room_type: metrics.terminal_room_type.clone(),
+                screen: metrics.terminal_screen.clone(),
+                score: metrics.terminal_score,
+                victory: metrics.terminal_victory,
+                monsters: metrics.terminal_monsters.clone(),
+            }),
+        slow_search_count: metrics.slow_search_count,
+        slow_search_max_ms: metrics.slow_search_max_ms,
+        exact_turn_disagree_count: metrics.exact_turn_disagree_count,
+        exact_turn_skip_count: metrics.exact_turn_skip_count,
+        exact_turn_takeover_count: metrics.exact_turn_takeover_count,
+        strict_dominance_disagreement_count: metrics.strict_dominance_disagreement_count,
+        high_threat_disagreement_count: metrics.high_threat_disagreement_count,
+        survival_downgrade_avoided_count: metrics.survival_downgrade_avoided_count,
+        regime_counts: metrics.regime_counts.clone(),
+        search_timeout_count: metrics.search_timeout_count,
+        event_fallback_count: metrics.event_fallback_count,
+        primary_signals,
+    }
+}
+
+fn render_triage_summary(
+    report: &RuntimeFindingReport,
+    manifest: &LiveRunManifest,
+    validation: &LiveRunValidation,
+    metrics: &RunTriageMetrics,
+) -> String {
     let mut out = String::new();
     out.push_str("=== TRIAGE SUMMARY ===\n");
     out.push_str(&format!(
-        "Run: {} | Classification: {}\n",
-        report.run_id, report.classification_label
+        "Run: {} | Profile: {} | Purpose: {}\n",
+        report.run_id,
+        manifest
+            .profile
+            .profile_name
+            .as_deref()
+            .unwrap_or("unknown"),
+        manifest.profile.purpose.as_deref().unwrap_or("unknown"),
+    ));
+    out.push_str(&format!(
+        "Mode: parity={} exit={} classification={}\n",
+        manifest.parity_mode, manifest.session_exit_reason, report.classification_label
+    ));
+    out.push_str(&format!(
+        "Combat Parity: {} | Validation: {}\n",
+        if report.counts.engine_bugs == 0
+            && report.counts.content_gaps == 0
+            && report.counts.timing_diffs == 0
+            && report.counts.replay_failures == 0
+        {
+            "clean"
+        } else {
+            "tainted"
+        },
+        validation.status
+    ));
+    if !validation.errors.is_empty() {
+        out.push_str("Validation Notes:\n");
+        for error in validation.errors.iter().take(3) {
+            out.push_str(&format!("- {error}\n"));
+        }
+    }
+    out.push_str(&format!(
+        "Build: {} | Binary Fresh: {}\n",
+        manifest
+            .provenance
+            .git_short_sha
+            .as_deref()
+            .unwrap_or("unknown"),
+        manifest
+            .provenance
+            .binary_is_fresh
+            .map(|flag| if flag { "true" } else { "false" })
+            .unwrap_or("unknown"),
     ));
     out.push_str(&format!(
         "Counts: engine_bugs={} content_gaps={} timing_diffs={} replay_failures={}\n",
@@ -739,41 +1213,56 @@ fn render_triage_summary(report: &RuntimeFindingReport) -> String {
         report.counts.timing_diffs,
         report.counts.replay_failures
     ));
-
-    let mut write_family_section =
-        |title: &str, families: Vec<&RuntimeFindingFamily>| -> std::fmt::Result {
-            use std::fmt::Write;
-            writeln!(out, "\n{title}")?;
-            if families.is_empty() {
-                writeln!(out, "- none")?;
-                return Ok(());
+    if let (Some(floor), Some(act)) = (metrics.highest_floor, metrics.highest_act) {
+        out.push_str(&format!(
+            "Progression: reached floor {} act {} room={}\n",
+            floor,
+            act,
+            metrics.deepest_room_type.as_deref().unwrap_or("unknown")
+        ));
+    }
+    if metrics.terminal_snapshot_present {
+        out.push_str(&format!(
+            "Terminal Outcome: frame={} floor={} act={} room={} screen={} score={} monsters={}\n",
+            metrics
+                .terminal_frame
+                .map(|value| value.to_string())
+                .unwrap_or_else(|| "?".to_string()),
+            metrics
+                .terminal_floor
+                .map(|value| value.to_string())
+                .unwrap_or_else(|| "?".to_string()),
+            metrics
+                .terminal_act
+                .map(|value| value.to_string())
+                .unwrap_or_else(|| "?".to_string()),
+            metrics.terminal_room_type.as_deref().unwrap_or("unknown"),
+            metrics.terminal_screen.as_deref().unwrap_or("unknown"),
+            metrics
+                .terminal_score
+                .map(|value| value.to_string())
+                .unwrap_or_else(|| "?".to_string()),
+            if metrics.terminal_monsters.is_empty() {
+                "n/a".to_string()
+            } else {
+                metrics.terminal_monsters.join(", ")
             }
-            for family in families {
-                let labels = if !family.combat_labels.is_empty() {
-                    family.combat_labels.join(", ")
-                } else if !family.event_labels.is_empty() {
-                    family.event_labels.join(", ")
-                } else {
-                    "n/a".to_string()
-                };
-                let frames = family
-                    .example_frames
-                    .iter()
-                    .map(|frame| frame.to_string())
-                    .collect::<Vec<_>>()
-                    .join(", ");
-                writeln!(
-                    out,
-                    "- {} (×{}) labels=[{}] frames=[{}] look_next={}",
-                    family.key,
-                    family.count,
-                    labels,
-                    frames,
-                    family.suggested_artifacts.join(", ")
-                )?;
-            }
-            Ok(())
-        };
+        ));
+    }
+    if !metrics.reached_boss_acts.is_empty() {
+        let acts = metrics
+            .reached_boss_acts
+            .iter()
+            .map(|act| format!("Act {act}"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        out.push_str(&format!("Boss Milestones: reached {acts}\n"));
+    }
+    if metrics.terminal_snapshot_present {
+        out.push_str(
+            "Snapshots: terminal_snapshot.json is separate from parity failure snapshots\n",
+        );
+    }
 
     let top_engine = findings_for_category(report, "engine_bug")
         .take(5)
@@ -785,31 +1274,275 @@ fn render_triage_summary(report: &RuntimeFindingReport) -> String {
         .take(5)
         .collect::<Vec<_>>();
 
-    let _ = write_family_section("Top Engine Bug Families:", top_engine);
-    let _ = write_family_section("Top Validation Failure Families:", top_validation);
-    let _ = write_family_section("Top Content Gap Families:", top_gaps);
+    if top_engine.is_empty()
+        && top_validation.is_empty()
+        && top_gaps.is_empty()
+        && validation.status.starts_with("ok")
+    {
+        out.push_str("\nPrimary Signal:\n- no combat parity failures captured in this run\n");
+    } else if top_engine.is_empty() && top_validation.is_empty() && top_gaps.is_empty() {
+        out.push_str(
+            "\nPrimary Signal:\n- combat parity is clean, but validation/runtime quality still needs attention\n",
+        );
+    }
 
-    out.push_str(
-        "\nWhere to look next:\n- combat engine bugs: debug.txt, failure_snapshots.jsonl, replay.json\n- validation failures: event_audit.jsonl, debug.txt\n",
-    );
-    out.push_str("\n=== CHRONOLOGICAL APPENDIX ===\n");
+    let _ = write_triage_family_section(&mut out, "Top Engine Bug Families:", top_engine);
+    let _ =
+        write_triage_family_section(&mut out, "Top Validation Failure Families:", top_validation);
+    let _ = write_triage_family_section(&mut out, "Top Content Gap Families:", top_gaps);
+
+    if metrics.has_quality_warnings() {
+        out.push_str("\nBot/Runtime Signals:\n");
+        if metrics.slow_search_count > 0 {
+            out.push_str(&format!(
+                "- slow_search_count={} max_root_ms={}\n",
+                metrics.slow_search_count, metrics.slow_search_max_ms
+            ));
+        }
+        if metrics.exact_turn_disagree_count > 0 || metrics.exact_turn_skip_count > 0 {
+            out.push_str(&format!(
+                "- exact_turn_disagree_count={} exact_turn_skip_count={}\n",
+                metrics.exact_turn_disagree_count, metrics.exact_turn_skip_count
+            ));
+        }
+        if !metrics.regime_counts.is_empty() {
+            out.push_str(&format!(
+                "- regime_hotspots={}\n",
+                format_regime_hotspots(&metrics.regime_counts)
+            ));
+        }
+        if metrics.exact_turn_takeover_count > 0 {
+            out.push_str(&format!(
+                "- exact_turn_forced_takeover_count={}\n",
+                metrics.exact_turn_takeover_count
+            ));
+        }
+        if metrics.strict_dominance_disagreement_count > 0 {
+            out.push_str(&format!(
+                "- exact_turn_strict_dominance_count={}\n",
+                metrics.strict_dominance_disagreement_count
+            ));
+        }
+        if metrics.high_threat_disagreement_count > 0 {
+            out.push_str(&format!(
+                "- high_threat_disagreement_count={}\n",
+                metrics.high_threat_disagreement_count
+            ));
+        }
+        if metrics.survival_downgrade_avoided_count > 0 {
+            out.push_str(&format!(
+                "- survival_downgrade_avoided_count={}\n",
+                metrics.survival_downgrade_avoided_count
+            ));
+        }
+        if metrics.search_timeout_count > 0 {
+            out.push_str(&format!(
+                "- search_timeout_count={}\n",
+                metrics.search_timeout_count
+            ));
+        }
+        if metrics.event_fallback_count > 0 {
+            out.push_str(&format!(
+                "- event_fallback_count={}\n",
+                metrics.event_fallback_count
+            ));
+        }
+    }
+
+    out.push_str("\nArtifacts To Open First:\n");
+    if report.counts.engine_bugs > 0
+        || report.counts.content_gaps > 0
+        || report.counts.timing_diffs > 0
+        || report.counts.replay_failures > 0
+    {
+        out.push_str(
+            "- focus.txt\n- findings.json\n- failure_snapshots.jsonl\n- debug.txt\n- raw.jsonl\n",
+        );
+    } else if validation.trace_incomplete {
+        out.push_str("- focus.txt\n- validation.json\n- event_audit.jsonl\n- debug.txt\n");
+    } else if metrics.has_quality_warnings() {
+        out.push_str("- focus.txt\n- bot_strength.json\n- debug.txt\n");
+        if metrics.event_fallback_count > 0 {
+            out.push_str("- event_audit.jsonl\n");
+        }
+        out.push_str(
+            "- raw.jsonl (only if you are correlating frames or building a replay/case)\n",
+        );
+    } else {
+        out.push_str(
+            "- focus.txt\n- bot_strength.json\n- findings.json\n- raw.jsonl (only if you are generating a replay/case)\n",
+        );
+    }
     out
+}
+
+fn format_regime_hotspots(regime_counts: &BTreeMap<String, usize>) -> String {
+    let mut entries = regime_counts
+        .iter()
+        .map(|(regime, count)| (regime.as_str(), *count))
+        .collect::<Vec<_>>();
+    entries.sort_by(|left, right| right.1.cmp(&left.1).then_with(|| left.0.cmp(right.0)));
+    entries
+        .into_iter()
+        .take(4)
+        .map(|(regime, count)| format!("{regime}={count}"))
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+fn build_focus_dashboard(
+    report: &RuntimeFindingReport,
+    manifest: &LiveRunManifest,
+    validation: &LiveRunValidation,
+    metrics: &RunTriageMetrics,
+    original_focus: &str,
+) -> String {
+    let mut out = render_triage_summary(report, manifest, validation, metrics);
+    let key_events = select_key_lines(original_focus, |line| line.starts_with("[EVENT]"), 4);
+    let runtime_highlights = select_key_lines(
+        original_focus,
+        |line| {
+            line.contains("[SLOW SEARCH]")
+                || line.contains("[SEARCH TIMEOUT]")
+                || (line.contains("[AUDIT]") && line.contains("agrees=false"))
+                || (line.contains("[AUDIT]") && line.contains("skipped=true"))
+        },
+        8,
+    );
+    if !key_events.is_empty() {
+        out.push_str("\nKey Event Trace:\n");
+        for line in key_events {
+            out.push_str(&format!("- {line}\n"));
+        }
+    }
+    if !runtime_highlights.is_empty() {
+        out.push_str("\nKey Runtime Highlights:\n");
+        for line in runtime_highlights {
+            out.push_str(&format!("- {line}\n"));
+        }
+    }
+    if let Some(summary_box) = extract_last_combat_summary_box(original_focus) {
+        out.push_str("\nLast Combat Summary:\n");
+        out.push_str(&summary_box);
+        out.push('\n');
+    }
+    if let Some(terminal_excerpt) = extract_terminal_excerpt(original_focus) {
+        out.push_str("\nTerminal Section:\n");
+        out.push_str(&terminal_excerpt);
+        out.push('\n');
+    }
+    if original_focus.contains("=== CHRONOLOGICAL APPENDIX ===\n") {
+        out.push_str("\nSee also: focus_appendix.txt for the full focused trace.\n");
+    }
+    out
+}
+
+fn select_key_lines<F>(text: &str, predicate: F, limit: usize) -> Vec<String>
+where
+    F: Fn(&str) -> bool,
+{
+    text.lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty() && predicate(line))
+        .take(limit)
+        .map(|line| line.to_string())
+        .collect()
+}
+
+fn extract_last_combat_summary_box(text: &str) -> Option<String> {
+    let start = text.rfind("╔")?;
+    let tail = &text[start..];
+    let end = tail.find("╝")?;
+    Some(tail[..end + "╝".len()].trim().to_string())
+}
+
+fn extract_terminal_excerpt(text: &str) -> Option<String> {
+    let lines = text.lines().collect::<Vec<_>>();
+    let idx = lines
+        .iter()
+        .position(|line| line.contains("=== GAME OVER ===") || line.contains("=== VICTORY ==="))?;
+    let excerpt = lines[idx..(idx + 4).min(lines.len())].join("\n");
+    Some(excerpt.trim().to_string())
+}
+
+fn write_triage_family_section(
+    out: &mut String,
+    title: &str,
+    families: Vec<&RuntimeFindingFamily>,
+) -> std::fmt::Result {
+    use std::fmt::Write;
+
+    writeln!(out, "\n{title}")?;
+    if families.is_empty() {
+        writeln!(out, "- none")?;
+        return Ok(());
+    }
+    for family in families {
+        let labels = if !family.combat_labels.is_empty() {
+            family.combat_labels.join(", ")
+        } else if !family.event_labels.is_empty() {
+            family.event_labels.join(", ")
+        } else {
+            "n/a".to_string()
+        };
+        let frames = family
+            .example_frames
+            .iter()
+            .map(|frame| frame.to_string())
+            .collect::<Vec<_>>()
+            .join(", ");
+        writeln!(
+            out,
+            "- {} (×{}) labels=[{}] frames=[{}] look_next={}",
+            family.key,
+            family.count,
+            labels,
+            frames,
+            family.suggested_artifacts.join(", ")
+        )?;
+    }
+    Ok(())
+}
+
+#[derive(Clone, Debug)]
+struct FocusRewriteOutcome {
+    metrics: RunTriageMetrics,
+    appendix_present: bool,
 }
 
 fn rewrite_archived_focus_with_triage_summary(
     focus_path: &Path,
     report: &RuntimeFindingReport,
-) -> Result<(), String> {
+    manifest: &LiveRunManifest,
+    validation: &LiveRunValidation,
+) -> Result<FocusRewriteOutcome, String> {
     let original = std::fs::read_to_string(focus_path)
         .map_err(|err| format!("failed to read focus '{}': {err}", focus_path.display()))?;
+    let run_dir = focus_path.parent().unwrap_or_else(|| Path::new("."));
+    let metrics = derive_run_triage_metrics(run_dir, &original);
     let appendix = original
         .split_once("=== CHRONOLOGICAL APPENDIX ===\n")
         .map(|(_, rest)| rest)
         .unwrap_or(&original)
-        .trim_start_matches('\n');
-    let rewritten = format!("{}\n{}", render_triage_summary(report), appendix);
+        .trim_start_matches('\n')
+        .trim();
+    let appendix_present = !appendix.is_empty();
+    if appendix_present {
+        let appendix_path = run_dir.join("focus_appendix.txt");
+        std::fs::write(&appendix_path, appendix).map_err(|err| {
+            format!(
+                "failed to write focus appendix '{}': {err}",
+                appendix_path.display()
+            )
+        })?;
+    }
+    let rewritten = build_focus_dashboard(report, manifest, validation, &metrics, &original);
     std::fs::write(focus_path, rewritten)
-        .map_err(|err| format!("failed to rewrite focus '{}': {err}", focus_path.display()))
+        .map_err(|err| format!("failed to rewrite focus '{}': {err}", focus_path.display()))?;
+    Ok(FocusRewriteOutcome {
+        metrics,
+        appendix_present,
+    })
 }
 
 fn write_findings_report(path: &Path, report: &RuntimeFindingReport) -> Result<(), String> {
@@ -920,42 +1653,66 @@ pub(crate) fn finalize_live_run(
 
     let classification_label = classify_run(&input);
     let is_clean = is_clean_label(&classification_label);
+    let profile = load_profile_metadata();
+    let is_engine_profile = profile
+        .purpose
+        .as_deref()
+        .is_some_and(|purpose| purpose.eq_ignore_ascii_case("engine"));
     let retain_replay = matches!(
         classification_label.as_str(),
         "strict_fail" | "survey_tainted" | "loss_tainted" | "victory_tainted"
     );
     let raw_present = copy_if_exists(&paths.current_raw(), &run_dir.join("raw.jsonl"))?;
     let focus_present = copy_if_exists(&paths.current_focus(), &run_dir.join("focus.txt"))?;
-    let signatures_present = copy_if_exists(
-        &paths.current_signatures(),
-        &run_dir.join("signatures.jsonl"),
-    )?;
+    let signatures_present = if is_engine_profile && is_clean {
+        false
+    } else {
+        copy_if_nonempty(
+            &paths.current_signatures(),
+            &run_dir.join("signatures.jsonl"),
+        )?
+    };
     let combat_suspects_present = copy_if_nonempty(
         &paths.current_combat_suspects(),
         &run_dir.join("combat_suspects.jsonl"),
     )?;
-    let failure_snapshots_present = copy_if_exists(
+    let snapshot_split = split_failure_snapshot_artifacts(
         &paths.current_failure_snapshots(),
         &run_dir.join("failure_snapshots.jsonl"),
+        &run_dir.join("terminal_snapshot.json"),
     )?;
+    let failure_snapshots_present = snapshot_split.failure_snapshots_present;
+    let terminal_snapshot_present = snapshot_split.terminal_snapshot_present;
     let debug_present = copy_if_exists(&paths.current_debug(), &run_dir.join("debug.txt"))?;
     let reward_audit_present = copy_if_nonempty(
         &paths.current_reward_audit(),
         &run_dir.join("reward_audit.jsonl"),
     )?;
-    let event_audit_present = copy_if_exists(
+    let event_audit_present = copy_if_nonempty(
         &paths.current_event_audit(),
         &run_dir.join("event_audit.jsonl"),
     )?;
-    let human_noncombat_audit_present = copy_if_nonempty(
-        &paths.current_human_noncombat_audit(),
-        &run_dir.join("human_noncombat_audit.jsonl"),
+    let combat_decision_audit_present = copy_if_nonempty(
+        &paths.current_combat_decision_audit(),
+        &run_dir.join("combat_decision_audit.jsonl"),
     )?;
-    let sidecar_shadow_present = copy_if_nonempty(
-        &paths.current_sidecar_shadow(),
-        &run_dir.join("sidecar_shadow.jsonl"),
-    )?;
-    let watch_audit_present = if input.watch_enabled {
+    let human_noncombat_audit_present = if is_engine_profile {
+        false
+    } else {
+        copy_if_nonempty(
+            &paths.current_human_noncombat_audit(),
+            &run_dir.join("human_noncombat_audit.jsonl"),
+        )?
+    };
+    let sidecar_shadow_present = if is_engine_profile {
+        false
+    } else {
+        copy_if_nonempty(
+            &paths.current_sidecar_shadow(),
+            &run_dir.join("sidecar_shadow.jsonl"),
+        )?
+    };
+    let watch_audit_present = if input.watch_enabled && !is_engine_profile {
         copy_if_nonempty(
             &paths.current_watch_audit(),
             &run_dir.join("watch_audit.jsonl"),
@@ -963,7 +1720,7 @@ pub(crate) fn finalize_live_run(
     } else {
         false
     };
-    let watch_noncombat_present = if input.watch_enabled {
+    let watch_noncombat_present = if input.watch_enabled && !is_engine_profile {
         copy_if_nonempty(
             &paths.current_watch_noncombat(),
             &run_dir.join("watch_noncombat.jsonl"),
@@ -977,7 +1734,7 @@ pub(crate) fn finalize_live_run(
         false
     };
     let findings_path = run_dir.join("findings.json");
-    let findings_present = if failure_snapshots_present {
+    let report = if failure_snapshots_present {
         let report = build_finding_report(
             &input.run_id,
             &classification_label,
@@ -989,14 +1746,21 @@ pub(crate) fn finalize_live_run(
             },
             &run_dir.join("failure_snapshots.jsonl"),
         )?;
-        write_findings_report(&findings_path, &report)?;
-        if focus_present {
-            rewrite_archived_focus_with_triage_summary(&run_dir.join("focus.txt"), &report)?;
-        }
-        true
+        report
     } else {
-        false
+        build_empty_finding_report(
+            &input.run_id,
+            &classification_label,
+            &LiveRunCounts {
+                engine_bugs: input.engine_bug_total,
+                content_gaps: input.content_gap_total,
+                timing_diffs: input.timing_diff_total,
+                replay_failures: input.replay_failures,
+            },
+        )
     };
+    write_findings_report(&findings_path, &report)?;
+    let findings_present = true;
 
     let manifest = LiveRunManifest {
         run_id: input.run_id.clone(),
@@ -1006,7 +1770,7 @@ pub(crate) fn finalize_live_run(
         watch_enabled: input.watch_enabled,
         session_exit_reason: input.session_exit_reason,
         classification_label: classification_label.clone(),
-        profile: load_profile_metadata(),
+        profile,
         provenance: runtime_provenance(),
         counts: LiveRunCounts {
             engine_bugs: input.engine_bug_total,
@@ -1017,7 +1781,9 @@ pub(crate) fn finalize_live_run(
         artifacts: LiveRunArtifacts {
             raw: Some(LiveArtifactRecord::new("raw.jsonl", raw_present)),
             focus: Some(LiveArtifactRecord::new("focus.txt", focus_present)),
+            focus_appendix: Some(LiveArtifactRecord::new("focus_appendix.txt", false)),
             findings: Some(LiveArtifactRecord::new("findings.json", findings_present)),
+            bot_strength: Some(LiveArtifactRecord::new("bot_strength.json", false)),
             signatures: Some(LiveArtifactRecord::new(
                 "signatures.jsonl",
                 signatures_present,
@@ -1030,6 +1796,10 @@ pub(crate) fn finalize_live_run(
                 "failure_snapshots.jsonl",
                 failure_snapshots_present,
             )),
+            terminal_snapshot: Some(LiveArtifactRecord::new(
+                "terminal_snapshot.json",
+                terminal_snapshot_present,
+            )),
             debug: Some(LiveArtifactRecord::new("debug.txt", debug_present)),
             replay: Some(LiveArtifactRecord::new("replay.json", replay_present)),
             reward_audit: Some(LiveArtifactRecord::new(
@@ -1039,6 +1809,10 @@ pub(crate) fn finalize_live_run(
             event_audit: Some(LiveArtifactRecord::new(
                 "event_audit.jsonl",
                 event_audit_present,
+            )),
+            combat_decision_audit: Some(LiveArtifactRecord::new(
+                "combat_decision_audit.jsonl",
+                combat_decision_audit_present,
             )),
             human_noncombat_audit: Some(LiveArtifactRecord::new(
                 "human_noncombat_audit.jsonl",
@@ -1082,6 +1856,38 @@ pub(crate) fn finalize_live_run(
     let _ = std::fs::copy(&validation_path, paths.current_validation());
     manifest.validation = Some(validation.clone());
     manifest.artifacts.validation = Some(LiveArtifactRecord::new("validation.json", true));
+    let focus_rewrite = if focus_present {
+        Some(rewrite_archived_focus_with_triage_summary(
+            &run_dir.join("focus.txt"),
+            &report,
+            &manifest,
+            &validation,
+        )?)
+    } else {
+        None
+    };
+    if let Some(focus_rewrite) = &focus_rewrite {
+        manifest.artifacts.focus_appendix = Some(LiveArtifactRecord::new(
+            "focus_appendix.txt",
+            focus_rewrite.appendix_present,
+        ));
+    }
+    let metrics = if let Some(focus_rewrite) = &focus_rewrite {
+        focus_rewrite.metrics.clone()
+    } else {
+        derive_run_triage_metrics(&run_dir, "")
+    };
+    let bot_strength = build_bot_strength_summary(&report, &manifest, &validation, &metrics);
+    let bot_strength_path = run_dir.join("bot_strength.json");
+    let bot_strength_text = serde_json::to_string_pretty(&bot_strength)
+        .map_err(|err| format!("failed to serialize bot strength summary: {err}"))?;
+    std::fs::write(&bot_strength_path, bot_strength_text).map_err(|err| {
+        format!(
+            "failed to write bot strength summary '{}': {err}",
+            bot_strength_path.display()
+        )
+    })?;
+    manifest.artifacts.bot_strength = Some(LiveArtifactRecord::new("bot_strength.json", true));
     rewrite_manifest(&manifest_path, &manifest)?;
     let _ = write_manifest(&paths.current_manifest(), &manifest);
     let gc_summary = gc_runs(paths)?;
@@ -1161,6 +1967,76 @@ fn copy_if_nonempty(source: &Path, target: &Path) -> Result<bool, String> {
         return Ok(false);
     }
     copy_if_exists(source, target)
+}
+
+#[derive(Clone, Debug, Default)]
+struct ArchivedSnapshotSplit {
+    failure_snapshots_present: bool,
+    terminal_snapshot_present: bool,
+}
+
+fn split_failure_snapshot_artifacts(
+    source: &Path,
+    failure_target: &Path,
+    terminal_target: &Path,
+) -> Result<ArchivedSnapshotSplit, String> {
+    if !std::fs::metadata(source)
+        .map(|meta| meta.is_file() && meta.len() > 0)
+        .unwrap_or(false)
+    {
+        return Ok(ArchivedSnapshotSplit::default());
+    }
+
+    let text = std::fs::read_to_string(source)
+        .map_err(|err| format!("failed to read '{}': {err}", source.display()))?;
+    let mut parity_lines = Vec::new();
+    let mut terminal_snapshot: Option<Value> = None;
+    for (idx, line) in text.lines().enumerate() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        let root = serde_json::from_str::<Value>(trimmed).map_err(|err| {
+            format!(
+                "invalid jsonl in '{}' at line {}: {err}",
+                source.display(),
+                idx + 1
+            )
+        })?;
+        if root
+            .get("trigger_kind")
+            .and_then(Value::as_str)
+            .is_some_and(|kind| kind == "terminal_loss")
+        {
+            terminal_snapshot = Some(root);
+        } else {
+            parity_lines.push(trimmed.to_string());
+        }
+    }
+
+    let mut split = ArchivedSnapshotSplit::default();
+    if !parity_lines.is_empty() {
+        let text = format!("{}\n", parity_lines.join("\n"));
+        std::fs::write(failure_target, text).map_err(|err| {
+            format!(
+                "failed to write failure snapshots '{}': {err}",
+                failure_target.display()
+            )
+        })?;
+        split.failure_snapshots_present = true;
+    }
+    if let Some(snapshot) = terminal_snapshot {
+        let text = serde_json::to_string_pretty(&snapshot)
+            .map_err(|err| format!("failed to serialize terminal snapshot: {err}"))?;
+        std::fs::write(terminal_target, text).map_err(|err| {
+            format!(
+                "failed to write terminal snapshot '{}': {err}",
+                terminal_target.display()
+            )
+        })?;
+        split.terminal_snapshot_present = true;
+    }
+    Ok(split)
 }
 
 pub(crate) fn verify_replay_counts(replay_path: &Path) -> Result<(usize, usize), String> {
@@ -1244,6 +2120,288 @@ mod tests {
         assert_eq!(fallback.event_labels, vec!["Neow"]);
 
         let _ = std::fs::remove_file(&snapshots_path);
+        let _ = std::fs::remove_dir_all(&temp_root);
+    }
+
+    #[test]
+    fn render_triage_summary_surfaces_validation_gaps_for_clean_runs() {
+        let report = build_empty_finding_report(
+            "run_clean",
+            "survey_clean",
+            &LiveRunCounts {
+                engine_bugs: 0,
+                content_gaps: 0,
+                timing_diffs: 0,
+                replay_failures: 0,
+            },
+        );
+        let manifest = LiveRunManifest {
+            run_id: "run_clean".to_string(),
+            timestamp: "20260420_000000".to_string(),
+            build_tag: "build".to_string(),
+            parity_mode: "Strict".to_string(),
+            watch_enabled: false,
+            session_exit_reason: "STDIN_EOF".to_string(),
+            classification_label: "survey_clean".to_string(),
+            profile: LiveProfileMetadata {
+                profile_name: Some("Ironclad_Engine_Strict.json".to_string()),
+                purpose: Some("engine".to_string()),
+                capture_policy: Some("strict_stop_on_first_parity_fail".to_string()),
+            },
+            provenance: LiveRunProvenance {
+                git_short_sha: Some("abc1234".to_string()),
+                binary_is_fresh: Some(true),
+                ..LiveRunProvenance::default()
+            },
+            counts: LiveRunCounts::default(),
+            artifacts: LiveRunArtifacts::default(),
+            validation: None,
+            retention: LiveRetentionFlags::default(),
+        };
+        let validation = LiveRunValidation {
+            status: "trace_incomplete".to_string(),
+            trace_incomplete: true,
+            errors: vec![
+                "event trace present but screen_index/screen_source fields are missing".to_string(),
+            ],
+            ..LiveRunValidation::default()
+        };
+        let metrics = RunTriageMetrics::default();
+
+        let summary = render_triage_summary(&report, &manifest, &validation, &metrics);
+
+        assert!(summary.contains("Combat Parity: clean | Validation: trace_incomplete"));
+        assert!(summary
+            .contains("event trace present but screen_index/screen_source fields are missing"));
+        assert!(summary.contains("validation.json"));
+        assert!(summary.contains("event_audit.jsonl"));
+    }
+
+    #[test]
+    fn derive_run_triage_metrics_surfaces_progression_and_quality_signals() {
+        let temp_root = std::env::temp_dir().join(format!(
+            "live_comm_metrics_test_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("unix time")
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&temp_root).expect("temp root should be creatable");
+        std::fs::write(
+            temp_root.join("raw.jsonl"),
+            concat!(
+                "{\"game_state\":{\"floor\":16,\"act\":1,\"room_type\":\"MonsterRoomBoss\"}}\n",
+                "{\"game_state\":{\"floor\":33,\"act\":2,\"room_type\":\"MonsterRoomBoss\"}}\n"
+            ),
+        )
+        .expect("raw should write");
+        std::fs::write(
+            temp_root.join("failure_snapshots.jsonl"),
+            "{\"trigger_kind\":\"terminal_loss\"}\n",
+        )
+        .expect("failure snapshots should write");
+        let focus_text = concat!(
+            "[EVENT] frame=1 Neow | choose=Talk score=18 fallback | protocol=unsupported_event\n",
+            "[SLOW SEARCH] frame=420 baseline_ms=0 root_ms=709 legal_moves=6 chosen=Play #4 Warcry+\n",
+            "[AUDIT] exact_turn best=PlayCard { card_index: 3, target: None } line_len=2 ends=8 nodes=7 prunes=0 cycles=0 truncated=false agrees=false regime=crisis dominance=strictly_better_in_window confidence=exact takeover=true takeover_reason=crisis_strict_dominance frontier_survival=severe_risk exact_survival=stable resources=hp80/blk12/pots0/lost0/exh0\n",
+            "[AUDIT] exact_turn skipped=true reason=high_root_branching legal_moves=12 living_monsters=3 filled_potions=0 regime=fragile dominance=incomparable confidence=unavailable takeover=false takeover_reason=no_best_first_input frontier_survival=risky_but_playable exact_survival=risky_but_playable\n",
+            "[SEARCH TIMEOUT] frame=435 root_search partial_result budget=1200 elapsed_ms=4\n"
+        );
+
+        let metrics = derive_run_triage_metrics(&temp_root, focus_text);
+
+        assert_eq!(metrics.highest_floor, Some(33));
+        assert_eq!(metrics.highest_act, Some(2));
+        assert_eq!(
+            metrics.deepest_room_type.as_deref(),
+            Some("MonsterRoomBoss")
+        );
+        assert_eq!(metrics.reached_boss_acts, vec![1, 2]);
+        assert_eq!(metrics.slow_search_count, 1);
+        assert_eq!(metrics.slow_search_max_ms, 709);
+        assert_eq!(metrics.exact_turn_disagree_count, 1);
+        assert_eq!(metrics.exact_turn_skip_count, 1);
+        assert_eq!(metrics.exact_turn_takeover_count, 1);
+        assert_eq!(metrics.strict_dominance_disagreement_count, 1);
+        assert_eq!(metrics.high_threat_disagreement_count, 1);
+        assert_eq!(metrics.survival_downgrade_avoided_count, 1);
+        assert_eq!(metrics.regime_counts.get("crisis"), Some(&1));
+        assert_eq!(metrics.regime_counts.get("fragile"), Some(&1));
+        assert_eq!(metrics.search_timeout_count, 1);
+        assert_eq!(metrics.event_fallback_count, 1);
+        assert!(metrics.terminal_snapshot_present);
+
+        let _ = std::fs::remove_file(temp_root.join("raw.jsonl"));
+        let _ = std::fs::remove_file(temp_root.join("failure_snapshots.jsonl"));
+        let _ = std::fs::remove_dir_all(&temp_root);
+    }
+
+    #[test]
+    fn build_bot_strength_summary_includes_phase1_decision_fields() {
+        let report =
+            build_empty_finding_report("run_strength", "loss_clean", &LiveRunCounts::default());
+        let manifest = LiveRunManifest {
+            run_id: "run_strength".to_string(),
+            timestamp: "20260420_000000".to_string(),
+            build_tag: "build".to_string(),
+            parity_mode: "Strict".to_string(),
+            watch_enabled: false,
+            session_exit_reason: "GAME_OVER".to_string(),
+            classification_label: "loss_clean".to_string(),
+            profile: LiveProfileMetadata {
+                profile_name: Some("Ironclad_Engine_Strict.json".to_string()),
+                purpose: Some("engine".to_string()),
+                capture_policy: Some("strict_stop_on_first_parity_fail".to_string()),
+            },
+            provenance: LiveRunProvenance::default(),
+            counts: LiveRunCounts::default(),
+            artifacts: LiveRunArtifacts::default(),
+            validation: None,
+            retention: LiveRetentionFlags::default(),
+        };
+        let validation = LiveRunValidation {
+            status: "ok".to_string(),
+            ..LiveRunValidation::default()
+        };
+        let mut metrics = RunTriageMetrics::default();
+        metrics.exact_turn_takeover_count = 2;
+        metrics.strict_dominance_disagreement_count = 3;
+        metrics.high_threat_disagreement_count = 1;
+        metrics.survival_downgrade_avoided_count = 2;
+        metrics.regime_counts.insert("crisis".to_string(), 4);
+        metrics.regime_counts.insert("fragile".to_string(), 2);
+
+        let summary = build_bot_strength_summary(&report, &manifest, &validation, &metrics);
+
+        assert_eq!(summary.exact_turn_takeover_count, 2);
+        assert_eq!(summary.strict_dominance_disagreement_count, 3);
+        assert_eq!(summary.high_threat_disagreement_count, 1);
+        assert_eq!(summary.survival_downgrade_avoided_count, 2);
+        assert_eq!(summary.regime_counts.get("crisis"), Some(&4));
+        assert_eq!(summary.regime_counts.get("fragile"), Some(&2));
+    }
+
+    #[test]
+    fn split_failure_snapshot_artifacts_separates_terminal_snapshot() {
+        let temp_root = std::env::temp_dir().join(format!(
+            "live_comm_split_test_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("unix time")
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&temp_root).expect("temp root should be creatable");
+        let source = temp_root.join("source.jsonl");
+        std::fs::write(
+            &source,
+            concat!(
+                "{\"trigger_kind\":\"engine_bug\",\"frame\":10}\n",
+                "{\"trigger_kind\":\"terminal_loss\",\"frame\":11,\"screen\":\"GAME_OVER\"}\n"
+            ),
+        )
+        .expect("source should write");
+
+        let split = split_failure_snapshot_artifacts(
+            &source,
+            &temp_root.join("failure_snapshots.jsonl"),
+            &temp_root.join("terminal_snapshot.json"),
+        )
+        .expect("split should succeed");
+
+        assert!(split.failure_snapshots_present);
+        assert!(split.terminal_snapshot_present);
+        let failure_text = std::fs::read_to_string(temp_root.join("failure_snapshots.jsonl"))
+            .expect("failure snapshots should read");
+        assert!(failure_text.contains("\"engine_bug\""));
+        assert!(!failure_text.contains("\"terminal_loss\""));
+        let terminal_text = std::fs::read_to_string(temp_root.join("terminal_snapshot.json"))
+            .expect("terminal snapshot should read");
+        assert!(terminal_text.contains("\"terminal_loss\""));
+
+        let _ = std::fs::remove_dir_all(&temp_root);
+    }
+
+    #[test]
+    fn rewrite_archived_focus_moves_appendix_into_separate_file() {
+        let temp_root = std::env::temp_dir().join(format!(
+            "live_comm_focus_rewrite_test_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("unix time")
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&temp_root).expect("temp root should be creatable");
+        std::fs::write(
+            temp_root.join("raw.jsonl"),
+            "{\"game_state\":{\"floor\":16,\"act\":1,\"room_type\":\"MonsterRoomBoss\"}}\n",
+        )
+        .expect("raw should write");
+        std::fs::write(
+            temp_root.join("terminal_snapshot.json"),
+            "{\"trigger_kind\":\"terminal_loss\",\"frame\":99,\"screen\":\"GAME_OVER\",\"room_type\":\"MonsterRoomBoss\",\"normalized_state\":{\"floor\":16,\"act\":1,\"monsters\":[{\"name\":\"Slime Boss\"}]},\"decision_context\":{\"score\":123,\"victory\":false}}\n",
+        )
+        .expect("terminal snapshot should write");
+        let focus_path = temp_root.join("focus.txt");
+        std::fs::write(
+            &focus_path,
+            concat!(
+                "=== CHRONOLOGICAL APPENDIX ===\n",
+                "[EVENT] frame=2 Neow | choose=Talk score=18 fallback | protocol=unsupported_event\n",
+                "[SLOW SEARCH] frame=8 baseline_ms=0 root_ms=709 legal_moves=6 chosen=Play #1 Defend\n",
+                "╔══════════════════════════════════════════════════════╗\n",
+                "║  COMBAT SUMMARY (F227 ~ F234)                          \n",
+                "╚══════════════════════════════════════════════════════╝\n",
+                "[F234] === GAME OVER === victory=false score=123\n"
+            ),
+        )
+        .expect("focus should write");
+
+        let report =
+            build_empty_finding_report("run_focus", "loss_clean", &LiveRunCounts::default());
+        let manifest = LiveRunManifest {
+            run_id: "run_focus".to_string(),
+            timestamp: "20260420_000000".to_string(),
+            build_tag: "build".to_string(),
+            parity_mode: "Strict".to_string(),
+            watch_enabled: false,
+            session_exit_reason: "GAME_OVER".to_string(),
+            classification_label: "loss_clean".to_string(),
+            profile: LiveProfileMetadata {
+                profile_name: Some("Ironclad_Engine_Strict.json".to_string()),
+                purpose: Some("engine".to_string()),
+                capture_policy: Some("strict_stop_on_first_parity_fail".to_string()),
+            },
+            provenance: LiveRunProvenance::default(),
+            counts: LiveRunCounts::default(),
+            artifacts: LiveRunArtifacts::default(),
+            validation: None,
+            retention: LiveRetentionFlags::default(),
+        };
+        let validation = LiveRunValidation {
+            status: "ok".to_string(),
+            ..LiveRunValidation::default()
+        };
+
+        let rewrite = rewrite_archived_focus_with_triage_summary(
+            &focus_path,
+            &report,
+            &manifest,
+            &validation,
+        )
+        .expect("focus rewrite should succeed");
+
+        assert!(rewrite.appendix_present);
+        let rewritten = std::fs::read_to_string(&focus_path).expect("rewritten focus should read");
+        assert!(rewritten.contains("=== TRIAGE SUMMARY ==="));
+        assert!(rewritten.contains("See also: focus_appendix.txt"));
+        let appendix = std::fs::read_to_string(temp_root.join("focus_appendix.txt"))
+            .expect("focus appendix should read");
+        assert!(appendix.contains("[EVENT]"));
+        assert!(appendix.contains("[F234] === GAME OVER ==="));
+
         let _ = std::fs::remove_dir_all(&temp_root);
     }
 }

@@ -78,11 +78,20 @@ pub fn gc_runs(paths: &LiveLogPaths) -> Result<GcSummary, String> {
         if rank >= MAX_CLEAN_CANONICAL_RUNS {
             let mut changed = false;
             changed |= remove_run_artifact(manifest_path, &mut manifest.artifacts.raw);
-            changed |= remove_run_artifact(manifest_path, &mut manifest.artifacts.focus);
-            changed |= remove_run_artifact(manifest_path, &mut manifest.artifacts.findings);
+            changed |= remove_run_artifact(manifest_path, &mut manifest.artifacts.focus_appendix);
             changed |= remove_run_artifact(manifest_path, &mut manifest.artifacts.signatures);
             changed |= remove_run_artifact(manifest_path, &mut manifest.artifacts.combat_suspects);
+            changed |=
+                remove_run_artifact(manifest_path, &mut manifest.artifacts.failure_snapshots);
+            changed |=
+                remove_run_artifact(manifest_path, &mut manifest.artifacts.terminal_snapshot);
             changed |= remove_run_artifact(manifest_path, &mut manifest.artifacts.reward_audit);
+            changed |= remove_run_artifact(manifest_path, &mut manifest.artifacts.event_audit);
+            changed |=
+                remove_run_artifact(manifest_path, &mut manifest.artifacts.human_noncombat_audit);
+            changed |= remove_run_artifact(manifest_path, &mut manifest.artifacts.sidecar_shadow);
+            changed |= remove_run_artifact(manifest_path, &mut manifest.artifacts.watch_audit);
+            changed |= remove_run_artifact(manifest_path, &mut manifest.artifacts.watch_noncombat);
             changed |= remove_run_artifact(manifest_path, &mut manifest.artifacts.debug);
             changed |= remove_run_artifact(manifest_path, &mut manifest.artifacts.replay);
             if changed {
@@ -102,6 +111,10 @@ pub fn gc_runs(paths: &LiveLogPaths) -> Result<GcSummary, String> {
                 remove_run_artifact(manifest_path, &mut manifest.artifacts.watch_audit);
             watch_changed |=
                 remove_run_artifact(manifest_path, &mut manifest.artifacts.watch_noncombat);
+            watch_changed |=
+                remove_run_artifact(manifest_path, &mut manifest.artifacts.human_noncombat_audit);
+            watch_changed |=
+                remove_run_artifact(manifest_path, &mut manifest.artifacts.sidecar_shadow);
             if watch_changed {
                 summary.pruned_watch += 1;
                 rewrite_manifest(manifest_path, manifest)?;

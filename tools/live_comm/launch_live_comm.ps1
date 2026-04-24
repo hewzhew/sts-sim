@@ -1,7 +1,8 @@
 param(
     [string]$ProfilePath = $(Join-Path $PSScriptRoot "profile.json"),
     [switch]$DryRun,
-    [switch]$SkipFreshBuild
+    [switch]$SkipFreshBuild,
+    [switch]$AllowAutoBuildIfStale
 )
 
 $ErrorActionPreference = "Stop"
@@ -114,27 +115,91 @@ function Get-BinaryFreshnessStatus {
     }
 }
 
-function Invoke-FreshBuildIfNeeded {
+function Get-StaleBinaryGuidance {
     param(
         [string]$RepoRoot,
-        [string]$ExePath,
-        [switch]$DryRun,
-        [switch]$SkipFreshBuild
+        [string]$ExePath
     )
-
-    $status = Get-BinaryFreshnessStatus -RepoRoot $RepoRoot -ExePath $ExePath
-    if ($SkipFreshBuild -or $status.binary_is_fresh) {
-        return $status
-    }
-
-    if ($DryRun) {
-        return $status
-    }
 
     $normalizedExePath = [System.IO.Path]::GetFullPath($ExePath)
     $releaseExe = [System.IO.Path]::GetFullPath((Join-Path $RepoRoot "target\\release\\play.exe"))
     $debugExe = [System.IO.Path]::GetFullPath((Join-Path $RepoRoot "target\\debug\\play.exe"))
+
     if ($normalizedExePath -eq $releaseExe) {
+        return [pscustomobject]@{
+            binary_kind = "release"
+            auto_build_supported = $true
+            build_command = "cargo build --release --bin play"
+        }
+    }
+
+    if ($normalizedExePath -eq $debugExe) {
+        return [pscustomobject]@{
+            binary_kind = "debug"
+            auto_build_supported = $true
+            build_command = "cargo build --bin play"
+        }
+    }
+
+    return [pscustomobject]@{
+        binary_kind = "custom"
+        auto_build_supported = $false
+        build_command = ""
+    }
+}
+
+function Resolve-FreshnessGate {
+    param(
+        [string]$RepoRoot,
+        [string]$ExePath,
+        [switch]$DryRun,
+        [switch]$SkipFreshBuild,
+        [switch]$AllowAutoBuildIfStale
+    )
+
+    $status = Get-BinaryFreshnessStatus -RepoRoot $RepoRoot -ExePath $ExePath
+    $guidance = Get-StaleBinaryGuidance -RepoRoot $RepoRoot -ExePath $ExePath
+    if ($SkipFreshBuild -or $status.binary_is_fresh) {
+        return [pscustomobject]@{
+            exe_path = $status.exe_path
+            exe_last_write_utc = $status.exe_last_write_utc
+            latest_input_path = $status.latest_input_path
+            latest_input_write_utc = $status.latest_input_write_utc
+            binary_is_fresh = $status.binary_is_fresh
+            binary_kind = $guidance.binary_kind
+            build_command = $guidance.build_command
+            launch_ready = $true
+            rebuilt = $false
+            stale_policy = $(if ($SkipFreshBuild) { "skip_check" } else { "require_fresh" })
+        }
+    }
+
+    if ($DryRun) {
+        return [pscustomobject]@{
+            exe_path = $status.exe_path
+            exe_last_write_utc = $status.exe_last_write_utc
+            latest_input_path = $status.latest_input_path
+            latest_input_write_utc = $status.latest_input_write_utc
+            binary_is_fresh = $status.binary_is_fresh
+            binary_kind = $guidance.binary_kind
+            build_command = $guidance.build_command
+            launch_ready = [bool]($AllowAutoBuildIfStale -or $status.binary_is_fresh)
+            rebuilt = $false
+            stale_policy = $(if ($AllowAutoBuildIfStale) { "auto_build" } else { "fail_fast" })
+        }
+    }
+
+    if (-not $AllowAutoBuildIfStale) {
+        $message = if ($guidance.auto_build_supported -and -not [string]::IsNullOrWhiteSpace($guidance.build_command)) {
+            "[live_comm launcher] stale $($guidance.binary_kind) binary detected; refusing to rebuild inside CommunicationMod handshake. Run '$($guidance.build_command)' in $RepoRoot, then relaunch the game."
+        } else {
+            "[live_comm launcher] stale binary detected at $ExePath; refusing to rebuild inside CommunicationMod handshake. Rebuild or replace the configured exe, then relaunch the game."
+        }
+        Write-Host $message
+        throw $message
+    }
+
+    if ($guidance.binary_kind -eq "release") {
         Write-Host ("[live_comm launcher] stale release binary detected; rebuilding {0}" -f $ExePath)
         Push-Location $RepoRoot
         try {
@@ -145,7 +210,7 @@ function Invoke-FreshBuildIfNeeded {
         } finally {
             Pop-Location
         }
-    } elseif ($normalizedExePath -eq $debugExe) {
+    } elseif ($guidance.binary_kind -eq "debug") {
         Write-Host ("[live_comm launcher] stale debug binary detected; rebuilding {0}" -f $ExePath)
         Push-Location $RepoRoot
         try {
@@ -164,7 +229,18 @@ function Invoke-FreshBuildIfNeeded {
     if (-not $refreshed.binary_is_fresh) {
         throw "Binary is still stale after rebuild: $ExePath"
     }
-    return $refreshed
+    return [pscustomobject]@{
+        exe_path = $refreshed.exe_path
+        exe_last_write_utc = $refreshed.exe_last_write_utc
+        latest_input_path = $refreshed.latest_input_path
+        latest_input_write_utc = $refreshed.latest_input_write_utc
+        binary_is_fresh = $refreshed.binary_is_fresh
+        binary_kind = $guidance.binary_kind
+        build_command = $guidance.build_command
+        launch_ready = $true
+        rebuilt = $true
+        stale_policy = "auto_build"
+    }
 }
 
 if (-not (Test-Path $ProfilePath)) {
@@ -176,7 +252,12 @@ $profile = $profileText | ConvertFrom-Json
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
 $exePath = Resolve-PlayExePath -Profile $profile -RepoRoot $repoRoot
 $gitShort = Get-RepoHeadShort -RepoRoot $repoRoot
-$freshness = Invoke-FreshBuildIfNeeded -RepoRoot $repoRoot -ExePath $exePath -DryRun:$DryRun -SkipFreshBuild:$SkipFreshBuild
+$freshness = Resolve-FreshnessGate `
+    -RepoRoot $repoRoot `
+    -ExePath $exePath `
+    -DryRun:$DryRun `
+    -SkipFreshBuild:$SkipFreshBuild `
+    -AllowAutoBuildIfStale:$AllowAutoBuildIfStale
 $exeItem = Get-Item -LiteralPath $exePath
 $profileName =
     if ($profile -and $profile.PSObject.Properties.Name -contains "activated_profile") {
@@ -215,7 +296,13 @@ if ($DryRun) {
         latest_input_path = $launchMetadata.latest_input_path
         latest_input_write_utc = $launchMetadata.latest_input_write_utc
         binary_is_fresh = $launchMetadata.binary_is_fresh
+        binary_kind = $freshness.binary_kind
+        stale_policy = $freshness.stale_policy
+        launch_ready = $freshness.launch_ready
+        rebuilt = $freshness.rebuilt
+        suggested_build_cmd = $freshness.build_command
         fresh_build_skipped = [bool]$SkipFreshBuild
+        auto_build_if_stale = [bool]$AllowAutoBuildIfStale
         args = $argList
     }
     $payload | ConvertTo-Json -Depth 4
@@ -231,12 +318,14 @@ $env:LIVE_COMM_LAUNCH_SOURCE_LATEST_PATH = $launchMetadata.latest_input_path
 $env:LIVE_COMM_LAUNCH_SOURCE_LATEST_MTIME_UTC = $launchMetadata.latest_input_write_utc
 $env:LIVE_COMM_LAUNCH_BINARY_IS_FRESH = $launchMetadata.binary_is_fresh.ToString().ToLowerInvariant()
 
-Write-Host ("[live_comm launcher] profile={0} exe={1} exe_mtime_utc={2} repo_head={3} binary_is_fresh={4} latest_input={5}" -f `
+Write-Host ("[live_comm launcher] profile={0} exe={1} exe_mtime_utc={2} repo_head={3} binary_is_fresh={4} stale_policy={5} rebuilt={6} latest_input={7}" -f `
     ($(if ([string]::IsNullOrWhiteSpace($profileName)) { "<none>" } else { $profileName })),
     $exePath,
     $exeItem.LastWriteTimeUtc.ToString("o"),
     ($(if ([string]::IsNullOrWhiteSpace($gitShort)) { "<unknown>" } else { $gitShort })),
     $launchMetadata.binary_is_fresh.ToString().ToLowerInvariant(),
+    $freshness.stale_policy,
+    $freshness.rebuilt.ToString().ToLowerInvariant(),
     $launchMetadata.latest_input_path)
 
 & $exePath @argList

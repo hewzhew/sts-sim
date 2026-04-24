@@ -1,8 +1,9 @@
 use super::{
-    java_process_status, LiveCommConfig, COMBAT_SUSPECT_AUDIT_PATH, CURRENT_LOG_ROOT,
-    EVENT_AUDIT_PATH, FAILURE_SNAPSHOT_AUDIT_PATH, FOCUS_LOG_PATH, HUMAN_NONCOMBAT_AUDIT_PATH,
-    LIVE_COMM_BUILD_TAG, LOG_PATH, RAW_PATH, REPLAY_PATH, REWARD_AUDIT_PATH,
-    SIDECAR_SHADOW_AUDIT_PATH, SIG_PATH, WATCH_AUDIT_PATH, WATCH_NONCOMBAT_AUDIT_PATH,
+    java_process_status, LiveCommConfig, COMBAT_DECISION_AUDIT_PATH, COMBAT_SUSPECT_AUDIT_PATH,
+    CURRENT_LOG_ROOT, EVENT_AUDIT_PATH, FAILURE_SNAPSHOT_AUDIT_PATH, FOCUS_LOG_PATH,
+    HUMAN_NONCOMBAT_AUDIT_PATH, LIVE_COMM_BUILD_TAG, LOG_PATH, RAW_PATH, REPLAY_PATH,
+    REWARD_AUDIT_PATH, SIDECAR_SHADOW_AUDIT_PATH, SIG_PATH, WATCH_AUDIT_PATH,
+    WATCH_NONCOMBAT_AUDIT_PATH,
 };
 use crate::cli::live_comm_admin::{timestamp_string, LiveLogPaths};
 use crate::cli::live_comm_runtime::{
@@ -27,6 +28,7 @@ pub(super) struct LiveCommIo {
     pub(super) event_audit: std::fs::File,
     pub(super) human_noncombat_audit: std::fs::File,
     pub(super) sidecar_shadow: std::fs::File,
+    pub(super) combat_decision_audit: std::fs::File,
     pub(super) watch_audit: std::fs::File,
     pub(super) watch_noncombat_audit: std::fs::File,
     pub(super) combat_suspects: std::fs::File,
@@ -52,6 +54,7 @@ impl LiveCommIo {
             config.sidecar_shadow,
             "sidecar_shadow",
         );
+        let combat_decision_audit = std::fs::File::create(COMBAT_DECISION_AUDIT_PATH).unwrap();
         let watch_audit = create_optional_sidecar(
             WATCH_AUDIT_PATH,
             config.watch_capture.enabled(),
@@ -159,6 +162,7 @@ impl LiveCommIo {
             event_audit,
             human_noncombat_audit,
             sidecar_shadow,
+            combat_decision_audit,
             watch_audit,
             watch_noncombat_audit,
             combat_suspects,

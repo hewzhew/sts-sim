@@ -38,10 +38,19 @@ pub fn latest_run_artifact_path(
         let candidate = match artifact {
             "raw" => artifact_absolute_path(&manifest_path, &manifest.artifacts.raw),
             "focus" => artifact_absolute_path(&manifest_path, &manifest.artifacts.focus),
+            "focus_appendix" => {
+                artifact_absolute_path(&manifest_path, &manifest.artifacts.focus_appendix)
+            }
             "findings" => artifact_absolute_path(&manifest_path, &manifest.artifacts.findings),
+            "bot_strength" => {
+                artifact_absolute_path(&manifest_path, &manifest.artifacts.bot_strength)
+            }
             "signatures" => artifact_absolute_path(&manifest_path, &manifest.artifacts.signatures),
             "combat_suspects" => {
                 artifact_absolute_path(&manifest_path, &manifest.artifacts.combat_suspects)
+            }
+            "terminal_snapshot" => {
+                artifact_absolute_path(&manifest_path, &manifest.artifacts.terminal_snapshot)
             }
             "debug" => artifact_absolute_path(&manifest_path, &manifest.artifacts.debug),
             "replay" => artifact_absolute_path(&manifest_path, &manifest.artifacts.replay),

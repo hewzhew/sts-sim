@@ -38,14 +38,18 @@ impl LiveArtifactRecord {
 pub struct LiveRunArtifacts {
     pub raw: Option<LiveArtifactRecord>,
     pub focus: Option<LiveArtifactRecord>,
+    pub focus_appendix: Option<LiveArtifactRecord>,
     pub findings: Option<LiveArtifactRecord>,
+    pub bot_strength: Option<LiveArtifactRecord>,
     pub signatures: Option<LiveArtifactRecord>,
     pub combat_suspects: Option<LiveArtifactRecord>,
     pub failure_snapshots: Option<LiveArtifactRecord>,
+    pub terminal_snapshot: Option<LiveArtifactRecord>,
     pub debug: Option<LiveArtifactRecord>,
     pub replay: Option<LiveArtifactRecord>,
     pub reward_audit: Option<LiveArtifactRecord>,
     pub event_audit: Option<LiveArtifactRecord>,
+    pub combat_decision_audit: Option<LiveArtifactRecord>,
     pub human_noncombat_audit: Option<LiveArtifactRecord>,
     pub sidecar_shadow: Option<LiveArtifactRecord>,
     pub validation: Option<LiveArtifactRecord>,
@@ -157,6 +161,10 @@ impl LiveLogPaths {
 
     pub(crate) fn current_event_audit(&self) -> PathBuf {
         self.current.join("live_comm_event_audit.jsonl")
+    }
+
+    pub(crate) fn current_combat_decision_audit(&self) -> PathBuf {
+        self.current.join("live_comm_combat_decision_audit.jsonl")
     }
 
     pub(crate) fn current_human_noncombat_audit(&self) -> PathBuf {

@@ -80,6 +80,7 @@ Use this checklist every time.
 
 2. If you changed Rust code that `CommunicationMod` will execute:
    - `cargo build --release --bin play`
+   - do this before starting the game; do not rely on launcher-side rebuilds
 
 3. If you changed Java `CommunicationMod` code:
    - rebuild the mod jar
@@ -100,6 +101,15 @@ Do not skip this if you recently changed:
 - `profile.json`
 - `play.exe`
 - launcher paths
+
+Launcher freshness rule:
+
+- the launcher now fails fast if `play.exe` is stale
+- it no longer tries to rebuild inside the `CommunicationMod` startup handshake
+- if `-DryRun` reports `binary_is_fresh=false`, run the suggested `cargo build ...`
+  command first, then relaunch the game
+- only use `-AllowAutoBuildIfStale` for an explicit manual shell run, not for the
+  default game-start path
 
 ## Default Rust Edit Checklist
 

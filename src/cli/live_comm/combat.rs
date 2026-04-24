@@ -9,7 +9,7 @@ use crate::bot::combat::{
     branch_family_for_card, describe_end_turn_options,
     diagnose_root_search_with_depth_and_runtime_and_root_inputs,
     diagnose_root_search_with_runtime_and_root_inputs, BranchFamily, CombatDiagnostics,
-    CombatMoveStat, SearchExactTurnMode, SearchRuntimeBudget,
+    CombatMoveStat, SearchExactTurnMode, SearchExperimentFlags, SearchRuntimeBudget,
 };
 use crate::bot::infra::comm as comm_mod;
 use crate::bot::infra::coverage_signatures::{
@@ -317,6 +317,7 @@ fn live_root_search_budget(
             .min(root_node_budget_for_legacy_budget(legacy_budget) * 25),
         audit_budget: audit_node_budget_for_legacy_budget(legacy_budget),
         exact_turn_mode: exact_turn_mode_for_live(exact_turn_mode),
+        experiment_flags: SearchExperimentFlags::default(),
     }
 }
 
@@ -330,6 +331,7 @@ fn live_baseline_search_budget(legacy_budget: u32) -> SearchRuntimeBudget {
         exact_turn_node_budget: 0,
         audit_budget: audit_node_budget_for_legacy_budget(legacy_budget),
         exact_turn_mode: SearchExactTurnMode::Off,
+        experiment_flags: SearchExperimentFlags::default(),
     }
 }
 
@@ -716,6 +718,71 @@ fn decision_audit_exact_turn_summary(audit: &Value) -> Option<String> {
         return None;
     }
 
+    let regime = audit
+        .get("regime")
+        .and_then(Value::as_str)
+        .unwrap_or("unknown");
+    let frontier_outcome = audit.get("frontier_outcome");
+    let frontier_survival = frontier_outcome
+        .and_then(|value| value.get("survival"))
+        .and_then(Value::as_str)
+        .unwrap_or("unknown");
+    let exact_turn_verdict = audit.get("exact_turn_verdict");
+    let exact_survival = exact_turn_verdict
+        .and_then(|value| value.get("survival"))
+        .and_then(Value::as_str)
+        .unwrap_or("unknown");
+    let dominance = exact_turn_verdict
+        .and_then(|value| value.get("dominance"))
+        .and_then(Value::as_str)
+        .unwrap_or("incomparable");
+    let confidence = exact_turn_verdict
+        .and_then(|value| value.get("confidence"))
+        .and_then(Value::as_str)
+        .unwrap_or("unavailable");
+    let takeover_policy = audit.get("takeover_policy");
+    let takeover = takeover_policy
+        .and_then(|value| value.get("takeover_applied"))
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    let takeover_reason = takeover_policy
+        .and_then(|value| value.get("takeover_reason"))
+        .and_then(Value::as_str)
+        .unwrap_or("unknown");
+    let decision_trace = audit.get("decision_trace");
+    let root_pipeline = audit.get("root_pipeline");
+    let chosen_by = decision_trace
+        .and_then(|value| value.get("chosen_by"))
+        .and_then(Value::as_str)
+        .unwrap_or("frontier");
+    let frontier_class = decision_trace
+        .and_then(|value| value.get("frontier_proposal_class"))
+        .and_then(Value::as_str)
+        .unwrap_or("other");
+    let screened_out = root_pipeline
+        .and_then(|value| value.get("screened_out"))
+        .and_then(Value::as_array)
+        .map(|entries| entries.len())
+        .unwrap_or(0);
+    let alternatives = decision_trace
+        .and_then(|value| value.get("why_not_others"))
+        .and_then(Value::as_array)
+        .map(|entries| entries.len())
+        .unwrap_or(0);
+    let rejection_reasons = decision_trace
+        .and_then(|value| value.get("rejection_reasons"))
+        .and_then(Value::as_array)
+        .map(|reasons| {
+            reasons
+                .iter()
+                .filter_map(Value::as_str)
+                .take(4)
+                .collect::<Vec<_>>()
+                .join(",")
+        })
+        .filter(|reasons| !reasons.is_empty())
+        .unwrap_or_else(|| "none".to_string());
+
     if exact_turn
         .get("skipped")
         .and_then(|value| value.as_bool())
@@ -726,7 +793,7 @@ fn decision_audit_exact_turn_summary(audit: &Value) -> Option<String> {
         let living_monsters = json_number_as_i64(exact_turn.get("living_monsters")).unwrap_or(0);
         let filled_potions = json_number_as_i64(exact_turn.get("filled_potions")).unwrap_or(0);
         return Some(format!(
-            "skipped=true reason={reason} legal_moves={legal_moves} living_monsters={living_monsters} filled_potions={filled_potions}"
+            "skipped=true reason={reason} legal_moves={legal_moves} living_monsters={living_monsters} filled_potions={filled_potions} regime={regime} frontier_class={frontier_class} screened_out={screened_out} alternatives={alternatives} dominance={dominance} confidence={confidence} takeover={takeover} takeover_reason={takeover_reason} chosen_by={chosen_by} frontier_survival={frontier_survival} exact_survival={exact_survival} rejection_reasons={rejection_reasons}"
         ));
     }
 
@@ -754,6 +821,18 @@ fn decision_audit_exact_turn_summary(audit: &Value) -> Option<String> {
         format!("cycles={cycle_cuts}"),
         format!("truncated={truncated}"),
         format!("agrees={agrees}"),
+        format!("regime={regime}"),
+        format!("frontier_class={frontier_class}"),
+        format!("screened_out={screened_out}"),
+        format!("alternatives={alternatives}"),
+        format!("dominance={dominance}"),
+        format!("confidence={confidence}"),
+        format!("takeover={takeover}"),
+        format!("takeover_reason={takeover_reason}"),
+        format!("chosen_by={chosen_by}"),
+        format!("frontier_survival={frontier_survival}"),
+        format!("exact_survival={exact_survival}"),
+        format!("rejection_reasons={rejection_reasons}"),
     ];
 
     if let Some(resources) = exact_turn.get("best_resources") {
@@ -2039,6 +2118,7 @@ pub(super) fn handle_live_combat_frame<W: Write>(
             None,
             None,
         );
+        sidecar::write_shadow_record(&mut live_io.combat_decision_audit, &shadow);
         sidecar::write_shadow_record(&mut live_io.sidecar_shadow, &shadow);
     }
     if let Some(baseline_diag) = baseline_diag.as_ref() {

@@ -34,6 +34,8 @@ pub(crate) const HUMAN_NONCOMBAT_AUDIT_PATH: &str =
     r"d:\rust\sts_simulator\logs\current\live_comm_human_noncombat_audit.jsonl";
 pub(crate) const SIDECAR_SHADOW_AUDIT_PATH: &str =
     r"d:\rust\sts_simulator\logs\current\live_comm_sidecar_shadow.jsonl";
+pub(crate) const COMBAT_DECISION_AUDIT_PATH: &str =
+    r"d:\rust\sts_simulator\logs\current\live_comm_combat_decision_audit.jsonl";
 pub(crate) const WATCH_AUDIT_PATH: &str =
     r"d:\rust\sts_simulator\logs\current\live_comm_watch_audit.jsonl";
 pub(crate) const WATCH_NONCOMBAT_AUDIT_PATH: &str =

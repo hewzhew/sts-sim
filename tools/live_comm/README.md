@@ -6,7 +6,9 @@ Use this wrapper so `CommunicationMod` does not need a new command in
 The launcher now treats stale runtime binaries as a first-class failure mode:
 
 - by default it checks whether `play.exe` is older than Rust-side build inputs
-- if stale, it rebuilds `play.exe` before launching
+- if stale, it fails fast and tells you which `cargo build ...` command to run
+- it does not auto-rebuild inside the `CommunicationMod` handshake path unless you
+  explicitly pass `-AllowAutoBuildIfStale`
 - run provenance records both the binary git sha and the repo head sha, plus
   whether the launcher considered the binary fresh
 
@@ -32,6 +34,16 @@ powershell -ExecutionPolicy Bypass -File D:\rust\sts_simulator\tools\live_comm\i
 ```
 
 After that, leave `C:\Users\17239\AppData\Local\ModTheSpire\CommunicationMod\config.properties` alone.
+
+Important:
+
+- prebuild `play.exe` yourself before launching the game
+- do not rely on launcher-side rebuilds during game startup
+- if you really want the old behavior for a manual shell run, use:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File D:\rust\sts_simulator\tools\live_comm\launch_live_comm.ps1 -AllowAutoBuildIfStale
+```
 
 ## Manual scenario console
 

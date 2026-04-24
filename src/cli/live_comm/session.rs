@@ -139,6 +139,43 @@ fn event_validation_failure_reasons(trace_audit: &Value) -> Vec<String> {
     reasons
 }
 
+fn enrich_event_audit_with_screen_state(trace_audit: &Value, game_state: &Value) -> Value {
+    let mut enriched = trace_audit.clone();
+    let Some(audit) = enriched.as_object_mut() else {
+        return enriched;
+    };
+    let Some(screen_state) = game_state.get("screen_state").and_then(Value::as_object) else {
+        return enriched;
+    };
+
+    let screen_index_missing = audit
+        .get("screen_index")
+        .is_none_or(|value| value.is_null());
+    if screen_index_missing {
+        if let Some(value) = screen_state.get("current_screen_index").cloned() {
+            audit.insert("screen_index".to_string(), value);
+        }
+    }
+
+    let screen_key_missing = audit.get("screen_key").is_none_or(|value| value.is_null());
+    if screen_key_missing {
+        if let Some(value) = screen_state.get("current_screen_key").cloned() {
+            audit.insert("screen_key".to_string(), value);
+        }
+    }
+
+    let screen_source_missing = audit
+        .get("screen_source")
+        .is_none_or(|value| value.is_null());
+    if screen_source_missing {
+        if let Some(value) = screen_state.get("screen_source").cloned() {
+            audit.insert("screen_source".to_string(), value);
+        }
+    }
+
+    enriched
+}
+
 fn should_fail_fast_on_snapshot(trigger_kind: &str, reasons: &[String]) -> bool {
     match trigger_kind {
         "validation_failure" | "engine_bug" | "session_polluted" | "protocol_error" => true,
@@ -1132,6 +1169,8 @@ impl LiveCommSession {
                         )
                     {
                         if trace.command == cmd {
+                            let decision_audit =
+                                enrich_event_audit_with_screen_state(&trace.audit, gs);
                             writeln!(
                                 live_io.log,
                                 "[F{}] EVENT POLICY {}",
@@ -1157,17 +1196,16 @@ impl LiveCommSession {
                                 "room_phase": room_phase,
                                 "screen": screen,
                                 "command": cmd,
-                                "decision": trace.audit,
+                                "decision": decision_audit,
                             }))
                             .unwrap();
                             let _ = writeln!(live_io.event_audit, "{}", encoded);
                             let _ = live_io.event_audit.flush();
-                            let family = trace
-                                .audit
+                            let family = decision_audit
                                 .get("family")
                                 .and_then(|v| v.as_str())
                                 .unwrap_or("");
-                            let reasons = event_validation_failure_reasons(&trace.audit);
+                            let reasons = event_validation_failure_reasons(&decision_audit);
                             if !reasons.is_empty() {
                                 let _ = write_failure_snapshot(
                                     live_io,
@@ -1177,7 +1215,7 @@ impl LiveCommSession {
                                     reasons.clone(),
                                     serde_json::json!({
                                         "chosen_command": cmd,
-                                        "event_decision": trace.audit.clone(),
+                                        "event_decision": decision_audit.clone(),
                                     }),
                                 );
                                 if self.config.fail_fast_debug
@@ -1212,7 +1250,7 @@ impl LiveCommSession {
                                     "live_comm_event",
                                     &meta,
                                     cmd.clone(),
-                                    trace.audit.clone(),
+                                    decision_audit,
                                 );
                                 sidecar::write_shadow_record(&mut live_io.sidecar_shadow, &shadow);
                             }
@@ -1502,7 +1540,7 @@ impl LiveCommSession {
 
 #[cfg(test)]
 mod tests {
-    use super::event_validation_failure_reasons;
+    use super::{enrich_event_audit_with_screen_state, event_validation_failure_reasons};
     use serde_json::json;
 
     #[test]
@@ -1547,6 +1585,37 @@ mod tests {
         assert_eq!(
             event_validation_failure_reasons(&audit),
             vec!["event_screen_semantics_incomplete".to_string()]
+        );
+    }
+
+    #[test]
+    fn enrich_event_audit_backfills_protocol_screen_metadata() {
+        let audit = json!({
+            "family": "cost_tradeoff",
+            "event_name": "Golden Idol",
+            "screen": 0,
+        });
+        let game_state = json!({
+            "screen_state": {
+                "current_screen_index": 2,
+                "current_screen_key": "TAKE",
+                "screen_source": "protocol_screen_state"
+            }
+        });
+
+        let enriched = enrich_event_audit_with_screen_state(&audit, &game_state);
+
+        assert_eq!(
+            enriched.get("screen_index").and_then(|v| v.as_u64()),
+            Some(2)
+        );
+        assert_eq!(
+            enriched.get("screen_key").and_then(|v| v.as_str()),
+            Some("TAKE")
+        );
+        assert_eq!(
+            enriched.get("screen_source").and_then(|v| v.as_str()),
+            Some("protocol_screen_state")
         );
     }
 }
