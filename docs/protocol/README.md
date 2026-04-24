@@ -11,6 +11,10 @@ The active combat schema is split:
 - `protocol_meta.continuation_state`
 - protocol/session metadata such as `reward_session` and `combat_session`
 
+Rust screen-command routing treats `noncombat_action_space` as the preferred
+source for ordinary non-combat screens, and falls back to `combat_action_space`
+for combat-internal pending screens such as grid or discovery choices.
+
 The legacy merged `combat_state` payload is historical and should not be treated
 as the live contract.
 

@@ -5,7 +5,7 @@ use super::reward_audit::{
 use crate::bot::Agent;
 use crate::cli::live_comm_noncombat::{choose_best_index, decide_noncombat_with_agent};
 use crate::protocol::java::{
-    build_noncombat_affordance_snapshot, NoncombatAffordanceSnapshot, ProtocolNoncombatActionKind,
+    build_screen_affordance_snapshot, NoncombatAffordanceSnapshot, ProtocolNoncombatActionKind,
 };
 use crate::runtime::combat::CombatState;
 use serde_json::Value;
@@ -82,7 +82,7 @@ pub(super) fn maybe_arm_human_card_reward_audit(
 
 fn protocol_noncombat_affordance(parsed: &Value) -> Option<NoncombatAffordanceSnapshot> {
     parsed.get("protocol_meta").and_then(|protocol_meta| {
-        build_noncombat_affordance_snapshot(protocol_meta)
+        build_screen_affordance_snapshot(protocol_meta)
             .ok()
             .flatten()
     })
@@ -318,5 +318,38 @@ mod tests {
         let command = route_noncombat_command(&mut agent, &parsed, "REST", &[]);
 
         assert_eq!(command, "PROCEED");
+    }
+
+    #[test]
+    fn noncombat_route_uses_combat_action_space_for_pending_combat_screen() {
+        let parsed = json!({
+            "protocol_meta": {
+                "combat_action_space": {
+                    "screen_type": "GRID",
+                    "actions": [
+                        {
+                            "action_id": "choice:grid:0",
+                            "kind": "submit_choice",
+                            "command": "CHOOSE 0",
+                            "choice_index": 0,
+                            "choice_label": "strike"
+                        },
+                        {
+                            "action_id": "proceed:grid",
+                            "kind": "proceed",
+                            "command": "CONFIRM"
+                        }
+                    ]
+                }
+            },
+            "game_state": {
+                "screen_type": "GRID"
+            }
+        });
+        let mut agent = Agent::new();
+
+        let command = route_noncombat_command(&mut agent, &parsed, "GRID", &[]);
+
+        assert_eq!(command, "CHOOSE 0");
     }
 }

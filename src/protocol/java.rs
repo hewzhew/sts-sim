@@ -86,7 +86,7 @@ pub enum ProtocolNoncombatActionKind {
 impl ProtocolNoncombatActionKind {
     fn parse(value: &str) -> Self {
         match value {
-            "choose" => Self::Choose,
+            "choose" | "submit_choice" => Self::Choose,
             "proceed" => Self::Proceed,
             "cancel" => Self::Cancel,
             "potion_discard" => Self::PotionDiscard,
@@ -556,7 +556,23 @@ pub fn build_combat_affordance_snapshot(
 pub fn build_noncombat_affordance_snapshot(
     protocol_meta: &Value,
 ) -> Result<Option<NoncombatAffordanceSnapshot>, String> {
-    let Some(action_space) = protocol_meta.get("noncombat_action_space") else {
+    build_screen_action_space(protocol_meta, "noncombat_action_space")
+}
+
+pub fn build_screen_affordance_snapshot(
+    protocol_meta: &Value,
+) -> Result<Option<NoncombatAffordanceSnapshot>, String> {
+    if let Some(snapshot) = build_screen_action_space(protocol_meta, "noncombat_action_space")? {
+        return Ok(Some(snapshot));
+    }
+    build_screen_action_space(protocol_meta, "combat_action_space")
+}
+
+fn build_screen_action_space(
+    protocol_meta: &Value,
+    field_name: &str,
+) -> Result<Option<NoncombatAffordanceSnapshot>, String> {
+    let Some(action_space) = protocol_meta.get(field_name) else {
         return Ok(None);
     };
     if action_space.is_null() {
@@ -565,7 +581,7 @@ pub fn build_noncombat_affordance_snapshot(
     let actions = action_space
         .get("actions")
         .and_then(Value::as_array)
-        .ok_or_else(|| "protocol_meta.noncombat_action_space.actions missing".to_string())?;
+        .ok_or_else(|| format!("protocol_meta.{field_name}.actions missing"))?;
     let screen_type = action_space
         .get("screen_type")
         .and_then(Value::as_str)
@@ -582,12 +598,12 @@ pub fn build_noncombat_affordance_snapshot(
         let kind_raw = raw_action
             .get("kind")
             .and_then(Value::as_str)
-            .ok_or_else(|| format!("noncombat_action_space action {action_id} missing kind"))?;
+            .ok_or_else(|| format!("{field_name} action {action_id} missing kind"))?;
         let kind = ProtocolNoncombatActionKind::parse(kind_raw);
         let command = raw_action
             .get("command")
             .and_then(Value::as_str)
-            .ok_or_else(|| format!("noncombat_action_space action {action_id} missing command"))?
+            .ok_or_else(|| format!("{field_name} action {action_id} missing command"))?
             .to_string();
         let choice_index = raw_action
             .get("choice_index")
@@ -919,6 +935,41 @@ mod tests {
             Some("POTION DISCARD 1")
         );
         assert_eq!(snapshot.choice_labels(), vec!["gold".to_string()]);
+    }
+
+    #[test]
+    fn build_screen_affordance_snapshot_accepts_combat_pending_choice_actions() {
+        let action_space = json!({
+            "combat_action_space": {
+                "screen_type": "GRID",
+                "actions": [
+                    {
+                        "action_id": "choice:grid:0",
+                        "kind": "submit_choice",
+                        "command": "CHOOSE 0",
+                        "choice_index": 0,
+                        "choice_label": "strike"
+                    },
+                    {
+                        "action_id": "proceed:grid",
+                        "kind": "proceed",
+                        "command": "CONFIRM"
+                    }
+                ]
+            }
+        });
+
+        let snapshot = build_screen_affordance_snapshot(&action_space)
+            .expect("affordance parse")
+            .expect("action space");
+
+        assert_eq!(snapshot.screen_type.as_deref(), Some("GRID"));
+        assert_eq!(snapshot.command_for_choice_index(0), Some("CHOOSE 0"));
+        assert_eq!(
+            snapshot.first_command_for_kind(ProtocolNoncombatActionKind::Proceed),
+            Some("CONFIRM")
+        );
+        assert_eq!(snapshot.choice_labels(), vec!["strike".to_string()]);
     }
 
     #[test]
