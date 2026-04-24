@@ -6,7 +6,9 @@ use super::human_noncombat_audit::{
     update_human_noncombat_audit, PendingHumanNoncombatAudit,
 };
 use super::io::LiveCommIo;
-use super::noncombat::{maybe_arm_human_card_reward_audit, route_noncombat_command};
+use super::noncombat::{
+    maybe_arm_human_card_reward_audit, route_noncombat_command, validate_screen_action_space,
+};
 use super::reward_audit::{
     classify_human_card_reward_audit_disposition, emit_bot_card_reward_audit,
     extract_human_card_reward_choice, finalize_human_card_reward_audit,
@@ -966,6 +968,40 @@ impl LiveCommSession {
     ) -> Option<LoopExitReason> {
         let parsed = frame.root();
         let has = |c: &str| avail.contains(&c);
+
+        if let Some(report) = validate_screen_action_space(parsed, screen, room_phase, avail) {
+            writeln!(
+                live_io.log,
+                "[F{}] SCREEN ACTION SPACE validation_failure screen={} room_phase={} field={} reasons={}",
+                self.frame_count,
+                screen,
+                room_phase,
+                report.expected_field(),
+                report.reasons.join(",")
+            )
+            .unwrap();
+            let _ = write_failure_snapshot(
+                live_io,
+                self.frame_count,
+                frame,
+                "validation_failure",
+                report.reasons.clone(),
+                report.decision_context(avail),
+            );
+            if self.config.fail_fast_debug
+                && should_fail_fast_on_snapshot("validation_failure", &report.reasons)
+            {
+                let _ = writeln!(
+                    live_io.focus_log,
+                    "[FAIL_FAST] frame={} trigger=validation_failure reasons={}",
+                    self.frame_count,
+                    report.reasons.join(",")
+                );
+                let _ = live_io.log.flush();
+                let _ = live_io.focus_log.flush();
+                return Some(LoopExitReason::FailFast);
+            }
+        }
 
         if maybe_arm_human_card_reward_audit(
             self.config.human_card_reward_audit,

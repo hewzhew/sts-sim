@@ -8,8 +8,38 @@ use crate::protocol::java::{
     build_screen_affordance_snapshot, NoncombatAffordanceSnapshot, ProtocolNoncombatActionKind,
 };
 use crate::runtime::combat::CombatState;
-use serde_json::Value;
+use serde_json::{json, Value};
 use std::io::Write;
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(super) struct ScreenActionSpaceValidation {
+    pub reasons: Vec<String>,
+    expected_field: &'static str,
+    expected_capability: &'static str,
+    screen: String,
+    room_phase: String,
+    exported_screen_type: Option<String>,
+    action_count: Option<usize>,
+}
+
+impl ScreenActionSpaceValidation {
+    pub(super) fn decision_context(&self, avail: &[&str]) -> Value {
+        json!({
+            "validation": "screen_action_space",
+            "expected_field": self.expected_field,
+            "expected_capability": self.expected_capability,
+            "screen": self.screen,
+            "room_phase": self.room_phase,
+            "exported_screen_type": self.exported_screen_type,
+            "action_count": self.action_count,
+            "available_commands": avail,
+        })
+    }
+
+    pub(super) fn expected_field(&self) -> &'static str {
+        self.expected_field
+    }
+}
 
 pub(super) fn maybe_arm_human_card_reward_audit(
     enabled: bool,
@@ -86,6 +116,152 @@ fn protocol_noncombat_affordance(parsed: &Value) -> Option<NoncombatAffordanceSn
             .ok()
             .flatten()
     })
+}
+
+pub(super) fn validate_screen_action_space(
+    root: &Value,
+    screen: &str,
+    room_phase: &str,
+    avail: &[&str],
+) -> Option<ScreenActionSpaceValidation> {
+    if !screen_requires_typed_action_space(screen) {
+        return None;
+    }
+
+    let (expected_field, expected_capability) = expected_action_space_source(room_phase);
+    if !protocol_capability_enabled(root, expected_capability) {
+        return None;
+    }
+
+    let mut report = ScreenActionSpaceValidation {
+        reasons: Vec::new(),
+        expected_field,
+        expected_capability,
+        screen: screen.to_string(),
+        room_phase: room_phase.to_string(),
+        exported_screen_type: None,
+        action_count: None,
+    };
+    let Some(action_space) = root
+        .get("protocol_meta")
+        .and_then(|meta| meta.get(expected_field))
+        .filter(|value| !value.is_null())
+    else {
+        report
+            .reasons
+            .push(format!("missing_screen_action_space:{expected_field}"));
+        return Some(report);
+    };
+    let Some(action_space_object) = action_space.as_object() else {
+        report
+            .reasons
+            .push(format!("invalid_screen_action_space:{expected_field}"));
+        return Some(report);
+    };
+
+    report.exported_screen_type = action_space_object
+        .get("screen_type")
+        .and_then(Value::as_str)
+        .map(ToOwned::to_owned);
+    match report.exported_screen_type.as_deref() {
+        Some(exported) if exported == screen => {}
+        Some(_) => report.reasons.push(format!(
+            "screen_action_space_screen_type_mismatch:{expected_field}"
+        )),
+        None => report.reasons.push(format!(
+            "missing_screen_action_space_screen_type:{expected_field}"
+        )),
+    }
+
+    let Some(actions) = action_space_object.get("actions").and_then(Value::as_array) else {
+        report.reasons.push(format!(
+            "missing_screen_action_space_actions:{expected_field}"
+        ));
+        return (!report.reasons.is_empty()).then_some(report);
+    };
+    report.action_count = Some(actions.len());
+    if actions.is_empty() && frame_has_legacy_screen_command_signal(root, avail) {
+        report
+            .reasons
+            .push(format!("empty_screen_action_space:{expected_field}"));
+    }
+
+    for (index, action) in actions.iter().enumerate() {
+        let action_id = action
+            .get("action_id")
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned)
+            .unwrap_or_else(|| format!("{expected_field}[{index}]"));
+        let kind = action.get("kind").and_then(Value::as_str);
+        if kind.is_none() {
+            report.reasons.push(format!(
+                "invalid_screen_action_space_kind:{expected_field}:{action_id}"
+            ));
+        }
+        if action.get("command").and_then(Value::as_str).is_none() {
+            report.reasons.push(format!(
+                "invalid_screen_action_space_command:{expected_field}:{action_id}"
+            ));
+        }
+        if kind.is_some_and(|value| matches!(value, "choose" | "submit_choice"))
+            && action.get("choice_index").and_then(Value::as_u64).is_none()
+        {
+            report.reasons.push(format!(
+                "invalid_screen_action_space_choice_index:{expected_field}:{action_id}"
+            ));
+        }
+    }
+
+    (!report.reasons.is_empty()).then_some(report)
+}
+
+fn expected_action_space_source(room_phase: &str) -> (&'static str, &'static str) {
+    if room_phase == "COMBAT" {
+        ("combat_action_space", "combat_action_space")
+    } else {
+        ("noncombat_action_space", "noncombat_action_space")
+    }
+}
+
+fn protocol_capability_enabled(root: &Value, capability: &str) -> bool {
+    root.get("protocol_meta")
+        .and_then(|meta| meta.get("capabilities"))
+        .and_then(|caps| caps.get(capability))
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
+}
+
+fn screen_requires_typed_action_space(screen: &str) -> bool {
+    matches!(
+        screen,
+        "EVENT"
+            | "CHEST"
+            | "SHOP_ROOM"
+            | "REST"
+            | "CARD_REWARD"
+            | "COMBAT_REWARD"
+            | "MAP"
+            | "BOSS_REWARD"
+            | "SHOP_SCREEN"
+            | "GRID"
+            | "HAND_SELECT"
+            | "COMPLETE"
+    )
+}
+
+fn frame_has_legacy_screen_command_signal(root: &Value, avail: &[&str]) -> bool {
+    let command_signal = avail.iter().any(|command| {
+        matches!(
+            command.to_ascii_lowercase().as_str(),
+            "choose" | "proceed" | "skip" | "confirm" | "leave" | "cancel" | "return" | "potion"
+        )
+    });
+    let choice_signal = root
+        .get("game_state")
+        .and_then(|gs| gs.get("choice_list"))
+        .and_then(Value::as_array)
+        .is_some_and(|choices| !choices.is_empty());
+    command_signal || choice_signal
 }
 
 fn protocol_choice_labels(snapshot: Option<&NoncombatAffordanceSnapshot>) -> Vec<String> {
@@ -259,7 +435,7 @@ pub(super) fn route_noncombat_command(
 
 #[cfg(test)]
 mod tests {
-    use super::route_noncombat_command;
+    use super::{route_noncombat_command, validate_screen_action_space};
     use crate::bot::Agent;
     use serde_json::json;
     use serde_json::Value;
@@ -385,5 +561,104 @@ mod tests {
         let command = route_noncombat_command(&mut agent, &parsed, "CARD_REWARD", &[]);
 
         assert_eq!(command, "CHOOSE 0");
+    }
+
+    #[test]
+    fn screen_action_space_validation_accepts_contract_fixtures() {
+        for (fixture, screen, room_phase) in [
+            ("combat_grid_select", "GRID", "COMBAT"),
+            ("combat_discovery_card_reward", "CARD_REWARD", "COMBAT"),
+            ("noncombat_card_reward", "CARD_REWARD", "COMPLETE"),
+        ] {
+            let parsed = load_screen_action_fixture(fixture);
+
+            assert_eq!(
+                validate_screen_action_space(&parsed, screen, room_phase, &[]),
+                None,
+                "{fixture}"
+            );
+        }
+    }
+
+    #[test]
+    fn screen_action_space_validation_flags_missing_combat_field() {
+        let parsed = json!({
+            "available_commands": ["choose"],
+            "protocol_meta": {
+                "capabilities": {
+                    "combat_action_space": true
+                }
+            },
+            "game_state": {
+                "screen_type": "GRID",
+                "room_phase": "COMBAT"
+            }
+        });
+
+        let report = validate_screen_action_space(&parsed, "GRID", "COMBAT", &["choose"]).unwrap();
+
+        assert_eq!(report.expected_field(), "combat_action_space");
+        assert!(report
+            .reasons
+            .contains(&"missing_screen_action_space:combat_action_space".to_string()));
+    }
+
+    #[test]
+    fn screen_action_space_validation_flags_screen_type_mismatch() {
+        let parsed = json!({
+            "protocol_meta": {
+                "capabilities": {
+                    "combat_action_space": true
+                },
+                "combat_action_space": {
+                    "screen_type": "CARD_REWARD",
+                    "actions": [
+                        {
+                            "action_id": "choice:grid:0",
+                            "kind": "submit_choice",
+                            "command": "CHOOSE 0",
+                            "choice_index": 0
+                        }
+                    ]
+                }
+            },
+            "game_state": {
+                "screen_type": "GRID",
+                "room_phase": "COMBAT"
+            }
+        });
+
+        let report = validate_screen_action_space(&parsed, "GRID", "COMBAT", &[]).unwrap();
+
+        assert!(report
+            .reasons
+            .contains(&"screen_action_space_screen_type_mismatch:combat_action_space".to_string()));
+    }
+
+    #[test]
+    fn screen_action_space_validation_flags_empty_actions_with_legacy_command_signal() {
+        let parsed = json!({
+            "available_commands": ["choose"],
+            "protocol_meta": {
+                "capabilities": {
+                    "noncombat_action_space": true
+                },
+                "noncombat_action_space": {
+                    "screen_type": "EVENT",
+                    "actions": []
+                }
+            },
+            "game_state": {
+                "screen_type": "EVENT",
+                "room_phase": "EVENT",
+                "choice_list": ["option"]
+            }
+        });
+
+        let report = validate_screen_action_space(&parsed, "EVENT", "EVENT", &["choose"]).unwrap();
+
+        assert!(report
+            .reasons
+            .contains(&"empty_screen_action_space:noncombat_action_space".to_string()));
     }
 }

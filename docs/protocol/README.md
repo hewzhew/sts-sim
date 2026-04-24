@@ -17,6 +17,9 @@ for combat-internal pending screens such as grid or discovery choices.
 Small action-space contract fixtures live in
 `tests/protocol_screen_action_space`; they intentionally avoid
 `game_state.choice_list` so tests exercise the typed command surface directly.
+When a live frame declares the relevant action-space capability, Rust validates
+that interactive screens export the expected typed action space before falling
+back to legacy command routing.
 
 The legacy merged `combat_state` payload is historical and should not be treated
 as the live contract.
