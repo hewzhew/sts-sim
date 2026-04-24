@@ -4,6 +4,9 @@ use super::reward_audit::{
 };
 use crate::bot::Agent;
 use crate::cli::live_comm_noncombat::{choose_best_index, decide_noncombat_with_agent};
+use crate::protocol::java::{
+    build_noncombat_affordance_snapshot, NoncombatAffordanceSnapshot, ProtocolNoncombatActionKind,
+};
 use crate::runtime::combat::CombatState;
 use serde_json::Value;
 use std::io::Write;
@@ -77,6 +80,109 @@ pub(super) fn maybe_arm_human_card_reward_audit(
     true
 }
 
+fn protocol_noncombat_affordance(parsed: &Value) -> Option<NoncombatAffordanceSnapshot> {
+    parsed.get("protocol_meta").and_then(|protocol_meta| {
+        build_noncombat_affordance_snapshot(protocol_meta)
+            .ok()
+            .flatten()
+    })
+}
+
+fn protocol_choice_labels(snapshot: Option<&NoncombatAffordanceSnapshot>) -> Vec<String> {
+    snapshot
+        .map(NoncombatAffordanceSnapshot::choice_labels)
+        .unwrap_or_default()
+}
+
+fn protocol_command_for_requested(
+    snapshot: &NoncombatAffordanceSnapshot,
+    requested: &str,
+) -> Option<String> {
+    if let Some(exact) = snapshot.first_command_matching(requested) {
+        return Some(exact.to_string());
+    }
+
+    let parts = requested.split_whitespace().collect::<Vec<_>>();
+    match parts.as_slice() {
+        [verb, idx] if verb.eq_ignore_ascii_case("choose") => idx
+            .parse::<usize>()
+            .ok()
+            .and_then(|choice_index| snapshot.command_for_choice_index(choice_index))
+            .map(ToOwned::to_owned),
+        [verb] if verb.eq_ignore_ascii_case("proceed") || verb.eq_ignore_ascii_case("confirm") => {
+            snapshot
+                .first_command_for_kind(ProtocolNoncombatActionKind::Proceed)
+                .map(ToOwned::to_owned)
+        }
+        [verb]
+            if verb.eq_ignore_ascii_case("skip")
+                || verb.eq_ignore_ascii_case("cancel")
+                || verb.eq_ignore_ascii_case("return")
+                || verb.eq_ignore_ascii_case("leave") =>
+        {
+            snapshot
+                .first_command_for_kind(ProtocolNoncombatActionKind::Cancel)
+                .map(ToOwned::to_owned)
+        }
+        [verb, action, slot]
+            if verb.eq_ignore_ascii_case("potion") && action.eq_ignore_ascii_case("discard") =>
+        {
+            slot.parse::<usize>()
+                .ok()
+                .and_then(|slot| snapshot.command_for_potion_discard_slot(slot))
+                .map(ToOwned::to_owned)
+        }
+        _ => None,
+    }
+}
+
+fn protocol_fallback_noncombat_command(
+    snapshot: &NoncombatAffordanceSnapshot,
+    screen: &str,
+    choice_list: &[&str],
+    potions_full: bool,
+) -> Option<String> {
+    if screen != "SHOP_ROOM" {
+        if let Some(command) = snapshot.first_command_matching("LEAVE") {
+            return Some(command.to_string());
+        }
+    }
+
+    if screen == "SHOP_ROOM" {
+        if !choice_list.is_empty() {
+            if let Some(command) = snapshot.command_for_choice_index(0) {
+                return Some(command.to_string());
+            }
+        }
+        if let Some(command) = snapshot.first_command_for_kind(ProtocolNoncombatActionKind::Proceed)
+        {
+            return Some(command.to_string());
+        }
+    }
+
+    if !choice_list.is_empty() {
+        if choice_list[0] == "potion" && potions_full {
+            if let Some(command) = snapshot.command_for_potion_discard_slot(0) {
+                return Some(command.to_string());
+            }
+        } else if choice_list.len() == 1 && choice_list[0] == "potion" {
+            if let Some(command) = snapshot.first_command_matching("SKIP") {
+                return Some(command.to_string());
+            }
+        } else {
+            let choice_index = choose_best_index(choice_list);
+            if let Some(command) = snapshot.command_for_choice_index(choice_index) {
+                return Some(command.to_string());
+            }
+        }
+    }
+
+    snapshot
+        .first_command_for_kind(ProtocolNoncombatActionKind::Proceed)
+        .or_else(|| snapshot.first_command_for_kind(ProtocolNoncombatActionKind::Cancel))
+        .map(ToOwned::to_owned)
+}
+
 pub(super) fn route_noncombat_command(
     agent: &mut Agent,
     parsed: &Value,
@@ -85,11 +191,18 @@ pub(super) fn route_noncombat_command(
 ) -> String {
     let has = |c: &str| avail.contains(&c);
     let gs = &parsed["game_state"];
-    let choice_list: Vec<&str> = gs
+    let protocol_affordance = protocol_noncombat_affordance(parsed);
+    let protocol_choice_labels = protocol_choice_labels(protocol_affordance.as_ref());
+    let legacy_choice_list: Vec<&str> = gs
         .get("choice_list")
         .and_then(|v| v.as_array())
         .map(|arr| arr.iter().filter_map(|v| v.as_str()).collect())
         .unwrap_or_default();
+    let choice_list: Vec<&str> = if protocol_choice_labels.is_empty() {
+        legacy_choice_list
+    } else {
+        protocol_choice_labels.iter().map(String::as_str).collect()
+    };
     let potions_full = if let Some(arr) = gs.get("potions").and_then(|v| v.as_array()) {
         arr.iter().all(|p| {
             p.get("id")
@@ -105,7 +218,14 @@ pub(super) fn route_noncombat_command(
         manual_reward_cmd
     } else if let Some(agent_cmd) = decide_noncombat_with_agent(agent, parsed, screen, &choice_list)
     {
-        agent_cmd
+        protocol_affordance
+            .as_ref()
+            .and_then(|snapshot| protocol_command_for_requested(snapshot, &agent_cmd))
+            .unwrap_or(agent_cmd)
+    } else if let Some(protocol_cmd) = protocol_affordance.as_ref().and_then(|snapshot| {
+        protocol_fallback_noncombat_command(snapshot, screen, &choice_list, potions_full)
+    }) {
+        protocol_cmd
     } else if has("leave") && screen != "SHOP_ROOM" {
         "LEAVE".to_string()
     } else if screen == "SHOP_ROOM" && has("choose") && !choice_list.is_empty() {
@@ -134,5 +254,69 @@ pub(super) fn route_noncombat_command(
         "WAIT 30".to_string()
     } else {
         "STATE".to_string()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::route_noncombat_command;
+    use crate::bot::Agent;
+    use serde_json::json;
+
+    #[test]
+    fn noncombat_route_uses_protocol_action_space_without_choice_list() {
+        let parsed = json!({
+            "protocol_meta": {
+                "noncombat_action_space": {
+                    "screen_type": "CHEST",
+                    "actions": [
+                        {
+                            "action_id": "choice:chest:0",
+                            "kind": "choose",
+                            "command": "CHOOSE 0",
+                            "choice_index": 0,
+                            "choice_label": "open"
+                        }
+                    ]
+                }
+            },
+            "game_state": {
+                "screen_type": "CHEST"
+            }
+        });
+        let mut agent = Agent::new();
+
+        let command = route_noncombat_command(&mut agent, &parsed, "CHEST", &[]);
+
+        assert_eq!(command, "CHOOSE 0");
+    }
+
+    #[test]
+    fn noncombat_route_normalizes_agent_command_through_protocol_action_space() {
+        let parsed = json!({
+            "protocol_meta": {
+                "noncombat_action_space": {
+                    "screen_type": "REST",
+                    "actions": [
+                        {
+                            "action_id": "proceed:rest",
+                            "kind": "proceed",
+                            "command": "PROCEED"
+                        }
+                    ]
+                }
+            },
+            "game_state": {
+                "screen_type": "REST",
+                "seed": 1,
+                "ascension_level": 0,
+                "class": "IRONCLAD"
+            }
+        });
+        let mut agent = Agent::new();
+
+        let command = route_noncombat_command(&mut agent, &parsed, "REST", &[]);
+
+        assert_eq!(command, "PROCEED");
     }
 }

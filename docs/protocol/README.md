@@ -7,6 +7,7 @@ The active combat schema is split:
 - `game_state.combat_truth`
 - `game_state.combat_observation`
 - `protocol_meta.combat_action_space`
+- `protocol_meta.noncombat_action_space`
 - `protocol_meta.continuation_state`
 - protocol/session metadata such as `reward_session` and `combat_session`
 

@@ -75,6 +75,54 @@ pub struct CombatAffordanceSnapshot {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ProtocolNoncombatActionKind {
+    Choose,
+    Proceed,
+    Cancel,
+    PotionDiscard,
+    Unknown(String),
+}
+
+impl ProtocolNoncombatActionKind {
+    fn parse(value: &str) -> Self {
+        match value {
+            "choose" => Self::Choose,
+            "proceed" => Self::Proceed,
+            "cancel" => Self::Cancel,
+            "potion_discard" => Self::PotionDiscard,
+            other => Self::Unknown(other.to_string()),
+        }
+    }
+
+    pub fn as_str(&self) -> &str {
+        match self {
+            Self::Choose => "choose",
+            Self::Proceed => "proceed",
+            Self::Cancel => "cancel",
+            Self::PotionDiscard => "potion_discard",
+            Self::Unknown(value) => value.as_str(),
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct ProtocolNoncombatAction {
+    pub action_id: String,
+    pub kind: ProtocolNoncombatActionKind,
+    pub command: String,
+    pub choice_index: Option<usize>,
+    pub choice_label: Option<String>,
+    pub potion_slot: Option<usize>,
+}
+
+#[derive(Clone, Debug)]
+pub struct NoncombatAffordanceSnapshot {
+    pub screen_type: Option<String>,
+    pub actions: Vec<ProtocolNoncombatAction>,
+    actions_by_id: HashMap<String, usize>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ProtocolContinuationStateStatus {
     Active,
     Resolved,
@@ -168,6 +216,64 @@ impl CombatAffordanceSnapshot {
             .into_iter()
             .flat_map(|indices| indices.iter().filter_map(|index| self.actions.get(*index)))
             .collect()
+    }
+}
+
+impl NoncombatAffordanceSnapshot {
+    pub fn len(&self) -> usize {
+        self.actions.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.actions.is_empty()
+    }
+
+    pub fn action_by_id(&self, action_id: &str) -> Option<&ProtocolNoncombatAction> {
+        self.actions_by_id
+            .get(action_id)
+            .and_then(|index| self.actions.get(*index))
+    }
+
+    pub fn choice_labels(&self) -> Vec<String> {
+        self.actions
+            .iter()
+            .filter(|action| matches!(action.kind, ProtocolNoncombatActionKind::Choose))
+            .filter_map(|action| action.choice_label.clone())
+            .collect()
+    }
+
+    pub fn command_for_choice_index(&self, choice_index: usize) -> Option<&str> {
+        self.actions
+            .iter()
+            .find(|action| {
+                matches!(action.kind, ProtocolNoncombatActionKind::Choose)
+                    && action.choice_index == Some(choice_index)
+            })
+            .map(|action| action.command.as_str())
+    }
+
+    pub fn command_for_potion_discard_slot(&self, potion_slot: usize) -> Option<&str> {
+        self.actions
+            .iter()
+            .find(|action| {
+                matches!(action.kind, ProtocolNoncombatActionKind::PotionDiscard)
+                    && action.potion_slot == Some(potion_slot)
+            })
+            .map(|action| action.command.as_str())
+    }
+
+    pub fn first_command_for_kind(&self, kind: ProtocolNoncombatActionKind) -> Option<&str> {
+        self.actions
+            .iter()
+            .find(|action| action.kind == kind)
+            .map(|action| action.command.as_str())
+    }
+
+    pub fn first_command_matching(&self, command: &str) -> Option<&str> {
+        self.actions
+            .iter()
+            .find(|action| action.command.eq_ignore_ascii_case(command))
+            .map(|action| action.command.as_str())
     }
 }
 
@@ -447,6 +553,73 @@ pub fn build_combat_affordance_snapshot(
     }))
 }
 
+pub fn build_noncombat_affordance_snapshot(
+    protocol_meta: &Value,
+) -> Result<Option<NoncombatAffordanceSnapshot>, String> {
+    let Some(action_space) = protocol_meta.get("noncombat_action_space") else {
+        return Ok(None);
+    };
+    if action_space.is_null() {
+        return Ok(None);
+    }
+    let actions = action_space
+        .get("actions")
+        .and_then(Value::as_array)
+        .ok_or_else(|| "protocol_meta.noncombat_action_space.actions missing".to_string())?;
+    let screen_type = action_space
+        .get("screen_type")
+        .and_then(Value::as_str)
+        .map(ToOwned::to_owned);
+    let mut affordance_actions = Vec::with_capacity(actions.len());
+    let mut actions_by_id = HashMap::new();
+
+    for (index, raw_action) in actions.iter().enumerate() {
+        let action_id = raw_action
+            .get("action_id")
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned)
+            .unwrap_or_else(|| format!("protocol-noncombat-action-{index}"));
+        let kind_raw = raw_action
+            .get("kind")
+            .and_then(Value::as_str)
+            .ok_or_else(|| format!("noncombat_action_space action {action_id} missing kind"))?;
+        let kind = ProtocolNoncombatActionKind::parse(kind_raw);
+        let command = raw_action
+            .get("command")
+            .and_then(Value::as_str)
+            .ok_or_else(|| format!("noncombat_action_space action {action_id} missing command"))?
+            .to_string();
+        let choice_index = raw_action
+            .get("choice_index")
+            .and_then(Value::as_u64)
+            .map(|value| value as usize);
+        let choice_label = raw_action
+            .get("choice_label")
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned);
+        let potion_slot = raw_action
+            .get("potion_slot")
+            .and_then(Value::as_u64)
+            .map(|value| value as usize);
+
+        actions_by_id.insert(action_id.clone(), index);
+        affordance_actions.push(ProtocolNoncombatAction {
+            action_id,
+            kind,
+            command,
+            choice_index,
+            choice_label,
+            potion_slot,
+        });
+    }
+
+    Ok(Some(NoncombatAffordanceSnapshot {
+        screen_type,
+        actions: affordance_actions,
+        actions_by_id,
+    }))
+}
+
 fn protocol_root_action_to_input(
     action_id: &str,
     kind: &ProtocolCombatActionKind,
@@ -692,6 +865,60 @@ mod tests {
         let card_uuid = snapshot.action_by_id("play-0").unwrap().card_uuid.unwrap();
         assert_eq!(snapshot.card_actions_for_uuid(card_uuid).len(), 1);
         assert_eq!(snapshot.potion_actions_for_slot(0).len(), 1);
+    }
+
+    #[test]
+    fn build_noncombat_affordance_snapshot_maps_protocol_actions() {
+        let action_space = json!({
+            "noncombat_action_space": {
+                "screen_type": "COMBAT_REWARD",
+                "actions": [
+                    {
+                        "action_id": "choice:combat_reward:7",
+                        "kind": "choose",
+                        "command": "CHOOSE 7",
+                        "choice_index": 7,
+                        "choice_label": "gold"
+                    },
+                    {
+                        "action_id": "cancel:combat_reward",
+                        "kind": "cancel",
+                        "command": "SKIP"
+                    },
+                    {
+                        "action_id": "potion_discard:1",
+                        "kind": "potion_discard",
+                        "command": "POTION DISCARD 1",
+                        "potion_slot": 1
+                    }
+                ]
+            }
+        });
+
+        let snapshot = build_noncombat_affordance_snapshot(&action_space)
+            .expect("affordance parse")
+            .expect("action space");
+
+        assert_eq!(snapshot.len(), 3);
+        assert_eq!(snapshot.screen_type.as_deref(), Some("COMBAT_REWARD"));
+        assert_eq!(
+            snapshot
+                .action_by_id("choice:combat_reward:7")
+                .unwrap()
+                .choice_label
+                .as_deref(),
+            Some("gold")
+        );
+        assert_eq!(snapshot.command_for_choice_index(7), Some("CHOOSE 7"));
+        assert_eq!(
+            snapshot.first_command_for_kind(ProtocolNoncombatActionKind::Cancel),
+            Some("SKIP")
+        );
+        assert_eq!(
+            snapshot.command_for_potion_discard_slot(1),
+            Some("POTION DISCARD 1")
+        );
+        assert_eq!(snapshot.choice_labels(), vec!["gold".to_string()]);
     }
 
     #[test]
