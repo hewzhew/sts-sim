@@ -338,8 +338,8 @@ mod tests {
     use crate::content::cards::CardId;
     use crate::content::monsters::EnemyId;
     use crate::content::powers::PowerId;
-    use crate::engine::core::{is_smoke_escape_stable_boundary, tick_engine};
     use crate::engine::action_handlers::damage::handle_fiend_fire;
+    use crate::engine::core::{is_smoke_escape_stable_boundary, tick_engine};
     use crate::runtime::action::{DamageInfo, DamageType};
     use crate::runtime::combat::{CombatCard, Power};
     use crate::state::core::EngineState;
