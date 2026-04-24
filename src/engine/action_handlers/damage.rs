@@ -122,8 +122,9 @@ pub fn apply_raw_damage_to_monster(
         let mut final_damage = raw_damage.max(0);
         final_damage = deduct_block(&mut m.block, final_damage);
         if final_damage > 0 {
+            let actual_hp_lost = final_damage.min(m.current_hp.max(0));
             m.current_hp = (m.current_hp - final_damage).max(0);
-            hp_lost = final_damage;
+            hp_lost = actual_hp_lost;
         }
     }
     super::check_and_trigger_monster_death(state, target_id);
@@ -184,8 +185,9 @@ fn apply_damage_to_monster_via_pipeline(
         {
             real_m.block = m.block;
             if final_damage > 0 {
+                let actual_hp_lost = final_damage.min(real_m.current_hp.max(0));
                 real_m.current_hp = (real_m.current_hp - final_damage).max(0);
-                outcome.hp_lost = final_damage;
+                outcome.hp_lost = actual_hp_lost;
                 outcome.died = real_m.current_hp <= 0;
             }
         }
@@ -839,6 +841,7 @@ pub fn handle_heal(target: usize, mut amount: i32, state: &mut CombatState) {
         }
     }
     if target == 0 {
+        amount = crate::content::relics::hooks::on_calculate_heal(state, amount);
         let previous_hp = state.entities.player.current_hp;
         state.entities.player.current_hp =
             (state.entities.player.current_hp + amount).min(state.entities.player.max_hp);

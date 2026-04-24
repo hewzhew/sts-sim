@@ -44,7 +44,10 @@ pub fn try_revive(state: &mut CombatState) {
             potency *= 2.0;
         }
         let heal_amount = (state.entities.player.max_hp as f32 * potency) as i32;
-        state.entities.player.current_hp = heal_amount.max(1);
+        let heal_amount =
+            crate::content::relics::hooks::on_calculate_heal(state, heal_amount.max(1));
+        state.entities.player.current_hp =
+            (state.entities.player.current_hp + heal_amount).min(state.entities.player.max_hp);
         return;
     }
 
@@ -56,7 +59,12 @@ pub fn try_revive(state: &mut CombatState) {
         .find(|r| r.id == crate::content::relics::RelicId::LizardTail)
         .map_or(false, |r| !r.used_up);
     if lizard_unused {
-        state.entities.player.current_hp = std::cmp::max(1, state.entities.player.max_hp / 2);
+        let heal_amount = crate::content::relics::hooks::on_calculate_heal(
+            state,
+            crate::content::relics::lizard_tail::revive_amount(state.entities.player.max_hp),
+        );
+        state.entities.player.current_hp =
+            (state.entities.player.current_hp + heal_amount).min(state.entities.player.max_hp);
         if let Some(lt) = state
             .entities
             .player

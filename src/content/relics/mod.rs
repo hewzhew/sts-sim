@@ -915,7 +915,9 @@ pub fn get_relic_subscriptions(id: RelicId) -> RelicSubscriptions {
             sub.at_pre_battle = true;
             sub.at_turn_start = true;
         }
-        RelicId::LizardTail => sub.on_lose_hp = true,
+        // Java handles Lizard Tail inline in the player death check rather than
+        // through a generic onLoseHp relic hook.
+        RelicId::LizardTail => {}
         RelicId::MagicFlower => sub.on_calculate_heal = true,
         RelicId::MarkOfTheBloom => sub.on_calculate_heal = true,
         RelicId::Mango => {} // OOC: onEquip increaseMaxHp(14) only

@@ -321,12 +321,6 @@ pub fn on_lose_hp(state: &mut CombatState, amount: i32) -> smallvec::SmallVec<[A
                 ));
                 state.entities.player.relics[relic_index] = rs;
             }
-            RelicId::LizardTail => {
-                let used_up = state.entities.player.relics[relic_index].used_up;
-                actions.extend(crate::content::relics::lizard_tail::on_lose_hp(
-                    &*state, used_up,
-                ));
-            }
             RelicId::SelfFormingClay => {
                 actions.extend(crate::content::relics::self_forming_clay::on_lose_hp())
             }
