@@ -112,6 +112,7 @@ pub(crate) enum ScreenRejectionKind {
     EndTurnWorseThanPlayableAlternative,
     DominatedFrontierSurvival,
     DominatedRootProgress,
+    DominatedRootResources,
     FragileRiskOutlier,
     TrimmedByScreeningWidth,
 }
@@ -132,6 +133,7 @@ impl ScreenRejectionKind {
             Self::EndTurnWorseThanPlayableAlternative => "end_turn_worse_than_playable_alternative",
             Self::DominatedFrontierSurvival => "dominated_frontier_survival",
             Self::DominatedRootProgress => "dominated_root_progress",
+            Self::DominatedRootResources => "dominated_root_resources",
             Self::FragileRiskOutlier => "fragile_risk_outlier",
             Self::TrimmedByScreeningWidth => "trimmed_by_screening_width",
         }

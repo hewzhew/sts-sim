@@ -283,11 +283,16 @@ fn screen_root_proposals(
             .iter()
             .enumerate()
             .any(|(other_idx, other)| other_idx != idx && root_progress_dominates(other, proposal));
+        let root_resource_dominated = proposals
+            .iter()
+            .enumerate()
+            .any(|(other_idx, other)| other_idx != idx && root_resource_dominates(other, proposal));
         let rejection_reason = screen_rejection_reason(
             regime,
             proposal,
             any_survivor,
             root_progress_dominated,
+            root_resource_dominated,
             best_unblocked,
             best_non_endturn_unblocked,
             best_enemy_total,
@@ -335,6 +340,7 @@ fn screen_rejection_reason(
     proposal: &RootProposal,
     any_survivor: bool,
     root_progress_dominated: bool,
+    root_resource_dominated: bool,
     best_unblocked: i32,
     best_non_endturn_unblocked: i32,
     best_enemy_total: i32,
@@ -346,6 +352,9 @@ fn screen_rejection_reason(
     }
     if root_progress_dominated {
         return Some(ScreenRejectionKind::DominatedRootProgress);
+    }
+    if root_resource_dominated {
+        return Some(ScreenRejectionKind::DominatedRootResources);
     }
 
     match regime {
@@ -509,6 +518,7 @@ fn compare_root_proposals(
         &right.frontier_outcome,
     )
     .then_with(|| compare_root_progress(left, right))
+    .then_with(|| compare_root_resource_dominance(left, right))
     .then_with(|| {
         compare_exact_adjudicated_outcomes(
             regime,
@@ -534,6 +544,14 @@ fn compare_explored_candidates(
     )
     .then_with(|| {
         compare_root_progress_facts(
+            &left.candidate,
+            &left.frontier_outcome,
+            &right.candidate,
+            &right.frontier_outcome,
+        )
+    })
+    .then_with(|| {
+        compare_root_resource_dominance_facts(
             &left.candidate,
             &left.frontier_outcome,
             &right.candidate,
@@ -638,6 +656,74 @@ fn root_progress_dominates_facts(
     }
 
     false
+}
+
+fn compare_root_resource_dominance(
+    left: &RootProposal,
+    right: &RootProposal,
+) -> std::cmp::Ordering {
+    compare_root_resource_dominance_facts(
+        &left.candidate,
+        &left.frontier_outcome,
+        &right.candidate,
+        &right.frontier_outcome,
+    )
+}
+
+fn compare_root_resource_dominance_facts(
+    left_candidate: &CombatCandidate,
+    left_outcome: &DecisionOutcome,
+    right_candidate: &CombatCandidate,
+    right_outcome: &DecisionOutcome,
+) -> std::cmp::Ordering {
+    if root_resource_dominates_facts(left_candidate, left_outcome, right_candidate, right_outcome) {
+        std::cmp::Ordering::Less
+    } else if root_resource_dominates_facts(
+        right_candidate,
+        right_outcome,
+        left_candidate,
+        left_outcome,
+    ) {
+        std::cmp::Ordering::Greater
+    } else {
+        std::cmp::Ordering::Equal
+    }
+}
+
+fn root_resource_dominates(left: &RootProposal, right: &RootProposal) -> bool {
+    root_resource_dominates_facts(
+        &left.candidate,
+        &left.frontier_outcome,
+        &right.candidate,
+        &right.frontier_outcome,
+    )
+}
+
+fn root_resource_dominates_facts(
+    left_candidate: &CombatCandidate,
+    left_outcome: &DecisionOutcome,
+    right_candidate: &CombatCandidate,
+    right_outcome: &DecisionOutcome,
+) -> bool {
+    if left_candidate.survives != right_candidate.survives
+        || left_outcome.survival != right_outcome.survival
+    {
+        return false;
+    }
+    if left_outcome.position < right_outcome.position
+        || left_outcome.terminality < right_outcome.terminality
+        || left_candidate.projected_unblocked > right_candidate.projected_unblocked
+        || left_candidate.projected_enemy_total > right_candidate.projected_enemy_total
+        || left_candidate.projected_hp < right_candidate.projected_hp
+        || left_candidate.projected_block < right_candidate.projected_block
+    {
+        return false;
+    }
+
+    let ignore_block_after_clear = root_clears_combat(left_candidate, left_outcome)
+        && root_clears_combat(right_candidate, right_outcome);
+    root_resources_not_worse(left_outcome, right_outcome, ignore_block_after_clear)
+        && root_resources_strictly_better(left_outcome, right_outcome, ignore_block_after_clear)
 }
 
 fn root_survival_not_worse(
@@ -888,6 +974,24 @@ mod tests {
         }
     }
 
+    fn with_resources(
+        mut outcome: DecisionOutcome,
+        spent_potions: u8,
+        hp_lost: i32,
+        exhausted_cards: u16,
+        final_hp: i32,
+        final_block: i32,
+    ) -> DecisionOutcome {
+        outcome.resource_delta = ResourceDeltaSummary {
+            spent_potions,
+            hp_lost,
+            exhausted_cards,
+            final_hp,
+            final_block,
+        };
+        outcome
+    }
+
     fn proposal(
         input: ClientInput,
         survives: bool,
@@ -903,6 +1007,12 @@ mod tests {
         } else {
             ExactnessLevel::Unavailable
         };
+        let projected_hp = if survives {
+            frontier_outcome.resource_delta.final_hp
+        } else {
+            0
+        };
+        let projected_block = frontier_outcome.resource_delta.final_block;
         RootProposal {
             candidate: CombatCandidate {
                 input,
@@ -919,8 +1029,8 @@ mod tests {
                 projection_truncated: false,
                 cluster_size: 1,
                 collapsed_inputs: Vec::new(),
-                projected_hp: if survives { 20 } else { 0 },
-                projected_block: 0,
+                projected_hp,
+                projected_block,
                 projected_enemy_total,
                 projected_unblocked,
                 survives,
@@ -1148,6 +1258,148 @@ mod tests {
             ),
             std::cmp::Ordering::Less
         );
+    }
+
+    #[test]
+    fn same_survival_resource_dominance_beats_recursive_value_in_all_regimes() {
+        let resource_better = proposal(
+            ClientInput::PlayCard {
+                card_index: 0,
+                target: None,
+            },
+            true,
+            0,
+            24,
+            with_resources(
+                decision_outcome(
+                    SurvivalJudgement::Stable,
+                    PositionClass::TempoNeutral,
+                    -20.0,
+                ),
+                0,
+                0,
+                0,
+                30,
+                8,
+            ),
+            None,
+        );
+        let resource_worse = proposal(
+            ClientInput::PlayCard {
+                card_index: 1,
+                target: None,
+            },
+            true,
+            0,
+            24,
+            with_resources(
+                decision_outcome(
+                    SurvivalJudgement::Stable,
+                    PositionClass::TempoNeutral,
+                    100.0,
+                ),
+                1,
+                2,
+                0,
+                28,
+                8,
+            ),
+            None,
+        );
+
+        for regime in [
+            CombatRegime::Crisis,
+            CombatRegime::Fragile,
+            CombatRegime::Contested,
+            CombatRegime::Advantage,
+        ] {
+            assert_eq!(
+                compare_root_proposals(regime, &resource_better, &resource_worse),
+                std::cmp::Ordering::Less,
+                "same-survival root resource dominance should affect proposal ordering in {regime:?}"
+            );
+
+            let better_explored = explored_from(resource_better.clone(), terminal_defeat_value());
+            let worse_explored = explored_from(
+                resource_worse.clone(),
+                CombatValue::Terminal(TerminalOutcome {
+                    kind: TerminalKind::CombatCleared,
+                    final_hp: 99,
+                    final_block: 99,
+                }),
+            );
+            assert_eq!(
+                compare_explored_candidates(regime, &better_explored, &worse_explored),
+                std::cmp::Ordering::Less,
+                "same-survival root resource dominance should beat recursive value in {regime:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn contested_screening_drops_same_survival_resource_dominated_root() {
+        let combat = blank_test_combat();
+        let resource_worse = proposal(
+            ClientInput::PlayCard {
+                card_index: 1,
+                target: None,
+            },
+            true,
+            0,
+            20,
+            with_resources(
+                decision_outcome(
+                    SurvivalJudgement::Stable,
+                    PositionClass::TempoNeutral,
+                    100.0,
+                ),
+                1,
+                1,
+                0,
+                19,
+                4,
+            ),
+            None,
+        );
+        let resource_better = proposal(
+            ClientInput::PlayCard {
+                card_index: 0,
+                target: None,
+            },
+            true,
+            0,
+            20,
+            with_resources(
+                decision_outcome(
+                    SurvivalJudgement::Stable,
+                    PositionClass::TempoNeutral,
+                    -10.0,
+                ),
+                0,
+                0,
+                0,
+                20,
+                4,
+            ),
+            None,
+        );
+
+        let screened = screen_root_proposals(
+            CombatRegime::Contested,
+            vec![resource_worse, resource_better],
+            &combat,
+            1,
+        );
+
+        assert_eq!(screened.kept.len(), 1);
+        assert!(screened.kept.iter().any(|proposal| matches!(
+            proposal.candidate.input,
+            ClientInput::PlayCard { card_index: 0, .. }
+        )));
+        assert!(screened.rejected.iter().any(|rejection| matches!(
+            rejection.reason,
+            ScreenRejectionKind::DominatedRootResources
+        )));
     }
 
     #[test]
