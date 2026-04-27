@@ -278,11 +278,16 @@ fn screen_root_proposals(
 
     let mut kept = Vec::new();
     let mut overflow: Vec<(RootProposal, ScreenRejectionKind)> = Vec::new();
-    for proposal in proposals.into_iter() {
+    for (idx, proposal) in proposals.iter().enumerate() {
+        let root_progress_dominated = proposals
+            .iter()
+            .enumerate()
+            .any(|(other_idx, other)| other_idx != idx && root_progress_dominates(other, proposal));
         let rejection_reason = screen_rejection_reason(
             regime,
-            &proposal,
+            proposal,
             any_survivor,
+            root_progress_dominated,
             best_unblocked,
             best_non_endturn_unblocked,
             best_enemy_total,
@@ -290,9 +295,9 @@ fn screen_root_proposals(
             player_hp,
         );
         if let Some(reason) = rejection_reason {
-            overflow.push((proposal, reason));
+            overflow.push((proposal.clone(), reason));
         } else {
-            kept.push(proposal);
+            kept.push(proposal.clone());
         }
     }
 
@@ -329,6 +334,7 @@ fn screen_rejection_reason(
     regime: CombatRegime,
     proposal: &RootProposal,
     any_survivor: bool,
+    root_progress_dominated: bool,
     best_unblocked: i32,
     best_non_endturn_unblocked: i32,
     best_enemy_total: i32,
@@ -337,6 +343,9 @@ fn screen_rejection_reason(
 ) -> Option<ScreenRejectionKind> {
     if any_survivor && !proposal.candidate.survives {
         return Some(ScreenRejectionKind::UnsurvivableWhileSurvivorExists);
+    }
+    if root_progress_dominated {
+        return Some(ScreenRejectionKind::DominatedRootProgress);
     }
 
     match regime {
@@ -499,6 +508,7 @@ fn compare_root_proposals(
         right.candidate.survives,
         &right.frontier_outcome,
     )
+    .then_with(|| compare_root_progress(left, right))
     .then_with(|| {
         compare_exact_adjudicated_outcomes(
             regime,
@@ -522,6 +532,14 @@ fn compare_explored_candidates(
         right.candidate.survives,
         &right.frontier_outcome,
     )
+    .then_with(|| {
+        compare_root_progress_facts(
+            &left.candidate,
+            &left.frontier_outcome,
+            &right.candidate,
+            &right.frontier_outcome,
+        )
+    })
     .then_with(|| {
         compare_exact_adjudicated_outcomes(
             regime,
@@ -551,6 +569,137 @@ fn compare_root_survival(
     right_survives
         .cmp(&left_survives)
         .then_with(|| right_outcome.survival.cmp(&left_outcome.survival))
+}
+
+fn compare_root_progress(left: &RootProposal, right: &RootProposal) -> std::cmp::Ordering {
+    compare_root_progress_facts(
+        &left.candidate,
+        &left.frontier_outcome,
+        &right.candidate,
+        &right.frontier_outcome,
+    )
+}
+
+fn compare_root_progress_facts(
+    left_candidate: &CombatCandidate,
+    left_outcome: &DecisionOutcome,
+    right_candidate: &CombatCandidate,
+    right_outcome: &DecisionOutcome,
+) -> std::cmp::Ordering {
+    if root_progress_dominates_facts(left_candidate, left_outcome, right_candidate, right_outcome) {
+        std::cmp::Ordering::Less
+    } else if root_progress_dominates_facts(
+        right_candidate,
+        right_outcome,
+        left_candidate,
+        left_outcome,
+    ) {
+        std::cmp::Ordering::Greater
+    } else {
+        std::cmp::Ordering::Equal
+    }
+}
+
+fn root_progress_dominates(left: &RootProposal, right: &RootProposal) -> bool {
+    root_progress_dominates_facts(
+        &left.candidate,
+        &left.frontier_outcome,
+        &right.candidate,
+        &right.frontier_outcome,
+    )
+}
+
+fn root_progress_dominates_facts(
+    left_candidate: &CombatCandidate,
+    left_outcome: &DecisionOutcome,
+    right_candidate: &CombatCandidate,
+    right_outcome: &DecisionOutcome,
+) -> bool {
+    if !root_survival_not_worse(left_candidate, left_outcome, right_candidate, right_outcome) {
+        return false;
+    }
+
+    let left_clears = root_clears_combat(left_candidate, left_outcome);
+    let right_clears = root_clears_combat(right_candidate, right_outcome);
+    if left_clears && !right_clears {
+        return root_resources_not_worse(left_outcome, right_outcome, true);
+    }
+
+    if matches!(right_candidate.input, ClientInput::EndTurn)
+        && !matches!(left_candidate.input, ClientInput::EndTurn)
+        && !right_clears
+    {
+        return root_end_turn_progress_dominated(
+            left_candidate,
+            left_outcome,
+            right_candidate,
+            right_outcome,
+        );
+    }
+
+    false
+}
+
+fn root_survival_not_worse(
+    left_candidate: &CombatCandidate,
+    left_outcome: &DecisionOutcome,
+    right_candidate: &CombatCandidate,
+    right_outcome: &DecisionOutcome,
+) -> bool {
+    (!right_candidate.survives || left_candidate.survives)
+        && left_outcome.survival >= right_outcome.survival
+}
+
+fn root_clears_combat(candidate: &CombatCandidate, outcome: &DecisionOutcome) -> bool {
+    matches!(
+        outcome.terminality,
+        super::decision::TerminalForecast::LethalWin
+    ) || candidate.projected_enemy_total <= 0
+}
+
+fn root_end_turn_progress_dominated(
+    left_candidate: &CombatCandidate,
+    left_outcome: &DecisionOutcome,
+    right_candidate: &CombatCandidate,
+    right_outcome: &DecisionOutcome,
+) -> bool {
+    root_resources_not_worse(left_outcome, right_outcome, false)
+        && left_candidate.projected_unblocked <= right_candidate.projected_unblocked
+        && left_candidate.projected_enemy_total <= right_candidate.projected_enemy_total
+        && left_candidate.projected_hp >= right_candidate.projected_hp
+        && left_candidate.projected_block >= right_candidate.projected_block
+        && (left_candidate.projected_enemy_total < right_candidate.projected_enemy_total
+            || left_candidate.projected_unblocked < right_candidate.projected_unblocked
+            || left_candidate.projected_hp > right_candidate.projected_hp
+            || left_candidate.projected_block > right_candidate.projected_block
+            || left_outcome.terminality > right_outcome.terminality
+            || root_resources_strictly_better(left_outcome, right_outcome, false))
+}
+
+fn root_resources_not_worse(
+    left: &DecisionOutcome,
+    right: &DecisionOutcome,
+    ignore_block_after_clear: bool,
+) -> bool {
+    left.resource_delta.spent_potions <= right.resource_delta.spent_potions
+        && left.resource_delta.hp_lost <= right.resource_delta.hp_lost
+        && left.resource_delta.exhausted_cards <= right.resource_delta.exhausted_cards
+        && left.resource_delta.final_hp >= right.resource_delta.final_hp
+        && (ignore_block_after_clear
+            || left.resource_delta.final_block >= right.resource_delta.final_block)
+}
+
+fn root_resources_strictly_better(
+    left: &DecisionOutcome,
+    right: &DecisionOutcome,
+    ignore_block_after_clear: bool,
+) -> bool {
+    left.resource_delta.spent_potions < right.resource_delta.spent_potions
+        || left.resource_delta.hp_lost < right.resource_delta.hp_lost
+        || left.resource_delta.exhausted_cards < right.resource_delta.exhausted_cards
+        || left.resource_delta.final_hp > right.resource_delta.final_hp
+        || (!ignore_block_after_clear
+            && left.resource_delta.final_block > right.resource_delta.final_block)
 }
 
 fn compare_exact_adjudicated_outcomes(
@@ -710,10 +859,24 @@ mod tests {
         position: PositionClass,
         efficiency_score: f32,
     ) -> DecisionOutcome {
+        decision_outcome_with_terminality(
+            survival,
+            position,
+            TerminalForecast::SurvivesWindow,
+            efficiency_score,
+        )
+    }
+
+    fn decision_outcome_with_terminality(
+        survival: SurvivalJudgement,
+        position: PositionClass,
+        terminality: TerminalForecast,
+        efficiency_score: f32,
+    ) -> DecisionOutcome {
         DecisionOutcome {
             survival,
             position,
-            terminality: TerminalForecast::SurvivesWindow,
+            terminality,
             resource_delta: ResourceDeltaSummary {
                 spent_potions: 0,
                 hp_lost: 0,
@@ -889,6 +1052,145 @@ mod tests {
             ),
             std::cmp::Ordering::Less
         );
+    }
+
+    #[test]
+    fn root_lethal_progress_dominates_end_turn_recursive_value_in_all_regimes() {
+        let lethal = proposal(
+            ClientInput::PlayCard {
+                card_index: 0,
+                target: Some(0),
+            },
+            true,
+            0,
+            0,
+            decision_outcome_with_terminality(
+                SurvivalJudgement::Safe,
+                PositionClass::WinningLine,
+                TerminalForecast::LethalWin,
+                10.0,
+            ),
+            None,
+        );
+        let delaying_end_turn = proposal(
+            ClientInput::EndTurn,
+            true,
+            6,
+            1,
+            decision_outcome(SurvivalJudgement::Safe, PositionClass::TempoNeutral, 100.0),
+            None,
+        );
+
+        for regime in [
+            CombatRegime::Crisis,
+            CombatRegime::Fragile,
+            CombatRegime::Contested,
+            CombatRegime::Advantage,
+        ] {
+            assert_eq!(
+                compare_root_proposals(regime, &lethal, &delaying_end_turn),
+                std::cmp::Ordering::Less,
+                "root lethal progress should dominate EndTurn proposal ordering in {regime:?}"
+            );
+
+            let lethal_explored = explored_from(lethal.clone(), terminal_defeat_value());
+            let end_turn_explored = explored_from(
+                delaying_end_turn.clone(),
+                CombatValue::Terminal(TerminalOutcome {
+                    kind: TerminalKind::CombatCleared,
+                    final_hp: 20,
+                    final_block: 0,
+                }),
+            );
+            assert_eq!(
+                compare_explored_candidates(regime, &lethal_explored, &end_turn_explored),
+                std::cmp::Ordering::Less,
+                "root lethal progress should dominate recursive search values in {regime:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn root_progress_blocks_terminal_defeat_end_turn_tiebreak() {
+        let progress = proposal(
+            ClientInput::PlayCard {
+                card_index: 0,
+                target: Some(0),
+            },
+            true,
+            0,
+            0,
+            decision_outcome_with_terminality(
+                SurvivalJudgement::Safe,
+                PositionClass::WinningLine,
+                TerminalForecast::LethalWin,
+                10.0,
+            ),
+            None,
+        );
+        let end_turn = proposal(
+            ClientInput::EndTurn,
+            true,
+            0,
+            1,
+            decision_outcome(SurvivalJudgement::Safe, PositionClass::TempoNeutral, 10.0),
+            None,
+        );
+
+        let progress_explored = explored_from(progress, terminal_defeat_value());
+        let end_turn_explored = explored_from(end_turn, terminal_defeat_value());
+
+        assert_eq!(
+            compare_explored_candidates(
+                CombatRegime::Advantage,
+                &progress_explored,
+                &end_turn_explored,
+            ),
+            std::cmp::Ordering::Less
+        );
+    }
+
+    #[test]
+    fn advantage_screening_drops_end_turn_when_root_lethal_exists() {
+        let combat = blank_test_combat();
+        let proposals = vec![
+            proposal(
+                ClientInput::EndTurn,
+                true,
+                6,
+                1,
+                decision_outcome(SurvivalJudgement::Safe, PositionClass::TempoNeutral, 100.0),
+                None,
+            ),
+            proposal(
+                ClientInput::PlayCard {
+                    card_index: 0,
+                    target: Some(0),
+                },
+                true,
+                0,
+                0,
+                decision_outcome_with_terminality(
+                    SurvivalJudgement::Safe,
+                    PositionClass::WinningLine,
+                    TerminalForecast::LethalWin,
+                    10.0,
+                ),
+                None,
+            ),
+        ];
+
+        let screened = screen_root_proposals(CombatRegime::Advantage, proposals, &combat, 1);
+
+        assert_eq!(screened.kept.len(), 1);
+        assert!(!screened
+            .kept
+            .iter()
+            .any(|proposal| matches!(proposal.candidate.input, ClientInput::EndTurn)));
+        assert!(screened.rejected.iter().any(|rejection| matches!(
+            rejection.reason,
+            ScreenRejectionKind::DominatedRootProgress
+        )));
     }
 
     #[test]
