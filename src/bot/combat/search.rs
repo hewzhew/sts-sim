@@ -113,6 +113,7 @@ pub(super) fn explore_root_with_inputs(
     let screened_out = screened.rejected;
     let trimmed_after_screening = screened.trimmed;
     proposals = screened.kept;
+    proposals.sort_by(|left, right| compare_root_proposals(regime, left, right));
     let exact_adjudicated_count = exact_adjudicate_root_proposals(
         engine,
         combat,
@@ -334,13 +335,13 @@ fn screen_rejection_reason(
     best_survival: super::decision::SurvivalJudgement,
     player_hp: i32,
 ) -> Option<ScreenRejectionKind> {
+    if any_survivor && !proposal.candidate.survives {
+        return Some(ScreenRejectionKind::UnsurvivableWhileSurvivorExists);
+    }
+
     match regime {
         CombatRegime::Crisis => {
-            if any_survivor && !proposal.candidate.survives {
-                Some(ScreenRejectionKind::UnsurvivableWhileSurvivorExists)
-            } else if proposal.candidate.projected_unblocked >= player_hp
-                && best_unblocked < player_hp
-            {
+            if proposal.candidate.projected_unblocked >= player_hp && best_unblocked < player_hp {
                 Some(ScreenRejectionKind::ImmediateLethalWhenSaferExists)
             } else if matches!(proposal.candidate.input, ClientInput::EndTurn)
                 && best_non_endturn_unblocked < proposal.candidate.projected_unblocked
@@ -355,9 +356,7 @@ fn screen_rejection_reason(
             }
         }
         CombatRegime::Fragile => {
-            if any_survivor && !proposal.candidate.survives {
-                Some(ScreenRejectionKind::UnsurvivableWhileSurvivorExists)
-            } else if proposal.candidate.projected_unblocked > best_unblocked + 6
+            if proposal.candidate.projected_unblocked > best_unblocked + 6
                 && proposal.candidate.projected_enemy_total >= best_enemy_total + 8
             {
                 Some(ScreenRejectionKind::FragileRiskOutlier)
@@ -494,13 +493,21 @@ fn compare_root_proposals(
     left: &RootProposal,
     right: &RootProposal,
 ) -> std::cmp::Ordering {
-    compare_exact_adjudicated_outcomes(
-        regime,
-        left.exact_outcome.as_ref(),
-        left.exact_confidence,
-        right.exact_outcome.as_ref(),
-        right.exact_confidence,
+    compare_root_survival(
+        left.candidate.survives,
+        &left.frontier_outcome,
+        right.candidate.survives,
+        &right.frontier_outcome,
     )
+    .then_with(|| {
+        compare_exact_adjudicated_outcomes(
+            regime,
+            left.exact_outcome.as_ref(),
+            left.exact_confidence,
+            right.exact_outcome.as_ref(),
+            right.exact_confidence,
+        )
+    })
     .then_with(|| compare_candidates(&left.candidate, &right.candidate))
 }
 
@@ -509,13 +516,21 @@ fn compare_explored_candidates(
     left: &ExploredCandidate,
     right: &ExploredCandidate,
 ) -> std::cmp::Ordering {
-    compare_exact_adjudicated_outcomes(
-        regime,
-        left.exact_outcome.as_ref(),
-        left.exact_confidence,
-        right.exact_outcome.as_ref(),
-        right.exact_confidence,
+    compare_root_survival(
+        left.candidate.survives,
+        &left.frontier_outcome,
+        right.candidate.survives,
+        &right.frontier_outcome,
     )
+    .then_with(|| {
+        compare_exact_adjudicated_outcomes(
+            regime,
+            left.exact_outcome.as_ref(),
+            left.exact_confidence,
+            right.exact_outcome.as_ref(),
+            right.exact_confidence,
+        )
+    })
     .then_with(|| {
         compare_values(&left.search_value, &right.search_value).then_with(|| {
             end_turn_tiebreak(
@@ -525,6 +540,17 @@ fn compare_explored_candidates(
             )
         })
     })
+}
+
+fn compare_root_survival(
+    left_survives: bool,
+    left_outcome: &DecisionOutcome,
+    right_survives: bool,
+    right_outcome: &DecisionOutcome,
+) -> std::cmp::Ordering {
+    right_survives
+        .cmp(&left_survives)
+        .then_with(|| right_outcome.survival.cmp(&left_outcome.survival))
 }
 
 fn compare_exact_adjudicated_outcomes(
@@ -730,7 +756,7 @@ mod tests {
                 projection_truncated: false,
                 cluster_size: 1,
                 collapsed_inputs: Vec::new(),
-                projected_hp: 20,
+                projected_hp: if survives { 20 } else { 0 },
                 projected_block: 0,
                 projected_enemy_total,
                 projected_unblocked,
@@ -742,6 +768,127 @@ mod tests {
             exact_outcome,
             exact_confidence,
         }
+    }
+
+    fn terminal_defeat_value() -> CombatValue {
+        CombatValue::Terminal(TerminalOutcome {
+            kind: TerminalKind::Defeat,
+            final_hp: 0,
+            final_block: 0,
+        })
+    }
+
+    fn explored_from(proposal: RootProposal, search_value: CombatValue) -> ExploredCandidate {
+        ExploredCandidate {
+            explored_nodes: 1,
+            candidate: proposal.candidate,
+            proposal_class: proposal.proposal_class,
+            frontier_outcome: proposal.frontier_outcome,
+            search_value,
+            exact_outcome: proposal.exact_outcome,
+            exact_confidence: proposal.exact_confidence,
+        }
+    }
+
+    #[test]
+    fn root_survival_dominance_beats_recursive_defeat_tiebreak_in_all_regimes() {
+        let survivor = proposal(
+            ClientInput::PlayCard {
+                card_index: 2,
+                target: None,
+            },
+            true,
+            10,
+            47,
+            decision_outcome(
+                SurvivalJudgement::SevereRisk,
+                PositionClass::Collapsing,
+                -2.0,
+            ),
+            None,
+        );
+        let doomed_end_turn = proposal(
+            ClientInput::EndTurn,
+            false,
+            0,
+            51,
+            decision_outcome(
+                SurvivalJudgement::ForcedLoss,
+                PositionClass::Collapsing,
+                -20.0,
+            ),
+            None,
+        );
+
+        for regime in [
+            CombatRegime::Crisis,
+            CombatRegime::Fragile,
+            CombatRegime::Contested,
+            CombatRegime::Advantage,
+        ] {
+            assert_eq!(
+                compare_root_proposals(regime, &survivor, &doomed_end_turn),
+                std::cmp::Ordering::Less,
+                "root survival should dominate proposal ordering in {regime:?}"
+            );
+
+            let survivor_explored = explored_from(survivor.clone(), terminal_defeat_value());
+            let doomed_explored = explored_from(doomed_end_turn.clone(), terminal_defeat_value());
+            assert_eq!(
+                compare_explored_candidates(regime, &survivor_explored, &doomed_explored),
+                std::cmp::Ordering::Less,
+                "root survival should dominate recursive defeat tie-breaks in {regime:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn root_survival_class_dominates_recursive_search_value() {
+        let stable = proposal(
+            ClientInput::PlayCard {
+                card_index: 0,
+                target: None,
+            },
+            true,
+            0,
+            60,
+            decision_outcome(SurvivalJudgement::Stable, PositionClass::DefensiveBind, 0.0),
+            None,
+        );
+        let severe = proposal(
+            ClientInput::PlayCard {
+                card_index: 1,
+                target: None,
+            },
+            true,
+            8,
+            40,
+            decision_outcome(
+                SurvivalJudgement::SevereRisk,
+                PositionClass::Collapsing,
+                50.0,
+            ),
+            None,
+        );
+
+        let stable_explored = explored_from(stable, terminal_defeat_value());
+        let severe_explored = explored_from(
+            severe,
+            CombatValue::Terminal(TerminalOutcome {
+                kind: TerminalKind::CombatCleared,
+                final_hp: 1,
+                final_block: 0,
+            }),
+        );
+
+        assert_eq!(
+            compare_explored_candidates(
+                CombatRegime::Advantage,
+                &stable_explored,
+                &severe_explored
+            ),
+            std::cmp::Ordering::Less
+        );
     }
 
     #[test]
@@ -786,6 +933,48 @@ mod tests {
             compare_root_proposals(CombatRegime::Crisis, &better, &worse),
             std::cmp::Ordering::Less
         );
+    }
+
+    #[test]
+    fn contested_screening_drops_unsurvivable_root_when_survivor_exists() {
+        let combat = blank_test_combat();
+        let proposals = vec![
+            proposal(
+                ClientInput::EndTurn,
+                false,
+                20,
+                12,
+                decision_outcome(
+                    SurvivalJudgement::ForcedLoss,
+                    PositionClass::Collapsing,
+                    50.0,
+                ),
+                None,
+            ),
+            proposal(
+                ClientInput::PlayCard {
+                    card_index: 0,
+                    target: None,
+                },
+                true,
+                0,
+                10,
+                decision_outcome(SurvivalJudgement::Stable, PositionClass::Stabilizing, 5.0),
+                None,
+            ),
+        ];
+
+        let screened = screen_root_proposals(CombatRegime::Contested, proposals, &combat, 1);
+
+        assert_eq!(screened.kept.len(), 1);
+        assert!(!screened
+            .kept
+            .iter()
+            .any(|proposal| matches!(proposal.candidate.input, ClientInput::EndTurn)));
+        assert!(screened.rejected.iter().any(|rejection| matches!(
+            rejection.reason,
+            ScreenRejectionKind::UnsurvivableWhileSurvivorExists
+        )));
     }
 
     #[test]
