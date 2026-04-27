@@ -710,10 +710,11 @@ pub fn resolve_power_at_turn_start(
             acts
         }
         PowerId::MayhemPower => {
-            // Play top card of draw pile `amount` times
             let mut acts = smallvec::SmallVec::new();
             for _ in 0..amount {
-                acts.push(crate::runtime::action::Action::PlayTopCard {
+                // Java Mayhem queues a wrapper before the turn draw; the wrapper
+                // appends PlayTopCardAction when it runs, after DrawCardAction.
+                acts.push(crate::runtime::action::Action::QueuePlayTopCardToBottom {
                     target: None,
                     exhaust: false,
                 });

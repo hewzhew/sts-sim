@@ -1095,6 +1095,14 @@ pub fn handle_play_top_card(target: Option<usize>, exhaust: bool, state: &mut Co
     });
 }
 
+pub fn handle_queue_play_top_card_to_bottom(
+    target: Option<usize>,
+    exhaust: bool,
+    state: &mut CombatState,
+) {
+    state.queue_action_back(Action::PlayTopCard { target, exhaust });
+}
+
 pub fn handle_play_top_cards_buffered(
     count: u8,
     target: Option<usize>,

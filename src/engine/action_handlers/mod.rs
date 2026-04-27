@@ -414,6 +414,9 @@ pub fn execute_action(action: Action, state: &mut CombatState) {
         Action::PlayTopCard { target, exhaust } => {
             cards::handle_play_top_card(target, exhaust, state)
         }
+        Action::QueuePlayTopCardToBottom { target, exhaust } => {
+            cards::handle_queue_play_top_card_to_bottom(target, exhaust, state)
+        }
         Action::PlayTopCardsBuffered {
             count,
             target,

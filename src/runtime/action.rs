@@ -404,6 +404,10 @@ pub enum Action {
         target: Option<EntityId>,
         exhaust: bool,
     },
+    QueuePlayTopCardToBottom {
+        target: Option<EntityId>,
+        exhaust: bool,
+    },
     /// Buffer the current top N cards from the draw pile, then play them in
     /// reverse buffered order. This matches Java Distilled Chaos semantics:
     /// the later buffered cards should still be played even if earlier cards
