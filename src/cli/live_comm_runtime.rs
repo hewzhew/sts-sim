@@ -367,6 +367,14 @@ struct RunTriageMetrics {
     high_threat_disagreement_count: usize,
     survival_downgrade_avoided_count: usize,
     regime_counts: BTreeMap<String, usize>,
+    root_progress_screened_count: usize,
+    idle_end_turn_with_playable_card_count: usize,
+    idle_end_turn_with_potion_only_count: usize,
+    strict_dominance_by_regime: BTreeMap<String, usize>,
+    strict_dominance_by_takeover_reason: BTreeMap<String, usize>,
+    strict_dominance_by_frontier_class: BTreeMap<String, usize>,
+    terminal_recent_decision_count: usize,
+    terminal_recent_forced_loss_count: usize,
     search_timeout_count: usize,
     event_fallback_count: usize,
     terminal_snapshot_present: bool,
@@ -381,6 +389,9 @@ impl RunTriageMetrics {
             || self.strict_dominance_disagreement_count > 0
             || self.high_threat_disagreement_count > 0
             || self.survival_downgrade_avoided_count > 0
+            || self.root_progress_screened_count > 0
+            || self.idle_end_turn_with_playable_card_count > 0
+            || self.idle_end_turn_with_potion_only_count > 0
             || self.search_timeout_count > 0
             || self.event_fallback_count > 0
     }
@@ -391,6 +402,7 @@ fn derive_run_triage_metrics(run_dir: &Path, focus_text: &str) -> RunTriageMetri
     derive_progression_metrics(&run_dir.join("raw.jsonl"), &mut metrics);
     derive_focus_quality_metrics(focus_text, &mut metrics);
     derive_terminal_outcome_metrics(run_dir, &mut metrics);
+    derive_combat_decision_audit_metrics(run_dir, &mut metrics);
     metrics
 }
 
@@ -537,6 +549,183 @@ fn derive_terminal_outcome_metrics(run_dir: &Path, metrics: &mut RunTriageMetric
     metrics.terminal_snapshot_present = true;
 }
 
+fn derive_combat_decision_audit_metrics(run_dir: &Path, metrics: &mut RunTriageMetrics) {
+    let audit_path = run_dir.join("combat_decision_audit.jsonl");
+    let Ok(text) = std::fs::read_to_string(audit_path) else {
+        return;
+    };
+
+    let mut terminal_recent = Vec::new();
+    for line in text.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        let Ok(root) = serde_json::from_str::<Value>(trimmed) else {
+            continue;
+        };
+
+        metrics.root_progress_screened_count += root_progress_screened_count(&root);
+        note_idle_end_turn_metrics(&root, metrics);
+        note_strict_dominance_groupings(&root, metrics);
+        note_terminal_recent_decision(&root, metrics.terminal_frame, &mut terminal_recent);
+    }
+
+    if !terminal_recent.is_empty() {
+        metrics.terminal_recent_decision_count = terminal_recent.len();
+        metrics.terminal_recent_forced_loss_count =
+            terminal_recent.iter().filter(|(_, forced)| *forced).count();
+    }
+}
+
+fn root_progress_screened_count(root: &Value) -> usize {
+    json_path(root, &["decision_audit", "decision_trace", "screened_out"])
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter(|entry| json_str(entry, &["reason"]) == Some("dominated_root_progress"))
+        .count()
+}
+
+fn note_idle_end_turn_metrics(root: &Value, metrics: &mut RunTriageMetrics) {
+    if root.get("chosen_move").and_then(Value::as_str) != Some("EndTurn") {
+        return;
+    }
+    if root.get("legal_moves").and_then(Value::as_u64).unwrap_or(0) <= 1 {
+        return;
+    }
+
+    let has_playable_card = has_play_card_alternative(root);
+    let has_potion = has_potion_alternative(root);
+    if has_playable_card {
+        metrics.idle_end_turn_with_playable_card_count += 1;
+    } else if has_potion {
+        metrics.idle_end_turn_with_potion_only_count += 1;
+    }
+}
+
+fn has_play_card_alternative(root: &Value) -> bool {
+    top_candidates(root).any(|candidate| {
+        json_str(candidate, &["move_label"]).is_some_and(|label| label.starts_with("Play "))
+    }) || why_not_others(root).any(|candidate| {
+        json_str(candidate, &["input"]).is_some_and(|input| input.starts_with("PlayCard"))
+    })
+}
+
+fn has_potion_alternative(root: &Value) -> bool {
+    top_candidates(root).any(|candidate| {
+        json_str(candidate, &["move_label"]).is_some_and(|label| label.starts_with("UsePotion"))
+    }) || why_not_others(root).any(|candidate| {
+        json_str(candidate, &["input"]).is_some_and(|input| input.starts_with("UsePotion"))
+    })
+}
+
+fn top_candidates(root: &Value) -> impl Iterator<Item = &Value> {
+    root.get("top_candidates")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+}
+
+fn why_not_others(root: &Value) -> impl Iterator<Item = &Value> {
+    json_path(
+        root,
+        &["decision_audit", "decision_trace", "why_not_others"],
+    )
+    .and_then(Value::as_array)
+    .into_iter()
+    .flatten()
+}
+
+fn note_strict_dominance_groupings(root: &Value, metrics: &mut RunTriageMetrics) {
+    let dominance = json_str(root, &["decision_audit", "exact_turn_verdict", "dominance"]);
+    let agrees = json_path(
+        root,
+        &[
+            "decision_audit",
+            "exact_turn_shadow",
+            "agrees_with_frontier",
+        ],
+    )
+    .and_then(Value::as_bool);
+    if dominance != Some("strictly_better_in_window") || agrees != Some(false) {
+        return;
+    }
+
+    increment_group(
+        &mut metrics.strict_dominance_by_regime,
+        json_str(root, &["decision_audit", "regime"]).unwrap_or("unknown"),
+    );
+    increment_group(
+        &mut metrics.strict_dominance_by_takeover_reason,
+        json_str(
+            root,
+            &["decision_audit", "exact_turn_shadow", "takeover_reason"],
+        )
+        .unwrap_or("unknown"),
+    );
+    increment_group(
+        &mut metrics.strict_dominance_by_frontier_class,
+        json_str(
+            root,
+            &[
+                "decision_audit",
+                "decision_trace",
+                "frontier_proposal_class",
+            ],
+        )
+        .unwrap_or("unknown"),
+    );
+}
+
+fn note_terminal_recent_decision(
+    root: &Value,
+    terminal_frame: Option<u64>,
+    terminal_recent: &mut Vec<(u64, bool)>,
+) {
+    let Some(terminal_frame) = terminal_frame else {
+        return;
+    };
+    let Some(frame) = root.get("frame").and_then(Value::as_u64) else {
+        return;
+    };
+    if frame >= terminal_frame {
+        return;
+    }
+
+    let frontier_forced = json_str(
+        root,
+        &[
+            "decision_audit",
+            "decision_outcomes",
+            "frontier",
+            "survival",
+        ],
+    ) == Some("forced_loss");
+    let exact_forced = json_str(root, &["decision_audit", "exact_turn_verdict", "survival"])
+        == Some("forced_loss");
+    terminal_recent.push((frame, frontier_forced && exact_forced));
+    if terminal_recent.len() > 5 {
+        terminal_recent.remove(0);
+    }
+}
+
+fn increment_group(groups: &mut BTreeMap<String, usize>, key: &str) {
+    *groups.entry(key.to_string()).or_insert(0) += 1;
+}
+
+fn json_path<'a>(value: &'a Value, path: &[&str]) -> Option<&'a Value> {
+    let mut current = value;
+    for key in path {
+        current = current.get(*key)?;
+    }
+    Some(current)
+}
+
+fn json_str<'a>(value: &'a Value, path: &[&str]) -> Option<&'a str> {
+    json_path(value, path).and_then(Value::as_str)
+}
+
 fn populate_terminal_metrics_from_value(root: &Value, metrics: &mut RunTriageMetrics) {
     metrics.terminal_frame = root.get("frame").and_then(Value::as_u64);
     metrics.terminal_screen = root
@@ -681,6 +870,14 @@ struct BotStrengthSummary {
     high_threat_disagreement_count: usize,
     survival_downgrade_avoided_count: usize,
     regime_counts: BTreeMap<String, usize>,
+    root_progress_screened_count: usize,
+    idle_end_turn_with_playable_card_count: usize,
+    idle_end_turn_with_potion_only_count: usize,
+    strict_dominance_by_regime: BTreeMap<String, usize>,
+    strict_dominance_by_takeover_reason: BTreeMap<String, usize>,
+    strict_dominance_by_frontier_class: BTreeMap<String, usize>,
+    terminal_recent_decision_count: usize,
+    terminal_recent_forced_loss_count: usize,
     search_timeout_count: usize,
     event_fallback_count: usize,
     primary_signals: Vec<String>,
@@ -1129,6 +1326,18 @@ fn build_bot_strength_summary(
             metrics.exact_turn_takeover_count
         ));
     }
+    if metrics.root_progress_screened_count > 0 {
+        primary_signals.push(format!(
+            "root_progress_screened={}",
+            metrics.root_progress_screened_count
+        ));
+    }
+    if metrics.idle_end_turn_with_playable_card_count > 0 {
+        primary_signals.push(format!(
+            "idle_end_turn_with_playable_cards={}",
+            metrics.idle_end_turn_with_playable_card_count
+        ));
+    }
     if metrics.high_threat_disagreement_count > 0 {
         primary_signals.push(format!(
             "high_threat_disagreements={}",
@@ -1188,6 +1397,14 @@ fn build_bot_strength_summary(
         high_threat_disagreement_count: metrics.high_threat_disagreement_count,
         survival_downgrade_avoided_count: metrics.survival_downgrade_avoided_count,
         regime_counts: metrics.regime_counts.clone(),
+        root_progress_screened_count: metrics.root_progress_screened_count,
+        idle_end_turn_with_playable_card_count: metrics.idle_end_turn_with_playable_card_count,
+        idle_end_turn_with_potion_only_count: metrics.idle_end_turn_with_potion_only_count,
+        strict_dominance_by_regime: metrics.strict_dominance_by_regime.clone(),
+        strict_dominance_by_takeover_reason: metrics.strict_dominance_by_takeover_reason.clone(),
+        strict_dominance_by_frontier_class: metrics.strict_dominance_by_frontier_class.clone(),
+        terminal_recent_decision_count: metrics.terminal_recent_decision_count,
+        terminal_recent_forced_loss_count: metrics.terminal_recent_forced_loss_count,
         search_timeout_count: metrics.search_timeout_count,
         event_fallback_count: metrics.event_fallback_count,
         primary_signals,
@@ -1372,11 +1589,44 @@ fn render_triage_summary(
                 metrics.exact_turn_takeover_count
             ));
         }
+        if metrics.root_progress_screened_count > 0 {
+            out.push_str(&format!(
+                "- root_progress_screened_count={}\n",
+                metrics.root_progress_screened_count
+            ));
+        }
+        if metrics.idle_end_turn_with_playable_card_count > 0
+            || metrics.idle_end_turn_with_potion_only_count > 0
+        {
+            out.push_str(&format!(
+                "- idle_end_turn_with_playable_cards={} potion_only_alternatives={}\n",
+                metrics.idle_end_turn_with_playable_card_count,
+                metrics.idle_end_turn_with_potion_only_count
+            ));
+        }
         if metrics.strict_dominance_disagreement_count > 0 {
             out.push_str(&format!(
                 "- exact_turn_strict_dominance_count={}\n",
                 metrics.strict_dominance_disagreement_count
             ));
+            if !metrics.strict_dominance_by_regime.is_empty() {
+                out.push_str(&format!(
+                    "- strict_dominance_by_regime={}\n",
+                    format_count_map(&metrics.strict_dominance_by_regime, 4)
+                ));
+            }
+            if !metrics.strict_dominance_by_takeover_reason.is_empty() {
+                out.push_str(&format!(
+                    "- strict_dominance_by_takeover_reason={}\n",
+                    format_count_map(&metrics.strict_dominance_by_takeover_reason, 4)
+                ));
+            }
+            if !metrics.strict_dominance_by_frontier_class.is_empty() {
+                out.push_str(&format!(
+                    "- strict_dominance_by_frontier_class={}\n",
+                    format_count_map(&metrics.strict_dominance_by_frontier_class, 4)
+                ));
+            }
         }
         if metrics.high_threat_disagreement_count > 0 {
             out.push_str(&format!(
@@ -1402,6 +1652,12 @@ fn render_triage_summary(
                 metrics.event_fallback_count
             ));
         }
+        if metrics.terminal_recent_decision_count > 0 {
+            out.push_str(&format!(
+                "- terminal_recent_forced_loss_window={}/{}\n",
+                metrics.terminal_recent_forced_loss_count, metrics.terminal_recent_decision_count
+            ));
+        }
     }
 
     out.push_str("\nArtifacts To Open First:\n");
@@ -1420,7 +1676,9 @@ fn render_triage_summary(
     } else if validation.trace_incomplete {
         out.push_str("- focus.txt\n- validation.json\n- event_audit.jsonl\n- debug.txt\n");
     } else if metrics.has_quality_warnings() {
-        out.push_str("- focus.txt\n- bot_strength.json\n- debug.txt\n");
+        out.push_str(
+            "- focus.txt\n- bot_strength.json\n- combat_decision_audit.jsonl\n- debug.txt\n",
+        );
         if metrics.event_fallback_count > 0 {
             out.push_str("- event_audit.jsonl\n");
         }
@@ -1436,15 +1694,19 @@ fn render_triage_summary(
 }
 
 fn format_regime_hotspots(regime_counts: &BTreeMap<String, usize>) -> String {
-    let mut entries = regime_counts
+    format_count_map(regime_counts, 4)
+}
+
+fn format_count_map(counts: &BTreeMap<String, usize>, limit: usize) -> String {
+    let mut entries = counts
         .iter()
-        .map(|(regime, count)| (regime.as_str(), *count))
+        .map(|(key, count)| (key.as_str(), *count))
         .collect::<Vec<_>>();
     entries.sort_by(|left, right| right.1.cmp(&left.1).then_with(|| left.0.cmp(right.0)));
     entries
         .into_iter()
-        .take(4)
-        .map(|(regime, count)| format!("{regime}={count}"))
+        .take(limit)
+        .map(|(key, count)| format!("{key}={count}"))
         .collect::<Vec<_>>()
         .join(", ")
 }
@@ -2344,6 +2606,70 @@ mod tests {
     }
 
     #[test]
+    fn derive_run_triage_metrics_reads_combat_decision_audit_quality_metrics() {
+        let temp_root = std::env::temp_dir().join(format!(
+            "live_comm_decision_metrics_test_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("unix time")
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&temp_root).expect("temp root should be creatable");
+        std::fs::write(
+            temp_root.join("terminal_snapshot.json"),
+            "{\"trigger_kind\":\"terminal_loss\",\"frame\":100,\"screen\":\"GAME_OVER\",\"normalized_state\":{\"floor\":21,\"act\":2}}\n",
+        )
+        .expect("terminal snapshot should write");
+        std::fs::write(
+            temp_root.join("combat_decision_audit.jsonl"),
+            concat!(
+                "{\"frame\":96,\"chosen_move\":\"EndTurn\",\"legal_moves\":3,",
+                "\"top_candidates\":[{\"move_label\":\"EndTurn\"},{\"move_label\":\"Play #1 Strike @1\"}],",
+                "\"decision_audit\":{\"regime\":\"contested\",",
+                "\"decision_trace\":{\"frontier_proposal_class\":\"end_turn\",",
+                "\"screened_out\":[{\"reason\":\"dominated_root_progress\"}],",
+                "\"why_not_others\":[{\"input\":\"PlayCard { card_index: 0, target: Some(1) }\"}]},",
+                "\"decision_outcomes\":{\"frontier\":{\"survival\":\"forced_loss\"}},",
+                "\"exact_turn_verdict\":{\"dominance\":\"strictly_better_in_window\",\"survival\":\"forced_loss\"},",
+                "\"exact_turn_shadow\":{\"agrees_with_frontier\":false,\"takeover_reason\":\"regime_not_takeover\"}}}\n",
+                "{\"frame\":97,\"chosen_move\":\"EndTurn\",\"legal_moves\":2,",
+                "\"top_candidates\":[{\"move_label\":\"EndTurn\"},{\"move_label\":\"UsePotion#0\"}],",
+                "\"decision_audit\":{\"regime\":\"fragile\",",
+                "\"decision_trace\":{\"frontier_proposal_class\":\"end_turn\",\"screened_out\":[],\"why_not_others\":[{\"input\":\"UsePotion { potion_index: 0, target: None }\"}]},",
+                "\"decision_outcomes\":{\"frontier\":{\"survival\":\"risky_but_playable\"}},",
+                "\"exact_turn_verdict\":{\"dominance\":\"incomparable\",\"survival\":\"risky_but_playable\"},",
+                "\"exact_turn_shadow\":{\"agrees_with_frontier\":true,\"takeover_reason\":\"frontier_agrees\"}}}\n"
+            ),
+        )
+        .expect("combat decision audit should write");
+
+        let metrics = derive_run_triage_metrics(&temp_root, "");
+
+        assert_eq!(metrics.root_progress_screened_count, 1);
+        assert_eq!(metrics.idle_end_turn_with_playable_card_count, 1);
+        assert_eq!(metrics.idle_end_turn_with_potion_only_count, 1);
+        assert_eq!(
+            metrics.strict_dominance_by_regime.get("contested"),
+            Some(&1)
+        );
+        assert_eq!(
+            metrics
+                .strict_dominance_by_takeover_reason
+                .get("regime_not_takeover"),
+            Some(&1)
+        );
+        assert_eq!(
+            metrics.strict_dominance_by_frontier_class.get("end_turn"),
+            Some(&1)
+        );
+        assert_eq!(metrics.terminal_recent_decision_count, 2);
+        assert_eq!(metrics.terminal_recent_forced_loss_count, 1);
+
+        let _ = std::fs::remove_dir_all(&temp_root);
+    }
+
+    #[test]
     fn build_bot_strength_summary_includes_phase1_decision_fields() {
         let report =
             build_empty_finding_report("run_strength", "loss_clean", &LiveRunCounts::default());
@@ -2377,6 +2703,14 @@ mod tests {
         metrics.survival_downgrade_avoided_count = 2;
         metrics.regime_counts.insert("crisis".to_string(), 4);
         metrics.regime_counts.insert("fragile".to_string(), 2);
+        metrics.root_progress_screened_count = 5;
+        metrics.idle_end_turn_with_playable_card_count = 1;
+        metrics.idle_end_turn_with_potion_only_count = 2;
+        metrics
+            .strict_dominance_by_takeover_reason
+            .insert("regime_not_takeover".to_string(), 3);
+        metrics.terminal_recent_decision_count = 5;
+        metrics.terminal_recent_forced_loss_count = 4;
 
         let summary = build_bot_strength_summary(&report, &manifest, &validation, &metrics);
 
@@ -2386,6 +2720,17 @@ mod tests {
         assert_eq!(summary.survival_downgrade_avoided_count, 2);
         assert_eq!(summary.regime_counts.get("crisis"), Some(&4));
         assert_eq!(summary.regime_counts.get("fragile"), Some(&2));
+        assert_eq!(summary.root_progress_screened_count, 5);
+        assert_eq!(summary.idle_end_turn_with_playable_card_count, 1);
+        assert_eq!(summary.idle_end_turn_with_potion_only_count, 2);
+        assert_eq!(
+            summary
+                .strict_dominance_by_takeover_reason
+                .get("regime_not_takeover"),
+            Some(&3)
+        );
+        assert_eq!(summary.terminal_recent_decision_count, 5);
+        assert_eq!(summary.terminal_recent_forced_loss_count, 4);
     }
 
     #[test]
