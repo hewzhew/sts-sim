@@ -15,6 +15,7 @@ use crate::core::EntityId;
 use crate::engine::core::tick_until_stable_turn;
 use crate::engine::targeting;
 use crate::runtime::combat::{CombatCard, CombatPhase, CombatState};
+use crate::runtime::rng::{shuffle_with_random_long, StsRng};
 use crate::state::core::{ClientInput, EngineState, PendingChoice, PileType};
 
 use crate::testing::fixtures::combat_case::{lower_case, CombatCase};
@@ -35,6 +36,13 @@ pub struct CombatEnvSpec {
     pub run_rule_context_summary: Option<String>,
     pub initial_engine_state: EngineState,
     pub initial_combat: CombatState,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CombatEnvDrawOrderVariant {
+    Exact,
+    ReshuffleDraw,
 }
 
 impl CombatEnvSpec {
@@ -127,6 +135,21 @@ impl CombatEnvSpec {
             start_spec.encounter_id, start_spec.room_type, seed
         ));
         Ok(spec)
+    }
+
+    pub fn apply_draw_order_variant(&mut self, variant: CombatEnvDrawOrderVariant, seed: u64) {
+        match variant {
+            CombatEnvDrawOrderVariant::Exact => {}
+            CombatEnvDrawOrderVariant::ReshuffleDraw => {
+                let mut rng = StsRng::new(seed);
+                shuffle_with_random_long(&mut self.initial_combat.zones.draw_pile, &mut rng);
+                let note = "draw_order_variant=reshuffle_draw".to_string();
+                self.run_rule_context_summary = Some(match self.run_rule_context_summary.take() {
+                    Some(summary) if !summary.is_empty() => format!("{summary}; {note}"),
+                    _ => note,
+                });
+            }
+        }
     }
 }
 
@@ -539,10 +562,12 @@ impl CombatEnv {
         );
         self.episode_steps += 1;
 
-        let outcome = if !alive || self.combat.entities.player.current_hp <= 0 {
+        let outcome = if self.combat.entities.player.current_hp <= 0 {
             Some(CombatEpisodeOutcome::Defeat)
         } else if living_monster_count(&self.combat) == 0 {
             Some(CombatEpisodeOutcome::Victory)
+        } else if !alive {
+            Some(CombatEpisodeOutcome::Defeat)
         } else {
             None
         };

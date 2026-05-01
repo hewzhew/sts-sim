@@ -61,6 +61,12 @@ Current config carries:
 
 - `train_seeds`
 - `eval_seeds`
+- optional `draw_order_variant`
+
+`draw_order_variant = "exact"` keeps the compiled start state's draw order.
+`"reshuffle_draw"` keeps the public observation fixed at pile counts, then
+reshuffles the hidden draw pile for robustness checks. This is for
+partial-observable combat training, not for creating per-action optimal labels.
 
 The intended use is:
 

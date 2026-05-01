@@ -258,12 +258,17 @@ class StructuredGymCombatEnv(gym.Env[dict[str, np.ndarray], dict[str, int]]):
         max_episode_steps: int = 64,
         seed: int = 0,
         seed_pool: list[int] | None = None,
+        draw_order_variant: str = "exact",
+        reward_mode: str = "legacy",
+        reward_config: dict[str, float] | None = None,
     ) -> None:
         super().__init__()
         if not spec_paths:
             raise ValueError("StructuredGymCombatEnv requires at least one spec path")
         if spec_source not in {"author_spec", "start_spec"}:
             raise ValueError(f"unsupported spec_source '{spec_source}'")
+        if draw_order_variant not in {"exact", "reshuffle_draw"}:
+            raise ValueError(f"unsupported draw_order_variant '{draw_order_variant}'")
         self.spec_paths = [Path(path) for path in spec_paths]
         self.spec_source = spec_source
         self.driver = CombatEnvDriver(driver_binary)
@@ -271,6 +276,19 @@ class StructuredGymCombatEnv(gym.Env[dict[str, np.ndarray], dict[str, int]]):
         self.max_episode_steps = int(max_episode_steps)
         self._rng = random.Random(seed)
         self.seed_pool = [int(value) for value in (seed_pool or [])]
+        self.draw_order_variant = draw_order_variant
+        self.reward_mode = str(reward_mode or "legacy")
+        self.reward_config = {
+            "victory_reward": 1.0,
+            "defeat_reward": -1.0,
+            "hp_loss_scale": 0.02,
+            "catastrophe_unblocked_threshold": 18.0,
+            "catastrophe_penalty": 0.25,
+            "next_enemy_window_relief_scale": 0.0,
+            "persistent_attack_script_relief_scale": 0.0,
+        }
+        if reward_config:
+            self.reward_config.update({key: float(value) for key, value in reward_config.items()})
         self._last_response: dict[str, Any] | None = None
         self._current_spec: Path | None = None
         self._step_count = 0
@@ -338,7 +356,14 @@ class StructuredGymCombatEnv(gym.Env[dict[str, np.ndarray], dict[str, int]]):
             seed_hint = int(self._rng.choice(self.seed_pool))
         else:
             seed_hint = int(self._rng.randrange(1, 2**31))
-        response = self.driver.request({"cmd": "reset", self.spec_source: str(chosen_spec), "seed_hint": seed_hint})
+        response = self.driver.request(
+            {
+                "cmd": "reset",
+                self.spec_source: str(chosen_spec),
+                "seed_hint": seed_hint,
+                "draw_order_variant": self.draw_order_variant,
+            }
+        )
         self._last_response = response
         self._step_count = 0
         info = self._info_from_response(response, invalid_action=False, decoder_failure=False)
@@ -351,17 +376,28 @@ class StructuredGymCombatEnv(gym.Env[dict[str, np.ndarray], dict[str, int]]):
         if self._last_response is None:
             raise RuntimeError("reset must be called before step")
         action_index, invalid_action, decoder_failure = self._decode_action_index(action)
+        invalid_penalty = self.invalid_action_penalty if invalid_action else 0.0
         if invalid_action:
             response = self._last_response
-            reward = self.invalid_action_penalty
         else:
             response = self.driver.request({"cmd": "step", "action_index": action_index})
-            reward = float(response.get("reward") or 0.0)
             self._last_response = response
         self._step_count += 1
         terminated = bool(response.get("done"))
         truncated = bool(not terminated and self._step_count >= self.max_episode_steps)
         info = self._info_from_response(response, invalid_action=invalid_action, decoder_failure=decoder_failure)
+        if self.reward_mode == "legacy":
+            reward = float(response.get("reward") or 0.0) + float(invalid_penalty)
+            info["effective_reward_terms"] = {
+                "reward_mode": "legacy",
+                "legacy_reward_term": float(response.get("reward") or 0.0),
+                "invalid_action_penalty": float(invalid_penalty),
+                "total_effective_reward": float(reward),
+            }
+        else:
+            reward_terms = self._effective_reward_terms(info, invalid_penalty)
+            reward = float(reward_terms["total_effective_reward"])
+            info["effective_reward_terms"] = reward_terms
         return self._encode_observation(response), reward, terminated, truncated, info
 
     def close(self) -> None:
@@ -722,6 +758,7 @@ class StructuredGymCombatEnv(gym.Env[dict[str, np.ndarray], dict[str, int]]):
         payload = response.get("payload") or {}
         obs = payload.get("observation") or {}
         pressure = obs.get("pressure") or {}
+        reward_breakdown = response.get("reward_breakdown") or {}
         spec_name = response.get("spec_name") or obs.get("env_name") or (self._current_spec.stem if self._current_spec else None)
         probe_targets = _derive_probe_targets(obs)
         return {
@@ -737,11 +774,56 @@ class StructuredGymCombatEnv(gym.Env[dict[str, np.ndarray], dict[str, int]]):
             "turn_count": obs.get("turn_count"),
             "visible_incoming": pressure.get("visible_incoming"),
             "visible_unblocked": pressure.get("visible_unblocked"),
+            "reward_breakdown": reward_breakdown,
+            "logged_reward_breakdown": reward_breakdown,
             "action_candidates": payload.get("action_candidates") or [],
             "pending_choice_kind": obs.get("pending_choice_kind"),
             "probe_targets": probe_targets,
             "raw_observation": obs,
         }
+
+    def _effective_reward_terms(self, info: dict[str, Any], invalid_penalty: float) -> dict[str, Any]:
+        if self.reward_mode != "minimal_rl":
+            raise RuntimeError(f"unsupported reward_mode '{self.reward_mode}'")
+        breakdown = info.get("logged_reward_breakdown") or info.get("reward_breakdown") or {}
+        terms = {
+            "reward_mode": self.reward_mode,
+            "invalid_action_penalty": float(invalid_penalty),
+            "terminal_victory_term": 0.0,
+            "terminal_defeat_term": 0.0,
+            "hp_loss_term": 0.0,
+            "next_enemy_window_relief_term": 0.0,
+            "catastrophe_term": 0.0,
+            "used_breakdown_keys": [],
+        }
+        outcome = str(info.get("outcome") or "")
+        if outcome == "victory":
+            terms["terminal_victory_term"] = float(self.reward_config["victory_reward"])
+        elif outcome == "defeat":
+            terms["terminal_defeat_term"] = float(self.reward_config["defeat_reward"])
+        if "player_hp_delta" in breakdown:
+            terms["used_breakdown_keys"].append("player_hp_delta")
+        terms["hp_loss_term"] = float(breakdown.get("player_hp_delta") or 0.0) * float(
+            self.reward_config["hp_loss_scale"]
+        )
+        if "next_enemy_window_relief" in breakdown:
+            terms["used_breakdown_keys"].append("next_enemy_window_relief")
+        terms["next_enemy_window_relief_term"] = float(
+            breakdown.get("next_enemy_window_relief") or 0.0
+        ) * float(self.reward_config["next_enemy_window_relief_scale"])
+        if float(info.get("visible_unblocked") or 0.0) >= float(
+            self.reward_config["catastrophe_unblocked_threshold"]
+        ):
+            terms["catastrophe_term"] = -float(self.reward_config["catastrophe_penalty"])
+        terms["total_effective_reward"] = float(
+            terms["invalid_action_penalty"]
+            + terms["terminal_victory_term"]
+            + terms["terminal_defeat_term"]
+            + terms["hp_loss_term"]
+            + terms["next_enemy_window_relief_term"]
+            + terms["catastrophe_term"]
+        )
+        return terms
 
 
 __all__ = [

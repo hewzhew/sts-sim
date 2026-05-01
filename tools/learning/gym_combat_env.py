@@ -147,12 +147,15 @@ class GymCombatEnv(gym.Env[np.ndarray, int]):
         seed_pool: list[int] | None = None,
         reward_mode: str = "legacy",
         reward_config: dict[str, float] | None = None,
+        draw_order_variant: str = "exact",
     ) -> None:
         super().__init__()
         if not spec_paths:
             raise ValueError("GymCombatEnv requires at least one spec path")
         if spec_source not in {"author_spec", "start_spec"}:
             raise ValueError(f"unsupported spec_source '{spec_source}'")
+        if draw_order_variant not in {"exact", "reshuffle_draw"}:
+            raise ValueError(f"unsupported draw_order_variant '{draw_order_variant}'")
         self.spec_paths = [Path(path) for path in spec_paths]
         self.spec_source = spec_source
         self.driver = CombatEnvDriver(driver_binary)
@@ -160,6 +163,7 @@ class GymCombatEnv(gym.Env[np.ndarray, int]):
         self.max_episode_steps = int(max_episode_steps)
         self._rng = random.Random(seed)
         self.seed_pool = [int(value) for value in (seed_pool or [])]
+        self.draw_order_variant = draw_order_variant
         self.reward_mode = str(reward_mode or "legacy")
         self.reward_config = {
             "victory_reward": 1.0,
@@ -199,6 +203,7 @@ class GymCombatEnv(gym.Env[np.ndarray, int]):
                 "cmd": "reset",
                 self.spec_source: str(chosen_spec),
                 "seed_hint": seed_hint,
+                "draw_order_variant": self.draw_order_variant,
             }
         )
         self._last_response = response

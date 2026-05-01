@@ -28,6 +28,7 @@ def make_env(
     train_seeds: list[int],
     reward_mode: str,
     reward_config: dict[str, float],
+    draw_order_variant: str,
 ):
     def _factory():
         return GymCombatEnv(
@@ -39,6 +40,7 @@ def make_env(
             max_episode_steps=max_episode_steps,
             reward_mode=reward_mode,
             reward_config=reward_config,
+            draw_order_variant=draw_order_variant,
         )
 
     return _factory
@@ -60,6 +62,7 @@ def evaluate_policy(
     max_episode_steps: int,
     reward_mode: str,
     reward_config: dict[str, float],
+    draw_order_variant: str,
     artifact_context: dict[str, Any],
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     env = GymCombatEnv(
@@ -70,6 +73,7 @@ def evaluate_policy(
         max_episode_steps=max_episode_steps,
         reward_mode=reward_mode,
         reward_config=reward_config,
+        draw_order_variant=draw_order_variant,
     )
     rows: list[dict[str, Any]] = []
     try:
@@ -191,6 +195,7 @@ def main() -> int:
     n_envs = int(config.get("n_envs", 4))
     max_episode_steps = int(config.get("max_episode_steps", 64))
     reward_mode = str(config.get("reward_mode") or "minimal_rl")
+    draw_order_variant = str(config.get("draw_order_variant") or "exact")
     reward_config = {
         "victory_reward": 1.0,
         "defeat_reward": -1.0,
@@ -225,6 +230,7 @@ def main() -> int:
             train_seeds=train_seeds,
             reward_mode=reward_mode,
             reward_config=reward_config,
+            draw_order_variant=draw_order_variant,
         )
         for idx in range(n_envs)
     ]
@@ -248,6 +254,7 @@ def main() -> int:
         "config_name": name,
         "config_path": str(args.config.resolve()),
         "reward_mode": reward_mode,
+        "draw_order_variant": draw_order_variant,
         "generated_at_utc": datetime.now(timezone.utc).isoformat(),
     }
 
@@ -259,6 +266,7 @@ def main() -> int:
         max_episode_steps=max_episode_steps,
         reward_mode=reward_mode,
         reward_config=reward_config,
+        draw_order_variant=draw_order_variant,
         artifact_context=artifact_context,
     )
     report = {
@@ -272,6 +280,7 @@ def main() -> int:
         "max_episode_steps": max_episode_steps,
         "reward": reward_config,
         "reward_mode": reward_mode,
+        "draw_order_variant": draw_order_variant,
         "ppo": ppo_config,
         "eval": eval_metrics,
         "notes": [

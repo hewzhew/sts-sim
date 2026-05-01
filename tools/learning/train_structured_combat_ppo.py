@@ -5,6 +5,7 @@ import argparse
 import json
 from collections import defaultdict
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import numpy as np
@@ -217,6 +218,11 @@ def summarize_benchmark_rows(rows: list[dict[str, Any]]) -> dict[str, Any]:
 def evaluate_structured_policy(
     model: StructuredPolicyNet | None,
     *,
+    eval_cases: list[tuple[Any, Path]],
+    spec_source: str,
+    draw_order_variant: str,
+    reward_mode: str,
+    reward_config: dict[str, float],
     driver_binary: Path | None,
     max_episode_steps: int,
     deterministic: bool,
@@ -224,8 +230,17 @@ def evaluate_structured_policy(
     random_policy: bool = False,
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     rows: list[dict[str, Any]] = []
-    for case, spec_path in resolve_benchmark_cases():
-        env = StructuredGymCombatEnv([spec_path], driver_binary=driver_binary, max_episode_steps=max_episode_steps, seed=case.seed)
+    for case, spec_path in eval_cases:
+        env = StructuredGymCombatEnv(
+            [spec_path],
+            spec_source=spec_source,
+            driver_binary=driver_binary,
+            max_episode_steps=max_episode_steps,
+            seed=case.seed,
+            draw_order_variant=draw_order_variant,
+            reward_mode=reward_mode,
+            reward_config=reward_config,
+        )
         try:
             obs, info = env.reset(options={"spec_path": spec_path, "seed_hint": case.seed})
             done = False
@@ -279,6 +294,11 @@ def evaluate_structured_policy(
 def evaluate_flat_baseline(
     model_path: Path,
     *,
+    eval_cases: list[tuple[Any, Path]],
+    spec_source: str,
+    draw_order_variant: str,
+    reward_mode: str,
+    reward_config: dict[str, float],
     driver_binary: Path | None,
     max_episode_steps: int,
     deterministic: bool,
@@ -289,8 +309,17 @@ def evaluate_flat_baseline(
 
     model = MaskablePPO.load(str(model_path))
     rows: list[dict[str, Any]] = []
-    for case, spec_path in resolve_benchmark_cases():
-        env = GymCombatEnv([spec_path], driver_binary=driver_binary, max_episode_steps=max_episode_steps, seed=case.seed)
+    for case, spec_path in eval_cases:
+        env = GymCombatEnv(
+            [spec_path],
+            spec_source=spec_source,
+            driver_binary=driver_binary,
+            max_episode_steps=max_episode_steps,
+            seed=case.seed,
+            draw_order_variant=draw_order_variant,
+            reward_mode=reward_mode,
+            reward_config=reward_config,
+        )
         try:
             obs, info = env.reset(options={"spec_path": spec_path, "seed_hint": case.seed})
             done = False
@@ -334,9 +363,67 @@ def evaluate_flat_baseline(
     return summarize_benchmark_rows(rows), rows
 
 
+def load_start_spec_name(path: Path) -> str:
+    try:
+        with path.open("r", encoding="utf-8") as handle:
+            payload = json.load(handle)
+        return str(payload.get("name") or path.stem)
+    except Exception:
+        return path.stem
+
+
+def parse_seed_list(raw: str) -> list[int]:
+    seeds = [int(part.strip()) for part in raw.split(",") if part.strip()]
+    if not seeds:
+        raise SystemExit("--eval-seeds must contain at least one integer seed")
+    return seeds
+
+
+def resolve_training_specs(args: argparse.Namespace) -> tuple[str, list[Path]]:
+    if args.spec_source == "start_spec":
+        if not args.start_spec:
+            raise SystemExit("--spec-source start_spec requires at least one --start-spec")
+        return "start_spec", [Path(path) for path in args.start_spec]
+    spec_paths = discover_spec_paths(args.spec_dir)
+    if not spec_paths:
+        raise SystemExit(f"no combat specs found under {args.spec_dir}")
+    return "author_spec", spec_paths
+
+
+def resolve_eval_cases(
+    spec_source: str,
+    spec_paths: list[Path],
+    eval_seeds: list[int],
+) -> list[tuple[Any, Path]]:
+    if spec_source == "author_spec":
+        cases = resolve_benchmark_cases()
+        if cases:
+            return cases
+        return [
+            (SimpleNamespace(spec_name=path.stem, seed=eval_seeds[0], tag="author_spec"), path)
+            for path in spec_paths
+        ]
+    cases = []
+    for spec_path in spec_paths:
+        spec_name = load_start_spec_name(spec_path)
+        for seed in eval_seeds:
+            cases.append(
+                (
+                    SimpleNamespace(spec_name=spec_name, seed=int(seed), tag="start_spec"),
+                    spec_path,
+                )
+            )
+    return cases
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Train a structured multi-head PPO combat policy.")
     parser.add_argument("--spec-dir", default=REPO_ROOT / "data" / "combat_lab" / "specs", type=Path)
+    parser.add_argument("--spec-source", choices=["author_spec", "start_spec"], default="author_spec")
+    parser.add_argument("--start-spec", action="append", default=[], type=Path)
+    parser.add_argument("--eval-seeds", default="2009,2010,2011,2012,2013,2014,2015,2016")
+    parser.add_argument("--draw-order-variant", choices=["exact", "reshuffle_draw"], default="exact")
+    parser.add_argument("--reward-mode", choices=["legacy", "minimal_rl"], default="minimal_rl")
     parser.add_argument("--driver-binary", default=None, type=Path)
     parser.add_argument("--timesteps", default=2048, type=int)
     parser.add_argument("--n-envs", default=4, type=int)
@@ -363,9 +450,18 @@ def main() -> None:
     torch.manual_seed(args.seed)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    spec_paths = discover_spec_paths(args.spec_dir)
-    if not spec_paths:
-        raise SystemExit(f"no combat specs found under {args.spec_dir}")
+    spec_source, spec_paths = resolve_training_specs(args)
+    eval_seeds = parse_seed_list(args.eval_seeds)
+    eval_cases = resolve_eval_cases(spec_source, spec_paths, eval_seeds)
+    reward_config = {
+        "victory_reward": 1.0,
+        "defeat_reward": -1.0,
+        "hp_loss_scale": 0.02,
+        "catastrophe_unblocked_threshold": 18.0,
+        "catastrophe_penalty": 0.25,
+        "next_enemy_window_relief_scale": 0.0,
+        "persistent_attack_script_relief_scale": 0.0,
+    }
 
     dataset_dir = REPO_ROOT / "tools" / "artifacts" / "learning_dataset"
     prefix = str(args.output_prefix or "").strip()
@@ -376,9 +472,13 @@ def main() -> None:
     envs = [
         StructuredGymCombatEnv(
             spec_paths,
+            spec_source=spec_source,
             driver_binary=args.driver_binary,
             max_episode_steps=args.max_episode_steps,
             seed=args.seed + env_index,
+            draw_order_variant=args.draw_order_variant,
+            reward_mode=args.reward_mode,
+            reward_config=reward_config,
         )
         for env_index in range(args.n_envs)
     ]
@@ -514,6 +614,11 @@ def main() -> None:
 
         eval_metrics, eval_rows = evaluate_structured_policy(
             model,
+            eval_cases=eval_cases,
+            spec_source=spec_source,
+            draw_order_variant=args.draw_order_variant,
+            reward_mode=args.reward_mode,
+            reward_config=reward_config,
             driver_binary=args.driver_binary,
             max_episode_steps=args.max_episode_steps,
             deterministic=True,
@@ -522,6 +627,11 @@ def main() -> None:
         )
         random_metrics, random_rows = evaluate_structured_policy(
             None,
+            eval_cases=eval_cases,
+            spec_source=spec_source,
+            draw_order_variant=args.draw_order_variant,
+            reward_mode=args.reward_mode,
+            reward_config=reward_config,
             driver_binary=args.driver_binary,
             max_episode_steps=args.max_episode_steps,
             deterministic=True,
@@ -533,6 +643,11 @@ def main() -> None:
         if args.flat_baseline_model is not None:
             flat_metrics, flat_rows = evaluate_flat_baseline(
                 args.flat_baseline_model,
+                eval_cases=eval_cases,
+                spec_source=spec_source,
+                draw_order_variant=args.draw_order_variant,
+                reward_mode=args.reward_mode,
+                reward_config=reward_config,
                 driver_binary=args.driver_binary,
                 max_episode_steps=args.max_episode_steps,
                 deterministic=True,
@@ -545,7 +660,13 @@ def main() -> None:
             "epochs": int(args.epochs),
             "seed": int(args.seed),
             "max_episode_steps": int(args.max_episode_steps),
+            "spec_source": spec_source,
+            "draw_order_variant": args.draw_order_variant,
+            "reward_mode": args.reward_mode,
+            "reward": reward_config,
             "spec_count": len(spec_paths),
+            "eval_seed_count": len(eval_seeds),
+            "train_specs": [str(path) for path in spec_paths],
             "driver_binary": str(args.driver_binary) if args.driver_binary else None,
             "eval": eval_metrics,
             "random_benchmark": random_metrics,

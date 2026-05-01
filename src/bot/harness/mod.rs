@@ -7,8 +7,8 @@ mod combat_policy;
 
 pub use boss_validation::{build_ledger_record, validate_case};
 pub use combat_env::{
-    ActionMask, CombatAction, CombatEnv, CombatEnvSpec, CombatEpisodeOutcome, CombatObservation,
-    CombatRewardBreakdown,
+    ActionMask, CombatAction, CombatEnv, CombatEnvDrawOrderVariant, CombatEnvSpec,
+    CombatEpisodeOutcome, CombatObservation, CombatRewardBreakdown,
 };
 pub use combat_lab::{
     run_combat_case_lab, run_combat_lab, write_sanitized_case_for_local_lab,

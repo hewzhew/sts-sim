@@ -5,8 +5,8 @@ use clap::Parser;
 use serde::{Deserialize, Serialize};
 use sts_simulator::bot::combat::{load_fixture_path, DecisionAuditEngineState};
 use sts_simulator::bot::harness::{
-    ActionMask, CombatAction, CombatEnv, CombatEnvSpec, CombatEpisodeOutcome, CombatObservation,
-    CombatRewardBreakdown,
+    ActionMask, CombatAction, CombatEnv, CombatEnvDrawOrderVariant, CombatEnvSpec,
+    CombatEpisodeOutcome, CombatObservation, CombatRewardBreakdown,
 };
 use sts_simulator::diff::replay::{
     derive_combat_replay_view, find_combat_step_index_by_before_frame_id,
@@ -37,6 +37,7 @@ enum DriverRequest {
         replay_raw: Option<PathBuf>,
         replay_frame: Option<u64>,
         seed_hint: Option<u64>,
+        draw_order_variant: Option<CombatEnvDrawOrderVariant>,
     },
     Observation,
     Step {
@@ -159,6 +160,7 @@ fn handle_request(env: &mut Option<CombatEnv>, request: DriverRequest) -> Driver
             replay_raw,
             replay_frame,
             seed_hint,
+            draw_order_variant,
         } => match reset_env(
             env,
             author_spec,
@@ -167,6 +169,7 @@ fn handle_request(env: &mut Option<CombatEnv>, request: DriverRequest) -> Driver
             replay_raw,
             replay_frame,
             seed_hint.unwrap_or(0),
+            draw_order_variant.unwrap_or(CombatEnvDrawOrderVariant::Exact),
         ) {
             Ok(response) => response,
             Err(err) => error_response(err),
@@ -225,6 +228,7 @@ fn reset_env(
     replay_raw: Option<PathBuf>,
     replay_frame: Option<u64>,
     seed_hint: u64,
+    draw_order_variant: CombatEnvDrawOrderVariant,
 ) -> Result<DriverResponse, String> {
     let requested_sources = [
         author_spec.as_ref().map(|_| "author_spec"),
@@ -247,7 +251,7 @@ fn reset_env(
         );
     }
 
-    let requested_spec = if let Some(spec_path) = author_spec {
+    let mut requested_spec = if let Some(spec_path) = author_spec {
         Some(load_spec_from_author_spec(spec_path, seed_hint).map_err(|err| err.to_string())?)
     } else if let Some(spec_path) = start_spec {
         Some(load_spec_from_start_spec(spec_path, seed_hint)?)
@@ -258,6 +262,14 @@ fn reset_env(
     } else {
         None
     };
+    if let Some(spec) = requested_spec.as_mut() {
+        let variant_seed = if seed_hint == 0 {
+            spec.seed_hint
+        } else {
+            seed_hint
+        };
+        spec.apply_draw_order_variant(draw_order_variant, variant_seed);
+    }
 
     match (env.as_mut(), requested_spec) {
         (Some(current_env), None) => {

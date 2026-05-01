@@ -51,6 +51,17 @@
 - `diagnostics`
   - heuristic summaries for logs and ablations only
 
+### Hidden zone rule
+- `draw_count`, `discard_count`, and `exhaust_count` are public observation
+  fields.
+- Draw/discard/exhaust card identities and draw pile order are not public
+  policy observations.
+- Replay/live snapshots may contain full hidden engine truth for validation,
+  but `CombatObservation` and Python gym tensorization must not expose it.
+- `combat_env_driver` reset supports `draw_order_variant=reshuffle_draw` for
+  local robustness checks where the same visible start state is evaluated under
+  alternate hidden draw orders.
+
 ### Hand card fields
 - `slot`
 - `uuid`
