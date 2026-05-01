@@ -19,6 +19,9 @@ from structured_policy import StructuredPolicyNet, to_device_obs
 from train_structured_combat_ppo import index_obs
 
 
+LARGE_GAP_THRESHOLD = 0.10
+
+
 def safe_corr(y_true: np.ndarray, y_pred: np.ndarray) -> float:
     if y_true.size == 0 or np.std(y_true) == 0.0 or np.std(y_pred) == 0.0:
         return 0.0
@@ -92,6 +95,54 @@ def batch_from_dataset(
         "regression": (regression - regression_mean) / regression_std.clamp_min(1e-6),
         "binary": binary,
     }
+
+
+def grouped_batches(
+    dataset: dict[str, Any],
+    indices: np.ndarray,
+    *,
+    batch_groups: int,
+    rng: np.random.Generator,
+) -> list[np.ndarray]:
+    group_to_indices: dict[int, list[int]] = {}
+    for index in indices:
+        group_id = int(dataset["group_index"][index])
+        group_to_indices.setdefault(group_id, []).append(int(index))
+    group_ids = np.asarray(sorted(group_to_indices), dtype=np.int64)
+    rng.shuffle(group_ids)
+    batches: list[np.ndarray] = []
+    for start in range(0, len(group_ids), max(int(batch_groups), 1)):
+        selected = group_ids[start : start + max(int(batch_groups), 1)]
+        batch_indices: list[int] = []
+        for group_id in selected:
+            batch_indices.extend(group_to_indices[int(group_id)])
+        if batch_indices:
+            batches.append(np.asarray(batch_indices, dtype=np.int64))
+    return batches
+
+
+def listwise_return_loss(
+    regression_pred: torch.Tensor,
+    regression_target: torch.Tensor,
+    group_ids: torch.Tensor,
+    *,
+    temperature: float,
+) -> torch.Tensor:
+    score_index = CANDIDATE_REGRESSION_TARGETS.index("discounted_return")
+    losses: list[torch.Tensor] = []
+    temperature = max(float(temperature), 1e-3)
+    for group_id in torch.unique(group_ids):
+        mask = group_ids == group_id
+        if int(mask.sum().item()) < 2:
+            continue
+        pred_scores = regression_pred[mask, score_index] / temperature
+        target_scores = regression_target[mask, score_index] / temperature
+        target_probs = torch.softmax(target_scores.detach(), dim=0)
+        log_probs = torch.log_softmax(pred_scores, dim=0)
+        losses.append(-(target_probs * log_probs).sum())
+    if not losses:
+        return regression_pred.sum() * 0.0
+    return torch.stack(losses).mean()
 
 
 class StructuredCandidateValueEvaluator(nn.Module):
@@ -180,6 +231,9 @@ def evaluate_split(
     top1_within_005 = 0
     top1_regrets: list[float] = []
     top2_gaps: list[float] = []
+    large_gap_hits = 0
+    large_gap_within_005 = 0
+    large_gap_regrets: list[float] = []
     group_rows = 0
     prediction_rows: list[dict[str, Any]] = []
     for group_id in np.unique(dataset["group_index"][indices].astype(np.int64)):
@@ -193,22 +247,40 @@ def evaluate_split(
         best_local = int(np.argmax(pred_scores))
         true_best = float(np.max(true_scores))
         sorted_true = sorted((float(value) for value in true_scores), reverse=True)
-        if len(sorted_true) > 1:
-            top2_gaps.append(float(sorted_true[0] - sorted_true[1]))
+        top2_gap = float(sorted_true[0] - sorted_true[1]) if len(sorted_true) > 1 else 0.0
+        top2_gaps.append(top2_gap)
         chosen_global = group_indices[best_local]
         regret = float(true_best - true_scores[best_local])
-        if bool(dataset["candidate_is_best"][chosen_global] > 0.5):
+        hit = bool(dataset["candidate_is_best"][chosen_global] > 0.5) or regret <= 1e-9
+        if hit:
             top1_hits += 1
         if regret <= 0.02:
             top1_within_002 += 1
         if regret <= 0.05:
             top1_within_005 += 1
+        if top2_gap >= LARGE_GAP_THRESHOLD:
+            large_gap_regrets.append(regret)
+            if hit:
+                large_gap_hits += 1
+            if regret <= 0.05:
+                large_gap_within_005 += 1
         top1_regrets.append(regret)
     metrics["top1_group_match"] = float(top1_hits / group_rows) if group_rows else 0.0
     metrics["top1_within_0_02"] = float(top1_within_002 / group_rows) if group_rows else 0.0
     metrics["top1_within_0_05"] = float(top1_within_005 / group_rows) if group_rows else 0.0
     metrics["top1_mean_regret"] = float(np.mean(top1_regrets)) if top1_regrets else 0.0
+    metrics["top1_median_regret"] = float(np.median(top1_regrets)) if top1_regrets else 0.0
     metrics["mean_true_top2_gap"] = float(np.mean(top2_gaps)) if top2_gaps else 0.0
+    metrics["median_true_top2_gap"] = float(np.median(top2_gaps)) if top2_gaps else 0.0
+    metrics["large_gap_threshold"] = LARGE_GAP_THRESHOLD
+    metrics["large_gap_groups"] = int(len(large_gap_regrets))
+    metrics["large_gap_top1_group_match"] = (
+        float(large_gap_hits / len(large_gap_regrets)) if large_gap_regrets else 0.0
+    )
+    metrics["large_gap_top1_within_0_05"] = (
+        float(large_gap_within_005 / len(large_gap_regrets)) if large_gap_regrets else 0.0
+    )
+    metrics["large_gap_top1_mean_regret"] = float(np.mean(large_gap_regrets)) if large_gap_regrets else 0.0
     for local_index, source_index in enumerate(indices):
         row: dict[str, Any] = {
             "sample_index": int(source_index),
@@ -234,6 +306,9 @@ def main() -> None:
     parser.add_argument("--batch-size", default=32, type=int)
     parser.add_argument("--learning-rate", default=3e-4, type=float)
     parser.add_argument("--binary-loss-coef", default=0.5, type=float)
+    parser.add_argument("--rank-loss-coef", default=0.0, type=float)
+    parser.add_argument("--rank-batch-groups", default=16, type=int)
+    parser.add_argument("--rank-temperature", default=0.25, type=float)
     parser.add_argument("--train-percent", default=80, type=int)
     parser.add_argument("--seed", default=7, type=int)
     parser.add_argument("--output-prefix", default="structured_candidate_value_evaluator")
@@ -275,6 +350,7 @@ def main() -> None:
     losses: list[float] = []
     regression_losses: list[float] = []
     binary_losses: list[float] = []
+    rank_losses: list[float] = []
     for _ in range(int(args.epochs)):
         rng.shuffle(train_indices)
         model.train()
@@ -292,6 +368,29 @@ def main() -> None:
             losses.append(float(loss.detach().cpu()))
             regression_losses.append(float(regression_loss.detach().cpu()))
             binary_losses.append(float(binary_loss.detach().cpu()))
+        if float(args.rank_loss_coef) > 0.0:
+            for batch_indices in grouped_batches(
+                dataset,
+                train_indices,
+                batch_groups=int(args.rank_batch_groups),
+                rng=rng,
+            ):
+                batch = batch_from_dataset(dataset, batch_indices, device, mean_t, std_t)
+                reg_pred, _ = model(batch["obs"], batch["candidate_features"])
+                group_ids = torch.as_tensor(dataset["group_index"][batch_indices], device=device).long()
+                rank_loss = listwise_return_loss(
+                    reg_pred,
+                    batch["regression"],
+                    group_ids,
+                    temperature=float(args.rank_temperature),
+                )
+                loss = float(args.rank_loss_coef) * rank_loss
+                optimizer.zero_grad()
+                loss.backward()
+                nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+                optimizer.step()
+                losses.append(float(loss.detach().cpu()))
+                rank_losses.append(float(rank_loss.detach().cpu()))
 
     train_metrics, train_predictions = evaluate_split(
         model,
@@ -335,6 +434,8 @@ def main() -> None:
                 "binary_targets": CANDIDATE_BINARY_TARGETS,
                 "regression_mean": regression_mean.tolist(),
                 "regression_std": regression_std.tolist(),
+                "rank_loss_coef": float(args.rank_loss_coef),
+                "rank_temperature": float(args.rank_temperature),
             },
         },
         model_out,
@@ -366,6 +467,13 @@ def main() -> None:
             "mean_total": float(np.mean(losses)) if losses else 0.0,
             "mean_regression": float(np.mean(regression_losses)) if regression_losses else 0.0,
             "mean_binary": float(np.mean(binary_losses)) if binary_losses else 0.0,
+            "mean_rank": float(np.mean(rank_losses)) if rank_losses else 0.0,
+            "rank_batches": int(len(rank_losses)),
+        },
+        "rank_loss": {
+            "coef": float(args.rank_loss_coef),
+            "batch_groups": int(args.rank_batch_groups),
+            "temperature": float(args.rank_temperature),
         },
         "target_scaling": {
             "regression_targets": CANDIDATE_REGRESSION_TARGETS,

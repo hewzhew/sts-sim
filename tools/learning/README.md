@@ -238,6 +238,7 @@ asking a policy head to choose exact card slots.
   --dataset tools/artifacts/learning_dataset/structured_candidate_value_hexaghost_v2_32.npz `
   --epochs 80 `
   --batch-size 32 `
+  --rank-loss-coef 0.10 `
   --output-prefix structured_candidate_value_hexaghost_v2_32
 ```
 
@@ -245,7 +246,27 @@ This is the first candidate-after-state value probe. Each root candidate is
 executed, then the teacher policy continues for a short horizon; the model learns
 candidate outcome heads and evaluates candidate ranking within the same root
 state group. This is slower to build than state-only value data, but it is much
-closer to asking why one root choice is better than another.
+closer to asking why one root choice is better than another. `--rank-loss-coef`
+adds an optional listwise loss over candidates from the same root state; leave it
+at `0.0` to reproduce pure pointwise value regression. Early Hexaghost probes
+showed `0.10` preserving value calibration better than a more aggressive `0.25`,
+while still improving root candidate ranking.
+
+Candidate value prediction failures can be audited with:
+
+```powershell
+.\.venv-rl\Scripts\python tools/learning/audit_candidate_value_predictions.py `
+  --rows tools/artifacts/learning_dataset/structured_candidate_value_hexaghost_v2_32.jsonl `
+  --predictions tools/artifacts/learning_dataset/structured_candidate_value_hexaghost_v2_32_e80_predictions.jsonl `
+  --split val `
+  --out tools/artifacts/learning_dataset/structured_candidate_value_hexaghost_v2_32_audit.json
+```
+
+The audit groups predictions by root state, compares predicted top candidate
+against the teacher-continuation target, and separates small-gap mistakes from
+large-gap failures. It also reports class confusion, true/predicted value deltas,
+and worst mistake examples for deciding whether to improve labels, data balance,
+or the evaluator architecture.
 
 ## Recommended Reading
 
