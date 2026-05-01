@@ -15,6 +15,7 @@ from build_structured_state_evaluator_dataset import (
     REGRESSION_TARGETS,
     choose_collection_action,
     discounted_sum,
+    normalize_state_policy,
     player_hp,
     total_living_monster_hp,
     visible_unblocked,
@@ -40,6 +41,14 @@ CANDIDATE_BINARY_TARGETS = BINARY_TARGETS + [
     "root_terminal_victory",
     "root_terminal_defeat",
 ]
+
+CONTINUATION_POLICY_CHOICES = ["greedy_transition"]
+
+
+def judge_protocol(continuation_policy: str, horizon: int) -> str:
+    if continuation_policy == "greedy_transition":
+        return f"root_candidate_plus_greedy_transition_h{int(horizon)}"
+    raise ValueError(f"unsupported continuation policy: {continuation_policy}")
 
 
 def group_count(group_rows: list[dict[str, Any]]) -> int:
@@ -194,7 +203,10 @@ def label_candidate_continuation(
     env_args: dict[str, Any],
     horizon: int,
     gamma: float,
+    continuation_policy: str = "greedy_transition",
 ) -> tuple[dict[str, float] | None, dict[str, Any]]:
+    if continuation_policy not in CONTINUATION_POLICY_CHOICES:
+        raise ValueError(f"unsupported continuation policy: {continuation_policy}")
     action = main_env.candidate_to_canonical(candidate)
     probe = make_env(**env_args)
     try:
@@ -252,12 +264,13 @@ def label_candidate_continuation(
             rollout_actions.append(
                 {
                     "step": len(rewards) - 1,
-                    "source": "teacher_continuation",
+                    "source": f"{continuation_policy}_continuation",
                     "action": teacher_action,
                     "label": info.get("chosen_action_label"),
                     "reward": float(reward),
                     "outcome": info.get("outcome"),
-                    "teacher_gap": (audit or {}).get("gap"),
+                    "judge_gap": (audit or {}).get("gap"),
+                    "greedy_transition_gap": (audit or {}).get("gap"),
                 }
             )
             if info.get("invalid_action") or info.get("decoder_failure"):
@@ -294,6 +307,9 @@ def label_candidate_continuation(
             "replay_ok": True,
             "horizon": int(horizon),
             "gamma": float(gamma),
+            "label_mode": "fixed_seed_replay",
+            "continuation_policy": continuation_policy,
+            "judge_protocol": judge_protocol(continuation_policy, horizon),
             "outcome": outcome,
             "root_outcome": root_outcome,
             "rollout_actions": rollout_actions,
@@ -328,7 +344,8 @@ def main() -> None:
     parser.add_argument("--max-episode-steps", default=96, type=int)
     parser.add_argument("--label-horizon", default=8, type=int)
     parser.add_argument("--gamma", default=0.97, type=float)
-    parser.add_argument("--state-policy", choices=["teacher", "random", "mixed"], default="mixed")
+    parser.add_argument("--continuation-policy", choices=CONTINUATION_POLICY_CHOICES, default="greedy_transition")
+    parser.add_argument("--state-policy", choices=["teacher", "greedy_transition", "random", "mixed"], default="mixed")
     parser.add_argument("--mixed-random-rate", default=0.35, type=float)
     parser.add_argument("--min-visible-unblocked", default=0.0, type=float)
     parser.add_argument("--max-player-hp", default=0.0, type=float)
@@ -361,6 +378,7 @@ def main() -> None:
     parser.add_argument("--rows-out", default=None, type=Path)
     parser.add_argument("--summary-out", default=None, type=Path)
     args = parser.parse_args()
+    args.state_policy = normalize_state_policy(args.state_policy)
 
     spec_paths = [Path(path) for path in args.start_spec]
     seeds = parse_seed_list(args.seeds)
@@ -391,7 +409,7 @@ def main() -> None:
     value_samples: dict[str, list[np.ndarray | float]] = {}
     rows: list[dict[str, Any]] = []
     episodes_started = 0
-    collection_policy_counts = {"teacher": 0, "random": 0}
+    collection_policy_counts = {"greedy_transition": 0, "random": 0}
     skipped_state_counts: dict[str, int] = {}
     group_filter_reject_counts: dict[str, int] = {}
     candidate_groups_considered = 0
@@ -457,6 +475,7 @@ def main() -> None:
                             env_args=env_args,
                             horizon=args.label_horizon,
                             gamma=args.gamma,
+                            continuation_policy=args.continuation_policy,
                         )
                         candidate_evals += 1
                         if targets is None:
@@ -590,7 +609,10 @@ def main() -> None:
             "match": args.hard_group_match,
         },
         "accepted_group_diagnostics": summarize_group_diagnostics(accepted_group_diagnostics),
-        "label_policy": "candidate_then_teacher_one_step_branch_score_continuation",
+        "label_mode": "fixed_seed_replay",
+        "continuation_policy": args.continuation_policy,
+        "judge_protocol": judge_protocol(args.continuation_policy, int(args.label_horizon)),
+        "label_policy": f"candidate_then_{args.continuation_policy}_continuation",
         "label_horizon": int(args.label_horizon),
         "gamma": float(args.gamma),
         "max_candidates_per_state": int(args.max_candidates_per_state),
@@ -600,7 +622,7 @@ def main() -> None:
         "regression_targets": CANDIDATE_REGRESSION_TARGETS,
         "binary_targets": CANDIDATE_BINARY_TARGETS,
         "notes": [
-            "each row is a root candidate labelled by candidate execution plus short teacher continuation",
+            "each row is a root candidate labelled by candidate execution plus short greedy-transition continuation",
             "groups preserve candidate alternatives from the same root state",
             "ranking labels use discounted_return within each candidate group",
         ],

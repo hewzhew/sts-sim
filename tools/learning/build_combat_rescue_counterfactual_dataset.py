@@ -9,8 +9,19 @@ from pathlib import Path
 from typing import Any
 
 from build_structured_bc_teacher_dataset import legal_candidates, make_env, replay_prefix
-from build_structured_candidate_value_dataset import candidate_group_diagnostics, label_candidate_continuation
-from build_structured_state_evaluator_dataset import choose_collection_action, player_hp, total_living_monster_hp, visible_unblocked
+from build_structured_candidate_value_dataset import (
+    CONTINUATION_POLICY_CHOICES,
+    candidate_group_diagnostics,
+    judge_protocol,
+    label_candidate_continuation,
+)
+from build_structured_state_evaluator_dataset import (
+    choose_collection_action,
+    normalize_state_policy,
+    player_hp,
+    total_living_monster_hp,
+    visible_unblocked,
+)
 from combat_rl_common import REPO_ROOT, write_json, write_jsonl
 from train_structured_combat_ppo import load_start_spec_name, parse_seed_list
 
@@ -159,6 +170,7 @@ def evaluate_decision_candidates(
     env_args: dict[str, Any],
     horizon: int,
     gamma: float,
+    continuation_policy: str,
 ) -> tuple[dict[str, Any] | None, list[dict[str, Any]]]:
     probe = make_env(**env_args)
     try:
@@ -186,6 +198,7 @@ def evaluate_decision_candidates(
             env_args=env_args,
             horizon=horizon,
             gamma=gamma,
+            continuation_policy=continuation_policy,
         )
         if targets is None:
             continue
@@ -283,8 +296,9 @@ def main() -> None:
     parser.add_argument("--max-backtrack-steps", default=8, type=int)
     parser.add_argument("--label-horizon", default=12, type=int)
     parser.add_argument("--gamma", default=0.97, type=float)
+    parser.add_argument("--continuation-policy", choices=CONTINUATION_POLICY_CHOICES, default="greedy_transition")
     parser.add_argument("--rescue-mode", choices=["survival", "root_or_survival", "return", "any"], default="survival")
-    parser.add_argument("--state-policy", choices=["teacher", "random", "mixed"], default="mixed")
+    parser.add_argument("--state-policy", choices=["teacher", "greedy_transition", "random", "mixed"], default="mixed")
     parser.add_argument("--mixed-random-rate", default=0.75, type=float)
     parser.add_argument("--min-return-delta", default=0.25, type=float)
     parser.add_argument("--draw-order-variant", choices=["exact", "reshuffle_draw"], default="reshuffle_draw")
@@ -308,6 +322,7 @@ def main() -> None:
     parser.add_argument("--summary-out", default=None, type=Path)
     parser.add_argument("--macro-manifest-out", default=None, type=Path)
     args = parser.parse_args()
+    args.state_policy = normalize_state_policy(args.state_policy)
 
     spec_paths = [Path(path) for path in args.start_spec]
     seeds = parse_seed_list(args.seeds)
@@ -390,6 +405,7 @@ def main() -> None:
                         env_args=env_args,
                         horizon=int(args.label_horizon),
                         gamma=float(args.gamma),
+                        continuation_policy=args.continuation_policy,
                     )
                     if raw is None or not candidate_rows:
                         continue
@@ -482,7 +498,8 @@ def main() -> None:
                         "prefix_len": len(prefix_actions),
                         "replay_key": key,
                         "label_mode": "fixed_seed_replay",
-                        "continuation_policy": "teacher",
+                        "continuation_policy": args.continuation_policy,
+                        "judge_protocol": judge_protocol(args.continuation_policy, int(args.label_horizon)),
                         "intervention_depth": "combat_kstep",
                         "source_policy": args.state_policy,
                         "public_observation": raw_observation_summary(raw),
@@ -531,7 +548,8 @@ def main() -> None:
                             "reject_reason": "no_combat_rescue_candidate_within_backtrack_window",
                             "source_policy": args.state_policy,
                             "label_mode": "fixed_seed_replay",
-                            "continuation_policy": "teacher",
+                            "continuation_policy": args.continuation_policy,
+                            "judge_protocol": judge_protocol(args.continuation_policy, int(args.label_horizon)),
                             "last_failed_steps": [
                                 {
                                     "decision_step": int(step.get("step_index") or 0),
@@ -585,6 +603,9 @@ def main() -> None:
         "max_backtrack_steps": int(args.max_backtrack_steps),
         "label_horizon": int(args.label_horizon),
         "gamma": float(args.gamma),
+        "label_mode": "fixed_seed_replay",
+        "continuation_policy": args.continuation_policy,
+        "judge_protocol": judge_protocol(args.continuation_policy, int(args.label_horizon)),
         "rescue_mode": args.rescue_mode,
         "min_return_delta": float(args.min_return_delta),
         "draw_order_variant": args.draw_order_variant,
@@ -593,7 +614,7 @@ def main() -> None:
         "episodes": episode_summaries,
         "notes": [
             "one output row is one same-state decision group with all labelled root candidates",
-            "candidate outcomes are labelled by root action plus short teacher continuation under fixed replay",
+            "candidate outcomes are labelled by root action plus short greedy-transition continuation under fixed replay",
             "episodes with no combat rescue groups are written to the macro backtrack manifest",
         ],
     }

@@ -147,7 +147,7 @@ This generates the synthetic strong Hexaghost start spec under ignored learning
 artifacts, then runs separate structured PPO probes for each requested stage and
 writes a compact summary JSON next to the per-stage metrics.
 
-### Build a structured BC teacher warmup
+### Build a structured BC greedy-transition warmup
 
 ```powershell
 .\.venv-rl\Scripts\python tools/learning/build_structured_bc_teacher_dataset.py `
@@ -166,11 +166,12 @@ writes a compact summary JSON next to the per-stage metrics.
   --timesteps 8192
 ```
 
-The first teacher dataset builder is intentionally local and conservative: it
+The first warmup dataset builder is intentionally local and conservative: it
 replays each sampled prefix from the same start spec and seed, evaluates legal
 root candidates with a short branch score, and writes structured observation
 tensors plus the preferred multi-head action. These labels are policy warmup
-priors, not engine truth.
+priors, not engine truth. The historical script and CLI still use `teacher` in
+some names, but this source is only a greedy one-step transition judge.
 
 ### Train a structured candidate ranker
 
@@ -191,7 +192,7 @@ priors, not engine truth.
 ```
 
 This is the first quotient-action experiment. The dataset keeps the legal root
-candidate set, pads it to a fixed candidate axis, marks all teacher-top ties,
+candidate set, pads it to a fixed candidate axis, marks all greedy-judge top ties,
 and stores abstract action classes such as damage, mitigation, setup, draw, and
 end turn. The ranker scores candidates from state tensors plus candidate
 features instead of directly predicting a concrete hand slot. It is useful as an
@@ -216,7 +217,7 @@ offline prior/diagnostic surface; it is not yet a production combat policy.
 ```
 
 This is the first structured value-learning probe. It labels structured
-observations with short teacher-continuation outcomes such as discounted return,
+observations with short greedy-transition continuation outcomes such as discounted return,
 HP delta, enemy HP progress, visible unblocked damage, survival, victory, and
 defeat. The point is to test whether the encoder can learn state quality before
 asking a policy head to choose exact card slots.
@@ -229,6 +230,7 @@ asking a policy head to choose exact card slots.
   --seeds 2009,2010,2011,2012 `
   --states 32 `
   --label-horizon 10 `
+  --continuation-policy greedy_transition `
   --min-visible-unblocked 6 `
   --min-step-index 3 `
   --state-policy mixed `
@@ -243,7 +245,7 @@ asking a policy head to choose exact card slots.
 ```
 
 This is the first candidate-after-state value probe. Each root candidate is
-executed, then the teacher policy continues for a short horizon; the model learns
+executed, then the greedy-transition policy continues for a short horizon; the model learns
 candidate outcome heads and evaluates candidate ranking within the same root
 state group. This is slower to build than state-only value data, but it is much
 closer to asking why one root choice is better than another. `--rank-loss-coef`
@@ -261,6 +263,7 @@ only harder groups before writing samples:
   --seeds 2009,2010,2011,2012 `
   --states 32 `
   --label-horizon 10 `
+  --continuation-policy greedy_transition `
   --min-visible-unblocked 6 `
   --min-step-index 3 `
   --min-top2-gap 0.10 `
@@ -277,7 +280,7 @@ considered, accepted, and rejected, plus accepted-group gap and disagreement
 rates.
 
 For larger experiments, prefer filtering an already-built broad dataset instead
-of re-running expensive teacher continuations while rejecting groups online:
+of re-running expensive greedy-transition continuations while rejecting groups online:
 
 ```powershell
 .\.venv-rl\Scripts\python tools/learning/filter_structured_candidate_value_dataset.py `
@@ -303,6 +306,7 @@ candidate. One JSONL row is one same-state group, not one bad/rescue pair:
   --state-policy random `
   --max-backtrack-steps 8 `
   --label-horizon 12 `
+  --continuation-policy greedy_transition `
   --rescue-mode survival `
   --out tools/artifacts/learning_dataset/combat_rescue_decision_groups.jsonl
 ```
@@ -310,7 +314,8 @@ candidate. One JSONL row is one same-state group, not one bad/rescue pair:
 Each group records `public_observation`, `failed_action`, `candidate_outcomes`,
 `rescue_candidate_indices`, `label_mode`, `continuation_policy`,
 `intervention_depth`, and per-candidate `filter_reason`. The current labels use
-`label_mode=fixed_seed_replay` and `continuation_policy=teacher`: they are
+`label_mode=fixed_seed_replay`, `continuation_policy=greedy_transition`, and a
+`judge_protocol` such as `root_candidate_plus_greedy_transition_h12`: they are
 counterfactual certificates for this replay protocol, not global optimal-action
 labels.
 
@@ -330,7 +335,7 @@ Combat rescue groups can be bucketed before training:
 ```
 
 The audit writes a JSON summary, a Markdown review, tagged groups, and focused
-JSONL buckets for `hard_survival`, `teacher_bad`, `random_trivial`, and
+JSONL buckets for `hard_survival`, `greedy_transition_bad`, `random_trivial`, and
 `candidate_value_recommended`. The recommended bucket keeps hard survival groups
 while holding out trivial random `EndTurn` failures so they can be capped
 separately.
@@ -346,7 +351,7 @@ Candidate value prediction failures can be audited with:
 ```
 
 The audit groups predictions by root state, compares predicted top candidate
-against the teacher-continuation target, and separates small-gap mistakes from
+against the greedy-transition continuation target, and separates small-gap mistakes from
 large-gap failures. It also reports class confusion, true/predicted value deltas,
 and worst mistake examples for deciding whether to improve labels, data balance,
 or the evaluator architecture.

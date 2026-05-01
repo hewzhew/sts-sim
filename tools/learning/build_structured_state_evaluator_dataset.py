@@ -33,6 +33,18 @@ BINARY_TARGETS = [
     "terminal_defeat",
 ]
 
+CONTINUATION_POLICY_CHOICES = ["greedy_transition"]
+
+
+def judge_protocol(continuation_policy: str, horizon: int) -> str:
+    if continuation_policy == "greedy_transition":
+        return f"greedy_transition_h{int(horizon)}"
+    raise ValueError(f"unsupported continuation policy: {continuation_policy}")
+
+
+def normalize_state_policy(state_policy: str) -> str:
+    return "greedy_transition" if state_policy == "teacher" else state_policy
+
 
 def sample_count(samples: dict[str, list[np.ndarray]]) -> int:
     return len(next(iter(samples.values()), []))
@@ -98,7 +110,10 @@ def teacher_rollout_label(
     env_args: dict[str, Any],
     horizon: int,
     gamma: float,
+    continuation_policy: str = "greedy_transition",
 ) -> tuple[dict[str, float] | None, dict[str, Any]]:
+    if continuation_policy not in CONTINUATION_POLICY_CHOICES:
+        raise ValueError(f"unsupported continuation policy: {continuation_policy}")
     probe = make_env(**env_args)
     try:
         _, info, replay_ok = replay_prefix(
@@ -144,7 +159,9 @@ def teacher_rollout_label(
                     "label": info.get("chosen_action_label"),
                     "reward": float(reward),
                     "outcome": info.get("outcome"),
-                    "teacher_gap": (audit or {}).get("gap"),
+                    "source": f"{continuation_policy}_continuation",
+                    "judge_gap": (audit or {}).get("gap"),
+                    "greedy_transition_gap": (audit or {}).get("gap"),
                 }
             )
             if info.get("invalid_action") or info.get("decoder_failure"):
@@ -171,6 +188,9 @@ def teacher_rollout_label(
             "replay_ok": True,
             "horizon": int(horizon),
             "gamma": float(gamma),
+            "label_mode": "fixed_seed_replay",
+            "continuation_policy": continuation_policy,
+            "judge_protocol": judge_protocol(continuation_policy, horizon),
             "outcome": outcome,
             "rollout_actions": rollout_actions,
             "start": {
@@ -201,8 +221,9 @@ def choose_collection_action(
     main_env: Any,
     env_args: dict[str, Any],
 ) -> tuple[dict[str, int] | None, str]:
-    use_random = state_policy == "random" or (
-        state_policy == "mixed" and rng.random() < float(mixed_random_rate)
+    normalized_policy = normalize_state_policy(state_policy)
+    use_random = normalized_policy == "random" or (
+        normalized_policy == "mixed" and rng.random() < float(mixed_random_rate)
     )
     if use_random:
         return main_env.sample_random_legal_action(), "random"
@@ -214,7 +235,7 @@ def choose_collection_action(
         main_env=main_env,
         env_args=env_args,
     )
-    return action, "teacher"
+    return action, "greedy_transition"
 
 
 def main() -> None:
@@ -226,7 +247,8 @@ def main() -> None:
     parser.add_argument("--max-episode-steps", default=96, type=int)
     parser.add_argument("--label-horizon", default=8, type=int)
     parser.add_argument("--gamma", default=0.97, type=float)
-    parser.add_argument("--state-policy", choices=["teacher", "random", "mixed"], default="mixed")
+    parser.add_argument("--continuation-policy", choices=CONTINUATION_POLICY_CHOICES, default="greedy_transition")
+    parser.add_argument("--state-policy", choices=["teacher", "greedy_transition", "random", "mixed"], default="mixed")
     parser.add_argument("--mixed-random-rate", default=0.25, type=float)
     parser.add_argument("--draw-order-variant", choices=["exact", "reshuffle_draw"], default="reshuffle_draw")
     parser.add_argument("--reward-mode", choices=["legacy", "minimal_rl"], default="minimal_rl")
@@ -249,6 +271,7 @@ def main() -> None:
     parser.add_argument("--rows-out", default=None, type=Path)
     parser.add_argument("--summary-out", default=None, type=Path)
     args = parser.parse_args()
+    args.state_policy = normalize_state_policy(args.state_policy)
 
     spec_paths = [Path(path) for path in args.start_spec]
     seeds = parse_seed_list(args.seeds)
@@ -279,7 +302,7 @@ def main() -> None:
     target_samples: dict[str, list[float]] = {}
     rows: list[dict[str, Any]] = []
     episodes_started = 0
-    collection_policy_counts = {"teacher": 0, "random": 0}
+    collection_policy_counts = {"greedy_transition": 0, "random": 0}
     main_env = make_env(**env_args)
     try:
         for spec_path in spec_paths:
@@ -305,6 +328,7 @@ def main() -> None:
                         env_args=env_args,
                         horizon=args.label_horizon,
                         gamma=args.gamma,
+                        continuation_policy=args.continuation_policy,
                     )
                     if targets is None:
                         break
@@ -364,7 +388,10 @@ def main() -> None:
         "seeds": seeds,
         "state_policy": args.state_policy,
         "collection_policy_counts": collection_policy_counts,
-        "label_policy": "teacher_one_step_branch_score_continuation",
+        "label_mode": "fixed_seed_replay",
+        "continuation_policy": args.continuation_policy,
+        "judge_protocol": judge_protocol(args.continuation_policy, int(args.label_horizon)),
+        "label_policy": f"{args.continuation_policy}_continuation",
         "label_horizon": int(args.label_horizon),
         "gamma": float(args.gamma),
         "draw_order_variant": args.draw_order_variant,
@@ -373,9 +400,9 @@ def main() -> None:
         "regression_targets": REGRESSION_TARGETS,
         "binary_targets": BINARY_TARGETS,
         "notes": [
-            "samples are structured observations labelled by short teacher continuation outcomes",
+            "samples are structured observations labelled by short greedy-transition continuation outcomes",
             "targets are state values, not direct action labels",
-            "mixed state-policy intentionally visits some off-teacher states while labels still use teacher continuation",
+            "mixed state-policy intentionally visits some off-greedy states while labels still use greedy-transition continuation",
         ],
     }
     write_json(summary_out, summary)

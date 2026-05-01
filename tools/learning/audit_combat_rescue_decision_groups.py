@@ -51,8 +51,8 @@ def is_hard_survival(group: dict[str, Any]) -> bool:
     )
 
 
-def is_teacher_bad(group: dict[str, Any]) -> bool:
-    return failed_source(group) == "teacher"
+def is_greedy_transition_bad(group: dict[str, Any]) -> bool:
+    return failed_source(group) in {"teacher", "greedy_transition"}
 
 
 def is_random_trivial(group: dict[str, Any]) -> bool:
@@ -67,8 +67,8 @@ def group_tags(group: dict[str, Any]) -> list[str]:
     tags: list[str] = []
     if is_hard_survival(group):
         tags.append("hard_survival")
-    if is_teacher_bad(group):
-        tags.append("teacher_bad")
+    if is_greedy_transition_bad(group):
+        tags.append("greedy_transition_bad")
     if is_random_trivial(group):
         tags.append("random_trivial")
     elif is_random_nontrivial(group):
@@ -225,7 +225,10 @@ def main() -> None:
     write_review(review_out, summary=summary, groups=tagged_groups, macro_rows=macro_rows)
     write_jsonl(default_sidecar(bucket_prefix, ".tagged.jsonl"), tagged_groups)
     write_jsonl(default_sidecar(bucket_prefix, ".hard_survival.jsonl"), [group for group in tagged_groups if "hard_survival" in group["audit_tags"]])
-    write_jsonl(default_sidecar(bucket_prefix, ".teacher_bad.jsonl"), [group for group in tagged_groups if "teacher_bad" in group["audit_tags"]])
+    write_jsonl(
+        default_sidecar(bucket_prefix, ".greedy_transition_bad.jsonl"),
+        [group for group in tagged_groups if "greedy_transition_bad" in group["audit_tags"]],
+    )
     write_jsonl(default_sidecar(bucket_prefix, ".random_trivial.jsonl"), [group for group in tagged_groups if "random_trivial" in group["audit_tags"]])
     write_jsonl(
         default_sidecar(bucket_prefix, ".candidate_value_recommended.jsonl"),
