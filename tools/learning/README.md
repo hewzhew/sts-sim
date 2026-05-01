@@ -289,6 +289,30 @@ of re-running expensive teacher continuations while rejecting groups online:
 The filtered rows renumber `sample_index` and `group_index`, while preserving
 `source_sample_index` and `source_group_index` for provenance.
 
+### Build combat rescue counterfactual rows
+
+Failure-centered rows are generated from failed episodes by replaying back to
+recent combat decision points and evaluating alternative root candidates:
+
+```powershell
+.\.venv-rl\Scripts\python tools/learning/build_combat_rescue_counterfactual_dataset.py `
+  --start-spec data/boss_validation/hexaghost_v2/start_spec.json `
+  --seeds 2009,2010,2011,2012 `
+  --episodes 4 `
+  --state-policy random `
+  --max-backtrack-steps 8 `
+  --label-horizon 12 `
+  --rescue-mode survival `
+  --out tools/artifacts/learning_dataset/combat_rescue_counterfactual_rows.jsonl
+```
+
+The default `--rescue-mode survival` keeps only pairs where the failed action
+dies within the short horizon and an alternative survives it. Episodes with no
+combat rescue rows are marked as `needs_macro_backtrack`, which makes them good
+candidates for deeper rollback to card rewards, shops, rests, or human review.
+Use `--rescue-mode root_or_survival`, `return`, or `any` only for broader audit
+corpora; those modes intentionally admit weaker rescue notions.
+
 Candidate value prediction failures can be audited with:
 
 ```powershell
