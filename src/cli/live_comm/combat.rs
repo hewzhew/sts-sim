@@ -2268,6 +2268,7 @@ pub(super) fn handle_live_combat_frame<W: Write>(
                     .map(|m| monster_display_name(m.monster_type))
                     .collect(),
                 has_rng_state: combat_truth_snapshot.get("rng_state").is_some(),
+                terminal_screen: false,
             };
 
             let mut local_cs = truth.clone();

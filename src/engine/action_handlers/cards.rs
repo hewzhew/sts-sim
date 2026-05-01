@@ -1091,7 +1091,7 @@ pub fn handle_play_top_card(target: Option<usize>, exhaust: bool, state: &mut Co
             purge_on_use: false,
             source: crate::runtime::combat::QueuedCardSource::Normal,
         }),
-        in_front: true,
+        in_front: false,
     });
 }
 
@@ -1101,72 +1101,6 @@ pub fn handle_queue_play_top_card_to_bottom(
     state: &mut CombatState,
 ) {
     state.queue_action_back(Action::PlayTopCard { target, exhaust });
-}
-
-pub fn handle_play_top_cards_buffered(
-    count: u8,
-    target: Option<usize>,
-    exhaust: bool,
-    state: &mut CombatState,
-) {
-    let mut buffered: Vec<(Box<crate::runtime::combat::CombatCard>, Option<usize>)> = Vec::new();
-
-    for _ in 0..count {
-        if state.zones.draw_pile.is_empty() {
-            if state.zones.discard_pile.is_empty() {
-                break;
-            }
-            handle_empty_deck_shuffle(state);
-            if state.zones.draw_pile.is_empty() {
-                break;
-            }
-        }
-
-        let mut card = Box::new(state.zones.draw_pile.remove(0));
-        card.free_to_play_once = true;
-        if crate::content::cards::get_card_definition(card.id).cost == -1 {
-            card.energy_on_use = state.turn.energy as i32;
-        }
-        if exhaust {
-            card.exhaust_override = Some(true);
-        }
-        let queued_random_target = target.or_else(|| {
-            targeting::pick_random_target(state, crate::state::TargetValidation::AnyEnemy)
-        });
-        let resolved_target = if let Some(validation) =
-            targeting::validation_for_card_target(crate::content::cards::effective_target(&card))
-        {
-            match queued_random_target {
-                Some(explicit) => {
-                    targeting::resolve_target_request(state, Some(validation), Some(explicit))
-                        .ok()
-                        .flatten()
-                        .or_else(|| targeting::pick_random_target(state, validation))
-                }
-                None => targeting::pick_random_target(state, validation),
-            }
-        } else {
-            queued_random_target
-        };
-        buffered.push((card, resolved_target));
-    }
-
-    for (card, resolved_target) in buffered.into_iter().rev() {
-        state.queue_action_front(Action::EnqueueCardPlay {
-            item: Box::new(crate::runtime::combat::QueuedCardPlay {
-                card: *card,
-                target: resolved_target,
-                energy_on_use: state.turn.energy as i32,
-                ignore_energy_total: true,
-                autoplay: true,
-                random_target: false,
-                is_end_turn_autoplay: false,
-                purge_on_use: false,
-                source: crate::runtime::combat::QueuedCardSource::Normal,
-            }),
-            in_front: true,
-        });
-    }
 }
 
 pub fn handle_obtain_potion(state: &mut CombatState) {

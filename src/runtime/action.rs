@@ -400,6 +400,8 @@ pub enum Action {
         random_spot: bool,
         upgraded: bool,
     },
+    /// Java PlayTopCardAction with random target selection via cardRandomRng.
+    /// Used by DistilledChaosPotion and similar.
     PlayTopCard {
         target: Option<EntityId>,
         exhaust: bool,
@@ -408,17 +410,6 @@ pub enum Action {
         target: Option<EntityId>,
         exhaust: bool,
     },
-    /// Buffer the current top N cards from the draw pile, then play them in
-    /// reverse buffered order. This matches Java Distilled Chaos semantics:
-    /// the later buffered cards should still be played even if earlier cards
-    /// draw through the pile.
-    PlayTopCardsBuffered {
-        count: u8,
-        target: Option<EntityId>,
-        exhaust: bool,
-    },
-    /// Java PlayTopCardAction with random target selection via cardRandomRng.
-    /// Used by DistilledChaosPotion and similar.
     ModifyCardMisc {
         card_uuid: u32,
         amount: i32,

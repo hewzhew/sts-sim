@@ -154,8 +154,63 @@ impl GremlinLeader {
     pub const GREMLIN_SLOT_LOGICAL_POSITIONS: [i32; 3] = Self::GREMLIN_SLOT_DRAW_X;
     pub const LEADER_LOGICAL_POSITION: i32 = 3;
 
-    fn protocol_draw_x_for_minion(slot: usize, monster_id: EnemyId) -> i32 {
-        let slot_draw_x = Self::GREMLIN_SLOT_DRAW_X[slot];
+    fn gremlin_slot_draw_xs(state: &CombatState, leader_id: usize) -> [i32; 3] {
+        // Live snapshots store absolute draw_x values, while encounter templates use
+        // Java constructor offsets. Reuse existing gremlin anchors so newly summoned
+        // minions sort into the same coordinate frame as dead slot occupants.
+        let mut positions: Vec<i32> = state
+            .entities
+            .monsters
+            .iter()
+            .filter(|monster| {
+                monster.id != leader_id
+                    && EnemyId::from_id(monster.monster_type).is_some_and(|enemy_id| {
+                        matches!(
+                            enemy_id,
+                            EnemyId::GremlinWarrior
+                                | EnemyId::GremlinThief
+                                | EnemyId::GremlinFat
+                                | EnemyId::GremlinTsundere
+                                | EnemyId::GremlinWizard
+                        )
+                    })
+            })
+            .map(|monster| {
+                state
+                    .monster_protocol_identity(monster.id)
+                    .and_then(|identity| identity.draw_x)
+                    .unwrap_or(monster.logical_position)
+            })
+            .collect();
+        positions.sort_unstable();
+        positions.dedup();
+
+        let mut slot_draw_xs = Self::GREMLIN_SLOT_DRAW_X;
+        match positions.as_slice() {
+            [slot_2, slot_0, slot_1, ..] => {
+                slot_draw_xs[0] = *slot_0;
+                slot_draw_xs[1] = *slot_1;
+                slot_draw_xs[2] = *slot_2;
+            }
+            [slot_0, slot_1] => {
+                slot_draw_xs[0] = *slot_0;
+                slot_draw_xs[1] = *slot_1;
+                let gap = slot_1 - slot_0;
+                if gap > 0 {
+                    // Java POSX deltas: slot0-slot2=166, slot1-slot0=196.
+                    slot_draw_xs[2] = slot_0 - (gap * 166 / 196);
+                }
+            }
+            [slot_0] => {
+                slot_draw_xs[0] = *slot_0;
+            }
+            [] => {}
+        }
+        slot_draw_xs
+    }
+
+    fn protocol_draw_x_for_minion(slot_draw_xs: [i32; 3], slot: usize, monster_id: EnemyId) -> i32 {
+        let slot_draw_x = slot_draw_xs[slot];
         match monster_id {
             EnemyId::GremlinWizard => slot_draw_x - 35,
             _ => slot_draw_x,
@@ -164,6 +219,7 @@ impl GremlinLeader {
 
     fn occupied_summon_slots(state: &CombatState, leader_id: usize) -> [bool; 3] {
         let mut occupied = [false; 3];
+        let slot_draw_xs = Self::gremlin_slot_draw_xs(state, leader_id);
         for monster in &state.entities.monsters {
             if monster.id == leader_id
                 || monster.is_dying
@@ -176,10 +232,12 @@ impl GremlinLeader {
                 .monster_protocol_identity(monster.id)
                 .and_then(|identity| identity.draw_x)
                 .unwrap_or(monster.logical_position);
-            for (slot, slot_draw_x) in Self::GREMLIN_SLOT_DRAW_X.iter().enumerate() {
-                if draw_x == *slot_draw_x {
-                    occupied[slot] = true;
-                }
+            if let Some((slot, _)) = slot_draw_xs
+                .iter()
+                .enumerate()
+                .min_by_key(|(_, slot_draw_x)| (draw_x - **slot_draw_x).abs())
+            {
+                occupied[slot] = true;
             }
         }
         occupied
@@ -255,6 +313,7 @@ impl MonsterBehavior for GremlinLeader {
         let mut actions = match plan.move_id {
             RALLY => {
                 let mut occupied_slots = Self::occupied_summon_slots(state, entity.id);
+                let slot_draw_xs = Self::gremlin_slot_draw_xs(state, entity.id);
                 let mut actions = Vec::new();
                 for _ in 0..2 {
                     let Some(slot) = occupied_slots.iter().position(|occupied| !occupied) else {
@@ -262,7 +321,7 @@ impl MonsterBehavior for GremlinLeader {
                     };
                     occupied_slots[slot] = true;
                     let monster_id = Self::random_summoned_gremlin(&mut state.rng.ai_rng);
-                    let draw_x = Self::protocol_draw_x_for_minion(slot, monster_id);
+                    let draw_x = Self::protocol_draw_x_for_minion(slot_draw_xs, slot, monster_id);
                     actions.push(Action::SpawnMonsterSmart {
                         monster_id,
                         logical_position: draw_x,

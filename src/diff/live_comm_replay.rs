@@ -1246,6 +1246,10 @@ fn action_context_for_step(
         was_end_turn: matches!(step.mapped_command, Some(CombatMappedCommand::End)),
         has_rng_state: truth_snapshot.get("rng_state").is_some()
             || step.after_root.get("rng_state").is_some(),
+        terminal_screen: step.screen_type.as_deref().is_some_and(|screen_type| {
+            screen_type.eq_ignore_ascii_case("GAME_OVER")
+                || screen_type.eq_ignore_ascii_case("DEATH")
+        }),
         ..Default::default()
     };
     if let Some(monsters) = observation_snapshot

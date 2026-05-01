@@ -56,6 +56,9 @@ pub struct ActionContext {
     pub monster_names: Vec<String>,
     /// Whether the Java snapshot includes rng_state for deterministic validation
     pub has_rng_state: bool,
+    /// Whether Java has already moved to a terminal screen. Java clears player
+    /// powers at this point, while Rust may still hold the final combat state.
+    pub terminal_screen: bool,
 }
 
 impl ActionContext {
@@ -145,6 +148,9 @@ pub fn compare_powers(
         if !has_match {
             // GuardianThreshold is an internal Rust-only tracker, Java never exports it
             if rp.power_type == crate::runtime::combat::PowerId::GuardianThreshold {
+                continue;
+            }
+            if prefix == "player" && context.terminal_screen {
                 continue;
             }
             // Rust has a power that Java doesn't → always an engine bug

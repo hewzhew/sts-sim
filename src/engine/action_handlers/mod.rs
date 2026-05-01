@@ -417,11 +417,6 @@ pub fn execute_action(action: Action, state: &mut CombatState) {
         Action::QueuePlayTopCardToBottom { target, exhaust } => {
             cards::handle_queue_play_top_card_to_bottom(target, exhaust, state)
         }
-        Action::PlayTopCardsBuffered {
-            count,
-            target,
-            exhaust,
-        } => cards::handle_play_top_cards_buffered(count, target, exhaust, state),
         Action::UsePotion { slot, target } => cards::handle_use_potion(slot, target, state),
         Action::DiscardPotion { slot } => {
             if slot < state.entities.potions.len() {

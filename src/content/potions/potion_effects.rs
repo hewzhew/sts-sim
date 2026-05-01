@@ -314,17 +314,18 @@ pub fn get_potion_actions(
             );
         }
         PotionId::DistilledChaosPotion => {
-            // Java DistilledChaosAction buffers the current top N cards, then
-            // plays them in reverse buffered order. Earlier played draw cards
-            // should not consume cards that were already chosen to be played.
-            bottom(
-                &mut actions,
-                Action::PlayTopCardsBuffered {
-                    count: potency.max(0) as u8,
-                    target: None,
-                    exhaust: false,
-                },
-            );
+            // Java adds one PlayTopCardAction per potency. Each action takes the
+            // current top card when it executes, then appends that card to the
+            // normal card queue.
+            for _ in 0..potency.max(0) {
+                bottom(
+                    &mut actions,
+                    Action::PlayTopCard {
+                        target: None,
+                        exhaust: false,
+                    },
+                );
+            }
         }
         PotionId::DuplicationPotion => {
             // This turn, your next card is played twice
