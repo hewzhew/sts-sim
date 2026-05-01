@@ -322,6 +322,19 @@ deeper rollback to card rewards, shops, rests, paths, or human review. Use
 `--rescue-mode root_or_survival`, `return`, or `any` only for broader audit
 corpora; those modes intentionally admit weaker rescue notions.
 
+Combat rescue groups can be bucketed before training:
+
+```powershell
+.\.venv-rl\Scripts\python tools/learning/audit_combat_rescue_decision_groups.py `
+  --groups tools/artifacts/learning_dataset/combat_rescue_decision_groups.jsonl
+```
+
+The audit writes a JSON summary, a Markdown review, tagged groups, and focused
+JSONL buckets for `hard_survival`, `teacher_bad`, `random_trivial`, and
+`candidate_value_recommended`. The recommended bucket keeps hard survival groups
+while holding out trivial random `EndTurn` failures so they can be capped
+separately.
+
 Candidate value prediction failures can be audited with:
 
 ```powershell
