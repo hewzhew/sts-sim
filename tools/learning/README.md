@@ -135,6 +135,18 @@ cargo build --release --bin combat_env_driver
 .\.venv-rl\Scripts\python tools/learning/train_structured_combat_ppo.py
 ```
 
+### Run a start-spec curriculum sweep
+
+```powershell
+.\.venv-rl\Scripts\python tools/learning/run_structured_start_spec_curriculum.py `
+  --stages hexaghost_op_v1,hexaghost_v3,hexaghost_v2 `
+  --timesteps 32768
+```
+
+This generates the synthetic strong Hexaghost start spec under ignored learning
+artifacts, then runs separate structured PPO probes for each requested stage and
+writes a compact summary JSON next to the per-stage metrics.
+
 ## Recommended Reading
 
 - [../../docs/design/COMBAT_RL_CONTRACT_V0.md](../../docs/design/COMBAT_RL_CONTRACT_V0.md)

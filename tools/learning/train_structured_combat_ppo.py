@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import time
 from collections import defaultdict
 from pathlib import Path
 from types import SimpleNamespace
@@ -372,6 +373,10 @@ def load_start_spec_name(path: Path) -> str:
         return path.stem
 
 
+def start_spec_tag(path: Path) -> str:
+    return path.parent.name if path.name == "start_spec.json" else path.stem
+
+
 def parse_seed_list(raw: str) -> list[int]:
     seeds = [int(part.strip()) for part in raw.split(",") if part.strip()]
     if not seeds:
@@ -406,10 +411,11 @@ def resolve_eval_cases(
     cases = []
     for spec_path in spec_paths:
         spec_name = load_start_spec_name(spec_path)
+        tag = start_spec_tag(spec_path)
         for seed in eval_seeds:
             cases.append(
                 (
-                    SimpleNamespace(spec_name=spec_name, seed=int(seed), tag="start_spec"),
+                    SimpleNamespace(spec_name=spec_name, seed=int(seed), tag=tag),
                     spec_path,
                 )
             )
@@ -424,6 +430,16 @@ def main() -> None:
     parser.add_argument("--eval-seeds", default="2009,2010,2011,2012,2013,2014,2015,2016")
     parser.add_argument("--draw-order-variant", choices=["exact", "reshuffle_draw"], default="exact")
     parser.add_argument("--reward-mode", choices=["legacy", "minimal_rl"], default="minimal_rl")
+    parser.add_argument("--victory-reward", default=1.0, type=float)
+    parser.add_argument("--defeat-reward", default=-1.0, type=float)
+    parser.add_argument("--hp-loss-scale", default=0.02, type=float)
+    parser.add_argument("--enemy-hp-delta-scale", default=0.0, type=float)
+    parser.add_argument("--kill-bonus-scale", default=0.0, type=float)
+    parser.add_argument("--catastrophe-unblocked-threshold", default=18.0, type=float)
+    parser.add_argument("--catastrophe-penalty", default=0.25, type=float)
+    parser.add_argument("--next-enemy-window-relief-scale", default=0.0, type=float)
+    parser.add_argument("--persistent-attack-script-relief-scale", default=0.0, type=float)
+    parser.add_argument("--device", choices=["auto", "cpu", "cuda"], default="auto")
     parser.add_argument("--driver-binary", default=None, type=Path)
     parser.add_argument("--timesteps", default=2048, type=int)
     parser.add_argument("--n-envs", default=4, type=int)
@@ -448,19 +464,28 @@ def main() -> None:
 
     np.random.seed(args.seed)
     torch.manual_seed(args.seed)
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    if args.device == "auto":
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    elif args.device == "cuda":
+        if not torch.cuda.is_available():
+            raise SystemExit("requested --device cuda but torch.cuda.is_available() is false")
+        device = torch.device("cuda")
+    else:
+        device = torch.device("cpu")
 
     spec_source, spec_paths = resolve_training_specs(args)
     eval_seeds = parse_seed_list(args.eval_seeds)
     eval_cases = resolve_eval_cases(spec_source, spec_paths, eval_seeds)
     reward_config = {
-        "victory_reward": 1.0,
-        "defeat_reward": -1.0,
-        "hp_loss_scale": 0.02,
-        "catastrophe_unblocked_threshold": 18.0,
-        "catastrophe_penalty": 0.25,
-        "next_enemy_window_relief_scale": 0.0,
-        "persistent_attack_script_relief_scale": 0.0,
+        "victory_reward": float(args.victory_reward),
+        "defeat_reward": float(args.defeat_reward),
+        "hp_loss_scale": float(args.hp_loss_scale),
+        "enemy_hp_delta_scale": float(args.enemy_hp_delta_scale),
+        "kill_bonus_scale": float(args.kill_bonus_scale),
+        "catastrophe_unblocked_threshold": float(args.catastrophe_unblocked_threshold),
+        "catastrophe_penalty": float(args.catastrophe_penalty),
+        "next_enemy_window_relief_scale": float(args.next_enemy_window_relief_scale),
+        "persistent_attack_script_relief_scale": float(args.persistent_attack_script_relief_scale),
     }
 
     dataset_dir = REPO_ROOT / "tools" / "artifacts" / "learning_dataset"
@@ -482,6 +507,19 @@ def main() -> None:
         )
         for env_index in range(args.n_envs)
     ]
+    timing: dict[str, float | int] = {
+        "setup_seconds": 0.0,
+        "rollout_policy_seconds": 0.0,
+        "rollout_env_seconds": 0.0,
+        "rollout_bookkeeping_seconds": 0.0,
+        "update_seconds": 0.0,
+        "eval_seconds": 0.0,
+        "total_seconds": 0.0,
+        "rollout_steps": 0,
+        "ppo_minibatches": 0,
+    }
+    total_timer = time.perf_counter()
+    setup_timer = total_timer
     try:
         obs_list = []
         info_list = []
@@ -498,6 +536,7 @@ def main() -> None:
             intent_vocab=max(len(INTENT_KIND_IDS), 1),
         ).to(device)
         optimizer = torch.optim.AdamW(model.parameters(), lr=args.learning_rate)
+        timing["setup_seconds"] = time.perf_counter() - setup_timer
 
         updates = max(args.timesteps // max(args.rollout_steps * args.n_envs, 1), 1)
         total_steps = 0
@@ -511,10 +550,14 @@ def main() -> None:
             probe_steps: list[np.ndarray] = []
 
             for _ in range(args.rollout_steps):
+                policy_start = time.perf_counter()
                 batch_obs_np = stack_obs_np(obs_list)
                 batch_obs = to_device_obs(batch_obs_np, device)
                 with torch.no_grad():
                     actions_t, logprob_t, value_t, _ = sample_actions(model, batch_obs, deterministic=False)
+                timing["rollout_policy_seconds"] += time.perf_counter() - policy_start
+
+                env_start = time.perf_counter()
                 step_rewards = np.zeros((args.n_envs,), dtype=np.float32)
                 step_dones = np.zeros((args.n_envs,), dtype=np.float32)
                 probe_targets = np.zeros((args.n_envs, 4), dtype=np.float32)
@@ -535,6 +578,9 @@ def main() -> None:
                         next_obs, next_info = env.reset(options={"seed_hint": args.seed + total_steps + env_index + 1})
                     next_obs_list.append(next_obs)
                     next_info_list.append(next_info)
+                timing["rollout_env_seconds"] += time.perf_counter() - env_start
+
+                bookkeeping_start = time.perf_counter()
                 obs_steps.append(batch_obs_np)
                 action_steps.append(action_np)
                 logprob_steps.append(logprob_t.detach().cpu().numpy().astype(np.float32))
@@ -545,9 +591,12 @@ def main() -> None:
                 obs_list = next_obs_list
                 info_list = next_info_list
                 total_steps += args.n_envs
+                timing["rollout_steps"] += args.n_envs
+                timing["rollout_bookkeeping_seconds"] += time.perf_counter() - bookkeeping_start
                 if total_steps >= args.timesteps:
                     break
 
+            bookkeeping_start = time.perf_counter()
             last_obs = to_device_obs(stack_obs_np(obs_list), device)
             with torch.no_grad():
                 last_state = model.encode(last_obs)
@@ -570,9 +619,13 @@ def main() -> None:
 
             count = flat_old_logprobs.shape[0]
             indices = np.arange(count)
+            timing["rollout_bookkeeping_seconds"] += time.perf_counter() - bookkeeping_start
+
+            update_start = time.perf_counter()
             for _ in range(args.epochs):
                 np.random.shuffle(indices)
                 for start in range(0, count, args.minibatch_size):
+                    timing["ppo_minibatches"] += 1
                     batch_index = indices[start : start + args.minibatch_size]
                     obs_mb = to_device_obs(index_obs(flat_obs, batch_index), device)
                     actions_mb = {key: torch.as_tensor(value[batch_index], device=device).long() for key, value in flat_actions.items()}
@@ -597,6 +650,7 @@ def main() -> None:
 
                 if total_steps >= args.timesteps:
                     break
+            timing["update_seconds"] += time.perf_counter() - update_start
 
         torch.save(
             {
@@ -612,6 +666,7 @@ def main() -> None:
             model_out,
         )
 
+        eval_start = time.perf_counter()
         eval_metrics, eval_rows = evaluate_structured_policy(
             model,
             eval_cases=eval_cases,
@@ -652,6 +707,23 @@ def main() -> None:
                 max_episode_steps=args.max_episode_steps,
                 deterministic=True,
             )
+        timing["eval_seconds"] = time.perf_counter() - eval_start
+        timing["total_seconds"] = time.perf_counter() - total_timer
+        rollout_steps = max(float(timing["rollout_steps"]), 1.0)
+        rollout_wall = max(
+            float(timing["rollout_policy_seconds"])
+            + float(timing["rollout_env_seconds"])
+            + float(timing["rollout_bookkeeping_seconds"]),
+            1e-9,
+        )
+        timing["rollout_steps_per_second"] = float(timing["rollout_steps"]) / rollout_wall
+        timing["total_steps_per_second"] = float(timing["rollout_steps"]) / max(
+            float(timing["total_seconds"]),
+            1e-9,
+        )
+        timing["env_step_milliseconds"] = 1000.0 * float(timing["rollout_env_seconds"]) / rollout_steps
+        timing["policy_step_milliseconds"] = 1000.0 * float(timing["rollout_policy_seconds"]) / rollout_steps
+        timing["update_step_milliseconds"] = 1000.0 * float(timing["update_seconds"]) / rollout_steps
         metrics = {
             "model": "structured_multi_head_ppo",
             "timesteps": int(args.timesteps),
@@ -659,6 +731,13 @@ def main() -> None:
             "rollout_steps": int(args.rollout_steps),
             "epochs": int(args.epochs),
             "seed": int(args.seed),
+            "device": str(device),
+            "torch": {
+                "version": torch.__version__,
+                "cuda_available": bool(torch.cuda.is_available()),
+                "cuda_version": torch.version.cuda,
+                "cuda_device": torch.cuda.get_device_name(0) if torch.cuda.is_available() else None,
+            },
             "max_episode_steps": int(args.max_episode_steps),
             "spec_source": spec_source,
             "draw_order_variant": args.draw_order_variant,
@@ -671,6 +750,7 @@ def main() -> None:
             "eval": eval_metrics,
             "random_benchmark": random_metrics,
             "flat_baseline_benchmark": flat_metrics,
+            "timing": timing,
             "notes": [
                 "structured observation/action contract over combat_env_driver",
                 "custom multi-head PPO with latent tactical bottleneck and probe heads",

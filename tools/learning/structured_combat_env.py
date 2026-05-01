@@ -282,6 +282,8 @@ class StructuredGymCombatEnv(gym.Env[dict[str, np.ndarray], dict[str, int]]):
             "victory_reward": 1.0,
             "defeat_reward": -1.0,
             "hp_loss_scale": 0.02,
+            "enemy_hp_delta_scale": 0.0,
+            "kill_bonus_scale": 0.0,
             "catastrophe_unblocked_threshold": 18.0,
             "catastrophe_penalty": 0.25,
             "next_enemy_window_relief_scale": 0.0,
@@ -792,6 +794,8 @@ class StructuredGymCombatEnv(gym.Env[dict[str, np.ndarray], dict[str, int]]):
             "terminal_victory_term": 0.0,
             "terminal_defeat_term": 0.0,
             "hp_loss_term": 0.0,
+            "enemy_hp_delta_term": 0.0,
+            "kill_bonus_term": 0.0,
             "next_enemy_window_relief_term": 0.0,
             "catastrophe_term": 0.0,
             "used_breakdown_keys": [],
@@ -805,6 +809,16 @@ class StructuredGymCombatEnv(gym.Env[dict[str, np.ndarray], dict[str, int]]):
             terms["used_breakdown_keys"].append("player_hp_delta")
         terms["hp_loss_term"] = float(breakdown.get("player_hp_delta") or 0.0) * float(
             self.reward_config["hp_loss_scale"]
+        )
+        if "enemy_hp_delta" in breakdown:
+            terms["used_breakdown_keys"].append("enemy_hp_delta")
+        terms["enemy_hp_delta_term"] = float(breakdown.get("enemy_hp_delta") or 0.0) * float(
+            self.reward_config["enemy_hp_delta_scale"]
+        )
+        if "kill_bonus" in breakdown:
+            terms["used_breakdown_keys"].append("kill_bonus")
+        terms["kill_bonus_term"] = float(breakdown.get("kill_bonus") or 0.0) * float(
+            self.reward_config["kill_bonus_scale"]
         )
         if "next_enemy_window_relief" in breakdown:
             terms["used_breakdown_keys"].append("next_enemy_window_relief")
@@ -820,6 +834,8 @@ class StructuredGymCombatEnv(gym.Env[dict[str, np.ndarray], dict[str, int]]):
             + terms["terminal_victory_term"]
             + terms["terminal_defeat_term"]
             + terms["hp_loss_term"]
+            + terms["enemy_hp_delta_term"]
+            + terms["kill_bonus_term"]
             + terms["next_enemy_window_relief_term"]
             + terms["catastrophe_term"]
         )
