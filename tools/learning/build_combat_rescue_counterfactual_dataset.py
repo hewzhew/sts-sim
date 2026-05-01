@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import random
 from pathlib import Path
@@ -23,6 +24,25 @@ def action_key(action: dict[str, int] | None) -> tuple[int, int, int, int, int]:
         int(action.get("potion_slot") or 0),
         int(action.get("choice_index") or 0),
     )
+
+
+def stable_hash(payload: Any, length: int = 16) -> str:
+    text = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()[:length]
+
+
+def relative_path_text(path: Path) -> str:
+    return str(path.relative_to(REPO_ROOT) if path.is_relative_to(REPO_ROOT) else path)
+
+
+def replay_key(spec_path: Path, seed_hint: int, prefix_actions: list[dict[str, int]]) -> dict[str, Any]:
+    prefix_hash = stable_hash(prefix_actions, length=16)
+    return {
+        "spec_path": relative_path_text(spec_path),
+        "seed": int(seed_hint),
+        "prefix_len": int(len(prefix_actions)),
+        "prefix_action_hash": prefix_hash,
+    }
 
 
 def raw_observation_summary(raw: dict[str, Any]) -> dict[str, Any]:
@@ -97,6 +117,37 @@ def rescue_reasons_match(reasons: list[str], rescue_mode: str) -> bool:
     if rescue_mode == "return":
         return "improves_return" in reason_set
     raise ValueError(f"unknown rescue mode: {rescue_mode}")
+
+
+def rescue_confidence(reasons: list[str]) -> str:
+    reason_set = set(reasons)
+    if "avoids_root_defeat" in reason_set:
+        return "root_defeat_counterfactual"
+    if reason_set & {"avoids_horizon_defeat", "restores_horizon_survival"}:
+        return "hard_survival_counterfactual"
+    if "improves_return" in reason_set:
+        return "return_counterfactual"
+    return "audit_only"
+
+
+def pairwise_delta(base: dict[str, float], candidate: dict[str, float]) -> dict[str, float]:
+    return {
+        "discounted_return_delta": float(candidate.get("discounted_return") or 0.0)
+        - float(base.get("discounted_return") or 0.0),
+        "hp_delta_delta": float(candidate.get("hp_delta") or 0.0) - float(base.get("hp_delta") or 0.0),
+        "enemy_hp_delta_delta": float(candidate.get("enemy_hp_delta") or 0.0)
+        - float(base.get("enemy_hp_delta") or 0.0),
+    }
+
+
+def candidate_filter_reason(*, is_failed_action: bool, reasons: list[str], rescue_mode: str) -> str | None:
+    if is_failed_action:
+        return "failed_episode_action"
+    if rescue_reasons_match(reasons, rescue_mode):
+        return None
+    if not reasons:
+        return "no_counterfactual_improvement"
+    return "counterfactual_does_not_match_rescue_mode"
 
 
 def evaluate_decision_candidates(
@@ -223,7 +274,7 @@ def run_episode(
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Build combat rescue counterfactual rows from failed episodes.")
+    parser = argparse.ArgumentParser(description="Build combat rescue decision groups from failed episodes.")
     parser.add_argument("--spec-source", choices=["start_spec"], default="start_spec")
     parser.add_argument("--start-spec", action="append", required=True, type=Path)
     parser.add_argument("--seeds", default="2009,2010,2011,2012")
@@ -251,10 +302,11 @@ def main() -> None:
     parser.add_argument("--rng-seed", default=7, type=int)
     parser.add_argument(
         "--out",
-        default=REPO_ROOT / "tools" / "artifacts" / "learning_dataset" / "combat_rescue_counterfactual_rows.jsonl",
+        default=REPO_ROOT / "tools" / "artifacts" / "learning_dataset" / "combat_rescue_decision_groups.jsonl",
         type=Path,
     )
     parser.add_argument("--summary-out", default=None, type=Path)
+    parser.add_argument("--macro-manifest-out", default=None, type=Path)
     args = parser.parse_args()
 
     spec_paths = [Path(path) for path in args.start_spec]
@@ -282,11 +334,13 @@ def main() -> None:
     }
 
     rng = random.Random(int(args.rng_seed))
-    rows: list[dict[str, Any]] = []
+    groups: list[dict[str, Any]] = []
+    macro_backtrack_rows: list[dict[str, Any]] = []
     episode_summaries: list[dict[str, Any]] = []
     episodes_started = 0
     defeated_episodes = 0
     rescued_episodes = 0
+    rescue_pair_count = 0
     macro_backtrack_candidates = 0
     main_env = make_env(**env_args)
     try:
@@ -313,12 +367,14 @@ def main() -> None:
                             "seed": int(seed_hint),
                             "outcome": episode.get("outcome"),
                             "steps": len(episode["steps"]),
-                            "rescue_rows": 0,
+                            "rescue_groups": 0,
+                            "rescue_pairs": 0,
                         }
                     )
                     continue
                 defeated_episodes += 1
-                episode_rescue_rows = 0
+                episode_rescue_groups = 0
+                episode_rescue_pairs = 0
                 actions = list(episode["actions"])
                 steps = list(episode["steps"])
                 for backtrack_offset in range(1, min(int(args.max_backtrack_steps), len(actions)) + 1):
@@ -349,80 +405,156 @@ def main() -> None:
                         for row in candidate_rows
                     ]
                     group_diagnostics = candidate_group_diagnostics(group_rows)
+                    candidate_outcomes: list[dict[str, Any]] = []
+                    rescue_candidate_indices: list[int] = []
+                    rescue_reasons_by_candidate: dict[str, list[str]] = {}
+                    rescue_confidences: list[str] = []
                     for rescue_candidate in candidate_rows:
-                        if action_key(rescue_candidate["action"]) == action_key(bad_action):
-                            continue
-                        reasons = rescue_reason(
-                            bad_candidate["targets"],
-                            rescue_candidate["targets"],
-                            min_return_delta=float(args.min_return_delta),
+                        is_failed_action = action_key(rescue_candidate["action"]) == action_key(bad_action)
+                        reasons: list[str] = []
+                        if not is_failed_action:
+                            reasons = rescue_reason(
+                                bad_candidate["targets"],
+                                rescue_candidate["targets"],
+                                min_return_delta=float(args.min_return_delta),
+                            )
+                        filter_reason = candidate_filter_reason(
+                            is_failed_action=is_failed_action,
+                            reasons=reasons,
+                            rescue_mode=args.rescue_mode,
                         )
-                        if not rescue_reasons_match(reasons, args.rescue_mode):
-                            continue
-                        row = {
-                            "sample_index": len(rows),
-                            "spec_path": str(spec_path.relative_to(REPO_ROOT) if spec_path.is_relative_to(REPO_ROOT) else spec_path),
-                            "spec_name": load_start_spec_name(spec_path),
-                            "seed": int(seed_hint),
-                            "episode_outcome": episode.get("outcome"),
-                            "episode_steps": len(actions),
-                            "decision_step": int(decision_index),
-                            "backtrack_offset": int(backtrack_offset),
-                            "prefix_len": len(prefix_actions),
-                            "state": raw_observation_summary(raw),
-                            "bad": {
-                                "label": bad_step.get("label") or bad_candidate.get("candidate_label"),
-                                "source": bad_step.get("source"),
-                                "action": bad_action,
-                                "targets": bad_candidate["targets"],
-                                "outcome_bucket": bad_candidate["outcome_bucket"],
-                            },
-                            "rescue": {
+                        is_rescue_candidate = filter_reason is None
+                        if is_rescue_candidate:
+                            candidate_index = int(rescue_candidate["candidate_index"])
+                            rescue_candidate_indices.append(candidate_index)
+                            rescue_reasons_by_candidate[str(candidate_index)] = reasons
+                            rescue_confidences.append(rescue_confidence(reasons))
+                        candidate_outcomes.append(
+                            {
+                                "candidate_index": int(rescue_candidate["candidate_index"]),
                                 "label": rescue_candidate.get("candidate_label"),
                                 "action": rescue_candidate["action"],
                                 "targets": rescue_candidate["targets"],
                                 "outcome_bucket": rescue_candidate["outcome_bucket"],
+                                "is_failed_action": bool(is_failed_action),
+                                "is_rescue_candidate": bool(is_rescue_candidate),
+                                "counterfactual_reasons": reasons,
+                                "filter_reason": filter_reason,
+                                "delta_vs_failed": pairwise_delta(
+                                    bad_candidate["targets"],
+                                    rescue_candidate["targets"],
+                                ),
+                            }
+                        )
+                    if not rescue_candidate_indices:
+                        continue
+                    strongest_confidence = (
+                        "root_defeat_counterfactual"
+                        if "root_defeat_counterfactual" in rescue_confidences
+                        else "hard_survival_counterfactual"
+                        if "hard_survival_counterfactual" in rescue_confidences
+                        else "return_counterfactual"
+                        if "return_counterfactual" in rescue_confidences
+                        else "audit_only"
+                    )
+                    key = replay_key(spec_path, seed_hint, prefix_actions)
+                    group = {
+                        "group_index": len(groups),
+                        "decision_group_id": stable_hash(
+                            {
+                                **key,
+                                "decision_step": int(decision_index),
+                                "backtrack_offset": int(backtrack_offset),
+                                "bad_action": bad_action,
+                                "label_horizon": int(args.label_horizon),
+                                "rescue_mode": args.rescue_mode,
                             },
-                            "improvement": {
-                                "discounted_return_delta": float(rescue_candidate["targets"].get("discounted_return") or 0.0)
-                                - float(bad_candidate["targets"].get("discounted_return") or 0.0),
-                                "hp_delta_delta": float(rescue_candidate["targets"].get("hp_delta") or 0.0)
-                                - float(bad_candidate["targets"].get("hp_delta") or 0.0),
-                                "enemy_hp_delta_delta": float(rescue_candidate["targets"].get("enemy_hp_delta") or 0.0)
-                                - float(bad_candidate["targets"].get("enemy_hp_delta") or 0.0),
-                            },
-                            "reasons": reasons,
-                            "candidate_group": {
-                                "candidate_count": len(candidate_rows),
-                                **group_diagnostics,
-                            },
-                            "candidates": [
-                                {
-                                    "candidate_index": candidate.get("candidate_index"),
-                                    "label": candidate.get("candidate_label"),
-                                    "action": candidate.get("action"),
-                                    "targets": candidate.get("targets"),
-                                    "outcome_bucket": candidate.get("outcome_bucket"),
-                                    "is_bad_action": action_key(candidate.get("action")) == action_key(bad_action),
-                                    "is_rescue_action": action_key(candidate.get("action")) == action_key(rescue_candidate.get("action")),
-                                }
-                                for candidate in candidate_rows
-                            ],
-                        }
-                        rows.append(row)
-                        episode_rescue_rows += 1
-                if episode_rescue_rows > 0:
+                            length=20,
+                        ),
+                        "schema": "combat_rescue_decision_group/v1",
+                        "spec_path": relative_path_text(spec_path),
+                        "spec_name": load_start_spec_name(spec_path),
+                        "seed": int(seed_hint),
+                        "episode_outcome": episode.get("outcome"),
+                        "episode_steps": len(actions),
+                        "decision_step": int(decision_index),
+                        "backtrack_offset": int(backtrack_offset),
+                        "prefix_len": len(prefix_actions),
+                        "replay_key": key,
+                        "label_mode": "fixed_seed_replay",
+                        "continuation_policy": "teacher",
+                        "intervention_depth": "combat_kstep",
+                        "source_policy": args.state_policy,
+                        "public_observation": raw_observation_summary(raw),
+                        "failed_action": {
+                            "candidate_index": int(bad_candidate["candidate_index"]),
+                            "label": bad_step.get("label") or bad_candidate.get("candidate_label"),
+                            "source": bad_step.get("source"),
+                            "action": bad_action,
+                            "targets": bad_candidate["targets"],
+                            "outcome_bucket": bad_candidate["outcome_bucket"],
+                        },
+                        "rescue_candidate_indices": rescue_candidate_indices,
+                        "rescue_reasons_by_candidate": rescue_reasons_by_candidate,
+                        "confidence": strongest_confidence,
+                        "filter": {
+                            "accepted": True,
+                            "accept_reason": "has_rescue_candidate_matching_mode",
+                            "reject_reason": None,
+                            "rescue_mode": args.rescue_mode,
+                            "min_return_delta": float(args.min_return_delta),
+                        },
+                        "candidate_group": {
+                            "candidate_count": len(candidate_rows),
+                            **group_diagnostics,
+                        },
+                        "candidate_outcomes": candidate_outcomes,
+                    }
+                    groups.append(group)
+                    episode_rescue_groups += 1
+                    episode_rescue_pairs += len(rescue_candidate_indices)
+                    rescue_pair_count += len(rescue_candidate_indices)
+                if episode_rescue_groups > 0:
                     rescued_episodes += 1
                 else:
                     macro_backtrack_candidates += 1
+                    macro_backtrack_rows.append(
+                        {
+                            "schema": "combat_rescue_macro_backtrack_manifest/v1",
+                            "spec_path": relative_path_text(spec_path),
+                            "spec_name": load_start_spec_name(spec_path),
+                            "seed": int(seed_hint),
+                            "episode_outcome": episode.get("outcome"),
+                            "episode_steps": len(actions),
+                            "max_backtrack_steps": int(args.max_backtrack_steps),
+                            "intervention_depth_attempted": "combat_kstep",
+                            "reject_reason": "no_combat_rescue_candidate_within_backtrack_window",
+                            "source_policy": args.state_policy,
+                            "label_mode": "fixed_seed_replay",
+                            "continuation_policy": "teacher",
+                            "last_failed_steps": [
+                                {
+                                    "decision_step": int(step.get("step_index") or 0),
+                                    "source": step.get("source"),
+                                    "label": step.get("label"),
+                                    "action": step.get("action"),
+                                    "reward": step.get("reward"),
+                                    "outcome_after": step.get("outcome_after"),
+                                    "state": step.get("raw_before"),
+                                }
+                                for step in steps[-min(int(args.max_backtrack_steps), len(steps)) :]
+                            ],
+                        }
+                    )
                 episode_summaries.append(
                     {
                         "spec": str(spec_path),
                         "seed": int(seed_hint),
                         "outcome": episode.get("outcome"),
                         "steps": len(actions),
-                        "rescue_rows": int(episode_rescue_rows),
-                        "needs_macro_backtrack": bool(episode_rescue_rows == 0),
+                        "rescue_groups": int(episode_rescue_groups),
+                        "rescue_pairs": int(episode_rescue_pairs),
+                        "needs_macro_backtrack": bool(episode_rescue_groups == 0),
                     }
                 )
             if episodes_started >= int(args.episodes):
@@ -431,10 +563,17 @@ def main() -> None:
         main_env.close()
 
     summary_out = args.summary_out or args.out.with_suffix(".summary.json")
-    write_jsonl(args.out, rows)
+    macro_manifest_out = args.macro_manifest_out or args.out.with_suffix(".macro_backtrack.jsonl")
+    write_jsonl(args.out, groups)
+    write_jsonl(macro_manifest_out, macro_backtrack_rows)
     summary = {
-        "rows": str(args.out),
-        "row_count": len(rows),
+        "schema": "combat_rescue_decision_group/v1",
+        "groups": str(args.out),
+        "macro_backtrack_manifest": str(macro_manifest_out),
+        "group_count": len(groups),
+        "row_count": len(groups),
+        "rescue_pair_count": int(rescue_pair_count),
+        "macro_backtrack_manifest_count": len(macro_backtrack_rows),
         "episodes_started": int(episodes_started),
         "defeated_episodes": int(defeated_episodes),
         "rescued_episodes": int(rescued_episodes),
@@ -453,9 +592,9 @@ def main() -> None:
         "reward": reward_config,
         "episodes": episode_summaries,
         "notes": [
-            "rows compare a failed episode action against a same-state rescue candidate",
-            "candidate outcomes are labelled by root action plus short teacher continuation",
-            "episodes with no combat rescue rows are candidates for macro backtracking",
+            "one output row is one same-state decision group with all labelled root candidates",
+            "candidate outcomes are labelled by root action plus short teacher continuation under fixed replay",
+            "episodes with no combat rescue groups are written to the macro backtrack manifest",
         ],
     }
     write_json(summary_out, summary)

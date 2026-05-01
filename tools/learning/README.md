@@ -289,10 +289,11 @@ of re-running expensive teacher continuations while rejecting groups online:
 The filtered rows renumber `sample_index` and `group_index`, while preserving
 `source_sample_index` and `source_group_index` for provenance.
 
-### Build combat rescue counterfactual rows
+### Build combat rescue decision groups
 
-Failure-centered rows are generated from failed episodes by replaying back to
-recent combat decision points and evaluating alternative root candidates:
+Failure-centered decision groups are generated from failed episodes by replaying
+back to recent combat decision points and evaluating every legal root
+candidate. One JSONL row is one same-state group, not one bad/rescue pair:
 
 ```powershell
 .\.venv-rl\Scripts\python tools/learning/build_combat_rescue_counterfactual_dataset.py `
@@ -303,14 +304,22 @@ recent combat decision points and evaluating alternative root candidates:
   --max-backtrack-steps 8 `
   --label-horizon 12 `
   --rescue-mode survival `
-  --out tools/artifacts/learning_dataset/combat_rescue_counterfactual_rows.jsonl
+  --out tools/artifacts/learning_dataset/combat_rescue_decision_groups.jsonl
 ```
 
-The default `--rescue-mode survival` keeps only pairs where the failed action
-dies within the short horizon and an alternative survives it. Episodes with no
-combat rescue rows are marked as `needs_macro_backtrack`, which makes them good
-candidates for deeper rollback to card rewards, shops, rests, or human review.
-Use `--rescue-mode root_or_survival`, `return`, or `any` only for broader audit
+Each group records `public_observation`, `failed_action`, `candidate_outcomes`,
+`rescue_candidate_indices`, `label_mode`, `continuation_policy`,
+`intervention_depth`, and per-candidate `filter_reason`. The current labels use
+`label_mode=fixed_seed_replay` and `continuation_policy=teacher`: they are
+counterfactual certificates for this replay protocol, not global optimal-action
+labels.
+
+The default `--rescue-mode survival` keeps only groups where the failed action
+dies within the short horizon and at least one alternative survives it. Episodes
+with no combat rescue groups are written to the `.macro_backtrack.jsonl`
+manifest and marked as `needs_macro_backtrack`, which makes them candidates for
+deeper rollback to card rewards, shops, rests, paths, or human review. Use
+`--rescue-mode root_or_survival`, `return`, or `any` only for broader audit
 corpora; those modes intentionally admit weaker rescue notions.
 
 Candidate value prediction failures can be audited with:
