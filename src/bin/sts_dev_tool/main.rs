@@ -72,6 +72,40 @@ enum Commands {
     /// Generate interaction-signature coverage artifacts from replay logs and live_comm sidecar.
     InteractionCoverage,
 
+    /// Batch-run full offline episodes with a masked random policy for RL-readiness smoke checks.
+    RunBatch {
+        /// Number of episodes to run.
+        #[arg(long, default_value_t = 100)]
+        episodes: usize,
+        /// Base seed; episode N uses base_seed + N.
+        #[arg(long, default_value_t = 1)]
+        seed: u64,
+        /// Ascension level.
+        #[arg(long, default_value_t = 0)]
+        ascension: u8,
+        /// Player class: ironclad, silent, defect, watcher.
+        #[arg(long, default_value = "ironclad")]
+        class: String,
+        /// Enable Act 4 key logic.
+        #[arg(long, default_value_t = false)]
+        final_act: bool,
+        /// Maximum decision steps per episode before step-cap termination.
+        #[arg(long, default_value_t = 2000)]
+        max_steps: usize,
+        /// Policy name. Currently only random_masked is supported.
+        #[arg(long, default_value = "random_masked")]
+        policy: String,
+        /// Optional output directory for per-episode action traces.
+        #[arg(long)]
+        trace_dir: Option<PathBuf>,
+        /// Optional JSON summary output path.
+        #[arg(long)]
+        summary_out: Option<PathBuf>,
+        /// Re-run each episode from its recorded actions and compare terminal summary.
+        #[arg(long, default_value_t = true)]
+        determinism_check: bool,
+    },
+
     /// Manage run-first live_comm logs.
     Logs {
         #[command(subcommand)]
@@ -3726,6 +3760,69 @@ fn main() {
                 coverage_path, report_path
             );
             println!("Records: {}", records.len());
+        }
+        Commands::RunBatch {
+            episodes,
+            seed,
+            ascension,
+            class,
+            final_act,
+            max_steps,
+            policy,
+            trace_dir,
+            summary_out,
+            determinism_check,
+        } => {
+            if policy != "random_masked" {
+                eprintln!(
+                    "unsupported policy '{policy}'; currently only random_masked is available"
+                );
+                std::process::exit(2);
+            }
+            let player_class = match class.to_ascii_lowercase().as_str() {
+                "ironclad" | "red" => "Ironclad",
+                "silent" | "green" => "Silent",
+                "defect" | "blue" => "Defect",
+                "watcher" | "purple" => "Watcher",
+                other => {
+                    eprintln!(
+                        "unsupported class '{other}'; expected ironclad, silent, defect, or watcher"
+                    );
+                    std::process::exit(2);
+                }
+            };
+            let config = sts_simulator::cli::full_run_smoke::RunBatchConfig {
+                episodes: *episodes,
+                base_seed: *seed,
+                ascension: *ascension,
+                final_act: *final_act,
+                player_class,
+                max_steps: *max_steps,
+                trace_dir: trace_dir.clone(),
+                determinism_check: *determinism_check,
+            };
+            let summary =
+                sts_simulator::cli::full_run_smoke::run_batch(&config).unwrap_or_else(|err| {
+                    eprintln!("run-batch failed: {err}");
+                    std::process::exit(1);
+                });
+            if let Some(summary_out) = summary_out {
+                if let Some(parent) = summary_out.parent() {
+                    std::fs::create_dir_all(parent)
+                        .expect("run-batch summary parent should be creatable");
+                }
+                std::fs::write(
+                    summary_out,
+                    serde_json::to_string_pretty(&summary)
+                        .expect("run-batch summary should serialize"),
+                )
+                .expect("run-batch summary should write");
+            }
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&summary)
+                    .expect("run-batch summary should serialize for stdout")
+            );
         }
         Commands::Logs { command } => {
             let paths = sts_simulator::cli::live_comm_admin::LiveLogPaths::default_paths();
