@@ -292,6 +292,97 @@ of re-running expensive greedy-transition continuations while rejecting groups o
 The filtered rows renumber `sample_index` and `group_index`, while preserving
 `source_sample_index` and `source_group_index` for provenance.
 
+### Triage run-built state corpus rows
+
+Fixed combat specs are useful for smoke tests and regressions, but they should
+not be treated as the main training distribution. Full-run `live_comm` frames are
+also not labels; they are only a more realistic candidate pool. Before spending
+rollout/oracle budget, triage them into cheap buckets:
+
+```powershell
+cargo run --bin sts_dev_tool -- combat build-state-corpus `
+  --label loss_clean `
+  --latest-runs 5 `
+  --limit-per-raw 64 `
+  --depth 2 `
+  --out tmp/run_state_corpus_loss_clean/state_corpus.jsonl `
+  --summary-out tmp/run_state_corpus_loss_clean/state_corpus_summary.json
+
+.\.venv-rl\Scripts\python tools/learning/triage_state_corpus.py `
+  --input tmp/run_state_corpus_loss_clean/state_corpus.jsonl
+```
+
+The triage step writes:
+
+- `*.triage.jsonl`: compact per-state features, tags, and routing decision
+- `*.counterfactual_candidates.jsonl`: broad cheap-triage candidate set
+- `*.oracle_needed.jsonl`: high-priority states worth expensive candidate counterfactuals
+- `*.macro_backtrack.jsonl`: states that look already lost and need provenance
+- `*.calibration_only.jsonl`: unstable rows useful for uncertainty, not top-1 labels
+- `*.rejected_or_background.jsonl`: forced or low-signal states
+- `*.triage.summary.json` / `*.triage.md`: coverage and sample-efficiency review
+
+The report also loads each run's `manifest.json` and compares it with the
+current repository state. If the run commit, binary provenance, or current dirty
+state means the rows are stale, the report is marked `STALE` and its evidence
+scope is `historical_replay_only`, not current-policy evidence.
+
+By default `*.oracle_needed.jsonl` keeps only high-priority rows and caps each
+run+encounter group at four rows, because consecutive combat frames are highly
+correlated. Use `--oracle-min-priority medium` or `--max-oracle-per-encounter 0`
+for broader offline review, but keep the defaults for expensive rollout labeling
+until the yield is known.
+
+This keeps the data contract explicit:
+
+```text
+live run state corpus -> cheap triage -> selective oracle -> hard candidate groups
+```
+
+Do not train action heads directly from raw `live_comm` bot choices. A
+`live_snapshot` row solves only the "fake state distribution" problem; it does
+not solve weak labels, low-decision states, or failures caused by earlier macro
+choices.
+
+### Audit oracle-needed live states
+
+After triage, the next step is an audit loop, not a training dataset. The
+consumer below takes `*.oracle_needed.jsonl`, runs `combat_decision_audit` on the
+matching live replay frames, and asks whether the current bot action was clearly
+bad under the configured local audit protocol:
+
+```powershell
+.\.venv-rl\Scripts\python tools/learning/audit_oracle_needed_states.py `
+  --input tmp/run_state_corpus_loss_clean/state_corpus.oracle_needed.jsonl `
+  --mode fast `
+  --require-current
+```
+
+It writes:
+
+- `*.audit.jsonl`: one row per audited state, with legal candidates, candidate
+  outcomes, bot rank, best candidate, and recommendation
+- `*.audit.md`: human review table
+- `*.audit.summary.json`: counts for bot top-rank, clearly bad decisions,
+  safety-rule candidates, and regression candidates
+- `*.regression_cases.jsonl` / `*.safety_rule_cases.jsonl`: focused audit
+  buckets for local replay/regression work
+
+This script intentionally does not write `.npz` files and should not be used as
+a training shortcut. The acceptance question is:
+
+```text
+Did the audit find real live-run states where the bot action is clearly worse,
+and can those cases be turned into search/frontier regressions?
+```
+
+Rows where every candidate still dies are routed as macro-provenance candidates,
+not local combat regressions, even if one dying line scores better than another.
+In `--mode fast`, actionable findings are rerun with the slow audit budget by
+default; pass `--no-refine-actionable` only when profiling the cheap pass itself.
+Use `--require-current` for current-policy diagnosis. Without it, stale rows are
+allowed only as historical replay audit and the report is marked accordingly.
+
 ### Build combat rescue decision groups
 
 Failure-centered decision groups are generated from failed episodes by replaying
