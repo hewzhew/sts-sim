@@ -46,6 +46,23 @@ def group_count(group_rows: list[dict[str, Any]]) -> int:
     return len({int(row["group_index"]) for row in group_rows})
 
 
+def state_filter_reason(
+    raw_observation: dict[str, Any],
+    *,
+    step_index: int,
+    min_visible_unblocked: float,
+    max_player_hp: float,
+    min_step_index: int,
+) -> str | None:
+    if int(step_index) < int(min_step_index):
+        return "before_min_step_index"
+    if visible_unblocked(raw_observation) < float(min_visible_unblocked):
+        return "below_min_visible_unblocked"
+    if float(max_player_hp) > 0.0 and player_hp(raw_observation) > float(max_player_hp):
+        return "above_max_player_hp"
+    return None
+
+
 def append_candidate_row(
     obs_samples: dict[str, list[np.ndarray]],
     value_samples: dict[str, list[np.ndarray | float]],
@@ -231,6 +248,9 @@ def main() -> None:
     parser.add_argument("--gamma", default=0.97, type=float)
     parser.add_argument("--state-policy", choices=["teacher", "random", "mixed"], default="mixed")
     parser.add_argument("--mixed-random-rate", default=0.35, type=float)
+    parser.add_argument("--min-visible-unblocked", default=0.0, type=float)
+    parser.add_argument("--max-player-hp", default=0.0, type=float)
+    parser.add_argument("--min-step-index", default=0, type=int)
     parser.add_argument("--draw-order-variant", choices=["exact", "reshuffle_draw"], default="reshuffle_draw")
     parser.add_argument("--reward-mode", choices=["legacy", "minimal_rl"], default="minimal_rl")
     parser.add_argument("--victory-reward", default=1.0, type=float)
@@ -284,6 +304,7 @@ def main() -> None:
     rows: list[dict[str, Any]] = []
     episodes_started = 0
     collection_policy_counts = {"teacher": 0, "random": 0}
+    skipped_state_counts: dict[str, int] = {}
     candidate_evals = 0
     main_env = make_env(**env_args)
     try:
@@ -303,9 +324,38 @@ def main() -> None:
                     candidates = legal_candidates(info)[: min(int(args.max_candidates_per_state), MAX_RANKER_CANDIDATES)]
                     if not candidates:
                         break
+                    raw = info.get("raw_observation") or {}
+                    skip_reason = state_filter_reason(
+                        raw,
+                        step_index=step_index,
+                        min_visible_unblocked=args.min_visible_unblocked,
+                        max_player_hp=args.max_player_hp,
+                        min_step_index=args.min_step_index,
+                    )
+                    if skip_reason is not None:
+                        skipped_state_counts[skip_reason] = skipped_state_counts.get(skip_reason, 0) + 1
+                        action, source = choose_collection_action(
+                            state_policy=args.state_policy,
+                            rng=rng,
+                            mixed_random_rate=args.mixed_random_rate,
+                            spec_path=spec_path,
+                            seed_hint=seed_hint,
+                            prefix_actions=prefix_actions,
+                            candidates=candidates,
+                            main_env=main_env,
+                            env_args=env_args,
+                        )
+                        if action is None:
+                            break
+                        collection_policy_counts[source] = collection_policy_counts.get(source, 0) + 1
+                        obs, _, done, truncated, info = main_env.step(action)
+                        if info.get("invalid_action") or info.get("decoder_failure"):
+                            break
+                        prefix_actions.append(action)
+                        step_index += 1
+                        continue
                     group_index = group_count(rows)
                     group_rows: list[dict[str, Any]] = []
-                    raw = info.get("raw_observation") or {}
                     for candidate_index, candidate in enumerate(candidates):
                         targets, audit = label_candidate_continuation(
                             spec_path=spec_path,
@@ -403,6 +453,12 @@ def main() -> None:
         "seeds": seeds,
         "state_policy": args.state_policy,
         "collection_policy_counts": collection_policy_counts,
+        "skipped_state_counts": skipped_state_counts,
+        "state_filters": {
+            "min_visible_unblocked": float(args.min_visible_unblocked),
+            "max_player_hp": float(args.max_player_hp),
+            "min_step_index": int(args.min_step_index),
+        },
         "label_policy": "candidate_then_teacher_one_step_branch_score_continuation",
         "label_horizon": int(args.label_horizon),
         "gamma": float(args.gamma),

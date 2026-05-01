@@ -228,7 +228,9 @@ asking a policy head to choose exact card slots.
   --start-spec data/boss_validation/hexaghost_v2/start_spec.json `
   --seeds 2009,2010,2011,2012 `
   --states 32 `
-  --label-horizon 6 `
+  --label-horizon 10 `
+  --min-visible-unblocked 6 `
+  --min-step-index 3 `
   --state-policy mixed `
   --out tools/artifacts/learning_dataset/structured_candidate_value_hexaghost_v2_32.npz
 
