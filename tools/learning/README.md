@@ -197,6 +197,54 @@ end turn. The ranker scores candidates from state tensors plus candidate
 features instead of directly predicting a concrete hand slot. It is useful as an
 offline prior/diagnostic surface; it is not yet a production combat policy.
 
+### Train a structured state evaluator
+
+```powershell
+.\.venv-rl\Scripts\python tools/learning/build_structured_state_evaluator_dataset.py `
+  --start-spec data/boss_validation/hexaghost_v2/start_spec.json `
+  --seeds 2009,2010,2011,2012,2013,2014,2015,2016 `
+  --samples 128 `
+  --label-horizon 8 `
+  --state-policy mixed `
+  --out tools/artifacts/learning_dataset/structured_state_evaluator_hexaghost_v2_128.npz
+
+.\.venv-rl\Scripts\python tools/learning/train_structured_state_evaluator.py `
+  --dataset tools/artifacts/learning_dataset/structured_state_evaluator_hexaghost_v2_128.npz `
+  --epochs 80 `
+  --batch-size 32 `
+  --output-prefix structured_state_evaluator_hexaghost_v2_128
+```
+
+This is the first structured value-learning probe. It labels structured
+observations with short teacher-continuation outcomes such as discounted return,
+HP delta, enemy HP progress, visible unblocked damage, survival, victory, and
+defeat. The point is to test whether the encoder can learn state quality before
+asking a policy head to choose exact card slots.
+
+### Train a structured candidate value evaluator
+
+```powershell
+.\.venv-rl\Scripts\python tools/learning/build_structured_candidate_value_dataset.py `
+  --start-spec data/boss_validation/hexaghost_v2/start_spec.json `
+  --seeds 2009,2010,2011,2012 `
+  --states 32 `
+  --label-horizon 6 `
+  --state-policy mixed `
+  --out tools/artifacts/learning_dataset/structured_candidate_value_hexaghost_v2_32.npz
+
+.\.venv-rl\Scripts\python tools/learning/train_structured_candidate_value_evaluator.py `
+  --dataset tools/artifacts/learning_dataset/structured_candidate_value_hexaghost_v2_32.npz `
+  --epochs 80 `
+  --batch-size 32 `
+  --output-prefix structured_candidate_value_hexaghost_v2_32
+```
+
+This is the first candidate-after-state value probe. Each root candidate is
+executed, then the teacher policy continues for a short horizon; the model learns
+candidate outcome heads and evaluates candidate ranking within the same root
+state group. This is slower to build than state-only value data, but it is much
+closer to asking why one root choice is better than another.
+
 ## Recommended Reading
 
 - [../../docs/design/COMBAT_RL_CONTRACT_V0.md](../../docs/design/COMBAT_RL_CONTRACT_V0.md)
