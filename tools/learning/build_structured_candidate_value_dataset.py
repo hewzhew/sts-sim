@@ -46,6 +46,88 @@ def group_count(group_rows: list[dict[str, Any]]) -> int:
     return len({int(row["group_index"]) for row in group_rows})
 
 
+def candidate_group_diagnostics(group_rows: list[dict[str, Any]]) -> dict[str, Any]:
+    returns = sorted((float(row["targets"]["discounted_return"]) for row in group_rows), reverse=True)
+    top2_gap = float(returns[0] - returns[1]) if len(returns) > 1 else 0.0
+    target_names = [
+        "survived_horizon",
+        "terminal_defeat",
+        "terminal_victory",
+        "root_terminal_defeat",
+        "root_terminal_victory",
+    ]
+    variation = {
+        name: len({float(row["targets"].get(name, 0.0)) for row in group_rows}) > 1
+        for name in target_names
+    }
+    best_score = returns[0] if returns else 0.0
+    worst_score = returns[-1] if returns else 0.0
+    return {
+        "candidate_count": int(len(group_rows)),
+        "best_discounted_return": float(best_score),
+        "worst_discounted_return": float(worst_score),
+        "return_range": float(best_score - worst_score),
+        "top2_gap": top2_gap,
+        "survival_disagreement": bool(variation["survived_horizon"]),
+        "terminal_defeat_disagreement": bool(variation["terminal_defeat"]),
+        "terminal_victory_disagreement": bool(variation["terminal_victory"]),
+        "root_terminal_defeat_disagreement": bool(variation["root_terminal_defeat"]),
+        "root_terminal_victory_disagreement": bool(variation["root_terminal_victory"]),
+    }
+
+
+def hard_group_checks(group_diagnostics: dict[str, Any], args: argparse.Namespace) -> dict[str, bool]:
+    checks: dict[str, bool] = {}
+    if float(args.min_top2_gap) > 0.0:
+        checks["min_top2_gap"] = float(group_diagnostics["top2_gap"]) >= float(args.min_top2_gap)
+    if float(args.min_return_range) > 0.0:
+        checks["min_return_range"] = float(group_diagnostics["return_range"]) >= float(args.min_return_range)
+    if bool(args.require_survival_disagreement):
+        checks["survival_disagreement"] = bool(group_diagnostics["survival_disagreement"])
+    if bool(args.require_terminal_disagreement):
+        checks["terminal_disagreement"] = bool(
+            group_diagnostics["terminal_defeat_disagreement"]
+            or group_diagnostics["terminal_victory_disagreement"]
+        )
+    if bool(args.require_root_terminal_disagreement):
+        checks["root_terminal_disagreement"] = bool(
+            group_diagnostics["root_terminal_defeat_disagreement"]
+            or group_diagnostics["root_terminal_victory_disagreement"]
+        )
+    return checks
+
+
+def hard_group_reject_reason(group_diagnostics: dict[str, Any], args: argparse.Namespace) -> str | None:
+    checks = hard_group_checks(group_diagnostics, args)
+    if not checks:
+        return None
+    if args.hard_group_match == "all":
+        return None if all(checks.values()) else "hard_group_all_criteria_unmet"
+    return None if any(checks.values()) else "hard_group_any_criteria_unmet"
+
+
+def summarize_group_diagnostics(items: list[dict[str, Any]]) -> dict[str, Any]:
+    if not items:
+        return {"groups": 0}
+    numeric_keys = ["candidate_count", "return_range", "top2_gap", "best_discounted_return", "worst_discounted_return"]
+    bool_keys = [
+        "survival_disagreement",
+        "terminal_defeat_disagreement",
+        "terminal_victory_disagreement",
+        "root_terminal_defeat_disagreement",
+        "root_terminal_victory_disagreement",
+    ]
+    summary: dict[str, Any] = {"groups": int(len(items))}
+    for key in numeric_keys:
+        values = [float(item.get(key, 0.0)) for item in items]
+        summary[f"{key}_mean"] = float(np.mean(values))
+        summary[f"{key}_median"] = float(np.median(values))
+    for key in bool_keys:
+        summary[f"{key}_rate"] = float(np.mean([1.0 if item.get(key) else 0.0 for item in items]))
+    summary["large_gap_0_10_rate"] = float(np.mean([1.0 if float(item.get("top2_gap", 0.0)) >= 0.10 else 0.0 for item in items]))
+    return summary
+
+
 def state_filter_reason(
     raw_observation: dict[str, Any],
     *,
@@ -251,6 +333,12 @@ def main() -> None:
     parser.add_argument("--min-visible-unblocked", default=0.0, type=float)
     parser.add_argument("--max-player-hp", default=0.0, type=float)
     parser.add_argument("--min-step-index", default=0, type=int)
+    parser.add_argument("--min-top2-gap", default=0.0, type=float)
+    parser.add_argument("--min-return-range", default=0.0, type=float)
+    parser.add_argument("--require-survival-disagreement", action="store_true")
+    parser.add_argument("--require-terminal-disagreement", action="store_true")
+    parser.add_argument("--require-root-terminal-disagreement", action="store_true")
+    parser.add_argument("--hard-group-match", choices=["any", "all"], default="any")
     parser.add_argument("--draw-order-variant", choices=["exact", "reshuffle_draw"], default="reshuffle_draw")
     parser.add_argument("--reward-mode", choices=["legacy", "minimal_rl"], default="minimal_rl")
     parser.add_argument("--victory-reward", default=1.0, type=float)
@@ -305,6 +393,9 @@ def main() -> None:
     episodes_started = 0
     collection_policy_counts = {"teacher": 0, "random": 0}
     skipped_state_counts: dict[str, int] = {}
+    group_filter_reject_counts: dict[str, int] = {}
+    candidate_groups_considered = 0
+    accepted_group_diagnostics: list[dict[str, Any]] = []
     candidate_evals = 0
     main_env = make_env(**env_args)
     try:
@@ -387,6 +478,33 @@ def main() -> None:
                         )
                     if not group_rows:
                         break
+                    candidate_groups_considered += 1
+                    group_diagnostics = candidate_group_diagnostics(group_rows)
+                    reject_reason = hard_group_reject_reason(group_diagnostics, args)
+                    if reject_reason is not None:
+                        group_filter_reject_counts[reject_reason] = group_filter_reject_counts.get(reject_reason, 0) + 1
+                        action, source = choose_collection_action(
+                            state_policy=args.state_policy,
+                            rng=rng,
+                            mixed_random_rate=args.mixed_random_rate,
+                            spec_path=spec_path,
+                            seed_hint=seed_hint,
+                            prefix_actions=prefix_actions,
+                            candidates=candidates,
+                            main_env=main_env,
+                            env_args=env_args,
+                        )
+                        if action is None:
+                            break
+                        collection_policy_counts[source] = collection_policy_counts.get(source, 0) + 1
+                        obs, _, done, truncated, info = main_env.step(action)
+                        if info.get("invalid_action") or info.get("decoder_failure"):
+                            break
+                        prefix_actions.append(action)
+                        step_index += 1
+                        continue
+
+                    accepted_group_diagnostics.append(group_diagnostics)
                     best_score = max(float(row["targets"]["discounted_return"]) for row in group_rows)
                     for row in group_rows:
                         row["candidate_is_best"] = (
@@ -407,6 +525,7 @@ def main() -> None:
                                 "candidate_label": row["candidate_label"],
                                 "candidate_class": row["candidate_class_name"],
                                 "candidate_is_best": bool(row["candidate_is_best"]),
+                                "group_diagnostics": group_diagnostics,
                                 "targets": row["targets"],
                                 "audit": row["audit"],
                             }
@@ -447,6 +566,8 @@ def main() -> None:
         "rows": str(rows_out),
         "row_count": len(rows),
         "state_groups": group_count(rows),
+        "candidate_groups_considered": int(candidate_groups_considered),
+        "candidate_groups_accepted": int(len(accepted_group_diagnostics)),
         "episodes_started": episodes_started,
         "candidate_evals": candidate_evals,
         "specs": [str(path) for path in spec_paths],
@@ -454,11 +575,21 @@ def main() -> None:
         "state_policy": args.state_policy,
         "collection_policy_counts": collection_policy_counts,
         "skipped_state_counts": skipped_state_counts,
+        "group_filter_reject_counts": group_filter_reject_counts,
         "state_filters": {
             "min_visible_unblocked": float(args.min_visible_unblocked),
             "max_player_hp": float(args.max_player_hp),
             "min_step_index": int(args.min_step_index),
         },
+        "hard_group_filters": {
+            "min_top2_gap": float(args.min_top2_gap),
+            "min_return_range": float(args.min_return_range),
+            "require_survival_disagreement": bool(args.require_survival_disagreement),
+            "require_terminal_disagreement": bool(args.require_terminal_disagreement),
+            "require_root_terminal_disagreement": bool(args.require_root_terminal_disagreement),
+            "match": args.hard_group_match,
+        },
+        "accepted_group_diagnostics": summarize_group_diagnostics(accepted_group_diagnostics),
         "label_policy": "candidate_then_teacher_one_step_branch_score_continuation",
         "label_horizon": int(args.label_horizon),
         "gamma": float(args.gamma),

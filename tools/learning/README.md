@@ -252,6 +252,43 @@ at `0.0` to reproduce pure pointwise value regression. Early Hexaghost probes
 showed `0.10` preserving value calibration better than a more aggressive `0.25`,
 while still improving root candidate ranking.
 
+When the root ranking signal is too soft, the candidate value builder can keep
+only harder groups before writing samples:
+
+```powershell
+.\.venv-rl\Scripts\python tools/learning/build_structured_candidate_value_dataset.py `
+  --start-spec data/boss_validation/hexaghost_v2/start_spec.json `
+  --seeds 2009,2010,2011,2012 `
+  --states 32 `
+  --label-horizon 10 `
+  --min-visible-unblocked 6 `
+  --min-step-index 3 `
+  --min-top2-gap 0.10 `
+  --out tools/artifacts/learning_dataset/structured_candidate_value_hexaghost_v2_hard32.npz
+```
+
+`--min-top2-gap`, `--min-return-range`,
+`--require-survival-disagreement`, `--require-terminal-disagreement`, and
+`--require-root-terminal-disagreement` are group-level filters. With the default
+`--hard-group-match any`, a group is kept when any enabled criterion matches.
+Use `--hard-group-match all` when building a narrow corpus that must satisfy
+every enabled criterion. The summary JSON reports how many candidate groups were
+considered, accepted, and rejected, plus accepted-group gap and disagreement
+rates.
+
+For larger experiments, prefer filtering an already-built broad dataset instead
+of re-running expensive teacher continuations while rejecting groups online:
+
+```powershell
+.\.venv-rl\Scripts\python tools/learning/filter_structured_candidate_value_dataset.py `
+  --dataset tools/artifacts/learning_dataset/structured_candidate_value_hexaghost_v2_256.npz `
+  --min-top2-gap 0.10 `
+  --out tools/artifacts/learning_dataset/structured_candidate_value_hexaghost_v2_256_top2gap010.npz
+```
+
+The filtered rows renumber `sample_index` and `group_index`, while preserving
+`source_sample_index` and `source_group_index` for provenance.
+
 Candidate value prediction failures can be audited with:
 
 ```powershell
