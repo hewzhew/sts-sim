@@ -46,6 +46,80 @@ def index_obs(obs: dict[str, np.ndarray], indices: np.ndarray) -> dict[str, np.n
     return {key: value[indices] for key, value in obs.items()}
 
 
+def load_bc_dataset(path: Path, max_samples: int = 0) -> tuple[dict[str, np.ndarray], dict[str, np.ndarray]]:
+    with np.load(path, allow_pickle=False) as payload:
+        obs = {
+            key.removeprefix("obs__"): np.asarray(payload[key])
+            for key in payload.files
+            if key.startswith("obs__")
+        }
+        actions = {
+            key.removeprefix("action__"): np.asarray(payload[key], dtype=np.int64)
+            for key in payload.files
+            if key.startswith("action__")
+        }
+    if not obs:
+        raise SystemExit(f"BC dataset has no obs arrays: {path}")
+    required_actions = {"action_type", "card_slot", "target_slot", "potion_slot", "choice_index"}
+    missing_actions = sorted(required_actions - set(actions))
+    if missing_actions:
+        raise SystemExit(f"BC dataset is missing action arrays {missing_actions}: {path}")
+    count = next(iter(obs.values())).shape[0]
+    if any(value.shape[0] != count for value in obs.values()):
+        raise SystemExit(f"BC dataset obs arrays have inconsistent sample counts: {path}")
+    if any(value.shape[0] != count for value in actions.values()):
+        raise SystemExit(f"BC dataset action arrays have inconsistent sample counts: {path}")
+    if max_samples > 0 and count > max_samples:
+        indices = np.arange(count)[: int(max_samples)]
+        obs = index_obs(obs, indices)
+        actions = {key: value[indices] for key, value in actions.items()}
+    return obs, actions
+
+
+def run_bc_warmup(
+    model: StructuredPolicyNet,
+    optimizer: torch.optim.Optimizer,
+    *,
+    dataset_path: Path,
+    device: torch.device,
+    epochs: int,
+    batch_size: int,
+    max_samples: int,
+) -> dict[str, Any]:
+    bc_obs, bc_actions = load_bc_dataset(dataset_path, max_samples=max_samples)
+    count = next(iter(bc_obs.values())).shape[0]
+    indices = np.arange(count)
+    loss_sum = 0.0
+    batches = 0
+    timer = time.perf_counter()
+    for _ in range(int(epochs)):
+        np.random.shuffle(indices)
+        for start in range(0, count, int(batch_size)):
+            batch_index = indices[start : start + int(batch_size)]
+            obs_mb = to_device_obs(index_obs(bc_obs, batch_index), device)
+            actions_mb = {
+                key: torch.as_tensor(value[batch_index], device=device).long()
+                for key, value in bc_actions.items()
+            }
+            logprob, entropy, _, _ = evaluate_actions(model, obs_mb, actions_mb)
+            loss = -logprob.mean() - 0.001 * entropy.mean()
+            optimizer.zero_grad()
+            loss.backward()
+            nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+            optimizer.step()
+            loss_sum += float(loss.detach().cpu())
+            batches += 1
+    return {
+        "dataset": str(dataset_path),
+        "epochs": int(epochs),
+        "batch_size": int(batch_size),
+        "samples": int(count),
+        "batches": int(batches),
+        "loss_mean": float(loss_sum / max(batches, 1)),
+        "seconds": float(time.perf_counter() - timer),
+    }
+
+
 def compute_gae(
     rewards: np.ndarray,
     dones: np.ndarray,
@@ -455,6 +529,11 @@ def main() -> None:
     parser.add_argument("--ent-coef", default=0.01, type=float)
     parser.add_argument("--vf-coef", default=0.5, type=float)
     parser.add_argument("--probe-coef", default=0.1, type=float)
+    parser.add_argument("--bc-dataset", default=None, type=Path)
+    parser.add_argument("--bc-warmup-epochs", default=0, type=int)
+    parser.add_argument("--bc-batch-size", default=128, type=int)
+    parser.add_argument("--bc-max-samples", default=0, type=int)
+    parser.add_argument("--bc-only", action="store_true")
     parser.add_argument("--output-prefix", default="", help="Optional output prefix under tools/artifacts/learning_dataset.")
     parser.add_argument("--model-out", default=None, type=Path)
     parser.add_argument("--metrics-out", default=None, type=Path)
@@ -514,6 +593,7 @@ def main() -> None:
         "rollout_bookkeeping_seconds": 0.0,
         "update_seconds": 0.0,
         "eval_seconds": 0.0,
+        "bc_warmup_seconds": 0.0,
         "total_seconds": 0.0,
         "rollout_steps": 0,
         "ppo_minibatches": 0,
@@ -538,7 +618,25 @@ def main() -> None:
         optimizer = torch.optim.AdamW(model.parameters(), lr=args.learning_rate)
         timing["setup_seconds"] = time.perf_counter() - setup_timer
 
-        updates = max(args.timesteps // max(args.rollout_steps * args.n_envs, 1), 1)
+        bc_warmup_metrics = None
+        if args.bc_dataset is not None and args.bc_warmup_epochs > 0:
+            bc_warmup_metrics = run_bc_warmup(
+                model,
+                optimizer,
+                dataset_path=args.bc_dataset,
+                device=device,
+                epochs=args.bc_warmup_epochs,
+                batch_size=args.bc_batch_size,
+                max_samples=args.bc_max_samples,
+            )
+            timing["bc_warmup_seconds"] = float(bc_warmup_metrics["seconds"])
+
+        if args.bc_only:
+            updates = 0
+        elif args.timesteps <= 0:
+            updates = 0
+        else:
+            updates = max(args.timesteps // max(args.rollout_steps * args.n_envs, 1), 1)
         total_steps = 0
         for _ in range(updates):
             obs_steps: list[dict[str, np.ndarray]] = []
@@ -747,6 +845,7 @@ def main() -> None:
             "eval_seed_count": len(eval_seeds),
             "train_specs": [str(path) for path in spec_paths],
             "driver_binary": str(args.driver_binary) if args.driver_binary else None,
+            "bc_warmup": bc_warmup_metrics,
             "eval": eval_metrics,
             "random_benchmark": random_metrics,
             "flat_baseline_benchmark": flat_metrics,

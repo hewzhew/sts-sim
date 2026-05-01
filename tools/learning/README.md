@@ -147,6 +147,31 @@ This generates the synthetic strong Hexaghost start spec under ignored learning
 artifacts, then runs separate structured PPO probes for each requested stage and
 writes a compact summary JSON next to the per-stage metrics.
 
+### Build a structured BC teacher warmup
+
+```powershell
+.\.venv-rl\Scripts\python tools/learning/build_structured_bc_teacher_dataset.py `
+  --start-spec data/boss_validation/hexaghost_v2/start_spec.json `
+  --seeds 2009,2010,2011,2012,2013,2014,2015,2016 `
+  --samples 128 `
+  --out tools/artifacts/learning_dataset/structured_bc_teacher_hexaghost_v2_128.npz
+
+.\.venv-rl\Scripts\python tools/learning/train_structured_combat_ppo.py `
+  --spec-source start_spec `
+  --start-spec data/boss_validation/hexaghost_v2/start_spec.json `
+  --draw-order-variant reshuffle_draw `
+  --enemy-hp-delta-scale 0.01 `
+  --bc-dataset tools/artifacts/learning_dataset/structured_bc_teacher_hexaghost_v2_128.npz `
+  --bc-warmup-epochs 5 `
+  --timesteps 8192
+```
+
+The first teacher dataset builder is intentionally local and conservative: it
+replays each sampled prefix from the same start spec and seed, evaluates legal
+root candidates with a short branch score, and writes structured observation
+tensors plus the preferred multi-head action. These labels are policy warmup
+priors, not engine truth.
+
 ## Recommended Reading
 
 - [../../docs/design/COMBAT_RL_CONTRACT_V0.md](../../docs/design/COMBAT_RL_CONTRACT_V0.md)

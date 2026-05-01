@@ -123,6 +123,11 @@ def main() -> None:
     parser.add_argument("--catastrophe-penalty", default=0.25, type=float)
     parser.add_argument("--next-enemy-window-relief-scale", default=0.0, type=float)
     parser.add_argument("--persistent-attack-script-relief-scale", default=0.0, type=float)
+    parser.add_argument("--bc-dataset", default=None, type=Path)
+    parser.add_argument("--bc-warmup-epochs", default=0, type=int)
+    parser.add_argument("--bc-batch-size", default=128, type=int)
+    parser.add_argument("--bc-max-samples", default=0, type=int)
+    parser.add_argument("--bc-only", action="store_true")
     parser.add_argument("--output-prefix", default="structured_start_spec_curriculum")
     parser.add_argument("--driver-binary", default=None, type=Path)
     parser.add_argument("--skip-build", action="store_true")
@@ -201,6 +206,21 @@ def main() -> None:
             "--output-prefix",
             prefix,
         ]
+        if args.bc_dataset is not None:
+            cmd.extend(
+                [
+                    "--bc-dataset",
+                    str(args.bc_dataset),
+                    "--bc-warmup-epochs",
+                    str(args.bc_warmup_epochs),
+                    "--bc-batch-size",
+                    str(args.bc_batch_size),
+                    "--bc-max-samples",
+                    str(args.bc_max_samples),
+                ]
+            )
+        if args.bc_only:
+            cmd.append("--bc-only")
         if args.driver_binary is not None:
             cmd.extend(["--driver-binary", str(args.driver_binary)])
         run_command(cmd, dry_run=args.dry_run)
@@ -230,6 +250,11 @@ def main() -> None:
         "draw_order_variant": args.draw_order_variant,
         "reward_mode": args.reward_mode,
         "device": args.device,
+        "bc_dataset": str(args.bc_dataset) if args.bc_dataset else None,
+        "bc_warmup_epochs": args.bc_warmup_epochs,
+        "bc_batch_size": args.bc_batch_size,
+        "bc_max_samples": args.bc_max_samples,
+        "bc_only": bool(args.bc_only),
         "reward": {
             "victory_reward": args.victory_reward,
             "defeat_reward": args.defeat_reward,
