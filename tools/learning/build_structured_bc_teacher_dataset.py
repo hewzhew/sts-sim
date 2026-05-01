@@ -11,7 +11,7 @@ import numpy as np
 
 from combat_rl_common import REPO_ROOT, write_json, write_jsonl
 from structured_combat_env import StructuredGymCombatEnv
-from train_structured_combat_ppo import load_start_spec_name, parse_seed_list, stack_obs_np
+from train_structured_combat_ppo import load_start_spec_name, parse_seed_list
 
 
 def legal_candidates(info: dict[str, Any]) -> list[dict[str, Any]]:
@@ -141,7 +141,7 @@ def replay_prefix(
     return obs, info, True
 
 
-def choose_teacher_action(
+def score_teacher_candidates(
     *,
     spec_path: Path,
     seed_hint: int,
@@ -149,7 +149,7 @@ def choose_teacher_action(
     candidates: list[dict[str, Any]],
     main_env: StructuredGymCombatEnv,
     env_args: dict[str, Any],
-) -> tuple[dict[str, int] | None, dict[str, Any]]:
+) -> list[dict[str, Any]]:
     scored: list[dict[str, Any]] = []
     for candidate in candidates:
         action = main_env.candidate_to_canonical(candidate)
@@ -181,7 +181,7 @@ def choose_teacher_action(
                     }
                 )
                 continue
-            score, details = transition_teacher_score(
+            _score, details = transition_teacher_score(
                 action=action,
                 reward=float(reward),
                 done=bool(done or truncated),
@@ -190,6 +190,7 @@ def choose_teacher_action(
             scored.append(
                 {
                     "candidate_label": candidate.get("label"),
+                    "candidate": candidate,
                     "action": action,
                     "replay_ok": True,
                     **details,
@@ -197,6 +198,26 @@ def choose_teacher_action(
             )
         finally:
             probe.close()
+    return scored
+
+
+def choose_teacher_action(
+    *,
+    spec_path: Path,
+    seed_hint: int,
+    prefix_actions: list[dict[str, int]],
+    candidates: list[dict[str, Any]],
+    main_env: StructuredGymCombatEnv,
+    env_args: dict[str, Any],
+) -> tuple[dict[str, int] | None, dict[str, Any]]:
+    scored = score_teacher_candidates(
+        spec_path=spec_path,
+        seed_hint=seed_hint,
+        prefix_actions=prefix_actions,
+        candidates=candidates,
+        main_env=main_env,
+        env_args=env_args,
+    )
 
     valid = [row for row in scored if row.get("action") is not None]
     if not valid:
