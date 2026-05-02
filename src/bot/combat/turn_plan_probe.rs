@@ -12,7 +12,7 @@ use super::legal_moves::get_legal_moves;
 use super::profile::SearchProfileBreakdown;
 use super::stepping::simulate_input_bounded;
 
-pub const COMBAT_TURN_PLAN_PROBE_SCHEMA_VERSION: &str = "combat_turn_plan_probe_v1";
+pub const COMBAT_TURN_PLAN_PROBE_SCHEMA_VERSION: &str = "combat_turn_plan_probe_v1_1";
 
 #[derive(Clone, Copy, Debug)]
 pub struct CombatTurnPlanProbeConfig {
@@ -39,6 +39,7 @@ pub struct CombatTurnPlanProbeReport {
     pub source_trace: serde_json::Value,
     pub state_summary: CombatPlanStateSummary,
     pub hand_cards: Vec<CombatPlanHandCard>,
+    pub first_action_affordances: Vec<CombatFirstActionAffordance>,
     pub plans: Vec<CombatPlanReport>,
     pub sequence_classes: Vec<CombatPlanSequenceClass>,
     pub risk_notes: Vec<CombatPlanRiskNote>,
@@ -84,6 +85,32 @@ pub struct CombatPlanReport {
     pub best_score: Option<PlanScoreBreakdown>,
     pub candidate_sequence_count: usize,
     pub explanation: String,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct CombatFirstActionAffordance {
+    pub action_key: String,
+    pub action_label: String,
+    pub supported_plans: Vec<CombatPlanActionSupport>,
+    pub best_plan_rank: Option<usize>,
+    pub sequence_count: usize,
+    pub best_sequence_key: Option<String>,
+    pub best_sequence_actions: Vec<String>,
+    pub best_sequence_score: Option<PlanScoreBreakdown>,
+    pub component_max: PlanScoreBreakdown,
+    pub major_tradeoffs: Vec<String>,
+    pub risk_note_kinds: Vec<String>,
+    pub order_sensitive_reasons: Vec<String>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct CombatPlanActionSupport {
+    pub plan_name: String,
+    pub rank: usize,
+    pub plan_score: i32,
+    pub best_plan_score: i32,
+    pub score_gap_to_best: i32,
+    pub support_level: String,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -196,12 +223,15 @@ pub fn probe_turn_plans(
         .iter()
         .map(|plan| build_plan_report(*plan, &sequence_classes))
         .collect();
+    let first_action_affordances =
+        build_first_action_affordances(&plan_kinds, &sequence_classes, &risk_notes);
 
     CombatTurnPlanProbeReport {
         schema_version: COMBAT_TURN_PLAN_PROBE_SCHEMA_VERSION.to_string(),
         source_trace: serde_json::Value::Null,
         state_summary: start_summary,
         hand_cards,
+        first_action_affordances,
         plans,
         sequence_classes,
         risk_notes,
@@ -214,6 +244,219 @@ pub fn probe_turn_plans(
             "budget_pruning_can_hide_lower_ranked_sequences".to_string(),
         ],
     }
+}
+
+fn build_first_action_affordances(
+    plan_kinds: &[CombatPlanKind],
+    sequences: &[CombatPlanSequenceClass],
+    risk_notes: &[CombatPlanRiskNote],
+) -> Vec<CombatFirstActionAffordance> {
+    let mut by_first_action = BTreeMap::<String, Vec<&CombatPlanSequenceClass>>::new();
+    for sequence in sequences {
+        if let Some(first_action) = sequence.action_keys.first() {
+            by_first_action
+                .entry(first_action.clone())
+                .or_default()
+                .push(sequence);
+        }
+    }
+
+    let mut plan_rankings = Vec::<(CombatPlanKind, Vec<(String, i32)>)>::new();
+    for plan in plan_kinds {
+        let mut best_by_first_action = BTreeMap::<String, i32>::new();
+        for sequence in sequences {
+            let Some(first_action) = sequence.action_keys.first() else {
+                continue;
+            };
+            let score = score_for_plan(*plan, &sequence.diagnostics);
+            best_by_first_action
+                .entry(first_action.clone())
+                .and_modify(|existing| *existing = (*existing).max(score))
+                .or_insert(score);
+        }
+        let mut ranked = best_by_first_action.into_iter().collect::<Vec<_>>();
+        ranked.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+        plan_rankings.push((*plan, ranked));
+    }
+
+    let mut affordances = by_first_action
+        .into_iter()
+        .map(|(action_key, action_sequences)| {
+            let best_sequence = action_sequences
+                .iter()
+                .copied()
+                .max_by_key(|sequence| sequence.diagnostics.total_score);
+            let mut supported_plans = Vec::new();
+            for (plan, ranked) in &plan_rankings {
+                let Some(best_plan_score) = ranked.first().map(|(_, score)| *score) else {
+                    continue;
+                };
+                let best_for_action = ranked
+                    .iter()
+                    .enumerate()
+                    .find(|(_, (first_action, _))| first_action == &action_key);
+                let Some((rank_idx, (_, plan_score))) = best_for_action else {
+                    continue;
+                };
+                let rank = rank_idx + 1;
+                let gap = best_plan_score - *plan_score;
+                let support_level = if rank == 1 {
+                    "top"
+                } else if rank <= 3 || gap <= 80 {
+                    "near_top"
+                } else {
+                    "weak"
+                };
+                if support_level != "weak" {
+                    supported_plans.push(CombatPlanActionSupport {
+                        plan_name: plan_label(*plan).to_string(),
+                        rank,
+                        plan_score: *plan_score,
+                        best_plan_score,
+                        score_gap_to_best: gap,
+                        support_level: support_level.to_string(),
+                    });
+                }
+            }
+            supported_plans.sort_by(|a, b| {
+                a.rank
+                    .cmp(&b.rank)
+                    .then_with(|| a.score_gap_to_best.cmp(&b.score_gap_to_best))
+                    .then_with(|| a.plan_name.cmp(&b.plan_name))
+            });
+            let best_plan_rank = supported_plans.iter().map(|support| support.rank).min();
+            let component_max = aggregate_component_max(&action_sequences);
+            let action_risk_kinds = risk_notes
+                .iter()
+                .filter(|note| note.action_key == action_key)
+                .map(|note| note.kind.clone())
+                .collect::<BTreeSet<_>>()
+                .into_iter()
+                .collect::<Vec<_>>();
+            let order_sensitive_reasons = action_sequences
+                .iter()
+                .flat_map(|sequence| sequence.order_sensitive_reasons.iter().cloned())
+                .collect::<BTreeSet<_>>()
+                .into_iter()
+                .collect::<Vec<_>>();
+            CombatFirstActionAffordance {
+                action_label: probe_action_label_from_key(&action_key),
+                action_key,
+                supported_plans,
+                best_plan_rank,
+                sequence_count: action_sequences.len(),
+                best_sequence_key: best_sequence
+                    .map(|sequence| sequence.sequence_equivalence_key.clone()),
+                best_sequence_actions: best_sequence
+                    .map(|sequence| sequence.actions.clone())
+                    .unwrap_or_default(),
+                best_sequence_score: best_sequence.map(|sequence| sequence.diagnostics.clone()),
+                component_max: component_max.clone(),
+                major_tradeoffs: major_tradeoffs_for_first_action(
+                    &component_max,
+                    &action_risk_kinds,
+                    &order_sensitive_reasons,
+                ),
+                risk_note_kinds: action_risk_kinds,
+                order_sensitive_reasons,
+            }
+        })
+        .collect::<Vec<_>>();
+
+    affordances.sort_by(|a, b| {
+        a.best_plan_rank
+            .unwrap_or(usize::MAX)
+            .cmp(&b.best_plan_rank.unwrap_or(usize::MAX))
+            .then_with(|| {
+                score_value_for_sort(b.best_sequence_score.as_ref())
+                    .cmp(&score_value_for_sort(a.best_sequence_score.as_ref()))
+            })
+            .then_with(|| a.action_key.cmp(&b.action_key))
+    });
+    affordances
+}
+
+fn score_value_for_sort(score: Option<&PlanScoreBreakdown>) -> i32 {
+    score.map(|score| score.total_score).unwrap_or(i32::MIN)
+}
+
+fn aggregate_component_max(sequences: &[&CombatPlanSequenceClass]) -> PlanScoreBreakdown {
+    let mut aggregate = PlanScoreBreakdown {
+        total_score: i32::MIN,
+        lethal_score: i32::MIN,
+        block_score: i32::MIN,
+        hp_loss_score: i32::MIN,
+        enemy_death_score: i32::MIN,
+        damage_score: i32::MIN,
+        setup_score: i32::MIN,
+        exhaust_value: i32::MIN,
+        key_card_risk: i32::MIN,
+        random_risk: i32::MIN,
+        future_hand_penalty: i32::MIN,
+    };
+    for sequence in sequences {
+        let score = &sequence.diagnostics;
+        aggregate.total_score = aggregate.total_score.max(score.total_score);
+        aggregate.lethal_score = aggregate.lethal_score.max(score.lethal_score);
+        aggregate.block_score = aggregate.block_score.max(score.block_score);
+        aggregate.hp_loss_score = aggregate.hp_loss_score.max(score.hp_loss_score);
+        aggregate.enemy_death_score = aggregate.enemy_death_score.max(score.enemy_death_score);
+        aggregate.damage_score = aggregate.damage_score.max(score.damage_score);
+        aggregate.setup_score = aggregate.setup_score.max(score.setup_score);
+        aggregate.exhaust_value = aggregate.exhaust_value.max(score.exhaust_value);
+        aggregate.key_card_risk = aggregate.key_card_risk.max(score.key_card_risk);
+        aggregate.random_risk = aggregate.random_risk.max(score.random_risk);
+        aggregate.future_hand_penalty =
+            aggregate.future_hand_penalty.max(score.future_hand_penalty);
+    }
+    if aggregate.total_score == i32::MIN {
+        PlanScoreBreakdown::default()
+    } else {
+        aggregate
+    }
+}
+
+fn major_tradeoffs_for_first_action(
+    score: &PlanScoreBreakdown,
+    risk_note_kinds: &[String],
+    order_sensitive_reasons: &[String],
+) -> Vec<String> {
+    let mut tradeoffs = Vec::new();
+    if score.lethal_score > 0 {
+        tradeoffs.push("can_end_combat".to_string());
+    }
+    if score.enemy_death_score > 0 {
+        tradeoffs.push("can_kill_enemy".to_string());
+    }
+    if score.block_score >= 80 {
+        tradeoffs.push("strong_defense_line".to_string());
+    } else if score.block_score > 0 {
+        tradeoffs.push("partial_defense_line".to_string());
+    }
+    if score.damage_score >= 72 {
+        tradeoffs.push("strong_damage_progress".to_string());
+    } else if score.damage_score > 0 {
+        tradeoffs.push("damage_progress".to_string());
+    }
+    if score.setup_score > 0 {
+        tradeoffs.push("setup_or_scaling".to_string());
+    }
+    if score.exhaust_value > 0 {
+        tradeoffs.push("exhaust_cleanup_or_synergy".to_string());
+    }
+    if score.hp_loss_score < 0 {
+        tradeoffs.push("accepts_hp_loss".to_string());
+    }
+    if score.future_hand_penalty < 0 {
+        tradeoffs.push("spends_or_destroys_hand".to_string());
+    }
+    if score.key_card_risk < 0 || score.random_risk < 0 || !risk_note_kinds.is_empty() {
+        tradeoffs.push("explicit_risk_note".to_string());
+    }
+    if !order_sensitive_reasons.is_empty() {
+        tradeoffs.push("order_sensitive".to_string());
+    }
+    tradeoffs
 }
 
 fn explore_sequence_classes(
@@ -935,6 +1178,38 @@ fn probe_target_label(combat: &CombatState, target: Option<usize>) -> String {
     }
 }
 
+fn probe_action_label_from_key(action_key: &str) -> String {
+    if action_key == "combat/end_turn" {
+        return "EndTurn".to_string();
+    }
+    if let Some(rest) = action_key.strip_prefix("combat/play_card/card:") {
+        let card = rest.split('/').next().unwrap_or(rest);
+        let hand = rest
+            .split("hand:")
+            .nth(1)
+            .and_then(|part| part.split('/').next())
+            .filter(|hand| !hand.is_empty())
+            .map(|hand| format!("[h{hand}]"))
+            .unwrap_or_default();
+        let target = rest
+            .split("target:")
+            .nth(1)
+            .filter(|target| !target.is_empty())
+            .unwrap_or("none");
+        if target == "none" {
+            format!("{card}{hand}")
+        } else {
+            format!("{card}{hand} -> {target}")
+        }
+    } else if let Some(rest) = action_key.strip_prefix("combat/hand_select/") {
+        format!("HandSelect {rest}")
+    } else if let Some(rest) = action_key.strip_prefix("combat/grid_select/") {
+        format!("GridSelect {rest}")
+    } else {
+        action_key.to_string()
+    }
+}
+
 fn uuid_list_key(uuids: &[u32]) -> String {
     uuids
         .iter()
@@ -1121,6 +1396,19 @@ mod tests {
         assert!(!note.exact_rng_branches);
         assert!(note.risk_is_overlay_only);
         assert!(note.bad_branch_probability_milli.unwrap_or_default() > 0);
+        let affordance = report
+            .first_action_affordances
+            .iter()
+            .find(|affordance| affordance.action_key.contains("card:TrueGrit"))
+            .expect("True Grit should have a first-action affordance");
+        assert!(affordance
+            .risk_note_kinds
+            .iter()
+            .any(|kind| kind == "true_grit_random_exhaust_overlay"));
+        assert!(affordance
+            .major_tradeoffs
+            .iter()
+            .any(|tradeoff| tradeoff == "explicit_risk_note"));
     }
 
     #[test]
@@ -1201,6 +1489,19 @@ mod tests {
             .order_sensitive_reasons
             .iter()
             .any(|reason| reason == "debuff_before_damage_can_change_value")));
+        let bash = report
+            .first_action_affordances
+            .iter()
+            .find(|affordance| affordance.action_key.contains("card:Bash"))
+            .expect("Bash should have first-action affordance rows");
+        assert!(bash
+            .supported_plans
+            .iter()
+            .any(|support| support.plan_name == "MaxDamage" && support.rank == 1));
+        assert!(bash
+            .order_sensitive_reasons
+            .iter()
+            .any(|reason| reason == "debuff_before_damage_can_change_value"));
     }
 
     #[test]

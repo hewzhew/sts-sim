@@ -38,10 +38,15 @@ def action_label(action_key: Any) -> str:
         return "EndTurn"
     if key.startswith("combat/play_card/card:"):
         card = key.split("card:", 1)[1].split("/", 1)[0]
+        hand = ""
+        if "hand:" in key:
+            hand_idx = key.split("hand:", 1)[1].split("/", 1)[0]
+            if hand_idx:
+                hand = f"[h{hand_idx}]"
         target = key.split("target:", 1)[1] if "target:" in key else "none"
         if target in {"none", ""}:
-            return f"{card}"
-        return f"{card} -> {target}"
+            return f"{card}{hand}"
+        return f"{card}{hand} -> {target}"
     if key.startswith("combat/hand_select/"):
         return "Hand select " + key.rsplit(":", 1)[-1]
     if key.startswith("combat/grid_select/"):
@@ -211,6 +216,65 @@ def render_risk_notes(report: dict[str, Any]) -> str:
     return "<section class='panel'><h2>Risk Notes</h2>" + "\n".join(rows) + "</section>"
 
 
+def render_affordances(report: dict[str, Any]) -> str:
+    affordances = report.get("first_action_affordances") or []
+    chosen = chosen_context(report)["chosen"]
+    rows = []
+    for affordance in affordances:
+        score = affordance.get("best_sequence_score") or {}
+        component = affordance.get("component_max") or {}
+        supports = " ".join(
+            chip(
+                f"{support.get('plan_name')} #{support.get('rank')} ({support.get('support_level')}, gap {support.get('score_gap_to_best')})",
+                "chosen" if support.get("rank") == 1 else "support",
+            )
+            for support in affordance.get("supported_plans") or []
+        )
+        if not supports:
+            supports = "<span class='muted'>no top/near-top plan support</span>"
+        tradeoffs = " ".join(chip(item, "tradeoff") for item in affordance.get("major_tradeoffs") or [])
+        risks = " ".join(chip(item, "risk") for item in affordance.get("risk_note_kinds") or [])
+        order = " ".join(chip(item, "reason") for item in affordance.get("order_sensitive_reasons") or [])
+        classes = []
+        if affordance.get("action_key") == chosen:
+            classes.append("chosen-row")
+        rows.append(
+            f"<tr class='{' '.join(classes)}'>"
+            f"<td><strong>{esc(affordance.get('action_label'))}</strong><div class='muted mono'>{esc(affordance.get('action_key'))}</div></td>"
+            f"<td>{supports}</td>"
+            f"<td>{esc(affordance.get('best_plan_rank') or '')}</td>"
+            f"<td>{esc(affordance.get('sequence_count'))}</td>"
+            f"<td>{esc(score.get('total_score'))}</td>"
+            f"<td>{esc(component.get('block_score'))}</td>"
+            f"<td>{esc(component.get('damage_score'))}</td>"
+            f"<td>{esc(component.get('setup_score'))}</td>"
+            f"<td>{esc(component.get('exhaust_value'))}</td>"
+            f"<td>{esc(component.get('key_card_risk'))} / {esc(component.get('random_risk'))}</td>"
+            f"<td>{tradeoffs}{risks}{order}</td>"
+            "</tr>"
+        )
+    body = "\n".join(rows) or "<tr><td colspan='11'>No first-action affordances in this report.</td></tr>"
+    return f"""
+    <section class="panel">
+      <h2>Action Affordance Matrix</h2>
+      <p class="muted">
+        This is action-to-plan evidence from explored current-turn sequence classes.
+        It is not a policy label: support means the action appears in a top or near-top sequence for that plan.
+      </p>
+      <table>
+        <thead>
+          <tr>
+            <th>First action</th><th>Supported plans</th><th>Best rank</th><th>Seqs</th>
+            <th>Best total</th><th>Max block</th><th>Max damage</th><th>Max setup</th><th>Max exhaust</th>
+            <th>Key/random risk</th><th>Tradeoffs</th>
+          </tr>
+        </thead>
+        <tbody>{body}</tbody>
+      </table>
+    </section>
+    """
+
+
 def render_plans(report: dict[str, Any]) -> str:
     chosen = chosen_context(report)["chosen"]
     cards = []
@@ -334,6 +398,8 @@ def render_html(report: dict[str, Any], report_path: Path, top_sequences: int) -
     .semantic { background: #f0f9ff; border-color: #7dd3fc; }
     .transient { background: #f5f3ff; border-color: #c4b5fd; }
     .warning, .risk { background: #fff7ed; border-color: #fdba74; }
+    .support { background: #eef2ff; border-color: #a5b4fc; }
+    .tradeoff { background: #f0fdf4; border-color: #86efac; }
     .chosen { background: #dbeafe; border-color: #60a5fa; }
     .affected { background: #fef2f2; border-color: #fca5a5; }
     .reason { background: #ecfdf5; border-color: #86efac; }
@@ -363,6 +429,7 @@ def render_html(report: dict[str, Any], report_path: Path, top_sequences: int) -
   <p class="muted mono">generated: {esc(datetime.now(timezone.utc).isoformat())}</p>
   {render_state(report)}
   {render_warnings(report)}
+  {render_affordances(report)}
   {render_risk_notes(report)}
   {render_hand(report)}
   {render_plans(report)}
@@ -387,8 +454,29 @@ def render_markdown(report: dict[str, Any], report_path: Path, top_sequences: in
         f"- HP / block / incoming: `{state.get('player_hp')}` / `{state.get('player_block')}` / `{state.get('visible_incoming_damage')}`",
         f"- Energy / hand / monsters: `{state.get('energy')}` / `{state.get('hand_count')}` / `{state.get('alive_monster_count')}`",
         "",
-        "## Plan Tops",
+        "## Action Affordance Matrix",
     ]
+    for affordance in report.get("first_action_affordances") or []:
+        score = affordance.get("best_sequence_score") or {}
+        component = affordance.get("component_max") or {}
+        supports = ", ".join(
+            f"{support.get('plan_name')}#{support.get('rank')}:{support.get('support_level')} gap {support.get('score_gap_to_best')}"
+            for support in affordance.get("supported_plans") or []
+        )
+        tradeoffs = ", ".join(str(item) for item in affordance.get("major_tradeoffs") or [])
+        lines.append(
+            f"- `{affordance.get('action_label')}` rank `{affordance.get('best_plan_rank')}` "
+            f"seqs `{affordance.get('sequence_count')}`, total `{score.get('total_score')}`, "
+            f"max block/damage/setup/exhaust `{component.get('block_score')}`/`{component.get('damage_score')}`/`{component.get('setup_score')}`/`{component.get('exhaust_value')}`, "
+            f"risk `{component.get('key_card_risk')},{component.get('random_risk')}`; "
+            f"supports: {supports or 'none'}; tradeoffs: {tradeoffs or 'none'}"
+        )
+    lines.extend(
+        [
+            "",
+            "## Plan Tops",
+        ]
+    )
     for plan in report.get("plans") or []:
         keys = plan.get("best_action_keys") or []
         score = plan.get("best_score") or {}
@@ -415,7 +503,10 @@ def render_markdown(report: dict[str, Any], report_path: Path, top_sequences: in
             existing, count = compact[existing_idx]
             existing_score = score_value(existing.get("diagnostics") or {}, "total_score")
             current_score = score_value(sequence.get("diagnostics") or {}, "total_score")
-            compact[existing_idx] = (sequence if current_score > existing_score else existing, count + 1)
+            compact[existing_idx] = (
+                sequence if current_score > existing_score else existing,
+                count + 1,
+            )
         else:
             seen[label] = len(compact)
             compact.append((sequence, 1))
