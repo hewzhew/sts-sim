@@ -23,6 +23,33 @@ SURVIVAL_ORDER = {
     "stable": 4,
 }
 
+PRESSURE_ORDER = [
+    "no_attack",
+    "blocked_attack",
+    "chip_pressure",
+    "medium_pressure",
+    "high_pressure",
+    "lethal_pressure",
+]
+
+BALANCED_PRESSURE_ORDER = [
+    "medium_pressure",
+    "chip_pressure",
+    "no_attack",
+    "blocked_attack",
+    "high_pressure",
+    "lethal_pressure",
+]
+
+NORMAL_PRESSURE_PRIORITY = {
+    "medium_pressure": 6,
+    "chip_pressure": 5,
+    "blocked_attack": 4,
+    "no_attack": 3,
+    "high_pressure": 2,
+    "lethal_pressure": 1,
+}
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
@@ -35,7 +62,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-cases", type=int, default=12)
     parser.add_argument("--per-trace-limit", type=int, default=6)
     parser.add_argument("--min-candidates", type=int, default=2)
-    parser.add_argument("--case-strategy", default="danger", choices=["trace_order", "danger"])
+    parser.add_argument("--case-strategy", default="balanced_pressure", choices=["trace_order", "danger", "balanced_pressure", "normal_pressure"])
     parser.add_argument("--min-step-gap", type=int, default=3)
     parser.add_argument("--continuation-policy", default="rule_baseline_v0", choices=["rule_baseline_v0", "random_masked"])
     parser.add_argument("--horizon", type=int, default=10)
@@ -106,6 +133,57 @@ def case_priority(step: dict[str, Any]) -> tuple[float, int, int, int]:
     )
 
 
+def cheap_pressure_class(step: dict[str, Any]) -> str:
+    incoming = int(combat_obs(step).get("visible_incoming_damage") or 0)
+    unblocked = unblocked_damage(step)
+    current_hp = hp(step)
+    if incoming <= 0:
+        return "no_attack"
+    if unblocked <= 0:
+        return "blocked_attack"
+    if current_hp > 0 and unblocked >= current_hp:
+        return "lethal_pressure"
+    if current_hp > 0 and unblocked >= max(current_hp // 2, 1):
+        return "high_pressure"
+    if unblocked >= 6:
+        return "medium_pressure"
+    return "chip_pressure"
+
+
+def ordered_steps(candidates: list[tuple[tuple[float, int, int, int], dict[str, Any]]], strategy: str) -> list[dict[str, Any]]:
+    if strategy == "danger":
+        return [step for _priority, step in sorted(candidates, key=lambda item: item[0], reverse=True)]
+    if strategy == "normal_pressure":
+        return [
+            step
+            for _priority, step in sorted(
+                candidates,
+                key=lambda item: (
+                    NORMAL_PRESSURE_PRIORITY.get(cheap_pressure_class(item[1]), 0),
+                    item[0][2],
+                    item[0][3],
+                    item[0][1],
+                ),
+                reverse=True,
+            )
+        ]
+    if strategy == "balanced_pressure":
+        buckets: dict[str, list[dict[str, Any]]] = {name: [] for name in PRESSURE_ORDER}
+        for priority, step in sorted(candidates, key=lambda item: item[0], reverse=True):
+            buckets.setdefault(cheap_pressure_class(step), []).append(step)
+        ordered: list[dict[str, Any]] = []
+        while any(buckets.values()):
+            progressed = False
+            for name in BALANCED_PRESSURE_ORDER:
+                if buckets.get(name):
+                    ordered.append(buckets[name].pop(0))
+                    progressed = True
+            if not progressed:
+                break
+        return ordered
+    return [step for _priority, step in candidates]
+
+
 def public_case(case: dict[str, Any]) -> dict[str, Any]:
     return {
         key: str(value) if isinstance(value, Path) else value
@@ -129,6 +207,7 @@ def step_to_case(path: Path, trace: dict[str, Any], step: dict[str, Any]) -> dic
         "hp": hp(step),
         "incoming": int(combat.get("visible_incoming_damage") or 0),
         "unblocked": unblocked_damage(step),
+        "selection_pressure_class": cheap_pressure_class(step),
         "turn_count": int(combat.get("turn_count") or 0),
         "monster_hp": int(combat.get("total_monster_hp") or 0),
         "candidate_count": legal_count(step),
@@ -149,10 +228,8 @@ def select_cases(args: argparse.Namespace) -> list[dict[str, Any]]:
             if legal_count(step) < args.min_candidates:
                 continue
             candidates.append((case_priority(step), step))
-        if args.case_strategy == "danger":
-            candidates.sort(key=lambda item: item[0], reverse=True)
         per_trace = 0
-        for _priority, step in candidates:
+        for step in ordered_steps(candidates, args.case_strategy):
             step_index = int(step.get("step_index") or 0)
             if any(abs(step_index - selected) < args.min_step_gap for selected in selected_steps):
                 continue
@@ -234,10 +311,13 @@ def find_ranking_row(report: dict[str, Any], candidate_index: int) -> dict[str, 
 
 
 def group_ranks(report: dict[str, Any]) -> dict[str, int]:
+    return group_ranks_for_rows(list(report.get("ranking") or []))
+
+
+def group_ranks_for_rows(rows: list[dict[str, Any]]) -> dict[str, int]:
     best_by_signature: dict[str, int] = {}
-    for row in report.get("ranking") or []:
+    for rank, row in enumerate(rows, start=1):
         signature = str(row.get("equivalence_signature") or "")
-        rank = int(row.get("rank") or 0)
         if signature and (signature not in best_by_signature or rank < best_by_signature[signature]):
             best_by_signature[signature] = rank
     return best_by_signature
@@ -313,7 +393,7 @@ def diagnostic_flags(report: dict[str, Any], chosen: dict[str, Any] | None, best
     chosen_role = str(abstraction_value(chosen, "root_plan_role") or "")
     best_role = str(abstraction_value(best, "root_plan_role") or "")
     pressure = str(abstraction_value(chosen, "pressure_class") or abstraction_value(best, "pressure_class") or "")
-    if chosen_fit == "ignores_attack" and best_fit in {"covers_attack", "reduces_attack", "decisive"}:
+    if chosen_fit == "ignores_attack" and best_fit in {"covers_attack", "reduces_attack", "reduces_future_attack", "decisive"}:
         flags.append("ignored_attack_pressure")
     if chosen_role == "partial_defense" and best_role == "full_defense":
         flags.append("missed_full_defense")
@@ -345,6 +425,48 @@ def is_actionable(kind: str) -> bool:
     return kind in {"survival_rescue", "tactical_win", "major_hp_efficiency", "hp_efficiency"}
 
 
+def plan_readiness(
+    chosen: dict[str, Any] | None,
+    best: dict[str, Any] | None,
+    kind: str,
+    flags: list[str],
+) -> tuple[str, bool, list[str]]:
+    if chosen is None or best is None:
+        return "invalid", False, ["missing_chosen_or_best"]
+    flag_set = set(flags)
+    reasons: list[str] = []
+    pressure = str(abstraction_value(chosen, "pressure_class") or abstraction_value(best, "pressure_class") or "unknown")
+    chosen_family = action_family(chosen.get("candidate_key"))
+    best_family = action_family(best.get("candidate_key"))
+    chosen_fit = str(abstraction_value(chosen, "root_plan_fit") or "")
+    best_fit = str(abstraction_value(best, "root_plan_fit") or "")
+
+    if kind == "already_lost" or estimate(best, "survive_prob") <= 0.0:
+        return "diagnostic_only", False, ["already_lost"]
+    if pressure == "lethal_pressure":
+        reasons.append("lethal_pressure")
+    if "potion_opportunity" in flag_set or "potion_overuse" in flag_set or "use_potion" in {chosen_family, best_family}:
+        reasons.append("external_resource")
+    if chosen_family not in {"play_card", "end_turn"} or best_family not in {"play_card", "end_turn"}:
+        reasons.append("non_card_root")
+    if "lethal_pressure" in reasons or "external_resource" in reasons or "non_card_root" in reasons:
+        return "diagnostic_only", False, reasons
+
+    if pressure in {"chip_pressure", "medium_pressure", "high_pressure"}:
+        if "missed_full_defense" in flag_set or "ignored_attack_pressure" in flag_set:
+            return "defense_plan_probe", True, ["attack_pressure_contract"]
+        if chosen_fit != best_fit:
+            return "combat_plan_probe", True, ["different_turn_plan_fit"]
+        if kind in {"hp_efficiency", "major_hp_efficiency", "tactical_win"}:
+            return "combat_plan_probe", True, [kind]
+        return "calibration_only", False, ["same_or_weak_combat_plan"]
+    if pressure in {"no_attack", "blocked_attack"}:
+        if "wasted_no_attack_window" in flag_set or chosen_fit != best_fit:
+            return "window_plan_probe", True, ["window_resource_allocation"]
+        return "calibration_only", False, ["same_or_weak_window_plan"]
+    return "diagnostic_only", False, [f"unsupported_pressure:{pressure}"]
+
+
 def flatten_case(result: dict[str, Any]) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     case = result["case"]
     if result["status"] != "ok":
@@ -364,6 +486,13 @@ def flatten_case(result: dict[str, Any]) -> tuple[list[dict[str, Any]], dict[str
     chosen_group_rank = ranks_by_group.get(chosen_signature)
     flags = diagnostic_flags(report, chosen, best, chosen_group_rank)
     kind = triage_kind(chosen, best, chosen_group_rank)
+    readiness, training_ready, readiness_reasons = plan_readiness(chosen, best, kind, flags)
+    card_ranking = [row for row in ranking if action_family(row.get("candidate_key")) in {"play_card", "end_turn"}]
+    best_card = card_ranking[0] if card_ranking else None
+    card_group_rank = group_ranks_for_rows(card_ranking).get(chosen_signature)
+    card_flags = diagnostic_flags(report, chosen, best_card, card_group_rank) if best_card is not None else ["missing_card_candidate"]
+    card_kind = triage_kind(chosen, best_card, card_group_rank) if best_card is not None else "invalid"
+    card_readiness, card_training_ready, card_readiness_reasons = plan_readiness(chosen, best_card, card_kind, card_flags)
     group_count = int((report.get("summary") or {}).get("equivalence_group_count") or 0)
     candidate_count = int((report.get("summary") or {}).get("candidate_count") or 0)
     case_summary = {
@@ -404,8 +533,17 @@ def flatten_case(result: dict[str, Any]) -> tuple[list[dict[str, Any]], dict[str
         "best_root_block_need": abstraction_value(best, "root_block_need"),
         "best_root_unblocked_reduction": abstraction_value(best, "root_unblocked_reduction"),
         "best_root_damage_delta": abstraction_value(best, "root_damage_delta"),
+        "best_card_candidate_index": None if best_card is None else int(best_card.get("candidate_index") or 0),
+        "best_card_candidate_key": None if best_card is None else str(best_card.get("candidate_key") or ""),
+        "best_card_equivalence_signature": None if best_card is None else str(best_card.get("equivalence_signature") or ""),
+        "best_card_root_plan_role": abstraction_value(best_card, "root_plan_role"),
+        "best_card_root_plan_fit": abstraction_value(best_card, "root_plan_fit"),
+        "best_card_root_unblocked_reduction": abstraction_value(best_card, "root_unblocked_reduction"),
+        "best_card_root_damage_delta": abstraction_value(best_card, "root_damage_delta"),
         "hp_regret": estimate(best, "expected_end_hp") - estimate(chosen, "expected_end_hp"),
         "combat_win_regret": estimate(best, "combat_win_prob") - estimate(chosen, "combat_win_prob"),
+        "card_hp_regret": estimate(best_card, "expected_end_hp") - estimate(chosen, "expected_end_hp"),
+        "card_combat_win_regret": estimate(best_card, "combat_win_prob") - estimate(chosen, "combat_win_prob"),
         "survive_prob_range": estimate_range(ranking, "survive_prob"),
         "combat_win_prob_range": estimate_range(ranking, "combat_win_prob"),
         "expected_end_hp_range": estimate_range(ranking, "expected_end_hp"),
@@ -418,6 +556,14 @@ def flatten_case(result: dict[str, Any]) -> tuple[list[dict[str, Any]], dict[str
         "root_plan_fit_counts": abstraction_counts(ranking, "root_plan_fit"),
         "triage_kind": kind,
         "actionable": is_actionable(kind),
+        "plan_readiness": readiness,
+        "training_ready": training_ready,
+        "readiness_reasons": readiness_reasons,
+        "card_triage_kind": card_kind,
+        "card_plan_readiness": card_readiness,
+        "card_training_ready": card_training_ready,
+        "card_readiness_reasons": card_readiness_reasons,
+        "card_diagnostic_flags": card_flags,
         "diagnostic_flags": flags,
     }
     rows = []
@@ -473,6 +619,9 @@ def main() -> None:
     flag_counts: Counter[str] = Counter()
     for case in ok_cases:
         flag_counts.update(case.get("diagnostic_flags") or [])
+    plan_probe_cases = [case for case in ok_cases if case.get("training_ready")]
+    card_plan_probe_cases = [case for case in ok_cases if case.get("card_training_ready")]
+    diagnostic_cases = [case for case in ok_cases if not case.get("training_ready") and case.get("actionable")]
     summary = {
         "schema_version": "combat_abstraction_batch_v0",
         "created_at_utc": datetime.now(timezone.utc).isoformat(),
@@ -502,6 +651,10 @@ def main() -> None:
         "diagnostic_flag_counts": dict(sorted(flag_counts.items())),
         "triage_kind_counts": dict(sorted(Counter(str(case.get("triage_kind")) for case in ok_cases).items())),
         "actionable_case_count": sum(1 for case in ok_cases if case.get("actionable")),
+        "plan_readiness_counts": dict(sorted(Counter(str(case.get("plan_readiness")) for case in ok_cases).items())),
+        "training_ready_case_count": len(plan_probe_cases),
+        "card_plan_readiness_counts": dict(sorted(Counter(str(case.get("card_plan_readiness")) for case in ok_cases).items())),
+        "card_training_ready_case_count": len(card_plan_probe_cases),
         "average_candidate_count": mean([case["candidate_count_evaluated"] for case in ok_cases]) if ok_cases else 0.0,
         "average_equivalence_group_count": mean([case["equivalence_group_count"] for case in ok_cases]) if ok_cases else 0.0,
         "average_compression_ratio": mean([case["compression_ratio"] for case in ok_cases]) if ok_cases else 0.0,
@@ -514,12 +667,13 @@ def main() -> None:
         "best_root_plan_fit_counts": dict(sorted(Counter(str(case.get("best_root_plan_fit")) for case in ok_cases).items())),
         "chosen_root_plan_role_counts": dict(sorted(Counter(str(case.get("chosen_root_plan_role")) for case in ok_cases).items())),
         "best_root_plan_role_counts": dict(sorted(Counter(str(case.get("best_root_plan_role")) for case in ok_cases).items())),
+        "best_card_root_plan_fit_counts": dict(sorted(Counter(str(case.get("best_card_root_plan_fit")) for case in ok_cases).items())),
+        "best_card_root_plan_role_counts": dict(sorted(Counter(str(case.get("best_card_root_plan_role")) for case in ok_cases).items())),
         "elapsed_seconds": elapsed,
-        "interesting_cases": [
-            case
-            for case in ok_cases
-            if case.get("actionable")
-        ][: args.max_interesting_cases],
+        "plan_probe_cases": plan_probe_cases[: args.max_interesting_cases],
+        "card_plan_probe_cases": card_plan_probe_cases[: args.max_interesting_cases],
+        "diagnostic_cases": diagnostic_cases[: args.max_interesting_cases],
+        "interesting_cases": card_plan_probe_cases[: args.max_interesting_cases],
         "case_summaries": case_summaries,
     }
     write_json(out_dir / "summary.json", summary)
@@ -533,6 +687,10 @@ def main() -> None:
                 "chosen_top_group_rate": summary["chosen_top_group_rate"],
                 "triage_kind_counts": summary["triage_kind_counts"],
                 "actionable_case_count": summary["actionable_case_count"],
+                "plan_readiness_counts": summary["plan_readiness_counts"],
+                "training_ready_case_count": summary["training_ready_case_count"],
+                "card_plan_readiness_counts": summary["card_plan_readiness_counts"],
+                "card_training_ready_case_count": summary["card_training_ready_case_count"],
                 "diagnostic_flag_counts": summary["diagnostic_flag_counts"],
             },
             indent=2,

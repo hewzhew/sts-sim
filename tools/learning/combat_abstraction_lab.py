@@ -68,6 +68,13 @@ def monster_hp(obs: dict[str, Any]) -> int:
     return int(combat_state(obs).get("total_monster_hp") or 0)
 
 
+def int_value(values: dict[str, Any], key: str, default: int = 0) -> int:
+    value = values.get(key)
+    if value is None:
+        return default
+    return int(value or 0)
+
+
 def summarize_combat_obs(obs: dict[str, Any]) -> dict[str, Any]:
     combat = combat_state(obs)
     return {
@@ -118,6 +125,10 @@ def candidate_tags(candidate: dict[str, Any]) -> list[str]:
             tags.append("draw")
         if card.get("gains_energy"):
             tags.append("energy")
+        if card.get("applies_weak"):
+            tags.extend(["debuff", "mitigation", "weak"])
+        if card.get("applies_vulnerable"):
+            tags.extend(["debuff", "vulnerable"])
         if card.get("scaling_piece"):
             tags.append("scaling")
         if card.get("exhaust"):
@@ -224,13 +235,13 @@ def pressure_class(start: dict[str, Any]) -> str:
 def root_plan(start: dict[str, Any], immediate: dict[str, Any], tags: list[str]) -> dict[str, Any]:
     tag_set = set(tags)
     start_unblocked = int(start.get("unblocked") or 0)
-    immediate_unblocked = int(immediate.get("unblocked") or start_unblocked)
+    immediate_unblocked = int_value(immediate, "unblocked", start_unblocked)
     start_monster_hp = int(start.get("monster_hp") or 0)
-    immediate_monster_hp = int(immediate.get("monster_hp") or 0)
+    immediate_monster_hp = int_value(immediate, "monster_hp", start_monster_hp)
     start_block = int(start.get("block") or 0)
-    immediate_block = int(immediate.get("block") or start_block)
+    immediate_block = int_value(immediate, "block", start_block)
     start_energy = int(start.get("energy") or 0)
-    immediate_energy = int(immediate.get("energy") or start_energy)
+    immediate_energy = int_value(immediate, "energy", start_energy)
     unblocked_reduction = max(start_unblocked - immediate_unblocked, 0)
     damage_delta = max(start_monster_hp - immediate_monster_hp, 0)
     block_delta = max(immediate_block - start_block, 0)
@@ -252,6 +263,10 @@ def root_plan(start: dict[str, Any], immediate: dict[str, Any], tags: list[str])
         role = "damage_under_pressure"
     elif under_attack and ("power" in tag_set or "scaling" in tag_set):
         role = "scaling_under_pressure"
+    elif under_attack and "mitigation" in tag_set:
+        role = "mitigation_debuff"
+    elif under_attack and "debuff" in tag_set:
+        role = "offensive_debuff_under_pressure"
     elif under_attack and "use_potion" in tag_set:
         role = "emergency_resource"
     elif under_attack:
@@ -260,6 +275,8 @@ def root_plan(start: dict[str, Any], immediate: dict[str, Any], tags: list[str])
         role = "defense_without_pressure"
     elif "power" in tag_set or "scaling" in tag_set:
         role = "setup_window"
+    elif "debuff" in tag_set:
+        role = "debuff_window"
     elif damage_delta > 0:
         role = "damage_window"
     else:
@@ -273,11 +290,15 @@ def root_plan(start: dict[str, Any], immediate: dict[str, Any], tags: list[str])
         fit = "reduces_attack"
     elif role == "damage_under_pressure":
         fit = "trades_hp_for_progress"
+    elif role == "mitigation_debuff":
+        fit = "reduces_future_attack"
+    elif role == "offensive_debuff_under_pressure":
+        fit = "trades_hp_for_future_progress"
     elif role in {"scaling_under_pressure", "ignores_pressure"}:
         fit = "ignores_attack"
     elif role == "emergency_resource":
         fit = "external_resource"
-    elif role in {"setup_window", "damage_window"}:
+    elif role in {"setup_window", "damage_window", "debuff_window"}:
         fit = "uses_window"
     elif role == "defense_without_pressure":
         fit = "wastes_window"
@@ -342,8 +363,8 @@ def classify_candidate(
     survive_prob = float(estimates.get("survive_prob") or 0.0)
     combat_win_prob = float(estimates.get("combat_win_prob") or 0.0)
     expected_end_hp = float(estimates.get("expected_end_hp") or 0.0)
-    immediate_unblocked = int(immediate.get("unblocked") or start.get("unblocked") or 0)
-    immediate_hp = int(immediate.get("hp") or start.get("hp") or 0)
+    immediate_unblocked = int_value(immediate, "unblocked", int(start.get("unblocked") or 0))
+    immediate_hp = int_value(immediate, "hp", int(start.get("hp") or 0))
 
     if survive_prob <= 0.0:
         survival_class = "forced_loss"
