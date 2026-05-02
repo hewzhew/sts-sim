@@ -23,6 +23,7 @@ use crate::state::selection::{SelectionResolution, SelectionScope, SelectionTarg
 
 pub const FULL_RUN_OBSERVATION_SCHEMA_VERSION: &str = "full_run_observation_v0";
 pub const FULL_RUN_ACTION_SCHEMA_VERSION: &str = "full_run_action_candidate_set_v0";
+const NO_PROGRESS_REPEAT_LIMIT: usize = 8;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RunPolicyKind {
@@ -67,6 +68,7 @@ pub struct RunBatchSummary {
     pub episodes_completed: usize,
     pub crash_count: usize,
     pub illegal_action_count: usize,
+    pub no_progress_loop_count: usize,
     pub deterministic_replay_pass_count: usize,
     pub average_floor: f32,
     pub median_floor: f32,
@@ -95,6 +97,7 @@ pub struct RunEpisodeSummary {
     pub steps: usize,
     pub forced_engine_ticks: usize,
     pub illegal_actions: usize,
+    pub no_progress_loop: Option<RunNoProgressLoop>,
     pub crash: Option<String>,
     pub deterministic_replay_pass: Option<bool>,
     pub deterministic_replay_error: Option<String>,
@@ -110,6 +113,18 @@ pub struct RunEpisodeSummary {
     pub deck_size: usize,
     pub relic_count: usize,
     pub trace_path: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+pub struct RunNoProgressLoop {
+    pub start_step: usize,
+    pub end_step: usize,
+    pub repeat_count: usize,
+    pub action_key: String,
+    pub decision_type: String,
+    pub engine_state: String,
+    pub floor: i32,
+    pub act: u8,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -321,6 +336,60 @@ struct EpisodeContext {
     combat_win_count: usize,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct NoProgressSignature {
+    observation_key: String,
+    action_mask_key: String,
+    chosen_action_key: String,
+}
+
+#[derive(Clone, Debug)]
+struct NoProgressTracker {
+    last: Option<NoProgressSignature>,
+    repeat_count: usize,
+    start_step: usize,
+}
+
+impl NoProgressTracker {
+    fn new() -> Self {
+        Self {
+            last: None,
+            repeat_count: 0,
+            start_step: 0,
+        }
+    }
+
+    fn observe(
+        &mut self,
+        step_index: usize,
+        signature: NoProgressSignature,
+        observation: &RunObservationV0,
+    ) -> Option<RunNoProgressLoop> {
+        if self.last.as_ref() == Some(&signature) {
+            self.repeat_count += 1;
+        } else {
+            self.last = Some(signature.clone());
+            self.repeat_count = 1;
+            self.start_step = step_index;
+        }
+
+        if self.repeat_count >= NO_PROGRESS_REPEAT_LIMIT {
+            Some(RunNoProgressLoop {
+                start_step: self.start_step,
+                end_step: step_index,
+                repeat_count: self.repeat_count,
+                action_key: signature.chosen_action_key,
+                decision_type: observation.decision_type.clone(),
+                engine_state: observation.engine_state.clone(),
+                floor: observation.floor,
+                act: observation.act,
+            })
+        } else {
+            None
+        }
+    }
+}
+
 pub fn run_batch(config: &RunBatchConfig) -> Result<RunBatchSummary, String> {
     if config.episodes == 0 {
         return Err("episodes must be greater than 0".to_string());
@@ -341,6 +410,7 @@ pub fn run_batch(config: &RunBatchConfig) -> Result<RunBatchSummary, String> {
     let mut episodes = Vec::new();
     let mut crash_count = 0usize;
     let mut illegal_action_count = 0usize;
+    let mut no_progress_loop_count = 0usize;
     let mut deterministic_replay_pass_count = 0usize;
 
     for episode_id in 0..config.episodes {
@@ -382,6 +452,9 @@ pub fn run_batch(config: &RunBatchConfig) -> Result<RunBatchSummary, String> {
 
         if episode.summary.crash.is_some() {
             crash_count += 1;
+        }
+        if episode.summary.no_progress_loop.is_some() {
+            no_progress_loop_count += 1;
         }
         illegal_action_count += episode.summary.illegal_actions;
         episodes.push(episode.summary);
@@ -456,6 +529,7 @@ pub fn run_batch(config: &RunBatchConfig) -> Result<RunBatchSummary, String> {
         episodes_completed,
         crash_count,
         illegal_action_count,
+        no_progress_loop_count,
         deterministic_replay_pass_count,
         average_floor,
         median_floor,
@@ -505,6 +579,7 @@ fn run_episode(
                     steps: 0,
                     forced_engine_ticks: 0,
                     illegal_actions: 0,
+                    no_progress_loop: None,
                     crash: Some(crash),
                     deterministic_replay_pass: None,
                     deterministic_replay_error: None,
@@ -552,11 +627,13 @@ fn run_episode_inner(
     let mut trace = Vec::new();
     let mut actions = Vec::new();
     let mut illegal_actions = 0usize;
+    let mut no_progress_loop = None;
     let mut crash = None;
     let mut terminal_reason = "step_cap".to_string();
     let mut decision_type_counts = std::collections::BTreeMap::<String, usize>::new();
     let mut legal_action_count_sum = 0usize;
     let mut max_legal_action_count = 0usize;
+    let mut no_progress_tracker = NoProgressTracker::new();
 
     for step_index in 0..config.max_steps {
         if let Err(err) = prepare_decision_point(&mut ctx, config.max_steps) {
@@ -597,14 +674,31 @@ fn run_episode_inner(
             }
         };
 
+        let observation = build_observation(&ctx);
+        let action_mask = build_action_candidates(&legal_actions, ctx.combat_state.as_ref());
+        let chosen = action_mask
+            .get(chosen_action_index)
+            .expect("chosen action index should be in legal action mask");
+        let chosen_action_id = chosen.action_id;
+        let chosen_action_key = chosen.action_key.clone();
+        let signature =
+            no_progress_signature(&observation, &action_mask, chosen_action_key.clone());
+        if let Some(loop_info) = no_progress_tracker.observe(step_index, signature, &observation) {
+            crash = Some(format!(
+                "no progress loop: action {} repeated {} times from step {} to {} at {} floor {}",
+                loop_info.action_key,
+                loop_info.repeat_count,
+                loop_info.start_step,
+                loop_info.end_step,
+                loop_info.decision_type,
+                loop_info.floor
+            ));
+            terminal_reason = "no_progress_loop".to_string();
+            no_progress_loop = Some(loop_info);
+            break;
+        }
+
         if capture_trace {
-            let observation = build_observation(&ctx);
-            let action_mask = build_action_candidates(&legal_actions, ctx.combat_state.as_ref());
-            let chosen = action_mask
-                .get(chosen_action_index)
-                .expect("chosen action index should be in legal action mask");
-            let chosen_action_id = chosen.action_id;
-            let chosen_action_key = chosen.action_key.clone();
             trace.push(RunStepTrace {
                 step_index,
                 floor: ctx.run_state.floor_num,
@@ -684,6 +778,7 @@ fn run_episode_inner(
             steps: actions.len(),
             forced_engine_ticks: ctx.forced_engine_ticks,
             illegal_actions,
+            no_progress_loop,
             crash,
             deterministic_replay_pass: None,
             deterministic_replay_error: None,
@@ -1801,6 +1896,75 @@ fn build_action_candidates(
         .collect()
 }
 
+fn no_progress_signature(
+    observation: &RunObservationV0,
+    action_mask: &[RunActionCandidate],
+    chosen_action_key: String,
+) -> NoProgressSignature {
+    let mut action_mask_key = String::new();
+    for candidate in action_mask {
+        if !action_mask_key.is_empty() {
+            action_mask_key.push('|');
+        }
+        action_mask_key.push_str(&candidate.action_key);
+    }
+
+    NoProgressSignature {
+        observation_key: observation_signature_key(observation),
+        action_mask_key,
+        chosen_action_key,
+    }
+}
+
+fn observation_signature_key(observation: &RunObservationV0) -> String {
+    let combat_key = observation
+        .combat
+        .as_ref()
+        .map(|combat| {
+            format!(
+                "combat:hp={}/{};block={};energy={};turn={};hand={};draw={};discard={};exhaust={};alive={};monster_hp={};incoming={}",
+                combat.player_hp,
+                observation.max_hp,
+                combat.player_block,
+                combat.energy,
+                combat.turn_count,
+                combat.hand_count,
+                combat.draw_count,
+                combat.discard_count,
+                combat.exhaust_count,
+                combat.alive_monster_count,
+                combat.total_monster_hp,
+                combat.visible_incoming_damage
+            )
+        })
+        .unwrap_or_else(|| "combat:none".to_string());
+
+    format!(
+        "decision={};engine={};act={};floor={};room={:?};hp={}/{};gold={};deck={};relics={};potions={}/{};screen=e{}:r{}:rc{}:sc{}:sr{}:sp{}:br{}:sel{};{}",
+        observation.decision_type,
+        observation.engine_state,
+        observation.act,
+        observation.floor,
+        observation.current_room,
+        observation.current_hp,
+        observation.max_hp,
+        observation.gold,
+        observation.deck_size,
+        observation.relic_count,
+        observation.filled_potion_slots,
+        observation.potion_slots,
+        observation.screen.event_option_count,
+        observation.screen.reward_item_count,
+        observation.screen.reward_card_choice_count,
+        observation.screen.shop_card_count,
+        observation.screen.shop_relic_count,
+        observation.screen.shop_potion_count,
+        observation.screen.boss_relic_choice_count,
+        observation.screen.selection_target_count,
+        combat_key
+    )
+}
+
 fn action_key_for_input(input: &ClientInput, combat: Option<&CombatState>) -> String {
     match input {
         ClientInput::PlayCard { card_index, target } => {
@@ -2314,6 +2478,72 @@ mod tests {
         assert_eq!(candidates[0].action_id, stable_action_id("combat/end_turn"));
         assert!(matches!(candidates[0].action, TraceClientInput::EndTurn));
         assert_eq!(candidates[1].action_key, "map/select_x/3");
+    }
+
+    #[test]
+    fn no_progress_tracker_reports_repeated_identical_decision_signature() {
+        let observation = RunObservationV0 {
+            schema_version: FULL_RUN_OBSERVATION_SCHEMA_VERSION.to_string(),
+            decision_type: "combat".to_string(),
+            engine_state: "combat_player_turn".to_string(),
+            act: 1,
+            floor: 3,
+            current_room: Some("MonsterRoom".to_string()),
+            current_hp: 40,
+            max_hp: 80,
+            hp_ratio_milli: 500,
+            gold: 99,
+            deck_size: 10,
+            relic_count: 1,
+            potion_slots: 3,
+            filled_potion_slots: 0,
+            combat: Some(RunCombatObservationV0 {
+                player_hp: 40,
+                player_block: 0,
+                energy: 1,
+                turn_count: 2,
+                hand_count: 1,
+                draw_count: 5,
+                discard_count: 4,
+                exhaust_count: 0,
+                alive_monster_count: 1,
+                total_monster_hp: 12,
+                visible_incoming_damage: 6,
+            }),
+            screen: empty_screen_observation(),
+        };
+        let action_mask = vec![RunActionCandidate {
+            action_index: 0,
+            action_id: stable_action_id("combat/play_card/card:Apparition/hand:0/target:none"),
+            action_key: "combat/play_card/card:Apparition/hand:0/target:none".to_string(),
+            action: TraceClientInput::PlayCard {
+                card_index: 0,
+                target: None,
+            },
+        }];
+        let mut tracker = NoProgressTracker::new();
+
+        let mut detected = None;
+        for step_index in 10..(10 + NO_PROGRESS_REPEAT_LIMIT) {
+            detected = tracker.observe(
+                step_index,
+                no_progress_signature(
+                    &observation,
+                    &action_mask,
+                    "combat/play_card/card:Apparition/hand:0/target:none".to_string(),
+                ),
+                &observation,
+            );
+        }
+
+        let loop_info = detected.expect("repeat limit should report no-progress loop");
+        assert_eq!(loop_info.start_step, 10);
+        assert_eq!(loop_info.end_step, 10 + NO_PROGRESS_REPEAT_LIMIT - 1);
+        assert_eq!(loop_info.repeat_count, NO_PROGRESS_REPEAT_LIMIT);
+        assert_eq!(
+            loop_info.action_key,
+            "combat/play_card/card:Apparition/hand:0/target:none"
+        );
     }
 
     #[test]
