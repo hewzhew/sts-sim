@@ -166,6 +166,17 @@ pub(crate) fn combat_exhaust_score_for_uuid(combat: &CombatState, uuid: u32) -> 
         .unwrap_or(i32::MIN / 4)
 }
 
+pub(crate) fn combat_fuel_score_for_uuid(combat: &CombatState, uuid: u32) -> i32 {
+    let context = build_context(combat);
+    combat
+        .zones
+        .hand
+        .iter()
+        .position(|card| card.uuid == uuid)
+        .map(|idx| fuel_score_with_context(combat, idx, &context))
+        .unwrap_or(i32::MIN / 4)
+}
+
 pub(crate) fn combat_retention_score_for_uuid(combat: &CombatState, uuid: u32) -> i32 {
     let context = build_context(combat);
     combat

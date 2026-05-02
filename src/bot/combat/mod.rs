@@ -18,6 +18,7 @@ mod root_prior;
 mod search;
 mod stepping;
 mod terminal;
+pub(crate) mod turn_plan_probe;
 mod turn_state_key;
 mod types;
 mod value;
@@ -54,6 +55,11 @@ pub use profile::{
     SearchNodeCounters, SearchPhaseProfile, SearchProfileBreakdown, SearchProfilingLevel,
 };
 pub use root_prior::{LookupRootPriorProvider, RootPriorConfig, RootPriorQueryKey};
+pub use turn_plan_probe::{
+    probe_turn_plans, CombatPlanProbeLimits, CombatPlanReport, CombatPlanRiskNote,
+    CombatPlanSequenceClass, CombatPlanStateSummary, CombatTurnPlanProbeConfig,
+    CombatTurnPlanProbeReport, PlanScoreBreakdown,
+};
 
 struct ExactTurnShadowDecision {
     audit: serde_json::Value,

@@ -249,6 +249,41 @@ enum LogCommands {
 
 #[derive(Subcommand, Debug)]
 enum CombatCommands {
+    PlanProbe {
+        /// Full-run trace JSON to replay into a combat decision point.
+        #[arg(long)]
+        trace_file: PathBuf,
+        /// Step index from the trace to probe before its chosen action is applied.
+        #[arg(long)]
+        step_index: usize,
+        /// Output JSON report path.
+        #[arg(long)]
+        out: PathBuf,
+        /// Optional ascension override for old traces without embedded config.
+        #[arg(long)]
+        ascension: Option<u8>,
+        /// Optional player class override for old traces without embedded config.
+        #[arg(long)]
+        class: Option<String>,
+        /// Optional final-act override for old traces without embedded config.
+        #[arg(long)]
+        final_act: Option<bool>,
+        /// Optional replay max step cap.
+        #[arg(long)]
+        max_steps: Option<usize>,
+        /// Current-turn probe max action depth.
+        #[arg(long, default_value_t = 6)]
+        max_depth: usize,
+        /// Current-turn probe node budget.
+        #[arg(long, default_value_t = 2000)]
+        max_nodes: usize,
+        /// Current-turn probe branch width.
+        #[arg(long, default_value_t = 32)]
+        beam_width: usize,
+        /// Engine ticks allowed after each candidate action.
+        #[arg(long, default_value_t = 200)]
+        max_engine_steps_per_action: usize,
+    },
     BuildStateCorpus {
         /// Individual ScenarioFixture paths to include.
         #[arg(long, value_delimiter = ',')]
@@ -4445,6 +4480,53 @@ fn main() {
             }
         }
         Commands::Combat { command } => match command {
+            CombatCommands::PlanProbe {
+                trace_file,
+                step_index,
+                out,
+                ascension,
+                class,
+                final_act,
+                max_steps,
+                max_depth,
+                max_nodes,
+                beam_width,
+                max_engine_steps_per_action,
+            } => {
+                let report = sts_simulator::cli::full_run_smoke::probe_combat_plan_from_trace(
+                    &sts_simulator::cli::full_run_smoke::FullRunTracePlanProbeConfig {
+                        trace_file: trace_file.clone(),
+                        step_index: *step_index,
+                        ascension: *ascension,
+                        final_act: *final_act,
+                        player_class: class.clone(),
+                        max_steps: *max_steps,
+                        probe_config: sts_simulator::bot::combat::CombatTurnPlanProbeConfig {
+                            max_depth: *max_depth,
+                            max_nodes: *max_nodes,
+                            beam_width: *beam_width,
+                            max_engine_steps_per_action: *max_engine_steps_per_action,
+                        },
+                    },
+                )
+                .expect("combat plan-probe should succeed");
+
+                if let Some(parent) = out.parent() {
+                    std::fs::create_dir_all(parent)
+                        .expect("combat plan-probe output parent should be creatable");
+                }
+                std::fs::write(
+                    out,
+                    serde_json::to_string_pretty(&report)
+                        .expect("combat plan-probe report should serialize"),
+                )
+                .expect("combat plan-probe report should write");
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&report)
+                        .expect("combat plan-probe report should serialize for stdout")
+                );
+            }
             CombatCommands::BuildStateCorpus {
                 fixtures,
                 fixture_dirs,

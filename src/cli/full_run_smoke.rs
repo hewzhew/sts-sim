@@ -2,6 +2,11 @@ use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
+use crate::bot::card_disposition::{
+    build_context as build_card_role_context, classify_hand_card_with_context,
+    combat_copy_score_for_uuid, combat_exhaust_score_for_uuid, combat_fuel_score_for_uuid,
+    combat_retention_score_for_uuid, HandCardRole,
+};
 use crate::content::cards::{CardId, CardRarity, CardType};
 use crate::content::monsters::factory::{self, EncounterId};
 use crate::content::relics::RelicId;
@@ -21,7 +26,7 @@ use crate::state::run::RunState;
 use crate::state::selection::EngineDiagnosticSeverity;
 use crate::state::selection::{SelectionResolution, SelectionScope, SelectionTargetRef};
 
-pub const FULL_RUN_OBSERVATION_SCHEMA_VERSION: &str = "full_run_observation_v2";
+pub const FULL_RUN_OBSERVATION_SCHEMA_VERSION: &str = "full_run_observation_v3";
 pub const FULL_RUN_ACTION_SCHEMA_VERSION: &str = "full_run_action_candidate_set_v1";
 const NO_PROGRESS_REPEAT_LIMIT: usize = 8;
 
@@ -152,8 +157,19 @@ pub struct RunNoProgressLoop {
 pub struct RunEpisodeTraceFile {
     pub observation_schema_version: String,
     pub action_schema_version: String,
+    pub config: RunTraceConfigV0,
     pub summary: RunEpisodeSummary,
     pub steps: Vec<RunStepTrace>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct RunTraceConfigV0 {
+    pub seed: u64,
+    pub ascension: u8,
+    pub final_act: bool,
+    pub player_class: String,
+    pub max_steps: usize,
+    pub policy: String,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -279,6 +295,7 @@ pub struct RunCombatObservationV0 {
     pub combat_phase: String,
     pub turn_count: u32,
     pub hand_count: usize,
+    pub hand_cards: Vec<RunCombatHandCardObservationV0>,
     pub draw_count: usize,
     pub discard_count: usize,
     pub exhaust_count: usize,
@@ -292,6 +309,31 @@ pub struct RunCombatObservationV0 {
     pub pending_action_count: usize,
     pub queued_card_count: usize,
     pub limbo_count: usize,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct RunCombatHandCardObservationV0 {
+    pub hand_index: usize,
+    pub card_instance_id: u32,
+    pub card_id: String,
+    pub upgraded: bool,
+    pub upgrades: u8,
+    pub cost_for_turn: i8,
+    pub playable: bool,
+    pub base_semantics: Vec<String>,
+    pub transient_tags: Vec<String>,
+    pub estimated_role_scores: RunHandCardRoleScoresV0,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct RunHandCardRoleScoresV0 {
+    pub score_kind: String,
+    pub role: String,
+    pub keeper: i32,
+    pub fuel: i32,
+    pub exhaust: i32,
+    pub retention: i32,
+    pub copy: i32,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -508,6 +550,17 @@ pub struct FullRunEnvStep {
     pub done: bool,
     pub chosen_action_key: Option<String>,
     pub info: FullRunEnvInfo,
+}
+
+#[derive(Clone, Debug)]
+pub struct FullRunTracePlanProbeConfig {
+    pub trace_file: PathBuf,
+    pub step_index: usize,
+    pub ascension: Option<u8>,
+    pub final_act: Option<bool>,
+    pub player_class: Option<String>,
+    pub max_steps: Option<usize>,
+    pub probe_config: crate::bot::combat::CombatTurnPlanProbeConfig,
 }
 
 pub struct FullRunEnv {
@@ -825,6 +878,237 @@ impl FullRunEnv {
             crash: self.crash.clone(),
             contract_failure: self.contract_failure.clone(),
         }
+    }
+}
+
+pub fn probe_combat_plan_from_trace(
+    config: &FullRunTracePlanProbeConfig,
+) -> Result<crate::bot::combat::CombatTurnPlanProbeReport, String> {
+    let raw = std::fs::read_to_string(&config.trace_file).map_err(|err| {
+        format!(
+            "failed to read trace file '{}': {err}",
+            config.trace_file.display()
+        )
+    })?;
+    let trace: serde_json::Value =
+        serde_json::from_str(&raw).map_err(|err| format!("failed to parse trace JSON: {err}"))?;
+    let summary = trace
+        .get("summary")
+        .ok_or_else(|| "trace missing summary".to_string())?;
+    let seed = summary
+        .get("seed")
+        .and_then(serde_json::Value::as_u64)
+        .ok_or_else(|| "trace summary missing seed".to_string())?;
+    let trace_config = trace.get("config");
+    let ascension = config.ascension.unwrap_or_else(|| {
+        trace_config
+            .and_then(|value| value.get("ascension"))
+            .and_then(serde_json::Value::as_u64)
+            .unwrap_or(0) as u8
+    });
+    let final_act = config.final_act.unwrap_or_else(|| {
+        trace_config
+            .and_then(|value| value.get("final_act"))
+            .and_then(serde_json::Value::as_bool)
+            .unwrap_or(false)
+    });
+    let player_class = config.player_class.clone().unwrap_or_else(|| {
+        trace_config
+            .and_then(|value| value.get("player_class"))
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or("Ironclad")
+            .to_string()
+    });
+    let max_steps = config.max_steps.unwrap_or_else(|| {
+        trace_config
+            .and_then(|value| value.get("max_steps"))
+            .and_then(serde_json::Value::as_u64)
+            .map(|value| value as usize)
+            .unwrap_or_else(|| config.step_index.saturating_add(128).max(512))
+    });
+    let steps = trace
+        .get("steps")
+        .and_then(serde_json::Value::as_array)
+        .ok_or_else(|| "trace missing steps[]".to_string())?;
+    if config.step_index >= steps.len() {
+        return Err(format!(
+            "step-index {} out of range for trace with {} step(s)",
+            config.step_index,
+            steps.len()
+        ));
+    }
+
+    let mut ctx = EpisodeContext {
+        engine_state: EngineState::EventRoom,
+        run_state: RunState::new(
+            seed,
+            ascension,
+            final_act,
+            normalize_player_class(&player_class),
+        ),
+        combat_state: None,
+        stashed_event_combat: None,
+        forced_engine_ticks: 0,
+        combat_win_count: 0,
+    };
+
+    for (step_idx, step) in steps.iter().take(config.step_index).enumerate() {
+        prepare_decision_point(&mut ctx, max_steps)?;
+        let action = trace_step_action(step)
+            .map_err(|err| format!("failed to decode action at trace step {step_idx}: {err}"))?;
+        let keep_running = tick_run(
+            &mut ctx.engine_state,
+            &mut ctx.run_state,
+            &mut ctx.combat_state,
+            Some(action),
+        );
+        if let Some(errors) = take_engine_error_diagnostics(&mut ctx) {
+            return Err(format!(
+                "replay to step {} rejected trace action: {}",
+                step_idx,
+                errors.join("; ")
+            ));
+        }
+        finish_combat_if_needed(&mut ctx);
+        if !keep_running {
+            return Err(format!(
+                "engine stopped while replaying trace before requested step {}",
+                config.step_index
+            ));
+        }
+    }
+
+    prepare_decision_point(&mut ctx, max_steps)?;
+    let Some(combat) = ctx.combat_state.as_ref() else {
+        return Err(format!(
+            "trace step {} replayed to non-combat state {}",
+            config.step_index,
+            engine_state_label(&ctx.engine_state)
+        ));
+    };
+    if !matches!(
+        ctx.engine_state,
+        EngineState::CombatPlayerTurn | EngineState::PendingChoice(_)
+    ) {
+        return Err(format!(
+            "trace step {} is not a combat turn frontier: {}",
+            config.step_index,
+            engine_state_label(&ctx.engine_state)
+        ));
+    }
+
+    let target_trace_step = &steps[config.step_index];
+    let mut report =
+        crate::bot::combat::probe_turn_plans(&ctx.engine_state, combat, config.probe_config);
+    report.source_trace = serde_json::json!({
+        "trace_file": config.trace_file.display().to_string(),
+        "step_index": config.step_index,
+        "seed": seed,
+        "ascension": ascension,
+        "final_act": final_act,
+        "player_class": player_class,
+        "trace_observation_schema_version": trace.get("observation_schema_version").cloned().unwrap_or(serde_json::Value::Null),
+        "trace_action_schema_version": trace.get("action_schema_version").cloned().unwrap_or(serde_json::Value::Null),
+        "trace_step_decision_type": target_trace_step.get("decision_type").cloned().unwrap_or(serde_json::Value::Null),
+        "trace_step_engine_state": target_trace_step.get("engine_state").cloned().unwrap_or(serde_json::Value::Null),
+        "trace_step_chosen_action_key": target_trace_step.get("chosen_action_key").cloned().unwrap_or(serde_json::Value::Null),
+    });
+    Ok(report)
+}
+
+fn trace_step_action(step: &serde_json::Value) -> Result<ClientInput, String> {
+    let value = step
+        .get("chosen_action")
+        .ok_or_else(|| "missing chosen_action".to_string())?
+        .clone();
+    let trace_input: TraceClientInput = serde_json::from_value(value)
+        .map_err(|err| format!("chosen_action shape mismatch: {err}"))?;
+    Ok(client_input_from_trace_input(trace_input))
+}
+
+fn client_input_from_trace_input(input: TraceClientInput) -> ClientInput {
+    match input {
+        TraceClientInput::PlayCard { card_index, target } => {
+            ClientInput::PlayCard { card_index, target }
+        }
+        TraceClientInput::UsePotion {
+            potion_index,
+            target,
+        } => ClientInput::UsePotion {
+            potion_index,
+            target,
+        },
+        TraceClientInput::DiscardPotion { potion_index } => {
+            ClientInput::DiscardPotion(potion_index)
+        }
+        TraceClientInput::EndTurn => ClientInput::EndTurn,
+        TraceClientInput::SubmitCardChoice { indices } => ClientInput::SubmitCardChoice(indices),
+        TraceClientInput::SubmitDiscoverChoice { index } => {
+            ClientInput::SubmitDiscoverChoice(index)
+        }
+        TraceClientInput::SelectMapNode { x } => ClientInput::SelectMapNode(x),
+        TraceClientInput::FlyToNode { x, y } => ClientInput::FlyToNode(x, y),
+        TraceClientInput::SelectEventOption { index } => ClientInput::SelectEventOption(index),
+        TraceClientInput::CampfireOption { choice } => {
+            ClientInput::CampfireOption(campfire_choice_from_trace(choice))
+        }
+        TraceClientInput::EventChoice { index } => ClientInput::EventChoice(index),
+        TraceClientInput::SubmitScryDiscard { indices } => ClientInput::SubmitScryDiscard(indices),
+        TraceClientInput::SubmitSelection {
+            scope,
+            selected_card_uuids,
+        } => ClientInput::SubmitSelection(SelectionResolution {
+            scope: selection_scope_from_trace(scope),
+            selected: selected_card_uuids
+                .into_iter()
+                .map(SelectionTargetRef::CardUuid)
+                .collect(),
+        }),
+        TraceClientInput::SubmitHandSelect { card_uuids } => {
+            ClientInput::SubmitHandSelect(card_uuids)
+        }
+        TraceClientInput::SubmitGridSelect { card_uuids } => {
+            ClientInput::SubmitGridSelect(card_uuids)
+        }
+        TraceClientInput::SubmitDeckSelect { indices } => ClientInput::SubmitDeckSelect(indices),
+        TraceClientInput::ClaimReward { index } => ClientInput::ClaimReward(index),
+        TraceClientInput::SelectCard { index } => ClientInput::SelectCard(index),
+        TraceClientInput::BuyCard { index } => ClientInput::BuyCard(index),
+        TraceClientInput::BuyRelic { index } => ClientInput::BuyRelic(index),
+        TraceClientInput::BuyPotion { index } => ClientInput::BuyPotion(index),
+        TraceClientInput::PurgeCard { index } => ClientInput::PurgeCard(index),
+        TraceClientInput::SubmitRelicChoice { index } => ClientInput::SubmitRelicChoice(index),
+        TraceClientInput::Proceed => ClientInput::Proceed,
+        TraceClientInput::Cancel => ClientInput::Cancel,
+    }
+}
+
+fn campfire_choice_from_trace(choice: TraceCampfireChoice) -> CampfireChoice {
+    match choice {
+        TraceCampfireChoice::Rest => CampfireChoice::Rest,
+        TraceCampfireChoice::Smith { deck_index } => CampfireChoice::Smith(deck_index),
+        TraceCampfireChoice::Dig => CampfireChoice::Dig,
+        TraceCampfireChoice::Lift => CampfireChoice::Lift,
+        TraceCampfireChoice::Toke { deck_index } => CampfireChoice::Toke(deck_index),
+        TraceCampfireChoice::Recall => CampfireChoice::Recall,
+    }
+}
+
+fn selection_scope_from_trace(scope: TraceSelectionScope) -> SelectionScope {
+    match scope {
+        TraceSelectionScope::Hand => SelectionScope::Hand,
+        TraceSelectionScope::Deck => SelectionScope::Deck,
+        TraceSelectionScope::Grid => SelectionScope::Grid,
+    }
+}
+
+fn normalize_player_class(player_class: &str) -> &'static str {
+    match player_class.to_ascii_lowercase().as_str() {
+        "ironclad" | "red" => "Ironclad",
+        "silent" | "green" => "Silent",
+        "defect" | "blue" => "Defect",
+        "watcher" | "purple" => "Watcher",
+        _ => "Ironclad",
     }
 }
 
@@ -1202,7 +1486,7 @@ pub fn run_batch(config: &RunBatchConfig) -> Result<RunBatchSummary, String> {
             if let Some(failure) = &mut episode.summary.contract_failure {
                 failure.trace_path = episode.summary.trace_path.clone();
             }
-            write_trace_file(&trace_path, &episode.summary, &episode.trace)?;
+            write_trace_file(&trace_path, config, &episode.summary, &episode.trace)?;
         }
 
         if episode.summary.crash.is_some() {
@@ -2991,6 +3275,7 @@ fn build_combat_observation(combat: &CombatState) -> RunCombatObservationV0 {
         combat_phase: combat_phase_label(combat).to_string(),
         turn_count: combat.turn.turn_count,
         hand_count: combat.zones.hand.len(),
+        hand_cards: build_combat_hand_card_observations(combat),
         draw_count: combat.zones.draw_pile.len(),
         discard_count: combat.zones.discard_pile.len(),
         exhaust_count: combat.zones.exhaust_pile.len(),
@@ -3008,6 +3293,120 @@ fn build_combat_observation(combat: &CombatState) -> RunCombatObservationV0 {
         queued_card_count: combat.zones.queued_cards.len(),
         limbo_count: combat.zones.limbo.len(),
     }
+}
+
+fn build_combat_hand_card_observations(
+    combat: &CombatState,
+) -> Vec<RunCombatHandCardObservationV0> {
+    let context = build_card_role_context(combat);
+    combat
+        .zones
+        .hand
+        .iter()
+        .enumerate()
+        .map(|(hand_index, card)| {
+            let playable = crate::content::cards::can_play_card(card, combat).is_ok();
+            let role = classify_hand_card_with_context(combat, hand_index, &context);
+            let mut transient_tags = Vec::new();
+            transient_tags.push(if playable { "playable" } else { "unplayable" }.to_string());
+            if card.cost_for_turn.is_some() {
+                transient_tags.push("cost_for_turn_override".to_string());
+            }
+            if card.free_to_play_once {
+                transient_tags.push("free_to_play_once".to_string());
+            }
+            transient_tags.push(format!("role:{}", hand_card_role_label(role)));
+
+            RunCombatHandCardObservationV0 {
+                hand_index,
+                card_instance_id: card.uuid,
+                card_id: format!("{:?}", card.id),
+                upgraded: card.upgrades > 0,
+                upgrades: card.upgrades,
+                cost_for_turn: card.get_cost(),
+                playable,
+                base_semantics: base_semantics_for_card(card.id, card.upgrades),
+                transient_tags,
+                estimated_role_scores: RunHandCardRoleScoresV0 {
+                    score_kind: "heuristic_not_truth".to_string(),
+                    role: hand_card_role_label(role).to_string(),
+                    keeper: combat_retention_score_for_uuid(combat, card.uuid),
+                    fuel: combat_fuel_score_for_uuid(combat, card.uuid),
+                    exhaust: combat_exhaust_score_for_uuid(combat, card.uuid),
+                    retention: combat_retention_score_for_uuid(combat, card.uuid),
+                    copy: combat_copy_score_for_uuid(combat, card.uuid),
+                },
+            }
+        })
+        .collect()
+}
+
+fn hand_card_role_label(role: HandCardRole) -> &'static str {
+    match role {
+        HandCardRole::CoreKeeper => "core_keeper",
+        HandCardRole::SequencedPiece => "sequenced_piece",
+        HandCardRole::SituationalResource => "situational_resource",
+        HandCardRole::LowValueFuel => "low_value_fuel",
+    }
+}
+
+fn base_semantics_for_card(card_id: CardId, upgrades: u8) -> Vec<String> {
+    let def = crate::content::cards::get_card_definition(card_id);
+    let mut tags = Vec::new();
+    match def.card_type {
+        CardType::Attack => tags.push("attack".to_string()),
+        CardType::Skill => tags.push("skill".to_string()),
+        CardType::Power => tags.push("power".to_string()),
+        CardType::Status => tags.push("status".to_string()),
+        CardType::Curse => tags.push("curse".to_string()),
+    }
+    if def.base_damage + def.upgrade_damage * upgrades as i32 > 0 {
+        tags.push("damage".to_string());
+    }
+    if def.base_block + def.upgrade_block * upgrades as i32 > 0 || card_is_block_core(card_id) {
+        tags.push("block".to_string());
+    }
+    if def.exhaust {
+        tags.push("self_exhaust".to_string());
+    }
+    if card_draws_cards(card_id) {
+        tags.push("draw".to_string());
+    }
+    if card_gains_energy(card_id) {
+        tags.push("energy".to_string());
+    }
+    if card_applies_weak(card_id) {
+        tags.push("apply_weak".to_string());
+    }
+    if card_applies_vulnerable(card_id) {
+        tags.push("apply_vulnerable".to_string());
+    }
+    if card_is_scaling_piece(card_id) {
+        tags.push("setup_or_scaling".to_string());
+    }
+    if card_exhausts_other_cards(card_id) {
+        tags.push("exhaust_outlet".to_string());
+    }
+    match card_id {
+        CardId::TrueGrit if upgrades == 0 => {
+            tags.push("random_exhaust".to_string());
+            tags.push("risk_overlay_required".to_string());
+        }
+        CardId::TrueGrit => tags.push("chosen_exhaust".to_string()),
+        CardId::SecondWind => {
+            tags.push("exhaust_non_attacks".to_string());
+            tags.push("block_from_hand_destruction".to_string());
+        }
+        CardId::FiendFire => {
+            tags.push("exhaust_hand_for_damage".to_string());
+            tags.push("hand_destruction_risk".to_string());
+        }
+        _ => {}
+    }
+    if def.target == crate::content::cards::CardTarget::AllEnemy || def.is_multi_damage {
+        tags.push("multi_target_or_multi_damage".to_string());
+    }
+    tags
 }
 
 fn combat_phase_label(combat: &CombatState) -> &'static str {
@@ -3813,6 +4212,7 @@ fn deterministic_replay_error(
 
 fn write_trace_file(
     path: &Path,
+    config: &RunBatchConfig,
     summary: &RunEpisodeSummary,
     steps: &[RunStepTrace],
 ) -> Result<(), String> {
@@ -3827,6 +4227,14 @@ fn write_trace_file(
     let trace = RunEpisodeTraceFile {
         observation_schema_version: FULL_RUN_OBSERVATION_SCHEMA_VERSION.to_string(),
         action_schema_version: FULL_RUN_ACTION_SCHEMA_VERSION.to_string(),
+        config: RunTraceConfigV0 {
+            seed: summary.seed,
+            ascension: config.ascension,
+            final_act: config.final_act,
+            player_class: config.player_class.to_string(),
+            max_steps: config.max_steps,
+            policy: config.policy.as_str().to_string(),
+        },
         summary: summary.clone(),
         steps: steps.to_vec(),
     };
@@ -3927,6 +4335,7 @@ mod tests {
                 combat_phase: "player_turn".to_string(),
                 turn_count: 2,
                 hand_count: 1,
+                hand_cards: Vec::new(),
                 draw_count: 5,
                 discard_count: 4,
                 exhaust_count: 0,
