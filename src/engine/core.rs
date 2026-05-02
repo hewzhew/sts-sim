@@ -147,15 +147,18 @@ pub fn tick_engine(
                     let candidate_uuids = hand_select_candidates(combat_state, filter);
                     let available = candidate_uuids.len() as u8;
                     if available == 0 {
+                        let legal_empty_fizzle = min == 0
+                            || (filter == crate::state::HandSelectFilter::Upgradeable
+                                && reason == crate::state::HandSelectReason::Upgrade);
                         record_engine_diagnostic(
                             combat_state,
                             EngineDiagnostic {
-                                severity: if min == 0 {
+                                severity: if legal_empty_fizzle {
                                     EngineDiagnosticSeverity::Info
                                 } else {
                                     EngineDiagnosticSeverity::Error
                                 },
-                                class: if min == 0 {
+                                class: if legal_empty_fizzle {
                                     EngineDiagnosticClass::Normalization
                                 } else {
                                     EngineDiagnosticClass::Broken

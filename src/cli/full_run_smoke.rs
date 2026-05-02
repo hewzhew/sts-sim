@@ -70,6 +70,7 @@ pub struct RunBatchSummary {
     pub illegal_action_count: usize,
     pub no_progress_loop_count: usize,
     pub deterministic_replay_pass_count: usize,
+    pub contract_failure_count: usize,
     pub average_floor: f32,
     pub median_floor: f32,
     pub average_steps: f32,
@@ -83,6 +84,7 @@ pub struct RunBatchSummary {
     pub death_floor_counts: std::collections::BTreeMap<String, usize>,
     pub act_counts: std::collections::BTreeMap<String, usize>,
     pub decision_type_counts: std::collections::BTreeMap<String, usize>,
+    pub contract_failures: Vec<RunContractFailure>,
     pub episodes: Vec<RunEpisodeSummary>,
 }
 
@@ -101,6 +103,7 @@ pub struct RunEpisodeSummary {
     pub crash: Option<String>,
     pub deterministic_replay_pass: Option<bool>,
     pub deterministic_replay_error: Option<String>,
+    pub contract_failure: Option<RunContractFailure>,
     pub duration_ms: u128,
     pub total_reward: f32,
     pub combat_win_count: usize,
@@ -113,6 +116,24 @@ pub struct RunEpisodeSummary {
     pub deck_size: usize,
     pub relic_count: usize,
     pub trace_path: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+pub struct RunContractFailure {
+    pub kind: String,
+    pub episode_id: usize,
+    pub seed: u64,
+    pub policy: String,
+    pub step: Option<usize>,
+    pub action_key: Option<String>,
+    pub decision_type: Option<String>,
+    pub engine_state: Option<String>,
+    pub floor: i32,
+    pub act: u8,
+    pub terminal_reason: String,
+    pub details: String,
+    pub trace_path: Option<String>,
+    pub reproduce_command: String,
 }
 
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
@@ -390,6 +411,90 @@ impl NoProgressTracker {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
+fn make_contract_failure(
+    config: &RunBatchConfig,
+    episode_id: usize,
+    seed: u64,
+    kind: &str,
+    terminal_reason: &str,
+    floor: i32,
+    act: u8,
+    step: Option<usize>,
+    action_key: Option<String>,
+    decision_type: Option<String>,
+    engine_state: Option<String>,
+    details: String,
+) -> RunContractFailure {
+    RunContractFailure {
+        kind: kind.to_string(),
+        episode_id,
+        seed,
+        policy: config.policy.as_str().to_string(),
+        step,
+        action_key,
+        decision_type,
+        engine_state,
+        floor,
+        act,
+        terminal_reason: terminal_reason.to_string(),
+        details,
+        trace_path: None,
+        reproduce_command: reproduce_command(config, seed),
+    }
+}
+
+fn reproduce_command(config: &RunBatchConfig, seed: u64) -> String {
+    let mut parts = vec![
+        "cargo".to_string(),
+        "run".to_string(),
+        "--release".to_string(),
+        "--bin".to_string(),
+        "sts_dev_tool".to_string(),
+        "--".to_string(),
+        "run-batch".to_string(),
+        "--episodes".to_string(),
+        "1".to_string(),
+        "--seed".to_string(),
+        seed.to_string(),
+        "--policy".to_string(),
+        config.policy.as_str().to_string(),
+        "--ascension".to_string(),
+        config.ascension.to_string(),
+        "--class".to_string(),
+        cli_class_arg(config.player_class).to_string(),
+        "--max-steps".to_string(),
+        config.max_steps.to_string(),
+        "--determinism-check".to_string(),
+        "--summary-out".to_string(),
+        format!(
+            "tools\\artifacts\\full_run_smoke\\repro_{}_seed_{}.json",
+            config.policy.as_str(),
+            seed
+        ),
+        "--trace-dir".to_string(),
+        format!(
+            "tools\\artifacts\\full_run_smoke\\repro_{}_seed_{}_trace",
+            config.policy.as_str(),
+            seed
+        ),
+    ];
+    if config.final_act {
+        parts.push("--final-act".to_string());
+    }
+    parts.join(" ")
+}
+
+fn cli_class_arg(player_class: &str) -> &'static str {
+    match player_class {
+        "Ironclad" => "ironclad",
+        "Silent" => "silent",
+        "Defect" => "defect",
+        "Watcher" => "watcher",
+        _ => "ironclad",
+    }
+}
+
 pub fn run_batch(config: &RunBatchConfig) -> Result<RunBatchSummary, String> {
     if config.episodes == 0 {
         return Err("episodes must be greater than 0".to_string());
@@ -441,12 +546,35 @@ pub fn run_batch(config: &RunBatchConfig) -> Result<RunBatchSummary, String> {
             episode.summary.deterministic_replay_error = replay_error;
             if passed {
                 deterministic_replay_pass_count += 1;
+            } else if episode.summary.contract_failure.is_none() {
+                let details = episode
+                    .summary
+                    .deterministic_replay_error
+                    .clone()
+                    .unwrap_or_else(|| "deterministic replay mismatch".to_string());
+                episode.summary.contract_failure = Some(make_contract_failure(
+                    config,
+                    episode_id,
+                    seed,
+                    "deterministic_replay_mismatch",
+                    "deterministic_replay_mismatch",
+                    episode.summary.floor,
+                    episode.summary.act,
+                    None,
+                    None,
+                    None,
+                    None,
+                    details,
+                ));
             }
         }
 
         if let Some(trace_dir) = &config.trace_dir {
             let trace_path = trace_dir.join(format!("episode_{episode_id:04}_seed_{seed}.json"));
             episode.summary.trace_path = Some(trace_path.display().to_string());
+            if let Some(failure) = &mut episode.summary.contract_failure {
+                failure.trace_path = episode.summary.trace_path.clone();
+            }
             write_trace_file(&trace_path, &episode.summary, &episode.trace)?;
         }
 
@@ -514,6 +642,11 @@ pub fn run_batch(config: &RunBatchConfig) -> Result<RunBatchSummary, String> {
                 .or_insert(0) += *count;
         }
     }
+    let contract_failures = episodes
+        .iter()
+        .filter_map(|episode| episode.contract_failure.clone())
+        .collect::<Vec<_>>();
+    let contract_failure_count = contract_failures.len();
 
     Ok(RunBatchSummary {
         observation_schema_version: FULL_RUN_OBSERVATION_SCHEMA_VERSION.to_string(),
@@ -531,6 +664,7 @@ pub fn run_batch(config: &RunBatchConfig) -> Result<RunBatchSummary, String> {
         illegal_action_count,
         no_progress_loop_count,
         deterministic_replay_pass_count,
+        contract_failure_count,
         average_floor,
         median_floor,
         average_steps,
@@ -544,6 +678,7 @@ pub fn run_batch(config: &RunBatchConfig) -> Result<RunBatchSummary, String> {
         death_floor_counts,
         act_counts,
         decision_type_counts,
+        contract_failures,
         episodes,
     })
 }
@@ -568,6 +703,20 @@ fn run_episode(
             } else {
                 "panic without string payload".to_string()
             };
+            let contract_failure = make_contract_failure(
+                config,
+                episode_id,
+                seed,
+                "panic",
+                "panic",
+                0,
+                1,
+                None,
+                None,
+                None,
+                None,
+                crash.clone(),
+            );
             EpisodeRun {
                 summary: RunEpisodeSummary {
                     episode_id,
@@ -583,6 +732,7 @@ fn run_episode(
                     crash: Some(crash),
                     deterministic_replay_pass: None,
                     deterministic_replay_error: None,
+                    contract_failure: Some(contract_failure),
                     duration_ms: 0,
                     total_reward: -100.0,
                     combat_win_count: 0,
@@ -629,6 +779,7 @@ fn run_episode_inner(
     let mut illegal_actions = 0usize;
     let mut no_progress_loop = None;
     let mut crash = None;
+    let mut contract_failure = None;
     let mut terminal_reason = "step_cap".to_string();
     let mut decision_type_counts = std::collections::BTreeMap::<String, usize>::new();
     let mut legal_action_count_sum = 0usize;
@@ -637,6 +788,20 @@ fn run_episode_inner(
 
     for step_index in 0..config.max_steps {
         if let Err(err) = prepare_decision_point(&mut ctx, config.max_steps) {
+            contract_failure = Some(make_contract_failure(
+                config,
+                episode_id,
+                seed,
+                "engine_error",
+                "engine_error",
+                ctx.run_state.floor_num,
+                ctx.run_state.act_num,
+                Some(step_index),
+                None,
+                Some(decision_type(&ctx.engine_state).to_string()),
+                Some(engine_state_label(&ctx.engine_state).to_string()),
+                err.clone(),
+            ));
             crash = Some(err);
             terminal_reason = "engine_error".to_string();
             break;
@@ -649,11 +814,26 @@ fn run_episode_inner(
 
         let legal_actions = legal_actions(&ctx.engine_state, &ctx.run_state, &ctx.combat_state);
         if legal_actions.is_empty() {
-            crash = Some(format!(
+            let details = format!(
                 "no legal actions at {} on floor {}",
                 engine_state_label(&ctx.engine_state),
                 ctx.run_state.floor_num
+            );
+            contract_failure = Some(make_contract_failure(
+                config,
+                episode_id,
+                seed,
+                "no_legal_actions",
+                "no_legal_actions",
+                ctx.run_state.floor_num,
+                ctx.run_state.act_num,
+                Some(step_index),
+                None,
+                Some(decision_type(&ctx.engine_state).to_string()),
+                Some(engine_state_label(&ctx.engine_state).to_string()),
+                details.clone(),
             ));
+            crash = Some(details);
             terminal_reason = "no_legal_actions".to_string();
             break;
         }
@@ -668,6 +848,20 @@ fn run_episode_inner(
             Ok(action) => action,
             Err(err) => {
                 illegal_actions += 1;
+                contract_failure = Some(make_contract_failure(
+                    config,
+                    episode_id,
+                    seed,
+                    "illegal_replay_action",
+                    "illegal_replay_action",
+                    ctx.run_state.floor_num,
+                    ctx.run_state.act_num,
+                    Some(step_index),
+                    None,
+                    Some(current_decision_type.clone()),
+                    Some(engine_state_label(&ctx.engine_state).to_string()),
+                    err.clone(),
+                ));
                 crash = Some(err);
                 terminal_reason = "illegal_replay_action".to_string();
                 break;
@@ -683,20 +877,6 @@ fn run_episode_inner(
         let chosen_action_key = chosen.action_key.clone();
         let signature =
             no_progress_signature(&observation, &action_mask, chosen_action_key.clone());
-        if let Some(loop_info) = no_progress_tracker.observe(step_index, signature, &observation) {
-            crash = Some(format!(
-                "no progress loop: action {} repeated {} times from step {} to {} at {} floor {}",
-                loop_info.action_key,
-                loop_info.repeat_count,
-                loop_info.start_step,
-                loop_info.end_step,
-                loop_info.decision_type,
-                loop_info.floor
-            ));
-            terminal_reason = "no_progress_loop".to_string();
-            no_progress_loop = Some(loop_info);
-            break;
-        }
 
         if capture_trace {
             trace.push(RunStepTrace {
@@ -704,20 +884,49 @@ fn run_episode_inner(
                 floor: ctx.run_state.floor_num,
                 act: ctx.run_state.act_num,
                 engine_state: engine_state_label(&ctx.engine_state).to_string(),
-                decision_type: current_decision_type,
+                decision_type: current_decision_type.clone(),
                 hp: ctx.run_state.current_hp,
                 max_hp: ctx.run_state.max_hp,
                 gold: ctx.run_state.gold,
                 deck_size: ctx.run_state.master_deck.len(),
                 relic_count: ctx.run_state.relics.len(),
                 legal_action_count: legal_actions.len(),
-                observation,
-                action_mask,
+                observation: observation.clone(),
+                action_mask: action_mask.clone(),
                 chosen_action_index,
                 chosen_action_id,
-                chosen_action_key,
+                chosen_action_key: chosen_action_key.clone(),
                 chosen_action: trace_input_from_client_input(&action),
             });
+        }
+        if let Some(loop_info) = no_progress_tracker.observe(step_index, signature, &observation) {
+            let details = format!(
+                "no progress loop: action {} repeated {} times from step {} to {} at {} floor {}",
+                loop_info.action_key,
+                loop_info.repeat_count,
+                loop_info.start_step,
+                loop_info.end_step,
+                loop_info.decision_type,
+                loop_info.floor
+            );
+            contract_failure = Some(make_contract_failure(
+                config,
+                episode_id,
+                seed,
+                "no_progress_loop",
+                "no_progress_loop",
+                loop_info.floor,
+                loop_info.act,
+                Some(loop_info.end_step),
+                Some(loop_info.action_key.clone()),
+                Some(loop_info.decision_type.clone()),
+                Some(loop_info.engine_state.clone()),
+                details.clone(),
+            ));
+            crash = Some(details);
+            terminal_reason = "no_progress_loop".to_string();
+            no_progress_loop = Some(loop_info);
+            break;
         }
         actions.push(action.clone());
         let executed_action_key = action_key_for_input(&action, ctx.combat_state.as_ref());
@@ -730,10 +939,25 @@ fn run_episode_inner(
         );
         if let Some(errors) = take_engine_error_diagnostics(&mut ctx) {
             illegal_actions += 1;
-            crash = Some(format!(
+            let details = format!(
                 "engine rejected legal action {executed_action_key}: {}",
                 errors.join("; ")
+            );
+            contract_failure = Some(make_contract_failure(
+                config,
+                episode_id,
+                seed,
+                "engine_rejected_action",
+                "engine_rejected_action",
+                ctx.run_state.floor_num,
+                ctx.run_state.act_num,
+                Some(step_index),
+                Some(executed_action_key),
+                Some(current_decision_type),
+                Some(observation.engine_state.clone()),
+                details.clone(),
             ));
+            crash = Some(details);
             terminal_reason = "engine_rejected_action".to_string();
             break;
         }
@@ -782,6 +1006,7 @@ fn run_episode_inner(
             crash,
             deterministic_replay_pass: None,
             deterministic_replay_error: None,
+            contract_failure,
             duration_ms: start.elapsed().as_millis(),
             total_reward,
             combat_win_count: ctx.combat_win_count,
@@ -2571,6 +2796,8 @@ mod tests {
         );
         assert_eq!(summary.action_mask_kind, "per_decision_candidate_set");
         assert_eq!(summary.deterministic_replay_pass_count, 1);
+        assert_eq!(summary.contract_failure_count, 0);
+        assert!(summary.contract_failures.is_empty());
         assert_eq!(summary.policy, "random_masked");
         assert!(summary.max_legal_action_count > 0);
         assert!(summary.decision_type_counts.values().sum::<usize>() > 0);
@@ -2596,6 +2823,71 @@ mod tests {
         assert_eq!(summary.crash_count, 0);
         assert_eq!(summary.illegal_action_count, 0);
         assert_eq!(summary.deterministic_replay_pass_count, 1);
+        assert_eq!(summary.contract_failure_count, 0);
         assert!(summary.average_legal_action_count > 0.0);
+    }
+
+    #[test]
+    fn rule_baseline_seed_10542_regresses_empty_upgrade_select_fizzle() {
+        let config = RunBatchConfig {
+            episodes: 1,
+            base_seed: 10542,
+            ascension: 0,
+            final_act: false,
+            player_class: "Ironclad",
+            max_steps: 5000,
+            policy: RunPolicyKind::RuleBaselineV0,
+            trace_dir: None,
+            determinism_check: true,
+        };
+
+        let summary = run_batch(&config).expect("seed 10542 should run without contract failure");
+        assert_eq!(summary.crash_count, 0);
+        assert_eq!(summary.illegal_action_count, 0);
+        assert_eq!(summary.no_progress_loop_count, 0);
+        assert_eq!(summary.contract_failure_count, 0);
+        assert_eq!(summary.deterministic_replay_pass_count, 1);
+    }
+
+    #[test]
+    fn contract_failure_records_repro_seed_policy_and_action_key() {
+        let config = RunBatchConfig {
+            episodes: 1,
+            base_seed: 6040,
+            ascension: 0,
+            final_act: false,
+            player_class: "Ironclad",
+            max_steps: 5000,
+            policy: RunPolicyKind::RandomMasked,
+            trace_dir: None,
+            determinism_check: true,
+        };
+
+        let failure = make_contract_failure(
+            &config,
+            0,
+            6040,
+            "engine_rejected_action",
+            "engine_rejected_action",
+            3,
+            1,
+            Some(17),
+            Some("combat/play_card/card:Apparition/hand:0/target:none".to_string()),
+            Some("combat".to_string()),
+            Some("combat_player_turn".to_string()),
+            "engine rejected legal action".to_string(),
+        );
+
+        assert_eq!(failure.seed, 6040);
+        assert_eq!(failure.policy, "random_masked");
+        assert_eq!(failure.step, Some(17));
+        assert_eq!(
+            failure.action_key.as_deref(),
+            Some("combat/play_card/card:Apparition/hand:0/target:none")
+        );
+        assert!(failure.reproduce_command.contains("--episodes 1"));
+        assert!(failure.reproduce_command.contains("--seed 6040"));
+        assert!(failure.reproduce_command.contains("--policy random_masked"));
+        assert!(failure.reproduce_command.contains("--max-steps 5000"));
     }
 }
