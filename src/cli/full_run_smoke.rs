@@ -21,7 +21,7 @@ use crate::state::run::RunState;
 use crate::state::selection::EngineDiagnosticSeverity;
 use crate::state::selection::{SelectionResolution, SelectionScope, SelectionTargetRef};
 
-pub const FULL_RUN_OBSERVATION_SCHEMA_VERSION: &str = "full_run_observation_v1";
+pub const FULL_RUN_OBSERVATION_SCHEMA_VERSION: &str = "full_run_observation_v2";
 pub const FULL_RUN_ACTION_SCHEMA_VERSION: &str = "full_run_action_candidate_set_v1";
 const NO_PROGRESS_REPEAT_LIMIT: usize = 8;
 
@@ -194,8 +194,65 @@ pub struct RunObservationV0 {
     pub potion_slots: usize,
     pub filled_potion_slots: usize,
     pub deck: RunDeckObservationV0,
+    pub deck_cards: Vec<RunDeckCardObservationV0>,
+    pub relics: Vec<RunRelicObservationV0>,
+    pub potions: Vec<RunPotionSlotObservationV0>,
+    pub map: Option<RunMapObservationV0>,
+    pub next_nodes: Vec<RunMapNodeObservationV0>,
+    pub act_boss: Option<String>,
+    pub reward_source: Option<String>,
     pub combat: Option<RunCombatObservationV0>,
     pub screen: RunScreenObservationV0,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct RunDeckCardObservationV0 {
+    pub deck_index: usize,
+    pub uuid: u32,
+    pub card: RunCardFeatureV0,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct RunRelicObservationV0 {
+    pub relic_id: String,
+    pub counter: i32,
+    pub used_up: bool,
+    pub amount: i32,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct RunPotionSlotObservationV0 {
+    pub slot_index: usize,
+    pub potion_id: Option<String>,
+    pub uuid: Option<u32>,
+    pub can_use: bool,
+    pub can_discard: bool,
+    pub requires_target: bool,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct RunMapObservationV0 {
+    pub current_x: i32,
+    pub current_y: i32,
+    pub boss_node_available: bool,
+    pub has_emerald_key: bool,
+    pub nodes: Vec<RunMapNodeObservationV0>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct RunMapNodeObservationV0 {
+    pub x: i32,
+    pub y: i32,
+    pub room_type: Option<String>,
+    pub has_emerald_key: bool,
+    pub reachable_now: bool,
+    pub edges: Vec<RunMapEdgeObservationV0>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct RunMapEdgeObservationV0 {
+    pub dst_x: i32,
+    pub dst_y: i32,
 }
 
 #[derive(Clone, Debug, Default, Serialize)]
@@ -2608,9 +2665,33 @@ fn build_observation(ctx: &EpisodeContext) -> RunObservationV0 {
             .filter(|slot| slot.is_some())
             .count(),
         deck: build_deck_observation(&ctx.run_state),
+        deck_cards: build_deck_card_observations(&ctx.run_state),
+        relics: build_relic_observations(&ctx.run_state),
+        potions: build_potion_observations(&ctx.run_state),
+        map: build_map_observation_if_relevant(&ctx.engine_state, &ctx.run_state),
+        next_nodes: build_next_node_observations(&ctx.run_state),
+        act_boss: ctx
+            .run_state
+            .boss_list
+            .first()
+            .map(|boss| format!("{boss:?}")),
+        reward_source: reward_source_label(&ctx.engine_state, &ctx.run_state),
         combat: combat.map(build_combat_observation),
         screen: build_screen_observation(&ctx.engine_state, &ctx.run_state),
     }
+}
+
+fn build_deck_card_observations(run_state: &RunState) -> Vec<RunDeckCardObservationV0> {
+    run_state
+        .master_deck
+        .iter()
+        .enumerate()
+        .map(|(deck_index, card)| RunDeckCardObservationV0 {
+            deck_index,
+            uuid: card.uuid,
+            card: build_card_feature(card.id, card.upgrades, run_state),
+        })
+        .collect()
 }
 
 fn build_deck_observation(run_state: &RunState) -> RunDeckObservationV0 {
@@ -2655,6 +2736,176 @@ fn build_deck_observation(run_state: &RunState) -> RunDeckObservationV0 {
         0
     };
     out
+}
+
+fn build_relic_observations(run_state: &RunState) -> Vec<RunRelicObservationV0> {
+    run_state
+        .relics
+        .iter()
+        .map(|relic| RunRelicObservationV0 {
+            relic_id: format!("{:?}", relic.id),
+            counter: relic.counter,
+            used_up: relic.used_up,
+            amount: relic.amount,
+        })
+        .collect()
+}
+
+fn build_potion_observations(run_state: &RunState) -> Vec<RunPotionSlotObservationV0> {
+    run_state
+        .potions
+        .iter()
+        .enumerate()
+        .map(|(slot_index, slot)| match slot {
+            Some(potion) => RunPotionSlotObservationV0 {
+                slot_index,
+                potion_id: Some(format!("{:?}", potion.id)),
+                uuid: Some(potion.uuid),
+                can_use: potion.can_use,
+                can_discard: potion.can_discard,
+                requires_target: potion.requires_target,
+            },
+            None => RunPotionSlotObservationV0 {
+                slot_index,
+                potion_id: None,
+                uuid: None,
+                can_use: false,
+                can_discard: false,
+                requires_target: false,
+            },
+        })
+        .collect()
+}
+
+fn build_map_observation(run_state: &RunState) -> RunMapObservationV0 {
+    let nodes = run_state
+        .map
+        .graph
+        .iter()
+        .flat_map(|row| row.iter())
+        .filter(|node| {
+            node.class.is_some()
+                || !node.edges.is_empty()
+                || !node.parents.is_empty()
+                || node.has_emerald_key
+        })
+        .map(|node| map_node_observation(run_state, node.x, node.y))
+        .collect();
+    RunMapObservationV0 {
+        current_x: run_state.map.current_x,
+        current_y: run_state.map.current_y,
+        boss_node_available: run_state.map.boss_node_available,
+        has_emerald_key: run_state.map.has_emerald_key,
+        nodes,
+    }
+}
+
+fn build_map_observation_if_relevant(
+    engine_state: &EngineState,
+    run_state: &RunState,
+) -> Option<RunMapObservationV0> {
+    match engine_state {
+        EngineState::CombatPlayerTurn
+        | EngineState::CombatProcessing
+        | EngineState::EventCombat(_)
+        | EngineState::PendingChoice(PendingChoice::GridSelect { .. })
+        | EngineState::PendingChoice(PendingChoice::HandSelect { .. })
+        | EngineState::PendingChoice(PendingChoice::DiscoverySelect(_))
+        | EngineState::PendingChoice(PendingChoice::ScrySelect { .. })
+        | EngineState::PendingChoice(PendingChoice::CardRewardSelect { .. })
+        | EngineState::PendingChoice(PendingChoice::StanceChoice)
+        | EngineState::GameOver(_) => None,
+        EngineState::RewardScreen(_)
+        | EngineState::Campfire
+        | EngineState::Shop(_)
+        | EngineState::MapNavigation
+        | EngineState::EventRoom
+        | EngineState::RunPendingChoice(_)
+        | EngineState::BossRelicSelect(_) => Some(build_map_observation(run_state)),
+    }
+}
+
+fn build_next_node_observations(run_state: &RunState) -> Vec<RunMapNodeObservationV0> {
+    legal_map_actions(run_state)
+        .into_iter()
+        .filter_map(|action| match action {
+            ClientInput::SelectMapNode(x) => {
+                let y = if run_state.map.current_y == -1 {
+                    0
+                } else if run_state.map.current_y == 14 {
+                    15
+                } else {
+                    run_state.map.current_y + 1
+                };
+                Some(map_node_observation(run_state, x as i32, y))
+            }
+            ClientInput::FlyToNode(x, y) => {
+                Some(map_node_observation(run_state, x as i32, y as i32))
+            }
+            _ => None,
+        })
+        .collect()
+}
+
+fn map_node_observation(run_state: &RunState, x: i32, y: i32) -> RunMapNodeObservationV0 {
+    if y == 15 {
+        return RunMapNodeObservationV0 {
+            x,
+            y,
+            room_type: Some("MonsterRoomBoss".to_string()),
+            has_emerald_key: false,
+            reachable_now: run_state.map.can_travel_to(x, y, false),
+            edges: Vec::new(),
+        };
+    }
+    let node = run_state
+        .map
+        .graph
+        .get(y.max(0) as usize)
+        .and_then(|row| row.get(x.max(0) as usize));
+    let edges = node
+        .map(|node| {
+            node.edges
+                .iter()
+                .map(|edge| RunMapEdgeObservationV0 {
+                    dst_x: edge.dst_x,
+                    dst_y: edge.dst_y,
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    RunMapNodeObservationV0 {
+        x,
+        y,
+        room_type: node.and_then(|node| node.class).map(room_type_name),
+        has_emerald_key: node.is_some_and(|node| node.has_emerald_key),
+        reachable_now: run_state.map.can_travel_to(x, y, false),
+        edges,
+    }
+}
+
+fn room_type_name(room_type: RoomType) -> String {
+    format!("{room_type:?}")
+}
+
+fn reward_source_label(engine_state: &EngineState, run_state: &RunState) -> Option<String> {
+    match engine_state {
+        EngineState::RewardScreen(reward_state) => {
+            if run_state.pending_boss_reward {
+                Some("boss_combat_reward".to_string())
+            } else {
+                Some(format!(
+                    "{:?}:{:?}",
+                    reward_state.screen_context,
+                    run_state.map.get_current_room_type()
+                ))
+            }
+        }
+        EngineState::PendingChoice(PendingChoice::CardRewardSelect { .. }) => {
+            Some("combat_card_reward_select".to_string())
+        }
+        _ => None,
+    }
 }
 
 fn build_combat_observation(combat: &CombatState) -> RunCombatObservationV0 {
@@ -3634,6 +3885,13 @@ mod tests {
             potion_slots: 3,
             filled_potion_slots: 0,
             deck: RunDeckObservationV0::default(),
+            deck_cards: Vec::new(),
+            relics: Vec::new(),
+            potions: Vec::new(),
+            map: None,
+            next_nodes: Vec::new(),
+            act_boss: None,
+            reward_source: None,
             combat: Some(RunCombatObservationV0 {
                 player_hp: 40,
                 player_block: 0,
@@ -3722,6 +3980,52 @@ mod tests {
         assert_eq!(summary.policy, "random_masked");
         assert!(summary.max_legal_action_count > 0);
         assert!(summary.decision_type_counts.values().sum::<usize>() > 0);
+    }
+
+    #[test]
+    fn trace_observation_exports_visible_run_context() {
+        let config = RunBatchConfig {
+            episodes: 1,
+            base_seed: 71200,
+            ascension: 0,
+            final_act: false,
+            player_class: "Ironclad",
+            max_steps: 80,
+            policy: RunPolicyKind::RuleBaselineV0,
+            trace_dir: None,
+            determinism_check: false,
+        };
+        let episode = run_episode(&config, 0, 71200, EpisodePolicy::RuleBaselineV0, true);
+        assert!(episode.summary.crash.is_none());
+
+        let first = episode
+            .trace
+            .first()
+            .expect("trace should include Neow step");
+        let observation = &first.observation;
+        assert_eq!(
+            observation.schema_version,
+            FULL_RUN_OBSERVATION_SCHEMA_VERSION
+        );
+        assert_eq!(observation.deck_cards.len(), observation.deck_size);
+        assert_eq!(observation.relics.len(), observation.relic_count);
+        assert_eq!(observation.potions.len(), observation.potion_slots);
+        assert!(observation.act_boss.is_some());
+        assert!(!observation.next_nodes.is_empty());
+
+        let map_step = episode
+            .trace
+            .iter()
+            .find(|step| step.decision_type == "map")
+            .expect("short rule-baseline run should reach map navigation");
+        assert!(map_step.observation.map.is_some());
+
+        let combat_step = episode
+            .trace
+            .iter()
+            .find(|step| step.decision_type == "combat")
+            .expect("short rule-baseline run should reach combat");
+        assert!(combat_step.observation.map.is_none());
     }
 
     #[test]

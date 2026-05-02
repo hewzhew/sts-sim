@@ -25,8 +25,8 @@ TRAINING_CONTEXT_FLAGS = IMPORTANT_CONTEXT_FLAGS | {
 }
 REWARD_DECISION_TYPES = {"reward_card_choice", "combat_card_reward"}
 MAP_DECISION_TYPES = {"map"}
-ROUTE_SENSITIVE_DECISION_TYPES = {"map", "campfire", "shop", "reward_card_choice", "boss_relic"}
-BOSS_SENSITIVE_DECISION_TYPES = {"reward_card_choice", "boss_relic", "campfire", "map"}
+ROUTE_SENSITIVE_DECISION_TYPES = {"map", "campfire", "shop", "reward_card_choice"}
+BOSS_SENSITIVE_DECISION_TYPES = {"reward_card_choice", "campfire", "map"}
 
 
 def parse_args() -> argparse.Namespace:
@@ -163,13 +163,18 @@ def export_snapshots(args: argparse.Namespace, trace_dir: Path) -> tuple[list[di
             "trace_file_count": len(trace_files),
         },
         "config": {
-            "episodes": args.episodes,
-            "seed": args.seed,
-            "policy": args.policy,
-            "ascension": args.ascension,
-            "player_class": args.player_class,
-            "final_act": bool(args.final_act),
-            "max_steps": args.max_steps,
+            "source_mode": "existing_trace_dir" if args.trace_dir else "generated_run_batch",
+            "run_batch": None
+            if args.trace_dir
+            else {
+                "episodes": args.episodes,
+                "seed": args.seed,
+                "policy": args.policy,
+                "ascension": args.ascension,
+                "player_class": args.player_class,
+                "final_act": bool(args.final_act),
+                "max_steps": args.max_steps,
+            },
         },
         "counts": {
             "episodes": episode_count,
@@ -184,8 +189,8 @@ def export_snapshots(args: argparse.Namespace, trace_dir: Path) -> tuple[list[di
             "eval_ready": "Has full visible run context for human/model preference evaluation.",
             "training_ready": "Has replay/clone/randomness contract needed for rollout-backed labels.",
             "current_expected_gap": (
-                "Rust run-batch traces currently expose aggregate deck/relic/potion counts, "
-                "not full deck/relic/potion/map context; many rows should be smoke_ready only."
+                "Rust run-batch traces expose visible deck/relic/potion/map context, but they "
+                "do not yet include a replay clone state or paired rollout randomness contract."
             ),
         },
     }
@@ -261,20 +266,21 @@ def quality_flags_for_snapshot(
         flags.append("missing_deck_summary")
     if not has_nonempty_list(observation, "deck.cards") and not has_nonempty_list(observation, "deck_cards"):
         flags.append("missing_full_deck_list")
-    if not has_nonempty_list(observation, "relics"):
+    if not has_list(observation, "relics"):
         flags.append("missing_current_relics")
     if not has_list(observation, "potions"):
         flags.append("missing_potion_state")
 
     if decision_type in REWARD_DECISION_TYPES and not observation.get("reward_source"):
         flags.append("missing_reward_source")
+    is_boss_reward = observation.get("reward_source") == "boss_combat_reward"
     if decision_type in MAP_DECISION_TYPES and not observation.get("map"):
         flags.append("missing_map_graph")
-    if decision_type in ROUTE_SENSITIVE_DECISION_TYPES and not (
+    if decision_type in ROUTE_SENSITIVE_DECISION_TYPES and not is_boss_reward and not (
         observation.get("next_nodes") or nested_get(observation, "map.next_nodes")
     ):
         flags.append("missing_next_nodes")
-    if decision_type in BOSS_SENSITIVE_DECISION_TYPES and not (
+    if decision_type in BOSS_SENSITIVE_DECISION_TYPES and not is_boss_reward and not (
         observation.get("boss") or observation.get("act_boss") or observation.get("boss_id")
     ):
         flags.append("missing_boss_info")
