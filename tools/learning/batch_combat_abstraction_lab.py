@@ -279,6 +279,12 @@ def abstraction_counts(ranking: list[dict[str, Any]], key: str) -> dict[str, int
     return dict(sorted(counts.items()))
 
 
+def abstraction_value(row: dict[str, Any] | None, key: str) -> Any:
+    if row is None:
+        return None
+    return (row.get("abstraction") or {}).get(key)
+
+
 def diagnostic_flags(report: dict[str, Any], chosen: dict[str, Any] | None, best: dict[str, Any] | None, chosen_group_rank: int | None) -> list[str]:
     flags: list[str] = []
     if chosen is None or best is None:
@@ -302,6 +308,17 @@ def diagnostic_flags(report: dict[str, Any], chosen: dict[str, Any] | None, best
         flags.append("potion_opportunity")
     if action_family(chosen.get("candidate_key")) == "use_potion" and action_family(best.get("candidate_key")) != "use_potion":
         flags.append("potion_overuse")
+    chosen_fit = str(abstraction_value(chosen, "root_plan_fit") or "")
+    best_fit = str(abstraction_value(best, "root_plan_fit") or "")
+    chosen_role = str(abstraction_value(chosen, "root_plan_role") or "")
+    best_role = str(abstraction_value(best, "root_plan_role") or "")
+    pressure = str(abstraction_value(chosen, "pressure_class") or abstraction_value(best, "pressure_class") or "")
+    if chosen_fit == "ignores_attack" and best_fit in {"covers_attack", "reduces_attack", "decisive"}:
+        flags.append("ignored_attack_pressure")
+    if chosen_role == "partial_defense" and best_role == "full_defense":
+        flags.append("missed_full_defense")
+    if pressure == "no_attack" and chosen_fit == "wastes_window" and best_fit in {"uses_window", "decisive"}:
+        flags.append("wasted_no_attack_window")
     return flags
 
 
@@ -367,6 +384,12 @@ def flatten_case(result: dict[str, Any]) -> tuple[list[dict[str, Any]], dict[str
         "chosen_kill_clock": None if chosen is None else (chosen.get("abstraction") or {}).get("kill_clock"),
         "chosen_risk_bucket": None if chosen is None else (chosen.get("abstraction") or {}).get("risk_bucket"),
         "chosen_role": None if chosen is None else (chosen.get("abstraction") or {}).get("role"),
+        "chosen_pressure_class": abstraction_value(chosen, "pressure_class"),
+        "chosen_root_plan_role": abstraction_value(chosen, "root_plan_role"),
+        "chosen_root_plan_fit": abstraction_value(chosen, "root_plan_fit"),
+        "chosen_root_block_need": abstraction_value(chosen, "root_block_need"),
+        "chosen_root_unblocked_reduction": abstraction_value(chosen, "root_unblocked_reduction"),
+        "chosen_root_damage_delta": abstraction_value(chosen, "root_damage_delta"),
         "best_candidate_index": None if best is None else int(best.get("candidate_index") or 0),
         "best_candidate_key": None if best is None else str(best.get("candidate_key") or ""),
         "best_action_family": None if best is None else action_family(best.get("candidate_key")),
@@ -375,6 +398,12 @@ def flatten_case(result: dict[str, Any]) -> tuple[list[dict[str, Any]], dict[str
         "best_kill_clock": None if best is None else (best.get("abstraction") or {}).get("kill_clock"),
         "best_risk_bucket": None if best is None else (best.get("abstraction") or {}).get("risk_bucket"),
         "best_role": None if best is None else (best.get("abstraction") or {}).get("role"),
+        "best_pressure_class": abstraction_value(best, "pressure_class"),
+        "best_root_plan_role": abstraction_value(best, "root_plan_role"),
+        "best_root_plan_fit": abstraction_value(best, "root_plan_fit"),
+        "best_root_block_need": abstraction_value(best, "root_block_need"),
+        "best_root_unblocked_reduction": abstraction_value(best, "root_unblocked_reduction"),
+        "best_root_damage_delta": abstraction_value(best, "root_damage_delta"),
         "hp_regret": estimate(best, "expected_end_hp") - estimate(chosen, "expected_end_hp"),
         "combat_win_regret": estimate(best, "combat_win_prob") - estimate(chosen, "combat_win_prob"),
         "survive_prob_range": estimate_range(ranking, "survive_prob"),
@@ -384,6 +413,9 @@ def flatten_case(result: dict[str, Any]) -> tuple[list[dict[str, Any]], dict[str
         "kill_clock_counts": abstraction_counts(ranking, "kill_clock"),
         "risk_bucket_counts": abstraction_counts(ranking, "risk_bucket"),
         "role_counts": abstraction_counts(ranking, "role"),
+        "pressure_class_counts": abstraction_counts(ranking, "pressure_class"),
+        "root_plan_role_counts": abstraction_counts(ranking, "root_plan_role"),
+        "root_plan_fit_counts": abstraction_counts(ranking, "root_plan_fit"),
         "triage_kind": kind,
         "actionable": is_actionable(kind),
         "diagnostic_flags": flags,
@@ -477,6 +509,11 @@ def main() -> None:
         "best_role_counts": dict(sorted(Counter(str(case.get("best_role")) for case in ok_cases).items())),
         "chosen_action_family_counts": dict(sorted(Counter(str(case.get("chosen_action_family")) for case in ok_cases).items())),
         "best_action_family_counts": dict(sorted(Counter(str(case.get("best_action_family")) for case in ok_cases).items())),
+        "pressure_class_counts": dict(sorted(Counter(str(case.get("chosen_pressure_class")) for case in ok_cases).items())),
+        "chosen_root_plan_fit_counts": dict(sorted(Counter(str(case.get("chosen_root_plan_fit")) for case in ok_cases).items())),
+        "best_root_plan_fit_counts": dict(sorted(Counter(str(case.get("best_root_plan_fit")) for case in ok_cases).items())),
+        "chosen_root_plan_role_counts": dict(sorted(Counter(str(case.get("chosen_root_plan_role")) for case in ok_cases).items())),
+        "best_root_plan_role_counts": dict(sorted(Counter(str(case.get("best_root_plan_role")) for case in ok_cases).items())),
         "elapsed_seconds": elapsed,
         "interesting_cases": [
             case

@@ -204,6 +204,99 @@ def include_required_branch(indices: list[int], required_index: int, candidate_c
     return sorted(set(indices + [required_index]))
 
 
+def pressure_class(start: dict[str, Any]) -> str:
+    incoming = int(start.get("incoming") or 0)
+    unblocked = int(start.get("unblocked") or 0)
+    current_hp = int(start.get("hp") or 0)
+    if incoming <= 0:
+        return "no_attack"
+    if unblocked <= 0:
+        return "blocked_attack"
+    if current_hp > 0 and unblocked >= current_hp:
+        return "lethal_pressure"
+    if current_hp > 0 and unblocked >= max(current_hp // 2, 1):
+        return "high_pressure"
+    if unblocked >= 6:
+        return "medium_pressure"
+    return "chip_pressure"
+
+
+def root_plan(start: dict[str, Any], immediate: dict[str, Any], tags: list[str]) -> dict[str, Any]:
+    tag_set = set(tags)
+    start_unblocked = int(start.get("unblocked") or 0)
+    immediate_unblocked = int(immediate.get("unblocked") or start_unblocked)
+    start_monster_hp = int(start.get("monster_hp") or 0)
+    immediate_monster_hp = int(immediate.get("monster_hp") or 0)
+    start_block = int(start.get("block") or 0)
+    immediate_block = int(immediate.get("block") or start_block)
+    start_energy = int(start.get("energy") or 0)
+    immediate_energy = int(immediate.get("energy") or start_energy)
+    unblocked_reduction = max(start_unblocked - immediate_unblocked, 0)
+    damage_delta = max(start_monster_hp - immediate_monster_hp, 0)
+    block_delta = max(immediate_block - start_block, 0)
+    energy_spent = max(start_energy - immediate_energy, 0)
+    pressure = pressure_class(start)
+    under_attack = pressure not in {"no_attack", "blocked_attack"}
+
+    if "end_turn" in tag_set:
+        role = "end_turn"
+    elif start_monster_hp > 0 and immediate_monster_hp <= 0:
+        role = "lethal"
+    elif under_attack and unblocked_reduction >= start_unblocked and start_unblocked > 0:
+        role = "full_defense"
+    elif under_attack and unblocked_reduction > 0 and damage_delta > 0:
+        role = "mixed_partial_defense"
+    elif under_attack and unblocked_reduction > 0:
+        role = "partial_defense"
+    elif under_attack and damage_delta > 0:
+        role = "damage_under_pressure"
+    elif under_attack and ("power" in tag_set or "scaling" in tag_set):
+        role = "scaling_under_pressure"
+    elif under_attack and "use_potion" in tag_set:
+        role = "emergency_resource"
+    elif under_attack:
+        role = "ignores_pressure"
+    elif "block" in tag_set and damage_delta == 0:
+        role = "defense_without_pressure"
+    elif "power" in tag_set or "scaling" in tag_set:
+        role = "setup_window"
+    elif damage_delta > 0:
+        role = "damage_window"
+    else:
+        role = "other_window"
+
+    if role == "lethal":
+        fit = "decisive"
+    elif role == "full_defense":
+        fit = "covers_attack"
+    elif role in {"mixed_partial_defense", "partial_defense"}:
+        fit = "reduces_attack"
+    elif role == "damage_under_pressure":
+        fit = "trades_hp_for_progress"
+    elif role in {"scaling_under_pressure", "ignores_pressure"}:
+        fit = "ignores_attack"
+    elif role == "emergency_resource":
+        fit = "external_resource"
+    elif role in {"setup_window", "damage_window"}:
+        fit = "uses_window"
+    elif role == "defense_without_pressure":
+        fit = "wastes_window"
+    else:
+        fit = "neutral"
+
+    return {
+        "pressure_class": pressure,
+        "root_block_need": start_unblocked,
+        "root_unblocked_after": immediate_unblocked,
+        "root_unblocked_reduction": unblocked_reduction,
+        "root_damage_delta": damage_delta,
+        "root_block_delta": block_delta,
+        "root_energy_spent": energy_spent,
+        "root_plan_role": role,
+        "root_plan_fit": fit,
+    }
+
+
 def aggregate_samples(samples: list[dict[str, Any]]) -> dict[str, Any]:
     defeat = []
     combat_win = []
@@ -300,6 +393,7 @@ def classify_candidate(
         "risk_bucket": risk_bucket,
         "role": role,
         "expected_end_hp_bucket5": int(expected_end_hp) // 5,
+        **root_plan(start, immediate, tags),
     }
 
 
