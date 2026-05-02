@@ -2,7 +2,7 @@ use std::io::{self, BufRead, Write};
 
 use serde::{Deserialize, Serialize};
 use sts_simulator::cli::full_run_smoke::{
-    FullRunEnv, FullRunEnvConfig, FullRunEnvInfo, FullRunEnvState,
+    FullRunEnv, FullRunEnvConfig, FullRunEnvInfo, FullRunEnvState, RunPolicyKind,
 };
 
 #[derive(Debug, Deserialize)]
@@ -19,6 +19,9 @@ enum DriverRequest {
     Observation,
     Step {
         action_index: usize,
+    },
+    StepPolicy {
+        policy: String,
     },
     Close,
 }
@@ -150,6 +153,29 @@ fn handle_request(env: &mut Option<FullRunEnv>, request: DriverRequest) -> Drive
             },
             None => error_response("full-run env not initialized; send reset first".to_string()),
         },
+        DriverRequest::StepPolicy { policy } => {
+            let policy_kind = match normalize_policy(&policy) {
+                Ok(value) => value,
+                Err(err) => return error_response(err),
+            };
+            match env.as_mut() {
+                Some(current) => match current.step_policy(policy_kind) {
+                    Ok(step) => DriverResponse {
+                        ok: true,
+                        error: None,
+                        payload: Some(step.state),
+                        reward: Some(step.reward),
+                        done: Some(step.done),
+                        chosen_action_key: step.chosen_action_key,
+                        info: Some(step.info),
+                    },
+                    Err(err) => error_response(err),
+                },
+                None => {
+                    error_response("full-run env not initialized; send reset first".to_string())
+                }
+            }
+        }
     }
 }
 
@@ -173,6 +199,15 @@ fn normalize_player_class(value: Option<&str>) -> Result<&'static str, String> {
         "watcher" | "purple" => Ok("Watcher"),
         other => Err(format!(
             "unsupported class '{other}'; expected ironclad, silent, defect, or watcher"
+        )),
+    }
+}
+
+fn normalize_policy(value: &str) -> Result<RunPolicyKind, String> {
+    match value.to_ascii_lowercase().as_str() {
+        "rule_baseline_v0" => Ok(RunPolicyKind::RuleBaselineV0),
+        other => Err(format!(
+            "unsupported policy '{other}'; expected rule_baseline_v0"
         )),
     }
 }

@@ -573,6 +573,34 @@ impl FullRunEnv {
         self.prepare_state()
     }
 
+    pub fn step_policy(&mut self, policy: RunPolicyKind) -> Result<FullRunEnvStep, String> {
+        if self.done {
+            return self.step(0);
+        }
+        let _ = self.prepare_state()?;
+        if self.done {
+            return self.step(0);
+        }
+        let legal_actions = legal_actions(
+            &self.ctx.engine_state,
+            &self.ctx.run_state,
+            &self.ctx.combat_state,
+        );
+        if legal_actions.is_empty() {
+            return Err("no legal actions available for policy step".to_string());
+        }
+        let action_index = match policy {
+            RunPolicyKind::RuleBaselineV0 => choose_rule_baseline_action(&self.ctx, &legal_actions),
+            RunPolicyKind::RandomMasked => {
+                return Err(
+                    "random_masked policy step is not stateful in FullRunEnv; choose a legal index externally"
+                        .to_string(),
+                )
+            }
+        };
+        self.step(action_index)
+    }
+
     pub fn step(&mut self, action_index: usize) -> Result<FullRunEnvStep, String> {
         if self.done {
             return Ok(FullRunEnvStep {
@@ -4055,6 +4083,23 @@ mod tests {
             step.state.observation_schema_version,
             FULL_RUN_OBSERVATION_SCHEMA_VERSION
         );
+        assert_eq!(step.info.seed, 42);
+        assert!(step.chosen_action_key.is_some());
+    }
+
+    #[test]
+    fn full_run_env_step_policy_uses_rule_baseline() {
+        let config = FullRunEnvConfig {
+            seed: 42,
+            ascension: 0,
+            final_act: false,
+            player_class: "Ironclad",
+            max_steps: 50,
+        };
+        let mut env = FullRunEnv::new(config).expect("full-run env should reset");
+        let step = env
+            .step_policy(RunPolicyKind::RuleBaselineV0)
+            .expect("rule baseline policy should choose a legal action");
         assert_eq!(step.info.seed, 42);
         assert!(step.chosen_action_key.is_some());
     }
