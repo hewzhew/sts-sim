@@ -185,6 +185,14 @@ This is only a bridge/training-loop sanity check. Treat its output as evidence
 that `MaskablePPO` can consume the full-run environment and legal action mask,
 not as a meaningful policy-strength result.
 
+The full-run Gym bridge currently consumes `full_run_observation_v1` and
+`full_run_action_candidate_set_v1`. The v1 contract adds coarse deck-summary
+features plus optional card features on card-bearing action candidates such as
+reward `select_card`, shop `buy_card`, combat `play_card`, smith, purge, and
+toke. Card-reward choices also receive a very small heuristic shaping signal so
+short PPO probes can distinguish "take a good offered card" from "skip every
+card" without treating the rule score as an oracle.
+
 ### Run the full-run sanity matrix
 
 ```powershell
@@ -200,6 +208,10 @@ This compares Rust `random_masked`, Rust `rule_baseline_v0`, and several PPO
 training seeds across several evaluation seed blocks. Use it to catch contract
 failures, seed flukes, step-cap behavior, and obvious action collapse before
 making any claim about learned full-run strength.
+
+For behavior-level comparisons, prefer a slightly longer probe such as
+`--timesteps 8192 --eval-episodes 50`; the 2048-step matrix is mainly a bridge
+and contract smoke.
 
 ### Audit full-run policy behavior
 

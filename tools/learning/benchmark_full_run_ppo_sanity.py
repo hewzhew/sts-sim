@@ -134,7 +134,17 @@ def evaluate_python_policy(
                 reward_total += float(reward)
                 steps += 1
                 invalid_actions += 1 if info.get("invalid_action") else 0
-            rows.append(episode_row(episode, base_seed + episode, info, steps, reward_total, invalid_actions))
+            rows.append(
+                episode_row(
+                    episode,
+                    base_seed + episode,
+                    info,
+                    steps,
+                    reward_total,
+                    invalid_actions,
+                    truncated,
+                )
+            )
     finally:
         env.close()
     summary = summarize_rows(rows, time.perf_counter() - start)
@@ -182,12 +192,19 @@ def episode_row(
     steps: int,
     reward_total: float,
     invalid_actions: int,
+    truncated: bool,
 ) -> dict[str, Any]:
+    terminal_reason = info.get("terminal_reason")
+    result = info.get("result")
+    if truncated and terminal_reason in {None, "running"}:
+        terminal_reason = "python_truncated"
+    if truncated and result in {None, "ongoing"}:
+        result = "truncated"
     return {
         "episode": int(episode),
         "seed": int(seed),
-        "result": info.get("result"),
-        "terminal_reason": info.get("terminal_reason"),
+        "result": result,
+        "terminal_reason": terminal_reason,
         "floor": int(info.get("floor") or 0),
         "act": int(info.get("act") or 0),
         "steps": int(steps),
@@ -195,6 +212,7 @@ def episode_row(
         "combat_win_count": int(info.get("combat_win_count") or 0),
         "invalid_actions": int(invalid_actions),
         "crash": info.get("crash"),
+        "truncated": bool(truncated),
     }
 
 
@@ -245,6 +263,10 @@ def anomaly_flags(
         flags.append("no_progress")
     if int((summary.get("terminal_reason_counts") or {}).get("step_cap", 0)) > 0:
         flags.append("step_cap")
+    if int((summary.get("terminal_reason_counts") or {}).get("python_truncated", 0)) > 0:
+        flags.append("python_truncated")
+    if int((summary.get("result_counts") or {}).get("ongoing", 0)) > 0:
+        flags.append("ongoing_episode_result")
     if float(summary.get("average_steps") or 0.0) > 0.9 * float(max_steps):
         flags.append("near_step_cap_average_steps")
     action_total = sum(action_type_counts.values())

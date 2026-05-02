@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
-use crate::content::cards::CardId;
+use crate::content::cards::{CardId, CardRarity, CardType};
 use crate::content::monsters::factory::{self, EncounterId};
 use crate::content::relics::RelicId;
 use crate::engine::run_loop::tick_run;
@@ -21,8 +21,8 @@ use crate::state::run::RunState;
 use crate::state::selection::EngineDiagnosticSeverity;
 use crate::state::selection::{SelectionResolution, SelectionScope, SelectionTargetRef};
 
-pub const FULL_RUN_OBSERVATION_SCHEMA_VERSION: &str = "full_run_observation_v0";
-pub const FULL_RUN_ACTION_SCHEMA_VERSION: &str = "full_run_action_candidate_set_v0";
+pub const FULL_RUN_OBSERVATION_SCHEMA_VERSION: &str = "full_run_observation_v1";
+pub const FULL_RUN_ACTION_SCHEMA_VERSION: &str = "full_run_action_candidate_set_v1";
 const NO_PROGRESS_REPEAT_LIMIT: usize = 8;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -193,8 +193,25 @@ pub struct RunObservationV0 {
     pub relic_count: usize,
     pub potion_slots: usize,
     pub filled_potion_slots: usize,
+    pub deck: RunDeckObservationV0,
     pub combat: Option<RunCombatObservationV0>,
     pub screen: RunScreenObservationV0,
+}
+
+#[derive(Clone, Debug, Default, Serialize)]
+pub struct RunDeckObservationV0 {
+    pub attack_count: usize,
+    pub skill_count: usize,
+    pub power_count: usize,
+    pub status_count: usize,
+    pub curse_count: usize,
+    pub starter_basic_count: usize,
+    pub damage_card_count: usize,
+    pub block_card_count: usize,
+    pub draw_card_count: usize,
+    pub scaling_card_count: usize,
+    pub exhaust_card_count: usize,
+    pub average_cost_milli: i32,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -230,6 +247,36 @@ pub struct RunActionCandidate {
     pub action_id: u32,
     pub action_key: String,
     pub action: TraceClientInput,
+    pub card: Option<RunCardFeatureV0>,
+}
+
+#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+pub struct RunCardFeatureV0 {
+    pub card_id: String,
+    pub card_id_hash: u32,
+    pub card_type_id: u8,
+    pub rarity_id: u8,
+    pub cost: i8,
+    pub upgrades: u8,
+    pub base_damage: i32,
+    pub base_block: i32,
+    pub base_magic: i32,
+    pub upgraded_damage: i32,
+    pub upgraded_block: i32,
+    pub upgraded_magic: i32,
+    pub exhaust: bool,
+    pub ethereal: bool,
+    pub innate: bool,
+    pub aoe: bool,
+    pub multi_damage: bool,
+    pub starter_basic: bool,
+    pub draws_cards: bool,
+    pub gains_energy: bool,
+    pub applies_weak: bool,
+    pub applies_vulnerable: bool,
+    pub scaling_piece: bool,
+    pub deck_copies: usize,
+    pub rule_score: i32,
 }
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -548,6 +595,7 @@ impl FullRunEnv {
         }
 
         let before_score = full_run_progress_score(&self.ctx);
+        let action_shaping = full_run_action_shaping_reward(&self.ctx, &action);
         let keep_running = tick_run(
             &mut self.ctx.engine_state,
             &mut self.ctx.run_state,
@@ -620,7 +668,7 @@ impl FullRunEnv {
         }
 
         let after_score = full_run_progress_score(&self.ctx);
-        let reward = after_score - before_score + self.terminal_reward();
+        let reward = after_score - before_score + self.terminal_reward() + action_shaping;
         Ok(FullRunEnvStep {
             state: self.prepare_state()?,
             reward,
@@ -648,8 +696,7 @@ impl FullRunEnv {
                 &self.ctx.combat_state,
             )
         };
-        let action_candidates =
-            build_action_candidates(&legal_actions, self.ctx.combat_state.as_ref());
+        let action_candidates = build_action_candidates(&legal_actions, Some(&self.ctx));
         let action_mask = vec![true; action_candidates.len()];
         Ok(FullRunEnvState {
             observation_schema_version: FULL_RUN_OBSERVATION_SCHEMA_VERSION.to_string(),
@@ -705,6 +752,39 @@ fn full_run_progress_score(ctx: &EpisodeContext) -> f32 {
         0.0
     };
     ctx.run_state.floor_num.max(0) as f32 + ctx.combat_win_count as f32 * 2.0 + hp_fraction
+}
+
+fn full_run_action_shaping_reward(ctx: &EpisodeContext, action: &ClientInput) -> f32 {
+    let EngineState::RewardScreen(reward_state) = &ctx.engine_state else {
+        return 0.0;
+    };
+    let Some(cards) = &reward_state.pending_card_choice else {
+        return 0.0;
+    };
+    match action {
+        ClientInput::SelectCard(index) => cards
+            .get(*index)
+            .map(|card| {
+                let score = rule_card_offer_score(card.id, &ctx.run_state);
+                (score as f32 / 300.0).clamp(-0.20, 0.35)
+            })
+            .unwrap_or(0.0),
+        ClientInput::Proceed => {
+            let best_score = cards
+                .iter()
+                .map(|card| rule_card_offer_score(card.id, &ctx.run_state))
+                .max()
+                .unwrap_or(0);
+            if best_score >= 70 {
+                -0.18
+            } else if best_score <= 20 {
+                0.04
+            } else {
+                -0.05
+            }
+        }
+        _ => 0.0,
+    }
 }
 
 fn full_run_result_label(ctx: &EpisodeContext, done: bool, crash: Option<&String>) -> String {
@@ -1283,7 +1363,7 @@ fn run_episode_inner(
         };
 
         let observation = build_observation(&ctx);
-        let action_mask = build_action_candidates(&legal_actions, ctx.combat_state.as_ref());
+        let action_mask = build_action_candidates(&legal_actions, Some(&ctx));
         let chosen = action_mask
             .get(chosen_action_index)
             .expect("chosen action index should be in legal action mask");
@@ -2430,9 +2510,54 @@ fn build_observation(ctx: &EpisodeContext) -> RunObservationV0 {
             .iter()
             .filter(|slot| slot.is_some())
             .count(),
+        deck: build_deck_observation(&ctx.run_state),
         combat: combat.map(build_combat_observation),
         screen: build_screen_observation(&ctx.engine_state, &ctx.run_state),
     }
+}
+
+fn build_deck_observation(run_state: &RunState) -> RunDeckObservationV0 {
+    let mut out = RunDeckObservationV0::default();
+    let mut cost_sum = 0i32;
+    let mut cost_count = 0i32;
+    for card in &run_state.master_deck {
+        let def = crate::content::cards::get_card_definition(card.id);
+        match def.card_type {
+            CardType::Attack => out.attack_count += 1,
+            CardType::Skill => out.skill_count += 1,
+            CardType::Power => out.power_count += 1,
+            CardType::Status => out.status_count += 1,
+            CardType::Curse => out.curse_count += 1,
+        }
+        if crate::content::cards::is_starter_basic(card.id) {
+            out.starter_basic_count += 1;
+        }
+        if def.base_damage > 0 {
+            out.damage_card_count += 1;
+        }
+        if def.base_block > 0 || card_is_block_core(card.id) {
+            out.block_card_count += 1;
+        }
+        if card_draws_cards(card.id) {
+            out.draw_card_count += 1;
+        }
+        if card_is_scaling_piece(card.id) {
+            out.scaling_card_count += 1;
+        }
+        if def.exhaust || card_exhausts_other_cards(card.id) {
+            out.exhaust_card_count += 1;
+        }
+        if def.cost >= 0 {
+            cost_sum += def.cost as i32;
+            cost_count += 1;
+        }
+    }
+    out.average_cost_milli = if cost_count > 0 {
+        cost_sum * 1000 / cost_count
+    } else {
+        0
+    };
+    out
 }
 
 fn build_combat_observation(combat: &CombatState) -> RunCombatObservationV0 {
@@ -2528,21 +2653,233 @@ fn empty_screen_observation() -> RunScreenObservationV0 {
 
 fn build_action_candidates(
     legal_actions: &[ClientInput],
-    combat: Option<&CombatState>,
+    ctx: Option<&EpisodeContext>,
 ) -> Vec<RunActionCandidate> {
+    let combat = ctx.and_then(|ctx| ctx.combat_state.as_ref());
     legal_actions
         .iter()
         .enumerate()
         .map(|(action_index, action)| {
             let action_key = action_key_for_input(action, combat);
+            let card = ctx.and_then(|ctx| card_feature_for_action(action, ctx));
             RunActionCandidate {
                 action_index,
                 action_id: stable_action_id(&action_key),
                 action_key,
                 action: trace_input_from_client_input(action),
+                card,
             }
         })
         .collect()
+}
+
+fn card_feature_for_action(action: &ClientInput, ctx: &EpisodeContext) -> Option<RunCardFeatureV0> {
+    match action {
+        ClientInput::PlayCard { card_index, .. } => ctx
+            .combat_state
+            .as_ref()
+            .and_then(|combat| combat.zones.hand.get(*card_index))
+            .map(|card| build_card_feature(card.id, card.upgrades, &ctx.run_state)),
+        ClientInput::SelectCard(index) => match &ctx.engine_state {
+            EngineState::RewardScreen(reward_state) => reward_state
+                .pending_card_choice
+                .as_ref()
+                .and_then(|cards| cards.get(*index))
+                .map(|card| build_card_feature(card.id, card.upgrades, &ctx.run_state)),
+            _ => None,
+        },
+        ClientInput::BuyCard(index) => match &ctx.engine_state {
+            EngineState::Shop(shop) => shop
+                .cards
+                .get(*index)
+                .map(|card| build_card_feature(card.card_id, 0, &ctx.run_state)),
+            _ => None,
+        },
+        ClientInput::CampfireOption(CampfireChoice::Smith(index))
+        | ClientInput::CampfireOption(CampfireChoice::Toke(index))
+        | ClientInput::PurgeCard(index) => ctx
+            .run_state
+            .master_deck
+            .get(*index)
+            .map(|card| build_card_feature(card.id, card.upgrades, &ctx.run_state)),
+        _ => None,
+    }
+}
+
+fn build_card_feature(card_id: CardId, upgrades: u8, run_state: &RunState) -> RunCardFeatureV0 {
+    let def = crate::content::cards::get_card_definition(card_id);
+    let deck_copies = run_state
+        .master_deck
+        .iter()
+        .filter(|card| card.id == card_id)
+        .count();
+    RunCardFeatureV0 {
+        card_id: format!("{card_id:?}"),
+        card_id_hash: stable_action_id(&format!("card:{card_id:?}")),
+        card_type_id: card_type_id(def.card_type),
+        rarity_id: card_rarity_id(def.rarity),
+        cost: def.cost,
+        upgrades,
+        base_damage: def.base_damage,
+        base_block: def.base_block,
+        base_magic: def.base_magic,
+        upgraded_damage: def.base_damage + def.upgrade_damage * upgrades as i32,
+        upgraded_block: def.base_block + def.upgrade_block * upgrades as i32,
+        upgraded_magic: def.base_magic + def.upgrade_magic * upgrades as i32,
+        exhaust: def.exhaust,
+        ethereal: def.ethereal,
+        innate: def.innate,
+        aoe: matches!(def.target, crate::content::cards::CardTarget::AllEnemy),
+        multi_damage: def.is_multi_damage || card_is_multi_hit(card_id),
+        starter_basic: crate::content::cards::is_starter_basic(card_id),
+        draws_cards: card_draws_cards(card_id),
+        gains_energy: card_gains_energy(card_id),
+        applies_weak: card_applies_weak(card_id),
+        applies_vulnerable: card_applies_vulnerable(card_id),
+        scaling_piece: card_is_scaling_piece(card_id),
+        deck_copies,
+        rule_score: rule_card_offer_score(card_id, run_state),
+    }
+}
+
+fn card_type_id(card_type: CardType) -> u8 {
+    match card_type {
+        CardType::Attack => 1,
+        CardType::Skill => 2,
+        CardType::Power => 3,
+        CardType::Status => 4,
+        CardType::Curse => 5,
+    }
+}
+
+fn card_rarity_id(rarity: CardRarity) -> u8 {
+    match rarity {
+        CardRarity::Basic => 1,
+        CardRarity::Common => 2,
+        CardRarity::Uncommon => 3,
+        CardRarity::Rare => 4,
+        CardRarity::Special => 5,
+        CardRarity::Curse => 6,
+    }
+}
+
+fn card_draws_cards(card_id: CardId) -> bool {
+    matches!(
+        card_id,
+        CardId::BattleTrance
+            | CardId::BurningPact
+            | CardId::DarkEmbrace
+            | CardId::DeepBreath
+            | CardId::Dropkick
+            | CardId::Evolve
+            | CardId::Finesse
+            | CardId::FlashOfSteel
+            | CardId::GoodInstincts
+            | CardId::MasterOfStrategy
+            | CardId::Offering
+            | CardId::PommelStrike
+            | CardId::ShrugItOff
+            | CardId::Warcry
+            | CardId::Acrobatics
+            | CardId::Backflip
+            | CardId::Prepared
+            | CardId::DaggerThrow
+            | CardId::Adrenaline
+    )
+}
+
+fn card_gains_energy(card_id: CardId) -> bool {
+    matches!(
+        card_id,
+        CardId::Bloodletting
+            | CardId::Berserk
+            | CardId::Offering
+            | CardId::SeeingRed
+            | CardId::Sentinel
+            | CardId::Adrenaline
+    )
+}
+
+fn card_applies_weak(card_id: CardId) -> bool {
+    matches!(
+        card_id,
+        CardId::Clothesline
+            | CardId::Intimidate
+            | CardId::Shockwave
+            | CardId::Uppercut
+            | CardId::Blind
+    )
+}
+
+fn card_applies_vulnerable(card_id: CardId) -> bool {
+    matches!(
+        card_id,
+        CardId::Bash | CardId::Shockwave | CardId::ThunderClap | CardId::Trip | CardId::Uppercut
+    )
+}
+
+fn card_is_multi_hit(card_id: CardId) -> bool {
+    matches!(
+        card_id,
+        CardId::Pummel
+            | CardId::SwordBoomerang
+            | CardId::TwinStrike
+            | CardId::Whirlwind
+            | CardId::Reaper
+    )
+}
+
+fn card_exhausts_other_cards(card_id: CardId) -> bool {
+    matches!(
+        card_id,
+        CardId::BurningPact
+            | CardId::FiendFire
+            | CardId::SecondWind
+            | CardId::SeverSoul
+            | CardId::TrueGrit
+            | CardId::Purity
+    )
+}
+
+fn card_is_scaling_piece(card_id: CardId) -> bool {
+    matches!(
+        card_id,
+        CardId::DemonForm
+            | CardId::Inflame
+            | CardId::LimitBreak
+            | CardId::Rupture
+            | CardId::SpotWeakness
+            | CardId::Barricade
+            | CardId::Entrench
+            | CardId::Juggernaut
+            | CardId::Metallicize
+            | CardId::FeelNoPain
+            | CardId::DarkEmbrace
+            | CardId::Corruption
+            | CardId::Evolve
+            | CardId::FireBreathing
+            | CardId::Footwork
+            | CardId::NoxiousFumes
+            | CardId::AfterImage
+    )
+}
+
+fn card_is_block_core(card_id: CardId) -> bool {
+    matches!(
+        card_id,
+        CardId::Defend
+            | CardId::DefendG
+            | CardId::Apparition
+            | CardId::GhostlyArmor
+            | CardId::FlameBarrier
+            | CardId::Impervious
+            | CardId::PowerThrough
+            | CardId::ShrugItOff
+            | CardId::Backflip
+            | CardId::CloakAndDagger
+            | CardId::GoodInstincts
+            | CardId::DarkShackles
+    )
 }
 
 fn no_progress_signature(
@@ -2987,6 +3324,9 @@ fn decision_type(engine_state: &EngineState) -> &'static str {
         EngineState::PendingChoice(PendingChoice::ScrySelect { .. }) => "combat_scry",
         EngineState::PendingChoice(PendingChoice::CardRewardSelect { .. }) => "combat_card_reward",
         EngineState::PendingChoice(PendingChoice::StanceChoice) => "combat_stance",
+        EngineState::RewardScreen(reward_state) if reward_state.pending_card_choice.is_some() => {
+            "reward_card_choice"
+        }
         EngineState::RewardScreen(_) => "reward",
         EngineState::Campfire => "campfire",
         EngineState::Shop(_) => "shop",
@@ -3146,6 +3486,7 @@ mod tests {
             relic_count: 1,
             potion_slots: 3,
             filled_potion_slots: 0,
+            deck: RunDeckObservationV0::default(),
             combat: Some(RunCombatObservationV0 {
                 player_hp: 40,
                 player_block: 0,
@@ -3169,6 +3510,7 @@ mod tests {
                 card_index: 0,
                 target: None,
             },
+            card: None,
         }];
         let mut tracker = NoProgressTracker::new();
 
@@ -3256,6 +3598,62 @@ mod tests {
         );
         assert_eq!(step.info.seed, 42);
         assert!(step.chosen_action_key.is_some());
+    }
+
+    #[test]
+    fn reward_card_choice_candidates_include_card_features_and_deck_summary() {
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        run_state.master_deck.clear();
+        run_state.add_card_to_deck(CardId::Strike);
+        run_state.add_card_to_deck(CardId::Defend);
+        run_state.add_card_to_deck(CardId::Bash);
+        let reward_state = RewardState {
+            pending_card_choice: Some(vec![
+                crate::rewards::state::RewardCard::new(CardId::PommelStrike, 0),
+                crate::rewards::state::RewardCard::new(CardId::ShrugItOff, 0),
+            ]),
+            ..RewardState::new()
+        };
+        let ctx = EpisodeContext {
+            engine_state: EngineState::RewardScreen(reward_state),
+            run_state,
+            combat_state: None,
+            stashed_event_combat: None,
+            forced_engine_ticks: 0,
+            combat_win_count: 0,
+        };
+        let legal_actions = legal_actions(&ctx.engine_state, &ctx.run_state, &ctx.combat_state);
+        let candidates = build_action_candidates(&legal_actions, Some(&ctx));
+        let observation = build_observation(&ctx);
+
+        assert_eq!(observation.decision_type, "reward_card_choice");
+        assert_eq!(observation.screen.reward_card_choice_count, 2);
+        assert_eq!(observation.deck.attack_count, 2);
+        assert_eq!(observation.deck.skill_count, 1);
+        assert!(observation.deck.starter_basic_count >= 2);
+
+        let pommel = candidates
+            .iter()
+            .find(|candidate| matches!(candidate.action, TraceClientInput::SelectCard { index: 0 }))
+            .and_then(|candidate| candidate.card.as_ref())
+            .expect("first reward card candidate should expose card features");
+        assert_eq!(pommel.card_id, "PommelStrike");
+        assert_eq!(pommel.card_type_id, card_type_id(CardType::Attack));
+        assert!(pommel.draws_cards);
+        assert!(pommel.rule_score > 0);
+
+        let skip = candidates
+            .iter()
+            .find(|candidate| matches!(candidate.action, TraceClientInput::Proceed))
+            .expect("card reward skip should remain available");
+        assert!(skip.card.is_none());
+
+        let take_reward = full_run_action_shaping_reward(&ctx, &ClientInput::SelectCard(0));
+        let skip_reward = full_run_action_shaping_reward(&ctx, &ClientInput::Proceed);
+        assert!(
+            take_reward > skip_reward,
+            "card choice shaping should give the learner an immediate non-oracle hint"
+        );
     }
 
     #[test]

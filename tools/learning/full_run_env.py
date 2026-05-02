@@ -26,8 +26,9 @@ except ModuleNotFoundError as err:
 from combat_rl_common import REPO_ROOT, find_release_binary
 
 MAX_ACTIONS = 256
-ACTION_FEATURES = 5
-BASE_OBS_DIM = 24
+CARD_FEATURES = 25
+ACTION_FEATURES = 5 + CARD_FEATURES
+BASE_OBS_DIM = 41
 OBS_DIM = BASE_OBS_DIM + (MAX_ACTIONS * ACTION_FEATURES)
 
 DECISION_TYPE_IDS = {
@@ -40,6 +41,7 @@ DECISION_TYPE_IDS = {
     "combat_card_reward": 6,
     "combat_stance": 7,
     "reward": 8,
+    "reward_card_choice": 15,
     "campfire": 9,
     "shop": 10,
     "map": 11,
@@ -276,6 +278,11 @@ class FullRunGymEnv(gym.Env[np.ndarray, int]):
             float(combat.get("visible_incoming_damage") or 0),
             float(info.get("combat_win_count") or 0),
             float(screen.get("reward_item_count") or 0),
+            float(screen.get("reward_card_choice_count") or 0),
+            float(screen.get("shop_card_count") or 0),
+            float(screen.get("shop_relic_count") or 0),
+            float(screen.get("shop_potion_count") or 0),
+            *self._deck_features(obs.get("deck") or {}),
         ]
         values = list(base)
         for index in range(min(len(candidates), MAX_ACTIONS)):
@@ -289,11 +296,63 @@ class FullRunGymEnv(gym.Env[np.ndarray, int]):
                     _stable_token(str(candidate.get("action_key") or "")),
                     float(candidate.get("action_id") or 0) / float(2**32 - 1),
                     float(index),
+                    *self._card_features(candidate.get("card")),
                 ]
             )
         missing_action_features = (MAX_ACTIONS * ACTION_FEATURES) - (len(values) - BASE_OBS_DIM)
         values.extend([0.0] * max(missing_action_features, 0))
         return np.asarray(values[:OBS_DIM], dtype=np.float32)
+
+    def _deck_features(self, deck: dict[str, Any]) -> list[float]:
+        deck_size = max(float(deck.get("attack_count") or 0) + float(deck.get("skill_count") or 0) + float(deck.get("power_count") or 0), 1.0)
+        return [
+            float(deck.get("attack_count") or 0) / deck_size,
+            float(deck.get("skill_count") or 0) / deck_size,
+            float(deck.get("power_count") or 0) / deck_size,
+            float(deck.get("status_count") or 0) / 10.0,
+            float(deck.get("curse_count") or 0) / 10.0,
+            float(deck.get("starter_basic_count") or 0) / deck_size,
+            float(deck.get("damage_card_count") or 0) / deck_size,
+            float(deck.get("block_card_count") or 0) / deck_size,
+            float(deck.get("draw_card_count") or 0) / deck_size,
+            float(deck.get("scaling_card_count") or 0) / deck_size,
+            float(deck.get("exhaust_card_count") or 0) / deck_size,
+            float(deck.get("average_cost_milli") or 0) / 1000.0,
+            1.0,
+        ]
+
+    def _card_features(self, card: Any) -> list[float]:
+        if not isinstance(card, dict):
+            return [0.0] * CARD_FEATURES
+        rule_score = float(card.get("rule_score") or 0.0)
+        rule_score = max(min(rule_score, 200.0), -200.0) / 200.0
+        return [
+            1.0,
+            float(card.get("card_id_hash") or 0) / float(2**32 - 1),
+            float(card.get("card_type_id") or 0) / 5.0,
+            float(card.get("rarity_id") or 0) / 6.0,
+            float(card.get("cost") or 0) / 4.0,
+            float(card.get("upgrades") or 0) / 5.0,
+            float(card.get("base_damage") or 0) / 50.0,
+            float(card.get("base_block") or 0) / 50.0,
+            float(card.get("base_magic") or 0) / 20.0,
+            float(card.get("upgraded_damage") or 0) / 60.0,
+            float(card.get("upgraded_block") or 0) / 60.0,
+            float(card.get("upgraded_magic") or 0) / 25.0,
+            1.0 if card.get("exhaust") else 0.0,
+            1.0 if card.get("ethereal") else 0.0,
+            1.0 if card.get("innate") else 0.0,
+            1.0 if card.get("aoe") else 0.0,
+            1.0 if card.get("multi_damage") else 0.0,
+            1.0 if card.get("starter_basic") else 0.0,
+            1.0 if card.get("draws_cards") else 0.0,
+            1.0 if card.get("gains_energy") else 0.0,
+            1.0 if card.get("applies_weak") else 0.0,
+            1.0 if card.get("applies_vulnerable") else 0.0,
+            1.0 if card.get("scaling_piece") else 0.0,
+            float(card.get("deck_copies") or 0) / 5.0,
+            rule_score,
+        ]
 
     def _info_from_response(self, response: dict[str, Any], invalid_action: bool) -> dict[str, Any]:
         payload = response.get("payload") or {}

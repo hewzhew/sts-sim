@@ -120,7 +120,8 @@ def audit_ppo_seed(
     action_counts = merge_eval_counts(evals, "action_type_counts")
     prefix_counts = merge_eval_counts(evals, "action_key_prefix_counts")
     combat_decisions = decision_counts["combat"]
-    reward_decisions = decision_counts["reward"]
+    reward_decisions = decision_counts["reward"] + decision_counts["reward_card_choice"]
+    reward_card_choice_decisions = decision_counts["reward_card_choice"]
     shop_decisions = decision_counts["shop"]
     campfire_decisions = decision_counts["campfire"]
 
@@ -157,6 +158,9 @@ def audit_ppo_seed(
             "end_turn_per_combat_decision": ratio(action_counts["end_turn"], combat_decisions),
             "use_potion_per_combat_decision": combat_potion_use_rate,
             "select_card_per_reward_decision": select_card_rate,
+            "select_card_per_reward_card_choice": ratio(
+                action_counts["select_card"], reward_card_choice_decisions
+            ),
             "claim_reward_per_reward_decision": ratio(action_counts["claim_reward"], reward_decisions),
             "buy_card_per_shop_decision": ratio(action_counts["buy_card"], shop_decisions),
             "buy_relic_per_shop_decision": ratio(action_counts["buy_relic"], shop_decisions),

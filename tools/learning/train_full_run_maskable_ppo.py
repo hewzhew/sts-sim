@@ -81,7 +81,17 @@ def evaluate_random(args: argparse.Namespace, base_seed: int, episodes: int) -> 
                 reward_total += float(reward)
                 steps += 1
                 invalid_actions += 1 if info.get("invalid_action") else 0
-            rows.append(episode_row(episode, base_seed + episode, info, steps, reward_total, invalid_actions))
+            rows.append(
+                episode_row(
+                    episode,
+                    base_seed + episode,
+                    info,
+                    steps,
+                    reward_total,
+                    invalid_actions,
+                    truncated,
+                )
+            )
     finally:
         env.close()
     return summarize_rows(rows, time.perf_counter() - start)
@@ -119,7 +129,17 @@ def evaluate_model(
                 reward_total += float(reward)
                 steps += 1
                 invalid_actions += 1 if info.get("invalid_action") else 0
-            rows.append(episode_row(episode, base_seed + episode, info, steps, reward_total, invalid_actions))
+            rows.append(
+                episode_row(
+                    episode,
+                    base_seed + episode,
+                    info,
+                    steps,
+                    reward_total,
+                    invalid_actions,
+                    truncated,
+                )
+            )
     finally:
         env.close()
     return summarize_rows(rows, time.perf_counter() - start)
@@ -132,12 +152,19 @@ def episode_row(
     steps: int,
     reward_total: float,
     invalid_actions: int,
+    truncated: bool,
 ) -> dict[str, Any]:
+    terminal_reason = info.get("terminal_reason")
+    result = info.get("result")
+    if truncated and terminal_reason in {None, "running"}:
+        terminal_reason = "python_truncated"
+    if truncated and result in {None, "ongoing"}:
+        result = "truncated"
     return {
         "episode": int(episode),
         "seed": int(seed),
-        "result": info.get("result"),
-        "terminal_reason": info.get("terminal_reason"),
+        "result": result,
+        "terminal_reason": terminal_reason,
         "floor": int(info.get("floor") or 0),
         "act": int(info.get("act") or 0),
         "steps": int(steps),
@@ -145,6 +172,7 @@ def episode_row(
         "combat_win_count": int(info.get("combat_win_count") or 0),
         "invalid_actions": int(invalid_actions),
         "crash": info.get("crash"),
+        "truncated": bool(truncated),
     }
 
 
