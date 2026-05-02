@@ -201,6 +201,19 @@ training seeds across several evaluation seed blocks. Use it to catch contract
 failures, seed flukes, step-cap behavior, and obvious action collapse before
 making any claim about learned full-run strength.
 
+### Audit full-run policy behavior
+
+```powershell
+.\.venv-rl\Scripts\python.exe tools/learning/analyze_full_run_policy_matrix.py `
+  --matrix tools/artifacts/full_run_rl_matrix/full_matrix_2048_3x3x100_sozu_resource_waste.json `
+  --print-markdown
+```
+
+This reads a matrix report and looks for behavior-level symptoms such as seed
+instability, reward-card selection collapse, potion/shop anomalies, and contract
+failures. It is an audit gate before longer PPO runs, not a policy-strength
+benchmark.
+
 ### Run a start-spec curriculum sweep
 
 ```powershell
