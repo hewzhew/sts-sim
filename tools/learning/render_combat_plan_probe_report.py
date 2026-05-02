@@ -90,6 +90,55 @@ def action_label(action_key: Any) -> str:
     return key
 
 
+def action_family(action_key: Any) -> str:
+    key = str(action_key or "")
+    if key == "combat/end_turn":
+        return "end_turn"
+    if key.startswith("combat/play_card"):
+        return "play_card"
+    if key.startswith("combat/use_potion"):
+        return "use_potion"
+    return "other"
+
+
+HUMAN_LABELS = {
+    "no_attack": "敌人不攻击",
+    "blocked_attack": "已防住攻击",
+    "chip_pressure": "小额伤害压力",
+    "medium_pressure": "中等伤害压力",
+    "high_pressure": "高伤害压力",
+    "lethal_pressure": "致死压力",
+    "partial_defense": "局部防御",
+    "full_defense": "完全防御",
+    "mixed_partial_defense": "攻防混合",
+    "damage_under_pressure": "顶着伤害进攻",
+    "scaling_under_pressure": "顶着伤害发育",
+    "mitigation_debuff": "弱化/减伤",
+    "damage_window": "窗口期进攻",
+    "setup_window": "窗口期发育",
+    "debuff_window": "窗口期上 debuff",
+    "defense_without_pressure": "无压力防御",
+    "end_turn": "结束回合",
+    "lethal": "斩杀",
+    "covers_attack": "防住伤害",
+    "reduces_attack": "减少伤害",
+    "trades_hp_for_progress": "用血量换进度",
+    "trades_hp_for_future_progress": "用血量换后续收益",
+    "reduces_future_attack": "降低后续伤害",
+    "uses_window": "利用窗口",
+    "wastes_window": "浪费窗口",
+    "decisive": "决定性动作",
+    "neutral": "中性/等待",
+    "ignores_attack": "没有处理当前攻击",
+}
+
+
+def human(raw: Any) -> str:
+    text = str(raw if raw is not None else "unknown")
+    label = HUMAN_LABELS.get(text)
+    return f"{label} ({text})" if label else text
+
+
 def case_rows(case: dict[str, Any], summary_path: Path) -> list[dict[str, Any]]:
     rows_path = resolve_path(str(case.get("rows_path") or ""), summary_path.parent)
     if rows_path is None:
@@ -163,15 +212,15 @@ def render_plan_box(title: str, case: dict[str, Any], row: dict[str, Any] | None
       <div class="action">{esc(action_label(key))}</div>
       <div class="mono small">{esc(key)}</div>
       <div class="chips">
-        {badge(plan_role or "unknown", "role")}
-        {badge(plan_fit or "unknown", "fit")}
+        {badge(human(plan_role or "unknown"), "role")}
+        {badge(human(plan_fit or "unknown"), "fit")}
       </div>
       <dl>
-        <dt>Block need</dt><dd>{esc(block_need)}</dd>
-        <dt>Unblocked reduction</dt><dd>{esc(block_reduce)}</dd>
-        <dt>Damage delta</dt><dd>{esc(damage)}</dd>
-        <dt>Expected end HP</dt><dd>{esc(fmt_float((row or {}).get("expected_end_hp")))}</dd>
-        <dt>Combat win prob</dt><dd>{esc(fmt_float((row or {}).get("combat_win_prob")))}</dd>
+        <dt>当前需防伤害</dt><dd>{esc(block_need)}</dd>
+        <dt>本动作减少伤害</dt><dd>{esc(block_reduce)}</dd>
+        <dt>本动作伤害推进</dt><dd>{esc(damage)}</dd>
+        <dt>短程续跑后 HP</dt><dd>{esc(fmt_float((row or {}).get("expected_end_hp")))}</dd>
+        <dt>短程战斗胜率</dt><dd>{esc(fmt_float((row or {}).get("combat_win_prob")))}</dd>
       </dl>
     </div>
     """
@@ -180,7 +229,11 @@ def render_plan_box(title: str, case: dict[str, Any], row: dict[str, Any] | None
 def render_candidate_table(rows: list[dict[str, Any]], case: dict[str, Any], top_n: int) -> str:
     chosen_key = str(case.get("chosen_action_key") or "")
     best_card_key = str(case.get("best_card_candidate_key") or "")
-    card_rows = [row for row in rows if str(row.get("action_family") or "") in {"play_card", "end_turn"}]
+    card_rows = [
+        row
+        for row in rows
+        if str(row.get("action_family") or action_family(row.get("candidate_key"))) in {"play_card", "end_turn"}
+    ]
     card_rows = sorted(card_rows, key=lambda row: int(row.get("rank") or 999))[:top_n]
     out = []
     for row in card_rows:
@@ -194,8 +247,8 @@ def render_candidate_table(rows: list[dict[str, Any]], case: dict[str, Any], top
             "<tr class=\"{}\">".format(" ".join(classes))
             + f"<td>{esc(row.get('rank'))}</td>"
             + f"<td><strong>{esc(action_label(key))}</strong><div class=\"mono small\">{esc(key)}</div></td>"
-            + f"<td>{esc(row.get('root_plan_role'))}<br><span class=\"muted\">{esc(row.get('root_plan_fit'))}</span></td>"
-            + f"<td>{esc(row.get('pressure_class'))}</td>"
+            + f"<td>{esc(human(row.get('root_plan_role')))}<br><span class=\"muted\">{esc(human(row.get('root_plan_fit')))}</span></td>"
+            + f"<td>{esc(human(row.get('pressure_class')))}</td>"
             + f"<td>{esc(row.get('root_block_need'))} / {esc(row.get('root_unblocked_reduction'))}</td>"
             + f"<td>{esc(row.get('root_damage_delta'))}</td>"
             + f"<td>{esc(fmt_float(row.get('expected_end_hp')))}</td>"
@@ -203,13 +256,13 @@ def render_candidate_table(rows: list[dict[str, Any]], case: dict[str, Any], top
             + "</tr>"
         )
     if not out:
-        out.append('<tr><td colspan="8">No card/end-turn rows found.</td></tr>')
+        out.append('<tr><td colspan="8">没有找到牌动作/结束回合候选。这通常说明 rows 文件缺失或 schema 不匹配。</td></tr>')
     return """
     <table class="candidate-table">
       <thead>
         <tr>
-          <th>Rank</th><th>Candidate</th><th>Plan</th><th>Pressure</th>
-          <th>Need / reduce</th><th>Damage</th><th>End HP</th><th>Win</th>
+          <th>排序</th><th>候选动作</th><th>规划类型</th><th>压力</th>
+          <th>需防 / 减伤</th><th>伤害推进</th><th>续跑 HP</th><th>胜率</th>
         </tr>
       </thead>
       <tbody>
@@ -232,26 +285,30 @@ def render_case(case: dict[str, Any], summary_path: Path, top_n: int, index: int
           <div class="meta">
             {badge('floor ' + str(case.get('floor')), 'meta-badge')}
             {badge('hp ' + str(case.get('hp')), 'meta-badge')}
-            {badge(case.get('chosen_pressure_class'), 'pressure')}
+            {badge(human(case.get('chosen_pressure_class')), 'pressure')}
             {badge(case.get('card_plan_readiness'), 'ready')}
           </div>
         </div>
         <div class="regret">
-          <div>HP gap <strong>{esc(fmt_float(case.get('card_hp_regret')))}</strong></div>
-          <div>Win gap <strong>{esc(fmt_float(case.get('card_combat_win_regret')))}</strong></div>
+          <div>右侧多保留 HP <strong>{esc(fmt_float(case.get('card_hp_regret')))}</strong></div>
+          <div>右侧胜率差 <strong>{esc(fmt_float(case.get('card_combat_win_regret')))}</strong></div>
         </div>
       </header>
-      <div class="reason-row"><strong>Reasons:</strong> {reasons or 'none'} <strong>Flags:</strong> {flags or 'none'}</div>
+      <p class="case-help">
+        读法：左边是当前策略实际选的第一手；右边是“只在牌动作/结束回合里”短程续跑排第一的第一手。
+        右上角 HP/胜率差为右边相对左边的短程估计，不是绝对真理。
+      </p>
+      <div class="reason-row"><strong>入选原因:</strong> {reasons or 'none'} <strong>诊断标记:</strong> {flags or 'none'}</div>
       <div class="plan-grid">
-        {render_plan_box('Chosen', case, chosen_row, 'chosen')}
-        {render_plan_box('Best card-only', case, best_card_row, 'best_card')}
+        {render_plan_box('当前策略选择', case, chosen_row, 'chosen')}
+        {render_plan_box('牌动作内短程最优', case, best_card_row, 'best_card')}
       </div>
       <details open>
-        <summary>Top card/end-turn candidates</summary>
+        <summary>候选牌动作/结束回合排序</summary>
         {render_candidate_table(rows, case, top_n)}
       </details>
       <details>
-        <summary>Source files</summary>
+        <summary>源文件</summary>
         <div class="mono small">case report: {esc(report_path)}</div>
         <div class="mono small">rows: {esc(rows_path)}</div>
       </details>
@@ -280,6 +337,7 @@ def render_html(summary: dict[str, Any], summary_path: Path, cases: list[dict[st
     .case-card header { display: flex; justify-content: space-between; gap: 16px; align-items: flex-start; border-bottom: 1px solid #e5e7eb; padding-bottom: 12px; margin-bottom: 12px; }
     .meta, .chips, .reason-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
     .reason-row { margin: 8px 0 14px; color: #374151; }
+    .case-help { margin: 0 0 12px; color: #4b5563; line-height: 1.45; }
     .badge { display: inline-block; border: 1px solid #cbd5e1; border-radius: 999px; padding: 3px 8px; font-size: 12px; background: #f8fafc; }
     .pressure { background: #fff7ed; border-color: #fdba74; }
     .ready { background: #ecfdf5; border-color: #6ee7b7; }
@@ -324,23 +382,22 @@ def render_html(summary: dict[str, Any], summary_path: Path, cases: list[dict[st
 <main>
   <h1>Combat Plan Probe Report</h1>
   <p class="intro">
-    This report is for human quality review of card-only combat plan probes. It does not define
-    training labels by itself. Full-policy potion dominated cases are tracked in the overview but
-    filtered out of the primary case list.
+    这个页面不是训练集，也不是“正确答案表”。它只是把抽出来的战斗规划疑点做成人能读的质检页：
+    左边是当前策略实际第一手，右边是只比较牌动作/结束回合时的短程续跑最优第一手。
+    如果右侧更高 HP 或更高短程胜率，同时规划语义也合理，这个 case 才值得保留。
   </p>
   <p class="mono small">summary: {esc(summary_path)}</p>
   <p class="mono small">generated: {esc(datetime.now(timezone.utc).isoformat())}</p>
   <div class="metrics">{metric_html}</div>
-  {render_counts('Pressure Classes', summary.get('pressure_class_counts') or {})}
-  {render_counts('Card Plan Readiness', summary.get('card_plan_readiness_counts') or {})}
-  {render_counts('Diagnostic Flags', summary.get('diagnostic_flag_counts') or {})}
+  {render_counts('压力分布', summary.get('pressure_class_counts') or {})}
+  {render_counts('牌规划样本分级', summary.get('card_plan_readiness_counts') or {})}
+  {render_counts('诊断标记', summary.get('diagnostic_flag_counts') or {})}
   <section>
-    <h2>Review Guidance</h2>
+    <h2>怎么看</h2>
     <p class="intro">
-      Keep a case only if the chosen-vs-best-card comparison has a believable combat-plan meaning:
-      defense versus damage, damage versus setup, immediate block versus future mitigation, or
-      no-attack window usage. Downgrade cases where EndTurn is the unexplained best card action,
-      continuation behavior looks arbitrary, or the state is already a macro-caused collapse.
+      重点看“规划类型”是否可信，而不是盲信右侧一定正确。保留的 case 应该像：
+      防御换进攻、即时格挡换后续减伤、斩杀优先于防御、无攻击窗口不该空防。
+      如果右侧是无法解释的 EndTurn、续跑行为看起来随机、或局面已经是前面路线/构筑造成的崩盘，就应降级为 calibration/diagnostic。
     </p>
   </section>
   {case_html or '<section>No plan probe cases selected.</section>'}
@@ -352,13 +409,17 @@ def render_html(summary: dict[str, Any], summary_path: Path, cases: list[dict[st
 
 def render_markdown(summary: dict[str, Any], summary_path: Path, cases: list[dict[str, Any]]) -> str:
     lines = [
-        "# Combat Plan Probe Report",
+        "# 战斗规划样本质检报告",
         "",
         f"- Summary: `{summary_path}`",
-        f"- Selected cases: `{(summary.get('counts') or {}).get('selected_cases')}`",
-        f"- Card plan probes: `{summary.get('card_training_ready_case_count')}`",
-        f"- Full plan probes: `{summary.get('training_ready_case_count')}`",
-        f"- Potion opportunities: `{(summary.get('diagnostic_flag_counts') or {}).get('potion_opportunity', 0)}`",
+        f"- 抽样 combat root: `{(summary.get('counts') or {}).get('selected_cases')}`",
+        f"- 牌规划样本: `{summary.get('card_training_ready_case_count')}`",
+        f"- full-policy 规划样本: `{summary.get('training_ready_case_count')}`",
+        f"- 药水机会诊断: `{(summary.get('diagnostic_flag_counts') or {}).get('potion_opportunity', 0)}`",
+        "",
+        "## 怎么看",
+        "",
+        "左边是当前策略实际第一手；右边是只比较牌动作/结束回合时的短程续跑最优第一手。HP/胜率差为右边相对左边的短程估计，不是绝对真理。",
         "",
         "## Cases",
     ]
@@ -367,12 +428,12 @@ def render_markdown(summary: dict[str, Any], summary_path: Path, cases: list[dic
             [
                 "",
                 f"### {index}. `{case.get('case_id')}`",
-                f"- Floor/HP/pressure: `{case.get('floor')}` / `{case.get('hp')}` / `{case.get('chosen_pressure_class')}`",
-                f"- Chosen: `{case.get('chosen_action_key')}` -> `{case.get('chosen_root_plan_role')}` / `{case.get('chosen_root_plan_fit')}`",
-                f"- Best card: `{case.get('best_card_candidate_key')}` -> `{case.get('best_card_root_plan_role')}` / `{case.get('best_card_root_plan_fit')}`",
-                f"- Card HP gap / win gap: `{fmt_float(case.get('card_hp_regret'))}` / `{fmt_float(case.get('card_combat_win_regret'))}`",
-                f"- Reasons: `{', '.join(str(x) for x in case.get('card_readiness_reasons') or [])}`",
-                f"- Flags: `{', '.join(str(x) for x in case.get('card_diagnostic_flags') or [])}`",
+                f"- 楼层/HP/压力: `{case.get('floor')}` / `{case.get('hp')}` / `{human(case.get('chosen_pressure_class'))}`",
+                f"- 当前策略: `{case.get('chosen_action_key')}` -> `{human(case.get('chosen_root_plan_role'))}` / `{human(case.get('chosen_root_plan_fit'))}`",
+                f"- 牌动作内短程最优: `{case.get('best_card_candidate_key')}` -> `{human(case.get('best_card_root_plan_role'))}` / `{human(case.get('best_card_root_plan_fit'))}`",
+                f"- 右侧多保留 HP / 胜率差: `{fmt_float(case.get('card_hp_regret'))}` / `{fmt_float(case.get('card_combat_win_regret'))}`",
+                f"- 入选原因: `{', '.join(str(x) for x in case.get('card_readiness_reasons') or [])}`",
+                f"- 诊断标记: `{', '.join(str(x) for x in case.get('card_diagnostic_flags') or [])}`",
                 f"- Rows: `{case.get('rows_path')}`",
             ]
         )
