@@ -41,6 +41,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--horizon", type=int, default=10)
     parser.add_argument("--samples", type=int, default=1)
     parser.add_argument("--max-branches", type=int, default=12)
+    parser.add_argument("--max-interesting-cases", type=int, default=20)
     parser.add_argument("--ascension", type=int, default=0)
     parser.add_argument("--class", dest="player_class", default="ironclad")
     parser.add_argument("--final-act", action="store_true")
@@ -255,6 +256,29 @@ def estimate(row: dict[str, Any] | None, key: str) -> float:
     return float((row.get("estimates") or {}).get(key) or 0.0)
 
 
+def action_family(candidate_key: str | None) -> str:
+    key = str(candidate_key or "")
+    if key.startswith("combat/play_card"):
+        return "play_card"
+    if key.startswith("combat/use_potion"):
+        return "use_potion"
+    if key == "combat/end_turn":
+        return "end_turn"
+    return "other"
+
+
+def estimate_range(ranking: list[dict[str, Any]], key: str) -> float:
+    values = [estimate(row, key) for row in ranking]
+    if not values:
+        return 0.0
+    return max(values) - min(values)
+
+
+def abstraction_counts(ranking: list[dict[str, Any]], key: str) -> dict[str, int]:
+    counts = Counter(str((row.get("abstraction") or {}).get(key) or "unknown") for row in ranking)
+    return dict(sorted(counts.items()))
+
+
 def diagnostic_flags(report: dict[str, Any], chosen: dict[str, Any] | None, best: dict[str, Any] | None, chosen_group_rank: int | None) -> list[str]:
     flags: list[str] = []
     if chosen is None or best is None:
@@ -274,7 +298,34 @@ def diagnostic_flags(report: dict[str, Any], chosen: dict[str, Any] | None, best
         flags.append("hp_regret_ge_10")
     if "combat/end_turn" in str(chosen.get("candidate_key") or "") and "combat/end_turn" not in str(best.get("candidate_key") or ""):
         flags.append("end_turn_not_best")
+    if action_family(best.get("candidate_key")) == "use_potion" and action_family(chosen.get("candidate_key")) != "use_potion":
+        flags.append("potion_opportunity")
+    if action_family(chosen.get("candidate_key")) == "use_potion" and action_family(best.get("candidate_key")) != "use_potion":
+        flags.append("potion_overuse")
     return flags
+
+
+def triage_kind(chosen: dict[str, Any] | None, best: dict[str, Any] | None, chosen_group_rank: int | None) -> str:
+    if chosen is None or best is None:
+        return "invalid"
+    if estimate(best, "survive_prob") <= 0.0:
+        return "already_lost"
+    if survival_rank(best) > survival_rank(chosen):
+        return "survival_rescue"
+    if estimate(best, "combat_win_prob") > estimate(chosen, "combat_win_prob") + 0.001:
+        return "tactical_win"
+    hp_regret = estimate(best, "expected_end_hp") - estimate(chosen, "expected_end_hp")
+    if hp_regret >= 10.0:
+        return "major_hp_efficiency"
+    if hp_regret >= 5.0:
+        return "hp_efficiency"
+    if chosen_group_rank == 1:
+        return "same_equivalence_group"
+    return "weak_rank_gap"
+
+
+def is_actionable(kind: str) -> bool:
+    return kind in {"survival_rescue", "tactical_win", "major_hp_efficiency", "hp_efficiency"}
 
 
 def flatten_case(result: dict[str, Any]) -> tuple[list[dict[str, Any]], dict[str, Any]]:
@@ -295,6 +346,7 @@ def flatten_case(result: dict[str, Any]) -> tuple[list[dict[str, Any]], dict[str
     chosen_signature = str((chosen or {}).get("equivalence_signature") or "")
     chosen_group_rank = ranks_by_group.get(chosen_signature)
     flags = diagnostic_flags(report, chosen, best, chosen_group_rank)
+    kind = triage_kind(chosen, best, chosen_group_rank)
     group_count = int((report.get("summary") or {}).get("equivalence_group_count") or 0)
     candidate_count = int((report.get("summary") or {}).get("candidate_count") or 0)
     case_summary = {
@@ -310,12 +362,14 @@ def flatten_case(result: dict[str, Any]) -> tuple[list[dict[str, Any]], dict[str
         "chosen_was_top_rank": None if chosen is None else int(chosen.get("rank") or 0) == 1,
         "chosen_was_top_group": chosen_group_rank == 1 if chosen_group_rank is not None else None,
         "chosen_equivalence_signature": chosen_signature or None,
+        "chosen_action_family": None if chosen is None else action_family(chosen.get("candidate_key")),
         "chosen_survival_class": None if chosen is None else (chosen.get("abstraction") or {}).get("survival_class"),
         "chosen_kill_clock": None if chosen is None else (chosen.get("abstraction") or {}).get("kill_clock"),
         "chosen_risk_bucket": None if chosen is None else (chosen.get("abstraction") or {}).get("risk_bucket"),
         "chosen_role": None if chosen is None else (chosen.get("abstraction") or {}).get("role"),
         "best_candidate_index": None if best is None else int(best.get("candidate_index") or 0),
         "best_candidate_key": None if best is None else str(best.get("candidate_key") or ""),
+        "best_action_family": None if best is None else action_family(best.get("candidate_key")),
         "best_equivalence_signature": None if best is None else str(best.get("equivalence_signature") or ""),
         "best_survival_class": None if best is None else (best.get("abstraction") or {}).get("survival_class"),
         "best_kill_clock": None if best is None else (best.get("abstraction") or {}).get("kill_clock"),
@@ -323,6 +377,15 @@ def flatten_case(result: dict[str, Any]) -> tuple[list[dict[str, Any]], dict[str
         "best_role": None if best is None else (best.get("abstraction") or {}).get("role"),
         "hp_regret": estimate(best, "expected_end_hp") - estimate(chosen, "expected_end_hp"),
         "combat_win_regret": estimate(best, "combat_win_prob") - estimate(chosen, "combat_win_prob"),
+        "survive_prob_range": estimate_range(ranking, "survive_prob"),
+        "combat_win_prob_range": estimate_range(ranking, "combat_win_prob"),
+        "expected_end_hp_range": estimate_range(ranking, "expected_end_hp"),
+        "survival_class_counts": abstraction_counts(ranking, "survival_class"),
+        "kill_clock_counts": abstraction_counts(ranking, "kill_clock"),
+        "risk_bucket_counts": abstraction_counts(ranking, "risk_bucket"),
+        "role_counts": abstraction_counts(ranking, "role"),
+        "triage_kind": kind,
+        "actionable": is_actionable(kind),
         "diagnostic_flags": flags,
     }
     rows = []
@@ -334,6 +397,7 @@ def flatten_case(result: dict[str, Any]) -> tuple[list[dict[str, Any]], dict[str
                 **public_case(case),
                 "candidate_index": int(row.get("candidate_index") or 0),
                 "candidate_key": row.get("candidate_key"),
+                "action_family": action_family(row.get("candidate_key")),
                 "candidate_card_id": row.get("candidate_card_id"),
                 "rank": int(row.get("rank") or 0),
                 "equivalence_signature": row.get("equivalence_signature"),
@@ -391,6 +455,7 @@ def main() -> None:
             "horizon": args.horizon,
             "samples": 1 if args.continuation_policy == "rule_baseline_v0" else args.samples,
             "max_branches": args.max_branches,
+            "max_interesting_cases": args.max_interesting_cases,
         },
         "counts": {
             "selected_cases": len(cases),
@@ -403,17 +468,21 @@ def main() -> None:
         "chosen_top_rank_rate": rate(ok_cases, "chosen_was_top_rank"),
         "chosen_top_group_rate": rate(ok_cases, "chosen_was_top_group"),
         "diagnostic_flag_counts": dict(sorted(flag_counts.items())),
+        "triage_kind_counts": dict(sorted(Counter(str(case.get("triage_kind")) for case in ok_cases).items())),
+        "actionable_case_count": sum(1 for case in ok_cases if case.get("actionable")),
         "average_candidate_count": mean([case["candidate_count_evaluated"] for case in ok_cases]) if ok_cases else 0.0,
         "average_equivalence_group_count": mean([case["equivalence_group_count"] for case in ok_cases]) if ok_cases else 0.0,
         "average_compression_ratio": mean([case["compression_ratio"] for case in ok_cases]) if ok_cases else 0.0,
         "chosen_role_counts": dict(sorted(Counter(str(case.get("chosen_role")) for case in ok_cases).items())),
         "best_role_counts": dict(sorted(Counter(str(case.get("best_role")) for case in ok_cases).items())),
+        "chosen_action_family_counts": dict(sorted(Counter(str(case.get("chosen_action_family")) for case in ok_cases).items())),
+        "best_action_family_counts": dict(sorted(Counter(str(case.get("best_action_family")) for case in ok_cases).items())),
         "elapsed_seconds": elapsed,
         "interesting_cases": [
             case
             for case in ok_cases
-            if any(flag in set(case.get("diagnostic_flags") or []) for flag in ["survival_dominated", "missed_combat_win", "hp_regret_ge_5", "end_turn_not_best"])
-        ][:20],
+            if case.get("actionable")
+        ][: args.max_interesting_cases],
         "case_summaries": case_summaries,
     }
     write_json(out_dir / "summary.json", summary)
@@ -425,6 +494,8 @@ def main() -> None:
             | {
                 "chosen_top_rank_rate": summary["chosen_top_rank_rate"],
                 "chosen_top_group_rate": summary["chosen_top_group_rate"],
+                "triage_kind_counts": summary["triage_kind_counts"],
+                "actionable_case_count": summary["actionable_case_count"],
                 "diagnostic_flag_counts": summary["diagnostic_flag_counts"],
             },
             indent=2,
