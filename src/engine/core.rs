@@ -148,6 +148,7 @@ pub fn tick_engine(
                     let available = candidate_uuids.len() as u8;
                     if available == 0 {
                         let legal_empty_fizzle = min == 0
+                            || hand_select_can_fizzle_when_empty(reason)
                             || (filter == crate::state::HandSelectFilter::Upgradeable
                                 && reason == crate::state::HandSelectReason::Upgrade);
                         record_engine_diagnostic(
@@ -1073,6 +1074,16 @@ fn hand_candidate_matches(
             )
         }
     }
+}
+
+fn hand_select_can_fizzle_when_empty(reason: crate::state::HandSelectReason) -> bool {
+    matches!(
+        reason,
+        crate::state::HandSelectReason::Discard
+            | crate::state::HandSelectReason::Exhaust
+            | crate::state::HandSelectReason::PutOnDrawPile
+            | crate::state::HandSelectReason::PutToBottomOfDraw
+    )
 }
 
 fn grid_select_candidates(

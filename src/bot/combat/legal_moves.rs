@@ -691,6 +691,47 @@ mod tests {
     }
 
     #[test]
+    fn engine_fizzles_empty_warcry_hand_select_without_error() {
+        let mut combat = build_fixture_combat();
+        combat.zones.hand = vec![crate::runtime::combat::CombatCard::new(
+            crate::content::cards::CardId::Warcry,
+            90_001,
+        )];
+        combat.zones.draw_pile.clear();
+        combat.zones.discard_pile.clear();
+        combat.turn.energy = 1;
+
+        let mut engine = EngineState::CombatPlayerTurn;
+        let alive = crate::engine::core::tick_until_stable_turn(
+            &mut engine,
+            &mut combat,
+            ClientInput::PlayCard {
+                card_index: 0,
+                target: None,
+            },
+        );
+
+        assert!(alive);
+        assert_eq!(engine, EngineState::CombatPlayerTurn);
+        let diagnostics = combat.take_engine_diagnostics();
+        assert!(
+            diagnostics.iter().any(|diagnostic| diagnostic.severity
+                == crate::state::selection::EngineDiagnosticSeverity::Info
+                && diagnostic.class
+                    == crate::state::selection::EngineDiagnosticClass::Normalization
+                && diagnostic
+                    .message
+                    .contains("auto-skipped empty hand select")),
+            "empty Warcry hand selection should fizzle as a Java-compatible normalization"
+        );
+        assert!(
+            diagnostics.iter().all(|diagnostic| diagnostic.severity
+                != crate::state::selection::EngineDiagnosticSeverity::Error),
+            "empty Warcry hand selection should not emit an engine error: {diagnostics:?}"
+        );
+    }
+
+    #[test]
     fn engine_local_moves_skip_cards_when_velvet_choker_locked() {
         let mut combat = build_fixture_combat();
         combat.zones.hand = vec![crate::runtime::combat::CombatCard::new(
