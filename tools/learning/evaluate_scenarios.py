@@ -587,25 +587,48 @@ def feature_limitations(scenario: dict[str, Any]) -> list[str]:
 def summarize_scenarios(scenarios: list[dict[str, Any]]) -> dict[str, Any]:
     by_policy: dict[str, Counter[str]] = defaultdict(Counter)
     by_policy_category: dict[str, dict[str, Counter[str]]] = defaultdict(lambda: defaultdict(Counter))
+    by_policy_tag: dict[str, dict[str, Counter[str]]] = defaultdict(lambda: defaultdict(Counter))
+    by_policy_evidence: dict[str, dict[str, Counter[str]]] = defaultdict(lambda: defaultdict(Counter))
     label_modes = Counter()
+    evidence_modes = Counter()
+    rationale_tags = Counter()
     categories = Counter()
     for scenario in scenarios:
         category = str(scenario.get("category") or "unknown")
+        label = scenario.get("human_label") or {}
+        evidence = str(label.get("evidence") or "unlabeled")
+        tags = [str(tag) for tag in label.get("rationale_tags") or []] or ["untagged"]
         categories[category] += 1
-        label_modes[str((scenario.get("human_label") or {}).get("mode") or "unlabeled")] += 1
+        label_modes[str(label.get("mode") or "unlabeled")] += 1
+        evidence_modes[evidence] += 1
+        for tag in tags:
+            rationale_tags[tag] += 1
         for policy in scenario.get("policies") or []:
             name = str(policy.get("policy") or "unknown")
             status = str((policy.get("label_eval") or {}).get("status") or "unknown")
             by_policy[name][status] += 1
             by_policy_category[name][category][status] += 1
+            by_policy_evidence[name][evidence][status] += 1
+            for tag in tags:
+                by_policy_tag[name][tag][status] += 1
     return {
         "scenario_count": len(scenarios),
         "category_counts": dict(categories),
         "label_mode_counts": dict(label_modes),
+        "evidence_counts": dict(evidence_modes),
+        "rationale_tag_counts": dict(rationale_tags),
         "policy_label_status_counts": {policy: dict(counts) for policy, counts in by_policy.items()},
         "policy_category_status_counts": {
             policy: {category: dict(counts) for category, counts in categories.items()}
             for policy, categories in by_policy_category.items()
+        },
+        "policy_evidence_status_counts": {
+            policy: {evidence: dict(counts) for evidence, counts in evidence_rows.items()}
+            for policy, evidence_rows in by_policy_evidence.items()
+        },
+        "policy_rationale_tag_status_counts": {
+            policy: {tag: dict(counts) for tag, counts in tag_rows.items()}
+            for policy, tag_rows in by_policy_tag.items()
         },
     }
 
@@ -616,6 +639,8 @@ def build_human_review(report: dict[str, Any]) -> dict[str, Any]:
             "Edit human_label only; candidate ids must match the candidates list.",
             "Use mode=no_signal when the local decision is not meaningfully rescuable or preferences are arbitrary.",
             "Use mode=needs_rollout when human intuition is weak and paired rollouts should label the case later.",
+            "Use rationale_tags for structured reasons; reason text is for humans and should not be treated as a direct training label.",
+            "Use evidence=human_prior until a rollout/regression result backs the label.",
             "Do not treat model/rule rankings as labels; they are shown only to make review faster.",
         ],
         "source_report_version": report.get("report_version"),

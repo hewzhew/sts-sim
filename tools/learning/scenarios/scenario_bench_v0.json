@@ -80,6 +80,12 @@
           "skip"
         ],
         "confidence": 0.75,
+        "rationale_tags": [
+          "early_act",
+          "deck_unformed",
+          "needs_frontload"
+        ],
+        "evidence": "human_prior",
         "reason": "Early Act 1 needs frontload; speculative exhaust scaling can be acceptable but not over the frontload draw attack."
       }
     },
@@ -156,6 +162,12 @@
           "skip"
         ],
         "confidence": 0.7,
+        "rationale_tags": [
+          "early_act",
+          "lacks_block",
+          "lacks_draw"
+        ],
+        "evidence": "human_prior",
         "reason": "Shrug stabilizes block and card flow; the other cards are playable but less directly solve the deck."
       }
     },
@@ -233,6 +245,11 @@
           "skip"
         ],
         "confidence": 0.85,
+        "rationale_tags": [
+          "boss_counter",
+          "hp_pressure"
+        ],
+        "evidence": "human_prior",
         "reason": "Disarm is a high-impact mitigation card against multi-hit boss patterns."
       }
     },
@@ -309,6 +326,12 @@
           "skip"
         ],
         "confidence": 0.9,
+        "rationale_tags": [
+          "late_act",
+          "needs_aoe",
+          "needs_frontload"
+        ],
+        "evidence": "human_prior",
         "reason": "Act 2 punishes lack of AoE; Immolate is a major immediate stabilizer."
       }
     },
@@ -385,6 +408,11 @@
           "skip"
         ],
         "confidence": 0.68,
+        "rationale_tags": [
+          "boss_counter",
+          "lacks_scaling"
+        ],
+        "evidence": "human_prior",
         "reason": "The deck has enough immediate cards; adding simple scaling is more useful than another common attack."
       }
     },
@@ -460,6 +488,11 @@
         ],
         "bad": [],
         "confidence": 0.8,
+        "rationale_tags": [
+          "already_lost",
+          "uncertain"
+        ],
+        "evidence": "human_prior",
         "reason": "This should not become a strong top-1 training sample; the run state is probably already macro-caused."
       }
     },
@@ -537,6 +570,12 @@
           "skip"
         ],
         "confidence": 0.72,
+        "rationale_tags": [
+          "synergy_piece",
+          "lacks_draw",
+          "lacks_scaling"
+        ],
+        "evidence": "human_prior",
         "reason": "Existing exhaust support makes engine cards much more important than a low-impact attack."
       }
     },
@@ -613,6 +652,11 @@
           "perfected_strike"
         ],
         "confidence": 0.65,
+        "rationale_tags": [
+          "avoid_deck_bloat",
+          "small_gap"
+        ],
+        "evidence": "human_prior",
         "reason": "This is one of the few spots where skip can be better than adding another weak card."
       }
     },
@@ -689,6 +733,10 @@
           "skip"
         ],
         "confidence": 0.72,
+        "rationale_tags": [
+          "lacks_draw"
+        ],
+        "evidence": "human_prior",
         "reason": "Draw is the explicit missing capability; Battle Trance is the cleanest fix."
       }
     },
@@ -764,6 +812,11 @@
           "skip"
         ],
         "confidence": 0.78,
+        "rationale_tags": [
+          "late_act",
+          "lacks_block"
+        ],
+        "evidence": "human_prior",
         "reason": "Either high block or block+draw directly addresses the current weakness."
       }
     },
@@ -834,6 +887,11 @@
           "smith_pommel"
         ],
         "confidence": 0.9,
+        "rationale_tags": [
+          "hp_pressure",
+          "route_risk"
+        ],
+        "evidence": "human_prior",
         "reason": "At 18/80 before an elite, survival dominates upgrade greed."
       }
     },
@@ -904,6 +962,10 @@
           "smith_defend"
         ],
         "confidence": 0.82,
+        "rationale_tags": [
+          "upgrade_value"
+        ],
+        "evidence": "human_prior",
         "reason": "With high HP, upgrade value should matter more than resting."
       }
     },
@@ -974,6 +1036,12 @@
           "smith_strike"
         ],
         "confidence": 0.55,
+        "rationale_tags": [
+          "hp_pressure",
+          "upgrade_value",
+          "small_gap"
+        ],
+        "evidence": "human_prior",
         "reason": "This is intentionally less crisp; both rest and the high-value upgrade can be defensible."
       }
     },
@@ -1047,6 +1115,11 @@
           "smith_defend"
         ],
         "confidence": 0.8,
+        "rationale_tags": [
+          "remove_basic",
+          "upgrade_value"
+        ],
+        "evidence": "human_prior",
         "reason": "At high HP, Peace Pipe removal of a starter Strike is the meaningful macro improvement."
       }
     },
@@ -1117,6 +1190,11 @@
           "smith_battle_trance"
         ],
         "confidence": 0.88,
+        "rationale_tags": [
+          "hp_pressure",
+          "boss_counter"
+        ],
+        "evidence": "human_prior",
         "reason": "Boss entry HP is a capability metric; low HP should not greed upgrades here."
       }
     },
@@ -1176,6 +1254,10 @@
           "busted_crown"
         ],
         "confidence": 0.62,
+        "rationale_tags": [
+          "low_curve"
+        ],
+        "evidence": "human_prior",
         "reason": "This benchmark checks whether low curve context can penalize Snecko-like choices."
       }
     },
@@ -1236,6 +1318,11 @@
           "tiny_house"
         ],
         "confidence": 0.6,
+        "rationale_tags": [
+          "high_curve",
+          "lacks_draw"
+        ],
+        "evidence": "human_prior",
         "reason": "High-cost context should reverse the low-curve Snecko penalty."
       }
     },
@@ -1299,6 +1386,11 @@
           "runic_dome"
         ],
         "confidence": 0.45,
+        "rationale_tags": [
+          "potion_reliance",
+          "uncertain"
+        ],
+        "evidence": "uncertain",
         "reason": "This is intentionally marked for rollout; human preference depends on route and potion replacement value."
       }
     },
@@ -1363,6 +1455,11 @@
         ],
         "bad": [],
         "confidence": 0.62,
+        "rationale_tags": [
+          "route_risk",
+          "needs_frontload"
+        ],
+        "evidence": "human_prior",
         "reason": "This checks for excessive safe-path bias when the deck has enough early power."
       }
     },
@@ -1424,6 +1521,12 @@
           "elite_path"
         ],
         "confidence": 0.8,
+        "rationale_tags": [
+          "route_risk",
+          "hp_pressure",
+          "deck_unformed"
+        ],
+        "evidence": "human_prior",
         "reason": "Low HP plus starter-heavy deck makes the elite path a poor local macro decision."
       }
     }

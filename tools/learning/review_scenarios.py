@@ -27,6 +27,32 @@ LABEL_MODES = {
     "abstain",
 }
 
+EVIDENCE_MODES = {"human_prior", "rollout_backed", "regression_case", "uncertain"}
+
+RATIONALE_TAGS = {
+    "early_act",
+    "late_act",
+    "deck_unformed",
+    "needs_frontload",
+    "lacks_draw",
+    "lacks_block",
+    "lacks_scaling",
+    "needs_aoe",
+    "hp_pressure",
+    "boss_counter",
+    "avoid_deck_bloat",
+    "already_lost",
+    "synergy_piece",
+    "upgrade_value",
+    "remove_basic",
+    "route_risk",
+    "potion_reliance",
+    "low_curve",
+    "high_curve",
+    "small_gap",
+    "uncertain",
+}
+
 ROLE_NAMES = {"preferred", "acceptable", "bad"}
 
 
@@ -155,6 +181,8 @@ def normalize_label(raw: Any, candidate_ids: set[str]) -> dict[str, Any]:
         "acceptable": normalize_id_list(label.get("acceptable"), candidate_ids),
         "bad": normalize_id_list(label.get("bad"), candidate_ids),
         "confidence": clamp_float(label.get("confidence"), 0.0, 1.0, 0.5),
+        "rationale_tags": normalize_tag_list(label.get("rationale_tags")),
+        "evidence": normalize_evidence(label.get("evidence")),
         "reason": str(label.get("reason") or ""),
     }
     return normalized
@@ -171,6 +199,24 @@ def normalize_id_list(raw: Any, candidate_ids: set[str]) -> list[str]:
     return out
 
 
+def normalize_tag_list(raw: Any) -> list[str]:
+    if not isinstance(raw, list):
+        return []
+    out: list[str] = []
+    for item in raw:
+        value = str(item)
+        if value in RATIONALE_TAGS and value not in out:
+            out.append(value)
+    return out
+
+
+def normalize_evidence(raw: Any) -> str:
+    value = str(raw or "human_prior")
+    if value not in EVIDENCE_MODES:
+        return "human_prior"
+    return value
+
+
 def clamp_float(raw: Any, low: float, high: float, default: float) -> float:
     try:
         value = float(raw)
@@ -183,14 +229,20 @@ def review_summary(data: dict[str, Any]) -> dict[str, Any]:
     scenarios = data.get("scenarios") or []
     mode_counts: dict[str, int] = {}
     category_counts: dict[str, int] = {}
+    tag_counts: dict[str, int] = {}
+    evidence_counts: dict[str, int] = {}
     reviewed = 0
     needs_attention = 0
     for scenario in scenarios:
         label = scenario.get("human_label") or {}
         mode = str(label.get("mode") or "abstain")
+        evidence = str(label.get("evidence") or "human_prior")
         category = str(scenario.get("category") or "unknown")
         mode_counts[mode] = mode_counts.get(mode, 0) + 1
+        evidence_counts[evidence] = evidence_counts.get(evidence, 0) + 1
         category_counts[category] = category_counts.get(category, 0) + 1
+        for tag in label.get("rationale_tags") or []:
+            tag_counts[str(tag)] = tag_counts.get(str(tag), 0) + 1
         reason = str(label.get("reason") or "").strip()
         has_roles = any(label.get(role) for role in ROLE_NAMES)
         if mode in {"no_signal", "needs_rollout", "abstain"} or reason or has_roles:
@@ -203,6 +255,8 @@ def review_summary(data: dict[str, Any]) -> dict[str, Any]:
         "needs_attention_count": needs_attention,
         "mode_counts": mode_counts,
         "category_counts": category_counts,
+        "rationale_tag_counts": tag_counts,
+        "evidence_counts": evidence_counts,
     }
 
 
@@ -533,7 +587,7 @@ HTML = r"""<!doctype html>
     .role-btn.none.selected { background: #59636e; }
     .mode-row {
       display: grid;
-      grid-template-columns: minmax(220px, 320px) minmax(180px, 1fr) auto;
+      grid-template-columns: minmax(180px, 1fr) minmax(160px, .8fr) minmax(180px, 1fr) auto;
       gap: 10px;
       align-items: center;
     }
@@ -544,6 +598,38 @@ HTML = r"""<!doctype html>
       align-items: center;
     }
     .confidence-wrap input { width: 100%; }
+    .tag-section {
+      margin-top: 12px;
+      padding-top: 10px;
+      border-top: 1px solid var(--line);
+    }
+    .tag-title {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 650;
+      margin-bottom: 8px;
+    }
+    .tag-grid {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+    .tag-btn {
+      min-height: 28px;
+      border: 1px solid var(--line);
+      background: #fff;
+      border-radius: 999px;
+      padding: 4px 9px;
+      cursor: pointer;
+      color: #2f3b46;
+      font-size: 12px;
+    }
+    .tag-btn.selected {
+      background: #e7f0fb;
+      border-color: #8fb4db;
+      color: #174f87;
+      font-weight: 650;
+    }
     textarea {
       width: 100%;
       min-height: 92px;
@@ -657,6 +743,37 @@ HTML = r"""<!doctype html>
       "abstain"
     ];
 
+    const evidenceModes = [
+      "human_prior",
+      "rollout_backed",
+      "regression_case",
+      "uncertain"
+    ];
+
+    const rationaleTags = [
+      "early_act",
+      "late_act",
+      "deck_unformed",
+      "needs_frontload",
+      "lacks_draw",
+      "lacks_block",
+      "lacks_scaling",
+      "needs_aoe",
+      "hp_pressure",
+      "boss_counter",
+      "avoid_deck_bloat",
+      "already_lost",
+      "synergy_piece",
+      "upgrade_value",
+      "remove_basic",
+      "route_risk",
+      "potion_reliance",
+      "low_curve",
+      "high_curve",
+      "small_gap",
+      "uncertain"
+    ];
+
     function byId(id) {
       return document.getElementById(id);
     }
@@ -755,6 +872,8 @@ HTML = r"""<!doctype html>
         scenario.category,
         scenario.decision_type,
         scenario.context_note,
+        ...((scenario.human_label || {}).rationale_tags || []),
+        (scenario.human_label || {}).evidence || "",
         ...(scenario.candidates || []).map((candidate) => `${candidate.id} ${candidate.label} ${candidate.card || ""}`)
       ].join(" ").toLowerCase();
       return haystack.includes(query);
@@ -802,11 +921,18 @@ HTML = r"""<!doctype html>
               <select class="mode-select" id="labelMode" data-testid="label-mode">
                 ${labelModes.map((mode) => `<option value="${mode}" ${mode === label.mode ? "selected" : ""}>${mode}</option>`).join("")}
               </select>
+              <select class="mode-select" id="evidenceMode" data-testid="evidence-mode">
+                ${evidenceModes.map((mode) => `<option value="${mode}" ${mode === label.evidence ? "selected" : ""}>${mode}</option>`).join("")}
+              </select>
               <div class="confidence-wrap">
                 <input id="confidence" data-testid="confidence" type="range" min="0" max="1" step="0.01" value="${Number(label.confidence || 0).toFixed(2)}">
                 <span id="confidenceText">${Number(label.confidence || 0).toFixed(2)}</span>
               </div>
               <button class="btn" id="clearRoles" data-testid="clear-roles">Clear roles</button>
+            </div>
+            <div class="tag-section">
+              <div class="tag-title">Rationale tags</div>
+              <div class="tag-grid">${renderRationaleTags(label)}</div>
             </div>
             <textarea id="reason" data-testid="reason" placeholder="Reason / uncertainty / what rollout should check">${escapeHtml(label.reason || "")}</textarea>
           </div>
@@ -869,6 +995,14 @@ HTML = r"""<!doctype html>
       return `<button class="role-btn ${role} ${selected ? "selected" : ""}" data-testid="role-${role}" data-role="${role}" data-candidate-id="${escapeAttr(candidateId)}">${label}</button>`;
     }
 
+    function renderRationaleTags(label) {
+      const selected = new Set(label.rationale_tags || []);
+      return rationaleTags.map((tag) => {
+        const isSelected = selected.has(tag);
+        return `<button class="tag-btn ${isSelected ? "selected" : ""}" data-testid="rationale-tag" data-tag="${escapeAttr(tag)}">${escapeHtml(tag)}</button>`;
+      }).join("");
+    }
+
     function renderRankings(scenario) {
       const rankings = scenario.policy_rankings || {};
       const keys = Object.keys(rankings);
@@ -898,6 +1032,11 @@ HTML = r"""<!doctype html>
         markDirty();
         renderAll();
       };
+      byId("evidenceMode").onchange = (event) => {
+        ensureLabel(scenario).evidence = event.target.value;
+        markDirty();
+        renderAll();
+      };
       byId("confidence").oninput = (event) => {
         ensureLabel(scenario).confidence = Number(event.target.value);
         byId("confidenceText").textContent = Number(event.target.value).toFixed(2);
@@ -922,6 +1061,13 @@ HTML = r"""<!doctype html>
           renderAll();
         };
       }
+      for (const button of document.querySelectorAll(".tag-btn")) {
+        button.onclick = () => {
+          toggleRationaleTag(scenario, button.dataset.tag);
+          markDirty();
+          renderAll();
+        };
+      }
     }
 
     function ensureLabel(scenario) {
@@ -934,6 +1080,8 @@ HTML = r"""<!doctype html>
       label.acceptable = Array.isArray(label.acceptable) ? label.acceptable : [];
       label.bad = Array.isArray(label.bad) ? label.bad : [];
       label.confidence = Number.isFinite(Number(label.confidence)) ? Number(label.confidence) : 0.5;
+      label.rationale_tags = Array.isArray(label.rationale_tags) ? label.rationale_tags : [];
+      label.evidence = label.evidence || "human_prior";
       label.reason = label.reason || "";
       return label;
     }
@@ -953,6 +1101,17 @@ HTML = r"""<!doctype html>
       if (role !== "none") {
         label[role].push(candidateId);
       }
+    }
+
+    function toggleRationaleTag(scenario, tag) {
+      const label = ensureLabel(scenario);
+      const tags = new Set(label.rationale_tags || []);
+      if (tags.has(tag)) {
+        tags.delete(tag);
+      } else {
+        tags.add(tag);
+      }
+      label.rationale_tags = Array.from(tags);
     }
 
     function markDirty() {
