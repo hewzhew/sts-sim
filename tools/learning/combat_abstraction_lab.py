@@ -196,6 +196,14 @@ def estimate_candidate(args: argparse.Namespace, trace: dict[str, Any], target_s
     }
 
 
+def include_required_branch(indices: list[int], required_index: int, candidate_count: int, max_branches: int) -> list[int]:
+    if required_index < 0 or required_index >= candidate_count or required_index in indices:
+        return indices
+    if max_branches > 0 and len(indices) >= max_branches:
+        indices = indices[: max_branches - 1]
+    return sorted(set(indices + [required_index]))
+
+
 def aggregate_samples(samples: list[dict[str, Any]]) -> dict[str, Any]:
     defeat = []
     combat_win = []
@@ -333,7 +341,13 @@ def main() -> None:
         if target_check["status"] != "ok" and not args.allow_replay_mismatch:
             raise RuntimeError(f"target replay mismatch: {target_check}")
         candidates = (target_response.get("payload") or {}).get("action_candidates") or []
-        branch_indices = parse_branch_indices(args.branch_indices, len(candidates), args.max_branches)
+        chosen_index = int(target.get("chosen_action_index") or 0)
+        branch_indices = include_required_branch(
+            parse_branch_indices(args.branch_indices, len(candidates), args.max_branches),
+            chosen_index,
+            len(candidates),
+            args.max_branches,
+        )
         start_obs = observation_from_response(target_response)
         target_summary = {
             "trace_step": {

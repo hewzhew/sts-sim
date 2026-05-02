@@ -1,0 +1,438 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import argparse
+import json
+import subprocess
+import sys
+import time
+from collections import Counter
+from datetime import datetime, timezone
+from pathlib import Path
+from statistics import mean
+from typing import Any
+
+from combat_rl_common import REPO_ROOT, write_json, write_jsonl
+
+
+SURVIVAL_ORDER = {
+    "forced_loss": 0,
+    "stochastic_loss_risk": 1,
+    "severe_risk": 2,
+    "risky": 3,
+    "stable": 4,
+}
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description=(
+            "Run combat abstraction lab over a batch of full-run trace combat roots and summarize "
+            "chosen ranks, near-equivalence groups, and obvious local regrets."
+        )
+    )
+    parser.add_argument("--trace-dir", type=Path, required=True)
+    parser.add_argument("--max-cases", type=int, default=12)
+    parser.add_argument("--per-trace-limit", type=int, default=6)
+    parser.add_argument("--min-candidates", type=int, default=2)
+    parser.add_argument("--case-strategy", default="danger", choices=["trace_order", "danger"])
+    parser.add_argument("--min-step-gap", type=int, default=3)
+    parser.add_argument("--continuation-policy", default="rule_baseline_v0", choices=["rule_baseline_v0", "random_masked"])
+    parser.add_argument("--horizon", type=int, default=10)
+    parser.add_argument("--samples", type=int, default=1)
+    parser.add_argument("--max-branches", type=int, default=12)
+    parser.add_argument("--ascension", type=int, default=0)
+    parser.add_argument("--class", dest="player_class", default="ironclad")
+    parser.add_argument("--final-act", action="store_true")
+    parser.add_argument("--max-steps", type=int, default=5000)
+    parser.add_argument("--driver-binary", type=Path)
+    parser.add_argument("--allow-replay-mismatch", action="store_true")
+    parser.add_argument(
+        "--out-dir",
+        type=Path,
+        default=REPO_ROOT / "tools" / "artifacts" / "combat_abstraction_lab" / "batch",
+    )
+    return parser.parse_args()
+
+
+def load_json(path: Path) -> dict[str, Any]:
+    with path.open("r", encoding="utf-8") as handle:
+        return json.load(handle)
+
+
+def trace_files(trace_dir: Path) -> list[Path]:
+    files = sorted(trace_dir.glob("episode_*.json"))
+    if not files:
+        files = sorted(trace_dir.rglob("episode_*.json"))
+    if not files:
+        raise SystemExit(f"no episode_*.json files found in {trace_dir}")
+    return files
+
+
+def combat_obs(step: dict[str, Any]) -> dict[str, Any]:
+    obs = step.get("observation") or {}
+    return obs.get("combat") or {}
+
+
+def unblocked_damage(step: dict[str, Any]) -> int:
+    combat = combat_obs(step)
+    incoming = int(combat.get("visible_incoming_damage") or 0)
+    block = int(combat.get("player_block") or 0)
+    return max(incoming - block, 0)
+
+
+def hp(step: dict[str, Any]) -> int:
+    obs = step.get("observation") or {}
+    combat = combat_obs(step)
+    return int(obs.get("current_hp") or combat.get("player_hp") or step.get("hp") or 0)
+
+
+def legal_count(step: dict[str, Any]) -> int:
+    mask = step.get("action_mask") or []
+    return int(step.get("legal_action_count") or len(mask))
+
+
+def case_priority(step: dict[str, Any]) -> tuple[float, int, int, int]:
+    current_hp = max(hp(step), 1)
+    unblocked = unblocked_damage(step)
+    danger = unblocked / current_hp
+    combat = combat_obs(step)
+    return (
+        danger,
+        unblocked,
+        legal_count(step),
+        int(combat.get("total_monster_hp") or 0),
+    )
+
+
+def public_case(case: dict[str, Any]) -> dict[str, Any]:
+    return {
+        key: str(value) if isinstance(value, Path) else value
+        for key, value in case.items()
+        if key != "trace_file"
+    } | {"trace_file": str(case["trace_file"])}
+
+
+def step_to_case(path: Path, trace: dict[str, Any], step: dict[str, Any]) -> dict[str, Any]:
+    combat = combat_obs(step)
+    step_index = int(step.get("step_index") or 0)
+    return {
+        "case_id": f"{path.stem}_step_{step_index:04}",
+        "trace_file": path,
+        "episode_id": int((trace.get("summary") or {}).get("episode_id") or 0),
+        "seed": int((trace.get("summary") or {}).get("seed") or 0),
+        "step_index": step_index,
+        "decision_type": str(step.get("decision_type") or ""),
+        "floor": int(step.get("floor") or 0),
+        "act": int(step.get("act") or 0),
+        "hp": hp(step),
+        "incoming": int(combat.get("visible_incoming_damage") or 0),
+        "unblocked": unblocked_damage(step),
+        "turn_count": int(combat.get("turn_count") or 0),
+        "monster_hp": int(combat.get("total_monster_hp") or 0),
+        "candidate_count": legal_count(step),
+        "chosen_action_index": int(step.get("chosen_action_index") or 0),
+        "chosen_action_key": str(step.get("chosen_action_key") or ""),
+    }
+
+
+def select_cases(args: argparse.Namespace) -> list[dict[str, Any]]:
+    cases: list[dict[str, Any]] = []
+    for path in trace_files(args.trace_dir):
+        trace = load_json(path)
+        candidates = []
+        selected_steps: list[int] = []
+        for step in trace.get("steps") or []:
+            if str(step.get("decision_type") or "") != "combat":
+                continue
+            if legal_count(step) < args.min_candidates:
+                continue
+            candidates.append((case_priority(step), step))
+        if args.case_strategy == "danger":
+            candidates.sort(key=lambda item: item[0], reverse=True)
+        per_trace = 0
+        for _priority, step in candidates:
+            step_index = int(step.get("step_index") or 0)
+            if any(abs(step_index - selected) < args.min_step_gap for selected in selected_steps):
+                continue
+            cases.append(step_to_case(path, trace, step))
+            selected_steps.append(step_index)
+            per_trace += 1
+            if per_trace >= args.per_trace_limit or len(cases) >= args.max_cases:
+                break
+        if len(cases) >= args.max_cases:
+            break
+    return cases
+
+
+def run_case(args: argparse.Namespace, case: dict[str, Any], reports_dir: Path) -> dict[str, Any]:
+    report_path = reports_dir / f"{case['case_id']}.json"
+    rows_path = reports_dir / f"{case['case_id']}.rows.jsonl"
+    cmd = [
+        sys.executable,
+        str(REPO_ROOT / "tools" / "learning" / "combat_abstraction_lab.py"),
+        "--trace-file",
+        str(case["trace_file"]),
+        "--step-index",
+        str(case["step_index"]),
+        "--continuation-policy",
+        args.continuation_policy,
+        "--horizon",
+        str(args.horizon),
+        "--samples",
+        str(args.samples),
+        "--max-branches",
+        str(args.max_branches),
+        "--ascension",
+        str(args.ascension),
+        "--class",
+        args.player_class,
+        "--max-steps",
+        str(args.max_steps),
+        "--out",
+        str(report_path),
+        "--rows-out",
+        str(rows_path),
+    ]
+    if args.final_act:
+        cmd.append("--final-act")
+    if args.driver_binary:
+        cmd.extend(["--driver-binary", str(args.driver_binary)])
+    if args.allow_replay_mismatch:
+        cmd.append("--allow-replay-mismatch")
+    proc = subprocess.run(
+        cmd,
+        cwd=str(REPO_ROOT),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        encoding="utf-8",
+    )
+    if proc.returncode != 0:
+        return {
+            "case": case,
+            "status": "failed",
+            "error": proc.stderr.strip() or proc.stdout.strip(),
+            "report_path": str(report_path),
+            "rows_path": str(rows_path),
+        }
+    return {
+        "case": case,
+        "status": "ok",
+        "report_path": str(report_path),
+        "rows_path": str(rows_path),
+        "report": load_json(report_path),
+    }
+
+
+def find_ranking_row(report: dict[str, Any], candidate_index: int) -> dict[str, Any] | None:
+    for row in report.get("ranking") or []:
+        if int(row.get("candidate_index") or 0) == candidate_index:
+            return row
+    return None
+
+
+def group_ranks(report: dict[str, Any]) -> dict[str, int]:
+    best_by_signature: dict[str, int] = {}
+    for row in report.get("ranking") or []:
+        signature = str(row.get("equivalence_signature") or "")
+        rank = int(row.get("rank") or 0)
+        if signature and (signature not in best_by_signature or rank < best_by_signature[signature]):
+            best_by_signature[signature] = rank
+    return best_by_signature
+
+
+def survival_rank(row: dict[str, Any] | None) -> int:
+    if row is None:
+        return -1
+    abstraction = row.get("abstraction") or {}
+    return SURVIVAL_ORDER.get(str(abstraction.get("survival_class") or ""), -1)
+
+
+def estimate(row: dict[str, Any] | None, key: str) -> float:
+    if row is None:
+        return 0.0
+    return float((row.get("estimates") or {}).get(key) or 0.0)
+
+
+def diagnostic_flags(report: dict[str, Any], chosen: dict[str, Any] | None, best: dict[str, Any] | None, chosen_group_rank: int | None) -> list[str]:
+    flags: list[str] = []
+    if chosen is None or best is None:
+        return ["missing_chosen_or_best"]
+    if int(chosen.get("rank") or 0) != 1:
+        flags.append("chosen_not_top_rank")
+    if chosen_group_rank != 1:
+        flags.append("chosen_not_top_equivalence_group")
+    if survival_rank(best) > survival_rank(chosen):
+        flags.append("survival_dominated")
+    if estimate(best, "combat_win_prob") > estimate(chosen, "combat_win_prob") + 0.001:
+        flags.append("missed_combat_win")
+    hp_regret = estimate(best, "expected_end_hp") - estimate(chosen, "expected_end_hp")
+    if hp_regret >= 5.0:
+        flags.append("hp_regret_ge_5")
+    if hp_regret >= 10.0:
+        flags.append("hp_regret_ge_10")
+    if "combat/end_turn" in str(chosen.get("candidate_key") or "") and "combat/end_turn" not in str(best.get("candidate_key") or ""):
+        flags.append("end_turn_not_best")
+    return flags
+
+
+def flatten_case(result: dict[str, Any]) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    case = result["case"]
+    if result["status"] != "ok":
+        return [], {
+            **public_case(case),
+            "status": result["status"],
+            "error": result.get("error"),
+            "report_path": result.get("report_path"),
+        }
+    report = result["report"]
+    ranking = list(report.get("ranking") or [])
+    chosen_index = int(case["chosen_action_index"])
+    chosen = find_ranking_row(report, chosen_index)
+    best = ranking[0] if ranking else None
+    ranks_by_group = group_ranks(report)
+    chosen_signature = str((chosen or {}).get("equivalence_signature") or "")
+    chosen_group_rank = ranks_by_group.get(chosen_signature)
+    flags = diagnostic_flags(report, chosen, best, chosen_group_rank)
+    group_count = int((report.get("summary") or {}).get("equivalence_group_count") or 0)
+    candidate_count = int((report.get("summary") or {}).get("candidate_count") or 0)
+    case_summary = {
+        **public_case(case),
+        "status": "ok",
+        "report_path": result.get("report_path"),
+        "rows_path": result.get("rows_path"),
+        "candidate_count_evaluated": candidate_count,
+        "equivalence_group_count": group_count,
+        "compression_ratio": (group_count / candidate_count) if candidate_count else 0.0,
+        "chosen_rank": None if chosen is None else int(chosen.get("rank") or 0),
+        "chosen_group_rank": chosen_group_rank,
+        "chosen_was_top_rank": None if chosen is None else int(chosen.get("rank") or 0) == 1,
+        "chosen_was_top_group": chosen_group_rank == 1 if chosen_group_rank is not None else None,
+        "chosen_equivalence_signature": chosen_signature or None,
+        "chosen_survival_class": None if chosen is None else (chosen.get("abstraction") or {}).get("survival_class"),
+        "chosen_kill_clock": None if chosen is None else (chosen.get("abstraction") or {}).get("kill_clock"),
+        "chosen_risk_bucket": None if chosen is None else (chosen.get("abstraction") or {}).get("risk_bucket"),
+        "chosen_role": None if chosen is None else (chosen.get("abstraction") or {}).get("role"),
+        "best_candidate_index": None if best is None else int(best.get("candidate_index") or 0),
+        "best_candidate_key": None if best is None else str(best.get("candidate_key") or ""),
+        "best_equivalence_signature": None if best is None else str(best.get("equivalence_signature") or ""),
+        "best_survival_class": None if best is None else (best.get("abstraction") or {}).get("survival_class"),
+        "best_kill_clock": None if best is None else (best.get("abstraction") or {}).get("kill_clock"),
+        "best_risk_bucket": None if best is None else (best.get("abstraction") or {}).get("risk_bucket"),
+        "best_role": None if best is None else (best.get("abstraction") or {}).get("role"),
+        "hp_regret": estimate(best, "expected_end_hp") - estimate(chosen, "expected_end_hp"),
+        "combat_win_regret": estimate(best, "combat_win_prob") - estimate(chosen, "combat_win_prob"),
+        "diagnostic_flags": flags,
+    }
+    rows = []
+    for row in ranking:
+        abstraction = row.get("abstraction") or {}
+        estimates = row.get("estimates") or {}
+        rows.append(
+            {
+                **public_case(case),
+                "candidate_index": int(row.get("candidate_index") or 0),
+                "candidate_key": row.get("candidate_key"),
+                "candidate_card_id": row.get("candidate_card_id"),
+                "rank": int(row.get("rank") or 0),
+                "equivalence_signature": row.get("equivalence_signature"),
+                "is_chosen": int(row.get("candidate_index") or 0) == chosen_index,
+                "is_best": int(row.get("rank") or 0) == 1,
+                **abstraction,
+                **estimates,
+            }
+        )
+    return rows, case_summary
+
+
+def rate(items: list[dict[str, Any]], key: str) -> float:
+    if not items:
+        return 0.0
+    return sum(1 for item in items if item.get(key)) / len(items)
+
+
+def main() -> None:
+    args = parse_args()
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    out_dir = args.out_dir / stamp
+    reports_dir = out_dir / "case_reports"
+    reports_dir.mkdir(parents=True, exist_ok=True)
+    cases = select_cases(args)
+    if not cases:
+        raise SystemExit("no combat cases selected")
+
+    started = time.perf_counter()
+    results = [run_case(args, case, reports_dir) for case in cases]
+    elapsed = time.perf_counter() - started
+
+    candidate_rows: list[dict[str, Any]] = []
+    case_summaries: list[dict[str, Any]] = []
+    for result in results:
+        rows, case_summary = flatten_case(result)
+        candidate_rows.extend(rows)
+        case_summaries.append(case_summary)
+
+    ok_cases = [case for case in case_summaries if case.get("status") == "ok"]
+    flag_counts: Counter[str] = Counter()
+    for case in ok_cases:
+        flag_counts.update(case.get("diagnostic_flags") or [])
+    summary = {
+        "schema_version": "combat_abstraction_batch_v0",
+        "created_at_utc": datetime.now(timezone.utc).isoformat(),
+        "config": {
+            "trace_dir": str(args.trace_dir),
+            "max_cases": args.max_cases,
+            "per_trace_limit": args.per_trace_limit,
+            "min_candidates": args.min_candidates,
+            "case_strategy": args.case_strategy,
+            "min_step_gap": args.min_step_gap,
+            "continuation_policy": args.continuation_policy,
+            "horizon": args.horizon,
+            "samples": 1 if args.continuation_policy == "rule_baseline_v0" else args.samples,
+            "max_branches": args.max_branches,
+        },
+        "counts": {
+            "selected_cases": len(cases),
+            "ok_cases": len(ok_cases),
+            "failed_cases": sum(1 for result in results if result["status"] != "ok"),
+            "candidate_rows": len(candidate_rows),
+        },
+        "chosen_rank_counts": dict(sorted(Counter(str(case.get("chosen_rank")) for case in ok_cases).items())),
+        "chosen_group_rank_counts": dict(sorted(Counter(str(case.get("chosen_group_rank")) for case in ok_cases).items())),
+        "chosen_top_rank_rate": rate(ok_cases, "chosen_was_top_rank"),
+        "chosen_top_group_rate": rate(ok_cases, "chosen_was_top_group"),
+        "diagnostic_flag_counts": dict(sorted(flag_counts.items())),
+        "average_candidate_count": mean([case["candidate_count_evaluated"] for case in ok_cases]) if ok_cases else 0.0,
+        "average_equivalence_group_count": mean([case["equivalence_group_count"] for case in ok_cases]) if ok_cases else 0.0,
+        "average_compression_ratio": mean([case["compression_ratio"] for case in ok_cases]) if ok_cases else 0.0,
+        "chosen_role_counts": dict(sorted(Counter(str(case.get("chosen_role")) for case in ok_cases).items())),
+        "best_role_counts": dict(sorted(Counter(str(case.get("best_role")) for case in ok_cases).items())),
+        "elapsed_seconds": elapsed,
+        "interesting_cases": [
+            case
+            for case in ok_cases
+            if any(flag in set(case.get("diagnostic_flags") or []) for flag in ["survival_dominated", "missed_combat_win", "hp_regret_ge_5", "end_turn_not_best"])
+        ][:20],
+        "case_summaries": case_summaries,
+    }
+    write_json(out_dir / "summary.json", summary)
+    write_jsonl(out_dir / "candidate_rows.jsonl", candidate_rows)
+    write_jsonl(out_dir / "case_summaries.jsonl", case_summaries)
+    print(
+        json.dumps(
+            summary["counts"]
+            | {
+                "chosen_top_rank_rate": summary["chosen_top_rank_rate"],
+                "chosen_top_group_rate": summary["chosen_top_group_rate"],
+                "diagnostic_flag_counts": summary["diagnostic_flag_counts"],
+            },
+            indent=2,
+            ensure_ascii=False,
+        )
+    )
+    print(f"wrote {out_dir}")
+
+
+if __name__ == "__main__":
+    main()
