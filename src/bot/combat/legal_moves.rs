@@ -32,11 +32,6 @@ pub(crate) fn engine_local_moves(engine: &EngineState, combat: &CombatState) -> 
                 {
                     continue;
                 }
-                if potion.id == crate::content::potions::PotionId::LiquidMemories
-                    && combat.zones.discard_pile.is_empty()
-                {
-                    continue;
-                }
                 if let Some(validation) =
                     targeting::validation_for_potion_target(potion.requires_target)
                 {
@@ -620,7 +615,7 @@ mod tests {
     }
 
     #[test]
-    fn engine_local_moves_skip_liquid_memories_with_empty_discard_pile() {
+    fn engine_local_moves_keeps_liquid_memories_with_empty_discard_pile() {
         let mut combat = build_fixture_combat();
         combat.zones.discard_pile.clear();
         combat.entities.potions = vec![
@@ -637,14 +632,61 @@ mod tests {
 
         let inputs = engine_local_moves(&EngineState::CombatPlayerTurn, &combat);
         assert!(
-            !inputs.iter().any(|input| matches!(
+            inputs.iter().any(|input| matches!(
                 input,
                 ClientInput::UsePotion {
                     potion_index: 0,
                     ..
                 }
             )),
-            "Liquid Memories needs a discard-pile target"
+            "Liquid Memories is Java-usable with an empty discard pile; the action fizzles after consuming it"
+        );
+    }
+
+    #[test]
+    fn engine_fizzles_liquid_memories_empty_discard_after_consuming_potion() {
+        let mut combat = build_fixture_combat();
+        combat.zones.discard_pile.clear();
+        combat.entities.potions = vec![
+            Some(crate::content::potions::Potion::with_affordance_truth(
+                crate::content::potions::PotionId::LiquidMemories,
+                1,
+                true,
+                true,
+                false,
+            )),
+            None,
+            None,
+        ];
+
+        let mut engine = EngineState::CombatPlayerTurn;
+        let alive = crate::engine::core::tick_until_stable_turn(
+            &mut engine,
+            &mut combat,
+            ClientInput::UsePotion {
+                potion_index: 0,
+                target: None,
+            },
+        );
+
+        assert!(alive);
+        assert_eq!(engine, EngineState::CombatPlayerTurn);
+        assert!(combat.entities.potions[0].is_none());
+        let diagnostics = combat.take_engine_diagnostics();
+        assert!(
+            diagnostics.iter().any(|diagnostic| diagnostic.severity
+                == crate::state::selection::EngineDiagnosticSeverity::Info
+                && diagnostic.class
+                    == crate::state::selection::EngineDiagnosticClass::Normalization
+                && diagnostic
+                    .message
+                    .contains("auto-skipped empty grid select")),
+            "empty Liquid Memories selection should fizzle as a Java-compatible normalization"
+        );
+        assert!(
+            diagnostics.iter().all(|diagnostic| diagnostic.severity
+                != crate::state::selection::EngineDiagnosticSeverity::Error),
+            "empty Liquid Memories should not emit an engine error: {diagnostics:?}"
         );
     }
 
