@@ -357,6 +357,420 @@ struct EpisodeContext {
     combat_win_count: usize,
 }
 
+#[derive(Clone, Debug)]
+pub struct FullRunEnvConfig {
+    pub seed: u64,
+    pub ascension: u8,
+    pub final_act: bool,
+    pub player_class: &'static str,
+    pub max_steps: usize,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct FullRunEnvState {
+    pub observation_schema_version: String,
+    pub action_schema_version: String,
+    pub action_mask_kind: String,
+    pub observation: RunObservationV0,
+    pub action_candidates: Vec<RunActionCandidate>,
+    pub action_mask: Vec<bool>,
+    pub legal_action_count: usize,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct FullRunEnvInfo {
+    pub seed: u64,
+    pub step: usize,
+    pub terminal_reason: String,
+    pub result: String,
+    pub forced_engine_ticks: usize,
+    pub combat_win_count: usize,
+    pub crash: Option<String>,
+    pub contract_failure: Option<RunContractFailure>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct FullRunEnvStep {
+    pub state: FullRunEnvState,
+    pub reward: f32,
+    pub done: bool,
+    pub chosen_action_key: Option<String>,
+    pub info: FullRunEnvInfo,
+}
+
+pub struct FullRunEnv {
+    config: FullRunEnvConfig,
+    ctx: EpisodeContext,
+    steps: usize,
+    done: bool,
+    terminal_reason: String,
+    crash: Option<String>,
+    contract_failure: Option<RunContractFailure>,
+    no_progress_tracker: NoProgressTracker,
+}
+
+impl FullRunEnvConfig {
+    pub fn batch_config(&self, policy: RunPolicyKind) -> RunBatchConfig {
+        RunBatchConfig {
+            episodes: 1,
+            base_seed: self.seed,
+            ascension: self.ascension,
+            final_act: self.final_act,
+            player_class: self.player_class,
+            max_steps: self.max_steps,
+            policy,
+            trace_dir: None,
+            determinism_check: false,
+        }
+    }
+}
+
+impl FullRunEnv {
+    pub fn new(config: FullRunEnvConfig) -> Result<Self, String> {
+        if config.max_steps == 0 {
+            return Err("max_steps must be greater than 0".to_string());
+        }
+        let ctx = EpisodeContext {
+            engine_state: EngineState::EventRoom,
+            run_state: RunState::new(
+                config.seed,
+                config.ascension,
+                config.final_act,
+                config.player_class,
+            ),
+            combat_state: None,
+            stashed_event_combat: None,
+            forced_engine_ticks: 0,
+            combat_win_count: 0,
+        };
+        let mut env = Self {
+            config,
+            ctx,
+            steps: 0,
+            done: false,
+            terminal_reason: "running".to_string(),
+            crash: None,
+            contract_failure: None,
+            no_progress_tracker: NoProgressTracker::new(),
+        };
+        let _ = env.prepare_state()?;
+        Ok(env)
+    }
+
+    pub fn state(&mut self) -> Result<FullRunEnvState, String> {
+        self.prepare_state()
+    }
+
+    pub fn step(&mut self, action_index: usize) -> Result<FullRunEnvStep, String> {
+        if self.done {
+            return Ok(FullRunEnvStep {
+                state: self.prepare_state()?,
+                reward: 0.0,
+                done: true,
+                chosen_action_key: None,
+                info: self.info(),
+            });
+        }
+        if self.steps >= self.config.max_steps {
+            self.done = true;
+            self.terminal_reason = "step_cap".to_string();
+            return Ok(FullRunEnvStep {
+                state: self.prepare_state()?,
+                reward: -2.0,
+                done: true,
+                chosen_action_key: None,
+                info: self.info(),
+            });
+        }
+
+        let state = self.prepare_state()?;
+        if action_index >= state.action_candidates.len() {
+            return Err(format!(
+                "action index {action_index} out of range for {} candidates",
+                state.action_candidates.len()
+            ));
+        }
+        if !state.action_mask[action_index] {
+            return Err(format!("action index {action_index} is currently illegal"));
+        }
+
+        let legal_actions = legal_actions(
+            &self.ctx.engine_state,
+            &self.ctx.run_state,
+            &self.ctx.combat_state,
+        );
+        let action = legal_actions
+            .get(action_index)
+            .cloned()
+            .ok_or_else(|| format!("action index {action_index} missing from legal actions"))?;
+        let chosen_action_key = state.action_candidates[action_index].action_key.clone();
+        let signature = no_progress_signature(
+            &state.observation,
+            &state.action_candidates,
+            chosen_action_key.clone(),
+        );
+        if let Some(loop_info) =
+            self.no_progress_tracker
+                .observe(self.steps, signature, &state.observation)
+        {
+            let details = format!(
+                "no progress loop: action {} repeated {} times from step {} to {} at {} floor {}",
+                loop_info.action_key,
+                loop_info.repeat_count,
+                loop_info.start_step,
+                loop_info.end_step,
+                loop_info.decision_type,
+                loop_info.floor
+            );
+            self.done = true;
+            self.terminal_reason = "no_progress_loop".to_string();
+            self.crash = Some(details.clone());
+            self.contract_failure = Some(make_full_run_env_contract_failure(
+                &self.config,
+                self.config.seed,
+                "no_progress_loop",
+                "no_progress_loop",
+                loop_info.floor,
+                loop_info.act,
+                Some(loop_info.end_step),
+                Some(loop_info.action_key.clone()),
+                Some(loop_info.decision_type.clone()),
+                Some(loop_info.engine_state.clone()),
+                details,
+            ));
+            return Ok(FullRunEnvStep {
+                state,
+                reward: -100.0,
+                done: true,
+                chosen_action_key: Some(chosen_action_key),
+                info: self.info(),
+            });
+        }
+
+        let before_score = full_run_progress_score(&self.ctx);
+        let keep_running = tick_run(
+            &mut self.ctx.engine_state,
+            &mut self.ctx.run_state,
+            &mut self.ctx.combat_state,
+            Some(action),
+        );
+        self.steps += 1;
+
+        if let Some(errors) = take_engine_error_diagnostics(&mut self.ctx) {
+            let details = format!(
+                "engine rejected legal action {chosen_action_key}: {}",
+                errors.join("; ")
+            );
+            self.done = true;
+            self.terminal_reason = "engine_rejected_action".to_string();
+            self.crash = Some(details.clone());
+            self.contract_failure = Some(make_full_run_env_contract_failure(
+                &self.config,
+                self.config.seed,
+                "engine_rejected_action",
+                "engine_rejected_action",
+                self.ctx.run_state.floor_num,
+                self.ctx.run_state.act_num,
+                Some(self.steps.saturating_sub(1)),
+                Some(chosen_action_key.clone()),
+                Some(state.observation.decision_type.clone()),
+                Some(state.observation.engine_state.clone()),
+                details,
+            ));
+            return Ok(FullRunEnvStep {
+                state: self.prepare_state()?,
+                reward: -100.0,
+                done: true,
+                chosen_action_key: Some(chosen_action_key),
+                info: self.info(),
+            });
+        }
+
+        finish_combat_if_needed(&mut self.ctx);
+        if !keep_running && matches!(self.ctx.engine_state, EngineState::GameOver(_)) {
+            self.done = true;
+            self.terminal_reason = "game_over".to_string();
+        } else if !keep_running {
+            self.done = true;
+            self.terminal_reason = "engine_stopped".to_string();
+        }
+
+        if !self.done {
+            if let Err(err) = prepare_decision_point(&mut self.ctx, self.config.max_steps) {
+                self.done = true;
+                self.terminal_reason = "engine_error".to_string();
+                self.crash = Some(err.clone());
+                self.contract_failure = Some(make_full_run_env_contract_failure(
+                    &self.config,
+                    self.config.seed,
+                    "engine_error",
+                    "engine_error",
+                    self.ctx.run_state.floor_num,
+                    self.ctx.run_state.act_num,
+                    Some(self.steps),
+                    Some(chosen_action_key.clone()),
+                    Some(decision_type(&self.ctx.engine_state).to_string()),
+                    Some(engine_state_label(&self.ctx.engine_state).to_string()),
+                    err,
+                ));
+            } else if matches!(self.ctx.engine_state, EngineState::GameOver(_)) {
+                self.done = true;
+                self.terminal_reason = "game_over".to_string();
+            }
+        }
+
+        let after_score = full_run_progress_score(&self.ctx);
+        let reward = after_score - before_score + self.terminal_reward();
+        Ok(FullRunEnvStep {
+            state: self.prepare_state()?,
+            reward,
+            done: self.done,
+            chosen_action_key: Some(chosen_action_key),
+            info: self.info(),
+        })
+    }
+
+    fn prepare_state(&mut self) -> Result<FullRunEnvState, String> {
+        if !self.done {
+            prepare_decision_point(&mut self.ctx, self.config.max_steps)?;
+            if matches!(self.ctx.engine_state, EngineState::GameOver(_)) {
+                self.done = true;
+                self.terminal_reason = "game_over".to_string();
+            }
+        }
+        let observation = build_observation(&self.ctx);
+        let legal_actions = if self.done {
+            Vec::new()
+        } else {
+            legal_actions(
+                &self.ctx.engine_state,
+                &self.ctx.run_state,
+                &self.ctx.combat_state,
+            )
+        };
+        let action_candidates =
+            build_action_candidates(&legal_actions, self.ctx.combat_state.as_ref());
+        let action_mask = vec![true; action_candidates.len()];
+        Ok(FullRunEnvState {
+            observation_schema_version: FULL_RUN_OBSERVATION_SCHEMA_VERSION.to_string(),
+            action_schema_version: FULL_RUN_ACTION_SCHEMA_VERSION.to_string(),
+            action_mask_kind: "per_decision_candidate_set".to_string(),
+            observation,
+            legal_action_count: action_candidates.len(),
+            action_candidates,
+            action_mask,
+        })
+    }
+
+    fn terminal_reward(&self) -> f32 {
+        if !self.done {
+            return 0.0;
+        }
+        match &self.ctx.engine_state {
+            EngineState::GameOver(RunResult::Victory) => 100.0,
+            EngineState::GameOver(RunResult::Defeat) => -10.0,
+            _ if self.crash.is_some() => -100.0,
+            _ => -2.0,
+        }
+    }
+
+    pub fn info(&self) -> FullRunEnvInfo {
+        FullRunEnvInfo {
+            seed: self.config.seed,
+            step: self.steps,
+            terminal_reason: self.terminal_reason.clone(),
+            result: full_run_result_label(&self.ctx, self.done, self.crash.as_ref()),
+            forced_engine_ticks: self.ctx.forced_engine_ticks,
+            combat_win_count: self.ctx.combat_win_count,
+            crash: self.crash.clone(),
+            contract_failure: self.contract_failure.clone(),
+        }
+    }
+}
+
+fn full_run_progress_score(ctx: &EpisodeContext) -> f32 {
+    let active_hp = ctx
+        .combat_state
+        .as_ref()
+        .map(|combat| combat.entities.player.current_hp)
+        .unwrap_or(ctx.run_state.current_hp);
+    let active_max_hp = ctx
+        .combat_state
+        .as_ref()
+        .map(|combat| combat.entities.player.max_hp)
+        .unwrap_or(ctx.run_state.max_hp);
+    let hp_fraction = if active_max_hp > 0 {
+        active_hp.max(0) as f32 / active_max_hp as f32
+    } else {
+        0.0
+    };
+    ctx.run_state.floor_num.max(0) as f32 + ctx.combat_win_count as f32 * 2.0 + hp_fraction
+}
+
+fn full_run_result_label(ctx: &EpisodeContext, done: bool, crash: Option<&String>) -> String {
+    match &ctx.engine_state {
+        EngineState::GameOver(RunResult::Victory) => "victory",
+        EngineState::GameOver(RunResult::Defeat) => "defeat",
+        _ if crash.is_some() => "crash",
+        _ if done => "truncated",
+        _ => "ongoing",
+    }
+    .to_string()
+}
+
+#[allow(clippy::too_many_arguments)]
+fn make_full_run_env_contract_failure(
+    config: &FullRunEnvConfig,
+    seed: u64,
+    kind: &str,
+    terminal_reason: &str,
+    floor: i32,
+    act: u8,
+    step: Option<usize>,
+    action_key: Option<String>,
+    decision_type: Option<String>,
+    engine_state: Option<String>,
+    details: String,
+) -> RunContractFailure {
+    RunContractFailure {
+        kind: kind.to_string(),
+        episode_id: 0,
+        seed,
+        policy: "external_driver".to_string(),
+        step,
+        action_key,
+        decision_type,
+        engine_state,
+        floor,
+        act,
+        terminal_reason: terminal_reason.to_string(),
+        details,
+        trace_path: None,
+        reproduce_command: full_run_env_reproduce_command(config, seed),
+    }
+}
+
+fn full_run_env_reproduce_command(config: &FullRunEnvConfig, seed: u64) -> String {
+    let mut parts = vec![
+        ".venv-rl\\Scripts\\python.exe".to_string(),
+        "tools\\learning\\smoke_full_run_env.py".to_string(),
+        "--episodes".to_string(),
+        "1".to_string(),
+        "--seed".to_string(),
+        seed.to_string(),
+        "--ascension".to_string(),
+        config.ascension.to_string(),
+        "--class".to_string(),
+        cli_class_arg(config.player_class).to_string(),
+        "--max-steps".to_string(),
+        config.max_steps.to_string(),
+    ];
+    if config.final_act {
+        parts.push("--final-act".to_string());
+    }
+    parts.join(" ")
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct NoProgressSignature {
     observation_key: String,
@@ -2801,6 +3215,37 @@ mod tests {
         assert_eq!(summary.policy, "random_masked");
         assert!(summary.max_legal_action_count > 0);
         assert!(summary.decision_type_counts.values().sum::<usize>() > 0);
+    }
+
+    #[test]
+    fn full_run_env_reset_and_step_exposes_candidate_mask() {
+        let config = FullRunEnvConfig {
+            seed: 42,
+            ascension: 0,
+            final_act: false,
+            player_class: "Ironclad",
+            max_steps: 50,
+        };
+        let mut env = FullRunEnv::new(config).expect("full-run env should reset");
+
+        let state = env.state().expect("state should be available");
+        assert_eq!(
+            state.observation_schema_version,
+            FULL_RUN_OBSERVATION_SCHEMA_VERSION
+        );
+        assert_eq!(state.action_schema_version, FULL_RUN_ACTION_SCHEMA_VERSION);
+        assert_eq!(state.action_mask_kind, "per_decision_candidate_set");
+        assert_eq!(state.action_candidates.len(), state.action_mask.len());
+        assert!(state.legal_action_count > 0);
+        assert!(state.action_mask.iter().all(|legal| *legal));
+
+        let step = env.step(0).expect("first legal action should step");
+        assert_eq!(
+            step.state.observation_schema_version,
+            FULL_RUN_OBSERVATION_SCHEMA_VERSION
+        );
+        assert_eq!(step.info.seed, 42);
+        assert!(step.chosen_action_key.is_some());
     }
 
     #[test]

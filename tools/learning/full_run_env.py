@@ -1,0 +1,330 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import hashlib
+import json
+import random
+import subprocess
+from pathlib import Path
+from typing import Any
+
+try:
+    import gymnasium as gym
+    import numpy as np
+    from gymnasium import spaces
+except ModuleNotFoundError as err:
+    missing = err.name or "required package"
+    raise SystemExit(
+        f"Missing Python dependency '{missing}'. Use the project RL venv instead of system Python:\n"
+        r"  .\.venv-rl\Scripts\python.exe tools\learning\smoke_full_run_env.py"
+        "\nIf the venv is not initialized, run:\n"
+        r"  python -m venv .venv-rl"
+        "\n"
+        r"  .\.venv-rl\Scripts\python.exe -m pip install -r tools\learning\requirements-hybrid-rl.txt"
+    ) from err
+
+from combat_rl_common import REPO_ROOT, find_release_binary
+
+MAX_ACTIONS = 256
+ACTION_FEATURES = 5
+BASE_OBS_DIM = 24
+OBS_DIM = BASE_OBS_DIM + (MAX_ACTIONS * ACTION_FEATURES)
+
+DECISION_TYPE_IDS = {
+    "none": 0,
+    "combat": 1,
+    "combat_hand_select": 2,
+    "combat_grid_select": 3,
+    "combat_discovery": 4,
+    "combat_scry": 5,
+    "combat_card_reward": 6,
+    "combat_stance": 7,
+    "reward": 8,
+    "campfire": 9,
+    "shop": 10,
+    "map": 11,
+    "event": 12,
+    "run_deck_selection": 13,
+    "boss_relic": 14,
+}
+
+ACTION_TYPE_IDS = {
+    "play_card": 1,
+    "use_potion": 2,
+    "discard_potion": 3,
+    "end_turn": 4,
+    "submit_card_choice": 5,
+    "submit_discover_choice": 6,
+    "select_map_node": 7,
+    "fly_to_node": 8,
+    "select_event_option": 9,
+    "campfire_option": 10,
+    "event_choice": 11,
+    "submit_scry_discard": 12,
+    "submit_selection": 13,
+    "submit_hand_select": 14,
+    "submit_grid_select": 15,
+    "submit_deck_select": 16,
+    "claim_reward": 17,
+    "select_card": 18,
+    "buy_card": 19,
+    "buy_relic": 20,
+    "buy_potion": 21,
+    "purge_card": 22,
+    "submit_relic_choice": 23,
+    "proceed": 24,
+    "cancel": 25,
+}
+
+
+def _stable_token(text: str | None, buckets: int = 4096) -> float:
+    if not text:
+        return 0.0
+    digest = hashlib.md5(text.encode("utf-8")).digest()
+    value = int.from_bytes(digest[:4], "little") % buckets
+    return float(value) / float(max(buckets - 1, 1))
+
+
+class FullRunEnvDriver:
+    def __init__(self, binary: Path | None = None) -> None:
+        self.binary = find_release_binary(binary, "full_run_env_driver")
+        self.proc: subprocess.Popen[str] | None = None
+
+    def start(self) -> None:
+        if self.proc is not None:
+            return
+        self.proc = subprocess.Popen(
+            [str(self.binary)],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            encoding="utf-8",
+            cwd=str(REPO_ROOT),
+            bufsize=1,
+        )
+        self.request({"cmd": "ping"})
+
+    def close(self) -> None:
+        if self.proc is None:
+            return
+        try:
+            self.request({"cmd": "close"})
+        except Exception:
+            pass
+        proc = self.proc
+        self.proc = None
+        try:
+            proc.terminate()
+        except Exception:
+            pass
+        try:
+            proc.wait(timeout=1.0)
+        except Exception:
+            pass
+        for handle in (proc.stdin, proc.stdout, proc.stderr):
+            if handle is None:
+                continue
+            try:
+                handle.close()
+            except Exception:
+                pass
+
+    def request(self, payload: dict[str, Any]) -> dict[str, Any]:
+        self.start()
+        assert self.proc is not None and self.proc.stdin is not None and self.proc.stdout is not None
+        self.proc.stdin.write(json.dumps(payload, ensure_ascii=False) + "\n")
+        self.proc.stdin.flush()
+        line = self.proc.stdout.readline()
+        if not line:
+            stderr = ""
+            if self.proc.stderr is not None:
+                try:
+                    stderr = self.proc.stderr.read()
+                except Exception:
+                    stderr = ""
+            raise RuntimeError(f"full_run_env_driver exited unexpectedly: {stderr}")
+        response = json.loads(line)
+        if not response.get("ok"):
+            raise RuntimeError(str(response.get("error") or "unknown full_run_env_driver error"))
+        return response
+
+
+class FullRunGymEnv(gym.Env[np.ndarray, int]):
+    metadata = {"render_modes": []}
+
+    def __init__(
+        self,
+        driver_binary: Path | None = None,
+        seed: int = 1,
+        ascension: int = 0,
+        final_act: bool = False,
+        player_class: str = "ironclad",
+        max_episode_steps: int = 5000,
+        invalid_action_penalty: float = -2.0,
+    ) -> None:
+        super().__init__()
+        self.driver = FullRunEnvDriver(driver_binary)
+        self._rng = random.Random(seed)
+        self.seed = int(seed)
+        self.ascension = int(ascension)
+        self.final_act = bool(final_act)
+        self.player_class = str(player_class)
+        self.max_episode_steps = int(max_episode_steps)
+        self.invalid_action_penalty = float(invalid_action_penalty)
+        self._last_response: dict[str, Any] | None = None
+        self._step_count = 0
+        self.observation_space = spaces.Box(low=-1e6, high=1e6, shape=(OBS_DIM,), dtype=np.float32)
+        self.action_space = spaces.Discrete(MAX_ACTIONS)
+
+    def reset(
+        self,
+        *,
+        seed: int | None = None,
+        options: dict[str, Any] | None = None,
+    ) -> tuple[np.ndarray, dict[str, Any]]:
+        super().reset(seed=seed)
+        if seed is not None:
+            self._rng.seed(seed)
+        options = options or {}
+        run_seed = int(options.get("run_seed") or options.get("seed") or self._rng.randrange(1, 2**31))
+        response = self.driver.request(
+            {
+                "cmd": "reset",
+                "seed": run_seed,
+                "ascension": int(options.get("ascension", self.ascension)),
+                "final_act": bool(options.get("final_act", self.final_act)),
+                "class": str(options.get("class", self.player_class)),
+                "max_steps": int(options.get("max_steps", self.max_episode_steps)),
+            }
+        )
+        self._last_response = response
+        self._step_count = 0
+        return self._encode_observation(response), self._info_from_response(response, invalid_action=False)
+
+    def step(self, action: int) -> tuple[np.ndarray, float, bool, bool, dict[str, Any]]:
+        if self._last_response is None:
+            raise RuntimeError("FullRunGymEnv.step called before reset")
+        action_mask = self.action_masks()
+        invalid_action = bool(action < 0 or action >= MAX_ACTIONS or not action_mask[action])
+        penalty = self.invalid_action_penalty if invalid_action else 0.0
+        if invalid_action:
+            legal_indices = np.flatnonzero(action_mask)
+            if len(legal_indices) == 0:
+                raise RuntimeError("no legal actions available for full-run env step")
+            action = int(legal_indices[0])
+
+        response = self.driver.request({"cmd": "step", "action_index": int(action)})
+        self._last_response = response
+        self._step_count += 1
+        terminated = bool(response.get("done"))
+        truncated = self._step_count >= self.max_episode_steps and not terminated
+        reward = float(response.get("reward") or 0.0) + penalty
+        info = self._info_from_response(response, invalid_action=invalid_action)
+        info["invalid_action_penalty"] = penalty
+        return self._encode_observation(response), reward, terminated, truncated, info
+
+    def action_masks(self) -> np.ndarray:
+        mask = np.zeros(MAX_ACTIONS, dtype=bool)
+        if self._last_response is None:
+            return mask
+        payload = self._last_response.get("payload") or {}
+        current = list(payload.get("action_mask") or [])
+        limit = min(len(current), MAX_ACTIONS)
+        mask[:limit] = np.asarray(current[:limit], dtype=bool)
+        return mask
+
+    def sample_random_legal_action(self) -> int:
+        legal_indices = np.flatnonzero(self.action_masks())
+        if len(legal_indices) == 0:
+            return 0
+        return int(self._rng.choice([int(index) for index in legal_indices]))
+
+    def close(self) -> None:
+        self.driver.close()
+
+    def _encode_observation(self, response: dict[str, Any]) -> np.ndarray:
+        payload = response.get("payload") or {}
+        obs = payload.get("observation") or {}
+        combat = obs.get("combat") or {}
+        screen = obs.get("screen") or {}
+        info = response.get("info") or {}
+        mask = list(payload.get("action_mask") or [])
+        candidates = list(payload.get("action_candidates") or [])
+        base = [
+            float(obs.get("act") or 0),
+            float(obs.get("floor") or 0),
+            float(obs.get("current_hp") or 0),
+            float(obs.get("max_hp") or 0),
+            float(obs.get("hp_ratio_milli") or 0) / 1000.0,
+            float(obs.get("gold") or 0),
+            float(obs.get("deck_size") or 0),
+            float(obs.get("relic_count") or 0),
+            float(obs.get("potion_slots") or 0),
+            float(obs.get("filled_potion_slots") or 0),
+            float(payload.get("legal_action_count") or 0),
+            float(DECISION_TYPE_IDS.get(str(obs.get("decision_type") or "none"), 0)),
+            float(combat.get("player_block") or 0),
+            float(combat.get("energy") or 0),
+            float(combat.get("turn_count") or 0),
+            float(combat.get("hand_count") or 0),
+            float(combat.get("draw_count") or 0),
+            float(combat.get("discard_count") or 0),
+            float(combat.get("exhaust_count") or 0),
+            float(combat.get("alive_monster_count") or 0),
+            float(combat.get("total_monster_hp") or 0),
+            float(combat.get("visible_incoming_damage") or 0),
+            float(info.get("combat_win_count") or 0),
+            float(screen.get("reward_item_count") or 0),
+        ]
+        values = list(base)
+        for index in range(min(len(candidates), MAX_ACTIONS)):
+            candidate = candidates[index] or {}
+            action = candidate.get("action") or {}
+            action_type = str(action.get("type") or "")
+            values.extend(
+                [
+                    1.0 if index < len(mask) and bool(mask[index]) else 0.0,
+                    float(ACTION_TYPE_IDS.get(action_type, 0)),
+                    _stable_token(str(candidate.get("action_key") or "")),
+                    float(candidate.get("action_id") or 0) / float(2**32 - 1),
+                    float(index),
+                ]
+            )
+        missing_action_features = (MAX_ACTIONS * ACTION_FEATURES) - (len(values) - BASE_OBS_DIM)
+        values.extend([0.0] * max(missing_action_features, 0))
+        return np.asarray(values[:OBS_DIM], dtype=np.float32)
+
+    def _info_from_response(self, response: dict[str, Any], invalid_action: bool) -> dict[str, Any]:
+        payload = response.get("payload") or {}
+        obs = payload.get("observation") or {}
+        info = dict(response.get("info") or {})
+        info.update(
+            {
+                "invalid_action": invalid_action,
+                "reward": response.get("reward"),
+                "done": response.get("done"),
+                "chosen_action_key": response.get("chosen_action_key"),
+                "legal_action_count": payload.get("legal_action_count"),
+                "decision_type": obs.get("decision_type"),
+                "engine_state": obs.get("engine_state"),
+                "act": obs.get("act"),
+                "floor": obs.get("floor"),
+                "current_hp": obs.get("current_hp"),
+                "max_hp": obs.get("max_hp"),
+                "gold": obs.get("gold"),
+                "deck_size": obs.get("deck_size"),
+                "relic_count": obs.get("relic_count"),
+                "action_candidates": payload.get("action_candidates") or [],
+                "raw_payload": payload,
+            }
+        )
+        return info
+
+
+__all__ = [
+    "FullRunEnvDriver",
+    "FullRunGymEnv",
+    "MAX_ACTIONS",
+    "OBS_DIM",
+]

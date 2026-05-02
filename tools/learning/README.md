@@ -14,7 +14,7 @@ What it is for:
 What it is not for:
 
 - runtime inference in `live_comm`
-- full-run RL control
+- production full-run RL control
 - a second source of engine truth
 
 ## Setup
@@ -23,9 +23,12 @@ What it is not for:
 python -m venv .venv-rl
 .\.venv-rl\Scripts\python -m pip install -r tools/learning/requirements-hybrid-rl.txt
 cargo build --release --bin combat_env_driver
+cargo build --release --bin full_run_env_driver
 ```
 
-The default environment is CPU-first. Treat CUDA as a separate install profile.
+Use `.\.venv-rl\Scripts\python.exe` for learning scripts. The system Python is
+intentionally not treated as the RL environment. The default environment is
+CPU-first. Treat CUDA as a separate install profile.
 
 ## Current Learning Surfaces
 
@@ -44,6 +47,24 @@ The cleanest current combat learning surface is the structured contract:
   - `tools/learning/train_structured_combat_ppo.py`
 
 This is the most explicit observation/action contract in the repo right now.
+
+### Full-Run Environment Contract
+
+The first full-run learning surface is intentionally only an environment
+contract:
+
+- Rust episode wrapper:
+  - `sts_simulator::cli::full_run_smoke::FullRunEnv`
+- Rust bridge:
+  - `full_run_env_driver`
+- Python bridge:
+  - `tools/learning/full_run_env.py`
+- smoke script:
+  - `tools/learning/smoke_full_run_env.py`
+
+This surface exists to prove offline full-run `reset/step/action_mask/done`
+behavior before training. It is not yet a policy or a claim that PPO is the main
+solution.
 
 ### Simulator-Outcome Baselines
 
@@ -134,6 +155,20 @@ cargo build --release --bin combat_env_driver
 ```powershell
 .\.venv-rl\Scripts\python tools/learning/train_structured_combat_ppo.py
 ```
+
+### Smoke-test the full-run Gym bridge
+
+```powershell
+cargo build --release --bin full_run_env_driver
+.\.venv-rl\Scripts\python.exe tools/learning/smoke_full_run_env.py `
+  --episodes 100 `
+  --seed 14000 `
+  --max-steps 5000
+```
+
+Expected contract-level failures are `crash_count`, `illegal_action_count`, or
+`no_progress_count` greater than zero. A normal random policy should usually die;
+the smoke only validates the bridge and action contract.
 
 ### Run a start-spec curriculum sweep
 
