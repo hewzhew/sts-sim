@@ -170,6 +170,21 @@ Expected contract-level failures are `crash_count`, `illegal_action_count`, or
 `no_progress_count` greater than zero. A normal random policy should usually die;
 the smoke only validates the bridge and action contract.
 
+### Run a tiny full-run PPO sanity check
+
+```powershell
+.\.venv-rl\Scripts\python.exe tools/learning/train_full_run_maskable_ppo.py `
+  --timesteps 2048 `
+  --n-envs 2 `
+  --eval-episodes 50 `
+  --seed 30000 `
+  --eval-seed 40000
+```
+
+This is only a bridge/training-loop sanity check. Treat its output as evidence
+that `MaskablePPO` can consume the full-run environment and legal action mask,
+not as a meaningful policy-strength result.
+
 ### Run a start-spec curriculum sweep
 
 ```powershell
