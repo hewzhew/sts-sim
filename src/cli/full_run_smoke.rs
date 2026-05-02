@@ -18,10 +18,26 @@ use crate::state::core::{
     RunResult,
 };
 use crate::state::run::RunState;
+use crate::state::selection::EngineDiagnosticSeverity;
 use crate::state::selection::{SelectionResolution, SelectionScope, SelectionTargetRef};
 
 pub const FULL_RUN_OBSERVATION_SCHEMA_VERSION: &str = "full_run_observation_v0";
 pub const FULL_RUN_ACTION_SCHEMA_VERSION: &str = "full_run_action_candidate_set_v0";
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RunPolicyKind {
+    RandomMasked,
+    RuleBaselineV0,
+}
+
+impl RunPolicyKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::RandomMasked => "random_masked",
+            Self::RuleBaselineV0 => "rule_baseline_v0",
+        }
+    }
+}
 
 #[derive(Clone, Debug)]
 pub struct RunBatchConfig {
@@ -31,6 +47,7 @@ pub struct RunBatchConfig {
     pub final_act: bool,
     pub player_class: &'static str,
     pub max_steps: usize,
+    pub policy: RunPolicyKind,
     pub trace_dir: Option<PathBuf>,
     pub determinism_check: bool,
 }
@@ -54,11 +71,16 @@ pub struct RunBatchSummary {
     pub average_floor: f32,
     pub median_floor: f32,
     pub average_steps: f32,
+    pub average_total_reward: f32,
+    pub average_combat_wins: f32,
+    pub average_legal_action_count: f32,
+    pub max_legal_action_count: usize,
     pub steps_per_second: f32,
     pub episodes_per_hour: f32,
     pub result_counts: std::collections::BTreeMap<String, usize>,
     pub death_floor_counts: std::collections::BTreeMap<String, usize>,
     pub act_counts: std::collections::BTreeMap<String, usize>,
+    pub decision_type_counts: std::collections::BTreeMap<String, usize>,
     pub episodes: Vec<RunEpisodeSummary>,
 }
 
@@ -77,6 +99,11 @@ pub struct RunEpisodeSummary {
     pub deterministic_replay_pass: Option<bool>,
     pub deterministic_replay_error: Option<String>,
     pub duration_ms: u128,
+    pub total_reward: f32,
+    pub combat_win_count: usize,
+    pub decision_type_counts: std::collections::BTreeMap<String, usize>,
+    pub average_legal_action_count: f32,
+    pub max_legal_action_count: usize,
     pub hp: i32,
     pub max_hp: i32,
     pub gold: i32,
@@ -278,6 +305,7 @@ enum EpisodePolicy {
     RandomMasked {
         rng: StsRng,
     },
+    RuleBaselineV0,
     Replay {
         actions: Vec<ClientInput>,
         cursor: usize,
@@ -290,6 +318,7 @@ struct EpisodeContext {
     combat_state: Option<CombatState>,
     stashed_event_combat: Option<EventCombatState>,
     forced_engine_ticks: usize,
+    combat_win_count: usize,
 }
 
 pub fn run_batch(config: &RunBatchConfig) -> Result<RunBatchSummary, String> {
@@ -317,15 +346,13 @@ pub fn run_batch(config: &RunBatchConfig) -> Result<RunBatchSummary, String> {
     for episode_id in 0..config.episodes {
         let seed = config.base_seed.wrapping_add(episode_id as u64);
         let policy_seed = seed ^ 0x9e37_79b9_7f4a_7c15;
-        let mut episode = run_episode(
-            config,
-            episode_id,
-            seed,
-            EpisodePolicy::RandomMasked {
+        let episode_policy = match config.policy {
+            RunPolicyKind::RandomMasked => EpisodePolicy::RandomMasked {
                 rng: StsRng::new(policy_seed),
             },
-            true,
-        );
+            RunPolicyKind::RuleBaselineV0 => EpisodePolicy::RuleBaselineV0,
+        };
+        let mut episode = run_episode(config, episode_id, seed, episode_policy, true);
 
         if config.determinism_check {
             let replay = run_episode(
@@ -378,6 +405,26 @@ pub fn run_batch(config: &RunBatchConfig) -> Result<RunBatchSummary, String> {
     };
     let median_floor = median_i32(&floors);
     let average_steps = total_steps as f32 / episodes.len().max(1) as f32;
+    let average_total_reward = episodes
+        .iter()
+        .map(|episode| episode.total_reward)
+        .sum::<f32>()
+        / episodes.len().max(1) as f32;
+    let average_combat_wins = episodes
+        .iter()
+        .map(|episode| episode.combat_win_count)
+        .sum::<usize>() as f32
+        / episodes.len().max(1) as f32;
+    let legal_action_count_sum = episodes
+        .iter()
+        .map(|episode| episode.average_legal_action_count * episode.steps as f32)
+        .sum::<f32>();
+    let average_legal_action_count = legal_action_count_sum / total_steps.max(1) as f32;
+    let max_legal_action_count = episodes
+        .iter()
+        .map(|episode| episode.max_legal_action_count)
+        .max()
+        .unwrap_or(0);
     let result_counts = count_by(episodes.iter().map(|episode| episode.result.clone()));
     let death_floor_counts = count_by(
         episodes
@@ -386,12 +433,20 @@ pub fn run_batch(config: &RunBatchConfig) -> Result<RunBatchSummary, String> {
             .map(|episode| episode.floor.to_string()),
     );
     let act_counts = count_by(episodes.iter().map(|episode| episode.act.to_string()));
+    let mut decision_type_counts = std::collections::BTreeMap::new();
+    for episode in &episodes {
+        for (decision_type, count) in &episode.decision_type_counts {
+            *decision_type_counts
+                .entry(decision_type.clone())
+                .or_insert(0) += *count;
+        }
+    }
 
     Ok(RunBatchSummary {
         observation_schema_version: FULL_RUN_OBSERVATION_SCHEMA_VERSION.to_string(),
         action_schema_version: FULL_RUN_ACTION_SCHEMA_VERSION.to_string(),
         action_mask_kind: "per_decision_candidate_set".to_string(),
-        policy: "random_masked".to_string(),
+        policy: config.policy.as_str().to_string(),
         episodes_requested: config.episodes,
         base_seed: config.base_seed,
         ascension: config.ascension,
@@ -405,11 +460,16 @@ pub fn run_batch(config: &RunBatchConfig) -> Result<RunBatchSummary, String> {
         average_floor,
         median_floor,
         average_steps,
+        average_total_reward,
+        average_combat_wins,
+        average_legal_action_count,
+        max_legal_action_count,
         steps_per_second: total_steps as f32 / elapsed,
         episodes_per_hour: episodes.len() as f32 / elapsed * 3600.0,
         result_counts,
         death_floor_counts,
         act_counts,
+        decision_type_counts,
         episodes,
     })
 }
@@ -449,6 +509,11 @@ fn run_episode(
                     deterministic_replay_pass: None,
                     deterministic_replay_error: None,
                     duration_ms: 0,
+                    total_reward: -100.0,
+                    combat_win_count: 0,
+                    decision_type_counts: std::collections::BTreeMap::new(),
+                    average_legal_action_count: 0.0,
+                    max_legal_action_count: 0,
                     hp: 0,
                     max_hp: 0,
                     gold: 0,
@@ -482,12 +547,16 @@ fn run_episode_inner(
         combat_state: None,
         stashed_event_combat: None,
         forced_engine_ticks: 0,
+        combat_win_count: 0,
     };
     let mut trace = Vec::new();
     let mut actions = Vec::new();
     let mut illegal_actions = 0usize;
     let mut crash = None;
     let mut terminal_reason = "step_cap".to_string();
+    let mut decision_type_counts = std::collections::BTreeMap::<String, usize>::new();
+    let mut legal_action_count_sum = 0usize;
+    let mut max_legal_action_count = 0usize;
 
     for step_index in 0..config.max_steps {
         if let Err(err) = prepare_decision_point(&mut ctx, config.max_steps) {
@@ -511,8 +580,14 @@ fn run_episode_inner(
             terminal_reason = "no_legal_actions".to_string();
             break;
         }
+        let current_decision_type = decision_type(&ctx.engine_state).to_string();
+        *decision_type_counts
+            .entry(current_decision_type.clone())
+            .or_insert(0) += 1;
+        legal_action_count_sum += legal_actions.len();
+        max_legal_action_count = max_legal_action_count.max(legal_actions.len());
 
-        let (chosen_action_index, action) = match choose_action(&mut policy, &legal_actions) {
+        let (chosen_action_index, action) = match choose_action(&mut policy, &ctx, &legal_actions) {
             Ok(action) => action,
             Err(err) => {
                 illegal_actions += 1;
@@ -535,7 +610,7 @@ fn run_episode_inner(
                 floor: ctx.run_state.floor_num,
                 act: ctx.run_state.act_num,
                 engine_state: engine_state_label(&ctx.engine_state).to_string(),
-                decision_type: decision_type(&ctx.engine_state).to_string(),
+                decision_type: current_decision_type,
                 hp: ctx.run_state.current_hp,
                 max_hp: ctx.run_state.max_hp,
                 gold: ctx.run_state.gold,
@@ -551,6 +626,7 @@ fn run_episode_inner(
             });
         }
         actions.push(action.clone());
+        let executed_action_key = action_key_for_input(&action, ctx.combat_state.as_ref());
 
         let keep_running = tick_run(
             &mut ctx.engine_state,
@@ -558,6 +634,15 @@ fn run_episode_inner(
             &mut ctx.combat_state,
             Some(action),
         );
+        if let Some(errors) = take_engine_error_diagnostics(&mut ctx) {
+            illegal_actions += 1;
+            crash = Some(format!(
+                "engine rejected legal action {executed_action_key}: {}",
+                errors.join("; ")
+            ));
+            terminal_reason = "engine_rejected_action".to_string();
+            break;
+        }
         finish_combat_if_needed(&mut ctx);
         if !keep_running {
             terminal_reason = "engine_stopped".to_string();
@@ -579,6 +664,14 @@ fn run_episode_inner(
         _ => "step_cap",
     }
     .to_string();
+    let average_legal_action_count = legal_action_count_sum as f32 / actions.len().max(1) as f32;
+    let total_reward = episode_reward(
+        &result,
+        ctx.run_state.floor_num,
+        ctx.combat_win_count,
+        ctx.run_state.current_hp,
+        ctx.run_state.max_hp,
+    );
 
     EpisodeRun {
         summary: RunEpisodeSummary {
@@ -595,6 +688,11 @@ fn run_episode_inner(
             deterministic_replay_pass: None,
             deterministic_replay_error: None,
             duration_ms: start.elapsed().as_millis(),
+            total_reward,
+            combat_win_count: ctx.combat_win_count,
+            decision_type_counts,
+            average_legal_action_count,
+            max_legal_action_count,
             hp: ctx.run_state.current_hp,
             max_hp: ctx.run_state.max_hp,
             gold: ctx.run_state.gold,
@@ -676,7 +774,11 @@ fn finish_combat_if_needed(ctx: &mut EpisodeContext) {
     if ctx.combat_state.is_none() {
         return;
     }
+    let survived_combat = !matches!(ctx.engine_state, EngineState::GameOver(_));
     ctx.combat_state = None;
+    if survived_combat {
+        ctx.combat_win_count += 1;
+    }
 
     let Some(event_combat) = ctx.stashed_event_combat.take() else {
         return;
@@ -704,8 +806,24 @@ fn finish_combat_if_needed(ctx: &mut EpisodeContext) {
     }
 }
 
+fn take_engine_error_diagnostics(ctx: &mut EpisodeContext) -> Option<Vec<String>> {
+    let combat = ctx.combat_state.as_mut()?;
+    let diagnostics = combat.take_engine_diagnostics();
+    let errors = diagnostics
+        .into_iter()
+        .filter(|diagnostic| diagnostic.severity == EngineDiagnosticSeverity::Error)
+        .map(|diagnostic| diagnostic.message)
+        .collect::<Vec<_>>();
+    if errors.is_empty() {
+        None
+    } else {
+        Some(errors)
+    }
+}
+
 fn choose_action(
     policy: &mut EpisodePolicy,
+    ctx: &EpisodeContext,
     legal_actions: &[ClientInput],
 ) -> Result<(usize, ClientInput), String> {
     match policy {
@@ -715,6 +833,10 @@ fn choose_action(
             } else {
                 rng.random_range(0, legal_actions.len() as i32 - 1) as usize
             };
+            Ok((idx, legal_actions[idx].clone()))
+        }
+        EpisodePolicy::RuleBaselineV0 => {
+            let idx = choose_rule_baseline_action(ctx, legal_actions);
             Ok((idx, legal_actions[idx].clone()))
         }
         EpisodePolicy::Replay { actions, cursor } => {
@@ -737,6 +859,575 @@ fn choose_action(
             }
         }
     }
+}
+
+fn choose_rule_baseline_action(ctx: &EpisodeContext, legal_actions: &[ClientInput]) -> usize {
+    let mut best_index = 0usize;
+    let mut best_score = i32::MIN;
+    for (index, action) in legal_actions.iter().enumerate() {
+        let score = rule_baseline_score(ctx, action);
+        if score > best_score {
+            best_index = index;
+            best_score = score;
+        }
+    }
+    best_index
+}
+
+fn rule_baseline_score(ctx: &EpisodeContext, action: &ClientInput) -> i32 {
+    match &ctx.engine_state {
+        EngineState::CombatPlayerTurn | EngineState::PendingChoice(_) => {
+            score_combat_action(ctx, action)
+        }
+        EngineState::RewardScreen(reward_state) => {
+            score_reward_action(&ctx.run_state, reward_state, action)
+        }
+        EngineState::MapNavigation => score_map_action(&ctx.run_state, action),
+        EngineState::EventRoom => score_event_action(action),
+        EngineState::BossRelicSelect(state) => score_boss_relic_action(state, action),
+        EngineState::Campfire => score_campfire_action(&ctx.run_state, action),
+        EngineState::Shop(shop) => score_shop_action(&ctx.run_state, shop, action),
+        EngineState::RunPendingChoice(choice) => {
+            let request = choice.selection_request(&ctx.run_state);
+            score_run_selection_action(&ctx.run_state, &request, action)
+        }
+        EngineState::CombatProcessing | EngineState::EventCombat(_) | EngineState::GameOver(_) => 0,
+    }
+}
+
+fn score_combat_action(ctx: &EpisodeContext, action: &ClientInput) -> i32 {
+    let Some(combat) = ctx.combat_state.as_ref() else {
+        return score_noncombat_fallback(action);
+    };
+    match (&ctx.engine_state, action) {
+        (
+            EngineState::PendingChoice(PendingChoice::DiscoverySelect(cards)),
+            ClientInput::SubmitDiscoverChoice(index),
+        )
+        | (
+            EngineState::PendingChoice(PendingChoice::CardRewardSelect { cards, .. }),
+            ClientInput::SubmitDiscoverChoice(index),
+        ) => cards
+            .get(*index)
+            .map(|card_id| 100 + rule_card_offer_score(*card_id, &ctx.run_state))
+            .unwrap_or(-1_000),
+        (
+            EngineState::PendingChoice(PendingChoice::CardRewardSelect { can_skip: true, .. }),
+            ClientInput::Cancel,
+        ) => 10,
+        (
+            EngineState::PendingChoice(PendingChoice::ScrySelect { .. }),
+            ClientInput::SubmitScryDiscard(indices),
+        ) => 10 + indices.len() as i32 * 8,
+        (
+            EngineState::PendingChoice(PendingChoice::StanceChoice),
+            ClientInput::SubmitDiscoverChoice(index),
+        ) => {
+            let unblocked = visible_unblocked_damage(combat);
+            match *index {
+                1 if unblocked > 0 => 100,
+                0 if unblocked == 0 => 80,
+                _ => 20,
+            }
+        }
+        (_, ClientInput::PlayCard { card_index, target }) => {
+            score_play_card_action(combat, *card_index, *target)
+        }
+        (_, ClientInput::UsePotion { .. }) => -1_000,
+        (_, ClientInput::DiscardPotion { .. }) => -50,
+        (_, ClientInput::EndTurn) => {
+            let playable_cards = combat
+                .zones
+                .hand
+                .iter()
+                .filter(|card| crate::content::cards::can_play_card(card, combat).is_ok())
+                .count();
+            if playable_cards == 0 {
+                20
+            } else {
+                -200 - visible_unblocked_damage(combat) * 4
+            }
+        }
+        _ => score_noncombat_fallback(action),
+    }
+}
+
+fn score_play_card_action(combat: &CombatState, card_index: usize, target: Option<usize>) -> i32 {
+    let Some(card) = combat.zones.hand.get(card_index) else {
+        return -1_000;
+    };
+    let def = crate::content::cards::get_card_definition(card.id);
+    let evaluated = crate::content::cards::evaluate_card_for_play(card, combat, target);
+    let incoming = visible_incoming_damage(combat);
+    let unblocked = (incoming - combat.entities.player.block).max(0);
+    let hp = combat.entities.player.current_hp.max(1);
+    let danger = unblocked >= hp / 3 || unblocked >= 12;
+    let mut score = 20 - evaluated.get_cost().max(0) as i32 * 12;
+
+    let damage = estimated_card_damage(combat, &evaluated, target);
+    let block = evaluated
+        .base_block_mut
+        .max(def.base_block + card.upgrades as i32 * def.upgrade_block);
+    if damage > 0 {
+        score += damage * if danger { 8 } else { 11 };
+        if estimated_action_kills_all(combat, &evaluated, target) {
+            score += 900;
+        } else if target
+            .and_then(|target_id| alive_monster_by_id(combat, target_id))
+            .is_some_and(|monster| damage >= monster.current_hp + monster.block)
+        {
+            score += 180;
+        }
+    }
+    if block > 0 {
+        let useful_block = block.min(unblocked.max(0));
+        score += useful_block * if danger { 18 } else { 6 };
+        score += (block - useful_block).max(0) * 2;
+    }
+
+    let specific_bonus = match card.id {
+        CardId::Bash | CardId::Uppercut | CardId::Shockwave => 45,
+        CardId::Disarm => 70,
+        CardId::Inflame | CardId::DemonForm | CardId::FeelNoPain | CardId::DarkEmbrace => 55,
+        CardId::ShrugItOff | CardId::PommelStrike | CardId::BattleTrance => 35,
+        CardId::Offering | CardId::Adrenaline => 80,
+        CardId::Immolate | CardId::Feed | CardId::Reaper => 65,
+        CardId::Flex | CardId::Bloodletting | CardId::SeeingRed | CardId::SpotWeakness => 35,
+        CardId::Defend if danger => 25,
+        CardId::Strike if !danger => 8,
+        _ => 0,
+    };
+
+    match def.card_type {
+        crate::content::cards::CardType::Power => {
+            score += if danger && unblocked >= hp { -20 } else { 8 };
+        }
+        crate::content::cards::CardType::Skill => {
+            score += 12;
+        }
+        crate::content::cards::CardType::Attack => {
+            score += if incoming == 0 { 20 } else { 8 };
+        }
+        crate::content::cards::CardType::Status | crate::content::cards::CardType::Curse => {
+            score -= 80;
+        }
+    }
+
+    score += specific_bonus;
+    if damage == 0 && block == 0 && specific_bonus <= 0 {
+        score -= 350;
+    }
+
+    score
+}
+
+fn estimated_card_damage(
+    combat: &CombatState,
+    card: &crate::runtime::combat::CombatCard,
+    target: Option<usize>,
+) -> i32 {
+    let def = crate::content::cards::get_card_definition(card.id);
+    if def.is_multi_damage || matches!(def.target, crate::content::cards::CardTarget::AllEnemy) {
+        if !card.multi_damage.is_empty() {
+            return card
+                .multi_damage
+                .iter()
+                .take(alive_monster_count(combat))
+                .copied()
+                .sum();
+        }
+        return card.base_damage_mut.max(0) * alive_monster_count(combat) as i32;
+    }
+
+    let damage = card.base_damage_mut.max(0);
+    if let Some(target_id) = target {
+        if let Some(monster) = alive_monster_by_id(combat, target_id) {
+            return damage.min(monster.current_hp + monster.block);
+        }
+    }
+    damage
+}
+
+fn estimated_action_kills_all(
+    combat: &CombatState,
+    card: &crate::runtime::combat::CombatCard,
+    target: Option<usize>,
+) -> bool {
+    let alive = combat
+        .entities
+        .monsters
+        .iter()
+        .filter(|monster| !monster.is_dying && !monster.is_escaped && !monster.half_dead)
+        .collect::<Vec<_>>();
+    if alive.is_empty() {
+        return false;
+    }
+    let def = crate::content::cards::get_card_definition(card.id);
+    if def.is_multi_damage || matches!(def.target, crate::content::cards::CardTarget::AllEnemy) {
+        if !card.multi_damage.is_empty() {
+            return alive.iter().enumerate().all(|(idx, monster)| {
+                card.multi_damage.get(idx).copied().unwrap_or(0)
+                    >= monster.current_hp + monster.block
+            });
+        }
+        return alive
+            .iter()
+            .all(|monster| card.base_damage_mut >= monster.current_hp + monster.block);
+    }
+    if alive.len() == 1 {
+        return target
+            .and_then(|target_id| alive_monster_by_id(combat, target_id))
+            .is_some_and(|monster| card.base_damage_mut >= monster.current_hp + monster.block);
+    }
+    false
+}
+
+fn alive_monster_by_id(
+    combat: &CombatState,
+    target_id: usize,
+) -> Option<&crate::runtime::combat::MonsterEntity> {
+    combat.entities.monsters.iter().find(|monster| {
+        monster.id == target_id && !monster.is_dying && !monster.is_escaped && !monster.half_dead
+    })
+}
+
+fn alive_monster_count(combat: &CombatState) -> usize {
+    combat
+        .entities
+        .monsters
+        .iter()
+        .filter(|monster| !monster.is_dying && !monster.is_escaped && !monster.half_dead)
+        .count()
+}
+
+fn visible_unblocked_damage(combat: &CombatState) -> i32 {
+    (visible_incoming_damage(combat) - combat.entities.player.block).max(0)
+}
+
+fn visible_incoming_damage(combat: &CombatState) -> i32 {
+    combat
+        .entities
+        .monsters
+        .iter()
+        .filter(|monster| !monster.is_dying && !monster.is_escaped && !monster.half_dead)
+        .map(|monster| {
+            crate::projection::combat::monster_preview_total_damage_in_combat(combat, monster)
+        })
+        .sum()
+}
+
+fn score_reward_action(
+    run_state: &RunState,
+    reward_state: &RewardState,
+    action: &ClientInput,
+) -> i32 {
+    if let Some(cards) = &reward_state.pending_card_choice {
+        return match action {
+            ClientInput::SelectCard(index) => cards
+                .get(*index)
+                .map(|card| rule_card_offer_score(card.id, run_state))
+                .unwrap_or(-1_000),
+            ClientInput::Proceed => 5,
+            _ => -100,
+        };
+    }
+
+    match action {
+        ClientInput::ClaimReward(index) => reward_state
+            .items
+            .get(*index)
+            .map(|item| match item {
+                RewardItem::Gold { amount } | RewardItem::StolenGold { amount } => 60 + amount / 8,
+                RewardItem::Relic { .. } => 120,
+                RewardItem::Potion { .. } => {
+                    if run_state.potions.iter().any(Option::is_none) {
+                        55
+                    } else {
+                        10
+                    }
+                }
+                RewardItem::Card { .. } => 70,
+                RewardItem::EmeraldKey | RewardItem::SapphireKey => 25,
+            })
+            .unwrap_or(-1_000),
+        ClientInput::Proceed => 0,
+        _ => -100,
+    }
+}
+
+fn score_map_action(run_state: &RunState, action: &ClientInput) -> i32 {
+    let ClientInput::SelectMapNode(x) = action else {
+        return score_noncombat_fallback(action);
+    };
+    let target_y = if run_state.map.current_y == -1 {
+        0
+    } else if run_state.map.current_y == 14 {
+        15
+    } else {
+        run_state.map.current_y + 1
+    };
+    if target_y == 15 {
+        return 200;
+    }
+    let room_type = run_state
+        .map
+        .graph
+        .get(target_y as usize)
+        .and_then(|row| row.get(*x))
+        .and_then(|node| node.class);
+    let hp_ratio = run_state.current_hp * 100 / run_state.max_hp.max(1);
+    match room_type {
+        Some(RoomType::MonsterRoomElite) if hp_ratio >= 70 => 70,
+        Some(RoomType::MonsterRoomElite) => -20,
+        Some(RoomType::RestRoom) if hp_ratio < 70 => 90,
+        Some(RoomType::RestRoom) => 45,
+        Some(RoomType::TreasureRoom) => 80,
+        Some(RoomType::ShopRoom) if run_state.gold >= 150 => 75,
+        Some(RoomType::ShopRoom) => 25,
+        Some(RoomType::EventRoom) => 55,
+        Some(RoomType::MonsterRoom) => 50,
+        Some(RoomType::MonsterRoomBoss) => 200,
+        Some(RoomType::TrueVictoryRoom) => 300,
+        None => 0,
+    }
+}
+
+fn score_event_action(action: &ClientInput) -> i32 {
+    match action {
+        ClientInput::EventChoice(index) => 30 - *index as i32,
+        ClientInput::Proceed => 5,
+        _ => score_noncombat_fallback(action),
+    }
+}
+
+fn score_boss_relic_action(
+    state: &crate::rewards::state::BossRelicChoiceState,
+    action: &ClientInput,
+) -> i32 {
+    match action {
+        ClientInput::SubmitRelicChoice(index) => state
+            .relics
+            .get(*index)
+            .map(|relic| 80 + rule_relic_score(*relic))
+            .unwrap_or(-1_000),
+        ClientInput::Proceed => -40,
+        _ => score_noncombat_fallback(action),
+    }
+}
+
+fn score_campfire_action(run_state: &RunState, action: &ClientInput) -> i32 {
+    match action {
+        ClientInput::CampfireOption(CampfireChoice::Rest) => {
+            let hp_ratio = run_state.current_hp * 100 / run_state.max_hp.max(1);
+            if hp_ratio < 45 {
+                160
+            } else if hp_ratio < 70 {
+                90
+            } else {
+                10
+            }
+        }
+        ClientInput::CampfireOption(CampfireChoice::Smith(index)) => run_state
+            .master_deck
+            .get(*index)
+            .map(|card| rule_upgrade_score(card.id))
+            .unwrap_or(-1_000),
+        ClientInput::CampfireOption(CampfireChoice::Toke(index)) => run_state
+            .master_deck
+            .get(*index)
+            .map(|card| 60 + rule_remove_score(card.id, run_state))
+            .unwrap_or(-1_000),
+        ClientInput::CampfireOption(CampfireChoice::Dig) => 75,
+        ClientInput::CampfireOption(CampfireChoice::Lift) => 55,
+        ClientInput::CampfireOption(CampfireChoice::Recall) => -20,
+        _ => score_noncombat_fallback(action),
+    }
+}
+
+fn score_shop_action(
+    run_state: &RunState,
+    shop: &crate::shop::ShopState,
+    action: &ClientInput,
+) -> i32 {
+    match action {
+        ClientInput::PurgeCard(index) => run_state
+            .master_deck
+            .get(*index)
+            .map(|card| 100 + rule_remove_score(card.id, run_state))
+            .unwrap_or(-1_000),
+        ClientInput::BuyCard(index) => shop
+            .cards
+            .get(*index)
+            .map(|card| rule_card_offer_score(card.card_id, run_state) - card.price / 5)
+            .unwrap_or(-1_000),
+        ClientInput::BuyRelic(index) => shop
+            .relics
+            .get(*index)
+            .map(|relic| 70 + rule_relic_score(relic.relic_id) - relic.price / 8)
+            .unwrap_or(-1_000),
+        ClientInput::BuyPotion(index) => shop
+            .potions
+            .get(*index)
+            .map(|potion| 35 - potion.price / 8)
+            .unwrap_or(-1_000),
+        ClientInput::Proceed => 0,
+        _ => score_noncombat_fallback(action),
+    }
+}
+
+fn score_run_selection_action(
+    run_state: &RunState,
+    request: &crate::state::selection::SelectionRequest,
+    action: &ClientInput,
+) -> i32 {
+    match action {
+        ClientInput::SubmitSelection(selection) => {
+            let mut score = 20 + selection.selected.len() as i32 * 5;
+            for selected in &selection.selected {
+                let SelectionTargetRef::CardUuid(uuid) = selected;
+                if let Some(card) = run_state.master_deck.iter().find(|card| card.uuid == *uuid) {
+                    score += rule_remove_score(card.id, run_state).max(0) / 2;
+                }
+            }
+            score
+        }
+        ClientInput::Cancel if request.can_cancel => 5,
+        _ => score_noncombat_fallback(action),
+    }
+}
+
+fn score_noncombat_fallback(action: &ClientInput) -> i32 {
+    match action {
+        ClientInput::Proceed => 0,
+        ClientInput::Cancel => -5,
+        _ => 10,
+    }
+}
+
+fn rule_card_offer_score(card_id: CardId, run_state: &RunState) -> i32 {
+    let def = crate::content::cards::get_card_definition(card_id);
+    if matches!(
+        def.card_type,
+        crate::content::cards::CardType::Curse | crate::content::cards::CardType::Status
+    ) {
+        return -120;
+    }
+
+    let mut score = match def.rarity {
+        crate::content::cards::CardRarity::Basic => -60,
+        crate::content::cards::CardRarity::Common => 25,
+        crate::content::cards::CardRarity::Uncommon => 42,
+        crate::content::cards::CardRarity::Rare => 58,
+        crate::content::cards::CardRarity::Special => 20,
+        crate::content::cards::CardRarity::Curse => -120,
+    };
+    score += match def.card_type {
+        crate::content::cards::CardType::Attack => {
+            if run_state.master_deck.len() <= 14 {
+                20
+            } else {
+                5
+            }
+        }
+        crate::content::cards::CardType::Skill => 18,
+        crate::content::cards::CardType::Power => 28,
+        crate::content::cards::CardType::Status | crate::content::cards::CardType::Curse => -100,
+    };
+    score += def.base_damage.max(0) + def.base_block.max(0);
+    score += match card_id {
+        CardId::ShrugItOff | CardId::PommelStrike | CardId::BattleTrance => 45,
+        CardId::Disarm | CardId::Shockwave | CardId::Offering | CardId::Adrenaline => 65,
+        CardId::Immolate | CardId::Feed | CardId::Reaper | CardId::Bludgeon => 55,
+        CardId::Inflame | CardId::FeelNoPain | CardId::DarkEmbrace | CardId::DemonForm => 40,
+        CardId::Bash | CardId::Defend | CardId::Strike => -80,
+        CardId::PerfectedStrike | CardId::Clash => -45,
+        CardId::TwinStrike | CardId::SwordBoomerang => -20,
+        _ => 0,
+    };
+    let copies = run_state
+        .master_deck
+        .iter()
+        .filter(|card| card.id == card_id)
+        .count() as i32;
+    score -= copies * 12;
+    if run_state.master_deck.len() >= 22 && def.card_type == crate::content::cards::CardType::Attack
+    {
+        score -= 20;
+    }
+    score
+}
+
+fn rule_remove_score(card_id: CardId, run_state: &RunState) -> i32 {
+    let def = crate::content::cards::get_card_definition(card_id);
+    if def.card_type == crate::content::cards::CardType::Curse {
+        return 180;
+    }
+    match card_id {
+        CardId::Strike => 115,
+        CardId::Defend => {
+            let defend_count = run_state
+                .master_deck
+                .iter()
+                .filter(|card| card.id == CardId::Defend)
+                .count();
+            if defend_count > 4 {
+                75
+            } else {
+                35
+            }
+        }
+        _ if crate::content::cards::is_starter_basic(card_id) => 70,
+        _ if def.card_type == crate::content::cards::CardType::Status => 90,
+        _ => -40,
+    }
+}
+
+fn rule_upgrade_score(card_id: CardId) -> i32 {
+    match card_id {
+        CardId::Bash => 95,
+        CardId::Inflame | CardId::ShrugItOff | CardId::PommelStrike | CardId::BattleTrance => 85,
+        CardId::Immolate | CardId::Feed | CardId::Offering | CardId::Adrenaline => 82,
+        CardId::Uppercut | CardId::Shockwave | CardId::Disarm => 78,
+        CardId::Defend => 50,
+        CardId::Strike => 20,
+        _ => {
+            let def = crate::content::cards::get_card_definition(card_id);
+            35 + def.upgrade_damage.max(0) * 3
+                + def.upgrade_block.max(0) * 3
+                + def.upgrade_magic.max(0) * 4
+        }
+    }
+}
+
+fn rule_relic_score(relic_id: RelicId) -> i32 {
+    match relic_id {
+        RelicId::BurningBlood => 30,
+        RelicId::QuestionCard | RelicId::SingingBowl | RelicId::MoltenEgg | RelicId::ToxicEgg => 45,
+        RelicId::BagOfPreparation | RelicId::Anchor | RelicId::Lantern => 55,
+        RelicId::CoffeeDripper | RelicId::RunicDome | RelicId::BustedCrown => -25,
+        _ => 20,
+    }
+}
+
+fn episode_reward(
+    result: &str,
+    floor: i32,
+    combat_win_count: usize,
+    current_hp: i32,
+    max_hp: i32,
+) -> f32 {
+    let terminal = match result {
+        "victory" => 100.0,
+        "defeat" => -10.0,
+        "crash" => -100.0,
+        _ => -2.0,
+    };
+    let hp_fraction = if max_hp > 0 {
+        current_hp.max(0) as f32 / max_hp as f32
+    } else {
+        0.0
+    };
+    floor.max(0) as f32 + combat_win_count as f32 * 2.0 + hp_fraction + terminal
 }
 
 fn legal_actions(
@@ -1112,10 +1803,16 @@ fn build_action_candidates(
 
 fn action_key_for_input(input: &ClientInput, combat: Option<&CombatState>) -> String {
     match input {
-        ClientInput::PlayCard { card_index, target } => format!(
-            "combat/play_card/hand:{card_index}/target:{}",
-            target_label(*target, combat)
-        ),
+        ClientInput::PlayCard { card_index, target } => {
+            let card_label = combat
+                .and_then(|combat| combat.zones.hand.get(*card_index))
+                .map(|card| format!("{:?}", card.id))
+                .unwrap_or_else(|| "unknown".to_string());
+            format!(
+                "combat/play_card/card:{card_label}/hand:{card_index}/target:{}",
+                target_label(*target, combat)
+            )
+        }
         ClientInput::UsePotion {
             potion_index,
             target,
@@ -1628,6 +2325,7 @@ mod tests {
             final_act: false,
             player_class: "Ironclad",
             max_steps: 50,
+            policy: RunPolicyKind::RandomMasked,
             trace_dir: None,
             determinism_check: true,
         };
@@ -1643,5 +2341,31 @@ mod tests {
         );
         assert_eq!(summary.action_mask_kind, "per_decision_candidate_set");
         assert_eq!(summary.deterministic_replay_pass_count, 1);
+        assert_eq!(summary.policy, "random_masked");
+        assert!(summary.max_legal_action_count > 0);
+        assert!(summary.decision_type_counts.values().sum::<usize>() > 0);
+    }
+
+    #[test]
+    fn rule_baseline_policy_runs_and_reports_metrics() {
+        let config = RunBatchConfig {
+            episodes: 1,
+            base_seed: 42,
+            ascension: 0,
+            final_act: false,
+            player_class: "Ironclad",
+            max_steps: 50,
+            policy: RunPolicyKind::RuleBaselineV0,
+            trace_dir: None,
+            determinism_check: true,
+        };
+
+        let summary = run_batch(&config).expect("one episode rule baseline smoke should run");
+        assert_eq!(summary.policy, "rule_baseline_v0");
+        assert_eq!(summary.episodes_completed, 1);
+        assert_eq!(summary.crash_count, 0);
+        assert_eq!(summary.illegal_action_count, 0);
+        assert_eq!(summary.deterministic_replay_pass_count, 1);
+        assert!(summary.average_legal_action_count > 0.0);
     }
 }

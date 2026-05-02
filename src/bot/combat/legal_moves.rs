@@ -24,6 +24,14 @@ pub(crate) fn engine_local_moves(engine: &EngineState, combat: &CombatState) -> 
                 if !potion.can_use {
                     continue;
                 }
+                if potion.id == crate::content::potions::PotionId::FairyPotion {
+                    continue;
+                }
+                if potion.id == crate::content::potions::PotionId::SmokeBomb
+                    && combat.meta.is_boss_fight
+                {
+                    continue;
+                }
                 if let Some(validation) =
                     targeting::validation_for_potion_target(potion.requires_target)
                 {
@@ -41,7 +49,15 @@ pub(crate) fn engine_local_moves(engine: &EngineState, combat: &CombatState) -> 
                 }
             }
 
+            let velvet_choker_locked = combat
+                .entities
+                .player
+                .has_relic(crate::content::relics::RelicId::VelvetChoker)
+                && combat.turn.counters.cards_played_this_turn >= 6;
             for (i, card) in combat.zones.hand.iter().enumerate() {
+                if velvet_choker_locked {
+                    continue;
+                }
                 if crate::content::cards::can_play_card(card, combat).is_ok() {
                     let target_type = crate::content::cards::effective_target(card);
                     if let Some(validation) = targeting::validation_for_card_target(target_type) {
@@ -538,6 +554,95 @@ mod tests {
                 .iter()
                 .any(|input| matches!(input, ClientInput::UsePotion { .. })),
             "engine-local enumeration should not emit can_use=false potion actions"
+        );
+    }
+
+    #[test]
+    fn engine_local_moves_skip_passive_fairy_potion_even_if_local_affordance_is_stale() {
+        let mut combat = build_fixture_combat();
+        combat.entities.potions = vec![
+            Some(crate::content::potions::Potion::with_affordance_truth(
+                crate::content::potions::PotionId::FairyPotion,
+                1,
+                true,
+                true,
+                false,
+            )),
+            None,
+            None,
+        ];
+
+        let inputs = engine_local_moves(&EngineState::CombatPlayerTurn, &combat);
+        assert!(
+            !inputs.iter().any(|input| matches!(
+                input,
+                ClientInput::UsePotion {
+                    potion_index: 0,
+                    ..
+                }
+            )),
+            "Fairy in a Bottle is passive and should not be a manual root action"
+        );
+    }
+
+    #[test]
+    fn engine_local_moves_skip_smoke_bomb_during_boss_combat() {
+        let mut combat = build_fixture_combat();
+        combat.meta.is_boss_fight = true;
+        combat.entities.potions = vec![
+            Some(crate::content::potions::Potion::with_affordance_truth(
+                crate::content::potions::PotionId::SmokeBomb,
+                1,
+                true,
+                true,
+                false,
+            )),
+            None,
+            None,
+        ];
+
+        let inputs = engine_local_moves(&EngineState::CombatPlayerTurn, &combat);
+        assert!(
+            !inputs.iter().any(|input| matches!(
+                input,
+                ClientInput::UsePotion {
+                    potion_index: 0,
+                    ..
+                }
+            )),
+            "Smoke Bomb is not usable in boss combat"
+        );
+    }
+
+    #[test]
+    fn engine_local_moves_skip_cards_when_velvet_choker_locked() {
+        let mut combat = build_fixture_combat();
+        combat.zones.hand = vec![crate::runtime::combat::CombatCard::new(
+            crate::content::cards::CardId::Apparition,
+            90_001,
+        )];
+        combat.turn.energy = 3;
+        combat.turn.counters.cards_played_this_turn = 6;
+        combat
+            .entities
+            .player
+            .relics
+            .push(crate::content::relics::RelicState::new(
+                crate::content::relics::RelicId::VelvetChoker,
+            ));
+
+        let inputs = engine_local_moves(&EngineState::CombatPlayerTurn, &combat);
+        assert!(
+            !inputs
+                .iter()
+                .any(|input| matches!(input, ClientInput::PlayCard { .. })),
+            "Velvet Choker prevents playing more than six cards in a turn, so card actions must not enter the legal mask"
+        );
+        assert!(
+            inputs
+                .iter()
+                .any(|input| matches!(input, ClientInput::EndTurn)),
+            "EndTurn should remain legal under Velvet Choker"
         );
     }
 

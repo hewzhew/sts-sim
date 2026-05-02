@@ -619,7 +619,7 @@ impl Potion {
         Self {
             id,
             uuid,
-            can_use: true,
+            can_use: id != PotionId::FairyPotion,
             can_discard: true,
             requires_target: definition.target_required,
         }

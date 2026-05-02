@@ -80,10 +80,20 @@ pub fn tick_engine(
     // Phase 1: pending choice overrides
     if let EngineState::PendingChoice(_) = engine_state {
         if let Some(cmd) = input {
-            if resolve_pending_choice(engine_state, combat_state, cmd).is_ok() {
-                if !matches!(engine_state, EngineState::PendingChoice(_)) {
-                    *engine_state = EngineState::CombatProcessing;
+            match resolve_pending_choice(engine_state, combat_state, cmd) {
+                Ok(()) => {
+                    if !matches!(engine_state, EngineState::PendingChoice(_)) {
+                        *engine_state = EngineState::CombatProcessing;
+                    }
                 }
+                Err(err) => record_engine_diagnostic(
+                    combat_state,
+                    EngineDiagnostic {
+                        severity: EngineDiagnosticSeverity::Error,
+                        class: EngineDiagnosticClass::Broken,
+                        message: format!("Rejected pending-choice input: {err}"),
+                    },
+                ),
             }
         }
         return true;
@@ -92,15 +102,27 @@ pub fn tick_engine(
     // Phase 2: process input
     if *engine_state == EngineState::CombatPlayerTurn {
         if let Some(cmd) = input {
-            if handle_player_turn_input(engine_state, combat_state, cmd).is_ok() {
-                // After a card play, actions (damage, block, etc.) are queued.
-                // Transition to CombatProcessing to drain the queue.
-                if combat_state.has_pending_actions() || !combat_state.zones.queued_cards.is_empty()
-                {
-                    *engine_state = EngineState::CombatProcessing;
+            match handle_player_turn_input(engine_state, combat_state, cmd) {
+                Ok(()) => {
+                    // After a card play, actions (damage, block, etc.) are queued.
+                    // Transition to CombatProcessing to drain the queue.
+                    if combat_state.has_pending_actions()
+                        || !combat_state.zones.queued_cards.is_empty()
+                    {
+                        *engine_state = EngineState::CombatProcessing;
+                    }
                 }
-            } else {
-                return true;
+                Err(err) => {
+                    record_engine_diagnostic(
+                        combat_state,
+                        EngineDiagnostic {
+                            severity: EngineDiagnosticSeverity::Error,
+                            class: EngineDiagnosticClass::Broken,
+                            message: format!("Rejected player-turn input: {err}"),
+                        },
+                    );
+                    return true;
+                }
             }
         } else {
             return true;
@@ -884,16 +906,16 @@ fn resolve_pending_choice(
         } => pending_choices::handle_scry(engine_state, combat_state, cards.len(), input),
         PendingChoice::HandSelect {
             candidate_uuids,
-            min_cards: count,
-            max_cards: _,
+            min_cards,
+            max_cards,
             can_cancel: cancellable,
             reason,
         } => pending_choices::handle_hand_select(
             engine_state,
             combat_state,
             &candidate_uuids,
-            count as usize,
-            false,
+            max_cards as usize,
+            min_cards == max_cards,
             cancellable,
             reason,
             input,

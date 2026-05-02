@@ -92,7 +92,7 @@ enum Commands {
         /// Maximum decision steps per episode before step-cap termination.
         #[arg(long, default_value_t = 2000)]
         max_steps: usize,
-        /// Policy name. Currently only random_masked is supported.
+        /// Policy name: random_masked or rule_baseline_v0.
         #[arg(long, default_value = "random_masked")]
         policy: String,
         /// Optional output directory for per-episode action traces.
@@ -3773,12 +3773,18 @@ fn main() {
             summary_out,
             determinism_check,
         } => {
-            if policy != "random_masked" {
-                eprintln!(
-                    "unsupported policy '{policy}'; currently only random_masked is available"
-                );
-                std::process::exit(2);
-            }
+            let policy_kind = match policy.to_ascii_lowercase().as_str() {
+                "random_masked" => sts_simulator::cli::full_run_smoke::RunPolicyKind::RandomMasked,
+                "rule_baseline_v0" => {
+                    sts_simulator::cli::full_run_smoke::RunPolicyKind::RuleBaselineV0
+                }
+                other => {
+                    eprintln!(
+                        "unsupported policy '{other}'; expected random_masked or rule_baseline_v0"
+                    );
+                    std::process::exit(2);
+                }
+            };
             let player_class = match class.to_ascii_lowercase().as_str() {
                 "ironclad" | "red" => "Ironclad",
                 "silent" | "green" => "Silent",
@@ -3798,6 +3804,7 @@ fn main() {
                 final_act: *final_act,
                 player_class,
                 max_steps: *max_steps,
+                policy: policy_kind,
                 trace_dir: trace_dir.clone(),
                 determinism_check: *determinism_check,
             };
