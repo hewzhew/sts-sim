@@ -533,6 +533,53 @@ HTML = r"""<!doctype html>
       line-height: 1.5;
       margin-top: 8px;
     }
+    .context-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+    .context-card {
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: #fbfcfd;
+      padding: 9px;
+      min-width: 0;
+    }
+    .context-title {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 650;
+      margin-bottom: 6px;
+    }
+    .kv {
+      display: grid;
+      grid-template-columns: minmax(116px, 1fr) auto;
+      gap: 4px 8px;
+      font-size: 12px;
+      line-height: 1.35;
+    }
+    .kv-key {
+      color: var(--muted);
+      word-break: keep-all;
+    }
+    .kv-value {
+      font-weight: 600;
+      text-align: right;
+    }
+    .pill-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 5px;
+    }
+    .pill {
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: #fff;
+      padding: 3px 7px;
+      font-size: 12px;
+      overflow-wrap: anywhere;
+    }
     .grid2 {
       display: grid;
       grid-template-columns: minmax(0, 1.2fr) minmax(280px, .8fr);
@@ -872,6 +919,11 @@ HTML = r"""<!doctype html>
         scenario.category,
         scenario.decision_type,
         scenario.context_note,
+        ...objectSearchValues(scenario.observation),
+        ...objectSearchValues(scenario.deck),
+        ...(scenario.relics || []),
+        ...(scenario.potions || []),
+        ...(scenario.feature_limitations || []),
         ...((scenario.human_label || {}).rationale_tags || []),
         (scenario.human_label || {}).evidence || "",
         ...(scenario.candidates || []).map((candidate) => `${candidate.id} ${candidate.label} ${candidate.card || ""}`)
@@ -917,6 +969,7 @@ HTML = r"""<!doctype html>
             <div class="context">${escapeHtml(scenario.context_note || "")}</div>
           </div>
           <div class="panel-body">
+            ${renderScenarioContext(scenario)}
             <div class="mode-row">
               <select class="mode-select" id="labelMode" data-testid="label-mode">
                 ${labelModes.map((mode) => `<option value="${mode}" ${mode === label.mode ? "selected" : ""}>${mode}</option>`).join("")}
@@ -949,6 +1002,62 @@ HTML = r"""<!doctype html>
         </div>
       `;
       wireScenarioControls(scenario);
+    }
+
+    function objectSearchValues(value) {
+      if (!value || typeof value !== "object") return [];
+      if (Array.isArray(value)) return value.map((item) => String(item));
+      return Object.entries(value).map(([key, item]) => `${key} ${String(item)}`);
+    }
+
+    function renderScenarioContext(scenario) {
+      const cards = [
+        renderKvCard("Observation", scenario.observation),
+        renderKvCard("Deck summary", scenario.deck),
+        renderListCard("Relics", scenario.relics),
+        renderListCard("Potions", scenario.potions),
+        renderListCard("Limitations", scenario.feature_limitations),
+      ].filter(Boolean);
+      if (!cards.length) {
+        return '<div class="context-card"><div class="context-title">Context</div><div class="kv-value">No structured context in this review file.</div></div>';
+      }
+      return `<div class="context-grid">${cards.join("")}</div>`;
+    }
+
+    function renderKvCard(title, value) {
+      if (!value || typeof value !== "object" || Array.isArray(value)) return "";
+      const entries = Object.entries(value).filter(([, item]) => item !== undefined && item !== null && item !== "");
+      if (!entries.length) return "";
+      return `
+        <div class="context-card">
+          <div class="context-title">${escapeHtml(title)}</div>
+          <div class="kv">
+            ${entries.map(([key, item]) => `
+              <div class="kv-key">${escapeHtml(key)}</div>
+              <div class="kv-value">${escapeHtml(formatContextValue(item))}</div>
+            `).join("")}
+          </div>
+        </div>
+      `;
+    }
+
+    function renderListCard(title, value) {
+      const items = Array.isArray(value) ? value.filter((item) => item !== undefined && item !== null && item !== "") : [];
+      if (!items.length) return "";
+      return `
+        <div class="context-card">
+          <div class="context-title">${escapeHtml(title)}</div>
+          <div class="pill-list">
+            ${items.map((item) => `<span class="pill">${escapeHtml(formatContextValue(item))}</span>`).join("")}
+          </div>
+        </div>
+      `;
+    }
+
+    function formatContextValue(value) {
+      if (Array.isArray(value)) return value.join(", ");
+      if (value && typeof value === "object") return JSON.stringify(value);
+      return String(value);
     }
 
     function renderCandidateTable(scenario) {

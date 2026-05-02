@@ -240,6 +240,10 @@ def evaluate_scenario(
         "category": scenario.get("category"),
         "decision_type": scenario.get("decision_type"),
         "context_note": scenario.get("context_note"),
+        "observation": scenario.get("observation") or {},
+        "deck": scenario.get("deck") or {},
+        "relics": scenario.get("relics") or [],
+        "potions": scenario.get("potions") or [],
         "feature_limitations": feature_limitations(scenario),
         "human_label": scenario.get("human_label") or {},
         "candidates": review_candidates(candidates),
@@ -577,8 +581,19 @@ def review_candidates(candidates: list[dict[str, Any]]) -> list[dict[str, Any]]:
 def feature_limitations(scenario: dict[str, Any]) -> list[str]:
     decision_type = str(scenario.get("decision_type") or "")
     limitations = []
+    observation = scenario.get("observation") or {}
     if decision_type in {"boss_relic", "map"}:
         limitations.append("model_obs_v0_only_encodes_action_key_for_this_candidate_type")
+    if decision_type == "reward_card_choice" and observation.get("post_boss_reward") is True:
+        non_rare = []
+        for candidate in scenario.get("candidates") or []:
+            if str(candidate.get("kind") or "") == "skip":
+                continue
+            card = candidate.get("card") or {}
+            if str(card.get("rarity") or "").lower() != "rare":
+                non_rare.append(str(candidate.get("id") or candidate.get("label") or "unknown"))
+        if non_rare:
+            limitations.append("invalid_post_boss_reward_contains_non_rare_card")
     if str((scenario.get("human_label") or {}).get("mode") or "") == "no_signal":
         limitations.append("human_label_marks_no_local_training_signal")
     return limitations
@@ -651,6 +666,11 @@ def build_human_review(report: dict[str, Any]) -> dict[str, Any]:
                 "category": scenario.get("category"),
                 "decision_type": scenario.get("decision_type"),
                 "context_note": scenario.get("context_note"),
+                "observation": scenario.get("observation") or {},
+                "deck": scenario.get("deck") or {},
+                "relics": scenario.get("relics") or [],
+                "potions": scenario.get("potions") or [],
+                "feature_limitations": scenario.get("feature_limitations") or [],
                 "candidates": scenario.get("candidates"),
                 "human_label": scenario.get("human_label"),
                 "policy_top_choices": {

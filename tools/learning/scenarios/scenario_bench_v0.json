@@ -172,13 +172,15 @@
       }
     },
     {
-      "id": "card_reward_hexaghost_disarm_003",
+      "id": "card_reward_pre_hexaghost_disarm_003",
       "category": "card_reward",
       "decision_type": "reward_card_choice",
-      "context_note": "Act 1 boss is Hexaghost; deck has enough frontload but limited mitigation.",
+      "context_note": "Pre-boss hallway/elite card reward before known Hexaghost; this is not a post-boss rare reward.",
       "observation": {
         "act": 1,
         "floor": 12,
+        "reward_source": "pre_boss_hallway_or_elite",
+        "post_boss_reward": false,
         "current_hp": 43,
         "max_hp": 80,
         "gold": 134,
@@ -250,7 +252,7 @@
           "hp_pressure"
         ],
         "evidence": "human_prior",
-        "reason": "Disarm is a high-impact mitigation card against multi-hit boss patterns."
+        "reason": "Disarm is a high-impact mitigation card against Hexaghost multi-hit patterns; this case is explicitly a pre-boss non-rare reward, not an Act boss reward."
       }
     },
     {
