@@ -907,9 +907,7 @@ fn probe_action_key(combat: &CombatState, action: &ClientInput) -> String {
                 format!(
                     "combat/play_card/card:{:?}/hand:{card_index}/target:{}",
                     card.id,
-                    target
-                        .map(|target| target.to_string())
-                        .unwrap_or_else(|| "none".to_string())
+                    probe_target_label(combat, *target)
                 )
             })
             .unwrap_or_else(|| format!("{action:?}")),
@@ -921,6 +919,19 @@ fn probe_action_key(combat: &CombatState, action: &ClientInput) -> String {
             format!("combat/grid_select/uuids:{}", uuid_list_key(uuids))
         }
         _ => format!("{action:?}"),
+    }
+}
+
+fn probe_target_label(combat: &CombatState, target: Option<usize>) -> String {
+    match target {
+        None => "none".to_string(),
+        Some(entity_id) => combat
+            .entities
+            .monsters
+            .iter()
+            .position(|monster| monster.id == entity_id)
+            .map(|slot| format!("monster_slot:{slot}"))
+            .unwrap_or_else(|| format!("entity:{entity_id}")),
     }
 }
 
