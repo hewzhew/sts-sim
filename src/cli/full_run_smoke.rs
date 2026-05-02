@@ -2002,7 +2002,17 @@ fn score_shop_action(
         ClientInput::BuyPotion(index) => shop
             .potions
             .get(*index)
-            .map(|potion| 35 - potion.price / 8)
+            .map(|potion| {
+                if run_state
+                    .relics
+                    .iter()
+                    .any(|relic| relic.id == RelicId::Sozu)
+                {
+                    -80 - potion.price / 4
+                } else {
+                    35 - potion.price / 8
+                }
+            })
             .unwrap_or(-1_000),
         ClientInput::Proceed => 0,
         _ => score_noncombat_fallback(action),
@@ -3246,6 +3256,80 @@ mod tests {
         );
         assert_eq!(step.info.seed, 42);
         assert!(step.chosen_action_key.is_some());
+    }
+
+    #[test]
+    fn legal_shop_actions_keep_sozu_potion_purchase_as_executable_resource_loss() {
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        run_state.gold = 200;
+        run_state
+            .relics
+            .push(crate::content::relics::RelicState::new(RelicId::Sozu));
+        let mut shop = crate::shop::ShopState::new();
+        shop.potions.push(crate::shop::ShopPotion {
+            potion_id: crate::content::potions::PotionId::BlockPotion,
+            price: 50,
+            can_buy: true,
+            blocked_reason: None,
+        });
+
+        let actions = legal_shop_actions(&run_state, &shop);
+
+        assert!(actions
+            .iter()
+            .any(|action| matches!(action, ClientInput::Proceed)));
+        assert!(
+            actions
+                .iter()
+                .any(|action| matches!(action, ClientInput::BuyPotion(0))),
+            "Sozu shop potion buys are executable: they spend gold and absorb the potion"
+        );
+    }
+
+    #[test]
+    fn legal_shop_actions_keep_affordable_potions_with_empty_slot_without_sozu() {
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        run_state.gold = 200;
+        let mut shop = crate::shop::ShopState::new();
+        shop.potions.push(crate::shop::ShopPotion {
+            potion_id: crate::content::potions::PotionId::BlockPotion,
+            price: 50,
+            can_buy: true,
+            blocked_reason: None,
+        });
+
+        let actions = legal_shop_actions(&run_state, &shop);
+
+        assert!(
+            actions
+                .iter()
+                .any(|action| matches!(action, ClientInput::BuyPotion(0))),
+            "normal affordable shop potion buys should remain legal"
+        );
+    }
+
+    #[test]
+    fn rule_baseline_scores_sozu_potion_purchase_as_resource_waste() {
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        run_state.gold = 200;
+        run_state
+            .relics
+            .push(crate::content::relics::RelicState::new(RelicId::Sozu));
+        let mut shop = crate::shop::ShopState::new();
+        shop.potions.push(crate::shop::ShopPotion {
+            potion_id: crate::content::potions::PotionId::BlockPotion,
+            price: 50,
+            can_buy: true,
+            blocked_reason: None,
+        });
+
+        let buy_score = score_shop_action(&run_state, &shop, &ClientInput::BuyPotion(0));
+        let leave_score = score_shop_action(&run_state, &shop, &ClientInput::Proceed);
+
+        assert!(
+            buy_score < leave_score,
+            "Sozu potion purchase remains executable but should be scored as resource waste"
+        );
     }
 
     #[test]

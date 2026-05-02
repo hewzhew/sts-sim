@@ -185,6 +185,22 @@ This is only a bridge/training-loop sanity check. Treat its output as evidence
 that `MaskablePPO` can consume the full-run environment and legal action mask,
 not as a meaningful policy-strength result.
 
+### Run the full-run sanity matrix
+
+```powershell
+cargo build --release --bin full_run_env_driver --bin sts_dev_tool
+.\.venv-rl\Scripts\python.exe tools/learning/benchmark_full_run_ppo_sanity.py `
+  --timesteps 2048 `
+  --train-seeds 30000,31000,32000 `
+  --eval-seeds 40000,50000,60000 `
+  --eval-episodes 100
+```
+
+This compares Rust `random_masked`, Rust `rule_baseline_v0`, and several PPO
+training seeds across several evaluation seed blocks. Use it to catch contract
+failures, seed flukes, step-cap behavior, and obvious action collapse before
+making any claim about learned full-run strength.
+
 ### Run a start-spec curriculum sweep
 
 ```powershell

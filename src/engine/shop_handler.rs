@@ -236,6 +236,12 @@ pub fn handle(
             ClientInput::BuyPotion(idx) => {
                 if idx < shop.potions.len() && run_state.gold >= shop.potions[idx].price {
                     if has_relic(run_state, RelicId::Sozu) {
+                        let purchased = shop.potions.remove(idx);
+                        run_state
+                            .change_gold_with_source(-purchased.price, DomainEventSource::Shop);
+                        if has_relic(run_state, RelicId::Courier) {
+                            replace_shop_potion_slot(run_state, shop, idx);
+                        }
                     } else if let Some(empty_slot) = run_state.find_empty_potion_slot() {
                         let purchased = shop.potions.remove(idx);
                         run_state
@@ -433,6 +439,54 @@ mod tests {
         assert!(next.is_none());
         assert_eq!(shop.potions.len(), 1);
         assert!(run_state.potions.iter().any(|p| p.is_some()));
+    }
+
+    #[test]
+    fn sozu_shop_potion_purchase_spends_gold_and_absorbs_offer_without_potion() {
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        run_state.gold = 200;
+        run_state.relics.push(RelicState::new(RelicId::Sozu));
+        let starting_potions = run_state.potions.clone();
+
+        let mut shop = ShopState::new();
+        shop.potions.push(ShopPotion {
+            potion_id: PotionId::BlockPotion,
+            price: 50,
+            can_buy: true,
+            blocked_reason: None,
+        });
+
+        let next = handle(&mut run_state, &mut shop, Some(ClientInput::BuyPotion(0)));
+
+        assert!(next.is_none());
+        assert_eq!(run_state.gold, 150);
+        assert_eq!(run_state.potions, starting_potions);
+        assert!(shop.potions.is_empty());
+    }
+
+    #[test]
+    fn courier_refills_sozu_absorbed_shop_potion_purchase() {
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        run_state.gold = 200;
+        run_state.relics.clear();
+        run_state.relics.push(RelicState::new(RelicId::Sozu));
+        run_state.relics.push(RelicState::new(RelicId::Courier));
+        let starting_potions = run_state.potions.clone();
+
+        let mut shop = ShopState::new();
+        shop.potions.push(ShopPotion {
+            potion_id: PotionId::BlockPotion,
+            price: 50,
+            can_buy: true,
+            blocked_reason: None,
+        });
+
+        let next = handle(&mut run_state, &mut shop, Some(ClientInput::BuyPotion(0)));
+
+        assert!(next.is_none());
+        assert_eq!(run_state.gold, 150);
+        assert_eq!(run_state.potions, starting_potions);
+        assert_eq!(shop.potions.len(), 1);
     }
 
     #[test]
