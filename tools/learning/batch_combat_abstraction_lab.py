@@ -425,6 +425,14 @@ def is_actionable(kind: str) -> bool:
     return kind in {"survival_rescue", "tactical_win", "major_hp_efficiency", "hp_efficiency"}
 
 
+def has_outcome_signal(chosen: dict[str, Any], best: dict[str, Any]) -> bool:
+    return (
+        survival_rank(best) > survival_rank(chosen)
+        or estimate(best, "combat_win_prob") > estimate(chosen, "combat_win_prob") + 0.001
+        or estimate(best, "expected_end_hp") - estimate(chosen, "expected_end_hp") >= 5.0
+    )
+
+
 def plan_readiness(
     chosen: dict[str, Any] | None,
     best: dict[str, Any] | None,
@@ -453,16 +461,20 @@ def plan_readiness(
         return "diagnostic_only", False, reasons
 
     if pressure in {"chip_pressure", "medium_pressure", "high_pressure"}:
-        if "missed_full_defense" in flag_set or "ignored_attack_pressure" in flag_set:
+        if ("missed_full_defense" in flag_set or "ignored_attack_pressure" in flag_set) and has_outcome_signal(chosen, best):
             return "defense_plan_probe", True, ["attack_pressure_contract"]
-        if chosen_fit != best_fit:
+        if chosen_fit != best_fit and has_outcome_signal(chosen, best):
             return "combat_plan_probe", True, ["different_turn_plan_fit"]
         if kind in {"hp_efficiency", "major_hp_efficiency", "tactical_win"}:
             return "combat_plan_probe", True, [kind]
         return "calibration_only", False, ["same_or_weak_combat_plan"]
     if pressure in {"no_attack", "blocked_attack"}:
-        if "wasted_no_attack_window" in flag_set or chosen_fit != best_fit:
+        best_uses_window = best_fit in {"uses_window", "decisive"}
+        chosen_wastes_window = chosen_fit in {"wastes_window", "neutral"}
+        if ("wasted_no_attack_window" in flag_set or (best_uses_window and chosen_wastes_window)) and has_outcome_signal(chosen, best):
             return "window_plan_probe", True, ["window_resource_allocation"]
+        if kind in {"hp_efficiency", "major_hp_efficiency", "tactical_win"} and best_uses_window:
+            return "combat_plan_probe", True, [kind]
         return "calibration_only", False, ["same_or_weak_window_plan"]
     return "diagnostic_only", False, [f"unsupported_pressure:{pressure}"]
 
