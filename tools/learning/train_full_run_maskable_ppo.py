@@ -15,6 +15,7 @@ from sb3_contrib import MaskablePPO
 from stable_baselines3.common.vec_env import DummyVecEnv, VecMonitor
 
 from combat_rl_common import REPO_ROOT, write_json
+from full_run_candidate_policy import FullRunCandidateScorerPolicy
 from full_run_env import FullRunGymEnv
 
 
@@ -39,6 +40,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--learning-rate", type=float, default=3e-4)
     parser.add_argument("--gamma", type=float, default=0.99)
     parser.add_argument("--ent-coef", type=float, default=0.01)
+    parser.add_argument("--policy-arch", choices=["mlp", "candidate_scorer"], default="mlp")
+    parser.add_argument("--candidate-state-dim", type=int, default=128)
+    parser.add_argument("--candidate-action-dim", type=int, default=96)
+    parser.add_argument("--candidate-hidden-dim", type=int, default=128)
     return parser.parse_args()
 
 
@@ -54,6 +59,16 @@ def make_env(args: argparse.Namespace, env_seed: int):
         )
 
     return _factory
+
+
+def policy_spec(args: argparse.Namespace):
+    if args.policy_arch == "candidate_scorer":
+        return FullRunCandidateScorerPolicy, {
+            "state_dim": args.candidate_state_dim,
+            "candidate_dim": args.candidate_action_dim,
+            "hidden_dim": args.candidate_hidden_dim,
+        }
+    return "MlpPolicy", {"net_arch": [64, 64]}
 
 
 def evaluate_random(args: argparse.Namespace, base_seed: int, episodes: int) -> dict[str, Any]:
@@ -198,6 +213,14 @@ def summarize_rows(rows: list[dict[str, Any]], elapsed: float) -> dict[str, Any]
         "terminal_reason_counts": dict(
             Counter(str(row.get("terminal_reason") or "unknown") for row in rows)
         ),
+        "failure_examples": [
+            row
+            for row in rows
+            if row.get("crash")
+            or int(row.get("invalid_actions") or 0) > 0
+            or row.get("terminal_reason") == "no_progress_loop"
+            or bool(row.get("truncated"))
+        ][:5],
     }
 
 
@@ -205,8 +228,8 @@ def main() -> int:
     args = parse_args()
     artifact_dir = REPO_ROOT / "tools" / "artifacts" / "full_run_rl"
     artifact_dir.mkdir(parents=True, exist_ok=True)
-    model_out = args.model_out or artifact_dir / "full_run_maskable_ppo_sanity.zip"
-    metrics_out = args.metrics_out or artifact_dir / "full_run_maskable_ppo_sanity.json"
+    model_out = args.model_out or artifact_dir / f"full_run_{args.policy_arch}_ppo_sanity.zip"
+    metrics_out = args.metrics_out or artifact_dir / f"full_run_{args.policy_arch}_ppo_sanity.json"
 
     random_eval = evaluate_random(args, args.eval_seed, args.eval_episodes)
 
@@ -214,8 +237,9 @@ def main() -> int:
         DummyVecEnv([make_env(args, args.seed + idx) for idx in range(max(int(args.n_envs), 1))])
     )
     train_start = time.perf_counter()
+    policy, policy_kwargs = policy_spec(args)
     model = MaskablePPO(
-        "MlpPolicy",
+        policy,
         vec_env,
         verbose=0,
         seed=args.seed,
@@ -224,7 +248,7 @@ def main() -> int:
         learning_rate=args.learning_rate,
         gamma=args.gamma,
         ent_coef=args.ent_coef,
-        policy_kwargs={"net_arch": [64, 64]},
+        policy_kwargs=policy_kwargs,
     )
     model.learn(total_timesteps=args.timesteps, progress_bar=False)
     train_seconds = time.perf_counter() - train_start
@@ -263,6 +287,10 @@ def main() -> int:
             "learning_rate": args.learning_rate,
             "gamma": args.gamma,
             "ent_coef": args.ent_coef,
+            "policy_arch": args.policy_arch,
+            "candidate_state_dim": args.candidate_state_dim,
+            "candidate_action_dim": args.candidate_action_dim,
+            "candidate_hidden_dim": args.candidate_hidden_dim,
         },
         "train": {
             "seconds": train_seconds,

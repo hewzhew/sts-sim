@@ -219,14 +219,22 @@ pub struct RunCombatObservationV0 {
     pub player_hp: i32,
     pub player_block: i32,
     pub energy: i32,
+    pub combat_phase: String,
     pub turn_count: u32,
     pub hand_count: usize,
     pub draw_count: usize,
     pub discard_count: usize,
     pub exhaust_count: usize,
     pub alive_monster_count: usize,
+    pub dying_monster_count: usize,
+    pub half_dead_monster_count: usize,
+    pub zero_hp_monster_count: usize,
+    pub pending_rebirth_monster_count: usize,
     pub total_monster_hp: i32,
     pub visible_incoming_damage: i32,
+    pub pending_action_count: usize,
+    pub queued_card_count: usize,
+    pub limbo_count: usize,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -758,32 +766,72 @@ fn full_run_action_shaping_reward(ctx: &EpisodeContext, action: &ClientInput) ->
     let EngineState::RewardScreen(reward_state) = &ctx.engine_state else {
         return 0.0;
     };
-    let Some(cards) = &reward_state.pending_card_choice else {
-        return 0.0;
-    };
+    if let Some(cards) = &reward_state.pending_card_choice {
+        return match action {
+            ClientInput::SelectCard(index) => cards
+                .get(*index)
+                .map(|card| {
+                    let score = rule_card_offer_score(card.id, &ctx.run_state);
+                    (score as f32 / 300.0).clamp(-0.20, 0.35)
+                })
+                .unwrap_or(0.0),
+            ClientInput::Proceed => {
+                let best_score = cards
+                    .iter()
+                    .map(|card| rule_card_offer_score(card.id, &ctx.run_state))
+                    .max()
+                    .unwrap_or(0);
+                if best_score >= 70 {
+                    -0.18
+                } else if best_score <= 20 {
+                    0.04
+                } else {
+                    -0.05
+                }
+            }
+            _ => 0.0,
+        };
+    }
+
     match action {
-        ClientInput::SelectCard(index) => cards
+        ClientInput::ClaimReward(index) => reward_state
+            .items
             .get(*index)
-            .map(|card| {
-                let score = rule_card_offer_score(card.id, &ctx.run_state);
-                (score as f32 / 300.0).clamp(-0.20, 0.35)
-            })
+            .map(|item| reward_item_shaping_value(&ctx.run_state, item).min(0.35))
             .unwrap_or(0.0),
         ClientInput::Proceed => {
-            let best_score = cards
+            let skipped_value = reward_state
+                .items
                 .iter()
-                .map(|card| rule_card_offer_score(card.id, &ctx.run_state))
-                .max()
-                .unwrap_or(0);
-            if best_score >= 70 {
-                -0.18
-            } else if best_score <= 20 {
-                0.04
-            } else {
-                -0.05
-            }
+                .map(|item| reward_item_shaping_value(&ctx.run_state, item).max(0.0))
+                .sum::<f32>();
+            -skipped_value.min(0.60)
         }
         _ => 0.0,
+    }
+}
+
+fn reward_item_shaping_value(run_state: &RunState, item: &RewardItem) -> f32 {
+    match item {
+        RewardItem::Gold { amount } | RewardItem::StolenGold { amount } => {
+            (*amount as f32 / 240.0).clamp(0.05, 0.25)
+        }
+        RewardItem::Relic { .. } => 0.30,
+        RewardItem::Potion { .. } => {
+            if run_state
+                .relics
+                .iter()
+                .any(|relic| relic.id == RelicId::Sozu)
+            {
+                -0.05
+            } else if run_state.potions.iter().any(Option::is_none) {
+                0.08
+            } else {
+                0.0
+            }
+        }
+        RewardItem::Card { .. } => 0.12,
+        RewardItem::EmeraldKey | RewardItem::SapphireKey => 0.04,
     }
 }
 
@@ -1524,6 +1572,7 @@ fn prepare_decision_point(ctx: &mut EpisodeContext, max_steps: usize) -> Result<
     let mut local_ticks = 0usize;
     loop {
         init_combat_if_needed(ctx)?;
+        reconcile_terminal_combat_player_turn(ctx);
         finish_combat_if_needed(ctx);
 
         if !matches!(ctx.engine_state, EngineState::CombatProcessing) {
@@ -1538,6 +1587,7 @@ fn prepare_decision_point(ctx: &mut EpisodeContext, max_steps: usize) -> Result<
         );
         ctx.forced_engine_ticks += 1;
         local_ticks += 1;
+        reconcile_terminal_combat_player_turn(ctx);
         finish_combat_if_needed(ctx);
         if !keep_running || matches!(ctx.engine_state, EngineState::GameOver(_)) {
             return Ok(());
@@ -1572,6 +1622,53 @@ fn init_combat_if_needed(ctx: &mut EpisodeContext) -> Result<(), String> {
     }
 
     Ok(())
+}
+
+fn reconcile_terminal_combat_player_turn(ctx: &mut EpisodeContext) {
+    if !matches!(ctx.engine_state, EngineState::CombatPlayerTurn) {
+        return;
+    }
+    let Some(combat) = ctx.combat_state.as_ref() else {
+        return;
+    };
+    if combat_is_waiting_for_victory_settlement(combat) {
+        ctx.engine_state = EngineState::CombatProcessing;
+    }
+}
+
+fn combat_is_waiting_for_victory_settlement(combat: &CombatState) -> bool {
+    !combat.entities.monsters.is_empty()
+        && !combat.has_pending_actions()
+        && combat.zones.queued_cards.is_empty()
+        && combat
+            .entities
+            .monsters
+            .iter()
+            .all(|monster| monster_is_defeated_for_victory_settlement(combat, monster))
+}
+
+fn monster_is_defeated_for_victory_settlement(
+    combat: &CombatState,
+    monster: &crate::runtime::combat::MonsterEntity,
+) -> bool {
+    if monster.is_escaped {
+        return true;
+    }
+    if monster.half_dead {
+        return false;
+    }
+    if monster.current_hp > 0 && !monster.is_dying {
+        return false;
+    }
+    !crate::content::powers::store::powers_for(combat, monster.id).is_some_and(|powers| {
+        powers.iter().any(|power| {
+            matches!(
+                power.power_type,
+                crate::content::powers::PowerId::Regrow
+                    | crate::content::powers::PowerId::Unawakened
+            )
+        })
+    })
 }
 
 fn finish_combat_if_needed(ctx: &mut EpisodeContext) {
@@ -2567,6 +2664,40 @@ fn build_combat_observation(combat: &CombatState) -> RunCombatObservationV0 {
         .iter()
         .filter(|monster| !monster.is_dying && !monster.is_escaped && !monster.half_dead)
         .collect::<Vec<_>>();
+    let dying_monster_count = combat
+        .entities
+        .monsters
+        .iter()
+        .filter(|monster| monster.is_dying)
+        .count();
+    let half_dead_monster_count = combat
+        .entities
+        .monsters
+        .iter()
+        .filter(|monster| monster.half_dead)
+        .count();
+    let zero_hp_monster_count = combat
+        .entities
+        .monsters
+        .iter()
+        .filter(|monster| monster.current_hp <= 0)
+        .count();
+    let pending_rebirth_monster_count = combat
+        .entities
+        .monsters
+        .iter()
+        .filter(|monster| {
+            crate::content::powers::store::powers_for(combat, monster.id).is_some_and(|powers| {
+                powers.iter().any(|power| {
+                    matches!(
+                        power.power_type,
+                        crate::content::powers::PowerId::Regrow
+                            | crate::content::powers::PowerId::Unawakened
+                    )
+                })
+            })
+        })
+        .count();
     let visible_incoming_damage = alive_monsters
         .iter()
         .map(|monster| {
@@ -2578,17 +2709,33 @@ fn build_combat_observation(combat: &CombatState) -> RunCombatObservationV0 {
         player_hp: combat.entities.player.current_hp,
         player_block: combat.entities.player.block,
         energy: combat.turn.energy as i32,
+        combat_phase: combat_phase_label(combat).to_string(),
         turn_count: combat.turn.turn_count,
         hand_count: combat.zones.hand.len(),
         draw_count: combat.zones.draw_pile.len(),
         discard_count: combat.zones.discard_pile.len(),
         exhaust_count: combat.zones.exhaust_pile.len(),
         alive_monster_count: alive_monsters.len(),
+        dying_monster_count,
+        half_dead_monster_count,
+        zero_hp_monster_count,
+        pending_rebirth_monster_count,
         total_monster_hp: alive_monsters
             .iter()
             .map(|monster| monster.current_hp.max(0))
             .sum(),
         visible_incoming_damage,
+        pending_action_count: combat.action_queue_len(),
+        queued_card_count: combat.zones.queued_cards.len(),
+        limbo_count: combat.zones.limbo.len(),
+    }
+}
+
+fn combat_phase_label(combat: &CombatState) -> &'static str {
+    match combat.turn.current_phase {
+        crate::runtime::combat::CombatPhase::PlayerTurn => "player_turn",
+        crate::runtime::combat::CombatPhase::TurnTransition => "turn_transition",
+        crate::runtime::combat::CombatPhase::MonsterTurn => "monster_turn",
     }
 }
 
@@ -3491,14 +3638,22 @@ mod tests {
                 player_hp: 40,
                 player_block: 0,
                 energy: 1,
+                combat_phase: "player_turn".to_string(),
                 turn_count: 2,
                 hand_count: 1,
                 draw_count: 5,
                 discard_count: 4,
                 exhaust_count: 0,
                 alive_monster_count: 1,
+                dying_monster_count: 0,
+                half_dead_monster_count: 0,
+                zero_hp_monster_count: 0,
+                pending_rebirth_monster_count: 0,
                 total_monster_hp: 12,
                 visible_incoming_damage: 6,
+                pending_action_count: 0,
+                queued_card_count: 0,
+                limbo_count: 0,
             }),
             screen: empty_screen_observation(),
         };
@@ -3601,6 +3756,41 @@ mod tests {
     }
 
     #[test]
+    fn terminal_combat_player_turn_is_settled_before_actions_are_exposed() {
+        let mut run_state = RunState::new(42, 0, false, "Ironclad");
+        let mut combat = init_combat(&mut run_state);
+        combat.clear_pending_actions();
+        combat.zones.queued_cards.clear();
+        combat.zones.limbo.clear();
+        combat
+            .zones
+            .limbo
+            .push(crate::runtime::combat::CombatCard::new(
+                CardId::Strike,
+                1234,
+            ));
+        for monster in &mut combat.entities.monsters {
+            monster.current_hp = 0;
+            monster.is_dying = true;
+            monster.half_dead = false;
+        }
+        let mut ctx = EpisodeContext {
+            engine_state: EngineState::CombatPlayerTurn,
+            run_state,
+            combat_state: Some(combat),
+            stashed_event_combat: None,
+            forced_engine_ticks: 0,
+            combat_win_count: 0,
+        };
+
+        prepare_decision_point(&mut ctx, 100).expect("terminal combat should settle");
+
+        assert!(matches!(ctx.engine_state, EngineState::RewardScreen(_)));
+        assert!(ctx.combat_state.is_none());
+        assert_eq!(ctx.combat_win_count, 1);
+    }
+
+    #[test]
     fn reward_card_choice_candidates_include_card_features_and_deck_summary() {
         let mut run_state = RunState::new(1, 0, false, "Ironclad");
         run_state.master_deck.clear();
@@ -3653,6 +3843,43 @@ mod tests {
         assert!(
             take_reward > skip_reward,
             "card choice shaping should give the learner an immediate non-oracle hint"
+        );
+    }
+
+    #[test]
+    fn reward_item_screen_shaping_discourages_skipping_unclaimed_resources() {
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        run_state.potions = vec![None, None, None];
+        let reward_state = RewardState {
+            items: vec![
+                RewardItem::Gold { amount: 42 },
+                RewardItem::Card {
+                    cards: vec![crate::rewards::state::RewardCard::new(
+                        CardId::PommelStrike,
+                        0,
+                    )],
+                },
+            ],
+            ..RewardState::new()
+        };
+        let ctx = EpisodeContext {
+            engine_state: EngineState::RewardScreen(reward_state),
+            run_state,
+            combat_state: None,
+            stashed_event_combat: None,
+            forced_engine_ticks: 0,
+            combat_win_count: 0,
+        };
+
+        let claim_gold = full_run_action_shaping_reward(&ctx, &ClientInput::ClaimReward(0));
+        let claim_card = full_run_action_shaping_reward(&ctx, &ClientInput::ClaimReward(1));
+        let proceed = full_run_action_shaping_reward(&ctx, &ClientInput::Proceed);
+
+        assert!(claim_gold > 0.0);
+        assert!(claim_card > 0.0);
+        assert!(
+            proceed < 0.0,
+            "skipping unclaimed reward items should carry an immediate resource-loss hint"
         );
     }
 

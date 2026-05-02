@@ -57,6 +57,64 @@ fn resolve_victory_hooks_immediately(combat_state: &mut CombatState) {
     }
 }
 
+fn settle_victory_if_ready(
+    engine_state: &mut EngineState,
+    combat_state: &mut CombatState,
+) -> Option<bool> {
+    if !combat_state.entities.monsters.iter().all(|m| {
+        if m.is_escaped {
+            return true;
+        }
+        if m.half_dead {
+            return false;
+        }
+        if m.current_hp > 0 {
+            return false;
+        }
+        let is_pending_rebirth = crate::content::powers::store::powers_for(combat_state, m.id)
+            .is_some_and(|powers| {
+                powers.iter().any(|p| {
+                    matches!(
+                        p.power_type,
+                        crate::content::powers::PowerId::Regrow
+                            | crate::content::powers::PowerId::Unawakened
+                    )
+                })
+            });
+        !is_pending_rebirth
+    }) {
+        return None;
+    }
+
+    if !combat_state.turn.counters.victory_triggered {
+        combat_state.turn.mark_victory_triggered();
+        resolve_victory_hooks_immediately(combat_state);
+    }
+
+    if !combat_state.has_pending_actions()
+        && combat_state.zones.queued_cards.is_empty()
+        && !combat_state.zones.limbo.is_empty()
+    {
+        combat_state
+            .zones
+            .discard_pile
+            .append(&mut combat_state.zones.limbo);
+    }
+
+    // Java does not cut off queued onUseCard / onDeath aftermath when the last monster dies.
+    // Finish draining any already-queued actions (e.g. Rage block, relic hooks, death hooks)
+    // before transitioning to rewards.
+    if !combat_state.has_pending_actions()
+        && combat_state.zones.limbo.is_empty()
+        && combat_state.zones.queued_cards.is_empty()
+    {
+        *engine_state = EngineState::RewardScreen(crate::rewards::state::RewardState::new());
+        return Some(false);
+    }
+    *engine_state = EngineState::CombatProcessing;
+    Some(true)
+}
+
 pub fn is_smoke_escape_stable_boundary(
     engine_state: &EngineState,
     combat_state: &CombatState,
@@ -786,48 +844,15 @@ pub fn tick_engine(
                 *engine_state = EngineState::GameOver(RunResult::Defeat);
                 return false;
             }
+            if let Some(keep_running) = settle_victory_if_ready(engine_state, combat_state) {
+                return keep_running;
+            }
             return true;
         }
     }
 
-    if combat_state.entities.monsters.iter().all(|m| {
-        if m.is_escaped {
-            return true;
-        }
-        if m.half_dead {
-            return false;
-        }
-        if m.current_hp > 0 {
-            return false;
-        }
-        let is_pending_rebirth = crate::content::powers::store::powers_for(combat_state, m.id)
-            .is_some_and(|powers| {
-                powers.iter().any(|p| {
-                    matches!(
-                        p.power_type,
-                        crate::content::powers::PowerId::Regrow
-                            | crate::content::powers::PowerId::Unawakened
-                    )
-                })
-            });
-        !is_pending_rebirth
-    }) {
-        if !combat_state.turn.counters.victory_triggered {
-            combat_state.turn.mark_victory_triggered();
-            resolve_victory_hooks_immediately(combat_state);
-        }
-
-        // Java does not cut off queued onUseCard / onDeath aftermath when the last monster dies.
-        // Finish draining any already-queued actions (e.g. Rage block, relic hooks, death hooks)
-        // before transitioning to rewards.
-        if !combat_state.has_pending_actions()
-            && combat_state.zones.limbo.is_empty()
-            && combat_state.zones.queued_cards.is_empty()
-        {
-            *engine_state = EngineState::RewardScreen(crate::rewards::state::RewardState::new());
-            return false;
-        }
-        *engine_state = EngineState::CombatProcessing;
+    if let Some(keep_running) = settle_victory_if_ready(engine_state, combat_state) {
+        return keep_running;
     }
 
     true
