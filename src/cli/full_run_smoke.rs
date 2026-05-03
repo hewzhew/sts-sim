@@ -2456,6 +2456,12 @@ fn choose_plan_query_action(ctx: &EpisodeContext, legal_actions: &[ClientInput])
         .count()
         >= 2;
 
+    if !high_pressure || unblocked * 5 <= hp {
+        if let Some(index) = resource_window_opener_action(combat, legal_actions, unblocked, hp) {
+            return Some(index);
+        }
+    }
+
     if high_pressure {
         for (query, statuses) in [
             ("CanFullBlockThenMaxDamage", &["feasible"][..]),
@@ -2509,6 +2515,122 @@ fn choose_plan_query_action(ctx: &EpisodeContext, legal_actions: &[ClientInput])
     }
 
     None
+}
+
+fn resource_window_opener_action(
+    combat: &CombatState,
+    legal_actions: &[ClientInput],
+    unblocked: i32,
+    hp: i32,
+) -> Option<usize> {
+    legal_actions
+        .iter()
+        .enumerate()
+        .filter_map(|(index, action)| {
+            let ClientInput::PlayCard { card_index, target } = action else {
+                return None;
+            };
+            if target.is_some() {
+                return None;
+            }
+            let score = resource_window_opener_score(combat, *card_index, unblocked, hp)?;
+            Some((index, score))
+        })
+        .max_by_key(|(_, score)| *score)
+        .map(|(index, _)| index)
+}
+
+fn resource_window_opener_score(
+    combat: &CombatState,
+    card_index: usize,
+    unblocked: i32,
+    hp: i32,
+) -> Option<i32> {
+    let card = combat.zones.hand.get(card_index)?;
+    let (base, hp_cost, extra_energy, draw_count) = match card.id {
+        CardId::Adrenaline => (240, 0, 1, 2),
+        CardId::Offering => (230, 6, 2, 3),
+        CardId::BattleTrance => (115, 0, 0, 3),
+        CardId::SeeingRed => (90, 0, 2, 0),
+        CardId::Bloodletting => (80, 3, 2 + card.upgrades as i32, 0),
+        _ => return None,
+    };
+    if hp - hp_cost <= unblocked + 6 {
+        return None;
+    }
+    let evaluated = crate::content::cards::evaluate_card_for_play(card, combat, None);
+    let cost = evaluated.get_cost().max(0) as i32;
+    let energy_after = combat.turn.energy as i32 - cost + extra_energy;
+    if energy_after <= 0 && draw_count > 0 {
+        return None;
+    }
+
+    let immediate_payoff = resource_window_immediate_payoff_score(combat, card_index, energy_after);
+    let draw_payoff = if draw_count > 0 {
+        resource_window_draw_payoff_score(combat, draw_count)
+    } else {
+        0
+    };
+    let payoff = immediate_payoff + draw_payoff;
+    if payoff < 45 {
+        return None;
+    }
+
+    Some(base + payoff - hp_cost * 14 - cost * 8)
+}
+
+fn resource_window_immediate_payoff_score(
+    combat: &CombatState,
+    resource_card_index: usize,
+    energy_after: i32,
+) -> i32 {
+    combat
+        .zones
+        .hand
+        .iter()
+        .enumerate()
+        .filter(|(index, _)| *index != resource_card_index)
+        .map(|(_, card)| {
+            let evaluated = crate::content::cards::evaluate_card_for_play(card, combat, None);
+            let cost = evaluated.get_cost().max(0) as i32;
+            resource_window_card_payoff_score(card.id, cost <= energy_after)
+        })
+        .sum()
+}
+
+fn resource_window_draw_payoff_score(combat: &CombatState, draw_count: usize) -> i32 {
+    if combat.zones.draw_pile.is_empty() && combat.zones.discard_pile.is_empty() {
+        return 0;
+    }
+    let mut scores = combat
+        .zones
+        .draw_pile
+        .iter()
+        .chain(combat.zones.discard_pile.iter())
+        .map(|card| resource_window_card_payoff_score(card.id, true))
+        .filter(|score| *score > 0)
+        .collect::<Vec<_>>();
+    scores.sort_unstable_by(|a, b| b.cmp(a));
+    scores.into_iter().take(draw_count.max(1) * 2).sum::<i32>() / 2
+}
+
+fn resource_window_card_payoff_score(card_id: CardId, currently_playable: bool) -> i32 {
+    let def = crate::content::cards::get_card_definition(card_id);
+    let playable_multiplier = if currently_playable { 2 } else { 1 };
+    let base = match card_id {
+        CardId::Immolate | CardId::Bludgeon | CardId::FiendFire | CardId::Reaper => 55,
+        CardId::Bash | CardId::Uppercut | CardId::Shockwave | CardId::Disarm => 42,
+        CardId::Inflame | CardId::DemonForm | CardId::FeelNoPain | CardId::DarkEmbrace => 38,
+        CardId::Cleave | CardId::Whirlwind | CardId::ThunderClap | CardId::Carnage => 34,
+        CardId::PommelStrike | CardId::ShrugItOff | CardId::BattleTrance => 28,
+        _ => match def.card_type {
+            CardType::Attack if def.base_damage > 0 => 22,
+            CardType::Skill if def.base_block > 0 => 18,
+            CardType::Power => 24,
+            _ => 0,
+        },
+    };
+    base * playable_multiplier
 }
 
 fn mapped_query_action(
@@ -5489,13 +5611,86 @@ mod tests {
         let index = choose_plan_query_action(&ctx, &legal)
             .expect("plan-query should choose a damage-window action");
 
-        assert!(matches!(
+        assert!(
+            matches!(
+                legal.get(index),
+                Some(ClientInput::PlayCard {
+                    card_index: 0,
+                    target: None
+                })
+            ),
+            "expected Immolate first, got {:?} from {:?}",
             legal.get(index),
-            Some(ClientInput::PlayCard {
-                card_index: 0,
-                target: None
-            })
-        ));
+            legal
+        );
+    }
+
+    #[test]
+    fn plan_query_v0_opens_safe_offering_resource_window_before_spending_attacks() {
+        use crate::semantics::combat::{
+            AttackSpec, AttackStep, DamageKind, MonsterMoveSpec, MoveStep, MoveTarget,
+        };
+
+        let mut run_state = RunState::new(43, 0, false, "Ironclad");
+        let mut combat = build_combat_state(&mut run_state, EncounterId::SmallSlimes);
+        combat.clear_pending_actions();
+        combat.zones.queued_cards.clear();
+        combat.zones.limbo.clear();
+        combat.turn.energy = 3;
+        combat.entities.player.current_hp = 200;
+        combat.entities.player.max_hp = 200;
+        combat.entities.player.block = 0;
+        combat.zones.hand = vec![
+            crate::runtime::combat::CombatCard::new(CardId::Offering, 20_001),
+            crate::runtime::combat::CombatCard::new(CardId::Bash, 20_002),
+            crate::runtime::combat::CombatCard::new(CardId::Strike, 20_003),
+        ];
+        combat.zones.draw_pile = vec![
+            crate::runtime::combat::CombatCard::new(CardId::Immolate, 20_004),
+            crate::runtime::combat::CombatCard::new(CardId::Strike, 20_005),
+            crate::runtime::combat::CombatCard::new(CardId::Defend, 20_006),
+        ];
+        for monster in &mut combat.entities.monsters {
+            monster.current_hp = 200;
+            monster.max_hp = 200;
+            monster.block = 0;
+            let attack = AttackSpec {
+                base_damage: 1,
+                hits: 1,
+                damage_kind: DamageKind::Normal,
+            };
+            monster.set_planned_move_id(1);
+            monster.set_planned_visible_spec(Some(MonsterMoveSpec::Attack(attack.clone())));
+            monster.set_planned_steps(smallvec::smallvec![MoveStep::Attack(AttackStep {
+                target: MoveTarget::Player,
+                attack,
+            })]);
+        }
+
+        let ctx = EpisodeContext {
+            engine_state: EngineState::CombatPlayerTurn,
+            run_state,
+            combat_state: Some(combat),
+            stashed_event_combat: None,
+            forced_engine_ticks: 0,
+            combat_win_count: 0,
+        };
+        let legal = legal_actions(&ctx.engine_state, &ctx.run_state, &ctx.combat_state);
+        let index = choose_plan_query_action(&ctx, &legal)
+            .expect("plan-query should open a safe resource window");
+
+        assert!(
+            matches!(
+                legal.get(index),
+                Some(ClientInput::PlayCard {
+                    card_index: 0,
+                    target: None
+                })
+            ),
+            "expected Offering first, got {:?} from {:?}",
+            legal.get(index),
+            legal
+        );
     }
 
     #[test]
