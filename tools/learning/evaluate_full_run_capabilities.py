@@ -145,6 +145,10 @@ def run_model_policy(args: argparse.Namespace, artifact_dir: Path) -> dict[str, 
     if args.model is None:
         raise SystemExit("--model is required when policies includes 'model'")
     model = MaskablePPO.load(str(args.model))
+    policy_dir = artifact_dir / args.model_name
+    trace_dir = policy_dir / "traces"
+    if args.keep_traces:
+        trace_dir.mkdir(parents=True, exist_ok=True)
     env = FullRunGymEnv(
         driver_binary=args.driver_binary,
         seed=args.seed,
@@ -173,11 +177,19 @@ def run_model_policy(args: argparse.Namespace, artifact_dir: Path) -> dict[str, 
                 steps.append(
                     {
                         "step": len(steps),
+                        "step_index": len(steps),
                         "floor": int(info.get("floor") or observation.get("floor") or 0),
                         "act": int(info.get("act") or observation.get("act") or 0),
+                        "hp": int(info.get("current_hp") or observation.get("current_hp") or 0),
+                        "max_hp": int(info.get("max_hp") or observation.get("max_hp") or 0),
+                        "gold": int(observation.get("gold") or 0),
+                        "deck_size": int(info.get("deck_size") or observation.get("deck_size") or 0),
+                        "relic_count": int(info.get("relic_count") or observation.get("relic_count") or 0),
+                        "legal_action_count": int(info.get("legal_action_count") or len(info.get("action_candidates") or [])),
                         "observation": observation,
                         "decision_type": str(info.get("decision_type") or observation.get("decision_type") or "unknown"),
                         "engine_state": str(info.get("engine_state") or observation.get("engine_state") or "unknown"),
+                        "chosen_action_index": action,
                         "chosen_action_key": str(candidate.get("action_key") or ""),
                         "chosen_action": candidate.get("action") or {},
                         "chosen_candidate": candidate,
@@ -205,13 +217,95 @@ def run_model_policy(args: argparse.Namespace, artifact_dir: Path) -> dict[str, 
                 "deck_size": int(info.get("deck_size") or 0),
                 "relic_count": int(info.get("relic_count") or 0),
             }
-            episodes.append({"summary": summary, "steps": steps})
+            episode = {"summary": summary, "steps": steps}
+            if args.keep_traces:
+                trace_path = trace_dir / f"episode_{episode_index:04}_seed_{run_seed}.json"
+                summary["trace_path"] = str(trace_path)
+                write_full_run_trace(
+                    trace_path=trace_path,
+                    args=args,
+                    policy=args.model_name,
+                    seed=run_seed,
+                    summary=summary,
+                    steps=steps,
+                )
+            episodes.append(episode)
     finally:
         env.close()
     elapsed = time.perf_counter() - start
     summary = summarize_policy(args.model_name, episodes, elapsed)
-    summary["source"] = {"kind": "python_maskable_ppo", "model": str(args.model), "traces_kept": False}
+    summary["source"] = {
+        "kind": "python_maskable_ppo",
+        "model": str(args.model),
+        "trace_dir": str(trace_dir) if args.keep_traces else None,
+        "traces_kept": bool(args.keep_traces),
+    }
     return summary
+
+
+def write_full_run_trace(
+    *,
+    trace_path: Path,
+    args: argparse.Namespace,
+    policy: str,
+    seed: int,
+    summary: dict[str, Any],
+    steps: list[dict[str, Any]],
+) -> None:
+    trace_steps = []
+    for step in steps:
+        trace_steps.append(
+            {
+                "step_index": int(step.get("step_index") or step.get("step") or 0),
+                "floor": int(step.get("floor") or 0),
+                "act": int(step.get("act") or 0),
+                "engine_state": str(step.get("engine_state") or "unknown"),
+                "decision_type": str(step.get("decision_type") or "unknown"),
+                "hp": int(step.get("hp") or 0),
+                "max_hp": int(step.get("max_hp") or 0),
+                "gold": int(step.get("gold") or 0),
+                "deck_size": int(step.get("deck_size") or 0),
+                "relic_count": int(step.get("relic_count") or 0),
+                "legal_action_count": int(step.get("legal_action_count") or 0),
+                "observation": step.get("observation") or {},
+                "action_mask": step.get("action_mask") or [],
+                "chosen_action_index": int(step.get("chosen_action_index") or 0),
+                "chosen_action_key": str(step.get("chosen_action_key") or ""),
+                "chosen_action": step.get("chosen_action") or {},
+            }
+        )
+    write_json(
+        trace_path,
+        {
+            "observation_schema_version": "full_run_observation_v3",
+            "action_schema_version": "full_run_action_candidate_set_v1",
+            "config": {
+                "seed": seed,
+                "ascension": args.ascension,
+                "final_act": bool(args.final_act),
+                "player_class": canonical_player_class(args.player_class),
+                "max_steps": args.max_steps,
+                "policy": policy,
+                "source": "python_maskable_ppo",
+            },
+            "summary": summary,
+            "steps": trace_steps,
+        },
+    )
+
+
+def canonical_player_class(player_class: str) -> str:
+    normalized = str(player_class or "").strip().lower()
+    return {
+        "ironclad": "Ironclad",
+        "red": "Ironclad",
+        "silent": "Silent",
+        "green": "Silent",
+        "defect": "Defect",
+        "blue": "Defect",
+        "watcher": "Watcher",
+        "purple": "Watcher",
+    }.get(normalized, player_class)
 
 
 def candidate_at(info: dict[str, Any], index: int) -> dict[str, Any]:

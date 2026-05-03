@@ -859,7 +859,7 @@ def render_markdown(report: dict[str, Any]) -> str:
 
 def main() -> None:
     args = parse_args()
-    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
     out_dir = args.out_dir / timestamp
     reports_dir = out_dir / "case_reports"
     reports_dir.mkdir(parents=True, exist_ok=True)
