@@ -2,7 +2,8 @@ use std::io::{self, BufRead, Write};
 
 use serde::{Deserialize, Serialize};
 use sts_simulator::cli::full_run_smoke::{
-    FullRunEnv, FullRunEnvConfig, FullRunEnvInfo, FullRunEnvState, RunPolicyKind,
+    FullRunEnv, FullRunEnvConfig, FullRunEnvInfo, FullRunEnvState, RewardShapingProfile,
+    RunPolicyKind,
 };
 
 #[derive(Debug, Deserialize)]
@@ -15,6 +16,7 @@ enum DriverRequest {
         final_act: Option<bool>,
         class: Option<String>,
         max_steps: Option<usize>,
+        reward_shaping_profile: Option<String>,
     },
     Observation,
     Step {
@@ -90,6 +92,7 @@ fn handle_request(env: &mut Option<FullRunEnv>, request: DriverRequest) -> Drive
             final_act,
             class,
             max_steps,
+            reward_shaping_profile,
         } => {
             let player_class = match normalize_player_class(class.as_deref()) {
                 Ok(value) => value,
@@ -101,6 +104,13 @@ fn handle_request(env: &mut Option<FullRunEnv>, request: DriverRequest) -> Drive
                 final_act: final_act.unwrap_or(false),
                 player_class,
                 max_steps: max_steps.unwrap_or(5000),
+                reward_shaping_profile: match reward_shaping_profile {
+                    Some(value) => match RewardShapingProfile::parse(&value) {
+                        Ok(profile) => profile,
+                        Err(err) => return error_response(err),
+                    },
+                    None => RewardShapingProfile::Baseline,
+                },
             };
             match FullRunEnv::new(config) {
                 Ok(mut next_env) => match next_env.state() {

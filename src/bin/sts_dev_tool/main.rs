@@ -104,6 +104,9 @@ enum Commands {
         /// Re-run each episode from its recorded actions and compare terminal summary.
         #[arg(long, default_value_t = true)]
         determinism_check: bool,
+        /// Immediate reward shaping profile for learning smoke: baseline or plan_deficit_v0.
+        #[arg(long, default_value = "baseline")]
+        reward_shaping_profile: String,
     },
 
     /// Manage run-first live_comm logs.
@@ -3807,6 +3810,7 @@ fn main() {
             trace_dir,
             summary_out,
             determinism_check,
+            reward_shaping_profile,
         } => {
             let policy_kind = match policy.to_ascii_lowercase().as_str() {
                 "random_masked" => sts_simulator::cli::full_run_smoke::RunPolicyKind::RandomMasked,
@@ -3842,6 +3846,16 @@ fn main() {
                 policy: policy_kind,
                 trace_dir: trace_dir.clone(),
                 determinism_check: *determinism_check,
+                reward_shaping_profile:
+                    match sts_simulator::cli::full_run_smoke::RewardShapingProfile::parse(
+                        reward_shaping_profile,
+                    ) {
+                        Ok(profile) => profile,
+                        Err(err) => {
+                            eprintln!("{err}");
+                            std::process::exit(2);
+                        }
+                    },
             };
             let summary =
                 sts_simulator::cli::full_run_smoke::run_batch(&config).unwrap_or_else(|err| {

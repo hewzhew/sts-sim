@@ -30,6 +30,11 @@ CARD_FEATURES = 25
 ACTION_FEATURES = 5 + CARD_FEATURES
 BASE_OBS_DIM = 41
 OBS_DIM = BASE_OBS_DIM + (MAX_ACTIONS * ACTION_FEATURES)
+PLAN_PROFILE_FEATURES = 10
+PLAN_DELTA_FEATURES = 13
+PLAN_BASE_OBS_DIM = BASE_OBS_DIM + PLAN_PROFILE_FEATURES
+PLAN_ACTION_FEATURES = ACTION_FEATURES + PLAN_DELTA_FEATURES
+PLAN_OBS_DIM = PLAN_BASE_OBS_DIM + (MAX_ACTIONS * PLAN_ACTION_FEATURES)
 
 DECISION_TYPE_IDS = {
     "none": 0,
@@ -164,8 +169,12 @@ class FullRunGymEnv(gym.Env[np.ndarray, int]):
         player_class: str = "ironclad",
         max_episode_steps: int = 5000,
         invalid_action_penalty: float = -2.0,
+        reward_shaping_profile: str = "baseline",
+        feature_profile: str = "baseline",
     ) -> None:
         super().__init__()
+        if feature_profile not in {"baseline", "plan_v0"}:
+            raise ValueError("feature_profile must be 'baseline' or 'plan_v0'")
         self.driver = FullRunEnvDriver(driver_binary)
         self._rng = random.Random(seed)
         self.seed = int(seed)
@@ -174,9 +183,14 @@ class FullRunGymEnv(gym.Env[np.ndarray, int]):
         self.player_class = str(player_class)
         self.max_episode_steps = int(max_episode_steps)
         self.invalid_action_penalty = float(invalid_action_penalty)
+        self.reward_shaping_profile = str(reward_shaping_profile or "baseline")
+        self.feature_profile = str(feature_profile)
+        self.base_obs_dim = PLAN_BASE_OBS_DIM if self.feature_profile == "plan_v0" else BASE_OBS_DIM
+        self.action_features = PLAN_ACTION_FEATURES if self.feature_profile == "plan_v0" else ACTION_FEATURES
+        self.obs_dim = self.base_obs_dim + (MAX_ACTIONS * self.action_features)
         self._last_response: dict[str, Any] | None = None
         self._step_count = 0
-        self.observation_space = spaces.Box(low=-1e6, high=1e6, shape=(OBS_DIM,), dtype=np.float32)
+        self.observation_space = spaces.Box(low=-1e6, high=1e6, shape=(self.obs_dim,), dtype=np.float32)
         self.action_space = spaces.Discrete(MAX_ACTIONS)
 
     def reset(
@@ -198,6 +212,7 @@ class FullRunGymEnv(gym.Env[np.ndarray, int]):
                 "final_act": bool(options.get("final_act", self.final_act)),
                 "class": str(options.get("class", self.player_class)),
                 "max_steps": int(options.get("max_steps", self.max_episode_steps)),
+                "reward_shaping_profile": str(options.get("reward_shaping_profile", self.reward_shaping_profile)),
             }
         )
         self._last_response = response
@@ -284,6 +299,8 @@ class FullRunGymEnv(gym.Env[np.ndarray, int]):
             float(screen.get("shop_potion_count") or 0),
             *self._deck_features(obs.get("deck") or {}),
         ]
+        if self.feature_profile == "plan_v0":
+            base.extend(self._plan_profile_features(obs.get("plan_profile") or {}))
         values = list(base)
         for index in range(min(len(candidates), MAX_ACTIONS)):
             candidate = candidates[index] or {}
@@ -299,9 +316,11 @@ class FullRunGymEnv(gym.Env[np.ndarray, int]):
                     *self._card_features(candidate.get("card")),
                 ]
             )
-        missing_action_features = (MAX_ACTIONS * ACTION_FEATURES) - (len(values) - BASE_OBS_DIM)
+            if self.feature_profile == "plan_v0":
+                values.extend(self._plan_delta_features(candidate.get("plan_delta") or {}))
+        missing_action_features = (MAX_ACTIONS * self.action_features) - (len(values) - self.base_obs_dim)
         values.extend([0.0] * max(missing_action_features, 0))
-        return np.asarray(values[:OBS_DIM], dtype=np.float32)
+        return np.asarray(values[: self.obs_dim], dtype=np.float32)
 
     def _deck_features(self, deck: dict[str, Any]) -> list[float]:
         deck_size = max(float(deck.get("attack_count") or 0) + float(deck.get("skill_count") or 0) + float(deck.get("power_count") or 0), 1.0)
@@ -319,6 +338,38 @@ class FullRunGymEnv(gym.Env[np.ndarray, int]):
             float(deck.get("exhaust_card_count") or 0) / deck_size,
             float(deck.get("average_cost_milli") or 0) / 1000.0,
             1.0,
+        ]
+
+    def _plan_profile_features(self, profile: dict[str, Any]) -> list[float]:
+        return [
+            float(profile.get("frontload_supply") or 0) / 120.0,
+            float(profile.get("block_supply") or 0) / 120.0,
+            float(profile.get("draw_supply") or 0) / 80.0,
+            float(profile.get("scaling_supply") or 0) / 80.0,
+            float(profile.get("aoe_supply") or 0) / 80.0,
+            float(profile.get("exhaust_supply") or 0) / 80.0,
+            float(profile.get("kill_window_supply") or 0) / 80.0,
+            float(profile.get("starter_basic_burden") or 0) / 100.0,
+            float(profile.get("setup_cashout_risk") or 0) / 100.0,
+            1.0,
+        ]
+
+    def _plan_delta_features(self, delta: dict[str, Any]) -> list[float]:
+        plan_adjusted = max(min(float(delta.get("plan_adjusted_score") or 0.0), 240.0), -240.0) / 240.0
+        return [
+            float(delta.get("frontload_delta") or 0) / 80.0,
+            float(delta.get("block_delta") or 0) / 80.0,
+            float(delta.get("draw_delta") or 0) / 40.0,
+            float(delta.get("scaling_delta") or 0) / 40.0,
+            float(delta.get("aoe_delta") or 0) / 60.0,
+            float(delta.get("exhaust_delta") or 0) / 40.0,
+            float(delta.get("kill_window_delta") or 0) / 40.0,
+            float(delta.get("starter_basic_burden_delta") or 0) / 40.0,
+            float(delta.get("setup_cashout_risk_delta") or 0) / 40.0,
+            float(delta.get("deck_deficit_bonus") or 0) / 120.0,
+            float(delta.get("bloat_penalty") or 0) / 80.0,
+            float(delta.get("duplicate_penalty") or 0) / 80.0,
+            plan_adjusted,
         ]
 
     def _card_features(self, card: Any) -> list[float]:
@@ -385,5 +436,10 @@ __all__ = [
     "FullRunEnvDriver",
     "FullRunGymEnv",
     "MAX_ACTIONS",
+    "ACTION_FEATURES",
+    "BASE_OBS_DIM",
     "OBS_DIM",
+    "PLAN_ACTION_FEATURES",
+    "PLAN_BASE_OBS_DIM",
+    "PLAN_OBS_DIM",
 ]

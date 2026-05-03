@@ -28,23 +28,29 @@ class FullRunCandidateScorerPolicy(MaskableActorCriticPolicy):
         state_dim: int = 128,
         candidate_dim: int = 96,
         hidden_dim: int = 128,
+        base_obs_dim: int = BASE_OBS_DIM,
+        action_feature_dim: int = ACTION_FEATURES,
+        max_actions: int = MAX_ACTIONS,
         **kwargs: Any,
     ) -> None:
         self.full_run_state_dim = int(state_dim)
         self.full_run_candidate_dim = int(candidate_dim)
         self.full_run_hidden_dim = int(hidden_dim)
+        self.full_run_base_obs_dim = int(base_obs_dim)
+        self.full_run_action_feature_dim = int(action_feature_dim)
+        self.full_run_max_actions = int(max_actions)
         super().__init__(*args, **kwargs)
 
     def _build(self, lr_schedule: Schedule) -> None:
         activation = self.activation_fn
         self.state_encoder = nn.Sequential(
-            nn.Linear(BASE_OBS_DIM, self.full_run_state_dim),
+            nn.Linear(self.full_run_base_obs_dim, self.full_run_state_dim),
             activation(),
             nn.Linear(self.full_run_state_dim, self.full_run_state_dim),
             activation(),
         )
         self.candidate_encoder = nn.Sequential(
-            nn.Linear(ACTION_FEATURES, self.full_run_candidate_dim),
+            nn.Linear(self.full_run_action_feature_dim, self.full_run_candidate_dim),
             activation(),
             nn.Linear(self.full_run_candidate_dim, self.full_run_candidate_dim),
             activation(),
@@ -81,9 +87,15 @@ class FullRunCandidateScorerPolicy(MaskableActorCriticPolicy):
     def _split_full_run_obs(self, obs: th.Tensor) -> tuple[th.Tensor, th.Tensor]:
         if obs.dim() == 1:
             obs = obs.unsqueeze(0)
-        base = obs[:, :BASE_OBS_DIM]
-        action_flat = obs[:, BASE_OBS_DIM : BASE_OBS_DIM + MAX_ACTIONS * ACTION_FEATURES]
-        candidates = action_flat.reshape((-1, MAX_ACTIONS, ACTION_FEATURES))
+        base = obs[:, : self.full_run_base_obs_dim]
+        action_flat = obs[
+            :,
+            self.full_run_base_obs_dim : self.full_run_base_obs_dim
+            + self.full_run_max_actions * self.full_run_action_feature_dim,
+        ]
+        candidates = action_flat.reshape(
+            (-1, self.full_run_max_actions, self.full_run_action_feature_dim)
+        )
         return base, candidates
 
     def _encode_state_and_candidates(self, obs: th.Tensor) -> tuple[th.Tensor, th.Tensor, th.Tensor]:
@@ -99,7 +111,9 @@ class FullRunCandidateScorerPolicy(MaskableActorCriticPolicy):
 
     def _action_logits_and_values(self, obs: th.Tensor) -> tuple[th.Tensor, th.Tensor]:
         state_latent, candidate_latent, value_latent = self._encode_state_and_candidates(obs)
-        state_for_each_candidate = state_latent.unsqueeze(1).expand(-1, MAX_ACTIONS, -1)
+        state_for_each_candidate = state_latent.unsqueeze(1).expand(
+            -1, self.full_run_max_actions, -1
+        )
         scorer_input = th.cat([state_for_each_candidate, candidate_latent], dim=-1)
         logits = self.candidate_scorer(scorer_input).squeeze(-1)
         values = self.value_net(value_latent)

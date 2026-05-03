@@ -20,6 +20,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--final-act", action="store_true")
     parser.add_argument("--max-steps", type=int, default=5000)
     parser.add_argument("--driver-binary", type=Path)
+    parser.add_argument("--reward-shaping-profile", choices=["baseline", "plan_deficit_v0"], default="baseline")
+    parser.add_argument("--feature-profile", choices=["baseline", "plan_v0"], default="baseline")
     parser.add_argument("--details", action="store_true", help="Include per-episode detail rows in stdout JSON.")
     return parser.parse_args()
 
@@ -33,6 +35,8 @@ def main() -> int:
         final_act=args.final_act,
         player_class=args.player_class,
         max_episode_steps=args.max_steps,
+        reward_shaping_profile=args.reward_shaping_profile,
+        feature_profile=args.feature_profile,
     )
     start = time.perf_counter()
     episode_summaries: list[dict[str, Any]] = []

@@ -16,7 +16,14 @@ from stable_baselines3.common.vec_env import DummyVecEnv, VecMonitor
 
 from combat_rl_common import REPO_ROOT, write_json
 from full_run_candidate_policy import FullRunCandidateScorerPolicy
-from full_run_env import FullRunGymEnv
+from full_run_env import (
+    ACTION_FEATURES,
+    BASE_OBS_DIM,
+    MAX_ACTIONS,
+    PLAN_ACTION_FEATURES,
+    PLAN_BASE_OBS_DIM,
+    FullRunGymEnv,
+)
 
 
 def parse_args() -> argparse.Namespace:
@@ -44,6 +51,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--candidate-state-dim", type=int, default=128)
     parser.add_argument("--candidate-action-dim", type=int, default=96)
     parser.add_argument("--candidate-hidden-dim", type=int, default=128)
+    parser.add_argument(
+        "--reward-shaping-profile",
+        choices=["baseline", "plan_deficit_v0"],
+        default="baseline",
+    )
+    parser.add_argument("--feature-profile", choices=["baseline", "plan_v0"], default="baseline")
     return parser.parse_args()
 
 
@@ -56,6 +69,8 @@ def make_env(args: argparse.Namespace, env_seed: int):
             final_act=args.final_act,
             player_class=args.player_class,
             max_episode_steps=args.max_steps,
+            reward_shaping_profile=args.reward_shaping_profile,
+            feature_profile=args.feature_profile,
         )
 
     return _factory
@@ -63,10 +78,15 @@ def make_env(args: argparse.Namespace, env_seed: int):
 
 def policy_spec(args: argparse.Namespace):
     if args.policy_arch == "candidate_scorer":
+        base_obs_dim = PLAN_BASE_OBS_DIM if args.feature_profile == "plan_v0" else BASE_OBS_DIM
+        action_feature_dim = PLAN_ACTION_FEATURES if args.feature_profile == "plan_v0" else ACTION_FEATURES
         return FullRunCandidateScorerPolicy, {
             "state_dim": args.candidate_state_dim,
             "candidate_dim": args.candidate_action_dim,
             "hidden_dim": args.candidate_hidden_dim,
+            "base_obs_dim": base_obs_dim,
+            "action_feature_dim": action_feature_dim,
+            "max_actions": MAX_ACTIONS,
         }
     return "MlpPolicy", {"net_arch": [64, 64]}
 
@@ -79,6 +99,8 @@ def evaluate_random(args: argparse.Namespace, base_seed: int, episodes: int) -> 
         final_act=args.final_act,
         player_class=args.player_class,
         max_episode_steps=args.max_steps,
+        reward_shaping_profile=args.reward_shaping_profile,
+        feature_profile=args.feature_profile,
     )
     rows: list[dict[str, Any]] = []
     start = time.perf_counter()
@@ -126,6 +148,8 @@ def evaluate_model(
         final_act=args.final_act,
         player_class=args.player_class,
         max_episode_steps=args.max_steps,
+        reward_shaping_profile=args.reward_shaping_profile,
+        feature_profile=args.feature_profile,
     )
     rows: list[dict[str, Any]] = []
     start = time.perf_counter()
@@ -285,11 +309,13 @@ def main() -> int:
             "n_steps": args.n_steps,
             "batch_size": args.batch_size,
             "learning_rate": args.learning_rate,
-            "gamma": args.gamma,
-            "ent_coef": args.ent_coef,
-            "policy_arch": args.policy_arch,
-            "candidate_state_dim": args.candidate_state_dim,
-            "candidate_action_dim": args.candidate_action_dim,
+                "gamma": args.gamma,
+                "ent_coef": args.ent_coef,
+                "policy_arch": args.policy_arch,
+                "reward_shaping_profile": args.reward_shaping_profile,
+                "feature_profile": args.feature_profile,
+                "candidate_state_dim": args.candidate_state_dim,
+                "candidate_action_dim": args.candidate_action_dim,
             "candidate_hidden_dim": args.candidate_hidden_dim,
         },
         "train": {

@@ -36,6 +36,19 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--artifact-dir", type=Path)
     parser.add_argument("--out", type=Path)
     parser.add_argument("--keep-traces", action="store_true")
+    parser.add_argument(
+        "--reward-shaping-profile",
+        choices=["baseline", "plan_deficit_v0"],
+        default="baseline",
+    )
+    parser.add_argument("--feature-profile", choices=["baseline", "plan_v0"], default="baseline")
+    parser.add_argument(
+        "--plan-query-report",
+        action="append",
+        default=[],
+        metavar="POLICY=PATH",
+        help="Optional combat_plan_query_batch_report.json for a policy, used as eval signal only.",
+    )
     return parser.parse_args()
 
 
@@ -72,6 +85,8 @@ def run_rust_policy(args: argparse.Namespace, policy: str, artifact_dir: Path) -
         "--max-steps",
         str(args.max_steps),
         "--determinism-check",
+        "--reward-shaping-profile",
+        args.reward_shaping_profile,
         "--summary-out",
         str(summary_path),
         "--trace-dir",
@@ -156,6 +171,8 @@ def run_model_policy(args: argparse.Namespace, artifact_dir: Path) -> dict[str, 
         final_act=args.final_act,
         player_class=args.player_class,
         max_episode_steps=args.max_steps,
+        reward_shaping_profile=args.reward_shaping_profile,
+        feature_profile=args.feature_profile,
     )
     episodes: list[dict[str, Any]] = []
     start = time.perf_counter()
@@ -506,6 +523,15 @@ def boss_capabilities(episodes: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+def card_with_plan_score(candidate: dict[str, Any]) -> dict[str, Any]:
+    card = dict(candidate.get("card") or {})
+    plan_delta = candidate.get("plan_delta") or {}
+    card["plan_adjusted_score"] = float(
+        plan_delta.get("plan_adjusted_score", card.get("rule_score") or 0) or 0
+    )
+    return card
+
+
 def reward_capabilities(steps: list[dict[str, Any]]) -> dict[str, Any]:
     card_choice_decisions = 0
     card_selects = 0
@@ -515,6 +541,18 @@ def reward_capabilities(steps: list[dict[str, Any]]) -> dict[str, Any]:
     selected_rule_scores = []
     selected_card_types = Counter()
     skipped_good_offers = 0
+    best_offer_rule_scores = []
+    missed_best_gaps = []
+    missed_best_gap_ge_30 = 0
+    plan_adjusted_best_offer_scores = []
+    plan_adjusted_missed_gaps = []
+    plan_adjusted_gap_ge_30 = 0
+    draw_card_offer_count = 0
+    draw_card_select_count = 0
+    draw_card_skip_count = 0
+    scaling_card_offer_count = 0
+    scaling_card_select_count = 0
+    scaling_card_skip_count = 0
 
     for step in steps:
         decision = str(step.get("decision_type") or "")
@@ -524,20 +562,66 @@ def reward_capabilities(steps: list[dict[str, Any]]) -> dict[str, Any]:
         screen = obs.get("screen") or {}
         if decision == "reward_card_choice":
             card_choice_decisions += 1
+            cards = [
+                card_with_plan_score(item)
+                for item in step.get("action_mask", []) or []
+                if isinstance(item, dict) and (item.get("card") or {})
+            ]
+            best_card = max(cards, key=lambda card: float(card.get("rule_score") or 0), default={})
+            best_plan_card = max(
+                cards,
+                key=lambda card: float(card.get("plan_adjusted_score") or card.get("rule_score") or 0),
+                default={},
+            )
+            best_score = float(best_card.get("rule_score") or 0)
+            best_plan_score = float(
+                best_plan_card.get("plan_adjusted_score") or best_plan_card.get("rule_score") or 0
+            )
+            best_offer_rule_scores.append(best_score)
+            plan_adjusted_best_offer_scores.append(best_plan_score)
+            offer_has_draw = any(bool(card.get("draws_cards")) for card in cards)
+            offer_has_scaling = any(bool(card.get("scaling_piece")) for card in cards)
+            if offer_has_draw:
+                draw_card_offer_count += 1
+            if offer_has_scaling:
+                scaling_card_offer_count += 1
+
             if act == "select_card":
                 card_selects += 1
                 card = candidate.get("card") or {}
-                selected_rule_scores.append(float(card.get("rule_score") or 0))
+                plan_delta = candidate.get("plan_delta") or {}
+                selected_score = float(card.get("rule_score") or 0)
+                selected_plan_score = float(
+                    plan_delta.get("plan_adjusted_score", selected_score) or selected_score
+                )
+                selected_rule_scores.append(selected_score)
                 selected_card_types[str(card.get("card_type_id") or 0)] += 1
+                if bool(card.get("draws_cards")):
+                    draw_card_select_count += 1
+                if bool(card.get("scaling_piece")):
+                    scaling_card_select_count += 1
+                gap = max(best_score - selected_score, 0.0)
+                missed_best_gaps.append(gap)
+                if gap >= 30:
+                    missed_best_gap_ge_30 += 1
+                plan_gap = max(best_plan_score - selected_plan_score, 0.0)
+                plan_adjusted_missed_gaps.append(plan_gap)
+                if plan_gap >= 30:
+                    plan_adjusted_gap_ge_30 += 1
             elif act == "proceed":
                 card_skips += 1
-                cards = [
-                    (item.get("card") or {})
-                    for item in step.get("action_mask", []) or []
-                    if isinstance(item, dict)
-                ]
-                if cards and max(float(card.get("rule_score") or 0) for card in cards) >= 70:
+                if offer_has_draw:
+                    draw_card_skip_count += 1
+                if offer_has_scaling:
+                    scaling_card_skip_count += 1
+                if best_score >= 70:
                     skipped_good_offers += 1
+                missed_best_gaps.append(max(best_score - 5.0, 0.0))
+                if best_score - 5.0 >= 30:
+                    missed_best_gap_ge_30 += 1
+                plan_adjusted_missed_gaps.append(max(best_plan_score - 5.0, 0.0))
+                if best_plan_score - 5.0 >= 30:
+                    plan_adjusted_gap_ge_30 += 1
         if decision == "reward":
             if act == "claim_reward":
                 reward_claims += 1
@@ -550,8 +634,24 @@ def reward_capabilities(steps: list[dict[str, Any]]) -> dict[str, Any]:
         "card_skip_count": card_skips,
         "card_skip_share": safe_ratio(card_skips, card_choice_decisions),
         "selected_card_rule_score_average": safe_mean(selected_rule_scores),
+        "best_offer_rule_score_average": safe_mean(best_offer_rule_scores),
+        "missed_best_rule_score_gap_average": safe_mean(missed_best_gaps),
+        "missed_best_rule_score_gap_ge_30_count": missed_best_gap_ge_30,
+        "plan_adjusted_best_offer_score_average": safe_mean(plan_adjusted_best_offer_scores),
+        "plan_adjusted_missed_best_gap_average": safe_mean(plan_adjusted_missed_gaps),
+        "plan_adjusted_missed_best_gap_ge_30_count": plan_adjusted_gap_ge_30,
         "selected_card_type_counts": dict(selected_card_types),
         "skipped_good_offer_count": skipped_good_offers,
+        "draw_card_offer_count": draw_card_offer_count,
+        "draw_card_select_count": draw_card_select_count,
+        "draw_card_skip_count": draw_card_skip_count,
+        "draw_card_select_share_when_offered": safe_ratio(draw_card_select_count, draw_card_offer_count),
+        "scaling_card_offer_count": scaling_card_offer_count,
+        "scaling_card_select_count": scaling_card_select_count,
+        "scaling_card_skip_count": scaling_card_skip_count,
+        "scaling_card_select_share_when_offered": safe_ratio(
+            scaling_card_select_count, scaling_card_offer_count
+        ),
         "reward_claim_count": reward_claims,
         "reward_proceed_with_items_count": reward_proceeds,
         "reward_claims_per_reward_proceed": safe_ratio(reward_claims, reward_proceeds),
@@ -659,6 +759,16 @@ def diagnostic_flags(
         flags.append("reward_card_skip_nontrivial")
     if int(rewards_summary.get("skipped_good_offer_count") or 0) > 0:
         flags.append("skipped_good_card_offer")
+    if int(rewards_summary.get("missed_best_rule_score_gap_ge_30_count") or 0) > 0:
+        flags.append("reward_card_large_rule_score_regret")
+    if int(rewards_summary.get("plan_adjusted_missed_best_gap_ge_30_count") or 0) > 0:
+        flags.append("reward_card_plan_adjusted_regret")
+    if int(rewards_summary.get("draw_card_offer_count") or 0) >= 10:
+        if float(rewards_summary.get("draw_card_select_share_when_offered") or 0) < 0.20:
+            flags.append("reward_card_draw_avoidance")
+    if int(rewards_summary.get("scaling_card_offer_count") or 0) >= 10:
+        if float(rewards_summary.get("scaling_card_select_share_when_offered") or 0) < 0.20:
+            flags.append("reward_card_scaling_avoidance")
     if int(boss.get("boss_combat_entry_count") or 0) > 0:
         if float(boss.get("average_boss_entry_hp_ratio") or 0) < 0.55:
             flags.append("boss_entry_hp_weak")
@@ -723,6 +833,47 @@ def median(values: list[int]) -> float:
     return (ordered[mid - 1] + ordered[mid]) / 2.0
 
 
+def parse_named_paths(values: list[str]) -> dict[str, Path]:
+    out: dict[str, Path] = {}
+    for raw in values:
+        if "=" not in raw:
+            raise SystemExit(f"--plan-query-report must use POLICY=PATH, got {raw!r}")
+        name, path = raw.split("=", 1)
+        name = name.strip()
+        if not name:
+            raise SystemExit(f"--plan-query-report has empty policy name: {raw!r}")
+        out[name] = Path(path.strip())
+    return out
+
+
+def plan_query_eval_signals(paths: dict[str, Path]) -> list[dict[str, Any]]:
+    signals = []
+    for policy, path in sorted(paths.items()):
+        report = json.loads(path.read_text(encoding="utf-8"))
+        summary = report.get("summary") or {}
+        flags = summary.get("flag_counts") or {}
+        signals.append(
+            {
+                "policy": policy,
+                "report_path": str(path),
+                "case_count": int(summary.get("case_count") or 0),
+                "query_status_counts": summary.get("query_status_counts") or {},
+                "flag_counts": flags,
+                "core_metrics": {
+                    "missed_full_block_line": int(flags.get("missed_full_block_line") or 0),
+                    "full_block_damage_gap": int(flags.get("full_block_damage_gap") or 0),
+                    "setup_and_block_available_clean": int(
+                        flags.get("setup_and_block_available_clean") or 0
+                    ),
+                    "setup_available_but_leaks": int(flags.get("setup_available_but_leaks") or 0),
+                    "near_lethal_small_gap": int(flags.get("near_lethal_small_gap") or 0),
+                    "needs_deeper_search": int(summary.get("needs_deeper_search_cases") or 0),
+                },
+            }
+        )
+    return signals
+
+
 def main() -> int:
     args = parse_args()
     policies = parse_policy_list(args.policies)
@@ -750,8 +901,11 @@ def main() -> int:
             "max_steps": args.max_steps,
             "policies": policies,
             "model": str(args.model) if args.model else None,
+            "reward_shaping_profile": args.reward_shaping_profile,
+            "feature_profile": args.feature_profile,
         },
         "policies": policy_reports,
+        "plan_query_eval_signals": plan_query_eval_signals(parse_named_paths(args.plan_query_report)),
         "comparison": compare_policy_reports(policy_reports),
     }
     write_json(out_path, report)
@@ -775,7 +929,15 @@ def compare_policy_reports(reports: list[dict[str, Any]]) -> dict[str, Any]:
         "average_boss_entry_hp_ratio": ("boss", "average_boss_entry_hp_ratio"),
         "card_skip_share": ("rewards", "card_skip_share"),
         "selected_card_rule_score_average": ("rewards", "selected_card_rule_score_average"),
+        "best_offer_rule_score_average": ("rewards", "best_offer_rule_score_average"),
+        "missed_best_rule_score_gap_average": ("rewards", "missed_best_rule_score_gap_average"),
+        "missed_best_rule_score_gap_ge_30_count": ("rewards", "missed_best_rule_score_gap_ge_30_count"),
+        "plan_adjusted_best_offer_score_average": ("rewards", "plan_adjusted_best_offer_score_average"),
+        "plan_adjusted_missed_best_gap_average": ("rewards", "plan_adjusted_missed_best_gap_average"),
+        "plan_adjusted_missed_best_gap_ge_30_count": ("rewards", "plan_adjusted_missed_best_gap_ge_30_count"),
         "skipped_good_offer_count": ("rewards", "skipped_good_offer_count"),
+        "draw_card_select_share_when_offered": ("rewards", "draw_card_select_share_when_offered"),
+        "scaling_card_select_share_when_offered": ("rewards", "scaling_card_select_share_when_offered"),
         "shop_resource_action_count": ("macro", "shop_resource_action_count"),
         "smith_to_rest_ratio": ("macro", "smith_to_rest_ratio"),
         "average_draw_density": ("deck", "average_draw_density"),

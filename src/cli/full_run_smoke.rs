@@ -26,9 +26,35 @@ use crate::state::run::RunState;
 use crate::state::selection::EngineDiagnosticSeverity;
 use crate::state::selection::{SelectionResolution, SelectionScope, SelectionTargetRef};
 
-pub const FULL_RUN_OBSERVATION_SCHEMA_VERSION: &str = "full_run_observation_v3";
-pub const FULL_RUN_ACTION_SCHEMA_VERSION: &str = "full_run_action_candidate_set_v1";
+pub const FULL_RUN_OBSERVATION_SCHEMA_VERSION: &str = "full_run_observation_v4_plan_profile";
+pub const FULL_RUN_ACTION_SCHEMA_VERSION: &str = "full_run_action_candidate_set_v2_plan_delta";
 const NO_PROGRESS_REPEAT_LIMIT: usize = 8;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RewardShapingProfile {
+    Baseline,
+    PlanDeficitV0,
+}
+
+impl RewardShapingProfile {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Baseline => "baseline",
+            Self::PlanDeficitV0 => "plan_deficit_v0",
+        }
+    }
+
+    pub fn parse(value: &str) -> Result<Self, String> {
+        match value.to_ascii_lowercase().as_str() {
+            "baseline" => Ok(Self::Baseline),
+            "plan_deficit_v0" => Ok(Self::PlanDeficitV0),
+            other => Err(format!(
+                "unsupported reward shaping profile '{other}'; expected baseline or plan_deficit_v0"
+            )),
+        }
+    }
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RunPolicyKind {
@@ -56,6 +82,7 @@ pub struct RunBatchConfig {
     pub policy: RunPolicyKind,
     pub trace_dir: Option<PathBuf>,
     pub determinism_check: bool,
+    pub reward_shaping_profile: RewardShapingProfile,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -70,6 +97,7 @@ pub struct RunBatchSummary {
     pub final_act: bool,
     pub player_class: String,
     pub max_steps: usize,
+    pub reward_shaping_profile: String,
     pub episodes_completed: usize,
     pub crash_count: usize,
     pub illegal_action_count: usize,
@@ -170,6 +198,7 @@ pub struct RunTraceConfigV0 {
     pub player_class: String,
     pub max_steps: usize,
     pub policy: String,
+    pub reward_shaping_profile: String,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -210,6 +239,7 @@ pub struct RunObservationV0 {
     pub potion_slots: usize,
     pub filled_potion_slots: usize,
     pub deck: RunDeckObservationV0,
+    pub plan_profile: DeckPlanProfileV0,
     pub deck_cards: Vec<RunDeckCardObservationV0>,
     pub relics: Vec<RunRelicObservationV0>,
     pub potions: Vec<RunPotionSlotObservationV0>,
@@ -355,6 +385,39 @@ pub struct RunActionCandidate {
     pub action_key: String,
     pub action: TraceClientInput,
     pub card: Option<RunCardFeatureV0>,
+    pub plan_delta: CandidatePlanDeltaV0,
+}
+
+#[derive(Clone, Debug, Default, Serialize, PartialEq, Eq)]
+pub struct DeckPlanProfileV0 {
+    pub score_kind: String,
+    pub frontload_supply: i32,
+    pub block_supply: i32,
+    pub draw_supply: i32,
+    pub scaling_supply: i32,
+    pub aoe_supply: i32,
+    pub exhaust_supply: i32,
+    pub kill_window_supply: i32,
+    pub starter_basic_burden: i32,
+    pub setup_cashout_risk: i32,
+}
+
+#[derive(Clone, Debug, Default, Serialize, PartialEq, Eq)]
+pub struct CandidatePlanDeltaV0 {
+    pub score_kind: String,
+    pub frontload_delta: i32,
+    pub block_delta: i32,
+    pub draw_delta: i32,
+    pub scaling_delta: i32,
+    pub aoe_delta: i32,
+    pub exhaust_delta: i32,
+    pub kill_window_delta: i32,
+    pub starter_basic_burden_delta: i32,
+    pub setup_cashout_risk_delta: i32,
+    pub deck_deficit_bonus: i32,
+    pub bloat_penalty: i32,
+    pub duplicate_penalty: i32,
+    pub plan_adjusted_score: i32,
 }
 
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
@@ -518,6 +581,7 @@ pub struct FullRunEnvConfig {
     pub final_act: bool,
     pub player_class: &'static str,
     pub max_steps: usize,
+    pub reward_shaping_profile: RewardShapingProfile,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -586,6 +650,7 @@ impl FullRunEnvConfig {
             policy,
             trace_dir: None,
             determinism_check: false,
+            reward_shaping_profile: self.reward_shaping_profile,
         }
     }
 }
@@ -741,7 +806,8 @@ impl FullRunEnv {
         }
 
         let before_score = full_run_progress_score(&self.ctx);
-        let action_shaping = full_run_action_shaping_reward(&self.ctx, &action);
+        let action_shaping =
+            full_run_action_shaping_reward(&self.ctx, &action, self.config.reward_shaping_profile);
         let keep_running = tick_run(
             &mut self.ctx.engine_state,
             &mut self.ctx.run_state,
@@ -1131,33 +1197,61 @@ fn full_run_progress_score(ctx: &EpisodeContext) -> f32 {
     ctx.run_state.floor_num.max(0) as f32 + ctx.combat_win_count as f32 * 2.0 + hp_fraction
 }
 
-fn full_run_action_shaping_reward(ctx: &EpisodeContext, action: &ClientInput) -> f32 {
+fn full_run_action_shaping_reward(
+    ctx: &EpisodeContext,
+    action: &ClientInput,
+    profile: RewardShapingProfile,
+) -> f32 {
     let EngineState::RewardScreen(reward_state) = &ctx.engine_state else {
         return 0.0;
     };
     if let Some(cards) = &reward_state.pending_card_choice {
         return match action {
-            ClientInput::SelectCard(index) => cards
-                .get(*index)
-                .map(|card| {
+            ClientInput::SelectCard(index) => cards.get(*index).map_or(0.0, |card| match profile {
+                RewardShapingProfile::Baseline => {
                     let score = rule_card_offer_score(card.id, &ctx.run_state);
                     (score as f32 / 300.0).clamp(-0.20, 0.35)
-                })
-                .unwrap_or(0.0),
-            ClientInput::Proceed => {
-                let best_score = cards
-                    .iter()
-                    .map(|card| rule_card_offer_score(card.id, &ctx.run_state))
-                    .max()
-                    .unwrap_or(0);
-                if best_score >= 70 {
-                    -0.18
-                } else if best_score <= 20 {
-                    0.04
-                } else {
-                    -0.05
                 }
-            }
+                RewardShapingProfile::PlanDeficitV0 => {
+                    let delta = add_card_plan_delta(card.id, card.upgrades, &ctx.run_state);
+                    (delta.plan_adjusted_score as f32 / 220.0).clamp(-0.25, 0.65)
+                }
+            }),
+            ClientInput::Proceed => match profile {
+                RewardShapingProfile::Baseline => {
+                    let best_score = cards
+                        .iter()
+                        .map(|card| rule_card_offer_score(card.id, &ctx.run_state))
+                        .max()
+                        .unwrap_or(0);
+                    if best_score >= 70 {
+                        -0.18
+                    } else if best_score <= 20 {
+                        0.04
+                    } else {
+                        -0.05
+                    }
+                }
+                RewardShapingProfile::PlanDeficitV0 => {
+                    let best_score = cards
+                        .iter()
+                        .map(|card| {
+                            add_card_plan_delta(card.id, card.upgrades, &ctx.run_state)
+                                .plan_adjusted_score
+                        })
+                        .max()
+                        .unwrap_or(0);
+                    if best_score >= 110 {
+                        -0.65
+                    } else if best_score >= 70 {
+                        -0.40
+                    } else if best_score <= 20 {
+                        0.05
+                    } else {
+                        -0.12
+                    }
+                }
+            },
             _ => 0.0,
         };
     }
@@ -1261,6 +1355,8 @@ fn full_run_env_reproduce_command(config: &FullRunEnvConfig, seed: u64) -> Strin
         cli_class_arg(config.player_class).to_string(),
         "--max-steps".to_string(),
         config.max_steps.to_string(),
+        "--reward-shaping-profile".to_string(),
+        config.reward_shaping_profile.as_str().to_string(),
     ];
     if config.final_act {
         parts.push("--final-act".to_string());
@@ -1376,6 +1472,8 @@ fn reproduce_command(config: &RunBatchConfig, seed: u64) -> String {
         cli_class_arg(config.player_class).to_string(),
         "--max-steps".to_string(),
         config.max_steps.to_string(),
+        "--reward-shaping-profile".to_string(),
+        config.reward_shaping_profile.as_str().to_string(),
         "--determinism-check".to_string(),
         "--summary-out".to_string(),
         format!(
@@ -1570,6 +1668,7 @@ pub fn run_batch(config: &RunBatchConfig) -> Result<RunBatchSummary, String> {
         final_act: config.final_act,
         player_class: config.player_class.to_string(),
         max_steps: config.max_steps,
+        reward_shaping_profile: config.reward_shaping_profile.as_str().to_string(),
         episodes_completed,
         crash_count,
         illegal_action_count,
@@ -2977,6 +3076,7 @@ fn build_observation(ctx: &EpisodeContext) -> RunObservationV0 {
             .filter(|slot| slot.is_some())
             .count(),
         deck: build_deck_observation(&ctx.run_state),
+        plan_profile: build_deck_plan_profile(&ctx.run_state),
         deck_cards: build_deck_card_observations(&ctx.run_state),
         relics: build_relic_observations(&ctx.run_state),
         potions: build_potion_observations(&ctx.run_state),
@@ -3048,6 +3148,145 @@ fn build_deck_observation(run_state: &RunState) -> RunDeckObservationV0 {
         0
     };
     out
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+struct CardPlanAffordance {
+    frontload: i32,
+    block: i32,
+    draw: i32,
+    scaling: i32,
+    aoe: i32,
+    exhaust: i32,
+    kill_window: i32,
+    setup_cashout_risk: i32,
+}
+
+impl CardPlanAffordance {
+    fn subtract(self, other: Self) -> Self {
+        Self {
+            frontload: self.frontload - other.frontload,
+            block: self.block - other.block,
+            draw: self.draw - other.draw,
+            scaling: self.scaling - other.scaling,
+            aoe: self.aoe - other.aoe,
+            exhaust: self.exhaust - other.exhaust,
+            kill_window: self.kill_window - other.kill_window,
+            setup_cashout_risk: self.setup_cashout_risk - other.setup_cashout_risk,
+        }
+    }
+}
+
+fn build_deck_plan_profile(run_state: &RunState) -> DeckPlanProfileV0 {
+    let mut profile = DeckPlanProfileV0 {
+        score_kind: "heuristic".to_string(),
+        ..DeckPlanProfileV0::default()
+    };
+    for card in &run_state.master_deck {
+        let affordance = card_plan_affordance(card.id, card.upgrades);
+        profile.frontload_supply += affordance.frontload;
+        profile.block_supply += affordance.block;
+        profile.draw_supply += affordance.draw;
+        profile.scaling_supply += affordance.scaling;
+        profile.aoe_supply += affordance.aoe;
+        profile.exhaust_supply += affordance.exhaust;
+        profile.kill_window_supply += affordance.kill_window;
+        if crate::content::cards::is_starter_basic(card.id) {
+            profile.starter_basic_burden += 10;
+        }
+    }
+    profile.setup_cashout_risk = setup_cashout_risk_from_supplies(
+        profile.frontload_supply,
+        profile.block_supply,
+        profile.draw_supply,
+        profile.scaling_supply,
+    );
+    profile
+}
+
+fn card_plan_affordance(card_id: CardId, upgrades: u8) -> CardPlanAffordance {
+    let def = crate::content::cards::get_card_definition(card_id);
+    let damage = (def.base_damage + def.upgrade_damage * upgrades as i32).max(0);
+    let block = (def.base_block + def.upgrade_block * upgrades as i32).max(0);
+    let magic = (def.base_magic + def.upgrade_magic * upgrades as i32).max(0);
+    let mut out = CardPlanAffordance::default();
+    if damage > 0 {
+        out.frontload += damage;
+    }
+    if block > 0 {
+        out.block += block;
+    } else if card_is_block_core(card_id) {
+        out.block += 8;
+    }
+    if card_draws_cards(card_id) {
+        out.draw += match card_id {
+            CardId::Offering | CardId::BattleTrance | CardId::MasterOfStrategy => 18,
+            CardId::ShrugItOff | CardId::PommelStrike | CardId::Backflip => 12,
+            _ => 10,
+        };
+    }
+    if card_is_scaling_piece(card_id) {
+        out.scaling += match card_id {
+            CardId::DemonForm | CardId::Corruption => 22,
+            CardId::Inflame | CardId::FeelNoPain | CardId::DarkEmbrace => 16,
+            _ => 12,
+        };
+        out.setup_cashout_risk += 4;
+    }
+    if matches!(def.target, crate::content::cards::CardTarget::AllEnemy) || def.is_multi_damage {
+        out.aoe += 12 + damage / 2;
+    }
+    if card_is_multi_hit(card_id) {
+        out.aoe += 4;
+    }
+    if card_exhausts_other_cards(card_id) {
+        out.exhaust += match card_id {
+            CardId::TrueGrit if upgrades == 0 => 5,
+            CardId::TrueGrit => 14,
+            CardId::SecondWind | CardId::FiendFire | CardId::BurningPact => 12,
+            _ => 8,
+        };
+    }
+    if matches!(
+        card_id,
+        CardId::Feed | CardId::HandOfGreed | CardId::RitualDagger
+    ) {
+        out.kill_window += 18;
+    }
+    if card_applies_vulnerable(card_id) {
+        out.frontload += 8 + magic;
+    }
+    if card_applies_weak(card_id) {
+        out.block += 6 + magic;
+    }
+    match card_id {
+        CardId::Immolate => {
+            out.frontload += 20;
+            out.aoe += 20;
+        }
+        CardId::Disarm | CardId::Shockwave => {
+            out.block += 18;
+            out.scaling += 6;
+        }
+        CardId::Offering => {
+            out.frontload += 8;
+            out.draw += 6;
+        }
+        _ => {}
+    }
+    out
+}
+
+fn setup_cashout_risk_from_supplies(
+    frontload_supply: i32,
+    block_supply: i32,
+    draw_supply: i32,
+    scaling_supply: i32,
+) -> i32 {
+    if scaling_supply <= 0 {
+        return 0;
+    }
+    (scaling_supply * 2 - block_supply - draw_supply - frontload_supply / 3).max(0)
 }
 
 fn build_relic_observations(run_state: &RunState) -> Vec<RunRelicObservationV0> {
@@ -3487,12 +3726,16 @@ fn build_action_candidates(
         .map(|(action_index, action)| {
             let action_key = action_key_for_input(action, combat);
             let card = ctx.and_then(|ctx| card_feature_for_action(action, ctx));
+            let plan_delta = ctx
+                .map(|ctx| candidate_plan_delta_for_action(action, ctx))
+                .unwrap_or_else(empty_candidate_plan_delta);
             RunActionCandidate {
                 action_index,
                 action_id: stable_action_id(&action_key),
                 action_key,
                 action: trace_input_from_client_input(action),
                 card,
+                plan_delta,
             }
         })
         .collect()
@@ -3529,6 +3772,227 @@ fn card_feature_for_action(action: &ClientInput, ctx: &EpisodeContext) -> Option
             .map(|card| build_card_feature(card.id, card.upgrades, &ctx.run_state)),
         _ => None,
     }
+}
+
+fn candidate_plan_delta_for_action(
+    action: &ClientInput,
+    ctx: &EpisodeContext,
+) -> CandidatePlanDeltaV0 {
+    match action {
+        ClientInput::SelectCard(index) => match &ctx.engine_state {
+            EngineState::RewardScreen(reward_state) => reward_state
+                .pending_card_choice
+                .as_ref()
+                .and_then(|cards| cards.get(*index))
+                .map(|card| add_card_plan_delta(card.id, card.upgrades, &ctx.run_state))
+                .unwrap_or_else(empty_candidate_plan_delta),
+            _ => empty_candidate_plan_delta(),
+        },
+        ClientInput::BuyCard(index) => match &ctx.engine_state {
+            EngineState::Shop(shop) => shop
+                .cards
+                .get(*index)
+                .map(|card| add_card_plan_delta(card.card_id, 0, &ctx.run_state))
+                .unwrap_or_else(empty_candidate_plan_delta),
+            _ => empty_candidate_plan_delta(),
+        },
+        ClientInput::CampfireOption(CampfireChoice::Smith(index)) => ctx
+            .run_state
+            .master_deck
+            .get(*index)
+            .map(|card| upgrade_card_plan_delta(card.id, card.upgrades, &ctx.run_state))
+            .unwrap_or_else(empty_candidate_plan_delta),
+        ClientInput::CampfireOption(CampfireChoice::Toke(index))
+        | ClientInput::PurgeCard(index) => ctx
+            .run_state
+            .master_deck
+            .get(*index)
+            .map(|card| remove_card_plan_delta(card.id, card.upgrades, &ctx.run_state))
+            .unwrap_or_else(empty_candidate_plan_delta),
+        _ => empty_candidate_plan_delta(),
+    }
+}
+
+fn empty_candidate_plan_delta() -> CandidatePlanDeltaV0 {
+    CandidatePlanDeltaV0 {
+        score_kind: "heuristic".to_string(),
+        ..CandidatePlanDeltaV0::default()
+    }
+}
+
+fn add_card_plan_delta(
+    card_id: CardId,
+    upgrades: u8,
+    run_state: &RunState,
+) -> CandidatePlanDeltaV0 {
+    let affordance = card_plan_affordance(card_id, upgrades);
+    let profile = build_deck_plan_profile(run_state);
+    let deck_deficit_bonus = deck_deficit_bonus(&profile, affordance, run_state);
+    let bloat_penalty = deck_bloat_penalty(card_id, affordance, run_state);
+    let duplicate_penalty = plan_duplicate_penalty(card_id, run_state);
+    let rule_score = rule_card_offer_score(card_id, run_state);
+    delta_from_affordance(
+        affordance,
+        0,
+        deck_deficit_bonus,
+        bloat_penalty,
+        duplicate_penalty,
+        rule_score + deck_deficit_bonus + bloat_penalty + duplicate_penalty,
+    )
+}
+
+fn upgrade_card_plan_delta(
+    card_id: CardId,
+    upgrades: u8,
+    run_state: &RunState,
+) -> CandidatePlanDeltaV0 {
+    let before = card_plan_affordance(card_id, upgrades);
+    let after = card_plan_affordance(card_id, upgrades.saturating_add(1));
+    let affordance = after.subtract(before);
+    let profile = build_deck_plan_profile(run_state);
+    let deck_deficit_bonus = deck_deficit_bonus(&profile, affordance, run_state);
+    let rule_score = rule_upgrade_score(card_id);
+    delta_from_affordance(
+        affordance,
+        0,
+        deck_deficit_bonus,
+        0,
+        0,
+        rule_score + deck_deficit_bonus,
+    )
+}
+
+fn remove_card_plan_delta(
+    card_id: CardId,
+    upgrades: u8,
+    run_state: &RunState,
+) -> CandidatePlanDeltaV0 {
+    let affordance = card_plan_affordance(card_id, upgrades);
+    let burden_delta = if crate::content::cards::is_starter_basic(card_id) {
+        -10
+    } else {
+        0
+    };
+    let mut out = delta_from_affordance(
+        CardPlanAffordance {
+            frontload: -affordance.frontload,
+            block: -affordance.block,
+            draw: -affordance.draw,
+            scaling: -affordance.scaling,
+            aoe: -affordance.aoe,
+            exhaust: -affordance.exhaust,
+            kill_window: -affordance.kill_window,
+            setup_cashout_risk: -affordance.setup_cashout_risk,
+        },
+        burden_delta,
+        0,
+        0,
+        0,
+        rule_remove_score(card_id, run_state),
+    );
+    if burden_delta < 0 {
+        out.deck_deficit_bonus += 25;
+        out.plan_adjusted_score += 25;
+    }
+    if run_state.master_deck.len() <= 14 && affordance.frontload > 0 {
+        out.deck_deficit_bonus -= 10;
+        out.plan_adjusted_score -= 10;
+    }
+    out
+}
+
+fn delta_from_affordance(
+    affordance: CardPlanAffordance,
+    starter_basic_burden_delta: i32,
+    deck_deficit_bonus: i32,
+    bloat_penalty: i32,
+    duplicate_penalty: i32,
+    plan_adjusted_score: i32,
+) -> CandidatePlanDeltaV0 {
+    CandidatePlanDeltaV0 {
+        score_kind: "heuristic".to_string(),
+        frontload_delta: affordance.frontload,
+        block_delta: affordance.block,
+        draw_delta: affordance.draw,
+        scaling_delta: affordance.scaling,
+        aoe_delta: affordance.aoe,
+        exhaust_delta: affordance.exhaust,
+        kill_window_delta: affordance.kill_window,
+        starter_basic_burden_delta,
+        setup_cashout_risk_delta: affordance.setup_cashout_risk,
+        deck_deficit_bonus,
+        bloat_penalty,
+        duplicate_penalty,
+        plan_adjusted_score,
+    }
+}
+
+fn deck_deficit_bonus(
+    profile: &DeckPlanProfileV0,
+    affordance: CardPlanAffordance,
+    run_state: &RunState,
+) -> i32 {
+    let mut bonus = 0;
+    if profile.frontload_supply < 70 {
+        bonus += affordance.frontload;
+    }
+    if profile.block_supply < 50 {
+        bonus += affordance.block;
+    }
+    if profile.draw_supply < 20 {
+        bonus += affordance.draw * 2;
+    } else if profile.draw_supply < 35 {
+        bonus += affordance.draw;
+    }
+    if profile.scaling_supply < 20 {
+        bonus += affordance.scaling * 2;
+    } else if profile.scaling_supply < 35 {
+        bonus += affordance.scaling;
+    }
+    if profile.aoe_supply < 18 && (run_state.act_num >= 2 || run_state.floor_num >= 7) {
+        bonus += affordance.aoe * 2;
+    } else if profile.aoe_supply < 18 {
+        bonus += affordance.aoe;
+    }
+    if profile.exhaust_supply < 12 {
+        bonus += affordance.exhaust;
+    }
+    if profile.kill_window_supply == 0 {
+        bonus += affordance.kill_window / 2;
+    }
+    bonus
+}
+
+fn deck_bloat_penalty(
+    card_id: CardId,
+    affordance: CardPlanAffordance,
+    run_state: &RunState,
+) -> i32 {
+    if run_state.master_deck.len() < 22 {
+        return 0;
+    }
+    let high_value_plan_card = affordance.draw > 0
+        || affordance.scaling > 0
+        || affordance.aoe > 0
+        || affordance.kill_window > 0
+        || matches!(
+            card_id,
+            CardId::Disarm | CardId::Shockwave | CardId::Offering
+        );
+    if high_value_plan_card {
+        -5
+    } else {
+        -18
+    }
+}
+
+fn plan_duplicate_penalty(card_id: CardId, run_state: &RunState) -> i32 {
+    let copies = run_state
+        .master_deck
+        .iter()
+        .filter(|card| card.id == card_id)
+        .count() as i32;
+    -(copies * 5)
 }
 
 fn build_card_feature(card_id: CardId, upgrades: u8, run_state: &RunState) -> RunCardFeatureV0 {
@@ -4234,6 +4698,7 @@ fn write_trace_file(
             player_class: config.player_class.to_string(),
             max_steps: config.max_steps,
             policy: config.policy.as_str().to_string(),
+            reward_shaping_profile: config.reward_shaping_profile.as_str().to_string(),
         },
         summary: summary.clone(),
         steps: steps.to_vec(),
@@ -4321,6 +4786,10 @@ mod tests {
             potion_slots: 3,
             filled_potion_slots: 0,
             deck: RunDeckObservationV0::default(),
+            plan_profile: DeckPlanProfileV0 {
+                score_kind: "heuristic".to_string(),
+                ..DeckPlanProfileV0::default()
+            },
             deck_cards: Vec::new(),
             relics: Vec::new(),
             potions: Vec::new(),
@@ -4361,6 +4830,7 @@ mod tests {
                 target: None,
             },
             card: None,
+            plan_delta: empty_candidate_plan_delta(),
         }];
         let mut tracker = NoProgressTracker::new();
 
@@ -4399,6 +4869,7 @@ mod tests {
             policy: RunPolicyKind::RandomMasked,
             trace_dir: None,
             determinism_check: true,
+            reward_shaping_profile: RewardShapingProfile::Baseline,
         };
 
         let summary = run_batch(&config).expect("one episode smoke should run");
@@ -4431,6 +4902,7 @@ mod tests {
             policy: RunPolicyKind::RuleBaselineV0,
             trace_dir: None,
             determinism_check: false,
+            reward_shaping_profile: RewardShapingProfile::Baseline,
         };
         let episode = run_episode(&config, 0, 71200, EpisodePolicy::RuleBaselineV0, true);
         assert!(episode.summary.crash.is_none());
@@ -4473,6 +4945,7 @@ mod tests {
             final_act: false,
             player_class: "Ironclad",
             max_steps: 50,
+            reward_shaping_profile: RewardShapingProfile::Baseline,
         };
         let mut env = FullRunEnv::new(config).expect("full-run env should reset");
 
@@ -4504,6 +4977,7 @@ mod tests {
             final_act: false,
             player_class: "Ironclad",
             max_steps: 50,
+            reward_shaping_profile: RewardShapingProfile::Baseline,
         };
         let mut env = FullRunEnv::new(config).expect("full-run env should reset");
         let step = env
@@ -4596,12 +5070,141 @@ mod tests {
             .expect("card reward skip should remain available");
         assert!(skip.card.is_none());
 
-        let take_reward = full_run_action_shaping_reward(&ctx, &ClientInput::SelectCard(0));
-        let skip_reward = full_run_action_shaping_reward(&ctx, &ClientInput::Proceed);
+        let take_reward = full_run_action_shaping_reward(
+            &ctx,
+            &ClientInput::SelectCard(0),
+            RewardShapingProfile::Baseline,
+        );
+        let skip_reward = full_run_action_shaping_reward(
+            &ctx,
+            &ClientInput::Proceed,
+            RewardShapingProfile::Baseline,
+        );
         assert!(
             take_reward > skip_reward,
             "card choice shaping should give the learner an immediate non-oracle hint"
         );
+    }
+
+    #[test]
+    fn starter_deck_plan_profile_marks_basic_burden_and_missing_draw_scaling() {
+        let run_state = RunState::new(1, 0, false, "Ironclad");
+        let profile = build_deck_plan_profile(&run_state);
+
+        assert_eq!(profile.score_kind, "heuristic");
+        assert!(
+            profile.starter_basic_burden >= 90,
+            "starter deck should expose a high starter/basic burden"
+        );
+        assert_eq!(profile.draw_supply, 0);
+        assert_eq!(profile.scaling_supply, 0);
+        assert!(profile.frontload_supply > 0);
+        assert!(profile.block_supply > 0);
+    }
+
+    #[test]
+    fn reward_card_candidates_expose_plan_deltas_for_draw_scaling_and_frontload() {
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        run_state.master_deck.clear();
+        run_state.add_card_to_deck(CardId::Strike);
+        run_state.add_card_to_deck(CardId::Defend);
+        run_state.add_card_to_deck(CardId::Bash);
+        let reward_state = RewardState {
+            pending_card_choice: Some(vec![
+                crate::rewards::state::RewardCard::new(CardId::PommelStrike, 0),
+                crate::rewards::state::RewardCard::new(CardId::ShrugItOff, 0),
+                crate::rewards::state::RewardCard::new(CardId::Inflame, 0),
+                crate::rewards::state::RewardCard::new(CardId::Immolate, 0),
+                crate::rewards::state::RewardCard::new(CardId::Disarm, 0),
+            ]),
+            ..RewardState::new()
+        };
+        let ctx = EpisodeContext {
+            engine_state: EngineState::RewardScreen(reward_state),
+            run_state,
+            combat_state: None,
+            stashed_event_combat: None,
+            forced_engine_ticks: 0,
+            combat_win_count: 0,
+        };
+        let legal_actions = legal_actions(&ctx.engine_state, &ctx.run_state, &ctx.combat_state);
+        let candidates = build_action_candidates(&legal_actions, Some(&ctx));
+
+        let by_card = |name: &str| {
+            candidates
+                .iter()
+                .find(|candidate| {
+                    candidate
+                        .card
+                        .as_ref()
+                        .is_some_and(|card| card.card_id == name)
+                })
+                .expect("candidate should exist")
+        };
+        assert!(by_card("PommelStrike").plan_delta.draw_delta > 0);
+        assert!(by_card("ShrugItOff").plan_delta.block_delta > 0);
+        assert!(by_card("Inflame").plan_delta.scaling_delta > 0);
+        assert!(by_card("Immolate").plan_delta.aoe_delta > 0);
+        assert!(by_card("Disarm").plan_delta.block_delta > 0);
+    }
+
+    #[test]
+    fn true_grit_upgrade_delta_improves_exhaust_reliability() {
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        run_state.master_deck.clear();
+        run_state.add_card_to_deck(CardId::TrueGrit);
+
+        let unupgraded = add_card_plan_delta(CardId::TrueGrit, 0, &run_state);
+        let upgraded = add_card_plan_delta(CardId::TrueGrit, 1, &run_state);
+        let upgrade = upgrade_card_plan_delta(CardId::TrueGrit, 0, &run_state);
+
+        assert!(upgraded.exhaust_delta > unupgraded.exhaust_delta);
+        assert!(upgrade.exhaust_delta > 0);
+        assert!(upgrade.plan_adjusted_score > 0);
+    }
+
+    #[test]
+    fn plan_deficit_shaping_strongly_penalizes_skipping_high_plan_offer() {
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        run_state.master_deck.clear();
+        run_state.add_card_to_deck(CardId::Strike);
+        run_state.add_card_to_deck(CardId::Defend);
+        run_state.add_card_to_deck(CardId::Bash);
+        let reward_state = RewardState {
+            pending_card_choice: Some(vec![
+                crate::rewards::state::RewardCard::new(CardId::PommelStrike, 0),
+                crate::rewards::state::RewardCard::new(CardId::Inflame, 0),
+            ]),
+            ..RewardState::new()
+        };
+        let ctx = EpisodeContext {
+            engine_state: EngineState::RewardScreen(reward_state),
+            run_state,
+            combat_state: None,
+            stashed_event_combat: None,
+            forced_engine_ticks: 0,
+            combat_win_count: 0,
+        };
+
+        let take_plan = full_run_action_shaping_reward(
+            &ctx,
+            &ClientInput::SelectCard(0),
+            RewardShapingProfile::PlanDeficitV0,
+        );
+        let skip_plan = full_run_action_shaping_reward(
+            &ctx,
+            &ClientInput::Proceed,
+            RewardShapingProfile::PlanDeficitV0,
+        );
+        let skip_baseline = full_run_action_shaping_reward(
+            &ctx,
+            &ClientInput::Proceed,
+            RewardShapingProfile::Baseline,
+        );
+
+        assert!(take_plan > 0.35);
+        assert!(skip_plan < skip_baseline);
+        assert!(skip_plan <= -0.40);
     }
 
     #[test]
@@ -4629,9 +5232,21 @@ mod tests {
             combat_win_count: 0,
         };
 
-        let claim_gold = full_run_action_shaping_reward(&ctx, &ClientInput::ClaimReward(0));
-        let claim_card = full_run_action_shaping_reward(&ctx, &ClientInput::ClaimReward(1));
-        let proceed = full_run_action_shaping_reward(&ctx, &ClientInput::Proceed);
+        let claim_gold = full_run_action_shaping_reward(
+            &ctx,
+            &ClientInput::ClaimReward(0),
+            RewardShapingProfile::Baseline,
+        );
+        let claim_card = full_run_action_shaping_reward(
+            &ctx,
+            &ClientInput::ClaimReward(1),
+            RewardShapingProfile::Baseline,
+        );
+        let proceed = full_run_action_shaping_reward(
+            &ctx,
+            &ClientInput::Proceed,
+            RewardShapingProfile::Baseline,
+        );
 
         assert!(claim_gold > 0.0);
         assert!(claim_card > 0.0);
@@ -4727,6 +5342,7 @@ mod tests {
             policy: RunPolicyKind::RuleBaselineV0,
             trace_dir: None,
             determinism_check: true,
+            reward_shaping_profile: RewardShapingProfile::Baseline,
         };
 
         let summary = run_batch(&config).expect("one episode rule baseline smoke should run");
@@ -4751,6 +5367,7 @@ mod tests {
             policy: RunPolicyKind::RuleBaselineV0,
             trace_dir: None,
             determinism_check: true,
+            reward_shaping_profile: RewardShapingProfile::Baseline,
         };
 
         let summary = run_batch(&config).expect("seed 10542 should run without contract failure");
@@ -4773,6 +5390,7 @@ mod tests {
             policy: RunPolicyKind::RandomMasked,
             trace_dir: None,
             determinism_check: true,
+            reward_shaping_profile: RewardShapingProfile::Baseline,
         };
 
         let failure = make_contract_failure(
