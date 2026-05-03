@@ -13,7 +13,7 @@ from typing import Any
 from combat_rl_common import REPO_ROOT, write_json
 
 
-REPORT_VERSION = "probabilistic_cashout_lab_v0_2"
+REPORT_VERSION = "probabilistic_cashout_lab_v0_3"
 DEFAULT_REPORT = (
     REPO_ROOT
     / "tools"
@@ -498,6 +498,65 @@ def context_flags(case: dict[str, Any]) -> set[str]:
     return set(str(flag) for flag in ((case.get("relevance") or {}).get("context_flags") or []))
 
 
+def relevance_counts(case: dict[str, Any]) -> dict[str, float]:
+    return {
+        str(key): num(value)
+        for key, value in ((case.get("relevance") or {}).get("bucketed_cards") or {}).items()
+    }
+
+
+def relevance_classes(case: dict[str, Any]) -> set[str]:
+    return set(str(item) for item in ((case.get("relevance") or {}).get("tracked_classes") or []))
+
+
+def cashout_context_summary(case: dict[str, Any], future_summary: dict[str, Any] | None = None) -> dict[str, Any]:
+    future_summary = future_summary or {}
+    counts = relevance_counts(case)
+    archetypes = future_summary.get("encounter_archetypes") or {}
+    act = int(case.get("act") or 0)
+    floor = int(case.get("floor") or 0)
+    frontload_supply = profile_value(case, "frontload_supply")
+    block_supply = profile_value(case, "block_supply")
+    scaling_supply = profile_value(case, "scaling_supply")
+    exhaust_supply = profile_value(case, "exhaust_supply")
+    starter_burden = profile_value(case, "starter_basic_burden")
+    scaling_gap = max(0.0, 35.0 - scaling_supply) / 35.0
+    block_gap = max(0.0, 50.0 - block_supply) / 50.0
+    frontload_gap = max(0.0, 70.0 - frontload_supply) / 70.0
+    attack_density = counts.get("generic_attack", 0.0)
+    block_density = counts.get("generic_block", 0.0)
+    exhaust_density = counts.get("exhaust_engine", 0.0)
+    junk_density = counts.get("junk_status", 0.0)
+    exhaust_payoff_density = exhaust_supply / 8.0 + exhaust_density * 0.55 + junk_density * 0.35
+    boss_long = num(archetypes.get("boss_long_fight"))
+    single_frontload = num(archetypes.get("single_frontload"))
+    block_control = num(archetypes.get("block_control"))
+    future_bosses = min(num(future_summary.get("boss_count")), 1.0)
+    boss_cashout_need = 0.45 + scaling_gap * 0.30 + block_gap * 0.15 + frontload_gap * 0.10
+    if act <= 1 and floor >= 10:
+        boss_cashout_need += 0.12
+    boss_demand = min(1.25, boss_long * boss_cashout_need + future_bosses * 0.08)
+    return {
+        "attack_density": round(attack_density, 3),
+        "block_density": round(block_density, 3),
+        "exhaust_density": round(exhaust_density, 3),
+        "junk_density": round(junk_density, 3),
+        "exhaust_payoff_density": round(exhaust_payoff_density, 3),
+        "starter_basic_burden": round(starter_burden, 3),
+        "scaling_gap": round(scaling_gap, 3),
+        "block_gap": round(block_gap, 3),
+        "frontload_gap": round(frontload_gap, 3),
+        "boss_demand": round(boss_demand, 3),
+        "single_frontload_pressure": round(single_frontload, 3),
+        "block_control_pressure": round(block_control, 3),
+        "future_boss_count": round(num(future_summary.get("boss_count")), 3),
+    }
+
+
+def boss_demand_pressure(case: dict[str, Any], future_summary: dict[str, Any] | None = None) -> float:
+    return num(cashout_context_summary(case, future_summary).get("boss_demand"))
+
+
 def scenario_buckets(case: dict[str, Any], future_summary: dict[str, Any] | None = None) -> list[ScenarioBucket]:
     act = int(case.get("act") or 0)
     floor = int(case.get("floor") or 0)
@@ -554,6 +613,7 @@ def scenario_buckets(case: dict[str, Any], future_summary: dict[str, Any] | None
     multi_pressure = num(future_archetypes.get("multi_small_enemies"))
     elite_burst = num(future_archetypes.get("elite_burst"))
     boss_long = num(future_archetypes.get("boss_long_fight"))
+    boss_demand = boss_demand_pressure(case, future_summary)
     single_frontload = num(future_archetypes.get("single_frontload"))
     block_control = num(future_archetypes.get("block_control"))
 
@@ -586,9 +646,9 @@ def scenario_buckets(case: dict[str, Any], future_summary: dict[str, Any] | None
                 weight *= 1.0 + single_frontload * 0.35
             if "boss" in bucket.name or "scaling" in bucket.name:
                 weight *= 1.0 + min(future_bosses, 1) * 0.25
-                weight *= 1.0 + boss_long * 0.55
+                weight *= 1.0 + boss_demand * 0.55
                 if "scaling_cashout" in demands:
-                    demands["scaling_cashout"] *= 1.0 + boss_long * 0.25
+                    demands["scaling_cashout"] *= 1.0 + boss_demand * 0.25
                 if floor >= 10 and act <= 1:
                     weight *= 1.0 + min(future_pressure, 5.0) * 0.04
             if "survival" in bucket.name or "block" in bucket.name or "control" in bucket.name:
@@ -626,8 +686,149 @@ def reach_factor(candidate: dict[str, Any], bucket: ScenarioBucket) -> float:
     return 0.58 + 0.42 * max(0.0, min(p, 1.0))
 
 
-def bucket_score(candidate: dict[str, Any], bucket: ScenarioBucket) -> float:
+def clamp(value: float, low: float, high: float) -> float:
+    return max(low, min(high, value))
+
+
+def component_multiplier(
+    field: str,
+    *,
+    candidate: dict[str, Any],
+    bucket: ScenarioBucket,
+    case: dict[str, Any],
+    future_summary: dict[str, Any] | None,
+) -> tuple[float, list[str]]:
+    cid = str(candidate.get("card_id") or "")
+    primary = str(candidate.get("primary_class") or "")
+    context = cashout_context_summary(case, future_summary)
+    flags = context_flags(case)
+    notes: list[str] = []
+    multiplier = 1.0
+
+    if field == "scaling_cashout":
+        boss_demand = num(context.get("boss_demand"))
+        single_frontload = num(context.get("single_frontload_pressure"))
+        attack_density = num(context.get("attack_density"))
+        block_gap = num(context.get("block_gap"))
+        scaling_gap = num(context.get("scaling_gap"))
+        multiplier *= 0.42 + boss_demand * 0.95 + scaling_gap * 0.18
+        if "boss" not in bucket.name and "scaling" not in bucket.name and boss_demand < 0.12:
+            multiplier *= 0.70
+            notes.append("slow_scaling_outside_long_fight")
+        if single_frontload >= 0.30 and bucket.name.endswith("frontload"):
+            multiplier *= 0.72
+            notes.append("single_frontload_pressure_discounts_setup")
+        if block_gap >= 0.45 and boss_demand < 0.20:
+            multiplier *= 0.78
+            notes.append("low_block_window_for_setup")
+        if cid == "Inflame":
+            if attack_density < 7:
+                multiplier *= 0.78
+                notes.append("inflame_low_attack_density")
+            elif attack_density >= 10:
+                multiplier *= 1.08
+            if profile_value(case, "frontload_supply") >= 95:
+                multiplier *= 0.82
+                notes.append("inflame_frontload_already_high")
+        elif cid == "LimitBreak":
+            if profile_value(case, "scaling_supply") < 8:
+                multiplier *= 0.25
+                notes.append("limit_break_without_existing_strength")
+        elif cid in {"DarkEmbrace", "FeelNoPain"}:
+            payoff = num(context.get("exhaust_payoff_density"))
+            if payoff < 1.0:
+                multiplier *= 0.25
+                notes.append("exhaust_power_without_engine")
+            elif payoff < 2.0:
+                multiplier *= 0.55
+                notes.append("exhaust_power_thin_engine")
+            else:
+                multiplier *= 1.05
+        elif cid == "DemonForm" and profile_value(case, "frontload_supply") < 65 and boss_demand < 0.25:
+            multiplier *= 0.62
+            notes.append("demon_form_too_slow_for_current_window")
+        multiplier = clamp(multiplier, 0.12, 1.35)
+
+    elif field == "exhaust":
+        payoff = num(context.get("exhaust_payoff_density"))
+        junk = num(context.get("junk_density"))
+        exhaust_density = num(context.get("exhaust_density"))
+        if payoff < 0.8 and junk <= 0:
+            multiplier *= 0.25
+            notes.append("exhaust_without_payoff_or_junk")
+        elif payoff < 1.6:
+            multiplier *= 0.55
+            notes.append("thin_exhaust_cashout")
+        else:
+            multiplier *= 0.95 + min(payoff, 4.0) * 0.08
+        if cid in {"TrueGrit", "SecondWind"} and exhaust_density <= 0 and junk <= 0:
+            multiplier *= 0.65
+            notes.append("cleanup_card_without_cleanup_target")
+        if cid in {"DarkEmbrace", "FeelNoPain"}:
+            multiplier *= 0.45
+            notes.append("exhaust_power_is_payoff_not_outlet")
+        multiplier = clamp(multiplier, 0.10, 1.30)
+
+    elif field == "draw_cashout":
+        if cid == "Offering":
+            payoff = num(context.get("attack_density")) + num(context.get("block_density")) * 0.45
+            if payoff < 8:
+                multiplier *= 0.70
+                notes.append("offering_low_immediate_payoff_density")
+            if "VelvetChoker" in flags:
+                multiplier *= 0.55
+                notes.append("offering_choker_action_pressure")
+        if primary == "generic_draw" and profile_value(case, "draw_supply") >= 20:
+            multiplier *= 0.78
+            notes.append("draw_supply_already_present")
+        multiplier = clamp(multiplier, 0.25, 1.20)
+
+    elif field in {"aoe_damage", "multi_enemy_control"}:
+        archetypes = (future_summary or {}).get("encounter_archetypes") or {}
+        multi_pressure = num(archetypes.get("multi_small_enemies"))
+        if multi_pressure < 0.12 and profile_value(case, "aoe_supply") >= 12:
+            multiplier *= 0.78
+            notes.append("aoe_without_near_multi_pressure")
+        if cid == "ThunderClap":
+            multiplier *= 0.65
+            notes.append("thunderclap_requires_followup")
+        multiplier = clamp(multiplier, 0.35, 1.20)
+
+    return multiplier, notes
+
+
+def adjusted_ev_for_bucket(
+    candidate: dict[str, Any],
+    bucket: ScenarioBucket,
+    case: dict[str, Any],
+    future_summary: dict[str, Any] | None,
+) -> tuple[dict[str, float], list[str]]:
     ev = candidate.get("bucket_ev") or {}
+    adjusted = {field: num(ev.get(field)) for field in COMPONENTS}
+    notes: list[str] = []
+    for field in COMPONENTS:
+        multiplier, field_notes = component_multiplier(
+            field,
+            candidate=candidate,
+            bucket=bucket,
+            case=case,
+            future_summary=future_summary,
+        )
+        if abs(multiplier - 1.0) >= 0.03 and adjusted[field]:
+            adjusted[field] = round(adjusted[field] * multiplier, 3)
+            notes.extend(field_notes)
+    adjusted["base_prior"] = num(ev.get("base_prior"))
+    adjusted["context_penalty"] = num(ev.get("context_penalty"))
+    return adjusted, sorted(set(notes))
+
+
+def bucket_score(
+    candidate: dict[str, Any],
+    bucket: ScenarioBucket,
+    case: dict[str, Any],
+    future_summary: dict[str, Any] | None,
+) -> float:
+    ev, _notes = adjusted_ev_for_bucket(candidate, bucket, case, future_summary)
     raw = 0.0
     for field, weight in bucket.demands.items():
         raw += num(ev.get(field)) * weight
@@ -651,14 +852,21 @@ def weighted_cvar_low(scores: list[tuple[float, float]], tail: float = 0.30) -> 
     return total / used if used else 0.0
 
 
-def candidate_lab_eval(candidate: dict[str, Any], buckets: list[ScenarioBucket]) -> dict[str, Any]:
+def candidate_lab_eval(
+    candidate: dict[str, Any],
+    buckets: list[ScenarioBucket],
+    *,
+    case: dict[str, Any],
+    future_summary: dict[str, Any] | None,
+) -> dict[str, Any]:
     scored = [
         {
             "bucket": bucket.name,
             "weight": round(bucket.weight, 4),
-            "score": bucket_score(candidate, bucket),
+            "score": bucket_score(candidate, bucket, case, future_summary),
             "reach_key": bucket.reach_key,
             "demands": bucket.demands,
+            "cashout_adjustments": adjusted_ev_for_bucket(candidate, bucket, case, future_summary)[1],
         }
         for bucket in buckets
     ]
@@ -698,6 +906,47 @@ def candidate_lab_eval(candidate: dict[str, Any], buckets: list[ScenarioBucket])
         "best_bucket": {"name": best["bucket"], "score": best["score"]},
         "bucket_scores": scored,
         "flags": flags,
+    }
+
+
+def select_calibrated_lab_best(
+    candidates: list[dict[str, Any]],
+    static_best: dict[str, Any],
+    *,
+    min_override_margin: float = 8.0,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Keep probabilistic cashout diagnostic from making weak overrides.
+
+    Rollout alignment showed that the lab is useful for stress-testing, but weak
+    probabilistic differences often made it worse than the static cashout best.
+    V0.3 therefore only overrides static when the lab advantage is explicit.
+    """
+    if not candidates:
+        return {}, {"selection_policy": "no_candidates"}
+    raw_best = candidates[0]
+    static_key = str(static_best.get("action_key") or "")
+    static_eval = next((row for row in candidates if str(row.get("action_key") or "") == static_key), {})
+    if not static_eval or raw_best.get("action_key") == static_key:
+        return raw_best, {
+            "selection_policy": "raw_lab_best",
+            "raw_lab_best": raw_best.get("card_id"),
+            "override_margin": 0.0,
+        }
+    margin = num(raw_best.get("lab_expected_score")) - num(static_eval.get("lab_expected_score"))
+    if margin >= min_override_margin:
+        return raw_best, {
+            "selection_policy": "lab_overrides_static",
+            "raw_lab_best": raw_best.get("card_id"),
+            "static_best": static_eval.get("card_id"),
+            "override_margin": round(margin, 3),
+            "min_override_margin": min_override_margin,
+        }
+    return static_eval, {
+        "selection_policy": "calibrated_to_static_best",
+        "raw_lab_best": raw_best.get("card_id"),
+        "static_best": static_eval.get("card_id"),
+        "override_margin": round(margin, 3),
+        "min_override_margin": min_override_margin,
     }
 
 
@@ -748,14 +997,21 @@ def evaluate_case(
         )
     )
     buckets = scenario_buckets(case, future_summary)
-    candidates = [candidate_lab_eval(candidate, buckets) for candidate in case.get("candidates") or []]
+    candidates = [
+        candidate_lab_eval(candidate, buckets, case=case, future_summary=future_summary)
+        for candidate in case.get("candidates") or []
+    ]
     candidates.sort(key=lambda item: item["lab_expected_score"], reverse=True)
-    lab_best = candidates[0] if candidates else {}
+    static_best = case.get("best_by_cashout") or {}
+    raw_lab_best = candidates[0] if candidates else {}
+    lab_best, lab_selection = select_calibrated_lab_best(candidates, static_best)
     hand_buckets = scenario_buckets(case, {})
-    hand_candidates = [candidate_lab_eval(candidate, hand_buckets) for candidate in case.get("candidates") or []]
+    hand_candidates = [
+        candidate_lab_eval(candidate, hand_buckets, case=case, future_summary={})
+        for candidate in case.get("candidates") or []
+    ]
     hand_candidates.sort(key=lambda item: item["lab_expected_score"], reverse=True)
     hand_best = hand_candidates[0] if hand_candidates else {}
-    static_best = case.get("best_by_cashout") or {}
     chosen = case.get("chosen") or {}
     flags: list[str] = []
     if lab_best and lab_best.get("action_key") != static_best.get("action_key"):
@@ -769,6 +1025,8 @@ def evaluate_case(
         )
         if margin >= 8:
             flags.append("lab_overturns_static_best")
+    if lab_selection.get("selection_policy") == "calibrated_to_static_best":
+        flags.append("weak_lab_override_blocked")
     static_eval = next(
         (candidate for candidate in candidates if candidate.get("action_key") == static_best.get("action_key")),
         {},
@@ -839,11 +1097,20 @@ def evaluate_case(
             "lab_cvar30": lab_best.get("lab_cvar30"),
             "flags": lab_best.get("flags") or [],
         },
+        "raw_lab_best": {
+            "card_id": raw_lab_best.get("card_id"),
+            "action_key": raw_lab_best.get("action_key"),
+            "lab_expected_score": raw_lab_best.get("lab_expected_score"),
+            "lab_cvar30": raw_lab_best.get("lab_cvar30"),
+            "flags": raw_lab_best.get("flags") or [],
+        },
+        "lab_selection": lab_selection,
         "scenario_buckets": [
             {"name": bucket.name, "weight": round(bucket.weight, 4), "demands": bucket.demands}
             for bucket in buckets
         ],
         "future_room_summary": future_summary,
+        "cashout_context": cashout_context_summary(case, future_summary),
         "prior_impact": prior_impact,
         "candidate_evals": candidates,
         "case_flags": flags,
@@ -972,6 +1239,7 @@ def write_markdown(path: Path, report: dict[str, Any]) -> None:
                 f"- prior source weights: `{(case.get('future_room_summary') or {}).get('source_weights', {})}`",
                 f"- source pressure: `{((case.get('future_room_summary') or {}).get('source_diagnostics') or {}).get('pressure_scores', {})}`",
                 f"- encounter archetypes: `{(case.get('future_room_summary') or {}).get('encounter_archetypes', {})}`",
+                f"- cashout context: `{case.get('cashout_context', {})}`",
                 f"- prior impact: `{case.get('prior_impact', {})}`",
                 f"- chosen: `{case['chosen']['card_id']}`",
                 f"- static best: `{static_best['card_id']}` score `{static_best['cashout_score']}` / `{static_best['dominant_cashout']}`",
@@ -1011,7 +1279,12 @@ def write_markdown(path: Path, report: dict[str, Any]) -> None:
 
 
 def self_test() -> None:
-    case = {"act": 2, "floor": 20, "relevance": {"context_flags": ["aoe_readiness_deficit"]}, "deck_plan_profile": {}}
+    case = {
+        "act": 2,
+        "floor": 20,
+        "relevance": {"context_flags": ["aoe_readiness_deficit"]},
+        "deck_plan_profile": {},
+    }
     buckets = scenario_buckets(case)
     assert abs(sum(bucket.weight for bucket in buckets) - 1.0) < 1e-6
     aoe_candidate = {
@@ -1030,8 +1303,8 @@ def self_test() -> None:
         "reachability": {"p_opening_candidate": 0.4, "p_by_turn2_candidate": 0.8},
         "context_penalties": {},
     }
-    aoe_eval = candidate_lab_eval(aoe_candidate, buckets)
-    attack_eval = candidate_lab_eval(attack_candidate, buckets)
+    aoe_eval = candidate_lab_eval(aoe_candidate, buckets, case=case, future_summary={})
+    attack_eval = candidate_lab_eval(attack_candidate, buckets, case=case, future_summary={})
     assert aoe_eval["lab_expected_score"] > attack_eval["lab_expected_score"]
     assert aoe_eval["lab_cvar30"] <= aoe_eval["lab_expected_score"]
     print(json.dumps({"self_test": "ok", "aoe_expected": aoe_eval["lab_expected_score"]}))

@@ -24,7 +24,7 @@ from verify_cashout_counterfactuals import (
 )
 
 
-REPORT_VERSION = "cashout_rollout_labeler_v1"
+REPORT_VERSION = "cashout_rollout_labeler_v1_1"
 LABEL_MODE = "policy_horizon_paired_fixed_trace_replay"
 GAME_RNG_MODE = "fixed_trace_replay"
 
@@ -423,6 +423,11 @@ def summarize(labels: list[dict[str, Any]], candidate_rows: list[dict[str, Any]]
             key = f"{obs.get('continuation_policy')}@{obs.get('horizon')}"
             verdict = str((obs.get("classification") or {}).get("verdict") or obs.get("status") or "unknown")
             policy_horizon_counts[key][verdict] += 1
+    attr_rows = [
+        (row.get("candidate") or {}).get("attribution") or {}
+        for row in candidate_rows
+        if (row.get("candidate") or {}).get("attribution")
+    ]
     return {
         "case_count": len(labels),
         "label_status_counts": dict(sorted(label_counts.items())),
@@ -436,10 +441,37 @@ def summarize(labels: list[dict[str, Any]], candidate_rows: list[dict[str, Any]]
         "pairwise_label_count": len(edges),
         "strong_training_signal_count": sum(1 for label in labels if label.get("strong_training_signal")),
         "requires_cashout_policy_count": label_counts.get("requires_cashout_policy", 0),
+        "candidate_attribution_summary": summarize_candidate_attributions(attr_rows),
         "contract": (
             "needs_rollout is not a label; only rollout-produced robust_confirmed labels "
             "are strong training signals"
         ),
+    }
+
+
+def summarize_candidate_attributions(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    if not rows:
+        return {"row_count": 0}
+    fields = [
+        "hp_loss_observed",
+        "monster_hp_reduction_observed",
+        "alive_monster_reduction_observed",
+        "combat_turns_observed",
+        "combat_play_card_count",
+        "energy_unused_on_end_turn_total",
+        "draw_pile_decrease_observed",
+        "exhaust_count_increase_observed",
+    ]
+    return {
+        "row_count": len(rows),
+        "averages": {
+            field: round(sum(float(row.get(field) or 0.0) for row in rows) / len(rows), 3)
+            for field in fields
+        },
+        "scaling_played_count": sum(1 for row in rows if row.get("scaling_played")),
+        "draw_played_count": sum(1 for row in rows if row.get("draw_played")),
+        "exhaust_played_count": sum(1 for row in rows if row.get("exhaust_played")),
+        "observability": "derived from before/after full-run observations; not an engine event log",
     }
 
 
@@ -457,6 +489,7 @@ def write_markdown(path: Path, report: dict[str, Any]) -> None:
         f"- label counts: `{report['summary']['label_status_counts']}`",
         f"- strong labels: `{report['summary']['strong_training_signal_count']}`",
         f"- requires cashout policy: `{report['summary']['requires_cashout_policy_count']}`",
+        f"- attribution rows: `{(report['summary'].get('candidate_attribution_summary') or {}).get('row_count', 0)}`",
         f"- RNG mode: `{report['config']['game_rng_mode']}`",
         "",
         "## Limitations",
@@ -491,8 +524,9 @@ def write_markdown(path: Path, report: dict[str, Any]) -> None:
         for obs in label.get("observations") or []:
             classification = obs.get("classification") or {}
             diff = classification.get("outcome_diff_cashout_minus_chosen") or {}
+            attr = diff.get("attribution") or {}
             lines.append(
-                "  - `{policy}` h`{horizon}`: `{verdict}` by `{reason}`, rank chosen `{chosen_rank}` cashout `{cashout_rank}`, diff floor `{floor}` hp `{hp}`".format(
+                "  - `{policy}` h`{horizon}`: `{verdict}` by `{reason}`, rank chosen `{chosen_rank}` cashout `{cashout_rank}`, diff floor `{floor}` hp `{hp}`, attr hp_loss `{attr_hp_loss}` monster_hp `{monster_hp}` kills `{kills}`".format(
                     policy=obs.get("continuation_policy"),
                     horizon=obs.get("horizon"),
                     verdict=classification.get("verdict") or obs.get("status"),
@@ -501,6 +535,9 @@ def write_markdown(path: Path, report: dict[str, Any]) -> None:
                     cashout_rank=classification.get("cashout_best_rank"),
                     floor=diff.get("floor_delta"),
                     hp=diff.get("end_hp"),
+                    attr_hp_loss=attr.get("hp_loss_observed"),
+                    monster_hp=attr.get("monster_hp_reduction_observed"),
+                    kills=attr.get("alive_monster_reduction_observed"),
                 )
             )
         lines.append("")
@@ -602,6 +639,7 @@ def main() -> None:
             "plan_query_v0 is current-turn-only combat continuation with noncombat fallback to rule_baseline_v0",
             "needs_rollout is a queue status, not a training label",
             "only robust_confirmed is marked as a strong training signal",
+            "rollout attribution is derived from before/after observation deltas and is not exact engine event attribution",
         ],
         "labels": labels,
     }

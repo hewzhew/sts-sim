@@ -12,6 +12,46 @@ from typing import Any
 from combat_rl_common import REPO_ROOT, write_json, write_jsonl
 from full_run_env import FullRunEnvDriver
 
+SCALING_OR_SETUP_CARDS = {
+    "Barricade",
+    "Berserk",
+    "Brutality",
+    "Corruption",
+    "DarkEmbrace",
+    "DemonForm",
+    "Evolve",
+    "FeelNoPain",
+    "FireBreathing",
+    "Inflame",
+    "Juggernaut",
+    "LimitBreak",
+    "Metallicize",
+    "Rupture",
+    "SpotWeakness",
+}
+
+DRAW_CARDS = {
+    "BattleTrance",
+    "BurningPact",
+    "DarkEmbrace",
+    "Offering",
+    "PommelStrike",
+    "ShrugItOff",
+    "Warcry",
+}
+
+EXHAUST_CARDS = {
+    "BurningPact",
+    "Corruption",
+    "DarkEmbrace",
+    "FeelNoPain",
+    "FiendFire",
+    "Havoc",
+    "SecondWind",
+    "SeverSoul",
+    "TrueGrit",
+}
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
@@ -170,21 +210,26 @@ def run_candidate_branch(
         start = summarize_state_response(target_response)
         decision_counts: Counter[str] = Counter()
         reward_total = 0.0
+        attribution = new_rollout_attribution()
 
         response = driver.request({"cmd": "step", "action_index": candidate_index})
+        update_rollout_attribution(attribution, target_response, response)
         reward_total += float(response.get("reward") or 0.0)
         immediate = summarize_response(response)
         steps_taken = 1
         if not bool(response.get("done")):
             for _ in range(max(int(args.continuation_steps) - 1, 0)):
                 decision_counts[str(observation_from_response(response).get("decision_type") or "unknown")] += 1
+                before = response
                 response = step_continuation(driver, response, args.continuation_policy, rng)
+                update_rollout_attribution(attribution, before, response)
                 reward_total += float(response.get("reward") or 0.0)
                 steps_taken += 1
                 if bool(response.get("done")):
                     break
 
         end = summarize_response(response)
+        final_attribution = finalize_rollout_attribution(attribution, start, end)
         return {
             "candidate_index": candidate_index,
             "candidate_key": str(candidate.get("action_key") or ""),
@@ -199,10 +244,202 @@ def run_candidate_branch(
             "steps_taken": steps_taken,
             "continuation_policy": args.continuation_policy,
             "continuation_decision_counts": dict(sorted(decision_counts.items())),
+            "attribution": final_attribution,
             "reward_total": reward_total,
         }
     finally:
         driver.close()
+
+
+def new_rollout_attribution() -> dict[str, Any]:
+    return {
+        "schema_version": "rollout_attribution_v0",
+        "transition_count": 0,
+        "combat_transition_count": 0,
+        "combat_entry_count": 0,
+        "combat_play_card_count": 0,
+        "combat_end_turn_count": 0,
+        "potion_use_count": 0,
+        "setup_or_scaling_cards_played": [],
+        "draw_cards_played": [],
+        "exhaust_cards_played": [],
+        "hp_loss_observed": 0,
+        "max_single_transition_hp_loss": 0,
+        "monster_hp_reduction_observed": 0,
+        "alive_monster_reduction_observed": 0,
+        "exhaust_count_increase_observed": 0,
+        "discard_count_increase_observed": 0,
+        "draw_pile_decrease_observed": 0,
+        "max_visible_incoming_damage": 0,
+        "max_visible_unblocked_damage": 0,
+        "max_player_block": 0,
+        "max_hand_count": 0,
+        "energy_unused_on_end_turn_total": 0,
+        "energy_unused_on_end_turn_max": 0,
+        "energy_unused_on_end_turn_count": 0,
+        "_turn_keys": set(),
+        "_combat_wins_before": None,
+    }
+
+
+def combat_from_response(response: dict[str, Any]) -> dict[str, Any]:
+    return (observation_from_response(response).get("combat") or {}) or {}
+
+
+def action_card_id(action_key: str) -> str:
+    marker = "card:"
+    if marker not in action_key:
+        return ""
+    rest = action_key.split(marker, 1)[1]
+    for sep in ["/", ":", " "]:
+        if sep in rest:
+            return rest.split(sep, 1)[0]
+    return rest
+
+
+def transition_same_combat(before_obs: dict[str, Any], after_obs: dict[str, Any]) -> bool:
+    before_combat = before_obs.get("combat") or {}
+    after_combat = after_obs.get("combat") or {}
+    if not before_combat or not after_combat:
+        return False
+    return (
+        int(before_obs.get("floor") or 0) == int(after_obs.get("floor") or 0)
+        and str(before_obs.get("engine_state") or "") == str(after_obs.get("engine_state") or "")
+    )
+
+
+def update_rollout_attribution(
+    attribution: dict[str, Any],
+    before_response: dict[str, Any],
+    after_response: dict[str, Any],
+) -> None:
+    before_obs = observation_from_response(before_response)
+    after_obs = observation_from_response(after_response)
+    before_info = info_from_response(before_response)
+    before_combat = before_obs.get("combat") or {}
+    after_combat = after_obs.get("combat") or {}
+    action_key = str(after_response.get("chosen_action_key") or "")
+
+    attribution["transition_count"] += 1
+    if not before_combat and after_combat:
+        attribution["combat_entry_count"] += 1
+    if before_combat:
+        attribution["combat_transition_count"] += 1
+        turn_key = (
+            int(before_obs.get("floor") or 0),
+            int(before_info.get("combat_win_count") or 0),
+            int(before_combat.get("turn_count") or 0),
+        )
+        attribution["_turn_keys"].add(turn_key)
+        visible_incoming = int(before_combat.get("visible_incoming_damage") or 0)
+        player_block = int(before_combat.get("player_block") or 0)
+        attribution["max_visible_incoming_damage"] = max(
+            int(attribution["max_visible_incoming_damage"]),
+            visible_incoming,
+        )
+        attribution["max_visible_unblocked_damage"] = max(
+            int(attribution["max_visible_unblocked_damage"]),
+            max(0, visible_incoming - player_block),
+        )
+        attribution["max_player_block"] = max(
+            int(attribution["max_player_block"]),
+            player_block,
+            int(after_combat.get("player_block") or 0) if after_combat else 0,
+        )
+        attribution["max_hand_count"] = max(
+            int(attribution["max_hand_count"]),
+            int(before_combat.get("hand_count") or 0),
+            int(after_combat.get("hand_count") or 0) if after_combat else 0,
+        )
+
+    hp_loss = int(before_obs.get("current_hp") or 0) - int(after_obs.get("current_hp") or 0)
+    if hp_loss > 0:
+        attribution["hp_loss_observed"] += hp_loss
+        attribution["max_single_transition_hp_loss"] = max(
+            int(attribution["max_single_transition_hp_loss"]),
+            hp_loss,
+        )
+
+    if transition_same_combat(before_obs, after_obs):
+        monster_hp_delta = int(before_combat.get("total_monster_hp") or 0) - int(
+            after_combat.get("total_monster_hp") or 0
+        )
+        if monster_hp_delta > 0:
+            attribution["monster_hp_reduction_observed"] += monster_hp_delta
+        alive_delta = int(before_combat.get("alive_monster_count") or 0) - int(
+            after_combat.get("alive_monster_count") or 0
+        )
+        if alive_delta > 0:
+            attribution["alive_monster_reduction_observed"] += alive_delta
+        for field, key in [
+            ("exhaust_count", "exhaust_count_increase_observed"),
+            ("discard_count", "discard_count_increase_observed"),
+        ]:
+            delta = int(after_combat.get(field) or 0) - int(before_combat.get(field) or 0)
+            if delta > 0:
+                attribution[key] += delta
+        draw_delta = int(before_combat.get("draw_count") or 0) - int(after_combat.get("draw_count") or 0)
+        if draw_delta > 0:
+            attribution["draw_pile_decrease_observed"] += draw_delta
+
+    if action_key.startswith("combat/play_card"):
+        attribution["combat_play_card_count"] += 1
+        cid = action_card_id(action_key)
+        turn = int(before_combat.get("turn_count") or 0) if before_combat else None
+        record = {
+            "card_id": cid,
+            "turn": turn,
+            "floor": int(before_obs.get("floor") or 0),
+            "incoming_before": int(before_combat.get("visible_incoming_damage") or 0) if before_combat else 0,
+            "energy_before": int(before_combat.get("energy") or 0) if before_combat else 0,
+        }
+        if cid in SCALING_OR_SETUP_CARDS:
+            attribution["setup_or_scaling_cards_played"].append(record)
+        if cid in DRAW_CARDS:
+            attribution["draw_cards_played"].append(record)
+        if cid in EXHAUST_CARDS:
+            attribution["exhaust_cards_played"].append(record)
+    elif action_key.startswith("combat/end_turn"):
+        attribution["combat_end_turn_count"] += 1
+        energy = int(before_combat.get("energy") or 0) if before_combat else 0
+        if energy > 0:
+            attribution["energy_unused_on_end_turn_total"] += energy
+            attribution["energy_unused_on_end_turn_count"] += 1
+            attribution["energy_unused_on_end_turn_max"] = max(
+                int(attribution["energy_unused_on_end_turn_max"]),
+                energy,
+            )
+    elif "potion" in action_key:
+        attribution["potion_use_count"] += 1
+
+
+def finalize_rollout_attribution(
+    attribution: dict[str, Any],
+    start: dict[str, Any],
+    end: dict[str, Any],
+) -> dict[str, Any]:
+    out = dict(attribution)
+    out["combat_turns_observed"] = len(out.pop("_turn_keys", set()))
+    out.pop("_combat_wins_before", None)
+    out["combat_win_delta"] = int(end.get("combat_win_count") or 0) - int(
+        start.get("combat_win_count") or 0
+    )
+    out["hp_delta"] = int(end.get("current_hp") or 0) - int(start.get("current_hp") or 0)
+    out["floor_delta"] = int(end.get("floor") or 0) - int(start.get("floor") or 0)
+    out["scaling_played"] = bool(out["setup_or_scaling_cards_played"])
+    out["draw_played"] = bool(out["draw_cards_played"])
+    out["exhaust_played"] = bool(out["exhaust_cards_played"])
+    out["energy_unused_per_end_turn"] = round(
+        float(out["energy_unused_on_end_turn_total"])
+        / max(int(out["combat_end_turn_count"]), 1),
+        3,
+    )
+    out["observability_limits"] = [
+        "derived from before/after full-run observations, not engine event logs",
+        "monster_hp_reduction_observed is a visible total-hp delta, not exact damage attribution",
+        "draw/exhaust fields are pile-count deltas and played-card tags, not full card-flow proofs",
+    ]
+    return out
 
 
 def step_continuation(

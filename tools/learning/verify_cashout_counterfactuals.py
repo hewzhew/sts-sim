@@ -478,7 +478,7 @@ def winner(value: str, reason: str) -> dict[str, str]:
 
 def compact_outcome(row: dict[str, Any]) -> dict[str, Any]:
     card = row.get("candidate_card") or {}
-    return {
+    out = {
         "candidate_index": int(row.get("candidate_index") or 0),
         "candidate_key": str(row.get("candidate_key") or ""),
         "card_id": card.get("card_id") if isinstance(card, dict) else None,
@@ -492,17 +492,54 @@ def compact_outcome(row: dict[str, Any]) -> dict[str, Any]:
         "reward_total": float(row.get("reward_total") or 0.0),
         "steps_taken": int(row.get("steps_taken") or 0),
     }
+    if row.get("attribution"):
+        out["attribution"] = row.get("attribution")
+    return out
 
 
 def outcome_diff(left: dict[str, Any], right: dict[str, Any]) -> dict[str, Any]:
     left_out = compact_outcome(left)
     right_out = compact_outcome(right)
-    return {
+    out = {
         "floor_delta": left_out["floor_delta"] - right_out["floor_delta"],
         "combat_win_delta": left_out["combat_win_delta"] - right_out["combat_win_delta"],
         "end_hp": left_out["end_hp"] - right_out["end_hp"],
         "reward_total": round(left_out["reward_total"] - right_out["reward_total"], 3),
     }
+    left_attr = left_out.get("attribution") or {}
+    right_attr = right_out.get("attribution") or {}
+    if left_attr or right_attr:
+        out["attribution"] = attribution_diff(left_attr, right_attr)
+    return out
+
+
+def attribution_diff(left: dict[str, Any], right: dict[str, Any]) -> dict[str, Any]:
+    fields = [
+        "hp_loss_observed",
+        "monster_hp_reduction_observed",
+        "alive_monster_reduction_observed",
+        "combat_turns_observed",
+        "combat_play_card_count",
+        "combat_end_turn_count",
+        "energy_unused_on_end_turn_total",
+        "draw_pile_decrease_observed",
+        "exhaust_count_increase_observed",
+        "discard_count_increase_observed",
+        "max_visible_incoming_damage",
+        "max_visible_unblocked_damage",
+    ]
+    diff = {
+        field: round(float(left.get(field) or 0.0) - float(right.get(field) or 0.0), 3)
+        for field in fields
+    }
+    diff["scaling_played_delta"] = int(bool(left.get("scaling_played"))) - int(
+        bool(right.get("scaling_played"))
+    )
+    diff["draw_played_delta"] = int(bool(left.get("draw_played"))) - int(bool(right.get("draw_played")))
+    diff["exhaust_played_delta"] = int(bool(left.get("exhaust_played"))) - int(
+        bool(right.get("exhaust_played"))
+    )
+    return diff
 
 
 def summarize_results(results: list[dict[str, Any]]) -> dict[str, Any]:
