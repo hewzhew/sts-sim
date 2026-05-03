@@ -13,8 +13,8 @@ from typing import Any
 from combat_rl_common import REPO_ROOT, write_json
 
 
-REPORT_VERSION = "card_cashout_lab_v0"
-SCORE_KIND = "heuristic_cashout_v0"
+REPORT_VERSION = "card_cashout_lab_v0_1"
+SCORE_KIND = "heuristic_cashout_v0_1"
 
 PLAN_FIELDS = (
     "frontload_delta",
@@ -38,6 +38,7 @@ EXHAUST_ENGINE_CARDS = {
     "Exhume",
 }
 ENERGY_CARDS = {"Offering", "SeeingRed", "Bloodletting", "Dropkick", "Sentinel"}
+MULTI_ENEMY_CONTROL_CARDS = {"Shockwave", "ThunderClap"}
 HIGH_VALUE_RELIC_WARNINGS = {
     "BagOfPreparation": "draw_relic_not_exactly_modeled",
     "RingOfTheSnake": "draw_relic_not_exactly_modeled",
@@ -243,6 +244,19 @@ def is_aoe(card: dict[str, Any]) -> bool:
     return bool(card.get("aoe") or card.get("multi_damage"))
 
 
+def is_aoe_damage(card: dict[str, Any]) -> bool:
+    return is_aoe(card) and card_damage(card) > 0
+
+
+def is_multi_enemy_control(card: dict[str, Any]) -> bool:
+    cid = card_id(card)
+    if cid in MULTI_ENEMY_CONTROL_CARDS:
+        return True
+    return is_aoe(card) and (
+        bool(card.get("applies_weak")) or bool(card.get("applies_vulnerable"))
+    )
+
+
 def is_energy(card: dict[str, Any]) -> bool:
     return bool(card.get("gains_energy")) or card_id(card) in ENERGY_CARDS
 
@@ -271,8 +285,10 @@ def card_classes(card: dict[str, Any]) -> set[str]:
         classes.add("generic_draw")
     if is_scaling(card):
         classes.add("generic_scaling")
-    if is_aoe(card):
-        classes.add("generic_aoe")
+    if is_aoe_damage(card):
+        classes.add("generic_aoe_damage")
+    if is_multi_enemy_control(card):
+        classes.add("generic_multi_enemy_control")
     if is_energy(card):
         classes.add("generic_energy")
     if is_exhaust_engine(card):
@@ -287,7 +303,8 @@ def card_classes(card: dict[str, Any]) -> set[str]:
 def primary_class(card: dict[str, Any]) -> str:
     priority = [
         "kill_window",
-        "generic_aoe",
+        "generic_aoe_damage",
+        "generic_multi_enemy_control",
         "generic_scaling",
         "generic_draw",
         "generic_energy",
@@ -374,7 +391,8 @@ def high_value_deck_cards(cards: list[dict[str, Any]]) -> dict[str, dict[str, An
             "generic_draw",
             "generic_energy",
             "generic_scaling",
-            "generic_aoe",
+            "generic_aoe_damage",
+            "generic_multi_enemy_control",
             "kill_window",
             "exhaust_engine",
         }:
@@ -439,7 +457,8 @@ def build_relevance(
                     "generic_draw",
                     "generic_energy",
                     "generic_scaling",
-                    "generic_aoe",
+                    "generic_aoe_damage",
+                    "generic_multi_enemy_control",
                     "kill_window",
                     "exhaust_engine",
                 }
@@ -512,7 +531,8 @@ def playable_payoff_count(deck_cards: list[dict[str, Any]], candidate_card: dict
             "generic_attack",
             "generic_block",
             "generic_scaling",
-            "generic_aoe",
+            "generic_aoe_damage",
+            "generic_multi_enemy_control",
             "generic_energy",
             "exhaust_engine",
             "kill_window",
@@ -584,10 +604,11 @@ def payoff_quality(deck_cards: list[dict[str, Any]], profile: dict[str, Any]) ->
     attacks = counts.get("generic_attack", 0) * 2.5 * frontload_need
     block = counts.get("generic_block", 0) * 2.0 * block_need
     scaling = counts.get("generic_scaling", 0) * 4.0 * scaling_need
-    aoe = counts.get("generic_aoe", 0) * 4.0 * aoe_need
+    aoe = counts.get("generic_aoe_damage", 0) * 4.0 * aoe_need
+    multi_control = counts.get("generic_multi_enemy_control", 0) * 3.0 * aoe_need
     exhaust = counts.get("exhaust_engine", 0) * 2.0
     junk = counts.get("junk_status", 0) * 1.8
-    return max(0.0, energy + attacks + block + scaling + aoe + exhaust - junk)
+    return max(0.0, energy + attacks + block + scaling + aoe + multi_control + exhaust - junk)
 
 
 def bucket_ev(
@@ -633,17 +654,35 @@ def bucket_ev(
             * deficit_factor(profile, "scaling_supply", 35.0)
             * time_factor
         )
-    aoe = 0.0
-    if is_aoe(card) or delta["aoe_delta"] > 0:
+    aoe_damage = 0.0
+    multi_enemy_control = 0.0
+    if is_aoe_damage(card):
         act = int(obs.get("act") or 0)
         floor = int(obs.get("floor") or 0)
         act_factor = 1.35 if act >= 2 or floor >= 7 else 1.0
-        aoe = (
+        aoe_damage = (
             p_turn2
-            * max(delta["aoe_delta"], card_damage(card) // 2)
+            * max(int(delta["aoe_delta"] * 0.65), card_damage(card) // 2)
             * deficit_factor(profile, "aoe_supply", 18.0)
             * act_factor
         )
+    if is_multi_enemy_control(card) or (delta["aoe_delta"] > 0 and not is_aoe_damage(card)):
+        act = int(obs.get("act") or 0)
+        floor = int(obs.get("floor") or 0)
+        act_factor = 1.25 if act >= 2 or floor >= 7 else 1.0
+        control_base = max(
+            int(delta["aoe_delta"] * 0.55),
+            int(delta["block_delta"] * 0.20),
+            int(delta["frontload_delta"] * 0.10),
+            6 if is_multi_enemy_control(card) else 0,
+        )
+        multi_enemy_control = (
+            p_turn2
+            * control_base
+            * deficit_factor(profile, "aoe_supply", 18.0)
+            * act_factor
+        )
+    aoe_total = aoe_damage + multi_enemy_control
     exhaust = 0.0
     if delta["exhaust_delta"] > 0 or is_exhaust_engine(card):
         exhaust = p_turn2 * max(delta["exhaust_delta"], 5) * deficit_factor(
@@ -663,7 +702,7 @@ def bucket_ev(
         + block
         + draw_cashout
         + scaling
-        + aoe
+        + aoe_total
         + exhaust
         + kill_window
         + letter_opener_bonus
@@ -674,7 +713,9 @@ def bucket_ev(
         "frontload": round(frontload, 3),
         "block": round(block, 3),
         "draw_cashout": round(draw_cashout, 3),
-        "aoe": round(aoe, 3),
+        "aoe_damage": round(aoe_damage, 3),
+        "multi_enemy_control": round(multi_enemy_control, 3),
+        "aoe": round(aoe_total, 3),
         "scaling_cashout": round(scaling, 3),
         "exhaust": round(exhaust, 3),
         "kill_window": round(kill_window, 3),
@@ -687,7 +728,8 @@ def bucket_ev(
                 "frontload": frontload,
                 "block": block,
                 "draw_cashout": draw_cashout,
-                "aoe": aoe,
+                "aoe_damage": aoe_damage,
+                "multi_enemy_control": multi_enemy_control,
                 "scaling_cashout": scaling,
                 "exhaust": exhaust,
                 "kill_window": kill_window,
@@ -770,8 +812,15 @@ def candidate_notes(
         notes.append(
             f"scaling_cashout={ev['scaling_cashout']:.1f} ({cashout_grade(ev['scaling_cashout'])})"
         )
-    if is_aoe(card):
-        notes.append(f"aoe_cashout={ev['aoe']:.1f} ({cashout_grade(ev['aoe'])})")
+    if is_aoe_damage(card):
+        notes.append(
+            f"aoe_damage_cashout={ev['aoe_damage']:.1f} ({cashout_grade(ev['aoe_damage'])})"
+        )
+    if is_multi_enemy_control(card):
+        notes.append(
+            "multi_enemy_control_cashout="
+            f"{ev['multi_enemy_control']:.1f} ({cashout_grade(ev['multi_enemy_control'])})"
+        )
     if penalties.get("total_penalty", 0) > 0:
         notes.append(f"context_penalty={penalties['total_penalty']:.1f}")
     if warnings:
@@ -847,8 +896,10 @@ def classify_case(
         kinds.append("missed_draw_cashout")
     elif dominant == "scaling_cashout":
         kinds.append("missed_scaling_cashout")
-    elif dominant == "aoe":
-        kinds.append("missed_aoe_cashout")
+    elif dominant == "aoe_damage":
+        kinds.append("missed_aoe_damage_cashout")
+    elif dominant == "multi_enemy_control":
+        kinds.append("missed_multi_enemy_control_cashout")
     elif dominant == "frontload":
         kinds.append("missed_frontload_cashout")
     elif dominant == "block":
@@ -902,11 +953,150 @@ def compact_case(row: dict[str, Any]) -> dict[str, Any]:
         "cashout_kinds": row["cashout_kinds"],
         "needs_rollout": row["needs_rollout"],
         "confidence": row["confidence"],
+        "calibration_status": row.get("calibration_status", "uncalibrated"),
+        "training_candidate": bool(row.get("training_candidate", False)),
+        "calibration_notes": row.get("calibration_notes", []),
         "notes": row["notes"],
         "candidates": row["candidates"],
         "relevance": row["relevance"],
         "deck_plan_profile": row["deck_plan_profile"],
         "trace_file": row["trace_file"],
+    }
+
+
+def is_actionable_case(row: dict[str, Any], min_gap: float) -> bool:
+    return (
+        float(row.get("cashout_gap") or 0.0) >= min_gap
+        and "small_cashout_gap_ignore" not in (row.get("cashout_kinds") or [])
+    )
+
+
+def is_high_confidence_training_candidate(row: dict[str, Any], min_gap: float) -> bool:
+    best = row.get("best_by_cashout") or {}
+    return (
+        is_actionable_case(row, min_gap)
+        and best.get("cashout_grade") == "high"
+        and row.get("confidence") == "high"
+        and not row.get("needs_rollout")
+        and float(row.get("cashout_gap") or 0.0) >= min_gap * 2
+    )
+
+
+def calibrate_policies(
+    policies: list[dict[str, Any]],
+    *,
+    min_gap: float,
+    top_cases: int,
+) -> dict[str, Any]:
+    baseline = next(
+        (policy for policy in policies if policy["policy"] == "rule_baseline_v0"),
+        None,
+    ) or next(
+        (policy for policy in policies if "rule_baseline" in policy["policy"]),
+        None,
+    )
+    baseline_cases = []
+    if baseline:
+        baseline_cases = [
+            row
+            for row in baseline.get("comparisons", [])
+            if is_actionable_case(row, min_gap)
+        ]
+    baseline_best_cards = {
+        (row.get("best_by_cashout") or {}).get("card_id")
+        for row in baseline_cases
+        if (row.get("best_by_cashout") or {}).get("card_id")
+    }
+    baseline_dominants = Counter(
+        (row.get("best_by_cashout") or {}).get("dominant_cashout")
+        for row in baseline_cases
+        if (row.get("best_by_cashout") or {}).get("dominant_cashout")
+    )
+    baseline_kinds = Counter(
+        kind
+        for row in baseline_cases
+        for kind in row.get("cashout_kinds", [])
+        if kind != "small_cashout_gap_ignore"
+    )
+
+    for policy in policies:
+        calibration_counts: Counter[str] = Counter()
+        for row in policy.get("comparisons", []):
+            notes = list(row.get("calibration_notes", []))
+            if not is_actionable_case(row, min_gap):
+                status = "ignored_small_gap"
+                training_candidate = False
+            elif policy is baseline:
+                status = "cashout_disagreement_with_rule_baseline"
+                training_candidate = False
+                notes.append("rule_baseline_v0 was also flagged; treat as cashout calibration issue")
+            elif (row.get("best_by_cashout") or {}).get("card_id") in baseline_best_cards:
+                status = "cashout_disagreement_with_rule_baseline"
+                training_candidate = False
+                notes.append(
+                    "same best-by-cashout card appears in rule_baseline_v0 flagged cases"
+                )
+            elif row.get("needs_rollout"):
+                status = "needs_rollout"
+                training_candidate = False
+            elif is_high_confidence_training_candidate(row, min_gap):
+                status = "high_confidence_candidate"
+                training_candidate = True
+            else:
+                status = "diagnostic_only"
+                training_candidate = False
+            row["calibration_status"] = status
+            row["training_candidate"] = training_candidate
+            row["calibration_notes"] = notes
+            calibration_counts[status] += 1
+
+        actionable = [
+            row
+            for row in policy.get("comparisons", [])
+            if is_actionable_case(row, min_gap)
+        ]
+        policy["calibration_counts"] = dict(calibration_counts)
+        policy["high_confidence_candidate_count"] = sum(
+            1
+            for row in actionable
+            if row.get("calibration_status") == "high_confidence_candidate"
+        )
+        policy["needs_rollout_calibrated_count"] = sum(
+            1 for row in actionable if row.get("calibration_status") == "needs_rollout"
+        )
+        policy["rule_baseline_disagreement_count"] = sum(
+            1
+            for row in actionable
+            if row.get("calibration_status") == "cashout_disagreement_with_rule_baseline"
+        )
+        policy["top_cases"] = [
+            compact_case(row)
+            for row in sorted(actionable, key=lambda item: item["cashout_gap"], reverse=True)[
+                :top_cases
+            ]
+        ]
+        policy["high_confidence_cases"] = [
+            compact_case(row)
+            for row in sorted(
+                [
+                    row
+                    for row in actionable
+                    if row.get("calibration_status") == "high_confidence_candidate"
+                ],
+                key=lambda item: item["cashout_gap"],
+                reverse=True,
+            )[:top_cases]
+        ]
+
+    return {
+        "baseline_policy": baseline["policy"] if baseline else None,
+        "baseline_actionable_regret_count": len(baseline_cases),
+        "baseline_suspect_best_cards": sorted(card for card in baseline_best_cards if card),
+        "baseline_suspect_dominants": dict(baseline_dominants),
+        "baseline_suspect_kinds": dict(baseline_kinds),
+        "policy_calibration_counts": {
+            policy["policy"]: policy.get("calibration_counts", {}) for policy in policies
+        },
     }
 
 
@@ -1027,36 +1217,77 @@ def pct(value: float) -> str:
 
 def write_markdown(path: Path, report: dict[str, Any]) -> None:
     lines = [
-        "# Card Cashout Lab V0",
+        "# Card Cashout Lab V0.1",
         "",
         f"Generated: `{report['generated_at_utc']}`",
         "",
         "This report is a heuristic cashout diagnostic. It is not a teacher label, policy, or trainer.",
         "",
+        "## Calibration",
+        "",
+    ]
+    calibration = report.get("calibration") or {}
+    lines.extend(
+        [
+            f"- baseline policy: `{calibration.get('baseline_policy') or 'none'}`",
+            f"- baseline actionable cashout disagreements: `{calibration.get('baseline_actionable_regret_count', 0)}`",
+            f"- baseline suspect best cards: `{', '.join(calibration.get('baseline_suspect_best_cards') or []) or '-'}`",
+            "",
+        ]
+    )
+    lines.extend(
+        [
         "## Summary",
         "",
-        "| policy | decisions | actionable | needs rollout | avg gap | top cashout regrets |",
-        "|---|---:|---:|---:|---:|---|",
-    ]
+        "| policy | decisions | actionable | high confidence | needs rollout | baseline disagreement | avg gap | top cashout regrets |",
+        "|---|---:|---:|---:|---:|---:|---:|---|",
+        ]
+    )
     for policy in report["policies"]:
         top_kinds = ", ".join(
             f"{kind}:{count}"
             for kind, count in Counter(policy["cashout_kind_counts"]).most_common(5)
         )
         lines.append(
-            "| {policy} | {decisions} | {actionable} | {rollout} ({rollout_share}) | {gap:.1f} | {kinds} |".format(
+            "| {policy} | {decisions} | {actionable} | {high_conf} | {rollout} ({rollout_share}) | {baseline_disagree} | {gap:.1f} | {kinds} |".format(
                 policy=policy["policy"],
                 decisions=policy["decision_count"],
                 actionable=policy["actionable_regret_count"],
-                rollout=policy["needs_rollout_count"],
+                high_conf=policy.get("high_confidence_candidate_count", 0),
+                rollout=policy.get("needs_rollout_calibrated_count", policy["needs_rollout_count"]),
                 rollout_share=pct(
-                    policy["needs_rollout_count"]
+                    policy.get("needs_rollout_calibrated_count", policy["needs_rollout_count"])
                     / max(policy["actionable_regret_count"], 1)
                 ),
+                baseline_disagree=policy.get("rule_baseline_disagreement_count", 0),
                 gap=policy["average_cashout_gap"],
                 kinds=top_kinds or "-",
             )
         )
+    lines.extend(["", "## High Confidence Candidate Cases", ""])
+    for policy in report["policies"]:
+        cases = policy.get("high_confidence_cases") or []
+        lines.extend([f"### {policy['policy']}", ""])
+        if not cases:
+            lines.append("- none")
+            lines.append("")
+            continue
+        for case in cases[:8]:
+            best = case["best_by_cashout"]
+            chosen = case["chosen"]
+            lines.append(
+                "- seed `{seed}` step `{step}` floor `{floor}`: `{chosen}` -> `{best}`, gap `{gap:.0f}`, best `{dominant}` `{score:.0f}`".format(
+                    seed=case["seed"],
+                    step=case["step_index"],
+                    floor=case["floor"],
+                    chosen=chosen["card_id"],
+                    best=best["card_id"],
+                    gap=case["cashout_gap"],
+                    dominant=best["dominant_cashout"],
+                    score=best["cashout_score"],
+                )
+            )
+        lines.append("")
     lines.extend(["", "## Top Cashout Regret Cases", ""])
     for policy in report["policies"]:
         lines.extend([f"### {policy['policy']}", ""])
@@ -1073,7 +1304,7 @@ def write_markdown(path: Path, report: dict[str, Any]) -> None:
                 for candidate in case["candidates"]
             )
             lines.append(
-                "- seed `{seed}` step `{step}` floor `{floor}` hp `{hp}`: chose `{chosen}` ({chosen_score:.0f}, {chosen_cashout}) vs cashout-best `{best}` ({best_score:.0f}, {best_cashout}); gap `{gap:.0f}`; kinds `{kinds}`; rollout `{rollout}`; [{cards}]".format(
+                "- seed `{seed}` step `{step}` floor `{floor}` hp `{hp}`: chose `{chosen}` ({chosen_score:.0f}, {chosen_cashout}) vs cashout-best `{best}` ({best_score:.0f}, {best_cashout}); gap `{gap:.0f}`; calibration `{calibration}`; kinds `{kinds}`; rollout `{rollout}`; [{cards}]".format(
                     seed=case["seed"],
                     step=case["step_index"],
                     floor=case["floor"],
@@ -1085,6 +1316,7 @@ def write_markdown(path: Path, report: dict[str, Any]) -> None:
                     best_score=best["cashout_score"],
                     best_cashout=best["dominant_cashout"],
                     gap=case["cashout_gap"],
+                    calibration=case.get("calibration_status", "uncalibrated"),
                     kinds=", ".join(case["cashout_kinds"]),
                     rollout="yes" if case["needs_rollout"] else "no",
                     cards=cards,
@@ -1094,6 +1326,8 @@ def write_markdown(path: Path, report: dict[str, Any]) -> None:
                 lines.append(f"  - best notes: {'; '.join(best['notes'])}")
             if case["notes"]:
                 lines.append(f"  - case notes: {'; '.join(case['notes'])}")
+            if case.get("calibration_notes"):
+                lines.append(f"  - calibration: {'; '.join(case['calibration_notes'])}")
         lines.append("")
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
@@ -1139,24 +1373,30 @@ def write_top_cases_markdown(path: Path, report: dict[str, Any]) -> None:
                         case["confidence"],
                         "yes" if case["needs_rollout"] else "no",
                     ),
+                    "- calibration: `{}`; training candidate `{}`".format(
+                        case.get("calibration_status", "uncalibrated"),
+                        "yes" if case.get("training_candidate") else "no",
+                    ),
                 ]
             )
             if case["notes"]:
                 lines.append(f"- notes: {'; '.join(case['notes'])}")
+            if case.get("calibration_notes"):
+                lines.append(f"- calibration notes: {'; '.join(case['calibration_notes'])}")
             flags = case["relevance"].get("context_flags") or []
             warnings = case["relevance"].get("context_warnings") or []
             if flags or warnings:
                 lines.append(f"- context: {', '.join(flags + warnings)}")
             lines.append("")
             lines.append(
-                "| candidate | score | grade | dominant | p open | p turn2 | combo | front | block | draw | scaling | aoe | penalty |"
+                "| candidate | score | grade | dominant | p open | p turn2 | combo | front | block | draw | scaling | aoe dmg | multi ctrl | penalty |"
             )
-            lines.append("|---|---:|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|")
+            lines.append("|---|---:|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|")
             for candidate in case["candidates"]:
                 reach = candidate["reachability"]
                 ev = candidate["bucket_ev"]
                 lines.append(
-                    "| {card} | {score:.1f} | {grade} | {dominant} | {open:.2f} | {turn2:.2f} | {combo:.2f} | {front:.1f} | {block:.1f} | {draw:.1f} | {scaling:.1f} | {aoe:.1f} | {penalty:.1f} |".format(
+                    "| {card} | {score:.1f} | {grade} | {dominant} | {open:.2f} | {turn2:.2f} | {combo:.2f} | {front:.1f} | {block:.1f} | {draw:.1f} | {scaling:.1f} | {aoe_damage:.1f} | {multi_control:.1f} | {penalty:.1f} |".format(
                         card=candidate["card_id"],
                         score=candidate["cashout_score"],
                         grade=candidate["cashout_grade"],
@@ -1168,7 +1408,8 @@ def write_top_cases_markdown(path: Path, report: dict[str, Any]) -> None:
                         block=ev.get("block", 0.0),
                         draw=ev.get("draw_cashout", 0.0),
                         scaling=ev.get("scaling_cashout", 0.0),
-                        aoe=ev.get("aoe", 0.0),
+                        aoe_damage=ev.get("aoe_damage", 0.0),
+                        multi_control=ev.get("multi_enemy_control", 0.0),
                         penalty=ev.get("context_penalty", 0.0),
                     )
                 )
@@ -1196,6 +1437,11 @@ def main() -> int:
         )
         for policy, path in sorted(trace_dirs.items())
     ]
+    calibration = calibrate_policies(
+        policies,
+        min_gap=args.min_gap,
+        top_cases=args.top_cases,
+    )
     report = {
         "report_version": REPORT_VERSION,
         "generated_at_utc": datetime.now(timezone.utc).isoformat(),
@@ -1208,8 +1454,10 @@ def main() -> int:
             "notes": [
                 "cashout_score is diagnostic, not a teacher",
                 "draw order, reshuffle details, Snecko/Pyramid, and exact relic semantics are not solved in V0",
+                "high_confidence_candidate is the only calibration status intended for later training experiments",
             ],
         },
+        "calibration": calibration,
         "policies": policies,
     }
     write_json(args.out, report)
