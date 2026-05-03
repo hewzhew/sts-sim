@@ -275,14 +275,17 @@ def run_counterfactual_case(
             "source_case": compact_source_case(source),
         }
     report = read_json(report_path)
+    source_case = compact_source_case(source)
+    verification = classify_case(args, source, report)
     return {
         "case_id": case["case_id"],
         "policy": case["policy"],
         "status": "ok",
         "case_report_path": str(report_path),
         "branch_indices": branch_indices,
-        "source_case": compact_source_case(source),
-        "verification": classify_case(args, source, report),
+        "source_case": source_case,
+        "verification": verification,
+        "calibrated_use": calibrated_use(source_case, verification),
         "counterfactual_summary": report.get("summary") or {},
     }
 
@@ -353,6 +356,59 @@ def classify_case(args: argparse.Namespace, source: dict[str, Any], report: dict
         "chosen_outcome": compact_outcome(chosen),
         "cashout_best_outcome": compact_outcome(cashout_best),
         "outcome_diff_cashout_minus_chosen": outcome_diff(cashout_best, chosen),
+    }
+
+
+def calibrated_use(source: dict[str, Any], verification: dict[str, Any]) -> dict[str, Any]:
+    """Convert verifier verdicts into conservative downstream usage guidance.
+
+    The key contract is intentionally strict: only a static high-confidence case
+    that the simulator also confirms becomes a strong training signal. Everything
+    from needs_rollout remains downweighted even if the short continuation agrees.
+    """
+    source_status = str(source.get("calibration_status") or "uncalibrated")
+    verdict = str(verification.get("verdict") or "unknown")
+    if source_status == "high_confidence_candidate" and verdict == "cashout_confirmed":
+        return {
+            "use": "verified_training_signal",
+            "strong_training_signal": True,
+            "suggested_weight": 1.0,
+            "notes": [
+                "static cashout was high confidence and short counterfactual continuation confirmed it"
+            ],
+        }
+    if verdict == "cashout_confirmed":
+        return {
+            "use": "verified_but_downweighted",
+            "strong_training_signal": False,
+            "suggested_weight": 0.25,
+            "notes": [
+                f"source calibration was {source_status}; keep as diagnostic or low-weight auxiliary signal"
+            ],
+        }
+    if verdict == "cashout_refuted":
+        return {
+            "use": "verified_refuted",
+            "strong_training_signal": False,
+            "suggested_weight": 0.0,
+            "notes": [
+                "short counterfactual continuation preferred the chosen action over cashout-best"
+            ],
+        }
+    if verdict == "equivalent":
+        return {
+            "use": "verified_equivalent",
+            "strong_training_signal": False,
+            "suggested_weight": 0.0,
+            "notes": [
+                "cashout-best and chosen were below verifier margin; do not train as a preference"
+            ],
+        }
+    return {
+        "use": "needs_more_evidence",
+        "strong_training_signal": False,
+        "suggested_weight": 0.0,
+        "notes": ["verifier result was inconclusive or unavailable"],
     }
 
 
@@ -448,22 +504,74 @@ def outcome_diff(left: dict[str, Any], right: dict[str, Any]) -> dict[str, Any]:
 def summarize_results(results: list[dict[str, Any]]) -> dict[str, Any]:
     by_policy: dict[str, Counter[str]] = defaultdict(Counter)
     by_status: Counter[str] = Counter()
+    by_source_status: dict[str, Counter[str]] = defaultdict(Counter)
+    calibrated_by_policy: dict[str, Counter[str]] = defaultdict(Counter)
+    strong_signals_by_policy: Counter[str] = Counter()
     for result in results:
         status = result.get("status")
         policy = str(result.get("policy") or "unknown")
         if status != "ok":
             verdict = "failed"
+            source_status = "failed"
+            calibrated = "verification_failed"
         else:
             verdict = str((result.get("verification") or {}).get("verdict") or "unknown")
+            source_status = str((result.get("source_case") or {}).get("calibration_status") or "uncalibrated")
+            calibrated = str((result.get("calibrated_use") or {}).get("use") or "unknown")
+            if bool((result.get("calibrated_use") or {}).get("strong_training_signal")):
+                strong_signals_by_policy[policy] += 1
         by_policy[policy][verdict] += 1
         by_status[status] += 1
+        by_source_status[source_status][verdict] += 1
+        calibrated_by_policy[policy][calibrated] += 1
     return {
         "case_count": len(results),
         "status_counts": dict(sorted(by_status.items())),
         "verdict_counts_by_policy": {
             policy: dict(sorted(counter.items())) for policy, counter in sorted(by_policy.items())
         },
+        "verdict_counts_by_source_calibration": {
+            status: dict(sorted(counter.items()))
+            for status, counter in sorted(by_source_status.items())
+        },
+        "calibrated_use_counts_by_policy": {
+            policy: dict(sorted(counter.items()))
+            for policy, counter in sorted(calibrated_by_policy.items())
+        },
+        "strong_training_signal_counts_by_policy": dict(sorted(strong_signals_by_policy.items())),
+        "calibration_rule": (
+            "only high_confidence_candidate + cashout_confirmed is a strong training signal; "
+            "needs_rollout remains downweighted even when confirmed"
+        ),
     }
+
+
+def verified_training_signal_cases(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    out = []
+    for result in results:
+        calibrated = result.get("calibrated_use") or {}
+        if not calibrated.get("strong_training_signal"):
+            continue
+        source = result.get("source_case") or {}
+        verification = result.get("verification") or {}
+        out.append(
+            {
+                "policy": result.get("policy"),
+                "case_id": result.get("case_id"),
+                "seed": source.get("seed"),
+                "step_index": source.get("step_index"),
+                "floor": source.get("floor"),
+                "chosen_card": (source.get("chosen") or {}).get("card_id"),
+                "cashout_best_card": (source.get("best_by_cashout") or {}).get("card_id"),
+                "cashout_gap": source.get("cashout_gap"),
+                "cashout_kinds": source.get("cashout_kinds"),
+                "comparison_reason": verification.get("comparison_reason"),
+                "outcome_diff_cashout_minus_chosen": verification.get("outcome_diff_cashout_minus_chosen"),
+                "suggested_weight": calibrated.get("suggested_weight"),
+                "case_report_path": result.get("case_report_path"),
+            }
+        )
+    return out
 
 
 def write_markdown(path: Path, report: dict[str, Any]) -> None:
@@ -478,6 +586,7 @@ def write_markdown(path: Path, report: dict[str, Any]) -> None:
         "",
         f"- cases: `{report['summary']['case_count']}`",
         f"- statuses: `{report['summary']['status_counts']}`",
+        f"- calibration rule: `{report['summary'].get('calibration_rule')}`",
         "",
         "| policy | confirmed | refuted | equivalent | inconclusive | failed |",
         "|---|---:|---:|---:|---:|---:|",
@@ -491,6 +600,62 @@ def write_markdown(path: Path, report: dict[str, Any]) -> None:
                 equivalent=counts.get("equivalent", 0),
                 inconclusive=counts.get("inconclusive", 0) + counts.get("unknown", 0),
                 failed=counts.get("failed", 0),
+            )
+        )
+    lines.extend(["", "## Calibration Use", ""])
+    lines.extend(
+        [
+            "| policy | verified training | downweighted confirmed | refuted | equivalent | more evidence |",
+            "|---|---:|---:|---:|---:|---:|",
+        ]
+    )
+    for policy, counts in sorted((report["summary"].get("calibrated_use_counts_by_policy") or {}).items()):
+        lines.append(
+            "| {policy} | {training} | {downweighted} | {refuted} | {equivalent} | {more} |".format(
+                policy=policy,
+                training=counts.get("verified_training_signal", 0),
+                downweighted=counts.get("verified_but_downweighted", 0),
+                refuted=counts.get("verified_refuted", 0),
+                equivalent=counts.get("verified_equivalent", 0),
+                more=counts.get("needs_more_evidence", 0) + counts.get("verification_failed", 0),
+            )
+        )
+    lines.extend(["", "## Source Calibration Check", ""])
+    lines.extend(
+        [
+            "| source status | confirmed | refuted | equivalent | inconclusive | failed |",
+            "|---|---:|---:|---:|---:|---:|",
+        ]
+    )
+    for status, counts in sorted((report["summary"].get("verdict_counts_by_source_calibration") or {}).items()):
+        lines.append(
+            "| {status} | {confirmed} | {refuted} | {equivalent} | {inconclusive} | {failed} |".format(
+                status=status,
+                confirmed=counts.get("cashout_confirmed", 0),
+                refuted=counts.get("cashout_refuted", 0),
+                equivalent=counts.get("equivalent", 0),
+                inconclusive=counts.get("inconclusive", 0) + counts.get("unknown", 0),
+                failed=counts.get("failed", 0),
+            )
+        )
+    lines.extend(["", "## Verified Training Signal Cases", ""])
+    signal_cases = report.get("verified_training_signal_cases") or []
+    if not signal_cases:
+        lines.append("- none")
+    for case in signal_cases:
+        diff = case.get("outcome_diff_cashout_minus_chosen") or {}
+        lines.append(
+            "- `{policy}` seed `{seed}` step `{step}` floor `{floor}`: `{chosen}` -> `{best}`, gap `{gap:.1f}`, by `{reason}`, diff floor `{floor_diff}` hp `{hp_diff}`".format(
+                policy=case.get("policy"),
+                seed=case.get("seed"),
+                step=case.get("step_index"),
+                floor=case.get("floor"),
+                chosen=case.get("chosen_card"),
+                best=case.get("cashout_best_card"),
+                gap=float(case.get("cashout_gap") or 0.0),
+                reason=case.get("comparison_reason"),
+                floor_diff=diff.get("floor_delta"),
+                hp_diff=diff.get("end_hp"),
             )
         )
     lines.extend(["", "## Cases", ""])
@@ -510,6 +675,7 @@ def write_markdown(path: Path, report: dict[str, Any]) -> None:
             )
             continue
         verification = result.get("verification") or {}
+        calibrated = result.get("calibrated_use") or {}
         diff = verification.get("outcome_diff_cashout_minus_chosen") or {}
         lines.extend(
             [
@@ -533,6 +699,11 @@ def write_markdown(path: Path, report: dict[str, Any]) -> None:
                     reason=verification.get("comparison_reason"),
                     chosen_rank=verification.get("chosen_rank"),
                     cashout_rank=verification.get("cashout_best_rank"),
+                ),
+                "- calibrated use: `{use}`, strong `{strong}`, suggested weight `{weight}`".format(
+                    use=calibrated.get("use"),
+                    strong=calibrated.get("strong_training_signal"),
+                    weight=calibrated.get("suggested_weight"),
                 ),
                 "- cashout minus chosen: floor `{floor}`, combats `{combats}`, end HP `{hp}`, reward `{reward}`".format(
                     floor=diff.get("floor_delta"),
@@ -567,6 +738,14 @@ def self_test() -> None:
         "reward_total": 1.2,
     }
     assert compare_outcomes(left, close, min_hp_margin=5, min_reward_margin=1.0)["winner"] == "equivalent"
+    assert calibrated_use(
+        {"calibration_status": "high_confidence_candidate"},
+        {"verdict": "cashout_confirmed"},
+    )["strong_training_signal"]
+    assert not calibrated_use(
+        {"calibration_status": "needs_rollout"},
+        {"verdict": "cashout_confirmed"},
+    )["strong_training_signal"]
     print("self-test ok")
 
 
@@ -608,6 +787,7 @@ def main() -> int:
             ],
         },
         "summary": summarize_results(results),
+        "verified_training_signal_cases": verified_training_signal_cases(results),
         "cases": results,
     }
     write_json(args.out, report)
