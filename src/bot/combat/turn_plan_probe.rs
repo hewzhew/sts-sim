@@ -12,7 +12,7 @@ use super::legal_moves::get_legal_moves;
 use super::profile::SearchProfileBreakdown;
 use super::stepping::simulate_input_bounded;
 
-pub const COMBAT_TURN_PLAN_PROBE_SCHEMA_VERSION: &str = "combat_turn_plan_probe_v1_1";
+pub const COMBAT_TURN_PLAN_PROBE_SCHEMA_VERSION: &str = "combat_turn_plan_probe_v1_2";
 
 #[derive(Clone, Copy, Debug)]
 pub struct CombatTurnPlanProbeConfig {
@@ -39,6 +39,7 @@ pub struct CombatTurnPlanProbeReport {
     pub source_trace: serde_json::Value,
     pub state_summary: CombatPlanStateSummary,
     pub hand_cards: Vec<CombatPlanHandCard>,
+    pub plan_queries: Vec<CombatPlanQueryReport>,
     pub first_action_affordances: Vec<CombatFirstActionAffordance>,
     pub plans: Vec<CombatPlanReport>,
     pub sequence_classes: Vec<CombatPlanSequenceClass>,
@@ -114,15 +115,47 @@ pub struct CombatPlanActionSupport {
 }
 
 #[derive(Clone, Debug, Serialize)]
+pub struct CombatPlanQueryReport {
+    pub query_name: String,
+    pub status: String,
+    pub best_sequence_key: Option<String>,
+    pub best_action_keys: Vec<String>,
+    pub best_actions: Vec<String>,
+    pub outcome: Option<CombatPlanSequenceOutcome>,
+    pub failed_constraints: Vec<String>,
+    pub needs_deeper_search: bool,
+    pub notes: Vec<String>,
+}
+
+#[derive(Clone, Debug, Serialize)]
 pub struct CombatPlanSequenceClass {
     pub sequence_equivalence_key: String,
     pub actions: Vec<String>,
     pub action_keys: Vec<String>,
     pub order_sensitive_reasons: Vec<String>,
     pub diagnostics: PlanScoreBreakdown,
+    pub outcome: CombatPlanSequenceOutcome,
     pub pruned_as_equivalent: bool,
     pub pruned_by_budget: bool,
     pub pruned_by_dominated_state: bool,
+}
+
+#[derive(Clone, Debug, Default, Serialize)]
+pub struct CombatPlanSequenceOutcome {
+    pub damage_done: i32,
+    pub block_after: i32,
+    pub projected_unblocked_damage: i32,
+    pub hp_loss_actual: i32,
+    pub remaining_energy: i32,
+    pub remaining_hand_count: usize,
+    pub enemy_deaths: usize,
+    pub living_monster_count: usize,
+    pub total_monster_hp: i32,
+    pub played_setup_or_scaling: bool,
+    pub played_kill_window_card: bool,
+    pub random_risk_present: bool,
+    pub ended_turn: bool,
+    pub kill_window_target_count: usize,
 }
 
 #[derive(Clone, Debug, Default, Serialize)]
@@ -199,6 +232,9 @@ struct AccumulatedSequenceEffects {
     key_card_risk: i32,
     random_risk: i32,
     future_hand_penalty: i32,
+    played_setup_or_scaling: bool,
+    played_kill_window_card: bool,
+    random_risk_present: bool,
 }
 
 pub fn probe_turn_plans(
@@ -223,6 +259,7 @@ pub fn probe_turn_plans(
         .iter()
         .map(|plan| build_plan_report(*plan, &sequence_classes))
         .collect();
+    let plan_queries = build_plan_queries(combat, &sequence_classes, &limits);
     let first_action_affordances =
         build_first_action_affordances(&plan_kinds, &sequence_classes, &risk_notes);
 
@@ -231,6 +268,7 @@ pub fn probe_turn_plans(
         source_trace: serde_json::Value::Null,
         state_summary: start_summary,
         hand_cards,
+        plan_queries,
         first_action_affordances,
         plans,
         sequence_classes,
@@ -376,6 +414,408 @@ fn build_first_action_affordances(
     affordances
 }
 
+fn build_plan_queries(
+    start: &CombatState,
+    sequences: &[CombatPlanSequenceClass],
+    limits: &CombatPlanProbeLimits,
+) -> Vec<CombatPlanQueryReport> {
+    vec![
+        query_can_lethal(start, sequences, limits),
+        query_can_full_block(start, sequences, limits),
+        query_can_full_block_then_max_damage(start, sequences, limits),
+        query_can_play_setup_and_still_block(start, sequences, limits),
+        query_can_preserve_kill_window(start, sequences, limits),
+    ]
+}
+
+fn query_can_lethal(
+    _start: &CombatState,
+    sequences: &[CombatPlanSequenceClass],
+    limits: &CombatPlanProbeLimits,
+) -> CombatPlanQueryReport {
+    let candidates = current_turn_sequences(sequences);
+    let best_lethal = candidates
+        .iter()
+        .copied()
+        .filter(|sequence| sequence.outcome.living_monster_count == 0)
+        .max_by_key(|sequence| {
+            (
+                sequence.outcome.damage_done,
+                -sequence.outcome.hp_loss_actual,
+                sequence.outcome.remaining_energy,
+            )
+        });
+    if let Some(sequence) = best_lethal {
+        return query_report(
+            "CanLethal",
+            "feasible",
+            Some(sequence),
+            Vec::new(),
+            vec!["current-turn lethal sequence found".to_string()],
+            query_needs_deeper_search(Some(sequence), limits, "feasible", false),
+        );
+    }
+
+    let best_damage = candidates.iter().copied().max_by_key(|sequence| {
+        (
+            sequence.outcome.damage_done,
+            -sequence.outcome.total_monster_hp,
+        )
+    });
+    let Some(sequence) = best_damage else {
+        return query_report(
+            "CanLethal",
+            "not_feasible",
+            None,
+            vec!["no_sequences_explored".to_string()],
+            vec!["no current-turn action sequence was available".to_string()],
+            limits.pruned_by_budget > 0,
+        );
+    };
+    let status = if sequence.outcome.damage_done > 0 {
+        "partial"
+    } else {
+        "not_feasible"
+    };
+    query_report(
+        "CanLethal",
+        status,
+        Some(sequence),
+        vec![
+            "combat_not_ended".to_string(),
+            format!("missing_damage:{}", sequence.outcome.total_monster_hp),
+        ],
+        vec![
+            format!("max_damage_done:{}", sequence.outcome.damage_done),
+            format!("remaining_monster_hp:{}", sequence.outcome.total_monster_hp),
+        ],
+        query_needs_deeper_search(Some(sequence), limits, status, false),
+    )
+}
+
+fn query_can_full_block(
+    start: &CombatState,
+    sequences: &[CombatPlanSequenceClass],
+    limits: &CombatPlanProbeLimits,
+) -> CombatPlanQueryReport {
+    if visible_incoming_damage(start) <= 0 {
+        return query_report(
+            "CanFullBlock",
+            "not_applicable",
+            None,
+            Vec::new(),
+            vec!["no visible incoming damage".to_string()],
+            false,
+        );
+    }
+    let candidates = current_turn_sequences(sequences);
+    let best_full_block = candidates
+        .iter()
+        .copied()
+        .filter(|sequence| sequence.outcome.projected_unblocked_damage == 0)
+        .max_by_key(|sequence| {
+            (
+                sequence.outcome.remaining_energy,
+                sequence.outcome.damage_done,
+            )
+        });
+    if let Some(sequence) = best_full_block {
+        return query_report(
+            "CanFullBlock",
+            "feasible",
+            Some(sequence),
+            Vec::new(),
+            vec![format!(
+                "remaining_energy:{}",
+                sequence.outcome.remaining_energy
+            )],
+            query_needs_deeper_search(Some(sequence), limits, "feasible", false),
+        );
+    }
+    let best_partial = candidates.iter().copied().max_by_key(|sequence| {
+        (
+            -sequence.outcome.projected_unblocked_damage,
+            sequence.outcome.block_after,
+            sequence.outcome.remaining_energy,
+        )
+    });
+    let Some(sequence) = best_partial else {
+        return query_report(
+            "CanFullBlock",
+            "not_feasible",
+            None,
+            vec!["no_current_turn_sequences".to_string()],
+            Vec::new(),
+            limits.pruned_by_budget > 0,
+        );
+    };
+    query_report(
+        "CanFullBlock",
+        "partial",
+        Some(sequence),
+        vec![format!(
+            "unblocked_damage:{}",
+            sequence.outcome.projected_unblocked_damage
+        )],
+        vec![format!("max_block_after:{}", sequence.outcome.block_after)],
+        query_needs_deeper_search(Some(sequence), limits, "partial", false),
+    )
+}
+
+fn query_can_full_block_then_max_damage(
+    start: &CombatState,
+    sequences: &[CombatPlanSequenceClass],
+    limits: &CombatPlanProbeLimits,
+) -> CombatPlanQueryReport {
+    let candidates = current_turn_sequences(sequences);
+    let full_block_candidates = candidates
+        .iter()
+        .copied()
+        .filter(|sequence| {
+            visible_incoming_damage(start) <= 0 || sequence.outcome.projected_unblocked_damage == 0
+        })
+        .collect::<Vec<_>>();
+    if let Some(sequence) = full_block_candidates
+        .iter()
+        .copied()
+        .max_by_key(|sequence| {
+            (
+                sequence.outcome.damage_done,
+                sequence.outcome.remaining_energy,
+            )
+        })
+    {
+        return query_report(
+            "CanFullBlockThenMaxDamage",
+            "feasible",
+            Some(sequence),
+            Vec::new(),
+            vec![
+                "max damage under full-block constraint".to_string(),
+                format!("damage_done:{}", sequence.outcome.damage_done),
+            ],
+            query_needs_deeper_search(Some(sequence), limits, "feasible", false),
+        );
+    }
+
+    let best_partial = candidates.iter().copied().max_by_key(|sequence| {
+        (
+            -sequence.outcome.projected_unblocked_damage,
+            sequence.outcome.damage_done,
+            sequence.outcome.block_after,
+        )
+    });
+    let Some(sequence) = best_partial else {
+        return query_report(
+            "CanFullBlockThenMaxDamage",
+            "not_feasible",
+            None,
+            vec!["no_current_turn_sequences".to_string()],
+            Vec::new(),
+            limits.pruned_by_budget > 0,
+        );
+    };
+    query_report(
+        "CanFullBlockThenMaxDamage",
+        "partial",
+        Some(sequence),
+        vec![format!(
+            "unblocked_damage:{}",
+            sequence.outcome.projected_unblocked_damage
+        )],
+        vec![format!("damage_done:{}", sequence.outcome.damage_done)],
+        query_needs_deeper_search(Some(sequence), limits, "partial", false),
+    )
+}
+
+fn query_can_play_setup_and_still_block(
+    start: &CombatState,
+    sequences: &[CombatPlanSequenceClass],
+    limits: &CombatPlanProbeLimits,
+) -> CombatPlanQueryReport {
+    if !has_setup_or_scaling_card_in_hand(start) {
+        return query_report(
+            "CanPlaySetupAndStillBlock",
+            "not_applicable",
+            None,
+            Vec::new(),
+            vec!["no setup/scaling card in hand".to_string()],
+            false,
+        );
+    }
+    let setup_sequences = current_turn_sequences(sequences)
+        .into_iter()
+        .filter(|sequence| sequence.outcome.played_setup_or_scaling)
+        .collect::<Vec<_>>();
+    if setup_sequences.is_empty() {
+        return query_report(
+            "CanPlaySetupAndStillBlock",
+            "not_feasible",
+            None,
+            vec!["setup_card_not_played".to_string()],
+            Vec::new(),
+            limits.pruned_by_budget > 0,
+        );
+    }
+    let best_full_block = setup_sequences
+        .iter()
+        .copied()
+        .filter(|sequence| {
+            visible_incoming_damage(start) <= 0 || sequence.outcome.projected_unblocked_damage == 0
+        })
+        .max_by_key(|sequence| {
+            (
+                sequence.outcome.damage_done,
+                sequence.outcome.remaining_energy,
+            )
+        });
+    if let Some(sequence) = best_full_block {
+        return query_report(
+            "CanPlaySetupAndStillBlock",
+            "feasible",
+            Some(sequence),
+            Vec::new(),
+            vec!["setup/scaling played while meeting block constraint".to_string()],
+            query_needs_deeper_search(Some(sequence), limits, "feasible", false),
+        );
+    }
+    let sequence = setup_sequences
+        .iter()
+        .copied()
+        .max_by_key(|sequence| {
+            (
+                -sequence.outcome.projected_unblocked_damage,
+                sequence.outcome.damage_done,
+                sequence.outcome.remaining_energy,
+            )
+        })
+        .expect("setup_sequences is non-empty");
+    query_report(
+        "CanPlaySetupAndStillBlock",
+        "partial",
+        Some(sequence),
+        vec![format!(
+            "unblocked_damage_after_setup:{}",
+            sequence.outcome.projected_unblocked_damage
+        )],
+        vec!["setup/scaling can be played but full block is not met".to_string()],
+        query_needs_deeper_search(Some(sequence), limits, "partial", false),
+    )
+}
+
+fn query_can_preserve_kill_window(
+    start: &CombatState,
+    sequences: &[CombatPlanSequenceClass],
+    limits: &CombatPlanProbeLimits,
+) -> CombatPlanQueryReport {
+    let kill_window_cards = kill_window_card_labels_in_hand(start);
+    if kill_window_cards.is_empty() {
+        return query_report(
+            "CanPreserveKillWindow",
+            "not_applicable",
+            None,
+            Vec::new(),
+            vec!["no Feed/HandOfGreed/RitualDagger in hand".to_string()],
+            false,
+        );
+    }
+    let best_preserve = current_turn_sequences(sequences)
+        .into_iter()
+        .filter(|sequence| {
+            !sequence.outcome.played_kill_window_card
+                && sequence.outcome.kill_window_target_count > 0
+        })
+        .max_by_key(|sequence| {
+            (
+                sequence.outcome.damage_done,
+                -sequence.outcome.projected_unblocked_damage,
+                sequence.outcome.kill_window_target_count as i32,
+            )
+        });
+    if let Some(sequence) = best_preserve {
+        return query_report(
+            "CanPreserveKillWindow",
+            "feasible",
+            Some(sequence),
+            Vec::new(),
+            vec![
+                format!("kill_window_cards:{}", kill_window_cards.join(",")),
+                format!(
+                    "kill_window_target_count:{}",
+                    sequence.outcome.kill_window_target_count
+                ),
+            ],
+            query_needs_deeper_search(Some(sequence), limits, "feasible", true),
+        );
+    }
+    let best = current_turn_sequences(sequences)
+        .into_iter()
+        .max_by_key(|sequence| {
+            (
+                sequence.outcome.damage_done,
+                -sequence.outcome.projected_unblocked_damage,
+            )
+        });
+    query_report(
+        "CanPreserveKillWindow",
+        "not_feasible",
+        best,
+        vec!["no_preserved_kill_window_target".to_string()],
+        vec![format!("kill_window_cards:{}", kill_window_cards.join(","))],
+        query_needs_deeper_search(best, limits, "not_feasible", true),
+    )
+}
+
+fn query_report(
+    query_name: &str,
+    status: &str,
+    sequence: Option<&CombatPlanSequenceClass>,
+    failed_constraints: Vec<String>,
+    notes: Vec<String>,
+    needs_deeper_search: bool,
+) -> CombatPlanQueryReport {
+    CombatPlanQueryReport {
+        query_name: query_name.to_string(),
+        status: status.to_string(),
+        best_sequence_key: sequence.map(|sequence| sequence.sequence_equivalence_key.clone()),
+        best_action_keys: sequence
+            .map(|sequence| sequence.action_keys.clone())
+            .unwrap_or_default(),
+        best_actions: sequence
+            .map(|sequence| sequence.actions.clone())
+            .unwrap_or_default(),
+        outcome: sequence.map(|sequence| sequence.outcome.clone()),
+        failed_constraints,
+        needs_deeper_search,
+        notes,
+    }
+}
+
+fn query_needs_deeper_search(
+    sequence: Option<&CombatPlanSequenceClass>,
+    limits: &CombatPlanProbeLimits,
+    status: &str,
+    kill_window_query: bool,
+) -> bool {
+    let budget_limited = limits.pruned_by_budget > 0 && status != "feasible";
+    let Some(sequence) = sequence else {
+        return budget_limited;
+    };
+    let random_risk = sequence.outcome.random_risk_present;
+    let kill_window_precision = kill_window_query
+        && (sequence.outcome.living_monster_count > 1
+            || !sequence.order_sensitive_reasons.is_empty()
+            || random_risk);
+    budget_limited || random_risk || kill_window_precision
+}
+
+fn current_turn_sequences(sequences: &[CombatPlanSequenceClass]) -> Vec<&CombatPlanSequenceClass> {
+    sequences
+        .iter()
+        .filter(|sequence| !sequence.outcome.ended_turn)
+        .collect()
+}
+
 fn score_value_for_sort(score: Option<&PlanScoreBreakdown>) -> i32 {
     score.map(|score| score.total_score).unwrap_or(i32::MIN)
 }
@@ -499,6 +939,8 @@ fn explore_sequence_classes(
 
         if !node.actions.is_empty() {
             let diagnostics = diagnose_sequence(combat, &node.combat, &node.accumulated);
+            let outcome =
+                build_sequence_outcome(combat, &node.combat, &node.accumulated, node.ended_turn);
             let key = sequence_equivalence_key(&node.engine, &node.combat);
             kept.push(CombatPlanSequenceClass {
                 sequence_equivalence_key: key,
@@ -510,6 +952,7 @@ fn explore_sequence_classes(
                     .cloned()
                     .collect::<Vec<_>>(),
                 diagnostics,
+                outcome,
                 pruned_as_equivalent: false,
                 pruned_by_budget: false,
                 pruned_by_dominated_state: false,
@@ -733,6 +1176,37 @@ fn diagnose_sequence(
     }
 }
 
+fn build_sequence_outcome(
+    start: &CombatState,
+    final_state: &CombatState,
+    accumulated: &AccumulatedSequenceEffects,
+    ended_turn: bool,
+) -> CombatPlanSequenceOutcome {
+    let start_hp = start.entities.player.current_hp;
+    let final_hp = final_state.entities.player.current_hp;
+    let start_enemy_hp = total_alive_monster_hp(start);
+    let final_enemy_hp = total_alive_monster_hp(final_state);
+    let incoming = visible_incoming_damage(final_state);
+    let enemy_deaths =
+        living_monster_count(start).saturating_sub(living_monster_count(final_state));
+    CombatPlanSequenceOutcome {
+        damage_done: (start_enemy_hp - final_enemy_hp).max(0),
+        block_after: final_state.entities.player.block,
+        projected_unblocked_damage: (incoming - final_state.entities.player.block).max(0),
+        hp_loss_actual: (start_hp - final_hp).max(0),
+        remaining_energy: final_state.turn.energy as i32,
+        remaining_hand_count: final_state.zones.hand.len(),
+        enemy_deaths,
+        living_monster_count: living_monster_count(final_state),
+        total_monster_hp: final_enemy_hp,
+        played_setup_or_scaling: accumulated.played_setup_or_scaling,
+        played_kill_window_card: accumulated.played_kill_window_card,
+        random_risk_present: accumulated.random_risk_present || accumulated.random_risk != 0,
+        ended_turn,
+        kill_window_target_count: kill_window_target_count(final_state),
+    }
+}
+
 fn accumulate_action_effects(
     combat: &CombatState,
     action: &ClientInput,
@@ -764,9 +1238,14 @@ fn accumulate_action_effects(
             }
             if facts.random_generation || card.id == CardId::TrueGrit && card.upgrades == 0 {
                 order_sensitive_reasons.insert("random_effect_requires_risk_model".to_string());
+                accumulated.random_risk_present = true;
             }
             if structure.is_setup_piece() || structure.is_scaling_piece() {
                 accumulated.setup_score += 90;
+                accumulated.played_setup_or_scaling = true;
+            }
+            if is_kill_window_card(card.id) {
+                accumulated.played_kill_window_card = true;
             }
             if facts.exhausts_other_cards {
                 accumulated.future_hand_penalty -= 12;
@@ -1268,6 +1747,64 @@ fn possible_kill_with_card(combat: &CombatState, card: &CombatCard) -> bool {
         .any(|monster| monster.current_hp > 0 && monster.current_hp <= rough_damage)
 }
 
+fn has_setup_or_scaling_card_in_hand(combat: &CombatState) -> bool {
+    combat.zones.hand.iter().any(|card| {
+        let structure = card_structure::structure(card.id);
+        structure.is_setup_piece() || structure.is_scaling_piece()
+    })
+}
+
+fn is_kill_window_card(card_id: CardId) -> bool {
+    matches!(
+        card_id,
+        CardId::Feed | CardId::HandOfGreed | CardId::RitualDagger
+    )
+}
+
+fn kill_window_card_labels_in_hand(combat: &CombatState) -> Vec<String> {
+    combat
+        .zones
+        .hand
+        .iter()
+        .filter(|card| is_kill_window_card(card.id))
+        .map(hand_card_label)
+        .collect()
+}
+
+fn kill_window_target_count(combat: &CombatState) -> usize {
+    let kill_window_damages = combat
+        .zones
+        .hand
+        .iter()
+        .filter(|card| is_kill_window_card(card.id))
+        .map(kill_window_card_damage)
+        .collect::<Vec<_>>();
+    if kill_window_damages.is_empty() {
+        return 0;
+    }
+    combat
+        .entities
+        .monsters
+        .iter()
+        .filter(|monster| {
+            monster.current_hp > 0
+                && !monster.is_dying
+                && !monster.is_escaped
+                && !monster.half_dead
+                && kill_window_damages
+                    .iter()
+                    .any(|damage| monster.current_hp <= *damage)
+        })
+        .count()
+}
+
+fn kill_window_card_damage(card: &CombatCard) -> i32 {
+    let def = cards::get_card_definition(card.id);
+    (def.base_damage + def.upgrade_damage * card.upgrades as i32)
+        .max(card.base_damage_mut)
+        .max(0)
+}
+
 fn exhaust_outlet_value(combat: &CombatState, played_index: Option<usize>) -> i32 {
     combat
         .zones
@@ -1365,6 +1902,179 @@ mod tests {
 
     fn card(id: CardId, uuid: u32) -> CombatCard {
         CombatCard::new(id, uuid)
+    }
+
+    fn query<'a>(report: &'a CombatTurnPlanProbeReport, name: &str) -> &'a CombatPlanQueryReport {
+        report
+            .plan_queries
+            .iter()
+            .find(|query| query.query_name == name)
+            .unwrap_or_else(|| panic!("missing query {name}"))
+    }
+
+    #[test]
+    fn combat_turn_plan_probe_query_reports_lethal_partial() {
+        let mut combat = blank_test_combat();
+        let mut cultist = planned_monster(EnemyId::Cultist, 3);
+        cultist.current_hp = 20;
+        cultist.max_hp = 20;
+        combat.entities.monsters.push(cultist);
+        combat.zones.hand.push(card(CardId::Strike, 1));
+
+        let report = probe_turn_plans(
+            &EngineState::CombatPlayerTurn,
+            &combat,
+            CombatTurnPlanProbeConfig {
+                max_depth: 1,
+                ..CombatTurnPlanProbeConfig::default()
+            },
+        );
+
+        let lethal = query(&report, "CanLethal");
+        assert_eq!(lethal.status, "partial");
+        let outcome = lethal.outcome.as_ref().expect("partial query has outcome");
+        assert!(outcome.damage_done > 0);
+        assert!(lethal
+            .failed_constraints
+            .iter()
+            .any(|constraint| constraint.starts_with("missing_damage:")));
+    }
+
+    #[test]
+    fn combat_turn_plan_probe_query_reports_full_block() {
+        let mut combat = blank_test_combat();
+        combat
+            .entities
+            .monsters
+            .push(planned_monster(EnemyId::Cultist, 1));
+        combat.zones.hand.push(card(CardId::Defend, 1));
+        combat.zones.hand.push(card(CardId::Defend, 2));
+
+        let report = probe_turn_plans(
+            &EngineState::CombatPlayerTurn,
+            &combat,
+            CombatTurnPlanProbeConfig {
+                max_depth: 2,
+                ..CombatTurnPlanProbeConfig::default()
+            },
+        );
+
+        let full_block = query(&report, "CanFullBlock");
+        assert_eq!(full_block.status, "feasible");
+        let outcome = full_block
+            .outcome
+            .as_ref()
+            .expect("feasible query has outcome");
+        assert_eq!(outcome.projected_unblocked_damage, 0);
+        assert!(outcome.remaining_energy >= 1);
+    }
+
+    #[test]
+    fn combat_turn_plan_probe_query_reports_full_block_then_damage() {
+        let mut combat = blank_test_combat();
+        combat
+            .entities
+            .monsters
+            .push(planned_monster(EnemyId::Cultist, 1));
+        combat.zones.hand.push(card(CardId::Strike, 1));
+        combat.zones.hand.push(card(CardId::Defend, 2));
+        combat.zones.hand.push(card(CardId::Defend, 3));
+
+        let report = probe_turn_plans(
+            &EngineState::CombatPlayerTurn,
+            &combat,
+            CombatTurnPlanProbeConfig {
+                max_depth: 3,
+                ..CombatTurnPlanProbeConfig::default()
+            },
+        );
+
+        let guarded_damage = query(&report, "CanFullBlockThenMaxDamage");
+        assert_eq!(guarded_damage.status, "feasible");
+        let outcome = guarded_damage
+            .outcome
+            .as_ref()
+            .expect("feasible query has outcome");
+        assert_eq!(outcome.projected_unblocked_damage, 0);
+        assert!(outcome.damage_done > 0);
+    }
+
+    #[test]
+    fn combat_turn_plan_probe_query_reports_setup_and_block() {
+        let mut combat = blank_test_combat();
+        combat
+            .entities
+            .monsters
+            .push(planned_monster(EnemyId::Cultist, 1));
+        combat.zones.hand.push(card(CardId::Inflame, 1));
+        combat.zones.hand.push(card(CardId::Defend, 2));
+        combat.zones.hand.push(card(CardId::Defend, 3));
+
+        let report = probe_turn_plans(
+            &EngineState::CombatPlayerTurn,
+            &combat,
+            CombatTurnPlanProbeConfig {
+                max_depth: 3,
+                ..CombatTurnPlanProbeConfig::default()
+            },
+        );
+
+        let setup = query(&report, "CanPlaySetupAndStillBlock");
+        assert_eq!(setup.status, "feasible");
+        let outcome = setup.outcome.as_ref().expect("feasible query has outcome");
+        assert!(outcome.played_setup_or_scaling);
+        assert_eq!(outcome.projected_unblocked_damage, 0);
+    }
+
+    #[test]
+    fn combat_turn_plan_probe_query_reports_kill_window_preservation() {
+        let mut combat = blank_test_combat();
+        let mut cultist = planned_monster(EnemyId::Cultist, 3);
+        cultist.current_hp = 8;
+        cultist.max_hp = 20;
+        combat.entities.monsters.push(cultist);
+        combat.zones.hand.push(card(CardId::Feed, 1));
+        combat.zones.hand.push(card(CardId::Defend, 2));
+
+        let report = probe_turn_plans(
+            &EngineState::CombatPlayerTurn,
+            &combat,
+            CombatTurnPlanProbeConfig {
+                max_depth: 1,
+                ..CombatTurnPlanProbeConfig::default()
+            },
+        );
+
+        let kill_window = query(&report, "CanPreserveKillWindow");
+        assert_eq!(kill_window.status, "feasible");
+        let outcome = kill_window
+            .outcome
+            .as_ref()
+            .expect("feasible query has outcome");
+        assert!(!outcome.played_kill_window_card);
+        assert!(outcome.kill_window_target_count > 0);
+    }
+
+    #[test]
+    fn combat_turn_plan_probe_query_reports_kill_window_not_applicable() {
+        let mut combat = blank_test_combat();
+        combat
+            .entities
+            .monsters
+            .push(planned_monster(EnemyId::Cultist, 3));
+        combat.zones.hand.push(card(CardId::Strike, 1));
+
+        let report = probe_turn_plans(
+            &EngineState::CombatPlayerTurn,
+            &combat,
+            CombatTurnPlanProbeConfig {
+                max_depth: 1,
+                ..CombatTurnPlanProbeConfig::default()
+            },
+        );
+
+        let kill_window = query(&report, "CanPreserveKillWindow");
+        assert_eq!(kill_window.status, "not_applicable");
     }
 
     #[test]
