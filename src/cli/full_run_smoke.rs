@@ -2447,6 +2447,14 @@ fn choose_plan_query_action(ctx: &EpisodeContext, legal_actions: &[ClientInput])
     let unblocked = visible_unblocked_damage(combat);
     let hp = combat.entities.player.current_hp.max(1);
     let high_pressure = unblocked > 0 && (unblocked >= 8 || unblocked * 3 >= hp);
+    let low_or_moderate_pressure = !high_pressure && (unblocked <= 6 || unblocked * 5 <= hp);
+    let multi_enemy_pressure = combat
+        .entities
+        .monsters
+        .iter()
+        .filter(|monster| monster.current_hp > 0 && !monster.is_dying)
+        .count()
+        >= 2;
 
     if high_pressure {
         for (query, statuses) in [
@@ -2456,6 +2464,17 @@ fn choose_plan_query_action(ctx: &EpisodeContext, legal_actions: &[ClientInput])
             ("CanFullBlock", &["partial"][..]),
         ] {
             if let Some(index) = mapped_query_action(&report, &legal_by_key, query, statuses) {
+                return Some(index);
+            }
+        }
+    }
+
+    if incoming > 0 && low_or_moderate_pressure {
+        if let Some(index) = mapped_plan_action(&report, &legal_by_key, "KillThreateningEnemy") {
+            return Some(index);
+        }
+        if multi_enemy_pressure {
+            if let Some(index) = mapped_plan_action(&report, &legal_by_key, "MaxDamage") {
                 return Some(index);
             }
         }
@@ -5414,6 +5433,69 @@ mod tests {
             .expect("plan-query policy should choose a legal action or fall back");
         assert_eq!(step.info.seed, 42);
         assert!(step.chosen_action_key.is_some());
+    }
+
+    #[test]
+    fn plan_query_v0_cashes_low_pressure_multi_enemy_damage_window() {
+        use crate::semantics::combat::{
+            AttackSpec, AttackStep, DamageKind, MonsterMoveSpec, MoveStep, MoveTarget,
+        };
+
+        let mut run_state = RunState::new(42, 0, false, "Ironclad");
+        let mut combat = build_combat_state(&mut run_state, EncounterId::SmallSlimes);
+        combat.clear_pending_actions();
+        combat.zones.queued_cards.clear();
+        combat.zones.limbo.clear();
+        combat.turn.energy = 3;
+        combat.entities.player.current_hp = 80;
+        combat.entities.player.block = 0;
+        combat.zones.hand = vec![
+            crate::runtime::combat::CombatCard::new(CardId::Immolate, 10_001),
+            crate::runtime::combat::CombatCard::new(CardId::Defend, 10_002),
+            crate::runtime::combat::CombatCard::new(CardId::Defend, 10_003),
+        ];
+        for (index, monster) in combat.entities.monsters.iter_mut().enumerate() {
+            monster.current_hp = 30;
+            monster.max_hp = 30;
+            monster.block = 0;
+            if index == 0 {
+                let attack = AttackSpec {
+                    base_damage: 6,
+                    hits: 1,
+                    damage_kind: DamageKind::Normal,
+                };
+                monster.set_planned_move_id(1);
+                monster.set_planned_visible_spec(Some(MonsterMoveSpec::Attack(attack.clone())));
+                monster.set_planned_steps(smallvec::smallvec![MoveStep::Attack(AttackStep {
+                    target: MoveTarget::Player,
+                    attack,
+                })]);
+            } else {
+                monster.set_planned_move_id(0);
+                monster.set_planned_visible_spec(Some(MonsterMoveSpec::None));
+                monster.set_planned_steps(smallvec::smallvec![]);
+            }
+        }
+
+        let ctx = EpisodeContext {
+            engine_state: EngineState::CombatPlayerTurn,
+            run_state,
+            combat_state: Some(combat),
+            stashed_event_combat: None,
+            forced_engine_ticks: 0,
+            combat_win_count: 0,
+        };
+        let legal = legal_actions(&ctx.engine_state, &ctx.run_state, &ctx.combat_state);
+        let index = choose_plan_query_action(&ctx, &legal)
+            .expect("plan-query should choose a damage-window action");
+
+        assert!(matches!(
+            legal.get(index),
+            Some(ClientInput::PlayCard {
+                card_index: 0,
+                target: None
+            })
+        ));
     }
 
     #[test]
