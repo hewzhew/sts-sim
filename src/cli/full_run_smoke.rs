@@ -2456,6 +2456,24 @@ fn choose_plan_query_action(ctx: &EpisodeContext, legal_actions: &[ClientInput])
         .count()
         >= 2;
 
+    if resource_window_opened_this_turn(combat) {
+        if high_pressure {
+            for (query, statuses) in [
+                ("CanFullBlockThenMaxDamage", &["feasible"][..]),
+                ("CanFullBlock", &["feasible"][..]),
+                ("CanFullBlockThenMaxDamage", &["partial"][..]),
+            ] {
+                if let Some(index) = mapped_query_action(&report, &legal_by_key, query, statuses) {
+                    return Some(index);
+                }
+            }
+        }
+        if let Some(index) = resource_window_follow_through_action(&report, &legal_by_key, incoming)
+        {
+            return Some(index);
+        }
+    }
+
     if !high_pressure || unblocked * 5 <= hp {
         if let Some(index) = resource_window_opener_action(combat, legal_actions, unblocked, hp) {
             return Some(index);
@@ -2517,6 +2535,90 @@ fn choose_plan_query_action(ctx: &EpisodeContext, legal_actions: &[ClientInput])
     None
 }
 
+fn resource_window_opened_this_turn(combat: &CombatState) -> bool {
+    combat
+        .turn
+        .counters
+        .card_ids_played_this_turn
+        .iter()
+        .any(|card_id| is_resource_window_card(*card_id))
+}
+
+fn is_resource_window_card(card_id: CardId) -> bool {
+    matches!(
+        card_id,
+        CardId::Offering
+            | CardId::Adrenaline
+            | CardId::BattleTrance
+            | CardId::SeeingRed
+            | CardId::Bloodletting
+    )
+}
+
+fn resource_window_follow_through_action(
+    report: &crate::bot::combat::CombatTurnPlanProbeReport,
+    legal_by_key: &BTreeMap<String, usize>,
+    incoming: i32,
+) -> Option<usize> {
+    if let Some(plan) = report
+        .plans
+        .iter()
+        .find(|plan| plan.plan_name == "MaxDamage")
+    {
+        if let Some(score) = plan.best_score.as_ref() {
+            if score.enemy_death_score > 0 || score.damage_score >= 180 {
+                if let Some(index) = first_mapped_action(&plan.best_action_keys, legal_by_key) {
+                    return Some(index);
+                }
+            }
+        }
+    }
+
+    let mut best: Option<(usize, i32)> = None;
+    for plan_name in [
+        "KillThreateningEnemy",
+        "MaxDamage",
+        "BlockEnoughThenDamage",
+        "SetupPowerOrScaling",
+    ] {
+        let Some(plan) = report.plans.iter().find(|plan| plan.plan_name == plan_name) else {
+            continue;
+        };
+        let Some(index) = first_mapped_action(&plan.best_action_keys, legal_by_key) else {
+            continue;
+        };
+        let Some(score) = plan.best_score.as_ref() else {
+            continue;
+        };
+        let mut adjusted = score.total_score;
+        match plan_name {
+            "KillThreateningEnemy" => {
+                adjusted += score.enemy_death_score * 2 + score.damage_score;
+            }
+            "MaxDamage" => {
+                adjusted += score.damage_score * 2 + score.enemy_death_score;
+            }
+            "BlockEnoughThenDamage" => {
+                if incoming <= 0 {
+                    adjusted -= 80;
+                }
+                adjusted += score.block_score + score.damage_score;
+            }
+            "SetupPowerOrScaling" => {
+                adjusted += score.setup_score * 2 + score.damage_score / 2;
+            }
+            _ => {}
+        }
+        if best
+            .as_ref()
+            .is_none_or(|(_, best_score)| adjusted > *best_score)
+        {
+            best = Some((index, adjusted));
+        }
+    }
+    best.map(|(index, _)| index)
+}
+
 fn resource_window_opener_action(
     combat: &CombatState,
     legal_actions: &[ClientInput],
@@ -2555,6 +2657,9 @@ fn resource_window_opener_score(
         CardId::Bloodletting => (80, 3, 2 + card.upgrades as i32, 0),
         _ => return None,
     };
+    if resource_window_opened_this_turn(combat) {
+        return None;
+    }
     if hp - hp_cost <= unblocked + 6 {
         return None;
     }
@@ -5688,6 +5793,69 @@ mod tests {
                 })
             ),
             "expected Offering first, got {:?} from {:?}",
+            legal.get(index),
+            legal
+        );
+    }
+
+    #[test]
+    fn plan_query_v0_follows_resource_window_with_best_cashout_plan() {
+        use crate::semantics::combat::{
+            AttackSpec, AttackStep, DamageKind, MonsterMoveSpec, MoveStep, MoveTarget,
+        };
+
+        let mut run_state = RunState::new(44, 0, false, "Ironclad");
+        let mut combat = build_combat_state(&mut run_state, EncounterId::SmallSlimes);
+        combat.clear_pending_actions();
+        combat.zones.queued_cards.clear();
+        combat.zones.limbo.clear();
+        combat.turn.energy = 4;
+        combat.turn.record_card_played(CardId::Offering);
+        combat.entities.player.current_hp = 70;
+        combat.entities.player.block = 0;
+        combat.zones.hand = vec![
+            crate::runtime::combat::CombatCard::new(CardId::Defend, 30_001),
+            crate::runtime::combat::CombatCard::new(CardId::Immolate, 30_002),
+            crate::runtime::combat::CombatCard::new(CardId::Defend, 30_003),
+        ];
+        for monster in &mut combat.entities.monsters {
+            monster.current_hp = 40;
+            monster.max_hp = 40;
+            monster.block = 0;
+            let attack = AttackSpec {
+                base_damage: 1,
+                hits: 1,
+                damage_kind: DamageKind::Normal,
+            };
+            monster.set_planned_move_id(1);
+            monster.set_planned_visible_spec(Some(MonsterMoveSpec::Attack(attack.clone())));
+            monster.set_planned_steps(smallvec::smallvec![MoveStep::Attack(AttackStep {
+                target: MoveTarget::Player,
+                attack,
+            })]);
+        }
+
+        let ctx = EpisodeContext {
+            engine_state: EngineState::CombatPlayerTurn,
+            run_state,
+            combat_state: Some(combat),
+            stashed_event_combat: None,
+            forced_engine_ticks: 0,
+            combat_win_count: 0,
+        };
+        let legal = legal_actions(&ctx.engine_state, &ctx.run_state, &ctx.combat_state);
+        let index = choose_plan_query_action(&ctx, &legal)
+            .expect("resource-window follow-through should choose a payoff action");
+
+        assert!(
+            matches!(
+                legal.get(index),
+                Some(ClientInput::PlayCard {
+                    card_index: 1,
+                    target: None
+                })
+            ),
+            "expected Immolate cashout after Offering, got {:?} from {:?}",
             legal.get(index),
             legal
         );

@@ -824,7 +824,7 @@ fn execute_played_card(
         }
     }
 
-    state.turn.increment_cards_played();
+    state.turn.record_card_played(card_id);
     if def.card_type == crate::content::cards::CardType::Attack {
         state.turn.increment_attacks_played();
     }
