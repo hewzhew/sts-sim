@@ -32,9 +32,12 @@ BASE_OBS_DIM = 41
 OBS_DIM = BASE_OBS_DIM + (MAX_ACTIONS * ACTION_FEATURES)
 PLAN_PROFILE_FEATURES = 10
 PLAN_DELTA_FEATURES = 13
+REWARD_ACTION_FEATURES = 10
 PLAN_BASE_OBS_DIM = BASE_OBS_DIM + PLAN_PROFILE_FEATURES
 PLAN_ACTION_FEATURES = ACTION_FEATURES + PLAN_DELTA_FEATURES
+PLAN_REWARD_ACTION_FEATURES = PLAN_ACTION_FEATURES + REWARD_ACTION_FEATURES
 PLAN_OBS_DIM = PLAN_BASE_OBS_DIM + (MAX_ACTIONS * PLAN_ACTION_FEATURES)
+PLAN_REWARD_OBS_DIM = PLAN_BASE_OBS_DIM + (MAX_ACTIONS * PLAN_REWARD_ACTION_FEATURES)
 
 DECISION_TYPE_IDS = {
     "none": 0,
@@ -173,8 +176,8 @@ class FullRunGymEnv(gym.Env[np.ndarray, int]):
         feature_profile: str = "baseline",
     ) -> None:
         super().__init__()
-        if feature_profile not in {"baseline", "plan_v0"}:
-            raise ValueError("feature_profile must be 'baseline' or 'plan_v0'")
+        if feature_profile not in {"baseline", "plan_v0", "plan_reward_v0"}:
+            raise ValueError("feature_profile must be 'baseline', 'plan_v0', or 'plan_reward_v0'")
         self.driver = FullRunEnvDriver(driver_binary)
         self._rng = random.Random(seed)
         self.seed = int(seed)
@@ -185,8 +188,12 @@ class FullRunGymEnv(gym.Env[np.ndarray, int]):
         self.invalid_action_penalty = float(invalid_action_penalty)
         self.reward_shaping_profile = str(reward_shaping_profile or "baseline")
         self.feature_profile = str(feature_profile)
-        self.base_obs_dim = PLAN_BASE_OBS_DIM if self.feature_profile == "plan_v0" else BASE_OBS_DIM
-        self.action_features = PLAN_ACTION_FEATURES if self.feature_profile == "plan_v0" else ACTION_FEATURES
+        self.base_obs_dim = PLAN_BASE_OBS_DIM if self.feature_profile != "baseline" else BASE_OBS_DIM
+        self.action_features = {
+            "baseline": ACTION_FEATURES,
+            "plan_v0": PLAN_ACTION_FEATURES,
+            "plan_reward_v0": PLAN_REWARD_ACTION_FEATURES,
+        }[self.feature_profile]
         self.obs_dim = self.base_obs_dim + (MAX_ACTIONS * self.action_features)
         self._last_response: dict[str, Any] | None = None
         self._step_count = 0
@@ -299,7 +306,7 @@ class FullRunGymEnv(gym.Env[np.ndarray, int]):
             float(screen.get("shop_potion_count") or 0),
             *self._deck_features(obs.get("deck") or {}),
         ]
-        if self.feature_profile == "plan_v0":
+        if self.feature_profile != "baseline":
             base.extend(self._plan_profile_features(obs.get("plan_profile") or {}))
         values = list(base)
         for index in range(min(len(candidates), MAX_ACTIONS)):
@@ -316,8 +323,10 @@ class FullRunGymEnv(gym.Env[np.ndarray, int]):
                     *self._card_features(candidate.get("card")),
                 ]
             )
-            if self.feature_profile == "plan_v0":
+            if self.feature_profile != "baseline":
                 values.extend(self._plan_delta_features(candidate.get("plan_delta") or {}))
+            if self.feature_profile == "plan_reward_v0":
+                values.extend(self._reward_action_features(candidate.get("reward_structure") or {}))
         missing_action_features = (MAX_ACTIONS * self.action_features) - (len(values) - self.base_obs_dim)
         values.extend([0.0] * max(missing_action_features, 0))
         return np.asarray(values[: self.obs_dim], dtype=np.float32)
@@ -370,6 +379,21 @@ class FullRunGymEnv(gym.Env[np.ndarray, int]):
             float(delta.get("bloat_penalty") or 0) / 80.0,
             float(delta.get("duplicate_penalty") or 0) / 80.0,
             plan_adjusted,
+        ]
+
+    def _reward_action_features(self, reward: dict[str, Any]) -> list[float]:
+        item_type = str(reward.get("claim_reward_item_type") or "")
+        return [
+            1.0 if reward.get("is_reward_action") else 0.0,
+            1.0 if reward.get("claim_opens_card_choice") else 0.0,
+            max(min(float(reward.get("claim_free_value_score") or 0.0), 180.0), -80.0) / 180.0,
+            1.0 if reward.get("claim_likely_waste") else 0.0,
+            1.0 if reward.get("claim_capacity_blocked") else 0.0,
+            1.0 if reward.get("is_proceed_with_unclaimed_rewards") else 0.0,
+            float(reward.get("unclaimed_reward_count") or 0) / 8.0,
+            float(reward.get("unclaimed_card_reward_count") or 0) / 5.0,
+            1.0 if reward.get("proceed_is_cleanup") else 0.0,
+            _stable_token(item_type),
         ]
 
     def _card_features(self, card: Any) -> list[float]:
@@ -442,4 +466,6 @@ __all__ = [
     "PLAN_ACTION_FEATURES",
     "PLAN_BASE_OBS_DIM",
     "PLAN_OBS_DIM",
+    "PLAN_REWARD_ACTION_FEATURES",
+    "PLAN_REWARD_OBS_DIM",
 ]

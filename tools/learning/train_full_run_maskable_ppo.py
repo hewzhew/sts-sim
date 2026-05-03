@@ -22,6 +22,7 @@ from full_run_env import (
     MAX_ACTIONS,
     PLAN_ACTION_FEATURES,
     PLAN_BASE_OBS_DIM,
+    PLAN_REWARD_ACTION_FEATURES,
     FullRunGymEnv,
 )
 
@@ -56,7 +57,11 @@ def parse_args() -> argparse.Namespace:
         choices=["baseline", "plan_deficit_v0"],
         default="baseline",
     )
-    parser.add_argument("--feature-profile", choices=["baseline", "plan_v0"], default="baseline")
+    parser.add_argument(
+        "--feature-profile",
+        choices=["baseline", "plan_v0", "plan_reward_v0"],
+        default="baseline",
+    )
     return parser.parse_args()
 
 
@@ -78,8 +83,12 @@ def make_env(args: argparse.Namespace, env_seed: int):
 
 def policy_spec(args: argparse.Namespace):
     if args.policy_arch == "candidate_scorer":
-        base_obs_dim = PLAN_BASE_OBS_DIM if args.feature_profile == "plan_v0" else BASE_OBS_DIM
-        action_feature_dim = PLAN_ACTION_FEATURES if args.feature_profile == "plan_v0" else ACTION_FEATURES
+        base_obs_dim = PLAN_BASE_OBS_DIM if args.feature_profile != "baseline" else BASE_OBS_DIM
+        action_feature_dim = {
+            "baseline": ACTION_FEATURES,
+            "plan_v0": PLAN_ACTION_FEATURES,
+            "plan_reward_v0": PLAN_REWARD_ACTION_FEATURES,
+        }[args.feature_profile]
         return FullRunCandidateScorerPolicy, {
             "state_dim": args.candidate_state_dim,
             "candidate_dim": args.candidate_action_dim,

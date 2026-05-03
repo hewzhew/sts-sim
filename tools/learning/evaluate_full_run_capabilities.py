@@ -41,7 +41,11 @@ def parse_args() -> argparse.Namespace:
         choices=["baseline", "plan_deficit_v0"],
         default="baseline",
     )
-    parser.add_argument("--feature-profile", choices=["baseline", "plan_v0"], default="baseline")
+    parser.add_argument(
+        "--feature-profile",
+        choices=["baseline", "plan_v0", "plan_reward_v0"],
+        default="baseline",
+    )
     parser.add_argument(
         "--plan-query-report",
         action="append",

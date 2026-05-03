@@ -26,8 +26,9 @@ use crate::state::run::RunState;
 use crate::state::selection::EngineDiagnosticSeverity;
 use crate::state::selection::{SelectionResolution, SelectionScope, SelectionTargetRef};
 
-pub const FULL_RUN_OBSERVATION_SCHEMA_VERSION: &str = "full_run_observation_v4_plan_profile";
-pub const FULL_RUN_ACTION_SCHEMA_VERSION: &str = "full_run_action_candidate_set_v2_plan_delta";
+pub const FULL_RUN_OBSERVATION_SCHEMA_VERSION: &str = "full_run_observation_v5_reward_structure";
+pub const FULL_RUN_ACTION_SCHEMA_VERSION: &str =
+    "full_run_action_candidate_set_v3_reward_structure";
 const NO_PROGRESS_REPEAT_LIMIT: usize = 8;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -371,11 +372,31 @@ pub struct RunScreenObservationV0 {
     pub event_option_count: usize,
     pub reward_item_count: usize,
     pub reward_card_choice_count: usize,
+    pub reward_phase: String,
+    pub reward_items: Vec<RunRewardItemObservationV0>,
+    pub reward_claimable_item_count: usize,
+    pub reward_unclaimed_card_item_count: usize,
+    pub reward_free_value_score: i32,
     pub shop_card_count: usize,
     pub shop_relic_count: usize,
     pub shop_potion_count: usize,
     pub boss_relic_choice_count: usize,
     pub selection_target_count: usize,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct RunRewardItemObservationV0 {
+    pub item_index: usize,
+    pub item_type: String,
+    pub amount: i32,
+    pub card_choice_count: usize,
+    pub relic_id: Option<String>,
+    pub potion_id: Option<String>,
+    pub claimable: bool,
+    pub opens_card_choice: bool,
+    pub free_value_score: i32,
+    pub likely_waste: bool,
+    pub capacity_blocked: bool,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -386,6 +407,24 @@ pub struct RunActionCandidate {
     pub action: TraceClientInput,
     pub card: Option<RunCardFeatureV0>,
     pub plan_delta: CandidatePlanDeltaV0,
+    pub reward_structure: RewardActionStructureV0,
+}
+
+#[derive(Clone, Debug, Default, Serialize, PartialEq, Eq)]
+pub struct RewardActionStructureV0 {
+    pub score_kind: String,
+    pub screen_phase: String,
+    pub is_reward_action: bool,
+    pub is_proceed_with_unclaimed_rewards: bool,
+    pub unclaimed_reward_count: usize,
+    pub unclaimed_card_reward_count: usize,
+    pub claim_reward_item_type: Option<String>,
+    pub claim_opens_card_choice: bool,
+    pub claim_free_value_score: i32,
+    pub claim_likely_waste: bool,
+    pub claim_capacity_blocked: bool,
+    pub proceed_is_cleanup: bool,
+    pub skip_card_choice: bool,
 }
 
 #[derive(Clone, Debug, Default, Serialize, PartialEq, Eq)]
@@ -1260,15 +1299,32 @@ fn full_run_action_shaping_reward(
         ClientInput::ClaimReward(index) => reward_state
             .items
             .get(*index)
-            .map(|item| reward_item_shaping_value(&ctx.run_state, item).min(0.35))
+            .map(|item| match profile {
+                RewardShapingProfile::Baseline => {
+                    reward_item_shaping_value(&ctx.run_state, item).min(0.35)
+                }
+                RewardShapingProfile::PlanDeficitV0 => {
+                    plan_deficit_reward_item_shaping_value(&ctx.run_state, item).min(0.55)
+                }
+            })
             .unwrap_or(0.0),
         ClientInput::Proceed => {
             let skipped_value = reward_state
                 .items
                 .iter()
-                .map(|item| reward_item_shaping_value(&ctx.run_state, item).max(0.0))
+                .map(|item| match profile {
+                    RewardShapingProfile::Baseline => {
+                        reward_item_shaping_value(&ctx.run_state, item).max(0.0)
+                    }
+                    RewardShapingProfile::PlanDeficitV0 => {
+                        plan_deficit_reward_item_shaping_value(&ctx.run_state, item).max(0.0)
+                    }
+                })
                 .sum::<f32>();
-            -skipped_value.min(0.60)
+            match profile {
+                RewardShapingProfile::Baseline => -skipped_value.min(0.60),
+                RewardShapingProfile::PlanDeficitV0 => -skipped_value.min(1.00),
+            }
         }
         _ => 0.0,
     }
@@ -1295,6 +1351,93 @@ fn reward_item_shaping_value(run_state: &RunState, item: &RewardItem) -> f32 {
         }
         RewardItem::Card { .. } => 0.12,
         RewardItem::EmeraldKey | RewardItem::SapphireKey => 0.04,
+    }
+}
+
+fn plan_deficit_reward_item_shaping_value(run_state: &RunState, item: &RewardItem) -> f32 {
+    match item {
+        RewardItem::Card { .. } => 0.42,
+        RewardItem::Relic { .. } => 0.48,
+        RewardItem::Gold { amount } | RewardItem::StolenGold { amount } => {
+            (*amount as f32 / 180.0).clamp(0.08, 0.35)
+        }
+        RewardItem::Potion { .. } => {
+            if reward_item_likely_waste(run_state, item) {
+                -0.04
+            } else if run_state.potions.iter().any(Option::is_none) {
+                0.10
+            } else {
+                0.0
+            }
+        }
+        RewardItem::EmeraldKey | RewardItem::SapphireKey => 0.06,
+    }
+}
+
+fn reward_item_type_label(item: &RewardItem) -> &'static str {
+    match item {
+        RewardItem::Gold { .. } => "gold",
+        RewardItem::StolenGold { .. } => "stolen_gold",
+        RewardItem::Card { .. } => "card_reward",
+        RewardItem::Relic { .. } => "relic",
+        RewardItem::Potion { .. } => "potion",
+        RewardItem::EmeraldKey => "emerald_key",
+        RewardItem::SapphireKey => "sapphire_key",
+    }
+}
+
+fn reward_item_amount(item: &RewardItem) -> i32 {
+    match item {
+        RewardItem::Gold { amount } | RewardItem::StolenGold { amount } => *amount,
+        _ => 0,
+    }
+}
+
+fn reward_item_claimable(run_state: &RunState, item: &RewardItem) -> bool {
+    match item {
+        RewardItem::Potion { .. } => {
+            run_state
+                .relics
+                .iter()
+                .any(|relic| relic.id == RelicId::Sozu)
+                || run_state.potions.iter().any(Option::is_none)
+        }
+        _ => true,
+    }
+}
+
+fn reward_item_capacity_blocked(run_state: &RunState, item: &RewardItem) -> bool {
+    matches!(item, RewardItem::Potion { .. })
+        && !run_state
+            .relics
+            .iter()
+            .any(|relic| relic.id == RelicId::Sozu)
+        && !run_state.potions.iter().any(Option::is_none)
+}
+
+fn reward_item_likely_waste(run_state: &RunState, item: &RewardItem) -> bool {
+    matches!(item, RewardItem::Potion { .. })
+        && run_state
+            .relics
+            .iter()
+            .any(|relic| relic.id == RelicId::Sozu)
+}
+
+fn reward_item_claim_score(run_state: &RunState, item: &RewardItem) -> i32 {
+    match item {
+        RewardItem::Gold { amount } | RewardItem::StolenGold { amount } => 60 + amount / 8,
+        RewardItem::Relic { .. } => 120,
+        RewardItem::Potion { .. } => {
+            if reward_item_likely_waste(run_state, item) {
+                -10
+            } else if run_state.potions.iter().any(Option::is_none) {
+                55
+            } else {
+                0
+            }
+        }
+        RewardItem::Card { .. } => 70,
+        RewardItem::EmeraldKey | RewardItem::SapphireKey => 25,
     }
 }
 
@@ -2516,17 +2659,8 @@ fn score_reward_action(
             .items
             .get(*index)
             .map(|item| match item {
-                RewardItem::Gold { amount } | RewardItem::StolenGold { amount } => 60 + amount / 8,
-                RewardItem::Relic { .. } => 120,
-                RewardItem::Potion { .. } => {
-                    if run_state.potions.iter().any(Option::is_none) {
-                        55
-                    } else {
-                        10
-                    }
-                }
-                RewardItem::Card { .. } => 70,
-                RewardItem::EmeraldKey | RewardItem::SapphireKey => 25,
+                RewardItem::Potion { .. } if reward_item_likely_waste(run_state, item) => -10,
+                _ => reward_item_claim_score(run_state, item),
             })
             .unwrap_or(-1_000),
         ClientInput::Proceed => 0,
@@ -2895,17 +3029,7 @@ fn legal_reward_actions(run_state: &RunState, reward_state: &RewardState) -> Vec
 
     let mut actions = Vec::new();
     for (idx, item) in reward_state.items.iter().enumerate() {
-        let claimable = match item {
-            RewardItem::Potion { .. } => {
-                run_state
-                    .relics
-                    .iter()
-                    .any(|relic| relic.id == RelicId::Sozu)
-                    || run_state.potions.iter().any(Option::is_none)
-            }
-            _ => true,
-        };
-        if claimable {
+        if reward_item_claimable(run_state, item) {
             actions.push(ClientInput::ClaimReward(idx));
         }
     }
@@ -3668,15 +3792,9 @@ fn build_screen_observation(
                 .count(),
             ..empty_screen_observation()
         },
-        EngineState::RewardScreen(reward_state) => RunScreenObservationV0 {
-            reward_item_count: reward_state.items.len(),
-            reward_card_choice_count: reward_state
-                .pending_card_choice
-                .as_ref()
-                .map(Vec::len)
-                .unwrap_or(0),
-            ..empty_screen_observation()
-        },
+        EngineState::RewardScreen(reward_state) => {
+            build_reward_screen_observation(run_state, reward_state)
+        }
         EngineState::Shop(shop) => RunScreenObservationV0 {
             shop_card_count: shop.cards.len(),
             shop_relic_count: shop.relics.len(),
@@ -3707,11 +3825,92 @@ fn empty_screen_observation() -> RunScreenObservationV0 {
         event_option_count: 0,
         reward_item_count: 0,
         reward_card_choice_count: 0,
+        reward_phase: "none".to_string(),
+        reward_items: Vec::new(),
+        reward_claimable_item_count: 0,
+        reward_unclaimed_card_item_count: 0,
+        reward_free_value_score: 0,
         shop_card_count: 0,
         shop_relic_count: 0,
         shop_potion_count: 0,
         boss_relic_choice_count: 0,
         selection_target_count: 0,
+    }
+}
+
+fn build_reward_screen_observation(
+    run_state: &RunState,
+    reward_state: &RewardState,
+) -> RunScreenObservationV0 {
+    let reward_items = reward_state
+        .items
+        .iter()
+        .enumerate()
+        .map(|(item_index, item)| reward_item_observation(run_state, item_index, item))
+        .collect::<Vec<_>>();
+    let reward_claimable_item_count = reward_items.iter().filter(|item| item.claimable).count();
+    let reward_unclaimed_card_item_count = reward_items
+        .iter()
+        .filter(|item| item.opens_card_choice)
+        .count();
+    let reward_free_value_score = reward_items
+        .iter()
+        .filter(|item| item.claimable)
+        .map(|item| item.free_value_score.max(0))
+        .sum::<i32>();
+    let reward_phase = if reward_state.pending_card_choice.is_some() {
+        "card_choice"
+    } else if reward_claimable_item_count > 0 {
+        "claim_items"
+    } else {
+        "cleanup"
+    };
+
+    RunScreenObservationV0 {
+        reward_item_count: reward_state.items.len(),
+        reward_card_choice_count: reward_state
+            .pending_card_choice
+            .as_ref()
+            .map(Vec::len)
+            .unwrap_or(0),
+        reward_phase: reward_phase.to_string(),
+        reward_items,
+        reward_claimable_item_count,
+        reward_unclaimed_card_item_count,
+        reward_free_value_score,
+        ..empty_screen_observation()
+    }
+}
+
+fn reward_item_observation(
+    run_state: &RunState,
+    item_index: usize,
+    item: &RewardItem,
+) -> RunRewardItemObservationV0 {
+    let claimable = reward_item_claimable(run_state, item);
+    let likely_waste = reward_item_likely_waste(run_state, item);
+    let capacity_blocked = reward_item_capacity_blocked(run_state, item);
+    RunRewardItemObservationV0 {
+        item_index,
+        item_type: reward_item_type_label(item).to_string(),
+        amount: reward_item_amount(item),
+        card_choice_count: match item {
+            RewardItem::Card { cards } => cards.len(),
+            _ => 0,
+        },
+        relic_id: match item {
+            RewardItem::Relic { relic_id } => Some(format!("{relic_id:?}")),
+            _ => None,
+        },
+        potion_id: match item {
+            RewardItem::Potion { potion_id } => Some(format!("{potion_id:?}")),
+            _ => None,
+        },
+        claimable,
+        opens_card_choice: matches!(item, RewardItem::Card { .. }),
+        free_value_score: reward_item_claim_score(run_state, item),
+        likely_waste,
+        capacity_blocked,
     }
 }
 
@@ -3729,6 +3928,9 @@ fn build_action_candidates(
             let plan_delta = ctx
                 .map(|ctx| candidate_plan_delta_for_action(action, ctx))
                 .unwrap_or_else(empty_candidate_plan_delta);
+            let reward_structure = ctx
+                .map(|ctx| reward_action_structure_for_action(action, ctx))
+                .unwrap_or_else(empty_reward_action_structure);
             RunActionCandidate {
                 action_index,
                 action_id: stable_action_id(&action_key),
@@ -3736,9 +3938,81 @@ fn build_action_candidates(
                 action: trace_input_from_client_input(action),
                 card,
                 plan_delta,
+                reward_structure,
             }
         })
         .collect()
+}
+
+fn empty_reward_action_structure() -> RewardActionStructureV0 {
+    RewardActionStructureV0 {
+        score_kind: "heuristic".to_string(),
+        screen_phase: "none".to_string(),
+        ..RewardActionStructureV0::default()
+    }
+}
+
+fn reward_action_structure_for_action(
+    action: &ClientInput,
+    ctx: &EpisodeContext,
+) -> RewardActionStructureV0 {
+    let EngineState::RewardScreen(reward_state) = &ctx.engine_state else {
+        return empty_reward_action_structure();
+    };
+    if reward_state.pending_card_choice.is_some() {
+        return RewardActionStructureV0 {
+            score_kind: "heuristic".to_string(),
+            screen_phase: "card_choice".to_string(),
+            is_reward_action: matches!(action, ClientInput::SelectCard(_) | ClientInput::Proceed),
+            skip_card_choice: matches!(action, ClientInput::Proceed),
+            proceed_is_cleanup: false,
+            ..RewardActionStructureV0::default()
+        };
+    }
+
+    let unclaimed_reward_count = reward_state.items.len();
+    let unclaimed_card_reward_count = reward_state
+        .items
+        .iter()
+        .filter(|item| matches!(item, RewardItem::Card { .. }))
+        .count();
+    match action {
+        ClientInput::ClaimReward(index) => reward_state
+            .items
+            .get(*index)
+            .map(|item| {
+                let item_obs = reward_item_observation(&ctx.run_state, *index, item);
+                RewardActionStructureV0 {
+                    score_kind: "heuristic".to_string(),
+                    screen_phase: "claim_items".to_string(),
+                    is_reward_action: true,
+                    unclaimed_reward_count,
+                    unclaimed_card_reward_count,
+                    claim_reward_item_type: Some(item_obs.item_type),
+                    claim_opens_card_choice: item_obs.opens_card_choice,
+                    claim_free_value_score: item_obs.free_value_score,
+                    claim_likely_waste: item_obs.likely_waste,
+                    claim_capacity_blocked: item_obs.capacity_blocked,
+                    ..RewardActionStructureV0::default()
+                }
+            })
+            .unwrap_or_else(empty_reward_action_structure),
+        ClientInput::Proceed => RewardActionStructureV0 {
+            score_kind: "heuristic".to_string(),
+            screen_phase: if unclaimed_reward_count > 0 {
+                "claim_items".to_string()
+            } else {
+                "cleanup".to_string()
+            },
+            is_reward_action: true,
+            is_proceed_with_unclaimed_rewards: unclaimed_reward_count > 0,
+            unclaimed_reward_count,
+            unclaimed_card_reward_count,
+            proceed_is_cleanup: unclaimed_reward_count == 0,
+            ..RewardActionStructureV0::default()
+        },
+        _ => empty_reward_action_structure(),
+    }
 }
 
 fn card_feature_for_action(action: &ClientInput, ctx: &EpisodeContext) -> Option<RunCardFeatureV0> {
@@ -4831,6 +5105,7 @@ mod tests {
             },
             card: None,
             plan_delta: empty_candidate_plan_delta(),
+            reward_structure: empty_reward_action_structure(),
         }];
         let mut tracker = NoProgressTracker::new();
 
@@ -5050,6 +5325,7 @@ mod tests {
 
         assert_eq!(observation.decision_type, "reward_card_choice");
         assert_eq!(observation.screen.reward_card_choice_count, 2);
+        assert_eq!(observation.screen.reward_phase, "card_choice");
         assert_eq!(observation.deck.attack_count, 2);
         assert_eq!(observation.deck.skill_count, 1);
         assert!(observation.deck.starter_basic_count >= 2);
@@ -5069,6 +5345,7 @@ mod tests {
             .find(|candidate| matches!(candidate.action, TraceClientInput::Proceed))
             .expect("card reward skip should remain available");
         assert!(skip.card.is_none());
+        assert!(skip.reward_structure.skip_card_choice);
 
         let take_reward = full_run_action_shaping_reward(
             &ctx,
@@ -5254,6 +5531,113 @@ mod tests {
             proceed < 0.0,
             "skipping unclaimed reward items should carry an immediate resource-loss hint"
         );
+    }
+
+    #[test]
+    fn reward_screen_structure_exposes_claim_items_and_proceed_avoidance() {
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        run_state.potions = vec![None, None, None];
+        let reward_state = RewardState {
+            items: vec![
+                RewardItem::Gold { amount: 42 },
+                RewardItem::Card {
+                    cards: vec![crate::rewards::state::RewardCard::new(
+                        CardId::PommelStrike,
+                        0,
+                    )],
+                },
+            ],
+            ..RewardState::new()
+        };
+        let ctx = EpisodeContext {
+            engine_state: EngineState::RewardScreen(reward_state),
+            run_state,
+            combat_state: None,
+            stashed_event_combat: None,
+            forced_engine_ticks: 0,
+            combat_win_count: 0,
+        };
+
+        let observation = build_observation(&ctx);
+        assert_eq!(observation.screen.reward_phase, "claim_items");
+        assert_eq!(observation.screen.reward_item_count, 2);
+        assert_eq!(observation.screen.reward_claimable_item_count, 2);
+        assert_eq!(observation.screen.reward_unclaimed_card_item_count, 1);
+        assert!(observation.screen.reward_free_value_score > 0);
+        assert!(observation
+            .screen
+            .reward_items
+            .iter()
+            .any(|item| item.item_type == "card_reward" && item.opens_card_choice));
+
+        let legal_actions = legal_actions(&ctx.engine_state, &ctx.run_state, &ctx.combat_state);
+        let candidates = build_action_candidates(&legal_actions, Some(&ctx));
+        let claim_card = candidates
+            .iter()
+            .find(|candidate| {
+                matches!(candidate.action, TraceClientInput::ClaimReward { index: 1 })
+            })
+            .expect("card reward item should be claimable");
+        assert!(claim_card.reward_structure.claim_opens_card_choice);
+        assert_eq!(
+            claim_card
+                .reward_structure
+                .claim_reward_item_type
+                .as_deref(),
+            Some("card_reward")
+        );
+        assert!(claim_card.reward_structure.claim_free_value_score > 0);
+
+        let proceed = candidates
+            .iter()
+            .find(|candidate| matches!(candidate.action, TraceClientInput::Proceed))
+            .expect("proceed should remain available");
+        assert!(proceed.reward_structure.is_proceed_with_unclaimed_rewards);
+        assert_eq!(proceed.reward_structure.unclaimed_reward_count, 2);
+        assert_eq!(proceed.reward_structure.unclaimed_card_reward_count, 1);
+        assert!(!proceed.reward_structure.proceed_is_cleanup);
+    }
+
+    #[test]
+    fn plan_deficit_shaping_penalizes_skipping_reward_item_phase_more_strongly() {
+        let run_state = RunState::new(1, 0, false, "Ironclad");
+        let reward_state = RewardState {
+            items: vec![RewardItem::Card {
+                cards: vec![crate::rewards::state::RewardCard::new(
+                    CardId::PommelStrike,
+                    0,
+                )],
+            }],
+            ..RewardState::new()
+        };
+        let ctx = EpisodeContext {
+            engine_state: EngineState::RewardScreen(reward_state),
+            run_state,
+            combat_state: None,
+            stashed_event_combat: None,
+            forced_engine_ticks: 0,
+            combat_win_count: 0,
+        };
+
+        let claim_plan = full_run_action_shaping_reward(
+            &ctx,
+            &ClientInput::ClaimReward(0),
+            RewardShapingProfile::PlanDeficitV0,
+        );
+        let proceed_plan = full_run_action_shaping_reward(
+            &ctx,
+            &ClientInput::Proceed,
+            RewardShapingProfile::PlanDeficitV0,
+        );
+        let proceed_baseline = full_run_action_shaping_reward(
+            &ctx,
+            &ClientInput::Proceed,
+            RewardShapingProfile::Baseline,
+        );
+
+        assert!(claim_plan >= 0.40);
+        assert!(proceed_plan < proceed_baseline);
+        assert!(proceed_plan <= -0.40);
     }
 
     #[test]
