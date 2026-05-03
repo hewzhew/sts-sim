@@ -13,8 +13,8 @@ from typing import Any
 from combat_rl_common import REPO_ROOT, write_json
 
 
-REPORT_VERSION = "card_cashout_lab_v0_5"
-SCORE_KIND = "heuristic_cashout_v0_5"
+REPORT_VERSION = "card_cashout_lab_v0_6"
+SCORE_KIND = "heuristic_cashout_v0_6"
 
 PLAN_FIELDS = (
     "frontload_delta",
@@ -37,6 +37,20 @@ EXHAUST_ENGINE_CARDS = {
     "DarkEmbrace",
     "Exhume",
 }
+RELIABLE_EXHAUST_OUTLET_CARDS = {
+    "TrueGrit",
+    "SecondWind",
+    "FiendFire",
+    "BurningPact",
+    "Corruption",
+    "Exhume",
+}
+STATUS_BURDEN_CARDS = {
+    "PowerThrough": 2,
+    "WildStrike": 1,
+    "RecklessCharge": 1,
+}
+STATUS_PAYOFF_CARDS = {"Evolve", "FireBreathing", "MedKit"}
 ENERGY_CARDS = {"Offering", "SeeingRed", "Bloodletting", "Dropkick", "Sentinel"}
 MULTI_ENEMY_CONTROL_CARDS = {"Shockwave", "ThunderClap"}
 HIGH_VALUE_RELIC_WARNINGS = {
@@ -266,14 +280,19 @@ def is_exhaust_engine(card: dict[str, Any]) -> bool:
 
 
 def is_exhaust_outlet(card: dict[str, Any]) -> bool:
-    return bool(card.get("exhaust")) or card_id(card) in {
-        "TrueGrit",
-        "SecondWind",
-        "FiendFire",
-        "BurningPact",
-        "Corruption",
-        "Exhume",
-    }
+    return is_reliable_exhaust_outlet(card)
+
+
+def is_reliable_exhaust_outlet(card: dict[str, Any]) -> bool:
+    return card_id(card) in RELIABLE_EXHAUST_OUTLET_CARDS
+
+
+def status_burden(card: dict[str, Any]) -> int:
+    return STATUS_BURDEN_CARDS.get(card_id(card), 0)
+
+
+def has_status_payoff(deck_cards: list[dict[str, Any]]) -> bool:
+    return any(card_id(card) in STATUS_PAYOFF_CARDS for card in deck_cards)
 
 
 def is_kill_window(card: dict[str, Any]) -> bool:
@@ -583,6 +602,8 @@ def context_penalties(
         "high_curve_clog_risk": 0.0,
         "draw_over_cashout": 0.0,
         "setup_cashout_risk": 0.0,
+        "act1_frontload_urgency": 0.0,
+        "status_burden_risk": 0.0,
         "card_context_uncertainty": 0.0,
         "duplicate_penalty": float(abs(delta.get("duplicate_penalty") or 0)),
         "deck_bloat_penalty": float(abs(delta.get("bloat_penalty") or 0)),
@@ -622,11 +643,32 @@ def context_penalties(
         values["card_context_uncertainty"] += 10.0
     if card_id(card) == "Clothesline":
         values["card_context_uncertainty"] += 4.0
+        if act == 1 and floor <= 3:
+            values["act1_frontload_urgency"] += 8.0
+        if "SneckoEye" in relics:
+            values["card_context_uncertainty"] += 6.0
     if card_id(card) == "ShrugItOff":
+        current_hp = int(obs.get("current_hp") or obs.get("hp") or 0)
         if act <= 1 and floor <= 3 and profile_value(profile, "frontload_supply") < 60:
             values["card_context_uncertainty"] += 8.0
+        elif act <= 1 and floor <= 6 and profile_value(profile, "frontload_supply") < 60:
+            values["act1_frontload_urgency"] += 4.0
+            if current_hp and current_hp <= 10:
+                values["act1_frontload_urgency"] += 6.0
         if profile_value(profile, "draw_supply") >= 20:
             values["draw_over_cashout"] += 5.0
+    generated_status = status_burden(card)
+    if generated_status:
+        status_penalty = generated_status * 5.0
+        if not has_status_payoff(deck_cards):
+            status_penalty += 5.0
+        if exhaust_outlet_count(deck_cards) <= 0:
+            status_penalty += 4.0
+        if is_draw(card) or profile_value(profile, "draw_supply") >= 20:
+            status_penalty += 3.0
+        if act == 1 and floor <= 6:
+            status_penalty += 3.0
+        values["status_burden_risk"] += status_penalty
     if card_id(card) in {"DarkEmbrace", "FeelNoPain"}:
         outlet_count = exhaust_outlet_count(deck_cards)
         if outlet_count == 0:
@@ -637,6 +679,16 @@ def context_penalties(
         values["high_curve_clog_risk"] += 8.0 + max(card_cost(card) - 3, 0) * 4.0
         if is_scaling(card) and float(profile.get("frontload_supply") or 0) < 70:
             values["high_curve_clog_risk"] += 8.0
+    if card_id(card) == "DemonForm":
+        current_hp = int(obs.get("current_hp") or obs.get("hp") or 0)
+        if act == 1 and floor <= 6:
+            values["setup_cashout_risk"] += 14.0
+            if profile_value(profile, "draw_supply") < 20:
+                values["setup_cashout_risk"] += 5.0
+            if profile_value(profile, "block_supply") < 30:
+                values["setup_cashout_risk"] += 6.0
+        if current_hp and current_hp <= 35 and act <= 1:
+            values["setup_cashout_risk"] += 8.0
     if is_draw(card) and not is_energy(card):
         values["draw_over_cashout"] += max(card_cost(card), 0) * 3.0
     if is_draw(card) and "VelvetChoker" in relics:
@@ -1130,6 +1182,10 @@ def needs_deeper_model(row: dict[str, Any]) -> bool:
     if penalties.get("nob_skill_risk", 0) > 0:
         return True
     if penalties.get("card_context_uncertainty", 0) >= 8:
+        return True
+    if penalties.get("status_burden_risk", 0) >= 8:
+        return True
+    if penalties.get("act1_frontload_urgency", 0) >= 8:
         return True
     if row["bucket_ev"].get("dominant_cashout") in {"draw_cashout", "scaling_cashout"}:
         return row["cashout_grade"] in {"low", "speculative"}
