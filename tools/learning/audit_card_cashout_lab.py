@@ -13,8 +13,8 @@ from typing import Any
 from combat_rl_common import REPO_ROOT, write_json
 
 
-REPORT_VERSION = "card_cashout_lab_v0_1"
-SCORE_KIND = "heuristic_cashout_v0_1"
+REPORT_VERSION = "card_cashout_lab_v0_3"
+SCORE_KIND = "heuristic_cashout_v0_3"
 
 PLAN_FIELDS = (
     "frontload_delta",
@@ -573,11 +573,19 @@ def context_penalties(
             values["choker_action_pressure"] += 5.0
     if act == 1 and floor <= 6 and int(card.get("card_type_id") or 0) == 2:
         if not (is_draw(card) and card_block(card) > 0) and card_damage(card) <= 0:
-            values["nob_skill_risk"] += 7.0
+            values["nob_skill_risk"] += 18.0
+        if card_damage(card) <= 0 and card_block(card) <= 0:
+            values["nob_skill_risk"] += 8.0
+    if card_id(card) in {"Shockwave", "Disarm"} and card_damage(card) <= 0 and card_block(card) <= 0:
+        values["setup_cashout_risk"] += 18.0 if act == 1 and floor <= 6 else 10.0
+    if is_multi_enemy_control(card) and card_damage(card) <= 0 and card_block(card) <= 0:
+        values["setup_cashout_risk"] += 12.0 if act == 1 and floor <= 6 else 7.0
     if card_cost(card) >= 3:
         values["high_curve_clog_risk"] += 8.0 + max(card_cost(card) - 3, 0) * 4.0
         if is_scaling(card) and float(profile.get("frontload_supply") or 0) < 70:
             values["high_curve_clog_risk"] += 8.0
+    if is_draw(card) and not is_energy(card):
+        values["draw_over_cashout"] += max(card_cost(card), 0) * 3.0
     if is_draw(card) and "VelvetChoker" in relics:
         values["draw_over_cashout"] += 8.0
     if delta.get("setup_cashout_risk_delta", 0) > 0:
@@ -611,6 +619,32 @@ def payoff_quality(deck_cards: list[dict[str, Any]], profile: dict[str, Any]) ->
     return max(0.0, energy + attacks + block + scaling + aoe + multi_control + exhaust - junk)
 
 
+def base_prior_value(candidate: dict[str, Any], card: dict[str, Any]) -> float:
+    """Keep static rule/plan priors as weak tie-breakers, not cashout proof.
+
+    The first cashout pass let rule_score dominate slow draw/control/scaling
+    cards. Rollout labels showed that many of those cards are policy/horizon
+    dependent, so V0.2 discounts priors unless the card has direct current-deck
+    cashout such as damage/block/AoE.
+    """
+    rule = candidate_rule_score(candidate)
+    plan = candidate_plan_score(candidate)
+    direct_output = card_damage(card) > 0 or card_block(card) > 0 or is_aoe_damage(card)
+    slow_plan = (
+        is_draw(card)
+        or is_scaling(card)
+        or is_multi_enemy_control(card)
+        or card_id(card) in {"Shockwave", "Disarm"}
+    )
+    if is_aoe_damage(card):
+        return 0.17 * rule + 0.09 * plan
+    if direct_output and not slow_plan:
+        return 0.14 * rule + 0.07 * plan
+    if direct_output and slow_plan:
+        return 0.10 * rule + 0.05 * plan
+    return 0.07 * rule + 0.035 * plan
+
+
 def bucket_ev(
     *,
     candidate: dict[str, Any],
@@ -638,21 +672,28 @@ def bucket_ev(
     draw_cashout = 0.0
     if is_draw(card):
         payoff = payoff_quality(deck_cards, profile)
+        draw_base = 5 if card_cost(card) > 0 else 8
         draw_cashout = (
-            p_turn2 * max(delta["draw_delta"], 8)
-            + p_combo * min(payoff, 60.0) * 0.35
-            + p_open * min(payoff, 40.0) * 0.10
+            p_turn2 * max(delta["draw_delta"], draw_base)
+            + p_combo * min(payoff, 55.0) * 0.22
+            + p_open * min(payoff, 35.0) * 0.06
         )
+        if card_damage(card) > 0 and card_block(card) <= 0:
+            draw_cashout *= 0.55
+        elif card_block(card) > 0:
+            draw_cashout *= 0.80
     scaling = 0.0
     if is_scaling(card):
         act = int(obs.get("act") or 0)
         floor = int(obs.get("floor") or 0)
         time_factor = 1.25 if act >= 2 or floor >= 7 else 1.0
+        synergy_factor = scaling_synergy_factor(card, deck_cards)
         scaling = (
             p_turn2
             * max(delta["scaling_delta"], 10)
             * deficit_factor(profile, "scaling_supply", 35.0)
             * time_factor
+            * synergy_factor
         )
     aoe_damage = 0.0
     multi_enemy_control = 0.0
@@ -696,7 +737,7 @@ def bucket_ev(
         letter_opener_bonus = p_turn2 * 5.0
 
     total_penalty = float(penalties.get("total_penalty") or 0.0)
-    base_prior = 0.20 * candidate_rule_score(candidate) + 0.12 * candidate_plan_score(candidate)
+    base_prior = base_prior_value(candidate, card)
     subtotal = (
         frontload
         + block
@@ -736,6 +777,24 @@ def bucket_ev(
             }
         ),
     }
+
+
+def scaling_synergy_factor(card: dict[str, Any], deck_cards: list[dict[str, Any]]) -> float:
+    cid = card_id(card)
+    classes = class_counts(deck_cards)
+    if cid == "FeelNoPain":
+        exhaust_count = classes.get("exhaust_engine", 0)
+        if exhaust_count <= 0:
+            return 0.45
+        if exhaust_count == 1:
+            return 0.75
+        return 1.15
+    if cid in {"Inflame", "DemonForm", "LimitBreak"}:
+        attack_count = classes.get("generic_attack", 0)
+        if attack_count <= 4:
+            return 0.75
+        return 1.0
+    return 0.85
 
 
 def dominant_cashout(values: dict[str, float]) -> str:
@@ -1217,7 +1276,7 @@ def pct(value: float) -> str:
 
 def write_markdown(path: Path, report: dict[str, Any]) -> None:
     lines = [
-        "# Card Cashout Lab V0.1",
+        f"# Card Cashout Lab {REPORT_VERSION}",
         "",
         f"Generated: `{report['generated_at_utc']}`",
         "",
