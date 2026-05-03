@@ -92,7 +92,7 @@ enum Commands {
         /// Maximum decision steps per episode before step-cap termination.
         #[arg(long, default_value_t = 2000)]
         max_steps: usize,
-        /// Policy name: random_masked or rule_baseline_v0.
+        /// Policy name: random_masked, rule_baseline_v0, or plan_query_v0.
         #[arg(long, default_value = "random_masked")]
         policy: String,
         /// Optional output directory for per-episode action traces.
@@ -3817,9 +3817,10 @@ fn main() {
                 "rule_baseline_v0" => {
                     sts_simulator::cli::full_run_smoke::RunPolicyKind::RuleBaselineV0
                 }
+                "plan_query_v0" => sts_simulator::cli::full_run_smoke::RunPolicyKind::PlanQueryV0,
                 other => {
                     eprintln!(
-                        "unsupported policy '{other}'; expected random_masked or rule_baseline_v0"
+                        "unsupported policy '{other}'; expected random_masked, rule_baseline_v0, or plan_query_v0"
                     );
                     std::process::exit(2);
                 }

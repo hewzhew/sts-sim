@@ -27,7 +27,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--class", dest="player_class", default="ironclad")
     parser.add_argument("--final-act", action="store_true")
     parser.add_argument("--max-steps", type=int, default=5000)
-    parser.add_argument("--continuation-policy", default="rule_baseline_v0", choices=["rule_baseline_v0", "random_masked"])
+    parser.add_argument(
+        "--continuation-policy",
+        default="rule_baseline_v0",
+        choices=["rule_baseline_v0", "plan_query_v0", "random_masked"],
+    )
     parser.add_argument("--continuation-steps", type=int, default=40)
     parser.add_argument(
         "--branch-indices",
@@ -207,8 +211,8 @@ def step_continuation(
     policy: str,
     rng: random.Random,
 ) -> dict[str, Any]:
-    if policy == "rule_baseline_v0":
-        return driver.request({"cmd": "step_policy", "policy": "rule_baseline_v0"})
+    if policy in {"rule_baseline_v0", "plan_query_v0"}:
+        return driver.request({"cmd": "step_policy", "policy": policy})
     if policy == "random_masked":
         candidates = (response.get("payload") or {}).get("action_candidates") or []
         if not candidates:

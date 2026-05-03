@@ -216,8 +216,9 @@ fn normalize_player_class(value: Option<&str>) -> Result<&'static str, String> {
 fn normalize_policy(value: &str) -> Result<RunPolicyKind, String> {
     match value.to_ascii_lowercase().as_str() {
         "rule_baseline_v0" => Ok(RunPolicyKind::RuleBaselineV0),
+        "plan_query_v0" => Ok(RunPolicyKind::PlanQueryV0),
         other => Err(format!(
-            "unsupported policy '{other}'; expected rule_baseline_v0"
+            "unsupported policy '{other}'; expected rule_baseline_v0 or plan_query_v0"
         )),
     }
 }

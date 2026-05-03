@@ -38,7 +38,11 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--max-cases", type=int, default=8)
     parser.add_argument("--per-policy-limit", type=int, default=4)
-    parser.add_argument("--continuation-policy", default="rule_baseline_v0", choices=["rule_baseline_v0", "random_masked"])
+    parser.add_argument(
+        "--continuation-policy",
+        default="rule_baseline_v0",
+        choices=["rule_baseline_v0", "plan_query_v0", "random_masked"],
+    )
     parser.add_argument("--continuation-steps", type=int, default=100)
     parser.add_argument("--max-branches", type=int, default=8)
     parser.add_argument("--ascension", type=int, default=0)

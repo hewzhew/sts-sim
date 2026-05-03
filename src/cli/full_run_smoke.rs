@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
@@ -61,6 +62,7 @@ impl RewardShapingProfile {
 pub enum RunPolicyKind {
     RandomMasked,
     RuleBaselineV0,
+    PlanQueryV0,
 }
 
 impl RunPolicyKind {
@@ -68,6 +70,7 @@ impl RunPolicyKind {
         match self {
             Self::RandomMasked => "random_masked",
             Self::RuleBaselineV0 => "rule_baseline_v0",
+            Self::PlanQueryV0 => "plan_query_v0",
         }
     }
 }
@@ -598,6 +601,7 @@ enum EpisodePolicy {
         rng: StsRng,
     },
     RuleBaselineV0,
+    PlanQueryV0,
     Replay {
         actions: Vec<ClientInput>,
         cursor: usize,
@@ -748,6 +752,8 @@ impl FullRunEnv {
         }
         let action_index = match policy {
             RunPolicyKind::RuleBaselineV0 => choose_rule_baseline_action(&self.ctx, &legal_actions),
+            RunPolicyKind::PlanQueryV0 => choose_plan_query_action(&self.ctx, &legal_actions)
+                .unwrap_or_else(|| choose_rule_baseline_action(&self.ctx, &legal_actions)),
             RunPolicyKind::RandomMasked => {
                 return Err(
                     "random_masked policy step is not stateful in FullRunEnv; choose a legal index externally"
@@ -1678,6 +1684,7 @@ pub fn run_batch(config: &RunBatchConfig) -> Result<RunBatchSummary, String> {
                 rng: StsRng::new(policy_seed),
             },
             RunPolicyKind::RuleBaselineV0 => EpisodePolicy::RuleBaselineV0,
+            RunPolicyKind::PlanQueryV0 => EpisodePolicy::PlanQueryV0,
         };
         let mut episode = run_episode(config, episode_id, seed, episode_policy, true);
 
@@ -2361,6 +2368,11 @@ fn choose_action(
             let idx = choose_rule_baseline_action(ctx, legal_actions);
             Ok((idx, legal_actions[idx].clone()))
         }
+        EpisodePolicy::PlanQueryV0 => {
+            let idx = choose_plan_query_action(ctx, legal_actions)
+                .unwrap_or_else(|| choose_rule_baseline_action(ctx, legal_actions));
+            Ok((idx, legal_actions[idx].clone()))
+        }
         EpisodePolicy::Replay { actions, cursor } => {
             let action = actions
                 .get(*cursor)
@@ -2394,6 +2406,130 @@ fn choose_rule_baseline_action(ctx: &EpisodeContext, legal_actions: &[ClientInpu
         }
     }
     best_index
+}
+
+fn choose_plan_query_action(ctx: &EpisodeContext, legal_actions: &[ClientInput]) -> Option<usize> {
+    let combat = ctx.combat_state.as_ref()?;
+    if !matches!(
+        ctx.engine_state,
+        EngineState::CombatPlayerTurn | EngineState::PendingChoice(_)
+    ) {
+        return None;
+    }
+    let legal_by_key = legal_actions.iter().enumerate().fold(
+        BTreeMap::<String, usize>::new(),
+        |mut acc, (index, action)| {
+            acc.entry(action_key_for_input(action, Some(combat)))
+                .or_insert(index);
+            acc
+        },
+    );
+    if legal_by_key.is_empty() {
+        return None;
+    }
+
+    let report = crate::bot::combat::probe_turn_plans(
+        &ctx.engine_state,
+        combat,
+        crate::bot::combat::CombatTurnPlanProbeConfig {
+            max_depth: 4,
+            max_nodes: 500,
+            beam_width: 16,
+            max_engine_steps_per_action: 200,
+        },
+    );
+
+    if let Some(index) = mapped_query_action(&report, &legal_by_key, "CanLethal", &["feasible"]) {
+        return Some(index);
+    }
+
+    let incoming = visible_incoming_damage(combat);
+    let unblocked = visible_unblocked_damage(combat);
+    let hp = combat.entities.player.current_hp.max(1);
+    let high_pressure = unblocked > 0 && (unblocked >= 8 || unblocked * 3 >= hp);
+
+    if high_pressure {
+        for (query, statuses) in [
+            ("CanFullBlockThenMaxDamage", &["feasible"][..]),
+            ("CanFullBlock", &["feasible"][..]),
+            ("CanFullBlockThenMaxDamage", &["partial"][..]),
+            ("CanFullBlock", &["partial"][..]),
+        ] {
+            if let Some(index) = mapped_query_action(&report, &legal_by_key, query, statuses) {
+                return Some(index);
+            }
+        }
+    }
+
+    if incoming == 0 || unblocked == 0 {
+        if let Some(index) = mapped_query_action(
+            &report,
+            &legal_by_key,
+            "CanPlaySetupAndStillBlock",
+            &["feasible"],
+        ) {
+            return Some(index);
+        }
+    }
+
+    if incoming > 0 {
+        if let Some(index) = mapped_query_action(
+            &report,
+            &legal_by_key,
+            "CanFullBlockThenMaxDamage",
+            &["feasible"],
+        ) {
+            return Some(index);
+        }
+    }
+
+    for plan_name in ["MaxDamage", "SetupPowerOrScaling"] {
+        if let Some(index) = mapped_plan_action(&report, &legal_by_key, plan_name) {
+            return Some(index);
+        }
+    }
+
+    None
+}
+
+fn mapped_query_action(
+    report: &crate::bot::combat::CombatTurnPlanProbeReport,
+    legal_by_key: &BTreeMap<String, usize>,
+    query_name: &str,
+    allowed_statuses: &[&str],
+) -> Option<usize> {
+    let query = report
+        .plan_queries
+        .iter()
+        .find(|query| query.query_name == query_name)?;
+    if !allowed_statuses
+        .iter()
+        .any(|status| query.status.as_str() == *status)
+    {
+        return None;
+    }
+    first_mapped_action(&query.best_action_keys, legal_by_key)
+}
+
+fn mapped_plan_action(
+    report: &crate::bot::combat::CombatTurnPlanProbeReport,
+    legal_by_key: &BTreeMap<String, usize>,
+    plan_name: &str,
+) -> Option<usize> {
+    let plan = report
+        .plans
+        .iter()
+        .find(|plan| plan.plan_name == plan_name)?;
+    first_mapped_action(&plan.best_action_keys, legal_by_key)
+}
+
+fn first_mapped_action(
+    action_keys: &[String],
+    legal_by_key: &BTreeMap<String, usize>,
+) -> Option<usize> {
+    action_keys
+        .iter()
+        .find_map(|action_key| legal_by_key.get(action_key).copied())
 }
 
 fn rule_baseline_score(ctx: &EpisodeContext, action: &ClientInput) -> i32 {
@@ -5258,6 +5394,24 @@ mod tests {
         let step = env
             .step_policy(RunPolicyKind::RuleBaselineV0)
             .expect("rule baseline policy should choose a legal action");
+        assert_eq!(step.info.seed, 42);
+        assert!(step.chosen_action_key.is_some());
+    }
+
+    #[test]
+    fn full_run_env_step_policy_accepts_plan_query_v0() {
+        let config = FullRunEnvConfig {
+            seed: 42,
+            ascension: 0,
+            final_act: false,
+            player_class: "Ironclad",
+            max_steps: 80,
+            reward_shaping_profile: RewardShapingProfile::Baseline,
+        };
+        let mut env = FullRunEnv::new(config).expect("full-run env should reset");
+        let step = env
+            .step_policy(RunPolicyKind::PlanQueryV0)
+            .expect("plan-query policy should choose a legal action or fall back");
         assert_eq!(step.info.seed, 42);
         assert!(step.chosen_action_key.is_some());
     }
