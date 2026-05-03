@@ -13,7 +13,7 @@ from typing import Any
 from combat_rl_common import REPO_ROOT, write_json
 
 
-REPORT_VERSION = "cashout_micro_probe_runner_v0"
+REPORT_VERSION = "cashout_micro_probe_runner_v0_1"
 DEFAULT_QUEUE = (
     REPO_ROOT
     / "tools"
@@ -234,7 +234,13 @@ def compact_outcome(outcome: dict[str, Any] | None) -> dict[str, Any]:
             "draw_played": attr.get("draw_played"),
             "scaling_played": attr.get("scaling_played"),
             "exhaust_played": attr.get("exhaust_played"),
+            "draw_cards": [record.get("card_id") for record in attr.get("draw_cards_played") or []],
+            "setup_cards": [
+                record.get("card_id") for record in attr.get("setup_or_scaling_cards_played") or []
+            ],
+            "exhaust_cards": [record.get("card_id") for record in attr.get("exhaust_cards_played") or []],
             "energy_unused": attr.get("energy_unused_on_end_turn_total"),
+            "energy_unused_max": attr.get("energy_unused_on_end_turn_max"),
             "max_unblocked": attr.get("max_visible_unblocked_damage"),
         },
     }
@@ -263,6 +269,97 @@ def diff_metrics(left: dict[str, Any] | None, right: dict[str, Any] | None) -> d
         "draw_played_delta": int(bool(left_attr.get("draw_played"))) - int(bool(right_attr.get("draw_played"))),
         "scaling_played_delta": int(bool(left_attr.get("scaling_played"))) - int(bool(right_attr.get("scaling_played"))),
         "exhaust_played_delta": int(bool(left_attr.get("exhaust_played"))) - int(bool(right_attr.get("exhaust_played"))),
+    }
+
+
+def played_card_ids(attr: dict[str, Any], field: str) -> list[str]:
+    return [str(record.get("card_id") or "") for record in attr.get(field) or [] if record.get("card_id")]
+
+
+def resource_window_reason_notes(reason_codes: list[str]) -> list[str]:
+    text = {
+        "opened_resource_window_without_clear_progress": "Resource window opened but did not create a clear progress edge",
+        "low_damage_conversion": "Extra resource did not convert into meaningful monster HP progress",
+        "no_combat_win_edge": "Candidate did not win more combats than the control line",
+        "control_wins_combat_candidate_does_not": "Control branch wins a combat that the resource-window branch does not",
+        "unused_energy_after_window": "Resource line still ended turns with unused energy",
+        "draw_without_observed_payoff_card": "Draw was played, but no setup/exhaust payoff was observed",
+        "survival_gain_without_progress": "Line preserved HP but did not improve combat progress",
+        "resource_line_costs_more_hp": "Resource line paid extra HP without enough compensation",
+        "enemy_pressure_overwhelms_window": "Visible incoming pressure stayed high during the window",
+        "long_fight_no_close": "Continuation saw a long fight without closing the combat",
+        "payoff_with_resource_waste": "Resource window produced progress, but with resource waste",
+        "resource_not_played_or_not_observed": "No resource-window execution was observed",
+    }
+    return [text[code] for code in reason_codes if code in text]
+
+
+def resource_window_reason_breakdown(
+    candidate: dict[str, Any] | None,
+    control: dict[str, Any] | None,
+    diff: dict[str, Any],
+    verdict: str,
+) -> dict[str, Any]:
+    if not candidate or not control:
+        return {"reason_codes": ["missing_branch"], "reason_details": {}}
+    cand_attr = candidate.get("attribution") or {}
+    ctrl_attr = control.get("attribution") or {}
+    cand_delta = candidate.get("outcome_delta") or {}
+    ctrl_delta = control.get("outcome_delta") or {}
+    cand_wins = num(cand_delta.get("combat_win_delta"))
+    ctrl_wins = num(ctrl_delta.get("combat_win_delta"))
+    cand_monster_hp = num(cand_attr.get("monster_hp_reduction_observed"))
+    ctrl_monster_hp = num(ctrl_attr.get("monster_hp_reduction_observed"))
+    cand_energy_unused = num(cand_attr.get("energy_unused_on_end_turn_total"))
+    ctrl_energy_unused = num(ctrl_attr.get("energy_unused_on_end_turn_total"))
+    reason_codes: list[str] = []
+    if verdict == "window_opened_without_payoff":
+        reason_codes.append("opened_resource_window_without_clear_progress")
+        if num(diff.get("monster_hp")) < 20:
+            reason_codes.append("low_damage_conversion")
+        if num(diff.get("combat_wins")) <= 0 and cand_wins <= ctrl_wins:
+            reason_codes.append("no_combat_win_edge")
+        if cand_wins < ctrl_wins:
+            reason_codes.append("control_wins_combat_candidate_does_not")
+        if num(diff.get("energy_unused")) > 2 or cand_energy_unused >= 3:
+            reason_codes.append("unused_energy_after_window")
+        if (
+            bool(cand_attr.get("draw_played"))
+            and not bool(cand_attr.get("scaling_played"))
+            and not bool(cand_attr.get("exhaust_played"))
+            and num(diff.get("monster_hp")) < 40
+        ):
+            reason_codes.append("draw_without_observed_payoff_card")
+        if num(diff.get("end_hp")) > 0 and num(diff.get("combat_wins")) <= 0 and num(diff.get("monster_hp")) < 40:
+            reason_codes.append("survival_gain_without_progress")
+        if num(diff.get("hp_loss")) > 5:
+            reason_codes.append("resource_line_costs_more_hp")
+        if num(cand_attr.get("max_visible_unblocked_damage")) >= 20:
+            reason_codes.append("enemy_pressure_overwhelms_window")
+        if num(cand_attr.get("combat_turns_observed")) >= 6 and cand_wins <= ctrl_wins:
+            reason_codes.append("long_fight_no_close")
+    elif verdict == "partial_cashout_with_waste":
+        reason_codes.append("payoff_with_resource_waste")
+        if num(diff.get("energy_unused")) > 2 or cand_energy_unused >= 3:
+            reason_codes.append("unused_energy_after_window")
+    elif verdict == "not_realized":
+        reason_codes.append("resource_not_played_or_not_observed")
+
+    return {
+        "reason_codes": reason_codes,
+        "reason_details": {
+            "candidate_combat_win_delta": cand_wins,
+            "control_combat_win_delta": ctrl_wins,
+            "candidate_monster_hp_reduction": cand_monster_hp,
+            "control_monster_hp_reduction": ctrl_monster_hp,
+            "candidate_energy_unused": cand_energy_unused,
+            "control_energy_unused": ctrl_energy_unused,
+            "candidate_draw_cards": played_card_ids(cand_attr, "draw_cards_played"),
+            "candidate_setup_cards": played_card_ids(cand_attr, "setup_or_scaling_cards_played"),
+            "candidate_exhaust_cards": played_card_ids(cand_attr, "exhaust_cards_played"),
+            "candidate_max_unblocked": num(cand_attr.get("max_visible_unblocked_damage")),
+            "candidate_combat_turns": num(cand_attr.get("combat_turns_observed")),
+        },
     }
 
 
@@ -297,6 +394,15 @@ def family_verdict(family: str, candidate: dict[str, Any] | None, control: dict[
         else:
             verdict = "not_realized"
             notes.append("No clear draw/resource execution signal")
+        reason_breakdown = resource_window_reason_breakdown(candidate, control, diff, verdict)
+        notes.extend(resource_window_reason_notes(reason_breakdown["reason_codes"]))
+        return {
+            "verdict": verdict,
+            "diff": diff,
+            "notes": notes,
+            "reason_codes": reason_breakdown["reason_codes"],
+            "reason_details": reason_breakdown["reason_details"],
+        }
     else:
         if num(diff.get("score")) > 25:
             verdict = "cashout_realized"
@@ -341,6 +447,11 @@ def summarize_probe_context(
 
 def aggregate_case_verdict(contexts: list[dict[str, Any]]) -> dict[str, Any]:
     verdict_counts = Counter(str((row.get("family_verdict") or {}).get("verdict") or "unknown") for row in contexts)
+    reason_counts = Counter(
+        str(code)
+        for row in contexts
+        for code in ((row.get("family_verdict") or {}).get("reason_codes") or [])
+    )
     realized = verdict_counts.get("cashout_realized", 0)
     partial = verdict_counts.get("partial_cashout_with_waste", 0) + verdict_counts.get("progress_with_hp_cost", 0)
     failed = verdict_counts.get("not_realized", 0) + verdict_counts.get("window_opened_without_payoff", 0)
@@ -359,6 +470,7 @@ def aggregate_case_verdict(contexts: list[dict[str, Any]]) -> dict[str, Any]:
     return {
         "case_verdict": label,
         "family_verdict_counts": dict(sorted(verdict_counts.items())),
+        "family_reason_counts": dict(sorted(reason_counts.items())),
         "contract": "micro-probe verdict is diagnostic and trace-prefix conditional, not a card label",
     }
 
@@ -429,7 +541,7 @@ def run_case(args: argparse.Namespace, row: dict[str, Any], case_dir: Path) -> d
 def write_markdown(path: Path, report: dict[str, Any]) -> None:
     summary = report["summary"]
     lines = [
-        "# Cashout Micro-Probe Runner V0",
+        "# Cashout Micro-Probe Runner V0.1",
         "",
         "This is a trace-prefix short-continuation probe report.",
         "It focuses on AoE kill timing and resource-window cashout; it is not a standalone canonical encounter generator.",
@@ -441,6 +553,7 @@ def write_markdown(path: Path, report: dict[str, Any]) -> None:
         f"- context count: `{summary['context_count']}`",
         f"- case verdicts: `{summary['case_verdict_counts']}`",
         f"- family verdicts: `{summary['family_verdict_counts']}`",
+        f"- family reasons: `{summary['family_reason_counts']}`",
         f"- failures: `{summary['failure_count']}`",
         f"- contract: `{summary['contract']}`",
         "",
@@ -464,16 +577,17 @@ def write_markdown(path: Path, report: dict[str, Any]) -> None:
                     question=case.get("question"),
                 ),
                 f"- family verdict counts: `{aggregate.get('family_verdict_counts')}`",
+                f"- family reason counts: `{aggregate.get('family_reason_counts')}`",
                 "",
-                "| context | family | verdict | cand rank | ctrl rank | score | floor | combats | hp | hp loss | monster hp | kills | notes |",
-                "|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|",
+                "| context | family | verdict | cand rank | ctrl rank | score | floor | combats | hp | hp loss | monster hp | kills | reasons | notes |",
+                "|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|---|",
             ]
         )
         for ctx in case.get("contexts") or []:
             verdict = ctx.get("family_verdict") or {}
             diff = verdict.get("diff") or {}
             lines.append(
-                "| {context} | {family} | {verdict} | {cand_rank} | {ctrl_rank} | {score} | {floor} | {combats} | {hp} | {hp_loss} | {monster} | {kills} | `{notes}` |".format(
+                "| {context} | {family} | {verdict} | {cand_rank} | {ctrl_rank} | {score} | {floor} | {combats} | {hp} | {hp_loss} | {monster} | {kills} | `{reasons}` | `{notes}` |".format(
                     context=ctx.get("context"),
                     family=ctx.get("family"),
                     verdict=verdict.get("verdict"),
@@ -486,6 +600,7 @@ def write_markdown(path: Path, report: dict[str, Any]) -> None:
                     hp_loss=diff.get("hp_loss"),
                     monster=diff.get("monster_hp"),
                     kills=diff.get("kills"),
+                    reasons=verdict.get("reason_codes") or [],
                     notes=verdict.get("notes") or [],
                 )
             )
@@ -511,6 +626,12 @@ def main() -> int:
         for case in cases
         for ctx in case.get("contexts") or []
     )
+    family_reason_counts = Counter(
+        str(code)
+        for case in cases
+        for ctx in case.get("contexts") or []
+        for code in ((ctx.get("family_verdict") or {}).get("reason_codes") or [])
+    )
     report = {
         "report_version": REPORT_VERSION,
         "generated_at_utc": datetime.now(timezone.utc).isoformat(),
@@ -530,6 +651,7 @@ def main() -> int:
             "failure_count": sum(len(case.get("failures") or []) for case in cases),
             "case_verdict_counts": dict(sorted(case_verdict_counts.items())),
             "family_verdict_counts": dict(sorted(family_verdict_counts.items())),
+            "family_reason_counts": dict(sorted(family_reason_counts.items())),
             "contract": "trace-prefix micro-probe; diagnostic only, not a training label",
         },
         "cases": cases,
@@ -538,6 +660,7 @@ def main() -> int:
             "No standalone canonical encounters are generated yet.",
             "Future RNG is fixed-trace replay; results are policy/horizon conditional.",
             "AoE/resource verdict rules are heuristic routing signals, not card truth.",
+            "Resource-window reason codes are attribution hints, not causal proof.",
         ],
     }
     write_json(out_dir / "cashout_micro_probe_runner_report.json", report)
