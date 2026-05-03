@@ -147,10 +147,20 @@ def selected_card(step: dict[str, Any]) -> dict[str, Any] | None:
 
 def summarize_trace_policy(policy: str, path: Path, top_cases: int) -> dict[str, Any]:
     decisions: list[dict[str, Any]] = []
+    reward_claim_count = 0
+    reward_proceed_with_items_count = 0
     for trace_path in trace_files(path):
         trace = read_json(trace_path)
         seed = int((trace.get("summary") or {}).get("seed") or 0)
         for step in trace.get("steps") or []:
+            if str(step.get("decision_type") or "") == "reward":
+                key = str(step.get("chosen_action_key") or "")
+                action = (step.get("chosen_action") or {}).get("type") or ""
+                screen = (step.get("observation") or {}).get("screen") or {}
+                if action == "claim_reward":
+                    reward_claim_count += 1
+                elif key == "proceed" and int(screen.get("reward_item_count") or 0) > 0:
+                    reward_proceed_with_items_count += 1
             if not is_card_reward_step(step):
                 continue
             cards = card_candidates(step)
@@ -196,10 +206,16 @@ def summarize_trace_policy(policy: str, path: Path, top_cases: int) -> dict[str,
     skipped_good = [row for row in skips if row["best_card"]["rule_score"] >= 70]
     large_gap = [row for row in decisions if row["best_gap"] >= 30]
     large_plan_gap = [row for row in decisions if row["plan_adjusted_gap"] >= 30]
+    reward_unclaimed_item_proceed_share = ratio(
+        reward_proceed_with_items_count, reward_claim_count + reward_proceed_with_items_count
+    )
 
     return {
         "policy": policy,
         "trace_dir": str(path),
+        "reward_claim_count": reward_claim_count,
+        "reward_proceed_with_items_count": reward_proceed_with_items_count,
+        "reward_unclaimed_item_proceed_share": reward_unclaimed_item_proceed_share,
         "card_choice_decision_count": len(decisions),
         "card_select_count": len(selects),
         "card_skip_count": len(skips),
@@ -221,7 +237,18 @@ def summarize_trace_policy(policy: str, path: Path, top_cases: int) -> dict[str,
         "scaling_card_select_count": len(scaling_selects),
         "scaling_card_select_share_when_offered": ratio(len(scaling_selects), len(scaling_offers)),
         "selected_card_type_counts": dict(Counter(str(row["selected_card"]["card_type_id"]) for row in selects)),
-        "collapse_flags": collapse_flags(decisions, skips, skipped_good, large_gap, draw_offers, draw_selects, scaling_offers, scaling_selects),
+        "collapse_flags": collapse_flags(
+            decisions,
+            skips,
+            skipped_good,
+            large_gap,
+            draw_offers,
+            draw_selects,
+            scaling_offers,
+            scaling_selects,
+            reward_proceed_with_items_count,
+            reward_unclaimed_item_proceed_share,
+        ),
         "top_regret_cases": compact_cases(sorted(large_gap, key=lambda row: row["best_gap"], reverse=True)[:top_cases]),
         "top_plan_adjusted_regret_cases": compact_cases(
             sorted(large_plan_gap, key=lambda row: row["plan_adjusted_gap"], reverse=True)[:top_cases]
@@ -241,12 +268,16 @@ def collapse_flags(
     draw_selects: list[dict[str, Any]],
     scaling_offers: list[dict[str, Any]],
     scaling_selects: list[dict[str, Any]],
+    reward_proceed_with_items_count: int,
+    reward_unclaimed_item_proceed_share: float,
 ) -> list[str]:
     flags = []
     if ratio(len(skips), len(decisions)) >= 0.20:
         flags.append("reward_card_skip_nontrivial")
     if skipped_good:
         flags.append("skipped_good_card_offer")
+    if reward_proceed_with_items_count >= 10 and reward_unclaimed_item_proceed_share >= 0.20:
+        flags.append("reward_item_claim_avoidance")
     if large_gap:
         flags.append("reward_card_large_rule_score_regret")
     if len(draw_offers) >= 10 and ratio(len(draw_selects), len(draw_offers)) < 0.20:
@@ -329,15 +360,17 @@ def write_markdown(path: Path, report: dict[str, Any]) -> None:
         "",
         "## Reward/Card Choice",
         "",
-        "| policy | choices | skip % | skipped good | large gap | plan gap | selected score | best offer | plan best | draw select % | scaling select % | flags |",
-        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|",
+        "| policy | choices | skip % | unclaimed reward proceed | skipped good | large gap | plan gap | selected score | best offer | plan best | draw select % | scaling select % | flags |",
+        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|",
     ]
     for policy in report["policies"]:
         lines.append(
-            "| {policy} | {choices} | {skip:.1%} | {skipped_good} | {large_gap} | {plan_gap} | {selected:.1f} | {best:.1f} | {plan_best:.1f} | {draw:.1%} | {scaling:.1%} | {flags} |".format(
+            "| {policy} | {choices} | {skip:.1%} | {unclaimed} ({unclaimed_share:.1%}) | {skipped_good} | {large_gap} | {plan_gap} | {selected:.1f} | {best:.1f} | {plan_best:.1f} | {draw:.1%} | {scaling:.1%} | {flags} |".format(
                 policy=policy["policy"],
                 choices=policy["card_choice_decision_count"],
                 skip=policy["card_skip_share"],
+                unclaimed=policy["reward_proceed_with_items_count"],
+                unclaimed_share=policy["reward_unclaimed_item_proceed_share"],
                 skipped_good=policy["skipped_good_offer_count"],
                 large_gap=policy["large_best_gap_count"],
                 plan_gap=policy["plan_adjusted_large_gap_count"],

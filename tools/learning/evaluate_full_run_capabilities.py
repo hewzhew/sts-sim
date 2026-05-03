@@ -654,6 +654,9 @@ def reward_capabilities(steps: list[dict[str, Any]]) -> dict[str, Any]:
         ),
         "reward_claim_count": reward_claims,
         "reward_proceed_with_items_count": reward_proceeds,
+        "reward_unclaimed_item_proceed_share": safe_ratio(
+            reward_proceeds, reward_claims + reward_proceeds
+        ),
         "reward_claims_per_reward_proceed": safe_ratio(reward_claims, reward_proceeds),
     }
 
@@ -759,6 +762,9 @@ def diagnostic_flags(
         flags.append("reward_card_skip_nontrivial")
     if int(rewards_summary.get("skipped_good_offer_count") or 0) > 0:
         flags.append("skipped_good_card_offer")
+    if int(rewards_summary.get("reward_proceed_with_items_count") or 0) >= 10:
+        if float(rewards_summary.get("reward_unclaimed_item_proceed_share") or 0) >= 0.20:
+            flags.append("reward_item_claim_avoidance")
     if int(rewards_summary.get("missed_best_rule_score_gap_ge_30_count") or 0) > 0:
         flags.append("reward_card_large_rule_score_regret")
     if int(rewards_summary.get("plan_adjusted_missed_best_gap_ge_30_count") or 0) > 0:
