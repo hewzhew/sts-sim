@@ -13,7 +13,7 @@ from typing import Any
 from combat_rl_common import REPO_ROOT, write_json
 
 
-REPORT_VERSION = "probabilistic_cashout_lab_v0"
+REPORT_VERSION = "probabilistic_cashout_lab_v0_2"
 DEFAULT_REPORT = (
     REPO_ROOT
     / "tools"
@@ -73,6 +73,23 @@ def parse_args() -> argparse.Namespace:
         help="Disable trace-derived future-room bucket weighting.",
     )
     parser.add_argument(
+        "--empirical-trace-dir",
+        action="append",
+        default=[],
+        metavar="PATH",
+        help="Trace directory/file for empirical act-floor future-room priors. Defaults to trace dirs referenced by the cashout report.",
+    )
+    parser.add_argument(
+        "--no-empirical-priors",
+        action="store_true",
+        help="Disable multi-run empirical act-floor room priors.",
+    )
+    parser.add_argument(
+        "--no-map-priors",
+        action="store_true",
+        help="Disable current visible-map reachable-room priors.",
+    )
+    parser.add_argument(
         "--out",
         type=Path,
         default=REPO_ROOT
@@ -99,6 +116,31 @@ def trace_path_from_case(case: dict[str, Any]) -> Path | None:
     if path.is_absolute():
         return path
     return REPO_ROOT / path
+
+
+def iter_report_trace_paths(report: dict[str, Any]) -> list[Path]:
+    paths: dict[str, Path] = {}
+    for policy in report.get("policies") or []:
+        for row in policy.get("comparisons") or []:
+            path = trace_path_from_case(row)
+            if path:
+                paths[str(path)] = path
+    return sorted(paths.values(), key=str)
+
+
+def trace_files_from_inputs(inputs: list[str], fallback_report: dict[str, Any]) -> list[Path]:
+    paths: dict[str, Path] = {}
+    raw_paths = [Path(raw) for raw in inputs]
+    if not raw_paths:
+        raw_paths = sorted({path.parent for path in iter_report_trace_paths(fallback_report)}, key=str)
+    for raw in raw_paths:
+        path = raw if raw.is_absolute() else REPO_ROOT / raw
+        if path.is_file():
+            paths[str(path)] = path
+        elif path.is_dir():
+            for trace in sorted(path.rglob("episode_*.json")):
+                paths[str(trace)] = trace
+    return sorted(paths.values(), key=str)
 
 
 def room_from_step(step: dict[str, Any]) -> str:
@@ -164,44 +206,280 @@ def load_trace_rooms(path: Path, cache: dict[str, list[dict[str, Any]]]) -> list
     return rows
 
 
+def load_trace(path: Path, cache: dict[str, dict[str, Any]]) -> dict[str, Any]:
+    key = str(path)
+    if key not in cache:
+        cache[key] = read_json(path) if path.exists() else {}
+    return cache[key]
+
+
+def trace_step_for_case(case: dict[str, Any], trace_cache: dict[str, dict[str, Any]]) -> dict[str, Any]:
+    path = trace_path_from_case(case)
+    if not path:
+        return {}
+    trace = load_trace(path, trace_cache)
+    step_index = int(case.get("step_index") or -1)
+    for step in trace.get("steps") or []:
+        if int(step.get("step_index") or -2) == step_index:
+            return step
+    return {}
+
+
+def summarize_counts(counts: Counter[str] | dict[str, float]) -> dict[str, Any]:
+    monster_like = sum(value for room, value in counts.items() if "MonsterRoom" in room)
+    elite = sum(value for room, value in counts.items() if "Elite" in room)
+    boss = sum(value for room, value in counts.items() if "Boss" in room)
+    rest = float(counts.get("RestRoom", 0.0))
+    shop = float(counts.get("ShopRoom", 0.0))
+    event = float(counts.get("EventRoom", 0.0))
+    pressure = monster_like + 1.2 * elite + 1.5 * boss
+    recovery = rest + 0.5 * shop + 0.25 * event
+    return {
+        "room_type_counts": {
+            room: round(float(value), 3)
+            for room, value in sorted(counts.items())
+            if abs(float(value)) > 1e-9
+        },
+        "monster_like_count": round(float(monster_like), 3),
+        "elite_count": round(float(elite), 3),
+        "boss_count": round(float(boss), 3),
+        "rest_count": round(rest, 3),
+        "shop_count": round(shop, 3),
+        "event_count": round(event, 3),
+        "pressure_score": round(float(pressure), 3),
+        "recovery_score": round(float(recovery), 3),
+    }
+
+
+def archetype_distribution(summary: dict[str, Any], *, act: int, floor: int) -> dict[str, float]:
+    monster_like = num(summary.get("monster_like_count"))
+    elite = num(summary.get("elite_count"))
+    boss = num(summary.get("boss_count"))
+    rest = num(summary.get("rest_count"))
+    shop = num(summary.get("shop_count"))
+    pressure = num(summary.get("pressure_score"))
+    recovery = num(summary.get("recovery_score"))
+    if not summary.get("room_type_counts"):
+        return {}
+
+    raw = {
+        "multi_small_enemies": max(monster_like - 0.35 * elite - 0.20 * boss, 0.0)
+        * (1.20 if act >= 2 else 0.80),
+        "elite_burst": elite * (1.35 if act <= 1 else 1.10),
+        "boss_long_fight": boss * (1.40 if floor >= 10 or act >= 2 else 1.0),
+        "single_frontload": max(monster_like - 0.45 * elite - 0.30 * boss, 0.0)
+        * (0.95 if act <= 1 else 0.70),
+        "block_control": max(pressure - recovery, 0.0) * 0.60,
+        "recovery_window": (rest + 0.6 * shop) * 0.65,
+    }
+    if act <= 1 and floor <= 5:
+        raw["single_frontload"] *= 1.25
+        raw["elite_burst"] *= 1.15
+    if act >= 2:
+        raw["multi_small_enemies"] *= 1.25
+        raw["block_control"] *= 1.15
+    total = sum(max(value, 0.0) for value in raw.values())
+    if total <= 0:
+        return {}
+    return {key: round(max(value, 0.0) / total, 4) for key, value in sorted(raw.items())}
+
+
+def empirical_prior_index(
+    trace_paths: list[Path],
+    *,
+    room_cache: dict[str, list[dict[str, Any]]],
+    window: int,
+) -> dict[tuple[int, int], dict[str, Any]]:
+    accum: dict[tuple[int, int], dict[str, Any]] = {}
+    for path in trace_paths:
+        rows = load_trace_rooms(path, room_cache)
+        if not rows:
+            continue
+        max_by_act: dict[int, int] = {}
+        for row in rows:
+            act = int(row.get("act") or 0)
+            max_by_act[act] = max(max_by_act.get(act, 0), int(row.get("floor") or 0))
+        for act, max_floor in max_by_act.items():
+            for floor in range(0, max_floor + 1):
+                future = [
+                    row
+                    for row in rows
+                    if int(row.get("act") or 0) == act
+                    and floor < int(row.get("floor") or 0) <= floor + max(window, 1)
+                ]
+                if not future:
+                    continue
+                key = (act, floor)
+                bucket = accum.setdefault(key, {"sample_count": 0, "room_type_counts": Counter()})
+                bucket["sample_count"] += 1
+                bucket["room_type_counts"].update(str(row.get("room_type") or "") for row in future)
+    out: dict[tuple[int, int], dict[str, Any]] = {}
+    for key, row in accum.items():
+        samples = max(int(row.get("sample_count") or 0), 1)
+        counts = {room: count / samples for room, count in (row["room_type_counts"]).items()}
+        summary = summarize_counts(counts)
+        summary["sample_count"] = samples
+        out[key] = summary
+    return out
+
+
+def visible_map_summary(step: dict[str, Any], *, window: int) -> dict[str, Any]:
+    obs = step.get("observation") or {}
+    map_data = obs.get("map") or {}
+    nodes = map_data.get("nodes") or []
+    if not nodes:
+        return {}
+    node_map: dict[tuple[int, int], dict[str, Any]] = {}
+    for node in nodes:
+        try:
+            node_map[(int(node.get("x")), int(node.get("y")))] = node
+        except (TypeError, ValueError):
+            continue
+    starts: list[tuple[int, int]] = []
+    for node in obs.get("next_nodes") or []:
+        try:
+            starts.append((int(node.get("x")), int(node.get("y"))))
+        except (TypeError, ValueError):
+            continue
+    if not starts:
+        current_x = int(map_data.get("current_x") or -999)
+        current_y = int(map_data.get("current_y") or -999)
+        current = node_map.get((current_x, current_y))
+        if current:
+            for edge in current.get("edges") or []:
+                starts.append((int(edge.get("dst_x")), int(edge.get("dst_y"))))
+    if not starts:
+        return {}
+
+    seen: set[tuple[int, int]] = set()
+    queue: list[tuple[tuple[int, int], int]] = [(start, 1) for start in starts]
+    reachable: list[dict[str, Any]] = []
+    while queue:
+        key, depth = queue.pop(0)
+        if key in seen or depth > max(window, 1):
+            continue
+        seen.add(key)
+        node = node_map.get(key)
+        if not node:
+            continue
+        reachable.append(node)
+        for edge in node.get("edges") or []:
+            try:
+                queue.append(((int(edge.get("dst_x")), int(edge.get("dst_y"))), depth + 1))
+            except (TypeError, ValueError):
+                continue
+
+    counts = Counter(str(node.get("room_type") or "") for node in reachable if node.get("room_type"))
+    summary = summarize_counts(counts)
+    summary["future_floor_count"] = len(reachable)
+    summary["reachable_node_count"] = len(reachable)
+    return summary
+
+
 def future_room_summary(
     case: dict[str, Any],
     *,
     trace_cache: dict[str, list[dict[str, Any]]],
+    full_trace_cache: dict[str, dict[str, Any]],
+    empirical_index: dict[tuple[int, int], dict[str, Any]],
     window: int,
+    use_actual_trace_prior: bool,
+    use_empirical_prior: bool,
+    use_map_prior: bool,
 ) -> dict[str, Any]:
     path = trace_path_from_case(case)
-    rows = load_trace_rooms(path, trace_cache) if path else []
     act = int(case.get("act") or 0)
     floor = int(case.get("floor") or 0)
-    future = [
-        row
-        for row in rows
-        if int(row.get("act") or 0) == act
-        and floor < int(row.get("floor") or 0) <= floor + max(window, 1)
-    ]
-    counts = Counter(str(row.get("room_type") or "") for row in future)
-    monster_like = sum(count for room, count in counts.items() if "MonsterRoom" in room)
-    elite = sum(count for room, count in counts.items() if "Elite" in room)
-    boss = sum(count for room, count in counts.items() if "Boss" in room)
-    rest = counts.get("RestRoom", 0)
-    shop = counts.get("ShopRoom", 0)
-    event = counts.get("EventRoom", 0)
-    pressure = monster_like + 1.2 * elite + 1.5 * boss
-    recovery = rest + 0.5 * shop + 0.25 * event
+
+    actual_summary: dict[str, Any] = {}
+    if use_actual_trace_prior and path:
+        rows = load_trace_rooms(path, trace_cache)
+        future = [
+            row
+            for row in rows
+            if int(row.get("act") or 0) == act
+            and floor < int(row.get("floor") or 0) <= floor + max(window, 1)
+        ]
+        actual_summary = summarize_counts(Counter(str(row.get("room_type") or "") for row in future))
+        actual_summary["future_floor_count"] = len(future)
+
+    empirical_summary = empirical_index.get((act, floor), {}) if use_empirical_prior else {}
+    map_summary = (
+        visible_map_summary(
+            trace_step_for_case(case, full_trace_cache),
+            window=window,
+        )
+        if use_map_prior
+        else {}
+    )
+
+    source_weights = {
+        "empirical_act_floor": 0.45 if empirical_summary.get("room_type_counts") else 0.0,
+        "visible_map": 0.40 if map_summary.get("room_type_counts") else 0.0,
+        "actual_trace_suffix": 0.15 if actual_summary.get("room_type_counts") else 0.0,
+    }
+    total_weight = sum(source_weights.values())
+    combined_counts: Counter[str] = Counter()
+    if total_weight > 0:
+        for source, summary in [
+            ("empirical_act_floor", empirical_summary),
+            ("visible_map", map_summary),
+            ("actual_trace_suffix", actual_summary),
+        ]:
+            weight = source_weights[source] / total_weight
+            for room, count in (summary.get("room_type_counts") or {}).items():
+                combined_counts[room] += num(count) * weight
+    combined = summarize_counts(combined_counts)
+    future_floor_count = max(
+        int(actual_summary.get("future_floor_count") or 0),
+        int(map_summary.get("future_floor_count") or 0),
+    )
+    source_pressure_scores = {
+        source: num(summary.get("pressure_score"))
+        for source, summary in {
+            "empirical_act_floor": empirical_summary,
+            "visible_map": map_summary,
+            "actual_trace_suffix": actual_summary,
+        }.items()
+        if summary.get("room_type_counts")
+    }
+    pressure_values = list(source_pressure_scores.values())
+    pressure_spread = max(pressure_values) - min(pressure_values) if pressure_values else 0.0
+    source_flags: list[str] = []
+    if pressure_spread >= 4.0:
+        source_flags.append("prior_sources_disagree_on_pressure")
+    if map_summary.get("room_type_counts") and not empirical_summary.get("room_type_counts"):
+        source_flags.append("map_only_prior")
+    if empirical_summary.get("room_type_counts") and not map_summary.get("room_type_counts"):
+        source_flags.append("empirical_only_prior")
+    archetypes = archetype_distribution(combined, act=act, floor=floor)
+    source_archetypes = {
+        source: archetype_distribution(summary, act=act, floor=floor)
+        for source, summary in {
+            "empirical_act_floor": empirical_summary,
+            "visible_map": map_summary,
+            "actual_trace_suffix": actual_summary,
+        }.items()
+        if summary.get("room_type_counts")
+    }
     return {
         "trace_file": str(path) if path else "",
         "window": window,
-        "future_floor_count": len(future),
-        "room_type_counts": dict(sorted(counts.items())),
-        "monster_like_count": monster_like,
-        "elite_count": elite,
-        "boss_count": boss,
-        "rest_count": rest,
-        "shop_count": shop,
-        "event_count": event,
-        "pressure_score": round(pressure, 3),
-        "recovery_score": round(recovery, 3),
+        "future_floor_count": future_floor_count,
+        **combined,
+        "source_weights": {key: round(value / total_weight, 3) for key, value in source_weights.items() if total_weight and value > 0},
+        "source_diagnostics": {
+            "pressure_scores": source_pressure_scores,
+            "pressure_spread": round(pressure_spread, 3),
+            "flags": source_flags,
+            "source_archetypes": source_archetypes,
+        },
+        "encounter_archetypes": archetypes,
+        "sources": {
+            "empirical_act_floor": empirical_summary,
+            "visible_map": map_summary,
+            "actual_trace_suffix": actual_summary,
+        },
     }
 
 
@@ -269,9 +547,15 @@ def scenario_buckets(case: dict[str, Any], future_summary: dict[str, Any] | None
     future_summary = future_summary or {}
     future_pressure = num(future_summary.get("pressure_score"))
     future_recovery = num(future_summary.get("recovery_score"))
-    future_elites = int(future_summary.get("elite_count") or 0)
-    future_bosses = int(future_summary.get("boss_count") or 0)
-    future_monsters = int(future_summary.get("monster_like_count") or 0)
+    future_elites = num(future_summary.get("elite_count"))
+    future_bosses = num(future_summary.get("boss_count"))
+    future_monsters = num(future_summary.get("monster_like_count"))
+    future_archetypes = future_summary.get("encounter_archetypes") or {}
+    multi_pressure = num(future_archetypes.get("multi_small_enemies"))
+    elite_burst = num(future_archetypes.get("elite_burst"))
+    boss_long = num(future_archetypes.get("boss_long_fight"))
+    single_frontload = num(future_archetypes.get("single_frontload"))
+    block_control = num(future_archetypes.get("block_control"))
 
     adjusted: list[ScenarioBucket] = []
     for bucket in buckets:
@@ -286,16 +570,32 @@ def scenario_buckets(case: dict[str, Any], future_summary: dict[str, Any] | None
         if future_summary.get("future_floor_count"):
             if "multi_enemy" in bucket.name or "aoe" in bucket.name:
                 weight *= 1.0 + min(future_monsters, 4) * 0.08
+                weight *= 1.0 + multi_pressure * 0.55
+                if "aoe_damage" in demands:
+                    demands["aoe_damage"] *= 1.0 + multi_pressure * 0.25
+                if "multi_enemy_control" in demands:
+                    demands["multi_enemy_control"] *= 1.0 + multi_pressure * 0.20
                 if act >= 2:
                     weight *= 1.0 + min(future_pressure, 6.0) * 0.03
             if "elite" in bucket.name or "nob" in bucket.name:
                 weight *= 1.0 + min(future_elites, 3) * 0.22
+                weight *= 1.0 + elite_burst * 0.65
+                if "frontload" in demands:
+                    demands["frontload"] *= 1.0 + elite_burst * 0.20
+            if "frontload" in bucket.name:
+                weight *= 1.0 + single_frontload * 0.35
             if "boss" in bucket.name or "scaling" in bucket.name:
                 weight *= 1.0 + min(future_bosses, 1) * 0.25
+                weight *= 1.0 + boss_long * 0.55
+                if "scaling_cashout" in demands:
+                    demands["scaling_cashout"] *= 1.0 + boss_long * 0.25
                 if floor >= 10 and act <= 1:
                     weight *= 1.0 + min(future_pressure, 5.0) * 0.04
             if "survival" in bucket.name or "block" in bucket.name or "control" in bucket.name:
                 weight *= 1.0 + min(max(future_pressure - future_recovery, 0.0), 5.0) * 0.05
+                weight *= 1.0 + block_control * 0.45
+                if "block" in demands:
+                    demands["block"] *= 1.0 + block_control * 0.15
         adjusted.append(
             ScenarioBucket(
                 bucket.name,
@@ -428,18 +728,33 @@ def evaluate_case(
     case: dict[str, Any],
     *,
     trace_cache: dict[str, list[dict[str, Any]]],
+    full_trace_cache: dict[str, dict[str, Any]],
+    empirical_index: dict[tuple[int, int], dict[str, Any]],
     future_room_window: int,
-    use_trace_room_priors: bool,
+    use_actual_trace_prior: bool,
+    use_empirical_prior: bool,
+    use_map_prior: bool,
 ) -> dict[str, Any]:
     future_summary = (
-        future_room_summary(case, trace_cache=trace_cache, window=future_room_window)
-        if use_trace_room_priors
-        else {}
+        future_room_summary(
+            case,
+            trace_cache=trace_cache,
+            full_trace_cache=full_trace_cache,
+            empirical_index=empirical_index,
+            window=future_room_window,
+            use_actual_trace_prior=use_actual_trace_prior,
+            use_empirical_prior=use_empirical_prior,
+            use_map_prior=use_map_prior,
+        )
     )
     buckets = scenario_buckets(case, future_summary)
     candidates = [candidate_lab_eval(candidate, buckets) for candidate in case.get("candidates") or []]
     candidates.sort(key=lambda item: item["lab_expected_score"], reverse=True)
     lab_best = candidates[0] if candidates else {}
+    hand_buckets = scenario_buckets(case, {})
+    hand_candidates = [candidate_lab_eval(candidate, hand_buckets) for candidate in case.get("candidates") or []]
+    hand_candidates.sort(key=lambda item: item["lab_expected_score"], reverse=True)
+    hand_best = hand_candidates[0] if hand_candidates else {}
     static_best = case.get("best_by_cashout") or {}
     chosen = case.get("chosen") or {}
     flags: list[str] = []
@@ -464,6 +779,37 @@ def evaluate_case(
         flags.append("static_best_overstated")
     if "stable_cashout" in (static_eval.get("flags") or []):
         flags.append("static_best_stable")
+    hand_static_eval = next(
+        (
+            candidate
+            for candidate in hand_candidates
+            if candidate.get("action_key") == static_best.get("action_key")
+        ),
+        {},
+    )
+    prior_impact = {
+        "hand_only_lab_best": {
+            "card_id": hand_best.get("card_id"),
+            "action_key": hand_best.get("action_key"),
+            "lab_expected_score": hand_best.get("lab_expected_score"),
+            "lab_cvar30": hand_best.get("lab_cvar30"),
+        },
+        "lab_best_changed": bool(lab_best)
+        and bool(hand_best)
+        and lab_best.get("action_key") != hand_best.get("action_key"),
+        "lab_best_expected_delta": round(
+            num(lab_best.get("lab_expected_score")) - num(hand_best.get("lab_expected_score")),
+            3,
+        ),
+        "static_best_expected_delta": round(
+            num(static_eval.get("lab_expected_score")) - num(hand_static_eval.get("lab_expected_score")),
+            3,
+        ),
+        "static_best_cvar_delta": round(
+            num(static_eval.get("lab_cvar30")) - num(hand_static_eval.get("lab_cvar30")),
+            3,
+        ),
+    }
     return {
         "case_id": f"{policy}_seed_{case.get('seed')}_step_{case.get('step_index')}_{static_best.get('card_id')}",
         "policy": policy,
@@ -498,6 +844,7 @@ def evaluate_case(
             for bucket in buckets
         ],
         "future_room_summary": future_summary,
+        "prior_impact": prior_impact,
         "candidate_evals": candidates,
         "case_flags": flags,
     }
@@ -509,7 +856,14 @@ def summarize(cases: list[dict[str, Any]]) -> dict[str, Any]:
     stable_cards: dict[str, int] = {}
     overstated_cards: dict[str, int] = {}
     future_room_counts: Counter[str] = Counter()
+    future_archetype_totals: Counter[str] = Counter()
     future_pressure_scores: list[float] = []
+    prior_pressure_spreads: list[float] = []
+    lab_best_deltas: list[float] = []
+    static_best_deltas: list[float] = []
+    prior_source_flags: Counter[str] = Counter()
+    prior_source_weight_presence: Counter[str] = Counter()
+    lab_best_changed_by_prior = 0
     future_covered = 0
     for case in cases:
         for flag in case.get("case_flags") or []:
@@ -533,6 +887,19 @@ def summarize(cases: list[dict[str, Any]]) -> dict[str, Any]:
             future_covered += 1
             future_pressure_scores.append(num(future.get("pressure_score")))
             future_room_counts.update(future.get("room_type_counts") or {})
+            for archetype, value in (future.get("encounter_archetypes") or {}).items():
+                future_archetype_totals[str(archetype)] += num(value)
+            diagnostics = future.get("source_diagnostics") or {}
+            prior_pressure_spreads.append(num(diagnostics.get("pressure_spread")))
+            for flag in diagnostics.get("flags") or []:
+                prior_source_flags[str(flag)] += 1
+            for source in (future.get("source_weights") or {}).keys():
+                prior_source_weight_presence[str(source)] += 1
+        impact = case.get("prior_impact") or {}
+        lab_best_deltas.append(num(impact.get("lab_best_expected_delta")))
+        static_best_deltas.append(num(impact.get("static_best_expected_delta")))
+        if impact.get("lab_best_changed"):
+            lab_best_changed_by_prior += 1
     expectations = [
         num(((case.get("lab_best") or {}).get("lab_expected_score")))
         for case in cases
@@ -550,6 +917,20 @@ def summarize(cases: list[dict[str, Any]]) -> dict[str, Any]:
             "coverage_rate": round(future_covered / len(cases), 4) if cases else 0.0,
             "room_type_counts": dict(sorted(future_room_counts.items())),
             "average_pressure_score": round(mean(future_pressure_scores), 3) if future_pressure_scores else 0.0,
+            "average_encounter_archetypes": {
+                key: round(value / future_covered, 4)
+                for key, value in sorted(future_archetype_totals.items())
+            }
+            if future_covered
+            else {},
+        },
+        "prior_source_diagnostics": {
+            "source_presence_counts": dict(sorted(prior_source_weight_presence.items())),
+            "source_flag_counts": dict(sorted(prior_source_flags.items())),
+            "average_pressure_spread": round(mean(prior_pressure_spreads), 3) if prior_pressure_spreads else 0.0,
+            "average_abs_lab_best_delta": round(mean([abs(value) for value in lab_best_deltas]), 3) if lab_best_deltas else 0.0,
+            "average_abs_static_best_delta": round(mean([abs(value) for value in static_best_deltas]), 3) if static_best_deltas else 0.0,
+            "lab_best_changed_by_prior": lab_best_changed_by_prior,
         },
     }
 
@@ -567,6 +948,7 @@ def write_markdown(path: Path, report: dict[str, Any]) -> None:
         f"- average lab-best expected score: `{summary['average_lab_best_expected']}`",
         f"- case flags: `{summary['case_flag_counts']}`",
         f"- future room prior coverage: `{summary['future_room_prior_coverage']}`",
+        f"- prior source diagnostics: `{summary['prior_source_diagnostics']}`",
         "",
         "## Static Best Cards",
         "",
@@ -587,6 +969,10 @@ def write_markdown(path: Path, report: dict[str, Any]) -> None:
                 "",
                 f"- floor: `{case['floor']}` act `{case['act']}` hp `{case['hp']}` status `{case['calibration_status']}`",
                 f"- future rooms: `{(case.get('future_room_summary') or {}).get('room_type_counts', {})}`",
+                f"- prior source weights: `{(case.get('future_room_summary') or {}).get('source_weights', {})}`",
+                f"- source pressure: `{((case.get('future_room_summary') or {}).get('source_diagnostics') or {}).get('pressure_scores', {})}`",
+                f"- encounter archetypes: `{(case.get('future_room_summary') or {}).get('encounter_archetypes', {})}`",
+                f"- prior impact: `{case.get('prior_impact', {})}`",
                 f"- chosen: `{case['chosen']['card_id']}`",
                 f"- static best: `{static_best['card_id']}` score `{static_best['cashout_score']}` / `{static_best['dominant_cashout']}`",
                 f"- lab best: `{lab_best.get('card_id')}` expected `{lab_best.get('lab_expected_score')}` cvar30 `{lab_best.get('lab_cvar30')}` flags `{lab_best.get('flags')}`",
@@ -660,13 +1046,32 @@ def main() -> int:
     statuses = status_filter(args.statuses)
     selected = iter_cases(cashout_report, statuses, args.max_cases)
     trace_cache: dict[str, list[dict[str, Any]]] = {}
+    full_trace_cache: dict[str, dict[str, Any]] = {}
+    empirical_trace_files = (
+        trace_files_from_inputs(args.empirical_trace_dir, cashout_report)
+        if not args.no_empirical_priors
+        else []
+    )
+    empirical_index = (
+        empirical_prior_index(
+            empirical_trace_files,
+            room_cache=trace_cache,
+            window=args.future_room_window,
+        )
+        if not args.no_empirical_priors
+        else {}
+    )
     cases = [
         evaluate_case(
             policy,
             case,
             trace_cache=trace_cache,
+            full_trace_cache=full_trace_cache,
+            empirical_index=empirical_index,
             future_room_window=args.future_room_window,
-            use_trace_room_priors=not args.no_trace_room_priors,
+            use_actual_trace_prior=not args.no_trace_room_priors,
+            use_empirical_prior=not args.no_empirical_priors,
+            use_map_prior=not args.no_map_priors,
         )
         for policy, case in selected
     ]
@@ -686,7 +1091,11 @@ def main() -> int:
             "max_cases": args.max_cases,
             "top_n": args.top_n,
             "future_room_window": args.future_room_window,
-            "trace_room_priors": not args.no_trace_room_priors,
+            "actual_trace_suffix_prior": not args.no_trace_room_priors,
+            "empirical_act_floor_prior": not args.no_empirical_priors,
+            "visible_map_prior": not args.no_map_priors,
+            "empirical_trace_count": len(empirical_trace_files),
+            "empirical_prior_key_count": len(empirical_index),
         },
         "summary": summarize(cases),
         "cases": cases,
