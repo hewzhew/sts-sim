@@ -6,7 +6,7 @@ import html
 import json
 import subprocess
 import sys
-from collections import Counter, defaultdict
+from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -14,7 +14,7 @@ from typing import Any
 from combat_rl_common import REPO_ROOT, write_json, write_jsonl
 
 
-BATCH_SCHEMA_VERSION = "combat_plan_query_batch_audit_v0"
+BATCH_SCHEMA_VERSION = "combat_plan_query_batch_audit_v0_1"
 QUERY_NAMES = [
     "CanLethal",
     "CanFullBlock",
@@ -22,6 +22,13 @@ QUERY_NAMES = [
     "CanPlaySetupAndStillBlock",
     "CanPreserveKillWindow",
 ]
+
+SETUP_DOWNSIDE_CARDS = {
+    "Berserk": "berserk_vulnerable_downside",
+    "Blasphemy": "blasphemy_delayed_death_risk",
+    "WraithForm": "wraith_form_dex_loss_downside",
+    "BiasedCognition": "biased_cognition_focus_loss_downside",
+}
 
 PRESSURE_ORDER = [
     "medium_pressure",
@@ -54,6 +61,18 @@ def parse_args() -> argparse.Namespace:
         choices=["trace_order", "danger", "balanced_pressure"],
     )
     parser.add_argument("--small-lethal-gap", type=int, default=8)
+    parser.add_argument(
+        "--damage-gap-threshold",
+        type=int,
+        default=6,
+        help="Minimum current-turn damage gap before a different full-block+damage first action is flagged.",
+    )
+    parser.add_argument(
+        "--leak-gap-threshold",
+        type=int,
+        default=1,
+        help="Minimum projected unblocked damage improvement before a different block line is flagged.",
+    )
     parser.add_argument("--ascension", type=int, default=0)
     parser.add_argument("--class", dest="player_class", default="ironclad")
     parser.add_argument("--final-act", action="store_true")
@@ -349,6 +368,174 @@ def chosen_matches_query_first(case: dict[str, Any], query: dict[str, Any] | Non
     return bool(best_first) and best_first == str(case.get("chosen_action_key") or "")
 
 
+def card_id_from_action_key(action_key: Any) -> str:
+    key = str(action_key or "")
+    if "card:" not in key:
+        return ""
+    return key.split("card:", 1)[1].split("/", 1)[0]
+
+
+def action_card_ids(action_keys: list[Any]) -> list[str]:
+    return [card for card in (card_id_from_action_key(key) for key in action_keys) if card]
+
+
+def setup_downside_notes(action_keys: list[Any]) -> list[str]:
+    notes: list[str] = []
+    for card_id in action_card_ids(action_keys):
+        note = SETUP_DOWNSIDE_CARDS.get(card_id)
+        if note and note not in notes:
+            notes.append(note)
+    return notes
+
+
+def end_turn_outcome_from_state(report: dict[str, Any]) -> dict[str, Any]:
+    state = report.get("state_summary") or {}
+    incoming = int(state.get("visible_incoming_damage") or 0)
+    block = int(state.get("player_block") or 0)
+    return {
+        "damage_done": 0,
+        "block_after": block,
+        "projected_unblocked_damage": max(incoming - block, 0),
+        "hp_loss_actual": 0,
+        "remaining_energy": int(state.get("energy") or 0),
+        "remaining_hand_count": int(state.get("hand_count") or 0),
+        "enemy_deaths": 0,
+        "living_monster_count": int(state.get("alive_monster_count") or 0),
+        "total_monster_hp": int(state.get("total_monster_hp") or 0),
+        "played_setup_or_scaling": False,
+        "played_kill_window_card": False,
+        "random_risk_present": False,
+        "ended_turn": True,
+        "source": "state_summary_end_turn_projection",
+    }
+
+
+def outcome_int(outcome: dict[str, Any] | None, key: str) -> int:
+    if not outcome:
+        return 0
+    return int(outcome.get(key) or 0)
+
+
+def outcome_line(outcome: dict[str, Any] | None) -> str:
+    if not outcome:
+        return "none"
+    return (
+        f"dmg {outcome_int(outcome, 'damage_done')}, "
+        f"block {outcome_int(outcome, 'block_after')}, "
+        f"leak {outcome_int(outcome, 'projected_unblocked_damage')}, "
+        f"energy {outcome_int(outcome, 'remaining_energy')}"
+    )
+
+
+def outcome_gap(best: dict[str, Any] | None, chosen: dict[str, Any] | None) -> dict[str, int] | None:
+    if not best or not chosen:
+        return None
+    return {
+        "damage": outcome_int(best, "damage_done") - outcome_int(chosen, "damage_done"),
+        "leak": outcome_int(chosen, "projected_unblocked_damage") - outcome_int(best, "projected_unblocked_damage"),
+        "block": outcome_int(best, "block_after") - outcome_int(chosen, "block_after"),
+        "enemy_deaths": outcome_int(best, "enemy_deaths") - outcome_int(chosen, "enemy_deaths"),
+    }
+
+
+def sequence_outcomes_for_first(report: dict[str, Any], first_key: str) -> list[dict[str, Any]]:
+    if first_key == "combat/end_turn":
+        return [end_turn_outcome_from_state(report)]
+    outcomes: list[dict[str, Any]] = []
+    for sequence in report.get("sequence_classes") or []:
+        action_keys = sequence.get("action_keys") or []
+        if first_action(action_keys) != first_key:
+            continue
+        outcome = dict(sequence.get("outcome") or {})
+        if not outcome:
+            continue
+        if bool(outcome.get("ended_turn")) and outcome_int(outcome, "living_monster_count") > 0:
+            continue
+        outcome["sequence_equivalence_key"] = sequence.get("sequence_equivalence_key")
+        outcome["action_keys"] = list(action_keys)
+        outcomes.append(outcome)
+    return outcomes
+
+
+def best_outcome_for_first(report: dict[str, Any], first_key: str, query_name: str) -> dict[str, Any] | None:
+    outcomes = sequence_outcomes_for_first(report, first_key)
+    if not outcomes:
+        return None
+    if query_name == "CanLethal":
+        return max(
+            outcomes,
+            key=lambda outcome: (
+                outcome_int(outcome, "living_monster_count") == 0,
+                outcome_int(outcome, "damage_done"),
+                -outcome_int(outcome, "total_monster_hp"),
+                outcome_int(outcome, "remaining_energy"),
+            ),
+        )
+    if query_name == "CanFullBlock":
+        return max(
+            outcomes,
+            key=lambda outcome: (
+                -outcome_int(outcome, "projected_unblocked_damage"),
+                outcome_int(outcome, "block_after"),
+                outcome_int(outcome, "damage_done"),
+                outcome_int(outcome, "remaining_energy"),
+            ),
+        )
+    if query_name == "CanFullBlockThenMaxDamage":
+        return max(
+            outcomes,
+            key=lambda outcome: (
+                -outcome_int(outcome, "projected_unblocked_damage"),
+                outcome_int(outcome, "damage_done"),
+                outcome_int(outcome, "enemy_deaths"),
+                outcome_int(outcome, "remaining_energy"),
+            ),
+        )
+    if query_name == "CanPlaySetupAndStillBlock":
+        setup_outcomes = [outcome for outcome in outcomes if bool(outcome.get("played_setup_or_scaling"))]
+        if not setup_outcomes:
+            return None
+        return max(
+            setup_outcomes,
+            key=lambda outcome: (
+                -outcome_int(outcome, "projected_unblocked_damage"),
+                outcome_int(outcome, "damage_done"),
+                outcome_int(outcome, "remaining_energy"),
+            ),
+        )
+    return max(
+        outcomes,
+        key=lambda outcome: (
+            outcome_int(outcome, "damage_done"),
+            -outcome_int(outcome, "projected_unblocked_damage"),
+            outcome_int(outcome, "block_after"),
+        ),
+    )
+
+
+def build_query_summary(
+    report: dict[str, Any],
+    chosen_key: str,
+    name: str,
+    query: dict[str, Any] | None,
+) -> dict[str, Any]:
+    best_outcome = query_outcome(query)
+    chosen_outcome = best_outcome_for_first(report, chosen_key, name)
+    return {
+        "status": (query or {}).get("status"),
+        "best_first": query_best_first(query),
+        "best_first_label": action_label(query_best_first(query)),
+        "line": query_line(query),
+        "needs_deeper_search": bool((query or {}).get("needs_deeper_search")),
+        "outcome": best_outcome,
+        "chosen_first_outcome": chosen_outcome,
+        "chosen_first_line": outcome_line(chosen_outcome),
+        "query_vs_chosen_gap": outcome_gap(best_outcome, chosen_outcome),
+        "failed_constraints": list((query or {}).get("failed_constraints") or []),
+        "notes": list((query or {}).get("notes") or []),
+    }
+
+
 def flatten_result(args: argparse.Namespace, result: dict[str, Any]) -> dict[str, Any]:
     case = result["case"]
     if result["status"] != "ok":
@@ -373,59 +560,106 @@ def flatten_result(args: argparse.Namespace, result: dict[str, Any]) -> dict[str
     setup_block = queries.get("CanPlaySetupAndStillBlock")
     kill_window = queries.get("CanPreserveKillWindow")
 
-    if lethal and lethal.get("status") == "feasible" and not chosen_matches_query_first(case, lethal):
-        flags.append("lethal_available_different_first")
+    lethal_chosen = best_outcome_for_first(report, chosen_key, "CanLethal")
+    if lethal and lethal.get("status") == "feasible":
+        if not lethal_chosen or outcome_int(lethal_chosen, "living_monster_count") != 0:
+            flags.append("lethal_available_missed_first")
+        elif not chosen_matches_query_first(case, lethal):
+            notes.append("lethal_available_but_chosen_first_also_lethal")
     gap = missing_damage(lethal)
     if lethal and lethal.get("status") == "partial" and gap is not None and gap <= args.small_lethal_gap:
         flags.append("near_lethal_small_gap")
         notes.append(f"missing_damage={gap}")
-    if full_block and full_block.get("status") == "feasible" and not chosen_matches_query_first(case, full_block):
-        flags.append("full_block_available_different_first")
-    if (
-        full_block_damage
-        and full_block_damage.get("status") == "feasible"
-        and not chosen_matches_query_first(case, full_block_damage)
-    ):
-        flags.append("full_block_damage_available_different_first")
+
+    full_block_chosen = best_outcome_for_first(report, chosen_key, "CanFullBlock")
+    if full_block and full_block.get("status") == "feasible":
+        full_block_gap = outcome_gap(query_outcome(full_block), full_block_chosen)
+        if not full_block_chosen:
+            notes.append("chosen_first_not_kept_for_full_block")
+        elif outcome_int(full_block_chosen, "projected_unblocked_damage") > 0:
+            leak_gap = (full_block_gap or {}).get("leak", 0)
+            if leak_gap >= args.leak_gap_threshold:
+                flags.append("missed_full_block_line")
+                notes.append(f"full_block_leak_gap={leak_gap}")
+        elif not chosen_matches_query_first(case, full_block):
+            notes.append("full_block_first_is_equivalent_or_safe")
+
+    full_block_damage_chosen = best_outcome_for_first(report, chosen_key, "CanFullBlockThenMaxDamage")
+    if full_block_damage and full_block_damage.get("status") == "feasible":
+        full_damage_gap = outcome_gap(query_outcome(full_block_damage), full_block_damage_chosen)
+        if not full_block_damage_chosen:
+            notes.append("chosen_first_not_kept_for_full_block_damage")
+        else:
+            chosen_leak = outcome_int(full_block_damage_chosen, "projected_unblocked_damage")
+            damage_gap = (full_damage_gap or {}).get("damage", 0)
+            leak_gap = (full_damage_gap or {}).get("leak", 0)
+            if chosen_leak > 0 and leak_gap >= args.leak_gap_threshold:
+                flags.append("missed_full_block_damage_line")
+                notes.append(f"full_block_damage_leak_gap={leak_gap}")
+            elif damage_gap >= args.damage_gap_threshold:
+                flags.append("full_block_damage_gap")
+                notes.append(f"full_block_damage_gap={damage_gap}")
+            elif not chosen_matches_query_first(case, full_block_damage):
+                notes.append(f"full_block_damage_gap_below_threshold={damage_gap}")
+
+    setup_notes = setup_downside_notes(list((setup_block or {}).get("best_action_keys") or []))
     if setup_block and setup_block.get("status") == "feasible":
-        flags.append("setup_and_block_available")
+        if setup_notes:
+            flags.append("setup_and_block_available_with_downside")
+        else:
+            flags.append("setup_and_block_available_clean")
     if setup_block and setup_block.get("status") == "partial":
         flags.append("setup_available_but_leaks")
+    if setup_notes:
+        flags.append("setup_downside_risk")
+        notes.extend(f"setup_downside={note}" for note in setup_notes)
     if kill_window and kill_window.get("status") == "feasible":
         flags.append("kill_window_preservable")
     if any(bool(query.get("needs_deeper_search")) for query in queries.values()):
         flags.append("needs_deeper_search")
     if case.get("incoming", 0) > 0 and full_block and full_block.get("status") != "feasible":
         flags.append("no_full_block_line_under_pressure")
-    if chosen_key == "combat/end_turn" and full_block_damage and full_block_damage.get("status") == "feasible":
-        flags.append("end_turn_with_plan_available")
+    if chosen_key == "combat/end_turn":
+        end_turn_outcome = end_turn_outcome_from_state(report)
+        end_turn_leak = outcome_int(end_turn_outcome, "projected_unblocked_damage")
+        fb_damage = query_outcome(full_block_damage)
+        fb_damage_gain = outcome_int(fb_damage, "damage_done")
+        if full_block_damage and full_block_damage.get("status") == "feasible" and fb_damage_gain >= args.damage_gap_threshold:
+            flags.append("end_turn_with_damage_plan_available")
+        if setup_block and setup_block.get("status") == "feasible":
+            if setup_notes:
+                flags.append("end_turn_with_risky_setup_available")
+            else:
+                flags.append("end_turn_with_clean_setup_available")
+        if end_turn_leak > 0 and full_block and full_block.get("status") == "feasible":
+            flags.append("end_turn_missed_full_block")
+
+    flags = list(dict.fromkeys(flags))
+    notes = list(dict.fromkeys(notes))
 
     flag_weights = {
         "probe_failed": 100,
-        "lethal_available_different_first": 30,
+        "lethal_available_missed_first": 30,
         "near_lethal_small_gap": 20,
-        "full_block_damage_available_different_first": 14,
-        "full_block_available_different_first": 12,
-        "setup_and_block_available": 10,
+        "missed_full_block_damage_line": 18,
+        "missed_full_block_line": 16,
+        "full_block_damage_gap": 12,
+        "setup_and_block_available_clean": 8,
+        "setup_and_block_available_with_downside": 3,
+        "setup_downside_risk": 2,
         "setup_available_but_leaks": 8,
         "kill_window_preservable": 8,
         "needs_deeper_search": 7,
         "no_full_block_line_under_pressure": 6,
-        "end_turn_with_plan_available": 20,
+        "end_turn_with_damage_plan_available": 16,
+        "end_turn_with_clean_setup_available": 8,
+        "end_turn_with_risky_setup_available": 3,
+        "end_turn_missed_full_block": 20,
     }
     interesting_score = sum(flag_weights.get(flag, 1) for flag in flags)
 
     query_summaries = {
-        name: {
-            "status": queries.get(name, {}).get("status"),
-            "best_first": query_best_first(queries.get(name)),
-            "best_first_label": action_label(query_best_first(queries.get(name))),
-            "line": query_line(queries.get(name)),
-            "needs_deeper_search": bool(queries.get(name, {}).get("needs_deeper_search")),
-            "outcome": query_outcome(queries.get(name)),
-            "failed_constraints": list(queries.get(name, {}).get("failed_constraints") or []),
-            "notes": list(queries.get(name, {}).get("notes") or []),
-        }
+        name: build_query_summary(report, chosen_key, name, queries.get(name))
         for name in QUERY_NAMES
     }
     return {
@@ -509,11 +743,20 @@ def render_html(report: dict[str, Any], out_path: Path) -> str:
     case_rows = []
     for row in rows:
         query_summaries = row.get("query_summaries") or {}
-        compact_queries = "<br>".join(
-            f"<strong>{esc(name.replace('Can', ''))}</strong>: {esc((query_summaries.get(name) or {}).get('line'))}"
-            for name in QUERY_NAMES
-        )
+        compact_lines = []
+        for name in QUERY_NAMES:
+            query = query_summaries.get(name) or {}
+            gap = query.get("query_vs_chosen_gap") or {}
+            gap_text = ""
+            if gap:
+                gap_text = f"; gap dmg {gap.get('damage')}, leak {gap.get('leak')}"
+            compact_lines.append(
+                f"<strong>{esc(name.replace('Can', ''))}</strong>: {esc(query.get('line'))}"
+                f"<div class='muted'>chosen-first: {esc(query.get('chosen_first_line'))}{esc(gap_text)}</div>"
+            )
+        compact_queries = "<br>".join(compact_lines)
         flags = " ".join(f"<span class='chip'>{esc(flag)}</span>" for flag in row.get("flags") or [])
+        notes = "; ".join(str(note) for note in row.get("notes") or [])
         link = rel_link(row.get("report_path"), out_path.parent)
         report_link = f"<a href='{esc(link)}'>json</a>" if link else ""
         case_rows.append(
@@ -522,7 +765,7 @@ def render_html(report: dict[str, Any], out_path: Path) -> str:
             f"<td>{esc(row.get('pressure_class'))}<div class='muted'>HP {esc(row.get('hp'))}, in {esc(row.get('incoming'))}, leak {esc(row.get('unblocked'))}</div></td>"
             f"<td>{esc(row.get('chosen_action_label') or action_label(row.get('chosen_action_key')))}</td>"
             f"<td>{compact_queries}</td>"
-            f"<td>{flags or '<span class=\"muted\">none</span>'}<div class='muted'>score {esc(row.get('interesting_score'))}</div></td>"
+            f"<td>{flags or '<span class=\"muted\">none</span>'}<div class='muted'>score {esc(row.get('interesting_score'))}</div><div class='muted'>{esc(notes)}</div></td>"
             f"<td>{report_link}</td>"
             "</tr>"
         )
@@ -605,10 +848,11 @@ def render_markdown(report: dict[str, Any]) -> str:
     for row in sorted(report.get("cases") or [], key=lambda item: int(item.get("interesting_score") or 0), reverse=True):
         if int(row.get("interesting_score") or 0) <= 0:
             continue
+        notes = "; ".join(row.get("notes") or [])
         lines.append(
             f"- `{row.get('case_id')}` floor `{row.get('floor')}` step `{row.get('step_index')}` "
             f"pressure `{row.get('pressure_class')}` chosen `{row.get('chosen_action_label')}` "
-            f"flags `{', '.join(row.get('flags') or [])}` report `{row.get('report_path')}`"
+            f"flags `{', '.join(row.get('flags') or [])}` notes `{notes}` report `{row.get('report_path')}`"
         )
     return "\n".join(lines) + "\n"
 
@@ -638,6 +882,8 @@ def main() -> None:
             "min_step_gap": args.min_step_gap,
             "case_strategy": args.case_strategy,
             "small_lethal_gap": args.small_lethal_gap,
+            "damage_gap_threshold": args.damage_gap_threshold,
+            "leak_gap_threshold": args.leak_gap_threshold,
             "max_depth": args.max_depth,
             "max_nodes": args.max_nodes,
             "beam_width": args.beam_width,
