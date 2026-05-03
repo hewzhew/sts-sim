@@ -13,8 +13,8 @@ from typing import Any
 from combat_rl_common import REPO_ROOT, write_json
 
 
-REPORT_VERSION = "card_cashout_lab_v0_3"
-SCORE_KIND = "heuristic_cashout_v0_3"
+REPORT_VERSION = "card_cashout_lab_v0_5"
+SCORE_KIND = "heuristic_cashout_v0_5"
 
 PLAN_FIELDS = (
     "frontload_delta",
@@ -263,6 +263,17 @@ def is_energy(card: dict[str, Any]) -> bool:
 
 def is_exhaust_engine(card: dict[str, Any]) -> bool:
     return bool(card.get("exhaust")) or card_id(card) in EXHAUST_ENGINE_CARDS
+
+
+def is_exhaust_outlet(card: dict[str, Any]) -> bool:
+    return bool(card.get("exhaust")) or card_id(card) in {
+        "TrueGrit",
+        "SecondWind",
+        "FiendFire",
+        "BurningPact",
+        "Corruption",
+        "Exhume",
+    }
 
 
 def is_kill_window(card: dict[str, Any]) -> bool:
@@ -547,12 +558,21 @@ def deficit_factor(profile: dict[str, Any], field: str, target: float) -> float:
     return 1.0 + max(target - current, 0.0) / max(target, 1.0)
 
 
+def profile_value(profile: dict[str, Any], field: str) -> float:
+    return float(profile.get(field) or 0.0)
+
+
+def exhaust_outlet_count(deck_cards: list[dict[str, Any]]) -> int:
+    return sum(1 for card in deck_cards if is_exhaust_outlet(card))
+
+
 def context_penalties(
     *,
     card: dict[str, Any],
     delta: dict[str, int],
     obs: dict[str, Any],
     profile: dict[str, Any],
+    deck_cards: list[dict[str, Any]],
 ) -> dict[str, Any]:
     relics = relic_ids(obs)
     act = int(obs.get("act") or 0)
@@ -563,6 +583,7 @@ def context_penalties(
         "high_curve_clog_risk": 0.0,
         "draw_over_cashout": 0.0,
         "setup_cashout_risk": 0.0,
+        "card_context_uncertainty": 0.0,
         "duplicate_penalty": float(abs(delta.get("duplicate_penalty") or 0)),
         "deck_bloat_penalty": float(abs(delta.get("bloat_penalty") or 0)),
     }
@@ -580,6 +601,38 @@ def context_penalties(
         values["setup_cashout_risk"] += 18.0 if act == 1 and floor <= 6 else 10.0
     if is_multi_enemy_control(card) and card_damage(card) <= 0 and card_block(card) <= 0:
         values["setup_cashout_risk"] += 12.0 if act == 1 and floor <= 6 else 7.0
+    if card_id(card) == "PommelStrike":
+        if payoff_quality(deck_cards, profile) < 50:
+            values["card_context_uncertainty"] += 8.0
+        if profile_value(profile, "frontload_supply") >= 65:
+            values["card_context_uncertainty"] += 10.0
+        if profile_value(profile, "draw_supply") >= 20:
+            values["card_context_uncertainty"] += 5.0
+    if card_id(card) in {"ThunderClap", "Cleave", "Whirlwind"}:
+        if profile_value(profile, "aoe_supply") >= 18:
+            values["card_context_uncertainty"] += 12.0
+        if card_id(card) == "ThunderClap" and act <= 1:
+            if floor <= 5:
+                values["card_context_uncertainty"] += 8.0
+            elif floor >= 12:
+                values["card_context_uncertainty"] += 12.0
+        if act == 1 and floor <= 2 and card_id(card) != "Whirlwind":
+            values["card_context_uncertainty"] += 5.0
+    if card_id(card) == "Clothesline" and profile_value(profile, "frontload_supply") >= 70:
+        values["card_context_uncertainty"] += 10.0
+    if card_id(card) == "Clothesline":
+        values["card_context_uncertainty"] += 4.0
+    if card_id(card) == "ShrugItOff":
+        if act <= 1 and floor <= 3 and profile_value(profile, "frontload_supply") < 60:
+            values["card_context_uncertainty"] += 8.0
+        if profile_value(profile, "draw_supply") >= 20:
+            values["draw_over_cashout"] += 5.0
+    if card_id(card) in {"DarkEmbrace", "FeelNoPain"}:
+        outlet_count = exhaust_outlet_count(deck_cards)
+        if outlet_count == 0:
+            values["card_context_uncertainty"] += 20.0
+        elif outlet_count == 1:
+            values["card_context_uncertainty"] += 8.0
     if card_cost(card) >= 3:
         values["high_curve_clog_risk"] += 8.0 + max(card_cost(card) - 3, 0) * 4.0
         if is_scaling(card) and float(profile.get("frontload_supply") or 0) < 70:
@@ -619,7 +672,7 @@ def payoff_quality(deck_cards: list[dict[str, Any]], profile: dict[str, Any]) ->
     return max(0.0, energy + attacks + block + scaling + aoe + multi_control + exhaust - junk)
 
 
-def base_prior_value(candidate: dict[str, Any], card: dict[str, Any]) -> float:
+def base_prior_value(candidate: dict[str, Any], card: dict[str, Any], profile: dict[str, Any]) -> float:
     """Keep static rule/plan priors as weak tie-breakers, not cashout proof.
 
     The first cashout pass let rule_score dominate slow draw/control/scaling
@@ -636,6 +689,16 @@ def base_prior_value(candidate: dict[str, Any], card: dict[str, Any]) -> float:
         or is_multi_enemy_control(card)
         or card_id(card) in {"Shockwave", "Disarm"}
     )
+    cid = card_id(card)
+    if cid == "ThunderClap":
+        return 0.04 * rule + 0.02 * plan
+    if cid in {"Cleave", "Whirlwind"}:
+        return 0.11 * rule + 0.055 * plan
+    if cid == "PommelStrike":
+        prior = 0.08 * rule + 0.04 * plan
+        if profile_value(profile, "frontload_supply") >= 65:
+            prior *= 0.55
+        return prior
     if is_aoe_damage(card):
         return 0.17 * rule + 0.09 * plan
     if direct_output and not slow_plan:
@@ -643,6 +706,66 @@ def base_prior_value(candidate: dict[str, Any], card: dict[str, Any]) -> float:
     if direct_output and slow_plan:
         return 0.10 * rule + 0.05 * plan
     return 0.07 * rule + 0.035 * plan
+
+
+def draw_context_multiplier(card: dict[str, Any], deck_cards: list[dict[str, Any]], profile: dict[str, Any]) -> float:
+    cid = card_id(card)
+    payoff = payoff_quality(deck_cards, profile)
+    if cid == "PommelStrike":
+        multiplier = 0.55
+        if payoff < 50:
+            multiplier *= 0.65
+        if profile_value(profile, "frontload_supply") >= 65:
+            multiplier *= 0.55
+        if profile_value(profile, "draw_supply") >= 20:
+            multiplier *= 0.75
+        if payoff >= 55:
+            multiplier *= 1.20
+        return multiplier
+    if cid == "ShrugItOff":
+        multiplier = 0.75
+        if profile_value(profile, "frontload_supply") < 60:
+            multiplier *= 0.70
+        if profile_value(profile, "draw_supply") >= 20:
+            multiplier *= 0.75
+        if payoff < 50:
+            multiplier *= 0.75
+        return max(0.25, min(multiplier, 0.85))
+    if card_damage(card) > 0 and card_block(card) <= 0:
+        return 0.55
+    if card_block(card) > 0:
+        return 0.80
+    return 1.0
+
+
+def frontload_context_multiplier(card: dict[str, Any], profile: dict[str, Any]) -> float:
+    cid = card_id(card)
+    supply = profile_value(profile, "frontload_supply")
+    if cid == "PommelStrike":
+        return 0.55 if supply >= 65 else 0.85
+    if cid == "Clothesline":
+        return 0.55 if supply >= 70 else 0.90
+    return 1.0
+
+
+def aoe_context_multiplier(card: dict[str, Any], obs: dict[str, Any], profile: dict[str, Any]) -> float:
+    cid = card_id(card)
+    act = int(obs.get("act") or 0)
+    floor = int(obs.get("floor") or 0)
+    aoe_supply = profile_value(profile, "aoe_supply")
+    deficit = 1.0 if aoe_supply < 12 else (0.75 if aoe_supply < 18 else 0.45)
+    timing = 1.20 if act >= 2 or floor >= 7 else (0.95 if floor >= 4 else 0.75)
+    if cid == "Immolate":
+        return max(0.9, deficit * timing * 1.25)
+    if cid == "Whirlwind":
+        return deficit * timing * 0.95
+    if cid == "Cleave":
+        return deficit * timing * 0.78
+    if cid == "ThunderClap":
+        if act <= 1:
+            return deficit * timing * 0.35
+        return deficit * timing * 0.50
+    return deficit * timing
 
 
 def bucket_ev(
@@ -663,6 +786,7 @@ def bucket_ev(
         p_turn2
         * max(delta["frontload_delta"], card_damage(card) * 2 // 3)
         * deficit_factor(profile, "frontload_supply", 70.0)
+        * frontload_context_multiplier(card, profile)
     )
     block = (
         p_turn2
@@ -678,10 +802,7 @@ def bucket_ev(
             + p_combo * min(payoff, 55.0) * 0.22
             + p_open * min(payoff, 35.0) * 0.06
         )
-        if card_damage(card) > 0 and card_block(card) <= 0:
-            draw_cashout *= 0.55
-        elif card_block(card) > 0:
-            draw_cashout *= 0.80
+        draw_cashout *= draw_context_multiplier(card, deck_cards, profile)
     scaling = 0.0
     if is_scaling(card):
         act = int(obs.get("act") or 0)
@@ -706,6 +827,7 @@ def bucket_ev(
             * max(int(delta["aoe_delta"] * 0.65), card_damage(card) // 2)
             * deficit_factor(profile, "aoe_supply", 18.0)
             * act_factor
+            * aoe_context_multiplier(card, obs, profile)
         )
     if is_multi_enemy_control(card) or (delta["aoe_delta"] > 0 and not is_aoe_damage(card)):
         act = int(obs.get("act") or 0)
@@ -722,6 +844,7 @@ def bucket_ev(
             * control_base
             * deficit_factor(profile, "aoe_supply", 18.0)
             * act_factor
+            * aoe_context_multiplier(card, obs, profile)
         )
     aoe_total = aoe_damage + multi_enemy_control
     exhaust = 0.0
@@ -737,7 +860,7 @@ def bucket_ev(
         letter_opener_bonus = p_turn2 * 5.0
 
     total_penalty = float(penalties.get("total_penalty") or 0.0)
-    base_prior = base_prior_value(candidate, card)
+    base_prior = base_prior_value(candidate, card, profile)
     subtotal = (
         frontload
         + block
@@ -782,13 +905,19 @@ def bucket_ev(
 def scaling_synergy_factor(card: dict[str, Any], deck_cards: list[dict[str, Any]]) -> float:
     cid = card_id(card)
     classes = class_counts(deck_cards)
+    outlet_count = exhaust_outlet_count(deck_cards)
     if cid == "FeelNoPain":
-        exhaust_count = classes.get("exhaust_engine", 0)
-        if exhaust_count <= 0:
+        if outlet_count <= 0:
             return 0.45
-        if exhaust_count == 1:
+        if outlet_count == 1:
             return 0.75
         return 1.15
+    if cid == "DarkEmbrace":
+        if outlet_count <= 0:
+            return 0.35
+        if outlet_count == 1:
+            return 0.65
+        return 1.10
     if cid in {"Inflame", "DemonForm", "LimitBreak"}:
         attack_count = classes.get("generic_attack", 0)
         if attack_count <= 4:
@@ -831,7 +960,13 @@ def candidate_cashout(
         turn2_seen_cards=turn2_seen_cards,
     )
     delta = plan_delta(candidate)
-    penalties = context_penalties(card=card, delta=delta, obs=obs, profile=profile)
+    penalties = context_penalties(
+        card=card,
+        delta=delta,
+        obs=obs,
+        profile=profile,
+        deck_cards=deck_cards,
+    )
     ev = bucket_ev(candidate=candidate, deck_cards=deck_cards, reach=reach, penalties=penalties, obs=obs)
     flags, warnings = context_flags(obs, profile)
     notes = candidate_notes(card, ev, penalties, warnings)
@@ -993,6 +1128,8 @@ def needs_deeper_model(row: dict[str, Any]) -> bool:
     if penalties.get("choker_action_pressure", 0) > 0:
         return True
     if penalties.get("nob_skill_risk", 0) > 0:
+        return True
+    if penalties.get("card_context_uncertainty", 0) >= 8:
         return True
     if row["bucket_ev"].get("dominant_cashout") in {"draw_cashout", "scaling_cashout"}:
         return row["cashout_grade"] in {"low", "speculative"}
