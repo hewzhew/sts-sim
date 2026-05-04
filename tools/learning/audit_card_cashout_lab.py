@@ -13,8 +13,8 @@ from typing import Any
 from combat_rl_common import REPO_ROOT, write_json
 
 
-REPORT_VERSION = "card_cashout_lab_v0_6"
-SCORE_KIND = "heuristic_cashout_v0_6"
+REPORT_VERSION = "card_cashout_lab_v0_8"
+SCORE_KIND = "heuristic_cashout_v0_8"
 
 PLAN_FIELDS = (
     "frontload_delta",
@@ -52,7 +52,10 @@ STATUS_BURDEN_CARDS = {
 }
 STATUS_PAYOFF_CARDS = {"Evolve", "FireBreathing", "MedKit"}
 ENERGY_CARDS = {"Offering", "SeeingRed", "Bloodletting", "Dropkick", "Sentinel"}
+RESOURCE_WINDOW_CARDS = {"Offering", "SeeingRed", "Bloodletting"}
 MULTI_ENEMY_CONTROL_CARDS = {"Shockwave", "ThunderClap"}
+AOE_DAMAGE_CARDS = {"Immolate", "Cleave", "Whirlwind", "Reaper"}
+MULTI_HIT_NOT_AOE_CARDS = {"TwinStrike", "SwordBoomerang", "Pummel"}
 HIGH_VALUE_RELIC_WARNINGS = {
     "BagOfPreparation": "draw_relic_not_exactly_modeled",
     "RingOfTheSnake": "draw_relic_not_exactly_modeled",
@@ -255,7 +258,12 @@ def is_scaling(card: dict[str, Any]) -> bool:
 
 
 def is_aoe(card: dict[str, Any]) -> bool:
-    return bool(card.get("aoe") or card.get("multi_damage"))
+    cid = card_id(card)
+    if cid in MULTI_HIT_NOT_AOE_CARDS:
+        return False
+    if cid in AOE_DAMAGE_CARDS or cid in MULTI_ENEMY_CONTROL_CARDS:
+        return True
+    return bool(card.get("aoe"))
 
 
 def is_aoe_damage(card: dict[str, Any]) -> bool:
@@ -399,7 +407,86 @@ def self_test() -> None:
     p_combo = hypergeom_at_least_one_each(20, 1, 3, 5)
     if p_combo <= 0:
         raise SystemExit("expected same-turn combo probability > 0")
-    print(json.dumps({"self_test": "ok", "p_opening": p_opening, "p_combo": p_combo}))
+    offering = {"card_id": "Offering", "draws_cards": True, "gains_energy": True, "card_type_id": 2}
+    weak_profile = {
+        "frontload_supply": 45,
+        "block_supply": 25,
+        "draw_supply": 5,
+        "scaling_supply": 0,
+    }
+    weak_deck = [
+        {"card_id": "Strike", "base_damage": 6, "card_type_id": 1},
+        {"card_id": "Defend", "base_block": 5, "card_type_id": 2},
+    ]
+    pressure_penalty = resource_window_pressure_gate_penalty(
+        card=offering,
+        obs={"act": 1, "floor": 14, "current_hp": 21, "max_hp": 80},
+        profile=weak_profile,
+        deck_cards=weak_deck,
+    )
+    if pressure_penalty < 25:
+        raise SystemExit(f"expected high-pressure Offering gate, got {pressure_penalty}")
+    safe_penalty = resource_window_pressure_gate_penalty(
+        card=offering,
+        obs={"act": 1, "floor": 4, "current_hp": 70, "max_hp": 80},
+        profile={"frontload_supply": 85, "block_supply": 60, "draw_supply": 5},
+        deck_cards=weak_deck
+        + [
+            {"card_id": "Immolate", "base_damage": 21, "aoe": True, "card_type_id": 1},
+            {"card_id": "ShrugItOff", "base_block": 8, "draws_cards": True, "card_type_id": 2},
+        ],
+    )
+    if safe_penalty >= pressure_penalty:
+        raise SystemExit("expected safe Offering gate to be lower than high-pressure gate")
+    pommel_gate = draw_payoff_gate_penalty(
+        card={"card_id": "PommelStrike", "draws_cards": True, "base_damage": 9, "cost": 1},
+        obs={"act": 1, "floor": 1, "current_hp": 70, "max_hp": 80},
+        profile=weak_profile,
+        deck_cards=weak_deck,
+    )
+    if pommel_gate < 12:
+        raise SystemExit(f"expected low-payoff Pommel gate, got {pommel_gate}")
+    shrug_gate = draw_payoff_gate_penalty(
+        card={"card_id": "ShrugItOff", "draws_cards": True, "base_block": 8, "cost": 1},
+        obs={"act": 1, "floor": 5, "current_hp": 23, "max_hp": 80},
+        profile=weak_profile,
+        deck_cards=weak_deck,
+    )
+    if shrug_gate < 20:
+        raise SystemExit(f"expected low-frontload Shrug gate, got {shrug_gate}")
+    stable_immolate_uncertainty = aoe_cashout_uncertainty_penalty(
+        card={"card_id": "Immolate", "aoe": True, "base_damage": 21, "cost": 2},
+        obs={"act": 1, "floor": 8, "current_hp": 64, "max_hp": 80},
+        profile={"frontload_supply": 48, "aoe_supply": 0},
+    )
+    unstable_immolate_uncertainty = aoe_cashout_uncertainty_penalty(
+        card={"card_id": "Immolate", "aoe": True, "base_damage": 21, "cost": 2},
+        obs={"act": 1, "floor": 8, "current_hp": 64, "max_hp": 80},
+        profile={"frontload_supply": 58, "aoe_supply": 0},
+    )
+    if unstable_immolate_uncertainty <= stable_immolate_uncertainty:
+        raise SystemExit(
+            "expected stronger Immolate uncertainty when deck already has more frontload"
+        )
+    if is_aoe_damage({"card_id": "TwinStrike", "multi_damage": True, "base_damage": 5}):
+        raise SystemExit("Twin Strike is multi-hit, not AoE")
+    if not is_aoe_damage({"card_id": "Cleave", "multi_damage": True, "base_damage": 8}):
+        raise SystemExit("expected Cleave to be treated as AoE damage")
+    print(
+        json.dumps(
+            {
+                "self_test": "ok",
+                "p_opening": p_opening,
+                "p_combo": p_combo,
+                "pressure_penalty": pressure_penalty,
+                "safe_penalty": safe_penalty,
+                "pommel_gate": pommel_gate,
+                "shrug_gate": shrug_gate,
+                "stable_immolate_uncertainty": stable_immolate_uncertainty,
+                "unstable_immolate_uncertainty": unstable_immolate_uncertainty,
+            }
+        )
+    )
 
 
 def class_counts(cards: list[dict[str, Any]]) -> dict[str, int]:
@@ -657,6 +744,29 @@ def context_penalties(
                 values["act1_frontload_urgency"] += 6.0
         if profile_value(profile, "draw_supply") >= 20:
             values["draw_over_cashout"] += 5.0
+    draw_gate = draw_payoff_gate_penalty(
+        card=card,
+        obs=obs,
+        profile=profile,
+        deck_cards=deck_cards,
+    )
+    if draw_gate > 0:
+        values["draw_payoff_gate"] = draw_gate
+    aoe_uncertainty = aoe_cashout_uncertainty_penalty(
+        card=card,
+        obs=obs,
+        profile=profile,
+    )
+    if aoe_uncertainty > 0:
+        values["aoe_cashout_uncertainty"] = aoe_uncertainty
+    resource_gate = resource_window_pressure_gate_penalty(
+        card=card,
+        obs=obs,
+        profile=profile,
+        deck_cards=deck_cards,
+    )
+    if resource_gate > 0:
+        values["resource_window_pressure_gate"] = resource_gate
     generated_status = status_burden(card)
     if generated_status:
         status_penalty = generated_status * 5.0
@@ -705,6 +815,160 @@ def context_penalties(
         **active,
         "total_penalty": round(total, 3),
     }
+
+
+def draw_payoff_gate_penalty(
+    *,
+    card: dict[str, Any],
+    obs: dict[str, Any],
+    profile: dict[str, Any],
+    deck_cards: list[dict[str, Any]],
+) -> float:
+    """Discount draw/block-draw when current deck cannot cash it out.
+
+    This is a static residual repair for Pommel Strike / Shrug It Off style
+    false positives. It should move marginal draw cases into rollout review,
+    not decide that draw is bad.
+    """
+    if not is_draw(card) or is_energy(card):
+        return 0.0
+
+    cid = card_id(card)
+    act = int(obs.get("act") or 0)
+    floor = int(obs.get("floor") or 0)
+    payoff = payoff_quality(deck_cards, profile)
+    frontload = profile_value(profile, "frontload_supply")
+    block = profile_value(profile, "block_supply")
+    draw = profile_value(profile, "draw_supply")
+
+    penalty = 0.0
+    if payoff < 45:
+        penalty += 10.0
+    elif payoff < 60:
+        penalty += 5.0
+    if draw >= 20:
+        penalty += 6.0
+
+    if cid == "PommelStrike":
+        if payoff < 50:
+            penalty += 6.0
+        if frontload >= 65:
+            penalty += 8.0
+        if act == 1 and floor <= 2 and payoff < 55:
+            penalty += 4.0
+    elif cid == "ShrugItOff":
+        if act == 1 and floor <= 6 and frontload < 60:
+            penalty += 18.0
+        if block >= 50:
+            penalty += 6.0
+        if payoff < 50:
+            penalty += 4.0
+    elif cid == "Warcry":
+        penalty += 8.0
+    elif card_block(card) <= 0 and card_damage(card) <= 0:
+        penalty += 8.0
+
+    return round(min(max(penalty, 0.0), 42.0), 3)
+
+
+def aoe_cashout_uncertainty_penalty(
+    *,
+    card: dict[str, Any],
+    obs: dict[str, Any],
+    profile: dict[str, Any],
+) -> float:
+    """Mark AoE cashout as uncertain unless future pressure is decisive."""
+    if not (is_aoe_damage(card) or is_multi_enemy_control(card)):
+        return 0.0
+
+    cid = card_id(card)
+    act = int(obs.get("act") or 0)
+    floor = int(obs.get("floor") or 0)
+    current_hp = int(obs.get("current_hp") or obs.get("hp") or 0)
+    aoe_supply = profile_value(profile, "aoe_supply")
+    frontload = profile_value(profile, "frontload_supply")
+
+    penalty = 0.0
+    if aoe_supply >= 18:
+        penalty += 14.0
+    elif aoe_supply >= 10:
+        penalty += 8.0
+    if act == 1 and floor <= 3:
+        penalty += 10.0
+    if cid != "Immolate":
+        if act == 1 and floor <= 6:
+            penalty += 8.0
+        if cid == "ThunderClap":
+            penalty += 8.0
+    else:
+        if act == 1 and floor >= 7 and frontload >= 55:
+            penalty += 10.0
+        if current_hp and current_hp <= 12:
+            penalty *= 0.5
+        if (act >= 2 or floor >= 7) and aoe_supply < 10 and frontload < 55:
+            penalty *= 0.35
+
+    return round(min(max(penalty, 0.0), 32.0), 3)
+
+
+def resource_window_pressure_gate_penalty(
+    *,
+    card: dict[str, Any],
+    obs: dict[str, Any],
+    profile: dict[str, Any],
+    deck_cards: list[dict[str, Any]],
+) -> float:
+    """Penalize resource-window cashout when the deck is under pressure.
+
+    Rollout micro-probes showed Offering false positives where the card opened a
+    draw/energy window, but high-pressure continuations did not convert it into
+    combat wins, kill timing, or meaningful monster HP progress. This gate is a
+    diagnostic correction, not card truth.
+    """
+    cid = card_id(card)
+    if cid not in RESOURCE_WINDOW_CARDS:
+        return 0.0
+
+    act = int(obs.get("act") or 0)
+    floor = int(obs.get("floor") or 0)
+    current_hp = int(obs.get("current_hp") or obs.get("hp") or 0)
+    max_hp = int(obs.get("max_hp") or 0)
+    hp_ratio = current_hp / max(max_hp, 1) if current_hp and max_hp else 1.0
+    frontload = profile_value(profile, "frontload_supply")
+    block = profile_value(profile, "block_supply")
+    payoff = payoff_quality(deck_cards, profile)
+
+    pressure = 0.0
+    if cid == "Offering":
+        if current_hp and current_hp <= 12:
+            pressure += 30.0
+        elif current_hp and current_hp <= 24:
+            pressure += 22.0
+        elif current_hp and current_hp <= 36:
+            pressure += 12.0
+    elif current_hp and current_hp <= 18:
+        pressure += 10.0
+    if hp_ratio <= 0.35:
+        pressure += 8.0
+    if act >= 2 or floor >= 12:
+        pressure += 6.0
+    if frontload < 60:
+        pressure += min(16.0, (60.0 - frontload) * 0.35)
+    if block < 35:
+        pressure += min(14.0, (35.0 - block) * 0.40)
+    if payoff < 45:
+        pressure += 14.0
+    elif payoff < 60:
+        pressure += 8.0
+
+    if payoff >= 75 and current_hp > 35 and frontload >= 65:
+        pressure *= 0.45
+    elif payoff >= 65 and current_hp > 30:
+        pressure *= 0.65
+    if frontload >= 80 and block >= 55:
+        pressure *= 0.70
+
+    return round(min(max(pressure, 0.0), 55.0), 3)
 
 
 def payoff_quality(deck_cards: list[dict[str, Any]], profile: dict[str, Any]) -> float:
@@ -763,6 +1027,15 @@ def base_prior_value(candidate: dict[str, Any], card: dict[str, Any], profile: d
 def draw_context_multiplier(card: dict[str, Any], deck_cards: list[dict[str, Any]], profile: dict[str, Any]) -> float:
     cid = card_id(card)
     payoff = payoff_quality(deck_cards, profile)
+    if cid in RESOURCE_WINDOW_CARDS:
+        multiplier = 0.85
+        if payoff < 45:
+            multiplier *= 0.60
+        elif payoff < 60:
+            multiplier *= 0.78
+        elif payoff >= 75:
+            multiplier *= 1.08
+        return max(0.35, min(multiplier, 0.95))
     if cid == "PommelStrike":
         multiplier = 0.55
         if payoff < 50:
@@ -1069,6 +1342,14 @@ def candidate_notes(
         )
     if penalties.get("total_penalty", 0) > 0:
         notes.append(f"context_penalty={penalties['total_penalty']:.1f}")
+    if penalties.get("draw_payoff_gate", 0) > 0:
+        notes.append(f"draw_payoff_gate={penalties['draw_payoff_gate']:.1f}")
+    if penalties.get("aoe_cashout_uncertainty", 0) > 0:
+        notes.append(f"aoe_cashout_uncertainty={penalties['aoe_cashout_uncertainty']:.1f}")
+    if penalties.get("resource_window_pressure_gate", 0) > 0:
+        notes.append(
+            f"resource_window_pressure_gate={penalties['resource_window_pressure_gate']:.1f}"
+        )
     if warnings:
         notes.extend(warnings[:3])
     return notes
@@ -1182,6 +1463,12 @@ def needs_deeper_model(row: dict[str, Any]) -> bool:
     if penalties.get("nob_skill_risk", 0) > 0:
         return True
     if penalties.get("card_context_uncertainty", 0) >= 8:
+        return True
+    if penalties.get("draw_payoff_gate", 0) >= 8:
+        return True
+    if penalties.get("aoe_cashout_uncertainty", 0) >= 8:
+        return True
+    if penalties.get("resource_window_pressure_gate", 0) >= 12:
         return True
     if penalties.get("status_burden_risk", 0) >= 8:
         return True
