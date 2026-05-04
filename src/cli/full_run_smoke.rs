@@ -2561,6 +2561,9 @@ fn guarded_survival_query_action(
     report: &crate::bot::combat::CombatTurnPlanProbeReport,
     legal_by_key: &BTreeMap<String, usize>,
 ) -> Option<usize> {
+    if let Some(index) = guarded_boss_race_action(combat, report, legal_by_key) {
+        return Some(index);
+    }
     for (query, statuses) in [
         ("CanFullBlockThenMaxDamage", &["feasible"][..]),
         ("CanFullBlock", &["feasible"][..]),
@@ -2581,6 +2584,89 @@ fn guarded_survival_query_action(
         }
     }
     None
+}
+
+fn guarded_boss_race_action(
+    combat: &CombatState,
+    report: &crate::bot::combat::CombatTurnPlanProbeReport,
+    legal_by_key: &BTreeMap<String, usize>,
+) -> Option<usize> {
+    let hp = combat.entities.player.current_hp.max(1);
+    let race = sequence_for_plan(report, "MaxDamage")?;
+    let guard = guarded_partial_sequence(report);
+    let guard_outcome = guard.map(|sequence| &sequence.outcome);
+    let race_unblocked = race.outcome.projected_unblocked_damage;
+    if hp - race_unblocked <= 6 {
+        return None;
+    }
+
+    let guard_unblocked = guard_outcome
+        .map(|outcome| outcome.projected_unblocked_damage)
+        .unwrap_or_else(|| visible_unblocked_damage(combat));
+    let guard_damage = guard_outcome
+        .map(|outcome| outcome.damage_done)
+        .unwrap_or_default();
+    let extra_leak = (race_unblocked - guard_unblocked).max(0);
+    let damage_gain = race.outcome.damage_done - guard_damage;
+    let total_hp = total_alive_monster_hp(combat).max(1);
+    let race_damage_share_milli = race.outcome.damage_done * 1000 / total_hp;
+
+    let meaningful_boss_clock = race.outcome.enemy_deaths > 0
+        || race.outcome.damage_done >= 45
+        || damage_gain >= 30
+        || race_damage_share_milli >= 250;
+    let leak_is_acceptable = extra_leak <= 6 || race_unblocked <= 8 || guard_unblocked >= 16;
+    let not_pure_chip = damage_gain >= 20 || race.outcome.damage_done >= 35;
+
+    if meaningful_boss_clock && leak_is_acceptable && not_pure_chip {
+        return first_mapped_action(&race.action_keys, legal_by_key);
+    }
+    None
+}
+
+fn sequence_for_plan<'a>(
+    report: &'a crate::bot::combat::CombatTurnPlanProbeReport,
+    plan_name: &str,
+) -> Option<&'a crate::bot::combat::CombatPlanSequenceClass> {
+    let key = report
+        .plans
+        .iter()
+        .find(|plan| plan.plan_name == plan_name)?
+        .best_sequence_key
+        .as_ref()?;
+    report
+        .sequence_classes
+        .iter()
+        .find(|sequence| sequence.sequence_equivalence_key == *key)
+}
+
+fn sequence_for_query<'a>(
+    report: &'a crate::bot::combat::CombatTurnPlanProbeReport,
+    query_name: &str,
+    allowed_statuses: &[&str],
+) -> Option<&'a crate::bot::combat::CombatPlanSequenceClass> {
+    let query = report
+        .plan_queries
+        .iter()
+        .find(|query| query.query_name == query_name)?;
+    if !allowed_statuses
+        .iter()
+        .any(|status| query.status.as_str() == *status)
+    {
+        return None;
+    }
+    let key = query.best_sequence_key.as_ref()?;
+    report
+        .sequence_classes
+        .iter()
+        .find(|sequence| sequence.sequence_equivalence_key == *key)
+}
+
+fn guarded_partial_sequence(
+    report: &crate::bot::combat::CombatTurnPlanProbeReport,
+) -> Option<&crate::bot::combat::CombatPlanSequenceClass> {
+    sequence_for_query(report, "CanFullBlock", &["partial"])
+        .or_else(|| sequence_for_query(report, "CanFullBlockThenMaxDamage", &["partial"]))
 }
 
 fn guarded_direct_block_action(
@@ -5837,7 +5923,7 @@ mod tests {
         combat.zones.limbo.clear();
         combat.meta.is_boss_fight = true;
         combat.turn.energy = 3;
-        combat.entities.player.current_hp = 35;
+        combat.entities.player.current_hp = 18;
         combat.entities.player.max_hp = 80;
         combat.entities.player.block = 0;
         combat.zones.hand = vec![
@@ -5891,6 +5977,150 @@ mod tests {
                 })
             ),
             "expected Defend before Immolate under boss/ramp pressure, got {:?} from {:?}",
+            legal.get(index),
+            legal
+        );
+    }
+
+    #[test]
+    fn plan_query_v0_allows_boss_race_cashout_when_guard_line_still_leaks() {
+        use crate::semantics::combat::{
+            AttackSpec, AttackStep, DamageKind, MonsterMoveSpec, MoveStep, MoveTarget,
+        };
+
+        let mut run_state = RunState::new(46, 0, false, "Ironclad");
+        let mut combat = build_combat_state(&mut run_state, EncounterId::SmallSlimes);
+        combat.clear_pending_actions();
+        combat.zones.queued_cards.clear();
+        combat.zones.limbo.clear();
+        combat.meta.is_boss_fight = true;
+        combat.turn.energy = 3;
+        combat.entities.player.current_hp = 80;
+        combat.entities.player.max_hp = 80;
+        combat.entities.player.block = 0;
+        combat.zones.hand = vec![
+            crate::runtime::combat::CombatCard::new(CardId::Immolate, 12_001),
+            crate::runtime::combat::CombatCard::new(CardId::Defend, 12_002),
+            crate::runtime::combat::CombatCard::new(CardId::Strike, 12_003),
+        ];
+        for monster in combat.entities.monsters.iter_mut() {
+            monster.current_hp = 220;
+            monster.max_hp = 220;
+            monster.block = 0;
+            monster.is_dying = false;
+            let attack = AttackSpec {
+                base_damage: 32,
+                hits: 1,
+                damage_kind: DamageKind::Normal,
+            };
+            monster.set_planned_move_id(1);
+            monster.set_planned_visible_spec(Some(MonsterMoveSpec::Attack(attack.clone())));
+            monster.set_planned_steps(smallvec::smallvec![MoveStep::Attack(AttackStep {
+                target: MoveTarget::Player,
+                attack,
+            })]);
+        }
+
+        let ctx = EpisodeContext {
+            engine_state: EngineState::CombatPlayerTurn,
+            run_state,
+            combat_state: Some(combat),
+            stashed_event_combat: None,
+            forced_engine_ticks: 0,
+            combat_win_count: 0,
+        };
+        let combat = ctx.combat_state.as_ref().unwrap();
+        let incoming = visible_incoming_damage(combat);
+        let unblocked = visible_unblocked_damage(combat);
+        assert!(
+            guarded_survival_pressure(combat, incoming, unblocked, combat.entities.player.current_hp),
+            "test setup should trigger guarded pressure, incoming={incoming}, unblocked={unblocked}"
+        );
+        let legal = legal_actions(&ctx.engine_state, &ctx.run_state, &ctx.combat_state);
+        let index = choose_plan_query_action(&ctx, &legal)
+            .expect("plan-query should choose a guarded boss race action");
+
+        assert!(
+            matches!(
+                legal.get(index),
+                Some(ClientInput::PlayCard {
+                    card_index: 0,
+                    target: None
+                })
+            ),
+            "expected Immolate when guard line still leaks and HP buffer is high, got {:?} from {:?}",
+            legal.get(index),
+            legal
+        );
+    }
+
+    #[test]
+    fn plan_query_v0_allows_boss_race_cashout_over_zero_damage_full_block() {
+        use crate::semantics::combat::{
+            AttackSpec, AttackStep, DamageKind, MonsterMoveSpec, MoveStep, MoveTarget,
+        };
+
+        let mut run_state = RunState::new(47, 0, false, "Ironclad");
+        let mut combat = build_combat_state(&mut run_state, EncounterId::SmallSlimes);
+        combat.clear_pending_actions();
+        combat.zones.queued_cards.clear();
+        combat.zones.limbo.clear();
+        combat.meta.is_boss_fight = true;
+        combat.turn.energy = 3;
+        combat.entities.player.current_hp = 80;
+        combat.entities.player.max_hp = 80;
+        combat.entities.player.block = 0;
+        combat.zones.hand = vec![
+            crate::runtime::combat::CombatCard::new(CardId::Immolate, 13_001),
+            crate::runtime::combat::CombatCard::new(CardId::Defend, 13_002),
+            crate::runtime::combat::CombatCard::new(CardId::Defend, 13_003),
+        ];
+        for monster in combat.entities.monsters.iter_mut() {
+            monster.current_hp = 220;
+            monster.max_hp = 220;
+            monster.block = 0;
+            monster.is_dying = false;
+            let attack = AttackSpec {
+                base_damage: 5,
+                hits: 1,
+                damage_kind: DamageKind::Normal,
+            };
+            monster.set_planned_move_id(1);
+            monster.set_planned_visible_spec(Some(MonsterMoveSpec::Attack(attack.clone())));
+            monster.set_planned_steps(smallvec::smallvec![MoveStep::Attack(AttackStep {
+                target: MoveTarget::Player,
+                attack,
+            })]);
+        }
+
+        let ctx = EpisodeContext {
+            engine_state: EngineState::CombatPlayerTurn,
+            run_state,
+            combat_state: Some(combat),
+            stashed_event_combat: None,
+            forced_engine_ticks: 0,
+            combat_win_count: 0,
+        };
+        let combat = ctx.combat_state.as_ref().unwrap();
+        let incoming = visible_incoming_damage(combat);
+        let unblocked = visible_unblocked_damage(combat);
+        assert!(
+            guarded_survival_pressure(combat, incoming, unblocked, combat.entities.player.current_hp),
+            "test setup should trigger guarded pressure, incoming={incoming}, unblocked={unblocked}"
+        );
+        let legal = legal_actions(&ctx.engine_state, &ctx.run_state, &ctx.combat_state);
+        let index = choose_plan_query_action(&ctx, &legal)
+            .expect("plan-query should choose a boss race cashout action");
+
+        assert!(
+            matches!(
+                legal.get(index),
+                Some(ClientInput::PlayCard {
+                    card_index: 0,
+                    target: None
+                })
+            ),
+            "expected Immolate over zero-damage full block when HP buffer is high, got {:?} from {:?}",
             legal.get(index),
             legal
         );
