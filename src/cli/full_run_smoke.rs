@@ -2448,6 +2448,7 @@ fn choose_plan_query_action(ctx: &EpisodeContext, legal_actions: &[ClientInput])
     let hp = combat.entities.player.current_hp.max(1);
     let high_pressure = unblocked > 0 && (unblocked >= 8 || unblocked * 3 >= hp);
     let low_or_moderate_pressure = !high_pressure && (unblocked <= 6 || unblocked * 5 <= hp);
+    let guarded_pressure = guarded_survival_pressure(combat, incoming, unblocked, hp);
     let multi_enemy_pressure = combat
         .entities
         .monsters
@@ -2457,15 +2458,11 @@ fn choose_plan_query_action(ctx: &EpisodeContext, legal_actions: &[ClientInput])
         >= 2;
 
     if resource_window_opened_this_turn(combat) {
-        if high_pressure {
-            for (query, statuses) in [
-                ("CanFullBlockThenMaxDamage", &["feasible"][..]),
-                ("CanFullBlock", &["feasible"][..]),
-                ("CanFullBlockThenMaxDamage", &["partial"][..]),
-            ] {
-                if let Some(index) = mapped_query_action(&report, &legal_by_key, query, statuses) {
-                    return Some(index);
-                }
+        if guarded_pressure {
+            if let Some(index) =
+                guarded_survival_query_action(combat, legal_actions, &report, &legal_by_key)
+            {
+                return Some(index);
             }
         }
         if let Some(index) = resource_window_follow_through_action(&report, &legal_by_key, incoming)
@@ -2476,6 +2473,14 @@ fn choose_plan_query_action(ctx: &EpisodeContext, legal_actions: &[ClientInput])
 
     if !high_pressure || unblocked * 5 <= hp {
         if let Some(index) = resource_window_opener_action(combat, legal_actions, unblocked, hp) {
+            return Some(index);
+        }
+    }
+
+    if guarded_pressure {
+        if let Some(index) =
+            guarded_survival_query_action(combat, legal_actions, &report, &legal_by_key)
+        {
             return Some(index);
         }
     }
@@ -2491,6 +2496,10 @@ fn choose_plan_query_action(ctx: &EpisodeContext, legal_actions: &[ClientInput])
                 return Some(index);
             }
         }
+    }
+
+    if guarded_pressure {
+        return None;
     }
 
     if incoming > 0 && low_or_moderate_pressure {
@@ -2533,6 +2542,81 @@ fn choose_plan_query_action(ctx: &EpisodeContext, legal_actions: &[ClientInput])
     }
 
     None
+}
+
+fn guarded_survival_pressure(combat: &CombatState, incoming: i32, unblocked: i32, hp: i32) -> bool {
+    if incoming <= 0 || unblocked <= 0 {
+        return false;
+    }
+    let total_hp = total_alive_monster_hp(combat);
+    let boss_or_long_race =
+        combat.meta.is_boss_fight || (alive_monster_count(combat) == 1 && total_hp >= 120);
+    let severe_attack_window = incoming >= 24 || unblocked * 2 >= hp;
+    boss_or_long_race && (unblocked >= 8 || severe_attack_window)
+}
+
+fn guarded_survival_query_action(
+    combat: &CombatState,
+    legal_actions: &[ClientInput],
+    report: &crate::bot::combat::CombatTurnPlanProbeReport,
+    legal_by_key: &BTreeMap<String, usize>,
+) -> Option<usize> {
+    for (query, statuses) in [
+        ("CanFullBlockThenMaxDamage", &["feasible"][..]),
+        ("CanFullBlock", &["feasible"][..]),
+    ] {
+        if let Some(index) = mapped_query_action(report, legal_by_key, query, statuses) {
+            return Some(index);
+        }
+    }
+    if let Some(index) = guarded_direct_block_action(combat, legal_actions) {
+        return Some(index);
+    }
+    for (query, statuses) in [
+        ("CanFullBlock", &["partial"][..]),
+        ("CanFullBlockThenMaxDamage", &["partial"][..]),
+    ] {
+        if let Some(index) = mapped_query_action(report, legal_by_key, query, statuses) {
+            return Some(index);
+        }
+    }
+    None
+}
+
+fn guarded_direct_block_action(
+    combat: &CombatState,
+    legal_actions: &[ClientInput],
+) -> Option<usize> {
+    legal_actions
+        .iter()
+        .enumerate()
+        .filter_map(|(index, action)| {
+            let ClientInput::PlayCard { card_index, target } = action else {
+                return None;
+            };
+            if target.is_some() {
+                return None;
+            }
+            let card = combat.zones.hand.get(*card_index)?;
+            let def = crate::content::cards::get_card_definition(card.id);
+            let evaluated = crate::content::cards::evaluate_card_for_play(card, combat, *target);
+            let block = evaluated
+                .base_block_mut
+                .max(def.base_block + card.upgrades as i32 * def.upgrade_block);
+            if block <= 0 && !card_is_block_core(card.id) {
+                return None;
+            }
+            let cost = evaluated.get_cost().max(0) as i32;
+            let block_score = block.max(8);
+            let utility_bonus = match card.id {
+                CardId::ShrugItOff | CardId::TrueGrit | CardId::FlameBarrier => 30,
+                CardId::Impervious | CardId::PowerThrough => 20,
+                _ => 0,
+            };
+            Some((index, block_score * 100 - cost * 10 + utility_bonus))
+        })
+        .max_by_key(|(_, score)| *score)
+        .map(|(index, _)| index)
 }
 
 fn resource_window_opened_this_turn(combat: &CombatState) -> bool {
@@ -3002,6 +3086,16 @@ fn alive_monster_count(combat: &CombatState) -> usize {
         .iter()
         .filter(|monster| !monster.is_dying && !monster.is_escaped && !monster.half_dead)
         .count()
+}
+
+fn total_alive_monster_hp(combat: &CombatState) -> i32 {
+    combat
+        .entities
+        .monsters
+        .iter()
+        .filter(|monster| !monster.is_dying && !monster.is_escaped && !monster.half_dead)
+        .map(|monster| monster.current_hp.max(0) + monster.block.max(0))
+        .sum()
 }
 
 fn visible_unblocked_damage(combat: &CombatState) -> i32 {
@@ -5725,6 +5819,78 @@ mod tests {
                 })
             ),
             "expected Immolate first, got {:?} from {:?}",
+            legal.get(index),
+            legal
+        );
+    }
+
+    #[test]
+    fn plan_query_v0_guards_boss_ramp_pressure_before_aoe_cashout() {
+        use crate::semantics::combat::{
+            AttackSpec, AttackStep, DamageKind, MonsterMoveSpec, MoveStep, MoveTarget,
+        };
+
+        let mut run_state = RunState::new(45, 0, false, "Ironclad");
+        let mut combat = build_combat_state(&mut run_state, EncounterId::SmallSlimes);
+        combat.clear_pending_actions();
+        combat.zones.queued_cards.clear();
+        combat.zones.limbo.clear();
+        combat.meta.is_boss_fight = true;
+        combat.turn.energy = 3;
+        combat.entities.player.current_hp = 35;
+        combat.entities.player.max_hp = 80;
+        combat.entities.player.block = 0;
+        combat.zones.hand = vec![
+            crate::runtime::combat::CombatCard::new(CardId::Immolate, 11_001),
+            crate::runtime::combat::CombatCard::new(CardId::Defend, 11_002),
+            crate::runtime::combat::CombatCard::new(CardId::Strike, 11_003),
+        ];
+        for monster in combat.entities.monsters.iter_mut() {
+            monster.current_hp = 220;
+            monster.max_hp = 220;
+            monster.block = 0;
+            monster.is_dying = false;
+            let attack = AttackSpec {
+                base_damage: 32,
+                hits: 1,
+                damage_kind: DamageKind::Normal,
+            };
+            monster.set_planned_move_id(1);
+            monster.set_planned_visible_spec(Some(MonsterMoveSpec::Attack(attack.clone())));
+            monster.set_planned_steps(smallvec::smallvec![MoveStep::Attack(AttackStep {
+                target: MoveTarget::Player,
+                attack,
+            })]);
+        }
+
+        let ctx = EpisodeContext {
+            engine_state: EngineState::CombatPlayerTurn,
+            run_state,
+            combat_state: Some(combat),
+            stashed_event_combat: None,
+            forced_engine_ticks: 0,
+            combat_win_count: 0,
+        };
+        let combat = ctx.combat_state.as_ref().unwrap();
+        let incoming = visible_incoming_damage(combat);
+        let unblocked = visible_unblocked_damage(combat);
+        assert!(
+            guarded_survival_pressure(combat, incoming, unblocked, combat.entities.player.current_hp),
+            "test setup should trigger guarded pressure, incoming={incoming}, unblocked={unblocked}"
+        );
+        let legal = legal_actions(&ctx.engine_state, &ctx.run_state, &ctx.combat_state);
+        let index = choose_plan_query_action(&ctx, &legal)
+            .expect("plan-query should still choose a guarded survival action");
+
+        assert!(
+            matches!(
+                legal.get(index),
+                Some(ClientInput::PlayCard {
+                    card_index: 1,
+                    target: None
+                })
+            ),
+            "expected Defend before Immolate under boss/ramp pressure, got {:?} from {:?}",
             legal.get(index),
             legal
         );

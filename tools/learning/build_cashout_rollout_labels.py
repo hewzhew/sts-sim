@@ -61,6 +61,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--rollouts-per-candidate", type=int, default=8)
     parser.add_argument("--max-cases", type=int, default=30)
     parser.add_argument("--per-policy-limit", type=int, default=30)
+    parser.add_argument(
+        "--case-ids",
+        default="",
+        help="Optional comma-separated case ids to keep after normal policy/status selection.",
+    )
     parser.add_argument("--max-branches", type=int, default=8)
     parser.add_argument("--ascension", type=int, default=0)
     parser.add_argument("--class", dest="player_class", default="ironclad")
@@ -95,6 +100,7 @@ def parse_int_csv(text: str) -> list[int]:
 def iter_selected_cases(args: argparse.Namespace, report: dict[str, Any]) -> list[dict[str, Any]]:
     wanted_policies = selected_policies(report, args.policies)
     wanted_statuses = set(parse_csv(args.statuses))
+    wanted_case_ids = set(parse_csv(args.case_ids))
     if not wanted_statuses:
         raise SystemExit("--statuses must not be empty")
     cases: list[dict[str, Any]] = []
@@ -126,6 +132,9 @@ def iter_selected_cases(args: argparse.Namespace, report: dict[str, Any]) -> lis
                     "source_case": case,
                 }
             )
+            if wanted_case_ids and cases[-1]["case_id"] not in wanted_case_ids:
+                cases.pop()
+                continue
             per_policy_counts[policy_name] += 1
             if len(cases) >= args.max_cases:
                 return cases
