@@ -24,7 +24,7 @@ from verify_cashout_counterfactuals import (
 )
 
 
-REPORT_VERSION = "cashout_rollout_labeler_v1_1"
+REPORT_VERSION = "cashout_rollout_labeler_v1_2"
 LABEL_MODE = "policy_horizon_paired_fixed_trace_replay"
 GAME_RNG_MODE = "fixed_trace_replay"
 
@@ -375,6 +375,7 @@ def aggregate_case_label(case: dict[str, Any], observations: list[dict[str, Any]
     else:
         label = "inconclusive"
 
+    diagnostics = label_diagnostics(label=label, successful=successful, source=case["source_case"])
     strong = label == "robust_confirmed"
     source = compact_source_case(case["source_case"])
     return {
@@ -383,16 +384,126 @@ def aggregate_case_label(case: dict[str, Any], observations: list[dict[str, Any]
         "label_mode": LABEL_MODE,
         "game_rng_mode": GAME_RNG_MODE,
         "label_status": label,
+        "label_substatus": diagnostics["label_substatus"],
+        "diagnostic_tags": diagnostics["diagnostic_tags"],
         "strong_training_signal": strong,
         "suggested_weight": 1.0 if strong else (0.35 if label == "requires_cashout_policy" else 0.0),
         "source_case": source,
         "observations": observations,
         "verdict_counts": dict(sorted(Counter(verdicts).items())),
-        "notes": label_notes(label),
+        "policy_verdict_counts": diagnostics["policy_verdict_counts"],
+        "horizon_verdict_counts": diagnostics["horizon_verdict_counts"],
+        "notes": label_notes(label, diagnostics["label_substatus"]),
     }
 
 
-def label_notes(label: str) -> list[str]:
+def verdict(row: dict[str, Any]) -> str:
+    return str((row.get("classification") or {}).get("verdict") or "inconclusive")
+
+
+def label_diagnostics(
+    *,
+    label: str,
+    successful: list[dict[str, Any]],
+    source: dict[str, Any],
+) -> dict[str, Any]:
+    by_policy: dict[str, Counter[str]] = defaultdict(Counter)
+    by_horizon: dict[str, Counter[str]] = defaultdict(Counter)
+    for row in successful:
+        by_policy[str(row.get("continuation_policy") or "unknown")][verdict(row)] += 1
+        by_horizon[str(row.get("horizon") or "unknown")][verdict(row)] += 1
+
+    policy_verdict_sets = {
+        policy: {item for item, count in counts.items() if count > 0 and item != "inconclusive"}
+        for policy, counts in by_policy.items()
+    }
+    horizon_verdict_sets = {
+        horizon: {item for item, count in counts.items() if count > 0 and item != "inconclusive"}
+        for horizon, counts in by_horizon.items()
+    }
+    tags: list[str] = []
+
+    best = source.get("best_by_cashout") or {}
+    best_score = float(best.get("cashout_score") or 0.0)
+    best_grade = str(best.get("cashout_grade") or "")
+    verdict_counts = Counter(verdict(row) for row in successful)
+    confirmed = verdict_counts.get("rollout_confirmed", 0)
+    refuted = verdict_counts.get("rollout_refuted", 0)
+    equivalent = verdict_counts.get("rollout_equivalent", 0)
+
+    if best_score >= 60 or best_grade in {"medium", "high"}:
+        tags.append("static_high_cashout")
+    elif best_score < 30:
+        tags.append("static_low_or_speculative_cashout")
+    if equivalent >= max(confirmed, refuted, 1):
+        tags.append("many_equivalent_verdicts")
+
+    policies_with_confirm = {
+        policy for policy, counts in by_policy.items() if counts.get("rollout_confirmed", 0) > 0
+    }
+    policies_with_refute = {
+        policy for policy, counts in by_policy.items() if counts.get("rollout_refuted", 0) > 0
+    }
+    horizons_with_confirm = {
+        horizon for horizon, counts in by_horizon.items() if counts.get("rollout_confirmed", 0) > 0
+    }
+    horizons_with_refute = {
+        horizon for horizon, counts in by_horizon.items() if counts.get("rollout_refuted", 0) > 0
+    }
+
+    policy_conflict = bool(policies_with_confirm and policies_with_refute)
+    if len(policies_with_confirm | policies_with_refute) >= 2 and policy_conflict:
+        tags.append("continuation_policy_conflict")
+    if any(
+        {"rollout_confirmed", "rollout_refuted"}.issubset(items)
+        for items in policy_verdict_sets.values()
+    ) or (len(horizons_with_confirm | horizons_with_refute) >= 2 and horizons_with_confirm and horizons_with_refute):
+        tags.append("horizon_sensitive")
+    if label in {"rollout_unstable", "rollout_refuted"} and best_score >= 60 and refuted > 0:
+        tags.append("static_high_but_policy_unrealized")
+
+    if label == "rollout_unstable":
+        if best_score < 30 and equivalent >= 1:
+            substatus = "weak_margin_equivalent"
+        elif "continuation_policy_conflict" in tags:
+            substatus = "continuation_policy_conflict"
+        elif "horizon_sensitive" in tags:
+            substatus = "horizon_sensitive"
+        elif "static_high_but_policy_unrealized" in tags:
+            substatus = "static_high_but_policy_unrealized"
+        else:
+            substatus = "mixed_unstable"
+    elif label == "rollout_equivalent":
+        substatus = "weak_margin_equivalent"
+    elif label == "rollout_refuted" and best_score >= 60:
+        substatus = "static_high_but_policy_unrealized"
+        if substatus not in tags:
+            tags.append(substatus)
+    else:
+        substatus = label
+
+    if substatus not in tags and substatus not in {
+        "robust_confirmed",
+        "rollout_confirmed",
+        "requires_cashout_policy",
+        "rollout_failed",
+        "inconclusive",
+    }:
+        tags.append(substatus)
+
+    return {
+        "label_substatus": substatus,
+        "diagnostic_tags": sorted(set(tags)),
+        "policy_verdict_counts": {
+            key: dict(sorted(counter.items())) for key, counter in sorted(by_policy.items())
+        },
+        "horizon_verdict_counts": {
+            key: dict(sorted(counter.items())) for key, counter in sorted(by_horizon.items())
+        },
+    }
+
+
+def label_notes(label: str, substatus: str = "") -> list[str]:
     if label == "robust_confirmed":
         return [
             "cashout-best beat chosen across multiple continuation policy/horizon settings",
@@ -404,6 +515,14 @@ def label_notes(label: str) -> list[str]:
             "use as a diagnostic for better continuation, not as a policy-independent card label",
         ]
     if label == "rollout_unstable":
+        if substatus == "continuation_policy_conflict":
+            return ["continuation policies disagreed; diagnose cashout utilization before training"]
+        if substatus == "horizon_sensitive":
+            return ["short and long horizons disagreed; treat as horizon-sensitive, not a hard label"]
+        if substatus == "weak_margin_equivalent":
+            return ["effect margins are weak or mostly equivalent; use for calibration, not preference"]
+        if substatus == "static_high_but_policy_unrealized":
+            return ["static cashout is high but at least one continuation cannot realize it"]
         return ["continuation policies or horizons disagreed; do not train as a hard preference"]
     if label == "rollout_refuted":
         return ["paired continuation preferred the source chosen action over static cashout-best"]
@@ -414,6 +533,7 @@ def label_notes(label: str) -> list[str]:
 
 def summarize(labels: list[dict[str, Any]], candidate_rows: list[dict[str, Any]], edges: list[dict[str, Any]]) -> dict[str, Any]:
     label_counts = Counter(str(label.get("label_status") or "unknown") for label in labels)
+    substatus_counts = Counter(str(label.get("label_substatus") or "unknown") for label in labels)
     source_counts: dict[str, Counter[str]] = defaultdict(Counter)
     policy_horizon_counts: dict[str, Counter[str]] = defaultdict(Counter)
     for label in labels:
@@ -431,6 +551,7 @@ def summarize(labels: list[dict[str, Any]], candidate_rows: list[dict[str, Any]]
     return {
         "case_count": len(labels),
         "label_status_counts": dict(sorted(label_counts.items())),
+        "label_substatus_counts": dict(sorted(substatus_counts.items())),
         "source_status_label_counts": {
             key: dict(sorted(counter.items())) for key, counter in sorted(source_counts.items())
         },
@@ -487,6 +608,7 @@ def write_markdown(path: Path, report: dict[str, Any]) -> None:
         "",
         f"- cases: `{report['summary']['case_count']}`",
         f"- label counts: `{report['summary']['label_status_counts']}`",
+        f"- label substatus counts: `{report['summary'].get('label_substatus_counts', {})}`",
         f"- strong labels: `{report['summary']['strong_training_signal_count']}`",
         f"- requires cashout policy: `{report['summary']['requires_cashout_policy_count']}`",
         f"- attribution rows: `{(report['summary'].get('candidate_attribution_summary') or {}).get('row_count', 0)}`",
@@ -506,8 +628,9 @@ def write_markdown(path: Path, report: dict[str, Any]) -> None:
             [
                 f"### `{label.get('case_id')}`",
                 "",
-                "- `{status}` source `{source_policy}` seed `{seed}` step `{step}` floor `{floor}`: `{chosen}` -> cashout `{best}` gap `{gap:.1f}`".format(
+                "- `{status}` / `{substatus}` source `{source_policy}` seed `{seed}` step `{step}` floor `{floor}`: `{chosen}` -> cashout `{best}` gap `{gap:.1f}`".format(
                     status=label.get("label_status"),
+                    substatus=label.get("label_substatus"),
                     source_policy=label.get("source_policy"),
                     seed=source.get("seed"),
                     step=source.get("step_index"),
@@ -517,6 +640,7 @@ def write_markdown(path: Path, report: dict[str, Any]) -> None:
                     gap=float(source.get("cashout_gap") or 0.0),
                 ),
                 f"- verdict counts: `{label.get('verdict_counts')}`",
+                f"- diagnostic tags: `{label.get('diagnostic_tags', [])}`",
                 f"- suggested weight: `{label.get('suggested_weight')}`",
                 "",
             ]

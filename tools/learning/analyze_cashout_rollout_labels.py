@@ -65,6 +65,7 @@ def fmt_float(value: float, digits: int = 2) -> str:
 class BucketStats:
     total: int = 0
     statuses: Counter[str] = field(default_factory=Counter)
+    substatuses: Counter[str] = field(default_factory=Counter)
     source_statuses: Counter[str] = field(default_factory=Counter)
     source_policies: Counter[str] = field(default_factory=Counter)
     chosen_cards: Counter[str] = field(default_factory=Counter)
@@ -78,6 +79,7 @@ class BucketStats:
         best = source.get("best_by_cashout") or {}
         self.total += 1
         self.statuses[str(label.get("label_status") or "unknown")] += 1
+        self.substatuses[str(label.get("label_substatus") or "unknown")] += 1
         self.source_statuses[str(source.get("calibration_status") or "uncalibrated")] += 1
         self.source_policies[str(label.get("source_policy") or "unknown")] += 1
         self.chosen_cards[card_label(chosen)] += 1
@@ -124,6 +126,7 @@ def aggregate_labels(labels: list[dict[str, Any]]) -> dict[str, Any]:
     by_dominant: dict[str, BucketStats] = defaultdict(BucketStats)
     by_pair: dict[str, BucketStats] = defaultdict(BucketStats)
     by_status: dict[str, BucketStats] = defaultdict(BucketStats)
+    by_substatus: dict[str, BucketStats] = defaultdict(BucketStats)
 
     for label in labels:
         by_best[best_card(label)].add_label(label)
@@ -132,6 +135,7 @@ def aggregate_labels(labels: list[dict[str, Any]]) -> dict[str, Any]:
         by_dominant[dominant_cashout(label)].add_label(label)
         by_pair[f"{chosen_card(label)} -> {best_card(label)}"].add_label(label)
         by_status[str(label.get("label_status") or "unknown")].add_label(label)
+        by_substatus[str(label.get("label_substatus") or "unknown")].add_label(label)
 
     return {
         "by_best_card": bucket_table(by_best),
@@ -140,6 +144,7 @@ def aggregate_labels(labels: list[dict[str, Any]]) -> dict[str, Any]:
         "by_dominant_cashout": bucket_table(by_dominant),
         "by_chosen_to_best_pair": bucket_table(by_pair),
         "by_label_status": bucket_table(by_status),
+        "by_label_substatus": bucket_table(by_substatus),
     }
 
 
@@ -151,6 +156,7 @@ def bucket_table(buckets: dict[str, BucketStats]) -> list[dict[str, Any]]:
                 "name": name,
                 "total": stats.total,
                 "statuses": dict(sorted(stats.statuses.items())),
+                "substatuses": dict(sorted(stats.substatuses.items())),
                 "robust_confirmed": stats.statuses.get("robust_confirmed", 0),
                 "requires_cashout_policy": stats.statuses.get("requires_cashout_policy", 0),
                 "refuted": stats.statuses.get("rollout_refuted", 0),
@@ -236,6 +242,8 @@ def label_summary(label: dict[str, Any]) -> dict[str, Any]:
     return {
         "case_id": label.get("case_id"),
         "label_status": label.get("label_status"),
+        "label_substatus": label.get("label_substatus"),
+        "diagnostic_tags": label.get("diagnostic_tags") or [],
         "source_policy": label.get("source_policy"),
         "seed": source.get("seed"),
         "step_index": source.get("step_index"),
@@ -246,6 +254,8 @@ def label_summary(label: dict[str, Any]) -> dict[str, Any]:
         "dominant_cashout": dominant_cashout(label),
         "cashout_gap": float(source.get("cashout_gap") or 0.0),
         "verdict_counts": label.get("verdict_counts") or {},
+        "policy_verdict_counts": label.get("policy_verdict_counts") or {},
+        "horizon_verdict_counts": label.get("horizon_verdict_counts") or {},
         "reason": label_reason(label),
     }
 
@@ -325,16 +335,25 @@ def outcome_table(buckets: dict[str, list[dict[str, Any]]]) -> list[dict[str, An
 def recommendations(analysis: dict[str, Any]) -> list[str]:
     summary = analysis.get("rollout_summary") or {}
     labels = summary.get("label_status_counts") or {}
+    substatuses = summary.get("label_substatus_counts") or {}
     robust = int(labels.get("robust_confirmed", 0))
     refuted = int(labels.get("rollout_refuted", 0))
     unstable = int(labels.get("rollout_unstable", 0))
     equivalent = int(labels.get("rollout_equivalent", 0))
+    policy_conflict = int(substatuses.get("continuation_policy_conflict", 0))
+    horizon_sensitive = int(substatuses.get("horizon_sensitive", 0))
+    weak_margin = int(substatuses.get("weak_margin_equivalent", 0))
+    static_unrealized = int(substatuses.get("static_high_but_policy_unrealized", 0))
     total = int(summary.get("case_count") or sum(int(v) for v in labels.values()))
     out = []
 
-    if refuted + unstable > robust:
+    if refuted + static_unrealized > robust:
         out.append(
-            "修 cashout 静态模型优先：refuted+unstable 明显多于 robust_confirmed，静态 cashout 仍在系统性过度乐观。"
+            "优先修静态/兑现模型：refuted 或 static_high_but_policy_unrealized 仍多于 robust_confirmed。"
+        )
+    elif policy_conflict or horizon_sensitive:
+        out.append(
+            "不要继续用静态 gate 硬修：主要剩余风险来自 continuation_policy_conflict / horizon_sensitive。"
         )
     if robust < 20:
         out.append(
@@ -347,6 +366,14 @@ def recommendations(analysis: dict[str, Any]) -> list[str]:
     if equivalent > 0:
         out.append(
             "保留 equivalent 为校准样本：这些 case 可以帮助设置 margin/不确定性，不应转成偏好标签。"
+        )
+    if weak_margin:
+        out.append(
+            "weak_margin_equivalent 应作为不确定性/等价类样本，不应进入强偏好训练。"
+        )
+    if policy_conflict:
+        out.append(
+            "continuation_policy_conflict 需要比较后续战斗策略，而不是直接判定牌好坏。"
         )
     policy_rows = analysis.get("observation_aggregates", {}).get("by_policy") or []
     plan_row = next((row for row in policy_rows if row.get("name") == "plan_query_v0"), None)
@@ -422,6 +449,7 @@ def write_markdown(path: Path, analysis: dict[str, Any], top_n: int) -> None:
         f"- source generated: `{analysis.get('source_generated_at_utc')}`",
         f"- cases: `{summary.get('case_count')}`",
         f"- label counts: `{summary.get('label_status_counts')}`",
+        f"- label substatus counts: `{summary.get('label_substatus_counts')}`",
         f"- candidate outcomes: `{summary.get('candidate_outcome_row_count')}`",
         f"- pairwise labels: `{summary.get('pairwise_label_count')}`",
         "",
@@ -442,6 +470,21 @@ def write_markdown(path: Path, analysis: dict[str, Any], top_n: int) -> None:
                 ("bad static %", "bad_static_rate"),
                 ("avg gap", "avg_cashout_gap"),
                 ("kinds", "top_cashout_kinds"),
+            ],
+            limit=top_n,
+        )
+    )
+    lines.extend(["", "## Label Substatus", ""])
+    lines.extend(
+        md_table(
+            analysis["label_aggregates"]["by_label_substatus"],
+            [
+                ("substatus", "name"),
+                ("n", "total"),
+                ("statuses", "statuses"),
+                ("confirmed %", "confirmed_rate"),
+                ("bad static %", "bad_static_rate"),
+                ("best cards", "top_best_cards"),
             ],
             limit=top_n,
         )
@@ -501,6 +544,7 @@ def write_markdown(path: Path, analysis: dict[str, Any], top_n: int) -> None:
                 ("best", "best"),
                 ("class", "primary_class"),
                 ("cashout", "dominant_cashout"),
+                ("substatus", "label_substatus"),
                 ("gap", "cashout_gap"),
                 ("verdicts", "verdict_counts"),
             ],
@@ -516,6 +560,7 @@ def write_markdown(path: Path, analysis: dict[str, Any], top_n: int) -> None:
                 ("best", "best"),
                 ("class", "primary_class"),
                 ("cashout", "dominant_cashout"),
+                ("substatus", "label_substatus"),
                 ("gap", "cashout_gap"),
                 ("verdicts", "verdict_counts"),
             ],
@@ -531,6 +576,7 @@ def write_markdown(path: Path, analysis: dict[str, Any], top_n: int) -> None:
                 ("best", "best"),
                 ("class", "primary_class"),
                 ("cashout", "dominant_cashout"),
+                ("substatus", "label_substatus"),
                 ("gap", "cashout_gap"),
                 ("verdicts", "verdict_counts"),
             ],
@@ -547,6 +593,7 @@ def write_markdown(path: Path, analysis: dict[str, Any], top_n: int) -> None:
                 ("best", "best"),
                 ("class", "primary_class"),
                 ("cashout", "dominant_cashout"),
+                ("substatus", "label_substatus"),
                 ("gap", "cashout_gap"),
                 ("verdicts", "verdict_counts"),
             ],

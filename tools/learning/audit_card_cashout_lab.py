@@ -13,8 +13,9 @@ from typing import Any
 from combat_rl_common import REPO_ROOT, write_json
 
 
-REPORT_VERSION = "card_cashout_lab_v0_8"
-SCORE_KIND = "heuristic_cashout_v0_8"
+REPORT_VERSION = "card_cashout_lab_v0_10"
+SCORE_KIND = "heuristic_cashout_v0_10"
+MIN_ABSOLUTE_CASHOUT_FOR_REGRET = 20.0
 
 PLAN_FIELDS = (
     "frontload_delta",
@@ -53,6 +54,8 @@ STATUS_BURDEN_CARDS = {
 STATUS_PAYOFF_CARDS = {"Evolve", "FireBreathing", "MedKit"}
 ENERGY_CARDS = {"Offering", "SeeingRed", "Bloodletting", "Dropkick", "Sentinel"}
 RESOURCE_WINDOW_CARDS = {"Offering", "SeeingRed", "Bloodletting"}
+VULNERABLE_SOURCE_CARDS = {"Bash", "Uppercut", "Shockwave", "ThunderClap", "Trip"}
+CORRUPTION_PAYOFF_CARDS = {"FeelNoPain", "DarkEmbrace", "Barricade", "BodySlam", "Juggernaut"}
 MULTI_ENEMY_CONTROL_CARDS = {"Shockwave", "ThunderClap"}
 AOE_DAMAGE_CARDS = {"Immolate", "Cleave", "Whirlwind", "Reaper"}
 MULTI_HIT_NOT_AOE_CARDS = {"TwinStrike", "SwordBoomerang", "Pummel"}
@@ -472,6 +475,75 @@ def self_test() -> None:
         raise SystemExit("Twin Strike is multi-hit, not AoE")
     if not is_aoe_damage({"card_id": "Cleave", "multi_damage": True, "base_damage": 8}):
         raise SystemExit("expected Cleave to be treated as AoE damage")
+    starterish_deck = [
+        *[{"card_id": "Strike", "base_damage": 6, "card_type_id": 1} for _ in range(5)],
+        *[{"card_id": "Defend", "base_block": 5, "card_type_id": 2} for _ in range(4)],
+        {"card_id": "Bash", "base_damage": 8, "applies_vulnerable": True, "card_type_id": 1},
+        {"card_id": "Flex", "scaling_piece": True, "card_type_id": 2},
+    ]
+    corruption_gate = corruption_cashout_gate_penalty(
+        card={"card_id": "Corruption", "cost": 3, "scaling_piece": True, "card_type_id": 3},
+        obs={"act": 1, "floor": 6, "current_hp": 40, "max_hp": 80},
+        profile={"frontload_supply": 55, "block_supply": 25, "draw_supply": 0},
+        deck_cards=starterish_deck,
+    )
+    if corruption_gate < 30:
+        raise SystemExit(f"expected Corruption prerequisite gate, got {corruption_gate}")
+    dropkick_gate = dropkick_vulnerable_gate_penalty(
+        card={
+            "card_id": "Dropkick",
+            "draws_cards": True,
+            "gains_energy": True,
+            "base_damage": 5,
+            "card_type_id": 1,
+        },
+        obs={"act": 1, "floor": 6, "current_hp": 12, "max_hp": 80},
+        profile={"frontload_supply": 54, "draw_supply": 0},
+        deck_cards=starterish_deck,
+    )
+    if dropkick_gate < 30:
+        raise SystemExit(f"expected Dropkick vulnerable gate, got {dropkick_gate}")
+    searing_gate = buildaround_upgrade_gate_penalty(
+        card={"card_id": "SearingBlow", "upgrades": 0, "base_damage": 12, "card_type_id": 1},
+        obs={"act": 1, "floor": 6},
+        profile={"frontload_supply": 62, "starter_basic_burden": 90},
+    )
+    if searing_gate < 30:
+        raise SystemExit(f"expected Searing Blow upgrade gate, got {searing_gate}")
+    spot_gate = spot_weakness_window_gate_penalty(
+        card={"card_id": "SpotWeakness", "scaling_piece": True, "card_type_id": 2},
+        obs={"act": 2, "floor": 16},
+        profile={"frontload_supply": 80, "block_supply": 25, "draw_supply": 10},
+        deck_cards=starterish_deck,
+    )
+    if spot_gate < 20:
+        raise SystemExit(f"expected Spot Weakness attack-window gate, got {spot_gate}")
+    exhume_gate = exhume_target_gate_penalty(
+        card={"card_id": "Exhume", "card_type_id": 2},
+        deck_cards=starterish_deck,
+        profile={"exhaust_supply": 0},
+    )
+    if exhume_gate < 30:
+        raise SystemExit(f"expected Exhume target gate, got {exhume_gate}")
+    clash_gate = clash_playability_gate_penalty(
+        card={"card_id": "Clash", "base_damage": 14, "card_type_id": 1},
+        deck_cards=starterish_deck,
+        profile={"draw_supply": 0, "starter_basic_burden": 90},
+    )
+    if clash_gate < 20:
+        raise SystemExit(f"expected Clash playability gate, got {clash_gate}")
+    rampage_gate = rampage_repeat_gate_penalty(
+        card={"card_id": "Rampage", "base_damage": 8, "card_type_id": 1},
+        profile={"frontload_supply": 52, "draw_supply": 0, "aoe_supply": 0},
+    )
+    if rampage_gate < 12:
+        raise SystemExit(f"expected Rampage repeat gate, got {rampage_gate}")
+    reaper_gate = reaper_strength_gate_penalty(
+        card={"card_id": "Reaper", "base_damage": 4, "aoe": True, "card_type_id": 1},
+        profile={"frontload_supply": 80, "block_supply": 31, "scaling_supply": 0, "aoe_supply": 36},
+    )
+    if reaper_gate < 20:
+        raise SystemExit(f"expected Reaper strength gate, got {reaper_gate}")
     print(
         json.dumps(
             {
@@ -672,6 +744,25 @@ def exhaust_outlet_count(deck_cards: list[dict[str, Any]]) -> int:
     return sum(1 for card in deck_cards if is_exhaust_outlet(card))
 
 
+def deck_card_count(deck_cards: list[dict[str, Any]], ids: set[str]) -> int:
+    return sum(1 for card in deck_cards if card_id(card) in ids)
+
+
+def deck_type_count(deck_cards: list[dict[str, Any]], card_type_id: int) -> int:
+    return sum(1 for card in deck_cards if int(card.get("card_type_id") or 0) == card_type_id)
+
+
+def vulnerable_source_count(deck_cards: list[dict[str, Any]]) -> int:
+    return deck_card_count(deck_cards, VULNERABLE_SOURCE_CARDS)
+
+
+def card_upgrades(card: dict[str, Any]) -> int:
+    try:
+        return max(int(card.get("upgrades") or 0), 0)
+    except (TypeError, ValueError):
+        return 0
+
+
 def context_penalties(
     *,
     card: dict[str, Any],
@@ -767,6 +858,49 @@ def context_penalties(
     )
     if resource_gate > 0:
         values["resource_window_pressure_gate"] = resource_gate
+    corruption_gate = corruption_cashout_gate_penalty(
+        card=card,
+        obs=obs,
+        profile=profile,
+        deck_cards=deck_cards,
+    )
+    if corruption_gate > 0:
+        values["corruption_cashout_gate"] = corruption_gate
+    dropkick_gate = dropkick_vulnerable_gate_penalty(
+        card=card,
+        obs=obs,
+        profile=profile,
+        deck_cards=deck_cards,
+    )
+    if dropkick_gate > 0:
+        values["dropkick_vulnerable_gate"] = dropkick_gate
+    buildaround_gate = buildaround_upgrade_gate_penalty(
+        card=card,
+        obs=obs,
+        profile=profile,
+    )
+    if buildaround_gate > 0:
+        values["buildaround_upgrade_gate"] = buildaround_gate
+    spot_gate = spot_weakness_window_gate_penalty(
+        card=card,
+        obs=obs,
+        profile=profile,
+        deck_cards=deck_cards,
+    )
+    if spot_gate > 0:
+        values["spot_weakness_window_gate"] = spot_gate
+    exhume_gate = exhume_target_gate_penalty(card=card, deck_cards=deck_cards, profile=profile)
+    if exhume_gate > 0:
+        values["exhume_target_gate"] = exhume_gate
+    clash_gate = clash_playability_gate_penalty(card=card, deck_cards=deck_cards, profile=profile)
+    if clash_gate > 0:
+        values["clash_playability_gate"] = clash_gate
+    rampage_gate = rampage_repeat_gate_penalty(card=card, profile=profile)
+    if rampage_gate > 0:
+        values["rampage_repeat_gate"] = rampage_gate
+    reaper_gate = reaper_strength_gate_penalty(card=card, profile=profile)
+    if reaper_gate > 0:
+        values["reaper_strength_gate"] = reaper_gate
     generated_status = status_burden(card)
     if generated_status:
         status_penalty = generated_status * 5.0
@@ -969,6 +1103,282 @@ def resource_window_pressure_gate_penalty(
         pressure *= 0.70
 
     return round(min(max(pressure, 0.0), 55.0), 3)
+
+
+def corruption_cashout_gate_penalty(
+    *,
+    card: dict[str, Any],
+    obs: dict[str, Any],
+    profile: dict[str, Any],
+    deck_cards: list[dict[str, Any]],
+) -> float:
+    """Require actual skill/payoff density before Corruption gets scaling credit."""
+    if card_id(card) != "Corruption":
+        return 0.0
+
+    act = int(obs.get("act") or 0)
+    floor = int(obs.get("floor") or 0)
+    skills = deck_type_count(deck_cards, 2)
+    payoff_cards = deck_card_count(deck_cards, CORRUPTION_PAYOFF_CARDS)
+    outlet_count = exhaust_outlet_count(deck_cards)
+    draw = profile_value(profile, "draw_supply")
+    block = profile_value(profile, "block_supply")
+    frontload = profile_value(profile, "frontload_supply")
+
+    penalty = 0.0
+    if skills <= 4:
+        penalty += 26.0
+    elif skills <= 6:
+        penalty += 18.0
+    elif skills <= 8:
+        penalty += 8.0
+    if payoff_cards <= 0:
+        penalty += 10.0
+    elif payoff_cards == 1 and skills <= 6:
+        penalty += 4.0
+    if draw < 18:
+        penalty += 8.0
+    if block < 35 and skills <= 6:
+        penalty += 6.0
+    if act == 1 and floor <= 7:
+        penalty += 8.0
+    if frontload < 65:
+        penalty += 5.0
+    if outlet_count >= 2 and payoff_cards >= 1 and skills >= 8:
+        penalty *= 0.55
+    elif skills >= 9 and draw >= 25:
+        penalty *= 0.70
+
+    return round(min(max(penalty, 0.0), 55.0), 3)
+
+
+def dropkick_vulnerable_gate_penalty(
+    *,
+    card: dict[str, Any],
+    obs: dict[str, Any],
+    profile: dict[str, Any],
+    deck_cards: list[dict[str, Any]],
+) -> float:
+    """Discount Dropkick draw/energy unless vulnerable is realistically available."""
+    if card_id(card) != "Dropkick":
+        return 0.0
+
+    act = int(obs.get("act") or 0)
+    floor = int(obs.get("floor") or 0)
+    current_hp = int(obs.get("current_hp") or obs.get("hp") or 0)
+    vuln_sources = vulnerable_source_count(deck_cards)
+    draw = profile_value(profile, "draw_supply")
+    frontload = profile_value(profile, "frontload_supply")
+
+    penalty = 0.0
+    if vuln_sources <= 0:
+        penalty += 30.0
+    elif vuln_sources == 1:
+        penalty += 20.0
+    elif vuln_sources == 2:
+        penalty += 8.0
+    if draw < 15 and vuln_sources <= 1:
+        penalty += 6.0
+    if frontload < 60 and vuln_sources <= 1:
+        penalty += 5.0
+    if act == 1 and floor <= 6 and vuln_sources <= 1:
+        penalty += 5.0
+    if current_hp and current_hp <= 15:
+        penalty += 6.0
+    if vuln_sources >= 3 and draw >= 20:
+        penalty *= 0.50
+
+    return round(min(max(penalty, 0.0), 45.0), 3)
+
+
+def buildaround_upgrade_gate_penalty(
+    *,
+    card: dict[str, Any],
+    obs: dict[str, Any],
+    profile: dict[str, Any],
+) -> float:
+    """Prevent upgrade-dependent build-arounds from looking like plain frontload."""
+    cid = card_id(card)
+    if cid != "SearingBlow":
+        return 0.0
+
+    upgrades = card_upgrades(card)
+    floor = int(obs.get("floor") or 0)
+    starter_burden = profile_value(profile, "starter_basic_burden")
+    frontload = profile_value(profile, "frontload_supply")
+
+    penalty = 0.0
+    if upgrades <= 0:
+        penalty += 24.0
+    elif upgrades == 1:
+        penalty += 14.0
+    elif upgrades == 2:
+        penalty += 6.0
+    if floor >= 6 and upgrades <= 1:
+        penalty += 8.0
+    if starter_burden >= 80 and upgrades <= 1:
+        penalty += 4.0
+    if frontload >= 60 and upgrades <= 1:
+        penalty += 5.0
+    if upgrades >= 3:
+        penalty *= 0.25
+
+    return round(min(max(penalty, 0.0), 42.0), 3)
+
+
+def spot_weakness_window_gate_penalty(
+    *,
+    card: dict[str, Any],
+    obs: dict[str, Any],
+    profile: dict[str, Any],
+    deck_cards: list[dict[str, Any]],
+) -> float:
+    """Treat Spot Weakness as attack-window scaling, not generic scaling."""
+    if card_id(card) != "SpotWeakness":
+        return 0.0
+
+    attack_count = deck_type_count(deck_cards, 1)
+    draw = profile_value(profile, "draw_supply")
+    frontload = profile_value(profile, "frontload_supply")
+    block = profile_value(profile, "block_supply")
+    act = int(obs.get("act") or 0)
+    floor = int(obs.get("floor") or 0)
+
+    penalty = 0.0
+    if attack_count <= 5:
+        penalty += 16.0
+    elif attack_count <= 7:
+        penalty += 8.0
+    if draw < 15:
+        penalty += 6.0
+    if block < 35 and (act >= 2 or floor >= 8):
+        penalty += 8.0
+    if frontload >= 75 and draw >= 20:
+        penalty += 8.0
+    if attack_count >= 9 and draw >= 25:
+        penalty *= 0.55
+
+    return round(min(max(penalty, 0.0), 36.0), 3)
+
+
+def exhume_target_gate_penalty(
+    *,
+    card: dict[str, Any],
+    deck_cards: list[dict[str, Any]],
+    profile: dict[str, Any],
+) -> float:
+    """Require enough meaningful exhaust events before Exhume gets engine value."""
+    if card_id(card) != "Exhume":
+        return 0.0
+
+    exhaust_cards = sum(
+        1
+        for deck_card in deck_cards
+        if is_exhaust_engine(deck_card) or bool(deck_card.get("exhaust"))
+    )
+    outlets = exhaust_outlet_count(deck_cards)
+    exhaust_supply = profile_value(profile, "exhaust_supply")
+
+    penalty = 0.0
+    if exhaust_cards <= 0:
+        penalty += 24.0
+    elif exhaust_cards == 1:
+        penalty += 14.0
+    if outlets <= 0 and exhaust_supply < 10:
+        penalty += 10.0
+    if exhaust_supply <= 0:
+        penalty += 6.0
+    if exhaust_cards >= 3 and exhaust_supply >= 16:
+        penalty *= 0.55
+
+    return round(min(max(penalty, 0.0), 44.0), 3)
+
+
+def clash_playability_gate_penalty(
+    *,
+    card: dict[str, Any],
+    deck_cards: list[dict[str, Any]],
+    profile: dict[str, Any],
+) -> float:
+    """Clash frontload is conditional on drawing an all-attack hand."""
+    if card_id(card) != "Clash":
+        return 0.0
+
+    non_attack_count = sum(
+        1
+        for deck_card in deck_cards
+        if int(deck_card.get("card_type_id") or 0) != 1 and not is_junk(deck_card)
+    )
+    junk_count = sum(1 for deck_card in deck_cards if is_junk(deck_card))
+    draw = profile_value(profile, "draw_supply")
+    starter_burden = profile_value(profile, "starter_basic_burden")
+
+    penalty = 0.0
+    if non_attack_count >= 5:
+        penalty += 22.0
+    elif non_attack_count >= 3:
+        penalty += 16.0
+    elif non_attack_count >= 1:
+        penalty += 7.0
+    if junk_count > 0:
+        penalty += min(12.0, junk_count * 5.0)
+    if draw >= 15:
+        penalty += 4.0
+    if starter_burden >= 80 and non_attack_count >= 3:
+        penalty += 4.0
+
+    return round(min(max(penalty, 0.0), 42.0), 3)
+
+
+def rampage_repeat_gate_penalty(*, card: dict[str, Any], profile: dict[str, Any]) -> float:
+    """Rampage needs repeat access; static frontload alone overstates it."""
+    if card_id(card) != "Rampage":
+        return 0.0
+
+    draw = profile_value(profile, "draw_supply")
+    frontload = profile_value(profile, "frontload_supply")
+    aoe = profile_value(profile, "aoe_supply")
+
+    penalty = 0.0
+    if draw < 15:
+        penalty += 10.0
+    elif draw < 30:
+        penalty += 5.0
+    if frontload >= 50:
+        penalty += 4.0
+    if aoe <= 0:
+        penalty += 3.0
+    if draw >= 35:
+        penalty *= 0.45
+
+    return round(min(max(penalty, 0.0), 28.0), 3)
+
+
+def reaper_strength_gate_penalty(*, card: dict[str, Any], profile: dict[str, Any]) -> float:
+    """Reaper payoff needs strength or a real healing/AoE shortfall."""
+    if card_id(card) != "Reaper":
+        return 0.0
+
+    scaling = profile_value(profile, "scaling_supply")
+    aoe = profile_value(profile, "aoe_supply")
+    frontload = profile_value(profile, "frontload_supply")
+    block = profile_value(profile, "block_supply")
+
+    penalty = 0.0
+    if scaling < 15:
+        penalty += 16.0
+    elif scaling < 30:
+        penalty += 8.0
+    if aoe >= 20:
+        penalty += 6.0
+    if frontload >= 70:
+        penalty += 5.0
+    if block >= 45:
+        penalty += 4.0
+    if scaling >= 35:
+        penalty *= 0.45
+
+    return round(min(max(penalty, 0.0), 35.0), 3)
 
 
 def payoff_quality(deck_cards: list[dict[str, Any]], profile: dict[str, Any]) -> float:
@@ -1350,6 +1760,22 @@ def candidate_notes(
         notes.append(
             f"resource_window_pressure_gate={penalties['resource_window_pressure_gate']:.1f}"
         )
+    if penalties.get("corruption_cashout_gate", 0) > 0:
+        notes.append(f"corruption_cashout_gate={penalties['corruption_cashout_gate']:.1f}")
+    if penalties.get("dropkick_vulnerable_gate", 0) > 0:
+        notes.append(f"dropkick_vulnerable_gate={penalties['dropkick_vulnerable_gate']:.1f}")
+    if penalties.get("buildaround_upgrade_gate", 0) > 0:
+        notes.append(f"buildaround_upgrade_gate={penalties['buildaround_upgrade_gate']:.1f}")
+    if penalties.get("spot_weakness_window_gate", 0) > 0:
+        notes.append(f"spot_weakness_window_gate={penalties['spot_weakness_window_gate']:.1f}")
+    if penalties.get("exhume_target_gate", 0) > 0:
+        notes.append(f"exhume_target_gate={penalties['exhume_target_gate']:.1f}")
+    if penalties.get("clash_playability_gate", 0) > 0:
+        notes.append(f"clash_playability_gate={penalties['clash_playability_gate']:.1f}")
+    if penalties.get("rampage_repeat_gate", 0) > 0:
+        notes.append(f"rampage_repeat_gate={penalties['rampage_repeat_gate']:.1f}")
+    if penalties.get("reaper_strength_gate", 0) > 0:
+        notes.append(f"reaper_strength_gate={penalties['reaper_strength_gate']:.1f}")
     if warnings:
         notes.extend(warnings[:3])
     return notes
@@ -1412,6 +1838,16 @@ def classify_case(
 ) -> tuple[list[str], bool, str, list[str]]:
     if cashout_gap < min_gap:
         return ["small_cashout_gap_ignore"], False, "low", ["gap below audit threshold"]
+    if float(best.get("cashout_score") or 0.0) < MIN_ABSOLUTE_CASHOUT_FOR_REGRET:
+        return (
+            ["low_absolute_cashout_ignore"],
+            False,
+            "low",
+            [
+                "best static cashout is below absolute regret floor; "
+                "this may be a bad chosen action, not a missed high-cashout card"
+            ],
+        )
     kinds: list[str] = []
     notes: list[str] = []
     if selected is None:
@@ -1470,6 +1906,22 @@ def needs_deeper_model(row: dict[str, Any]) -> bool:
         return True
     if penalties.get("resource_window_pressure_gate", 0) >= 12:
         return True
+    if penalties.get("corruption_cashout_gate", 0) >= 12:
+        return True
+    if penalties.get("dropkick_vulnerable_gate", 0) >= 12:
+        return True
+    if penalties.get("buildaround_upgrade_gate", 0) >= 12:
+        return True
+    if penalties.get("spot_weakness_window_gate", 0) >= 8:
+        return True
+    if penalties.get("exhume_target_gate", 0) >= 10:
+        return True
+    if penalties.get("clash_playability_gate", 0) >= 10:
+        return True
+    if penalties.get("rampage_repeat_gate", 0) >= 8:
+        return True
+    if penalties.get("reaper_strength_gate", 0) >= 10:
+        return True
     if penalties.get("status_burden_risk", 0) >= 8:
         return True
     if penalties.get("act1_frontload_urgency", 0) >= 8:
@@ -1507,6 +1959,7 @@ def is_actionable_case(row: dict[str, Any], min_gap: float) -> bool:
     return (
         float(row.get("cashout_gap") or 0.0) >= min_gap
         and "small_cashout_gap_ignore" not in (row.get("cashout_kinds") or [])
+        and "low_absolute_cashout_ignore" not in (row.get("cashout_kinds") or [])
     )
 
 
