@@ -562,14 +562,14 @@ pub enum TraceCampfireChoice {
 }
 
 #[derive(Clone, Debug)]
-pub(crate) struct EpisodeRun {
+pub struct EpisodeRun {
     pub(crate) summary: RunEpisodeSummary,
     pub(crate) trace: Vec<RunStepTrace>,
     pub(crate) actions: Vec<ClientInput>,
 }
 
 #[derive(Clone, Debug)]
-pub(crate) enum EpisodePolicy {
+pub enum EpisodePolicy {
     RandomMasked {
         rng: StsRng,
     },
@@ -581,7 +581,7 @@ pub(crate) enum EpisodePolicy {
     },
 }
 
-pub(crate) struct EpisodeContext {
+pub struct EpisodeContext {
     pub(crate) engine_state: EngineState,
     pub(crate) run_state: RunState,
     pub(crate) combat_state: Option<CombatState>,
