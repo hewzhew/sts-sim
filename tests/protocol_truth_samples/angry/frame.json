@@ -1,0 +1,2550 @@
+{
+  "available_commands": [
+    "play",
+    "end",
+    "key",
+    "click",
+    "wait",
+    "handoff",
+    "scenario",
+    "state"
+  ],
+  "protocol_meta": {
+    "capabilities": {
+      "combat_session": true,
+      "reward_session": true,
+      "debug_commands": false,
+      "scenario_control": true
+    },
+    "last_command_kind": "state",
+    "response_id": 5,
+    "mod_build_tag": "commmod-2026-04-16-scenario-a",
+    "emitted_for_command_id": 4,
+    "last_command_id": 4,
+    "last_command": "STATE",
+    "emitted_for_command_kind": "state",
+    "protocol_version": 2,
+    "state_frame_id": 5,
+    "emitted_for_command": "STATE"
+  },
+  "ready_for_command": true,
+  "in_game": true,
+  "game_state": {
+    "screen_type": "NONE",
+    "screen_state": {},
+    "seed": 7556691122018160739,
+    "keys": {
+      "emerald": false,
+      "ruby": false,
+      "sapphire": false
+    },
+    "deck": [
+      {
+        "exhausts": false,
+        "is_playable": true,
+        "cost": 1,
+        "name": "Strike",
+        "id": "Strike_R",
+        "type": "ATTACK",
+        "ethereal": false,
+        "uuid": "27fbecbe-e7e7-40fc-b134-504d7112c6e0",
+        "upgrades": 0,
+        "base_damage": 6,
+        "rarity": "BASIC",
+        "has_target": true
+      },
+      {
+        "exhausts": false,
+        "is_playable": true,
+        "cost": 1,
+        "name": "Strike",
+        "id": "Strike_R",
+        "type": "ATTACK",
+        "ethereal": false,
+        "uuid": "ea74afe1-01de-4687-9502-0264016aa9bf",
+        "upgrades": 0,
+        "base_damage": 6,
+        "rarity": "BASIC",
+        "has_target": true
+      },
+      {
+        "exhausts": false,
+        "is_playable": true,
+        "cost": 1,
+        "name": "Strike",
+        "id": "Strike_R",
+        "type": "ATTACK",
+        "ethereal": false,
+        "uuid": "28354a23-9292-469b-99ca-d239f08cd602",
+        "upgrades": 0,
+        "base_damage": 6,
+        "rarity": "BASIC",
+        "has_target": true
+      },
+      {
+        "exhausts": false,
+        "is_playable": true,
+        "cost": 1,
+        "name": "Strike",
+        "id": "Strike_R",
+        "type": "ATTACK",
+        "ethereal": false,
+        "uuid": "6abcccbe-a753-40eb-b170-68ece6b1234f",
+        "upgrades": 0,
+        "base_damage": 6,
+        "rarity": "BASIC",
+        "has_target": true
+      },
+      {
+        "exhausts": false,
+        "is_playable": true,
+        "cost": 1,
+        "name": "Strike",
+        "id": "Strike_R",
+        "type": "ATTACK",
+        "ethereal": false,
+        "uuid": "b6de6990-e4c4-496f-b80b-2f2f27acdc01",
+        "upgrades": 0,
+        "base_damage": 6,
+        "rarity": "BASIC",
+        "has_target": true
+      },
+      {
+        "exhausts": false,
+        "is_playable": true,
+        "cost": 1,
+        "name": "Defend",
+        "id": "Defend_R",
+        "type": "SKILL",
+        "ethereal": false,
+        "uuid": "d1bf878e-6e3f-4bf3-aee9-85e9aeb76fbc",
+        "upgrades": 0,
+        "rarity": "BASIC",
+        "has_target": false
+      },
+      {
+        "exhausts": false,
+        "is_playable": true,
+        "cost": 1,
+        "name": "Defend",
+        "id": "Defend_R",
+        "type": "SKILL",
+        "ethereal": false,
+        "uuid": "10ac0ebe-8c92-4f62-85cc-9b7cf5aeaa2a",
+        "upgrades": 0,
+        "rarity": "BASIC",
+        "has_target": false
+      },
+      {
+        "exhausts": false,
+        "is_playable": true,
+        "cost": 1,
+        "name": "Defend",
+        "id": "Defend_R",
+        "type": "SKILL",
+        "ethereal": false,
+        "uuid": "4e3dd48c-fda4-429e-a1b1-f9116e3d8e9c",
+        "upgrades": 0,
+        "rarity": "BASIC",
+        "has_target": false
+      },
+      {
+        "exhausts": false,
+        "is_playable": true,
+        "cost": 1,
+        "name": "Defend",
+        "id": "Defend_R",
+        "type": "SKILL",
+        "ethereal": false,
+        "uuid": "f3b9d58b-7b36-4d88-aeb7-ef74d3ecb4e0",
+        "upgrades": 0,
+        "rarity": "BASIC",
+        "has_target": false
+      },
+      {
+        "exhausts": false,
+        "is_playable": true,
+        "cost": 2,
+        "name": "Bash",
+        "id": "Bash",
+        "type": "ATTACK",
+        "ethereal": false,
+        "uuid": "d04221ab-18f7-4a39-9251-0582544fdaea",
+        "upgrades": 0,
+        "base_damage": 8,
+        "rarity": "BASIC",
+        "has_target": true
+      }
+    ],
+    "relics": [
+      {
+        "name": "Burning Blood",
+        "runtime_state": {
+          "used_up": false,
+          "counter": -1
+        },
+        "id": "Burning Blood"
+      }
+    ],
+    "max_hp": 80,
+    "act_boss": "The Guardian",
+    "gold": 99,
+    "action_phase": "WAITING_ON_USER",
+    "act": 1,
+    "screen_name": "NONE",
+    "room_phase": "COMBAT",
+    "is_screen_up": false,
+    "potions": [
+      {
+        "requires_target": false,
+        "can_use": false,
+        "can_discard": false,
+        "name": "Potion Slot",
+        "id": "Potion Slot"
+      },
+      {
+        "requires_target": false,
+        "can_use": false,
+        "can_discard": false,
+        "name": "Potion Slot",
+        "id": "Potion Slot"
+      },
+      {
+        "requires_target": false,
+        "can_use": false,
+        "can_discard": false,
+        "name": "Potion Slot",
+        "id": "Potion Slot"
+      }
+    ],
+    "current_hp": 80,
+    "floor": 1,
+    "ascension_level": 0,
+    "class": "IRONCLAD",
+    "map": [
+      {
+        "symbol": "M",
+        "children": [
+          {
+            "x": 1,
+            "y": 1
+          }
+        ],
+        "x": 1,
+        "y": 0,
+        "parents": []
+      },
+      {
+        "symbol": "M",
+        "children": [
+          {
+            "x": 3,
+            "y": 1
+          }
+        ],
+        "x": 2,
+        "y": 0,
+        "parents": []
+      },
+      {
+        "symbol": "M",
+        "children": [
+          {
+            "x": 6,
+            "y": 1
+          }
+        ],
+        "x": 5,
+        "y": 0,
+        "parents": []
+      },
+      {
+        "symbol": "M",
+        "children": [
+          {
+            "x": 1,
+            "y": 2
+          }
+        ],
+        "x": 1,
+        "y": 1,
+        "parents": []
+      },
+      {
+        "symbol": "M",
+        "children": [
+          {
+            "x": 2,
+            "y": 2
+          },
+          {
+            "x": 3,
+            "y": 2
+          }
+        ],
+        "x": 3,
+        "y": 1,
+        "parents": []
+      },
+      {
+        "symbol": "?",
+        "children": [
+          {
+            "x": 5,
+            "y": 2
+          },
+          {
+            "x": 6,
+            "y": 2
+          }
+        ],
+        "x": 6,
+        "y": 1,
+        "parents": []
+      },
+      {
+        "symbol": "M",
+        "children": [
+          {
+            "x": 1,
+            "y": 3
+          }
+        ],
+        "x": 1,
+        "y": 2,
+        "parents": []
+      },
+      {
+        "symbol": "M",
+        "children": [
+          {
+            "x": 1,
+            "y": 3
+          }
+        ],
+        "x": 2,
+        "y": 2,
+        "parents": []
+      },
+      {
+        "symbol": "$",
+        "children": [
+          {
+            "x": 3,
+            "y": 3
+          }
+        ],
+        "x": 3,
+        "y": 2,
+        "parents": []
+      },
+      {
+        "symbol": "M",
+        "children": [
+          {
+            "x": 4,
+            "y": 3
+          },
+          {
+            "x": 5,
+            "y": 3
+          }
+        ],
+        "x": 5,
+        "y": 2,
+        "parents": []
+      },
+      {
+        "symbol": "?",
+        "children": [
+          {
+            "x": 5,
+            "y": 3
+          }
+        ],
+        "x": 6,
+        "y": 2,
+        "parents": []
+      },
+      {
+        "symbol": "M",
+        "children": [
+          {
+            "x": 0,
+            "y": 4
+          },
+          {
+            "x": 2,
+            "y": 4
+          }
+        ],
+        "x": 1,
+        "y": 3,
+        "parents": []
+      },
+      {
+        "symbol": "?",
+        "children": [
+          {
+            "x": 3,
+            "y": 4
+          }
+        ],
+        "x": 3,
+        "y": 3,
+        "parents": []
+      },
+      {
+        "symbol": "?",
+        "children": [
+          {
+            "x": 3,
+            "y": 4
+          }
+        ],
+        "x": 4,
+        "y": 3,
+        "parents": []
+      },
+      {
+        "symbol": "M",
+        "children": [
+          {
+            "x": 4,
+            "y": 4
+          },
+          {
+            "x": 5,
+            "y": 4
+          }
+        ],
+        "x": 5,
+        "y": 3,
+        "parents": []
+      },
+      {
+        "symbol": "M",
+        "children": [
+          {
+            "x": 1,
+            "y": 5
+          }
+        ],
+        "x": 0,
+        "y": 4,
+        "parents": []
+      },
+      {
+        "symbol": "?",
+        "children": [
+          {
+            "x": 2,
+            "y": 5
+          }
+        ],
+        "x": 2,
+        "y": 4,
+        "parents": []
+      },
+      {
+        "symbol": "M",
+        "children": [
+          {
+            "x": 3,
+            "y": 5
+          },
+          {
+            "x": 4,
+            "y": 5
+          }
+        ],
+        "x": 3,
+        "y": 4,
+        "parents": []
+      },
+      {
+        "symbol": "M",
+        "children": [
+          {
+            "x": 4,
+            "y": 5
+          }
+        ],
+        "x": 4,
+        "y": 4,
+        "parents": []
+      },
+      {
+        "symbol": "?",
+        "children": [
+          {
+            "x": 4,
+            "y": 5
+          }
+        ],
+        "x": 5,
+        "y": 4,
+        "parents": []
+      },
+      {
+        "symbol": "R",
+        "children": [
+          {
+            "x": 1,
+            "y": 6
+          }
+        ],
+        "x": 1,
+        "y": 5,
+        "parents": []
+      },
+      {
+        "symbol": "R",
+        "children": [
+          {
+            "x": 2,
+            "y": 6
+          }
+        ],
+        "x": 2,
+        "y": 5,
+        "parents": []
+      },
+      {
+        "symbol": "E",
+        "children": [
+          {
+            "x": 2,
+            "y": 6
+          }
+        ],
+        "x": 3,
+        "y": 5,
+        "parents": []
+      },
+      {
+        "symbol": "R",
+        "children": [
+          {
+            "x": 3,
+            "y": 6
+          },
+          {
+            "x": 4,
+            "y": 6
+          }
+        ],
+        "x": 4,
+        "y": 5,
+        "parents": []
+      },
+      {
+        "symbol": "E",
+        "children": [
+          {
+            "x": 1,
+            "y": 7
+          }
+        ],
+        "x": 1,
+        "y": 6,
+        "parents": []
+      },
+      {
+        "symbol": "M",
+        "children": [
+          {
+            "x": 1,
+            "y": 7
+          }
+        ],
+        "x": 2,
+        "y": 6,
+        "parents": []
+      },
+      {
+        "symbol": "E",
+        "children": [
+          {
+            "x": 2,
+            "y": 7
+          }
+        ],
+        "x": 3,
+        "y": 6,
+        "parents": []
+      },
+      {
+        "symbol": "M",
+        "children": [
+          {
+            "x": 4,
+            "y": 7
+          },
+          {
+            "x": 5,
+            "y": 7
+          }
+        ],
+        "x": 4,
+        "y": 6,
+        "parents": []
+      },
+      {
+        "symbol": "?",
+        "children": [
+          {
+            "x": 0,
+            "y": 8
+          },
+          {
+            "x": 1,
+            "y": 8
+          }
+        ],
+        "x": 1,
+        "y": 7,
+        "parents": []
+      },
+      {
+        "symbol": "?",
+        "children": [
+          {
+            "x": 1,
+            "y": 8
+          }
+        ],
+        "x": 2,
+        "y": 7,
+        "parents": []
+      },
+      {
+        "symbol": "?",
+        "children": [
+          {
+            "x": 4,
+            "y": 8
+          }
+        ],
+        "x": 4,
+        "y": 7,
+        "parents": []
+      },
+      {
+        "symbol": "M",
+        "children": [
+          {
+            "x": 6,
+            "y": 8
+          }
+        ],
+        "x": 5,
+        "y": 7,
+        "parents": []
+      },
+      {
+        "symbol": "T",
+        "children": [
+          {
+            "x": 0,
+            "y": 9
+          },
+          {
+            "x": 1,
+            "y": 9
+          }
+        ],
+        "x": 0,
+        "y": 8,
+        "parents": []
+      },
+      {
+        "symbol": "T",
+        "children": [
+          {
+            "x": 2,
+            "y": 9
+          }
+        ],
+        "x": 1,
+        "y": 8,
+        "parents": []
+      },
+      {
+        "symbol": "T",
+        "children": [
+          {
+            "x": 3,
+            "y": 9
+          }
+        ],
+        "x": 4,
+        "y": 8,
+        "parents": []
+      },
+      {
+        "symbol": "T",
+        "children": [
+          {
+            "x": 6,
+            "y": 9
+          }
+        ],
+        "x": 6,
+        "y": 8,
+        "parents": []
+      },
+      {
+        "symbol": "M",
+        "children": [
+          {
+            "x": 0,
+            "y": 10
+          }
+        ],
+        "x": 0,
+        "y": 9,
+        "parents": []
+      },
+      {
+        "symbol": "?",
+        "children": [
+          {
+            "x": 0,
+            "y": 10
+          }
+        ],
+        "x": 1,
+        "y": 9,
+        "parents": []
+      },
+      {
+        "symbol": "?",
+        "children": [
+          {
+            "x": 1,
+            "y": 10
+          },
+          {
+            "x": 3,
+            "y": 10
+          }
+        ],
+        "x": 2,
+        "y": 9,
+        "parents": []
+      },
+      {
+        "symbol": "R",
+        "children": [
+          {
+            "x": 4,
+            "y": 10
+          }
+        ],
+        "x": 3,
+        "y": 9,
+        "parents": []
+      },
+      {
+        "symbol": "M",
+        "children": [
+          {
+            "x": 5,
+            "y": 10
+          }
+        ],
+        "x": 6,
+        "y": 9,
+        "parents": []
+      },
+      {
+        "symbol": "M",
+        "children": [
+          {
+            "x": 0,
+            "y": 11
+          },
+          {
+            "x": 1,
+            "y": 11
+          }
+        ],
+        "x": 0,
+        "y": 10,
+        "parents": []
+      },
+      {
+        "symbol": "R",
+        "children": [
+          {
+            "x": 1,
+            "y": 11
+          }
+        ],
+        "x": 1,
+        "y": 10,
+        "parents": []
+      },
+      {
+        "symbol": "E",
+        "children": [
+          {
+            "x": 3,
+            "y": 11
+          }
+        ],
+        "x": 3,
+        "y": 10,
+        "parents": []
+      },
+      {
+        "symbol": "M",
+        "children": [
+          {
+            "x": 5,
+            "y": 11
+          }
+        ],
+        "x": 4,
+        "y": 10,
+        "parents": []
+      },
+      {
+        "symbol": "R",
+        "children": [
+          {
+            "x": 5,
+            "y": 11
+          }
+        ],
+        "x": 5,
+        "y": 10,
+        "parents": []
+      },
+      {
+        "symbol": "M",
+        "children": [
+          {
+            "x": 0,
+            "y": 12
+          }
+        ],
+        "x": 0,
+        "y": 11,
+        "parents": []
+      },
+      {
+        "symbol": "?",
+        "children": [
+          {
+            "x": 1,
+            "y": 12
+          },
+          {
+            "x": 2,
+            "y": 12
+          }
+        ],
+        "x": 1,
+        "y": 11,
+        "parents": []
+      },
+      {
+        "symbol": "M",
+        "children": [
+          {
+            "x": 3,
+            "y": 12
+          }
+        ],
+        "x": 3,
+        "y": 11,
+        "parents": []
+      },
+      {
+        "symbol": "$",
+        "children": [
+          {
+            "x": 4,
+            "y": 12
+          },
+          {
+            "x": 6,
+            "y": 12
+          }
+        ],
+        "x": 5,
+        "y": 11,
+        "parents": []
+      },
+      {
+        "symbol": "M",
+        "children": [
+          {
+            "x": 0,
+            "y": 13
+          }
+        ],
+        "x": 0,
+        "y": 12,
+        "parents": []
+      },
+      {
+        "symbol": "?",
+        "children": [
+          {
+            "x": 0,
+            "y": 13
+          }
+        ],
+        "x": 1,
+        "y": 12,
+        "parents": []
+      },
+      {
+        "symbol": "M",
+        "children": [
+          {
+            "x": 2,
+            "y": 13
+          }
+        ],
+        "x": 2,
+        "y": 12,
+        "parents": []
+      },
+      {
+        "symbol": "M",
+        "children": [
+          {
+            "x": 2,
+            "y": 13
+          }
+        ],
+        "x": 3,
+        "y": 12,
+        "parents": []
+      },
+      {
+        "symbol": "E",
+        "children": [
+          {
+            "x": 3,
+            "y": 13
+          }
+        ],
+        "x": 4,
+        "y": 12,
+        "parents": []
+      },
+      {
+        "symbol": "M",
+        "children": [
+          {
+            "x": 5,
+            "y": 13
+          }
+        ],
+        "x": 6,
+        "y": 12,
+        "parents": []
+      },
+      {
+        "symbol": "M",
+        "children": [
+          {
+            "x": 0,
+            "y": 14
+          },
+          {
+            "x": 1,
+            "y": 14
+          }
+        ],
+        "x": 0,
+        "y": 13,
+        "parents": []
+      },
+      {
+        "symbol": "$",
+        "children": [
+          {
+            "x": 1,
+            "y": 14
+          }
+        ],
+        "x": 2,
+        "y": 13,
+        "parents": []
+      },
+      {
+        "symbol": "M",
+        "children": [
+          {
+            "x": 2,
+            "y": 14
+          }
+        ],
+        "x": 3,
+        "y": 13,
+        "parents": []
+      },
+      {
+        "symbol": "M",
+        "children": [
+          {
+            "x": 4,
+            "y": 14
+          }
+        ],
+        "x": 5,
+        "y": 13,
+        "parents": []
+      },
+      {
+        "symbol": "R",
+        "children": [
+          {
+            "x": 3,
+            "y": 16
+          }
+        ],
+        "x": 0,
+        "y": 14,
+        "parents": []
+      },
+      {
+        "symbol": "R",
+        "children": [
+          {
+            "x": 3,
+            "y": 16
+          }
+        ],
+        "x": 1,
+        "y": 14,
+        "parents": []
+      },
+      {
+        "symbol": "R",
+        "children": [
+          {
+            "x": 3,
+            "y": 16
+          }
+        ],
+        "x": 2,
+        "y": 14,
+        "parents": []
+      },
+      {
+        "symbol": "R",
+        "children": [
+          {
+            "x": 3,
+            "y": 16
+          }
+        ],
+        "x": 4,
+        "y": 14,
+        "parents": []
+      }
+    ],
+    "room_type": "MonsterRoom",
+    "combat_truth": {
+      "discard_pile": [],
+      "exhaust_pile": [],
+      "using_card": false,
+      "monsters": [
+        {
+          "is_gone": false,
+          "move_hits": 1,
+          "draw_x": 747,
+          "move_base_damage": -1,
+          "is_dying": false,
+          "monster_index": 0,
+          "half_dead": false,
+          "move_adjusted_damage": -1,
+          "max_hp": 14,
+          "intent": "DEFEND",
+          "move_id": 1,
+          "name": "Shield Gremlin",
+          "monster_instance_id": 1,
+          "spawn_order": 1,
+          "current_hp": 14,
+          "block": 0,
+          "id": "GremlinTsundere",
+          "powers": [],
+          "is_escaping": false
+        },
+        {
+          "is_gone": false,
+          "move_hits": 1,
+          "draw_x": 853,
+          "move_base_damage": 9,
+          "is_dying": false,
+          "monster_index": 1,
+          "half_dead": false,
+          "move_adjusted_damage": 9,
+          "max_hp": 11,
+          "intent": "ATTACK",
+          "move_id": 1,
+          "name": "Sneaky Gremlin",
+          "monster_instance_id": 2,
+          "spawn_order": 2,
+          "current_hp": 11,
+          "block": 0,
+          "id": "GremlinThief",
+          "powers": [],
+          "is_escaping": false
+        },
+        {
+          "is_gone": false,
+          "move_hits": 1,
+          "draw_x": 977,
+          "move_base_damage": 9,
+          "is_dying": false,
+          "monster_index": 2,
+          "half_dead": false,
+          "move_adjusted_damage": 9,
+          "max_hp": 14,
+          "intent": "ATTACK",
+          "move_id": 1,
+          "name": "Sneaky Gremlin",
+          "monster_instance_id": 3,
+          "spawn_order": 3,
+          "current_hp": 14,
+          "block": 0,
+          "id": "GremlinThief",
+          "powers": [],
+          "is_escaping": false
+        },
+        {
+          "is_gone": false,
+          "move_hits": 1,
+          "draw_x": 1097,
+          "move_base_damage": 4,
+          "is_dying": false,
+          "monster_index": 3,
+          "half_dead": false,
+          "move_adjusted_damage": 4,
+          "runtime_state": {
+            "angry_amount": 1
+          },
+          "max_hp": 20,
+          "intent": "ATTACK",
+          "move_id": 1,
+          "name": "Mad Gremlin",
+          "monster_instance_id": 4,
+          "spawn_order": 4,
+          "current_hp": 20,
+          "block": 0,
+          "id": "GremlinWarrior",
+          "powers": [
+            {
+              "amount": 1,
+              "name": "Angry",
+              "id": "Angry"
+            }
+          ],
+          "is_escaping": false
+        }
+      ],
+      "turn": 1,
+      "draw_pile": [
+        {
+          "exhausts": false,
+          "is_playable": true,
+          "cost": 1,
+          "name": "Defend",
+          "id": "Defend_R",
+          "type": "SKILL",
+          "ethereal": false,
+          "uuid": "10ac0ebe-8c92-4f62-85cc-9b7cf5aeaa2a",
+          "upgrades": 0,
+          "rarity": "BASIC",
+          "has_target": false
+        },
+        {
+          "exhausts": false,
+          "is_playable": true,
+          "cost": 1,
+          "name": "Strike",
+          "id": "Strike_R",
+          "type": "ATTACK",
+          "ethereal": false,
+          "uuid": "b6de6990-e4c4-496f-b80b-2f2f27acdc01",
+          "upgrades": 0,
+          "base_damage": 6,
+          "rarity": "BASIC",
+          "has_target": true
+        },
+        {
+          "exhausts": false,
+          "is_playable": true,
+          "cost": 1,
+          "name": "Strike",
+          "id": "Strike_R",
+          "type": "ATTACK",
+          "ethereal": false,
+          "uuid": "28354a23-9292-469b-99ca-d239f08cd602",
+          "upgrades": 0,
+          "base_damage": 6,
+          "rarity": "BASIC",
+          "has_target": true
+        },
+        {
+          "exhausts": false,
+          "is_playable": true,
+          "cost": 1,
+          "name": "Strike",
+          "id": "Strike_R",
+          "type": "ATTACK",
+          "ethereal": false,
+          "uuid": "ea74afe1-01de-4687-9502-0264016aa9bf",
+          "upgrades": 0,
+          "base_damage": 6,
+          "rarity": "BASIC",
+          "has_target": true
+        },
+        {
+          "exhausts": false,
+          "is_playable": true,
+          "cost": 1,
+          "name": "Defend",
+          "id": "Defend_R",
+          "type": "SKILL",
+          "ethereal": false,
+          "uuid": "4e3dd48c-fda4-429e-a1b1-f9116e3d8e9c",
+          "upgrades": 0,
+          "rarity": "BASIC",
+          "has_target": false
+        }
+      ],
+      "cards_discarded_this_turn": 0,
+      "card_queue": [],
+      "times_damaged": 0,
+      "limbo": [],
+      "rng_state": {
+        "shuffle_rng": {
+          "seed1": 343368678802886935,
+          "counter": 1,
+          "seed0": -1439108556898191002
+        },
+        "misc_rng": {
+          "seed1": 6124292220332193270,
+          "counter": 4,
+          "seed0": 2381480752564700881
+        },
+        "monster_hp_rng": {
+          "seed1": 6124292220332193270,
+          "counter": 4,
+          "seed0": 2381480752564700881
+        },
+        "potion_rng": {
+          "seed1": 5903008549660486405,
+          "counter": 0,
+          "seed0": 6533188860627325719
+        },
+        "card_rng": {
+          "seed1": -1439108556898191002,
+          "counter": 0,
+          "seed0": 773605132538482459
+        },
+        "ai_rng": {
+          "seed1": 6124292220332193270,
+          "counter": 4,
+          "seed0": 2381480752564700881
+        }
+      },
+      "hand": [
+        {
+          "exhausts": false,
+          "is_playable": true,
+          "cost": 1,
+          "name": "Strike",
+          "id": "Strike_R",
+          "type": "ATTACK",
+          "ethereal": false,
+          "uuid": "27fbecbe-e7e7-40fc-b134-504d7112c6e0",
+          "upgrades": 0,
+          "base_damage": 6,
+          "rarity": "BASIC",
+          "has_target": true
+        },
+        {
+          "exhausts": false,
+          "is_playable": true,
+          "cost": 1,
+          "name": "Strike",
+          "id": "Strike_R",
+          "type": "ATTACK",
+          "ethereal": false,
+          "uuid": "6abcccbe-a753-40eb-b170-68ece6b1234f",
+          "upgrades": 0,
+          "base_damage": 6,
+          "rarity": "BASIC",
+          "has_target": true
+        },
+        {
+          "exhausts": false,
+          "is_playable": true,
+          "cost": 1,
+          "name": "Defend",
+          "id": "Defend_R",
+          "type": "SKILL",
+          "ethereal": false,
+          "uuid": "d1bf878e-6e3f-4bf3-aee9-85e9aeb76fbc",
+          "upgrades": 0,
+          "rarity": "BASIC",
+          "has_target": false
+        },
+        {
+          "exhausts": false,
+          "is_playable": true,
+          "cost": 2,
+          "name": "Bash",
+          "id": "Bash",
+          "type": "ATTACK",
+          "ethereal": false,
+          "uuid": "d04221ab-18f7-4a39-9251-0582544fdaea",
+          "upgrades": 0,
+          "base_damage": 8,
+          "rarity": "BASIC",
+          "has_target": true
+        },
+        {
+          "exhausts": false,
+          "is_playable": true,
+          "cost": 1,
+          "name": "Defend",
+          "id": "Defend_R",
+          "type": "SKILL",
+          "ethereal": false,
+          "uuid": "f3b9d58b-7b36-4d88-aeb7-ef74d3ecb4e0",
+          "upgrades": 0,
+          "rarity": "BASIC",
+          "has_target": false
+        }
+      ],
+      "colorless_combat_pool": [
+        {
+          "exhausts": true,
+          "is_playable": true,
+          "cost": 1,
+          "name": "Madness",
+          "id": "Madness",
+          "type": "SKILL",
+          "ethereal": false,
+          "uuid": "fdf3f593-6213-4cc2-a791-25985918dce0",
+          "upgrades": 0,
+          "rarity": "UNCOMMON",
+          "has_target": false
+        },
+        {
+          "exhausts": true,
+          "is_playable": true,
+          "cost": 0,
+          "name": "Thinking Ahead",
+          "id": "Thinking Ahead",
+          "type": "SKILL",
+          "ethereal": false,
+          "uuid": "b8dc870d-6184-4d80-a00d-e6590db5b6c2",
+          "upgrades": 0,
+          "rarity": "RARE",
+          "has_target": false
+        },
+        {
+          "exhausts": false,
+          "is_playable": true,
+          "cost": 2,
+          "name": "Mind Blast",
+          "id": "Mind Blast",
+          "type": "ATTACK",
+          "ethereal": false,
+          "uuid": "d2ab7b84-06af-4ed5-b27f-7890417a5504",
+          "upgrades": 0,
+          "base_damage": 0,
+          "rarity": "UNCOMMON",
+          "has_target": true
+        },
+        {
+          "exhausts": true,
+          "is_playable": true,
+          "cost": 2,
+          "name": "Metamorphosis",
+          "id": "Metamorphosis",
+          "type": "SKILL",
+          "ethereal": false,
+          "uuid": "bb9c7cf2-a214-4c92-a21f-97f1479f0dbc",
+          "upgrades": 0,
+          "rarity": "RARE",
+          "has_target": false
+        },
+        {
+          "exhausts": true,
+          "is_playable": true,
+          "cost": 0,
+          "name": "Jack of All Trades",
+          "id": "Jack Of All Trades",
+          "type": "SKILL",
+          "ethereal": false,
+          "uuid": "65065543-f72c-4148-bddc-75bf81655b36",
+          "upgrades": 0,
+          "rarity": "UNCOMMON",
+          "has_target": false
+        },
+        {
+          "exhausts": false,
+          "is_playable": true,
+          "cost": 0,
+          "name": "Swift Strike",
+          "id": "Swift Strike",
+          "type": "ATTACK",
+          "ethereal": false,
+          "uuid": "90d8caa6-48d3-41e8-954c-ba7ef1f0bc85",
+          "upgrades": 0,
+          "base_damage": 7,
+          "rarity": "UNCOMMON",
+          "has_target": true
+        },
+        {
+          "exhausts": false,
+          "is_playable": true,
+          "cost": 0,
+          "name": "Good Instincts",
+          "id": "Good Instincts",
+          "type": "SKILL",
+          "ethereal": false,
+          "uuid": "0068d71f-69a7-4b80-856d-757f8725da89",
+          "upgrades": 0,
+          "rarity": "UNCOMMON",
+          "has_target": false
+        },
+        {
+          "exhausts": true,
+          "is_playable": true,
+          "cost": 0,
+          "name": "Master of Strategy",
+          "id": "Master of Strategy",
+          "type": "SKILL",
+          "ethereal": false,
+          "uuid": "98a847e1-14aa-4b41-b479-4df4d946be78",
+          "upgrades": 0,
+          "rarity": "RARE",
+          "has_target": false
+        },
+        {
+          "exhausts": false,
+          "is_playable": true,
+          "cost": 2,
+          "name": "Magnetism",
+          "id": "Magnetism",
+          "type": "POWER",
+          "ethereal": false,
+          "uuid": "47660db8-d894-4d73-8086-fb423d14978c",
+          "upgrades": 0,
+          "rarity": "RARE",
+          "has_target": false
+        },
+        {
+          "exhausts": false,
+          "is_playable": true,
+          "cost": 0,
+          "name": "Finesse",
+          "id": "Finesse",
+          "type": "SKILL",
+          "ethereal": false,
+          "uuid": "98b874c1-1091-41fd-8d16-6278f666b969",
+          "upgrades": 0,
+          "rarity": "UNCOMMON",
+          "has_target": false
+        },
+        {
+          "exhausts": true,
+          "is_playable": true,
+          "cost": 1,
+          "name": "Discovery",
+          "id": "Discovery",
+          "type": "SKILL",
+          "ethereal": false,
+          "uuid": "fa01251c-59a6-4e97-9504-3016f4fb99fb",
+          "upgrades": 0,
+          "rarity": "UNCOMMON",
+          "has_target": false
+        },
+        {
+          "exhausts": true,
+          "is_playable": true,
+          "cost": 2,
+          "name": "Chrysalis",
+          "id": "Chrysalis",
+          "type": "SKILL",
+          "ethereal": false,
+          "uuid": "8ce3a631-b0ef-43d8-a9f0-c69699bd9cbc",
+          "upgrades": 0,
+          "rarity": "RARE",
+          "has_target": false
+        },
+        {
+          "exhausts": true,
+          "is_playable": true,
+          "cost": -1,
+          "name": "Transmutation",
+          "id": "Transmutation",
+          "type": "SKILL",
+          "ethereal": false,
+          "uuid": "5df3b465-60a0-475d-b76d-732dc0efb396",
+          "upgrades": 0,
+          "rarity": "RARE",
+          "has_target": false
+        },
+        {
+          "exhausts": true,
+          "is_playable": true,
+          "cost": 0,
+          "name": "Panacea",
+          "id": "Panacea",
+          "type": "SKILL",
+          "ethereal": false,
+          "uuid": "db482995-e1f8-4893-80d5-a2285a8749f8",
+          "upgrades": 0,
+          "rarity": "UNCOMMON",
+          "has_target": false
+        },
+        {
+          "exhausts": true,
+          "is_playable": true,
+          "cost": 0,
+          "name": "Purity",
+          "id": "Purity",
+          "type": "SKILL",
+          "ethereal": false,
+          "uuid": "ea6d7055-e6d2-483d-ab41-2d91f058491e",
+          "upgrades": 0,
+          "rarity": "UNCOMMON",
+          "has_target": false
+        },
+        {
+          "exhausts": false,
+          "is_playable": true,
+          "cost": 0,
+          "name": "Enlightenment",
+          "id": "Enlightenment",
+          "type": "SKILL",
+          "ethereal": false,
+          "uuid": "7d3dea01-ec38-43ad-bfa8-a97803a27121",
+          "upgrades": 0,
+          "rarity": "UNCOMMON",
+          "has_target": false
+        },
+        {
+          "exhausts": false,
+          "is_playable": true,
+          "cost": 0,
+          "name": "Forethought",
+          "id": "Forethought",
+          "type": "SKILL",
+          "ethereal": false,
+          "uuid": "a740f121-10a0-4b1a-8a5d-52c44c0cbc12",
+          "upgrades": 0,
+          "rarity": "UNCOMMON",
+          "has_target": false
+        },
+        {
+          "exhausts": false,
+          "is_playable": true,
+          "cost": 0,
+          "name": "Flash of Steel",
+          "id": "Flash of Steel",
+          "type": "ATTACK",
+          "ethereal": false,
+          "uuid": "224066b4-dcec-41d5-b2b5-25b9020c47b4",
+          "upgrades": 0,
+          "base_damage": 3,
+          "rarity": "UNCOMMON",
+          "has_target": true
+        },
+        {
+          "exhausts": false,
+          "is_playable": true,
+          "cost": 2,
+          "name": "Hand of Greed",
+          "id": "HandOfGreed",
+          "type": "ATTACK",
+          "ethereal": false,
+          "uuid": "b54c9859-fbb0-4882-a3ed-e192e37e41ba",
+          "upgrades": 0,
+          "base_damage": 20,
+          "rarity": "RARE",
+          "has_target": true
+        },
+        {
+          "exhausts": false,
+          "is_playable": true,
+          "cost": 2,
+          "name": "Mayhem",
+          "id": "Mayhem",
+          "type": "POWER",
+          "ethereal": false,
+          "uuid": "71018cfb-74c1-488f-a3f2-d8f0447da46b",
+          "upgrades": 0,
+          "rarity": "RARE",
+          "has_target": false
+        },
+        {
+          "exhausts": true,
+          "is_playable": true,
+          "cost": 2,
+          "name": "Apotheosis",
+          "id": "Apotheosis",
+          "type": "SKILL",
+          "ethereal": false,
+          "uuid": "694a87f7-9b97-426e-83cc-4d05420ed0c6",
+          "upgrades": 0,
+          "rarity": "RARE",
+          "has_target": false
+        },
+        {
+          "exhausts": true,
+          "is_playable": true,
+          "cost": 0,
+          "name": "Secret Weapon",
+          "id": "Secret Weapon",
+          "type": "SKILL",
+          "ethereal": false,
+          "uuid": "3b728294-38c5-4557-b7dd-ea60142bd914",
+          "upgrades": 0,
+          "rarity": "RARE",
+          "has_target": false
+        },
+        {
+          "exhausts": false,
+          "is_playable": true,
+          "cost": 0,
+          "name": "Panache",
+          "id": "Panache",
+          "type": "POWER",
+          "ethereal": false,
+          "uuid": "5b55ea20-3393-4463-9ea4-5066d267bac9",
+          "upgrades": 0,
+          "rarity": "RARE",
+          "has_target": false
+        },
+        {
+          "exhausts": true,
+          "is_playable": true,
+          "cost": 0,
+          "name": "Violence",
+          "id": "Violence",
+          "type": "SKILL",
+          "ethereal": false,
+          "uuid": "0d56e51b-c4da-4e5a-b0e3-0295cc22defc",
+          "upgrades": 0,
+          "rarity": "RARE",
+          "has_target": false
+        },
+        {
+          "exhausts": false,
+          "is_playable": true,
+          "cost": 0,
+          "name": "Deep Breath",
+          "id": "Deep Breath",
+          "type": "SKILL",
+          "ethereal": false,
+          "uuid": "cb931393-0665-4c67-a64a-9e444927b71c",
+          "upgrades": 0,
+          "rarity": "UNCOMMON",
+          "has_target": false
+        },
+        {
+          "exhausts": true,
+          "is_playable": true,
+          "cost": 0,
+          "name": "Secret Technique",
+          "id": "Secret Technique",
+          "type": "SKILL",
+          "ethereal": false,
+          "uuid": "766ad64a-613a-4d4e-99c7-f82e9b6e4892",
+          "upgrades": 0,
+          "rarity": "RARE",
+          "has_target": false
+        },
+        {
+          "exhausts": true,
+          "is_playable": true,
+          "cost": 0,
+          "name": "Bandage Up",
+          "id": "Bandage Up",
+          "type": "SKILL",
+          "ethereal": false,
+          "uuid": "040baa1d-516e-4fd3-b917-e4a2ea945e8b",
+          "upgrades": 0,
+          "rarity": "UNCOMMON",
+          "has_target": false
+        },
+        {
+          "exhausts": false,
+          "is_playable": true,
+          "cost": 0,
+          "name": "Blind",
+          "id": "Blind",
+          "type": "SKILL",
+          "ethereal": false,
+          "uuid": "a7ff62ba-bced-4b35-a1b9-1a313ee8a831",
+          "upgrades": 0,
+          "rarity": "UNCOMMON",
+          "has_target": true
+        },
+        {
+          "exhausts": false,
+          "is_playable": true,
+          "cost": 2,
+          "name": "The Bomb",
+          "id": "The Bomb",
+          "type": "SKILL",
+          "ethereal": false,
+          "uuid": "241eca08-3782-4f70-8cb2-521e27997f91",
+          "upgrades": 0,
+          "rarity": "RARE",
+          "has_target": false
+        },
+        {
+          "exhausts": false,
+          "is_playable": true,
+          "cost": 0,
+          "name": "Impatience",
+          "id": "Impatience",
+          "type": "SKILL",
+          "ethereal": false,
+          "uuid": "efe8e98b-17ea-4e97-9001-4ca4d223fa0a",
+          "upgrades": 0,
+          "rarity": "UNCOMMON",
+          "has_target": false
+        },
+        {
+          "exhausts": true,
+          "is_playable": true,
+          "cost": 0,
+          "name": "Dramatic Entrance",
+          "id": "Dramatic Entrance",
+          "type": "ATTACK",
+          "ethereal": false,
+          "uuid": "ef670370-e68f-477f-898c-5498a1b8b367",
+          "upgrades": 0,
+          "base_damage": 8,
+          "rarity": "UNCOMMON",
+          "has_target": false
+        },
+        {
+          "exhausts": false,
+          "is_playable": true,
+          "cost": 0,
+          "name": "Trip",
+          "id": "Trip",
+          "type": "SKILL",
+          "ethereal": false,
+          "uuid": "a9f89704-e821-4e3c-b7ce-1b9f98c97638",
+          "upgrades": 0,
+          "rarity": "UNCOMMON",
+          "has_target": true
+        },
+        {
+          "exhausts": true,
+          "is_playable": true,
+          "cost": 0,
+          "name": "Panic Button",
+          "id": "PanicButton",
+          "type": "SKILL",
+          "ethereal": false,
+          "uuid": "b88bd36b-3835-4dd8-9032-216929586aa6",
+          "upgrades": 0,
+          "rarity": "UNCOMMON",
+          "has_target": false
+        },
+        {
+          "exhausts": false,
+          "is_playable": true,
+          "cost": 0,
+          "name": "Sadistic Nature",
+          "id": "Sadistic Nature",
+          "type": "POWER",
+          "ethereal": false,
+          "uuid": "3892af31-83c3-45a1-976f-6397d3ee8b94",
+          "upgrades": 0,
+          "rarity": "RARE",
+          "has_target": false
+        },
+        {
+          "exhausts": true,
+          "is_playable": true,
+          "cost": 0,
+          "name": "Dark Shackles",
+          "id": "Dark Shackles",
+          "type": "SKILL",
+          "ethereal": false,
+          "uuid": "93b28693-b49f-4fb2-b36d-068e971dee19",
+          "upgrades": 0,
+          "rarity": "UNCOMMON",
+          "has_target": true
+        }
+      ],
+      "player": {
+        "orbs": [],
+        "current_hp": 80,
+        "block": 0,
+        "max_hp": 80,
+        "powers": [],
+        "energy": 3
+      }
+    },
+    "combat_observation": {
+      "discard_pile": [],
+      "exhaust_pile": [],
+      "using_card": false,
+      "monsters": [
+        {
+          "is_gone": false,
+          "move_hits": 1,
+          "draw_x": 747,
+          "move_base_damage": -1,
+          "is_dying": false,
+          "monster_index": 0,
+          "half_dead": false,
+          "move_adjusted_damage": -1,
+          "max_hp": 14,
+          "intent": "DEFEND",
+          "move_id": 1,
+          "name": "Shield Gremlin",
+          "monster_instance_id": 1,
+          "spawn_order": 1,
+          "current_hp": 14,
+          "block": 0,
+          "id": "GremlinTsundere",
+          "powers": [],
+          "is_escaping": false
+        },
+        {
+          "is_gone": false,
+          "move_hits": 1,
+          "draw_x": 853,
+          "move_base_damage": 9,
+          "is_dying": false,
+          "monster_index": 1,
+          "half_dead": false,
+          "move_adjusted_damage": 9,
+          "max_hp": 11,
+          "intent": "ATTACK",
+          "move_id": 1,
+          "name": "Sneaky Gremlin",
+          "monster_instance_id": 2,
+          "spawn_order": 2,
+          "current_hp": 11,
+          "block": 0,
+          "id": "GremlinThief",
+          "powers": [],
+          "is_escaping": false
+        },
+        {
+          "is_gone": false,
+          "move_hits": 1,
+          "draw_x": 977,
+          "move_base_damage": 9,
+          "is_dying": false,
+          "monster_index": 2,
+          "half_dead": false,
+          "move_adjusted_damage": 9,
+          "max_hp": 14,
+          "intent": "ATTACK",
+          "move_id": 1,
+          "name": "Sneaky Gremlin",
+          "monster_instance_id": 3,
+          "spawn_order": 3,
+          "current_hp": 14,
+          "block": 0,
+          "id": "GremlinThief",
+          "powers": [],
+          "is_escaping": false
+        },
+        {
+          "is_gone": false,
+          "move_hits": 1,
+          "draw_x": 1097,
+          "move_base_damage": 4,
+          "is_dying": false,
+          "monster_index": 3,
+          "half_dead": false,
+          "move_adjusted_damage": 4,
+          "runtime_state": {
+            "angry_amount": 1
+          },
+          "max_hp": 20,
+          "intent": "ATTACK",
+          "move_id": 1,
+          "name": "Mad Gremlin",
+          "monster_instance_id": 4,
+          "spawn_order": 4,
+          "current_hp": 20,
+          "block": 0,
+          "id": "GremlinWarrior",
+          "powers": [
+            {
+              "amount": 1,
+              "name": "Angry",
+              "id": "Angry"
+            }
+          ],
+          "is_escaping": false
+        }
+      ],
+      "turn": 1,
+      "draw_pile": [
+        {
+          "exhausts": false,
+          "is_playable": true,
+          "cost": 1,
+          "name": "Defend",
+          "id": "Defend_R",
+          "type": "SKILL",
+          "ethereal": false,
+          "uuid": "10ac0ebe-8c92-4f62-85cc-9b7cf5aeaa2a",
+          "upgrades": 0,
+          "rarity": "BASIC",
+          "has_target": false
+        },
+        {
+          "exhausts": false,
+          "is_playable": true,
+          "cost": 1,
+          "name": "Strike",
+          "id": "Strike_R",
+          "type": "ATTACK",
+          "ethereal": false,
+          "uuid": "b6de6990-e4c4-496f-b80b-2f2f27acdc01",
+          "upgrades": 0,
+          "base_damage": 6,
+          "rarity": "BASIC",
+          "has_target": true
+        },
+        {
+          "exhausts": false,
+          "is_playable": true,
+          "cost": 1,
+          "name": "Strike",
+          "id": "Strike_R",
+          "type": "ATTACK",
+          "ethereal": false,
+          "uuid": "28354a23-9292-469b-99ca-d239f08cd602",
+          "upgrades": 0,
+          "base_damage": 6,
+          "rarity": "BASIC",
+          "has_target": true
+        },
+        {
+          "exhausts": false,
+          "is_playable": true,
+          "cost": 1,
+          "name": "Strike",
+          "id": "Strike_R",
+          "type": "ATTACK",
+          "ethereal": false,
+          "uuid": "ea74afe1-01de-4687-9502-0264016aa9bf",
+          "upgrades": 0,
+          "base_damage": 6,
+          "rarity": "BASIC",
+          "has_target": true
+        },
+        {
+          "exhausts": false,
+          "is_playable": true,
+          "cost": 1,
+          "name": "Defend",
+          "id": "Defend_R",
+          "type": "SKILL",
+          "ethereal": false,
+          "uuid": "4e3dd48c-fda4-429e-a1b1-f9116e3d8e9c",
+          "upgrades": 0,
+          "rarity": "BASIC",
+          "has_target": false
+        }
+      ],
+      "cards_discarded_this_turn": 0,
+      "card_queue": [],
+      "times_damaged": 0,
+      "limbo": [],
+      "rng_state": {
+        "shuffle_rng": {
+          "seed1": 343368678802886935,
+          "counter": 1,
+          "seed0": -1439108556898191002
+        },
+        "misc_rng": {
+          "seed1": 6124292220332193270,
+          "counter": 4,
+          "seed0": 2381480752564700881
+        },
+        "monster_hp_rng": {
+          "seed1": 6124292220332193270,
+          "counter": 4,
+          "seed0": 2381480752564700881
+        },
+        "potion_rng": {
+          "seed1": 5903008549660486405,
+          "counter": 0,
+          "seed0": 6533188860627325719
+        },
+        "card_rng": {
+          "seed1": -1439108556898191002,
+          "counter": 0,
+          "seed0": 773605132538482459
+        },
+        "ai_rng": {
+          "seed1": 6124292220332193270,
+          "counter": 4,
+          "seed0": 2381480752564700881
+        }
+      },
+      "hand": [
+        {
+          "exhausts": false,
+          "is_playable": true,
+          "cost": 1,
+          "name": "Strike",
+          "id": "Strike_R",
+          "type": "ATTACK",
+          "ethereal": false,
+          "uuid": "27fbecbe-e7e7-40fc-b134-504d7112c6e0",
+          "upgrades": 0,
+          "base_damage": 6,
+          "rarity": "BASIC",
+          "has_target": true
+        },
+        {
+          "exhausts": false,
+          "is_playable": true,
+          "cost": 1,
+          "name": "Strike",
+          "id": "Strike_R",
+          "type": "ATTACK",
+          "ethereal": false,
+          "uuid": "6abcccbe-a753-40eb-b170-68ece6b1234f",
+          "upgrades": 0,
+          "base_damage": 6,
+          "rarity": "BASIC",
+          "has_target": true
+        },
+        {
+          "exhausts": false,
+          "is_playable": true,
+          "cost": 1,
+          "name": "Defend",
+          "id": "Defend_R",
+          "type": "SKILL",
+          "ethereal": false,
+          "uuid": "d1bf878e-6e3f-4bf3-aee9-85e9aeb76fbc",
+          "upgrades": 0,
+          "rarity": "BASIC",
+          "has_target": false
+        },
+        {
+          "exhausts": false,
+          "is_playable": true,
+          "cost": 2,
+          "name": "Bash",
+          "id": "Bash",
+          "type": "ATTACK",
+          "ethereal": false,
+          "uuid": "d04221ab-18f7-4a39-9251-0582544fdaea",
+          "upgrades": 0,
+          "base_damage": 8,
+          "rarity": "BASIC",
+          "has_target": true
+        },
+        {
+          "exhausts": false,
+          "is_playable": true,
+          "cost": 1,
+          "name": "Defend",
+          "id": "Defend_R",
+          "type": "SKILL",
+          "ethereal": false,
+          "uuid": "f3b9d58b-7b36-4d88-aeb7-ef74d3ecb4e0",
+          "upgrades": 0,
+          "rarity": "BASIC",
+          "has_target": false
+        }
+      ],
+      "colorless_combat_pool": [
+        {
+          "exhausts": true,
+          "is_playable": true,
+          "cost": 1,
+          "name": "Madness",
+          "id": "Madness",
+          "type": "SKILL",
+          "ethereal": false,
+          "uuid": "fdf3f593-6213-4cc2-a791-25985918dce0",
+          "upgrades": 0,
+          "rarity": "UNCOMMON",
+          "has_target": false
+        },
+        {
+          "exhausts": true,
+          "is_playable": true,
+          "cost": 0,
+          "name": "Thinking Ahead",
+          "id": "Thinking Ahead",
+          "type": "SKILL",
+          "ethereal": false,
+          "uuid": "b8dc870d-6184-4d80-a00d-e6590db5b6c2",
+          "upgrades": 0,
+          "rarity": "RARE",
+          "has_target": false
+        },
+        {
+          "exhausts": false,
+          "is_playable": true,
+          "cost": 2,
+          "name": "Mind Blast",
+          "id": "Mind Blast",
+          "type": "ATTACK",
+          "ethereal": false,
+          "uuid": "d2ab7b84-06af-4ed5-b27f-7890417a5504",
+          "upgrades": 0,
+          "base_damage": 0,
+          "rarity": "UNCOMMON",
+          "has_target": true
+        },
+        {
+          "exhausts": true,
+          "is_playable": true,
+          "cost": 2,
+          "name": "Metamorphosis",
+          "id": "Metamorphosis",
+          "type": "SKILL",
+          "ethereal": false,
+          "uuid": "bb9c7cf2-a214-4c92-a21f-97f1479f0dbc",
+          "upgrades": 0,
+          "rarity": "RARE",
+          "has_target": false
+        },
+        {
+          "exhausts": true,
+          "is_playable": true,
+          "cost": 0,
+          "name": "Jack of All Trades",
+          "id": "Jack Of All Trades",
+          "type": "SKILL",
+          "ethereal": false,
+          "uuid": "65065543-f72c-4148-bddc-75bf81655b36",
+          "upgrades": 0,
+          "rarity": "UNCOMMON",
+          "has_target": false
+        },
+        {
+          "exhausts": false,
+          "is_playable": true,
+          "cost": 0,
+          "name": "Swift Strike",
+          "id": "Swift Strike",
+          "type": "ATTACK",
+          "ethereal": false,
+          "uuid": "90d8caa6-48d3-41e8-954c-ba7ef1f0bc85",
+          "upgrades": 0,
+          "base_damage": 7,
+          "rarity": "UNCOMMON",
+          "has_target": true
+        },
+        {
+          "exhausts": false,
+          "is_playable": true,
+          "cost": 0,
+          "name": "Good Instincts",
+          "id": "Good Instincts",
+          "type": "SKILL",
+          "ethereal": false,
+          "uuid": "0068d71f-69a7-4b80-856d-757f8725da89",
+          "upgrades": 0,
+          "rarity": "UNCOMMON",
+          "has_target": false
+        },
+        {
+          "exhausts": true,
+          "is_playable": true,
+          "cost": 0,
+          "name": "Master of Strategy",
+          "id": "Master of Strategy",
+          "type": "SKILL",
+          "ethereal": false,
+          "uuid": "98a847e1-14aa-4b41-b479-4df4d946be78",
+          "upgrades": 0,
+          "rarity": "RARE",
+          "has_target": false
+        },
+        {
+          "exhausts": false,
+          "is_playable": true,
+          "cost": 2,
+          "name": "Magnetism",
+          "id": "Magnetism",
+          "type": "POWER",
+          "ethereal": false,
+          "uuid": "47660db8-d894-4d73-8086-fb423d14978c",
+          "upgrades": 0,
+          "rarity": "RARE",
+          "has_target": false
+        },
+        {
+          "exhausts": false,
+          "is_playable": true,
+          "cost": 0,
+          "name": "Finesse",
+          "id": "Finesse",
+          "type": "SKILL",
+          "ethereal": false,
+          "uuid": "98b874c1-1091-41fd-8d16-6278f666b969",
+          "upgrades": 0,
+          "rarity": "UNCOMMON",
+          "has_target": false
+        },
+        {
+          "exhausts": true,
+          "is_playable": true,
+          "cost": 1,
+          "name": "Discovery",
+          "id": "Discovery",
+          "type": "SKILL",
+          "ethereal": false,
+          "uuid": "fa01251c-59a6-4e97-9504-3016f4fb99fb",
+          "upgrades": 0,
+          "rarity": "UNCOMMON",
+          "has_target": false
+        },
+        {
+          "exhausts": true,
+          "is_playable": true,
+          "cost": 2,
+          "name": "Chrysalis",
+          "id": "Chrysalis",
+          "type": "SKILL",
+          "ethereal": false,
+          "uuid": "8ce3a631-b0ef-43d8-a9f0-c69699bd9cbc",
+          "upgrades": 0,
+          "rarity": "RARE",
+          "has_target": false
+        },
+        {
+          "exhausts": true,
+          "is_playable": true,
+          "cost": -1,
+          "name": "Transmutation",
+          "id": "Transmutation",
+          "type": "SKILL",
+          "ethereal": false,
+          "uuid": "5df3b465-60a0-475d-b76d-732dc0efb396",
+          "upgrades": 0,
+          "rarity": "RARE",
+          "has_target": false
+        },
+        {
+          "exhausts": true,
+          "is_playable": true,
+          "cost": 0,
+          "name": "Panacea",
+          "id": "Panacea",
+          "type": "SKILL",
+          "ethereal": false,
+          "uuid": "db482995-e1f8-4893-80d5-a2285a8749f8",
+          "upgrades": 0,
+          "rarity": "UNCOMMON",
+          "has_target": false
+        },
+        {
+          "exhausts": true,
+          "is_playable": true,
+          "cost": 0,
+          "name": "Purity",
+          "id": "Purity",
+          "type": "SKILL",
+          "ethereal": false,
+          "uuid": "ea6d7055-e6d2-483d-ab41-2d91f058491e",
+          "upgrades": 0,
+          "rarity": "UNCOMMON",
+          "has_target": false
+        },
+        {
+          "exhausts": false,
+          "is_playable": true,
+          "cost": 0,
+          "name": "Enlightenment",
+          "id": "Enlightenment",
+          "type": "SKILL",
+          "ethereal": false,
+          "uuid": "7d3dea01-ec38-43ad-bfa8-a97803a27121",
+          "upgrades": 0,
+          "rarity": "UNCOMMON",
+          "has_target": false
+        },
+        {
+          "exhausts": false,
+          "is_playable": true,
+          "cost": 0,
+          "name": "Forethought",
+          "id": "Forethought",
+          "type": "SKILL",
+          "ethereal": false,
+          "uuid": "a740f121-10a0-4b1a-8a5d-52c44c0cbc12",
+          "upgrades": 0,
+          "rarity": "UNCOMMON",
+          "has_target": false
+        },
+        {
+          "exhausts": false,
+          "is_playable": true,
+          "cost": 0,
+          "name": "Flash of Steel",
+          "id": "Flash of Steel",
+          "type": "ATTACK",
+          "ethereal": false,
+          "uuid": "224066b4-dcec-41d5-b2b5-25b9020c47b4",
+          "upgrades": 0,
+          "base_damage": 3,
+          "rarity": "UNCOMMON",
+          "has_target": true
+        },
+        {
+          "exhausts": false,
+          "is_playable": true,
+          "cost": 2,
+          "name": "Hand of Greed",
+          "id": "HandOfGreed",
+          "type": "ATTACK",
+          "ethereal": false,
+          "uuid": "b54c9859-fbb0-4882-a3ed-e192e37e41ba",
+          "upgrades": 0,
+          "base_damage": 20,
+          "rarity": "RARE",
+          "has_target": true
+        },
+        {
+          "exhausts": false,
+          "is_playable": true,
+          "cost": 2,
+          "name": "Mayhem",
+          "id": "Mayhem",
+          "type": "POWER",
+          "ethereal": false,
+          "uuid": "71018cfb-74c1-488f-a3f2-d8f0447da46b",
+          "upgrades": 0,
+          "rarity": "RARE",
+          "has_target": false
+        },
+        {
+          "exhausts": true,
+          "is_playable": true,
+          "cost": 2,
+          "name": "Apotheosis",
+          "id": "Apotheosis",
+          "type": "SKILL",
+          "ethereal": false,
+          "uuid": "694a87f7-9b97-426e-83cc-4d05420ed0c6",
+          "upgrades": 0,
+          "rarity": "RARE",
+          "has_target": false
+        },
+        {
+          "exhausts": true,
+          "is_playable": true,
+          "cost": 0,
+          "name": "Secret Weapon",
+          "id": "Secret Weapon",
+          "type": "SKILL",
+          "ethereal": false,
+          "uuid": "3b728294-38c5-4557-b7dd-ea60142bd914",
+          "upgrades": 0,
+          "rarity": "RARE",
+          "has_target": false
+        },
+        {
+          "exhausts": false,
+          "is_playable": true,
+          "cost": 0,
+          "name": "Panache",
+          "id": "Panache",
+          "type": "POWER",
+          "ethereal": false,
+          "uuid": "5b55ea20-3393-4463-9ea4-5066d267bac9",
+          "upgrades": 0,
+          "rarity": "RARE",
+          "has_target": false
+        },
+        {
+          "exhausts": true,
+          "is_playable": true,
+          "cost": 0,
+          "name": "Violence",
+          "id": "Violence",
+          "type": "SKILL",
+          "ethereal": false,
+          "uuid": "0d56e51b-c4da-4e5a-b0e3-0295cc22defc",
+          "upgrades": 0,
+          "rarity": "RARE",
+          "has_target": false
+        },
+        {
+          "exhausts": false,
+          "is_playable": true,
+          "cost": 0,
+          "name": "Deep Breath",
+          "id": "Deep Breath",
+          "type": "SKILL",
+          "ethereal": false,
+          "uuid": "cb931393-0665-4c67-a64a-9e444927b71c",
+          "upgrades": 0,
+          "rarity": "UNCOMMON",
+          "has_target": false
+        },
+        {
+          "exhausts": true,
+          "is_playable": true,
+          "cost": 0,
+          "name": "Secret Technique",
+          "id": "Secret Technique",
+          "type": "SKILL",
+          "ethereal": false,
+          "uuid": "766ad64a-613a-4d4e-99c7-f82e9b6e4892",
+          "upgrades": 0,
+          "rarity": "RARE",
+          "has_target": false
+        },
+        {
+          "exhausts": true,
+          "is_playable": true,
+          "cost": 0,
+          "name": "Bandage Up",
+          "id": "Bandage Up",
+          "type": "SKILL",
+          "ethereal": false,
+          "uuid": "040baa1d-516e-4fd3-b917-e4a2ea945e8b",
+          "upgrades": 0,
+          "rarity": "UNCOMMON",
+          "has_target": false
+        },
+        {
+          "exhausts": false,
+          "is_playable": true,
+          "cost": 0,
+          "name": "Blind",
+          "id": "Blind",
+          "type": "SKILL",
+          "ethereal": false,
+          "uuid": "a7ff62ba-bced-4b35-a1b9-1a313ee8a831",
+          "upgrades": 0,
+          "rarity": "UNCOMMON",
+          "has_target": true
+        },
+        {
+          "exhausts": false,
+          "is_playable": true,
+          "cost": 2,
+          "name": "The Bomb",
+          "id": "The Bomb",
+          "type": "SKILL",
+          "ethereal": false,
+          "uuid": "241eca08-3782-4f70-8cb2-521e27997f91",
+          "upgrades": 0,
+          "rarity": "RARE",
+          "has_target": false
+        },
+        {
+          "exhausts": false,
+          "is_playable": true,
+          "cost": 0,
+          "name": "Impatience",
+          "id": "Impatience",
+          "type": "SKILL",
+          "ethereal": false,
+          "uuid": "efe8e98b-17ea-4e97-9001-4ca4d223fa0a",
+          "upgrades": 0,
+          "rarity": "UNCOMMON",
+          "has_target": false
+        },
+        {
+          "exhausts": true,
+          "is_playable": true,
+          "cost": 0,
+          "name": "Dramatic Entrance",
+          "id": "Dramatic Entrance",
+          "type": "ATTACK",
+          "ethereal": false,
+          "uuid": "ef670370-e68f-477f-898c-5498a1b8b367",
+          "upgrades": 0,
+          "base_damage": 8,
+          "rarity": "UNCOMMON",
+          "has_target": false
+        },
+        {
+          "exhausts": false,
+          "is_playable": true,
+          "cost": 0,
+          "name": "Trip",
+          "id": "Trip",
+          "type": "SKILL",
+          "ethereal": false,
+          "uuid": "a9f89704-e821-4e3c-b7ce-1b9f98c97638",
+          "upgrades": 0,
+          "rarity": "UNCOMMON",
+          "has_target": true
+        },
+        {
+          "exhausts": true,
+          "is_playable": true,
+          "cost": 0,
+          "name": "Panic Button",
+          "id": "PanicButton",
+          "type": "SKILL",
+          "ethereal": false,
+          "uuid": "b88bd36b-3835-4dd8-9032-216929586aa6",
+          "upgrades": 0,
+          "rarity": "UNCOMMON",
+          "has_target": false
+        },
+        {
+          "exhausts": false,
+          "is_playable": true,
+          "cost": 0,
+          "name": "Sadistic Nature",
+          "id": "Sadistic Nature",
+          "type": "POWER",
+          "ethereal": false,
+          "uuid": "3892af31-83c3-45a1-976f-6397d3ee8b94",
+          "upgrades": 0,
+          "rarity": "RARE",
+          "has_target": false
+        },
+        {
+          "exhausts": true,
+          "is_playable": true,
+          "cost": 0,
+          "name": "Dark Shackles",
+          "id": "Dark Shackles",
+          "type": "SKILL",
+          "ethereal": false,
+          "uuid": "93b28693-b49f-4fb2-b36d-068e971dee19",
+          "upgrades": 0,
+          "rarity": "UNCOMMON",
+          "has_target": true
+        }
+      ],
+      "player": {
+        "orbs": [],
+        "current_hp": 80,
+        "block": 0,
+        "max_hp": 80,
+        "powers": [],
+        "energy": 3
+      }
+    }
+  }
+}

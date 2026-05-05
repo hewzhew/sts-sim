@@ -1,5 +1,5 @@
-use crate::action::{Action, ActionInfo, AddTo, DamageInfo, DamageType};
-use crate::combat::{CombatCard, CombatState};
+use crate::runtime::action::{Action, ActionInfo, AddTo, DamageInfo, DamageType};
+use crate::runtime::combat::{CombatCard, CombatState};
 
 pub fn on_end_turn_in_hand(
     _state: &CombatState,

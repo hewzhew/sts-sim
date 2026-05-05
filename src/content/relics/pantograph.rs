@@ -1,11 +1,11 @@
-use crate::action::ActionInfo;
-use crate::combat::CombatState;
+use crate::runtime::action::ActionInfo;
+use crate::runtime::combat::CombatState;
 use smallvec::SmallVec;
 
 pub fn at_battle_start(state: &CombatState) -> SmallVec<[ActionInfo; 4]> {
     let mut actions = SmallVec::new();
     let mut is_boss_combat = false;
-    for m in &state.monsters {
+    for m in &state.entities.monsters {
         if let Some(enemy_id) = crate::content::monsters::EnemyId::from_id(m.monster_type) {
             if matches!(
                 enemy_id,
@@ -28,11 +28,11 @@ pub fn at_battle_start(state: &CombatState) -> SmallVec<[ActionInfo; 4]> {
     }
     if is_boss_combat {
         actions.push(ActionInfo {
-            action: crate::action::Action::Heal {
+            action: crate::runtime::action::Action::Heal {
                 target: 0,
                 amount: 25,
             },
-            insertion_mode: crate::action::AddTo::Bottom,
+            insertion_mode: crate::runtime::action::AddTo::Bottom,
         });
     }
     actions

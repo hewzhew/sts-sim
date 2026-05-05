@@ -1,5 +1,5 @@
-use crate::action::{Action, ActionInfo, AddTo};
 use crate::content::cards::{CardId, CardType};
+use crate::runtime::action::{Action, ActionInfo, AddTo};
 use smallvec::SmallVec;
 
 pub struct BlueCandle;
@@ -10,11 +10,13 @@ impl BlueCandle {
         let def = crate::content::cards::get_card_definition(card_id);
 
         if def.card_type == CardType::Curse {
-            // Player loses 1 HP
+            // Java BlueCandle.onUseCard() uses LoseHPAction(player, player, 1, FIRE),
+            // so this self-loss should trigger Rupture.
             actions.push(ActionInfo {
                 action: Action::LoseHp {
                     target: 0,
                     amount: 1,
+                    triggers_rupture: true,
                 },
                 insertion_mode: AddTo::Bottom,
             });

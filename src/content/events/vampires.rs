@@ -1,7 +1,10 @@
 use crate::content::cards::{CardId, CardTag};
 use crate::content::relics::RelicId;
 use crate::state::core::EngineState;
-use crate::state::events::{EventChoiceMeta, EventState};
+use crate::state::events::{
+    EventActionKind, EventCardKind, EventChoiceMeta, EventEffect, EventOption,
+    EventOptionConstraint, EventOptionSemantics, EventOptionTransition, EventState,
+};
 use crate::state::run::RunState;
 
 fn get_hp_loss(run_state: &RunState) -> i32 {
@@ -13,29 +16,108 @@ fn get_hp_loss(run_state: &RunState) -> i32 {
 }
 
 pub fn get_choices(run_state: &RunState, event_state: &EventState) -> Vec<EventChoiceMeta> {
+    get_options(run_state, event_state)
+        .into_iter()
+        .map(|option| option.ui)
+        .collect()
+}
+
+pub fn get_options(run_state: &RunState, event_state: &EventState) -> Vec<EventOption> {
     if event_state.current_screen == 1 {
-        return vec![EventChoiceMeta::new("[Leave]")];
+        return vec![EventOption::new(
+            EventChoiceMeta::new("[Leave]"),
+            EventOptionSemantics {
+                action: EventActionKind::Leave,
+                effects: vec![],
+                constraints: vec![],
+                transition: EventOptionTransition::Complete,
+                repeatable: false,
+                terminal: true,
+            },
+        )];
     }
 
     let hp_loss = get_hp_loss(run_state);
-    let mut choices = vec![EventChoiceMeta::new(format!(
-        "[Accept] Lose {} Max HP. Replace all Strikes with 5 Bites.",
-        hp_loss
-    ))];
+    let mut choices = vec![EventOption::new(
+        EventChoiceMeta::new(format!(
+            "[Accept] Lose {} Max HP. Replace all Strikes with 5 Bites.",
+            hp_loss
+        )),
+        EventOptionSemantics {
+            action: EventActionKind::Accept,
+            effects: vec![
+                EventEffect::LoseMaxHp(hp_loss),
+                EventEffect::ObtainCard {
+                    count: 5,
+                    kind: EventCardKind::Specific(CardId::Bite),
+                },
+            ],
+            constraints: vec![],
+            transition: EventOptionTransition::AdvanceScreen,
+            repeatable: false,
+            terminal: false,
+        },
+    )];
 
     let has_vial = run_state.relics.iter().any(|r| r.id == RelicId::BloodVial);
     if has_vial {
-        choices.push(EventChoiceMeta::new(
-            "[Give Vial] Lose Blood Vial. Replace all Strikes with 5 Bites.",
+        choices.push(EventOption::new(
+            EventChoiceMeta::new("[Give Vial] Lose Blood Vial. Replace all Strikes with 5 Bites."),
+            EventOptionSemantics {
+                action: EventActionKind::Trade,
+                effects: vec![
+                    EventEffect::LoseRelic {
+                        specific: Some(RelicId::BloodVial),
+                        starter_only: false,
+                    },
+                    EventEffect::ObtainCard {
+                        count: 5,
+                        kind: EventCardKind::Specific(CardId::Bite),
+                    },
+                ],
+                constraints: vec![EventOptionConstraint::RequiresRelic(RelicId::BloodVial)],
+                transition: EventOptionTransition::AdvanceScreen,
+                repeatable: false,
+                terminal: false,
+            },
         ));
     } else {
-        choices.push(EventChoiceMeta::disabled(
-            "[Give Vial] Lose Blood Vial. Replace all Strikes with 5 Bites.",
-            "Requires Blood Vial",
+        choices.push(EventOption::new(
+            EventChoiceMeta::disabled(
+                "[Give Vial] Lose Blood Vial. Replace all Strikes with 5 Bites.",
+                "Requires Blood Vial",
+            ),
+            EventOptionSemantics {
+                action: EventActionKind::Trade,
+                effects: vec![
+                    EventEffect::LoseRelic {
+                        specific: Some(RelicId::BloodVial),
+                        starter_only: false,
+                    },
+                    EventEffect::ObtainCard {
+                        count: 5,
+                        kind: EventCardKind::Specific(CardId::Bite),
+                    },
+                ],
+                constraints: vec![EventOptionConstraint::RequiresRelic(RelicId::BloodVial)],
+                transition: EventOptionTransition::AdvanceScreen,
+                repeatable: false,
+                terminal: false,
+            },
         ));
     }
 
-    choices.push(EventChoiceMeta::new("[Refuse] Leave."));
+    choices.push(EventOption::new(
+        EventChoiceMeta::new("[Refuse] Leave."),
+        EventOptionSemantics {
+            action: EventActionKind::Decline,
+            effects: vec![],
+            constraints: vec![],
+            transition: EventOptionTransition::Complete,
+            repeatable: false,
+            terminal: true,
+        },
+    ));
     choices
 }
 
@@ -100,5 +182,40 @@ fn replace_attacks(run_state: &mut RunState) {
     // Add 5 Bites through the DeckManager pipeline
     for _ in 0..5 {
         run_state.add_card_to_deck(CardId::Bite);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::state::events::{
+        EventActionKind, EventCardKind, EventEffect, EventId, EventOptionConstraint,
+        EventOptionTransition, EventState,
+    };
+
+    #[test]
+    fn give_vial_option_exposes_constraint_and_bite_reward() {
+        let mut rs = RunState::new(1, 0, true, "Ironclad");
+        rs.event_state = Some(EventState::new(EventId::Vampires));
+        let options = get_options(&rs, rs.event_state.as_ref().unwrap());
+        let give_vial = &options[1];
+
+        assert!(give_vial.ui.disabled);
+        assert_eq!(give_vial.semantics.action, EventActionKind::Trade);
+        assert_eq!(
+            give_vial.semantics.constraints,
+            vec![EventOptionConstraint::RequiresRelic(RelicId::BloodVial)]
+        );
+        assert!(give_vial
+            .semantics
+            .effects
+            .contains(&EventEffect::ObtainCard {
+                count: 5,
+                kind: EventCardKind::Specific(CardId::Bite),
+            }));
+        assert_eq!(
+            give_vial.semantics.transition,
+            EventOptionTransition::AdvanceScreen
+        );
     }
 }

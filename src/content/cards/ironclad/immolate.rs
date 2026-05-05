@@ -1,5 +1,5 @@
-use crate::action::{Action, ActionInfo, AddTo};
-use crate::combat::{CombatCard, CombatState};
+use crate::runtime::action::{Action, ActionInfo, AddTo};
+use crate::runtime::combat::{CombatCard, CombatState};
 use smallvec::SmallVec;
 
 pub fn immolate_play(_state: &CombatState, card: &CombatCard) -> SmallVec<[ActionInfo; 4]> {
@@ -7,8 +7,8 @@ pub fn immolate_play(_state: &CombatState, card: &CombatCard) -> SmallVec<[Actio
         ActionInfo {
             action: Action::DamageAllEnemies {
                 source: 0,
-                damages: smallvec::smallvec![card.base_damage_mut; 5],
-                damage_type: crate::action::DamageType::Normal,
+                damages: card.multi_damage.clone(),
+                damage_type: crate::runtime::action::DamageType::Normal,
                 is_modified: false,
             },
             insertion_mode: AddTo::Bottom,

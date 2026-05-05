@@ -1,4 +1,4 @@
-use crate::action::ActionInfo;
+use crate::runtime::action::ActionInfo;
 use smallvec::SmallVec;
 
 /// TungstenRod: Whenever you would lose HP, lose 1 less.

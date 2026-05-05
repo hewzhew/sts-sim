@@ -1,9 +1,12 @@
 use crate::content::cards::CardId;
 use crate::state::core::EngineState;
-use crate::state::events::{EventChoiceMeta, EventState};
+use crate::state::events::{
+    EventActionKind, EventCardKind, EventChoiceMeta, EventEffect, EventOption,
+    EventOptionSemantics, EventOptionTransition, EventState,
+};
 use crate::state::run::RunState;
 
-pub fn get_choices(run_state: &RunState, event_state: &EventState) -> Vec<EventChoiceMeta> {
+pub fn get_options(run_state: &RunState, event_state: &EventState) -> Vec<EventOption> {
     match event_state.current_screen {
         0 => {
             let hp_loss = ((run_state.max_hp as f32) * 0.5).ceil() as i32;
@@ -13,15 +16,58 @@ pub fn get_choices(run_state: &RunState, event_state: &EventState) -> Vec<EventC
                 5
             };
             vec![
-                EventChoiceMeta::new(format!(
-                    "[Accept] Lose {} Max HP. Obtain {} Apparitions.",
-                    hp_loss, count
-                )),
-                EventChoiceMeta::new("[Refuse]"),
+                EventOption::new(
+                    EventChoiceMeta::new(format!(
+                        "[Accept] Lose {} Max HP. Obtain {} Apparitions.",
+                        hp_loss, count
+                    )),
+                    EventOptionSemantics {
+                        action: EventActionKind::Accept,
+                        effects: vec![
+                            EventEffect::LoseMaxHp(hp_loss),
+                            EventEffect::ObtainCard {
+                                count: count as usize,
+                                kind: EventCardKind::Specific(CardId::Apparition),
+                            },
+                        ],
+                        constraints: vec![],
+                        transition: EventOptionTransition::AdvanceScreen,
+                        repeatable: false,
+                        terminal: false,
+                    },
+                ),
+                EventOption::new(
+                    EventChoiceMeta::new("[Refuse]"),
+                    EventOptionSemantics {
+                        action: EventActionKind::Decline,
+                        effects: vec![],
+                        constraints: vec![],
+                        transition: EventOptionTransition::AdvanceScreen,
+                        repeatable: false,
+                        terminal: false,
+                    },
+                ),
             ]
         }
-        _ => vec![EventChoiceMeta::new("[Leave]")],
+        _ => vec![EventOption::new(
+            EventChoiceMeta::new("[Leave]"),
+            EventOptionSemantics {
+                action: EventActionKind::Leave,
+                effects: vec![],
+                constraints: vec![],
+                transition: EventOptionTransition::Complete,
+                repeatable: false,
+                terminal: true,
+            },
+        )],
     }
+}
+
+pub fn get_choices(run_state: &RunState, event_state: &EventState) -> Vec<EventChoiceMeta> {
+    get_options(run_state, event_state)
+        .into_iter()
+        .map(|option| option.ui)
+        .collect()
 }
 
 pub fn handle_choice(_engine_state: &mut EngineState, run_state: &mut RunState, choice_idx: usize) {

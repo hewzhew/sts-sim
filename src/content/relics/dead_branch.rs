@@ -1,6 +1,6 @@
-use crate::action::{Action, ActionInfo, AddTo};
-use crate::combat::CombatState;
 use crate::content::relics::RelicState;
+use crate::runtime::action::{Action, ActionInfo, AddTo};
+use crate::runtime::combat::CombatState;
 
 /// Dead Branch: Whenever you Exhaust a card, add a random card to your hand.
 /// Java: MakeTempCardInHandAction(returnTrulyRandomCardInCombat().makeCopy())

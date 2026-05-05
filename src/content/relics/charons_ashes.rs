@@ -1,6 +1,6 @@
-use crate::action::DamageType;
-use crate::action::{Action, ActionInfo, AddTo};
-use crate::combat::CombatState;
+use crate::runtime::action::DamageType;
+use crate::runtime::action::{Action, ActionInfo, AddTo};
+use crate::runtime::combat::CombatState;
 use smallvec::SmallVec;
 
 pub struct CharonsAshes;
@@ -9,7 +9,7 @@ impl CharonsAshes {
     pub fn on_exhaust(state: &CombatState) -> SmallVec<[ActionInfo; 4]> {
         let mut actions = SmallVec::new();
         let mut damages = SmallVec::new();
-        for _ in 0..state.monsters.len() {
+        for _ in 0..state.entities.monsters.len() {
             damages.push(3);
         }
 

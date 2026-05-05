@@ -1,219 +1,177 @@
-use crate::action::{Action, DamageInfo, DamageType};
-use crate::combat::{CombatState, Intent};
 use crate::content::cards::CardId;
+use crate::content::monsters::exordium::{add_card_action, attack_actions, PLAYER};
 use crate::content::monsters::MonsterBehavior;
 use crate::content::powers::PowerId;
+use crate::runtime::action::Action;
+use crate::runtime::combat::{CombatState, MonsterEntity};
+use crate::semantics::combat::{
+    AddCardStep, AttackSpec, CardDestination, DamageKind, EffectStrength, MonsterMoveSpec,
+    MonsterTurnPlan, MoveStep,
+};
 
 pub struct Nemesis;
 
-impl Nemesis {
-    /// Reconstruct scythe cooldown from move history.
-    /// Java: scytheCooldown starts at 0, decremented each getMove call (including initial),
-    /// resets to 2 when Scythe (byte 3) is chosen.
-    /// Since getMove is called (history_len + 1) times total, we need to track:
-    ///   - Find last Scythe (byte 3) in history
-    ///   - cooldown = 2 - (turns_since_scythe)
-    /// Note: The decrement happens BEFORE the decision, so the cooldown after setting
-    /// Scythe = 2 is decremented on the next getMove call.
-    fn reconstruct_scythe_cooldown(history: &std::collections::VecDeque<u8>) -> i32 {
-        // Find position of last Scythe usage (byte 3)
-        let mut last_scythe_idx: Option<usize> = None;
-        for (i, &m) in history.iter().enumerate() {
-            if m == 3 {
-                last_scythe_idx = Some(i);
-            }
-        }
+const TRI_ATTACK: u8 = 2;
+const SCYTHE: u8 = 3;
+const TRI_BURN: u8 = 4;
 
-        match last_scythe_idx {
-            Some(idx) => {
-                // Turns elapsed since scythe was selected (inclusive of the turn after)
-                let turns_since = (history.len() - 1 - idx) as i32;
-                // Java: cooldown set to 2 when scythe chosen, decremented each subsequent getMove
-                // The current getMove call also decrements, so:
-                // cooldown_before_this_call = 2 - turns_since
-                // cooldown_after_decrement = 2 - turns_since - 1 = 1 - turns_since
-                1 - turns_since
-            }
-            None => {
-                // Never used scythe: cooldown started at 0 and has been decremented
-                // (history.len() + 1) times (initial call + each roll_move call)
-                // But it starts at 0 and only decrements, so it's always <= 0
-                -(history.len() as i32) - 1
-            }
+fn scythe_damage() -> i32 {
+    45
+}
+
+fn fire_damage(ascension_level: u8) -> i32 {
+    if ascension_level >= 3 {
+        7
+    } else {
+        6
+    }
+}
+
+fn burn_amount(ascension_level: u8) -> i32 {
+    if ascension_level >= 18 {
+        5
+    } else {
+        3
+    }
+}
+
+fn tri_attack_plan(ascension_level: u8) -> MonsterTurnPlan {
+    MonsterTurnPlan::from_spec(
+        TRI_ATTACK,
+        MonsterMoveSpec::Attack(AttackSpec {
+            base_damage: fire_damage(ascension_level),
+            hits: 3,
+            damage_kind: DamageKind::Normal,
+        }),
+    )
+}
+
+fn scythe_plan() -> MonsterTurnPlan {
+    MonsterTurnPlan::from_spec(
+        SCYTHE,
+        MonsterMoveSpec::Attack(AttackSpec {
+            base_damage: scythe_damage(),
+            hits: 1,
+            damage_kind: DamageKind::Normal,
+        }),
+    )
+}
+
+fn tri_burn_plan(ascension_level: u8) -> MonsterTurnPlan {
+    let burn = AddCardStep {
+        card_id: CardId::Burn,
+        amount: burn_amount(ascension_level) as u8,
+        upgraded: false,
+        destination: CardDestination::Discard,
+        visible_strength: EffectStrength::Normal,
+    };
+    MonsterTurnPlan::from_spec(TRI_BURN, MonsterMoveSpec::AddCard(burn))
+}
+
+fn plan_for(move_id: u8, ascension_level: u8) -> MonsterTurnPlan {
+    match move_id {
+        TRI_ATTACK => tri_attack_plan(ascension_level),
+        SCYTHE => scythe_plan(),
+        TRI_BURN => tri_burn_plan(ascension_level),
+        _ => MonsterTurnPlan::unknown(move_id),
+    }
+}
+
+fn last_move(entity: &MonsterEntity, move_id: u8) -> bool {
+    entity.move_history().back().copied() == Some(move_id)
+}
+
+fn last_two_moves(entity: &MonsterEntity, move_id: u8) -> bool {
+    let history = entity.move_history();
+    history.len() >= 2
+        && history[history.len() - 1] == move_id
+        && history[history.len() - 2] == move_id
+}
+
+fn reconstruct_scythe_cooldown(history: &std::collections::VecDeque<u8>) -> i32 {
+    let mut last_scythe_idx = None;
+    for (i, &move_id) in history.iter().enumerate() {
+        if move_id == SCYTHE {
+            last_scythe_idx = Some(i);
         }
+    }
+
+    match last_scythe_idx {
+        Some(idx) => 1 - ((history.len() - 1 - idx) as i32),
+        None => -(history.len() as i32) - 1,
     }
 }
 
 impl MonsterBehavior for Nemesis {
-    fn roll_move(
-        _rng: &mut crate::rng::StsRng,
-        entity: &crate::combat::MonsterEntity,
+    fn roll_move_plan(
+        rng: &mut crate::runtime::rng::StsRng,
+        entity: &MonsterEntity,
         ascension_level: u8,
         num: i32,
-    ) -> (u8, Intent) {
-        let fire_dmg = if ascension_level >= 3 { 7 } else { 6 };
-        // Java: firstMove flag — true only for the very first getMove call
-        if entity.move_history.is_empty() {
-            if num < 50 {
-                return (
-                    2,
-                    Intent::Attack {
-                        damage: fire_dmg,
-                        hits: 3,
-                    },
-                );
+    ) -> MonsterTurnPlan {
+        if entity.move_history().is_empty() {
+            return if num < 50 {
+                tri_attack_plan(ascension_level)
             } else {
-                return (4, Intent::Debuff);
-            }
+                tri_burn_plan(ascension_level)
+            };
         }
 
-        // Reconstruct scythe cooldown (already decremented for this call)
-        let scythe_cooldown = Nemesis::reconstruct_scythe_cooldown(&entity.move_history);
+        let scythe_cooldown = reconstruct_scythe_cooldown(entity.move_history());
 
-        let last_move = entity.move_history.back().copied().unwrap_or(0);
-        let last_two_moves = |byte: u8| {
-            entity.move_history.len() >= 2
-                && entity.move_history[entity.move_history.len() - 1] == byte
-                && entity.move_history[entity.move_history.len() - 2] == byte
-        };
-
-        // Java: getMove L149-184 — 3 branches based on num
         if num < 30 {
-            if last_move != 3 && scythe_cooldown <= 0 {
-                // Scythe available and not last move
-                return (
-                    3,
-                    Intent::Attack {
-                        damage: 45,
-                        hits: 1,
-                    },
-                );
-            } else if _rng.random_range(0, 1) == 0 {
-                // Java: aiRng.randomBoolean() — 50/50
-                if !last_two_moves(2) {
-                    return (
-                        2,
-                        Intent::Attack {
-                            damage: fire_dmg,
-                            hits: 3,
-                        },
-                    );
+            if !last_move(entity, SCYTHE) && scythe_cooldown <= 0 {
+                scythe_plan()
+            } else if rng.random_boolean() {
+                if !last_two_moves(entity, TRI_ATTACK) {
+                    tri_attack_plan(ascension_level)
                 } else {
-                    return (4, Intent::Debuff);
+                    tri_burn_plan(ascension_level)
                 }
-            } else if last_move != 4 {
-                return (4, Intent::Debuff);
+            } else if !last_move(entity, TRI_BURN) {
+                tri_burn_plan(ascension_level)
             } else {
-                return (
-                    2,
-                    Intent::Attack {
-                        damage: fire_dmg,
-                        hits: 3,
-                    },
-                );
+                tri_attack_plan(ascension_level)
             }
         } else if num < 65 {
-            if !last_two_moves(2) {
-                return (
-                    2,
-                    Intent::Attack {
-                        damage: fire_dmg,
-                        hits: 3,
-                    },
-                );
-            } else if _rng.random_range(0, 1) == 0 {
-                // Java: aiRng.randomBoolean()
+            if !last_two_moves(entity, TRI_ATTACK) {
+                tri_attack_plan(ascension_level)
+            } else if rng.random_boolean() {
                 if scythe_cooldown > 0 {
-                    return (4, Intent::Debuff);
+                    tri_burn_plan(ascension_level)
                 } else {
-                    return (
-                        3,
-                        Intent::Attack {
-                            damage: 45,
-                            hits: 1,
-                        },
-                    );
+                    scythe_plan()
                 }
             } else {
-                return (4, Intent::Debuff);
+                tri_burn_plan(ascension_level)
             }
+        } else if !last_move(entity, TRI_BURN) {
+            tri_burn_plan(ascension_level)
+        } else if rng.random_boolean() && scythe_cooldown <= 0 {
+            scythe_plan()
         } else {
-            if last_move != 4 {
-                return (4, Intent::Debuff);
-            } else if _rng.random_range(0, 1) == 0 && scythe_cooldown <= 0 {
-                return (
-                    3,
-                    Intent::Attack {
-                        damage: 45,
-                        hits: 1,
-                    },
-                );
-            } else {
-                return (
-                    2,
-                    Intent::Attack {
-                        damage: fire_dmg,
-                        hits: 3,
-                    },
-                );
-            }
+            tri_attack_plan(ascension_level)
         }
     }
 
-    fn take_turn(state: &mut CombatState, entity: &crate::combat::MonsterEntity) -> Vec<Action> {
-        let mut actions = Vec::new();
-        let asc = state.ascension_level;
+    fn turn_plan(state: &CombatState, entity: &MonsterEntity) -> MonsterTurnPlan {
+        plan_for(entity.planned_move_id(), state.meta.ascension_level)
+    }
 
-        let fire_dmg = if asc >= 3 { 7 } else { 6 };
+    fn take_turn_plan(
+        state: &mut CombatState,
+        entity: &MonsterEntity,
+        plan: &MonsterTurnPlan,
+    ) -> Vec<Action> {
+        let mut actions = match (plan.move_id, plan.steps.as_slice()) {
+            (SCYTHE | TRI_ATTACK, [MoveStep::Attack(attack)]) => {
+                attack_actions(entity.id, PLAYER, &attack.attack)
+            }
+            (TRI_BURN, [MoveStep::AddCard(add_card)]) => vec![add_card_action(add_card)],
+            (move_id, steps) => panic!("nemesis plan/steps mismatch: {} {:?}", move_id, steps),
+        };
 
-        match entity.next_move_byte {
-            3 => {
-                // SCYTHE
-                actions.push(Action::Damage(DamageInfo {
-                    source: entity.id,
-                    target: 0,
-                    base: 45,
-                    output: 45,
-                    damage_type: DamageType::Normal,
-                    is_modified: false,
-                }));
-            }
-            2 => {
-                // TRI_ATTACK
-                for _ in 0..3 {
-                    actions.push(Action::Damage(DamageInfo {
-                        source: entity.id,
-                        target: 0,
-                        base: fire_dmg,
-                        output: fire_dmg,
-                        damage_type: DamageType::Normal,
-                        is_modified: false,
-                    }));
-                }
-            }
-            4 => {
-                // TRI_BURN
-                let burn_amt = if asc >= 18 { 5 } else { 3 };
-                actions.push(Action::MakeTempCardInDiscard {
-                    card_id: CardId::Burn,
-                    amount: burn_amt,
-                    upgraded: false,
-                });
-            }
-            _ => {}
-        }
-
-        // Java: if (!this.hasPower("Intangible")) { apply }
-        let has_intangible = state
-            .power_db
-            .get(&entity.id)
-            .map(|powers| {
-                powers
-                    .iter()
-                    .any(|p| p.power_type == PowerId::Intangible && p.amount > 0)
-            })
-            .unwrap_or(false);
-        if !has_intangible {
+        if crate::content::powers::store::power_amount(state, entity.id, PowerId::Intangible) <= 0 {
             actions.push(Action::ApplyPower {
                 source: entity.id,
                 target: entity.id,
@@ -221,7 +179,6 @@ impl MonsterBehavior for Nemesis {
                 amount: 1,
             });
         }
-
         actions.push(Action::RollMonsterMove {
             monster_id: entity.id,
         });

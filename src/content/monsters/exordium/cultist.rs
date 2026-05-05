@@ -1,84 +1,120 @@
-use crate::action::{Action, DamageInfo, DamageType};
-use crate::combat::{CombatState, Intent, MonsterEntity};
+use super::{attack_actions, PLAYER};
 use crate::content::monsters::MonsterBehavior;
 use crate::content::powers::PowerId;
+use crate::runtime::action::Action;
+use crate::runtime::combat::{CombatState, MonsterEntity};
+use crate::semantics::combat::{
+    ApplyPowerStep, AttackSpec, AttackStep, DamageKind, EffectStrength, MonsterTurnPlan, MoveStep,
+    MoveTarget, PowerEffectKind,
+};
 
 pub struct Cultist;
 
-impl MonsterBehavior for Cultist {
-    fn roll_move(
-        _rng: &mut crate::rng::StsRng,
-        entity: &MonsterEntity,
-        _ascension_level: u8,
-        _num: i32,
-    ) -> (u8, Intent) {
-        let is_first_move = entity.move_history.is_empty();
+const ATTACK: u8 = 1;
+const RITUAL: u8 = 3;
 
-        let attack_dmg = 6;
+fn ritual_amount(asc: u8) -> i32 {
+    if asc >= 17 {
+        5
+    } else if asc >= 2 {
+        4
+    } else {
+        3
+    }
+}
 
-        if is_first_move {
-            return (3, Intent::Buff); // 3 = INCANTATION
-        }
-
-        (
-            1,
-            Intent::Attack {
-                damage: attack_dmg,
+fn attack_plan() -> MonsterTurnPlan {
+    MonsterTurnPlan::single(
+        ATTACK,
+        MoveStep::Attack(AttackStep {
+            target: MoveTarget::Player,
+            attack: AttackSpec {
+                base_damage: 6,
                 hits: 1,
+                damage_kind: DamageKind::Normal,
             },
-        ) // 1 = DARK_STRIKE
+        }),
+    )
+}
+
+fn ritual_plan(asc: u8) -> MonsterTurnPlan {
+    MonsterTurnPlan::single(
+        RITUAL,
+        MoveStep::ApplyPower(ApplyPowerStep {
+            target: MoveTarget::SelfTarget,
+            power_id: PowerId::Ritual,
+            amount: ritual_amount(asc),
+            effect: PowerEffectKind::Buff,
+            visible_strength: EffectStrength::Normal,
+        }),
+    )
+}
+
+fn plan_for(move_id: u8, asc: u8) -> MonsterTurnPlan {
+    match move_id {
+        ATTACK => attack_plan(),
+        RITUAL => ritual_plan(asc),
+        _ => MonsterTurnPlan::unknown(move_id),
+    }
+}
+
+impl MonsterBehavior for Cultist {
+    fn roll_move_plan(
+        _rng: &mut crate::runtime::rng::StsRng,
+        entity: &MonsterEntity,
+        asc: u8,
+        _num: i32,
+    ) -> MonsterTurnPlan {
+        if entity.move_history().is_empty() {
+            ritual_plan(asc)
+        } else {
+            attack_plan()
+        }
     }
 
-    fn take_turn(state: &mut CombatState, entity: &MonsterEntity) -> Vec<Action> {
-        let asc = state.ascension_level;
-        let attack_dmg = 6;
-        let ritual_amount = if asc >= 17 {
-            5
-        } else if asc >= 2 {
-            4
-        } else {
-            3
-        };
+    fn turn_plan(state: &CombatState, entity: &MonsterEntity) -> MonsterTurnPlan {
+        plan_for(entity.planned_move_id(), state.meta.ascension_level)
+    }
 
-        let mut actions = Vec::new();
-
-        match entity.next_move_byte {
-            3 => {
-                // INCANTATION
-                // In a full implementation, we could have TalkAction too.
-                actions.push(Action::ApplyPower {
-                    target: entity.id,
+    fn take_turn_plan(
+        _state: &mut CombatState,
+        entity: &MonsterEntity,
+        plan: &MonsterTurnPlan,
+    ) -> Vec<Action> {
+        match plan.steps.as_slice() {
+            [MoveStep::ApplyPower(ApplyPowerStep {
+                target: MoveTarget::SelfTarget,
+                power_id: PowerId::Ritual,
+                amount,
+                effect: PowerEffectKind::Buff,
+                ..
+            })] => vec![
+                Action::ApplyPowerDetailed {
                     source: entity.id,
-                    power_id: PowerId::Ritual,
-                    amount: ritual_amount,
-                });
-                actions.push(Action::UpdatePowerExtraData {
                     target: entity.id,
                     power_id: PowerId::Ritual,
-                    value: 1, // 1 = skip first turn
+                    amount: *amount,
+                    instance_id: None,
+                    extra_data: Some(crate::content::powers::core::ritual::extra_data(
+                        false, true,
+                    )),
+                },
+                Action::RollMonsterMove {
+                    monster_id: entity.id,
+                },
+            ],
+            [MoveStep::Attack(AttackStep {
+                target: MoveTarget::Player,
+                attack,
+            })] => {
+                let mut actions = attack_actions(entity.id, PLAYER, attack);
+                actions.push(Action::RollMonsterMove {
+                    monster_id: entity.id,
                 });
+                actions
             }
-            1 => {
-                // DARK_STRIKE
-                actions.push(Action::Damage(DamageInfo {
-                    source: entity.id,
-                    target: 0, // Player
-                    base: attack_dmg,
-                    output: attack_dmg,
-                    damage_type: DamageType::Normal,
-                    is_modified: false,
-                }));
-            }
-            _ => {
-                // Fallback (should not happen)
-            }
+            [] => panic!("cultist plan missing locked truth"),
+            steps => panic!("cultist plan/steps mismatch: {:?}", steps),
         }
-
-        // Always end a turn by rolling the NEXT move to update intent graphic!
-        actions.push(Action::RollMonsterMove {
-            monster_id: entity.id,
-        });
-
-        actions
     }
 }

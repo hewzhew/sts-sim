@@ -61,6 +61,12 @@
                     ],
                     "scope": "combat"
                 },
+                "IntangiblePlayer": {
+                    "java": [
+                        "IntangiblePlayer"
+                    ],
+                    "scope": "combat"
+                },
                 "Thorns": {
                     "java": [
                         "Thorns"

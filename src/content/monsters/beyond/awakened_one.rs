@@ -1,172 +1,182 @@
-use crate::action::{Action, DamageInfo, DamageType};
-use crate::combat::{CombatState, Intent};
+use crate::content::cards::CardId;
+use crate::content::monsters::exordium::{add_card_action, attack_actions, PLAYER};
 use crate::content::monsters::MonsterBehavior;
 use crate::content::powers::PowerId;
+use crate::runtime::action::{Action, MonsterRuntimePatch};
+use crate::runtime::combat::{CombatState, MonsterEntity};
+use crate::semantics::combat::{
+    AddCardStep, AttackSpec, AttackStep, CardDestination, DamageKind, EffectStrength,
+    MonsterMoveSpec, MonsterTurnPlan, MoveStep, MoveTarget,
+};
+use smallvec::smallvec;
 
 pub struct AwakenedOne;
 
-impl MonsterBehavior for AwakenedOne {
-    fn roll_move(
-        _rng: &mut crate::rng::StsRng,
-        entity: &crate::combat::MonsterEntity,
-        _ascension_level: u8,
-        num: i32,
-    ) -> (u8, Intent) {
-        // Phase detection: check for Unawakened power
-        let is_phase_one = !entity.move_history.contains(&3);
+const SLASH: u8 = 1;
+const SOUL_STRIKE: u8 = 2;
+const REBIRTH: u8 = 3;
+const DARK_ECHO: u8 = 5;
+const SLUDGE: u8 = 6;
+const TACKLE: u8 = 8;
 
-        if entity.current_hp <= 0 && is_phase_one {
-            return (3, Intent::Unknown); // REBIRTH TRIGGER
-        }
+fn current_runtime(entity: &MonsterEntity) -> (bool, bool) {
+    (entity.awakened_one.form1, entity.awakened_one.first_turn)
+}
 
-        if is_phase_one {
-            // Phase 1 Logic
-            let slash_dmg = 20;
-            let soul_strike_dmg = 6;
-
-            if entity.move_history.is_empty() {
-                return (
-                    1,
-                    Intent::Attack {
-                        damage: slash_dmg,
-                        hits: 1,
-                    },
-                );
-            }
-            let last_move = entity.move_history.back().copied().unwrap_or(0);
-            let last_two_moves = |byte| {
-                entity.move_history.len() >= 2
-                    && entity.move_history[entity.move_history.len() - 1] == byte
-                    && entity.move_history[entity.move_history.len() - 2] == byte
-            };
-
-            if num < 25 {
-                if last_move != 2 {
-                    return (
-                        2,
-                        Intent::Attack {
-                            damage: soul_strike_dmg,
-                            hits: 4,
-                        },
-                    );
-                } else {
-                    return (
-                        1,
-                        Intent::Attack {
-                            damage: slash_dmg,
-                            hits: 1,
-                        },
-                    );
-                }
-            } else if !last_two_moves(1) {
-                return (
-                    1,
-                    Intent::Attack {
-                        damage: slash_dmg,
-                        hits: 1,
-                    },
-                );
-            } else {
-                return (
-                    2,
-                    Intent::Attack {
-                        damage: soul_strike_dmg,
-                        hits: 4,
-                    },
-                );
-            }
-        } else {
-            // Phase 2 Logic
-            let dark_echo_dmg = 40;
-            let sludge_dmg = 18;
-            let tackle_dmg = 10;
-
-            // First move after REBIRTH (byte 3) is always Dark Echo
-            let last_move = entity.move_history.back().copied().unwrap_or(0);
-            if last_move == 3 {
-                return (
-                    5,
-                    Intent::Attack {
-                        damage: dark_echo_dmg,
-                        hits: 1,
-                    },
-                );
-            }
-            let last_two_moves = |byte| {
-                entity.move_history.len() >= 2
-                    && entity.move_history[entity.move_history.len() - 1] == byte
-                    && entity.move_history[entity.move_history.len() - 2] == byte
-            };
-
-            if num < 50 {
-                if !last_two_moves(6) {
-                    return (
-                        6,
-                        Intent::AttackDebuff {
-                            damage: sludge_dmg,
-                            hits: 1,
-                        },
-                    );
-                } else {
-                    return (
-                        8,
-                        Intent::Attack {
-                            damage: tackle_dmg,
-                            hits: 3,
-                        },
-                    );
-                }
-            } else if !last_two_moves(8) {
-                return (
-                    8,
-                    Intent::Attack {
-                        damage: tackle_dmg,
-                        hits: 3,
-                    },
-                );
-            } else {
-                return (
-                    6,
-                    Intent::AttackDebuff {
-                        damage: sludge_dmg,
-                        hits: 1,
-                    },
-                );
-            }
-        }
+fn awakened_one_runtime_update(
+    entity: &MonsterEntity,
+    form1: Option<bool>,
+    first_turn: Option<bool>,
+) -> Action {
+    Action::UpdateMonsterRuntime {
+        monster_id: entity.id,
+        patch: MonsterRuntimePatch::AwakenedOne {
+            form1,
+            first_turn,
+            protocol_seeded: Some(true),
+        },
     }
+}
 
-    fn use_pre_battle_action(
-        entity: &crate::combat::MonsterEntity,
-        _hp_rng: &mut crate::rng::StsRng,
-        ascension_level: u8,
+fn last_move(entity: &MonsterEntity, move_id: u8) -> bool {
+    entity.move_history().back().copied() == Some(move_id)
+}
+
+fn last_two_moves(entity: &MonsterEntity, move_id: u8) -> bool {
+    let mut history = entity.move_history().iter().rev();
+    matches!(
+        (history.next().copied(), history.next().copied()),
+        (Some(a), Some(b)) if a == move_id && b == move_id
+    )
+}
+
+fn slash_plan() -> MonsterTurnPlan {
+    MonsterTurnPlan::from_spec(
+        SLASH,
+        MonsterMoveSpec::Attack(AttackSpec {
+            base_damage: 20,
+            hits: 1,
+            damage_kind: DamageKind::Normal,
+        }),
+    )
+}
+
+fn soul_strike_plan() -> MonsterTurnPlan {
+    MonsterTurnPlan::from_spec(
+        SOUL_STRIKE,
+        MonsterMoveSpec::Attack(AttackSpec {
+            base_damage: 6,
+            hits: 4,
+            damage_kind: DamageKind::Normal,
+        }),
+    )
+}
+
+fn rebirth_plan() -> MonsterTurnPlan {
+    MonsterTurnPlan::unknown(REBIRTH)
+}
+
+fn dark_echo_plan() -> MonsterTurnPlan {
+    MonsterTurnPlan::from_spec(
+        DARK_ECHO,
+        MonsterMoveSpec::Attack(AttackSpec {
+            base_damage: 40,
+            hits: 1,
+            damage_kind: DamageKind::Normal,
+        }),
+    )
+}
+
+fn sludge_plan() -> MonsterTurnPlan {
+    MonsterTurnPlan::with_visible_spec(
+        SLUDGE,
+        smallvec![
+            MoveStep::Attack(AttackStep {
+                target: MoveTarget::Player,
+                attack: AttackSpec {
+                    base_damage: 18,
+                    hits: 1,
+                    damage_kind: DamageKind::Normal,
+                },
+            }),
+            MoveStep::AddCard(AddCardStep {
+                card_id: CardId::Void,
+                amount: 1,
+                upgraded: false,
+                destination: CardDestination::DrawPileRandom,
+                visible_strength: EffectStrength::Normal,
+            }),
+        ],
+        MonsterMoveSpec::AttackAddCard(
+            AttackSpec {
+                base_damage: 18,
+                hits: 1,
+                damage_kind: DamageKind::Normal,
+            },
+            AddCardStep {
+                card_id: CardId::Void,
+                amount: 1,
+                upgraded: false,
+                destination: CardDestination::DrawPileRandom,
+                visible_strength: EffectStrength::Normal,
+            },
+        ),
+    )
+}
+
+fn tackle_plan() -> MonsterTurnPlan {
+    MonsterTurnPlan::from_spec(
+        TACKLE,
+        MonsterMoveSpec::Attack(AttackSpec {
+            base_damage: 10,
+            hits: 3,
+            damage_kind: DamageKind::Normal,
+        }),
+    )
+}
+
+fn plan_for(move_id: u8) -> MonsterTurnPlan {
+    match move_id {
+        SLASH => slash_plan(),
+        SOUL_STRIKE => soul_strike_plan(),
+        REBIRTH => rebirth_plan(),
+        DARK_ECHO => dark_echo_plan(),
+        SLUDGE => sludge_plan(),
+        TACKLE => tackle_plan(),
+        _ => MonsterTurnPlan::unknown(move_id),
+    }
+}
+
+impl MonsterBehavior for AwakenedOne {
+    fn use_pre_battle_actions(
+        state: &mut CombatState,
+        entity: &MonsterEntity,
+        legacy_rng: crate::content::monsters::PreBattleLegacyRng,
     ) -> Vec<Action> {
-        let mut actions = Vec::new();
-
-        let regen_amt = if ascension_level >= 19 { 15 } else { 10 };
-        let curiosity_amt = if ascension_level >= 19 { 2 } else { 1 };
-
-        actions.push(Action::ApplyPower {
-            source: entity.id,
-            target: entity.id,
-            power_id: PowerId::Regen,
-            amount: regen_amt,
-        });
-
-        actions.push(Action::ApplyPower {
-            source: entity.id,
-            target: entity.id,
-            power_id: PowerId::Curiosity, // Requires registration
-            amount: curiosity_amt,
-        });
-
-        actions.push(Action::ApplyPower {
-            source: entity.id,
-            target: entity.id,
-            power_id: PowerId::Unawakened, // Requires registration
-            amount: 1,
-        });
-
+        let (_rng, ascension_level) =
+            crate::content::monsters::legacy_pre_battle_rng(state, legacy_rng);
+        let regen_amount = if ascension_level >= 19 { 15 } else { 10 };
+        let curiosity_amount = if ascension_level >= 19 { 2 } else { 1 };
+        let mut actions = vec![
+            Action::ApplyPower {
+                source: entity.id,
+                target: entity.id,
+                power_id: PowerId::Regen,
+                amount: regen_amount,
+            },
+            Action::ApplyPower {
+                source: entity.id,
+                target: entity.id,
+                power_id: PowerId::Curiosity,
+                amount: curiosity_amount,
+            },
+            Action::ApplyPower {
+                source: entity.id,
+                target: entity.id,
+                power_id: PowerId::Unawakened,
+                amount: 1,
+            },
+        ];
         if ascension_level >= 4 {
             actions.push(Action::ApplyPower {
                 source: entity.id,
@@ -175,100 +185,126 @@ impl MonsterBehavior for AwakenedOne {
                 amount: 2,
             });
         }
-
         actions
     }
 
-    fn take_turn(state: &mut CombatState, entity: &crate::combat::MonsterEntity) -> Vec<Action> {
-        let mut actions = Vec::new();
-        let _asc = state.ascension_level;
-
-        match entity.next_move_byte {
-            1 => {
-                // SLASH
-                actions.push(Action::Damage(DamageInfo {
-                    source: entity.id,
-                    target: 0,
-                    base: 20,
-                    output: 20,
-                    damage_type: DamageType::Normal,
-                    is_modified: false,
-                }));
+    fn roll_move_plan(
+        _rng: &mut crate::runtime::rng::StsRng,
+        entity: &MonsterEntity,
+        _ascension_level: u8,
+        num: i32,
+    ) -> MonsterTurnPlan {
+        let (form1, first_turn) = current_runtime(entity);
+        if form1 {
+            if first_turn {
+                return slash_plan();
             }
-            2 => {
-                // SOUL STRIKE
-                for _ in 0..4 {
-                    actions.push(Action::Damage(DamageInfo {
-                        source: entity.id,
-                        target: 0,
-                        base: 6,
-                        output: 6,
-                        damage_type: DamageType::Normal,
-                        is_modified: false,
-                    }));
+            if num < 25 {
+                if !last_move(entity, SOUL_STRIKE) {
+                    soul_strike_plan()
+                } else {
+                    slash_plan()
                 }
+            } else if !last_two_moves(entity, SLASH) {
+                slash_plan()
+            } else {
+                soul_strike_plan()
             }
-            3 => {
-                // REBIRTH TRIGGER
-                if let Some(monster) = state.monsters.iter_mut().find(|m| m.id == entity.id) {
-                    monster.half_dead = false;
-                }
-                let asc = state.ascension_level;
-                let heal_amt = if asc >= 9 { 320 } else { 300 };
-                actions.push(Action::Heal {
-                    target: entity.id,
-                    amount: heal_amt,
-                });
+        } else if first_turn {
+            dark_echo_plan()
+        } else if num < 50 {
+            if !last_two_moves(entity, SLUDGE) {
+                sludge_plan()
+            } else {
+                tackle_plan()
             }
-            5 => {
-                // DARK ECHO
-                actions.push(Action::Damage(DamageInfo {
-                    source: entity.id,
-                    target: 0,
-                    base: 40,
-                    output: 40,
-                    damage_type: DamageType::Normal,
-                    is_modified: false,
-                }));
-            }
-            6 => {
-                // SLUDGE
-                actions.push(Action::Damage(DamageInfo {
-                    source: entity.id,
-                    target: 0,
-                    base: 18,
-                    output: 18,
-                    damage_type: DamageType::Normal,
-                    is_modified: false,
-                }));
-                // Need MakeTempCardInDrawPileAction equivalent (Void)
-                actions.push(Action::MakeTempCardInDrawPile {
-                    card_id: crate::content::cards::CardId::Void,
-                    amount: 1,
-                    random_spot: true,
-                    upgraded: false,
-                });
-            }
-            8 => {
-                // TACKLE
-                for _ in 0..3 {
-                    actions.push(Action::Damage(DamageInfo {
-                        source: entity.id,
-                        target: 0,
-                        base: 10,
-                        output: 10,
-                        damage_type: DamageType::Normal,
-                        is_modified: false,
-                    }));
-                }
-            }
-            _ => {}
+        } else if !last_two_moves(entity, TACKLE) {
+            tackle_plan()
+        } else {
+            sludge_plan()
         }
+    }
+
+    fn on_roll_move(
+        _ascension_level: u8,
+        entity: &MonsterEntity,
+        _num: i32,
+        plan: &MonsterTurnPlan,
+    ) -> Vec<Action> {
+        let (form1, first_turn) = current_runtime(entity);
+        if form1 && first_turn && plan.move_id == SLASH {
+            vec![awakened_one_runtime_update(entity, None, Some(false))]
+        } else {
+            Vec::new()
+        }
+    }
+
+    fn turn_plan(_state: &CombatState, entity: &MonsterEntity) -> MonsterTurnPlan {
+        plan_for(entity.planned_move_id())
+    }
+
+    fn take_turn_plan(
+        _state: &mut CombatState,
+        entity: &MonsterEntity,
+        plan: &MonsterTurnPlan,
+    ) -> Vec<Action> {
+        let mut actions = match (plan.move_id, plan.steps.as_slice()) {
+            (
+                SLASH | SOUL_STRIKE | DARK_ECHO | TACKLE,
+                [MoveStep::Attack(AttackStep {
+                    target: MoveTarget::Player,
+                    attack,
+                })],
+            ) => {
+                let mut actions = Vec::new();
+                if plan.move_id == DARK_ECHO {
+                    actions.push(awakened_one_runtime_update(entity, None, Some(false)));
+                }
+                actions.extend(attack_actions(entity.id, PLAYER, attack));
+                actions
+            }
+            (
+                SLUDGE,
+                [MoveStep::Attack(AttackStep {
+                    target: MoveTarget::Player,
+                    attack,
+                }), MoveStep::AddCard(add_card)],
+            ) => {
+                let mut actions = attack_actions(entity.id, PLAYER, attack);
+                actions.push(add_card_action(add_card));
+                actions
+            }
+            (REBIRTH, []) => vec![
+                Action::ReviveMonster { target: entity.id },
+                Action::Heal {
+                    target: entity.id,
+                    amount: entity.max_hp,
+                },
+            ],
+            (_, []) => panic!("awakened one plan missing locked truth: {}", plan.move_id),
+            (move_id, steps) => panic!("awakened one plan/steps mismatch: {} {:?}", move_id, steps),
+        };
 
         actions.push(Action::RollMonsterMove {
             monster_id: entity.id,
         });
-
         actions
+    }
+
+    fn on_death(state: &mut CombatState, entity: &MonsterEntity) -> Vec<Action> {
+        state
+            .entities
+            .monsters
+            .iter()
+            .filter(|monster| {
+                monster.id != entity.id
+                    && !monster.is_dying
+                    && !monster.is_escaped
+                    && monster.current_hp > 0
+                    && crate::content::monsters::EnemyId::from_id(monster.monster_type)
+                        == Some(crate::content::monsters::EnemyId::Cultist)
+            })
+            .map(|monster| Action::Escape { target: monster.id })
+            .collect()
     }
 }

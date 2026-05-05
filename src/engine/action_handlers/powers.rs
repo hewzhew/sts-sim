@@ -3,28 +3,37 @@
 // Handles: ApplyPower, RemovePower, RemoveAllDebuffs, ApplyStasis,
 //          UpdatePowerExtraData, AwakenedRebirthClear, GainEnergy
 
-use crate::action::Action;
-use crate::combat::CombatState;
+use crate::content::powers::store;
 use crate::content::powers::PowerId;
+use crate::runtime::action::Action;
+use crate::runtime::combat::CombatState;
 
 pub fn handle_apply_power(
     source: usize,
     target: usize,
     power_id: PowerId,
-    mut amount: i32,
+    amount: i32,
     state: &mut CombatState,
 ) {
-    if matches!(
-        power_id,
-        PowerId::NoDraw | PowerId::Minion | PowerId::Corruption | PowerId::Split
-    ) {
-        amount = -1;
-    }
+    handle_apply_power_detailed(source, target, power_id, amount, None, None, state);
+}
+
+pub fn handle_apply_power_detailed(
+    source: usize,
+    target: usize,
+    power_id: PowerId,
+    mut amount: i32,
+    instance_id: Option<u32>,
+    extra_data: Option<i32>,
+    state: &mut CombatState,
+) {
+    amount = crate::content::powers::canonicalize_applied_amount(power_id, amount);
 
     // C1: Snake Skull → +1 Poison
     if amount > 0
         && power_id == PowerId::Poison
         && state
+            .entities
             .player
             .has_relic(crate::content::relics::RelicId::SneckoSkull)
     {
@@ -36,15 +45,16 @@ pub fn handle_apply_power(
     // U1: Dead/Escaped target guard
     if target == 0 {
         // Player target — always valid
-    } else if let Some(m) = state.monsters.iter().find(|m| m.id == target) {
-        if m.is_dying || m.current_hp <= 0 {
+    } else if let Some(m) = state.entities.monsters.iter().find(|m| m.id == target) {
+        if m.is_dying || m.is_escaped || m.current_hp <= 0 {
             return;
         }
     }
 
     // U3: onApplyPower hooks (Sadistic Nature)
     if source != 0 || target != 0 {
-        if let Some(source_powers) = state.power_db.get(&source).cloned() {
+        if let Some(source_powers) = store::powers_for(state, source).map(|powers| powers.to_vec())
+        {
             for power in &source_powers {
                 let hook_actions = crate::content::powers::resolve_power_on_apply_power(
                     power.power_type,
@@ -55,9 +65,9 @@ pub fn handle_apply_power(
                     source,
                     state,
                 );
-                let hook_actions_4: smallvec::SmallVec<[crate::action::ActionInfo; 4]> =
+                let hook_actions_4: smallvec::SmallVec<[crate::runtime::action::ActionInfo; 4]> =
                     hook_actions.into_iter().collect();
-                crate::engine::core::queue_actions(&mut state.action_queue, hook_actions_4);
+                state.queue_actions(hook_actions_4);
             }
         }
     }
@@ -65,12 +75,12 @@ pub fn handle_apply_power(
     // U4: Champion Belt
     let champion_belt_actions =
         crate::content::relics::hooks::on_apply_power(state, power_id, target);
-    crate::engine::core::queue_actions(&mut state.action_queue, champion_belt_actions);
+    state.queue_actions(champion_belt_actions);
 
     // U5: Monster re-check after hooks
     if target != 0 {
-        if let Some(m) = state.monsters.iter().find(|m| m.id == target) {
-            if m.is_dying || m.current_hp <= 0 {
+        if let Some(m) = state.entities.monsters.iter().find(|m| m.id == target) {
+            if m.is_dying || m.is_escaped || m.current_hp <= 0 {
                 return;
             }
         }
@@ -84,21 +94,17 @@ pub fn handle_apply_power(
         }
     }
 
-    // U8: Artifact blocks debuffs
-    if crate::content::powers::is_debuff(power_id, amount) {
-        let has_artifact = state.power_db.get(&target).map_or(false, |powers| {
-            powers.iter().any(|p| p.power_type == PowerId::Artifact)
-        });
+    // U8: Artifact blocks actual debuff applications, not debuff cleanup like Weak -1.
+    if crate::content::powers::is_debuff_application(power_id, amount) {
+        let has_artifact = store::powers_for(state, target)
+            .is_some_and(|powers| powers.iter().any(|p| p.power_type == PowerId::Artifact));
         if has_artifact {
-            if let Some(powers) = state.power_db.get_mut(&target) {
-                if let Some(art) = powers
-                    .iter_mut()
-                    .find(|p| p.power_type == PowerId::Artifact)
-                {
-                    art.amount -= 1;
-                    if art.amount <= 0 {
-                        powers.retain(|p| p.power_type != PowerId::Artifact);
-                    }
+            if let Some(amount) = store::with_power_mut(state, target, PowerId::Artifact, |art| {
+                art.amount -= 1;
+                art.amount
+            }) {
+                if amount <= 0 {
+                    store::remove_power_type(state, target, PowerId::Artifact);
                 }
             }
             return;
@@ -106,71 +112,107 @@ pub fn handle_apply_power(
     }
 
     // Java ApplyPowerAction: No Draw does not stack and reapplying it is a no-op.
-    if matches!(
-        power_id,
-        PowerId::NoDraw | PowerId::Minion | PowerId::Corruption | PowerId::Split
-    )
-        && state
-            .power_db
-            .get(&target)
+    if crate::content::powers::uses_sentinel_amount(power_id)
+        && store::powers_for(state, target)
             .is_some_and(|powers| powers.iter().any(|p| p.power_type == power_id))
     {
         return;
     }
 
     // Core power application
-    let powers = state.power_db.entry(target).or_insert_with(Vec::new);
-    if let Some(existing) = powers.iter_mut().find(|p| p.power_type == power_id) {
-        existing.amount += amount;
+    let powers = store::ensure_powers_for_mut(state, target);
+    let mut should_remove_existing = false;
+    if crate::content::powers::uses_distinct_instances(power_id) {
+        if let Some(instance_id) = instance_id {
+            if let Some(existing) = powers
+                .iter_mut()
+                .find(|p| p.power_type == power_id && p.instance_id == Some(instance_id))
+            {
+                existing.amount += amount;
+                if let Some(extra_data) = extra_data {
+                    existing.extra_data = extra_data;
+                }
+                if !crate::content::powers::should_keep_power_instance(power_id, existing.amount) {
+                    should_remove_existing = true;
+                }
+            } else if crate::content::powers::should_keep_power_instance(power_id, amount) {
+                powers.push(crate::runtime::combat::Power {
+                    power_type: power_id,
+                    instance_id: Some(instance_id),
+                    amount,
+                    extra_data: extra_data.unwrap_or(0),
+                    just_applied: true,
+                });
+            }
+        } else if let Some(existing) = powers.iter_mut().find(|p| p.power_type == power_id) {
+            existing.amount += amount;
+            if let Some(extra_data) = extra_data {
+                existing.extra_data = extra_data;
+            }
+            if !crate::content::powers::should_keep_power_instance(power_id, existing.amount) {
+                should_remove_existing = true;
+            }
+        } else if crate::content::powers::should_keep_power_instance(power_id, amount) {
+            powers.push(crate::runtime::combat::Power {
+                power_type: power_id,
+                instance_id: None,
+                amount,
+                extra_data: extra_data.unwrap_or(0),
+                just_applied: true,
+            });
+        }
+    } else if let Some(existing) = powers.iter_mut().find(|p| p.power_type == power_id) {
         if power_id == PowerId::Combust {
+            existing.amount += amount;
             existing.extra_data += 1;
+        } else if power_id == PowerId::PanachePower && amount > 0 {
+            // Panache has two distinct positive-amount paths:
+            //   1. card application / stacking: amount is damage (10/14), damage stacks
+            //   2. countdown reset: internal ApplyPower(+1..+4), amount should reset countdown
+            if amount <= 4 && existing.amount < 5 {
+                existing.amount = (existing.amount + amount).min(5);
+            } else {
+                existing.extra_data += amount;
+            }
         } else if power_id == PowerId::Malleable && amount > 0 {
+            existing.amount += amount;
             existing.extra_data += amount;
         } else if power_id == PowerId::Flight && amount > 0 {
+            existing.amount += amount;
             existing.extra_data = existing.amount.max(existing.extra_data);
+        } else {
+            existing.amount += amount;
         }
 
         // Strength/Dexterity/Focus can go negative, but Java still removes them at exactly 0.
-        let can_go_neg = matches!(
-            power_id,
-            PowerId::Strength
-                | PowerId::Dexterity
-                | PowerId::Focus
-                | PowerId::NoDraw
-                | PowerId::Minion
-                | PowerId::Corruption
-                | PowerId::Split
-        );
-        if existing.amount == 0 && power_id != PowerId::TimeWarp {
-            powers.retain(|p| p.power_type != power_id);
-        } else if existing.amount < 0 && !can_go_neg && power_id != PowerId::TimeWarp {
-            powers.retain(|p| p.power_type != power_id);
+        if !crate::content::powers::should_keep_power_instance(power_id, existing.amount) {
+            should_remove_existing = true;
         }
     } else {
         // If they don't have it, we only add it if amount > 0, OR if it's a negative amount of a power that CAN go negative
-        let can_go_neg = matches!(
-            power_id,
-            PowerId::Strength
-                | PowerId::Dexterity
-                | PowerId::Focus
-                | PowerId::NoDraw
-                | PowerId::Minion
-                | PowerId::Corruption
-                | PowerId::Split
-        );
-        if amount > 0 || (amount < 0 && can_go_neg) {
-            let extra_data = match power_id {
-                PowerId::Combust => 1,
-                PowerId::Malleable => amount,
-                PowerId::Flight => amount,
-                _ => 0,
+        if crate::content::powers::should_keep_power_instance(power_id, amount) {
+            let (stored_amount, extra_data) = match power_id {
+                PowerId::PanachePower => (5, amount),
+                PowerId::Combust => (amount, 1),
+                PowerId::Malleable => (amount, amount),
+                PowerId::Flight => (amount, amount),
+                _ if extra_data.is_some() => (amount, extra_data.unwrap_or(0)),
+                _ => (amount, 0),
             };
-            powers.push(crate::combat::Power {
+            powers.push(crate::runtime::combat::Power {
                 power_type: power_id,
-                amount,
+                instance_id: None,
+                amount: stored_amount,
                 extra_data,
                 just_applied: true,
             });
+        }
+    }
+    if should_remove_existing {
+        if let Some(instance_id) = instance_id {
+            store::remove_power_instance(state, target, power_id, instance_id);
+        } else {
+            store::remove_power_type(state, target, power_id);
         }
     }
 
@@ -178,30 +220,210 @@ pub fn handle_apply_power(
     if power_id == PowerId::Corruption {
         crate::content::cards::ironclad::corruption::corruption_on_apply(state);
     }
+
+    if target == 0 {
+        state.recompute_turn_start_draw_modifier();
+    }
+}
+
+pub fn handle_trigger_time_warp_end_turn(owner: usize, state: &mut CombatState) {
+    let current_amount = store::power_amount(state, owner, PowerId::TimeWarp);
+    if current_amount != 0 {
+        let _ = store::with_power_mut(state, owner, PowerId::TimeWarp, |power| {
+            power.amount = 0;
+            power.just_applied = false;
+        });
+    }
+
+    // Java TimeWarpPower.callEndTurnEarlySequence:
+    // clear queued autoplay cards, then end the turn once the current card fully resolves.
+    crate::engine::action_handlers::cards::handle_clear_card_queue(state);
+    crate::engine::action_handlers::cards::handle_queue_early_end_turn(state);
+
+    let alive_monster_ids: Vec<usize> = state
+        .entities
+        .monsters
+        .iter()
+        .filter(|m| m.current_hp > 0 && !m.is_dying && !m.is_escaped)
+        .map(|m| m.id)
+        .collect();
+    for monster_id in alive_monster_ids {
+        state.queue_action_back(Action::ApplyPower {
+            source: monster_id,
+            target: monster_id,
+            power_id: PowerId::Strength,
+            amount: 2,
+        });
+    }
+}
+
+fn random_alive_monster(state: &mut CombatState) -> Option<usize> {
+    let alive: Vec<usize> = state
+        .entities
+        .monsters
+        .iter()
+        .filter(|m| m.current_hp > 0 && !m.is_dying && !m.is_escaped)
+        .map(|m| m.id)
+        .collect();
+    if alive.is_empty() {
+        None
+    } else {
+        let idx = state.rng.card_random_rng.random(alive.len() as i32 - 1) as usize;
+        Some(alive[idx])
+    }
+}
+
+pub fn handle_bouncing_flask(
+    target: Option<usize>,
+    amount: i32,
+    num_times: u8,
+    state: &mut CombatState,
+) {
+    let Some(target_id) = target.or_else(|| random_alive_monster(state)) else {
+        return;
+    };
+
+    if num_times > 1 {
+        let next_target = random_alive_monster(state);
+        state.queue_action_front(Action::BouncingFlask {
+            target: next_target,
+            amount,
+            num_times: num_times - 1,
+        });
+    }
+
+    if state
+        .entities
+        .monsters
+        .iter()
+        .any(|m| m.id == target_id && m.current_hp > 0 && !m.is_dying && !m.is_escaped)
+    {
+        state.queue_action_front(Action::ApplyPower {
+            source: 0,
+            target: target_id,
+            power_id: PowerId::Poison,
+            amount,
+        });
+    }
 }
 
 pub fn handle_remove_power(target: usize, power_id: PowerId, state: &mut CombatState) {
-    if let Some(powers) = state.power_db.get_mut(&target) {
-        powers.retain(|p| p.power_type != power_id);
+    let had_power = store::powers_for(state, target)
+        .is_some_and(|powers| powers.iter().any(|p| p.power_type == power_id));
+    if !had_power {
+        return;
+    }
+
+    let on_remove_actions =
+        crate::content::powers::resolve_power_on_remove(power_id, state, target);
+    for action in on_remove_actions {
+        state.queue_action_back(action);
+    }
+
+    store::remove_power_type(state, target, power_id);
+}
+
+pub fn handle_remove_power_instance(
+    target: usize,
+    power_id: PowerId,
+    instance_id: u32,
+    state: &mut CombatState,
+) {
+    let power_snapshot = store::powers_for(state, target).and_then(|powers| {
+        powers
+            .iter()
+            .find(|p| p.power_type == power_id && p.instance_id == Some(instance_id))
+            .cloned()
+    });
+    let Some(power_snapshot) = power_snapshot else {
+        return;
+    };
+
+    let on_remove_actions =
+        crate::content::powers::resolve_power_on_remove(power_snapshot.power_type, state, target);
+    for action in on_remove_actions {
+        state.queue_action_back(action);
+    }
+
+    store::remove_power_instance(state, target, power_id, instance_id);
+}
+
+pub fn handle_reduce_power(target: usize, power_id: PowerId, amount: i32, state: &mut CombatState) {
+    if amount <= 0 {
+        return;
+    }
+
+    let Some(remaining) = store::with_power_mut(state, target, power_id, |power| {
+        power.amount -= amount;
+        power.amount
+    }) else {
+        return;
+    };
+
+    if !crate::content::powers::should_keep_power_instance(power_id, remaining) {
+        handle_remove_power(target, power_id, state);
+    }
+
+    if target == 0 {
+        state.recompute_turn_start_draw_modifier();
+    }
+}
+
+pub fn handle_reduce_power_instance(
+    target: usize,
+    power_id: PowerId,
+    instance_id: u32,
+    amount: i32,
+    state: &mut CombatState,
+) {
+    if amount <= 0 {
+        return;
+    }
+
+    let Some(remaining) =
+        store::with_power_instance_mut(state, target, power_id, instance_id, |power| {
+            power.amount -= amount;
+            power.amount
+        })
+    else {
+        return;
+    };
+
+    if !crate::content::powers::should_keep_power_instance(power_id, remaining) {
+        handle_remove_power_instance(target, power_id, instance_id, state);
+    }
+
+    if target == 0 {
+        state.recompute_turn_start_draw_modifier();
     }
 }
 
 pub fn handle_remove_all_debuffs(target: usize, state: &mut CombatState) {
-    if let Some(powers) = state.power_db.get_mut(&target) {
-        powers.retain(|p| !crate::content::powers::is_debuff(p.power_type, p.amount));
+    let debuffs = store::powers_for(state, target)
+        .map(|powers| {
+            powers
+                .iter()
+                .filter(|p| crate::content::powers::is_debuff(p.power_type, p.amount))
+                .map(|p| p.power_type)
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+
+    for power_id in debuffs {
+        state.queue_action_front(Action::RemovePower { target, power_id });
     }
 }
 
 pub fn handle_apply_stasis(target_id: usize, state: &mut CombatState) {
-    if state.draw_pile.is_empty() && state.discard_pile.is_empty() {
+    if state.zones.draw_pile.is_empty() && state.zones.discard_pile.is_empty() {
         return;
     }
 
-    let source_pile_draw = !state.draw_pile.is_empty();
+    let source_pile_draw = !state.zones.draw_pile.is_empty();
     let source_pile = if source_pile_draw {
-        &state.draw_pile
+        &state.zones.draw_pile
     } else {
-        &state.discard_pile
+        &state.zones.discard_pile
     };
 
     let rarities_to_check = [
@@ -240,19 +462,24 @@ pub fn handle_apply_stasis(target_id: usize, state: &mut CombatState) {
     };
 
     let card = if source_pile_draw {
-        state.draw_pile.remove(pick_idx)
+        state.zones.draw_pile.remove(pick_idx)
     } else {
-        state.discard_pile.remove(pick_idx)
+        state.zones.discard_pile.remove(pick_idx)
     };
 
     let uuid = card.uuid as i32;
-    state.limbo.push(card);
+    state.zones.limbo.push(card);
 
-    state.action_queue.push_front(Action::ApplyPower {
+    state.queue_action_front(Action::UpdatePowerExtraData {
+        target: target_id,
+        power_id: PowerId::Stasis,
+        value: uuid,
+    });
+    state.queue_action_front(Action::ApplyPower {
         source: target_id,
         target: target_id,
         power_id: PowerId::Stasis,
-        amount: uuid,
+        amount: -1,
     });
 }
 
@@ -262,36 +489,49 @@ pub fn handle_update_power_extra_data(
     value: i32,
     state: &mut CombatState,
 ) {
-    if let Some(powers) = state.power_db.get_mut(&target) {
-        if let Some(power) = powers.iter_mut().find(|p| p.power_type == power_id) {
-            power.extra_data = value;
-        }
-    }
+    let _ = store::with_power_mut(state, target, power_id, |power| {
+        power.extra_data = value;
+    });
+}
+
+pub fn handle_update_power_extra_data_instance(
+    target: usize,
+    power_id: PowerId,
+    instance_id: u32,
+    value: i32,
+    state: &mut CombatState,
+) {
+    let _ = store::with_power_instance_mut(state, target, power_id, instance_id, |power| {
+        power.extra_data = value;
+    });
 }
 
 pub fn handle_awakened_rebirth_clear(target: usize, state: &mut CombatState) {
-    if let Some(powers) = state.power_db.get_mut(&target) {
-        powers.retain(|p| {
-            p.power_type != PowerId::Curiosity
-                && p.power_type != PowerId::Unawakened
-                && p.power_type != PowerId::Shackled
-                && !crate::content::powers::is_debuff(p.power_type, p.amount)
-        });
-    }
+    store::retain_entity_powers(state, target, |p| {
+        p.power_type != PowerId::Curiosity
+            && p.power_type != PowerId::Unawakened
+            && p.power_type != PowerId::Shackled
+            && !crate::content::powers::is_debuff(p.power_type, p.amount)
+    });
 }
 
 pub fn handle_gain_energy(amount: i32, state: &mut CombatState) {
-    state.energy = (state.energy as i32 + amount).max(0) as u8;
+    state.turn.adjust_energy(amount);
 }
 
 pub fn handle_gain_max_hp(amount: i32, state: &mut CombatState) {
-    state.player.max_hp += amount;
-    state.player.current_hp = (state.player.current_hp + amount).min(state.player.max_hp);
+    state.entities.player.max_hp += amount;
+    state.entities.player.current_hp =
+        (state.entities.player.current_hp + amount).min(state.entities.player.max_hp);
 }
 
 pub fn handle_lose_max_hp(target: usize, amount: i32, state: &mut CombatState) {
     if target == 0 {
-        state.player.max_hp = (state.player.max_hp - amount).max(1);
-        state.player.current_hp = state.player.current_hp.min(state.player.max_hp);
+        state.entities.player.max_hp = (state.entities.player.max_hp - amount).max(1);
+        state.entities.player.current_hp = state
+            .entities
+            .player
+            .current_hp
+            .min(state.entities.player.max_hp);
     }
 }

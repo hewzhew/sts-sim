@@ -9,14 +9,18 @@
 
 ## 当前真相层
 
-- 结构化真相优先：
+- 一级真相层：
+  - `tools/analysis_cache/java_entities.json`
+  - `tools/analysis_cache/java_methods.json`
+  - `tools/analysis_cache/java_hooks.json`
+  - `tools/analysis_cache/java_callsites.json`
+  - `tools/analysis_cache/rust_dispatch.json`
+  - `tools/analysis_cache/schema_aliases.json`
+- 二级兼容层：
   - `output/hooks.json`
   - `output/scattered_logic.json`
   - `output/relics.json`
-- Markdown 是渲染层：
-  - `output/hooks.md`
-  - `output/scattered_logic.md`
-  - `output/relics.md`
+- Markdown 是渲染层，不是主真相层。
 
 ## 文件清单
 

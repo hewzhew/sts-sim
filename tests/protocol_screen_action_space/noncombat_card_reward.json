@@ -1,0 +1,54 @@
+{
+  "available_commands": [],
+  "ready_for_command": true,
+  "in_game": true,
+  "protocol_meta": {
+    "protocol_version": 7,
+    "capabilities": {
+      "combat_action_space": true,
+      "noncombat_action_space": true
+    },
+    "noncombat_action_space": {
+      "screen_type": "CARD_REWARD",
+      "actions": [
+        {
+          "action_id": "choice:card_reward:0",
+          "kind": "choose",
+          "command": "CHOOSE 0",
+          "choice_index": 0,
+          "choice_label": "pommel strike"
+        },
+        {
+          "action_id": "choice:card_reward:1",
+          "kind": "choose",
+          "command": "CHOOSE 1",
+          "choice_index": 1,
+          "choice_label": "anger"
+        },
+        {
+          "action_id": "cancel:card_reward",
+          "kind": "cancel",
+          "command": "SKIP"
+        }
+      ]
+    }
+  },
+  "game_state": {
+    "screen_type": "CARD_REWARD",
+    "room_phase": "COMPLETE",
+    "is_screen_up": true,
+    "screen_state": {
+      "cards": [
+        {
+          "id": "Pommel Strike",
+          "upgrades": 0
+        },
+        {
+          "id": "Anger",
+          "upgrades": 0
+        }
+      ],
+      "skip_available": true
+    }
+  }
+}

@@ -1,5 +1,5 @@
-use crate::action::Action;
 use crate::content::cards::{get_card_definition, CardType};
+use crate::runtime::action::Action;
 use smallvec::SmallVec;
 
 pub fn on_card_drawn(card_id: crate::content::cards::CardId, amount: i32) -> SmallVec<[Action; 2]> {

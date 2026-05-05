@@ -17,6 +17,7 @@ use crate::state::core::{EngineState, RunPendingChoiceReason, RunPendingChoiceSt
 ///   2 = completed
 use crate::state::events::{EventChoiceMeta, EventState};
 use crate::state::run::RunState;
+use crate::state::selection::DomainEventSource;
 
 /// Neow reward types
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -181,7 +182,7 @@ pub fn setup_neow_choices(run_state: &mut RunState) {
         extra.push(encode_drawback(NeowDrawback::None));
     } else {
         // blessing: 4 categories, each pick one reward
-        let mut neow_rng = crate::rng::StsRng::new(run_state.seed);
+        let mut neow_rng = crate::runtime::rng::StsRng::new(run_state.seed);
 
         // Category 0: small bonuses
         let cat0_options = [
@@ -319,13 +320,16 @@ fn apply_drawback(run_state: &mut RunState, drawback: NeowDrawback) {
     match drawback {
         NeowDrawback::None => {}
         NeowDrawback::TenPercentHpLoss => {
-            run_state.max_hp -= hp_bonus;
-            if run_state.current_hp > run_state.max_hp {
-                run_state.current_hp = run_state.max_hp;
-            }
+            run_state.lose_max_hp_with_source(
+                hp_bonus,
+                DomainEventSource::Event(crate::state::events::EventId::Neow),
+            );
         }
         NeowDrawback::NoGold => {
-            run_state.gold = 0;
+            run_state.set_gold_with_source(
+                0,
+                DomainEventSource::Event(crate::state::events::EventId::Neow),
+            );
         }
         NeowDrawback::Curse => {
             // Add a random curse to deck
@@ -334,10 +338,10 @@ fn apply_drawback(run_state: &mut RunState, drawback: NeowDrawback) {
         }
         NeowDrawback::PercentDamage => {
             let dmg = run_state.current_hp / 10 * 3;
-            run_state.current_hp -= dmg;
-            if run_state.current_hp < 1 {
-                run_state.current_hp = 1;
-            }
+            run_state.set_current_hp_with_source(
+                (run_state.current_hp - dmg).max(1),
+                DomainEventSource::Event(crate::state::events::EventId::Neow),
+            );
         }
     }
 }
@@ -354,62 +358,83 @@ fn apply_reward(
         NeowRewardType::ThreeEnemyKill => {
             // Obtain NeowsLament relic
             let relic_id = crate::content::relics::RelicId::NeowsLament;
-            if let Some(next_state) =
-                run_state.obtain_relic(relic_id, crate::state::core::EngineState::EventRoom)
-            {
+            if let Some(next_state) = run_state.obtain_relic_with_source(
+                relic_id,
+                crate::state::core::EngineState::EventRoom,
+                DomainEventSource::Event(crate::state::events::EventId::Neow),
+            ) {
                 *engine_state = next_state;
             }
         }
         NeowRewardType::TenPercentHpBonus => {
-            run_state.max_hp += hp_bonus;
-            run_state.current_hp += hp_bonus;
+            run_state.gain_max_hp_with_source(
+                hp_bonus,
+                hp_bonus,
+                DomainEventSource::Event(crate::state::events::EventId::Neow),
+            );
         }
         NeowRewardType::TwentyPercentHpBonus => {
-            run_state.max_hp += hp_bonus * 2;
-            run_state.current_hp += hp_bonus * 2;
+            run_state.gain_max_hp_with_source(
+                hp_bonus * 2,
+                hp_bonus * 2,
+                DomainEventSource::Event(crate::state::events::EventId::Neow),
+            );
         }
         NeowRewardType::HundredGold => {
-            run_state.gold += 100;
+            run_state.change_gold_with_source(
+                100,
+                DomainEventSource::Event(crate::state::events::EventId::Neow),
+            );
         }
         NeowRewardType::TwoFiftyGold => {
-            run_state.gold += 250;
+            run_state.change_gold_with_source(
+                250,
+                DomainEventSource::Event(crate::state::events::EventId::Neow),
+            );
         }
         NeowRewardType::RandomCommonRelic => {
             if let Some(relic_id) = run_state.common_relic_pool.pop() {
-                if let Some(next_state) =
-                    run_state.obtain_relic(relic_id, crate::state::core::EngineState::EventRoom)
-                {
+                if let Some(next_state) = run_state.obtain_relic_with_source(
+                    relic_id,
+                    crate::state::core::EngineState::EventRoom,
+                    DomainEventSource::Event(crate::state::events::EventId::Neow),
+                ) {
                     *engine_state = next_state;
                 }
             }
         }
         NeowRewardType::OneRareRelic => {
             if let Some(relic_id) = run_state.rare_relic_pool.pop() {
-                if let Some(next_state) =
-                    run_state.obtain_relic(relic_id, crate::state::core::EngineState::EventRoom)
-                {
+                if let Some(next_state) = run_state.obtain_relic_with_source(
+                    relic_id,
+                    crate::state::core::EngineState::EventRoom,
+                    DomainEventSource::Event(crate::state::events::EventId::Neow),
+                ) {
                     *engine_state = next_state;
                 }
             }
         }
         NeowRewardType::BossRelic => {
             // Remove starter relic (first relic)
-            if !run_state.relics.is_empty() {
-                run_state.relics.remove(0);
-            }
+            let _ = run_state.remove_relic_at_with_source(
+                0,
+                DomainEventSource::Event(crate::state::events::EventId::Neow),
+            );
             // Obtain random boss relic
             if let Some(relic_id) = run_state.boss_relic_pool.pop() {
                 // Trigger effects like Pandora's Box transforming the deck
-                if let Some(next_state) =
-                    run_state.obtain_relic(relic_id, crate::state::core::EngineState::EventRoom)
-                {
+                if let Some(next_state) = run_state.obtain_relic_with_source(
+                    relic_id,
+                    crate::state::core::EngineState::EventRoom,
+                    DomainEventSource::Event(crate::state::events::EventId::Neow),
+                ) {
                     *engine_state = next_state;
                 }
             }
         }
         NeowRewardType::OneRandomRareCard => {
             // Get a random rare card from the player's class pool and add to deck
-            let pool = crate::engine::campfire_handler::card_pool_for_class(
+            let pool = crate::engine::campfire_handler::nonempty_card_pool_for_class(
                 run_state.player_class,
                 crate::content::cards::CardRarity::Rare,
             );
@@ -468,10 +493,10 @@ fn apply_reward(
                     pc,
                     false,
                 );
-                // Find first empty slot
-                if let Some(slot) = run_state.potions.iter_mut().find(|p| p.is_none()) {
-                    *slot = Some(crate::content::potions::Potion::new(potion_id, 0));
-                }
+                let _ = run_state.obtain_potion_with_source(
+                    crate::content::potions::Potion::new(potion_id, 0),
+                    DomainEventSource::Event(crate::state::events::EventId::Neow),
+                );
             }
         }
         NeowRewardType::ThreeCards => {
@@ -535,8 +560,10 @@ fn generate_neow_class_cards(
                 CardRarity::Common
             }
         };
-        let pool =
-            crate::engine::campfire_handler::card_pool_for_class(run_state.player_class, rarity);
+        let pool = crate::engine::campfire_handler::nonempty_card_pool_for_class(
+            run_state.player_class,
+            rarity,
+        );
         if !pool.is_empty() {
             let idx = run_state
                 .rng_pool

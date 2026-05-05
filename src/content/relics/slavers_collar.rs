@@ -1,5 +1,5 @@
-use crate::action::ActionInfo;
-use crate::combat::CombatState;
+use crate::runtime::action::ActionInfo;
+use crate::runtime::combat::CombatState;
 
 pub fn at_battle_start(
     state: &mut CombatState,
@@ -7,10 +7,10 @@ pub fn at_battle_start(
 ) -> smallvec::SmallVec<[ActionInfo; 4]> {
     let actions = smallvec::SmallVec::new();
 
-    let is_elite_or_boss = state.is_elite_fight || state.is_boss_fight;
+    let is_elite_or_boss = state.meta.is_elite_fight || state.meta.is_boss_fight;
 
     if is_elite_or_boss {
-        state.player.energy_master += 1;
+        state.entities.player.energy_master += 1;
         relic.counter = 1;
     } else {
         relic.counter = 0;
@@ -25,7 +25,7 @@ pub fn on_victory(
 ) -> smallvec::SmallVec<[ActionInfo; 4]> {
     let actions = smallvec::SmallVec::new();
     if relic.counter == 1 {
-        state.player.energy_master -= 1;
+        state.entities.player.energy_master -= 1;
         relic.counter = 0;
     }
     actions

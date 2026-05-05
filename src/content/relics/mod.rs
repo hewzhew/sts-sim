@@ -134,6 +134,7 @@ pub mod philosopher_stone;
 pub mod pocketwatch;
 pub mod shuriken;
 pub mod stone_calendar;
+pub mod strike_dummy;
 pub mod sundial;
 pub mod thread_and_needle;
 pub mod tingsha;
@@ -384,6 +385,8 @@ impl RelicState {
         let mut counter = -1;
         match id {
             RelicId::Omamori => counter = 2,
+            RelicId::Matryoshka => counter = 2,
+            RelicId::NlothsMask => counter = 1,
             RelicId::NeowsLament | RelicId::WingBoots => counter = 3,
             RelicId::PenNib
             | RelicId::Nunchaku
@@ -694,12 +697,54 @@ pub fn build_relic_pool(tier: RelicTier, player_class: &str) -> Vec<RelicId> {
     pool
 }
 
+/// Returns the permanent energy increase applied when a relic is equipped.
+///
+/// This keeps relic-specific on-equip bookkeeping in the relic domain instead
+/// of scattering rule tables into core combat/player state code.
+pub fn energy_master_delta(id: RelicId) -> u8 {
+    use RelicId::*;
+    match id {
+        BustedCrown | CoffeeDripper | CursedKey | Ectoplasm | FusionHammer | MarkOfPain
+        | PhilosopherStone | RunicDome | Sozu | VelvetChoker => 1,
+        _ => 0,
+    }
+}
+
+/// Rebuilds the player's effective per-turn energy from relic state after
+/// reconstructing combat truth from a Java snapshot.
+///
+/// This is intentionally a small, relic-domain entrypoint for runtime effects
+/// that are not fully visible in the snapshot but are still derivable from the
+/// current combat context.
+pub fn restore_combat_energy_master(state: &mut crate::runtime::combat::CombatState) {
+    let mut energy_master: u8 = 3;
+    let is_elite_or_boss = state.meta.is_elite_fight || state.meta.is_boss_fight;
+
+    for relic in state.entities.player.relics.iter_mut() {
+        energy_master = energy_master.saturating_add(energy_master_delta(relic.id));
+        match relic.id {
+            RelicId::SlaversCollar => {
+                if is_elite_or_boss {
+                    energy_master = energy_master.saturating_add(1);
+                    relic.counter = 1;
+                } else {
+                    relic.counter = 0;
+                }
+            }
+            _ => {}
+        }
+    }
+
+    state.entities.player.energy_master = energy_master;
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct RelicSubscriptions {
     pub at_pre_battle: bool,
     pub at_battle_start_pre_draw: bool,
     pub at_battle_start: bool,
     pub at_turn_start: bool,
+    pub at_turn_start_post_draw: bool,
     pub on_use_card: bool,
     pub on_shuffle: bool,
     pub on_exhaust: bool,
@@ -726,10 +771,6 @@ pub struct RelicSubscriptions {
 
     // Macro/Out-of-Combat Routing Hooks
     pub on_enter_rest_room: bool,
-    pub on_rest: bool,
-    pub on_enter_shop: bool,
-    pub on_purchase: bool,
-    pub on_reward_generation: bool,
 }
 
 pub fn get_relic_subscriptions(id: RelicId) -> RelicSubscriptions {
@@ -756,7 +797,7 @@ pub fn get_relic_subscriptions(id: RelicId) -> RelicSubscriptions {
         RelicId::BronzeScales => sub.at_battle_start = true,
         RelicId::BurningBlood => sub.on_victory = true,
         RelicId::BlackBlood => sub.on_victory = true,
-        RelicId::BlackStar => sub.on_victory = true,
+        RelicId::BlackStar => {} // reward generation handles the extra elite relic directly
         RelicId::BloodyIdol => {} // Requires an `on_gain_gold` hook! (Out of bounds for pure headless combat loop usually, or tracked specially)
         RelicId::BlueCandle => sub.on_use_card = true,
         RelicId::Boot => {} // Engine native query hook for on_attack_to_change_damage
@@ -773,7 +814,11 @@ pub fn get_relic_subscriptions(id: RelicId) -> RelicSubscriptions {
         RelicId::CultistMask => sub.at_battle_start = true,
         RelicId::CursedKey => {}
 
-        RelicId::CaptainsWheel => sub.at_turn_start = true,
+        RelicId::CaptainsWheel => {
+            sub.at_battle_start = true;
+            sub.at_turn_start = true;
+            sub.on_victory = true;
+        }
         RelicId::CentennialPuzzle => {
             sub.at_pre_battle = true;
             sub.on_lose_hp = true;
@@ -804,6 +849,7 @@ pub fn get_relic_subscriptions(id: RelicId) -> RelicSubscriptions {
         RelicId::EmotionChip => {
             sub.at_turn_start = true;
             sub.on_lose_hp = true;
+            sub.on_victory = true;
         }
         RelicId::EmptyCage => {}
         RelicId::Enchiridion => {
@@ -864,12 +910,18 @@ pub fn get_relic_subscriptions(id: RelicId) -> RelicSubscriptions {
             sub.at_turn_start = true;
         }
         RelicId::Inserter => sub.at_turn_start = true,
-        RelicId::Kunai => sub.on_use_card = true,
+        RelicId::Kunai => {
+            sub.on_use_card = true;
+            sub.at_turn_start = true;
+            sub.on_victory = true;
+        }
         RelicId::Lantern => {
             sub.at_pre_battle = true;
             sub.at_turn_start = true;
         }
-        RelicId::LizardTail => sub.on_lose_hp = true,
+        // Java handles Lizard Tail inline in the player death check rather than
+        // through a generic onLoseHp relic hook.
+        RelicId::LizardTail => {}
         RelicId::MagicFlower => sub.on_calculate_heal = true,
         RelicId::MarkOfTheBloom => sub.on_calculate_heal = true,
         RelicId::Mango => {} // OOC: onEquip increaseMaxHp(14) only
@@ -884,15 +936,14 @@ pub fn get_relic_subscriptions(id: RelicId) -> RelicSubscriptions {
         RelicId::NlothsGift => {} // Evaluated passively during card rewards
         RelicId::NuclearBattery => sub.at_pre_battle = true,
         RelicId::Nunchaku => sub.on_use_card = true,
-        RelicId::OddMushroom | RelicId::PaperFrog => {
-            sub.on_calculate_vulnerable_multiplier = true
-        }
+        RelicId::OddMushroom | RelicId::PaperFrog => sub.on_calculate_vulnerable_multiplier = true,
         RelicId::OddlySmoothStone => sub.at_battle_start = true,
         RelicId::Omamori => {} // Passive evaluated out of combat
         RelicId::Orichalcum => sub.at_end_of_turn = true,
         RelicId::OrnamentalFan => {
             sub.on_use_card = true;
             sub.at_turn_start = true; // resets counter
+            sub.on_victory = true;
         }
         RelicId::Pantograph => sub.at_battle_start = true, // checks boss combat
         RelicId::PeacePipe => {} // Passive evaluated out of combat at rest sites
@@ -935,17 +986,28 @@ pub fn get_relic_subscriptions(id: RelicId) -> RelicSubscriptions {
         RelicId::MutagenicStrength => sub.at_battle_start = true,
         RelicId::NeowsLament => sub.at_battle_start = true,
         RelicId::TwistedFunnel => sub.at_battle_start = true,
-        RelicId::Shuriken => sub.on_use_card = true,
-        RelicId::LetterOpener => sub.on_use_card = true,
+        RelicId::Shuriken => {
+            sub.on_use_card = true;
+            sub.at_turn_start = true;
+            sub.on_victory = true;
+        }
+        RelicId::LetterOpener => {
+            sub.on_use_card = true;
+            sub.on_victory = true;
+        }
         RelicId::ToughBandages => sub.on_discard = true,
         RelicId::Tingsha => sub.on_discard = true,
         RelicId::StoneCalendar => {
+            sub.at_battle_start = true;
             sub.at_turn_start = true;
             sub.at_end_of_turn = true;
+            sub.on_victory = true;
         }
         RelicId::Pocketwatch => {
-            sub.at_end_of_turn = true;
-            sub.at_turn_start = true;
+            sub.at_battle_start = true;
+            sub.at_turn_start_post_draw = true;
+            sub.on_use_card = true;
+            sub.on_victory = true;
         }
         RelicId::Sundial => sub.on_shuffle = true,
         RelicId::WarpedTongs => sub.at_turn_start = true,
@@ -954,7 +1016,10 @@ pub fn get_relic_subscriptions(id: RelicId) -> RelicSubscriptions {
             sub.on_lose_hp_last = true;
         }
         // Remaining P1 Relics
-        RelicId::Necronomicon => sub.on_use_card = true,
+        RelicId::Necronomicon => {
+            sub.on_use_card = true;
+            sub.at_turn_start = true;
+        }
         RelicId::VelvetChoker => {} // Passive — engine checks can_play_card
         RelicId::OrangePellets => sub.on_use_card = true,
         RelicId::Sling => sub.at_battle_start = true,
@@ -965,6 +1030,7 @@ pub fn get_relic_subscriptions(id: RelicId) -> RelicSubscriptions {
         RelicId::Matryoshka => {} // Passive — treasure room check
         RelicId::SlaversCollar => {
             sub.at_battle_start = true;
+            sub.on_victory = true;
         } // Java: beforeEnergyPrep
         RelicId::RunicCapacitor => sub.at_pre_battle = true, // Java: atBattleStart → IncreaseMaxOrb(3)
         RelicId::NilrysCodex => sub.at_end_of_turn = true,   // Java: onPlayerEndTurn → CodexAction

@@ -1,4 +1,4 @@
-use crate::action::Action;
+use crate::runtime::action::Action;
 use smallvec::SmallVec;
 
 pub fn on_exhaust(owner: crate::core::EntityId, amount: i32) -> SmallVec<[Action; 2]> {

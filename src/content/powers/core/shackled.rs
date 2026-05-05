@@ -1,6 +1,6 @@
-use crate::action::Action;
-use crate::combat::PowerId;
 use crate::core::EntityId;
+use crate::runtime::action::Action;
+use crate::runtime::combat::PowerId;
 
 pub fn at_end_of_turn(owner: EntityId, amount: i32) -> smallvec::SmallVec<[Action; 2]> {
     let mut actions = smallvec::smallvec![];

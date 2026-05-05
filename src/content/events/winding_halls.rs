@@ -1,11 +1,24 @@
 use crate::content::cards::CardId;
 use crate::state::core::EngineState;
-use crate::state::events::{EventChoiceMeta, EventState};
+use crate::state::events::{
+    EventActionKind, EventCardKind, EventChoiceMeta, EventEffect, EventOption,
+    EventOptionSemantics, EventOptionTransition, EventState,
+};
 use crate::state::run::RunState;
 
-pub fn get_choices(run_state: &RunState, event_state: &EventState) -> Vec<EventChoiceMeta> {
+pub fn get_options(run_state: &RunState, event_state: &EventState) -> Vec<EventOption> {
     match event_state.current_screen {
-        0 => vec![EventChoiceMeta::new("[Proceed]")],
+        0 => vec![EventOption::new(
+            EventChoiceMeta::new("[Proceed]"),
+            EventOptionSemantics {
+                action: EventActionKind::Continue,
+                effects: vec![],
+                constraints: vec![],
+                transition: EventOptionTransition::AdvanceScreen,
+                repeatable: false,
+                terminal: false,
+            },
+        )],
         1 => {
             let hp_loss_pct = if run_state.ascension_level >= 15 {
                 0.18
@@ -21,16 +34,78 @@ pub fn get_choices(run_state: &RunState, event_state: &EventState) -> Vec<EventC
             let heal_amt = (run_state.max_hp as f32 * heal_pct).round() as i32;
             let max_hp_loss = (run_state.max_hp as f32 * 0.05).round() as i32;
             vec![
-                EventChoiceMeta::new(format!("[Embrace] Lose {} HP. Obtain 2 Madness.", hp_loss)),
-                EventChoiceMeta::new(format!(
-                    "[Retrace] Heal {} HP. Become Cursed - Writhe.",
-                    heal_amt
-                )),
-                EventChoiceMeta::new(format!("[Accept] Lose {} Max HP.", max_hp_loss)),
+                EventOption::new(
+                    EventChoiceMeta::new(format!(
+                        "[Embrace] Lose {} HP. Obtain 2 Madness.",
+                        hp_loss
+                    )),
+                    EventOptionSemantics {
+                        action: EventActionKind::Accept,
+                        effects: vec![
+                            EventEffect::LoseHp(hp_loss),
+                            EventEffect::ObtainCard {
+                                count: 2,
+                                kind: EventCardKind::Specific(CardId::Madness),
+                            },
+                        ],
+                        constraints: vec![],
+                        transition: EventOptionTransition::AdvanceScreen,
+                        repeatable: false,
+                        terminal: false,
+                    },
+                ),
+                EventOption::new(
+                    EventChoiceMeta::new(format!(
+                        "[Retrace] Heal {} HP. Become Cursed - Writhe.",
+                        heal_amt
+                    )),
+                    EventOptionSemantics {
+                        action: EventActionKind::Accept,
+                        effects: vec![
+                            EventEffect::Heal(heal_amt),
+                            EventEffect::ObtainCurse {
+                                count: 1,
+                                kind: EventCardKind::Specific(CardId::Writhe),
+                            },
+                        ],
+                        constraints: vec![],
+                        transition: EventOptionTransition::AdvanceScreen,
+                        repeatable: false,
+                        terminal: false,
+                    },
+                ),
+                EventOption::new(
+                    EventChoiceMeta::new(format!("[Accept] Lose {} Max HP.", max_hp_loss)),
+                    EventOptionSemantics {
+                        action: EventActionKind::Accept,
+                        effects: vec![EventEffect::LoseMaxHp(max_hp_loss)],
+                        constraints: vec![],
+                        transition: EventOptionTransition::AdvanceScreen,
+                        repeatable: false,
+                        terminal: false,
+                    },
+                ),
             ]
         }
-        _ => vec![EventChoiceMeta::new("[Leave]")],
+        _ => vec![EventOption::new(
+            EventChoiceMeta::new("[Leave]"),
+            EventOptionSemantics {
+                action: EventActionKind::Leave,
+                effects: vec![],
+                constraints: vec![],
+                transition: EventOptionTransition::Complete,
+                repeatable: false,
+                terminal: true,
+            },
+        )],
     }
+}
+
+pub fn get_choices(run_state: &RunState, event_state: &EventState) -> Vec<EventChoiceMeta> {
+    get_options(run_state, event_state)
+        .into_iter()
+        .map(|option| option.ui)
+        .collect()
 }
 
 pub fn handle_choice(_engine_state: &mut EngineState, run_state: &mut RunState, choice_idx: usize) {

@@ -1,5 +1,5 @@
-use crate::action::{Action, ActionInfo, AddTo, DamageType};
-use crate::combat::{CombatCard, CombatState};
+use crate::runtime::action::{Action, ActionInfo, AddTo, DamageType};
+use crate::runtime::combat::{CombatCard, CombatState};
 use smallvec::SmallVec;
 
 pub fn thunderclap_play(state: &CombatState, card: &CombatCard) -> SmallVec<[ActionInfo; 4]> {
@@ -12,7 +12,7 @@ pub fn thunderclap_play(state: &CombatState, card: &CombatCard) -> SmallVec<[Act
         },
         insertion_mode: AddTo::Bottom,
     }];
-    for monster in &state.monsters {
+    for monster in &state.entities.monsters {
         if !monster.is_dying {
             actions.push(ActionInfo {
                 action: Action::ApplyPower {

@@ -1,7 +1,5 @@
-use crate::combat::{Intent, MonsterEntity};
-use crate::rng::StsRng;
-use std::collections::VecDeque;
-
+use crate::runtime::combat::{LouseRuntimeState, MonsterEntity, MonsterMoveState};
+use crate::runtime::rng::StsRng;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum EncounterId {
     // === Act 1: Exordium ===
@@ -104,18 +102,16 @@ pub fn build_encounter(
         let (min, max) = crate::content::monsters::get_hp_range(enemy_id, ascension_level);
         let current_hp = hp_rng.random_range(min as i32, max as i32) as i32;
         let id = (slot + 1) as usize; // Naive unique engine IDs for this batch
-        let intent_dmg = match enemy_id {
-            EnemyId::LouseNormal | EnemyId::LouseDefensive => {
-                if ascension_level >= 2 {
-                    hp_rng.random_range(6, 8) as i32
-                } else {
-                    hp_rng.random_range(5, 7) as i32
-                }
-            }
-            _ => 0,
+        let louse_bite_damage = match enemy_id {
+            EnemyId::LouseNormal | EnemyId::LouseDefensive => Some(if ascension_level >= 2 {
+                hp_rng.random_range(6, 8) as i32
+            } else {
+                hp_rng.random_range(5, 7) as i32
+            }),
+            _ => None,
         };
 
-        MonsterEntity {
+        let mut monster = MonsterEntity {
             id,
             monster_type: enemy_id as usize,
             current_hp,
@@ -125,12 +121,106 @@ pub fn build_encounter(
             is_dying: false,
             is_escaped: false,
             half_dead: false,
-            next_move_byte: 0,
-            current_intent: Intent::Unknown,
-            move_history: VecDeque::new(),
-            intent_dmg,
+            move_state: MonsterMoveState::default(),
             logical_position: slot as i32,
+            hexaghost: Default::default(),
+            louse: LouseRuntimeState {
+                bite_damage: louse_bite_damage,
+            },
+            jaw_worm: Default::default(),
+            thief: Default::default(),
+            byrd: Default::default(),
+            chosen: Default::default(),
+            snecko: Default::default(),
+            shelled_parasite: Default::default(),
+            bronze_automaton: Default::default(),
+            bronze_orb: Default::default(),
+            book_of_stabbing: Default::default(),
+            collector: Default::default(),
+            champ: Default::default(),
+            awakened_one: Default::default(),
+            corrupt_heart: Default::default(),
+            darkling: Default::default(),
+            lagavulin: Default::default(),
+            guardian: Default::default(),
+        };
+
+        if enemy_id == EnemyId::Byrd {
+            monster.byrd.first_move = true;
+            monster.byrd.is_flying = true;
+            monster.byrd.protocol_seeded = true;
         }
+        if enemy_id == EnemyId::Chosen {
+            monster.chosen.first_turn = true;
+            monster.chosen.used_hex = false;
+            monster.chosen.protocol_seeded = true;
+        }
+        if enemy_id == EnemyId::Snecko {
+            monster.snecko.first_turn = true;
+            monster.snecko.protocol_seeded = true;
+        }
+        if enemy_id == EnemyId::ShelledParasite {
+            monster.shelled_parasite.first_move = true;
+            monster.shelled_parasite.protocol_seeded = true;
+        }
+        if enemy_id == EnemyId::BronzeAutomaton {
+            monster.bronze_automaton.protocol_seeded = true;
+            monster.bronze_automaton.first_turn = true;
+            monster.bronze_automaton.num_turns = 0;
+        }
+        if enemy_id == EnemyId::BronzeOrb {
+            monster.bronze_orb.protocol_seeded = true;
+            monster.bronze_orb.used_stasis = false;
+        }
+        if enemy_id == EnemyId::BookOfStabbing {
+            monster.book_of_stabbing.protocol_seeded = true;
+            monster.book_of_stabbing.stab_count = 1;
+        }
+        if enemy_id == EnemyId::TheCollector {
+            monster.collector.protocol_seeded = true;
+            monster.collector.initial_spawn = true;
+            monster.collector.ult_used = false;
+            monster.collector.turns_taken = 0;
+        }
+        if enemy_id == EnemyId::Champ {
+            monster.champ.protocol_seeded = true;
+            monster.champ.first_turn = true;
+            monster.champ.num_turns = 0;
+            monster.champ.forge_times = 0;
+            monster.champ.threshold_reached = false;
+        }
+        if enemy_id == EnemyId::AwakenedOne {
+            monster.awakened_one.protocol_seeded = true;
+            monster.awakened_one.form1 = true;
+            monster.awakened_one.first_turn = true;
+        }
+        if enemy_id == EnemyId::CorruptHeart {
+            monster.corrupt_heart.protocol_seeded = true;
+            monster.corrupt_heart.first_move = true;
+            monster.corrupt_heart.move_count = 0;
+            monster.corrupt_heart.buff_count = 0;
+        }
+        if matches!(enemy_id, EnemyId::Looter | EnemyId::Mugger) {
+            monster.thief.protocol_seeded = true;
+            monster.thief.slash_count = 0;
+            monster.thief.stolen_gold = 0;
+        }
+
+        if enemy_id == EnemyId::Darkling {
+            crate::content::monsters::beyond::darkling::initialize_runtime_state(
+                &mut monster,
+                hp_rng,
+                ascension_level,
+            );
+        }
+        if enemy_id == EnemyId::TheGuardian {
+            crate::content::monsters::exordium::the_guardian::initialize_runtime_state(
+                &mut monster,
+                ascension_level,
+            );
+        }
+
+        monster
     };
 
     match encounter {
@@ -345,11 +435,12 @@ pub fn build_encounter(
             ));
         }
         EncounterId::Lagavulin | EncounterId::LagavulinEvent => {
-            monsters.push(spawn_monster(
-                EnemyId::Lagavulin,
-                monster_hp_rng,
-                slot_counter,
-            ));
+            let mut lagavulin = spawn_monster(EnemyId::Lagavulin, monster_hp_rng, slot_counter);
+            if matches!(encounter, EncounterId::LagavulinEvent) {
+                lagavulin.lagavulin.is_out = true;
+                lagavulin.lagavulin.is_out_triggered = true;
+            }
+            monsters.push(lagavulin);
         }
         EncounterId::ThreeSentries => {
             for _ in 0..3 {
@@ -491,25 +582,33 @@ pub fn build_encounter(
         }
         EncounterId::GremlinLeader => {
             // Java: spawnGremlin() + spawnGremlin() + GremlinLeader
-            // spawnGremlin = random from Warrior/Thief/Fat/Tsundere/Wizard
+            // spawnGremlin = weighted random from the 8-entry pool used by MonsterHelper.
             let gremlin_pool = [
                 EnemyId::GremlinWarrior,
+                EnemyId::GremlinWarrior,
                 EnemyId::GremlinThief,
+                EnemyId::GremlinThief,
+                EnemyId::GremlinFat,
                 EnemyId::GremlinFat,
                 EnemyId::GremlinTsundere,
                 EnemyId::GremlinWizard,
             ];
-            let g1 = gremlin_pool[misc_rng.random_range(0, 4) as usize];
-            monsters.push(spawn_monster(g1, monster_hp_rng, slot_counter));
+            let g1 = gremlin_pool[misc_rng.random_range(0, 7) as usize];
+            let mut first = spawn_monster(g1, monster_hp_rng, slot_counter);
+            first.logical_position =
+                crate::content::monsters::city::gremlin_leader::GremlinLeader::GREMLIN_SLOT_LOGICAL_POSITIONS[0];
+            monsters.push(first);
             slot_counter += 1;
-            let g2 = gremlin_pool[misc_rng.random_range(0, 4) as usize];
-            monsters.push(spawn_monster(g2, monster_hp_rng, slot_counter));
+            let g2 = gremlin_pool[misc_rng.random_range(0, 7) as usize];
+            let mut second = spawn_monster(g2, monster_hp_rng, slot_counter);
+            second.logical_position =
+                crate::content::monsters::city::gremlin_leader::GremlinLeader::GREMLIN_SLOT_LOGICAL_POSITIONS[1];
+            monsters.push(second);
             slot_counter += 1;
-            monsters.push(spawn_monster(
-                EnemyId::GremlinLeader,
-                monster_hp_rng,
-                slot_counter,
-            ));
+            let mut leader = spawn_monster(EnemyId::GremlinLeader, monster_hp_rng, slot_counter);
+            leader.logical_position =
+                crate::content::monsters::city::gremlin_leader::GremlinLeader::LEADER_LOGICAL_POSITION;
+            monsters.push(leader);
         }
         EncounterId::Slavers => {
             // Java: SlaverBlue + Taskmaster + SlaverRed
@@ -692,11 +791,9 @@ pub fn build_encounter(
         EncounterId::JawWormHorde => {
             // Java: 3 JawWorms with isHorde=true
             for _ in 0..3 {
-                monsters.push(spawn_monster(
-                    EnemyId::JawWorm,
-                    monster_hp_rng,
-                    slot_counter,
-                ));
+                let mut jaw_worm = spawn_monster(EnemyId::JawWorm, monster_hp_rng, slot_counter);
+                jaw_worm.jaw_worm.hard_mode = true;
+                monsters.push(jaw_worm);
                 slot_counter += 1;
             }
         }
@@ -723,23 +820,20 @@ pub fn build_encounter(
         }
         EncounterId::Reptomancer => {
             // Java: SnakeDagger + Reptomancer + SnakeDagger
-            monsters.push(spawn_monster(
-                EnemyId::SnakeDagger,
-                monster_hp_rng,
-                slot_counter,
-            ));
+            let mut left_dagger = spawn_monster(EnemyId::SnakeDagger, monster_hp_rng, slot_counter);
+            left_dagger.logical_position =
+                crate::content::monsters::beyond::reptomancer::Reptomancer::DAGGER_DRAW_X[1];
+            monsters.push(left_dagger);
             slot_counter += 1;
-            monsters.push(spawn_monster(
-                EnemyId::Reptomancer,
-                monster_hp_rng,
-                slot_counter,
-            ));
+            let mut reptomancer = spawn_monster(EnemyId::Reptomancer, monster_hp_rng, slot_counter);
+            reptomancer.logical_position = 0;
+            monsters.push(reptomancer);
             slot_counter += 1;
-            monsters.push(spawn_monster(
-                EnemyId::SnakeDagger,
-                monster_hp_rng,
-                slot_counter,
-            ));
+            let mut right_dagger =
+                spawn_monster(EnemyId::SnakeDagger, monster_hp_rng, slot_counter);
+            right_dagger.logical_position =
+                crate::content::monsters::beyond::reptomancer::Reptomancer::DAGGER_DRAW_X[0];
+            monsters.push(right_dagger);
         }
         EncounterId::AwakenedOne => {
             // Java: 2 Cultists + AwakenedOne

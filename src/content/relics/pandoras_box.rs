@@ -20,7 +20,7 @@ pub fn on_equip(run_state: &mut RunState) -> Vec<(String, String)> {
     let mut removed_names = Vec::new();
     let mut to_remove_uuids = Vec::new();
     for card in &run_state.master_deck {
-        if card.id == CardId::Strike || card.id == CardId::Defend {
+        if crate::content::cards::is_starter_basic(card.id) {
             to_remove_uuids.push(card.uuid);
             let def = get_card_definition(card.id);
             removed_names.push(def.name.to_string());
@@ -39,14 +39,27 @@ pub fn on_equip(run_state: &mut RunState) -> Vec<(String, String)> {
     // Phase 2: Generate `count` truly random cards using cardRandomRng
     // Java: returnTrulyRandomCard() → srcCommonCardPool + srcUncommonCardPool + srcRareCardPool
     //       → cardRandomRng.random(list.size() - 1)
-    use crate::content::cards::{IRONCLAD_COMMON_POOL, IRONCLAD_RARE_POOL, IRONCLAD_UNCOMMON_POOL};
-
-    let pool: Vec<CardId> = IRONCLAD_COMMON_POOL
-        .iter()
-        .chain(IRONCLAD_UNCOMMON_POOL.iter())
-        .chain(IRONCLAD_RARE_POOL.iter())
-        .copied()
-        .collect();
+    let pool: Vec<CardId> = crate::engine::campfire_handler::card_pool_for_class(
+        run_state.player_class,
+        crate::content::cards::CardRarity::Common,
+    )
+    .iter()
+    .chain(
+        crate::engine::campfire_handler::card_pool_for_class(
+            run_state.player_class,
+            crate::content::cards::CardRarity::Uncommon,
+        )
+        .iter(),
+    )
+    .chain(
+        crate::engine::campfire_handler::card_pool_for_class(
+            run_state.player_class,
+            crate::content::cards::CardRarity::Rare,
+        )
+        .iter(),
+    )
+    .copied()
+    .collect();
 
     let mut results = Vec::new();
 

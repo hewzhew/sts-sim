@@ -1,7 +1,7 @@
-use crate::action::Action;
-use crate::combat::CombatState;
 use crate::content::powers::PowerId;
 use crate::core::EntityId;
+use crate::runtime::action::Action;
+use crate::runtime::combat::CombatState;
 
 /// Java MalleablePower.onAttacked():
 ///   if (damageAmount < owner.currentHealth && damageAmount > 0 && info.type == NORMAL) {
@@ -21,9 +21,10 @@ pub fn on_attacked(
 
     // Java: damageAmount < this.owner.currentHealth && damageAmount > 0
     let owner_hp = if owner == 0 {
-        state.player.current_hp
+        state.entities.player.current_hp
     } else {
         state
+            .entities
             .monsters
             .iter()
             .find(|m| m.id == owner)
@@ -48,7 +49,7 @@ pub fn on_monster_turn_ended(
     let mut actions = smallvec::smallvec![];
 
     // reset amount to extra_data (basePower in Java)
-    if let Some(power_list) = state.power_db.get(&owner) {
+    if let Some(power_list) = state.entities.power_db.get(&owner) {
         if let Some(power) = power_list
             .iter()
             .find(|p| p.power_type == PowerId::Malleable)

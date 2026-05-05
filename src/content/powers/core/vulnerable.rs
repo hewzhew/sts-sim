@@ -1,23 +1,15 @@
-use crate::action::Action;
-use crate::combat::PowerId;
 use crate::core::EntityId;
+use crate::runtime::action::Action;
+use crate::runtime::combat::PowerId;
 
-pub fn on_calculate_damage_from_player(
-    mut damage: f32,
-    amount: i32,
-    multiplier: f32,
-) -> f32 {
+pub fn on_calculate_damage_from_player(mut damage: f32, amount: i32, multiplier: f32) -> f32 {
     if amount > 0 {
         damage *= multiplier;
     }
     damage
 }
 
-pub fn on_attacked_to_change_damage(
-    current_damage: i32,
-    amount: i32,
-    multiplier: f32,
-) -> i32 {
+pub fn on_attacked_to_change_damage(current_damage: i32, amount: i32, multiplier: f32) -> i32 {
     if amount > 0 {
         (current_damage as f32 * multiplier) as i32
     } else {

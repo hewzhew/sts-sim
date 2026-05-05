@@ -1,19 +1,19 @@
-use crate::action::{Action, ActionInfo, AddTo};
-use crate::combat::{CombatCard, CombatState};
+use crate::runtime::action::{Action, ActionInfo, AddTo};
+use crate::runtime::combat::{CombatCard, CombatState};
 use smallvec::SmallVec;
 
 pub fn burning_pact_play(state: &CombatState, card: &CombatCard) -> SmallVec<[ActionInfo; 4]> {
     let mut actions = SmallVec::new();
 
-    if state.hand.len() == 1 {
+    if state.zones.hand.len() == 1 {
         actions.push(ActionInfo {
             action: Action::ExhaustCard {
-                card_uuid: state.hand[0].uuid,
+                card_uuid: state.zones.hand[0].uuid,
                 source_pile: crate::state::PileType::Hand,
             },
             insertion_mode: AddTo::Bottom,
         });
-    } else if state.hand.len() > 1 {
+    } else if state.zones.hand.len() > 1 {
         actions.push(ActionInfo {
             action: Action::SuspendForHandSelect {
                 min: 1,

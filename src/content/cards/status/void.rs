@@ -1,5 +1,5 @@
-use crate::action::{Action, ActionInfo, AddTo};
-use crate::combat::CombatState;
+use crate::runtime::action::{Action, ActionInfo, AddTo};
+use crate::runtime::combat::CombatState;
 
 pub fn on_drawn(_state: &CombatState) -> smallvec::SmallVec<[ActionInfo; 4]> {
     smallvec::smallvec![ActionInfo {

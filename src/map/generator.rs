@@ -12,7 +12,7 @@ use std::collections::{HashMap, HashSet};
 use serde::Serialize;
 
 use super::node::{Map, MapEdge, MapRoomNode, Point, RoomType};
-use crate::rng::StsRng;
+use crate::runtime::rng::StsRng;
 use RoomType::*;
 
 // ─── Constants ───────────────────────────────────────────────────────────────

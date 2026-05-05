@@ -1,148 +1,268 @@
-use crate::action::{Action, DamageInfo, DamageType};
-use crate::combat::{CombatState, Intent, MonsterEntity};
-use crate::content::monsters::MonsterBehavior;
+use crate::content::monsters::exordium::{attack_actions, PLAYER};
+use crate::content::monsters::{MonsterBehavior, MonsterRollContext};
 use crate::content::powers::PowerId;
+use crate::runtime::action::Action;
+use crate::runtime::combat::{CombatState, MonsterEntity};
+use crate::semantics::combat::{
+    ApplyPowerStep, AttackSpec, AttackStep, DamageKind, DebuffSpec, EffectStrength, HealSpec,
+    HealStep, MonsterMoveSpec, MonsterTurnPlan, MoveStep, MoveTarget, PowerEffectKind,
+};
+use smallvec::smallvec;
 
 pub struct Healer;
 
+const ATTACK: u8 = 1;
+const HEAL: u8 = 2;
+const BUFF: u8 = 3;
+
+enum HealerTurn<'a> {
+    Attack(&'a AttackSpec, &'a ApplyPowerStep),
+    Heal(&'a HealStep),
+    Buff(&'a ApplyPowerStep),
+}
+
+fn attack_damage(ascension_level: u8) -> i32 {
+    if ascension_level >= 2 {
+        9
+    } else {
+        8
+    }
+}
+
+fn heal_amount(ascension_level: u8) -> i32 {
+    if ascension_level >= 17 {
+        20
+    } else {
+        16
+    }
+}
+
+fn heal_threshold(ascension_level: u8) -> i32 {
+    if ascension_level >= 17 {
+        20
+    } else {
+        15
+    }
+}
+
+fn strength_amount(ascension_level: u8) -> i32 {
+    if ascension_level >= 17 {
+        4
+    } else if ascension_level >= 2 {
+        3
+    } else {
+        2
+    }
+}
+
+fn attack_plan(ascension_level: u8) -> MonsterTurnPlan {
+    MonsterTurnPlan::from_spec(
+        ATTACK,
+        MonsterMoveSpec::AttackDebuff(
+            AttackSpec {
+                base_damage: attack_damage(ascension_level),
+                hits: 1,
+                damage_kind: DamageKind::Normal,
+            },
+            DebuffSpec {
+                power_id: PowerId::Frail,
+                amount: 2,
+                strength: EffectStrength::Normal,
+            },
+        ),
+    )
+}
+
+fn heal_plan(ascension_level: u8) -> MonsterTurnPlan {
+    let amount = heal_amount(ascension_level);
+    MonsterTurnPlan::with_visible_spec(
+        HEAL,
+        smallvec![MoveStep::Heal(HealStep {
+            target: MoveTarget::AllMonsters,
+            amount,
+        })],
+        MonsterMoveSpec::Heal(HealSpec {
+            target: MoveTarget::AllMonsters,
+            amount,
+        }),
+    )
+}
+
+fn buff_plan(ascension_level: u8) -> MonsterTurnPlan {
+    let amount = strength_amount(ascension_level);
+    MonsterTurnPlan::with_visible_spec(
+        BUFF,
+        smallvec![MoveStep::ApplyPower(ApplyPowerStep {
+            target: MoveTarget::AllMonsters,
+            power_id: PowerId::Strength,
+            amount,
+            effect: PowerEffectKind::Buff,
+            visible_strength: EffectStrength::Normal,
+        })],
+        MonsterMoveSpec::Buff(crate::semantics::combat::BuffSpec {
+            power_id: PowerId::Strength,
+            amount,
+        }),
+    )
+}
+
+fn plan_for(move_id: u8, ascension_level: u8) -> MonsterTurnPlan {
+    match move_id {
+        ATTACK => attack_plan(ascension_level),
+        HEAL => heal_plan(ascension_level),
+        BUFF => buff_plan(ascension_level),
+        _ => MonsterTurnPlan::unknown(move_id),
+    }
+}
+
+fn last_move(entity: &MonsterEntity, move_id: u8) -> bool {
+    entity.move_history().back().copied() == Some(move_id)
+}
+
+fn last_two_moves(entity: &MonsterEntity, move_id: u8) -> bool {
+    let history = entity.move_history();
+    history.len() >= 2
+        && history[history.len() - 1] == move_id
+        && history[history.len() - 2] == move_id
+}
+
+fn total_missing_hp(monsters: &[MonsterEntity]) -> i32 {
+    monsters
+        .iter()
+        .filter(|monster| !monster.is_dying && !monster.is_escaped)
+        .map(|monster| (monster.max_hp - monster.current_hp).max(0))
+        .sum()
+}
+
+fn living_monster_ids(state: &CombatState) -> Vec<usize> {
+    state
+        .entities
+        .monsters
+        .iter()
+        .filter(|monster| !monster.is_dying && !monster.is_escaped)
+        .map(|monster| monster.id)
+        .collect()
+}
+
+fn decode_turn<'a>(plan: &'a MonsterTurnPlan) -> HealerTurn<'a> {
+    match (plan.move_id, plan.steps.as_slice()) {
+        (
+            ATTACK,
+            [MoveStep::Attack(AttackStep {
+                target: MoveTarget::Player,
+                attack,
+            }), MoveStep::ApplyPower(
+                frail @ ApplyPowerStep {
+                    target: MoveTarget::Player,
+                    power_id: PowerId::Frail,
+                    effect: PowerEffectKind::Debuff,
+                    ..
+                },
+            )],
+        ) => HealerTurn::Attack(attack, frail),
+        (
+            HEAL,
+            [MoveStep::Heal(
+                heal @ HealStep {
+                    target: MoveTarget::AllMonsters,
+                    ..
+                },
+            )],
+        ) => HealerTurn::Heal(heal),
+        (
+            BUFF,
+            [MoveStep::ApplyPower(
+                power @ ApplyPowerStep {
+                    target: MoveTarget::AllMonsters,
+                    power_id: PowerId::Strength,
+                    effect: PowerEffectKind::Buff,
+                    ..
+                },
+            )],
+        ) => HealerTurn::Buff(power),
+        (_, []) => panic!("healer plan missing locked truth"),
+        (move_id, steps) => panic!("healer plan/steps mismatch: {} {:?}", move_id, steps),
+    }
+}
+
 impl Healer {
-    pub fn roll_move_custom(
-        rng: &mut crate::rng::StsRng,
+    fn roll_move_custom_plan(
+        _rng: &mut crate::runtime::rng::StsRng,
         entity: &MonsterEntity,
         ascension_level: u8,
-        _num: i32,
+        num: i32,
         monsters: &[MonsterEntity],
-    ) -> (u8, Intent) {
-        let magic_dmg = if ascension_level >= 2 { 9 } else { 8 };
-        let mut need_to_heal = 0;
-        for m in monsters {
-            if !m.is_dying && !m.is_escaped {
-                need_to_heal += m.max_hp - m.current_hp;
-            }
+    ) -> MonsterTurnPlan {
+        if total_missing_hp(monsters) > heal_threshold(ascension_level)
+            && !last_two_moves(entity, HEAL)
+        {
+            return heal_plan(ascension_level);
         }
-
-        let num = rng.random_range(0, 99);
-        let move_history = &entity.move_history;
-
-        let last_two_moves_2 = move_history.len() >= 2
-            && move_history[move_history.len() - 1] == 2
-            && move_history[move_history.len() - 2] == 2;
-        let last_two_moves_3 = move_history.len() >= 2
-            && move_history[move_history.len() - 1] == 3
-            && move_history[move_history.len() - 2] == 3;
-        let last_two_moves_1 = move_history.len() >= 2
-            && move_history[move_history.len() - 1] == 1
-            && move_history[move_history.len() - 2] == 1;
-        let last_move_1 = move_history.len() >= 1 && move_history[move_history.len() - 1] == 1;
 
         if ascension_level >= 17 {
-            if need_to_heal > 20 && !last_two_moves_2 {
-                return (2, Intent::Buff);
+            if num >= 40 && !last_move(entity, ATTACK) {
+                return attack_plan(ascension_level);
             }
-            if num >= 40 && !last_move_1 {
-                return (
-                    1,
-                    Intent::AttackDebuff {
-                        damage: magic_dmg,
-                        hits: 1,
-                    },
-                );
-            }
-        } else {
-            if need_to_heal > 15 && !last_two_moves_2 {
-                return (2, Intent::Buff);
-            }
-            if num >= 40 && !last_two_moves_1 {
-                return (
-                    1,
-                    Intent::AttackDebuff {
-                        damage: magic_dmg,
-                        hits: 1,
-                    },
-                );
-            }
+        } else if num >= 40 && !last_two_moves(entity, ATTACK) {
+            return attack_plan(ascension_level);
         }
 
-        if !last_two_moves_3 {
-            return (3, Intent::Buff);
+        if !last_two_moves(entity, BUFF) {
+            return buff_plan(ascension_level);
         }
 
-        (
-            1,
-            Intent::AttackDebuff {
-                damage: magic_dmg,
-                hits: 1,
-            },
-        )
+        attack_plan(ascension_level)
     }
 }
 
 impl MonsterBehavior for Healer {
-    fn roll_move(
-        _rng: &mut crate::rng::StsRng,
-        _entity: &MonsterEntity,
-        _ascension_level: u8,
-        _num: i32,
-    ) -> (u8, Intent) {
-        unreachable!("Healer requires roll_move_custom with monsters slice");
+    fn roll_move_plan_with_context(
+        rng: &mut crate::runtime::rng::StsRng,
+        entity: &MonsterEntity,
+        ascension_level: u8,
+        num: i32,
+        ctx: MonsterRollContext<'_>,
+    ) -> MonsterTurnPlan {
+        Self::roll_move_custom_plan(rng, entity, ascension_level, num, ctx.monsters)
     }
 
-    fn take_turn(state: &mut CombatState, entity: &MonsterEntity) -> Vec<Action> {
-        let mut actions = Vec::new();
-        let magic_dmg = if state.ascension_level >= 2 { 9 } else { 8 };
-        let heal_amt = if state.ascension_level >= 17 { 20 } else { 16 };
-        let str_amt = if state.ascension_level >= 17 {
-            4
-        } else if state.ascension_level >= 2 {
-            3
-        } else {
-            2
-        };
+    fn turn_plan(state: &CombatState, entity: &MonsterEntity) -> MonsterTurnPlan {
+        plan_for(entity.planned_move_id(), state.meta.ascension_level)
+    }
 
-        match entity.next_move_byte {
-            1 => {
-                // ATTACK
-                actions.push(Action::Damage(DamageInfo {
-                    source: entity.id,
-                    target: 0, // Player
-                    base: magic_dmg,
-                    output: magic_dmg,
-                    damage_type: DamageType::Normal,
-                    is_modified: false,
-                }));
+    fn take_turn_plan(
+        state: &mut CombatState,
+        entity: &MonsterEntity,
+        plan: &MonsterTurnPlan,
+    ) -> Vec<Action> {
+        let mut actions = match decode_turn(plan) {
+            HealerTurn::Attack(attack, frail) => {
+                let mut actions = attack_actions(entity.id, PLAYER, attack);
                 actions.push(Action::ApplyPower {
                     source: entity.id,
-                    target: 0,
-                    power_id: PowerId::Frail,
-                    amount: 2,
+                    target: PLAYER,
+                    power_id: frail.power_id,
+                    amount: frail.amount,
                 });
+                actions
             }
-            2 => {
-                // HEAL
-                for m in state.monsters.iter() {
-                    if !m.is_dying && !m.is_escaped {
-                        actions.push(Action::Heal {
-                            target: m.id,
-                            amount: heal_amt,
-                        });
-                    }
-                }
-            }
-            3 => {
-                // BUFF
-                for m in state.monsters.iter() {
-                    if !m.is_dying && !m.is_escaped {
-                        actions.push(Action::ApplyPower {
-                            source: entity.id,
-                            target: m.id,
-                            power_id: PowerId::Strength,
-                            amount: str_amt,
-                        });
-                    }
-                }
-            }
-            _ => {}
-        }
+            HealerTurn::Heal(heal) => living_monster_ids(state)
+                .into_iter()
+                .map(|target| Action::Heal {
+                    target,
+                    amount: heal.amount,
+                })
+                .collect(),
+            HealerTurn::Buff(power) => living_monster_ids(state)
+                .into_iter()
+                .map(|target| Action::ApplyPower {
+                    source: entity.id,
+                    target,
+                    power_id: power.power_id,
+                    amount: power.amount,
+                })
+                .collect(),
+        };
 
         actions.push(Action::RollMonsterMove {
             monster_id: entity.id,

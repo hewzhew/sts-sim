@@ -52,7 +52,7 @@ impl SimulationWatchdog {
         &mut self,
         engine_state: &EngineState,
         run_state: &crate::state::run::RunState,
-        combat_state: &Option<crate::combat::CombatState>,
+        combat_state: &Option<crate::runtime::combat::CombatState>,
         input: &ClientInput,
     ) -> bool {
         let state_summary = summarize_state(engine_state, run_state, combat_state);
@@ -131,17 +131,17 @@ impl SimulationWatchdog {
 fn summarize_state(
     engine_state: &EngineState,
     run_state: &crate::state::run::RunState,
-    combat_state: &Option<crate::combat::CombatState>,
+    combat_state: &Option<crate::runtime::combat::CombatState>,
 ) -> String {
     if let Some(cs) = combat_state {
-        let mon_hp: i32 = cs.monsters.iter().map(|m| m.current_hp).sum();
+        let mon_hp: i32 = cs.entities.monsters.iter().map(|m| m.current_hp).sum();
         return format!(
             "{:?} | Turn {} | Hand {} | E {} | HP {} | MonHP {}",
             engine_state,
-            cs.turn_count,
-            cs.hand.len(),
-            cs.energy,
-            cs.player.current_hp,
+            cs.turn.turn_count,
+            cs.zones.hand.len(),
+            cs.turn.energy,
+            cs.entities.player.current_hp,
             mon_hp
         );
     }

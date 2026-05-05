@@ -7,7 +7,7 @@
 //! - Per-act encounter definitions (Exordium, TheCity, TheBeyond)
 
 use super::factory::EncounterId;
-use crate::rng::StsRng;
+use crate::runtime::rng::StsRng;
 
 /// A weighted encounter entry, mirroring Java's `MonsterInfo`.
 struct MonsterInfo {
@@ -454,7 +454,10 @@ fn beyond_exclusions(monster_list: &[EncounterId]) -> Vec<EncounterId> {
 /// Java: initializeBoss() in Exordium/TheCity/TheBeyond.
 /// Shuffles 3 bosses with `Collections.shuffle(bossList, new Random(monsterRng.randomLong()))`.
 /// For the simulator we always take the "all bosses seen" path (shuffle all 3).
-pub fn generate_boss_list(act: u8, monster_rng: &mut crate::rng::StsRng) -> Vec<EncounterId> {
+pub fn generate_boss_list(
+    act: u8,
+    monster_rng: &mut crate::runtime::rng::StsRng,
+) -> Vec<EncounterId> {
     let mut bosses = match act {
         1 => vec![
             EncounterId::TheGuardian,
@@ -475,7 +478,7 @@ pub fn generate_boss_list(act: u8, monster_rng: &mut crate::rng::StsRng) -> Vec<
     };
 
     // Java: Collections.shuffle(bossList, new java.util.Random(monsterRng.randomLong()))
-    crate::rng::shuffle_with_random_long(&mut bosses, monster_rng);
+    crate::runtime::rng::shuffle_with_random_long(&mut bosses, monster_rng);
 
     bosses
 }

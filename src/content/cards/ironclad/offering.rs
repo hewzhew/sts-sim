@@ -1,5 +1,5 @@
-use crate::action::{Action, ActionInfo, AddTo};
-use crate::combat::{CombatCard, CombatState};
+use crate::runtime::action::{Action, ActionInfo, AddTo};
+use crate::runtime::combat::{CombatCard, CombatState};
 use smallvec::SmallVec;
 
 pub fn offering_play(_state: &CombatState, card: &CombatCard) -> SmallVec<[ActionInfo; 4]> {
@@ -7,7 +7,8 @@ pub fn offering_play(_state: &CombatState, card: &CombatCard) -> SmallVec<[Actio
         ActionInfo {
             action: Action::LoseHp {
                 target: 0,
-                amount: 6
+                amount: 6,
+                triggers_rupture: true,
             },
             insertion_mode: AddTo::Bottom,
         },

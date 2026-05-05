@@ -1,8 +1,18 @@
-use crate::action::{Action, ActionInfo, AddTo};
+use crate::runtime::action::{Action, ActionInfo, AddTo};
 use smallvec::SmallVec;
 
 /// Shuriken: Every time you play 3 Attacks in a single turn, gain 1 Strength.
 /// Java: counter-based, resets each turn.
+pub fn at_turn_start() -> SmallVec<[ActionInfo; 4]> {
+    smallvec::smallvec![ActionInfo {
+        action: Action::UpdateRelicCounter {
+            relic_id: crate::content::relics::RelicId::Shuriken,
+            counter: 0,
+        },
+        insertion_mode: AddTo::Bottom,
+    }]
+}
+
 pub fn on_use_card(
     card_id: crate::content::cards::CardId,
     counter: i32,
@@ -35,4 +45,8 @@ pub fn on_use_card(
     }
 
     actions
+}
+
+pub fn on_victory(relic_state: &mut crate::content::relics::RelicState) {
+    relic_state.counter = -1;
 }

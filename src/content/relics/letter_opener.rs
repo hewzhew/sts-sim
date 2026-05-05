@@ -1,10 +1,10 @@
-use crate::action::{Action, ActionInfo, AddTo};
+use crate::runtime::action::{Action, ActionInfo, AddTo};
 use smallvec::SmallVec;
 
 /// LetterOpener: Every time you play 3 Skills in a single turn, deal 5 damage to ALL enemies.
 /// Java: onUseCard() → ++counter; if counter % 3 == 0: counter=0, addToBot(DamageAllEnemiesAction(5, THORNS))
 pub fn on_use_card(
-    state: &crate::combat::CombatState,
+    state: &crate::runtime::combat::CombatState,
     card_id: crate::content::cards::CardId,
     counter: i32,
 ) -> SmallVec<[ActionInfo; 4]> {
@@ -25,12 +25,12 @@ pub fn on_use_card(
         if next_counter == 0 {
             // Java: addToBot(new DamageAllEnemiesAction(null, DamageInfo.createDamageMatrix(5, true), THORNS))
             let damages: smallvec::SmallVec<[i32; 5]> =
-                state.monsters.iter().map(|_| 5i32).collect();
+                state.entities.monsters.iter().map(|_| 5i32).collect();
             actions.push(ActionInfo {
                 action: Action::DamageAllEnemies {
                     source: 0,
                     damages,
-                    damage_type: crate::action::DamageType::Thorns,
+                    damage_type: crate::runtime::action::DamageType::Thorns,
                     is_modified: false,
                 },
                 insertion_mode: AddTo::Bottom, // Java: addToBot
@@ -39,4 +39,8 @@ pub fn on_use_card(
     }
 
     actions
+}
+
+pub fn on_victory(relic_state: &mut crate::content::relics::RelicState) {
+    relic_state.counter = -1;
 }

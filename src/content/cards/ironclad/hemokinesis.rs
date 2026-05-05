@@ -1,6 +1,6 @@
-use crate::action::{Action, ActionInfo, AddTo, DamageInfo, DamageType};
-use crate::combat::{CombatCard, CombatState};
 use crate::core::EntityId;
+use crate::runtime::action::{Action, ActionInfo, AddTo, DamageInfo, DamageType};
+use crate::runtime::combat::{CombatCard, CombatState};
 use smallvec::SmallVec;
 
 pub fn hemokinesis_play(
@@ -14,6 +14,7 @@ pub fn hemokinesis_play(
             action: Action::LoseHp {
                 target: 0,
                 amount: card.base_magic_num_mut,
+                triggers_rupture: true,
             },
             insertion_mode: AddTo::Bottom,
         },

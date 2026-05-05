@@ -1,10 +1,13 @@
 use crate::content::cards::CardId;
 use crate::content::relics::{RelicId, RelicState};
 use crate::state::core::EngineState;
-use crate::state::events::{EventChoiceMeta, EventState};
+use crate::state::events::{
+    EventActionKind, EventCardKind, EventChoiceMeta, EventEffect, EventOption,
+    EventOptionConstraint, EventOptionSemantics, EventOptionTransition, EventRelicKind, EventState,
+};
 use crate::state::run::RunState;
 
-pub fn get_choices(run_state: &RunState, event_state: &EventState) -> Vec<EventChoiceMeta> {
+pub fn get_options(run_state: &RunState, event_state: &EventState) -> Vec<EventOption> {
     match event_state.current_screen {
         0 => {
             let has_idol = run_state.relics.iter().any(|r| r.id == RelicId::GoldenIdol);
@@ -16,24 +19,98 @@ pub fn get_choices(run_state: &RunState, event_state: &EventState) -> Vec<EventC
             let hp_loss = (run_state.max_hp as f32 * hp_loss_pct).round() as i32;
             let mut choices = vec![];
             if has_idol {
-                choices.push(EventChoiceMeta::new(
-                    "[Offer] Trade Golden Idol for Bloody Idol.",
+                choices.push(EventOption::new(
+                    EventChoiceMeta::new("[Offer] Trade Golden Idol for Bloody Idol."),
+                    EventOptionSemantics {
+                        action: EventActionKind::Trade,
+                        effects: vec![
+                            EventEffect::LoseRelic {
+                                specific: Some(RelicId::GoldenIdol),
+                                starter_only: false,
+                            },
+                            EventEffect::ObtainRelic {
+                                count: 1,
+                                kind: EventRelicKind::Specific(RelicId::BloodyIdol),
+                            },
+                        ],
+                        constraints: vec![EventOptionConstraint::RequiresRelic(
+                            RelicId::GoldenIdol,
+                        )],
+                        transition: EventOptionTransition::AdvanceScreen,
+                        repeatable: false,
+                        terminal: false,
+                    },
                 ));
             } else {
-                choices.push(EventChoiceMeta::disabled(
-                    "[Offer] Requires Golden Idol.",
-                    "No Golden Idol",
+                choices.push(EventOption::new(
+                    EventChoiceMeta::disabled("[Offer] Requires Golden Idol.", "No Golden Idol"),
+                    EventOptionSemantics {
+                        action: EventActionKind::Trade,
+                        effects: vec![
+                            EventEffect::LoseRelic {
+                                specific: Some(RelicId::GoldenIdol),
+                                starter_only: false,
+                            },
+                            EventEffect::ObtainRelic {
+                                count: 1,
+                                kind: EventRelicKind::Specific(RelicId::BloodyIdol),
+                            },
+                        ],
+                        constraints: vec![EventOptionConstraint::RequiresRelic(
+                            RelicId::GoldenIdol,
+                        )],
+                        transition: EventOptionTransition::AdvanceScreen,
+                        repeatable: false,
+                        terminal: false,
+                    },
                 ));
             }
-            choices.push(EventChoiceMeta::new(format!(
-                "[Pray] Gain 5 Max HP. Lose {} HP.",
-                hp_loss
-            )));
-            choices.push(EventChoiceMeta::new("[Desecrate] Become Cursed - Decay."));
+            choices.push(EventOption::new(
+                EventChoiceMeta::new(format!("[Pray] Gain 5 Max HP. Lose {} HP.", hp_loss)),
+                EventOptionSemantics {
+                    action: EventActionKind::Accept,
+                    effects: vec![EventEffect::GainMaxHp(5), EventEffect::LoseHp(hp_loss)],
+                    constraints: vec![],
+                    transition: EventOptionTransition::AdvanceScreen,
+                    repeatable: false,
+                    terminal: false,
+                },
+            ));
+            choices.push(EventOption::new(
+                EventChoiceMeta::new("[Desecrate] Become Cursed - Decay."),
+                EventOptionSemantics {
+                    action: EventActionKind::Decline,
+                    effects: vec![EventEffect::ObtainCurse {
+                        count: 1,
+                        kind: EventCardKind::Specific(CardId::Decay),
+                    }],
+                    constraints: vec![],
+                    transition: EventOptionTransition::AdvanceScreen,
+                    repeatable: false,
+                    terminal: false,
+                },
+            ));
             choices
         }
-        _ => vec![EventChoiceMeta::new("[Leave]")],
+        _ => vec![EventOption::new(
+            EventChoiceMeta::new("[Leave]"),
+            EventOptionSemantics {
+                action: EventActionKind::Leave,
+                effects: vec![],
+                constraints: vec![],
+                transition: EventOptionTransition::Complete,
+                repeatable: false,
+                terminal: true,
+            },
+        )],
     }
+}
+
+pub fn get_choices(run_state: &RunState, event_state: &EventState) -> Vec<EventChoiceMeta> {
+    get_options(run_state, event_state)
+        .into_iter()
+        .map(|option| option.ui)
+        .collect()
 }
 
 pub fn handle_choice(_engine_state: &mut EngineState, run_state: &mut RunState, choice_idx: usize) {

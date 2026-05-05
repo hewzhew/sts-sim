@@ -1,21 +1,30 @@
-pub mod action;
-pub mod combat;
+extern crate self as sts_simulator;
+
 pub mod content;
-pub mod core;
-pub mod deck;
+mod core;
+mod deck;
 pub mod engine;
-pub mod events;
-pub mod game;
-pub mod interaction_coverage;
+mod events;
 pub mod map;
-pub mod rewards;
-pub mod rng;
-pub mod shop;
+pub mod projection;
+pub mod protocol;
+pub mod runtime;
+mod semantics;
+mod shop;
 pub mod state;
-pub mod utils;
 pub mod verification;
 
-pub use engine::*;
+// Integration layers around the runtime path.
+pub mod diff;
+mod testing;
+pub use testing::fixtures;
+pub use testing::support as test_support;
+
+// User-facing and experimental surfaces.
 pub mod bot;
 pub mod cli;
-pub mod diff;
+
+pub use core::EntityId;
+mod rewards;
+mod utils;
+pub use utils::SimulationWatchdog;

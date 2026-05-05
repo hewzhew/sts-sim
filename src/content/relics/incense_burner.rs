@@ -1,4 +1,4 @@
-use crate::action::{Action, ActionInfo, AddTo};
+use crate::runtime::action::{Action, ActionInfo, AddTo};
 use smallvec::SmallVec;
 
 /// Incense Burner: Every 6 turns, gain 1 Intangible.
@@ -33,7 +33,7 @@ pub fn at_turn_start(counter: i32) -> SmallVec<[ActionInfo; 4]> {
             action: Action::ApplyPower {
                 source: 0,
                 target: 0,
-                power_id: crate::content::powers::PowerId::Intangible,
+                power_id: crate::content::powers::PowerId::IntangiblePlayer,
                 amount: 1,
             },
             insertion_mode: AddTo::Bottom, // Java: addToBot

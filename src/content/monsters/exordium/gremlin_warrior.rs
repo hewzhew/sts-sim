@@ -1,75 +1,130 @@
-use crate::action::{Action, DamageInfo, DamageType};
-use crate::combat::{CombatState, Intent, MonsterEntity};
+use super::{apply_power_action, attack_actions, set_next_move_action, PLAYER};
 use crate::content::monsters::MonsterBehavior;
+use crate::content::powers::PowerId;
+use crate::runtime::action::Action;
+use crate::runtime::combat::{CombatState, MonsterEntity};
+use crate::semantics::combat::{
+    ApplyPowerStep, AttackSpec, AttackStep, DamageKind, EffectStrength, MonsterTurnPlan, MoveStep,
+    MoveTarget, PowerEffectKind,
+};
+
+const SCRATCH: u8 = 1;
+const ESCAPE: u8 = 99;
 
 pub struct GremlinWarrior;
 
-impl MonsterBehavior for GremlinWarrior {
-    fn roll_move(
-        _rng: &mut crate::rng::StsRng,
-        _entity: &MonsterEntity,
-        ascension_level: u8,
-        _num: i32,
-    ) -> (u8, Intent) {
-        let dmg = if ascension_level >= 2 { 5 } else { 4 };
-        (
-            1,
-            Intent::Attack {
-                damage: dmg,
+enum GremlinWarriorTurn<'a> {
+    Scratch(&'a AttackSpec),
+    Escape,
+}
+
+fn scratch_damage(asc: u8) -> i32 {
+    if asc >= 2 {
+        5
+    } else {
+        4
+    }
+}
+
+fn angry_amount(asc: u8) -> i32 {
+    if asc >= 17 {
+        2
+    } else {
+        1
+    }
+}
+
+fn scratch_plan(asc: u8) -> MonsterTurnPlan {
+    MonsterTurnPlan::single(
+        SCRATCH,
+        MoveStep::Attack(AttackStep {
+            target: MoveTarget::Player,
+            attack: AttackSpec {
+                base_damage: scratch_damage(asc),
                 hits: 1,
+                damage_kind: DamageKind::Normal,
             },
-        )
+        }),
+    )
+}
+
+fn escape_plan() -> MonsterTurnPlan {
+    MonsterTurnPlan::single(ESCAPE, MoveStep::Escape)
+}
+
+fn plan_for(move_id: u8, asc: u8) -> MonsterTurnPlan {
+    match move_id {
+        SCRATCH => scratch_plan(asc),
+        ESCAPE => escape_plan(),
+        _ => MonsterTurnPlan::unknown(move_id),
+    }
+}
+
+fn decode_turn<'a>(plan: &'a MonsterTurnPlan) -> GremlinWarriorTurn<'a> {
+    match (plan.move_id, plan.steps.as_slice()) {
+        (
+            SCRATCH,
+            [MoveStep::Attack(AttackStep {
+                target: MoveTarget::Player,
+                attack,
+            })],
+        ) => GremlinWarriorTurn::Scratch(attack),
+        (ESCAPE, [MoveStep::Escape]) => GremlinWarriorTurn::Escape,
+        (_, []) => panic!("gremlin warrior plan missing locked truth"),
+        (move_id, steps) => panic!(
+            "gremlin warrior plan/steps mismatch: {} {:?}",
+            move_id, steps
+        ),
+    }
+}
+
+impl MonsterBehavior for GremlinWarrior {
+    fn roll_move_plan(
+        _rng: &mut crate::runtime::rng::StsRng,
+        _entity: &MonsterEntity,
+        asc: u8,
+        _num: i32,
+    ) -> MonsterTurnPlan {
+        scratch_plan(asc)
     }
 
-    fn take_turn(state: &mut CombatState, entity: &MonsterEntity) -> Vec<Action> {
-        let dmg = if state.ascension_level >= 2 { 5 } else { 4 };
-        let mut actions = Vec::new();
-
-        match entity.next_move_byte {
-            1 => {
-                // SCRATCH
-                actions.push(Action::Damage(DamageInfo {
-                    source: entity.id,
-                    target: 0,
-                    base: dmg,
-                    output: dmg,
-                    damage_type: DamageType::Normal,
-                    is_modified: false,
-                }));
-                actions.push(Action::SetMonsterMove {
-                    monster_id: entity.id,
-                    next_move_byte: 1,
-                    intent: Intent::Attack {
-                        damage: dmg,
-                        hits: 1,
-                    },
-                });
-            }
-            99 => {
-                // ESCAPE
-                actions.push(Action::Escape { target: entity.id });
-            }
-            _ => {}
-        }
-
-        actions.push(Action::RollMonsterMove {
-            monster_id: entity.id,
-        });
-
-        actions
+    fn turn_plan(state: &CombatState, entity: &MonsterEntity) -> MonsterTurnPlan {
+        plan_for(entity.planned_move_id(), state.meta.ascension_level)
     }
 
-    fn use_pre_battle_action(
+    fn use_pre_battle_actions(
+        state: &mut CombatState,
         entity: &MonsterEntity,
-        _hp_rng: &mut crate::rng::StsRng,
-        ascension_level: u8,
+        legacy_rng: crate::content::monsters::PreBattleLegacyRng,
     ) -> Vec<Action> {
-        let amt = if ascension_level >= 17 { 2 } else { 1 };
-        vec![Action::ApplyPower {
-            target: entity.id,
-            source: entity.id,
-            power_id: crate::combat::PowerId::Angry,
-            amount: amt,
-        }]
+        let (_hp_rng, asc) = crate::content::monsters::legacy_pre_battle_rng(state, legacy_rng);
+        vec![apply_power_action(
+            entity,
+            &ApplyPowerStep {
+                target: MoveTarget::SelfTarget,
+                power_id: PowerId::Anger,
+                amount: angry_amount(asc),
+                effect: PowerEffectKind::Buff,
+                visible_strength: EffectStrength::Normal,
+            },
+        )]
+    }
+
+    fn take_turn_plan(
+        state: &mut CombatState,
+        entity: &MonsterEntity,
+        plan: &MonsterTurnPlan,
+    ) -> Vec<Action> {
+        match decode_turn(plan) {
+            GremlinWarriorTurn::Scratch(attack) => {
+                let mut actions = attack_actions(entity.id, PLAYER, attack);
+                actions.push(set_next_move_action(
+                    entity,
+                    scratch_plan(state.meta.ascension_level),
+                ));
+                actions
+            }
+            GremlinWarriorTurn::Escape => vec![Action::Escape { target: entity.id }],
+        }
     }
 }

@@ -1,4 +1,4 @@
-use crate::action::{Action, DamageType};
+use crate::runtime::action::{Action, DamageType};
 use smallvec::SmallVec;
 
 pub fn on_block_gained(amount: i32) -> SmallVec<[Action; 2]> {

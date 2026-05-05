@@ -32,7 +32,7 @@ def main() -> int:
             raise SystemExit(f"Missing documented tool path: {path}")
 
     subprocess.run(
-        [sys.executable, "-m", "sts_tool", "query", "Corruption"],
+        [sys.executable, "-m", "sts_tool", "query", "ApplyPower", "--json"],
         cwd=BASE_DIR,
         check=True,
         capture_output=True,
@@ -49,7 +49,7 @@ def main() -> int:
         encoding="utf-8",
     )
     render_hook_report("onExhaust", HOOK_QUERY_OUTPUT_DIR / "onExhaust.md", ANALYSIS_CACHE_DIR)
-    for family in ("exhaust", "guardian", "vulnerable"):
+    for family in ("exhaust", "guardian", "vulnerable", "power_lifecycle", "apply_power", "sentinel_amount"):
         build_family_audit(family, ANALYSIS_CACHE_DIR)
     subprocess.run(
         [sys.executable, "-m", "tools.coverage.main"],
@@ -59,32 +59,25 @@ def main() -> int:
         text=True,
         encoding="utf-8",
     )
-    subprocess.run(
-        [
-            sys.executable,
-            str(BASE_DIR / "source_extractor" / "sts_extractor.py"),
-            str(BASE_DIR.parent.parent / "cardcrawl"),
-            str(BASE_DIR / "source_extractor" / "output"),
-        ],
-        cwd=BASE_DIR.parent,
-        check=True,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-    )
 
     entities = json.loads((ANALYSIS_CACHE_DIR / "java_entities.json").read_text(encoding="utf-8"))
+    methods = json.loads((ANALYSIS_CACHE_DIR / "java_methods.json").read_text(encoding="utf-8"))
     hooks = json.loads((ANALYSIS_CACHE_DIR / "java_hooks.json").read_text(encoding="utf-8"))
     dispatch = json.loads((ANALYSIS_CACHE_DIR / "rust_dispatch.json").read_text(encoding="utf-8"))
+    aliases = json.loads((ANALYSIS_CACHE_DIR / "schema_aliases.json").read_text(encoding="utf-8"))
 
     classes = {entity["class_name"] for entity in entities["entities"]}
     assert "VulnerablePower" in classes
     assert "PaperFrog" in classes
     assert "TheGuardian" in classes
+    assert "NoDrawPower" in classes
     assert "onExhaust" in hooks["hooks"]
+    assert any(method["class_name"] == "ApplyPowerAction" and method["name"] == "update" for method in methods["methods"])
     assert "resolve_power_on_exhaust" in dispatch["power_dispatch"]
-    assert (BASE_DIR / "source_extractor" / "output" / "hooks.json").exists()
-    assert (BASE_DIR / "source_extractor" / "output" / "scattered_logic.json").exists()
+    assert any(alias["raw"] == "No Draw" and alias["normalized"] == "nodraw" for alias in aliases["aliases"])
+    assert any(alias["raw"] == "Clockwork Souvenir" and alias["normalized"] == "clockworksouvenir" for alias in aliases["aliases"])
+    assert any(alias["raw"] == "Strike_R" and alias["normalized"] == "striker" for alias in aliases["aliases"])
+    assert (ANALYSIS_CACHE_DIR / "family_audit" / "power_lifecycle.json").exists()
     return 0
 
 

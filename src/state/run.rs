@@ -1,7 +1,22 @@
-use crate::combat::{CombatCard, PlayerEntity};
 use crate::content::relics::RelicState;
 use crate::map::state::MapState;
-use crate::rng::RngPool;
+use crate::runtime::combat::{CombatCard, PlayerEntity};
+use crate::runtime::rng::RngPool;
+use crate::state::selection::{DomainCardSnapshot, DomainEvent, DomainEventSource};
+use std::cell::Cell;
+
+thread_local! {
+    static SUPPRESS_OBTAIN_LOGS_DEPTH: Cell<usize> = const { Cell::new(0) };
+}
+
+pub fn with_suppressed_obtain_logs<T>(f: impl FnOnce() -> T) -> T {
+    SUPPRESS_OBTAIN_LOGS_DEPTH.with(|depth| {
+        depth.set(depth.get() + 1);
+        let result = f();
+        depth.set(depth.get().saturating_sub(1));
+        result
+    })
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct RunState {
@@ -38,6 +53,16 @@ pub struct RunState {
     pub event_state: Option<crate::state::events::EventState>,
 
     pub event_generator: crate::events::generator::EventGenerator,
+    /// Java `AbstractRoom.mugged` equivalent for the current room.
+    ///
+    /// Set when a thief escapes after stealing gold. Cleared when entering the
+    /// next room. Used for post-combat room/reward semantics and future parity.
+    pub room_mugged: bool,
+    /// Java `AbstractRoom.smoked` equivalent for the current room.
+    ///
+    /// Set when Smoke Bomb ends the current combat. Cleared when entering the
+    /// next room. Used for reward-screen semantics and future parity.
+    pub room_smoked: bool,
 
     // Relic pools — filled at dungeon init, popped from end when obtaining relics.
     // Java: commonRelicPool, uncommonRelicPool, rareRelicPool, shopRelicPool, bossRelicPool
@@ -55,6 +80,7 @@ pub struct RunState {
 
     /// Set to true after boss combat ends, consumed by post_reward_state() to trigger act advance.
     pub pending_boss_reward: bool,
+    pub emitted_events: Vec<DomainEvent>,
 }
 
 impl RunState {
@@ -64,6 +90,12 @@ impl RunState {
         final_act: bool,
         player_class: &'static str,
     ) -> Self {
+        let base_max_hp = match player_class {
+            "Silent" => 70,
+            "Defect" => 75,
+            "Watcher" => 72,
+            _ => 80,
+        };
         // Generate Act 1 map; returns the consumed mapRng for emerald key placement.
         let (mut first_map, mut map_rng) =
             crate::map::generator::generate_map_for_act(seed, 1, ascension_level == 0);
@@ -82,8 +114,8 @@ impl RunState {
             rng_pool: RngPool::new(seed),
 
             // Typical Ironclad defaults
-            current_hp: 80,
-            max_hp: 80,
+            current_hp: base_max_hp,
+            max_hp: base_max_hp,
             gold: 99,
             shop_purge_count: 0,
             relics: Vec::new(),
@@ -106,6 +138,8 @@ impl RunState {
 
             // Subsystems
             event_generator: crate::events::generator::EventGenerator::new(1),
+            room_mugged: false,
+            room_smoked: false,
 
             // Relic pools (filled by init_relic_pools)
             common_relic_pool: Vec::new(),
@@ -120,10 +154,12 @@ impl RunState {
             boss_list: Vec::new(),
 
             pending_boss_reward: false,
+            emitted_events: Vec::new(),
         };
         rs.init_relic_pools();
         rs.init_encounter_lists();
         rs.init_boss_list();
+        rs.apply_starting_loadout();
 
         // --- Ascension metagame effects (Java: AbstractDungeon.java L2562-2580) ---
 
@@ -149,7 +185,7 @@ impl RunState {
         // Asc 10: Add Ascender's Bane (unremovable curse) to starting deck
         if ascension_level >= 10 {
             let uuid = 9999; // High UUID to avoid conflicts with starter deck
-            rs.master_deck.push(crate::combat::CombatCard::new(
+            rs.master_deck.push(crate::runtime::combat::CombatCard::new(
                 crate::content::cards::CardId::AscendersBane,
                 uuid,
             ));
@@ -158,6 +194,57 @@ impl RunState {
         // Initialize Neow event for run start
         crate::content::events::neow::setup_neow_choices(&mut rs);
         rs
+    }
+
+    fn apply_starting_loadout(&mut self) {
+        use crate::content::cards::CardId;
+        use crate::content::relics::{RelicId, RelicState};
+
+        if self.master_deck.is_empty() {
+            let starter_cards: &'static [CardId] = match self.player_class {
+                "Silent" => &[
+                    CardId::StrikeG,
+                    CardId::StrikeG,
+                    CardId::StrikeG,
+                    CardId::StrikeG,
+                    CardId::StrikeG,
+                    CardId::DefendG,
+                    CardId::DefendG,
+                    CardId::DefendG,
+                    CardId::DefendG,
+                    CardId::DefendG,
+                    CardId::Survivor,
+                    CardId::Neutralize,
+                ],
+                _ => &[
+                    CardId::Strike,
+                    CardId::Strike,
+                    CardId::Strike,
+                    CardId::Strike,
+                    CardId::Strike,
+                    CardId::Defend,
+                    CardId::Defend,
+                    CardId::Defend,
+                    CardId::Defend,
+                    CardId::Bash,
+                ],
+            };
+
+            for (idx, &card_id) in starter_cards.iter().enumerate() {
+                self.master_deck
+                    .push(crate::runtime::combat::CombatCard::new(card_id, idx as u32));
+            }
+        }
+
+        if self.relics.is_empty() {
+            let starter_relic = match self.player_class {
+                "Silent" => RelicId::SnakeRing,
+                "Defect" => RelicId::CrackedCore,
+                "Watcher" => RelicId::PureWater,
+                _ => RelicId::BurningBlood,
+            };
+            self.relics.push(RelicState::new(starter_relic));
+        }
     }
 
     /// Maps player_class string to PotionClass enum for potion generation.
@@ -182,7 +269,7 @@ impl RunState {
             gold: self.gold,
             max_orbs: 0,
             orbs: Vec::new(),
-            stance: crate::combat::StanceId::Neutral,
+            stance: crate::runtime::combat::StanceId::Neutral,
             relics: Vec::new(),
             relic_buses: Default::default(),
             energy_master: 3,
@@ -214,9 +301,177 @@ impl RunState {
         relic_id: crate::content::relics::RelicId,
         return_state: crate::state::core::EngineState,
     ) -> Option<crate::state::core::EngineState> {
+        self.obtain_relic_with_source(relic_id, return_state, DomainEventSource::DeckMutation)
+    }
+
+    pub fn obtain_relic_with_source(
+        &mut self,
+        relic_id: crate::content::relics::RelicId,
+        return_state: crate::state::core::EngineState,
+        source: DomainEventSource,
+    ) -> Option<crate::state::core::EngineState> {
+        let previous_gold = self.gold;
+        let previous_hp = self.current_hp;
+        let previous_max_hp = self.max_hp;
         self.relics
             .push(crate::content::relics::RelicState::new(relic_id));
-        crate::engine::relic_manager::on_equip(self, relic_id, return_state)
+        self.emit_event(DomainEvent::RelicObtained { relic_id, source });
+        let next_state = crate::engine::relic_manager::on_equip(self, relic_id, return_state);
+        self.emit_run_resource_diffs(previous_gold, previous_hp, previous_max_hp, source);
+        next_state
+    }
+
+    pub fn remove_relic_at_with_source(
+        &mut self,
+        index: usize,
+        source: DomainEventSource,
+    ) -> Option<crate::content::relics::RelicId> {
+        if index >= self.relics.len() {
+            return None;
+        }
+        let relic = self.relics.remove(index);
+        self.emit_event(DomainEvent::RelicLost {
+            relic_id: relic.id,
+            source,
+        });
+        Some(relic.id)
+    }
+
+    pub fn remove_first_relic_with_id_and_source(
+        &mut self,
+        relic_id: crate::content::relics::RelicId,
+        source: DomainEventSource,
+    ) -> Option<crate::content::relics::RelicId> {
+        self.relics
+            .iter()
+            .position(|relic| relic.id == relic_id)
+            .and_then(|index| self.remove_relic_at_with_source(index, source))
+    }
+
+    pub fn change_gold_with_source(&mut self, delta: i32, source: DomainEventSource) -> i32 {
+        let old_gold = self.gold;
+        self.gold = (self.gold + delta).max(0);
+        let actual_delta = self.gold - old_gold;
+        if actual_delta < 0 && matches!(source, DomainEventSource::Shop) {
+            if let Some(relic) = self
+                .relics
+                .iter_mut()
+                .find(|relic| relic.id == crate::content::relics::RelicId::MawBank)
+            {
+                relic.used_up = true;
+                relic.counter = -2;
+            }
+        }
+        if actual_delta != 0 {
+            self.emit_event(DomainEvent::GoldChanged {
+                delta: actual_delta,
+                new_total: self.gold,
+                source,
+            });
+        }
+        actual_delta
+    }
+
+    pub fn set_gold_with_source(&mut self, new_total: i32, source: DomainEventSource) -> i32 {
+        self.change_gold_with_source(new_total - self.gold, source)
+    }
+
+    pub fn change_hp_with_source(&mut self, delta: i32, source: DomainEventSource) -> i32 {
+        self.set_current_hp_with_source(self.current_hp + delta, source)
+    }
+
+    pub fn set_current_hp_with_source(
+        &mut self,
+        new_current_hp: i32,
+        source: DomainEventSource,
+    ) -> i32 {
+        let old_hp = self.current_hp;
+        self.current_hp = new_current_hp.clamp(0, self.max_hp.max(0));
+        let actual_delta = self.current_hp - old_hp;
+        if actual_delta != 0 {
+            self.emit_event(DomainEvent::HpChanged {
+                delta: actual_delta,
+                current_hp: self.current_hp,
+                max_hp: self.max_hp,
+                source,
+            });
+        }
+        actual_delta
+    }
+
+    pub fn gain_max_hp_with_source(
+        &mut self,
+        amount: i32,
+        heal_amount: i32,
+        source: DomainEventSource,
+    ) -> i32 {
+        if amount <= 0 {
+            return 0;
+        }
+        self.max_hp += amount;
+        self.current_hp = (self.current_hp + heal_amount).min(self.max_hp);
+        self.emit_event(DomainEvent::MaxHpChanged {
+            delta: amount,
+            current_hp: self.current_hp,
+            max_hp: self.max_hp,
+            source,
+        });
+        amount
+    }
+
+    pub fn lose_max_hp_with_source(&mut self, amount: i32, source: DomainEventSource) -> i32 {
+        if amount <= 0 {
+            return 0;
+        }
+        let old_max_hp = self.max_hp;
+        self.max_hp = (self.max_hp - amount).max(1);
+        self.current_hp = self.current_hp.min(self.max_hp);
+        let actual_delta = self.max_hp - old_max_hp;
+        if actual_delta != 0 {
+            self.emit_event(DomainEvent::MaxHpChanged {
+                delta: actual_delta,
+                current_hp: self.current_hp,
+                max_hp: self.max_hp,
+                source,
+            });
+        }
+        actual_delta
+    }
+
+    fn emit_run_resource_diffs(
+        &mut self,
+        previous_gold: i32,
+        previous_hp: i32,
+        previous_max_hp: i32,
+        source: DomainEventSource,
+    ) {
+        let gold_delta = self.gold - previous_gold;
+        if gold_delta != 0 {
+            self.emit_event(DomainEvent::GoldChanged {
+                delta: gold_delta,
+                new_total: self.gold,
+                source,
+            });
+        }
+        let max_hp_delta = self.max_hp - previous_max_hp;
+        if max_hp_delta != 0 {
+            self.emit_event(DomainEvent::MaxHpChanged {
+                delta: max_hp_delta,
+                current_hp: self.current_hp,
+                max_hp: self.max_hp,
+                source,
+            });
+        } else {
+            let hp_delta = self.current_hp - previous_hp;
+            if hp_delta != 0 {
+                self.emit_event(DomainEvent::HpChanged {
+                    delta: hp_delta,
+                    current_hp: self.current_hp,
+                    max_hp: self.max_hp,
+                    source,
+                });
+            }
+        }
     }
 
     /// Triggers when the player enters a Rest Room (Campfire).
@@ -240,6 +495,7 @@ impl RunState {
     pub fn generate_shop(&mut self) -> crate::shop::ShopState {
         let config = crate::shop::state::ShopConfig {
             ascension_level: self.ascension_level as i32,
+            player_class: self.player_class,
             has_courier: self
                 .relics
                 .iter()
@@ -365,7 +621,7 @@ impl RunState {
     /// Handles Omamori negation, CeramicFish gold, Elite Eggs upgrades, etc.
     /// Returns true if the card was actually added (false if Omamori blocked it).
     pub fn add_card_to_deck(&mut self, card_id: crate::content::cards::CardId) -> bool {
-        self.add_card_to_deck_with_upgrades(card_id, 0)
+        self.add_card_to_deck_with_upgrades_from(card_id, 0, DomainEventSource::RewardScreen)
     }
 
     /// Adds a card with an explicit pre-upgrade count.
@@ -373,6 +629,19 @@ impl RunState {
         &mut self,
         card_id: crate::content::cards::CardId,
         pre_upgrades: u8,
+    ) -> bool {
+        self.add_card_to_deck_with_upgrades_from(
+            card_id,
+            pre_upgrades,
+            DomainEventSource::DeckMutation,
+        )
+    }
+
+    pub fn add_card_to_deck_with_upgrades_from(
+        &mut self,
+        card_id: crate::content::cards::CardId,
+        pre_upgrades: u8,
+        source: DomainEventSource,
     ) -> bool {
         let ctx = self.build_deck_context();
         let mut target_uuid = self.next_card_uuid();
@@ -388,12 +657,10 @@ impl RunState {
         if !result.final_cards.is_empty() {
             was_added = true;
             for card in result.final_cards {
-                let def = crate::content::cards::get_card_definition(card.id);
-                eprintln!(
-                    "  [OBTAIN] Added card to deck: {}{}",
-                    def.name,
-                    if card.upgrades > 0 { "+" } else { "" }
-                );
+                self.emit_event(DomainEvent::CardObtained {
+                    card: Self::snapshot_card(&card),
+                    source,
+                });
                 self.master_deck.push(card);
             }
             self.dispatch_on_master_deck_change();
@@ -406,15 +673,17 @@ impl RunState {
     /// Removes a specific card instance from the master deck.
     /// Handles Parasite triggers, Necronomicurse regeneration.
     pub fn remove_card_from_deck(&mut self, uuid: u32) {
+        self.remove_card_from_deck_with_source(uuid, DomainEventSource::DeckMutation);
+    }
+
+    pub fn remove_card_from_deck_with_source(&mut self, uuid: u32, source: DomainEventSource) {
         let mut removed_id = None;
         if let Some(pos) = self.master_deck.iter().position(|c| c.uuid == uuid) {
             let removed = self.master_deck.remove(pos);
-            let def = crate::content::cards::get_card_definition(removed.id);
-            eprintln!(
-                "  [OBTAIN] Removed card from deck: {}{}",
-                def.name,
-                if removed.upgrades > 0 { "+" } else { "" }
-            );
+            self.emit_event(DomainEvent::CardRemoved {
+                card: Self::snapshot_card(&removed),
+                source,
+            });
             removed_id = Some(removed.id);
         }
 
@@ -449,7 +718,6 @@ impl RunState {
             has_molten_egg: self.relics.iter().any(|r| r.id == RelicId::MoltenEgg),
             has_toxic_egg: self.relics.iter().any(|r| r.id == RelicId::ToxicEgg),
             has_frozen_egg: self.relics.iter().any(|r| r.id == RelicId::FrozenEgg),
-            has_necronomicon: self.relics.iter().any(|r| r.id == RelicId::Necronomicon),
         }
     }
 
@@ -458,16 +726,14 @@ impl RunState {
         for action in actions {
             match action {
                 DeckAction::PreventObtain => { /* Handled structurally */ }
-                DeckAction::GainGold(amount) => self.gold += amount,
+                DeckAction::GainGold(amount) => {
+                    self.change_gold_with_source(amount, DomainEventSource::DeckMutation);
+                }
                 DeckAction::GainMaxHp(amount) => {
-                    self.max_hp += amount;
-                    self.current_hp += amount;
+                    self.gain_max_hp_with_source(amount, amount, DomainEventSource::DeckMutation);
                 }
                 DeckAction::LoseMaxHp(amount) => {
-                    self.max_hp -= amount;
-                    if self.current_hp > self.max_hp {
-                        self.current_hp = self.max_hp;
-                    }
+                    self.lose_max_hp_with_source(amount, DomainEventSource::DeckMutation);
                 }
                 DeckAction::UpdateRelicCounter(relic_id, counter) => {
                     if let Some(relic) = self.relics.iter_mut().find(|r| r.id == relic_id) {
@@ -520,23 +786,23 @@ impl RunState {
         }
 
         // Shuffle each pool with relicRng.randomLong() as seed (Java pattern)
-        crate::rng::shuffle_with_random_long(
+        crate::runtime::rng::shuffle_with_random_long(
             &mut self.common_relic_pool,
             &mut self.rng_pool.relic_rng,
         );
-        crate::rng::shuffle_with_random_long(
+        crate::runtime::rng::shuffle_with_random_long(
             &mut self.uncommon_relic_pool,
             &mut self.rng_pool.relic_rng,
         );
-        crate::rng::shuffle_with_random_long(
+        crate::runtime::rng::shuffle_with_random_long(
             &mut self.rare_relic_pool,
             &mut self.rng_pool.relic_rng,
         );
-        crate::rng::shuffle_with_random_long(
+        crate::runtime::rng::shuffle_with_random_long(
             &mut self.shop_relic_pool,
             &mut self.rng_pool.relic_rng,
         );
-        crate::rng::shuffle_with_random_long(
+        crate::runtime::rng::shuffle_with_random_long(
             &mut self.boss_relic_pool,
             &mut self.rng_pool.relic_rng,
         );
@@ -780,8 +1046,22 @@ impl RunState {
     /// `AbstractPlayer.obtainPotion()`. Returns true if placed, false if full.
     /// This is the ONLY correct way to add potions — never use `potions.push()`.
     pub fn obtain_potion(&mut self, potion: crate::content::potions::Potion) -> bool {
+        self.obtain_potion_with_source(potion, DomainEventSource::DeckMutation)
+    }
+
+    pub fn obtain_potion_with_source(
+        &mut self,
+        potion: crate::content::potions::Potion,
+        source: DomainEventSource,
+    ) -> bool {
         if let Some(slot) = self.potions.iter().position(|p| p.is_none()) {
+            let potion_id = potion.id;
             self.potions[slot] = Some(potion);
+            self.emit_event(DomainEvent::PotionObtained {
+                potion_id,
+                slot,
+                source,
+            });
             true
         } else {
             false
@@ -817,8 +1097,17 @@ impl RunState {
         &mut self,
         rarity: crate::content::cards::CardRarity,
     ) -> crate::content::cards::CardId {
-        use crate::content::cards::*;
-        let pool = ironclad_pool_for_rarity(rarity);
+        use crate::content::cards::CardId;
+        let pool = crate::engine::campfire_handler::nonempty_card_pool_for_class(
+            self.player_class,
+            rarity,
+        );
+        if pool.is_empty() {
+            return match self.player_class {
+                "Silent" => CardId::StrikeG,
+                _ => CardId::Strike,
+            };
+        }
         let idx = self
             .rng_pool
             .misc_rng
@@ -833,9 +1122,15 @@ impl RunState {
         card_type: crate::content::cards::CardType,
     ) -> crate::content::cards::CardId {
         use crate::content::cards::*;
-        let pool = ironclad_pool_for_type(card_type);
+        let pool = match self.player_class {
+            "Silent" => silent_pool_for_type(card_type),
+            _ => ironclad_pool_for_type(card_type),
+        };
         if pool.is_empty() {
-            return CardId::Strike; // fallback
+            return match self.player_class {
+                "Silent" => CardId::StrikeG,
+                _ => CardId::Strike,
+            };
         }
         let idx = self
             .rng_pool
@@ -865,7 +1160,10 @@ impl RunState {
             .collect();
 
         // Shuffle using miscRng.randomLong() seed (mirrors Java's Collections.shuffle)
-        crate::rng::shuffle_with_random_long(&mut upgradable_indices, &mut self.rng_pool.misc_rng);
+        crate::runtime::rng::shuffle_with_random_long(
+            &mut upgradable_indices,
+            &mut self.rng_pool.misc_rng,
+        );
 
         // Upgrade up to `count` cards
         for &idx in upgradable_indices.iter().take(count) {
@@ -876,8 +1174,19 @@ impl RunState {
 
     /// Upgrades a specific card in the master deck by its UUID.
     pub fn upgrade_card(&mut self, uuid: u32) {
+        self.upgrade_card_with_source(uuid, DomainEventSource::DeckMutation);
+    }
+
+    pub fn upgrade_card_with_source(&mut self, uuid: u32, source: DomainEventSource) {
         if let Some(card) = self.master_deck.iter_mut().find(|c| c.uuid == uuid) {
+            let before = Self::snapshot_card(card);
             card.upgrades += 1;
+            let after = Self::snapshot_card(card);
+            self.emit_event(DomainEvent::CardUpgraded {
+                before,
+                after,
+                source,
+            });
         }
     }
 
@@ -885,12 +1194,22 @@ impl RunState {
     /// Uses DeckManager properly so Omamori/Necronomicurse triggers fire correctly.
     /// `auto_upgrade` is true when transforming via Astrolabe.
     pub fn transform_card(&mut self, deck_index: usize, auto_upgrade: bool) {
+        self.transform_card_with_source(deck_index, auto_upgrade, DomainEventSource::DeckMutation);
+    }
+
+    pub fn transform_card_with_source(
+        &mut self,
+        deck_index: usize,
+        auto_upgrade: bool,
+        source: DomainEventSource,
+    ) {
         if deck_index >= self.master_deck.len() {
             return;
         }
 
         let old_card_id = self.master_deck[deck_index].id;
         let old_card_uuid = self.master_deck[deck_index].uuid;
+        let before = Self::snapshot_card(&self.master_deck[deck_index]);
         let def = crate::content::cards::get_card_definition(old_card_id);
 
         use crate::content::cards::*;
@@ -938,13 +1257,28 @@ impl RunState {
             }
         } else {
             // Java: returnTrulyRandomCardFromAvailable(c, rng)
-            let pool: Vec<CardId> = IRONCLAD_COMMON_POOL
-                .iter()
-                .chain(IRONCLAD_UNCOMMON_POOL.iter())
-                .chain(IRONCLAD_RARE_POOL.iter())
-                .copied()
-                .filter(|&c| c != old_card_id)
-                .collect();
+            let pool: Vec<CardId> = crate::engine::campfire_handler::card_pool_for_class(
+                self.player_class,
+                CardRarity::Common,
+            )
+            .iter()
+            .chain(
+                crate::engine::campfire_handler::card_pool_for_class(
+                    self.player_class,
+                    CardRarity::Uncommon,
+                )
+                .iter(),
+            )
+            .chain(
+                crate::engine::campfire_handler::card_pool_for_class(
+                    self.player_class,
+                    CardRarity::Rare,
+                )
+                .iter(),
+            )
+            .copied()
+            .filter(|&c| c != old_card_id)
+            .collect();
             if pool.is_empty() {
                 old_card_id
             } else {
@@ -956,8 +1290,20 @@ impl RunState {
             }
         };
 
-        // 1. Remove logically
-        self.remove_card_from_deck(old_card_uuid);
+        // 1. Remove logically without emitting a standalone remove event.
+        let mut removed_id = None;
+        if let Some(pos) = self
+            .master_deck
+            .iter()
+            .position(|c| c.uuid == old_card_uuid)
+        {
+            let removed = self.master_deck.remove(pos);
+            removed_id = Some(removed.id);
+        }
+        if let Some(card_id) = removed_id {
+            let remove_result = crate::deck::manager::DeckManager::remove_card(card_id);
+            self.resolve_deck_actions(remove_result.actions);
+        }
 
         // 2. Add logically
         let ctx = self.build_deck_context();
@@ -973,22 +1319,35 @@ impl RunState {
         // 3. Obtain
         let mut obtained_any = false;
         for card in result.final_cards {
-            let new_def = crate::content::cards::get_card_definition(card.id);
-            eprintln!(
-                "  [OBTAIN] Transformed {} -> {}{}",
-                def.name,
-                new_def.name,
-                if card.upgrades > 0 { "+" } else { "" }
-            );
+            self.emit_event(DomainEvent::CardTransformed {
+                before,
+                after: Self::snapshot_card(&card),
+                source,
+            });
             self.master_deck.push(card);
             obtained_any = true;
         }
-        if !obtained_any {
-            eprintln!("  [OBTAIN] Removed {} (Transform nullified?)", def.name);
-        }
+        let _ = def;
+        let _ = obtained_any;
 
-        // 4. Resolve Deck actions
+        // 4. Resolve obtain-triggered deck actions
         self.resolve_deck_actions(result.actions);
         self.dispatch_on_master_deck_change();
+    }
+
+    pub fn emit_event(&mut self, event: DomainEvent) {
+        self.emitted_events.push(event);
+    }
+
+    pub fn take_emitted_events(&mut self) -> Vec<DomainEvent> {
+        std::mem::take(&mut self.emitted_events)
+    }
+
+    fn snapshot_card(card: &CombatCard) -> DomainCardSnapshot {
+        DomainCardSnapshot {
+            id: card.id,
+            upgrades: card.upgrades,
+            uuid: card.uuid,
+        }
     }
 }

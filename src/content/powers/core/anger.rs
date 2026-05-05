@@ -1,6 +1,6 @@
-use crate::action::Action;
-use crate::combat::{CombatCard, CombatState, PowerId};
 use crate::core::EntityId;
+use crate::runtime::action::Action;
+use crate::runtime::combat::{CombatCard, CombatState, PowerId};
 use smallvec::{smallvec, SmallVec};
 
 pub fn on_card_played(

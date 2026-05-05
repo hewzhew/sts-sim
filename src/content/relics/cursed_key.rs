@@ -1,5 +1,5 @@
-use crate::combat::CombatState;
 use crate::content::relics::RelicState;
+use crate::runtime::combat::CombatState;
 
 // Note: Cursed Key is primarily an out-of-combat relic.
 // It grants +1 Energy globally (via `on_equip`) and forces a Curse drop into the deck

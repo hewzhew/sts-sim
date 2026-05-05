@@ -1,145 +1,189 @@
-use crate::action::{Action, DamageInfo, DamageType};
-use crate::combat::{CombatState, Intent, MonsterEntity};
+use crate::content::monsters::exordium::{attack_actions, PLAYER};
 use crate::content::monsters::MonsterBehavior;
 use crate::content::powers::PowerId;
+use crate::runtime::action::{Action, MonsterRuntimePatch};
+use crate::runtime::combat::{CombatState, MonsterEntity};
+use crate::semantics::combat::{
+    AttackSpec, AttackStep, DamageKind, MonsterMoveSpec, MonsterTurnPlan, MoveStep, MoveTarget,
+};
 
 pub struct BookOfStabbing;
 
-impl BookOfStabbing {
-    fn calculate_stab_count(
-        ascension_level: u8,
-        move_history: &std::collections::VecDeque<u8>,
-        is_next_move_stab: bool,
-    ) -> u8 {
-        let stabs_played = move_history.iter().filter(|&&m| m == 1).count() as i32;
-        let big_stabs_played = move_history.iter().filter(|&&m| m == 2).count() as i32;
+const STAB: u8 = 1;
+const BIG_STAB: u8 = 2;
 
-        let mut count = 1 + stabs_played;
-        if ascension_level >= 18 {
-            count += big_stabs_played;
-        }
+fn stab_damage(ascension_level: u8) -> i32 {
+    if ascension_level >= 3 {
+        7
+    } else {
+        6
+    }
+}
 
-        if is_next_move_stab {
-            count += 1;
-        }
-        count as u8
+fn big_stab_damage(ascension_level: u8) -> i32 {
+    if ascension_level >= 3 {
+        24
+    } else {
+        21
+    }
+}
+
+fn current_stab_count(entity: &MonsterEntity) -> u8 {
+    assert!(
+        entity.book_of_stabbing.protocol_seeded,
+        "book of stabbing runtime truth must be protocol-seeded or factory-seeded"
+    );
+    entity.book_of_stabbing.stab_count
+}
+
+fn stab_plan(ascension_level: u8, stab_count: u8) -> MonsterTurnPlan {
+    MonsterTurnPlan::from_spec(
+        STAB,
+        MonsterMoveSpec::Attack(AttackSpec {
+            base_damage: stab_damage(ascension_level),
+            hits: stab_count,
+            damage_kind: DamageKind::Normal,
+        }),
+    )
+}
+
+fn big_stab_plan(ascension_level: u8) -> MonsterTurnPlan {
+    MonsterTurnPlan::from_spec(
+        BIG_STAB,
+        MonsterMoveSpec::Attack(AttackSpec {
+            base_damage: big_stab_damage(ascension_level),
+            hits: 1,
+            damage_kind: DamageKind::Normal,
+        }),
+    )
+}
+
+fn plan_for(move_id: u8, ascension_level: u8, stab_count: u8) -> MonsterTurnPlan {
+    match move_id {
+        STAB => stab_plan(ascension_level, stab_count),
+        BIG_STAB => big_stab_plan(ascension_level),
+        _ => MonsterTurnPlan::unknown(move_id),
+    }
+}
+
+fn last_move(entity: &MonsterEntity, move_id: u8) -> bool {
+    entity.move_history().back().copied() == Some(move_id)
+}
+
+fn last_two_moves(entity: &MonsterEntity, move_id: u8) -> bool {
+    let mut history = entity.move_history().iter().rev();
+    matches!(
+        (history.next().copied(), history.next().copied()),
+        (Some(a), Some(b)) if a == move_id && b == move_id
+    )
+}
+
+fn next_stab_count(entity: &MonsterEntity, ascension_level: u8, plan: &MonsterTurnPlan) -> u8 {
+    let current = current_stab_count(entity);
+    match plan.move_id {
+        STAB => current.saturating_add(1),
+        BIG_STAB if ascension_level >= 18 => current.saturating_add(1),
+        BIG_STAB => current,
+        _ => current,
+    }
+}
+
+fn book_runtime_update(entity: &MonsterEntity, stab_count: u8) -> Action {
+    Action::UpdateMonsterRuntime {
+        monster_id: entity.id,
+        patch: MonsterRuntimePatch::BookOfStabbing {
+            stab_count: Some(stab_count),
+            protocol_seeded: Some(true),
+        },
     }
 }
 
 impl MonsterBehavior for BookOfStabbing {
-    fn use_pre_battle_action(
+    fn use_pre_battle_actions(
+        state: &mut CombatState,
         entity: &MonsterEntity,
-        _rng: &mut crate::rng::StsRng,
-        _ascension_level: u8,
+        legacy_rng: crate::content::monsters::PreBattleLegacyRng,
     ) -> Vec<Action> {
+        let (_rng, _ascension_level) =
+            crate::content::monsters::legacy_pre_battle_rng(state, legacy_rng);
         vec![Action::ApplyPower {
             source: entity.id,
             target: entity.id,
             power_id: PowerId::PainfulStabs,
-            amount: 1, // Amount doesn't explicitly matter for PainfulStabs in Java, it just checks for presence
+            amount: 1,
         }]
     }
 
-    fn roll_move(
-        rng: &mut crate::rng::StsRng,
+    fn roll_move_plan(
+        _rng: &mut crate::runtime::rng::StsRng,
         entity: &MonsterEntity,
         ascension_level: u8,
-        _num: i32,
-    ) -> (u8, Intent) {
-        let stab_dmg = if ascension_level >= 3 { 7 } else { 6 };
-        let big_stab_dmg = if ascension_level >= 3 { 24 } else { 21 };
-
-        let roll = rng.random_range(0, 99);
-        let last_move = entity.move_history.back().copied().unwrap_or(0);
-        let second_to_last = if entity.move_history.len() >= 2 {
-            entity.move_history[entity.move_history.len() - 2]
-        } else {
-            0
-        };
-
-        let last_two_moves = if entity.move_history.len() >= 2 {
-            last_move == 1 && second_to_last == 1
-        } else {
-            false
-        };
-
-        let next_move = if roll < 15 {
-            if last_move == 2 {
-                1 // STAB
-            } else {
-                2 // BIG_STAB
+        num: i32,
+    ) -> MonsterTurnPlan {
+        let stab_count = current_stab_count(entity);
+        if num < 15 {
+            if last_move(entity, BIG_STAB) {
+                return stab_plan(ascension_level, stab_count.saturating_add(1));
             }
-        } else if last_two_moves {
-            2 // BIG_STAB
-        } else {
-            1 // STAB
-        };
-
-        if next_move == 1 {
-            let hits = Self::calculate_stab_count(ascension_level, &entity.move_history, true);
-            (
-                1,
-                Intent::Attack {
-                    damage: stab_dmg,
-                    hits,
-                },
-            )
-        } else {
-            (
-                2,
-                Intent::Attack {
-                    damage: big_stab_dmg,
-                    hits: 1,
-                },
-            )
+            return big_stab_plan(ascension_level);
         }
+        if last_two_moves(entity, STAB) {
+            return big_stab_plan(ascension_level);
+        }
+        stab_plan(ascension_level, stab_count.saturating_add(1))
     }
 
-    fn take_turn(state: &mut CombatState, entity: &MonsterEntity) -> Vec<Action> {
-        let mut actions = Vec::new();
+    fn on_roll_move(
+        ascension_level: u8,
+        entity: &MonsterEntity,
+        _num: i32,
+        plan: &MonsterTurnPlan,
+    ) -> Vec<Action> {
+        vec![book_runtime_update(
+            entity,
+            next_stab_count(entity, ascension_level, plan),
+        )]
+    }
 
-        let stab_dmg = if state.ascension_level >= 3 { 7 } else { 6 };
-        let big_stab_dmg = if state.ascension_level >= 3 { 24 } else { 21 };
+    fn turn_plan(state: &CombatState, entity: &MonsterEntity) -> MonsterTurnPlan {
+        plan_for(
+            entity.planned_move_id(),
+            state.meta.ascension_level,
+            current_stab_count(entity),
+        )
+    }
 
-        match entity.next_move_byte {
-            1 => {
-                // STAB
-                // Note: The Engine pushes to move history prior to `take_turn` execution.
-                // We calculate `skewer_hits` incrementally from the history pool to strictly sync with the resolved Intent.
-                // Let's just use the intent hits if possible, but STS engine recalculates hits.
-                // If the engine hasn't pushed the move to history yet, `is_next_move_stab` is TRUE because we ARE the stab move and haven't pushed ourselves yet.
-                // In my simulator, `entity.move_history` contains the history UP TO the current turn. The current turn is only added at Turn End!
-                let actual_hits =
-                    Self::calculate_stab_count(state.ascension_level, &entity.move_history, true);
+    fn take_turn_plan(
+        state: &mut CombatState,
+        entity: &MonsterEntity,
+        plan: &MonsterTurnPlan,
+    ) -> Vec<Action> {
+        let mut actions = match (plan.move_id, plan.steps.as_slice()) {
+            (
+                STAB,
+                [MoveStep::Attack(AttackStep {
+                    target: MoveTarget::Player,
+                    attack,
+                })],
+            ) => attack_actions(entity.id, PLAYER, attack),
+            (
+                BIG_STAB,
+                [MoveStep::Attack(AttackStep {
+                    target: MoveTarget::Player,
+                    attack,
+                })],
+            ) => attack_actions(entity.id, PLAYER, attack),
+            (_, []) => panic!("book of stabbing plan missing locked truth"),
+            (move_id, steps) => panic!(
+                "book of stabbing plan/steps mismatch: {} {:?}",
+                move_id, steps
+            ),
+        };
 
-                for _ in 0..actual_hits {
-                    actions.push(Action::Damage(DamageInfo {
-                        source: entity.id,
-                        target: 0,
-                        base: stab_dmg,
-                        output: stab_dmg,
-                        damage_type: DamageType::Normal,
-                        is_modified: false,
-                    }));
-                }
-            }
-            2 => {
-                // BIG_STAB
-                actions.push(Action::Damage(DamageInfo {
-                    source: entity.id,
-                    target: 0,
-                    base: big_stab_dmg,
-                    output: big_stab_dmg,
-                    damage_type: DamageType::Normal,
-                    is_modified: false,
-                }));
-            }
-            _ => {}
-        }
         actions.push(Action::RollMonsterMove {
             monster_id: entity.id,
         });
-
+        let _ = state;
         actions
     }
 }

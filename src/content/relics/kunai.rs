@@ -1,7 +1,19 @@
-use crate::action::{Action, ActionInfo, AddTo};
+use crate::runtime::action::{Action, ActionInfo, AddTo};
 use smallvec::SmallVec;
 
 /// Kunai: Every time you play 3 Attacks in a single turn, gain 1 Dexterity.
+
+pub fn at_turn_start() -> SmallVec<[ActionInfo; 4]> {
+    let mut actions = SmallVec::new();
+    actions.push(ActionInfo {
+        action: Action::UpdateRelicCounter {
+            relic_id: crate::content::relics::RelicId::Kunai,
+            counter: 0,
+        },
+        insertion_mode: AddTo::Bottom,
+    });
+    actions
+}
 
 pub fn on_use_card(
     card_id: crate::content::cards::CardId,
@@ -35,4 +47,8 @@ pub fn on_use_card(
     }
 
     actions
+}
+
+pub fn on_victory(relic_state: &mut crate::content::relics::RelicState) {
+    relic_state.counter = -1;
 }

@@ -1,0 +1,126 @@
+# Manual Scenario Sample Index
+
+This index tracks manually recorded `CommunicationMod` scenario samples that
+already prove strict `runtime_state` slices in the new protocol path.
+
+These samples are not full replay fixtures and they are not full mechanic
+regression proofs. They are first-pass protocol truth captures used to confirm
+that:
+
+- `scenario` can enter the target scene
+- `CommunicationMod` exports the expected `runtime_state`
+- Rust strict importer has a concrete sample to consume
+
+The raw live capture may still exist under `logs/manual_scenario_samples/`, but
+the canonical checked-in fixture copy now lives under:
+
+- `tests/protocol_truth_samples/<slice>/frame.json`
+
+## Recorded Samples
+
+### GuardianThreshold
+
+- slice: `GuardianThreshold`
+- encounter: `the_guardian`
+- sample type: `protocol existence / importer proof`
+- path:
+  - `START ironclad 0`
+  - `scenario fight the_guardian`
+  - `STATE`
+- proof:
+  - monster `id == "TheGuardian"`
+  - `monster.runtime_state.guardian_threshold`
+- sample:
+  - checked-in fixture: [`tests/protocol_truth_samples/guardian_threshold/frame.json`](../../tests/protocol_truth_samples/guardian_threshold/frame.json)
+  - [guardian_threshold_20260416_123846](/d:/rust/sts_simulator/logs/manual_scenario_samples/guardian_threshold_20260416_123846)
+  - [frame.json](/d:/rust/sts_simulator/logs/manual_scenario_samples/guardian_threshold_20260416_123846/frame.json:1)
+- not proven here:
+  - threshold overflow behavior
+  - Defensive Mode switch semantics
+  - next-threshold progression
+  - intent timing after switch
+
+### Angry
+
+- slice: `Angry`
+- encounter: `gremlin_gang`
+- sample type: `protocol existence / importer proof`
+- path:
+  - `START ironclad 0`
+  - `scenario fight gremlin_gang`
+  - `STATE`
+- proof:
+  - monster `id == "GremlinWarrior"`
+  - `monster.runtime_state.angry_amount`
+- sample:
+  - checked-in fixture: [`tests/protocol_truth_samples/angry/frame.json`](../../tests/protocol_truth_samples/angry/frame.json)
+  - [angry_20260416_124115](/d:/rust/sts_simulator/logs/manual_scenario_samples/angry_20260416_124115)
+  - [frame.json](/d:/rust/sts_simulator/logs/manual_scenario_samples/angry_20260416_124115/frame.json:1)
+
+### Combust
+
+- slice: `Combust`
+- encounter: `jaw_worm`
+- sample type: `protocol existence / importer proof`
+- path:
+  - `START ironclad 0`
+  - `scenario fight jaw_worm`
+  - `STATE`
+  - `scenario power add player combust 1`
+  - `WAIT 10`
+  - `STATE`
+- proof:
+  - player power `id == "Combust"`
+  - `power.runtime_state.hp_loss`
+- sample:
+  - checked-in fixture: [`tests/protocol_truth_samples/combust/frame.json`](../../tests/protocol_truth_samples/combust/frame.json)
+  - [combust_20260416_124432](/d:/rust/sts_simulator/logs/manual_scenario_samples/combust_20260416_124432)
+  - [frame.json](/d:/rust/sts_simulator/logs/manual_scenario_samples/combust_20260416_124432/frame.json:1)
+
+### Stasis
+
+- slice: `Stasis`
+- encounter: `automaton`
+- sample type: `protocol existence / importer proof`
+- path:
+  - `START ironclad 0`
+  - `scenario fight automaton`
+  - `STATE`
+  - `END`
+  - `STATE`
+- proof:
+  - some `BronzeOrb` has power `id == "Stasis"`
+  - that power has `runtime_state.card_uuid`
+- sample:
+  - checked-in fixture: [`tests/protocol_truth_samples/stasis/frame.json`](../../tests/protocol_truth_samples/stasis/frame.json)
+  - [stasis_20260416_132231](/d:/rust/sts_simulator/logs/manual_scenario_samples/stasis_20260416_132231)
+  - [frame.json](/d:/rust/sts_simulator/logs/manual_scenario_samples/stasis_20260416_132231/frame.json:1)
+
+## Current Status
+
+These four slices are the current stable manual protocol truth set:
+
+- `GuardianThreshold`
+- `Angry`
+- `Combust`
+- `Stasis`
+
+## Next Expected Use
+
+This index should be updated when one of these happens:
+
+1. a checked-in fixture under `tests/protocol_truth_samples/` is replaced
+2. a newer raw sample supersedes the current source capture
+3. an additional strict `runtime_state` slice is manually captured
+
+If a slice also needs mechanic validation, that should be tracked separately in
+a behavior matrix or deterministic combat test plan, not overloaded onto this
+index.
+
+## Related Docs
+
+- [LIVE_COMM_MANUAL_SCENARIO_RUNBOOK.md](../live_comm/LIVE_COMM_MANUAL_SCENARIO_RUNBOOK.md)
+- [STATE_SYNC_STATUS.md](STATE_SYNC_STATUS.md)
+- [PROTOCOL_TRUTH_RULES.md](PROTOCOL_TRUTH_RULES.md)
+- [GUARDIAN_THRESHOLD_TEST_MATRIX.md](GUARDIAN_THRESHOLD_TEST_MATRIX.md)
+- [`tests/protocol_truth_samples.rs`](../../tests/protocol_truth_samples.rs)

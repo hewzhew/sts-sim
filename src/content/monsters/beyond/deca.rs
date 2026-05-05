@@ -1,118 +1,201 @@
-use crate::action::{Action, DamageInfo, DamageType};
-use crate::combat::{CombatState, Intent};
+use crate::content::cards::CardId;
+use crate::content::monsters::exordium::{add_card_action, attack_actions, PLAYER};
 use crate::content::monsters::MonsterBehavior;
 use crate::content::powers::PowerId;
+use crate::runtime::action::Action;
+use crate::runtime::combat::{CombatState, MonsterEntity};
+use crate::semantics::combat::{
+    AddCardStep, ApplyPowerStep, AttackSpec, AttackStep, CardDestination, DamageKind, DefendSpec,
+    EffectStrength, MonsterMoveSpec, MonsterTurnPlan, MoveStep, MoveTarget, PowerEffectKind,
+};
+use smallvec::smallvec;
 
 pub struct Deca;
 
-impl MonsterBehavior for Deca {
-    fn roll_move(
-        _rng: &mut crate::rng::StsRng,
-        entity: &crate::combat::MonsterEntity,
-        ascension_level: u8,
-        _num: i32,
-    ) -> (u8, Intent) {
-        let beam_dmg = if ascension_level >= 4 { 12 } else { 10 };
+const BEAM: u8 = 0;
+const SQUARE_OF_PROTECTION: u8 = 2;
 
-        if entity.move_history.is_empty() {
-            return (
-                0,
-                Intent::AttackDebuff {
-                    damage: beam_dmg,
-                    hits: 2,
-                },
-            ); // BEAM first typically (to alternate cleanly with Donu)
-        }
-
-        let last_move = entity.move_history.back().copied().unwrap_or(0);
-
-        if last_move == 0 {
-            return (
-                2,
-                if ascension_level >= 19 {
-                    Intent::DefendBuff
-                } else {
-                    Intent::Defend
-                },
-            ); // Alternate to Square
-        } else {
-            return (
-                0,
-                Intent::AttackDebuff {
-                    damage: beam_dmg,
-                    hits: 2,
-                },
-            ); // Alternate to Beam
-        }
+fn beam_damage(ascension_level: u8) -> i32 {
+    if ascension_level >= 4 {
+        12
+    } else {
+        10
     }
+}
 
-    fn use_pre_battle_action(
-        entity: &crate::combat::MonsterEntity,
-        _hp_rng: &mut crate::rng::StsRng,
-        ascension_level: u8,
+fn beam_plan(ascension_level: u8) -> MonsterTurnPlan {
+    let dazed = AddCardStep {
+        card_id: CardId::Dazed,
+        amount: 2,
+        upgraded: false,
+        destination: CardDestination::Discard,
+        visible_strength: EffectStrength::Normal,
+    };
+    MonsterTurnPlan::with_visible_spec(
+        BEAM,
+        smallvec![
+            MoveStep::Attack(AttackStep {
+                target: MoveTarget::Player,
+                attack: AttackSpec {
+                    base_damage: beam_damage(ascension_level),
+                    hits: 2,
+                    damage_kind: DamageKind::Normal,
+                },
+            }),
+            MoveStep::AddCard(dazed.clone()),
+        ],
+        MonsterMoveSpec::AttackAddCard(
+            AttackSpec {
+                base_damage: beam_damage(ascension_level),
+                hits: 2,
+                damage_kind: DamageKind::Normal,
+            },
+            dazed,
+        ),
+    )
+}
+
+fn square_plan(ascension_level: u8) -> MonsterTurnPlan {
+    let steps = if ascension_level >= 19 {
+        smallvec![
+            MoveStep::GainBlock(crate::semantics::combat::BlockStep {
+                target: MoveTarget::AllMonsters,
+                amount: 16,
+            }),
+            MoveStep::ApplyPower(ApplyPowerStep {
+                target: MoveTarget::AllMonsters,
+                power_id: PowerId::PlatedArmor,
+                amount: 3,
+                effect: PowerEffectKind::Buff,
+                visible_strength: EffectStrength::Normal,
+            }),
+        ]
+    } else {
+        smallvec![MoveStep::GainBlock(crate::semantics::combat::BlockStep {
+            target: MoveTarget::AllMonsters,
+            amount: 16,
+        })]
+    };
+
+    let visible = if ascension_level >= 19 {
+        MonsterMoveSpec::DefendBuff(
+            DefendSpec { block: 16 },
+            crate::semantics::combat::BuffSpec {
+                power_id: PowerId::PlatedArmor,
+                amount: 3,
+            },
+        )
+    } else {
+        MonsterMoveSpec::Defend(DefendSpec { block: 16 })
+    };
+
+    MonsterTurnPlan::with_visible_spec(SQUARE_OF_PROTECTION, steps, visible)
+}
+
+fn plan_for(move_id: u8, ascension_level: u8) -> MonsterTurnPlan {
+    match move_id {
+        BEAM => beam_plan(ascension_level),
+        SQUARE_OF_PROTECTION => square_plan(ascension_level),
+        _ => MonsterTurnPlan::unknown(move_id),
+    }
+}
+
+impl MonsterBehavior for Deca {
+    fn use_pre_battle_actions(
+        state: &mut CombatState,
+        entity: &MonsterEntity,
+        legacy_rng: crate::content::monsters::PreBattleLegacyRng,
     ) -> Vec<Action> {
-        let artifact_amt = if ascension_level >= 19 { 3 } else { 2 };
+        let (_rng, ascension_level) =
+            crate::content::monsters::legacy_pre_battle_rng(state, legacy_rng);
         vec![Action::ApplyPower {
             source: entity.id,
             target: entity.id,
             power_id: PowerId::Artifact,
-            amount: artifact_amt,
+            amount: if ascension_level >= 19 { 3 } else { 2 },
         }]
     }
 
-    fn take_turn(state: &mut CombatState, entity: &crate::combat::MonsterEntity) -> Vec<Action> {
-        let mut actions = Vec::new();
-        let asc = state.ascension_level;
-
-        let beam_dmg = if asc >= 4 { 12 } else { 10 };
-
-        match entity.next_move_byte {
-            0 => {
-                // BEAM
-                for _ in 0..2 {
-                    actions.push(Action::Damage(DamageInfo {
-                        source: entity.id,
-                        target: 0,
-                        base: beam_dmg,
-                        output: beam_dmg,
-                        damage_type: DamageType::Normal,
-                        is_modified: false,
-                    }));
-                }
-                actions.push(Action::MakeTempCardInDiscard {
-                    card_id: crate::content::cards::CardId::Dazed,
-                    amount: 2,
-                    upgraded: false,
-                });
-            }
-            2 => {
-                // SQUARE_OF_PROTECTION
-                let alive_monsters: Vec<crate::core::EntityId> = state
-                    .monsters
-                    .iter()
-                    .filter(|m| m.current_hp > 0 && !m.is_dying)
-                    .map(|m| m.id)
-                    .collect();
-
-                for target_id in alive_monsters {
-                    actions.push(Action::GainBlock {
-                        target: target_id,
-                        amount: 16,
-                    });
-
-                    if asc >= 19 {
-                        actions.push(Action::ApplyPower {
-                            source: entity.id,
-                            target: target_id,
-                            power_id: PowerId::PlatedArmor,
-                            amount: 3,
-                        });
-                    }
-                }
-            }
-            _ => {}
+    fn roll_move_plan(
+        _rng: &mut crate::runtime::rng::StsRng,
+        entity: &MonsterEntity,
+        ascension_level: u8,
+        _num: i32,
+    ) -> MonsterTurnPlan {
+        match entity.move_history().back().copied() {
+            None => beam_plan(ascension_level),
+            Some(BEAM) => square_plan(ascension_level),
+            _ => beam_plan(ascension_level),
         }
+    }
 
+    fn turn_plan(state: &CombatState, entity: &MonsterEntity) -> MonsterTurnPlan {
+        plan_for(entity.planned_move_id(), state.meta.ascension_level)
+    }
+
+    fn take_turn_plan(
+        state: &mut CombatState,
+        entity: &MonsterEntity,
+        plan: &MonsterTurnPlan,
+    ) -> Vec<Action> {
+        let mut actions = match (plan.move_id, plan.steps.as_slice()) {
+            (
+                BEAM,
+                [MoveStep::Attack(AttackStep {
+                    target: MoveTarget::Player,
+                    attack,
+                }), MoveStep::AddCard(add_card)],
+            ) => {
+                let mut actions = attack_actions(entity.id, PLAYER, attack);
+                actions.push(add_card_action(add_card));
+                actions
+            }
+            (
+                SQUARE_OF_PROTECTION,
+                [MoveStep::GainBlock(crate::semantics::combat::BlockStep {
+                    target: MoveTarget::AllMonsters,
+                    amount,
+                })],
+            ) => state
+                .entities
+                .monsters
+                .iter()
+                .map(|monster| Action::GainBlock {
+                    target: monster.id,
+                    amount: *amount,
+                })
+                .collect(),
+            (
+                SQUARE_OF_PROTECTION,
+                [MoveStep::GainBlock(crate::semantics::combat::BlockStep {
+                    target: MoveTarget::AllMonsters,
+                    amount,
+                }), MoveStep::ApplyPower(ApplyPowerStep {
+                    target: MoveTarget::AllMonsters,
+                    power_id: PowerId::PlatedArmor,
+                    amount: plated_amount,
+                    effect: PowerEffectKind::Buff,
+                    ..
+                })],
+            ) => {
+                let mut actions = Vec::new();
+                for monster in &state.entities.monsters {
+                    actions.push(Action::GainBlock {
+                        target: monster.id,
+                        amount: *amount,
+                    });
+                    actions.push(Action::ApplyPower {
+                        source: entity.id,
+                        target: monster.id,
+                        power_id: PowerId::PlatedArmor,
+                        amount: *plated_amount,
+                    });
+                }
+                actions
+            }
+            (_, []) => panic!("deca plan missing locked truth"),
+            (move_id, steps) => panic!("deca plan/steps mismatch: {} {:?}", move_id, steps),
+        };
         actions.push(Action::RollMonsterMove {
             monster_id: entity.id,
         });

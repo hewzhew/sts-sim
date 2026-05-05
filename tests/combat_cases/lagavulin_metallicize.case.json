@@ -1,0 +1,262 @@
+{
+  "id": "live_window_215_216",
+  "domain": "combat",
+  "basis": {
+    "kind": "encounter_template",
+    "player_class": "IRONCLAD",
+    "ascension_level": 0,
+    "encounter_id": "lagavulin",
+    "room_type": "MonsterRoomElite",
+    "seed_hint": 8521876691729826955,
+    "player_current_hp": 87,
+    "player_max_hp": 87,
+    "relics": [],
+    "potions": [],
+    "master_deck": [
+      {
+        "id": "Armaments",
+        "upgrades": 1,
+        "cost": null,
+        "misc": null,
+        "count": 1
+      },
+      {
+        "id": "Bash",
+        "upgrades": 0,
+        "cost": null,
+        "misc": null,
+        "count": 1
+      },
+      {
+        "id": "Bloodletting",
+        "upgrades": 0,
+        "cost": null,
+        "misc": null,
+        "count": 1
+      },
+      {
+        "id": "Cleave",
+        "upgrades": 0,
+        "cost": null,
+        "misc": null,
+        "count": 1
+      },
+      {
+        "id": "Defend_R",
+        "upgrades": 0,
+        "cost": null,
+        "misc": null,
+        "count": 4
+      },
+      {
+        "id": "Fiend Fire",
+        "upgrades": 0,
+        "cost": null,
+        "misc": null,
+        "count": 1
+      },
+      {
+        "id": "Intimidate",
+        "upgrades": 0,
+        "cost": null,
+        "misc": null,
+        "count": 1
+      },
+      {
+        "id": "Pommel Strike",
+        "upgrades": 0,
+        "cost": null,
+        "misc": null,
+        "count": 1
+      },
+      {
+        "id": "Strike_R",
+        "upgrades": 0,
+        "cost": null,
+        "misc": null,
+        "count": 2
+      }
+    ]
+  },
+  "delta": {
+    "player": {
+      "current_hp": null,
+      "max_hp": null,
+      "block": 0,
+      "energy": 2,
+      "gold": null,
+      "powers": [
+        {
+          "id": "Combust",
+          "amount": 5
+        }
+      ]
+    },
+    "monsters": [
+      {
+        "monster": 0,
+        "current_hp": 111,
+        "max_hp": 111,
+        "block": 12,
+        "move_id": 5,
+        "move_history": [
+          5,
+          5,
+          5
+        ],
+        "powers": [
+          {
+            "id": "Metallicize",
+            "amount": 12
+          }
+        ],
+        "runtime": {
+          "values": {
+            "lagavulin.idle_count": 1,
+            "lagavulin.is_out_triggered": false
+          }
+        }
+      }
+    ],
+    "relics": [],
+    "zones": {
+      "hand": [
+        {
+          "id": "Bloodletting",
+          "uuid": null,
+          "upgrades": 0,
+          "cost": null,
+          "misc": null,
+          "count": 1
+        },
+        {
+          "id": "Defend_R",
+          "uuid": null,
+          "upgrades": 0,
+          "cost": null,
+          "misc": null,
+          "count": 1
+        },
+        {
+          "id": "Cleave",
+          "uuid": null,
+          "upgrades": 0,
+          "cost": null,
+          "misc": null,
+          "count": 1
+        },
+        {
+          "id": "Fiend Fire",
+          "uuid": null,
+          "upgrades": 0,
+          "cost": null,
+          "misc": null,
+          "count": 1
+        }
+      ],
+      "draw_pile": null,
+      "discard_pile": null,
+      "exhaust_pile": null,
+      "limbo": null
+    },
+    "potions": [
+      "Potion Slot",
+      "Potion Slot",
+      "Potion Slot"
+    ],
+    "runtime": null,
+    "rng": null,
+    "engine": {
+      "response_id": 215,
+      "frame_id": 215,
+      "turn_count": 2,
+      "screen_type": "NONE",
+      "screen_state": {}
+    }
+  },
+  "program": [
+    {
+      "step": {
+        "kind": "play",
+        "selector": {
+          "kind": "index",
+          "index": 4
+        },
+        "target": 0
+      },
+      "label": null,
+      "response_id": 216,
+      "frame_id": 216,
+      "command_kind": "play"
+    }
+  ],
+  "oracle": {
+    "primary": "differential",
+    "evidence": [
+      "differential"
+    ],
+    "note": null
+  },
+  "expectations": [
+    {
+      "check": {
+        "kind": "path",
+        "field": "monster[0].power[Metallicize].amount",
+        "expected": {
+          "kind": "number",
+          "value": 4
+        }
+      },
+      "response_id": 216,
+      "frame_id": 216,
+      "note": null
+    }
+  ],
+  "provenance": {
+    "source": null,
+    "source_path": null,
+    "response_id_range": [
+      215,
+      216
+    ],
+    "failure_frame": null,
+    "assertion_source_frames": [
+      216
+    ],
+    "assertion_source_response_ids": [
+      216
+    ],
+    "debug_context_summary": {
+      "frame_id": 216,
+      "monster_ids": [],
+      "monster_powers": [],
+      "player_powers": [],
+      "relic_ids": [
+        "Burning Blood",
+        "NeowsBlessing",
+        "Toy Ornithopter",
+        "Strawberry"
+      ],
+      "response_id": 216,
+      "room_type": "MonsterRoomElite",
+      "screen_type": "NONE"
+    },
+    "aspect_summary": {
+      "boss_mechanics": {
+        "monster_ids": [],
+        "room_type": "MonsterRoomElite"
+      },
+      "damage_mod_relics": [],
+      "draw_exhaust_engine": {
+        "powers": [],
+        "relics": []
+      },
+      "energy_relics": []
+    },
+    "notes": [
+      "reduced_protocol_snapshot_to_encounter_template",
+      "minimized_encounter_template_delta"
+    ]
+  },
+  "tags": []
+}

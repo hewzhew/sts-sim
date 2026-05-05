@@ -77,7 +77,7 @@ pub fn init_nloth_state(run_state: &mut RunState) -> i32 {
     }
     // Build index list and shuffle with randomLong seed (matching Java exactly)
     let mut indices: Vec<usize> = (0..run_state.relics.len()).collect();
-    crate::rng::shuffle_with_random_long(&mut indices, &mut run_state.rng_pool.misc_rng);
+    crate::runtime::rng::shuffle_with_random_long(&mut indices, &mut run_state.rng_pool.misc_rng);
     let idx1 = indices[0];
     let idx2 = indices[1];
     (idx1 as i32) | ((idx2 as i32) << 8)

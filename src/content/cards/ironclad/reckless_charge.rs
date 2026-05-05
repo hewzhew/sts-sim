@@ -1,5 +1,5 @@
-use crate::action::{Action, ActionInfo, AddTo};
-use crate::combat::{CombatCard, CombatState};
+use crate::runtime::action::{Action, ActionInfo, AddTo};
+use crate::runtime::combat::{CombatCard, CombatState};
 use smallvec::SmallVec;
 
 pub fn reckless_charge_play(
@@ -10,12 +10,12 @@ pub fn reckless_charge_play(
     let target = target.expect("Reckless Charge requires a valid target!");
     smallvec::smallvec![
         ActionInfo {
-            action: Action::Damage(crate::action::DamageInfo {
+            action: Action::Damage(crate::runtime::action::DamageInfo {
                 source: 0,
                 target,
                 base: card.base_damage_mut,
                 output: card.base_damage_mut,
-                damage_type: crate::action::DamageType::Normal,
+                damage_type: crate::runtime::action::DamageType::Normal,
                 is_modified: false,
             }),
             insertion_mode: AddTo::Bottom,

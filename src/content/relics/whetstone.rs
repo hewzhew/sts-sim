@@ -15,7 +15,7 @@ pub fn on_equip(run_state: &mut RunState) -> Option<EngineState> {
         .collect();
 
     if !upgradable_indices.is_empty() {
-        crate::rng::shuffle_with_random_long(
+        crate::runtime::rng::shuffle_with_random_long(
             &mut upgradable_indices,
             &mut run_state.rng_pool.misc_rng,
         );

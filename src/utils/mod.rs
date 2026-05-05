@@ -1,1 +1,3 @@
-pub mod watchdog;
+mod watchdog;
+
+pub use watchdog::SimulationWatchdog;

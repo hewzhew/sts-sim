@@ -1,4 +1,4 @@
-use crate::action::{Action, ActionInfo, AddTo};
+use crate::runtime::action::{Action, ActionInfo, AddTo};
 use smallvec::SmallVec;
 
 /// MutagenicStrength: At the start of combat, gain 3 Strength and 3 LoseStrength at end of turn.

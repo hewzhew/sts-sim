@@ -1,6 +1,117 @@
-use crate::diff::mapper::{card_id_from_java, java_potion_id_to_rust, relic_id_from_java};
-use crate::diff::state_sync::snapshot_uuid;
-use crate::state::core::EngineState;
+use crate::protocol::java::{
+    card_id_from_java, java_potion_id_to_rust, relic_id_from_java, snapshot_uuid,
+};
+use crate::rewards::state::BossRelicChoiceState;
+use crate::state::core::{EngineState, RunPendingChoiceReason, RunPendingChoiceState};
+use serde_json::Value;
+
+#[derive(Clone, Debug)]
+pub(crate) struct LiveEventPolicyTrace {
+    pub command: String,
+    pub summary: String,
+    pub detail: String,
+    pub audit: Value,
+    pub deck_improvement_summary: Option<String>,
+}
+
+pub(crate) fn choose_live_event_command_with_trace(
+    gs: &serde_json::Value,
+    rs: &crate::state::run::RunState,
+) -> Option<LiveEventPolicyTrace> {
+    let screen_state = gs.get("screen_state")?;
+    let decision = crate::bot::event::decide_live(screen_state, rs)?;
+    let event_label = screen_state
+        .get("event_name")
+        .or_else(|| screen_state.get("event_id"))
+        .and_then(Value::as_str)
+        .filter(|value| !value.is_empty())
+        .unwrap_or("Event");
+    let command_index = screen_state
+        .get("options")
+        .and_then(Value::as_array)
+        .and_then(|options| options.get(decision.option_index))
+        .and_then(|option| option.get("choice_index"))
+        .and_then(Value::as_u64)
+        .map(|value| value as usize)
+        .unwrap_or(decision.command_index);
+    let protocol_audit = gs
+        .get("screen_state")
+        .map(|screen_state| {
+            crate::engine::event_handler::live_event_protocol_audit(rs, screen_state)
+        })
+        .unwrap_or(Value::Null);
+    let protocol_note = live_event_protocol_note(&protocol_audit);
+    let mut audit = crate::bot::event::audit_json(&decision);
+    if let Some(object) = audit.as_object_mut() {
+        object.insert("live_event_protocol".to_string(), protocol_audit.clone());
+    }
+    Some(LiveEventPolicyTrace {
+        command: format!("CHOOSE {}", command_index),
+        summary: format!(
+            "{} | {}{}{}",
+            event_label,
+            crate::bot::event::compact_choice_summary(&decision),
+            decision
+                .deck_ops
+                .as_ref()
+                .map(|assessment| format!(
+                    " | deck={}",
+                    crate::bot::deck_ops::focus_summary(assessment)
+                ))
+                .unwrap_or_default(),
+            protocol_note
+                .as_deref()
+                .map(|note| format!(" | {}", note))
+                .unwrap_or_default()
+        ),
+        detail: format!(
+            "{} | {}{}",
+            event_label,
+            crate::bot::event::describe_choice(&decision),
+            protocol_note
+                .as_deref()
+                .map(|note| format!(" [{}]", note))
+                .unwrap_or_default()
+        ),
+        audit,
+        deck_improvement_summary: decision
+            .deck_ops
+            .as_ref()
+            .map(crate::bot::deck_ops::focus_summary),
+    })
+}
+
+fn live_event_protocol_note(protocol_audit: &Value) -> Option<String> {
+    let status = protocol_audit
+        .get("rebuild_status")
+        .and_then(Value::as_str)
+        .unwrap_or("");
+    match status {
+        "ready" => Some("protocol=structured_live_ready".to_string()),
+        "missing_semantics_state" => {
+            let missing = protocol_audit
+                .get("event_semantics_missing_keys")
+                .and_then(Value::as_array)
+                .map(|keys| {
+                    keys.iter()
+                        .filter_map(Value::as_str)
+                        .collect::<Vec<_>>()
+                        .join(",")
+                })
+                .unwrap_or_default();
+            Some(format!(
+                "protocol=missing_event_semantics_state({})",
+                missing
+            ))
+        }
+        "unknown_event_name" => Some("protocol=unknown_event_name".to_string()),
+        "unsupported_event" => Some("protocol=unsupported_event".to_string()),
+        "state_decode_failed" => Some("protocol=state_decode_failed".to_string()),
+        "option_count_mismatch" => Some("protocol=option_count_mismatch".to_string()),
+        "disabled_mismatch" => Some("protocol=disabled_mismatch".to_string()),
+        _ => None,
+    }
+}
 
 pub(crate) fn choose_best_index(_choices: &[&str]) -> usize {
     0
@@ -18,13 +129,40 @@ fn has_available_command(gs: &serde_json::Value, command: &str) -> bool {
 }
 
 pub(crate) fn decide_noncombat_with_agent(
-    agent: &mut crate::bot::agent::Agent,
-    gs: &serde_json::Value,
+    agent: &mut crate::bot::Agent,
+    root: &serde_json::Value,
     screen: &str,
     choice_list: &[&str],
 ) -> Option<String> {
+    let gs = root.get("game_state").unwrap_or(root);
     let rs = build_live_run_state(gs)?;
     match screen {
+        "SHOP_ROOM" => {
+            let last_kind = root
+                .get("protocol_meta")
+                .and_then(|v| v.get("last_command_kind"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            if matches!(last_kind, "return" | "leave" | "cancel") {
+                if has_available_command(root, "proceed") {
+                    Some("PROCEED".to_string())
+                } else {
+                    None
+                }
+            } else if has_available_command(root, "choose") && !choice_list.is_empty() {
+                Some("CHOOSE 0".to_string())
+            } else if has_available_command(root, "proceed") {
+                Some("PROCEED".to_string())
+            } else {
+                None
+            }
+        }
+        "SHOP_SCREEN" => {
+            let shop = build_live_shop_state(gs)?;
+            let decision =
+                agent.decide_shop_policy(&rs, crate::bot::ShopDecisionContext { shop: &shop });
+            shop_decision_command(root, &rs, &shop, &decision)
+        }
         "CARD_REWARD" => {
             let cards = gs
                 .get("screen_state")
@@ -44,39 +182,32 @@ pub(crate) fn decide_noncombat_with_agent(
             if reward_cards.is_empty() {
                 return None;
             }
-            let reward = crate::rewards::state::RewardState {
-                items: Vec::new(),
-                skippable: gs
-                    .get("screen_state")
-                    .and_then(|v| v.get("skip_available"))
-                    .and_then(|v| v.as_bool())
-                    .unwrap_or(true),
-                pending_card_choice: Some(reward_cards),
-            };
-            let input = agent.decide(&EngineState::RewardScreen(reward), &rs, &None, false);
-            match input {
-                crate::state::core::ClientInput::SelectCard(idx)
-                | crate::state::core::ClientInput::SubmitDiscoverChoice(idx) => {
-                    Some(format!("CHOOSE {}", idx))
-                }
-                crate::state::core::ClientInput::Proceed
-                | crate::state::core::ClientInput::Cancel => Some("SKIP".to_string()),
-                _ => None,
-            }
+            let decision = agent.decide_reward_card_policy(
+                &rs,
+                crate::bot::RewardCardDecisionContext {
+                    reward_cards: &reward_cards,
+                    can_skip: gs
+                        .get("screen_state")
+                        .and_then(|v| v.get("skip_available"))
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(true),
+                },
+            );
+            reward_card_decision_command(&decision)
         }
         "COMBAT_REWARD" => {
-            let rewards = build_live_reward_state(gs)?;
-            let input = agent.decide(&EngineState::RewardScreen(rewards), &rs, &None, false);
-            match input {
-                crate::state::core::ClientInput::ClaimReward(idx) => {
-                    Some(format!("CHOOSE {}", idx))
-                }
-                crate::state::core::ClientInput::Proceed
-                | crate::state::core::ClientInput::Cancel => Some("PROCEED".to_string()),
-                _ => None,
-            }
+            let rewards = build_live_reward_state_with_protocol(root, gs)?;
+            let blocked_potion_offers = blocked_replaceable_reward_potion_offers(root);
+            let decision = agent.decide_reward_claim_policy(
+                &rs,
+                crate::bot::RewardClaimDecisionContext {
+                    reward: &rewards,
+                    blocked_potion_offers: &blocked_potion_offers,
+                },
+            );
+            reward_claim_decision_command(root, gs, &decision)
         }
-        "GRID" => decide_live_grid_screen(gs, &rs),
+        "GRID" => decide_live_grid_screen(agent, root, &rs),
         "MAP" => {
             let input = agent.decide(&EngineState::MapNavigation, &rs, &None, false);
             match input {
@@ -90,6 +221,11 @@ pub(crate) fn decide_noncombat_with_agent(
                 _ => None,
             }
         }
+        "BOSS_REWARD" => {
+            let state = build_live_boss_relic_state(gs)?;
+            let decision = agent.decide_boss_relic_policy(&rs, &state);
+            Some(format!("CHOOSE {}", decision.chosen_index))
+        }
         "REST" => {
             let input = agent.decide(&EngineState::Campfire, &rs, &None, false);
             match input {
@@ -101,8 +237,241 @@ pub(crate) fn decide_noncombat_with_agent(
                 _ => None,
             }
         }
+        "EVENT" => choose_live_event_command_with_trace(gs, &rs).map(|trace| trace.command),
         _ => None,
     }
+}
+
+pub(crate) fn build_live_boss_relic_state(
+    gs: &serde_json::Value,
+) -> Option<crate::rewards::state::BossRelicChoiceState> {
+    let relics = gs
+        .get("screen_state")
+        .and_then(|v| v.get("relics"))
+        .and_then(|v| v.as_array())?
+        .iter()
+        .filter_map(|relic| {
+            relic
+                .get("id")
+                .and_then(|v| v.as_str())
+                .and_then(relic_id_from_java)
+        })
+        .collect::<Vec<_>>();
+    if relics.is_empty() {
+        None
+    } else {
+        Some(BossRelicChoiceState::new(relics))
+    }
+}
+
+fn shop_decision_command(
+    root: &serde_json::Value,
+    rs: &crate::state::run::RunState,
+    shop: &crate::shop::ShopState,
+    decision: &crate::bot::ShopDecision,
+) -> Option<String> {
+    let choices = build_live_shop_choices(shop, rs);
+    match decision.action {
+        crate::bot::ShopDecisionAction::BuyCard(idx) => choices
+            .iter()
+            .position(|choice| matches!(choice, LiveShopChoice::Card(card_idx) if *card_idx == idx))
+            .map(|idx| format!("CHOOSE {}", idx)),
+        crate::bot::ShopDecisionAction::BuyRelic(idx) => choices
+            .iter()
+            .position(
+                |choice| matches!(choice, LiveShopChoice::Relic(relic_idx) if *relic_idx == idx),
+            )
+            .map(|idx| format!("CHOOSE {}", idx)),
+        crate::bot::ShopDecisionAction::BuyPotion(idx) => choices
+            .iter()
+            .position(
+                |choice| matches!(choice, LiveShopChoice::Potion(potion_idx) if *potion_idx == idx),
+            )
+            .map(|idx| format!("CHOOSE {}", idx)),
+        crate::bot::ShopDecisionAction::PurgeCard(_) => choices
+            .iter()
+            .position(|choice| matches!(choice, LiveShopChoice::Purge))
+            .map(|idx| format!("CHOOSE {}", idx)),
+        crate::bot::ShopDecisionAction::DiscardPotion(idx) => {
+            Some(format!("POTION DISCARD {}", idx))
+        }
+        crate::bot::ShopDecisionAction::Leave => {
+            if has_available_command(root, "leave") {
+                Some("LEAVE".to_string())
+            } else if has_available_command(root, "return") || has_available_command(root, "cancel")
+            {
+                Some("RETURN".to_string())
+            } else {
+                None
+            }
+        }
+    }
+}
+
+fn reward_card_decision_command(decision: &crate::bot::RewardCardDecision) -> Option<String> {
+    match decision.action {
+        crate::bot::RewardCardDecisionAction::Pick(idx) => Some(format!("CHOOSE {}", idx)),
+        crate::bot::RewardCardDecisionAction::Skip => Some("SKIP".to_string()),
+    }
+}
+
+fn reward_claim_decision_command(
+    root: &serde_json::Value,
+    gs: &serde_json::Value,
+    decision: &crate::bot::RewardClaimDecision,
+) -> Option<String> {
+    match decision.action {
+        crate::bot::RewardClaimDecisionAction::Claim(idx) => {
+            reward_choice_command_with_protocol(root, gs, idx)
+        }
+        crate::bot::RewardClaimDecisionAction::DiscardPotion(idx) => {
+            Some(format!("POTION DISCARD {}", idx))
+        }
+        crate::bot::RewardClaimDecisionAction::Proceed => Some("PROCEED".to_string()),
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum LiveShopChoice {
+    Purge,
+    Card(usize),
+    Relic(usize),
+    Potion(usize),
+}
+
+fn build_live_shop_choices(
+    shop: &crate::shop::ShopState,
+    rs: &crate::state::run::RunState,
+) -> Vec<LiveShopChoice> {
+    let mut choices = Vec::new();
+    if shop.purge_available && rs.gold >= shop.purge_cost {
+        choices.push(LiveShopChoice::Purge);
+    }
+    for (idx, card) in shop.cards.iter().enumerate() {
+        if card.can_buy && rs.gold >= card.price {
+            choices.push(LiveShopChoice::Card(idx));
+        }
+    }
+    for (idx, relic) in shop.relics.iter().enumerate() {
+        if relic.can_buy && rs.gold >= relic.price {
+            choices.push(LiveShopChoice::Relic(idx));
+        }
+    }
+    for (idx, potion) in shop.potions.iter().enumerate() {
+        if potion.can_buy && rs.gold >= potion.price {
+            choices.push(LiveShopChoice::Potion(idx));
+        }
+    }
+    choices
+}
+
+pub(crate) fn build_live_shop_state(gs: &serde_json::Value) -> Option<crate::shop::ShopState> {
+    let screen_state = gs.get("screen_state")?;
+    let mut shop = crate::shop::ShopState::new();
+
+    shop.cards = screen_state
+        .get("cards")
+        .and_then(|v| v.as_array())
+        .map(|cards| {
+            cards
+                .iter()
+                .filter_map(|card| {
+                    let card_id = card
+                        .get("id")
+                        .and_then(|v| v.as_str())
+                        .and_then(card_id_from_java)?;
+                    let price = card.get("price").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
+                    let can_buy = card
+                        .get("can_buy")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(true);
+                    let blocked_reason = card
+                        .get("blocked_reason")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string());
+                    Some(crate::shop::ShopCard {
+                        card_id,
+                        price,
+                        can_buy,
+                        blocked_reason,
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+
+    shop.relics = screen_state
+        .get("relics")
+        .and_then(|v| v.as_array())
+        .map(|relics| {
+            relics
+                .iter()
+                .filter_map(|relic| {
+                    let relic_id = relic
+                        .get("id")
+                        .and_then(|v| v.as_str())
+                        .and_then(relic_id_from_java)?;
+                    let price = relic.get("price").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
+                    let can_buy = relic
+                        .get("can_buy")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(true);
+                    let blocked_reason = relic
+                        .get("blocked_reason")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string());
+                    Some(crate::shop::ShopRelic {
+                        relic_id,
+                        price,
+                        can_buy,
+                        blocked_reason,
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+
+    shop.potions = screen_state
+        .get("potions")
+        .and_then(|v| v.as_array())
+        .map(|potions| {
+            potions
+                .iter()
+                .filter_map(|potion| {
+                    let potion_id = potion
+                        .get("id")
+                        .and_then(|v| v.as_str())
+                        .and_then(java_potion_id_to_rust)?;
+                    let price = potion.get("price").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
+                    let can_buy = potion
+                        .get("can_buy")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(true);
+                    let blocked_reason = potion
+                        .get("blocked_reason")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string());
+                    Some(crate::shop::ShopPotion {
+                        potion_id,
+                        price,
+                        can_buy,
+                        blocked_reason,
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+
+    shop.purge_available = screen_state
+        .get("purge_available")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    shop.purge_cost = screen_state
+        .get("purge_cost")
+        .and_then(|v| v.as_i64())
+        .unwrap_or(shop.purge_cost as i64) as i32;
+
+    Some(shop)
 }
 
 fn campfire_choice_command(
@@ -136,16 +505,93 @@ fn campfire_choice_command(
         })
 }
 
-fn build_live_reward_state(gs: &serde_json::Value) -> Option<crate::rewards::state::RewardState> {
+fn extract_recently_closed_card_reward_ids(root: &serde_json::Value) -> Option<Vec<String>> {
+    let reward_session = root
+        .get("protocol_meta")
+        .and_then(|v| v.get("reward_session"))?;
+    if reward_session.get("state").and_then(|v| v.as_str()) != Some("closed_without_choice") {
+        return None;
+    }
+    let offered = reward_session
+        .get("offered_card_ids")
+        .and_then(|v| v.as_array())?
+        .iter()
+        .filter_map(|v| v.as_str().map(str::to_string))
+        .collect::<Vec<_>>();
+    if offered.is_empty() {
+        None
+    } else {
+        Some(offered)
+    }
+}
+
+fn reward_matches_recently_closed_card_session(
+    reward: &serde_json::Value,
+    recently_closed_card_ids: &[String],
+    claimable_reward_count: usize,
+) -> bool {
+    if reward.get("reward_type").and_then(|v| v.as_str()) != Some("CARD") {
+        return false;
+    }
+
+    let preview_ids = reward
+        .get("preview_card_ids")
+        .and_then(|v| v.as_array())
+        .map(|cards| {
+            cards
+                .iter()
+                .filter_map(|v| v.as_str().map(str::to_string))
+                .collect::<Vec<_>>()
+        });
+
+    if let Some(preview_ids) = preview_ids {
+        if !preview_ids.is_empty() {
+            return preview_ids == recently_closed_card_ids;
+        }
+    }
+
+    claimable_reward_count == 1
+}
+
+pub(crate) fn build_live_reward_state_with_protocol(
+    root: &serde_json::Value,
+    gs: &serde_json::Value,
+) -> Option<crate::rewards::state::RewardState> {
     use crate::rewards::state::{RewardItem, RewardState};
 
     let rewards = gs
         .get("screen_state")
         .and_then(|v| v.get("rewards"))
         .and_then(|v| v.as_array())?;
+    let claimable_reward_count = rewards
+        .iter()
+        .filter(|reward| {
+            !reward
+                .get("claimable")
+                .and_then(|v| v.as_bool())
+                .is_some_and(|claimable| !claimable)
+        })
+        .count();
+    let recently_closed_card_ids = extract_recently_closed_card_reward_ids(root);
 
     let mut state = RewardState::new();
     for reward in rewards {
+        if reward
+            .get("claimable")
+            .and_then(|v| v.as_bool())
+            .is_some_and(|claimable| !claimable)
+        {
+            continue;
+        }
+        if let Some(recently_closed_card_ids) = recently_closed_card_ids.as_ref() {
+            if reward_matches_recently_closed_card_session(
+                reward,
+                recently_closed_card_ids,
+                claimable_reward_count,
+            ) {
+                continue;
+            }
+        }
         let reward_type = reward
             .get("reward_type")
             .and_then(|v| v.as_str())
@@ -184,17 +630,463 @@ fn build_live_reward_state(gs: &serde_json::Value) -> Option<crate::rewards::sta
     Some(state)
 }
 
-fn decide_live_grid_screen(
+fn reward_choice_command_with_protocol(
+    root: &serde_json::Value,
     gs: &serde_json::Value,
+    reward_idx: usize,
+) -> Option<String> {
+    let rewards = gs
+        .get("screen_state")
+        .and_then(|v| v.get("rewards"))
+        .and_then(|v| v.as_array())?;
+    let claimable_reward_count = rewards
+        .iter()
+        .filter(|reward| {
+            !reward
+                .get("claimable")
+                .and_then(|v| v.as_bool())
+                .is_some_and(|claimable| !claimable)
+        })
+        .count();
+    let recently_closed_card_ids = extract_recently_closed_card_reward_ids(root);
+
+    let command_idx = rewards
+        .iter()
+        .filter(|reward| {
+            if reward
+                .get("claimable")
+                .and_then(|v| v.as_bool())
+                .is_some_and(|claimable| !claimable)
+            {
+                return false;
+            }
+            if let Some(recently_closed_card_ids) = recently_closed_card_ids.as_ref() {
+                if reward_matches_recently_closed_card_session(
+                    reward,
+                    recently_closed_card_ids,
+                    claimable_reward_count,
+                ) {
+                    return false;
+                }
+            }
+            true
+        })
+        .nth(reward_idx)?
+        .get("choice_index")
+        .and_then(|v| v.as_u64())
+        .map(|v| v as usize)?;
+
+    Some(format!("CHOOSE {}", command_idx))
+}
+
+fn blocked_replaceable_reward_potion_offer(
+    reward: &serde_json::Value,
+) -> Option<crate::bot::BlockedPotionOffer> {
+    if reward.get("reward_type").and_then(|v| v.as_str()) != Some("POTION") {
+        return None;
+    }
+
+    let blocked_reason = reward.get("blocked_reason").and_then(|v| v.as_str());
+    let can_discard = reward
+        .get("can_discard")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    let claimable = reward
+        .get("claimable")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(true);
+
+    if claimable || blocked_reason != Some("potion_slots_full") || !can_discard {
+        return None;
+    }
+
+    let potion_id = reward
+        .get("potion")
+        .and_then(|v| v.get("id"))
+        .and_then(|v| v.as_str())
+        .and_then(java_potion_id_to_rust)?;
+
+    Some(crate::bot::BlockedPotionOffer { potion_id })
+}
+
+pub(crate) fn blocked_replaceable_reward_potion_offers(
+    root: &serde_json::Value,
+) -> Vec<crate::bot::BlockedPotionOffer> {
+    if !has_available_command(root, "potion") {
+        return Vec::new();
+    }
+
+    let gs = root.get("game_state").unwrap_or(root);
+    gs.get("screen_state")
+        .and_then(|v| v.get("rewards"))
+        .and_then(|v| v.as_array())
+        .map(|rewards| {
+            rewards
+                .iter()
+                .filter_map(blocked_replaceable_reward_potion_offer)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        blocked_replaceable_reward_potion_offers, choose_live_event_command_with_trace,
+        reward_card_decision_command, reward_claim_decision_command, shop_decision_command,
+    };
+    use crate::bot::Agent;
+    use crate::content::cards::CardId;
+    use crate::content::potions::{Potion, PotionId};
+    use crate::shop::{ShopPotion, ShopState};
+    use crate::state::run::RunState;
+    use serde_json::{json, Value};
+
+    #[test]
+    fn live_event_trace_uses_structured_event_choice_path() {
+        let mut rs = RunState::new(2, 0, false, "Ironclad");
+        rs.gold = 70;
+        rs.master_deck.push(crate::runtime::combat::CombatCard::new(
+            CardId::Parasite,
+            91_777,
+        ));
+        let gs = json!({
+            "screen_state": {
+                "event_name": "Designer",
+                "event_id": "Designer",
+                "current_screen": 1,
+                "event_semantics_state": {
+                    "adjust_upgrades_one": true,
+                    "clean_up_removes_cards": true
+                },
+                "options": [
+                    { "text": "x1", "disabled": false, "choice_index": 40 },
+                    { "text": "x2", "disabled": false, "choice_index": 41 },
+                    { "text": "x3", "disabled": true, "choice_index": 42 },
+                    { "text": "x4", "disabled": false, "choice_index": 43 }
+                ]
+            }
+        });
+
+        let trace = choose_live_event_command_with_trace(&gs, &rs).unwrap();
+        assert_eq!(trace.command, "CHOOSE 41");
+        assert!(trace.summary.contains("Designer"));
+    }
+
+    #[test]
+    fn live_event_trace_surfaces_missing_event_semantics_state_keys() {
+        let mut rs = RunState::new(3, 0, false, "Ironclad");
+        rs.gold = 70;
+        rs.master_deck.push(crate::runtime::combat::CombatCard::new(
+            CardId::Parasite,
+            91_778,
+        ));
+        let gs = json!({
+            "screen_state": {
+                "event_name": "Designer",
+                "event_id": "Designer",
+                "current_screen": 1,
+                "options": [
+                    { "text": "[Adjust] 40 Gold. Upgrade 1 card.", "disabled": false, "choice_index": 50 },
+                    { "text": "[Clean Up] 60 Gold. Remove 1 card.", "disabled": false, "choice_index": 51 },
+                    { "text": "[Full Service] 90 Gold. Remove 1 card + upgrade 1 random.", "disabled": true, "choice_index": 52 },
+                    { "text": "[Punch] Lose 3 HP.", "disabled": false, "choice_index": 53 }
+                ]
+            }
+        });
+
+        let trace = choose_live_event_command_with_trace(&gs, &rs).unwrap();
+        assert!(trace
+            .summary
+            .contains("protocol=missing_event_semantics_state"));
+        let protocol = trace
+            .audit
+            .get("live_event_protocol")
+            .and_then(Value::as_object)
+            .unwrap();
+        assert_eq!(
+            protocol
+                .get("event_semantics_required")
+                .and_then(Value::as_bool),
+            Some(true)
+        );
+        assert!(protocol
+            .get("event_semantics_missing_keys")
+            .and_then(Value::as_array)
+            .is_some_and(|keys| keys.len() == 2));
+    }
+
+    #[test]
+    fn shop_blocked_potion_replacement_discards_when_blocked_offer_is_worth_buying() {
+        let agent = Agent::new();
+        let root = json!({
+            "available_commands": ["choose", "potion", "leave"],
+        });
+        let mut rs = RunState::new(1, 0, false, "Ironclad");
+        rs.gold = 100;
+        rs.potions = vec![
+            Some(Potion::new(PotionId::FruitJuice, 1)),
+            Some(Potion::new(PotionId::SmokeBomb, 2)),
+            Some(Potion::new(PotionId::WeakenPotion, 3)),
+        ];
+        let mut shop = ShopState::new();
+        shop.purge_available = false;
+        shop.potions = vec![ShopPotion {
+            potion_id: PotionId::PowerPotion,
+            price: 49,
+            can_buy: false,
+            blocked_reason: Some("potion_slots_full".to_string()),
+        }];
+
+        let decision =
+            agent.decide_shop_policy(&rs, crate::bot::ShopDecisionContext { shop: &shop });
+        assert_eq!(
+            decision.action,
+            crate::bot::ShopDecisionAction::DiscardPotion(1)
+        );
+        let command = shop_decision_command(&root, &rs, &shop, &decision);
+        assert_eq!(command, Some("POTION DISCARD 1".to_string()));
+    }
+
+    #[test]
+    fn shop_blocked_potion_replacement_skips_when_blocked_offer_is_weaker_than_kept_potions() {
+        let agent = Agent::new();
+        let root = json!({
+            "available_commands": ["choose", "potion", "leave"],
+        });
+        let mut rs = RunState::new(1, 0, false, "Ironclad");
+        rs.gold = 100;
+        rs.potions = vec![
+            Some(Potion::new(PotionId::AncientPotion, 1)),
+            Some(Potion::new(PotionId::PowerPotion, 2)),
+            Some(Potion::new(PotionId::EnergyPotion, 3)),
+        ];
+        let mut shop = ShopState::new();
+        shop.purge_available = false;
+        shop.potions = vec![ShopPotion {
+            potion_id: PotionId::SmokeBomb,
+            price: 50,
+            can_buy: false,
+            blocked_reason: Some("potion_slots_full".to_string()),
+        }];
+
+        let decision =
+            agent.decide_shop_policy(&rs, crate::bot::ShopDecisionContext { shop: &shop });
+        assert_eq!(decision.action, crate::bot::ShopDecisionAction::Leave);
+        let command = shop_decision_command(&root, &rs, &shop, &decision);
+        assert_eq!(command, Some("LEAVE".to_string()));
+    }
+
+    #[test]
+    fn reward_potion_score_rates_elixir_above_energy_potion() {
+        let agent = Agent::new();
+        let rs = RunState::new(1, 0, false, "Ironclad");
+
+        let elixir = agent.reward_potion_score(&rs, PotionId::Elixir);
+        let energy = agent.reward_potion_score(&rs, PotionId::EnergyPotion);
+
+        assert!(
+            elixir > energy,
+            "expected Elixir ({elixir}) > Energy Potion ({energy})"
+        );
+    }
+
+    #[test]
+    fn reward_claim_policy_surfaces_blocked_potion_replacement_through_policy() {
+        let agent = Agent::new();
+        let root = json!({
+            "available_commands": ["choose", "potion", "proceed"],
+            "game_state": {
+                "screen_state": {
+                    "rewards": [
+                        {
+                            "reward_type": "POTION",
+                            "claimable": false,
+                            "can_discard": true,
+                            "blocked_reason": "potion_slots_full",
+                            "potion": { "id": "PowerPotion" }
+                        }
+                    ]
+                }
+            }
+        });
+        let mut rs = RunState::new(1, 0, false, "Ironclad");
+        rs.potions = vec![
+            Some(Potion::new(PotionId::FruitJuice, 1)),
+            Some(Potion::new(PotionId::SmokeBomb, 2)),
+            Some(Potion::new(PotionId::WeakenPotion, 3)),
+        ];
+        let reward = crate::rewards::state::RewardState::new();
+        let offers = blocked_replaceable_reward_potion_offers(&root);
+
+        let decision = agent.decide_reward_claim_policy(
+            &rs,
+            crate::bot::RewardClaimDecisionContext {
+                reward: &reward,
+                blocked_potion_offers: &offers,
+            },
+        );
+
+        assert!(matches!(
+            decision.action,
+            crate::bot::RewardClaimDecisionAction::DiscardPotion(_)
+        ));
+    }
+
+    #[test]
+    fn reward_card_decision_command_maps_pick_and_skip() {
+        let pick = crate::bot::RewardCardDecision {
+            meta: crate::bot::DecisionMetadata::new(
+                crate::bot::DecisionDomain::RewardCard,
+                "test",
+                Some("pick"),
+                None,
+                false,
+            ),
+            action: crate::bot::RewardCardDecisionAction::Pick(2),
+            diagnostics: crate::bot::RewardDecisionDiagnostics {
+                recommended_choice: Some(2),
+                recommended_rationale_key: Some("reward_best_offer"),
+                best_score: 10,
+                skip_score: 0,
+                skip_rationale_key: "reward_skip_baseline",
+                skip_benefit_score: 0,
+                skip_penalty_score: 0,
+                skip_situational_bonus: 0,
+                force_pick: false,
+                can_skip: true,
+                candidates: Vec::new(),
+            },
+        };
+        let skip = crate::bot::RewardCardDecision {
+            meta: crate::bot::DecisionMetadata::new(
+                crate::bot::DecisionDomain::RewardCard,
+                "test",
+                Some("skip"),
+                None,
+                false,
+            ),
+            action: crate::bot::RewardCardDecisionAction::Skip,
+            diagnostics: crate::bot::RewardDecisionDiagnostics {
+                recommended_choice: None,
+                recommended_rationale_key: None,
+                best_score: 0,
+                skip_score: 10,
+                skip_rationale_key: "reward_skip_baseline",
+                skip_benefit_score: 10,
+                skip_penalty_score: 0,
+                skip_situational_bonus: 0,
+                force_pick: false,
+                can_skip: true,
+                candidates: Vec::new(),
+            },
+        };
+
+        assert_eq!(
+            reward_card_decision_command(&pick),
+            Some("CHOOSE 2".to_string())
+        );
+        assert_eq!(
+            reward_card_decision_command(&skip),
+            Some("SKIP".to_string())
+        );
+    }
+
+    #[test]
+    fn reward_claim_decision_command_maps_claim_discard_and_proceed() {
+        let root = json!({
+            "game_state": {
+                "screen_state": {
+                    "rewards": [
+                        {
+                            "reward_type": "GOLD",
+                            "choice_index": 7,
+                            "claimable": true,
+                            "gold": 25
+                        }
+                    ]
+                }
+            }
+        });
+        let gs = root.get("game_state").unwrap();
+
+        let claim = crate::bot::RewardClaimDecision {
+            meta: crate::bot::DecisionMetadata::new(
+                crate::bot::DecisionDomain::RewardClaim,
+                "test",
+                Some("claim"),
+                None,
+                false,
+            ),
+            action: crate::bot::RewardClaimDecisionAction::Claim(0),
+            diagnostics: crate::bot::RewardClaimDiagnostics {
+                chosen_index: Some(0),
+                chosen_kind: "claim",
+                blocked_potion_offer_count: 0,
+                rationale_key: "claim",
+            },
+        };
+        let discard = crate::bot::RewardClaimDecision {
+            meta: crate::bot::DecisionMetadata::new(
+                crate::bot::DecisionDomain::RewardClaim,
+                "test",
+                Some("discard"),
+                None,
+                false,
+            ),
+            action: crate::bot::RewardClaimDecisionAction::DiscardPotion(1),
+            diagnostics: crate::bot::RewardClaimDiagnostics {
+                chosen_index: None,
+                chosen_kind: "discard_potion",
+                blocked_potion_offer_count: 0,
+                rationale_key: "discard",
+            },
+        };
+        let proceed = crate::bot::RewardClaimDecision {
+            meta: crate::bot::DecisionMetadata::new(
+                crate::bot::DecisionDomain::RewardClaim,
+                "test",
+                Some("proceed"),
+                None,
+                false,
+            ),
+            action: crate::bot::RewardClaimDecisionAction::Proceed,
+            diagnostics: crate::bot::RewardClaimDiagnostics {
+                chosen_index: None,
+                chosen_kind: "proceed",
+                blocked_potion_offer_count: 0,
+                rationale_key: "proceed",
+            },
+        };
+
+        assert_eq!(
+            reward_claim_decision_command(&root, gs, &claim),
+            Some("CHOOSE 7".to_string())
+        );
+        assert_eq!(
+            reward_claim_decision_command(&root, gs, &discard),
+            Some("POTION DISCARD 1".to_string())
+        );
+        assert_eq!(
+            reward_claim_decision_command(&root, gs, &proceed),
+            Some("PROCEED".to_string())
+        );
+    }
+}
+
+fn decide_live_grid_screen(
+    agent: &mut crate::bot::Agent,
+    root: &serde_json::Value,
     rs: &crate::state::run::RunState,
 ) -> Option<String> {
+    let gs = root.get("game_state").unwrap_or(root);
     let screen_state = gs.get("screen_state")?;
-    let can_choose = has_available_command(gs, "choose");
-    let can_confirm = has_available_command(gs, "confirm")
-        || has_available_command(gs, "proceed");
-    let can_cancel = has_available_command(gs, "cancel")
-        || has_available_command(gs, "return")
-        || has_available_command(gs, "leave");
+    let can_choose = has_available_command(root, "choose");
+    let can_confirm =
+        has_available_command(root, "confirm") || has_available_command(root, "proceed");
+    let can_cancel = has_available_command(root, "cancel")
+        || has_available_command(root, "return")
+        || has_available_command(root, "leave");
 
     if !can_choose {
         if can_confirm {
@@ -228,11 +1120,6 @@ fn decide_live_grid_screen(
     let current_action = gs
         .get("current_action")
         .and_then(|v| v.as_str())
-        .or_else(|| {
-            gs.get("combat_state")
-                .and_then(|v| v.get("current_action"))
-                .and_then(|v| v.as_str())
-        })
         .unwrap_or("");
 
     let for_upgrade = screen_state
@@ -247,6 +1134,56 @@ fn decide_live_grid_screen(
         .get("for_transform")
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
+
+    if let Some(choice_state) = build_live_run_pending_choice_state(
+        current_action,
+        for_upgrade,
+        for_purge,
+        for_transform,
+        cards.len(),
+        screen_state,
+    ) {
+        match agent.decide(
+            &EngineState::RunPendingChoice(choice_state),
+            rs,
+            &None,
+            false,
+        ) {
+            crate::state::core::ClientInput::SubmitDeckSelect(indices) => {
+                if let Some(idx) = indices.into_iter().find(|idx| {
+                    *idx < cards.len()
+                        && !selected
+                            .contains(&snapshot_uuid(&cards[*idx]["uuid"], 60_000 + *idx as u32))
+                }) {
+                    return Some(format!("CHOOSE {}", idx));
+                }
+            }
+            crate::state::core::ClientInput::SubmitSelection(selection) => {
+                if selection.scope == crate::state::selection::SelectionScope::Deck {
+                    let desired = selection
+                        .selected
+                        .into_iter()
+                        .filter_map(|target| match target {
+                            crate::state::selection::SelectionTargetRef::CardUuid(uuid) => {
+                                Some(uuid)
+                            }
+                        })
+                        .collect::<Vec<_>>();
+                    if let Some(idx) = cards.iter().enumerate().find_map(|(idx, card)| {
+                        let uuid = snapshot_uuid(&card["uuid"], 60_000 + idx as u32);
+                        if desired.contains(&uuid) && !selected.contains(&uuid) {
+                            Some(idx)
+                        } else {
+                            None
+                        }
+                    }) {
+                        return Some(format!("CHOOSE {}", idx));
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
 
     let mut best_idx = None;
     let mut best_score = i32::MIN;
@@ -264,7 +1201,7 @@ fn decide_live_grid_screen(
             continue;
         };
 
-        let mut score = crate::bot::evaluator::CardEvaluator::evaluate_owned_card(card_id, rs);
+        let mut score = crate::bot::score_owned_card(card_id, rs);
         if current_action == "DiscardPileToTopOfDeckAction" {
             score += 15;
         } else if current_action.contains("DiscardPileToHandAction")
@@ -293,13 +1230,57 @@ fn decide_live_grid_screen(
     best_idx.map(|idx| format!("CHOOSE {}", idx))
 }
 
+fn build_live_run_pending_choice_state(
+    current_action: &str,
+    for_upgrade: bool,
+    for_purge: bool,
+    for_transform: bool,
+    card_count: usize,
+    screen_state: &serde_json::Value,
+) -> Option<RunPendingChoiceState> {
+    let max_choices = screen_state
+        .get("num_cards")
+        .and_then(|v| v.as_u64())
+        .map(|value| value as usize)
+        .unwrap_or(1)
+        .min(card_count.max(1));
+    let min_choices = if screen_state
+        .get("any_number")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false)
+    {
+        0
+    } else {
+        max_choices
+    };
+
+    let reason = if for_purge {
+        Some(RunPendingChoiceReason::Purge)
+    } else if for_upgrade {
+        Some(RunPendingChoiceReason::Upgrade)
+    } else if for_transform {
+        Some(RunPendingChoiceReason::Transform)
+    } else if current_action.contains("Duplicate") || current_action.contains("Mirror") {
+        Some(RunPendingChoiceReason::Duplicate)
+    } else {
+        None
+    }?;
+
+    Some(RunPendingChoiceState {
+        min_choices,
+        max_choices,
+        reason,
+        return_state: Box::new(EngineState::EventRoom),
+    })
+}
+
 fn live_upgrade_priority(
     card_id: crate::content::cards::CardId,
     rs: &crate::state::run::RunState,
 ) -> i32 {
     use crate::content::cards::CardId;
 
-    let profile = crate::bot::evaluator::CardEvaluator::deck_profile(rs);
+    let profile = crate::bot::deck_profile(rs);
     let mut score = match card_id {
         CardId::Whirlwind => 42,
         CardId::DemonForm => 38,
@@ -309,8 +1290,26 @@ fn live_upgrade_priority(
         CardId::Corruption | CardId::FeelNoPain | CardId::DarkEmbrace => 34,
         CardId::Barricade | CardId::Entrench | CardId::BodySlam => 30,
         CardId::LimitBreak | CardId::HeavyBlade | CardId::SwordBoomerang => 24,
-        CardId::Strike => -18,
-        CardId::Defend => -22,
+        CardId::Strike | CardId::StrikeG => -18,
+        CardId::Defend | CardId::DefendG => -22,
+        CardId::Neutralize => 26,
+        CardId::Survivor => 28,
+        CardId::DeadlyPoison => 26,
+        CardId::Prepared => 18,
+        CardId::DaggerThrow => 24,
+        CardId::PoisonedStab => 26,
+        CardId::DaggerSpray => 24,
+        CardId::BladeDance => 24,
+        CardId::Backflip => 24,
+        CardId::Acrobatics => 24,
+        CardId::CloakAndDagger => 22,
+        CardId::Catalyst => 20,
+        CardId::BouncingFlask => 24,
+        CardId::Footwork => 28,
+        CardId::NoxiousFumes => 28,
+        CardId::Adrenaline => 34,
+        CardId::AfterImage => 30,
+        CardId::Burst => 28,
         _ => 0,
     };
 
@@ -336,7 +1335,7 @@ fn live_upgrade_priority(
     score
 }
 
-fn build_live_run_state(gs: &serde_json::Value) -> Option<crate::state::run::RunState> {
+pub(crate) fn build_live_run_state(gs: &serde_json::Value) -> Option<crate::state::run::RunState> {
     let seed = gs.get("seed").and_then(|v| v.as_u64()).unwrap_or(0);
     let ascension = gs
         .get("ascension_level")
@@ -391,7 +1390,7 @@ fn build_live_run_state(gs: &serde_json::Value) -> Option<crate::state::run::Run
                         .and_then(|v| v.as_str())
                         .and_then(card_id_from_java)?;
                     let upgrades = card.get("upgrades").and_then(|v| v.as_u64()).unwrap_or(0) as u8;
-                    let mut combat_card = crate::combat::CombatCard::new(id, idx as u32);
+                    let mut combat_card = crate::runtime::combat::CombatCard::new(id, idx as u32);
                     combat_card.upgrades = upgrades;
                     Some(combat_card)
                 })
@@ -410,8 +1409,27 @@ fn build_live_run_state(gs: &serde_json::Value) -> Option<crate::state::run::Run
                         .and_then(|v| v.as_str())
                         .and_then(relic_id_from_java)?;
                     let mut state = crate::content::relics::RelicState::new(id);
-                    state.counter =
-                        relic.get("counter").and_then(|v| v.as_i64()).unwrap_or(-1) as i32;
+                    let runtime_state = relic.get("runtime_state").unwrap_or_else(|| {
+                        panic!("strict live_comm: relic.runtime_state missing for {:?}", id)
+                    });
+                    state.counter = runtime_state
+                        .get("counter")
+                        .and_then(|v| v.as_i64())
+                        .unwrap_or_else(|| {
+                            panic!(
+                                "strict live_comm: relic.runtime_state.counter missing for {:?}",
+                                id
+                            )
+                        }) as i32;
+                    state.used_up = runtime_state
+                        .get("used_up")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or_else(|| {
+                            panic!(
+                                "strict live_comm: relic.runtime_state.used_up missing for {:?}",
+                                id
+                            )
+                        });
                     Some(state)
                 })
                 .collect()
