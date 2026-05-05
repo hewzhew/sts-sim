@@ -5,7 +5,7 @@ pub fn build_action_candidates(
     ctx: Option<&EpisodeContext>,
 ) -> Vec<RunActionCandidate> {
     let combat = ctx.and_then(|ctx| ctx.combat_state.as_ref());
-    legal_actions
+    let mut candidates: Vec<RunActionCandidate> = legal_actions
         .iter()
         .enumerate()
         .map(|(action_index, action)| {
@@ -29,9 +29,17 @@ pub fn build_action_candidates(
                 card,
                 plan_delta,
                 reward_structure,
+                dominated: false,
+                dominated_by_index: None,
             }
         })
-        .collect()
+        .collect();
+
+    // Annotate Pareto-dominated candidates for diagnostic visibility.
+    // We don't remove them from the mask (yet) — only mark them so audits can
+    // measure how often a dominated candidate "wins" under rollout.
+    annotate_dominated_candidates(&mut candidates);
+    candidates
 }
 
 pub fn empty_reward_action_structure() -> RewardActionStructureV0 {
@@ -533,5 +541,158 @@ pub fn card_is_block_core(card_id: CardId) -> bool {
             | CardId::GoodInstincts
             | CardId::DarkShackles
     )
+}
+
+// ---------------------------------------------------------------------------
+// Pareto dominance on plan delta vectors
+// ---------------------------------------------------------------------------
+
+/// Core dimensions for Pareto comparison: (name, higher_is_better)
+const DOMINANCE_DIMS: &[(&str, bool)] = &[
+    ("frontload_delta", true),
+    ("block_delta", true),
+    ("draw_delta", true),
+    ("scaling_delta", true),
+    ("aoe_delta", true),
+    ("exhaust_delta", true),
+    ("kill_window_delta", true),
+    ("starter_basic_burden_delta", true),
+    ("setup_cashout_risk_delta", false), // lower risk = better
+    ("deck_deficit_bonus", true),
+    ("bloat_penalty", true),
+    ("duplicate_penalty", true),
+];
+
+fn delta_dim(delta: &CandidatePlanDeltaV0, dim: &str, higher_better: bool) -> i32 {
+    let raw = match dim {
+        "frontload_delta" => delta.frontload_delta,
+        "block_delta" => delta.block_delta,
+        "draw_delta" => delta.draw_delta,
+        "scaling_delta" => delta.scaling_delta,
+        "aoe_delta" => delta.aoe_delta,
+        "exhaust_delta" => delta.exhaust_delta,
+        "kill_window_delta" => delta.kill_window_delta,
+        "starter_basic_burden_delta" => delta.starter_basic_burden_delta,
+        "setup_cashout_risk_delta" => delta.setup_cashout_risk_delta,
+        "deck_deficit_bonus" => delta.deck_deficit_bonus,
+        "bloat_penalty" => delta.bloat_penalty,
+        "duplicate_penalty" => delta.duplicate_penalty,
+        _ => 0,
+    };
+    if higher_better { raw } else { -raw }
+}
+
+/// Annotate candidates in-place: set `dominated` and `dominated_by_index`.
+/// Only compares among candidates that have a plan_delta (typically reward card choices).
+pub fn annotate_dominated_candidates(candidates: &mut [RunActionCandidate]) {
+    let n = candidates.len();
+    for i in 0..n {
+        let di = match &candidates[i].plan_delta {
+            Some(d) => d,
+            None => continue,
+        };
+        for j in 0..n {
+            if i == j {
+                continue;
+            }
+            let dj = match &candidates[j].plan_delta {
+                Some(d) => d,
+                None => continue,
+            };
+            if pareto_dominates(di, dj) {
+                candidates[j].dominated = true;
+                if candidates[j].dominated_by_index.is_none() {
+                    candidates[j].dominated_by_index = Some(i);
+                }
+            }
+        }
+    }
+}
+
+/// Returns true if `a` Pareto-dominates `b`:
+/// a ≥ b in all core dimensions, and a > b in at least one.
+pub fn pareto_dominates(a: &CandidatePlanDeltaV0, b: &CandidatePlanDeltaV0) -> bool {
+    let mut has_strict = false;
+    for &(dim, higher_better) in DOMINANCE_DIMS {
+        let va = delta_dim(a, dim, higher_better);
+        let vb = delta_dim(b, dim, higher_better);
+        if va < vb {
+            return false;
+        }
+        if va > vb {
+            has_strict = true;
+        }
+    }
+    has_strict
+}
+
+/// Returns indices of non-dominated candidates.
+/// Among equivalent candidates (mutual non-domination with identical deltas),
+/// only the first in order is kept.
+pub fn filter_dominated_candidates(
+    candidates: &[RunActionCandidate],
+) -> Vec<usize> {
+    let n = candidates.len();
+    let mut dominated = vec![false; n];
+
+    for i in 0..n {
+        if dominated[i] {
+            continue;
+        }
+        let di = match &candidates[i].plan_delta {
+            Some(d) => d,
+            None => continue,
+        };
+        for j in 0..n {
+            if i == j || dominated[j] {
+                continue;
+            }
+            let dj = match &candidates[j].plan_delta {
+                Some(d) => d,
+                None => continue,
+            };
+            if pareto_dominates(di, dj) {
+                dominated[j] = true;
+            }
+        }
+    }
+
+    // Also collapse equivalent candidates (identical deltas)
+    let mut keep = Vec::new();
+    for i in 0..n {
+        if dominated[i] {
+            continue;
+        }
+        // Check if any earlier kept candidate has identical delta
+        let di = &candidates[i].plan_delta;
+        let is_dup = keep.iter().any(|&k: &usize| {
+            &candidates[k].plan_delta == di
+        });
+        if !is_dup {
+            keep.push(i);
+        }
+    }
+
+    keep
+}
+
+/// Diagnostic: for a candidate at `index`, return the index of a candidate that
+/// dominates it, if any.
+pub fn dominated_by(
+    candidates: &[RunActionCandidate],
+    index: usize,
+) -> Option<usize> {
+    let d = candidates[index].plan_delta.as_ref()?;
+    for (i, c) in candidates.iter().enumerate() {
+        if i == index {
+            continue;
+        }
+        if let Some(di) = &c.plan_delta {
+            if pareto_dominates(di, d) {
+                return Some(i);
+            }
+        }
+    }
+    None
 }
 
