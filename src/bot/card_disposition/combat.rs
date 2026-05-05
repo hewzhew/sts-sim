@@ -9,7 +9,7 @@ use super::helpers::{
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum HandCardRole {
+pub enum HandCardRole {
     CoreKeeper,
     SequencedPiece,
     SituationalResource,
