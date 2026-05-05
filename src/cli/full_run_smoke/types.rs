@@ -384,6 +384,8 @@ pub struct RunActionCandidate {
     pub card: Option<RunCardFeatureV0>,
     pub plan_delta: Option<CandidatePlanDeltaV0>,
     pub reward_structure: Option<RewardActionStructureV0>,
+    pub dominated: bool,
+    pub dominated_by_index: Option<usize>,
 }
 
 #[derive(Clone, Debug, Default, Serialize, PartialEq, Eq)]
