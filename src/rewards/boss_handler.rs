@@ -1,6 +1,7 @@
 use crate::rewards::state::BossRelicChoiceState;
 use crate::state::core::{ClientInput, EngineState};
 use crate::state::run::RunState;
+use crate::state::selection::DomainEventSource;
 
 pub fn handle(
     run_state: &mut RunState,
@@ -22,9 +23,11 @@ pub fn handle(
 
                     run_state.advance_act();
 
-                    if let Some(next_state) =
-                        run_state.obtain_relic(chosen_relic, EngineState::MapNavigation)
-                    {
+                    if let Some(next_state) = run_state.obtain_relic_with_source(
+                        chosen_relic,
+                        EngineState::MapNavigation,
+                        DomainEventSource::BossRelicChoice,
+                    ) {
                         return Some(next_state);
                     }
 

@@ -1,6 +1,51 @@
-use crate::action::{Action, ActionInfo, AddTo};
-use crate::combat::CombatState;
+use crate::runtime::action::{Action, ActionInfo, AddTo};
+use crate::runtime::combat::CombatState;
 use crate::state::core::{ClientInput, EngineState, GridSelectReason, HandSelectReason, PileType};
+use crate::state::selection::{
+    DomainCardSnapshot, DomainEvent, DomainEventSource, SelectionResolution, SelectionScope,
+    SelectionTargetRef,
+};
+
+fn selection_to_uuids(
+    input: ClientInput,
+    expected_scope: SelectionScope,
+) -> Result<Vec<u32>, &'static str> {
+    match input {
+        ClientInput::SubmitSelection(SelectionResolution { scope, selected }) => {
+            if scope != expected_scope {
+                return Err("Selection scope does not match pending choice");
+            }
+            let uuids = selected
+                .into_iter()
+                .map(|target| match target {
+                    SelectionTargetRef::CardUuid(uuid) => Ok(uuid),
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok(uuids)
+        }
+        ClientInput::SubmitHandSelect(uuids) if expected_scope == SelectionScope::Hand => Ok(uuids),
+        ClientInput::SubmitGridSelect(uuids) if expected_scope == SelectionScope::Grid => Ok(uuids),
+        _ => Err("Invalid input for selection"),
+    }
+}
+
+fn snapshot_cards_from_hand(combat_state: &CombatState, uuids: &[u32]) -> Vec<DomainCardSnapshot> {
+    uuids
+        .iter()
+        .filter_map(|uuid| {
+            combat_state
+                .zones
+                .hand
+                .iter()
+                .find(|card| card.uuid == *uuid)
+                .map(|card| DomainCardSnapshot {
+                    id: card.id,
+                    upgrades: card.upgrades,
+                    uuid: card.uuid,
+                })
+        })
+        .collect()
+}
 
 pub fn handle_scry(
     engine_state: &mut EngineState,
@@ -11,7 +56,7 @@ pub fn handle_scry(
     match input {
         ClientInput::SubmitScryDiscard(indices) => {
             // Simplified stub
-            if indices.len() <= combat_state.draw_pile.len() {
+            if indices.len() <= combat_state.zones.draw_pile.len() {
                 *engine_state = EngineState::CombatProcessing;
                 Ok(())
             } else {
@@ -41,7 +86,8 @@ pub fn handle_hand_select(
                 Err("Cannot cancel this selection")
             }
         }
-        ClientInput::SubmitHandSelect(uuids) => {
+        input => {
+            let uuids = selection_to_uuids(input, SelectionScope::Hand)?;
             if uuids.iter().any(|uuid| !candidate_uuids.contains(uuid)) {
                 return Err("Selected card is not in the frozen hand-select candidate set");
             }
@@ -58,9 +104,11 @@ pub fn handle_hand_select(
                     let num_selected = uuids.len();
                     // Move selected cards from hand to discard
                     for uuid in &uuids {
-                        if let Some(pos) = combat_state.hand.iter().position(|c| c.uuid == *uuid) {
-                            let card = combat_state.hand.remove(pos);
-                            combat_state.discard_pile.push(card);
+                        if let Some(pos) =
+                            combat_state.zones.hand.iter().position(|c| c.uuid == *uuid)
+                        {
+                            let card = combat_state.zones.hand.remove(pos);
+                            combat_state.zones.discard_pile.push(card);
                         }
                     }
                     // Queue draw actions for same number of cards
@@ -69,46 +117,59 @@ pub fn handle_hand_select(
                             action: Action::DrawCards(num_selected as u32),
                             insertion_mode: AddTo::Top,
                         };
-                        crate::engine::core::queue_actions(
-                            &mut combat_state.action_queue,
-                            smallvec::smallvec![action],
-                        );
+                        combat_state.queue_actions(smallvec::smallvec![action]);
                     }
                 }
                 HandSelectReason::Exhaust => {
+                    let exhausted_cards = snapshot_cards_from_hand(combat_state, &uuids);
                     // Java ExhaustAction: exhaust selected cards from hand
                     for uuid in &uuids {
-                        if let Some(pos) = combat_state.hand.iter().position(|c| c.uuid == *uuid) {
-                            let card = combat_state.hand.remove(pos);
-                            combat_state.exhaust_pile.push(card);
-                        }
+                        crate::engine::action_handlers::cards::handle_exhaust_card(
+                            *uuid,
+                            PileType::Hand,
+                            combat_state,
+                        );
+                    }
+                    if !exhausted_cards.is_empty() {
+                        combat_state.emit_event(DomainEvent::CardsExhausted {
+                            cards: exhausted_cards,
+                            source: DomainEventSource::Selection(reason.into()),
+                        });
                     }
                 }
                 HandSelectReason::Discard => {
                     // Discard selected cards from hand
                     for uuid in &uuids {
-                        if let Some(pos) = combat_state.hand.iter().position(|c| c.uuid == *uuid) {
-                            let card = combat_state.hand.remove(pos);
-                            combat_state.discard_pile.push(card);
+                        if let Some(pos) =
+                            combat_state.zones.hand.iter().position(|c| c.uuid == *uuid)
+                        {
+                            let card = combat_state.zones.hand.remove(pos);
+                            combat_state.zones.discard_pile.push(card);
                         }
                     }
                 }
                 HandSelectReason::PutOnDrawPile => {
                     // Move selected cards from hand to top of draw pile
                     for uuid in &uuids {
-                        if let Some(pos) = combat_state.hand.iter().position(|c| c.uuid == *uuid) {
-                            let card = combat_state.hand.remove(pos);
-                            combat_state.draw_pile.insert(0, card);
+                        if let Some(pos) =
+                            combat_state.zones.hand.iter().position(|c| c.uuid == *uuid)
+                        {
+                            let card = combat_state.zones.hand.remove(pos);
+                            combat_state.zones.draw_pile.insert(0, card);
                         }
                     }
                 }
                 HandSelectReason::PutToBottomOfDraw => {
-                    // Forethought: move to bottom of draw pile, mark free_to_play_once
+                    // Forethought: move to bottom of draw pile; only cards with cost > 0 become free once.
                     for uuid in &uuids {
-                        if let Some(pos) = combat_state.hand.iter().position(|c| c.uuid == *uuid) {
-                            let mut card = combat_state.hand.remove(pos);
-                            card.cost_for_turn = Some(0); // free_to_play_once
-                            combat_state.draw_pile.push(card);
+                        if let Some(pos) =
+                            combat_state.zones.hand.iter().position(|c| c.uuid == *uuid)
+                        {
+                            let mut card = combat_state.zones.hand.remove(pos);
+                            if card.get_cost() > 0 {
+                                card.free_to_play_once = true;
+                            }
+                            combat_state.zones.draw_pile.push(card);
                         }
                     }
                 }
@@ -119,12 +180,14 @@ pub fn handle_hand_select(
                 HandSelectReason::Copy { amount } => {
                     // Dual Wield: copy selected card(s) into hand
                     for uuid in &uuids {
-                        if let Some(pos) = combat_state.hand.iter().position(|c| c.uuid == *uuid) {
-                            let card = combat_state.hand[pos].clone();
+                        if let Some(pos) =
+                            combat_state.zones.hand.iter().position(|c| c.uuid == *uuid)
+                        {
+                            let card = combat_state.zones.hand[pos].clone();
                             for _ in 0..amount {
                                 let mut copy = card.clone();
-                                copy.uuid = 60000 + combat_state.hand.len() as u32;
-                                combat_state.hand.push(copy);
+                                copy.uuid = 60000 + combat_state.zones.hand.len() as u32;
+                                combat_state.zones.hand.push(copy);
                             }
                         }
                     }
@@ -132,17 +195,38 @@ pub fn handle_hand_select(
                 HandSelectReason::Upgrade => {
                     // Armaments upgraded: upgrade selected card in hand
                     for uuid in &uuids {
-                        if let Some(card) = combat_state.hand.iter_mut().find(|c| c.uuid == *uuid) {
+                        if let Some(card) =
+                            combat_state.zones.hand.iter_mut().find(|c| c.uuid == *uuid)
+                        {
+                            let before = DomainCardSnapshot {
+                                id: card.id,
+                                upgrades: card.upgrades,
+                                uuid: card.uuid,
+                            };
                             card.upgrades += 1;
+                            combat_state.emit_event(DomainEvent::CardUpgraded {
+                                before,
+                                after: before.upgraded(),
+                                source: DomainEventSource::Selection(reason.into()),
+                            });
                         }
                     }
                 }
             }
 
+            combat_state.emit_event(DomainEvent::SelectionResolved {
+                scope: SelectionScope::Hand,
+                reason: reason.into(),
+                selected: uuids
+                    .iter()
+                    .copied()
+                    .map(SelectionTargetRef::CardUuid)
+                    .collect(),
+                source: DomainEventSource::Selection(reason.into()),
+            });
             *engine_state = EngineState::CombatProcessing;
             Ok(())
         }
-        _ => Err("Invalid input for HandSelect"),
     }
 }
 
@@ -166,7 +250,8 @@ pub fn handle_grid_select(
                 Err("Cannot cancel this selection")
             }
         }
-        ClientInput::SubmitGridSelect(uuids) => {
+        input => {
+            let uuids = selection_to_uuids(input, SelectionScope::Grid)?;
             if uuids.iter().any(|uuid| !candidate_uuids.contains(uuid)) {
                 return Err("Selected card is not in the frozen grid-select candidate set");
             }
@@ -181,14 +266,15 @@ pub fn handle_grid_select(
                     // Java BetterDiscardPileToHandAction: move from discard to hand, setCostForTurn(0)
                     for uuid in &uuids {
                         if let Some(pos) = combat_state
+                            .zones
                             .discard_pile
                             .iter()
                             .position(|c| c.uuid == *uuid)
                         {
-                            let mut card = combat_state.discard_pile.remove(pos);
+                            let mut card = combat_state.zones.discard_pile.remove(pos);
                             card.cost_for_turn = Some(0);
-                            if combat_state.hand.len() < 10 {
-                                combat_state.hand.push(card);
+                            if combat_state.zones.hand.len() < 10 {
+                                combat_state.zones.hand.push(card);
                             }
                         }
                     }
@@ -197,13 +283,13 @@ pub fn handle_grid_select(
                     // Move from source pile to draw pile (random position)
                     for uuid in &uuids {
                         let pile = match source_pile {
-                            PileType::Discard => &mut combat_state.discard_pile,
-                            PileType::Exhaust => &mut combat_state.exhaust_pile,
-                            _ => &mut combat_state.discard_pile,
+                            PileType::Discard => &mut combat_state.zones.discard_pile,
+                            PileType::Exhaust => &mut combat_state.zones.exhaust_pile,
+                            _ => &mut combat_state.zones.discard_pile,
                         };
                         if let Some(pos) = pile.iter().position(|c| c.uuid == *uuid) {
                             let card = pile.remove(pos);
-                            combat_state.draw_pile.push(card);
+                            combat_state.zones.draw_pile.push(card);
                         }
                     }
                 }
@@ -211,16 +297,17 @@ pub fn handle_grid_select(
                     // Exhume: move from exhaust to hand
                     for uuid in &uuids {
                         if let Some(pos) = combat_state
+                            .zones
                             .exhaust_pile
                             .iter()
                             .position(|c| c.uuid == *uuid)
                         {
-                            let mut card = combat_state.exhaust_pile.remove(pos);
+                            let mut card = combat_state.zones.exhaust_pile.remove(pos);
                             if upgrade {
                                 card.upgrades += 1;
                             }
-                            if combat_state.hand.len() < 10 {
-                                combat_state.hand.push(card);
+                            if combat_state.zones.hand.len() < 10 {
+                                combat_state.zones.hand.push(card);
                             }
                         }
                     }
@@ -228,125 +315,33 @@ pub fn handle_grid_select(
                 GridSelectReason::SkillFromDeckToHand | GridSelectReason::AttackFromDeckToHand => {
                     // SecretTechnique/SecretWeapon: move from draw pile to hand
                     for uuid in &uuids {
-                        if let Some(pos) =
-                            combat_state.draw_pile.iter().position(|c| c.uuid == *uuid)
+                        if let Some(pos) = combat_state
+                            .zones
+                            .draw_pile
+                            .iter()
+                            .position(|c| c.uuid == *uuid)
                         {
-                            let card = combat_state.draw_pile.remove(pos);
-                            if combat_state.hand.len() < 10 {
-                                combat_state.hand.push(card);
+                            let card = combat_state.zones.draw_pile.remove(pos);
+                            if combat_state.zones.hand.len() < 10 {
+                                combat_state.zones.hand.push(card);
                             }
                         }
                     }
                 }
             }
 
+            combat_state.emit_event(DomainEvent::SelectionResolved {
+                scope: SelectionScope::Grid,
+                reason: reason.into(),
+                selected: uuids
+                    .iter()
+                    .copied()
+                    .map(SelectionTargetRef::CardUuid)
+                    .collect(),
+                source: DomainEventSource::Selection(reason.into()),
+            });
             *engine_state = EngineState::CombatProcessing;
             Ok(())
         }
-        _ => Err("Invalid input for GridSelect"),
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::action::Action;
-    use crate::combat::{CombatCard, CombatPhase, CombatState, PlayerEntity, RelicBuses, StanceId};
-    use crate::state::PendingChoice;
-    use std::collections::{HashMap, VecDeque};
-
-    fn test_combat() -> CombatState {
-        CombatState {
-            ascension_level: 0,
-            turn_count: 1,
-            current_phase: CombatPhase::PlayerTurn,
-            energy: 3,
-            draw_pile: Vec::new(),
-            hand: vec![CombatCard::new(crate::content::cards::CardId::Strike, 101)],
-            discard_pile: Vec::new(),
-            exhaust_pile: Vec::new(),
-            limbo: Vec::new(),
-            player: PlayerEntity {
-                id: 0,
-                current_hp: 80,
-                max_hp: 80,
-                block: 0,
-                gold_delta_this_combat: 0,
-                gold: 99,
-                max_orbs: 0,
-                orbs: Vec::new(),
-                stance: StanceId::Neutral,
-                relics: Vec::new(),
-                relic_buses: RelicBuses::default(),
-                energy_master: 3,
-            },
-            monsters: Vec::new(),
-            potions: vec![None, None, None],
-            power_db: HashMap::new(),
-            action_queue: VecDeque::<Action>::new(),
-            counters: Default::default(),
-            card_uuid_counter: 1,
-            rng: crate::rng::RngPool::new(5),
-            is_boss_fight: false,
-            is_elite_fight: false,
-            meta_changes: Vec::new(),
-        }
-    }
-
-    #[test]
-    fn grid_select_rejects_cancel_when_not_cancellable() {
-        let mut engine_state = EngineState::PendingChoice(PendingChoice::GridSelect {
-            source_pile: PileType::Discard,
-            candidate_uuids: vec![101],
-            min_cards: 1,
-            max_cards: 1,
-            can_cancel: false,
-            reason: GridSelectReason::DiscardToHand,
-        });
-        let mut combat = test_combat();
-
-        let err = handle_grid_select(
-            &mut engine_state,
-            &mut combat,
-            &[101],
-            PileType::Discard,
-            1,
-            1,
-            false,
-            GridSelectReason::DiscardToHand,
-            ClientInput::Cancel,
-        )
-        .unwrap_err();
-
-        assert_eq!(err, "Cannot cancel this selection");
-    }
-
-    #[test]
-    fn hand_select_rejects_unknown_uuid() {
-        let mut engine_state = EngineState::PendingChoice(PendingChoice::HandSelect {
-            candidate_uuids: vec![101],
-            min_cards: 1,
-            max_cards: 1,
-            can_cancel: false,
-            reason: HandSelectReason::Upgrade,
-        });
-        let mut combat = test_combat();
-
-        let err = handle_hand_select(
-            &mut engine_state,
-            &mut combat,
-            &[101],
-            1,
-            true,
-            false,
-            HandSelectReason::Upgrade,
-            ClientInput::SubmitHandSelect(vec![999]),
-        )
-        .unwrap_err();
-
-        assert_eq!(
-            err,
-            "Selected card is not in the frozen hand-select candidate set"
-        );
     }
 }

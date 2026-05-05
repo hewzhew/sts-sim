@@ -1,122 +1,167 @@
-use crate::action::{Action, DamageInfo, DamageType};
-use crate::combat::{CombatState, Intent};
 use crate::content::cards::CardId;
+use crate::content::monsters::exordium::{add_card_action, attack_actions, PLAYER};
 use crate::content::monsters::MonsterBehavior;
 use crate::content::powers::PowerId;
+use crate::runtime::action::Action;
+use crate::runtime::combat::{CombatState, MonsterEntity};
+use crate::semantics::combat::{
+    AddCardStep, AttackSpec, CardDestination, DamageKind, EffectStrength, MonsterMoveSpec,
+    MonsterTurnPlan, MoveStep,
+};
+use smallvec::smallvec;
 
 pub struct OrbWalker;
 
-impl MonsterBehavior for OrbWalker {
-    fn roll_move(
-        _rng: &mut crate::rng::StsRng,
-        entity: &crate::combat::MonsterEntity,
-        ascension_level: u8,
-        num: i32,
-    ) -> (u8, Intent) {
-        let claw_dmg = if ascension_level >= 2 { 16 } else { 15 };
-        let laser_dmg = if ascension_level >= 2 { 11 } else { 10 };
+const LASER: u8 = 1;
+const CLAW: u8 = 2;
 
-        let last_two_moves = |byte| {
-            entity.move_history.len() >= 2
-                && entity.move_history[entity.move_history.len() - 1] == byte
-                && entity.move_history[entity.move_history.len() - 2] == byte
-        };
-        if num < 40 {
-            if !last_two_moves(2) {
-                (
-                    2,
-                    Intent::Attack {
-                        damage: claw_dmg,
-                        hits: 1,
-                    },
-                )
-            } else {
-                (
-                    1,
-                    Intent::AttackDebuff {
-                        damage: laser_dmg,
-                        hits: 1,
-                    },
-                )
-            }
-        } else if !last_two_moves(1) {
-            (
-                1,
-                Intent::AttackDebuff {
-                    damage: laser_dmg,
-                    hits: 1,
-                },
-            )
-        } else {
-            (
-                2,
-                Intent::Attack {
-                    damage: claw_dmg,
-                    hits: 1,
-                },
-            )
-        }
+fn laser_damage(ascension_level: u8) -> i32 {
+    if ascension_level >= 2 {
+        11
+    } else {
+        10
     }
+}
 
-    fn use_pre_battle_action(
-        entity: &crate::combat::MonsterEntity,
-        _hp_rng: &mut crate::rng::StsRng,
-        ascension_level: u8,
+fn claw_damage(ascension_level: u8) -> i32 {
+    if ascension_level >= 2 {
+        16
+    } else {
+        15
+    }
+}
+
+fn burn_discard_step() -> AddCardStep {
+    AddCardStep {
+        card_id: CardId::Burn,
+        amount: 1,
+        upgraded: false,
+        destination: CardDestination::Discard,
+        visible_strength: EffectStrength::Normal,
+    }
+}
+
+fn burn_draw_step() -> AddCardStep {
+    AddCardStep {
+        card_id: CardId::Burn,
+        amount: 1,
+        upgraded: false,
+        destination: CardDestination::DrawPileRandom,
+        visible_strength: EffectStrength::Normal,
+    }
+}
+
+fn laser_plan(ascension_level: u8) -> MonsterTurnPlan {
+    let visible_add = burn_discard_step();
+    MonsterTurnPlan::with_visible_spec(
+        LASER,
+        smallvec![
+            MoveStep::Attack(crate::semantics::combat::AttackStep {
+                target: crate::semantics::combat::MoveTarget::Player,
+                attack: AttackSpec {
+                    base_damage: laser_damage(ascension_level),
+                    hits: 1,
+                    damage_kind: DamageKind::Normal,
+                },
+            }),
+            MoveStep::AddCard(burn_discard_step()),
+            MoveStep::AddCard(burn_draw_step()),
+        ],
+        MonsterMoveSpec::AttackAddCard(
+            AttackSpec {
+                base_damage: laser_damage(ascension_level),
+                hits: 1,
+                damage_kind: DamageKind::Normal,
+            },
+            visible_add,
+        ),
+    )
+}
+
+fn claw_plan(ascension_level: u8) -> MonsterTurnPlan {
+    MonsterTurnPlan::from_spec(
+        CLAW,
+        MonsterMoveSpec::Attack(AttackSpec {
+            base_damage: claw_damage(ascension_level),
+            hits: 1,
+            damage_kind: DamageKind::Normal,
+        }),
+    )
+}
+
+fn last_two_moves(entity: &MonsterEntity, move_id: u8) -> bool {
+    let mut history = entity.move_history().iter().rev();
+    matches!(
+        (history.next().copied(), history.next().copied()),
+        (Some(a), Some(b)) if a == move_id && b == move_id
+    )
+}
+
+fn plan_for(move_id: u8, ascension_level: u8) -> MonsterTurnPlan {
+    match move_id {
+        LASER => laser_plan(ascension_level),
+        CLAW => claw_plan(ascension_level),
+        _ => MonsterTurnPlan::unknown(move_id),
+    }
+}
+
+impl MonsterBehavior for OrbWalker {
+    fn use_pre_battle_actions(
+        state: &mut CombatState,
+        entity: &MonsterEntity,
+        legacy_rng: crate::content::monsters::PreBattleLegacyRng,
     ) -> Vec<Action> {
-        let str_amount = if ascension_level >= 17 { 5 } else { 3 };
-
+        let (_rng, ascension_level) =
+            crate::content::monsters::legacy_pre_battle_rng(state, legacy_rng);
         vec![Action::ApplyPower {
             source: entity.id,
             target: entity.id,
             power_id: PowerId::GenericStrengthUp,
-            amount: str_amount,
+            amount: if ascension_level >= 17 { 5 } else { 3 },
         }]
     }
 
-    fn take_turn(state: &mut CombatState, entity: &crate::combat::MonsterEntity) -> Vec<Action> {
-        let mut actions = Vec::new();
-        let asc = state.ascension_level;
-
-        let claw_dmg = if asc >= 2 { 16 } else { 15 };
-        let laser_dmg = if asc >= 2 { 11 } else { 10 };
-
-        match entity.next_move_byte {
-            2 => {
-                // CLAW
-                actions.push(Action::Damage(DamageInfo {
-                    source: entity.id,
-                    target: 0,
-                    base: claw_dmg,
-                    output: claw_dmg,
-                    damage_type: DamageType::Normal,
-                    is_modified: false,
-                }));
+    fn roll_move_plan(
+        _rng: &mut crate::runtime::rng::StsRng,
+        entity: &MonsterEntity,
+        ascension_level: u8,
+        num: i32,
+    ) -> MonsterTurnPlan {
+        if num < 40 {
+            if !last_two_moves(entity, CLAW) {
+                claw_plan(ascension_level)
+            } else {
+                laser_plan(ascension_level)
             }
-            1 => {
-                // LASER
-                actions.push(Action::Damage(DamageInfo {
-                    source: entity.id,
-                    target: 0,
-                    base: laser_dmg,
-                    output: laser_dmg,
-                    damage_type: DamageType::Normal,
-                    is_modified: false,
-                }));
-                actions.push(Action::MakeTempCardInDiscard {
-                    card_id: CardId::Burn,
-                    amount: 1,
-                    upgraded: false,
-                });
-                actions.push(Action::MakeTempCardInDrawPile {
-                    card_id: CardId::Burn,
-                    amount: 1,
-                    random_spot: true,
-                    upgraded: false,
-                });
-            }
-            _ => {}
+        } else if !last_two_moves(entity, LASER) {
+            laser_plan(ascension_level)
+        } else {
+            claw_plan(ascension_level)
         }
+    }
 
+    fn turn_plan(state: &CombatState, entity: &MonsterEntity) -> MonsterTurnPlan {
+        plan_for(entity.planned_move_id(), state.meta.ascension_level)
+    }
+
+    fn take_turn_plan(
+        _state: &mut CombatState,
+        entity: &MonsterEntity,
+        plan: &MonsterTurnPlan,
+    ) -> Vec<Action> {
+        let mut actions = match (plan.move_id, plan.steps.as_slice()) {
+            (CLAW, [MoveStep::Attack(attack)]) => attack_actions(entity.id, PLAYER, &attack.attack),
+            (
+                LASER,
+                [MoveStep::Attack(attack), MoveStep::AddCard(discard_burn), MoveStep::AddCard(draw_burn)],
+            ) => {
+                let mut actions = attack_actions(entity.id, PLAYER, &attack.attack);
+                actions.push(add_card_action(discard_burn));
+                actions.push(add_card_action(draw_burn));
+                actions
+            }
+            (move_id, steps) => panic!("orb walker plan/steps mismatch: {} {:?}", move_id, steps),
+        };
         actions.push(Action::RollMonsterMove {
             monster_id: entity.id,
         });

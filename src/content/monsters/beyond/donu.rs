@@ -1,93 +1,132 @@
-use crate::action::{Action, DamageInfo, DamageType};
-use crate::combat::{CombatState, Intent};
+use crate::content::monsters::exordium::{attack_actions, PLAYER};
 use crate::content::monsters::MonsterBehavior;
 use crate::content::powers::PowerId;
+use crate::runtime::action::Action;
+use crate::runtime::combat::{CombatState, MonsterEntity};
+use crate::semantics::combat::{
+    ApplyPowerStep, AttackSpec, AttackStep, BuffSpec, DamageKind, EffectStrength, MonsterMoveSpec,
+    MonsterTurnPlan, MoveStep, MoveTarget, PowerEffectKind,
+};
+use smallvec::smallvec;
 
 pub struct Donu;
 
-impl MonsterBehavior for Donu {
-    fn roll_move(
-        _rng: &mut crate::rng::StsRng,
-        entity: &crate::combat::MonsterEntity,
-        ascension_level: u8,
-        _num: i32,
-    ) -> (u8, Intent) {
-        let beam_dmg = if ascension_level >= 4 { 12 } else { 10 };
+const BEAM: u8 = 0;
+const CIRCLE_OF_PROTECTION: u8 = 2;
 
-        if entity.move_history.is_empty() {
-            return (2, Intent::Buff); // CIRCLE_OF_PROTECTION
-        }
-
-        let last_move = entity.move_history.back().copied().unwrap_or(0);
-
-        if last_move == 0 {
-            return (2, Intent::Buff); // Alternate from Attack to Buff
-        } else {
-            return (
-                0,
-                Intent::Attack {
-                    damage: beam_dmg,
-                    hits: 2,
-                },
-            ); // Alternate from Buff to Attack
-        }
+fn beam_damage(ascension_level: u8) -> i32 {
+    if ascension_level >= 4 {
+        12
+    } else {
+        10
     }
+}
 
-    fn use_pre_battle_action(
-        entity: &crate::combat::MonsterEntity,
-        _hp_rng: &mut crate::rng::StsRng,
-        ascension_level: u8,
+fn beam_plan(ascension_level: u8) -> MonsterTurnPlan {
+    MonsterTurnPlan::from_spec(
+        BEAM,
+        MonsterMoveSpec::Attack(AttackSpec {
+            base_damage: beam_damage(ascension_level),
+            hits: 2,
+            damage_kind: DamageKind::Normal,
+        }),
+    )
+}
+
+fn circle_plan() -> MonsterTurnPlan {
+    MonsterTurnPlan::with_visible_spec(
+        CIRCLE_OF_PROTECTION,
+        smallvec![MoveStep::ApplyPower(ApplyPowerStep {
+            target: MoveTarget::AllMonsters,
+            power_id: PowerId::Strength,
+            amount: 3,
+            effect: PowerEffectKind::Buff,
+            visible_strength: EffectStrength::Normal,
+        })],
+        MonsterMoveSpec::Buff(BuffSpec {
+            power_id: PowerId::Strength,
+            amount: 3,
+        }),
+    )
+}
+
+fn plan_for(move_id: u8, ascension_level: u8) -> MonsterTurnPlan {
+    match move_id {
+        BEAM => beam_plan(ascension_level),
+        CIRCLE_OF_PROTECTION => circle_plan(),
+        _ => MonsterTurnPlan::unknown(move_id),
+    }
+}
+
+impl MonsterBehavior for Donu {
+    fn use_pre_battle_actions(
+        state: &mut CombatState,
+        entity: &MonsterEntity,
+        legacy_rng: crate::content::monsters::PreBattleLegacyRng,
     ) -> Vec<Action> {
-        let artifact_amt = if ascension_level >= 19 { 3 } else { 2 };
+        let (_rng, ascension_level) =
+            crate::content::monsters::legacy_pre_battle_rng(state, legacy_rng);
         vec![Action::ApplyPower {
             source: entity.id,
             target: entity.id,
             power_id: PowerId::Artifact,
-            amount: artifact_amt,
+            amount: if ascension_level >= 19 { 3 } else { 2 },
         }]
     }
 
-    fn take_turn(state: &mut CombatState, entity: &crate::combat::MonsterEntity) -> Vec<Action> {
-        let mut actions = Vec::new();
-        let asc = state.ascension_level;
-
-        let beam_dmg = if asc >= 4 { 12 } else { 10 };
-
-        match entity.next_move_byte {
-            0 => {
-                // BEAM
-                for _ in 0..2 {
-                    actions.push(Action::Damage(DamageInfo {
-                        source: entity.id,
-                        target: 0,
-                        base: beam_dmg,
-                        output: beam_dmg,
-                        damage_type: DamageType::Normal,
-                        is_modified: false,
-                    }));
-                }
-            }
-            2 => {
-                // CIRCLE_OF_PROTECTION
-                let alive_monsters: Vec<crate::core::EntityId> = state
-                    .monsters
-                    .iter()
-                    .filter(|m| m.current_hp > 0 && !m.is_dying)
-                    .map(|m| m.id)
-                    .collect();
-
-                for target_id in alive_monsters {
-                    actions.push(Action::ApplyPower {
-                        source: entity.id,
-                        target: target_id, // applies to both Donu & Deca realistically
-                        power_id: PowerId::Strength,
-                        amount: 3,
-                    });
-                }
-            }
-            _ => {}
+    fn roll_move_plan(
+        _rng: &mut crate::runtime::rng::StsRng,
+        entity: &MonsterEntity,
+        ascension_level: u8,
+        _num: i32,
+    ) -> MonsterTurnPlan {
+        match entity.move_history().back().copied() {
+            None => circle_plan(),
+            Some(BEAM) => circle_plan(),
+            _ => beam_plan(ascension_level),
         }
+    }
 
+    fn turn_plan(state: &CombatState, entity: &MonsterEntity) -> MonsterTurnPlan {
+        plan_for(entity.planned_move_id(), state.meta.ascension_level)
+    }
+
+    fn take_turn_plan(
+        state: &mut CombatState,
+        entity: &MonsterEntity,
+        plan: &MonsterTurnPlan,
+    ) -> Vec<Action> {
+        let mut actions = match (plan.move_id, plan.steps.as_slice()) {
+            (
+                BEAM,
+                [MoveStep::Attack(AttackStep {
+                    target: MoveTarget::Player,
+                    attack,
+                })],
+            ) => attack_actions(entity.id, PLAYER, attack),
+            (
+                CIRCLE_OF_PROTECTION,
+                [MoveStep::ApplyPower(ApplyPowerStep {
+                    target: MoveTarget::AllMonsters,
+                    power_id: PowerId::Strength,
+                    amount,
+                    effect: PowerEffectKind::Buff,
+                    ..
+                })],
+            ) => state
+                .entities
+                .monsters
+                .iter()
+                .map(|monster| Action::ApplyPower {
+                    source: entity.id,
+                    target: monster.id,
+                    power_id: PowerId::Strength,
+                    amount: *amount,
+                })
+                .collect(),
+            (_, []) => panic!("donu plan missing locked truth"),
+            (move_id, steps) => panic!("donu plan/steps mismatch: {} {:?}", move_id, steps),
+        };
         actions.push(Action::RollMonsterMove {
             monster_id: entity.id,
         });

@@ -146,6 +146,26 @@ pub enum CardId {
     ThinkingAhead,
     Transmutation,
     Violence,
+    StrikeG,
+    DefendG,
+    Neutralize,
+    Survivor,
+    DeadlyPoison,
+    BouncingFlask,
+    Catalyst,
+    NoxiousFumes,
+    Footwork,
+    BladeDance,
+    CloakAndDagger,
+    Backflip,
+    Acrobatics,
+    Prepared,
+    DaggerThrow,
+    PoisonedStab,
+    DaggerSpray,
+    Adrenaline,
+    AfterImage,
+    Burst,
     // Add more as we expand
 }
 
@@ -180,6 +200,7 @@ pub enum CardTarget {
 pub enum CardTag {
     Strike,
     StarterStrike,
+    StarterDefend,
     Healing,
     Empty,
 }
@@ -204,30 +225,6 @@ pub struct CardDefinition {
     pub upgrade_magic: i32,
 }
 
-#[allow(dead_code)]
-fn build_status(id: CardId, name: &'static str, cost: i8) -> CardDefinition {
-    CardDefinition {
-        id,
-        name,
-        card_type: CardType::Status,
-        rarity: CardRarity::Special,
-        cost,
-        base_damage: 0,
-        base_block: 0,
-        base_magic: 0,
-        target: CardTarget::None,
-        is_multi_damage: false,
-        exhaust: false,
-        ethereal: false,
-        innate: false,
-        tags: &[],
-        upgrade_damage: 0,
-        upgrade_block: 0,
-        upgrade_magic: 0,
-    }
-}
-
-#[allow(dead_code)]
 fn build_curse(id: CardId, name: &'static str, cost: i8) -> CardDefinition {
     let mut def = CardDefinition {
         id,
@@ -277,26 +274,43 @@ fn build_curse(id: CardId, name: &'static str, cost: i8) -> CardDefinition {
 /// 1. Sentinel (Gain Energy)
 /// 2. Necronomicurse (Clone itself back to hand)
 pub fn resolve_card_on_exhaust(
-    card: &crate::combat::CombatCard,
-    _state: &crate::combat::CombatState,
-) -> Vec<crate::action::ActionInfo> {
+    card: &crate::runtime::combat::CombatCard,
+    _state: &crate::runtime::combat::CombatState,
+) -> Vec<crate::runtime::action::ActionInfo> {
     match card.id {
-        CardId::Necronomicurse => vec![crate::action::ActionInfo {
-            action: crate::action::Action::MakeTempCardInHand {
+        CardId::Necronomicurse => vec![crate::runtime::action::ActionInfo {
+            action: crate::runtime::action::Action::MakeTempCardInHand {
                 card_id: CardId::Necronomicurse,
                 amount: 1,
                 upgraded: false,
             },
-            insertion_mode: crate::action::AddTo::Bottom,
+            insertion_mode: crate::runtime::action::AddTo::Bottom,
         }],
-        CardId::Sentinel => vec![crate::action::ActionInfo {
-            action: crate::action::Action::GainEnergy {
+        CardId::Sentinel => vec![crate::runtime::action::ActionInfo {
+            action: crate::runtime::action::Action::GainEnergy {
                 amount: if card.upgrades > 0 { 3 } else { 2 },
             },
-            insertion_mode: crate::action::AddTo::Bottom,
+            insertion_mode: crate::runtime::action::AddTo::Bottom,
         }],
         _ => vec![],
     }
+}
+
+pub fn is_starter_strike(id: CardId) -> bool {
+    matches!(id, CardId::Strike | CardId::StrikeG)
+}
+
+pub fn is_starter_defend(id: CardId) -> bool {
+    matches!(id, CardId::Defend | CardId::DefendG)
+}
+
+pub fn is_starter_basic(id: CardId) -> bool {
+    is_starter_strike(id) || is_starter_defend(id)
+}
+
+pub fn is_innate_card(card: &crate::runtime::combat::CombatCard) -> bool {
+    get_card_definition(card.id).innate
+        || matches!(card.id, CardId::AfterImage) && card.upgrades > 0
 }
 
 pub fn get_card_definition(id: CardId) -> CardDefinition {
@@ -337,7 +351,7 @@ pub fn get_card_definition(id: CardId) -> CardDefinition {
             name: "Madness",
             card_type: CardType::Skill,
             rarity: CardRarity::Uncommon,
-            cost: 0,
+            cost: 1,
             base_damage: 0,
             base_block: 0,
             base_magic: 0,
@@ -359,7 +373,7 @@ pub fn get_card_definition(id: CardId) -> CardDefinition {
             cost: 1,
             base_damage: 15,
             base_block: 0,
-            base_magic: 0,
+            base_magic: 3,
             target: CardTarget::Enemy,
             is_multi_damage: false,
             exhaust: true,
@@ -373,13 +387,13 @@ pub fn get_card_definition(id: CardId) -> CardDefinition {
         CardId::JAX => CardDefinition {
             id: CardId::JAX,
             name: "J.A.X.",
-            card_type: CardType::Attack,
+            card_type: CardType::Skill,
             rarity: CardRarity::Special,
             cost: 0,
-            base_damage: 2,
+            base_damage: 0,
             base_block: 0,
-            base_magic: 3, // HP loss on play
-            target: CardTarget::Enemy,
+            base_magic: 2,
+            target: CardTarget::SelfTarget,
             is_multi_damage: false,
             exhaust: false,
             ethereal: false,
@@ -474,7 +488,7 @@ pub fn get_card_definition(id: CardId) -> CardDefinition {
             cost: 0,
             base_damage: 0,
             base_block: 0,
-            base_magic: 0,
+            base_magic: 1,
             target: CardTarget::SelfTarget,
             is_multi_damage: false,
             exhaust: false,
@@ -570,9 +584,9 @@ pub fn get_card_definition(id: CardId) -> CardDefinition {
             base_damage: 0,
             base_block: 0,
             base_magic: 0,
-            target: CardTarget::SelfTarget,
+            target: CardTarget::None,
             is_multi_damage: false,
-            exhaust: true,
+            exhaust: false,
             ethereal: false,
             innate: false,
             tags: &[],
@@ -626,7 +640,7 @@ pub fn get_card_definition(id: CardId) -> CardDefinition {
             cost: 0,
             base_damage: 0,
             base_block: 0,
-            base_magic: 0,
+            base_magic: 1,
             target: CardTarget::SelfTarget,
             is_multi_damage: false,
             exhaust: true,
@@ -683,7 +697,7 @@ pub fn get_card_definition(id: CardId) -> CardDefinition {
             cost: 0,
             base_damage: 0,
             base_block: 30,
-            base_magic: 0,
+            base_magic: 2,
             target: CardTarget::SelfTarget,
             is_multi_damage: false,
             exhaust: true,
@@ -932,7 +946,7 @@ pub fn get_card_definition(id: CardId) -> CardDefinition {
             base_damage: 0,
             base_block: 0,
             base_magic: 0,
-            target: CardTarget::SelfTarget,
+            target: CardTarget::None,
             is_multi_damage: false,
             exhaust: true,
             ethereal: false,
@@ -951,7 +965,7 @@ pub fn get_card_definition(id: CardId) -> CardDefinition {
             base_damage: 0,
             base_block: 0,
             base_magic: 0,
-            target: CardTarget::SelfTarget,
+            target: CardTarget::None,
             is_multi_damage: false,
             exhaust: true,
             ethereal: false,
@@ -1113,6 +1127,44 @@ pub fn get_card_definition(id: CardId) -> CardDefinition {
             upgrade_block: 3,
             upgrade_magic: 0,
         },
+        CardId::StrikeG => CardDefinition {
+            id: CardId::StrikeG,
+            name: "Strike",
+            card_type: CardType::Attack,
+            rarity: CardRarity::Basic,
+            cost: 1,
+            base_damage: 6,
+            base_block: 0,
+            base_magic: 0,
+            target: CardTarget::Enemy,
+            is_multi_damage: false,
+            exhaust: false,
+            ethereal: false,
+            innate: false,
+            tags: &[CardTag::Strike, CardTag::StarterStrike],
+            upgrade_damage: 3,
+            upgrade_block: 0,
+            upgrade_magic: 0,
+        },
+        CardId::DefendG => CardDefinition {
+            id: CardId::DefendG,
+            name: "Defend",
+            card_type: CardType::Skill,
+            rarity: CardRarity::Basic,
+            cost: 1,
+            base_damage: 0,
+            base_block: 5,
+            base_magic: 0,
+            target: CardTarget::SelfTarget,
+            is_multi_damage: false,
+            exhaust: false,
+            ethereal: false,
+            innate: false,
+            tags: &[CardTag::StarterDefend],
+            upgrade_damage: 0,
+            upgrade_block: 3,
+            upgrade_magic: 0,
+        },
         CardId::Bash => CardDefinition {
             id: CardId::Bash,
             name: "Bash",
@@ -1131,6 +1183,44 @@ pub fn get_card_definition(id: CardId) -> CardDefinition {
             upgrade_damage: 2,
             upgrade_block: 0,
             upgrade_magic: 1,
+        },
+        CardId::Neutralize => CardDefinition {
+            id: CardId::Neutralize,
+            name: "Neutralize",
+            card_type: CardType::Attack,
+            rarity: CardRarity::Basic,
+            cost: 0,
+            base_damage: 3,
+            base_block: 0,
+            base_magic: 1,
+            target: CardTarget::Enemy,
+            is_multi_damage: false,
+            exhaust: false,
+            ethereal: false,
+            innate: false,
+            tags: &[],
+            upgrade_damage: 1,
+            upgrade_block: 0,
+            upgrade_magic: 1,
+        },
+        CardId::Survivor => CardDefinition {
+            id: CardId::Survivor,
+            name: "Survivor",
+            card_type: CardType::Skill,
+            rarity: CardRarity::Basic,
+            cost: 1,
+            base_damage: 0,
+            base_block: 8,
+            base_magic: 0,
+            target: CardTarget::SelfTarget,
+            is_multi_damage: false,
+            exhaust: false,
+            ethereal: false,
+            innate: false,
+            tags: &[],
+            upgrade_damage: 0,
+            upgrade_block: 3,
+            upgrade_magic: 0,
         },
         CardId::Cleave => CardDefinition {
             id: CardId::Cleave,
@@ -2166,7 +2256,7 @@ pub fn get_card_definition(id: CardId) -> CardDefinition {
             cost: 1,
             base_damage: 8,
             base_block: 0,
-            base_magic: 8,
+            base_magic: 5,
             target: CardTarget::Enemy,
             is_multi_damage: false,
             exhaust: false,
@@ -2652,13 +2742,317 @@ pub fn get_card_definition(id: CardId) -> CardDefinition {
             upgrade_block: 0,
             upgrade_magic: 1,
         },
+        CardId::DeadlyPoison => CardDefinition {
+            id: CardId::DeadlyPoison,
+            name: "Deadly Poison",
+            card_type: CardType::Skill,
+            rarity: CardRarity::Common,
+            cost: 1,
+            base_damage: 0,
+            base_block: 0,
+            base_magic: 5,
+            target: CardTarget::Enemy,
+            is_multi_damage: false,
+            exhaust: false,
+            ethereal: false,
+            innate: false,
+            tags: &[],
+            upgrade_damage: 0,
+            upgrade_block: 0,
+            upgrade_magic: 2,
+        },
+        CardId::BouncingFlask => CardDefinition {
+            id: CardId::BouncingFlask,
+            name: "Bouncing Flask",
+            card_type: CardType::Skill,
+            rarity: CardRarity::Uncommon,
+            cost: 2,
+            base_damage: 0,
+            base_block: 0,
+            base_magic: 3,
+            target: CardTarget::AllEnemy,
+            is_multi_damage: false,
+            exhaust: false,
+            ethereal: false,
+            innate: false,
+            tags: &[],
+            upgrade_damage: 0,
+            upgrade_block: 0,
+            upgrade_magic: 1,
+        },
+        CardId::Catalyst => CardDefinition {
+            id: CardId::Catalyst,
+            name: "Catalyst",
+            card_type: CardType::Skill,
+            rarity: CardRarity::Uncommon,
+            cost: 1,
+            base_damage: 0,
+            base_block: 0,
+            base_magic: 2,
+            target: CardTarget::Enemy,
+            is_multi_damage: false,
+            exhaust: true,
+            ethereal: false,
+            innate: false,
+            tags: &[],
+            upgrade_damage: 0,
+            upgrade_block: 0,
+            upgrade_magic: 1,
+        },
+        CardId::NoxiousFumes => CardDefinition {
+            id: CardId::NoxiousFumes,
+            name: "Noxious Fumes",
+            card_type: CardType::Power,
+            rarity: CardRarity::Uncommon,
+            cost: 1,
+            base_damage: 0,
+            base_block: 0,
+            base_magic: 2,
+            target: CardTarget::SelfTarget,
+            is_multi_damage: false,
+            exhaust: false,
+            ethereal: false,
+            innate: false,
+            tags: &[],
+            upgrade_damage: 0,
+            upgrade_block: 0,
+            upgrade_magic: 1,
+        },
+        CardId::Footwork => CardDefinition {
+            id: CardId::Footwork,
+            name: "Footwork",
+            card_type: CardType::Power,
+            rarity: CardRarity::Uncommon,
+            cost: 1,
+            base_damage: 0,
+            base_block: 0,
+            base_magic: 2,
+            target: CardTarget::SelfTarget,
+            is_multi_damage: false,
+            exhaust: false,
+            ethereal: false,
+            innate: false,
+            tags: &[],
+            upgrade_damage: 0,
+            upgrade_block: 0,
+            upgrade_magic: 1,
+        },
+        CardId::BladeDance => CardDefinition {
+            id: CardId::BladeDance,
+            name: "Blade Dance",
+            card_type: CardType::Skill,
+            rarity: CardRarity::Common,
+            cost: 1,
+            base_damage: 0,
+            base_block: 0,
+            base_magic: 3,
+            target: CardTarget::None,
+            is_multi_damage: false,
+            exhaust: false,
+            ethereal: false,
+            innate: false,
+            tags: &[],
+            upgrade_damage: 0,
+            upgrade_block: 0,
+            upgrade_magic: 1,
+        },
+        CardId::CloakAndDagger => CardDefinition {
+            id: CardId::CloakAndDagger,
+            name: "Cloak And Dagger",
+            card_type: CardType::Skill,
+            rarity: CardRarity::Common,
+            cost: 1,
+            base_damage: 0,
+            base_block: 6,
+            base_magic: 1,
+            target: CardTarget::SelfTarget,
+            is_multi_damage: false,
+            exhaust: false,
+            ethereal: false,
+            innate: false,
+            tags: &[],
+            upgrade_damage: 0,
+            upgrade_block: 0,
+            upgrade_magic: 1,
+        },
+        CardId::Backflip => CardDefinition {
+            id: CardId::Backflip,
+            name: "Backflip",
+            card_type: CardType::Skill,
+            rarity: CardRarity::Common,
+            cost: 1,
+            base_damage: 0,
+            base_block: 5,
+            base_magic: 2,
+            target: CardTarget::SelfTarget,
+            is_multi_damage: false,
+            exhaust: false,
+            ethereal: false,
+            innate: false,
+            tags: &[],
+            upgrade_damage: 0,
+            upgrade_block: 3,
+            upgrade_magic: 0,
+        },
+        CardId::Acrobatics => CardDefinition {
+            id: CardId::Acrobatics,
+            name: "Acrobatics",
+            card_type: CardType::Skill,
+            rarity: CardRarity::Common,
+            cost: 1,
+            base_damage: 0,
+            base_block: 0,
+            base_magic: 3,
+            target: CardTarget::None,
+            is_multi_damage: false,
+            exhaust: false,
+            ethereal: false,
+            innate: false,
+            tags: &[],
+            upgrade_damage: 0,
+            upgrade_block: 0,
+            upgrade_magic: 1,
+        },
+        CardId::Prepared => CardDefinition {
+            id: CardId::Prepared,
+            name: "Prepared",
+            card_type: CardType::Skill,
+            rarity: CardRarity::Common,
+            cost: 0,
+            base_damage: 0,
+            base_block: 0,
+            base_magic: 1,
+            target: CardTarget::None,
+            is_multi_damage: false,
+            exhaust: false,
+            ethereal: false,
+            innate: false,
+            tags: &[],
+            upgrade_damage: 0,
+            upgrade_block: 0,
+            upgrade_magic: 1,
+        },
+        CardId::DaggerThrow => CardDefinition {
+            id: CardId::DaggerThrow,
+            name: "Dagger Throw",
+            card_type: CardType::Attack,
+            rarity: CardRarity::Common,
+            cost: 1,
+            base_damage: 9,
+            base_block: 0,
+            base_magic: 0,
+            target: CardTarget::Enemy,
+            is_multi_damage: false,
+            exhaust: false,
+            ethereal: false,
+            innate: false,
+            tags: &[],
+            upgrade_damage: 3,
+            upgrade_block: 0,
+            upgrade_magic: 0,
+        },
+        CardId::PoisonedStab => CardDefinition {
+            id: CardId::PoisonedStab,
+            name: "Poisoned Stab",
+            card_type: CardType::Attack,
+            rarity: CardRarity::Common,
+            cost: 1,
+            base_damage: 6,
+            base_block: 0,
+            base_magic: 3,
+            target: CardTarget::Enemy,
+            is_multi_damage: false,
+            exhaust: false,
+            ethereal: false,
+            innate: false,
+            tags: &[],
+            upgrade_damage: 2,
+            upgrade_block: 0,
+            upgrade_magic: 1,
+        },
+        CardId::DaggerSpray => CardDefinition {
+            id: CardId::DaggerSpray,
+            name: "Dagger Spray",
+            card_type: CardType::Attack,
+            rarity: CardRarity::Common,
+            cost: 1,
+            base_damage: 4,
+            base_block: 0,
+            base_magic: 0,
+            target: CardTarget::AllEnemy,
+            is_multi_damage: true,
+            exhaust: false,
+            ethereal: false,
+            innate: false,
+            tags: &[],
+            upgrade_damage: 2,
+            upgrade_block: 0,
+            upgrade_magic: 0,
+        },
+        CardId::Adrenaline => CardDefinition {
+            id: CardId::Adrenaline,
+            name: "Adrenaline",
+            card_type: CardType::Skill,
+            rarity: CardRarity::Rare,
+            cost: 0,
+            base_damage: 0,
+            base_block: 0,
+            base_magic: 2,
+            target: CardTarget::SelfTarget,
+            is_multi_damage: false,
+            exhaust: true,
+            ethereal: false,
+            innate: false,
+            tags: &[],
+            upgrade_damage: 0,
+            upgrade_block: 0,
+            upgrade_magic: 0,
+        },
+        CardId::AfterImage => CardDefinition {
+            id: CardId::AfterImage,
+            name: "After Image",
+            card_type: CardType::Power,
+            rarity: CardRarity::Rare,
+            cost: 1,
+            base_damage: 0,
+            base_block: 0,
+            base_magic: 1,
+            target: CardTarget::SelfTarget,
+            is_multi_damage: false,
+            exhaust: false,
+            ethereal: false,
+            innate: false,
+            tags: &[],
+            upgrade_damage: 0,
+            upgrade_block: 0,
+            upgrade_magic: 0,
+        },
+        CardId::Burst => CardDefinition {
+            id: CardId::Burst,
+            name: "Burst",
+            card_type: CardType::Skill,
+            rarity: CardRarity::Rare,
+            cost: 1,
+            base_damage: 0,
+            base_block: 0,
+            base_magic: 1,
+            target: CardTarget::SelfTarget,
+            is_multi_damage: false,
+            exhaust: false,
+            ethereal: false,
+            innate: false,
+            tags: &[],
+            upgrade_damage: 0,
+            upgrade_block: 0,
+            upgrade_magic: 1,
+        },
     }
 }
 
-use crate::action::{Action, ActionInfo};
-use crate::combat::{CombatCard, CombatState};
 use crate::content::powers::PowerId;
 use crate::core::EntityId;
+use crate::runtime::action::{Action, ActionInfo};
+use crate::runtime::combat::{CombatCard, CombatState};
 use smallvec::SmallVec;
 
 /// Central dispatch table for resolving card play mechanics.
@@ -2670,7 +3064,7 @@ pub fn resolve_card_play(
 ) -> SmallVec<[ActionInfo; 4]> {
     let t = target;
     match card_id {
-        CardId::Strike => ironclad::strike::strike_play(_state, _card, t),
+        CardId::Strike | CardId::StrikeG => ironclad::strike::strike_play(_state, _card, t),
         CardId::Bash => ironclad::bash::bash_play(_state, _card, t),
         CardId::Cleave => ironclad::cleave::cleave_play(_state, _card),
         CardId::IronWave => ironclad::iron_wave::iron_wave_play(_state, _card, t),
@@ -2679,7 +3073,9 @@ pub fn resolve_card_play(
         }
         CardId::TwinStrike => ironclad::twin_strike::twin_strike_play(_state, _card, t),
         CardId::ThunderClap => ironclad::thunderclap::thunderclap_play(_state, _card),
-        CardId::Defend => ironclad::defend::defend_play(_state, _card),
+        CardId::Defend | CardId::DefendG => ironclad::defend::defend_play(_state, _card),
+        CardId::Neutralize => silent::neutralize::neutralize_play(_state, _card, t),
+        CardId::Survivor => silent::survivor::survivor_play(_state, _card),
         CardId::ShrugItOff => ironclad::shrug_it_off::shrug_it_off_play(_state, _card),
         CardId::Flex => ironclad::flex::flex_play(_state, _card),
         CardId::TrueGrit => ironclad::true_grit::true_grit_play(_state, _card),
@@ -2749,8 +3145,8 @@ pub fn resolve_card_play(
         CardId::Pummel => ironclad::pummel::pummel_play(_state, _card, t),
         CardId::Miracle => {
             smallvec::smallvec![ActionInfo {
-                action: crate::action::Action::GainEnergy { amount: 1 },
-                insertion_mode: crate::action::AddTo::Bottom,
+                action: crate::runtime::action::Action::GainEnergy { amount: 1 },
+                insertion_mode: crate::runtime::action::AddTo::Bottom,
             }]
         }
         CardId::Shiv => {
@@ -2758,20 +3154,47 @@ pub fn resolve_card_play(
             if let Some(t) = t {
                 let def = get_card_definition(CardId::Shiv);
                 actions.push(ActionInfo {
-                    action: crate::action::Action::Damage(crate::action::DamageInfo {
-                        source: _card.uuid as usize,
-                        target: t,
-                        base: def.base_damage,
-                        output: _card.base_damage_mut,
-                        damage_type: crate::action::DamageType::Normal,
-                        is_modified: _card.base_damage_mut != def.base_damage,
-                    }),
-                    insertion_mode: crate::action::AddTo::Bottom,
+                    action: crate::runtime::action::Action::Damage(
+                        crate::runtime::action::DamageInfo {
+                            source: _card.uuid as usize,
+                            target: t,
+                            base: def.base_damage,
+                            output: _card.base_damage_mut,
+                            damage_type: crate::runtime::action::DamageType::Normal,
+                            is_modified: _card.base_damage_mut != def.base_damage,
+                        },
+                    ),
+                    insertion_mode: crate::runtime::action::AddTo::Bottom,
                 });
             }
             actions
         }
-        CardId::Bite => colorless::bite::bite_play(_state, _card, t),
+        CardId::Bite => colorless::play_colorless(_state, _card, t),
+        CardId::Apparition => smallvec::smallvec![ActionInfo {
+            action: Action::ApplyPower {
+                source: 0,
+                target: 0,
+                power_id: PowerId::IntangiblePlayer,
+                amount: _card.base_magic_num_mut.max(1),
+            },
+            insertion_mode: crate::runtime::action::AddTo::Bottom,
+        }],
+        CardId::DeadlyPoison => silent::deadly_poison::deadly_poison_play(_state, _card, t),
+        CardId::BouncingFlask => silent::bouncing_flask::bouncing_flask_play(_state, _card),
+        CardId::Catalyst => silent::catalyst::catalyst_play(_state, _card, t),
+        CardId::NoxiousFumes => silent::noxious_fumes::noxious_fumes_play(_state, _card),
+        CardId::Footwork => silent::footwork::footwork_play(_state, _card),
+        CardId::BladeDance => silent::blade_dance::blade_dance_play(_state, _card),
+        CardId::CloakAndDagger => silent::cloak_and_dagger::cloak_and_dagger_play(_state, _card),
+        CardId::Backflip => silent::backflip::backflip_play(_state, _card),
+        CardId::Acrobatics => silent::acrobatics::acrobatics_play(_state, _card),
+        CardId::Prepared => silent::prepared::prepared_play(_state, _card),
+        CardId::DaggerThrow => silent::dagger_throw::dagger_throw_play(_state, _card, t),
+        CardId::PoisonedStab => silent::poisoned_stab::poisoned_stab_play(_state, _card, t),
+        CardId::DaggerSpray => silent::dagger_spray::dagger_spray_play(_state, _card),
+        CardId::Adrenaline => silent::adrenaline::adrenaline_play(_state, _card),
+        CardId::AfterImage => silent::after_image::after_image_play(_state, _card),
+        CardId::Burst => silent::burst::burst_play(_state, _card),
         CardId::Pride => smallvec::smallvec![], // Coast 1 but does nothing on play
         CardId::Finesse
         | CardId::BandageUp
@@ -2806,359 +3229,9 @@ pub fn resolve_card_play(
         | CardId::TheBomb
         | CardId::ThinkingAhead
         | CardId::Transmutation
-        | CardId::Violence => {
-            let _def = get_card_definition(_card.id);
-            let dmg = _card.base_damage_mut;
-            let blk = _card.base_block_mut;
-            let mag = _card.base_magic_num_mut;
-            let mut acts: SmallVec<[Action; 4]> = smallvec::smallvec![];
-            match _card.id {
-                // ── Colorless Uncommon ──
-                CardId::BandageUp => {
-                    // Heal magic HP
-                    acts.push(Action::Heal {
-                        target: 0,
-                        amount: mag,
-                    });
-                }
-                CardId::Blind => {
-                    // Apply 2 Weak to target
-                    let target_id = t.expect("Blind requires a target!");
-                    acts.push(Action::ApplyPower {
-                        source: 0,
-                        target: target_id,
-                        power_id: PowerId::Weak,
-                        amount: mag,
-                    });
-                }
-                CardId::DarkShackles => {
-                    // Apply -9 Strength to target (temporary, lost at end of turn)
-                    let target_id = t.expect("Dark Shackles requires a target!");
-                    acts.push(Action::ApplyPower {
-                        source: 0,
-                        target: target_id,
-                        power_id: PowerId::Strength,
-                        amount: -mag,
-                    });
-                    acts.push(Action::ApplyPower {
-                        source: 0,
-                        target: target_id,
-                        power_id: PowerId::LoseStrength,
-                        amount: -mag,
-                    });
-                }
-                CardId::DeepBreath => {
-                    // Shuffle discard into draw pile, draw 1
-                    acts.push(Action::EmptyDeckShuffle);
-                    acts.push(Action::DrawCards(1));
-                }
-                CardId::Discovery => {
-                    // Java: DiscoveryAction — present 3 random cards to choose from, chosen card costs 0
-                    acts.push(Action::SuspendForDiscovery {
-                        card_type: None,
-                        cost_for_turn: Some(0),
-                    });
-                }
-                CardId::DramaticEntrance => {
-                    // Deal 8 damage to ALL enemies
-                    acts.push(Action::DamageAllEnemies {
-                        source: 0,
-                        damages: smallvec::smallvec![dmg; 5],
-                        damage_type: crate::action::DamageType::Normal,
-                        is_modified: false,
-                    });
-                }
-                CardId::Enlightenment => {
-                    // Reduce cost of all cards in hand to 1 (this turn only)
-                    acts.push(Action::ReduceAllHandCosts { amount: 1 });
-                }
-                CardId::Finesse => {
-                    // Gain 2 Block, Draw 1
-                    acts.push(Action::GainBlock {
-                        target: 0,
-                        amount: blk,
-                    });
-                    acts.push(Action::DrawCards(1));
-                }
-                CardId::FlashOfSteel => {
-                    // Deal 3 damage, Draw 1
-                    let target_id = t.expect("Flash of Steel requires a target!");
-                    acts.push(Action::Damage(crate::action::DamageInfo {
-                        source: 0,
-                        target: target_id,
-                        base: dmg,
-                        output: dmg,
-                        damage_type: crate::action::DamageType::Normal,
-                        is_modified: false,
-                    }));
-                    acts.push(Action::DrawCards(1));
-                }
-                CardId::Forethought => {
-                    // Put card(s) from hand to bottom of draw pile (cost 0 next time)
-                    // Base: choose 1 card. Upgraded: choose any number.
-                    if !_state.hand.is_empty() {
-                        let upgraded = _card.upgrades > 0;
-                        acts.push(Action::SuspendForHandSelect {
-                            min: if upgraded { 0 } else { 1 },
-                            max: if upgraded { 99 } else { 1 },
-                            can_cancel: upgraded,
-                            filter: crate::state::HandSelectFilter::Any,
-                            reason: crate::state::HandSelectReason::PutToBottomOfDraw,
-                        });
-                    }
-                }
-                CardId::GoodInstincts => {
-                    // Gain 6 Block
-                    acts.push(Action::GainBlock {
-                        target: 0,
-                        amount: blk,
-                    });
-                }
-                CardId::Impatience => {
-                    // If no Attacks in hand, draw 2 cards
-                    let has_attack = _state
-                        .hand
-                        .iter()
-                        .any(|c| get_card_definition(c.id).card_type == CardType::Attack);
-                    if !has_attack {
-                        acts.push(Action::DrawCards(mag as u32));
-                    }
-                }
-                CardId::JackOfAllTrades => {
-                    // Add 1 random colorless card to hand
-                    acts.push(Action::MakeRandomColorlessCardInHand {
-                        rarity: CardRarity::Uncommon,
-                        cost_for_turn: None,
-                    });
-                }
-                CardId::MindBlast => {
-                    // Deal damage equal to draw pile size
-                    let draw_size = _state.draw_pile.len() as i32;
-                    let target_id = t.expect("Mind Blast requires a target!");
-                    acts.push(Action::Damage(crate::action::DamageInfo {
-                        source: 0,
-                        target: target_id,
-                        base: draw_size,
-                        output: draw_size,
-                        damage_type: crate::action::DamageType::Normal,
-                        is_modified: true,
-                    }));
-                }
-                CardId::Panacea => {
-                    // Gain 1 Artifact
-                    acts.push(Action::ApplyPower {
-                        source: 0,
-                        target: 0,
-                        power_id: PowerId::Artifact,
-                        amount: mag,
-                    });
-                }
-                CardId::PanicButton => {
-                    // Gain 30 Block
-                    acts.push(Action::GainBlock {
-                        target: 0,
-                        amount: blk,
-                    });
-                }
-                CardId::Purity => {
-                    // Exhaust up to magic (3/5) cards from hand
-                    if !_state.hand.is_empty() {
-                        acts.push(Action::SuspendForHandSelect {
-                            min: 0,
-                            max: mag as u8,
-                            can_cancel: true,
-                            filter: crate::state::HandSelectFilter::Any,
-                            reason: crate::state::HandSelectReason::Exhaust,
-                        });
-                    }
-                }
-                CardId::SwiftStrike => {
-                    // Deal 7 damage
-                    let target_id = t.expect("Swift Strike requires a target!");
-                    acts.push(Action::Damage(crate::action::DamageInfo {
-                        source: 0,
-                        target: target_id,
-                        base: dmg,
-                        output: dmg,
-                        damage_type: crate::action::DamageType::Normal,
-                        is_modified: false,
-                    }));
-                }
-                CardId::Trip => {
-                    // Apply 2 Vulnerable to target
-                    let target_id = t.expect("Trip requires a target!");
-                    acts.push(Action::ApplyPower {
-                        source: 0,
-                        target: target_id,
-                        power_id: PowerId::Vulnerable,
-                        amount: mag,
-                    });
-                }
-                // ── Colorless Rare ──
-                CardId::Apotheosis => {
-                    acts.push(Action::UpgradeAllInHand);
-                }
-                CardId::Chrysalis => {
-                    for _ in 0..mag {
-                        acts.push(Action::MakeRandomCardInHand {
-                            card_type: Some(CardType::Skill),
-                            cost_for_turn: Some(0),
-                        });
-                    }
-                }
-                CardId::HandOfGreed => {
-                    let target_id = t.expect("Hand of Greed requires a target!");
-                    acts.push(Action::Damage(crate::action::DamageInfo {
-                        source: 0,
-                        target: target_id,
-                        base: dmg,
-                        output: dmg,
-                        damage_type: crate::action::DamageType::Normal,
-                        is_modified: false,
-                    }));
-                }
-                CardId::Magnetism => {
-                    // Power: At start of each turn, add a random colorless card to hand
-                    acts.push(Action::ApplyPower {
-                        source: 0,
-                        target: 0,
-                        power_id: PowerId::MagnetismPower,
-                        amount: 1,
-                    });
-                }
-                CardId::Mayhem => {
-                    // Power: At start of each turn, play the top card of draw pile
-                    acts.push(Action::ApplyPower {
-                        source: 0,
-                        target: 0,
-                        power_id: PowerId::MayhemPower,
-                        amount: 1,
-                    });
-                }
-                CardId::Panache => {
-                    // Power: Every 5th card played, deal magic (10/14) damage to ALL enemies
-                    // amount=5 (counter), extra_data=damage
-                    acts.push(Action::ApplyPower {
-                        source: 0,
-                        target: 0,
-                        power_id: PowerId::PanachePower,
-                        amount: 5,
-                    });
-                    // Store damage value in extra_data
-                    acts.push(Action::UpdatePowerExtraData {
-                        target: 0,
-                        power_id: PowerId::PanachePower,
-                        value: mag,
-                    });
-                }
-                CardId::SadisticNature => {
-                    // Power: When applying a debuff, deal magic (5/7) damage to that enemy
-                    acts.push(Action::ApplyPower {
-                        source: 0,
-                        target: 0,
-                        power_id: PowerId::SadisticPower,
-                        amount: mag,
-                    });
-                }
-                CardId::TheBomb => {
-                    // Power: At the end of 3 turns, deal magic (40/50) damage to ALL enemies
-                    // amount=3 (countdown), extra_data=damage
-                    acts.push(Action::ApplyPower {
-                        source: 0,
-                        target: 0,
-                        power_id: PowerId::TheBombPower,
-                        amount: 3,
-                    });
-                    acts.push(Action::UpdatePowerExtraData {
-                        target: 0,
-                        power_id: PowerId::TheBombPower,
-                        value: mag,
-                    });
-                }
-                CardId::MasterOfStrategy => {
-                    acts.push(Action::DrawCards(mag as u32));
-                }
-                CardId::Metamorphosis => {
-                    for _ in 0..mag {
-                        acts.push(Action::MakeRandomCardInHand {
-                            card_type: Some(CardType::Attack),
-                            cost_for_turn: Some(0),
-                        });
-                    }
-                }
-                CardId::SecretTechnique => {
-                    // Search draw pile for a Skill card and put it in hand
-                    let skills: Vec<_> = _state
-                        .draw_pile
-                        .iter()
-                        .filter(|c| get_card_definition(c.id).card_type == CardType::Skill)
-                        .map(|c| c.uuid)
-                        .collect();
-                    if skills.len() == 1 {
-                        acts.push(Action::MoveCard {
-                            card_uuid: skills[0],
-                            from: crate::state::PileType::Draw,
-                            to: crate::state::PileType::Hand,
-                        });
-                    } else if !skills.is_empty() {
-                        acts.push(Action::SuspendForGridSelect {
-                            source_pile: crate::state::PileType::Draw,
-                            min: 1,
-                            max: 1,
-                            can_cancel: false,
-                            filter: crate::state::GridSelectFilter::Skill,
-                            reason: crate::state::GridSelectReason::SkillFromDeckToHand,
-                        });
-                    }
-                }
-                CardId::SecretWeapon => {
-                    // Search draw pile for an Attack card and put it in hand
-                    let attacks: Vec<_> = _state
-                        .draw_pile
-                        .iter()
-                        .filter(|c| get_card_definition(c.id).card_type == CardType::Attack)
-                        .map(|c| c.uuid)
-                        .collect();
-                    if attacks.len() == 1 {
-                        acts.push(Action::MoveCard {
-                            card_uuid: attacks[0],
-                            from: crate::state::PileType::Draw,
-                            to: crate::state::PileType::Hand,
-                        });
-                    } else if !attacks.is_empty() {
-                        acts.push(Action::SuspendForGridSelect {
-                            source_pile: crate::state::PileType::Draw,
-                            min: 1,
-                            max: 1,
-                            can_cancel: false,
-                            filter: crate::state::GridSelectFilter::Attack,
-                            reason: crate::state::GridSelectReason::AttackFromDeckToHand,
-                        });
-                    }
-                }
-                CardId::ThinkingAhead => {
-                    acts.push(Action::DrawCards(2));
-                }
-                CardId::Transmutation => {
-                    acts.push(Action::MakeRandomColorlessCardInHand {
-                        rarity: CardRarity::Uncommon,
-                        cost_for_turn: Some(0),
-                    });
-                }
-                CardId::Violence => {
-                    for _ in 0..mag {
-                        acts.push(Action::DrawCards(1));
-                    }
-                }
-                _ => {}
-            }
-            acts.into_iter()
-                .map(|a| ActionInfo {
-                    action: a,
-                    insertion_mode: crate::action::AddTo::Bottom,
-                })
-                .collect()
-        }
+        | CardId::Violence
+        | CardId::JAX
+        | CardId::RitualDagger => colorless::play_colorless(_state, _card, t),
         // Unplayable stubs — curses, status, and special cards
         CardId::Wound
         | CardId::Burn
@@ -3177,11 +3250,11 @@ pub fn resolve_card_play(
         | CardId::Normality
         | CardId::Pain
         | CardId::Shame
-        | CardId::Writhe
-        | CardId::Apparition
-        | CardId::Madness
-        | CardId::RitualDagger
-        | CardId::JAX => smallvec::smallvec![], // Unplayable / Stub
+        | CardId::Writhe => smallvec::smallvec![], // Unplayable / Stub
+        CardId::Madness => smallvec::smallvec![ActionInfo {
+            action: Action::Madness,
+            insertion_mode: crate::runtime::action::AddTo::Bottom,
+        }],
     }
 }
 
@@ -3190,7 +3263,9 @@ pub fn resolve_card_play(
 pub fn evaluate_card(card: &mut CombatCard, state: &CombatState, target: Option<EntityId>) {
     let def = get_card_definition(card.id);
     let u = if card.upgrades > 0 { 1 } else { 0 };
-    let mut damage = (def.base_damage + u * def.upgrade_damage) as f32;
+    let mut damage = card
+        .base_damage_override
+        .unwrap_or(def.base_damage + u * def.upgrade_damage) as f32;
     let mut block = (def.base_block + u * def.upgrade_block) as f32;
 
     // 1. Card specific base overrides (Perfected Strike)
@@ -3198,22 +3273,22 @@ pub fn evaluate_card(card: &mut CombatCard, state: &CombatState, target: Option<
         let mut strike_count = 0;
         let is_strike = |id| get_card_definition(id).tags.contains(&CardTag::Strike);
 
-        for c in &state.hand {
+        for c in &state.zones.hand {
             if is_strike(c.id) && c.uuid != card.uuid {
                 strike_count += 1;
             }
         }
-        for c in &state.draw_pile {
+        for c in &state.zones.draw_pile {
             if is_strike(c.id) && c.uuid != card.uuid {
                 strike_count += 1;
             }
         }
-        for c in &state.discard_pile {
+        for c in &state.zones.discard_pile {
             if is_strike(c.id) && c.uuid != card.uuid {
                 strike_count += 1;
             }
         }
-        for c in &state.limbo {
+        for c in &state.zones.limbo {
             if is_strike(c.id) && c.uuid != card.uuid {
                 strike_count += 1;
             }
@@ -3227,18 +3302,28 @@ pub fn evaluate_card(card: &mut CombatCard, state: &CombatState, target: Option<
         damage += (card.base_magic_num_mut as f32) * (strike_count as f32);
     } else if card.id == CardId::BloodForBlood {
         // Dynamic Cost Reduction based on hits taken (unblocked or blocked depending on earlier engine implementation; Java increments when hp lost)
-        card.cost_modifier = -(state.counters.times_damaged_this_combat as i8);
+        card.cost_modifier = -(state.turn.counters.times_damaged_this_combat as i8);
     } else if card.id == CardId::BodySlam {
-        damage = state.player.block as f32;
-    } else if card.id == CardId::Rampage {
-        damage += card.misc_value as f32;
+        damage = state.entities.player.block as f32;
     } else if card.id == CardId::SearingBlow {
         let u = card.upgrades as f32;
         damage = 12.0 + u * (u + 7.0) / 2.0;
+    } else if card.id == CardId::RitualDagger {
+        damage = if card.misc_value > 0 {
+            card.misc_value as f32
+        } else {
+            def.base_damage as f32
+        };
     }
 
-    // 2. Player Powers
-    if let Some(powers) = state.power_db.get(&0) {
+    // 2. Relic atDamageModify hooks (Java: AbstractCard.applyPowers/calculateCardDamage)
+    // run before player power atDamageGive hooks. This ordering matters for cases like
+    // Strike Dummy under Weak: (base + 3) * 0.75, not base * 0.75 + 3.
+    damage =
+        crate::content::relics::hooks::modify_player_attack_damage_for_card(state, card, damage);
+
+    // 3. Player Powers
+    if let Some(powers) = crate::content::powers::store::powers_for(state, 0) {
         for power in powers {
             damage = crate::content::powers::resolve_power_on_calculate_damage_to_enemy(
                 power.power_type,
@@ -3257,21 +3342,21 @@ pub fn evaluate_card(card: &mut CombatCard, state: &CombatState, target: Option<
         }
     }
 
-    // 3. Stance
+    // 4. Stance
     if def.card_type == crate::content::cards::CardType::Attack {
-        match state.player.stance {
-            crate::combat::StanceId::Wrath => damage *= 2.0,
-            crate::combat::StanceId::Divinity => damage *= 3.0,
+        match state.entities.player.stance {
+            crate::runtime::combat::StanceId::Wrath => damage *= 2.0,
+            crate::runtime::combat::StanceId::Divinity => damage *= 3.0,
             _ => {}
         }
     }
-    // 4. Target Powers
+    // 5. Target Powers
     if def.is_multi_damage {
         card.multi_damage.clear();
-        for m in &state.monsters {
+        for m in &state.entities.monsters {
             let mut mdmg = damage;
             // Target specific powers (Vulnerable)
-            if let Some(target_powers) = state.power_db.get(&m.id) {
+            if let Some(target_powers) = crate::content::powers::store::powers_for(state, m.id) {
                 for power in target_powers {
                     mdmg = crate::content::powers::resolve_power_on_calculate_damage_from_player(
                         power.power_type,
@@ -3282,6 +3367,16 @@ pub fn evaluate_card(card: &mut CombatCard, state: &CombatState, target: Option<
                         power.amount,
                     );
                 }
+                let mut final_receive = mdmg.max(0.0).floor() as i32;
+                for power in target_powers {
+                    final_receive = crate::content::powers::resolve_power_at_damage_final_receive(
+                        power.power_type,
+                        final_receive,
+                        power.amount,
+                        crate::runtime::action::DamageType::Normal,
+                    );
+                }
+                mdmg = final_receive as f32;
             }
             if mdmg < 0.0 {
                 mdmg = 0.0;
@@ -3292,7 +3387,7 @@ pub fn evaluate_card(card: &mut CombatCard, state: &CombatState, target: Option<
             damage = *first as f32;
         }
     } else if let Some(target_id) = target {
-        if let Some(target_powers) = state.power_db.get(&target_id) {
+        if let Some(target_powers) = crate::content::powers::store::powers_for(state, target_id) {
             for power in target_powers {
                 damage = crate::content::powers::resolve_power_on_calculate_damage_from_player(
                     power.power_type,
@@ -3303,6 +3398,16 @@ pub fn evaluate_card(card: &mut CombatCard, state: &CombatState, target: Option<
                     power.amount,
                 );
             }
+            let mut final_receive = damage.max(0.0).floor() as i32;
+            for power in target_powers {
+                final_receive = crate::content::powers::resolve_power_at_damage_final_receive(
+                    power.power_type,
+                    final_receive,
+                    power.amount,
+                    crate::runtime::action::DamageType::Normal,
+                );
+            }
+            damage = final_receive as f32;
         }
     }
 
@@ -3318,11 +3423,61 @@ pub fn evaluate_card(card: &mut CombatCard, state: &CombatState, target: Option<
     card.base_magic_num_mut = def.base_magic + u * def.upgrade_magic;
 }
 
+/// Produces a freshly evaluated combat card for actual play execution.
+///
+/// This avoids relying on potentially stale cached mutation fields on the card
+/// object when generating execution-time actions.
+pub fn evaluate_card_for_play(
+    card: &CombatCard,
+    state: &CombatState,
+    target: Option<EntityId>,
+) -> CombatCard {
+    let mut evaluated = card.clone();
+    evaluate_card(&mut evaluated, state, target);
+    evaluated
+}
+
+/// Returns the card's intrinsic exhaust-on-play behavior after applying
+/// upgrade-sensitive card rules.
+pub fn exhausts_when_played(card: &CombatCard) -> bool {
+    match card.id {
+        CardId::LimitBreak => card.upgrades == 0,
+        CardId::Discovery => card.upgrades == 0,
+        CardId::SecretTechnique => card.upgrades == 0,
+        CardId::SecretWeapon => card.upgrades == 0,
+        CardId::ThinkingAhead => card.upgrades == 0,
+        _ => get_card_definition(card.id).exhaust,
+    }
+}
+
+/// Returns the card's effective ethereal status after upgrade-sensitive overrides.
+pub fn is_ethereal(card: &CombatCard) -> bool {
+    match card.id {
+        CardId::Apparition => card.upgrades == 0,
+        _ => get_card_definition(card.id).ethereal,
+    }
+}
+
+pub fn upgraded_base_cost_override(card: &CombatCard) -> Option<i8> {
+    match card.id {
+        CardId::Madness if card.upgrades > 0 => Some(0),
+        _ => None,
+    }
+}
+
+pub fn effective_target(card: &CombatCard) -> CardTarget {
+    match card.id {
+        CardId::Blind if card.upgrades > 0 => CardTarget::AllEnemy,
+        CardId::Trip if card.upgrades > 0 => CardTarget::AllEnemy,
+        _ => get_card_definition(card.id).target,
+    }
+}
+
 /// Validates whether a card can be played based on energy, status locks, and curses like Normality.
 pub fn can_play_card(card: &CombatCard, state: &CombatState) -> Result<(), &'static str> {
     // Curse: Normality Lock
-    if state.hand.iter().any(|c| c.id == CardId::Normality) {
-        if state.counters.cards_played_this_turn >= 3 {
+    if state.zones.hand.iter().any(|c| c.id == CardId::Normality) {
+        if state.turn.counters.cards_played_this_turn >= 3 {
             return Err("Normality: Cannot play more than 3 cards this turn.");
         }
     }
@@ -3334,12 +3489,14 @@ pub fn can_play_card(card: &CombatCard, state: &CombatState) -> Result<(), &'sta
     if cost < -1 {
         if def.card_type == crate::content::cards::CardType::Curse
             && state
+                .entities
                 .player
                 .has_relic(crate::content::relics::RelicId::BlueCandle)
         {
             // Blue Candle override
         } else if def.card_type == crate::content::cards::CardType::Status
             && state
+                .entities
                 .player
                 .has_relic(crate::content::relics::RelicId::MedicalKit)
         {
@@ -3351,7 +3508,7 @@ pub fn can_play_card(card: &CombatCard, state: &CombatState) -> Result<(), &'sta
 
     // Java: hasEnoughEnergy() — Power.canPlayCard() hook
     // Iterates all player powers; if any returns false, card cannot be played.
-    if let Some(player_powers) = state.power_db.get(&0) {
+    if let Some(player_powers) = crate::content::powers::store::powers_for(state, 0) {
         for ps in player_powers {
             if !crate::content::powers::resolve_power_can_play_card(ps.power_type, card) {
                 return Err("A power prevents playing this card.");
@@ -3361,7 +3518,7 @@ pub fn can_play_card(card: &CombatCard, state: &CombatState) -> Result<(), &'sta
 
     // Java: hasEnoughEnergy() — Entangled hardcode (L857-860)
     // This is separate from the canPlayCard hook; Java checks it explicitly.
-    if let Some(player_powers) = state.power_db.get(&0) {
+    if let Some(player_powers) = crate::content::powers::store::powers_for(state, 0) {
         if player_powers
             .iter()
             .any(|p| p.power_type == crate::content::powers::PowerId::Entangle)
@@ -3374,7 +3531,7 @@ pub fn can_play_card(card: &CombatCard, state: &CombatState) -> Result<(), &'sta
     // Card-specific overrides (Java: card.canUse overrides)
     match card.id {
         CardId::Clash => {
-            let has_non_attack = state.hand.iter().any(|c| {
+            let has_non_attack = state.zones.hand.iter().any(|c| {
                 let d = crate::content::cards::get_card_definition(c.id);
                 d.card_type != crate::content::cards::CardType::Attack
             });
@@ -3382,12 +3539,32 @@ pub fn can_play_card(card: &CombatCard, state: &CombatState) -> Result<(), &'sta
                 return Err("Can only play Clash if every card in your hand is an Attack.");
             }
         }
+        CardId::SecretTechnique => {
+            let has_skill = state
+                .zones
+                .draw_pile
+                .iter()
+                .any(|c| get_card_definition(c.id).card_type == CardType::Skill);
+            if !has_skill {
+                return Err("No Skill cards in draw pile.");
+            }
+        }
+        CardId::SecretWeapon => {
+            let has_attack = state
+                .zones
+                .draw_pile
+                .iter()
+                .any(|c| get_card_definition(c.id).card_type == CardType::Attack);
+            if !has_attack {
+                return Err("No Attack cards in draw pile.");
+            }
+        }
         // Future cards like Grand Finale (if draw pile not empty) go here
         _ => {}
     }
 
     // Default cost validation
-    if cost >= 0 && state.energy < (cost as u8) {
+    if cost >= 0 && state.turn.energy < (cost as u8) {
         return Err("Not enough energy.");
     }
 
@@ -3399,7 +3576,7 @@ pub fn on_play_card(played_card: &CombatCard, state: &CombatState) -> SmallVec<[
     let mut passive_actions = smallvec::SmallVec::new();
 
     // Curse: Pain (Lose 1 HP for every card played)
-    for card in &state.hand {
+    for card in &state.zones.hand {
         if card.id == CardId::Pain && card.uuid != played_card.uuid {
             passive_actions.push(crate::content::cards::curses::pain::on_other_card_played());
         }
@@ -3539,6 +3716,27 @@ pub const IRONCLAD_RARE_POOL: &[CardId] = &[
     CardId::Reaper,
 ];
 
+pub const SILENT_COMMON_POOL: &[CardId] = &[
+    CardId::Acrobatics,
+    CardId::Backflip,
+    CardId::BladeDance,
+    CardId::CloakAndDagger,
+    CardId::DeadlyPoison,
+    CardId::Prepared,
+    CardId::DaggerThrow,
+    CardId::PoisonedStab,
+    CardId::DaggerSpray,
+];
+
+pub const SILENT_UNCOMMON_POOL: &[CardId] = &[
+    CardId::BouncingFlask,
+    CardId::Catalyst,
+    CardId::Footwork,
+    CardId::NoxiousFumes,
+];
+
+pub const SILENT_RARE_POOL: &[CardId] = &[CardId::Adrenaline, CardId::AfterImage, CardId::Burst];
+
 /// Returns the pool for a given rarity (Ironclad).
 /// Returns the pool of randomly obtainable curse cards.
 /// Java: AbstractDungeon.returnRandomCurse() draws from this pool.
@@ -3585,9 +3783,25 @@ pub fn ironclad_pool_for_type(card_type: CardType) -> Vec<CardId> {
     result
 }
 
-/// Returns the pool for a given rarity (Silent). Stub until Silent cards are implemented.
-pub fn silent_pool_for_rarity(_rarity: CardRarity) -> &'static [CardId] {
-    &[]
+pub fn silent_pool_for_rarity(rarity: CardRarity) -> &'static [CardId] {
+    match rarity {
+        CardRarity::Common => SILENT_COMMON_POOL,
+        CardRarity::Uncommon => SILENT_UNCOMMON_POOL,
+        CardRarity::Rare => SILENT_RARE_POOL,
+        _ => SILENT_COMMON_POOL,
+    }
+}
+
+pub fn silent_pool_for_type(card_type: CardType) -> Vec<CardId> {
+    let mut result = Vec::new();
+    for &pool in &[SILENT_COMMON_POOL, SILENT_UNCOMMON_POOL, SILENT_RARE_POOL] {
+        for &id in pool {
+            if get_card_definition(id).card_type == card_type {
+                result.push(id);
+            }
+        }
+    }
+    result
 }
 
 /// Returns the pool for a given rarity (Defect). Stub until Defect cards are implemented.
@@ -3609,6 +3823,59 @@ pub fn colorless_pool_for_rarity(rarity: CardRarity) -> &'static [CardId] {
     }
 }
 
+pub fn is_eligible_random_colorless_in_combat(id: CardId) -> bool {
+    let def = get_card_definition(id);
+    !def.tags.contains(&CardTag::Healing)
+        && (COLORLESS_UNCOMMON_POOL.contains(&id) || COLORLESS_RARE_POOL.contains(&id))
+}
+
+pub fn random_colorless_in_combat_pool() -> Vec<CardId> {
+    // Java: AbstractDungeon.returnTrulyRandomColorlessCardInCombat() iterates
+    // srcColorlessCardPool.group, whose order comes from CardLibrary.addColorlessCards()
+    // and AbstractDungeon.addColorlessCards(). This is not grouped by rarity; preserve the
+    // original registration order so cardRandomRng picks line up with Java replay.
+    [
+        CardId::Apotheosis,
+        CardId::Blind,
+        CardId::Chrysalis,
+        CardId::DarkShackles,
+        CardId::DeepBreath,
+        CardId::Discovery,
+        CardId::DramaticEntrance,
+        CardId::Enlightenment,
+        CardId::Finesse,
+        CardId::FlashOfSteel,
+        CardId::Forethought,
+        CardId::GoodInstincts,
+        CardId::HandOfGreed,
+        CardId::Impatience,
+        CardId::JackOfAllTrades,
+        CardId::Madness,
+        CardId::Magnetism,
+        CardId::MasterOfStrategy,
+        CardId::Mayhem,
+        CardId::Metamorphosis,
+        CardId::MindBlast,
+        CardId::Panacea,
+        CardId::Panache,
+        CardId::PanicButton,
+        CardId::Purity,
+        CardId::SadisticNature,
+        CardId::SecretTechnique,
+        CardId::SecretWeapon,
+        CardId::SwiftStrike,
+        CardId::TheBomb,
+        CardId::ThinkingAhead,
+        CardId::Transmutation,
+        CardId::Trip,
+        CardId::Violence,
+    ]
+    .iter()
+    .copied()
+    .filter(|&id| is_eligible_random_colorless_in_combat(id))
+    .collect()
+}
+
 // ============================================================================
 // Java Card ID Mapping
 // ============================================================================
@@ -3623,6 +3890,10 @@ pub fn java_id(id: CardId) -> &'static str {
         CardId::Strike => "Strike_R",
         CardId::Defend => "Defend_R",
         CardId::Bash => "Bash",
+        CardId::StrikeG => "Strike_G",
+        CardId::DefendG => "Defend_G",
+        CardId::Neutralize => "Neutralize",
+        CardId::Survivor => "Survivor",
 
         // --- Ironclad Common ---
         CardId::Anger => "Anger",
@@ -3771,6 +4042,22 @@ pub fn java_id(id: CardId) -> &'static str {
         CardId::ThinkingAhead => "Thinking Ahead",
         CardId::Transmutation => "Transmutation",
         CardId::Violence => "Violence",
+        CardId::DeadlyPoison => "Deadly Poison",
+        CardId::BouncingFlask => "Bouncing Flask",
+        CardId::Catalyst => "Catalyst",
+        CardId::NoxiousFumes => "Noxious Fumes",
+        CardId::Footwork => "Footwork",
+        CardId::BladeDance => "Blade Dance",
+        CardId::CloakAndDagger => "Cloak And Dagger",
+        CardId::Backflip => "Backflip",
+        CardId::Acrobatics => "Acrobatics",
+        CardId::Prepared => "Prepared",
+        CardId::DaggerThrow => "Dagger Throw",
+        CardId::PoisonedStab => "Poisoned Stab",
+        CardId::DaggerSpray => "Dagger Spray",
+        CardId::Adrenaline => "Adrenaline",
+        CardId::AfterImage => "After Image",
+        CardId::Burst => "Burst",
     }
 }
 
@@ -3782,6 +4069,10 @@ pub fn build_java_id_map() -> std::collections::HashMap<&'static str, CardId> {
         Strike,
         Defend,
         Bash,
+        StrikeG,
+        DefendG,
+        Neutralize,
+        Survivor,
         Anger,
         Armaments,
         BodySlam,
@@ -3914,6 +4205,22 @@ pub fn build_java_id_map() -> std::collections::HashMap<&'static str, CardId> {
         ThinkingAhead,
         Transmutation,
         Violence,
+        DeadlyPoison,
+        BouncingFlask,
+        Catalyst,
+        NoxiousFumes,
+        Footwork,
+        BladeDance,
+        CloakAndDagger,
+        Backflip,
+        Acrobatics,
+        Prepared,
+        DaggerThrow,
+        PoisonedStab,
+        DaggerSpray,
+        Adrenaline,
+        AfterImage,
+        Burst,
     ];
     let mut map = std::collections::HashMap::with_capacity(all_ids.len());
     for id in all_ids {

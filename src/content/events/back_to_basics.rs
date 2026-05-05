@@ -48,7 +48,7 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
                 1 => {
                     // Upgrade all Strikes and Defends
                     for card in run_state.master_deck.iter_mut() {
-                        if card.id == CardId::Strike || card.id == CardId::Defend {
+                        if crate::content::cards::is_starter_basic(card.id) {
                             card.upgrades += 1;
                         }
                     }

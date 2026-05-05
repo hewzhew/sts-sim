@@ -1,192 +1,152 @@
 # sts_simulator
 
-A work-in-progress Slay the Spire engine reimplementation in Rust.
+Rust Slay the Spire simulator focused on three things:
 
-The goal is to build a headless, deterministic simulation core that can eventually
-serve as a fast-forward environment for search-based AI (MCTS, RL). "Eventually"
-is doing heavy lifting here — the project is nowhere near complete, and help is needed.
+- deterministic engine/runtime truth
+- Rust versus Java parity through `live_comm`
+- offline AI experiments on top of explicit contracts instead of guessed state
 
-> **⚠️ This is an early-stage project. Lots of game mechanics are missing, incomplete,
-> or subtly wrong. There is no interactive interface. Contributions are very welcome —
-> see below for how you can help.**
+This is not a polished game client. It is a headless simulator and tooling repo.
 
-## Why this exists (and how it differs from alternatives)
+## Current shape
 
-Projects like [slay-the-model](https://github.com/wkzMagician/slay-the-model) offer
-a clean Python framework with TUI, localization, LLM integration, and human-friendly
-design. This project aims at something different:
+The repo now has four active workstreams:
 
-| | slay-the-model (Python) | this project (Rust) |
-|---|---|---|
-| Design goal | Clean architecture, LLM/human-friendly | Raw simulation speed for search-based AI |
-| Verification | Manual / ad-hoc | Differential testing against real Java traces |
-| RNG | Independent impl | Java-compatible `SplittableRandom` (same seed → same outcome) |
-| UI | ✅ TUI + i18n | ❌ None (headless only) |
-| LLM support | ✅ Built-in | ❌ Not yet |
-| Maturity | More complete | Very incomplete |
+1. core engine work
+   - `runtime`, `engine`, `content`, `state`, `map`
+2. parity and protocol work
+   - `live_comm`, replay, strict importer, Java protocol migration
+3. bot and debug workbenches
+   - search, noncombat policy, audit tools, scenario harnesses
+4. offline learning sidecars
+   - `CombatEnv`, `combat_env_driver`, structured combat PPO, local oracle and macro counterfactual experiments
 
-**If you want something usable today**, use slay-the-model. This project's bet is that
-a Rust simulation core with verified RNG parity and differential testing will matter
-for serious AI research — but we're not there yet.
+The project is still incomplete. The important distinction is that it is no longer
+"just a Rust port." The primary acceptance loop is the Java-connected `live_comm`
+workflow, and the current learning work is real but still deliberately offline and
+experimental.
 
-## Honest status
+## What is authoritative
 
-The biggest problem is **not knowing what we don't know**. Files exist for many
-entities, but "file exists" ≠ "correct implementation":
+- Java source in `../cardcrawl/`
+  - actual game lifecycle and hidden runtime behavior
+- this repo's `CommunicationMod` fork in `../CommunicationMod/`
+  - protocol exporter used by `live_comm`
+- Rust importer and parity tooling
+  - must consume exported truth directly instead of reconstructing hidden state by guesswork
 
-### What has been tested against real game traces
+The current combat protocol is split:
 
-The **differential test driver** (`diff_driver.rs`) replays `.jsonl` state traces
-captured from the real Java game and compares every field (HP, block, buffs, card
-positions, RNG seeds) after each player action. This is the only source of truth.
+- `game_state.combat_truth`
+- `game_state.combat_observation`
+- `protocol_meta.combat_action_space`
+- session/runtime metadata such as `reward_session` and `combat_session`
 
-- **A few Ironclad-only full runs** have achieved 100% combat parity — meaning every
-  player action in those runs produces identical output in Rust vs Java
-- **Map generation** is seed-accurate, verified against
-  [sts_map_oracle](https://github.com/Ru5ty0ne/sts_map_oracle)
-- **RNG** (SplittableRandom, Xoshiro256**) is verified at the seed level
+The old merged `combat_state` model is historical. Do not treat it as the live contract.
 
-### What exists but is not trustworthy
+## Current status
 
-- **Powers**: Files exist for many powers, but hook dispatch may be incomplete or
-  fire in the wrong order. Some hooks are missing entirely. Hard to quantify because
-  powers interact with actions in complex ways
-- **Relics**: Similar story — files exist, but counter logic (reset-on-combat-start,
-  increment-on-X) is likely wrong in many cases. Scattered engine checks
-  (`hasRelic("Ginger")` buried in action code) are particularly easy to miss
-- **Actions**: ~120 action variants are defined, but the Rust fields don't always
-  mirror Java's fields (Rust uses enum dispatch where Java uses inheritance), so
-  subtle behavior differences are expected
-- **Monsters**: Exordium and City AI is implemented and partially tested; Beyond is
-  incomplete
-- **Events, Potions, Orbs, Stances**: Files exist, partially functional, not verified
+What is working well enough to matter:
 
-### What is known missing
+- deterministic Rust runtime and replay surfaces
+- run-profile based `live_comm` workflow
+- strict protocol/importer rules for migrated `runtime_state` slices
+- combat-focused offline environment and bridge:
+  - `sts_simulator::bot::harness::combat_env::CombatEnv`
+  - `combat_env_driver`
+  - `tools/learning/structured_combat_env.py`
 
-- **Silent / Defect / Watcher cards**: Barely started
-- **Non-combat game flow**: The run loop has framework for map → combat → reward →
-  shop → campfire → event, but the differential driver only tests combat. Whether a
-  full run can complete end-to-end without crashing is unclear
-- **Interactive interface**: No TUI, no text output. You literally cannot "play" the
-  game — it's a pure state machine with no human-facing output
-- **Engine completeness**: The core loop mirrors Java's `GameActionManager`, but we
-  don't have a systematic way to know which action handlers are incomplete or which
-  hook call sites are missing. This is the hardest problem and the main reason
-  contributors would be valuable
+What is still weak:
 
-## Architecture
+- full engine parity is still incomplete
+- noncombat protocol and handoff flow are still moving
+- the bot is useful as a consumer and stress test, not as a trusted teacher
+- learning experiments are reference probes, not production policy
 
-The Rust codebase uses **enum dispatch** (flat enums + match arms) where Java uses
-inheritance hierarchies. A Java `AbstractPower` subclass becomes a `PowerId` enum
-variant, with hook behavior dispatched via `match` in centralized handler functions.
+## Read First
 
-```
+- [docs/README.md](docs/README.md)
+  - active doc index and what is canonical versus historical
+- [docs/REPOSITORY_MAP.md](docs/REPOSITORY_MAP.md)
+  - ownership map and active repo surfaces
+- [docs/LAYER_BOUNDARIES.md](docs/LAYER_BOUNDARIES.md)
+  - hard dependency rules
+- [docs/live_comm/README.md](docs/live_comm/README.md)
+  - current parity/debugging workflow
+- [docs/protocol/README.md](docs/protocol/README.md)
+  - protocol truth and importer contract
+- [tools/learning/README.md](tools/learning/README.md)
+  - current offline learning sidecar path
+- [../CommunicationMod/README.md](../CommunicationMod/README.md)
+  - Java-side protocol fork used by this repo
+
+## High-level layout
+
+```text
 src/
-├── engine/                # Core game loop, action dispatch, turn management
-│   ├── core.rs            # Action queue tick loop (mirrors Java GameActionManager)
-│   ├── action_handlers.rs # ~120 Action::* variant handlers (the biggest file)
-│   ├── run_loop.rs        # Full run state machine
-│   └── ...                # campfire, shop, event, reward handlers
-├── state/                 # Pure data, no logic
-│   ├── run.rs             # RunState: HP, gold, deck, relics, map position
-│   └── core.rs            # CombatState: hand, piles, monsters, orbs
-├── content/               # Game content (per-entity logic)
-│   ├── cards/             # Card use() implementations
-│   ├── powers/            # Power hook dispatch functions
-│   ├── relics/            # Relic hook dispatch functions
-│   ├── monsters/          # Monster AI (intent selection, takeTurn)
-│   └── ...                # potions, events, orbs, stances
-├── map/                   # Procedural map generation (seed-deterministic)
-├── rng.rs                 # Java-compatible RNG
-├── action.rs              # Action enum definition
-└── verification.rs        # State comparison utilities
+  runtime/ engine/ content/ state/ map/
+    core simulator truth
+  semantics/ projection/
+    explicit truth-side semantic and preview layers
+  diff/ protocol/ testing/ verification/
+    importer, replay, fixtures, parity, and validation
+  bot/ cli/ bin/
+    consumers, workbenches, live_comm runtime, and tooling
+
+tools/
+  live_comm/
+    launcher, run profiles, manual bridge helpers
+  learning/
+    offline dataset builders, env bridges, PPO/baseline experiments
+  sts_tool/ source_extractor/
+    Java source tracing and porting support
 ```
 
-## Verification methodology
+For the current ownership tags and boundaries, trust the docs above over older design notes.
 
-The differential test driver works as follows:
+## Common commands
 
-1. **Capture**: Run the real Java game with a
-   [modified CommunicationMod](https://github.com/ForgottenArbiter/CommunicationMod)
-   that exports full game state snapshots (every entity's HP, buffs, cards, RNG state)
-   as `.jsonl` after each player action
-2. **Replay**: `diff_driver.rs` loads these traces. For each action, it syncs Rust
-   state from the Java snapshot, executes the same player decision in the Rust engine,
-   then compares the resulting state field by field
-3. **Assert**: Any mismatch → failing test, early stop, detailed divergence report
-
-**Important limitation**: The driver currently only tests combat sequences. Non-combat
-flow (rewards, map, shop, events) is not covered by differential testing. This means
-bugs in those systems can go unnoticed.
-
-```bash
-# Requires .jsonl trace files in tools/replays/ (not distributed — contains game data)
-cargo test test_diff_rng_replay -- --nocapture
-```
-
-## Building
-
-```bash
+```powershell
 cargo build --release
 cargo test
+powershell -ExecutionPolicy Bypass -File .\tools\run_high_value_tests.ps1
+cargo run --bin sts_dev_tool -- logs status
 ```
 
-## Porting tools
+For Java-connected runs, prefer checked-in live profiles instead of hand-typed flags:
 
-The `tools/` directory contains Python utilities for analyzing Java source code,
-used when porting new entities to Rust. They require a local copy of the decompiled
-Java source (not distributed).
-
-| Tool | Purpose |
-|------|---------|
-| `sts_tool/` | Tree-sitter based: structured AST extraction + cross-file call chain + Rust parity check |
-| `hook_query.py` | Hook override finder with liveness detection |
-| `coverage/` | HTML dashboard showing which hooks are implemented |
-
-```bash
-# Requires: pip install tree-sitter tree-sitter-java
-# Requires: decompiled Java source
-cd tools && python -m sts_tool query ApplyPower
+```powershell
+powershell -ExecutionPolicy Bypass -File .\tools\live_comm\use_profile.ps1 Ironclad_Engine_Strict
 ```
 
-## How you can help
+## Learning status
 
-### If you know StS mechanics
-- **Audit an action handler**: Pick an `Action::*` variant in `action_handlers.rs`,
-  use `python -m sts_tool query <ActionName>` to see the Java logic, and check if
-  the Rust implementation matches
-- **Port a missing card/power/relic**: Same workflow — tool gives you the structured
-  Java logic and cross-file dependencies
-- **Identify scattered logic**: The Java engine buries `hasRelic("X")` and
-  `hasPower("Y")` checks in unexpected places. Finding and porting these is tedious
-  but critical
+There is active learning work in the repo again, but its scope is narrow:
 
-### If you know Rust
-- **Add a simple TUI or text dump**: Even printing "Turn 3: Player plays Strike
-  on Jaw Worm" would make debugging dramatically easier
-- **Run loop testing**: Try running a full simulated run (map → combat → reward → ...)
-  and see where it crashes or produces nonsensical state. File issues.
-- **Improve the differential driver**: Extending it to cover non-combat flow
-  (rewards, events, map transitions) would catch bugs that currently go undetected
+- combat-only first
+- offline-first
+- contract-driven
+- used for baselines, probes, and reference experiments
 
-### If you know about AI/RL
-- **Design an interface**: What observation/action format would make this useful as
-  a gym-like environment? How should the state be exposed?
-- **Integration with existing frameworks**: Similar to how
-  [bottled_ai](https://github.com/xaved88/bottled_ai) interfaces with the real game,
-  design how an AI would interact with this simulation
+What exists today:
 
-## Related Projects
+- structured combat observation/action contract
+- Rust `combat_env_driver` bridge
+- `Gymnasium` / PPO experiments
+- local oracle and `Q_local` experiments
+- macro counterfactual datasets for reward/shop/event analysis
 
-- [Slay the Spire](https://www.megacrit.com/) — The original game by MegaCrit
-- [CommunicationMod](https://github.com/ForgottenArbiter/CommunicationMod) — Java mod
-  for exporting game state traces
-- [bottled_ai](https://github.com/xaved88/bottled_ai) — Automated StS play via
-  CommunicationMod
-- [sts_map_oracle](https://github.com/Ru5ty0ne/sts_map_oracle) — Pitch-perfect map
-  generation; used to verify our map generator
-- [slay-the-model](https://github.com/wkzMagician/slay-the-model) — Python StS
-  framework with TUI, localization, and LLM support
+What does not exist today:
+
+- trusted runtime inference in the live bot
+- full-run RL environment stability
+- a claim that current learning artifacts are strong enough to guide engine truth
+
+## Non-goals
+
+- not a polished terminal game
+- not a stable third-party protocol for general consumers
+- not yet a trustworthy full-run training environment
 
 ## License
 

@@ -2,6 +2,7 @@ pub mod brutality;
 pub mod combust;
 pub mod corruption;
 pub mod dark_embrace;
+pub mod demon_form;
 pub mod double_tap;
 pub mod evolve;
 pub mod feel_no_pain;

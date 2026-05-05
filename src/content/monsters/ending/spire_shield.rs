@@ -1,186 +1,241 @@
-use crate::action::{Action, DamageInfo, DamageType};
-use crate::combat::{Intent, MonsterEntity};
+use crate::content::monsters::exordium::{attack_actions, gain_block_action, PLAYER};
 use crate::content::monsters::MonsterBehavior;
+use crate::content::powers::PowerId;
+use crate::runtime::action::Action;
+use crate::runtime::combat::{CombatState, MonsterEntity};
+use crate::semantics::combat::{
+    ApplyPowerStep, AttackSpec, AttackStep, BlockStep, DamageKind, DebuffSpec, DefendSpec,
+    EffectStrength, MonsterMoveSpec, MonsterTurnPlan, MoveStep, MoveTarget, PowerEffectKind,
+};
+use smallvec::smallvec;
 
 pub struct SpireShield;
 
+const BASH: u8 = 1;
+const FORTIFY: u8 = 2;
+const SMASH: u8 = 3;
+
+fn bash_damage(ascension_level: u8) -> i32 {
+    if ascension_level >= 3 {
+        14
+    } else {
+        12
+    }
+}
+
+fn smash_damage(ascension_level: u8) -> i32 {
+    if ascension_level >= 3 {
+        38
+    } else {
+        34
+    }
+}
+
+fn smash_block(ascension_level: u8) -> i32 {
+    if ascension_level >= 18 {
+        99
+    } else {
+        smash_damage(ascension_level)
+    }
+}
+
+fn bash_plan(ascension_level: u8) -> MonsterTurnPlan {
+    MonsterTurnPlan::with_visible_spec(
+        BASH,
+        smallvec![
+            MoveStep::Attack(AttackStep {
+                target: MoveTarget::Player,
+                attack: AttackSpec {
+                    base_damage: bash_damage(ascension_level),
+                    hits: 1,
+                    damage_kind: DamageKind::Normal,
+                },
+            }),
+            MoveStep::ApplyPower(ApplyPowerStep {
+                target: MoveTarget::Player,
+                power_id: PowerId::Strength,
+                amount: -1,
+                effect: PowerEffectKind::Debuff,
+                visible_strength: EffectStrength::Normal,
+            }),
+        ],
+        MonsterMoveSpec::AttackDebuff(
+            AttackSpec {
+                base_damage: bash_damage(ascension_level),
+                hits: 1,
+                damage_kind: DamageKind::Normal,
+            },
+            DebuffSpec {
+                power_id: PowerId::Strength,
+                amount: -1,
+                strength: EffectStrength::Normal,
+            },
+        ),
+    )
+}
+
+fn fortify_plan() -> MonsterTurnPlan {
+    MonsterTurnPlan::with_visible_spec(
+        FORTIFY,
+        smallvec![MoveStep::GainBlock(BlockStep {
+            target: MoveTarget::AllMonsters,
+            amount: 30,
+        })],
+        MonsterMoveSpec::Defend(DefendSpec { block: 30 }),
+    )
+}
+
+fn smash_plan(ascension_level: u8) -> MonsterTurnPlan {
+    MonsterTurnPlan::from_spec(
+        SMASH,
+        MonsterMoveSpec::AttackDefend(
+            AttackSpec {
+                base_damage: smash_damage(ascension_level),
+                hits: 1,
+                damage_kind: DamageKind::Normal,
+            },
+            DefendSpec {
+                block: smash_block(ascension_level),
+            },
+        ),
+    )
+}
+
+fn plan_for(move_id: u8, ascension_level: u8) -> MonsterTurnPlan {
+    match move_id {
+        BASH => bash_plan(ascension_level),
+        FORTIFY => fortify_plan(),
+        SMASH => smash_plan(ascension_level),
+        _ => MonsterTurnPlan::unknown(move_id),
+    }
+}
+
 impl MonsterBehavior for SpireShield {
-    fn roll_move(
-        _rng: &mut crate::rng::StsRng,
+    fn use_pre_battle_actions(
+        state: &mut CombatState,
+        entity: &MonsterEntity,
+        legacy_rng: crate::content::monsters::PreBattleLegacyRng,
+    ) -> Vec<Action> {
+        let (_rng, ascension_level) =
+            crate::content::monsters::legacy_pre_battle_rng(state, legacy_rng);
+        vec![
+            Action::ApplyPower {
+                source: entity.id,
+                target: PLAYER,
+                power_id: PowerId::Surrounded,
+                amount: 1,
+            },
+            Action::ApplyPower {
+                source: entity.id,
+                target: entity.id,
+                power_id: PowerId::Artifact,
+                amount: if ascension_level >= 18 { 2 } else { 1 },
+            },
+        ]
+    }
+
+    fn roll_move_plan(
+        rng: &mut crate::runtime::rng::StsRng,
         entity: &MonsterEntity,
         ascension_level: u8,
         _num: i32,
-    ) -> (u8, Intent) {
-        // Java: SpireShield.getMove uses moveCount % 3 deterministic cycle.
-        // moveCount increments AFTER each selection (post-increment).
-        // Since roll_move is called once per turn, moveCount == move_history.len()
-        let move_count = entity.move_history.len();
-
-        let bash_dmg = if ascension_level >= 3 { 14 } else { 12 };
-        let smash_dmg = if ascension_level >= 3 { 38 } else { 34 };
-
-        let last_move = entity.move_history.back().copied().unwrap_or(0);
-
-        match move_count % 3 {
+    ) -> MonsterTurnPlan {
+        match entity.move_history().len() % 3 {
             0 => {
-                // Java: aiRng.randomBoolean() → 50% Fortify, 50% Bash
-                if _rng.random_boolean() {
-                    (2, Intent::Defend) // FORTIFY
+                if rng.random_boolean() {
+                    fortify_plan()
                 } else {
-                    (
-                        1,
-                        Intent::AttackDebuff {
-                            damage: bash_dmg,
-                            hits: 1,
-                        },
-                    ) // BASH
+                    bash_plan(ascension_level)
                 }
             }
             1 => {
-                // Java: if (!lastMove(BASH)) → Bash; else → Fortify
-                if last_move != 1 {
-                    (
-                        1,
-                        Intent::AttackDebuff {
-                            damage: bash_dmg,
-                            hits: 1,
-                        },
-                    ) // BASH
+                if entity.move_history().back().copied() == Some(BASH) {
+                    fortify_plan()
                 } else {
-                    (2, Intent::Defend) // FORTIFY
+                    bash_plan(ascension_level)
                 }
             }
-            _ => {
-                // Java: always SMASH (byte 3) with ATTACK_DEFEND intent
-                (
-                    3,
-                    Intent::AttackDefend {
-                        damage: smash_dmg,
-                        hits: 1,
-                    },
-                ) // SMASH
-            }
+            _ => smash_plan(ascension_level),
         }
     }
 
-    fn use_pre_battle_action(
-        _entity: &MonsterEntity,
-        _hp_rng: &mut crate::rng::StsRng,
-        ascension_level: u8,
+    fn turn_plan(state: &CombatState, entity: &MonsterEntity) -> MonsterTurnPlan {
+        plan_for(entity.planned_move_id(), state.meta.ascension_level)
+    }
+
+    fn take_turn_plan(
+        state: &mut CombatState,
+        entity: &MonsterEntity,
+        plan: &MonsterTurnPlan,
     ) -> Vec<Action> {
-        // Java: Apply Surrounded to player (positional, not modeled) + Artifact to self
-        let artifact_amt = if ascension_level >= 18 { 2 } else { 1 };
-        vec![Action::ApplyPower {
-            source: _entity.id,
-            target: _entity.id,
-            power_id: crate::content::powers::PowerId::Artifact,
-            amount: artifact_amt,
-        }]
-    }
-
-    fn take_turn(state: &mut crate::combat::CombatState, entity: &MonsterEntity) -> Vec<Action> {
-        let mut actions = Vec::new();
-        let asc = state.ascension_level;
-
-        let bash_dmg = if asc >= 3 { 14 } else { 12 };
-        let smash_dmg = if asc >= 3 { 38 } else { 34 };
-
-        match entity.next_move_byte {
-            1 => {
-                // BASH — attack + debuff (-1 Str or -1 Focus)
-                actions.push(Action::Damage(DamageInfo {
+        let mut actions = match (plan.move_id, plan.steps.as_slice()) {
+            (
+                BASH,
+                [MoveStep::Attack(AttackStep {
+                    target: MoveTarget::Player,
+                    attack,
+                }), MoveStep::ApplyPower(ApplyPowerStep {
+                    target: MoveTarget::Player,
+                    effect: PowerEffectKind::Debuff,
+                    ..
+                })],
+            ) => {
+                let mut actions = attack_actions(entity.id, PLAYER, attack);
+                let focus_roll =
+                    !state.entities.player.orbs.is_empty() && state.rng.ai_rng.random_boolean();
+                actions.push(Action::ApplyPower {
                     source: entity.id,
-                    target: 0,
-                    base: bash_dmg,
-                    output: bash_dmg,
-                    damage_type: DamageType::Normal,
-                    is_modified: false,
-                }));
-                // Java: if player has orbs && aiRng.randomBoolean() → -1 Focus
-                // else → -1 Str.
-                if state.player.max_orbs > 0 && state.rng.ai_rng.random_boolean() {
-                    actions.push(Action::ApplyPower {
-                        source: entity.id,
-                        target: 0,
-                        power_id: crate::content::powers::PowerId::Focus,
-                        amount: -1,
-                    });
-                } else {
-                    actions.push(Action::ApplyPower {
-                        source: entity.id,
-                        target: 0,
-                        power_id: crate::content::powers::PowerId::Strength,
-                        amount: -1,
-                    });
-                }
-            }
-            2 => {
-                // FORTIFY — block all monsters (Java uses flat 30, not Asc-scaled)
-                for m in &state.monsters {
-                    if !m.is_dying {
-                        actions.push(Action::GainBlock {
-                            target: m.id,
-                            amount: 30,
-                        });
-                    }
-                }
-            }
-            3 => {
-                // SMASH — attack + gain block
-                actions.push(Action::Damage(DamageInfo {
-                    source: entity.id,
-                    target: 0,
-                    base: smash_dmg,
-                    output: smash_dmg,
-                    damage_type: DamageType::Normal,
-                    is_modified: false,
-                }));
-                // Java: Asc 18 → 99 block, else → damage output as block
-                let block = if asc >= 18 { 99 } else { smash_dmg };
-                actions.push(Action::GainBlock {
-                    target: entity.id,
-                    amount: block,
+                    target: PLAYER,
+                    power_id: if focus_roll {
+                        PowerId::Focus
+                    } else {
+                        PowerId::Strength
+                    },
+                    amount: -1,
                 });
+                actions
             }
-            _ => {}
-        }
-
+            (
+                FORTIFY,
+                [MoveStep::GainBlock(BlockStep {
+                    target: MoveTarget::AllMonsters,
+                    amount,
+                })],
+            ) => state
+                .entities
+                .monsters
+                .iter()
+                .map(|monster| Action::GainBlock {
+                    target: monster.id,
+                    amount: *amount,
+                })
+                .collect(),
+            (
+                SMASH,
+                [MoveStep::Attack(AttackStep {
+                    target: MoveTarget::Player,
+                    attack,
+                }), MoveStep::GainBlock(
+                    block @ BlockStep {
+                        target: MoveTarget::SelfTarget,
+                        ..
+                    },
+                )],
+            ) => {
+                let mut actions = attack_actions(entity.id, PLAYER, attack);
+                actions.push(gain_block_action(entity, block));
+                actions
+            }
+            (_, []) => panic!("spire shield plan missing locked truth"),
+            (move_id, steps) => panic!("spire shield plan/steps mismatch: {} {:?}", move_id, steps),
+        };
         actions.push(Action::RollMonsterMove {
             monster_id: entity.id,
         });
-
         actions
     }
 
-    fn on_death(state: &mut crate::combat::CombatState, _entity: &MonsterEntity) -> Vec<Action> {
-        let mut actions = Vec::new();
-        // Java: if player has "Surrounded" power, remove it and adjust player facing
-        if state.power_db.get(&0).map_or(false, |powers| {
-            powers
-                .iter()
-                .any(|p| p.power_type == crate::content::powers::PowerId::Surrounded)
-        }) {
-            actions.push(Action::RemovePower {
-                target: 0,
-                power_id: crate::content::powers::PowerId::Surrounded,
-            });
-        }
-
-        // Java: Remove "BackAttack" power from surviving monsters
-        for m in &state.monsters {
-            if m.current_hp > 0 && !m.is_dying {
-                if state.power_db.get(&m.id).map_or(false, |powers| {
-                    powers
-                        .iter()
-                        .any(|p| p.power_type == crate::content::powers::PowerId::BackAttack)
-                }) {
-                    actions.push(Action::RemovePower {
-                        target: m.id,
-                        power_id: crate::content::powers::PowerId::BackAttack,
-                    });
-                }
-            }
-        }
-        actions
+    fn on_death(state: &mut CombatState, _entity: &MonsterEntity) -> Vec<Action> {
+        super::surrounded_cleanup_actions(state)
     }
 }

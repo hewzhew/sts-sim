@@ -1,5 +1,5 @@
-use crate::action::{Action, ActionInfo, AddTo, DamageInfo, DamageType};
-use crate::combat::{CombatCard, CombatState};
+use crate::runtime::action::{Action, ActionInfo, AddTo, DamageInfo, DamageType};
+use crate::runtime::combat::{CombatCard, CombatState};
 use smallvec::SmallVec;
 
 pub fn clash_play(
@@ -11,7 +11,7 @@ pub fn clash_play(
     let mut actions = smallvec::SmallVec::new();
 
     // Unplayable if there are non-attacks in hand
-    let has_non_attacks = state.hand.iter().any(|c| {
+    let has_non_attacks = state.zones.hand.iter().any(|c| {
         crate::content::cards::get_card_definition(c.id).card_type
             != crate::content::cards::CardType::Attack
     });

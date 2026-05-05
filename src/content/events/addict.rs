@@ -1,7 +1,8 @@
 use crate::content::cards::CardId;
 use crate::state::core::EngineState;
-use crate::state::events::{EventChoiceMeta, EventState};
+use crate::state::events::{EventChoiceMeta, EventId, EventState};
 use crate::state::run::RunState;
+use crate::state::selection::DomainEventSource;
 
 const GOLD_COST: i32 = 85;
 
@@ -39,20 +40,31 @@ pub fn handle_choice(_engine_state: &mut EngineState, run_state: &mut RunState, 
                 0 => {
                     // Pay gold for relic
                     if run_state.gold >= GOLD_COST {
-                        run_state.gold -= GOLD_COST;
+                        run_state.change_gold_with_source(
+                            -GOLD_COST,
+                            DomainEventSource::Event(EventId::Addict),
+                        );
                         let relic_id = run_state.random_relic();
-                        run_state
-                            .relics
-                            .push(crate::content::relics::RelicState::new(relic_id));
+                        if let Some(next_state) = run_state.obtain_relic_with_source(
+                            relic_id,
+                            EngineState::EventRoom,
+                            DomainEventSource::Event(EventId::Addict),
+                        ) {
+                            *_engine_state = next_state;
+                        }
                     }
                     event_state.current_screen = 1;
                 }
                 1 => {
                     // Rob: relic + Shame curse
                     let relic_id = run_state.random_relic();
-                    run_state
-                        .relics
-                        .push(crate::content::relics::RelicState::new(relic_id));
+                    if let Some(next_state) = run_state.obtain_relic_with_source(
+                        relic_id,
+                        EngineState::EventRoom,
+                        DomainEventSource::Event(EventId::Addict),
+                    ) {
+                        *_engine_state = next_state;
+                    }
                     run_state.add_card_to_deck(CardId::Shame);
                     event_state.current_screen = 1;
                 }

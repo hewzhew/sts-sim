@@ -1,9 +1,77 @@
 use serde_json::Value;
+use std::collections::BTreeSet;
 use std::env;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::process::Command;
+use std::time::{SystemTime, UNIX_EPOCH};
+
+fn git_short_sha() -> String {
+    Command::new("git")
+        .args(["rev-parse", "--short", "HEAD"])
+        .output()
+        .ok()
+        .filter(|output| output.status.success())
+        .and_then(|output| String::from_utf8(output.stdout).ok())
+        .map(|stdout| stdout.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| "nogit".to_string())
+}
+
+fn build_unix_secs() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_secs())
+        .unwrap_or(0)
+}
+
+fn build_live_comm_tag(version: &str, git_short: &str, build_unix: u64) -> String {
+    format!("rust-live-comm-v{}-{}-{}", version, git_short, build_unix)
+}
+
+fn emit_git_rerun_watchers() {
+    let git_dir = Command::new("git")
+        .args(["rev-parse", "--git-dir"])
+        .output()
+        .ok()
+        .filter(|output| output.status.success())
+        .and_then(|output| String::from_utf8(output.stdout).ok())
+        .map(|stdout| stdout.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| ".git".to_string());
+
+    let git_dir_path = PathBuf::from(&git_dir);
+    let head_path = git_dir_path.join("HEAD");
+    println!("cargo:rerun-if-changed={}", head_path.display());
+
+    if let Ok(head_text) = fs::read_to_string(&head_path) {
+        if let Some(ref_path) = head_text.strip_prefix("ref: ").map(str::trim) {
+            println!(
+                "cargo:rerun-if-changed={}",
+                git_dir_path.join(ref_path).display()
+            );
+        }
+    }
+
+    let packed_refs_path = git_dir_path.join("packed-refs");
+    if packed_refs_path.exists() {
+        println!("cargo:rerun-if-changed={}", packed_refs_path.display());
+    }
+}
 
 fn main() {
+    let version = env::var("CARGO_PKG_VERSION").unwrap_or_else(|_| "0.0.0".to_string());
+    let git_short = git_short_sha();
+    let build_unix = build_unix_secs();
+    println!(
+        "cargo:rustc-env=LIVE_COMM_BUILD_TAG={}",
+        build_live_comm_tag(&version, &git_short, build_unix)
+    );
+    println!("cargo:rustc-env=LIVE_COMM_GIT_SHORT={git_short}");
+    println!("cargo:rustc-env=LIVE_COMM_BUILD_UNIX={build_unix}");
+    println!("cargo:rerun-if-changed=build.rs");
+    emit_git_rerun_watchers();
+
     let out_dir = env::var_os("OUT_DIR").unwrap();
     let dest_path = Path::new(&out_dir).join("generated_schema.rs");
 
@@ -30,29 +98,39 @@ fn main() {
     );
 
     if let Some(enums) = parsed["enums"].as_object() {
-        for (_enum_key, enum_def) in enums {
+        for (enum_key, enum_def) in enums {
+            if enum_key == "card_id" {
+                continue;
+            }
             if let (Some(rust_type), Some(fn_name), Some(entries)) = (
                 enum_def["rust_type"].as_str(),
                 enum_def["fn_name"].as_str(),
                 enum_def["entries"].as_object(),
             ) {
                 generated_code.push_str(&format!(
-                    "pub fn {}(s: &str) -> Option<{}> {{\n",
+                    "pub(crate) fn {}_raw(s: &str) -> Option<{}> {{\n",
                     fn_name, rust_type
                 ));
                 generated_code.push_str("    match s {\n");
 
                 for (rust_variant, entry_def) in entries {
                     if let Some(java_names) = entry_def["java"].as_array() {
-                        let mut patterns = Vec::new();
+                        let mut patterns = BTreeSet::new();
                         for j in java_names {
                             if let Some(j_str) = j.as_str() {
-                                patterns.push(format!("\"{}\"", j_str));
+                                let normalized = j_str
+                                    .chars()
+                                    .filter(|c| c.is_ascii_alphanumeric())
+                                    .map(|c| c.to_ascii_lowercase())
+                                    .collect::<String>();
+                                if !normalized.is_empty() {
+                                    patterns.insert(format!("\"{}\"", normalized));
+                                }
                             }
                         }
 
                         if !patterns.is_empty() {
-                            let pattern_str = patterns.join(" | ");
+                            let pattern_str = patterns.into_iter().collect::<Vec<_>>().join(" | ");
                             let status = entry_def
                                 .get("status")
                                 .and_then(|v| v.as_str())

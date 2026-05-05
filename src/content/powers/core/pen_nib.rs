@@ -1,7 +1,7 @@
-use crate::action::Action;
+use crate::runtime::action::Action;
 use smallvec::SmallVec;
 
-pub fn on_use_card(card: &crate::combat::CombatCard) -> SmallVec<[Action; 4]> {
+pub fn on_use_card(card: &crate::runtime::combat::CombatCard) -> SmallVec<[Action; 4]> {
     let mut actions = SmallVec::new();
     let def = crate::content::cards::get_card_definition(card.id);
     if def.card_type == crate::content::cards::CardType::Attack {

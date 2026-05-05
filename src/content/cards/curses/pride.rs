@@ -1,6 +1,6 @@
-use crate::action::{Action, ActionInfo, AddTo};
-use crate::combat::CombatState;
 use crate::content::cards::CardId;
+use crate::runtime::action::{Action, ActionInfo, AddTo};
+use crate::runtime::combat::CombatState;
 
 pub fn on_end_turn_in_hand(_state: &CombatState) -> smallvec::SmallVec<[ActionInfo; 4]> {
     // Note: To truly match Spire, this should make a copy and insert it.

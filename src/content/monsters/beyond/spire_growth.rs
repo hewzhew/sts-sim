@@ -1,108 +1,152 @@
-use crate::action::{Action, DamageInfo, DamageType};
-use crate::combat::{CombatState, Intent};
-use crate::content::monsters::MonsterBehavior;
+use crate::content::monsters::exordium::{apply_power_action, attack_actions, PLAYER};
+use crate::content::monsters::{MonsterBehavior, MonsterRollContext};
 use crate::content::powers::PowerId;
+use crate::runtime::action::Action;
+use crate::runtime::combat::{CombatState, MonsterEntity};
+use crate::semantics::combat::{
+    AttackSpec, DamageKind, DebuffSpec, EffectStrength, MonsterMoveSpec, MonsterTurnPlan, MoveStep,
+};
 
 pub struct SpireGrowth;
 
-impl MonsterBehavior for SpireGrowth {
-    fn roll_move(
-        _rng: &mut crate::rng::StsRng,
-        entity: &crate::combat::MonsterEntity,
+const QUICK_TACKLE: u8 = 1;
+const CONSTRICT: u8 = 2;
+const SMASH: u8 = 3;
+
+fn tackle_damage(ascension_level: u8) -> i32 {
+    if ascension_level >= 2 {
+        18
+    } else {
+        16
+    }
+}
+
+fn smash_damage(ascension_level: u8) -> i32 {
+    if ascension_level >= 2 {
+        25
+    } else {
+        22
+    }
+}
+
+fn constrict_amount(ascension_level: u8) -> i32 {
+    if ascension_level >= 17 {
+        12
+    } else {
+        10
+    }
+}
+
+fn tackle_plan(ascension_level: u8) -> MonsterTurnPlan {
+    MonsterTurnPlan::from_spec(
+        QUICK_TACKLE,
+        MonsterMoveSpec::Attack(AttackSpec {
+            base_damage: tackle_damage(ascension_level),
+            hits: 1,
+            damage_kind: DamageKind::Normal,
+        }),
+    )
+}
+
+fn constrict_plan(ascension_level: u8) -> MonsterTurnPlan {
+    MonsterTurnPlan::from_spec(
+        CONSTRICT,
+        MonsterMoveSpec::StrongDebuff(DebuffSpec {
+            power_id: PowerId::Constricted,
+            amount: constrict_amount(ascension_level),
+            strength: EffectStrength::Strong,
+        }),
+    )
+}
+
+fn smash_plan(ascension_level: u8) -> MonsterTurnPlan {
+    MonsterTurnPlan::from_spec(
+        SMASH,
+        MonsterMoveSpec::Attack(AttackSpec {
+            base_damage: smash_damage(ascension_level),
+            hits: 1,
+            damage_kind: DamageKind::Normal,
+        }),
+    )
+}
+
+fn last_two_moves(entity: &MonsterEntity, move_id: u8) -> bool {
+    let mut history = entity.move_history().iter().rev();
+    matches!(
+        (history.next().copied(), history.next().copied()),
+        (Some(a), Some(b)) if a == move_id && b == move_id
+    )
+}
+
+impl SpireGrowth {
+    fn roll_move_custom_plan(
+        entity: &MonsterEntity,
         ascension_level: u8,
         num: i32,
-    ) -> (u8, Intent) {
-        let tackle_dmg = if ascension_level >= 2 { 18 } else { 16 };
-        let smash_dmg = if ascension_level >= 2 { 25 } else { 22 };
+        player_has_constricted: bool,
+    ) -> MonsterTurnPlan {
+        let last_move = entity.move_history().back().copied();
 
-        let last_move = entity.move_history.back().copied().unwrap_or(0);
-        let constrict_applies = entity.move_history.iter().filter(|&&m| m == 2).count() == 0; // Simplified tracker for Constricted
-
-        let last_two_moves_1 = entity.move_history.len() >= 2
-            && entity.move_history[entity.move_history.len() - 1] == 1
-            && entity.move_history[entity.move_history.len() - 2] == 1;
-        let last_two_moves_3 = entity.move_history.len() >= 2
-            && entity.move_history[entity.move_history.len() - 1] == 3
-            && entity.move_history[entity.move_history.len() - 2] == 3;
-
-        if ascension_level >= 17 && constrict_applies && last_move != 2 {
-            return (2, Intent::StrongDebuff);
+        if ascension_level >= 17 && !player_has_constricted && last_move != Some(CONSTRICT) {
+            return constrict_plan(ascension_level);
         }
-        if num < 50 && !last_two_moves_1 {
-            return (
-                1,
-                Intent::Attack {
-                    damage: tackle_dmg,
-                    hits: 1,
-                },
-            );
+        if num < 50 && !last_two_moves(entity, QUICK_TACKLE) {
+            return tackle_plan(ascension_level);
         }
-
-        if constrict_applies && last_move != 2 {
-            return (2, Intent::StrongDebuff);
+        if !player_has_constricted && last_move != Some(CONSTRICT) {
+            return constrict_plan(ascension_level);
         }
-
-        if !last_two_moves_3 {
-            return (
-                3,
-                Intent::Attack {
-                    damage: smash_dmg,
-                    hits: 1,
-                },
-            );
+        if !last_two_moves(entity, SMASH) {
+            return smash_plan(ascension_level);
         }
+        tackle_plan(ascension_level)
+    }
+}
 
-        (
-            1,
-            Intent::Attack {
-                damage: tackle_dmg,
-                hits: 1,
-            },
+fn plan_for(move_id: u8, ascension_level: u8) -> MonsterTurnPlan {
+    match move_id {
+        QUICK_TACKLE => tackle_plan(ascension_level),
+        CONSTRICT => constrict_plan(ascension_level),
+        SMASH => smash_plan(ascension_level),
+        _ => MonsterTurnPlan::unknown(move_id),
+    }
+}
+
+impl MonsterBehavior for SpireGrowth {
+    fn roll_move_plan_with_context(
+        _rng: &mut crate::runtime::rng::StsRng,
+        entity: &MonsterEntity,
+        ascension_level: u8,
+        num: i32,
+        ctx: MonsterRollContext<'_>,
+    ) -> MonsterTurnPlan {
+        Self::roll_move_custom_plan(
+            entity,
+            ascension_level,
+            num,
+            ctx.player_has_power(PowerId::Constricted),
         )
     }
 
-    fn take_turn(state: &mut CombatState, entity: &crate::combat::MonsterEntity) -> Vec<Action> {
-        let mut actions = Vec::new();
-        let asc = state.ascension_level;
+    fn turn_plan(state: &CombatState, entity: &MonsterEntity) -> MonsterTurnPlan {
+        plan_for(entity.planned_move_id(), state.meta.ascension_level)
+    }
 
-        match entity.next_move_byte {
-            1 => {
-                // QUICK_TACKLE
-                let dmg = if asc >= 2 { 18 } else { 16 };
-                actions.push(Action::Damage(DamageInfo {
-                    source: entity.id,
-                    target: 0,
-                    base: dmg,
-                    output: dmg,
-                    damage_type: DamageType::Normal,
-                    is_modified: false,
-                }));
+    fn take_turn_plan(
+        _state: &mut CombatState,
+        entity: &MonsterEntity,
+        plan: &MonsterTurnPlan,
+    ) -> Vec<Action> {
+        let mut actions = match (plan.move_id, plan.steps.as_slice()) {
+            (QUICK_TACKLE, [MoveStep::Attack(attack)]) => {
+                attack_actions(entity.id, PLAYER, &attack.attack)
             }
-            2 => {
-                // CONSTRICT
-                let amount = if asc >= 17 { 12 } else { 10 };
-                actions.push(Action::ApplyPower {
-                    source: entity.id,
-                    target: 0, // Applies to player
-                    power_id: PowerId::Constricted,
-                    amount: amount,
-                });
+            (CONSTRICT, [MoveStep::ApplyPower(power)]) => vec![apply_power_action(entity, power)],
+            (SMASH, [MoveStep::Attack(attack)]) => {
+                attack_actions(entity.id, PLAYER, &attack.attack)
             }
-            3 => {
-                // SMASH
-                let dmg = if asc >= 2 { 25 } else { 22 };
-                actions.push(Action::Damage(DamageInfo {
-                    source: entity.id,
-                    target: 0,
-                    base: dmg,
-                    output: dmg,
-                    damage_type: DamageType::Normal,
-                    is_modified: false,
-                }));
-            }
-            _ => {}
-        }
-
+            (move_id, steps) => panic!("spire growth plan/steps mismatch: {} {:?}", move_id, steps),
+        };
         actions.push(Action::RollMonsterMove {
             monster_id: entity.id,
         });

@@ -1,6 +1,7 @@
-use crate::action::Action;
-use crate::combat::{CombatCard, CombatState};
+use crate::content::powers::PowerId;
 use crate::core::EntityId;
+use crate::runtime::action::Action;
+use crate::runtime::combat::{CombatCard, CombatState};
 
 pub fn on_calculate_damage_from_player(
     _state: &CombatState,
@@ -9,15 +10,28 @@ pub fn on_calculate_damage_from_player(
     base_damage: f32,
     amount: i32,
 ) -> f32 {
-    // Each stack of Slow (which increases by 1 for each card played this turn) adds +10% damage
-    // The amount given here is the CURRENT amount of Slow stacks
     let multiplier = 1.0 + (amount as f32 * 0.1);
     base_damage * multiplier
 }
 
-pub fn at_end_of_turn(_owner: EntityId) -> smallvec::SmallVec<[Action; 2]> {
-    // In actual game logic, Slow resets to 0 at the end of the *player's* turn,
-    // or practically it just acts as a counter of cards played this turn.
-    // For engine simplicity we evaluate it dynamically or reset it here if the owner turn ends.
-    smallvec::smallvec![]
+pub fn on_card_played(owner: EntityId) -> smallvec::SmallVec<[Action; 2]> {
+    smallvec::smallvec![Action::ApplyPower {
+        source: owner,
+        target: owner,
+        power_id: PowerId::Slow,
+        amount: 1,
+    }]
+}
+
+pub fn at_end_of_round(owner: EntityId, amount: i32) -> smallvec::SmallVec<[Action; 2]> {
+    if amount <= 0 {
+        return smallvec::smallvec![];
+    }
+
+    smallvec::smallvec![Action::ApplyPower {
+        source: owner,
+        target: owner,
+        power_id: PowerId::Slow,
+        amount: -amount,
+    }]
 }

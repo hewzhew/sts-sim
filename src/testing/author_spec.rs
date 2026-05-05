@@ -1,0 +1,1085 @@
+use serde::{Deserialize, Serialize};
+use serde_json::{json, Value};
+
+use crate::content::cards::get_card_definition;
+use crate::protocol::java::{card_id_from_java, relic_id_from_java};
+
+use crate::testing::fixtures::scenario::{
+    ScenarioAssertion, ScenarioCardSelector, ScenarioFixture, ScenarioKind, ScenarioOracleKind,
+    ScenarioProvenance, ScenarioStep, StructuredScenarioStep,
+};
+
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct CombatAuthorSpec {
+    pub name: String,
+    #[serde(default = "default_player_class")]
+    pub player_class: String,
+    #[serde(default = "default_room_type")]
+    pub room_type: String,
+    #[serde(default = "default_turn")]
+    pub turn: u32,
+    #[serde(default)]
+    pub player: AuthorPlayerSpec,
+    #[serde(default)]
+    pub monsters: Vec<AuthorMonsterSpec>,
+    #[serde(default)]
+    pub hand: Vec<AuthorCardSpec>,
+    #[serde(default)]
+    pub draw_pile: Vec<AuthorCardSpec>,
+    #[serde(default)]
+    pub discard_pile: Vec<AuthorCardSpec>,
+    #[serde(default)]
+    pub exhaust_pile: Vec<AuthorCardSpec>,
+    #[serde(default)]
+    pub relics: Vec<AuthorRelicSpec>,
+    #[serde(default)]
+    pub potions: Vec<String>,
+    #[serde(default)]
+    pub steps: Vec<AuthorStepSpec>,
+    #[serde(default, alias = "expect")]
+    pub assertions: Vec<AuthorAssertionSpec>,
+    #[serde(default)]
+    pub tags: Vec<String>,
+    #[serde(default)]
+    pub provenance: Option<ScenarioProvenance>,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct AuthorPlayerSpec {
+    #[serde(default)]
+    pub current_hp: Option<i32>,
+    #[serde(default)]
+    pub max_hp: Option<i32>,
+    #[serde(default)]
+    pub block: Option<i32>,
+    #[serde(default)]
+    pub energy: Option<u8>,
+    #[serde(default)]
+    pub gold: Option<i32>,
+    #[serde(default)]
+    pub powers: Vec<AuthorPowerSpec>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct AuthorMonsterSpec {
+    pub id: String,
+    pub current_hp: i32,
+    #[serde(default)]
+    pub max_hp: Option<i32>,
+    #[serde(default)]
+    pub block: Option<i32>,
+    #[serde(default)]
+    pub powers: Vec<AuthorPowerSpec>,
+    #[serde(default = "default_intent")]
+    pub intent: String,
+    #[serde(default = "default_move_base_damage")]
+    pub move_base_damage: i32,
+    #[serde(default = "default_move_adjusted_damage")]
+    pub move_adjusted_damage: i32,
+    #[serde(default = "default_move_hits")]
+    pub move_hits: i32,
+    #[serde(default)]
+    pub move_id: i32,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct AuthorPowerSpec {
+    pub id: String,
+    pub amount: i32,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(untagged)]
+pub enum AuthorCardSpec {
+    Simple(String),
+    Detailed(AuthorCardEntry),
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct AuthorCardEntry {
+    pub id: String,
+    #[serde(default)]
+    pub upgrades: u8,
+    #[serde(default)]
+    pub cost: Option<i32>,
+    #[serde(default)]
+    pub misc: Option<i32>,
+    #[serde(default = "default_count")]
+    pub count: usize,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(untagged)]
+pub enum AuthorRelicSpec {
+    Simple(String),
+    Detailed(AuthorRelicEntry),
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct AuthorRelicEntry {
+    pub id: String,
+    #[serde(default = "default_relic_counter")]
+    pub counter: i32,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(untagged)]
+pub enum AuthorStepSpec {
+    Raw(String),
+    Command {
+        command: String,
+    },
+    Play {
+        play: AuthorPlayStep,
+    },
+    End {
+        end: bool,
+    },
+    PotionUse {
+        potion_use: AuthorPotionUseStep,
+    },
+    HumanCardReward {
+        human_card_reward: AuthorHumanCardRewardStep,
+    },
+    HandSelect {
+        hand_select: AuthorSelectCardsStep,
+    },
+    GridSelect {
+        grid_select: AuthorSelectCardsStep,
+    },
+    Cancel {
+        cancel: bool,
+    },
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct AuthorPlayStep {
+    pub card: AuthorCardSelectorSpec,
+    #[serde(default)]
+    pub target: Option<usize>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct AuthorPotionUseStep {
+    pub slot: usize,
+    #[serde(default)]
+    pub target: Option<usize>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct AuthorHumanCardRewardStep {
+    #[serde(default)]
+    pub choice: Option<usize>,
+    #[serde(default)]
+    pub skip: bool,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct AuthorSelectCardsStep {
+    pub cards: Vec<AuthorCardSelectorSpec>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(untagged)]
+pub enum AuthorCardSelectorSpec {
+    Index(usize),
+    SimpleId(String),
+    Detailed(AuthorCardSelectorEntry),
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct AuthorCardSelectorEntry {
+    pub id: String,
+    #[serde(default = "default_occurrence")]
+    pub occurrence: usize,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(untagged)]
+pub enum AuthorAssertionSpec {
+    Field(AuthorFieldAssertionSpec),
+    MonsterCount {
+        monster_count: i64,
+        #[serde(default)]
+        note: Option<String>,
+    },
+    PileContains {
+        pile_contains: AuthorPileContainsSpec,
+        #[serde(default)]
+        note: Option<String>,
+    },
+    PileCount {
+        pile_count: AuthorPileCountSpec,
+        #[serde(default)]
+        note: Option<String>,
+    },
+    PileSize {
+        pile_size: AuthorPileSizeSpec,
+        #[serde(default)]
+        note: Option<String>,
+    },
+    PlayerStat {
+        player_stat: AuthorPlayerStatAssertionSpec,
+        #[serde(default)]
+        note: Option<String>,
+    },
+    PlayerPower {
+        player_power: AuthorPowerAssertionTargetSpec,
+        #[serde(default)]
+        note: Option<String>,
+    },
+    MonsterStat {
+        monster_stat: AuthorMonsterStatAssertionSpec,
+        #[serde(default)]
+        note: Option<String>,
+    },
+    MonsterPower {
+        monster_power: AuthorMonsterPowerAssertionSpec,
+        #[serde(default)]
+        note: Option<String>,
+    },
+    MonsterMissing {
+        monster_missing: usize,
+        #[serde(default)]
+        note: Option<String>,
+    },
+    HasRelic {
+        has_relic: String,
+        #[serde(default)]
+        note: Option<String>,
+    },
+    RelicCount {
+        relic_count: AuthorRelicCountSpec,
+        #[serde(default)]
+        note: Option<String>,
+    },
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct AuthorFieldAssertionSpec {
+    pub field: String,
+    #[serde(default)]
+    pub number: Option<i64>,
+    #[serde(default)]
+    pub string: Option<String>,
+    #[serde(default)]
+    pub bool: Option<bool>,
+    #[serde(default)]
+    pub missing: Option<bool>,
+    #[serde(default)]
+    pub note: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct AuthorPileContainsSpec {
+    pub pile: String,
+    pub id: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct AuthorPileCountSpec {
+    pub pile: String,
+    pub id: String,
+    pub count: i64,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct AuthorPileSizeSpec {
+    pub pile: String,
+    pub count: i64,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct AuthorPlayerStatAssertionSpec {
+    pub stat: String,
+    pub value: i64,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct AuthorPowerAssertionTargetSpec {
+    pub id: String,
+    pub amount: i64,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct AuthorMonsterStatAssertionSpec {
+    pub monster: usize,
+    pub stat: String,
+    pub value: i64,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct AuthorMonsterPowerAssertionSpec {
+    pub monster: usize,
+    pub id: String,
+    pub amount: i64,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct AuthorRelicCountSpec {
+    pub id: String,
+    pub count: i64,
+}
+
+pub fn compile_combat_author_spec(spec: &CombatAuthorSpec) -> Result<ScenarioFixture, String> {
+    let player_max_hp = spec
+        .player
+        .max_hp
+        .unwrap_or_else(|| base_max_hp_for_class(&spec.player_class));
+    let player_current_hp = spec.player.current_hp.unwrap_or(player_max_hp);
+
+    let hand = expand_cards(&spec.hand, "hand", false)?;
+    let draw_pile = expand_cards(&spec.draw_pile, "draw", true)?;
+    let discard_pile = expand_cards(&spec.discard_pile, "discard", false)?;
+    let exhaust_pile = expand_cards(&spec.exhaust_pile, "exhaust", false)?;
+
+    let truth_monsters = spec
+        .monsters
+        .iter()
+        .map(|monster| {
+            let resolved_move_id = resolved_author_monster_move_id(monster);
+            let canonical_id = canonical_monster_java_id(&monster.id);
+            Ok(json!({
+                "id": canonical_id,
+                "current_hp": monster.current_hp,
+                "max_hp": monster.max_hp.unwrap_or(monster.current_hp),
+                "block": monster.block.unwrap_or(0),
+                "powers": compile_powers(&monster.powers),
+                "move_id": resolved_move_id,
+                "move_base_damage": monster.move_base_damage,
+                "move_hits": monster.move_hits,
+                "powers": compile_powers(&monster.powers),
+                "runtime_state": compile_monster_runtime_state(monster, resolved_move_id),
+                "is_dying": false,
+                "is_escaping": false,
+                "half_dead": false,
+                "is_gone": false,
+            }))
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+    let observation_monsters = spec
+        .monsters
+        .iter()
+        .map(|monster| {
+            let canonical_id = canonical_monster_java_id(&monster.id);
+            Ok(json!({
+                "id": canonical_id,
+                "current_hp": monster.current_hp,
+                "max_hp": monster.max_hp.unwrap_or(monster.current_hp),
+                "block": monster.block.unwrap_or(0),
+                "powers": compile_powers(&monster.powers),
+                "intent": monster.intent,
+                "move_adjusted_damage": monster.move_adjusted_damage,
+                "move_hits": monster.move_hits,
+                "is_dying": false,
+                "is_escaping": false,
+                "half_dead": false,
+                "is_gone": false,
+            }))
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+
+    let initial_game_state = json!({
+        "class": spec.player_class,
+        "room_type": spec.room_type,
+        "relics": compile_relics(&spec.relics),
+        "potions": compile_potions(&spec.potions),
+        "combat_truth": {
+            "turn": spec.turn,
+            "player": {
+                "current_hp": player_current_hp,
+                "max_hp": player_max_hp,
+                "block": spec.player.block.unwrap_or(0),
+                "energy": spec.player.energy.unwrap_or(3),
+                "gold": spec.player.gold.unwrap_or(99),
+                "powers": compile_powers(&spec.player.powers),
+            },
+            "monsters": truth_monsters,
+            "hand": hand.clone(),
+            "draw_pile": draw_pile.clone(),
+            "discard_pile": discard_pile.clone(),
+            "exhaust_pile": exhaust_pile.clone(),
+            "limbo": [],
+            "card_queue": [],
+            "colorless_combat_pool": [],
+            "using_card": Value::Null,
+            "card_in_play": Value::Null,
+            "cards_discarded_this_turn": 0,
+            "times_damaged": 0,
+            "monster_turn_log": [],
+            "potions": compile_potions(&spec.potions),
+        },
+        "combat_observation": {
+            "player": {
+                "current_hp": player_current_hp,
+                "max_hp": player_max_hp,
+                "block": spec.player.block.unwrap_or(0),
+                "energy": spec.player.energy.unwrap_or(3),
+                "gold": spec.player.gold.unwrap_or(99),
+                "powers": compile_powers(&spec.player.powers),
+            },
+            "monsters": observation_monsters,
+            "hand": hand,
+            "discard_pile": discard_pile,
+            "exhaust_pile": exhaust_pile,
+            "limbo": [],
+            "using_card": Value::Null,
+            "card_in_play": Value::Null,
+            "cards_discarded_this_turn": 0,
+            "times_damaged": 0,
+            "draw_pile_count": draw_pile.len(),
+        }
+    });
+
+    Ok(ScenarioFixture {
+        name: spec.name.clone(),
+        kind: ScenarioKind::Combat,
+        oracle_kind: ScenarioOracleKind::Synthetic,
+        initial_game_state,
+        initial_protocol_meta: None,
+        steps: spec
+            .steps
+            .iter()
+            .map(compile_step)
+            .collect::<Result<Vec<_>, _>>()?,
+        assertions: spec
+            .assertions
+            .iter()
+            .map(compile_assertion)
+            .collect::<Result<Vec<_>, _>>()?,
+        provenance: spec.provenance.clone(),
+        tags: spec.tags.clone(),
+    })
+}
+
+fn expand_cards(
+    specs: &[AuthorCardSpec],
+    zone_prefix: &str,
+    reverse_output: bool,
+) -> Result<Vec<Value>, String> {
+    let mut cards = Vec::new();
+    let mut zone_index = 0usize;
+    for spec in specs {
+        let entry = match spec {
+            AuthorCardSpec::Simple(id) => AuthorCardEntry {
+                id: id.clone(),
+                upgrades: 0,
+                cost: None,
+                misc: None,
+                count: 1,
+            },
+            AuthorCardSpec::Detailed(entry) => entry.clone(),
+        };
+        if entry.count == 0 {
+            continue;
+        }
+        let card_id = card_id_from_java(&entry.id)
+            .ok_or_else(|| format!("unknown Java card id '{}'", entry.id))?;
+        let def = get_card_definition(card_id);
+        for local_index in 0..entry.count {
+            cards.push(json!({
+                "id": entry.id,
+                "uuid": format!("{zone_prefix}-{zone_index}-{local_index}"),
+                "upgrades": entry.upgrades,
+                "cost": entry.cost.unwrap_or(def.cost as i32),
+                "misc": entry.misc.unwrap_or(0),
+            }));
+        }
+        zone_index += 1;
+    }
+    if reverse_output {
+        cards.reverse();
+    }
+    Ok(cards)
+}
+
+fn compile_powers(powers: &[AuthorPowerSpec]) -> Vec<Value> {
+    powers
+        .iter()
+        .map(|power| {
+            json!({
+                "id": power.id,
+                "amount": power.amount,
+            })
+        })
+        .collect()
+}
+
+fn compile_relics(relics: &[AuthorRelicSpec]) -> Vec<Value> {
+    relics
+        .iter()
+        .map(|relic| match relic {
+            AuthorRelicSpec::Simple(id) => json!({
+                "id": id,
+                "runtime_state": compile_relic_runtime_state(id, -1),
+            }),
+            AuthorRelicSpec::Detailed(entry) => json!({
+                "id": entry.id,
+                "runtime_state": compile_relic_runtime_state(&entry.id, entry.counter),
+            }),
+        })
+        .collect()
+}
+
+fn compile_relic_runtime_state(id: &str, counter: i32) -> Value {
+    match relic_id_from_java(id) {
+        Some(crate::content::relics::RelicId::CentennialPuzzle) => json!({
+            "counter": counter,
+            "used_this_combat": false,
+        }),
+        Some(crate::content::relics::RelicId::ArtOfWar) => json!({
+            "counter": counter,
+            "used_up": false,
+            "gain_energy_next": false,
+            "first_turn": false,
+        }),
+        Some(crate::content::relics::RelicId::Pocketwatch) => json!({
+            "counter": counter,
+            "used_up": false,
+            "first_turn": false,
+        }),
+        _ => json!({
+            "counter": counter,
+            "used_up": false,
+        }),
+    }
+}
+
+fn compile_potions(potions: &[String]) -> Vec<Value> {
+    let mut compiled = potions
+        .iter()
+        .map(|id| json!({ "id": id }))
+        .collect::<Vec<_>>();
+    while compiled.len() < 3 {
+        compiled.push(json!({ "id": "Potion Slot" }));
+    }
+    compiled
+}
+
+fn canonical_monster_java_id(id: &str) -> String {
+    match normalize_identifier(id).as_str() {
+        "redlouse" => "FuzzyLouseNormal".to_string(),
+        "greenlouse" => "FuzzyLouseDefensive".to_string(),
+        _ => id.to_string(),
+    }
+}
+
+fn resolved_author_monster_move_id(monster: &AuthorMonsterSpec) -> i32 {
+    if monster.move_id > 0 {
+        return monster.move_id;
+    }
+    infer_author_monster_move_id(monster).unwrap_or(0)
+}
+
+fn infer_author_monster_move_id(monster: &AuthorMonsterSpec) -> Option<i32> {
+    let id = normalize_identifier(&monster.id);
+    let intent = normalize_identifier(&monster.intent);
+    let damage = monster
+        .move_adjusted_damage
+        .max(monster.move_base_damage)
+        .max(0);
+    let hits = monster.move_hits.max(1);
+    match id.as_str() {
+        "jawworm" => {
+            if matches!(intent.as_str(), "buff" | "defendbuff" | "defend") {
+                Some(2)
+            } else if intent == "attack" && damage <= 8 {
+                Some(3)
+            } else if intent == "attack" {
+                Some(1)
+            } else {
+                None
+            }
+        }
+        "cultist" => {
+            if intent == "attack" {
+                Some(1)
+            } else if intent == "buff" {
+                Some(3)
+            } else {
+                None
+            }
+        }
+        "lagavulin" => match intent.as_str() {
+            "sleep" => Some(5),
+            "strongdebuff" | "debuff" => Some(1),
+            "attack" => Some(3),
+            "stun" => Some(4),
+            "magic" => Some(6),
+            _ => None,
+        },
+        "slimeboss" => match intent.as_str() {
+            "attack" => Some(1),
+            "strongdebuff" | "debuff" => Some(4),
+            "magic" => Some(2),
+            _ => None,
+        },
+        "theguardian" => match intent.as_str() {
+            "defend" => Some(6),
+            "debuff" | "strongdebuff" => Some(7),
+            "buff" | "defendbuff" => Some(1),
+            "attack" if hits >= 4 || damage <= 5 => Some(5),
+            "attack" if hits >= 2 || damage <= 8 => Some(4),
+            "attack" if damage >= 30 => Some(2),
+            "attack" => Some(3),
+            _ => None,
+        },
+        "redlouse" | "fuzzylousenormal" | "louse" => {
+            if intent == "attack" {
+                Some(3)
+            } else if intent == "buff" {
+                Some(4)
+            } else {
+                None
+            }
+        }
+        "greenlouse" | "fuzzylousedefensive" => {
+            if intent == "attack" {
+                Some(3)
+            } else if matches!(intent.as_str(), "debuff" | "strongdebuff") {
+                Some(4)
+            } else {
+                None
+            }
+        }
+        _ => None,
+    }
+}
+
+fn author_power_amount(powers: &[AuthorPowerSpec], power_id: &str) -> Option<i32> {
+    let needle = normalize_identifier(power_id);
+    powers
+        .iter()
+        .find(|power| normalize_identifier(&power.id) == needle)
+        .map(|power| power.amount)
+}
+
+fn compile_monster_runtime_state(monster: &AuthorMonsterSpec, move_id: i32) -> Value {
+    match normalize_identifier(&monster.id).as_str() {
+        "hexaghost" => json!({
+            "activated": move_id != 5,
+            "orb_active_count": 0,
+            "burn_upgraded": false,
+        }),
+        "darkling" => json!({
+            "first_move": false,
+            "nip_dmg": 7,
+        }),
+        "chosen" => json!({
+            "first_turn": false,
+            "used_hex": false,
+        }),
+        "lagavulin" => json!({
+            "idle_count": 0,
+            "debuff_turn_count": 0,
+            "is_out": move_id != 5,
+            "is_out_triggered": false,
+        }),
+        "theguardian" => json!({
+            "guardian_threshold": author_power_amount(&monster.powers, "Guardian Threshold").unwrap_or(30),
+            "damage_taken": 0,
+            "is_open": move_id != 1 && move_id != 3 && move_id != 4,
+            "close_up_triggered": false,
+        }),
+        "redlouse" | "greenlouse" | "louse" | "fuzzylousenormal" | "fuzzylousedefensive" => json!({
+            "bite_damage": monster
+                .move_adjusted_damage
+                .max(monster.move_base_damage)
+                .max(5),
+        }),
+        _ => json!({}),
+    }
+}
+
+fn compile_step(step: &AuthorStepSpec) -> Result<ScenarioStep, String> {
+    let command = match step {
+        AuthorStepSpec::Raw(command) => ScenarioStep {
+            command: command.clone(),
+            ..Default::default()
+        },
+        AuthorStepSpec::Command { command } => ScenarioStep {
+            command: command.clone(),
+            ..Default::default()
+        },
+        AuthorStepSpec::Play { play } => {
+            let selector = compile_card_selector(&play.card)?;
+            let command = describe_play_step(&selector, play.target);
+            ScenarioStep {
+                command,
+                structured: Some(StructuredScenarioStep::Play {
+                    selector,
+                    target: play.target,
+                }),
+                ..Default::default()
+            }
+        }
+        AuthorStepSpec::End { end } => {
+            if !end {
+                return Err("structured end step must be {\"end\": true}".to_string());
+            }
+            ScenarioStep {
+                command: "END".to_string(),
+                structured: Some(StructuredScenarioStep::End),
+                ..Default::default()
+            }
+        }
+        AuthorStepSpec::PotionUse { potion_use } => {
+            let mut command = format!("POTION USE {}", potion_use.slot);
+            if let Some(target) = potion_use.target {
+                command.push(' ');
+                command.push_str(&target.to_string());
+            }
+            ScenarioStep {
+                command,
+                structured: Some(StructuredScenarioStep::PotionUse {
+                    slot: potion_use.slot,
+                    target: potion_use.target,
+                }),
+                ..Default::default()
+            }
+        }
+        AuthorStepSpec::HumanCardReward { human_card_reward } => {
+            let command = if human_card_reward.skip {
+                "HUMAN_CARD_REWARD SKIP".to_string()
+            } else if let Some(choice) = human_card_reward.choice {
+                format!("HUMAN_CARD_REWARD {}", choice)
+            } else {
+                return Err(
+                    "human_card_reward step must set either skip=true or choice=<index>"
+                        .to_string(),
+                );
+            };
+            ScenarioStep {
+                command,
+                structured: Some(if human_card_reward.skip {
+                    StructuredScenarioStep::Cancel
+                } else {
+                    StructuredScenarioStep::Choose {
+                        index: human_card_reward.choice.expect("choice already checked"),
+                    }
+                }),
+                ..Default::default()
+            }
+        }
+        AuthorStepSpec::HandSelect { hand_select } => {
+            let selectors = compile_card_selectors(&hand_select.cards)?;
+            ScenarioStep {
+                command: format!("HAND_SELECT {}", describe_selectors(&selectors)),
+                structured: Some(StructuredScenarioStep::HandSelect { selectors }),
+                ..Default::default()
+            }
+        }
+        AuthorStepSpec::GridSelect { grid_select } => {
+            let selectors = compile_card_selectors(&grid_select.cards)?;
+            ScenarioStep {
+                command: format!("GRID_SELECT {}", describe_selectors(&selectors)),
+                structured: Some(StructuredScenarioStep::GridSelect { selectors }),
+                ..Default::default()
+            }
+        }
+        AuthorStepSpec::Cancel { cancel } => {
+            if !cancel {
+                return Err("structured cancel step must be {\"cancel\": true}".to_string());
+            }
+            ScenarioStep {
+                command: "CANCEL".to_string(),
+                structured: Some(StructuredScenarioStep::Cancel),
+                ..Default::default()
+            }
+        }
+    };
+    Ok(command)
+}
+
+fn compile_card_selectors(
+    selectors: &[AuthorCardSelectorSpec],
+) -> Result<Vec<ScenarioCardSelector>, String> {
+    selectors.iter().map(compile_card_selector).collect()
+}
+
+fn compile_card_selector(
+    selector: &AuthorCardSelectorSpec,
+) -> Result<ScenarioCardSelector, String> {
+    match selector {
+        AuthorCardSelectorSpec::Index(index) => {
+            if *index == 0 {
+                Err("structured card selector uses 1-based index; got 0".to_string())
+            } else {
+                Ok(ScenarioCardSelector::Index { index: *index })
+            }
+        }
+        AuthorCardSelectorSpec::SimpleId(id) => Ok(ScenarioCardSelector::JavaId {
+            id: id.clone(),
+            occurrence: 1,
+        }),
+        AuthorCardSelectorSpec::Detailed(entry) => {
+            if entry.occurrence == 0 {
+                return Err("structured card selector occurrence must be >= 1".to_string());
+            }
+            Ok(ScenarioCardSelector::JavaId {
+                id: entry.id.clone(),
+                occurrence: entry.occurrence,
+            })
+        }
+    }
+}
+
+fn describe_play_step(selector: &ScenarioCardSelector, target: Option<usize>) -> String {
+    let mut base = match selector {
+        ScenarioCardSelector::Index { index } => format!("PLAY {}", index),
+        ScenarioCardSelector::JavaId { id, occurrence } => {
+            if *occurrence == 1 {
+                format!("PLAY_ID {}", id)
+            } else {
+                format!("PLAY_ID {} #{}", id, occurrence)
+            }
+        }
+    };
+    if let Some(target) = target {
+        base.push_str(&format!(" -> {}", target));
+    }
+    base
+}
+
+fn describe_selectors(selectors: &[ScenarioCardSelector]) -> String {
+    selectors
+        .iter()
+        .map(|selector| match selector {
+            ScenarioCardSelector::Index { index } => format!("#{index}"),
+            ScenarioCardSelector::JavaId { id, occurrence } => {
+                if *occurrence == 1 {
+                    id.clone()
+                } else {
+                    format!("{id}#{occurrence}")
+                }
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+fn compile_assertion(assertion: &AuthorAssertionSpec) -> Result<ScenarioAssertion, String> {
+    match assertion {
+        AuthorAssertionSpec::Field(assertion) => {
+            let (expected_kind, expected_value) = if assertion.missing.unwrap_or(false) {
+                ("missing".to_string(), None)
+            } else if let Some(number) = assertion.number {
+                ("number".to_string(), Some(json!(number)))
+            } else if let Some(string) = &assertion.string {
+                ("string".to_string(), Some(json!(string)))
+            } else if let Some(value) = assertion.bool {
+                ("bool".to_string(), Some(json!(value)))
+            } else {
+                return Err(format!(
+                    "assertion for '{}' must specify one of number/string/bool/missing",
+                    assertion.field
+                ));
+            };
+
+            Ok(ScenarioAssertion {
+                field: assertion.field.clone(),
+                expected_kind,
+                expected_value,
+                note: assertion.note.clone(),
+                ..Default::default()
+            })
+        }
+        AuthorAssertionSpec::MonsterCount {
+            monster_count,
+            note,
+        } => Ok(ScenarioAssertion {
+            field: "monster_count".to_string(),
+            expected_kind: "number".to_string(),
+            expected_value: Some(json!(monster_count)),
+            note: note.clone(),
+            ..Default::default()
+        }),
+        AuthorAssertionSpec::PileContains {
+            pile_contains,
+            note,
+        } => Ok(ScenarioAssertion {
+            field: format!(
+                "{}.contains[{}]",
+                normalize_pile_name(&pile_contains.pile)?,
+                pile_contains.id
+            ),
+            expected_kind: "bool".to_string(),
+            expected_value: Some(json!(true)),
+            note: note.clone(),
+            ..Default::default()
+        }),
+        AuthorAssertionSpec::PileCount { pile_count, note } => Ok(ScenarioAssertion {
+            field: format!(
+                "{}.count[{}]",
+                normalize_pile_name(&pile_count.pile)?,
+                pile_count.id
+            ),
+            expected_kind: "number".to_string(),
+            expected_value: Some(json!(pile_count.count)),
+            note: note.clone(),
+            ..Default::default()
+        }),
+        AuthorAssertionSpec::PileSize { pile_size, note } => Ok(ScenarioAssertion {
+            field: format!("{}_size", normalize_pile_name(&pile_size.pile)?),
+            expected_kind: "number".to_string(),
+            expected_value: Some(json!(pile_size.count)),
+            note: note.clone(),
+            ..Default::default()
+        }),
+        AuthorAssertionSpec::PlayerStat { player_stat, note } => Ok(ScenarioAssertion {
+            field: format!("player.{}", normalize_player_stat_name(&player_stat.stat)?),
+            expected_kind: "number".to_string(),
+            expected_value: Some(json!(player_stat.value)),
+            note: note.clone(),
+            ..Default::default()
+        }),
+        AuthorAssertionSpec::PlayerPower { player_power, note } => Ok(ScenarioAssertion {
+            field: format!("player.power[{}].amount", player_power.id),
+            expected_kind: "number".to_string(),
+            expected_value: Some(json!(player_power.amount)),
+            note: note.clone(),
+            ..Default::default()
+        }),
+        AuthorAssertionSpec::MonsterStat { monster_stat, note } => Ok(ScenarioAssertion {
+            field: format!(
+                "monster[{}].{}",
+                monster_stat.monster,
+                normalize_monster_stat_name(&monster_stat.stat)?
+            ),
+            expected_kind: "number".to_string(),
+            expected_value: Some(json!(monster_stat.value)),
+            note: note.clone(),
+            ..Default::default()
+        }),
+        AuthorAssertionSpec::MonsterPower {
+            monster_power,
+            note,
+        } => Ok(ScenarioAssertion {
+            field: format!(
+                "monster[{}].power[{}].amount",
+                monster_power.monster, monster_power.id
+            ),
+            expected_kind: "number".to_string(),
+            expected_value: Some(json!(monster_power.amount)),
+            note: note.clone(),
+            ..Default::default()
+        }),
+        AuthorAssertionSpec::MonsterMissing {
+            monster_missing,
+            note,
+        } => Ok(ScenarioAssertion {
+            field: format!("monster[{monster_missing}].hp"),
+            expected_kind: "missing".to_string(),
+            expected_value: None,
+            note: note.clone(),
+            ..Default::default()
+        }),
+        AuthorAssertionSpec::HasRelic { has_relic, note } => Ok(ScenarioAssertion {
+            field: format!("relics.contains[{has_relic}]"),
+            expected_kind: "bool".to_string(),
+            expected_value: Some(json!(true)),
+            note: note.clone(),
+            ..Default::default()
+        }),
+        AuthorAssertionSpec::RelicCount { relic_count, note } => Ok(ScenarioAssertion {
+            field: format!("relics.count[{}]", relic_count.id),
+            expected_kind: "number".to_string(),
+            expected_value: Some(json!(relic_count.count)),
+            note: note.clone(),
+            ..Default::default()
+        }),
+    }
+}
+
+fn normalize_pile_name(pile: &str) -> Result<&'static str, String> {
+    match pile {
+        "hand" => Ok("hand"),
+        "draw" | "draw_pile" => Ok("draw_pile"),
+        "discard" | "discard_pile" => Ok("discard_pile"),
+        "exhaust" | "exhaust_pile" => Ok("exhaust_pile"),
+        "limbo" => Ok("limbo"),
+        other => Err(format!(
+            "unsupported pile '{}' in structured assertion; expected hand/draw/discard/exhaust/limbo",
+            other
+        )),
+    }
+}
+
+fn normalize_player_stat_name(stat: &str) -> Result<&'static str, String> {
+    match stat {
+        "hp" | "current_hp" => Ok("hp"),
+        "block" => Ok("block"),
+        "energy" => Ok("energy"),
+        other => Err(format!(
+            "unsupported player stat '{}' in structured assertion; expected hp/current_hp/block/energy",
+            other
+        )),
+    }
+}
+
+fn normalize_monster_stat_name(stat: &str) -> Result<&'static str, String> {
+    match stat {
+        "hp" | "current_hp" => Ok("hp"),
+        "block" => Ok("block"),
+        other => Err(format!(
+            "unsupported monster stat '{}' in structured assertion; expected hp/current_hp/block",
+            other
+        )),
+    }
+}
+
+fn base_max_hp_for_class(player_class: &str) -> i32 {
+    match player_class {
+        "Silent" => 70,
+        "Defect" => 75,
+        "Watcher" => 72,
+        _ => 80,
+    }
+}
+
+fn default_player_class() -> String {
+    "Ironclad".to_string()
+}
+
+fn default_room_type() -> String {
+    "MonsterRoom".to_string()
+}
+
+fn default_turn() -> u32 {
+    1
+}
+
+fn default_intent() -> String {
+    "UNKNOWN".to_string()
+}
+
+fn default_move_base_damage() -> i32 {
+    -1
+}
+
+fn default_move_adjusted_damage() -> i32 {
+    -1
+}
+
+fn default_move_hits() -> i32 {
+    1
+}
+
+fn default_count() -> usize {
+    1
+}
+
+fn default_relic_counter() -> i32 {
+    -1
+}
+
+fn default_occurrence() -> usize {
+    1
+}
+
+fn normalize_identifier(raw: &str) -> String {
+    raw.chars()
+        .filter(|c| c.is_ascii_alphanumeric())
+        .map(|c| c.to_ascii_lowercase())
+        .collect()
+}

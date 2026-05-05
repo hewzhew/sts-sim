@@ -1,5 +1,5 @@
-use crate::combat::CombatState;
 use crate::content::relics::RelicState;
+use crate::runtime::combat::CombatState;
 
 // Note: Cultist Mask is purely a cosmetic/UI relic ("CAW CAW!").
 // Since the rust engine is headless, there is no UI logic to fire.

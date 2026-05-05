@@ -78,7 +78,7 @@ pub fn handle_choice(_engine_state: &mut EngineState, run_state: &mut RunState, 
                         let _seed = run_state.rng_pool.misc_rng.random_long();
                         RelicId::Circlet
                     } else {
-                        crate::rng::shuffle_with_random_long(
+                        crate::runtime::rng::shuffle_with_random_long(
                             &mut available,
                             &mut run_state.rng_pool.misc_rng,
                         );

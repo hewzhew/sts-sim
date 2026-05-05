@@ -1,1 +1,18 @@
-// Placeholder for Silent cards
+pub mod acrobatics;
+pub mod adrenaline;
+pub mod after_image;
+pub mod backflip;
+pub mod blade_dance;
+pub mod bouncing_flask;
+pub mod burst;
+pub mod catalyst;
+pub mod cloak_and_dagger;
+pub mod dagger_spray;
+pub mod dagger_throw;
+pub mod deadly_poison;
+pub mod footwork;
+pub mod neutralize;
+pub mod noxious_fumes;
+pub mod poisoned_stab;
+pub mod prepared;
+pub mod survivor;

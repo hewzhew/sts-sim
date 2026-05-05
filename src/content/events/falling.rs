@@ -1,5 +1,8 @@
 use crate::state::core::EngineState;
-use crate::state::events::{EventChoiceMeta, EventState};
+use crate::state::events::{
+    EventActionKind, EventCardKind, EventChoiceMeta, EventEffect, EventOption,
+    EventOptionConstraint, EventOptionSemantics, EventOptionTransition, EventState,
+};
 use crate::state::run::RunState;
 
 // internal_state packs pre-selected card indices:
@@ -18,9 +21,19 @@ fn attack_idx(s: i32) -> usize {
     ((s >> 20) & 0x3FF) as usize
 }
 
-pub fn get_choices(_run_state: &RunState, event_state: &EventState) -> Vec<EventChoiceMeta> {
+pub fn get_options(run_state: &RunState, event_state: &EventState) -> Vec<EventOption> {
     match event_state.current_screen {
-        0 => vec![EventChoiceMeta::new("[Proceed]")],
+        0 => vec![EventOption::new(
+            EventChoiceMeta::new("[Proceed]"),
+            EventOptionSemantics {
+                action: EventActionKind::Continue,
+                effects: vec![],
+                constraints: vec![],
+                transition: EventOptionTransition::AdvanceScreen,
+                repeatable: false,
+                terminal: false,
+            },
+        )],
         1 => {
             let s = event_state.internal_state;
             let has_skill = (s & 0x3FF) != NO_CARD;
@@ -28,31 +41,133 @@ pub fn get_choices(_run_state: &RunState, event_state: &EventState) -> Vec<Event
             let has_attack = ((s >> 20) & 0x3FF) != NO_CARD;
 
             if !has_skill && !has_power && !has_attack {
-                return vec![EventChoiceMeta::new("[Land Safely] Nothing happens.")];
+                return vec![EventOption::new(
+                    EventChoiceMeta::new("[Land Safely] Nothing happens."),
+                    EventOptionSemantics {
+                        action: EventActionKind::Decline,
+                        effects: vec![],
+                        constraints: vec![],
+                        transition: EventOptionTransition::AdvanceScreen,
+                        repeatable: false,
+                        terminal: false,
+                    },
+                )];
             }
 
             let mut choices = vec![];
             if has_skill {
-                choices.push(EventChoiceMeta::new("[Skill] Remove a Skill."));
+                let effect = card_remove_effect(run_state, skill_idx(s));
+                choices.push(EventOption::new(
+                    EventChoiceMeta::new("[Skill] Remove a Skill."),
+                    EventOptionSemantics {
+                        action: EventActionKind::DeckOperation,
+                        effects: vec![effect],
+                        constraints: vec![EventOptionConstraint::RequiresRemovableCard],
+                        transition: EventOptionTransition::AdvanceScreen,
+                        repeatable: false,
+                        terminal: false,
+                    },
+                ));
             } else {
-                choices.push(EventChoiceMeta::disabled("[Skill] No Skills.", "No Skills"));
+                choices.push(EventOption::new(
+                    EventChoiceMeta::disabled("[Skill] No Skills.", "No Skills"),
+                    EventOptionSemantics {
+                        action: EventActionKind::DeckOperation,
+                        effects: vec![],
+                        constraints: vec![EventOptionConstraint::RequiresRemovableCard],
+                        transition: EventOptionTransition::AdvanceScreen,
+                        repeatable: false,
+                        terminal: false,
+                    },
+                ));
             }
             if has_power {
-                choices.push(EventChoiceMeta::new("[Power] Remove a Power."));
+                let effect = card_remove_effect(run_state, power_idx(s));
+                choices.push(EventOption::new(
+                    EventChoiceMeta::new("[Power] Remove a Power."),
+                    EventOptionSemantics {
+                        action: EventActionKind::DeckOperation,
+                        effects: vec![effect],
+                        constraints: vec![EventOptionConstraint::RequiresRemovableCard],
+                        transition: EventOptionTransition::AdvanceScreen,
+                        repeatable: false,
+                        terminal: false,
+                    },
+                ));
             } else {
-                choices.push(EventChoiceMeta::disabled("[Power] No Powers.", "No Powers"));
+                choices.push(EventOption::new(
+                    EventChoiceMeta::disabled("[Power] No Powers.", "No Powers"),
+                    EventOptionSemantics {
+                        action: EventActionKind::DeckOperation,
+                        effects: vec![],
+                        constraints: vec![EventOptionConstraint::RequiresRemovableCard],
+                        transition: EventOptionTransition::AdvanceScreen,
+                        repeatable: false,
+                        terminal: false,
+                    },
+                ));
             }
             if has_attack {
-                choices.push(EventChoiceMeta::new("[Attack] Remove an Attack."));
+                let effect = card_remove_effect(run_state, attack_idx(s));
+                choices.push(EventOption::new(
+                    EventChoiceMeta::new("[Attack] Remove an Attack."),
+                    EventOptionSemantics {
+                        action: EventActionKind::DeckOperation,
+                        effects: vec![effect],
+                        constraints: vec![EventOptionConstraint::RequiresRemovableCard],
+                        transition: EventOptionTransition::AdvanceScreen,
+                        repeatable: false,
+                        terminal: false,
+                    },
+                ));
             } else {
-                choices.push(EventChoiceMeta::disabled(
-                    "[Attack] No Attacks.",
-                    "No Attacks",
+                choices.push(EventOption::new(
+                    EventChoiceMeta::disabled("[Attack] No Attacks.", "No Attacks"),
+                    EventOptionSemantics {
+                        action: EventActionKind::DeckOperation,
+                        effects: vec![],
+                        constraints: vec![EventOptionConstraint::RequiresRemovableCard],
+                        transition: EventOptionTransition::AdvanceScreen,
+                        repeatable: false,
+                        terminal: false,
+                    },
                 ));
             }
             choices
         }
-        _ => vec![EventChoiceMeta::new("[Leave]")],
+        _ => vec![EventOption::new(
+            EventChoiceMeta::new("[Leave]"),
+            EventOptionSemantics {
+                action: EventActionKind::Leave,
+                effects: vec![],
+                constraints: vec![],
+                transition: EventOptionTransition::Complete,
+                repeatable: false,
+                terminal: true,
+            },
+        )],
+    }
+}
+
+pub fn get_choices(run_state: &RunState, event_state: &EventState) -> Vec<EventChoiceMeta> {
+    get_options(run_state, event_state)
+        .into_iter()
+        .map(|option| option.ui)
+        .collect()
+}
+
+fn card_remove_effect(run_state: &RunState, deck_idx: usize) -> EventEffect {
+    match run_state.master_deck.get(deck_idx) {
+        Some(card) => EventEffect::RemoveCard {
+            count: 1,
+            target_uuid: Some(card.uuid),
+            kind: EventCardKind::Specific(card.id),
+        },
+        None => EventEffect::RemoveCard {
+            count: 1,
+            target_uuid: None,
+            kind: EventCardKind::Unknown,
+        },
     }
 }
 
@@ -150,4 +265,36 @@ pub fn init_falling_state(run_state: &mut RunState) -> i32 {
     }
 
     (s_idx & 0x3FF) | ((p_idx & 0x3FF) << 10) | ((a_idx & 0x3FF) << 20)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::content::cards::CardId;
+
+    #[test]
+    fn falling_skill_option_exposes_remove_operation() {
+        let mut rs = RunState::new(1, 0, true, "Ironclad");
+        rs.add_card_to_deck(CardId::ShrugItOff);
+        let skill_index = rs.master_deck.len() - 1;
+        let state = EventState {
+            id: crate::state::events::EventId::Falling,
+            current_screen: 1,
+            internal_state: (skill_index as i32 & 0x3FF)
+                | ((NO_CARD & 0x3FF) << 10)
+                | ((NO_CARD & 0x3FF) << 20),
+            completed: false,
+            combat_pending: false,
+            extra_data: Vec::new(),
+        };
+        let options = get_options(&rs, &state);
+        assert!(matches!(
+            options[0].semantics.effects.as_slice(),
+            [EventEffect::RemoveCard {
+                count: 1,
+                target_uuid: Some(_),
+                kind: EventCardKind::Specific(CardId::ShrugItOff),
+            }]
+        ));
+    }
 }

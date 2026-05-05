@@ -1,6 +1,7 @@
 use crate::content::relics::{RelicId, RelicState};
 use crate::state::core::{CampfireChoice, ClientInput, EngineState};
 use crate::state::run::RunState;
+use crate::state::selection::DomainEventSource;
 
 /// Campfire (Rest Site) handler.
 ///
@@ -52,8 +53,11 @@ pub fn handle(
                     .iter()
                     .any(|r| r.id == RelicId::DreamCatcher)
                 {
-                    let cards =
-                        crate::rewards::generator::generate_card_reward(run_state, 3, false);
+                    let cards = crate::rewards::generator::generate_card_reward(
+                        run_state,
+                        crate::rewards::generator::adjusted_card_reward_choice_count(run_state, 3),
+                        false,
+                    );
                     let mut reward_state = crate::rewards::state::RewardState::new();
                     reward_state
                         .items
@@ -68,7 +72,8 @@ pub fn handle(
             CampfireChoice::Smith(idx) => {
                 // Java: SmithOption → card upgrade on master_deck
                 if idx < run_state.master_deck.len() {
-                    run_state.master_deck[idx].upgrades += 1;
+                    let uuid = run_state.master_deck[idx].uuid;
+                    run_state.upgrade_card_with_source(uuid, DomainEventSource::CampfireSmith);
                 }
                 *engine_state = EngineState::MapNavigation;
             }
@@ -103,7 +108,10 @@ pub fn handle(
                     let card = &run_state.master_deck[idx];
                     if !is_card_bottled(card, &run_state.relics) {
                         let uuid = card.uuid;
-                        run_state.remove_card_from_deck(uuid);
+                        run_state.remove_card_from_deck_with_source(
+                            uuid,
+                            DomainEventSource::CampfireToke,
+                        );
                     }
                 }
                 *engine_state = EngineState::MapNavigation;
@@ -119,11 +127,46 @@ pub fn handle(
     true
 }
 
+#[cfg(test)]
+mod tests {
+    use super::handle;
+    use crate::content::relics::{RelicId, RelicState};
+    use crate::state::core::{CampfireChoice, ClientInput, EngineState};
+    use crate::state::run::RunState;
+
+    #[test]
+    fn dream_catcher_reward_respects_question_card() {
+        let mut engine_state = EngineState::Campfire;
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        run_state.relics.clear();
+        run_state
+            .relics
+            .push(RelicState::new(RelicId::DreamCatcher));
+        run_state
+            .relics
+            .push(RelicState::new(RelicId::QuestionCard));
+
+        assert!(handle(
+            &mut engine_state,
+            &mut run_state,
+            Some(ClientInput::CampfireOption(CampfireChoice::Rest))
+        ));
+
+        match engine_state {
+            EngineState::RewardScreen(ref reward_state) => match &reward_state.items[0] {
+                crate::rewards::state::RewardItem::Card { cards } => assert_eq!(cards.len(), 4),
+                other => panic!("expected card reward, got {other:?}"),
+            },
+            other => panic!("expected reward screen, got {other:?}"),
+        }
+    }
+}
+
 /// Check if a card is bottled (attached to BottledFlame/Lightning/Tornado).
 /// Java stores the card UUID in the relic's `misc` field; our RelicState uses `amount` for this.
 /// For now: RelicState.amount stores the bottled card's UUID.
 /// A value of 0 means no card is bottled (since UUIDs start at 1).
-fn is_card_bottled(card: &crate::combat::CombatCard, relics: &[RelicState]) -> bool {
+fn is_card_bottled(card: &crate::runtime::combat::CombatCard, relics: &[RelicState]) -> bool {
     if card.uuid == 0 {
         return false;
     } // UUID 0 = not a real bottled target
@@ -152,6 +195,29 @@ pub fn card_pool_for_class(
         "Watcher" => crate::content::cards::watcher_pool_for_rarity(rarity),
         _ => crate::content::cards::ironclad_pool_for_rarity(rarity), // fallback
     }
+}
+
+pub fn nonempty_card_pool_for_class(
+    player_class: &str,
+    rarity: crate::content::cards::CardRarity,
+) -> &'static [crate::content::cards::CardId] {
+    use crate::content::cards::CardRarity;
+
+    let fallbacks = match rarity {
+        CardRarity::Rare => [CardRarity::Rare, CardRarity::Uncommon, CardRarity::Common],
+        CardRarity::Uncommon => [CardRarity::Uncommon, CardRarity::Common, CardRarity::Rare],
+        CardRarity::Common => [CardRarity::Common, CardRarity::Uncommon, CardRarity::Rare],
+        _ => [CardRarity::Common, CardRarity::Uncommon, CardRarity::Rare],
+    };
+
+    for candidate_rarity in fallbacks {
+        let pool = card_pool_for_class(player_class, candidate_rarity);
+        if !pool.is_empty() {
+            return pool;
+        }
+    }
+
+    &[]
 }
 
 /// Returns the list of available campfire options for the current run state.

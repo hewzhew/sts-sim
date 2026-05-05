@@ -1,4 +1,4 @@
-use crate::action::Action;
+use crate::runtime::action::Action;
 use smallvec::SmallVec;
 
 /// Energized: At the start of your next turn, gain X Energy.

@@ -1,15 +1,15 @@
-use crate::action::ActionInfo;
+use crate::runtime::action::ActionInfo;
 use smallvec::SmallVec;
 
 pub fn at_battle_start() -> SmallVec<[ActionInfo; 4]> {
     let mut actions = SmallVec::new();
     actions.push(ActionInfo {
-        action: crate::action::Action::SuspendForCardReward {
-            pool: crate::action::CardRewardPool::Colorless,
-            destination: crate::action::CardDestination::Hand,
+        action: crate::runtime::action::Action::SuspendForCardReward {
+            pool: crate::runtime::action::CardRewardPool::Colorless,
+            destination: crate::runtime::action::CardDestination::Hand,
             can_skip: false,
         },
-        insertion_mode: crate::action::AddTo::Bottom,
+        insertion_mode: crate::runtime::action::AddTo::Bottom,
     });
     actions
 }

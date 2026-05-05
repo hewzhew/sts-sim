@@ -1,6 +1,6 @@
-use crate::action::{Action, DamageInfo, DamageType};
-use crate::combat::CombatState;
 use crate::core::EntityId;
+use crate::runtime::action::{Action, DamageInfo, DamageType};
+use crate::runtime::combat::CombatState;
 
 pub fn on_attacked(
     _state: &CombatState,

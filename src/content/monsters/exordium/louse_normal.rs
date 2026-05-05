@@ -1,138 +1,181 @@
-use crate::action::{Action, DamageInfo, DamageType};
-use crate::combat::{CombatState, Intent, MonsterEntity, PowerId};
+use super::{apply_power_action, attack_actions, PLAYER};
 use crate::content::monsters::MonsterBehavior;
+use crate::content::powers::PowerId;
+use crate::runtime::action::Action;
+use crate::runtime::combat::{CombatState, MonsterEntity};
+use crate::semantics::combat::{
+    ApplyPowerStep, AttackSpec, AttackStep, DamageKind, EffectStrength, MonsterTurnPlan, MoveStep,
+    MoveTarget, PowerEffectKind,
+};
 
-// LouseNormal
+const BITE: u8 = 3;
+const STRENGTHEN: u8 = 4;
+
 pub struct LouseNormal;
 
+enum LouseNormalTurn<'a> {
+    Bite(&'a AttackSpec),
+    Strengthen(&'a ApplyPowerStep),
+}
+
+fn strengthen_amount(asc: u8) -> i32 {
+    if asc >= 17 {
+        4
+    } else {
+        3
+    }
+}
+
+fn curl_up_amount(hp_rng: &mut crate::runtime::rng::StsRng, asc: u8) -> i32 {
+    if asc >= 17 {
+        hp_rng.random_range(9, 12)
+    } else if asc >= 7 {
+        hp_rng.random_range(4, 8)
+    } else {
+        hp_rng.random_range(3, 7)
+    }
+}
+
+fn bite_damage(entity: &MonsterEntity) -> i32 {
+    entity
+        .louse
+        .bite_damage
+        .unwrap_or_else(|| panic!("louse normal missing locked bite damage"))
+}
+
+fn bite_plan(entity: &MonsterEntity) -> MonsterTurnPlan {
+    MonsterTurnPlan::single(
+        BITE,
+        MoveStep::Attack(AttackStep {
+            target: MoveTarget::Player,
+            attack: AttackSpec {
+                base_damage: bite_damage(entity),
+                hits: 1,
+                damage_kind: DamageKind::Normal,
+            },
+        }),
+    )
+}
+
+fn strengthen_plan(asc: u8) -> MonsterTurnPlan {
+    MonsterTurnPlan::single(
+        STRENGTHEN,
+        MoveStep::ApplyPower(ApplyPowerStep {
+            target: MoveTarget::SelfTarget,
+            power_id: PowerId::Strength,
+            amount: strengthen_amount(asc),
+            effect: PowerEffectKind::Buff,
+            visible_strength: EffectStrength::Normal,
+        }),
+    )
+}
+
+fn plan_for(entity: &MonsterEntity, move_id: u8, asc: u8) -> MonsterTurnPlan {
+    match move_id {
+        BITE => bite_plan(entity),
+        STRENGTHEN => strengthen_plan(asc),
+        _ => MonsterTurnPlan::unknown(move_id),
+    }
+}
+
+fn last_two_moves(entity: &MonsterEntity, move_id: u8) -> bool {
+    let mut history = entity.move_history().iter().rev();
+    matches!(
+        (history.next().copied(), history.next().copied()),
+        (Some(a), Some(b)) if a == move_id && b == move_id
+    )
+}
+
+fn decode_turn<'a>(plan: &'a MonsterTurnPlan) -> LouseNormalTurn<'a> {
+    match (plan.move_id, plan.steps.as_slice()) {
+        (
+            BITE,
+            [MoveStep::Attack(AttackStep {
+                target: MoveTarget::Player,
+                attack,
+            })],
+        ) => LouseNormalTurn::Bite(attack),
+        (
+            STRENGTHEN,
+            [MoveStep::ApplyPower(ApplyPowerStep {
+                target: MoveTarget::SelfTarget,
+                power_id: PowerId::Strength,
+                effect: PowerEffectKind::Buff,
+                ..
+            })],
+        ) => {
+            let MoveStep::ApplyPower(power) = &plan.steps[0] else {
+                unreachable!()
+            };
+            LouseNormalTurn::Strengthen(power)
+        }
+        (_, []) => panic!("louse normal plan missing locked truth"),
+        (move_id, steps) => panic!("louse normal plan/steps mismatch: {} {:?}", move_id, steps),
+    }
+}
+
 impl MonsterBehavior for LouseNormal {
-    fn roll_move(
-        _rng: &mut crate::rng::StsRng,
+    fn roll_move_plan(
+        _rng: &mut crate::runtime::rng::StsRng,
         entity: &MonsterEntity,
-        ascension_level: u8,
+        asc: u8,
         num: i32,
-    ) -> (u8, Intent) {
-        let bite_dmg = entity.intent_dmg;
-
-        // 3 = BITE, 4 = STRENGTHEN
-        let last_move = entity.move_history.back().copied();
-        let last_move_before = if entity.move_history.len() >= 2 {
-            entity
-                .move_history
-                .get(entity.move_history.len() - 2)
-                .copied()
-        } else {
-            None
-        };
-        let last_two_moves_were =
-            |byte: u8| -> bool { last_move == Some(byte) && last_move_before == Some(byte) };
-
-        // Java: Asc 17+ uses lastMove(4) (single check), below Asc 17 uses lastTwoMoves(4)
-        if ascension_level >= 17 {
+    ) -> MonsterTurnPlan {
+        if asc >= 17 {
             if num < 25 {
-                if last_move == Some(4) {
-                    (
-                        3,
-                        Intent::Attack {
-                            damage: bite_dmg,
-                            hits: 1,
-                        },
-                    )
+                if entity.move_history().back().copied() == Some(STRENGTHEN) {
+                    bite_plan(entity)
                 } else {
-                    (4, Intent::Buff)
+                    strengthen_plan(asc)
                 }
-            } else if last_two_moves_were(3) {
-                (4, Intent::Buff)
+            } else if last_two_moves(entity, BITE) {
+                strengthen_plan(asc)
             } else {
-                (
-                    3,
-                    Intent::Attack {
-                        damage: bite_dmg,
-                        hits: 1,
-                    },
-                )
+                bite_plan(entity)
             }
+        } else if num < 25 {
+            if last_two_moves(entity, STRENGTHEN) {
+                bite_plan(entity)
+            } else {
+                strengthen_plan(asc)
+            }
+        } else if last_two_moves(entity, BITE) {
+            strengthen_plan(asc)
         } else {
-            if num < 25 {
-                if last_two_moves_were(4) {
-                    (
-                        3,
-                        Intent::Attack {
-                            damage: bite_dmg,
-                            hits: 1,
-                        },
-                    )
-                } else {
-                    (4, Intent::Buff)
-                }
-            } else if last_two_moves_were(3) {
-                (4, Intent::Buff)
-            } else {
-                (
-                    3,
-                    Intent::Attack {
-                        damage: bite_dmg,
-                        hits: 1,
-                    },
-                )
-            }
+            bite_plan(entity)
         }
     }
 
-    fn take_turn(state: &mut CombatState, entity: &MonsterEntity) -> Vec<Action> {
-        let asc = state.ascension_level;
-        let bite_dmg = entity.intent_dmg;
-        let str_amount = if asc >= 17 { 4 } else { 3 };
-        let mut actions = Vec::new();
+    fn turn_plan(state: &CombatState, entity: &MonsterEntity) -> MonsterTurnPlan {
+        plan_for(entity, entity.planned_move_id(), state.meta.ascension_level)
+    }
 
-        match entity.next_move_byte {
-            3 => {
-                // BITE
-                actions.push(Action::Damage(DamageInfo {
-                    source: entity.id,
-                    target: 0, // Player
-                    base: bite_dmg,
-                    output: bite_dmg,
-                    damage_type: DamageType::Normal,
-                    is_modified: false,
-                }));
-            }
-            4 => {
-                // STRENGTHEN
-                actions.push(Action::ApplyPower {
-                    target: entity.id,
-                    source: entity.id,
-                    power_id: PowerId::Strength,
-                    amount: str_amount,
-                });
-            }
-            _ => {}
-        }
+    fn use_pre_battle_actions(
+        state: &mut CombatState,
+        entity: &MonsterEntity,
+        legacy_rng: crate::content::monsters::PreBattleLegacyRng,
+    ) -> Vec<Action> {
+        let (hp_rng, asc) = crate::content::monsters::legacy_pre_battle_rng(state, legacy_rng);
+        vec![Action::ApplyPower {
+            source: entity.id,
+            target: entity.id,
+            power_id: PowerId::CurlUp,
+            amount: curl_up_amount(hp_rng, asc),
+        }]
+    }
 
+    fn take_turn_plan(
+        _state: &mut CombatState,
+        entity: &MonsterEntity,
+        plan: &MonsterTurnPlan,
+    ) -> Vec<Action> {
+        let mut actions = match decode_turn(plan) {
+            LouseNormalTurn::Bite(attack) => attack_actions(entity.id, PLAYER, attack),
+            LouseNormalTurn::Strengthen(power) => vec![apply_power_action(entity, power)],
+        };
         actions.push(Action::RollMonsterMove {
             monster_id: entity.id,
         });
         actions
-    }
-
-    fn use_pre_battle_action(
-        entity: &MonsterEntity,
-        hp_rng: &mut crate::rng::StsRng,
-        ascension_level: u8,
-    ) -> Vec<Action> {
-        let curl_up_amount = if ascension_level >= 17 {
-            hp_rng.random_range(9, 12) as i32
-        } else if ascension_level >= 7 {
-            hp_rng.random_range(4, 8) as i32
-        } else {
-            hp_rng.random_range(3, 7) as i32
-        };
-
-        vec![Action::ApplyPower {
-            target: entity.id,
-            source: entity.id,
-            power_id: PowerId::CurlUp,
-            amount: curl_up_amount,
-        }]
     }
 }

@@ -1,7 +1,7 @@
-use crate::action::Action;
-use crate::combat::CombatState;
 use crate::content::powers::PowerId;
 use crate::core::EntityId;
+use crate::runtime::action::Action;
+use crate::runtime::combat::CombatState;
 
 pub fn on_attacked(
     state: &CombatState,
@@ -19,7 +19,7 @@ pub fn on_attacked(
             power_id: PowerId::Strength,
             amount: -damage,
         });
-        let has_artifact = state.power_db.get(&owner).is_some_and(|powers| {
+        let has_artifact = state.entities.power_db.get(&owner).is_some_and(|powers| {
             powers
                 .iter()
                 .any(|p| p.power_type == PowerId::Artifact && p.amount > 0)

@@ -1,4 +1,4 @@
-use crate::combat::{CombatCard, CombatState};
+use crate::runtime::combat::{CombatCard, CombatState};
 
 pub fn on_apply(state: &mut CombatState) {
     crate::content::cards::ironclad::corruption::corruption_on_apply(state)

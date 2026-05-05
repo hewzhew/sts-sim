@@ -1,10 +1,10 @@
-use crate::action::{Action, ActionInfo, AddTo, DamageInfo, DamageType};
-use crate::combat::CombatState;
+use crate::runtime::action::{Action, ActionInfo, AddTo, DamageInfo, DamageType};
+use crate::runtime::combat::CombatState;
 use smallvec::SmallVec;
 
 /// Regret: Unplayable. At the end of your turn, lose HP equal to the number of cards in your hand.
 pub fn on_end_turn_in_hand(state: &CombatState) -> SmallVec<[ActionInfo; 4]> {
-    let hand_size = state.hand.len() as i32;
+    let hand_size = state.zones.hand.len() as i32;
 
     smallvec::smallvec![ActionInfo {
         action: Action::Damage(DamageInfo {

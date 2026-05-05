@@ -8,10 +8,14 @@
 //   maxHpLoss = (int)(maxHP * 0.08f) or 0.10f at A15+, min 1
 
 use crate::content::cards::CardId;
-use crate::content::relics::{RelicId, RelicState};
+use crate::content::relics::RelicId;
 use crate::state::core::EngineState;
-use crate::state::events::{EventChoiceMeta, EventState};
+use crate::state::events::{
+    EventActionKind, EventCardKind, EventChoiceMeta, EventEffect, EventId, EventOption,
+    EventOptionSemantics, EventOptionTransition, EventRelicKind, EventState,
+};
 use crate::state::run::RunState;
+use crate::state::selection::DomainEventSource;
 
 fn calc_damage(run_state: &RunState) -> i32 {
     if run_state.ascension_level >= 15 {
@@ -30,26 +34,96 @@ fn calc_max_hp_loss(run_state: &RunState) -> i32 {
     loss.max(1)
 }
 
-pub fn get_choices(run_state: &RunState, event_state: &EventState) -> Vec<EventChoiceMeta> {
+pub fn get_options(run_state: &RunState, event_state: &EventState) -> Vec<EventOption> {
     match event_state.current_screen {
-        0 => {
-            vec![
+        0 => vec![
+            EventOption::new(
                 EventChoiceMeta::new("[Take] Obtain Golden Idol."),
+                EventOptionSemantics {
+                    action: EventActionKind::Gain,
+                    effects: vec![EventEffect::ObtainRelic {
+                        count: 1,
+                        kind: EventRelicKind::Specific(RelicId::GoldenIdol),
+                    }],
+                    constraints: vec![],
+                    transition: EventOptionTransition::AdvanceScreen,
+                    repeatable: false,
+                    terminal: false,
+                },
+            ),
+            EventOption::new(
                 EventChoiceMeta::new("[Leave]"),
-            ]
-        }
+                EventOptionSemantics {
+                    action: EventActionKind::Leave,
+                    effects: vec![],
+                    constraints: vec![],
+                    transition: EventOptionTransition::Complete,
+                    repeatable: false,
+                    terminal: true,
+                },
+            ),
+        ],
         1 => {
-            // Trap triggered — pick your punishment
             let damage = calc_damage(run_state);
             let max_hp_loss = calc_max_hp_loss(run_state);
             vec![
-                EventChoiceMeta::new("[Run] Obtain Injury curse."),
-                EventChoiceMeta::new(format!("[Fight] Take {} damage.", damage)),
-                EventChoiceMeta::new(format!("[Lose Max HP] Lose {} Max HP.", max_hp_loss)),
+                EventOption::new(
+                    EventChoiceMeta::new("[Run] Obtain Injury curse."),
+                    EventOptionSemantics {
+                        action: EventActionKind::Decline,
+                        effects: vec![EventEffect::ObtainCurse {
+                            count: 1,
+                            kind: EventCardKind::Specific(CardId::Injury),
+                        }],
+                        constraints: vec![],
+                        transition: EventOptionTransition::AdvanceScreen,
+                        repeatable: false,
+                        terminal: true,
+                    },
+                ),
+                EventOption::new(
+                    EventChoiceMeta::new(format!("[Fight] Take {} damage.", damage)),
+                    EventOptionSemantics {
+                        action: EventActionKind::Fight,
+                        effects: vec![EventEffect::LoseHp(damage)],
+                        constraints: vec![],
+                        transition: EventOptionTransition::AdvanceScreen,
+                        repeatable: false,
+                        terminal: true,
+                    },
+                ),
+                EventOption::new(
+                    EventChoiceMeta::new(format!("[Lose Max HP] Lose {} Max HP.", max_hp_loss)),
+                    EventOptionSemantics {
+                        action: EventActionKind::Decline,
+                        effects: vec![EventEffect::LoseMaxHp(max_hp_loss)],
+                        constraints: vec![],
+                        transition: EventOptionTransition::AdvanceScreen,
+                        repeatable: false,
+                        terminal: true,
+                    },
+                ),
             ]
         }
-        _ => vec![EventChoiceMeta::new("[Leave]")],
+        _ => vec![EventOption::new(
+            EventChoiceMeta::new("[Leave]"),
+            EventOptionSemantics {
+                action: EventActionKind::Leave,
+                effects: vec![],
+                constraints: vec![],
+                transition: EventOptionTransition::Complete,
+                repeatable: false,
+                terminal: true,
+            },
+        )],
     }
+}
+
+pub fn get_choices(run_state: &RunState, event_state: &EventState) -> Vec<EventChoiceMeta> {
+    get_options(run_state, event_state)
+        .into_iter()
+        .map(|option| option.ui)
+        .collect()
 }
 
 pub fn handle_choice(_engine_state: &mut EngineState, run_state: &mut RunState, choice_idx: usize) {
@@ -65,7 +139,13 @@ pub fn handle_choice(_engine_state: &mut EngineState, run_state: &mut RunState, 
                     } else {
                         RelicId::GoldenIdol
                     };
-                    run_state.relics.push(RelicState::new(relic_id));
+                    if let Some(next_state) = run_state.obtain_relic_with_source(
+                        relic_id,
+                        EngineState::EventRoom,
+                        DomainEventSource::Event(EventId::GoldenIdol),
+                    ) {
+                        *_engine_state = next_state;
+                    }
                     event_state.current_screen = 1;
                 }
                 _ => {
@@ -91,15 +171,18 @@ pub fn handle_choice(_engine_state: &mut EngineState, run_state: &mut RunState, 
                     {
                         damage = (damage - 1).max(0);
                     }
-                    run_state.current_hp = (run_state.current_hp - damage).max(0);
+                    run_state.change_hp_with_source(
+                        -damage,
+                        DomainEventSource::Event(EventId::GoldenIdol),
+                    );
                 }
                 _ => {
                     // Lose Max HP
                     let max_hp_loss = calc_max_hp_loss(run_state);
-                    run_state.max_hp = (run_state.max_hp - max_hp_loss).max(1);
-                    if run_state.current_hp > run_state.max_hp {
-                        run_state.current_hp = run_state.max_hp;
-                    }
+                    run_state.lose_max_hp_with_source(
+                        max_hp_loss,
+                        DomainEventSource::Event(EventId::GoldenIdol),
+                    );
                 }
             }
             event_state.current_screen = 2;

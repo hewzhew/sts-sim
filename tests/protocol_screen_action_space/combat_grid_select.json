@@ -1,0 +1,47 @@
+{
+  "available_commands": [],
+  "ready_for_command": true,
+  "in_game": true,
+  "protocol_meta": {
+    "protocol_version": 7,
+    "capabilities": {
+      "combat_action_space": true,
+      "noncombat_action_space": true
+    },
+    "combat_action_space": {
+      "screen_type": "GRID",
+      "actions": [
+        {
+          "action_id": "choice:grid:0",
+          "kind": "submit_choice",
+          "command": "CHOOSE 0",
+          "target_required": false,
+          "target_options": [],
+          "choice_index": 0,
+          "choice_label": "strike"
+        },
+        {
+          "action_id": "choice:grid:1",
+          "kind": "submit_choice",
+          "command": "CHOOSE 1",
+          "target_required": false,
+          "target_options": [],
+          "choice_index": 1,
+          "choice_label": "defend"
+        },
+        {
+          "action_id": "proceed:grid",
+          "kind": "proceed",
+          "command": "CONFIRM",
+          "target_required": false,
+          "target_options": []
+        }
+      ]
+    }
+  },
+  "game_state": {
+    "screen_type": "GRID",
+    "room_phase": "COMBAT",
+    "is_screen_up": true
+  }
+}

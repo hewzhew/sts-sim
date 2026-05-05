@@ -1,7 +1,7 @@
 use super::PotionId;
-use crate::action::{Action, ActionInfo, AddTo, DamageInfo, DamageType};
 use crate::content::powers::PowerId;
 use crate::core::EntityId;
+use crate::runtime::action::{Action, ActionInfo, AddTo, DamageInfo, DamageType, NO_SOURCE};
 use smallvec::SmallVec;
 
 /// Player entity ID constant
@@ -18,8 +18,8 @@ fn bottom(actions: &mut SmallVec<[ActionInfo; 4]>, action: Action) {
 /// Generates the actions applied when a potion is used in combat.
 /// `target_idx`: Some(enemy_entity_id) for targeted/thrown potions, None for self.
 /// `potency`: the effective potency (base * SacredBark multiplier).
-#[allow(unused)]
 pub fn get_potion_actions(
+    enemy_count: usize,
     potion: PotionId,
     target_idx: Option<usize>,
     potency: i32,
@@ -48,8 +48,11 @@ pub fn get_potion_actions(
             bottom(
                 &mut actions,
                 Action::DamageAllEnemies {
-                    source: PLAYER,
-                    damages: smallvec::smallvec![potency; 5],
+                    // Java uses DamageAllEnemiesAction(null, ..., NORMAL), so this
+                    // damage should not look like a player-owned normal attack for
+                    // hooks such as Curl Up.
+                    source: NO_SOURCE,
+                    damages: crate::runtime::action::repeated_damage_matrix(enemy_count, potency),
                     damage_type: DamageType::Normal,
                     is_modified: false,
                 },
@@ -202,6 +205,7 @@ pub fn get_potion_actions(
             bottom(
                 &mut actions,
                 Action::SuspendForDiscovery {
+                    colorless: false,
                     card_type: Some(crate::content::cards::CardType::Attack),
                     cost_for_turn: Some(0),
                 },
@@ -212,6 +216,7 @@ pub fn get_potion_actions(
             bottom(
                 &mut actions,
                 Action::SuspendForDiscovery {
+                    colorless: false,
                     card_type: Some(crate::content::cards::CardType::Skill),
                     cost_for_turn: Some(0),
                 },
@@ -220,10 +225,11 @@ pub fn get_potion_actions(
         PotionId::PowerPotion => {
             // Java: DiscoveryAction(CardType.POWER, potency) — opens choice screen with 3 Power cards.
             // SuspendForDiscovery consumes the correct 3+ cardRandomRng calls.
-            // diff_driver auto-resolves the discovery choice by matching Java snapshot.
+            // Replay continuation now depends on typed protocol continuation truth.
             bottom(
                 &mut actions,
                 Action::SuspendForDiscovery {
+                    colorless: false,
                     card_type: Some(crate::content::cards::CardType::Power),
                     cost_for_turn: Some(0),
                 },
@@ -236,7 +242,8 @@ pub fn get_potion_actions(
             bottom(
                 &mut actions,
                 Action::SuspendForDiscovery {
-                    card_type: None, // Signal for colorless discovery
+                    colorless: true,
+                    card_type: None,
                     cost_for_turn: Some(0),
                 },
             );
@@ -307,7 +314,18 @@ pub fn get_potion_actions(
             );
         }
         PotionId::DistilledChaosPotion => {
-            // Handled natively in Action::UsePotion (action_handlers.rs) to maintain accurate RNG parity.
+            // Java adds one PlayTopCardAction per potency. Each action takes the
+            // current top card when it executes, then appends that card to the
+            // normal card queue.
+            for _ in 0..potency.max(0) {
+                bottom(
+                    &mut actions,
+                    Action::PlayTopCard {
+                        target: None,
+                        exhaust: false,
+                    },
+                );
+            }
         }
         PotionId::DuplicationPotion => {
             // This turn, your next card is played twice
@@ -421,7 +439,7 @@ pub fn get_potion_actions(
                 Action::ApplyPower {
                     source: PLAYER,
                     target: PLAYER,
-                    power_id: PowerId::Intangible,
+                    power_id: PowerId::IntangiblePlayer,
                     amount: potency,
                 },
             );
@@ -442,11 +460,15 @@ pub fn get_potion_actions(
             // Gain 1 Ritual
             bottom(
                 &mut actions,
-                Action::ApplyPower {
+                Action::ApplyPowerDetailed {
                     source: PLAYER,
                     target: PLAYER,
                     power_id: PowerId::Ritual,
                     amount: potency,
+                    instance_id: None,
+                    extra_data: Some(crate::content::powers::core::ritual::extra_data(
+                        true, false,
+                    )),
                 },
             );
         }
@@ -456,7 +478,12 @@ pub fn get_potion_actions(
             bottom(&mut actions, Action::EnterStance("Divinity".to_string()));
         }
         PotionId::EssenceOfDarkness => {
-            // Handled natively in Action::UsePotion (action_handlers.rs) to maintain accurate multiplier parity.
+            for _ in 0..potency.max(0) {
+                bottom(
+                    &mut actions,
+                    Action::ChannelOrb(crate::runtime::combat::OrbId::Dark),
+                );
+            }
         }
     }
 

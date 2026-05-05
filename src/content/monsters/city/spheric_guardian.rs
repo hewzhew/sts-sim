@@ -1,16 +1,167 @@
-use crate::action::{Action, DamageInfo, DamageType};
-use crate::combat::{CombatState, Intent, MonsterEntity};
+use crate::content::monsters::exordium::{
+    apply_power_action, attack_actions, gain_block_action, PLAYER,
+};
 use crate::content::monsters::MonsterBehavior;
 use crate::content::powers::PowerId;
+use crate::runtime::action::Action;
+use crate::runtime::combat::{CombatState, MonsterEntity};
+use crate::semantics::combat::{
+    ApplyPowerStep, AttackSpec, AttackStep, BlockStep, DamageKind, DebuffSpec, DefendSpec,
+    EffectStrength, MonsterMoveSpec, MonsterTurnPlan, MoveStep, MoveTarget, PowerEffectKind,
+};
 
 pub struct SphericGuardian;
 
+const SLAM: u8 = 1;
+const HARDEN: u8 = 2;
+const BASH_AND_BLOCK: u8 = 3;
+const BASH_AND_FRAIL: u8 = 4;
+
+enum SphericGuardianTurn<'a> {
+    Slam(&'a AttackSpec),
+    Harden(&'a BlockStep),
+    BashAndBlock(&'a AttackSpec, &'a BlockStep),
+    BashAndFrail(&'a AttackSpec, &'a ApplyPowerStep),
+}
+
+fn bash_damage(asc: u8) -> i32 {
+    if asc >= 2 {
+        11
+    } else {
+        10
+    }
+}
+
+fn harden_block(asc: u8) -> i32 {
+    if asc >= 17 {
+        35
+    } else {
+        25
+    }
+}
+
+fn slam_plan(asc: u8) -> MonsterTurnPlan {
+    MonsterTurnPlan::from_spec(
+        SLAM,
+        MonsterMoveSpec::Attack(AttackSpec {
+            base_damage: bash_damage(asc),
+            hits: 2,
+            damage_kind: DamageKind::Normal,
+        }),
+    )
+}
+
+fn harden_plan(asc: u8) -> MonsterTurnPlan {
+    MonsterTurnPlan::from_spec(
+        HARDEN,
+        MonsterMoveSpec::Defend(DefendSpec {
+            block: harden_block(asc),
+        }),
+    )
+}
+
+fn bash_and_block_plan(asc: u8) -> MonsterTurnPlan {
+    MonsterTurnPlan::from_spec(
+        BASH_AND_BLOCK,
+        MonsterMoveSpec::AttackDefend(
+            AttackSpec {
+                base_damage: bash_damage(asc),
+                hits: 1,
+                damage_kind: DamageKind::Normal,
+            },
+            DefendSpec { block: 15 },
+        ),
+    )
+}
+
+fn bash_and_frail_plan(asc: u8) -> MonsterTurnPlan {
+    MonsterTurnPlan::from_spec(
+        BASH_AND_FRAIL,
+        MonsterMoveSpec::AttackDebuff(
+            AttackSpec {
+                base_damage: bash_damage(asc),
+                hits: 1,
+                damage_kind: DamageKind::Normal,
+            },
+            DebuffSpec {
+                power_id: PowerId::Frail,
+                amount: 5,
+                strength: EffectStrength::Normal,
+            },
+        ),
+    )
+}
+
+fn plan_for(move_id: u8, asc: u8) -> MonsterTurnPlan {
+    match move_id {
+        SLAM => slam_plan(asc),
+        HARDEN => harden_plan(asc),
+        BASH_AND_BLOCK => bash_and_block_plan(asc),
+        BASH_AND_FRAIL => bash_and_frail_plan(asc),
+        _ => MonsterTurnPlan::unknown(move_id),
+    }
+}
+
+fn decode_turn<'a>(plan: &'a MonsterTurnPlan) -> SphericGuardianTurn<'a> {
+    match (plan.move_id, plan.steps.as_slice()) {
+        (
+            SLAM,
+            [MoveStep::Attack(AttackStep {
+                target: MoveTarget::Player,
+                attack,
+            })],
+        ) => SphericGuardianTurn::Slam(attack),
+        (
+            HARDEN,
+            [MoveStep::GainBlock(
+                block @ BlockStep {
+                    target: MoveTarget::SelfTarget,
+                    ..
+                },
+            )],
+        ) => SphericGuardianTurn::Harden(block),
+        (
+            BASH_AND_BLOCK,
+            [MoveStep::Attack(AttackStep {
+                target: MoveTarget::Player,
+                attack,
+            }), MoveStep::GainBlock(
+                block @ BlockStep {
+                    target: MoveTarget::SelfTarget,
+                    ..
+                },
+            )],
+        ) => SphericGuardianTurn::BashAndBlock(attack, block),
+        (
+            BASH_AND_FRAIL,
+            [MoveStep::Attack(AttackStep {
+                target: MoveTarget::Player,
+                attack,
+            }), MoveStep::ApplyPower(
+                power @ ApplyPowerStep {
+                    target: MoveTarget::Player,
+                    power_id: PowerId::Frail,
+                    effect: PowerEffectKind::Debuff,
+                    ..
+                },
+            )],
+        ) => SphericGuardianTurn::BashAndFrail(attack, power),
+        (_, []) => panic!("spheric guardian plan missing locked truth"),
+        (move_id, steps) => panic!(
+            "spheric guardian plan/steps mismatch: {} {:?}",
+            move_id, steps
+        ),
+    }
+}
+
 impl MonsterBehavior for SphericGuardian {
-    fn use_pre_battle_action(
+    fn use_pre_battle_actions(
+        state: &mut CombatState,
         entity: &MonsterEntity,
-        _hp_rng: &mut crate::rng::StsRng,
-        _ascension_level: u8,
+        legacy_rng: crate::content::monsters::PreBattleLegacyRng,
     ) -> Vec<Action> {
+        let (_hp_rng, _ascension_level) =
+            crate::content::monsters::legacy_pre_battle_rng(state, legacy_rng);
         vec![
             Action::ApplyPower {
                 source: entity.id,
@@ -31,115 +182,51 @@ impl MonsterBehavior for SphericGuardian {
         ]
     }
 
-    fn roll_move(
-        _rng: &mut crate::rng::StsRng,
+    fn roll_move_plan(
+        _rng: &mut crate::runtime::rng::StsRng,
         entity: &MonsterEntity,
         ascension_level: u8,
         _num: i32,
-    ) -> (u8, Intent) {
-        let dmg = if ascension_level >= 2 { 11 } else { 10 };
-
-        if entity.move_history.is_empty() {
-            return (2, Intent::Defend);
+    ) -> MonsterTurnPlan {
+        if entity.move_history().is_empty() {
+            return harden_plan(ascension_level);
         }
-
-        if entity.move_history.len() == 1 {
-            return (
-                4,
-                Intent::AttackDebuff {
-                    damage: dmg,
-                    hits: 1,
-                },
-            );
+        if entity.move_history().len() == 1 {
+            return bash_and_frail_plan(ascension_level);
         }
-
-        if entity.move_history.back() == Some(&1) {
-            (
-                3,
-                Intent::AttackDefend {
-                    damage: dmg,
-                    hits: 1,
-                },
-            )
+        if entity.move_history().back().copied() == Some(SLAM) {
+            bash_and_block_plan(ascension_level)
         } else {
-            (
-                1,
-                Intent::Attack {
-                    damage: dmg,
-                    hits: 2,
-                },
-            )
+            slam_plan(ascension_level)
         }
     }
 
-    fn take_turn(state: &mut CombatState, entity: &MonsterEntity) -> Vec<Action> {
-        let mut actions = Vec::new();
-        let target = 0; // Player
-        let asc = state.ascension_level;
-        let dmg = if asc >= 2 { 11 } else { 10 };
+    fn turn_plan(state: &CombatState, entity: &MonsterEntity) -> MonsterTurnPlan {
+        plan_for(entity.planned_move_id(), state.meta.ascension_level)
+    }
 
-        match entity.next_move_byte {
-            1 => {
-                actions.push(Action::Damage(DamageInfo {
-                    source: entity.id,
-                    target,
-                    base: dmg,
-                    output: dmg,
-                    damage_type: DamageType::Normal,
-                    is_modified: false,
-                }));
-                actions.push(Action::Damage(DamageInfo {
-                    source: entity.id,
-                    target,
-                    base: dmg,
-                    output: dmg,
-                    damage_type: DamageType::Normal,
-                    is_modified: false,
-                }));
+    fn take_turn_plan(
+        _state: &mut CombatState,
+        entity: &MonsterEntity,
+        plan: &MonsterTurnPlan,
+    ) -> Vec<Action> {
+        let mut actions = match decode_turn(plan) {
+            SphericGuardianTurn::Slam(attack) => attack_actions(entity.id, PLAYER, attack),
+            SphericGuardianTurn::Harden(block) => vec![gain_block_action(entity, block)],
+            SphericGuardianTurn::BashAndBlock(attack, block) => {
+                let mut actions = attack_actions(entity.id, PLAYER, attack);
+                actions.push(gain_block_action(entity, block));
+                actions
             }
-            2 => {
-                let block_amt = if asc >= 17 { 35 } else { 25 };
-                actions.push(Action::GainBlock {
-                    target: entity.id,
-                    amount: block_amt,
-                });
+            SphericGuardianTurn::BashAndFrail(attack, power) => {
+                let mut actions = attack_actions(entity.id, PLAYER, attack);
+                actions.push(apply_power_action(entity, power));
+                actions
             }
-            3 => {
-                actions.push(Action::GainBlock {
-                    target: entity.id,
-                    amount: 15,
-                });
-                actions.push(Action::Damage(DamageInfo {
-                    source: entity.id,
-                    target,
-                    base: dmg,
-                    output: dmg,
-                    damage_type: DamageType::Normal,
-                    is_modified: false,
-                }));
-            }
-            4 => {
-                actions.push(Action::Damage(DamageInfo {
-                    source: entity.id,
-                    target,
-                    base: dmg,
-                    output: dmg,
-                    damage_type: DamageType::Normal,
-                    is_modified: false,
-                }));
-                actions.push(Action::ApplyPower {
-                    source: entity.id,
-                    target,
-                    power_id: PowerId::Frail,
-                    amount: 5,
-                });
-            }
-            _ => {}
-        }
+        };
         actions.push(Action::RollMonsterMove {
             monster_id: entity.id,
         });
-
         actions
     }
 }

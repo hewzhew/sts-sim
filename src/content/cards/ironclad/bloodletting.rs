@@ -1,5 +1,5 @@
-use crate::action::{Action, ActionInfo, AddTo};
-use crate::combat::{CombatCard, CombatState};
+use crate::runtime::action::{Action, ActionInfo, AddTo};
+use crate::runtime::combat::{CombatCard, CombatState};
 use smallvec::SmallVec;
 
 pub fn bloodletting_play(_state: &CombatState, card: &CombatCard) -> SmallVec<[ActionInfo; 4]> {
@@ -7,7 +7,8 @@ pub fn bloodletting_play(_state: &CombatState, card: &CombatCard) -> SmallVec<[A
         ActionInfo {
             action: Action::LoseHp {
                 target: 0,
-                amount: 3
+                amount: 3,
+                triggers_rupture: true,
             },
             insertion_mode: AddTo::Bottom,
         },

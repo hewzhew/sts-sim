@@ -1,13 +1,13 @@
-use crate::action::{Action, ActionInfo, AddTo};
-use crate::combat::{CombatCard, CombatState};
 use crate::content::powers::PowerId;
+use crate::runtime::action::{Action, ActionInfo, AddTo};
+use crate::runtime::combat::{CombatCard, CombatState};
 use smallvec::SmallVec;
 
 pub fn shockwave_play(state: &CombatState, card: &CombatCard) -> SmallVec<[ActionInfo; 4]> {
     let mut actions = smallvec::SmallVec::new();
     let amount = card.base_magic_num_mut; // 3, upgraded 5
 
-    for m in &state.monsters {
+    for m in &state.entities.monsters {
         if !m.is_dying && !m.is_escaped {
             actions.push(ActionInfo {
                 action: Action::ApplyPower {

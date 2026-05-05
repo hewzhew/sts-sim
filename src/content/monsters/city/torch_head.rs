@@ -1,47 +1,69 @@
-use crate::action::{Action, DamageInfo, DamageType};
-use crate::combat::{CombatState, Intent};
+use crate::content::monsters::exordium::{attack_actions, set_next_move_action, PLAYER};
 use crate::content::monsters::MonsterBehavior;
+use crate::runtime::action::Action;
+use crate::runtime::combat::{CombatState, MonsterEntity};
+use crate::semantics::combat::{AttackSpec, DamageKind, MonsterMoveSpec, MonsterTurnPlan};
 
 pub struct TorchHead;
 
-impl MonsterBehavior for TorchHead {
-    fn use_pre_battle_action(
-        entity: &crate::combat::MonsterEntity,
-        _hp_rng: &mut crate::rng::StsRng,
-        _ascension_level: u8,
-    ) -> Vec<Action> {
-        vec![Action::ApplyPower {
-            source: entity.id,
-            target: entity.id,
-            power_id: crate::content::powers::PowerId::Minion,
-            amount: 1,
-        }]
-    }
+const TACKLE: u8 = 1;
+const TACKLE_DAMAGE: i32 = 7;
 
-    fn roll_move(
-        _rng: &mut crate::rng::StsRng,
-        _entity: &crate::combat::MonsterEntity,
+fn tackle_plan() -> MonsterTurnPlan {
+    MonsterTurnPlan::from_spec(
+        TACKLE,
+        MonsterMoveSpec::Attack(AttackSpec {
+            base_damage: TACKLE_DAMAGE,
+            hits: 1,
+            damage_kind: DamageKind::Normal,
+        }),
+    )
+}
+
+fn plan_for(move_id: u8) -> MonsterTurnPlan {
+    match move_id {
+        TACKLE => tackle_plan(),
+        _ => MonsterTurnPlan::unknown(move_id),
+    }
+}
+
+impl MonsterBehavior for TorchHead {
+    fn roll_move_plan(
+        _rng: &mut crate::runtime::rng::StsRng,
+        _entity: &MonsterEntity,
         _ascension_level: u8,
         _num: i32,
-    ) -> (u8, Intent) {
-        (1, Intent::Attack { damage: 7, hits: 1 })
+    ) -> MonsterTurnPlan {
+        tackle_plan()
     }
 
-    fn take_turn(_state: &mut CombatState, entity: &crate::combat::MonsterEntity) -> Vec<Action> {
-        let mut actions = Vec::new();
-        if entity.next_move_byte == 1 {
-            actions.push(Action::Damage(DamageInfo {
-                source: entity.id,
-                target: 0,
-                base: 7,
-                output: 7,
-                damage_type: DamageType::Normal,
-                is_modified: false,
-            }));
+    fn turn_plan(_state: &CombatState, entity: &MonsterEntity) -> MonsterTurnPlan {
+        plan_for(entity.planned_move_id())
+    }
+
+    fn take_turn_plan(
+        _state: &mut CombatState,
+        entity: &MonsterEntity,
+        plan: &MonsterTurnPlan,
+    ) -> Vec<Action> {
+        match plan.move_id {
+            TACKLE => {
+                let mut actions = attack_actions(
+                    entity.id,
+                    PLAYER,
+                    &AttackSpec {
+                        base_damage: TACKLE_DAMAGE,
+                        hits: 1,
+                        damage_kind: DamageKind::Normal,
+                    },
+                );
+                actions.push(set_next_move_action(entity, tackle_plan()));
+                actions
+            }
+            _ => panic!(
+                "torch head take_turn received unsupported move {}",
+                plan.move_id
+            ),
         }
-        actions.push(Action::RollMonsterMove {
-            monster_id: entity.id,
-        });
-        actions
     }
 }

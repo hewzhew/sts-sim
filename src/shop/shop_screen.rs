@@ -7,7 +7,7 @@ use crate::shop::state::{ShopCard, ShopConfig, ShopPotion, ShopRelic, ShopState}
 /// Equivalent to Java's `ShopScreen.init(...)` + associated methods.
 /// Consumes rng sequences and populates the ShopState, determining prices and discounts.
 pub fn generate_shop<F>(
-    rng_pool: &mut crate::rng::RngPool,
+    rng_pool: &mut crate::runtime::rng::RngPool,
     config: &ShopConfig,
     mut get_relic: F,
 ) -> ShopState
@@ -17,7 +17,8 @@ where
     let mut shop = ShopState::new();
 
     // 1. Ask Merchant to generate the raw card slots from cardRng
-    let (colored_cards, colorless_cards) = generate_cards(rng_pool, config.card_blizz_randomizer);
+    let (colored_cards, colorless_cards) =
+        generate_cards(rng_pool, config.player_class, config.card_blizz_randomizer);
 
     // Process Colored Cards Jitter (merchantRng)
     for c in colored_cards {
@@ -30,7 +31,12 @@ where
         };
         let tmp_price = base_price * rng_pool.merchant_rng.random_f32_min_max(0.9, 1.1);
         let price = tmp_price.trunc() as i32;
-        shop.cards.push(ShopCard { card_id: c, price });
+        shop.cards.push(ShopCard {
+            card_id: c,
+            price,
+            can_buy: true,
+            blocked_reason: None,
+        });
     }
 
     // Process Colorless Cards Jitter (merchantRng)
@@ -45,7 +51,12 @@ where
         let mut tmp_price = base_price * rng_pool.merchant_rng.random_f32_min_max(0.9, 1.1);
         tmp_price *= 1.2; // Colorless bump
         let price = tmp_price.trunc() as i32;
-        shop.cards.push(ShopCard { card_id: c, price });
+        shop.cards.push(ShopCard {
+            card_id: c,
+            price,
+            can_buy: true,
+            blocked_reason: None,
+        });
     }
 
     // Apply Sale tag via integer division on a random colored card (0-4)
@@ -78,7 +89,12 @@ where
 
         let jitter_mult = rng_pool.merchant_rng.random_f32_min_max(0.95, 1.05);
         let price = (base_price * jitter_mult).round() as i32;
-        shop.relics.push(ShopRelic { relic_id, price });
+        shop.relics.push(ShopRelic {
+            relic_id,
+            price,
+            can_buy: true,
+            blocked_reason: None,
+        });
     }
 
     // 3. Potions (3 slots via potionRng & merchantRng)
@@ -88,12 +104,17 @@ where
         let base_price = potions::get_potion_price(potion_id) as f32;
         let jitter_mult = rng_pool.merchant_rng.random_f32_min_max(0.95, 1.05);
         let price = (base_price * jitter_mult).round() as i32;
-        shop.potions.push(ShopPotion { potion_id, price });
+        shop.potions.push(ShopPotion {
+            potion_id,
+            price,
+            can_buy: true,
+            blocked_reason: None,
+        });
     }
 
     // 4. Initial Purge Cost
-    let actual_purge_cost = 75.0 + (config.previous_purge_count as f32 * 25.0);
-    shop.purge_cost = actual_purge_cost as i32;
+    let base_purge_cost = 75.0 + (config.previous_purge_count as f32 * 25.0);
+    shop.purge_cost = base_purge_cost as i32;
 
     // 5. Apply Discounts Sequentially (ShopScreen.init logic)
     let ascension_level = config.ascension_level;
@@ -112,7 +133,7 @@ where
             p.price = (p.price as f32 * mult).round() as i32;
         }
         if affect_purge {
-            shop.purge_cost = (shop.purge_cost as f32 * mult).round() as i32;
+            shop.purge_cost = (base_purge_cost * mult).round() as i32;
         }
     };
 
@@ -130,4 +151,63 @@ where
     }
 
     shop
+}
+
+#[cfg(test)]
+mod tests {
+    use super::generate_shop;
+    use crate::content::potions::PotionClass;
+    use crate::content::relics::{RelicId, RelicTier};
+    use crate::runtime::rng::RngPool;
+    use crate::shop::state::ShopConfig;
+
+    fn fixed_relic(tier: RelicTier) -> RelicId {
+        match tier {
+            RelicTier::Common => RelicId::Anchor,
+            RelicTier::Uncommon => RelicId::LetterOpener,
+            RelicTier::Rare => RelicId::LizardTail,
+            RelicTier::Shop => RelicId::MembershipCard,
+            _ => RelicId::Anchor,
+        }
+    }
+
+    #[test]
+    fn membership_card_overrides_courier_for_initial_purge_cost() {
+        let mut rng_pool = RngPool::new(1);
+        let shop = generate_shop(
+            &mut rng_pool,
+            &ShopConfig {
+                ascension_level: 0,
+                player_class: "Ironclad",
+                has_courier: true,
+                has_membership_card: true,
+                has_smiling_mask: false,
+                previous_purge_count: 1,
+                potion_class: PotionClass::Ironclad,
+                card_blizz_randomizer: 5,
+            },
+            fixed_relic,
+        );
+        assert_eq!(shop.purge_cost, 50);
+    }
+
+    #[test]
+    fn smiling_mask_overrides_discounted_initial_purge_cost() {
+        let mut rng_pool = RngPool::new(1);
+        let shop = generate_shop(
+            &mut rng_pool,
+            &ShopConfig {
+                ascension_level: 0,
+                player_class: "Ironclad",
+                has_courier: true,
+                has_membership_card: true,
+                has_smiling_mask: true,
+                previous_purge_count: 3,
+                potion_class: PotionClass::Ironclad,
+                card_blizz_randomizer: 5,
+            },
+            fixed_relic,
+        );
+        assert_eq!(shop.purge_cost, 50);
+    }
 }

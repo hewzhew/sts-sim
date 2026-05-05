@@ -1,4 +1,4 @@
-use crate::content::cards::{get_card_definition, ironclad_pool_for_rarity, CardId, CardRarity};
+use crate::content::cards::{get_card_definition, CardId, CardRarity};
 use crate::state::core::EngineState;
 use crate::state::events::{EventChoiceMeta, EventState};
 use crate::state::run::RunState;
@@ -142,7 +142,16 @@ fn roll_and_get_card(run_state: &mut RunState) -> CardId {
     };
 
     // Step 2: getCard(rarity) — uses cardRng via pool.getRandomCard(true)
-    let pool = ironclad_pool_for_rarity(rarity);
+    let pool = crate::engine::campfire_handler::nonempty_card_pool_for_class(
+        run_state.player_class,
+        rarity,
+    );
+    if pool.is_empty() {
+        return match run_state.player_class {
+            "Silent" => CardId::StrikeG,
+            _ => CardId::Strike,
+        };
+    }
     let idx = run_state
         .rng_pool
         .card_rng

@@ -608,18 +608,48 @@ pub const ALL_POTIONS: &[PotionId] = &[
 pub struct Potion {
     pub id: PotionId,
     pub uuid: u32,
+    pub can_use: bool,
+    pub can_discard: bool,
+    pub requires_target: bool,
 }
 
 impl Potion {
     pub fn new(id: PotionId, uuid: u32) -> Self {
-        Self { id, uuid }
+        let definition = get_potion_definition(id);
+        Self {
+            id,
+            uuid,
+            can_use: id != PotionId::FairyPotion,
+            can_discard: true,
+            requires_target: definition.target_required,
+        }
+    }
+
+    pub fn with_affordance_truth(
+        id: PotionId,
+        uuid: u32,
+        can_use: bool,
+        can_discard: bool,
+        requires_target: bool,
+    ) -> Self {
+        Self {
+            id,
+            uuid,
+            can_use,
+            can_discard,
+            requires_target,
+        }
     }
 }
 
 /// Returns a random potion with rarity weighting, matching Java's `AbstractDungeon.returnRandomPotion()`.
 /// Rolls 0-99: <65 = Common, 65-89 = Uncommon, ≥90 = Rare.
 /// When `limited=true`, excludes FruitJuice (Java behavior for EntropicBrew).
-pub fn random_potion(rng: &mut crate::rng::StsRng, class: PotionClass, limited: bool) -> PotionId {
+pub fn random_potion(
+    rng: &mut crate::runtime::rng::StsRng,
+    class: PotionClass,
+    limited: bool,
+) -> PotionId {
     let roll = rng.random_range(0, 99);
     let rarity = if roll < 65 {
         PotionRarity::Common
@@ -635,7 +665,7 @@ pub fn random_potion(rng: &mut crate::rng::StsRng, class: PotionClass, limited: 
 /// Java: `AbstractDungeon.returnRandomPotion(rarity, limited)` — rejection-samples from flat pool.
 /// When `limited=true`, excludes FruitJuice.
 pub fn random_potion_by_rarity(
-    rng: &mut crate::rng::StsRng,
+    rng: &mut crate::runtime::rng::StsRng,
     class: PotionClass,
     rarity: PotionRarity,
     limited: bool,
@@ -655,7 +685,7 @@ pub fn random_potion_by_rarity(
 }
 
 /// Returns a totally random potion (no rarity weighting). Java: `AbstractDungeon.returnTotallyRandomPotion()`.
-pub fn random_potion_any(rng: &mut crate::rng::StsRng, class: PotionClass) -> PotionId {
+pub fn random_potion_any(rng: &mut crate::runtime::rng::StsRng, class: PotionClass) -> PotionId {
     let pool = potions_for_class(class);
     let idx = rng.random(pool.len() as i32 - 1) as usize;
     pool[idx]

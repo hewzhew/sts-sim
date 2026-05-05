@@ -24,6 +24,9 @@ tools/replay_short*.jsonl
 tools/java_monsters.json
 tools/rust_monsters.json
 tests/generated/
+tests/live_captures/
+tests/live_regressions/
+tests/synthetic_scenarios/
 
 # Temporary files
 *.log
@@ -31,9 +34,24 @@ tests/generated/
 /*_batch_report.md
 /monster_analysis_output.md
 /coverage.json
+/ledger.jsonl
+/crash_trace_*.log
+/silent_auto_smoke*.log
 /live_comm_debug.txt
 /live_comm_raw.jsonl
 /live_comm_signatures.jsonl
+/live_comm_reward_audit.jsonl
+/live_comm_watch_*.jsonl
+/tmp/
+/tmp_*.json
+/tmp_*.jsonl
+/data/
+/data/*.md
+/data/*.json
+/data/*.jsonl
+/data/*.pkl
+/tools/live_comm/profile.json
+/tools/live_comm/profiles/*.json
 /logs/
 
 # OS / IDE

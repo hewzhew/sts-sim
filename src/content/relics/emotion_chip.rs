@@ -1,6 +1,6 @@
-use crate::action::{Action, ActionInfo, AddTo};
-use crate::combat::CombatState;
 use crate::content::relics::RelicState;
+use crate::runtime::action::{Action, ActionInfo, AddTo};
+use crate::runtime::combat::CombatState;
 use smallvec::SmallVec;
 
 /// EmotionChip (Defect Rare)
@@ -36,4 +36,9 @@ pub fn at_turn_start(_state: &CombatState, relic: &mut RelicState) -> SmallVec<[
         });
     }
     actions
+}
+
+pub fn on_victory(relic: &mut RelicState) {
+    // Java: onVictory() — clear pulse so it does not leak into the next combat.
+    relic.counter = 0;
 }

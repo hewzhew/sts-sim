@@ -1,5 +1,4 @@
 pub mod acid_slime;
-pub mod acid_slime_l;
 pub mod cultist;
 pub mod fungi_beast;
 pub mod gremlin_fat;
@@ -19,5 +18,146 @@ pub mod slaver_blue;
 pub mod slaver_red;
 pub mod slime_boss;
 pub mod spike_slime;
-pub mod spike_slime_l;
 pub mod the_guardian;
+
+use crate::core::EntityId;
+use crate::runtime::action::Action;
+use crate::runtime::combat::MonsterEntity;
+use crate::semantics::combat::{
+    AddCardStep, ApplyPowerStep, AttackSpec, BlockStep, CardDestination, MonsterTurnPlan,
+    MoveTarget, RandomBlockStep, RemovePowerStep, SpawnHpSpec, SpawnHpValue, SpawnMonsterStep,
+    StealGoldStep, UpgradeCardsStep, UtilityStep,
+};
+
+pub const PLAYER: EntityId = 0;
+
+/// Builds the canonical action sequence for a simple monster attack.
+///
+/// This is the only helper simple monster files should use for ordinary attacks.
+/// It forwards plan truth from `AttackSpec` into `Action::MonsterAttack` without
+/// trying to predict modified output damage.
+pub fn attack_actions(source: EntityId, target: EntityId, attack: &AttackSpec) -> Vec<Action> {
+    let damage = Action::MonsterAttack {
+        source,
+        target,
+        base_damage: attack.base_damage,
+        damage_kind: attack.damage_kind,
+    };
+    std::iter::repeat_n(damage, attack.hits.max(1) as usize).collect()
+}
+
+pub fn add_card_action(step: &AddCardStep) -> Action {
+    match step.destination {
+        CardDestination::Hand => Action::MakeTempCardInHand {
+            card_id: step.card_id,
+            amount: step.amount,
+            upgraded: step.upgraded,
+        },
+        CardDestination::Discard => Action::MakeTempCardInDiscard {
+            card_id: step.card_id,
+            amount: step.amount,
+            upgraded: step.upgraded,
+        },
+        CardDestination::DrawPileRandom => Action::MakeTempCardInDrawPile {
+            card_id: step.card_id,
+            amount: step.amount,
+            random_spot: true,
+            upgraded: step.upgraded,
+        },
+    }
+}
+
+pub fn steal_gold_action(source: &MonsterEntity, step: &StealGoldStep) -> Action {
+    Action::StealPlayerGold {
+        thief_id: source.id,
+        amount: step.amount,
+    }
+}
+
+fn resolve_target(source: &MonsterEntity, target: MoveTarget) -> EntityId {
+    match target {
+        MoveTarget::Player => PLAYER,
+        MoveTarget::SelfTarget => source.id,
+        MoveTarget::AllMonsters => {
+            panic!("group target requires explicit monster-by-monster expansion")
+        }
+    }
+}
+
+pub fn apply_power_action(source: &MonsterEntity, step: &ApplyPowerStep) -> Action {
+    Action::ApplyPower {
+        source: source.id,
+        target: resolve_target(source, step.target),
+        power_id: step.power_id,
+        amount: step.amount,
+    }
+}
+
+pub fn gain_block_action(source: &MonsterEntity, step: &BlockStep) -> Action {
+    Action::GainBlock {
+        target: resolve_target(source, step.target),
+        amount: step.amount,
+    }
+}
+
+pub fn gain_block_random_monster_action(source: &MonsterEntity, step: &RandomBlockStep) -> Action {
+    Action::GainBlockRandomMonster {
+        source: source.id,
+        amount: step.amount,
+    }
+}
+
+pub fn remove_power_action(source: &MonsterEntity, step: &RemovePowerStep) -> Action {
+    Action::RemovePower {
+        target: resolve_target(source, step.target),
+        power_id: step.power_id,
+    }
+}
+
+pub fn utility_action(source: &MonsterEntity, step: &UtilityStep) -> Action {
+    match step {
+        UtilityStep::RemoveAllDebuffs { target } => Action::RemoveAllDebuffs {
+            target: resolve_target(source, *target),
+        },
+    }
+}
+
+pub fn upgrade_cards_action(step: &UpgradeCardsStep) -> Action {
+    match step.card_id {
+        crate::content::cards::CardId::Burn => Action::UpgradeAllBurns,
+        card_id => panic!(
+            "unsupported upgrade-cards step for monster execution: {:?}",
+            card_id
+        ),
+    }
+}
+
+pub fn set_next_move_action(source: &MonsterEntity, plan: MonsterTurnPlan) -> Action {
+    Action::SetMonsterMove {
+        monster_id: source.id,
+        next_move_byte: plan.move_id,
+        planned_steps: plan.steps,
+        planned_visible_spec: plan.visible_spec,
+    }
+}
+
+pub fn spawn_action(source: &MonsterEntity, step: &SpawnMonsterStep) -> Action {
+    let resolve_hp = |value: SpawnHpValue| match value {
+        SpawnHpValue::Rolled => SpawnHpValue::Rolled,
+        SpawnHpValue::Fixed(hp) => SpawnHpValue::Fixed(hp.max(0)),
+        SpawnHpValue::SourceCurrentHp => SpawnHpValue::Fixed(source.current_hp.max(0)),
+        SpawnHpValue::SourceMaxHp => SpawnHpValue::Fixed(source.max_hp.max(0)),
+    };
+    let logical_position = source.logical_position + step.logical_position_offset;
+
+    Action::SpawnMonsterSmart {
+        monster_id: step.monster_id,
+        logical_position,
+        hp: SpawnHpSpec {
+            current: resolve_hp(step.hp.current),
+            max: resolve_hp(step.hp.max),
+        },
+        protocol_draw_x: None,
+        is_minion: step.is_minion,
+    }
+}

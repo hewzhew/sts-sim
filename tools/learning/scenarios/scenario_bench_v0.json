@@ -1,0 +1,1536 @@
+{
+  "suite_id": "scenario_bench_v0",
+  "version": 1,
+  "notes": [
+    "Offline synthetic scenarios for decision-quality review.",
+    "Labels are diagnostic preferences, not runtime rules and not rollout proof.",
+    "Use no_signal or needs_rollout instead of forcing a top-1 label when the local decision is not meaningful."
+  ],
+  "scenarios": [
+    {
+      "id": "card_reward_act1_early_frontload_001",
+      "category": "card_reward",
+      "decision_type": "reward_card_choice",
+      "context_note": "Floor 2 starter deck; needs reliable frontload for Act 1 hallway/elite preparation.",
+      "observation": {
+        "act": 1,
+        "floor": 2,
+        "current_hp": 76,
+        "max_hp": 80,
+        "gold": 28,
+        "deck_size": 10
+      },
+      "deck": {
+        "deck_size": 10,
+        "attack_count": 6,
+        "skill_count": 4,
+        "power_count": 0,
+        "starter_basic_count": 10,
+        "damage_card_count": 6,
+        "block_card_count": 4,
+        "draw_card_count": 0,
+        "scaling_card_count": 0,
+        "average_cost_milli": 1100
+      },
+      "candidates": [
+        {
+          "id": "pommel_strike",
+          "label": "Pommel Strike",
+          "card": {
+            "name": "Pommel Strike",
+            "rarity": "common",
+            "rule_score": 94
+          }
+        },
+        {
+          "id": "feel_no_pain",
+          "label": "Feel No Pain",
+          "card": {
+            "name": "Feel No Pain",
+            "rarity": "uncommon",
+            "rule_score": 67
+          }
+        },
+        {
+          "id": "clash",
+          "label": "Clash",
+          "card": {
+            "name": "Clash",
+            "rarity": "common",
+            "rule_score": 12
+          }
+        },
+        {
+          "id": "skip",
+          "label": "Skip",
+          "kind": "skip",
+          "rule_score": 5
+        }
+      ],
+      "human_label": {
+        "mode": "soft_preference",
+        "preferred": [
+          "pommel_strike"
+        ],
+        "acceptable": [
+          "feel_no_pain"
+        ],
+        "bad": [
+          "clash",
+          "skip"
+        ],
+        "confidence": 0.75,
+        "rationale_tags": [
+          "early_act",
+          "deck_unformed",
+          "needs_frontload"
+        ],
+        "evidence": "human_prior",
+        "reason": "Early Act 1 needs frontload; speculative exhaust scaling can be acceptable but not over the frontload draw attack."
+      }
+    },
+    {
+      "id": "card_reward_act1_block_draw_002",
+      "category": "card_reward",
+      "decision_type": "reward_card_choice",
+      "context_note": "Act 1 deck already has two attacks; adding block+draw is high value.",
+      "observation": {
+        "act": 1,
+        "floor": 5,
+        "current_hp": 61,
+        "max_hp": 80,
+        "gold": 68,
+        "deck_size": 13
+      },
+      "deck": {
+        "deck_size": 13,
+        "attack_count": 8,
+        "skill_count": 5,
+        "power_count": 0,
+        "starter_basic_count": 10,
+        "damage_card_count": 8,
+        "block_card_count": 4,
+        "draw_card_count": 1,
+        "scaling_card_count": 0,
+        "average_cost_milli": 1070
+      },
+      "candidates": [
+        {
+          "id": "shrug_it_off",
+          "label": "Shrug It Off",
+          "card": {
+            "name": "Shrug It Off",
+            "rarity": "common",
+            "rule_score": 98
+          }
+        },
+        {
+          "id": "anger",
+          "label": "Anger",
+          "card": {
+            "name": "Anger",
+            "rarity": "common",
+            "rule_score": 58
+          }
+        },
+        {
+          "id": "metallicize",
+          "label": "Metallicize",
+          "card": {
+            "name": "Metallicize",
+            "rarity": "uncommon",
+            "rule_score": 70
+          }
+        },
+        {
+          "id": "skip",
+          "label": "Skip",
+          "kind": "skip",
+          "rule_score": 5
+        }
+      ],
+      "human_label": {
+        "mode": "soft_preference",
+        "preferred": [
+          "shrug_it_off"
+        ],
+        "acceptable": [
+          "metallicize",
+          "anger"
+        ],
+        "bad": [
+          "skip"
+        ],
+        "confidence": 0.7,
+        "rationale_tags": [
+          "early_act",
+          "lacks_block",
+          "lacks_draw"
+        ],
+        "evidence": "human_prior",
+        "reason": "Shrug stabilizes block and card flow; the other cards are playable but less directly solve the deck."
+      }
+    },
+    {
+      "id": "card_reward_pre_hexaghost_disarm_003",
+      "category": "card_reward",
+      "decision_type": "reward_card_choice",
+      "context_note": "Pre-boss hallway/elite card reward before known Hexaghost; this is not a post-boss rare reward.",
+      "observation": {
+        "act": 1,
+        "floor": 12,
+        "reward_source": "pre_boss_hallway_or_elite",
+        "post_boss_reward": false,
+        "current_hp": 43,
+        "max_hp": 80,
+        "gold": 134,
+        "deck_size": 17,
+        "boss": "Hexaghost"
+      },
+      "deck": {
+        "deck_size": 17,
+        "attack_count": 10,
+        "skill_count": 6,
+        "power_count": 1,
+        "starter_basic_count": 9,
+        "damage_card_count": 10,
+        "block_card_count": 5,
+        "draw_card_count": 2,
+        "scaling_card_count": 1,
+        "average_cost_milli": 1180
+      },
+      "candidates": [
+        {
+          "id": "disarm",
+          "label": "Disarm",
+          "card": {
+            "name": "Disarm",
+            "rarity": "uncommon",
+            "rule_score": 118
+          }
+        },
+        {
+          "id": "fire_breathing",
+          "label": "Fire Breathing",
+          "card": {
+            "name": "Fire Breathing",
+            "rarity": "uncommon",
+            "rule_score": 62
+          }
+        },
+        {
+          "id": "perfected_strike",
+          "label": "Perfected Strike",
+          "card": {
+            "name": "Perfected Strike",
+            "rarity": "common",
+            "rule_score": 24
+          }
+        },
+        {
+          "id": "skip",
+          "label": "Skip",
+          "kind": "skip",
+          "rule_score": 5
+        }
+      ],
+      "human_label": {
+        "mode": "hard_preference",
+        "preferred": [
+          "disarm"
+        ],
+        "acceptable": [
+          "fire_breathing"
+        ],
+        "bad": [
+          "perfected_strike",
+          "skip"
+        ],
+        "confidence": 0.85,
+        "rationale_tags": [
+          "boss_counter",
+          "hp_pressure"
+        ],
+        "evidence": "human_prior",
+        "reason": "Disarm is a high-impact mitigation card against Hexaghost multi-hit patterns; this case is explicitly a pre-boss non-rare reward, not an Act boss reward."
+      }
+    },
+    {
+      "id": "card_reward_act2_aoe_gap_004",
+      "category": "card_reward",
+      "decision_type": "reward_card_choice",
+      "context_note": "Entering Act 2 with almost no AoE; needs a hallway stabilizer.",
+      "observation": {
+        "act": 2,
+        "floor": 18,
+        "current_hp": 52,
+        "max_hp": 80,
+        "gold": 188,
+        "deck_size": 20
+      },
+      "deck": {
+        "deck_size": 20,
+        "attack_count": 11,
+        "skill_count": 7,
+        "power_count": 2,
+        "starter_basic_count": 7,
+        "damage_card_count": 11,
+        "block_card_count": 6,
+        "draw_card_count": 2,
+        "scaling_card_count": 1,
+        "average_cost_milli": 1220
+      },
+      "candidates": [
+        {
+          "id": "immolate",
+          "label": "Immolate",
+          "card": {
+            "name": "Immolate",
+            "rarity": "rare",
+            "rule_score": 122
+          }
+        },
+        {
+          "id": "heavy_blade",
+          "label": "Heavy Blade",
+          "card": {
+            "name": "Heavy Blade",
+            "rarity": "common",
+            "rule_score": 42
+          }
+        },
+        {
+          "id": "perfected_strike",
+          "label": "Perfected Strike",
+          "card": {
+            "name": "Perfected Strike",
+            "rarity": "common",
+            "rule_score": 18
+          }
+        },
+        {
+          "id": "skip",
+          "label": "Skip",
+          "kind": "skip",
+          "rule_score": 5
+        }
+      ],
+      "human_label": {
+        "mode": "hard_preference",
+        "preferred": [
+          "immolate"
+        ],
+        "acceptable": [
+          "heavy_blade"
+        ],
+        "bad": [
+          "perfected_strike",
+          "skip"
+        ],
+        "confidence": 0.9,
+        "rationale_tags": [
+          "late_act",
+          "needs_aoe",
+          "needs_frontload"
+        ],
+        "evidence": "human_prior",
+        "reason": "Act 2 punishes lack of AoE; Immolate is a major immediate stabilizer."
+      }
+    },
+    {
+      "id": "card_reward_pre_boss_scaling_005",
+      "category": "card_reward",
+      "decision_type": "reward_card_choice",
+      "context_note": "Act 1 boss soon; deck has frontload and draw but almost no scaling.",
+      "observation": {
+        "act": 1,
+        "floor": 13,
+        "current_hp": 58,
+        "max_hp": 80,
+        "gold": 121,
+        "deck_size": 18
+      },
+      "deck": {
+        "deck_size": 18,
+        "attack_count": 10,
+        "skill_count": 8,
+        "power_count": 0,
+        "starter_basic_count": 8,
+        "damage_card_count": 10,
+        "block_card_count": 7,
+        "draw_card_count": 3,
+        "scaling_card_count": 0,
+        "average_cost_milli": 1110
+      },
+      "candidates": [
+        {
+          "id": "inflame",
+          "label": "Inflame",
+          "card": {
+            "name": "Inflame",
+            "rarity": "uncommon",
+            "rule_score": 91
+          }
+        },
+        {
+          "id": "twin_strike",
+          "label": "Twin Strike",
+          "card": {
+            "name": "Twin Strike",
+            "rarity": "common",
+            "rule_score": 36
+          }
+        },
+        {
+          "id": "armaments",
+          "label": "Armaments",
+          "card": {
+            "name": "Armaments",
+            "rarity": "common",
+            "rule_score": 64
+          }
+        },
+        {
+          "id": "skip",
+          "label": "Skip",
+          "kind": "skip",
+          "rule_score": 5
+        }
+      ],
+      "human_label": {
+        "mode": "soft_preference",
+        "preferred": [
+          "inflame"
+        ],
+        "acceptable": [
+          "armaments"
+        ],
+        "bad": [
+          "twin_strike",
+          "skip"
+        ],
+        "confidence": 0.68,
+        "rationale_tags": [
+          "boss_counter",
+          "lacks_scaling"
+        ],
+        "evidence": "human_prior",
+        "reason": "The deck has enough immediate cards; adding simple scaling is more useful than another common attack."
+      }
+    },
+    {
+      "id": "card_reward_already_lost_no_signal_006",
+      "category": "card_reward",
+      "decision_type": "reward_card_choice",
+      "context_note": "Act 2 low HP, bloated low-synergy deck; local reward choice is unlikely to rescue the run.",
+      "observation": {
+        "act": 2,
+        "floor": 27,
+        "current_hp": 9,
+        "max_hp": 80,
+        "gold": 23,
+        "deck_size": 31
+      },
+      "deck": {
+        "deck_size": 31,
+        "attack_count": 19,
+        "skill_count": 11,
+        "power_count": 1,
+        "starter_basic_count": 10,
+        "damage_card_count": 16,
+        "block_card_count": 7,
+        "draw_card_count": 1,
+        "scaling_card_count": 0,
+        "curse_count": 2,
+        "average_cost_milli": 1180
+      },
+      "candidates": [
+        {
+          "id": "twin_strike",
+          "label": "Twin Strike",
+          "card": {
+            "name": "Twin Strike",
+            "rarity": "common",
+            "rule_score": 20
+          }
+        },
+        {
+          "id": "wild_strike",
+          "label": "Wild Strike",
+          "card": {
+            "name": "Wild Strike",
+            "rarity": "common",
+            "rule_score": 18
+          }
+        },
+        {
+          "id": "flex",
+          "label": "Flex",
+          "card": {
+            "name": "Flex",
+            "rarity": "common",
+            "rule_score": 22
+          }
+        },
+        {
+          "id": "skip",
+          "label": "Skip",
+          "kind": "skip",
+          "rule_score": 5
+        }
+      ],
+      "human_label": {
+        "mode": "no_signal",
+        "preferred": [],
+        "acceptable": [
+          "skip",
+          "flex",
+          "twin_strike",
+          "wild_strike"
+        ],
+        "bad": [],
+        "confidence": 0.8,
+        "rationale_tags": [
+          "already_lost",
+          "uncertain"
+        ],
+        "evidence": "human_prior",
+        "reason": "This should not become a strong top-1 training sample; the run state is probably already macro-caused."
+      }
+    },
+    {
+      "id": "card_reward_exhaust_engine_007",
+      "category": "card_reward",
+      "decision_type": "reward_card_choice",
+      "context_note": "Deck already has Feel No Pain and several exhaust cards; engine piece is valuable.",
+      "observation": {
+        "act": 2,
+        "floor": 20,
+        "current_hp": 61,
+        "max_hp": 80,
+        "gold": 170,
+        "deck_size": 21
+      },
+      "deck": {
+        "deck_size": 21,
+        "attack_count": 10,
+        "skill_count": 9,
+        "power_count": 2,
+        "starter_basic_count": 7,
+        "damage_card_count": 10,
+        "block_card_count": 8,
+        "draw_card_count": 3,
+        "scaling_card_count": 2,
+        "exhaust_card_count": 4,
+        "average_cost_milli": 1260
+      },
+      "candidates": [
+        {
+          "id": "corruption",
+          "label": "Corruption",
+          "card": {
+            "name": "Corruption",
+            "rarity": "rare",
+            "rule_score": 115
+          }
+        },
+        {
+          "id": "dark_embrace",
+          "label": "Dark Embrace",
+          "card": {
+            "name": "Dark Embrace",
+            "rarity": "uncommon",
+            "rule_score": 98
+          }
+        },
+        {
+          "id": "sword_boomerang",
+          "label": "Sword Boomerang",
+          "card": {
+            "name": "Sword Boomerang",
+            "rarity": "common",
+            "rule_score": 25
+          }
+        },
+        {
+          "id": "skip",
+          "label": "Skip",
+          "kind": "skip",
+          "rule_score": 5
+        }
+      ],
+      "human_label": {
+        "mode": "soft_preference",
+        "preferred": [
+          "corruption"
+        ],
+        "acceptable": [
+          "dark_embrace"
+        ],
+        "bad": [
+          "sword_boomerang",
+          "skip"
+        ],
+        "confidence": 0.72,
+        "rationale_tags": [
+          "synergy_piece",
+          "lacks_draw",
+          "lacks_scaling"
+        ],
+        "evidence": "human_prior",
+        "reason": "Existing exhaust support makes engine cards much more important than a low-impact attack."
+      }
+    },
+    {
+      "id": "card_reward_fat_deck_skip_008",
+      "category": "card_reward",
+      "decision_type": "reward_card_choice",
+      "context_note": "Large deck with low-quality offer; skip is a meaningful local choice.",
+      "observation": {
+        "act": 2,
+        "floor": 24,
+        "current_hp": 48,
+        "max_hp": 80,
+        "gold": 112,
+        "deck_size": 29
+      },
+      "deck": {
+        "deck_size": 29,
+        "attack_count": 16,
+        "skill_count": 11,
+        "power_count": 2,
+        "starter_basic_count": 8,
+        "damage_card_count": 14,
+        "block_card_count": 8,
+        "draw_card_count": 2,
+        "scaling_card_count": 2,
+        "average_cost_milli": 1110
+      },
+      "candidates": [
+        {
+          "id": "clash",
+          "label": "Clash",
+          "card": {
+            "name": "Clash",
+            "rarity": "common",
+            "rule_score": 8
+          }
+        },
+        {
+          "id": "perfected_strike",
+          "label": "Perfected Strike",
+          "card": {
+            "name": "Perfected Strike",
+            "rarity": "common",
+            "rule_score": 12
+          }
+        },
+        {
+          "id": "warcry",
+          "label": "Warcry",
+          "card": {
+            "name": "Warcry",
+            "rarity": "common",
+            "rule_score": 30
+          }
+        },
+        {
+          "id": "skip",
+          "label": "Skip",
+          "kind": "skip",
+          "rule_score": 45
+        }
+      ],
+      "human_label": {
+        "mode": "soft_preference",
+        "preferred": [
+          "skip"
+        ],
+        "acceptable": [
+          "warcry"
+        ],
+        "bad": [
+          "clash",
+          "perfected_strike"
+        ],
+        "confidence": 0.65,
+        "rationale_tags": [
+          "avoid_deck_bloat",
+          "small_gap"
+        ],
+        "evidence": "human_prior",
+        "reason": "This is one of the few spots where skip can be better than adding another weak card."
+      }
+    },
+    {
+      "id": "card_reward_need_draw_009",
+      "category": "card_reward",
+      "decision_type": "reward_card_choice",
+      "context_note": "Deck has enough damage and block but poor card flow.",
+      "observation": {
+        "act": 1,
+        "floor": 10,
+        "current_hp": 64,
+        "max_hp": 80,
+        "gold": 97,
+        "deck_size": 16
+      },
+      "deck": {
+        "deck_size": 16,
+        "attack_count": 9,
+        "skill_count": 7,
+        "power_count": 0,
+        "starter_basic_count": 9,
+        "damage_card_count": 9,
+        "block_card_count": 7,
+        "draw_card_count": 0,
+        "scaling_card_count": 1,
+        "average_cost_milli": 1140
+      },
+      "candidates": [
+        {
+          "id": "battle_trance",
+          "label": "Battle Trance",
+          "card": {
+            "name": "Battle Trance",
+            "rarity": "uncommon",
+            "rule_score": 104
+          }
+        },
+        {
+          "id": "pommel_strike",
+          "label": "Pommel Strike",
+          "card": {
+            "name": "Pommel Strike",
+            "rarity": "common",
+            "rule_score": 88
+          }
+        },
+        {
+          "id": "heavy_blade",
+          "label": "Heavy Blade",
+          "card": {
+            "name": "Heavy Blade",
+            "rarity": "common",
+            "rule_score": 33
+          }
+        },
+        {
+          "id": "skip",
+          "label": "Skip",
+          "kind": "skip",
+          "rule_score": 5
+        }
+      ],
+      "human_label": {
+        "mode": "soft_preference",
+        "preferred": [
+          "battle_trance"
+        ],
+        "acceptable": [
+          "pommel_strike"
+        ],
+        "bad": [
+          "heavy_blade",
+          "skip"
+        ],
+        "confidence": 0.72,
+        "rationale_tags": [
+          "lacks_draw"
+        ],
+        "evidence": "human_prior",
+        "reason": "Draw is the explicit missing capability; Battle Trance is the cleanest fix."
+      }
+    },
+    {
+      "id": "card_reward_act2_block_gap_010",
+      "category": "card_reward",
+      "decision_type": "reward_card_choice",
+      "context_note": "Act 2 deck has damage but weak block density.",
+      "observation": {
+        "act": 2,
+        "floor": 19,
+        "current_hp": 45,
+        "max_hp": 80,
+        "gold": 151,
+        "deck_size": 21
+      },
+      "deck": {
+        "deck_size": 21,
+        "attack_count": 13,
+        "skill_count": 7,
+        "power_count": 1,
+        "starter_basic_count": 7,
+        "damage_card_count": 13,
+        "block_card_count": 4,
+        "draw_card_count": 2,
+        "scaling_card_count": 1,
+        "average_cost_milli": 1130
+      },
+      "candidates": [
+        {
+          "id": "flame_barrier",
+          "label": "Flame Barrier",
+          "card": {
+            "name": "Flame Barrier",
+            "rarity": "uncommon",
+            "rule_score": 100
+          }
+        },
+        {
+          "id": "shrug_it_off",
+          "label": "Shrug It Off",
+          "card": {
+            "name": "Shrug It Off",
+            "rarity": "common",
+            "rule_score": 96
+          }
+        },
+        {
+          "id": "anger",
+          "label": "Anger",
+          "card": {
+            "name": "Anger",
+            "rarity": "common",
+            "rule_score": 40
+          }
+        },
+        {
+          "id": "skip",
+          "label": "Skip",
+          "kind": "skip",
+          "rule_score": 5
+        }
+      ],
+      "human_label": {
+        "mode": "acceptable_set",
+        "preferred": [
+          "flame_barrier",
+          "shrug_it_off"
+        ],
+        "acceptable": [],
+        "bad": [
+          "anger",
+          "skip"
+        ],
+        "confidence": 0.78,
+        "rationale_tags": [
+          "late_act",
+          "lacks_block"
+        ],
+        "evidence": "human_prior",
+        "reason": "Either high block or block+draw directly addresses the current weakness."
+      }
+    },
+    {
+      "id": "campfire_low_hp_before_elite_001",
+      "category": "campfire",
+      "decision_type": "campfire",
+      "context_note": "Low HP before an unavoidable elite; rest should dominate a good upgrade.",
+      "observation": {
+        "act": 1,
+        "floor": 8,
+        "current_hp": 18,
+        "max_hp": 80,
+        "gold": 86,
+        "deck_size": 15
+      },
+      "deck": {
+        "deck_size": 15,
+        "attack_count": 9,
+        "skill_count": 6,
+        "power_count": 0,
+        "starter_basic_count": 9,
+        "damage_card_count": 9,
+        "block_card_count": 5,
+        "draw_card_count": 1,
+        "scaling_card_count": 0,
+        "average_cost_milli": 1110
+      },
+      "candidates": [
+        {
+          "id": "rest",
+          "label": "Rest",
+          "kind": "rest"
+        },
+        {
+          "id": "smith_bash",
+          "label": "Smith Bash",
+          "kind": "smith",
+          "deck_index": 0,
+          "upgrade_score": 95,
+          "card": {
+            "name": "Bash",
+            "rarity": "basic",
+            "rule_score": 40
+          }
+        },
+        {
+          "id": "smith_pommel",
+          "label": "Smith Pommel Strike",
+          "kind": "smith",
+          "deck_index": 10,
+          "upgrade_score": 85,
+          "card": {
+            "name": "Pommel Strike",
+            "rarity": "common",
+            "rule_score": 94
+          }
+        }
+      ],
+      "human_label": {
+        "mode": "hard_preference",
+        "preferred": [
+          "rest"
+        ],
+        "acceptable": [],
+        "bad": [
+          "smith_bash",
+          "smith_pommel"
+        ],
+        "confidence": 0.9,
+        "rationale_tags": [
+          "hp_pressure",
+          "route_risk"
+        ],
+        "evidence": "human_prior",
+        "reason": "At 18/80 before an elite, survival dominates upgrade greed."
+      }
+    },
+    {
+      "id": "campfire_high_hp_bash_upgrade_002",
+      "category": "campfire",
+      "decision_type": "campfire",
+      "context_note": "Healthy before boss; Bash upgrade is high impact.",
+      "observation": {
+        "act": 1,
+        "floor": 14,
+        "current_hp": 66,
+        "max_hp": 80,
+        "gold": 140,
+        "deck_size": 17
+      },
+      "deck": {
+        "deck_size": 17,
+        "attack_count": 10,
+        "skill_count": 6,
+        "power_count": 1,
+        "starter_basic_count": 8,
+        "damage_card_count": 10,
+        "block_card_count": 5,
+        "draw_card_count": 2,
+        "scaling_card_count": 1,
+        "average_cost_milli": 1170
+      },
+      "candidates": [
+        {
+          "id": "rest",
+          "label": "Rest",
+          "kind": "rest"
+        },
+        {
+          "id": "smith_bash",
+          "label": "Smith Bash",
+          "kind": "smith",
+          "deck_index": 0,
+          "upgrade_score": 95,
+          "card": {
+            "name": "Bash",
+            "rarity": "basic",
+            "rule_score": 40
+          }
+        },
+        {
+          "id": "smith_defend",
+          "label": "Smith Defend",
+          "kind": "smith",
+          "deck_index": 5,
+          "upgrade_score": 50,
+          "card": {
+            "name": "Defend",
+            "rarity": "basic",
+            "rule_score": -20
+          }
+        }
+      ],
+      "human_label": {
+        "mode": "hard_preference",
+        "preferred": [
+          "smith_bash"
+        ],
+        "acceptable": [],
+        "bad": [
+          "rest",
+          "smith_defend"
+        ],
+        "confidence": 0.82,
+        "rationale_tags": [
+          "upgrade_value"
+        ],
+        "evidence": "human_prior",
+        "reason": "With high HP, upgrade value should matter more than resting."
+      }
+    },
+    {
+      "id": "campfire_medium_hp_rest_or_key_upgrade_003",
+      "category": "campfire",
+      "decision_type": "campfire",
+      "context_note": "Medium HP; important upgrade exists, but rest is also acceptable depending on map pressure.",
+      "observation": {
+        "act": 2,
+        "floor": 25,
+        "current_hp": 42,
+        "max_hp": 80,
+        "gold": 210,
+        "deck_size": 23
+      },
+      "deck": {
+        "deck_size": 23,
+        "attack_count": 11,
+        "skill_count": 10,
+        "power_count": 2,
+        "starter_basic_count": 6,
+        "damage_card_count": 11,
+        "block_card_count": 9,
+        "draw_card_count": 3,
+        "scaling_card_count": 2,
+        "average_cost_milli": 1240
+      },
+      "candidates": [
+        {
+          "id": "rest",
+          "label": "Rest",
+          "kind": "rest"
+        },
+        {
+          "id": "smith_shockwave",
+          "label": "Smith Shockwave",
+          "kind": "smith",
+          "deck_index": 14,
+          "upgrade_score": 78,
+          "card": {
+            "name": "Shockwave",
+            "rarity": "uncommon",
+            "rule_score": 110
+          }
+        },
+        {
+          "id": "smith_strike",
+          "label": "Smith Strike",
+          "kind": "smith",
+          "deck_index": 3,
+          "upgrade_score": 20,
+          "card": {
+            "name": "Strike",
+            "rarity": "basic",
+            "rule_score": -40
+          }
+        }
+      ],
+      "human_label": {
+        "mode": "acceptable_set",
+        "preferred": [
+          "rest",
+          "smith_shockwave"
+        ],
+        "acceptable": [],
+        "bad": [
+          "smith_strike"
+        ],
+        "confidence": 0.55,
+        "rationale_tags": [
+          "hp_pressure",
+          "upgrade_value",
+          "small_gap"
+        ],
+        "evidence": "human_prior",
+        "reason": "This is intentionally less crisp; both rest and the high-value upgrade can be defensible."
+      }
+    },
+    {
+      "id": "campfire_peace_pipe_remove_strike_004",
+      "category": "campfire",
+      "decision_type": "campfire",
+      "context_note": "Healthy with Peace Pipe; removing Strike is better than weak upgrades.",
+      "observation": {
+        "act": 2,
+        "floor": 22,
+        "current_hp": 68,
+        "max_hp": 80,
+        "gold": 180,
+        "deck_size": 24
+      },
+      "relics": [
+        "Peace Pipe"
+      ],
+      "deck": {
+        "deck_size": 24,
+        "attack_count": 13,
+        "skill_count": 9,
+        "power_count": 2,
+        "starter_basic_count": 8,
+        "damage_card_count": 12,
+        "block_card_count": 8,
+        "draw_card_count": 3,
+        "scaling_card_count": 2,
+        "average_cost_milli": 1160
+      },
+      "candidates": [
+        {
+          "id": "rest",
+          "label": "Rest",
+          "kind": "rest"
+        },
+        {
+          "id": "toke_strike",
+          "label": "Remove Strike",
+          "kind": "toke",
+          "deck_index": 1,
+          "remove_score": 115,
+          "card": {
+            "name": "Strike",
+            "rarity": "basic",
+            "rule_score": -40
+          }
+        },
+        {
+          "id": "smith_defend",
+          "label": "Smith Defend",
+          "kind": "smith",
+          "deck_index": 5,
+          "upgrade_score": 50,
+          "card": {
+            "name": "Defend",
+            "rarity": "basic",
+            "rule_score": -20
+          }
+        }
+      ],
+      "human_label": {
+        "mode": "hard_preference",
+        "preferred": [
+          "toke_strike"
+        ],
+        "acceptable": [],
+        "bad": [
+          "rest",
+          "smith_defend"
+        ],
+        "confidence": 0.8,
+        "rationale_tags": [
+          "remove_basic",
+          "upgrade_value"
+        ],
+        "evidence": "human_prior",
+        "reason": "At high HP, Peace Pipe removal of a starter Strike is the meaningful macro improvement."
+      }
+    },
+    {
+      "id": "campfire_low_hp_before_boss_005",
+      "category": "campfire",
+      "decision_type": "campfire",
+      "context_note": "Low HP before Act 1 boss; even strong upgrades should lose to rest.",
+      "observation": {
+        "act": 1,
+        "floor": 15,
+        "current_hp": 24,
+        "max_hp": 80,
+        "gold": 101,
+        "deck_size": 18
+      },
+      "deck": {
+        "deck_size": 18,
+        "attack_count": 10,
+        "skill_count": 7,
+        "power_count": 1,
+        "starter_basic_count": 8,
+        "damage_card_count": 10,
+        "block_card_count": 6,
+        "draw_card_count": 2,
+        "scaling_card_count": 1,
+        "average_cost_milli": 1130
+      },
+      "candidates": [
+        {
+          "id": "rest",
+          "label": "Rest",
+          "kind": "rest"
+        },
+        {
+          "id": "smith_inflame",
+          "label": "Smith Inflame",
+          "kind": "smith",
+          "deck_index": 15,
+          "upgrade_score": 85,
+          "card": {
+            "name": "Inflame",
+            "rarity": "uncommon",
+            "rule_score": 90
+          }
+        },
+        {
+          "id": "smith_battle_trance",
+          "label": "Smith Battle Trance",
+          "kind": "smith",
+          "deck_index": 16,
+          "upgrade_score": 85,
+          "card": {
+            "name": "Battle Trance",
+            "rarity": "uncommon",
+            "rule_score": 104
+          }
+        }
+      ],
+      "human_label": {
+        "mode": "hard_preference",
+        "preferred": [
+          "rest"
+        ],
+        "acceptable": [],
+        "bad": [
+          "smith_inflame",
+          "smith_battle_trance"
+        ],
+        "confidence": 0.88,
+        "rationale_tags": [
+          "hp_pressure",
+          "boss_counter"
+        ],
+        "evidence": "human_prior",
+        "reason": "Boss entry HP is a capability metric; low HP should not greed upgrades here."
+      }
+    },
+    {
+      "id": "boss_relic_low_curve_001",
+      "category": "boss_relic",
+      "decision_type": "boss_relic",
+      "context_note": "Low-curve deck; Snecko is risky, Coffee Dripper may be strong if healing is stable.",
+      "observation": {
+        "act": 2,
+        "floor": 17,
+        "current_hp": 68,
+        "max_hp": 80,
+        "gold": 155,
+        "deck_size": 20
+      },
+      "deck": {
+        "deck_size": 20,
+        "attack_count": 10,
+        "skill_count": 9,
+        "power_count": 1,
+        "starter_basic_count": 7,
+        "damage_card_count": 10,
+        "block_card_count": 8,
+        "draw_card_count": 4,
+        "scaling_card_count": 1,
+        "average_cost_milli": 870
+      },
+      "candidates": [
+        {
+          "id": "coffee_dripper",
+          "label": "Coffee Dripper",
+          "relic": "Coffee Dripper",
+          "relic_score": 55
+        },
+        {
+          "id": "snecko_eye",
+          "label": "Snecko Eye",
+          "relic": "Snecko Eye",
+          "relic_score": -5
+        },
+        {
+          "id": "busted_crown",
+          "label": "Busted Crown",
+          "relic": "Busted Crown",
+          "relic_score": -30
+        }
+      ],
+      "human_label": {
+        "mode": "soft_preference",
+        "preferred": [
+          "coffee_dripper"
+        ],
+        "acceptable": [],
+        "bad": [
+          "snecko_eye",
+          "busted_crown"
+        ],
+        "confidence": 0.62,
+        "rationale_tags": [
+          "low_curve"
+        ],
+        "evidence": "human_prior",
+        "reason": "This benchmark checks whether low curve context can penalize Snecko-like choices."
+      }
+    },
+    {
+      "id": "boss_relic_high_cost_draw_002",
+      "category": "boss_relic",
+      "decision_type": "boss_relic",
+      "context_note": "High-cost deck with limited draw; Snecko Eye becomes attractive.",
+      "observation": {
+        "act": 2,
+        "floor": 17,
+        "current_hp": 52,
+        "max_hp": 80,
+        "gold": 95,
+        "deck_size": 21
+      },
+      "deck": {
+        "deck_size": 21,
+        "attack_count": 9,
+        "skill_count": 9,
+        "power_count": 3,
+        "starter_basic_count": 6,
+        "damage_card_count": 9,
+        "block_card_count": 8,
+        "draw_card_count": 1,
+        "scaling_card_count": 3,
+        "average_cost_milli": 1780
+      },
+      "candidates": [
+        {
+          "id": "snecko_eye",
+          "label": "Snecko Eye",
+          "relic": "Snecko Eye",
+          "relic_score": 75
+        },
+        {
+          "id": "tiny_house",
+          "label": "Tiny House",
+          "relic": "Tiny House",
+          "relic_score": 20
+        },
+        {
+          "id": "black_star",
+          "label": "Black Star",
+          "relic": "Black Star",
+          "relic_score": 25
+        }
+      ],
+      "human_label": {
+        "mode": "soft_preference",
+        "preferred": [
+          "snecko_eye"
+        ],
+        "acceptable": [
+          "black_star"
+        ],
+        "bad": [
+          "tiny_house"
+        ],
+        "confidence": 0.6,
+        "rationale_tags": [
+          "high_curve",
+          "lacks_draw"
+        ],
+        "evidence": "human_prior",
+        "reason": "High-cost context should reverse the low-curve Snecko penalty."
+      }
+    },
+    {
+      "id": "boss_relic_sozu_potion_reliance_003",
+      "category": "boss_relic",
+      "decision_type": "boss_relic",
+      "context_note": "Potion-reliant weak deck; Sozu should be suspicious despite energy.",
+      "observation": {
+        "act": 2,
+        "floor": 17,
+        "current_hp": 39,
+        "max_hp": 80,
+        "gold": 220,
+        "deck_size": 20
+      },
+      "potions": [
+        "Fire Potion",
+        "Weak Potion"
+      ],
+      "deck": {
+        "deck_size": 20,
+        "attack_count": 12,
+        "skill_count": 7,
+        "power_count": 1,
+        "starter_basic_count": 8,
+        "damage_card_count": 11,
+        "block_card_count": 5,
+        "draw_card_count": 1,
+        "scaling_card_count": 1,
+        "average_cost_milli": 1100
+      },
+      "candidates": [
+        {
+          "id": "sozu",
+          "label": "Sozu",
+          "relic": "Sozu",
+          "relic_score": -15
+        },
+        {
+          "id": "black_star",
+          "label": "Black Star",
+          "relic": "Black Star",
+          "relic_score": 35
+        },
+        {
+          "id": "runic_dome",
+          "label": "Runic Dome",
+          "relic": "Runic Dome",
+          "relic_score": -25
+        }
+      ],
+      "human_label": {
+        "mode": "needs_rollout",
+        "preferred": [],
+        "acceptable": [
+          "black_star",
+          "sozu"
+        ],
+        "bad": [
+          "runic_dome"
+        ],
+        "confidence": 0.45,
+        "rationale_tags": [
+          "potion_reliance",
+          "uncertain"
+        ],
+        "evidence": "uncertain",
+        "reason": "This is intentionally marked for rollout; human preference depends on route and potion replacement value."
+      }
+    },
+    {
+      "id": "pathing_strong_take_elite_001",
+      "category": "pathing",
+      "decision_type": "map",
+      "context_note": "Strong early deck, high HP, fire potion; should not over-avoid a reasonable elite path.",
+      "observation": {
+        "act": 1,
+        "floor": 6,
+        "current_hp": 74,
+        "max_hp": 80,
+        "gold": 92,
+        "deck_size": 14
+      },
+      "potions": [
+        "Fire Potion"
+      ],
+      "deck": {
+        "deck_size": 14,
+        "attack_count": 9,
+        "skill_count": 5,
+        "power_count": 0,
+        "starter_basic_count": 9,
+        "damage_card_count": 9,
+        "block_card_count": 4,
+        "draw_card_count": 1,
+        "scaling_card_count": 0,
+        "average_cost_milli": 1120
+      },
+      "candidates": [
+        {
+          "id": "elite_path",
+          "label": "Elite path with campfire",
+          "x": 2,
+          "room": "elite",
+          "path_bonus": 30
+        },
+        {
+          "id": "event_path",
+          "label": "Event-heavy safe path",
+          "x": 4,
+          "room": "event",
+          "path_bonus": 0
+        },
+        {
+          "id": "shop_path",
+          "label": "Early shop path",
+          "x": 6,
+          "room": "shop",
+          "path_bonus": 0
+        }
+      ],
+      "human_label": {
+        "mode": "soft_preference",
+        "preferred": [
+          "elite_path"
+        ],
+        "acceptable": [
+          "shop_path"
+        ],
+        "bad": [],
+        "confidence": 0.62,
+        "rationale_tags": [
+          "route_risk",
+          "needs_frontload"
+        ],
+        "evidence": "human_prior",
+        "reason": "This checks for excessive safe-path bias when the deck has enough early power."
+      }
+    },
+    {
+      "id": "pathing_weak_avoid_elite_002",
+      "category": "pathing",
+      "decision_type": "map",
+      "context_note": "Weak deck, low HP, no potion; elite path should be avoided.",
+      "observation": {
+        "act": 1,
+        "floor": 6,
+        "current_hp": 31,
+        "max_hp": 80,
+        "gold": 55,
+        "deck_size": 13
+      },
+      "deck": {
+        "deck_size": 13,
+        "attack_count": 7,
+        "skill_count": 6,
+        "power_count": 0,
+        "starter_basic_count": 10,
+        "damage_card_count": 7,
+        "block_card_count": 5,
+        "draw_card_count": 0,
+        "scaling_card_count": 0,
+        "average_cost_milli": 1080
+      },
+      "candidates": [
+        {
+          "id": "elite_path",
+          "label": "Elite path",
+          "x": 1,
+          "room": "elite"
+        },
+        {
+          "id": "rest_path",
+          "label": "Rest-site path",
+          "x": 3,
+          "room": "rest",
+          "path_bonus": 20
+        },
+        {
+          "id": "normal_path",
+          "label": "Normal fight path",
+          "x": 5,
+          "room": "monster"
+        }
+      ],
+      "human_label": {
+        "mode": "hard_preference",
+        "preferred": [
+          "rest_path"
+        ],
+        "acceptable": [
+          "normal_path"
+        ],
+        "bad": [
+          "elite_path"
+        ],
+        "confidence": 0.8,
+        "rationale_tags": [
+          "route_risk",
+          "hp_pressure",
+          "deck_unformed"
+        ],
+        "evidence": "human_prior",
+        "reason": "Low HP plus starter-heavy deck makes the elite path a poor local macro decision."
+      }
+    }
+  ]
+}

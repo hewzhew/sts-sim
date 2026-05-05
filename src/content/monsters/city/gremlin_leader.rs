@@ -1,213 +1,393 @@
-use crate::action::{Action, DamageInfo, DamageType};
-use crate::combat::{CombatState, Intent, MonsterEntity};
-use crate::content::monsters::MonsterBehavior;
+use crate::content::monsters::exordium::{attack_actions, PLAYER};
+use crate::content::monsters::{EnemyId, MonsterBehavior, MonsterRollContext};
 use crate::content::powers::PowerId;
+use crate::runtime::action::Action;
+use crate::runtime::combat::{CombatState, MonsterEntity};
+use crate::runtime::rng::StsRng;
+use crate::semantics::combat::{
+    AttackSpec, BuffSpec, DamageKind, DefendSpec, MonsterMoveSpec, MonsterTurnPlan, SpawnHpSpec,
+    SpawnHpValue,
+};
 
 pub struct GremlinLeader;
 
-impl GremlinLeader {
-    pub fn roll_move_custom(
-        rng: &mut crate::rng::StsRng,
-        entity: &MonsterEntity,
-        _ascension_level: u8,
-        _num: i32,
-        monsters: &[MonsterEntity],
-    ) -> (u8, Intent) {
-        let alive_gremlins = monsters
-            .iter()
-            .filter(|m| m.id != entity.id && !m.is_dying)
-            .count();
-        let last_move = entity.move_history.back().copied().unwrap_or(0);
+const RALLY: u8 = 2;
+const ENCOURAGE: u8 = 3;
+const STAB: u8 = 4;
+const STAB_DAMAGE: i32 = 6;
+const STAB_HITS: u8 = 3;
+const SUMMON_POOL: [EnemyId; 8] = [
+    EnemyId::GremlinWarrior,
+    EnemyId::GremlinWarrior,
+    EnemyId::GremlinThief,
+    EnemyId::GremlinThief,
+    EnemyId::GremlinFat,
+    EnemyId::GremlinFat,
+    EnemyId::GremlinTsundere,
+    EnemyId::GremlinWizard,
+];
 
-        let num = rng.random_range(0, 99);
+fn stab_plan() -> MonsterTurnPlan {
+    MonsterTurnPlan::from_spec(
+        STAB,
+        MonsterMoveSpec::Attack(AttackSpec {
+            base_damage: STAB_DAMAGE,
+            hits: STAB_HITS,
+            damage_kind: DamageKind::Normal,
+        }),
+    )
+}
 
-        let move_byte = if alive_gremlins == 0 {
-            if num < 75 {
-                if last_move != 2 {
-                    2
-                } else {
-                    4
-                }
-            } else if last_move != 4 {
-                4
+fn rally_plan() -> MonsterTurnPlan {
+    // The exact summoned gremlins are chosen from aiRng during execution, so the
+    // visible truth is only "unknown rally" at planning time.
+    MonsterTurnPlan::with_visible_spec(RALLY, smallvec::smallvec![], MonsterMoveSpec::Unknown)
+}
+
+fn encourage_strength(ascension_level: u8) -> i32 {
+    if ascension_level >= 18 {
+        5
+    } else if ascension_level >= 3 {
+        4
+    } else {
+        3
+    }
+}
+
+fn encourage_block(ascension_level: u8) -> i32 {
+    if ascension_level >= 18 {
+        10
+    } else {
+        6
+    }
+}
+
+fn encourage_plan(ascension_level: u8) -> MonsterTurnPlan {
+    MonsterTurnPlan::with_visible_spec(
+        ENCOURAGE,
+        smallvec::smallvec![],
+        MonsterMoveSpec::DefendBuff(
+            DefendSpec {
+                block: encourage_block(ascension_level),
+            },
+            BuffSpec {
+                power_id: PowerId::Strength,
+                amount: encourage_strength(ascension_level),
+            },
+        ),
+    )
+}
+
+fn plan_for(move_id: u8, ascension_level: u8) -> MonsterTurnPlan {
+    match move_id {
+        RALLY => rally_plan(),
+        ENCOURAGE => encourage_plan(ascension_level),
+        STAB => stab_plan(),
+        _ => MonsterTurnPlan::unknown(move_id),
+    }
+}
+
+fn last_move(entity: &MonsterEntity, move_id: u8) -> bool {
+    entity.move_history().back().copied() == Some(move_id)
+}
+
+fn alive_gremlin_count(monsters: &[MonsterEntity], leader_id: usize) -> usize {
+    monsters
+        .iter()
+        .filter(|monster| {
+            monster.id != leader_id
+                && !monster.is_dying
+                && !monster.is_escaped
+                && monster.current_hp > 0
+        })
+        .count()
+}
+
+fn choose_move(rng: &mut StsRng, entity: &MonsterEntity, alive_gremlins: usize, num: i32) -> u8 {
+    if alive_gremlins == 0 {
+        if num < 75 {
+            if !last_move(entity, RALLY) {
+                RALLY
             } else {
-                2
+                STAB
             }
-        } else if alive_gremlins < 2 {
-            if num < 50 {
-                if last_move != 2 {
-                    2
-                } else {
-                    // Re-roll to 50-99
-                    let reroll = rng.random_range(50, 99);
-                    if reroll < 80 {
-                        if last_move != 3 {
-                            3
-                        } else {
-                            4
-                        }
-                    } else if last_move != 4 {
-                        4
-                    } else {
-                        // In Java, rerolling to 0-80 would happen if all these checks failed.
-                        // For simplicity since STS RNG rerolls can be deeply recursive, we just map it out:
-                        let reroll2 = rng.random_range(0, 79);
-                        if reroll2 < 50 {
-                            2
-                        } else {
-                            3
-                        }
-                    }
-                }
-            } else if num < 80 {
-                if last_move != 3 {
-                    3
-                } else {
-                    4
-                }
-            } else if last_move != 4 {
-                4
-            } else {
-                let reroll = rng.random_range(0, 79);
-                if reroll < 50 {
-                    if last_move != 2 {
-                        2
-                    } else {
-                        3
-                    } // Approx
-                } else if last_move != 3 {
-                    3
-                } else {
-                    4
-                }
-            }
+        } else if !last_move(entity, STAB) {
+            STAB
         } else {
-            if num < 66 {
-                if last_move != 3 {
-                    3
-                } else {
-                    4
-                }
-            } else if last_move != 4 {
-                4
-            } else {
-                3
-            }
-        };
-
-        match move_byte {
-            2 => (2, Intent::Unknown),
-            3 => (3, Intent::DefendBuff),
-            4 | _ => (4, Intent::Attack { damage: 6, hits: 3 }),
+            RALLY
         }
+    } else if alive_gremlins < 2 {
+        if num < 50 {
+            if !last_move(entity, RALLY) {
+                RALLY
+            } else {
+                let reroll = rng.random_range(50, 99);
+                choose_move(rng, entity, alive_gremlins, reroll)
+            }
+        } else if num < 80 {
+            if !last_move(entity, ENCOURAGE) {
+                ENCOURAGE
+            } else {
+                STAB
+            }
+        } else if !last_move(entity, STAB) {
+            STAB
+        } else {
+            let reroll = rng.random_range(0, 80);
+            choose_move(rng, entity, alive_gremlins, reroll)
+        }
+    } else if num < 66 {
+        if !last_move(entity, ENCOURAGE) {
+            ENCOURAGE
+        } else {
+            STAB
+        }
+    } else if !last_move(entity, STAB) {
+        STAB
+    } else {
+        ENCOURAGE
+    }
+}
+
+impl GremlinLeader {
+    pub const GREMLIN_SLOT_DRAW_X: [i32; 3] = [-366, -170, -532];
+    pub const GREMLIN_SLOT_LOGICAL_POSITIONS: [i32; 3] = Self::GREMLIN_SLOT_DRAW_X;
+    pub const LEADER_LOGICAL_POSITION: i32 = 3;
+
+    fn gremlin_slot_draw_xs(state: &CombatState, leader_id: usize) -> [i32; 3] {
+        // Live snapshots store absolute draw_x values, while encounter templates use
+        // Java constructor offsets. Reuse existing gremlin anchors so newly summoned
+        // minions sort into the same coordinate frame as dead slot occupants.
+        let mut positions: Vec<i32> = state
+            .entities
+            .monsters
+            .iter()
+            .filter(|monster| {
+                monster.id != leader_id
+                    && EnemyId::from_id(monster.monster_type).is_some_and(|enemy_id| {
+                        matches!(
+                            enemy_id,
+                            EnemyId::GremlinWarrior
+                                | EnemyId::GremlinThief
+                                | EnemyId::GremlinFat
+                                | EnemyId::GremlinTsundere
+                                | EnemyId::GremlinWizard
+                        )
+                    })
+            })
+            .map(|monster| {
+                state
+                    .monster_protocol_identity(monster.id)
+                    .and_then(|identity| identity.draw_x)
+                    .unwrap_or(monster.logical_position)
+            })
+            .collect();
+        positions.sort_unstable();
+        positions.dedup();
+
+        let mut slot_draw_xs = Self::GREMLIN_SLOT_DRAW_X;
+        match positions.as_slice() {
+            [slot_2, slot_0, slot_1, ..] => {
+                slot_draw_xs[0] = *slot_0;
+                slot_draw_xs[1] = *slot_1;
+                slot_draw_xs[2] = *slot_2;
+            }
+            [slot_0, slot_1] => {
+                slot_draw_xs[0] = *slot_0;
+                slot_draw_xs[1] = *slot_1;
+                let gap = slot_1 - slot_0;
+                if gap > 0 {
+                    // Java POSX deltas: slot0-slot2=166, slot1-slot0=196.
+                    slot_draw_xs[2] = slot_0 - (gap * 166 / 196);
+                }
+            }
+            [slot_0] => {
+                slot_draw_xs[0] = *slot_0;
+            }
+            [] => {}
+        }
+        slot_draw_xs
+    }
+
+    fn protocol_draw_x_for_minion(slot_draw_xs: [i32; 3], slot: usize, monster_id: EnemyId) -> i32 {
+        let slot_draw_x = slot_draw_xs[slot];
+        match monster_id {
+            EnemyId::GremlinWizard => slot_draw_x - 35,
+            _ => slot_draw_x,
+        }
+    }
+
+    fn occupied_summon_slots(state: &CombatState, leader_id: usize) -> [bool; 3] {
+        let mut occupied = [false; 3];
+        let slot_draw_xs = Self::gremlin_slot_draw_xs(state, leader_id);
+        for monster in &state.entities.monsters {
+            if monster.id == leader_id
+                || monster.is_dying
+                || monster.is_escaped
+                || monster.current_hp <= 0
+            {
+                continue;
+            }
+            let draw_x = state
+                .monster_protocol_identity(monster.id)
+                .and_then(|identity| identity.draw_x)
+                .unwrap_or(monster.logical_position);
+            if let Some((slot, _)) = slot_draw_xs
+                .iter()
+                .enumerate()
+                .min_by_key(|(_, slot_draw_x)| (draw_x - **slot_draw_x).abs())
+            {
+                occupied[slot] = true;
+            }
+        }
+        occupied
+    }
+
+    fn living_ally_ids(state: &CombatState, leader_id: usize) -> Vec<usize> {
+        state
+            .entities
+            .monsters
+            .iter()
+            .filter(|monster| {
+                monster.id != leader_id
+                    && !monster.is_dying
+                    && !monster.is_escaped
+                    && monster.current_hp > 0
+            })
+            .map(|monster| monster.id)
+            .collect()
+    }
+
+    fn random_summoned_gremlin(rng: &mut StsRng) -> EnemyId {
+        SUMMON_POOL[rng.random_range(0, (SUMMON_POOL.len() - 1) as i32) as usize]
+    }
+
+    fn roll_move_custom_plan(
+        rng: &mut StsRng,
+        entity: &MonsterEntity,
+        ascension_level: u8,
+        num: i32,
+        monsters: &[MonsterEntity],
+    ) -> MonsterTurnPlan {
+        let move_id = choose_move(rng, entity, alive_gremlin_count(monsters, entity.id), num);
+        plan_for(move_id, ascension_level)
     }
 }
 
 impl MonsterBehavior for GremlinLeader {
-    fn roll_move(
-        _rng: &mut crate::rng::StsRng,
-        _entity: &MonsterEntity,
-        _ascension_level: u8,
-        _num: i32,
-    ) -> (u8, Intent) {
-        // Will never be called because engine overrides this.
-        (2, Intent::Unknown)
+    fn roll_move_plan_with_context(
+        rng: &mut StsRng,
+        entity: &MonsterEntity,
+        ascension_level: u8,
+        num: i32,
+        ctx: MonsterRollContext<'_>,
+    ) -> MonsterTurnPlan {
+        Self::roll_move_custom_plan(rng, entity, ascension_level, num, ctx.monsters)
     }
 
-    fn take_turn(state: &mut CombatState, entity: &MonsterEntity) -> Vec<Action> {
-        let mut actions = Vec::new();
+    fn use_pre_battle_actions(
+        state: &mut CombatState,
+        entity: &MonsterEntity,
+        _legacy_rng: crate::content::monsters::PreBattleLegacyRng,
+    ) -> Vec<Action> {
+        Self::living_ally_ids(state, entity.id)
+            .into_iter()
+            .map(|ally_id| Action::ApplyPower {
+                source: entity.id,
+                target: ally_id,
+                power_id: PowerId::Minion,
+                amount: 1,
+            })
+            .collect()
+    }
 
-        match entity.next_move_byte {
-            2 => {
-                // RALLY
-                let mut minion_slots = vec![];
-                if !state.monsters.iter().any(|m| m.slot == 1 && !m.is_dying) {
-                    minion_slots.push(1);
-                }
-                if !state.monsters.iter().any(|m| m.slot == 2 && !m.is_dying) {
-                    minion_slots.push(2);
-                }
+    fn turn_plan(state: &CombatState, entity: &MonsterEntity) -> MonsterTurnPlan {
+        plan_for(entity.planned_move_id(), state.meta.ascension_level)
+    }
 
-                let variants = [
-                    crate::content::monsters::EnemyId::GremlinTsundere,
-                    crate::content::monsters::EnemyId::GremlinFat,
-                    crate::content::monsters::EnemyId::GremlinWarrior,
-                    crate::content::monsters::EnemyId::GremlinThief,
-                    crate::content::monsters::EnemyId::GremlinWizard,
-                ];
-
-                let mut mock_max_id = state.monsters.iter().map(|m| m.id).max().unwrap_or(0);
-
-                for slot in minion_slots {
-                    mock_max_id += 1;
-                    let minion_id = variants[state.rng.ai_rng.random_range(0, 4) as usize];
+    fn take_turn_plan(
+        state: &mut CombatState,
+        entity: &MonsterEntity,
+        plan: &MonsterTurnPlan,
+    ) -> Vec<Action> {
+        let mut actions = match plan.move_id {
+            RALLY => {
+                let mut occupied_slots = Self::occupied_summon_slots(state, entity.id);
+                let slot_draw_xs = Self::gremlin_slot_draw_xs(state, entity.id);
+                let mut actions = Vec::new();
+                for _ in 0..2 {
+                    let Some(slot) = occupied_slots.iter().position(|occupied| !occupied) else {
+                        break;
+                    };
+                    occupied_slots[slot] = true;
+                    let monster_id = Self::random_summoned_gremlin(&mut state.rng.ai_rng);
+                    let draw_x = Self::protocol_draw_x_for_minion(slot_draw_xs, slot, monster_id);
                     actions.push(Action::SpawnMonsterSmart {
-                        monster_id: minion_id,
-                        current_hp: 0,
-                        max_hp: 0,
-                        logical_position: slot as i32,
-                    });
-
-                    actions.push(Action::ApplyPower {
-                        source: entity.id,
-                        target: mock_max_id,
-                        power_id: PowerId::Minion,
-                        amount: 1,
+                        monster_id,
+                        logical_position: draw_x,
+                        hp: SpawnHpSpec {
+                            current: SpawnHpValue::Rolled,
+                            max: SpawnHpValue::Rolled,
+                        },
+                        protocol_draw_x: Some(draw_x),
+                        is_minion: true,
                     });
                 }
+                actions
             }
-            3 => {
-                // ENCOURAGE
-                let str_amt = if state.ascension_level >= 18 {
-                    5
-                } else if state.ascension_level >= 3 {
-                    4
-                } else {
-                    3
-                };
-                let block_amt = if state.ascension_level >= 18 { 10 } else { 6 };
-
-                actions.push(Action::ApplyPower {
+            ENCOURAGE => {
+                let mut actions = vec![Action::ApplyPower {
                     source: entity.id,
                     target: entity.id,
                     power_id: PowerId::Strength,
-                    amount: str_amt,
-                });
-
-                for m in state.monsters.iter() {
-                    if m.id != entity.id && !m.is_dying {
-                        actions.push(Action::ApplyPower {
-                            source: entity.id,
-                            target: m.id,
-                            power_id: PowerId::Strength,
-                            amount: str_amt,
-                        });
-                        actions.push(Action::GainBlock {
-                            target: m.id,
-                            amount: block_amt,
-                        });
-                    }
-                }
-            }
-            4 => {
-                // STAB
-                for _ in 0..3 {
-                    actions.push(Action::Damage(DamageInfo {
+                    amount: encourage_strength(state.meta.ascension_level),
+                }];
+                for ally_id in Self::living_ally_ids(state, entity.id) {
+                    actions.push(Action::ApplyPower {
                         source: entity.id,
-                        target: 0,
-                        base: 6,
-                        output: 6,
-                        damage_type: DamageType::Normal,
-                        is_modified: false,
-                    }));
+                        target: ally_id,
+                        power_id: PowerId::Strength,
+                        amount: encourage_strength(state.meta.ascension_level),
+                    });
+                    actions.push(Action::GainBlock {
+                        target: ally_id,
+                        amount: encourage_block(state.meta.ascension_level),
+                    });
                 }
+                actions
             }
-            _ => {}
-        }
+            STAB => attack_actions(
+                entity.id,
+                PLAYER,
+                &AttackSpec {
+                    base_damage: STAB_DAMAGE,
+                    hits: STAB_HITS,
+                    damage_kind: DamageKind::Normal,
+                },
+            ),
+            _ => panic!(
+                "gremlin leader take_turn received unsupported move {}",
+                plan.move_id
+            ),
+        };
         actions.push(Action::RollMonsterMove {
             monster_id: entity.id,
         });
-
         actions
+    }
+
+    fn on_death(state: &mut CombatState, entity: &MonsterEntity) -> Vec<Action> {
+        state
+            .entities
+            .monsters
+            .iter()
+            .filter(|monster| {
+                monster.id != entity.id
+                    && !monster.is_dying
+                    && !monster.is_escaped
+                    && monster.current_hp > 0
+            })
+            .map(|monster| Action::Escape { target: monster.id })
+            .collect()
     }
 }

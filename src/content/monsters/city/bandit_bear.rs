@@ -1,92 +1,177 @@
-use crate::action::{Action, DamageInfo, DamageType};
-use crate::combat::{CombatState, Intent};
+use crate::content::monsters::exordium::{
+    apply_power_action, attack_actions, gain_block_action, set_next_move_action, PLAYER,
+};
 use crate::content::monsters::MonsterBehavior;
 use crate::content::powers::PowerId;
+use crate::runtime::action::Action;
+use crate::runtime::combat::{CombatState, MonsterEntity};
+use crate::semantics::combat::{
+    ApplyPowerStep, AttackSpec, DamageKind, DebuffSpec, DefendSpec, EffectStrength,
+    MonsterMoveSpec, MonsterTurnPlan, MoveStep, MoveTarget, PowerEffectKind,
+};
 
 pub struct BanditBear;
 
+const MAUL: u8 = 1;
+const BEAR_HUG: u8 = 2;
+const LUNGE: u8 = 3;
+
+fn maul_damage(ascension_level: u8) -> i32 {
+    if ascension_level >= 2 {
+        20
+    } else {
+        18
+    }
+}
+
+fn lunge_damage(ascension_level: u8) -> i32 {
+    if ascension_level >= 2 {
+        10
+    } else {
+        9
+    }
+}
+
+fn lunge_block() -> i32 {
+    9
+}
+
+fn dexterity_reduction(ascension_level: u8) -> i32 {
+    if ascension_level >= 17 {
+        -4
+    } else {
+        -2
+    }
+}
+
+fn maul_plan(ascension_level: u8) -> MonsterTurnPlan {
+    MonsterTurnPlan::from_spec(
+        MAUL,
+        MonsterMoveSpec::Attack(AttackSpec {
+            base_damage: maul_damage(ascension_level),
+            hits: 1,
+            damage_kind: DamageKind::Normal,
+        }),
+    )
+}
+
+fn bear_hug_plan(ascension_level: u8) -> MonsterTurnPlan {
+    MonsterTurnPlan::from_spec(
+        BEAR_HUG,
+        MonsterMoveSpec::StrongDebuff(DebuffSpec {
+            power_id: PowerId::Dexterity,
+            amount: dexterity_reduction(ascension_level),
+            strength: EffectStrength::Strong,
+        }),
+    )
+}
+
+fn lunge_plan(ascension_level: u8) -> MonsterTurnPlan {
+    MonsterTurnPlan::from_spec(
+        LUNGE,
+        MonsterMoveSpec::AttackDefend(
+            AttackSpec {
+                base_damage: lunge_damage(ascension_level),
+                hits: 1,
+                damage_kind: DamageKind::Normal,
+            },
+            DefendSpec {
+                block: lunge_block(),
+            },
+        ),
+    )
+}
+
+fn plan_for(move_id: u8, ascension_level: u8) -> MonsterTurnPlan {
+    match move_id {
+        MAUL => maul_plan(ascension_level),
+        BEAR_HUG => bear_hug_plan(ascension_level),
+        LUNGE => lunge_plan(ascension_level),
+        _ => MonsterTurnPlan::unknown(move_id),
+    }
+}
+
+fn last_move(entity: &MonsterEntity) -> Option<u8> {
+    entity.move_history().back().copied()
+}
+
 impl MonsterBehavior for BanditBear {
-    fn roll_move(
-        _rng: &mut crate::rng::StsRng,
-        entity: &crate::combat::MonsterEntity,
+    fn roll_move_plan(
+        _rng: &mut crate::runtime::rng::StsRng,
+        entity: &MonsterEntity,
         ascension_level: u8,
         _num: i32,
-    ) -> (u8, Intent) {
-        if entity.move_history.is_empty() {
-            return (2, Intent::StrongDebuff); // BEAR_HUG
-        }
-
-        let last_move = entity.move_history.back().copied().unwrap_or(0);
-        if last_move == 2 || last_move == 1 {
-            let dmg = if ascension_level >= 2 { 10 } else { 9 };
-            (
-                3,
-                Intent::AttackDefend {
-                    damage: dmg,
-                    hits: 1,
-                },
-            ) // LUNGE
-        } else {
-            let dmg = if ascension_level >= 2 { 20 } else { 18 };
-            (
-                1,
-                Intent::Attack {
-                    damage: dmg,
-                    hits: 1,
-                },
-            ) // MAUL
+    ) -> MonsterTurnPlan {
+        match last_move(entity) {
+            None => bear_hug_plan(ascension_level),
+            Some(BEAR_HUG | MAUL) => lunge_plan(ascension_level),
+            Some(LUNGE) => maul_plan(ascension_level),
+            Some(_) => bear_hug_plan(ascension_level),
         }
     }
 
-    fn take_turn(state: &mut CombatState, entity: &crate::combat::MonsterEntity) -> Vec<Action> {
-        let mut actions = Vec::new();
-        let asc = state.ascension_level;
+    fn turn_plan(state: &CombatState, entity: &MonsterEntity) -> MonsterTurnPlan {
+        plan_for(entity.planned_move_id(), state.meta.ascension_level)
+    }
 
-        match entity.next_move_byte {
-            2 => {
-                // BEAR_HUG
-                let con_reduction = if asc >= 17 { 4 } else { 2 };
-                actions.push(Action::ApplyPower {
-                    source: entity.id,
-                    target: 0,
+    fn take_turn_plan(
+        state: &mut CombatState,
+        entity: &MonsterEntity,
+        plan: &MonsterTurnPlan,
+    ) -> Vec<Action> {
+        match (plan.move_id, plan.steps.as_slice()) {
+            (
+                BEAR_HUG,
+                [MoveStep::ApplyPower(ApplyPowerStep {
+                    target: MoveTarget::Player,
                     power_id: PowerId::Dexterity,
-                    amount: -con_reduction,
-                });
+                    effect: PowerEffectKind::Debuff,
+                    ..
+                })],
+            ) => vec![
+                apply_power_action(
+                    entity,
+                    &ApplyPowerStep {
+                        target: MoveTarget::Player,
+                        power_id: PowerId::Dexterity,
+                        amount: dexterity_reduction(state.meta.ascension_level),
+                        effect: PowerEffectKind::Debuff,
+                        visible_strength: EffectStrength::Strong,
+                    },
+                ),
+                set_next_move_action(entity, lunge_plan(state.meta.ascension_level)),
+            ],
+            (
+                MAUL,
+                [MoveStep::Attack(crate::semantics::combat::AttackStep {
+                    target: MoveTarget::Player,
+                    attack,
+                })],
+            ) => {
+                let mut actions = attack_actions(entity.id, PLAYER, attack);
+                actions.push(set_next_move_action(
+                    entity,
+                    lunge_plan(state.meta.ascension_level),
+                ));
+                actions
             }
-            1 => {
-                // MAUL
-                let dmg = if asc >= 2 { 20 } else { 18 };
-                actions.push(Action::Damage(DamageInfo {
-                    source: entity.id,
-                    target: 0,
-                    base: dmg,
-                    output: dmg,
-                    damage_type: DamageType::Normal,
-                    is_modified: false,
-                }));
+            (
+                LUNGE,
+                [MoveStep::Attack(crate::semantics::combat::AttackStep {
+                    target: MoveTarget::Player,
+                    attack,
+                }), MoveStep::GainBlock(block)],
+            ) if block.target == MoveTarget::SelfTarget => {
+                let mut actions = attack_actions(entity.id, PLAYER, attack);
+                actions.push(gain_block_action(entity, block));
+                actions.push(set_next_move_action(
+                    entity,
+                    maul_plan(state.meta.ascension_level),
+                ));
+                actions
             }
-            3 => {
-                // LUNGE
-                let dmg = if asc >= 2 { 10 } else { 9 };
-                actions.push(Action::Damage(DamageInfo {
-                    source: entity.id,
-                    target: 0,
-                    base: dmg,
-                    output: dmg,
-                    damage_type: DamageType::Normal,
-                    is_modified: false,
-                }));
-                actions.push(Action::GainBlock {
-                    target: entity.id,
-                    amount: 9,
-                });
-            }
-            _ => {}
+            (_, []) => panic!("bandit bear plan missing locked truth"),
+            (move_id, steps) => panic!("bandit bear plan/steps mismatch: {} {:?}", move_id, steps),
         }
-
-        actions.push(Action::RollMonsterMove {
-            monster_id: entity.id,
-        });
-        actions
     }
 }
