@@ -582,22 +582,35 @@ fn delta_dim(delta: &CandidatePlanDeltaV0, dim: &str, higher_better: bool) -> i3
     if higher_better { raw } else { -raw }
 }
 
+/// Returns true if the delta has any non-zero value in the dominance dimensions.
+/// A candidate whose 12 dominance dimensions are all zero has its value entirely
+/// outside the current vector model (e.g. DualWield, Corruption).  These
+/// context-dependent cards are excluded from Pareto comparison.
+fn is_vectorizable(delta: &CandidatePlanDeltaV0) -> bool {
+    for &(dim, _) in DOMINANCE_DIMS {
+        if delta_dim(delta, dim, true) != 0 {
+            return true;
+        }
+    }
+    false
+}
+
 /// Annotate candidates in-place: set `dominated` and `dominated_by_index`.
-/// Only compares among candidates that have a plan_delta (typically reward card choices).
+/// Skips candidates whose plan_delta is None or has no vectorizable dimensions.
 pub fn annotate_dominated_candidates(candidates: &mut [RunActionCandidate]) {
     let n = candidates.len();
     for i in 0..n {
         let di = match &candidates[i].plan_delta {
-            Some(d) => d,
-            None => continue,
+            Some(d) if is_vectorizable(d) => d,
+            _ => continue,
         };
         for j in 0..n {
             if i == j {
                 continue;
             }
             let dj = match &candidates[j].plan_delta {
-                Some(d) => d,
-                None => continue,
+                Some(d) if is_vectorizable(d) => d,
+                _ => continue,
             };
             if pareto_dominates(di, dj) {
                 candidates[j].dominated = true;
