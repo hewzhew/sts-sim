@@ -234,6 +234,21 @@ pub fn card_plan_affordance(card_id: CardId, upgrades: u8) -> CardPlanAffordance
             out.frontload += 8;
             out.draw += 6;
         }
+        // Magic-based cards: primary value comes from base_magic,
+        // not captured by base_damage/base_block.
+        CardId::Flex => {
+            // +magic strength for 1 turn → temporary frontload (~2 attacks)
+            out.frontload += magic * 2;
+        }
+        CardId::Rage => {
+            // +magic block per attack played → block over a turn (~3 attacks)
+            out.block += magic * 3;
+        }
+        CardId::Combust => {
+            // magic AOE damage per turn as power → ongoing aoe (~4 turns)
+            out.aoe += magic * 4;
+            out.scaling += 8;
+        }
         _ => {}
     }
     out
