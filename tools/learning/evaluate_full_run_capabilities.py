@@ -132,15 +132,51 @@ def run_rust_policy(args: argparse.Namespace, policy: str, artifact_dir: Path) -
     return summary
 
 
+def slim_observation(obs: dict[str, Any]) -> dict[str, Any]:
+    combat = obs.get("combat") or {}
+    slim_combat: dict[str, Any] = {}
+    if isinstance(combat, dict) and combat:
+        slim_combat = {
+            "player_hp": combat.get("player_hp"),
+            "player_block": combat.get("player_block"),
+            "visible_incoming_damage": combat.get("visible_incoming_damage"),
+            "enemies": combat.get("enemies"),
+            "monsters": combat.get("monsters"),
+        }
+    return {
+        "floor": obs.get("floor"),
+        "current_hp": obs.get("current_hp"),
+        "max_hp": obs.get("max_hp"),
+        "combat": slim_combat,
+        "screen": obs.get("screen"),
+        "deck": obs.get("deck"),
+    }
+
+
+def slim_action_mask(candidates: list[dict[str, Any]], decision_type: str) -> list[dict[str, Any]]:
+    if decision_type != "reward_card_choice":
+        return []
+    return [
+        {
+            "card": item.get("card"),
+            "plan_delta": item.get("plan_delta"),
+            "reward_structure": item.get("reward_structure"),
+        }
+        for item in candidates
+        if isinstance(item, dict)
+    ]
+
+
 def episode_from_trace_file(path: Path) -> dict[str, Any]:
     data = json.loads(path.read_text(encoding="utf-8"))
     summary = data.get("summary") or {}
     steps = []
     for raw in data.get("steps") or []:
         observation = raw.get("observation") or {}
-        chosen_candidate = {}
         candidates = raw.get("action_mask") or []
+        decision_type = str(raw.get("decision_type") or observation.get("decision_type") or "unknown")
         index = int(raw.get("chosen_action_index") or 0)
+        chosen_candidate: dict[str, Any] = {}
         if 0 <= index < len(candidates) and isinstance(candidates[index], dict):
             chosen_candidate = candidates[index]
         steps.append(
@@ -148,13 +184,13 @@ def episode_from_trace_file(path: Path) -> dict[str, Any]:
                 "step": int(raw.get("step_index") or 0),
                 "floor": int(raw.get("floor") or observation.get("floor") or 0),
                 "act": int(raw.get("act") or observation.get("act") or 0),
-                "observation": observation,
-                "decision_type": str(raw.get("decision_type") or observation.get("decision_type") or "unknown"),
+                "observation": slim_observation(observation),
+                "decision_type": decision_type,
                 "engine_state": str(raw.get("engine_state") or observation.get("engine_state") or "unknown"),
                 "chosen_action_key": str(raw.get("chosen_action_key") or chosen_candidate.get("action_key") or ""),
                 "chosen_action": raw.get("chosen_action") or chosen_candidate.get("action") or {},
                 "chosen_candidate": chosen_candidate,
-                "action_mask": candidates,
+                "action_mask": slim_action_mask(candidates, decision_type),
             }
         )
     return {"summary": summary, "steps": steps}
@@ -195,6 +231,8 @@ def run_model_policy(args: argparse.Namespace, artifact_dir: Path) -> dict[str, 
                 candidate = candidate_at(info, action)
                 raw_payload = info.get("raw_payload") or {}
                 observation = raw_payload.get("observation") or {}
+                candidates = info.get("action_candidates") or []
+                decision_type = str(info.get("decision_type") or observation.get("decision_type") or "unknown")
                 steps.append(
                     {
                         "step": len(steps),
@@ -206,15 +244,15 @@ def run_model_policy(args: argparse.Namespace, artifact_dir: Path) -> dict[str, 
                         "gold": int(observation.get("gold") or 0),
                         "deck_size": int(info.get("deck_size") or observation.get("deck_size") or 0),
                         "relic_count": int(info.get("relic_count") or observation.get("relic_count") or 0),
-                        "legal_action_count": int(info.get("legal_action_count") or len(info.get("action_candidates") or [])),
-                        "observation": observation,
-                        "decision_type": str(info.get("decision_type") or observation.get("decision_type") or "unknown"),
+                        "legal_action_count": int(info.get("legal_action_count") or len(candidates)),
+                        "observation": slim_observation(observation),
+                        "decision_type": decision_type,
                         "engine_state": str(info.get("engine_state") or observation.get("engine_state") or "unknown"),
                         "chosen_action_index": action,
                         "chosen_action_key": str(candidate.get("action_key") or ""),
                         "chosen_action": candidate.get("action") or {},
                         "chosen_candidate": candidate,
-                        "action_mask": info.get("action_candidates") or [],
+                        "action_mask": slim_action_mask(candidates, decision_type),
                     }
                 )
                 obs, reward, done, truncated, info = env.step(action)
