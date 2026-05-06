@@ -766,4 +766,3 @@ pub fn reward_item_observation(
         capacity_blocked,
     }
 }
-

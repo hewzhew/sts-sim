@@ -323,4 +323,3 @@ pub fn stable_action_id(action_key: &str) -> u32 {
     }
     hash
 }
-

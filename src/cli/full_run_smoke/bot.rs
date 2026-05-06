@@ -58,7 +58,10 @@ pub fn choose_rule_baseline_action(ctx: &EpisodeContext, legal_actions: &[Client
     best_index
 }
 
-pub fn choose_plan_query_action(ctx: &EpisodeContext, legal_actions: &[ClientInput]) -> Option<usize> {
+pub fn choose_plan_query_action(
+    ctx: &EpisodeContext,
+    legal_actions: &[ClientInput],
+) -> Option<usize> {
     let combat = ctx.combat_state.as_ref()?;
     if !matches!(
         ctx.engine_state,
@@ -215,7 +218,12 @@ pub fn episode_reward(
     floor.max(0) as f32 + combat_win_count as f32 * 2.0 + hp_fraction + terminal
 }
 
-pub fn guarded_survival_pressure(combat: &CombatState, incoming: i32, unblocked: i32, hp: i32) -> bool {
+pub fn guarded_survival_pressure(
+    combat: &CombatState,
+    incoming: i32,
+    unblocked: i32,
+    hp: i32,
+) -> bool {
     if incoming <= 0 || unblocked <= 0 {
         return false;
     }
@@ -697,7 +705,11 @@ pub fn score_combat_action(ctx: &EpisodeContext, action: &ClientInput) -> i32 {
     }
 }
 
-pub fn score_play_card_action(combat: &CombatState, card_index: usize, target: Option<usize>) -> i32 {
+pub fn score_play_card_action(
+    combat: &CombatState,
+    card_index: usize,
+    target: Option<usize>,
+) -> i32 {
     let Some(card) = combat.zones.hand.get(card_index) else {
         return -1_000;
     };
