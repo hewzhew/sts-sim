@@ -56,9 +56,11 @@ pub use profile::{
 };
 pub use root_prior::{LookupRootPriorProvider, RootPriorConfig, RootPriorQueryKey};
 pub use turn_plan_probe::{
-    probe_turn_plans, CombatPlanProbeLimits, CombatPlanQueryReport, CombatPlanReport,
-    CombatPlanRiskNote, CombatPlanSequenceClass, CombatPlanSequenceOutcome, CombatPlanStateSummary,
-    CombatTurnPlanProbeConfig, CombatTurnPlanProbeReport, PlanScoreBreakdown,
+    probe_draw_marginal_value, probe_turn_plans, CombatDrawMarginalBranchReport,
+    CombatDrawMarginalProbeReport, CombatDrawMarginalSummary, CombatPlanProbeLimits,
+    CombatPlanQueryReport, CombatPlanReport, CombatPlanRiskNote, CombatPlanSequenceClass,
+    CombatPlanSequenceOutcome, CombatPlanStateSummary, CombatTurnPlanProbeConfig,
+    CombatTurnPlanProbeReport, PlanScoreBreakdown,
 };
 
 struct ExactTurnShadowDecision {

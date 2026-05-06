@@ -9,11 +9,13 @@ use std::process::Command;
 use sts_simulator::bot::combat::{
     diagnose_root_search_with_depth_and_runtime, SearchRuntimeBudget,
 };
-use sts_simulator::fixtures::combat_case::{lower_case, CombatCase};
+use sts_simulator::fixtures::author_spec::CombatAuthorSpec;
+use sts_simulator::fixtures::combat_case::{compile_combat_author_case, lower_case, CombatCase};
 use sts_simulator::fixtures::live_capture::build_fixture_from_record_window;
 use sts_simulator::fixtures::scenario::{
     initialize_fixture_state, ScenarioFixture, ScenarioKind, ScenarioOracleKind, ScenarioProvenance,
 };
+use sts_simulator::protocol::java::card_id_from_java;
 
 /// Slay the Spire Simulator Developer Tool
 /// Unifies schema queries, AST parsing, and log diffing into a single interface.
@@ -274,6 +276,49 @@ enum CombatCommands {
         /// Optional replay max step cap.
         #[arg(long)]
         max_steps: Option<usize>,
+        /// Current-turn probe max action depth.
+        #[arg(long, default_value_t = 6)]
+        max_depth: usize,
+        /// Current-turn probe node budget.
+        #[arg(long, default_value_t = 2000)]
+        max_nodes: usize,
+        /// Current-turn probe branch width.
+        #[arg(long, default_value_t = 32)]
+        beam_width: usize,
+        /// Engine ticks allowed after each candidate action.
+        #[arg(long, default_value_t = 200)]
+        max_engine_steps_per_action: usize,
+    },
+    PlanProbeAuthorSpec {
+        /// Synthetic combat author spec JSON to lower directly into a combat state.
+        #[arg(long)]
+        author_spec: PathBuf,
+        /// Output JSON report path.
+        #[arg(long)]
+        out: PathBuf,
+        /// Current-turn probe max action depth.
+        #[arg(long, default_value_t = 6)]
+        max_depth: usize,
+        /// Current-turn probe node budget.
+        #[arg(long, default_value_t = 2000)]
+        max_nodes: usize,
+        /// Current-turn probe branch width.
+        #[arg(long, default_value_t = 32)]
+        beam_width: usize,
+        /// Engine ticks allowed after each candidate action.
+        #[arg(long, default_value_t = 200)]
+        max_engine_steps_per_action: usize,
+    },
+    DrawMarginalProbeAuthorSpec {
+        /// Synthetic combat author spec JSON to lower directly into a combat state.
+        #[arg(long)]
+        author_spec: PathBuf,
+        /// Target draw/search/resource card to force or forbid, e.g. BattleTrance or "Battle Trance".
+        #[arg(long)]
+        action_card: String,
+        /// Output JSON report path.
+        #[arg(long)]
+        out: PathBuf,
         /// Current-turn probe max action depth.
         #[arg(long, default_value_t = 6)]
         max_depth: usize,
@@ -4540,6 +4585,106 @@ fn main() {
                     "{}",
                     serde_json::to_string_pretty(&report)
                         .expect("combat plan-probe report should serialize for stdout")
+                );
+            }
+            CombatCommands::PlanProbeAuthorSpec {
+                author_spec,
+                out,
+                max_depth,
+                max_nodes,
+                beam_width,
+                max_engine_steps_per_action,
+            } => {
+                let payload = std::fs::read_to_string(author_spec)
+                    .expect("combat plan-probe author spec should be readable");
+                let spec: CombatAuthorSpec =
+                    serde_json::from_str(&payload).expect("combat author spec should parse");
+                let case = compile_combat_author_case(&spec)
+                    .expect("combat author spec should compile to combat case");
+                let seed = lower_case(&case).expect("combat author spec case should lower");
+                let mut report = sts_simulator::bot::combat::probe_turn_plans(
+                    &seed.engine_state,
+                    &seed.combat,
+                    sts_simulator::bot::combat::CombatTurnPlanProbeConfig {
+                        max_depth: *max_depth,
+                        max_nodes: *max_nodes,
+                        beam_width: *beam_width,
+                        max_engine_steps_per_action: *max_engine_steps_per_action,
+                    },
+                );
+                report.source_trace = serde_json::json!({
+                    "source": "author_spec",
+                    "author_spec": author_spec,
+                    "case_id": case.id,
+                    "tags": case.tags,
+                });
+
+                if let Some(parent) = out.parent() {
+                    std::fs::create_dir_all(parent)
+                        .expect("combat plan-probe author-spec output parent should be creatable");
+                }
+                std::fs::write(
+                    out,
+                    serde_json::to_string_pretty(&report)
+                        .expect("combat plan-probe author-spec report should serialize"),
+                )
+                .expect("combat plan-probe author-spec report should write");
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&report)
+                        .expect("combat plan-probe author-spec report should serialize for stdout")
+                );
+            }
+            CombatCommands::DrawMarginalProbeAuthorSpec {
+                author_spec,
+                action_card,
+                out,
+                max_depth,
+                max_nodes,
+                beam_width,
+                max_engine_steps_per_action,
+            } => {
+                let payload = std::fs::read_to_string(author_spec)
+                    .expect("combat draw-marginal author spec should be readable");
+                let spec: CombatAuthorSpec =
+                    serde_json::from_str(&payload).expect("combat author spec should parse");
+                let case = compile_combat_author_case(&spec)
+                    .expect("combat author spec should compile to combat case");
+                let seed = lower_case(&case).expect("combat author spec case should lower");
+                let target_card = card_id_from_java(action_card)
+                    .unwrap_or_else(|| panic!("unknown Java card id or alias '{}'", action_card));
+                let mut report = sts_simulator::bot::combat::probe_draw_marginal_value(
+                    &seed.engine_state,
+                    &seed.combat,
+                    target_card,
+                    sts_simulator::bot::combat::CombatTurnPlanProbeConfig {
+                        max_depth: *max_depth,
+                        max_nodes: *max_nodes,
+                        beam_width: *beam_width,
+                        max_engine_steps_per_action: *max_engine_steps_per_action,
+                    },
+                );
+                report.source_trace = serde_json::json!({
+                    "source": "author_spec",
+                    "author_spec": author_spec,
+                    "case_id": case.id,
+                    "tags": case.tags,
+                });
+
+                if let Some(parent) = out.parent() {
+                    std::fs::create_dir_all(parent)
+                        .expect("combat draw-marginal output parent should be creatable");
+                }
+                std::fs::write(
+                    out,
+                    serde_json::to_string_pretty(&report)
+                        .expect("combat draw-marginal report should serialize"),
+                )
+                .expect("combat draw-marginal report should write");
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&report)
+                        .expect("combat draw-marginal report should serialize for stdout")
                 );
             }
             CombatCommands::BuildStateCorpus {

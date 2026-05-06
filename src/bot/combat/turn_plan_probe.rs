@@ -16,6 +16,7 @@ use super::profile::SearchProfileBreakdown;
 use super::stepping::simulate_input_bounded;
 
 pub const COMBAT_TURN_PLAN_PROBE_SCHEMA_VERSION: &str = "combat_turn_plan_probe_v2_3_1";
+pub const COMBAT_DRAW_MARGINAL_PROBE_SCHEMA_VERSION: &str = "combat_draw_marginal_probe_v0";
 
 #[derive(Clone, Copy, Debug)]
 pub struct CombatTurnPlanProbeConfig {
@@ -49,6 +50,44 @@ pub struct CombatTurnPlanProbeReport {
     pub risk_notes: Vec<CombatPlanRiskNote>,
     pub probe_limits: CombatPlanProbeLimits,
     pub truth_warnings: Vec<String>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct CombatDrawMarginalProbeReport {
+    pub schema_version: String,
+    pub source_trace: serde_json::Value,
+    pub target_action_card: String,
+    pub target_card_id: String,
+    pub status: String,
+    pub branches: Vec<CombatDrawMarginalBranchReport>,
+    pub marginal: Option<CombatDrawMarginalSummary>,
+    pub truth_warnings: Vec<String>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct CombatDrawMarginalBranchReport {
+    pub branch_name: String,
+    pub status: String,
+    pub target_action_keys: Vec<String>,
+    pub plan_queries: Vec<CombatPlanQueryReport>,
+    pub probe_limits: CombatPlanProbeLimits,
+    pub sequence_count: usize,
+}
+
+#[derive(Clone, Debug, Default, Serialize)]
+pub struct CombatDrawMarginalSummary {
+    pub comparison_query: String,
+    pub damage_delta: i32,
+    pub block_delta: i32,
+    pub unblocked_reduction: i32,
+    pub hp_loss_reduction: i32,
+    pub remaining_energy_delta: i32,
+    pub remaining_hand_delta: i32,
+    pub setup_gain: bool,
+    pub lethal_gain: bool,
+    pub full_block_gain: bool,
+    pub marginal_score: i32,
+    pub label_strength: String,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -272,6 +311,12 @@ struct ProbeNode {
 }
 
 #[derive(Clone, Debug, Default)]
+struct CombatTurnPlanExploreOptions {
+    forbidden_card: Option<CardId>,
+    require_first_card: Option<CardId>,
+}
+
+#[derive(Clone, Debug, Default)]
 struct ActionEffectSummary {
     pure_damage: bool,
     pure_block: bool,
@@ -424,9 +469,24 @@ pub fn probe_turn_plans(
     combat: &CombatState,
     config: CombatTurnPlanProbeConfig,
 ) -> CombatTurnPlanProbeReport {
+    probe_turn_plans_with_options(
+        engine,
+        combat,
+        config,
+        &CombatTurnPlanExploreOptions::default(),
+    )
+}
+
+fn probe_turn_plans_with_options(
+    engine: &EngineState,
+    combat: &CombatState,
+    config: CombatTurnPlanProbeConfig,
+    options: &CombatTurnPlanExploreOptions,
+) -> CombatTurnPlanProbeReport {
     let start_summary = summarize_state(engine, combat);
     let hand_cards = build_probe_hand_cards(combat);
-    let (sequence_classes, limits, risk_notes) = explore_sequence_classes(engine, combat, config);
+    let (sequence_classes, limits, risk_notes) =
+        explore_sequence_classes(engine, combat, config, options);
     let plan_kinds = [
         CombatPlanKind::Lethal,
         CombatPlanKind::KillThreateningEnemy,
@@ -469,6 +529,276 @@ pub fn probe_turn_plans(
             "static_random_risk_overlay_is_not_engine_rng_branch_enumeration".to_string(),
             "budget_pruning_can_hide_lower_ranked_sequences".to_string(),
         ],
+    }
+}
+
+pub fn probe_draw_marginal_value(
+    engine: &EngineState,
+    combat: &CombatState,
+    target_card: CardId,
+    config: CombatTurnPlanProbeConfig,
+) -> CombatDrawMarginalProbeReport {
+    let target_action_card = cards::java_id(target_card).to_string();
+    let target_card_id = format!("{target_card:?}");
+    let target_action_keys = matching_legal_root_action_keys(engine, combat, target_card);
+
+    let free = probe_turn_plans_with_options(
+        engine,
+        combat,
+        config,
+        &CombatTurnPlanExploreOptions::default(),
+    );
+    let no_draw = probe_turn_plans_with_options(
+        engine,
+        combat,
+        config,
+        &CombatTurnPlanExploreOptions {
+            forbidden_card: Some(target_card),
+            require_first_card: None,
+        },
+    );
+    let forced = if target_action_keys.is_empty() {
+        None
+    } else {
+        Some(probe_turn_plans_with_options(
+            engine,
+            combat,
+            config,
+            &CombatTurnPlanExploreOptions {
+                forbidden_card: None,
+                require_first_card: Some(target_card),
+            },
+        ))
+    };
+
+    let mut branches = Vec::new();
+    branches.push(draw_marginal_branch("free_best", "ok", Vec::new(), &free));
+    branches.push(draw_marginal_branch(
+        "no_draw_best",
+        "ok",
+        Vec::new(),
+        &no_draw,
+    ));
+    if let Some(forced_report) = &forced {
+        branches.push(draw_marginal_branch(
+            "forced_draw_best",
+            "ok",
+            target_action_keys,
+            forced_report,
+        ));
+    } else {
+        branches.push(CombatDrawMarginalBranchReport {
+            branch_name: "forced_draw_best".to_string(),
+            status: "not_applicable".to_string(),
+            target_action_keys: Vec::new(),
+            plan_queries: Vec::new(),
+            probe_limits: empty_probe_limits(config),
+            sequence_count: 0,
+        });
+    }
+
+    let marginal = forced
+        .as_ref()
+        .and_then(|forced_report| summarize_draw_marginal(&no_draw, forced_report));
+    let status = if forced.is_some() {
+        "ok"
+    } else {
+        "not_applicable"
+    }
+    .to_string();
+
+    CombatDrawMarginalProbeReport {
+        schema_version: COMBAT_DRAW_MARGINAL_PROBE_SCHEMA_VERSION.to_string(),
+        source_trace: serde_json::Value::Null,
+        target_action_card,
+        target_card_id,
+        status,
+        branches,
+        marginal,
+        truth_warnings: vec![
+            "current_turn_only_horizon".to_string(),
+            "forced_draw_branch_forces_target_card_as_first_action".to_string(),
+            "no_draw_branch_excludes_target_card_from_current_turn_sequences".to_string(),
+            "marginal_delta_includes_target_card_body_not_only_draw_text".to_string(),
+            "marginal_summary_is_plan_query_delta_not_card_choice_truth".to_string(),
+            "sample_distribution_must_be_built_by_batching_multiple_author_specs".to_string(),
+        ],
+    }
+}
+
+fn draw_marginal_branch(
+    branch_name: &str,
+    status: &str,
+    target_action_keys: Vec<String>,
+    report: &CombatTurnPlanProbeReport,
+) -> CombatDrawMarginalBranchReport {
+    CombatDrawMarginalBranchReport {
+        branch_name: branch_name.to_string(),
+        status: status.to_string(),
+        target_action_keys,
+        plan_queries: report.plan_queries.clone(),
+        probe_limits: report.probe_limits.clone(),
+        sequence_count: report.sequence_classes.len(),
+    }
+}
+
+fn summarize_draw_marginal(
+    no_draw: &CombatTurnPlanProbeReport,
+    forced: &CombatTurnPlanProbeReport,
+) -> Option<CombatDrawMarginalSummary> {
+    let comparison_query = "CanFullBlockThenMaxDamage";
+    let no_query = query_by_name(no_draw, comparison_query)
+        .or_else(|| query_by_name(no_draw, "CanLethal"))
+        .or_else(|| no_draw.plan_queries.first())?;
+    let forced_query = query_by_name(forced, comparison_query)
+        .or_else(|| query_by_name(forced, "CanLethal"))
+        .or_else(|| forced.plan_queries.first())?;
+    let no_outcome = no_query.outcome.as_ref().cloned().unwrap_or_default();
+    let forced_outcome = forced_query.outcome.as_ref().cloned().unwrap_or_default();
+    let no_lethal = query_status_is(no_draw, "CanLethal", "feasible");
+    let forced_lethal = query_status_is(forced, "CanLethal", "feasible");
+    let no_full_block = query_status_is(no_draw, "CanFullBlock", "feasible");
+    let forced_full_block = query_status_is(forced, "CanFullBlock", "feasible");
+
+    let damage_delta = forced_outcome.damage_done - no_outcome.damage_done;
+    let block_delta = forced_outcome.block_after - no_outcome.block_after;
+    let unblocked_reduction =
+        no_outcome.projected_unblocked_damage - forced_outcome.projected_unblocked_damage;
+    let hp_loss_reduction = no_outcome.hp_loss_actual - forced_outcome.hp_loss_actual;
+    let remaining_energy_delta = forced_outcome.remaining_energy - no_outcome.remaining_energy;
+    let remaining_hand_delta =
+        forced_outcome.remaining_hand_count as i32 - no_outcome.remaining_hand_count as i32;
+    let setup_gain = forced_outcome.played_setup_or_scaling && !no_outcome.played_setup_or_scaling;
+    let lethal_gain = forced_lethal && !no_lethal;
+    let full_block_gain = forced_full_block && !no_full_block;
+    let marginal_score = damage_delta
+        + block_delta
+        + unblocked_reduction * 6
+        + hp_loss_reduction * 10
+        + remaining_energy_delta * 2
+        + remaining_hand_delta
+        + if setup_gain { 15 } else { 0 }
+        + if lethal_gain { 80 } else { 0 }
+        + if full_block_gain { 40 } else { 0 };
+    let label_strength = if marginal_score >= 60 && hp_loss_reduction >= -6 {
+        "robust_positive"
+    } else if marginal_score >= 15 {
+        "conditional_positive"
+    } else if marginal_score <= -25 {
+        "harmful"
+    } else if marginal_score.abs() <= 8 {
+        "equivalent"
+    } else {
+        "inconclusive"
+    }
+    .to_string();
+
+    Some(CombatDrawMarginalSummary {
+        comparison_query: forced_query.query_name.clone(),
+        damage_delta,
+        block_delta,
+        unblocked_reduction,
+        hp_loss_reduction,
+        remaining_energy_delta,
+        remaining_hand_delta,
+        setup_gain,
+        lethal_gain,
+        full_block_gain,
+        marginal_score,
+        label_strength,
+    })
+}
+
+fn query_by_name<'a>(
+    report: &'a CombatTurnPlanProbeReport,
+    name: &str,
+) -> Option<&'a CombatPlanQueryReport> {
+    report
+        .plan_queries
+        .iter()
+        .find(|query| query.query_name == name)
+}
+
+fn query_status_is(report: &CombatTurnPlanProbeReport, name: &str, status: &str) -> bool {
+    query_by_name(report, name).is_some_and(|query| query.status == status)
+}
+
+fn matching_legal_root_action_keys(
+    engine: &EngineState,
+    combat: &CombatState,
+    target_card: CardId,
+) -> Vec<String> {
+    get_legal_moves(engine, combat)
+        .into_iter()
+        .filter(|action| allowed_probe_action(engine, action))
+        .filter(|action| action_card_id(combat, action) == Some(target_card))
+        .map(|action| probe_action_key(combat, &action))
+        .collect()
+}
+
+fn allowed_by_draw_marginal_options(
+    combat: &CombatState,
+    action: &ClientInput,
+    node: &ProbeNode,
+    options: &CombatTurnPlanExploreOptions,
+) -> bool {
+    let action_card = action_card_id(combat, action);
+    if options
+        .forbidden_card
+        .is_some_and(|forbidden| action_card == Some(forbidden))
+    {
+        return false;
+    }
+    if node.depth == 0
+        && node.actions.is_empty()
+        && options
+            .require_first_card
+            .is_some_and(|required| action_card != Some(required))
+    {
+        return false;
+    }
+    true
+}
+
+fn action_card_id(combat: &CombatState, action: &ClientInput) -> Option<CardId> {
+    let ClientInput::PlayCard { card_index, .. } = action else {
+        return None;
+    };
+    combat.zones.hand.get(*card_index).map(|card| card.id)
+}
+
+fn empty_probe_limits(config: CombatTurnPlanProbeConfig) -> CombatPlanProbeLimits {
+    CombatPlanProbeLimits {
+        max_depth: config.max_depth,
+        max_nodes: config.max_nodes,
+        beam_width: config.beam_width,
+        max_engine_steps_per_action: config.max_engine_steps_per_action,
+        nodes_expanded: 0,
+        actions_considered: 0,
+        actions_simulated: 0,
+        sequence_classes_kept: 0,
+        pruned_as_equivalent: 0,
+        pruned_by_abstract_equivalence: 0,
+        abstract_equivalence_candidates: 0,
+        abstract_equivalence_blocked_by_context: 0,
+        abstract_equivalence_blocked_by_action_semantics: 0,
+        abstract_equivalence_rejected_by_engine: 0,
+        pruned_by_verified_abstract_equivalence: 0,
+        generation_canonical_candidates: 0,
+        generation_canonical_blocked_by_context: 0,
+        generation_canonical_blocked_by_action_semantics: 0,
+        pruned_by_generation_canonical_order: 0,
+        pruned_by_generation_duplicate_card: 0,
+        pruned_by_generation_same_lane_order: 0,
+        pruned_by_generation_target_order: 0,
+        pruned_by_generation_lane_order: 0,
+        generation_duplicate_prune_effects: BTreeMap::new(),
+        pruned_by_plan_expansion_gate: 0,
+        plan_expansion_gate_reasons: BTreeMap::new(),
+        plan_expansion_gate_examples: Vec::new(),
+        pruned_by_optimistic_bound: 0,
+        pruned_by_budget: 0,
+        pruned_by_dominated_state: 0,
     }
 }
 
@@ -1110,6 +1440,7 @@ fn explore_sequence_classes(
     engine: &EngineState,
     combat: &CombatState,
     config: CombatTurnPlanProbeConfig,
+    options: &CombatTurnPlanExploreOptions,
 ) -> (
     Vec<CombatPlanSequenceClass>,
     CombatPlanProbeLimits,
@@ -1238,6 +1569,7 @@ fn explore_sequence_classes(
         let mut legal = get_legal_moves(&node.engine, &node.combat)
             .into_iter()
             .filter(|action| allowed_probe_action(&node.engine, action))
+            .filter(|action| allowed_by_draw_marginal_options(&node.combat, action, &node, options))
             .collect::<Vec<_>>();
         legal.sort_by_key(|action| -action_order_score(&node.combat, action));
         legal.truncate(config.beam_width);
@@ -3419,6 +3751,113 @@ mod tests {
             .iter()
             .find(|query| query.query_name == name)
             .unwrap_or_else(|| panic!("missing query {name}"))
+    }
+
+    fn marginal_branch<'a>(
+        report: &'a CombatDrawMarginalProbeReport,
+        name: &str,
+    ) -> &'a CombatDrawMarginalBranchReport {
+        report
+            .branches
+            .iter()
+            .find(|branch| branch.branch_name == name)
+            .unwrap_or_else(|| panic!("missing branch {name}"))
+    }
+
+    #[test]
+    fn draw_marginal_probe_reports_not_applicable_when_target_absent() {
+        let mut combat = blank_test_combat();
+        combat
+            .entities
+            .monsters
+            .push(planned_monster(EnemyId::Cultist, 1));
+        combat.zones.hand.push(card(CardId::Strike, 1));
+
+        let report = probe_draw_marginal_value(
+            &EngineState::CombatPlayerTurn,
+            &combat,
+            CardId::BattleTrance,
+            CombatTurnPlanProbeConfig {
+                max_depth: 2,
+                ..CombatTurnPlanProbeConfig::default()
+            },
+        );
+
+        assert_eq!(report.status, "not_applicable");
+        assert_eq!(
+            marginal_branch(&report, "forced_draw_best").status,
+            "not_applicable"
+        );
+        assert!(report.marginal.is_none());
+    }
+
+    #[test]
+    fn draw_marginal_probe_no_draw_branch_excludes_target_card() {
+        let mut combat = blank_test_combat();
+        let mut cultist = planned_monster(EnemyId::Cultist, 1);
+        cultist.current_hp = 60;
+        cultist.max_hp = 60;
+        combat.entities.monsters.push(cultist);
+        combat.zones.hand.push(card(CardId::BattleTrance, 1));
+        combat.zones.hand.push(card(CardId::Strike, 2));
+        combat.zones.draw_pile.push(card(CardId::Strike, 10));
+
+        let no_draw = probe_turn_plans_with_options(
+            &EngineState::CombatPlayerTurn,
+            &combat,
+            CombatTurnPlanProbeConfig {
+                max_depth: 2,
+                beam_width: 8,
+                ..CombatTurnPlanProbeConfig::default()
+            },
+            &CombatTurnPlanExploreOptions {
+                forbidden_card: Some(CardId::BattleTrance),
+                require_first_card: None,
+            },
+        );
+
+        assert!(!no_draw.sequence_classes.iter().any(|sequence| sequence
+            .action_keys
+            .iter()
+            .any(|key| key.contains("card:BattleTrance"))));
+    }
+
+    #[test]
+    fn draw_marginal_probe_forced_battle_trance_can_show_setup_damage_gain() {
+        let mut combat = blank_test_combat();
+        let mut cultist = planned_monster(EnemyId::Cultist, 1);
+        cultist.current_hp = 64;
+        cultist.max_hp = 64;
+        combat.entities.monsters.push(cultist);
+        combat.turn.energy = 4;
+        combat.zones.hand.push(card(CardId::BattleTrance, 1));
+        combat.zones.hand.push(card(CardId::WildStrike, 2));
+        combat.zones.draw_pile.push(card(CardId::Inflame, 10));
+        combat.zones.draw_pile.push(card(CardId::Strike, 11));
+        combat.zones.draw_pile.push(card(CardId::Strike, 12));
+
+        let report = probe_draw_marginal_value(
+            &EngineState::CombatPlayerTurn,
+            &combat,
+            CardId::BattleTrance,
+            CombatTurnPlanProbeConfig {
+                max_depth: 4,
+                beam_width: 16,
+                ..CombatTurnPlanProbeConfig::default()
+            },
+        );
+
+        assert_eq!(report.status, "ok");
+        assert!(!marginal_branch(&report, "forced_draw_best")
+            .target_action_keys
+            .is_empty());
+        let marginal = report
+            .marginal
+            .expect("forced draw should produce marginal");
+        assert!(
+            marginal.damage_delta > 0 || marginal.setup_gain,
+            "{marginal:?}"
+        );
     }
 
     #[test]
