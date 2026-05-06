@@ -15,7 +15,7 @@ use super::legal_moves::get_legal_moves;
 use super::profile::SearchProfileBreakdown;
 use super::stepping::simulate_input_bounded;
 
-pub const COMBAT_TURN_PLAN_PROBE_SCHEMA_VERSION: &str = "combat_turn_plan_probe_v1_5_1";
+pub const COMBAT_TURN_PLAN_PROBE_SCHEMA_VERSION: &str = "combat_turn_plan_probe_v2_1_1";
 
 #[derive(Clone, Copy, Debug)]
 pub struct CombatTurnPlanProbeConfig {
@@ -202,6 +202,8 @@ pub struct CombatPlanProbeLimits {
     pub beam_width: usize,
     pub max_engine_steps_per_action: usize,
     pub nodes_expanded: usize,
+    pub actions_considered: usize,
+    pub actions_simulated: usize,
     pub sequence_classes_kept: usize,
     pub pruned_as_equivalent: usize,
     pub pruned_by_abstract_equivalence: usize,
@@ -210,6 +212,15 @@ pub struct CombatPlanProbeLimits {
     pub abstract_equivalence_blocked_by_action_semantics: usize,
     pub abstract_equivalence_rejected_by_engine: usize,
     pub pruned_by_verified_abstract_equivalence: usize,
+    pub generation_canonical_candidates: usize,
+    pub generation_canonical_blocked_by_context: usize,
+    pub generation_canonical_blocked_by_action_semantics: usize,
+    pub pruned_by_generation_canonical_order: usize,
+    pub pruned_by_generation_duplicate_card: usize,
+    pub pruned_by_generation_same_lane_order: usize,
+    pub pruned_by_generation_target_order: usize,
+    pub pruned_by_generation_lane_order: usize,
+    pub generation_duplicate_prune_effects: BTreeMap<String, usize>,
     pub pruned_by_optimistic_bound: usize,
     pub pruned_by_budget: usize,
     pub pruned_by_dominated_state: usize,
@@ -235,6 +246,7 @@ struct ProbeNode {
     action_keys: Vec<String>,
     order_sensitive_reasons: BTreeSet<String>,
     sequence_residues: BTreeSet<String>,
+    canonical_last_keys: BTreeMap<String, String>,
     compression_notes: BTreeSet<String>,
     risk_notes: Vec<CombatPlanRiskNote>,
     accumulated: AccumulatedSequenceEffects,
@@ -347,6 +359,31 @@ enum AbstractCompressionDecision {
     BlockedByContext(String),
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum GenerationCanonicalDecision {
+    Candidate(GenerationCanonicalKeys),
+    BlockedByActionSemantics(&'static str),
+    BlockedByContext(String),
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct GenerationCanonicalKeys {
+    group_key: String,
+    sort_key: String,
+    effect_key: String,
+    class_label: String,
+    lane_label: String,
+    target_label: String,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum GenerationPruneKind {
+    DuplicateCard,
+    SameLaneOrder,
+    TargetOrder,
+    LaneOrder,
+}
+
 #[derive(Clone, Debug, Default)]
 struct AccumulatedSequenceEffects {
     setup_score: i32,
@@ -404,6 +441,7 @@ pub fn probe_turn_plans(
             "no_future_seed_oracle".to_string(),
             "role_scores_are_heuristic_not_truth".to_string(),
             "affine_buff_projection_is_heuristic_not_engine_truth".to_string(),
+            "generation_canonical_order_pruning_is_conservative_pure_damage_block_only".to_string(),
             "abstract_sequence_compression_is_engine_verified_and_conservative".to_string(),
             "abstract_rejection_diff_notes_are_diagnostic_not_policy_labels".to_string(),
             "abstract_verification_ignores_recomputed_card_eval_cache".to_string(),
@@ -1064,6 +1102,7 @@ fn explore_sequence_classes(
         action_keys: Vec::new(),
         order_sensitive_reasons: BTreeSet::new(),
         sequence_residues: BTreeSet::new(),
+        canonical_last_keys: BTreeMap::new(),
         compression_notes: BTreeSet::new(),
         risk_notes: Vec::new(),
         accumulated: AccumulatedSequenceEffects::default(),
@@ -1076,6 +1115,8 @@ fn explore_sequence_classes(
     let mut kept = Vec::new();
     let mut all_risk_notes = Vec::new();
     let mut nodes_expanded = 0usize;
+    let mut actions_considered = 0usize;
+    let mut actions_simulated = 0usize;
     let mut pruned_as_equivalent = 0usize;
     let mut pruned_by_abstract_equivalence = 0usize;
     let mut abstract_equivalence_candidates = 0usize;
@@ -1083,6 +1124,15 @@ fn explore_sequence_classes(
     let mut abstract_equivalence_blocked_by_action_semantics = 0usize;
     let mut abstract_equivalence_rejected_by_engine = 0usize;
     let mut pruned_by_verified_abstract_equivalence = 0usize;
+    let mut generation_canonical_candidates = 0usize;
+    let mut generation_canonical_blocked_by_context = 0usize;
+    let mut generation_canonical_blocked_by_action_semantics = 0usize;
+    let mut pruned_by_generation_canonical_order = 0usize;
+    let mut pruned_by_generation_duplicate_card = 0usize;
+    let mut pruned_by_generation_same_lane_order = 0usize;
+    let mut pruned_by_generation_target_order = 0usize;
+    let mut pruned_by_generation_lane_order = 0usize;
+    let mut generation_duplicate_prune_effects = BTreeMap::<String, usize>::new();
     let mut pruned_by_optimistic_bound = 0usize;
     let mut pruned_by_budget = 0usize;
     let pruned_by_dominated_state = 0usize;
@@ -1168,17 +1218,88 @@ fn explore_sequence_classes(
         legal.sort_by_key(|action| -action_order_score(&node.combat, action));
         legal.truncate(config.beam_width);
 
+        let mut seen_generation_sibling_keys = BTreeSet::new();
         for action in legal {
             if nodes_expanded + queue.len() >= config.max_nodes {
                 pruned_by_budget += 1;
                 continue;
             }
+            actions_considered += 1;
             let action_key = probe_action_key(&node.combat, &action);
             let action_summary = summarize_action_effect(&node.combat, &action);
+            let mut generation_canonical_notes = BTreeSet::new();
+            let mut next_canonical_last_keys = BTreeMap::new();
+            match generation_canonical_decision(
+                &node.combat,
+                &node.engine,
+                &action,
+                &action_summary,
+                &node.order_sensitive_reasons,
+                &node.sequence_residues,
+            ) {
+                GenerationCanonicalDecision::Candidate(keys) => {
+                    generation_canonical_candidates += 1;
+                    generation_canonical_notes.insert("generation_canonical_candidate".to_string());
+                    generation_canonical_notes
+                        .insert(format!("generation_canonical_class:{}", keys.class_label));
+                    generation_canonical_notes
+                        .insert(format!("generation_canonical_lane:{}", keys.lane_label));
+                    if !seen_generation_sibling_keys.insert(keys.sort_key.clone()) {
+                        pruned_by_generation_canonical_order += 1;
+                        pruned_by_generation_duplicate_card += 1;
+                        increment_counter(
+                            &mut generation_duplicate_prune_effects,
+                            keys.effect_key.clone(),
+                        );
+                        continue;
+                    }
+                    if let Some(last_key) = node.canonical_last_keys.get(&keys.group_key) {
+                        if keys.sort_key < *last_key {
+                            pruned_by_generation_canonical_order += 1;
+                            match classify_generation_prune_kind(last_key, &keys.sort_key) {
+                                GenerationPruneKind::DuplicateCard => {
+                                    pruned_by_generation_duplicate_card += 1;
+                                    increment_counter(
+                                        &mut generation_duplicate_prune_effects,
+                                        keys.effect_key.clone(),
+                                    );
+                                }
+                                GenerationPruneKind::SameLaneOrder => {
+                                    pruned_by_generation_same_lane_order += 1;
+                                }
+                                GenerationPruneKind::TargetOrder => {
+                                    pruned_by_generation_target_order += 1;
+                                }
+                                GenerationPruneKind::LaneOrder => {
+                                    pruned_by_generation_lane_order += 1;
+                                }
+                            }
+                            continue;
+                        }
+                    }
+                    next_canonical_last_keys = node.canonical_last_keys.clone();
+                    next_canonical_last_keys.insert(keys.group_key, keys.sort_key);
+                }
+                GenerationCanonicalDecision::BlockedByActionSemantics(reason) => {
+                    generation_canonical_blocked_by_action_semantics += 1;
+                    generation_canonical_notes
+                        .insert("generation_canonical_blocked_by_action_semantics".to_string());
+                    generation_canonical_notes
+                        .insert(format!("generation_canonical_action_blocker:{reason}"));
+                }
+                GenerationCanonicalDecision::BlockedByContext(reason) => {
+                    generation_canonical_blocked_by_context += 1;
+                    generation_canonical_notes
+                        .insert("generation_canonical_blocked_by_context".to_string());
+                    generation_canonical_notes
+                        .insert(format!("generation_canonical_context_blocker:{reason}"));
+                }
+            }
             let mut next_accumulated = node.accumulated.clone();
             let mut next_reasons = node.order_sensitive_reasons.clone();
             let mut next_residues = node.sequence_residues.clone();
             let mut next_compression_notes = node.compression_notes.clone();
+            next_compression_notes.extend(generation_canonical_notes);
             let mut next_notes = node.risk_notes.clone();
             for residue in action_sequence_residues(&node.combat, &action) {
                 next_residues.insert(residue.to_string());
@@ -1195,6 +1316,7 @@ fn explore_sequence_classes(
                 &mut next_notes,
             );
 
+            actions_simulated += 1;
             let (next_engine, next_combat, outcome) = simulate_input_bounded(
                 &node.engine,
                 &node.combat,
@@ -1294,6 +1416,7 @@ fn explore_sequence_classes(
                 action_keys,
                 order_sensitive_reasons: next_reasons,
                 sequence_residues: next_residues,
+                canonical_last_keys: next_canonical_last_keys,
                 compression_notes: next_compression_notes,
                 risk_notes: next_notes,
                 accumulated: next_accumulated,
@@ -1324,6 +1447,8 @@ fn explore_sequence_classes(
         beam_width: config.beam_width,
         max_engine_steps_per_action: config.max_engine_steps_per_action,
         nodes_expanded,
+        actions_considered,
+        actions_simulated,
         sequence_classes_kept: kept.len(),
         pruned_as_equivalent,
         pruned_by_abstract_equivalence,
@@ -1332,6 +1457,15 @@ fn explore_sequence_classes(
         abstract_equivalence_blocked_by_action_semantics,
         abstract_equivalence_rejected_by_engine,
         pruned_by_verified_abstract_equivalence,
+        generation_canonical_candidates,
+        generation_canonical_blocked_by_context,
+        generation_canonical_blocked_by_action_semantics,
+        pruned_by_generation_canonical_order,
+        pruned_by_generation_duplicate_card,
+        pruned_by_generation_same_lane_order,
+        pruned_by_generation_target_order,
+        pruned_by_generation_lane_order,
+        generation_duplicate_prune_effects,
         pruned_by_optimistic_bound,
         pruned_by_budget,
         pruned_by_dominated_state,
@@ -1979,6 +2113,188 @@ fn abstract_compression_decision(
         return AbstractCompressionDecision::BlockedByContext(reason);
     }
     AbstractCompressionDecision::Candidate
+}
+
+fn generation_canonical_decision(
+    combat: &CombatState,
+    engine: &EngineState,
+    action: &ClientInput,
+    summary: &ActionEffectSummary,
+    order_sensitive_reasons: &BTreeSet<String>,
+    sequence_residues: &BTreeSet<String>,
+) -> GenerationCanonicalDecision {
+    if !matches!(engine, EngineState::CombatPlayerTurn) {
+        return GenerationCanonicalDecision::BlockedByContext("not_player_turn".to_string());
+    }
+    if let Some(residue) = sequence_residues.iter().next() {
+        return GenerationCanonicalDecision::BlockedByContext(format!(
+            "sequence_residue:{residue}"
+        ));
+    }
+    if !action_sequence_residues(combat, action).is_empty() {
+        return GenerationCanonicalDecision::BlockedByActionSemantics(
+            "action_leaves_sequence_residue",
+        );
+    }
+    if !order_sensitive_reasons.is_empty() {
+        return GenerationCanonicalDecision::BlockedByActionSemantics("order_sensitive_action");
+    }
+    if !summary.pure_damage && !summary.pure_block {
+        return GenerationCanonicalDecision::BlockedByActionSemantics("not_pure_damage_or_block");
+    }
+    if summary.draws_cards {
+        return GenerationCanonicalDecision::BlockedByActionSemantics("draw");
+    }
+    if summary.energy_gain {
+        return GenerationCanonicalDecision::BlockedByActionSemantics("energy_gain");
+    }
+    if summary.debuff {
+        return GenerationCanonicalDecision::BlockedByActionSemantics("debuff");
+    }
+    if summary.setup_or_scaling {
+        return GenerationCanonicalDecision::BlockedByActionSemantics("setup_or_scaling");
+    }
+    if summary.exhaust_or_discard {
+        return GenerationCanonicalDecision::BlockedByActionSemantics("exhaust_or_discard");
+    }
+    if summary.random_effect {
+        return GenerationCanonicalDecision::BlockedByActionSemantics("random_effect");
+    }
+    if summary.possible_kill {
+        return GenerationCanonicalDecision::BlockedByActionSemantics("possible_kill");
+    }
+    if summary.target_sensitive {
+        return GenerationCanonicalDecision::BlockedByActionSemantics("target_sensitive");
+    }
+    if let Some(reason) = known_order_sensitive_context(combat, summary) {
+        return GenerationCanonicalDecision::BlockedByContext(reason);
+    }
+    match generation_canonical_action_keys(combat, action, summary) {
+        Some(keys) => GenerationCanonicalDecision::Candidate(keys),
+        None => GenerationCanonicalDecision::BlockedByActionSemantics("unsupported_action"),
+    }
+}
+
+fn generation_canonical_action_keys(
+    combat: &CombatState,
+    action: &ClientInput,
+    summary: &ActionEffectSummary,
+) -> Option<GenerationCanonicalKeys> {
+    let ClientInput::PlayCard { card_index, target } = action else {
+        return None;
+    };
+    let card = combat.zones.hand.get(*card_index)?;
+    let (lane_rank, lane_label) = if summary.pure_damage {
+        ("0", "damage")
+    } else if summary.pure_block {
+        ("1", "block")
+    } else {
+        return None;
+    };
+    let target_label = if summary.pure_damage {
+        probe_target_label(combat, *target)
+    } else {
+        "none".to_string()
+    };
+    let effect_key = generation_canonical_card_effect_key(card);
+    let sort_key =
+        format!("lane:{lane_rank}:{lane_label}|target:{target_label}|effect:{effect_key}");
+    Some(GenerationCanonicalKeys {
+        group_key: "pure_damage_block".to_string(),
+        sort_key,
+        effect_key,
+        class_label: generation_canonical_class_label(summary, card, &target_label),
+        lane_label: lane_label.to_string(),
+        target_label,
+    })
+}
+
+fn generation_canonical_card_effect_key(card: &CombatCard) -> String {
+    format!(
+        "card:{:?}|upg:{}|cost:{}|cost_mod:{}|cost_turn:{}|free:{}|energy_on_use:{}|misc:{}|base_dmg_override:{}|exhaust_override:{:?}|retain_override:{:?}|base_dmg_mut:{}|base_block_mut:{}|base_magic_mut:{}|multi_damage:{:?}",
+        card.id,
+        card.upgrades,
+        card.get_cost(),
+        card.cost_modifier,
+        card.cost_for_turn
+            .map(|cost| cost.to_string())
+            .unwrap_or_else(|| "_".to_string()),
+        card.free_to_play_once,
+        card.energy_on_use,
+        card.misc_value,
+        card.base_damage_override
+            .map(|damage| damage.to_string())
+            .unwrap_or_else(|| "_".to_string()),
+        card.exhaust_override,
+        card.retain_override,
+        card.base_damage_mut,
+        card.base_block_mut,
+        card.base_magic_num_mut,
+        card.multi_damage
+    )
+}
+
+fn generation_canonical_class_label(
+    summary: &ActionEffectSummary,
+    card: &CombatCard,
+    target_label: &str,
+) -> String {
+    if summary.pure_block {
+        format!(
+            "block/effect:{}",
+            generation_canonical_card_effect_key(card)
+        )
+    } else {
+        format!(
+            "damage/target:{target_label}/effect:{}",
+            generation_canonical_card_effect_key(card)
+        )
+    }
+}
+
+fn classify_generation_prune_kind(
+    previous_sort_key: &str,
+    current_sort_key: &str,
+) -> GenerationPruneKind {
+    let previous = parse_generation_sort_key(previous_sort_key);
+    let current = parse_generation_sort_key(current_sort_key);
+    if previous.lane == current.lane
+        && previous.target == current.target
+        && previous.effect == current.effect
+    {
+        GenerationPruneKind::DuplicateCard
+    } else if previous.lane == current.lane && previous.target == current.target {
+        GenerationPruneKind::SameLaneOrder
+    } else if previous.lane == current.lane {
+        GenerationPruneKind::TargetOrder
+    } else {
+        GenerationPruneKind::LaneOrder
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+struct ParsedGenerationSortKey<'a> {
+    lane: &'a str,
+    target: &'a str,
+    effect: &'a str,
+}
+
+fn parse_generation_sort_key(sort_key: &str) -> ParsedGenerationSortKey<'_> {
+    let mut parsed = ParsedGenerationSortKey::default();
+    for part in sort_key.split('|') {
+        if let Some(value) = part.strip_prefix("lane:") {
+            parsed.lane = value;
+        } else if let Some(value) = part.strip_prefix("target:") {
+            parsed.target = value;
+        } else if let Some(value) = part.strip_prefix("effect:") {
+            parsed.effect = value;
+        }
+    }
+    parsed
+}
+
+fn increment_counter(counter: &mut BTreeMap<String, usize>, key: String) {
+    *counter.entry(key).or_insert(0) += 1;
 }
 
 fn known_order_sensitive_context(
@@ -3217,7 +3533,7 @@ mod tests {
     }
 
     #[test]
-    fn combat_turn_plan_probe_compresses_pure_strike_defend_permutations() {
+    fn combat_turn_plan_probe_generation_canonical_prunes_pure_permutations() {
         let mut combat = blank_test_combat();
         let mut cultist = planned_monster(EnemyId::Cultist, 1);
         cultist.current_hp = 60;
@@ -3225,6 +3541,8 @@ mod tests {
         combat.entities.monsters.push(cultist);
         combat.zones.hand.push(card(CardId::Strike, 1));
         combat.zones.hand.push(card(CardId::Defend, 2));
+        combat.zones.hand.push(card(CardId::Strike, 3));
+        combat.zones.hand.push(card(CardId::Defend, 4));
 
         let report = probe_turn_plans(
             &EngineState::CombatPlayerTurn,
@@ -3237,26 +3555,44 @@ mod tests {
         );
 
         assert!(
-            report.probe_limits.pruned_by_abstract_equivalence > 0,
+            report.probe_limits.pruned_by_generation_canonical_order > 0,
             "{:?}",
             report.probe_limits
         );
         assert!(
-            report.probe_limits.pruned_by_verified_abstract_equivalence > 0,
+            report.probe_limits.pruned_by_generation_duplicate_card > 0,
             "{:?}",
             report.probe_limits
+        );
+        assert!(
+            !report
+                .probe_limits
+                .generation_duplicate_prune_effects
+                .is_empty(),
+            "{:?}",
+            report.probe_limits
+        );
+        assert!(
+            report.probe_limits.pruned_by_generation_lane_order > 0,
+            "{:?}",
+            report.probe_limits
+        );
+        assert!(report.probe_limits.generation_canonical_candidates > 0);
+        assert_eq!(
+            report.probe_limits.abstract_equivalence_rejected_by_engine,
+            0
         );
         assert!(report.probe_limits.abstract_equivalence_candidates > 0);
         assert!(report
             .sequence_classes
             .iter()
             .any(|sequence| sequence.compression_notes.iter().any(|note| note
-                == "verified_abstract_equivalence"
+                == "generation_canonical_candidate"
                 || note == "abstract_candidate")));
     }
 
     #[test]
-    fn combat_turn_plan_probe_allows_safe_relic_context_for_verified_abstract_prune() {
+    fn combat_turn_plan_probe_allows_safe_relic_context_for_generation_prune() {
         let mut combat = blank_test_combat();
         combat
             .entities
@@ -3266,7 +3602,7 @@ mod tests {
         cultist.current_hp = 60;
         cultist.max_hp = 60;
         combat.entities.monsters.push(cultist);
-        combat.zones.hand.push(card(CardId::Strike, 1));
+        combat.zones.hand.push(card(CardId::Defend, 1));
         combat.zones.hand.push(card(CardId::Defend, 2));
 
         let report = probe_turn_plans(
@@ -3280,7 +3616,11 @@ mod tests {
         );
 
         assert!(report.probe_limits.abstract_equivalence_candidates > 0);
-        assert!(report.probe_limits.pruned_by_verified_abstract_equivalence > 0);
+        assert!(
+            report.probe_limits.pruned_by_generation_canonical_order
+                + report.probe_limits.pruned_by_verified_abstract_equivalence
+                > 0
+        );
         assert_eq!(
             report.probe_limits.abstract_equivalence_rejected_by_engine,
             0
@@ -3298,7 +3638,7 @@ mod tests {
         cultist.current_hp = 60;
         cultist.max_hp = 60;
         combat.entities.monsters.push(cultist);
-        combat.zones.hand.push(card(CardId::Strike, 1));
+        combat.zones.hand.push(card(CardId::Defend, 1));
         combat.zones.hand.push(card(CardId::Defend, 2));
 
         let report = probe_turn_plans(
@@ -3312,7 +3652,11 @@ mod tests {
         );
 
         assert!(report.probe_limits.abstract_equivalence_candidates > 0);
-        assert!(report.probe_limits.pruned_by_verified_abstract_equivalence > 0);
+        assert!(
+            report.probe_limits.pruned_by_generation_canonical_order
+                + report.probe_limits.pruned_by_verified_abstract_equivalence
+                > 0
+        );
         assert!(!report.sequence_classes.iter().any(|sequence| sequence
             .compression_notes
             .iter()
@@ -3447,6 +3791,12 @@ mod tests {
             .compression_notes
             .iter()
             .any(|note| note == "sequence_residue:future_draw_order")));
+        assert!(report.sequence_classes.iter().any(|sequence| sequence
+            .compression_notes
+            .iter()
+            .any(
+                |note| note == "generation_canonical_action_blocker:action_leaves_sequence_residue"
+            )));
         assert!(report.sequence_classes.iter().any(|sequence| sequence
             .compression_notes
             .iter()

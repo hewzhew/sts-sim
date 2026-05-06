@@ -383,18 +383,39 @@ def flatten_result(result: dict[str, Any]) -> dict[str, Any]:
     abstract_blocked_action = int(limits.get("abstract_equivalence_blocked_by_action_semantics") or 0)
     abstract_rejected_engine = int(limits.get("abstract_equivalence_rejected_by_engine") or 0)
     verified_abstract_pruned = int(limits.get("pruned_by_verified_abstract_equivalence") or pruned_abstract)
+    generation_candidates = int(limits.get("generation_canonical_candidates") or 0)
+    generation_blocked_context = int(limits.get("generation_canonical_blocked_by_context") or 0)
+    generation_blocked_action = int(limits.get("generation_canonical_blocked_by_action_semantics") or 0)
+    pruned_generation = int(limits.get("pruned_by_generation_canonical_order") or 0)
+    pruned_generation_duplicate = int(limits.get("pruned_by_generation_duplicate_card") or 0)
+    pruned_generation_same_lane = int(limits.get("pruned_by_generation_same_lane_order") or 0)
+    pruned_generation_target = int(limits.get("pruned_by_generation_target_order") or 0)
+    pruned_generation_lane = int(limits.get("pruned_by_generation_lane_order") or 0)
+    generation_duplicate_effects = limits.get("generation_duplicate_prune_effects") or {}
     pruned_bound = int(limits.get("pruned_by_optimistic_bound") or 0)
     pruned_budget = int(limits.get("pruned_by_budget") or 0)
     nodes = int(limits.get("nodes_expanded") or 0)
+    actions_considered = int(limits.get("actions_considered") or 0)
+    actions_simulated = int(limits.get("actions_simulated") or 0)
     kept = int(limits.get("sequence_classes_kept") or 0)
-    observed_branch_events = nodes + pruned_exact + pruned_abstract + pruned_bound + pruned_budget
-    total_pruned = pruned_exact + pruned_abstract + pruned_bound + pruned_budget
+    observed_branch_events = (
+        nodes + pruned_exact + pruned_abstract + pruned_generation + pruned_bound + pruned_budget
+    )
+    total_pruned = pruned_exact + pruned_abstract + pruned_generation + pruned_bound + pruned_budget
 
     no_compression_reasons: list[str] = []
+    if pruned_generation == 0:
+        no_compression_reasons.append("no_generation_canonical_pruned")
     if pruned_abstract == 0:
         no_compression_reasons.append("no_abstract_equivalence_pruned")
+    if not compression_notes.get("generation_canonical_candidate"):
+        no_compression_reasons.append("no_generation_canonical_candidate_sequence_kept")
     if not compression_notes.get("abstract_candidate"):
         no_compression_reasons.append("no_abstract_candidate_sequence_kept")
+    if generation_blocked_context:
+        no_compression_reasons.append("generation_canonical_blocked_by_context")
+    if generation_blocked_action:
+        no_compression_reasons.append("generation_canonical_blocked_by_action_semantics")
     if abstract_blocked_context:
         no_compression_reasons.append("abstract_blocked_by_context")
     if abstract_blocked_action:
@@ -409,6 +430,8 @@ def flatten_result(result: dict[str, Any]) -> dict[str, Any]:
         {
             "schema_version": report.get("schema_version"),
             "nodes_expanded": nodes,
+            "actions_considered": actions_considered,
+            "actions_simulated": actions_simulated,
             "sequence_classes_kept": kept,
             "pruned_as_equivalent": pruned_exact,
             "pruned_by_abstract_equivalence": pruned_abstract,
@@ -417,12 +440,22 @@ def flatten_result(result: dict[str, Any]) -> dict[str, Any]:
             "abstract_equivalence_blocked_by_action_semantics": abstract_blocked_action,
             "abstract_equivalence_rejected_by_engine": abstract_rejected_engine,
             "pruned_by_verified_abstract_equivalence": verified_abstract_pruned,
+            "generation_canonical_candidates": generation_candidates,
+            "generation_canonical_blocked_by_context": generation_blocked_context,
+            "generation_canonical_blocked_by_action_semantics": generation_blocked_action,
+            "pruned_by_generation_canonical_order": pruned_generation,
+            "pruned_by_generation_duplicate_card": pruned_generation_duplicate,
+            "pruned_by_generation_same_lane_order": pruned_generation_same_lane,
+            "pruned_by_generation_target_order": pruned_generation_target,
+            "pruned_by_generation_lane_order": pruned_generation_lane,
+            "generation_duplicate_prune_effects": generation_duplicate_effects,
             "pruned_by_optimistic_bound": pruned_bound,
             "pruned_by_budget": pruned_budget,
             "pruned_by_dominated_state": int(limits.get("pruned_by_dominated_state") or 0),
             "total_pruned_observed": total_pruned,
             "observed_branch_events": observed_branch_events,
             "observed_prune_share": (total_pruned / observed_branch_events) if observed_branch_events else 0.0,
+            "simulation_skip_share": (pruned_generation / actions_considered) if actions_considered else 0.0,
             "kept_per_node": (kept / nodes) if nodes else 0.0,
             "compression_notes": dict(compression_notes),
             "abstract_reject_diffs": dict(abstract_reject_diffs),
@@ -464,6 +497,8 @@ def summarize(rows: list[dict[str, Any]], top: int = 15) -> dict[str, Any]:
         "ok_cases": len(ok_rows),
         "failed_cases": len(failed_rows),
         "nodes_expanded": total_nodes,
+        "actions_considered": sum_int(ok_rows, "actions_considered"),
+        "actions_simulated": sum_int(ok_rows, "actions_simulated"),
         "sequence_classes_kept": total_kept,
         "pruned_as_equivalent": sum_int(ok_rows, "pruned_as_equivalent"),
         "pruned_by_abstract_equivalence": sum_int(ok_rows, "pruned_by_abstract_equivalence"),
@@ -474,13 +509,35 @@ def summarize(rows: list[dict[str, Any]], top: int = 15) -> dict[str, Any]:
         ),
         "abstract_equivalence_rejected_by_engine": sum_int(ok_rows, "abstract_equivalence_rejected_by_engine"),
         "pruned_by_verified_abstract_equivalence": sum_int(ok_rows, "pruned_by_verified_abstract_equivalence"),
+        "generation_canonical_candidates": sum_int(ok_rows, "generation_canonical_candidates"),
+        "generation_canonical_blocked_by_context": sum_int(ok_rows, "generation_canonical_blocked_by_context"),
+        "generation_canonical_blocked_by_action_semantics": sum_int(
+            ok_rows, "generation_canonical_blocked_by_action_semantics"
+        ),
+        "pruned_by_generation_canonical_order": sum_int(ok_rows, "pruned_by_generation_canonical_order"),
+        "pruned_by_generation_duplicate_card": sum_int(ok_rows, "pruned_by_generation_duplicate_card"),
+        "pruned_by_generation_same_lane_order": sum_int(ok_rows, "pruned_by_generation_same_lane_order"),
+        "pruned_by_generation_target_order": sum_int(ok_rows, "pruned_by_generation_target_order"),
+        "pruned_by_generation_lane_order": sum_int(ok_rows, "pruned_by_generation_lane_order"),
         "pruned_by_optimistic_bound": sum_int(ok_rows, "pruned_by_optimistic_bound"),
         "pruned_by_budget": sum_int(ok_rows, "pruned_by_budget"),
         "total_pruned_observed": total_pruned,
         "observed_branch_events": total_events,
         "observed_prune_share": (total_pruned / total_events) if total_events else 0.0,
+        "simulation_skip_share": (
+            sum_int(ok_rows, "pruned_by_generation_canonical_order")
+            / sum_int(ok_rows, "actions_considered")
+        )
+        if sum_int(ok_rows, "actions_considered")
+        else 0.0,
         "kept_per_node": (total_kept / total_nodes) if total_nodes else 0.0,
         "cases_with_abstract_prune": sum(1 for row in ok_rows if int(row.get("pruned_by_abstract_equivalence") or 0) > 0),
+        "cases_with_generation_prune": sum(
+            1 for row in ok_rows if int(row.get("pruned_by_generation_canonical_order") or 0) > 0
+        ),
+        "cases_with_generation_candidates": sum(
+            1 for row in ok_rows if int(row.get("generation_canonical_candidates") or 0) > 0
+        ),
         "cases_with_abstract_candidates": sum(
             1 for row in ok_rows if int(row.get("abstract_equivalence_candidates") or 0) > 0
         ),
@@ -502,7 +559,18 @@ def summarize(rows: list[dict[str, Any]], top: int = 15) -> dict[str, Any]:
         "order_sensitive_reasons": aggregate_counter(ok_rows, "order_sensitive_reasons").most_common(top),
         "risk_note_kinds": aggregate_counter(ok_rows, "risk_note_kinds").most_common(top),
         "no_compression_reasons": no_compression_reasons.most_common(top),
+        "generation_duplicate_prune_effects": aggregate_counter(
+            ok_rows, "generation_duplicate_prune_effects"
+        ).most_common(top),
         "top_exact_prune_cases": top_cases(ok_rows, "pruned_as_equivalent", top),
+        "top_generation_prune_cases": top_cases(ok_rows, "pruned_by_generation_canonical_order", top),
+        "top_generation_duplicate_cases": top_cases(ok_rows, "pruned_by_generation_duplicate_card", top),
+        "top_generation_same_lane_cases": top_cases(ok_rows, "pruned_by_generation_same_lane_order", top),
+        "top_generation_target_order_cases": top_cases(ok_rows, "pruned_by_generation_target_order", top),
+        "top_generation_lane_order_cases": top_cases(ok_rows, "pruned_by_generation_lane_order", top),
+        "top_generation_candidate_cases": top_cases(ok_rows, "generation_canonical_candidates", top),
+        "top_generation_context_blocked_cases": top_cases(ok_rows, "generation_canonical_blocked_by_context", top),
+        "top_generation_action_blocked_cases": top_cases(ok_rows, "generation_canonical_blocked_by_action_semantics", top),
         "top_abstract_prune_cases": top_cases(ok_rows, "pruned_by_abstract_equivalence", top),
         "top_abstract_candidate_cases": top_cases(ok_rows, "abstract_equivalence_candidates", top),
         "top_abstract_context_blocked_cases": top_cases(ok_rows, "abstract_equivalence_blocked_by_context", top),
@@ -526,6 +594,8 @@ def top_cases(rows: list[dict[str, Any]], key: str, top: int) -> list[dict[str, 
                 "pressure_class": row.get("pressure_class"),
                 "candidate_count": row.get("candidate_count"),
                 "nodes_expanded": row.get("nodes_expanded"),
+                "actions_considered": row.get("actions_considered"),
+                "actions_simulated": row.get("actions_simulated"),
                 "sequence_classes_kept": row.get("sequence_classes_kept"),
                 key: row.get(key),
                 "report_path": row.get("report_path"),
@@ -549,6 +619,8 @@ def markdown_report(report: dict[str, Any]) -> str:
         "ok_cases",
         "failed_cases",
         "nodes_expanded",
+        "actions_considered",
+        "actions_simulated",
         "sequence_classes_kept",
         "pruned_as_equivalent",
         "pruned_by_abstract_equivalence",
@@ -557,9 +629,20 @@ def markdown_report(report: dict[str, Any]) -> str:
         "abstract_equivalence_blocked_by_action_semantics",
         "abstract_equivalence_rejected_by_engine",
         "pruned_by_verified_abstract_equivalence",
+        "generation_canonical_candidates",
+        "generation_canonical_blocked_by_context",
+        "generation_canonical_blocked_by_action_semantics",
+        "pruned_by_generation_canonical_order",
+        "pruned_by_generation_duplicate_card",
+        "pruned_by_generation_same_lane_order",
+        "pruned_by_generation_target_order",
+        "pruned_by_generation_lane_order",
         "pruned_by_optimistic_bound",
         "pruned_by_budget",
         "observed_prune_share",
+        "simulation_skip_share",
+        "cases_with_generation_prune",
+        "cases_with_generation_candidates",
         "cases_with_abstract_prune",
         "cases_with_abstract_candidates",
         "cases_with_abstract_rejections",
@@ -587,9 +670,22 @@ def markdown_report(report: dict[str, Any]) -> str:
     table("Order-Sensitive Reasons", report["summary"]["order_sensitive_reasons"], ("reason", "n"))
     table("Risk Note Kinds", report["summary"]["risk_note_kinds"], ("kind", "n"))
     table("No-Compression Reasons", report["summary"]["no_compression_reasons"], ("reason", "n"))
+    table(
+        "Generation Duplicate Prune Effects",
+        report["summary"]["generation_duplicate_prune_effects"],
+        ("effect key", "n"),
+    )
 
     for title, key in [
         ("Top Exact-Prune Cases", "top_exact_prune_cases"),
+        ("Top Generation Canonical-Prune Cases", "top_generation_prune_cases"),
+        ("Top Generation Duplicate-Card Cases", "top_generation_duplicate_cases"),
+        ("Top Generation Same-Lane Order Cases", "top_generation_same_lane_cases"),
+        ("Top Generation Target-Order Cases", "top_generation_target_order_cases"),
+        ("Top Generation Lane-Order Cases", "top_generation_lane_order_cases"),
+        ("Top Generation Canonical-Candidate Cases", "top_generation_candidate_cases"),
+        ("Top Generation Context-Blocked Cases", "top_generation_context_blocked_cases"),
+        ("Top Generation Action-Blocked Cases", "top_generation_action_blocked_cases"),
         ("Top Abstract-Prune Cases", "top_abstract_prune_cases"),
         ("Top Abstract-Candidate Cases", "top_abstract_candidate_cases"),
         ("Top Abstract Context-Blocked Cases", "top_abstract_context_blocked_cases"),
@@ -603,10 +699,18 @@ def markdown_report(report: dict[str, Any]) -> str:
         if not rows:
             lines.append("_none_")
             continue
-        lines.append("| case | pressure | candidates | nodes | kept | pruned | report |")
-        lines.append("| --- | --- | ---: | ---: | ---: | ---: | --- |")
+        lines.append("| case | pressure | candidates | nodes | sim | kept | pruned | report |")
+        lines.append("| --- | --- | ---: | ---: | ---: | ---: | ---: | --- |")
         prune_key = {
             "top_exact_prune_cases": "pruned_as_equivalent",
+            "top_generation_prune_cases": "pruned_by_generation_canonical_order",
+            "top_generation_duplicate_cases": "pruned_by_generation_duplicate_card",
+            "top_generation_same_lane_cases": "pruned_by_generation_same_lane_order",
+            "top_generation_target_order_cases": "pruned_by_generation_target_order",
+            "top_generation_lane_order_cases": "pruned_by_generation_lane_order",
+            "top_generation_candidate_cases": "generation_canonical_candidates",
+            "top_generation_context_blocked_cases": "generation_canonical_blocked_by_context",
+            "top_generation_action_blocked_cases": "generation_canonical_blocked_by_action_semantics",
             "top_abstract_prune_cases": "pruned_by_abstract_equivalence",
             "top_abstract_candidate_cases": "abstract_equivalence_candidates",
             "top_abstract_context_blocked_cases": "abstract_equivalence_blocked_by_context",
@@ -618,7 +722,8 @@ def markdown_report(report: dict[str, Any]) -> str:
         for row in rows:
             lines.append(
                 f"| `{row['case_id']}` | `{row['pressure_class']}` | {row['candidate_count']} | "
-                f"{row['nodes_expanded']} | {row['sequence_classes_kept']} | {row[prune_key]} | "
+                f"{row['nodes_expanded']} | {row.get('actions_simulated')} | "
+                f"{row['sequence_classes_kept']} | {row[prune_key]} | "
                 f"`{row['report_path']}` |"
             )
 
@@ -628,7 +733,9 @@ def markdown_report(report: dict[str, Any]) -> str:
             "## Interpretation",
             "",
             "- `pruned_as_equivalent` is exact state equivalence and is the safest compression signal.",
-            "- `pruned_by_abstract_equivalence` is the new engine-verified pure damage/block permutation compression.",
+            "- `pruned_by_generation_canonical_order` is V2 pre-simulation canonical ordering for safe pure damage/block permutations.",
+            "- Generation canonical subclasses split that count into duplicate-card, same-lane, target-order, and lane-order prunes.",
+            "- `pruned_by_abstract_equivalence` is the engine-verified pure damage/block permutation compression fallback.",
             "- `abstract_equivalence_rejected_by_engine` means the heuristic abstract key matched but exact verification refused to prune.",
             "- `abstract_reject_diff:*` notes classify which verified state fields differed across an abstract-key collision.",
             "- `pruned_by_optimistic_bound` is a V0 bound-prune diagnostic; zero means the bound is likely too loose or disabled by safety gates.",
