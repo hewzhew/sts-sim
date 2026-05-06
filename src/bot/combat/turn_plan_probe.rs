@@ -3,6 +3,9 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use crate::bot::{card_facts, card_structure};
 use crate::content::cards::{self, CardId, CardType};
+use crate::content::monsters::EnemyId;
+use crate::content::powers::PowerId;
+use crate::content::relics::{get_relic_subscriptions, RelicId};
 use crate::projection::combat::monster_preview_total_damage_in_combat;
 use crate::runtime::combat::{CombatCard, CombatState};
 use crate::state::core::ClientInput;
@@ -12,7 +15,7 @@ use super::legal_moves::get_legal_moves;
 use super::profile::SearchProfileBreakdown;
 use super::stepping::simulate_input_bounded;
 
-pub const COMBAT_TURN_PLAN_PROBE_SCHEMA_VERSION: &str = "combat_turn_plan_probe_v1_3";
+pub const COMBAT_TURN_PLAN_PROBE_SCHEMA_VERSION: &str = "combat_turn_plan_probe_v1_5";
 
 #[derive(Clone, Copy, Debug)]
 pub struct CombatTurnPlanProbeConfig {
@@ -202,6 +205,11 @@ pub struct CombatPlanProbeLimits {
     pub sequence_classes_kept: usize,
     pub pruned_as_equivalent: usize,
     pub pruned_by_abstract_equivalence: usize,
+    pub abstract_equivalence_candidates: usize,
+    pub abstract_equivalence_blocked_by_context: usize,
+    pub abstract_equivalence_blocked_by_action_semantics: usize,
+    pub abstract_equivalence_rejected_by_engine: usize,
+    pub pruned_by_verified_abstract_equivalence: usize,
     pub pruned_by_optimistic_bound: usize,
     pub pruned_by_budget: usize,
     pub pruned_by_dominated_state: usize,
@@ -251,6 +259,91 @@ struct ActionEffectSummary {
     strength_gain: i32,
     dex_gain: i32,
     vulnerable_projection: i32,
+}
+
+#[derive(Clone, Debug)]
+struct AbstractSeen {
+    verification_snapshot: AbstractVerificationSnapshot,
+    score: i32,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct AbstractVerificationSnapshot {
+    engine: String,
+    player: String,
+    monsters: String,
+    hand_state: String,
+    hand_eval_cache: String,
+    draw_state: String,
+    draw_eval_cache: String,
+    discard_state: String,
+    discard_eval_cache: String,
+    exhaust_state: String,
+    exhaust_eval_cache: String,
+    turn_counters: String,
+    played_card_ids: String,
+    relics: String,
+    powers: String,
+}
+
+impl AbstractVerificationSnapshot {
+    fn behaviorally_matches(&self, other: &Self) -> bool {
+        self.engine == other.engine
+            && self.player == other.player
+            && self.monsters == other.monsters
+            && self.hand_state == other.hand_state
+            && self.draw_state == other.draw_state
+            && self.discard_state == other.discard_state
+            && self.exhaust_state == other.exhaust_state
+            && self.turn_counters == other.turn_counters
+            && self.played_card_ids == other.played_card_ids
+            && self.relics == other.relics
+            && self.powers == other.powers
+    }
+
+    fn diff_reasons(&self, other: &Self) -> Vec<&'static str> {
+        let mut reasons = Vec::new();
+        if self.engine != other.engine {
+            reasons.push("engine_state_diff");
+        }
+        if self.player != other.player {
+            reasons.push("player_resource_diff");
+        }
+        if self.monsters != other.monsters {
+            reasons.push("monster_state_diff");
+        }
+        if self.hand_state != other.hand_state {
+            reasons.push("hand_card_state_diff");
+        }
+        if self.draw_state != other.draw_state
+            || self.discard_state != other.discard_state
+            || self.exhaust_state != other.exhaust_state
+        {
+            reasons.push("deck_zone_card_state_diff");
+        }
+        if self.turn_counters != other.turn_counters
+            || self.played_card_ids != other.played_card_ids
+        {
+            reasons.push("turn_counter_diff");
+        }
+        if self.relics != other.relics {
+            reasons.push("relic_state_diff");
+        }
+        if self.powers != other.powers {
+            reasons.push("power_state_diff");
+        }
+        if reasons.is_empty() {
+            reasons.push("unknown_signature_diff");
+        }
+        reasons
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum AbstractCompressionDecision {
+    Candidate,
+    BlockedByActionSemantics(&'static str),
+    BlockedByContext(String),
 }
 
 #[derive(Clone, Debug, Default)]
@@ -310,7 +403,9 @@ pub fn probe_turn_plans(
             "no_future_seed_oracle".to_string(),
             "role_scores_are_heuristic_not_truth".to_string(),
             "affine_buff_projection_is_heuristic_not_engine_truth".to_string(),
-            "abstract_sequence_compression_is_conservative_and_diagnostic".to_string(),
+            "abstract_sequence_compression_is_engine_verified_and_conservative".to_string(),
+            "abstract_rejection_diff_notes_are_diagnostic_not_policy_labels".to_string(),
+            "abstract_verification_ignores_recomputed_card_eval_cache".to_string(),
             "static_random_risk_overlay_is_not_engine_rng_branch_enumeration".to_string(),
             "budget_pruning_can_hide_lower_ranked_sequences".to_string(),
         ],
@@ -975,12 +1070,17 @@ fn explore_sequence_classes(
     });
 
     let mut seen = BTreeMap::<String, i32>::new();
-    let mut seen_abstract = BTreeMap::<String, i32>::new();
+    let mut seen_abstract = BTreeMap::<String, Vec<AbstractSeen>>::new();
     let mut kept = Vec::new();
     let mut all_risk_notes = Vec::new();
     let mut nodes_expanded = 0usize;
     let mut pruned_as_equivalent = 0usize;
     let mut pruned_by_abstract_equivalence = 0usize;
+    let mut abstract_equivalence_candidates = 0usize;
+    let mut abstract_equivalence_blocked_by_context = 0usize;
+    let mut abstract_equivalence_blocked_by_action_semantics = 0usize;
+    let mut abstract_equivalence_rejected_by_engine = 0usize;
+    let mut pruned_by_verified_abstract_equivalence = 0usize;
     let mut pruned_by_optimistic_bound = 0usize;
     let mut pruned_by_budget = 0usize;
     let pruned_by_dominated_state = 0usize;
@@ -1087,21 +1187,73 @@ fn explore_sequence_classes(
             let next_key = sequence_equivalence_key(&next_engine, &next_combat);
             let next_diag = diagnose_sequence(combat, &next_combat, &next_accumulated);
             let next_score = next_diag.total_score;
-            if abstract_compression_allowed(
+            match abstract_compression_decision(
                 &node.combat,
                 &next_engine,
                 &action_summary,
                 &next_reasons,
             ) {
-                let abstract_key = abstract_sequence_key(&next_engine, &next_combat);
-                if let Some(previous_score) = seen_abstract.get(&abstract_key) {
-                    if *previous_score >= next_score {
-                        pruned_by_abstract_equivalence += 1;
-                        continue;
+                AbstractCompressionDecision::Candidate => {
+                    abstract_equivalence_candidates += 1;
+                    next_compression_notes.insert("abstract_candidate".to_string());
+                    let abstract_key = abstract_sequence_key(&next_engine, &next_combat);
+                    let verification_snapshot =
+                        abstract_verification_snapshot(&next_engine, &next_combat);
+                    let mut rejected_by_engine = false;
+                    let mut replace_seen_score = None;
+                    let mut rejection_reasons = Vec::new();
+                    if let Some(previous_entries) = seen_abstract.get_mut(&abstract_key) {
+                        if let Some((idx, previous)) =
+                            previous_entries.iter_mut().enumerate().find(|(_, entry)| {
+                                entry
+                                    .verification_snapshot
+                                    .behaviorally_matches(&verification_snapshot)
+                            })
+                        {
+                            if previous.score >= next_score {
+                                pruned_by_abstract_equivalence += 1;
+                                pruned_by_verified_abstract_equivalence += 1;
+                                continue;
+                            }
+                            replace_seen_score = Some((idx, next_score));
+                        } else if !previous_entries.is_empty() {
+                            abstract_equivalence_rejected_by_engine += 1;
+                            rejected_by_engine = true;
+                            rejection_reasons = abstract_rejection_reasons(
+                                previous_entries.as_slice(),
+                                &verification_snapshot,
+                            );
+                        }
+                    }
+                    if rejected_by_engine {
+                        next_compression_notes.insert("abstract_rejected_by_engine".to_string());
+                        for reason in rejection_reasons {
+                            next_compression_notes.insert(format!("abstract_reject_diff:{reason}"));
+                        }
+                    } else {
+                        next_compression_notes.insert("verified_abstract_equivalence".to_string());
+                    }
+                    let previous_entries = seen_abstract.entry(abstract_key).or_default();
+                    if let Some((idx, score)) = replace_seen_score {
+                        previous_entries[idx].score = score;
+                    } else {
+                        previous_entries.push(AbstractSeen {
+                            verification_snapshot,
+                            score: next_score,
+                        });
                     }
                 }
-                seen_abstract.insert(abstract_key, next_score);
-                next_compression_notes.insert("abstract_equivalence_safe".to_string());
+                AbstractCompressionDecision::BlockedByActionSemantics(reason) => {
+                    abstract_equivalence_blocked_by_action_semantics += 1;
+                    next_compression_notes
+                        .insert("abstract_blocked_by_action_semantics".to_string());
+                    next_compression_notes.insert(format!("abstract_action_blocker:{reason}"));
+                }
+                AbstractCompressionDecision::BlockedByContext(reason) => {
+                    abstract_equivalence_blocked_by_context += 1;
+                    next_compression_notes.insert("abstract_blocked_by_context".to_string());
+                    next_compression_notes.insert(format!("abstract_context_blocker:{reason}"));
+                }
             }
             if let Some(previous_score) = seen.get(&next_key) {
                 if *previous_score >= next_score {
@@ -1154,6 +1306,11 @@ fn explore_sequence_classes(
         sequence_classes_kept: kept.len(),
         pruned_as_equivalent,
         pruned_by_abstract_equivalence,
+        abstract_equivalence_candidates,
+        abstract_equivalence_blocked_by_context,
+        abstract_equivalence_blocked_by_action_semantics,
+        abstract_equivalence_rejected_by_engine,
+        pruned_by_verified_abstract_equivalence,
         pruned_by_optimistic_bound,
         pruned_by_budget,
         pruned_by_dominated_state,
@@ -1729,23 +1886,245 @@ fn vulnerable_projection_for_action(
     (remaining_damage / 2).min(target_hp).max(0)
 }
 
-fn abstract_compression_allowed(
+fn abstract_compression_decision(
     combat: &CombatState,
     engine: &EngineState,
     summary: &ActionEffectSummary,
     order_sensitive_reasons: &BTreeSet<String>,
-) -> bool {
-    matches!(engine, EngineState::CombatPlayerTurn)
-        && order_sensitive_reasons.is_empty()
-        && abstract_runtime_is_simple(combat)
-        && (summary.pure_damage || summary.pure_block)
+) -> AbstractCompressionDecision {
+    if !matches!(engine, EngineState::CombatPlayerTurn) {
+        return AbstractCompressionDecision::BlockedByContext("not_player_turn".to_string());
+    }
+    if !order_sensitive_reasons.is_empty() {
+        return AbstractCompressionDecision::BlockedByActionSemantics("order_sensitive_action");
+    }
+    if !summary.pure_damage && !summary.pure_block {
+        return AbstractCompressionDecision::BlockedByActionSemantics("not_pure_damage_or_block");
+    }
+    if summary.draws_cards {
+        return AbstractCompressionDecision::BlockedByActionSemantics("draw");
+    }
+    if summary.energy_gain {
+        return AbstractCompressionDecision::BlockedByActionSemantics("energy_gain");
+    }
+    if summary.debuff {
+        return AbstractCompressionDecision::BlockedByActionSemantics("debuff");
+    }
+    if summary.setup_or_scaling {
+        return AbstractCompressionDecision::BlockedByActionSemantics("setup_or_scaling");
+    }
+    if summary.exhaust_or_discard {
+        return AbstractCompressionDecision::BlockedByActionSemantics("exhaust_or_discard");
+    }
+    if summary.random_effect {
+        return AbstractCompressionDecision::BlockedByActionSemantics("random_effect");
+    }
+    if summary.possible_kill {
+        return AbstractCompressionDecision::BlockedByActionSemantics("possible_kill");
+    }
+    if summary.target_sensitive {
+        return AbstractCompressionDecision::BlockedByActionSemantics("target_sensitive");
+    }
+    if let Some(reason) = known_order_sensitive_context(combat, summary) {
+        return AbstractCompressionDecision::BlockedByContext(reason);
+    }
+    AbstractCompressionDecision::Candidate
 }
 
-fn abstract_runtime_is_simple(combat: &CombatState) -> bool {
-    combat.entities.power_db.is_empty()
-        && combat.entities.player.relics.is_empty()
-        && combat.zones.limbo.is_empty()
-        && combat.zones.queued_cards.is_empty()
+fn known_order_sensitive_context(
+    combat: &CombatState,
+    summary: &ActionEffectSummary,
+) -> Option<String> {
+    if !combat.zones.limbo.is_empty() {
+        return Some("limbo_not_empty".to_string());
+    }
+    if !combat.zones.queued_cards.is_empty() {
+        return Some("queued_cards_not_empty".to_string());
+    }
+    if let Some(relic_id) = combat
+        .entities
+        .player
+        .relics
+        .iter()
+        .map(|relic| relic.id)
+        .find(|id| relic_has_current_turn_order_trigger(*id, summary))
+    {
+        return Some(format!("relic_order_trigger:{relic_id:?}"));
+    }
+    if let Some(power_id) = combat
+        .entities
+        .power_db
+        .values()
+        .flat_map(|powers| powers.iter().map(|power| power.power_type))
+        .find(|id| power_has_current_turn_order_trigger(*id, summary))
+    {
+        return Some(format!("power_order_trigger:{power_id:?}"));
+    }
+    if let Some(enemy_id) = combat
+        .entities
+        .monsters
+        .iter()
+        .filter(|monster| !monster.is_dying && !monster.is_escaped && !monster.half_dead)
+        .filter_map(|monster| EnemyId::from_id(monster.monster_type))
+        .find(|enemy| enemy_has_current_turn_order_trigger(*enemy))
+    {
+        return Some(format!("enemy_order_trigger:{enemy_id:?}"));
+    }
+    None
+}
+
+fn relic_has_current_turn_order_trigger(id: RelicId, summary: &ActionEffectSummary) -> bool {
+    let sub = get_relic_subscriptions(id);
+    match id {
+        RelicId::InkBottle | RelicId::OrangePellets => summary.pure_damage || summary.pure_block,
+        RelicId::LetterOpener => summary.pure_block,
+        RelicId::Duality
+        | RelicId::Kunai
+        | RelicId::Nunchaku
+        | RelicId::OrnamentalFan
+        | RelicId::PenNib
+        | RelicId::Shuriken
+        | RelicId::Necronomicon => summary.pure_damage,
+        RelicId::MummifiedHand | RelicId::BirdFacedUrn => summary.setup_or_scaling,
+        RelicId::BlueCandle | RelicId::MedicalKit => summary.exhaust_or_discard,
+        RelicId::CharonsAshes | RelicId::DeadBranch => summary.exhaust_or_discard,
+        RelicId::ToughBandages | RelicId::Tingsha | RelicId::HoveringKite => {
+            summary.exhaust_or_discard
+        }
+        RelicId::GremlinHorn | RelicId::TheSpecimen => summary.possible_kill,
+        RelicId::ChampionBelt | RelicId::SneckoSkull => summary.debuff,
+        RelicId::Ginger | RelicId::Turnip | RelicId::OddMushroom | RelicId::PaperFrog => {
+            summary.debuff
+        }
+        RelicId::ChemicalX => summary.energy_gain,
+        // These mutate turn/relic counters but are not order-sensitive for pure
+        // damage/block final states; the engine verification signature still
+        // catches different counters if they matter.
+        RelicId::ArtOfWar | RelicId::Pocketwatch => false,
+        _ => {
+            (sub.on_use_card && (summary.pure_damage || summary.pure_block))
+                || (sub.on_exhaust && summary.exhaust_or_discard)
+                || (sub.on_discard && summary.exhaust_or_discard)
+                || (sub.on_monster_death && summary.possible_kill)
+                || (sub.on_apply_power && (summary.debuff || summary.setup_or_scaling))
+                || (sub.on_receive_power_modify && summary.debuff)
+                || (sub.on_calculate_x_cost && summary.energy_gain)
+                || (sub.on_calculate_vulnerable_multiplier && summary.debuff)
+        }
+    }
+}
+
+fn power_has_current_turn_order_trigger(id: PowerId, summary: &ActionEffectSummary) -> bool {
+    match id {
+        PowerId::Strength
+        | PowerId::Dexterity
+        | PowerId::Vulnerable
+        | PowerId::Weak
+        | PowerId::Frail
+        | PowerId::Ritual
+        | PowerId::Artifact
+        | PowerId::Metallicize
+        | PowerId::Barricade
+        | PowerId::Minion
+        | PowerId::Intangible
+        | PowerId::IntangiblePlayer
+        | PowerId::NoDraw
+        | PowerId::NoBlock
+        | PowerId::Entangle => false,
+        PowerId::CurlUp
+        | PowerId::FlameBarrier
+        | PowerId::Malleable
+        | PowerId::ModeShift
+        | PowerId::SharpHide
+        | PowerId::Thorns
+        | PowerId::PenNibPower
+        | PowerId::Flight
+        | PowerId::Reactive
+        | PowerId::PlatedArmor => summary.pure_damage,
+        PowerId::Rage | PowerId::Juggernaut => summary.pure_block,
+        PowerId::FeelNoPain | PowerId::DarkEmbrace => summary.exhaust_or_discard,
+        PowerId::SadisticPower => summary.debuff,
+        _ => true,
+    }
+}
+
+fn conservative_order_sensitive_context(combat: &CombatState) -> Option<String> {
+    if !combat.zones.limbo.is_empty() {
+        return Some("limbo_not_empty".to_string());
+    }
+    if !combat.zones.queued_cards.is_empty() {
+        return Some("queued_cards_not_empty".to_string());
+    }
+    if let Some(relic_id) = combat
+        .entities
+        .player
+        .relics
+        .iter()
+        .map(|relic| relic.id)
+        .find(|id| {
+            let sub = get_relic_subscriptions(*id);
+            sub.on_use_card
+                || sub.on_exhaust
+                || sub.on_discard
+                || sub.on_monster_death
+                || sub.on_apply_power
+                || sub.on_lose_hp
+                || sub.on_attacked_to_change_damage
+                || sub.on_receive_power_modify
+                || sub.on_calculate_x_cost
+                || sub.on_calculate_vulnerable_multiplier
+        })
+    {
+        return Some(format!("relic_order_trigger:{relic_id:?}"));
+    }
+    if let Some(power_id) = combat
+        .entities
+        .power_db
+        .values()
+        .flat_map(|powers| powers.iter().map(|power| power.power_type))
+        .find(|id| {
+            !matches!(
+                id,
+                PowerId::Strength
+                    | PowerId::Dexterity
+                    | PowerId::Vulnerable
+                    | PowerId::Weak
+                    | PowerId::Frail
+                    | PowerId::Ritual
+                    | PowerId::Artifact
+                    | PowerId::Metallicize
+                    | PowerId::Barricade
+                    | PowerId::Minion
+            )
+        })
+    {
+        return Some(format!("power_order_trigger:{power_id:?}"));
+    }
+    if let Some(enemy_id) = combat
+        .entities
+        .monsters
+        .iter()
+        .filter(|monster| !monster.is_dying && !monster.is_escaped && !monster.half_dead)
+        .filter_map(|monster| EnemyId::from_id(monster.monster_type))
+        .find(|enemy| enemy_has_current_turn_order_trigger(*enemy))
+    {
+        return Some(format!("enemy_order_trigger:{enemy_id:?}"));
+    }
+    None
+}
+
+fn enemy_has_current_turn_order_trigger(id: EnemyId) -> bool {
+    matches!(
+        id,
+        EnemyId::GremlinNob
+            | EnemyId::Byrd
+            | EnemyId::Spiker
+            | EnemyId::TimeEater
+            | EnemyId::AwakenedOne
+            | EnemyId::CorruptHeart
+            | EnemyId::GiantHead
+            | EnemyId::TheGuardian
+    )
 }
 
 fn abstract_sequence_key(engine: &EngineState, combat: &CombatState) -> String {
@@ -1783,6 +2162,159 @@ fn abstract_sequence_key(engine: &EngineState, combat: &CombatState) -> String {
     )
 }
 
+fn abstract_rejection_reasons(
+    previous_entries: &[AbstractSeen],
+    current: &AbstractVerificationSnapshot,
+) -> Vec<&'static str> {
+    previous_entries
+        .iter()
+        .map(|entry| entry.verification_snapshot.diff_reasons(current))
+        .min_by_key(|reasons| reasons.len())
+        .unwrap_or_else(|| vec!["missing_previous_signature"])
+}
+
+fn abstract_verification_snapshot(
+    engine: &EngineState,
+    combat: &CombatState,
+) -> AbstractVerificationSnapshot {
+    #[derive(Clone, Debug)]
+    struct ZoneSnapshot {
+        state: String,
+        eval_cache: String,
+    }
+
+    fn zone_signature(cards: &[CombatCard]) -> ZoneSnapshot {
+        let mut state_parts = cards
+            .iter()
+            .map(|card| {
+                format!(
+                    "{:?}+{}:misc:{}:cost_mod:{}:cost_turn:{}:base_dmg_override:{}:exhaust:{:?}:retain:{:?}:free:{}:energy_on_use:{}",
+                    card.id,
+                    card.upgrades,
+                    card.misc_value,
+                    card.cost_modifier,
+                    card.cost_for_turn
+                        .map(|cost| cost.to_string())
+                        .unwrap_or_else(|| "_".to_string()),
+                    card.base_damage_override
+                        .map(|damage| damage.to_string())
+                        .unwrap_or_else(|| "_".to_string()),
+                    card.exhaust_override,
+                    card.retain_override,
+                    card.free_to_play_once,
+                    card.energy_on_use
+                )
+            })
+            .collect::<Vec<_>>();
+        state_parts.sort();
+        let mut parts = cards
+            .iter()
+            .map(|card| {
+                format!(
+                    "{:?}+{}:base_dmg_mut:{}:base_block_mut:{}:base_magic_mut:{}:multi_damage:{:?}",
+                    card.id,
+                    card.upgrades,
+                    card.base_damage_mut,
+                    card.base_block_mut,
+                    card.base_magic_num_mut,
+                    card.multi_damage
+                )
+            })
+            .collect::<Vec<_>>();
+        parts.sort();
+        ZoneSnapshot {
+            state: state_parts.join(","),
+            eval_cache: parts.join(","),
+        }
+    }
+
+    let monsters = combat
+        .entities
+        .monsters
+        .iter()
+        .map(|monster| {
+            format!(
+                "{}:{}:{}:{}:{}:{}",
+                monster.id,
+                monster.current_hp,
+                monster.block,
+                monster.is_dying,
+                monster.is_escaped,
+                monster.half_dead
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(",");
+    let relics = combat
+        .entities
+        .player
+        .relics
+        .iter()
+        .map(|relic| {
+            format!(
+                "{:?}:{}:{}:{}",
+                relic.id, relic.counter, relic.used_up, relic.amount
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(",");
+    let powers = combat
+        .entities
+        .power_db
+        .iter()
+        .map(|(entity, powers)| {
+            let mut parts = powers
+                .iter()
+                .map(|power| {
+                    format!(
+                        "{:?}:{}:{}:{}",
+                        power.power_type, power.amount, power.extra_data, power.just_applied
+                    )
+                })
+                .collect::<Vec<_>>();
+            parts.sort();
+            format!("{entity}:{}", parts.join("|"))
+        })
+        .collect::<Vec<_>>()
+        .join(",");
+    let mut played_card_ids = combat
+        .turn
+        .counters
+        .card_ids_played_this_turn
+        .iter()
+        .map(|card_id| format!("{card_id:?}"))
+        .collect::<Vec<_>>();
+    played_card_ids.sort();
+    let hand = zone_signature(&combat.zones.hand);
+    let draw = zone_signature(&combat.zones.draw_pile);
+    let discard = zone_signature(&combat.zones.discard_pile);
+    let exhaust = zone_signature(&combat.zones.exhaust_pile);
+    AbstractVerificationSnapshot {
+        engine: format!("{engine:?}"),
+        player: format!(
+            "hp:{}|block:{}|energy:{}",
+            combat.entities.player.current_hp, combat.entities.player.block, combat.turn.energy
+        ),
+        monsters,
+        hand_state: hand.state,
+        hand_eval_cache: hand.eval_cache,
+        draw_state: draw.state,
+        draw_eval_cache: draw.eval_cache,
+        discard_state: discard.state,
+        discard_eval_cache: discard.eval_cache,
+        exhaust_state: exhaust.state,
+        exhaust_eval_cache: exhaust.eval_cache,
+        turn_counters: format!(
+            "cards:{}|attacks:{}",
+            combat.turn.counters.cards_played_this_turn,
+            combat.turn.counters.attacks_played_this_turn
+        ),
+        played_card_ids: played_card_ids.join(","),
+        relics,
+        powers,
+    }
+}
+
 fn can_bound_prune(
     engine: &EngineState,
     combat: &CombatState,
@@ -1790,11 +2322,12 @@ fn can_bound_prune(
 ) -> bool {
     matches!(engine, EngineState::CombatPlayerTurn)
         && order_sensitive_reasons.is_empty()
-        && abstract_runtime_is_simple(combat)
+        && conservative_order_sensitive_context(combat).is_none()
 }
 
 fn optimistic_bound_score(combat: &CombatState, order_sensitive_reasons: &BTreeSet<String>) -> i32 {
-    if !order_sensitive_reasons.is_empty() || !abstract_runtime_is_simple(combat) {
+    if !order_sensitive_reasons.is_empty() || conservative_order_sensitive_context(combat).is_some()
+    {
         return 10_000;
     }
     let mut max_damage = 0;
@@ -2307,6 +2840,7 @@ mod tests {
     use super::*;
     use crate::content::cards::CardId;
     use crate::content::monsters::EnemyId;
+    use crate::content::relics::{RelicId, RelicState};
     use crate::runtime::combat::{CombatCard, Power};
     use crate::test_support::{blank_test_combat, planned_monster};
 
@@ -2644,11 +3178,184 @@ mod tests {
             },
         );
 
-        assert!(report.probe_limits.pruned_by_abstract_equivalence > 0);
+        assert!(
+            report.probe_limits.pruned_by_abstract_equivalence > 0,
+            "{:?}",
+            report.probe_limits
+        );
+        assert!(
+            report.probe_limits.pruned_by_verified_abstract_equivalence > 0,
+            "{:?}",
+            report.probe_limits
+        );
+        assert!(report.probe_limits.abstract_equivalence_candidates > 0);
+        assert!(report
+            .sequence_classes
+            .iter()
+            .any(|sequence| sequence.compression_notes.iter().any(|note| note
+                == "verified_abstract_equivalence"
+                || note == "abstract_candidate")));
+    }
+
+    #[test]
+    fn combat_turn_plan_probe_allows_safe_relic_context_for_verified_abstract_prune() {
+        let mut combat = blank_test_combat();
+        combat
+            .entities
+            .player
+            .add_relic(RelicState::new(RelicId::BurningBlood));
+        let mut cultist = planned_monster(EnemyId::Cultist, 1);
+        cultist.current_hp = 60;
+        cultist.max_hp = 60;
+        combat.entities.monsters.push(cultist);
+        combat.zones.hand.push(card(CardId::Strike, 1));
+        combat.zones.hand.push(card(CardId::Defend, 2));
+
+        let report = probe_turn_plans(
+            &EngineState::CombatPlayerTurn,
+            &combat,
+            CombatTurnPlanProbeConfig {
+                max_depth: 2,
+                beam_width: 8,
+                ..CombatTurnPlanProbeConfig::default()
+            },
+        );
+
+        assert!(report.probe_limits.abstract_equivalence_candidates > 0);
+        assert!(report.probe_limits.pruned_by_verified_abstract_equivalence > 0);
+        assert_eq!(
+            report.probe_limits.abstract_equivalence_rejected_by_engine,
+            0
+        );
+    }
+
+    #[test]
+    fn combat_turn_plan_probe_does_not_block_irrelevant_exhaust_relic_for_pure_cards() {
+        let mut combat = blank_test_combat();
+        combat
+            .entities
+            .player
+            .add_relic(RelicState::new(RelicId::CharonsAshes));
+        let mut cultist = planned_monster(EnemyId::Cultist, 1);
+        cultist.current_hp = 60;
+        cultist.max_hp = 60;
+        combat.entities.monsters.push(cultist);
+        combat.zones.hand.push(card(CardId::Strike, 1));
+        combat.zones.hand.push(card(CardId::Defend, 2));
+
+        let report = probe_turn_plans(
+            &EngineState::CombatPlayerTurn,
+            &combat,
+            CombatTurnPlanProbeConfig {
+                max_depth: 2,
+                beam_width: 8,
+                ..CombatTurnPlanProbeConfig::default()
+            },
+        );
+
+        assert!(report.probe_limits.abstract_equivalence_candidates > 0);
+        assert!(report.probe_limits.pruned_by_verified_abstract_equivalence > 0);
+        assert!(!report.sequence_classes.iter().any(|sequence| sequence
+            .compression_notes
+            .iter()
+            .any(|note| note == "abstract_context_blocker:relic_order_trigger:CharonsAshes")));
+    }
+
+    #[test]
+    fn combat_turn_plan_probe_blocks_card_count_relic_context() {
+        let mut combat = blank_test_combat();
+        combat
+            .entities
+            .player
+            .add_relic(RelicState::new(RelicId::LetterOpener));
+        combat
+            .entities
+            .monsters
+            .push(planned_monster(EnemyId::Cultist, 1));
+        combat.zones.hand.push(card(CardId::Defend, 1));
+        combat.zones.hand.push(card(CardId::Defend, 2));
+
+        let report = probe_turn_plans(
+            &EngineState::CombatPlayerTurn,
+            &combat,
+            CombatTurnPlanProbeConfig {
+                max_depth: 2,
+                beam_width: 8,
+                ..CombatTurnPlanProbeConfig::default()
+            },
+        );
+
+        assert!(report.probe_limits.abstract_equivalence_blocked_by_context > 0);
+        assert_eq!(
+            report.probe_limits.pruned_by_verified_abstract_equivalence,
+            0
+        );
         assert!(report.sequence_classes.iter().any(|sequence| sequence
             .compression_notes
             .iter()
-            .any(|note| note == "abstract_equivalence_safe")));
+            .any(|note| note == "abstract_context_blocker:relic_order_trigger:LetterOpener")));
+    }
+
+    #[test]
+    fn combat_turn_plan_probe_blocks_possible_kill_from_abstract_prune() {
+        let mut combat = blank_test_combat();
+        let mut cultist = planned_monster(EnemyId::Cultist, 1);
+        cultist.current_hp = 5;
+        cultist.max_hp = 60;
+        combat.entities.monsters.push(cultist);
+        combat.zones.hand.push(card(CardId::Strike, 1));
+        combat.zones.hand.push(card(CardId::Defend, 2));
+
+        let report = probe_turn_plans(
+            &EngineState::CombatPlayerTurn,
+            &combat,
+            CombatTurnPlanProbeConfig {
+                max_depth: 2,
+                beam_width: 8,
+                ..CombatTurnPlanProbeConfig::default()
+            },
+        );
+
+        assert!(
+            report
+                .probe_limits
+                .abstract_equivalence_blocked_by_action_semantics
+                > 0
+        );
+    }
+
+    #[test]
+    fn combat_turn_plan_probe_rejects_abstract_match_when_engine_signature_differs() {
+        let mut combat = blank_test_combat();
+        combat
+            .entities
+            .monsters
+            .push(planned_monster(EnemyId::Cultist, 1));
+        let mut override_defend = card(CardId::Defend, 1);
+        override_defend.cost_for_turn = Some(1);
+        combat.zones.hand.push(override_defend);
+        combat.zones.hand.push(card(CardId::Defend, 2));
+
+        let report = probe_turn_plans(
+            &EngineState::CombatPlayerTurn,
+            &combat,
+            CombatTurnPlanProbeConfig {
+                max_depth: 1,
+                beam_width: 8,
+                ..CombatTurnPlanProbeConfig::default()
+            },
+        );
+
+        assert!(report.probe_limits.abstract_equivalence_candidates > 0);
+        assert!(report.probe_limits.abstract_equivalence_rejected_by_engine > 0);
+        assert!(report.sequence_classes.iter().any(|sequence| sequence
+            .compression_notes
+            .iter()
+            .any(|note| note == "abstract_rejected_by_engine")));
+        assert!(report.sequence_classes.iter().any(|sequence| sequence
+            .compression_notes
+            .iter()
+            .any(|note| note.starts_with("abstract_reject_diff:"))));
     }
 
     #[test]
@@ -2804,7 +3511,7 @@ mod tests {
         assert!(!pommel
             .compression_notes
             .iter()
-            .any(|note| note == "abstract_equivalence_safe"));
+            .any(|note| note == "verified_abstract_equivalence"));
     }
 
     #[test]
