@@ -15,7 +15,7 @@ use super::legal_moves::get_legal_moves;
 use super::profile::SearchProfileBreakdown;
 use super::stepping::simulate_input_bounded;
 
-pub const COMBAT_TURN_PLAN_PROBE_SCHEMA_VERSION: &str = "combat_turn_plan_probe_v1_5";
+pub const COMBAT_TURN_PLAN_PROBE_SCHEMA_VERSION: &str = "combat_turn_plan_probe_v1_5_1";
 
 #[derive(Clone, Copy, Debug)]
 pub struct CombatTurnPlanProbeConfig {
@@ -234,6 +234,7 @@ struct ProbeNode {
     actions: Vec<String>,
     action_keys: Vec<String>,
     order_sensitive_reasons: BTreeSet<String>,
+    sequence_residues: BTreeSet<String>,
     compression_notes: BTreeSet<String>,
     risk_notes: Vec<CombatPlanRiskNote>,
     accumulated: AccumulatedSequenceEffects,
@@ -1062,6 +1063,7 @@ fn explore_sequence_classes(
         actions: Vec::new(),
         action_keys: Vec::new(),
         order_sensitive_reasons: BTreeSet::new(),
+        sequence_residues: BTreeSet::new(),
         compression_notes: BTreeSet::new(),
         risk_notes: Vec::new(),
         accumulated: AccumulatedSequenceEffects::default(),
@@ -1096,8 +1098,11 @@ fn explore_sequence_classes(
 
         if !node.actions.is_empty() {
             let mut diagnostics = diagnose_sequence(combat, &node.combat, &node.accumulated);
-            diagnostics.optimistic_bound_score =
-                optimistic_bound_score(&node.combat, &node.order_sensitive_reasons);
+            diagnostics.optimistic_bound_score = optimistic_bound_score(
+                &node.combat,
+                &node.order_sensitive_reasons,
+                &node.sequence_residues,
+            );
             let outcome =
                 build_sequence_outcome(combat, &node.combat, &node.accumulated, node.ended_turn);
             let key = sequence_equivalence_key(&node.engine, &node.combat);
@@ -1138,9 +1143,18 @@ fn explore_sequence_classes(
         }
         let node_diag = diagnose_sequence(combat, &node.combat, &node.accumulated);
         let node_bound = node_diag.total_score
-            + optimistic_bound_score(&node.combat, &node.order_sensitive_reasons);
+            + optimistic_bound_score(
+                &node.combat,
+                &node.order_sensitive_reasons,
+                &node.sequence_residues,
+            );
         if best_total_score != i32::MIN
-            && can_bound_prune(&node.engine, &node.combat, &node.order_sensitive_reasons)
+            && can_bound_prune(
+                &node.engine,
+                &node.combat,
+                &node.order_sensitive_reasons,
+                &node.sequence_residues,
+            )
             && node_bound + 300 < best_total_score
         {
             pruned_by_optimistic_bound += 1;
@@ -1163,8 +1177,13 @@ fn explore_sequence_classes(
             let action_summary = summarize_action_effect(&node.combat, &action);
             let mut next_accumulated = node.accumulated.clone();
             let mut next_reasons = node.order_sensitive_reasons.clone();
+            let mut next_residues = node.sequence_residues.clone();
             let mut next_compression_notes = node.compression_notes.clone();
             let mut next_notes = node.risk_notes.clone();
+            for residue in action_sequence_residues(&node.combat, &action) {
+                next_residues.insert(residue.to_string());
+                next_compression_notes.insert(format!("sequence_residue:{residue}"));
+            }
             accumulate_action_effects(
                 &node.combat,
                 &action,
@@ -1192,6 +1211,7 @@ fn explore_sequence_classes(
                 &next_engine,
                 &action_summary,
                 &next_reasons,
+                &next_residues,
             ) {
                 AbstractCompressionDecision::Candidate => {
                     abstract_equivalence_candidates += 1;
@@ -1273,6 +1293,7 @@ fn explore_sequence_classes(
                 actions,
                 action_keys,
                 order_sensitive_reasons: next_reasons,
+                sequence_residues: next_residues,
                 compression_notes: next_compression_notes,
                 risk_notes: next_notes,
                 accumulated: next_accumulated,
@@ -1636,6 +1657,29 @@ fn accumulate_action_effects(
     }
 }
 
+fn action_sequence_residues(combat: &CombatState, action: &ClientInput) -> Vec<&'static str> {
+    let ClientInput::PlayCard { card_index, .. } = action else {
+        return Vec::new();
+    };
+    let Some(card) = combat.zones.hand.get(*card_index) else {
+        return Vec::new();
+    };
+    match card.id {
+        CardId::Headbutt if !combat.zones.discard_pile.is_empty() => {
+            vec!["future_draw_order"]
+        }
+        CardId::Warcry | CardId::ThinkingAhead => vec!["future_draw_order"],
+        CardId::DeepBreath if !combat.zones.discard_pile.is_empty() => {
+            vec!["shuffle_draw_order"]
+        }
+        CardId::Forethought if combat.zones.hand.len() > 1 => vec!["future_draw_order"],
+        CardId::SecretTechnique | CardId::SecretWeapon if !combat.zones.draw_pile.is_empty() => {
+            vec!["deck_search_to_hand"]
+        }
+        _ => Vec::new(),
+    }
+}
+
 fn add_true_grit_random_overlay(
     combat: &CombatState,
     played_hand_index: usize,
@@ -1891,9 +1935,15 @@ fn abstract_compression_decision(
     engine: &EngineState,
     summary: &ActionEffectSummary,
     order_sensitive_reasons: &BTreeSet<String>,
+    sequence_residues: &BTreeSet<String>,
 ) -> AbstractCompressionDecision {
     if !matches!(engine, EngineState::CombatPlayerTurn) {
         return AbstractCompressionDecision::BlockedByContext("not_player_turn".to_string());
+    }
+    if let Some(residue) = sequence_residues.iter().next() {
+        return AbstractCompressionDecision::BlockedByContext(format!(
+            "sequence_residue:{residue}"
+        ));
     }
     if !order_sensitive_reasons.is_empty() {
         return AbstractCompressionDecision::BlockedByActionSemantics("order_sensitive_action");
@@ -2319,14 +2369,22 @@ fn can_bound_prune(
     engine: &EngineState,
     combat: &CombatState,
     order_sensitive_reasons: &BTreeSet<String>,
+    sequence_residues: &BTreeSet<String>,
 ) -> bool {
     matches!(engine, EngineState::CombatPlayerTurn)
         && order_sensitive_reasons.is_empty()
+        && sequence_residues.is_empty()
         && conservative_order_sensitive_context(combat).is_none()
 }
 
-fn optimistic_bound_score(combat: &CombatState, order_sensitive_reasons: &BTreeSet<String>) -> i32 {
-    if !order_sensitive_reasons.is_empty() || conservative_order_sensitive_context(combat).is_some()
+fn optimistic_bound_score(
+    combat: &CombatState,
+    order_sensitive_reasons: &BTreeSet<String>,
+    sequence_residues: &BTreeSet<String>,
+) -> i32 {
+    if !order_sensitive_reasons.is_empty()
+        || !sequence_residues.is_empty()
+        || conservative_order_sensitive_context(combat).is_some()
     {
         return 10_000;
     }
@@ -3356,6 +3414,43 @@ mod tests {
             .compression_notes
             .iter()
             .any(|note| note.starts_with("abstract_reject_diff:"))));
+    }
+
+    #[test]
+    fn combat_turn_plan_probe_blocks_abstract_after_future_draw_residue() {
+        let mut combat = blank_test_combat();
+        let mut cultist = planned_monster(EnemyId::Cultist, 1);
+        cultist.current_hp = 60;
+        cultist.max_hp = 60;
+        combat.entities.monsters.push(cultist);
+        combat.zones.hand.push(card(CardId::Headbutt, 1));
+        combat.zones.hand.push(card(CardId::Defend, 2));
+        combat.zones.hand.push(card(CardId::Strike, 3));
+        combat.zones.hand.push(card(CardId::Defend, 4));
+        combat.zones.discard_pile.push(card(CardId::Strike, 20));
+
+        let report = probe_turn_plans(
+            &EngineState::CombatPlayerTurn,
+            &combat,
+            CombatTurnPlanProbeConfig {
+                max_depth: 3,
+                beam_width: 16,
+                ..CombatTurnPlanProbeConfig::default()
+            },
+        );
+
+        assert_eq!(
+            report.probe_limits.abstract_equivalence_rejected_by_engine,
+            0
+        );
+        assert!(report.sequence_classes.iter().any(|sequence| sequence
+            .compression_notes
+            .iter()
+            .any(|note| note == "sequence_residue:future_draw_order")));
+        assert!(report.sequence_classes.iter().any(|sequence| sequence
+            .compression_notes
+            .iter()
+            .any(|note| note == "abstract_context_blocker:sequence_residue:future_draw_order")));
     }
 
     #[test]
