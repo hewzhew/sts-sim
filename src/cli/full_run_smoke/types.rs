@@ -650,6 +650,8 @@ pub struct FullRunTraceDrawMarginalProbeConfig {
     pub trace_file: PathBuf,
     pub step_index: usize,
     pub target_card: crate::content::cards::CardId,
+    pub target_hand_index: Option<usize>,
+    pub target_action_key: Option<String>,
     pub ascension: Option<u8>,
     pub final_act: Option<bool>,
     pub player_class: Option<String>,

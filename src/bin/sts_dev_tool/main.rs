@@ -316,6 +316,12 @@ enum CombatCommands {
         /// Target draw/search/resource card to force or forbid, e.g. BattleTrance or "Battle Trance".
         #[arg(long)]
         action_card: String,
+        /// Optional target hand index. When set, only that card instance is forced/forbidden.
+        #[arg(long)]
+        hand_index: Option<usize>,
+        /// Optional exact root action key. When set, forced branch uses that exact first action.
+        #[arg(long)]
+        target_action_key: Option<String>,
         /// Output JSON report path.
         #[arg(long)]
         out: PathBuf,
@@ -342,6 +348,12 @@ enum CombatCommands {
         /// Target draw/search/resource card to force or forbid, e.g. BattleTrance or "Battle Trance".
         #[arg(long)]
         action_card: String,
+        /// Optional target hand index. When set, only that card instance is forced/forbidden.
+        #[arg(long)]
+        hand_index: Option<usize>,
+        /// Optional exact root action key. When set, forced branch uses that exact first action.
+        #[arg(long)]
+        target_action_key: Option<String>,
         /// Output JSON report path.
         #[arg(long)]
         out: PathBuf,
@@ -4676,6 +4688,8 @@ fn main() {
             CombatCommands::DrawMarginalProbeAuthorSpec {
                 author_spec,
                 action_card,
+                hand_index,
+                target_action_key,
                 out,
                 max_depth,
                 max_nodes,
@@ -4691,10 +4705,35 @@ fn main() {
                 let seed = lower_case(&case).expect("combat author spec case should lower");
                 let target_card = card_id_from_java(action_card)
                     .unwrap_or_else(|| panic!("unknown Java card id or alias '{}'", action_card));
-                let mut report = sts_simulator::bot::combat::probe_draw_marginal_value(
+                let mut target = if let Some(hand_index) = hand_index {
+                    let card = seed.combat.zones.hand.get(*hand_index).unwrap_or_else(|| {
+                        panic!(
+                            "target hand index {} out of range for hand size {}",
+                            hand_index,
+                            seed.combat.zones.hand.len()
+                        )
+                    });
+                    if card.id != target_card {
+                        panic!(
+                            "target hand index {} has {:?}, expected {:?}",
+                            hand_index, card.id, target_card
+                        );
+                    }
+                    sts_simulator::bot::combat::CombatDrawMarginalTarget::hand_instance(
+                        target_card,
+                        *hand_index,
+                        card.uuid,
+                    )
+                } else {
+                    sts_simulator::bot::combat::CombatDrawMarginalTarget::card(target_card)
+                };
+                if let Some(target_action_key) = target_action_key {
+                    target = target.with_root_action_key(target_action_key.clone());
+                }
+                let mut report = sts_simulator::bot::combat::probe_draw_marginal_value_for_target(
                     &seed.engine_state,
                     &seed.combat,
-                    target_card,
+                    target,
                     sts_simulator::bot::combat::CombatTurnPlanProbeConfig {
                         max_depth: *max_depth,
                         max_nodes: *max_nodes,
@@ -4729,6 +4768,8 @@ fn main() {
                 trace_file,
                 step_index,
                 action_card,
+                hand_index,
+                target_action_key,
                 out,
                 ascension,
                 class,
@@ -4747,6 +4788,8 @@ fn main() {
                             trace_file: trace_file.clone(),
                             step_index: *step_index,
                             target_card,
+                            target_hand_index: *hand_index,
+                            target_action_key: target_action_key.clone(),
                             ascension: *ascension,
                             final_act: *final_act,
                             player_class: class.clone(),

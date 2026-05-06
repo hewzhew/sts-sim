@@ -16,7 +16,7 @@ use super::profile::SearchProfileBreakdown;
 use super::stepping::simulate_input_bounded;
 
 pub const COMBAT_TURN_PLAN_PROBE_SCHEMA_VERSION: &str = "combat_turn_plan_probe_v2_3_1";
-pub const COMBAT_DRAW_MARGINAL_PROBE_SCHEMA_VERSION: &str = "combat_draw_marginal_probe_v0";
+pub const COMBAT_DRAW_MARGINAL_PROBE_SCHEMA_VERSION: &str = "combat_draw_marginal_probe_v1";
 
 #[derive(Clone, Copy, Debug)]
 pub struct CombatTurnPlanProbeConfig {
@@ -58,6 +58,10 @@ pub struct CombatDrawMarginalProbeReport {
     pub source_trace: serde_json::Value,
     pub target_action_card: String,
     pub target_card_id: String,
+    pub target_granularity: String,
+    pub target_card_uuid: Option<u32>,
+    pub target_hand_index: Option<usize>,
+    pub target_action_key: Option<String>,
     pub status: String,
     pub branches: Vec<CombatDrawMarginalBranchReport>,
     pub marginal: Option<CombatDrawMarginalSummary>,
@@ -312,8 +316,51 @@ struct ProbeNode {
 
 #[derive(Clone, Debug, Default)]
 struct CombatTurnPlanExploreOptions {
-    forbidden_card: Option<CardId>,
-    require_first_card: Option<CardId>,
+    forbidden_target: Option<CombatDrawMarginalTarget>,
+    require_first_target: Option<CombatDrawMarginalTarget>,
+}
+
+#[derive(Clone, Debug)]
+pub struct CombatDrawMarginalTarget {
+    pub card_id: CardId,
+    pub card_uuid: Option<u32>,
+    pub hand_index: Option<usize>,
+    pub root_action_key: Option<String>,
+}
+
+impl CombatDrawMarginalTarget {
+    pub fn card(card_id: CardId) -> Self {
+        Self {
+            card_id,
+            card_uuid: None,
+            hand_index: None,
+            root_action_key: None,
+        }
+    }
+
+    pub fn hand_instance(card_id: CardId, hand_index: usize, card_uuid: u32) -> Self {
+        Self {
+            card_id,
+            card_uuid: Some(card_uuid),
+            hand_index: Some(hand_index),
+            root_action_key: None,
+        }
+    }
+
+    pub fn with_root_action_key(mut self, action_key: String) -> Self {
+        self.root_action_key = Some(action_key);
+        self
+    }
+
+    fn granularity(&self) -> &'static str {
+        if self.root_action_key.is_some() {
+            "root_action_key"
+        } else if self.card_uuid.is_some() {
+            "hand_instance"
+        } else {
+            "card_id"
+        }
+    }
 }
 
 #[derive(Clone, Debug, Default)]
@@ -538,9 +585,25 @@ pub fn probe_draw_marginal_value(
     target_card: CardId,
     config: CombatTurnPlanProbeConfig,
 ) -> CombatDrawMarginalProbeReport {
-    let target_action_card = cards::java_id(target_card).to_string();
-    let target_card_id = format!("{target_card:?}");
-    let target_action_keys = matching_legal_root_action_keys(engine, combat, target_card);
+    probe_draw_marginal_value_for_target(
+        engine,
+        combat,
+        CombatDrawMarginalTarget::card(target_card),
+        config,
+    )
+}
+
+pub fn probe_draw_marginal_value_for_target(
+    engine: &EngineState,
+    combat: &CombatState,
+    target: CombatDrawMarginalTarget,
+    config: CombatTurnPlanProbeConfig,
+) -> CombatDrawMarginalProbeReport {
+    let target = normalize_draw_marginal_target(engine, combat, target);
+    let target_action_card = cards::java_id(target.card_id).to_string();
+    let target_card_id = format!("{:?}", target.card_id);
+    let target_granularity = target.granularity().to_string();
+    let target_action_keys = matching_legal_root_action_keys(engine, combat, &target);
 
     let free = probe_turn_plans_with_options(
         engine,
@@ -553,8 +616,8 @@ pub fn probe_draw_marginal_value(
         combat,
         config,
         &CombatTurnPlanExploreOptions {
-            forbidden_card: Some(target_card),
-            require_first_card: None,
+            forbidden_target: Some(target.clone()),
+            require_first_target: None,
         },
     );
     let forced = if target_action_keys.is_empty() {
@@ -565,8 +628,8 @@ pub fn probe_draw_marginal_value(
             combat,
             config,
             &CombatTurnPlanExploreOptions {
-                forbidden_card: None,
-                require_first_card: Some(target_card),
+                forbidden_target: None,
+                require_first_target: Some(target.clone()),
             },
         ))
     };
@@ -612,15 +675,21 @@ pub fn probe_draw_marginal_value(
         source_trace: serde_json::Value::Null,
         target_action_card,
         target_card_id,
+        target_granularity,
+        target_card_uuid: target.card_uuid,
+        target_hand_index: target.hand_index,
+        target_action_key: target.root_action_key,
         status,
         branches,
         marginal,
         truth_warnings: vec![
             "current_turn_only_horizon".to_string(),
-            "forced_draw_branch_forces_target_card_as_first_action".to_string(),
-            "no_draw_branch_excludes_target_card_from_current_turn_sequences".to_string(),
+            "forced_draw_branch_forces_target_as_first_action".to_string(),
+            "no_draw_branch_excludes_target_from_current_turn_sequences".to_string(),
             "marginal_delta_includes_target_card_body_not_only_draw_text".to_string(),
             "marginal_summary_is_plan_query_delta_not_card_choice_truth".to_string(),
+            "card_id_granularity_forbids_or_forces_all_same_card_copies".to_string(),
+            "hand_instance_granularity_tracks_card_uuid_across_hand_index_shifts".to_string(),
             "sample_distribution_must_be_built_by_batching_multiple_author_specs".to_string(),
         ],
     }
@@ -726,12 +795,12 @@ fn query_status_is(report: &CombatTurnPlanProbeReport, name: &str, status: &str)
 fn matching_legal_root_action_keys(
     engine: &EngineState,
     combat: &CombatState,
-    target_card: CardId,
+    target: &CombatDrawMarginalTarget,
 ) -> Vec<String> {
     get_legal_moves(engine, combat)
         .into_iter()
         .filter(|action| allowed_probe_action(engine, action))
-        .filter(|action| action_card_id(combat, action) == Some(target_card))
+        .filter(|action| draw_marginal_target_matches_action(combat, action, target, true))
         .map(|action| probe_action_key(combat, &action))
         .collect()
 }
@@ -742,20 +811,79 @@ fn allowed_by_draw_marginal_options(
     node: &ProbeNode,
     options: &CombatTurnPlanExploreOptions,
 ) -> bool {
-    let action_card = action_card_id(combat, action);
-    if options
-        .forbidden_card
-        .is_some_and(|forbidden| action_card == Some(forbidden))
-    {
+    if options.forbidden_target.as_ref().is_some_and(|forbidden| {
+        draw_marginal_target_matches_action(combat, action, forbidden, false)
+    }) {
         return false;
     }
     if node.depth == 0
         && node.actions.is_empty()
         && options
-            .require_first_card
-            .is_some_and(|required| action_card != Some(required))
+            .require_first_target
+            .as_ref()
+            .is_some_and(|required| {
+                !draw_marginal_target_matches_action(combat, action, required, true)
+            })
     {
         return false;
+    }
+    true
+}
+
+fn normalize_draw_marginal_target(
+    engine: &EngineState,
+    combat: &CombatState,
+    mut target: CombatDrawMarginalTarget,
+) -> CombatDrawMarginalTarget {
+    if let Some(hand_index) = target.hand_index {
+        if let Some(card) = combat.zones.hand.get(hand_index) {
+            if card.id == target.card_id {
+                target.card_uuid = Some(card.uuid);
+            }
+        }
+    }
+    if target.card_uuid.is_none() {
+        if let Some(root_action_key) = target.root_action_key.as_deref() {
+            for action in get_legal_moves(engine, combat)
+                .into_iter()
+                .filter(|action| allowed_probe_action(engine, action))
+            {
+                if probe_action_key(combat, &action) == root_action_key {
+                    if let ClientInput::PlayCard { card_index, .. } = action {
+                        if let Some(card) = combat.zones.hand.get(card_index) {
+                            if card.id == target.card_id {
+                                target.card_uuid = Some(card.uuid);
+                                target.hand_index = Some(card_index);
+                            }
+                        }
+                    }
+                    break;
+                }
+            }
+        }
+    }
+    target
+}
+
+fn draw_marginal_target_matches_action(
+    combat: &CombatState,
+    action: &ClientInput,
+    target: &CombatDrawMarginalTarget,
+    is_root_action: bool,
+) -> bool {
+    if is_root_action {
+        if let Some(root_action_key) = target.root_action_key.as_deref() {
+            return probe_action_key(combat, action) == root_action_key;
+        }
+    }
+    let Some(card_id) = action_card_id(combat, action) else {
+        return false;
+    };
+    if card_id != target.card_id {
+        return false;
+    }
+    if let Some(card_uuid) = target.card_uuid {
+        return action_card_uuid(combat, action) == Some(card_uuid);
     }
     true
 }
@@ -765,6 +893,13 @@ fn action_card_id(combat: &CombatState, action: &ClientInput) -> Option<CardId> 
         return None;
     };
     combat.zones.hand.get(*card_index).map(|card| card.id)
+}
+
+fn action_card_uuid(combat: &CombatState, action: &ClientInput) -> Option<u32> {
+    let ClientInput::PlayCard { card_index, .. } = action else {
+        return None;
+    };
+    combat.zones.hand.get(*card_index).map(|card| card.uuid)
 }
 
 fn empty_probe_limits(config: CombatTurnPlanProbeConfig) -> CombatPlanProbeLimits {
@@ -3811,8 +3946,8 @@ mod tests {
                 ..CombatTurnPlanProbeConfig::default()
             },
             &CombatTurnPlanExploreOptions {
-                forbidden_card: Some(CardId::BattleTrance),
-                require_first_card: None,
+                forbidden_target: Some(CombatDrawMarginalTarget::card(CardId::BattleTrance)),
+                require_first_target: None,
             },
         );
 
@@ -3858,6 +3993,48 @@ mod tests {
             marginal.damage_delta > 0 || marginal.setup_gain,
             "{marginal:?}"
         );
+    }
+
+    #[test]
+    fn draw_marginal_probe_hand_instance_does_not_exclude_same_card_copy() {
+        let mut combat = blank_test_combat();
+        let mut cultist = planned_monster(EnemyId::Cultist, 1);
+        cultist.current_hp = 60;
+        cultist.max_hp = 60;
+        combat.entities.monsters.push(cultist);
+        combat.zones.hand.push(card(CardId::PommelStrike, 10));
+        combat.zones.hand.push(card(CardId::PommelStrike, 11));
+        combat.zones.hand.push(card(CardId::Strike, 12));
+        combat.zones.draw_pile.push(card(CardId::Strike, 20));
+
+        let no_draw = probe_turn_plans_with_options(
+            &EngineState::CombatPlayerTurn,
+            &combat,
+            CombatTurnPlanProbeConfig {
+                max_depth: 1,
+                beam_width: 8,
+                ..CombatTurnPlanProbeConfig::default()
+            },
+            &CombatTurnPlanExploreOptions {
+                forbidden_target: Some(CombatDrawMarginalTarget::hand_instance(
+                    CardId::PommelStrike,
+                    0,
+                    10,
+                )),
+                require_first_target: None,
+            },
+        );
+
+        assert!(!no_draw
+            .sequence_classes
+            .iter()
+            .flat_map(|sequence| sequence.action_keys.iter())
+            .any(|key| key.contains("card:PommelStrike/hand:0")));
+        assert!(no_draw
+            .sequence_classes
+            .iter()
+            .flat_map(|sequence| sequence.action_keys.iter())
+            .any(|key| key.contains("card:PommelStrike/hand:1")));
     }
 
     #[test]

@@ -54,11 +54,18 @@ pub fn probe_combat_draw_marginal_from_trace(
             engine_state_label(&ctx.engine_state)
         ));
     };
-
-    let mut report = crate::bot::combat::probe_draw_marginal_value(
+    let target = draw_marginal_target_from_trace_config(
         &ctx.engine_state,
         combat,
         config.target_card,
+        config.target_hand_index,
+        config.target_action_key.clone(),
+    )?;
+
+    let mut report = crate::bot::combat::probe_draw_marginal_value_for_target(
+        &ctx.engine_state,
+        combat,
+        target,
         config.probe_config,
     );
     report.source_trace = trace_probe_source(
@@ -72,6 +79,51 @@ pub fn probe_combat_draw_marginal_from_trace(
         &target_trace_step,
     );
     Ok(report)
+}
+
+fn draw_marginal_target_from_trace_config(
+    engine: &EngineState,
+    combat: &CombatState,
+    target_card: CardId,
+    target_hand_index: Option<usize>,
+    target_action_key: Option<String>,
+) -> Result<crate::bot::combat::CombatDrawMarginalTarget, String> {
+    let mut target = if let Some(hand_index) = target_hand_index {
+        let card = combat.zones.hand.get(hand_index).ok_or_else(|| {
+            format!(
+                "target hand index {} out of range for hand size {}",
+                hand_index,
+                combat.zones.hand.len()
+            )
+        })?;
+        if card.id != target_card {
+            return Err(format!(
+                "target hand index {} has {:?}, expected {:?}",
+                hand_index, card.id, target_card
+            ));
+        }
+        crate::bot::combat::CombatDrawMarginalTarget::hand_instance(
+            target_card,
+            hand_index,
+            card.uuid,
+        )
+    } else {
+        crate::bot::combat::CombatDrawMarginalTarget::card(target_card)
+    };
+    if let Some(action_key) = target_action_key {
+        let legal_keys = crate::bot::combat::legal_moves::get_legal_moves(engine, combat)
+            .into_iter()
+            .map(|action| action_key_for_input(&action, Some(combat)))
+            .collect::<Vec<_>>();
+        if !legal_keys.iter().any(|key| key == &action_key) {
+            return Err(format!(
+                "target action key '{}' is not legal at replayed step; legal keys: {:?}",
+                action_key, legal_keys
+            ));
+        }
+        target = target.with_root_action_key(action_key);
+    }
+    Ok(target)
 }
 
 type ReplayedTraceFrontier = (

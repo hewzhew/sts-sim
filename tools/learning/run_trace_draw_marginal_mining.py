@@ -125,11 +125,13 @@ def hand_target_cards(step: dict[str, Any], target_cards: set[str]) -> list[dict
     return result
 
 
-def has_legal_play_for_card(step: dict[str, Any], target_card: str) -> bool:
+def has_legal_play_for_card(step: dict[str, Any], target_card: str, hand_index: int | None) -> bool:
     for action in step.get("action_mask") or []:
         if not isinstance(action, dict):
             continue
         if (action.get("action") or {}).get("type") != "play_card":
+            continue
+        if hand_index is not None and as_int((action.get("action") or {}).get("card_index"), -1) != hand_index:
             continue
         card = action.get("card") or {}
         if card_key(card.get("card_id")) == target_card:
@@ -156,7 +158,8 @@ def scan_candidates(trace_dir: Path, target_cards: set[str], *, max_cases_per_ca
                 continue
             for hand_card in hand_target_cards(step, target_cards):
                 target_card = str(hand_card["normalized_card_id"])
-                if not has_legal_play_for_card(step, target_card):
+                hand_index = as_int(hand_card.get("hand_index"), -1)
+                if not has_legal_play_for_card(step, target_card, hand_index):
                     continue
                 incoming = as_int(combat.get("visible_incoming_damage"))
                 hp = as_int(combat.get("player_hp"), as_int(step.get("hp")))
@@ -189,7 +192,8 @@ def scan_candidates(trace_dir: Path, target_cards: set[str], *, max_cases_per_ca
                         "alive_monster_count": as_int(combat.get("alive_monster_count")),
                         "total_monster_hp": as_int(combat.get("total_monster_hp")),
                         "target_action_card": target_card,
-                        "hand_index": hand_card.get("hand_index"),
+                        "hand_index": hand_index,
+                        "card_instance_id": hand_card.get("card_instance_id"),
                         "target_cost_for_turn": hand_card.get("cost_for_turn"),
                         "chosen_action_key": chosen_key,
                         "legal_action_count": legal_count,
@@ -256,6 +260,8 @@ def run_probe(
         str(case["step_index"]),
         "--action-card",
         str(case["target_action_card"]),
+        "--hand-index",
+        str(case["hand_index"]),
         "--out",
         str(report_path),
         "--max-depth",
@@ -298,6 +304,15 @@ def marginal_row(case: dict[str, Any], report: dict[str, Any]) -> dict[str, Any]
     return {
         **case,
         "report_status": report.get("status"),
+        "target_granularity": report.get("target_granularity"),
+        "target_card_uuid": report.get("target_card_uuid"),
+        "target_hand_index": report.get("target_hand_index"),
+        "target_action_keys": [
+            key
+            for branch in report.get("branches") or []
+            if branch.get("branch_name") == "forced_draw_best"
+            for key in (branch.get("target_action_keys") or [])
+        ],
         "damage_delta": as_int(marginal.get("damage_delta")),
         "block_delta": as_int(marginal.get("block_delta")),
         "unblocked_reduction": as_int(marginal.get("unblocked_reduction")),
@@ -466,7 +481,7 @@ def main() -> None:
         "limitations": [
             "current_turn_only_horizon",
             "trace_policy_occupancy_distribution_not_balanced",
-            "target_card_level_probe_forbids_or_forces_all_same-card copies in hand",
+            "target_hand_instance_probe_tracks_uuid_but_forced_branch_may_choose_any_legal_target_for_that_instance",
             "labels_are_plan_query_deltas_not_card_choice_truth",
         ],
     }
