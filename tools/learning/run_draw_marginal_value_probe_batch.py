@@ -26,6 +26,7 @@ REPORT_VERSION = "draw_marginal_value_probe_batch_v0"
 
 TEMPLATES: dict[str, dict[str, Any]] = {
     "BattleTrance": {
+        "action_card": "BattleTrance",
         "template": "battle_trance_setup_damage",
         "hand": ["Battle Trance", "Wild Strike", "Strike_R", "Defend_R"],
         "draw_pool": ["Inflame", "Strike_R", "Strike_R", "Defend_R", "Strike_R", "Defend_R"],
@@ -36,6 +37,7 @@ TEMPLATES: dict[str, dict[str, Any]] = {
         "tags": ["battle_trance", "setup_payoff", "damage_payoff"],
     },
     "PommelStrike": {
+        "action_card": "PommelStrike",
         "template": "pommel_strike_block",
         "hand": ["Pommel Strike", "Strike_R", "Defend_R"],
         "draw_pool": ["Defend_R", "Defend_R", "Strike_R", "Strike_R", "Strike_R"],
@@ -45,7 +47,19 @@ TEMPLATES: dict[str, dict[str, Any]] = {
         "energy": [2, 3],
         "tags": ["pommel_strike", "block_payoff", "pressure"],
     },
+    "PommelStrikeNoPayoff": {
+        "action_card": "PommelStrike",
+        "template": "pommel_strike_spends_block_energy",
+        "hand": ["Pommel Strike", "Defend_R", "Defend_R"],
+        "draw_pool": ["Strike_R", "Strike_R", "Strike_R", "Strike_R", "Defend_R"],
+        "monster_hp": 64,
+        "hp": 45,
+        "incoming": [18, 24, 30],
+        "energy": [2],
+        "tags": ["pommel_strike", "negative_payoff", "energy_spent_blocks_full_block"],
+    },
     "Offering": {
+        "action_card": "Offering",
         "template": "offering_resource_window",
         "hand": ["Offering", "Strike_R", "Defend_R"],
         "draw_pool": ["Inflame", "Strike_R", "Defend_R", "Strike_R", "Defend_R", "Strike_R"],
@@ -55,7 +69,19 @@ TEMPLATES: dict[str, dict[str, Any]] = {
         "energy": [2, 3],
         "tags": ["offering", "resource_window", "damage_payoff", "block_payoff"],
     },
+    "OfferingNoPayoff": {
+        "action_card": "Offering",
+        "template": "offering_hp_cost_no_payoff",
+        "hand": ["Offering", "Strike_R", "Defend_R"],
+        "draw_pool": ["Strike_R", "Defend_R", "Strike_R", "Defend_R", "Strike_R", "Defend_R"],
+        "monster_hp": 90,
+        "hp": 18,
+        "incoming": [0, 6],
+        "energy": [3],
+        "tags": ["offering", "negative_payoff", "hp_cost_without_query_gain"],
+    },
     "SecretTechnique": {
+        "action_card": "SecretTechnique",
         "template": "secret_technique_search_block",
         "hand": ["Secret Technique", "Strike_R", "Defend_R"],
         "draw_pool": ["Shrug It Off", "Inflame", "Strike_R", "Strike_R", "Strike_R", "Defend_R"],
@@ -75,7 +101,10 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         default=REPO_ROOT / "tools" / "artifacts" / "draw_marginal_value" / "v0",
     )
-    parser.add_argument("--cards", default="BattleTrance,PommelStrike,Offering,SecretTechnique")
+    parser.add_argument(
+        "--cards",
+        default="BattleTrance,PommelStrike,PommelStrikeNoPayoff,Offering,OfferingNoPayoff,SecretTechnique",
+    )
     parser.add_argument("--samples-per-template", type=int, default=32)
     parser.add_argument("--seed", type=int, default=91000)
     parser.add_argument("--tool-path", type=Path, default=REPO_ROOT / "target" / "debug" / "sts_dev_tool.exe")
@@ -90,7 +119,8 @@ def resolve(path: Path) -> Path:
     return path if path.is_absolute() else REPO_ROOT / path
 
 
-def build_sample(card: str, template: dict[str, Any], sample_index: int, rng: random.Random) -> dict[str, Any]:
+def build_sample(template_key: str, template: dict[str, Any], sample_index: int, rng: random.Random) -> dict[str, Any]:
+    action_card = str(template.get("action_card") or template_key)
     incoming = rng.choice(template["incoming"])
     energy = rng.choice(template["energy"])
     draw_pile = list(template["draw_pool"])
@@ -99,7 +129,7 @@ def build_sample(card: str, template: dict[str, Any], sample_index: int, rng: ra
     payload = spec(
         name=case_id,
         description=(
-            f"Draw marginal value sample for {card}; compare no-target-action vs forced-target-action. "
+            f"Draw marginal value sample for {action_card}; compare no-target-action vs forced-target-action. "
             f"incoming={incoming}, energy={energy}, draw_pile_sample={draw_pile}."
         ),
         hand=list(template["hand"]),
@@ -111,7 +141,8 @@ def build_sample(card: str, template: dict[str, Any], sample_index: int, rng: ra
     )
     payload["provenance"]["draw_marginal"] = {
         "template": template["template"],
-        "target_action_card": card,
+        "template_key": template_key,
+        "target_action_card": action_card,
         "sample_index": sample_index,
         "incoming": incoming,
         "energy": energy,
@@ -310,10 +341,11 @@ def main() -> None:
     marginal_rows: list[dict[str, Any]] = []
     manifest_rows: list[dict[str, Any]] = []
     rng = random.Random(args.seed)
-    for card in cards:
-        template = TEMPLATES[card]
+    for template_key in cards:
+        template = TEMPLATES[template_key]
+        action_card = str(template.get("action_card") or template_key)
         for sample_index in range(args.samples_per_template):
-            payload = build_sample(card, template, sample_index, rng)
+            payload = build_sample(template_key, template, sample_index, rng)
             case_id = str(payload["name"])
             spec_path = spec_dir / f"{case_id}.json"
             report_path = report_dir / f"{case_id}.report.json"
@@ -321,7 +353,8 @@ def main() -> None:
             case_meta = {
                 "case_id": case_id,
                 "template": template["template"],
-                "target_action_card": card,
+                "template_key": template_key,
+                "target_action_card": action_card,
                 "sample_index": sample_index,
                 "incoming": payload["monsters"][0]["move_adjusted_damage"],
                 "energy": payload["player"]["energy"],
@@ -335,7 +368,7 @@ def main() -> None:
                 tool_path,
                 spec_path,
                 report_path,
-                card,
+                action_card,
                 max_depth=args.max_depth,
                 max_nodes=args.max_nodes,
                 beam_width=args.beam_width,

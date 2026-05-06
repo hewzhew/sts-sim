@@ -340,6 +340,8 @@ def compare_query_preference(
             preferred_branch, reason = "forced_draw_best", "higher_damage_under_lethal_query"
         elif damage_delta <= -6:
             preferred_branch, reason = "no_draw_best", "lower_damage_under_lethal_query"
+        elif hp_loss_reduction <= -6:
+            preferred_branch, reason = "no_draw_best", "hp_cost_without_lethal_or_damage_gain"
     elif query_name == "CanFullBlock":
         if status_delta > 0:
             preferred_branch, reason = "forced_draw_best", "better_block_status"
@@ -349,6 +351,8 @@ def compare_query_preference(
             preferred_branch, reason = "forced_draw_best", "less_unblocked_damage"
         elif unblocked_reduction <= -1:
             preferred_branch, reason = "no_draw_best", "more_unblocked_damage"
+        elif hp_loss_reduction <= -6:
+            preferred_branch, reason = "no_draw_best", "hp_cost_without_block_gain"
     elif query_name == "CanFullBlockThenMaxDamage":
         if status_delta > 0:
             preferred_branch, reason = "forced_draw_best", "better_block_then_damage_status"
@@ -362,6 +366,8 @@ def compare_query_preference(
             preferred_branch, reason = "forced_draw_best", "higher_damage_after_block"
         elif damage_delta <= -6:
             preferred_branch, reason = "no_draw_best", "lower_damage_after_block"
+        elif hp_loss_reduction <= -6:
+            preferred_branch, reason = "no_draw_best", "hp_cost_without_block_or_damage_gain"
     elif query_name == "CanPlaySetupAndStillBlock":
         if setup_gain and unblocked_reduction >= 0:
             preferred_branch, reason = "forced_draw_best", "setup_enabled_without_more_leak"
@@ -371,6 +377,8 @@ def compare_query_preference(
             preferred_branch, reason = "forced_draw_best", "better_setup_block_status"
         elif status_delta < 0:
             preferred_branch, reason = "no_draw_best", "worse_setup_block_status"
+        elif hp_loss_reduction <= -6:
+            preferred_branch, reason = "no_draw_best", "hp_cost_without_setup_block_gain"
 
     target = str(case.get("target_action_card") or "")
     forced_cards = action_cards(forced)
@@ -378,15 +386,17 @@ def compare_query_preference(
     notes = []
     if target and target not in forced_cards:
         notes.append("forced_query_line_did_not_include_target_action")
-    if damage_delta < 0 and preferred_branch == "forced_draw_best":
+    damage_sensitive_query = query_name in {"CanLethal", "CanFullBlockThenMaxDamage"}
+    defense_sensitive_query = query_name in {"CanFullBlock", "CanFullBlockThenMaxDamage", "CanPlaySetupAndStillBlock"}
+    if damage_sensitive_query and damage_delta < 0 and preferred_branch == "forced_draw_best":
         notes.append("forced_preference_has_damage_tradeoff")
-    if unblocked_reduction < 0 and preferred_branch == "forced_draw_best":
+    if defense_sensitive_query and unblocked_reduction < 0 and preferred_branch == "forced_draw_best":
         notes.append("forced_preference_has_defense_tradeoff")
     if hp_loss_reduction < 0 and preferred_branch == "forced_draw_best":
         notes.append("forced_preference_has_hp_cost")
-    if damage_delta > 0 and preferred_branch == "no_draw_best":
+    if damage_sensitive_query and damage_delta > 0 and preferred_branch == "no_draw_best":
         notes.append("no_draw_preference_gives_up_damage")
-    if unblocked_reduction > 0 and preferred_branch == "no_draw_best":
+    if defense_sensitive_query and unblocked_reduction > 0 and preferred_branch == "no_draw_best":
         notes.append("no_draw_preference_gives_up_defense")
 
     hard_preference_allowed = preferred_branch != "equivalent" and target in forced_cards

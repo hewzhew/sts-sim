@@ -115,12 +115,17 @@ def partition(rows: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
 def binary_examples(buckets: dict[str, list[dict[str, Any]]]) -> list[dict[str, Any]]:
     rows = []
     for row in buckets["clean_hard_preferences"]:
+        target_improves = row.get("normalized_label") == "target_better"
         rows.append(
             {
                 **row,
                 "binary_label_mode": "query_axis_improvement_v0",
-                "target_improves_query": True,
-                "binary_training_use": "positive_clean_query_improvement",
+                "target_improves_query": target_improves,
+                "binary_training_use": (
+                    "positive_clean_query_improvement"
+                    if target_improves
+                    else "negative_clean_query_degradation"
+                ),
             }
         )
     for row in buckets["equivalent_or_calibration"]:
