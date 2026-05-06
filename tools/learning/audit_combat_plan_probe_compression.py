@@ -22,6 +22,41 @@ from combat_reranker_common import write_json, write_jsonl
 REPO_ROOT = Path(__file__).resolve().parents[2]
 REPORT_VERSION = "combat_plan_probe_compression_audit_v0"
 
+ACTION_SPACE_CARD_IDS = {
+    "Acrobatics",
+    "Adrenaline",
+    "Backflip",
+    "BattleTrance",
+    "BurningPact",
+    "DeepBreath",
+    "Discovery",
+    "DaggerThrow",
+    "Dropkick",
+    "Finesse",
+    "FlashOfSteel",
+    "Forethought",
+    "Impatience",
+    "InfernalBlade",
+    "JackOfAllTrades",
+    "MasterOfStrategy",
+    "Offering",
+    "PommelStrike",
+    "Prepared",
+    "SecretTechnique",
+    "SecretWeapon",
+    "ShrugItOff",
+    "ThinkingAhead",
+    "Violence",
+    "Warcry",
+}
+
+ZONE_MUTATION_SEMANTICS = {
+    "creates_cards",
+    "produces_status",
+    "self_replicating",
+    "draw",
+}
+
 PRESSURE_ORDER = [
     "medium_pressure",
     "chip_pressure",
@@ -66,6 +101,15 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-steps", type=int, default=5000)
     parser.add_argument("--max-depth", type=int, default=4)
     parser.add_argument("--max-nodes", type=int, default=500)
+    parser.add_argument(
+        "--expansion-rerun-nodes",
+        type=int,
+        default=1000,
+        help=(
+            "If a budget-pruned case has action-space/zone-mutation cards, rerun that case "
+            "with this max-node budget and report plan-query deltas. Set to 0 to disable."
+        ),
+    )
     parser.add_argument("--beam-width", type=int, default=16)
     parser.add_argument("--max-engine-steps-per-action", type=int, default=200)
     parser.add_argument("--sts-dev-tool", type=Path)
@@ -262,8 +306,12 @@ def select_cases(args: argparse.Namespace, files: list[Path]) -> list[dict[str, 
     return cases
 
 
-def run_case(args: argparse.Namespace, case: dict[str, Any], reports_dir: Path) -> dict[str, Any]:
-    report_path = reports_dir / f"{case['case_id']}.json"
+def run_plan_probe(
+    args: argparse.Namespace,
+    case: dict[str, Any],
+    report_path: Path,
+    max_nodes: int,
+) -> dict[str, Any]:
     cmd = [
         *sts_dev_tool_cmd(args),
         "combat",
@@ -283,7 +331,7 @@ def run_case(args: argparse.Namespace, case: dict[str, Any], reports_dir: Path) 
         "--max-depth",
         str(args.max_depth),
         "--max-nodes",
-        str(args.max_nodes),
+        str(max_nodes),
         "--beam-width",
         str(args.beam_width),
         "--max-engine-steps-per-action",
@@ -305,13 +353,112 @@ def run_case(args: argparse.Namespace, case: dict[str, Any], reports_dir: Path) 
             "status": "failed",
             "error": proc.stderr.strip() or proc.stdout.strip(),
             "report_path": str(report_path),
+            "max_nodes": max_nodes,
         }
     return {
         "case": case,
         "status": "ok",
         "report_path": str(report_path),
         "report": read_json(report_path),
+        "max_nodes": max_nodes,
     }
+
+
+def report_action_space_cards(report: dict[str, Any]) -> list[str]:
+    cards = []
+    for card in report.get("hand_cards") or []:
+        card_id = str(card.get("card_id") or "")
+        semantics = {str(item) for item in card.get("base_semantics") or []}
+        transient = {str(item) for item in card.get("transient_tags") or []}
+        if card_id in ACTION_SPACE_CARD_IDS or semantics & ZONE_MUTATION_SEMANTICS or transient & ZONE_MUTATION_SEMANTICS:
+            cards.append(card_id)
+    return sorted(set(cards))
+
+
+def should_expansion_rerun(args: argparse.Namespace, report: dict[str, Any]) -> tuple[bool, list[str]]:
+    if args.expansion_rerun_nodes <= 0 or args.expansion_rerun_nodes <= args.max_nodes:
+        return (False, [])
+    limits = report.get("probe_limits") or {}
+    if int(limits.get("pruned_by_budget") or 0) <= 0:
+        return (False, [])
+    cards = report_action_space_cards(report)
+    return (bool(cards), cards)
+
+
+def query_summary(query: dict[str, Any]) -> dict[str, Any]:
+    outcome = query.get("outcome") or {}
+    return {
+        "status": query.get("status"),
+        "best_action_keys": list(query.get("best_action_keys") or []),
+        "needs_deeper_search": bool(query.get("needs_deeper_search")),
+        "failed_constraints": list(query.get("failed_constraints") or []),
+        "notes": list(query.get("notes") or []),
+        "outcome": {
+            key: outcome.get(key)
+            for key in [
+                "damage_done",
+                "projected_unblocked_damage",
+                "remaining_energy",
+                "enemy_deaths",
+                "living_monster_count",
+                "total_monster_hp",
+                "played_setup_or_scaling",
+            ]
+            if key in outcome
+        },
+    }
+
+
+def plan_query_deltas(base_report: dict[str, Any], rerun_report: dict[str, Any]) -> list[dict[str, Any]]:
+    base = {str(query.get("query_name")): query_summary(query) for query in base_report.get("plan_queries") or []}
+    rerun = {str(query.get("query_name")): query_summary(query) for query in rerun_report.get("plan_queries") or []}
+    out = []
+    for name in sorted(set(base) | set(rerun)):
+        before = base.get(name)
+        after = rerun.get(name)
+        changed_fields = []
+        if before != after:
+            keys = sorted(set((before or {}).keys()) | set((after or {}).keys()))
+            changed_fields = [key for key in keys if (before or {}).get(key) != (after or {}).get(key)]
+        if changed_fields:
+            out.append(
+                {
+                    "query_name": name,
+                    "changed_fields": changed_fields,
+                    "before": before,
+                    "after": after,
+                }
+            )
+    return out
+
+
+def run_case(args: argparse.Namespace, case: dict[str, Any], reports_dir: Path) -> dict[str, Any]:
+    report_path = reports_dir / f"{case['case_id']}.json"
+    result = run_plan_probe(args, case, report_path, args.max_nodes)
+    if result["status"] != "ok":
+        return result
+    should_rerun, cards = should_expansion_rerun(args, result["report"])
+    if not should_rerun:
+        return result
+
+    rerun_path = reports_dir / f"{case['case_id']}.expansion_nodes_{args.expansion_rerun_nodes}.json"
+    rerun = run_plan_probe(args, case, rerun_path, args.expansion_rerun_nodes)
+    expansion: dict[str, Any] = {
+        "triggered": True,
+        "reason": "budget_prune_with_action_space_cards",
+        "action_space_cards": cards,
+        "base_max_nodes": args.max_nodes,
+        "rerun_max_nodes": args.expansion_rerun_nodes,
+        "rerun_status": rerun["status"],
+        "rerun_report_path": rerun.get("report_path"),
+    }
+    if rerun["status"] == "ok":
+        expansion["query_deltas"] = plan_query_deltas(result["report"], rerun["report"])
+        expansion["rerun_probe_limits"] = rerun["report"].get("probe_limits") or {}
+    else:
+        expansion["error"] = rerun.get("error")
+    result["expansion_rerun"] = expansion
+    return result
 
 
 def card_semantic_blockers(report: dict[str, Any]) -> list[str]:
@@ -395,6 +542,10 @@ def flatten_result(result: dict[str, Any]) -> dict[str, Any]:
     pruned_plan_gate = int(limits.get("pruned_by_plan_expansion_gate") or 0)
     plan_gate_reasons = limits.get("plan_expansion_gate_reasons") or {}
     plan_gate_examples = limits.get("plan_expansion_gate_examples") or []
+    expansion_rerun = result.get("expansion_rerun") or {}
+    expansion_query_deltas = expansion_rerun.get("query_deltas") or []
+    expansion_changed_queries = [str(delta.get("query_name") or "") for delta in expansion_query_deltas]
+    expansion_rerun_limits = expansion_rerun.get("rerun_probe_limits") or {}
     pruned_bound = int(limits.get("pruned_by_optimistic_bound") or 0)
     pruned_budget = int(limits.get("pruned_by_budget") or 0)
     nodes = int(limits.get("nodes_expanded") or 0)
@@ -486,6 +637,16 @@ def flatten_result(result: dict[str, Any]) -> dict[str, Any]:
             "projection_totals": dict(projection_total),
             "truth_warnings": list(report.get("truth_warnings") or []),
             "no_compression_reasons": sorted(set(no_compression_reasons)),
+            "expansion_rerun_triggered": bool(expansion_rerun.get("triggered")),
+            "expansion_rerun_status": expansion_rerun.get("rerun_status"),
+            "expansion_rerun_reason": expansion_rerun.get("reason"),
+            "expansion_rerun_report_path": expansion_rerun.get("rerun_report_path"),
+            "expansion_rerun_cards": list(expansion_rerun.get("action_space_cards") or []),
+            "expansion_rerun_query_delta_count": len(expansion_query_deltas),
+            "expansion_rerun_changed_queries": expansion_changed_queries,
+            "expansion_rerun_query_deltas": expansion_query_deltas,
+            "expansion_rerun_pruned_by_budget": int(expansion_rerun_limits.get("pruned_by_budget") or 0),
+            "expansion_rerun_nodes_expanded": int(expansion_rerun_limits.get("nodes_expanded") or 0),
         }
     )
     return row
@@ -583,6 +744,20 @@ def summarize(rows: list[dict[str, Any]], top: int = 15) -> dict[str, Any]:
         ),
         "cases_with_bound_prune": sum(1 for row in ok_rows if int(row.get("pruned_by_optimistic_bound") or 0) > 0),
         "cases_with_budget_prune": sum(1 for row in ok_rows if int(row.get("pruned_by_budget") or 0) > 0),
+        "expansion_reruns": sum(1 for row in ok_rows if row.get("expansion_rerun_triggered")),
+        "expansion_rerun_success": sum(
+            1
+            for row in ok_rows
+            if row.get("expansion_rerun_triggered") and row.get("expansion_rerun_status") == "ok"
+        ),
+        "expansion_rerun_query_delta_cases": sum(
+            1 for row in ok_rows if int(row.get("expansion_rerun_query_delta_count") or 0) > 0
+        ),
+        "expansion_rerun_residual_budget_cases": sum(
+            1
+            for row in ok_rows
+            if row.get("expansion_rerun_triggered") and int(row.get("expansion_rerun_pruned_by_budget") or 0) > 0
+        ),
     }
     pressure_counts = Counter(str(row.get("pressure_class") or "unknown") for row in ok_rows)
     schema_counts = Counter(str(row.get("schema_version") or "unknown") for row in ok_rows)
@@ -601,6 +776,8 @@ def summarize(rows: list[dict[str, Any]], top: int = 15) -> dict[str, Any]:
         ).most_common(top),
         "plan_expansion_gate_reasons": aggregate_counter(ok_rows, "plan_expansion_gate_reasons").most_common(top),
         "plan_expansion_gate_example_actions": aggregate_plan_gate_examples(ok_rows, top),
+        "expansion_rerun_changed_queries": aggregate_counter(ok_rows, "expansion_rerun_changed_queries").most_common(top),
+        "top_expansion_rerun_cases": top_expansion_rerun_cases(ok_rows, top),
         "top_exact_prune_cases": top_cases(ok_rows, "pruned_as_equivalent", top),
         "top_generation_prune_cases": top_cases(ok_rows, "pruned_by_generation_canonical_order", top),
         "top_generation_duplicate_cases": top_cases(ok_rows, "pruned_by_generation_duplicate_card", top),
@@ -619,6 +796,37 @@ def summarize(rows: list[dict[str, Any]], top: int = 15) -> dict[str, Any]:
         "top_bound_prune_cases": top_cases(ok_rows, "pruned_by_optimistic_bound", top),
         "top_budget_prune_cases": top_cases(ok_rows, "pruned_by_budget", top),
     }
+
+
+def top_expansion_rerun_cases(rows: list[dict[str, Any]], top: int) -> list[dict[str, Any]]:
+    out = []
+    candidates = [
+        row
+        for row in rows
+        if row.get("expansion_rerun_triggered")
+    ]
+    candidates.sort(
+        key=lambda row: (
+            int(row.get("expansion_rerun_query_delta_count") or 0),
+            int(row.get("pruned_by_budget") or 0),
+        ),
+        reverse=True,
+    )
+    for row in candidates[:top]:
+        out.append(
+            {
+                "case_id": row.get("case_id"),
+                "pressure_class": row.get("pressure_class"),
+                "pruned_by_budget": row.get("pruned_by_budget"),
+                "rerun_pruned_by_budget": row.get("expansion_rerun_pruned_by_budget"),
+                "query_delta_count": row.get("expansion_rerun_query_delta_count"),
+                "changed_queries": row.get("expansion_rerun_changed_queries") or [],
+                "cards": row.get("expansion_rerun_cards") or [],
+                "report_path": row.get("report_path"),
+                "rerun_report_path": row.get("expansion_rerun_report_path"),
+            }
+        )
+    return out
 
 
 def top_cases(rows: list[dict[str, Any]], key: str, top: int) -> list[dict[str, Any]]:
@@ -690,6 +898,10 @@ def markdown_report(report: dict[str, Any]) -> str:
         "cases_with_plan_expansion_gate",
         "cases_with_bound_prune",
         "cases_with_budget_prune",
+        "expansion_reruns",
+        "expansion_rerun_success",
+        "expansion_rerun_query_delta_cases",
+        "expansion_rerun_residual_budget_cases",
     ]:
         value = totals.get(key)
         if isinstance(value, float):
@@ -727,6 +939,28 @@ def markdown_report(report: dict[str, Any]) -> str:
         report["summary"]["plan_expansion_gate_example_actions"],
         ("example", "n"),
     )
+    table(
+        "Expansion Rerun Changed Queries",
+        report["summary"]["expansion_rerun_changed_queries"],
+        ("query", "n"),
+    )
+
+    lines.extend(["", "## Top Expansion Rerun Cases", ""])
+    rerun_rows = report["summary"]["top_expansion_rerun_cases"]
+    if not rerun_rows:
+        lines.append("_none_")
+    else:
+        lines.append("| case | pressure | budget 500→rerun | query deltas | changed queries | cards | reports |")
+        lines.append("| --- | --- | ---: | ---: | --- | --- | --- |")
+        for row in rerun_rows:
+            changed = ", ".join(f"`{item}`" for item in row.get("changed_queries") or []) or "_none_"
+            cards = ", ".join(f"`{item}`" for item in row.get("cards") or []) or "_none_"
+            lines.append(
+                f"| `{row['case_id']}` | `{row['pressure_class']}` | "
+                f"{row.get('pruned_by_budget')}→{row.get('rerun_pruned_by_budget')} | "
+                f"{row.get('query_delta_count')} | {changed} | {cards} | "
+                f"`{row.get('report_path')}` / `{row.get('rerun_report_path')}` |"
+            )
 
     for title, key in [
         ("Top Exact-Prune Cases", "top_exact_prune_cases"),
@@ -826,6 +1060,7 @@ def main() -> None:
             "case_strategy": args.case_strategy,
             "max_depth": args.max_depth,
             "max_nodes": args.max_nodes,
+            "expansion_rerun_nodes": args.expansion_rerun_nodes,
             "beam_width": args.beam_width,
             "trace_files": [str(path) for path in files],
         },
