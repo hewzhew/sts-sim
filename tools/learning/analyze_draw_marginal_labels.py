@@ -18,7 +18,13 @@ from typing import Any
 from combat_reranker_common import iter_jsonl, write_json, write_jsonl
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-REPORT_VERSION = "draw_marginal_label_drilldown_v0"
+REPORT_VERSION = "draw_marginal_label_drilldown_v1"
+QUERY_NAMES = [
+    "CanLethal",
+    "CanFullBlock",
+    "CanFullBlockThenMaxDamage",
+    "CanPlaySetupAndStillBlock",
+]
 
 
 def parse_args() -> argparse.Namespace:
@@ -51,6 +57,10 @@ def as_bool(value: Any) -> bool:
     return bool(value)
 
 
+def maybe_int(value: Any, default: int = 0) -> int:
+    return default if value is None else as_int(value, default)
+
+
 def load_rows(path: Path) -> list[dict[str, Any]]:
     return [row for _, row in iter_jsonl(path)]
 
@@ -77,6 +87,25 @@ def action_cards(row: dict[str, Any]) -> list[str]:
         elif "grid_select" in text:
             cards.append("GridSelect")
     return cards
+
+
+def status_rank(status: str) -> int | None:
+    if status == "feasible":
+        return 2
+    if status == "partial":
+        return 1
+    if status == "not_feasible":
+        return 0
+    return None
+
+
+def query_axis(query_name: str) -> str:
+    return {
+        "CanLethal": "lethal_or_damage",
+        "CanFullBlock": "full_block_or_leak",
+        "CanFullBlockThenMaxDamage": "block_then_damage",
+        "CanPlaySetupAndStillBlock": "setup_and_block",
+    }.get(query_name, query_name)
 
 
 def classify_case(row: dict[str, Any], index: dict[tuple[str, str, str], dict[str, Any]]) -> dict[str, Any]:
@@ -264,6 +293,182 @@ def axis_examples(cases: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return examples
 
 
+def compare_query_preference(
+    case: dict[str, Any],
+    index: dict[tuple[str, str, str], dict[str, Any]],
+    query_name: str,
+) -> dict[str, Any] | None:
+    case_id = str(case["case_id"])
+    forced = query_row(index, case_id, "forced_draw_best", query_name)
+    no_draw = query_row(index, case_id, "no_draw_best", query_name)
+    if not forced or not no_draw:
+        return None
+    forced_status = str(forced.get("query_status") or "")
+    no_status = str(no_draw.get("query_status") or "")
+    forced_rank = status_rank(forced_status)
+    no_rank = status_rank(no_status)
+    if forced_rank is None or no_rank is None:
+        return None
+
+    forced_damage = maybe_int(forced.get("damage_done"))
+    no_damage = maybe_int(no_draw.get("damage_done"))
+    forced_unblocked = maybe_int(forced.get("projected_unblocked_damage"))
+    no_unblocked = maybe_int(no_draw.get("projected_unblocked_damage"))
+    forced_block = maybe_int(forced.get("block_after"))
+    no_block = maybe_int(no_draw.get("block_after"))
+    forced_hp_loss = maybe_int(forced.get("hp_loss_actual"))
+    no_hp_loss = maybe_int(no_draw.get("hp_loss_actual"))
+    forced_setup = as_bool(forced.get("played_setup_or_scaling"))
+    no_setup = as_bool(no_draw.get("played_setup_or_scaling"))
+
+    damage_delta = forced_damage - no_damage
+    unblocked_reduction = no_unblocked - forced_unblocked
+    block_delta = forced_block - no_block
+    hp_loss_reduction = no_hp_loss - forced_hp_loss
+    status_delta = forced_rank - no_rank
+    setup_gain = forced_setup and not no_setup
+    setup_loss = no_setup and not forced_setup
+
+    preferred_branch = "equivalent"
+    reason = "within_margin"
+    if query_name == "CanLethal":
+        if status_delta > 0:
+            preferred_branch, reason = "forced_draw_best", "better_lethal_status"
+        elif status_delta < 0:
+            preferred_branch, reason = "no_draw_best", "worse_lethal_status"
+        elif damage_delta >= 6:
+            preferred_branch, reason = "forced_draw_best", "higher_damage_under_lethal_query"
+        elif damage_delta <= -6:
+            preferred_branch, reason = "no_draw_best", "lower_damage_under_lethal_query"
+    elif query_name == "CanFullBlock":
+        if status_delta > 0:
+            preferred_branch, reason = "forced_draw_best", "better_block_status"
+        elif status_delta < 0:
+            preferred_branch, reason = "no_draw_best", "worse_block_status"
+        elif unblocked_reduction >= 1:
+            preferred_branch, reason = "forced_draw_best", "less_unblocked_damage"
+        elif unblocked_reduction <= -1:
+            preferred_branch, reason = "no_draw_best", "more_unblocked_damage"
+    elif query_name == "CanFullBlockThenMaxDamage":
+        if status_delta > 0:
+            preferred_branch, reason = "forced_draw_best", "better_block_then_damage_status"
+        elif status_delta < 0:
+            preferred_branch, reason = "no_draw_best", "worse_block_then_damage_status"
+        elif unblocked_reduction >= 1:
+            preferred_branch, reason = "forced_draw_best", "less_unblocked_damage_under_damage_plan"
+        elif unblocked_reduction <= -1:
+            preferred_branch, reason = "no_draw_best", "more_unblocked_damage_under_damage_plan"
+        elif damage_delta >= 6:
+            preferred_branch, reason = "forced_draw_best", "higher_damage_after_block"
+        elif damage_delta <= -6:
+            preferred_branch, reason = "no_draw_best", "lower_damage_after_block"
+    elif query_name == "CanPlaySetupAndStillBlock":
+        if setup_gain and unblocked_reduction >= 0:
+            preferred_branch, reason = "forced_draw_best", "setup_enabled_without_more_leak"
+        elif setup_loss and unblocked_reduction <= 0:
+            preferred_branch, reason = "no_draw_best", "setup_lost_or_more_leak"
+        elif status_delta > 0:
+            preferred_branch, reason = "forced_draw_best", "better_setup_block_status"
+        elif status_delta < 0:
+            preferred_branch, reason = "no_draw_best", "worse_setup_block_status"
+
+    target = str(case.get("target_action_card") or "")
+    forced_cards = action_cards(forced)
+    no_draw_cards = action_cards(no_draw)
+    notes = []
+    if target and target not in forced_cards:
+        notes.append("forced_query_line_did_not_include_target_action")
+    if damage_delta < 0 and preferred_branch == "forced_draw_best":
+        notes.append("forced_preference_has_damage_tradeoff")
+    if unblocked_reduction < 0 and preferred_branch == "forced_draw_best":
+        notes.append("forced_preference_has_defense_tradeoff")
+    if hp_loss_reduction < 0 and preferred_branch == "forced_draw_best":
+        notes.append("forced_preference_has_hp_cost")
+    if damage_delta > 0 and preferred_branch == "no_draw_best":
+        notes.append("no_draw_preference_gives_up_damage")
+    if unblocked_reduction > 0 and preferred_branch == "no_draw_best":
+        notes.append("no_draw_preference_gives_up_defense")
+
+    hard_preference_allowed = preferred_branch != "equivalent" and target in forced_cards
+    label = "equivalent"
+    if preferred_branch == "forced_draw_best":
+        label = f"target_action_better_for_{query_axis(query_name)}"
+    elif preferred_branch == "no_draw_best":
+        label = f"target_action_worse_for_{query_axis(query_name)}"
+
+    return {
+        "label_id": f"{case_id}::{target}::{query_name}",
+        "source_case_id": case_id,
+        "target_action_card": target,
+        "query_name": query_name,
+        "query_axis": query_axis(query_name),
+        "label_mode": "current_turn_query_specific_preference_v0",
+        "label": label,
+        "preferred_branch": preferred_branch,
+        "reason": reason,
+        "hard_preference_allowed": hard_preference_allowed,
+        "global_preference_allowed": False,
+        "forced_status": forced_status,
+        "no_draw_status": no_status,
+        "status_delta": status_delta,
+        "damage_delta": damage_delta,
+        "block_delta": block_delta,
+        "unblocked_reduction": unblocked_reduction,
+        "hp_loss_reduction": hp_loss_reduction,
+        "setup_gain": setup_gain,
+        "setup_loss": setup_loss,
+        "forced_cards": forced_cards,
+        "no_draw_cards": no_draw_cards,
+        "notes": notes,
+        "limitations": [
+            "current_turn_only",
+            "query_specific_not_global_preference",
+            "forced_draw_vs_no_draw_counterfactual_only",
+        ],
+    }
+
+
+def query_specific_labels(
+    cases: list[dict[str, Any]],
+    index: dict[tuple[str, str, str], dict[str, Any]],
+) -> list[dict[str, Any]]:
+    labels = []
+    for case in cases:
+        for query_name in QUERY_NAMES:
+            label = compare_query_preference(case, index, query_name)
+            if label is not None:
+                labels.append(label)
+    return labels
+
+
+def query_label_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    by_card: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for row in rows:
+        by_card[str(row.get("target_action_card") or "")].append(row)
+    hard_rows = [row for row in rows if row.get("hard_preference_allowed")]
+    return {
+        "count": len(rows),
+        "label_counts": dict(sorted(Counter(str(row.get("label")) for row in rows).items())),
+        "query_counts": dict(sorted(Counter(str(row.get("query_name")) for row in rows).items())),
+        "hard_preference_count": len(hard_rows),
+        "clean_hard_preference_count": sum(1 for row in hard_rows if not row.get("notes")),
+        "hard_preference_with_tradeoff_count": sum(1 for row in hard_rows if row.get("notes")),
+        "global_preference_count": sum(1 for row in rows if row.get("global_preference_allowed")),
+        "by_card": [
+            {
+                "target_action_card": card,
+                "count": len(items),
+                "hard_preference_count": sum(1 for row in items if row.get("hard_preference_allowed")),
+                "clean_hard_preference_count": sum(
+                    1 for row in items if row.get("hard_preference_allowed") and not row.get("notes")
+                ),
+                "label_counts": dict(sorted(Counter(str(row.get("label")) for row in items).items())),
+            }
+            for card, items in sorted(by_card.items())
+        ],
+    }
+
+
 def markdown(report: dict[str, Any]) -> str:
     lines = [
         "# Draw Marginal Label Drilldown",
@@ -279,6 +484,9 @@ def markdown(report: dict[str, Any]) -> str:
         f"- dominant axes: `{report['summary']['dominant_axis_counts']}`",
         f"- usable as hard preference: `{report['summary']['usable_as_hard_preference_count']}`",
         f"- usable as axis evidence: `{report['summary']['usable_as_axis_evidence_count']}`",
+        f"- query-specific labels: `{report['query_label_summary']['count']}`",
+        f"- query-specific hard preferences: `{report['query_label_summary']['hard_preference_count']}`",
+        f"- clean query-specific hard preferences: `{report['query_label_summary']['clean_hard_preference_count']}`",
         "",
         "## By Card",
         "",
@@ -290,6 +498,27 @@ def markdown(report: dict[str, Any]) -> str:
             f"| `{row['target_action_card']}` | {row['count']} | `{row['label_counts']}` | "
             f"`{row['dominant_axis_counts']}` | {row['usable_as_hard_preference']} | "
             f"{row['usable_as_axis_evidence']} | {row['avg_score']} |"
+        )
+    lines.extend(
+        [
+            "",
+            "## Query-Specific Labels",
+            "",
+            "These are hard labels only inside one current-turn query, not global action preferences.",
+            "",
+            f"- labels: `{report['query_label_summary']['label_counts']}`",
+            f"- queries: `{report['query_label_summary']['query_counts']}`",
+            f"- global preferences: `{report['query_label_summary']['global_preference_count']}`",
+            "",
+        "| card | count | hard query pref | clean hard pref | labels |",
+        "| --- | ---: | ---: | ---: | --- |",
+        ]
+    )
+    for row in report["query_label_summary"]["by_card"]:
+        lines.append(
+            f"| `{row['target_action_card']}` | {row['count']} | {row['hard_preference_count']} | "
+            f"{row['clean_hard_preference_count']} | "
+            f"`{row['label_counts']}` |"
         )
     lines.extend(
         [
@@ -336,6 +565,7 @@ def main() -> None:
     branches = load_rows(branch_path)
     index = branch_index(branches)
     cases = [classify_case(row, index) for row in marginals]
+    query_labels = query_specific_labels(cases, index)
     report = {
         "report_version": REPORT_VERSION,
         "generated_at_utc": datetime.now(timezone.utc).isoformat(),
@@ -345,6 +575,7 @@ def main() -> None:
             "branch_outcomes": str(branch_path),
         },
         "summary": aggregate(cases),
+        "query_label_summary": query_label_summary(query_labels),
         "cases": cases,
         "limitations": [
             "current_turn_only_horizon",
@@ -355,8 +586,18 @@ def main() -> None:
     write_json(out, report)
     write_jsonl(out.with_suffix(".cases.jsonl"), cases)
     write_jsonl(out.with_name("axis_examples.jsonl"), axis_examples(cases))
+    write_jsonl(out.with_name("query_specific_labels.jsonl"), query_labels)
     out.with_suffix(".md").write_text(markdown(report), encoding="utf-8")
-    print(json.dumps({"summary": report["summary"], "out": str(out)}, indent=2))
+    print(
+        json.dumps(
+            {
+                "summary": report["summary"],
+                "query_label_summary": report["query_label_summary"],
+                "out": str(out),
+            },
+            indent=2,
+        )
+    )
 
 
 if __name__ == "__main__":
