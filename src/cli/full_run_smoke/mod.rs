@@ -27,26 +27,24 @@ use crate::state::run::RunState;
 use crate::state::selection::EngineDiagnosticSeverity;
 use crate::state::selection::{SelectionResolution, SelectionScope, SelectionTargetRef};
 
-
 mod types;
 pub use types::*;
 
-mod trace;
-mod reward;
+mod actions;
 mod batch;
 mod bot;
-mod actions;
-mod observation;
 mod features;
+mod observation;
+mod reward;
+mod trace;
 
-pub use trace::*;
-pub use reward::*;
+pub use actions::*;
 pub use batch::*;
 pub use bot::*;
-pub use actions::*;
-pub use observation::*;
 pub use features::*;
-
+pub use observation::*;
+pub use reward::*;
+pub use trace::*;
 
 impl FullRunEnv {
     pub fn new(config: FullRunEnvConfig) -> Result<Self, String> {
@@ -342,8 +340,6 @@ impl FullRunEnv {
     }
 }
 
-
-
 fn no_progress_signature(
     observation: &RunObservationV0,
     action_mask: &[RunActionCandidate],
@@ -412,7 +408,6 @@ fn observation_signature_key(observation: &RunObservationV0) -> String {
         combat_key
     )
 }
-
 
 fn init_combat(run_state: &mut RunState) -> CombatState {
     let encounter_id = if let Some(room_type) = run_state.map.get_current_room_type() {
@@ -559,7 +554,6 @@ fn encounter_key_to_id(key: &str) -> Option<EncounterId> {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -656,8 +650,10 @@ mod tests {
                 target: None,
             },
             card: None,
-            plan_delta: empty_candidate_plan_delta(),
-            reward_structure: empty_reward_action_structure(),
+            plan_delta: Some(empty_candidate_plan_delta()),
+            reward_structure: Some(empty_reward_action_structure()),
+            dominated: false,
+            dominated_by_index: None,
         }];
         let mut tracker = NoProgressTracker::new();
 
@@ -1330,7 +1326,12 @@ mod tests {
             .find(|candidate| matches!(candidate.action, TraceClientInput::Proceed))
             .expect("card reward skip should remain available");
         assert!(skip.card.is_none());
-        assert!(skip.reward_structure.skip_card_choice);
+        assert!(
+            skip.reward_structure
+                .as_ref()
+                .expect("skip reward structure")
+                .skip_card_choice
+        );
 
         let take_reward = full_run_action_shaping_reward(
             &ctx,
@@ -1403,11 +1404,46 @@ mod tests {
                 })
                 .expect("candidate should exist")
         };
-        assert!(by_card("PommelStrike").plan_delta.draw_delta > 0);
-        assert!(by_card("ShrugItOff").plan_delta.block_delta > 0);
-        assert!(by_card("Inflame").plan_delta.scaling_delta > 0);
-        assert!(by_card("Immolate").plan_delta.aoe_delta > 0);
-        assert!(by_card("Disarm").plan_delta.block_delta > 0);
+        assert!(
+            by_card("PommelStrike")
+                .plan_delta
+                .as_ref()
+                .expect("PommelStrike plan delta")
+                .draw_delta
+                > 0
+        );
+        assert!(
+            by_card("ShrugItOff")
+                .plan_delta
+                .as_ref()
+                .expect("ShrugItOff plan delta")
+                .block_delta
+                > 0
+        );
+        assert!(
+            by_card("Inflame")
+                .plan_delta
+                .as_ref()
+                .expect("Inflame plan delta")
+                .scaling_delta
+                > 0
+        );
+        assert!(
+            by_card("Immolate")
+                .plan_delta
+                .as_ref()
+                .expect("Immolate plan delta")
+                .aoe_delta
+                > 0
+        );
+        assert!(
+            by_card("Disarm")
+                .plan_delta
+                .as_ref()
+                .expect("Disarm plan delta")
+                .block_delta
+                > 0
+        );
     }
 
     #[test]
@@ -1563,24 +1599,29 @@ mod tests {
                 matches!(candidate.action, TraceClientInput::ClaimReward { index: 1 })
             })
             .expect("card reward item should be claimable");
-        assert!(claim_card.reward_structure.claim_opens_card_choice);
+        let claim_card_structure = claim_card
+            .reward_structure
+            .as_ref()
+            .expect("claim card reward structure");
+        assert!(claim_card_structure.claim_opens_card_choice);
         assert_eq!(
-            claim_card
-                .reward_structure
-                .claim_reward_item_type
-                .as_deref(),
+            claim_card_structure.claim_reward_item_type.as_deref(),
             Some("card_reward")
         );
-        assert!(claim_card.reward_structure.claim_free_value_score > 0);
+        assert!(claim_card_structure.claim_free_value_score > 0);
 
         let proceed = candidates
             .iter()
             .find(|candidate| matches!(candidate.action, TraceClientInput::Proceed))
             .expect("proceed should remain available");
-        assert!(proceed.reward_structure.is_proceed_with_unclaimed_rewards);
-        assert_eq!(proceed.reward_structure.unclaimed_reward_count, 2);
-        assert_eq!(proceed.reward_structure.unclaimed_card_reward_count, 1);
-        assert!(!proceed.reward_structure.proceed_is_cleanup);
+        let proceed_structure = proceed
+            .reward_structure
+            .as_ref()
+            .expect("proceed reward structure");
+        assert!(proceed_structure.is_proceed_with_unclaimed_rewards);
+        assert_eq!(proceed_structure.unclaimed_reward_count, 2);
+        assert_eq!(proceed_structure.unclaimed_card_reward_count, 1);
+        assert!(!proceed_structure.proceed_is_cleanup);
     }
 
     #[test]

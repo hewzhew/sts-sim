@@ -12,7 +12,7 @@ use super::legal_moves::get_legal_moves;
 use super::profile::SearchProfileBreakdown;
 use super::stepping::simulate_input_bounded;
 
-pub const COMBAT_TURN_PLAN_PROBE_SCHEMA_VERSION: &str = "combat_turn_plan_probe_v1_2";
+pub const COMBAT_TURN_PLAN_PROBE_SCHEMA_VERSION: &str = "combat_turn_plan_probe_v1_3";
 
 #[derive(Clone, Copy, Debug)]
 pub struct CombatTurnPlanProbeConfig {
@@ -133,6 +133,7 @@ pub struct CombatPlanSequenceClass {
     pub actions: Vec<String>,
     pub action_keys: Vec<String>,
     pub order_sensitive_reasons: Vec<String>,
+    pub compression_notes: Vec<String>,
     pub diagnostics: PlanScoreBreakdown,
     pub outcome: CombatPlanSequenceOutcome,
     pub pruned_as_equivalent: bool,
@@ -171,6 +172,10 @@ pub struct PlanScoreBreakdown {
     pub key_card_risk: i32,
     pub random_risk: i32,
     pub future_hand_penalty: i32,
+    pub strength_projection: i32,
+    pub dex_projection: i32,
+    pub vulnerable_projection: i32,
+    pub optimistic_bound_score: i32,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -196,6 +201,8 @@ pub struct CombatPlanProbeLimits {
     pub nodes_expanded: usize,
     pub sequence_classes_kept: usize,
     pub pruned_as_equivalent: usize,
+    pub pruned_by_abstract_equivalence: usize,
+    pub pruned_by_optimistic_bound: usize,
     pub pruned_by_budget: usize,
     pub pruned_by_dominated_state: usize,
 }
@@ -219,10 +226,31 @@ struct ProbeNode {
     actions: Vec<String>,
     action_keys: Vec<String>,
     order_sensitive_reasons: BTreeSet<String>,
+    compression_notes: BTreeSet<String>,
     risk_notes: Vec<CombatPlanRiskNote>,
     accumulated: AccumulatedSequenceEffects,
     depth: usize,
     ended_turn: bool,
+}
+
+#[derive(Clone, Debug, Default)]
+struct ActionEffectSummary {
+    pure_damage: bool,
+    pure_block: bool,
+    draws_cards: bool,
+    energy_gain: bool,
+    debuff: bool,
+    setup_or_scaling: bool,
+    exhaust_or_discard: bool,
+    random_effect: bool,
+    possible_kill: bool,
+    target_sensitive: bool,
+    damage_estimate: i32,
+    block_estimate: i32,
+    attack_hit_count: i32,
+    strength_gain: i32,
+    dex_gain: i32,
+    vulnerable_projection: i32,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -232,6 +260,9 @@ struct AccumulatedSequenceEffects {
     key_card_risk: i32,
     random_risk: i32,
     future_hand_penalty: i32,
+    strength_projection: i32,
+    dex_projection: i32,
+    vulnerable_projection: i32,
     played_setup_or_scaling: bool,
     played_kill_window_card: bool,
     random_risk_present: bool,
@@ -278,6 +309,8 @@ pub fn probe_turn_plans(
             "current_turn_only_horizon".to_string(),
             "no_future_seed_oracle".to_string(),
             "role_scores_are_heuristic_not_truth".to_string(),
+            "affine_buff_projection_is_heuristic_not_engine_truth".to_string(),
+            "abstract_sequence_compression_is_conservative_and_diagnostic".to_string(),
             "static_random_risk_overlay_is_not_engine_rng_branch_enumeration".to_string(),
             "budget_pruning_can_hide_lower_ranked_sequences".to_string(),
         ],
@@ -833,6 +866,10 @@ fn aggregate_component_max(sequences: &[&CombatPlanSequenceClass]) -> PlanScoreB
         key_card_risk: i32::MIN,
         random_risk: i32::MIN,
         future_hand_penalty: i32::MIN,
+        strength_projection: i32::MIN,
+        dex_projection: i32::MIN,
+        vulnerable_projection: i32::MIN,
+        optimistic_bound_score: i32::MIN,
     };
     for sequence in sequences {
         let score = &sequence.diagnostics;
@@ -848,6 +885,15 @@ fn aggregate_component_max(sequences: &[&CombatPlanSequenceClass]) -> PlanScoreB
         aggregate.random_risk = aggregate.random_risk.max(score.random_risk);
         aggregate.future_hand_penalty =
             aggregate.future_hand_penalty.max(score.future_hand_penalty);
+        aggregate.strength_projection =
+            aggregate.strength_projection.max(score.strength_projection);
+        aggregate.dex_projection = aggregate.dex_projection.max(score.dex_projection);
+        aggregate.vulnerable_projection = aggregate
+            .vulnerable_projection
+            .max(score.vulnerable_projection);
+        aggregate.optimistic_bound_score = aggregate
+            .optimistic_bound_score
+            .max(score.optimistic_bound_score);
     }
     if aggregate.total_score == i32::MIN {
         PlanScoreBreakdown::default()
@@ -880,6 +926,12 @@ fn major_tradeoffs_for_first_action(
     }
     if score.setup_score > 0 {
         tradeoffs.push("setup_or_scaling".to_string());
+    }
+    if score.strength_projection > 0 {
+        tradeoffs.push("strength_payoff_projection".to_string());
+    }
+    if score.vulnerable_projection > 0 {
+        tradeoffs.push("vulnerable_payoff_projection".to_string());
     }
     if score.exhaust_value > 0 {
         tradeoffs.push("exhaust_cleanup_or_synergy".to_string());
@@ -915,6 +967,7 @@ fn explore_sequence_classes(
         actions: Vec::new(),
         action_keys: Vec::new(),
         order_sensitive_reasons: BTreeSet::new(),
+        compression_notes: BTreeSet::new(),
         risk_notes: Vec::new(),
         accumulated: AccumulatedSequenceEffects::default(),
         depth: 0,
@@ -922,13 +975,17 @@ fn explore_sequence_classes(
     });
 
     let mut seen = BTreeMap::<String, i32>::new();
+    let mut seen_abstract = BTreeMap::<String, i32>::new();
     let mut kept = Vec::new();
     let mut all_risk_notes = Vec::new();
     let mut nodes_expanded = 0usize;
     let mut pruned_as_equivalent = 0usize;
+    let mut pruned_by_abstract_equivalence = 0usize;
+    let mut pruned_by_optimistic_bound = 0usize;
     let mut pruned_by_budget = 0usize;
     let pruned_by_dominated_state = 0usize;
     let mut profile = SearchProfileBreakdown::default();
+    let mut best_total_score = i32::MIN;
 
     while let Some(node) = queue.pop_front() {
         if nodes_expanded >= config.max_nodes {
@@ -938,10 +995,20 @@ fn explore_sequence_classes(
         nodes_expanded += 1;
 
         if !node.actions.is_empty() {
-            let diagnostics = diagnose_sequence(combat, &node.combat, &node.accumulated);
+            let mut diagnostics = diagnose_sequence(combat, &node.combat, &node.accumulated);
+            diagnostics.optimistic_bound_score =
+                optimistic_bound_score(&node.combat, &node.order_sensitive_reasons);
             let outcome =
                 build_sequence_outcome(combat, &node.combat, &node.accumulated, node.ended_turn);
             let key = sequence_equivalence_key(&node.engine, &node.combat);
+            let mut compression_notes = node.compression_notes.iter().cloned().collect::<Vec<_>>();
+            if !node.order_sensitive_reasons.is_empty()
+                && !compression_notes
+                    .iter()
+                    .any(|note| note == "order_sensitive_sequence")
+            {
+                compression_notes.push("order_sensitive_sequence".to_string());
+            }
             kept.push(CombatPlanSequenceClass {
                 sequence_equivalence_key: key,
                 actions: node.actions.clone(),
@@ -951,6 +1018,7 @@ fn explore_sequence_classes(
                     .iter()
                     .cloned()
                     .collect::<Vec<_>>(),
+                compression_notes,
                 diagnostics,
                 outcome,
                 pruned_as_equivalent: false,
@@ -958,9 +1026,24 @@ fn explore_sequence_classes(
                 pruned_by_dominated_state: false,
             });
             all_risk_notes.extend(node.risk_notes.clone());
+            best_total_score = best_total_score.max(
+                kept.last()
+                    .map(|sequence| sequence.diagnostics.total_score)
+                    .unwrap_or(i32::MIN),
+            );
         }
 
         if node.depth >= config.max_depth || node.ended_turn || !is_probe_frontier(&node.engine) {
+            continue;
+        }
+        let node_diag = diagnose_sequence(combat, &node.combat, &node.accumulated);
+        let node_bound = node_diag.total_score
+            + optimistic_bound_score(&node.combat, &node.order_sensitive_reasons);
+        if best_total_score != i32::MIN
+            && can_bound_prune(&node.engine, &node.combat, &node.order_sensitive_reasons)
+            && node_bound + 300 < best_total_score
+        {
+            pruned_by_optimistic_bound += 1;
             continue;
         }
 
@@ -977,12 +1060,15 @@ fn explore_sequence_classes(
                 continue;
             }
             let action_key = probe_action_key(&node.combat, &action);
+            let action_summary = summarize_action_effect(&node.combat, &action);
             let mut next_accumulated = node.accumulated.clone();
             let mut next_reasons = node.order_sensitive_reasons.clone();
+            let mut next_compression_notes = node.compression_notes.clone();
             let mut next_notes = node.risk_notes.clone();
             accumulate_action_effects(
                 &node.combat,
                 &action,
+                &action_summary,
                 node.actions.len(),
                 &action_key,
                 &mut next_accumulated,
@@ -1001,6 +1087,22 @@ fn explore_sequence_classes(
             let next_key = sequence_equivalence_key(&next_engine, &next_combat);
             let next_diag = diagnose_sequence(combat, &next_combat, &next_accumulated);
             let next_score = next_diag.total_score;
+            if abstract_compression_allowed(
+                &node.combat,
+                &next_engine,
+                &action_summary,
+                &next_reasons,
+            ) {
+                let abstract_key = abstract_sequence_key(&next_engine, &next_combat);
+                if let Some(previous_score) = seen_abstract.get(&abstract_key) {
+                    if *previous_score >= next_score {
+                        pruned_by_abstract_equivalence += 1;
+                        continue;
+                    }
+                }
+                seen_abstract.insert(abstract_key, next_score);
+                next_compression_notes.insert("abstract_equivalence_safe".to_string());
+            }
             if let Some(previous_score) = seen.get(&next_key) {
                 if *previous_score >= next_score {
                     pruned_as_equivalent += 1;
@@ -1019,6 +1121,7 @@ fn explore_sequence_classes(
                 actions,
                 action_keys,
                 order_sensitive_reasons: next_reasons,
+                compression_notes: next_compression_notes,
                 risk_notes: next_notes,
                 accumulated: next_accumulated,
                 depth: node.depth + 1,
@@ -1050,6 +1153,8 @@ fn explore_sequence_classes(
         nodes_expanded,
         sequence_classes_kept: kept.len(),
         pruned_as_equivalent,
+        pruned_by_abstract_equivalence,
+        pruned_by_optimistic_bound,
         pruned_by_budget,
         pruned_by_dominated_state,
     };
@@ -1159,7 +1264,10 @@ fn diagnose_sequence(
         + accumulated.exhaust_value
         + accumulated.key_card_risk
         + accumulated.random_risk
-        + future_hand_penalty;
+        + future_hand_penalty
+        + accumulated.strength_projection * 4
+        + accumulated.dex_projection * 3
+        + accumulated.vulnerable_projection * 3;
 
     PlanScoreBreakdown {
         total_score,
@@ -1173,6 +1281,10 @@ fn diagnose_sequence(
         key_card_risk: accumulated.key_card_risk,
         random_risk: accumulated.random_risk,
         future_hand_penalty,
+        strength_projection: accumulated.strength_projection,
+        dex_projection: accumulated.dex_projection,
+        vulnerable_projection: accumulated.vulnerable_projection,
+        optimistic_bound_score: 0,
     }
 }
 
@@ -1210,6 +1322,7 @@ fn build_sequence_outcome(
 fn accumulate_action_effects(
     combat: &CombatState,
     action: &ClientInput,
+    summary: &ActionEffectSummary,
     sequence_action_index: usize,
     action_key: &str,
     accumulated: &mut AccumulatedSequenceEffects,
@@ -1243,6 +1356,29 @@ fn accumulate_action_effects(
             if structure.is_setup_piece() || structure.is_scaling_piece() {
                 accumulated.setup_score += 90;
                 accumulated.played_setup_or_scaling = true;
+            }
+            if summary.strength_gain > 0 {
+                let projection = (summary.strength_gain
+                    * remaining_attack_hit_count(combat, Some(*card_index)))
+                .min(total_alive_monster_hp(combat).max(0));
+                accumulated.strength_projection += projection;
+                accumulated.setup_score += projection * 4;
+            }
+            if summary.dex_gain > 0 {
+                let projection =
+                    summary.dex_gain * remaining_block_card_count(combat, Some(*card_index));
+                accumulated.dex_projection += projection;
+                accumulated.setup_score += projection * 3;
+            }
+            if summary.vulnerable_projection > 0 {
+                accumulated.vulnerable_projection += summary.vulnerable_projection;
+                accumulated.setup_score += summary.vulnerable_projection * 3;
+            }
+            if summary.attack_hit_count > 0 {
+                let strength = combat.get_power(0, crate::runtime::combat::PowerId::Strength);
+                if strength > 0 {
+                    accumulated.strength_projection += strength * summary.attack_hit_count;
+                }
             }
             if is_kill_window_card(card.id) {
                 accumulated.played_kill_window_card = true;
@@ -1405,6 +1541,280 @@ fn add_true_grit_random_overlay(
         good_branch_probability_milli: Some(good_milli),
         affected_cards: affected,
     });
+}
+
+fn summarize_action_effect(combat: &CombatState, action: &ClientInput) -> ActionEffectSummary {
+    let mut summary = ActionEffectSummary::default();
+    let ClientInput::PlayCard { card_index, target } = action else {
+        summary.target_sensitive = !matches!(action, ClientInput::EndTurn);
+        return summary;
+    };
+    let Some(card) = combat.zones.hand.get(*card_index) else {
+        summary.target_sensitive = true;
+        return summary;
+    };
+    let def = cards::get_card_definition(card.id);
+    let facts = card_facts::facts(card.id);
+    let structure = card_structure::structure(card.id);
+
+    summary.damage_estimate = estimate_card_damage(card, combat);
+    summary.block_estimate = estimate_card_block(card);
+    summary.attack_hit_count = attack_hit_count(card.id, card.upgrades, combat);
+    summary.draws_cards = facts.draws_cards;
+    summary.energy_gain = facts.gains_energy;
+    summary.debuff = facts.applies_vuln || facts.applies_weak || facts.applies_frail;
+    summary.setup_or_scaling = structure.is_setup_piece() || structure.is_scaling_piece();
+    summary.exhaust_or_discard = facts.exhausts_other_cards;
+    summary.random_effect =
+        facts.random_generation || card.id == CardId::TrueGrit && card.upgrades == 0;
+    summary.possible_kill = possible_kill_with_card(combat, card);
+    summary.target_sensitive = facts.target_sensitive || target.is_some() && summary.debuff;
+    summary.pure_damage = def.card_type == CardType::Attack
+        && summary.damage_estimate > 0
+        && summary.block_estimate == 0
+        && !summary.draws_cards
+        && !summary.energy_gain
+        && !summary.debuff
+        && !summary.setup_or_scaling
+        && !summary.exhaust_or_discard
+        && !summary.random_effect
+        && !summary.target_sensitive
+        && !summary.possible_kill;
+    summary.pure_block = def.card_type == CardType::Skill
+        && summary.block_estimate > 0
+        && summary.damage_estimate == 0
+        && !summary.draws_cards
+        && !summary.energy_gain
+        && !summary.debuff
+        && !summary.setup_or_scaling
+        && !summary.exhaust_or_discard
+        && !summary.random_effect
+        && !summary.target_sensitive
+        && !summary.possible_kill;
+    summary.strength_gain = strength_gain_for_card(card);
+    summary.dex_gain = dex_gain_for_card(card);
+    if facts.applies_vuln {
+        summary.vulnerable_projection =
+            vulnerable_projection_for_action(combat, *card_index, *target);
+    }
+    summary
+}
+
+fn estimate_card_damage(card: &CombatCard, combat: &CombatState) -> i32 {
+    let def = cards::get_card_definition(card.id);
+    let base = if card.base_damage_mut > 0 {
+        card.base_damage_mut
+    } else {
+        def.base_damage + def.upgrade_damage * card.upgrades as i32
+    };
+    (base * attack_hit_count(card.id, card.upgrades, combat)).max(0)
+}
+
+fn estimate_card_block(card: &CombatCard) -> i32 {
+    let def = cards::get_card_definition(card.id);
+    if card.base_block_mut > 0 {
+        card.base_block_mut
+    } else {
+        def.base_block + def.upgrade_block * card.upgrades as i32
+    }
+    .max(0)
+}
+
+fn attack_hit_count(card_id: CardId, upgrades: u8, combat: &CombatState) -> i32 {
+    match card_id {
+        CardId::TwinStrike => 2,
+        CardId::Pummel => {
+            if upgrades > 0 {
+                5
+            } else {
+                4
+            }
+        }
+        CardId::SwordBoomerang => {
+            if upgrades > 0 {
+                4
+            } else {
+                3
+            }
+        }
+        CardId::Cleave
+        | CardId::ThunderClap
+        | CardId::Immolate
+        | CardId::Whirlwind
+        | CardId::Reaper => living_monster_count(combat).max(1) as i32,
+        _ => {
+            let def = cards::get_card_definition(card_id);
+            if def.card_type == CardType::Attack
+                && def.base_damage + def.upgrade_damage * upgrades as i32 > 0
+            {
+                1
+            } else {
+                0
+            }
+        }
+    }
+}
+
+fn strength_gain_for_card(card: &CombatCard) -> i32 {
+    let def = cards::get_card_definition(card.id);
+    match card.id {
+        CardId::Inflame | CardId::Flex | CardId::SpotWeakness => {
+            def.base_magic + def.upgrade_magic * card.upgrades as i32
+        }
+        _ => 0,
+    }
+}
+
+fn dex_gain_for_card(card: &CombatCard) -> i32 {
+    let def = cards::get_card_definition(card.id);
+    match card.id {
+        CardId::Footwork => def.base_magic + def.upgrade_magic * card.upgrades as i32,
+        _ => 0,
+    }
+}
+
+fn remaining_attack_hit_count(combat: &CombatState, exclude_hand_index: Option<usize>) -> i32 {
+    combat
+        .zones
+        .hand
+        .iter()
+        .enumerate()
+        .filter(|(idx, card)| {
+            Some(*idx) != exclude_hand_index && cards::can_play_card(card, combat).is_ok()
+        })
+        .map(|(_, card)| attack_hit_count(card.id, card.upgrades, combat))
+        .sum()
+}
+
+fn remaining_block_card_count(combat: &CombatState, exclude_hand_index: Option<usize>) -> i32 {
+    combat
+        .zones
+        .hand
+        .iter()
+        .enumerate()
+        .filter(|(idx, card)| {
+            Some(*idx) != exclude_hand_index && cards::can_play_card(card, combat).is_ok()
+        })
+        .filter(|(_, card)| estimate_card_block(card) > 0)
+        .count() as i32
+}
+
+fn vulnerable_projection_for_action(
+    combat: &CombatState,
+    played_hand_index: usize,
+    target: Option<usize>,
+) -> i32 {
+    let remaining_damage = combat
+        .zones
+        .hand
+        .iter()
+        .enumerate()
+        .filter(|(idx, card)| {
+            *idx != played_hand_index
+                && cards::can_play_card(card, combat).is_ok()
+                && cards::get_card_definition(card.id).card_type == CardType::Attack
+        })
+        .map(|(_, card)| estimate_card_damage(card, combat))
+        .sum::<i32>();
+    let target_hp = target
+        .and_then(|entity_id| {
+            combat
+                .entities
+                .monsters
+                .iter()
+                .find(|monster| monster.id == entity_id)
+                .map(|monster| monster.current_hp.max(0))
+        })
+        .unwrap_or_else(|| total_alive_monster_hp(combat).max(0));
+    (remaining_damage / 2).min(target_hp).max(0)
+}
+
+fn abstract_compression_allowed(
+    combat: &CombatState,
+    engine: &EngineState,
+    summary: &ActionEffectSummary,
+    order_sensitive_reasons: &BTreeSet<String>,
+) -> bool {
+    matches!(engine, EngineState::CombatPlayerTurn)
+        && order_sensitive_reasons.is_empty()
+        && abstract_runtime_is_simple(combat)
+        && (summary.pure_damage || summary.pure_block)
+}
+
+fn abstract_runtime_is_simple(combat: &CombatState) -> bool {
+    combat.entities.power_db.is_empty()
+        && combat.entities.player.relics.is_empty()
+        && combat.zones.limbo.is_empty()
+        && combat.zones.queued_cards.is_empty()
+}
+
+fn abstract_sequence_key(engine: &EngineState, combat: &CombatState) -> String {
+    let monster_hp = combat
+        .entities
+        .monsters
+        .iter()
+        .filter(|monster| !monster.is_escaped && !monster.half_dead)
+        .map(|monster| {
+            format!(
+                "{}:{}:{}",
+                monster.id,
+                monster.current_hp.max(0),
+                monster.block
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(",");
+    let mut hand = combat
+        .zones
+        .hand
+        .iter()
+        .map(|card| format!("{:?}+{}", card.id, card.upgrades))
+        .collect::<Vec<_>>();
+    hand.sort();
+    format!(
+        "{engine:?}|hp:{}|block:{}|energy:{}|monsters:{monster_hp}|hand:{}|draw:{}|discard:{}|exhaust:{}",
+        combat.entities.player.current_hp,
+        combat.entities.player.block,
+        combat.turn.energy,
+        hand.join(","),
+        combat.zones.draw_pile.len(),
+        combat.zones.discard_pile.len(),
+        combat.zones.exhaust_pile.len()
+    )
+}
+
+fn can_bound_prune(
+    engine: &EngineState,
+    combat: &CombatState,
+    order_sensitive_reasons: &BTreeSet<String>,
+) -> bool {
+    matches!(engine, EngineState::CombatPlayerTurn)
+        && order_sensitive_reasons.is_empty()
+        && abstract_runtime_is_simple(combat)
+}
+
+fn optimistic_bound_score(combat: &CombatState, order_sensitive_reasons: &BTreeSet<String>) -> i32 {
+    if !order_sensitive_reasons.is_empty() || !abstract_runtime_is_simple(combat) {
+        return 10_000;
+    }
+    let mut max_damage = 0;
+    let mut max_block = 0;
+    let mut max_setup = 0;
+    for card in &combat.zones.hand {
+        if cards::can_play_card(card, combat).is_err() {
+            continue;
+        }
+        let structure = card_structure::structure(card.id);
+        max_damage += estimate_card_damage(card, combat);
+        max_block += estimate_card_block(card);
+        if structure.is_setup_piece() || structure.is_scaling_piece() {
+            max_setup += 90;
+        }
+    }
+    let damage_score = max_damage.min(total_alive_monster_hp(combat).max(0)) * 6;
+    let block_need = visible_incoming_damage(combat).max(0);
+    let block_score = max_block.min(block_need + 20) * 8;
+    damage_score + block_score + max_setup
 }
 
 fn allowed_probe_action(engine: &EngineState, action: &ClientInput) -> bool {
@@ -2212,6 +2622,189 @@ mod tests {
             .order_sensitive_reasons
             .iter()
             .any(|reason| reason == "debuff_before_damage_can_change_value"));
+    }
+
+    #[test]
+    fn combat_turn_plan_probe_compresses_pure_strike_defend_permutations() {
+        let mut combat = blank_test_combat();
+        let mut cultist = planned_monster(EnemyId::Cultist, 1);
+        cultist.current_hp = 60;
+        cultist.max_hp = 60;
+        combat.entities.monsters.push(cultist);
+        combat.zones.hand.push(card(CardId::Strike, 1));
+        combat.zones.hand.push(card(CardId::Defend, 2));
+
+        let report = probe_turn_plans(
+            &EngineState::CombatPlayerTurn,
+            &combat,
+            CombatTurnPlanProbeConfig {
+                max_depth: 2,
+                beam_width: 8,
+                ..CombatTurnPlanProbeConfig::default()
+            },
+        );
+
+        assert!(report.probe_limits.pruned_by_abstract_equivalence > 0);
+        assert!(report.sequence_classes.iter().any(|sequence| sequence
+            .compression_notes
+            .iter()
+            .any(|note| note == "abstract_equivalence_safe")));
+    }
+
+    #[test]
+    fn combat_turn_plan_probe_projects_inflame_before_attack() {
+        let mut combat = blank_test_combat();
+        let mut cultist = planned_monster(EnemyId::Cultist, 1);
+        cultist.current_hp = 60;
+        cultist.max_hp = 60;
+        combat.entities.monsters.push(cultist);
+        combat.zones.hand.push(card(CardId::Inflame, 1));
+        combat.zones.hand.push(card(CardId::Strike, 2));
+
+        let report = probe_turn_plans(
+            &EngineState::CombatPlayerTurn,
+            &combat,
+            CombatTurnPlanProbeConfig {
+                max_depth: 2,
+                beam_width: 8,
+                ..CombatTurnPlanProbeConfig::default()
+            },
+        );
+
+        let inflame_then_strike = report
+            .sequence_classes
+            .iter()
+            .find(|sequence| {
+                sequence.action_keys.len() >= 2
+                    && sequence.action_keys[0].contains("card:Inflame")
+                    && sequence.action_keys[1].contains("card:Strike")
+            })
+            .expect("Inflame -> Strike sequence should be explored");
+        let strike_then_inflame = report
+            .sequence_classes
+            .iter()
+            .find(|sequence| {
+                sequence.action_keys.len() >= 2
+                    && sequence.action_keys[0].contains("card:Strike")
+                    && sequence.action_keys[1].contains("card:Inflame")
+            })
+            .expect("Strike -> Inflame sequence should be explored");
+        assert!(inflame_then_strike.diagnostics.strength_projection > 0);
+        assert!(
+            inflame_then_strike.diagnostics.total_score
+                > strike_then_inflame.diagnostics.total_score
+        );
+    }
+
+    #[test]
+    fn combat_turn_plan_probe_counts_multi_hit_strength_payoff() {
+        let mut combat = blank_test_combat();
+        let mut cultist = planned_monster(EnemyId::Cultist, 1);
+        cultist.current_hp = 60;
+        cultist.max_hp = 60;
+        combat.entities.monsters.push(cultist);
+        combat.entities.power_db.insert(
+            0,
+            vec![Power {
+                power_type: crate::runtime::combat::PowerId::Strength,
+                instance_id: None,
+                amount: 2,
+                extra_data: 0,
+                just_applied: false,
+            }],
+        );
+        combat.zones.hand.push(card(CardId::Strike, 1));
+        combat.zones.hand.push(card(CardId::TwinStrike, 2));
+
+        let report = probe_turn_plans(
+            &EngineState::CombatPlayerTurn,
+            &combat,
+            CombatTurnPlanProbeConfig {
+                max_depth: 1,
+                beam_width: 8,
+                ..CombatTurnPlanProbeConfig::default()
+            },
+        );
+
+        let strike = report
+            .sequence_classes
+            .iter()
+            .find(|sequence| sequence.action_keys[0].contains("card:Strike"))
+            .expect("Strike sequence should be explored");
+        let twin = report
+            .sequence_classes
+            .iter()
+            .find(|sequence| sequence.action_keys[0].contains("card:TwinStrike"))
+            .expect("Twin Strike sequence should be explored");
+        assert!(twin.diagnostics.strength_projection > strike.diagnostics.strength_projection);
+    }
+
+    #[test]
+    fn combat_turn_plan_probe_caps_strength_projection_by_available_hp() {
+        let mut combat = blank_test_combat();
+        let mut cultist = planned_monster(EnemyId::Cultist, 1);
+        cultist.current_hp = 1;
+        cultist.max_hp = 60;
+        combat.entities.monsters.push(cultist);
+        combat.zones.hand.push(card(CardId::Inflame, 1));
+        combat.zones.hand.push(card(CardId::TwinStrike, 2));
+
+        let report = probe_turn_plans(
+            &EngineState::CombatPlayerTurn,
+            &combat,
+            CombatTurnPlanProbeConfig {
+                max_depth: 1,
+                beam_width: 8,
+                ..CombatTurnPlanProbeConfig::default()
+            },
+        );
+
+        let inflame = report
+            .sequence_classes
+            .iter()
+            .find(|sequence| sequence.action_keys[0].contains("card:Inflame"))
+            .expect("Inflame sequence should be explored");
+        assert!(inflame.diagnostics.strength_projection <= 1);
+    }
+
+    #[test]
+    fn combat_turn_plan_probe_does_not_abstract_draw_sequences() {
+        let mut combat = blank_test_combat();
+        let mut cultist = planned_monster(EnemyId::Cultist, 1);
+        cultist.current_hp = 60;
+        cultist.max_hp = 60;
+        combat.entities.monsters.push(cultist);
+        combat.zones.hand.push(card(CardId::PommelStrike, 1));
+        combat.zones.hand.push(card(CardId::Defend, 2));
+
+        let report = probe_turn_plans(
+            &EngineState::CombatPlayerTurn,
+            &combat,
+            CombatTurnPlanProbeConfig {
+                max_depth: 2,
+                beam_width: 8,
+                ..CombatTurnPlanProbeConfig::default()
+            },
+        );
+
+        let pommel = report
+            .sequence_classes
+            .iter()
+            .find(|sequence| {
+                sequence
+                    .action_keys
+                    .first()
+                    .is_some_and(|key| key.contains("card:PommelStrike"))
+            })
+            .expect("Pommel Strike sequence should be explored");
+        assert!(pommel
+            .order_sensitive_reasons
+            .iter()
+            .any(|reason| reason == "draw_changes_future_action_space"));
+        assert!(!pommel
+            .compression_notes
+            .iter()
+            .any(|note| note == "abstract_equivalence_safe"));
     }
 
     #[test]
