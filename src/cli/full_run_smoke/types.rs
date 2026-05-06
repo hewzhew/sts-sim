@@ -645,6 +645,18 @@ pub struct FullRunTracePlanProbeConfig {
     pub probe_config: crate::bot::combat::CombatTurnPlanProbeConfig,
 }
 
+#[derive(Clone, Debug)]
+pub struct FullRunTraceDrawMarginalProbeConfig {
+    pub trace_file: PathBuf,
+    pub step_index: usize,
+    pub target_card: crate::content::cards::CardId,
+    pub ascension: Option<u8>,
+    pub final_act: Option<bool>,
+    pub player_class: Option<String>,
+    pub max_steps: Option<usize>,
+    pub probe_config: crate::bot::combat::CombatTurnPlanProbeConfig,
+}
+
 pub struct FullRunEnv {
     pub(crate) config: FullRunEnvConfig,
     pub(crate) ctx: EpisodeContext,

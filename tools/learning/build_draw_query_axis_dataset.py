@@ -244,7 +244,7 @@ def build_report(input_path: Path, buckets: dict[str, list[dict[str, Any]]]) -> 
         },
         "warnings": [
             "clean hard preferences are query-local, not global action preferences",
-            "current batch has synthetic-template bias",
+            "current batch may have source distribution bias; check synthetic-template or trace-occupancy provenance",
             "do not train a scalar action-good classifier unless target_worse negatives exist",
         ],
     }

@@ -3,10 +3,99 @@ use super::*;
 pub fn probe_combat_plan_from_trace(
     config: &FullRunTracePlanProbeConfig,
 ) -> Result<crate::bot::combat::CombatTurnPlanProbeReport, String> {
-    let raw = std::fs::read_to_string(&config.trace_file).map_err(|err| {
+    let (trace, seed, ascension, final_act, player_class, target_trace_step, ctx) =
+        replay_trace_to_combat_frontier(
+            &config.trace_file,
+            config.step_index,
+            config.ascension,
+            config.final_act,
+            config.player_class.clone(),
+            config.max_steps,
+        )?;
+    let Some(combat) = ctx.combat_state.as_ref() else {
+        return Err(format!(
+            "trace step {} replayed to non-combat state {}",
+            config.step_index,
+            engine_state_label(&ctx.engine_state)
+        ));
+    };
+
+    let mut report =
+        crate::bot::combat::probe_turn_plans(&ctx.engine_state, combat, config.probe_config);
+    report.source_trace = trace_probe_source(
+        &config.trace_file,
+        config.step_index,
+        seed,
+        ascension,
+        final_act,
+        &player_class,
+        &trace,
+        &target_trace_step,
+    );
+    Ok(report)
+}
+
+pub fn probe_combat_draw_marginal_from_trace(
+    config: &FullRunTraceDrawMarginalProbeConfig,
+) -> Result<crate::bot::combat::CombatDrawMarginalProbeReport, String> {
+    let (trace, seed, ascension, final_act, player_class, target_trace_step, ctx) =
+        replay_trace_to_combat_frontier(
+            &config.trace_file,
+            config.step_index,
+            config.ascension,
+            config.final_act,
+            config.player_class.clone(),
+            config.max_steps,
+        )?;
+    let Some(combat) = ctx.combat_state.as_ref() else {
+        return Err(format!(
+            "trace step {} replayed to non-combat state {}",
+            config.step_index,
+            engine_state_label(&ctx.engine_state)
+        ));
+    };
+
+    let mut report = crate::bot::combat::probe_draw_marginal_value(
+        &ctx.engine_state,
+        combat,
+        config.target_card,
+        config.probe_config,
+    );
+    report.source_trace = trace_probe_source(
+        &config.trace_file,
+        config.step_index,
+        seed,
+        ascension,
+        final_act,
+        &player_class,
+        &trace,
+        &target_trace_step,
+    );
+    Ok(report)
+}
+
+type ReplayedTraceFrontier = (
+    serde_json::Value,
+    u64,
+    u8,
+    bool,
+    String,
+    serde_json::Value,
+    EpisodeContext,
+);
+
+fn replay_trace_to_combat_frontier(
+    trace_file: &Path,
+    step_index: usize,
+    ascension_override: Option<u8>,
+    final_act_override: Option<bool>,
+    player_class_override: Option<String>,
+    max_steps_override: Option<usize>,
+) -> Result<ReplayedTraceFrontier, String> {
+    let raw = std::fs::read_to_string(trace_file).map_err(|err| {
         format!(
             "failed to read trace file '{}': {err}",
-            config.trace_file.display()
+            trace_file.display()
         )
     })?;
     let trace: serde_json::Value =
@@ -19,40 +108,40 @@ pub fn probe_combat_plan_from_trace(
         .and_then(serde_json::Value::as_u64)
         .ok_or_else(|| "trace summary missing seed".to_string())?;
     let trace_config = trace.get("config");
-    let ascension = config.ascension.unwrap_or_else(|| {
+    let ascension = ascension_override.unwrap_or_else(|| {
         trace_config
             .and_then(|value| value.get("ascension"))
             .and_then(serde_json::Value::as_u64)
             .unwrap_or(0) as u8
     });
-    let final_act = config.final_act.unwrap_or_else(|| {
+    let final_act = final_act_override.unwrap_or_else(|| {
         trace_config
             .and_then(|value| value.get("final_act"))
             .and_then(serde_json::Value::as_bool)
             .unwrap_or(false)
     });
-    let player_class = config.player_class.clone().unwrap_or_else(|| {
+    let player_class = player_class_override.unwrap_or_else(|| {
         trace_config
             .and_then(|value| value.get("player_class"))
             .and_then(serde_json::Value::as_str)
             .unwrap_or("Ironclad")
             .to_string()
     });
-    let max_steps = config.max_steps.unwrap_or_else(|| {
+    let max_steps = max_steps_override.unwrap_or_else(|| {
         trace_config
             .and_then(|value| value.get("max_steps"))
             .and_then(serde_json::Value::as_u64)
             .map(|value| value as usize)
-            .unwrap_or_else(|| config.step_index.saturating_add(128).max(512))
+            .unwrap_or_else(|| step_index.saturating_add(128).max(512))
     });
     let steps = trace
         .get("steps")
         .and_then(serde_json::Value::as_array)
         .ok_or_else(|| "trace missing steps[]".to_string())?;
-    if config.step_index >= steps.len() {
+    if step_index >= steps.len() {
         return Err(format!(
             "step-index {} out of range for trace with {} step(s)",
-            config.step_index,
+            step_index,
             steps.len()
         ));
     }
@@ -71,7 +160,7 @@ pub fn probe_combat_plan_from_trace(
         combat_win_count: 0,
     };
 
-    for (step_idx, step) in steps.iter().take(config.step_index).enumerate() {
+    for (step_idx, step) in steps.iter().take(step_index).enumerate() {
         prepare_decision_point(&mut ctx, max_steps)?;
         let action = trace_step_action(step)
             .map_err(|err| format!("failed to decode action at trace step {step_idx}: {err}"))?;
@@ -92,36 +181,48 @@ pub fn probe_combat_plan_from_trace(
         if !keep_running {
             return Err(format!(
                 "engine stopped while replaying trace before requested step {}",
-                config.step_index
+                step_index
             ));
         }
     }
 
     prepare_decision_point(&mut ctx, max_steps)?;
-    let Some(combat) = ctx.combat_state.as_ref() else {
-        return Err(format!(
-            "trace step {} replayed to non-combat state {}",
-            config.step_index,
-            engine_state_label(&ctx.engine_state)
-        ));
-    };
     if !matches!(
         ctx.engine_state,
         EngineState::CombatPlayerTurn | EngineState::PendingChoice(_)
     ) {
         return Err(format!(
             "trace step {} is not a combat turn frontier: {}",
-            config.step_index,
+            step_index,
             engine_state_label(&ctx.engine_state)
         ));
     }
 
-    let target_trace_step = &steps[config.step_index];
-    let mut report =
-        crate::bot::combat::probe_turn_plans(&ctx.engine_state, combat, config.probe_config);
-    report.source_trace = serde_json::json!({
-        "trace_file": config.trace_file.display().to_string(),
-        "step_index": config.step_index,
+    let target_trace_step = steps[step_index].clone();
+    Ok((
+        trace,
+        seed,
+        ascension,
+        final_act,
+        player_class,
+        target_trace_step,
+        ctx,
+    ))
+}
+
+fn trace_probe_source(
+    trace_file: &Path,
+    step_index: usize,
+    seed: u64,
+    ascension: u8,
+    final_act: bool,
+    player_class: &str,
+    trace: &serde_json::Value,
+    target_trace_step: &serde_json::Value,
+) -> serde_json::Value {
+    serde_json::json!({
+        "trace_file": trace_file.display().to_string(),
+        "step_index": step_index,
         "seed": seed,
         "ascension": ascension,
         "final_act": final_act,
@@ -131,8 +232,7 @@ pub fn probe_combat_plan_from_trace(
         "trace_step_decision_type": target_trace_step.get("decision_type").cloned().unwrap_or(serde_json::Value::Null),
         "trace_step_engine_state": target_trace_step.get("engine_state").cloned().unwrap_or(serde_json::Value::Null),
         "trace_step_chosen_action_key": target_trace_step.get("chosen_action_key").cloned().unwrap_or(serde_json::Value::Null),
-    });
-    Ok(report)
+    })
 }
 
 pub fn trace_step_action(step: &serde_json::Value) -> Result<ClientInput, String> {
