@@ -15,7 +15,7 @@ use super::legal_moves::get_legal_moves;
 use super::profile::SearchProfileBreakdown;
 use super::stepping::simulate_input_bounded;
 
-pub const COMBAT_TURN_PLAN_PROBE_SCHEMA_VERSION: &str = "combat_turn_plan_probe_v2_1_1";
+pub const COMBAT_TURN_PLAN_PROBE_SCHEMA_VERSION: &str = "combat_turn_plan_probe_v2_3_1";
 
 #[derive(Clone, Copy, Debug)]
 pub struct CombatTurnPlanProbeConfig {
@@ -221,9 +221,26 @@ pub struct CombatPlanProbeLimits {
     pub pruned_by_generation_target_order: usize,
     pub pruned_by_generation_lane_order: usize,
     pub generation_duplicate_prune_effects: BTreeMap<String, usize>,
+    pub pruned_by_plan_expansion_gate: usize,
+    pub plan_expansion_gate_reasons: BTreeMap<String, usize>,
+    pub plan_expansion_gate_examples: Vec<PlanExpansionGateExample>,
     pub pruned_by_optimistic_bound: usize,
     pub pruned_by_budget: usize,
     pub pruned_by_dominated_state: usize,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct PlanExpansionGateExample {
+    pub reason: String,
+    pub depth: usize,
+    pub partial_action_keys: Vec<String>,
+    pub partial_actions: Vec<String>,
+    pub pruned_action_key: String,
+    pub pruned_action: String,
+    pub current_energy: i32,
+    pub current_block: i32,
+    pub visible_incoming_damage: i32,
+    pub hand_size: usize,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -263,6 +280,8 @@ struct ActionEffectSummary {
     debuff: bool,
     setup_or_scaling: bool,
     exhaust_or_discard: bool,
+    creates_cards: bool,
+    immediate_action_space_change: bool,
     random_effect: bool,
     possible_kill: bool,
     target_sensitive: bool,
@@ -391,6 +410,7 @@ struct AccumulatedSequenceEffects {
     key_card_risk: i32,
     random_risk: i32,
     future_hand_penalty: i32,
+    action_space_change_count: usize,
     strength_projection: i32,
     dex_projection: i32,
     vulnerable_projection: i32,
@@ -440,6 +460,7 @@ pub fn probe_turn_plans(
             "current_turn_only_horizon".to_string(),
             "no_future_seed_oracle".to_string(),
             "role_scores_are_heuristic_not_truth".to_string(),
+            "plan_expansion_gate_is_query_oriented_and_diagnostic".to_string(),
             "affine_buff_projection_is_heuristic_not_engine_truth".to_string(),
             "generation_canonical_order_pruning_is_conservative_pure_damage_block_only".to_string(),
             "abstract_sequence_compression_is_engine_verified_and_conservative".to_string(),
@@ -1133,6 +1154,9 @@ fn explore_sequence_classes(
     let mut pruned_by_generation_target_order = 0usize;
     let mut pruned_by_generation_lane_order = 0usize;
     let mut generation_duplicate_prune_effects = BTreeMap::<String, usize>::new();
+    let mut pruned_by_plan_expansion_gate = 0usize;
+    let mut plan_expansion_gate_reasons = BTreeMap::<String, usize>::new();
+    let mut plan_expansion_gate_examples = Vec::new();
     let mut pruned_by_optimistic_bound = 0usize;
     let mut pruned_by_budget = 0usize;
     let pruned_by_dominated_state = 0usize;
@@ -1227,6 +1251,26 @@ fn explore_sequence_classes(
             actions_considered += 1;
             let action_key = probe_action_key(&node.combat, &action);
             let action_summary = summarize_action_effect(&node.combat, &action);
+            if let Some(reason) = plan_expansion_gate_reason(
+                &node.engine,
+                &node.combat,
+                &action,
+                &action_summary,
+                &node.accumulated,
+                &node.sequence_residues,
+            ) {
+                pruned_by_plan_expansion_gate += 1;
+                increment_counter(&mut plan_expansion_gate_reasons, reason.to_string());
+                if plan_expansion_gate_examples.len() < 32 {
+                    plan_expansion_gate_examples.push(plan_expansion_gate_example(
+                        reason,
+                        &node,
+                        &action_key,
+                        &action,
+                    ));
+                }
+                continue;
+            }
             let mut generation_canonical_notes = BTreeSet::new();
             let mut next_canonical_last_keys = BTreeMap::new();
             match generation_canonical_decision(
@@ -1466,6 +1510,9 @@ fn explore_sequence_classes(
         pruned_by_generation_target_order,
         pruned_by_generation_lane_order,
         generation_duplicate_prune_effects,
+        pruned_by_plan_expansion_gate,
+        plan_expansion_gate_reasons,
+        plan_expansion_gate_examples,
         pruned_by_optimistic_bound,
         pruned_by_budget,
         pruned_by_dominated_state,
@@ -1648,18 +1695,25 @@ fn accumulate_action_effects(
             };
             let facts = card_facts::facts(card.id);
             let structure = card_structure::structure(card.id);
-            if facts.draws_cards {
+            if summary.draws_cards {
                 order_sensitive_reasons.insert("draw_changes_future_action_space".to_string());
             }
             if facts.applies_vuln || facts.applies_weak {
                 order_sensitive_reasons.insert("debuff_before_damage_can_change_value".to_string());
             }
-            if facts.gains_energy {
+            if summary.energy_gain {
                 order_sensitive_reasons
                     .insert("energy_gain_changes_future_action_space".to_string());
             }
             if facts.exhausts_other_cards {
                 order_sensitive_reasons.insert("exhaust_changes_hand_and_deck_state".to_string());
+            }
+            if facts.creates_cards {
+                order_sensitive_reasons
+                    .insert("card_creation_changes_future_card_zones".to_string());
+            }
+            if summary.immediate_action_space_change {
+                accumulated.action_space_change_count += 1;
             }
             if facts.random_generation || card.id == CardId::TrueGrit && card.upgrades == 0 {
                 order_sensitive_reasons.insert("random_effect_requires_risk_model".to_string());
@@ -1798,6 +1852,16 @@ fn action_sequence_residues(combat: &CombatState, action: &ClientInput) -> Vec<&
     let Some(card) = combat.zones.hand.get(*card_index) else {
         return Vec::new();
     };
+    let facts = card_facts::facts(card.id);
+    if facts.self_replicating {
+        return vec!["generated_card_copy"];
+    }
+    if facts.produces_status {
+        return vec!["generated_status_card"];
+    }
+    if facts.creates_cards {
+        return vec!["generated_card_zone_mutation"];
+    }
     match card.id {
         CardId::Headbutt if !combat.zones.discard_pile.is_empty() => {
             vec!["future_draw_order"]
@@ -1811,6 +1875,62 @@ fn action_sequence_residues(combat: &CombatState, action: &ClientInput) -> Vec<&
             vec!["deck_search_to_hand"]
         }
         _ => Vec::new(),
+    }
+}
+
+fn dropkick_payoff_active(combat: &CombatState, target: Option<usize>) -> bool {
+    target.is_some_and(|target| combat.get_power(target, PowerId::Vulnerable) > 0)
+}
+
+fn action_changes_current_action_space(
+    combat: &CombatState,
+    action: &ClientInput,
+    card: &CombatCard,
+) -> bool {
+    let target = match action {
+        ClientInput::PlayCard { target, .. } => *target,
+        _ => None,
+    };
+    match card.id {
+        CardId::Dropkick => dropkick_payoff_active(combat, target),
+        CardId::Impatience => !combat
+            .zones
+            .hand
+            .iter()
+            .any(|card| cards::get_card_definition(card.id).card_type == CardType::Attack),
+        CardId::SecretTechnique => combat
+            .zones
+            .draw_pile
+            .iter()
+            .any(|card| cards::get_card_definition(card.id).card_type == CardType::Skill),
+        CardId::SecretWeapon | CardId::Violence => combat
+            .zones
+            .draw_pile
+            .iter()
+            .any(|card| cards::get_card_definition(card.id).card_type == CardType::Attack),
+        CardId::Forethought => combat.zones.hand.len() > 1,
+        CardId::DeepBreath => {
+            !combat.zones.draw_pile.is_empty() || !combat.zones.discard_pile.is_empty()
+        }
+        CardId::Acrobatics
+        | CardId::Adrenaline
+        | CardId::Backflip
+        | CardId::BattleTrance
+        | CardId::BurningPact
+        | CardId::Discovery
+        | CardId::DaggerThrow
+        | CardId::Finesse
+        | CardId::FlashOfSteel
+        | CardId::InfernalBlade
+        | CardId::JackOfAllTrades
+        | CardId::MasterOfStrategy
+        | CardId::Offering
+        | CardId::PommelStrike
+        | CardId::Prepared
+        | CardId::ShrugItOff
+        | CardId::ThinkingAhead
+        | CardId::Warcry => true,
+        _ => false,
     }
 }
 
@@ -1895,11 +2015,15 @@ fn summarize_action_effect(combat: &CombatState, action: &ClientInput) -> Action
     summary.damage_estimate = estimate_card_damage(card, combat);
     summary.block_estimate = estimate_card_block(card);
     summary.attack_hit_count = attack_hit_count(card.id, card.upgrades, combat);
-    summary.draws_cards = facts.draws_cards;
-    summary.energy_gain = facts.gains_energy;
+    let dropkick_payoff = card.id == CardId::Dropkick && dropkick_payoff_active(combat, *target);
+    summary.draws_cards = facts.draws_cards && (card.id != CardId::Dropkick || dropkick_payoff);
+    summary.energy_gain = facts.gains_energy || dropkick_payoff;
     summary.debuff = facts.applies_vuln || facts.applies_weak || facts.applies_frail;
     summary.setup_or_scaling = structure.is_setup_piece() || structure.is_scaling_piece();
     summary.exhaust_or_discard = facts.exhausts_other_cards;
+    summary.creates_cards = facts.creates_cards;
+    summary.immediate_action_space_change =
+        action_changes_current_action_space(combat, action, card);
     summary.random_effect =
         facts.random_generation || card.id == CardId::TrueGrit && card.upgrades == 0;
     summary.possible_kill = possible_kill_with_card(combat, card);
@@ -1912,6 +2036,7 @@ fn summarize_action_effect(combat: &CombatState, action: &ClientInput) -> Action
         && !summary.debuff
         && !summary.setup_or_scaling
         && !summary.exhaust_or_discard
+        && !summary.creates_cards
         && !summary.random_effect
         && !summary.target_sensitive
         && !summary.possible_kill;
@@ -1923,6 +2048,7 @@ fn summarize_action_effect(combat: &CombatState, action: &ClientInput) -> Action
         && !summary.debuff
         && !summary.setup_or_scaling
         && !summary.exhaust_or_discard
+        && !summary.creates_cards
         && !summary.random_effect
         && !summary.target_sensitive
         && !summary.possible_kill;
@@ -2082,6 +2208,9 @@ fn abstract_compression_decision(
     if !order_sensitive_reasons.is_empty() {
         return AbstractCompressionDecision::BlockedByActionSemantics("order_sensitive_action");
     }
+    if summary.creates_cards {
+        return AbstractCompressionDecision::BlockedByActionSemantics("creates_cards");
+    }
     if !summary.pure_damage && !summary.pure_block {
         return AbstractCompressionDecision::BlockedByActionSemantics("not_pure_damage_or_block");
     }
@@ -2138,6 +2267,9 @@ fn generation_canonical_decision(
     }
     if !order_sensitive_reasons.is_empty() {
         return GenerationCanonicalDecision::BlockedByActionSemantics("order_sensitive_action");
+    }
+    if summary.creates_cards {
+        return GenerationCanonicalDecision::BlockedByActionSemantics("creates_cards");
     }
     if !summary.pure_damage && !summary.pure_block {
         return GenerationCanonicalDecision::BlockedByActionSemantics("not_pure_damage_or_block");
@@ -2295,6 +2427,56 @@ fn parse_generation_sort_key(sort_key: &str) -> ParsedGenerationSortKey<'_> {
 
 fn increment_counter(counter: &mut BTreeMap<String, usize>, key: String) {
     *counter.entry(key).or_insert(0) += 1;
+}
+
+fn plan_expansion_gate_reason(
+    engine: &EngineState,
+    combat: &CombatState,
+    action: &ClientInput,
+    summary: &ActionEffectSummary,
+    accumulated: &AccumulatedSequenceEffects,
+    sequence_residues: &BTreeSet<String>,
+) -> Option<&'static str> {
+    if !matches!(engine, EngineState::CombatPlayerTurn) {
+        return None;
+    }
+    if matches!(action, ClientInput::EndTurn) {
+        return None;
+    }
+    if summary.pure_block
+        && visible_incoming_damage(combat) <= combat.entities.player.block
+        && kill_window_target_count(combat) == 0
+        && known_order_sensitive_context(combat, summary).is_none()
+    {
+        return Some("surplus_block_without_pressure");
+    }
+    if summary.immediate_action_space_change && accumulated.action_space_change_count >= 1 {
+        return Some("secondary_action_space_change_budget");
+    }
+    if summary.immediate_action_space_change && !sequence_residues.is_empty() {
+        return Some("action_space_change_after_card_zone_residue");
+    }
+    None
+}
+
+fn plan_expansion_gate_example(
+    reason: &str,
+    node: &ProbeNode,
+    action_key: &str,
+    action: &ClientInput,
+) -> PlanExpansionGateExample {
+    PlanExpansionGateExample {
+        reason: reason.to_string(),
+        depth: node.depth,
+        partial_action_keys: node.action_keys.clone(),
+        partial_actions: node.actions.clone(),
+        pruned_action_key: action_key.to_string(),
+        pruned_action: format!("{action:?}"),
+        current_energy: node.combat.turn.energy as i32,
+        current_block: node.combat.entities.player.block,
+        visible_incoming_damage: visible_incoming_damage(&node.combat),
+        hand_size: node.combat.zones.hand.len(),
+    }
 }
 
 fn known_order_sensitive_context(
@@ -2862,6 +3044,15 @@ fn semantics_for_card(card_id: CardId, upgrades: u8) -> Vec<String> {
     }
     if facts.exhausts_self {
         tags.push("self_exhaust".to_string());
+    }
+    if facts.self_replicating {
+        tags.push("self_replicating".to_string());
+    }
+    if facts.produces_status {
+        tags.push("produces_status".to_string());
+    }
+    if facts.creates_cards {
+        tags.push("creates_cards".to_string());
     }
     match card_id {
         CardId::TrueGrit if upgrades == 0 => {
@@ -3674,6 +3865,7 @@ mod tests {
             .entities
             .monsters
             .push(planned_monster(EnemyId::Cultist, 1));
+        combat.entities.player.block = 99;
         combat.zones.hand.push(card(CardId::Defend, 1));
         combat.zones.hand.push(card(CardId::Defend, 2));
 
@@ -3957,6 +4149,274 @@ mod tests {
             .compression_notes
             .iter()
             .any(|note| note == "verified_abstract_equivalence"));
+    }
+
+    #[test]
+    fn combat_turn_plan_probe_does_not_generation_prune_anger_copy_effect() {
+        let mut combat = blank_test_combat();
+        let mut cultist = planned_monster(EnemyId::Cultist, 1);
+        cultist.current_hp = 60;
+        cultist.max_hp = 60;
+        combat.entities.monsters.push(cultist);
+        combat.zones.hand.push(card(CardId::Anger, 1));
+        combat.zones.hand.push(card(CardId::Anger, 2));
+        combat.zones.hand.push(card(CardId::Defend, 3));
+
+        let report = probe_turn_plans(
+            &EngineState::CombatPlayerTurn,
+            &combat,
+            CombatTurnPlanProbeConfig {
+                max_depth: 2,
+                beam_width: 8,
+                ..CombatTurnPlanProbeConfig::default()
+            },
+        );
+
+        assert!(report.hand_cards.iter().any(|card| card.card_id == "Anger"
+            && card
+                .base_semantics
+                .iter()
+                .any(|tag| tag == "self_replicating")));
+        assert!(report.sequence_classes.iter().any(|sequence| sequence
+            .compression_notes
+            .iter()
+            .any(|note| note == "sequence_residue:generated_card_copy")));
+        assert!(!report
+            .probe_limits
+            .generation_duplicate_prune_effects
+            .keys()
+            .any(|effect| effect.contains("Anger")));
+    }
+
+    #[test]
+    fn combat_turn_plan_probe_does_not_treat_status_generation_as_pure_block() {
+        let mut combat = blank_test_combat();
+        combat
+            .entities
+            .monsters
+            .push(planned_monster(EnemyId::Cultist, 1));
+        combat.zones.hand.push(card(CardId::PowerThrough, 1));
+        combat.zones.hand.push(card(CardId::Defend, 2));
+
+        let report = probe_turn_plans(
+            &EngineState::CombatPlayerTurn,
+            &combat,
+            CombatTurnPlanProbeConfig {
+                max_depth: 2,
+                beam_width: 8,
+                ..CombatTurnPlanProbeConfig::default()
+            },
+        );
+
+        assert!(report
+            .hand_cards
+            .iter()
+            .any(|card| card.card_id == "PowerThrough"
+                && card
+                    .base_semantics
+                    .iter()
+                    .any(|tag| tag == "produces_status")));
+        assert!(report.sequence_classes.iter().any(|sequence| sequence
+            .compression_notes
+            .iter()
+            .any(|note| note == "sequence_residue:generated_status_card")));
+        assert!(!report
+            .probe_limits
+            .generation_duplicate_prune_effects
+            .keys()
+            .any(|effect| effect.contains("PowerThrough")));
+    }
+
+    #[test]
+    fn combat_turn_plan_probe_gates_surplus_block_without_pressure() {
+        let mut combat = blank_test_combat();
+        combat
+            .entities
+            .monsters
+            .push(planned_monster(EnemyId::Cultist, 1));
+        combat.entities.player.block = 99;
+        combat.zones.hand.push(card(CardId::Defend, 1));
+        combat.zones.hand.push(card(CardId::Defend, 2));
+        combat.zones.hand.push(card(CardId::Strike, 3));
+
+        let report = probe_turn_plans(
+            &EngineState::CombatPlayerTurn,
+            &combat,
+            CombatTurnPlanProbeConfig {
+                max_depth: 2,
+                beam_width: 8,
+                ..CombatTurnPlanProbeConfig::default()
+            },
+        );
+
+        assert!(report.probe_limits.pruned_by_plan_expansion_gate > 0);
+        assert!(report
+            .probe_limits
+            .plan_expansion_gate_reasons
+            .contains_key("surplus_block_without_pressure"));
+        assert!(report
+            .probe_limits
+            .plan_expansion_gate_examples
+            .iter()
+            .any(|example| example.reason == "surplus_block_without_pressure"
+                && example.pruned_action_key.contains("card:Defend")));
+    }
+
+    #[test]
+    fn combat_turn_plan_probe_keeps_block_when_it_reduces_incoming() {
+        let mut combat = blank_test_combat();
+        combat
+            .entities
+            .monsters
+            .push(planned_monster(EnemyId::Cultist, 1));
+        combat.entities.player.block = 0;
+        combat.zones.hand.push(card(CardId::Defend, 1));
+        combat.zones.hand.push(card(CardId::Defend, 2));
+
+        let report = probe_turn_plans(
+            &EngineState::CombatPlayerTurn,
+            &combat,
+            CombatTurnPlanProbeConfig {
+                max_depth: 1,
+                beam_width: 8,
+                ..CombatTurnPlanProbeConfig::default()
+            },
+        );
+
+        assert!(!report
+            .probe_limits
+            .plan_expansion_gate_reasons
+            .contains_key("surplus_block_without_pressure"));
+        assert!(report
+            .sequence_classes
+            .iter()
+            .any(|sequence| sequence.action_keys[0].contains("card:Defend")));
+    }
+
+    #[test]
+    fn combat_turn_plan_probe_gates_repeated_action_space_changes() {
+        let mut combat = blank_test_combat();
+        let mut cultist = planned_monster(EnemyId::Cultist, 1);
+        cultist.current_hp = 80;
+        cultist.max_hp = 80;
+        combat.entities.monsters.push(cultist);
+        combat.zones.hand.push(card(CardId::PommelStrike, 1));
+        combat.zones.hand.push(card(CardId::ShrugItOff, 2));
+        combat.zones.hand.push(card(CardId::Strike, 3));
+
+        let report = probe_turn_plans(
+            &EngineState::CombatPlayerTurn,
+            &combat,
+            CombatTurnPlanProbeConfig {
+                max_depth: 2,
+                beam_width: 8,
+                ..CombatTurnPlanProbeConfig::default()
+            },
+        );
+
+        assert!(report.probe_limits.pruned_by_plan_expansion_gate > 0);
+        assert!(report
+            .probe_limits
+            .plan_expansion_gate_reasons
+            .contains_key("secondary_action_space_change_budget"));
+        assert!(report
+            .probe_limits
+            .plan_expansion_gate_examples
+            .iter()
+            .any(
+                |example| example.reason == "secondary_action_space_change_budget"
+                    && !example.partial_action_keys.is_empty()
+            ));
+    }
+
+    #[test]
+    fn combat_turn_plan_probe_does_not_gate_dropkick_without_vulnerable() {
+        let mut combat = blank_test_combat();
+        let mut cultist = planned_monster(EnemyId::Cultist, 1);
+        cultist.current_hp = 80;
+        cultist.max_hp = 80;
+        combat.entities.monsters.push(cultist);
+        combat.zones.hand.push(card(CardId::Dropkick, 1));
+        combat.zones.hand.push(card(CardId::Dropkick, 2));
+        combat.zones.hand.push(card(CardId::Strike, 3));
+
+        let report = probe_turn_plans(
+            &EngineState::CombatPlayerTurn,
+            &combat,
+            CombatTurnPlanProbeConfig {
+                max_depth: 2,
+                beam_width: 12,
+                ..CombatTurnPlanProbeConfig::default()
+            },
+        );
+
+        assert!(!report
+            .probe_limits
+            .plan_expansion_gate_reasons
+            .contains_key("secondary_action_space_change_budget"));
+        let dropkick = report
+            .sequence_classes
+            .iter()
+            .find(|sequence| sequence.action_keys[0].contains("card:Dropkick"))
+            .expect("Dropkick line should be explored");
+        assert!(!dropkick
+            .order_sensitive_reasons
+            .iter()
+            .any(|reason| reason == "draw_changes_future_action_space"));
+        assert!(!dropkick
+            .order_sensitive_reasons
+            .iter()
+            .any(|reason| reason == "energy_gain_changes_future_action_space"));
+    }
+
+    #[test]
+    fn combat_turn_plan_probe_gates_repeated_dropkick_with_vulnerable() {
+        let mut combat = blank_test_combat();
+        let mut cultist = planned_monster(EnemyId::Cultist, 1);
+        cultist.current_hp = 80;
+        cultist.max_hp = 80;
+        combat.entities.monsters.push(cultist);
+        combat.entities.power_db.insert(
+            1,
+            vec![Power {
+                power_type: crate::runtime::combat::PowerId::Vulnerable,
+                instance_id: None,
+                amount: 2,
+                extra_data: 0,
+                just_applied: false,
+            }],
+        );
+        combat.zones.hand.push(card(CardId::Dropkick, 1));
+        combat.zones.hand.push(card(CardId::Dropkick, 2));
+        combat.zones.hand.push(card(CardId::Strike, 3));
+
+        let report = probe_turn_plans(
+            &EngineState::CombatPlayerTurn,
+            &combat,
+            CombatTurnPlanProbeConfig {
+                max_depth: 2,
+                beam_width: 12,
+                ..CombatTurnPlanProbeConfig::default()
+            },
+        );
+
+        assert!(report
+            .probe_limits
+            .plan_expansion_gate_reasons
+            .contains_key("secondary_action_space_change_budget"));
+        let dropkick = report
+            .sequence_classes
+            .iter()
+            .find(|sequence| sequence.action_keys[0].contains("card:Dropkick"))
+            .expect("Dropkick line should be explored");
+        assert!(dropkick
+            .order_sensitive_reasons
+            .iter()
+            .any(|reason| reason == "draw_changes_future_action_space"));
+        assert!(dropkick
+            .order_sensitive_reasons
+            .iter()
+            .any(|reason| reason == "energy_gain_changes_future_action_space"));
     }
 
     #[test]

@@ -392,6 +392,9 @@ def flatten_result(result: dict[str, Any]) -> dict[str, Any]:
     pruned_generation_target = int(limits.get("pruned_by_generation_target_order") or 0)
     pruned_generation_lane = int(limits.get("pruned_by_generation_lane_order") or 0)
     generation_duplicate_effects = limits.get("generation_duplicate_prune_effects") or {}
+    pruned_plan_gate = int(limits.get("pruned_by_plan_expansion_gate") or 0)
+    plan_gate_reasons = limits.get("plan_expansion_gate_reasons") or {}
+    plan_gate_examples = limits.get("plan_expansion_gate_examples") or []
     pruned_bound = int(limits.get("pruned_by_optimistic_bound") or 0)
     pruned_budget = int(limits.get("pruned_by_budget") or 0)
     nodes = int(limits.get("nodes_expanded") or 0)
@@ -399,9 +402,22 @@ def flatten_result(result: dict[str, Any]) -> dict[str, Any]:
     actions_simulated = int(limits.get("actions_simulated") or 0)
     kept = int(limits.get("sequence_classes_kept") or 0)
     observed_branch_events = (
-        nodes + pruned_exact + pruned_abstract + pruned_generation + pruned_bound + pruned_budget
+        nodes
+        + pruned_exact
+        + pruned_abstract
+        + pruned_generation
+        + pruned_plan_gate
+        + pruned_bound
+        + pruned_budget
     )
-    total_pruned = pruned_exact + pruned_abstract + pruned_generation + pruned_bound + pruned_budget
+    total_pruned = (
+        pruned_exact
+        + pruned_abstract
+        + pruned_generation
+        + pruned_plan_gate
+        + pruned_bound
+        + pruned_budget
+    )
 
     no_compression_reasons: list[str] = []
     if pruned_generation == 0:
@@ -422,6 +438,8 @@ def flatten_result(result: dict[str, Any]) -> dict[str, Any]:
         no_compression_reasons.append("abstract_blocked_by_action_semantics")
     if abstract_rejected_engine:
         no_compression_reasons.append("abstract_rejected_by_engine")
+    if pruned_plan_gate:
+        no_compression_reasons.append("plan_expansion_gate_pruned")
     if order_reasons:
         no_compression_reasons.append("order_sensitive_sequences_present")
     no_compression_reasons.extend(card_semantic_blockers(report))
@@ -449,6 +467,9 @@ def flatten_result(result: dict[str, Any]) -> dict[str, Any]:
             "pruned_by_generation_target_order": pruned_generation_target,
             "pruned_by_generation_lane_order": pruned_generation_lane,
             "generation_duplicate_prune_effects": generation_duplicate_effects,
+            "pruned_by_plan_expansion_gate": pruned_plan_gate,
+            "plan_expansion_gate_reasons": plan_gate_reasons,
+            "plan_expansion_gate_examples": plan_gate_examples,
             "pruned_by_optimistic_bound": pruned_bound,
             "pruned_by_budget": pruned_budget,
             "pruned_by_dominated_state": int(limits.get("pruned_by_dominated_state") or 0),
@@ -485,6 +506,18 @@ def aggregate_counter(rows: list[dict[str, Any]], key: str) -> Counter:
     return counter
 
 
+def aggregate_plan_gate_examples(rows: list[dict[str, Any]], top: int) -> list[tuple[str, int]]:
+    counter: Counter = Counter()
+    for row in rows:
+        for example in row.get("plan_expansion_gate_examples") or []:
+            reason = str(example.get("reason") or "unknown")
+            action = str(example.get("pruned_action_key") or "unknown")
+            prefix = " -> ".join(str(item) for item in example.get("partial_action_keys") or [])
+            label = f"{reason} | {prefix + ' -> ' if prefix else ''}{action}"
+            counter[label] += 1
+    return counter.most_common(top)
+
+
 def summarize(rows: list[dict[str, Any]], top: int = 15) -> dict[str, Any]:
     ok_rows = [row for row in rows if row.get("status") == "ok"]
     failed_rows = [row for row in rows if row.get("status") != "ok"]
@@ -519,6 +552,7 @@ def summarize(rows: list[dict[str, Any]], top: int = 15) -> dict[str, Any]:
         "pruned_by_generation_same_lane_order": sum_int(ok_rows, "pruned_by_generation_same_lane_order"),
         "pruned_by_generation_target_order": sum_int(ok_rows, "pruned_by_generation_target_order"),
         "pruned_by_generation_lane_order": sum_int(ok_rows, "pruned_by_generation_lane_order"),
+        "pruned_by_plan_expansion_gate": sum_int(ok_rows, "pruned_by_plan_expansion_gate"),
         "pruned_by_optimistic_bound": sum_int(ok_rows, "pruned_by_optimistic_bound"),
         "pruned_by_budget": sum_int(ok_rows, "pruned_by_budget"),
         "total_pruned_observed": total_pruned,
@@ -544,6 +578,9 @@ def summarize(rows: list[dict[str, Any]], top: int = 15) -> dict[str, Any]:
         "cases_with_abstract_rejections": sum(
             1 for row in ok_rows if int(row.get("abstract_equivalence_rejected_by_engine") or 0) > 0
         ),
+        "cases_with_plan_expansion_gate": sum(
+            1 for row in ok_rows if int(row.get("pruned_by_plan_expansion_gate") or 0) > 0
+        ),
         "cases_with_bound_prune": sum(1 for row in ok_rows if int(row.get("pruned_by_optimistic_bound") or 0) > 0),
         "cases_with_budget_prune": sum(1 for row in ok_rows if int(row.get("pruned_by_budget") or 0) > 0),
     }
@@ -562,12 +599,15 @@ def summarize(rows: list[dict[str, Any]], top: int = 15) -> dict[str, Any]:
         "generation_duplicate_prune_effects": aggregate_counter(
             ok_rows, "generation_duplicate_prune_effects"
         ).most_common(top),
+        "plan_expansion_gate_reasons": aggregate_counter(ok_rows, "plan_expansion_gate_reasons").most_common(top),
+        "plan_expansion_gate_example_actions": aggregate_plan_gate_examples(ok_rows, top),
         "top_exact_prune_cases": top_cases(ok_rows, "pruned_as_equivalent", top),
         "top_generation_prune_cases": top_cases(ok_rows, "pruned_by_generation_canonical_order", top),
         "top_generation_duplicate_cases": top_cases(ok_rows, "pruned_by_generation_duplicate_card", top),
         "top_generation_same_lane_cases": top_cases(ok_rows, "pruned_by_generation_same_lane_order", top),
         "top_generation_target_order_cases": top_cases(ok_rows, "pruned_by_generation_target_order", top),
         "top_generation_lane_order_cases": top_cases(ok_rows, "pruned_by_generation_lane_order", top),
+        "top_plan_expansion_gate_cases": top_cases(ok_rows, "pruned_by_plan_expansion_gate", top),
         "top_generation_candidate_cases": top_cases(ok_rows, "generation_canonical_candidates", top),
         "top_generation_context_blocked_cases": top_cases(ok_rows, "generation_canonical_blocked_by_context", top),
         "top_generation_action_blocked_cases": top_cases(ok_rows, "generation_canonical_blocked_by_action_semantics", top),
@@ -637,6 +677,7 @@ def markdown_report(report: dict[str, Any]) -> str:
         "pruned_by_generation_same_lane_order",
         "pruned_by_generation_target_order",
         "pruned_by_generation_lane_order",
+        "pruned_by_plan_expansion_gate",
         "pruned_by_optimistic_bound",
         "pruned_by_budget",
         "observed_prune_share",
@@ -646,6 +687,7 @@ def markdown_report(report: dict[str, Any]) -> str:
         "cases_with_abstract_prune",
         "cases_with_abstract_candidates",
         "cases_with_abstract_rejections",
+        "cases_with_plan_expansion_gate",
         "cases_with_bound_prune",
         "cases_with_budget_prune",
     ]:
@@ -675,6 +717,16 @@ def markdown_report(report: dict[str, Any]) -> str:
         report["summary"]["generation_duplicate_prune_effects"],
         ("effect key", "n"),
     )
+    table(
+        "Plan Expansion Gate Reasons",
+        report["summary"]["plan_expansion_gate_reasons"],
+        ("reason", "n"),
+    )
+    table(
+        "Plan Expansion Gate Example Actions",
+        report["summary"]["plan_expansion_gate_example_actions"],
+        ("example", "n"),
+    )
 
     for title, key in [
         ("Top Exact-Prune Cases", "top_exact_prune_cases"),
@@ -683,6 +735,7 @@ def markdown_report(report: dict[str, Any]) -> str:
         ("Top Generation Same-Lane Order Cases", "top_generation_same_lane_cases"),
         ("Top Generation Target-Order Cases", "top_generation_target_order_cases"),
         ("Top Generation Lane-Order Cases", "top_generation_lane_order_cases"),
+        ("Top Plan Expansion Gate Cases", "top_plan_expansion_gate_cases"),
         ("Top Generation Canonical-Candidate Cases", "top_generation_candidate_cases"),
         ("Top Generation Context-Blocked Cases", "top_generation_context_blocked_cases"),
         ("Top Generation Action-Blocked Cases", "top_generation_action_blocked_cases"),
@@ -708,6 +761,7 @@ def markdown_report(report: dict[str, Any]) -> str:
             "top_generation_same_lane_cases": "pruned_by_generation_same_lane_order",
             "top_generation_target_order_cases": "pruned_by_generation_target_order",
             "top_generation_lane_order_cases": "pruned_by_generation_lane_order",
+            "top_plan_expansion_gate_cases": "pruned_by_plan_expansion_gate",
             "top_generation_candidate_cases": "generation_canonical_candidates",
             "top_generation_context_blocked_cases": "generation_canonical_blocked_by_context",
             "top_generation_action_blocked_cases": "generation_canonical_blocked_by_action_semantics",
@@ -735,6 +789,7 @@ def markdown_report(report: dict[str, Any]) -> str:
             "- `pruned_as_equivalent` is exact state equivalence and is the safest compression signal.",
             "- `pruned_by_generation_canonical_order` is V2 pre-simulation canonical ordering for safe pure damage/block permutations.",
             "- Generation canonical subclasses split that count into duplicate-card, same-lane, target-order, and lane-order prunes.",
+            "- `pruned_by_plan_expansion_gate` is V2.3 query-oriented expansion gating for surplus block and repeated action-space changes.",
             "- `pruned_by_abstract_equivalence` is the engine-verified pure damage/block permutation compression fallback.",
             "- `abstract_equivalence_rejected_by_engine` means the heuristic abstract key matched but exact verification refused to prune.",
             "- `abstract_reject_diff:*` notes classify which verified state fields differed across an abstract-key collision.",

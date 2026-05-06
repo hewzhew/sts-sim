@@ -31,6 +31,7 @@ pub(crate) struct CardFacts {
     pub combat_heal: bool,
     pub conditional_free: bool,
     pub self_replicating: bool,
+    pub creates_cards: bool,
     pub random_generation: bool,
     pub cost_manipulation_sensitive: bool,
 }
@@ -97,7 +98,10 @@ pub(crate) fn facts(card_id: CardId) -> CardFacts {
                 | ThunderClap
                 | Whirlwind
         ),
-        produces_status: matches!(card_id, PowerThrough | RecklessCharge | WildStrike),
+        produces_status: matches!(
+            card_id,
+            Immolate | PowerThrough | RecklessCharge | WildStrike
+        ),
         exhausts_other_cards: matches!(
             card_id,
             BurningPact | FiendFire | SecondWind | SeverSoul | TrueGrit
@@ -109,6 +113,18 @@ pub(crate) fn facts(card_id: CardId) -> CardFacts {
         combat_heal: matches!(card_id, Reaper | Bite | Feed | BandageUp),
         conditional_free: matches!(card_id, BloodForBlood | Dropkick | SeeingRed),
         self_replicating: matches!(card_id, Anger),
+        creates_cards: matches!(
+            card_id,
+            Anger
+                | BladeDance
+                | CloakAndDagger
+                | DualWield
+                | Immolate
+                | PowerThrough
+                | Pride
+                | RecklessCharge
+                | WildStrike
+        ),
         random_generation: matches!(card_id, Discovery | InfernalBlade | Metamorphosis | Mayhem),
         cost_manipulation_sensitive: matches!(
             card_id,
@@ -139,6 +155,11 @@ mod tests {
 
         let anger = facts(CardId::Anger);
         assert!(anger.self_replicating);
+        assert!(anger.creates_cards);
+
+        let immolate = facts(CardId::Immolate);
+        assert!(immolate.produces_status);
+        assert!(immolate.creates_cards);
 
         let discovery = facts(CardId::Discovery);
         assert!(discovery.random_generation);
