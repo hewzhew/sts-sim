@@ -17,6 +17,7 @@ DOMS = [
     ("kill_window_delta", True),
     ("starter_basic_burden_delta", True),
     ("setup_cashout_risk_delta", False),
+    ("duplicate_penalty", True),
 ]
 
 

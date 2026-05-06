@@ -11,16 +11,22 @@ pub fn build_action_candidates(
         .map(|(action_index, action)| {
             let action_key = action_key_for_input(action, combat);
             let card = ctx.and_then(|ctx| card_feature_for_action(action, ctx));
-            let plan_delta = ctx
-                .and_then(|ctx| {
-                    let delta = candidate_plan_delta_for_action(action, ctx);
-                    if delta == empty_candidate_plan_delta() { None } else { Some(delta) }
-                });
-            let reward_structure = ctx
-                .and_then(|ctx| {
-                    let rs = reward_action_structure_for_action(action, ctx);
-                    if rs == empty_reward_action_structure() { None } else { Some(rs) }
-                });
+            let plan_delta = ctx.and_then(|ctx| {
+                let delta = candidate_plan_delta_for_action(action, ctx);
+                if delta == empty_candidate_plan_delta() {
+                    None
+                } else {
+                    Some(delta)
+                }
+            });
+            let reward_structure = ctx.and_then(|ctx| {
+                let rs = reward_action_structure_for_action(action, ctx);
+                if rs == empty_reward_action_structure() {
+                    None
+                } else {
+                    Some(rs)
+                }
+            });
             RunActionCandidate {
                 action_index,
                 action_id: stable_action_id(&action_key),
@@ -113,7 +119,10 @@ pub fn reward_action_structure_for_action(
     }
 }
 
-pub fn card_feature_for_action(action: &ClientInput, ctx: &EpisodeContext) -> Option<RunCardFeatureV0> {
+pub fn card_feature_for_action(
+    action: &ClientInput,
+    ctx: &EpisodeContext,
+) -> Option<RunCardFeatureV0> {
     match action {
         ClientInput::PlayCard { card_index, .. } => ctx
             .combat_state
@@ -558,8 +567,6 @@ const DOMINANCE_DIMS: &[(&str, bool)] = &[
     ("kill_window_delta", true),
     ("starter_basic_burden_delta", true),
     ("setup_cashout_risk_delta", false), // lower risk = better
-    ("deck_deficit_bonus", true),
-    ("bloat_penalty", true),
     ("duplicate_penalty", true),
 ];
 
@@ -579,11 +586,15 @@ fn delta_dim(delta: &CandidatePlanDeltaV0, dim: &str, higher_better: bool) -> i3
         "duplicate_penalty" => delta.duplicate_penalty,
         _ => 0,
     };
-    if higher_better { raw } else { -raw }
+    if higher_better {
+        raw
+    } else {
+        -raw
+    }
 }
 
 /// Returns true if the delta has any non-zero value in the dominance dimensions.
-/// A candidate whose 12 dominance dimensions are all zero has its value entirely
+/// A candidate whose 10 dominance dimensions are all zero has its value entirely
 /// outside the current vector model (e.g. DualWield, Corruption).  These
 /// context-dependent cards are excluded from Pareto comparison.
 fn is_vectorizable(delta: &CandidatePlanDeltaV0) -> bool {
@@ -642,9 +653,7 @@ pub fn pareto_dominates(a: &CandidatePlanDeltaV0, b: &CandidatePlanDeltaV0) -> b
 /// Returns indices of non-dominated candidates.
 /// Among equivalent candidates (mutual non-domination with identical deltas),
 /// only the first in order is kept.
-pub fn filter_dominated_candidates(
-    candidates: &[RunActionCandidate],
-) -> Vec<usize> {
+pub fn filter_dominated_candidates(candidates: &[RunActionCandidate]) -> Vec<usize> {
     let n = candidates.len();
     let mut dominated = vec![false; n];
 
@@ -678,9 +687,9 @@ pub fn filter_dominated_candidates(
         }
         // Check if any earlier kept candidate has identical delta
         let di = &candidates[i].plan_delta;
-        let is_dup = keep.iter().any(|&k: &usize| {
-            &candidates[k].plan_delta == di
-        });
+        let is_dup = keep
+            .iter()
+            .any(|&k: &usize| &candidates[k].plan_delta == di);
         if !is_dup {
             keep.push(i);
         }
@@ -691,10 +700,7 @@ pub fn filter_dominated_candidates(
 
 /// Diagnostic: for a candidate at `index`, return the index of a candidate that
 /// dominates it, if any.
-pub fn dominated_by(
-    candidates: &[RunActionCandidate],
-    index: usize,
-) -> Option<usize> {
+pub fn dominated_by(candidates: &[RunActionCandidate], index: usize) -> Option<usize> {
     let d = candidates[index].plan_delta.as_ref()?;
     for (i, c) in candidates.iter().enumerate() {
         if i == index {
@@ -708,4 +714,3 @@ pub fn dominated_by(
     }
     None
 }
-
