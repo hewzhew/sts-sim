@@ -225,6 +225,45 @@ def aggregate(rows: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+def axis_examples(cases: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    examples = []
+    for row in cases:
+        examples.append(
+            {
+                "example_id": f"{row['case_id']}::{row['target_action_card']}",
+                "source_case_id": row["case_id"],
+                "target_action_card": row.get("target_action_card"),
+                "label_mode": "current_turn_draw_marginal_axis_evidence",
+                "hard_preference_allowed": False,
+                "dominant_axis": row.get("dominant_axis"),
+                "positive_axes": row.get("positive_axes") or [],
+                "negative_axes": row.get("negative_axes") or [],
+                "tradeoff_notes": row.get("tradeoff_notes") or [],
+                "notes": row.get("notes") or [],
+                "label_strength": row.get("label_strength"),
+                "marginal_score": row.get("marginal_score"),
+                "full_block_gain": row.get("full_block_gain"),
+                "setup_gain": row.get("setup_gain"),
+                "lethal_gain": row.get("lethal_gain"),
+                "damage_delta": row.get("damage_delta"),
+                "block_delta": row.get("block_delta"),
+                "unblocked_reduction": row.get("unblocked_reduction"),
+                "hp_loss_reduction": row.get("hp_loss_reduction"),
+                "remaining_energy_delta": row.get("remaining_energy_delta"),
+                "remaining_hand_delta": row.get("remaining_hand_delta"),
+                "forced_cards": row.get("forced_cards") or [],
+                "no_draw_cards": row.get("no_draw_cards") or [],
+                "usable_as_axis_evidence": bool(row.get("usable_as_axis_evidence")),
+                "limitations": [
+                    "current_turn_only",
+                    "axis_evidence_not_card_choice_truth",
+                    "not_a_hard_preference_label",
+                ],
+            }
+        )
+    return examples
+
+
 def markdown(report: dict[str, Any]) -> str:
     lines = [
         "# Draw Marginal Label Drilldown",
@@ -315,6 +354,7 @@ def main() -> None:
     }
     write_json(out, report)
     write_jsonl(out.with_suffix(".cases.jsonl"), cases)
+    write_jsonl(out.with_name("axis_examples.jsonl"), axis_examples(cases))
     out.with_suffix(".md").write_text(markdown(report), encoding="utf-8")
     print(json.dumps({"summary": report["summary"], "out": str(out)}, indent=2))
 
