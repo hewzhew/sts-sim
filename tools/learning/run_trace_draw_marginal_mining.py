@@ -69,6 +69,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--cards", default=",".join(DEFAULT_TARGET_CARDS))
     parser.add_argument("--max-cases", type=int, default=80)
     parser.add_argument("--max-cases-per-card", type=int, default=20)
+    parser.add_argument(
+        "--target-granularity",
+        choices=["action_key", "hand_instance"],
+        default="action_key",
+        help="Mine exact root action keys by default; hand_instance preserves the previous behavior.",
+    )
     parser.add_argument("--tool-path", type=Path, default=REPO_ROOT / "target" / "debug" / "sts_dev_tool.exe")
     parser.add_argument("--max-depth", type=int, default=4)
     parser.add_argument("--max-nodes", type=int, default=1200)
@@ -115,31 +121,56 @@ def trace_files(trace_dir: Path) -> list[Path]:
     return sorted(trace_dir.glob("*.json"))
 
 
-def hand_target_cards(step: dict[str, Any], target_cards: set[str]) -> list[dict[str, Any]]:
+def hand_cards_by_index(step: dict[str, Any]) -> dict[int, dict[str, Any]]:
     combat = ((step.get("observation") or {}).get("combat") or {})
-    result = []
+    result = {}
     for hand_card in combat.get("hand_cards") or []:
-        normalized = card_key(hand_card.get("card_id"))
-        if normalized in target_cards and bool(hand_card.get("playable", True)):
-            result.append({**hand_card, "normalized_card_id": normalized})
+        hand_index = as_int(hand_card.get("hand_index"), -1)
+        if hand_index >= 0:
+            result[hand_index] = hand_card
     return result
 
 
-def has_legal_play_for_card(step: dict[str, Any], target_card: str, hand_index: int | None) -> bool:
+def target_play_actions(step: dict[str, Any], target_cards: set[str]) -> list[dict[str, Any]]:
+    hand_by_index = hand_cards_by_index(step)
+    result = []
     for action in step.get("action_mask") or []:
         if not isinstance(action, dict):
             continue
-        if (action.get("action") or {}).get("type") != "play_card":
-            continue
-        if hand_index is not None and as_int((action.get("action") or {}).get("card_index"), -1) != hand_index:
+        action_payload = action.get("action") or {}
+        if action_payload.get("type") != "play_card":
             continue
         card = action.get("card") or {}
-        if card_key(card.get("card_id")) == target_card:
-            return True
-    return False
+        target_card = card_key(card.get("card_id"))
+        if target_card not in target_cards:
+            continue
+        hand_index = as_int(action_payload.get("card_index"), -1)
+        hand_card = hand_by_index.get(hand_index) or {}
+        if hand_card and not bool(hand_card.get("playable", True)):
+            continue
+        result.append(
+            {
+                "action_index": action.get("action_index"),
+                "action_key": action.get("action_key"),
+                "target_action_card": target_card,
+                "hand_index": hand_index,
+                "card_instance_id": hand_card.get("card_instance_id"),
+                "target_cost_for_turn": hand_card.get("cost_for_turn"),
+                "action_target": action_payload.get("target"),
+                "dominated": action.get("dominated"),
+            }
+        )
+    return result
 
 
-def scan_candidates(trace_dir: Path, target_cards: set[str], *, max_cases_per_card: int, max_cases: int) -> list[dict[str, Any]]:
+def scan_candidates(
+    trace_dir: Path,
+    target_cards: set[str],
+    *,
+    max_cases_per_card: int,
+    max_cases: int,
+    target_granularity: str,
+) -> list[dict[str, Any]]:
     candidates: list[dict[str, Any]] = []
     for path in trace_files(trace_dir):
         try:
@@ -156,11 +187,10 @@ def scan_candidates(trace_dir: Path, target_cards: set[str], *, max_cases_per_ca
             combat = ((step.get("observation") or {}).get("combat") or {})
             if combat.get("combat_phase") not in {None, "player_turn"}:
                 continue
-            for hand_card in hand_target_cards(step, target_cards):
-                target_card = str(hand_card["normalized_card_id"])
-                hand_index = as_int(hand_card.get("hand_index"), -1)
-                if not has_legal_play_for_card(step, target_card, hand_index):
-                    continue
+            for target_action in target_play_actions(step, target_cards):
+                target_card = str(target_action["target_action_card"])
+                hand_index = as_int(target_action.get("hand_index"), -1)
+                action_key = str(target_action.get("action_key") or "")
                 incoming = as_int(combat.get("visible_incoming_damage"))
                 hp = as_int(combat.get("player_hp"), as_int(step.get("hp")))
                 energy = as_int(combat.get("energy"))
@@ -168,9 +198,10 @@ def scan_candidates(trace_dir: Path, target_cards: set[str], *, max_cases_per_ca
                 draw_count = as_int(combat.get("draw_count"))
                 legal_count = as_int(step.get("legal_action_count"))
                 chosen_key = str(step.get("chosen_action_key") or "")
-                chosen_bonus = 20 if target_card in chosen_key else 0
+                chosen_bonus = 40 if action_key and chosen_key == action_key else 20 if target_card in chosen_key else 0
                 score = pressure_score + legal_count + min(draw_count, 8) + chosen_bonus
-                case_id = f"{path.stem}_step_{as_int(step.get('step_index')):04d}_{target_card}"
+                action_suffix = action_key_suffix(action_key) if target_granularity == "action_key" else f"hand_{hand_index}"
+                case_id = f"{path.stem}_step_{as_int(step.get('step_index')):04d}_{target_card}_{action_suffix}"
                 candidates.append(
                     {
                         "case_id": case_id,
@@ -193,12 +224,25 @@ def scan_candidates(trace_dir: Path, target_cards: set[str], *, max_cases_per_ca
                         "total_monster_hp": as_int(combat.get("total_monster_hp")),
                         "target_action_card": target_card,
                         "hand_index": hand_index,
-                        "card_instance_id": hand_card.get("card_instance_id"),
-                        "target_cost_for_turn": hand_card.get("cost_for_turn"),
+                        "card_instance_id": target_action.get("card_instance_id"),
+                        "target_cost_for_turn": target_action.get("target_cost_for_turn"),
+                        "target_action_key": action_key if target_granularity == "action_key" else None,
+                        "target_action_index": target_action.get("action_index"),
+                        "action_target": target_action.get("action_target"),
+                        "target_granularity_requested": target_granularity,
+                        "dominated": target_action.get("dominated"),
                         "chosen_action_key": chosen_key,
                         "legal_action_count": legal_count,
                         "selection_score": score,
-                        "selection_reasons": selection_reasons(incoming, draw_count, legal_count, chosen_key, target_card),
+                        "selection_reasons": selection_reasons(
+                            incoming,
+                            draw_count,
+                            legal_count,
+                            chosen_key,
+                            target_card,
+                            action_key,
+                            target_granularity,
+                        ),
                     }
                 )
     candidates.sort(
@@ -214,7 +258,11 @@ def scan_candidates(trace_dir: Path, target_cards: set[str], *, max_cases_per_ca
     seen: set[tuple[str, int, str]] = set()
     for row in candidates:
         card = str(row["target_action_card"])
-        key = (str(row["trace_file"]), as_int(row["step_index"]), card)
+        key = (
+            str(row["trace_file"]),
+            as_int(row["step_index"]),
+            str(row.get("target_action_key") or f"{card}:hand:{row.get('hand_index')}"),
+        )
         if key in seen or per_card[card] >= max_cases_per_card:
             continue
         seen.add(key)
@@ -225,8 +273,30 @@ def scan_candidates(trace_dir: Path, target_cards: set[str], *, max_cases_per_ca
     return chosen
 
 
-def selection_reasons(incoming: int, draw_count: int, legal_count: int, chosen_key: str, target_card: str) -> list[str]:
-    reasons = ["target_card_playable_in_trace_hand"]
+def action_key_suffix(action_key: str) -> str:
+    if not action_key:
+        return "action_unknown"
+    text = (
+        action_key.replace("combat/play_card/card:", "")
+        .replace("/", "_")
+        .replace(":", "_")
+        .replace("[", "")
+        .replace("]", "")
+        .replace(",", "_")
+    )
+    return text[:120]
+
+
+def selection_reasons(
+    incoming: int,
+    draw_count: int,
+    legal_count: int,
+    chosen_key: str,
+    target_card: str,
+    action_key: str,
+    target_granularity: str,
+) -> list[str]:
+    reasons = ["target_card_playable_in_trace_hand", f"target_granularity:{target_granularity}"]
     if incoming > 0:
         reasons.append("visible_incoming_pressure")
     if incoming >= 18:
@@ -235,6 +305,8 @@ def selection_reasons(incoming: int, draw_count: int, legal_count: int, chosen_k
         reasons.append("nonempty_draw_pile")
     if legal_count >= 8:
         reasons.append("wide_action_mask")
+    if action_key and action_key == chosen_key:
+        reasons.append("trace_policy_chose_exact_target_action")
     if target_card in chosen_key:
         reasons.append("trace_policy_chose_target_card")
     return reasons
@@ -262,15 +334,21 @@ def run_probe(
         str(case["target_action_card"]),
         "--hand-index",
         str(case["hand_index"]),
-        "--out",
-        str(report_path),
-        "--max-depth",
-        str(max_depth),
-        "--max-nodes",
-        str(max_nodes),
-        "--beam-width",
-        str(beam_width),
     ]
+    if case.get("target_action_key"):
+        cmd.extend(["--target-action-key", str(case["target_action_key"])])
+    cmd.extend(
+        [
+            "--out",
+            str(report_path),
+            "--max-depth",
+            str(max_depth),
+            "--max-nodes",
+            str(max_nodes),
+            "--beam-width",
+            str(beam_width),
+        ]
+    )
     subprocess.run(cmd, cwd=REPO_ROOT, check=True, stdout=subprocess.DEVNULL)
 
 
@@ -307,6 +385,7 @@ def marginal_row(case: dict[str, Any], report: dict[str, Any]) -> dict[str, Any]
         "target_granularity": report.get("target_granularity"),
         "target_card_uuid": report.get("target_card_uuid"),
         "target_hand_index": report.get("target_hand_index"),
+        "target_action_key_reported": report.get("target_action_key"),
         "target_action_keys": [
             key
             for branch in report.get("branches") or []
@@ -438,6 +517,7 @@ def main() -> None:
         target_cards,
         max_cases_per_card=args.max_cases_per_card,
         max_cases=args.max_cases,
+        target_granularity=args.target_granularity,
     )
     report_dir = out_dir / "reports"
     branch_output_rows: list[dict[str, Any]] = []
@@ -468,6 +548,7 @@ def main() -> None:
             "trace_dir": str(trace_dir),
             "out_dir": str(out_dir),
             "cards": sorted(target_cards),
+            "target_granularity": args.target_granularity,
             "max_cases": args.max_cases,
             "max_cases_per_card": args.max_cases_per_card,
             "tool_path": str(tool_path),
@@ -481,6 +562,7 @@ def main() -> None:
         "limitations": [
             "current_turn_only_horizon",
             "trace_policy_occupancy_distribution_not_balanced",
+            "action_key_granularity_forces_one_concrete_root_target_when_target_action_key_is_present",
             "target_hand_instance_probe_tracks_uuid_but_forced_branch_may_choose_any_legal_target_for_that_instance",
             "labels_are_plan_query_deltas_not_card_choice_truth",
         ],

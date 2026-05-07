@@ -50,7 +50,7 @@ pub fn build_observation(ctx: &EpisodeContext) -> RunObservationV0 {
             .first()
             .map(|boss| format!("{boss:?}")),
         reward_source: reward_source_label(&ctx.engine_state, &ctx.run_state),
-        combat: combat.map(build_combat_observation),
+        combat: combat.map(|combat| build_combat_observation(&ctx.engine_state, combat)),
         screen: build_screen_observation(&ctx.engine_state, &ctx.run_state),
     }
 }
@@ -436,7 +436,10 @@ pub fn reward_source_label(engine_state: &EngineState, run_state: &RunState) -> 
     }
 }
 
-pub fn build_combat_observation(combat: &CombatState) -> RunCombatObservationV0 {
+pub fn build_combat_observation(
+    engine_state: &EngineState,
+    combat: &CombatState,
+) -> RunCombatObservationV0 {
     let alive_monsters = combat
         .entities
         .monsters
@@ -508,7 +511,250 @@ pub fn build_combat_observation(combat: &CombatState) -> RunCombatObservationV0 
         pending_action_count: combat.action_queue_len(),
         queued_card_count: combat.zones.queued_cards.len(),
         limbo_count: combat.zones.limbo.len(),
+        pending_choice_kind: run_pending_choice_kind(engine_state),
+        pending_choice: build_run_pending_choice_observation(engine_state, combat),
     }
+}
+
+fn run_pending_choice_kind(engine_state: &EngineState) -> Option<String> {
+    match engine_state {
+        EngineState::PendingChoice(choice) => Some(
+            match choice {
+                PendingChoice::GridSelect { .. } => "grid_select",
+                PendingChoice::HandSelect { .. } => "hand_select",
+                PendingChoice::DiscoverySelect(_) => "discovery_select",
+                PendingChoice::ScrySelect { .. } => "scry_select",
+                PendingChoice::CardRewardSelect { .. } => "card_reward_select",
+                PendingChoice::StanceChoice => "stance_choice",
+            }
+            .to_string(),
+        ),
+        _ => None,
+    }
+}
+
+fn build_run_pending_choice_observation(
+    engine_state: &EngineState,
+    combat: &CombatState,
+) -> Option<RunPendingChoiceObservationV0> {
+    let EngineState::PendingChoice(choice) = engine_state else {
+        return None;
+    };
+    match choice {
+        PendingChoice::DiscoverySelect(cards) => Some(RunPendingChoiceObservationV0 {
+            kind: "discovery_select".to_string(),
+            min_select: 1,
+            max_select: 1,
+            can_cancel: false,
+            reason: None,
+            source_pile: None,
+            options: cards
+                .iter()
+                .enumerate()
+                .map(
+                    |(option_index, card_id)| RunPendingChoiceOptionObservationV0 {
+                        option_index,
+                        label: crate::content::cards::get_card_definition(*card_id)
+                            .name
+                            .to_string(),
+                        card_id: Some(format!("{card_id:?}")),
+                        card_uuid: None,
+                        selection_uuids: Vec::new(),
+                        source_pile: None,
+                    },
+                )
+                .collect(),
+        }),
+        PendingChoice::CardRewardSelect {
+            cards,
+            destination,
+            can_skip,
+        } => Some(RunPendingChoiceObservationV0 {
+            kind: "card_reward_select".to_string(),
+            min_select: 1,
+            max_select: 1,
+            can_cancel: *can_skip,
+            reason: Some(format!("{destination:?}")),
+            source_pile: None,
+            options: cards
+                .iter()
+                .enumerate()
+                .map(
+                    |(option_index, card_id)| RunPendingChoiceOptionObservationV0 {
+                        option_index,
+                        label: crate::content::cards::get_card_definition(*card_id)
+                            .name
+                            .to_string(),
+                        card_id: Some(format!("{card_id:?}")),
+                        card_uuid: None,
+                        selection_uuids: Vec::new(),
+                        source_pile: None,
+                    },
+                )
+                .collect(),
+        }),
+        PendingChoice::StanceChoice => Some(RunPendingChoiceObservationV0 {
+            kind: "stance_choice".to_string(),
+            min_select: 1,
+            max_select: 1,
+            can_cancel: false,
+            reason: None,
+            source_pile: None,
+            options: vec![
+                RunPendingChoiceOptionObservationV0 {
+                    option_index: 0,
+                    label: "Wrath".to_string(),
+                    card_id: None,
+                    card_uuid: None,
+                    selection_uuids: Vec::new(),
+                    source_pile: None,
+                },
+                RunPendingChoiceOptionObservationV0 {
+                    option_index: 1,
+                    label: "Calm".to_string(),
+                    card_id: None,
+                    card_uuid: None,
+                    selection_uuids: Vec::new(),
+                    source_pile: None,
+                },
+            ],
+        }),
+        PendingChoice::HandSelect {
+            candidate_uuids,
+            min_cards,
+            max_cards,
+            can_cancel,
+            reason,
+        } => Some(RunPendingChoiceObservationV0 {
+            kind: "hand_select".to_string(),
+            min_select: *min_cards,
+            max_select: *max_cards,
+            can_cancel: *can_cancel,
+            reason: Some(format!("{reason:?}")),
+            source_pile: Some("Hand".to_string()),
+            options: candidate_uuids
+                .iter()
+                .enumerate()
+                .map(|(option_index, uuid)| {
+                    let card = find_combat_card_by_uuid(combat, *uuid);
+                    RunPendingChoiceOptionObservationV0 {
+                        option_index,
+                        label: card
+                            .map(format_combat_card_label)
+                            .unwrap_or_else(|| format!("card#{uuid}")),
+                        card_id: card.map(|card| format!("{:?}", card.id)),
+                        card_uuid: Some(*uuid),
+                        selection_uuids: vec![*uuid],
+                        source_pile: Some("Hand".to_string()),
+                    }
+                })
+                .collect(),
+        }),
+        PendingChoice::GridSelect {
+            source_pile,
+            candidate_uuids,
+            min_cards,
+            max_cards,
+            can_cancel,
+            reason,
+        } => Some(RunPendingChoiceObservationV0 {
+            kind: "grid_select".to_string(),
+            min_select: *min_cards,
+            max_select: *max_cards,
+            can_cancel: *can_cancel,
+            reason: Some(format!("{reason:?}")),
+            source_pile: Some(run_pile_type_name(*source_pile)),
+            options: candidate_uuids
+                .iter()
+                .enumerate()
+                .map(|(option_index, uuid)| {
+                    let card = find_combat_card_by_uuid(combat, *uuid);
+                    RunPendingChoiceOptionObservationV0 {
+                        option_index,
+                        label: card
+                            .map(format_combat_card_label)
+                            .unwrap_or_else(|| format!("card#{uuid}")),
+                        card_id: card.map(|card| format!("{:?}", card.id)),
+                        card_uuid: Some(*uuid),
+                        selection_uuids: vec![*uuid],
+                        source_pile: Some(run_pile_type_name(*source_pile)),
+                    }
+                })
+                .collect(),
+        }),
+        PendingChoice::ScrySelect { cards, card_uuids } => Some(RunPendingChoiceObservationV0 {
+            kind: "scry_select".to_string(),
+            min_select: 0,
+            max_select: cards.len() as u8,
+            can_cancel: true,
+            reason: None,
+            source_pile: Some("Draw".to_string()),
+            options: cards
+                .iter()
+                .enumerate()
+                .map(
+                    |(option_index, card_id)| RunPendingChoiceOptionObservationV0 {
+                        option_index,
+                        label: crate::content::cards::get_card_definition(*card_id)
+                            .name
+                            .to_string(),
+                        card_id: Some(format!("{card_id:?}")),
+                        card_uuid: card_uuids.get(option_index).copied(),
+                        selection_uuids: card_uuids
+                            .get(option_index)
+                            .copied()
+                            .into_iter()
+                            .collect(),
+                        source_pile: Some("Draw".to_string()),
+                    },
+                )
+                .collect(),
+        }),
+    }
+}
+
+fn find_combat_card_by_uuid(
+    combat: &CombatState,
+    uuid: u32,
+) -> Option<&crate::runtime::combat::CombatCard> {
+    combat
+        .zones
+        .hand
+        .iter()
+        .chain(combat.zones.draw_pile.iter())
+        .chain(combat.zones.discard_pile.iter())
+        .chain(combat.zones.exhaust_pile.iter())
+        .chain(combat.zones.limbo.iter())
+        .find(|card| card.uuid == uuid)
+        .or_else(|| {
+            combat
+                .zones
+                .queued_cards
+                .iter()
+                .map(|queued| &queued.card)
+                .find(|card| card.uuid == uuid)
+        })
+}
+
+fn format_combat_card_label(card: &crate::runtime::combat::CombatCard) -> String {
+    let name = crate::content::cards::get_card_definition(card.id).name;
+    if card.upgrades > 0 {
+        format!("{name}+{}", card.upgrades)
+    } else {
+        name.to_string()
+    }
+}
+
+fn run_pile_type_name(pile: crate::state::core::PileType) -> String {
+    match pile {
+        crate::state::core::PileType::Draw => "Draw",
+        crate::state::core::PileType::Discard => "Discard",
+        crate::state::core::PileType::Exhaust => "Exhaust",
+        crate::state::core::PileType::Hand => "Hand",
+        crate::state::core::PileType::Limbo => "Limbo",
+        crate::state::core::PileType::MasterDeck => "MasterDeck",
+    }
+    .to_string()
 }
 
 pub fn build_combat_hand_card_observations(

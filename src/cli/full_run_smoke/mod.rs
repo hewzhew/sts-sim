@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
+use std::collections::hash_map::DefaultHasher;
 use std::collections::BTreeMap;
+use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
@@ -110,6 +112,178 @@ impl FullRunEnv {
             }
         };
         self.step(action_index)
+    }
+
+    pub fn preview_policy_action_index(
+        &mut self,
+        policy: RunPolicyKind,
+    ) -> Result<(Option<usize>, Option<String>), String> {
+        if self.done {
+            let _ = self.prepare_state()?;
+            return Ok((None, None));
+        }
+        let state = self.prepare_state()?;
+        if self.done {
+            return Ok((None, None));
+        }
+        let legal_actions = legal_actions(
+            &self.ctx.engine_state,
+            &self.ctx.run_state,
+            &self.ctx.combat_state,
+        );
+        if legal_actions.is_empty() {
+            return Err("no legal actions available for policy preview".to_string());
+        }
+        let action_index = match policy {
+            RunPolicyKind::RuleBaselineV0 => choose_rule_baseline_action(&self.ctx, &legal_actions),
+            RunPolicyKind::PlanQueryV0 => choose_plan_query_action(&self.ctx, &legal_actions)
+                .unwrap_or_else(|| choose_rule_baseline_action(&self.ctx, &legal_actions)),
+            RunPolicyKind::RandomMasked => {
+                return Err(
+                    "random_masked policy preview is not deterministic in FullRunEnv".to_string(),
+                )
+            }
+        };
+        let action_key = state
+            .action_candidates
+            .get(action_index)
+            .map(|candidate| candidate.action_key.clone());
+        Ok((Some(action_index), action_key))
+    }
+
+    pub fn cache_bucket_hint(&self) -> u64 {
+        let mut hasher = DefaultHasher::new();
+        self.config.seed.hash(&mut hasher);
+        self.config.ascension.hash(&mut hasher);
+        self.config.final_act.hash(&mut hasher);
+        self.config.player_class.hash(&mut hasher);
+        self.config.max_steps.hash(&mut hasher);
+        self.config
+            .reward_shaping_profile
+            .as_str()
+            .hash(&mut hasher);
+        self.steps.hash(&mut hasher);
+        self.done.hash(&mut hasher);
+        self.terminal_reason.hash(&mut hasher);
+        self.crash.is_some().hash(&mut hasher);
+        self.contract_failure.is_some().hash(&mut hasher);
+        self.no_progress_tracker.repeat_count.hash(&mut hasher);
+        self.no_progress_tracker.start_step.hash(&mut hasher);
+        if let Some(last) = &self.no_progress_tracker.last {
+            last.observation_key.hash(&mut hasher);
+            last.action_mask_key.hash(&mut hasher);
+            last.chosen_action_key.hash(&mut hasher);
+        }
+
+        engine_state_label(&self.ctx.engine_state).hash(&mut hasher);
+        format!("{:?}", self.ctx.engine_state).hash(&mut hasher);
+        self.ctx.forced_engine_ticks.hash(&mut hasher);
+        self.ctx.combat_win_count.hash(&mut hasher);
+
+        let run = &self.ctx.run_state;
+        run.seed.hash(&mut hasher);
+        run.ascension_level.hash(&mut hasher);
+        run.act_num.hash(&mut hasher);
+        run.floor_num.hash(&mut hasher);
+        run.current_hp.hash(&mut hasher);
+        run.max_hp.hash(&mut hasher);
+        run.gold.hash(&mut hasher);
+        run.shop_purge_count.hash(&mut hasher);
+        run.relics.len().hash(&mut hasher);
+        run.potions.len().hash(&mut hasher);
+        run.master_deck.len().hash(&mut hasher);
+        run.reward_state.is_some().hash(&mut hasher);
+        run.shop_state.is_some().hash(&mut hasher);
+        run.event_state.is_some().hash(&mut hasher);
+        run.room_mugged.hash(&mut hasher);
+        run.room_smoked.hash(&mut hasher);
+        run.pending_boss_reward.hash(&mut hasher);
+
+        if let Some(combat) = &self.ctx.combat_state {
+            combat.meta.ascension_level.hash(&mut hasher);
+            combat.meta.player_class.hash(&mut hasher);
+            combat.meta.is_boss_fight.hash(&mut hasher);
+            combat.meta.is_elite_fight.hash(&mut hasher);
+            combat.turn.turn_count.hash(&mut hasher);
+            format!("{:?}", combat.turn.current_phase).hash(&mut hasher);
+            combat.turn.energy.hash(&mut hasher);
+            combat.turn.turn_start_draw_modifier.hash(&mut hasher);
+            combat
+                .turn
+                .counters
+                .cards_played_this_turn
+                .hash(&mut hasher);
+            combat
+                .turn
+                .counters
+                .attacks_played_this_turn
+                .hash(&mut hasher);
+            combat
+                .turn
+                .counters
+                .times_damaged_this_combat
+                .hash(&mut hasher);
+            combat
+                .turn
+                .counters
+                .early_end_turn_pending
+                .hash(&mut hasher);
+            combat.turn.counters.victory_triggered.hash(&mut hasher);
+
+            hash_card_zone_hint(&combat.zones.draw_pile, &mut hasher);
+            hash_card_zone_hint(&combat.zones.hand, &mut hasher);
+            hash_card_zone_hint(&combat.zones.discard_pile, &mut hasher);
+            hash_card_zone_hint(&combat.zones.exhaust_pile, &mut hasher);
+            hash_card_zone_hint(&combat.zones.limbo, &mut hasher);
+            combat.zones.queued_cards.len().hash(&mut hasher);
+            combat.zones.card_uuid_counter.hash(&mut hasher);
+            combat.engine.action_queue.len().hash(&mut hasher);
+
+            let player = &combat.entities.player;
+            player.current_hp.hash(&mut hasher);
+            player.max_hp.hash(&mut hasher);
+            player.block.hash(&mut hasher);
+            player.gold_delta_this_combat.hash(&mut hasher);
+            player.gold.hash(&mut hasher);
+            player.energy_master.hash(&mut hasher);
+            player.stance.as_str().hash(&mut hasher);
+            player.orbs.len().hash(&mut hasher);
+            player.relics.len().hash(&mut hasher);
+
+            for monster in &combat.entities.monsters {
+                monster.id.hash(&mut hasher);
+                monster.monster_type.hash(&mut hasher);
+                monster.current_hp.hash(&mut hasher);
+                monster.max_hp.hash(&mut hasher);
+                monster.block.hash(&mut hasher);
+                monster.slot.hash(&mut hasher);
+                monster.is_dying.hash(&mut hasher);
+                monster.is_escaped.hash(&mut hasher);
+                monster.half_dead.hash(&mut hasher);
+                monster.planned_move_id().hash(&mut hasher);
+            }
+            combat.entities.power_db.len().hash(&mut hasher);
+            for (entity_id, powers) in &combat.entities.power_db {
+                entity_id.hash(&mut hasher);
+                powers.len().hash(&mut hasher);
+                for power in powers {
+                    format!("{:?}", power.power_type).hash(&mut hasher);
+                    power.instance_id.hash(&mut hasher);
+                    power.amount.hash(&mut hasher);
+                    power.extra_data.hash(&mut hasher);
+                    power.just_applied.hash(&mut hasher);
+                }
+            }
+            combat.runtime.using_card.hash(&mut hasher);
+            combat.runtime.card_queue.len().hash(&mut hasher);
+            combat.runtime.colorless_combat_pool.len().hash(&mut hasher);
+            combat.runtime.pending_rewards.len().hash(&mut hasher);
+            combat.runtime.combat_mugged.hash(&mut hasher);
+            combat.runtime.combat_smoked.hash(&mut hasher);
+        } else {
+            0u8.hash(&mut hasher);
+        }
+        hasher.finish()
     }
 
     pub fn step(&mut self, action_index: usize) -> Result<FullRunEnvStep, String> {
@@ -330,6 +504,23 @@ impl FullRunEnv {
         FullRunEnvInfo {
             seed: self.config.seed,
             step: self.steps,
+            floor: self.ctx.run_state.floor_num,
+            act: self.ctx.run_state.act_num,
+            hp: self
+                .ctx
+                .combat_state
+                .as_ref()
+                .map(|combat| combat.entities.player.current_hp)
+                .unwrap_or(self.ctx.run_state.current_hp),
+            max_hp: self
+                .ctx
+                .combat_state
+                .as_ref()
+                .map(|combat| combat.entities.player.max_hp)
+                .unwrap_or(self.ctx.run_state.max_hp),
+            gold: self.ctx.run_state.gold,
+            deck_size: self.ctx.run_state.master_deck.len(),
+            relic_count: self.ctx.run_state.relics.len(),
             terminal_reason: self.terminal_reason.clone(),
             result: full_run_result_label(&self.ctx, self.done, self.crash.as_ref()),
             forced_engine_ticks: self.ctx.forced_engine_ticks,
@@ -337,6 +528,26 @@ impl FullRunEnv {
             crash: self.crash.clone(),
             contract_failure: self.contract_failure.clone(),
         }
+    }
+}
+
+fn hash_card_zone_hint(cards: &[crate::runtime::combat::CombatCard], hasher: &mut DefaultHasher) {
+    cards.len().hash(hasher);
+    for card in cards {
+        format!("{:?}", card.id).hash(hasher);
+        card.uuid.hash(hasher);
+        card.upgrades.hash(hasher);
+        card.misc_value.hash(hasher);
+        card.base_damage_override.hash(hasher);
+        card.cost_modifier.hash(hasher);
+        card.cost_for_turn.hash(hasher);
+        card.base_damage_mut.hash(hasher);
+        card.base_block_mut.hash(hasher);
+        card.base_magic_num_mut.hash(hasher);
+        card.exhaust_override.hash(hasher);
+        card.retain_override.hash(hasher);
+        card.free_to_play_once.hash(hasher);
+        card.energy_on_use.hash(hasher);
     }
 }
 
@@ -638,6 +849,8 @@ mod tests {
                 pending_action_count: 0,
                 queued_card_count: 0,
                 limbo_count: 0,
+                pending_choice_kind: None,
+                pending_choice: None,
             }),
             screen: empty_screen_observation(),
         };

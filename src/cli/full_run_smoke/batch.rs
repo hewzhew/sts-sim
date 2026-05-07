@@ -7,7 +7,7 @@ pub struct NoProgressSignature {
     pub(crate) chosen_action_key: String,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct NoProgressTracker {
     pub(crate) last: Option<NoProgressSignature>,
     pub(crate) repeat_count: usize,

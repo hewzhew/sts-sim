@@ -45,6 +45,8 @@ Then branch by task:
   - testing workflow and fixture/platform notes
 - `docs/design/`
   - active design docs and experiment contracts
+- `docs/decision_records/`
+  - short current decisions that prevent repeating invalidated experiment paths
 - `docs/audits/`
   - dated investigations and validation reports
 - `docs/archive/`

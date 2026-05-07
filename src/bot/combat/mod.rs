@@ -345,6 +345,7 @@ pub fn diagnose_root_search_with_depth_and_runtime_and_root_inputs(
                     cache_hits: 0,
                     cache_misses: 0,
                     truncated: false,
+                    truncation: exact_turn_solver::ExactTurnTruncationReport::default(),
                 },
                 runtime.experiment_flags,
             );
@@ -582,6 +583,7 @@ fn build_exact_turn_shadow(
                 cache_hits: 0,
                 cache_misses: 0,
                 truncated: false,
+                truncation: exact_turn_solver::ExactTurnTruncationReport::default(),
             },
             experiment_flags,
         );
@@ -635,6 +637,7 @@ fn build_exact_turn_shadow(
                     cache_hits: 0,
                     cache_misses: 0,
                     truncated: false,
+                    truncation: exact_turn_solver::ExactTurnTruncationReport::default(),
                 },
                 experiment_flags,
             );

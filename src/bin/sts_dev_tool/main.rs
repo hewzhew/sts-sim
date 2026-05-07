@@ -382,6 +382,126 @@ enum CombatCommands {
         #[arg(long, default_value_t = 200)]
         max_engine_steps_per_action: usize,
     },
+    CandidateOutcomePack {
+        /// Full-run trace JSON to replay into a combat decision point.
+        #[arg(long)]
+        trace_file: PathBuf,
+        /// Step index from the trace to evaluate before its chosen action is applied.
+        #[arg(long)]
+        step_index: usize,
+        /// Output JSON report path.
+        #[arg(long)]
+        out: PathBuf,
+        /// Optional ascension override for old traces without embedded config.
+        #[arg(long)]
+        ascension: Option<u8>,
+        /// Optional player class override for old traces without embedded config.
+        #[arg(long)]
+        class: Option<String>,
+        /// Optional final-act override for old traces without embedded config.
+        #[arg(long)]
+        final_act: Option<bool>,
+        /// Optional replay max step cap.
+        #[arg(long)]
+        max_steps: Option<usize>,
+        /// Exact-turn node budget per forced root candidate.
+        #[arg(long, default_value_t = 10_000)]
+        max_exact_nodes_per_candidate: usize,
+        /// Engine ticks allowed after each candidate action.
+        #[arg(long, default_value_t = 200)]
+        max_engine_steps_per_action: usize,
+        /// Optional cap for smoke runs. Omit to evaluate all legal candidates.
+        #[arg(long)]
+        max_candidates: Option<usize>,
+        /// Restrict root candidates to the controlled V0 surface: play_card and end_turn.
+        #[arg(long)]
+        controlled_v0: bool,
+    },
+    CandidateOutcomePackBatch {
+        /// Trace JSON files or directories containing trace JSON files.
+        #[arg(long, value_delimiter = ',', required = true)]
+        trace_input: Vec<PathBuf>,
+        /// Output directory for per-budget packs and suite summary.
+        #[arg(long)]
+        out_dir: PathBuf,
+        /// First trace step index to consider, inclusive.
+        #[arg(long, default_value_t = 0)]
+        step_start: usize,
+        /// Last trace step index to consider, exclusive.
+        #[arg(long)]
+        step_end: Option<usize>,
+        /// Optional cap on selected controlled combat states.
+        #[arg(long)]
+        step_limit: Option<usize>,
+        /// Optional ascension override for old traces without embedded config.
+        #[arg(long)]
+        ascension: Option<u8>,
+        /// Optional player class override for old traces without embedded config.
+        #[arg(long)]
+        class: Option<String>,
+        /// Optional final-act override for old traces without embedded config.
+        #[arg(long)]
+        final_act: Option<bool>,
+        /// Optional replay max step cap.
+        #[arg(long)]
+        max_steps: Option<usize>,
+        /// Comma-separated exact-turn node budgets to sweep.
+        #[arg(long, default_value = "1000,5000,20000,50000")]
+        budgets: String,
+        /// Engine ticks allowed after each candidate action.
+        #[arg(long, default_value_t = 200)]
+        max_engine_steps_per_action: usize,
+        /// Minimum non-truncated candidates required for trainable manifest eligibility.
+        #[arg(long, default_value_t = 4)]
+        min_eligible_candidates: usize,
+        /// Minimum bounded pairwise labels required before a batch can be called oracle-ready.
+        #[arg(long, default_value_t = 100)]
+        min_trainable_pairs: usize,
+        /// Median per-candidate exact-turn runtime gate for automatic budget selection.
+        #[arg(long, default_value_t = 500)]
+        median_runtime_ms_limit: u128,
+    },
+    RecursiveRolloutValidation {
+        /// Trace JSON files or directories containing trace JSON files.
+        #[arg(long, value_delimiter = ',', required = true)]
+        trace_input: Vec<PathBuf>,
+        /// Output directory for recursive rollout validation packs.
+        #[arg(long)]
+        out_dir: PathBuf,
+        /// First trace step index to consider, inclusive.
+        #[arg(long, default_value_t = 0)]
+        step_start: usize,
+        /// Last trace step index to consider, exclusive.
+        #[arg(long)]
+        step_end: Option<usize>,
+        /// Optional cap on selected controlled combat states.
+        #[arg(long)]
+        step_limit: Option<usize>,
+        /// Optional ascension override for old traces without embedded config.
+        #[arg(long)]
+        ascension: Option<u8>,
+        /// Optional player class override for old traces without embedded config.
+        #[arg(long)]
+        class: Option<String>,
+        /// Optional final-act override for old traces without embedded config.
+        #[arg(long)]
+        final_act: Option<bool>,
+        /// Optional replay max step cap.
+        #[arg(long)]
+        max_steps: Option<usize>,
+        /// Decisions to roll forward after forcing the root candidate.
+        #[arg(long, default_value_t = 8)]
+        horizon_decisions: usize,
+        /// Continuation policy after the forced root action: rule_baseline_v0 or plan_query_v0.
+        #[arg(long, default_value = "rule_baseline_v0")]
+        continuation_policy: String,
+        /// Optional cap for smoke runs. Omit to evaluate all controlled legal candidates.
+        #[arg(long)]
+        max_candidates: Option<usize>,
+        /// Restrict root candidates to play_card and end_turn.
+        #[arg(long)]
+        controlled_v0: bool,
+    },
     BuildStateCorpus {
         /// Individual ScenarioFixture paths to include.
         #[arg(long, value_delimiter = ',')]
@@ -4818,6 +4938,190 @@ fn main() {
                     "{}",
                     serde_json::to_string_pretty(&report)
                         .expect("combat draw-marginal trace report should serialize for stdout")
+                );
+            }
+            CombatCommands::CandidateOutcomePack {
+                trace_file,
+                step_index,
+                out,
+                ascension,
+                class,
+                final_act,
+                max_steps,
+                max_exact_nodes_per_candidate,
+                max_engine_steps_per_action,
+                max_candidates,
+                controlled_v0,
+            } => {
+                let report =
+                    sts_simulator::cli::full_run_smoke::build_candidate_outcome_pack_from_trace(
+                        &sts_simulator::cli::full_run_smoke::FullRunTraceCandidateOutcomePackConfig {
+                            trace_file: trace_file.clone(),
+                            step_index: *step_index,
+                            ascension: *ascension,
+                            final_act: *final_act,
+                            player_class: class.clone(),
+                            max_steps: *max_steps,
+                            max_exact_nodes_per_candidate: *max_exact_nodes_per_candidate,
+                            max_engine_steps_per_action: *max_engine_steps_per_action,
+                            max_candidates: *max_candidates,
+                            controlled_v0: *controlled_v0,
+                            min_eligible_candidates: 4,
+                        },
+                    )
+                    .expect("combat candidate-outcome pack should build");
+
+                if let Some(parent) = out.parent() {
+                    std::fs::create_dir_all(parent)
+                        .expect("combat candidate-outcome output parent should be creatable");
+                }
+                std::fs::write(
+                    out,
+                    serde_json::to_string_pretty(&report)
+                        .expect("combat candidate-outcome report should serialize"),
+                )
+                .expect("combat candidate-outcome report should write");
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&serde_json::json!({
+                        "schema_version": &report.schema_version,
+                        "out": out.display().to_string(),
+                        "split_group_key": &report.split_group_key,
+                        "candidate_count": report.candidate_count,
+                        "pack_oracle_quality": &report.pack_oracle_quality,
+                        "truth_warnings": &report.truth_warnings,
+                    }))
+                    .expect("combat candidate-outcome summary should serialize for stdout")
+                );
+            }
+            CombatCommands::CandidateOutcomePackBatch {
+                trace_input,
+                out_dir,
+                step_start,
+                step_end,
+                step_limit,
+                ascension,
+                class,
+                final_act,
+                max_steps,
+                budgets,
+                max_engine_steps_per_action,
+                min_eligible_candidates,
+                min_trainable_pairs,
+                median_runtime_ms_limit,
+            } => {
+                let parsed_budgets = budgets
+                    .split(',')
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+                    .map(|value| {
+                        value.parse::<usize>().unwrap_or_else(|_| {
+                            panic!("invalid candidate-outcome budget '{value}'")
+                        })
+                    })
+                    .collect::<Vec<_>>();
+                if parsed_budgets.is_empty() {
+                    panic!("candidate-outcome-pack-batch requires at least one budget");
+                }
+                let report =
+                    sts_simulator::cli::full_run_smoke::build_candidate_outcome_pack_batch_from_traces(
+                        &sts_simulator::cli::full_run_smoke::FullRunTraceCandidateOutcomePackBatchConfig {
+                            trace_inputs: trace_input.clone(),
+                            out_dir: out_dir.clone(),
+                            step_start: *step_start,
+                            step_end: *step_end,
+                            step_limit: *step_limit,
+                            ascension: *ascension,
+                            final_act: *final_act,
+                            player_class: class.clone(),
+                            max_steps: *max_steps,
+                            budgets: parsed_budgets,
+                            max_engine_steps_per_action: *max_engine_steps_per_action,
+                            min_eligible_candidates: *min_eligible_candidates,
+                            min_trainable_pairs: *min_trainable_pairs,
+                            median_runtime_ms_limit: *median_runtime_ms_limit,
+                        },
+                    )
+                    .expect("combat candidate-outcome batch should build");
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&serde_json::json!({
+                        "schema_version": &report.schema_version,
+                        "out_dir": &report.out_dir,
+                        "selected_budget": report.selected_budget,
+                        "oracle_ready": report.oracle_ready,
+                        "oracle_ready_reason": &report.oracle_ready_reason,
+                        "trainable_manifest_count": report.trainable_manifest.len(),
+                        "diagnostic_manifest_count": report.diagnostic_manifest.len(),
+                        "error_count": report.errors.len(),
+                    }))
+                    .expect("combat candidate-outcome batch summary should serialize for stdout")
+                );
+            }
+            CombatCommands::RecursiveRolloutValidation {
+                trace_input,
+                out_dir,
+                step_start,
+                step_end,
+                step_limit,
+                ascension,
+                class,
+                final_act,
+                max_steps,
+                horizon_decisions,
+                continuation_policy,
+                max_candidates,
+                controlled_v0,
+            } => {
+                let policy_kind = match continuation_policy.to_ascii_lowercase().as_str() {
+                    "rule_baseline_v0" | "rule" => {
+                        sts_simulator::cli::full_run_smoke::RunPolicyKind::RuleBaselineV0
+                    }
+                    "plan_query_v0" | "plan" => {
+                        sts_simulator::cli::full_run_smoke::RunPolicyKind::PlanQueryV0
+                    }
+                    other => {
+                        eprintln!(
+                            "unsupported continuation policy '{other}'; expected rule_baseline_v0 or plan_query_v0"
+                        );
+                        std::process::exit(2);
+                    }
+                };
+                let report =
+                    sts_simulator::cli::full_run_smoke::run_recursive_rollout_validation_from_traces(
+                        &sts_simulator::cli::full_run_smoke::FullRunTraceRecursiveRolloutValidationConfig {
+                            trace_inputs: trace_input.clone(),
+                            out_dir: out_dir.clone(),
+                            step_start: *step_start,
+                            step_end: *step_end,
+                            step_limit: *step_limit,
+                            ascension: *ascension,
+                            final_act: *final_act,
+                            player_class: class.clone(),
+                            max_steps: *max_steps,
+                            horizon_decisions: *horizon_decisions,
+                            continuation_policy: policy_kind,
+                            max_candidates: *max_candidates,
+                            controlled_v0: *controlled_v0,
+                        },
+                    )
+                    .expect("combat recursive rollout validation should run");
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&serde_json::json!({
+                        "schema_version": report.get("schema_version").cloned().unwrap_or(serde_json::Value::Null),
+                        "out_dir": report.get("out_dir").cloned().unwrap_or(serde_json::Value::Null),
+                        "pack_count": report.get("pack_count").cloned().unwrap_or(serde_json::Value::Null),
+                        "trainable_pack_count": report.get("trainable_pack_count").cloned().unwrap_or(serde_json::Value::Null),
+                        "candidate_count": report.get("candidate_count").cloned().unwrap_or(serde_json::Value::Null),
+                        "pairwise_label_count": report.get("pairwise_label_count").cloned().unwrap_or(serde_json::Value::Null),
+                        "elapsed_ms": report.get("elapsed_ms").cloned().unwrap_or(serde_json::Value::Null),
+                        "median_rollout_elapsed_ms": report.get("median_rollout_elapsed_ms").cloned().unwrap_or(serde_json::Value::Null),
+                        "rollouts_per_second": report.get("rollouts_per_second").cloned().unwrap_or(serde_json::Value::Null),
+                        "terminal_counts": report.get("terminal_counts").cloned().unwrap_or(serde_json::Value::Null),
+                        "error_count": report.get("errors").and_then(serde_json::Value::as_array).map(|values| values.len()).unwrap_or(0),
+                    }))
+                    .expect("combat recursive rollout summary should serialize for stdout")
                 );
             }
             CombatCommands::BuildStateCorpus {

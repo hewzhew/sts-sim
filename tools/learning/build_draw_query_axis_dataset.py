@@ -8,16 +8,19 @@ are balanced enough to train anything more than an axis/reason head.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
+import re
 from collections import Counter, defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from combat_reranker_common import iter_jsonl, stable_split, write_json, write_jsonl
+from combat_reranker_common import iter_jsonl, write_json, write_jsonl
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-REPORT_VERSION = "draw_query_axis_dataset_v0"
+REPORT_VERSION = "draw_query_axis_dataset_v0_2"
+TRACE_STEP_RE = re.compile(r"^(?P<trace_step>episode_\d+_seed_\d+_step_\d+)")
 
 
 def parse_args() -> argparse.Namespace:
@@ -43,8 +46,49 @@ def load_jsonl(path: Path) -> list[dict[str, Any]]:
     return [row for _, row in iter_jsonl(path)]
 
 
+def split_group(row: dict[str, Any]) -> tuple[str, str]:
+    """Return the leakage-safe split group for a query-axis label row.
+
+    Action-key mining intentionally creates several target-action cases from the
+    same combat state. Splitting by source_case_id would allow near-duplicate
+    rows from the same trace step into train and heldout sets. Grouping by the
+    trace step keeps all actions/queries from one combat state together.
+    """
+    trace_file = str(row.get("trace_file") or "")
+    step_index = row.get("step_index")
+    if trace_file and step_index is not None:
+        return f"{trace_file}::step_{step_index}", "trace_file_step"
+
+    source_case_id = str(row.get("source_case_id") or "")
+    match = TRACE_STEP_RE.match(source_case_id)
+    if match:
+        return match.group("trace_step"), "trace_step_from_source_case_id"
+
+    label_id = str(row.get("label_id") or "")
+    match = TRACE_STEP_RE.match(label_id)
+    if match:
+        return match.group("trace_step"), "trace_step_from_label_id"
+
+    if source_case_id:
+        return source_case_id, "source_case_id"
+    if label_id:
+        return label_id, "label_id"
+    return "unknown", "unknown"
+
+
+def stable_group_split(group_key: str) -> str:
+    digest = hashlib.sha256(group_key.encode("utf-8")).digest()
+    bucket = int.from_bytes(digest[:8], "big") % 20
+    if bucket < 14:
+        return "train"
+    if bucket < 17:
+        return "val"
+    return "test"
+
+
 def row_split(row: dict[str, Any]) -> str:
-    return stable_split(str(row.get("source_case_id") or row.get("label_id") or ""))
+    group_key, _ = split_group(row)
+    return stable_group_split(group_key)
 
 
 def normalize_label(row: dict[str, Any]) -> str:
@@ -59,10 +103,13 @@ def normalize_label(row: dict[str, Any]) -> str:
 
 
 def compact_row(row: dict[str, Any], bucket: str) -> dict[str, Any]:
+    split_group_key, split_group_key_kind = split_group(row)
     return {
         "label_id": row.get("label_id"),
         "source_case_id": row.get("source_case_id"),
-        "split": row_split(row),
+        "split": stable_group_split(split_group_key),
+        "split_group_key": split_group_key,
+        "split_group_key_kind": split_group_key_kind,
         "bucket": bucket,
         "target_action_card": row.get("target_action_card"),
         "query_name": row.get("query_name"),
@@ -148,10 +195,36 @@ def split_counts(rows: list[dict[str, Any]]) -> dict[str, int]:
     return group_counts(rows, "split")
 
 
+def split_group_counts(rows: list[dict[str, Any]]) -> dict[str, int]:
+    by_split: dict[str, set[str]] = defaultdict(set)
+    for row in rows:
+        by_split[str(row.get("split") or "")].add(str(row.get("split_group_key") or ""))
+    return dict(sorted((split, len(groups)) for split, groups in by_split.items()))
+
+
+def split_group_diagnostics(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    groups: dict[str, set[str]] = defaultdict(set)
+    for row in rows:
+        groups[str(row.get("split_group_key") or "")].add(str(row.get("split") or ""))
+    leakage = {key: sorted(splits) for key, splits in groups.items() if len(splits) > 1}
+    examples = [
+        {"split_group_key": key, "splits": splits}
+        for key, splits in sorted(leakage.items())[:10]
+    ]
+    return {
+        "unique_group_count": len(groups),
+        "group_counts_by_split": split_group_counts(rows),
+        "group_key_kind_counts": group_counts(rows, "split_group_key_kind"),
+        "potential_leakage_group_count": len(leakage),
+        "potential_leakage_examples": examples,
+    }
+
+
 def summarize_bucket(rows: list[dict[str, Any]]) -> dict[str, Any]:
     return {
         "count": len(rows),
         "split_counts": split_counts(rows),
+        "split_group_counts": split_group_counts(rows),
         "label_counts": group_counts(rows, "normalized_label"),
         "query_counts": group_counts(rows, "query_name"),
         "card_counts": group_counts(rows, "target_action_card"),
@@ -223,11 +296,14 @@ def build_report(input_path: Path, buckets: dict[str, list[dict[str, Any]]]) -> 
             "all_rows": summarize_bucket(all_rows),
             "clean_hard_preferences": summarize_bucket(clean),
             "hard_preference_label_balance_ok": label_balance_ok,
+            "split_grouping": split_group_diagnostics(all_rows),
             "binary_query_improvement": {
                 "count": len(binary_rows),
                 "positive_count": sum(1 for row in binary_rows if row.get("target_improves_query")),
                 "negative_count": sum(1 for row in binary_rows if not row.get("target_improves_query")),
                 "split_counts": split_counts(binary_rows),
+                "split_group_counts": split_group_counts(binary_rows),
+                "split_grouping": split_group_diagnostics(binary_rows),
                 "query_counts": group_counts(binary_rows, "query_name"),
                 "card_counts": group_counts(binary_rows, "target_action_card"),
                 "majority_baselines": [
@@ -245,6 +321,7 @@ def build_report(input_path: Path, buckets: dict[str, list[dict[str, Any]]]) -> 
         "warnings": [
             "clean hard preferences are query-local, not global action preferences",
             "current batch may have source distribution bias; check synthetic-template or trace-occupancy provenance",
+            "splits are grouped by trace step when trace-derived ids are available",
             "do not train a scalar action-good classifier unless target_worse negatives exist",
         ],
     }
@@ -266,12 +343,25 @@ def markdown(report: dict[str, Any]) -> str:
         f"- binary query-improvement rows: `{report['summary']['binary_query_improvement']['count']}`",
         f"- binary positives/negatives: `{report['summary']['binary_query_improvement']['positive_count']}` / "
         f"`{report['summary']['binary_query_improvement']['negative_count']}`",
+        f"- split groups: `{report['summary']['split_grouping']['unique_group_count']}`",
+        f"- split leakage groups: `{report['summary']['split_grouping']['potential_leakage_group_count']}`",
         "",
         "## Clean Hard Preferences",
         "",
         f"- labels: `{report['summary']['clean_hard_preferences']['label_counts']}`",
         f"- queries: `{report['summary']['clean_hard_preferences']['query_counts']}`",
         f"- cards: `{report['summary']['clean_hard_preferences']['card_counts']}`",
+        "",
+        "## Split Hygiene",
+        "",
+        "Rows are split by combat-state group when trace-derived ids are available, not by individual action-key case.",
+        "",
+        f"- all row groups by split: `{report['summary']['split_grouping']['group_counts_by_split']}`",
+        f"- all row group key kinds: `{report['summary']['split_grouping']['group_key_kind_counts']}`",
+        f"- binary row groups by split: "
+        f"`{report['summary']['binary_query_improvement']['split_grouping']['group_counts_by_split']}`",
+        f"- potential leakage groups: "
+        f"`{report['summary']['split_grouping']['potential_leakage_group_count']}`",
         "",
         "## Binary Query-Improvement Baselines",
         "",

@@ -12,6 +12,7 @@ use super::legal_moves::get_legal_moves;
 use super::profile::SearchProfileBreakdown;
 use super::stepping::{
     pending_choice_is_same_turn_frontier, project_turn_close_state_bounded, simulate_input_bounded,
+    StepAdvanceResult,
 };
 use super::turn_state_key::{
     stable_dominance_bucket_key, turn_state_key, StableOutcomeKey, TurnStateKey,
@@ -58,6 +59,16 @@ pub struct ExactTurnSolution {
     pub cache_hits: u32,
     pub cache_misses: u32,
     pub truncated: bool,
+    pub truncation: ExactTurnTruncationReport,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct ExactTurnTruncationReport {
+    pub max_nodes_hit: bool,
+    pub engine_step_limit_hit: bool,
+    pub deadline_hit: bool,
+    pub cycle_cut: bool,
+    pub step_projection_truncated: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -74,6 +85,7 @@ struct SearchCtx {
     cache_hits: u32,
     cache_misses: u32,
     truncated: bool,
+    truncation: ExactTurnTruncationReport,
     memo: HashMap<TurnStateKey, MemoEntry>,
     profile: SearchProfileBreakdown,
 }
@@ -96,6 +108,7 @@ pub fn solve_exact_turn_with_config(
         cache_hits: 0,
         cache_misses: 0,
         truncated: false,
+        truncation: ExactTurnTruncationReport::default(),
         memo: HashMap::new(),
         profile: SearchProfileBreakdown::default(),
     };
@@ -120,6 +133,37 @@ pub fn solve_exact_turn_with_config(
         cache_hits: ctx.cache_hits,
         cache_misses: ctx.cache_misses,
         truncated: ctx.truncated,
+        truncation: ctx.truncation,
+    }
+}
+
+impl SearchCtx {
+    fn note_max_nodes_hit(&mut self) {
+        self.truncated = true;
+        self.truncation.max_nodes_hit = true;
+    }
+
+    fn note_deadline_hit(&mut self) {
+        self.truncated = true;
+        self.truncation.deadline_hit = true;
+    }
+
+    fn note_cycle_cut(&mut self) {
+        self.truncated = true;
+        self.truncation.cycle_cut = true;
+    }
+
+    fn note_step_projection_outcome(&mut self, outcome: StepAdvanceResult) {
+        if !outcome.truncated && !outcome.timed_out {
+            return;
+        }
+        self.truncated = true;
+        self.truncation.step_projection_truncated = true;
+        if outcome.timed_out {
+            self.truncation.deadline_hit = true;
+        } else {
+            self.truncation.engine_step_limit_hit = true;
+        }
     }
 }
 
@@ -134,8 +178,8 @@ fn enumerate_end_states(
         .deadline
         .is_some_and(|deadline| Instant::now() >= deadline)
     {
-        ctx.truncated = true;
-        let (end_state, _) = build_turn_close_end_state(
+        ctx.note_deadline_hit();
+        let (end_state, outcome) = build_turn_close_end_state(
             engine,
             combat,
             ctx.config.max_engine_steps,
@@ -143,12 +187,13 @@ fn enumerate_end_states(
             root_inputs,
             &mut ctx.profile,
         );
+        ctx.note_step_projection_outcome(outcome);
         return vec![end_state];
     }
 
     if ctx.explored_nodes as usize >= ctx.config.max_nodes {
-        ctx.truncated = true;
-        let (end_state, _) = build_turn_close_end_state(
+        ctx.note_max_nodes_hit();
+        let (end_state, outcome) = build_turn_close_end_state(
             engine,
             combat,
             ctx.config.max_engine_steps,
@@ -156,6 +201,7 @@ fn enumerate_end_states(
             root_inputs,
             &mut ctx.profile,
         );
+        ctx.note_step_projection_outcome(outcome);
         return vec![end_state];
     }
 
@@ -165,9 +211,9 @@ fn enumerate_end_states(
         return match cached {
             MemoEntry::Done(end_states) => end_states.clone(),
             MemoEntry::InProgress => {
-                ctx.truncated = true;
+                ctx.note_cycle_cut();
                 ctx.cycle_cuts = ctx.cycle_cuts.saturating_add(1);
-                let (end_state, _) = build_turn_close_end_state(
+                let (end_state, outcome) = build_turn_close_end_state(
                     engine,
                     combat,
                     ctx.config.max_engine_steps,
@@ -175,6 +221,7 @@ fn enumerate_end_states(
                     root_inputs,
                     &mut ctx.profile,
                 );
+                ctx.note_step_projection_outcome(outcome);
                 vec![end_state]
             }
         };
@@ -187,7 +234,7 @@ fn enumerate_end_states(
     let can_continue = can_continue_same_turn(engine, combat, root_inputs);
     let mut end_states = Vec::new();
     if should_emit_leaf_candidate(engine, combat, can_continue, root_inputs) {
-        let (base_end_state, base_truncated) = build_turn_close_end_state(
+        let (base_end_state, base_outcome) = build_turn_close_end_state(
             engine,
             combat,
             ctx.config.max_engine_steps,
@@ -195,7 +242,7 @@ fn enumerate_end_states(
             root_inputs,
             &mut ctx.profile,
         );
-        ctx.truncated |= base_truncated;
+        ctx.note_step_projection_outcome(base_outcome);
         end_states.push(base_end_state);
     }
 
@@ -206,7 +253,7 @@ fn enumerate_end_states(
                 .deadline
                 .is_some_and(|deadline| Instant::now() >= deadline)
             {
-                ctx.truncated = true;
+                ctx.note_deadline_hit();
                 break;
             }
             let (next_engine, next_combat, step_outcome) = simulate_input_bounded(
@@ -217,7 +264,7 @@ fn enumerate_end_states(
                 ctx.config.deadline,
                 &mut ctx.profile,
             );
-            ctx.truncated |= step_outcome.truncated || step_outcome.timed_out;
+            ctx.note_step_projection_outcome(step_outcome);
             let suffixes = enumerate_end_states(&next_engine, &next_combat, ctx, None);
             for suffix in suffixes {
                 insert_nondominated(
@@ -241,7 +288,7 @@ fn build_turn_close_end_state(
     deadline: Option<Instant>,
     root_inputs: Option<&[ClientInput]>,
     profile: &mut SearchProfileBreakdown,
-) -> (TurnEndState, bool) {
+) -> (TurnEndState, StepAdvanceResult) {
     let (frontier_engine, frontier_combat, outcome) =
         project_turn_close_state_bounded(engine, combat, max_engine_steps, deadline, profile);
     let frontier_eval = eval_frontier_state(&frontier_engine, &frontier_combat);
@@ -262,7 +309,7 @@ fn build_turn_close_end_state(
             line,
             resources: TurnResourceSummary::at_frontier(final_hp, final_block),
         },
-        outcome.truncated || outcome.timed_out,
+        outcome,
     )
 }
 

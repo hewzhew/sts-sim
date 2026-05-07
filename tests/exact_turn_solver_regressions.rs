@@ -149,6 +149,8 @@ fn exact_turn_solver_reports_truncation_when_node_budget_is_tiny() {
         solution.truncated,
         "tiny node budgets should be surfaced explicitly"
     );
+    assert!(solution.truncation.max_nodes_hit);
+    assert!(!solution.truncation.deadline_hit);
 }
 
 #[test]
