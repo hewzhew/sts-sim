@@ -864,7 +864,7 @@ mod tests {
         SearchExperimentFlags, SearchRuntimeBudget,
     };
     use crate::bot::combat::decision::SurvivalJudgement;
-    use crate::bot::combat::exact_turn_solver::ExactTurnSolution;
+    use crate::bot::combat::exact_turn_solver::{ExactTurnSolution, ExactTurnTruncationReport};
     use crate::content::cards::CardId;
     use crate::content::powers::PowerId;
     use crate::runtime::combat::{CombatCard, Power};
@@ -885,6 +885,7 @@ mod tests {
             cache_hits: 0,
             cache_misses: 0,
             truncated: false,
+            truncation: ExactTurnTruncationReport::default(),
         }
     }
 
