@@ -44,6 +44,7 @@ This does not make `frontier_eval`, exact-turn search, verified teacher, or live
 - `tools/learning/verify_decision_records_replay.py` replays `DecisionRecord` JSONL through the DecisionEnv commands and verifies state hashes, candidate lists, rewards, and terminal flags. It requires the same env config used during collection.
 - `tools/learning/evaluate_decision_record_regret.py` computes behavior/model regret and harmful-action metrics from `TeacherDecisionLabel` candidate returns.
 - `tools/learning/train_decision_record_pairwise_scorer.py` trains a dependency-free pairwise candidate scorer baseline from `DecisionRecord` teacher pairwise preferences.
+- `tools/learning/eval_decision_record_gated_scorer.py` evaluates a scorer as a conservative offline override policy and reports override rate, accepted true advantage, and harmful override rate.
 - `tools/learning/collect_decision_records_batch.py` collects DecisionRecord shards with multiple driver workers.
 - `tools/learning/export_decision_record_candidate_table.py` exports a flat candidate table as JSONL, with optional Parquet output when `pyarrow` is installed.
 - `full_run_env_driver` exposes `policy_input` for policy/live callers. It is constructed from public observation plus public action candidates and intentionally omits debug `info`, state hashes, and teacher labels.
