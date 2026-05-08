@@ -429,7 +429,7 @@ impl NeutralEngineQueryService {
         ))
     }
 
-    pub fn enemy_response_public_probe(
+    pub fn isolated_enemy_response_public_probe(
         &self,
         context: &SearchExecutionContext,
         left: ActionId,
@@ -438,6 +438,32 @@ impl NeutralEngineQueryService {
         let left_result = self.force_then_enemy_response_public(context, left)?;
         let right_result = self.force_then_enemy_response_public(context, right)?;
         Some(EnemyResponsePublicProbeResult::from_branches(
+            context.decision_id.clone(),
+            left,
+            right,
+            left_result,
+            right_result,
+        ))
+    }
+
+    pub fn enemy_response_public_probe(
+        &self,
+        context: &SearchExecutionContext,
+        left: ActionId,
+        right: ActionId,
+    ) -> Option<EnemyResponsePublicProbeResult> {
+        self.isolated_enemy_response_public_probe(context, left, right)
+    }
+
+    pub fn aligned_enemy_response_public_probe(
+        &self,
+        context: &SearchExecutionContext,
+        left: ActionId,
+        right: ActionId,
+    ) -> Option<AlignedEnemyResponsePublicProbeResult> {
+        let left_result = self.force_sequence_then_enemy_response_public(context, left, right)?;
+        let right_result = self.force_sequence_then_enemy_response_public(context, right, left)?;
+        Some(AlignedEnemyResponsePublicProbeResult::from_branches(
             context.decision_id.clone(),
             left,
             right,
@@ -515,6 +541,171 @@ impl NeutralEngineQueryService {
             first_advance
                 .engine_steps
                 .saturating_add(enemy_advance.engine_steps),
+            None,
+        ))
+    }
+
+    fn force_sequence_then_enemy_response_public(
+        &self,
+        context: &SearchExecutionContext,
+        first: ActionId,
+        suffix: ActionId,
+    ) -> Option<AlignedEnemyResponseBranchSummary> {
+        let first_input = context.candidate(first)?.clone();
+        let suffix_input = context.candidate(suffix)?.clone();
+        let mut engine = context.engine.clone();
+        let mut combat = context.combat.clone();
+        let before = CombatStateSummary::from_state(&engine, &combat);
+        let first_advance = force_input_to_stable(
+            &mut engine,
+            &mut combat,
+            first_input,
+            self.step_limit.max_engine_steps,
+        );
+        if first_advance.truncated
+            || !first_advance.alive
+            || matches!(engine, EngineState::GameOver(_))
+            || combat_cleared(&engine, &combat)
+            || matches!(engine, EngineState::PendingChoice(_))
+        {
+            let after = CombatStateSummary::from_state(&engine, &combat);
+            let failure_reason = if matches!(engine, EngineState::PendingChoice(_)) {
+                Some("pending_choice_before_suffix")
+            } else if first_advance.truncated {
+                Some("first_action_truncated")
+            } else {
+                Some("first_action_terminal_before_suffix")
+            };
+            return Some(AlignedEnemyResponseBranchSummary::from_summary(
+                context,
+                first,
+                suffix,
+                before,
+                after,
+                false,
+                false,
+                false,
+                first_advance.truncated,
+                first_advance.engine_steps,
+                failure_reason,
+            ));
+        }
+
+        let legal_after_first = legal_moves_for_audit(&engine, &combat);
+        let Some(remapped_suffix) =
+            remap_input_after_state(&suffix_input, &context.combat, &combat)
+        else {
+            let after = CombatStateSummary::from_state(&engine, &combat);
+            return Some(AlignedEnemyResponseBranchSummary::from_summary(
+                context,
+                first,
+                suffix,
+                before,
+                after,
+                false,
+                false,
+                false,
+                false,
+                first_advance.engine_steps,
+                Some("suffix_action_remap_failed"),
+            ));
+        };
+        if !legal_after_first.contains(&remapped_suffix) {
+            let after = CombatStateSummary::from_state(&engine, &combat);
+            return Some(AlignedEnemyResponseBranchSummary::from_summary(
+                context,
+                first,
+                suffix,
+                before,
+                after,
+                false,
+                false,
+                false,
+                false,
+                first_advance.engine_steps,
+                Some("suffix_action_illegal_after_first"),
+            ));
+        }
+
+        let remaining_after_first = self
+            .step_limit
+            .max_engine_steps
+            .saturating_sub(first_advance.engine_steps)
+            .max(1);
+        let suffix_advance = force_input_to_stable(
+            &mut engine,
+            &mut combat,
+            remapped_suffix,
+            remaining_after_first,
+        );
+        let steps_after_suffix = first_advance
+            .engine_steps
+            .saturating_add(suffix_advance.engine_steps);
+        if suffix_advance.truncated
+            || !suffix_advance.alive
+            || matches!(engine, EngineState::GameOver(_))
+            || combat_cleared(&engine, &combat)
+            || matches!(engine, EngineState::PendingChoice(_))
+        {
+            let after = CombatStateSummary::from_state(&engine, &combat);
+            let failure_reason = if matches!(engine, EngineState::PendingChoice(_)) {
+                Some("pending_choice_before_enemy_response")
+            } else if suffix_advance.truncated {
+                Some("suffix_action_truncated")
+            } else {
+                Some("suffix_action_terminal_before_enemy_response")
+            };
+            return Some(AlignedEnemyResponseBranchSummary::from_summary(
+                context,
+                first,
+                suffix,
+                before,
+                after,
+                true,
+                true,
+                false,
+                suffix_advance.truncated,
+                steps_after_suffix,
+                failure_reason,
+            ));
+        }
+
+        let legal_after_suffix = legal_moves_for_audit(&engine, &combat);
+        if !legal_after_suffix.contains(&ClientInput::EndTurn) {
+            let after = CombatStateSummary::from_state(&engine, &combat);
+            return Some(AlignedEnemyResponseBranchSummary::from_summary(
+                context,
+                first,
+                suffix,
+                before,
+                after,
+                true,
+                true,
+                false,
+                false,
+                steps_after_suffix,
+                Some("end_turn_not_legal_after_suffix"),
+            ));
+        }
+        let remaining = self
+            .step_limit
+            .max_engine_steps
+            .saturating_sub(steps_after_suffix)
+            .max(1);
+        let enemy_advance =
+            force_input_to_stable(&mut engine, &mut combat, ClientInput::EndTurn, remaining);
+        let after = CombatStateSummary::from_state(&engine, &combat);
+        Some(AlignedEnemyResponseBranchSummary::from_summary(
+            context,
+            first,
+            suffix,
+            before,
+            after,
+            true,
+            true,
+            true,
+            enemy_advance.truncated,
+            steps_after_suffix.saturating_add(enemy_advance.engine_steps),
             None,
         ))
     }
@@ -940,6 +1131,117 @@ pub struct EnemyResponsePublicProbeResult {
     pub left_clears_right_not: bool,
     pub right_clears_left_not: bool,
     pub public_safe: bool,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub struct AlignedEnemyResponseBranchSummary {
+    pub schema_version: String,
+    pub decision_id: DecisionId,
+    pub first_action_id: ActionId,
+    pub suffix_action_id: ActionId,
+    pub suffix_action_legal: bool,
+    pub suffix_action_applied: bool,
+    pub end_turn_applied: bool,
+    pub reached_public_boundary: bool,
+    pub truncated: bool,
+    pub engine_steps: u32,
+    pub boundary_kind: BoundaryKind,
+    pub failure_reason: Option<String>,
+    pub summary: EnemyResponsePublicSummary,
+    pub public_delta: EnemyResponsePublicDelta,
+}
+
+impl AlignedEnemyResponseBranchSummary {
+    fn from_summary(
+        context: &SearchExecutionContext,
+        first_action_id: ActionId,
+        suffix_action_id: ActionId,
+        before: CombatStateSummary,
+        after: CombatStateSummary,
+        suffix_action_legal: bool,
+        suffix_action_applied: bool,
+        end_turn_applied: bool,
+        truncated: bool,
+        engine_steps: u32,
+        failure_reason: Option<&'static str>,
+    ) -> Self {
+        Self {
+            schema_version: NEUTRAL_ENGINE_QUERY_VERSION.to_string(),
+            decision_id: context.decision_id.clone(),
+            first_action_id,
+            suffix_action_id,
+            suffix_action_legal,
+            suffix_action_applied,
+            end_turn_applied,
+            reached_public_boundary: !truncated && failure_reason.is_none(),
+            truncated,
+            engine_steps,
+            boundary_kind: summary_boundary_kind(&after, truncated),
+            failure_reason: failure_reason.map(str::to_string),
+            summary: EnemyResponsePublicSummary::from_summary(&after),
+            public_delta: EnemyResponsePublicDelta::from_transition(&before, &after),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub struct AlignedEnemyResponsePublicProbeResult {
+    pub schema_version: String,
+    pub decision_id: DecisionId,
+    pub left_action_id: ActionId,
+    pub right_action_id: ActionId,
+    pub left: AlignedEnemyResponseBranchSummary,
+    pub right: AlignedEnemyResponseBranchSummary,
+    pub hp_lost_diff_left_minus_right: i32,
+    pub enemy_removed_diff_left_minus_right: i32,
+    pub kill_diff_left_minus_right: i32,
+    pub left_dead_right_alive: bool,
+    pub left_alive_right_dead: bool,
+    pub left_clears_right_not: bool,
+    pub right_clears_left_not: bool,
+    pub summary_equal: bool,
+    pub public_safe: bool,
+}
+
+impl AlignedEnemyResponsePublicProbeResult {
+    fn from_branches(
+        decision_id: DecisionId,
+        left_action_id: ActionId,
+        right_action_id: ActionId,
+        left: AlignedEnemyResponseBranchSummary,
+        right: AlignedEnemyResponseBranchSummary,
+    ) -> Self {
+        Self {
+            schema_version: NEUTRAL_ENGINE_QUERY_VERSION.to_string(),
+            decision_id,
+            left_action_id,
+            right_action_id,
+            hp_lost_diff_left_minus_right: left.public_delta.hp_lost - right.public_delta.hp_lost,
+            enemy_removed_diff_left_minus_right: left.public_delta.enemy_hp_removed
+                - right.public_delta.enemy_hp_removed,
+            kill_diff_left_minus_right: left.public_delta.enemies_killed
+                - right.public_delta.enemies_killed,
+            left_dead_right_alive: left.public_delta.player_dead && !right.public_delta.player_dead,
+            left_alive_right_dead: !left.public_delta.player_dead && right.public_delta.player_dead,
+            left_clears_right_not: left.public_delta.combat_cleared
+                && !right.public_delta.combat_cleared,
+            right_clears_left_not: !left.public_delta.combat_cleared
+                && right.public_delta.combat_cleared,
+            summary_equal: left.summary == right.summary,
+            public_safe: left
+                .summary
+                .redacted_fields
+                .iter()
+                .any(|field| field == "hand")
+                && right
+                    .summary
+                    .redacted_fields
+                    .iter()
+                    .any(|field| field == "hand"),
+            left,
+            right,
+        }
+    }
 }
 
 impl EnemyResponsePublicProbeResult {

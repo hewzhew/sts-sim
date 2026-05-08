@@ -26,7 +26,7 @@ It does not output `best_move`, `chosen_move`, `takeover`, `frontier_score`, or 
 - Branch compression is deterministic over observed transition results. Random/draw branches are represented as additional `NeutralEngineQueryResult`s and grouped by the same signature mechanism.
 - `draw_top_card_branch_effects` can sample draw-pile alternatives by forcing each selected draw-pile card to the top. These results are marked `FutureSample`; they may guide search allocation or audit, but they are not public observation.
 - Pending choices such as Headbutt-style follow-up choices are represented as `BoundaryKind::PendingChoice`. They are not flattened into root action products.
-- `src/app/policy_runner` contains `NeutralCompressedPolicyRunner`, the first non-legacy runner over this substrate. It emits a deliberation trace from neutral evidence and only selects when strict generic engine-effect dominance is visible.
+- `src/app/policy_runner` contains `NeutralProbeEvaluator`, the non-legacy audit component over this substrate. It emits a deliberation trace from neutral evidence and records only short-horizon diagnostic signals; it does not select actions.
 
 ## Non-Goals
 

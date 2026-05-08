@@ -2,7 +2,7 @@ use super::frame::LiveFrame;
 use super::io::LiveCommIo;
 use super::snapshot::write_failure_snapshot;
 use super::{LiveCombatMode, LiveExactTurnMode, LiveParityMode, LiveVerifiedTeacherMode};
-use crate::app::policy_runner::NeutralCompressedPolicyRunner;
+use crate::app::policy_runner::NeutralProbeEvaluator;
 use crate::bot::combat::legal_moves::protocol_root_moves;
 use crate::bot::combat::monster_belief::build_combat_belief_state;
 use crate::bot::combat::pressure::StatePressureFeatures;
@@ -2690,7 +2690,7 @@ pub(super) fn handle_live_combat_frame<W: Write>(
         truth.clone(),
         policy_root_inputs.clone(),
     );
-    let neutral_runner = NeutralCompressedPolicyRunner::default();
+    let neutral_runner = NeutralProbeEvaluator::default();
     let deliberation_trace =
         neutral_runner.deliberate(&live_policy_input, &neutral_execution_context);
     let deliberation_trace_value =

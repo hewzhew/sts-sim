@@ -1,6 +1,6 @@
 use std::fs;
 
-use sts_simulator::app::policy_runner::NeutralCompressedPolicyRunner;
+use sts_simulator::app::policy_runner::NeutralProbeEvaluator;
 use sts_simulator::content::cards::CardId;
 use sts_simulator::content::monsters::EnemyId;
 use sts_simulator::runtime::combat::{CombatCard, CombatState};
@@ -164,11 +164,15 @@ fn neutral_runner_uses_effect_groups_without_legacy_or_exact() {
         combat,
         inputs,
     );
-    let runner = NeutralCompressedPolicyRunner::default();
+    let runner = NeutralProbeEvaluator::default();
     let trace = runner.deliberate(&input, &context);
 
-    assert_eq!(trace.decision.mode, DecisionMode::NeutralEvidenceResolved);
-    assert_eq!(trace.decision.selected_action_id, Some(ActionId(0)));
+    assert_eq!(trace.decision.mode, DecisionMode::EvidenceInsufficient);
+    assert_eq!(trace.decision.selected_action_id, None);
+    assert_eq!(
+        trace.decision.fallback_reason.as_deref(),
+        Some("neutral_runner_signal_only")
+    );
     assert_eq!(
         trace
             .decision
@@ -181,14 +185,11 @@ fn neutral_runner_uses_effect_groups_without_legacy_or_exact() {
         trace
             .decision
             .payload
-            .pointer("/neutral_hypothesis_action_id")
+            .pointer("/short_horizon_signal_candidate_id")
             .and_then(|value| value.as_u64()),
         Some(0)
     );
-    assert_eq!(
-        trace.proposal.policy_id,
-        "neutral_compressed_policy_runner_v0"
-    );
+    assert_eq!(trace.proposal.policy_id, "neutral_probe_evaluator_v1");
     assert!(trace.evidence.iter().all(|evidence| matches!(
         evidence.search_kind,
         sts_simulator::verification::search_policy::SearchKind::NeutralBranchCompression { .. }
@@ -231,7 +232,7 @@ fn neutral_runner_keeps_resource_actions_as_evidence_not_selection() {
         combat,
         inputs,
     );
-    let runner = NeutralCompressedPolicyRunner::default();
+    let runner = NeutralProbeEvaluator::default();
     let trace = runner.deliberate(&input, &context);
     let evaluations = trace
         .decision
@@ -271,7 +272,7 @@ fn neutral_runner_evaluations_include_audit_classification_fields() {
         combat,
         inputs,
     );
-    let runner = NeutralCompressedPolicyRunner::default();
+    let runner = NeutralProbeEvaluator::default();
     let trace = runner.deliberate(&input, &context);
     let evaluations = trace
         .decision
@@ -284,7 +285,7 @@ fn neutral_runner_evaluations_include_audit_classification_fields() {
         .find(|eval| eval["action_id"] == 0)
         .expect("attack eval");
     assert_eq!(attack["reason_code"], "damage_delta_only");
-    assert_eq!(attack["label_role"], "SearchAllocationTarget");
+    assert_eq!(attack["label_role"], "SearchSignalOnly");
     assert_eq!(
         attack["hypothesis_class"],
         "short_horizon_tactical_hypothesis"
@@ -308,7 +309,7 @@ fn neutral_runner_marks_terminal_clear_as_certificate() {
         combat,
         inputs,
     );
-    let runner = NeutralCompressedPolicyRunner::default();
+    let runner = NeutralProbeEvaluator::default();
     let trace = runner.deliberate(&input, &context);
     let evaluations = trace
         .decision
@@ -323,7 +324,15 @@ fn neutral_runner_marks_terminal_clear_as_certificate() {
     assert_eq!(terminal["reason_code"], "terminal_clear");
     assert_eq!(terminal["hypothesis_class"], "terminal_certificate");
     assert_eq!(terminal["label_role"], "DecisionCertificate");
-    assert_eq!(trace.decision.selected_action_id, Some(ActionId(0)));
+    assert_eq!(trace.decision.selected_action_id, None);
+    assert_eq!(
+        trace
+            .decision
+            .payload
+            .pointer("/short_horizon_signal_candidate_id")
+            .and_then(|value| value.as_u64()),
+        Some(0)
+    );
 }
 
 #[test]

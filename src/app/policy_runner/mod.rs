@@ -11,7 +11,7 @@ use crate::verification::search_policy::{
     SearchEvidence, SearchHint, SearchKind, SearchPlan, SEARCH_AWARE_POLICY_SCHEMA_VERSION,
 };
 
-pub const NEUTRAL_POLICY_RUNNER_ID: &str = "neutral_compressed_policy_runner_v0";
+pub const NEUTRAL_PROBE_EVALUATOR_ID: &str = "neutral_probe_evaluator_v1";
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct NeutralPolicyRunnerConfig {
@@ -39,14 +39,14 @@ pub struct EvaluationTrace {
     pub expanded_branch_groups: Vec<BranchEffectGroup>,
     pub unexpanded_branch_groups: Vec<BranchEffectGroup>,
     pub candidate_evaluations: Vec<CandidateEvaluation>,
-    pub selected_group_id: Option<usize>,
+    pub signal_group_id: Option<usize>,
     pub selected_action_id: Option<ActionId>,
-    pub neutral_hypothesis_action_id: Option<ActionId>,
+    pub short_horizon_signal_candidate_id: Option<ActionId>,
     pub controller_decision: String,
     pub reason: String,
-    pub selected_reason_code: Option<String>,
-    pub selected_hypothesis_class: Option<String>,
-    pub selected_label_role: Option<String>,
+    pub signal_reason_code: Option<String>,
+    pub signal_class: Option<String>,
+    pub signal_label_role: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
@@ -70,12 +70,12 @@ pub struct CandidateEvaluation {
     pub label_role: String,
 }
 
-pub struct NeutralCompressedPolicyRunner {
+pub struct NeutralProbeEvaluator {
     pub config: NeutralPolicyRunnerConfig,
     pub query: NeutralEngineQueryService,
 }
 
-impl Default for NeutralCompressedPolicyRunner {
+impl Default for NeutralProbeEvaluator {
     fn default() -> Self {
         Self {
             config: NeutralPolicyRunnerConfig::default(),
@@ -84,7 +84,7 @@ impl Default for NeutralCompressedPolicyRunner {
     }
 }
 
-impl NeutralCompressedPolicyRunner {
+impl NeutralProbeEvaluator {
     pub fn deliberate(
         &self,
         input: &PolicyInput,
@@ -146,7 +146,7 @@ impl NeutralCompressedPolicyRunner {
         PolicyProposal {
             schema_version: SEARCH_AWARE_POLICY_SCHEMA_VERSION.to_string(),
             decision_id: input.decision_id.clone(),
-            policy_id: NEUTRAL_POLICY_RUNNER_ID.to_string(),
+            policy_id: NEUTRAL_PROBE_EVALUATOR_ID.to_string(),
             prior_scores,
             uncertainty: Vec::new(),
             risk_flags: Vec::new(),
@@ -167,12 +167,12 @@ impl NeutralCompressedPolicyRunner {
                 time_budget_ms: input.time_budget_ms,
                 max_requests: proposal.search_hints.len(),
                 payload: serde_json::json!({
-                    "runner": NEUTRAL_POLICY_RUNNER_ID,
+                    "runner": NEUTRAL_PROBE_EVALUATOR_ID,
                     "budget_kind": "candidate_neutral_branch_effects",
                 }),
             },
             serde_json::json!({
-                "runner": NEUTRAL_POLICY_RUNNER_ID,
+                "runner": NEUTRAL_PROBE_EVALUATOR_ID,
                 "search_service": "NeutralEngineQueryService",
             }),
         )
@@ -234,39 +234,39 @@ impl NeutralCompressedPolicyRunner {
             })
             .cloned()
             .collect::<Vec<_>>();
-        let selected = select_by_strict_generic_dominance(&group_representatives);
-        let selected_group_id = selected.and_then(|action_id| {
+        let hypothesis = select_by_strict_generic_dominance(&group_representatives);
+        let signal_group_id = hypothesis.and_then(|action_id| {
             candidate_evaluations
                 .iter()
                 .find(|eval| eval.action_id == action_id)
                 .map(|eval| eval.group_id)
         });
-        let selected_eval = selected.and_then(|action_id| {
+        let selected_eval = hypothesis.and_then(|action_id| {
             candidate_evaluations
                 .iter()
                 .find(|eval| eval.action_id == action_id)
         });
-        let selected_reason_code = selected_eval.map(|eval| eval.reason_code.clone());
-        let selected_hypothesis_class = selected_eval.map(|eval| eval.hypothesis_class.clone());
-        let selected_label_role = selected_eval.map(|eval| eval.label_role.clone());
+        let signal_reason_code = selected_eval.map(|eval| eval.reason_code.clone());
+        let signal_class = selected_eval.map(|eval| eval.hypothesis_class.clone());
+        let signal_label_role = selected_eval.map(|eval| eval.label_role.clone());
         let (expanded_branch_groups, unexpanded_branch_groups) =
             split_expanded_groups(groups, self.config.max_branch_depth);
         EvaluationTrace {
             schema_version: "neutral_recursive_evaluation_trace_v0".to_string(),
-            runner_id: NEUTRAL_POLICY_RUNNER_ID.to_string(),
+            runner_id: NEUTRAL_PROBE_EVALUATOR_ID.to_string(),
             expanded_branch_groups,
             unexpanded_branch_groups,
             candidate_evaluations,
-            selected_group_id,
-            selected_action_id: selected,
-            neutral_hypothesis_action_id: selected,
+            signal_group_id,
+            selected_action_id: None,
+            short_horizon_signal_candidate_id: hypothesis,
             controller_decision: "abstain".to_string(),
-            reason: selected_reason_code
+            reason: signal_reason_code
                 .clone()
                 .unwrap_or_else(|| "insufficient".to_string()),
-            selected_reason_code,
-            selected_hypothesis_class,
-            selected_label_role,
+            signal_reason_code,
+            signal_class,
+            signal_label_role,
         }
     }
 
@@ -276,43 +276,31 @@ impl NeutralCompressedPolicyRunner {
         evidence: &[SearchEvidence],
         evaluation: &EvaluationTrace,
     ) -> PolicyDecision {
-        if let Some(action_id) = evaluation.selected_action_id {
-            PolicyDecision {
-                schema_version: SEARCH_AWARE_POLICY_SCHEMA_VERSION.to_string(),
-                decision_id: input.decision_id.clone(),
-                policy_id: NEUTRAL_POLICY_RUNNER_ID.to_string(),
-                selected_action_id: Some(action_id),
-                mode: DecisionMode::NeutralEvidenceResolved,
-                confidence: "generic_dominance".to_string(),
-                fallback_reason: None,
-                evidence_used: evidence
-                    .iter()
-                    .map(|item| item.evidence_id.clone())
-                    .collect(),
-                payload: serde_json::to_value(evaluation).unwrap_or_else(|_| Value::Null),
-            }
+        let fallback_reason = if evaluation.short_horizon_signal_candidate_id.is_some() {
+            "neutral_runner_signal_only"
         } else {
-            PolicyDecision {
-                schema_version: SEARCH_AWARE_POLICY_SCHEMA_VERSION.to_string(),
-                decision_id: input.decision_id.clone(),
-                policy_id: NEUTRAL_POLICY_RUNNER_ID.to_string(),
-                selected_action_id: None,
-                mode: DecisionMode::EvidenceInsufficient,
-                confidence: "none".to_string(),
-                fallback_reason: Some("no_strict_generic_dominance".to_string()),
-                evidence_used: evidence
-                    .iter()
-                    .map(|item| item.evidence_id.clone())
-                    .collect(),
-                payload: serde_json::to_value(evaluation).unwrap_or_else(|_| Value::Null),
-            }
+            "no_short_horizon_signal"
+        };
+        PolicyDecision {
+            schema_version: SEARCH_AWARE_POLICY_SCHEMA_VERSION.to_string(),
+            decision_id: input.decision_id.clone(),
+            policy_id: NEUTRAL_PROBE_EVALUATOR_ID.to_string(),
+            selected_action_id: None,
+            mode: DecisionMode::EvidenceInsufficient,
+            confidence: "abstain".to_string(),
+            fallback_reason: Some(fallback_reason.to_string()),
+            evidence_used: evidence
+                .iter()
+                .map(|item| item.evidence_id.clone())
+                .collect(),
+            payload: serde_json::to_value(evaluation).unwrap_or_else(|_| Value::Null),
         }
     }
 }
 
 fn with_evaluation_payload(mut plan: SearchPlan, evaluation: &EvaluationTrace) -> SearchPlan {
     plan.payload = serde_json::json!({
-        "runner": NEUTRAL_POLICY_RUNNER_ID,
+        "runner": NEUTRAL_PROBE_EVALUATOR_ID,
         "evaluation_trace": evaluation,
     });
     plan
@@ -537,7 +525,7 @@ fn classify_candidate(
             "typed_immediate_dominance".to_string(),
             evidence_scope,
             "typed_immediate_dominance".to_string(),
-            "TacticalHypothesis".to_string(),
+            "SearchSignalOnly".to_string(),
         );
     }
     if contains_bucket(risk_buckets, "draw") {
@@ -545,7 +533,7 @@ fn classify_candidate(
             "draw_sample_uncertain".to_string(),
             evidence_scope,
             "unresolved".to_string(),
-            "SearchAllocationTarget".to_string(),
+            "SearchSignalOnly".to_string(),
         );
     }
     if contains_bucket(risk_buckets, "exhaust") {
@@ -553,7 +541,7 @@ fn classify_candidate(
             "exhaust_cost_unmodeled".to_string(),
             evidence_scope,
             "unresolved".to_string(),
-            "SearchAllocationTarget".to_string(),
+            "SearchSignalOnly".to_string(),
         );
     }
     if contains_bucket(risk_buckets, "debuff") {
@@ -561,7 +549,7 @@ fn classify_candidate(
             "delayed_debuff_horizon_missing".to_string(),
             evidence_scope,
             "unresolved".to_string(),
-            "SearchAllocationTarget".to_string(),
+            "SearchSignalOnly".to_string(),
         );
     }
     if contains_bucket(risk_buckets, "setup") || contains_bucket(risk_buckets, "power") {
@@ -569,7 +557,7 @@ fn classify_candidate(
             "setup_value_unmodeled".to_string(),
             evidence_scope,
             "unresolved".to_string(),
-            "SearchAllocationTarget".to_string(),
+            "SearchSignalOnly".to_string(),
         );
     }
     if contains_bucket(risk_buckets, "block") && result.branch_effect.enemy_hp_removed == 0 {
@@ -577,7 +565,7 @@ fn classify_candidate(
             "defense_horizon_missing".to_string(),
             evidence_scope,
             "unresolved".to_string(),
-            "SearchAllocationTarget".to_string(),
+            "SearchSignalOnly".to_string(),
         );
     }
     if result.truncated {
@@ -593,7 +581,7 @@ fn classify_candidate(
             "damage_delta_only".to_string(),
             evidence_scope,
             "short_horizon_tactical_hypothesis".to_string(),
-            "SearchAllocationTarget".to_string(),
+            "SearchSignalOnly".to_string(),
         );
     }
     (

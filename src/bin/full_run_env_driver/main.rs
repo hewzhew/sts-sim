@@ -12,7 +12,7 @@ use blake2::digest::{Update, VariableOutput};
 use blake2::Blake2bVar;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use sts_simulator::app::policy_runner::NeutralCompressedPolicyRunner;
+use sts_simulator::app::policy_runner::NeutralProbeEvaluator;
 use sts_simulator::cli::full_run_smoke::{
     FullRunEnv, FullRunEnvConfig, FullRunEnvInfo, FullRunEnvState, RewardShapingProfile,
     RunActionCandidate, RunPolicyKind,
@@ -1466,7 +1466,7 @@ fn handle_request(session: &mut DriverSession, request: DriverRequest) -> Driver
                         info: Some(current.info()),
                     };
                 };
-                let mut runner = NeutralCompressedPolicyRunner::default();
+                let mut runner = NeutralProbeEvaluator::default();
                 if let Some(max_branch_depth) = max_branch_depth {
                     runner.config.max_branch_depth = max_branch_depth;
                 }
@@ -1480,23 +1480,33 @@ fn handle_request(session: &mut DriverSession, request: DriverRequest) -> Driver
                     candidates,
                 );
                 let trace = runner.deliberate(&policy_input, &execution_context);
-                let paired_compare_vs_reference =
-                    trace.decision.selected_action_id.and_then(|selected| {
+                let signal_candidate_id = short_horizon_signal_candidate_id(&trace);
+                let paired_compare_vs_reference = signal_candidate_id.and_then(|selected| {
+                    let reference = ActionId(reference_action_id?);
+                    (selected != reference)
+                        .then(|| {
+                            runner
+                                .query
+                                .paired_compare(&execution_context, selected, reference)
+                        })
+                        .flatten()
+                });
+                let commutation_probe_vs_reference = signal_candidate_id.and_then(|selected| {
+                    let reference = ActionId(reference_action_id?);
+                    (selected != reference)
+                        .then(|| {
+                            runner
+                                .query
+                                .commutation_probe(&execution_context, selected, reference)
+                        })
+                        .flatten()
+                });
+                let isolated_enemy_response_public_probe_vs_reference = signal_candidate_id
+                    .and_then(|selected| {
                         let reference = ActionId(reference_action_id?);
                         (selected != reference)
                             .then(|| {
-                                runner
-                                    .query
-                                    .paired_compare(&execution_context, selected, reference)
-                            })
-                            .flatten()
-                    });
-                let commutation_probe_vs_reference =
-                    trace.decision.selected_action_id.and_then(|selected| {
-                        let reference = ActionId(reference_action_id?);
-                        (selected != reference)
-                            .then(|| {
-                                runner.query.commutation_probe(
+                                runner.query.enemy_response_public_probe(
                                     &execution_context,
                                     selected,
                                     reference,
@@ -1504,12 +1514,12 @@ fn handle_request(session: &mut DriverSession, request: DriverRequest) -> Driver
                             })
                             .flatten()
                     });
-                let enemy_response_public_probe_vs_reference =
-                    trace.decision.selected_action_id.and_then(|selected| {
+                let aligned_enemy_response_public_probe_vs_reference = signal_candidate_id
+                    .and_then(|selected| {
                         let reference = ActionId(reference_action_id?);
                         (selected != reference)
                             .then(|| {
-                                runner.query.enemy_response_public_probe(
+                                runner.query.aligned_enemy_response_public_probe(
                                     &execution_context,
                                     selected,
                                     reference,
@@ -1526,9 +1536,14 @@ fn handle_request(session: &mut DriverSession, request: DriverRequest) -> Driver
                 let reference_suffix_replay_probe = commutation_probe_value
                     .as_ref()
                     .map(reference_suffix_replay_probe_from_commutation);
-                let enemy_response_public_probe_value = enemy_response_public_probe_vs_reference
-                    .as_ref()
-                    .and_then(|value| serde_json::to_value(value).ok());
+                let isolated_enemy_response_public_probe_value =
+                    isolated_enemy_response_public_probe_vs_reference
+                        .as_ref()
+                        .and_then(|value| serde_json::to_value(value).ok());
+                let aligned_enemy_response_public_probe_value =
+                    aligned_enemy_response_public_probe_vs_reference
+                        .as_ref()
+                        .and_then(|value| serde_json::to_value(value).ok());
                 let disagreement_audit = neutral_disagreement_audit(
                     &policy_input,
                     &trace,
@@ -1536,7 +1551,8 @@ fn handle_request(session: &mut DriverSession, request: DriverRequest) -> Driver
                     paired_compare_value.clone(),
                     commutation_probe_value.clone(),
                     reference_suffix_replay_probe.clone(),
-                    enemy_response_public_probe_value.clone(),
+                    isolated_enemy_response_public_probe_value.clone(),
+                    aligned_enemy_response_public_probe_value.clone(),
                 );
                 DriverResponse {
                     ok: true,
@@ -1550,7 +1566,8 @@ fn handle_request(session: &mut DriverSession, request: DriverRequest) -> Driver
                         "paired_compare_vs_reference": paired_compare_vs_reference,
                         "commutation_probe_vs_reference": commutation_probe_vs_reference,
                         "reference_suffix_replay_probe": reference_suffix_replay_probe,
-                        "enemy_response_public_probe_vs_reference": enemy_response_public_probe_vs_reference,
+                        "isolated_enemy_response_public_probe_vs_reference": isolated_enemy_response_public_probe_vs_reference,
+                        "aligned_enemy_response_public_probe_vs_reference": aligned_enemy_response_public_probe_vs_reference,
                         "disagreement_audit": disagreement_audit,
                     })),
                     reward: None,
@@ -2108,15 +2125,14 @@ fn neutral_policy_trace_summary(trace: &DeliberationTrace) -> Value {
         .decision
         .selected_action_id
         .map(|action_id| action_id.0);
-    let neutral_hypothesis_action_id = evaluation
-        .get("neutral_hypothesis_action_id")
-        .and_then(Value::as_u64);
+    let short_horizon_signal_candidate_id =
+        short_horizon_signal_candidate_id(trace).map(|action| action.0);
     let controller_decision = evaluation
         .get("controller_decision")
         .and_then(Value::as_str)
         .unwrap_or("unknown");
-    let hypothesis_label_role = evaluation
-        .get("selected_label_role")
+    let signal_label_role = evaluation
+        .get("signal_label_role")
         .and_then(Value::as_str)
         .unwrap_or("unknown");
     json!({
@@ -2124,10 +2140,9 @@ fn neutral_policy_trace_summary(trace: &DeliberationTrace) -> Value {
         "policy_id": &trace.decision.policy_id,
         "mode": &trace.decision.mode,
         "controller_decision": controller_decision,
-        "neutral_hypothesis_action_id": neutral_hypothesis_action_id,
-        "hypothesis_label_role": hypothesis_label_role,
+        "short_horizon_signal_candidate_id": short_horizon_signal_candidate_id,
+        "signal_label_role": signal_label_role,
         "selected_action_id": selected_action_id,
-        "selected_action_id_legacy": selected_action_id,
         "fallback": selected_action_id.is_none(),
         "fallback_reason": &trace.decision.fallback_reason,
         "candidate_count": candidate_evaluations.len(),
@@ -2148,9 +2163,10 @@ fn neutral_disagreement_audit(
     paired_compare: Option<Value>,
     commutation_probe: Option<Value>,
     reference_suffix_replay_probe: Option<Value>,
-    enemy_response_public_probe: Option<Value>,
+    isolated_enemy_response_public_probe: Option<Value>,
+    aligned_enemy_response_public_probe: Option<Value>,
 ) -> Option<Value> {
-    let selected_action_id = trace.decision.selected_action_id?;
+    let selected_action_id = short_horizon_signal_candidate_id(trace)?;
     let reference_action_id = reference_action_id?;
     if selected_action_id == reference_action_id {
         return None;
@@ -2189,11 +2205,20 @@ fn neutral_disagreement_audit(
         paired_compare.as_ref(),
         commutation_probe.as_ref(),
     );
+    let typed_comparability = typed_comparability_contract(
+        reason_code,
+        &risk_buckets,
+        behavior,
+        selected,
+        paired_compare.as_ref(),
+        commutation_probe.as_ref(),
+        aligned_enemy_response_public_probe.as_ref(),
+    );
     Some(json!({
         "schema_version": "neutral_disagreement_audit_v3",
         "decision_id": &policy_input.decision_id,
         "behavior": action_descriptor(reference_action_id, behavior),
-        "selected": action_descriptor(selected_action_id, selected),
+        "short_horizon_signal": action_descriptor(selected_action_id, selected),
         "action_kind_pair": format!("{}->{}", behavior.action_kind, selected.action_kind),
         "reason_code": reason_code,
         "evidence_scope": evidence_scope,
@@ -2205,14 +2230,185 @@ fn neutral_disagreement_audit(
         "route_status": route.get("status").cloned().unwrap_or(Value::Null),
         "action_label": route.get("action_label").cloned().unwrap_or(Value::Null),
         "router": route,
+        "typed_comparability": typed_comparability,
         "paired_compare_deltas": paired_compare.as_ref().map(paired_compare_delta_summary),
         "paired_compare": paired_compare,
         "commutation_result": commutation_probe.as_ref().map(commutation_summary),
         "commutation_probe": commutation_probe,
         "reference_suffix_replay_probe": reference_suffix_replay_probe,
-        "enemy_response_public_probe": enemy_response_public_probe,
+        "isolated_enemy_response_public_probe": isolated_enemy_response_public_probe,
+        "aligned_enemy_response_public_probe": aligned_enemy_response_public_probe,
         "trainable_as_action_label": false,
     }))
+}
+
+fn typed_comparability_contract(
+    reason_code: &str,
+    risk_buckets: &Value,
+    behavior: &sts_simulator::verification::decision_env::PublicActionCandidateView,
+    signal: &sts_simulator::verification::decision_env::PublicActionCandidateView,
+    paired_compare: Option<&Value>,
+    commutation_probe: Option<&Value>,
+    aligned_enemy_response_public_probe: Option<&Value>,
+) -> Value {
+    let has_risk = |bucket: &str| {
+        risk_buckets
+            .as_array()
+            .is_some_and(|items| items.iter().any(|item| item.as_str() == Some(bucket)))
+    };
+    let order_only = commutation_probe
+        .and_then(|value| value.get("order_only_equivalent"))
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    let paired = PairedRouteEvidence::from_value(paired_compare);
+    let aligned = PairedRouteEvidence::from_value(aligned_enemy_response_public_probe);
+    let aligned_summary_equal = aligned_enemy_response_public_probe
+        .and_then(|value| value.get("summary_equal"))
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    let same_action_domain = behavior.action_kind == signal.action_kind
+        && !has_risk("resource")
+        && !has_risk("draw")
+        && !has_risk("exhaust")
+        && !has_risk("setup")
+        && !has_risk("power")
+        && !has_risk("debuff")
+        && !has_risk("pending_choice")
+        && !has_risk("hp_cost");
+
+    let (comparability, certificate, requires_horizon_or_value, notes) = if order_only {
+        (
+            "OrderEquivalent",
+            "order_equivalence",
+            false,
+            vec!["commutation_probe_summary_equal"],
+        )
+    } else if aligned.neutral_dead_behavior_alive || paired.neutral_dead_behavior_alive {
+        (
+            "RefutedByAlignedBoundary",
+            "refutation",
+            false,
+            vec!["signal_dead_behavior_alive"],
+        )
+    } else if aligned.behavior_clears_neutral_not || paired.behavior_clears_neutral_not {
+        (
+            "RefutedByAlignedBoundary",
+            "refutation",
+            false,
+            vec!["behavior_clears_signal_not"],
+        )
+    } else if aligned.neutral_alive_behavior_dead || paired.neutral_alive_behavior_dead {
+        (
+            "SurvivalComparable",
+            "survival_flip_candidate",
+            false,
+            vec!["signal_alive_behavior_dead"],
+        )
+    } else if aligned.neutral_clears_behavior_not
+        || paired.neutral_clears_behavior_not
+        || reason_code == "terminal_clear"
+    {
+        (
+            "TerminalComparable",
+            "terminal_clear_candidate",
+            false,
+            vec!["terminal_engine_outcome"],
+        )
+    } else if has_risk("resource") {
+        (
+            "IncomparableResourceBoundary",
+            "none",
+            true,
+            vec!["cross_combat_resource_domain"],
+        )
+    } else if has_risk("pending_choice") {
+        (
+            "IncomparablePendingChoice",
+            "none",
+            true,
+            vec!["pending_choice_requires_decision_state"],
+        )
+    } else if has_risk("draw") {
+        (
+            "IncomparableDrawOrHiddenSample",
+            "none",
+            true,
+            vec!["draw_or_hidden_sample"],
+        )
+    } else if has_risk("exhaust") {
+        (
+            "IncomparableIrreversibleCost",
+            "none",
+            true,
+            vec!["irreversible_exhaust_or_state_cost"],
+        )
+    } else if has_risk("setup") || has_risk("power") || has_risk("debuff") || has_risk("block") {
+        (
+            "IncomparableNeedsHorizon",
+            "none",
+            true,
+            vec!["delayed_or_defensive_value"],
+        )
+    } else if reason_code == "damage_delta_only" {
+        (
+            "DiagnosticOnlyDamageDelta",
+            "none",
+            true,
+            vec!["damage_delta_not_action_preference"],
+        )
+    } else if same_action_domain && aligned_summary_equal {
+        (
+            "SameDomainEquivalentAtAlignedBoundary",
+            "same_domain_equivalence",
+            false,
+            vec!["aligned_public_summary_equal"],
+        )
+    } else if same_action_domain {
+        (
+            "SameDomainComparableNeedsValue",
+            "none",
+            true,
+            vec!["same_action_kind_without_certificate"],
+        )
+    } else {
+        (
+            "IncomparableNeedsHorizon",
+            "none",
+            true,
+            vec!["no_comparable_certificate"],
+        )
+    };
+
+    json!({
+        "schema_version": "typed_comparability_contract_v0",
+        "comparability": comparability,
+        "certificate_gate": {
+            "certificate": certificate,
+            "action_label": "none",
+            "trainable_as_action_label": false,
+            "requires_horizon_or_value": requires_horizon_or_value,
+            "notes": notes,
+        },
+        "domains": {
+            "behavior_action_kind": behavior.action_kind.clone(),
+            "signal_action_kind": signal.action_kind.clone(),
+            "same_action_domain": same_action_domain,
+        },
+        "boundaries": {
+            "uses_aligned_enemy_response": aligned_enemy_response_public_probe.is_some(),
+            "aligned_summary_equal": aligned_summary_equal,
+            "order_only": order_only,
+        },
+    })
+}
+
+fn short_horizon_signal_candidate_id(trace: &DeliberationTrace) -> Option<ActionId> {
+    trace
+        .decision
+        .payload
+        .get("short_horizon_signal_candidate_id")
+        .and_then(Value::as_u64)
+        .map(|value| ActionId(value as usize))
 }
 
 fn reference_suffix_replay_probe_from_commutation(value: &Value) -> Value {
@@ -2221,11 +2417,11 @@ fn reference_suffix_replay_probe_from_commutation(value: &Value) -> Value {
         "suffix_source": "reference_action_only",
         "attempted_suffix_len": 1,
         "minimal_suffix_probe": true,
-        "hypothesis_then_reference_legal": value
+        "signal_then_reference_legal": value
             .get("left_then_right_legal")
             .cloned()
             .unwrap_or(Value::Null),
-        "reference_then_hypothesis_legal": value
+        "reference_then_signal_legal": value
             .get("right_then_left_legal")
             .cloned()
             .unwrap_or(Value::Null),
@@ -2235,7 +2431,7 @@ fn reference_suffix_replay_probe_from_commutation(value: &Value) -> Value {
             .unwrap_or(Value::Null),
         "summary_equal": value.get("summary_equal").cloned().unwrap_or(Value::Null),
         "terminal_diff": value.get("terminal_diff").cloned().unwrap_or(Value::Null),
-        "hypothesis_replay_break_reason": value
+        "signal_replay_break_reason": value
             .pointer("/left_then_right/failure_reason")
             .cloned()
             .unwrap_or(Value::Null),
@@ -3606,7 +3802,7 @@ mod tests {
         let payload = supported_trace.expect("expected to reach a combat decision");
         assert_eq!(
             payload["trace"]["proposal"]["policy_id"],
-            "neutral_compressed_policy_runner_v0"
+            "neutral_probe_evaluator_v1"
         );
         assert_eq!(
             payload["trace"]["evidence"][0]["search_kind"]["kind"],
@@ -3675,13 +3871,15 @@ mod tests {
         }
 
         let payload = supported_trace.expect("expected to reach a combat decision");
-        let selected = payload["summary"]["selected_action_id"]
+        assert!(payload["summary"]["selected_action_id"].is_null());
+        let signal = payload["summary"]["short_horizon_signal_candidate_id"]
             .as_u64()
-            .expect("neutral should select in this smoke state") as usize;
+            .expect("neutral should emit a short-horizon signal in this smoke state")
+            as usize;
         let candidate_count = payload["summary"]["candidate_count"]
             .as_u64()
             .expect("candidate count") as usize;
-        let reference = if selected == 0 && candidate_count > 1 {
+        let reference = if signal == 0 && candidate_count > 1 {
             1
         } else {
             0
@@ -3700,9 +3898,10 @@ mod tests {
         assert!(!payload["paired_compare_vs_reference"].is_null());
         assert!(!payload["commutation_probe_vs_reference"].is_null());
         assert!(!payload["reference_suffix_replay_probe"].is_null());
-        assert!(!payload["enemy_response_public_probe_vs_reference"].is_null());
+        assert!(!payload["isolated_enemy_response_public_probe_vs_reference"].is_null());
+        assert!(!payload["aligned_enemy_response_public_probe_vs_reference"].is_null());
         assert_eq!(payload["summary"]["controller_decision"], "abstain");
-        assert!(payload["summary"]["neutral_hypothesis_action_id"].is_u64());
+        assert!(payload["summary"]["short_horizon_signal_candidate_id"].is_u64());
         assert_eq!(
             payload["disagreement_audit"]["schema_version"],
             "neutral_disagreement_audit_v3"
@@ -3716,6 +3915,20 @@ mod tests {
         assert_eq!(payload["disagreement_audit"]["action_label"], "none");
         assert!(payload["disagreement_audit"]["label_role"].is_string());
         assert!(payload["disagreement_audit"]["irreversible_resource_ledger"].is_object());
+        assert_eq!(
+            payload["disagreement_audit"]["typed_comparability"]["schema_version"],
+            "typed_comparability_contract_v0"
+        );
+        assert_eq!(
+            payload["disagreement_audit"]["typed_comparability"]["certificate_gate"]
+                ["action_label"],
+            "none"
+        );
+        assert_eq!(
+            payload["disagreement_audit"]["typed_comparability"]["certificate_gate"]
+                ["trainable_as_action_label"],
+            false
+        );
     }
 
     #[test]

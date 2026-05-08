@@ -250,7 +250,7 @@ fn commutation_probe_marks_mutual_exclusion_when_second_action_becomes_illegal()
 }
 
 #[test]
-fn enemy_response_public_probe_redacts_future_card_zones() {
+fn isolated_enemy_response_public_probe_redacts_future_card_zones() {
     let combat = cultist_combat_with_hand(&[CardId::Strike, CardId::Defend]);
     let context = SearchExecutionContext::new(
         decision_id(),
@@ -269,7 +269,7 @@ fn enemy_response_public_probe_redacts_future_card_zones() {
     );
     let service = NeutralEngineQueryService::default();
     let probe = service
-        .enemy_response_public_probe(&context, ActionId(0), ActionId(1))
+        .isolated_enemy_response_public_probe(&context, ActionId(0), ActionId(1))
         .expect("enemy response public probe");
     assert!(probe.public_safe);
     let serialized = serde_json::to_string(&probe).expect("serialize probe");
@@ -278,4 +278,33 @@ fn enemy_response_public_probe_redacts_future_card_zones() {
     assert!(!serialized.contains("draw_len"));
     assert!(!serialized.contains("discard_len"));
     assert!(!serialized.contains("exhaust_len"));
+}
+
+#[test]
+fn aligned_enemy_response_public_probe_replays_commutable_suffix_before_enemy_response() {
+    let combat = cultist_combat_with_hand(&[CardId::Strike, CardId::Defend]);
+    let context = SearchExecutionContext::new(
+        decision_id(),
+        EngineState::CombatPlayerTurn,
+        combat,
+        vec![
+            ClientInput::PlayCard {
+                card_index: 0,
+                target: Some(1),
+            },
+            ClientInput::PlayCard {
+                card_index: 1,
+                target: None,
+            },
+        ],
+    );
+    let service = NeutralEngineQueryService::default();
+    let probe = service
+        .aligned_enemy_response_public_probe(&context, ActionId(0), ActionId(1))
+        .expect("aligned enemy response public probe");
+    assert!(probe.public_safe);
+    assert!(probe.left.suffix_action_applied);
+    assert!(probe.right.suffix_action_applied);
+    assert!(probe.summary_equal);
+    assert_eq!(probe.hp_lost_diff_left_minus_right, 0);
 }
