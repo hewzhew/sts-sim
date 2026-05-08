@@ -54,7 +54,31 @@ impl SearchExecutionContext {
 pub enum NeutralQueryKind {
     OneStepTransition,
     StableTransition,
+    CurrentTurnClose,
+    AlignedBoundary,
     BranchCompression,
+    PairedCompare,
+}
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum BoundaryKind {
+    OneStep,
+    Stable,
+    CurrentTurnClose,
+    AlignedStable,
+    CombatEnd,
+    GameOver,
+    PendingChoice,
+    StepLimit,
+}
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum Observability {
+    PublicTransition,
+    EngineOutcome,
+    FutureSample,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
@@ -219,10 +243,13 @@ pub struct NeutralEngineQueryResult {
     pub action_id: ActionId,
     pub query_kind: NeutralQueryKind,
     pub input_debug: String,
+    pub scenario_debug: Option<String>,
     pub alive: bool,
     pub truncated: bool,
     pub engine_steps: u32,
     pub max_engine_steps: u32,
+    pub boundary_kind: BoundaryKind,
+    pub observability: Observability,
     pub before: CombatStateSummary,
     pub after: CombatStateSummary,
     pub delta: TransitionDelta,
@@ -236,8 +263,19 @@ impl NeutralEngineQueryResult {
             NeutralQueryKind::StableTransition => SearchKind::NeutralStableTransition {
                 max_engine_steps: self.max_engine_steps,
             },
+            NeutralQueryKind::CurrentTurnClose | NeutralQueryKind::AlignedBoundary => {
+                SearchKind::NeutralStableTransition {
+                    max_engine_steps: self.max_engine_steps,
+                }
+            }
             NeutralQueryKind::BranchCompression => SearchKind::NeutralBranchCompression {
                 max_engine_steps: self.max_engine_steps,
+            },
+            NeutralQueryKind::PairedCompare => SearchKind::PairwiseCompare {
+                other: self.action_id,
+                horizon: super::search_policy::HorizonSpec::StableBoundary {
+                    max_decisions: self.max_engine_steps,
+                },
             },
         };
         SearchEvidence {
@@ -290,6 +328,8 @@ impl NeutralEngineQueryService {
             false,
             1,
             1,
+            BoundaryKind::OneStep,
+            Observability::EngineOutcome,
             before,
             after,
         ))
@@ -320,8 +360,51 @@ impl NeutralEngineQueryService {
             advance.truncated,
             advance.engine_steps,
             self.step_limit.max_engine_steps,
+            boundary_kind(&engine, &combat, advance.truncated),
+            Observability::EngineOutcome,
             before,
             after,
+        ))
+    }
+
+    pub fn force_to_current_turn_close(
+        &self,
+        context: &SearchExecutionContext,
+        action_id: ActionId,
+    ) -> Option<NeutralEngineQueryResult> {
+        let mut result = self.force_to_stable(context, action_id)?;
+        result.query_kind = NeutralQueryKind::CurrentTurnClose;
+        result.boundary_kind = BoundaryKind::CurrentTurnClose;
+        Some(result)
+    }
+
+    pub fn force_to_aligned_boundary(
+        &self,
+        context: &SearchExecutionContext,
+        action_id: ActionId,
+        boundary_kind: BoundaryKind,
+    ) -> Option<NeutralEngineQueryResult> {
+        let mut result = self.force_to_stable(context, action_id)?;
+        result.query_kind = NeutralQueryKind::AlignedBoundary;
+        result.boundary_kind = if result.truncated {
+            BoundaryKind::StepLimit
+        } else {
+            boundary_kind
+        };
+        Some(result)
+    }
+
+    pub fn paired_compare(
+        &self,
+        context: &SearchExecutionContext,
+        left: ActionId,
+        right: ActionId,
+    ) -> Option<PairedCandidateCompare> {
+        let left_result = self.force_to_stable(context, left)?;
+        let right_result = self.force_to_stable(context, right)?;
+        Some(PairedCandidateCompare::from_results(
+            left_result,
+            right_result,
         ))
     }
 
@@ -340,11 +423,84 @@ impl NeutralEngineQueryService {
             .collect()
     }
 
+    pub fn draw_top_card_branch_effects(
+        &self,
+        context: &SearchExecutionContext,
+        action_id: ActionId,
+        max_branches: usize,
+    ) -> Vec<NeutralEngineQueryResult> {
+        let branch_count = context.combat.zones.draw_pile.len().min(max_branches);
+        (0..branch_count)
+            .filter_map(|draw_index| {
+                let mut branch_combat = context.combat.clone();
+                let card = branch_combat.zones.draw_pile.remove(draw_index);
+                let scenario_debug =
+                    format!("draw_top_card_sample/index:{draw_index}/card:{:?}", card.id);
+                branch_combat.zones.draw_pile.insert(0, card);
+                let branch_context = SearchExecutionContext {
+                    decision_id: context.decision_id.clone(),
+                    engine: context.engine.clone(),
+                    combat: branch_combat,
+                    candidates: context.candidates.clone(),
+                };
+                let mut result = self.force_to_stable(&branch_context, action_id)?;
+                result.query_kind = NeutralQueryKind::BranchCompression;
+                result.observability = Observability::FutureSample;
+                result.scenario_debug = Some(scenario_debug);
+                Some(result)
+            })
+            .collect()
+    }
+
     pub fn compress_branch_effects(
         &self,
         results: &[NeutralEngineQueryResult],
     ) -> Vec<BranchEffectGroup> {
         compress_branch_effects(results)
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub struct PairedCandidateCompare {
+    pub schema_version: String,
+    pub decision_id: DecisionId,
+    pub left: NeutralEngineQueryResult,
+    pub right: NeutralEngineQueryResult,
+    pub hp_lost_diff_left_minus_right: i32,
+    pub enemy_removed_diff_left_minus_right: i32,
+    pub kill_diff_left_minus_right: i32,
+    pub left_dead_right_alive: bool,
+    pub left_alive_right_dead: bool,
+    pub left_clears_right_not: bool,
+    pub right_clears_left_not: bool,
+}
+
+impl PairedCandidateCompare {
+    pub fn from_results(
+        mut left: NeutralEngineQueryResult,
+        mut right: NeutralEngineQueryResult,
+    ) -> Self {
+        left.query_kind = NeutralQueryKind::PairedCompare;
+        right.query_kind = NeutralQueryKind::PairedCompare;
+        Self {
+            schema_version: NEUTRAL_ENGINE_QUERY_VERSION.to_string(),
+            decision_id: left.decision_id.clone(),
+            hp_lost_diff_left_minus_right: left.branch_effect.hp_lost - right.branch_effect.hp_lost,
+            enemy_removed_diff_left_minus_right: left.branch_effect.enemy_hp_removed
+                - right.branch_effect.enemy_hp_removed,
+            kill_diff_left_minus_right: left.branch_effect.enemies_killed
+                - right.branch_effect.enemies_killed,
+            left_dead_right_alive: left.branch_effect.player_dead
+                && !right.branch_effect.player_dead,
+            left_alive_right_dead: !left.branch_effect.player_dead
+                && right.branch_effect.player_dead,
+            left_clears_right_not: left.branch_effect.combat_cleared
+                && !right.branch_effect.combat_cleared,
+            right_clears_left_not: !left.branch_effect.combat_cleared
+                && right.branch_effect.combat_cleared,
+            left,
+            right,
+        }
     }
 }
 
@@ -434,6 +590,8 @@ fn build_result(
     truncated: bool,
     engine_steps: u32,
     max_engine_steps: u32,
+    boundary_kind: BoundaryKind,
+    observability: Observability,
     before: CombatStateSummary,
     after: CombatStateSummary,
 ) -> NeutralEngineQueryResult {
@@ -445,10 +603,13 @@ fn build_result(
         action_id,
         query_kind,
         input_debug: format!("{input:?}"),
+        scenario_debug: None,
         alive,
         truncated,
         engine_steps,
         max_engine_steps,
+        boundary_kind,
+        observability,
         before,
         after,
         delta,
@@ -470,6 +631,20 @@ fn stable_boundary(engine: &EngineState, combat: &CombatState) -> bool {
         || matches!(engine, EngineState::RewardScreen(_))
         || matches!(engine, EngineState::GameOver(_))
         || is_smoke_escape_stable_boundary(engine, combat)
+}
+
+fn boundary_kind(engine: &EngineState, combat: &CombatState, truncated: bool) -> BoundaryKind {
+    if truncated {
+        BoundaryKind::StepLimit
+    } else if matches!(engine, EngineState::GameOver(_)) {
+        BoundaryKind::GameOver
+    } else if combat_cleared(engine, combat) {
+        BoundaryKind::CombatEnd
+    } else if matches!(engine, EngineState::PendingChoice(_)) {
+        BoundaryKind::PendingChoice
+    } else {
+        BoundaryKind::Stable
+    }
 }
 
 fn enemy_total_hp(combat: &CombatState) -> i32 {

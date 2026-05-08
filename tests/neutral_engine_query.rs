@@ -27,6 +27,24 @@ fn cultist_combat_with_hand(hand: &[CardId]) -> sts_simulator::runtime::combat::
     combat
 }
 
+fn cultist_combat_with_zones(
+    hand: &[CardId],
+    draw: &[CardId],
+    discard: &[CardId],
+) -> sts_simulator::runtime::combat::CombatState {
+    let mut combat = cultist_combat_with_hand(hand);
+    let mut uuid = 100;
+    for id in draw {
+        combat.zones.draw_pile.push(card(*id, uuid));
+        uuid += 1;
+    }
+    for id in discard {
+        combat.zones.discard_pile.push(card(*id, uuid));
+        uuid += 1;
+    }
+    combat
+}
+
 fn decision_id() -> DecisionId {
     DecisionId {
         episode_id: "neutral-query-test".to_string(),
@@ -116,4 +134,56 @@ fn branch_effect_signature_compresses_by_observed_engine_delta() {
         .find(|group| group.signature.enemy_damage_bucket == attack.enemy_damage_bucket)
         .unwrap();
     assert_eq!(attack_group.count, 2);
+}
+
+#[test]
+fn draw_top_card_branches_compress_without_enumerating_full_future_tree() {
+    let combat = cultist_combat_with_zones(
+        &[CardId::PommelStrike],
+        &[CardId::Strike, CardId::Defend, CardId::Bash],
+        &[],
+    );
+    let context = SearchExecutionContext::new(
+        decision_id(),
+        EngineState::CombatPlayerTurn,
+        combat,
+        vec![ClientInput::PlayCard {
+            card_index: 0,
+            target: Some(1),
+        }],
+    );
+    let service = NeutralEngineQueryService::default();
+    let branches = service.draw_top_card_branch_effects(&context, ActionId(0), 8);
+    assert_eq!(branches.len(), 3);
+    assert!(branches
+        .iter()
+        .all(|branch| branch.scenario_debug.is_some()));
+
+    let groups = service.compress_branch_effects(&branches);
+    assert!(
+        groups.len() < branches.len(),
+        "draw samples should be compressed by observed effect signature"
+    );
+}
+
+#[test]
+fn pending_choice_is_intermediate_decision_state_not_flat_root_option() {
+    let combat =
+        cultist_combat_with_zones(&[CardId::Headbutt], &[], &[CardId::Strike, CardId::Defend]);
+    let context = SearchExecutionContext::new(
+        decision_id(),
+        EngineState::CombatPlayerTurn,
+        combat,
+        vec![ClientInput::PlayCard {
+            card_index: 0,
+            target: Some(1),
+        }],
+    );
+    let service = NeutralEngineQueryService::default();
+    let result = service.force_to_stable(&context, ActionId(0)).unwrap();
+    assert!(
+        result.after.pending_choice,
+        "Headbutt should expose a pending choice state instead of being flattened at root"
+    );
+    assert!(result.branch_effect.pending_choice_created);
 }

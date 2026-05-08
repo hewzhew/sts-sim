@@ -15,6 +15,7 @@ pub mod state;
 pub mod verification;
 
 // Integration layers around the runtime path.
+pub mod app;
 pub mod diff;
 mod testing;
 pub use testing::fixtures;

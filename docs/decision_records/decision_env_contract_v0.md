@@ -51,9 +51,11 @@ This does not make `frontier_eval`, exact-turn search, verified teacher, or live
 - live CommunicationMod combat now constructs a `policy_input_v0` from the public live observation snapshot and root action candidates, then maps the current legacy frontier fallback decision through that candidate set before sending a command. This keeps the current behavior while moving the live execution seam onto the policy-input contract.
 - Combat audit now labels current live combat baseline as `legacy_frontier_planner` / `legacy_frontier_fallback`; exact-turn and turn-option outputs are evidence/shadow unless a later policy layer consumes them through a separate contract.
 - `src/verification/search_policy.rs` defines the search-aware policy contract: `PolicyProposal`, `SearchPlan`, `SearchRequest`, `SearchEvidence`, `PolicyDecision`, and `DeliberationTrace`.
-- live CommunicationMod combat now writes a `search_aware_policy_trace` into combat audit. V0 is intentionally `legacy_frontier_fallback` with `legacy_root_search` evidence marked `heuristic_only`; it is a deliberation trace shape, not verified teacher truth.
+- `src/app/policy_runner` defines `NeutralCompressedPolicyRunner`, the first non-legacy search-aware runner. It builds uniform no-model proposals, requests neutral branch-compression evidence, groups observed engine effects, and only selects when strict generic dominance is visible.
+- live CommunicationMod combat now writes a `search_aware_policy_trace` from `NeutralCompressedPolicyRunner` into combat audit. Current live execution still uses the existing baseline command path for safety; the neutral trace is shadow evidence, not takeover authority.
 
 ## Next Work
 
 - Add a non-baseline neural candidate scorer only as a fast prior / risk / uncertainty component once strict trainable teacher labels are available.
-- Replace the V0 legacy trace with a real search-aware `PolicyRunner`: model proposal, budgeted `SearchRequest`s, clean `SearchEvidence`, evidence-aware decision, and fallback.
+- Collect and evaluate neutral runner deliberation traces offline before enabling any live takeover.
+- Add model proposal/risk/uncertainty heads only as components of the neutral search-aware runner, not as naked argmax policy.

@@ -239,11 +239,13 @@ pub struct SearchEvidence {
 #[serde(rename_all = "snake_case")]
 pub enum DecisionMode {
     FastPriorAccepted,
+    NeutralEvidenceResolved,
     ExactTurnResolved,
     RolloutResolved,
     DominanceResolved,
     EvidenceTieBrokenByModel,
     EvidenceTieBrokenByLegacy,
+    EvidenceInsufficient,
     LegacyFallback,
     TimeoutFallback,
     SafetyFallback,
