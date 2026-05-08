@@ -17,7 +17,8 @@ use sts_simulator::cli::full_run_smoke::{
     RunActionCandidate, RunPolicyKind,
 };
 use sts_simulator::verification::decision_env::{
-    ActionId, DecisionEnv, DecisionRecord, DecisionRecordContext,
+    ActionId, CandidateLabel, DecisionEnv, DecisionRecord, DecisionRecordContext,
+    PairwisePreference, TeacherDecisionLabel, TimeStep,
 };
 
 #[derive(Debug, Deserialize)]
@@ -45,6 +46,15 @@ enum DriverRequest {
         sim_version: Option<String>,
         return_spec_version: Option<String>,
         context: Option<Value>,
+        teacher_continuation_policy: Option<String>,
+        teacher_horizon_decisions: Option<usize>,
+        teacher_horizon_mode: Option<String>,
+        teacher_gamma: Option<f32>,
+        teacher_evaluation_mode: Option<String>,
+        teacher_value_cache_scope: Option<String>,
+        teacher_value_cache_max_entries: Option<usize>,
+        teacher_parallelism: Option<usize>,
+        teacher_exact_root_dedup: Option<bool>,
     },
     StepPolicy {
         policy: String,
@@ -1437,12 +1447,39 @@ fn handle_request(session: &mut DriverSession, request: DriverRequest) -> Driver
             sim_version,
             return_spec_version,
             context,
+            teacher_continuation_policy,
+            teacher_horizon_decisions,
+            teacher_horizon_mode,
+            teacher_gamma,
+            teacher_evaluation_mode,
+            teacher_value_cache_scope,
+            teacher_value_cache_max_entries,
+            teacher_parallelism,
+            teacher_exact_root_dedup,
         } => match session.env.as_mut() {
             Some(current) => {
                 let seed = current.info().seed;
                 let decision = match DecisionEnv::current_timestep(current) {
                     Ok(timestep) => timestep,
                     Err(err) => return error_response(err.to_string()),
+                };
+                let teacher_label = match build_teacher_label_for_decision_record(
+                    current,
+                    &mut session.episode_value_cache,
+                    &decision,
+                    teacher_continuation_policy,
+                    teacher_horizon_decisions,
+                    teacher_horizon_mode,
+                    teacher_gamma,
+                    teacher_evaluation_mode,
+                    teacher_value_cache_scope,
+                    teacher_value_cache_max_entries,
+                    teacher_parallelism,
+                    teacher_exact_root_dedup,
+                    return_spec_version.as_deref().unwrap_or("driver_reward_v0"),
+                ) {
+                    Ok(label) => label,
+                    Err(err) => return error_response(err),
                 };
                 let outcome = match DecisionEnv::step(current, ActionId(action_id)) {
                     Ok(timestep) => timestep,
@@ -1454,6 +1491,7 @@ fn handle_request(session: &mut DriverSession, request: DriverRequest) -> Driver
                     seed,
                 );
                 record_context.behavior_action = Some(ActionId(action_id));
+                record_context.teacher_label = teacher_label;
                 record_context.info =
                     context.unwrap_or_else(|| json!({"source": "full_run_env_driver"}));
                 let record =
@@ -1869,6 +1907,190 @@ fn error_response(error: String) -> DriverResponse {
         chosen_action_key: None,
         info: None,
     }
+}
+
+fn build_teacher_label_for_decision_record(
+    env: &mut FullRunEnv,
+    episode_cache: &mut ValueCache,
+    decision: &TimeStep,
+    continuation_policy: Option<String>,
+    horizon_decisions: Option<usize>,
+    horizon_mode: Option<String>,
+    gamma: Option<f32>,
+    evaluation_mode: Option<String>,
+    value_cache_scope: Option<String>,
+    value_cache_max_entries: Option<usize>,
+    parallelism: Option<usize>,
+    exact_root_dedup: Option<bool>,
+    return_spec_version: &str,
+) -> Result<Option<TeacherDecisionLabel>, String> {
+    let requested = continuation_policy.is_some()
+        || horizon_decisions.is_some()
+        || horizon_mode.is_some()
+        || gamma.is_some()
+        || evaluation_mode.is_some()
+        || value_cache_scope.is_some()
+        || value_cache_max_entries.is_some()
+        || parallelism.is_some()
+        || exact_root_dedup.is_some();
+    if !requested {
+        return Ok(None);
+    }
+
+    let continuation_policy =
+        normalize_policy(continuation_policy.as_deref().unwrap_or("rule_baseline_v0"))?;
+    let horizon_decisions = horizon_decisions.unwrap_or(8);
+    let horizon_mode = HorizonMode::parse(horizon_mode.as_deref())?;
+    let gamma = gamma.unwrap_or(0.99);
+    if !gamma.is_finite() {
+        return Err("teacher_gamma must be finite".to_string());
+    }
+    let evaluation_mode =
+        EvaluationMode::parse(evaluation_mode.as_deref().or(Some("bellman_cached_v1")))?;
+    let value_cache_scope =
+        ValueCacheScope::parse(value_cache_scope.as_deref().or(Some("episode")))?;
+    let action_indices = decision
+        .candidates
+        .iter()
+        .map(|candidate| candidate.action_index)
+        .collect::<Vec<_>>();
+    let payload = evaluate_candidates(
+        env,
+        episode_cache,
+        action_indices,
+        continuation_policy,
+        horizon_decisions,
+        horizon_mode,
+        gamma,
+        EvaluationRuntimeOptions {
+            mode: evaluation_mode,
+            cache_scope: value_cache_scope,
+            cache_max_entries: value_cache_max_entries.unwrap_or(4096),
+            parallelism: parallelism.unwrap_or(1),
+            exact_root_dedup: exact_root_dedup.unwrap_or(true),
+        },
+        EvaluationOutputOptions {
+            include_state: false,
+            include_next_state: false,
+            include_continuation_trace: false,
+            check_live_env_unchanged: true,
+        },
+    )?;
+    Ok(Some(teacher_label_from_candidate_evaluation(
+        payload,
+        return_spec_version,
+    )))
+}
+
+fn teacher_label_from_candidate_evaluation(
+    payload: CandidateEvaluationPayload,
+    return_spec_version: &str,
+) -> TeacherDecisionLabel {
+    let best_return = payload
+        .evaluations
+        .iter()
+        .filter(|evaluation| evaluation.ok)
+        .map(|evaluation| evaluation.discounted_return)
+        .fold(None, |acc: Option<f32>, value| {
+            Some(acc.map_or(value, |best| best.max(value)))
+        });
+    let labels = payload
+        .evaluations
+        .iter()
+        .map(|evaluation| {
+            let action_id = ActionId(evaluation.action_index);
+            let dominance = if !evaluation.ok {
+                Some("error".to_string())
+            } else if best_return
+                .is_some_and(|best| (best - evaluation.discounted_return).abs() <= f32::EPSILON)
+            {
+                Some("best_or_tied".to_string())
+            } else {
+                Some("evaluated".to_string())
+            };
+            CandidateLabel {
+                action_id,
+                mean_return: evaluation.ok.then_some(evaluation.discounted_return),
+                stderr: None,
+                sample_count: u32::from(evaluation.ok),
+                dominance,
+                confidence: evaluation.ok.then_some("single_rollout".to_string()),
+                payload: json!({
+                    "action_index": evaluation.action_index,
+                    "ok": evaluation.ok,
+                    "error": evaluation.error,
+                    "chosen_action_key": evaluation.chosen_action_key,
+                    "one_step_reward": evaluation.one_step_reward,
+                    "discounted_return": evaluation.discounted_return,
+                    "done": evaluation.done,
+                    "terminal_reason": evaluation.terminal_reason,
+                    "continuation_steps": evaluation.continuation_steps,
+                    "rollout_done": evaluation.rollout_done,
+                    "rollout_terminal_reason": evaluation.rollout_terminal_reason,
+                    "horizon_stop_reason": evaluation.horizon_stop_reason,
+                    "payoff_reasons": evaluation.payoff_reasons,
+                    "final_info": evaluation.final_info,
+                }),
+            }
+        })
+        .collect::<Vec<_>>();
+    let pairwise_preferences = pairwise_preferences_from_evaluations(&payload.evaluations);
+    TeacherDecisionLabel {
+        teacher_spec_version: "candidate_evaluation_teacher_v0".to_string(),
+        return_spec_version: return_spec_version.to_string(),
+        labels,
+        pairwise_preferences,
+        payload: json!({
+            "source_schema_version": payload.schema_version,
+            "continuation_policy": payload.continuation_policy,
+            "horizon_decisions": payload.horizon_decisions,
+            "horizon_mode": payload.horizon_mode,
+            "gamma": payload.gamma,
+            "evaluation_mode": payload.evaluation_mode,
+            "value_cache_scope": payload.value_cache_scope,
+            "root_candidate_count": payload.root_candidate_count,
+            "root_exact_dedup_count": payload.root_exact_dedup_count,
+            "root_rule_equivalent_prune_count": payload.root_rule_equivalent_prune_count,
+            "value_cache_hit_count": payload.value_cache_hit_count,
+            "value_cache_miss_count": payload.value_cache_miss_count,
+            "policy_step_eval_count": payload.policy_step_eval_count,
+            "cache_entry_count": payload.cache_entry_count,
+            "parallelism_requested": payload.parallelism_requested,
+            "parallelism_used": payload.parallelism_used,
+            "candidate_eval_wall_ms": payload.candidate_eval_wall_ms,
+            "live_env_unchanged": payload.live_env_unchanged,
+        }),
+    }
+}
+
+fn pairwise_preferences_from_evaluations(
+    evaluations: &[CandidateEvaluation],
+) -> Vec<PairwisePreference> {
+    let Some(best) = evaluations
+        .iter()
+        .filter(|evaluation| evaluation.ok)
+        .max_by(|left, right| left.discounted_return.total_cmp(&right.discounted_return))
+    else {
+        return Vec::new();
+    };
+    evaluations
+        .iter()
+        .filter(|other| {
+            other.ok
+                && best.action_index != other.action_index
+                && best.discounted_return > other.discounted_return + f32::EPSILON
+        })
+        .map(|other| PairwisePreference {
+            preferred: ActionId(best.action_index),
+            other: ActionId(other.action_index),
+            margin: Some(best.discounted_return - other.discounted_return),
+            confidence: Some("best_vs_other_single_rollout".to_string()),
+            payload: json!({
+                "preferred_return": best.discounted_return,
+                "other_return": other.discounted_return,
+            }),
+        })
+        .collect()
 }
 
 fn state_payload(state: FullRunEnvState) -> Value {
@@ -2641,6 +2863,15 @@ mod tests {
                 sim_version: Some("test_sim".to_string()),
                 return_spec_version: Some("test_return".to_string()),
                 context: Some(json!({"collector": "driver_test"})),
+                teacher_continuation_policy: None,
+                teacher_horizon_decisions: None,
+                teacher_horizon_mode: None,
+                teacher_gamma: None,
+                teacher_evaluation_mode: None,
+                teacher_value_cache_scope: None,
+                teacher_value_cache_max_entries: None,
+                teacher_parallelism: None,
+                teacher_exact_root_dedup: None,
             },
         );
 
@@ -2659,5 +2890,55 @@ mod tests {
                 .as_f64()
                 .expect("record reward") as f32
         );
+    }
+
+    #[test]
+    fn driver_can_attach_teacher_label_to_decision_record_step() {
+        let mut session = DriverSession::default();
+        let reset = DriverRequest::Reset {
+            seed: Some(6),
+            ascension: Some(0),
+            final_act: Some(false),
+            class: Some("ironclad".to_string()),
+            max_steps: Some(80),
+            reward_shaping_profile: Some("baseline".to_string()),
+        };
+        assert!(handle_request(&mut session, reset).ok);
+
+        let record_response = handle_request(
+            &mut session,
+            DriverRequest::DecisionRecordStep {
+                action_id: 0,
+                sim_version: Some("test_sim".to_string()),
+                return_spec_version: Some("test_return".to_string()),
+                context: Some(json!({"collector": "teacher_label_test"})),
+                teacher_continuation_policy: Some("rule_baseline_v0".to_string()),
+                teacher_horizon_decisions: Some(1),
+                teacher_horizon_mode: Some("fixed_decisions".to_string()),
+                teacher_gamma: Some(0.99),
+                teacher_evaluation_mode: Some("bellman_cached_v1".to_string()),
+                teacher_value_cache_scope: Some("request".to_string()),
+                teacher_value_cache_max_entries: Some(64),
+                teacher_parallelism: Some(1),
+                teacher_exact_root_dedup: Some(true),
+            },
+        );
+
+        assert!(record_response.ok);
+        let record = record_response.payload.expect("record payload");
+        let label = &record["teacher_label"];
+        assert_eq!(
+            label["teacher_spec_version"],
+            "candidate_evaluation_teacher_v0"
+        );
+        assert_eq!(label["return_spec_version"], "test_return");
+        assert!(label["labels"]
+            .as_array()
+            .is_some_and(|labels| !labels.is_empty()));
+        assert_eq!(
+            label["payload"]["source_schema_version"],
+            "return_q_candidate_evaluation_v0"
+        );
+        assert_eq!(label["payload"]["live_env_unchanged"], true);
     }
 }

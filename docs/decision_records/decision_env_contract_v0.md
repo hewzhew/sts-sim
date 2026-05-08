@@ -37,9 +37,10 @@ This does not make `frontier_eval`, exact-turn search, verified teacher, or live
 - `FullRunEnv` implements the contract in `src/cli/full_run_smoke/decision_env.rs`.
 - `full_run_env_driver` exposes contract payloads with `decision_env_observation`, `decision_env_step`, and `decision_record_step`.
 - `tools/learning/collect_decision_records.py` collects behavior-policy trajectories as `DecisionRecord` JSONL through the driver contract.
+- `decision_record_step` can optionally attach `candidate_evaluation_teacher_v0` labels. These labels evaluate candidates and populate `teacher_label`; they do not choose the live action.
 
 ## Next Work
 
-- Move teacher labels into `TeacherDecisionLabel` instead of standalone ad-hoc schemas.
-- Add a batch collector that writes `DecisionRecord` JSONL.
+- Add stricter teacher quality gates before any labels are treated as trainable.
+- Replace the filtered JSON public observation with typed public observation structs.
 - Split live policy input so it cannot read oracle/debug payloads by construction.
