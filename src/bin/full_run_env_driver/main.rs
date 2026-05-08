@@ -12,6 +12,7 @@ use blake2::digest::{Update, VariableOutput};
 use blake2::Blake2bVar;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use sts_simulator::app::policy_runner::NeutralCompressedPolicyRunner;
 use sts_simulator::cli::full_run_smoke::{
     FullRunEnv, FullRunEnvConfig, FullRunEnvInfo, FullRunEnvState, RewardShapingProfile,
     RunActionCandidate, RunPolicyKind,
@@ -20,6 +21,8 @@ use sts_simulator::verification::decision_env::{
     ActionId, CandidateLabel, DecisionEnv, DecisionRecord, DecisionRecordContext,
     PairwisePreference, PolicyInput, TeacherDecisionLabel, TimeStep,
 };
+use sts_simulator::verification::neutral_engine_query::SearchExecutionContext;
+use sts_simulator::verification::search_policy::DeliberationTrace;
 
 #[derive(Debug, Deserialize)]
 #[serde(tag = "cmd", rename_all = "snake_case")]
@@ -37,6 +40,11 @@ enum DriverRequest {
     DecisionEnvObservation,
     PolicyInput {
         time_budget_ms: Option<u32>,
+    },
+    NeutralPolicyTrace {
+        time_budget_ms: Option<u32>,
+        max_branch_depth: Option<u8>,
+        max_candidates: Option<usize>,
     },
     Step {
         action_index: usize,
@@ -1421,6 +1429,73 @@ fn handle_request(session: &mut DriverSession, request: DriverRequest) -> Driver
             },
             None => error_response("full-run env not initialized; send reset first".to_string()),
         },
+        DriverRequest::NeutralPolicyTrace {
+            time_budget_ms,
+            max_branch_depth,
+            max_candidates,
+        } => match session.env.as_mut() {
+            Some(current) => {
+                let timestep = match DecisionEnv::current_timestep(current) {
+                    Ok(timestep) => timestep,
+                    Err(err) => return error_response(err.to_string()),
+                };
+                let policy_input =
+                    match PolicyInput::from_timestep(&timestep, time_budget_ms.unwrap_or(25)) {
+                        Ok(policy_input) => policy_input,
+                        Err(err) => return error_response(err.to_string()),
+                    };
+                let context_parts = match current.current_combat_decision_context_parts() {
+                    Ok(parts) => parts,
+                    Err(err) => return error_response(err),
+                };
+                let Some((engine, combat, candidates)) = context_parts else {
+                    return DriverResponse {
+                        ok: true,
+                        error: None,
+                        payload: Some(json!({
+                            "schema_version": "neutral_policy_trace_driver_v0",
+                            "supported": false,
+                            "reason": "current_decision_is_not_combat_engine_decision",
+                            "policy_input": policy_input,
+                        })),
+                        reward: None,
+                        done: Some(current.info().result != "ongoing"),
+                        chosen_action_key: None,
+                        info: Some(current.info()),
+                    };
+                };
+                let mut runner = NeutralCompressedPolicyRunner::default();
+                if let Some(max_branch_depth) = max_branch_depth {
+                    runner.config.max_branch_depth = max_branch_depth;
+                }
+                if let Some(max_candidates) = max_candidates {
+                    runner.config.max_candidates = max_candidates;
+                }
+                let execution_context = SearchExecutionContext::from_policy_input(
+                    &policy_input,
+                    engine,
+                    combat,
+                    candidates,
+                );
+                let trace = runner.deliberate(&policy_input, &execution_context);
+                DriverResponse {
+                    ok: true,
+                    error: None,
+                    payload: Some(json!({
+                        "schema_version": "neutral_policy_trace_driver_v0",
+                        "supported": true,
+                        "policy_input": policy_input,
+                        "trace": trace,
+                        "summary": neutral_policy_trace_summary(&trace),
+                    })),
+                    reward: None,
+                    done: Some(current.info().result != "ongoing"),
+                    chosen_action_key: None,
+                    info: Some(current.info()),
+                }
+            }
+            None => error_response("full-run env not initialized; send reset first".to_string()),
+        },
         DriverRequest::Step { action_index } => match session.env.as_mut() {
             Some(current) => match current.step(action_index) {
                 Ok(step) => DriverResponse {
@@ -1929,6 +2004,61 @@ fn error_response(error: String) -> DriverResponse {
         chosen_action_key: None,
         info: None,
     }
+}
+
+fn neutral_policy_trace_summary(trace: &DeliberationTrace) -> Value {
+    let evaluation = &trace.decision.payload;
+    let expanded_group_count = evaluation
+        .get("expanded_branch_groups")
+        .and_then(Value::as_array)
+        .map(Vec::len)
+        .unwrap_or(0);
+    let unexpanded_group_count = evaluation
+        .get("unexpanded_branch_groups")
+        .and_then(Value::as_array)
+        .map(Vec::len)
+        .unwrap_or(0);
+    let candidate_evaluations = evaluation
+        .get("candidate_evaluations")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    let truncated_candidate_count = candidate_evaluations
+        .iter()
+        .filter(|item| {
+            item.get("truncated")
+                .and_then(Value::as_bool)
+                .unwrap_or(false)
+        })
+        .count();
+    let dead_candidate_count = candidate_evaluations
+        .iter()
+        .filter(|item| {
+            item.get("player_dead")
+                .and_then(Value::as_bool)
+                .unwrap_or(false)
+        })
+        .count();
+    let selected_action_id = trace
+        .decision
+        .selected_action_id
+        .map(|action_id| action_id.0);
+    json!({
+        "schema_version": "neutral_policy_trace_summary_v0",
+        "policy_id": &trace.decision.policy_id,
+        "mode": &trace.decision.mode,
+        "selected_action_id": selected_action_id,
+        "fallback": selected_action_id.is_none(),
+        "fallback_reason": &trace.decision.fallback_reason,
+        "candidate_count": candidate_evaluations.len(),
+        "evidence_count": trace.evidence.len(),
+        "request_count": trace.search_plan.requests.len(),
+        "expanded_group_count": expanded_group_count,
+        "unexpanded_group_count": unexpanded_group_count,
+        "group_count": expanded_group_count + unexpanded_group_count,
+        "truncated_candidate_count": truncated_candidate_count,
+        "dead_candidate_count": dead_candidate_count,
+    })
 }
 
 fn build_teacher_label_for_decision_record(
@@ -2974,6 +3104,77 @@ mod tests {
         assert!(!serialized.contains("timestep_info"));
         assert!(!serialized.contains("teacher_label"));
         assert!(!serialized.contains("rule_score"));
+    }
+
+    #[test]
+    fn driver_exposes_neutral_policy_trace_without_stepping_env() {
+        let mut session = DriverSession::default();
+        let reset = DriverRequest::Reset {
+            seed: Some(8),
+            ascension: Some(0),
+            final_act: Some(false),
+            class: Some("ironclad".to_string()),
+            max_steps: Some(80),
+            reward_shaping_profile: Some("baseline".to_string()),
+        };
+        assert!(handle_request(&mut session, reset).ok);
+
+        let mut supported_trace = None;
+        for _ in 0..32 {
+            let trace = handle_request(
+                &mut session,
+                DriverRequest::NeutralPolicyTrace {
+                    time_budget_ms: Some(17),
+                    max_branch_depth: Some(1),
+                    max_candidates: Some(16),
+                },
+            );
+            assert!(trace.ok);
+            let payload = trace.payload.expect("neutral trace payload");
+            assert_eq!(payload["schema_version"], "neutral_policy_trace_driver_v0");
+            if payload["supported"].as_bool() == Some(true) {
+                supported_trace = Some(payload);
+                break;
+            }
+            let preview = handle_request(
+                &mut session,
+                DriverRequest::PreviewPolicyAction {
+                    policy: "rule_baseline_v0".to_string(),
+                    include_state: Some(false),
+                    include_next_state: Some(false),
+                    check_live_env_unchanged: Some(false),
+                },
+            );
+            assert!(preview.ok);
+            let Some(action_id) = preview
+                .payload
+                .as_ref()
+                .and_then(|payload| payload["chosen_action_index"].as_u64())
+            else {
+                break;
+            };
+            let step = handle_request(
+                &mut session,
+                DriverRequest::DecisionEnvStep {
+                    action_id: action_id as usize,
+                },
+            );
+            assert!(step.ok);
+            if step.done == Some(true) {
+                break;
+            }
+        }
+
+        let payload = supported_trace.expect("expected to reach a combat decision");
+        assert_eq!(
+            payload["trace"]["proposal"]["policy_id"],
+            "neutral_compressed_policy_runner_v0"
+        );
+        assert_eq!(
+            payload["trace"]["evidence"][0]["search_kind"]["kind"],
+            "neutral_branch_compression"
+        );
+        assert!(payload["summary"]["candidate_count"].as_u64().unwrap_or(0) > 0);
     }
 
     #[test]

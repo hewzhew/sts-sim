@@ -53,6 +53,8 @@ This does not make `frontier_eval`, exact-turn search, verified teacher, or live
 - `src/verification/search_policy.rs` defines the search-aware policy contract: `PolicyProposal`, `SearchPlan`, `SearchRequest`, `SearchEvidence`, `PolicyDecision`, and `DeliberationTrace`.
 - `src/app/policy_runner` defines `NeutralCompressedPolicyRunner`, the first non-legacy search-aware runner. It builds uniform no-model proposals, requests neutral branch-compression evidence, groups observed engine effects, and only selects when strict generic dominance is visible.
 - live CommunicationMod combat now writes a `search_aware_policy_trace` from `NeutralCompressedPolicyRunner` into combat audit. Current live execution still uses the existing baseline command path for safety; the neutral trace is shadow evidence, not takeover authority.
+- `full_run_env_driver` exposes `neutral_policy_trace` for offline audit. It returns a `policy_input`, neutral deliberation trace, and summary metrics without stepping the env.
+- `tools/learning/collect_neutral_policy_traces.py` follows a behavior policy through DecisionEnv and records neutral trace coverage/compression/fallback metrics as JSONL plus a summary.
 
 ## Next Work
 

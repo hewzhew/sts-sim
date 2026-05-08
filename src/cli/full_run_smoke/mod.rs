@@ -154,6 +154,30 @@ impl FullRunEnv {
         Ok((Some(action_index), action_key))
     }
 
+    pub fn current_combat_decision_context_parts(
+        &mut self,
+    ) -> Result<Option<(EngineState, CombatState, Vec<ClientInput>)>, String> {
+        let _ = self.prepare_state()?;
+        if self.done {
+            return Ok(None);
+        }
+        if !matches!(
+            self.ctx.engine_state,
+            EngineState::CombatPlayerTurn | EngineState::PendingChoice(_)
+        ) {
+            return Ok(None);
+        }
+        let Some(combat) = self.ctx.combat_state.clone() else {
+            return Ok(None);
+        };
+        let legal_actions = legal_actions(
+            &self.ctx.engine_state,
+            &self.ctx.run_state,
+            &self.ctx.combat_state,
+        );
+        Ok(Some((self.ctx.engine_state.clone(), combat, legal_actions)))
+    }
+
     pub fn cache_bucket_hint(&self) -> u64 {
         let mut hasher = DefaultHasher::new();
         self.config.seed.hash(&mut hasher);
