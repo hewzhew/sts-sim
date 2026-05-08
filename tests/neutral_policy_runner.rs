@@ -19,11 +19,15 @@ fn card(id: CardId, uuid: u32) -> CombatCard {
 }
 
 fn cultist_combat() -> CombatState {
+    cultist_combat_with_hp(48)
+}
+
+fn cultist_combat_with_hp(hp: i32) -> CombatState {
     let mut combat = blank_test_combat();
     combat.turn.energy = 3;
     combat.turn.turn_count = 2;
     let mut cultist = planned_monster(EnemyId::Cultist, 1);
-    cultist.current_hp = 48;
+    cultist.current_hp = hp;
     combat.entities.monsters.push(cultist);
     combat.zones.hand.push(card(CardId::Strike, 1));
     combat.zones.hand.push(card(CardId::Strike, 2));
@@ -144,7 +148,15 @@ fn policy_input_with_action_views(
 fn neutral_runner_uses_effect_groups_without_legacy_or_exact() {
     let inputs = candidates();
     let combat = cultist_combat();
-    let input = policy_input(&inputs);
+    let input = policy_input_with_action_views(
+        &inputs,
+        &["play_card", "play_card", "play_card"],
+        &[
+            "combat/play_card/card:Strike/hand:0/target:monster_slot:0",
+            "combat/play_card/card:Strike/hand:1/target:monster_slot:0",
+            "combat/play_card/card:Defend/hand:2",
+        ],
+    );
     assert_eq!(input.schema_version, POLICY_INPUT_SCHEMA_VERSION);
     let context = SearchExecutionContext::from_policy_input(
         &input,
@@ -214,7 +226,86 @@ fn neutral_runner_keeps_resource_actions_as_evidence_not_selection() {
     assert_eq!(evaluations.len(), 2);
     assert_eq!(evaluations[0]["resource_action"], true);
     assert_eq!(evaluations[0]["dominance_eligible"], false);
+    assert_eq!(evaluations[0]["reason_code"], "resource_ineligible");
+    assert_eq!(evaluations[0]["hypothesis_class"], "audit_only");
+    assert!(evaluations[0]["risk_buckets"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|bucket| bucket == "resource"));
     assert_ne!(trace.decision.selected_action_id, Some(ActionId(0)));
+}
+
+#[test]
+fn neutral_runner_evaluations_include_audit_classification_fields() {
+    let inputs = candidates();
+    let combat = cultist_combat();
+    let input = policy_input_with_action_views(
+        &inputs,
+        &["play_card", "play_card", "play_card"],
+        &[
+            "combat/play_card/card:Strike/hand:0/target:monster_slot:0",
+            "combat/play_card/card:Strike/hand:1/target:monster_slot:0",
+            "combat/play_card/card:Defend/hand:2",
+        ],
+    );
+    let context = SearchExecutionContext::from_policy_input(
+        &input,
+        EngineState::CombatPlayerTurn,
+        combat,
+        inputs,
+    );
+    let runner = NeutralCompressedPolicyRunner::default();
+    let trace = runner.deliberate(&input, &context);
+    let evaluations = trace
+        .decision
+        .payload
+        .pointer("/candidate_evaluations")
+        .and_then(|value| value.as_array())
+        .expect("candidate evaluations");
+    let attack = evaluations
+        .iter()
+        .find(|eval| eval["action_id"] == 0)
+        .expect("attack eval");
+    assert_eq!(attack["reason_code"], "damage_delta_only");
+    assert_eq!(
+        attack["hypothesis_class"],
+        "short_horizon_tactical_hypothesis"
+    );
+    assert_eq!(attack["evidence_scope"], "stable_boundary");
+    let block = evaluations
+        .iter()
+        .find(|eval| eval["action_id"] == 2)
+        .expect("block eval");
+    assert_eq!(block["reason_code"], "defense_horizon_missing");
+}
+
+#[test]
+fn neutral_runner_marks_terminal_clear_as_certificate() {
+    let inputs = candidates();
+    let combat = cultist_combat_with_hp(6);
+    let input = policy_input(&inputs);
+    let context = SearchExecutionContext::from_policy_input(
+        &input,
+        EngineState::CombatPlayerTurn,
+        combat,
+        inputs,
+    );
+    let runner = NeutralCompressedPolicyRunner::default();
+    let trace = runner.deliberate(&input, &context);
+    let evaluations = trace
+        .decision
+        .payload
+        .pointer("/candidate_evaluations")
+        .and_then(|value| value.as_array())
+        .expect("candidate evaluations");
+    let terminal = evaluations
+        .iter()
+        .find(|eval| eval["action_id"] == 0)
+        .expect("terminal eval");
+    assert_eq!(terminal["reason_code"], "terminal_clear");
+    assert_eq!(terminal["hypothesis_class"], "terminal_certificate");
+    assert_eq!(trace.decision.selected_action_id, Some(ActionId(0)));
 }
 
 #[test]

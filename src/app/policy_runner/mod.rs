@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::collections::BTreeSet;
 
 use crate::verification::decision_env::{ActionId, PolicyInput};
 use crate::verification::neutral_engine_query::{
@@ -41,6 +42,8 @@ pub struct EvaluationTrace {
     pub selected_group_id: Option<usize>,
     pub selected_action_id: Option<ActionId>,
     pub reason: String,
+    pub selected_reason_code: Option<String>,
+    pub selected_hypothesis_class: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
@@ -57,6 +60,10 @@ pub struct CandidateEvaluation {
     pub resource_action: bool,
     pub dominance_eligible: bool,
     pub dominance_score: i32,
+    pub reason_code: String,
+    pub evidence_scope: String,
+    pub risk_buckets: Vec<String>,
+    pub hypothesis_class: String,
 }
 
 pub struct NeutralCompressedPolicyRunner {
@@ -176,11 +183,11 @@ impl NeutralCompressedPolicyRunner {
         let candidate_evaluations = results
             .iter()
             .map(|result| {
-                let resource_action = input
+                let candidate = input
                     .candidates
                     .iter()
-                    .find(|candidate| candidate.id == result.action_id)
-                    .is_some_and(is_resource_action);
+                    .find(|candidate| candidate.id == result.action_id);
+                let resource_action = candidate.is_some_and(is_resource_action);
                 let dominance_eligible =
                     !resource_action || self.config.allow_resource_action_selection;
                 let group_id = groups
@@ -188,6 +195,11 @@ impl NeutralCompressedPolicyRunner {
                     .find(|group| group.action_ids.contains(&result.action_id))
                     .map(|group| group.group_id)
                     .unwrap_or(usize::MAX);
+                let risk_buckets = candidate
+                    .map(|candidate| candidate_risk_buckets(candidate, result))
+                    .unwrap_or_else(|| result_risk_buckets(result));
+                let (reason_code, evidence_scope, hypothesis_class) =
+                    classify_candidate(result, resource_action, &risk_buckets);
                 CandidateEvaluation {
                     action_id: result.action_id,
                     group_id,
@@ -201,6 +213,10 @@ impl NeutralCompressedPolicyRunner {
                     resource_action,
                     dominance_eligible,
                     dominance_score: dominance_score(result),
+                    reason_code,
+                    evidence_scope,
+                    risk_buckets,
+                    hypothesis_class,
                 }
             })
             .collect::<Vec<_>>();
@@ -220,6 +236,13 @@ impl NeutralCompressedPolicyRunner {
                 .find(|eval| eval.action_id == action_id)
                 .map(|eval| eval.group_id)
         });
+        let selected_eval = selected.and_then(|action_id| {
+            candidate_evaluations
+                .iter()
+                .find(|eval| eval.action_id == action_id)
+        });
+        let selected_reason_code = selected_eval.map(|eval| eval.reason_code.clone());
+        let selected_hypothesis_class = selected_eval.map(|eval| eval.hypothesis_class.clone());
         let (expanded_branch_groups, unexpanded_branch_groups) =
             split_expanded_groups(groups, self.config.max_branch_depth);
         EvaluationTrace {
@@ -230,11 +253,11 @@ impl NeutralCompressedPolicyRunner {
             candidate_evaluations,
             selected_group_id,
             selected_action_id: selected,
-            reason: if selected.is_some() {
-                "strict_generic_engine_effect_dominance".to_string()
-            } else {
-                "no_strict_generic_dominance".to_string()
-            },
+            reason: selected_reason_code
+                .clone()
+                .unwrap_or_else(|| "insufficient".to_string()),
+            selected_reason_code,
+            selected_hypothesis_class,
         }
     }
 
@@ -356,4 +379,210 @@ fn is_resource_action(
         "use_potion" | "discard_potion"
     ) || candidate.action_key.contains("/use_potion/")
         || candidate.action_key.contains("/discard_potion/")
+}
+
+fn candidate_risk_buckets(
+    candidate: &crate::verification::decision_env::PublicActionCandidateView,
+    result: &NeutralEngineQueryResult,
+) -> Vec<String> {
+    let mut buckets = BTreeSet::new();
+    if candidate.action_kind == "end_turn" {
+        buckets.insert("end_turn".to_string());
+    }
+    if candidate.action_kind == "use_potion" || candidate.action_kind == "discard_potion" {
+        buckets.insert("resource".to_string());
+    }
+    if candidate.action_kind.contains("choice") || candidate.action_kind == "selection" {
+        buckets.insert("pending_choice".to_string());
+    }
+    if candidate.action_kind == "play_card" {
+        if let Some(card) = candidate.payload.get("card") {
+            if card.get("card_type_id").and_then(Value::as_u64) == Some(1) {
+                buckets.insert("attack".to_string());
+            }
+            if numeric_card_field(card, "base_block") > 0
+                || numeric_card_field(card, "upgraded_block") > 0
+            {
+                buckets.insert("block".to_string());
+            }
+            if card
+                .get("draws_cards")
+                .and_then(Value::as_bool)
+                .unwrap_or(false)
+            {
+                buckets.insert("draw".to_string());
+            }
+            if card
+                .get("exhaust")
+                .and_then(Value::as_bool)
+                .unwrap_or(false)
+            {
+                buckets.insert("exhaust".to_string());
+            }
+            if card
+                .get("applies_weak")
+                .and_then(Value::as_bool)
+                .unwrap_or(false)
+                || card
+                    .get("applies_vulnerable")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false)
+            {
+                buckets.insert("debuff".to_string());
+            }
+            if card
+                .get("scaling_piece")
+                .and_then(Value::as_bool)
+                .unwrap_or(false)
+                || card.get("card_type_id").and_then(Value::as_u64) == Some(3)
+            {
+                buckets.insert("setup".to_string());
+            }
+            if card
+                .get("ethereal")
+                .and_then(Value::as_bool)
+                .unwrap_or(false)
+            {
+                buckets.insert("ethereal".to_string());
+            }
+            if card.get("card_type_id").and_then(Value::as_u64) == Some(3) {
+                buckets.insert("power".to_string());
+            }
+        } else {
+            if candidate.action_key.contains("card_type:attack") {
+                buckets.insert("attack".to_string());
+            }
+            if candidate.action_key.contains("block") || candidate.action_key.contains("Defend") {
+                buckets.insert("block".to_string());
+            }
+        }
+    }
+    for bucket in result_risk_buckets(result) {
+        buckets.insert(bucket);
+    }
+    buckets.into_iter().collect()
+}
+
+fn result_risk_buckets(result: &NeutralEngineQueryResult) -> Vec<String> {
+    let mut buckets = BTreeSet::new();
+    let effect = &result.branch_effect;
+    if effect.pending_choice_created {
+        buckets.insert("pending_choice".to_string());
+    }
+    if effect.hp_lost > 0 {
+        buckets.insert("hp_cost".to_string());
+    }
+    if effect.draw_len_delta != 0 || effect.hand_len_delta > 0 {
+        buckets.insert("draw".to_string());
+    }
+    if effect.exhaust_len_delta > 0 {
+        buckets.insert("exhaust".to_string());
+    }
+    buckets.into_iter().collect()
+}
+
+fn numeric_card_field(card: &Value, key: &str) -> i64 {
+    card.get(key).and_then(Value::as_i64).unwrap_or(0)
+}
+
+fn classify_candidate(
+    result: &NeutralEngineQueryResult,
+    resource_action: bool,
+    risk_buckets: &[String],
+) -> (String, String, String) {
+    let evidence_scope = if result.truncated {
+        "bounded_stable_boundary"
+    } else if result.branch_effect.pending_choice_created {
+        "stable_boundary_pending_choice"
+    } else {
+        "stable_boundary"
+    }
+    .to_string();
+
+    if resource_action {
+        return (
+            "resource_ineligible".to_string(),
+            evidence_scope,
+            "audit_only".to_string(),
+        );
+    }
+    if result.branch_effect.player_dead {
+        return (
+            "insufficient".to_string(),
+            evidence_scope,
+            "insufficient".to_string(),
+        );
+    }
+    if result.branch_effect.combat_cleared {
+        return (
+            "terminal_clear".to_string(),
+            evidence_scope,
+            "terminal_certificate".to_string(),
+        );
+    }
+    if result.branch_effect.enemies_killed > 0 {
+        return (
+            "typed_immediate_dominance".to_string(),
+            evidence_scope,
+            "typed_immediate_dominance".to_string(),
+        );
+    }
+    if contains_bucket(risk_buckets, "draw") {
+        return (
+            "draw_sample_uncertain".to_string(),
+            evidence_scope,
+            "unresolved".to_string(),
+        );
+    }
+    if contains_bucket(risk_buckets, "exhaust") {
+        return (
+            "exhaust_cost_unmodeled".to_string(),
+            evidence_scope,
+            "unresolved".to_string(),
+        );
+    }
+    if contains_bucket(risk_buckets, "debuff") {
+        return (
+            "delayed_debuff_horizon_missing".to_string(),
+            evidence_scope,
+            "unresolved".to_string(),
+        );
+    }
+    if contains_bucket(risk_buckets, "setup") || contains_bucket(risk_buckets, "power") {
+        return (
+            "setup_value_unmodeled".to_string(),
+            evidence_scope,
+            "unresolved".to_string(),
+        );
+    }
+    if contains_bucket(risk_buckets, "block") && result.branch_effect.enemy_hp_removed == 0 {
+        return (
+            "defense_horizon_missing".to_string(),
+            evidence_scope,
+            "unresolved".to_string(),
+        );
+    }
+    if result.truncated {
+        return (
+            "insufficient".to_string(),
+            evidence_scope,
+            "insufficient".to_string(),
+        );
+    }
+    if result.branch_effect.enemy_hp_removed > 0 {
+        return (
+            "damage_delta_only".to_string(),
+            evidence_scope,
+            "short_horizon_tactical_hypothesis".to_string(),
+        );
+    }
+    (
+        "insufficient".to_string(),
+        evidence_scope,
+        "insufficient".to_string(),
+    )
+}
+
+fn contains_bucket(risk_buckets: &[String], wanted: &str) -> bool {
+    risk_buckets.iter().any(|bucket| bucket == wanted)
 }

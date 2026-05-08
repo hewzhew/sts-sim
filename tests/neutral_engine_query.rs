@@ -187,3 +187,64 @@ fn pending_choice_is_intermediate_decision_state_not_flat_root_option() {
     );
     assert!(result.branch_effect.pending_choice_created);
 }
+
+#[test]
+fn commutation_probe_detects_order_equivalence_when_both_orders_are_legal() {
+    let combat = cultist_combat_with_hand(&[CardId::Strike, CardId::Defend]);
+    let context = SearchExecutionContext::new(
+        decision_id(),
+        EngineState::CombatPlayerTurn,
+        combat,
+        vec![
+            ClientInput::PlayCard {
+                card_index: 0,
+                target: Some(1),
+            },
+            ClientInput::PlayCard {
+                card_index: 1,
+                target: None,
+            },
+        ],
+    );
+    let service = NeutralEngineQueryService::default();
+    let probe = service
+        .commutation_probe(&context, ActionId(0), ActionId(1))
+        .expect("probe");
+
+    assert!(probe.left_then_right_legal);
+    assert!(probe.right_then_left_legal);
+    assert!(probe.both_orders_reached_boundary);
+    assert!(probe.summary_equal);
+    assert!(probe.order_only_equivalent);
+    assert_eq!(probe.enemy_removed_diff, 0);
+    assert_eq!(probe.hp_loss_diff, 0);
+}
+
+#[test]
+fn commutation_probe_marks_mutual_exclusion_when_second_action_becomes_illegal() {
+    let mut combat = cultist_combat_with_hand(&[CardId::Strike, CardId::Defend]);
+    combat.turn.energy = 1;
+    let context = SearchExecutionContext::new(
+        decision_id(),
+        EngineState::CombatPlayerTurn,
+        combat,
+        vec![
+            ClientInput::PlayCard {
+                card_index: 0,
+                target: Some(1),
+            },
+            ClientInput::PlayCard {
+                card_index: 1,
+                target: None,
+            },
+        ],
+    );
+    let service = NeutralEngineQueryService::default();
+    let probe = service
+        .commutation_probe(&context, ActionId(0), ActionId(1))
+        .expect("probe");
+
+    assert!(!probe.left_then_right_legal);
+    assert!(!probe.right_then_left_legal);
+    assert!(!probe.order_only_equivalent);
+}

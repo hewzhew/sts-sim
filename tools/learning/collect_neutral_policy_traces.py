@@ -81,18 +81,48 @@ def update_summary(
     trace = trace_payload.get("trace") or {}
     trace_summary = trace_payload.get("summary") or {}
     decision = trace.get("decision") or {}
+    evaluation = decision.get("payload") or {}
     mode = decision.get("mode") or "unknown"
     summary["mode_counts"][mode] += 1
+    candidate_evaluations = evaluation.get("candidate_evaluations") or []
+    for item in candidate_evaluations:
+        reason_code = item.get("reason_code") or "missing"
+        summary["candidate_reason_code_counts"][reason_code] += 1
+        evidence_scope = item.get("evidence_scope") or "missing"
+        summary["candidate_evidence_scope_counts"][evidence_scope] += 1
+        for bucket in item.get("risk_buckets") or []:
+            summary["candidate_risk_bucket_counts"][bucket] += 1
+    summary["resource_representative_contamination_count"] += resource_representative_contamination_count(
+        evaluation
+    )
     if trace_summary.get("fallback"):
         summary["fallback_count"] += 1
     else:
         summary["selected_count"] += 1
         selected_action_id = trace_summary.get("selected_action_id")
+        selected_eval = find_candidate_eval(candidate_evaluations, selected_action_id)
+        if selected_eval and selected_eval.get("resource_action"):
+            summary["selected_resource_count"] += 1
         if selected_action_id is not None and behavior_action_id is not None:
             if int(selected_action_id) == int(behavior_action_id):
                 summary["selected_agrees_with_behavior_count"] += 1
             else:
                 summary["selected_disagrees_with_behavior_count"] += 1
+                audit = trace_payload.get("disagreement_audit") or {}
+                reason_code = audit.get("reason_code") or "missing"
+                evidence_scope = audit.get("evidence_scope") or "missing"
+                hypothesis_class = audit.get("hypothesis_class") or "missing"
+                action_kind_pair = audit.get("action_kind_pair") or "missing"
+                summary["reason_code_counts"][reason_code] += 1
+                summary["evidence_scope_counts"][evidence_scope] += 1
+                summary["hypothesis_class_counts"][hypothesis_class] += 1
+                summary["action_kind_confusion"][action_kind_pair] += 1
+                if reason_code == "missing":
+                    summary["missing_disagreement_reason_count"] += 1
+                if audit.get("trainable_as_action_label") is not False:
+                    summary["trainable_disagreement_label_count"] += 1
+                for bucket in audit.get("risk_buckets") or []:
+                    summary["risk_bucket_counts"][bucket] += 1
                 paired = trace_payload.get("paired_compare_vs_reference")
                 if paired is not None:
                     summary["paired_compare_count"] += 1
@@ -113,6 +143,32 @@ def update_summary(
                     summary["paired_kill_diff_sum"] += int(
                         paired.get("kill_diff_left_minus_right") or 0
                     )
+                    hp_diff = int(paired.get("hp_lost_diff_left_minus_right") or 0)
+                    enemy_diff = int(paired.get("enemy_removed_diff_left_minus_right") or 0)
+                    if hp_diff > 0:
+                        summary["paired_hp_loss_worse_count"] += 1
+                    if hp_diff >= 3:
+                        summary["paired_hp_loss_worse_ge_3_count"] += 1
+                    if hp_diff >= 5:
+                        summary["paired_hp_loss_worse_ge_5_count"] += 1
+                    if enemy_diff < 0:
+                        summary["paired_enemy_removed_worse_count"] += 1
+                commutation = trace_payload.get("commutation_probe_vs_reference")
+                if commutation is not None:
+                    summary["commutation_probe_count"] += 1
+                    left_legal = bool(commutation.get("left_then_right_legal"))
+                    right_legal = bool(commutation.get("right_then_left_legal"))
+                    order_only = bool(commutation.get("order_only_equivalent"))
+                    if order_only:
+                        summary["order_only_disagreement_count"] += 1
+                    elif not left_legal or not right_legal:
+                        summary["mutually_exclusive_disagreement_count"] += 1
+                    else:
+                        summary["non_order_commutable_disagreement_count"] += 1
+                    if not left_legal:
+                        summary["left_then_right_second_illegal_count"] += 1
+                    if not right_legal:
+                        summary["right_then_left_second_illegal_count"] += 1
 
     for field in (
         "candidate_count",
@@ -127,6 +183,53 @@ def update_summary(
         value = int(trace_summary.get(field) or 0)
         summary[f"total_{field}"] += value
         summary[f"max_{field}"] = max(summary[f"max_{field}"], value)
+
+
+def find_candidate_eval(items: list[dict[str, Any]], action_id: Any) -> dict[str, Any] | None:
+    if action_id is None:
+        return None
+    try:
+        wanted = int(action_id)
+    except (TypeError, ValueError):
+        return None
+    for item in items:
+        try:
+            if int(item.get("action_id")) == wanted:
+                return item
+        except (TypeError, ValueError):
+            continue
+    return None
+
+
+def resource_representative_contamination_count(evaluation: dict[str, Any]) -> int:
+    candidate_evaluations = evaluation.get("candidate_evaluations") or []
+    eval_by_id: dict[int, dict[str, Any]] = {}
+    for item in candidate_evaluations:
+        try:
+            eval_by_id[int(item.get("action_id"))] = item
+        except (TypeError, ValueError):
+            continue
+    total = 0
+    groups = list(evaluation.get("expanded_branch_groups") or []) + list(
+        evaluation.get("unexpanded_branch_groups") or []
+    )
+    for group in groups:
+        try:
+            representative_id = int(group.get("representative_action_id"))
+        except (TypeError, ValueError):
+            continue
+        representative_eval = eval_by_id.get(representative_id)
+        if not representative_eval or not representative_eval.get("resource_action"):
+            continue
+        member_ids = []
+        for action_id in group.get("action_ids") or []:
+            try:
+                member_ids.append(int(action_id))
+            except (TypeError, ValueError):
+                continue
+        if any(eval_by_id.get(action_id, {}).get("dominance_eligible") for action_id in member_ids):
+            total += 1
+    return total
 
 
 def collect_episode(
@@ -236,6 +339,22 @@ def finalize_summary(summary: dict[str, Any]) -> dict[str, Any]:
         summary["paired_enemy_removed_diff_sum"] / paired
     )
     summary["paired_avg_kill_diff_left_minus_behavior"] = summary["paired_kill_diff_sum"] / paired
+    summary["commutation_summary"] = {
+        "probe_count": summary["commutation_probe_count"],
+        "order_only_disagreement_count": summary["order_only_disagreement_count"],
+        "mutually_exclusive_disagreement_count": summary[
+            "mutually_exclusive_disagreement_count"
+        ],
+        "non_order_commutable_disagreement_count": summary[
+            "non_order_commutable_disagreement_count"
+        ],
+        "left_then_right_second_illegal_count": summary[
+            "left_then_right_second_illegal_count"
+        ],
+        "right_then_left_second_illegal_count": summary[
+            "right_then_left_second_illegal_count"
+        ],
+    }
     return summary
 
 
@@ -273,8 +392,11 @@ def main() -> int:
         "unsupported_count": 0,
         "fallback_count": 0,
         "selected_count": 0,
+        "selected_resource_count": 0,
         "selected_agrees_with_behavior_count": 0,
         "selected_disagrees_with_behavior_count": 0,
+        "missing_disagreement_reason_count": 0,
+        "trainable_disagreement_label_count": 0,
         "paired_compare_count": 0,
         "paired_left_dead_right_alive_count": 0,
         "paired_left_alive_right_dead_count": 0,
@@ -283,8 +405,27 @@ def main() -> int:
         "paired_hp_lost_diff_sum": 0,
         "paired_enemy_removed_diff_sum": 0,
         "paired_kill_diff_sum": 0,
+        "paired_hp_loss_worse_count": 0,
+        "paired_hp_loss_worse_ge_3_count": 0,
+        "paired_hp_loss_worse_ge_5_count": 0,
+        "paired_enemy_removed_worse_count": 0,
+        "commutation_probe_count": 0,
+        "order_only_disagreement_count": 0,
+        "mutually_exclusive_disagreement_count": 0,
+        "non_order_commutable_disagreement_count": 0,
+        "left_then_right_second_illegal_count": 0,
+        "right_then_left_second_illegal_count": 0,
+        "resource_representative_contamination_count": 0,
         "unsupported_reasons": Counter(),
         "mode_counts": Counter(),
+        "reason_code_counts": Counter(),
+        "evidence_scope_counts": Counter(),
+        "hypothesis_class_counts": Counter(),
+        "risk_bucket_counts": Counter(),
+        "action_kind_confusion": Counter(),
+        "candidate_reason_code_counts": Counter(),
+        "candidate_evidence_scope_counts": Counter(),
+        "candidate_risk_bucket_counts": Counter(),
         "episodes": [],
     }
     for field in (
@@ -325,6 +466,16 @@ def main() -> int:
 
     summary["unsupported_reasons"] = dict(summary["unsupported_reasons"])
     summary["mode_counts"] = dict(summary["mode_counts"])
+    summary["reason_code_counts"] = dict(summary["reason_code_counts"])
+    summary["evidence_scope_counts"] = dict(summary["evidence_scope_counts"])
+    summary["hypothesis_class_counts"] = dict(summary["hypothesis_class_counts"])
+    summary["risk_bucket_counts"] = dict(summary["risk_bucket_counts"])
+    summary["action_kind_confusion"] = dict(summary["action_kind_confusion"])
+    summary["candidate_reason_code_counts"] = dict(summary["candidate_reason_code_counts"])
+    summary["candidate_evidence_scope_counts"] = dict(
+        summary["candidate_evidence_scope_counts"]
+    )
+    summary["candidate_risk_bucket_counts"] = dict(summary["candidate_risk_bucket_counts"])
     summary = finalize_summary(summary)
     summary_out.parent.mkdir(parents=True, exist_ok=True)
     summary_out.write_text(json.dumps(summary, indent=2), encoding="utf-8")

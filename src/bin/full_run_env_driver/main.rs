@@ -1491,6 +1491,30 @@ fn handle_request(session: &mut DriverSession, request: DriverRequest) -> Driver
                             })
                             .flatten()
                     });
+                let commutation_probe_vs_reference =
+                    trace.decision.selected_action_id.and_then(|selected| {
+                        let reference = ActionId(reference_action_id?);
+                        (selected != reference)
+                            .then(|| {
+                                runner.query.commutation_probe(
+                                    &execution_context,
+                                    selected,
+                                    reference,
+                                )
+                            })
+                            .flatten()
+                    });
+                let disagreement_audit = neutral_disagreement_audit(
+                    &policy_input,
+                    &trace,
+                    reference_action_id.map(ActionId),
+                    paired_compare_vs_reference
+                        .as_ref()
+                        .and_then(|value| serde_json::to_value(value).ok()),
+                    commutation_probe_vs_reference
+                        .as_ref()
+                        .and_then(|value| serde_json::to_value(value).ok()),
+                );
                 DriverResponse {
                     ok: true,
                     error: None,
@@ -1501,6 +1525,8 @@ fn handle_request(session: &mut DriverSession, request: DriverRequest) -> Driver
                         "trace": trace,
                         "summary": neutral_policy_trace_summary(&trace),
                         "paired_compare_vs_reference": paired_compare_vs_reference,
+                        "commutation_probe_vs_reference": commutation_probe_vs_reference,
+                        "disagreement_audit": disagreement_audit,
                     })),
                     reward: None,
                     done: Some(current.info().result != "ongoing"),
@@ -2072,6 +2098,150 @@ fn neutral_policy_trace_summary(trace: &DeliberationTrace) -> Value {
         "group_count": expanded_group_count + unexpanded_group_count,
         "truncated_candidate_count": truncated_candidate_count,
         "dead_candidate_count": dead_candidate_count,
+    })
+}
+
+fn neutral_disagreement_audit(
+    policy_input: &PolicyInput,
+    trace: &DeliberationTrace,
+    reference_action_id: Option<ActionId>,
+    paired_compare: Option<Value>,
+    commutation_probe: Option<Value>,
+) -> Option<Value> {
+    let selected_action_id = trace.decision.selected_action_id?;
+    let reference_action_id = reference_action_id?;
+    if selected_action_id == reference_action_id {
+        return None;
+    }
+    let selected = policy_input.candidates.get(selected_action_id.0)?;
+    let behavior = policy_input.candidates.get(reference_action_id.0)?;
+    let selected_eval = candidate_evaluation_by_action(&trace.decision.payload, selected_action_id);
+    let reason_code = selected_eval
+        .as_ref()
+        .and_then(|value| value.get("reason_code"))
+        .and_then(Value::as_str)
+        .unwrap_or("insufficient");
+    let evidence_scope = selected_eval
+        .as_ref()
+        .and_then(|value| value.get("evidence_scope"))
+        .and_then(Value::as_str)
+        .unwrap_or("unknown");
+    let hypothesis_class = selected_eval
+        .as_ref()
+        .and_then(|value| value.get("hypothesis_class"))
+        .and_then(Value::as_str)
+        .unwrap_or("unknown");
+    let risk_buckets = selected_eval
+        .as_ref()
+        .and_then(|value| value.get("risk_buckets"))
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    Some(json!({
+        "schema_version": "neutral_disagreement_audit_v2",
+        "decision_id": &policy_input.decision_id,
+        "behavior": action_descriptor(reference_action_id, behavior),
+        "selected": action_descriptor(selected_action_id, selected),
+        "action_kind_pair": format!("{}->{}", behavior.action_kind, selected.action_kind),
+        "reason_code": reason_code,
+        "evidence_scope": evidence_scope,
+        "hypothesis_class": hypothesis_class,
+        "risk_buckets": risk_buckets,
+        "paired_compare_deltas": paired_compare.as_ref().map(paired_compare_delta_summary),
+        "paired_compare": paired_compare,
+        "commutation_result": commutation_probe.as_ref().map(commutation_summary),
+        "commutation_probe": commutation_probe,
+        "trainable_as_action_label": false,
+    }))
+}
+
+fn candidate_evaluation_by_action(payload: &Value, action_id: ActionId) -> Option<Value> {
+    payload
+        .get("candidate_evaluations")
+        .and_then(Value::as_array)?
+        .iter()
+        .find(|candidate| action_value_eq(candidate.get("action_id"), action_id))
+        .cloned()
+}
+
+fn action_value_eq(value: Option<&Value>, action_id: ActionId) -> bool {
+    value
+        .and_then(Value::as_u64)
+        .is_some_and(|value| value as usize == action_id.0)
+}
+
+fn action_descriptor(
+    action_id: ActionId,
+    candidate: &sts_simulator::verification::decision_env::PublicActionCandidateView,
+) -> Value {
+    json!({
+        "action_id": action_id.0,
+        "action_index": candidate.action_index,
+        "action_kind": candidate.action_kind.clone(),
+        "action_key": candidate.action_key.clone(),
+        "card": candidate.payload.get("card").cloned().unwrap_or(Value::Null),
+        "payload": candidate.payload.clone(),
+    })
+}
+
+fn paired_compare_delta_summary(value: &Value) -> Value {
+    json!({
+        "hp_lost_diff_left_minus_behavior": value
+            .get("hp_lost_diff_left_minus_right")
+            .cloned()
+            .unwrap_or(Value::Null),
+        "enemy_removed_diff_left_minus_behavior": value
+            .get("enemy_removed_diff_left_minus_right")
+            .cloned()
+            .unwrap_or(Value::Null),
+        "kill_diff_left_minus_behavior": value
+            .get("kill_diff_left_minus_right")
+            .cloned()
+            .unwrap_or(Value::Null),
+        "neutral_dead_behavior_alive": value
+            .get("left_dead_right_alive")
+            .cloned()
+            .unwrap_or(Value::Null),
+        "neutral_alive_behavior_dead": value
+            .get("left_alive_right_dead")
+            .cloned()
+            .unwrap_or(Value::Null),
+        "neutral_clears_behavior_not": value
+            .get("left_clears_right_not")
+            .cloned()
+            .unwrap_or(Value::Null),
+        "behavior_clears_neutral_not": value
+            .get("right_clears_left_not")
+            .cloned()
+            .unwrap_or(Value::Null),
+    })
+}
+
+fn commutation_summary(value: &Value) -> Value {
+    json!({
+        "left_then_right_legal": value
+            .get("left_then_right_legal")
+            .cloned()
+            .unwrap_or(Value::Null),
+        "right_then_left_legal": value
+            .get("right_then_left_legal")
+            .cloned()
+            .unwrap_or(Value::Null),
+        "both_orders_reached_boundary": value
+            .get("both_orders_reached_boundary")
+            .cloned()
+            .unwrap_or(Value::Null),
+        "summary_equal": value.get("summary_equal").cloned().unwrap_or(Value::Null),
+        "order_only_equivalent": value
+            .get("order_only_equivalent")
+            .cloned()
+            .unwrap_or(Value::Null),
+        "hp_loss_diff": value.get("hp_loss_diff").cloned().unwrap_or(Value::Null),
+        "enemy_removed_diff": value
+            .get("enemy_removed_diff")
+            .cloned()
+            .unwrap_or(Value::Null),
+        "kill_diff": value.get("kill_diff").cloned().unwrap_or(Value::Null),
+        "terminal_diff": value.get("terminal_diff").cloned().unwrap_or(Value::Null),
     })
 }
 
@@ -3213,7 +3383,7 @@ mod tests {
                     time_budget_ms: Some(17),
                     max_branch_depth: Some(1),
                     max_candidates: Some(16),
-                    reference_action_id: Some(0),
+                    reference_action_id: None,
                 },
             );
             assert!(trace.ok);
@@ -3252,7 +3422,39 @@ mod tests {
         }
 
         let payload = supported_trace.expect("expected to reach a combat decision");
-        assert!(payload.get("paired_compare_vs_reference").is_some());
+        let selected = payload["summary"]["selected_action_id"]
+            .as_u64()
+            .expect("neutral should select in this smoke state") as usize;
+        let candidate_count = payload["summary"]["candidate_count"]
+            .as_u64()
+            .expect("candidate count") as usize;
+        let reference = if selected == 0 && candidate_count > 1 {
+            1
+        } else {
+            0
+        };
+        let trace = handle_request(
+            &mut session,
+            DriverRequest::NeutralPolicyTrace {
+                time_budget_ms: Some(17),
+                max_branch_depth: Some(1),
+                max_candidates: Some(16),
+                reference_action_id: Some(reference),
+            },
+        );
+        assert!(trace.ok);
+        let payload = trace.payload.expect("neutral trace payload");
+        assert!(!payload["paired_compare_vs_reference"].is_null());
+        assert!(!payload["commutation_probe_vs_reference"].is_null());
+        assert_eq!(
+            payload["disagreement_audit"]["schema_version"],
+            "neutral_disagreement_audit_v2"
+        );
+        assert_eq!(
+            payload["disagreement_audit"]["trainable_as_action_label"],
+            false
+        );
+        assert!(payload["disagreement_audit"]["reason_code"].is_string());
     }
 
     #[test]

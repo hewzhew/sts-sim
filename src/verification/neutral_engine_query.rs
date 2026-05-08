@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::BTreeMap;
 
+use crate::bot::combat::legal_moves_for_audit;
 use crate::engine::core::{is_smoke_escape_stable_boundary, tick_engine};
 use crate::runtime::combat::CombatState;
 use crate::state::core::ClientInput;
@@ -58,6 +59,7 @@ pub enum NeutralQueryKind {
     AlignedBoundary,
     BranchCompression,
     PairedCompare,
+    CommutationProbe,
 }
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -271,12 +273,14 @@ impl NeutralEngineQueryResult {
             NeutralQueryKind::BranchCompression => SearchKind::NeutralBranchCompression {
                 max_engine_steps: self.max_engine_steps,
             },
-            NeutralQueryKind::PairedCompare => SearchKind::PairwiseCompare {
-                other: self.action_id,
-                horizon: super::search_policy::HorizonSpec::StableBoundary {
-                    max_decisions: self.max_engine_steps,
-                },
-            },
+            NeutralQueryKind::PairedCompare | NeutralQueryKind::CommutationProbe => {
+                SearchKind::PairwiseCompare {
+                    other: self.action_id,
+                    horizon: super::search_policy::HorizonSpec::StableBoundary {
+                        max_decisions: self.max_engine_steps,
+                    },
+                }
+            }
         };
         SearchEvidence {
             evidence_id: evidence_id.into(),
@@ -408,6 +412,110 @@ impl NeutralEngineQueryService {
         ))
     }
 
+    pub fn commutation_probe(
+        &self,
+        context: &SearchExecutionContext,
+        left: ActionId,
+        right: ActionId,
+    ) -> Option<CommutationProbeResult> {
+        let left_then_right = self.force_sequence_to_stable(context, left, right);
+        let right_then_left = self.force_sequence_to_stable(context, right, left);
+        Some(CommutationProbeResult::from_sequences(
+            context.decision_id.clone(),
+            left,
+            right,
+            left_then_right,
+            right_then_left,
+        ))
+    }
+
+    fn force_sequence_to_stable(
+        &self,
+        context: &SearchExecutionContext,
+        first: ActionId,
+        second: ActionId,
+    ) -> CommutationSequenceSummary {
+        let Some(first_input) = context.candidate(first).cloned() else {
+            return CommutationSequenceSummary::illegal(first, second, "missing_first_candidate");
+        };
+        let Some(second_input) = context.candidate(second).cloned() else {
+            return CommutationSequenceSummary::illegal(first, second, "missing_second_candidate");
+        };
+        let mut engine = context.engine.clone();
+        let mut combat = context.combat.clone();
+        let before = CombatStateSummary::from_state(&engine, &combat);
+        let first_advance = force_input_to_stable(
+            &mut engine,
+            &mut combat,
+            first_input,
+            self.step_limit.max_engine_steps,
+        );
+        if first_advance.truncated || !first_advance.alive {
+            let after = CombatStateSummary::from_state(&engine, &combat);
+            return CommutationSequenceSummary::after_first_only(
+                context,
+                first,
+                second,
+                false,
+                first_advance.truncated,
+                first_advance.engine_steps,
+                before,
+                after,
+                "first_action_terminal_or_truncated",
+            );
+        }
+        let legal = legal_moves_for_audit(&engine, &combat);
+        let Some(remapped_second) =
+            remap_input_after_state(&second_input, &context.combat, &combat)
+        else {
+            let after = CombatStateSummary::from_state(&engine, &combat);
+            return CommutationSequenceSummary::after_first_only(
+                context,
+                first,
+                second,
+                false,
+                false,
+                first_advance.engine_steps,
+                before,
+                after,
+                "second_action_remap_failed",
+            );
+        };
+        if !legal.contains(&remapped_second) {
+            let after = CombatStateSummary::from_state(&engine, &combat);
+            return CommutationSequenceSummary::after_first_only(
+                context,
+                first,
+                second,
+                false,
+                false,
+                first_advance.engine_steps,
+                before,
+                after,
+                "second_action_illegal_after_first",
+            );
+        }
+        let remaining = self
+            .step_limit
+            .max_engine_steps
+            .saturating_sub(first_advance.engine_steps)
+            .max(1);
+        let second_advance =
+            force_input_to_stable(&mut engine, &mut combat, remapped_second, remaining);
+        let after = CombatStateSummary::from_state(&engine, &combat);
+        CommutationSequenceSummary::completed(
+            context,
+            first,
+            second,
+            first_advance
+                .engine_steps
+                .saturating_add(second_advance.engine_steps),
+            second_advance.truncated,
+            before,
+            after,
+        )
+    }
+
     pub fn branch_effect_evidence(
         &self,
         context: &SearchExecutionContext,
@@ -500,6 +608,176 @@ impl PairedCandidateCompare {
                 && right.branch_effect.combat_cleared,
             left,
             right,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub struct CommutationSequenceSummary {
+    pub schema_version: String,
+    pub decision_id: DecisionId,
+    pub first_action_id: ActionId,
+    pub second_action_id: ActionId,
+    pub second_action_legal: bool,
+    pub reached_boundary: bool,
+    pub truncated: bool,
+    pub engine_steps: u32,
+    pub boundary_kind: BoundaryKind,
+    pub failure_reason: Option<String>,
+    pub after: CombatStateSummary,
+    pub branch_effect: BranchEffectVector,
+}
+
+impl CommutationSequenceSummary {
+    fn illegal(first: ActionId, second: ActionId, reason: impl Into<String>) -> Self {
+        let empty = CombatStateSummary {
+            engine_state: "unavailable".to_string(),
+            player_hp: 0,
+            player_block: 0,
+            energy: 0,
+            enemy_total_hp: 0,
+            living_enemy_count: 0,
+            hand_len: 0,
+            draw_len: 0,
+            discard_len: 0,
+            exhaust_len: 0,
+            pending_choice: false,
+            combat_cleared: false,
+            player_dead: false,
+        };
+        let effect = BranchEffectVector::from_transition(&empty, &empty);
+        Self {
+            schema_version: NEUTRAL_ENGINE_QUERY_VERSION.to_string(),
+            decision_id: DecisionId {
+                episode_id: "missing_context".to_string(),
+                step_index: 0,
+                decision_type: "missing_context".to_string(),
+            },
+            first_action_id: first,
+            second_action_id: second,
+            second_action_legal: false,
+            reached_boundary: false,
+            truncated: false,
+            engine_steps: 0,
+            boundary_kind: BoundaryKind::StepLimit,
+            failure_reason: Some(reason.into()),
+            after: empty,
+            branch_effect: effect,
+        }
+    }
+
+    fn after_first_only(
+        context: &SearchExecutionContext,
+        first: ActionId,
+        second: ActionId,
+        second_action_legal: bool,
+        truncated: bool,
+        engine_steps: u32,
+        before: CombatStateSummary,
+        after: CombatStateSummary,
+        reason: impl Into<String>,
+    ) -> Self {
+        Self {
+            schema_version: NEUTRAL_ENGINE_QUERY_VERSION.to_string(),
+            decision_id: context.decision_id.clone(),
+            first_action_id: first,
+            second_action_id: second,
+            second_action_legal,
+            reached_boundary: false,
+            truncated,
+            engine_steps,
+            boundary_kind: summary_boundary_kind(&after, truncated),
+            failure_reason: Some(reason.into()),
+            branch_effect: BranchEffectVector::from_transition(&before, &after),
+            after,
+        }
+    }
+
+    fn completed(
+        context: &SearchExecutionContext,
+        first: ActionId,
+        second: ActionId,
+        engine_steps: u32,
+        truncated: bool,
+        before: CombatStateSummary,
+        after: CombatStateSummary,
+    ) -> Self {
+        Self {
+            schema_version: NEUTRAL_ENGINE_QUERY_VERSION.to_string(),
+            decision_id: context.decision_id.clone(),
+            first_action_id: first,
+            second_action_id: second,
+            second_action_legal: true,
+            reached_boundary: !truncated,
+            truncated,
+            engine_steps,
+            boundary_kind: summary_boundary_kind(&after, truncated),
+            failure_reason: None,
+            branch_effect: BranchEffectVector::from_transition(&before, &after),
+            after,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub struct CommutationProbeResult {
+    pub schema_version: String,
+    pub decision_id: DecisionId,
+    pub left_action_id: ActionId,
+    pub right_action_id: ActionId,
+    pub left_then_right_legal: bool,
+    pub right_then_left_legal: bool,
+    pub both_orders_reached_boundary: bool,
+    pub summary_equal: bool,
+    pub hp_loss_diff: i32,
+    pub enemy_removed_diff: i32,
+    pub kill_diff: i32,
+    pub terminal_diff: bool,
+    pub order_only_equivalent: bool,
+    pub left_then_right: CommutationSequenceSummary,
+    pub right_then_left: CommutationSequenceSummary,
+}
+
+impl CommutationProbeResult {
+    fn from_sequences(
+        decision_id: DecisionId,
+        left: ActionId,
+        right: ActionId,
+        left_then_right: CommutationSequenceSummary,
+        right_then_left: CommutationSequenceSummary,
+    ) -> Self {
+        let left_then_right_legal = left_then_right.second_action_legal;
+        let right_then_left_legal = right_then_left.second_action_legal;
+        let both_orders_reached_boundary =
+            left_then_right.reached_boundary && right_then_left.reached_boundary;
+        let summary_equal =
+            both_orders_reached_boundary && left_then_right.after == right_then_left.after;
+        let terminal_diff = left_then_right.branch_effect.player_dead
+            != right_then_left.branch_effect.player_dead
+            || left_then_right.branch_effect.combat_cleared
+                != right_then_left.branch_effect.combat_cleared;
+        Self {
+            schema_version: NEUTRAL_ENGINE_QUERY_VERSION.to_string(),
+            decision_id,
+            left_action_id: left,
+            right_action_id: right,
+            left_then_right_legal,
+            right_then_left_legal,
+            both_orders_reached_boundary,
+            summary_equal,
+            hp_loss_diff: left_then_right.branch_effect.hp_lost
+                - right_then_left.branch_effect.hp_lost,
+            enemy_removed_diff: left_then_right.branch_effect.enemy_hp_removed
+                - right_then_left.branch_effect.enemy_hp_removed,
+            kill_diff: left_then_right.branch_effect.enemies_killed
+                - right_then_left.branch_effect.enemies_killed,
+            terminal_diff,
+            order_only_equivalent: left_then_right_legal
+                && right_then_left_legal
+                && summary_equal
+                && !terminal_diff,
+            left_then_right,
+            right_then_left,
         }
     }
 }
@@ -614,6 +892,38 @@ fn build_result(
         after,
         delta,
         branch_effect,
+    }
+}
+
+fn remap_input_after_state(
+    original: &ClientInput,
+    before: &CombatState,
+    after: &CombatState,
+) -> Option<ClientInput> {
+    match original {
+        ClientInput::PlayCard { card_index, target } => {
+            let uuid = before.zones.hand.get(*card_index)?.uuid;
+            let new_index = after.zones.hand.iter().position(|card| card.uuid == uuid)?;
+            Some(ClientInput::PlayCard {
+                card_index: new_index,
+                target: *target,
+            })
+        }
+        other => Some(other.clone()),
+    }
+}
+
+fn summary_boundary_kind(summary: &CombatStateSummary, truncated: bool) -> BoundaryKind {
+    if truncated {
+        BoundaryKind::StepLimit
+    } else if summary.player_dead {
+        BoundaryKind::GameOver
+    } else if summary.combat_cleared {
+        BoundaryKind::CombatEnd
+    } else if summary.pending_choice {
+        BoundaryKind::PendingChoice
+    } else {
+        BoundaryKind::Stable
     }
 }
 
