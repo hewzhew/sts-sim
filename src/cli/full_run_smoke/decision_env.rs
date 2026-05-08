@@ -7,12 +7,11 @@ use crate::verification::decision_env::{
 };
 
 use super::{
-    FullRunEnv, FullRunEnvConfig, FullRunEnvInfo, FullRunEnvState, RewardShapingProfile,
-    RunActionCandidate, TraceClientInput,
+    FullRunEnv, FullRunEnvConfig, FullRunEnvInfo, FullRunEnvState,
+    FullRunPublicActionCandidatePayloadV1, FullRunPublicObservationV1, RewardShapingProfile,
+    RunActionCandidate, TraceClientInput, FULL_RUN_PUBLIC_ACTION_SCHEMA_VERSION,
+    FULL_RUN_PUBLIC_OBSERVATION_SCHEMA_VERSION,
 };
-
-const FULL_RUN_PUBLIC_OBSERVATION_SCHEMA_VERSION: &str = "full_run_public_observation_v0";
-const FULL_RUN_PUBLIC_ACTION_SCHEMA_VERSION: &str = "full_run_public_action_candidate_v0";
 
 impl DecisionEnv for FullRunEnv {
     type Snapshot = FullRunEnv;
@@ -98,7 +97,15 @@ fn timestep_from_state(
             schema_version: FULL_RUN_PUBLIC_OBSERVATION_SCHEMA_VERSION.to_string(),
             visibility: ObservationVisibility::Public,
             decision_type,
-            payload: public_payload(&state.observation, "full-run observation")?,
+            payload: serde_json::to_value(FullRunPublicObservationV1::from_observation(
+                &state.observation,
+                &state.observation_schema_version,
+            ))
+            .map_err(|err| {
+                DecisionEnvError::new(format!(
+                    "serialize full-run public observation failed: {err}"
+                ))
+            })?,
         },
         candidates,
         reward: RewardEvent {
@@ -124,59 +131,19 @@ fn action_candidate_from_full_run(
         action_index: candidate.action_index,
         action_key: candidate.action_key.clone(),
         action_kind: action_kind(&candidate.action).to_string(),
-        payload: public_payload(candidate, "full-run action candidate")?,
-    })
-}
-
-fn public_payload<T: serde::Serialize>(value: &T, label: &str) -> Result<Value, DecisionEnvError> {
-    let mut payload = serde_json::to_value(value)
-        .map_err(|err| DecisionEnvError::new(format!("serialize {label} failed: {err}")))?;
-    remove_non_public_policy_fields(&mut payload);
-    if let Value::Object(map) = &mut payload {
-        if map.contains_key("schema_version") {
-            map.insert(
-                "schema_version".to_string(),
-                Value::String(FULL_RUN_PUBLIC_OBSERVATION_SCHEMA_VERSION.to_string()),
-            );
-        }
-    }
-    Ok(payload)
-}
-
-fn remove_non_public_policy_fields(value: &mut Value) {
-    match value {
-        Value::Object(map) => {
-            let keys = map.keys().cloned().collect::<Vec<_>>();
-            for key in keys {
-                if is_non_public_policy_field(&key) {
-                    map.remove(&key);
-                }
-            }
-            for child in map.values_mut() {
-                remove_non_public_policy_fields(child);
-            }
-        }
-        Value::Array(items) => {
-            for child in items {
-                remove_non_public_policy_fields(child);
-            }
-        }
-        _ => {}
-    }
-}
-
-fn is_non_public_policy_field(key: &str) -> bool {
-    key.contains("score")
-        || matches!(
-            key,
-            "plan_profile"
-                | "plan_delta"
-                | "reward_structure"
-                | "estimated_role_scores"
-                | "dominated"
-                | "dominated_by_index"
-                | "likely_waste"
+        payload: serde_json::to_value(
+            FullRunPublicActionCandidatePayloadV1::from_candidate(candidate).map_err(|err| {
+                DecisionEnvError::new(format!(
+                    "serialize full-run public action candidate failed: {err}"
+                ))
+            })?,
         )
+        .map_err(|err| {
+            DecisionEnvError::new(format!(
+                "serialize full-run public action candidate payload failed: {err}"
+            ))
+        })?,
+    })
 }
 
 fn action_kind(action: &TraceClientInput) -> &'static str {

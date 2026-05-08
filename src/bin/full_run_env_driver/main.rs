@@ -18,7 +18,7 @@ use sts_simulator::cli::full_run_smoke::{
 };
 use sts_simulator::verification::decision_env::{
     ActionId, CandidateLabel, DecisionEnv, DecisionRecord, DecisionRecordContext,
-    PairwisePreference, TeacherDecisionLabel, TimeStep,
+    PairwisePreference, PolicyInput, TeacherDecisionLabel, TimeStep,
 };
 
 #[derive(Debug, Deserialize)]
@@ -35,6 +35,9 @@ enum DriverRequest {
     },
     Observation,
     DecisionEnvObservation,
+    PolicyInput {
+        time_budget_ms: Option<u32>,
+    },
     Step {
         action_index: usize,
     },
@@ -1389,6 +1392,25 @@ fn handle_request(session: &mut DriverSession, request: DriverRequest) -> Driver
                     payload: Some(
                         serde_json::to_value(timestep)
                             .expect("decision env timestep should serialize"),
+                    ),
+                    reward: None,
+                    done: Some(current.info().result != "ongoing"),
+                    chosen_action_key: None,
+                    info: Some(current.info()),
+                },
+                Err(err) => error_response(err.to_string()),
+            },
+            None => error_response("full-run env not initialized; send reset first".to_string()),
+        },
+        DriverRequest::PolicyInput { time_budget_ms } => match session.env.as_mut() {
+            Some(current) => match DecisionEnv::current_timestep(current).and_then(|timestep| {
+                PolicyInput::from_timestep(&timestep, time_budget_ms.unwrap_or(25))
+            }) {
+                Ok(policy_input) => DriverResponse {
+                    ok: true,
+                    error: None,
+                    payload: Some(
+                        serde_json::to_value(policy_input).expect("policy input should serialize"),
                     ),
                     reward: None,
                     done: Some(current.info().result != "ongoing"),
@@ -2920,6 +2942,38 @@ mod tests {
             stepped_payload["terminated"].as_bool().unwrap()
                 || stepped_payload["truncated"].as_bool().unwrap()
         );
+    }
+
+    #[test]
+    fn driver_exposes_policy_input_without_debug_info() {
+        let mut session = DriverSession::default();
+        let reset = DriverRequest::Reset {
+            seed: Some(8),
+            ascension: Some(0),
+            final_act: Some(false),
+            class: Some("ironclad".to_string()),
+            max_steps: Some(80),
+            reward_shaping_profile: Some("baseline".to_string()),
+        };
+        assert!(handle_request(&mut session, reset).ok);
+
+        let response = handle_request(
+            &mut session,
+            DriverRequest::PolicyInput {
+                time_budget_ms: Some(11),
+            },
+        );
+
+        assert!(response.ok);
+        let payload = response.payload.expect("policy input payload");
+        assert_eq!(payload["schema_version"], "policy_input_v0");
+        assert_eq!(payload["time_budget_ms"], 11);
+        assert_eq!(payload["observation"]["visibility"], "public");
+        let serialized = serde_json::to_string(&payload).expect("serialize policy input");
+        assert!(!serialized.contains("state_hash"));
+        assert!(!serialized.contains("timestep_info"));
+        assert!(!serialized.contains("teacher_label"));
+        assert!(!serialized.contains("rule_score"));
     }
 
     #[test]

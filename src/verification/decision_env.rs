@@ -4,6 +4,7 @@ use serde_json::Value;
 pub const DECISION_ENV_CONTRACT_VERSION: &str = "decision_env_contract_v0";
 pub const DECISION_RECORD_SCHEMA_VERSION: &str = "decision_record_v0";
 pub const REWARD_EVENT_SCHEMA_VERSION: &str = "reward_event_v0";
+pub const POLICY_INPUT_SCHEMA_VERSION: &str = "policy_input_v0";
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct RunSeed(pub u64);
@@ -52,6 +53,63 @@ pub struct ActionCandidate {
     pub action_key: String,
     pub action_kind: String,
     pub payload: Value,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub struct PublicActionCandidateView {
+    pub id: ActionId,
+    pub action_schema_version: String,
+    pub action_index: usize,
+    pub action_key: String,
+    pub action_kind: String,
+    pub payload: Value,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub struct PolicyInput {
+    pub schema_version: String,
+    pub decision_id: DecisionId,
+    pub observation: ObservationPayload,
+    pub candidates: Vec<PublicActionCandidateView>,
+    pub time_budget_ms: u32,
+}
+
+impl PolicyInput {
+    pub fn from_timestep(
+        timestep: &TimeStep,
+        time_budget_ms: u32,
+    ) -> Result<Self, DecisionEnvError> {
+        if timestep.observation.visibility != ObservationVisibility::Public {
+            return Err(DecisionEnvError::new(format!(
+                "policy input requires public observation, got {:?}",
+                timestep.observation.visibility
+            )));
+        }
+        Ok(Self {
+            schema_version: POLICY_INPUT_SCHEMA_VERSION.to_string(),
+            decision_id: timestep.decision_id.clone(),
+            observation: timestep.observation.clone(),
+            candidates: timestep
+                .candidates
+                .iter()
+                .map(PublicActionCandidateView::from)
+                .collect(),
+            time_budget_ms,
+        })
+    }
+}
+
+impl From<&ActionCandidate> for PublicActionCandidateView {
+    fn from(value: &ActionCandidate) -> Self {
+        Self {
+            id: value.id,
+            action_schema_version: value.action_schema_version.clone(),
+            action_index: value.action_index,
+            action_key: value.action_key.clone(),
+            action_kind: value.action_kind.clone(),
+            payload: value.payload.clone(),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]

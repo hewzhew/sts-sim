@@ -38,6 +38,7 @@ mod bot;
 mod decision_env;
 mod features;
 mod observation;
+mod public_observation;
 mod reward;
 mod trace;
 
@@ -46,6 +47,7 @@ pub use batch::*;
 pub use bot::*;
 pub use features::*;
 pub use observation::*;
+pub use public_observation::*;
 pub use reward::*;
 pub use trace::*;
 
