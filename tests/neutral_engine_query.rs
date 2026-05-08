@@ -248,3 +248,34 @@ fn commutation_probe_marks_mutual_exclusion_when_second_action_becomes_illegal()
     assert!(!probe.right_then_left_legal);
     assert!(!probe.order_only_equivalent);
 }
+
+#[test]
+fn enemy_response_public_probe_redacts_future_card_zones() {
+    let combat = cultist_combat_with_hand(&[CardId::Strike, CardId::Defend]);
+    let context = SearchExecutionContext::new(
+        decision_id(),
+        EngineState::CombatPlayerTurn,
+        combat,
+        vec![
+            ClientInput::PlayCard {
+                card_index: 0,
+                target: Some(1),
+            },
+            ClientInput::PlayCard {
+                card_index: 1,
+                target: None,
+            },
+        ],
+    );
+    let service = NeutralEngineQueryService::default();
+    let probe = service
+        .enemy_response_public_probe(&context, ActionId(0), ActionId(1))
+        .expect("enemy response public probe");
+    assert!(probe.public_safe);
+    let serialized = serde_json::to_string(&probe).expect("serialize probe");
+    assert!(serialized.contains("redacted_fields"));
+    assert!(!serialized.contains("hand_len"));
+    assert!(!serialized.contains("draw_len"));
+    assert!(!serialized.contains("discard_len"));
+    assert!(!serialized.contains("exhaust_len"));
+}

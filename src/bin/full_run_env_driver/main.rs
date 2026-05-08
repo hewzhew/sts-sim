@@ -1504,16 +1504,39 @@ fn handle_request(session: &mut DriverSession, request: DriverRequest) -> Driver
                             })
                             .flatten()
                     });
+                let enemy_response_public_probe_vs_reference =
+                    trace.decision.selected_action_id.and_then(|selected| {
+                        let reference = ActionId(reference_action_id?);
+                        (selected != reference)
+                            .then(|| {
+                                runner.query.enemy_response_public_probe(
+                                    &execution_context,
+                                    selected,
+                                    reference,
+                                )
+                            })
+                            .flatten()
+                    });
+                let paired_compare_value = paired_compare_vs_reference
+                    .as_ref()
+                    .and_then(|value| serde_json::to_value(value).ok());
+                let commutation_probe_value = commutation_probe_vs_reference
+                    .as_ref()
+                    .and_then(|value| serde_json::to_value(value).ok());
+                let reference_suffix_replay_probe = commutation_probe_value
+                    .as_ref()
+                    .map(reference_suffix_replay_probe_from_commutation);
+                let enemy_response_public_probe_value = enemy_response_public_probe_vs_reference
+                    .as_ref()
+                    .and_then(|value| serde_json::to_value(value).ok());
                 let disagreement_audit = neutral_disagreement_audit(
                     &policy_input,
                     &trace,
                     reference_action_id.map(ActionId),
-                    paired_compare_vs_reference
-                        .as_ref()
-                        .and_then(|value| serde_json::to_value(value).ok()),
-                    commutation_probe_vs_reference
-                        .as_ref()
-                        .and_then(|value| serde_json::to_value(value).ok()),
+                    paired_compare_value.clone(),
+                    commutation_probe_value.clone(),
+                    reference_suffix_replay_probe.clone(),
+                    enemy_response_public_probe_value.clone(),
                 );
                 DriverResponse {
                     ok: true,
@@ -1526,6 +1549,8 @@ fn handle_request(session: &mut DriverSession, request: DriverRequest) -> Driver
                         "summary": neutral_policy_trace_summary(&trace),
                         "paired_compare_vs_reference": paired_compare_vs_reference,
                         "commutation_probe_vs_reference": commutation_probe_vs_reference,
+                        "reference_suffix_replay_probe": reference_suffix_replay_probe,
+                        "enemy_response_public_probe_vs_reference": enemy_response_public_probe_vs_reference,
                         "disagreement_audit": disagreement_audit,
                     })),
                     reward: None,
@@ -2083,11 +2108,26 @@ fn neutral_policy_trace_summary(trace: &DeliberationTrace) -> Value {
         .decision
         .selected_action_id
         .map(|action_id| action_id.0);
+    let neutral_hypothesis_action_id = evaluation
+        .get("neutral_hypothesis_action_id")
+        .and_then(Value::as_u64);
+    let controller_decision = evaluation
+        .get("controller_decision")
+        .and_then(Value::as_str)
+        .unwrap_or("unknown");
+    let hypothesis_label_role = evaluation
+        .get("selected_label_role")
+        .and_then(Value::as_str)
+        .unwrap_or("unknown");
     json!({
         "schema_version": "neutral_policy_trace_summary_v0",
         "policy_id": &trace.decision.policy_id,
         "mode": &trace.decision.mode,
+        "controller_decision": controller_decision,
+        "neutral_hypothesis_action_id": neutral_hypothesis_action_id,
+        "hypothesis_label_role": hypothesis_label_role,
         "selected_action_id": selected_action_id,
+        "selected_action_id_legacy": selected_action_id,
         "fallback": selected_action_id.is_none(),
         "fallback_reason": &trace.decision.fallback_reason,
         "candidate_count": candidate_evaluations.len(),
@@ -2107,6 +2147,8 @@ fn neutral_disagreement_audit(
     reference_action_id: Option<ActionId>,
     paired_compare: Option<Value>,
     commutation_probe: Option<Value>,
+    reference_suffix_replay_probe: Option<Value>,
+    enemy_response_public_probe: Option<Value>,
 ) -> Option<Value> {
     let selected_action_id = trace.decision.selected_action_id?;
     let reference_action_id = reference_action_id?;
@@ -2131,11 +2173,17 @@ fn neutral_disagreement_audit(
         .and_then(|value| value.get("hypothesis_class"))
         .and_then(Value::as_str)
         .unwrap_or("unknown");
+    let label_role = selected_eval
+        .as_ref()
+        .and_then(|value| value.get("label_role"))
+        .and_then(Value::as_str)
+        .unwrap_or("AuditOnly");
     let risk_buckets = selected_eval
         .as_ref()
         .and_then(|value| value.get("risk_buckets"))
         .cloned()
         .unwrap_or_else(|| json!([]));
+    let irreversible_resource_ledger = irreversible_resource_ledger(&risk_buckets, reason_code);
     let route = route_disagreement(
         reason_code,
         paired_compare.as_ref(),
@@ -2150,7 +2198,9 @@ fn neutral_disagreement_audit(
         "reason_code": reason_code,
         "evidence_scope": evidence_scope,
         "hypothesis_class": hypothesis_class,
+        "label_role": label_role,
         "risk_buckets": risk_buckets,
+        "irreversible_resource_ledger": irreversible_resource_ledger,
         "route": route.get("route").cloned().unwrap_or(Value::Null),
         "route_status": route.get("status").cloned().unwrap_or(Value::Null),
         "action_label": route.get("action_label").cloned().unwrap_or(Value::Null),
@@ -2159,8 +2209,69 @@ fn neutral_disagreement_audit(
         "paired_compare": paired_compare,
         "commutation_result": commutation_probe.as_ref().map(commutation_summary),
         "commutation_probe": commutation_probe,
+        "reference_suffix_replay_probe": reference_suffix_replay_probe,
+        "enemy_response_public_probe": enemy_response_public_probe,
         "trainable_as_action_label": false,
     }))
+}
+
+fn reference_suffix_replay_probe_from_commutation(value: &Value) -> Value {
+    json!({
+        "schema_version": "reference_suffix_replay_probe_v0",
+        "suffix_source": "reference_action_only",
+        "attempted_suffix_len": 1,
+        "minimal_suffix_probe": true,
+        "hypothesis_then_reference_legal": value
+            .get("left_then_right_legal")
+            .cloned()
+            .unwrap_or(Value::Null),
+        "reference_then_hypothesis_legal": value
+            .get("right_then_left_legal")
+            .cloned()
+            .unwrap_or(Value::Null),
+        "both_orders_reached_boundary": value
+            .get("both_orders_reached_boundary")
+            .cloned()
+            .unwrap_or(Value::Null),
+        "summary_equal": value.get("summary_equal").cloned().unwrap_or(Value::Null),
+        "terminal_diff": value.get("terminal_diff").cloned().unwrap_or(Value::Null),
+        "hypothesis_replay_break_reason": value
+            .pointer("/left_then_right/failure_reason")
+            .cloned()
+            .unwrap_or(Value::Null),
+        "reference_replay_break_reason": value
+            .pointer("/right_then_left/failure_reason")
+            .cloned()
+            .unwrap_or(Value::Null),
+    })
+}
+
+fn irreversible_resource_ledger(risk_buckets: &Value, reason_code: &str) -> Value {
+    let has = |bucket: &str| {
+        risk_buckets
+            .as_array()
+            .is_some_and(|items| items.iter().any(|item| item.as_str() == Some(bucket)))
+    };
+    let delayed_or_defensive = matches!(
+        reason_code,
+        "draw_sample_uncertain"
+            | "exhaust_cost_unmodeled"
+            | "setup_value_unmodeled"
+            | "delayed_debuff_horizon_missing"
+            | "defense_horizon_missing"
+    );
+    json!({
+        "schema_version": "irreversible_resource_ledger_v0",
+        "draw_changed_or_sampled": has("draw"),
+        "exhaust_cost_or_state_changed": has("exhaust"),
+        "setup_or_power_value_unmodeled": has("setup") || has("power"),
+        "debuff_value_delayed": has("debuff"),
+        "defense_value_requires_enemy_response": has("block"),
+        "hp_cost_observed": has("hp_cost"),
+        "pending_choice_created": has("pending_choice"),
+        "cross_combat_resource": has("resource"),
+        "requires_horizon_or_value": delayed_or_defensive,
+    })
 }
 
 fn route_disagreement(
@@ -3588,6 +3699,10 @@ mod tests {
         let payload = trace.payload.expect("neutral trace payload");
         assert!(!payload["paired_compare_vs_reference"].is_null());
         assert!(!payload["commutation_probe_vs_reference"].is_null());
+        assert!(!payload["reference_suffix_replay_probe"].is_null());
+        assert!(!payload["enemy_response_public_probe_vs_reference"].is_null());
+        assert_eq!(payload["summary"]["controller_decision"], "abstain");
+        assert!(payload["summary"]["neutral_hypothesis_action_id"].is_u64());
         assert_eq!(
             payload["disagreement_audit"]["schema_version"],
             "neutral_disagreement_audit_v3"
@@ -3599,6 +3714,8 @@ mod tests {
         assert!(payload["disagreement_audit"]["reason_code"].is_string());
         assert!(payload["disagreement_audit"]["route"].is_string());
         assert_eq!(payload["disagreement_audit"]["action_label"], "none");
+        assert!(payload["disagreement_audit"]["label_role"].is_string());
+        assert!(payload["disagreement_audit"]["irreversible_resource_ledger"].is_object());
     }
 
     #[test]

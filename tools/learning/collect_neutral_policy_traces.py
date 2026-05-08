@@ -99,12 +99,21 @@ def update_summary(
         summary["fallback_count"] += 1
     else:
         summary["selected_count"] += 1
-        selected_action_id = trace_summary.get("selected_action_id")
-        selected_eval = find_candidate_eval(candidate_evaluations, selected_action_id)
+        hypothesis_action_id = trace_summary.get("neutral_hypothesis_action_id")
+        if hypothesis_action_id is None:
+            hypothesis_action_id = trace_summary.get("selected_action_id")
+        if hypothesis_action_id is not None:
+            summary["hypothesis_count"] += 1
+        if trace_summary.get("controller_decision") == "abstain":
+            summary["controller_abstain_count"] += 1
+        selected_eval = find_candidate_eval(candidate_evaluations, hypothesis_action_id)
         if selected_eval and selected_eval.get("resource_action"):
             summary["selected_resource_count"] += 1
-        if selected_action_id is not None and behavior_action_id is not None:
-            if int(selected_action_id) == int(behavior_action_id):
+        if selected_eval:
+            label_role = selected_eval.get("label_role") or "missing"
+            summary["hypothesis_label_role_counts"][label_role] += 1
+        if hypothesis_action_id is not None and behavior_action_id is not None:
+            if int(hypothesis_action_id) == int(behavior_action_id):
                 summary["selected_agrees_with_behavior_count"] += 1
             else:
                 summary["selected_disagrees_with_behavior_count"] += 1
@@ -112,14 +121,21 @@ def update_summary(
                 reason_code = audit.get("reason_code") or "missing"
                 evidence_scope = audit.get("evidence_scope") or "missing"
                 hypothesis_class = audit.get("hypothesis_class") or "missing"
+                label_role = audit.get("label_role") or "missing"
                 action_kind_pair = audit.get("action_kind_pair") or "missing"
                 route = audit.get("route") or "missing"
                 route_status = audit.get("route_status") or "missing"
                 action_label = audit.get("action_label") or "missing"
+                relation = disagreement_relation(trace_payload.get("commutation_probe_vs_reference"))
                 summary["reason_code_counts"][reason_code] += 1
                 summary["evidence_scope_counts"][evidence_scope] += 1
                 summary["hypothesis_class_counts"][hypothesis_class] += 1
+                summary["label_role_counts"][label_role] += 1
                 summary["action_kind_confusion"][action_kind_pair] += 1
+                summary["disagreement_relation_counts"][relation] += 1
+                summary["reason_relation_counts"][f"{reason_code}|{relation}"] += 1
+                if reason_code == "damage_delta_only":
+                    summary["damage_delta_relation_counts"][relation] += 1
                 summary["route_counts"][route] += 1
                 summary["route_status_counts"][route_status] += 1
                 summary["route_action_label_counts"][action_label] += 1
@@ -139,6 +155,10 @@ def update_summary(
                     summary["trainable_disagreement_label_count"] += 1
                 if action_label != "none":
                     summary["non_none_action_label_count"] += 1
+                ledger = audit.get("irreversible_resource_ledger") or {}
+                for key, value in ledger.items():
+                    if isinstance(value, bool) and value:
+                        summary["irreversible_ledger_counts"][key] += 1
                 for bucket in audit.get("risk_buckets") or []:
                     summary["risk_bucket_counts"][bucket] += 1
                 paired = trace_payload.get("paired_compare_vs_reference")
@@ -171,6 +191,28 @@ def update_summary(
                         summary["paired_hp_loss_worse_ge_5_count"] += 1
                     if enemy_diff < 0:
                         summary["paired_enemy_removed_worse_count"] += 1
+                suffix = trace_payload.get("reference_suffix_replay_probe")
+                if suffix is not None:
+                    summary["reference_suffix_replay_probe_count"] += 1
+                    if not bool(suffix.get("hypothesis_then_reference_legal")):
+                        summary["hypothesis_suffix_replay_illegal_count"] += 1
+                    if not bool(suffix.get("reference_then_hypothesis_legal")):
+                        summary["reference_suffix_replay_illegal_count"] += 1
+                    if bool(suffix.get("summary_equal")):
+                        summary["suffix_replay_summary_equal_count"] += 1
+                enemy_response = trace_payload.get("enemy_response_public_probe_vs_reference")
+                if enemy_response is not None:
+                    summary["enemy_response_public_probe_count"] += 1
+                    if bool(enemy_response.get("public_safe")):
+                        summary["enemy_response_public_safe_count"] += 1
+                    hp_diff = int(enemy_response.get("hp_lost_diff_left_minus_right") or 0)
+                    enemy_diff = int(
+                        enemy_response.get("enemy_removed_diff_left_minus_right") or 0
+                    )
+                    if hp_diff > 0:
+                        summary["enemy_response_hp_loss_worse_count"] += 1
+                    if enemy_diff < 0:
+                        summary["enemy_response_enemy_removed_worse_count"] += 1
                 commutation = trace_payload.get("commutation_probe_vs_reference")
                 if commutation is not None:
                     summary["commutation_probe_count"] += 1
@@ -217,6 +259,18 @@ def find_candidate_eval(items: list[dict[str, Any]], action_id: Any) -> dict[str
         except (TypeError, ValueError):
             continue
     return None
+
+
+def disagreement_relation(commutation: dict[str, Any] | None) -> str:
+    if not commutation:
+        return "missing"
+    if bool(commutation.get("order_only_equivalent")):
+        return "order_only"
+    left_legal = bool(commutation.get("left_then_right_legal"))
+    right_legal = bool(commutation.get("right_then_left_legal"))
+    if not left_legal or not right_legal:
+        return "mutually_exclusive"
+    return "non_order_commutable"
 
 
 def resource_representative_contamination_count(evaluation: dict[str, Any]) -> int:
@@ -381,6 +435,33 @@ def finalize_summary(summary: dict[str, Any]) -> dict[str, Any]:
         "needs_horizon_or_value_count": summary["needs_horizon_or_value_count"],
         "non_none_action_label_count": summary["non_none_action_label_count"],
     }
+    summary["hypothesis_summary"] = {
+        "hypothesis_count": summary["hypothesis_count"],
+        "controller_abstain_count": summary["controller_abstain_count"],
+        "label_role_counts": dict(summary["label_role_counts"]),
+        "reason_relation_counts": dict(summary["reason_relation_counts"]),
+        "damage_delta_relation_counts": dict(summary["damage_delta_relation_counts"]),
+    }
+    summary["probe_summary"] = {
+        "reference_suffix_replay_probe_count": summary[
+            "reference_suffix_replay_probe_count"
+        ],
+        "hypothesis_suffix_replay_illegal_count": summary[
+            "hypothesis_suffix_replay_illegal_count"
+        ],
+        "reference_suffix_replay_illegal_count": summary[
+            "reference_suffix_replay_illegal_count"
+        ],
+        "suffix_replay_summary_equal_count": summary["suffix_replay_summary_equal_count"],
+        "enemy_response_public_probe_count": summary["enemy_response_public_probe_count"],
+        "enemy_response_public_safe_count": summary["enemy_response_public_safe_count"],
+        "enemy_response_hp_loss_worse_count": summary[
+            "enemy_response_hp_loss_worse_count"
+        ],
+        "enemy_response_enemy_removed_worse_count": summary[
+            "enemy_response_enemy_removed_worse_count"
+        ],
+    }
     return summary
 
 
@@ -418,6 +499,8 @@ def main() -> int:
         "unsupported_count": 0,
         "fallback_count": 0,
         "selected_count": 0,
+        "hypothesis_count": 0,
+        "controller_abstain_count": 0,
         "selected_resource_count": 0,
         "selected_agrees_with_behavior_count": 0,
         "selected_disagrees_with_behavior_count": 0,
@@ -448,13 +531,27 @@ def main() -> int:
         "left_then_right_second_illegal_count": 0,
         "right_then_left_second_illegal_count": 0,
         "resource_representative_contamination_count": 0,
+        "reference_suffix_replay_probe_count": 0,
+        "hypothesis_suffix_replay_illegal_count": 0,
+        "reference_suffix_replay_illegal_count": 0,
+        "suffix_replay_summary_equal_count": 0,
+        "enemy_response_public_probe_count": 0,
+        "enemy_response_public_safe_count": 0,
+        "enemy_response_hp_loss_worse_count": 0,
+        "enemy_response_enemy_removed_worse_count": 0,
         "unsupported_reasons": Counter(),
         "mode_counts": Counter(),
         "reason_code_counts": Counter(),
         "evidence_scope_counts": Counter(),
         "hypothesis_class_counts": Counter(),
+        "label_role_counts": Counter(),
+        "hypothesis_label_role_counts": Counter(),
         "risk_bucket_counts": Counter(),
         "action_kind_confusion": Counter(),
+        "disagreement_relation_counts": Counter(),
+        "reason_relation_counts": Counter(),
+        "damage_delta_relation_counts": Counter(),
+        "irreversible_ledger_counts": Counter(),
         "route_counts": Counter(),
         "route_status_counts": Counter(),
         "route_action_label_counts": Counter(),
@@ -504,8 +601,14 @@ def main() -> int:
     summary["reason_code_counts"] = dict(summary["reason_code_counts"])
     summary["evidence_scope_counts"] = dict(summary["evidence_scope_counts"])
     summary["hypothesis_class_counts"] = dict(summary["hypothesis_class_counts"])
+    summary["label_role_counts"] = dict(summary["label_role_counts"])
+    summary["hypothesis_label_role_counts"] = dict(summary["hypothesis_label_role_counts"])
     summary["risk_bucket_counts"] = dict(summary["risk_bucket_counts"])
     summary["action_kind_confusion"] = dict(summary["action_kind_confusion"])
+    summary["disagreement_relation_counts"] = dict(summary["disagreement_relation_counts"])
+    summary["reason_relation_counts"] = dict(summary["reason_relation_counts"])
+    summary["damage_delta_relation_counts"] = dict(summary["damage_delta_relation_counts"])
+    summary["irreversible_ledger_counts"] = dict(summary["irreversible_ledger_counts"])
     summary["route_counts"] = dict(summary["route_counts"])
     summary["route_status_counts"] = dict(summary["route_status_counts"])
     summary["route_action_label_counts"] = dict(summary["route_action_label_counts"])

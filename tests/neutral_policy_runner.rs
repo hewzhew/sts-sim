@@ -170,6 +170,22 @@ fn neutral_runner_uses_effect_groups_without_legacy_or_exact() {
     assert_eq!(trace.decision.mode, DecisionMode::NeutralEvidenceResolved);
     assert_eq!(trace.decision.selected_action_id, Some(ActionId(0)));
     assert_eq!(
+        trace
+            .decision
+            .payload
+            .pointer("/controller_decision")
+            .and_then(|value| value.as_str()),
+        Some("abstain")
+    );
+    assert_eq!(
+        trace
+            .decision
+            .payload
+            .pointer("/neutral_hypothesis_action_id")
+            .and_then(|value| value.as_u64()),
+        Some(0)
+    );
+    assert_eq!(
         trace.proposal.policy_id,
         "neutral_compressed_policy_runner_v0"
     );
@@ -268,6 +284,7 @@ fn neutral_runner_evaluations_include_audit_classification_fields() {
         .find(|eval| eval["action_id"] == 0)
         .expect("attack eval");
     assert_eq!(attack["reason_code"], "damage_delta_only");
+    assert_eq!(attack["label_role"], "SearchAllocationTarget");
     assert_eq!(
         attack["hypothesis_class"],
         "short_horizon_tactical_hypothesis"
@@ -305,6 +322,7 @@ fn neutral_runner_marks_terminal_clear_as_certificate() {
         .expect("terminal eval");
     assert_eq!(terminal["reason_code"], "terminal_clear");
     assert_eq!(terminal["hypothesis_class"], "terminal_certificate");
+    assert_eq!(terminal["label_role"], "DecisionCertificate");
     assert_eq!(trace.decision.selected_action_id, Some(ActionId(0)));
 }
 

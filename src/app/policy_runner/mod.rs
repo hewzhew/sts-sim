@@ -41,9 +41,12 @@ pub struct EvaluationTrace {
     pub candidate_evaluations: Vec<CandidateEvaluation>,
     pub selected_group_id: Option<usize>,
     pub selected_action_id: Option<ActionId>,
+    pub neutral_hypothesis_action_id: Option<ActionId>,
+    pub controller_decision: String,
     pub reason: String,
     pub selected_reason_code: Option<String>,
     pub selected_hypothesis_class: Option<String>,
+    pub selected_label_role: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
@@ -64,6 +67,7 @@ pub struct CandidateEvaluation {
     pub evidence_scope: String,
     pub risk_buckets: Vec<String>,
     pub hypothesis_class: String,
+    pub label_role: String,
 }
 
 pub struct NeutralCompressedPolicyRunner {
@@ -198,7 +202,7 @@ impl NeutralCompressedPolicyRunner {
                 let risk_buckets = candidate
                     .map(|candidate| candidate_risk_buckets(candidate, result))
                     .unwrap_or_else(|| result_risk_buckets(result));
-                let (reason_code, evidence_scope, hypothesis_class) =
+                let (reason_code, evidence_scope, hypothesis_class, label_role) =
                     classify_candidate(result, resource_action, &risk_buckets);
                 CandidateEvaluation {
                     action_id: result.action_id,
@@ -217,6 +221,7 @@ impl NeutralCompressedPolicyRunner {
                     evidence_scope,
                     risk_buckets,
                     hypothesis_class,
+                    label_role,
                 }
             })
             .collect::<Vec<_>>();
@@ -243,6 +248,7 @@ impl NeutralCompressedPolicyRunner {
         });
         let selected_reason_code = selected_eval.map(|eval| eval.reason_code.clone());
         let selected_hypothesis_class = selected_eval.map(|eval| eval.hypothesis_class.clone());
+        let selected_label_role = selected_eval.map(|eval| eval.label_role.clone());
         let (expanded_branch_groups, unexpanded_branch_groups) =
             split_expanded_groups(groups, self.config.max_branch_depth);
         EvaluationTrace {
@@ -253,11 +259,14 @@ impl NeutralCompressedPolicyRunner {
             candidate_evaluations,
             selected_group_id,
             selected_action_id: selected,
+            neutral_hypothesis_action_id: selected,
+            controller_decision: "abstain".to_string(),
             reason: selected_reason_code
                 .clone()
                 .unwrap_or_else(|| "insufficient".to_string()),
             selected_reason_code,
             selected_hypothesis_class,
+            selected_label_role,
         }
     }
 
@@ -489,7 +498,7 @@ fn classify_candidate(
     result: &NeutralEngineQueryResult,
     resource_action: bool,
     risk_buckets: &[String],
-) -> (String, String, String) {
+) -> (String, String, String, String) {
     let evidence_scope = if result.truncated {
         "bounded_stable_boundary"
     } else if result.branch_effect.pending_choice_created {
@@ -504,6 +513,7 @@ fn classify_candidate(
             "resource_ineligible".to_string(),
             evidence_scope,
             "audit_only".to_string(),
+            "AuditOnly".to_string(),
         );
     }
     if result.branch_effect.player_dead {
@@ -511,6 +521,7 @@ fn classify_candidate(
             "insufficient".to_string(),
             evidence_scope,
             "insufficient".to_string(),
+            "AuditOnly".to_string(),
         );
     }
     if result.branch_effect.combat_cleared {
@@ -518,6 +529,7 @@ fn classify_candidate(
             "terminal_clear".to_string(),
             evidence_scope,
             "terminal_certificate".to_string(),
+            "DecisionCertificate".to_string(),
         );
     }
     if result.branch_effect.enemies_killed > 0 {
@@ -525,6 +537,7 @@ fn classify_candidate(
             "typed_immediate_dominance".to_string(),
             evidence_scope,
             "typed_immediate_dominance".to_string(),
+            "TacticalHypothesis".to_string(),
         );
     }
     if contains_bucket(risk_buckets, "draw") {
@@ -532,6 +545,7 @@ fn classify_candidate(
             "draw_sample_uncertain".to_string(),
             evidence_scope,
             "unresolved".to_string(),
+            "SearchAllocationTarget".to_string(),
         );
     }
     if contains_bucket(risk_buckets, "exhaust") {
@@ -539,6 +553,7 @@ fn classify_candidate(
             "exhaust_cost_unmodeled".to_string(),
             evidence_scope,
             "unresolved".to_string(),
+            "SearchAllocationTarget".to_string(),
         );
     }
     if contains_bucket(risk_buckets, "debuff") {
@@ -546,6 +561,7 @@ fn classify_candidate(
             "delayed_debuff_horizon_missing".to_string(),
             evidence_scope,
             "unresolved".to_string(),
+            "SearchAllocationTarget".to_string(),
         );
     }
     if contains_bucket(risk_buckets, "setup") || contains_bucket(risk_buckets, "power") {
@@ -553,6 +569,7 @@ fn classify_candidate(
             "setup_value_unmodeled".to_string(),
             evidence_scope,
             "unresolved".to_string(),
+            "SearchAllocationTarget".to_string(),
         );
     }
     if contains_bucket(risk_buckets, "block") && result.branch_effect.enemy_hp_removed == 0 {
@@ -560,6 +577,7 @@ fn classify_candidate(
             "defense_horizon_missing".to_string(),
             evidence_scope,
             "unresolved".to_string(),
+            "SearchAllocationTarget".to_string(),
         );
     }
     if result.truncated {
@@ -567,6 +585,7 @@ fn classify_candidate(
             "insufficient".to_string(),
             evidence_scope,
             "insufficient".to_string(),
+            "AuditOnly".to_string(),
         );
     }
     if result.branch_effect.enemy_hp_removed > 0 {
@@ -574,12 +593,14 @@ fn classify_candidate(
             "damage_delta_only".to_string(),
             evidence_scope,
             "short_horizon_tactical_hypothesis".to_string(),
+            "SearchAllocationTarget".to_string(),
         );
     }
     (
         "insufficient".to_string(),
         evidence_scope,
         "insufficient".to_string(),
+        "AuditOnly".to_string(),
     )
 }
 
