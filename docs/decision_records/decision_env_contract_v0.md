@@ -46,11 +46,12 @@ This does not make `frontier_eval`, exact-turn search, verified teacher, or live
 - `tools/learning/train_decision_record_pairwise_scorer.py` trains a dependency-free pairwise candidate scorer baseline from `DecisionRecord` teacher pairwise preferences.
 - `tools/learning/eval_decision_record_gated_scorer.py` evaluates a scorer as a conservative offline override policy and reports override rate, accepted true advantage, and harmful override rate.
 - `tools/learning/collect_decision_records_batch.py` collects DecisionRecord shards with multiple driver workers.
-- `tools/learning/export_decision_record_candidate_table.py` exports a flat candidate table as JSONL, with optional Parquet output when `pyarrow` is installed.
+- `tools/learning/export_decision_record_candidate_table.py` exports a flat candidate table as JSONL or Parquet. The Parquet path has been smoke-tested with `pyarrow`.
 - `full_run_env_driver` exposes `policy_input` for policy/live callers. It is constructed from public observation plus public action candidates and intentionally omits debug `info`, state hashes, and teacher labels.
+- live CommunicationMod combat now constructs a `policy_input_v0` from the public live observation snapshot and root action candidates, then maps the current legacy frontier fallback decision through that candidate set before sending a command. This keeps the current behavior while moving the live execution seam onto the policy-input contract.
 - Combat audit now labels current live combat baseline as `legacy_frontier_planner` / `legacy_frontier_fallback`; exact-turn and turn-option outputs are evidence/shadow unless a later policy layer consumes them through a separate contract.
 
 ## Next Work
 
-- Move live CommunicationMod decision code to consume `policy_input` rather than search/debug payloads.
 - Add a non-baseline neural candidate scorer once strict trainable teacher labels are available.
+- Replace the live legacy-frontier fallback policy with a model-backed `PolicyRunner` after shadow metrics prove it is safe.

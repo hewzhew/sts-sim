@@ -31,6 +31,9 @@ use crate::verification::combat::{
     build_combat_state_from_snapshots, compare_combat_states_from_snapshots, ActionContext,
     DiffCategory, DiffResult,
 };
+use crate::verification::decision_env::{
+    ActionCandidate, ActionId, DecisionId, ObservationPayload, ObservationVisibility, PolicyInput,
+};
 use serde_json::Value;
 use std::io::Write;
 use std::time::{Duration, Instant};
@@ -40,6 +43,8 @@ const LIVE_BASELINE_SEARCH_TIMEOUT_MS: u64 = 250;
 const LIVE_ROOT_SEARCH_TIMEOUT_MS: u64 = 2_500;
 const LIVE_ROOT_EXACT_TURN_MAX_NODES: usize = 1_200;
 const LIVE_SAMPLED_AUDIT_INTERVAL: u64 = 8;
+const LIVE_COMBAT_PUBLIC_OBSERVATION_SCHEMA_VERSION: &str = "live_combat_public_observation_v0";
+const LIVE_COMBAT_PUBLIC_ACTION_SCHEMA_VERSION: &str = "live_combat_public_action_candidate_v0";
 
 fn log_combat_stage_enter(
     live_io: &mut LiveCommIo,
@@ -695,6 +700,136 @@ fn describe_client_input(combat: &CombatState, input: &ClientInput) -> String {
         ClientInput::EndTurn => "EndTurn".to_string(),
         other => format!("{other:?}"),
     }
+}
+
+fn live_combat_action_key(input: &ClientInput) -> String {
+    match input {
+        ClientInput::PlayCard { card_index, target } => match target {
+            Some(target) => format!("play_card/{card_index}/target/{target}"),
+            None => format!("play_card/{card_index}"),
+        },
+        ClientInput::UsePotion {
+            potion_index,
+            target,
+        } => match target {
+            Some(target) => format!("use_potion/{potion_index}/target/{target}"),
+            None => format!("use_potion/{potion_index}"),
+        },
+        ClientInput::DiscardPotion(potion_index) => format!("discard_potion/{potion_index}"),
+        ClientInput::EndTurn => "end_turn".to_string(),
+        ClientInput::SubmitCardChoice(indices) => format!("card_choice/{indices:?}"),
+        ClientInput::SubmitDiscoverChoice(index) => format!("discover_choice/{index}"),
+        ClientInput::SubmitSelection(indices) => format!("selection/{indices:?}"),
+        ClientInput::SubmitHandSelect(indices) => format!("hand_select/{indices:?}"),
+        ClientInput::SubmitGridSelect(indices) => format!("grid_select/{indices:?}"),
+        ClientInput::SubmitDeckSelect(indices) => format!("deck_select/{indices:?}"),
+        ClientInput::SubmitScryDiscard(indices) => format!("scry_discard/{indices:?}"),
+        ClientInput::Proceed => "proceed".to_string(),
+        ClientInput::Cancel => "cancel".to_string(),
+        other => format!("{other:?}"),
+    }
+}
+
+fn live_combat_action_kind(input: &ClientInput) -> &'static str {
+    match input {
+        ClientInput::PlayCard { .. } => "play_card",
+        ClientInput::UsePotion { .. } => "use_potion",
+        ClientInput::DiscardPotion(_) => "discard_potion",
+        ClientInput::EndTurn => "end_turn",
+        ClientInput::SubmitCardChoice(_) => "card_choice",
+        ClientInput::SubmitDiscoverChoice(_) => "discover_choice",
+        ClientInput::SubmitSelection(_)
+        | ClientInput::SubmitHandSelect(_)
+        | ClientInput::SubmitGridSelect(_)
+        | ClientInput::SubmitDeckSelect(_)
+        | ClientInput::SubmitScryDiscard(_) => "selection",
+        ClientInput::Proceed => "proceed",
+        ClientInput::Cancel => "cancel",
+        _ => "other",
+    }
+}
+
+fn live_combat_policy_input(
+    frame_count: u64,
+    root_action_source: &str,
+    protocol_root_action_count: usize,
+    public_observation_snapshot: &Value,
+    combat: &CombatState,
+    root_inputs: &[ClientInput],
+    protocol_affordance: Option<&crate::protocol::java::CombatAffordanceSnapshot>,
+    time_budget_ms: u32,
+) -> PolicyInput {
+    let observation = ObservationPayload {
+        schema_version: LIVE_COMBAT_PUBLIC_OBSERVATION_SCHEMA_VERSION.to_string(),
+        visibility: ObservationVisibility::Public,
+        decision_type: "combat".to_string(),
+        payload: serde_json::json!({
+            "schema_version": LIVE_COMBAT_PUBLIC_OBSERVATION_SCHEMA_VERSION,
+            "source": "communication_mod_live_observation_snapshot",
+            "frame_count": frame_count,
+            "root_action_source": root_action_source,
+            "protocol_root_action_count": protocol_root_action_count,
+            "combat": public_observation_snapshot,
+        }),
+    };
+    let candidates = root_inputs
+        .iter()
+        .enumerate()
+        .map(|(index, input)| {
+            let protocol_action =
+                protocol_affordance.and_then(|snapshot| snapshot.find_by_input(input));
+            ActionCandidate {
+                id: ActionId(index),
+                action_schema_version: LIVE_COMBAT_PUBLIC_ACTION_SCHEMA_VERSION.to_string(),
+                action_index: index,
+                action_key: live_combat_action_key(input),
+                action_kind: live_combat_action_kind(input).to_string(),
+                payload: serde_json::json!({
+                    "schema_version": LIVE_COMBAT_PUBLIC_ACTION_SCHEMA_VERSION,
+                    "label": describe_client_input(combat, input),
+                    "protocol_action_id": protocol_action.map(|action| action.action_id.clone()),
+                    "has_protocol_command": protocol_action.is_some(),
+                }),
+            }
+        })
+        .collect::<Vec<_>>();
+    let timestep = crate::verification::decision_env::TimeStep {
+        contract_version: crate::verification::decision_env::DECISION_ENV_CONTRACT_VERSION
+            .to_string(),
+        decision_id: DecisionId {
+            episode_id: "live_comm".to_string(),
+            step_index: frame_count as usize,
+            decision_type: "combat".to_string(),
+        },
+        observation,
+        candidates,
+        reward: crate::verification::decision_env::RewardEvent {
+            schema_version: crate::verification::decision_env::REWARD_EVENT_SCHEMA_VERSION
+                .to_string(),
+            scalar_reward: 0.0,
+            components: serde_json::json!({"source": "live_policy_input_no_reward"}),
+        },
+        terminated: false,
+        truncated: false,
+        info: crate::verification::decision_env::StepInfo {
+            state_hash: String::new(),
+            payload: serde_json::Value::Null,
+        },
+    };
+    PolicyInput::from_timestep(&timestep, time_budget_ms)
+        .expect("live combat policy input is constructed from public observation")
+}
+
+fn legacy_frontier_policy_action_id(
+    combat: &CombatState,
+    root_inputs: &[ClientInput],
+    chosen_move: &ClientInput,
+) -> Option<ActionId> {
+    root_inputs
+        .iter()
+        .enumerate()
+        .find(|(_, input)| same_or_equivalent_client_input(combat, input, chosen_move))
+        .map(|(index, _)| ActionId(index))
 }
 
 fn format_card(card: &crate::runtime::combat::CombatCard) -> String {
@@ -2363,6 +2498,38 @@ pub(super) fn handle_live_combat_frame<W: Write>(
     } else {
         "legacy"
     };
+    let policy_root_inputs = root_inputs.clone().unwrap_or_else(|| {
+        crate::bot::combat::legal_moves_for_audit(&EngineState::CombatPlayerTurn, &truth)
+    });
+    let live_policy_input = live_combat_policy_input(
+        frame_count,
+        root_action_source,
+        protocol_root_action_count,
+        &combat_observation_snapshot,
+        &truth,
+        &policy_root_inputs,
+        protocol_affordance.as_ref(),
+        LIVE_ROOT_SEARCH_TIMEOUT_MS as u32,
+    );
+    writeln!(
+        live_io.log,
+        "  [POLICY INPUT] schema={} observation_schema={} candidates={} source={}",
+        live_policy_input.schema_version,
+        live_policy_input.observation.schema_version,
+        live_policy_input.candidates.len(),
+        root_action_source
+    )
+    .unwrap();
+    writeln!(
+        live_io.focus_log,
+        "[POLICY INPUT] frame={} schema={} obs_schema={} candidates={} source={}",
+        frame_count,
+        live_policy_input.schema_version,
+        live_policy_input.observation.schema_version,
+        live_policy_input.candidates.len(),
+        root_action_source
+    )
+    .unwrap();
 
     let root_started = log_combat_stage_enter(
         live_io,
@@ -2583,7 +2750,32 @@ pub(super) fn handle_live_combat_frame<W: Write>(
         baseline_diag.as_ref(),
         &search_diag,
     );
-    let input = search_diag.chosen_move.clone();
+    let selected_policy_action_id =
+        legacy_frontier_policy_action_id(&truth, &policy_root_inputs, &search_diag.chosen_move);
+    let input = selected_policy_action_id
+        .and_then(|action_id| policy_root_inputs.get(action_id.0).cloned())
+        .unwrap_or_else(|| search_diag.chosen_move.clone());
+    writeln!(
+        live_io.log,
+        "  [POLICY DECISION] policy_input_schema={} policy=legacy_frontier_fallback selected_action_id={} selected_key={} selected_label={}",
+        live_policy_input.schema_version,
+        selected_policy_action_id
+            .map(|action_id| action_id.0.to_string())
+            .unwrap_or_else(|| "<missing>".to_string()),
+        live_combat_action_key(&input),
+        describe_client_input(&truth, &input)
+    )
+    .unwrap();
+    writeln!(
+        live_io.focus_log,
+        "[POLICY DECISION] frame={} policy=legacy_frontier_fallback selected_action_id={} selected_key={}",
+        frame_count,
+        selected_policy_action_id
+            .map(|action_id| action_id.0.to_string())
+            .unwrap_or_else(|| "<missing>".to_string()),
+        live_combat_action_key(&input)
+    )
+    .unwrap();
     let chosen_protocol_action = protocol_affordance
         .as_ref()
         .and_then(|snapshot| snapshot.find_by_input(&input));
