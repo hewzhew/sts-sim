@@ -40,6 +40,7 @@ This does not make `frontier_eval`, exact-turn search, verified teacher, or live
 - `decision_record_step` can optionally attach `candidate_evaluation_teacher_v0` labels. These labels evaluate candidates and populate `teacher_label`; they do not choose the live action.
 - `teacher_label.payload.training_eligibility` records whether the label can be used for training. Fixed-decision horizon labels are marked audit/screening only by default.
 - `tools/learning/audit_decision_record_teacher_quality.py` audits `DecisionRecord` JSONL and can fail before training if no eligible labels are present.
+- `tools/learning/audit_decision_record_contract.py` checks that records keep public observations public, keep behavior actions legal, and keep legacy heuristic keys out of public observation/candidate payloads.
 - `tools/learning/verify_decision_records_replay.py` replays `DecisionRecord` JSONL through the DecisionEnv commands and verifies state hashes, candidate lists, rewards, and terminal flags. It requires the same env config used during collection.
 
 ## Next Work
