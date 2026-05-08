@@ -2136,8 +2136,13 @@ fn neutral_disagreement_audit(
         .and_then(|value| value.get("risk_buckets"))
         .cloned()
         .unwrap_or_else(|| json!([]));
+    let route = route_disagreement(
+        reason_code,
+        paired_compare.as_ref(),
+        commutation_probe.as_ref(),
+    );
     Some(json!({
-        "schema_version": "neutral_disagreement_audit_v2",
+        "schema_version": "neutral_disagreement_audit_v3",
         "decision_id": &policy_input.decision_id,
         "behavior": action_descriptor(reference_action_id, behavior),
         "selected": action_descriptor(selected_action_id, selected),
@@ -2146,12 +2151,149 @@ fn neutral_disagreement_audit(
         "evidence_scope": evidence_scope,
         "hypothesis_class": hypothesis_class,
         "risk_buckets": risk_buckets,
+        "route": route.get("route").cloned().unwrap_or(Value::Null),
+        "route_status": route.get("status").cloned().unwrap_or(Value::Null),
+        "action_label": route.get("action_label").cloned().unwrap_or(Value::Null),
+        "router": route,
         "paired_compare_deltas": paired_compare.as_ref().map(paired_compare_delta_summary),
         "paired_compare": paired_compare,
         "commutation_result": commutation_probe.as_ref().map(commutation_summary),
         "commutation_probe": commutation_probe,
         "trainable_as_action_label": false,
     }))
+}
+
+fn route_disagreement(
+    reason_code: &str,
+    paired_compare: Option<&Value>,
+    commutation_probe: Option<&Value>,
+) -> Value {
+    let order_only = commutation_probe
+        .and_then(|value| value.get("order_only_equivalent"))
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    if order_only {
+        return json!({
+            "schema_version": "neutral_disagreement_router_v3",
+            "route": "equivalent_order_only",
+            "status": "equivalent",
+            "action_label": "none",
+            "requires_confirmation": false,
+            "required_confirmation_boundary": Value::Null,
+            "notes": ["commutation_probe_summary_equal"],
+        });
+    }
+
+    let paired = PairedRouteEvidence::from_value(paired_compare);
+    if paired.neutral_dead_behavior_alive || paired.behavior_clears_neutral_not {
+        return json!({
+            "schema_version": "neutral_disagreement_router_v3",
+            "route": "refuted_by_stable_boundary",
+            "status": "refuted",
+            "action_label": "none",
+            "requires_confirmation": false,
+            "required_confirmation_boundary": Value::Null,
+            "notes": ["stable_boundary_bad_flip"],
+        });
+    }
+    if paired.neutral_alive_behavior_dead || paired.neutral_clears_behavior_not {
+        return json!({
+            "schema_version": "neutral_disagreement_router_v3",
+            "route": "terminal_or_survival_certificate",
+            "status": "confirmed_positive",
+            "action_label": "none",
+            "requires_confirmation": false,
+            "required_confirmation_boundary": Value::Null,
+            "notes": ["stable_boundary_terminal_or_survival_flip"],
+        });
+    }
+
+    match reason_code {
+        "terminal_clear" | "survival_flip" => json!({
+            "schema_version": "neutral_disagreement_router_v3",
+            "route": "terminal_or_survival_certificate",
+            "status": "confirmed_positive",
+            "action_label": "none",
+            "requires_confirmation": false,
+            "required_confirmation_boundary": Value::Null,
+            "notes": ["candidate_reason_certificate"],
+        }),
+        "typed_immediate_dominance" => json!({
+            "schema_version": "neutral_disagreement_router_v3",
+            "route": "typed_immediate_dominance",
+            "status": "needs_aligned_confirmation",
+            "action_label": "none",
+            "requires_confirmation": true,
+            "required_confirmation_boundary": "next_aligned_combat_boundary",
+            "notes": ["typed_immediate_not_training_label"],
+        }),
+        "damage_delta_only" => json!({
+            "schema_version": "neutral_disagreement_router_v3",
+            "route": "needs_aligned_confirmation",
+            "status": "needs_aligned_confirmation",
+            "action_label": "none",
+            "requires_confirmation": true,
+            "required_confirmation_boundary": "next_aligned_combat_boundary",
+            "notes": ["damage_delta_only_forbidden_as_direct_label"],
+        }),
+        "draw_sample_uncertain"
+        | "exhaust_cost_unmodeled"
+        | "setup_value_unmodeled"
+        | "delayed_debuff_horizon_missing"
+        | "defense_horizon_missing" => json!({
+            "schema_version": "neutral_disagreement_router_v3",
+            "route": "needs_horizon_or_value",
+            "status": "needs_horizon_or_value",
+            "action_label": "none",
+            "requires_confirmation": true,
+            "required_confirmation_boundary": "horizon_or_value_model",
+            "notes": ["unmodeled_delayed_or_defensive_value"],
+        }),
+        "resource_ineligible" => json!({
+            "schema_version": "neutral_disagreement_router_v3",
+            "route": "audit_only_resource",
+            "status": "audit_only",
+            "action_label": "none",
+            "requires_confirmation": false,
+            "required_confirmation_boundary": Value::Null,
+            "notes": ["resource_action_ineligible"],
+        }),
+        _ => json!({
+            "schema_version": "neutral_disagreement_router_v3",
+            "route": "insufficient",
+            "status": "insufficient",
+            "action_label": "none",
+            "requires_confirmation": true,
+            "required_confirmation_boundary": "manual_or_stronger_evidence",
+            "notes": ["unclassified_or_insufficient_evidence"],
+        }),
+    }
+}
+
+#[derive(Default)]
+struct PairedRouteEvidence {
+    neutral_dead_behavior_alive: bool,
+    neutral_alive_behavior_dead: bool,
+    neutral_clears_behavior_not: bool,
+    behavior_clears_neutral_not: bool,
+}
+
+impl PairedRouteEvidence {
+    fn from_value(value: Option<&Value>) -> Self {
+        Self {
+            neutral_dead_behavior_alive: bool_field(value, "left_dead_right_alive"),
+            neutral_alive_behavior_dead: bool_field(value, "left_alive_right_dead"),
+            neutral_clears_behavior_not: bool_field(value, "left_clears_right_not"),
+            behavior_clears_neutral_not: bool_field(value, "right_clears_left_not"),
+        }
+    }
+}
+
+fn bool_field(value: Option<&Value>, key: &str) -> bool {
+    value
+        .and_then(|value| value.get(key))
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
 }
 
 fn candidate_evaluation_by_action(payload: &Value, action_id: ActionId) -> Option<Value> {
@@ -3448,13 +3590,15 @@ mod tests {
         assert!(!payload["commutation_probe_vs_reference"].is_null());
         assert_eq!(
             payload["disagreement_audit"]["schema_version"],
-            "neutral_disagreement_audit_v2"
+            "neutral_disagreement_audit_v3"
         );
         assert_eq!(
             payload["disagreement_audit"]["trainable_as_action_label"],
             false
         );
         assert!(payload["disagreement_audit"]["reason_code"].is_string());
+        assert!(payload["disagreement_audit"]["route"].is_string());
+        assert_eq!(payload["disagreement_audit"]["action_label"], "none");
     }
 
     #[test]

@@ -113,14 +113,32 @@ def update_summary(
                 evidence_scope = audit.get("evidence_scope") or "missing"
                 hypothesis_class = audit.get("hypothesis_class") or "missing"
                 action_kind_pair = audit.get("action_kind_pair") or "missing"
+                route = audit.get("route") or "missing"
+                route_status = audit.get("route_status") or "missing"
+                action_label = audit.get("action_label") or "missing"
                 summary["reason_code_counts"][reason_code] += 1
                 summary["evidence_scope_counts"][evidence_scope] += 1
                 summary["hypothesis_class_counts"][hypothesis_class] += 1
                 summary["action_kind_confusion"][action_kind_pair] += 1
+                summary["route_counts"][route] += 1
+                summary["route_status_counts"][route_status] += 1
+                summary["route_action_label_counts"][action_label] += 1
+                if route == "equivalent_order_only":
+                    summary["equivalent_order_only_count"] += 1
+                if route_status == "confirmed_positive":
+                    summary["confirmed_positive_count"] += 1
+                if route_status == "refuted":
+                    summary["refuted_count"] += 1
+                if route_status == "needs_aligned_confirmation":
+                    summary["needs_aligned_confirmation_count"] += 1
+                if route_status == "needs_horizon_or_value":
+                    summary["needs_horizon_or_value_count"] += 1
                 if reason_code == "missing":
                     summary["missing_disagreement_reason_count"] += 1
                 if audit.get("trainable_as_action_label") is not False:
                     summary["trainable_disagreement_label_count"] += 1
+                if action_label != "none":
+                    summary["non_none_action_label_count"] += 1
                 for bucket in audit.get("risk_buckets") or []:
                     summary["risk_bucket_counts"][bucket] += 1
                 paired = trace_payload.get("paired_compare_vs_reference")
@@ -355,6 +373,14 @@ def finalize_summary(summary: dict[str, Any]) -> dict[str, Any]:
             "right_then_left_second_illegal_count"
         ],
     }
+    summary["router_summary"] = {
+        "confirmed_positive_count": summary["confirmed_positive_count"],
+        "refuted_count": summary["refuted_count"],
+        "equivalent_order_only_count": summary["equivalent_order_only_count"],
+        "needs_aligned_confirmation_count": summary["needs_aligned_confirmation_count"],
+        "needs_horizon_or_value_count": summary["needs_horizon_or_value_count"],
+        "non_none_action_label_count": summary["non_none_action_label_count"],
+    }
     return summary
 
 
@@ -397,6 +423,12 @@ def main() -> int:
         "selected_disagrees_with_behavior_count": 0,
         "missing_disagreement_reason_count": 0,
         "trainable_disagreement_label_count": 0,
+        "non_none_action_label_count": 0,
+        "confirmed_positive_count": 0,
+        "refuted_count": 0,
+        "equivalent_order_only_count": 0,
+        "needs_aligned_confirmation_count": 0,
+        "needs_horizon_or_value_count": 0,
         "paired_compare_count": 0,
         "paired_left_dead_right_alive_count": 0,
         "paired_left_alive_right_dead_count": 0,
@@ -423,6 +455,9 @@ def main() -> int:
         "hypothesis_class_counts": Counter(),
         "risk_bucket_counts": Counter(),
         "action_kind_confusion": Counter(),
+        "route_counts": Counter(),
+        "route_status_counts": Counter(),
+        "route_action_label_counts": Counter(),
         "candidate_reason_code_counts": Counter(),
         "candidate_evidence_scope_counts": Counter(),
         "candidate_risk_bucket_counts": Counter(),
@@ -471,6 +506,9 @@ def main() -> int:
     summary["hypothesis_class_counts"] = dict(summary["hypothesis_class_counts"])
     summary["risk_bucket_counts"] = dict(summary["risk_bucket_counts"])
     summary["action_kind_confusion"] = dict(summary["action_kind_confusion"])
+    summary["route_counts"] = dict(summary["route_counts"])
+    summary["route_status_counts"] = dict(summary["route_status_counts"])
+    summary["route_action_label_counts"] = dict(summary["route_action_label_counts"])
     summary["candidate_reason_code_counts"] = dict(summary["candidate_reason_code_counts"])
     summary["candidate_evidence_scope_counts"] = dict(
         summary["candidate_evidence_scope_counts"]
