@@ -42,11 +42,14 @@ This does not make `frontier_eval`, exact-turn search, verified teacher, or live
 - `tools/learning/audit_decision_record_teacher_quality.py` audits `DecisionRecord` JSONL and can fail before training if no eligible labels are present.
 - `tools/learning/audit_decision_record_contract.py` checks that records keep public observations public, keep behavior actions legal, and keep legacy heuristic keys out of public observation/candidate payloads.
 - `tools/learning/verify_decision_records_replay.py` replays `DecisionRecord` JSONL through the DecisionEnv commands and verifies state hashes, candidate lists, rewards, and terminal flags. It requires the same env config used during collection.
+- `tools/learning/evaluate_decision_record_regret.py` computes behavior/model regret and harmful-action metrics from `TeacherDecisionLabel` candidate returns.
+- `tools/learning/train_decision_record_pairwise_scorer.py` trains a dependency-free pairwise candidate scorer baseline from `DecisionRecord` teacher pairwise preferences.
+- `tools/learning/collect_decision_records_batch.py` collects DecisionRecord shards with multiple driver workers.
+- `tools/learning/export_decision_record_candidate_table.py` exports a flat candidate table as JSONL, with optional Parquet output when `pyarrow` is installed.
 - `full_run_env_driver` exposes `policy_input` for policy/live callers. It is constructed from public observation plus public action candidates and intentionally omits debug `info`, state hashes, and teacher labels.
 - Combat audit now labels current live combat baseline as `legacy_frontier_planner` / `legacy_frontier_fallback`; exact-turn and turn-option outputs are evidence/shadow unless a later policy layer consumes them through a separate contract.
 
 ## Next Work
 
 - Move live CommunicationMod decision code to consume `policy_input` rather than search/debug payloads.
-- Add offline evaluator/regret metrics over `DecisionRecord` + `TeacherDecisionLabel`.
-- Add candidate scorer/value training scripts that consume only `DecisionRecord`.
+- Add a non-baseline neural candidate scorer once strict trainable teacher labels are available.
