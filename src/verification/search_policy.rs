@@ -116,6 +116,13 @@ impl PolicyProposal {
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum SearchKind {
+    NeutralOneStepTransition,
+    NeutralStableTransition {
+        max_engine_steps: u32,
+    },
+    NeutralBranchCompression {
+        max_engine_steps: u32,
+    },
     ExactTurn {
         max_nodes: Option<u32>,
         stop_at_end_turn: bool,
