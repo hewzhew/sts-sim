@@ -50,8 +50,10 @@ This does not make `frontier_eval`, exact-turn search, verified teacher, or live
 - `full_run_env_driver` exposes `policy_input` for policy/live callers. It is constructed from public observation plus public action candidates and intentionally omits debug `info`, state hashes, and teacher labels.
 - live CommunicationMod combat now constructs a `policy_input_v0` from the public live observation snapshot and root action candidates, then maps the current legacy frontier fallback decision through that candidate set before sending a command. This keeps the current behavior while moving the live execution seam onto the policy-input contract.
 - Combat audit now labels current live combat baseline as `legacy_frontier_planner` / `legacy_frontier_fallback`; exact-turn and turn-option outputs are evidence/shadow unless a later policy layer consumes them through a separate contract.
+- `src/verification/search_policy.rs` defines the search-aware policy contract: `PolicyProposal`, `SearchPlan`, `SearchRequest`, `SearchEvidence`, `PolicyDecision`, and `DeliberationTrace`.
+- live CommunicationMod combat now writes a `search_aware_policy_trace` into combat audit. V0 is intentionally `legacy_frontier_fallback` with `legacy_root_search` evidence marked `heuristic_only`; it is a deliberation trace shape, not verified teacher truth.
 
 ## Next Work
 
-- Add a non-baseline neural candidate scorer once strict trainable teacher labels are available.
-- Replace the live legacy-frontier fallback policy with a model-backed `PolicyRunner` after shadow metrics prove it is safe.
+- Add a non-baseline neural candidate scorer only as a fast prior / risk / uncertainty component once strict trainable teacher labels are available.
+- Replace the V0 legacy trace with a real search-aware `PolicyRunner`: model proposal, budgeted `SearchRequest`s, clean `SearchEvidence`, evidence-aware decision, and fallback.

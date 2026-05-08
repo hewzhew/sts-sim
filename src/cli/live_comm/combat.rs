@@ -34,6 +34,11 @@ use crate::verification::combat::{
 use crate::verification::decision_env::{
     ActionCandidate, ActionId, DecisionId, ObservationPayload, ObservationVisibility, PolicyInput,
 };
+use crate::verification::search_policy::{
+    CandidateRiskFlags, CandidateScore, CandidateUncertainty, DeliberationTrace, Exactness,
+    PolicyDecision, PolicyProposal, SearchBudget, SearchEvidence, SearchHint, SearchKind,
+    SearchPlan, UncertaintyLevel,
+};
 use serde_json::Value;
 use std::io::Write;
 use std::time::{Duration, Instant};
@@ -830,6 +835,268 @@ fn legacy_frontier_policy_action_id(
         .enumerate()
         .find(|(_, input)| same_or_equivalent_client_input(combat, input, chosen_move))
         .map(|(index, _)| ActionId(index))
+}
+
+fn legacy_frontier_policy_proposal(
+    policy_input: &PolicyInput,
+    combat: &CombatState,
+    root_inputs: &[ClientInput],
+    search_diag: &CombatDiagnostics,
+    selected_action_id: Option<ActionId>,
+) -> PolicyProposal {
+    let mut prior_scores = Vec::new();
+    let mut seen = std::collections::BTreeSet::new();
+    for (rank, move_stat) in search_diag.top_moves.iter().enumerate() {
+        if let Some(action_id) =
+            legacy_frontier_policy_action_id(combat, root_inputs, &move_stat.input)
+        {
+            if seen.insert(action_id) {
+                prior_scores.push(CandidateScore {
+                    action_id,
+                    score: move_stat.avg_score,
+                    rank,
+                    source: "legacy_frontier_root_search".to_string(),
+                    payload: serde_json::json!({
+                        "visits": move_stat.visits,
+                        "base_order_score": move_stat.base_order_score,
+                        "order_score": move_stat.order_score,
+                        "leaf_score": move_stat.leaf_score,
+                        "projected_hp": move_stat.projected_hp,
+                        "projected_block": move_stat.projected_block,
+                        "projected_enemy_total": move_stat.projected_enemy_total,
+                        "projected_unblocked": move_stat.projected_unblocked,
+                        "survives": move_stat.survives,
+                    }),
+                });
+            }
+        }
+    }
+    for candidate in &policy_input.candidates {
+        if seen.insert(candidate.id) {
+            prior_scores.push(CandidateScore {
+                action_id: candidate.id,
+                score: if Some(candidate.id) == selected_action_id {
+                    1.0
+                } else {
+                    0.0
+                },
+                rank: prior_scores.len(),
+                source: "candidate_unscored_by_legacy_topk".to_string(),
+                payload: serde_json::Value::Null,
+            });
+        }
+    }
+    let uncertainty = selected_action_id
+        .map(|action_id| CandidateUncertainty {
+            action_id,
+            level: if search_diag.timed_out {
+                UncertaintyLevel::High
+            } else {
+                UncertaintyLevel::Unknown
+            },
+            reasons: if search_diag.timed_out {
+                vec!["legacy_root_search_timed_out".to_string()]
+            } else {
+                vec!["legacy_frontier_is_not_model_uncertainty".to_string()]
+            },
+            payload: serde_json::Value::Null,
+        })
+        .into_iter()
+        .collect::<Vec<_>>();
+    let risk_flags = search_diag
+        .top_moves
+        .iter()
+        .filter_map(|move_stat| {
+            let action_id =
+                legacy_frontier_policy_action_id(combat, root_inputs, &move_stat.input)?;
+            let mut flags = Vec::new();
+            if !move_stat.survives {
+                flags.push("legacy_projection_does_not_survive".to_string());
+            }
+            if move_stat.projected_unblocked > 0 {
+                flags.push("legacy_projection_unblocked_damage".to_string());
+            }
+            if search_diag.timed_out {
+                flags.push("legacy_search_timed_out".to_string());
+            }
+            (!flags.is_empty()).then_some(CandidateRiskFlags {
+                action_id,
+                flags,
+                payload: serde_json::Value::Null,
+            })
+        })
+        .collect::<Vec<_>>();
+    let mut search_hints = Vec::new();
+    if let Some(action_id) = selected_action_id {
+        search_hints.push(SearchHint {
+            candidate_id: Some(action_id),
+            search_kind: SearchKind::LegacyRootSearch {
+                depth_limit: Some(search_diag.depth_limit),
+            },
+            priority: 1.0,
+            reason: "legacy_selected_anchor".to_string(),
+            payload: serde_json::Value::Null,
+        });
+    }
+    for move_stat in search_diag.top_moves.iter().take(3) {
+        if let Some(action_id) =
+            legacy_frontier_policy_action_id(combat, root_inputs, &move_stat.input)
+        {
+            if Some(action_id) != selected_action_id {
+                search_hints.push(SearchHint {
+                    candidate_id: Some(action_id),
+                    search_kind: SearchKind::LegacyRootSearch {
+                        depth_limit: Some(search_diag.depth_limit),
+                    },
+                    priority: 0.5,
+                    reason: "legacy_top_candidate_anchor".to_string(),
+                    payload: serde_json::Value::Null,
+                });
+            }
+        }
+    }
+    PolicyProposal {
+        schema_version: crate::verification::search_policy::SEARCH_AWARE_POLICY_SCHEMA_VERSION
+            .to_string(),
+        decision_id: policy_input.decision_id.clone(),
+        policy_id: "legacy_frontier_prior_v0".to_string(),
+        prior_scores,
+        uncertainty,
+        risk_flags,
+        search_hints,
+        fast_path_allowed: false,
+        payload: serde_json::json!({
+            "role": "legacy_prior_anchor_only",
+            "legacy_search_timed_out": search_diag.timed_out,
+            "legacy_simulations": search_diag.simulations,
+            "legacy_elapsed_ms": search_diag.elapsed_ms,
+        }),
+    }
+}
+
+fn legacy_frontier_search_plan(
+    policy_input: &PolicyInput,
+    proposal: &PolicyProposal,
+    search_diag: &CombatDiagnostics,
+) -> SearchPlan {
+    SearchPlan::from_hints(
+        policy_input,
+        &proposal.search_hints,
+        SearchBudget {
+            time_budget_ms: policy_input.time_budget_ms,
+            max_requests: proposal.search_hints.len(),
+            payload: serde_json::json!({
+                "legacy_root_timeout_ms": LIVE_ROOT_SEARCH_TIMEOUT_MS,
+                "legacy_elapsed_ms": search_diag.elapsed_ms,
+                "legacy_timed_out": search_diag.timed_out,
+            }),
+        },
+        serde_json::json!({
+            "execution_note": "legacy root search already executed before this V0 policy trace",
+        }),
+    )
+}
+
+fn legacy_frontier_search_evidence(
+    policy_input: &PolicyInput,
+    combat: &CombatState,
+    root_inputs: &[ClientInput],
+    search_diag: &CombatDiagnostics,
+    search_plan: &SearchPlan,
+) -> Vec<SearchEvidence> {
+    let mut evidence = Vec::new();
+    for (index, move_stat) in search_diag
+        .top_moves
+        .iter()
+        .take(SEARCH_DIAG_TOP_K)
+        .enumerate()
+    {
+        let action_id = legacy_frontier_policy_action_id(combat, root_inputs, &move_stat.input);
+        let request_id = action_id.and_then(|action_id| {
+            search_plan
+                .requests
+                .iter()
+                .find(|request| request.candidate_id == Some(action_id))
+                .map(|request| request.request_id.clone())
+        });
+        evidence.push(SearchEvidence {
+            evidence_id: format!("legacy_root_search_candidate_{index}"),
+            decision_id: policy_input.decision_id.clone(),
+            candidate_id: action_id,
+            request_id,
+            search_kind: SearchKind::LegacyRootSearch {
+                depth_limit: Some(search_diag.depth_limit),
+            },
+            exactness: Exactness::HeuristicOnly,
+            truncated: search_diag.timed_out,
+            payload: serde_json::json!({
+                "source": "legacy_frontier_root_search",
+                "score": move_stat.avg_score,
+                "visits": move_stat.visits,
+                "action_label": describe_client_input(combat, &move_stat.input),
+                "projected_hp": move_stat.projected_hp,
+                "projected_block": move_stat.projected_block,
+                "projected_enemy_total": move_stat.projected_enemy_total,
+                "projected_unblocked": move_stat.projected_unblocked,
+                "survives": move_stat.survives,
+                "timed_out": search_diag.timed_out,
+                "note": "heuristic legacy evidence; not verified teacher truth",
+            }),
+        });
+    }
+    if evidence.is_empty() {
+        evidence.push(SearchEvidence {
+            evidence_id: "legacy_root_search_empty".to_string(),
+            decision_id: policy_input.decision_id.clone(),
+            candidate_id: None,
+            request_id: None,
+            search_kind: SearchKind::LegacyRootSearch {
+                depth_limit: Some(search_diag.depth_limit),
+            },
+            exactness: Exactness::HeuristicOnly,
+            truncated: search_diag.timed_out,
+            payload: serde_json::json!({
+                "source": "legacy_frontier_root_search",
+                "note": "no top move evidence available",
+            }),
+        });
+    }
+    evidence
+}
+
+fn legacy_frontier_deliberation_trace(
+    policy_input: &PolicyInput,
+    combat: &CombatState,
+    root_inputs: &[ClientInput],
+    search_diag: &CombatDiagnostics,
+    selected_action_id: Option<ActionId>,
+) -> DeliberationTrace {
+    let proposal = legacy_frontier_policy_proposal(
+        policy_input,
+        combat,
+        root_inputs,
+        search_diag,
+        selected_action_id,
+    );
+    let search_plan = legacy_frontier_search_plan(policy_input, &proposal, search_diag);
+    let evidence = legacy_frontier_search_evidence(
+        policy_input,
+        combat,
+        root_inputs,
+        search_diag,
+        &search_plan,
+    );
+    let decision = PolicyDecision::legacy_fallback(
+        policy_input,
+        selected_action_id,
+        &evidence,
+        "model_policy_not_available",
+        serde_json::json!({
+            "legacy_search_timed_out": search_diag.timed_out,
+            "fallback_role": "current_live_authority",
+        }),
+    );
+    DeliberationTrace::new(policy_input, proposal, search_plan, evidence, decision)
 }
 
 fn format_card(card: &crate::runtime::combat::CombatCard) -> String {
@@ -2680,6 +2947,53 @@ pub(super) fn handle_live_combat_frame<W: Write>(
         frame_count, root_action_source, protocol_root_action_count
     )
     .unwrap();
+    let selected_policy_action_id =
+        legacy_frontier_policy_action_id(&truth, &policy_root_inputs, &search_diag.chosen_move);
+    let deliberation_trace = legacy_frontier_deliberation_trace(
+        &live_policy_input,
+        &truth,
+        &policy_root_inputs,
+        &search_diag,
+        selected_policy_action_id,
+    );
+    let deliberation_trace_value =
+        serde_json::to_value(&deliberation_trace).unwrap_or_else(|_| serde_json::Value::Null);
+    if let serde_json::Value::Object(audit) = &mut search_diag.decision_audit {
+        audit.insert(
+            "search_aware_policy_trace".to_string(),
+            deliberation_trace_value.clone(),
+        );
+    }
+    writeln!(
+        live_io.log,
+        "  [POLICY TRACE] schema={} mode={:?} proposal={} requests={} evidence={} selected_action_id={}",
+        deliberation_trace.schema_version,
+        deliberation_trace.decision.mode,
+        deliberation_trace.proposal.policy_id,
+        deliberation_trace.search_plan.requests.len(),
+        deliberation_trace.evidence.len(),
+        deliberation_trace
+            .decision
+            .selected_action_id
+            .map(|action_id| action_id.0.to_string())
+            .unwrap_or_else(|| "<none>".to_string())
+    )
+    .unwrap();
+    writeln!(
+        live_io.focus_log,
+        "[POLICY TRACE] frame={} mode={:?} proposal={} requests={} evidence={} selected_action_id={}",
+        frame_count,
+        deliberation_trace.decision.mode,
+        deliberation_trace.proposal.policy_id,
+        deliberation_trace.search_plan.requests.len(),
+        deliberation_trace.evidence.len(),
+        deliberation_trace
+            .decision
+            .selected_action_id
+            .map(|action_id| action_id.0.to_string())
+            .unwrap_or_else(|| "<none>".to_string())
+    )
+    .unwrap();
     log_combat_decision_audit_summary(live_io, &search_diag);
     log_focus_decision_summary(
         live_io,
@@ -2750,8 +3064,6 @@ pub(super) fn handle_live_combat_frame<W: Write>(
         baseline_diag.as_ref(),
         &search_diag,
     );
-    let selected_policy_action_id =
-        legacy_frontier_policy_action_id(&truth, &policy_root_inputs, &search_diag.chosen_move);
     let input = selected_policy_action_id
         .and_then(|action_id| policy_root_inputs.get(action_id.0).cloned())
         .unwrap_or_else(|| search_diag.chosen_move.clone());
