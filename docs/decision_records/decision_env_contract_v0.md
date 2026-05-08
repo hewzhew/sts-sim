@@ -17,7 +17,7 @@ The simulator must become a reproducible training platform instead of another pl
 - `TimeStep` contains versioned public observation, legal `ActionCandidate`s, reward event, terminal/truncation flags, and debug `info`.
 - `DecisionRecord` is the canonical versioned dataset row for behavior, teacher, model, human, and baseline decisions.
 - Offline teacher output belongs in `teacher_label`; it is not a live command path.
-- The initial FullRun adapter exposes a filtered public payload schema. Legacy heuristic fields such as planner scores, plan deltas, reward structure hints, and dominance markers remain available only through debug/audit paths.
+- The FullRun adapter exposes typed public observation/action payloads. Legacy heuristic fields such as planner scores, plan deltas, reward structure hints, and dominance markers remain available only through debug/audit paths.
 
 ## Non-Goals
 
@@ -42,9 +42,11 @@ This does not make `frontier_eval`, exact-turn search, verified teacher, or live
 - `tools/learning/audit_decision_record_teacher_quality.py` audits `DecisionRecord` JSONL and can fail before training if no eligible labels are present.
 - `tools/learning/audit_decision_record_contract.py` checks that records keep public observations public, keep behavior actions legal, and keep legacy heuristic keys out of public observation/candidate payloads.
 - `tools/learning/verify_decision_records_replay.py` replays `DecisionRecord` JSONL through the DecisionEnv commands and verifies state hashes, candidate lists, rewards, and terminal flags. It requires the same env config used during collection.
+- `full_run_env_driver` exposes `policy_input` for policy/live callers. It is constructed from public observation plus public action candidates and intentionally omits debug `info`, state hashes, and teacher labels.
+- Combat audit now labels current live combat baseline as `legacy_frontier_planner` / `legacy_frontier_fallback`; exact-turn and turn-option outputs are evidence/shadow unless a later policy layer consumes them through a separate contract.
 
 ## Next Work
 
-- Replace the filtered JSON public observation with typed public observation structs.
-- Split live policy input so it cannot read oracle/debug payloads by construction.
-- Move legacy combat planners and frontier heuristics behind explicitly named fallback/evidence interfaces.
+- Move live CommunicationMod decision code to consume `policy_input` rather than search/debug payloads.
+- Add offline evaluator/regret metrics over `DecisionRecord` + `TeacherDecisionLabel`.
+- Add candidate scorer/value training scripts that consume only `DecisionRecord`.

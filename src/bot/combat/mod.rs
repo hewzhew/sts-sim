@@ -44,6 +44,9 @@ use self::turn_option::{build_turn_option_evidence, unavailable_turn_option_evid
 use search::ExploredCandidate;
 use value::{diagnostic_score, incoming_damage, total_enemy_hp};
 
+const LEGACY_FRONTIER_PLANNER_ID: &str = "legacy_frontier_planner";
+const LEGACY_FRONTIER_FALLBACK_AUTHORITY: &str = "legacy_frontier_fallback";
+
 pub use audit::{
     audit_fixture, audit_state, build_fixture_from_reconstructed_step, extract_preference_samples,
     load_fixture_path, render_text_report, write_fixture_path, CombatPreferenceSample,
@@ -283,6 +286,7 @@ pub fn diagnose_root_search_with_depth_and_runtime_and_root_inputs(
             root_prior_reordered: false,
             top_moves: Vec::new(),
             decision_audit: json!({
+                "planner": LEGACY_FRONTIER_PLANNER_ID,
                 "regime": serde_json::Value::Null,
                 "frontier_outcome": serde_json::Value::Null,
                 "exact_turn_verdict": serde_json::Value::Null,
@@ -414,7 +418,7 @@ pub fn diagnose_root_search_with_depth_and_runtime_and_root_inputs(
             unavailable_turn_option_evidence("exact_turn_unavailable", &frontier_chosen_move)
         });
     let chosen_move = frontier_chosen_move.clone();
-    let chosen_by = "legacy_frontier_fallback";
+    let chosen_by = LEGACY_FRONTIER_FALLBACK_AUTHORITY;
     let mut decision_trace_audit = json!(exact_turn_shadow.decision_trace);
     if let Some(trace) = decision_trace_audit.as_object_mut() {
         trace.insert("chosen_by".to_string(), json!(chosen_by));
@@ -462,7 +466,7 @@ pub fn diagnose_root_search_with_depth_and_runtime_and_root_inputs(
         root_prior_reordered: false,
         top_moves,
         decision_audit: json!({
-            "planner": "combat_baseline",
+            "planner": LEGACY_FRONTIER_PLANNER_ID,
             "kind": "frontier_with_turn_option_evidence_v0",
             "chosen_by": chosen_by,
             "chosen_move": chosen_move_audit,
@@ -470,6 +474,14 @@ pub fn diagnose_root_search_with_depth_and_runtime_and_root_inputs(
             "turn_option_decision_role": "evidence_only",
             "turn_option_evidence_status": turn_option_evidence_status,
             "turn_option_evidence": turn_option_evidence.audit,
+            "legacy_frontier_pipeline": {
+                "regime": format!("{:?}", explored.regime).to_ascii_lowercase(),
+                "proposal_count": explored.proposal_count,
+                "screened_count": explored.screened_count,
+                "exact_adjudicated_count": explored.exact_adjudicated_count,
+                "proposal_class_counts": explored.proposal_class_counts,
+                "screened_out": explored.screened_out,
+            },
             "root_pipeline": {
                 "regime": format!("{:?}", explored.regime).to_ascii_lowercase(),
                 "proposal_count": explored.proposal_count,
