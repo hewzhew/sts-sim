@@ -17,6 +17,7 @@ pub struct NeutralPolicyRunnerConfig {
     pub max_branch_depth: u8,
     pub max_candidates: usize,
     pub require_strict_dominance: bool,
+    pub allow_resource_action_selection: bool,
 }
 
 impl Default for NeutralPolicyRunnerConfig {
@@ -25,6 +26,7 @@ impl Default for NeutralPolicyRunnerConfig {
             max_branch_depth: 1,
             max_candidates: 64,
             require_strict_dominance: true,
+            allow_resource_action_selection: false,
         }
     }
 }
@@ -52,6 +54,8 @@ pub struct CandidateEvaluation {
     pub enemies_killed: i32,
     pub energy_left: u8,
     pub truncated: bool,
+    pub resource_action: bool,
+    pub dominance_eligible: bool,
     pub dominance_score: i32,
 }
 
@@ -90,7 +94,7 @@ impl NeutralCompressedPolicyRunner {
             .enumerate()
             .map(|(idx, result)| result.to_search_evidence(format!("neutral_branch_effect_{idx}")))
             .collect::<Vec<_>>();
-        let evaluation = self.evaluate(&results, &groups);
+        let evaluation = self.evaluate(input, &results, &groups);
         let decision = self.decide(input, &evidence, &evaluation);
         DeliberationTrace::new(
             input,
@@ -165,12 +169,20 @@ impl NeutralCompressedPolicyRunner {
 
     fn evaluate(
         &self,
+        input: &PolicyInput,
         results: &[NeutralEngineQueryResult],
         groups: &[BranchEffectGroup],
     ) -> EvaluationTrace {
         let candidate_evaluations = results
             .iter()
             .map(|result| {
+                let resource_action = input
+                    .candidates
+                    .iter()
+                    .find(|candidate| candidate.id == result.action_id)
+                    .is_some_and(is_resource_action);
+                let dominance_eligible =
+                    !resource_action || self.config.allow_resource_action_selection;
                 let group_id = groups
                     .iter()
                     .find(|group| group.action_ids.contains(&result.action_id))
@@ -186,6 +198,8 @@ impl NeutralCompressedPolicyRunner {
                     enemies_killed: result.branch_effect.enemies_killed,
                     energy_left: result.branch_effect.energy_left,
                     truncated: result.truncated,
+                    resource_action,
+                    dominance_eligible,
                     dominance_score: dominance_score(result),
                 }
             })
@@ -307,7 +321,7 @@ fn dominance_score(result: &NeutralEngineQueryResult) -> i32 {
 fn select_by_strict_generic_dominance(evaluations: &[CandidateEvaluation]) -> Option<ActionId> {
     let mut viable = evaluations
         .iter()
-        .filter(|eval| !eval.player_dead && !eval.truncated)
+        .filter(|eval| !eval.player_dead && !eval.truncated && eval.dominance_eligible)
         .collect::<Vec<_>>();
     if viable.is_empty() {
         return None;
@@ -332,4 +346,14 @@ fn select_by_strict_generic_dominance(evaluations: &[CandidateEvaluation]) -> Op
         return None;
     }
     Some(best.action_id)
+}
+
+fn is_resource_action(
+    candidate: &crate::verification::decision_env::PublicActionCandidateView,
+) -> bool {
+    matches!(
+        candidate.action_kind.as_str(),
+        "use_potion" | "discard_potion"
+    ) || candidate.action_key.contains("/use_potion/")
+        || candidate.action_key.contains("/discard_potion/")
 }

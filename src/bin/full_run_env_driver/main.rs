@@ -45,6 +45,7 @@ enum DriverRequest {
         time_budget_ms: Option<u32>,
         max_branch_depth: Option<u8>,
         max_candidates: Option<usize>,
+        reference_action_id: Option<usize>,
     },
     Step {
         action_index: usize,
@@ -1433,6 +1434,7 @@ fn handle_request(session: &mut DriverSession, request: DriverRequest) -> Driver
             time_budget_ms,
             max_branch_depth,
             max_candidates,
+            reference_action_id,
         } => match session.env.as_mut() {
             Some(current) => {
                 let timestep = match DecisionEnv::current_timestep(current) {
@@ -1478,6 +1480,17 @@ fn handle_request(session: &mut DriverSession, request: DriverRequest) -> Driver
                     candidates,
                 );
                 let trace = runner.deliberate(&policy_input, &execution_context);
+                let paired_compare_vs_reference =
+                    trace.decision.selected_action_id.and_then(|selected| {
+                        let reference = ActionId(reference_action_id?);
+                        (selected != reference)
+                            .then(|| {
+                                runner
+                                    .query
+                                    .paired_compare(&execution_context, selected, reference)
+                            })
+                            .flatten()
+                    });
                 DriverResponse {
                     ok: true,
                     error: None,
@@ -1487,6 +1500,7 @@ fn handle_request(session: &mut DriverSession, request: DriverRequest) -> Driver
                         "policy_input": policy_input,
                         "trace": trace,
                         "summary": neutral_policy_trace_summary(&trace),
+                        "paired_compare_vs_reference": paired_compare_vs_reference,
                     })),
                     reward: None,
                     done: Some(current.info().result != "ongoing"),
@@ -3127,6 +3141,7 @@ mod tests {
                     time_budget_ms: Some(17),
                     max_branch_depth: Some(1),
                     max_candidates: Some(16),
+                    reference_action_id: None,
                 },
             );
             assert!(trace.ok);
@@ -3175,6 +3190,69 @@ mod tests {
             "neutral_branch_compression"
         );
         assert!(payload["summary"]["candidate_count"].as_u64().unwrap_or(0) > 0);
+    }
+
+    #[test]
+    fn driver_neutral_policy_trace_can_pair_compare_against_reference_action() {
+        let mut session = DriverSession::default();
+        let reset = DriverRequest::Reset {
+            seed: Some(8),
+            ascension: Some(0),
+            final_act: Some(false),
+            class: Some("ironclad".to_string()),
+            max_steps: Some(80),
+            reward_shaping_profile: Some("baseline".to_string()),
+        };
+        assert!(handle_request(&mut session, reset).ok);
+
+        let mut supported_trace = None;
+        for _ in 0..32 {
+            let trace = handle_request(
+                &mut session,
+                DriverRequest::NeutralPolicyTrace {
+                    time_budget_ms: Some(17),
+                    max_branch_depth: Some(1),
+                    max_candidates: Some(16),
+                    reference_action_id: Some(0),
+                },
+            );
+            assert!(trace.ok);
+            let payload = trace.payload.expect("neutral trace payload");
+            if payload["supported"].as_bool() == Some(true) {
+                supported_trace = Some(payload);
+                break;
+            }
+            let preview = handle_request(
+                &mut session,
+                DriverRequest::PreviewPolicyAction {
+                    policy: "rule_baseline_v0".to_string(),
+                    include_state: Some(false),
+                    include_next_state: Some(false),
+                    check_live_env_unchanged: Some(false),
+                },
+            );
+            assert!(preview.ok);
+            let Some(action_id) = preview
+                .payload
+                .as_ref()
+                .and_then(|payload| payload["chosen_action_index"].as_u64())
+            else {
+                break;
+            };
+            let step = handle_request(
+                &mut session,
+                DriverRequest::DecisionEnvStep {
+                    action_id: action_id as usize,
+                },
+            );
+            assert!(step.ok);
+            if step.done == Some(true) {
+                break;
+            }
+        }
+
+        let payload = supported_trace.expect("expected to reach a combat decision");
+        assert!(payload.get("paired_compare_vs_reference").is_some());
     }
 
     #[test]

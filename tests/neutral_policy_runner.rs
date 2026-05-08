@@ -76,10 +76,52 @@ fn policy_input(inputs: &[ClientInput]) -> PolicyInput {
                 action_key: format!("{input:?}"),
                 action_kind: match input {
                     ClientInput::PlayCard { .. } => "play_card",
+                    ClientInput::UsePotion { .. } => "use_potion",
                     ClientInput::EndTurn => "end_turn",
                     _ => "other",
                 }
                 .to_string(),
+                payload: serde_json::Value::Null,
+            })
+            .collect(),
+        reward: sts_simulator::verification::decision_env::RewardEvent {
+            schema_version: "reward_event_v0".to_string(),
+            scalar_reward: 0.0,
+            components: serde_json::Value::Null,
+        },
+        terminated: false,
+        truncated: false,
+        info: sts_simulator::verification::decision_env::StepInfo {
+            state_hash: String::new(),
+            payload: serde_json::Value::Null,
+        },
+    };
+    PolicyInput::from_timestep(&timestep, 100).unwrap()
+}
+
+fn policy_input_with_action_views(
+    inputs: &[ClientInput],
+    kinds: &[&str],
+    keys: &[&str],
+) -> PolicyInput {
+    let timestep = TimeStep {
+        contract_version: "decision_env_contract_v0".to_string(),
+        decision_id: decision_id(),
+        observation: ObservationPayload {
+            schema_version: "neutral_policy_test_public_obs_v0".to_string(),
+            visibility: ObservationVisibility::Public,
+            decision_type: "combat".to_string(),
+            payload: serde_json::json!({"fixture": "cultist_combat"}),
+        },
+        candidates: inputs
+            .iter()
+            .enumerate()
+            .map(|(index, _input)| ActionCandidate {
+                id: ActionId(index),
+                action_schema_version: "neutral_policy_test_action_v0".to_string(),
+                action_index: index,
+                action_key: keys[index].to_string(),
+                action_kind: kinds[index].to_string(),
                 payload: serde_json::Value::Null,
             })
             .collect(),
@@ -132,6 +174,47 @@ fn neutral_runner_uses_effect_groups_without_legacy_or_exact() {
             .map(Vec::len),
         Some(2)
     );
+}
+
+#[test]
+fn neutral_runner_keeps_resource_actions_as_evidence_not_selection() {
+    let inputs = vec![
+        ClientInput::UsePotion {
+            potion_index: 0,
+            target: Some(1),
+        },
+        ClientInput::PlayCard {
+            card_index: 0,
+            target: Some(1),
+        },
+    ];
+    let combat = cultist_combat();
+    let input = policy_input_with_action_views(
+        &inputs,
+        &["use_potion", "play_card"],
+        &[
+            "combat/use_potion/slot:0/target:monster_slot:0",
+            "combat/play_card/card:Strike/hand:0/target:monster_slot:0",
+        ],
+    );
+    let context = SearchExecutionContext::from_policy_input(
+        &input,
+        EngineState::CombatPlayerTurn,
+        combat,
+        inputs,
+    );
+    let runner = NeutralCompressedPolicyRunner::default();
+    let trace = runner.deliberate(&input, &context);
+    let evaluations = trace
+        .decision
+        .payload
+        .pointer("/candidate_evaluations")
+        .and_then(|value| value.as_array())
+        .expect("candidate evaluations");
+    assert_eq!(evaluations.len(), 2);
+    assert_eq!(evaluations[0]["resource_action"], true);
+    assert_eq!(evaluations[0]["dominance_eligible"], false);
+    assert_ne!(trace.decision.selected_action_id, Some(ActionId(0)));
 }
 
 #[test]

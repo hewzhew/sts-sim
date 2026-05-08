@@ -93,6 +93,26 @@ def update_summary(
                 summary["selected_agrees_with_behavior_count"] += 1
             else:
                 summary["selected_disagrees_with_behavior_count"] += 1
+                paired = trace_payload.get("paired_compare_vs_reference")
+                if paired is not None:
+                    summary["paired_compare_count"] += 1
+                    if paired.get("left_dead_right_alive"):
+                        summary["paired_left_dead_right_alive_count"] += 1
+                    if paired.get("left_alive_right_dead"):
+                        summary["paired_left_alive_right_dead_count"] += 1
+                    if paired.get("left_clears_right_not"):
+                        summary["paired_left_clears_right_not_count"] += 1
+                    if paired.get("right_clears_left_not"):
+                        summary["paired_right_clears_left_not_count"] += 1
+                    summary["paired_hp_lost_diff_sum"] += int(
+                        paired.get("hp_lost_diff_left_minus_right") or 0
+                    )
+                    summary["paired_enemy_removed_diff_sum"] += int(
+                        paired.get("enemy_removed_diff_left_minus_right") or 0
+                    )
+                    summary["paired_kill_diff_sum"] += int(
+                        paired.get("kill_diff_left_minus_right") or 0
+                    )
 
     for field in (
         "candidate_count",
@@ -139,14 +159,6 @@ def collect_episode(
     total_reward = 0.0
     final_info: dict[str, Any] | None = None
     while not done and records < max_steps:
-        trace = client.request(
-            {
-                "cmd": "neutral_policy_trace",
-                "time_budget_ms": time_budget_ms,
-                "max_branch_depth": max_branch_depth,
-                "max_candidates": max_candidates,
-            }
-        )["payload"]
         preview = client.request(
             {
                 "cmd": "preview_policy_action",
@@ -157,6 +169,15 @@ def collect_episode(
             }
         )["payload"]
         action_id = preview.get("chosen_action_index")
+        trace = client.request(
+            {
+                "cmd": "neutral_policy_trace",
+                "time_budget_ms": time_budget_ms,
+                "max_branch_depth": max_branch_depth,
+                "max_candidates": max_candidates,
+                "reference_action_id": action_id,
+            }
+        )["payload"]
         trace_record = {
             "schema_version": "neutral_policy_trace_record_v0",
             "seed": seed,
@@ -207,6 +228,14 @@ def finalize_summary(summary: dict[str, Any]) -> dict[str, Any]:
     summary["selected_disagreement_rate_with_behavior"] = (
         summary["selected_disagrees_with_behavior_count"] / selected
     )
+    paired = max(int(summary["paired_compare_count"]), 1)
+    summary["paired_avg_hp_lost_diff_left_minus_behavior"] = (
+        summary["paired_hp_lost_diff_sum"] / paired
+    )
+    summary["paired_avg_enemy_removed_diff_left_minus_behavior"] = (
+        summary["paired_enemy_removed_diff_sum"] / paired
+    )
+    summary["paired_avg_kill_diff_left_minus_behavior"] = summary["paired_kill_diff_sum"] / paired
     return summary
 
 
@@ -246,6 +275,14 @@ def main() -> int:
         "selected_count": 0,
         "selected_agrees_with_behavior_count": 0,
         "selected_disagrees_with_behavior_count": 0,
+        "paired_compare_count": 0,
+        "paired_left_dead_right_alive_count": 0,
+        "paired_left_alive_right_dead_count": 0,
+        "paired_left_clears_right_not_count": 0,
+        "paired_right_clears_left_not_count": 0,
+        "paired_hp_lost_diff_sum": 0,
+        "paired_enemy_removed_diff_sum": 0,
+        "paired_kill_diff_sum": 0,
         "unsupported_reasons": Counter(),
         "mode_counts": Counter(),
         "episodes": [],
