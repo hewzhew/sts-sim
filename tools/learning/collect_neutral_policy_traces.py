@@ -64,7 +64,11 @@ class DriverClient:
             self.proc.terminate()
 
 
-def update_summary(summary: dict[str, Any], trace_payload: dict[str, Any]) -> None:
+def update_summary(
+    summary: dict[str, Any],
+    trace_payload: dict[str, Any],
+    behavior_action_id: int | None,
+) -> None:
     summary["decision_count"] += 1
     supported = bool(trace_payload.get("supported"))
     if not supported:
@@ -83,6 +87,12 @@ def update_summary(summary: dict[str, Any], trace_payload: dict[str, Any]) -> No
         summary["fallback_count"] += 1
     else:
         summary["selected_count"] += 1
+        selected_action_id = trace_summary.get("selected_action_id")
+        if selected_action_id is not None and behavior_action_id is not None:
+            if int(selected_action_id) == int(behavior_action_id):
+                summary["selected_agrees_with_behavior_count"] += 1
+            else:
+                summary["selected_disagrees_with_behavior_count"] += 1
 
     for field in (
         "candidate_count",
@@ -137,16 +147,6 @@ def collect_episode(
                 "max_candidates": max_candidates,
             }
         )["payload"]
-        trace_record = {
-            "schema_version": "neutral_policy_trace_record_v0",
-            "seed": seed,
-            "episode_step": records,
-            "trace": trace,
-        }
-        out.write(json.dumps(trace_record, separators=(",", ":")) + "\n")
-        update_summary(summary, trace)
-        records += 1
-
         preview = client.request(
             {
                 "cmd": "preview_policy_action",
@@ -157,6 +157,19 @@ def collect_episode(
             }
         )["payload"]
         action_id = preview.get("chosen_action_index")
+        trace_record = {
+            "schema_version": "neutral_policy_trace_record_v0",
+            "seed": seed,
+            "episode_step": records,
+            "behavior_policy": policy,
+            "behavior_action_id": action_id,
+            "behavior_action_key": preview.get("chosen_action_key"),
+            "trace": trace,
+        }
+        out.write(json.dumps(trace_record, separators=(",", ":")) + "\n")
+        update_summary(summary, trace, action_id)
+        records += 1
+
         if action_id is None:
             break
         step = client.request({"cmd": "decision_env_step", "action_id": action_id})
@@ -187,6 +200,13 @@ def finalize_summary(summary: dict[str, Any]) -> dict[str, Any]:
         summary[f"avg_{field}"] = summary[f"total_{field}"] / supported
     summary["fallback_rate_supported"] = summary["fallback_count"] / supported
     summary["selected_rate_supported"] = summary["selected_count"] / supported
+    selected = max(int(summary["selected_count"]), 1)
+    summary["selected_agreement_rate_with_behavior"] = (
+        summary["selected_agrees_with_behavior_count"] / selected
+    )
+    summary["selected_disagreement_rate_with_behavior"] = (
+        summary["selected_disagrees_with_behavior_count"] / selected
+    )
     return summary
 
 
@@ -224,6 +244,8 @@ def main() -> int:
         "unsupported_count": 0,
         "fallback_count": 0,
         "selected_count": 0,
+        "selected_agrees_with_behavior_count": 0,
+        "selected_disagrees_with_behavior_count": 0,
         "unsupported_reasons": Counter(),
         "mode_counts": Counter(),
         "episodes": [],
