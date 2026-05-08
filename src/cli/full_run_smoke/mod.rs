@@ -35,6 +35,7 @@ pub use types::*;
 mod actions;
 mod batch;
 mod bot;
+mod decision_env;
 mod features;
 mod observation;
 mod reward;

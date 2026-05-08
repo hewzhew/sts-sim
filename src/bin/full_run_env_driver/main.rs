@@ -16,6 +16,9 @@ use sts_simulator::cli::full_run_smoke::{
     FullRunEnv, FullRunEnvConfig, FullRunEnvInfo, FullRunEnvState, RewardShapingProfile,
     RunActionCandidate, RunPolicyKind,
 };
+use sts_simulator::verification::decision_env::{
+    ActionId, DecisionEnv, DecisionRecord, DecisionRecordContext,
+};
 
 #[derive(Debug, Deserialize)]
 #[serde(tag = "cmd", rename_all = "snake_case")]
@@ -30,8 +33,18 @@ enum DriverRequest {
         reward_shaping_profile: Option<String>,
     },
     Observation,
+    DecisionEnvObservation,
     Step {
         action_index: usize,
+    },
+    DecisionEnvStep {
+        action_id: usize,
+    },
+    DecisionRecordStep {
+        action_id: usize,
+        sim_version: Option<String>,
+        return_spec_version: Option<String>,
+        context: Option<Value>,
     },
     StepPolicy {
         policy: String,
@@ -1358,6 +1371,24 @@ fn handle_request(session: &mut DriverSession, request: DriverRequest) -> Driver
             },
             None => error_response("full-run env not initialized; send reset first".to_string()),
         },
+        DriverRequest::DecisionEnvObservation => match session.env.as_mut() {
+            Some(current) => match DecisionEnv::current_timestep(current) {
+                Ok(timestep) => DriverResponse {
+                    ok: true,
+                    error: None,
+                    payload: Some(
+                        serde_json::to_value(timestep)
+                            .expect("decision env timestep should serialize"),
+                    ),
+                    reward: None,
+                    done: Some(current.info().result != "ongoing"),
+                    chosen_action_key: None,
+                    info: Some(current.info()),
+                },
+                Err(err) => error_response(err.to_string()),
+            },
+            None => error_response("full-run env not initialized; send reset first".to_string()),
+        },
         DriverRequest::Step { action_index } => match session.env.as_mut() {
             Some(current) => match current.step(action_index) {
                 Ok(step) => DriverResponse {
@@ -1371,6 +1402,79 @@ fn handle_request(session: &mut DriverSession, request: DriverRequest) -> Driver
                 },
                 Err(err) => error_response(err),
             },
+            None => error_response("full-run env not initialized; send reset first".to_string()),
+        },
+        DriverRequest::DecisionEnvStep { action_id } => match session.env.as_mut() {
+            Some(current) => match DecisionEnv::step(current, ActionId(action_id)) {
+                Ok(timestep) => {
+                    let reward = timestep.reward.scalar_reward;
+                    let done = timestep.terminated || timestep.truncated;
+                    let chosen_action_key = timestep
+                        .reward
+                        .components
+                        .get("chosen_action_key")
+                        .and_then(|value| value.as_str())
+                        .map(str::to_string);
+                    DriverResponse {
+                        ok: true,
+                        error: None,
+                        reward: Some(reward),
+                        done: Some(done),
+                        chosen_action_key,
+                        info: Some(current.info()),
+                        payload: Some(
+                            serde_json::to_value(timestep)
+                                .expect("decision env timestep should serialize"),
+                        ),
+                    }
+                }
+                Err(err) => error_response(err.to_string()),
+            },
+            None => error_response("full-run env not initialized; send reset first".to_string()),
+        },
+        DriverRequest::DecisionRecordStep {
+            action_id,
+            sim_version,
+            return_spec_version,
+            context,
+        } => match session.env.as_mut() {
+            Some(current) => {
+                let seed = current.info().seed;
+                let decision = match DecisionEnv::current_timestep(current) {
+                    Ok(timestep) => timestep,
+                    Err(err) => return error_response(err.to_string()),
+                };
+                let outcome = match DecisionEnv::step(current, ActionId(action_id)) {
+                    Ok(timestep) => timestep,
+                    Err(err) => return error_response(err.to_string()),
+                };
+                let mut record_context = DecisionRecordContext::new(
+                    sim_version.unwrap_or_else(|| "full_run_env".to_string()),
+                    return_spec_version.unwrap_or_else(|| "driver_reward_v0".to_string()),
+                    seed,
+                );
+                record_context.behavior_action = Some(ActionId(action_id));
+                record_context.info =
+                    context.unwrap_or_else(|| json!({"source": "full_run_env_driver"}));
+                let record =
+                    DecisionRecord::from_decision_and_outcome(&decision, &outcome, record_context);
+                DriverResponse {
+                    ok: true,
+                    error: None,
+                    reward: Some(record.reward_since_prev.scalar_reward),
+                    done: Some(record.terminated || record.truncated),
+                    chosen_action_key: record
+                        .reward_since_prev
+                        .components
+                        .get("chosen_action_key")
+                        .and_then(|value| value.as_str())
+                        .map(str::to_string),
+                    info: Some(current.info()),
+                    payload: Some(
+                        serde_json::to_value(record).expect("decision record should serialize"),
+                    ),
+                }
+            }
             None => error_response("full-run env not initialized; send reset first".to_string()),
         },
         DriverRequest::StepPolicy { policy } => {
@@ -2465,5 +2569,95 @@ mod tests {
         assert!(payload.next_state.is_none());
         assert!(payload.chosen_action_index.is_some());
         assert!(payload.chosen_action_key.is_some());
+    }
+
+    #[test]
+    fn driver_exposes_decision_env_timestep_commands() {
+        let mut session = DriverSession::default();
+        let reset = DriverRequest::Reset {
+            seed: Some(3),
+            ascension: Some(0),
+            final_act: Some(false),
+            class: Some("ironclad".to_string()),
+            max_steps: Some(80),
+            reward_shaping_profile: Some("baseline".to_string()),
+        };
+        assert!(handle_request(&mut session, reset).ok);
+
+        let observation = handle_request(&mut session, DriverRequest::DecisionEnvObservation);
+        assert!(observation.ok);
+        let observation_payload = observation.payload.expect("timestep payload");
+        assert_eq!(
+            observation_payload["contract_version"],
+            "decision_env_contract_v0"
+        );
+        assert_eq!(observation_payload["observation"]["visibility"], "public");
+        let first_action_id = observation_payload["candidates"][0]["id"]
+            .as_u64()
+            .expect("candidate action id") as usize;
+
+        let stepped = handle_request(
+            &mut session,
+            DriverRequest::DecisionEnvStep {
+                action_id: first_action_id,
+            },
+        );
+        assert!(stepped.ok);
+        let stepped_payload = stepped.payload.expect("stepped timestep payload");
+        assert_eq!(
+            stepped_payload["contract_version"],
+            "decision_env_contract_v0"
+        );
+        assert_eq!(
+            stepped.reward.expect("driver reward"),
+            stepped_payload["reward"]["scalar_reward"]
+                .as_f64()
+                .expect("payload reward") as f32
+        );
+        assert_eq!(
+            stepped.done.expect("driver done"),
+            stepped_payload["terminated"].as_bool().unwrap()
+                || stepped_payload["truncated"].as_bool().unwrap()
+        );
+    }
+
+    #[test]
+    fn driver_emits_versioned_decision_record_step() {
+        let mut session = DriverSession::default();
+        let reset = DriverRequest::Reset {
+            seed: Some(5),
+            ascension: Some(0),
+            final_act: Some(false),
+            class: Some("ironclad".to_string()),
+            max_steps: Some(80),
+            reward_shaping_profile: Some("baseline".to_string()),
+        };
+        assert!(handle_request(&mut session, reset).ok);
+
+        let record_response = handle_request(
+            &mut session,
+            DriverRequest::DecisionRecordStep {
+                action_id: 0,
+                sim_version: Some("test_sim".to_string()),
+                return_spec_version: Some("test_return".to_string()),
+                context: Some(json!({"collector": "driver_test"})),
+            },
+        );
+
+        assert!(record_response.ok);
+        let record = record_response.payload.expect("record payload");
+        assert_eq!(record["schema_version"], "decision_record_v0");
+        assert_eq!(record["sim_version"], "test_sim");
+        assert_eq!(record["return_spec_version"], "test_return");
+        assert_eq!(record["behavior_action"], 0);
+        assert!(record["state_hash_before"].is_string());
+        assert!(record["state_hash_after"].is_string());
+        assert_eq!(record["info"]["record_context"]["collector"], "driver_test");
+        assert_eq!(
+            record_response.reward.expect("driver reward"),
+            record["reward_since_prev"]["scalar_reward"]
+                .as_f64()
+                .expect("record reward") as f32
+        );
     }
 }
