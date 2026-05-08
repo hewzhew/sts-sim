@@ -87,6 +87,7 @@ enum DriverRequest {
         evidence_gate: Option<String>,
         low_evidence_margin: Option<f32>,
         confirm_low_evidence_horizon_decisions: Option<usize>,
+        confirm_low_evidence_horizon_mode: Option<String>,
         confirm_low_evidence_margin: Option<f32>,
     },
     RunVerifiedAdvOverrideBatch {
@@ -120,6 +121,7 @@ enum DriverRequest {
         evidence_gate: Option<String>,
         low_evidence_margin: Option<f32>,
         confirm_low_evidence_horizon_decisions: Option<usize>,
+        confirm_low_evidence_horizon_mode: Option<String>,
         confirm_low_evidence_margin: Option<f32>,
         summary_only: Option<bool>,
     },
@@ -240,6 +242,7 @@ struct VerifiedAdvOverrideRunConfigPayload {
     evidence_gate: String,
     low_evidence_margin: Option<f32>,
     confirm_low_evidence_horizon_decisions: Option<usize>,
+    confirm_low_evidence_horizon_mode: Option<String>,
     confirm_low_evidence_margin: Option<f32>,
     evaluation_mode: String,
     value_cache_scope: String,
@@ -288,6 +291,11 @@ struct VerifiedAdvOverridePolicySummary {
     verified_confirm_reject_count: usize,
     verified_confirm_candidate_evaluation_count: usize,
     verified_confirm_policy_step_eval_count: usize,
+    verified_artifact_confirm_decision_count: usize,
+    verified_artifact_confirm_accept_count: usize,
+    verified_artifact_confirm_reject_count: usize,
+    verified_artifact_confirm_candidate_evaluation_count: usize,
+    verified_artifact_confirm_policy_step_eval_count: usize,
     verified_decision_type_counts: BTreeMap<String, usize>,
     verified_override_decision_type_counts: BTreeMap<String, usize>,
     verified_decision_context_counts: BTreeMap<String, usize>,
@@ -296,6 +304,7 @@ struct VerifiedAdvOverridePolicySummary {
     verified_horizon_stop_reason_counts: BTreeMap<String, usize>,
     verified_payoff_reason_counts: BTreeMap<String, usize>,
     verified_override_payoff_reason_counts: BTreeMap<String, usize>,
+    verified_horizon_artifact_reason_counts: BTreeMap<String, usize>,
     verified_missing_counts: BTreeMap<String, usize>,
     verified_cached_root_candidate_count: usize,
     verified_cached_root_exact_dedup_count: usize,
@@ -363,6 +372,11 @@ struct VerifiedAdvOverrideStatsPayload {
     verified_confirm_reject_count: usize,
     verified_confirm_candidate_evaluation_count: usize,
     verified_confirm_policy_step_eval_count: usize,
+    verified_artifact_confirm_decision_count: usize,
+    verified_artifact_confirm_accept_count: usize,
+    verified_artifact_confirm_reject_count: usize,
+    verified_artifact_confirm_candidate_evaluation_count: usize,
+    verified_artifact_confirm_policy_step_eval_count: usize,
     verified_min_adv_on_overrides: Option<f32>,
     verified_max_adv_on_overrides: Option<f32>,
     verified_decision_type_counts: BTreeMap<String, usize>,
@@ -373,6 +387,7 @@ struct VerifiedAdvOverrideStatsPayload {
     verified_horizon_stop_reason_counts: BTreeMap<String, usize>,
     verified_payoff_reason_counts: BTreeMap<String, usize>,
     verified_override_payoff_reason_counts: BTreeMap<String, usize>,
+    verified_horizon_artifact_reason_counts: BTreeMap<String, usize>,
     verified_missing_counts: BTreeMap<String, usize>,
     verified_cached_root_candidate_count: usize,
     verified_cached_root_exact_dedup_count: usize,
@@ -408,6 +423,8 @@ struct VerifiedOverrideEvent {
     horizon_mode: String,
     horizon_stop_reason: Option<String>,
     payoff_reasons: Vec<String>,
+    confirmation_kind: Option<String>,
+    artifact_reasons: Vec<String>,
     scoped_candidate_count: usize,
     evaluated_candidate_count: usize,
     policy_step_eval_count: usize,
@@ -438,6 +455,11 @@ struct VerifiedAdvOverrideStats {
     confirm_reject_count: usize,
     confirm_candidate_evaluation_count: usize,
     confirm_policy_step_eval_count: usize,
+    artifact_confirm_decision_count: usize,
+    artifact_confirm_accept_count: usize,
+    artifact_confirm_reject_count: usize,
+    artifact_confirm_candidate_evaluation_count: usize,
+    artifact_confirm_policy_step_eval_count: usize,
     decision_type_counts: BTreeMap<String, usize>,
     override_decision_type_counts: BTreeMap<String, usize>,
     decision_context_counts: BTreeMap<String, usize>,
@@ -446,6 +468,7 @@ struct VerifiedAdvOverrideStats {
     horizon_stop_reason_counts: BTreeMap<String, usize>,
     payoff_reason_counts: BTreeMap<String, usize>,
     override_payoff_reason_counts: BTreeMap<String, usize>,
+    horizon_artifact_reason_counts: BTreeMap<String, usize>,
     missing_counts: BTreeMap<String, usize>,
     cached_root_candidate_count: usize,
     cached_root_exact_dedup_count: usize,
@@ -554,6 +577,7 @@ enum HorizonMode {
     FixedDecisions,
     AdaptiveNextPlayerTurnV1,
     AdaptivePayoffWindowV1,
+    CombatEndV1,
 }
 
 impl HorizonMode {
@@ -566,8 +590,9 @@ impl HorizonMode {
             "adaptive_payoff_window_v1" | "payoff_window_v1" => {
                 Ok(Self::AdaptivePayoffWindowV1)
             }
+            "combat_end_v1" | "combat_end" => Ok(Self::CombatEndV1),
             other => Err(format!(
-                "unsupported horizon_mode '{other}'; expected fixed_decisions, adaptive_next_player_turn_v1, or adaptive_payoff_window_v1"
+                "unsupported horizon_mode '{other}'; expected fixed_decisions, adaptive_next_player_turn_v1, adaptive_payoff_window_v1, or combat_end_v1"
             )),
         }
     }
@@ -577,6 +602,7 @@ impl HorizonMode {
             Self::FixedDecisions => "fixed_decisions",
             Self::AdaptiveNextPlayerTurnV1 => "adaptive_next_player_turn_v1",
             Self::AdaptivePayoffWindowV1 => "adaptive_payoff_window_v1",
+            Self::CombatEndV1 => "combat_end_v1",
         }
     }
 }
@@ -669,6 +695,7 @@ struct VerifiedAdvOverrideOptions {
 #[derive(Clone, Copy)]
 struct LowEvidenceConfirmationOptions {
     horizon_decisions: usize,
+    horizon_mode: HorizonMode,
     margin: f32,
 }
 
@@ -1512,6 +1539,7 @@ fn handle_request(session: &mut DriverSession, request: DriverRequest) -> Driver
             evidence_gate,
             low_evidence_margin,
             confirm_low_evidence_horizon_decisions,
+            confirm_low_evidence_horizon_mode,
             confirm_low_evidence_margin,
         } => {
             let config = match build_env_config(
@@ -1542,6 +1570,7 @@ fn handle_request(session: &mut DriverSession, request: DriverRequest) -> Driver
                 evidence_gate.as_deref(),
                 low_evidence_margin,
                 confirm_low_evidence_horizon_decisions,
+                confirm_low_evidence_horizon_mode.as_deref(),
                 confirm_low_evidence_margin,
                 gamma,
                 evaluation_mode.as_deref(),
@@ -1600,6 +1629,7 @@ fn handle_request(session: &mut DriverSession, request: DriverRequest) -> Driver
             evidence_gate,
             low_evidence_margin,
             confirm_low_evidence_horizon_decisions,
+            confirm_low_evidence_horizon_mode,
             confirm_low_evidence_margin,
             summary_only,
         } => {
@@ -1622,6 +1652,7 @@ fn handle_request(session: &mut DriverSession, request: DriverRequest) -> Driver
                 evidence_gate.as_deref(),
                 low_evidence_margin,
                 confirm_low_evidence_horizon_decisions,
+                confirm_low_evidence_horizon_mode.as_deref(),
                 confirm_low_evidence_margin,
                 gamma,
                 evaluation_mode.as_deref(),
@@ -1778,6 +1809,7 @@ fn build_verified_options(
     evidence_gate: Option<&str>,
     low_evidence_margin: Option<f32>,
     confirm_low_evidence_horizon_decisions: Option<usize>,
+    confirm_low_evidence_horizon_mode: Option<&str>,
     confirm_low_evidence_margin: Option<f32>,
     gamma: f32,
     evaluation_mode: Option<&str>,
@@ -1818,11 +1850,22 @@ fn build_verified_options(
     if strategy == VerifiedStrategy::ModelProposerV1 && proposer.is_none() {
         return Err("model_proposer_v1 requires proposer_model_path".to_string());
     }
+    let parsed_horizon_mode = HorizonMode::parse(horizon_mode)?;
+    let confirm_low_evidence = match confirm_low_evidence_horizon_decisions {
+        Some(horizon_decisions) => Some(LowEvidenceConfirmationOptions {
+            horizon_decisions,
+            horizon_mode: HorizonMode::parse(confirm_low_evidence_horizon_mode.or(horizon_mode))?,
+            margin: confirm_low_evidence_margin
+                .unwrap_or(oracle_margin)
+                .max(oracle_margin),
+        }),
+        None => None,
+    };
     Ok(VerifiedAdvOverrideOptions {
         candidate_scope: CandidateScope::parse(candidate_scope)?,
         continuation_policy: normalize_policy(continuation_policy.unwrap_or("rule_baseline_v0"))?,
         horizon_decisions,
-        horizon_mode: HorizonMode::parse(horizon_mode)?,
+        horizon_mode: parsed_horizon_mode,
         oracle_margin,
         strategy,
         prefilter_horizon_decisions: prefilter_horizon_decisions.unwrap_or(horizon_decisions),
@@ -1833,14 +1876,7 @@ fn build_verified_options(
         gamma,
         evidence_gate,
         low_evidence_margin: low_evidence_margin.filter(|value| *value > oracle_margin),
-        confirm_low_evidence: confirm_low_evidence_horizon_decisions.map(|horizon_decisions| {
-            LowEvidenceConfirmationOptions {
-                horizon_decisions,
-                margin: confirm_low_evidence_margin
-                    .unwrap_or(oracle_margin)
-                    .max(oracle_margin),
-            }
-        }),
+        confirm_low_evidence,
         runtime: EvaluationRuntimeOptions {
             mode: EvaluationMode::parse(evaluation_mode)?,
             cache_scope: ValueCacheScope::parse(value_cache_scope)?,

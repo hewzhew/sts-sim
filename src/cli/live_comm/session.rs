@@ -485,6 +485,7 @@ impl LiveCommSession {
                 self.config.parity_mode,
                 self.config.combat_mode,
                 self.config.exact_turn_mode,
+                self.config.verified_teacher_mode,
                 self.config.fail_fast_debug,
                 self.config.combat_search_budget,
                 self.config.legacy_root_legal_moves,

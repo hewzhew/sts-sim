@@ -1,7 +1,7 @@
 use serde::Serialize;
 
 use crate::content::cards::{self, CardType};
-use crate::runtime::combat::CombatState;
+use crate::runtime::combat::{CombatState, Power};
 use crate::state::core::ClientInput;
 use crate::state::EngineState;
 
@@ -151,11 +151,13 @@ pub(crate) struct ProposalTrace {
     pub reasons: Vec<String>,
 }
 
-#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, Serialize, PartialEq, Eq)]
 pub(crate) struct ResourceDeltaSummary {
     pub spent_potions: u8,
     pub hp_lost: i32,
     pub exhausted_cards: u16,
+    pub enemy_buff_delta: i32,
+    pub enemy_total: i32,
     pub final_hp: i32,
     pub final_block: i32,
 }
@@ -258,22 +260,12 @@ pub(crate) fn frontier_outcome_from_candidate(
     combat_before: &CombatState,
     candidate: &CombatCandidate,
 ) -> DecisionOutcome {
-    let exhausted_delta = candidate
-        .next_combat
-        .zones
-        .exhaust_pile
-        .len()
-        .saturating_sub(combat_before.zones.exhaust_pile.len());
     let resources = TurnResourceSummary::at_frontier(
         candidate.frontier_combat.entities.player.current_hp,
-        candidate.frontier_combat.entities.player.block,
+        effective_final_block(&candidate.frontier_combat),
     )
-    .with_transition(
-        &candidate.input,
-        combat_before.entities.player.current_hp,
-        candidate.next_combat.entities.player.current_hp,
-        exhausted_delta,
-    );
+    .with_transition(&candidate.input, combat_before, &candidate.next_combat)
+    .with_enemy_buff_delta_from(combat_before, &candidate.frontier_combat);
     outcome_from_frontier_state(
         &candidate.frontier_engine,
         &candidate.frontier_combat,
@@ -299,7 +291,16 @@ pub(crate) fn compare_decision_outcomes(
         .cmp(&right.survival)
         .then_with(|| left.position.cmp(&right.position))
         .then_with(|| left.terminality.cmp(&right.terminality))
-        .then_with(|| compare_resource_delta(&left.resource_delta, &right.resource_delta))
+        .then_with(|| {
+            compare_resource_delta(
+                &left.resource_delta,
+                &right.resource_delta,
+                left.survival,
+                right.survival,
+                left.terminality,
+                right.terminality,
+            )
+        })
         .then_with(|| {
             left.efficiency_score
                 .partial_cmp(&right.efficiency_score)
@@ -426,6 +427,12 @@ pub(crate) fn exact_turn_takeover_policy(
         .best_first_input
         .as_ref()
         .is_some_and(|input| input != chosen_move);
+    let exact_best_is_potion = solution.best_first_input.as_ref().is_some_and(|input| {
+        matches!(
+            input,
+            ClientInput::UsePotion { .. } | ClientInput::DiscardPotion(_)
+        )
+    });
     let allow_pending_choice_takeover = matches!(engine, EngineState::PendingChoice(_));
 
     let mut reasons = Vec::new();
@@ -439,6 +446,9 @@ pub(crate) fn exact_turn_takeover_policy(
     } else if !exact_disagrees {
         reasons.push("frontier_agrees".to_string());
         "frontier_agrees"
+    } else if flags.forbid_potion_exact_takeover && exact_best_is_potion {
+        reasons.push("potion_exact_takeover_forbidden".to_string());
+        "potion_exact_takeover_forbidden"
     } else if flags.forbid_idle_end_turn_when_exact_prefers_play
         && matches!(chosen_move, ClientInput::EndTurn)
         && solution
@@ -466,6 +476,16 @@ pub(crate) fn exact_turn_takeover_policy(
                 takeover = solution.best_first_input.clone();
                 reasons.push("survival_upgrade".to_string());
                 "fragile_survival_upgrade"
+            }
+            CombatRegime::Fragile
+                if flags.fragile_strict_dominance_takeover
+                    && matches!(verdict.dominance, DominanceClaim::StrictlyBetterInWindow)
+                    && matches!(verdict.confidence, ExactnessLevel::Exact)
+                    && !solution.truncated =>
+            {
+                takeover = solution.best_first_input.clone();
+                reasons.push("fragile_strict_dominance".to_string());
+                "fragile_strict_dominance"
             }
             CombatRegime::Crisis => {
                 reasons.push("crisis_without_strict_dominance".to_string());
@@ -586,6 +606,8 @@ fn outcome_from_frontier_state(
             spent_potions: resources.spent_potions,
             hp_lost: resources.hp_lost,
             exhausted_cards: resources.exhausted_cards,
+            enemy_buff_delta: resources.enemy_buff_delta,
+            enemy_total: total_enemy_hp(combat),
             final_hp: resources.final_hp,
             final_block: resources.final_block,
         },
@@ -678,25 +700,86 @@ fn efficiency_score(
         TerminalForecast::TimeoutUnknown => 0.0,
         TerminalForecast::DiesInWindow => -50.0,
     };
-    terminal_bonus + resources.final_hp as f32 * 0.6 + resources.final_block as f32 * 0.2
+    let final_block_value = if matches!(terminality, TerminalForecast::LethalWin) {
+        0.0
+    } else {
+        resources.final_block as f32 * 0.2
+    };
+    terminal_bonus
+        + resources.final_hp as f32 * 0.6
+        + final_block_value
+        + player_buff_score(combat) as f32 * 1.0
+        + enemy_debuff_score(combat) as f32 * 0.8
+        - player_debuff_score(combat) as f32 * 0.8
         - pressure.unblocked as f32 * 2.0
         - enemy_total * 0.12
         - posture.future_pollution_risk as f32 * 0.8
+        - resources.enemy_buff_delta as f32 * 1.4
         - resources.spent_potions as f32 * 4.0
         - resources.hp_lost as f32 * 0.5
         - resources.exhausted_cards as f32 * 0.25
 }
 
+fn effective_final_block(combat: &CombatState) -> i32 {
+    combat.entities.player.block.min(
+        StatePressureFeatures::from_combat(combat)
+            .value_incoming
+            .max(0),
+    )
+}
+
 fn compare_resource_delta(
     left: &ResourceDeltaSummary,
     right: &ResourceDeltaSummary,
+    left_survival: SurvivalJudgement,
+    right_survival: SurvivalJudgement,
+    left_terminality: TerminalForecast,
+    right_terminality: TerminalForecast,
 ) -> std::cmp::Ordering {
-    left.final_hp
-        .cmp(&right.final_hp)
-        .then_with(|| left.final_block.cmp(&right.final_block))
-        .then_with(|| right.spent_potions.cmp(&left.spent_potions))
-        .then_with(|| right.hp_lost.cmp(&left.hp_lost))
-        .then_with(|| right.exhausted_cards.cmp(&left.exhausted_cards))
+    let progress_first = matches!(
+        (left_survival, right_survival),
+        (SurvivalJudgement::Safe, SurvivalJudgement::Safe)
+    ) && matches!(
+        (left_terminality, right_terminality),
+        (
+            TerminalForecast::SurvivesWindow,
+            TerminalForecast::SurvivesWindow
+        )
+    );
+    if progress_first {
+        right
+            .enemy_total
+            .cmp(&left.enemy_total)
+            .then_with(|| left.final_hp.cmp(&right.final_hp))
+            .then_with(|| right.enemy_buff_delta.cmp(&left.enemy_buff_delta))
+            .then_with(|| {
+                resource_block_tiebreak(left, left_terminality)
+                    .cmp(&resource_block_tiebreak(right, right_terminality))
+            })
+            .then_with(|| right.spent_potions.cmp(&left.spent_potions))
+            .then_with(|| right.hp_lost.cmp(&left.hp_lost))
+            .then_with(|| right.exhausted_cards.cmp(&left.exhausted_cards))
+    } else {
+        left.final_hp
+            .cmp(&right.final_hp)
+            .then_with(|| right.enemy_buff_delta.cmp(&left.enemy_buff_delta))
+            .then_with(|| right.enemy_total.cmp(&left.enemy_total))
+            .then_with(|| {
+                resource_block_tiebreak(left, left_terminality)
+                    .cmp(&resource_block_tiebreak(right, right_terminality))
+            })
+            .then_with(|| right.spent_potions.cmp(&left.spent_potions))
+            .then_with(|| right.hp_lost.cmp(&left.hp_lost))
+            .then_with(|| right.exhausted_cards.cmp(&left.exhausted_cards))
+    }
+}
+
+fn resource_block_tiebreak(resources: &ResourceDeltaSummary, terminality: TerminalForecast) -> i32 {
+    if matches!(terminality, TerminalForecast::LethalWin) {
+        0
+    } else {
+        resources.final_block
+    }
 }
 
 fn lethal_window_for_state(combat: &CombatState) -> Option<LethalWindow> {
@@ -720,6 +803,54 @@ fn total_enemy_hp(combat: &CombatState) -> i32 {
         .filter(|monster| !monster.is_dying && !monster.is_escaped && monster.current_hp > 0)
         .map(|monster| monster.current_hp + monster.block)
         .sum()
+}
+
+fn player_buff_score(combat: &CombatState) -> i32 {
+    combat.entities.power_db.get(&0).map_or(0, |powers| {
+        powers
+            .iter()
+            .filter(|power| !crate::content::powers::is_debuff(power.power_type, power.amount))
+            .map(generic_power_magnitude)
+            .sum()
+    })
+}
+
+fn player_debuff_score(combat: &CombatState) -> i32 {
+    combat.entities.power_db.get(&0).map_or(0, |powers| {
+        powers
+            .iter()
+            .filter(|power| crate::content::powers::is_debuff(power.power_type, power.amount))
+            .map(generic_power_magnitude)
+            .sum()
+    })
+}
+
+fn enemy_debuff_score(combat: &CombatState) -> i32 {
+    combat
+        .entities
+        .monsters
+        .iter()
+        .filter(|monster| !monster.is_dying && !monster.is_escaped && !monster.half_dead)
+        .map(|monster| {
+            combat
+                .entities
+                .power_db
+                .get(&monster.id)
+                .map_or(0, |powers| {
+                    powers
+                        .iter()
+                        .filter(|power| {
+                            crate::content::powers::is_debuff(power.power_type, power.amount)
+                        })
+                        .map(generic_power_magnitude)
+                        .sum()
+                })
+        })
+        .sum()
+}
+
+fn generic_power_magnitude(power: &Power) -> i32 {
+    power.amount.abs().clamp(1, 8)
 }
 
 fn living_monster_count(combat: &CombatState) -> usize {
@@ -784,6 +915,8 @@ mod tests {
                 spent_potions: 0,
                 hp_lost: 0,
                 exhausted_cards: 0,
+                enemy_buff_delta: 0,
+                enemy_total: 0,
                 final_hp: 20,
                 final_block: 12,
             },
@@ -797,6 +930,8 @@ mod tests {
                 spent_potions: 0,
                 hp_lost: 1,
                 exhausted_cards: 0,
+                enemy_buff_delta: 0,
+                enemy_total: 0,
                 final_hp: 14,
                 final_block: 4,
             },
@@ -839,6 +974,8 @@ mod tests {
                 spent_potions: 0,
                 hp_lost: 0,
                 exhausted_cards: 0,
+                enemy_buff_delta: 0,
+                enemy_total: total_enemy_hp(&combat),
                 final_hp: combat.entities.player.current_hp,
                 final_block: combat.entities.player.block,
             },
@@ -878,6 +1015,8 @@ mod tests {
                 spent_potions: 0,
                 hp_lost: 0,
                 exhausted_cards: 0,
+                enemy_buff_delta: 0,
+                enemy_total: total_enemy_hp(&combat),
                 final_hp: 1,
                 final_block: 0,
             },

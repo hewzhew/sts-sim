@@ -716,6 +716,10 @@ fn should_stop_adaptive_suffix(
     if horizon_mode == HorizonMode::FixedDecisions || continuation_steps == 0 {
         return None;
     }
+    if horizon_mode == HorizonMode::CombatEndV1 {
+        let decision_type = state.observation.decision_type.as_str();
+        return (!decision_type.starts_with("combat")).then_some("left_combat_decision_space");
+    }
     let Some(start_turn) = start_turn else {
         return None;
     };
@@ -742,6 +746,7 @@ fn should_stop_adaptive_suffix(
                 None
             }
         }
+        HorizonMode::CombatEndV1 => None,
     }
 }
 

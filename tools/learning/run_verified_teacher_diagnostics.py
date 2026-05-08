@@ -46,6 +46,10 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--low-evidence-margin", type=float)
     parser.add_argument("--confirm-low-evidence-horizon-decisions", type=int)
+    parser.add_argument(
+        "--confirm-low-evidence-horizon-mode",
+        choices=["fixed_decisions", "adaptive_next_player_turn_v1", "adaptive_payoff_window_v1", "combat_end_v1"],
+    )
     parser.add_argument("--confirm-low-evidence-margin", type=float)
     parser.add_argument(
         "--cases",
@@ -106,6 +110,7 @@ def main() -> None:
             "evidence_gate": args.evidence_gate,
             "low_evidence_margin": args.low_evidence_margin,
             "confirm_low_evidence_horizon_decisions": args.confirm_low_evidence_horizon_decisions,
+            "confirm_low_evidence_horizon_mode": args.confirm_low_evidence_horizon_mode,
             "confirm_low_evidence_margin": args.confirm_low_evidence_margin,
             "gamma": args.gamma,
         },
@@ -206,6 +211,8 @@ def run_verified_case(args: argparse.Namespace, case: str, out: Path) -> dict[st
                 str(args.confirm_low_evidence_horizon_decisions),
             ]
         )
+    if args.confirm_low_evidence_horizon_mode is not None:
+        cmd.extend(["--confirm-low-evidence-horizon-mode", args.confirm_low_evidence_horizon_mode])
     if args.confirm_low_evidence_margin is not None:
         cmd.extend(["--confirm-low-evidence-margin", str(args.confirm_low_evidence_margin)])
     if not args.keep_episodes:

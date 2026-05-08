@@ -56,6 +56,7 @@ pub struct LiveCommConfig {
     pub human_noncombat_hold: bool,
     pub fail_fast_debug: bool,
     pub sidecar_shadow: bool,
+    pub verified_teacher_mode: LiveVerifiedTeacherMode,
     pub parity_mode: LiveParityMode,
     pub combat_mode: LiveCombatMode,
     pub exact_turn_mode: LiveExactTurnMode,
@@ -85,6 +86,14 @@ pub enum LiveExactTurnMode {
     #[default]
     Auto,
     Force,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum LiveVerifiedTeacherMode {
+    #[default]
+    Off,
+    Shadow,
+    Takeover,
 }
 
 #[derive(Clone, Debug, Default)]

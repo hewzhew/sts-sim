@@ -1,15 +1,16 @@
 use super::frame::LiveFrame;
 use super::io::LiveCommIo;
 use super::snapshot::write_failure_snapshot;
-use super::{LiveCombatMode, LiveExactTurnMode, LiveParityMode};
+use super::{LiveCombatMode, LiveExactTurnMode, LiveParityMode, LiveVerifiedTeacherMode};
 use crate::bot::combat::legal_moves::protocol_root_moves;
 use crate::bot::combat::monster_belief::build_combat_belief_state;
 use crate::bot::combat::pressure::StatePressureFeatures;
 use crate::bot::combat::{
     branch_family_for_card, describe_end_turn_options,
     diagnose_root_search_with_depth_and_runtime_and_root_inputs,
-    diagnose_root_search_with_runtime_and_root_inputs, BranchFamily, CombatDiagnostics,
-    CombatMoveStat, SearchExactTurnMode, SearchExperimentFlags, SearchRuntimeBudget,
+    diagnose_root_search_with_runtime_and_root_inputs, evaluate_snapshot_teacher_shadow,
+    BranchFamily, CombatDiagnostics, CombatMoveStat, SearchExactTurnMode, SearchExperimentFlags,
+    SearchRuntimeBudget, SnapshotTeacherConfig,
 };
 use crate::bot::infra::comm as comm_mod;
 use crate::bot::infra::coverage_signatures::{
@@ -48,14 +49,20 @@ fn log_combat_stage_enter(
 ) -> Instant {
     let detail = detail.as_ref();
     writeln!(live_io.log, "  [STAGE] enter {stage} {detail}").unwrap();
-    writeln!(
-        live_io.focus_log,
-        "[STAGE] frame={frame_count} enter {stage} {detail}"
-    )
-    .unwrap();
+    if focus_stage_enter_enabled(stage) {
+        writeln!(
+            live_io.focus_log,
+            "[STAGE] frame={frame_count} enter {stage} {detail}"
+        )
+        .unwrap();
+    }
     let _ = live_io.log.flush();
     let _ = live_io.focus_log.flush();
     Instant::now()
+}
+
+fn focus_stage_enter_enabled(stage: &str) -> bool {
+    matches!(stage, "root_search" | "baseline_search")
 }
 
 fn log_combat_stage_exit(
@@ -103,7 +110,11 @@ struct CombatStats {
     diag_render_max_ms: u128,
 }
 
-fn log_potion_decision_trace(live_io: &mut LiveCommIo, combat: &CombatState) {
+fn log_potion_decision_trace(
+    live_io: &mut LiveCommIo,
+    combat: &CombatState,
+    actual_input: &crate::state::core::ClientInput,
+) {
     let snapshot = crate::bot::potions::immediate_potion_snapshot(combat);
     writeln!(
         live_io.log,
@@ -111,23 +122,31 @@ fn log_potion_decision_trace(live_io: &mut LiveCommIo, combat: &CombatState) {
         snapshot.minimum_priority, snapshot.context_summary
     )
     .unwrap();
+    writeln!(live_io.log, "  [POTION DIAG] actual {:?}", actual_input).unwrap();
 
     if let Some(chosen) = snapshot.chosen.as_ref() {
         writeln!(
             live_io.log,
-            "  [POTION DIAG] chosen {}",
+            "  [POTION DIAG] policy_chosen {}",
             chosen.debug_summary(snapshot.minimum_priority)
         )
         .unwrap();
         writeln!(
             live_io.focus_log,
-            "[POTION] min_priority={} {}",
+            "[POTION] actual={:?} policy_min_priority={} policy_chosen={}",
+            actual_input,
             snapshot.minimum_priority,
             chosen.debug_summary(snapshot.minimum_priority)
         )
         .unwrap();
     } else {
-        writeln!(live_io.log, "  [POTION DIAG] chosen <none>").unwrap();
+        writeln!(live_io.log, "  [POTION DIAG] policy_chosen <none>").unwrap();
+        writeln!(
+            live_io.focus_log,
+            "[POTION] actual={:?} policy_min_priority={} policy_chosen=<none>",
+            actual_input, snapshot.minimum_priority
+        )
+        .unwrap();
     }
 
     for (rank, candidate) in snapshot.candidates.iter().take(5).enumerate() {
@@ -143,6 +162,121 @@ fn log_potion_decision_trace(live_io: &mut LiveCommIo, combat: &CombatState) {
 
 fn total_incoming_damage_for_log(combat: &CombatState) -> i32 {
     StatePressureFeatures::from_combat(combat).value_incoming
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct LiveRootPotionGateReport {
+    original_count: usize,
+    filtered_count: usize,
+    potion_count: usize,
+    filtered_potion_count: usize,
+    reason: &'static str,
+}
+
+fn is_potion_input(input: &ClientInput) -> bool {
+    matches!(
+        input,
+        ClientInput::UsePotion { .. } | ClientInput::DiscardPotion(_)
+    )
+}
+
+fn live_root_potion_allowed(combat: &CombatState) -> (bool, &'static str) {
+    let pressure = StatePressureFeatures::from_combat(combat);
+    let hp = combat.entities.player.current_hp.max(0);
+    if pressure.lethal_pressure || pressure.max_unblocked >= hp.max(1) {
+        return (true, "lethal_pressure");
+    }
+    if combat.meta.is_boss_fight && pressure.urgent_pressure && hp <= 20 {
+        return (true, "boss_urgent_low_hp");
+    }
+    if combat.meta.is_elite_fight && pressure.urgent_pressure && hp <= 14 {
+        return (true, "elite_urgent_low_hp");
+    }
+    if pressure.urgent_pressure && hp <= 6 {
+        return (true, "critical_low_hp");
+    }
+    (false, "conserve_potion_resource")
+}
+
+fn filter_live_root_potion_inputs(
+    combat: &CombatState,
+    root_inputs: Option<Vec<ClientInput>>,
+) -> (Option<Vec<ClientInput>>, Option<LiveRootPotionGateReport>) {
+    let Some(inputs) = root_inputs else {
+        return (None, None);
+    };
+    let potion_count = inputs.iter().filter(|input| is_potion_input(input)).count();
+    if potion_count == 0 {
+        return (Some(inputs), None);
+    }
+    let (allowed, reason) = live_root_potion_allowed(combat);
+    if allowed {
+        return (
+            Some(inputs.clone()),
+            Some(LiveRootPotionGateReport {
+                original_count: inputs.len(),
+                filtered_count: inputs.len(),
+                potion_count,
+                filtered_potion_count: 0,
+                reason,
+            }),
+        );
+    }
+
+    let filtered = inputs
+        .iter()
+        .filter(|input| !is_potion_input(input))
+        .cloned()
+        .collect::<Vec<_>>();
+    if filtered.is_empty() {
+        return (
+            Some(inputs.clone()),
+            Some(LiveRootPotionGateReport {
+                original_count: inputs.len(),
+                filtered_count: inputs.len(),
+                potion_count,
+                filtered_potion_count: 0,
+                reason: "no_non_potion_fallback",
+            }),
+        );
+    }
+
+    (
+        Some(filtered.clone()),
+        Some(LiveRootPotionGateReport {
+            original_count: inputs.len(),
+            filtered_count: filtered.len(),
+            potion_count,
+            filtered_potion_count: potion_count,
+            reason,
+        }),
+    )
+}
+
+fn log_live_root_potion_gate(
+    live_io: &mut LiveCommIo,
+    frame_count: u64,
+    report: &LiveRootPotionGateReport,
+) {
+    let _ = writeln!(
+        live_io.log,
+        "  [POTION GATE] reason={} original_root_actions={} filtered_root_actions={} potions={} filtered_potions={}",
+        report.reason,
+        report.original_count,
+        report.filtered_count,
+        report.potion_count,
+        report.filtered_potion_count
+    );
+    if report.filtered_potion_count > 0 {
+        let _ = writeln!(
+            live_io.focus_log,
+            "[POTION GATE] frame={frame_count} reason={} filtered_potions={} root_actions={}->{}",
+            report.reason,
+            report.filtered_potion_count,
+            report.original_count,
+            report.filtered_count
+        );
+    }
 }
 
 fn log_hidden_intent_belief(live_io: &mut LiveCommIo, combat: &CombatState) {
@@ -170,6 +304,102 @@ fn log_hidden_intent_belief(live_io: &mut LiveCommIo, combat: &CombatState) {
         belief.urgent_probability,
         belief.public_state_complete
     );
+    for monster in belief
+        .monsters
+        .iter()
+        .filter(|monster| !monster.public_state_complete)
+    {
+        let _ = writeln!(
+            live_io.log,
+            "  [THREAT CLOCK] entity={} monster=\"{}\" hidden_plan certainty={:?} expected_incoming={:.1} max_incoming={} rationale={}",
+            monster.entity_id,
+            monster.monster_name,
+            monster.certainty,
+            monster.expected_incoming_damage,
+            monster.max_incoming_damage,
+            monster.rationale_key.unwrap_or("unknown")
+        );
+        let _ = writeln!(
+            live_io.focus_log,
+            "[THREAT CLOCK] monster=\"{}\" entity={} hidden_plan expected_incoming={:.1} max_incoming={} rationale={}",
+            monster.monster_name,
+            monster.entity_id,
+            monster.expected_incoming_damage,
+            monster.max_incoming_damage,
+            monster.rationale_key.unwrap_or("unknown")
+        );
+    }
+}
+
+fn log_snapshot_teacher_shadow(
+    live_io: &mut LiveCommIo,
+    frame_count: u64,
+    combat: &CombatState,
+    root_inputs: Option<Vec<crate::state::core::ClientInput>>,
+    combat_search_budget: u32,
+) {
+    let Some(root_inputs) = root_inputs.filter(|inputs| !inputs.is_empty()) else {
+        let _ = writeln!(
+            live_io.focus_log,
+            "[TEACHER SHADOW] frame={frame_count} skipped=no_protocol_root_inputs"
+        );
+        return;
+    };
+    let config = SnapshotTeacherConfig {
+        root_search_budget: combat_search_budget.clamp(40, 180),
+        continuation_search_budget: 80,
+        ..SnapshotTeacherConfig::default()
+    };
+    let report = evaluate_snapshot_teacher_shadow(
+        &EngineState::CombatPlayerTurn,
+        combat,
+        Some(root_inputs),
+        config,
+    );
+    let best = report.best_dominating_index.and_then(|index| {
+        report
+            .candidates
+            .iter()
+            .find(|candidate| candidate.index == index)
+    });
+    let best_summary = best
+        .map(|candidate| {
+            format!(
+                "index={} input={} reasons={}",
+                candidate.index,
+                candidate.input,
+                candidate.dominance_reasons.join("|")
+            )
+        })
+        .unwrap_or_else(|| "none".to_string());
+    let _ = writeln!(
+        live_io.focus_log,
+        "[TEACHER SHADOW] frame={frame_count} candidates={} dominating={} best={} elapsed_ms={} timeout={}",
+        report.candidate_count,
+        report.dominating_candidate_count,
+        best_summary,
+        report.elapsed_ms,
+        report.timed_out
+    );
+    let _ = writeln!(
+        live_io.log,
+        "  [TEACHER SHADOW] candidates={} reference={} dominating={} best={} elapsed_ms={} timeout={}",
+        report.candidate_count,
+        report.reference_input,
+        report.dominating_candidate_count,
+        best_summary,
+        report.elapsed_ms,
+        report.timed_out
+    );
+    if let Ok(value) = serde_json::to_value(&report) {
+        let record = serde_json::json!({
+            "kind": "snapshot_teacher_shadow",
+            "frame": frame_count,
+            "report": value,
+        });
+        sidecar::write_shadow_record(&mut live_io.combat_decision_audit, &record);
+        sidecar::write_shadow_record(&mut live_io.sidecar_shadow, &record);
+    }
 }
 
 fn summarize_cached_candidate_outcome(combat: &CombatState, stat: &CombatMoveStat) -> String {
@@ -317,7 +547,12 @@ fn live_root_search_budget(
             .min(root_node_budget_for_legacy_budget(legacy_budget) * 25),
         audit_budget: audit_node_budget_for_legacy_budget(legacy_budget),
         exact_turn_mode: exact_turn_mode_for_live(exact_turn_mode),
-        experiment_flags: SearchExperimentFlags::default(),
+        experiment_flags: SearchExperimentFlags {
+            fragile_strict_dominance_takeover: true,
+            forbid_idle_end_turn_when_exact_prefers_play: true,
+            forbid_potion_exact_takeover: true,
+            ..SearchExperimentFlags::default()
+        },
     }
 }
 
@@ -517,6 +752,175 @@ fn format_search_move_diag(combat: &CombatState, stat: &CombatMoveStat) -> Strin
         stat.realized_exhaust_draw,
         branch_family
     ) + &cluster_suffix
+}
+
+fn format_focus_hand(combat: &CombatState) -> String {
+    combat
+        .zones
+        .hand
+        .iter()
+        .enumerate()
+        .map(|(index, card)| {
+            let mut flags = Vec::new();
+            if card.free_to_play_once {
+                flags.push("free".to_string());
+            }
+            if card
+                .exhaust_override
+                .unwrap_or_else(|| crate::content::cards::get_card_definition(card.id).exhaust)
+            {
+                flags.push("exh".to_string());
+            }
+            let flags = if flags.is_empty() {
+                String::new()
+            } else {
+                format!(",{}", flags.join(","))
+            };
+            format!(
+                "{}:{}(cost={}{})",
+                index + 1,
+                format_card(card),
+                card.get_cost(),
+                flags
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn format_focus_top_moves(combat: &CombatState, search_diag: &CombatDiagnostics) -> String {
+    search_diag
+        .top_moves
+        .iter()
+        .take(4)
+        .enumerate()
+        .map(|(rank, stat)| {
+            format!(
+                "#{}:{} score={:.1} hp={} blk={} unblk={} enemy={}{}",
+                rank + 1,
+                describe_client_input(combat, &stat.input),
+                stat.avg_score,
+                stat.projected_hp,
+                stat.projected_block,
+                stat.projected_unblocked,
+                stat.projected_enemy_total,
+                if stat.cluster_size > 1 {
+                    format!(" x{}", stat.cluster_size)
+                } else {
+                    String::new()
+                }
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(" | ")
+}
+
+fn log_focus_decision_summary(
+    live_io: &mut LiveCommIo,
+    frame_count: u64,
+    combat: &CombatState,
+    search_diag: &CombatDiagnostics,
+    root_action_source: &str,
+    protocol_root_action_count: usize,
+) {
+    let pressure = StatePressureFeatures::from_combat(combat);
+    let trace = search_diag.decision_audit.get("decision_trace");
+    let exact = trace.and_then(|trace| trace.get("exact_turn_verdict"));
+    let chosen_by = json_str(trace.and_then(|trace| trace.get("chosen_by"))).unwrap_or("unknown");
+    let regime = json_str(trace.and_then(|trace| trace.get("regime"))).unwrap_or("unknown");
+    let exact_best =
+        json_str(exact.and_then(|exact| exact.get("best_first_input"))).unwrap_or("<none>");
+    let frontier_choice =
+        json_str(trace.and_then(|trace| trace.get("frontier_choice"))).unwrap_or("<unknown>");
+    let exact_dominance =
+        json_str(exact.and_then(|exact| exact.get("dominance"))).unwrap_or("unknown");
+    let exact_confidence =
+        json_str(exact.and_then(|exact| exact.get("confidence"))).unwrap_or("unknown");
+    let exact_truncated = exact
+        .and_then(|exact| exact.get("truncated"))
+        .and_then(|value| value.as_bool())
+        .unwrap_or(false);
+    let takeover = json_str(
+        search_diag
+            .decision_audit
+            .get("takeover_policy")
+            .and_then(|policy| policy.get("takeover_reason")),
+    )
+    .unwrap_or("unknown");
+
+    let _ = writeln!(
+        live_io.focus_log,
+        "[HAND] frame={frame_count} cards=[{}]",
+        format_focus_hand(combat)
+    );
+    let _ = writeln!(
+        live_io.focus_log,
+        "[DECISION] frame={frame_count} turn={} hp={}/{} e={} incoming={} unblocked={} max_unblocked={} hidden_intent={} regime={} chosen=\"{}\" chosen_by={} exact_best=\"{}\" exact_dom={} exact_conf={} exact_trunc={} takeover_reason={} root_source={} legal={} reduced={} protocol_root={}",
+        combat.turn.turn_count,
+        combat.entities.player.current_hp,
+        combat.entities.player.max_hp,
+        combat.turn.energy,
+        pressure.incoming,
+        pressure.unblocked,
+        pressure.max_unblocked,
+        pressure.hidden_intent_active,
+        regime,
+        describe_client_input(combat, &search_diag.chosen_move),
+        chosen_by,
+        exact_best,
+        exact_dominance,
+        exact_confidence,
+        exact_truncated,
+        takeover,
+        root_action_source,
+        search_diag.legal_moves,
+        search_diag.reduced_legal_moves,
+        protocol_root_action_count
+    );
+    let _ = writeln!(
+        live_io.focus_log,
+        "[TOP] frame={frame_count} {}",
+        format_focus_top_moves(combat, search_diag)
+    );
+
+    if search_diag.timed_out {
+        let _ = writeln!(
+            live_io.focus_log,
+            "[SUSPECT] frame={frame_count} kind=search_timeout elapsed_ms={} timeout_source={}",
+            search_diag.elapsed_ms,
+            search_diag
+                .profile
+                .timeout_source
+                .as_deref()
+                .unwrap_or("unknown")
+        );
+    }
+    if exact_best != "<none>"
+        && exact_best != frontier_choice
+        && !matches!(chosen_by, "exact_turn_takeover")
+    {
+        let _ = writeln!(
+            live_io.focus_log,
+            "[SUSPECT] frame={frame_count} kind=exact_disagrees_no_takeover chosen=\"{}\" exact_best=\"{}\" dominance={} confidence={} reason={}",
+            describe_client_input(combat, &search_diag.chosen_move),
+            exact_best,
+            exact_dominance,
+            exact_confidence,
+            takeover
+        );
+    }
+    if matches!(search_diag.chosen_move, ClientInput::UsePotion { .. }) {
+        let _ = writeln!(
+            live_io.focus_log,
+            "[SUSPECT] frame={frame_count} kind=potion_root_chosen chosen=\"{}\" hp={}/{} incoming={} unblocked={} regime={}",
+            describe_client_input(combat, &search_diag.chosen_move),
+            combat.entities.player.current_hp,
+            combat.entities.player.max_hp,
+            pressure.incoming,
+            pressure.unblocked,
+            regime
+        );
+    }
 }
 
 fn format_search_profile_summary(search_diag: &CombatDiagnostics) -> String {
@@ -841,8 +1245,9 @@ fn decision_audit_exact_turn_summary(audit: &Value) -> Option<String> {
         let spent_potions = json_number_as_i64(resources.get("spent_potions")).unwrap_or(0);
         let hp_lost = json_number_as_i64(resources.get("hp_lost")).unwrap_or(0);
         let exhausted_cards = json_number_as_i64(resources.get("exhausted_cards")).unwrap_or(0);
+        let enemy_buff_delta = json_number_as_i64(resources.get("enemy_buff_delta")).unwrap_or(0);
         parts.push(format!(
-            "resources=hp{final_hp}/blk{final_block}/pots{spent_potions}/lost{hp_lost}/exh{exhausted_cards}"
+            "resources=hp{final_hp}/blk{final_block}/pots{spent_potions}/lost{hp_lost}/exh{exhausted_cards}/ebuf{enemy_buff_delta}"
         ));
     }
 
@@ -1578,6 +1983,7 @@ pub(super) fn handle_live_combat_frame<W: Write>(
     parity_mode: LiveParityMode,
     combat_mode: LiveCombatMode,
     exact_turn_mode: LiveExactTurnMode,
+    verified_teacher_mode: LiveVerifiedTeacherMode,
     fail_fast_debug: bool,
     combat_search_budget: u32,
     legacy_root_legal_moves: bool,
@@ -1914,10 +2320,24 @@ pub(super) fn handle_live_combat_frame<W: Write>(
             return CombatFrameOutcome::StopForFailFast;
         }
     }
-    let root_inputs = protocol_affordance
+    let raw_root_inputs = protocol_affordance
         .as_ref()
         .filter(|snapshot| !snapshot.is_empty())
         .map(protocol_root_moves);
+    let (root_inputs, potion_gate_report) =
+        filter_live_root_potion_inputs(&truth, raw_root_inputs.clone());
+    if let Some(report) = potion_gate_report.as_ref() {
+        log_live_root_potion_gate(live_io, frame_count, report);
+    }
+    if matches!(verified_teacher_mode, LiveVerifiedTeacherMode::Shadow) {
+        log_snapshot_teacher_shadow(
+            live_io,
+            frame_count,
+            &truth,
+            root_inputs.clone(),
+            combat_search_budget,
+        );
+    }
     let root_action_source = if root_inputs.is_some() {
         "protocol"
     } else if legacy_root_legal_moves {
@@ -2094,6 +2514,14 @@ pub(super) fn handle_live_combat_frame<W: Write>(
     )
     .unwrap();
     log_combat_decision_audit_summary(live_io, &search_diag);
+    log_focus_decision_summary(
+        live_io,
+        frame_count,
+        &truth,
+        &search_diag,
+        root_action_source,
+        protocol_root_action_count,
+    );
     if live_io.log.metadata().is_ok() {
         let top_candidates = search_diag
             .top_moves
@@ -2201,7 +2629,7 @@ pub(super) fn handle_live_combat_frame<W: Write>(
     }
 
     if matches!(input, crate::state::core::ClientInput::UsePotion { .. }) {
-        log_potion_decision_trace(live_io, &truth);
+        log_potion_decision_trace(live_io, &truth, &input);
     }
 
     writeln!(live_io.log, "  → {:?}", input).unwrap();
@@ -2566,10 +2994,11 @@ fn align_rust_monsters_for_parse(cs: &CombatState, java_ms: &[Value]) -> Vec<Opt
 
 #[cfg(test)]
 mod tests {
-    use super::same_or_equivalent_client_input_with_state;
+    use super::{filter_live_root_potion_inputs, same_or_equivalent_client_input_with_state};
     use crate::content::cards::CardId;
     use crate::runtime::combat::CombatCard;
     use crate::state::core::ClientInput;
+    use crate::test_support::blank_test_combat;
 
     #[test]
     fn identical_hand_cards_with_different_indices_count_as_equivalent_actions() {
@@ -2614,5 +3043,38 @@ mod tests {
                 target: Some(1),
             },
         ));
+    }
+
+    #[test]
+    fn live_root_potion_gate_filters_non_emergency_potions() {
+        let combat = blank_test_combat();
+        let inputs = vec![
+            ClientInput::EndTurn,
+            ClientInput::UsePotion {
+                potion_index: 0,
+                target: None,
+            },
+            ClientInput::PlayCard {
+                card_index: 0,
+                target: None,
+            },
+        ];
+
+        let (filtered, report) = filter_live_root_potion_inputs(&combat, Some(inputs));
+
+        let filtered = filtered.expect("filtered root inputs");
+        assert_eq!(
+            filtered,
+            vec![
+                ClientInput::EndTurn,
+                ClientInput::PlayCard {
+                    card_index: 0,
+                    target: None,
+                }
+            ]
+        );
+        let report = report.expect("potion gate report");
+        assert_eq!(report.filtered_potion_count, 1);
+        assert_eq!(report.reason, "conserve_potion_resource");
     }
 }

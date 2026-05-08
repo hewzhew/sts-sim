@@ -126,6 +126,7 @@ pub fn decide_policy_action(
                 contested_strict_dominance_takeover: true,
                 advantage_strict_dominance_takeover: true,
                 forbid_idle_end_turn_when_exact_prefers_play: true,
+                ..SearchExperimentFlags::default()
             },
             kind,
         ),

@@ -14,13 +14,14 @@ use super::exact_turn_solver::{solve_exact_turn_with_config, ExactTurnConfig};
 use super::legal_moves::get_legal_moves;
 use super::ordering::{compare_candidates, end_turn_tiebreak};
 use super::planner::plan_candidate;
+use super::pressure::StatePressureFeatures;
 use super::profile::SearchProfileBreakdown;
 use super::terminal::terminal_outcome;
 use super::types::CombatCandidate;
 use super::value::{compare_values, projected_frontier, CombatValue};
 
 const ROOT_SCREENING_MULTIPLIER: usize = 2;
-const ROOT_EXACT_ADJUDICATION_LIMIT: usize = 3;
+const ROOT_EXACT_ADJUDICATION_LIMIT: usize = 5;
 const ROOT_EXACT_ADJUDICATION_MAX_NODES: usize = 1_200;
 
 #[derive(Clone)]
@@ -134,14 +135,20 @@ pub(super) fn explore_root_with_inputs(
     let mut explored = Vec::new();
     let mut consumed_nodes = 0usize;
     for proposal in proposals.into_iter().take(root_width.max(1)) {
-        if consumed_nodes >= root_node_budget && !explored.is_empty() {
+        if consumed_nodes >= root_node_budget {
             timed_out = true;
             profile.note_timeout_source("root_node_budget");
+            if explored.is_empty() {
+                explored.push(explored_from_frontier_only(proposal));
+            }
             break;
         }
-        if deadline.is_some_and(|limit| Instant::now() >= limit) && !explored.is_empty() {
+        if deadline.is_some_and(|limit| Instant::now() >= limit) {
             timed_out = true;
             profile.note_timeout_source("wall_clock_deadline");
+            if explored.is_empty() {
+                explored.push(explored_from_frontier_only(proposal));
+            }
             break;
         }
         let outcome = evaluate_state(
@@ -159,15 +166,11 @@ pub(super) fn explore_root_with_inputs(
         consumed_nodes = consumed_nodes
             .saturating_add(proposal.candidate.planner_nodes as usize)
             .saturating_add(outcome.explored_nodes as usize);
-        explored.push(ExploredCandidate {
-            explored_nodes: outcome.explored_nodes + proposal.candidate.planner_nodes,
-            candidate: proposal.candidate,
-            proposal_class: proposal.proposal_class,
-            frontier_outcome: proposal.frontier_outcome,
-            search_value: outcome.value,
-            exact_outcome: proposal.exact_outcome,
-            exact_confidence: proposal.exact_confidence,
-        });
+        explored.push(explored_from_proposal(
+            proposal,
+            outcome.value,
+            outcome.explored_nodes,
+        ));
     }
 
     explored.sort_by(|left, right| compare_explored_candidates(regime, left, right));
@@ -190,6 +193,27 @@ pub(super) fn explore_root_with_inputs(
     }
 }
 
+fn explored_from_frontier_only(proposal: RootProposal) -> ExploredCandidate {
+    let search_value = proposal.candidate.value;
+    explored_from_proposal(proposal, search_value, 0)
+}
+
+fn explored_from_proposal(
+    proposal: RootProposal,
+    search_value: CombatValue,
+    extra_explored_nodes: u32,
+) -> ExploredCandidate {
+    ExploredCandidate {
+        explored_nodes: extra_explored_nodes + proposal.candidate.planner_nodes,
+        candidate: proposal.candidate,
+        proposal_class: proposal.proposal_class,
+        frontier_outcome: proposal.frontier_outcome,
+        search_value,
+        exact_outcome: proposal.exact_outcome,
+        exact_confidence: proposal.exact_confidence,
+    }
+}
+
 fn propose_root_candidates(
     engine: &EngineState,
     combat: &CombatState,
@@ -201,30 +225,32 @@ fn propose_root_candidates(
     profile: &mut SearchProfileBreakdown,
 ) -> Vec<RootProposal> {
     let clusters = reduce_equivalent_inputs(combat, legal_moves, equivalence_mode);
-    let mut proposals = clusters
-        .iter()
-        .map(|cluster| {
-            let mut candidate = plan_candidate(
-                engine,
-                combat,
-                &cluster.representative,
-                branch_width,
-                max_engine_steps,
-                deadline,
-                profile,
-            );
-            candidate.cluster_size = cluster.collapsed_inputs.len() + 1;
-            candidate.collapsed_inputs = cluster.collapsed_inputs.clone();
-            let frontier_outcome = frontier_outcome_from_candidate(combat, &candidate);
-            RootProposal {
-                candidate,
-                proposal_class: classify_proposal_class(combat, &cluster.representative),
-                frontier_outcome,
-                exact_outcome: None,
-                exact_confidence: ExactnessLevel::Unavailable,
-            }
-        })
-        .collect::<Vec<_>>();
+    let mut proposals = Vec::new();
+    for (idx, cluster) in clusters.iter().enumerate() {
+        if idx > 0 && deadline.is_some_and(|limit| Instant::now() >= limit) {
+            profile.note_timeout_source("wall_clock_deadline");
+            break;
+        }
+        let mut candidate = plan_candidate(
+            engine,
+            combat,
+            &cluster.representative,
+            branch_width,
+            max_engine_steps,
+            deadline,
+            profile,
+        );
+        candidate.cluster_size = cluster.collapsed_inputs.len() + 1;
+        candidate.collapsed_inputs = cluster.collapsed_inputs.clone();
+        let frontier_outcome = frontier_outcome_from_candidate(combat, &candidate);
+        proposals.push(RootProposal {
+            candidate,
+            proposal_class: classify_proposal_class(combat, &cluster.representative),
+            frontier_outcome,
+            exact_outcome: None,
+            exact_confidence: ExactnessLevel::Unavailable,
+        });
+    }
     proposals.sort_by(|left, right| compare_candidates(&left.candidate, &right.candidate));
     proposals
 }
@@ -715,7 +741,7 @@ fn root_resource_dominates_facts(
         || left_candidate.projected_unblocked > right_candidate.projected_unblocked
         || left_candidate.projected_enemy_total > right_candidate.projected_enemy_total
         || left_candidate.projected_hp < right_candidate.projected_hp
-        || left_candidate.projected_block < right_candidate.projected_block
+        || root_effective_block(left_candidate) < root_effective_block(right_candidate)
     {
         return false;
     }
@@ -753,13 +779,23 @@ fn root_end_turn_progress_dominated(
         && left_candidate.projected_unblocked <= right_candidate.projected_unblocked
         && left_candidate.projected_enemy_total <= right_candidate.projected_enemy_total
         && left_candidate.projected_hp >= right_candidate.projected_hp
-        && left_candidate.projected_block >= right_candidate.projected_block
+        && root_effective_block(left_candidate) >= root_effective_block(right_candidate)
         && (left_candidate.projected_enemy_total < right_candidate.projected_enemy_total
             || left_candidate.projected_unblocked < right_candidate.projected_unblocked
             || left_candidate.projected_hp > right_candidate.projected_hp
-            || left_candidate.projected_block > right_candidate.projected_block
+            || root_effective_block(left_candidate) > root_effective_block(right_candidate)
             || left_outcome.terminality > right_outcome.terminality
             || root_resources_strictly_better(left_outcome, right_outcome, false))
+}
+
+fn root_effective_block(candidate: &CombatCandidate) -> i32 {
+    if candidate.projected_enemy_total <= 0 {
+        return 0;
+    }
+    let incoming = StatePressureFeatures::from_combat(&candidate.frontier_combat)
+        .value_incoming
+        .max(0);
+    candidate.projected_block.min(incoming)
 }
 
 fn root_resources_not_worse(
@@ -770,6 +806,7 @@ fn root_resources_not_worse(
     left.resource_delta.spent_potions <= right.resource_delta.spent_potions
         && left.resource_delta.hp_lost <= right.resource_delta.hp_lost
         && left.resource_delta.exhausted_cards <= right.resource_delta.exhausted_cards
+        && left.resource_delta.enemy_buff_delta <= right.resource_delta.enemy_buff_delta
         && left.resource_delta.final_hp >= right.resource_delta.final_hp
         && (ignore_block_after_clear
             || left.resource_delta.final_block >= right.resource_delta.final_block)
@@ -783,6 +820,7 @@ fn root_resources_strictly_better(
     left.resource_delta.spent_potions < right.resource_delta.spent_potions
         || left.resource_delta.hp_lost < right.resource_delta.hp_lost
         || left.resource_delta.exhausted_cards < right.resource_delta.exhausted_cards
+        || left.resource_delta.enemy_buff_delta < right.resource_delta.enemy_buff_delta
         || left.resource_delta.final_hp > right.resource_delta.final_hp
         || (!ignore_block_after_clear
             && left.resource_delta.final_block > right.resource_delta.final_block)
@@ -858,37 +896,39 @@ fn evaluate_state(
     }
 
     let clusters = reduce_equivalent_inputs(combat, legal_moves, equivalence_mode);
-    let mut candidates = clusters
-        .iter()
-        .map(|cluster| {
-            let mut candidate = {
-                plan_candidate(
-                    engine,
-                    combat,
-                    &cluster.representative,
-                    branch_width,
-                    max_engine_steps,
-                    deadline,
-                    profile,
-                )
-            };
-            candidate.cluster_size = cluster.collapsed_inputs.len() + 1;
-            candidate.collapsed_inputs = cluster.collapsed_inputs.clone();
-            candidate
-        })
-        .collect::<Vec<_>>();
+    let mut candidate_generation_timed_out = false;
+    let mut candidates = Vec::new();
+    for (idx, cluster) in clusters.iter().enumerate() {
+        if idx > 0 && deadline.is_some_and(|limit| Instant::now() >= limit) {
+            candidate_generation_timed_out = true;
+            profile.note_timeout_source("wall_clock_deadline");
+            break;
+        }
+        let mut candidate = plan_candidate(
+            engine,
+            combat,
+            &cluster.representative,
+            branch_width,
+            max_engine_steps,
+            deadline,
+            profile,
+        );
+        candidate.cluster_size = cluster.collapsed_inputs.len() + 1;
+        candidate.collapsed_inputs = cluster.collapsed_inputs.clone();
+        candidates.push(candidate);
+    }
     candidates.sort_by(compare_candidates);
 
     let mut best: Option<SearchOutcome> = None;
     let mut explored_nodes = 0;
-    let mut timed_out = false;
+    let mut timed_out = candidate_generation_timed_out;
     for candidate in candidates.into_iter().take(branch_width.max(1)) {
-        if explored_nodes as usize >= node_budget && best.is_some() {
+        if explored_nodes as usize >= node_budget {
             timed_out = true;
             profile.note_timeout_source("recursive_node_budget");
             break;
         }
-        if deadline.is_some_and(|limit| Instant::now() >= limit) && best.is_some() {
+        if deadline.is_some_and(|limit| Instant::now() >= limit) {
             timed_out = true;
             profile.note_timeout_source("wall_clock_deadline");
             break;
@@ -938,7 +978,11 @@ mod tests {
         PositionClass, ResourceDeltaSummary, SurvivalJudgement, TerminalForecast,
     };
     use crate::bot::combat::terminal::{TerminalKind, TerminalOutcome};
-    use crate::test_support::blank_test_combat;
+    use crate::content::cards::CardId;
+    use crate::content::monsters::EnemyId;
+    use crate::runtime::combat::CombatCard;
+    use crate::test_support::{blank_test_combat, planned_monster};
+    use std::time::Duration;
 
     fn decision_outcome(
         survival: SurvivalJudgement,
@@ -967,6 +1011,8 @@ mod tests {
                 spent_potions: 0,
                 hp_lost: 0,
                 exhausted_cards: 0,
+                enemy_buff_delta: 0,
+                enemy_total: 0,
                 final_hp: 20,
                 final_block: 0,
             },
@@ -986,10 +1032,46 @@ mod tests {
             spent_potions,
             hp_lost,
             exhausted_cards,
+            enemy_buff_delta: 0,
+            enemy_total: 0,
             final_hp,
             final_block,
         };
         outcome
+    }
+
+    #[test]
+    fn root_candidate_generation_keeps_frontier_fallback_after_deadline() {
+        let mut combat = blank_test_combat();
+        combat
+            .entities
+            .monsters
+            .push(planned_monster(EnemyId::Cultist, 1));
+        combat.zones.hand.push(CombatCard::new(CardId::Strike, 1));
+        let mut profile = SearchProfileBreakdown::default();
+
+        let proposals = propose_root_candidates(
+            &EngineState::CombatPlayerTurn,
+            &combat,
+            vec![
+                ClientInput::EndTurn,
+                ClientInput::PlayCard {
+                    card_index: 0,
+                    target: Some(1),
+                },
+            ],
+            2,
+            4,
+            Some(Instant::now() - Duration::from_millis(1)),
+            SearchEquivalenceMode::Safe,
+            &mut profile,
+        );
+
+        assert_eq!(proposals.len(), 1);
+        assert!(profile
+            .timeout_source
+            .as_deref()
+            .is_some_and(|source| source.ends_with("deadline")));
     }
 
     fn proposal(

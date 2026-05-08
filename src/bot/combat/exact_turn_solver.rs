@@ -9,6 +9,7 @@ use super::dominance::{strictly_dominates, TurnResourceSummary};
 use super::equivalence::{reduce_equivalent_inputs, SearchEquivalenceMode};
 use super::frontier_eval::{compare_frontier_eval, eval_frontier_state, FrontierEval};
 use super::legal_moves::get_legal_moves;
+use super::pressure::StatePressureFeatures;
 use super::profile::SearchProfileBreakdown;
 use super::stepping::{
     pending_choice_is_same_turn_frontier, project_turn_close_state_bounded, simulate_input_bounded,
@@ -39,6 +40,8 @@ impl Default for ExactTurnConfig {
 
 #[derive(Clone, Debug)]
 pub struct TurnEndState {
+    pub line_close_engine: EngineState,
+    pub line_close_combat: CombatState,
     pub frontier_engine: EngineState,
     pub frontier_combat: CombatState,
     frontier_eval: FrontierEval,
@@ -293,7 +296,7 @@ fn build_turn_close_end_state(
         project_turn_close_state_bounded(engine, combat, max_engine_steps, deadline, profile);
     let frontier_eval = eval_frontier_state(&frontier_engine, &frontier_combat);
     let final_hp = frontier_combat.entities.player.current_hp;
-    let final_block = frontier_combat.entities.player.block;
+    let final_block = effective_final_block(&frontier_combat);
     let line = if end_turn_available(engine, combat, root_inputs) {
         vec![ClientInput::EndTurn]
     } else {
@@ -303,6 +306,8 @@ fn build_turn_close_end_state(
     (
         TurnEndState {
             stable_key: stable_dominance_bucket_key(&frontier_engine, &frontier_combat),
+            line_close_engine: engine.clone(),
+            line_close_combat: combat.clone(),
             frontier_engine,
             frontier_combat,
             frontier_eval,
@@ -313,6 +318,14 @@ fn build_turn_close_end_state(
     )
 }
 
+fn effective_final_block(combat: &CombatState) -> i32 {
+    combat.entities.player.block.min(
+        StatePressureFeatures::from_combat(combat)
+            .value_incoming
+            .max(0),
+    )
+}
+
 fn prepend_input(
     input: &ClientInput,
     before: &CombatState,
@@ -320,16 +333,7 @@ fn prepend_input(
     mut suffix: TurnEndState,
 ) -> TurnEndState {
     suffix.line.insert(0, input.clone());
-    suffix.resources = suffix.resources.with_transition(
-        input,
-        before.entities.player.current_hp,
-        after.entities.player.current_hp,
-        after
-            .zones
-            .exhaust_pile
-            .len()
-            .saturating_sub(before.zones.exhaust_pile.len()),
-    );
+    suffix.resources = suffix.resources.with_transition(input, before, after);
     suffix
 }
 
@@ -383,7 +387,11 @@ fn insert_nondominated(
 fn compare_end_states(left: &TurnEndState, right: &TurnEndState) -> std::cmp::Ordering {
     compare_frontier_eval(&left.frontier_eval, &right.frontier_eval)
         .then_with(|| right.resources.final_hp.cmp(&left.resources.final_hp))
-        .then_with(|| right.resources.final_block.cmp(&left.resources.final_block))
+        .then_with(|| {
+            left.resources
+                .enemy_buff_delta
+                .cmp(&right.resources.enemy_buff_delta)
+        })
         .then_with(|| {
             left.resources
                 .spent_potions

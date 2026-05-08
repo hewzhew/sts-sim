@@ -24,6 +24,9 @@ Use these files when working on the current route:
     compact report
 - `audit_verified_teacher_pending_coverage.py`
   - checks how much decision-state / pending-choice coverage the teacher sees
+- `audit_verified_teacher_overrides.py`
+  - audits harmful seed-level overrides and low-confidence accepted overrides
+    from existing verified teacher diagnostic JSON
 - `run_verified_adv_override_prefilter_grid.py`
   - optional verifier prefilter experiment; not a default policy
 
@@ -105,6 +108,7 @@ python tools\learning\run_verified_teacher_diagnostics.py `
   --evidence-gate horizon_cap_any_v1 `
   --low-evidence-margin 2.0 `
   --confirm-low-evidence-horizon-decisions 16 `
+  --confirm-low-evidence-horizon-mode combat_end_v1 `
   --confirm-low-evidence-margin 2.0 `
   --keep-episodes
 ```
@@ -116,9 +120,26 @@ Key metrics:
 - override rate
 - low-evidence rejects
 - confirmation accepts/rejects
+- artifact-boundary confirmation accepts/rejects
 - candidate eval count and policy step eval count
 - horizon stop reason distribution
 - override payoff/context distribution
+
+Audit harmful / low-confidence accepted overrides from existing diagnostics:
+
+```powershell
+python tools\learning\audit_verified_teacher_overrides.py `
+  --inputs target\verified_teacher_h8_quality_gate_any_m1_low2_100_seed98100.json `
+           target\verified_teacher_h8_quality_gate_any_m1_low2_100_seed98500.json `
+  --out target\verified_teacher_override_audit.json `
+  --report-out target\verified_teacher_override_audit.md `
+  --low-adv-threshold 2.5
+```
+
+This audit reads existing JSON only. It can inspect accepted override events and
+seed-level harmed/worsened examples. It cannot yet inspect individual rejected
+low-evidence candidates because the Rust runner currently records those only as
+aggregate counts.
 
 ## Refactor Rule
 

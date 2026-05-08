@@ -137,16 +137,37 @@ impl LiveCommIo {
         .unwrap();
         writeln!(
             log,
-            "[CONFIG] parity_mode={:?} combat_search_budget={} sidecar_shadow={}",
-            config.parity_mode, config.combat_search_budget, config.sidecar_shadow
+            "[CONFIG] parity_mode={:?} combat_search_budget={} sidecar_shadow={} verified_teacher_mode={:?}",
+            config.parity_mode,
+            config.combat_search_budget,
+            config.sidecar_shadow,
+            config.verified_teacher_mode
         )
         .unwrap();
         writeln!(
             focus_log,
-            "[CONFIG] parity_mode={:?} combat_search_budget={} sidecar_shadow={}",
-            config.parity_mode, config.combat_search_budget, config.sidecar_shadow
+            "[CONFIG] parity_mode={:?} combat_search_budget={} sidecar_shadow={} verified_teacher_mode={:?}",
+            config.parity_mode,
+            config.combat_search_budget,
+            config.sidecar_shadow,
+            config.verified_teacher_mode
         )
         .unwrap();
+        if matches!(
+            config.verified_teacher_mode,
+            super::LiveVerifiedTeacherMode::Shadow
+        ) {
+            writeln!(
+                log,
+                "[TEACHER] snapshot teacher shadow enabled; live play still uses the normal combat chooser unless takeover is explicitly implemented and audited."
+            )
+            .unwrap();
+            writeln!(
+                focus_log,
+                "[TEACHER] snapshot shadow enabled; reports are diagnostic only and live actions still come from the normal chooser."
+            )
+            .unwrap();
+        }
         writeln!(
             focus_log,
             "[CONFIG] focused log keeps validation/parity failures, compact combat frame breadcrumbs, combat summaries, panic markers, and session end markers"

@@ -5,6 +5,7 @@ pub struct TurnResourceSummary {
     pub spent_potions: u8,
     pub hp_lost: i32,
     pub exhausted_cards: u16,
+    pub enemy_buff_delta: i32,
     pub final_hp: i32,
     pub final_block: i32,
 }
@@ -21,9 +22,8 @@ impl TurnResourceSummary {
     pub fn with_transition(
         mut self,
         input: &ClientInput,
-        before_hp: i32,
-        after_hp: i32,
-        exhausted_delta: usize,
+        before: &crate::runtime::combat::CombatState,
+        after: &crate::runtime::combat::CombatState,
     ) -> Self {
         if matches!(
             input,
@@ -31,19 +31,63 @@ impl TurnResourceSummary {
         ) {
             self.spent_potions = self.spent_potions.saturating_add(1);
         }
-        self.hp_lost += (before_hp - after_hp).max(0);
-        self.exhausted_cards = self
-            .exhausted_cards
-            .saturating_add(exhausted_delta.min(u16::MAX as usize) as u16);
+        self.hp_lost +=
+            (before.entities.player.current_hp - after.entities.player.current_hp).max(0);
+        self.enemy_buff_delta += (enemy_buff_pressure(after) - enemy_buff_pressure(before)).max(0);
+        self.exhausted_cards = self.exhausted_cards.saturating_add(
+            after
+                .zones
+                .exhaust_pile
+                .len()
+                .saturating_sub(before.zones.exhaust_pile.len())
+                .min(u16::MAX as usize) as u16,
+        );
+        self
+    }
+
+    pub fn with_enemy_buff_delta_from(
+        mut self,
+        before: &crate::runtime::combat::CombatState,
+        after: &crate::runtime::combat::CombatState,
+    ) -> Self {
+        self.enemy_buff_delta = (enemy_buff_pressure(after) - enemy_buff_pressure(before)).max(0);
         self
     }
 }
 
 pub fn strictly_dominates(left: &TurnResourceSummary, right: &TurnResourceSummary) -> bool {
-    let no_worse = left.final_hp >= right.final_hp && left.final_block >= right.final_block;
-    let strictly_better = left.final_hp > right.final_hp || left.final_block > right.final_block;
+    let no_worse = left.final_hp >= right.final_hp
+        && left.final_block >= right.final_block
+        && left.enemy_buff_delta <= right.enemy_buff_delta;
+    let strictly_better = left.final_hp > right.final_hp
+        || left.final_block > right.final_block
+        || left.enemy_buff_delta < right.enemy_buff_delta;
 
     no_worse && strictly_better
+}
+
+pub(crate) fn enemy_buff_pressure(combat: &crate::runtime::combat::CombatState) -> i32 {
+    combat
+        .entities
+        .monsters
+        .iter()
+        .filter(|monster| !monster.is_dying && !monster.is_escaped && !monster.half_dead)
+        .map(|monster| {
+            combat
+                .entities
+                .power_db
+                .get(&monster.id)
+                .map_or(0, |powers| {
+                    powers
+                        .iter()
+                        .filter(|power| {
+                            !crate::content::powers::is_debuff(power.power_type, power.amount)
+                        })
+                        .map(|power| power.amount.max(0))
+                        .sum::<i32>()
+                })
+        })
+        .sum()
 }
 
 #[cfg(test)]
@@ -124,5 +168,24 @@ mod tests {
 
         assert!(!strictly_dominates(&held, &spent));
         assert!(!strictly_dominates(&spent, &held));
+    }
+
+    #[test]
+    fn strict_dominance_treats_enemy_buff_growth_as_resource_cost() {
+        let clean = TurnResourceSummary {
+            final_hp: 40,
+            final_block: 0,
+            enemy_buff_delta: 0,
+            ..TurnResourceSummary::default()
+        };
+        let buffed_enemy = TurnResourceSummary {
+            final_hp: 40,
+            final_block: 0,
+            enemy_buff_delta: 2,
+            ..TurnResourceSummary::default()
+        };
+
+        assert!(strictly_dominates(&clean, &buffed_enemy));
+        assert!(!strictly_dominates(&buffed_enemy, &clean));
     }
 }

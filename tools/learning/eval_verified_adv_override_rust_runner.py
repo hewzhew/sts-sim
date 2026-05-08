@@ -28,7 +28,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--horizon-mode",
         default="fixed_decisions",
-        choices=["fixed_decisions", "adaptive_next_player_turn_v1", "adaptive_payoff_window_v1"],
+        choices=["fixed_decisions", "adaptive_next_player_turn_v1", "adaptive_payoff_window_v1", "combat_end_v1"],
     )
     parser.add_argument("--oracle-margin", type=float, default=1.0)
     parser.add_argument(
@@ -39,7 +39,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--prefilter-horizon-decisions", type=int)
     parser.add_argument(
         "--prefilter-horizon-mode",
-        choices=["fixed_decisions", "adaptive_next_player_turn_v1", "adaptive_payoff_window_v1"],
+        choices=["fixed_decisions", "adaptive_next_player_turn_v1", "adaptive_payoff_window_v1", "combat_end_v1"],
     )
     parser.add_argument("--prefilter-margin", type=float)
     parser.add_argument("--prefilter-top-k", type=int)
@@ -53,6 +53,10 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--low-evidence-margin", type=float)
     parser.add_argument("--confirm-low-evidence-horizon-decisions", type=int)
+    parser.add_argument(
+        "--confirm-low-evidence-horizon-mode",
+        choices=["fixed_decisions", "adaptive_next_player_turn_v1", "adaptive_payoff_window_v1", "combat_end_v1"],
+    )
     parser.add_argument("--confirm-low-evidence-margin", type=float)
     parser.add_argument("--oracle-continuation-policy", default="rule_baseline_v0")
     parser.add_argument("--verified-evaluation-mode", default="independent", choices=["independent", "bellman_cached_v1"])
@@ -100,6 +104,7 @@ def main() -> None:
                 "evidence_gate": args.evidence_gate,
                 "low_evidence_margin": args.low_evidence_margin,
                 "confirm_low_evidence_horizon_decisions": args.confirm_low_evidence_horizon_decisions,
+                "confirm_low_evidence_horizon_mode": args.confirm_low_evidence_horizon_mode,
                 "confirm_low_evidence_margin": args.confirm_low_evidence_margin,
                 "gamma": args.gamma,
                 "evaluation_mode": args.verified_evaluation_mode,

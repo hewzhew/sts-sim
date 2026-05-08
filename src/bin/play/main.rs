@@ -503,6 +503,30 @@ fn main() {
             "force" => sts_simulator::cli::live_comm::LiveExactTurnMode::Force,
             _ => sts_simulator::cli::live_comm::LiveExactTurnMode::Auto,
         };
+        let verified_teacher_mode = if has_flag("--live-comm-verified-teacher-takeover") {
+            sts_simulator::cli::live_comm::LiveVerifiedTeacherMode::Takeover
+        } else if has_flag("--live-comm-verified-teacher-shadow") {
+            sts_simulator::cli::live_comm::LiveVerifiedTeacherMode::Shadow
+        } else {
+            match flag_value("--live-comm-verified-teacher-mode")
+                .unwrap_or_else(|| "off".to_string())
+                .to_ascii_lowercase()
+                .as_str()
+            {
+                "shadow" => sts_simulator::cli::live_comm::LiveVerifiedTeacherMode::Shadow,
+                "takeover" => sts_simulator::cli::live_comm::LiveVerifiedTeacherMode::Takeover,
+                _ => sts_simulator::cli::live_comm::LiveVerifiedTeacherMode::Off,
+            }
+        };
+        if matches!(
+            verified_teacher_mode,
+            sts_simulator::cli::live_comm::LiveVerifiedTeacherMode::Takeover
+        ) {
+            eprintln!(
+                "[live_comm] --live-comm-verified-teacher-takeover is not enabled yet. Snapshot teacher shadow is available, but takeover requires audited live-frame evidence and command-mapping checks first. Use --live-comm-verified-teacher-shadow."
+            );
+            std::process::exit(2);
+        }
         let config = sts_simulator::cli::live_comm::LiveCommConfig {
             human_card_reward_audit: !fail_fast_debug && has_flag("--live-comm-human-card-reward"),
             human_boss_combat_handoff: !fail_fast_debug
@@ -510,6 +534,7 @@ fn main() {
             human_noncombat_hold: !fail_fast_debug && has_flag("--live-comm-human-noncombat"),
             fail_fast_debug,
             sidecar_shadow: has_flag("--sidecar-shadow"),
+            verified_teacher_mode,
             parity_mode,
             combat_mode,
             exact_turn_mode,

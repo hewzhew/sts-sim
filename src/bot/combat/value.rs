@@ -67,6 +67,14 @@ pub(super) fn incoming_damage(combat: &CombatState) -> i32 {
     StatePressureFeatures::from_combat(combat).value_incoming
 }
 
+fn effective_block(combat: &CombatState) -> i32 {
+    combat
+        .entities
+        .player
+        .block
+        .min(incoming_damage(combat).max(0))
+}
+
 pub(super) fn non_terminal_value(
     survives: bool,
     projected_unblocked: i32,
@@ -131,7 +139,7 @@ pub(super) fn frontier_value_at_state(engine: &EngineState, combat: &CombatState
             ),
             total_enemy_hp(combat),
             combat.entities.player.current_hp,
-            combat.entities.player.block,
+            effective_block(combat),
             player_buff_score(combat),
             player_debuff_score(combat),
             enemy_buff_score(combat),
@@ -151,7 +159,7 @@ pub(super) fn compare_values(left: &CombatValue, right: &CombatValue) -> std::cm
                 .kind
                 .cmp(&left.kind)
                 .then_with(|| right.final_hp.cmp(&left.final_hp))
-                .then_with(|| right.final_block.cmp(&left.final_block)),
+                .then_with(|| terminal_block_tiebreak(*right).cmp(&terminal_block_tiebreak(*left))),
             (CombatValue::NonTerminal(left), CombatValue::NonTerminal(right)) => right
                 .survives
                 .cmp(&left.survives)
@@ -177,7 +185,13 @@ pub(super) fn compare_values(left: &CombatValue, right: &CombatValue) -> std::cm
 pub(super) fn diagnostic_score(value: CombatValue, input: &ClientInput) -> f32 {
     match value {
         CombatValue::Terminal(outcome) => {
-            let mut score = outcome.final_hp as f32 * 0.1 + outcome.final_block as f32 * 0.05;
+            let mut score = outcome.final_hp as f32 * 0.1;
+            if !matches!(
+                outcome.kind,
+                TerminalKind::CombatCleared | TerminalKind::Victory
+            ) {
+                score += outcome.final_block as f32 * 0.05;
+            }
             score += match outcome.kind {
                 TerminalKind::Defeat => -20.0,
                 TerminalKind::Ongoing => 0.0,
@@ -208,6 +222,13 @@ pub(super) fn diagnostic_score(value: CombatValue, input: &ClientInput) -> f32 {
             }
             score
         }
+    }
+}
+
+fn terminal_block_tiebreak(outcome: TerminalOutcome) -> i32 {
+    match outcome.kind {
+        TerminalKind::CombatCleared | TerminalKind::Victory => 0,
+        TerminalKind::Defeat | TerminalKind::Ongoing => outcome.final_block,
     }
 }
 
@@ -339,6 +360,7 @@ fn future_position_score(
 mod tests {
     use super::{compare_values, projected_frontier, CombatValue};
     use crate::bot::combat::profile::SearchProfileBreakdown;
+    use crate::bot::combat::terminal::{TerminalKind, TerminalOutcome};
     use crate::content::cards::CardId;
     use crate::content::monsters::EnemyId;
     use crate::content::powers::PowerId;
@@ -450,6 +472,26 @@ mod tests {
                 }
             ) > super::diagnostic_score(value, &ClientInput::EndTurn),
             "non-endturn actions should still get a slight preference in identical states"
+        );
+    }
+
+    #[test]
+    fn terminal_combat_clear_ordering_ignores_final_block() {
+        let lethal_with_block = CombatValue::Terminal(TerminalOutcome {
+            kind: TerminalKind::CombatCleared,
+            final_hp: 40,
+            final_block: 30,
+        });
+        let lethal_without_block = CombatValue::Terminal(TerminalOutcome {
+            kind: TerminalKind::CombatCleared,
+            final_hp: 40,
+            final_block: 0,
+        });
+
+        assert_eq!(
+            compare_values(&lethal_with_block, &lethal_without_block),
+            std::cmp::Ordering::Equal,
+            "block after a cleared combat should not make a slower lethal line look better"
         );
     }
 }

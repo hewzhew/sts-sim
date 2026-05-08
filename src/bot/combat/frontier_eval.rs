@@ -37,7 +37,7 @@ pub(crate) fn eval_frontier_state(engine: &EngineState, combat: &CombatState) ->
             projected_unblocked: projected_unblocked(combat),
             projected_enemy_total: total_enemy_hp(combat),
             projected_hp: combat.entities.player.current_hp,
-            projected_block: combat.entities.player.block,
+            projected_block: effective_block(combat),
             player_buff_score: player_buff_score(combat),
             player_debuff_score: player_debuff_score(combat),
             enemy_buff_score: enemy_buff_score(combat),
@@ -58,7 +58,7 @@ pub(crate) fn compare_frontier_eval(
                 .kind
                 .cmp(&left.kind)
                 .then_with(|| right.final_hp.cmp(&left.final_hp))
-                .then_with(|| right.final_block.cmp(&left.final_block)),
+                .then_with(|| terminal_block_tiebreak(*right).cmp(&terminal_block_tiebreak(*left))),
             (FrontierEval::NonTerminal(left), FrontierEval::NonTerminal(right)) => right
                 .survives
                 .cmp(&left.survives)
@@ -77,6 +77,13 @@ pub(crate) fn compare_frontier_eval(
                 .then_with(|| right.projected_block.cmp(&left.projected_block)),
             _ => std::cmp::Ordering::Equal,
         })
+}
+
+fn terminal_block_tiebreak(outcome: TerminalOutcome) -> i32 {
+    match outcome.kind {
+        TerminalKind::CombatCleared | TerminalKind::Victory => 0,
+        TerminalKind::Defeat | TerminalKind::Ongoing => outcome.final_block,
+    }
 }
 
 fn frontier_bucket(value: &FrontierEval) -> i32 {
@@ -114,6 +121,13 @@ fn total_enemy_hp(combat: &CombatState) -> i32 {
 fn projected_unblocked(combat: &CombatState) -> i32 {
     (StatePressureFeatures::from_combat(combat).value_incoming - combat.entities.player.block)
         .max(0)
+}
+
+fn effective_block(combat: &CombatState) -> i32 {
+    let incoming = StatePressureFeatures::from_combat(combat)
+        .value_incoming
+        .max(0);
+    combat.entities.player.block.min(incoming)
 }
 
 fn next_non_endturn_options(engine: &EngineState, combat: &CombatState) -> i32 {

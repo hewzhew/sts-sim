@@ -68,6 +68,9 @@ fn run_verified_adv_override_batch(
             confirm_low_evidence_horizon_decisions: options
                 .confirm_low_evidence
                 .map(|confirm| confirm.horizon_decisions),
+            confirm_low_evidence_horizon_mode: options
+                .confirm_low_evidence
+                .map(|confirm| confirm.horizon_mode.as_str().to_string()),
             confirm_low_evidence_margin: options.confirm_low_evidence.map(|confirm| confirm.margin),
             evaluation_mode: options.runtime.mode.as_str().to_string(),
             value_cache_scope: options.runtime.cache_scope.as_str().to_string(),
@@ -269,12 +272,11 @@ fn choose_verified_adv_override_action_single_stage(
     };
     stats.record_final_payload(&payload);
 
-    let Some(rule_return) = payload
+    let rule_evaluation = payload
         .evaluations
         .iter()
-        .find(|evaluation| evaluation.ok && evaluation.action_index == rule_index)
-        .map(|evaluation| evaluation.discounted_return)
-    else {
+        .find(|evaluation| evaluation.ok && evaluation.action_index == rule_index);
+    let Some(rule_return) = rule_evaluation.map(|evaluation| evaluation.discounted_return) else {
         stats.record_missing(decision_type, "missing_rule_evaluation");
         return rule_index;
     };
@@ -315,34 +317,38 @@ fn choose_verified_adv_override_action_single_stage(
         payoff_reasons: best_evaluation
             .map(|evaluation| evaluation.payoff_reasons.clone())
             .unwrap_or_default(),
+        confirmation_kind: None,
+        artifact_reasons: Vec::new(),
         evaluated_candidate_count: count_successful_evaluations(&payload),
         policy_step_eval_count: payload.policy_step_eval_count,
     };
-    let mut confirmation_attempted = false;
+    let mut confirmation_kind = None;
     if best_index != rule_index && adv > options.oracle_margin {
-        match maybe_confirm_low_evidence_override(
+        match maybe_confirm_suspect_override(
             env,
             episode_cache,
+            state,
             rule_index,
             best_index,
             &options,
+            rule_evaluation,
             best_evaluation,
             stats,
         ) {
-            Ok(Some(confirm_evidence)) => {
-                confirmation_attempted = true;
+            Ok(ConfirmationOutcome::Confirmed(confirm_evidence)) => {
+                confirmation_kind = confirm_evidence.confirmation_kind.clone();
                 selected_evidence = confirm_evidence;
             }
-            Ok(None) => {}
+            Ok(ConfirmationOutcome::NotNeeded) => {}
+            Ok(ConfirmationOutcome::Rejected) => return rule_index,
             Err(err) => {
                 stats.record_missing(decision_type, &format!("confirm_evaluation_error:{err}"));
-                stats.record_confirm_reject();
-                stats.record_low_evidence_reject();
+                stats.record_reject();
                 return rule_index;
             }
         }
     }
-    let required_margin = if confirmation_attempted {
+    let required_margin = if confirmation_kind.is_some() {
         options
             .confirm_low_evidence
             .map(|confirm| confirm.margin)
@@ -351,8 +357,10 @@ fn choose_verified_adv_override_action_single_stage(
         margin_for_selected_evidence(&options, best_evaluation)
     };
     if best_index != rule_index && selected_evidence.adv_vs_rule > required_margin {
-        if confirmation_attempted {
-            stats.record_confirm_accept();
+        match confirmation_kind.as_deref() {
+            Some("horizon_artifact_boundary") => stats.record_artifact_confirm_accept(),
+            Some("low_evidence") => stats.record_confirm_accept(),
+            _ => {}
         }
         stats.record_override_payoff_reasons(&selected_evidence.payoff_reasons);
         stats.record_override(decision_type, &context_keys, selected_evidence.adv_vs_rule);
@@ -369,9 +377,14 @@ fn choose_verified_adv_override_action_single_stage(
         ));
         best_index
     } else {
-        if confirmation_attempted {
-            stats.record_confirm_reject();
-            stats.record_low_evidence_reject();
+        if let Some(kind) = confirmation_kind.as_deref() {
+            if kind == "horizon_artifact_boundary" {
+                stats.record_artifact_confirm_reject();
+                stats.record_reject();
+            } else {
+                stats.record_confirm_reject();
+                stats.record_low_evidence_reject();
+            }
         } else if best_index != rule_index
             && adv > options.oracle_margin
             && low_evidence_margin_applies(&options, best_evaluation)
@@ -523,12 +536,11 @@ fn choose_verified_adv_override_action_two_stage(
     };
     stats.record_final_payload(&final_payload);
 
-    let Some(rule_return) = final_payload
+    let rule_evaluation = final_payload
         .evaluations
         .iter()
-        .find(|evaluation| evaluation.ok && evaluation.action_index == rule_index)
-        .map(|evaluation| evaluation.discounted_return)
-    else {
+        .find(|evaluation| evaluation.ok && evaluation.action_index == rule_index);
+    let Some(rule_return) = rule_evaluation.map(|evaluation| evaluation.discounted_return) else {
         stats.record_missing(decision_type, "missing_final_rule_evaluation");
         return rule_index;
     };
@@ -563,34 +575,38 @@ fn choose_verified_adv_override_action_two_stage(
         payoff_reasons: best_evaluation
             .map(|evaluation| evaluation.payoff_reasons.clone())
             .unwrap_or_default(),
+        confirmation_kind: None,
+        artifact_reasons: Vec::new(),
         evaluated_candidate_count: count_successful_evaluations(&final_payload),
         policy_step_eval_count: final_payload.policy_step_eval_count,
     };
-    let mut confirmation_attempted = false;
+    let mut confirmation_kind = None;
     if best_index != rule_index && adv > options.oracle_margin {
-        match maybe_confirm_low_evidence_override(
+        match maybe_confirm_suspect_override(
             env,
             episode_cache,
+            state,
             rule_index,
             best_index,
             &options,
+            rule_evaluation,
             best_evaluation,
             stats,
         ) {
-            Ok(Some(confirm_evidence)) => {
-                confirmation_attempted = true;
+            Ok(ConfirmationOutcome::Confirmed(confirm_evidence)) => {
+                confirmation_kind = confirm_evidence.confirmation_kind.clone();
                 selected_evidence = confirm_evidence;
             }
-            Ok(None) => {}
+            Ok(ConfirmationOutcome::NotNeeded) => {}
+            Ok(ConfirmationOutcome::Rejected) => return rule_index,
             Err(err) => {
                 stats.record_missing(decision_type, &format!("confirm_evaluation_error:{err}"));
-                stats.record_confirm_reject();
-                stats.record_low_evidence_reject();
+                stats.record_reject();
                 return rule_index;
             }
         }
     }
-    let required_margin = if confirmation_attempted {
+    let required_margin = if confirmation_kind.is_some() {
         options
             .confirm_low_evidence
             .map(|confirm| confirm.margin)
@@ -599,8 +615,10 @@ fn choose_verified_adv_override_action_two_stage(
         margin_for_selected_evidence(&options, best_evaluation)
     };
     if best_index != rule_index && selected_evidence.adv_vs_rule > required_margin {
-        if confirmation_attempted {
-            stats.record_confirm_accept();
+        match confirmation_kind.as_deref() {
+            Some("horizon_artifact_boundary") => stats.record_artifact_confirm_accept(),
+            Some("low_evidence") => stats.record_confirm_accept(),
+            _ => {}
         }
         stats.record_override_payoff_reasons(&selected_evidence.payoff_reasons);
         stats.record_override(decision_type, &context_keys, selected_evidence.adv_vs_rule);
@@ -617,9 +635,14 @@ fn choose_verified_adv_override_action_two_stage(
         ));
         best_index
     } else {
-        if confirmation_attempted {
-            stats.record_confirm_reject();
-            stats.record_low_evidence_reject();
+        if let Some(kind) = confirmation_kind.as_deref() {
+            if kind == "horizon_artifact_boundary" {
+                stats.record_artifact_confirm_reject();
+                stats.record_reject();
+            } else {
+                stats.record_confirm_reject();
+                stats.record_low_evidence_reject();
+            }
         } else if best_index != rule_index
             && adv > options.oracle_margin
             && low_evidence_margin_applies(&options, best_evaluation)
@@ -746,12 +769,11 @@ fn choose_verified_adv_override_action_model_proposer(
     };
     stats.record_final_payload(&final_payload);
 
-    let Some(rule_return) = final_payload
+    let rule_evaluation = final_payload
         .evaluations
         .iter()
-        .find(|evaluation| evaluation.ok && evaluation.action_index == rule_index)
-        .map(|evaluation| evaluation.discounted_return)
-    else {
+        .find(|evaluation| evaluation.ok && evaluation.action_index == rule_index);
+    let Some(rule_return) = rule_evaluation.map(|evaluation| evaluation.discounted_return) else {
         stats.record_missing(decision_type, "missing_final_rule_evaluation");
         return rule_index;
     };
@@ -786,34 +808,38 @@ fn choose_verified_adv_override_action_model_proposer(
         payoff_reasons: best_evaluation
             .map(|evaluation| evaluation.payoff_reasons.clone())
             .unwrap_or_default(),
+        confirmation_kind: None,
+        artifact_reasons: Vec::new(),
         evaluated_candidate_count: count_successful_evaluations(&final_payload),
         policy_step_eval_count: final_payload.policy_step_eval_count,
     };
-    let mut confirmation_attempted = false;
+    let mut confirmation_kind = None;
     if best_index != rule_index && adv > options.oracle_margin {
-        match maybe_confirm_low_evidence_override(
+        match maybe_confirm_suspect_override(
             env,
             episode_cache,
+            state,
             rule_index,
             best_index,
             &options,
+            rule_evaluation,
             best_evaluation,
             stats,
         ) {
-            Ok(Some(confirm_evidence)) => {
-                confirmation_attempted = true;
+            Ok(ConfirmationOutcome::Confirmed(confirm_evidence)) => {
+                confirmation_kind = confirm_evidence.confirmation_kind.clone();
                 selected_evidence = confirm_evidence;
             }
-            Ok(None) => {}
+            Ok(ConfirmationOutcome::NotNeeded) => {}
+            Ok(ConfirmationOutcome::Rejected) => return rule_index,
             Err(err) => {
                 stats.record_missing(decision_type, &format!("confirm_evaluation_error:{err}"));
-                stats.record_confirm_reject();
-                stats.record_low_evidence_reject();
+                stats.record_reject();
                 return rule_index;
             }
         }
     }
-    let required_margin = if confirmation_attempted {
+    let required_margin = if confirmation_kind.is_some() {
         options
             .confirm_low_evidence
             .map(|confirm| confirm.margin)
@@ -822,8 +848,10 @@ fn choose_verified_adv_override_action_model_proposer(
         margin_for_selected_evidence(&options, best_evaluation)
     };
     if best_index != rule_index && selected_evidence.adv_vs_rule > required_margin {
-        if confirmation_attempted {
-            stats.record_confirm_accept();
+        match confirmation_kind.as_deref() {
+            Some("horizon_artifact_boundary") => stats.record_artifact_confirm_accept(),
+            Some("low_evidence") => stats.record_confirm_accept(),
+            _ => {}
         }
         stats.record_override_payoff_reasons(&selected_evidence.payoff_reasons);
         stats.record_override(decision_type, &context_keys, selected_evidence.adv_vs_rule);
@@ -840,9 +868,14 @@ fn choose_verified_adv_override_action_model_proposer(
         ));
         best_index
     } else {
-        if confirmation_attempted {
-            stats.record_confirm_reject();
-            stats.record_low_evidence_reject();
+        if let Some(kind) = confirmation_kind.as_deref() {
+            if kind == "horizon_artifact_boundary" {
+                stats.record_artifact_confirm_reject();
+                stats.record_reject();
+            } else {
+                stats.record_confirm_reject();
+                stats.record_low_evidence_reject();
+            }
         } else if best_index != rule_index
             && adv > options.oracle_margin
             && low_evidence_margin_applies(&options, best_evaluation)
@@ -1234,6 +1267,8 @@ impl VerifiedOverrideEvent {
             horizon_mode: evidence.horizon_mode.as_str().to_string(),
             horizon_stop_reason: evidence.horizon_stop_reason.clone(),
             payoff_reasons: evidence.payoff_reasons.clone(),
+            confirmation_kind: evidence.confirmation_kind.clone(),
+            artifact_reasons: evidence.artifact_reasons.clone(),
             scoped_candidate_count,
             evaluated_candidate_count: evidence.evaluated_candidate_count,
             policy_step_eval_count: evidence.policy_step_eval_count,
@@ -1257,6 +1292,8 @@ struct OverrideSelectionEvidence {
     horizon_mode: HorizonMode,
     horizon_stop_reason: Option<String>,
     payoff_reasons: Vec<String>,
+    confirmation_kind: Option<String>,
+    artifact_reasons: Vec<String>,
     evaluated_candidate_count: usize,
     policy_step_eval_count: usize,
 }
@@ -1287,6 +1324,8 @@ impl OverrideSelectionEvidence {
             horizon_mode,
             horizon_stop_reason: Some(selected_evaluation.horizon_stop_reason.clone()),
             payoff_reasons: selected_evaluation.payoff_reasons.clone(),
+            confirmation_kind: None,
+            artifact_reasons: Vec::new(),
             evaluated_candidate_count: count_successful_evaluations(payload),
             policy_step_eval_count: payload.policy_step_eval_count,
         })
@@ -1310,35 +1349,70 @@ fn low_evidence_margin_applies(
     })
 }
 
-fn maybe_confirm_low_evidence_override(
+enum ConfirmationOutcome {
+    NotNeeded,
+    Confirmed(OverrideSelectionEvidence),
+    Rejected,
+}
+
+fn maybe_confirm_suspect_override(
     env: &mut FullRunEnv,
     episode_cache: &mut ValueCache,
+    state: &FullRunEnvState,
     rule_index: usize,
     best_index: usize,
     options: &VerifiedAdvOverrideOptions,
+    rule_evaluation: Option<&CandidateEvaluation>,
     selected_evaluation: Option<&CandidateEvaluation>,
     stats: &mut VerifiedAdvOverrideStats,
-) -> Result<Option<OverrideSelectionEvidence>, String> {
-    let Some(confirm) = options.confirm_low_evidence else {
-        return Ok(None);
-    };
-    if best_index == rule_index || !low_evidence_margin_applies(options, selected_evaluation) {
-        return Ok(None);
+) -> Result<ConfirmationOutcome, String> {
+    if best_index == rule_index {
+        return Ok(ConfirmationOutcome::NotNeeded);
     }
 
-    stats.record_confirm_decision();
+    let artifact_reasons =
+        horizon_artifact_reasons(state, rule_index, best_index, rule_evaluation, selected_evaluation);
+    let low_evidence = low_evidence_margin_applies(options, selected_evaluation);
+    if artifact_reasons.is_empty() && !low_evidence {
+        return Ok(ConfirmationOutcome::NotNeeded);
+    }
+    let Some(confirm) = options.confirm_low_evidence else {
+        if !artifact_reasons.is_empty() {
+            stats.record_artifact_confirm_decision(&artifact_reasons);
+            stats.record_artifact_confirm_reject();
+            stats.record_reject();
+            return Ok(ConfirmationOutcome::Rejected);
+        }
+        return Ok(ConfirmationOutcome::NotNeeded);
+    };
+
+    let (confirmation_kind, horizon_mode, horizon_decisions) = if artifact_reasons.is_empty() {
+        ("low_evidence".to_string(), confirm.horizon_mode, confirm.horizon_decisions)
+    } else {
+        stats.record_artifact_confirm_decision(&artifact_reasons);
+        (
+            "horizon_artifact_boundary".to_string(),
+            confirm.horizon_mode,
+            confirm.horizon_decisions,
+        )
+    };
+    if artifact_reasons.is_empty() {
+        stats.record_confirm_decision();
+    }
+
     let mut confirm_indices = vec![rule_index, best_index];
     confirm_indices.sort_unstable();
     confirm_indices.dedup();
+    let runtime = confirmation_runtime_options(options.runtime, horizon_mode);
     let payload = evaluate_candidates(
         env,
         episode_cache,
         confirm_indices,
         options.continuation_policy,
-        confirm.horizon_decisions,
-        options.horizon_mode,
+        horizon_decisions,
+        horizon_mode,
         options.gamma,
-        options.runtime,
+        runtime,
         EvaluationOutputOptions {
             include_state: false,
             include_next_state: false,
@@ -1346,16 +1420,136 @@ fn maybe_confirm_low_evidence_override(
             check_live_env_unchanged: false,
         },
     )?;
-    stats.record_confirm_payload(&payload);
-    OverrideSelectionEvidence::from_payload(
+    if artifact_reasons.is_empty() {
+        stats.record_confirm_payload(&payload);
+    } else {
+        stats.record_artifact_confirm_payload(&payload);
+    }
+    let mut evidence = OverrideSelectionEvidence::from_payload(
         &payload,
         rule_index,
         best_index,
-        confirm.horizon_decisions,
-        options.horizon_mode,
+        horizon_decisions,
+        horizon_mode,
     )
-    .map(Some)
-    .ok_or_else(|| "missing_confirm_evaluation".to_string())
+    .ok_or_else(|| "missing_confirm_evaluation".to_string())?;
+    evidence.confirmation_kind = Some(confirmation_kind);
+    evidence.artifact_reasons = artifact_reasons;
+    Ok(ConfirmationOutcome::Confirmed(evidence))
+}
+
+fn confirmation_runtime_options(
+    mut runtime: EvaluationRuntimeOptions,
+    horizon_mode: HorizonMode,
+) -> EvaluationRuntimeOptions {
+    if horizon_mode != HorizonMode::FixedDecisions && runtime.mode == EvaluationMode::BellmanCachedV1
+    {
+        runtime.mode = EvaluationMode::Independent;
+        runtime.cache_scope = ValueCacheScope::Request;
+    }
+    runtime
+}
+
+fn horizon_artifact_reasons(
+    state: &FullRunEnvState,
+    rule_index: usize,
+    selected_index: usize,
+    rule_evaluation: Option<&CandidateEvaluation>,
+    selected_evaluation: Option<&CandidateEvaluation>,
+) -> Vec<String> {
+    let Some(selected_evaluation) = selected_evaluation else {
+        return Vec::new();
+    };
+    if selected_evaluation.horizon_stop_reason != "horizon_decision_cap" {
+        return Vec::new();
+    }
+    let adv = rule_evaluation
+        .map(|rule| selected_evaluation.discounted_return - rule.discounted_return)
+        .unwrap_or(0.0);
+    let rule_key = candidate_action_key(state, rule_index);
+    let selected_key = candidate_action_key(state, selected_index);
+    let mut reasons = Vec::new();
+    let near_combat_win_boundary = (1.75..2.75).contains(&adv);
+    if near_combat_win_boundary && selected_evaluation.payoff_reasons.is_empty() {
+        reasons.push("cap_adv_near_combat_win_no_payoff".to_string());
+    }
+    if near_combat_win_boundary
+        && same_card_target_swap(rule_key.as_deref(), selected_key.as_deref())
+    {
+        reasons.push("target_swap_combat_win_boundary".to_string());
+    }
+    if near_combat_win_boundary && is_end_turn_action(selected_key.as_deref()) {
+        reasons.push("end_turn_time_boundary".to_string());
+    }
+    if (1.75..3.25).contains(&adv)
+        && incoming_leaks_current_block(state)
+        && candidate_has_block(state, rule_index)
+        && !candidate_has_block(state, selected_index)
+    {
+        reasons.push("skip_block_under_incoming_boundary".to_string());
+    }
+    if terminal_defeat(rule_evaluation)
+        && selected_evaluation.horizon_stop_reason == "horizon_decision_cap"
+    {
+        reasons.push("terminal_cliff_rule_defeat_selected_truncated".to_string());
+    }
+    reasons.sort();
+    reasons.dedup();
+    reasons
+}
+
+fn terminal_defeat(evaluation: Option<&CandidateEvaluation>) -> bool {
+    evaluation.is_some_and(|evaluation| {
+        evaluation.rollout_done
+            && evaluation
+                .final_info
+                .as_ref()
+                .is_some_and(|info| info.result == "defeat")
+    })
+}
+
+fn same_card_target_swap(rule_key: Option<&str>, selected_key: Option<&str>) -> bool {
+    let Some(rule_key) = rule_key else {
+        return false;
+    };
+    let Some(selected_key) = selected_key else {
+        return false;
+    };
+    if !rule_key.contains("target:monster_slot") || !selected_key.contains("target:monster_slot") {
+        return false;
+    }
+    action_card_name(rule_key) == action_card_name(selected_key)
+        && action_target(rule_key) != action_target(selected_key)
+}
+
+fn action_card_name(action_key: &str) -> Option<&str> {
+    action_key
+        .split_once("card:")
+        .and_then(|(_, rest)| rest.split('/').next())
+}
+
+fn action_target(action_key: &str) -> Option<&str> {
+    action_key
+        .split_once("target:")
+        .map(|(_, rest)| rest.split('/').next().unwrap_or(rest))
+}
+
+fn is_end_turn_action(action_key: Option<&str>) -> bool {
+    action_key == Some("combat/end_turn")
+}
+
+fn candidate_has_block(state: &FullRunEnvState, index: usize) -> bool {
+    state
+        .action_candidates
+        .get(index)
+        .and_then(|candidate| candidate.card.as_ref())
+        .is_some_and(|card| card.base_block > 0 || card.upgraded_block > 0)
+}
+
+fn incoming_leaks_current_block(state: &FullRunEnvState) -> bool {
+    state.observation.combat.as_ref().is_some_and(|combat| {
+        combat.visible_incoming_damage > combat.player_block
+    })
 }
 
 fn margin_for_selected_evidence(
@@ -1452,6 +1646,14 @@ impl VerifiedAdvOverrideStats {
         self.record_evaluation_payload(payload);
     }
 
+    fn record_artifact_confirm_payload(&mut self, payload: &CandidateEvaluationPayload) {
+        let successful = count_successful_evaluations(payload);
+        self.artifact_confirm_candidate_evaluation_count += successful;
+        self.artifact_confirm_policy_step_eval_count += payload.policy_step_eval_count;
+        self.evaluated_candidate_count += successful;
+        self.record_evaluation_payload(payload);
+    }
+
     fn record_confirm_decision(&mut self) {
         self.confirm_decision_count += 1;
     }
@@ -1462,6 +1664,24 @@ impl VerifiedAdvOverrideStats {
 
     fn record_confirm_reject(&mut self) {
         self.confirm_reject_count += 1;
+    }
+
+    fn record_artifact_confirm_decision(&mut self, reasons: &[String]) {
+        self.artifact_confirm_decision_count += 1;
+        for reason in reasons {
+            *self
+                .horizon_artifact_reason_counts
+                .entry(reason.clone())
+                .or_insert(0) += 1;
+        }
+    }
+
+    fn record_artifact_confirm_accept(&mut self) {
+        self.artifact_confirm_accept_count += 1;
+    }
+
+    fn record_artifact_confirm_reject(&mut self) {
+        self.artifact_confirm_reject_count += 1;
     }
 
     fn record_missing(&mut self, decision_type: &str, reason: &str) {
@@ -1579,6 +1799,13 @@ impl VerifiedAdvOverrideStats {
             verified_confirm_reject_count: self.confirm_reject_count,
             verified_confirm_candidate_evaluation_count: self.confirm_candidate_evaluation_count,
             verified_confirm_policy_step_eval_count: self.confirm_policy_step_eval_count,
+            verified_artifact_confirm_decision_count: self.artifact_confirm_decision_count,
+            verified_artifact_confirm_accept_count: self.artifact_confirm_accept_count,
+            verified_artifact_confirm_reject_count: self.artifact_confirm_reject_count,
+            verified_artifact_confirm_candidate_evaluation_count: self
+                .artifact_confirm_candidate_evaluation_count,
+            verified_artifact_confirm_policy_step_eval_count: self
+                .artifact_confirm_policy_step_eval_count,
             verified_min_adv_on_overrides: self.min_verified_adv,
             verified_max_adv_on_overrides: self.max_verified_adv,
             verified_decision_type_counts: self.decision_type_counts.clone(),
@@ -1589,6 +1816,7 @@ impl VerifiedAdvOverrideStats {
             verified_horizon_stop_reason_counts: self.horizon_stop_reason_counts.clone(),
             verified_payoff_reason_counts: self.payoff_reason_counts.clone(),
             verified_override_payoff_reason_counts: self.override_payoff_reason_counts.clone(),
+            verified_horizon_artifact_reason_counts: self.horizon_artifact_reason_counts.clone(),
             verified_missing_counts: self.missing_counts.clone(),
             verified_cached_root_candidate_count: self.cached_root_candidate_count,
             verified_cached_root_exact_dedup_count: self.cached_root_exact_dedup_count,
@@ -1635,6 +1863,7 @@ fn summarize_verified_episodes(
     let mut horizon_stop_reason_counts = BTreeMap::new();
     let mut payoff_reason_counts = BTreeMap::new();
     let mut override_payoff_reason_counts = BTreeMap::new();
+    let mut horizon_artifact_reason_counts = BTreeMap::new();
     let mut missing_counts = BTreeMap::new();
     let mut verified_adv_weighted_sum = 0.0f32;
     let mut verified_overrides = 0usize;
@@ -1656,6 +1885,11 @@ fn summarize_verified_episodes(
     let mut confirm_rejects = 0usize;
     let mut confirm_evaluations = 0usize;
     let mut confirm_policy_steps = 0usize;
+    let mut artifact_confirm_decisions = 0usize;
+    let mut artifact_confirm_accepts = 0usize;
+    let mut artifact_confirm_rejects = 0usize;
+    let mut artifact_confirm_evaluations = 0usize;
+    let mut artifact_confirm_policy_steps = 0usize;
     let mut scoped_candidate_count_sum = 0.0f32;
     let mut cached_root_candidates = 0usize;
     let mut cached_root_dedup = 0usize;
@@ -1695,6 +1929,13 @@ fn summarize_verified_episodes(
         confirm_rejects += row.stats.verified_confirm_reject_count;
         confirm_evaluations += row.stats.verified_confirm_candidate_evaluation_count;
         confirm_policy_steps += row.stats.verified_confirm_policy_step_eval_count;
+        artifact_confirm_decisions += row.stats.verified_artifact_confirm_decision_count;
+        artifact_confirm_accepts += row.stats.verified_artifact_confirm_accept_count;
+        artifact_confirm_rejects += row.stats.verified_artifact_confirm_reject_count;
+        artifact_confirm_evaluations += row
+            .stats
+            .verified_artifact_confirm_candidate_evaluation_count;
+        artifact_confirm_policy_steps += row.stats.verified_artifact_confirm_policy_step_eval_count;
         verified_harmful += row.stats.verified_harmful_override_count;
         if let Some(mean_adv) = row.stats.verified_adv_mean_on_overrides {
             verified_adv_weighted_sum += mean_adv * row.stats.verified_override_count as f32;
@@ -1732,6 +1973,10 @@ fn summarize_verified_episodes(
         merge_counts(
             &mut override_payoff_reason_counts,
             &row.stats.verified_override_payoff_reason_counts,
+        );
+        merge_counts(
+            &mut horizon_artifact_reason_counts,
+            &row.stats.verified_horizon_artifact_reason_counts,
         );
         merge_counts(&mut missing_counts, &row.stats.verified_missing_counts);
         cached_root_candidates += row.stats.verified_cached_root_candidate_count;
@@ -1797,6 +2042,11 @@ fn summarize_verified_episodes(
         verified_confirm_reject_count: confirm_rejects,
         verified_confirm_candidate_evaluation_count: confirm_evaluations,
         verified_confirm_policy_step_eval_count: confirm_policy_steps,
+        verified_artifact_confirm_decision_count: artifact_confirm_decisions,
+        verified_artifact_confirm_accept_count: artifact_confirm_accepts,
+        verified_artifact_confirm_reject_count: artifact_confirm_rejects,
+        verified_artifact_confirm_candidate_evaluation_count: artifact_confirm_evaluations,
+        verified_artifact_confirm_policy_step_eval_count: artifact_confirm_policy_steps,
         verified_decision_type_counts: decision_type_counts,
         verified_override_decision_type_counts: override_decision_type_counts,
         verified_decision_context_counts: decision_context_counts,
@@ -1805,6 +2055,7 @@ fn summarize_verified_episodes(
         verified_horizon_stop_reason_counts: horizon_stop_reason_counts,
         verified_payoff_reason_counts: payoff_reason_counts,
         verified_override_payoff_reason_counts: override_payoff_reason_counts,
+        verified_horizon_artifact_reason_counts: horizon_artifact_reason_counts,
         verified_missing_counts: missing_counts,
         verified_cached_root_candidate_count: cached_root_candidates,
         verified_cached_root_exact_dedup_count: cached_root_dedup,
