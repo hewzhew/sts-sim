@@ -40,9 +40,10 @@ This does not make `frontier_eval`, exact-turn search, verified teacher, or live
 - `decision_record_step` can optionally attach `candidate_evaluation_teacher_v0` labels. These labels evaluate candidates and populate `teacher_label`; they do not choose the live action.
 - `teacher_label.payload.training_eligibility` records whether the label can be used for training. Fixed-decision horizon labels are marked audit/screening only by default.
 - `tools/learning/audit_decision_record_teacher_quality.py` audits `DecisionRecord` JSONL and can fail before training if no eligible labels are present.
+- `tools/learning/verify_decision_records_replay.py` replays `DecisionRecord` JSONL through the DecisionEnv commands and verifies state hashes, candidate lists, rewards, and terminal flags. It requires the same env config used during collection.
 
 ## Next Work
 
-- Add stricter teacher quality gates before any labels are treated as trainable.
 - Replace the filtered JSON public observation with typed public observation structs.
 - Split live policy input so it cannot read oracle/debug payloads by construction.
+- Move legacy combat planners and frontier heuristics behind explicitly named fallback/evidence interfaces.
