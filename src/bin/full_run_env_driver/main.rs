@@ -2035,6 +2035,7 @@ fn teacher_label_from_candidate_evaluation(
         })
         .collect::<Vec<_>>();
     let pairwise_preferences = pairwise_preferences_from_evaluations(&payload.evaluations);
+    let training_eligibility = teacher_training_eligibility(&payload, pairwise_preferences.len());
     TeacherDecisionLabel {
         teacher_spec_version: "candidate_evaluation_teacher_v0".to_string(),
         return_spec_version: return_spec_version.to_string(),
@@ -2059,8 +2060,86 @@ fn teacher_label_from_candidate_evaluation(
             "parallelism_used": payload.parallelism_used,
             "candidate_eval_wall_ms": payload.candidate_eval_wall_ms,
             "live_env_unchanged": payload.live_env_unchanged,
+            "training_eligibility": training_eligibility,
         }),
     }
+}
+
+fn teacher_training_eligibility(
+    payload: &CandidateEvaluationPayload,
+    pairwise_count: usize,
+) -> Value {
+    let mut reasons = Vec::<String>::new();
+    if payload.live_env_unchanged != Some(true) {
+        reasons.push("live_env_changed_or_unchecked".to_string());
+    }
+    if payload.evaluations.len() < 2 {
+        reasons.push("fewer_than_two_candidates".to_string());
+    }
+    if pairwise_count == 0 {
+        reasons.push("no_strict_pairwise_preferences".to_string());
+    }
+    if payload
+        .evaluations
+        .iter()
+        .any(|evaluation| !evaluation.ok || evaluation.error.is_some())
+    {
+        reasons.push("candidate_evaluation_error".to_string());
+    }
+    if payload
+        .evaluations
+        .iter()
+        .any(|evaluation| !evaluation.discounted_return.is_finite())
+    {
+        reasons.push("non_finite_return".to_string());
+    }
+    if payload.horizon_mode == "fixed_decisions" {
+        reasons.push("fixed_decision_horizon_audit_only".to_string());
+    }
+    if payload
+        .evaluations
+        .iter()
+        .any(|evaluation| evaluation.horizon_stop_reason == "horizon_decision_cap")
+    {
+        reasons.push("horizon_decision_cap_hit".to_string());
+    }
+    if payload.evaluations.iter().any(|evaluation| {
+        evaluation
+            .final_info
+            .as_ref()
+            .is_some_and(|info| matches!(info.result.as_str(), "truncated" | "crash"))
+    }) {
+        reasons.push("truncated_or_crash_final_info".to_string());
+    }
+    let strict_modes = ["combat_end_v1"];
+    if !strict_modes.contains(&payload.horizon_mode.as_str()) {
+        reasons.push(format!(
+            "horizon_mode_not_strict_trainable:{}",
+            payload.horizon_mode
+        ));
+    }
+    reasons.sort();
+    reasons.dedup();
+    let eligible_for_training = reasons.is_empty();
+    let label_use = if eligible_for_training {
+        "trainable_pairwise"
+    } else if payload
+        .evaluations
+        .iter()
+        .any(|evaluation| evaluation.ok && evaluation.discounted_return.is_finite())
+    {
+        "audit_or_screening_only"
+    } else {
+        "unusable"
+    };
+    json!({
+        "eligible_for_training": eligible_for_training,
+        "label_use": label_use,
+        "ineligibility_reasons": reasons,
+        "candidate_count": payload.evaluations.len(),
+        "pairwise_count": pairwise_count,
+        "strict_trainable_horizon_modes": strict_modes,
+    })
 }
 
 fn pairwise_preferences_from_evaluations(
