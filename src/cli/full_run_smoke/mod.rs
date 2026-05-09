@@ -1,6 +1,5 @@
 use serde::{Deserialize, Serialize};
 use std::collections::hash_map::DefaultHasher;
-use std::collections::BTreeMap;
 use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 use std::time::Instant;
@@ -105,8 +104,6 @@ impl FullRunEnv {
         }
         let action_index = match policy {
             RunPolicyKind::RuleBaselineV0 => choose_rule_baseline_action(&self.ctx, &legal_actions),
-            RunPolicyKind::PlanQueryV0 => choose_plan_query_action(&self.ctx, &legal_actions)
-                .unwrap_or_else(|| choose_rule_baseline_action(&self.ctx, &legal_actions)),
             RunPolicyKind::RandomMasked => {
                 return Err(
                     "random_masked policy step is not stateful in FullRunEnv; choose a legal index externally"
@@ -139,8 +136,6 @@ impl FullRunEnv {
         }
         let action_index = match policy {
             RunPolicyKind::RuleBaselineV0 => choose_rule_baseline_action(&self.ctx, &legal_actions),
-            RunPolicyKind::PlanQueryV0 => choose_plan_query_action(&self.ctx, &legal_actions)
-                .unwrap_or_else(|| choose_rule_baseline_action(&self.ctx, &legal_actions)),
             RunPolicyKind::RandomMasked => {
                 return Err(
                     "random_masked policy preview is not deterministic in FullRunEnv".to_string(),
@@ -185,10 +180,6 @@ impl FullRunEnv {
         self.config.final_act.hash(&mut hasher);
         self.config.player_class.hash(&mut hasher);
         self.config.max_steps.hash(&mut hasher);
-        self.config
-            .reward_shaping_profile
-            .as_str()
-            .hash(&mut hasher);
         self.steps.hash(&mut hasher);
         self.done.hash(&mut hasher);
         self.terminal_reason.hash(&mut hasher);
@@ -400,8 +391,6 @@ impl FullRunEnv {
         }
 
         let before_score = full_run_progress_score(&self.ctx);
-        let action_shaping =
-            full_run_action_shaping_reward(&self.ctx, &action, self.config.reward_shaping_profile);
         let keep_running = tick_run(
             &mut self.ctx.engine_state,
             &mut self.ctx.run_state,
@@ -474,7 +463,7 @@ impl FullRunEnv {
         }
 
         let after_score = full_run_progress_score(&self.ctx);
-        let reward = after_score - before_score + self.terminal_reward() + action_shaping;
+        let reward = after_score - before_score + self.terminal_reward();
         Ok(FullRunEnvStep {
             state: self.prepare_state()?,
             reward,
@@ -932,7 +921,6 @@ mod tests {
             policy: RunPolicyKind::RandomMasked,
             trace_dir: None,
             determinism_check: true,
-            reward_shaping_profile: RewardShapingProfile::Baseline,
         };
 
         let summary = run_batch(&config).expect("one episode smoke should run");
@@ -965,7 +953,6 @@ mod tests {
             policy: RunPolicyKind::RuleBaselineV0,
             trace_dir: None,
             determinism_check: false,
-            reward_shaping_profile: RewardShapingProfile::Baseline,
         };
         let episode = run_episode(&config, 0, 71200, EpisodePolicy::RuleBaselineV0, true);
         assert!(episode.summary.crash.is_none());
@@ -1008,7 +995,6 @@ mod tests {
             final_act: false,
             player_class: "Ironclad",
             max_steps: 50,
-            reward_shaping_profile: RewardShapingProfile::Baseline,
         };
         let mut env = FullRunEnv::new(config).expect("full-run env should reset");
 
@@ -1040,7 +1026,6 @@ mod tests {
             final_act: false,
             player_class: "Ironclad",
             max_steps: 50,
-            reward_shaping_profile: RewardShapingProfile::Baseline,
         };
         let mut env = FullRunEnv::new(config).expect("full-run env should reset");
         let step = env
@@ -1048,439 +1033,6 @@ mod tests {
             .expect("rule baseline policy should choose a legal action");
         assert_eq!(step.info.seed, 42);
         assert!(step.chosen_action_key.is_some());
-    }
-
-    #[test]
-    fn full_run_env_step_policy_accepts_plan_query_v0() {
-        let config = FullRunEnvConfig {
-            seed: 42,
-            ascension: 0,
-            final_act: false,
-            player_class: "Ironclad",
-            max_steps: 80,
-            reward_shaping_profile: RewardShapingProfile::Baseline,
-        };
-        let mut env = FullRunEnv::new(config).expect("full-run env should reset");
-        let step = env
-            .step_policy(RunPolicyKind::PlanQueryV0)
-            .expect("plan-query policy should choose a legal action or fall back");
-        assert_eq!(step.info.seed, 42);
-        assert!(step.chosen_action_key.is_some());
-    }
-
-    #[test]
-    fn plan_query_v0_cashes_low_pressure_multi_enemy_damage_window() {
-        use crate::semantics::combat::{
-            AttackSpec, AttackStep, DamageKind, MonsterMoveSpec, MoveStep, MoveTarget,
-        };
-
-        let mut run_state = RunState::new(42, 0, false, "Ironclad");
-        let mut combat = build_combat_state(&mut run_state, EncounterId::SmallSlimes);
-        combat.clear_pending_actions();
-        combat.zones.queued_cards.clear();
-        combat.zones.limbo.clear();
-        combat.turn.energy = 3;
-        combat.entities.player.current_hp = 80;
-        combat.entities.player.block = 0;
-        combat.zones.hand = vec![
-            crate::runtime::combat::CombatCard::new(CardId::Immolate, 10_001),
-            crate::runtime::combat::CombatCard::new(CardId::Defend, 10_002),
-            crate::runtime::combat::CombatCard::new(CardId::Defend, 10_003),
-        ];
-        for (index, monster) in combat.entities.monsters.iter_mut().enumerate() {
-            monster.current_hp = 30;
-            monster.max_hp = 30;
-            monster.block = 0;
-            if index == 0 {
-                let attack = AttackSpec {
-                    base_damage: 6,
-                    hits: 1,
-                    damage_kind: DamageKind::Normal,
-                };
-                monster.set_planned_move_id(1);
-                monster.set_planned_visible_spec(Some(MonsterMoveSpec::Attack(attack.clone())));
-                monster.set_planned_steps(smallvec::smallvec![MoveStep::Attack(AttackStep {
-                    target: MoveTarget::Player,
-                    attack,
-                })]);
-            } else {
-                monster.set_planned_move_id(0);
-                monster.set_planned_visible_spec(Some(MonsterMoveSpec::None));
-                monster.set_planned_steps(smallvec::smallvec![]);
-            }
-        }
-
-        let ctx = EpisodeContext {
-            engine_state: EngineState::CombatPlayerTurn,
-            run_state,
-            combat_state: Some(combat),
-            stashed_event_combat: None,
-            forced_engine_ticks: 0,
-            combat_win_count: 0,
-        };
-        let legal = legal_actions(&ctx.engine_state, &ctx.run_state, &ctx.combat_state);
-        let index = choose_plan_query_action(&ctx, &legal)
-            .expect("plan-query should choose a damage-window action");
-
-        assert!(
-            matches!(
-                legal.get(index),
-                Some(ClientInput::PlayCard {
-                    card_index: 0,
-                    target: None
-                })
-            ),
-            "expected Immolate first, got {:?} from {:?}",
-            legal.get(index),
-            legal
-        );
-    }
-
-    #[test]
-    fn plan_query_v0_guards_boss_ramp_pressure_before_aoe_cashout() {
-        use crate::semantics::combat::{
-            AttackSpec, AttackStep, DamageKind, MonsterMoveSpec, MoveStep, MoveTarget,
-        };
-
-        let mut run_state = RunState::new(45, 0, false, "Ironclad");
-        let mut combat = build_combat_state(&mut run_state, EncounterId::SmallSlimes);
-        combat.clear_pending_actions();
-        combat.zones.queued_cards.clear();
-        combat.zones.limbo.clear();
-        combat.meta.is_boss_fight = true;
-        combat.turn.energy = 3;
-        combat.entities.player.current_hp = 18;
-        combat.entities.player.max_hp = 80;
-        combat.entities.player.block = 0;
-        combat.zones.hand = vec![
-            crate::runtime::combat::CombatCard::new(CardId::Immolate, 11_001),
-            crate::runtime::combat::CombatCard::new(CardId::Defend, 11_002),
-            crate::runtime::combat::CombatCard::new(CardId::Strike, 11_003),
-        ];
-        for monster in combat.entities.monsters.iter_mut() {
-            monster.current_hp = 220;
-            monster.max_hp = 220;
-            monster.block = 0;
-            monster.is_dying = false;
-            let attack = AttackSpec {
-                base_damage: 32,
-                hits: 1,
-                damage_kind: DamageKind::Normal,
-            };
-            monster.set_planned_move_id(1);
-            monster.set_planned_visible_spec(Some(MonsterMoveSpec::Attack(attack.clone())));
-            monster.set_planned_steps(smallvec::smallvec![MoveStep::Attack(AttackStep {
-                target: MoveTarget::Player,
-                attack,
-            })]);
-        }
-
-        let ctx = EpisodeContext {
-            engine_state: EngineState::CombatPlayerTurn,
-            run_state,
-            combat_state: Some(combat),
-            stashed_event_combat: None,
-            forced_engine_ticks: 0,
-            combat_win_count: 0,
-        };
-        let combat = ctx.combat_state.as_ref().unwrap();
-        let incoming = visible_incoming_damage(combat);
-        let unblocked = visible_unblocked_damage(combat);
-        assert!(
-            guarded_survival_pressure(combat, incoming, unblocked, combat.entities.player.current_hp),
-            "test setup should trigger guarded pressure, incoming={incoming}, unblocked={unblocked}"
-        );
-        let legal = legal_actions(&ctx.engine_state, &ctx.run_state, &ctx.combat_state);
-        let index = choose_plan_query_action(&ctx, &legal)
-            .expect("plan-query should still choose a guarded survival action");
-
-        assert!(
-            matches!(
-                legal.get(index),
-                Some(ClientInput::PlayCard {
-                    card_index: 1,
-                    target: None
-                })
-            ),
-            "expected Defend before Immolate under boss/ramp pressure, got {:?} from {:?}",
-            legal.get(index),
-            legal
-        );
-    }
-
-    #[test]
-    fn plan_query_v0_allows_boss_race_cashout_when_guard_line_still_leaks() {
-        use crate::semantics::combat::{
-            AttackSpec, AttackStep, DamageKind, MonsterMoveSpec, MoveStep, MoveTarget,
-        };
-
-        let mut run_state = RunState::new(46, 0, false, "Ironclad");
-        let mut combat = build_combat_state(&mut run_state, EncounterId::SmallSlimes);
-        combat.clear_pending_actions();
-        combat.zones.queued_cards.clear();
-        combat.zones.limbo.clear();
-        combat.meta.is_boss_fight = true;
-        combat.turn.energy = 3;
-        combat.entities.player.current_hp = 80;
-        combat.entities.player.max_hp = 80;
-        combat.entities.player.block = 0;
-        combat.zones.hand = vec![
-            crate::runtime::combat::CombatCard::new(CardId::Immolate, 12_001),
-            crate::runtime::combat::CombatCard::new(CardId::Defend, 12_002),
-            crate::runtime::combat::CombatCard::new(CardId::Strike, 12_003),
-        ];
-        for monster in combat.entities.monsters.iter_mut() {
-            monster.current_hp = 220;
-            monster.max_hp = 220;
-            monster.block = 0;
-            monster.is_dying = false;
-            let attack = AttackSpec {
-                base_damage: 32,
-                hits: 1,
-                damage_kind: DamageKind::Normal,
-            };
-            monster.set_planned_move_id(1);
-            monster.set_planned_visible_spec(Some(MonsterMoveSpec::Attack(attack.clone())));
-            monster.set_planned_steps(smallvec::smallvec![MoveStep::Attack(AttackStep {
-                target: MoveTarget::Player,
-                attack,
-            })]);
-        }
-
-        let ctx = EpisodeContext {
-            engine_state: EngineState::CombatPlayerTurn,
-            run_state,
-            combat_state: Some(combat),
-            stashed_event_combat: None,
-            forced_engine_ticks: 0,
-            combat_win_count: 0,
-        };
-        let combat = ctx.combat_state.as_ref().unwrap();
-        let incoming = visible_incoming_damage(combat);
-        let unblocked = visible_unblocked_damage(combat);
-        assert!(
-            guarded_survival_pressure(combat, incoming, unblocked, combat.entities.player.current_hp),
-            "test setup should trigger guarded pressure, incoming={incoming}, unblocked={unblocked}"
-        );
-        let legal = legal_actions(&ctx.engine_state, &ctx.run_state, &ctx.combat_state);
-        let index = choose_plan_query_action(&ctx, &legal)
-            .expect("plan-query should choose a guarded boss race action");
-
-        assert!(
-            matches!(
-                legal.get(index),
-                Some(ClientInput::PlayCard {
-                    card_index: 0,
-                    target: None
-                })
-            ),
-            "expected Immolate when guard line still leaks and HP buffer is high, got {:?} from {:?}",
-            legal.get(index),
-            legal
-        );
-    }
-
-    #[test]
-    fn plan_query_v0_allows_boss_race_cashout_over_zero_damage_full_block() {
-        use crate::semantics::combat::{
-            AttackSpec, AttackStep, DamageKind, MonsterMoveSpec, MoveStep, MoveTarget,
-        };
-
-        let mut run_state = RunState::new(47, 0, false, "Ironclad");
-        let mut combat = build_combat_state(&mut run_state, EncounterId::SmallSlimes);
-        combat.clear_pending_actions();
-        combat.zones.queued_cards.clear();
-        combat.zones.limbo.clear();
-        combat.meta.is_boss_fight = true;
-        combat.turn.energy = 3;
-        combat.entities.player.current_hp = 80;
-        combat.entities.player.max_hp = 80;
-        combat.entities.player.block = 0;
-        combat.zones.hand = vec![
-            crate::runtime::combat::CombatCard::new(CardId::Immolate, 13_001),
-            crate::runtime::combat::CombatCard::new(CardId::Defend, 13_002),
-            crate::runtime::combat::CombatCard::new(CardId::Defend, 13_003),
-        ];
-        for monster in combat.entities.monsters.iter_mut() {
-            monster.current_hp = 220;
-            monster.max_hp = 220;
-            monster.block = 0;
-            monster.is_dying = false;
-            let attack = AttackSpec {
-                base_damage: 5,
-                hits: 1,
-                damage_kind: DamageKind::Normal,
-            };
-            monster.set_planned_move_id(1);
-            monster.set_planned_visible_spec(Some(MonsterMoveSpec::Attack(attack.clone())));
-            monster.set_planned_steps(smallvec::smallvec![MoveStep::Attack(AttackStep {
-                target: MoveTarget::Player,
-                attack,
-            })]);
-        }
-
-        let ctx = EpisodeContext {
-            engine_state: EngineState::CombatPlayerTurn,
-            run_state,
-            combat_state: Some(combat),
-            stashed_event_combat: None,
-            forced_engine_ticks: 0,
-            combat_win_count: 0,
-        };
-        let combat = ctx.combat_state.as_ref().unwrap();
-        let incoming = visible_incoming_damage(combat);
-        let unblocked = visible_unblocked_damage(combat);
-        assert!(
-            guarded_survival_pressure(combat, incoming, unblocked, combat.entities.player.current_hp),
-            "test setup should trigger guarded pressure, incoming={incoming}, unblocked={unblocked}"
-        );
-        let legal = legal_actions(&ctx.engine_state, &ctx.run_state, &ctx.combat_state);
-        let index = choose_plan_query_action(&ctx, &legal)
-            .expect("plan-query should choose a boss race cashout action");
-
-        assert!(
-            matches!(
-                legal.get(index),
-                Some(ClientInput::PlayCard {
-                    card_index: 0,
-                    target: None
-                })
-            ),
-            "expected Immolate over zero-damage full block when HP buffer is high, got {:?} from {:?}",
-            legal.get(index),
-            legal
-        );
-    }
-
-    #[test]
-    fn plan_query_v0_opens_safe_offering_resource_window_before_spending_attacks() {
-        use crate::semantics::combat::{
-            AttackSpec, AttackStep, DamageKind, MonsterMoveSpec, MoveStep, MoveTarget,
-        };
-
-        let mut run_state = RunState::new(43, 0, false, "Ironclad");
-        let mut combat = build_combat_state(&mut run_state, EncounterId::SmallSlimes);
-        combat.clear_pending_actions();
-        combat.zones.queued_cards.clear();
-        combat.zones.limbo.clear();
-        combat.turn.energy = 3;
-        combat.entities.player.current_hp = 200;
-        combat.entities.player.max_hp = 200;
-        combat.entities.player.block = 0;
-        combat.zones.hand = vec![
-            crate::runtime::combat::CombatCard::new(CardId::Offering, 20_001),
-            crate::runtime::combat::CombatCard::new(CardId::Bash, 20_002),
-            crate::runtime::combat::CombatCard::new(CardId::Strike, 20_003),
-        ];
-        combat.zones.draw_pile = vec![
-            crate::runtime::combat::CombatCard::new(CardId::Immolate, 20_004),
-            crate::runtime::combat::CombatCard::new(CardId::Strike, 20_005),
-            crate::runtime::combat::CombatCard::new(CardId::Defend, 20_006),
-        ];
-        for monster in &mut combat.entities.monsters {
-            monster.current_hp = 200;
-            monster.max_hp = 200;
-            monster.block = 0;
-            let attack = AttackSpec {
-                base_damage: 1,
-                hits: 1,
-                damage_kind: DamageKind::Normal,
-            };
-            monster.set_planned_move_id(1);
-            monster.set_planned_visible_spec(Some(MonsterMoveSpec::Attack(attack.clone())));
-            monster.set_planned_steps(smallvec::smallvec![MoveStep::Attack(AttackStep {
-                target: MoveTarget::Player,
-                attack,
-            })]);
-        }
-
-        let ctx = EpisodeContext {
-            engine_state: EngineState::CombatPlayerTurn,
-            run_state,
-            combat_state: Some(combat),
-            stashed_event_combat: None,
-            forced_engine_ticks: 0,
-            combat_win_count: 0,
-        };
-        let legal = legal_actions(&ctx.engine_state, &ctx.run_state, &ctx.combat_state);
-        let index = choose_plan_query_action(&ctx, &legal)
-            .expect("plan-query should open a safe resource window");
-
-        assert!(
-            matches!(
-                legal.get(index),
-                Some(ClientInput::PlayCard {
-                    card_index: 0,
-                    target: None
-                })
-            ),
-            "expected Offering first, got {:?} from {:?}",
-            legal.get(index),
-            legal
-        );
-    }
-
-    #[test]
-    fn plan_query_v0_follows_resource_window_with_best_cashout_plan() {
-        use crate::semantics::combat::{
-            AttackSpec, AttackStep, DamageKind, MonsterMoveSpec, MoveStep, MoveTarget,
-        };
-
-        let mut run_state = RunState::new(44, 0, false, "Ironclad");
-        let mut combat = build_combat_state(&mut run_state, EncounterId::SmallSlimes);
-        combat.clear_pending_actions();
-        combat.zones.queued_cards.clear();
-        combat.zones.limbo.clear();
-        combat.turn.energy = 4;
-        combat.turn.record_card_played(CardId::Offering);
-        combat.entities.player.current_hp = 70;
-        combat.entities.player.block = 0;
-        combat.zones.hand = vec![
-            crate::runtime::combat::CombatCard::new(CardId::Defend, 30_001),
-            crate::runtime::combat::CombatCard::new(CardId::Immolate, 30_002),
-            crate::runtime::combat::CombatCard::new(CardId::Defend, 30_003),
-        ];
-        for monster in &mut combat.entities.monsters {
-            monster.current_hp = 40;
-            monster.max_hp = 40;
-            monster.block = 0;
-            let attack = AttackSpec {
-                base_damage: 1,
-                hits: 1,
-                damage_kind: DamageKind::Normal,
-            };
-            monster.set_planned_move_id(1);
-            monster.set_planned_visible_spec(Some(MonsterMoveSpec::Attack(attack.clone())));
-            monster.set_planned_steps(smallvec::smallvec![MoveStep::Attack(AttackStep {
-                target: MoveTarget::Player,
-                attack,
-            })]);
-        }
-
-        let ctx = EpisodeContext {
-            engine_state: EngineState::CombatPlayerTurn,
-            run_state,
-            combat_state: Some(combat),
-            stashed_event_combat: None,
-            forced_engine_ticks: 0,
-            combat_win_count: 0,
-        };
-        let legal = legal_actions(&ctx.engine_state, &ctx.run_state, &ctx.combat_state);
-        let index = choose_plan_query_action(&ctx, &legal)
-            .expect("resource-window follow-through should choose a payoff action");
-
-        assert!(
-            matches!(
-                legal.get(index),
-                Some(ClientInput::PlayCard {
-                    card_index: 1,
-                    target: None
-                })
-            ),
-            "expected Immolate cashout after Offering, got {:?} from {:?}",
-            legal.get(index),
-            legal
-        );
     }
 
     #[test]
@@ -1571,21 +1123,6 @@ mod tests {
                 .as_ref()
                 .expect("skip reward structure")
                 .skip_card_choice
-        );
-
-        let take_reward = full_run_action_shaping_reward(
-            &ctx,
-            &ClientInput::SelectCard(0),
-            RewardShapingProfile::Baseline,
-        );
-        let skip_reward = full_run_action_shaping_reward(
-            &ctx,
-            &ClientInput::Proceed,
-            RewardShapingProfile::Baseline,
-        );
-        assert!(
-            take_reward > skip_reward,
-            "card choice shaping should give the learner an immediate non-oracle hint"
         );
     }
 
@@ -1702,99 +1239,6 @@ mod tests {
     }
 
     #[test]
-    fn plan_deficit_shaping_strongly_penalizes_skipping_high_plan_offer() {
-        let mut run_state = RunState::new(1, 0, false, "Ironclad");
-        run_state.master_deck.clear();
-        run_state.add_card_to_deck(CardId::Strike);
-        run_state.add_card_to_deck(CardId::Defend);
-        run_state.add_card_to_deck(CardId::Bash);
-        let reward_state = RewardState {
-            pending_card_choice: Some(vec![
-                crate::rewards::state::RewardCard::new(CardId::PommelStrike, 0),
-                crate::rewards::state::RewardCard::new(CardId::Inflame, 0),
-            ]),
-            ..RewardState::new()
-        };
-        let ctx = EpisodeContext {
-            engine_state: EngineState::RewardScreen(reward_state),
-            run_state,
-            combat_state: None,
-            stashed_event_combat: None,
-            forced_engine_ticks: 0,
-            combat_win_count: 0,
-        };
-
-        let take_plan = full_run_action_shaping_reward(
-            &ctx,
-            &ClientInput::SelectCard(0),
-            RewardShapingProfile::PlanDeficitV0,
-        );
-        let skip_plan = full_run_action_shaping_reward(
-            &ctx,
-            &ClientInput::Proceed,
-            RewardShapingProfile::PlanDeficitV0,
-        );
-        let skip_baseline = full_run_action_shaping_reward(
-            &ctx,
-            &ClientInput::Proceed,
-            RewardShapingProfile::Baseline,
-        );
-
-        assert!(take_plan > 0.35);
-        assert!(skip_plan < skip_baseline);
-        assert!(skip_plan <= -0.40);
-    }
-
-    #[test]
-    fn reward_item_screen_shaping_discourages_skipping_unclaimed_resources() {
-        let mut run_state = RunState::new(1, 0, false, "Ironclad");
-        run_state.potions = vec![None, None, None];
-        let reward_state = RewardState {
-            items: vec![
-                RewardItem::Gold { amount: 42 },
-                RewardItem::Card {
-                    cards: vec![crate::rewards::state::RewardCard::new(
-                        CardId::PommelStrike,
-                        0,
-                    )],
-                },
-            ],
-            ..RewardState::new()
-        };
-        let ctx = EpisodeContext {
-            engine_state: EngineState::RewardScreen(reward_state),
-            run_state,
-            combat_state: None,
-            stashed_event_combat: None,
-            forced_engine_ticks: 0,
-            combat_win_count: 0,
-        };
-
-        let claim_gold = full_run_action_shaping_reward(
-            &ctx,
-            &ClientInput::ClaimReward(0),
-            RewardShapingProfile::Baseline,
-        );
-        let claim_card = full_run_action_shaping_reward(
-            &ctx,
-            &ClientInput::ClaimReward(1),
-            RewardShapingProfile::Baseline,
-        );
-        let proceed = full_run_action_shaping_reward(
-            &ctx,
-            &ClientInput::Proceed,
-            RewardShapingProfile::Baseline,
-        );
-
-        assert!(claim_gold > 0.0);
-        assert!(claim_card > 0.0);
-        assert!(
-            proceed < 0.0,
-            "skipping unclaimed reward items should carry an immediate resource-loss hint"
-        );
-    }
-
-    #[test]
     fn reward_screen_structure_exposes_claim_items_and_proceed_avoidance() {
         let mut run_state = RunState::new(1, 0, false, "Ironclad");
         run_state.potions = vec![None, None, None];
@@ -1862,48 +1306,6 @@ mod tests {
         assert_eq!(proceed_structure.unclaimed_reward_count, 2);
         assert_eq!(proceed_structure.unclaimed_card_reward_count, 1);
         assert!(!proceed_structure.proceed_is_cleanup);
-    }
-
-    #[test]
-    fn plan_deficit_shaping_penalizes_skipping_reward_item_phase_more_strongly() {
-        let run_state = RunState::new(1, 0, false, "Ironclad");
-        let reward_state = RewardState {
-            items: vec![RewardItem::Card {
-                cards: vec![crate::rewards::state::RewardCard::new(
-                    CardId::PommelStrike,
-                    0,
-                )],
-            }],
-            ..RewardState::new()
-        };
-        let ctx = EpisodeContext {
-            engine_state: EngineState::RewardScreen(reward_state),
-            run_state,
-            combat_state: None,
-            stashed_event_combat: None,
-            forced_engine_ticks: 0,
-            combat_win_count: 0,
-        };
-
-        let claim_plan = full_run_action_shaping_reward(
-            &ctx,
-            &ClientInput::ClaimReward(0),
-            RewardShapingProfile::PlanDeficitV0,
-        );
-        let proceed_plan = full_run_action_shaping_reward(
-            &ctx,
-            &ClientInput::Proceed,
-            RewardShapingProfile::PlanDeficitV0,
-        );
-        let proceed_baseline = full_run_action_shaping_reward(
-            &ctx,
-            &ClientInput::Proceed,
-            RewardShapingProfile::Baseline,
-        );
-
-        assert!(claim_plan >= 0.40);
-        assert!(proceed_plan < proceed_baseline);
-        assert!(proceed_plan <= -0.40);
     }
 
     #[test]
@@ -1992,7 +1394,6 @@ mod tests {
             policy: RunPolicyKind::RuleBaselineV0,
             trace_dir: None,
             determinism_check: true,
-            reward_shaping_profile: RewardShapingProfile::Baseline,
         };
 
         let summary = run_batch(&config).expect("one episode rule baseline smoke should run");
@@ -2017,7 +1418,6 @@ mod tests {
             policy: RunPolicyKind::RuleBaselineV0,
             trace_dir: None,
             determinism_check: true,
-            reward_shaping_profile: RewardShapingProfile::Baseline,
         };
 
         let summary = run_batch(&config).expect("seed 10542 should run without contract failure");
@@ -2040,7 +1440,6 @@ mod tests {
             policy: RunPolicyKind::RandomMasked,
             trace_dir: None,
             determinism_check: true,
-            reward_shaping_profile: RewardShapingProfile::Baseline,
         };
 
         let failure = make_contract_failure(

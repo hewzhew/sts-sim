@@ -1,8 +1,10 @@
 # Audits
 
-This directory is for one-off investigations, narrow validation writeups, and dated findings.
+This directory is for one-off investigations, narrow validation writeups, and dated findings that
+remain useful for simulator parity or test design.
 
-These files are useful context, but they are not default entrypoints for the repo. Promote a file back to `docs/` root only if it becomes part of the normal workflow or defines an active design.
+Preference-learning, event-bucket-label, and tiny boss-validation learner notes were removed from
+the active tree. They are recoverable from Git history.
 
 Recent entrypoints:
 

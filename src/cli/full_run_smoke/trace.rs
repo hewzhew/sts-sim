@@ -571,7 +571,6 @@ pub fn write_trace_file(
             player_class: config.player_class.to_string(),
             max_steps: config.max_steps,
             policy: config.policy.as_str().to_string(),
-            reward_shaping_profile: config.reward_shaping_profile.as_str().to_string(),
         },
         summary: summary.clone(),
         steps: steps.to_vec(),

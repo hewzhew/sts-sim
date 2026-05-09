@@ -8,7 +8,6 @@ use sts_simulator::state::core::ClientInput;
 use sts_simulator::state::EngineState;
 use sts_simulator::test_support::{blank_test_combat, planned_monster};
 use sts_simulator::verification::decision_env::{ActionId, DecisionId};
-use sts_simulator::verification::search_policy::{Exactness, SearchKind};
 
 fn card(id: CardId, uuid: u32) -> CombatCard {
     CombatCard::new(id, uuid)
@@ -54,7 +53,7 @@ fn decision_id() -> DecisionId {
 }
 
 #[test]
-fn neutral_engine_query_forces_candidate_without_legacy_or_exact_turn() {
+fn neutral_engine_query_forces_candidate_to_stable_engine_boundary() {
     let combat = cultist_combat_with_hand(&[CardId::Strike, CardId::Defend]);
     let context = SearchExecutionContext::new(
         decision_id(),
@@ -80,19 +79,7 @@ fn neutral_engine_query_forces_candidate_without_legacy_or_exact_turn() {
     assert_eq!(result.branch_effect.enemies_killed, 0);
     assert_eq!(result.after.energy, 2);
 
-    let evidence = result.to_search_evidence("strike-stable");
-    assert_eq!(evidence.exactness, Exactness::Exact);
-    assert!(matches!(
-        evidence.search_kind,
-        SearchKind::NeutralStableTransition { .. }
-    ));
-    assert_eq!(
-        evidence
-            .payload
-            .get("schema_version")
-            .and_then(|value| value.as_str()),
-        Some("neutral_engine_query_v0")
-    );
+    assert_eq!(result.schema_version.as_str(), "neutral_engine_query_v0");
 }
 
 #[test]

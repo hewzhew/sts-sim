@@ -63,8 +63,6 @@ def run_shard(args: argparse.Namespace, shard_index: int, offset: int, episodes:
         args.player_class,
         "--max-steps",
         str(args.max_steps),
-        "--reward-shaping-profile",
-        args.reward_shaping_profile,
         "--policy",
         args.policy,
         "--sim-version",
@@ -108,7 +106,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--final-act", action="store_true")
     parser.add_argument("--class", dest="player_class", default="ironclad")
     parser.add_argument("--max-steps", type=int, default=500)
-    parser.add_argument("--reward-shaping-profile", default="baseline")
     parser.add_argument("--policy", default="rule_baseline_v0")
     parser.add_argument("--sim-version", default="full_run_env")
     parser.add_argument("--return-spec-version", default="driver_reward_v0")
@@ -129,7 +126,6 @@ def main() -> int:
         "driver": str(args.driver),
         "out_dir": str(args.out_dir),
         "class": args.player_class,
-        "reward_shaping_profile": args.reward_shaping_profile,
         "episodes": args.episodes,
         "workers": args.workers,
         "ok": all(shard.get("ok") for shard in shards),

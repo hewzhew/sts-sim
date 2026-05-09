@@ -5,7 +5,7 @@ This file defines the hard dependency direction for `src/`.
 ## Layers
 
 - `core`
-  - runtime truth and RL-facing semantics
+  - runtime truth and game semantics
   - `src/runtime/`
   - `src/semantics/`
   - `src/projection/`
@@ -22,7 +22,7 @@ This file defines the hard dependency direction for `src/`.
   - `src/testing/`
   - `src/verification/`
 - `app`
-  - search, policy, CLI, coverage, and higher-level workbenches that consume core/integration
+  - CLI, coverage, diagnostics, and higher-level workbenches that consume core/integration
   - `src/bot/`
   - `src/cli/`
   - `src/bin/`
@@ -58,8 +58,7 @@ This file defines the hard dependency direction for `src/`.
   - integration-side analysis helpers
   - currently `hexaghost_value`
 - `bot::harness`
-  - app-layer workbenches and bot-coupled validation surfaces
-  - `boss_validation`
+  - app-layer workbenches and bot-coupled smoke surfaces
   - `combat_env`
   - `combat_lab`
   - `combat_policy`

@@ -27,7 +27,8 @@ Do not reintroduce scripts that:
 - call `branch_trace`
 - call `evaluate_candidates`
 - call `run_verified_adv_override_*`
-- collect `neutral_policy_trace`
+- collect policy-shadow traces
+- collect search-allocation traces
 - train from `teacher_label`
 - convert single-seed counterfactuals into policy labels
 

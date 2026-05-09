@@ -8,8 +8,8 @@ use crate::verification::decision_env::{
 
 use super::{
     FullRunEnv, FullRunEnvConfig, FullRunEnvInfo, FullRunEnvState,
-    FullRunPublicActionCandidatePayloadV1, FullRunPublicObservationV1, RewardShapingProfile,
-    RunActionCandidate, TraceClientInput, FULL_RUN_PUBLIC_ACTION_SCHEMA_VERSION,
+    FullRunPublicActionCandidatePayloadV1, FullRunPublicObservationV1, RunActionCandidate,
+    TraceClientInput, FULL_RUN_PUBLIC_ACTION_SCHEMA_VERSION,
     FULL_RUN_PUBLIC_OBSERVATION_SCHEMA_VERSION,
 };
 
@@ -56,16 +56,12 @@ fn full_run_config_from_env(
             )))
         }
     };
-    let reward_shaping_profile = RewardShapingProfile::parse(&config.reward_shaping_profile)
-        .map_err(DecisionEnvError::new)?;
-
     Ok(FullRunEnvConfig {
         seed: config.seed,
         ascension: config.ascension,
         final_act: config.final_act,
         player_class,
         max_steps: config.max_steps,
-        reward_shaping_profile,
     })
 }
 

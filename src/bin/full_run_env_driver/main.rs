@@ -3,11 +3,10 @@ use std::io::{self, BufRead, Write};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sts_simulator::cli::full_run_smoke::{
-    FullRunEnv, FullRunEnvConfig, FullRunEnvInfo, FullRunEnvState, RewardShapingProfile,
-    RunPolicyKind,
+    FullRunEnv, FullRunEnvConfig, FullRunEnvInfo, FullRunEnvState, RunPolicyKind,
 };
 use sts_simulator::verification::decision_env::{
-    ActionId, DecisionEnv, DecisionRecord, DecisionRecordContext, PolicyInput,
+    ActionId, DecisionEnv, DecisionRecord, DecisionRecordContext,
 };
 
 #[derive(Debug, Deserialize)]
@@ -20,13 +19,9 @@ enum DriverRequest {
         final_act: Option<bool>,
         class: Option<String>,
         max_steps: Option<usize>,
-        reward_shaping_profile: Option<String>,
     },
     Observation,
     DecisionEnvObservation,
-    PolicyInput {
-        time_budget_ms: Option<u32>,
-    },
     Step {
         action_index: usize,
     },
@@ -132,7 +127,6 @@ fn handle_request(session: &mut DriverSession, request: DriverRequest) -> Driver
             final_act,
             class,
             max_steps,
-            reward_shaping_profile,
         } => reset_env(
             session,
             seed,
@@ -140,7 +134,6 @@ fn handle_request(session: &mut DriverSession, request: DriverRequest) -> Driver
             final_act,
             class.as_deref(),
             max_steps,
-            reward_shaping_profile,
         ),
         DriverRequest::Observation => with_env(session, |current| match current.state() {
             Ok(state) => ok_response(
@@ -158,22 +151,6 @@ fn handle_request(session: &mut DriverSession, request: DriverRequest) -> Driver
                     Some(
                         serde_json::to_value(timestep)
                             .expect("decision env timestep should serialize"),
-                    ),
-                    None,
-                    Some(current.info().result != "ongoing"),
-                    None,
-                    Some(current.info()),
-                ),
-                Err(err) => error_response(err.to_string()),
-            }
-        }),
-        DriverRequest::PolicyInput { time_budget_ms } => with_env(session, |current| {
-            match DecisionEnv::current_timestep(current).and_then(|timestep| {
-                PolicyInput::from_timestep(&timestep, time_budget_ms.unwrap_or(25))
-            }) {
-                Ok(policy_input) => ok_response(
-                    Some(
-                        serde_json::to_value(policy_input).expect("policy input should serialize"),
                     ),
                     None,
                     Some(current.info().result != "ongoing"),
@@ -303,18 +280,10 @@ fn reset_env(
     final_act: Option<bool>,
     class: Option<&str>,
     max_steps: Option<usize>,
-    reward_shaping_profile: Option<String>,
 ) -> DriverResponse {
     let player_class = match normalize_player_class(class) {
         Ok(value) => value,
         Err(err) => return error_response(err),
-    };
-    let reward_shaping_profile = match reward_shaping_profile {
-        Some(value) => match RewardShapingProfile::parse(&value) {
-            Ok(profile) => profile,
-            Err(err) => return error_response(err),
-        },
-        None => RewardShapingProfile::Baseline,
     };
     let config = FullRunEnvConfig {
         seed: seed.unwrap_or(1),
@@ -322,7 +291,6 @@ fn reset_env(
         final_act: final_act.unwrap_or(false),
         player_class,
         max_steps: max_steps.unwrap_or(5000),
-        reward_shaping_profile,
     };
     match FullRunEnv::new(config) {
         Ok(mut next_env) => match next_env.state() {
@@ -468,9 +436,8 @@ fn normalize_player_class(value: Option<&str>) -> Result<&'static str, String> {
 fn normalize_policy(value: &str) -> Result<RunPolicyKind, String> {
     match value.to_ascii_lowercase().as_str() {
         "rule_baseline_v0" => Ok(RunPolicyKind::RuleBaselineV0),
-        "plan_query_v0" => Ok(RunPolicyKind::PlanQueryV0),
         other => Err(format!(
-            "unsupported policy '{other}'; expected rule_baseline_v0 or plan_query_v0"
+            "unsupported policy '{other}'; expected rule_baseline_v0"
         )),
     }
 }

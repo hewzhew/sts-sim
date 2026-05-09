@@ -1,11 +1,9 @@
 //! App-layer bot harnesses and evaluation workbenches.
 
-mod boss_validation;
 mod combat_env;
 mod combat_lab;
 mod combat_policy;
 
-pub use boss_validation::{build_ledger_record, validate_case};
 pub use combat_env::{
     ActionMask, CombatAction, CombatEnv, CombatEnvDrawOrderVariant, CombatEnvSpec,
     CombatEpisodeOutcome, CombatObservation, CombatRewardBreakdown,

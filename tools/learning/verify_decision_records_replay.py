@@ -125,7 +125,6 @@ def reset_driver(client: DriverClient, args: argparse.Namespace, seed: int) -> N
             "final_act": args.final_act,
             "class": args.player_class,
             "max_steps": args.max_steps,
-            "reward_shaping_profile": args.reward_shaping_profile,
         }
     )
 
@@ -285,7 +284,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--final-act", action="store_true")
     parser.add_argument("--max-steps", type=int, default=500)
     parser.add_argument("--player-class", default="ironclad")
-    parser.add_argument("--reward-shaping-profile", default="baseline")
     parser.add_argument("--float-tolerance", type=float, default=1e-6)
     parser.add_argument("--max-examples", type=int, default=20)
     parser.add_argument("--fail-on-mismatch", action="store_true")
@@ -307,7 +305,6 @@ def main() -> int:
             "final_act": args.final_act,
             "max_steps": args.max_steps,
             "player_class": args.player_class,
-            "reward_shaping_profile": args.reward_shaping_profile,
         },
         "record_count": 0,
         "verified_record_count": 0,

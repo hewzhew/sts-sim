@@ -1,8 +1,7 @@
-use sts_simulator::cli::full_run_smoke::{FullRunEnv, FullRunEnvConfig, RewardShapingProfile};
+use sts_simulator::cli::full_run_smoke::{FullRunEnv, FullRunEnvConfig};
 use sts_simulator::verification::decision_env::{
-    DecisionEnv, DecisionRecord, DecisionRecordContext, EnvConfig, ObservationPayload,
-    ObservationVisibility, PolicyInput, RunSeed, DECISION_ENV_CONTRACT_VERSION,
-    DECISION_RECORD_SCHEMA_VERSION, POLICY_INPUT_SCHEMA_VERSION,
+    DecisionEnv, DecisionRecord, DecisionRecordContext, EnvConfig, ObservationVisibility, RunSeed,
+    DECISION_ENV_CONTRACT_VERSION, DECISION_RECORD_SCHEMA_VERSION,
 };
 
 fn native_config(seed: u64) -> FullRunEnvConfig {
@@ -12,7 +11,6 @@ fn native_config(seed: u64) -> FullRunEnvConfig {
         final_act: false,
         player_class: "ironclad",
         max_steps: 80,
-        reward_shaping_profile: RewardShapingProfile::Baseline,
     }
 }
 
@@ -23,7 +21,6 @@ fn contract_config(seed: u64) -> EnvConfig {
         final_act: false,
         player_class: "ironclad".to_string(),
         max_steps: 80,
-        reward_shaping_profile: "baseline".to_string(),
     }
 }
 
@@ -180,42 +177,4 @@ fn public_candidate_payload_strips_legacy_heuristic_fields() {
     }
 
     panic!("seed 1 did not reach a card-bearing candidate within the smoke horizon");
-}
-
-#[test]
-fn policy_input_exposes_only_public_decision_payload() {
-    let mut env = FullRunEnv::new(native_config(19)).expect("env");
-    let timestep = DecisionEnv::reset(&mut env, RunSeed(19), contract_config(19)).expect("reset");
-
-    let policy_input = PolicyInput::from_timestep(&timestep, 25).expect("policy input");
-
-    assert_eq!(policy_input.schema_version, POLICY_INPUT_SCHEMA_VERSION);
-    assert_eq!(policy_input.decision_id, timestep.decision_id);
-    assert_eq!(
-        policy_input.observation.visibility,
-        ObservationVisibility::Public
-    );
-    assert_eq!(policy_input.candidates.len(), timestep.candidates.len());
-    let serialized = serde_json::to_string(&policy_input).expect("serialize policy input");
-    assert!(!serialized.contains("state_hash"));
-    assert!(!serialized.contains("teacher_label"));
-    assert!(!serialized.contains("timestep_info"));
-    assert!(!serialized.contains("rule_score"));
-    assert!(!serialized.contains("estimated_role_scores"));
-}
-
-#[test]
-fn policy_input_rejects_non_public_observation() {
-    let mut env = FullRunEnv::new(native_config(23)).expect("env");
-    let mut timestep =
-        DecisionEnv::reset(&mut env, RunSeed(23), contract_config(23)).expect("reset");
-    timestep.observation = ObservationPayload {
-        visibility: ObservationVisibility::Debug,
-        ..timestep.observation
-    };
-
-    let err = PolicyInput::from_timestep(&timestep, 25).expect_err("debug observation rejected");
-    assert!(err
-        .message
-        .contains("policy input requires public observation"));
 }

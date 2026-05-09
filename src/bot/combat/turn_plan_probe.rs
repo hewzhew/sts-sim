@@ -687,7 +687,7 @@ pub fn probe_draw_marginal_value_for_target(
             "forced_draw_branch_forces_target_as_first_action".to_string(),
             "no_draw_branch_excludes_target_from_current_turn_sequences".to_string(),
             "marginal_delta_includes_target_card_body_not_only_draw_text".to_string(),
-            "marginal_summary_is_plan_query_delta_not_card_choice_truth".to_string(),
+            "marginal_summary_is_probe_delta_not_card_choice_truth".to_string(),
             "card_id_granularity_forbids_or_forces_all_same_card_copies".to_string(),
             "hand_instance_granularity_tracks_card_uuid_across_hand_index_shifts".to_string(),
             "sample_distribution_must_be_built_by_batching_multiple_author_specs".to_string(),

@@ -533,7 +533,7 @@ fn execute_step(
     let state_features_preview = preview_features(combat);
     let state_features_full = extract_state_features(combat);
     let bad_action_tags = flag_bad_action_tags(combat, policy_decision);
-    let input = decode_policy_input(policy_decision)?;
+    let input = decode_policy_decision(policy_decision)?;
     let chosen_action = policy_decision.final_input_debug.clone();
     let (action_kind, action_payload) = action_descriptor(&input, combat);
 
@@ -574,7 +574,7 @@ fn execute_step(
     })
 }
 
-fn decode_policy_input(policy_decision: &PolicyDecision) -> Result<ClientInput, String> {
+fn decode_policy_decision(policy_decision: &PolicyDecision) -> Result<ClientInput, String> {
     match policy_decision.final_action.kind.as_str() {
         "play_card" => Ok(ClientInput::PlayCard {
             card_index: policy_decision

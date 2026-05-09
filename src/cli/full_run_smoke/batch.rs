@@ -107,8 +107,6 @@ pub fn reproduce_command(config: &RunBatchConfig, seed: u64) -> String {
         cli_class_arg(config.player_class).to_string(),
         "--max-steps".to_string(),
         config.max_steps.to_string(),
-        "--reward-shaping-profile".to_string(),
-        config.reward_shaping_profile.as_str().to_string(),
         "--determinism-check".to_string(),
         "--summary-out".to_string(),
         format!(
@@ -170,7 +168,6 @@ pub fn run_batch(config: &RunBatchConfig) -> Result<RunBatchSummary, String> {
                 rng: StsRng::new(policy_seed),
             },
             RunPolicyKind::RuleBaselineV0 => EpisodePolicy::RuleBaselineV0,
-            RunPolicyKind::PlanQueryV0 => EpisodePolicy::PlanQueryV0,
         };
         let mut episode = run_episode(config, episode_id, seed, episode_policy, true);
 
@@ -304,7 +301,6 @@ pub fn run_batch(config: &RunBatchConfig) -> Result<RunBatchSummary, String> {
         final_act: config.final_act,
         player_class: config.player_class.to_string(),
         max_steps: config.max_steps,
-        reward_shaping_profile: config.reward_shaping_profile.as_str().to_string(),
         episodes_completed,
         crash_count,
         illegal_action_count,

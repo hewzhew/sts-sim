@@ -1,5 +1,4 @@
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 use std::collections::BTreeMap;
 
 use crate::bot::combat::legal_moves_for_audit;
@@ -8,8 +7,7 @@ use crate::runtime::combat::CombatState;
 use crate::state::core::ClientInput;
 use crate::state::EngineState;
 
-use crate::verification::decision_env::{ActionId, DecisionId, PolicyInput};
-use crate::verification::search_policy::{Exactness, HorizonSpec, SearchEvidence, SearchKind};
+use crate::verification::decision_env::{ActionId, DecisionId};
 
 pub const NEUTRAL_ENGINE_QUERY_VERSION: &str = "neutral_engine_query_v0";
 
@@ -34,15 +32,6 @@ impl SearchExecutionContext {
             combat,
             candidates,
         }
-    }
-
-    pub fn from_policy_input(
-        policy_input: &PolicyInput,
-        engine: EngineState,
-        combat: CombatState,
-        candidates: Vec<ClientInput>,
-    ) -> Self {
-        Self::new(policy_input.decision_id.clone(), engine, combat, candidates)
     }
 
     pub fn candidate(&self, action_id: ActionId) -> Option<&ClientInput> {
@@ -256,47 +245,6 @@ pub struct NeutralEngineQueryResult {
     pub after: CombatStateSummary,
     pub delta: TransitionDelta,
     pub branch_effect: BranchEffectVector,
-}
-
-impl NeutralEngineQueryResult {
-    pub fn to_search_evidence(&self, evidence_id: impl Into<String>) -> SearchEvidence {
-        let search_kind = match self.query_kind {
-            NeutralQueryKind::OneStepTransition => SearchKind::NeutralOneStepTransition,
-            NeutralQueryKind::StableTransition => SearchKind::NeutralStableTransition {
-                max_engine_steps: self.max_engine_steps,
-            },
-            NeutralQueryKind::CurrentTurnClose | NeutralQueryKind::AlignedBoundary => {
-                SearchKind::NeutralStableTransition {
-                    max_engine_steps: self.max_engine_steps,
-                }
-            }
-            NeutralQueryKind::BranchCompression => SearchKind::NeutralBranchCompression {
-                max_engine_steps: self.max_engine_steps,
-            },
-            NeutralQueryKind::PairedCompare | NeutralQueryKind::CommutationProbe => {
-                SearchKind::PairwiseCompare {
-                    other: self.action_id,
-                    horizon: HorizonSpec::StableBoundary {
-                        max_decisions: self.max_engine_steps,
-                    },
-                }
-            }
-        };
-        SearchEvidence {
-            evidence_id: evidence_id.into(),
-            decision_id: self.decision_id.clone(),
-            candidate_id: Some(self.action_id),
-            request_id: None,
-            search_kind,
-            exactness: if self.truncated {
-                Exactness::BoundedExact
-            } else {
-                Exactness::Exact
-            },
-            truncated: self.truncated,
-            payload: serde_json::to_value(self).unwrap_or_else(|_| Value::Null),
-        }
-    }
 }
 
 pub struct NeutralEngineQueryService {

@@ -3,40 +3,12 @@ use super::*;
 pub const FULL_RUN_OBSERVATION_SCHEMA_VERSION: &str = "full_run_observation_v5_reward_structure";
 pub const FULL_RUN_ACTION_SCHEMA_VERSION: &str =
     "full_run_action_candidate_set_v3_reward_structure";
-pub const COMBAT_CANDIDATE_OUTCOME_PACK_SCHEMA_VERSION: &str = "combat_candidate_outcome_pack_v0";
 pub(crate) const NO_PROGRESS_REPEAT_LIMIT: usize = 8;
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum RewardShapingProfile {
-    Baseline,
-    PlanDeficitV0,
-}
-
-impl RewardShapingProfile {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Baseline => "baseline",
-            Self::PlanDeficitV0 => "plan_deficit_v0",
-        }
-    }
-
-    pub fn parse(value: &str) -> Result<Self, String> {
-        match value.to_ascii_lowercase().as_str() {
-            "baseline" => Ok(Self::Baseline),
-            "plan_deficit_v0" => Ok(Self::PlanDeficitV0),
-            other => Err(format!(
-                "unsupported reward shaping profile '{other}'; expected baseline or plan_deficit_v0"
-            )),
-        }
-    }
-}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RunPolicyKind {
     RandomMasked,
     RuleBaselineV0,
-    PlanQueryV0,
 }
 
 impl RunPolicyKind {
@@ -44,7 +16,6 @@ impl RunPolicyKind {
         match self {
             Self::RandomMasked => "random_masked",
             Self::RuleBaselineV0 => "rule_baseline_v0",
-            Self::PlanQueryV0 => "plan_query_v0",
         }
     }
 }
@@ -60,7 +31,6 @@ pub struct RunBatchConfig {
     pub policy: RunPolicyKind,
     pub trace_dir: Option<PathBuf>,
     pub determinism_check: bool,
-    pub reward_shaping_profile: RewardShapingProfile,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -75,7 +45,6 @@ pub struct RunBatchSummary {
     pub final_act: bool,
     pub player_class: String,
     pub max_steps: usize,
-    pub reward_shaping_profile: String,
     pub episodes_completed: usize,
     pub crash_count: usize,
     pub illegal_action_count: usize,
@@ -176,7 +145,6 @@ pub struct RunTraceConfigV0 {
     pub player_class: String,
     pub max_steps: usize,
     pub policy: String,
-    pub reward_shaping_profile: String,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -600,7 +568,6 @@ pub enum EpisodePolicy {
         rng: StsRng,
     },
     RuleBaselineV0,
-    PlanQueryV0,
     Replay {
         actions: Vec<ClientInput>,
         cursor: usize,
@@ -624,7 +591,6 @@ pub struct FullRunEnvConfig {
     pub final_act: bool,
     pub player_class: &'static str,
     pub max_steps: usize,
-    pub reward_shaping_profile: RewardShapingProfile,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -715,7 +681,6 @@ impl FullRunEnvConfig {
             policy,
             trace_dir: None,
             determinism_check: false,
-            reward_shaping_profile: self.reward_shaping_profile,
         }
     }
 }
