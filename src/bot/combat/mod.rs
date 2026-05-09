@@ -32,9 +32,9 @@ use std::time::Instant;
 
 use self::decision::{
     build_decision_trace, build_exact_turn_verdict, classify_proposal_class, classify_regime,
-    exact_turn_takeover_policy, frontier_outcome_from_candidate, CombatRegime, DecisionOutcome,
+    exact_turn_takeover_gate, frontier_outcome_from_candidate, CombatRegime, DecisionOutcome,
     DecisionTrace, DominanceClaim, ExactTurnVerdict, ExactnessLevel, ProposalTrace,
-    ScreenRejection, TakeoverPolicy,
+    ScreenRejection, TakeoverGate,
 };
 use self::equivalence::{default_equivalence_mode, reduce_equivalent_inputs};
 use self::exact_turn_solver::{solve_exact_turn_with_config, ExactTurnConfig, ExactTurnSolution};
@@ -73,7 +73,7 @@ struct ExactTurnShadowDecision {
     regime: CombatRegime,
     frontier_outcome: DecisionOutcome,
     exact_turn_verdict: ExactTurnVerdict,
-    takeover_policy: TakeoverPolicy,
+    takeover_gate: TakeoverGate,
     decision_trace: DecisionTrace,
     solution: Option<ExactTurnSolution>,
     timed_out: bool,
@@ -285,7 +285,7 @@ pub fn diagnose_root_search_with_depth_and_runtime_and_root_inputs(
                 "regime": serde_json::Value::Null,
                 "frontier_outcome": serde_json::Value::Null,
                 "exact_turn_verdict": serde_json::Value::Null,
-                "takeover_policy": serde_json::Value::Null,
+                "takeover_gate": serde_json::Value::Null,
                 "decision_trace": serde_json::Value::Null,
                 "exact_turn_shadow": serde_json::Value::Null,
             }),
@@ -335,7 +335,7 @@ pub fn diagnose_root_search_with_depth_and_runtime_and_root_inputs(
             confidence: ExactnessLevel::Unavailable,
             truncated: false,
         };
-        let (_, takeover_policy, chosen_by, rejection_reasons) = exact_turn_takeover_policy(
+        let (_, takeover_gate, chosen_by, rejection_reasons) = exact_turn_takeover_gate(
             engine,
             &frontier_chosen_move,
             regime,
@@ -365,7 +365,7 @@ pub fn diagnose_root_search_with_depth_and_runtime_and_root_inputs(
             regime,
             frontier_outcome: frontier_outcome.clone(),
             exact_turn_verdict: exact_turn_verdict.clone(),
-            takeover_policy,
+            takeover_gate,
             decision_trace: build_decision_trace(
                 &frontier_chosen_move,
                 chosen_by,
@@ -488,7 +488,7 @@ pub fn diagnose_root_search_with_depth_and_runtime_and_root_inputs(
             "regime": exact_turn_shadow.regime,
             "frontier_outcome": exact_turn_shadow.frontier_outcome,
             "exact_turn_verdict": exact_turn_shadow.exact_turn_verdict,
-            "takeover_policy": exact_turn_shadow.takeover_policy,
+            "takeover_gate": exact_turn_shadow.takeover_gate,
             "decision_trace": decision_trace_audit,
             "exact_turn_shadow": exact_turn_shadow.audit,
         }),
@@ -543,7 +543,7 @@ fn build_move_stat(explored: &ExploredCandidate, idx: usize) -> CombatMoveStat {
         root_prior_score: 0.0,
         root_prior_hit: false,
         leaf_score: candidate.diagnostic_score,
-        policy_bonus: search_score - candidate.diagnostic_score,
+        search_delta: search_score - candidate.diagnostic_score,
         sequence_bonus: 0.0,
         sequence_survival_bonus: 0.0,
         sequence_exhaust_bonus: 0.0,
@@ -610,7 +610,7 @@ fn build_exact_turn_shadow(
             confidence: ExactnessLevel::Unavailable,
             truncated: false,
         };
-        let (_, takeover_policy, chosen_by, rejection_reasons) = exact_turn_takeover_policy(
+        let (_, takeover_gate, chosen_by, rejection_reasons) = exact_turn_takeover_gate(
             engine,
             chosen_move,
             regime,
@@ -636,7 +636,7 @@ fn build_exact_turn_shadow(
             regime,
             frontier_outcome: frontier_outcome.clone(),
             exact_turn_verdict: exact_turn_verdict.clone(),
-            takeover_policy,
+            takeover_gate,
             decision_trace: build_decision_trace(
                 chosen_move,
                 chosen_by,
@@ -664,7 +664,7 @@ fn build_exact_turn_shadow(
                 confidence: ExactnessLevel::Unavailable,
                 truncated: false,
             };
-            let (_, takeover_policy, chosen_by, mut rejection_reasons) = exact_turn_takeover_policy(
+            let (_, takeover_gate, chosen_by, mut rejection_reasons) = exact_turn_takeover_gate(
                 engine,
                 chosen_move,
                 regime,
@@ -698,7 +698,7 @@ fn build_exact_turn_shadow(
                 regime,
                 frontier_outcome: frontier_outcome.clone(),
                 exact_turn_verdict: exact_turn_verdict.clone(),
-                takeover_policy,
+                takeover_gate,
                 decision_trace: build_decision_trace(
                     chosen_move,
                     chosen_by,
@@ -739,7 +739,7 @@ fn build_exact_turn_shadow(
     }
     let best_state = solution.nondominated_end_states.first();
     let exact_turn_verdict = build_exact_turn_verdict(chosen_move, &frontier_outcome, &solution);
-    let (takeover_move, takeover_policy, chosen_by, rejection_reasons) = exact_turn_takeover_policy(
+    let (takeover_move, takeover_gate, chosen_by, rejection_reasons) = exact_turn_takeover_gate(
         engine,
         chosen_move,
         regime,
@@ -772,9 +772,9 @@ fn build_exact_turn_shadow(
             "cache_misses": solution.cache_misses,
             "truncated": solution.truncated,
             "agrees_with_frontier": solution.best_first_input.as_ref() == Some(chosen_move),
-            "takeover_eligible": takeover_policy.takeover_eligible,
+            "takeover_eligible": takeover_gate.takeover_eligible,
             "takeover_applied": takeover_applied,
-            "takeover_reason": takeover_policy.takeover_reason,
+            "takeover_reason": takeover_gate.takeover_reason,
             "takeover_move": takeover_move_audit,
             "best_resources": best_state.map(|state| {
                 json!({
@@ -789,7 +789,7 @@ fn build_exact_turn_shadow(
         regime,
         frontier_outcome: frontier_outcome.clone(),
         exact_turn_verdict: exact_turn_verdict.clone(),
-        takeover_policy,
+        takeover_gate,
         decision_trace: build_decision_trace(
             chosen_move,
             chosen_by,
@@ -903,9 +903,9 @@ fn search_depth_for_budget(num_simulations: u32) -> u32 {
 #[cfg(test)]
 mod tests {
     use super::{
-        diagnose_root_search_with_runtime, exact_turn_shadow_skip_reason,
-        exact_turn_takeover_policy, CombatRegime, DominanceClaim, ExactTurnVerdict, ExactnessLevel,
-        SearchExperimentFlags, SearchRuntimeBudget,
+        diagnose_root_search_with_runtime, exact_turn_shadow_skip_reason, exact_turn_takeover_gate,
+        CombatRegime, DominanceClaim, ExactTurnVerdict, ExactnessLevel, SearchExperimentFlags,
+        SearchRuntimeBudget,
     };
     use crate::bot::combat::decision::SurvivalJudgement;
     use crate::bot::combat::exact_turn_solver::{ExactTurnSolution, ExactTurnTruncationReport};
@@ -959,7 +959,7 @@ mod tests {
             confidence: ExactnessLevel::Exact,
             truncated: false,
         };
-        let (takeover, policy, authority, _) = exact_turn_takeover_policy(
+        let (takeover, gate, authority, _) = exact_turn_takeover_gate(
             &EngineState::CombatPlayerTurn,
             &ClientInput::PlayCard {
                 card_index: 0,
@@ -982,7 +982,7 @@ mod tests {
                 target: None,
             })
         );
-        assert_eq!(policy.takeover_reason, "crisis_strict_dominance");
+        assert_eq!(gate.takeover_reason, "crisis_strict_dominance");
         assert!(matches!(
             authority,
             crate::bot::combat::decision::DecisionAuthority::ExactTurnTakeover
@@ -1015,7 +1015,7 @@ mod tests {
             confidence: ExactnessLevel::Exact,
             truncated: false,
         };
-        let (takeover, policy, _, _) = exact_turn_takeover_policy(
+        let (takeover, gate, _, _) = exact_turn_takeover_gate(
             &EngineState::PendingChoice(PendingChoice::StanceChoice),
             &ClientInput::SubmitDiscoverChoice(0),
             CombatRegime::Fragile,
@@ -1026,7 +1026,7 @@ mod tests {
         );
 
         assert_eq!(takeover, Some(ClientInput::SubmitDiscoverChoice(1)));
-        assert_eq!(policy.takeover_reason, "override_pending_choice");
+        assert_eq!(gate.takeover_reason, "override_pending_choice");
     }
 
     #[test]
@@ -1055,7 +1055,7 @@ mod tests {
             confidence: ExactnessLevel::Exact,
             truncated: false,
         };
-        let (takeover, policy, authority, reasons) = exact_turn_takeover_policy(
+        let (takeover, gate, authority, reasons) = exact_turn_takeover_gate(
             &EngineState::CombatPlayerTurn,
             &ClientInput::PlayCard {
                 card_index: 0,
@@ -1072,7 +1072,7 @@ mod tests {
         );
 
         assert_eq!(takeover, None);
-        assert_eq!(policy.takeover_reason, "regime_not_takeover");
+        assert_eq!(gate.takeover_reason, "regime_not_takeover");
         assert!(matches!(
             authority,
             crate::bot::combat::decision::DecisionAuthority::Frontier
@@ -1106,7 +1106,7 @@ mod tests {
             confidence: ExactnessLevel::Exact,
             truncated: false,
         };
-        let (takeover, policy, authority, reasons) = exact_turn_takeover_policy(
+        let (takeover, gate, authority, reasons) = exact_turn_takeover_gate(
             &EngineState::CombatPlayerTurn,
             &ClientInput::PlayCard {
                 card_index: 0,
@@ -1132,7 +1132,7 @@ mod tests {
                 target: None,
             })
         );
-        assert_eq!(policy.takeover_reason, "contested_strict_dominance");
+        assert_eq!(gate.takeover_reason, "contested_strict_dominance");
         assert!(matches!(
             authority,
             crate::bot::combat::decision::DecisionAuthority::ExactTurnTakeover
@@ -1168,7 +1168,7 @@ mod tests {
             confidence: ExactnessLevel::Exact,
             truncated: false,
         };
-        let (takeover, policy, authority, reasons) = exact_turn_takeover_policy(
+        let (takeover, gate, authority, reasons) = exact_turn_takeover_gate(
             &EngineState::CombatPlayerTurn,
             &ClientInput::PlayCard {
                 card_index: 0,
@@ -1195,7 +1195,7 @@ mod tests {
                 target: None,
             })
         );
-        assert_eq!(policy.takeover_reason, "fragile_strict_dominance");
+        assert_eq!(gate.takeover_reason, "fragile_strict_dominance");
         assert!(matches!(
             authority,
             crate::bot::combat::decision::DecisionAuthority::ExactTurnTakeover
@@ -1231,7 +1231,7 @@ mod tests {
             confidence: ExactnessLevel::Exact,
             truncated: false,
         };
-        let (takeover, policy, authority, reasons) = exact_turn_takeover_policy(
+        let (takeover, gate, authority, reasons) = exact_turn_takeover_gate(
             &EngineState::CombatPlayerTurn,
             &ClientInput::PlayCard {
                 card_index: 0,
@@ -1251,7 +1251,7 @@ mod tests {
         );
 
         assert_eq!(takeover, None);
-        assert_eq!(policy.takeover_reason, "potion_exact_takeover_forbidden");
+        assert_eq!(gate.takeover_reason, "potion_exact_takeover_forbidden");
         assert!(matches!(
             authority,
             crate::bot::combat::decision::DecisionAuthority::Frontier
@@ -1287,7 +1287,7 @@ mod tests {
             confidence: ExactnessLevel::Exact,
             truncated: false,
         };
-        let (takeover, policy, authority, reasons) = exact_turn_takeover_policy(
+        let (takeover, gate, authority, reasons) = exact_turn_takeover_gate(
             &EngineState::CombatPlayerTurn,
             &ClientInput::EndTurn,
             CombatRegime::Advantage,
@@ -1310,7 +1310,7 @@ mod tests {
                 target: None,
             })
         );
-        assert_eq!(policy.takeover_reason, "idle_end_turn_strict_dominance");
+        assert_eq!(gate.takeover_reason, "idle_end_turn_strict_dominance");
         assert!(matches!(
             authority,
             crate::bot::combat::decision::DecisionAuthority::ExactTurnTakeover
@@ -1377,7 +1377,7 @@ mod tests {
             .decision_audit
             .get("exact_turn_verdict")
             .is_some());
-        assert!(diagnostics.decision_audit.get("takeover_policy").is_some());
+        assert!(diagnostics.decision_audit.get("takeover_gate").is_some());
         assert!(diagnostics.decision_audit.get("decision_trace").is_some());
     }
 }

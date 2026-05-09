@@ -1,12 +1,12 @@
 use super::*;
 
 pub fn choose_action(
-    policy: &mut EpisodePolicy,
+    selector: &mut EpisodeActionSelector,
     _ctx: &EpisodeContext,
     legal_actions: &[ClientInput],
 ) -> Result<(usize, ClientInput), String> {
-    match policy {
-        EpisodePolicy::RandomMasked { rng } => {
+    match selector {
+        EpisodeActionSelector::RandomMasked { rng } => {
             let idx = if legal_actions.len() == 1 {
                 0
             } else {
@@ -14,7 +14,7 @@ pub fn choose_action(
             };
             Ok((idx, legal_actions[idx].clone()))
         }
-        EpisodePolicy::Replay { actions, cursor } => {
+        EpisodeActionSelector::Replay { actions, cursor } => {
             let action = actions
                 .get(*cursor)
                 .cloned()

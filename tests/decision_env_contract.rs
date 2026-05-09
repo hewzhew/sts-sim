@@ -107,7 +107,7 @@ fn full_run_env_snapshot_restore_replays_same_action() {
 fn decision_record_preserves_canonical_timestep_boundary() {
     let mut env = FullRunEnv::new(native_config(13)).expect("env");
     let timestep = DecisionEnv::reset(&mut env, RunSeed(13), contract_config(13)).expect("reset");
-    let mut context = DecisionRecordContext::new("test_sim", "baseline_return_v0", 13);
+    let mut context = DecisionRecordContext::new("test_sim", "driver_return_v0", 13);
     context.info = serde_json::json!({"source": "contract_test"});
 
     let record = DecisionRecord::from_timestep(&timestep, context);
@@ -119,7 +119,7 @@ fn decision_record_preserves_canonical_timestep_boundary() {
     assert_eq!(record.reward_since_prev, timestep.reward);
     assert_eq!(record.state_hash_before, timestep.info.state_hash);
     assert_eq!(record.sim_version, "test_sim");
-    assert_eq!(record.return_spec_version, "baseline_return_v0");
+    assert_eq!(record.return_spec_version, "driver_return_v0");
     assert_eq!(record.seed, 13);
     assert_eq!(record.info["record_context"]["source"], "contract_test");
 }
@@ -130,7 +130,7 @@ fn decision_record_can_bind_behavior_action_to_outcome() {
     let decision = DecisionEnv::reset(&mut env, RunSeed(17), contract_config(17)).expect("reset");
     let action = decision.candidates.first().expect("candidate").id;
     let outcome = DecisionEnv::step(&mut env, action).expect("step");
-    let mut context = DecisionRecordContext::new("test_sim", "baseline_return_v0", 17);
+    let mut context = DecisionRecordContext::new("test_sim", "driver_return_v0", 17);
     context.behavior_action = Some(action);
 
     let record = DecisionRecord::from_decision_and_outcome(&decision, &outcome, context);

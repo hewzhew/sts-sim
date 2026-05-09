@@ -850,7 +850,7 @@ mod tests {
             final_act: false,
             player_class: "Ironclad",
             max_steps: 50,
-            policy: RunPolicyKind::RandomMasked,
+            action_selector: RunActionSelectorKind::RandomMasked,
             trace_dir: None,
             determinism_check: true,
         };
@@ -868,7 +868,7 @@ mod tests {
         assert_eq!(summary.deterministic_replay_pass_count, 1);
         assert_eq!(summary.contract_failure_count, 0);
         assert!(summary.contract_failures.is_empty());
-        assert_eq!(summary.policy, "random_masked");
+        assert_eq!(summary.action_selector, "random_masked");
         assert!(summary.max_legal_action_count > 0);
         assert!(summary.decision_type_counts.values().sum::<usize>() > 0);
     }
@@ -882,7 +882,7 @@ mod tests {
             final_act: false,
             player_class: "Ironclad",
             max_steps: 80,
-            policy: RunPolicyKind::RandomMasked,
+            action_selector: RunActionSelectorKind::RandomMasked,
             trace_dir: None,
             determinism_check: false,
         };
@@ -890,7 +890,7 @@ mod tests {
             &config,
             0,
             71200,
-            EpisodePolicy::RandomMasked {
+            EpisodeActionSelector::RandomMasked {
                 rng: StsRng::new(71200 ^ 0x9e37_79b9_7f4a_7c15),
             },
             true,
@@ -1263,7 +1263,7 @@ mod tests {
     }
 
     #[test]
-    fn contract_failure_records_repro_seed_policy_and_action_key() {
+    fn contract_failure_records_repro_seed_selector_and_action_key() {
         let config = RunBatchConfig {
             episodes: 1,
             base_seed: 6040,
@@ -1271,7 +1271,7 @@ mod tests {
             final_act: false,
             player_class: "Ironclad",
             max_steps: 5000,
-            policy: RunPolicyKind::RandomMasked,
+            action_selector: RunActionSelectorKind::RandomMasked,
             trace_dir: None,
             determinism_check: true,
         };
@@ -1292,7 +1292,7 @@ mod tests {
         );
 
         assert_eq!(failure.seed, 6040);
-        assert_eq!(failure.policy, "random_masked");
+        assert_eq!(failure.action_selector, "random_masked");
         assert_eq!(failure.step, Some(17));
         assert_eq!(
             failure.action_key.as_deref(),
@@ -1300,7 +1300,9 @@ mod tests {
         );
         assert!(failure.reproduce_command.contains("--episodes 1"));
         assert!(failure.reproduce_command.contains("--seed 6040"));
-        assert!(failure.reproduce_command.contains("--policy random_masked"));
+        assert!(failure
+            .reproduce_command
+            .contains("--action-selector random_masked"));
         assert!(failure.reproduce_command.contains("--max-steps 5000"));
     }
 }

@@ -2,8 +2,8 @@
 """Collect canonical DecisionRecord JSONL from full_run_env_driver.
 
 This script intentionally talks to the driver through the DecisionEnv contract
-commands. It does not parse legacy observation payloads except to ask a behavior
-policy for the legal action id to record.
+commands. It does not parse legacy observation payloads except to ask an action
+selector for the legal action id to record.
 """
 
 from __future__ import annotations
@@ -71,7 +71,7 @@ def collect_episode(
     final_act: bool,
     player_class: str,
     max_steps: int,
-    policy: str,
+    selector: str,
     sim_version: str,
     return_spec_version: str,
     out,
@@ -96,12 +96,12 @@ def collect_episode(
         candidates = decision.get("candidates") or []
         if not candidates:
             raise RuntimeError(f"decision env observation did not expose candidates: {decision}")
-        if policy == "random_masked":
+        if selector == "random_masked":
             candidate = candidates[rng.randrange(len(candidates))]
-        elif policy == "first_legal":
+        elif selector == "first_legal":
             candidate = candidates[0]
         else:
-            raise RuntimeError(f"unsupported collection policy '{policy}'")
+            raise RuntimeError(f"unsupported collection selector '{selector}'")
         action_id = candidate.get("id", candidate.get("action_index"))
         if action_id is None:
             raise RuntimeError(f"candidate did not contain action id: {candidate}")
@@ -111,10 +111,10 @@ def collect_episode(
             "action_id": action_id,
             "sim_version": sim_version,
             "return_spec_version": return_spec_version,
-                "context": {
-                    "collector": "collect_decision_records.py",
-                    "behavior_policy": policy,
-                    "seed": seed,
+            "context": {
+                "collector": "collect_decision_records.py",
+                "behavior_selector": selector,
+                "seed": seed,
             },
         }
         step = client.request(request)
@@ -144,7 +144,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--final-act", action="store_true")
     parser.add_argument("--class", dest="player_class", default="ironclad")
     parser.add_argument("--max-steps", type=int, default=500)
-    parser.add_argument("--policy", default="random_masked", choices=["random_masked", "first_legal"])
+    parser.add_argument("--selector", default="random_masked", choices=["random_masked", "first_legal"])
     parser.add_argument("--sim-version", default="full_run_env")
     parser.add_argument("--return-spec-version", default="driver_reward_v0")
     parser.add_argument("--summary-out", type=Path)
@@ -171,7 +171,7 @@ def main() -> int:
                         final_act=args.final_act,
                         player_class=args.player_class,
                         max_steps=args.max_steps,
-                        policy=args.policy,
+                        selector=args.selector,
                         sim_version=args.sim_version,
                         return_spec_version=args.return_spec_version,
                         out=out,
@@ -184,7 +184,7 @@ def main() -> int:
         "schema_version": "decision_record_collection_summary_v0",
         "out": str(args.out),
         "driver": str(args.driver),
-        "policy": args.policy,
+        "selector": args.selector,
         "class": args.player_class,
         "episodes": summaries,
         "total_records": sum(item["records"] for item in summaries),

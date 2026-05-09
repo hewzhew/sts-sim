@@ -218,7 +218,7 @@ pub(crate) struct DecisionTrace {
 }
 
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
-pub(crate) struct TakeoverPolicy {
+pub(crate) struct TakeoverGate {
     pub regime: CombatRegime,
     pub takeover_eligible: bool,
     pub takeover_reason: String,
@@ -406,7 +406,7 @@ pub(crate) fn build_exact_turn_verdict(
     }
 }
 
-pub(crate) fn exact_turn_takeover_policy(
+pub(crate) fn exact_turn_takeover_gate(
     engine: &EngineState,
     chosen_move: &ClientInput,
     regime: CombatRegime,
@@ -416,7 +416,7 @@ pub(crate) fn exact_turn_takeover_policy(
     flags: SearchExperimentFlags,
 ) -> (
     Option<ClientInput>,
-    TakeoverPolicy,
+    TakeoverGate,
     DecisionAuthority,
     Vec<String>,
 ) {
@@ -528,7 +528,7 @@ pub(crate) fn exact_turn_takeover_policy(
     } else {
         DecisionAuthority::Frontier
     };
-    let policy = TakeoverPolicy {
+    let gate = TakeoverGate {
         regime,
         takeover_eligible,
         takeover_reason: takeover_reason.to_string(),
@@ -539,7 +539,7 @@ pub(crate) fn exact_turn_takeover_policy(
         exact_survival: verdict.survival,
     };
 
-    (takeover, policy, authority, reasons)
+    (takeover, gate, authority, reasons)
 }
 
 pub(crate) fn build_decision_trace(

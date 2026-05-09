@@ -63,8 +63,8 @@ def run_shard(args: argparse.Namespace, shard_index: int, offset: int, episodes:
         args.player_class,
         "--max-steps",
         str(args.max_steps),
-        "--policy",
-        args.policy,
+        "--selector",
+        args.selector,
         "--sim-version",
         args.sim_version,
         "--return-spec-version",
@@ -106,7 +106,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--final-act", action="store_true")
     parser.add_argument("--class", dest="player_class", default="ironclad")
     parser.add_argument("--max-steps", type=int, default=500)
-    parser.add_argument("--policy", default="random_masked", choices=["random_masked", "first_legal"])
+    parser.add_argument("--selector", default="random_masked", choices=["random_masked", "first_legal"])
     parser.add_argument("--sim-version", default="full_run_env")
     parser.add_argument("--return-spec-version", default="driver_reward_v0")
     return parser.parse_args()
@@ -126,6 +126,7 @@ def main() -> int:
         "driver": str(args.driver),
         "out_dir": str(args.out_dir),
         "class": args.player_class,
+        "selector": args.selector,
         "episodes": args.episodes,
         "workers": args.workers,
         "ok": all(shard.get("ok") for shard in shards),

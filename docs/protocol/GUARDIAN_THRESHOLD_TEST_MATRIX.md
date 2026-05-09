@@ -153,7 +153,7 @@ Do not try to prove these cases with protocol-only samples.
 Preferred vehicles:
 
 - controlled combat fixture / author spec
-- `combat_lab` style deterministic harness
+- deterministic combat case tests
 - targeted live/manual scenario recording only when necessary
 
 Protocol samples should remain narrow:

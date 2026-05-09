@@ -220,7 +220,7 @@ fn root_search_decision_audit_includes_exact_turn_shadow() {
             .get("frontier_chosen_move")
             .and_then(|value| value.as_str())
             .is_some(),
-        "exact_turn shadow should expose the baseline frontier choice it is shadowing"
+        "exact_turn shadow should expose the frontier choice it is shadowing"
     );
     assert!(
         exact_turn
@@ -283,7 +283,7 @@ fn root_search_exact_turn_takeover_metadata_is_consistent_in_obvious_defend_spot
     if frontier_choice == "EndTurn" {
         assert!(
             takeover_applied,
-            "when the baseline frontier still wants EndTurn in this obvious same-turn spot, exact-turn should take over"
+            "when the frontier still wants EndTurn in this obvious same-turn spot, exact-turn should take over"
         );
         assert_eq!(
             exact_turn
@@ -294,7 +294,7 @@ fn root_search_exact_turn_takeover_metadata_is_consistent_in_obvious_defend_spot
     } else {
         assert!(
             !takeover_applied,
-            "if the baseline frontier already agrees with the obvious defend play, takeover should stay inactive"
+            "if the frontier already agrees with the obvious defend play, takeover should stay inactive"
         );
     }
 }

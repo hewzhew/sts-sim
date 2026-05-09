@@ -58,10 +58,8 @@ This file defines the hard dependency direction for `src/`.
   - integration-side analysis helpers
   - currently `hexaghost_value`
 - `bot::harness`
-  - app-layer workbenches and bot-coupled smoke surfaces
+  - app-layer combat env smoke surfaces
   - `combat_env`
-  - `combat_lab`
-  - `combat_policy`
 - `bot::coverage_signatures`
   - bot-side shared signature extraction for coverage/curiosity and live combat logging
 - `cli::coverage_tools`

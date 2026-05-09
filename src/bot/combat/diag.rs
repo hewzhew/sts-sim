@@ -13,7 +13,7 @@ pub struct CombatMoveStat {
     pub root_prior_score: f32,
     pub root_prior_hit: bool,
     pub leaf_score: f32,
-    pub policy_bonus: f32,
+    pub search_delta: f32,
     pub sequence_bonus: f32,
     pub sequence_survival_bonus: f32,
     pub sequence_exhaust_bonus: f32,

@@ -2571,7 +2571,7 @@ mod tests {
         .expect("failure snapshots should write");
         let focus_text = concat!(
             "[EVENT] frame=1 Neow | choose=Talk score=18 fallback | protocol=unsupported_event\n",
-            "[SLOW SEARCH] frame=420 baseline_ms=0 root_ms=709 legal_moves=6 chosen=Play #4 Warcry+\n",
+            "[SLOW SEARCH] frame=420 sync_audit_ms=0 root_ms=709 legal_moves=6 chosen=Play #4 Warcry+\n",
             "[AUDIT] exact_turn best=PlayCard { card_index: 3, target: None } line_len=2 ends=8 nodes=7 prunes=0 cycles=0 truncated=false agrees=false regime=crisis dominance=strictly_better_in_window confidence=exact takeover=true takeover_reason=crisis_strict_dominance frontier_survival=severe_risk exact_survival=stable resources=hp80/blk12/pots0/lost0/exh0\n",
             "[AUDIT] exact_turn skipped=true reason=high_root_branching legal_moves=12 living_monsters=3 filled_potions=0 regime=fragile dominance=incomparable confidence=unavailable takeover=false takeover_reason=no_best_first_input frontier_survival=risky_but_playable exact_survival=risky_but_playable\n",
             "[SEARCH TIMEOUT] frame=435 root_search partial_result budget=1200 elapsed_ms=4\n"
@@ -2801,7 +2801,7 @@ mod tests {
             concat!(
                 "=== CHRONOLOGICAL APPENDIX ===\n",
                 "[EVENT] frame=2 Neow | choose=Talk score=18 fallback | protocol=unsupported_event\n",
-                "[SLOW SEARCH] frame=8 baseline_ms=0 root_ms=709 legal_moves=6 chosen=Play #1 Defend\n",
+                "[SLOW SEARCH] frame=8 sync_audit_ms=0 root_ms=709 legal_moves=6 chosen=Play #1 Defend\n",
                 "╔══════════════════════════════════════════════════════╗\n",
                 "║  COMBAT SUMMARY (F227 ~ F234)                          \n",
                 "╚══════════════════════════════════════════════════════╝\n",

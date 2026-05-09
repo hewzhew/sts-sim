@@ -23,6 +23,9 @@ Removed from active code/docs:
 - bot-owned reward/shop/event/path/campfire/boss-relic policy modules
 - live noncombat sidecar shadow records
 - bot card-reward evaluation in human reward audit
+- combat policy-comparison workbench and `combat_lab` CLI
+- active `--policy` full-run smoke/collector option names; these are now
+  action selectors
 
 ## Reason
 
@@ -45,4 +48,5 @@ full_run_env_driver
 
 The baseline bot is no longer a DecisionRecord collection policy or macro
 controller. Remaining bot code is combat diagnostic/search machinery and cannot
-label long-run run decisions.
+label long-run run decisions. Combat takeover metadata is named as a gate, not a
+policy source.

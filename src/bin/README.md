@@ -8,25 +8,20 @@ Rough groups:
 
 - user / developer interaction
   - `play`
-  - `combat_lab`
   - `sts_dev_tool`
   - `view_replay`
 - combat validation and audits
-  - `combat_author_audit`
-  - `combat_boss_validate`
-  - `combat_boss_validate_pack`
+  - `combat_case`
   - `combat_env_driver`
   - `full_run_env_driver`
-  - `potion_audit`
   - `verify_live_comm_replay`
-  - `verify_shop`
 
 Supporting module ownership for these binaries now lives in:
 
 - `sts_simulator::fixtures`
   - scenario and author/start-spec inputs
 - `sts_simulator::bot::harness`
-  - combat env, lab, and bot-coupled validation workbenches
+  - combat env surfaces for explicit external action selection
 - `crate::testing::harness`
   - integration-side analysis helpers consumed internally by app-layer harnesses
 - `sts_simulator::diff::protocol`

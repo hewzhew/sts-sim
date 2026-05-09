@@ -251,9 +251,9 @@ fn run_case(
         0,
         default_runtime,
     );
-    let takeover_policy = diagnostics
+    let takeover_gate = diagnostics
         .decision_audit
-        .get("takeover_policy")
+        .get("takeover_gate")
         .cloned()
         .unwrap_or(serde_json::Value::Null);
     let exact_verdict = diagnostics
@@ -289,7 +289,7 @@ fn run_case(
         .and_then(|value| value.as_str())
         .unwrap_or("-");
     format!(
-        "{label} hand=[{}] player_hp={} cultist_hp={} move={} chosen_by={} turn_option_status={} current_line={} exact_takeover_line={} exact_first={} exact_line={} exact_truncated={} exact_nodes={} takeover_policy={} exact_verdict={} top_moves={}",
+        "{label} hand=[{}] player_hp={} cultist_hp={} move={} chosen_by={} turn_option_status={} current_line={} exact_takeover_line={} exact_first={} exact_line={} exact_truncated={} exact_nodes={} takeover_gate={} exact_verdict={} top_moves={}",
         hand_label(hand),
         player_hp,
         cultist_hp,
@@ -302,7 +302,7 @@ fn run_case(
         line_label(&exact.best_line, &combat),
         exact.truncated,
         exact.explored_nodes,
-        takeover_policy,
+        takeover_gate,
         exact_verdict,
         top_moves,
     )

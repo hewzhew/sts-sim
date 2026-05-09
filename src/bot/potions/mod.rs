@@ -1,12 +1,12 @@
 mod catalog;
-mod policy;
+mod immediate;
 mod signals;
 mod targets;
 
 use crate::content::potions::{get_potion_definition, PotionId};
 use crate::state::core::ClientInput;
 pub(crate) use catalog::category_label;
-pub(crate) use policy::immediate_potion_snapshot;
+pub(crate) use immediate::immediate_potion_snapshot;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PotionCategory {

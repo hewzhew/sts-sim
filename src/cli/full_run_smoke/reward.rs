@@ -89,7 +89,7 @@ pub fn make_full_run_env_contract_failure(
         kind: kind.to_string(),
         episode_id: 0,
         seed,
-        policy: "external_driver".to_string(),
+        action_selector: "external_driver".to_string(),
         step,
         action_key,
         decision_type,

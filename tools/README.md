@@ -10,8 +10,6 @@
   - machine-readable cached Java/protocol truth used by audits
 - `artifacts/`
   - generated reports, datasets, coverage outputs, and other derived files
-- `combat_lab/`
-  - local combat workbench helpers
 - `coverage/`
   - coverage dashboard and parsers
 - `learning/`
@@ -67,14 +65,20 @@ powershell -ExecutionPolicy Bypass -File .\tools\run_high_value_tests.ps1 -Inclu
 python tools\learning\collect_decision_records.py `
   --out tmp\decision_records\records.jsonl `
   --episodes 1 `
-  --seed-start 1
+  --seed-start 1 `
+  --max-steps 500
 
 python tools\learning\audit_decision_record_contract.py `
   --input tmp\decision_records\records.jsonl
 
 python tools\learning\verify_decision_records_replay.py `
-  --input tmp\decision_records\records.jsonl
+  --inputs tmp\decision_records\records.jsonl `
+  --max-steps 500 `
+  --fail-on-mismatch
 ```
+
+Replay verification must use the same env config as collection; `max_steps`,
+class, ascension, and final-act status are part of the replayed state hash.
 
 These scripts do not create teacher labels or policy preferences.
 

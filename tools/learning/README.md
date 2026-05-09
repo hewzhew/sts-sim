@@ -13,8 +13,10 @@ Allowed uses:
   externally selected legal actions or random-masked smoke actions
 - audit that records expose legal/public payloads only
 - replay records through the driver and compare hashes/candidates/outcomes
-- run explicit full-run policy evaluation where the final run outcome is the
-  metric
+- run explicit full-run outcome evaluation for externally supplied controllers
+
+Replay checks must use the same env config as collection. `max_steps`, class,
+ascension, and final-act status are part of the state hash.
 
 Tracked scripts:
 
@@ -28,10 +30,10 @@ Do not reintroduce scripts that:
 - call `branch_trace`
 - call `evaluate_candidates`
 - call `run_verified_adv_override_*`
-- collect policy-shadow traces
+- collect controller-shadow traces
 - collect search-allocation traces
 - train from `teacher_label`
-- convert single-seed counterfactuals into policy labels
+- convert single-seed counterfactuals into controller labels
 
 Deleted files remain recoverable from Git history and from the backup branches
 created before cleanup.

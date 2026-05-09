@@ -38,7 +38,7 @@ fn threat_governed_diagnostics_emit_phase1_decision_fields_for_crisis_states() {
     assert!(audit.get("exact_turn_shadow").is_some());
     assert!(audit.get("frontier_outcome").is_some());
     assert!(audit.get("exact_turn_verdict").is_some());
-    assert!(audit.get("takeover_policy").is_some());
+    assert!(audit.get("takeover_gate").is_some());
     assert!(audit.get("decision_trace").is_some());
 
     let decision_trace = audit.get("decision_trace").expect("trace should exist");

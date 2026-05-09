@@ -72,7 +72,7 @@ pub fn make_contract_failure(
         kind: kind.to_string(),
         episode_id,
         seed,
-        policy: config.policy.as_str().to_string(),
+        action_selector: config.action_selector.as_str().to_string(),
         step,
         action_key,
         decision_type,
@@ -99,8 +99,8 @@ pub fn reproduce_command(config: &RunBatchConfig, seed: u64) -> String {
         "1".to_string(),
         "--seed".to_string(),
         seed.to_string(),
-        "--policy".to_string(),
-        config.policy.as_str().to_string(),
+        "--action-selector".to_string(),
+        config.action_selector.as_str().to_string(),
         "--ascension".to_string(),
         config.ascension.to_string(),
         "--class".to_string(),
@@ -111,13 +111,13 @@ pub fn reproduce_command(config: &RunBatchConfig, seed: u64) -> String {
         "--summary-out".to_string(),
         format!(
             "tools\\artifacts\\full_run_smoke\\repro_{}_seed_{}.json",
-            config.policy.as_str(),
+            config.action_selector.as_str(),
             seed
         ),
         "--trace-dir".to_string(),
         format!(
             "tools\\artifacts\\full_run_smoke\\repro_{}_seed_{}_trace",
-            config.policy.as_str(),
+            config.action_selector.as_str(),
             seed
         ),
     ];
@@ -162,20 +162,20 @@ pub fn run_batch(config: &RunBatchConfig) -> Result<RunBatchSummary, String> {
 
     for episode_id in 0..config.episodes {
         let seed = config.base_seed.wrapping_add(episode_id as u64);
-        let policy_seed = seed ^ 0x9e37_79b9_7f4a_7c15;
-        let episode_policy = match config.policy {
-            RunPolicyKind::RandomMasked => EpisodePolicy::RandomMasked {
-                rng: StsRng::new(policy_seed),
+        let selector_seed = seed ^ 0x9e37_79b9_7f4a_7c15;
+        let episode_selector = match config.action_selector {
+            RunActionSelectorKind::RandomMasked => EpisodeActionSelector::RandomMasked {
+                rng: StsRng::new(selector_seed),
             },
         };
-        let mut episode = run_episode(config, episode_id, seed, episode_policy, true);
+        let mut episode = run_episode(config, episode_id, seed, episode_selector, true);
 
         if config.determinism_check {
             let replay = run_episode(
                 config,
                 episode_id,
                 seed,
-                EpisodePolicy::Replay {
+                EpisodeActionSelector::Replay {
                     actions: episode.actions.clone(),
                     cursor: 0,
                 },
@@ -293,7 +293,7 @@ pub fn run_batch(config: &RunBatchConfig) -> Result<RunBatchSummary, String> {
         observation_schema_version: FULL_RUN_OBSERVATION_SCHEMA_VERSION.to_string(),
         action_schema_version: FULL_RUN_ACTION_SCHEMA_VERSION.to_string(),
         action_mask_kind: "per_decision_candidate_set".to_string(),
-        policy: config.policy.as_str().to_string(),
+        action_selector: config.action_selector.as_str().to_string(),
         episodes_requested: config.episodes,
         base_seed: config.base_seed,
         ascension: config.ascension,
@@ -328,11 +328,11 @@ pub fn run_episode(
     config: &RunBatchConfig,
     episode_id: usize,
     seed: u64,
-    policy: EpisodePolicy,
+    selector: EpisodeActionSelector,
     capture_trace: bool,
 ) -> EpisodeRun {
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        run_episode_inner(config, episode_id, seed, policy, capture_trace)
+        run_episode_inner(config, episode_id, seed, selector, capture_trace)
     }));
     match result {
         Ok(run) => run,
@@ -398,7 +398,7 @@ pub fn run_episode_inner(
     config: &RunBatchConfig,
     episode_id: usize,
     seed: u64,
-    mut policy: EpisodePolicy,
+    mut selector: EpisodeActionSelector,
     capture_trace: bool,
 ) -> EpisodeRun {
     let start = Instant::now();
@@ -485,7 +485,8 @@ pub fn run_episode_inner(
         legal_action_count_sum += legal_actions.len();
         max_legal_action_count = max_legal_action_count.max(legal_actions.len());
 
-        let (chosen_action_index, action) = match choose_action(&mut policy, &ctx, &legal_actions) {
+        let (chosen_action_index, action) = match choose_action(&mut selector, &ctx, &legal_actions)
+        {
             Ok(action) => action,
             Err(err) => {
                 illegal_actions += 1;

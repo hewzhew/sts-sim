@@ -154,30 +154,6 @@ Legacy bridge:
   - legacy `ScenarioFixture` replay only
   - keep for migration compatibility, not for new checked-in regressions
 
-## Local Combat Lab
-
-The preferred local lab seed is now a `CombatCase`, not a raw fixture.
-
-Examples:
-
-```powershell
-cargo run --bin combat_lab -- `
-  --case tests\combat_cases\lagavulin_metallicize.case.json `
-  --episodes 10 `
-  --policy bot `
-  --depth 6 `
-  --variant-mode reshuffle-draw `
-  --base-seed 1 `
-  --out-dir tmp\combat_lab
-```
-
-Compatibility input paths still exist:
-
-- `--fixture <legacy_fixture.json>`
-- `--author-spec <spec.json>`
-
-Those paths are converted into `CombatCase` at the boundary before the lab starts.
-
 ## Cutover Rules
 
 1. New combat regressions should land under `tests/combat_cases/`.

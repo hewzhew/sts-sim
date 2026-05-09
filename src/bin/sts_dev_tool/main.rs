@@ -68,7 +68,7 @@ enum Commands {
     /// Generate interaction-signature coverage artifacts from replay logs and live_comm sidecar.
     InteractionCoverage,
 
-    /// Batch-run full offline episodes with an explicit policy for simulator smoke checks.
+    /// Batch-run full offline episodes with an explicit action selector for simulator smoke checks.
     RunBatch {
         /// Number of episodes to run.
         #[arg(long, default_value_t = 100)]
@@ -88,9 +88,9 @@ enum Commands {
         /// Maximum decision steps per episode before step-cap termination.
         #[arg(long, default_value_t = 2000)]
         max_steps: usize,
-        /// Policy name. Only random_masked is supported in full-run smoke.
+        /// Action selector name. Only random_masked is supported in full-run smoke.
         #[arg(long, default_value = "random_masked")]
-        policy: String,
+        action_selector: String,
         /// Optional output directory for per-episode action traces.
         #[arg(long)]
         trace_dir: Option<PathBuf>,
@@ -177,7 +177,7 @@ enum LogCommands {
         /// Include N previous responses in the generated ScenarioFixture.
         #[arg(long, default_value_t = 0)]
         window_lookback: usize,
-        /// Output directory for generated combat_lab fixtures.
+        /// Output directory for generated disagreement fixtures.
         #[arg(long)]
         out_dir: PathBuf,
         /// Optional JSON output path for the structured export report.
@@ -567,15 +567,17 @@ fn main() {
             class,
             final_act,
             max_steps,
-            policy,
+            action_selector,
             trace_dir,
             summary_out,
             determinism_check,
         } => {
-            let policy_kind = match policy.to_ascii_lowercase().as_str() {
-                "random_masked" => sts_simulator::cli::full_run_smoke::RunPolicyKind::RandomMasked,
+            let action_selector_kind = match action_selector.to_ascii_lowercase().as_str() {
+                "random_masked" => {
+                    sts_simulator::cli::full_run_smoke::RunActionSelectorKind::RandomMasked
+                }
                 other => {
-                    eprintln!("unsupported policy '{other}'; expected random_masked");
+                    eprintln!("unsupported action selector '{other}'; expected random_masked");
                     std::process::exit(2);
                 }
             };
@@ -598,7 +600,7 @@ fn main() {
                 final_act: *final_act,
                 player_class,
                 max_steps: *max_steps,
-                policy: policy_kind,
+                action_selector: action_selector_kind,
                 trace_dir: trace_dir.clone(),
                 determinism_check: *determinism_check,
             };

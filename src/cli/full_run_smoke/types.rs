@@ -6,11 +6,11 @@ pub const FULL_RUN_ACTION_SCHEMA_VERSION: &str =
 pub(crate) const NO_PROGRESS_REPEAT_LIMIT: usize = 8;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum RunPolicyKind {
+pub enum RunActionSelectorKind {
     RandomMasked,
 }
 
-impl RunPolicyKind {
+impl RunActionSelectorKind {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::RandomMasked => "random_masked",
@@ -26,7 +26,7 @@ pub struct RunBatchConfig {
     pub final_act: bool,
     pub player_class: &'static str,
     pub max_steps: usize,
-    pub policy: RunPolicyKind,
+    pub action_selector: RunActionSelectorKind,
     pub trace_dir: Option<PathBuf>,
     pub determinism_check: bool,
 }
@@ -36,7 +36,7 @@ pub struct RunBatchSummary {
     pub observation_schema_version: String,
     pub action_schema_version: String,
     pub action_mask_kind: String,
-    pub policy: String,
+    pub action_selector: String,
     pub episodes_requested: usize,
     pub base_seed: u64,
     pub ascension: u8,
@@ -101,7 +101,7 @@ pub struct RunContractFailure {
     pub kind: String,
     pub episode_id: usize,
     pub seed: u64,
-    pub policy: String,
+    pub action_selector: String,
     pub step: Option<usize>,
     pub action_key: Option<String>,
     pub decision_type: Option<String>,
@@ -142,7 +142,7 @@ pub struct RunTraceConfigV0 {
     pub final_act: bool,
     pub player_class: String,
     pub max_steps: usize,
-    pub policy: String,
+    pub action_selector: String,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -534,7 +534,7 @@ pub struct EpisodeRun {
 }
 
 #[derive(Clone, Debug)]
-pub enum EpisodePolicy {
+pub enum EpisodeActionSelector {
     RandomMasked {
         rng: StsRng,
     },
@@ -640,7 +640,7 @@ pub struct FullRunEnv {
 }
 
 impl FullRunEnvConfig {
-    pub fn batch_config(&self, policy: RunPolicyKind) -> RunBatchConfig {
+    pub fn batch_config(&self, action_selector: RunActionSelectorKind) -> RunBatchConfig {
         RunBatchConfig {
             episodes: 1,
             base_seed: self.seed,
@@ -648,7 +648,7 @@ impl FullRunEnvConfig {
             final_act: self.final_act,
             player_class: self.player_class,
             max_steps: self.max_steps,
-            policy,
+            action_selector,
             trace_dir: None,
             determinism_check: false,
         }

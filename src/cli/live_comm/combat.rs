@@ -35,7 +35,7 @@ use std::io::Write;
 use std::time::{Duration, Instant};
 
 const SEARCH_DIAG_TOP_K: usize = 5;
-const LIVE_BASELINE_SEARCH_TIMEOUT_MS: u64 = 250;
+const LIVE_SYNC_AUDIT_SEARCH_TIMEOUT_MS: u64 = 250;
 const LIVE_ROOT_SEARCH_TIMEOUT_MS: u64 = 2_500;
 const LIVE_ROOT_EXACT_TURN_MAX_NODES: usize = 1_200;
 const LIVE_SAMPLED_AUDIT_INTERVAL: u64 = 8;
@@ -61,7 +61,7 @@ fn log_combat_stage_enter(
 }
 
 fn focus_stage_enter_enabled(stage: &str) -> bool {
-    matches!(stage, "root_search" | "baseline_search")
+    matches!(stage, "root_search" | "sync_audit_search")
 }
 
 fn log_combat_stage_exit(
@@ -78,7 +78,7 @@ fn log_combat_stage_exit(
         "  [STAGE] exit {stage} elapsed_ms={elapsed_ms} {detail}"
     )
     .unwrap();
-    if elapsed_ms >= 100 || matches!(stage, "baseline_search" | "root_search") {
+    if elapsed_ms >= 100 || matches!(stage, "sync_audit_search" | "root_search") {
         writeln!(
             live_io.focus_log,
             "[STAGE] frame={frame_count} exit {stage} elapsed_ms={elapsed_ms} {detail}"
@@ -126,23 +126,23 @@ fn log_potion_decision_trace(
     if let Some(chosen) = snapshot.chosen.as_ref() {
         writeln!(
             live_io.log,
-            "  [POTION DIAG] policy_chosen {}",
+            "  [POTION DIAG] selected_candidate {}",
             chosen.debug_summary(snapshot.minimum_priority)
         )
         .unwrap();
         writeln!(
             live_io.focus_log,
-            "[POTION] actual={:?} policy_min_priority={} policy_chosen={}",
+            "[POTION] actual={:?} min_priority={} selected_candidate={}",
             actual_input,
             snapshot.minimum_priority,
             chosen.debug_summary(snapshot.minimum_priority)
         )
         .unwrap();
     } else {
-        writeln!(live_io.log, "  [POTION DIAG] policy_chosen <none>").unwrap();
+        writeln!(live_io.log, "  [POTION DIAG] selected_candidate <none>").unwrap();
         writeln!(
             live_io.focus_log,
-            "[POTION] actual={:?} policy_min_priority={} policy_chosen=<none>",
+            "[POTION] actual={:?} min_priority={} selected_candidate=<none>",
             actual_input, snapshot.minimum_priority
         )
         .unwrap();
@@ -368,12 +368,12 @@ fn log_slow_search_summary(
     live_io: &mut LiveCommIo,
     frame_count: u64,
     combat: &CombatState,
-    baseline_diag: Option<&CombatDiagnostics>,
+    sync_audit_diag: Option<&CombatDiagnostics>,
     search_diag: &CombatDiagnostics,
 ) {
-    let baseline_ms = baseline_diag.map(|diag| diag.elapsed_ms).unwrap_or(0);
+    let sync_audit_ms = sync_audit_diag.map(|diag| diag.elapsed_ms).unwrap_or(0);
     let root_ms = search_diag.elapsed_ms;
-    if baseline_ms < 500 && root_ms < 500 {
+    if sync_audit_ms < 500 && root_ms < 500 {
         return;
     }
 
@@ -405,13 +405,13 @@ fn log_slow_search_summary(
 
     writeln!(
         live_io.focus_log,
-        "[SLOW SEARCH] frame={frame_count} baseline_ms={baseline_ms} root_ms={root_ms} legal_moves={} chosen={} hand=[{}] monsters=[{}] exact_turn={} audit={}",
+        "[SLOW SEARCH] frame={frame_count} sync_audit_ms={sync_audit_ms} root_ms={root_ms} legal_moves={} chosen={} hand=[{}] monsters=[{}] exact_turn={} audit={}",
         search_diag.legal_moves,
         describe_client_input(combat, &search_diag.chosen_move),
         hand,
         monsters,
         exact_turn_summary,
-        if baseline_diag.is_some() { "sync" } else { "off" }
+        if sync_audit_diag.is_some() { "sync" } else { "off" }
     )
     .unwrap();
 }
@@ -484,10 +484,10 @@ fn live_root_search_budget(
     }
 }
 
-fn live_baseline_search_budget(legacy_budget: u32) -> SearchRuntimeBudget {
+fn live_sync_audit_search_budget(legacy_budget: u32) -> SearchRuntimeBudget {
     SearchRuntimeBudget {
         wall_clock_deadline: Some(
-            Instant::now() + Duration::from_millis(LIVE_BASELINE_SEARCH_TIMEOUT_MS),
+            Instant::now() + Duration::from_millis(LIVE_SYNC_AUDIT_SEARCH_TIMEOUT_MS),
         ),
         root_node_budget: audit_node_budget_for_legacy_budget(legacy_budget),
         engine_step_budget: engine_step_budget_for_legacy_budget(legacy_budget).min(120),
@@ -653,7 +653,7 @@ fn live_combat_action_key(input: &ClientInput) -> String {
     }
 }
 
-fn legacy_frontier_policy_action_index(
+fn root_action_index(
     combat: &CombatState,
     root_inputs: &[ClientInput],
     chosen_move: &ClientInput,
@@ -697,13 +697,13 @@ fn format_search_move_diag(combat: &CombatState, stat: &CombatMoveStat) -> Strin
         String::new()
     };
     format!(
-        "move={} visits={} avg_score={:.2} order={:.1} leaf={:.1} policy={:.1} sequence={:.1} frontload={:.1} defer={:.1} branch={:.1} downside={:.1} survival_window={:.1} exhaust_evidence={:.1} projected_hp={} projected_block={} projected_unblocked={} projected_enemy_total={} survives={} exhaust_block={} exhaust_draw={} branch_family={}",
+        "move={} visits={} avg_score={:.2} order={:.1} leaf={:.1} search_delta={:.1} sequence={:.1} frontload={:.1} defer={:.1} branch={:.1} downside={:.1} survival_window={:.1} exhaust_evidence={:.1} projected_hp={} projected_block={} projected_unblocked={} projected_enemy_total={} survives={} exhaust_block={} exhaust_draw={} branch_family={}",
         describe_client_input(combat, &stat.input),
         stat.visits,
         stat.avg_score,
         stat.order_score,
         stat.leaf_score,
-        stat.policy_bonus,
+        stat.search_delta,
         stat.sequence_bonus,
         stat.sequence_frontload_bonus,
         stat.sequence_defer_bonus,
@@ -811,8 +811,8 @@ fn log_focus_decision_summary(
     let takeover = json_str(
         search_diag
             .decision_audit
-            .get("takeover_policy")
-            .and_then(|policy| policy.get("takeover_reason")),
+            .get("takeover_gate")
+            .and_then(|gate| gate.get("takeover_reason")),
     )
     .unwrap_or("unknown");
 
@@ -939,14 +939,10 @@ fn format_search_profile_summary(search_diag: &CombatDiagnostics) -> String {
 }
 
 fn log_combat_decision_audit_summary(live_io: &mut LiveCommIo, search_diag: &CombatDiagnostics) {
-    let root_summary = decision_audit_root_summary(&search_diag.decision_audit);
     let tactical_summary = decision_audit_tactical_summary(&search_diag.decision_audit);
     let hand_select_summary = decision_audit_hand_select_summary(&search_diag.decision_audit);
     let exact_turn_summary = decision_audit_exact_turn_summary(&search_diag.decision_audit);
 
-    if let Some(summary) = root_summary.as_deref() {
-        writeln!(live_io.log, "  [AUDIT] root {}", summary).unwrap();
-    }
     if let Some(summary) = tactical_summary.as_deref() {
         writeln!(live_io.log, "  [AUDIT] tactical {}", summary).unwrap();
     }
@@ -958,9 +954,6 @@ fn log_combat_decision_audit_summary(live_io: &mut LiveCommIo, search_diag: &Com
     }
 
     let mut focus_parts = Vec::new();
-    if let Some(summary) = root_summary {
-        focus_parts.push(format!("root {}", summary));
-    }
     if let Some(summary) = tactical_summary {
         focus_parts.push(format!("tactical {}", summary));
     }
@@ -973,48 +966,6 @@ fn log_combat_decision_audit_summary(live_io: &mut LiveCommIo, search_diag: &Com
     if !focus_parts.is_empty() {
         writeln!(live_io.focus_log, "[AUDIT] {}", focus_parts.join(" | ")).unwrap();
     }
-}
-
-fn decision_audit_root_summary(audit: &Value) -> Option<String> {
-    let sequencing = audit.get("root_policy")?.get("sequencing")?;
-    if sequencing.is_null() {
-        return None;
-    }
-
-    let mut parts = Vec::new();
-    if let Some(total_delta) = json_number_as_i64(sequencing.get("total_delta")) {
-        parts.push(format!("delta={total_delta}"));
-    }
-    if let Some(rationale_key) = json_str(sequencing.get("rationale_key")) {
-        parts.push(format!("rationale={rationale_key}"));
-    }
-    if let Some(branch_rationale_key) = json_str(sequencing.get("branch_rationale_key")) {
-        parts.push(format!("branch={branch_rationale_key}"));
-    }
-    if let Some(downside_rationale_key) = json_str(sequencing.get("downside_rationale_key")) {
-        parts.push(format!("downside={downside_rationale_key}"));
-    }
-
-    let branch_opening = audit.get("root_policy")?.get("branch_opening")?;
-    if !branch_opening.is_null() {
-        if let Some(branch_family) = json_str(branch_opening.get("branch_family")) {
-            parts.push(format!("family={branch_family}"));
-        }
-        if let Some(continuation_value) =
-            json_number_as_i64(branch_opening.get("continuation_value"))
-        {
-            if continuation_value != 0 {
-                parts.push(format!("continue={continuation_value}"));
-            }
-        }
-        if let Some(downside_value) = json_number_as_i64(branch_opening.get("downside_value")) {
-            if downside_value != 0 {
-                parts.push(format!("risk={downside_value}"));
-            }
-        }
-    }
-
-    (!parts.is_empty()).then(|| parts.join(" "))
 }
 
 fn decision_audit_tactical_summary(audit: &Value) -> Option<String> {
@@ -1112,12 +1063,12 @@ fn decision_audit_exact_turn_summary(audit: &Value) -> Option<String> {
         .and_then(|value| value.get("confidence"))
         .and_then(Value::as_str)
         .unwrap_or("unavailable");
-    let takeover_policy = audit.get("takeover_policy");
-    let takeover = takeover_policy
+    let takeover_gate = audit.get("takeover_gate");
+    let takeover = takeover_gate
         .and_then(|value| value.get("takeover_applied"))
         .and_then(Value::as_bool)
         .unwrap_or(false);
-    let takeover_reason = takeover_policy
+    let takeover_reason = takeover_gate
         .and_then(|value| value.get("takeover_reason"))
         .and_then(Value::as_str)
         .unwrap_or("unknown");
@@ -2321,13 +2272,13 @@ pub(super) fn handle_live_combat_frame<W: Write>(
     } else {
         "legacy"
     };
-    let policy_root_inputs = root_inputs.clone().unwrap_or_else(|| {
+    let audit_root_inputs = root_inputs.clone().unwrap_or_else(|| {
         crate::bot::combat::legal_moves_for_audit(&EngineState::CombatPlayerTurn, &truth)
     });
     writeln!(
         live_io.log,
         "  [ROOT ACTION SET] candidates={} source={} protocol_root_action_count={}",
-        policy_root_inputs.len(),
+        audit_root_inputs.len(),
         root_action_source,
         protocol_root_action_count
     )
@@ -2336,7 +2287,7 @@ pub(super) fn handle_live_combat_frame<W: Write>(
         live_io.focus_log,
         "[ROOT ACTION SET] frame={} candidates={} source={} protocol_root_action_count={}",
         frame_count,
-        policy_root_inputs.len(),
+        audit_root_inputs.len(),
         root_action_source,
         protocol_root_action_count
     )
@@ -2385,43 +2336,44 @@ pub(super) fn handle_live_combat_frame<W: Write>(
         )
         .unwrap();
     }
-    let baseline_diag = if should_run_sync_audit(combat_mode, frame_count, &search_diag) {
-        let baseline_started = log_combat_stage_enter(live_io, frame_count, "baseline_search", "");
-        let baseline_runtime = live_baseline_search_budget(combat_search_budget);
-        let mut baseline_diag = diagnose_root_search_with_depth_and_runtime_and_root_inputs(
+    let sync_audit_diag = if should_run_sync_audit(combat_mode, frame_count, &search_diag) {
+        let sync_audit_started =
+            log_combat_stage_enter(live_io, frame_count, "sync_audit_search", "");
+        let sync_audit_runtime = live_sync_audit_search_budget(combat_search_budget);
+        let mut sync_audit_diag = diagnose_root_search_with_depth_and_runtime_and_root_inputs(
             &EngineState::CombatPlayerTurn,
             &truth,
             2,
             0,
-            baseline_runtime,
+            sync_audit_runtime,
             root_inputs.clone(),
         );
-        baseline_diag.profile.audit_ms = baseline_diag.elapsed_ms;
+        sync_audit_diag.profile.audit_ms = sync_audit_diag.elapsed_ms;
         log_combat_stage_exit(
             live_io,
             frame_count,
-            "baseline_search",
-            baseline_started,
+            "sync_audit_search",
+            sync_audit_started,
             format!(
                 "chosen={} legal_moves={} timed_out={}",
-                describe_client_input(&truth, &baseline_diag.chosen_move),
-                baseline_diag.legal_moves,
-                baseline_diag.timed_out,
+                describe_client_input(&truth, &sync_audit_diag.chosen_move),
+                sync_audit_diag.legal_moves,
+                sync_audit_diag.timed_out,
             ),
         );
-        if baseline_diag.timed_out {
+        if sync_audit_diag.timed_out {
             writeln!(
                 live_io.log,
-                "  [SEARCH TIMEOUT] baseline_search fell back to partial frontier results"
+                "  [SEARCH TIMEOUT] sync_audit_search fell back to partial frontier results"
             )
             .unwrap();
         }
-        Some(baseline_diag)
+        Some(sync_audit_diag)
     } else {
         None
     };
-    if let Some(baseline_diag) = baseline_diag.as_ref() {
-        search_diag.profile.audit_ms = baseline_diag.elapsed_ms;
+    if let Some(sync_audit_diag) = sync_audit_diag.as_ref() {
+        search_diag.profile.audit_ms = sync_audit_diag.elapsed_ms;
     }
     let verbose_outcome_logging = verbose_search_outcome_logging_enabled();
     let render_started = log_combat_stage_enter(live_io, frame_count, "search_render", "");
@@ -2492,7 +2444,7 @@ pub(super) fn handle_live_combat_frame<W: Write>(
     )
     .unwrap();
     let selected_root_action_index =
-        legacy_frontier_policy_action_index(&truth, &policy_root_inputs, &search_diag.chosen_move);
+        root_action_index(&truth, &audit_root_inputs, &search_diag.chosen_move);
     log_combat_decision_audit_summary(live_io, &search_diag);
     log_focus_decision_summary(
         live_io,
@@ -2511,7 +2463,7 @@ pub(super) fn handle_live_combat_frame<W: Write>(
             .collect::<Vec<_>>();
         let meta = crate::bot::DecisionMetadata::new(
             "combat_search",
-            Some("search_root_policy"),
+            Some("combat_root_search"),
             None,
             false,
         );
@@ -2528,27 +2480,27 @@ pub(super) fn handle_live_combat_frame<W: Write>(
         sidecar::write_shadow_record(&mut live_io.combat_decision_audit, &shadow);
         sidecar::write_shadow_record(&mut live_io.sidecar_shadow, &shadow);
     }
-    if let Some(baseline_diag) = baseline_diag.as_ref() {
+    if let Some(sync_audit_diag) = sync_audit_diag.as_ref() {
         if !same_or_equivalent_client_input(
             &truth,
-            &baseline_diag.chosen_move,
+            &sync_audit_diag.chosen_move,
             &search_diag.chosen_move,
         ) {
             writeln!(
                 live_io.log,
-                "  [BASELINE DIAG] disagrees chosen={:?} baseline_score={:.1}",
-                baseline_diag.chosen_move,
-                baseline_diag
+                "  [SYNC AUDIT] disagrees chosen={:?} audit_score={:.1}",
+                sync_audit_diag.chosen_move,
+                sync_audit_diag
                     .top_moves
                     .first()
                     .map(|stat| stat.avg_score)
                     .unwrap_or(0.0)
             )
             .unwrap();
-            for move_stat in baseline_diag.top_moves.iter().take(3) {
+            for move_stat in sync_audit_diag.top_moves.iter().take(3) {
                 writeln!(
                     live_io.log,
-                    "  [BASELINE DIAG] move={:?} score={:.1} visits={}",
+                    "  [SYNC AUDIT] move={:?} score={:.1} visits={}",
                     move_stat.input, move_stat.avg_score, move_stat.visits
                 )
                 .unwrap();
@@ -2559,15 +2511,15 @@ pub(super) fn handle_live_combat_frame<W: Write>(
         live_io,
         frame_count,
         &truth,
-        baseline_diag.as_ref(),
+        sync_audit_diag.as_ref(),
         &search_diag,
     );
     let input = selected_root_action_index
-        .and_then(|index| policy_root_inputs.get(index).cloned())
+        .and_then(|index| audit_root_inputs.get(index).cloned())
         .unwrap_or_else(|| search_diag.chosen_move.clone());
     writeln!(
         live_io.log,
-        "  [EXECUTION BASELINE] authority=existing_live_baseline selected_root_index={} selected_key={} selected_label={}",
+        "  [EXECUTION] authority=combat_search selected_root_index={} selected_key={} selected_label={}",
         selected_root_action_index
             .map(|index| index.to_string())
             .unwrap_or_else(|| "<missing>".to_string()),
@@ -2577,7 +2529,7 @@ pub(super) fn handle_live_combat_frame<W: Write>(
     .unwrap();
     writeln!(
         live_io.focus_log,
-        "[EXECUTION BASELINE] frame={} authority=existing_live_baseline selected_root_index={} selected_key={}",
+        "[EXECUTION] frame={} authority=combat_search selected_root_index={} selected_key={}",
         frame_count,
         selected_root_action_index
             .map(|index| index.to_string())
