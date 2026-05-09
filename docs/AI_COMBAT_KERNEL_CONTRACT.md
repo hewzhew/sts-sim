@@ -5,16 +5,25 @@ this repository.
 
 The kernel is not a bot, not a planner, not a Gym environment, and not a
 CleanRL-shaped wrapper. It is the deterministic combat state machine boundary
-that later rollout, replay, search, and training systems must use.
+that rollout, replay, search, and training systems must use.
 
 The canonical loop is:
 
 ```text
 CombatOrigin
-  -> KernelStart { handle, first_decision }
-  -> ActionDescriptor chosen by ActionId
+  -> KernelSession { handle, current_decision }
+  -> choose one ActionDescriptor by its local ActionId
   -> KernelTransition
-  -> DecisionFrame | CombatTerminal | TruncationCause | KernelFault
+  -> KernelOutcome
+```
+
+The canonical training/replay record is:
+
+```text
+DecisionFrame
++ ActionDescriptor snapshot
++ RecordedActionTrace
++ KernelTransition
 ```
 
 Anything outside this loop is downstream.
@@ -22,7 +31,8 @@ Anything outside this loop is downstream.
 ## Hard Rules
 
 - There is no opaque `PendingChoice`.
-- There is no raw `CombatState` access from task/training code.
+- There is no raw `CombatState` access from task, collector, trainer, or Python
+  adapter code.
 - There is no baseline bot continuation inside the kernel.
 - There is no reward shaping inside the kernel.
 - There is no seed-specific strategy branch.
@@ -30,11 +40,13 @@ Anything outside this loop is downstream.
 - There is no `RewardScreen` boundary in `CombatKernel`.
 - There is no `CombatTerminal::Error`.
 - There is no CleanRL or Gym constraint on kernel shape.
+- There is no default emission of privileged or debug data into trainable traces.
 
 Kernel mechanical type names must not contain algorithm words such as Actor,
 Critic, Policy, Value, PPO, CleanRL, Trainer, or RewardShaping.
 
-The kernel may know executable truth. Public policy data may not.
+The kernel may know executable truth. Public data used for action selection may
+not.
 
 ## Layer 1: Combat Origin
 
@@ -86,10 +98,12 @@ ReplayIdentity {
 The replay identity exists so that:
 
 ```text
-same origin + same semantic action trace -> same state hash sequence
+same origin + same recorded action trace -> same state hash sequence
 ```
 
-If this fails, the result is a replay fault, not a policy loss.
+The recorded action trace is not just semantic intent. It includes the local
+action id, descriptor snapshot, semantic key, public refs, schema version, and
+hashes. If replay diverges, the result is a replay fault, not a training loss.
 
 ## Layer 2: Combat Kernel
 
@@ -97,26 +111,38 @@ If this fails, the result is a replay fault, not a policy loss.
 
 ```text
 trait CombatKernel {
-  start(origin) -> Result<KernelStart, KernelFault>
+  start(origin) -> Result<KernelSession, KernelFault>
 
   step(
     handle,
     decision_id,
     action_id,
-  ) -> KernelTransition
+  ) -> Result<KernelTransition, KernelFault>
 
-  snapshot(handle) -> Result<KernelSnapshot, KernelFault>
-  restore(snapshot) -> Result<KernelStart, KernelFault>
-  fork(handle) -> Result<KernelStart, KernelFault>
+  snapshot(handle) -> Result<OpaqueKernelSnapshot, KernelFault>
+  restore(snapshot) -> Result<KernelSession, KernelFault>
+  fork(handle) -> Result<KernelSession, KernelFault>
 }
 ```
 
-`start` returns the first `DecisionFrame`; it does not require a separate
-`advance_to_boundary` call.
+`KernelSession` means "attached to a current decision", not "combat just
+started". `start`, `restore`, and `fork` all return the same shape:
 
-`step` is atomic. It validates that `decision_id` is still current, applies the
-chosen `ActionId`, advances internal engine ticks until the next decision or
-outcome, and returns one `KernelTransition`.
+```text
+KernelSession {
+  handle,
+  current_decision: DecisionFrame,
+  replay_identity: ReplayIdentity,
+}
+```
+
+The field must not be called `first_decision`, because restored and forked
+sessions resume at the current boundary.
+
+`step` is atomic. It validates that `decision_id` is still current, resolves the
+local `ActionId` to the current descriptor, applies the action, advances
+internal engine ticks until the next decision or outcome, and returns one
+`KernelTransition`.
 
 There must not be separate authoritative calls for:
 
@@ -125,34 +151,51 @@ legal_actions(handle)
 terminal(handle)
 ```
 
-The current legal actions live inside the current `DecisionFrame`. The terminal
-or truncation cause lives inside the `KernelTransition`.
+The current legal actions live inside the current `DecisionFrame`. The terminal,
+truncation cause, or fault lives inside the `KernelTransition`.
 
-### Kernel Start
+### Invalid Step Semantics
+
+Invalid step attempts must not mutate engine state.
+
+These cases return `KernelOutcome::Rejected` with unchanged state hash:
 
 ```text
-KernelStart {
-  handle,
-  first_decision: DecisionFrame,
-  replay_identity: ReplayIdentity,
-}
+StaleDecisionId
+InvalidActionId
+ActionNotInCurrentDecision
 ```
+
+Required behavior:
+
+```text
+state_hash_before == state_hash_after
+rng_hash_before == rng_hash_after
+action_descriptor_snapshot == None
+```
+
+Collectors may count these as illegal action attempts. They are not combat
+terminal states and not environment rewards.
+
+`HandleNotFound` returns `Err(KernelFault::HandleNotFound)` before a transition
+is formed.
 
 ### Kernel Transition
 
 ```text
 KernelTransition {
   previous_decision_id,
-  action_id,
-  action_descriptor_snapshot,
+  attempted_action_id,
+  action_descriptor_snapshot: Option<ActionDescriptor>,
 
   public_events,
-  privileged_events,
+  privileged_event_bundle: Option<PrivilegedEventBundle>,
 
   outcome,
 
   state_hash_before,
   state_hash_after,
+  rng_hash_before,
   rng_hash_after,
   engine_version,
   contract_schema_version,
@@ -161,8 +204,14 @@ KernelTransition {
 }
 ```
 
-`action_descriptor_snapshot` is required. A trace must remain interpretable even
-if later code changes how descriptors are generated.
+`action_descriptor_snapshot` is `Some(ActionDescriptor)` only for an accepted
+action. It is required for every accepted action so a trace remains interpretable
+even if later code changes descriptor generation.
+
+`privileged_event_bundle` is optional and absent by default. If present, it must
+carry a privilege manifest and the trace is not action-selection-trainable
+unless a collector explicitly strips the privileged fields before writing the
+trainable record.
 
 ### Kernel Outcome
 
@@ -170,6 +219,7 @@ if later code changes how descriptors are generated.
 KernelOutcome::Decision(DecisionFrame)
 KernelOutcome::Terminal(CombatTerminal)
 KernelOutcome::Truncated(TruncationCause)
+KernelOutcome::Rejected(StepRejection)
 KernelOutcome::Fault(KernelFault)
 ```
 
@@ -204,20 +254,24 @@ Search, replay, and debugging require cloning state without smuggling raw engine
 objects into task code.
 
 ```text
-KernelSnapshot {
-  engine_state,
-  rng_state,
+OpaqueKernelSnapshot {
+  snapshot_id,
   decision_id,
   replay_identity,
   schema_version,
   engine_version,
   content_manifest_hash,
   state_hash,
+  private_payload,
 }
 ```
 
-`restore(snapshot)` must produce the same current `DecisionFrame` hash that was
-present when the snapshot was taken.
+`private_payload` contains engine and RNG state, but it is kernel-private. It may
+be passed only to `restore`. It must not be serialized into trainable episode
+records, inspected by task code, or exposed through Python `info`.
+
+`restore(snapshot)` must produce a `KernelSession` whose `current_decision` hash
+matches the decision hash at the time the snapshot was taken.
 
 `fork(handle)` must be equivalent to `snapshot(handle)` followed by
 `restore(snapshot)`.
@@ -231,7 +285,7 @@ DecisionFrame {
   id,
   kind,
   public_observation,
-  privileged_observation,
+  privileged_observation: Option<PrivilegedObservation>,
   actions,
   choice,
   schema_version,
@@ -244,6 +298,9 @@ engine enters an unsupported substate, the kernel returns
 `KernelOutcome::Truncated(UnsupportedDecisionKind)`.
 
 There is no generic pending bucket.
+
+`privileged_observation` is absent by default. If present, it must carry a
+privilege manifest and must not be written into trainable action-selection data.
 
 ### Decision Kinds
 
@@ -315,8 +372,8 @@ ActionDescriptor {
 `ActionId` is an execution token scoped to one `DecisionFrame`. It must never be
 used as a learning label.
 
-`engine_ref` is an opaque execution reference. It is not serializable to policy
-data.
+`engine_ref` is an opaque execution reference. It is not serializable to public
+or trainable data.
 
 `ActionSemanticKey` is the stable, serializable action identity:
 
@@ -353,12 +410,14 @@ ActionSemanticKey::Skip { decision_kind }
 Every recorded action must store:
 
 ```text
+RecordedActionTrace {
 decision_id
 action_id
 action_descriptor_snapshot
 action_semantic_key
 public_argument_refs
 action_schema_version
+}
 ```
 
 Downstream tasks may map `ActionSemanticKey` into:
@@ -371,6 +430,10 @@ autoregressive verb/argument targets
 
 If a descriptor lacks enough stable public metadata for the selected encoding,
 the task must reject the decision as unsupported instead of guessing.
+
+Replay uses the full recorded action trace, not the semantic key alone. The
+semantic key is for learning and analysis; the descriptor snapshot plus local
+execution token is what makes exact replay auditable.
 
 ## Layer 5: Observations
 
@@ -387,10 +450,10 @@ DebugOracle:
   replay/debug truth, never emitted to training by default
 ```
 
-`PublicObservation` is the only observation allowed for policy inference.
+`PublicObservation` is the only observation allowed for action selection.
 
 `PrivilegedObservation` may be used by a declared asymmetric value estimator or
-evaluator. It must never be used by the action sampler or policy network.
+evaluator. It must never be used by an action sampler or behavior-cloning target.
 
 `DebugOracle` is not a training observation. It may contain exact draw order,
 hidden RNG, executable monster steps, and raw internal references.
@@ -452,8 +515,8 @@ monsters:
   alive
   escaped
   half_dead
-  visible_intent
-  visible_intent_damage
+  intent_visibility
+  visible_intent: Option<VisibleIntent>
   previous_public_moves
 
 combat:
@@ -497,12 +560,32 @@ behavior depends on turn/combat events.
 
 ### Intent Contract
 
-Monster intent must be classified:
+Monster intent is a structured public object, not a single damage number.
 
 ```text
-VisibleIntent
-MissingVisibleIntent
-OracleOnlyIntent
+VisibleIntent {
+  kind,
+  damage_per_hit,
+  hit_count,
+  block,
+  debuffs,
+  status_effects,
+  target_scope,
+  is_attack,
+  is_buff,
+  is_debuff,
+  is_escape,
+  is_sleep,
+  is_unknown_to_player,
+}
+```
+
+Every monster intent must be classified:
+
+```text
+IntentVisibility::Visible
+IntentVisibility::MissingVisible
+IntentVisibility::OracleOnly
 ```
 
 If executable truth says `Attack 11` but `PublicObservation` says no visible
@@ -510,7 +593,7 @@ intent, the task must either:
 
 - fix the observation bridge,
 - mark the state as `OracleOnlyIntent`, or
-- reject it for policy-mode training.
+- reject it for public action-selection training.
 
 Training around `MissingVisibleIntent` is forbidden.
 
@@ -529,10 +612,10 @@ non_training_build=true
 Any episode trace containing `DebugOracle` must be marked:
 
 ```text
-policy_trainable=false
+action_selection_trainable=false
 ```
 
-`PrivilegedObservation` must carry a manifest:
+`PrivilegedObservation` and `privileged_event_bundle` must carry a manifest:
 
 ```text
 PrivilegeManifest {
@@ -551,8 +634,8 @@ future_monster_rolls
 ```
 
 Allowed consumers may include value estimators or evaluators. Forbidden
-consumers must include policy networks, action samplers, and behavior-cloning
-targets.
+consumers must include action-selection models, action samplers, and
+behavior-cloning targets.
 
 ## Layer 6: Combat Task Adapter
 
@@ -573,8 +656,8 @@ Forbidden:
 - reading raw `CombatState`,
 - inventing mechanics,
 - treating kernel faults as negative reward,
-- using `DebugOracle` fields as policy input,
-- using `PrivilegedObservation` as policy input,
+- using `DebugOracle` fields as action-selection input,
+- using `PrivilegedObservation` as action-selection input,
 - using local `ActionId` as a global neural action id,
 - calling the old bot,
 - producing card-pick conclusions from combat-only tasks.
@@ -608,9 +691,10 @@ min_final_hp
 avg_turns
 truncated_rate
 fault_rate
+stale_decision_rate
+invalid_action_rate
 unsupported_decision_rate
 missing_visible_intent_rate
-illegal_action_rate
 privileged_observation_mode
 oracle_leakage_rate
 replay_mismatch_rate
@@ -630,7 +714,7 @@ A Python adapter may expose a Gymnasium-compatible `reset/step` API for narrow
 fixed-vocabulary tests. The canonical training data is still:
 
 ```text
-DecisionFrame + ActionDescriptor + KernelTransition
+DecisionFrame + ActionDescriptor + RecordedActionTrace + KernelTransition
 ```
 
 The real collector/trainer/replay/evaluator must be owned by this project and
@@ -657,7 +741,7 @@ is not a kernel layer.
 live_run
 run_replay
 authored_probe
-weak_policy_rollout
+weak_controller_rollout
 randomized_probe
 ```
 
@@ -665,7 +749,7 @@ Rules:
 
 - `live_run` and `run_replay` can support distribution claims.
 - `authored_probe` can support mechanic claims.
-- `weak_policy_rollout` can support coverage claims, not quality claims.
+- `weak_controller_rollout` can support coverage claims, not quality claims.
 - `randomized_probe` can find crashes, not prove strategic value.
 
 Do not use random deck insertion as evidence about real deckbuilding.
@@ -723,11 +807,22 @@ J. TerminalBoundary
   reward screen is not exposed by CombatKernel
 
 K. ReplayDeterminism
-  same origin + same semantic action trace -> identical state_hash sequence
+  same origin + same recorded action trace -> identical state_hash sequence
 
 L. LeakageTest
   PublicObservation contains no DebugOracle fields
-  training trace with DebugOracle is policy_trainable=false
+  default training trace contains no DebugOracle
+  default training trace contains no privileged_event_bundle
+  trace with DebugOracle is action_selection_trainable=false
+
+M. InvalidStepSafety
+  stale decision_id does not mutate state
+  invalid action_id does not mutate state
+  unchanged state/rng hashes are reported
+
+N. SnapshotOpacity
+  task/Python code can hold and pass OpaqueKernelSnapshot
+  task/Python code cannot inspect private payload
 ```
 
 If these fail, the next task is kernel/view/replay repair. Not PPO, not search,
@@ -738,10 +833,10 @@ and not reward tuning.
 The first implementation must be narrow and mechanical:
 
 ```text
-1. Add typed structures for ReplayIdentity, CombatOrigin, KernelStart,
+1. Add typed structures for ReplayIdentity, CombatOrigin, KernelSession,
    DecisionFrame, ChoiceSpec, ActionDescriptor, PublicObservation,
-   PrivilegedObservation, KernelTransition, KernelSnapshot, CombatTerminal,
-   TruncationCause, and KernelFault.
+   PrivilegedObservation, KernelTransition, OpaqueKernelSnapshot,
+   CombatTerminal, TruncationCause, and KernelFault.
 
 2. Implement AuthoredCombat starter Ironclad vs Jaw Worm through the real combat
    engine with explicit ReplayIdentity.
@@ -749,16 +844,18 @@ The first implementation must be narrow and mechanical:
 3. Implement TurnAction descriptors for playable hand cards, usable potions, and
    EndTurn.
 
-4. Implement PublicObservation intent, relic, potion, card-render, class-state,
+4. Implement invalid step safety for stale decision ids and invalid action ids.
+
+5. Implement PublicObservation intent, relic, potion, card-render, class-state,
    and public-history fields.
 
-5. Implement KernelTransition with state/rng/action trace hashes.
+6. Implement KernelTransition with state/rng/action trace hashes.
 
-6. Implement snapshot/restore/fork.
+7. Implement opaque snapshot/restore/fork.
 
-7. Add smoke binaries for the acceptance gate cases.
+8. Add smoke binaries for the acceptance gate cases.
 
-8. Only then add a CombatTask adapter.
+9. Only then add a CombatTask adapter.
 ```
 
 Do not implement training in the same change as the kernel.
@@ -769,6 +866,8 @@ Do not implement training in the same change as the kernel.
 - Micro two-slimes proves target masks can train.
 - Both are toy environments, not real-combat foundations.
 - CleanRL is now only a disposable reference/smoke tool.
-- The real foundation is `DecisionFrame + KernelTransition + replay identity`.
-- Any old audit shell, seed patch, baseline continuation, or Gym-first shape is
+- The real foundation is `DecisionFrame + RecordedActionTrace +
+  KernelTransition + replay identity`.
+- Any old audit shell, seed patch, baseline continuation, transparent snapshot,
+  privileged trace leak, weak-controller-as-teacher path, or Gym-first shape is
   outside this contract.
