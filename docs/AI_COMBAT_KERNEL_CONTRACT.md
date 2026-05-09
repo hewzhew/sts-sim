@@ -78,6 +78,15 @@ Existing Rust code is not a compatibility contract. If an existing Rust module,
 fixture, helper, or API cannot represent the Java-derived combat schema or cannot
 replay deterministically, it must be rewritten or deleted.
 
+`unsupported_abort` is a blocker marker, not a convenience escape. A combat path
+may be marked unsupported only with a source reference, behavior description,
+and non-trainable outcome. It cannot be used to claim that a mechanic has been
+implemented.
+
+The kernel must not choose features by what the old Rust simulator already
+models. It must choose state and transitions from the Java source inventory, then
+fit or replace Rust code accordingly.
+
 ## Combat Kernel API
 
 ```text

@@ -55,6 +55,9 @@ Rules:
   semantics or be marked `unsupported_abort`;
 - current Rust code has no compatibility privilege and may be deleted or
   rewritten if it conflicts with the schema;
+- `unsupported_abort` must name the Java source and exact missing behavior, and
+  cannot count as implemented coverage;
+- "hard to model in old Rust" is not a valid reason to omit a feature;
 - no `DecisionFrame` abstraction is required yet;
 - no Python wrapper is required yet;
 - no training code is allowed;
@@ -73,6 +76,7 @@ Acceptance:
 - no untyped `run_state` placeholder remains in the combat contract.
 - each reused Rust module has a migration-ledger entry explaining why it is kept;
 - each Java-derived mechanic in the first probe has a Rust owner module.
+- every unsupported combat path is non-trainable and appears in release blockers.
 
 Forbidden:
 
@@ -81,6 +85,7 @@ Forbidden:
 - relying on a fixture parser as runtime;
 - manually patching state after combat starts to keep the demo alive;
 - preserving old Rust modules for convenience;
+- treating `unsupported_abort` as feature preservation;
 - writing any model/trainer/collector code.
 
 ## Phase 0: Type Skeleton and Compile Boundary

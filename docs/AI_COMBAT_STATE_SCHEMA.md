@@ -37,6 +37,28 @@ Document every semantic divergence.
 Do not drop a game feature because it is inconvenient.
 ```
 
+This is a feature-preservation rule, not a Java-porting rule. The Java side is
+read to recover the original design and all mechanic obligations. The Rust side
+is written as a clean simulator for AI. A Java feature may be represented
+differently in Rust only if the resulting simulator has the same public combat
+semantics, hidden state transitions, hook order, and RNG consumption for the
+covered case.
+
+Selective porting is forbidden. A mechanic may be absent only when all of these
+are true:
+
+```text
+1. The relevant Java source location is named.
+2. The missing behavior is described precisely.
+3. The omission is classified as unsupported_abort, not as implemented.
+4. Any frame reaching it is non-trainable.
+5. The limitation is listed in the release blockers.
+```
+
+Difficulty is not an impossibility proof. "Hard to model", "old Rust cannot
+represent it", "Java design is ugly", or "not needed for the first probe" are
+not valid reasons to drop a feature.
+
 If a Java feature is impossible or inappropriate to migrate literally, the Rust
 replacement must state:
 
@@ -48,6 +70,12 @@ Rust representation
 semantic equivalence test
 known limitation, if any
 ```
+
+`why literal migration is invalid` must be about the implementation structure,
+not the mechanic. Examples that can justify redesign are Java UI coupling,
+mutable global singletons, inheritance shape, pointer identity, render-only
+state, or LibGDX runtime dependencies. They do not justify changing gameplay
+semantics.
 
 The existing Rust simulator does not receive compatibility protection. Any
 module, file, function, type, fixture, or test helper may be changed or deleted
@@ -154,6 +182,10 @@ adapter_only:
 No Rust type is accepted because it already exists. It is accepted only if it can
 be traced to Java-derived mechanics and produces deterministic replay under this
 schema.
+
+When existing Rust disagrees with Java-derived semantics, the default action is
+rewrite. Keeping it requires a parity note proving that the disagreement is only
+structural, not mechanical.
 
 ## Top-Level Snapshot
 
@@ -811,6 +843,8 @@ Java-to-Rust migration decisions are tracked separately from field coverage:
 ```text
 MigrationLedgerEntry {
   java_source,
+  java_methods,
+  java_fields,
   java_semantic_behavior,
   rust_module,
   rust_type,
@@ -840,6 +874,10 @@ unsupported_abort:
 
 `structural_redesign` is not a shortcut. It requires a test that demonstrates the
 same mechanic outcome as the Java source for the covered cases.
+
+`unsupported_abort` is not a release-quality implementation. It is a named hole
+that prevents trainable rollout through that path. It may be used to stage work,
+but it cannot be counted as preserving a feature.
 
 ## First Executable Probe
 
