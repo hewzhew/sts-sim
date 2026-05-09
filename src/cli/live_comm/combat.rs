@@ -109,173 +109,8 @@ struct CombatStats {
     diag_render_max_ms: u128,
 }
 
-fn log_potion_decision_trace(
-    live_io: &mut LiveCommIo,
-    combat: &CombatState,
-    actual_input: &crate::state::core::ClientInput,
-) {
-    let snapshot = crate::bot::potions::immediate_potion_snapshot(combat);
-    writeln!(
-        live_io.log,
-        "  [POTION DIAG] min_priority={} {}",
-        snapshot.minimum_priority, snapshot.context_summary
-    )
-    .unwrap();
-    writeln!(live_io.log, "  [POTION DIAG] actual {:?}", actual_input).unwrap();
-
-    if let Some(chosen) = snapshot.chosen.as_ref() {
-        writeln!(
-            live_io.log,
-            "  [POTION DIAG] selected_candidate {}",
-            chosen.debug_summary(snapshot.minimum_priority)
-        )
-        .unwrap();
-        writeln!(
-            live_io.focus_log,
-            "[POTION] actual={:?} min_priority={} selected_candidate={}",
-            actual_input,
-            snapshot.minimum_priority,
-            chosen.debug_summary(snapshot.minimum_priority)
-        )
-        .unwrap();
-    } else {
-        writeln!(live_io.log, "  [POTION DIAG] selected_candidate <none>").unwrap();
-        writeln!(
-            live_io.focus_log,
-            "[POTION] actual={:?} min_priority={} selected_candidate=<none>",
-            actual_input, snapshot.minimum_priority
-        )
-        .unwrap();
-    }
-
-    for (rank, candidate) in snapshot.candidates.iter().take(5).enumerate() {
-        writeln!(
-            live_io.log,
-            "  [POTION DIAG] rank={} {}",
-            rank + 1,
-            candidate.debug_summary(snapshot.minimum_priority)
-        )
-        .unwrap();
-    }
-}
-
 fn total_incoming_damage_for_log(combat: &CombatState) -> i32 {
     StatePressureFeatures::from_combat(combat).value_incoming
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-struct LiveRootPotionGateReport {
-    original_count: usize,
-    filtered_count: usize,
-    potion_count: usize,
-    filtered_potion_count: usize,
-    reason: &'static str,
-}
-
-fn is_potion_input(input: &ClientInput) -> bool {
-    matches!(
-        input,
-        ClientInput::UsePotion { .. } | ClientInput::DiscardPotion(_)
-    )
-}
-
-fn live_root_potion_allowed(combat: &CombatState) -> (bool, &'static str) {
-    let pressure = StatePressureFeatures::from_combat(combat);
-    let hp = combat.entities.player.current_hp.max(0);
-    if pressure.lethal_pressure || pressure.max_unblocked >= hp.max(1) {
-        return (true, "lethal_pressure");
-    }
-    if combat.meta.is_boss_fight && pressure.urgent_pressure && hp <= 20 {
-        return (true, "boss_urgent_low_hp");
-    }
-    if combat.meta.is_elite_fight && pressure.urgent_pressure && hp <= 14 {
-        return (true, "elite_urgent_low_hp");
-    }
-    if pressure.urgent_pressure && hp <= 6 {
-        return (true, "critical_low_hp");
-    }
-    (false, "conserve_potion_resource")
-}
-
-fn filter_live_root_potion_inputs(
-    combat: &CombatState,
-    root_inputs: Option<Vec<ClientInput>>,
-) -> (Option<Vec<ClientInput>>, Option<LiveRootPotionGateReport>) {
-    let Some(inputs) = root_inputs else {
-        return (None, None);
-    };
-    let potion_count = inputs.iter().filter(|input| is_potion_input(input)).count();
-    if potion_count == 0 {
-        return (Some(inputs), None);
-    }
-    let (allowed, reason) = live_root_potion_allowed(combat);
-    if allowed {
-        return (
-            Some(inputs.clone()),
-            Some(LiveRootPotionGateReport {
-                original_count: inputs.len(),
-                filtered_count: inputs.len(),
-                potion_count,
-                filtered_potion_count: 0,
-                reason,
-            }),
-        );
-    }
-
-    let filtered = inputs
-        .iter()
-        .filter(|input| !is_potion_input(input))
-        .cloned()
-        .collect::<Vec<_>>();
-    if filtered.is_empty() {
-        return (
-            Some(inputs.clone()),
-            Some(LiveRootPotionGateReport {
-                original_count: inputs.len(),
-                filtered_count: inputs.len(),
-                potion_count,
-                filtered_potion_count: 0,
-                reason: "no_non_potion_fallback",
-            }),
-        );
-    }
-
-    (
-        Some(filtered.clone()),
-        Some(LiveRootPotionGateReport {
-            original_count: inputs.len(),
-            filtered_count: filtered.len(),
-            potion_count,
-            filtered_potion_count: potion_count,
-            reason,
-        }),
-    )
-}
-
-fn log_live_root_potion_gate(
-    live_io: &mut LiveCommIo,
-    frame_count: u64,
-    report: &LiveRootPotionGateReport,
-) {
-    let _ = writeln!(
-        live_io.log,
-        "  [POTION GATE] reason={} original_root_actions={} filtered_root_actions={} potions={} filtered_potions={}",
-        report.reason,
-        report.original_count,
-        report.filtered_count,
-        report.potion_count,
-        report.filtered_potion_count
-    );
-    if report.filtered_potion_count > 0 {
-        let _ = writeln!(
-            live_io.focus_log,
-            "[POTION GATE] frame={frame_count} reason={} filtered_potions={} root_actions={}->{}",
-            report.reason,
-            report.filtered_potion_count,
-            report.original_count,
-            report.filtered_count
-        );
-    }
 }
 
 fn log_hidden_intent_belief(live_io: &mut LiveCommIo, combat: &CombatState) {
@@ -2242,11 +2077,7 @@ pub(super) fn handle_live_combat_frame<W: Write>(
         .as_ref()
         .filter(|snapshot| !snapshot.is_empty())
         .map(protocol_root_moves);
-    let (root_inputs, potion_gate_report) =
-        filter_live_root_potion_inputs(&truth, raw_root_inputs.clone());
-    if let Some(report) = potion_gate_report.as_ref() {
-        log_live_root_potion_gate(live_io, frame_count, report);
-    }
+    let root_inputs = raw_root_inputs.clone();
     let root_action_source = if root_inputs.is_some() {
         "protocol"
     } else if legacy_root_legal_moves {
@@ -2579,10 +2410,6 @@ pub(super) fn handle_live_combat_frame<W: Write>(
             chosen_command.as_deref().unwrap_or("?")
         )
         .unwrap();
-    }
-
-    if matches!(input, crate::state::core::ClientInput::UsePotion { .. }) {
-        log_potion_decision_trace(live_io, &truth, &input);
     }
 
     writeln!(live_io.log, "  → {:?}", input).unwrap();
@@ -2947,11 +2774,10 @@ fn align_rust_monsters_for_parse(cs: &CombatState, java_ms: &[Value]) -> Vec<Opt
 
 #[cfg(test)]
 mod tests {
-    use super::{filter_live_root_potion_inputs, same_or_equivalent_client_input_with_state};
+    use super::same_or_equivalent_client_input_with_state;
     use crate::content::cards::CardId;
     use crate::runtime::combat::CombatCard;
     use crate::state::core::ClientInput;
-    use crate::test_support::blank_test_combat;
 
     #[test]
     fn identical_hand_cards_with_different_indices_count_as_equivalent_actions() {
@@ -2996,38 +2822,5 @@ mod tests {
                 target: Some(1),
             },
         ));
-    }
-
-    #[test]
-    fn live_root_potion_gate_filters_non_emergency_potions() {
-        let combat = blank_test_combat();
-        let inputs = vec![
-            ClientInput::EndTurn,
-            ClientInput::UsePotion {
-                potion_index: 0,
-                target: None,
-            },
-            ClientInput::PlayCard {
-                card_index: 0,
-                target: None,
-            },
-        ];
-
-        let (filtered, report) = filter_live_root_potion_inputs(&combat, Some(inputs));
-
-        let filtered = filtered.expect("filtered root inputs");
-        assert_eq!(
-            filtered,
-            vec![
-                ClientInput::EndTurn,
-                ClientInput::PlayCard {
-                    card_index: 0,
-                    target: None,
-                }
-            ]
-        );
-        let report = report.expect("potion gate report");
-        assert_eq!(report.filtered_potion_count, 1);
-        assert_eq!(report.reason, "conserve_potion_resource");
     }
 }

@@ -5,7 +5,6 @@ pub(crate) mod deck;
 pub mod facts;
 pub mod harness;
 pub(crate) mod infra;
-pub(crate) mod potions;
 pub mod snapshots;
 
 pub(crate) use facts::{card_facts, card_structure};
