@@ -1,4 +1,3 @@
-mod audit;
 mod card_knowledge;
 mod decision;
 mod diag;
@@ -46,12 +45,6 @@ use value::{diagnostic_score, incoming_damage, total_enemy_hp};
 const LEGACY_FRONTIER_PLANNER_ID: &str = "legacy_frontier_planner";
 const LEGACY_FRONTIER_FALLBACK_AUTHORITY: &str = "legacy_frontier_fallback";
 
-pub use audit::{
-    audit_fixture, audit_state, build_fixture_from_reconstructed_step, load_fixture_path,
-    render_text_report, write_fixture_path, DecisionAuditConfig, DecisionAuditEngineState,
-    DecisionAuditFixture, DecisionAuditReport, ScoreBreakdown, TrajectoryOutcomeKind,
-    TrajectoryReport,
-};
 pub use card_knowledge::{branch_family_for_card, BranchFamily};
 pub use diag::{CombatDiagnostics, CombatMoveStat};
 pub use equivalence::{SearchEquivalenceKind, SearchEquivalenceMode};

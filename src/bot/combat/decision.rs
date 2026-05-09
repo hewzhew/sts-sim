@@ -5,7 +5,6 @@ use crate::runtime::combat::{CombatState, Power};
 use crate::state::core::ClientInput;
 use crate::state::EngineState;
 
-use super::audit::TrajectoryOutcomeKind;
 use super::dominance::TurnResourceSummary;
 use super::exact_turn_solver::{ExactTurnSolution, TurnEndState};
 use super::frontier_eval::{eval_frontier_state, FrontierEval};
@@ -575,16 +574,6 @@ pub(crate) fn build_decision_trace(
         rejection_reasons,
         screened_out,
         why_not_others,
-    }
-}
-
-#[allow(dead_code)]
-pub(crate) fn trajectory_terminality(outcome: TrajectoryOutcomeKind) -> TerminalForecast {
-    match outcome {
-        TrajectoryOutcomeKind::LethalWin => TerminalForecast::LethalWin,
-        TrajectoryOutcomeKind::Survives => TerminalForecast::SurvivesWindow,
-        TrajectoryOutcomeKind::Timeout => TerminalForecast::TimeoutUnknown,
-        TrajectoryOutcomeKind::Dies => TerminalForecast::DiesInWindow,
     }
 }
 

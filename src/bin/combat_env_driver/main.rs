@@ -3,7 +3,6 @@ use std::path::PathBuf;
 
 use clap::Parser;
 use serde::{Deserialize, Serialize};
-use sts_simulator::bot::combat::{load_fixture_path, DecisionAuditEngineState};
 use sts_simulator::bot::harness::{
     ActionMask, CombatAction, CombatEnv, CombatEnvDrawOrderVariant, CombatEnvSpec,
     CombatEpisodeOutcome, CombatObservation, CombatRewardBreakdown,
@@ -12,7 +11,6 @@ use sts_simulator::diff::replay::{
     derive_combat_replay_view, find_combat_step_index_by_before_frame_id,
     load_live_session_replay_path, reconstruct_combat_replay_step,
 };
-use sts_simulator::diff::state_sync::build_combat_state_from_snapshots;
 use sts_simulator::fixtures::author_spec::{compile_combat_author_spec, CombatAuthorSpec};
 use sts_simulator::fixtures::combat_start_spec::CombatStartSpec;
 
@@ -33,7 +31,6 @@ enum DriverRequest {
     Reset {
         author_spec: Option<PathBuf>,
         start_spec: Option<PathBuf>,
-        fixture: Option<PathBuf>,
         replay_raw: Option<PathBuf>,
         replay_frame: Option<u64>,
         seed_hint: Option<u64>,
@@ -156,7 +153,6 @@ fn handle_request(env: &mut Option<CombatEnv>, request: DriverRequest) -> Driver
         DriverRequest::Reset {
             author_spec,
             start_spec,
-            fixture,
             replay_raw,
             replay_frame,
             seed_hint,
@@ -165,7 +161,6 @@ fn handle_request(env: &mut Option<CombatEnv>, request: DriverRequest) -> Driver
             env,
             author_spec,
             start_spec,
-            fixture,
             replay_raw,
             replay_frame,
             seed_hint.unwrap_or(0),
@@ -178,7 +173,7 @@ fn handle_request(env: &mut Option<CombatEnv>, request: DriverRequest) -> Driver
             Some(current_env) => state_response(current_env, None, None, None, None),
             None => {
                 error_response(
-                    "combat env not initialized; send reset with author_spec, start_spec, fixture, or replay_raw/replay_frame"
+                    "combat env not initialized; send reset with author_spec, start_spec, or replay_raw/replay_frame"
                         .into(),
                 )
             }
@@ -186,7 +181,7 @@ fn handle_request(env: &mut Option<CombatEnv>, request: DriverRequest) -> Driver
         DriverRequest::Step { action_index } => {
             let Some(current_env) = env.as_mut() else {
                 return error_response(
-                    "combat env not initialized; send reset with author_spec, start_spec, fixture, or replay_raw/replay_frame"
+                    "combat env not initialized; send reset with author_spec, start_spec, or replay_raw/replay_frame"
                         .into(),
                 );
             };
@@ -224,7 +219,6 @@ fn reset_env(
     env: &mut Option<CombatEnv>,
     author_spec: Option<PathBuf>,
     start_spec: Option<PathBuf>,
-    fixture: Option<PathBuf>,
     replay_raw: Option<PathBuf>,
     replay_frame: Option<u64>,
     seed_hint: u64,
@@ -233,7 +227,6 @@ fn reset_env(
     let requested_sources = [
         author_spec.as_ref().map(|_| "author_spec"),
         start_spec.as_ref().map(|_| "start_spec"),
-        fixture.as_ref().map(|_| "fixture"),
         replay_raw.as_ref().map(|_| "replay"),
     ]
     .into_iter()
@@ -255,8 +248,6 @@ fn reset_env(
         Some(load_spec_from_author_spec(spec_path, seed_hint).map_err(|err| err.to_string())?)
     } else if let Some(spec_path) = start_spec {
         Some(load_spec_from_start_spec(spec_path, seed_hint)?)
-    } else if let Some(fixture_path) = fixture {
-        Some(load_spec_from_fixture_path(fixture_path, seed_hint)?)
     } else if let (Some(raw_path), Some(frame)) = (replay_raw, replay_frame) {
         Some(load_spec_from_replay_frame(raw_path, frame, seed_hint)?)
     } else {
@@ -304,7 +295,7 @@ fn reset_env(
             ))
         }
         (None, None) => Err(
-            "combat env not initialized; send reset with author_spec, start_spec, fixture, or replay_raw/replay_frame"
+            "combat env not initialized; send reset with author_spec, start_spec, or replay_raw/replay_frame"
                 .into(),
         ),
     }
@@ -392,26 +383,6 @@ fn load_spec_from_start_spec(path: PathBuf, seed_hint: u64) -> Result<CombatEnvS
         .map_err(|err| format!("failed to parse start_spec {}: {err}", path.display()))?;
     let effective_seed = if seed_hint == 0 { spec.seed } else { seed_hint };
     CombatEnvSpec::from_start_spec_with_seed(&spec, effective_seed)
-}
-
-fn load_spec_from_fixture_path(path: PathBuf, seed_hint: u64) -> Result<CombatEnvSpec, String> {
-    let fixture = load_fixture_path(&path)?;
-    let combat = build_combat_state_from_snapshots(
-        &fixture.truth_snapshot,
-        &fixture.observation_snapshot,
-        &fixture.relics,
-    );
-    let engine = match fixture.engine_state {
-        DecisionAuditEngineState::CombatPlayerTurn => {
-            sts_simulator::state::core::EngineState::CombatPlayerTurn
-        }
-    };
-    Ok(CombatEnvSpec::from_combat(
-        fixture.name,
-        seed_hint,
-        engine,
-        combat,
-    ))
 }
 
 fn load_spec_from_replay_frame(
