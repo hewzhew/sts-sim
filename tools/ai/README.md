@@ -43,6 +43,15 @@ cargo build --bin micro_two_slimes_env
 .\.venv-ai\Scripts\python.exe tools\ai\eval_micro_two_slimes_policy.py --episodes 1000
 ```
 
+Extract sourced deck slices from replay/live JSON or JSONL files:
+
+```powershell
+.\.venv-ai\Scripts\python.exe tools\ai\extract_deck_slices.py path\to\frames.jsonl --source-kind replay
+```
+
+Deck slices are provenance-tagged combat inputs, not proof that a card pick was
+good. See `deck_slice_schema.md`.
+
 Protocol:
 
 ```json
