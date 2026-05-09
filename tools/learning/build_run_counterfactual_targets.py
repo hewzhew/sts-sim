@@ -52,29 +52,77 @@ def candidate_keys(snapshot: dict[str, Any], limit: int = 24) -> list[str]:
     return keys[:limit]
 
 
+def candidate_role_for_target(failure_class: str, family: str) -> str:
+    if family == "route_to_shop":
+        return "map_choice"
+    if family == "shop_purchase":
+        return "shop_purchase_or_remove"
+    if family == "shop_card":
+        return "shop_buy_card"
+    if family == "card_reward":
+        return "reward_claim"
+    if family == "campfire_upgrade":
+        return "campfire_smith"
+    if family == "campfire_smith_rest_counterfactual":
+        if failure_class in {
+            "low_upgrade_conversion",
+            "low_damage_readiness",
+            "low_block_readiness",
+        }:
+            return "campfire_smith"
+        return "campfire_smith_or_rest"
+    return "diagnostic"
+
+
+def key_matches_candidate_role(key: str, role: str) -> bool:
+    if role == "map_choice":
+        return key.startswith("map/")
+    if role == "shop_purchase_or_remove":
+        return key.startswith("shop/buy_") or key.startswith("shop/purge_card/")
+    if role == "shop_buy_card":
+        return key.startswith("shop/buy_card/")
+    if role == "reward_claim":
+        return key.startswith("reward/claim/")
+    if role == "campfire_smith":
+        return key.startswith("campfire/smith/")
+    if role == "campfire_smith_or_rest":
+        return key == "campfire/rest" or key.startswith("campfire/smith/")
+    return True
+
+
+def candidate_keys_for_role(snapshot: dict[str, Any], role: str, limit: int = 24) -> list[str]:
+    keys: list[str] = []
+    for key in candidate_keys(snapshot, limit=10_000):
+        if key_matches_candidate_role(key, role):
+            keys.append(key)
+    return keys[:limit]
+
+
 def target_gate_for_family(family: str) -> dict[str, Any]:
-    if family in {"route_to_shop", "shop_purchase", "campfire_smith_rest_counterfactual", "campfire_upgrade"}:
+    if family in {
+        "route_to_shop",
+        "shop_purchase",
+        "campfire_smith_rest_counterfactual",
+        "campfire_upgrade",
+        "card_reward",
+        "shop_card",
+    }:
         return {
             "schema_version": "counterfactual_gate_v1",
-            "horizon": "act1_boss_or_next_combat_complete",
-            "survival_must_not_regress": True,
-            "boss_clear_must_not_regress": True,
-            "min_hp_or_outcome_margin_source": "audit_noise_gate_required_before_override",
-            "incomplete_evidence_action": "abstain",
-        }
-    if family in {"card_reward", "shop_card"}:
-        return {
-            "schema_version": "counterfactual_gate_v1",
-            "horizon": "act1_boss_or_act2_entry_gauntlet",
+            "horizon": "fixed_decisions_delayed_value_v1",
+            "horizon_mode": "fixed_decisions",
+            "horizon_decisions": 48,
             "survival_must_not_regress": True,
             "boss_clear_must_not_regress": True,
             "min_hp_or_outcome_margin_source": "audit_noise_gate_required_before_override",
             "incomplete_evidence_action": "abstain",
         }
     return {
-        "schema_version": "counterfactual_gate_v1",
-        "horizon": "gauntlet_evidence_only",
-        "survival_must_not_regress": True,
+            "schema_version": "counterfactual_gate_v1",
+            "horizon": "gauntlet_evidence_only",
+            "horizon_mode": "diagnostic_only",
+            "horizon_decisions": None,
+            "survival_must_not_regress": True,
         "boss_clear_must_not_regress": True,
         "min_hp_or_outcome_margin_source": "not_applicable_diagnostic_target",
         "incomplete_evidence_action": "abstain",
@@ -160,11 +208,33 @@ def build_targets_for_record(record: dict[str, Any]) -> tuple[list[dict[str, Any
                 continue
             for snapshot in matches:
                 step = safe_int(snapshot.get("step"), -1)
-                key = (failure_class, family, step)
+                role = candidate_role_for_target(failure_class, family)
+                role_keys = candidate_keys_for_role(snapshot, role)
+                key = (failure_class, f"{family}:{role}", step)
                 if key in seen_keys:
                     continue
                 seen_keys.add(key)
-                target_id = f"seed:{seed}:step:{step}:class:{failure_class}:family:{family}"
+                if not role_keys:
+                    unavailable.append(
+                        {
+                            "seed": seed,
+                            "source_failure_class": failure_class,
+                            "target_family": family,
+                            "candidate_role": role,
+                            "reason": "counterfactual_target_role_unavailable",
+                            "expected_decision_types": sorted(decision_types),
+                            "decision_step": step,
+                            "decision_type": snapshot.get("decision_type"),
+                            "candidate_count": safe_int(snapshot.get("candidate_count")),
+                            "candidate_action_keys": candidate_keys(snapshot),
+                            "failure_basis": failure.get("basis") or {},
+                        }
+                    )
+                    continue
+                target_id = (
+                    f"seed:{seed}:step:{step}:class:{failure_class}:"
+                    f"family:{family}:role:{role}"
+                )
                 targets.append(
                     {
                         "schema_version": TARGET_SCHEMA_VERSION,
@@ -172,12 +242,15 @@ def build_targets_for_record(record: dict[str, Any]) -> tuple[list[dict[str, Any
                         "seed": seed,
                         "source_failure_class": failure_class,
                         "target_family": family,
+                        "candidate_role": role,
                         "target_type": "decision_counterfactual_target",
                         "decision_step": step,
                         "decision_type": snapshot.get("decision_type"),
+                        "decision_fingerprint": snapshot.get("decision_fingerprint"),
                         "candidate_snapshot_available": True,
                         "candidate_count": safe_int(snapshot.get("candidate_count")),
-                        "candidate_action_keys": candidate_keys(snapshot),
+                        "candidate_action_keys": role_keys,
+                        "all_snapshot_candidate_action_keys": candidate_keys(snapshot),
                         "counterfactual_question": (
                             "At this decision, do any available candidates improve the named "
                             "run-level objective under the registered evidence horizon and gate?"
@@ -200,9 +273,11 @@ def build_targets(audit: dict[str, Any]) -> dict[str, Any]:
         unavailable.extend(missing)
 
     counts = Counter(str(target.get("target_family")) for target in all_targets)
+    role_counts = Counter(str(target.get("candidate_role") or "none") for target in all_targets)
     by_class: dict[str, Counter[str]] = defaultdict(Counter)
     for target in all_targets:
-        by_class[str(target.get("source_failure_class"))][str(target.get("target_family"))] += 1
+        key = f"{target.get('target_family')}|{target.get('candidate_role') or 'none'}"
+        by_class[str(target.get("source_failure_class"))][key] += 1
     unavailable_counts = Counter(str(item.get("reason")) for item in unavailable)
     return {
         "schema_version": TARGET_SCHEMA_VERSION,
@@ -211,6 +286,7 @@ def build_targets(audit: dict[str, Any]) -> dict[str, Any]:
         "target_count": len(all_targets),
         "unavailable_target_count": len(unavailable),
         "target_family_counts": dict(counts),
+        "candidate_role_counts": dict(role_counts),
         "target_family_by_failure_class": {key: dict(value) for key, value in by_class.items()},
         "unavailable_reason_counts": dict(unavailable_counts),
         "targets": all_targets,
@@ -231,21 +307,23 @@ def markdown_report(payload: dict[str, Any], *, max_rows: int = 30) -> str:
         f"- targets: `{payload.get('target_count')}`",
         f"- unavailable targets: `{payload.get('unavailable_target_count')}`",
         f"- target families: `{payload.get('target_family_counts')}`",
+        f"- candidate roles: `{payload.get('candidate_role_counts')}`",
         f"- unavailable reasons: `{payload.get('unavailable_reason_counts')}`",
         "",
         "## Targets",
         "",
-        "| seed | step | class | family | decision | candidates | gate horizon |",
-        "| --- | ---: | --- | --- | --- | ---: | --- |",
+        "| seed | step | class | family | role | decision | candidates | gate horizon |",
+        "| --- | ---: | --- | --- | --- | --- | ---: | --- |",
     ]
     for target in payload.get("targets", [])[:max_rows]:
         gate = target.get("gate") or {}
         lines.append(
-            "| {seed} | {step} | {cls} | {family} | {decision} | {candidates} | {horizon} |".format(
+            "| {seed} | {step} | {cls} | {family} | {role} | {decision} | {candidates} | {horizon} |".format(
                 seed=target.get("seed"),
                 step=target.get("decision_step"),
                 cls=target.get("source_failure_class"),
                 family=target.get("target_family"),
+                role=target.get("candidate_role"),
                 decision=target.get("decision_type"),
                 candidates=target.get("candidate_count"),
                 horizon=gate.get("horizon"),

@@ -11,6 +11,7 @@ the registered gate. Otherwise it abstains and records why.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 from collections import Counter, defaultdict
 from pathlib import Path
@@ -59,6 +60,17 @@ def targets_by_seed_step(target_payload: dict[str, Any]) -> dict[int, dict[int, 
     return table
 
 
+def targets_by_seed(target_payload: dict[str, Any]) -> dict[int, list[dict[str, Any]]]:
+    table: dict[int, list[dict[str, Any]]] = defaultdict(list)
+    for target in target_payload.get("targets") or []:
+        if target.get("target_type") != "decision_counterfactual_target":
+            continue
+        seed = target.get("seed")
+        if isinstance(seed, int):
+            table[seed].append(target)
+    return table
+
+
 def normalize_decision_type(value: Any) -> str:
     return str(value or "unknown").strip().lower()
 
@@ -76,7 +88,83 @@ def target_candidate_keys(target: dict[str, Any]) -> set[str]:
     return {str(key) for key in (target.get("candidate_action_keys") or []) if key is not None}
 
 
+def target_yield_key(target: dict[str, Any]) -> str:
+    return "|".join(
+        [
+            str(target.get("target_family") or "unknown"),
+            str(target.get("candidate_role") or "none"),
+            str(target.get("decision_type") or "unknown"),
+        ]
+    )
+
+
+def target_family_role_key(target: dict[str, Any]) -> str:
+    return target_yield_key(target)
+
+
+def target_family_role_keys(targets: list[dict[str, Any]]) -> list[str]:
+    return sorted({target_family_role_key(target) for target in targets})
+
+
+def load_yield_ranking(path: Path | None) -> dict[str, dict[str, Any]]:
+    if path is None:
+        return {}
+    payload = load_json(path)
+    return {
+        str(row.get("yield_key")): row
+        for row in payload.get("yield_rows", [])
+        if row.get("yield_key") is not None
+    }
+
+
+def public_context_summary(policy_input: dict[str, Any]) -> dict[str, Any]:
+    payload = ((policy_input.get("observation") or {}).get("payload")) or {}
+    return {
+        "act": safe_int(payload.get("act")),
+        "floor": safe_int(payload.get("floor")),
+        "hp": safe_int(payload.get("current_hp")),
+        "max_hp": safe_int(payload.get("max_hp")),
+        "gold": safe_int(payload.get("gold")),
+        "deck_size": safe_int(payload.get("deck_size")),
+    }
+
+
+def current_decision_fingerprint(
+    *,
+    decision_type: str,
+    policy_input: dict[str, Any],
+    candidates: list[dict[str, Any]],
+) -> str:
+    context = public_context_summary(policy_input)
+    payload = {
+        "decision_type": decision_type,
+        "act": context.get("act"),
+        "floor": context.get("floor"),
+        "hp": context.get("hp"),
+        "max_hp": context.get("max_hp"),
+        "gold": context.get("gold"),
+        "deck_size": context.get("deck_size"),
+        "candidate_keys": [candidate.get("action_key") for candidate in candidates],
+    }
+    return hashlib.sha256(
+        json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()[:24]
+
+
 def candidate_key_allowed_by_target(target: dict[str, Any], key: str) -> bool:
+    role = str(target.get("candidate_role") or "")
+    if role == "map_choice":
+        return key.startswith("map/")
+    if role == "shop_purchase_or_remove":
+        return key.startswith("shop/buy_") or key.startswith("shop/purge_card/")
+    if role == "shop_buy_card":
+        return key.startswith("shop/buy_card/")
+    if role == "reward_claim":
+        return key.startswith("reward/claim/")
+    if role == "campfire_smith":
+        return key.startswith("campfire/smith/")
+    if role == "campfire_smith_or_rest":
+        return key == "campfire/rest" or key.startswith("campfire/smith/")
     family = str(target.get("target_family") or "")
     failure_class = str(target.get("source_failure_class") or "")
     if family == "route_to_shop":
@@ -134,6 +222,75 @@ def compatible_targets_for_current_decision(
     return compatible, reasons
 
 
+def matching_targets_for_current_decision(
+    targets: list[dict[str, Any]],
+    *,
+    current_step: int,
+    decision_type: str,
+    policy_input: dict[str, Any],
+    candidates: list[dict[str, Any]],
+    consumed_target_ids: set[str],
+    target_step_window: int,
+    yield_ranking: dict[str, dict[str, Any]],
+    min_yield_score: float,
+    min_yield_observations: int,
+) -> tuple[list[dict[str, Any]], Counter[str], Counter[str]]:
+    reasons: Counter[str] = Counter()
+    match_modes: Counter[str] = Counter()
+    current_type = normalize_decision_type(decision_type)
+    current_keys = candidate_keys(candidates)
+    fingerprint = current_decision_fingerprint(
+        decision_type=decision_type,
+        policy_input=policy_input,
+        candidates=candidates,
+    )
+    matched: list[dict[str, Any]] = []
+    for target in targets:
+        target_id = str(target.get("target_id") or "")
+        if target_id in consumed_target_ids:
+            continue
+        target_step = safe_int(target.get("decision_step"), -1)
+        target_type = normalize_decision_type(target.get("decision_type"))
+        if target_step == current_step and target_type != current_type:
+            reasons["target_step_mismatch_after_closed_loop"] += 1
+            consumed_target_ids.add(target_id)
+            continue
+        if target_type != current_type:
+            continue
+
+        target_fingerprint = target.get("decision_fingerprint")
+        fingerprint_match = bool(target_fingerprint) and str(target_fingerprint) == fingerprint
+        window_match = (
+            target_step_window >= 0
+            and target_step >= 0
+            and abs(target_step - current_step) <= target_step_window
+        )
+        if not fingerprint_match and not window_match:
+            continue
+
+        keys = target_candidate_keys(target)
+        if keys and current_keys.isdisjoint(keys):
+            if target_step == current_step or fingerprint_match:
+                reasons["target_candidate_key_mismatch_after_closed_loop"] += 1
+                consumed_target_ids.add(target_id)
+            continue
+
+        yield_key = target_yield_key(target)
+        yield_row = yield_ranking.get(yield_key)
+        if yield_row is not None:
+            observations = safe_int(yield_row.get("evidence_request_count"))
+            score = safe_float(yield_row.get("yield_score"))
+            if observations < min_yield_observations or score < min_yield_score:
+                reasons["target_filtered_by_yield_gate"] += 1
+                consumed_target_ids.add(target_id)
+                continue
+
+        matched.append(target)
+        consumed_target_ids.add(target_id)
+        match_modes["fingerprint" if fingerprint_match else "step_window"] += 1
+    return matched, reasons, match_modes
+
+
 def action_indices_for_targets(
     candidates: list[dict[str, Any]],
     targets: list[dict[str, Any]],
@@ -163,6 +320,30 @@ def action_indices_for_targets(
 
 def has_non_behavior_candidate(indices: list[int], behavior_action_id: int) -> bool:
     return any(index != behavior_action_id for index in indices)
+
+
+def horizon_config_for_targets(
+    targets: list[dict[str, Any]],
+    *,
+    fallback_mode: str,
+    fallback_decisions: int,
+) -> tuple[str, int, Counter[str]]:
+    modes: Counter[str] = Counter()
+    decisions: list[int] = []
+    for target in targets:
+        gate = target.get("gate") or {}
+        mode = gate.get("horizon_mode")
+        if isinstance(mode, str) and mode and mode != "diagnostic_only":
+            modes[mode] += 1
+        raw_decisions = gate.get("horizon_decisions")
+        if isinstance(raw_decisions, int):
+            decisions.append(raw_decisions)
+    if not modes:
+        return fallback_mode, fallback_decisions, Counter({fallback_mode: 1})
+    # Mixed target families at one decision should use the longest requested
+    # explicit horizon, not the shortest local-combat horizon.
+    mode = "fixed_decisions" if modes.get("fixed_decisions") else modes.most_common(1)[0][0]
+    return mode, max(decisions) if decisions else fallback_decisions, modes
 
 
 def validate_cached_payload_identity(payload: dict[str, Any], identity: dict[str, Any]) -> bool:
@@ -343,7 +524,8 @@ def run_episode(
     seed: int,
     policy_kind: str,
     args: argparse.Namespace,
-    target_table: dict[int, dict[int, list[dict[str, Any]]]],
+    target_index: dict[int, list[dict[str, Any]]],
+    yield_ranking: dict[str, dict[str, Any]],
     trace_out,
     branch_cache: BranchEvidenceCache | None,
 ) -> dict[str, Any]:
@@ -365,6 +547,10 @@ def run_episode(
     raw_target_step_count = 0
     target_step_mismatch_after_closed_loop_count = 0
     target_candidate_key_mismatch_after_closed_loop_count = 0
+    target_filtered_by_yield_gate_count = 0
+    target_match_modes: Counter[str] = Counter()
+    target_horizon_modes: Counter[str] = Counter()
+    consumed_target_ids: set[str] = set()
     abstain_count = 0
     override_count = 0
     branch_trace_count = 0
@@ -396,57 +582,68 @@ def run_episode(
             break
         chosen_action_id = behavior_action_id
 
-        raw_matching_targets = target_table.get(seed, {}).get(steps, [])
+        raw_matching_targets: list[dict[str, Any]] = []
         matching_targets: list[dict[str, Any]] = []
-        if policy_kind == POLICY_UNDER_TEST and raw_matching_targets:
-            raw_target_step_count += len(raw_matching_targets)
+        if policy_kind == POLICY_UNDER_TEST:
             mismatch_reasons: Counter[str] = Counter()
-            matching_targets, mismatch_reasons = compatible_targets_for_current_decision(
-                raw_matching_targets,
+            matching_targets, mismatch_reasons, match_modes = matching_targets_for_current_decision(
+                target_index.get(seed, []),
+                current_step=steps,
                 decision_type=str(decision_type),
+                policy_input=policy_input,
                 candidates=candidates if isinstance(candidates, list) else [],
+                consumed_target_ids=consumed_target_ids,
+                target_step_window=args.target_step_window,
+                yield_ranking=yield_ranking,
+                min_yield_score=args.min_yield_score,
+                min_yield_observations=args.min_yield_observations,
             )
+            raw_matching_targets = matching_targets
+            raw_target_step_count += len(matching_targets)
+            target_match_modes.update(match_modes)
             target_step_mismatch_after_closed_loop_count += mismatch_reasons[
                 "target_step_mismatch_after_closed_loop"
             ]
             target_candidate_key_mismatch_after_closed_loop_count += mismatch_reasons[
                 "target_candidate_key_mismatch_after_closed_loop"
             ]
+            target_filtered_by_yield_gate_count += mismatch_reasons[
+                "target_filtered_by_yield_gate"
+            ]
             if not matching_targets:
-                target_miss_count += len(raw_matching_targets)
-                abstain_count += len(raw_matching_targets)
+                target_miss_count += sum(mismatch_reasons.values())
+                abstain_count += sum(mismatch_reasons.values())
                 abstain_reasons.update(mismatch_reasons)
-                step_record = {
-                    "schema_version": "targeted_counterfactual_step_record_v0",
-                    "trainable_as_action_label": False,
-                    "episode_seed": seed,
-                    "episode_step": steps,
-                    "decision_type": decision_type,
-                    "policy_kind": policy_kind,
-                    "target_ids": [target.get("target_id") for target in raw_matching_targets],
-                    "target_families": sorted(
-                        {str(target.get("target_family")) for target in raw_matching_targets}
-                    ),
-                    "behavior_action_id": behavior_action_id,
-                    "behavior_action_key": preview.get("chosen_action_key"),
-                    "decision": {
-                        "schema_version": "targeted_counterfactual_decision_v0",
+                if mismatch_reasons:
+                    step_record = {
+                        "schema_version": "targeted_counterfactual_step_record_v0",
                         "trainable_as_action_label": False,
-                        "mode": "abstain",
-                        "reason": "closed_loop_target_identity_mismatch",
+                        "episode_seed": seed,
+                        "episode_step": steps,
+                        "decision_type": decision_type,
+                        "policy_kind": policy_kind,
+                        "target_ids": [],
+                        "target_families": [],
                         "behavior_action_id": behavior_action_id,
-                        "chosen_action_id": behavior_action_id,
-                        "behavior_action": candidate_action_summary(candidates, behavior_action_id),
-                        "candidate_action": None,
-                        "mismatch_reason_counts": dict(mismatch_reasons),
-                    },
-                    "branch_trace_count": 0,
-                    "comparison_count": 0,
-                    "validation_issue_count": 0,
-                    "branch_evidence_cache_hit": None,
-                }
-                assert_no_label_leak(step_record, label="targeted counterfactual mismatch step")
-                trace_out.write(json.dumps(step_record, separators=(",", ":")) + "\n")
+                        "behavior_action_key": preview.get("chosen_action_key"),
+                        "decision": {
+                            "schema_version": "targeted_counterfactual_decision_v0",
+                            "trainable_as_action_label": False,
+                            "mode": "abstain",
+                            "reason": "closed_loop_target_identity_or_yield_mismatch",
+                            "behavior_action_id": behavior_action_id,
+                            "chosen_action_id": behavior_action_id,
+                            "behavior_action": candidate_action_summary(candidates, behavior_action_id),
+                            "candidate_action": None,
+                            "mismatch_reason_counts": dict(mismatch_reasons),
+                        },
+                        "branch_trace_count": 0,
+                        "comparison_count": 0,
+                        "validation_issue_count": 0,
+                        "branch_evidence_cache_hit": None,
+                    }
+                    assert_no_label_leak(step_record, label="targeted counterfactual mismatch step")
+                    trace_out.write(json.dumps(step_record, separators=(",", ":")) + "\n")
             else:
                 target_hit_count += len(matching_targets)
 
@@ -474,6 +671,10 @@ def run_episode(
                     "target_families": sorted(
                         {str(target.get("target_family")) for target in matching_targets}
                     ),
+                    "target_candidate_roles": sorted(
+                        {str(target.get("candidate_role") or "none") for target in matching_targets}
+                    ),
+                    "target_family_role_keys": target_family_role_keys(matching_targets),
                     "behavior_action_id": behavior_action_id,
                     "behavior_action_key": preview.get("chosen_action_key"),
                     "decision": {
@@ -506,6 +707,12 @@ def run_episode(
                 behavior_action_id=behavior_action_id,
                 max_candidates=args.max_candidates,
             )
+            horizon_mode, horizon_decisions, horizon_mode_counts = horizon_config_for_targets(
+                matching_targets,
+                fallback_mode=args.horizon_mode,
+                fallback_decisions=args.horizon_decisions,
+            )
+            target_horizon_modes.update(horizon_mode_counts)
             branch_request = {
                 "cmd": "branch_trace",
                 "action_indices": action_indices,
@@ -515,8 +722,8 @@ def run_episode(
                 "behavior_action_id": behavior_action_id,
                 "sampling_seed": seed,
                 "continuation_policy": args.continuation_policy,
-                "horizon_decisions": args.horizon_decisions,
-                "horizon_mode": args.horizon_mode,
+                "horizon_decisions": horizon_decisions,
+                "horizon_mode": horizon_mode,
                 "sim_version": "full_run_env_targeted_counterfactual_policy_v0",
                 "content_version": "content_current",
                 "include_comparisons": True,
@@ -563,6 +770,10 @@ def run_episode(
                 "target_families": sorted(
                     {str(target.get("target_family")) for target in matching_targets}
                 ),
+                "target_candidate_roles": sorted(
+                    {str(target.get("candidate_role") or "none") for target in matching_targets}
+                ),
+                "target_family_role_keys": target_family_role_keys(matching_targets),
                 "raw_target_ids_at_step": [
                     target.get("target_id") for target in raw_matching_targets
                 ],
@@ -572,6 +783,9 @@ def run_episode(
                     if matching_targets
                     else set()
                 ),
+                "target_match_modes": dict(match_modes),
+                "target_horizon_mode": horizon_mode,
+                "target_horizon_decisions": horizon_decisions,
                 "branch_action_indices": action_indices,
                 "behavior_action_id": behavior_action_id,
                 "behavior_action_key": preview.get("chosen_action_key"),
@@ -584,7 +798,7 @@ def run_episode(
             assert_no_label_leak(step_record, label="targeted counterfactual step")
             trace_out.write(json.dumps(step_record, separators=(",", ":")) + "\n")
         elif policy_kind == POLICY_UNDER_TEST:
-            if target_table.get(seed):
+            if target_index.get(seed):
                 target_miss_count += 0
 
         step = client.request({"cmd": "decision_env_step", "action_id": chosen_action_id})
@@ -602,12 +816,15 @@ def run_episode(
         "steps": steps,
         "done": done,
         "total_reward": total_reward,
-        "target_count_for_seed": sum(len(v) for v in target_table.get(seed, {}).values()),
+        "target_count_for_seed": len(target_index.get(seed, [])),
         "raw_target_step_count": raw_target_step_count,
         "target_hit_count": target_hit_count,
         "target_miss_count": target_miss_count,
         "target_step_mismatch_after_closed_loop_count": target_step_mismatch_after_closed_loop_count,
         "target_candidate_key_mismatch_after_closed_loop_count": target_candidate_key_mismatch_after_closed_loop_count,
+        "target_filtered_by_yield_gate_count": target_filtered_by_yield_gate_count,
+        "target_match_mode_counts": dict(target_match_modes),
+        "target_horizon_mode_counts": dict(target_horizon_modes),
         "evidence_request_count": evidence_request_count,
         "abstain_count": abstain_count,
         "abstain_reason_counts": dict(abstain_reasons),
@@ -742,6 +959,17 @@ def aggregate(results: list[dict[str, Any]], target_payload: dict[str, Any]) -> 
         for result in results
         if result.get("policy_kind") == POLICY_UNDER_TEST
     )
+    total_yield_filtered = sum(
+        safe_int(result.get("target_filtered_by_yield_gate_count"))
+        for result in results
+        if result.get("policy_kind") == POLICY_UNDER_TEST
+    )
+    target_match_modes: Counter[str] = Counter()
+    target_horizon_modes: Counter[str] = Counter()
+    for result in results:
+        if result.get("policy_kind") == POLICY_UNDER_TEST:
+            target_match_modes.update(result.get("target_match_mode_counts") or {})
+            target_horizon_modes.update(result.get("target_horizon_mode_counts") or {})
     failure_report = build_failure_report(
         paired=paired,
         target_payload=target_payload,
@@ -752,6 +980,7 @@ def aggregate(results: list[dict[str, Any]], target_payload: dict[str, Any]) -> 
         total_step_mismatch=total_step_mismatch,
         total_candidate_key_mismatch=total_candidate_key_mismatch,
         target_role_filter_abstain=target_role_filter_abstain,
+        total_yield_filtered=total_yield_filtered,
         bad_outcome_seed_count=bad,
     )
     return {
@@ -767,6 +996,9 @@ def aggregate(results: list[dict[str, Any]], target_payload: dict[str, Any]) -> 
         "target_step_mismatch_after_closed_loop_count": total_step_mismatch,
         "target_candidate_key_mismatch_after_closed_loop_count": total_candidate_key_mismatch,
         "target_no_compatible_candidate_after_role_filter_count": target_role_filter_abstain,
+        "target_filtered_by_yield_gate_count": total_yield_filtered,
+        "target_match_mode_counts": dict(target_match_modes),
+        "target_horizon_mode_counts": dict(target_horizon_modes),
         "total_abstain_count": sum(
             safe_int(result.get("abstain_count"))
             for result in results
@@ -796,6 +1028,7 @@ def build_failure_report(
     total_step_mismatch: int,
     total_candidate_key_mismatch: int,
     target_role_filter_abstain: int,
+    total_yield_filtered: int,
     bad_outcome_seed_count: int,
 ) -> dict[str, Any]:
     buckets: dict[str, dict[str, Any]] = {}
@@ -867,6 +1100,12 @@ def build_failure_report(
             },
             "Split target families by candidate role before closed-loop use; examples include upgrade-targets that must not become rest-targets.",
         )
+    if total_yield_filtered:
+        add(
+            "target_yield_gate_filtered",
+            {"target_filtered_by_yield_gate_count": total_yield_filtered},
+            "Review the historical yield ranking threshold; if useful targets are filtered, lower the threshold or split yield buckets by candidate role.",
+        )
     if total_overrides and bad_outcome_seed_count:
         bad_rows = [row for row in paired if safe_int(row.get("floor_delta")) < 0 or safe_int(row.get("combat_win_delta")) < 0]
         add(
@@ -930,6 +1169,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--continuation-policy", default="rule_baseline_v0")
     parser.add_argument("--horizon-mode", default="combat_end_v1")
     parser.add_argument("--horizon-decisions", type=int, default=24)
+    parser.add_argument("--target-step-window", type=int, default=0)
+    parser.add_argument("--yield-ranking", type=Path)
+    parser.add_argument("--min-yield-score", type=float, default=0.0)
+    parser.add_argument("--min-yield-observations", type=int, default=0)
     parser.add_argument("--max-candidates", type=int, default=16)
     parser.add_argument("--min-hp-margin", type=int, default=10)
     parser.add_argument("--min-reward-margin", type=float, default=0.25)
@@ -944,7 +1187,8 @@ def main() -> int:
     if not seeds:
         raise SystemExit("provide --seeds or --seed-start/--episodes")
     target_payload = load_json(args.targets)
-    target_table = targets_by_seed_step(target_payload)
+    target_index = targets_by_seed(target_payload)
+    yield_ranking = load_yield_ranking(args.yield_ranking)
     driver = args.driver or default_driver_path()
     branch_cache = (
         BranchEvidenceCache(args.branch_cache_dir)
@@ -963,7 +1207,8 @@ def main() -> int:
                         seed=seed,
                         policy_kind=policy_kind,
                         args=args,
-                        target_table=target_table,
+                        target_index=target_index,
+                        yield_ranking=yield_ranking,
                         trace_out=trace_out,
                         branch_cache=branch_cache if policy_kind == POLICY_UNDER_TEST else None,
                     )
@@ -1005,6 +1250,10 @@ def main() -> int:
         "config": {
             "horizon_mode": args.horizon_mode,
             "horizon_decisions": args.horizon_decisions,
+            "target_step_window": args.target_step_window,
+            "yield_ranking": str(args.yield_ranking) if args.yield_ranking else None,
+            "min_yield_score": args.min_yield_score,
+            "min_yield_observations": args.min_yield_observations,
             "max_candidates": args.max_candidates,
             "min_hp_margin": args.min_hp_margin,
             "min_reward_margin": args.min_reward_margin,

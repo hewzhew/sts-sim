@@ -9,6 +9,7 @@ changes improve run-level outcomes.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import math
 import re
@@ -167,6 +168,7 @@ def build_candidate_snapshot(
     *,
     decision_type: str,
     step: int,
+    observation_payload: dict[str, Any] | None = None,
     candidates: list[dict[str, Any]],
 ) -> dict[str, Any]:
     slim_candidates: list[dict[str, Any]] = []
@@ -184,10 +186,26 @@ def build_candidate_snapshot(
         }
         forbidden_found = forbidden_found or contains_forbidden_key(row, FORBIDDEN_CANDIDATE_SNAPSHOT_KEYS)
         slim_candidates.append(row)
+    context = summarize_observation_payload(observation_payload or {})
+    fingerprint_payload = {
+        "decision_type": decision_type,
+        "act": context.get("act"),
+        "floor": context.get("floor"),
+        "hp": context.get("hp"),
+        "max_hp": context.get("max_hp"),
+        "gold": context.get("gold"),
+        "deck_size": context.get("deck_size"),
+        "candidate_keys": [row.get("action_key") for row in slim_candidates],
+    }
+    fingerprint = hashlib.sha256(
+        json.dumps(fingerprint_payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()[:24]
     return {
         "schema_version": "noncombat_candidate_snapshot_v1",
         "step": step,
         "decision_type": decision_type,
+        "decision_fingerprint": fingerprint,
+        "public_context_summary": context,
         "candidate_count": len(slim_candidates),
         "candidates": slim_candidates,
         "trainable_as_action_label": False,
@@ -692,6 +710,8 @@ def summarize_candidate_snapshots(steps: list[dict[str, Any]]) -> dict[str, Any]
                 "schema_version": snapshot.get("schema_version", "noncombat_candidate_snapshot_v1"),
                 "step": row.get("step"),
                 "decision_type": decision_type,
+                "decision_fingerprint": snapshot.get("decision_fingerprint"),
+                "public_context_summary": snapshot.get("public_context_summary") or {},
                 "before": compact_state(row.get("before") or {}),
                 "action_taken": row.get("action") or {},
                 "candidate_count": safe_int(snapshot.get("candidate_count")),
@@ -1867,6 +1887,7 @@ def collect_readable_runs(args: argparse.Namespace) -> list[Path]:
                         "candidate_snapshot": build_candidate_snapshot(
                             decision_type=str(decision_type or "unknown"),
                             step=step_index,
+                            observation_payload=payload,
                             candidates=candidates,
                         )
                         if is_noncombat_decision_type(str(decision_type or "unknown"))
