@@ -1,3 +1,6 @@
+use sts_simulator::app::neutral_engine_query::{
+    NeutralEngineQueryService, NeutralQueryKind, SearchExecutionContext,
+};
 use sts_simulator::content::cards::CardId;
 use sts_simulator::content::monsters::EnemyId;
 use sts_simulator::runtime::combat::CombatCard;
@@ -5,9 +8,6 @@ use sts_simulator::state::core::ClientInput;
 use sts_simulator::state::EngineState;
 use sts_simulator::test_support::{blank_test_combat, planned_monster};
 use sts_simulator::verification::decision_env::{ActionId, DecisionId};
-use sts_simulator::verification::neutral_engine_query::{
-    NeutralEngineQueryService, NeutralQueryKind, SearchExecutionContext,
-};
 use sts_simulator::verification::search_policy::{Exactness, SearchKind};
 
 fn card(id: CardId, uuid: u32) -> CombatCard {

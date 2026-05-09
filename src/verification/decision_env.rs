@@ -138,35 +138,6 @@ pub struct TimeStep {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
-pub struct CandidateLabel {
-    pub action_id: ActionId,
-    pub mean_return: Option<f32>,
-    pub stderr: Option<f32>,
-    pub sample_count: u32,
-    pub dominance: Option<String>,
-    pub confidence: Option<String>,
-    pub payload: Value,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
-pub struct PairwisePreference {
-    pub preferred: ActionId,
-    pub other: ActionId,
-    pub margin: Option<f32>,
-    pub confidence: Option<String>,
-    pub payload: Value,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
-pub struct TeacherDecisionLabel {
-    pub teacher_spec_version: String,
-    pub return_spec_version: String,
-    pub labels: Vec<CandidateLabel>,
-    pub pairwise_preferences: Vec<PairwisePreference>,
-    pub payload: Value,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct DecisionRecord {
     pub schema_version: String,
     pub decision_id: DecisionId,
@@ -180,7 +151,6 @@ pub struct DecisionRecord {
     pub observation: ObservationPayload,
     pub candidates: Vec<ActionCandidate>,
     pub behavior_action: Option<ActionId>,
-    pub teacher_label: Option<TeacherDecisionLabel>,
     pub reward_since_prev: RewardEvent,
     pub terminated: bool,
     pub truncated: bool,
@@ -195,7 +165,6 @@ pub struct DecisionRecordContext {
     pub return_spec_version: String,
     pub seed: u64,
     pub behavior_action: Option<ActionId>,
-    pub teacher_label: Option<TeacherDecisionLabel>,
     pub state_hash_after: Option<String>,
     pub info: Value,
 }
@@ -212,7 +181,6 @@ impl DecisionRecordContext {
             return_spec_version: return_spec_version.into(),
             seed,
             behavior_action: None,
-            teacher_label: None,
             state_hash_after: None,
             info: Value::Null,
         }
@@ -234,7 +202,6 @@ impl DecisionRecord {
             observation: timestep.observation.clone(),
             candidates: timestep.candidates.clone(),
             behavior_action: context.behavior_action,
-            teacher_label: context.teacher_label,
             reward_since_prev: timestep.reward.clone(),
             terminated: timestep.terminated,
             truncated: timestep.truncated,
@@ -268,7 +235,6 @@ impl DecisionRecord {
             observation: decision.observation.clone(),
             candidates: decision.candidates.clone(),
             behavior_action: context.behavior_action,
-            teacher_label: context.teacher_label,
             reward_since_prev: outcome.reward.clone(),
             terminated: outcome.terminated,
             truncated: outcome.truncated,

@@ -70,29 +70,6 @@ def run_shard(args: argparse.Namespace, shard_index: int, offset: int, episodes:
     ]
     if args.final_act:
         cmd.append("--final-act")
-    if args.teacher_horizon_decisions is not None:
-        cmd.extend(
-            [
-                "--teacher-continuation-policy",
-                args.teacher_continuation_policy,
-                "--teacher-horizon-decisions",
-                str(args.teacher_horizon_decisions),
-                "--teacher-horizon-mode",
-                args.teacher_horizon_mode,
-                "--teacher-gamma",
-                str(args.teacher_gamma),
-                "--teacher-evaluation-mode",
-                args.teacher_evaluation_mode,
-                "--teacher-value-cache-scope",
-                args.teacher_value_cache_scope,
-                "--teacher-value-cache-max-entries",
-                str(args.teacher_value_cache_max_entries),
-                "--teacher-parallelism",
-                str(args.teacher_parallelism),
-            ]
-        )
-        if args.teacher_exact_root_dedup:
-            cmd.append("--teacher-exact-root-dedup")
     completed = subprocess.run(cmd, cwd=REPO_ROOT, text=True, capture_output=True)
     if completed.returncode != 0:
         return {
@@ -129,15 +106,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--policy", default="rule_baseline_v0")
     parser.add_argument("--sim-version", default="full_run_env")
     parser.add_argument("--return-spec-version", default="driver_reward_v0")
-    parser.add_argument("--teacher-continuation-policy", default="rule_baseline_v0")
-    parser.add_argument("--teacher-horizon-decisions", type=int)
-    parser.add_argument("--teacher-horizon-mode", default="fixed_decisions")
-    parser.add_argument("--teacher-gamma", type=float, default=0.99)
-    parser.add_argument("--teacher-evaluation-mode", default="bellman_cached_v1")
-    parser.add_argument("--teacher-value-cache-scope", default="episode")
-    parser.add_argument("--teacher-value-cache-max-entries", type=int, default=4096)
-    parser.add_argument("--teacher-parallelism", type=int, default=1)
-    parser.add_argument("--teacher-exact-root-dedup", action="store_true")
     return parser.parse_args()
 
 

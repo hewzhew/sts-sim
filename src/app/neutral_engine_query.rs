@@ -8,8 +8,8 @@ use crate::runtime::combat::CombatState;
 use crate::state::core::ClientInput;
 use crate::state::EngineState;
 
-use super::decision_env::{ActionId, DecisionId, PolicyInput};
-use super::search_policy::{Exactness, SearchEvidence, SearchKind};
+use crate::verification::decision_env::{ActionId, DecisionId, PolicyInput};
+use crate::verification::search_policy::{Exactness, HorizonSpec, SearchEvidence, SearchKind};
 
 pub const NEUTRAL_ENGINE_QUERY_VERSION: &str = "neutral_engine_query_v0";
 
@@ -276,7 +276,7 @@ impl NeutralEngineQueryResult {
             NeutralQueryKind::PairedCompare | NeutralQueryKind::CommutationProbe => {
                 SearchKind::PairwiseCompare {
                     other: self.action_id,
-                    horizon: super::search_policy::HorizonSpec::StableBoundary {
+                    horizon: HorizonSpec::StableBoundary {
                         max_decisions: self.max_engine_steps,
                     },
                 }

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import random
 import subprocess
 from pathlib import Path
@@ -20,10 +21,19 @@ except ModuleNotFoundError as err:
         "\nIf the venv is not initialized, run:\n"
         r"  python -m venv .venv-rl"
         "\n"
-        r"  .\.venv-rl\Scripts\python.exe -m pip install -r tools\learning\requirements-hybrid-rl.txt"
+        r"  .\.venv-rl\Scripts\python.exe -m pip install gymnasium numpy"
     ) from err
 
-from combat_rl_common import REPO_ROOT, find_release_binary
+REPO_ROOT = Path(__file__).resolve().parents[2]
+
+
+def find_release_binary(binary: Path | None, name: str) -> Path:
+    if binary is not None:
+        return Path(binary)
+    suffix = ".exe" if os.name == "nt" else ""
+    release = REPO_ROOT / "target" / "release" / f"{name}{suffix}"
+    debug = REPO_ROOT / "target" / "debug" / f"{name}{suffix}"
+    return release if release.exists() else debug
 
 MAX_ACTIONS = 256
 CARD_FEATURES = 25

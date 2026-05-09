@@ -1,154 +1,40 @@
 # Learning Tools
 
-This directory is intentionally narrow now. The active route is not a learned
-selector and not a local tactical oracle. The current mainline is:
+This directory no longer contains an active "verified teacher", BranchTrace,
+candidate rollout, or DecisionRecord teacher-label pipeline.
 
-```text
-Rust engine
--> verified teacher diagnostics
--> audit harmful overrides
--> improve leaf / continuation / evidence quality
--> only later distill a proposer or policy
-```
+Those paths were removed because they promoted weak baseline continuation and
+seed counterfactuals into reusable evidence. The full-run driver now exposes
+only environment stepping, public observations, policy input snapshots,
+baseline policy stepping, preview, and raw DecisionRecord transition capture.
 
-## Current Mainline
+Current allowed uses:
 
-Use these files when working on the current route:
+- simulator smoke tests
+- replay and contract checks
+- explicit full-run policy evaluation where the final run outcome is the metric
+- local diagnostic scripts that do not create action labels from branch traces,
+  candidate rollout returns, or teacher-label fields
 
-- `return_q_common.py`
-  - shared JSONL driver process wrapper and file helpers
-- `eval_verified_adv_override_rust_runner.py`
-  - runs the Rust-side verified override episode/batch policy
-- `run_verified_teacher_diagnostics.py`
-  - compares rule/plan baselines against verified teacher variants and writes a
-    compact report
-- `audit_verified_teacher_pending_coverage.py`
-  - checks how much decision-state / pending-choice coverage the teacher sees
-- `audit_verified_teacher_overrides.py`
-  - audits harmful seed-level overrides and low-confidence accepted overrides
-    from existing verified teacher diagnostic JSON
-- `run_verified_adv_override_prefilter_grid.py`
-  - optional verifier prefilter experiment; not a default policy
+Tracked files in this directory are intentionally limited to:
 
-The current teacher policy is conservative:
+- `full_run_env.py`
+- `smoke_full_run_env.py`
+- `analyze_full_run_policy_matrix.py`
+- `evaluate_full_run_capabilities.py`
+- `audit_decision_record_contract.py`
+- `collect_decision_records.py`
+- `collect_decision_records_batch.py`
+- `verify_decision_records_replay.py`
 
-```text
-default action = rule_baseline_v0
-override only when cloned engine return verifies a candidate advantage
-```
+Do not reintroduce scripts that:
 
-The latest useful improvement is selective extended verification:
+- call `branch_trace`
+- call `evaluate_candidates`
+- call `run_verified_adv_override_*`
+- collect `neutral_policy_trace`
+- train from `teacher_label`
+- convert single-seed counterfactuals into policy labels
 
-```text
-H8 evaluates all scoped root candidates.
-If the H8-best candidate has low evidence, confirm only {rule, best} at a
-longer horizon such as H16.
-Accept only if the confirmed advantage clears the confirmation margin.
-```
-
-This is an evidence-quality mechanism, not a card/action value rule.
-
-## Current Decision
-
-Do not treat these as active mainlines:
-
-- shallow `card/action + query` labels
-- candidate-pack labels as a primary training target
-- absolute return-Q direct selectors
-- learned advantage override selectors
-- learned verified proposer pruning
-- top-K coverage as proof that a proposer works
-- full MCTS / recursive search driven by a weak learned Q
-
-Those experiments are either diagnostic fixtures or negative baselines.
-
-## Archived Routes
-
-Failed or non-mainline experiments moved out of the root directory live under:
-
-- `_archive/2026_05_failed_routes/return_q_negative_baselines/`
-- `_archive/2026_05_failed_routes/learned_adv_override_negative_baseline/`
-- `_archive/2026_05_failed_routes/verified_proposer_negative_baselines/`
-- `_archive/2026_05_failed_routes/candidate_pack_diagnostics/`
-
-See `_archive/2026_05_failed_routes/README.md` for the rationale.
-
-## Draw / Cashout / Query Tools
-
-The draw marginal and cashout tools remain useful only as diagnostics,
-fixtures, and leakage/regression tests. They are not training proof:
-
-- `build_draw_query_axis_dataset.py`
-- `run_trace_draw_marginal_mining.py`
-- `analyze_draw_marginal_labels.py`
-- cashout and micro-probe scripts
-
-Use them when checking plumbing, split hygiene, or negative controls. Do not use
-their labels as the main supervised signal.
-
-## Verified Teacher Smoke
-
-Build:
-
-```powershell
-cargo build --release --bin full_run_env_driver
-```
-
-Run a small diagnostic:
-
-```powershell
-python tools\learning\run_verified_teacher_diagnostics.py `
-  --out target\verified_teacher_smoke.json `
-  --report-out target\verified_teacher_smoke.md `
-  --episodes 20 `
-  --seed-start 98100 `
-  --max-steps 160 `
-  --cases rule,h8_fixed `
-  --oracle-margin 1.0 `
-  --evidence-gate horizon_cap_any_v1 `
-  --low-evidence-margin 2.0 `
-  --confirm-low-evidence-horizon-decisions 16 `
-  --confirm-low-evidence-horizon-mode combat_end_v1 `
-  --confirm-low-evidence-margin 2.0 `
-  --keep-episodes
-```
-
-Key metrics:
-
-- reward delta vs rule
-- defeats and rescued/harmed seed counts
-- override rate
-- low-evidence rejects
-- confirmation accepts/rejects
-- artifact-boundary confirmation accepts/rejects
-- candidate eval count and policy step eval count
-- horizon stop reason distribution
-- override payoff/context distribution
-
-Audit harmful / low-confidence accepted overrides from existing diagnostics:
-
-```powershell
-python tools\learning\audit_verified_teacher_overrides.py `
-  --inputs target\verified_teacher_h8_quality_gate_any_m1_low2_100_seed98100.json `
-           target\verified_teacher_h8_quality_gate_any_m1_low2_100_seed98500.json `
-  --out target\verified_teacher_override_audit.json `
-  --report-out target\verified_teacher_override_audit.md `
-  --low-adv-threshold 2.5
-```
-
-This audit reads existing JSON only. It can inspect accepted override events and
-seed-level harmed/worsened examples. It cannot yet inspect individual rejected
-low-evidence candidates because the Rust runner currently records those only as
-aggregate counts.
-
-## Refactor Rule
-
-Before adding a new learning script, answer:
-
-```text
-Does this improve the verified teacher, explain harmful overrides, or reduce
-verified compute without changing the verifier's truth source?
-```
-
-If not, put it under `_archive/` or a clearly named diagnostic directory from
-the start.
+Deleted files remain recoverable from Git history and from the backup branches
+created before this cleanup.

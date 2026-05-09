@@ -1,5 +1,6 @@
 use std::fs;
 
+use sts_simulator::app::neutral_engine_query::SearchExecutionContext;
 use sts_simulator::app::policy_runner::NeutralProbeEvaluator;
 use sts_simulator::content::cards::CardId;
 use sts_simulator::content::monsters::EnemyId;
@@ -11,7 +12,6 @@ use sts_simulator::verification::decision_env::{
     ActionCandidate, ActionId, DecisionId, ObservationPayload, ObservationVisibility, PolicyInput,
     TimeStep, POLICY_INPUT_SCHEMA_VERSION,
 };
-use sts_simulator::verification::neutral_engine_query::SearchExecutionContext;
 use sts_simulator::verification::search_policy::DecisionMode;
 
 fn card(id: CardId, uuid: u32) -> CombatCard {

@@ -11,11 +11,17 @@ from pathlib import Path
 from statistics import mean
 from typing import Any
 
-from sb3_contrib import MaskablePPO
+try:
+    from sb3_contrib import MaskablePPO
+except ModuleNotFoundError:
+    MaskablePPO = None
 
-from combat_rl_common import REPO_ROOT, find_release_binary, write_json
-from full_run_candidate_policy import FullRunCandidateScorerPolicy  # noqa: F401
-from full_run_env import FullRunGymEnv
+from full_run_env import FullRunGymEnv, REPO_ROOT, find_release_binary
+
+
+def write_json(path: Path, payload: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
 
 def parse_args() -> argparse.Namespace:
@@ -199,6 +205,8 @@ def episode_from_trace_file(path: Path) -> dict[str, Any]:
 def run_model_policy(args: argparse.Namespace, artifact_dir: Path) -> dict[str, Any]:
     if args.model is None:
         raise SystemExit("--model is required when policies includes 'model'")
+    if MaskablePPO is None:
+        raise SystemExit("sb3_contrib is required when policies includes 'model'")
     model = MaskablePPO.load(str(args.model))
     policy_dir = artifact_dir / args.model_name
     trace_dir = policy_dir / "traces"

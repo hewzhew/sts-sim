@@ -72,7 +72,6 @@ def collect_episode(
     policy: str,
     sim_version: str,
     return_spec_version: str,
-    teacher: dict[str, Any] | None,
     out,
 ) -> dict[str, Any]:
     client.request(
@@ -113,11 +112,8 @@ def collect_episode(
                 "collector": "collect_decision_records.py",
                 "behavior_policy": policy,
                 "seed": seed,
-                "teacher_enabled": teacher is not None,
             },
         }
-        if teacher is not None:
-            request.update(teacher)
         step = client.request(request)
         record = step["payload"]
         out.write(json.dumps(record, separators=(",", ":")) + "\n")
@@ -148,15 +144,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--sim-version", default="full_run_env")
     parser.add_argument("--return-spec-version", default="driver_reward_v0")
     parser.add_argument("--summary-out", type=Path)
-    parser.add_argument("--teacher-continuation-policy", default="rule_baseline_v0")
-    parser.add_argument("--teacher-horizon-decisions", type=int)
-    parser.add_argument("--teacher-horizon-mode", default="fixed_decisions")
-    parser.add_argument("--teacher-gamma", type=float, default=0.99)
-    parser.add_argument("--teacher-evaluation-mode", default="bellman_cached_v1")
-    parser.add_argument("--teacher-value-cache-scope", default="episode")
-    parser.add_argument("--teacher-value-cache-max-entries", type=int, default=4096)
-    parser.add_argument("--teacher-parallelism", type=int, default=1)
-    parser.add_argument("--teacher-exact-root-dedup", action="store_true")
     return parser.parse_args()
 
 
@@ -166,19 +153,6 @@ def main() -> int:
         raise SystemExit(f"driver binary not found: {args.driver}")
     args.out.parent.mkdir(parents=True, exist_ok=True)
     summary_out = args.summary_out or args.out.with_suffix(".summary.json")
-    teacher = None
-    if args.teacher_horizon_decisions is not None:
-        teacher = {
-            "teacher_continuation_policy": args.teacher_continuation_policy,
-            "teacher_horizon_decisions": args.teacher_horizon_decisions,
-            "teacher_horizon_mode": args.teacher_horizon_mode,
-            "teacher_gamma": args.teacher_gamma,
-            "teacher_evaluation_mode": args.teacher_evaluation_mode,
-            "teacher_value_cache_scope": args.teacher_value_cache_scope,
-            "teacher_value_cache_max_entries": args.teacher_value_cache_max_entries,
-            "teacher_parallelism": args.teacher_parallelism,
-            "teacher_exact_root_dedup": args.teacher_exact_root_dedup,
-        }
     client = DriverClient(args.driver)
     summaries: list[dict[str, Any]] = []
     try:
@@ -195,7 +169,6 @@ def main() -> int:
                         policy=args.policy,
                         sim_version=args.sim_version,
                         return_spec_version=args.return_spec_version,
-                        teacher=teacher,
                         out=out,
                     )
                 )
@@ -207,7 +180,6 @@ def main() -> int:
         "out": str(args.out),
         "driver": str(args.driver),
         "policy": args.policy,
-        "teacher": teacher,
         "episodes": summaries,
         "total_records": sum(item["records"] for item in summaries),
     }

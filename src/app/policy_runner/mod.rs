@@ -2,10 +2,10 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::BTreeSet;
 
-use crate::verification::decision_env::{ActionId, PolicyInput};
-use crate::verification::neutral_engine_query::{
+use crate::app::neutral_engine_query::{
     BranchEffectGroup, NeutralEngineQueryResult, NeutralEngineQueryService, SearchExecutionContext,
 };
+use crate::verification::decision_env::{ActionId, PolicyInput};
 use crate::verification::search_policy::{
     CandidateScore, DecisionMode, DeliberationTrace, PolicyDecision, PolicyProposal, SearchBudget,
     SearchEvidence, SearchHint, SearchKind, SearchPlan, SEARCH_AWARE_POLICY_SCHEMA_VERSION,

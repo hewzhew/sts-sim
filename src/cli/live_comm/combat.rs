@@ -2,6 +2,7 @@ use super::frame::LiveFrame;
 use super::io::LiveCommIo;
 use super::snapshot::write_failure_snapshot;
 use super::{LiveCombatMode, LiveExactTurnMode, LiveParityMode, LiveVerifiedTeacherMode};
+use crate::app::neutral_engine_query::SearchExecutionContext;
 use crate::app::policy_runner::NeutralProbeEvaluator;
 use crate::bot::combat::legal_moves::protocol_root_moves;
 use crate::bot::combat::monster_belief::build_combat_belief_state;
@@ -35,7 +36,6 @@ use crate::verification::combat::{
 use crate::verification::decision_env::{
     ActionCandidate, ActionId, DecisionId, ObservationPayload, ObservationVisibility, PolicyInput,
 };
-use crate::verification::neutral_engine_query::SearchExecutionContext;
 use serde_json::Value;
 use std::io::Write;
 use std::time::{Duration, Instant};
