@@ -592,10 +592,10 @@ If executable truth says `Attack 11` but `PublicObservation` says no visible
 intent, the task must either:
 
 - fix the observation bridge,
-- mark the state as `OracleOnlyIntent`, or
+- mark the state as `IntentVisibility::OracleOnly`, or
 - reject it for public action-selection training.
 
-Training around `MissingVisibleIntent` is forbidden.
+Training around `IntentVisibility::MissingVisible` is forbidden.
 
 ### Leakage Rules
 
