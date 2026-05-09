@@ -3274,9 +3274,11 @@ fn normalize_player_class(value: Option<&str>) -> Result<&'static str, String> {
 fn normalize_policy(value: &str) -> Result<RunPolicyKind, String> {
     match value.to_ascii_lowercase().as_str() {
         "rule_baseline_v0" => Ok(RunPolicyKind::RuleBaselineV0),
+        "rule_baseline_v0_control" => Ok(RunPolicyKind::RuleBaselineV0Control),
+        "rule_baseline_v1_candidate" => Ok(RunPolicyKind::RuleBaselineV1Candidate),
         "plan_query_v0" => Ok(RunPolicyKind::PlanQueryV0),
         other => Err(format!(
-            "unsupported policy '{other}'; expected rule_baseline_v0 or plan_query_v0"
+            "unsupported policy '{other}'; expected rule_baseline_v0, rule_baseline_v0_control, rule_baseline_v1_candidate, or plan_query_v0"
         )),
     }
 }
@@ -3284,6 +3286,8 @@ fn normalize_policy(value: &str) -> Result<RunPolicyKind, String> {
 fn policy_name(policy: RunPolicyKind) -> &'static str {
     match policy {
         RunPolicyKind::RuleBaselineV0 => "rule_baseline_v0",
+        RunPolicyKind::RuleBaselineV0Control => "rule_baseline_v0_control",
+        RunPolicyKind::RuleBaselineV1Candidate => "rule_baseline_v1_candidate",
         RunPolicyKind::PlanQueryV0 => "plan_query_v0",
         RunPolicyKind::RandomMasked => "random_masked",
     }

@@ -1,4 +1,5 @@
 use super::*;
+use crate::content::potions::PotionId;
 
 pub fn choose_action(
     policy: &mut EpisodePolicy,
@@ -14,8 +15,12 @@ pub fn choose_action(
             };
             Ok((idx, legal_actions[idx].clone()))
         }
-        EpisodePolicy::RuleBaselineV0 => {
+        EpisodePolicy::RuleBaselineV0 | EpisodePolicy::RuleBaselineV1Candidate => {
             let idx = choose_rule_baseline_action(ctx, legal_actions);
+            Ok((idx, legal_actions[idx].clone()))
+        }
+        EpisodePolicy::RuleBaselineV0Control => {
+            let idx = choose_rule_baseline_v0_control_action(ctx, legal_actions);
             Ok((idx, legal_actions[idx].clone()))
         }
         EpisodePolicy::PlanQueryV0 => {
@@ -50,6 +55,22 @@ pub fn choose_rule_baseline_action(ctx: &EpisodeContext, legal_actions: &[Client
     let mut best_score = i32::MIN;
     for (index, action) in legal_actions.iter().enumerate() {
         let score = rule_baseline_score(ctx, action);
+        if score > best_score {
+            best_index = index;
+            best_score = score;
+        }
+    }
+    best_index
+}
+
+pub fn choose_rule_baseline_v0_control_action(
+    ctx: &EpisodeContext,
+    legal_actions: &[ClientInput],
+) -> usize {
+    let mut best_index = 0usize;
+    let mut best_score = i32::MIN;
+    for (index, action) in legal_actions.iter().enumerate() {
+        let score = rule_baseline_v0_control_score(ctx, action);
         if score > best_score {
             best_index = index;
             best_score = score;
@@ -636,7 +657,28 @@ pub fn rule_baseline_score(ctx: &EpisodeContext, action: &ClientInput) -> i32 {
             score_reward_action(&ctx.run_state, reward_state, action)
         }
         EngineState::MapNavigation => score_map_action(&ctx.run_state, action),
-        EngineState::EventRoom => score_event_action(action),
+        EngineState::EventRoom => score_event_action(&ctx.run_state, action),
+        EngineState::BossRelicSelect(state) => score_boss_relic_action(state, action),
+        EngineState::Campfire => score_campfire_action(&ctx.run_state, action),
+        EngineState::Shop(shop) => score_shop_action(&ctx.run_state, shop, action),
+        EngineState::RunPendingChoice(choice) => {
+            let request = choice.selection_request(&ctx.run_state);
+            score_run_selection_action(&ctx.run_state, &request, action)
+        }
+        EngineState::CombatProcessing | EngineState::EventCombat(_) | EngineState::GameOver(_) => 0,
+    }
+}
+
+pub fn rule_baseline_v0_control_score(ctx: &EpisodeContext, action: &ClientInput) -> i32 {
+    match &ctx.engine_state {
+        EngineState::CombatPlayerTurn | EngineState::PendingChoice(_) => {
+            score_combat_action_v0_control(ctx, action)
+        }
+        EngineState::RewardScreen(reward_state) => {
+            score_reward_action(&ctx.run_state, reward_state, action)
+        }
+        EngineState::MapNavigation => score_map_action_v0_control(&ctx.run_state, action),
+        EngineState::EventRoom => score_event_action_v0_control(action),
         EngineState::BossRelicSelect(state) => score_boss_relic_action(state, action),
         EngineState::Campfire => score_campfire_action(&ctx.run_state, action),
         EngineState::Shop(shop) => score_shop_action(&ctx.run_state, shop, action),
@@ -686,6 +728,69 @@ pub fn score_combat_action(ctx: &EpisodeContext, action: &ClientInput) -> i32 {
         (_, ClientInput::PlayCard { card_index, target }) => {
             score_play_card_action(combat, *card_index, *target)
         }
+        (
+            _,
+            ClientInput::UsePotion {
+                potion_index,
+                target,
+            },
+        ) => score_combat_potion_action(ctx, combat, *potion_index, *target),
+        (_, ClientInput::DiscardPotion { .. }) => -50,
+        (_, ClientInput::EndTurn) => {
+            let playable_cards = combat
+                .zones
+                .hand
+                .iter()
+                .filter(|card| crate::content::cards::can_play_card(card, combat).is_ok())
+                .count();
+            if playable_cards == 0 {
+                20
+            } else {
+                -200 - visible_unblocked_damage(combat) * 4
+            }
+        }
+        _ => score_noncombat_fallback(action),
+    }
+}
+
+pub fn score_combat_action_v0_control(ctx: &EpisodeContext, action: &ClientInput) -> i32 {
+    let Some(combat) = ctx.combat_state.as_ref() else {
+        return score_noncombat_fallback(action);
+    };
+    match (&ctx.engine_state, action) {
+        (
+            EngineState::PendingChoice(PendingChoice::DiscoverySelect(cards)),
+            ClientInput::SubmitDiscoverChoice(index),
+        )
+        | (
+            EngineState::PendingChoice(PendingChoice::CardRewardSelect { cards, .. }),
+            ClientInput::SubmitDiscoverChoice(index),
+        ) => cards
+            .get(*index)
+            .map(|card_id| 100 + rule_card_offer_score(*card_id, &ctx.run_state))
+            .unwrap_or(-1_000),
+        (
+            EngineState::PendingChoice(PendingChoice::CardRewardSelect { can_skip: true, .. }),
+            ClientInput::Cancel,
+        ) => 10,
+        (
+            EngineState::PendingChoice(PendingChoice::ScrySelect { .. }),
+            ClientInput::SubmitScryDiscard(indices),
+        ) => 10 + indices.len() as i32 * 8,
+        (
+            EngineState::PendingChoice(PendingChoice::StanceChoice),
+            ClientInput::SubmitDiscoverChoice(index),
+        ) => {
+            let unblocked = visible_unblocked_damage(combat);
+            match *index {
+                1 if unblocked > 0 => 100,
+                0 if unblocked == 0 => 80,
+                _ => 20,
+            }
+        }
+        (_, ClientInput::PlayCard { card_index, target }) => {
+            score_play_card_action_v0_control(combat, *card_index, *target)
+        }
         (_, ClientInput::UsePotion { .. }) => -1_000,
         (_, ClientInput::DiscardPotion { .. }) => -50,
         (_, ClientInput::EndTurn) => {
@@ -705,7 +810,321 @@ pub fn score_combat_action(ctx: &EpisodeContext, action: &ClientInput) -> i32 {
     }
 }
 
+pub fn score_combat_potion_action(
+    _ctx: &EpisodeContext,
+    combat: &CombatState,
+    potion_index: usize,
+    target: Option<usize>,
+) -> i32 {
+    let Some(Some(potion)) = combat.entities.potions.get(potion_index) else {
+        return -1_000;
+    };
+    let incoming = visible_incoming_damage(combat);
+    let pressure = incoming + visible_end_turn_self_damage(combat);
+    let unblocked = (pressure - combat.entities.player.block).max(0);
+    let hp = combat.entities.player.current_hp.max(1);
+    let key_fight = combat.meta.is_boss_fight || combat.meta.is_elite_fight;
+    let danger = unblocked >= 10 || unblocked * 3 >= hp;
+    let survival_emergency = unblocked >= hp || (hp <= 10 && unblocked > 0);
+    let playable_cards = combat
+        .zones
+        .hand
+        .iter()
+        .filter(|card| crate::content::cards::can_play_card(card, combat).is_ok())
+        .count() as i32;
+    let energy_gap = (playable_cards - combat.turn.energy as i32).max(0);
+    let mut score = if key_fight || survival_emergency {
+        55
+    } else {
+        -600
+    };
+
+    match potion.id {
+        PotionId::EnergyPotion => {
+            if key_fight && energy_gap > 0 {
+                score += 110 + energy_gap * 25;
+            } else if danger && energy_gap > 0 && unblocked >= hp {
+                score += 90 + energy_gap * 20;
+            }
+        }
+        PotionId::BlessingOfTheForge => {
+            let playable_hand = combat
+                .zones
+                .hand
+                .iter()
+                .filter(|card| crate::content::cards::can_play_card(card, combat).is_ok())
+                .count() as i32;
+            if key_fight && playable_hand >= 3 {
+                score += 105 + playable_hand * 12;
+            }
+        }
+        PotionId::BlockPotion => {
+            if unblocked > 0 && (key_fight || survival_emergency) {
+                score += 40 + unblocked.min(12) * 12;
+                if survival_emergency {
+                    score += 260;
+                }
+            }
+        }
+        PotionId::FirePotion | PotionId::ExplosivePotion => {
+            let damage = if potion.id == PotionId::FirePotion {
+                20
+            } else {
+                10 * alive_monster_count(combat) as i32
+            };
+            if damage >= total_alive_monster_hp(combat) {
+                score += 900;
+            } else if key_fight || survival_emergency {
+                score += damage * 5;
+            }
+        }
+        PotionId::FearPotion | PotionId::WeakenPotion => {
+            if target
+                .and_then(|target_id| alive_monster_by_id(combat, target_id))
+                .is_some()
+                && (key_fight || survival_emergency)
+            {
+                score += 110;
+                if survival_emergency {
+                    score += 120;
+                }
+            }
+        }
+        PotionId::StrengthPotion
+        | PotionId::DexterityPotion
+        | PotionId::SteroidPotion
+        | PotionId::SpeedPotion
+        | PotionId::EssenceOfSteel
+        | PotionId::LiquidBronze
+        | PotionId::HeartOfIron
+        | PotionId::CultistPotion => {
+            if key_fight || survival_emergency {
+                score += 120;
+                if survival_emergency {
+                    score += 160;
+                }
+            }
+            if matches!(potion.id, PotionId::DexterityPotion | PotionId::SpeedPotion) {
+                let playable_block_cards = playable_block_card_count(combat) as i32;
+                if playable_block_cards > 0 && (danger || survival_emergency) {
+                    let dex_gain = if potion.id == PotionId::SpeedPotion {
+                        5
+                    } else {
+                        2
+                    };
+                    let usable_block_cards =
+                        playable_block_cards.min(combat.turn.energy.max(0) as i32);
+                    let immediate_extra_block = dex_gain * usable_block_cards;
+                    score += immediate_extra_block * if survival_emergency { 26 } else { 12 };
+                    if survival_emergency {
+                        score += 420;
+                    }
+                }
+            }
+        }
+        PotionId::SwiftPotion
+        | PotionId::AttackPotion
+        | PotionId::SkillPotion
+        | PotionId::PowerPotion => {
+            if key_fight && combat.turn.energy > 0 {
+                score += 70;
+            }
+        }
+        PotionId::BloodPotion
+        | PotionId::RegenPotion
+        | PotionId::FruitJuice
+        | PotionId::FairyPotion => {
+            if (key_fight || survival_emergency)
+                && (danger || hp * 2 <= combat.entities.player.max_hp)
+            {
+                score += 90;
+            }
+        }
+        _ => {
+            if key_fight && (danger || combat.turn.turn_count <= 1) {
+                score += 60;
+            }
+        }
+    }
+
+    score
+}
+
 pub fn score_play_card_action(
+    combat: &CombatState,
+    card_index: usize,
+    target: Option<usize>,
+) -> i32 {
+    let Some(card) = combat.zones.hand.get(card_index) else {
+        return -1_000;
+    };
+    let def = crate::content::cards::get_card_definition(card.id);
+    let evaluated = crate::content::cards::evaluate_card_for_play(card, combat, target);
+    let incoming = visible_incoming_damage(combat);
+    let pressure = incoming + visible_end_turn_self_damage(combat);
+    let unblocked = (pressure - combat.entities.player.block).max(0);
+    let hp = combat.entities.player.current_hp.max(1);
+    let danger = unblocked >= hp / 3 || unblocked >= 12;
+    let mut score = 20 - evaluated.get_cost().max(0) as i32 * 12;
+
+    let damage = estimated_card_damage(combat, &evaluated, target);
+    let hp_damage = estimated_card_hp_damage(combat, &evaluated, target);
+    let block_damage = (damage - hp_damage).max(0);
+    let block = evaluated
+        .base_block_mut
+        .max(def.base_block + card.upgrades as i32 * def.upgrade_block);
+    let kills_all = estimated_action_kills_all(combat, &evaluated, target);
+    if damage > 0 {
+        score += hp_damage * if danger { 10 } else { 13 };
+        score += block_damage * if danger { 2 } else { 4 };
+        if kills_all {
+            score += 900;
+        } else if target
+            .and_then(|target_id| alive_monster_by_id(combat, target_id))
+            .is_some_and(|monster| damage >= monster.current_hp + monster.block)
+        {
+            score += 180;
+        }
+    }
+    if block > 0 {
+        let useful_block = block.min(unblocked.max(0));
+        score += useful_block * if danger { 18 } else { 6 };
+        score += (block - useful_block).max(0) * 2;
+    }
+    score += intangible_survival_card_score(combat, card.id, unblocked, hp);
+
+    let feel_no_pain = combat.get_power(
+        combat.entities.player.id,
+        crate::content::powers::PowerId::FeelNoPain,
+    );
+    if def.exhaust && feel_no_pain > 0 {
+        let exhaust_block = feel_no_pain;
+        let useful_block = exhaust_block.min(unblocked.max(0));
+        score += useful_block * if danger { 18 } else { 6 };
+        score += (exhaust_block - useful_block).max(0) * 2;
+    }
+
+    if card_gains_energy(card.id) {
+        let playable_block_cards = playable_block_card_count(combat) as i32;
+        let immediate_energy_gain = immediate_energy_gain_for_card(card.id, card.upgrades);
+        let net_energy_gain = immediate_energy_gain - evaluated.get_cost().max(0) as i32;
+        let hp_cost_is_tolerable = !matches!(card.id, CardId::Bloodletting | CardId::Offering)
+            || hp > unblocked + 6;
+        if net_energy_gain > 0
+            && playable_block_cards > 0
+            && hp_cost_is_tolerable
+            && (danger || unblocked >= hp)
+        {
+            score += 260 + playable_block_cards.min(3) * 55;
+            if unblocked >= hp {
+                score += 1_250;
+            }
+        } else if net_energy_gain > 0
+            && combat.turn.energy <= 1
+            && playable_block_cards + playable_attack_count(combat) > 1
+        {
+            score += 90;
+        }
+    }
+    score -= status_payoff_engine_exhaust_penalty(combat, card_index);
+
+    let long_fight = combat.meta.is_boss_fight
+        || combat.meta.is_elite_fight
+        || total_alive_monster_hp(combat) >= 60;
+    if card_applies_weak(card.id) && incoming > 0 {
+        score += 70 + incoming.min(30) * if danger { 7 } else { 4 };
+        if long_fight {
+            score += 45;
+        }
+    }
+    let target_block = target
+        .and_then(|target_id| alive_monster_by_id(combat, target_id))
+        .map(|monster| monster.block)
+        .unwrap_or(0);
+    let vulnerable_has_combat_value =
+        target.is_none() || hp_damage > 0 || target_block <= evaluated.base_damage_mut.max(0) / 2;
+    if card_applies_vulnerable(card.id)
+        && vulnerable_has_combat_value
+        && (long_fight || total_alive_monster_hp(combat) >= 35)
+    {
+        score += 65;
+        if combat.meta.is_boss_fight {
+            score += 45;
+        }
+    }
+
+    if unblocked >= hp && !kills_all {
+        let projected_unblocked = (unblocked - block).max(0);
+        if block > 0 && projected_unblocked < hp {
+            score += 650 + (unblocked - projected_unblocked) * 20;
+        } else if block > 0 {
+            score += 160 + (unblocked - projected_unblocked).max(0) * 10;
+        } else {
+            score -= 350;
+        }
+    }
+
+    let specific_bonus = match card.id {
+        CardId::Bash | CardId::Uppercut => {
+            if vulnerable_has_combat_value {
+                45
+            } else {
+                -10
+            }
+        }
+        CardId::Shockwave => 45,
+        CardId::Disarm => 70,
+        CardId::Inflame | CardId::DemonForm | CardId::FeelNoPain | CardId::DarkEmbrace => 55,
+        CardId::ShrugItOff | CardId::PommelStrike | CardId::BattleTrance => 35,
+        CardId::InfernalBlade => {
+            if combat.turn.energy > 0 {
+                115
+            } else {
+                25
+            }
+        }
+        CardId::Warcry => 65,
+        CardId::JackOfAllTrades => 75,
+        CardId::Armaments => {
+            if combat.zones.hand.len() >= 3 {
+                45
+            } else {
+                25
+            }
+        }
+        CardId::Offering | CardId::Adrenaline => 80,
+        CardId::Immolate | CardId::Feed | CardId::Reaper => 65,
+        CardId::Flex | CardId::Bloodletting | CardId::SeeingRed | CardId::SpotWeakness => 35,
+        CardId::Slimed if feel_no_pain > 0 => 45,
+        CardId::Defend if danger => 25,
+        CardId::Strike if !danger => 8,
+        _ => 0,
+    };
+
+    match def.card_type {
+        crate::content::cards::CardType::Power => {
+            score += if danger && unblocked >= hp { -20 } else { 8 };
+        }
+        crate::content::cards::CardType::Skill => {
+            score += 12;
+        }
+        crate::content::cards::CardType::Attack => {
+            score += if pressure == 0 { 20 } else { 8 };
+        }
+        crate::content::cards::CardType::Status | crate::content::cards::CardType::Curse => {
+            score -= 80;
+        }
+    }
+
+    score += specific_bonus;
+    if damage == 0 && block == 0 && specific_bonus <= 0 {
+        score -= 350;
+    }
+
+    score
+}
+
+pub fn score_play_card_action_v0_control(
     combat: &CombatState,
     card_index: usize,
     target: Option<usize>,
@@ -741,6 +1160,7 @@ pub fn score_play_card_action(
         score += useful_block * if danger { 18 } else { 6 };
         score += (block - useful_block).max(0) * 2;
     }
+    score += intangible_survival_card_score(combat, card.id, unblocked, hp);
 
     let specific_bonus = match card.id {
         CardId::Bash | CardId::Uppercut | CardId::Shockwave => 45,
@@ -778,6 +1198,36 @@ pub fn score_play_card_action(
     score
 }
 
+fn intangible_survival_card_score(
+    combat: &CombatState,
+    card_id: CardId,
+    unblocked: i32,
+    hp: i32,
+) -> i32 {
+    if !matches!(card_id, CardId::Apparition) || unblocked <= 0 {
+        return 0;
+    }
+    if combat.get_power(
+        combat.entities.player.id,
+        crate::content::powers::PowerId::IntangiblePlayer,
+    ) > 0
+    {
+        return 0;
+    }
+
+    let prevented = (unblocked - 1).max(0);
+    let mut score = 220 + prevented * 36;
+    if unblocked >= hp {
+        score += 1_400;
+    } else if unblocked * 2 >= hp {
+        score += 700;
+    }
+    if combat.meta.is_boss_fight || combat.meta.is_elite_fight {
+        score += 260;
+    }
+    score
+}
+
 pub fn estimated_card_damage(
     combat: &CombatState,
     card: &crate::runtime::combat::CombatCard,
@@ -800,6 +1250,53 @@ pub fn estimated_card_damage(
     if let Some(target_id) = target {
         if let Some(monster) = alive_monster_by_id(combat, target_id) {
             return damage.min(monster.current_hp + monster.block);
+        }
+    }
+    damage
+}
+
+pub fn estimated_card_hp_damage(
+    combat: &CombatState,
+    card: &crate::runtime::combat::CombatCard,
+    target: Option<usize>,
+) -> i32 {
+    let def = crate::content::cards::get_card_definition(card.id);
+    if def.is_multi_damage || matches!(def.target, crate::content::cards::CardTarget::AllEnemy) {
+        let alive = combat
+            .entities
+            .monsters
+            .iter()
+            .filter(|monster| !monster.is_dying && !monster.is_escaped && !monster.half_dead)
+            .collect::<Vec<_>>();
+        if !card.multi_damage.is_empty() {
+            return alive
+                .iter()
+                .enumerate()
+                .map(|(idx, monster)| {
+                    let damage = card.multi_damage.get(idx).copied().unwrap_or(0).max(0);
+                    (damage - monster.block.max(0))
+                        .max(0)
+                        .min(monster.current_hp.max(0))
+                })
+                .sum();
+        }
+        let damage = card.base_damage_mut.max(0);
+        return alive
+            .iter()
+            .map(|monster| {
+                (damage - monster.block.max(0))
+                    .max(0)
+                    .min(monster.current_hp.max(0))
+            })
+            .sum();
+    }
+
+    let damage = card.base_damage_mut.max(0);
+    if let Some(target_id) = target {
+        if let Some(monster) = alive_monster_by_id(combat, target_id) {
+            return (damage - monster.block.max(0))
+                .max(0)
+                .min(monster.current_hp.max(0));
         }
     }
     damage
@@ -857,6 +1354,82 @@ pub fn alive_monster_count(combat: &CombatState) -> usize {
         .count()
 }
 
+pub fn playable_block_card_count(combat: &CombatState) -> usize {
+    combat
+        .zones
+        .hand
+        .iter()
+        .filter(|card| crate::content::cards::can_play_card(card, combat).is_ok())
+        .filter(|card| {
+            let def = crate::content::cards::get_card_definition(card.id);
+            def.base_block + card.upgrades as i32 * def.upgrade_block > 0
+                || card_is_block_core(card.id)
+        })
+        .count()
+}
+
+pub fn playable_attack_count(combat: &CombatState) -> i32 {
+    combat
+        .zones
+        .hand
+        .iter()
+        .filter(|card| crate::content::cards::can_play_card(card, combat).is_ok())
+        .filter(|card| {
+            crate::content::cards::get_card_definition(card.id).card_type
+                == crate::content::cards::CardType::Attack
+        })
+        .count() as i32
+}
+
+pub fn immediate_energy_gain_for_card(card_id: CardId, upgrades: u8) -> i32 {
+    match card_id {
+        CardId::SeeingRed => 2,
+        CardId::Bloodletting => {
+            if upgrades > 0 {
+                3
+            } else {
+                3
+            }
+        }
+        CardId::Offering => 2,
+        CardId::Adrenaline => 1,
+        _ => 0,
+    }
+}
+
+pub fn status_payoff_engine_exhaust_penalty(combat: &CombatState, card_index: usize) -> i32 {
+    let Some(card) = combat.zones.hand.get(card_index) else {
+        return 0;
+    };
+    if card.id != CardId::SecondWind || visible_status_card_count(combat) == 0 {
+        return 0;
+    }
+    let payoff_engines = combat
+        .zones
+        .hand
+        .iter()
+        .enumerate()
+        .filter(|(index, other)| {
+            *index != card_index && matches!(other.id, CardId::FireBreathing | CardId::Evolve)
+        })
+        .count() as i32;
+    payoff_engines * 110
+}
+
+pub fn visible_status_card_count(combat: &CombatState) -> usize {
+    combat
+        .zones
+        .hand
+        .iter()
+        .chain(combat.zones.draw_pile.iter())
+        .chain(combat.zones.discard_pile.iter())
+        .filter(|card| {
+            crate::content::cards::get_card_definition(card.id).card_type
+                == crate::content::cards::CardType::Status
+        })
+        .count()
+}
+
 pub fn total_alive_monster_hp(combat: &CombatState) -> i32 {
     combat
         .entities
@@ -868,7 +1441,9 @@ pub fn total_alive_monster_hp(combat: &CombatState) -> i32 {
 }
 
 pub fn visible_unblocked_damage(combat: &CombatState) -> i32 {
-    (visible_incoming_damage(combat) - combat.entities.player.block).max(0)
+    (visible_incoming_damage(combat) + visible_end_turn_self_damage(combat)
+        - combat.entities.player.block)
+        .max(0)
 }
 
 pub fn visible_incoming_damage(combat: &CombatState) -> i32 {
@@ -879,6 +1454,26 @@ pub fn visible_incoming_damage(combat: &CombatState) -> i32 {
         .filter(|monster| !monster.is_dying && !monster.is_escaped && !monster.half_dead)
         .map(|monster| {
             crate::projection::combat::monster_preview_total_damage_in_combat(combat, monster)
+        })
+        .sum()
+}
+
+pub fn visible_end_turn_self_damage(combat: &CombatState) -> i32 {
+    combat
+        .zones
+        .hand
+        .iter()
+        .map(|card| match card.id {
+            CardId::Burn => {
+                if card.upgrades > 0 {
+                    4
+                } else {
+                    2
+                }
+            }
+            CardId::Decay => 2,
+            CardId::Regret => combat.zones.hand.len() as i32,
+            _ => 0,
         })
         .sum()
 }
@@ -914,6 +1509,15 @@ pub fn score_reward_action(
 }
 
 pub fn score_map_action(run_state: &RunState, action: &ClientInput) -> i32 {
+    let ClientInput::SelectMapNode(_) = action else {
+        return score_noncombat_fallback(action);
+    };
+    map_route_projection_for_action(run_state, action)
+        .map(|projection| projection.total_score)
+        .unwrap_or(0)
+}
+
+pub fn score_map_action_v0_control(run_state: &RunState, action: &ClientInput) -> i32 {
     let ClientInput::SelectMapNode(x) = action else {
         return score_noncombat_fallback(action);
     };
@@ -933,11 +1537,14 @@ pub fn score_map_action(run_state: &RunState, action: &ClientInput) -> i32 {
         .get(target_y as usize)
         .and_then(|row| row.get(*x))
         .and_then(|node| node.class);
-    let hp_ratio = run_state.current_hp * 100 / run_state.max_hp.max(1);
     match room_type {
-        Some(RoomType::MonsterRoomElite) if hp_ratio >= 70 => 70,
+        Some(RoomType::MonsterRoomElite)
+            if run_state.current_hp * 100 / run_state.max_hp.max(1) >= 70 =>
+        {
+            70
+        }
         Some(RoomType::MonsterRoomElite) => -20,
-        Some(RoomType::RestRoom) if hp_ratio < 70 => 90,
+        Some(RoomType::RestRoom) if run_state.current_hp * 100 / run_state.max_hp.max(1) < 70 => 90,
         Some(RoomType::RestRoom) => 45,
         Some(RoomType::TreasureRoom) => 80,
         Some(RoomType::ShopRoom) if run_state.gold >= 150 => 75,
@@ -950,11 +1557,421 @@ pub fn score_map_action(run_state: &RunState, action: &ClientInput) -> i32 {
     }
 }
 
-pub fn score_event_action(action: &ClientInput) -> i32 {
+#[derive(Clone, Copy, Debug, Default)]
+struct SmokeRouteStats {
+    first_shop_depth: Option<usize>,
+    first_rest_depth: Option<usize>,
+    first_elite_depth: Option<usize>,
+    early_monster_count: usize,
+    early_event_count: usize,
+}
+
+pub fn map_route_projection_for_action(
+    run_state: &RunState,
+    action: &ClientInput,
+) -> Option<MapRouteCandidateProjectionV0> {
+    let ClientInput::SelectMapNode(x) = action else {
+        return None;
+    };
+    let target_y = if run_state.map.current_y == -1 {
+        0
+    } else if run_state.map.current_y == 14 {
+        15
+    } else {
+        run_state.map.current_y + 1
+    };
+    if target_y == 15 {
+        return Some(MapRouteCandidateProjectionV0 {
+            score_kind: "full_map_route_v1".to_string(),
+            target_x: *x as i32,
+            target_y,
+            total_score: 200,
+            base_score: 200,
+            adjustment_score: 0,
+            first_shop_depth: None,
+            first_rest_depth: None,
+            first_elite_depth: None,
+            early_monster_count: 0,
+            early_event_count: 0,
+            early_safe_room_count: 0,
+            best_path: Vec::new(),
+        });
+    }
+    score_full_map_route_projection(run_state, *x as i32, target_y)
+}
+
+fn score_full_map_route_projection(
+    run_state: &RunState,
+    x: i32,
+    y: i32,
+) -> Option<MapRouteCandidateProjectionV0> {
+    let mut best = None;
+    visit_smoke_route(
+        run_state,
+        x,
+        y,
+        0,
+        0,
+        SmokeRouteStats::default(),
+        Vec::new(),
+        &mut best,
+    );
+    best.map(|mut projection| {
+        projection.target_x = x;
+        projection.target_y = y;
+        projection
+    })
+}
+
+fn visit_smoke_route(
+    run_state: &RunState,
+    x: i32,
+    y: i32,
+    depth: usize,
+    base_score_so_far: i32,
+    mut stats: SmokeRouteStats,
+    mut path: Vec<MapRouteRoomProjectionV0>,
+    best: &mut Option<MapRouteCandidateProjectionV0>,
+) {
+    let room_type = run_state
+        .map
+        .graph
+        .get(y as usize)
+        .and_then(|row| row.get(x as usize))
+        .and_then(|node| node.class);
+    let Some(room_type) = room_type else {
+        return;
+    };
+    record_smoke_route_room(&mut stats, room_type, depth);
+    let room_score = score_map_room(run_state, room_type);
+    let base_score_so_far = base_score_so_far + room_score;
+    path.push(MapRouteRoomProjectionV0 {
+        x,
+        y,
+        depth,
+        room_type: format!("{room_type:?}"),
+        room_score,
+    });
+
+    let Some(node) = run_state
+        .map
+        .graph
+        .get(y as usize)
+        .and_then(|row| row.get(x as usize))
+    else {
+        record_smoke_route_projection(run_state, x, y, stats, base_score_so_far, path, best);
+        return;
+    };
+
+    if node.edges.is_empty() {
+        record_smoke_route_projection(run_state, x, y, stats, base_score_so_far, path, best);
+        return;
+    }
+
+    for edge in &node.edges {
+        visit_smoke_route(
+            run_state,
+            edge.dst_x,
+            edge.dst_y,
+            depth + 1,
+            base_score_so_far,
+            stats,
+            path.clone(),
+            best,
+        );
+    }
+}
+
+fn record_smoke_route_projection(
+    run_state: &RunState,
+    target_x: i32,
+    target_y: i32,
+    stats: SmokeRouteStats,
+    base_score: i32,
+    path: Vec<MapRouteRoomProjectionV0>,
+    best: &mut Option<MapRouteCandidateProjectionV0>,
+) {
+    let adjustment_score = smoke_route_adjustment(run_state, stats);
+    let total_score = base_score + adjustment_score;
+    if best
+        .as_ref()
+        .is_some_and(|current| current.total_score >= total_score)
+    {
+        return;
+    }
+    let early_safe_room_count = smoke_route_early_safe_room_count(stats);
+    *best = Some(MapRouteCandidateProjectionV0 {
+        score_kind: "full_map_route_v1".to_string(),
+        target_x,
+        target_y,
+        total_score,
+        base_score,
+        adjustment_score,
+        first_shop_depth: stats.first_shop_depth,
+        first_rest_depth: stats.first_rest_depth,
+        first_elite_depth: stats.first_elite_depth,
+        early_monster_count: stats.early_monster_count,
+        early_event_count: stats.early_event_count,
+        early_safe_room_count,
+        best_path: path,
+    });
+}
+
+fn record_smoke_route_room(stats: &mut SmokeRouteStats, room_type: RoomType, depth: usize) {
+    match room_type {
+        RoomType::ShopRoom => {
+            stats.first_shop_depth.get_or_insert(depth);
+        }
+        RoomType::RestRoom => {
+            stats.first_rest_depth.get_or_insert(depth);
+        }
+        RoomType::MonsterRoomElite => {
+            stats.first_elite_depth.get_or_insert(depth);
+            if depth <= 3 {
+                stats.early_monster_count += 2;
+            }
+        }
+        RoomType::MonsterRoom => {
+            if depth <= 3 {
+                stats.early_monster_count += 1;
+            }
+        }
+        RoomType::EventRoom => {
+            if depth <= 3 {
+                stats.early_event_count += 1;
+            }
+        }
+        _ => {}
+    }
+}
+
+fn smoke_route_adjustment(run_state: &RunState, stats: SmokeRouteStats) -> i32 {
+    let need = crate::bot::shared::analyze_run_needs(run_state);
+    let mut adjustment = 0;
+    if let Some(shop_depth) = stats.first_shop_depth {
+        if shop_depth <= 5 && run_state.gold >= 150 {
+            adjustment += 120;
+        } else if shop_depth <= 7 && run_state.gold >= 120 {
+            adjustment += 50;
+        }
+    }
+
+    if let Some(elite_depth) = stats.first_elite_depth {
+        let shop_before_elite = stats
+            .first_shop_depth
+            .is_some_and(|shop_depth| shop_depth < elite_depth);
+        let rest_before_elite = stats
+            .first_rest_depth
+            .is_some_and(|rest_depth| rest_depth < elite_depth);
+        let readiness_gap = need.damage_gap + need.block_gap + need.control_gap;
+        if elite_depth <= 5 && readiness_gap > 0 && !shop_before_elite && !rest_before_elite {
+            adjustment -= 320 + readiness_gap * 3 + need.survival_pressure / 2;
+        }
+    }
+
+    if run_state.act_num >= 2 {
+        let early_safe_rooms = stats.early_event_count
+            + stats
+                .first_rest_depth
+                .filter(|depth| *depth <= 4)
+                .map(|_| 1)
+                .unwrap_or(0)
+            + stats
+                .first_shop_depth
+                .filter(|depth| *depth <= 4)
+                .map(|_| 1)
+                .unwrap_or(0);
+        adjustment -= stats.early_monster_count as i32 * 80;
+        adjustment += early_safe_rooms as i32 * 45;
+        if run_state.gold >= 250 && stats.first_shop_depth.is_none() {
+            adjustment -= 90;
+        }
+    }
+
+    adjustment
+}
+
+fn smoke_route_early_safe_room_count(stats: SmokeRouteStats) -> usize {
+    stats.early_event_count
+        + stats
+            .first_rest_depth
+            .filter(|depth| *depth <= 4)
+            .map(|_| 1)
+            .unwrap_or(0)
+        + stats
+            .first_shop_depth
+            .filter(|depth| *depth <= 4)
+            .map(|_| 1)
+            .unwrap_or(0)
+}
+
+fn score_map_room(run_state: &RunState, room_type: RoomType) -> i32 {
+    let hp_ratio = run_state.current_hp * 100 / run_state.max_hp.max(1);
+    match room_type {
+        RoomType::MonsterRoomElite if hp_ratio <= 20 => -260,
+        RoomType::MonsterRoomElite if hp_ratio >= 70 => 70,
+        RoomType::MonsterRoomElite => -20,
+        RoomType::RestRoom if hp_ratio < 70 => 90,
+        RoomType::RestRoom => 45,
+        RoomType::TreasureRoom => 80,
+        RoomType::ShopRoom if run_state.gold >= 150 => 75,
+        RoomType::ShopRoom => 25,
+        RoomType::EventRoom => 55,
+        RoomType::MonsterRoom if hp_ratio <= 15 => -120,
+        RoomType::MonsterRoom if hp_ratio <= 25 => 10,
+        RoomType::MonsterRoom => 50,
+        RoomType::MonsterRoomBoss => 200,
+        RoomType::TrueVictoryRoom => 300,
+    }
+}
+
+pub fn score_event_action(run_state: &RunState, action: &ClientInput) -> i32 {
+    match action {
+        ClientInput::EventChoice(index) => {
+            crate::engine::event_handler::get_event_options(run_state)
+                .get(*index)
+                .map(|option| score_event_option(run_state, option) - *index as i32)
+                .unwrap_or(-1_000)
+        }
+        ClientInput::Proceed => 5,
+        _ => score_noncombat_fallback(action),
+    }
+}
+
+pub fn score_event_action_v0_control(action: &ClientInput) -> i32 {
     match action {
         ClientInput::EventChoice(index) => 30 - *index as i32,
         ClientInput::Proceed => 5,
         _ => score_noncombat_fallback(action),
+    }
+}
+
+fn score_event_option(run_state: &RunState, option: &crate::state::events::EventOption) -> i32 {
+    use crate::state::events::{
+        EventActionKind, EventEffect, EventOptionTransition, EventRelicKind,
+    };
+
+    if option.ui.disabled {
+        return -1_000;
+    }
+
+    let mut score = match option.semantics.action {
+        EventActionKind::Leave | EventActionKind::Continue => 8,
+        EventActionKind::Decline => 12,
+        EventActionKind::Fight => {
+            if run_state.act_num >= 3 {
+                -220
+            } else if run_state.current_hp * 100 / run_state.max_hp.max(1) >= 70 {
+                35
+            } else {
+                -120
+            }
+        }
+        EventActionKind::Accept
+        | EventActionKind::Gain
+        | EventActionKind::Trade
+        | EventActionKind::DeckOperation
+        | EventActionKind::Special => 25,
+        EventActionKind::Unknown => 30,
+    };
+
+    match option.semantics.transition {
+        EventOptionTransition::StartCombat => {
+            score -= if run_state.act_num >= 3 { 220 } else { 60 };
+        }
+        EventOptionTransition::OpenSelection(_) => score += 45,
+        EventOptionTransition::OpenReward => score += 45,
+        EventOptionTransition::Complete => score += 5,
+        EventOptionTransition::AdvanceScreen | EventOptionTransition::None => {}
+    }
+
+    for effect in &option.semantics.effects {
+        match effect {
+            EventEffect::GainGold(amount) => {
+                score += (*amount / 8).min(80);
+            }
+            EventEffect::LoseGold(amount) => {
+                score -= (*amount / 4).min(120);
+            }
+            EventEffect::LoseHp(amount) => {
+                let hp_after = run_state.current_hp - *amount;
+                score -= amount * if hp_after <= 0 { 100 } else { 4 };
+            }
+            EventEffect::Heal(amount) => {
+                score += amount * 5;
+            }
+            EventEffect::GainMaxHp(amount) => score += amount * 8,
+            EventEffect::LoseMaxHp(amount) => score -= amount * 10,
+            EventEffect::ObtainRelic { count, kind } => {
+                let count = (*count).min(3) as i32;
+                score += count * 110;
+                if matches!(
+                    kind,
+                    EventRelicKind::Specific(crate::content::relics::RelicId::MarkOfTheBloom)
+                ) {
+                    score -= 180;
+                }
+            }
+            EventEffect::ObtainPotion { count } => score += (*count as i32).min(3) * 35,
+            EventEffect::ObtainCard { count, kind }
+            | EventEffect::ObtainColorlessCard { count, kind } => {
+                score += event_obtained_card_value(*count, *kind, run_state);
+            }
+            EventEffect::ObtainCurse { count, .. } => score -= (*count as i32) * 120,
+            EventEffect::RemoveCard { count, .. } => score += (*count as i32).min(3) * 85,
+            EventEffect::UpgradeCard { count } => {
+                let effective = if *count == usize::MAX {
+                    run_state
+                        .master_deck
+                        .iter()
+                        .filter(|card| card.upgrades == 0)
+                        .count()
+                } else {
+                    *count
+                };
+                score += (effective as i32).min(20) * 18;
+            }
+            EventEffect::TransformCard { count } => score += (*count as i32).min(3) * 35,
+            EventEffect::DuplicateCard { count } => score += (*count as i32).min(3) * 35,
+            EventEffect::LoseRelic { .. } | EventEffect::LoseStarterRelic { .. } => score -= 120,
+            EventEffect::StartCombat => {
+                score -= if run_state.act_num >= 3 { 220 } else { 60 };
+            }
+        }
+    }
+
+    score
+}
+
+fn event_obtained_card_value(
+    count: usize,
+    kind: crate::state::events::EventCardKind,
+    run_state: &RunState,
+) -> i32 {
+    use crate::state::events::EventCardKind;
+
+    let count = count as i32;
+    match kind {
+        EventCardKind::Specific(card_id) => count * event_specific_card_value(card_id, run_state),
+        EventCardKind::RandomColorless | EventCardKind::RandomClassCard => count.min(3) * 20,
+        EventCardKind::Unknown => count.min(3) * 20,
+    }
+}
+
+fn event_specific_card_value(card_id: CardId, run_state: &RunState) -> i32 {
+    match card_id {
+        // Apparition is an event-only survival card whose value is not represented by
+        // base block/damage fields. Without this, Ghosts is valued as five generic
+        // filler cards while paying the full max-HP cost.
+        CardId::Apparition => {
+            let low_hp_bonus = if run_state.current_hp * 100 / run_state.max_hp.max(1) <= 45 {
+                25
+            } else {
+                0
+            };
+            95 + low_hp_bonus
+        }
+        _ => rule_card_offer_score(card_id, run_state).max(20),
     }
 }
 
@@ -1054,7 +2071,29 @@ pub fn score_run_selection_action(
             for selected in &selection.selected {
                 let SelectionTargetRef::CardUuid(uuid) = selected;
                 if let Some(card) = run_state.master_deck.iter().find(|card| card.uuid == *uuid) {
-                    score += rule_remove_score(card.id, run_state).max(0) / 2;
+                    score += match request.reason {
+                        crate::state::selection::SelectionReason::Purge => {
+                            70 + rule_remove_score(card.id, run_state)
+                        }
+                        crate::state::selection::SelectionReason::Transform
+                        | crate::state::selection::SelectionReason::TransformUpgraded => {
+                            45 + rule_remove_score(card.id, run_state)
+                        }
+                        crate::state::selection::SelectionReason::Upgrade => {
+                            let already_upgraded_penalty = if card.upgrades > 0
+                                && card.id != CardId::SearingBlow
+                            {
+                                90
+                            } else {
+                                0
+                            };
+                            55 + rule_upgrade_score(card.id) - already_upgraded_penalty
+                        }
+                        crate::state::selection::SelectionReason::Duplicate => {
+                            55 + rule_card_offer_score(card.id, run_state)
+                        }
+                        _ => rule_remove_score(card.id, run_state).max(0) / 2,
+                    };
                 }
             }
             score

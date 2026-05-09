@@ -67,6 +67,7 @@ pub fn tick_run(
                 if !keep_running {
                     // Absorb combat player state back to RunState (HP, gold, relic counters)
                     run_state.absorb_combat_player(cs.entities.player.clone());
+                    run_state.potions = cs.entities.potions.clone();
                     run_state.room_mugged |= cs.runtime.combat_mugged;
                     run_state.room_smoked |= cs.runtime.combat_smoked;
 

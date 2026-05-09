@@ -104,7 +104,12 @@ impl FullRunEnv {
             return Err("no legal actions available for policy step".to_string());
         }
         let action_index = match policy {
-            RunPolicyKind::RuleBaselineV0 => choose_rule_baseline_action(&self.ctx, &legal_actions),
+            RunPolicyKind::RuleBaselineV0 | RunPolicyKind::RuleBaselineV1Candidate => {
+                choose_rule_baseline_action(&self.ctx, &legal_actions)
+            }
+            RunPolicyKind::RuleBaselineV0Control => {
+                choose_rule_baseline_v0_control_action(&self.ctx, &legal_actions)
+            }
             RunPolicyKind::PlanQueryV0 => choose_plan_query_action(&self.ctx, &legal_actions)
                 .unwrap_or_else(|| choose_rule_baseline_action(&self.ctx, &legal_actions)),
             RunPolicyKind::RandomMasked => {
@@ -138,7 +143,12 @@ impl FullRunEnv {
             return Err("no legal actions available for policy preview".to_string());
         }
         let action_index = match policy {
-            RunPolicyKind::RuleBaselineV0 => choose_rule_baseline_action(&self.ctx, &legal_actions),
+            RunPolicyKind::RuleBaselineV0 | RunPolicyKind::RuleBaselineV1Candidate => {
+                choose_rule_baseline_action(&self.ctx, &legal_actions)
+            }
+            RunPolicyKind::RuleBaselineV0Control => {
+                choose_rule_baseline_v0_control_action(&self.ctx, &legal_actions)
+            }
             RunPolicyKind::PlanQueryV0 => choose_plan_query_action(&self.ctx, &legal_actions)
                 .unwrap_or_else(|| choose_rule_baseline_action(&self.ctx, &legal_actions)),
             RunPolicyKind::RandomMasked => {
@@ -217,7 +227,7 @@ impl FullRunEnv {
         run.gold.hash(&mut hasher);
         run.shop_purge_count.hash(&mut hasher);
         run.relics.len().hash(&mut hasher);
-        run.potions.len().hash(&mut hasher);
+        hash_potion_slots(&run.potions, &mut hasher);
         run.master_deck.len().hash(&mut hasher);
         run.reward_state.is_some().hash(&mut hasher);
         run.shop_state.is_some().hash(&mut hasher);
@@ -276,6 +286,7 @@ impl FullRunEnv {
             player.stance.as_str().hash(&mut hasher);
             player.orbs.len().hash(&mut hasher);
             player.relics.len().hash(&mut hasher);
+            hash_potion_slots(&combat.entities.potions, &mut hasher);
 
             for monster in &combat.entities.monsters {
                 monster.id.hash(&mut hasher);
@@ -578,6 +589,26 @@ fn hash_card_zone_hint(cards: &[crate::runtime::combat::CombatCard], hasher: &mu
     }
 }
 
+fn hash_potion_slots(
+    potions: &[Option<crate::content::potions::Potion>],
+    hasher: &mut DefaultHasher,
+) {
+    potions.len().hash(hasher);
+    for slot in potions {
+        match slot {
+            Some(potion) => {
+                1u8.hash(hasher);
+                format!("{:?}", potion.id).hash(hasher);
+                potion.uuid.hash(hasher);
+                potion.can_use.hash(hasher);
+                potion.can_discard.hash(hasher);
+                potion.requires_target.hash(hasher);
+            }
+            None => 0u8.hash(hasher),
+        }
+    }
+}
+
 fn no_progress_signature(
     observation: &RunObservationV0,
     action_mask: &[RunActionCandidate],
@@ -873,6 +904,7 @@ mod tests {
                 pending_rebirth_monster_count: 0,
                 total_monster_hp: 12,
                 visible_incoming_damage: 6,
+                monsters: Vec::new(),
                 pending_action_count: 0,
                 queued_card_count: 0,
                 limbo_count: 0,
@@ -892,6 +924,10 @@ mod tests {
             card: None,
             plan_delta: Some(empty_candidate_plan_delta()),
             reward_structure: Some(empty_reward_action_structure()),
+            map_route: None,
+            event_option: None,
+            deck_selection: None,
+            rule_policy_debug_score: None,
             dominated: false,
             dominated_by_index: None,
         }];

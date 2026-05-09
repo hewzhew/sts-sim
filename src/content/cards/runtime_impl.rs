@@ -256,6 +256,8 @@ pub fn evaluate_card(card: &mut CombatCard, state: &CombatState, target: Option<
         card.cost_modifier = -(state.turn.counters.times_damaged_this_combat as i8);
     } else if card.id == CardId::BodySlam {
         damage = state.entities.player.block as f32;
+    } else if card.id == CardId::MindBlast {
+        damage = state.zones.draw_pile.len() as f32;
     } else if card.id == CardId::SearingBlow {
         let u = card.upgrades as f32;
         damage = 12.0 + u * (u + 7.0) / 2.0;
@@ -412,6 +414,7 @@ pub fn is_ethereal(card: &CombatCard) -> bool {
 pub fn upgraded_base_cost_override(card: &CombatCard) -> Option<i8> {
     match card.id {
         CardId::Madness if card.upgrades > 0 => Some(0),
+        CardId::MindBlast if card.upgrades > 0 => Some(1),
         _ => None,
     }
 }

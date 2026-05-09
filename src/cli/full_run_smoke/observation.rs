@@ -8,6 +8,9 @@ pub fn build_observation(ctx: &EpisodeContext) -> RunObservationV0 {
     let active_max_hp = combat
         .map(|combat| combat.entities.player.max_hp)
         .unwrap_or(ctx.run_state.max_hp);
+    let active_potions = combat
+        .map(|combat| combat.entities.potions.as_slice())
+        .unwrap_or(ctx.run_state.potions.as_slice());
 
     RunObservationV0 {
         schema_version: FULL_RUN_OBSERVATION_SCHEMA_VERSION.to_string(),
@@ -30,18 +33,13 @@ pub fn build_observation(ctx: &EpisodeContext) -> RunObservationV0 {
         gold: ctx.run_state.gold,
         deck_size: ctx.run_state.master_deck.len(),
         relic_count: ctx.run_state.relics.len(),
-        potion_slots: ctx.run_state.potions.len(),
-        filled_potion_slots: ctx
-            .run_state
-            .potions
-            .iter()
-            .filter(|slot| slot.is_some())
-            .count(),
+        potion_slots: active_potions.len(),
+        filled_potion_slots: active_potions.iter().filter(|slot| slot.is_some()).count(),
         deck: build_deck_observation(&ctx.run_state),
         plan_profile: build_deck_plan_profile(&ctx.run_state),
         deck_cards: build_deck_card_observations(&ctx.run_state),
         relics: build_relic_observations(&ctx.run_state),
-        potions: build_potion_observations(&ctx.run_state),
+        potions: build_potion_observations(active_potions),
         map: build_map_observation_if_relevant(&ctx.engine_state, &ctx.run_state),
         next_nodes: build_next_node_observations(&ctx.run_state),
         act_boss: ctx
@@ -279,9 +277,10 @@ pub fn build_relic_observations(run_state: &RunState) -> Vec<RunRelicObservation
         .collect()
 }
 
-pub fn build_potion_observations(run_state: &RunState) -> Vec<RunPotionSlotObservationV0> {
-    run_state
-        .potions
+pub fn build_potion_observations(
+    potions: &[Option<crate::content::potions::Potion>],
+) -> Vec<RunPotionSlotObservationV0> {
+    potions
         .iter()
         .enumerate()
         .map(|(slot_index, slot)| match slot {
@@ -508,12 +507,45 @@ pub fn build_combat_observation(
             .map(|monster| monster.current_hp.max(0))
             .sum(),
         visible_incoming_damage,
+        monsters: build_combat_monster_observations(combat),
         pending_action_count: combat.action_queue_len(),
         queued_card_count: combat.zones.queued_cards.len(),
         limbo_count: combat.zones.limbo.len(),
         pending_choice_kind: run_pending_choice_kind(engine_state),
         pending_choice: build_run_pending_choice_observation(engine_state, combat),
     }
+}
+
+fn build_combat_monster_observations(combat: &CombatState) -> Vec<RunCombatMonsterObservationV0> {
+    combat
+        .entities
+        .monsters
+        .iter()
+        .map(|monster| {
+            let visible_incoming_damage =
+                crate::projection::combat::monster_preview_total_damage_in_combat(combat, monster);
+            let monster_id = crate::content::monsters::EnemyId::from_id(monster.monster_type)
+                .map(|id| format!("{id:?}"))
+                .unwrap_or_else(|| format!("monster_type:{}", monster.monster_type));
+            RunCombatMonsterObservationV0 {
+                slot: monster.slot as usize,
+                entity_id: monster.id,
+                monster_id,
+                hp: monster.current_hp,
+                max_hp: monster.max_hp,
+                block: monster.block,
+                alive: !monster.is_dying
+                    && !monster.is_escaped
+                    && !monster.half_dead
+                    && monster.current_hp > 0,
+                dying: monster.is_dying,
+                escaped: monster.is_escaped,
+                half_dead: monster.half_dead,
+                planned_move_id: monster.planned_move_id(),
+                visible_incoming_damage,
+            }
+        })
+        .collect()
 }
 
 fn run_pending_choice_kind(engine_state: &EngineState) -> Option<String> {

@@ -1,4 +1,5 @@
 use super::*;
+use serde_json::json;
 
 pub fn probe_combat_plan_from_trace(
     config: &FullRunTracePlanProbeConfig,
@@ -618,6 +619,1004 @@ pub fn run_recursive_rollout_validation_from_traces(
     Ok(report)
 }
 
+pub fn run_branch_from_trace(
+    config: &FullRunTraceBranchRunConfig,
+) -> Result<serde_json::Value, String> {
+    let (trace, seed, ascension, final_act, player_class, target_trace_step, mut ctx) =
+        replay_trace_to_frontier(
+            &config.trace_file,
+            config.step_index,
+            config.ascension,
+            config.final_act,
+            config.player_class.clone(),
+            config.max_steps,
+        )?;
+    let max_steps = config.max_steps.unwrap_or_else(|| {
+        trace
+            .get("config")
+            .and_then(|value| value.get("max_steps"))
+            .and_then(serde_json::Value::as_u64)
+            .map(|value| value as usize)
+            .unwrap_or_else(|| config.step_index.saturating_add(512).max(1500))
+    });
+    let legal = legal_actions(&ctx.engine_state, &ctx.run_state, &ctx.combat_state);
+    if legal.is_empty() {
+        return Err(format!(
+            "trace step {} replayed to {} with no legal actions",
+            config.step_index,
+            engine_state_label(&ctx.engine_state)
+        ));
+    }
+    let candidates = build_action_candidates(&legal, Some(&ctx));
+    let forced_index = if let Some(index) = config.target_action_index {
+        if index >= legal.len() {
+            return Err(format!(
+                "target action index {} out of range for {} legal actions",
+                index,
+                legal.len()
+            ));
+        }
+        index
+    } else if let Some(key) = config.target_action_key.as_ref() {
+        candidates
+            .iter()
+            .position(|candidate| candidate.action_key == *key)
+            .ok_or_else(|| {
+                format!(
+                    "target action key '{}' not legal at step {}; legal keys: {:?}",
+                    key,
+                    config.step_index,
+                    candidates
+                        .iter()
+                        .map(|candidate| candidate.action_key.clone())
+                        .collect::<Vec<_>>()
+                )
+            })?
+    } else {
+        return Err(
+            "run-branch-from-trace requires --target-action-key or --target-action-index"
+                .to_string(),
+        );
+    };
+    let forced_input = legal
+        .get(forced_index)
+        .cloned()
+        .ok_or_else(|| format!("missing legal action at forced index {forced_index}"))?;
+    let forced_key = candidates
+        .get(forced_index)
+        .map(|candidate| candidate.action_key.clone())
+        .unwrap_or_else(|| action_key_for_input(&forced_input, ctx.combat_state.as_ref()));
+    let source_chosen = target_trace_step
+        .get("chosen_action_key")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or("")
+        .to_string();
+
+    let mut branch_steps = Vec::new();
+    let mut branch_action_keys = Vec::new();
+    let mut terminal_reason = "step_cap".to_string();
+    let mut crash = None::<String>;
+
+    branch_action_keys.push(forced_key.clone());
+    if config.include_trace {
+        branch_steps.push(json!({
+            "branch_step": 0,
+            "source_step_index": config.step_index,
+            "floor": ctx.run_state.floor_num,
+            "act": ctx.run_state.act_num,
+            "engine_state": engine_state_label(&ctx.engine_state),
+            "decision_type": decision_type(&ctx.engine_state),
+            "chosen_action_index": forced_index,
+            "chosen_action_key": forced_key,
+            "forced": true,
+            "hp": ctx.run_state.current_hp,
+            "gold": ctx.run_state.gold,
+        }));
+    }
+    if let Err(err) = apply_rollout_action(&mut ctx, forced_input, max_steps) {
+        crash = Some(err);
+        terminal_reason = "engine_error".to_string();
+    }
+
+    let mut branch_decisions = 1usize;
+    while crash.is_none() && branch_decisions < max_steps {
+        if let Err(err) = prepare_decision_point(&mut ctx, max_steps) {
+            crash = Some(err);
+            terminal_reason = "engine_error".to_string();
+            break;
+        }
+        if matches!(ctx.engine_state, EngineState::GameOver(_)) {
+            terminal_reason = "game_over".to_string();
+            break;
+        }
+        let legal = legal_actions(&ctx.engine_state, &ctx.run_state, &ctx.combat_state);
+        if legal.is_empty() {
+            crash = Some(format!(
+                "no legal actions at {} floor {}",
+                engine_state_label(&ctx.engine_state),
+                ctx.run_state.floor_num
+            ));
+            terminal_reason = "no_legal_actions".to_string();
+            break;
+        }
+        let chosen_index = match config.continuation_policy {
+            RunPolicyKind::RuleBaselineV0 | RunPolicyKind::RuleBaselineV1Candidate => {
+                choose_rule_baseline_action(&ctx, &legal)
+            }
+            RunPolicyKind::RuleBaselineV0Control => {
+                choose_rule_baseline_v0_control_action(&ctx, &legal)
+            }
+            RunPolicyKind::PlanQueryV0 => choose_plan_query_action(&ctx, &legal)
+                .unwrap_or_else(|| choose_rule_baseline_action(&ctx, &legal)),
+            RunPolicyKind::RandomMasked => choose_rule_baseline_action(&ctx, &legal),
+        };
+        let Some(input) = legal.get(chosen_index).cloned() else {
+            crash = Some(format!(
+                "continuation action index {chosen_index} out of range"
+            ));
+            terminal_reason = "engine_error".to_string();
+            break;
+        };
+        let action_key = action_key_for_input(&input, ctx.combat_state.as_ref());
+        branch_action_keys.push(action_key.clone());
+        if config.include_trace {
+            branch_steps.push(json!({
+                "branch_step": branch_decisions,
+                "source_step_index": config.step_index + branch_decisions,
+                "floor": ctx.run_state.floor_num,
+                "act": ctx.run_state.act_num,
+                "engine_state": engine_state_label(&ctx.engine_state),
+                "decision_type": decision_type(&ctx.engine_state),
+                "chosen_action_index": chosen_index,
+                "chosen_action_key": action_key,
+                "forced": false,
+                "hp": ctx.run_state.current_hp,
+                "gold": ctx.run_state.gold,
+            }));
+        }
+        if let Err(err) = apply_rollout_action(&mut ctx, input, max_steps) {
+            crash = Some(err);
+            terminal_reason = "engine_error".to_string();
+            break;
+        }
+        branch_decisions += 1;
+    }
+
+    if crash.is_none() {
+        let _ = prepare_decision_point(&mut ctx, max_steps);
+        if matches!(ctx.engine_state, EngineState::GameOver(_)) {
+            terminal_reason = "game_over".to_string();
+        }
+    }
+    let result = match &ctx.engine_state {
+        EngineState::GameOver(RunResult::Victory) => "victory",
+        EngineState::GameOver(RunResult::Defeat) => "defeat",
+        _ if crash.is_some() => "crash",
+        _ => "step_cap",
+    };
+
+    Ok(json!({
+        "schema_version": "full_run_branch_from_trace_v0",
+        "source_trace": trace_probe_source(
+            &config.trace_file,
+            config.step_index,
+            seed,
+            ascension,
+            final_act,
+            &player_class,
+            &trace,
+            &target_trace_step,
+        ),
+        "source_chosen_action_key": source_chosen,
+        "forced_action_index": forced_index,
+        "forced_action_key": forced_key,
+        "continuation_policy": config.continuation_policy.as_str(),
+        "legal_actions": candidates,
+        "result": result,
+        "terminal_reason": terminal_reason,
+        "crash": crash,
+        "floor": ctx.run_state.floor_num,
+        "act": ctx.run_state.act_num,
+        "hp": ctx.run_state.current_hp,
+        "max_hp": ctx.run_state.max_hp,
+        "gold": ctx.run_state.gold,
+        "deck_size": ctx.run_state.master_deck.len(),
+        "relic_count": ctx.run_state.relics.len(),
+        "combat_win_count": ctx.combat_win_count,
+        "branch_decisions": branch_decisions,
+        "branch_action_keys": branch_action_keys,
+        "branch_steps": if config.include_trace { json!(branch_steps) } else { serde_json::Value::Null },
+    }))
+}
+
+#[derive(Clone, Debug)]
+struct CombatPlanSearchNode {
+    ctx: EpisodeContext,
+    action_keys: Vec<String>,
+    depth: usize,
+    terminal_kind: Option<String>,
+    engine_error: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, serde::Serialize)]
+struct CombatPlanSearchScore {
+    terminal_bucket: i32,
+    alive: i32,
+    combat_win_delta: i32,
+    primary_monster_hp_reduction: i32,
+    monster_hp_reduction: i32,
+    incoming_safety: i32,
+    hp: i32,
+    block: i32,
+    depth_neg: i32,
+}
+
+pub fn search_combat_plan_from_trace(
+    config: &FullRunTraceCombatPlanSearchConfig,
+) -> Result<serde_json::Value, String> {
+    let (trace, seed, ascension, final_act, player_class, target_trace_step, mut start_ctx) =
+        replay_trace_to_frontier(
+            &config.trace_file,
+            config.step_index,
+            config.ascension,
+            config.final_act,
+            config.player_class.clone(),
+            config.max_steps,
+        )?;
+    let max_steps = config.max_steps.unwrap_or_else(|| {
+        trace
+            .get("config")
+            .and_then(|value| value.get("max_steps"))
+            .and_then(serde_json::Value::as_u64)
+            .map(|value| value as usize)
+            .unwrap_or_else(|| config.step_index.saturating_add(512).max(1500))
+    });
+    prepare_decision_point(&mut start_ctx, max_steps)?;
+    if !matches!(
+        start_ctx.engine_state,
+        EngineState::CombatPlayerTurn | EngineState::PendingChoice(_)
+    ) || start_ctx.combat_state.is_none()
+    {
+        return Err(format!(
+            "trace step {} replayed to non-combat decision {}",
+            config.step_index,
+            engine_state_label(&start_ctx.engine_state)
+        ));
+    }
+
+    let start_combat_win_count = start_ctx.combat_win_count;
+    let start_monster_hp = total_alive_monster_hp_for_ctx(&start_ctx);
+    let start_primary_monster_hp = primary_alive_monster_hp_for_ctx(&start_ctx);
+    let start_hp = current_player_hp_for_ctx(&start_ctx);
+    let start_legal = legal_actions(
+        &start_ctx.engine_state,
+        &start_ctx.run_state,
+        &start_ctx.combat_state,
+    );
+    let start_candidates = build_action_candidates(&start_legal, Some(&start_ctx));
+
+    let mut beam = vec![CombatPlanSearchNode {
+        ctx: start_ctx.clone(),
+        action_keys: Vec::new(),
+        depth: 0,
+        terminal_kind: None,
+        engine_error: None,
+    }];
+    let mut terminal_nodes: Vec<CombatPlanSearchNode> = Vec::new();
+    let mut censored_nodes: Vec<CombatPlanSearchNode> = Vec::new();
+    let mut errors: Vec<serde_json::Value> = Vec::new();
+    let mut visited_best: std::collections::HashMap<String, CombatPlanSearchScore> =
+        std::collections::HashMap::new();
+    let mut expanded_nodes = 0usize;
+    let mut generated_nodes = 1usize;
+    let mut max_depth_reached = 0usize;
+    let mut budget_exhausted = false;
+    let mut node_budget_censored_count = 0usize;
+    let mut max_depth_censored_count = 0usize;
+    let mut branching_pruned_count = 0usize;
+    let mut beam_pruned_count = 0usize;
+    let mut turn_sequence_beam_pruned_count = 0usize;
+    let mut state_dedup_pruned_count = 0usize;
+
+    for _depth in 0..config.max_depth_decisions {
+        if beam.is_empty() || budget_exhausted {
+            break;
+        }
+        let mut next_nodes = Vec::<CombatPlanSearchNode>::new();
+        for node in beam.into_iter() {
+            if generated_nodes >= config.max_nodes {
+                budget_exhausted = true;
+                node_budget_censored_count += 1;
+                censored_nodes.push(node);
+                break;
+            }
+            let mut prepared = node.clone();
+            if let Err(err) = prepare_decision_point(&mut prepared.ctx, max_steps) {
+                let mut failed = prepared;
+                failed.terminal_kind = Some("engine_error".to_string());
+                failed.engine_error = Some(err.clone());
+                errors.push(json!({
+                    "depth": failed.depth,
+                    "action_keys": failed.action_keys,
+                    "error": err,
+                }));
+                terminal_nodes.push(failed);
+                continue;
+            }
+            if let Some(kind) =
+                combat_plan_terminal_kind(&prepared.ctx, start_combat_win_count)
+            {
+                let mut terminal = prepared;
+                terminal.terminal_kind = Some(kind);
+                terminal_nodes.push(terminal);
+                continue;
+            }
+            if prepared.depth >= config.max_depth_decisions {
+                max_depth_censored_count += 1;
+                censored_nodes.push(prepared);
+                continue;
+            }
+            let start_turn_count = prepared
+                .ctx
+                .combat_state
+                .as_ref()
+                .map(|combat| combat.turn.turn_count);
+            let mut turn_frontier = vec![prepared];
+            let mut turn_steps = 0usize;
+            while !turn_frontier.is_empty() {
+                if budget_exhausted {
+                    break;
+                }
+                if turn_steps >= config.max_turn_sequence_actions {
+                    max_depth_censored_count += turn_frontier.len();
+                    censored_nodes.extend(turn_frontier);
+                    break;
+                }
+                let mut turn_next = Vec::<CombatPlanSearchNode>::new();
+                for mut seq_node in turn_frontier.into_iter() {
+                    if generated_nodes >= config.max_nodes {
+                        budget_exhausted = true;
+                        node_budget_censored_count += 1;
+                        censored_nodes.push(seq_node);
+                        break;
+                    }
+                    if let Err(err) = prepare_decision_point(&mut seq_node.ctx, max_steps) {
+                        let mut failed = seq_node;
+                        failed.terminal_kind = Some("engine_error".to_string());
+                        failed.engine_error = Some(err.clone());
+                        errors.push(json!({
+                            "depth": failed.depth,
+                            "action_keys": failed.action_keys,
+                            "error": err,
+                        }));
+                        terminal_nodes.push(failed);
+                        continue;
+                    }
+                    if let Some(kind) =
+                        combat_plan_terminal_kind(&seq_node.ctx, start_combat_win_count)
+                    {
+                        let mut terminal = seq_node;
+                        terminal.terminal_kind = Some(kind);
+                        terminal_nodes.push(terminal);
+                        continue;
+                    }
+                    if seq_node.depth >= config.max_depth_decisions {
+                        max_depth_censored_count += 1;
+                        censored_nodes.push(seq_node);
+                        continue;
+                    }
+                    let current_turn_count = seq_node
+                        .ctx
+                        .combat_state
+                        .as_ref()
+                        .map(|combat| combat.turn.turn_count);
+                    if start_turn_count.is_some()
+                        && current_turn_count.is_some()
+                        && current_turn_count != start_turn_count
+                    {
+                        let score = combat_plan_score(
+                            &seq_node,
+                            start_combat_win_count,
+                            start_monster_hp,
+                            start_primary_monster_hp,
+                        );
+                        let key = combat_plan_state_key(&seq_node.ctx, seq_node.depth);
+                        if visited_best
+                            .get(&key)
+                            .is_some_and(|existing| existing >= &score)
+                        {
+                            state_dedup_pruned_count += 1;
+                            continue;
+                        }
+                        visited_best.insert(key, score);
+                        next_nodes.push(seq_node);
+                        continue;
+                    }
+
+                    let legal = legal_actions(
+                        &seq_node.ctx.engine_state,
+                        &seq_node.ctx.run_state,
+                        &seq_node.ctx.combat_state,
+                    );
+                    if legal.is_empty() {
+                        let mut failed = seq_node;
+                        failed.terminal_kind = Some("no_legal_actions".to_string());
+                        failed.engine_error = Some(format!(
+                            "no legal actions at {} floor {}",
+                            engine_state_label(&failed.ctx.engine_state),
+                            failed.ctx.run_state.floor_num
+                        ));
+                        terminal_nodes.push(failed);
+                        continue;
+                    }
+                    expanded_nodes += 1;
+                    let candidates = build_action_candidates(&legal, Some(&seq_node.ctx));
+                    let mut children = Vec::<CombatPlanSearchNode>::new();
+                    for (action_index, input) in legal.into_iter().enumerate() {
+                        if generated_nodes >= config.max_nodes {
+                            budget_exhausted = true;
+                            break;
+                        }
+                        let child_ctx = seq_node.ctx.clone();
+                        let key = candidates
+                            .get(action_index)
+                            .map(|candidate| candidate.action_key.clone())
+                            .unwrap_or_else(|| {
+                                action_key_for_input(&input, child_ctx.combat_state.as_ref())
+                            });
+                        let mut action_keys = seq_node.action_keys.clone();
+                        action_keys.push(key);
+                        let mut child = CombatPlanSearchNode {
+                            ctx: child_ctx,
+                            action_keys,
+                            depth: seq_node.depth + 1,
+                            terminal_kind: None,
+                            engine_error: None,
+                        };
+                        if let Err(err) = apply_rollout_action(&mut child.ctx, input, max_steps) {
+                            child.terminal_kind = Some("engine_error".to_string());
+                            child.engine_error = Some(err.clone());
+                            errors.push(json!({
+                                "depth": child.depth,
+                                "action_keys": child.action_keys,
+                                "error": err,
+                            }));
+                        } else if let Err(err) = prepare_decision_point(&mut child.ctx, max_steps) {
+                            child.terminal_kind = Some("engine_error".to_string());
+                            child.engine_error = Some(err.clone());
+                            errors.push(json!({
+                                "depth": child.depth,
+                                "action_keys": child.action_keys,
+                                "error": err,
+                            }));
+                        } else if let Some(kind) =
+                            combat_plan_terminal_kind(&child.ctx, start_combat_win_count)
+                        {
+                            child.terminal_kind = Some(kind);
+                        }
+                        generated_nodes += 1;
+                        max_depth_reached = max_depth_reached.max(child.depth);
+                        children.push(child);
+                    }
+
+                    children.sort_by(|left, right| {
+                        combat_plan_score(
+                            right,
+                            start_combat_win_count,
+                            start_monster_hp,
+                            start_primary_monster_hp,
+                        )
+                        .cmp(&combat_plan_score(
+                            left,
+                            start_combat_win_count,
+                            start_monster_hp,
+                            start_primary_monster_hp,
+                        ))
+                    });
+                    if let Some(max_branching) = config.max_branching {
+                        if children.len() > max_branching {
+                            branching_pruned_count += children.len() - max_branching;
+                        }
+                        children.truncate(max_branching);
+                    }
+
+                    for child in children {
+                        if child.terminal_kind.is_some() {
+                            terminal_nodes.push(child);
+                            continue;
+                        }
+                        let current_turn_count = child
+                            .ctx
+                            .combat_state
+                            .as_ref()
+                            .map(|combat| combat.turn.turn_count);
+                        if start_turn_count.is_some()
+                            && current_turn_count.is_some()
+                            && current_turn_count != start_turn_count
+                        {
+                            let score = combat_plan_score(
+                                &child,
+                                start_combat_win_count,
+                                start_monster_hp,
+                                start_primary_monster_hp,
+                            );
+                            let key = combat_plan_state_key(&child.ctx, child.depth);
+                            if visited_best
+                                .get(&key)
+                                .is_some_and(|existing| existing >= &score)
+                            {
+                                state_dedup_pruned_count += 1;
+                                continue;
+                            }
+                            visited_best.insert(key, score);
+                            next_nodes.push(child);
+                        } else {
+                            turn_next.push(child);
+                        }
+                    }
+                }
+                turn_next.sort_by(|left, right| {
+                    combat_plan_score(right, start_combat_win_count, start_monster_hp, start_primary_monster_hp)
+                        .cmp(&combat_plan_score(left, start_combat_win_count, start_monster_hp, start_primary_monster_hp))
+                });
+                if turn_next.len() > config.turn_sequence_beam_width {
+                    turn_sequence_beam_pruned_count +=
+                        turn_next.len() - config.turn_sequence_beam_width;
+                    turn_next.truncate(config.turn_sequence_beam_width);
+                }
+                turn_frontier = turn_next;
+                turn_steps += 1;
+            }
+        }
+        next_nodes.sort_by(|left, right| {
+        combat_plan_score(right, start_combat_win_count, start_monster_hp, start_primary_monster_hp)
+            .cmp(&combat_plan_score(left, start_combat_win_count, start_monster_hp, start_primary_monster_hp))
+        });
+        if next_nodes.len() > config.beam_width {
+            beam_pruned_count += next_nodes.len() - config.beam_width;
+            next_nodes.truncate(config.beam_width);
+        }
+        beam = next_nodes;
+    }
+    let final_frontier_censored_count = beam.len();
+    censored_nodes.extend(beam);
+
+    let mut terminal_counts = std::collections::BTreeMap::<String, usize>::new();
+    for node in &terminal_nodes {
+        *terminal_counts
+            .entry(
+                node.terminal_kind
+                    .clone()
+                    .unwrap_or_else(|| "unknown".to_string()),
+            )
+            .or_insert(0) += 1;
+    }
+
+    let best_clear = best_node_by_kind(
+        &terminal_nodes,
+        "combat_cleared",
+        start_combat_win_count,
+        start_monster_hp,
+        start_primary_monster_hp,
+    );
+    let best_death = best_node_by_kind(
+        &terminal_nodes,
+        "death",
+        start_combat_win_count,
+        start_monster_hp,
+        start_primary_monster_hp,
+    );
+    let best_censored =
+        best_node(&censored_nodes, start_combat_win_count, start_monster_hp, start_primary_monster_hp);
+    let search_limited_by = {
+        let mut reasons = Vec::new();
+        if budget_exhausted {
+            reasons.push("node_budget");
+        }
+        if branching_pruned_count > 0 {
+            reasons.push("branching_cap");
+        }
+        if beam_pruned_count > 0 {
+            reasons.push("beam_width");
+        }
+        if turn_sequence_beam_pruned_count > 0 {
+            reasons.push("turn_sequence_beam_width");
+        }
+        if final_frontier_censored_count > 0 || max_depth_censored_count > 0 {
+            reasons.push("depth_or_frontier_censor");
+        }
+        reasons
+    };
+    let search_exhaustive_under_config = search_limited_by.is_empty() && censored_nodes.is_empty();
+
+    let frontier = if config.include_frontier {
+        let mut frontier = censored_nodes.clone();
+        frontier.sort_by(|left, right| {
+            combat_plan_score(
+                right,
+                start_combat_win_count,
+                start_monster_hp,
+                start_primary_monster_hp,
+            )
+            .cmp(&combat_plan_score(
+                left,
+                start_combat_win_count,
+                start_monster_hp,
+                start_primary_monster_hp,
+            ))
+        });
+        json!(
+            frontier
+                .iter()
+                .take(20)
+                .map(|node| {
+                    combat_plan_node_json(
+                        node,
+                        start_combat_win_count,
+                        start_monster_hp,
+                        start_primary_monster_hp,
+                        "censored_frontier",
+                    )
+                })
+                .collect::<Vec<_>>()
+        )
+    } else {
+        serde_json::Value::Null
+    };
+
+    Ok(json!({
+        "schema_version": "combat_plan_search_from_trace_v0",
+        "contract": {
+            "uses_frontier_eval": false,
+            "uses_exact_turn_best_line": false,
+            "uses_action_label": false,
+            "beam_role": "scheduler_only",
+            "expansion_unit": "current_turn_sequence_to_next_turn_boundary",
+            "terminal_priority": "combat_cleared > alive_censored > death"
+        },
+        "source_trace": trace_probe_source(
+            &config.trace_file,
+            config.step_index,
+            seed,
+            ascension,
+            final_act,
+            &player_class,
+            &trace,
+            &target_trace_step,
+        ),
+        "config": {
+            "max_nodes": config.max_nodes,
+            "beam_width": config.beam_width,
+            "max_depth_decisions": config.max_depth_decisions,
+            "turn_sequence_beam_width": config.turn_sequence_beam_width,
+            "max_turn_sequence_actions": config.max_turn_sequence_actions,
+            "max_branching": config.max_branching,
+            "max_steps": max_steps,
+        },
+        "start": {
+            "step_index": config.step_index,
+            "floor": start_ctx.run_state.floor_num,
+            "act": start_ctx.run_state.act_num,
+            "hp": start_hp,
+            "max_hp": start_ctx.run_state.max_hp,
+            "gold": start_ctx.run_state.gold,
+            "combat_win_count": start_combat_win_count,
+            "monster_hp": start_monster_hp,
+            "primary_monster_hp": start_primary_monster_hp,
+            "engine_state": engine_state_label(&start_ctx.engine_state),
+            "legal_action_count": start_candidates.len(),
+            "legal_actions": start_candidates,
+        },
+        "search_summary": {
+            "generated_nodes": generated_nodes,
+            "expanded_nodes": expanded_nodes,
+            "visited_state_count": visited_best.len(),
+            "terminal_counts": terminal_counts,
+            "censored_count": censored_nodes.len(),
+            "budget_exhausted": budget_exhausted,
+            "node_budget_censored_count": node_budget_censored_count,
+            "max_depth_censored_count": max_depth_censored_count,
+            "final_frontier_censored_count": final_frontier_censored_count,
+            "branching_pruned_count": branching_pruned_count,
+            "beam_pruned_count": beam_pruned_count,
+            "turn_sequence_beam_pruned_count": turn_sequence_beam_pruned_count,
+            "state_dedup_pruned_count": state_dedup_pruned_count,
+            "state_dedup_assumed_equivalent": true,
+            "search_exhaustive_under_config": search_exhaustive_under_config,
+            "search_limited_by": search_limited_by,
+            "max_depth_reached": max_depth_reached,
+            "error_count": errors.len(),
+        },
+        "best_complete_clear": best_clear.map(|node| {
+            combat_plan_node_json(
+                node,
+                start_combat_win_count,
+                start_monster_hp,
+                start_primary_monster_hp,
+                "combat_cleared",
+            )
+        }),
+        "best_alive_censored": best_censored.map(|node| {
+            combat_plan_node_json(
+                node,
+                start_combat_win_count,
+                start_monster_hp,
+                start_primary_monster_hp,
+                "censored_frontier",
+            )
+        }),
+        "best_death": best_death.map(|node| {
+            combat_plan_node_json(
+                node,
+                start_combat_win_count,
+                start_monster_hp,
+                start_primary_monster_hp,
+                "death",
+            )
+        }),
+        "frontier": frontier,
+        "errors": errors,
+    }))
+}
+
+fn best_node_by_kind<'a>(
+    nodes: &'a [CombatPlanSearchNode],
+    kind: &str,
+    start_combat_win_count: usize,
+    start_monster_hp: i32,
+    start_primary_monster_hp: i32,
+) -> Option<&'a CombatPlanSearchNode> {
+    nodes
+        .iter()
+        .filter(|node| node.terminal_kind.as_deref() == Some(kind))
+        .max_by(|left, right| {
+            combat_plan_score(
+                left,
+                start_combat_win_count,
+                start_monster_hp,
+                start_primary_monster_hp,
+            )
+            .cmp(&combat_plan_score(
+                right,
+                start_combat_win_count,
+                start_monster_hp,
+                start_primary_monster_hp,
+            ))
+        })
+}
+
+fn best_node<'a>(
+    nodes: &'a [CombatPlanSearchNode],
+    start_combat_win_count: usize,
+    start_monster_hp: i32,
+    start_primary_monster_hp: i32,
+) -> Option<&'a CombatPlanSearchNode> {
+    nodes.iter().max_by(|left, right| {
+        combat_plan_score(
+            left,
+            start_combat_win_count,
+            start_monster_hp,
+            start_primary_monster_hp,
+        )
+        .cmp(&combat_plan_score(
+            right,
+            start_combat_win_count,
+            start_monster_hp,
+            start_primary_monster_hp,
+        ))
+    })
+}
+
+fn combat_plan_terminal_kind(
+    ctx: &EpisodeContext,
+    start_combat_win_count: usize,
+) -> Option<String> {
+    if matches!(ctx.engine_state, EngineState::GameOver(RunResult::Defeat))
+        || current_player_hp_for_ctx(ctx) <= 0
+    {
+        return Some("death".to_string());
+    }
+    if ctx.combat_win_count > start_combat_win_count {
+        return Some("combat_cleared".to_string());
+    }
+    if matches!(ctx.engine_state, EngineState::GameOver(RunResult::Victory)) {
+        return Some("combat_cleared".to_string());
+    }
+    if ctx.combat_state.is_none()
+        && !matches!(
+            ctx.engine_state,
+            EngineState::CombatPlayerTurn | EngineState::CombatProcessing | EngineState::PendingChoice(_)
+        )
+    {
+        return Some("combat_cleared".to_string());
+    }
+    None
+}
+
+fn combat_plan_score(
+    node: &CombatPlanSearchNode,
+    start_combat_win_count: usize,
+    start_monster_hp: i32,
+    start_primary_monster_hp: i32,
+) -> CombatPlanSearchScore {
+    let terminal = node.terminal_kind.as_deref();
+    let hp = current_player_hp_for_ctx(&node.ctx);
+    let current_monster_hp = total_alive_monster_hp_for_ctx(&node.ctx);
+    let current_primary_monster_hp = primary_alive_monster_hp_for_ctx(&node.ctx);
+    let primary_monster_hp_reduction =
+        (start_primary_monster_hp - current_primary_monster_hp).max(0);
+    let monster_hp_reduction = (start_monster_hp - current_monster_hp).max(0);
+    let incoming = node
+        .ctx
+        .combat_state
+        .as_ref()
+        .map(visible_incoming_damage)
+        .unwrap_or(0);
+    let block = node
+        .ctx
+        .combat_state
+        .as_ref()
+        .map(|combat| combat.entities.player.block)
+        .unwrap_or(0);
+    let unblocked = (incoming - block).max(0);
+    let combat_win_delta = node
+        .ctx
+        .combat_win_count
+        .saturating_sub(start_combat_win_count) as i32;
+    let terminal_bucket = match terminal {
+        Some("combat_cleared") => 4,
+        None => 2,
+        Some("death") => 0,
+        Some("engine_error") | Some("no_legal_actions") => -1,
+        Some(_) => 1,
+    };
+    CombatPlanSearchScore {
+        terminal_bucket,
+        alive: if hp > 0 { 1 } else { 0 },
+        combat_win_delta,
+        primary_monster_hp_reduction,
+        monster_hp_reduction,
+        incoming_safety: -unblocked,
+        hp,
+        block,
+        depth_neg: -(node.depth as i32),
+    }
+}
+
+fn combat_plan_node_json(
+    node: &CombatPlanSearchNode,
+    start_combat_win_count: usize,
+    start_monster_hp: i32,
+    start_primary_monster_hp: i32,
+    label: &str,
+) -> serde_json::Value {
+    let hp = current_player_hp_for_ctx(&node.ctx);
+    let monster_hp = total_alive_monster_hp_for_ctx(&node.ctx);
+    let primary_monster_hp = primary_alive_monster_hp_for_ctx(&node.ctx);
+    let incoming = node
+        .ctx
+        .combat_state
+        .as_ref()
+        .map(visible_incoming_damage)
+        .unwrap_or(0);
+    let block = node
+        .ctx
+        .combat_state
+        .as_ref()
+        .map(|combat| combat.entities.player.block)
+        .unwrap_or(0);
+    json!({
+        "label": label,
+        "terminal_kind": node.terminal_kind,
+        "engine_error": node.engine_error,
+        "depth": node.depth,
+        "score": combat_plan_score(
+            node,
+            start_combat_win_count,
+            start_monster_hp,
+            start_primary_monster_hp
+        ),
+        "action_keys": node.action_keys,
+        "first_action_key": node.action_keys.first(),
+        "last_action_key": node.action_keys.last(),
+        "state": {
+            "engine_state": engine_state_label(&node.ctx.engine_state),
+            "decision_type": decision_type(&node.ctx.engine_state),
+            "floor": node.ctx.run_state.floor_num,
+            "act": node.ctx.run_state.act_num,
+            "hp": hp,
+            "max_hp": node.ctx.run_state.max_hp,
+            "block": block,
+            "incoming": incoming,
+            "unblocked": (incoming - block).max(0),
+            "monster_hp": monster_hp,
+            "monster_hp_reduction": (start_monster_hp - monster_hp).max(0),
+            "primary_monster_hp": primary_monster_hp,
+            "primary_monster_hp_reduction": (start_primary_monster_hp - primary_monster_hp).max(0),
+            "combat_win_delta": node.ctx.combat_win_count.saturating_sub(start_combat_win_count),
+            "hand": node.ctx.combat_state.as_ref().map(|combat| {
+                combat.zones.hand.iter().map(|card| format!("{:?}", card.id)).collect::<Vec<_>>()
+            }),
+        }
+    })
+}
+
+fn current_player_hp_for_ctx(ctx: &EpisodeContext) -> i32 {
+    ctx.combat_state
+        .as_ref()
+        .map(|combat| combat.entities.player.current_hp)
+        .unwrap_or(ctx.run_state.current_hp)
+}
+
+fn total_alive_monster_hp_for_ctx(ctx: &EpisodeContext) -> i32 {
+    ctx.combat_state
+        .as_ref()
+        .map(|combat| {
+            combat
+                .entities
+                .monsters
+                .iter()
+                .filter(|monster| monster.current_hp > 0 && !monster.is_dying && !monster.is_escaped)
+                .map(|monster| monster.current_hp + monster.block)
+                .sum()
+        })
+        .unwrap_or(0)
+}
+
+fn primary_alive_monster_hp_for_ctx(ctx: &EpisodeContext) -> i32 {
+    ctx.combat_state
+        .as_ref()
+        .and_then(|combat| {
+            combat
+                .entities
+                .monsters
+                .iter()
+                .find(|monster| {
+                    monster.current_hp > 0 && !monster.is_dying && !monster.is_escaped
+                })
+                .map(|monster| monster.current_hp + monster.block)
+        })
+        .unwrap_or(0)
+}
+
+fn combat_plan_state_key(ctx: &EpisodeContext, depth: usize) -> String {
+    use std::hash::{Hash, Hasher};
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    depth.hash(&mut hasher);
+    format!("{:?}", ctx.engine_state).hash(&mut hasher);
+    ctx.run_state.floor_num.hash(&mut hasher);
+    ctx.run_state.current_hp.hash(&mut hasher);
+    ctx.combat_win_count.hash(&mut hasher);
+    if let Some(combat) = ctx.combat_state.as_ref() {
+        combat.turn.turn_count.hash(&mut hasher);
+        combat.turn.energy.hash(&mut hasher);
+        combat.entities.player.current_hp.hash(&mut hasher);
+        combat.entities.player.block.hash(&mut hasher);
+        for card in &combat.zones.hand {
+            card.uuid.hash(&mut hasher);
+            card.id.hash(&mut hasher);
+            card.cost_for_turn.hash(&mut hasher);
+        }
+        for card in &combat.zones.draw_pile {
+            card.uuid.hash(&mut hasher);
+            card.id.hash(&mut hasher);
+        }
+        for card in &combat.zones.discard_pile {
+            card.uuid.hash(&mut hasher);
+            card.id.hash(&mut hasher);
+        }
+        for monster in &combat.entities.monsters {
+            monster.id.hash(&mut hasher);
+            monster.current_hp.hash(&mut hasher);
+            monster.block.hash(&mut hasher);
+            monster.planned_move_id().hash(&mut hasher);
+            monster.is_dying.hash(&mut hasher);
+            monster.is_escaped.hash(&mut hasher);
+        }
+    }
+    format!("{:016x}", hasher.finish())
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 struct RecursiveRolloutUtility {
     alive: i32,
@@ -706,8 +1705,11 @@ fn rollout_root_candidate_with_continuation(
         }
 
         let chosen_index = match continuation_policy {
-            RunPolicyKind::RuleBaselineV0 | RunPolicyKind::RandomMasked => {
-                choose_rule_baseline_action(&ctx, &legal)
+            RunPolicyKind::RuleBaselineV0
+            | RunPolicyKind::RuleBaselineV1Candidate
+            | RunPolicyKind::RandomMasked => choose_rule_baseline_action(&ctx, &legal),
+            RunPolicyKind::RuleBaselineV0Control => {
+                choose_rule_baseline_v0_control_action(&ctx, &legal)
             }
             RunPolicyKind::PlanQueryV0 => choose_plan_query_action(&ctx, &legal)
                 .unwrap_or_else(|| choose_rule_baseline_action(&ctx, &legal)),
@@ -1828,6 +2830,121 @@ type ReplayedTraceFrontier = (
     serde_json::Value,
     EpisodeContext,
 );
+
+fn replay_trace_to_frontier(
+    trace_file: &Path,
+    step_index: usize,
+    ascension_override: Option<u8>,
+    final_act_override: Option<bool>,
+    player_class_override: Option<String>,
+    max_steps_override: Option<usize>,
+) -> Result<ReplayedTraceFrontier, String> {
+    let raw = std::fs::read_to_string(trace_file).map_err(|err| {
+        format!(
+            "failed to read trace file '{}': {err}",
+            trace_file.display()
+        )
+    })?;
+    let trace: serde_json::Value =
+        serde_json::from_str(&raw).map_err(|err| format!("failed to parse trace JSON: {err}"))?;
+    let summary = trace
+        .get("summary")
+        .ok_or_else(|| "trace missing summary".to_string())?;
+    let seed = summary
+        .get("seed")
+        .and_then(serde_json::Value::as_u64)
+        .ok_or_else(|| "trace summary missing seed".to_string())?;
+    let trace_config = trace.get("config");
+    let ascension = ascension_override.unwrap_or_else(|| {
+        trace_config
+            .and_then(|value| value.get("ascension"))
+            .and_then(serde_json::Value::as_u64)
+            .unwrap_or(0) as u8
+    });
+    let final_act = final_act_override.unwrap_or_else(|| {
+        trace_config
+            .and_then(|value| value.get("final_act"))
+            .and_then(serde_json::Value::as_bool)
+            .unwrap_or(false)
+    });
+    let player_class = player_class_override.unwrap_or_else(|| {
+        trace_config
+            .and_then(|value| value.get("player_class"))
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or("Ironclad")
+            .to_string()
+    });
+    let max_steps = max_steps_override.unwrap_or_else(|| {
+        trace_config
+            .and_then(|value| value.get("max_steps"))
+            .and_then(serde_json::Value::as_u64)
+            .map(|value| value as usize)
+            .unwrap_or_else(|| step_index.saturating_add(128).max(512))
+    });
+    let steps = trace
+        .get("steps")
+        .and_then(serde_json::Value::as_array)
+        .ok_or_else(|| "trace missing steps[]".to_string())?;
+    if step_index >= steps.len() {
+        return Err(format!(
+            "step-index {} out of range for trace with {} step(s)",
+            step_index,
+            steps.len()
+        ));
+    }
+
+    let mut ctx = EpisodeContext {
+        engine_state: EngineState::EventRoom,
+        run_state: RunState::new(
+            seed,
+            ascension,
+            final_act,
+            normalize_player_class(&player_class),
+        ),
+        combat_state: None,
+        stashed_event_combat: None,
+        forced_engine_ticks: 0,
+        combat_win_count: 0,
+    };
+
+    for (step_idx, step) in steps.iter().take(step_index).enumerate() {
+        prepare_decision_point(&mut ctx, max_steps)?;
+        let action = trace_step_action(step)
+            .map_err(|err| format!("failed to decode action at trace step {step_idx}: {err}"))?;
+        let keep_running = tick_run(
+            &mut ctx.engine_state,
+            &mut ctx.run_state,
+            &mut ctx.combat_state,
+            Some(action),
+        );
+        if let Some(errors) = take_engine_error_diagnostics(&mut ctx) {
+            return Err(format!(
+                "replay to step {} rejected trace action: {}",
+                step_idx,
+                errors.join("; ")
+            ));
+        }
+        finish_combat_if_needed(&mut ctx);
+        if !keep_running {
+            return Err(format!(
+                "engine stopped while replaying trace before requested step {}",
+                step_index
+            ));
+        }
+    }
+
+    prepare_decision_point(&mut ctx, max_steps)?;
+    let target_trace_step = steps[step_index].clone();
+    Ok((
+        trace,
+        seed,
+        ascension,
+        final_act,
+        player_class,
+        target_trace_step,
+        ctx,
+    ))
+}
 
 fn replay_trace_to_combat_frontier(
     trace_file: &Path,

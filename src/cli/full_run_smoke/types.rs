@@ -35,7 +35,10 @@ impl RewardShapingProfile {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RunPolicyKind {
     RandomMasked,
+    /// Compatibility alias for the active rule policy candidate.
     RuleBaselineV0,
+    RuleBaselineV0Control,
+    RuleBaselineV1Candidate,
     PlanQueryV0,
 }
 
@@ -44,6 +47,8 @@ impl RunPolicyKind {
         match self {
             Self::RandomMasked => "random_masked",
             Self::RuleBaselineV0 => "rule_baseline_v0",
+            Self::RuleBaselineV0Control => "rule_baseline_v0_control",
+            Self::RuleBaselineV1Candidate => "rule_baseline_v1_candidate",
             Self::PlanQueryV0 => "plan_query_v0",
         }
     }
@@ -314,11 +319,28 @@ pub struct RunCombatObservationV0 {
     pub pending_rebirth_monster_count: usize,
     pub total_monster_hp: i32,
     pub visible_incoming_damage: i32,
+    pub monsters: Vec<RunCombatMonsterObservationV0>,
     pub pending_action_count: usize,
     pub queued_card_count: usize,
     pub limbo_count: usize,
     pub pending_choice_kind: Option<String>,
     pub pending_choice: Option<RunPendingChoiceObservationV0>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct RunCombatMonsterObservationV0 {
+    pub slot: usize,
+    pub entity_id: usize,
+    pub monster_id: String,
+    pub hp: i32,
+    pub max_hp: i32,
+    pub block: i32,
+    pub alive: bool,
+    pub dying: bool,
+    pub escaped: bool,
+    pub half_dead: bool,
+    pub planned_move_id: u8,
+    pub visible_incoming_damage: i32,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -408,8 +430,75 @@ pub struct RunActionCandidate {
     pub card: Option<RunCardFeatureV0>,
     pub plan_delta: Option<CandidatePlanDeltaV0>,
     pub reward_structure: Option<RewardActionStructureV0>,
+    pub map_route: Option<MapRouteCandidateProjectionV0>,
+    pub event_option: Option<EventActionProjectionV0>,
+    pub deck_selection: Option<DeckSelectionCandidateProjectionV0>,
+    pub rule_policy_debug_score: Option<i32>,
     pub dominated: bool,
     pub dominated_by_index: Option<usize>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct EventActionProjectionV0 {
+    pub score_kind: String,
+    pub event_id: Option<String>,
+    pub option_index: usize,
+    pub text: String,
+    pub disabled: bool,
+    pub disabled_reason: Option<String>,
+    pub action_kind: String,
+    pub transition: String,
+    pub effects: Vec<String>,
+    pub constraints: Vec<String>,
+    pub repeatable: bool,
+    pub terminal: bool,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct DeckSelectionCandidateProjectionV0 {
+    pub score_kind: String,
+    pub scope: String,
+    pub reason: String,
+    pub constraint: String,
+    pub can_cancel: bool,
+    pub selected_cards: Vec<DeckSelectionCardProjectionV0>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct DeckSelectionCardProjectionV0 {
+    pub deck_index: usize,
+    pub uuid: u32,
+    pub card_id: String,
+    pub upgrades: u8,
+    pub card_rule_score: i32,
+    pub remove_score: i32,
+    pub upgrade_score: i32,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct MapRouteCandidateProjectionV0 {
+    pub score_kind: String,
+    pub target_x: i32,
+    pub target_y: i32,
+    pub total_score: i32,
+    pub base_score: i32,
+    pub adjustment_score: i32,
+    pub first_shop_depth: Option<usize>,
+    pub first_rest_depth: Option<usize>,
+    pub first_elite_depth: Option<usize>,
+    pub early_monster_count: usize,
+    pub early_event_count: usize,
+    pub early_safe_room_count: usize,
+    pub best_path: Vec<MapRouteRoomProjectionV0>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct MapRouteRoomProjectionV0 {
+    pub x: i32,
+    pub y: i32,
+    pub depth: usize,
+    pub room_type: String,
+    pub room_score: i32,
 }
 
 #[derive(Clone, Debug, Default, Serialize, PartialEq, Eq)]
@@ -599,7 +688,10 @@ pub enum EpisodePolicy {
     RandomMasked {
         rng: StsRng,
     },
+    /// Compatibility alias for the active rule policy candidate.
     RuleBaselineV0,
+    RuleBaselineV0Control,
+    RuleBaselineV1Candidate,
     PlanQueryV0,
     Replay {
         actions: Vec<ClientInput>,
@@ -739,6 +831,37 @@ pub struct FullRunTraceRecursiveRolloutValidationConfig {
     pub continuation_policy: RunPolicyKind,
     pub max_candidates: Option<usize>,
     pub controlled_v0: bool,
+}
+
+#[derive(Clone, Debug)]
+pub struct FullRunTraceBranchRunConfig {
+    pub trace_file: PathBuf,
+    pub step_index: usize,
+    pub target_action_key: Option<String>,
+    pub target_action_index: Option<usize>,
+    pub ascension: Option<u8>,
+    pub final_act: Option<bool>,
+    pub player_class: Option<String>,
+    pub max_steps: Option<usize>,
+    pub continuation_policy: RunPolicyKind,
+    pub include_trace: bool,
+}
+
+#[derive(Clone, Debug)]
+pub struct FullRunTraceCombatPlanSearchConfig {
+    pub trace_file: PathBuf,
+    pub step_index: usize,
+    pub ascension: Option<u8>,
+    pub final_act: Option<bool>,
+    pub player_class: Option<String>,
+    pub max_steps: Option<usize>,
+    pub max_nodes: usize,
+    pub beam_width: usize,
+    pub max_depth_decisions: usize,
+    pub max_branching: Option<usize>,
+    pub turn_sequence_beam_width: usize,
+    pub max_turn_sequence_actions: usize,
+    pub include_frontier: bool,
 }
 
 #[derive(Clone, Debug, Serialize)]

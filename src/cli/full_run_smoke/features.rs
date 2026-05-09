@@ -27,6 +27,14 @@ pub fn build_action_candidates(
                     Some(rs)
                 }
             });
+            let map_route = ctx.and_then(|ctx| {
+                super::bot::map_route_projection_for_action(&ctx.run_state, action)
+            });
+            let event_option = ctx.and_then(|ctx| event_action_projection_for_action(action, ctx));
+            let deck_selection =
+                ctx.and_then(|ctx| deck_selection_projection_for_action(action, ctx));
+            let rule_policy_debug_score =
+                ctx.map(|ctx| super::bot::rule_baseline_score(ctx, action));
             RunActionCandidate {
                 action_index,
                 action_id: stable_action_id(&action_key),
@@ -35,6 +43,10 @@ pub fn build_action_candidates(
                 card,
                 plan_delta,
                 reward_structure,
+                map_route,
+                event_option,
+                deck_selection,
+                rule_policy_debug_score,
                 dominated: false,
                 dominated_by_index: None,
             }
@@ -46,6 +58,91 @@ pub fn build_action_candidates(
     // measure how often a dominated candidate "wins" under rollout.
     annotate_dominated_candidates(&mut candidates);
     candidates
+}
+
+pub fn event_action_projection_for_action(
+    action: &ClientInput,
+    ctx: &EpisodeContext,
+) -> Option<EventActionProjectionV0> {
+    let EngineState::EventRoom = ctx.engine_state else {
+        return None;
+    };
+    let ClientInput::EventChoice(option_index) = action else {
+        return None;
+    };
+    let option = crate::engine::event_handler::get_event_options(&ctx.run_state)
+        .get(*option_index)
+        .cloned()?;
+    Some(EventActionProjectionV0 {
+        score_kind: "engine_event_semantics_v0".to_string(),
+        event_id: ctx
+            .run_state
+            .event_state
+            .as_ref()
+            .map(|event| format!("{:?}", event.id)),
+        option_index: *option_index,
+        text: option.ui.text,
+        disabled: option.ui.disabled,
+        disabled_reason: option.ui.disabled_reason,
+        action_kind: format!("{:?}", option.semantics.action),
+        transition: format!("{:?}", option.semantics.transition),
+        effects: option
+            .semantics
+            .effects
+            .iter()
+            .map(|effect| format!("{:?}", effect))
+            .collect(),
+        constraints: option
+            .semantics
+            .constraints
+            .iter()
+            .map(|constraint| format!("{:?}", constraint))
+            .collect(),
+        repeatable: option.semantics.repeatable,
+        terminal: option.semantics.terminal,
+    })
+}
+
+pub fn deck_selection_projection_for_action(
+    action: &ClientInput,
+    ctx: &EpisodeContext,
+) -> Option<DeckSelectionCandidateProjectionV0> {
+    let EngineState::RunPendingChoice(choice) = &ctx.engine_state else {
+        return None;
+    };
+    let ClientInput::SubmitSelection(selection) = action else {
+        return None;
+    };
+    let request = choice.selection_request(&ctx.run_state);
+    let selected_cards = selection
+        .selected
+        .iter()
+        .filter_map(|selected| {
+            let SelectionTargetRef::CardUuid(uuid) = selected;
+            ctx.run_state
+                .master_deck
+                .iter()
+                .enumerate()
+                .find(|(_, card)| card.uuid == *uuid)
+                .map(|(deck_index, card)| DeckSelectionCardProjectionV0 {
+                    deck_index,
+                    uuid: card.uuid,
+                    card_id: format!("{:?}", card.id),
+                    upgrades: card.upgrades,
+                    card_rule_score: rule_card_offer_score(card.id, &ctx.run_state),
+                    remove_score: rule_remove_score(card.id, &ctx.run_state),
+                    upgrade_score: rule_upgrade_score(card.id),
+                })
+        })
+        .collect();
+    Some(DeckSelectionCandidateProjectionV0 {
+        score_kind: "engine_selection_semantics_v0".to_string(),
+        scope: format!("{:?}", request.scope),
+        reason: format!("{:?}", request.reason),
+        constraint: request.constraint.describe(request.targets.len()),
+        can_cancel: request.can_cancel,
+        selected_cards,
+    })
 }
 
 pub fn empty_reward_action_structure() -> RewardActionStructureV0 {

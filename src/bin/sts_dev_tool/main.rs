@@ -94,7 +94,7 @@ enum Commands {
         /// Maximum decision steps per episode before step-cap termination.
         #[arg(long, default_value_t = 2000)]
         max_steps: usize,
-        /// Policy name: random_masked, rule_baseline_v0, or plan_query_v0.
+        /// Policy name: random_masked, rule_baseline_v0, rule_baseline_v0_control, rule_baseline_v1_candidate, or plan_query_v0.
         #[arg(long, default_value = "random_masked")]
         policy: String,
         /// Optional output directory for per-episode action traces.
@@ -492,7 +492,7 @@ enum CombatCommands {
         /// Decisions to roll forward after forcing the root candidate.
         #[arg(long, default_value_t = 8)]
         horizon_decisions: usize,
-        /// Continuation policy after the forced root action: rule_baseline_v0 or plan_query_v0.
+        /// Continuation policy after the forced root action: rule_baseline_v0, rule_baseline_v0_control, rule_baseline_v1_candidate, or plan_query_v0.
         #[arg(long, default_value = "rule_baseline_v0")]
         continuation_policy: String,
         /// Optional cap for smoke runs. Omit to evaluate all controlled legal candidates.
@@ -501,6 +501,85 @@ enum CombatCommands {
         /// Restrict root candidates to play_card and end_turn.
         #[arg(long)]
         controlled_v0: bool,
+    },
+    RunBranchFromTrace {
+        /// Full-run trace JSON to replay to a decision point.
+        #[arg(long)]
+        trace_file: PathBuf,
+        /// Step index from the trace to branch before its chosen action is applied.
+        #[arg(long)]
+        step_index: usize,
+        /// Exact legal action key to force at the branch point.
+        #[arg(long)]
+        target_action_key: Option<String>,
+        /// Legal action index to force at the branch point.
+        #[arg(long)]
+        target_action_index: Option<usize>,
+        /// Continuation policy after the forced action.
+        #[arg(long, default_value = "rule_baseline_v1_candidate")]
+        continuation_policy: String,
+        /// Output JSON report path.
+        #[arg(long)]
+        out: PathBuf,
+        /// Include compact branch action trace in the output.
+        #[arg(long)]
+        include_trace: bool,
+        /// Optional ascension override for old traces without embedded config.
+        #[arg(long)]
+        ascension: Option<u8>,
+        /// Optional player class override for old traces without embedded config.
+        #[arg(long)]
+        class: Option<String>,
+        /// Optional final-act override for old traces without embedded config.
+        #[arg(long)]
+        final_act: Option<bool>,
+        /// Optional replay max step cap.
+        #[arg(long)]
+        max_steps: Option<usize>,
+    },
+    PlanSearchFromTrace {
+        /// Full-run trace JSON to replay to a combat decision point.
+        #[arg(long)]
+        trace_file: PathBuf,
+        /// Step index from the trace to use as the combat search root.
+        #[arg(long)]
+        step_index: usize,
+        /// Output JSON report path.
+        #[arg(long)]
+        out: PathBuf,
+        /// Optional ascension override for old traces without embedded config.
+        #[arg(long)]
+        ascension: Option<u8>,
+        /// Optional player class override for old traces without embedded config.
+        #[arg(long)]
+        class: Option<String>,
+        /// Optional final-act override for old traces without embedded config.
+        #[arg(long)]
+        final_act: Option<bool>,
+        /// Optional replay max step cap.
+        #[arg(long)]
+        max_steps: Option<usize>,
+        /// Maximum generated search nodes.
+        #[arg(long, default_value_t = 25_000)]
+        max_nodes: usize,
+        /// Beam width retained after each decision depth.
+        #[arg(long, default_value_t = 128)]
+        beam_width: usize,
+        /// Maximum combat decisions to search from the root.
+        #[arg(long, default_value_t = 80)]
+        max_depth_decisions: usize,
+        /// Beam retained while enumerating one current-turn action sequence before the next turn boundary.
+        #[arg(long, default_value_t = 256)]
+        turn_sequence_beam_width: usize,
+        /// Maximum actions inside a single current-turn sequence.
+        #[arg(long, default_value_t = 24)]
+        max_turn_sequence_actions: usize,
+        /// Optional cap on child branches retained per expanded node after scheduler ranking.
+        #[arg(long)]
+        max_branching: Option<usize>,
+        /// Include top censored frontier nodes in the output.
+        #[arg(long)]
+        include_frontier: bool,
     },
     BuildStateCorpus {
         /// Individual ScenarioFixture paths to include.
@@ -813,10 +892,16 @@ fn main() {
                 "rule_baseline_v0" => {
                     sts_simulator::cli::full_run_smoke::RunPolicyKind::RuleBaselineV0
                 }
+                "rule_baseline_v0_control" | "v0_control" => {
+                    sts_simulator::cli::full_run_smoke::RunPolicyKind::RuleBaselineV0Control
+                }
+                "rule_baseline_v1_candidate" | "v1_candidate" => {
+                    sts_simulator::cli::full_run_smoke::RunPolicyKind::RuleBaselineV1Candidate
+                }
                 "plan_query_v0" => sts_simulator::cli::full_run_smoke::RunPolicyKind::PlanQueryV0,
                 other => {
                     eprintln!(
-                        "unsupported policy '{other}'; expected random_masked, rule_baseline_v0, or plan_query_v0"
+                        "unsupported policy '{other}'; expected random_masked, rule_baseline_v0, rule_baseline_v0_control, rule_baseline_v1_candidate, or plan_query_v0"
                     );
                     std::process::exit(2);
                 }
@@ -1858,12 +1943,18 @@ fn main() {
                     "rule_baseline_v0" | "rule" => {
                         sts_simulator::cli::full_run_smoke::RunPolicyKind::RuleBaselineV0
                     }
+                    "rule_baseline_v0_control" | "v0_control" => {
+                        sts_simulator::cli::full_run_smoke::RunPolicyKind::RuleBaselineV0Control
+                    }
+                    "rule_baseline_v1_candidate" | "v1_candidate" => {
+                        sts_simulator::cli::full_run_smoke::RunPolicyKind::RuleBaselineV1Candidate
+                    }
                     "plan_query_v0" | "plan" => {
                         sts_simulator::cli::full_run_smoke::RunPolicyKind::PlanQueryV0
                     }
                     other => {
                         eprintln!(
-                            "unsupported continuation policy '{other}'; expected rule_baseline_v0 or plan_query_v0"
+                            "unsupported continuation policy '{other}'; expected rule_baseline_v0, rule_baseline_v0_control, rule_baseline_v1_candidate, or plan_query_v0"
                         );
                         std::process::exit(2);
                     }
@@ -1903,6 +1994,148 @@ fn main() {
                         "error_count": report.get("errors").and_then(serde_json::Value::as_array).map(|values| values.len()).unwrap_or(0),
                     }))
                     .expect("combat recursive rollout summary should serialize for stdout")
+                );
+            }
+            CombatCommands::RunBranchFromTrace {
+                trace_file,
+                step_index,
+                target_action_key,
+                target_action_index,
+                continuation_policy,
+                out,
+                include_trace,
+                ascension,
+                class,
+                final_act,
+                max_steps,
+            } => {
+                let policy_kind = match continuation_policy.to_ascii_lowercase().as_str() {
+                    "rule_baseline_v0" | "rule" => {
+                        sts_simulator::cli::full_run_smoke::RunPolicyKind::RuleBaselineV0
+                    }
+                    "rule_baseline_v0_control" | "v0_control" => {
+                        sts_simulator::cli::full_run_smoke::RunPolicyKind::RuleBaselineV0Control
+                    }
+                    "rule_baseline_v1_candidate" | "v1_candidate" => {
+                        sts_simulator::cli::full_run_smoke::RunPolicyKind::RuleBaselineV1Candidate
+                    }
+                    "plan_query_v0" | "plan" => {
+                        sts_simulator::cli::full_run_smoke::RunPolicyKind::PlanQueryV0
+                    }
+                    other => {
+                        eprintln!(
+                            "unsupported continuation policy '{other}'; expected rule_baseline_v0, rule_baseline_v0_control, rule_baseline_v1_candidate, or plan_query_v0"
+                        );
+                        std::process::exit(2);
+                    }
+                };
+                let report = sts_simulator::cli::full_run_smoke::run_branch_from_trace(
+                    &sts_simulator::cli::full_run_smoke::FullRunTraceBranchRunConfig {
+                        trace_file: trace_file.clone(),
+                        step_index: *step_index,
+                        target_action_key: target_action_key.clone(),
+                        target_action_index: *target_action_index,
+                        ascension: *ascension,
+                        final_act: *final_act,
+                        player_class: class.clone(),
+                        max_steps: *max_steps,
+                        continuation_policy: policy_kind,
+                        include_trace: *include_trace,
+                    },
+                )
+                .expect("combat run-branch-from-trace should run");
+                if let Some(parent) = out.parent() {
+                    std::fs::create_dir_all(parent)
+                        .expect("run-branch-from-trace output parent should be creatable");
+                }
+                std::fs::write(
+                    out,
+                    serde_json::to_string_pretty(&report)
+                        .expect("run-branch-from-trace report should serialize"),
+                )
+                .expect("run-branch-from-trace report should write");
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&serde_json::json!({
+                        "schema_version": report.get("schema_version").cloned().unwrap_or(serde_json::Value::Null),
+                        "out": out.display().to_string(),
+                        "forced_action_key": report.get("forced_action_key").cloned().unwrap_or(serde_json::Value::Null),
+                        "source_chosen_action_key": report.get("source_chosen_action_key").cloned().unwrap_or(serde_json::Value::Null),
+                        "result": report.get("result").cloned().unwrap_or(serde_json::Value::Null),
+                        "floor": report.get("floor").cloned().unwrap_or(serde_json::Value::Null),
+                        "act": report.get("act").cloned().unwrap_or(serde_json::Value::Null),
+                        "hp": report.get("hp").cloned().unwrap_or(serde_json::Value::Null),
+                        "combat_win_count": report.get("combat_win_count").cloned().unwrap_or(serde_json::Value::Null),
+                        "branch_decisions": report.get("branch_decisions").cloned().unwrap_or(serde_json::Value::Null),
+                    }))
+                    .expect("run-branch-from-trace stdout summary should serialize")
+                );
+            }
+            CombatCommands::PlanSearchFromTrace {
+                trace_file,
+                step_index,
+                out,
+                ascension,
+                class,
+                final_act,
+                max_steps,
+                max_nodes,
+                beam_width,
+                max_depth_decisions,
+                turn_sequence_beam_width,
+                max_turn_sequence_actions,
+                max_branching,
+                include_frontier,
+            } => {
+                let report =
+                    sts_simulator::cli::full_run_smoke::search_combat_plan_from_trace(
+                        &sts_simulator::cli::full_run_smoke::FullRunTraceCombatPlanSearchConfig {
+                            trace_file: trace_file.clone(),
+                            step_index: *step_index,
+                            ascension: *ascension,
+                            final_act: *final_act,
+                            player_class: class.clone(),
+                            max_steps: *max_steps,
+                            max_nodes: *max_nodes,
+                            beam_width: *beam_width,
+                            max_depth_decisions: *max_depth_decisions,
+                            turn_sequence_beam_width: *turn_sequence_beam_width,
+                            max_turn_sequence_actions: *max_turn_sequence_actions,
+                            max_branching: *max_branching,
+                            include_frontier: *include_frontier,
+                        },
+                    )
+                    .expect("combat plan-search-from-trace should run");
+                if let Some(parent) = out.parent() {
+                    std::fs::create_dir_all(parent)
+                        .expect("combat plan-search output parent should be creatable");
+                }
+                std::fs::write(
+                    out,
+                    serde_json::to_string_pretty(&report)
+                        .expect("combat plan-search report should serialize"),
+                )
+                .expect("combat plan-search report should write");
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&serde_json::json!({
+                        "schema_version": report.get("schema_version").cloned().unwrap_or(serde_json::Value::Null),
+                        "out": out.display().to_string(),
+                        "start": report.get("start").cloned().unwrap_or(serde_json::Value::Null),
+                        "search_summary": report.get("search_summary").cloned().unwrap_or(serde_json::Value::Null),
+                        "has_complete_clear": report.get("best_complete_clear").is_some_and(|value| !value.is_null()),
+                        "best_complete_clear_first_action": report
+                            .get("best_complete_clear")
+                            .and_then(|value| value.get("first_action_key"))
+                            .cloned()
+                            .unwrap_or(serde_json::Value::Null),
+                        "best_alive_censored_first_action": report
+                            .get("best_alive_censored")
+                            .and_then(|value| value.get("first_action_key"))
+                            .cloned()
+                            .unwrap_or(serde_json::Value::Null),
+                    }))
+                    .expect("combat plan-search stdout summary should serialize")
                 );
             }
             CombatCommands::BuildStateCorpus {

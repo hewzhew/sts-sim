@@ -662,7 +662,7 @@ pub fn get_card_definition(id: CardId) -> CardDefinition {
             base_magic: 0,
             target: CardTarget::Enemy,
             is_multi_damage: false,
-            exhaust: false,
+            exhaust: true,
             ethereal: false,
             innate: true,
             tags: &[],

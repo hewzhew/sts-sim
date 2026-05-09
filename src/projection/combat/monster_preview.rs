@@ -1,5 +1,5 @@
 use crate::runtime::combat::{CombatState, MonsterEntity};
-use crate::semantics::combat::{EffectStrength, MonsterMoveSpec, MonsterTurnPlan};
+use crate::semantics::combat::{DamageKind, EffectStrength, MonsterMoveSpec, MonsterTurnPlan};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum VisibleIntentKind {
@@ -71,7 +71,19 @@ pub fn project_monster_move_preview_from_plan(
         } else {
             None
         };
-    let semantic_damage = plan.attack().map(|attack| attack.base_damage.max(0));
+    let semantic_damage = plan.attack().map(|attack| {
+        if matches!(attack.damage_kind, DamageKind::Normal) {
+            crate::content::powers::calculate_monster_damage(
+                attack.base_damage,
+                monster.id,
+                0,
+                combat,
+            )
+            .max(0)
+        } else {
+            attack.base_damage.max(0)
+        }
+    });
     let damage_per_hit = protocol_damage.or(semantic_damage);
     MonsterMovePreview::from_plan(plan, damage_per_hit)
 }

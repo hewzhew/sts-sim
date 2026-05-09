@@ -471,6 +471,8 @@ fn branch_trace_pairwise_comparisons(traces: &[BranchTraceV1]) -> Vec<BranchComp
 fn policy_name(policy: RunPolicyKind) -> &'static str {
     match policy {
         RunPolicyKind::RuleBaselineV0 => "rule_baseline_v0",
+        RunPolicyKind::RuleBaselineV0Control => "rule_baseline_v0_control",
+        RunPolicyKind::RuleBaselineV1Candidate => "rule_baseline_v1_candidate",
         RunPolicyKind::PlanQueryV0 => "plan_query_v0",
         RunPolicyKind::RandomMasked => "random_masked",
     }
