@@ -77,6 +77,12 @@ trait CombatKernel {
   snapshot(handle: CombatHandle) -> Result<OpaqueKernelSnapshotHandle, KernelCallError>
   restore(snapshot: OpaqueKernelSnapshotHandle) -> Result<KernelSession, KernelCallError>
   fork(handle: CombatHandle) -> Result<KernelSession, KernelCallError>
+
+  request_privileged_decision_data(
+    handle: CombatHandle,
+    decision_id: DecisionId,
+    request: PrivilegedDataRequest,
+  ) -> Result<PrivilegedDecisionData, KernelCallError>
 }
 ```
 
@@ -87,7 +93,8 @@ and `fork` all return the same shape:
 KernelSession {
   handle: CombatHandle,
   current_decision: PublicDecisionFrame,
-  replay_identity: ReplayIdentity,
+  replay_provenance: ReplayProvenance,
+  replay_cursor: ReplayCursor,
 }
 ```
 
@@ -108,29 +115,65 @@ terminal, rejection, abort, replay fault, or truncation lives inside
 ## Combat Origin
 
 A combat cannot be started from loose fields and then treated as real. There are
-two valid origins:
+two origin families:
 
 ```text
-CombatOrigin::RunSnapshot {
-  run_state,
-  replay_identity,
+CombatOrigin::AuthoredCombatV0 {
+  authored_state,
+  replay_provenance,
 }
 
-CombatOrigin::AuthoredCombat {
-  spec,
-  replay_identity,
-  purpose,
+CombatOrigin::RunCombatSnapshot {
+  run_combat_snapshot,
+  replay_provenance,
 }
 ```
 
-`RunSnapshot` is the parity path. It comes from an actual run state and carries
-the replay identity needed to continue deterministically.
+`AuthoredCombatV0` is the first implementation path. It is a fully declared
+single-combat state used to prove the kernel can run one real combat without
+inventing a run-level system.
 
-`AuthoredCombat` is a probe path. It can test mechanics or build small tasks, but
-it is not evidence about real developing-run deck distribution.
+`RunCombatSnapshot` is the future parity path. It is disabled until a separate
+run-state snapshot spec exists. It must not be implemented as an untyped
+`run_state` placeholder.
+
+`RunCombatSnapshot` must eventually define the cut between run-level and
+combat-level state, including deck, relic counters, potion belt, map/run flags,
+event history relevant to combat, RNG streams, combat room identity, and
+combat-entry hooks.
+
+Until `docs/RUN_STATE_SNAPSHOT_SPEC.md` exists and is implemented,
+`CombatOrigin::RunCombatSnapshot` must return
+`KernelCallError::UnsupportedOrigin` or `KernelCallError::SchemaIncompatible`.
 
 `CombatStartSpec`, JSON fixtures, and hand-written deck slices are allowed only
-as temporary adapters into `AuthoredCombat`. They are not the AI contract.
+as temporary adapters into `AuthoredCombatV0`. They are not the AI contract.
+
+### AuthoredCombatV0 State
+
+`AuthoredCombatV0` is not a loose deck/enemy tuple. It must be a complete typed
+single-combat starting state:
+
+```text
+AuthoredCombatStateV0 {
+  player_setup,
+  combat_zones,
+  relic_setup,
+  potion_belt,
+  monster_group,
+  combat_room_context,
+  rng_streams,
+  combat_entry_flags,
+}
+```
+
+The first maintainable implementation must derive this structure from one real
+hard-coded combat instance and prove that the same RNG plus the same action trace
+replays identically.
+
+`AuthoredCombatStateV0` may be small for Jaw Worm, but it must be complete for
+that combat. It must not be a half-constructed `CombatState` patched until the
+demo runs.
 
 ## Public Decision Frame
 
@@ -175,6 +218,15 @@ Scry
 `SelectCardReward` is forbidden in `CombatKernel`. Post-combat card rewards are
 run-level decisions. Combat-generated choices must use
 `SelectFromGeneratedCards`.
+
+Pre-combat and run-level decisions are also forbidden in `CombatKernel`,
+including Neow rewards, bottle selection, map choices, shop choices, rest-site
+choices, event choices, and post-combat rewards. Those belong to a future
+run-level decision kernel.
+
+If a combat cannot start until a pre-combat or run-level choice is resolved,
+`CombatOrigin` is invalid for this kernel and must fail before combat starts. Do
+not smuggle those decisions into `TurnAction` or `ChooseOne`.
 
 ## Public and Kernel Action Descriptors
 
@@ -415,6 +467,44 @@ SelectionSemantics::ScryKeepDiscard
 Without `ChoiceContext` and `SelectionSemantics`, `SelectCandidate` is ambiguous
 and must not be emitted.
 
+### Multi-Step Choice State
+
+Any choice with `selected_so_far`, `remaining_min`, `remaining_max`,
+`requires_confirm`, or `can_cancel` is an explicit choice state machine.
+
+Rules:
+
+```text
+each intermediate selection state is a new PublicDecisionFrame
+selected_so_far is part of ChoiceSpec and decision_hash
+fork/restore must preserve intermediate choice state exactly
+cancel must either restore the pre-choice engine state or produce a documented
+state transition with public events
+confirm must be represented by a Confirm action descriptor when required
+auto_confirm_when_complete must be deterministic and visible in ChoiceSpec
+```
+
+Nested choices must be represented by a kernel-owned choice stack:
+
+```text
+ChoiceStackFrame {
+  choice_id,
+  parent_choice_id,
+  choice_context,
+  selected_so_far,
+  pre_choice_snapshot_handle,
+}
+```
+
+The public decision exposes only the current top-of-stack `ChoiceSpec`. The
+kernel-owned stack is included in full state hashes and snapshots. Replay must
+fail rather than guess if a recorded action refers to a different choice stack.
+
+`OrderCards` may be implemented as an ordered multi-step selection or as one
+public action per legal complete ordering. The selected representation must be
+declared in `SelectionSemantics`, canonical, replayable, and covered by
+acceptance tests. It must not silently switch between representations.
+
 ## Public Entity Ref Rule
 
 Public refs are part of the public trace contract.
@@ -459,6 +549,38 @@ DebugOracle:
 
 Default kernel start/step returns `PublicDecisionFrame`, not a privileged
 envelope. Privileged data requires an explicit request capability and manifest.
+
+### Privileged Data Request
+
+Privileged data is not embedded in the default decision frame. It is requested
+through the explicit side-channel API:
+
+```text
+request_privileged_decision_data(
+  handle,
+  decision_id,
+  PrivilegedDataRequest {
+    consumer,
+    requested_fields,
+    reason,
+  },
+) -> Result<PrivilegedDecisionData, KernelCallError>
+```
+
+Rules:
+
+```text
+request must not mutate combat state
+request must verify decision_id is current
+response must carry PrivilegeManifest
+response must be keyed by decision_hash
+response must be absent from default Python adapters
+response must not be written into action-selection datasets
+```
+
+Allowed consumers are explicitly named analysis/evaluation/value-estimation
+components. Action samplers, behavior-cloning targets, and default collectors are
+forbidden consumers.
 
 ### Public Observation Schema
 
@@ -630,8 +752,9 @@ behavior depends on turn/combat events.
 
 ```text
 KernelTransition {
-  replay_identity_before: ReplayIdentity,
-  replay_identity_after: ReplayIdentity,
+  replay_provenance: ReplayProvenance,
+  replay_cursor_before: ReplayCursor,
+  replay_cursor_after: ReplayCursor,
 
   previous_decision_id: DecisionId,
   attempted_action_id: ActionId,
@@ -668,6 +791,7 @@ KernelCallError:
   HandleNotFound
   SnapshotNotOwnedByKernel
   SnapshotExpired
+  UnsupportedOrigin
   SchemaIncompatible
 ```
 
@@ -742,7 +866,7 @@ CombatTerminalReport {
   combat_end_hooks_applied: bool,
   reward_screen_reached: bool,
   reward_generation_started: bool,
-  replay_identity_at_terminal: ReplayIdentity,
+  replay_cursor_at_terminal: ReplayCursor,
 }
 ```
 
@@ -801,7 +925,8 @@ OpaqueKernelSnapshotHandle {
   snapshot_id,
   owner_kernel_id,
   decision_id,
-  replay_identity,
+  replay_provenance,
+  replay_cursor,
   schema_version,
   engine_version,
   content_manifest_hash,
@@ -829,10 +954,10 @@ handles must carry generation/session identity
 stale decisions from parent are invalid in child and vice versa
 ```
 
-## Replay Identity and Hashing
+## Replay Provenance, Cursor, and Hashing
 
 ```text
-ReplayIdentity {
+ReplayProvenance {
   game_version,
   engine_commit,
   contract_schema_version,
@@ -840,6 +965,14 @@ ReplayIdentity {
   mod_manifest_hash,
   origin_hash,
   rng_snapshot_digest,
+}
+```
+
+`ReplayProvenance` is stable for one combat origin. It identifies where the
+replay came from. It must not include changing per-decision fields.
+
+```text
+ReplayCursor {
   full_state_hash,
   public_observation_hash,
   decision_hash,
@@ -847,6 +980,12 @@ ReplayIdentity {
   action_trace_hash,
 }
 ```
+
+`ReplayCursor` is the moving replay position. It changes after decisions and
+transitions.
+
+Do not use one structure as both provenance and cursor. Replay validation must
+compare stable provenance first, then cursor/hash sequence.
 
 All replay hashes must use canonical serialization with sorted map keys.
 
@@ -1101,6 +1240,26 @@ X. PythonInfoLeakage
 Y. PublicRefLifecycle
   visible card/monster/potion refs are stable under movement/death/use
   refs are never reused within a combat trace
+
+Z. MultiStepChoiceState
+  selected_so_far is part of decision_hash
+  fork during a partial selection preserves choice stack
+  cancel/confirm behavior is replayable and public
+
+AA. PreCombatBoundary
+  Neow, bottle, map, shop, rest, event, and post-combat reward choices are not
+  accepted by CombatKernel
+  invalid combat origins fail before a fake combat decision is emitted
+
+AB. AuthoredCombatStateV0Schema
+  Jaw Worm authored combat state is complete and typed
+  no untyped run_state is required
+  same state/RNG/action script runs identically five times
+
+AC. DynamicCombatAffordances
+  dynamic cost changes update public descriptors and action_set_hash
+  generated card choices carry choice_context and stable public refs
+  triggered extra card plays are represented as public events, not hidden actions
 ```
 
 If these fail, the next task is kernel/view/replay repair. Not PPO, not search,
@@ -1122,7 +1281,7 @@ and acceptance gate it satisfies.
 - Both are toy environments, not real-combat foundations.
 - CleanRL is now only a disposable reference/smoke tool.
 - The real foundation is `PublicDecisionFrame + PublicActionDescriptor +
-  RecordedActionTrace + KernelTransition + ReplayIdentity`.
+  RecordedActionTrace + KernelTransition + ReplayProvenance + ReplayCursor`.
 - Any old audit shell, seed patch, baseline continuation, transparent snapshot,
   privileged trace leak, weak-controller-as-teacher path, or Gym-first shape is
   outside this contract.

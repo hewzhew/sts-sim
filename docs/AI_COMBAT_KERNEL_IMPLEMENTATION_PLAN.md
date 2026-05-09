@@ -18,7 +18,52 @@ Stop and repair the kernel if any of these happen:
 - terminal metrics require raw state access;
 - Python `info`, logs, callbacks, or datasets contain privileged/debug/private
   fields;
+- privileged data is accessed without an explicit request capability and
+  consumer manifest;
 - a test passes only because it uses a fixture parser as runtime behavior.
+
+## Phase -1: Ground One Real Combat State
+
+Purpose: stop designing around abstract nouns. Before the kernel API is
+implemented, ground the state model on one complete real combat.
+
+Deliverables:
+
+```text
+docs/AI_COMBAT_STATE_V0_SCHEMA.md
+one hard-coded complete Ironclad vs Jaw Worm authored combat state
+one fixed public action script
+one smoke binary that runs the same combat five times
+state/hash trace output for each run
+```
+
+Rules:
+
+- the authored state must be complete for that combat, not a partial
+  `CombatState`;
+- no `DecisionFrame` abstraction is required yet;
+- no Python wrapper is required yet;
+- no training code is allowed;
+- every field needed to replay the combat must be named in the schema.
+
+Acceptance:
+
+- same authored state + same RNG + same action script produces identical final
+  result five times;
+- each run emits the same ordered state/hash sequence;
+- missing state required for determinism is added to
+  `AI_COMBAT_STATE_V0_SCHEMA.md`;
+- the schema explicitly distinguishes combat-level fields from future run-level
+  fields.
+- `RunCombatSnapshot` is explicitly unsupported until
+  `docs/RUN_STATE_SNAPSHOT_SPEC.md` exists.
+
+Forbidden:
+
+- pretending `run_state` exists;
+- relying on a fixture parser as runtime;
+- manually patching state after combat starts to keep the demo alive;
+- writing any model/trainer/collector code.
 
 ## Phase 0: Type Skeleton and Compile Boundary
 
@@ -38,7 +83,8 @@ Required types:
 
 ```text
 CombatOrigin
-ReplayIdentity
+ReplayProvenance
+ReplayCursor
 CombatHandle
 KernelSession
 PublicDecisionFrame
@@ -51,6 +97,9 @@ ChoiceSource
 SelectionSemantics
 PublicObservation
 PublicCombatEvent
+PrivilegedDataRequest
+PrivilegedDecisionData
+PrivilegeManifest
 KernelTransition
 KernelOutcome
 CombatTerminalReport
@@ -64,6 +113,7 @@ OpaqueKernelSnapshotHandle
 Acceptance:
 
 - code compiles with empty/non-engine implementations;
+- types are traceable back to `AI_COMBAT_STATE_V0_SCHEMA.md`;
 - `KernelActionDescriptor` is not serializable;
 - `PublicActionDescriptor` is serializable;
 - `OpaqueKernelSnapshotHandle` contains no byte payload accessible outside the
@@ -230,7 +280,7 @@ Acceptance:
 - `HandleNotFound` returns call error, not transition;
 - terminal report exposes final hp, max hp, turn count, hp lost, and terminal
   reason;
-- `ExternalProcessLost`, `TickBudgetExceeded`, and `ReplayMismatch` are not
+- `ExternalProcessLost`, `TickBudgetExceeded`, and replay faults are not
   truncations.
 
 Forbidden:
@@ -271,6 +321,8 @@ Acceptance:
   Ironclad;
 - missing visible intent marks frame not action-selection-trainable and prevents
   default sampler calls.
+- privileged decision data is obtainable only through explicit request API;
+- default `KernelSession.current_decision` contains public data only.
 
 Forbidden:
 
@@ -278,6 +330,7 @@ Forbidden:
 - naked `discard_pile`/`exhaust_pile` lists without visibility mode;
 - `visible_intent_damage` as the only intent field;
 - silently training through missing visible intent.
+- embedding privileged data in the default decision frame.
 
 ## Phase 6: Public Combat Events
 
@@ -346,14 +399,14 @@ Forbidden:
 - exposing hidden RNG through snapshot metadata;
 - using fork before fork isolation passes.
 
-## Phase 8: AuthoredCombat Jaw Worm Through Real Engine
+## Phase 8: AuthoredCombatV0 Jaw Worm Through Real Engine
 
 Purpose: first real engine path with no strategy logic.
 
 Deliverables:
 
 ```text
-AuthoredCombat starter Ironclad vs Jaw Worm
+AuthoredCombatV0 starter Ironclad vs Jaw Worm
 TurnAction decision
 PlayCard descriptors
 EndTurn descriptor
@@ -364,6 +417,7 @@ KernelTransition for at least one player action
 Acceptance:
 
 - start returns `KernelSession.current_decision`;
+- origin is built from `AI_COMBAT_STATE_V0_SCHEMA.md`;
 - action descriptors contain public descriptor hashes;
 - no `engine_ref` in printed public output;
 - one legal card play transitions through real engine;
@@ -373,6 +427,7 @@ Acceptance:
 Forbidden:
 
 - manual half-constructed `CombatState`;
+- untyped `run_state`;
 - old bot decision calls;
 - reward shaping;
 - training wrapper.
@@ -505,7 +560,10 @@ V0 is maintainable only when all are true:
 9. Python leakage tests pass.
 10. Jaw Worm real-engine path passes without old bot or fixture runtime.
 11. Headbutt/Hologram-like choice context differs in trace.
-12. No trainer is required to validate the kernel.
+12. Multi-step choice fork/cancel/confirm state is replayable.
+13. Pre-combat/run-level choices are rejected before fake combat decisions.
+14. Dynamic cost/generated choices update descriptor hashes and context.
+15. No trainer is required to validate the kernel.
 ```
 
 If any release criterion fails, the project is still in kernel construction, not
