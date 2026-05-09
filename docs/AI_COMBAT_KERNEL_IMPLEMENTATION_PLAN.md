@@ -34,6 +34,8 @@ Deliverables:
 
 ```text
 docs/AI_COMBAT_STATE_SCHEMA.md
+docs/AI_COMBAT_SOURCE_COVERAGE_LEDGER.md
+docs/AI_COMBAT_RUST_MIGRATION_LEDGER.md
 combat-relevant source inventory from D:\rust\cardcrawl
 coverage table mapping source classes/fields to schema sections
 Rust simulator inventory mapping existing modules to keep/rewrite/delete/adapter

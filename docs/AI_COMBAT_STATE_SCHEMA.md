@@ -116,6 +116,9 @@ that cannot represent such a field must change.
 
 ## Source Inventory
 
+The working source ledger lives in
+`docs/AI_COMBAT_SOURCE_COVERAGE_LEDGER.md`.
+
 The minimum source inventory is:
 
 | Source file | Required schema coverage |
@@ -146,6 +149,9 @@ each concrete combat-relevant subclass under these directories must either map
 to a typed payload or be listed as `unsupported_abort`.
 
 ## Rust Inventory
+
+The working Rust migration ledger lives in
+`docs/AI_COMBAT_RUST_MIGRATION_LEDGER.md`.
 
 Rust implementation work must also inventory the current simulator before reuse.
 At minimum, classify existing files under:
@@ -188,6 +194,10 @@ rewrite. Keeping it requires a parity note proving that the disagreement is only
 structural, not mechanical.
 
 ## Top-Level Snapshot
+
+The initial Rust type skeleton lives in
+`src/ai/combat_state_snapshot/mod.rs`. It is an audit schema boundary, not a
+legacy engine wrapper.
 
 ```text
 CombatStateSnapshot {
