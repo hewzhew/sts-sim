@@ -1,7 +1,5 @@
 mod agent;
-pub(crate) mod card_disposition;
 pub mod combat;
-mod combat_families;
 mod decision_meta;
 pub(crate) mod deck;
 pub mod facts;
@@ -10,7 +8,6 @@ pub(crate) mod infra;
 pub(crate) mod potions;
 pub mod snapshots;
 
-pub(crate) use deck::card_taxonomy;
 pub(crate) use facts::{card_facts, card_structure};
 pub(crate) use snapshots::{deck_archetype, deck_profile};
 

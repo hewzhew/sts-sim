@@ -5,7 +5,6 @@ mod dominance;
 mod equivalence;
 pub mod exact_turn_solver;
 mod frontier_eval;
-mod hand_select;
 pub(crate) mod legal_moves;
 pub(crate) mod monster_belief;
 mod ordering;

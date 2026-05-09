@@ -1,15 +1,7 @@
-use crate::bot::card_disposition::{
-    combat_copy_score_for_uuid, combat_exhaust_score_for_uuid, combat_retention_score_for_uuid,
-};
 use crate::engine::targeting;
 use crate::runtime::combat::CombatState;
-use crate::state::core::{ClientInput, GridSelectReason, HandSelectReason, PendingChoice};
+use crate::state::core::{ClientInput, PendingChoice};
 use crate::state::EngineState;
-
-use super::hand_select::{
-    score_discard_candidate, score_discard_to_hand_candidate, score_exhaust_candidate,
-    score_put_on_draw_pile_candidate,
-};
 
 pub(crate) fn engine_local_moves(engine: &EngineState, combat: &CombatState) -> Vec<ClientInput> {
     let mut moves = Vec::new();
@@ -81,37 +73,17 @@ pub(crate) fn engine_local_moves(engine: &EngineState, combat: &CombatState) -> 
                 min_cards,
                 max_cards,
                 candidate_uuids,
-                reason,
                 ..
             } => {
-                if matches!(reason, HandSelectReason::GamblingChip) && *min_cards == 0 {
-                    moves.extend(gambling_chip_moves(combat, candidate_uuids, *max_cards));
-                } else {
-                    extend_hand_select_moves(
-                        &mut moves,
-                        combat,
-                        candidate_uuids,
-                        *min_cards,
-                        *max_cards,
-                        *reason,
-                    );
-                }
+                extend_hand_select_moves(&mut moves, candidate_uuids, *min_cards, *max_cards);
             }
             PendingChoice::GridSelect {
                 min_cards,
                 candidate_uuids,
                 max_cards,
-                reason,
                 ..
             } => {
-                extend_grid_select_moves(
-                    &mut moves,
-                    combat,
-                    candidate_uuids,
-                    *min_cards,
-                    *max_cards,
-                    *reason,
-                );
+                extend_grid_select_moves(&mut moves, candidate_uuids, *min_cards, *max_cards);
             }
             PendingChoice::DiscoverySelect(_) => {
                 moves.push(ClientInput::SubmitDiscoverChoice(0));
@@ -129,39 +101,8 @@ pub(crate) fn engine_local_moves(engine: &EngineState, combat: &CombatState) -> 
                 }
             }
             PendingChoice::StanceChoice => {
-                let hp_percent = (combat.entities.player.current_hp * 100)
-                    / combat.entities.player.max_hp.max(1);
-                let expected_inc_damage: i32 = combat
-                    .entities
-                    .monsters
-                    .iter()
-                    .filter(|m| !m.is_dying && !m.is_escaped && !m.half_dead)
-                    .map(|monster| {
-                        crate::projection::combat::monster_preview_total_damage_in_combat(
-                            combat, monster,
-                        )
-                    })
-                    .sum();
-                let unblocked = (expected_inc_damage - combat.entities.player.block).max(0);
-                let playable_attacks = combat
-                    .zones
-                    .hand
-                    .iter()
-                    .filter(|card| crate::content::cards::can_play_card(card, combat).is_ok())
-                    .filter(|card| {
-                        crate::content::cards::get_card_definition(card.id).card_type
-                            == crate::content::cards::CardType::Attack
-                    })
-                    .count();
-
-                let prefer_calm = unblocked > 0 || hp_percent <= 45 || playable_attacks == 0;
-                if prefer_calm {
-                    moves.push(ClientInput::SubmitDiscoverChoice(1));
-                    moves.push(ClientInput::SubmitDiscoverChoice(0));
-                } else {
-                    moves.push(ClientInput::SubmitDiscoverChoice(0));
-                    moves.push(ClientInput::SubmitDiscoverChoice(1));
-                }
+                moves.push(ClientInput::SubmitDiscoverChoice(0));
+                moves.push(ClientInput::SubmitDiscoverChoice(1));
             }
             _ => {
                 moves.push(ClientInput::Proceed);
@@ -189,104 +130,28 @@ pub fn legal_moves_for_audit(engine: &EngineState, combat: &CombatState) -> Vec<
     get_legal_moves(engine, combat)
 }
 
-fn gambling_chip_moves(
-    combat: &CombatState,
-    candidate_uuids: &[u32],
-    max_cards: u8,
-) -> Vec<ClientInput> {
-    let mut moves = vec![ClientInput::SubmitHandSelect(Vec::new())];
-    let mut scored = candidate_uuids
-        .iter()
-        .map(|uuid| {
-            let discard_score = score_discard_candidate(combat, *uuid);
-            let retention = combat_retention_score_for_uuid(combat, *uuid);
-            let exhaust = combat_exhaust_score_for_uuid(combat, *uuid).max(0);
-            (*uuid, discard_score + exhaust / 3 - retention / 4)
-        })
-        .collect::<Vec<_>>();
-    scored.sort_by(|a, b| b.1.cmp(&a.1));
-
-    let protected_count = candidate_uuids
-        .iter()
-        .filter(|uuid| combat_retention_score_for_uuid(combat, **uuid) >= 7_500)
-        .count();
-    let safe_cap = candidate_uuids
-        .len()
-        .saturating_sub(protected_count)
-        .min(max_cards as usize);
-    if safe_cap == 0 {
-        return moves;
-    }
-
-    let strong = scored
-        .iter()
-        .filter(|(_, score)| *score >= 3_000)
-        .map(|(uuid, _)| *uuid)
-        .collect::<Vec<_>>();
-    let medium = scored
-        .iter()
-        .filter(|(_, score)| *score >= 1_400)
-        .map(|(uuid, _)| *uuid)
-        .collect::<Vec<_>>();
-
-    for take in 1..=strong.len().min(safe_cap.min(3)) {
-        moves.push(ClientInput::SubmitHandSelect(strong[..take].to_vec()));
-    }
-
-    let cautious_take = medium.len().min(safe_cap.min(4));
-    if cautious_take > 0 {
-        let selection = medium[..cautious_take].to_vec();
-        if !contains_hand_select(&moves, &selection) {
-            moves.push(ClientInput::SubmitHandSelect(selection));
-        }
-    }
-
-    if should_allow_full_gambling_chip_mulligan(combat, &scored, safe_cap) {
-        let full = scored
-            .iter()
-            .take(safe_cap)
-            .map(|(uuid, _)| *uuid)
-            .collect::<Vec<_>>();
-        if !full.is_empty() && !contains_hand_select(&moves, &full) {
-            moves.push(ClientInput::SubmitHandSelect(full));
-        }
-    }
-
-    moves
-}
-
 fn extend_hand_select_moves(
     moves: &mut Vec<ClientInput>,
-    combat: &CombatState,
     candidate_uuids: &[u32],
     min_cards: u8,
     max_cards: u8,
-    reason: HandSelectReason,
 ) {
-    let mut ordered = candidate_uuids.to_vec();
-    ordered
-        .sort_by_key(|uuid| std::cmp::Reverse(score_hand_select_candidate(combat, *uuid, reason)));
-
-    let filtered = match reason {
-        HandSelectReason::Discard | HandSelectReason::Exhaust if min_cards == 0 => ordered
-            .into_iter()
-            .filter(|uuid| score_hand_select_candidate(combat, *uuid, reason) > 0)
-            .collect::<Vec<_>>(),
-        _ => ordered,
-    };
-
     let effective_max = candidate_uuids.len().min(max_cards as usize);
     if min_cards == 0 {
         push_unique_hand_select(moves, Vec::new());
     }
-    if filtered.is_empty() || effective_max == 0 {
+    if candidate_uuids.is_empty() || effective_max == 0 {
         return;
     }
 
-    let combo_pool = filtered
+    let combo_pool = candidate_uuids
         .iter()
         .copied()
-        .take(selection_pool_cap(min_cards, max_cards, filtered.len()))
+        .take(selection_pool_cap(
+            min_cards,
+            max_cards,
+            candidate_uuids.len(),
+        ))
         .collect::<Vec<_>>();
     let min_select = if min_cards == 0 {
         1
@@ -302,28 +167,26 @@ fn extend_hand_select_moves(
 
 fn extend_grid_select_moves(
     moves: &mut Vec<ClientInput>,
-    combat: &CombatState,
     candidate_uuids: &[u32],
     min_cards: u8,
     max_cards: u8,
-    reason: GridSelectReason,
 ) {
-    let mut ordered = candidate_uuids.to_vec();
-    ordered
-        .sort_by_key(|uuid| std::cmp::Reverse(score_grid_select_candidate(combat, *uuid, reason)));
-
     let effective_max = candidate_uuids.len().min(max_cards as usize);
     if min_cards == 0 {
         push_unique_grid_select(moves, Vec::new());
     }
-    if ordered.is_empty() || effective_max == 0 {
+    if candidate_uuids.is_empty() || effective_max == 0 {
         return;
     }
 
-    let combo_pool = ordered
+    let combo_pool = candidate_uuids
         .iter()
         .copied()
-        .take(selection_pool_cap(min_cards, max_cards, ordered.len()))
+        .take(selection_pool_cap(
+            min_cards,
+            max_cards,
+            candidate_uuids.len(),
+        ))
         .collect::<Vec<_>>();
     let min_select = if min_cards == 0 {
         1
@@ -337,39 +200,13 @@ fn extend_grid_select_moves(
     }
 }
 
-fn score_hand_select_candidate(combat: &CombatState, uuid: u32, reason: HandSelectReason) -> i32 {
-    match reason {
-        HandSelectReason::PutOnDrawPile | HandSelectReason::PutToBottomOfDraw => {
-            score_put_on_draw_pile_candidate(combat, uuid)
-        }
-        HandSelectReason::Exhaust => score_exhaust_candidate(combat, uuid),
-        HandSelectReason::Discard | HandSelectReason::GamblingChip => {
-            score_discard_candidate(combat, uuid)
-        }
-        HandSelectReason::Copy { .. } => combat_copy_score_for_uuid(combat, uuid),
-        HandSelectReason::Retain | HandSelectReason::Upgrade => {
-            combat_retention_score_for_uuid(combat, uuid)
-        }
-    }
-}
-
-fn score_grid_select_candidate(combat: &CombatState, uuid: u32, reason: GridSelectReason) -> i32 {
-    match reason {
-        GridSelectReason::DiscardToHand => score_discard_to_hand_candidate(combat, uuid),
-        GridSelectReason::MoveToDrawPile
-        | GridSelectReason::Exhume { .. }
-        | GridSelectReason::SkillFromDeckToHand
-        | GridSelectReason::AttackFromDeckToHand => 0,
-    }
-}
-
 fn selection_pool_cap(min_cards: u8, max_cards: u8, available: usize) -> usize {
-    let baseline = if min_cards == 0 {
+    let cap_hint = if min_cards == 0 {
         (max_cards as usize).saturating_add(3)
     } else {
         (min_cards as usize).saturating_add(4)
     };
-    available.min(baseline.clamp(4, 8))
+    available.min(cap_hint.clamp(4, 8))
 }
 
 fn selection_generation_max(min_cards: u8, max_cards: u8, available: usize) -> usize {
@@ -444,28 +281,6 @@ fn push_unique_grid_select(moves: &mut Vec<ClientInput>, selection: Vec<u32>) {
     if !contains_grid_select(moves, &selection) {
         moves.push(ClientInput::SubmitGridSelect(selection));
     }
-}
-
-fn should_allow_full_gambling_chip_mulligan(
-    combat: &CombatState,
-    scored: &[(u32, i32)],
-    safe_cap: usize,
-) -> bool {
-    if combat.zones.draw_pile.is_empty() || safe_cap == 0 {
-        return false;
-    }
-
-    let strong_keepers = scored
-        .iter()
-        .filter(|(uuid, _)| combat_retention_score_for_uuid(combat, *uuid) >= 7_500)
-        .count();
-    let bad_cards = scored.iter().filter(|(_, score)| *score >= 1_400).count();
-    let average_score = scored.iter().map(|(_, score)| *score).sum::<i32>() / scored.len() as i32;
-
-    strong_keepers == 0
-        && bad_cards >= scored.len().saturating_sub(1)
-        && average_score >= 1_600
-        && combat.turn.energy >= 2
 }
 
 fn contains_hand_select(moves: &[ClientInput], selection: &[u32]) -> bool {

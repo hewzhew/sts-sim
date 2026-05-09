@@ -2244,7 +2244,6 @@ fn accumulate_action_effects(
                     affected_cards: Vec::new(),
                 });
             } else if card.id == CardId::SecondWind {
-                accumulated.exhaust_value += exhaust_outlet_value(combat, Some(*card_index));
                 accumulated.future_hand_penalty -= 30;
                 risk_notes.push(CombatPlanRiskNote {
                     sequence_action_index,
@@ -2261,7 +2260,6 @@ fn accumulate_action_effects(
                     affected_cards: non_attack_hand_cards(combat, Some(*card_index)),
                 });
             } else if card.id == CardId::FiendFire {
-                accumulated.exhaust_value += exhaust_outlet_value(combat, Some(*card_index));
                 accumulated.future_hand_penalty -= 60;
                 risk_notes.push(CombatPlanRiskNote {
                     sequence_action_index,
@@ -2287,12 +2285,6 @@ fn accumulate_action_effects(
                 .iter()
                 .filter_map(|uuid| hand_card_label_by_uuid(combat, *uuid))
                 .collect::<Vec<_>>();
-            accumulated.exhaust_value += uuids
-                .iter()
-                .map(|uuid| {
-                    crate::bot::card_disposition::combat_exhaust_score_for_uuid(combat, *uuid) / 100
-                })
-                .sum::<i32>();
             risk_notes.push(CombatPlanRiskNote {
                 sequence_action_index,
                 action_key: action_key.to_string(),
@@ -2421,46 +2413,23 @@ fn add_true_grit_random_overlay(
         return;
     }
 
-    let bad_cards = candidates
+    accumulated.random_risk_present = true;
+    let affected = candidates
         .iter()
-        .filter(|card| {
-            crate::bot::card_disposition::combat_retention_score_for_uuid(combat, card.uuid)
-                >= 4_000
-        })
         .map(|card| hand_card_label(card))
-        .collect::<Vec<_>>();
-    let good_cards = candidates
-        .iter()
-        .filter(|card| {
-            crate::bot::card_disposition::combat_exhaust_score_for_uuid(combat, card.uuid) >= 1_200
-        })
-        .map(|card| hand_card_label(card))
-        .collect::<Vec<_>>();
-
-    let bad_milli = bad_cards.len() as i32 * 1000 / candidates.len() as i32;
-    let good_milli = good_cards.len() as i32 * 1000 / candidates.len() as i32;
-    accumulated.random_risk -= bad_milli / 8;
-    accumulated.key_card_risk -= bad_milli / 5;
-    accumulated.exhaust_value += good_milli / 8;
-
-    let mut affected = bad_cards.clone();
-    for card in good_cards {
-        if !affected.contains(&card) {
-            affected.push(card);
-        }
-    }
+        .collect();
     risk_notes.push(CombatPlanRiskNote {
         sequence_action_index,
         action_key: action_key.to_string(),
         kind: "true_grit_random_exhaust_overlay".to_string(),
         message:
-            "Unupgraded True Grit uses a static remaining-hand distribution overlay; this is not exact RNG branch enumeration."
+            "Unupgraded True Grit has a random exhaust branch; this probe records the uncertainty without card-value classification."
                 .to_string(),
         chance_model: Some("static_hand_distribution".to_string()),
         exact_rng_branches: false,
         risk_is_overlay_only: true,
-        bad_branch_probability_milli: Some(bad_milli),
-        good_branch_probability_milli: Some(good_milli),
+        bad_branch_probability_milli: None,
+        good_branch_probability_milli: None,
         affected_cards: affected,
     });
 }
@@ -3416,13 +3385,7 @@ fn action_order_score(combat: &CombatState, action: &ClientInput) -> i32 {
             })
             .unwrap_or(0),
         ClientInput::SubmitHandSelect(uuids) | ClientInput::SubmitGridSelect(uuids) => {
-            uuids
-                .iter()
-                .map(|uuid| {
-                    crate::bot::card_disposition::combat_exhaust_score_for_uuid(combat, *uuid)
-                })
-                .sum::<i32>()
-                / 100
+            uuids.len() as i32
         }
         _ => 0,
     }
@@ -3778,19 +3741,6 @@ fn kill_window_card_damage(card: &CombatCard) -> i32 {
     (def.base_damage + def.upgrade_damage * card.upgrades as i32)
         .max(card.base_damage_mut)
         .max(0)
-}
-
-fn exhaust_outlet_value(combat: &CombatState, played_index: Option<usize>) -> i32 {
-    combat
-        .zones
-        .hand
-        .iter()
-        .enumerate()
-        .filter(|(idx, _)| Some(*idx) != played_index)
-        .map(|(_, card)| {
-            crate::bot::card_disposition::combat_exhaust_score_for_uuid(combat, card.uuid) / 100
-        })
-        .sum()
 }
 
 fn hand_cards_except(combat: &CombatState, played_index: Option<usize>) -> Vec<String> {

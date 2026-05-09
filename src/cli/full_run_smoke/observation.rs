@@ -757,7 +757,6 @@ fn run_pile_type_name(pile: crate::state::core::PileType) -> String {
 pub fn build_combat_hand_card_observations(
     combat: &CombatState,
 ) -> Vec<RunCombatHandCardObservationV0> {
-    let context = build_card_role_context(combat);
     combat
         .zones
         .hand
@@ -765,7 +764,6 @@ pub fn build_combat_hand_card_observations(
         .enumerate()
         .map(|(hand_index, card)| {
             let playable = crate::content::cards::can_play_card(card, combat).is_ok();
-            let role = classify_hand_card_with_context(combat, hand_index, &context);
             let mut transient_tags = Vec::new();
             transient_tags.push(if playable { "playable" } else { "unplayable" }.to_string());
             if card.cost_for_turn.is_some() {
@@ -774,7 +772,6 @@ pub fn build_combat_hand_card_observations(
             if card.free_to_play_once {
                 transient_tags.push("free_to_play_once".to_string());
             }
-            transient_tags.push(format!("role:{}", hand_card_role_label(role)));
 
             RunCombatHandCardObservationV0 {
                 hand_index,
@@ -789,15 +786,6 @@ pub fn build_combat_hand_card_observations(
             }
         })
         .collect()
-}
-
-pub fn hand_card_role_label(role: HandCardRole) -> &'static str {
-    match role {
-        HandCardRole::CoreKeeper => "core_keeper",
-        HandCardRole::SequencedPiece => "sequenced_piece",
-        HandCardRole::SituationalResource => "situational_resource",
-        HandCardRole::LowValueFuel => "low_value_fuel",
-    }
 }
 
 pub fn base_semantics_for_card(card_id: CardId, upgrades: u8) -> Vec<String> {

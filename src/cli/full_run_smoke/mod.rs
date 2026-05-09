@@ -4,9 +4,6 @@ use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
-use crate::bot::card_disposition::{
-    build_context as build_card_role_context, classify_hand_card_with_context, HandCardRole,
-};
 use crate::content::cards::{CardId, CardRarity, CardType};
 use crate::content::monsters::factory::{self, EncounterId};
 use crate::content::relics::RelicId;

@@ -336,7 +336,7 @@ mod tests {
     }
 
     #[test]
-    fn combat_turn_plan_probe_marks_true_grit_random_key_card_risk() {
+    fn combat_turn_plan_probe_marks_true_grit_random_branch_without_card_value_classification() {
         let mut combat = blank_test_combat();
         combat.zones.hand.push(card(CardId::TrueGrit, 1));
         combat.zones.hand.push(card(CardId::Bash, 2));
@@ -363,7 +363,16 @@ mod tests {
         );
         assert!(!note.exact_rng_branches);
         assert!(note.risk_is_overlay_only);
-        assert!(note.bad_branch_probability_milli.unwrap_or_default() > 0);
+        assert_eq!(note.bad_branch_probability_milli, None);
+        assert_eq!(note.good_branch_probability_milli, None);
+        assert!(note
+            .affected_cards
+            .iter()
+            .any(|card| card.starts_with("Bash+0#2")));
+        assert!(note
+            .affected_cards
+            .iter()
+            .any(|card| card.starts_with("Wound+0#3")));
         let affordance = report
             .first_action_affordances
             .iter()
@@ -380,7 +389,7 @@ mod tests {
     }
 
     #[test]
-    fn combat_turn_plan_probe_marks_true_grit_bad_card_upside() {
+    fn combat_turn_plan_probe_does_not_report_true_grit_good_bad_branch_scores() {
         let mut combat = blank_test_combat();
         combat.zones.hand.push(card(CardId::TrueGrit, 1));
         combat.zones.hand.push(card(CardId::Wound, 2));
@@ -400,7 +409,9 @@ mod tests {
             .iter()
             .find(|note| note.kind == "true_grit_random_exhaust_overlay")
             .expect("unupgraded True Grit should emit static random exhaust overlay");
-        assert!(note.good_branch_probability_milli.unwrap_or_default() > 0);
+        assert_eq!(note.bad_branch_probability_milli, None);
+        assert_eq!(note.good_branch_probability_milli, None);
+        assert_eq!(note.affected_cards.len(), 3);
     }
 
     #[test]
