@@ -62,6 +62,22 @@ Critic, Policy, Value, PPO, CleanRL, Trainer, or RewardShaping.
 The kernel may know executable truth. Public data used for action selection may
 not.
 
+## Java/Rust Authority Boundary
+
+The decompiled game source at `D:\rust\cardcrawl` is the authority for combat
+semantics: card effects, relic hooks, potion behavior, monster AI, intent
+construction, action queue order, choice screens, combat lifecycle, and RNG
+consumption.
+
+The Rust simulator is the executable target for AI. Rust does not have to copy
+Java's object graph, inheritance, UI coupling, mutable globals, or render state.
+It does have to preserve every combat mechanic unless the migration ledger marks
+the case as `unsupported_abort`.
+
+Existing Rust code is not a compatibility contract. If an existing Rust module,
+fixture, helper, or API cannot represent the Java-derived combat schema or cannot
+replay deterministically, it must be rewritten or deleted.
+
 ## Combat Kernel API
 
 ```text
@@ -114,48 +130,40 @@ terminal, rejection, abort, replay fault, or truncation lives inside
 
 ## Combat Origin
 
-A combat cannot be started from loose fields and then treated as real. There are
-two origin families:
+A combat cannot be started from loose fields and then treated as real. There is
+one combat origin:
 
 ```text
-CombatOrigin::AuthoredCombatV0 {
-  authored_state,
-  replay_provenance,
-}
-
-CombatOrigin::RunCombatSnapshot {
-  run_combat_snapshot,
+CombatOrigin::CombatSnapshot {
+  combat_state,
   replay_provenance,
 }
 ```
 
-`AuthoredCombatV0` is the first implementation path. It is a fully declared
-single-combat state used to prove the kernel can run one real combat without
-inventing a run-level system.
+`CombatSnapshot` is a complete typed combat state. It may be authored for a
+probe or extracted from a real run, but the kernel receives the same complete
+combat schema either way.
 
-`RunCombatSnapshot` is the future parity path. It is disabled until a separate
-run-state snapshot spec exists. It must not be implemented as an untyped
-`run_state` placeholder.
+The full source of truth for combat-state coverage is the decompiled game source
+under `D:\rust\cardcrawl`. The schema must be derived from combat-relevant game
+classes there, not from a small Jaw Worm demo.
 
-`RunCombatSnapshot` must eventually define the cut between run-level and
-combat-level state, including deck, relic counters, potion belt, map/run flags,
-event history relevant to combat, RNG streams, combat room identity, and
-combat-entry hooks.
+Full run state is not a combat-kernel input. Map path, shops, events, rewards,
+Neow choices, and rest sites belong to a future run-level kernel. If such data is
+needed to enter combat, it must be materialized into `CombatStateSnapshot` before
+calling `CombatKernel::start`.
 
-Until `docs/RUN_STATE_SNAPSHOT_SPEC.md` exists and is implemented,
-`CombatOrigin::RunCombatSnapshot` must return
-`KernelCallError::UnsupportedOrigin` or `KernelCallError::SchemaIncompatible`.
+JSON fixtures, hand-written deck slices, and other temporary import helpers are
+allowed only as adapters into `CombatSnapshot`. They are not the AI contract and
+must not become runtime behavior.
 
-`CombatStartSpec`, JSON fixtures, and hand-written deck slices are allowed only
-as temporary adapters into `AuthoredCombatV0`. They are not the AI contract.
+### Combat State Snapshot
 
-### AuthoredCombatV0 State
-
-`AuthoredCombatV0` is not a loose deck/enemy tuple. It must be a complete typed
-single-combat starting state:
+`CombatSnapshot` is not a loose deck/enemy tuple. It must be a complete typed
+combat state:
 
 ```text
-AuthoredCombatStateV0 {
+CombatStateSnapshot {
   player_setup,
   combat_zones,
   relic_setup,
@@ -167,13 +175,18 @@ AuthoredCombatStateV0 {
 }
 ```
 
-The first maintainable implementation must derive this structure from one real
-hard-coded combat instance and prove that the same RNG plus the same action trace
-replays identically.
+`CombatStateSnapshot` must cover all combat-relevant state categories identified
+from `D:\rust\cardcrawl`, including player, cards, monsters, powers, relics,
+potions, orbs, stance, action manager queues, choice screens, RNG streams,
+combat room state, and combat-entry/end hooks.
 
-`AuthoredCombatStateV0` may be small for Jaw Worm, but it must be complete for
-that combat. It must not be a half-constructed `CombatState` patched until the
-demo runs.
+The implementation may execute one scenario first, but the schema itself must
+not be scoped to that scenario or to any reduced combat subset. A missing combat
+state field is a schema defect, not a strategy defect.
+
+Every field in `CombatStateSnapshot` must have a source mapping and a Rust owner
+recorded in `AI_COMBAT_STATE_SCHEMA.md`. A field may be structurally redesigned
+for Rust, but not silently dropped.
 
 ## Public Decision Frame
 
@@ -1251,9 +1264,10 @@ AA. PreCombatBoundary
   accepted by CombatKernel
   invalid combat origins fail before a fake combat decision is emitted
 
-AB. AuthoredCombatStateV0Schema
-  Jaw Worm authored combat state is complete and typed
+AB. CompleteCombatStateSchema
+  combat snapshot schema is derived from D:\rust\cardcrawl source inventory
   no untyped run_state is required
+  all combat-relevant state categories have explicit schema coverage
   same state/RNG/action script runs identically five times
 
 AC. DynamicCombatAffordances
@@ -1280,7 +1294,7 @@ and acceptance gate it satisfies.
 - Micro two-slimes proves target masks can train.
 - Both are toy environments, not real-combat foundations.
 - CleanRL is now only a disposable reference/smoke tool.
-- The real foundation is `PublicDecisionFrame + PublicActionDescriptor +
+- The real foundation is `CombatStateSnapshot + PublicDecisionFrame + PublicActionDescriptor +
   RecordedActionTrace + KernelTransition + ReplayProvenance + ReplayCursor`.
 - Any old audit shell, seed patch, baseline continuation, transparent snapshot,
   privileged trace leak, weak-controller-as-teacher path, or Gym-first shape is

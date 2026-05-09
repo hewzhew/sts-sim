@@ -21,17 +21,24 @@ Stop and repair the kernel if any of these happen:
 - privileged data is accessed without an explicit request capability and
   consumer manifest;
 - a test passes only because it uses a fixture parser as runtime behavior.
+- existing Rust APIs are preserved after they conflict with the Java-derived
+  combat schema.
 
-## Phase -1: Ground One Real Combat State
+## Phase -1: Source Inventory and Complete Combat State Schema
 
 Purpose: stop designing around abstract nouns. Before the kernel API is
-implemented, ground the state model on one complete real combat.
+implemented, derive the combat snapshot schema from the decompiled game source
+in `D:\rust\cardcrawl`.
 
 Deliverables:
 
 ```text
-docs/AI_COMBAT_STATE_V0_SCHEMA.md
-one hard-coded complete Ironclad vs Jaw Worm authored combat state
+docs/AI_COMBAT_STATE_SCHEMA.md
+combat-relevant source inventory from D:\rust\cardcrawl
+coverage table mapping source classes/fields to schema sections
+Rust simulator inventory mapping existing modules to keep/rewrite/delete/adapter
+Java-to-Rust migration ledger
+one complete authored combat snapshot for deterministic replay probing
 one fixed public action script
 one smoke binary that runs the same combat five times
 state/hash trace output for each run
@@ -39,12 +46,20 @@ state/hash trace output for each run
 
 Rules:
 
-- the authored state must be complete for that combat, not a partial
-  `CombatState`;
+- the schema must target complete combat-state coverage, not a reduced subset;
+- the authored probe state must be an instance of the complete schema, not a
+  partial `CombatState`;
+- Java source defines semantics; Rust defines the AI-facing executable
+  implementation;
+- Rust may redesign Java's structure, but every redesign must preserve mechanic
+  semantics or be marked `unsupported_abort`;
+- current Rust code has no compatibility privilege and may be deleted or
+  rewritten if it conflicts with the schema;
 - no `DecisionFrame` abstraction is required yet;
 - no Python wrapper is required yet;
 - no training code is allowed;
-- every field needed to replay the combat must be named in the schema.
+- every field needed to replay combat must be named in the schema or explicitly
+  marked non-combat/non-mechanical with source justification.
 
 Acceptance:
 
@@ -52,22 +67,29 @@ Acceptance:
   result five times;
 - each run emits the same ordered state/hash sequence;
 - missing state required for determinism is added to
-  `AI_COMBAT_STATE_V0_SCHEMA.md`;
+  `AI_COMBAT_STATE_SCHEMA.md`;
 - the schema explicitly distinguishes combat-level fields from future run-level
   fields.
-- `RunCombatSnapshot` is explicitly unsupported until
-  `docs/RUN_STATE_SNAPSHOT_SPEC.md` exists.
+- no untyped `run_state` placeholder remains in the combat contract.
+- each reused Rust module has a migration-ledger entry explaining why it is kept;
+- each Java-derived mechanic in the first probe has a Rust owner module.
 
 Forbidden:
 
 - pretending `run_state` exists;
+- using Jaw Worm as the schema boundary;
 - relying on a fixture parser as runtime;
 - manually patching state after combat starts to keep the demo alive;
+- preserving old Rust modules for convenience;
 - writing any model/trainer/collector code.
 
 ## Phase 0: Type Skeleton and Compile Boundary
 
 Purpose: create names and ownership boundaries before touching real combat.
+
+This phase is allowed to delete or replace existing Rust AI/runtime/engine code
+that conflicts with `AI_COMBAT_STATE_SCHEMA.md`. Do not wrap incompatible code
+with nicer names.
 
 Deliverables:
 
@@ -83,6 +105,7 @@ Required types:
 
 ```text
 CombatOrigin
+CombatStateSnapshot
 ReplayProvenance
 ReplayCursor
 CombatHandle
@@ -113,7 +136,7 @@ OpaqueKernelSnapshotHandle
 Acceptance:
 
 - code compiles with empty/non-engine implementations;
-- types are traceable back to `AI_COMBAT_STATE_V0_SCHEMA.md`;
+- types are traceable back to `AI_COMBAT_STATE_SCHEMA.md`;
 - `KernelActionDescriptor` is not serializable;
 - `PublicActionDescriptor` is serializable;
 - `OpaqueKernelSnapshotHandle` contains no byte payload accessible outside the
@@ -399,14 +422,14 @@ Forbidden:
 - exposing hidden RNG through snapshot metadata;
 - using fork before fork isolation passes.
 
-## Phase 8: AuthoredCombatV0 Jaw Worm Through Real Engine
+## Phase 8: CombatSnapshot Jaw Worm Through Real Engine
 
 Purpose: first real engine path with no strategy logic.
 
 Deliverables:
 
 ```text
-AuthoredCombatV0 starter Ironclad vs Jaw Worm
+CombatSnapshot starter Ironclad vs Jaw Worm
 TurnAction decision
 PlayCard descriptors
 EndTurn descriptor
@@ -417,7 +440,7 @@ KernelTransition for at least one player action
 Acceptance:
 
 - start returns `KernelSession.current_decision`;
-- origin is built from `AI_COMBAT_STATE_V0_SCHEMA.md`;
+- origin is built from `AI_COMBAT_STATE_SCHEMA.md`;
 - action descriptors contain public descriptor hashes;
 - no `engine_ref` in printed public output;
 - one legal card play transitions through real engine;
@@ -544,9 +567,9 @@ Forbidden:
 - card-pick conclusions from combat-only tasks;
 - baseline continuation as evidence.
 
-## Release Criteria for "Maintainable V0"
+## Release Criteria for "Maintainable Kernel"
 
-V0 is maintainable only when all are true:
+The combat kernel is maintainable only when all are true:
 
 ```text
 1. Contract types compile and are separated by module visibility.
@@ -558,12 +581,15 @@ V0 is maintainable only when all are true:
 7. Hashes use canonical serialization.
 8. Snapshot/fork isolation passes.
 9. Python leakage tests pass.
-10. Jaw Worm real-engine path passes without old bot or fixture runtime.
-11. Headbutt/Hologram-like choice context differs in trace.
-12. Multi-step choice fork/cancel/confirm state is replayable.
-13. Pre-combat/run-level choices are rejected before fake combat decisions.
-14. Dynamic cost/generated choices update descriptor hashes and context.
-15. No trainer is required to validate the kernel.
+10. Complete combat-state schema is mapped to D:\rust\cardcrawl source inventory.
+11. Rust simulator inventory has keep/rewrite/delete/adapter decisions.
+12. Java-to-Rust migration ledger exists for reused or redesigned mechanics.
+13. Jaw Worm real-engine path passes without old bot or fixture runtime.
+14. Headbutt/Hologram-like choice context differs in trace.
+15. Multi-step choice fork/cancel/confirm state is replayable.
+16. Pre-combat/run-level choices are rejected before fake combat decisions.
+17. Dynamic cost/generated choices update descriptor hashes and context.
+18. No trainer is required to validate the kernel.
 ```
 
 If any release criterion fails, the project is still in kernel construction, not

@@ -1,0 +1,878 @@
+# AI Combat State Schema
+
+This document defines the combat-state schema used by `CombatKernel`.
+
+It is not a demo schema, not a small-combat schema, and not a numbered
+compatibility tier. The authoritative source for coverage is the decompiled game
+source at:
+
+```text
+D:\rust\cardcrawl
+```
+
+The first executable probe may use a simple combat, but that probe must be an
+instance of this complete schema. If implementation discovers missing combat
+state, the schema is incomplete and must be repaired before the kernel is treated
+as deterministic.
+
+## Java Semantics, Rust Simulator
+
+`D:\rust\cardcrawl` is the semantic source of truth. It is used to recover what
+the original game tracks, when hooks fire, which RNG stream is consumed, how card
+and monster effects compose, and which intermediate states can request player
+input.
+
+It is not a mandate to copy Java's object graph. The Rust simulator is the
+runtime used by AI, search, replay, and training. Rust may replace Java globals,
+inheritance, UI-coupled fields, mutable singletons, and render objects with
+typed deterministic data structures. That redesign is allowed only when it
+preserves the original mechanic.
+
+The migration rule is:
+
+```text
+Preserve mechanic semantics.
+Redesign implementation structure where Java's structure is bad for Rust.
+Document every semantic divergence.
+Do not drop a game feature because it is inconvenient.
+```
+
+If a Java feature is impossible or inappropriate to migrate literally, the Rust
+replacement must state:
+
+```text
+source class / method / field
+original Java behavior
+why literal migration is invalid
+Rust representation
+semantic equivalence test
+known limitation, if any
+```
+
+The existing Rust simulator does not receive compatibility protection. Any
+module, file, function, type, fixture, or test helper may be changed or deleted
+if it conflicts with this schema, with replay determinism, or with Java-derived
+combat semantics.
+
+## Coverage Rule
+
+Every combat-relevant field, queue, counter, RNG, and screen state found in
+`D:\rust\cardcrawl` must be classified in the schema inventory as one of:
+
+```text
+modeled:
+  stored directly in CombatStateSnapshot
+
+derived:
+  recomputed deterministically from modeled state
+
+render_only:
+  UI/animation data that no combat mechanic reads
+
+run_level_materialized:
+  originates outside combat but must be converted into combat state before
+  CombatKernel::start
+
+non_combat:
+  belongs only to map, shop, event, reward, rest-site, menu, or save systems
+
+unsupported_abort:
+  known source state not yet modeled; entering it is KernelAbort, not training
+  data
+```
+
+Silent globals are forbidden. Untyped `run_state` is forbidden. A field needed
+for replay, legal action generation, damage/block calculation, choice-screen
+progress, combat hooks, or RNG consumption cannot be ignored. Existing Rust code
+that cannot represent such a field must change.
+
+## Source Inventory
+
+The minimum source inventory is:
+
+| Source file | Required schema coverage |
+| --- | --- |
+| `dungeons/AbstractDungeon.java` | combat-global player pointer, current room/node facts needed by combat, combat RNG streams, action manager, screen-open state, combat-relevant static counters and flags |
+| `characters/AbstractPlayer.java` | player identity, HP/block/gold, master deck, draw/hand/discard/exhaust/limbo zones, relics, blights, potion belt, energy, orbs, stance, card-in-use, class-specific combat state |
+| `core/AbstractCreature.java` | common creature HP/block/powers/lifecycle/last-damage/combat flags used by player and monsters |
+| `cards/AbstractCard.java` | concrete card instance identity, cost, current turn cost, damage/block/magic/heal/draw/discard values, upgrade/misc/tags, target/type/color/rarity, one-shot flags, generated/autoplay state |
+| `cards/CardGroup.java` | zone ordering, group type, queued/in-hand bookkeeping when mechanically relevant |
+| `cards/CardQueueItem.java` | queued card, target, X-cost energy, ignore-energy flag, autoplay flag, random-target flag, end-turn autoplay flag |
+| `actions/GameActionManager.java` | action queues, pre-turn actions, card queue, monster queue, cards played this turn/combat, orb/stance history, phase/control flags, damage/discard/energy/turn counters |
+| `actions/AbstractGameAction.java` and subclasses | queued action class, action type, duration/done state, source/target refs, amount, and subclass payload needed to resume action execution |
+| `rooms/AbstractRoom.java` and monster room subclasses | room phase, monster group, combat-over flags, cannot-lose flag, elite/combat-event/smoke/mug flags, reward timing flags, card reward rarity counters that are touched by combat end |
+| `monsters/AbstractMonster.java` | monster identity, HP/block/powers/lifecycle, move bytes, move history, intent, damage list, escape/death flags, monster-specific payload |
+| `monsters/MonsterGroup.java` | ordered monster list, spawned monster insertion, random monster selection semantics, hovered monster excluded as render-only unless a mechanic reads it |
+| `monsters/EnemyMoveInfo.java` | next move, intent, base damage, multiplier, multi-damage flag |
+| `powers/AbstractPower.java` and concrete powers | owner ref, power id, amount, priority, type, turn-based/post-action/negative flags, concrete power payloads |
+| `relics/AbstractRelic.java` and concrete relics | relic id, counter, used-up/grayscale flags, energy-based flag, combat counters/charges, concrete relic payloads |
+| `potions/AbstractPotion.java` and concrete potions | potion id, slot, potency, can-use/target-required/thrown/discarded flags, concrete potion payloads |
+| `orbs/AbstractOrb.java` and concrete orbs | orb id, slot order, evoke/passive/base amounts, focus-applied values, concrete orb payloads |
+| `stances/AbstractStance.java` and concrete stances | stance id and concrete stance counters/timers only when mechanically read |
+| `screens/select/GridCardSelectScreen.java` | target group, selected cards, selection amount, confirm/cancel state, upgrade/transform/purge/any-number/clarity flags |
+| `screens/select/HandCardSelectScreen.java` | selected cards, number to select, can-pick-zero/up-to/any-number/transform/upgrade flags, selection reason, retrieval flag |
+| `random/Random.java` | `RandomXS128` state words and counter for every combat-consuming RNG stream |
+
+This table is not decorative. Before an implementation claims schema coverage,
+each concrete combat-relevant subclass under these directories must either map
+to a typed payload or be listed as `unsupported_abort`.
+
+## Rust Inventory
+
+Rust implementation work must also inventory the current simulator before reuse.
+At minimum, classify existing files under:
+
+```text
+src/runtime
+src/engine
+src/content
+src/state
+src/protocol
+src/projection
+src/semantics
+src/testing
+src/ai
+```
+
+Each reused Rust type must be classified as:
+
+```text
+kept:
+  already matches the Java-derived semantic schema
+
+rewritten:
+  useful concept, wrong shape or incomplete state
+
+deleted:
+  seed-driven, fixture-driven, policy-polluted, or incompatible with deterministic
+  replay
+
+adapter_only:
+  acceptable only as a temporary importer/exporter into CombatStateSnapshot
+```
+
+No Rust type is accepted because it already exists. It is accepted only if it can
+be traced to Java-derived mechanics and produces deterministic replay under this
+schema.
+
+## Top-Level Snapshot
+
+```text
+CombatStateSnapshot {
+  source_manifest: SourceManifest,
+  snapshot_origin: CombatSnapshotOrigin,
+  dungeon_context: DungeonCombatContext,
+  room_state: RoomCombatState,
+  action_manager: ActionManagerState,
+  player: PlayerCombatState,
+  monster_group: MonsterGroupState,
+  card_store: CardInstanceStore,
+  card_zones: CardZoneState,
+  powers: PowerState,
+  relics: RelicState,
+  blights: BlightState,
+  potions: PotionBeltState,
+  orbs: OrbState,
+  stance: StanceState,
+  choice_screens: ChoiceScreenState,
+  rng: CombatRngState,
+  lifecycle: CombatLifecycleState,
+  public_refs: PublicRefState,
+  derived_values: DerivedCombatValues,
+  source_coverage: SourceCoverageLedger,
+}
+```
+
+`CombatSnapshotOrigin` may be authored, replay-extracted, or bridge-extracted.
+That is provenance only. All origins use the same `CombatStateSnapshot` schema.
+
+## Source Manifest
+
+```text
+SourceManifest {
+  cardcrawl_root,
+  game_version,
+  decompile_manifest_hash,
+  simulator_commit,
+  schema_hash,
+  content_manifest_hash,
+}
+```
+
+`decompile_manifest_hash` is a canonical hash of the source files used for the
+inventory. If `D:\rust\cardcrawl` changes, the manifest must change.
+
+## Dungeon Combat Context
+
+```text
+DungeonCombatContext {
+  player_class,
+  floor_num,
+  act_num,
+  ascension_level,
+  curr_map_node_ref,
+  dungeon_id,
+  screen_state,
+  combat_relevant_global_flags,
+}
+```
+
+Combat code in `AbstractDungeon` uses many static fields. The schema must not
+pretend they are absent. Run-level fields stay outside the kernel only if their
+combat effects have already been materialized into player, room, relic, potion,
+card, monster, or RNG state.
+
+## Room Combat State
+
+```text
+RoomCombatState {
+  room_kind,
+  phase,
+  monster_group_ref,
+  is_battle_over,
+  cannot_lose,
+  elite_trigger,
+  mugged,
+  smoked,
+  combat_event,
+  reward_allowed,
+  reward_time,
+  skip_monster_turn,
+  base_rare_card_chance,
+  base_uncommon_card_chance,
+  rare_card_chance,
+  uncommon_card_chance,
+  combat_end_timer_state,
+}
+```
+
+`CombatKernel` stops at `CombatTerminalReport`. It must define whether combat-end
+hooks have been applied and must not consume post-combat reward-generation RNG.
+
+## Action Manager State
+
+```text
+ActionManagerState {
+  phase,
+  has_control,
+  turn_has_ended,
+  using_card,
+  monster_attacks_queued,
+  current_action,
+  previous_action,
+  turn_start_current_action,
+  next_combat_actions,
+  actions,
+  pre_turn_actions,
+  card_queue,
+  monster_queue,
+  cards_played_this_turn,
+  cards_played_this_combat,
+  orbs_channeled_this_turn,
+  orbs_channeled_this_combat,
+  unique_stances_this_combat,
+  mantra_gained,
+  last_card_ref,
+  total_discarded_this_turn,
+  damage_received_this_turn,
+  damage_received_this_combat,
+  hp_loss_this_combat,
+  player_hp_last_turn,
+  energy_gained_this_combat,
+  turn_index,
+}
+```
+
+Queued actions are typed state, not opaque callbacks:
+
+```text
+ActionState {
+  action_class,
+  action_type,
+  duration,
+  is_done,
+  source_ref,
+  target_ref,
+  amount,
+  damage_info,
+  card_ref,
+  power_ref,
+  relic_ref,
+  potion_ref,
+  subclass_payload,
+}
+```
+
+Any action subclass that cannot be serialized and restored must be
+`unsupported_abort` before the frame is used for training or search.
+
+`CardQueueItemState` must include:
+
+```text
+card_ref
+monster_ref
+energy_on_use
+ignore_energy_total
+autoplay_card
+random_target
+is_end_turn_auto_play
+```
+
+## Player Combat State
+
+```text
+PlayerCombatState {
+  creature: CreatureState,
+  player_class,
+  master_deck_zone_ref,
+  draw_pile_zone_ref,
+  hand_zone_ref,
+  discard_pile_zone_ref,
+  exhaust_pile_zone_ref,
+  limbo_zone_ref,
+  relic_refs,
+  blight_refs,
+  potion_slot_refs,
+  energy,
+  master_hand_size,
+  game_hand_size,
+  max_orbs,
+  orb_refs_in_order,
+  stance_ref,
+  card_in_use_ref,
+  damaged_this_combat,
+  class_specific_payload,
+}
+```
+
+`CreatureState` covers fields inherited through `AbstractCreature`:
+
+```text
+CreatureState {
+  creature_ref,
+  creature_id,
+  name_id,
+  is_player,
+  hp,
+  max_hp,
+  block,
+  gold,
+  powers,
+  lifecycle,
+  half_dead,
+  is_bloodied,
+  last_damage_taken,
+  escape_state,
+  mechanically_relevant_flags,
+}
+```
+
+Animation, hitbox, position, and color fields are render-only unless a source
+method reads them for mechanics. If a mechanic reads one later, it moves from
+`render_only` to `modeled`.
+
+## Cards and Zones
+
+All concrete card instances live in `CardInstanceStore`; zones only contain
+refs.
+
+```text
+CardInstance {
+  card_ref,
+  source_uuid,
+  card_id,
+  name_id,
+  color,
+  type,
+  rarity,
+  target,
+  tags,
+  upgraded,
+  times_upgraded,
+  misc,
+  cost,
+  cost_for_turn,
+  charge_cost,
+  is_cost_modified,
+  is_cost_modified_for_turn,
+  free_to_play_once,
+  energy_on_use,
+  ignore_energy_on_use,
+  damage_type,
+  damage_type_for_turn,
+  base_damage,
+  damage,
+  is_damage_modified,
+  base_block,
+  block,
+  is_block_modified,
+  base_magic_number,
+  magic_number,
+  is_magic_number_modified,
+  base_heal,
+  heal,
+  base_draw,
+  draw,
+  base_discard,
+  discard,
+  multi_damage,
+  exhaust,
+  ethereal,
+  retain,
+  self_retain,
+  innate,
+  return_to_hand,
+  shuffle_back_into_draw_pile,
+  exhaust_on_use_once,
+  dont_trigger_on_use_card,
+  purge_on_use,
+  is_in_autoplay,
+  generated_by,
+  card_specific_payload,
+}
+```
+
+```text
+CardZoneState {
+  master_deck,
+  draw_pile,
+  hand,
+  discard_pile,
+  exhaust_pile,
+  limbo,
+  card_in_play,
+  temporary_generated_cards,
+}
+
+CardZone {
+  zone_ref,
+  zone_kind,
+  ordered_card_refs,
+  group_type,
+  public_visibility_mode,
+}
+```
+
+Duplicate cards are represented by distinct `card_ref` values. Public
+observations may hide draw order; the private combat state must still model the
+real order for deterministic replay.
+
+## Monster Group
+
+```text
+MonsterGroupState {
+  group_ref,
+  monsters_in_slot_order,
+  hovered_monster_ref_if_mechanical,
+}
+
+MonsterState {
+  creature: CreatureState,
+  monster_ref,
+  monster_id,
+  slot,
+  max_hp_roll_state,
+  damage_entries,
+  move_state,
+  intent_state,
+  move_history,
+  escape_next,
+  escaped,
+  cannot_escape,
+  half_dead,
+  monster_specific_payload,
+}
+
+MonsterMoveState {
+  next_move,
+  move_byte,
+  move_name_id,
+  move_history,
+  enemy_move_info,
+}
+
+IntentState {
+  intent_kind,
+  tip_intent_kind,
+  base_damage,
+  displayed_damage,
+  damage_per_hit,
+  hit_count,
+  is_multi_damage,
+  block_amount,
+  debuffs,
+  status_cards,
+  summon_or_escape_flags,
+  target_scope,
+}
+```
+
+Intent is a structure, not a single damage number. Multi-hit, block, buff,
+debuff, summon, sleep, escape, and unknown/hidden states must be represented
+without overloading `visible_intent_damage`.
+
+Duplicate monsters use distinct `monster_ref` values that are stable for the
+entire combat and never reused.
+
+## Powers
+
+```text
+PowerState {
+  power_instances,
+  owner_to_power_order,
+}
+
+PowerInstance {
+  power_ref,
+  power_id,
+  owner_ref,
+  amount,
+  priority,
+  power_type,
+  is_turn_based,
+  is_post_action_power,
+  can_go_negative,
+  concrete_payload,
+}
+```
+
+Concrete power payloads are mandatory when the source class has additional
+mechanical fields or behavior depending on stored state.
+
+## Relics and Blights
+
+```text
+RelicState {
+  relic_instances,
+  relic_order,
+}
+
+RelicInstance {
+  relic_ref,
+  relic_id,
+  counter,
+  used_up,
+  grayscale,
+  energy_based,
+  discarded,
+  concrete_payload,
+}
+
+BlightState {
+  blight_instances,
+  blight_order,
+}
+```
+
+Relic counters and concrete payloads are combat state whenever relic hooks can
+trigger in combat or at combat end.
+
+## Potions
+
+```text
+PotionBeltState {
+  slots,
+}
+
+PotionSlotState {
+  slot_index,
+  potion_ref,
+}
+
+PotionInstance {
+  potion_ref,
+  potion_id,
+  slot,
+  potency,
+  can_use,
+  target_required,
+  is_obtained,
+  discarded,
+  is_thrown,
+  concrete_payload,
+}
+```
+
+Potion descriptors must distinguish targeted and untargeted use. Potion slots
+are part of player public state; concrete potion internals are private unless
+visible in game.
+
+## Orbs and Stance
+
+```text
+OrbState {
+  max_orbs,
+  orb_refs_in_order,
+  orb_instances,
+}
+
+OrbInstance {
+  orb_ref,
+  orb_id,
+  slot,
+  evoke_amount,
+  passive_amount,
+  base_evoke_amount,
+  base_passive_amount,
+  concrete_payload,
+}
+
+StanceState {
+  stance_ref,
+  stance_id,
+  concrete_payload,
+}
+```
+
+Watcher and Defect state must be present even if the first probe uses Ironclad.
+Empty is valid; undefined is not.
+
+## Choice Screens
+
+Choice screens are combat state when combat is waiting for input inside a card,
+relic, potion, power, or action effect.
+
+```text
+ChoiceScreenState {
+  active_screen,
+  grid_select,
+  hand_select,
+  generated_choice,
+  ordered_choice,
+}
+```
+
+`GridSelectState` must cover the source fields from
+`GridCardSelectScreen.java`:
+
+```text
+target_group_zone_ref
+selected_card_refs
+num_cards
+card_select_amount
+can_cancel
+for_upgrade
+for_transform
+for_purge
+confirm_screen_up
+is_just_for_confirming
+any_number
+for_clarity
+cancel_was_on
+upgrade_preview_card_ref
+```
+
+`HandSelectState` must cover the source fields from
+`HandCardSelectScreen.java`:
+
+```text
+num_cards_to_select
+selected_card_refs
+selection_reason
+were_cards_retrieved
+can_pick_zero
+up_to
+any_number
+for_transform
+for_upgrade
+num_selected
+wait_then_close_if_mechanical
+```
+
+Multi-step selection is a state machine. Fork, restore, cancel, confirm, and
+replay must preserve partial selection progress.
+
+## RNG State
+
+Every combat-consuming RNG stream must store both `RandomXS128` state words and
+the source `Random.counter`.
+
+```text
+RngStreamState {
+  stream_id,
+  xs128_state_0,
+  xs128_state_1,
+  counter,
+}
+
+CombatRngState {
+  monster_rng,
+  monster_hp_rng,
+  ai_rng,
+  shuffle_rng,
+  card_random_rng,
+  card_rng,
+  misc_rng,
+  potion_rng,
+  relic_rng_if_combat_consumed,
+  treasure_rng_if_combat_consumed,
+  custom_streams,
+}
+```
+
+If a combat path consumes an unmodeled RNG stream, replay has failed and the
+schema must be repaired. Do not absorb that failure with a heuristic.
+
+## Public Refs
+
+```text
+PublicRefState {
+  next_card_ref,
+  next_monster_ref,
+  next_power_ref,
+  next_relic_ref,
+  next_potion_ref,
+  tombstones,
+  visibility_ledger,
+}
+```
+
+Refs are engine-independent identities for trace and public observation:
+
+```text
+card_ref:
+  unique for a concrete card instance while publicly trackable; never reused
+  within a combat trace
+
+monster_ref:
+  stable for the whole combat; never reused after death, escape, or spawn slot
+  replacement
+
+potion_ref:
+  stable while a potion occupies a slot
+
+power/relic/orb/stance refs:
+  stable while the instance exists
+```
+
+Refs must not reveal hidden draw order.
+
+## Derived Combat Values
+
+```text
+DerivedCombatValues {
+  rendered_card_values,
+  legal_playability_cache,
+  visible_intents,
+  public_zone_summaries,
+}
+```
+
+These values may be cached only if they are recomputable from modeled state and
+their cache invalidation is deterministic. If a cached value affects legal
+actions or training observations, it must be hashed.
+
+## Lifecycle
+
+```text
+CombatLifecycleState {
+  combat_started,
+  pre_battle_actions_applied,
+  monster_pre_battle_actions_applied,
+  player_start_combat_hooks_applied,
+  turn_start_hooks_applied_for_turn,
+  combat_end_hooks_applied,
+  terminal_reached,
+  reward_generation_started,
+  reward_screen_reached,
+}
+```
+
+For `CombatKernel`, `reward_generation_started` and `reward_screen_reached` must
+remain false. If the engine tries to advance there, the kernel must stop at
+`CombatTerminalReport` before reward RNG is consumed.
+
+## Source Coverage Ledger
+
+```text
+SourceCoverageLedger {
+  source_file,
+  source_class,
+  source_field_or_state,
+  classification,
+  schema_path,
+  public_visibility,
+  replay_required,
+  rust_owner_module,
+  rust_status,
+  migration_decision,
+  notes,
+}
+```
+
+This ledger is the guard against architectural hand-waving. A field is not
+"handled" until it has an entry and a Rust owner or an explicit
+`unsupported_abort` decision.
+
+## Migration Ledger
+
+Java-to-Rust migration decisions are tracked separately from field coverage:
+
+```text
+MigrationLedgerEntry {
+  java_source,
+  java_semantic_behavior,
+  rust_module,
+  rust_type,
+  migration_kind,
+  preserved_features,
+  intentional_structural_changes,
+  semantic_equivalence_tests,
+  unsupported_cases,
+}
+```
+
+`migration_kind` is one of:
+
+```text
+direct_model:
+  Rust stores the same semantic state directly.
+
+derived_model:
+  Rust computes the value from other modeled state.
+
+structural_redesign:
+  Rust intentionally replaces Java's structure while preserving behavior.
+
+unsupported_abort:
+  known combat path not yet implemented; not trainable.
+```
+
+`structural_redesign` is not a shortcut. It requires a test that demonstrates the
+same mechanic outcome as the Java source for the covered cases.
+
+## First Executable Probe
+
+The first probe is allowed to use a simple authored combat because execution must
+start somewhere. It does not define the schema.
+
+The probe must:
+
+```text
+1. Construct one CombatStateSnapshot using this full schema.
+2. Initialize the real Rust combat engine from that snapshot.
+3. Execute a fixed legal public action script.
+4. Record full state hashes, public decision hashes, action-set hashes, RNG
+   hashes, and terminal report after each accepted action and boundary.
+5. Repeat the run five times.
+6. Produce identical ordered hash sequences.
+7. Record every missing source field as a schema defect.
+8. Record every reused Rust module in the migration ledger.
+```
+
+No `DecisionFrame`, Python adapter, trainer, search, or planner is allowed to
+become the reason this probe passes.
+
+## Forbidden Shortcuts
+
+- Do not introduce a reduced schema name for the first probe.
+- Do not define combat state as `deck + monsters + seed`.
+- Do not pass raw Java/Rust engine objects to task code.
+- Do not leave action queues opaque.
+- Do not leave choice screens as an unspecified pending state.
+- Do not hide run-level requirements inside an untyped `run_state`.
+- Do not consume reward-generation RNG inside `CombatKernel`.
+- Do not treat render-only classification as permanent if a mechanic reads the
+  field later.
+- Do not preserve existing Rust APIs for compatibility when they conflict with
+  Java-derived mechanics or deterministic replay.
