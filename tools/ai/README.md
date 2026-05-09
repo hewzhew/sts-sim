@@ -28,6 +28,12 @@ Run a short masked PPO training pass:
 .\.venv-ai\Scripts\python.exe tools\ai\train_micro_jaw_worm_ppo.py --total-timesteps 20000
 ```
 
+Evaluate a saved policy against the same seed range as a random legal baseline:
+
+```powershell
+.\.venv-ai\Scripts\python.exe tools\ai\eval_micro_jaw_worm_policy.py --episodes 100
+```
+
 Protocol:
 
 ```json

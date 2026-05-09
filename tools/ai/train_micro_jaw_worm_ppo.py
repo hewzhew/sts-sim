@@ -187,6 +187,7 @@ def evaluate(agent: Agent, args: Args, device: torch.device) -> dict[str, float]
     returns = []
     lengths = []
     kills = []
+    final_hps = []
     try:
         for episode in range(args.eval_episodes):
             obs, info = env.reset(seed=args.seed + 10_000 + episode)
@@ -206,6 +207,7 @@ def evaluate(agent: Agent, args: Args, device: torch.device) -> dict[str, float]
                     returns.append(total_reward)
                     lengths.append(length)
                     kills.append(1.0 if info["killed_enemy"] else 0.0)
+                    final_hps.append(float(info["player_hp"]))
                     break
     finally:
         env.close()
@@ -214,6 +216,9 @@ def evaluate(agent: Agent, args: Args, device: torch.device) -> dict[str, float]
         "eval_return": float(np.mean(returns)) if returns else 0.0,
         "eval_len": float(np.mean(lengths)) if lengths else 0.0,
         "eval_kill_rate": float(np.mean(kills)) if kills else 0.0,
+        "eval_final_hp": float(np.mean(final_hps)) if final_hps else 0.0,
+        "eval_hp_lost": float(80.0 - np.mean(final_hps)) if final_hps else 0.0,
+        "eval_min_hp": float(np.min(final_hps)) if final_hps else 0.0,
     }
 
 
@@ -418,7 +423,8 @@ def train(args: Args):
         metrics = evaluate(agent, args, device)
         print(
             "eval return={eval_return:.2f} len={eval_len:.1f} "
-            "kill={eval_kill_rate:.2f}".format(**metrics),
+            "kill={eval_kill_rate:.2f} final_hp={eval_final_hp:.1f} "
+            "hp_lost={eval_hp_lost:.1f} min_hp={eval_min_hp:.1f}".format(**metrics),
             flush=True,
         )
         args.save_path.parent.mkdir(parents=True, exist_ok=True)
