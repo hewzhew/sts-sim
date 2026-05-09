@@ -193,7 +193,6 @@ pub struct PublicRewardItemV1 {
     pub potion_id: Option<String>,
     pub claimable: bool,
     pub opens_card_choice: bool,
-    pub capacity_blocked: bool,
 }
 
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
@@ -487,7 +486,6 @@ impl From<&RunRewardItemObservationV0> for PublicRewardItemV1 {
             potion_id: value.potion_id.clone(),
             claimable: value.claimable,
             opens_card_choice: value.opens_card_choice,
-            capacity_blocked: value.capacity_blocked,
         }
     }
 }

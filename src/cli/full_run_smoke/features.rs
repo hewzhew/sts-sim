@@ -50,7 +50,6 @@ pub fn build_action_candidates(
 
 pub fn empty_reward_action_structure() -> RewardActionStructureV0 {
     RewardActionStructureV0 {
-        score_kind: "heuristic".to_string(),
         screen_phase: "none".to_string(),
         ..RewardActionStructureV0::default()
     }
@@ -65,7 +64,6 @@ pub fn reward_action_structure_for_action(
     };
     if reward_state.pending_card_choice.is_some() {
         return RewardActionStructureV0 {
-            score_kind: "heuristic".to_string(),
             screen_phase: "card_choice".to_string(),
             is_reward_action: matches!(action, ClientInput::SelectCard(_) | ClientInput::Proceed),
             skip_card_choice: matches!(action, ClientInput::Proceed),
@@ -87,22 +85,17 @@ pub fn reward_action_structure_for_action(
             .map(|item| {
                 let item_obs = reward_item_observation(&ctx.run_state, *index, item);
                 RewardActionStructureV0 {
-                    score_kind: "heuristic".to_string(),
                     screen_phase: "claim_items".to_string(),
                     is_reward_action: true,
                     unclaimed_reward_count,
                     unclaimed_card_reward_count,
                     claim_reward_item_type: Some(item_obs.item_type),
                     claim_opens_card_choice: item_obs.opens_card_choice,
-                    claim_free_value_score: item_obs.free_value_score,
-                    claim_likely_waste: item_obs.likely_waste,
-                    claim_capacity_blocked: item_obs.capacity_blocked,
                     ..RewardActionStructureV0::default()
                 }
             })
             .unwrap_or_else(empty_reward_action_structure),
         ClientInput::Proceed => RewardActionStructureV0 {
-            score_kind: "heuristic".to_string(),
             screen_phase: if unclaimed_reward_count > 0 {
                 "claim_items".to_string()
             } else {
@@ -196,7 +189,6 @@ pub fn candidate_plan_delta_for_action(
 
 pub fn empty_candidate_plan_delta() -> CandidatePlanDeltaV0 {
     CandidatePlanDeltaV0 {
-        score_kind: "heuristic".to_string(),
         ..CandidatePlanDeltaV0::default()
     }
 }
@@ -207,46 +199,25 @@ pub fn add_card_plan_delta(
     run_state: &RunState,
 ) -> CandidatePlanDeltaV0 {
     let affordance = card_plan_affordance(card_id, upgrades);
-    let profile = build_deck_plan_profile(run_state);
-    let deck_deficit_bonus = deck_deficit_bonus(&profile, affordance, run_state);
-    let bloat_penalty = deck_bloat_penalty(card_id, affordance, run_state);
-    let duplicate_penalty = plan_duplicate_penalty(card_id, run_state);
-    let rule_score = rule_card_offer_score(card_id, run_state);
-    delta_from_affordance(
-        affordance,
-        0,
-        deck_deficit_bonus,
-        bloat_penalty,
-        duplicate_penalty,
-        rule_score + deck_deficit_bonus + bloat_penalty + duplicate_penalty,
-    )
+    let starter_basic_burden_delta = duplicate_card_burden_delta(card_id, run_state);
+    delta_from_affordance(affordance, starter_basic_burden_delta)
 }
 
 pub fn upgrade_card_plan_delta(
     card_id: CardId,
     upgrades: u8,
-    run_state: &RunState,
+    _run_state: &RunState,
 ) -> CandidatePlanDeltaV0 {
     let before = card_plan_affordance(card_id, upgrades);
     let after = card_plan_affordance(card_id, upgrades.saturating_add(1));
     let affordance = after.subtract(before);
-    let profile = build_deck_plan_profile(run_state);
-    let deck_deficit_bonus = deck_deficit_bonus(&profile, affordance, run_state);
-    let rule_score = rule_upgrade_score(card_id);
-    delta_from_affordance(
-        affordance,
-        0,
-        deck_deficit_bonus,
-        0,
-        0,
-        rule_score + deck_deficit_bonus,
-    )
+    delta_from_affordance(affordance, 0)
 }
 
 pub fn remove_card_plan_delta(
     card_id: CardId,
     upgrades: u8,
-    run_state: &RunState,
+    _run_state: &RunState,
 ) -> CandidatePlanDeltaV0 {
     let affordance = card_plan_affordance(card_id, upgrades);
     let burden_delta = if crate::content::cards::is_starter_basic(card_id) {
@@ -254,7 +225,7 @@ pub fn remove_card_plan_delta(
     } else {
         0
     };
-    let mut out = delta_from_affordance(
+    delta_from_affordance(
         CardPlanAffordance {
             frontload: -affordance.frontload,
             block: -affordance.block,
@@ -266,32 +237,14 @@ pub fn remove_card_plan_delta(
             setup_cashout_risk: -affordance.setup_cashout_risk,
         },
         burden_delta,
-        0,
-        0,
-        0,
-        rule_remove_score(card_id, run_state),
-    );
-    if burden_delta < 0 {
-        out.deck_deficit_bonus += 25;
-        out.plan_adjusted_score += 25;
-    }
-    if run_state.master_deck.len() <= 14 && affordance.frontload > 0 {
-        out.deck_deficit_bonus -= 10;
-        out.plan_adjusted_score -= 10;
-    }
-    out
+    )
 }
 
 pub fn delta_from_affordance(
     affordance: CardPlanAffordance,
     starter_basic_burden_delta: i32,
-    deck_deficit_bonus: i32,
-    bloat_penalty: i32,
-    duplicate_penalty: i32,
-    plan_adjusted_score: i32,
 ) -> CandidatePlanDeltaV0 {
     CandidatePlanDeltaV0 {
-        score_kind: "heuristic".to_string(),
         frontload_delta: affordance.frontload,
         block_delta: affordance.block,
         draw_delta: affordance.draw,
@@ -301,79 +254,16 @@ pub fn delta_from_affordance(
         kill_window_delta: affordance.kill_window,
         starter_basic_burden_delta,
         setup_cashout_risk_delta: affordance.setup_cashout_risk,
-        deck_deficit_bonus,
-        bloat_penalty,
-        duplicate_penalty,
-        plan_adjusted_score,
     }
 }
 
-pub fn deck_deficit_bonus(
-    profile: &DeckPlanProfileV0,
-    affordance: CardPlanAffordance,
-    run_state: &RunState,
-) -> i32 {
-    let mut bonus = 0;
-    if profile.frontload_supply < 70 {
-        bonus += affordance.frontload;
-    }
-    if profile.block_supply < 50 {
-        bonus += affordance.block;
-    }
-    if profile.draw_supply < 20 {
-        bonus += affordance.draw * 2;
-    } else if profile.draw_supply < 35 {
-        bonus += affordance.draw;
-    }
-    if profile.scaling_supply < 20 {
-        bonus += affordance.scaling * 2;
-    } else if profile.scaling_supply < 35 {
-        bonus += affordance.scaling;
-    }
-    if profile.aoe_supply < 18 && (run_state.act_num >= 2 || run_state.floor_num >= 7) {
-        bonus += affordance.aoe * 2;
-    } else if profile.aoe_supply < 18 {
-        bonus += affordance.aoe;
-    }
-    if profile.exhaust_supply < 12 {
-        bonus += affordance.exhaust;
-    }
-    if profile.kill_window_supply == 0 {
-        bonus += affordance.kill_window / 2;
-    }
-    bonus
-}
-
-pub fn deck_bloat_penalty(
-    card_id: CardId,
-    affordance: CardPlanAffordance,
-    run_state: &RunState,
-) -> i32 {
-    if run_state.master_deck.len() < 22 {
-        return 0;
-    }
-    let high_value_plan_card = affordance.draw > 0
-        || affordance.scaling > 0
-        || affordance.aoe > 0
-        || affordance.kill_window > 0
-        || matches!(
-            card_id,
-            CardId::Disarm | CardId::Shockwave | CardId::Offering
-        );
-    if high_value_plan_card {
-        -5
-    } else {
-        -18
-    }
-}
-
-pub fn plan_duplicate_penalty(card_id: CardId, run_state: &RunState) -> i32 {
+pub fn duplicate_card_burden_delta(card_id: CardId, run_state: &RunState) -> i32 {
     let copies = run_state
         .master_deck
         .iter()
         .filter(|card| card.id == card_id)
         .count() as i32;
-    -(copies * 5)
+    -(copies * 2)
 }
 
 pub fn build_card_feature(card_id: CardId, upgrades: u8, run_state: &RunState) -> RunCardFeatureV0 {
@@ -408,7 +298,6 @@ pub fn build_card_feature(card_id: CardId, upgrades: u8, run_state: &RunState) -
         applies_vulnerable: card_applies_vulnerable(card_id),
         scaling_piece: card_is_scaling_piece(card_id),
         deck_copies,
-        rule_score: rule_card_offer_score(card_id, run_state),
     }
 }
 
@@ -567,7 +456,6 @@ const DOMINANCE_DIMS: &[(&str, bool)] = &[
     ("kill_window_delta", true),
     ("starter_basic_burden_delta", true),
     ("setup_cashout_risk_delta", false), // lower risk = better
-    ("duplicate_penalty", true),
 ];
 
 fn delta_dim(delta: &CandidatePlanDeltaV0, dim: &str, higher_better: bool) -> i32 {
@@ -581,9 +469,6 @@ fn delta_dim(delta: &CandidatePlanDeltaV0, dim: &str, higher_better: bool) -> i3
         "kill_window_delta" => delta.kill_window_delta,
         "starter_basic_burden_delta" => delta.starter_basic_burden_delta,
         "setup_cashout_risk_delta" => delta.setup_cashout_risk_delta,
-        "deck_deficit_bonus" => delta.deck_deficit_bonus,
-        "bloat_penalty" => delta.bloat_penalty,
-        "duplicate_penalty" => delta.duplicate_penalty,
         _ => 0,
     };
     if higher_better {

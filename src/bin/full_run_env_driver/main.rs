@@ -3,7 +3,7 @@ use std::io::{self, BufRead, Write};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sts_simulator::cli::full_run_smoke::{
-    FullRunEnv, FullRunEnvConfig, FullRunEnvInfo, FullRunEnvState, RunPolicyKind,
+    FullRunEnv, FullRunEnvConfig, FullRunEnvInfo, FullRunEnvState,
 };
 use sts_simulator::verification::decision_env::{
     ActionId, DecisionEnv, DecisionRecord, DecisionRecordContext,
@@ -34,15 +34,6 @@ enum DriverRequest {
         return_spec_version: Option<String>,
         context: Option<Value>,
     },
-    StepPolicy {
-        policy: String,
-    },
-    PreviewPolicyAction {
-        policy: String,
-        include_state: Option<bool>,
-        include_next_state: Option<bool>,
-        check_live_env_unchanged: Option<bool>,
-    },
     Close,
 }
 
@@ -55,28 +46,6 @@ struct DriverResponse {
     done: Option<bool>,
     chosen_action_key: Option<String>,
     info: Option<FullRunEnvInfo>,
-}
-
-#[derive(Debug, Serialize)]
-struct PolicyPreviewPayload {
-    schema_version: String,
-    policy: String,
-    live_env_unchanged: Option<bool>,
-    state_before: Option<FullRunEnvState>,
-    state_after: Option<FullRunEnvState>,
-    chosen_action_index: Option<usize>,
-    chosen_action_key: Option<String>,
-    reward: f32,
-    done: bool,
-    next_state: Option<FullRunEnvState>,
-    info: FullRunEnvInfo,
-}
-
-#[derive(Clone, Copy)]
-struct PreviewOutputOptions {
-    include_state: bool,
-    include_next_state: bool,
-    check_live_env_unchanged: bool,
 }
 
 #[derive(Default)]
@@ -235,41 +204,6 @@ fn handle_request(session: &mut DriverSession, request: DriverRequest) -> Driver
                 Some(current.info()),
             )
         }),
-        DriverRequest::StepPolicy { policy } => {
-            let policy_kind = match normalize_policy(&policy) {
-                Ok(value) => value,
-                Err(err) => return error_response(err),
-            };
-            with_env(session, |current| match current.step_policy(policy_kind) {
-                Ok(step) => ok_response(
-                    Some(state_payload(step.state)),
-                    Some(step.reward),
-                    Some(step.done),
-                    step.chosen_action_key,
-                    Some(step.info),
-                ),
-                Err(err) => error_response(err),
-            })
-        }
-        DriverRequest::PreviewPolicyAction {
-            policy,
-            include_state,
-            include_next_state,
-            check_live_env_unchanged,
-        } => {
-            let policy_kind = match normalize_policy(&policy) {
-                Ok(value) => value,
-                Err(err) => return error_response(err),
-            };
-            let options = PreviewOutputOptions {
-                include_state: include_state.unwrap_or(true),
-                include_next_state: include_next_state.unwrap_or(true),
-                check_live_env_unchanged: check_live_env_unchanged.unwrap_or(true),
-            };
-            with_env(session, |current| {
-                preview_policy_action(current, policy_kind, options)
-            })
-        }
     }
 }
 
@@ -309,72 +243,6 @@ fn reset_env(
         },
         Err(err) => error_response(err),
     }
-}
-
-fn preview_policy_action(
-    env: &mut FullRunEnv,
-    policy: RunPolicyKind,
-    output: PreviewOutputOptions,
-) -> DriverResponse {
-    let state_before = match env.state() {
-        Ok(state) => state,
-        Err(err) => return error_response(err),
-    };
-    let before_value = if output.check_live_env_unchanged {
-        match serde_json::to_value(&state_before) {
-            Ok(value) => Some(value),
-            Err(err) => return error_response(format!("state serialize failed: {err}")),
-        }
-    } else {
-        None
-    };
-    let mut trial = env.clone();
-    let step = match trial.step_policy(policy) {
-        Ok(step) => step,
-        Err(err) => return error_response(err),
-    };
-    let chosen_action_index = step.chosen_action_key.as_ref().and_then(|key| {
-        state_before
-            .action_candidates
-            .iter()
-            .position(|candidate| candidate.action_key == *key)
-    });
-    let state_after = match env.state() {
-        Ok(state) => state,
-        Err(err) => return error_response(err),
-    };
-    let after_value = if output.check_live_env_unchanged {
-        match serde_json::to_value(&state_after) {
-            Ok(value) => Some(value),
-            Err(err) => return error_response(format!("state serialize failed: {err}")),
-        }
-    } else {
-        None
-    };
-    let live_env_unchanged = match (&before_value, &after_value) {
-        (Some(before), Some(after)) => Some(before == after),
-        _ => None,
-    };
-    let payload = PolicyPreviewPayload {
-        schema_version: "policy_preview_v1".to_string(),
-        policy: policy.as_str().to_string(),
-        live_env_unchanged,
-        state_before: output.include_state.then_some(state_before),
-        state_after: output.include_state.then_some(state_after),
-        chosen_action_index,
-        chosen_action_key: step.chosen_action_key,
-        reward: step.reward,
-        done: step.done,
-        next_state: output.include_next_state.then_some(step.state),
-        info: step.info,
-    };
-    ok_response(
-        Some(serde_json::to_value(payload).expect("policy preview should serialize")),
-        None,
-        Some(env.info().result != "ongoing"),
-        None,
-        Some(env.info()),
-    )
 }
 
 fn with_env(
@@ -429,15 +297,6 @@ fn normalize_player_class(value: Option<&str>) -> Result<&'static str, String> {
         "watcher" | "purple" => Ok("Watcher"),
         other => Err(format!(
             "unsupported class '{other}'; expected ironclad, silent, defect, or watcher"
-        )),
-    }
-}
-
-fn normalize_policy(value: &str) -> Result<RunPolicyKind, String> {
-    match value.to_ascii_lowercase().as_str() {
-        "rule_baseline_v0" => Ok(RunPolicyKind::RuleBaselineV0),
-        other => Err(format!(
-            "unsupported policy '{other}'; expected rule_baseline_v0"
         )),
     }
 }

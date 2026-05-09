@@ -140,10 +140,7 @@ impl CardPlanAffordance {
 }
 
 pub fn build_deck_plan_profile(run_state: &RunState) -> DeckPlanProfileV0 {
-    let mut profile = DeckPlanProfileV0 {
-        score_kind: "heuristic".to_string(),
-        ..DeckPlanProfileV0::default()
-    };
+    let mut profile = DeckPlanProfileV0::default();
     for card in &run_state.master_deck {
         let affordance = card_plan_affordance(card.id, card.upgrades);
         profile.frontload_supply += affordance.frontload;
@@ -789,15 +786,6 @@ pub fn build_combat_hand_card_observations(
                 playable,
                 base_semantics: base_semantics_for_card(card.id, card.upgrades),
                 transient_tags,
-                estimated_role_scores: RunHandCardRoleScoresV0 {
-                    score_kind: "heuristic_not_truth".to_string(),
-                    role: hand_card_role_label(role).to_string(),
-                    keeper: combat_retention_score_for_uuid(combat, card.uuid),
-                    fuel: combat_fuel_score_for_uuid(combat, card.uuid),
-                    exhaust: combat_exhaust_score_for_uuid(combat, card.uuid),
-                    retention: combat_retention_score_for_uuid(combat, card.uuid),
-                    copy: combat_copy_score_for_uuid(combat, card.uuid),
-                },
             }
         })
         .collect()
@@ -928,7 +916,6 @@ pub fn empty_screen_observation() -> RunScreenObservationV0 {
         reward_items: Vec::new(),
         reward_claimable_item_count: 0,
         reward_unclaimed_card_item_count: 0,
-        reward_free_value_score: 0,
         shop_card_count: 0,
         shop_relic_count: 0,
         shop_potion_count: 0,
@@ -952,11 +939,6 @@ pub fn build_reward_screen_observation(
         .iter()
         .filter(|item| item.opens_card_choice)
         .count();
-    let reward_free_value_score = reward_items
-        .iter()
-        .filter(|item| item.claimable)
-        .map(|item| item.free_value_score.max(0))
-        .sum::<i32>();
     let reward_phase = if reward_state.pending_card_choice.is_some() {
         "card_choice"
     } else if reward_claimable_item_count > 0 {
@@ -976,7 +958,6 @@ pub fn build_reward_screen_observation(
         reward_items,
         reward_claimable_item_count,
         reward_unclaimed_card_item_count,
-        reward_free_value_score,
         ..empty_screen_observation()
     }
 }
@@ -987,8 +968,6 @@ pub fn reward_item_observation(
     item: &RewardItem,
 ) -> RunRewardItemObservationV0 {
     let claimable = reward_item_claimable(run_state, item);
-    let likely_waste = reward_item_likely_waste(run_state, item);
-    let capacity_blocked = reward_item_capacity_blocked(run_state, item);
     RunRewardItemObservationV0 {
         item_index,
         item_type: reward_item_type_label(item).to_string(),
@@ -1007,8 +986,5 @@ pub fn reward_item_observation(
         },
         claimable,
         opens_card_choice: matches!(item, RewardItem::Card { .. }),
-        free_value_score: reward_item_claim_score(run_state, item),
-        likely_waste,
-        capacity_blocked,
     }
 }

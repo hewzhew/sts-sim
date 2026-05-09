@@ -1,21 +1,19 @@
 use super::*;
 
-pub const FULL_RUN_OBSERVATION_SCHEMA_VERSION: &str = "full_run_observation_v5_reward_structure";
+pub const FULL_RUN_OBSERVATION_SCHEMA_VERSION: &str = "full_run_observation_v6_structural";
 pub const FULL_RUN_ACTION_SCHEMA_VERSION: &str =
-    "full_run_action_candidate_set_v3_reward_structure";
+    "full_run_action_candidate_set_v4_structural_delta";
 pub(crate) const NO_PROGRESS_REPEAT_LIMIT: usize = 8;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RunPolicyKind {
     RandomMasked,
-    RuleBaselineV0,
 }
 
 impl RunPolicyKind {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::RandomMasked => "random_masked",
-            Self::RuleBaselineV0 => "rule_baseline_v0",
         }
     }
 }
@@ -321,18 +319,6 @@ pub struct RunCombatHandCardObservationV0 {
     pub playable: bool,
     pub base_semantics: Vec<String>,
     pub transient_tags: Vec<String>,
-    pub estimated_role_scores: RunHandCardRoleScoresV0,
-}
-
-#[derive(Clone, Debug, Serialize)]
-pub struct RunHandCardRoleScoresV0 {
-    pub score_kind: String,
-    pub role: String,
-    pub keeper: i32,
-    pub fuel: i32,
-    pub exhaust: i32,
-    pub retention: i32,
-    pub copy: i32,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -344,7 +330,6 @@ pub struct RunScreenObservationV0 {
     pub reward_items: Vec<RunRewardItemObservationV0>,
     pub reward_claimable_item_count: usize,
     pub reward_unclaimed_card_item_count: usize,
-    pub reward_free_value_score: i32,
     pub shop_card_count: usize,
     pub shop_relic_count: usize,
     pub shop_potion_count: usize,
@@ -362,9 +347,6 @@ pub struct RunRewardItemObservationV0 {
     pub potion_id: Option<String>,
     pub claimable: bool,
     pub opens_card_choice: bool,
-    pub free_value_score: i32,
-    pub likely_waste: bool,
-    pub capacity_blocked: bool,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -382,7 +364,6 @@ pub struct RunActionCandidate {
 
 #[derive(Clone, Debug, Default, Serialize, PartialEq, Eq)]
 pub struct RewardActionStructureV0 {
-    pub score_kind: String,
     pub screen_phase: String,
     pub is_reward_action: bool,
     pub is_proceed_with_unclaimed_rewards: bool,
@@ -390,16 +371,12 @@ pub struct RewardActionStructureV0 {
     pub unclaimed_card_reward_count: usize,
     pub claim_reward_item_type: Option<String>,
     pub claim_opens_card_choice: bool,
-    pub claim_free_value_score: i32,
-    pub claim_likely_waste: bool,
-    pub claim_capacity_blocked: bool,
     pub proceed_is_cleanup: bool,
     pub skip_card_choice: bool,
 }
 
 #[derive(Clone, Debug, Default, Serialize, PartialEq, Eq)]
 pub struct DeckPlanProfileV0 {
-    pub score_kind: String,
     pub frontload_supply: i32,
     pub block_supply: i32,
     pub draw_supply: i32,
@@ -413,7 +390,6 @@ pub struct DeckPlanProfileV0 {
 
 #[derive(Clone, Debug, Default, Serialize, PartialEq, Eq)]
 pub struct CandidatePlanDeltaV0 {
-    pub score_kind: String,
     pub frontload_delta: i32,
     pub block_delta: i32,
     pub draw_delta: i32,
@@ -423,10 +399,6 @@ pub struct CandidatePlanDeltaV0 {
     pub kill_window_delta: i32,
     pub starter_basic_burden_delta: i32,
     pub setup_cashout_risk_delta: i32,
-    pub deck_deficit_bonus: i32,
-    pub bloat_penalty: i32,
-    pub duplicate_penalty: i32,
-    pub plan_adjusted_score: i32,
 }
 
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
@@ -455,7 +427,6 @@ pub struct RunCardFeatureV0 {
     pub applies_vulnerable: bool,
     pub scaling_piece: bool,
     pub deck_copies: usize,
-    pub rule_score: i32,
 }
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -567,7 +538,6 @@ pub enum EpisodePolicy {
     RandomMasked {
         rng: StsRng,
     },
-    RuleBaselineV0,
     Replay {
         actions: Vec<ClientInput>,
         cursor: usize,

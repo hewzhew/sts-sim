@@ -61,41 +61,6 @@ pub fn reward_item_claimable(run_state: &RunState, item: &RewardItem) -> bool {
     }
 }
 
-pub fn reward_item_capacity_blocked(run_state: &RunState, item: &RewardItem) -> bool {
-    matches!(item, RewardItem::Potion { .. })
-        && !run_state
-            .relics
-            .iter()
-            .any(|relic| relic.id == RelicId::Sozu)
-        && !run_state.potions.iter().any(Option::is_none)
-}
-
-pub fn reward_item_likely_waste(run_state: &RunState, item: &RewardItem) -> bool {
-    matches!(item, RewardItem::Potion { .. })
-        && run_state
-            .relics
-            .iter()
-            .any(|relic| relic.id == RelicId::Sozu)
-}
-
-pub fn reward_item_claim_score(run_state: &RunState, item: &RewardItem) -> i32 {
-    match item {
-        RewardItem::Gold { amount } | RewardItem::StolenGold { amount } => 60 + amount / 8,
-        RewardItem::Relic { .. } => 120,
-        RewardItem::Potion { .. } => {
-            if reward_item_likely_waste(run_state, item) {
-                -10
-            } else if run_state.potions.iter().any(Option::is_none) {
-                55
-            } else {
-                0
-            }
-        }
-        RewardItem::Card { .. } => 70,
-        RewardItem::EmeraldKey | RewardItem::SapphireKey => 25,
-    }
-}
-
 pub fn full_run_result_label(ctx: &EpisodeContext, done: bool, crash: Option<&String>) -> String {
     match &ctx.engine_state {
         EngineState::GameOver(RunResult::Victory) => "victory",

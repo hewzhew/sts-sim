@@ -106,7 +106,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--final-act", action="store_true")
     parser.add_argument("--class", dest="player_class", default="ironclad")
     parser.add_argument("--max-steps", type=int, default=500)
-    parser.add_argument("--policy", default="rule_baseline_v0")
+    parser.add_argument("--policy", default="random_masked", choices=["random_masked", "first_legal"])
     parser.add_argument("--sim-version", default="full_run_env")
     parser.add_argument("--return-spec-version", default="driver_reward_v0")
     return parser.parse_args()

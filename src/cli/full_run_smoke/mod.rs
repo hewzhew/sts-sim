@@ -5,9 +5,7 @@ use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use crate::bot::card_disposition::{
-    build_context as build_card_role_context, classify_hand_card_with_context,
-    combat_copy_score_for_uuid, combat_exhaust_score_for_uuid, combat_fuel_score_for_uuid,
-    combat_retention_score_for_uuid, HandCardRole,
+    build_context as build_card_role_context, classify_hand_card_with_context, HandCardRole,
 };
 use crate::content::cards::{CardId, CardRarity, CardType};
 use crate::content::monsters::factory::{self, EncounterId};
@@ -84,69 +82,6 @@ impl FullRunEnv {
 
     pub fn state(&mut self) -> Result<FullRunEnvState, String> {
         self.prepare_state()
-    }
-
-    pub fn step_policy(&mut self, policy: RunPolicyKind) -> Result<FullRunEnvStep, String> {
-        if self.done {
-            return self.step(0);
-        }
-        let _ = self.prepare_state()?;
-        if self.done {
-            return self.step(0);
-        }
-        let legal_actions = legal_actions(
-            &self.ctx.engine_state,
-            &self.ctx.run_state,
-            &self.ctx.combat_state,
-        );
-        if legal_actions.is_empty() {
-            return Err("no legal actions available for policy step".to_string());
-        }
-        let action_index = match policy {
-            RunPolicyKind::RuleBaselineV0 => choose_rule_baseline_action(&self.ctx, &legal_actions),
-            RunPolicyKind::RandomMasked => {
-                return Err(
-                    "random_masked policy step is not stateful in FullRunEnv; choose a legal index externally"
-                        .to_string(),
-                )
-            }
-        };
-        self.step(action_index)
-    }
-
-    pub fn preview_policy_action_index(
-        &mut self,
-        policy: RunPolicyKind,
-    ) -> Result<(Option<usize>, Option<String>), String> {
-        if self.done {
-            let _ = self.prepare_state()?;
-            return Ok((None, None));
-        }
-        let state = self.prepare_state()?;
-        if self.done {
-            return Ok((None, None));
-        }
-        let legal_actions = legal_actions(
-            &self.ctx.engine_state,
-            &self.ctx.run_state,
-            &self.ctx.combat_state,
-        );
-        if legal_actions.is_empty() {
-            return Err("no legal actions available for policy preview".to_string());
-        }
-        let action_index = match policy {
-            RunPolicyKind::RuleBaselineV0 => choose_rule_baseline_action(&self.ctx, &legal_actions),
-            RunPolicyKind::RandomMasked => {
-                return Err(
-                    "random_masked policy preview is not deterministic in FullRunEnv".to_string(),
-                )
-            }
-        };
-        let action_key = state
-            .action_candidates
-            .get(action_index)
-            .map(|candidate| candidate.action_key.clone());
-        Ok((Some(action_index), action_key))
     }
 
     pub fn current_combat_decision_context_parts(
@@ -833,10 +768,7 @@ mod tests {
             potion_slots: 3,
             filled_potion_slots: 0,
             deck: RunDeckObservationV0::default(),
-            plan_profile: DeckPlanProfileV0 {
-                score_kind: "heuristic".to_string(),
-                ..DeckPlanProfileV0::default()
-            },
+            plan_profile: DeckPlanProfileV0::default(),
             deck_cards: Vec::new(),
             relics: Vec::new(),
             potions: Vec::new(),
@@ -950,11 +882,19 @@ mod tests {
             final_act: false,
             player_class: "Ironclad",
             max_steps: 80,
-            policy: RunPolicyKind::RuleBaselineV0,
+            policy: RunPolicyKind::RandomMasked,
             trace_dir: None,
             determinism_check: false,
         };
-        let episode = run_episode(&config, 0, 71200, EpisodePolicy::RuleBaselineV0, true);
+        let episode = run_episode(
+            &config,
+            0,
+            71200,
+            EpisodePolicy::RandomMasked {
+                rng: StsRng::new(71200 ^ 0x9e37_79b9_7f4a_7c15),
+            },
+            true,
+        );
         assert!(episode.summary.crash.is_none());
 
         let first = episode
@@ -971,20 +911,6 @@ mod tests {
         assert_eq!(observation.potions.len(), observation.potion_slots);
         assert!(observation.act_boss.is_some());
         assert!(!observation.next_nodes.is_empty());
-
-        let map_step = episode
-            .trace
-            .iter()
-            .find(|step| step.decision_type == "map")
-            .expect("short rule-baseline run should reach map navigation");
-        assert!(map_step.observation.map.is_some());
-
-        let combat_step = episode
-            .trace
-            .iter()
-            .find(|step| step.decision_type == "combat")
-            .expect("short rule-baseline run should reach combat");
-        assert!(combat_step.observation.map.is_none());
     }
 
     #[test]
@@ -1014,23 +940,6 @@ mod tests {
             step.state.observation_schema_version,
             FULL_RUN_OBSERVATION_SCHEMA_VERSION
         );
-        assert_eq!(step.info.seed, 42);
-        assert!(step.chosen_action_key.is_some());
-    }
-
-    #[test]
-    fn full_run_env_step_policy_uses_rule_baseline() {
-        let config = FullRunEnvConfig {
-            seed: 42,
-            ascension: 0,
-            final_act: false,
-            player_class: "Ironclad",
-            max_steps: 50,
-        };
-        let mut env = FullRunEnv::new(config).expect("full-run env should reset");
-        let step = env
-            .step_policy(RunPolicyKind::RuleBaselineV0)
-            .expect("rule baseline policy should choose a legal action");
         assert_eq!(step.info.seed, 42);
         assert!(step.chosen_action_key.is_some());
     }
@@ -1111,7 +1020,6 @@ mod tests {
         assert_eq!(pommel.card_id, "PommelStrike");
         assert_eq!(pommel.card_type_id, card_type_id(CardType::Attack));
         assert!(pommel.draws_cards);
-        assert!(pommel.rule_score > 0);
 
         let skip = candidates
             .iter()
@@ -1131,7 +1039,6 @@ mod tests {
         let run_state = RunState::new(1, 0, false, "Ironclad");
         let profile = build_deck_plan_profile(&run_state);
 
-        assert_eq!(profile.score_kind, "heuristic");
         assert!(
             profile.starter_basic_burden >= 90,
             "starter deck should expose a high starter/basic burden"
@@ -1235,7 +1142,6 @@ mod tests {
 
         assert!(upgraded.exhaust_delta > unupgraded.exhaust_delta);
         assert!(upgrade.exhaust_delta > 0);
-        assert!(upgrade.plan_adjusted_score > 0);
     }
 
     #[test]
@@ -1268,7 +1174,6 @@ mod tests {
         assert_eq!(observation.screen.reward_item_count, 2);
         assert_eq!(observation.screen.reward_claimable_item_count, 2);
         assert_eq!(observation.screen.reward_unclaimed_card_item_count, 1);
-        assert!(observation.screen.reward_free_value_score > 0);
         assert!(observation
             .screen
             .reward_items
@@ -1292,7 +1197,6 @@ mod tests {
             claim_card_structure.claim_reward_item_type.as_deref(),
             Some("card_reward")
         );
-        assert!(claim_card_structure.claim_free_value_score > 0);
 
         let proceed = candidates
             .iter()
@@ -1356,76 +1260,6 @@ mod tests {
                 .any(|action| matches!(action, ClientInput::BuyPotion(0))),
             "normal affordable shop potion buys should remain legal"
         );
-    }
-
-    #[test]
-    fn rule_baseline_scores_sozu_potion_purchase_as_resource_waste() {
-        let mut run_state = RunState::new(1, 0, false, "Ironclad");
-        run_state.gold = 200;
-        run_state
-            .relics
-            .push(crate::content::relics::RelicState::new(RelicId::Sozu));
-        let mut shop = crate::shop::ShopState::new();
-        shop.potions.push(crate::shop::ShopPotion {
-            potion_id: crate::content::potions::PotionId::BlockPotion,
-            price: 50,
-            can_buy: true,
-            blocked_reason: None,
-        });
-
-        let buy_score = score_shop_action(&run_state, &shop, &ClientInput::BuyPotion(0));
-        let leave_score = score_shop_action(&run_state, &shop, &ClientInput::Proceed);
-
-        assert!(
-            buy_score < leave_score,
-            "Sozu potion purchase remains executable but should be scored as resource waste"
-        );
-    }
-
-    #[test]
-    fn rule_baseline_policy_runs_and_reports_metrics() {
-        let config = RunBatchConfig {
-            episodes: 1,
-            base_seed: 42,
-            ascension: 0,
-            final_act: false,
-            player_class: "Ironclad",
-            max_steps: 50,
-            policy: RunPolicyKind::RuleBaselineV0,
-            trace_dir: None,
-            determinism_check: true,
-        };
-
-        let summary = run_batch(&config).expect("one episode rule baseline smoke should run");
-        assert_eq!(summary.policy, "rule_baseline_v0");
-        assert_eq!(summary.episodes_completed, 1);
-        assert_eq!(summary.crash_count, 0);
-        assert_eq!(summary.illegal_action_count, 0);
-        assert_eq!(summary.deterministic_replay_pass_count, 1);
-        assert_eq!(summary.contract_failure_count, 0);
-        assert!(summary.average_legal_action_count > 0.0);
-    }
-
-    #[test]
-    fn rule_baseline_seed_10542_regresses_empty_upgrade_select_fizzle() {
-        let config = RunBatchConfig {
-            episodes: 1,
-            base_seed: 10542,
-            ascension: 0,
-            final_act: false,
-            player_class: "Ironclad",
-            max_steps: 5000,
-            policy: RunPolicyKind::RuleBaselineV0,
-            trace_dir: None,
-            determinism_check: true,
-        };
-
-        let summary = run_batch(&config).expect("seed 10542 should run without contract failure");
-        assert_eq!(summary.crash_count, 0);
-        assert_eq!(summary.illegal_action_count, 0);
-        assert_eq!(summary.no_progress_loop_count, 0);
-        assert_eq!(summary.contract_failure_count, 0);
-        assert_eq!(summary.deterministic_replay_pass_count, 1);
     }
 
     #[test]

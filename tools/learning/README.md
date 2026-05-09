@@ -9,7 +9,8 @@ counterfactuals into reusable labels.
 
 Allowed uses:
 
-- collect raw DecisionRecord transitions from `full_run_env_driver`
+- collect raw DecisionRecord transitions from `full_run_env_driver` using only
+  externally selected legal actions or random-masked smoke actions
 - audit that records expose legal/public payloads only
 - replay records through the driver and compare hashes/candidates/outcomes
 - run explicit full-run policy evaluation where the final run outcome is the

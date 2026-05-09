@@ -167,7 +167,6 @@ pub fn run_batch(config: &RunBatchConfig) -> Result<RunBatchSummary, String> {
             RunPolicyKind::RandomMasked => EpisodePolicy::RandomMasked {
                 rng: StsRng::new(policy_seed),
             },
-            RunPolicyKind::RuleBaselineV0 => EpisodePolicy::RuleBaselineV0,
         };
         let mut episode = run_episode(config, episode_id, seed, episode_policy, true);
 

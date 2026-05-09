@@ -32,7 +32,8 @@ comparison point, but it cannot label better long-run decisions.
 1. simulator parity
 2. deterministic replay and DecisionRecord capture
 3. legal observation versus internal state separation
-4. outcome evaluation of explicit policies such as `rule_baseline_v0`
+4. outcome evaluation from externally supplied policies or random-masked smoke
+   runs
 5. scenario fixtures only when their oracle source is clear
 6. after the truth/eval layer is stable, decide whether a small explicit search
    module or a full-run learner is worth building

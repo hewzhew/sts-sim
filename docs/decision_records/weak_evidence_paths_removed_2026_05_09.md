@@ -32,11 +32,12 @@ The only active AI-facing data path is:
 
 ```text
 full_run_env_driver
+-> legal action selection by external caller or random-masked smoke collector
 -> DecisionRecord capture
 -> contract audit
 -> deterministic replay verification
 -> explicit full-run outcome evaluation
 ```
 
-The baseline bot remains useful as a comparator and simulator stress test. It is
-not a teacher.
+The baseline bot is no longer a DecisionRecord collection policy. It may remain
+as an isolated simulator stress test, but it is not a teacher.

@@ -7,7 +7,8 @@ This repo is not a strong AI agent today. The current useful work is narrower:
 - keep the simulator and replay surfaces deterministic
 - compare Rust behavior against Java/CommunicationMod truth through `live_comm`
 - capture legal observations, action candidates, transitions, and run outcomes
-- use the existing bot as a stress test and comparator, not as a teacher
+- keep existing bot rules isolated from DecisionRecord collection and learning
+  claims
 
 Old weak-evidence learning paths have been removed from the active tree. In
 particular, BranchTrace/candidate rollout labels, verified teacher overrides,
@@ -32,7 +33,8 @@ Anything else is diagnostic unless a current doc says otherwise.
 - `src/cli/live_comm/`, `tools/live_comm/`
   - Java-connected parity and run capture
 - `src/bin/full_run_env_driver/`
-  - line-protocol driver for reset, step, preview, and DecisionRecord capture
+  - line-protocol driver for reset, legal observation, explicit step, and
+    DecisionRecord capture
 - `tools/learning/`
   - DecisionRecord collection, replay, and contract audit only
 
