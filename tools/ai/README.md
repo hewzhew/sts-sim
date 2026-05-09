@@ -34,6 +34,15 @@ Evaluate a saved policy against the same seed range as a random legal baseline:
 .\.venv-ai\Scripts\python.exe tools\ai\eval_micro_jaw_worm_policy.py --episodes 100
 ```
 
+Run the two-target slime task:
+
+```powershell
+cargo build --bin micro_two_slimes_env
+.\.venv-ai\Scripts\python.exe tools\ai\smoke_micro_two_slimes_env.py --episodes 5
+.\.venv-ai\Scripts\python.exe tools\ai\train_micro_two_slimes_ppo.py --total-timesteps 20000
+.\.venv-ai\Scripts\python.exe tools\ai\eval_micro_two_slimes_policy.py --episodes 1000
+```
+
 Protocol:
 
 ```json
