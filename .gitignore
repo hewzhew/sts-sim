@@ -5,6 +5,7 @@
 # Python
 **/__pycache__/
 *.pyc
+.venv-ai/
 
 # Generated outputs (re-generate with tools)
 tools/source_extractor/output/

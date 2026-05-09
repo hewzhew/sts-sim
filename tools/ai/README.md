@@ -15,6 +15,19 @@ Run a bridge smoke test:
 python tools\ai\smoke_micro_jaw_worm_env.py --episodes 5
 ```
 
+Create a local Python environment:
+
+```powershell
+& 'C:\Users\17239\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe' -m venv .venv-ai
+.\.venv-ai\Scripts\python.exe -m pip install -r tools\ai\requirements.txt
+```
+
+Run a short masked PPO training pass:
+
+```powershell
+.\.venv-ai\Scripts\python.exe tools\ai\train_micro_jaw_worm_ppo.py --total-timesteps 20000
+```
+
 Protocol:
 
 ```json
