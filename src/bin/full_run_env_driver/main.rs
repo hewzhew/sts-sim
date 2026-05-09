@@ -12,10 +12,17 @@ use blake2::digest::{Update, VariableOutput};
 use blake2::Blake2bVar;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use sts_simulator::app::branch_evaluator::{
+    branch_rng_state_hash, BranchCandidateScope, BranchEvaluator, BranchEvaluatorConfig,
+    BranchHorizonMode,
+};
 use sts_simulator::app::policy_runner::NeutralProbeEvaluator;
 use sts_simulator::cli::full_run_smoke::{
     FullRunEnv, FullRunEnvConfig, FullRunEnvInfo, FullRunEnvState, RewardShapingProfile,
     RunActionCandidate, RunPolicyKind,
+};
+use sts_simulator::verification::branch_dataset::{
+    validate_branch_dataset, BRANCH_TRACE_SCHEMA_VERSION, PAIRED_SCENARIO_SCHEMA_VERSION,
 };
 use sts_simulator::verification::decision_env::{
     ActionId, CandidateLabel, DecisionEnv, DecisionRecord, DecisionRecordContext,
@@ -41,6 +48,7 @@ enum DriverRequest {
     PolicyInput {
         time_budget_ms: Option<u32>,
     },
+    BranchTraceCacheIdentity,
     NeutralPolicyTrace {
         time_budget_ms: Option<u32>,
         max_branch_depth: Option<u8>,
@@ -67,6 +75,21 @@ enum DriverRequest {
         teacher_value_cache_max_entries: Option<usize>,
         teacher_parallelism: Option<usize>,
         teacher_exact_root_dedup: Option<bool>,
+    },
+    BranchTrace {
+        action_indices: Vec<usize>,
+        candidate_scope: Option<String>,
+        candidate_sampling_spec_id: Option<String>,
+        candidate_cap: Option<usize>,
+        behavior_action_id: Option<usize>,
+        sampling_seed: Option<u64>,
+        continuation_policy: Option<String>,
+        horizon_decisions: usize,
+        horizon_mode: Option<String>,
+        sim_version: Option<String>,
+        content_version: Option<String>,
+        max_steps: Option<usize>,
+        include_comparisons: Option<bool>,
     },
     StepPolicy {
         policy: String,
@@ -1430,6 +1453,32 @@ fn handle_request(session: &mut DriverSession, request: DriverRequest) -> Driver
             },
             None => error_response("full-run env not initialized; send reset first".to_string()),
         },
+        DriverRequest::BranchTraceCacheIdentity => match session.env.as_mut() {
+            Some(current) => match DecisionEnv::current_timestep(current) {
+                Ok(timestep) => DriverResponse {
+                    ok: true,
+                    error: None,
+                    payload: Some(json!({
+                        "schema_version": "branch_trace_cache_identity_v1",
+                        "decision_id": timestep.decision_id,
+                        "state_hash": timestep.info.state_hash,
+                        "rng_state_hash": branch_rng_state_hash(current),
+                        "candidate_count": timestep.candidates.len(),
+                        "candidate_action_keys": timestep
+                            .candidates
+                            .iter()
+                            .map(|candidate| candidate.action_key.clone())
+                            .collect::<Vec<_>>(),
+                    })),
+                    reward: None,
+                    done: Some(current.info().result != "ongoing"),
+                    chosen_action_key: None,
+                    info: Some(current.info()),
+                },
+                Err(err) => error_response(err.to_string()),
+            },
+            None => error_response("full-run env not initialized; send reset first".to_string()),
+        },
         DriverRequest::NeutralPolicyTrace {
             time_budget_ms,
             max_branch_depth,
@@ -1712,6 +1761,137 @@ fn handle_request(session: &mut DriverSession, request: DriverRequest) -> Driver
                     },
                     Err(err) => error_response(err),
                 },
+                None => {
+                    error_response("full-run env not initialized; send reset first".to_string())
+                }
+            }
+        }
+        DriverRequest::BranchTrace {
+            action_indices,
+            candidate_scope,
+            candidate_sampling_spec_id,
+            candidate_cap,
+            behavior_action_id,
+            sampling_seed,
+            continuation_policy,
+            horizon_decisions,
+            horizon_mode,
+            sim_version,
+            content_version,
+            max_steps,
+            include_comparisons,
+        } => {
+            let continuation_policy = match normalize_policy(
+                continuation_policy.as_deref().unwrap_or("rule_baseline_v0"),
+            ) {
+                Ok(policy) => policy,
+                Err(err) => return error_response(err),
+            };
+            let candidate_scope = match BranchCandidateScope::parse(candidate_scope.as_deref()) {
+                Ok(scope) => scope,
+                Err(err) => return error_response(err),
+            };
+            let horizon_mode = match BranchHorizonMode::parse(horizon_mode.as_deref()) {
+                Ok(mode) => mode,
+                Err(err) => return error_response(err),
+            };
+            match session.env.as_mut() {
+                Some(current) => {
+                    let decision = match DecisionEnv::current_timestep(current) {
+                        Ok(decision) => decision,
+                        Err(err) => return error_response(err.to_string()),
+                    };
+                    let stable_live = current.clone();
+                    let horizon_decisions = max_steps
+                        .map(|cap| horizon_decisions.min(cap))
+                        .unwrap_or(horizon_decisions);
+                    let config = BranchEvaluatorConfig {
+                        action_indices,
+                        candidate_scope,
+                        continuation_policy,
+                        horizon_decisions,
+                        horizon_mode,
+                        sim_version: sim_version.as_deref().unwrap_or("sim_current").to_string(),
+                        content_version: content_version
+                            .as_deref()
+                            .unwrap_or("content_current")
+                            .to_string(),
+                    };
+                    let output = match BranchEvaluator::evaluate_current(
+                        &stable_live,
+                        &decision,
+                        &config,
+                        include_comparisons.unwrap_or(true),
+                    ) {
+                        Ok(output) => output,
+                        Err(err) => return error_response(err),
+                    };
+                    let live_env_unchanged = *current == stable_live;
+                    let validation_report =
+                        validate_branch_dataset(&output.traces, &output.comparisons);
+                    let behavior_action_included = behavior_action_id
+                        .is_some_and(|action_id| output.action_indices.contains(&action_id));
+                    let candidate_sampling_spec = json!({
+                        "schema_version": "candidate_sampling_spec_v1",
+                        "candidate_sampling_spec_id": candidate_sampling_spec_id
+                            .as_deref()
+                            .unwrap_or("explicit_action_indices_then_scope_filter_v1"),
+                        "scope": candidate_scope.as_str(),
+                        "source": "explicit_action_indices_then_scope_filter",
+                        "candidate_cap": candidate_cap,
+                        "sampling_seed": sampling_seed,
+                        "behavior_action_id": behavior_action_id,
+                        "include_behavior_action": behavior_action_included,
+                        "requested_action_count": output.sampling_summary.requested_action_count,
+                        "legal_candidate_count": output.sampling_summary.legal_candidate_count,
+                        "included_candidate_count": output.sampling_summary.included_candidate_count,
+                        "excluded_candidate_count": output.sampling_summary.invalid_index_count + output.sampling_summary.scope_filtered_count,
+                        "excluded_by_reason": {
+                            "invalid_index": output.sampling_summary.invalid_index_count,
+                            "scope_filter": output.sampling_summary.scope_filtered_count
+                        },
+                        "uses_neutral_signal": false,
+                        "uses_legacy_best_move": false,
+                        "uses_exact_turn_best_line": false,
+                        "uses_frontier_eval_score": false
+                    });
+                    let paired_scenario_spec = json!({
+                        "schema_version": PAIRED_SCENARIO_SCHEMA_VERSION,
+                        "pairing_mode": "same_initial_env_seed_single_scenario_v0",
+                        "common_random_policy": "shared_initial_rng_no_realignment_v0",
+                        "scenario_seed_id": output.traces.first().map(|trace| trace.scenario_seed_id.clone()),
+                        "paired_seed_id": output.traces.first().map(|trace| format!("seed:{}", trace.seed)),
+                        "rng_divergence_recorded": true,
+                        "note": "branches share initial exact env and RNG; later RNG divergence is measured, not realigned"
+                    });
+                    DriverResponse {
+                        ok: true,
+                        error: None,
+                        payload: Some(json!({
+                            "schema_version": "branch_trace_batch_v1",
+                            "branch_trace_schema_version": BRANCH_TRACE_SCHEMA_VERSION,
+                            "decision_id": decision.decision_id,
+                            "horizon_decisions": horizon_decisions,
+                            "horizon_mode": horizon_mode.as_str(),
+                            "continuation_policy": policy_name(continuation_policy),
+                            "candidate_scope": candidate_scope.as_str(),
+                            "candidate_sampling_spec": candidate_sampling_spec,
+                            "paired_scenario_spec": paired_scenario_spec,
+                            "requested_action_indices": config.action_indices,
+                            "action_indices": output.action_indices,
+                            "trace_count": output.traces.len(),
+                            "comparison_count": output.comparisons.len(),
+                            "live_env_unchanged": live_env_unchanged,
+                            "validation_report": validation_report,
+                            "traces": output.traces,
+                            "comparisons": output.comparisons,
+                        })),
+                        reward: None,
+                        done: Some(current.info().result != "ongoing"),
+                        chosen_action_key: None,
+                        info: Some(current.info()),
+                    }
+                }
                 None => {
                     error_response("full-run env not initialized; send reset first".to_string())
                 }
@@ -3101,6 +3281,14 @@ fn normalize_policy(value: &str) -> Result<RunPolicyKind, String> {
     }
 }
 
+fn policy_name(policy: RunPolicyKind) -> &'static str {
+    match policy {
+        RunPolicyKind::RuleBaselineV0 => "rule_baseline_v0",
+        RunPolicyKind::PlanQueryV0 => "plan_query_v0",
+        RunPolicyKind::RandomMasked => "random_masked",
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -4028,5 +4216,180 @@ mod tests {
             "return_q_candidate_evaluation_v0"
         );
         assert_eq!(label["payload"]["live_env_unchanged"], true);
+    }
+
+    #[test]
+    fn driver_emits_branch_trace_without_stepping_live_env() {
+        let mut session = DriverSession::default();
+        let reset = DriverRequest::Reset {
+            seed: Some(7),
+            ascension: Some(0),
+            final_act: Some(false),
+            class: Some("ironclad".to_string()),
+            max_steps: Some(80),
+            reward_shaping_profile: Some("baseline".to_string()),
+        };
+        assert!(handle_request(&mut session, reset).ok);
+
+        let before = handle_request(
+            &mut session,
+            DriverRequest::PolicyInput {
+                time_budget_ms: Some(10),
+            },
+        )
+        .payload
+        .expect("policy input before branch trace");
+        let response = handle_request(
+            &mut session,
+            DriverRequest::BranchTrace {
+                action_indices: vec![0],
+                candidate_scope: Some("all".to_string()),
+                candidate_sampling_spec_id: None,
+                candidate_cap: None,
+                behavior_action_id: None,
+                sampling_seed: None,
+                continuation_policy: Some("rule_baseline_v0".to_string()),
+                horizon_decisions: 0,
+                horizon_mode: Some("fixed_decisions".to_string()),
+                sim_version: Some("test_sim".to_string()),
+                content_version: Some("test_content".to_string()),
+                max_steps: None,
+                include_comparisons: Some(true),
+            },
+        );
+        assert!(response.ok);
+        let payload = response.payload.expect("branch trace payload");
+        assert_eq!(payload["schema_version"], "branch_trace_batch_v1");
+        assert_eq!(payload["trace_count"], 1);
+        assert_eq!(payload["comparison_count"], 0);
+        assert_eq!(payload["live_env_unchanged"], true);
+        assert_eq!(payload["validation_report"]["valid"], true);
+        assert_eq!(payload["validation_report"]["issue_count"], 0);
+        assert_eq!(payload["traces"][0]["schema_version"], "branch_trace_v1");
+        assert_eq!(payload["traces"][0]["trainable_as_action_label"], false);
+        assert_eq!(
+            payload["traces"][0]["redaction_report"]["model_input_uses_public_observation"],
+            true
+        );
+
+        let after = handle_request(
+            &mut session,
+            DriverRequest::PolicyInput {
+                time_budget_ms: Some(10),
+            },
+        )
+        .payload
+        .expect("policy input after branch trace");
+        assert_eq!(before["decision_id"], after["decision_id"]);
+        assert_eq!(before["candidates"], after["candidates"]);
+    }
+
+    #[test]
+    fn branch_trace_is_deterministic_for_same_branch_spec() {
+        let mut session = DriverSession::default();
+        let reset = DriverRequest::Reset {
+            seed: Some(8),
+            ascension: Some(0),
+            final_act: Some(false),
+            class: Some("ironclad".to_string()),
+            max_steps: Some(120),
+            reward_shaping_profile: Some("baseline".to_string()),
+        };
+        assert!(handle_request(&mut session, reset).ok);
+
+        let first = handle_request(
+            &mut session,
+            DriverRequest::BranchTrace {
+                action_indices: vec![0],
+                candidate_scope: Some("all".to_string()),
+                candidate_sampling_spec_id: None,
+                candidate_cap: None,
+                behavior_action_id: None,
+                sampling_seed: None,
+                continuation_policy: Some("rule_baseline_v0".to_string()),
+                horizon_decisions: 2,
+                horizon_mode: Some("fixed_decisions".to_string()),
+                sim_version: Some("determinism_test".to_string()),
+                content_version: Some("test_content".to_string()),
+                max_steps: None,
+                include_comparisons: Some(true),
+            },
+        )
+        .payload
+        .expect("first branch trace payload");
+        let second = handle_request(
+            &mut session,
+            DriverRequest::BranchTrace {
+                action_indices: vec![0],
+                candidate_scope: Some("all".to_string()),
+                candidate_sampling_spec_id: None,
+                candidate_cap: None,
+                behavior_action_id: None,
+                sampling_seed: None,
+                continuation_policy: Some("rule_baseline_v0".to_string()),
+                horizon_decisions: 2,
+                horizon_mode: Some("fixed_decisions".to_string()),
+                sim_version: Some("determinism_test".to_string()),
+                content_version: Some("test_content".to_string()),
+                max_steps: None,
+                include_comparisons: Some(true),
+            },
+        )
+        .payload
+        .expect("second branch trace payload");
+
+        assert_eq!(first["validation_report"]["valid"], true);
+        assert_eq!(second["validation_report"]["valid"], true);
+        assert_eq!(first["traces"], second["traces"]);
+        assert_eq!(first["comparisons"], second["comparisons"]);
+    }
+
+    #[test]
+    fn combat_end_branch_trace_caps_are_censored() {
+        let mut session = DriverSession::default();
+        let reset = DriverRequest::Reset {
+            seed: Some(9),
+            ascension: Some(0),
+            final_act: Some(false),
+            class: Some("ironclad".to_string()),
+            max_steps: Some(120),
+            reward_shaping_profile: Some("baseline".to_string()),
+        };
+        assert!(handle_request(&mut session, reset).ok);
+        advance_to_combat(session.env.as_mut().expect("env should exist"));
+
+        let response = handle_request(
+            &mut session,
+            DriverRequest::BranchTrace {
+                action_indices: vec![0],
+                candidate_scope: Some("all".to_string()),
+                candidate_sampling_spec_id: None,
+                candidate_cap: None,
+                behavior_action_id: None,
+                sampling_seed: None,
+                continuation_policy: Some("rule_baseline_v0".to_string()),
+                horizon_decisions: 0,
+                horizon_mode: Some("combat_end_v1".to_string()),
+                sim_version: Some("censor_test".to_string()),
+                content_version: Some("test_content".to_string()),
+                max_steps: None,
+                include_comparisons: Some(true),
+            },
+        );
+        assert!(response.ok);
+        let payload = response.payload.expect("branch trace payload");
+        assert_eq!(payload["validation_report"]["valid"], true);
+        let outcome = &payload["traces"][0]["outcome"];
+        if outcome["stop_reason"] == "horizon_decision_cap_before_combat_end" {
+            assert_eq!(outcome["boundary_requested"], "combat_end");
+            assert_eq!(outcome["boundary_reached"], false);
+            assert_eq!(outcome["outcome_censored"], true);
+            assert_eq!(outcome["truncated"], true);
+            assert_eq!(
+                outcome["truncation_reason"],
+                "horizon_cap_before_combat_end"
+            );
+            assert_eq!(payload["traces"][0]["truncated"], true);
+        }
     }
 }
