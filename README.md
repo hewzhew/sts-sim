@@ -7,13 +7,13 @@ This repo is not a strong AI agent today. The current useful work is narrower:
 - keep the simulator and replay surfaces deterministic
 - compare Rust behavior against Java/CommunicationMod truth through `live_comm`
 - capture legal observations, action candidates, transitions, and run outcomes
-- keep existing bot rules isolated from DecisionRecord collection and learning
-  claims
+- keep combat search diagnostic code separate from macro-decision evidence
 
 Old weak-evidence learning paths have been removed from the active tree. In
 particular, BranchTrace/candidate rollout labels, verified teacher overrides,
-DecisionRecord teacher labels, PPO/Gym bridges, and single-seed policy patch
-pipelines are not active project direction.
+DecisionRecord teacher labels, PPO/Gym bridges, single-seed policy patch
+pipelines, and hand-written macro-policy modules are not active project
+direction.
 
 ## What Is Authoritative
 
@@ -68,6 +68,7 @@ powershell -ExecutionPolicy Bypass -File .\tools\live_comm\use_profile.ps1 Ironc
 - no A20H claim
 - no trusted current learning policy
 - no baseline-as-teacher pipeline
+- no hand-written reward/shop/event/path/campfire/boss-relic policy core
 - no policy conclusion from one seed death
 
 ## License

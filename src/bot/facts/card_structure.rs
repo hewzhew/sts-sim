@@ -47,10 +47,6 @@ impl CardStructure {
         self.contains(Self::SCALING_PIECE)
     }
 
-    pub(crate) const fn is_engine_piece(self) -> bool {
-        self.contains(Self::ENGINE_PIECE)
-    }
-
     pub(crate) const fn is_exhaust_engine(self) -> bool {
         self.contains(Self::EXHAUST_ENGINE)
     }
@@ -73,10 +69,6 @@ impl CardStructure {
 
     pub(crate) const fn is_status_engine(self) -> bool {
         self.contains(Self::STATUS_ENGINE)
-    }
-
-    pub(crate) const fn is_vuln_payoff(self) -> bool {
-        self.contains(Self::VULN_PAYOFF)
     }
 
     pub(crate) const fn is_block_payoff(self) -> bool {
@@ -131,7 +123,6 @@ mod tests {
     fn structure_tags_are_descriptive_not_value_labels() {
         let corruption = structure(CardId::Corruption);
         assert!(corruption.is_exhaust_engine());
-        assert!(corruption.is_engine_piece());
         assert!(!corruption.is_strength_payoff());
 
         let pummel = structure(CardId::Pummel);

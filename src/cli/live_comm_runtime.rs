@@ -1881,7 +1881,7 @@ fn validate_run_artifacts(run_dir: &Path, manifest: &LiveRunManifest) -> LiveRun
     let failure_snapshots_path = run_dir.join("failure_snapshots.jsonl");
 
     let focus_has_event_trace = file_contains(&focus_path, "[EVENT]");
-    let debug_has_event_policy = file_contains(&debug_path, "EVENT POLICY");
+    let debug_has_event_trace = file_contains(&debug_path, "EVENT TRACE");
     let event_frames_present = raw_contains_event_frames(&raw_path);
     let event_audit_present = event_audit_path.exists();
     let event_audit_json_lines = count_valid_jsonl_records(&event_audit_path).unwrap_or(0);
@@ -1897,7 +1897,7 @@ fn validate_run_artifacts(run_dir: &Path, manifest: &LiveRunManifest) -> LiveRun
 
     let trace_incomplete = event_frames_present
         && (!focus_has_event_trace
-            || !debug_has_event_policy
+            || !debug_has_event_trace
             || !event_audit_present
             || event_audit_json_lines == 0
             || reward_loop_detected
@@ -1910,8 +1910,8 @@ fn validate_run_artifacts(run_dir: &Path, manifest: &LiveRunManifest) -> LiveRun
     if event_frames_present && !focus_has_event_trace {
         errors.push("event frames present but focus.txt has no [EVENT] trace".to_string());
     }
-    if event_frames_present && !debug_has_event_policy {
-        errors.push("event frames present but debug.txt has no EVENT POLICY trace".to_string());
+    if event_frames_present && !debug_has_event_trace {
+        errors.push("event frames present but debug.txt has no EVENT TRACE record".to_string());
     }
     if !manifest_lists_event_audit {
         errors.push("manifest is missing event_audit artifact record".to_string());
@@ -1949,7 +1949,7 @@ fn validate_run_artifacts(run_dir: &Path, manifest: &LiveRunManifest) -> LiveRun
         status: status.to_string(),
         event_frames_present,
         focus_has_event_trace,
-        debug_has_event_policy,
+        debug_has_event_trace,
         event_audit_present,
         event_audit_json_lines,
         manifest_lists_event_audit,

@@ -2,7 +2,6 @@ mod catalog;
 mod policy;
 mod signals;
 mod targets;
-mod valuation;
 
 use crate::content::potions::{get_potion_definition, PotionId};
 use crate::state::core::ClientInput;

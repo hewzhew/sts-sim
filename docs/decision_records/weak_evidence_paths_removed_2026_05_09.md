@@ -19,6 +19,10 @@ Removed from active code/docs:
 - return-Q / pairwise teacher training
 - Gym/PPO full-run scripts
 - combat preference export from `combat_decision_audit`
+- `policy_spine` and Agent macro-decision entrypoints
+- bot-owned reward/shop/event/path/campfire/boss-relic policy modules
+- live noncombat sidecar shadow records
+- bot card-reward evaluation in human reward audit
 
 ## Reason
 
@@ -39,5 +43,6 @@ full_run_env_driver
 -> explicit full-run outcome evaluation
 ```
 
-The baseline bot is no longer a DecisionRecord collection policy. It may remain
-as an isolated simulator stress test, but it is not a teacher.
+The baseline bot is no longer a DecisionRecord collection policy or macro
+controller. Remaining bot code is combat diagnostic/search machinery and cannot
+label long-run run decisions.

@@ -26,6 +26,10 @@ comparison point, but it cannot label better long-run decisions.
 - return-Q / pairwise teacher training
 - Gym/PPO training scripts
 - single-seed counterfactual policy patches
+- hand-written macro-policy modules for reward, shop, event, map, campfire, and
+  boss relic decisions
+- live noncombat sidecar shadows that present heuristic macro decisions as
+  evidence
 
 ## Current Viable Work
 
@@ -40,3 +44,7 @@ comparison point, but it cannot label better long-run decisions.
 
 No current module has authority to say a macro decision is good unless the claim
 is backed by replay, scenario oracle, or held-out full-run outcomes.
+
+The remaining `src/bot/` code is combat-oriented diagnostic/search machinery
+plus representation helpers. Noncombat routing in live communication should be
+treated as protocol fallback or human handoff, not strategy.

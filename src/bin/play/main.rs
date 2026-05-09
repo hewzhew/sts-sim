@@ -148,31 +148,8 @@ fn describe_bot_decision(
     }
 }
 
-fn format_context_suffix(
-    rule_context_summary: Option<&str>,
-    rationale_key: Option<&str>,
-    context_delta: i32,
-) -> String {
-    let mut parts = Vec::new();
-    if let Some(summary) = rule_context_summary {
-        parts.push(format!("ctx={summary}"));
-    }
-    if let Some(rationale) = rationale_key {
-        parts.push(format!("rationale={rationale}"));
-    }
-    if context_delta != 0 {
-        parts.push(format!("delta_ctx={context_delta}"));
-    }
-    if parts.is_empty() {
-        String::new()
-    } else {
-        format!(" | {}", parts.join(" "))
-    }
-}
-
 fn describe_reward_screen_decision(
     engine_state: &EngineState,
-    run_state: &RunState,
     decision: &ClientInput,
 ) -> Option<String> {
     let EngineState::RewardScreen(reward) = engine_state else {
@@ -182,28 +159,17 @@ fn describe_reward_screen_decision(
     match decision {
         ClientInput::SelectCard(idx) | ClientInput::SubmitDiscoverChoice(idx) => {
             let cards = reward.pending_card_choice.as_ref()?;
-            let (_, diagnostics) =
-                sts_simulator::bot::reward::decide_cards(run_state, cards, reward.skippable);
-            let card_eval = diagnostics
-                .candidates
-                .iter()
-                .find(|candidate| candidate.index == *idx)?;
             let reward_card = cards.get(*idx)?;
             let def = sts_simulator::content::cards::get_card_definition(reward_card.id);
             Some(format!(
-                "Pick {}{} [reward {}]{}",
+                "Pick {}{} [reward {}]",
                 def.name,
                 if reward_card.upgrades > 0 {
                     format!(" +{}", reward_card.upgrades)
                 } else {
                     String::new()
                 },
-                idx,
-                format_context_suffix(
-                    Some("reward_candidate"),
-                    Some(card_eval.rationale_key),
-                    card_eval.score
-                )
+                idx
             ))
         }
         ClientInput::ClaimReward(idx) => reward.items.get(*idx).map(|item| match item {
@@ -233,17 +199,7 @@ fn describe_shop_screen_decision(
         ClientInput::BuyCard(idx) => {
             let card = shop.cards.get(*idx)?;
             let def = sts_simulator::content::cards::get_card_definition(card.card_id);
-            let offer_score = sts_simulator::bot::score_card_offer(card.card_id, run_state);
-            Some(format!(
-                "Shop Card: {} [price {}]{}",
-                def.name,
-                card.price,
-                format_context_suffix(
-                    Some("shop_offer_value"),
-                    Some("buy_card_offer_value"),
-                    offer_score
-                )
-            ))
+            Some(format!("Shop Card: {} [price {}]", def.name, card.price))
         }
         ClientInput::BuyRelic(idx) => shop
             .relics
@@ -701,7 +657,7 @@ fn main() {
                     println!("  [BOT] {description}");
                     println!("  [BOT][raw] {:?}", decision);
                 } else if let Some(description) =
-                    describe_reward_screen_decision(&engine_state, &run_state, &decision)
+                    describe_reward_screen_decision(&engine_state, &decision)
                 {
                     println!("  [BOT] {description}");
                     println!("  [BOT][raw] {:?}", decision);
@@ -737,23 +693,10 @@ fn main() {
                         }
                     }
                     ClientInput::EventChoice(choice_idx) => {
-                        if let Some(event) = run_state.event_state.as_ref() {
+                        if run_state.event_state.is_some() {
                             let options =
                                 sts_simulator::engine::event_handler::get_event_options(&run_state);
-                            if let Some(decision) =
-                                sts_simulator::bot::event::decide_local(&run_state, event)
-                            {
-                                if decision.option_index == *choice_idx {
-                                    println!(
-                                        "  [BOT] Event: {}",
-                                        sts_simulator::bot::event::describe_choice(&decision)
-                                    );
-                                } else if let Some(option) = options.get(*choice_idx) {
-                                    println!("  [BOT] Event: {}", option.ui.text);
-                                } else {
-                                    println!("  [BOT] Event choice #{}", choice_idx);
-                                }
-                            } else if let Some(option) = options.get(*choice_idx) {
+                            if let Some(option) = options.get(*choice_idx) {
                                 println!("  [BOT] Event: {}", option.ui.text);
                             } else {
                                 println!("  [BOT] Event choice #{}", choice_idx);
@@ -764,7 +707,7 @@ fn main() {
                     }
                     ClientInput::SelectCard(_) | ClientInput::SubmitDiscoverChoice(_) => {
                         if let Some(description) =
-                            describe_reward_screen_decision(&engine_state, &run_state, &decision)
+                            describe_reward_screen_decision(&engine_state, &decision)
                         {
                             println!("  [BOT] {description}");
                         } else if let ClientInput::SelectCard(idx) = &decision {
@@ -773,7 +716,7 @@ fn main() {
                     }
                     ClientInput::ClaimReward(_) => {
                         if let Some(description) =
-                            describe_reward_screen_decision(&engine_state, &run_state, &decision)
+                            describe_reward_screen_decision(&engine_state, &decision)
                         {
                             println!("  [BOT] {description}");
                         } else if let ClientInput::ClaimReward(idx) = &decision {

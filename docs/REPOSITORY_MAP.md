@@ -99,15 +99,17 @@ This path does not contain a trusted policy learner.
 - `src/protocol/` - `integration`
 - `src/testing/` - `integration`
 - `src/verification/` - `integration`
-- `src/bot/harness/` - `experiment`
 - `src/bin/` - `integration` entrypoints and workbenches
-- `src/bot/` - `experiment`
+- `src/bot/` - combat diagnostics/search experiment only
+- `src/bot/harness/` - combat/eval experiment
 - `src/cli/coverage_tools/` - `experiment`
 
 ## Current Notes
 
 - `bot` and `cli` are downstream of protocol/importer truth.
-- The baseline bot is a stress test and comparator, not a teacher.
+- Hand-written macro-policy modules have been removed from the active bot tree.
+- Remaining bot code is not a teacher for reward/shop/event/path/campfire/boss
+  relic choices.
 - Older learning docs may describe removed paths. Current entrypoints win.
 
 ## Root Rules

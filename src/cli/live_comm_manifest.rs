@@ -79,7 +79,7 @@ pub struct LiveRunValidation {
     pub status: String,
     pub event_frames_present: bool,
     pub focus_has_event_trace: bool,
-    pub debug_has_event_policy: bool,
+    pub debug_has_event_trace: bool,
     pub event_audit_present: bool,
     pub event_audit_json_lines: usize,
     pub manifest_lists_event_audit: bool,

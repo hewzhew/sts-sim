@@ -11,37 +11,11 @@ use crate::verification::combat::build_combat_state_from_snapshots;
 use serde_json::{json, Map, Value};
 use std::io::Write;
 
-pub(super) fn reward_deck_improvement_summary(
-    diagnostics: &crate::bot::RewardDecisionDiagnostics,
-    chosen_choice: Option<usize>,
-) -> Option<String> {
-    let target_idx = chosen_choice
-        .or(diagnostics.recommended_choice)
-        .or_else(|| diagnostics.candidates.first().map(|card| card.index))?;
-    let card = diagnostics
-        .candidates
-        .iter()
-        .find(|card| card.index == target_idx)
-        .or_else(|| diagnostics.candidates.first())?;
-    Some(format!(
-        "{} {} score={} rationale={}",
-        if chosen_choice.is_none() {
-            "skip_vs"
-        } else {
-            "pick"
-        },
-        card.card_id,
-        card.score,
-        card.rationale_key,
-    ))
-}
-
 pub(super) struct PendingHumanCardRewardAudit {
     pub(super) session_id: Option<String>,
     pub(super) state_frame_id: Option<i64>,
     pub(super) offered_signature: Vec<String>,
     pub(super) payload: Map<String, Value>,
-    pub(super) bot_recommended_choice: Option<usize>,
     pub(super) replay_truth: Option<CombatState>,
     pub(super) replay_engine_state: Option<EngineState>,
     pub(super) offscreen_hold_polls: u32,
@@ -132,7 +106,6 @@ pub(super) fn build_human_card_reward_pending(
         return None;
     }
 
-    let diagnostics = reward_diagnostics_for_offered_ids(&offered_ids, &rs, true);
     let meta = root.get("protocol_meta");
     let mut payload = Map::new();
     payload.insert("logged_at_unix_ms".to_string(), json!(unix_time_millis()));
@@ -181,14 +154,6 @@ pub(super) fn build_human_card_reward_pending(
         Value::Array(offered_cards_json),
     );
     payload.insert(
-        "bot_evaluation".to_string(),
-        reward_diagnostics_to_json(&diagnostics),
-    );
-    payload.insert(
-        "bot_recommended_choice".to_string(),
-        recommended_choice_to_json(diagnostics.recommended_choice),
-    );
-    payload.insert(
         "reward_session".to_string(),
         reward_session.cloned().unwrap_or(Value::Null),
     );
@@ -217,7 +182,6 @@ pub(super) fn build_human_card_reward_pending(
             .and_then(|v| v.as_i64()),
         offered_signature,
         payload,
-        bot_recommended_choice: diagnostics.recommended_choice,
         replay_truth,
         replay_engine_state,
         offscreen_hold_polls: 0,
@@ -250,17 +214,10 @@ pub(super) fn finalize_human_card_reward_audit(
             );
         }
     }
-    let agrees = compute_human_reward_choice_agreement(
-        pending.bot_recommended_choice,
-        human_choice.as_ref(),
-    );
     pending.payload.insert(
         "human_choice".to_string(),
         human_choice.clone().unwrap_or(Value::Null),
     );
-    pending
-        .payload
-        .insert("bot_human_agree".to_string(), agrees.unwrap_or(Value::Null));
     pending.payload.insert(
         "finalized_at_response_id".to_string(),
         json!(root
@@ -274,11 +231,8 @@ pub(super) fn finalize_human_card_reward_audit(
     let _ = reward_audit.flush();
     let _ = writeln!(
         log,
-        "  [CARD_AUDIT COMPLETE] human_choice={} agree={}",
+        "  [CARD_AUDIT COMPLETE] human_choice={}",
         line.get("human_choice")
-            .map(|v| v.to_string())
-            .unwrap_or_else(|| "null".to_string()),
-        line.get("bot_human_agree")
             .map(|v| v.to_string())
             .unwrap_or_else(|| "null".to_string())
     );
@@ -295,9 +249,6 @@ pub(super) fn finalize_human_card_reward_audit_without_choice(
     pending
         .payload
         .insert("human_choice".to_string(), Value::Null);
-    pending
-        .payload
-        .insert("bot_human_agree".to_string(), Value::Null);
     pending.payload.insert(
         "finalized_at_response_id".to_string(),
         json!(root
@@ -325,93 +276,6 @@ pub(super) fn finalize_human_card_reward_audit_without_choice(
         reason,
         pending.offered_signature.join(", ")
     );
-}
-
-pub(super) fn emit_bot_card_reward_audit(
-    root: &Value,
-    frame: u64,
-    command: &str,
-    reward_audit: &mut std::fs::File,
-) {
-    let Some(gs) = root.get("game_state") else {
-        return;
-    };
-    let Some(rs) = build_live_run_state(gs) else {
-        return;
-    };
-    let Some(cards) = gs
-        .get("screen_state")
-        .and_then(|v| v.get("cards"))
-        .and_then(|v| v.as_array())
-    else {
-        return;
-    };
-
-    let mut offered_ids = Vec::new();
-    let mut offered_cards_json = Vec::new();
-    for card in cards {
-        let Some(java_id) = card.get("id").and_then(|v| v.as_str()) else {
-            return;
-        };
-        let Some(card_id) = card_id_from_java(java_id) else {
-            return;
-        };
-        let upgrades = card.get("upgrades").and_then(|v| v.as_u64()).unwrap_or(0) as u8;
-        let name = card
-            .get("name")
-            .and_then(|v| v.as_str())
-            .unwrap_or(crate::content::cards::get_card_definition(card_id).name);
-        offered_ids.push(card_id);
-        offered_cards_json.push(json!({
-            "java_id": java_id,
-            "rust_card_id": format!("{:?}", card_id),
-            "name": name,
-            "upgrades": upgrades,
-            "source": "screen_state"
-        }));
-    }
-    if offered_ids.is_empty() {
-        return;
-    }
-
-    let diagnostics = reward_diagnostics_for_offered_ids(&offered_ids, &rs, true);
-    let chosen_choice = parse_bot_reward_choice(command);
-    let payload = json!({
-        "kind": "bot_reward_decision",
-        "logged_at_unix_ms": unix_time_millis(),
-        "frame": frame,
-        "response_id": root
-            .get("protocol_meta")
-            .and_then(|m| m.get("response_id"))
-            .and_then(|v| v.as_i64()),
-        "state_frame_id": root
-            .get("protocol_meta")
-            .and_then(|m| m.get("state_frame_id"))
-            .and_then(|v| v.as_i64()),
-        "floor": gs.get("floor").and_then(|v| v.as_i64()).unwrap_or(0),
-        "act": gs.get("act").and_then(|v| v.as_i64()).unwrap_or(0),
-        "class": gs.get("class").and_then(|v| v.as_str()).unwrap_or("IRONCLAD"),
-        "current_hp": gs.get("current_hp").and_then(|v| v.as_i64()).unwrap_or(0),
-        "max_hp": gs.get("max_hp").and_then(|v| v.as_i64()).unwrap_or(0),
-        "gold": gs.get("gold").and_then(|v| v.as_i64()).unwrap_or(0),
-        "deck_size": rs.master_deck.len(),
-        "offered_cards": offered_cards_json,
-        "bot_command": command,
-        "bot_choice": recommended_choice_to_json(chosen_choice),
-        "bot_evaluation": reward_diagnostics_to_json(&diagnostics),
-    });
-    let _ = writeln!(reward_audit, "{}", payload);
-    let _ = reward_audit.flush();
-}
-
-fn parse_bot_reward_choice(command: &str) -> Option<usize> {
-    let trimmed = command.trim();
-    if trimmed.eq_ignore_ascii_case("SKIP") || trimmed.eq_ignore_ascii_case("PROCEED") {
-        return None;
-    }
-    trimmed
-        .strip_prefix("CHOOSE ")
-        .and_then(|rest| rest.trim().parse::<usize>().ok())
 }
 
 pub(super) fn human_card_reward_hold_context(root: &Value) -> String {
@@ -623,68 +487,6 @@ fn apply_human_card_reward_to_prediction(
     true
 }
 
-fn reward_diagnostics_to_json(diagnostics: &crate::bot::RewardDecisionDiagnostics) -> Value {
-    let cards = diagnostics
-        .candidates
-        .iter()
-        .map(|card| {
-            json!({
-                "index": card.index,
-                "card_name": card.card_name,
-                "card_id": card.card_id,
-                "score": card.score,
-                "base_score": card.base_score,
-                "gap_bonus": card.gap_bonus,
-                "survival_bonus": card.survival_bonus,
-                "situational_bonus": card.situational_bonus,
-                "benefit_score": card.benefit_score,
-                "clutter_penalty": card.clutter_penalty,
-                "penalty_score": card.penalty_score,
-                "rationale_key": card.rationale_key,
-            })
-        })
-        .collect::<Vec<_>>();
-    json!({
-        "cards": cards,
-        "recommended_choice": recommended_choice_to_json(diagnostics.recommended_choice),
-        "recommended_rationale_key": diagnostics.recommended_rationale_key,
-        "best_score": diagnostics.best_score,
-        "skip_score": diagnostics.skip_score,
-        "skip_rationale_key": diagnostics.skip_rationale_key,
-        "skip_benefit_score": diagnostics.skip_benefit_score,
-        "skip_penalty_score": diagnostics.skip_penalty_score,
-        "skip_situational_bonus": diagnostics.skip_situational_bonus,
-        "force_pick": diagnostics.force_pick,
-        "can_skip": diagnostics.can_skip
-    })
-}
-
-fn reward_diagnostics_for_offered_ids(
-    offered_ids: &[crate::content::cards::CardId],
-    run_state: &crate::state::run::RunState,
-    can_skip: bool,
-) -> crate::bot::RewardDecisionDiagnostics {
-    let reward_cards = offered_ids
-        .iter()
-        .copied()
-        .map(|card_id| crate::rewards::state::RewardCard::new(card_id, 0))
-        .collect::<Vec<_>>();
-    crate::bot::reward::decide_cards(run_state, &reward_cards, can_skip).1
-}
-
-fn recommended_choice_to_json(recommended_choice: Option<usize>) -> Value {
-    match recommended_choice {
-        Some(idx) => json!({
-            "kind": "card",
-            "choice_index": idx
-        }),
-        None => json!({
-            "kind": "skip",
-            "choice_index": null
-        }),
-    }
-}
-
 pub(super) fn extract_human_card_reward_choice(root: &Value) -> Option<Value> {
     root.get("protocol_meta")?
         .get("recent_human_card_reward_choice")
@@ -720,23 +522,6 @@ pub(super) fn manual_card_reward_followup_command(root: &Value, screen: &str) ->
     }
 
     Some("PROCEED".to_string())
-}
-
-fn compute_human_reward_choice_agreement(
-    bot_recommended_choice: Option<usize>,
-    human_choice: Option<&Value>,
-) -> Option<Value> {
-    let human_choice = human_choice?;
-    let kind = human_choice.get("choice_kind").and_then(|v| v.as_str())?;
-    match (bot_recommended_choice, kind) {
-        (Some(bot_idx), "card") => {
-            let human_idx = human_choice.get("choice_index").and_then(|v| v.as_u64())?;
-            Some(Value::Bool(human_idx as usize == bot_idx))
-        }
-        (None, "skip") => Some(Value::Bool(true)),
-        (Some(_), "skip") | (None, "card") => Some(Value::Bool(false)),
-        _ => None,
-    }
 }
 
 pub(super) fn extract_reward_session(root: &Value) -> Option<&Value> {

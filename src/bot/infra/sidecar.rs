@@ -1,16 +1,8 @@
 use crate::bot::combat::CombatDiagnostics;
 use crate::bot::DecisionMetadata;
-use crate::bot::RewardDecisionDiagnostics;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::io::Write;
-
-#[derive(Clone, Debug, Serialize)]
-pub(crate) struct RewardSidecarSuggestion {
-    pub(crate) suggested_index: Option<usize>,
-    pub(crate) rationale: &'static str,
-    pub(crate) score_delta: f32,
-}
 
 #[derive(Clone, Debug, Serialize)]
 pub(crate) struct CombatRootSidecarSuggestion {
@@ -50,23 +42,6 @@ pub(crate) struct CombatPressureSidecarSuggestion {
 }
 
 #[derive(Clone, Debug, Serialize)]
-pub(crate) struct RewardShadowRecord {
-    pub(crate) kind: &'static str,
-    pub(crate) frame: u64,
-    pub(crate) source: &'static str,
-    pub(crate) decision_domain: &'static str,
-    pub(crate) decision_source: &'static str,
-    pub(crate) decision_rationale_key: Option<&'static str>,
-    pub(crate) fallback_used: bool,
-    pub(crate) recommended_choice: Option<usize>,
-    pub(crate) chosen_choice: Option<usize>,
-    pub(crate) skip_chosen: bool,
-    pub(crate) offered_count: usize,
-    pub(crate) evaluation: Value,
-    pub(crate) suggestion: Option<RewardSidecarSuggestion>,
-}
-
-#[derive(Clone, Debug, Serialize)]
 pub(crate) struct CombatShadowRecord {
     pub(crate) kind: &'static str,
     pub(crate) frame: u64,
@@ -89,49 +64,11 @@ pub(crate) struct CombatShadowRecord {
     pub(crate) decision_audit: Value,
 }
 
-#[derive(Clone, Debug, Serialize)]
-pub(crate) struct NoncombatDecisionShadowRecord {
-    pub(crate) kind: &'static str,
-    pub(crate) frame: u64,
-    pub(crate) source: &'static str,
-    pub(crate) decision_domain: &'static str,
-    pub(crate) decision_source: &'static str,
-    pub(crate) decision_rationale_key: Option<&'static str>,
-    pub(crate) fallback_used: bool,
-    pub(crate) chosen_command: String,
-    pub(crate) payload: Value,
-}
-
 pub(crate) fn write_shadow_record<W: Write>(sink: &mut W, record: &impl Serialize) {
     if let Ok(line) = serde_json::to_string(record) {
         let _ = writeln!(sink, "{}", line);
         let _ = sink.flush();
     }
-}
-
-pub(crate) fn reward_shadow_json(
-    frame: u64,
-    source: &'static str,
-    meta: &DecisionMetadata,
-    diagnostics: &RewardDecisionDiagnostics,
-    chosen_choice: Option<usize>,
-    suggestion: Option<RewardSidecarSuggestion>,
-) -> Value {
-    json!(RewardShadowRecord {
-        kind: "reward_shadow",
-        frame,
-        source,
-        decision_domain: "reward_card",
-        decision_source: meta.source,
-        decision_rationale_key: meta.rationale_key,
-        fallback_used: meta.fallback_used,
-        recommended_choice: diagnostics.recommended_choice,
-        chosen_choice,
-        skip_chosen: chosen_choice.is_none(),
-        offered_count: diagnostics.candidates.len(),
-        evaluation: reward_diagnostics_json(diagnostics),
-        suggestion,
-    })
 }
 
 pub(crate) fn combat_shadow_json(
@@ -179,73 +116,5 @@ pub(crate) fn combat_shadow_json(
         suggestion,
         pressure,
         decision_audit: search.decision_audit.clone(),
-    })
-}
-
-pub(crate) fn noncombat_decision_shadow_json(
-    frame: u64,
-    source: &'static str,
-    meta: &DecisionMetadata,
-    chosen_command: String,
-    payload: Value,
-) -> Value {
-    let decision_domain = match meta.domain {
-        crate::bot::DecisionDomain::Combat => "combat",
-        crate::bot::DecisionDomain::RewardCard => "reward_card",
-        crate::bot::DecisionDomain::RewardClaim => "reward_claim",
-        crate::bot::DecisionDomain::Shop => "shop",
-        crate::bot::DecisionDomain::Event => "event",
-        crate::bot::DecisionDomain::DeckImprovement => "deck_improvement",
-        crate::bot::DecisionDomain::Map => "map",
-        crate::bot::DecisionDomain::BossRelic => "boss_relic",
-        crate::bot::DecisionDomain::Campfire => "campfire",
-        crate::bot::DecisionDomain::LegacyInput => "legacy_input",
-    };
-    json!(NoncombatDecisionShadowRecord {
-        kind: "noncombat_decision_shadow",
-        frame,
-        source,
-        decision_domain,
-        decision_source: meta.source,
-        decision_rationale_key: meta.rationale_key,
-        fallback_used: meta.fallback_used,
-        chosen_command,
-        payload,
-    })
-}
-
-fn reward_diagnostics_json(diagnostics: &RewardDecisionDiagnostics) -> Value {
-    let cards = diagnostics
-        .candidates
-        .iter()
-        .map(|card| {
-            json!({
-                "index": card.index,
-                "card_name": card.card_name,
-                "card_id": card.card_id,
-                "score": card.score,
-                "base_score": card.base_score,
-                "gap_bonus": card.gap_bonus,
-                "survival_bonus": card.survival_bonus,
-                "situational_bonus": card.situational_bonus,
-                "benefit_score": card.benefit_score,
-                "clutter_penalty": card.clutter_penalty,
-                "penalty_score": card.penalty_score,
-                "rationale_key": card.rationale_key,
-            })
-        })
-        .collect::<Vec<_>>();
-    json!({
-        "cards": cards,
-        "recommended_choice": diagnostics.recommended_choice,
-        "recommended_rationale_key": diagnostics.recommended_rationale_key,
-        "best_score": diagnostics.best_score,
-        "skip_score": diagnostics.skip_score,
-        "skip_rationale_key": diagnostics.skip_rationale_key,
-        "skip_benefit_score": diagnostics.skip_benefit_score,
-        "skip_penalty_score": diagnostics.skip_penalty_score,
-        "skip_situational_bonus": diagnostics.skip_situational_bonus,
-        "force_pick": diagnostics.force_pick,
-        "can_skip": diagnostics.can_skip
     })
 }

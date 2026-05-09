@@ -10,11 +10,11 @@ use super::noncombat::{
     maybe_arm_human_card_reward_audit, route_noncombat_command, validate_screen_action_space,
 };
 use super::reward_audit::{
-    classify_human_card_reward_audit_disposition, emit_bot_card_reward_audit,
-    extract_human_card_reward_choice, finalize_human_card_reward_audit,
-    finalize_human_card_reward_audit_without_choice, human_card_reward_audit_reason_source,
-    human_card_reward_hold_context, reward_choice_matches_pending_session,
-    reward_deck_improvement_summary, HumanCardRewardAuditDisposition, PendingHumanCardRewardAudit,
+    classify_human_card_reward_audit_disposition, extract_human_card_reward_choice,
+    finalize_human_card_reward_audit, finalize_human_card_reward_audit_without_choice,
+    human_card_reward_audit_reason_source, human_card_reward_hold_context,
+    reward_choice_matches_pending_session, HumanCardRewardAuditDisposition,
+    PendingHumanCardRewardAudit,
 };
 use super::snapshot::write_failure_snapshot;
 use super::watch::{maybe_capture_live_watch, remember_live_record, LiveWatchRuntime};
@@ -22,7 +22,6 @@ use super::{
     should_clear_combat_context, LiveCommConfig, LoopExitReason, ENGINE_BUG_SUMMARY_INTERVAL,
     SIG_PATH,
 };
-use crate::bot::infra::sidecar;
 use crate::bot::Agent;
 use serde_json::Value;
 use std::io::Write;
@@ -1209,7 +1208,7 @@ impl LiveCommSession {
                                 enrich_event_audit_with_screen_state(&trace.audit, gs);
                             writeln!(
                                 live_io.log,
-                                "[F{}] EVENT POLICY {}",
+                                "[F{}] EVENT TRACE {}",
                                 self.frame_count, trace.detail
                             )
                             .unwrap();
@@ -1237,10 +1236,6 @@ impl LiveCommSession {
                             .unwrap();
                             let _ = writeln!(live_io.event_audit, "{}", encoded);
                             let _ = live_io.event_audit.flush();
-                            let family = decision_audit
-                                .get("family")
-                                .and_then(|v| v.as_str())
-                                .unwrap_or("");
                             let reasons = event_validation_failure_reasons(&decision_audit);
                             if !reasons.is_empty() {
                                 let _ = write_failure_snapshot(
@@ -1268,268 +1263,6 @@ impl LiveCommSession {
                                     return Some(LoopExitReason::FailFast);
                                 }
                             }
-                            if self.config.sidecar_shadow {
-                                let fallback_used = matches!(family, "compatibility_fallback");
-                                let meta = crate::bot::DecisionMetadata::new(
-                                    crate::bot::DecisionDomain::Event,
-                                    "event_policy",
-                                    if fallback_used {
-                                        Some("compatibility_fallback_adapter")
-                                    } else {
-                                        None
-                                    },
-                                    None,
-                                    fallback_used,
-                                );
-                                let shadow = sidecar::noncombat_decision_shadow_json(
-                                    self.frame_count,
-                                    "live_comm_event",
-                                    &meta,
-                                    cmd.clone(),
-                                    decision_audit,
-                                );
-                                sidecar::write_shadow_record(&mut live_io.sidecar_shadow, &shadow);
-                            }
-                        }
-                    }
-                }
-            }
-        } else if screen == "CARD_REWARD" {
-            emit_bot_card_reward_audit(parsed, self.frame_count, &cmd, &mut live_io.reward_audit);
-            if self.config.sidecar_shadow {
-                if let Some(gs) = parsed.get("game_state") {
-                    if let Some(rs) = crate::cli::live_comm_noncombat::build_live_run_state(gs) {
-                        if let Some(cards) = gs
-                            .get("screen_state")
-                            .and_then(|v| v.get("cards"))
-                            .and_then(|v| v.as_array())
-                        {
-                            let offered_ids = cards
-                                .iter()
-                                .filter_map(|card| {
-                                    card.get("id")
-                                        .and_then(|v| v.as_str())
-                                        .and_then(crate::protocol::java::card_id_from_java)
-                                })
-                                .collect::<Vec<_>>();
-                            if !offered_ids.is_empty() {
-                                let reward_cards = offered_ids
-                                    .iter()
-                                    .copied()
-                                    .map(|card_id| {
-                                        crate::rewards::state::RewardCard::new(card_id, 0)
-                                    })
-                                    .collect::<Vec<_>>();
-                                let decision = agent.decide_reward_card_policy(
-                                    &rs,
-                                    crate::bot::RewardCardDecisionContext {
-                                        reward_cards: &reward_cards,
-                                        can_skip: true,
-                                    },
-                                );
-                                let chosen_choice = if cmd.trim().eq_ignore_ascii_case("SKIP")
-                                    || cmd.trim().eq_ignore_ascii_case("PROCEED")
-                                {
-                                    None
-                                } else {
-                                    cmd.trim()
-                                        .strip_prefix("CHOOSE ")
-                                        .and_then(|rest| rest.trim().parse::<usize>().ok())
-                                };
-                                if let Some(deck_summary) = reward_deck_improvement_summary(
-                                    &decision.diagnostics,
-                                    chosen_choice,
-                                ) {
-                                    writeln!(
-                                        live_io.focus_log,
-                                        "[REWARD] frame={} cmd={} deck={}",
-                                        self.frame_count, cmd, deck_summary
-                                    )
-                                    .unwrap();
-                                }
-                                let shadow = sidecar::reward_shadow_json(
-                                    self.frame_count,
-                                    "live_comm_reward",
-                                    &decision.meta,
-                                    &decision.diagnostics,
-                                    chosen_choice,
-                                    None,
-                                );
-                                sidecar::write_shadow_record(&mut live_io.sidecar_shadow, &shadow);
-                            }
-                        }
-                    }
-                }
-            }
-        } else if screen == "COMBAT_REWARD" {
-            if self.config.sidecar_shadow {
-                if let Some(gs) = parsed.get("game_state") {
-                    if let Some(rs) = crate::cli::live_comm_noncombat::build_live_run_state(gs) {
-                        if let Some(reward) =
-                            crate::cli::live_comm_noncombat::build_live_reward_state_with_protocol(
-                                parsed, gs,
-                            )
-                        {
-                            let blocked_potion_offers =
-                                crate::cli::live_comm_noncombat::blocked_replaceable_reward_potion_offers(parsed);
-                            let decision = agent.decide_reward_claim_policy(
-                                &rs,
-                                crate::bot::RewardClaimDecisionContext {
-                                    reward: &reward,
-                                    blocked_potion_offers: &blocked_potion_offers,
-                                },
-                            );
-                            let action = match decision.action {
-                                crate::bot::RewardClaimDecisionAction::Claim(idx) => {
-                                    format!("claim:{idx}")
-                                }
-                                crate::bot::RewardClaimDecisionAction::DiscardPotion(idx) => {
-                                    format!("discard_potion:{idx}")
-                                }
-                                crate::bot::RewardClaimDecisionAction::Proceed => {
-                                    "proceed".to_string()
-                                }
-                            };
-                            let shadow = sidecar::noncombat_decision_shadow_json(
-                                self.frame_count,
-                                "live_comm_reward_claim",
-                                &decision.meta,
-                                cmd.clone(),
-                                serde_json::json!({
-                                    "action": action,
-                                    "reward_item_count": reward.items.len(),
-                                    "blocked_potion_offer_count": blocked_potion_offers.len(),
-                                }),
-                            );
-                            sidecar::write_shadow_record(&mut live_io.sidecar_shadow, &shadow);
-                        }
-                    }
-                }
-            }
-        } else if screen == "SHOP_SCREEN" {
-            if self.config.sidecar_shadow {
-                if let Some(gs) = parsed.get("game_state") {
-                    if let Some(rs) = crate::cli::live_comm_noncombat::build_live_run_state(gs) {
-                        if let Some(shop) =
-                            crate::cli::live_comm_noncombat::build_live_shop_state(gs)
-                        {
-                            let decision = agent.decide_shop_policy(
-                                &rs,
-                                crate::bot::ShopDecisionContext { shop: &shop },
-                            );
-                            let action = match decision.action {
-                                crate::bot::ShopDecisionAction::BuyCard(idx) => {
-                                    format!("buy_card:{idx}")
-                                }
-                                crate::bot::ShopDecisionAction::BuyRelic(idx) => {
-                                    format!("buy_relic:{idx}")
-                                }
-                                crate::bot::ShopDecisionAction::BuyPotion(idx) => {
-                                    format!("buy_potion:{idx}")
-                                }
-                                crate::bot::ShopDecisionAction::PurgeCard(idx) => {
-                                    format!("purge_card:{idx}")
-                                }
-                                crate::bot::ShopDecisionAction::DiscardPotion(idx) => {
-                                    format!("discard_potion:{idx}")
-                                }
-                                crate::bot::ShopDecisionAction::Leave => "leave".to_string(),
-                            };
-                            let shadow = sidecar::noncombat_decision_shadow_json(
-                                self.frame_count,
-                                "live_comm_shop",
-                                &decision.meta,
-                                cmd.clone(),
-                                serde_json::json!({
-                                    "action": action,
-                                    "card_count": shop.cards.len(),
-                                    "relic_count": shop.relics.len(),
-                                    "potion_count": shop.potions.len(),
-                                    "purge_available": shop.purge_available,
-                                }),
-                            );
-                            sidecar::write_shadow_record(&mut live_io.sidecar_shadow, &shadow);
-                        }
-                    }
-                }
-            }
-        } else if screen == "MAP" {
-            if self.config.sidecar_shadow {
-                if let Some(gs) = parsed.get("game_state") {
-                    if let Some(rs) = crate::cli::live_comm_noncombat::build_live_run_state(gs) {
-                        let decision = agent.decide_map_policy(&rs);
-                        let shadow = sidecar::noncombat_decision_shadow_json(
-                            self.frame_count,
-                            "live_comm_map",
-                            &decision.meta,
-                            cmd.clone(),
-                            serde_json::json!({
-                                "chosen_x": decision.chosen_x,
-                                "top_option_count": decision.diagnostics.top_options.len(),
-                                "top_rationale": decision
-                                    .diagnostics
-                                    .top_options
-                                    .first()
-                                    .map(|option| option.rationale_key),
-                            }),
-                        );
-                        sidecar::write_shadow_record(&mut live_io.sidecar_shadow, &shadow);
-                    }
-                }
-            }
-        } else if screen == "REST" {
-            if self.config.sidecar_shadow {
-                if let Some(gs) = parsed.get("game_state") {
-                    if let Some(rs) = crate::cli::live_comm_noncombat::build_live_run_state(gs) {
-                        let decision = agent.decide_campfire_policy(&rs);
-                        let shadow = sidecar::noncombat_decision_shadow_json(
-                            self.frame_count,
-                            "live_comm_campfire",
-                            &decision.meta,
-                            cmd.clone(),
-                            serde_json::json!({
-                                "choice": format!("{:?}", decision.choice),
-                                "top_option_count": decision.diagnostics.top_options.len(),
-                                "top_rationale": decision
-                                    .diagnostics
-                                    .top_options
-                                    .first()
-                                    .map(|option| option.rationale_key),
-                            }),
-                        );
-                        sidecar::write_shadow_record(&mut live_io.sidecar_shadow, &shadow);
-                    }
-                }
-            }
-        } else if screen == "BOSS_REWARD" {
-            if self.config.sidecar_shadow {
-                if let Some(gs) = parsed.get("game_state") {
-                    if let Some(rs) = crate::cli::live_comm_noncombat::build_live_run_state(gs) {
-                        if let Some(state) =
-                            crate::cli::live_comm_noncombat::build_live_boss_relic_state(gs)
-                        {
-                            let decision = agent.decide_boss_relic_policy(&rs, &state);
-                            let shadow = sidecar::noncombat_decision_shadow_json(
-                                self.frame_count,
-                                "live_comm_boss_relic",
-                                &decision.meta,
-                                cmd.clone(),
-                                serde_json::json!({
-                                    "chosen_index": decision.chosen_index,
-                                    "option_count": state.relics.len(),
-                                    "top_confidence": decision
-                                        .diagnostics
-                                        .top_candidates
-                                        .first()
-                                        .map(|candidate| candidate.confidence),
-                                    "top_reason": decision
-                                        .diagnostics
-                                        .top_candidates
-                                        .first()
-                                        .map(|candidate| candidate.primary_reason),
-                                }),
-                            );
-                            sidecar::write_shadow_record(&mut live_io.sidecar_shadow, &shadow);
                         }
                     }
                 }

@@ -83,12 +83,8 @@ pub(super) fn maybe_arm_human_card_reward_audit(
                 .unwrap();
                 writeln!(
                     log,
-                    "  [CARD_AUDIT] offered={} bot_recommendation={}",
-                    pending.offered_signature.join(", "),
-                    pending
-                        .bot_recommended_choice
-                        .map(|idx| idx.to_string())
-                        .unwrap_or_else(|| "skip".to_string())
+                    "  [CARD_AUDIT] offered={}",
+                    pending.offered_signature.join(", ")
                 )
                 .unwrap();
                 *pending_audit = Some(pending);

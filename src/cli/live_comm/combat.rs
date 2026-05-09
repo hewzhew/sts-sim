@@ -2510,7 +2510,6 @@ pub(super) fn handle_live_combat_frame<W: Write>(
             .map(|stat| combat_top_candidate_record(&truth, stat))
             .collect::<Vec<_>>();
         let meta = crate::bot::DecisionMetadata::new(
-            crate::bot::DecisionDomain::Combat,
             "combat_search",
             Some("search_root_policy"),
             None,

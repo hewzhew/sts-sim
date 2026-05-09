@@ -21,7 +21,3 @@ pub(crate) fn is_strength_enabler(card_id: CardId) -> bool {
 pub(crate) fn is_strength_payoff(card_id: CardId) -> bool {
     taxonomy(card_id).structure.is_strength_payoff()
 }
-
-pub(crate) fn is_multi_attack_payoff(card_id: CardId) -> bool {
-    taxonomy(card_id).structure.is_multi_attack_payoff()
-}
