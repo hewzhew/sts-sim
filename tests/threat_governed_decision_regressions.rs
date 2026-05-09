@@ -30,7 +30,6 @@ fn threat_governed_diagnostics_emit_phase1_decision_fields_for_crisis_states() {
     );
 
     let audit = &diagnostics.decision_audit;
-    assert!(audit.get("root_pipeline").is_some());
     assert_eq!(
         audit.get("regime").and_then(|value| value.as_str()),
         Some("crisis")
@@ -68,40 +67,6 @@ fn threat_governed_diagnostics_emit_phase1_decision_fields_for_crisis_states() {
         .and_then(|value| value.get("survival"))
         .and_then(|value| value.as_str())
         .is_some());
-    assert_eq!(
-        audit
-            .get("root_pipeline")
-            .and_then(|value| value.get("proposal_count"))
-            .and_then(|value| value.as_u64())
-            .unwrap_or(0)
-            >= audit
-                .get("root_pipeline")
-                .and_then(|value| value.get("screened_count"))
-                .and_then(|value| value.as_u64())
-                .unwrap_or(0),
-        true
-    );
-    assert!(audit
-        .get("root_pipeline")
-        .and_then(|value| value.get("proposal_class_counts"))
-        .and_then(|value| value.as_object())
-        .is_some());
-    assert!(audit
-        .get("root_pipeline")
-        .and_then(|value| value.get("screened_out"))
-        .and_then(|value| value.as_array())
-        .is_some());
-    assert_eq!(
-        decision_trace
-            .get("screened_out")
-            .and_then(|value| value.as_array())
-            .map(|value| value.len()),
-        audit
-            .get("root_pipeline")
-            .and_then(|value| value.get("screened_out"))
-            .and_then(|value| value.as_array())
-            .map(|value| value.len())
-    );
 }
 
 #[test]
@@ -144,7 +109,7 @@ fn threat_governed_diagnostics_mark_exact_turn_verdict_bounded_when_budget_is_ti
 }
 
 #[test]
-fn threat_governed_diagnostics_preserve_legacy_shadow_fields() {
+fn threat_governed_diagnostics_emit_exact_turn_shadow_fields() {
     let mut combat = blank_test_combat();
     combat.turn.energy = 1;
     combat.entities.player.current_hp = 24;
@@ -164,7 +129,7 @@ fn threat_governed_diagnostics_preserve_legacy_shadow_fields() {
     let shadow = diagnostics
         .decision_audit
         .get("exact_turn_shadow")
-        .expect("legacy shadow should remain");
+        .expect("exact-turn shadow should remain");
     assert!(shadow.get("frontier_chosen_move").is_some());
     assert!(shadow.get("agrees_with_frontier").is_some() || shadow.get("skipped").is_some());
 }

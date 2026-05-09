@@ -172,7 +172,6 @@ fn controller_line(
         exact_turn_mode: SearchExactTurnMode::Force,
         root_node_budget: 4_000,
         exact_turn_node_budget: 20_000,
-        audit_budget: 32,
         experiment_flags,
         ..SearchRuntimeBudget::default()
     };
@@ -241,7 +240,6 @@ fn run_case(
         exact_turn_mode: SearchExactTurnMode::Force,
         root_node_budget: 4_000,
         exact_turn_node_budget: 20_000,
-        audit_budget: 32,
         ..SearchRuntimeBudget::default()
     };
     let diagnostics = diagnose_root_search_with_depth_and_runtime(
@@ -280,22 +278,17 @@ fn run_case(
         .join(" | ");
     let chosen_by = diagnostics
         .decision_audit
-        .get("chosen_by")
+        .get("decision_trace")
+        .and_then(|value| value.get("chosen_by"))
         .and_then(|value| value.as_str())
         .unwrap_or("?");
-    let turn_option_status = diagnostics
-        .decision_audit
-        .get("turn_option_evidence_status")
-        .and_then(|value| value.as_str())
-        .unwrap_or("-");
     format!(
-        "{label} hand=[{}] player_hp={} cultist_hp={} move={} chosen_by={} turn_option_status={} current_line={} exact_takeover_line={} exact_first={} exact_line={} exact_truncated={} exact_nodes={} takeover_gate={} exact_verdict={} top_moves={}",
+        "{label} hand=[{}] player_hp={} cultist_hp={} move={} chosen_by={} current_line={} exact_takeover_line={} exact_first={} exact_line={} exact_truncated={} exact_nodes={} takeover_gate={} exact_verdict={} top_moves={}",
         hand_label(hand),
         player_hp,
         cultist_hp,
         cultist_move,
         chosen_by,
-        turn_option_status,
         line_label(&current_line, &combat),
         line_label(&exact_takeover_line, &combat),
         optional_input_label(exact.best_first_input.as_ref(), &combat),

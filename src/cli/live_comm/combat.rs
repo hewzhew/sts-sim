@@ -308,7 +308,6 @@ fn live_root_search_budget(
         engine_step_budget: engine_step_budget_for_legacy_budget(legacy_budget),
         exact_turn_node_budget: LIVE_ROOT_EXACT_TURN_MAX_NODES
             .min(root_node_budget_for_legacy_budget(legacy_budget) * 25),
-        audit_budget: audit_node_budget_for_legacy_budget(legacy_budget),
         exact_turn_mode: exact_turn_mode_for_live(exact_turn_mode),
         experiment_flags: SearchExperimentFlags {
             fragile_strict_dominance_takeover: true,
@@ -327,7 +326,6 @@ fn live_sync_audit_search_budget(legacy_budget: u32) -> SearchRuntimeBudget {
         root_node_budget: audit_node_budget_for_legacy_budget(legacy_budget),
         engine_step_budget: engine_step_budget_for_legacy_budget(legacy_budget).min(120),
         exact_turn_node_budget: 0,
-        audit_budget: audit_node_budget_for_legacy_budget(legacy_budget),
         exact_turn_mode: SearchExactTurnMode::Off,
         experiment_flags: SearchExperimentFlags::default(),
     }
@@ -908,7 +906,6 @@ fn decision_audit_exact_turn_summary(audit: &Value) -> Option<String> {
         .and_then(Value::as_str)
         .unwrap_or("unknown");
     let decision_trace = audit.get("decision_trace");
-    let root_pipeline = audit.get("root_pipeline");
     let chosen_by = decision_trace
         .and_then(|value| value.get("chosen_by"))
         .and_then(Value::as_str)
@@ -917,7 +914,7 @@ fn decision_audit_exact_turn_summary(audit: &Value) -> Option<String> {
         .and_then(|value| value.get("frontier_proposal_class"))
         .and_then(Value::as_str)
         .unwrap_or("other");
-    let screened_out = root_pipeline
+    let screened_out = decision_trace
         .and_then(|value| value.get("screened_out"))
         .and_then(Value::as_array)
         .map(|entries| entries.len())
@@ -2210,12 +2207,11 @@ pub(super) fn handle_live_combat_frame<W: Write>(
     let render_started = log_combat_stage_enter(live_io, frame_count, "search_render", "");
     writeln!(
         live_io.log,
-        "  [SEARCH DIAG] budget={} root_node_budget={} engine_step_budget={} exact_turn_node_budget={} audit_budget={} depth_limit={} max_depth={} root_width={} branch_width={} max_engine_steps={} elapsed_ms={} timed_out={} legal_moves={} reduced_legal_moves={} equivalence_mode={} simulations={} chosen={}",
+        "  [SEARCH DIAG] budget={} root_node_budget={} engine_step_budget={} exact_turn_node_budget={} depth_limit={} max_depth={} root_width={} branch_width={} max_engine_steps={} elapsed_ms={} timed_out={} legal_moves={} reduced_legal_moves={} equivalence_mode={} simulations={} chosen={}",
         combat_search_budget,
         root_runtime.root_node_budget,
         root_runtime.engine_step_budget,
         root_runtime.exact_turn_node_budget,
-        root_runtime.audit_budget,
         search_diag.depth_limit,
         search_diag.max_decision_depth,
         search_diag.root_width,

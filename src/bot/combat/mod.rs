@@ -15,7 +15,6 @@ mod profile;
 mod search;
 mod stepping;
 mod terminal;
-mod turn_option;
 pub(crate) mod turn_plan_probe;
 mod turn_state_key;
 mod types;
@@ -34,14 +33,10 @@ use self::decision::{
     ScreenRejection, TakeoverGate,
 };
 use self::equivalence::{default_equivalence_mode, reduce_equivalent_inputs};
-use self::exact_turn_solver::{solve_exact_turn_with_config, ExactTurnConfig, ExactTurnSolution};
+use self::exact_turn_solver::{solve_exact_turn_with_config, ExactTurnConfig};
 use self::legal_moves::get_legal_moves;
-use self::turn_option::{build_turn_option_evidence, unavailable_turn_option_evidence};
 use search::ExploredCandidate;
 use value::{diagnostic_score, incoming_damage, total_enemy_hp};
-
-const LEGACY_FRONTIER_PLANNER_ID: &str = "legacy_frontier_planner";
-const LEGACY_FRONTIER_FALLBACK_AUTHORITY: &str = "legacy_frontier_fallback";
 
 pub use card_knowledge::{branch_family_for_card, BranchFamily};
 pub use diag::{CombatDiagnostics, CombatMoveStat};
@@ -65,7 +60,6 @@ struct ExactTurnShadowDecision {
     exact_turn_verdict: ExactTurnVerdict,
     takeover_gate: TakeoverGate,
     decision_trace: DecisionTrace,
-    solution: Option<ExactTurnSolution>,
     timed_out: bool,
 }
 
@@ -91,7 +85,6 @@ pub struct SearchRuntimeBudget {
     pub root_node_budget: usize,
     pub engine_step_budget: usize,
     pub exact_turn_node_budget: usize,
-    pub audit_budget: usize,
     pub exact_turn_mode: SearchExactTurnMode,
     pub experiment_flags: SearchExperimentFlags,
 }
@@ -103,7 +96,6 @@ impl Default for SearchRuntimeBudget {
             root_node_budget: 64,
             engine_step_budget: 160,
             exact_turn_node_budget: 8_000,
-            audit_budget: 16,
             exact_turn_mode: SearchExactTurnMode::Auto,
             experiment_flags: SearchExperimentFlags::default(),
         }
@@ -266,7 +258,6 @@ pub fn diagnose_root_search_with_depth_and_runtime_and_root_inputs(
             equivalence_mode,
             top_moves: Vec::new(),
             decision_audit: json!({
-                "planner": LEGACY_FRONTIER_PLANNER_ID,
                 "regime": serde_json::Value::Null,
                 "frontier_outcome": serde_json::Value::Null,
                 "exact_turn_verdict": serde_json::Value::Null,
@@ -362,7 +353,6 @@ pub fn diagnose_root_search_with_depth_and_runtime_and_root_inputs(
                 explored.screened_out.clone(),
                 explored.proposal_trace.clone(),
             ),
-            solution: None,
             timed_out: false,
         }
     } else {
@@ -383,33 +373,15 @@ pub fn diagnose_root_search_with_depth_and_runtime_and_root_inputs(
             &mut profile,
         )
     };
-    let turn_option_evidence = exact_turn_shadow
-        .solution
-        .as_ref()
-        .map(|solution| {
-            build_turn_option_evidence(
-                combat,
-                solution,
-                &frontier_chosen_move,
-                runtime.audit_budget,
-            )
-        })
-        .unwrap_or_else(|| {
-            unavailable_turn_option_evidence("exact_turn_unavailable", &frontier_chosen_move)
-        });
     let chosen_move = frontier_chosen_move.clone();
-    let chosen_by = LEGACY_FRONTIER_FALLBACK_AUTHORITY;
     let mut decision_trace_audit = json!(exact_turn_shadow.decision_trace);
     if let Some(trace) = decision_trace_audit.as_object_mut() {
-        trace.insert("chosen_by".to_string(), json!(chosen_by));
+        trace.insert("chosen_by".to_string(), json!("frontier"));
         trace.insert(
             "chosen_action".to_string(),
             json!(format!("{:?}", chosen_move)),
         );
     }
-    let chosen_move_audit = format!("{:?}", chosen_move);
-    let legacy_frontier_choice_audit = format!("{:?}", frontier_chosen_move);
-    let turn_option_evidence_status = turn_option_evidence.status_reason;
     let simulations = explored
         .explored
         .iter()
@@ -441,30 +413,6 @@ pub fn diagnose_root_search_with_depth_and_runtime_and_root_inputs(
         equivalence_mode,
         top_moves,
         decision_audit: json!({
-            "planner": LEGACY_FRONTIER_PLANNER_ID,
-            "kind": "frontier_with_turn_option_evidence_v0",
-            "chosen_by": chosen_by,
-            "chosen_move": chosen_move_audit,
-            "legacy_frontier_choice": legacy_frontier_choice_audit,
-            "turn_option_decision_role": "evidence_only",
-            "turn_option_evidence_status": turn_option_evidence_status,
-            "turn_option_evidence": turn_option_evidence.audit,
-            "legacy_frontier_pipeline": {
-                "regime": format!("{:?}", explored.regime).to_ascii_lowercase(),
-                "proposal_count": explored.proposal_count,
-                "screened_count": explored.screened_count,
-                "exact_adjudicated_count": explored.exact_adjudicated_count,
-                "proposal_class_counts": explored.proposal_class_counts,
-                "screened_out": explored.screened_out,
-            },
-            "root_pipeline": {
-                "regime": format!("{:?}", explored.regime).to_ascii_lowercase(),
-                "proposal_count": explored.proposal_count,
-                "screened_count": explored.screened_count,
-                "exact_adjudicated_count": explored.exact_adjudicated_count,
-                "proposal_class_counts": explored.proposal_class_counts,
-                "screened_out": explored.screened_out,
-            },
             "regime": exact_turn_shadow.regime,
             "frontier_outcome": exact_turn_shadow.frontier_outcome,
             "exact_turn_verdict": exact_turn_shadow.exact_turn_verdict,
@@ -608,7 +556,6 @@ fn build_exact_turn_shadow(
                 screened_out.clone(),
                 proposal_trace.clone(),
             ),
-            solution: None,
             timed_out: false,
         };
     }
@@ -670,7 +617,6 @@ fn build_exact_turn_shadow(
                     screened_out.clone(),
                     proposal_trace.clone(),
                 ),
-                solution: None,
                 timed_out: false,
             };
         }
@@ -712,7 +658,6 @@ fn build_exact_turn_shadow(
     let takeover_move_audit = takeover_move.as_ref().map(|input| format!("{:?}", input));
 
     ExactTurnShadowDecision {
-        solution: Some(solution.clone()),
         timed_out: solution.truncated,
         audit: json!({
             "frontier_chosen_move": format!("{:?}", chosen_move),
@@ -1307,7 +1252,7 @@ mod tests {
     }
 
     #[test]
-    fn decision_audit_keeps_legacy_shadow_and_adds_phase1_fields() {
+    fn decision_audit_exposes_exact_turn_shadow_fields() {
         let mut combat = blank_test_combat();
         combat.turn.energy = 1;
         combat.entities.player.current_hp = 5;

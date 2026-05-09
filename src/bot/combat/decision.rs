@@ -80,21 +80,6 @@ pub(crate) enum ProposalClass {
     Other,
 }
 
-impl ProposalClass {
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::EndTurn => "end_turn",
-            Self::Attack => "attack",
-            Self::Block => "block",
-            Self::SkillUtility => "skill_utility",
-            Self::Power => "power",
-            Self::Potion => "potion",
-            Self::Choice => "choice",
-            Self::Other => "other",
-        }
-    }
-}
-
 #[derive(Clone, Copy, Debug, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum ProposalDisposition {

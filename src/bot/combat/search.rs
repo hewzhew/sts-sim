@@ -1,7 +1,6 @@
 use crate::runtime::combat::CombatState;
 use crate::state::core::ClientInput;
 use crate::state::EngineState;
-use std::collections::BTreeMap;
 use std::time::Instant;
 
 use super::decision::{
@@ -38,13 +37,8 @@ pub(super) struct ExploredCandidate {
 pub(super) struct RootExploreResult {
     pub(super) explored: Vec<ExploredCandidate>,
     pub(super) timed_out: bool,
-    pub(super) proposal_count: usize,
-    pub(super) screened_count: usize,
-    pub(super) exact_adjudicated_count: usize,
-    pub(super) proposal_class_counts: BTreeMap<String, usize>,
     pub(super) screened_out: Vec<ScreenRejection>,
     pub(super) proposal_trace: Vec<ProposalTrace>,
-    pub(super) regime: CombatRegime,
 }
 
 #[derive(Clone, Copy)]
@@ -86,13 +80,8 @@ pub(super) fn explore_root_with_inputs(
         return RootExploreResult {
             explored: Vec::new(),
             timed_out: false,
-            proposal_count: 0,
-            screened_count: 0,
-            exact_adjudicated_count: 0,
-            proposal_class_counts: BTreeMap::new(),
             screened_out: Vec::new(),
             proposal_trace: Vec::new(),
-            regime: CombatRegime::Advantage,
         };
     }
 
@@ -107,15 +96,12 @@ pub(super) fn explore_root_with_inputs(
         equivalence_mode,
         profile,
     );
-    let proposal_class_counts = summarize_proposal_classes(&proposals);
-    let proposal_count = proposals.len();
     let screened = screen_root_proposals(regime, proposals, combat, root_width.max(1));
-    let screened_count = screened.kept.len();
     let screened_out = screened.rejected;
     let trimmed_after_screening = screened.trimmed;
     proposals = screened.kept;
     proposals.sort_by(|left, right| compare_root_proposals(regime, left, right));
-    let exact_adjudicated_count = exact_adjudicate_root_proposals(
+    exact_adjudicate_root_proposals(
         engine,
         combat,
         regime,
@@ -183,13 +169,8 @@ pub(super) fn explore_root_with_inputs(
     RootExploreResult {
         explored,
         timed_out,
-        proposal_count,
-        screened_count,
-        exact_adjudicated_count,
-        proposal_class_counts,
         screened_out,
         proposal_trace,
-        regime,
     }
 }
 
@@ -414,16 +395,6 @@ fn screen_rejection_reason(
         }
         CombatRegime::Contested | CombatRegime::Advantage => None,
     }
-}
-
-fn summarize_proposal_classes(proposals: &[RootProposal]) -> BTreeMap<String, usize> {
-    let mut counts = BTreeMap::new();
-    for proposal in proposals {
-        *counts
-            .entry(proposal.proposal_class.as_str().to_string())
-            .or_insert(0) += 1;
-    }
-    counts
 }
 
 fn build_proposal_trace(
