@@ -68,7 +68,9 @@ def collect_episode(
     seed: int,
     ascension: int,
     final_act: bool,
+    player_class: str,
     max_steps: int,
+    reward_shaping_profile: str,
     policy: str,
     sim_version: str,
     return_spec_version: str,
@@ -80,9 +82,9 @@ def collect_episode(
             "seed": seed,
             "ascension": ascension,
             "final_act": final_act,
-            "class": "ironclad",
+            "class": player_class,
             "max_steps": max_steps,
-            "reward_shaping_profile": "baseline",
+            "reward_shaping_profile": reward_shaping_profile,
         }
     )
     written = 0
@@ -139,7 +141,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--seed-step", type=int, default=1)
     parser.add_argument("--ascension", type=int, default=0)
     parser.add_argument("--final-act", action="store_true")
+    parser.add_argument("--class", dest="player_class", default="ironclad")
     parser.add_argument("--max-steps", type=int, default=500)
+    parser.add_argument("--reward-shaping-profile", default="baseline")
     parser.add_argument("--policy", default="rule_baseline_v0")
     parser.add_argument("--sim-version", default="full_run_env")
     parser.add_argument("--return-spec-version", default="driver_reward_v0")
@@ -165,7 +169,9 @@ def main() -> int:
                         seed=seed,
                         ascension=args.ascension,
                         final_act=args.final_act,
+                        player_class=args.player_class,
                         max_steps=args.max_steps,
+                        reward_shaping_profile=args.reward_shaping_profile,
                         policy=args.policy,
                         sim_version=args.sim_version,
                         return_spec_version=args.return_spec_version,
@@ -180,6 +186,8 @@ def main() -> int:
         "out": str(args.out),
         "driver": str(args.driver),
         "policy": args.policy,
+        "class": args.player_class,
+        "reward_shaping_profile": args.reward_shaping_profile,
         "episodes": summaries,
         "total_records": sum(item["records"] for item in summaries),
     }

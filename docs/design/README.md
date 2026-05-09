@@ -1,14 +1,16 @@
 # Design
 
-Active design notes, experiments, and workboards live here.
+Current engine and runtime design notes live here.
 
-These files can still matter to current development, but they should not compete with canonical workflow docs in the root `docs/` directory.
-
-Promote a file back to `docs/` root only if it becomes part of the default developer path or defines a repo-wide rule.
+This directory is no longer the place for active learning promises. Learning
+direction is constrained by [../AI_DIRECTION.md](../AI_DIRECTION.md).
 
 Current high-signal files:
 
-- [COMBAT_RL_CONTRACT_V0.md](D:\rust\sts_simulator\docs\design\COMBAT_RL_CONTRACT_V0.md)
-- [LEARNING_TRUTH_SOURCES.md](D:\rust\sts_simulator\docs\design\LEARNING_TRUTH_SOURCES.md)
-- [MONSTER_RUNTIME_STATE_FRAMEWORK.md](D:\rust\sts_simulator\docs\design\MONSTER_RUNTIME_STATE_FRAMEWORK.md)
-- [PRE_BATTLE_API_REDESIGN.md](D:\rust\sts_simulator\docs\design\PRE_BATTLE_API_REDESIGN.md)
+- [MONSTER_RUNTIME_STATE_FRAMEWORK.md](MONSTER_RUNTIME_STATE_FRAMEWORK.md)
+- [PRE_BATTLE_API_REDESIGN.md](PRE_BATTLE_API_REDESIGN.md)
+- [COMBAT_STATE_REFACTOR.md](COMBAT_STATE_REFACTOR.md)
+- [COMBAT_LAYER_REFACTOR_LEDGER_2026-04-17.md](COMBAT_LAYER_REFACTOR_LEDGER_2026-04-17.md)
+- [DRAW_HAND_SIZE_DESIGN.md](DRAW_HAND_SIZE_DESIGN.md)
+- [COLLATERAL_EXHAUST_COST_OF_IMMEDIATE_CONVERSION_DESIGN.md](COLLATERAL_EXHAUST_COST_OF_IMMEDIATE_CONVERSION_DESIGN.md)
+- [BOT_LIVE_COOP_SHORTLIST.md](BOT_LIVE_COOP_SHORTLIST.md)

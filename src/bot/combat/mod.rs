@@ -16,7 +16,6 @@ pub(crate) mod pressure;
 mod profile;
 mod root_prior;
 mod search;
-mod snapshot_teacher;
 mod stepping;
 mod terminal;
 mod turn_option;
@@ -48,10 +47,10 @@ const LEGACY_FRONTIER_PLANNER_ID: &str = "legacy_frontier_planner";
 const LEGACY_FRONTIER_FALLBACK_AUTHORITY: &str = "legacy_frontier_fallback";
 
 pub use audit::{
-    audit_fixture, audit_state, build_fixture_from_reconstructed_step, extract_preference_samples,
-    load_fixture_path, render_text_report, write_fixture_path, CombatPreferenceSample,
-    CombatPreferenceState, DecisionAuditConfig, DecisionAuditEngineState, DecisionAuditFixture,
-    DecisionAuditReport, ScoreBreakdown, TrajectoryOutcomeKind, TrajectoryReport,
+    audit_fixture, audit_state, build_fixture_from_reconstructed_step, load_fixture_path,
+    render_text_report, write_fixture_path, DecisionAuditConfig, DecisionAuditEngineState,
+    DecisionAuditFixture, DecisionAuditReport, ScoreBreakdown, TrajectoryOutcomeKind,
+    TrajectoryReport,
 };
 pub use card_knowledge::{branch_family_for_card, BranchFamily};
 pub use diag::{CombatDiagnostics, CombatMoveStat};
@@ -61,10 +60,6 @@ pub use profile::{
     SearchNodeCounters, SearchPhaseProfile, SearchProfileBreakdown, SearchProfilingLevel,
 };
 pub use root_prior::{LookupRootPriorProvider, RootPriorConfig, RootPriorQueryKey};
-pub use snapshot_teacher::{
-    evaluate_snapshot_teacher_shadow, SnapshotTeacherCandidateReport, SnapshotTeacherConfig,
-    SnapshotTeacherOutcome, SnapshotTeacherReport,
-};
 pub use turn_plan_probe::{
     probe_draw_marginal_value, probe_draw_marginal_value_for_target, probe_turn_plans,
     CombatDrawMarginalBranchReport, CombatDrawMarginalProbeReport, CombatDrawMarginalSummary,

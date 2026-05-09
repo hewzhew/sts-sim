@@ -15,8 +15,8 @@ Rough groups:
   - `combat_author_audit`
   - `combat_boss_validate`
   - `combat_boss_validate_pack`
-  - `combat_decision_audit`
   - `combat_env_driver`
+  - `full_run_env_driver`
   - `potion_audit`
   - `verify_live_comm_replay`
   - `verify_shop`

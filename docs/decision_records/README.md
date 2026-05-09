@@ -1,6 +1,6 @@
 # Decision Records
 
-Short records for project direction changes that should not be rediscovered by
-rerunning old experiments.
+Short current records for project direction changes that should not be
+rediscovered by rerunning old experiments.
 
-- [stop_draw_query_axis_as_training_main.md](stop_draw_query_axis_as_training_main.md)
+- [weak_evidence_paths_removed_2026_05_09.md](weak_evidence_paths_removed_2026_05_09.md)

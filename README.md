@@ -1,110 +1,52 @@
 # sts_simulator
 
-Rust Slay the Spire simulator focused on three things:
+Rust Slay the Spire simulator and parity tooling.
 
-- deterministic engine/runtime truth
-- Rust versus Java parity through `live_comm`
-- offline AI experiments on top of explicit contracts instead of guessed state
+This repo is not a strong AI agent today. The current useful work is narrower:
 
-This is not a polished game client. It is a headless simulator and tooling repo.
+- keep the simulator and replay surfaces deterministic
+- compare Rust behavior against Java/CommunicationMod truth through `live_comm`
+- capture legal observations, action candidates, transitions, and run outcomes
+- use the existing bot as a stress test and comparator, not as a teacher
 
-## Current shape
+Old weak-evidence learning paths have been removed from the active tree. In
+particular, BranchTrace/candidate rollout labels, verified teacher overrides,
+DecisionRecord teacher labels, PPO/Gym bridges, and single-seed policy patch
+pipelines are not active project direction.
 
-The repo now has four active workstreams:
-
-1. core engine work
-   - `runtime`, `engine`, `content`, `state`, `map`
-2. parity and protocol work
-   - `live_comm`, replay, strict importer, Java protocol migration
-3. bot and debug workbenches
-   - search, noncombat policy, audit tools, scenario harnesses
-4. offline learning sidecars
-   - `CombatEnv`, `combat_env_driver`, structured combat PPO, local oracle and macro counterfactual experiments
-
-The project is still incomplete. The important distinction is that it is no longer
-"just a Rust port." The primary acceptance loop is the Java-connected `live_comm`
-workflow, and the current learning work is real but still deliberately offline and
-experimental.
-
-## What is authoritative
+## What Is Authoritative
 
 - Java source in `../cardcrawl/`
-  - actual game lifecycle and hidden runtime behavior
 - this repo's `CommunicationMod` fork in `../CommunicationMod/`
-  - protocol exporter used by `live_comm`
-- Rust importer and parity tooling
-  - must consume exported truth directly instead of reconstructing hidden state by guesswork
+- Rust importer, replay, state hash, and parity tests
+- explicit full-run outcomes from declared seed suites
 
-The current combat protocol is split:
+Anything else is diagnostic unless a current doc says otherwise.
 
-- `game_state.combat_truth`
-- `game_state.combat_observation`
-- `protocol_meta.combat_action_space`
-- session/runtime metadata such as `reward_session` and `combat_session`
+## Current Active Surfaces
 
-The old merged `combat_state` model is historical. Do not treat it as the live contract.
-
-## Current status
-
-What is working well enough to matter:
-
-- deterministic Rust runtime and replay surfaces
-- run-profile based `live_comm` workflow
-- strict protocol/importer rules for migrated `runtime_state` slices
-- combat-focused offline environment and bridge:
-  - `sts_simulator::bot::harness::combat_env::CombatEnv`
-  - `combat_env_driver`
-  - `tools/learning/structured_combat_env.py`
-
-What is still weak:
-
-- full engine parity is still incomplete
-- noncombat protocol and handoff flow are still moving
-- the bot is useful as a consumer and stress test, not as a trusted teacher
-- learning experiments are reference probes, not production policy
+- `src/runtime/`, `src/engine/`, `src/content/`, `src/state/`
+  - simulator/runtime truth
+- `src/protocol/`, `src/diff/`, `src/testing/`, `src/verification/`
+  - importer, replay, fixtures, and validation
+- `src/cli/live_comm/`, `tools/live_comm/`
+  - Java-connected parity and run capture
+- `src/bin/full_run_env_driver/`
+  - line-protocol driver for reset, step, preview, and DecisionRecord capture
+- `tools/learning/`
+  - DecisionRecord collection, replay, and contract audit only
 
 ## Read First
 
 - [docs/README.md](docs/README.md)
-  - active doc index and what is canonical versus historical
+- [docs/AI_DIRECTION.md](docs/AI_DIRECTION.md)
 - [docs/REPOSITORY_MAP.md](docs/REPOSITORY_MAP.md)
-  - ownership map and active repo surfaces
 - [docs/LAYER_BOUNDARIES.md](docs/LAYER_BOUNDARIES.md)
-  - hard dependency rules
 - [docs/live_comm/README.md](docs/live_comm/README.md)
-  - current parity/debugging workflow
 - [docs/protocol/README.md](docs/protocol/README.md)
-  - protocol truth and importer contract
 - [tools/learning/README.md](tools/learning/README.md)
-  - current offline learning sidecar path
-- [../CommunicationMod/README.md](../CommunicationMod/README.md)
-  - Java-side protocol fork used by this repo
 
-## High-level layout
-
-```text
-src/
-  runtime/ engine/ content/ state/ map/
-    core simulator truth
-  semantics/ projection/
-    explicit truth-side semantic and preview layers
-  diff/ protocol/ testing/ verification/
-    importer, replay, fixtures, parity, and validation
-  bot/ cli/ bin/
-    consumers, workbenches, live_comm runtime, and tooling
-
-tools/
-  live_comm/
-    launcher, run profiles, manual bridge helpers
-  learning/
-    offline dataset builders, env bridges, PPO/baseline experiments
-  sts_tool/ source_extractor/
-    Java source tracing and porting support
-```
-
-For the current ownership tags and boundaries, trust the docs above over older design notes.
-
-## Common commands
+## Common Commands
 
 ```powershell
 cargo build --release
@@ -113,40 +55,18 @@ powershell -ExecutionPolicy Bypass -File .\tools\run_high_value_tests.ps1
 cargo run --bin sts_dev_tool -- logs status
 ```
 
-For Java-connected runs, prefer checked-in live profiles instead of hand-typed flags:
+For Java-connected runs, prefer checked-in live profiles:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\tools\live_comm\use_profile.ps1 Ironclad_Engine_Strict
 ```
 
-## Learning status
+## Non-Goals
 
-There is active learning work in the repo again, but its scope is narrow:
-
-- combat-only first
-- offline-first
-- contract-driven
-- used for baselines, probes, and reference experiments
-
-What exists today:
-
-- structured combat observation/action contract
-- Rust `combat_env_driver` bridge
-- `Gymnasium` / PPO experiments
-- local oracle and `Q_local` experiments
-- macro counterfactual datasets for reward/shop/event analysis
-
-What does not exist today:
-
-- trusted runtime inference in the live bot
-- full-run RL environment stability
-- a claim that current learning artifacts are strong enough to guide engine truth
-
-## Non-goals
-
-- not a polished terminal game
-- not a stable third-party protocol for general consumers
-- not yet a trustworthy full-run training environment
+- no A20H claim
+- no trusted current learning policy
+- no baseline-as-teacher pipeline
+- no policy conclusion from one seed death
 
 ## License
 

@@ -38,15 +38,6 @@ enum DriverRequest {
         sim_version: Option<String>,
         return_spec_version: Option<String>,
         context: Option<Value>,
-        teacher_continuation_policy: Option<String>,
-        teacher_horizon_decisions: Option<usize>,
-        teacher_horizon_mode: Option<String>,
-        teacher_gamma: Option<f32>,
-        teacher_evaluation_mode: Option<String>,
-        teacher_value_cache_scope: Option<String>,
-        teacher_value_cache_max_entries: Option<usize>,
-        teacher_parallelism: Option<usize>,
-        teacher_exact_root_dedup: Option<bool>,
     },
     StepPolicy {
         policy: String,
@@ -234,63 +225,39 @@ fn handle_request(session: &mut DriverSession, request: DriverRequest) -> Driver
             sim_version,
             return_spec_version,
             context,
-            teacher_continuation_policy,
-            teacher_horizon_decisions,
-            teacher_horizon_mode,
-            teacher_gamma,
-            teacher_evaluation_mode,
-            teacher_value_cache_scope,
-            teacher_value_cache_max_entries,
-            teacher_parallelism,
-            teacher_exact_root_dedup,
-        } => {
-            if teacher_label_options_requested(
-                teacher_continuation_policy.as_ref(),
-                teacher_horizon_decisions,
-                teacher_horizon_mode.as_ref(),
-                teacher_gamma,
-                teacher_evaluation_mode.as_ref(),
-                teacher_value_cache_scope.as_ref(),
-                teacher_value_cache_max_entries,
-                teacher_parallelism,
-                teacher_exact_root_dedup,
-            ) {
-                return disabled_evidence_path_response("decision_record_step.teacher_label");
-            }
-            with_env(session, |current| {
-                let seed = current.info().seed;
-                let decision = match DecisionEnv::current_timestep(current) {
-                    Ok(timestep) => timestep,
-                    Err(err) => return error_response(err.to_string()),
-                };
-                let outcome = match DecisionEnv::step(current, ActionId(action_id)) {
-                    Ok(timestep) => timestep,
-                    Err(err) => return error_response(err.to_string()),
-                };
-                let mut record_context = DecisionRecordContext::new(
-                    sim_version.unwrap_or_else(|| "full_run_env".to_string()),
-                    return_spec_version.unwrap_or_else(|| "driver_reward_v0".to_string()),
-                    seed,
-                );
-                record_context.behavior_action = Some(ActionId(action_id));
-                record_context.info =
-                    context.unwrap_or_else(|| json!({"source": "full_run_env_driver"}));
-                let record =
-                    DecisionRecord::from_decision_and_outcome(&decision, &outcome, record_context);
-                ok_response(
-                    Some(serde_json::to_value(&record).expect("decision record should serialize")),
-                    Some(record.reward_since_prev.scalar_reward),
-                    Some(record.terminated || record.truncated),
-                    record
-                        .reward_since_prev
-                        .components
-                        .get("chosen_action_key")
-                        .and_then(Value::as_str)
-                        .map(str::to_string),
-                    Some(current.info()),
-                )
-            })
-        }
+        } => with_env(session, |current| {
+            let seed = current.info().seed;
+            let decision = match DecisionEnv::current_timestep(current) {
+                Ok(timestep) => timestep,
+                Err(err) => return error_response(err.to_string()),
+            };
+            let outcome = match DecisionEnv::step(current, ActionId(action_id)) {
+                Ok(timestep) => timestep,
+                Err(err) => return error_response(err.to_string()),
+            };
+            let mut record_context = DecisionRecordContext::new(
+                sim_version.unwrap_or_else(|| "full_run_env".to_string()),
+                return_spec_version.unwrap_or_else(|| "driver_reward_v0".to_string()),
+                seed,
+            );
+            record_context.behavior_action = Some(ActionId(action_id));
+            record_context.info =
+                context.unwrap_or_else(|| json!({"source": "full_run_env_driver"}));
+            let record =
+                DecisionRecord::from_decision_and_outcome(&decision, &outcome, record_context);
+            ok_response(
+                Some(serde_json::to_value(&record).expect("decision record should serialize")),
+                Some(record.reward_since_prev.scalar_reward),
+                Some(record.terminated || record.truncated),
+                record
+                    .reward_since_prev
+                    .components
+                    .get("chosen_action_key")
+                    .and_then(Value::as_str)
+                    .map(str::to_string),
+                Some(current.info()),
+            )
+        }),
         DriverRequest::StepPolicy { policy } => {
             let policy_kind = match normalize_policy(&policy) {
                 Ok(value) => value,
@@ -480,35 +447,6 @@ fn error_response(error: String) -> DriverResponse {
         chosen_action_key: None,
         info: None,
     }
-}
-
-fn disabled_evidence_path_response(path: &str) -> DriverResponse {
-    error_response(format!(
-        "{path} has been removed: this driver no longer turns baseline continuation, \
-         single-rollout candidate evaluation, branch traces, or seed counterfactuals into labels"
-    ))
-}
-
-fn teacher_label_options_requested(
-    continuation_policy: Option<&String>,
-    horizon_decisions: Option<usize>,
-    horizon_mode: Option<&String>,
-    gamma: Option<f32>,
-    evaluation_mode: Option<&String>,
-    value_cache_scope: Option<&String>,
-    value_cache_max_entries: Option<usize>,
-    parallelism: Option<usize>,
-    exact_root_dedup: Option<bool>,
-) -> bool {
-    continuation_policy.is_some()
-        || horizon_decisions.is_some()
-        || horizon_mode.is_some()
-        || gamma.is_some()
-        || evaluation_mode.is_some()
-        || value_cache_scope.is_some()
-        || value_cache_max_entries.is_some()
-        || parallelism.is_some()
-        || exact_root_dedup.is_some()
 }
 
 fn state_payload(state: FullRunEnvState) -> Value {

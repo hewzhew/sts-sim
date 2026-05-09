@@ -229,36 +229,6 @@ and no `--live-watch-*` flags. That means:
 - Rust stops on the first combat parse/parity mismatch
 - watch capture is effectively frozen for the run
 
-## Verified Teacher Live Status
-
-The full-run verified advantage override teacher is implemented in the offline
-`full_run_env_driver` path. Live play still sends actions from the normal combat
-chooser in `src/cli/live_comm/combat.rs`.
-
-There is also a live snapshot teacher shadow in
-`src/bot/combat/snapshot_teacher.rs`. It uses only the current Java truth import
-and protocol root actions; it does not maintain a live `FullRunEnv` mirror.
-
-`play.exe` accepts explicit teacher-mode flags so this boundary is visible:
-
-```text
---live-comm-verified-teacher-mode off|shadow|takeover
---live-comm-verified-teacher-shadow
---live-comm-verified-teacher-takeover
-```
-
-Current behavior:
-
-- `off`: existing live behavior.
-- `shadow`: writes diagnostic `snapshot_teacher_shadow` records while live
-  actions still come from the normal chooser.
-- `takeover`: fails fast because shadow evidence and command mapping have not
-  been audited enough for live control.
-
-See:
-
-- `docs/decision_records/live_verified_teacher_integration_status.md`
-
 Survey engine-debug example:
 
 ```powershell

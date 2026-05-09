@@ -1,7 +1,7 @@
 use super::frame::LiveFrame;
 use super::io::LiveCommIo;
 use super::snapshot::write_failure_snapshot;
-use super::{LiveCombatMode, LiveExactTurnMode, LiveParityMode, LiveVerifiedTeacherMode};
+use super::{LiveCombatMode, LiveExactTurnMode, LiveParityMode};
 use crate::app::neutral_engine_query::SearchExecutionContext;
 use crate::app::policy_runner::NeutralProbeEvaluator;
 use crate::bot::combat::legal_moves::protocol_root_moves;
@@ -10,9 +10,8 @@ use crate::bot::combat::pressure::StatePressureFeatures;
 use crate::bot::combat::{
     branch_family_for_card, describe_end_turn_options,
     diagnose_root_search_with_depth_and_runtime_and_root_inputs,
-    diagnose_root_search_with_runtime_and_root_inputs, evaluate_snapshot_teacher_shadow,
-    BranchFamily, CombatDiagnostics, CombatMoveStat, SearchExactTurnMode, SearchExperimentFlags,
-    SearchRuntimeBudget, SnapshotTeacherConfig,
+    diagnose_root_search_with_runtime_and_root_inputs, BranchFamily, CombatDiagnostics,
+    CombatMoveStat, SearchExactTurnMode, SearchExperimentFlags, SearchRuntimeBudget,
 };
 use crate::bot::infra::comm as comm_mod;
 use crate::bot::infra::coverage_signatures::{
@@ -335,77 +334,6 @@ fn log_hidden_intent_belief(live_io: &mut LiveCommIo, combat: &CombatState) {
             monster.max_incoming_damage,
             monster.rationale_key.unwrap_or("unknown")
         );
-    }
-}
-
-fn log_snapshot_teacher_shadow(
-    live_io: &mut LiveCommIo,
-    frame_count: u64,
-    combat: &CombatState,
-    root_inputs: Option<Vec<crate::state::core::ClientInput>>,
-    combat_search_budget: u32,
-) {
-    let Some(root_inputs) = root_inputs.filter(|inputs| !inputs.is_empty()) else {
-        let _ = writeln!(
-            live_io.focus_log,
-            "[TEACHER SHADOW] frame={frame_count} skipped=no_protocol_root_inputs"
-        );
-        return;
-    };
-    let config = SnapshotTeacherConfig {
-        root_search_budget: combat_search_budget.clamp(40, 180),
-        continuation_search_budget: 80,
-        ..SnapshotTeacherConfig::default()
-    };
-    let report = evaluate_snapshot_teacher_shadow(
-        &EngineState::CombatPlayerTurn,
-        combat,
-        Some(root_inputs),
-        config,
-    );
-    let best = report.best_dominating_index.and_then(|index| {
-        report
-            .candidates
-            .iter()
-            .find(|candidate| candidate.index == index)
-    });
-    let best_summary = best
-        .map(|candidate| {
-            format!(
-                "index={} input={} reasons={}",
-                candidate.index,
-                candidate.input,
-                candidate.dominance_reasons.join("|")
-            )
-        })
-        .unwrap_or_else(|| "none".to_string());
-    let _ = writeln!(
-        live_io.focus_log,
-        "[TEACHER SHADOW] frame={frame_count} candidates={} dominating={} best={} elapsed_ms={} timeout={}",
-        report.candidate_count,
-        report.dominating_candidate_count,
-        best_summary,
-        report.elapsed_ms,
-        report.timed_out
-    );
-    let _ = writeln!(
-        live_io.log,
-        "  [TEACHER SHADOW] candidates={} reference={} dominating={} best={} elapsed_ms={} timeout={}",
-        report.candidate_count,
-        report.reference_input,
-        report.dominating_candidate_count,
-        best_summary,
-        report.elapsed_ms,
-        report.timed_out
-    );
-    if let Ok(value) = serde_json::to_value(&report) {
-        let record = serde_json::json!({
-            "kind": "snapshot_teacher_shadow",
-            "frame": frame_count,
-            "report": value,
-        });
-        sidecar::write_shadow_record(&mut live_io.combat_decision_audit, &record);
-        sidecar::write_shadow_record(&mut live_io.sidecar_shadow, &record);
     }
 }
 
@@ -2120,7 +2048,6 @@ pub(super) fn handle_live_combat_frame<W: Write>(
     parity_mode: LiveParityMode,
     combat_mode: LiveCombatMode,
     exact_turn_mode: LiveExactTurnMode,
-    verified_teacher_mode: LiveVerifiedTeacherMode,
     fail_fast_debug: bool,
     combat_search_budget: u32,
     legacy_root_legal_moves: bool,
@@ -2465,15 +2392,6 @@ pub(super) fn handle_live_combat_frame<W: Write>(
         filter_live_root_potion_inputs(&truth, raw_root_inputs.clone());
     if let Some(report) = potion_gate_report.as_ref() {
         log_live_root_potion_gate(live_io, frame_count, report);
-    }
-    if matches!(verified_teacher_mode, LiveVerifiedTeacherMode::Shadow) {
-        log_snapshot_teacher_shadow(
-            live_io,
-            frame_count,
-            &truth,
-            root_inputs.clone(),
-            combat_search_budget,
-        );
     }
     let root_action_source = if root_inputs.is_some() {
         "protocol"

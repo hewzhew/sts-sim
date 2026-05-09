@@ -278,12 +278,14 @@ pub fn make_full_run_env_contract_failure(
 
 pub fn full_run_env_reproduce_command(config: &FullRunEnvConfig, seed: u64) -> String {
     let mut parts = vec![
-        ".venv-rl\\Scripts\\python.exe".to_string(),
-        "tools\\learning\\smoke_full_run_env.py".to_string(),
+        "python".to_string(),
+        "tools\\learning\\collect_decision_records.py".to_string(),
+        "--out".to_string(),
+        format!("tmp\\decision_records\\contract_failure_seed_{seed}.jsonl"),
+        "--seed-start".to_string(),
+        seed.to_string(),
         "--episodes".to_string(),
         "1".to_string(),
-        "--seed".to_string(),
-        seed.to_string(),
         "--ascension".to_string(),
         config.ascension.to_string(),
         "--class".to_string(),

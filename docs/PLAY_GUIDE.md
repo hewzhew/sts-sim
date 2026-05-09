@@ -90,5 +90,5 @@ Keep these distinctions in mind:
 ## When To Use Something Else
 
 - use [live_comm/README.md](live_comm/README.md) for parity debugging or Java-connected runs
-- use [../tools/learning/README.md](../tools/learning/README.md) for combat environment and learning experiments
+- use [../tools/learning/README.md](../tools/learning/README.md) for DecisionRecord capture and replay checks
 - use [BUGFIX_WORKFLOW.md](BUGFIX_WORKFLOW.md) when you are fixing a parity bug from archived run logs rather than doing ad hoc local play

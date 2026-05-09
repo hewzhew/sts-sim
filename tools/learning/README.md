@@ -1,27 +1,22 @@
 # Learning Tools
 
-This directory no longer contains an active "verified teacher", BranchTrace,
-candidate rollout, or DecisionRecord teacher-label pipeline.
+This directory is now DecisionRecord infrastructure only.
 
-Those paths were removed because they promoted weak baseline continuation and
-seed counterfactuals into reusable evidence. The full-run driver now exposes
-only environment stepping, public observations, policy input snapshots,
-baseline policy stepping, preview, and raw DecisionRecord transition capture.
+It does not contain an active verified teacher, BranchTrace, candidate rollout,
+Gym/PPO, return-Q, pairwise preference, or teacher-label pipeline. Those paths
+were removed because they turned weak baseline continuation and single-seed
+counterfactuals into reusable labels.
 
-Current allowed uses:
+Allowed uses:
 
-- simulator smoke tests
-- replay and contract checks
-- explicit full-run policy evaluation where the final run outcome is the metric
-- local diagnostic scripts that do not create action labels from branch traces,
-  candidate rollout returns, or teacher-label fields
+- collect raw DecisionRecord transitions from `full_run_env_driver`
+- audit that records expose legal/public payloads only
+- replay records through the driver and compare hashes/candidates/outcomes
+- run explicit full-run policy evaluation where the final run outcome is the
+  metric
 
-Tracked files in this directory are intentionally limited to:
+Tracked scripts:
 
-- `full_run_env.py`
-- `smoke_full_run_env.py`
-- `analyze_full_run_policy_matrix.py`
-- `evaluate_full_run_capabilities.py`
 - `audit_decision_record_contract.py`
 - `collect_decision_records.py`
 - `collect_decision_records_batch.py`
@@ -37,4 +32,4 @@ Do not reintroduce scripts that:
 - convert single-seed counterfactuals into policy labels
 
 Deleted files remain recoverable from Git history and from the backup branches
-created before this cleanup.
+created before cleanup.

@@ -5,13 +5,13 @@ This file is the current structure blueprint for the repo.
 ## Tags
 
 - `core`
-  - directly implements the simulator and RL-facing runtime path
+  - directly implements simulator/runtime truth
 - `integration`
-  - sync, replay, CLI, and verification layers around the runtime
+  - protocol sync, replay, CLI, and verification around runtime truth
 - `tooling`
-  - offline analysis, extraction, dataset building, and dev utilities
+  - offline analysis, extraction, DecisionRecord capture, and dev utilities
 - `experiment`
-  - workbenches, topic-specific probes, and temporary validation surfaces
+  - workbenches and topic-specific probes
 - `artifact`
   - generated outputs, captures, reports, datasets, and logs
 - `legacy`
@@ -22,8 +22,6 @@ This file is the current structure blueprint for the repo.
 ## Active Paths
 
 ### Engine Truth Path
-
-Treat these as the truth-bearing core:
 
 1. runtime and state
    - `src/runtime/`
@@ -44,8 +42,6 @@ Treat these as the truth-bearing core:
 
 ### Protocol / Verification Path
 
-Treat these as the integration layer around engine truth:
-
 1. Java/protocol adapter
    - `src/protocol/`
 2. importer, replay, and sync
@@ -58,83 +54,61 @@ Treat these as the integration layer around engine truth:
 
 ### App / Workbench Path
 
-These are consumers, not the source of engine truth:
+These are consumers, not sources of engine truth:
 
 - `src/bot/`
 - `src/cli/`
 - `src/bin/`
 
-### Current Learning Path
+### AI / Eval Infrastructure Path
 
-The current RL-facing experiment path is:
+The active AI-facing path is infrastructure only:
 
-1. Rust combat environment truth
-   - `src/bot/harness/combat_env.rs`
-2. bridge binary
-   - `src/bin/combat_env_driver/`
-3. Python transport and policy experiments
-   - `tools/learning/structured_combat_env.py`
-   - `tools/learning/train_structured_combat_ppo.py`
-   - `tools/learning/build_combat_rl_datasets.py`
-   - `tools/learning/build_macro_counterfactual_dataset.py`
+1. line-protocol full-run driver
+   - `src/bin/full_run_env_driver/`
+2. legal observation, action candidates, transition records
+   - `src/verification/decision_env.rs`
+3. collection and replay checks
+   - `tools/learning/collect_decision_records.py`
+   - `tools/learning/collect_decision_records_batch.py`
+   - `tools/learning/audit_decision_record_contract.py`
+   - `tools/learning/verify_decision_records_replay.py`
 
-This path is active, but still experimental. Do not treat it as a stable runtime policy stack.
+This path does not contain a trusted policy learner.
 
 ## Top-Level Layout
 
-- `src/` — `core`
-  - long-lived Rust code
-- `tests/` — `integration`
-  - external test drivers and scenario suites
-- `tools/` — `tooling`
-  - offline analysis, schema building, live-comm helpers, learning datasets, and artifacts
-- `docs/` — `tooling`
-  - architecture, workflows, protocol rules, and archived investigations
-- `logs/` — `artifact`
-  - live-comm captures and other loose runtime logs
-- `tmp/` — `artifact`
-  - temporary local workspace
-- `data/` — `artifact`
-  - user- or run-specific generated data
+- `src/` - `core` plus downstream app/workbench consumers
+- `tests/` - `integration`
+- `tools/` - `tooling`
+- `docs/` - `tooling`
+- `logs/` - `artifact`
+- `tmp/` - `artifact`
+- `data/` - `artifact`
 
 ## `src/` Ownership
 
-- `src/runtime/` — `core`
-  - base runtime primitives: `action`, `combat`, `rng`
-- `src/core/` — `core`
-  - shared engine-side utility types that are still core truth, not tooling
-- `src/engine/` — `core`
-  - turn progression, queue driving, action dispatch, room handlers
-- `src/content/` — `core`
-  - per-entity behavior and hook logic
-- `src/state/` — `core`
-  - structured run / combat / pending-choice state
-- `src/semantics/` — `core`
-  - explicit rule-critical semantic views derived from engine truth
-- `src/projection/` — `core`
-  - preview and presentation views derived from semantic truth
-- `src/diff/` — `integration`
-  - protocol mapping in `diff::protocol`, replay/verification in `diff::replay`, sync support in `diff::state_sync`
-- `src/protocol/` — `integration`
-  - Java/protocol-facing facade and adapter surface
-- `src/testing/` — `integration`
-  - fixtures in `testing::fixtures`, integration analysis in `testing::harness`
-- `src/verification/` — `integration`
-  - narrower facades for replay/reconstruction consumers
-- `src/bot/harness/` — `experiment`
-  - bot-coupled workbenches and validation harnesses promoted out of `testing`
-- `src/bin/` — `integration`
-  - explicit binary entrypoints, now one directory per binary
-- `src/bot/` — `experiment`
-  - search, policy, and sidecar logic
-- `src/cli/coverage_tools/` — `experiment`
-  - offline replay/live-comm coverage record extraction and report output
+- `src/runtime/` - `core`
+- `src/core/` - `core`
+- `src/engine/` - `core`
+- `src/content/` - `core`
+- `src/state/` - `core`
+- `src/semantics/` - `core`
+- `src/projection/` - `core`
+- `src/diff/` - `integration`
+- `src/protocol/` - `integration`
+- `src/testing/` - `integration`
+- `src/verification/` - `integration`
+- `src/bot/harness/` - `experiment`
+- `src/bin/` - `integration` entrypoints and workbenches
+- `src/bot/` - `experiment`
+- `src/cli/coverage_tools/` - `experiment`
 
 ## Current Notes
 
-- `fixtures` is exported from `lib.rs`, but its implementation still lives under `src/testing/`
-- `bot` and `cli` are important working surfaces, but they are downstream of protocol/importer truth
-- older design notes may still describe `diff::state_sync` as if it were a repair layer; current docs treat it as a strict importer
+- `bot` and `cli` are downstream of protocol/importer truth.
+- The baseline bot is a stress test and comparator, not a teacher.
+- Older learning docs may describe removed paths. Current entrypoints win.
 
 ## Root Rules
 

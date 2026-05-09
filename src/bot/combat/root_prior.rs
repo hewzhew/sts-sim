@@ -75,11 +75,7 @@ pub struct RootPriorArtifactRow {
     #[serde(default)]
     pub mean_return: Option<f32>,
     #[serde(default)]
-    pub teacher_score: Option<f32>,
-    #[serde(default)]
     pub uncertain: bool,
-    #[serde(default)]
-    pub teacher_best: bool,
     #[serde(default)]
     pub candidate_rank: Option<usize>,
     #[serde(default)]
@@ -132,7 +128,7 @@ impl LookupRootPriorProvider {
     pub fn load_jsonl(path: &Path) -> Result<Self, String> {
         let file = std::fs::File::open(path).map_err(|err| {
             format!(
-                "failed to open q_local root prior artifact '{}': {err}",
+                "failed to open root prior artifact '{}': {err}",
                 path.display()
             )
         })?;
@@ -142,7 +138,7 @@ impl LookupRootPriorProvider {
         for (line_no, line) in reader.lines().enumerate() {
             let text = line.map_err(|err| {
                 format!(
-                    "failed to read q_local root prior artifact '{}' at line {}: {err}",
+                    "failed to read root prior artifact '{}' at line {}: {err}",
                     path.display(),
                     line_no + 1
                 )
@@ -153,7 +149,7 @@ impl LookupRootPriorProvider {
             }
             let row: RootPriorArtifactRow = serde_json::from_str(trimmed).map_err(|err| {
                 format!(
-                    "failed to parse q_local root prior artifact '{}' at line {}: {err}",
+                    "failed to parse root prior artifact '{}' at line {}: {err}",
                     path.display(),
                     line_no + 1
                 )
