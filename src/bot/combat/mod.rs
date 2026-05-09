@@ -12,7 +12,6 @@ mod planner;
 pub(crate) mod posture;
 pub(crate) mod pressure;
 mod profile;
-mod root_prior;
 mod search;
 mod stepping;
 mod terminal;
@@ -51,7 +50,6 @@ pub use legal_moves::legal_moves_for_audit;
 pub use profile::{
     SearchNodeCounters, SearchPhaseProfile, SearchProfileBreakdown, SearchProfilingLevel,
 };
-pub use root_prior::{LookupRootPriorProvider, RootPriorConfig, RootPriorQueryKey};
 pub use turn_plan_probe::{
     probe_draw_marginal_value, probe_draw_marginal_value_for_target, probe_turn_plans,
     CombatDrawMarginalBranchReport, CombatDrawMarginalProbeReport, CombatDrawMarginalSummary,
@@ -266,11 +264,6 @@ pub fn diagnose_root_search_with_depth_and_runtime_and_root_inputs(
             branch_width,
             max_engine_steps,
             equivalence_mode,
-            root_prior_enabled: false,
-            root_prior_key: None,
-            root_prior_weight: 0.0,
-            root_prior_hits: 0,
-            root_prior_reordered: false,
             top_moves: Vec::new(),
             decision_audit: json!({
                 "planner": LEGACY_FRONTIER_PLANNER_ID,
@@ -446,11 +439,6 @@ pub fn diagnose_root_search_with_depth_and_runtime_and_root_inputs(
         branch_width,
         max_engine_steps,
         equivalence_mode,
-        root_prior_enabled: false,
-        root_prior_key: None,
-        root_prior_weight: 0.0,
-        root_prior_hits: 0,
-        root_prior_reordered: false,
         top_moves,
         decision_audit: json!({
             "planner": LEGACY_FRONTIER_PLANNER_ID,
@@ -504,24 +492,6 @@ pub fn diagnose_root_search_with_depth_and_mode(
     )
 }
 
-pub fn diagnose_root_search_with_depth_and_mode_and_root_prior(
-    engine: &EngineState,
-    combat: &CombatState,
-    depth_limit: u32,
-    num_simulations: u32,
-    _equivalence_mode: SearchEquivalenceMode,
-    _profiling_level: SearchProfilingLevel,
-    _root_prior: Option<&RootPriorConfig>,
-) -> CombatDiagnostics {
-    diagnose_root_search_with_depth_and_runtime(
-        engine,
-        combat,
-        depth_limit,
-        num_simulations,
-        SearchRuntimeBudget::default(),
-    )
-}
-
 fn build_move_stat(explored: &ExploredCandidate, idx: usize) -> CombatMoveStat {
     let candidate = &explored.candidate;
     let immediate_incoming = incoming_damage(&candidate.next_combat);
@@ -532,8 +502,6 @@ fn build_move_stat(explored: &ExploredCandidate, idx: usize) -> CombatMoveStat {
         avg_score: search_score,
         base_order_score: candidate.diagnostic_score,
         order_score: search_score,
-        root_prior_score: 0.0,
-        root_prior_hit: false,
         leaf_score: candidate.diagnostic_score,
         search_delta: search_score - candidate.diagnostic_score,
         sequence_bonus: 0.0,
