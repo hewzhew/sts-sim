@@ -107,8 +107,8 @@ represented explicitly.
 DecisionState {
   id: DecisionId,
   kind: DecisionKind,
-  actor_view: ActorView,
-  critic_view: Option<CriticView>,
+  public_observation: PublicObservation,
+  privileged_observation: Option<PrivilegedObservation>,
   action_descriptors: Vec<ActionDescriptor>,
 }
 ```
@@ -143,6 +143,7 @@ The kernel returns concrete legal candidates for the current decision:
 ```text
 ActionDescriptor {
   id: ActionId,
+  semantic_key: ActionSemanticKey,
   verb: ActionVerb,
   arguments: ActionArguments,
   source: Option<ActionSource>,
@@ -178,10 +179,31 @@ SelectCandidate {
 EndTurn
 ```
 
-`ActionId` is stable only inside the current `DecisionState`. A training task may
-map descriptors into a fixed categorical action space, a candidate-scoring head,
-or an autoregressive action head. The kernel does not pretend one global flat
-action vocabulary solves every UI substate.
+`ActionId` is an execution token. It is stable only inside the current
+`DecisionState` and must never be used directly as a neural-network class label.
+
+`ActionSemanticKey` is the learning-facing identity. It must carry enough stable
+metadata for a task to deterministically encode the action:
+
+```text
+decision_kind
+verb
+card_id / potion_id / option_id when applicable
+card_instance_id when available
+source zone and source slot when applicable
+target kind and target slot when applicable
+candidate zone and candidate card id when applicable
+```
+
+A fixed-vocabulary PPO task may map `ActionSemanticKey` into global action ids.
+A variable-choice task may instead score the candidate descriptors directly. An
+autoregressive task may split the descriptor into verb and argument heads. All
+three are valid. What is forbidden is treating local `ActionId = 0` as if it had
+the same meaning across different decision states.
+
+If a descriptor lacks enough stable metadata for the selected task encoding, the
+task must reject that decision as unsupported instead of silently guessing a
+mapping.
 
 Forced choices may auto-resolve only when they are mechanically forced and
 strategy-free. Any meaningful player choice must become a `DecisionState`.
@@ -192,29 +214,30 @@ The kernel produces views. It does not decide which view a learning algorithm is
 allowed to train on.
 
 ```text
-ActorView:
+PublicObservation:
   legal player-visible information only
 
-CriticView:
-  optional privileged training view for asymmetric actor-critic
+PrivilegedObservation:
+  optional simulator-privileged information for declared training tasks
 
 DebugOracle:
   replay/debug truth, never policy data
 ```
 
-Policy/inference may consume only `ActorView`.
+Policy/inference may consume only `PublicObservation`.
 
-An asymmetric actor-critic task may use `CriticView` for value training if the
-task declares that privilege explicitly and reports it in metrics. `CriticView`
-must never be used to choose actions at inference time.
+An asymmetric actor-critic task may use `PrivilegedObservation` for value
+training if the task declares that privilege explicitly and reports it in
+metrics. `PrivilegedObservation` must never be used to choose actions at
+inference time.
 
 `DebugOracle` can contain exact draw order, executable monster steps, hidden RNG,
 and full internal state references. It is for replay and diagnosis only. It must
 not be serialized into actor training data by accident.
 
-### ActorView Minimum
+### PublicObservation Minimum
 
-Initial actor-visible fields:
+Initial player-visible fields:
 
 ```text
 player:
@@ -242,6 +265,17 @@ monsters:
 combat:
   turn count
   decision kind
+
+turn_history:
+  cards_played_this_turn_count
+  attacks_played_this_turn
+  skills_played_this_turn
+  powers_played_this_turn
+  cards_played_this_turn_by_id
+  damage_taken_this_turn
+  hp_lost_this_turn
+  energy_spent_this_turn
+  cards_drawn_this_turn_count
 ```
 
 Observation mode must state whether draw pile order is visible, hidden, or
@@ -257,8 +291,8 @@ MissingVisibleIntent
 OracleOnlyIntent
 ```
 
-If executable truth says `Attack 11` but `ActorView` says no visible intent, the
-task must either:
+If executable truth says `Attack 11` but `PublicObservation` says no visible
+intent, the task must either:
 
 - fix the observation bridge,
 - mark the state as `OracleOnlyIntent`, or
@@ -274,8 +308,8 @@ kernel.
 Allowed:
 
 ```text
-encode_actor_view(decision) -> Tensor
-encode_critic_view(decision) -> Optional<Tensor>
+encode_public_observation(decision) -> Tensor
+encode_privileged_observation(decision) -> Optional<Tensor>
 encode_action_space(decision.action_descriptors) -> MaskOrCandidates
 reward(previous_decision, action, step_result, next_boundary) -> f32
 metrics(episode) -> CombatMetrics
@@ -286,7 +320,9 @@ Forbidden:
 - reading raw `CombatState`,
 - inventing mechanics,
 - treating kernel errors as negative reward,
-- using debug oracle fields as actor input,
+- using debug oracle fields as policy input,
+- using privileged observations as policy input,
+- using local ActionId as a global neural action id,
 - calling the old bot,
 - producing card-pick conclusions from combat-only tasks.
 
@@ -322,7 +358,7 @@ kernel_error_rate
 unsupported_decision_rate
 missing_visible_intent_rate
 illegal_action_rate
-critic_privilege_mode
+privileged_observation_mode
 ```
 
 `win_rate` alone is not a useful signal.
@@ -362,7 +398,7 @@ manual gate:
 4. Apply a legal action by ActionId.
 5. Step through a full player turn and monster turn.
 6. Return to DecisionKind::TurnAction or CombatTerminal.
-7. Produce ActorView at every decision.
+7. Produce PublicObservation at every decision.
 8. Report zero MissingVisibleIntent in policy mode.
 9. Finish combat as CombatTerminal::Won or CombatTerminal::Lost.
 10. Use no old bot, no fixture parser as runtime, and no reward screen boundary.
@@ -376,11 +412,12 @@ The first useful implementation is small and strict:
 
 ```text
 1. Add typed structures for CombatOrigin, CombatKernel, DecisionState,
-   ActionDescriptor, ActorView, CriticView, and CombatTerminal.
+   ActionDescriptor, PublicObservation, PrivilegedObservation, and
+   CombatTerminal.
 2. Implement AuthoredCombat starter Ironclad vs JawWorm through the real combat
    engine, with explicit RNG state.
 3. Implement TurnAction descriptors for playable hand cards and EndTurn.
-4. Implement ActorView intent classification.
+4. Implement PublicObservation intent classification.
 5. Add one smoke binary that prints decisions/actions/views and exits on
    terminal.
 6. Only then add a CombatTask adapter.
