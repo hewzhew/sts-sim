@@ -1725,6 +1725,194 @@ Coverage:
 - `shared_uncommon_combat_trigger_relic_metadata_matches_java_sources`
 - `mercury_hourglass_queues_thorns_damage_to_all_monster_slots`
 
+## Shared Relic Batch 5 - Uncommon Start / Victory / Reward Relics
+
+### Horn Cleat
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/relics/HornCleat.java`
+
+Rust source:
+- `src/content/relics/horn_cleat.rs`
+- `src/content/relics/hooks.rs`
+- `src/content/relics/mod.rs`
+
+Java evidence:
+- Constructor: ID `"HornCleat"`, tier `UNCOMMON`, landing sound `HEAVY`.
+- `atBattleStart()` sets `counter = 0` immediately.
+- `atTurnStart()`: if not grayscale, increments `counter`; when `counter == 2`,
+  queues block `14` with `addToBot`, then sets `counter = -1` and
+  `grayscale = true`.
+- `onVictory()` sets `counter = -1` and clears grayscale.
+
+Rust result:
+- Tier and subscriptions now match Java, including the previously missing
+  victory reset.
+- Fixed the relic to mutate its combat counter immediately rather than queuing
+  a later counter-update action.
+- Fixed the repeated-trigger bug: after the second-turn block, the counter is
+  set to `-1` and later turn starts in the same combat do nothing.
+- Rust does not model grayscale; the gameplay gate is represented by
+  `counter = -1`.
+
+Coverage:
+- `shared_uncommon_start_victory_reward_relic_metadata_matches_java_sources`
+- `horn_cleat_triggers_only_on_second_turn_then_disables_until_next_combat`
+
+### Pantograph
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/relics/Pantograph.java`
+
+Rust source:
+- `src/content/relics/pantograph.rs`
+- `src/content/relics/hooks.rs`
+
+Java evidence:
+- Constructor: ID `"Pantograph"`, tier `UNCOMMON`, landing sound `CLINK`.
+- `atBattleStart()` scans the current monsters and triggers if any monster has
+  `EnemyType.BOSS`.
+- Queues `HealAction(player, player, 25, 0.0f)` with `addToTop`; the relic
+  visual action is UI-only.
+
+Rust result:
+- Tier and battle-start subscription match Java.
+- Boss combat detection is currently derived from known boss enemy IDs.
+- Fixed heal insertion from bottom to top insertion to preserve Java action
+  ordering.
+- UI-only relic-above-creature action is intentionally not represented.
+
+Coverage:
+- `shared_uncommon_start_victory_reward_relic_metadata_matches_java_sources`
+- `pantograph_heals_only_in_boss_combat_with_java_top_insertion`
+
+### Meat on the Bone
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/relics/MeatOnTheBone.java`
+- `D:/rust/cardcrawl/rooms/AbstractRoom.java`
+
+Rust source:
+- `src/content/relics/meat_on_the_bone.rs`
+- `src/content/relics/hooks.rs`
+
+Java evidence:
+- Constructor: ID `"Meat on the Bone"`, tier `UNCOMMON`, landing sound
+  `HEAVY`.
+- `AbstractRoom.endBattle()` calls `onTrigger()` if the player has the relic.
+- `onTrigger()`: if `currentHealth <= maxHealth / 2.0f` and
+  `currentHealth > 0`, directly heals `12`.
+- `onBloodied`, `onNotBloodied`, pulse, flash, and relic visual actions are
+  UI-only.
+- `canSpawn` is false after floor 48 unless Endless mode is active.
+
+Rust result:
+- Tier and victory subscription match Java.
+- Fixed the hook to ignore `RelicState.used_up`; Meat on the Bone is not a
+  one-time relic.
+- Emits top insertion heal `12` when the player is alive and at or below half
+  HP at combat end.
+- Spawn gating is a relic-pool/reward-generation concern and is not handled by
+  the combat victory hook.
+
+Coverage:
+- `shared_uncommon_start_victory_reward_relic_metadata_matches_java_sources`
+- `meat_on_the_bone_heals_at_or_below_half_hp_without_used_up_gate`
+
+### Pear
+
+Status: `exact`
+
+Java source:
+- `D:/rust/cardcrawl/relics/Pear.java`
+
+Rust source:
+- `src/content/relics/pear.rs`
+- `src/engine/relic_manager.rs`
+
+Java evidence:
+- Constructor: ID `"Pear"`, tier `UNCOMMON`, landing sound `FLAT`.
+- `onEquip()` calls `AbstractDungeon.player.increaseMaxHp(10, true)`.
+
+Rust result:
+- Tier matches Java.
+- On-equip increases max HP by `10` and heals the same amount, capped by the
+  new max HP.
+
+Coverage:
+- `shared_uncommon_start_victory_reward_relic_metadata_matches_java_sources`
+- `pear_on_equip_grants_ten_max_hp_and_heals_same_amount`
+
+### Singing Bowl
+
+Status: `exact`
+
+Java source:
+- `D:/rust/cardcrawl/relics/SingingBowl.java`
+- `D:/rust/cardcrawl/screens/CardRewardScreen.java`
+- `D:/rust/cardcrawl/ui/buttons/SingingBowlButton.java`
+
+Rust source:
+- `src/rewards/handler.rs`
+
+Java evidence:
+- Constructor: ID `"Singing Bowl"`, tier `UNCOMMON`, landing sound `FLAT`.
+- The relic class itself only handles hover/click sound and flash.
+- Card reward screen adds an extra bowl option; choosing it records the
+  Singing Bowl choice and grants `+2` max HP instead of taking a card.
+- `canSpawn` is false after floor 48 unless Endless mode is active.
+
+Rust result:
+- Tier matches Java.
+- Reward card-choice handling exposes the bowl option at `idx == cards.len()`
+  only when the relic is present and grants `+2` max HP through
+  `DomainEventSource::RewardScreen`.
+- UI-only hover sound/flash behavior is intentionally not represented.
+- Spawn gating is a relic-pool/reward-generation concern and is not handled by
+  the card-choice handler.
+
+Coverage:
+- `shared_uncommon_start_victory_reward_relic_metadata_matches_java_sources`
+- `singing_bowl_card_reward_option_grants_two_max_hp_with_reward_source`
+
+### White Beast Statue
+
+Status: `exact`
+
+Java source:
+- `D:/rust/cardcrawl/relics/WhiteBeast.java`
+- `D:/rust/cardcrawl/rooms/AbstractRoom.java`
+
+Rust source:
+- `src/rewards/generator.rs`
+
+Java evidence:
+- Constructor: ID `"White Beast Statue"`, tier `UNCOMMON`, landing sound
+  `SOLID`.
+- The relic class itself has no gameplay hook.
+- `AbstractRoom.addPotionToRewards()` sets potion chance to `100` when the
+  player has the relic.
+- The same Java method sets chance to `0` if the room already has at least four
+  reward items.
+
+Rust result:
+- Tier matches Java.
+- Combat reward generation sets potion drop chance to `100` when the relic is
+  present and no Sozu potion block is active.
+- The current Rust combat reward generator builds rewards from an empty list and
+  checks potion generation before card/relic rewards, so the Java
+  `rewards.size() >= 4` cap has no reachable equivalent in this path.
+
+Coverage:
+- `shared_uncommon_start_victory_reward_relic_metadata_matches_java_sources`
+- `white_beast_statue_forces_potion_reward_unless_sozu_blocks_potions`
+
 ## Full Ironclad Class-Specific Relic Queue
 
 Relics remain `unreviewed` until their Java file, Rust definition/subscription,
@@ -1794,3 +1982,9 @@ class-specific queue.
 | 41 | `Shuriken.java` | `shuriken.rs` | `wrong-fixed` |
 | 42 | `OrnamentalFan.java` | `ornamental_fan.rs` | `exact` |
 | 43 | `MercuryHourglass.java` | `mercury_hourglass.rs` | `exact` |
+| 44 | `HornCleat.java` | `horn_cleat.rs` | `wrong-fixed` |
+| 45 | `Pantograph.java` | `pantograph.rs` | `wrong-fixed` |
+| 46 | `MeatOnTheBone.java` | `meat_on_the_bone.rs` | `wrong-fixed` |
+| 47 | `Pear.java` | `pear.rs` | `exact` |
+| 48 | `SingingBowl.java` | reward handler | `exact` |
+| 49 | `WhiteBeast.java` | reward generator | `exact` |

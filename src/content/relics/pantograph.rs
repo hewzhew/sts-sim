@@ -32,7 +32,7 @@ pub fn at_battle_start(state: &CombatState) -> SmallVec<[ActionInfo; 4]> {
                 target: 0,
                 amount: 25,
             },
-            insertion_mode: crate::runtime::action::AddTo::Bottom,
+            insertion_mode: crate::runtime::action::AddTo::Top,
         });
     }
     actions

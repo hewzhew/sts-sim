@@ -144,7 +144,9 @@ pub fn at_battle_start(state: &mut CombatState) -> SmallVec<[ActionInfo; 4]> {
                 state.entities.player.relics[relic_index] = rs;
             }
             RelicId::HornCleat => {
-                actions.extend(crate::content::relics::horn_cleat::HornCleat::at_battle_start())
+                let mut rs = state.entities.player.relics[relic_index].clone();
+                crate::content::relics::horn_cleat::HornCleat::at_battle_start(&mut rs);
+                state.entities.player.relics[relic_index] = rs;
             }
             RelicId::OddlySmoothStone => {
                 actions.extend(crate::content::relics::oddly_smooth_stone::at_battle_start())
@@ -383,6 +385,11 @@ pub fn on_victory(state: &mut CombatState) -> smallvec::SmallVec<[ActionInfo; 4]
                 crate::content::relics::letter_opener::on_victory(&mut rs);
                 state.entities.player.relics[relic_index] = rs;
             }
+            RelicId::HornCleat => {
+                let mut rs = state.entities.player.relics[relic_index].clone();
+                crate::content::relics::horn_cleat::HornCleat::on_victory(&mut rs);
+                state.entities.player.relics[relic_index] = rs;
+            }
             RelicId::CaptainsWheel => {
                 let mut rs = state.entities.player.relics[relic_index].clone();
                 crate::content::relics::captains_wheel::CaptainsWheel::on_victory(&mut rs);
@@ -394,9 +401,8 @@ pub fn on_victory(state: &mut CombatState) -> smallvec::SmallVec<[ActionInfo; 4]
                 state.entities.player.relics[relic_index] = rs;
             }
             RelicId::MeatOnTheBone => {
-                let used_up = state.entities.player.relics[relic_index].used_up;
                 actions.extend(crate::content::relics::meat_on_the_bone::on_victory(
-                    &*state, used_up,
+                    &*state,
                 ));
             }
             RelicId::Pocketwatch => {
@@ -465,9 +471,10 @@ pub fn at_turn_start(state: &mut CombatState) -> SmallVec<[ActionInfo; 4]> {
                 state.entities.player.relics[relic_index] = rs;
             }
             RelicId::HornCleat => {
-                let counter = state.entities.player.relics[relic_index].counter;
+                let mut rs = state.entities.player.relics[relic_index].clone();
                 actions
-                    .extend(crate::content::relics::horn_cleat::HornCleat::at_turn_start(counter));
+                    .extend(crate::content::relics::horn_cleat::HornCleat::at_turn_start(&mut rs));
+                state.entities.player.relics[relic_index] = rs;
             }
             RelicId::IncenseBurner => {
                 let counter = state.entities.player.relics[relic_index].counter;

@@ -911,6 +911,7 @@ pub fn get_relic_subscriptions(id: RelicId) -> RelicSubscriptions {
         RelicId::HornCleat => {
             sub.at_battle_start = true;
             sub.at_turn_start = true;
+            sub.on_victory = true;
         }
         RelicId::Inserter => sub.at_turn_start = true,
         RelicId::Kunai => {

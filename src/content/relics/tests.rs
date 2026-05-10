@@ -1420,3 +1420,211 @@ fn mercury_hourglass_queues_thorns_damage_to_all_monster_slots() {
         other => panic!("expected Mercury Hourglass all-enemy damage, got {other:?}"),
     }
 }
+
+#[test]
+fn shared_uncommon_start_victory_reward_relic_metadata_matches_java_sources() {
+    assert_eq!(get_relic_tier(RelicId::HornCleat), RelicTier::Uncommon);
+    assert_eq!(get_relic_tier(RelicId::Pantograph), RelicTier::Uncommon);
+    assert_eq!(get_relic_tier(RelicId::MeatOnTheBone), RelicTier::Uncommon);
+    assert_eq!(get_relic_tier(RelicId::Pear), RelicTier::Uncommon);
+    assert_eq!(get_relic_tier(RelicId::SingingBowl), RelicTier::Uncommon);
+    assert_eq!(
+        get_relic_tier(RelicId::WhiteBeastStatue),
+        RelicTier::Uncommon
+    );
+
+    assert!(get_relic_subscriptions(RelicId::HornCleat).at_battle_start);
+    assert!(get_relic_subscriptions(RelicId::HornCleat).at_turn_start);
+    assert!(get_relic_subscriptions(RelicId::HornCleat).on_victory);
+    assert!(get_relic_subscriptions(RelicId::Pantograph).at_battle_start);
+    assert!(get_relic_subscriptions(RelicId::MeatOnTheBone).on_victory);
+    assert!(!get_relic_subscriptions(RelicId::Pear).at_battle_start);
+    assert!(!get_relic_subscriptions(RelicId::SingingBowl).at_battle_start);
+    assert!(!get_relic_subscriptions(RelicId::WhiteBeastStatue).at_battle_start);
+}
+
+#[test]
+fn horn_cleat_triggers_only_on_second_turn_then_disables_until_next_combat() {
+    let mut relic = RelicState::new(RelicId::HornCleat);
+    horn_cleat::HornCleat::at_battle_start(&mut relic);
+    assert_eq!(relic.counter, 0);
+
+    assert!(horn_cleat::HornCleat::at_turn_start(&mut relic).is_empty());
+    assert_eq!(relic.counter, 1);
+
+    let second_turn = horn_cleat::HornCleat::at_turn_start(&mut relic);
+    assert_eq!(relic.counter, -1);
+    assert_eq!(second_turn.len(), 1);
+    assert_eq!(second_turn[0].insertion_mode, AddTo::Bottom);
+    assert!(matches!(
+        second_turn[0].action,
+        Action::GainBlock {
+            target: 0,
+            amount: 14
+        }
+    ));
+
+    assert!(horn_cleat::HornCleat::at_turn_start(&mut relic).is_empty());
+    assert_eq!(relic.counter, -1);
+
+    let mut state = crate::test_support::blank_test_combat();
+    let mut state_relic = RelicState::new(RelicId::HornCleat);
+    state.entities.player.add_relic(state_relic.clone());
+    assert!(hooks::at_battle_start(&mut state).is_empty());
+    assert_eq!(state.entities.player.relics[0].counter, 0);
+    assert!(hooks::at_turn_start(&mut state).is_empty());
+    assert_eq!(state.entities.player.relics[0].counter, 1);
+
+    state.entities.player.relics.clear();
+    state_relic.counter = 1;
+    state_relic.used_up = true;
+    state.entities.player.add_relic(state_relic);
+    assert!(hooks::on_victory(&mut state).is_empty());
+    assert_eq!(state.entities.player.relics[0].counter, -1);
+    assert!(!state.entities.player.relics[0].used_up);
+}
+
+#[test]
+fn pantograph_heals_only_in_boss_combat_with_java_top_insertion() {
+    let mut boss_state = crate::test_support::blank_test_combat();
+    boss_state
+        .entities
+        .monsters
+        .push(crate::test_support::test_monster(EnemyId::SlimeBoss));
+    let actions = pantograph::at_battle_start(&boss_state);
+    assert_eq!(actions.len(), 1);
+    assert_eq!(actions[0].insertion_mode, AddTo::Top);
+    assert!(matches!(
+        actions[0].action,
+        Action::Heal {
+            target: 0,
+            amount: 25
+        }
+    ));
+
+    let mut hallway_state = crate::test_support::blank_test_combat();
+    hallway_state
+        .entities
+        .monsters
+        .push(crate::test_support::test_monster(EnemyId::JawWorm));
+    assert!(pantograph::at_battle_start(&hallway_state).is_empty());
+}
+
+#[test]
+fn meat_on_the_bone_heals_at_or_below_half_hp_without_used_up_gate() {
+    let mut state = crate::test_support::blank_test_combat();
+    state.entities.player.current_hp = 40;
+    state.entities.player.max_hp = 80;
+
+    let actions = meat_on_the_bone::on_victory(&state);
+    assert_eq!(actions.len(), 1);
+    assert_eq!(actions[0].insertion_mode, AddTo::Top);
+    assert!(matches!(
+        actions[0].action,
+        Action::Heal {
+            target: 0,
+            amount: 12
+        }
+    ));
+
+    state.entities.player.current_hp = 41;
+    assert!(meat_on_the_bone::on_victory(&state).is_empty());
+
+    state.entities.player.current_hp = 0;
+    assert!(meat_on_the_bone::on_victory(&state).is_empty());
+
+    state.entities.player.current_hp = 40;
+    let mut used_relic = RelicState::new(RelicId::MeatOnTheBone);
+    used_relic.used_up = true;
+    state.entities.player.add_relic(used_relic);
+    assert_eq!(
+        hooks::on_victory(&mut state).len(),
+        1,
+        "Java Meat on the Bone is not a one-time used_up relic"
+    );
+}
+
+#[test]
+fn pear_on_equip_grants_ten_max_hp_and_heals_same_amount() {
+    let mut run_state = crate::state::run::RunState::new(1, 0, false, "Ironclad");
+    run_state.current_hp = 50;
+    run_state.max_hp = 80;
+
+    assert!(pear::on_equip(&mut run_state).is_none());
+    assert_eq!(run_state.max_hp, 90);
+    assert_eq!(run_state.current_hp, 60);
+}
+
+#[test]
+fn singing_bowl_card_reward_option_grants_two_max_hp_with_reward_source() {
+    let mut run_state = crate::state::run::RunState::new(1, 0, false, "Ironclad");
+    run_state.current_hp = 50;
+    run_state.max_hp = 80;
+    run_state.relics.clear();
+    run_state.relics.push(RelicState::new(RelicId::SingingBowl));
+    run_state.emitted_events.clear();
+
+    let mut reward_state = crate::rewards::state::RewardState {
+        items: Vec::new(),
+        skippable: true,
+        screen_context: crate::rewards::state::RewardScreenContext::Standard,
+        pending_card_choice: Some(vec![crate::rewards::state::RewardCard::new(
+            CardId::Strike,
+            0,
+        )]),
+    };
+
+    assert_eq!(
+        crate::rewards::handler::handle(
+            &mut run_state,
+            &mut reward_state,
+            Some(crate::state::core::ClientInput::SelectCard(1)),
+        ),
+        Some(crate::state::core::EngineState::MapNavigation)
+    );
+    assert_eq!(run_state.max_hp, 82);
+    assert_eq!(run_state.current_hp, 52);
+    assert!(run_state.emitted_events.iter().any(|event| matches!(
+        event,
+        DomainEvent::MaxHpChanged {
+            delta: 2,
+            source: DomainEventSource::RewardScreen,
+            ..
+        }
+    )));
+}
+
+#[test]
+fn white_beast_statue_forces_potion_reward_unless_sozu_blocks_potions() {
+    let mut run_state = crate::state::run::RunState::new(1, 0, false, "Ironclad");
+    run_state.relics.clear();
+    run_state
+        .relics
+        .push(RelicState::new(RelicId::WhiteBeastStatue));
+
+    let rewards = crate::rewards::generator::generate_combat_rewards(&mut run_state, false, false);
+    assert!(
+        rewards
+            .items
+            .iter()
+            .any(|item| matches!(item, crate::rewards::state::RewardItem::Potion { .. })),
+        "White Beast Statue sets the post-combat potion drop chance to 100"
+    );
+
+    let mut sozu_state = crate::state::run::RunState::new(1, 0, false, "Ironclad");
+    sozu_state.relics.clear();
+    sozu_state
+        .relics
+        .push(RelicState::new(RelicId::WhiteBeastStatue));
+    sozu_state.relics.push(RelicState::new(RelicId::Sozu));
+
+    let sozu_rewards =
+        crate::rewards::generator::generate_combat_rewards(&mut sozu_state, false, false);
+    assert!(
+        !sozu_rewards
+            .items
+            .iter()
+            .any(|item| matches!(item, crate::rewards::state::RewardItem::Potion { .. })),
+        "Java Sozu prevents potion rewards before White Beast can matter"
+    );
+}
