@@ -1,10 +1,12 @@
 use crate::state::core::EngineState;
 use crate::state::run::RunState;
+use crate::state::selection::DomainEventSource;
 
 pub fn on_equip(run_state: &mut RunState) -> Option<EngineState> {
     use crate::content::cards::{get_card_definition, CardId, CardType};
-    run_state.max_hp += 5;
-    run_state.current_hp = (run_state.current_hp + 5).min(run_state.max_hp);
+    use crate::content::relics::RelicId;
+    use crate::rewards::state::{RewardItem, RewardState};
+
     let mut upgradable: Vec<usize> = run_state
         .master_deck
         .iter()
@@ -20,14 +22,24 @@ pub fn on_equip(run_state: &mut RunState) -> Option<EngineState> {
             &mut upgradable,
             &mut run_state.rng_pool.misc_rng,
         );
-        run_state.master_deck[upgradable[0]].upgrades += 1;
+        let uuid = run_state.master_deck[upgradable[0]].uuid;
+        run_state.upgrade_card_with_source(uuid, DomainEventSource::Relic(RelicId::TinyHouse));
     }
-    if !run_state
-        .relics
-        .iter()
-        .any(|relic| relic.id == crate::content::relics::RelicId::Ectoplasm)
-    {
-        run_state.gold += 50;
-    }
-    None
+
+    run_state.gain_max_hp_with_source(5, 5, DomainEventSource::Relic(RelicId::TinyHouse));
+
+    let potion_class = run_state.potion_class();
+    let potion_id = crate::content::potions::random_potion(
+        &mut run_state.rng_pool.misc_rng,
+        potion_class,
+        false,
+    );
+    let num_cards = crate::rewards::generator::adjusted_card_reward_choice_count(run_state, 3);
+    let cards = crate::rewards::generator::generate_card_reward(run_state, num_cards, false);
+
+    let mut reward_state = RewardState::new();
+    reward_state.items.push(RewardItem::Gold { amount: 50 });
+    reward_state.items.push(RewardItem::Potion { potion_id });
+    reward_state.items.push(RewardItem::Card { cards });
+    Some(EngineState::RewardScreen(reward_state))
 }

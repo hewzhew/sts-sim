@@ -1,9 +1,19 @@
-// WristBlade: Attacks that cost 0 deal 3 additional damage.
-// This is a passive damage modifier evaluated in the damage calculation pipeline.
-// The engine's damage calc checks for this relic and adds 3 to base damage
-// when the played card is an Attack with effective cost 0.
+use crate::content::cards::{get_card_definition, CardType};
+use crate::runtime::combat::CombatCard;
 
-/// Returns additional damage for 0-cost Attacks.
-pub fn bonus_damage() -> i32 {
-    3
+/// Java WristBlade.atDamageModify:
+/// attacks with `costForTurn == 0`, or `freeToPlayOnce && cost != -1`, gain +4.
+pub fn modify_attack_damage_for_card(card: &CombatCard, damage: f32) -> f32 {
+    let def = get_card_definition(card.id);
+    if def.card_type != CardType::Attack {
+        return damage;
+    }
+
+    let costs_zero_for_turn = card.get_cost() == 0;
+    let is_non_x_free_once = card.free_to_play_once && def.cost != -1;
+    if costs_zero_for_turn || is_non_x_free_once {
+        damage + 4.0
+    } else {
+        damage
+    }
 }

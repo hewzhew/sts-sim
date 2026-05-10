@@ -175,6 +175,23 @@ pub enum EnemyId {
 }
 
 impl EnemyId {
+    pub fn is_boss(self) -> bool {
+        matches!(
+            self,
+            EnemyId::SlimeBoss
+                | EnemyId::Hexaghost
+                | EnemyId::TheGuardian
+                | EnemyId::BronzeAutomaton
+                | EnemyId::TheCollector
+                | EnemyId::Champ
+                | EnemyId::AwakenedOne
+                | EnemyId::TimeEater
+                | EnemyId::Donu
+                | EnemyId::Deca
+                | EnemyId::CorruptHeart
+        )
+    }
+
     pub fn from_id(id: MonsterId) -> Option<Self> {
         // Current stub mapper. In the future MonsterId will likely map safely to EnemyId or just BE EnemyId.
         match id {

@@ -990,6 +990,11 @@ pub fn modify_player_attack_damage_for_card(
                     card, damage,
                 );
             }
+            RelicId::WristBlade => {
+                damage = crate::content::relics::wrist_blade::modify_attack_damage_for_card(
+                    card, damage,
+                );
+            }
             _ => {}
         }
     }

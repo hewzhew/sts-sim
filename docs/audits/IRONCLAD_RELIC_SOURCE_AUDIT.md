@@ -3466,6 +3466,209 @@ Coverage:
 - `shared_boss_relic_second_batch_metadata_matches_java_sources`
 - `runic_dome_hides_public_intent_without_a_ui_model`
 
+## Shared Relic Batch 15 - Boss Relics Part 3
+
+### Sacred Bark
+
+Status: `exact`
+
+Java source:
+- `D:/rust/cardcrawl/relics/SacredBark.java`
+
+Rust source:
+- `src/content/relics/sacred_bark.rs`
+- `src/engine/action_handlers/cards.rs`
+- `src/engine/action_handlers/mod.rs`
+
+Java evidence:
+- Constructor: ID `"SacredBark"`, tier `BOSS`, landing sound `MAGICAL`.
+- `onEquip`: reinitializes existing potion data so UI text/potency reflects
+  the doubled potion effect.
+- Gameplay effect is potion potency doubling.
+
+Rust result:
+- Tier matches Java.
+- Potion effect resolution doubles potency while Sacred Bark is owned.
+- No UI reinitialization state is carried; potency is derived at use time.
+
+Coverage:
+- `shared_boss_relic_third_batch_metadata_matches_java_sources`
+
+### Slaver's Collar
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/relics/SlaversCollar.java`
+
+Rust source:
+- `src/content/relics/slavers_collar.rs`
+- `src/content/relics/mod.rs`
+- `src/content/monsters/mod.rs`
+
+Java evidence:
+- Constructor: ID `"SlaversCollar"`, tier `BOSS`, landing sound `FLAT`.
+- `beforeEnergyPrep`: starts from `eliteTrigger`, then scans every monster and
+  activates if any monster has `EnemyType.BOSS`.
+- If active, increments `player.energy.energyMaster` until victory.
+- `onVictory`: decrements energy master only if it had pulsed/activated.
+
+Rust result:
+- Tier matches Java.
+- Fixed activation to scan monster identity for boss enemies in addition to
+  combat metadata flags.
+- Fixed activation to add energy to the current first turn as well as
+  `energy_master`, matching Java's pre-energy-prep timing.
+- Restore/rebuild energy now uses the same elite/boss predicate.
+
+Coverage:
+- `shared_boss_relic_third_batch_metadata_matches_java_sources`
+- `slavers_collar_uses_java_elite_or_boss_detection_and_affects_current_turn_energy`
+
+### Snecko Eye
+
+Status: `exact`
+
+Java source:
+- `D:/rust/cardcrawl/relics/SneckoEye.java`
+
+Rust source:
+- `src/content/relics/snecko_eye.rs`
+- `src/engine/action_handlers/cards.rs`
+- `src/engine/core.rs`
+
+Java evidence:
+- Constructor: ID `"Snecko Eye"`, tier `BOSS`, landing sound `FLAT`.
+- `onEquip`: increases `masterHandSize` by `2`.
+- `onUnequip`: decreases `masterHandSize` by `2`.
+- `atPreBattle`: applies `ConfusionPower` to the player.
+
+Rust result:
+- Tier and pre-battle subscription match Java.
+- Initial and per-turn draw counts add two cards while Snecko Eye is owned.
+- Pre-battle hook applies Confusion to the player.
+
+Coverage:
+- `shared_boss_relic_third_batch_metadata_matches_java_sources`
+
+### Sozu
+
+Status: `exact`
+
+Java source:
+- `D:/rust/cardcrawl/relics/Sozu.java`
+
+Rust source:
+- `src/content/relics/mod.rs`
+- `src/rewards/generator.rs`
+- `src/rewards/handler.rs`
+- `src/engine/action_handlers/cards.rs`
+- `src/engine/shop_handler.rs`
+
+Java evidence:
+- Constructor: ID `"Sozu"`, tier `BOSS`, landing sound `FLAT`.
+- `onEquip`: increments `energyMaster`.
+- `onUnequip`: decrements `energyMaster`.
+- Potion prevention is handled by potion-obtain paths, not by a combat action.
+
+Rust result:
+- Tier and energy delta match Java.
+- Combat/reward/shop potion obtain paths respect Sozu as a prevention/absorb
+  rule.
+
+Coverage:
+- `shared_boss_relic_third_batch_metadata_matches_java_sources`
+- `white_beast_statue_forces_potion_reward_unless_sozu_blocks_potions`
+
+### Tiny House
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/relics/TinyHouse.java`
+- `D:/rust/cardcrawl/screens/CombatRewardScreen.java`
+
+Rust source:
+- `src/content/relics/tiny_house.rs`
+- `src/rewards/generator.rs`
+
+Java evidence:
+- Constructor: ID `"Tiny House"`, tier `BOSS`, landing sound `FLAT`.
+- `onEquip`: shuffles all upgradable master-deck cards with
+  `new Random(AbstractDungeon.miscRng.randomLong())` and upgrades one if any.
+- Increases max HP by `5`.
+- Adds `50` gold and one random potion to the current room rewards.
+- Opens the combat reward screen, whose setup also provides the normal card
+  reward unless the current room suppresses card rewards.
+
+Rust result:
+- Fixed random upgrade to use the normal upgrade event/source path.
+- Fixed max HP gain to emit `Relic(TinyHouse)` source.
+- Fixed gold, potion, and card reward handling to return a `RewardScreen`
+  instead of directly adding gold and omitting potion/card rewards.
+- Gold is now gained only when the reward is claimed, preserving Ectoplasm and
+  other reward-claim modifiers.
+
+Coverage:
+- `shared_boss_relic_third_batch_metadata_matches_java_sources`
+- `tiny_house_uses_reward_screen_for_gold_potion_and_card_reward`
+
+### Velvet Choker
+
+Status: `exact`
+
+Java source:
+- `D:/rust/cardcrawl/relics/VelvetChoker.java`
+
+Rust source:
+- `src/content/relics/mod.rs`
+- `src/engine/action_handlers/cards.rs`
+- `src/bot/combat/legal_moves.rs`
+
+Java evidence:
+- Constructor: ID `"Velvet Choker"`, tier `BOSS`, landing sound `FLAT`.
+- `onEquip`: increments `energyMaster`.
+- `onUnequip`: decrements `energyMaster`.
+- `atBattleStart`/`atTurnStart`: counter resets to `0`.
+- `onPlayCard`: increments counter up to the limit.
+- `canPlay`: rejects cards once counter reaches `6`.
+
+Rust result:
+- Tier and energy delta match Java.
+- The engine uses the canonical per-turn cards-played counter for the same
+  six-card limit.
+- Legal move generation mirrors the same limit.
+
+Coverage:
+- `shared_boss_relic_third_batch_metadata_matches_java_sources`
+
+### Wrist Blade
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/relics/WristBlade.java`
+
+Rust source:
+- `src/content/relics/wrist_blade.rs`
+- `src/content/relics/hooks.rs`
+- `src/content/cards/runtime_impl.rs`
+
+Java evidence:
+- Constructor: ID `"WristBlade"`, tier `BOSS`, landing sound `FLAT`.
+- `atDamageModify`: if `card.costForTurn == 0`, or if
+  `card.freeToPlayOnce && card.cost != -1`, returns `damage + 4.0f`.
+
+Rust result:
+- Fixed damage bonus from the old `+3` placeholder to Java's `+4`.
+- Fixed hook dispatch so Wrist Blade actually participates in card damage
+  calculation.
+- Preserved Java's X-cost exclusion for free-to-play-once cards.
+
+Coverage:
+- `shared_boss_relic_third_batch_metadata_matches_java_sources`
+- `wrist_blade_adds_four_damage_to_java_zero_cost_attacks_only`
+
 ## Full Ironclad Class-Specific Relic Queue
 
 Relics remain `unreviewed` until their Java file, Rust definition/subscription,
@@ -3591,3 +3794,10 @@ class-specific queue.
 | 97 | `PandorasBox.java` | `pandoras_box.rs` / deck manager | `wrong-fixed` |
 | 98 | `PhilosopherStone.java` | `philosopher_stone.rs` / spawn hooks | `wrong-fixed` |
 | 99 | `RunicDome.java` | intent observation / energy delta | `exact` |
+| 100 | `SacredBark.java` | potion potency path | `exact` |
+| 101 | `SlaversCollar.java` | `slavers_collar.rs` / energy restore | `wrong-fixed` |
+| 102 | `SneckoEye.java` | `snecko_eye.rs` / draw count | `exact` |
+| 103 | `Sozu.java` | potion obtain paths / energy delta | `exact` |
+| 104 | `TinyHouse.java` | `tiny_house.rs` / reward screen | `wrong-fixed` |
+| 105 | `VelvetChoker.java` | card play limit / energy delta | `exact` |
+| 106 | `WristBlade.java` | `wrist_blade.rs` / damage hook | `wrong-fixed` |

@@ -2795,6 +2795,161 @@ fn runic_dome_hides_public_intent_without_a_ui_model() {
 }
 
 #[test]
+fn shared_boss_relic_third_batch_metadata_matches_java_sources() {
+    assert_eq!(get_relic_tier(RelicId::SacredBark), RelicTier::Boss);
+    assert_eq!(get_relic_tier(RelicId::SlaversCollar), RelicTier::Boss);
+    assert_eq!(get_relic_tier(RelicId::SneckoEye), RelicTier::Boss);
+    assert_eq!(get_relic_tier(RelicId::Sozu), RelicTier::Boss);
+    assert_eq!(get_relic_tier(RelicId::TinyHouse), RelicTier::Boss);
+    assert_eq!(get_relic_tier(RelicId::VelvetChoker), RelicTier::Boss);
+    assert_eq!(get_relic_tier(RelicId::WristBlade), RelicTier::Boss);
+
+    assert_eq!(energy_master_delta(RelicId::Sozu), 1);
+    assert_eq!(energy_master_delta(RelicId::VelvetChoker), 1);
+    assert_eq!(energy_master_delta(RelicId::SneckoEye), 0);
+    assert_eq!(energy_master_delta(RelicId::SlaversCollar), 0);
+
+    assert!(get_relic_subscriptions(RelicId::SneckoEye).at_pre_battle);
+    assert!(get_relic_subscriptions(RelicId::SlaversCollar).at_battle_start);
+    assert!(get_relic_subscriptions(RelicId::SlaversCollar).on_victory);
+    assert!(!get_relic_subscriptions(RelicId::WristBlade).on_use_card);
+}
+
+#[test]
+fn slavers_collar_uses_java_elite_or_boss_detection_and_affects_current_turn_energy() {
+    let mut boss_state = crate::test_support::blank_test_combat();
+    boss_state
+        .entities
+        .player
+        .add_relic(RelicState::new(RelicId::SlaversCollar));
+    boss_state
+        .entities
+        .monsters
+        .push(crate::test_support::test_monster(EnemyId::SlimeBoss));
+
+    let actions = hooks::at_battle_start(&mut boss_state);
+    assert!(actions.is_empty());
+    assert_eq!(boss_state.entities.player.energy_master, 4);
+    assert_eq!(
+        boss_state.turn.energy, 4,
+        "Java beforeEnergyPrep increments energyMaster before first-turn energy is prepared"
+    );
+    assert_eq!(boss_state.entities.player.relics[0].counter, 1);
+
+    assert!(hooks::on_victory(&mut boss_state).is_empty());
+    assert_eq!(boss_state.entities.player.energy_master, 3);
+    assert_eq!(boss_state.entities.player.relics[0].counter, 0);
+
+    let mut hallway_state = crate::test_support::blank_test_combat();
+    hallway_state
+        .entities
+        .player
+        .add_relic(RelicState::new(RelicId::SlaversCollar));
+    hallway_state
+        .entities
+        .monsters
+        .push(crate::test_support::test_monster(EnemyId::JawWorm));
+    hooks::at_battle_start(&mut hallway_state);
+    assert_eq!(hallway_state.entities.player.energy_master, 3);
+    assert_eq!(hallway_state.turn.energy, 3);
+    assert_eq!(hallway_state.entities.player.relics[0].counter, 0);
+}
+
+#[test]
+fn tiny_house_uses_reward_screen_for_gold_potion_and_card_reward() {
+    let mut run = crate::state::run::RunState::new(18, 0, false, "Ironclad");
+    run.current_hp = 50;
+    run.max_hp = 80;
+    let starting_gold = run.gold;
+    run.emitted_events.clear();
+
+    let Some(crate::state::core::EngineState::RewardScreen(rewards)) =
+        tiny_house::on_equip(&mut run)
+    else {
+        panic!("expected Tiny House to open a reward screen");
+    };
+
+    assert_eq!(run.max_hp, 85);
+    assert_eq!(run.current_hp, 55);
+    assert_eq!(
+        run.gold, starting_gold,
+        "Java Tiny House adds gold to rewards; it is not gained on equip"
+    );
+    assert_eq!(
+        run.emitted_events
+            .iter()
+            .filter(|event| matches!(
+                event,
+                DomainEvent::CardUpgraded {
+                    source: DomainEventSource::Relic(RelicId::TinyHouse),
+                    ..
+                }
+            ))
+            .count(),
+        1
+    );
+    assert!(run.emitted_events.iter().any(|event| matches!(
+        event,
+        DomainEvent::MaxHpChanged {
+            delta: 5,
+            source: DomainEventSource::Relic(RelicId::TinyHouse),
+            ..
+        }
+    )));
+
+    assert!(rewards
+        .items
+        .iter()
+        .any(|item| matches!(item, crate::rewards::state::RewardItem::Gold { amount: 50 })));
+    assert!(rewards
+        .items
+        .iter()
+        .any(|item| matches!(item, crate::rewards::state::RewardItem::Potion { .. })));
+    assert!(rewards.items.iter().any(|item| matches!(
+        item,
+        crate::rewards::state::RewardItem::Card { cards } if !cards.is_empty()
+    )));
+}
+
+#[test]
+fn wrist_blade_adds_four_damage_to_java_zero_cost_attacks_only() {
+    let mut state = crate::test_support::blank_test_combat();
+    state
+        .entities
+        .player
+        .add_relic(RelicState::new(RelicId::WristBlade));
+
+    let mut zero_for_turn = CombatCard::new(CardId::Strike, 701);
+    zero_for_turn.cost_for_turn = Some(0);
+    assert_eq!(
+        hooks::modify_player_attack_damage_for_card(&state, &zero_for_turn, 6.0),
+        10.0
+    );
+
+    let mut free_non_x = CombatCard::new(CardId::Bash, 702);
+    free_non_x.free_to_play_once = true;
+    assert_eq!(
+        hooks::modify_player_attack_damage_for_card(&state, &free_non_x, 8.0),
+        12.0
+    );
+
+    let mut free_x = CombatCard::new(CardId::Whirlwind, 703);
+    free_x.free_to_play_once = true;
+    assert_eq!(
+        hooks::modify_player_attack_damage_for_card(&state, &free_x, 5.0),
+        5.0,
+        "Java excludes free-to-play X-cost cards unless costForTurn is actually 0"
+    );
+
+    let mut zero_skill = CombatCard::new(CardId::Defend, 704);
+    zero_skill.cost_for_turn = Some(0);
+    assert_eq!(
+        hooks::modify_player_attack_damage_for_card(&state, &zero_skill, 0.0),
+        0.0
+    );
+}
+
+#[test]
 fn shared_rare_damage_retention_relic_metadata_matches_java_sources() {
     assert_eq!(get_relic_tier(RelicId::Calipers), RelicTier::Rare);
     assert_eq!(get_relic_tier(RelicId::Torii), RelicTier::Rare);

@@ -722,7 +722,7 @@ pub fn energy_master_delta(id: RelicId) -> u8 {
 /// current combat context.
 pub fn restore_combat_energy_master(state: &mut crate::runtime::combat::CombatState) {
     let mut energy_master: u8 = 3;
-    let is_elite_or_boss = state.meta.is_elite_fight || state.meta.is_boss_fight;
+    let is_elite_or_boss = crate::content::relics::slavers_collar::is_elite_or_boss_combat(state);
 
     for relic in state.entities.player.relics.iter_mut() {
         energy_master = energy_master.saturating_add(energy_master_delta(relic.id));
