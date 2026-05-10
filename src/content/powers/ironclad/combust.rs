@@ -1,5 +1,5 @@
 use crate::content::powers::PowerId;
-use crate::runtime::action::{Action, DamageType};
+use crate::runtime::action::{Action, DamageType, NO_SOURCE};
 use crate::runtime::combat::CombatState;
 use smallvec::SmallVec;
 
@@ -23,6 +23,15 @@ pub fn at_end_of_turn(
 ) -> SmallVec<[Action; 2]> {
     let mut actions = SmallVec::new();
 
+    if !state
+        .entities
+        .monsters
+        .iter()
+        .any(|m| m.current_hp > 0 && !m.is_dying && !m.is_escaped && !m.half_dead)
+    {
+        return actions;
+    }
+
     // Get hpLoss from extra_data (defaults to 1 if somehow missing)
     let hp_loss = state
         .entities
@@ -38,7 +47,7 @@ pub fn at_end_of_turn(
         triggers_rupture: true,
     });
     actions.push(Action::DamageAllEnemies {
-        source: owner,
+        source: NO_SOURCE,
         damages: crate::runtime::action::repeated_damage_matrix(
             state.entities.monsters.len(),
             amount,

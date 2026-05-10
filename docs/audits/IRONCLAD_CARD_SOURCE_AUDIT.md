@@ -514,6 +514,141 @@ Coverage:
 - `ironclad_block_exhaust_and_ethereal_definitions_match_java_sources`
 - `ironclad_block_exhaust_and_ethereal_runtime_actions_match_java_use_methods`
 
+## Batch 5 - Conditional / AoE / Weak / End-Turn Damage Coverage
+
+### Clash
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/cards/red/Clash.java`
+
+Rust source:
+- `src/content/cards/mod.rs`
+- `src/content/cards/ironclad/clash.rs`
+- `src/content/cards/runtime_impl.rs`
+
+Java evidence:
+- Constructor: cost `0`, type `ATTACK`, color `RED`, rarity `COMMON`, target
+  `ENEMY`, `baseDamage = 14`.
+- `canUse`: after `super.canUse`, scans every card in player hand and rejects
+  play if any card is not an `ATTACK`.
+- `use`: queues optional VFX, then one `DamageAction` with
+  `new DamageInfo(p, this.damage, this.damageTypeForTurn)`.
+- `upgrade`: `upgradeDamage(4)`.
+- `ClashEffect` is UI/VFX-only and is not simulator mechanics.
+
+Rust result:
+- Definition matches Java constructor and upgrade damage.
+- `can_play_card` preserves the Java all-hand attack requirement.
+- Runtime now evaluates the card at play time before emitting damage, so
+  upgrades and damage modifiers do not rely on stale mutation fields.
+
+Coverage:
+- `ironclad_attack_condition_and_dot_power_definitions_match_java_sources`
+- `ironclad_attack_condition_and_dot_power_runtime_actions_match_java_use_methods`
+
+### Cleave
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/cards/red/Cleave.java`
+
+Rust source:
+- `src/content/cards/mod.rs`
+- `src/content/cards/ironclad/cleave.rs`
+- `src/content/cards/runtime_impl.rs`
+
+Java evidence:
+- Constructor: cost `1`, type `ATTACK`, color `RED`, rarity `COMMON`, target
+  `ALL_ENEMY`, `baseDamage = 8`, `isMultiDamage = true`.
+- `use`: queues SFX/VFX, then `DamageAllEnemiesAction(p, this.multiDamage,
+  this.damageTypeForTurn, NONE)`.
+- `upgrade`: `upgradeDamage(3)`.
+- SFX/VFX actions are presentation-only and are not simulator mechanics.
+
+Rust result:
+- Definition matches Java constructor, multi-damage flag, target, and upgrade.
+- Runtime now evaluates the card at play time before emitting
+  `Action::DamageAllEnemies`, so upgraded and per-target damage are generated
+  from current combat state.
+
+Coverage:
+- `ironclad_attack_condition_and_dot_power_definitions_match_java_sources`
+- `ironclad_attack_condition_and_dot_power_runtime_actions_match_java_use_methods`
+
+### Clothesline
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/cards/red/Clothesline.java`
+
+Rust source:
+- `src/content/cards/mod.rs`
+- `src/content/cards/ironclad/clothesline.rs`
+- `src/content/cards/runtime_impl.rs`
+
+Java evidence:
+- Constructor: cost `2`, type `ATTACK`, color `RED`, rarity `COMMON`, target
+  `ENEMY`, `baseDamage = 12`, `baseMagicNumber = magicNumber = 2`.
+- `use`: queues `DamageAction`, then `ApplyPowerAction` applying
+  `WeakPower(m, this.magicNumber, false)` to the same target.
+- `upgrade`: `upgradeDamage(2)` and `upgradeMagicNumber(1)`.
+
+Rust result:
+- Definition matches Java constructor and upgrade values.
+- Runtime now evaluates damage and magic at play time, preserving the Java
+  damage-then-weak action order with upgraded Weak duration.
+
+Coverage:
+- `ironclad_attack_condition_and_dot_power_definitions_match_java_sources`
+- `ironclad_attack_condition_and_dot_power_runtime_actions_match_java_use_methods`
+
+### Combust
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/cards/red/Combust.java`
+- `D:/rust/cardcrawl/powers/CombustPower.java`
+
+Rust source:
+- `src/content/cards/mod.rs`
+- `src/content/cards/ironclad/combust.rs`
+- `src/content/powers/ironclad/combust.rs`
+- `src/engine/action_handlers/powers.rs`
+
+Java evidence:
+- Card constructor: cost `1`, type `POWER`, color `RED`, rarity `UNCOMMON`,
+  target `SELF`, `baseMagicNumber = magicNumber = 5`.
+- Card `use`: applies `new CombustPower(p, 1, this.magicNumber)`.
+- Card `upgrade`: `upgradeMagicNumber(2)`.
+- `CombustPower` stores two gameplay values: `amount` is all-enemy damage, and
+  `hpLoss` is the player's end-turn HP loss.
+- `CombustPower.stackPower(stackAmount)`: adds `stackAmount` to damage and
+  increments `hpLoss` by exactly `1`.
+- `CombustPower.atEndOfTurn`: if monsters are not basically dead, queues
+  `LoseHPAction(owner, owner, hpLoss, FIRE)` and then
+  `DamageAllEnemiesAction(null, createDamageMatrix(amount, true), THORNS, FIRE)`.
+
+Rust result:
+- Definition matches Java constructor and upgrade magic.
+- Runtime now evaluates magic at play time before applying Combust.
+- Existing power storage matches Java by using `Power.amount` for damage and
+  `Power.extra_data` for `hpLoss`; stacking adds damage by applied amount and
+  increments `extra_data` by `1`.
+- End-turn all-enemy THORNS damage uses Rust `NO_SOURCE`, preserving Java's
+  `DamageAllEnemiesAction(null, ...)` source semantics.
+- Fixed the end-turn hook to skip when all monsters are basically dead, matching
+  the Java guard before HP loss and all-enemy damage.
+
+Coverage:
+- `ironclad_attack_condition_and_dot_power_definitions_match_java_sources`
+- `ironclad_attack_condition_and_dot_power_runtime_actions_match_java_use_methods`
+- `combust_power_stacks_damage_and_hp_loss_like_java_source`
+
 ## Full Ironclad Queue
 
 Cards remain `unreviewed` until their Java file, Rust definition, Rust runtime,
@@ -536,10 +671,10 @@ and supporting engine behavior have all been checked.
 | 13 | `Brutality.java` | `brutality.rs` | `wrong-fixed` |
 | 14 | `BurningPact.java` | `burning_pact.rs` | `wrong-fixed` |
 | 15 | `Carnage.java` | `carnage.rs` | `wrong-fixed` |
-| 16 | `Clash.java` | `clash.rs` | `unreviewed` |
-| 17 | `Cleave.java` | `cleave.rs` | `unreviewed` |
-| 18 | `Clothesline.java` | `clothesline.rs` | `unreviewed` |
-| 19 | `Combust.java` | `combust.rs` | `unreviewed` |
+| 16 | `Clash.java` | `clash.rs` | `wrong-fixed` |
+| 17 | `Cleave.java` | `cleave.rs` | `wrong-fixed` |
+| 18 | `Clothesline.java` | `clothesline.rs` | `wrong-fixed` |
+| 19 | `Combust.java` | `combust.rs` | `wrong-fixed` |
 | 20 | `Corruption.java` | `corruption.rs` | `unreviewed` |
 | 21 | `DarkEmbrace.java` | `dark_embrace.rs` | `unreviewed` |
 | 22 | `DemonForm.java` | `demon_form.rs` | `unreviewed` |

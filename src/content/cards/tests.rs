@@ -1,6 +1,7 @@
 use super::*;
+use crate::content::monsters::EnemyId;
 use crate::content::powers::PowerId;
-use crate::runtime::action::{Action, DamageType};
+use crate::runtime::action::{Action, DamageType, NO_SOURCE};
 use crate::runtime::combat::{CombatCard, Power};
 
 #[test]
@@ -694,4 +695,229 @@ fn ironclad_block_exhaust_and_ethereal_runtime_actions_match_java_use_methods() 
         Action::Damage(info) => assert_eq!(info.output, 28),
         other => panic!("Carnage+ should emit upgraded DamageAction, got {other:?}"),
     }
+}
+
+#[test]
+fn ironclad_attack_condition_and_dot_power_definitions_match_java_sources() {
+    let clash = get_card_definition(CardId::Clash);
+    assert_eq!(clash.name, "Clash");
+    assert_eq!(clash.card_type, CardType::Attack);
+    assert_eq!(clash.rarity, CardRarity::Common);
+    assert_eq!(clash.cost, 0);
+    assert_eq!(clash.base_damage, 14);
+    assert_eq!(clash.target, CardTarget::Enemy);
+    assert_eq!(clash.upgrade_damage, 4);
+
+    let cleave = get_card_definition(CardId::Cleave);
+    assert_eq!(cleave.name, "Cleave");
+    assert_eq!(cleave.card_type, CardType::Attack);
+    assert_eq!(cleave.rarity, CardRarity::Common);
+    assert_eq!(cleave.cost, 1);
+    assert_eq!(cleave.base_damage, 8);
+    assert!(cleave.is_multi_damage);
+    assert_eq!(cleave.target, CardTarget::AllEnemy);
+    assert_eq!(cleave.upgrade_damage, 3);
+
+    let clothesline = get_card_definition(CardId::Clothesline);
+    assert_eq!(clothesline.name, "Clothesline");
+    assert_eq!(clothesline.card_type, CardType::Attack);
+    assert_eq!(clothesline.rarity, CardRarity::Common);
+    assert_eq!(clothesline.cost, 2);
+    assert_eq!(clothesline.base_damage, 12);
+    assert_eq!(clothesline.base_magic, 2);
+    assert_eq!(clothesline.target, CardTarget::Enemy);
+    assert_eq!(clothesline.upgrade_damage, 2);
+    assert_eq!(clothesline.upgrade_magic, 1);
+
+    let combust = get_card_definition(CardId::Combust);
+    assert_eq!(combust.name, "Combust");
+    assert_eq!(combust.card_type, CardType::Power);
+    assert_eq!(combust.rarity, CardRarity::Uncommon);
+    assert_eq!(combust.cost, 1);
+    assert_eq!(combust.base_magic, 5);
+    assert_eq!(combust.target, CardTarget::SelfTarget);
+    assert_eq!(combust.upgrade_magic, 2);
+}
+
+#[test]
+fn ironclad_attack_condition_and_dot_power_runtime_actions_match_java_use_methods() {
+    let mut state = crate::test_support::blank_test_combat();
+
+    state.zones.hand = vec![
+        CombatCard::new(CardId::Clash, 100),
+        CombatCard::new(CardId::Strike, 101),
+    ];
+    assert!(can_play_card(&state.zones.hand[0], &state).is_ok());
+    let mut clash_plus = CombatCard::new(CardId::Clash, 102);
+    clash_plus.upgrades = 1;
+    let clash_plus_actions = resolve_card_play(CardId::Clash, &state, &clash_plus, Some(7));
+    assert_eq!(clash_plus_actions.len(), 1);
+    match &clash_plus_actions[0].action {
+        Action::Damage(info) => {
+            assert_eq!(info.source, 0);
+            assert_eq!(info.target, 7);
+            assert_eq!(info.base, 18);
+            assert_eq!(info.output, 18);
+            assert_eq!(info.damage_type, DamageType::Normal);
+        }
+        other => panic!("Clash+ should emit upgraded DamageAction, got {other:?}"),
+    }
+
+    state.zones.hand = vec![
+        CombatCard::new(CardId::Clash, 103),
+        CombatCard::new(CardId::Defend, 104),
+    ];
+    assert!(can_play_card(&state.zones.hand[0], &state).is_err());
+    assert!(resolve_card_play(CardId::Clash, &state, &state.zones.hand[0], Some(7)).is_empty());
+
+    let mut first = crate::test_support::test_monster(EnemyId::JawWorm);
+    first.id = 11;
+    first.slot = 0;
+    let mut second = crate::test_support::test_monster(EnemyId::Cultist);
+    second.id = 12;
+    second.slot = 1;
+    state.entities.monsters = vec![first, second];
+
+    let mut cleave_plus = CombatCard::new(CardId::Cleave, 105);
+    cleave_plus.upgrades = 1;
+    let cleave_plus_actions = resolve_card_play(CardId::Cleave, &state, &cleave_plus, None);
+    assert_eq!(cleave_plus_actions.len(), 1);
+    match &cleave_plus_actions[0].action {
+        Action::DamageAllEnemies {
+            source,
+            damages,
+            damage_type,
+            is_modified,
+        } => {
+            assert_eq!(*source, 0);
+            assert_eq!(damages.as_slice(), &[11, 11]);
+            assert_eq!(*damage_type, DamageType::Normal);
+            assert!(!*is_modified);
+        }
+        other => panic!("Cleave+ should emit DamageAllEnemiesAction, got {other:?}"),
+    }
+
+    let mut clothesline_plus = CombatCard::new(CardId::Clothesline, 106);
+    clothesline_plus.upgrades = 1;
+    let clothesline_plus_actions =
+        resolve_card_play(CardId::Clothesline, &state, &clothesline_plus, Some(11));
+    assert_eq!(clothesline_plus_actions.len(), 2);
+    match &clothesline_plus_actions[0].action {
+        Action::Damage(info) => {
+            assert_eq!(info.source, 0);
+            assert_eq!(info.target, 11);
+            assert_eq!(info.base, 14);
+            assert_eq!(info.output, 14);
+            assert_eq!(info.damage_type, DamageType::Normal);
+        }
+        other => panic!("Clothesline+ first action should be DamageAction, got {other:?}"),
+    }
+    match &clothesline_plus_actions[1].action {
+        Action::ApplyPower {
+            source,
+            target,
+            power_id,
+            amount,
+        } => {
+            assert_eq!(*source, 0);
+            assert_eq!(*target, 11);
+            assert_eq!(*power_id, PowerId::Weak);
+            assert_eq!(*amount, 3);
+        }
+        other => panic!("Clothesline+ second action should apply Weak, got {other:?}"),
+    }
+
+    let mut combust_plus = CombatCard::new(CardId::Combust, 107);
+    combust_plus.upgrades = 1;
+    let combust_plus_actions = resolve_card_play(CardId::Combust, &state, &combust_plus, None);
+    assert_eq!(combust_plus_actions.len(), 1);
+    match &combust_plus_actions[0].action {
+        Action::ApplyPower {
+            source,
+            target,
+            power_id,
+            amount,
+        } => {
+            assert_eq!(*source, 0);
+            assert_eq!(*target, 0);
+            assert_eq!(*power_id, PowerId::Combust);
+            assert_eq!(*amount, 7);
+        }
+        other => panic!("Combust+ should apply CombustPower with upgraded damage, got {other:?}"),
+    }
+}
+
+#[test]
+fn combust_power_stacks_damage_and_hp_loss_like_java_source() {
+    let mut state = crate::test_support::blank_test_combat();
+
+    crate::engine::action_handlers::powers::handle_apply_power(
+        0,
+        0,
+        PowerId::Combust,
+        5,
+        &mut state,
+    );
+    crate::engine::action_handlers::powers::handle_apply_power(
+        0,
+        0,
+        PowerId::Combust,
+        7,
+        &mut state,
+    );
+
+    let combust_power = crate::content::powers::store::powers_for(&state, 0)
+        .and_then(|powers| powers.iter().find(|p| p.power_type == PowerId::Combust))
+        .cloned()
+        .expect("Combust power should be stored on the player");
+    assert_eq!(combust_power.amount, 12);
+    assert_eq!(combust_power.extra_data, 2);
+
+    let mut first = crate::test_support::test_monster(EnemyId::JawWorm);
+    first.id = 21;
+    first.slot = 0;
+    let mut second = crate::test_support::test_monster(EnemyId::Cultist);
+    second.id = 22;
+    second.slot = 1;
+    state.entities.monsters = vec![first, second];
+
+    let actions = crate::content::powers::resolve_power_at_end_of_turn(&combust_power, &state, 0);
+    assert_eq!(actions.len(), 2);
+    match &actions[0] {
+        Action::LoseHp {
+            target,
+            amount,
+            triggers_rupture,
+        } => {
+            assert_eq!(*target, 0);
+            assert_eq!(*amount, 2);
+            assert!(*triggers_rupture);
+        }
+        other => panic!("Combust should lose stored hpLoss first, got {other:?}"),
+    }
+    match &actions[1] {
+        Action::DamageAllEnemies {
+            source,
+            damages,
+            damage_type,
+            is_modified,
+        } => {
+            assert_eq!(*source, NO_SOURCE);
+            assert_eq!(damages.as_slice(), &[12, 12]);
+            assert_eq!(*damage_type, DamageType::Thorns);
+            assert!(!*is_modified);
+        }
+        other => panic!("Combust should damage all enemies second, got {other:?}"),
+    }
+
+    for monster in &mut state.entities.monsters {
+        monster.current_hp = 0;
+        monster.is_dying = true;
+    }
+    let no_monster_actions =
+        crate::content::powers::resolve_power_at_end_of_turn(&combust_power, &state, 0);
+    assert!(
+        no_monster_actions.is_empty(),
+        "Java skips Combust atEndOfTurn when monsters are basically dead"
+    );
 }

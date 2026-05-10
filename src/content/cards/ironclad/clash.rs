@@ -19,7 +19,8 @@ pub fn clash_play(
         return actions;
     }
 
-    let damage = card.base_damage_mut;
+    let evaluated = crate::content::cards::evaluate_card_for_play(card, state, Some(target));
+    let damage = evaluated.base_damage_mut;
 
     actions.push(ActionInfo {
         action: Action::Damage(DamageInfo {
