@@ -714,6 +714,51 @@ impl RunState {
         was_added
     }
 
+    /// Adds a stat-equivalent copy of an existing master-deck card.
+    ///
+    /// This is the headless equivalent of Java's `makeStatEquivalentCopy()`
+    /// followed by `ShowCardAndObtainEffect`: obtain hooks still run, but
+    /// persistent per-card state such as `misc` is preserved on the obtained
+    /// copy. Bottle ownership is represented by relic UUIDs in Rust, so the new
+    /// UUID naturally clears bottle attachment.
+    pub fn add_card_instance_copy_to_deck_from(
+        &mut self,
+        template: &crate::runtime::combat::CombatCard,
+        source: DomainEventSource,
+    ) -> bool {
+        let ctx = self.build_deck_context();
+        let mut target_uuid = self.next_card_uuid();
+
+        let result = crate::deck::manager::DeckManager::obtain_card(
+            &ctx,
+            template.id,
+            &mut target_uuid,
+            template.upgrades,
+        );
+        let mut was_added = false;
+
+        if !result.final_cards.is_empty() {
+            was_added = true;
+            for mut card in result.final_cards {
+                card.misc_value = template.misc_value;
+                card.base_damage_override = template.base_damage_override;
+                card.cost_modifier = template.cost_modifier;
+                card.base_damage_mut = template.base_damage_mut;
+                card.base_block_mut = template.base_block_mut;
+                card.base_magic_num_mut = template.base_magic_num_mut;
+                self.emit_event(DomainEvent::CardObtained {
+                    card: Self::snapshot_card(&card),
+                    source,
+                });
+                self.master_deck.push(card);
+            }
+            self.dispatch_on_master_deck_change();
+        }
+
+        self.resolve_deck_actions(result.actions, source);
+        was_added
+    }
+
     /// Removes a specific card instance from the master deck.
     /// Handles Parasite triggers, Necronomicurse regeneration.
     pub fn remove_card_from_deck(&mut self, uuid: u32) {

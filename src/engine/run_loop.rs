@@ -316,16 +316,12 @@ pub fn tick_run(
                         }
                     }
                     crate::state::core::RunPendingChoiceReason::Duplicate => {
-                        // Duplicate: copy the selected card(s) and add to deck
                         let cards_to_copy: Vec<_> = sorted_indices
                             .iter()
-                            .filter_map(|&idx| {
-                                run_state.master_deck.get(idx).map(|c| (c.id, c.upgrades))
-                            })
+                            .filter_map(|&idx| run_state.master_deck.get(idx).cloned())
                             .collect();
-                        for (card_id, upgrades) in cards_to_copy {
-                            run_state
-                                .add_card_to_deck_with_upgrades_from(card_id, upgrades, source);
+                        for card in cards_to_copy {
+                            run_state.add_card_instance_copy_to_deck_from(&card, source);
                         }
                     }
                     reason @ (crate::state::core::RunPendingChoiceReason::BottleFlame
@@ -920,6 +916,62 @@ mod tests {
                 .find(|relic| relic.id == RelicId::BottledFlame)
                 .map(|relic| relic.amount),
             Some(101)
+        );
+    }
+
+    #[test]
+    fn duplicate_selection_preserves_stat_equivalent_card_state_without_copying_bottle_attachment()
+    {
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        run_state.relics.clear();
+        let mut bottled = RelicState::new(RelicId::BottledFlame);
+        bottled.amount = 101;
+        run_state.relics.push(bottled);
+
+        let mut original = CombatCard::new(CardId::RitualDagger, 101);
+        original.upgrades = 2;
+        original.misc_value = 17;
+        run_state.master_deck = vec![original];
+
+        let next_state = run_state
+            .obtain_relic_with_source(
+                RelicId::DollysMirror,
+                EngineState::MapNavigation,
+                DomainEventSource::RewardScreen,
+            )
+            .expect("Dolly's Mirror should open a deck selection");
+
+        let mut engine_state = next_state;
+        let mut combat_state = None;
+        assert!(tick_run(
+            &mut engine_state,
+            &mut run_state,
+            &mut combat_state,
+            Some(ClientInput::SubmitSelection(SelectionResolution {
+                scope: SelectionScope::Deck,
+                selected: vec![SelectionTargetRef::CardUuid(101)],
+            })),
+        ));
+
+        assert!(matches!(engine_state, EngineState::MapNavigation));
+        assert_eq!(run_state.master_deck.len(), 2);
+        let copied = run_state
+            .master_deck
+            .iter()
+            .find(|card| card.uuid != 101)
+            .expect("Dolly's Mirror should add a copied card");
+        assert_eq!(copied.id, CardId::RitualDagger);
+        assert_eq!(copied.upgrades, 2);
+        assert_eq!(copied.misc_value, 17);
+        assert_ne!(copied.uuid, 101);
+        assert_eq!(
+            run_state
+                .relics
+                .iter()
+                .find(|relic| relic.id == RelicId::BottledFlame)
+                .map(|relic| relic.amount),
+            Some(101),
+            "Java clears bottle flags on the copied card; Rust bottle attachment stays on original UUID"
         );
     }
 

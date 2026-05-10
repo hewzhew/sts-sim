@@ -3148,6 +3148,86 @@ fn circlet_duplicate_obtain_increments_existing_counter_instead_of_adding_copy()
 }
 
 #[test]
+fn shared_event_special_relic_gap_batch_metadata_matches_java_sources() {
+    assert_eq!(get_relic_tier(RelicId::DollysMirror), RelicTier::Shop);
+    assert_eq!(get_relic_tier(RelicId::Enchiridion), RelicTier::Special);
+    assert_eq!(get_relic_tier(RelicId::FaceOfCleric), RelicTier::Special);
+    assert_eq!(get_relic_tier(RelicId::GremlinMask), RelicTier::Special);
+
+    assert!(get_relic_subscriptions(RelicId::Enchiridion).at_pre_battle);
+    assert!(get_relic_subscriptions(RelicId::FaceOfCleric).on_victory);
+    assert!(get_relic_subscriptions(RelicId::GremlinMask).at_battle_start);
+}
+
+#[test]
+fn dollys_mirror_opens_duplicate_selection_when_deck_has_cards() {
+    let mut run = crate::state::run::RunState::new(23, 0, false, "Ironclad");
+    run.master_deck = vec![CombatCard::new(CardId::Strike, 101)];
+
+    let Some(crate::state::core::EngineState::RunPendingChoice(choice)) =
+        dollys_mirror::on_equip(&mut run, crate::state::core::EngineState::MapNavigation)
+    else {
+        panic!("Dolly's Mirror should open a duplicate selection");
+    };
+
+    assert_eq!(choice.min_choices, 1);
+    assert_eq!(choice.max_choices, 1);
+    assert_eq!(
+        choice.reason,
+        crate::state::core::RunPendingChoiceReason::Duplicate
+    );
+}
+
+#[test]
+fn enchiridion_adds_random_zero_cost_power_at_pre_battle() {
+    let mut state = crate::test_support::blank_test_combat();
+    let mut relic = RelicState::new(RelicId::Enchiridion);
+
+    let actions = enchiridion::at_battle_start(&state, &mut relic);
+    assert_eq!(actions.len(), 1);
+    assert_eq!(actions[0].insertion_mode, AddTo::Bottom);
+    assert!(matches!(
+        actions[0].action,
+        Action::MakeRandomCardInHand {
+            card_type: Some(crate::content::cards::CardType::Power),
+            cost_for_turn: Some(0),
+        }
+    ));
+
+    state.entities.player.add_relic(relic);
+    assert!(get_relic_subscriptions(RelicId::Enchiridion).at_pre_battle);
+}
+
+#[test]
+fn face_of_cleric_gains_one_max_hp_on_victory() {
+    let state = crate::test_support::blank_test_combat();
+    let mut relic = RelicState::new(RelicId::FaceOfCleric);
+
+    let actions = face_of_cleric::on_victory(&state, &mut relic);
+    assert_eq!(actions.len(), 1);
+    assert_eq!(actions[0].insertion_mode, AddTo::Bottom);
+    assert!(matches!(actions[0].action, Action::GainMaxHp { amount: 1 }));
+}
+
+#[test]
+fn gremlin_mask_applies_one_weak_to_player_at_battle_start() {
+    let state = crate::test_support::blank_test_combat();
+
+    let actions = gremlin_mask::at_battle_start(&state, &state.entities.player);
+    assert_eq!(actions.len(), 1);
+    assert_eq!(actions[0].insertion_mode, AddTo::Bottom);
+    assert!(matches!(
+        actions[0].action,
+        Action::ApplyPower {
+            source: 0,
+            target: 0,
+            power_id: PowerId::Weak,
+            amount: 1
+        }
+    ));
+}
+
+#[test]
 fn shared_rare_damage_retention_relic_metadata_matches_java_sources() {
     assert_eq!(get_relic_tier(RelicId::Calipers), RelicTier::Rare);
     assert_eq!(get_relic_tier(RelicId::Torii), RelicTier::Rare);

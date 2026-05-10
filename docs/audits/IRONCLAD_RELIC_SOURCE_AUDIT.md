@@ -170,7 +170,7 @@ Coverage:
 Status: `wrong-fixed`
 
 Java source:
-- `D:/rust/cardcrawl/relics/ChampionBelt.java`
+- `D:/rust/cardcrawl/relics/ChampionsBelt.java`
 - `D:/rust/cardcrawl/actions/common/ApplyPowerAction.java`
 
 Rust source:
@@ -3844,6 +3844,119 @@ Rust result:
 Coverage:
 - `shared_shop_special_relic_gap_batch_metadata_matches_java_sources`
 
+## Shared Relic Batch 17 - Event / Special Gaps Part 1
+
+### Dolly's Mirror
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/relics/DollysMirror.java`
+- `D:/rust/cardcrawl/cards/AbstractCard.java`
+- `D:/rust/cardcrawl/vfx/cardManip/ShowCardAndObtainEffect.java`
+
+Rust source:
+- `src/content/relics/dollys_mirror.rs`
+- `src/engine/run_loop.rs`
+- `src/state/run.rs`
+
+Java evidence:
+- Constructor: ID `"DollysMirror"`, tier `SHOP`, landing sound `SOLID`.
+- `onEquip`: opens a one-card master deck grid selection.
+- `update`: when one card is selected, calls `makeStatEquivalentCopy()`, clears
+  bottle flags on the copy, and obtains the copied card through
+  `ShowCardAndObtainEffect`.
+- `makeStatEquivalentCopy()` preserves upgrades and persistent card state such
+  as `misc`.
+
+Rust result:
+- Tier and deck-selection interrupt match Java.
+- Fixed duplicate resolution to add a stat-equivalent copy of the selected
+  master-deck instance instead of only copying `(card_id, upgrades)`.
+- Persistent `misc` and card stat overrides are preserved on the duplicate.
+- Bottle attachment stays on the original card UUID; the copied card receives a
+  new UUID.
+
+Coverage:
+- `shared_event_special_relic_gap_batch_metadata_matches_java_sources`
+- `dollys_mirror_opens_duplicate_selection_when_deck_has_cards`
+- `duplicate_selection_preserves_stat_equivalent_card_state_without_copying_bottle_attachment`
+
+### Enchiridion
+
+Status: `exact`
+
+Java source:
+- `D:/rust/cardcrawl/relics/Enchiridion.java`
+- `D:/rust/cardcrawl/dungeons/AbstractDungeon.java`
+
+Rust source:
+- `src/content/relics/enchiridion.rs`
+- `src/content/relics/hooks.rs`
+- `src/engine/action_handlers/cards.rs`
+
+Java evidence:
+- Constructor: ID `"Enchiridion"`, tier `SPECIAL`, landing sound `FLAT`.
+- `atPreBattle`: chooses `returnTrulyRandomCardInCombat(CardType.POWER)`,
+  copies it, sets cost for turn to zero if the base cost is not X-cost, and
+  adds it to hand.
+
+Rust result:
+- Tier and pre-battle subscription match Java.
+- Pre-battle hook queues a random generated Power card with zero cost for turn.
+- UI unlock/mark-seen effects are not modeled.
+
+Coverage:
+- `shared_event_special_relic_gap_batch_metadata_matches_java_sources`
+- `enchiridion_adds_random_zero_cost_power_at_pre_battle`
+
+### Face of Cleric
+
+Status: `exact`
+
+Java source:
+- `D:/rust/cardcrawl/relics/FaceOfCleric.java`
+
+Rust source:
+- `src/content/relics/face_of_cleric.rs`
+- `src/content/relics/hooks.rs`
+
+Java evidence:
+- Constructor: ID `"FaceOfCleric"`, tier `SPECIAL`, landing sound `CLINK`.
+- `onVictory`: increases max HP by 1.
+
+Rust result:
+- Tier and victory subscription match Java.
+- Victory hook queues `GainMaxHp { amount: 1 }`.
+
+Coverage:
+- `shared_event_special_relic_gap_batch_metadata_matches_java_sources`
+- `face_of_cleric_gains_one_max_hp_on_victory`
+
+### Gremlin Mask
+
+Status: `exact`
+
+Java source:
+- `D:/rust/cardcrawl/relics/GremlinMask.java`
+
+Rust source:
+- `src/content/relics/gremlin_mask.rs`
+- `src/content/relics/hooks.rs`
+
+Java evidence:
+- Constructor: ID `"GremlinMask"`, tier `SPECIAL`, landing sound `CLINK`.
+- `atBattleStart`: queues UI relic VFX and applies 1 Weak to the player.
+
+Rust result:
+- Tier and battle-start subscription match Java.
+- Battle-start hook applies 1 Weak to the player.
+- UI-only relic-above-player VFX is not modeled.
+
+Coverage:
+- `shared_event_special_relic_gap_batch_metadata_matches_java_sources`
+- `gremlin_mask_applies_one_weak_to_player_at_battle_start`
+
 ## Full Ironclad Class-Specific Relic Queue
 
 Relics remain `unreviewed` until their Java file, Rust definition/subscription,
@@ -3856,7 +3969,7 @@ hook implementation, and supporting engine behavior have all been checked.
 | 3 | `RedSkull.java` | `red_skull.rs` | `exact` |
 | 4 | `PaperFrog.java` | `paper_frog.rs` | `exact` |
 | 5 | `Brimstone.java` | `brimstone.rs` | `wrong-fixed` |
-| 6 | `ChampionBelt.java` | `champion_belt.rs` | `wrong-fixed` |
+| 6 | `ChampionsBelt.java` | `champion_belt.rs` | `wrong-fixed` |
 | 7 | `CharonsAshes.java` | `charons_ashes.rs` | `wrong-fixed` |
 | 8 | `MagicFlower.java` | `magic_flower.rs` | `exact` |
 | 9 | `MarkOfPain.java` | `mark_of_pain.rs` | `exact` |
@@ -3982,3 +4095,7 @@ class-specific queue.
 | 110 | `ChemicalX.java` | `chemical_x.rs` / X-cost hook | `exact` |
 | 111 | `Circlet.java` | `mod.rs` / run relic obtain | `wrong-fixed` |
 | 112 | `DiscerningMonocle.java` | `discerning_monocle.rs` / tier | `wrong-fixed` |
+| 113 | `DollysMirror.java` | `dollys_mirror.rs` / run duplicate choice | `wrong-fixed` |
+| 114 | `Enchiridion.java` | `enchiridion.rs` / pre-battle card generation | `exact` |
+| 115 | `FaceOfCleric.java` | `face_of_cleric.rs` / victory max HP | `exact` |
+| 116 | `GremlinMask.java` | `gremlin_mask.rs` / battle-start weak | `exact` |
