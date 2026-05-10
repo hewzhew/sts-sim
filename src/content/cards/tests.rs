@@ -2914,3 +2914,174 @@ fn rupture_and_reaper_execution_hooks_match_java_sources() {
     assert_eq!(reaper_state.entities.monsters[1].current_hp, 13);
     assert_eq!(reaper_state.entities.player.current_hp, 60);
 }
+
+#[test]
+fn ironclad_upgrade_and_exhaust_utility_definitions_match_java_sources() {
+    let searing_blow = get_card_definition(CardId::SearingBlow);
+    assert_eq!(searing_blow.card_type, CardType::Attack);
+    assert_eq!(searing_blow.rarity, CardRarity::Uncommon);
+    assert_eq!(searing_blow.cost, 2);
+    assert_eq!(searing_blow.base_damage, 12);
+    assert_eq!(searing_blow.target, CardTarget::Enemy);
+
+    let second_wind = get_card_definition(CardId::SecondWind);
+    assert_eq!(second_wind.card_type, CardType::Skill);
+    assert_eq!(second_wind.rarity, CardRarity::Uncommon);
+    assert_eq!(second_wind.cost, 1);
+    assert_eq!(second_wind.base_block, 5);
+    assert_eq!(second_wind.target, CardTarget::SelfTarget);
+    assert_eq!(second_wind.upgrade_block, 2);
+
+    let seeing_red = get_card_definition(CardId::SeeingRed);
+    assert_eq!(seeing_red.card_type, CardType::Skill);
+    assert_eq!(seeing_red.rarity, CardRarity::Uncommon);
+    assert_eq!(seeing_red.cost, 1);
+    assert_eq!(seeing_red.target, CardTarget::None);
+    assert!(seeing_red.exhaust);
+    let mut seeing_red_plus = CombatCard::new(CardId::SeeingRed, 330);
+    seeing_red_plus.upgrades = 1;
+    assert_eq!(upgraded_base_cost_override(&seeing_red_plus), Some(0));
+
+    let sentinel = get_card_definition(CardId::Sentinel);
+    assert_eq!(sentinel.card_type, CardType::Skill);
+    assert_eq!(sentinel.rarity, CardRarity::Uncommon);
+    assert_eq!(sentinel.cost, 1);
+    assert_eq!(sentinel.base_block, 5);
+    assert_eq!(sentinel.base_magic, 0);
+    assert_eq!(sentinel.target, CardTarget::SelfTarget);
+    assert_eq!(sentinel.upgrade_block, 3);
+}
+
+#[test]
+fn ironclad_upgrade_and_exhaust_utility_runtime_actions_match_java_use_methods() {
+    let mut state = crate::test_support::blank_test_combat();
+    crate::content::powers::store::set_powers_for(
+        &mut state,
+        0,
+        vec![
+            Power {
+                power_type: PowerId::Strength,
+                instance_id: None,
+                amount: 2,
+                extra_data: 0,
+                just_applied: false,
+            },
+            Power {
+                power_type: PowerId::Dexterity,
+                instance_id: None,
+                amount: 2,
+                extra_data: 0,
+                just_applied: false,
+            },
+        ],
+    );
+
+    let mut searing_blow_plus_2 = CombatCard::new(CardId::SearingBlow, 331);
+    searing_blow_plus_2.upgrades = 2;
+    let searing_actions =
+        resolve_card_play(CardId::SearingBlow, &state, &searing_blow_plus_2, Some(77));
+    assert_eq!(searing_actions.len(), 1);
+    match &searing_actions[0].action {
+        Action::Damage(info) => {
+            assert_eq!(info.source, 0);
+            assert_eq!(info.target, 77);
+            assert_eq!(info.base, 23);
+            assert_eq!(info.output, 23);
+            assert_eq!(info.damage_type, DamageType::Normal);
+        }
+        other => panic!("Searing Blow+2 should emit evaluated DamageAction, got {other:?}"),
+    }
+
+    let mut second_wind_plus = CombatCard::new(CardId::SecondWind, 332);
+    second_wind_plus.upgrades = 1;
+    let second_wind_actions =
+        resolve_card_play(CardId::SecondWind, &state, &second_wind_plus, None);
+    assert_eq!(second_wind_actions.len(), 1);
+    assert!(matches!(
+        second_wind_actions[0].action,
+        Action::BlockPerNonAttack { block_per_card: 9 }
+    ));
+
+    let seeing_red_actions = resolve_card_play(
+        CardId::SeeingRed,
+        &state,
+        &CombatCard::new(CardId::SeeingRed, 333),
+        None,
+    );
+    assert_eq!(seeing_red_actions.len(), 1);
+    assert!(matches!(
+        seeing_red_actions[0].action,
+        Action::GainEnergy { amount: 2 }
+    ));
+
+    let mut sentinel_plus = CombatCard::new(CardId::Sentinel, 334);
+    sentinel_plus.upgrades = 1;
+    let sentinel_actions = resolve_card_play(CardId::Sentinel, &state, &sentinel_plus, None);
+    assert_eq!(sentinel_actions.len(), 1);
+    assert!(matches!(
+        sentinel_actions[0].action,
+        Action::GainBlock {
+            target: 0,
+            amount: 10
+        }
+    ));
+}
+
+#[test]
+fn sentinel_exhaust_trigger_matches_java_add_to_top_energy() {
+    let state = crate::test_support::blank_test_combat();
+    let sentinel = CombatCard::new(CardId::Sentinel, 340);
+    let sentinel_hooks = resolve_card_on_exhaust(&sentinel, &state);
+    assert_eq!(sentinel_hooks.len(), 1);
+    assert!(matches!(
+        sentinel_hooks[0].action,
+        Action::GainEnergy { amount: 2 }
+    ));
+    assert_eq!(
+        sentinel_hooks[0].insertion_mode,
+        crate::runtime::action::AddTo::Top
+    );
+
+    let mut sentinel_plus = CombatCard::new(CardId::Sentinel, 341);
+    sentinel_plus.upgrades = 1;
+    let sentinel_plus_hooks = resolve_card_on_exhaust(&sentinel_plus, &state);
+    assert_eq!(sentinel_plus_hooks.len(), 1);
+    assert!(matches!(
+        sentinel_plus_hooks[0].action,
+        Action::GainEnergy { amount: 3 }
+    ));
+    assert_eq!(
+        sentinel_plus_hooks[0].insertion_mode,
+        crate::runtime::action::AddTo::Top
+    );
+
+    let mut exhaust_state = crate::test_support::blank_test_combat();
+    exhaust_state.zones.hand = vec![sentinel_plus];
+    crate::content::powers::store::set_powers_for(
+        &mut exhaust_state,
+        0,
+        vec![Power {
+            power_type: PowerId::FeelNoPain,
+            instance_id: None,
+            amount: 4,
+            extra_data: 0,
+            just_applied: false,
+        }],
+    );
+    crate::engine::action_handlers::cards::handle_exhaust_card(
+        341,
+        crate::state::PileType::Hand,
+        &mut exhaust_state,
+    );
+    assert_eq!(
+        exhaust_state.pop_next_action(),
+        Some(Action::GainEnergy { amount: 3 })
+    );
+    assert_eq!(
+        exhaust_state.pop_next_action(),
+        Some(Action::GainBlock {
+            target: 0,
+            amount: 4
+        })
+    );
+}

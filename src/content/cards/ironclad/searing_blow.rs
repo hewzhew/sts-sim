@@ -9,7 +9,8 @@ pub fn searing_blow_play(
 ) -> SmallVec<[ActionInfo; 4]> {
     let target = target.expect("Searing Blow requires a valid target!");
     let mut actions = smallvec::SmallVec::new();
-    let damage = card.base_damage_mut; // Dynamically calculated to scale infinitely with upgrades
+    let evaluated = crate::content::cards::evaluate_card_for_play(card, _state, Some(target));
+    let damage = evaluated.base_damage_mut;
 
     actions.push(ActionInfo {
         action: Action::Damage(DamageInfo {

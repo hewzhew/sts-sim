@@ -17,8 +17,6 @@ use crate::runtime::combat::CombatState;
 
 fn queue_exhaust_triggers(card: &crate::runtime::combat::CombatCard, state: &mut CombatState) {
     let mut after_actions = crate::content::relics::hooks::on_exhaust(state);
-    let card_hooks = crate::content::cards::resolve_card_on_exhaust(card, state);
-    after_actions.extend(card_hooks);
 
     for (owner, powers) in store::powers_snapshot_all(state) {
         for power in powers {
@@ -38,6 +36,9 @@ fn queue_exhaust_triggers(card: &crate::runtime::combat::CombatCard, state: &mut
             }
         }
     }
+
+    let card_hooks = crate::content::cards::resolve_card_on_exhaust(card, state);
+    after_actions.extend(card_hooks);
 
     state.queue_actions(after_actions);
 }

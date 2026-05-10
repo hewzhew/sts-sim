@@ -415,6 +415,7 @@ pub fn upgraded_base_cost_override(card: &CombatCard) -> Option<i8> {
         CardId::Havoc if card.upgrades > 0 => Some(0),
         CardId::InfernalBlade if card.upgrades > 0 => Some(0),
         CardId::Madness if card.upgrades > 0 => Some(0),
+        CardId::SeeingRed if card.upgrades > 0 => Some(0),
         _ => None,
     }
 }

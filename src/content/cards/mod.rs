@@ -290,7 +290,7 @@ pub fn resolve_card_on_exhaust(
             action: crate::runtime::action::Action::GainEnergy {
                 amount: if card.upgrades > 0 { 3 } else { 2 },
             },
-            insertion_mode: crate::runtime::action::AddTo::Bottom,
+            insertion_mode: crate::runtime::action::AddTo::Top,
         }],
         _ => vec![],
     }
@@ -1668,7 +1668,7 @@ pub fn get_card_definition(id: CardId) -> CardDefinition {
             cost: 1,
             base_damage: 0,
             base_block: 5,
-            base_magic: 2,
+            base_magic: 0,
             target: CardTarget::SelfTarget,
             is_multi_damage: false,
             exhaust: false,

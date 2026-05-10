@@ -1982,6 +1982,137 @@ Coverage:
 - `ironclad_rampage_and_rupture_runtime_actions_match_java_use_methods`
 - `rupture_and_reaper_execution_hooks_match_java_sources`
 
+## Batch 16 - Upgrade Scaling / Exhaust Utility / Energy Coverage
+
+### Searing Blow
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/cards/red/SearingBlow.java`
+
+Rust source:
+- `src/content/cards/mod.rs`
+- `src/content/cards/runtime_impl.rs`
+- `src/content/cards/ironclad/searing_blow.rs`
+
+Java evidence:
+- Constructor: cost `2`, type `ATTACK`, color `RED`, rarity `UNCOMMON`, target
+  `ENEMY`, `baseDamage = 12`, `timesUpgraded = upgrades`.
+- `use`: VFX only, then DamageAction using `this.damage`.
+- `upgrade`: `upgradeDamage(4 + this.timesUpgraded)`, increments
+  `timesUpgraded`, sets upgraded/name/title, and `canUpgrade()` always returns
+  true.
+- Closed-form damage for `n` upgrades is `12 + n * (n + 7) / 2`.
+
+Rust result:
+- Definition matches Java constructor.
+- Existing upgradeability paths already special-case Searing Blow as always
+  upgradeable.
+- Runtime already uses the closed-form Searing Blow damage formula in card
+  evaluation; play now evaluates at use time before emitting DamageAction.
+
+Coverage:
+- `ironclad_upgrade_and_exhaust_utility_definitions_match_java_sources`
+- `ironclad_upgrade_and_exhaust_utility_runtime_actions_match_java_use_methods`
+
+### Second Wind
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/cards/red/SecondWind.java`
+- `D:/rust/cardcrawl/actions/unique/BlockPerNonAttackAction.java`
+
+Rust source:
+- `src/content/cards/mod.rs`
+- `src/content/cards/ironclad/second_wind.rs`
+- `src/engine/action_handlers/damage.rs`
+
+Java evidence:
+- Constructor: cost `1`, type `SKILL`, color `RED`, rarity `UNCOMMON`, target
+  `SELF`, `baseBlock = 5`.
+- `use`: queues `BlockPerNonAttackAction(this.block)`.
+- `BlockPerNonAttackAction`: snapshots non-Attack cards in hand, queues one
+  GainBlock per card, then queues one ExhaustSpecificCardAction per card with
+  `addToTop`, so exhaust actions resolve before block actions.
+- `upgrade`: `upgradeBlock(2)`.
+
+Rust result:
+- Definition matches Java constructor and upgrade block.
+- Runtime now evaluates block at play time before emitting `BlockPerNonAttack`.
+- Existing handler snapshots non-Attack hand cards, queues exhaust actions before
+  one GainBlock per exhausted card, preserving the important exhaust-before-block
+  behavior for Feel No Pain, Juggernaut, Sentinel, and related hooks.
+
+Coverage:
+- `ironclad_upgrade_and_exhaust_utility_definitions_match_java_sources`
+- `ironclad_upgrade_and_exhaust_utility_runtime_actions_match_java_use_methods`
+
+### Seeing Red
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/cards/red/SeeingRed.java`
+
+Rust source:
+- `src/content/cards/mod.rs`
+- `src/content/cards/runtime_impl.rs`
+- `src/content/cards/ironclad/seeing_red.rs`
+
+Java evidence:
+- Constructor: cost `1`, type `SKILL`, color `RED`, rarity `UNCOMMON`, target
+  `NONE`, `exhaust = true`.
+- `use`: queues `GainEnergyAction(2)`.
+- `upgrade`: `upgradeBaseCost(0)`.
+
+Rust result:
+- Definition matches Java constructor and exhaust flag.
+- Runtime action already emits GainEnergy 2.
+- Added upgraded base-cost override so Seeing Red+ costs 0 instead of relying on
+  nonexistent damage/block/magic upgrade fields.
+
+Coverage:
+- `ironclad_upgrade_and_exhaust_utility_definitions_match_java_sources`
+- `ironclad_upgrade_and_exhaust_utility_runtime_actions_match_java_use_methods`
+
+### Sentinel
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/cards/red/Sentinel.java`
+
+Rust source:
+- `src/content/cards/mod.rs`
+- `src/content/cards/ironclad/sentinel.rs`
+- `src/engine/action_handlers/cards.rs`
+
+Java evidence:
+- Constructor: cost `1`, type `SKILL`, color `RED`, rarity `UNCOMMON`, target
+  `SELF`, `baseBlock = 5`; it does not define base magic.
+- `use`: queues GainBlock using `this.block`.
+- `triggerOnExhaust`: `addToTop(new GainEnergyAction(2))`, or 3 if upgraded.
+- `upgrade`: `upgradeBlock(3)` and description change only.
+
+Rust result:
+- Fixed definition base magic from fake `2` to `0`; energy-on-exhaust is card
+  hook behavior, not intrinsic magic.
+- Runtime now evaluates block at play time before emitting GainBlock.
+- Fixed Sentinel's exhaust hook insertion mode to `AddTo::Top`, matching Java
+  `addToTop`.
+- Reordered generic exhaust trigger collection to call relic hooks, then power
+  hooks, then card-specific `triggerOnExhaust`, matching Java
+  `CardGroup.moveToExhaustPile`.
+- Added a Sentinel + Feel No Pain exhaustion check to lock the Java-visible
+  order: Sentinel energy resolves before the bottom-queued Feel No Pain block.
+
+Coverage:
+- `ironclad_upgrade_and_exhaust_utility_definitions_match_java_sources`
+- `ironclad_upgrade_and_exhaust_utility_runtime_actions_match_java_use_methods`
+- `sentinel_exhaust_trigger_matches_java_add_to_top_energy`
+
 ## Full Ironclad Queue
 
 Cards remain `unreviewed` until their Java file, Rust definition, Rust runtime,
@@ -2048,10 +2179,10 @@ and supporting engine behavior have all been checked.
 | 57 | `Reaper.java` | `reaper.rs` | `wrong-fixed` |
 | 58 | `RecklessCharge.java` | `reckless_charge.rs` | `wrong-fixed` |
 | 59 | `Rupture.java` | `rupture.rs` | `wrong-fixed` |
-| 60 | `SearingBlow.java` | `searing_blow.rs` | `unreviewed` |
-| 61 | `SecondWind.java` | `second_wind.rs` | `unreviewed` |
-| 62 | `SeeingRed.java` | `seeing_red.rs` | `unreviewed` |
-| 63 | `Sentinel.java` | `sentinel.rs` | `unreviewed` |
+| 60 | `SearingBlow.java` | `searing_blow.rs` | `wrong-fixed` |
+| 61 | `SecondWind.java` | `second_wind.rs` | `wrong-fixed` |
+| 62 | `SeeingRed.java` | `seeing_red.rs` | `wrong-fixed` |
+| 63 | `Sentinel.java` | `sentinel.rs` | `wrong-fixed` |
 | 64 | `SeverSoul.java` | `sever_soul.rs` | `unreviewed` |
 | 65 | `Shockwave.java` | `shockwave.rs` | `unreviewed` |
 | 66 | `ShrugItOff.java` | `shrug_it_off.rs` | `unreviewed` |
