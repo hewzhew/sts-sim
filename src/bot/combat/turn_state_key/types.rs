@@ -102,6 +102,7 @@ pub(in crate::bot::combat) struct StableMetaKey {
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub(in crate::bot::combat) enum StableMetaChangeKey {
     AddCardToMasterDeck(String),
+    ModifyCardMisc { card_uuid: u32, amount: i32 },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -390,6 +391,9 @@ impl StableMetaChangeKey {
     fn diagnostic_string(&self) -> String {
         match self {
             StableMetaChangeKey::AddCardToMasterDeck(card) => format!("add_master:{card}"),
+            StableMetaChangeKey::ModifyCardMisc { card_uuid, amount } => {
+                format!("modify_misc:{card_uuid}:{amount}")
+            }
         }
     }
 }

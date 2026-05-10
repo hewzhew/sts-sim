@@ -10,6 +10,7 @@ use std::ops::{Deref, DerefMut};
 #[derive(Clone, Debug, PartialEq)]
 pub enum MetaChange {
     AddCardToMasterDeck(CardId),
+    ModifyCardMisc { card_uuid: u32, amount: i32 },
 }
 
 // --- ID Types ---

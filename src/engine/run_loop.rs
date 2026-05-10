@@ -153,6 +153,17 @@ fn resolve_out_of_combat_defeat(engine_state: &mut EngineState, run_state: &RunS
     false
 }
 
+fn apply_combat_meta_change(run_state: &mut RunState, change: crate::runtime::combat::MetaChange) {
+    match change {
+        crate::runtime::combat::MetaChange::AddCardToMasterDeck(card_id) => {
+            run_state.add_card_to_deck(card_id);
+        }
+        crate::runtime::combat::MetaChange::ModifyCardMisc { card_uuid, amount } => {
+            run_state.modify_card_misc_value(card_uuid, amount);
+        }
+    }
+}
+
 pub fn tick_run(
     engine_state: &mut EngineState,
     run_state: &mut RunState,
@@ -173,11 +184,7 @@ pub fn tick_run(
                     run_state.room_smoked |= cs.runtime.combat_smoked;
 
                     for change in cs.meta.meta_changes.drain(..) {
-                        match change {
-                            crate::runtime::combat::MetaChange::AddCardToMasterDeck(card_id) => {
-                                run_state.add_card_to_deck(card_id);
-                            }
-                        }
+                        apply_combat_meta_change(run_state, change);
                     }
 
                     // Check for Act 3 boss victory → Act 4 transition
@@ -705,11 +712,7 @@ pub fn tick_run(
                     run_state.room_smoked |= cs.runtime.combat_smoked;
 
                     for change in cs.meta.meta_changes.drain(..) {
-                        match change {
-                            crate::runtime::combat::MetaChange::AddCardToMasterDeck(card_id) => {
-                                run_state.add_card_to_deck(card_id);
-                            }
-                        }
+                        apply_combat_meta_change(run_state, change);
                     }
 
                     // Combat ended. Check if player died.
@@ -771,7 +774,9 @@ pub fn tick_run(
 
 #[cfg(test)]
 mod tests {
-    use super::{remove_one_relic_from_rewards_after_chest_open, tick_run};
+    use super::{
+        apply_combat_meta_change, remove_one_relic_from_rewards_after_chest_open, tick_run,
+    };
     use crate::content::cards::CardId;
     use crate::content::relics::{RelicId, RelicState};
     use crate::map::node::{MapEdge, MapRoomNode, RoomType};
@@ -986,6 +991,27 @@ mod tests {
                 .map(|relic| relic.amount),
             Some(101),
             "Java clears bottle flags on the copied card; Rust bottle attachment stays on original UUID"
+        );
+    }
+
+    #[test]
+    fn combat_misc_meta_change_updates_matching_master_deck_card() {
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        let mut dagger = CombatCard::new(CardId::RitualDagger, 101);
+        dagger.misc_value = 17;
+        run_state.master_deck = vec![dagger];
+
+        apply_combat_meta_change(
+            &mut run_state,
+            crate::runtime::combat::MetaChange::ModifyCardMisc {
+                card_uuid: 101,
+                amount: 3,
+            },
+        );
+
+        assert_eq!(
+            run_state.master_deck[0].misc_value, 20,
+            "Java RitualDaggerAction updates player.masterDeck before GetAllInBattleInstances"
         );
     }
 

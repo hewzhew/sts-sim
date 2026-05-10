@@ -1779,6 +1779,14 @@ fn on_kill_card_rewards_ignore_minions_and_half_dead_targets_like_java_actions()
     assert_eq!(dagger_normal.zones.exhaust_pile[0].misc_value, 3);
     assert_eq!(dagger_normal.zones.limbo[0].misc_value, 3);
     assert_eq!(
+        dagger_normal.meta.meta_changes,
+        vec![crate::runtime::combat::MetaChange::ModifyCardMisc {
+            card_uuid: 900,
+            amount: 3,
+        }],
+        "Java RitualDaggerAction also mutates the matching masterDeck card"
+    );
+    assert_eq!(
         dagger_normal.pop_next_action(),
         None,
         "Java RitualDaggerAction mutates every matching GetAllInBattleInstances card inside the damage action"

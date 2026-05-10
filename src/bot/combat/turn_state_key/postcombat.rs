@@ -228,5 +228,9 @@ fn stable_meta_change_key(change: &MetaChange) -> StableMetaChangeKey {
         MetaChange::AddCardToMasterDeck(card) => {
             StableMetaChangeKey::AddCardToMasterDeck(format!("{card:?}"))
         }
+        MetaChange::ModifyCardMisc { card_uuid, amount } => StableMetaChangeKey::ModifyCardMisc {
+            card_uuid: *card_uuid,
+            amount: *amount,
+        },
     }
 }

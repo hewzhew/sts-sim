@@ -1358,6 +1358,12 @@ impl RunState {
         }
     }
 
+    pub fn modify_card_misc_value(&mut self, uuid: u32, amount: i32) {
+        if let Some(card) = self.master_deck.iter_mut().find(|c| c.uuid == uuid) {
+            card.misc_value += amount;
+        }
+    }
+
     /// Transforms a card: removes it from deck and replaces with a random card of the same color.
     /// Uses DeckManager properly so Omamori/Necronomicurse triggers fire correctly.
     /// `auto_upgrade` is true when transforming via Astrolabe.

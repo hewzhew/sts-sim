@@ -9,10 +9,14 @@ Continue Java-source-backed mechanics cleanup. Do not add strategy heuristics, b
 
 ## Last Pushed Checkpoint
 
-`e2ef01d Match Corruption cost-for-turn semantics`
+`889a0f0 Update all matching misc card instances`
 
 Recent pushed mechanics fixes:
 
+- `889a0f0 Update all matching misc card instances`
+  - `ModifyCardMisc` now matches Java `GetAllInBattleInstances` combat-zone semantics.
+  - Java `RitualDaggerAction` mutates every battle instance with the matching UUID.
+  - Rust no longer stops after the first matching card in hand/draw/discard/exhaust/limbo.
 - `e2ef01d Match Corruption cost-for-turn semantics`
   - `Corruption` on-apply now matches Java `AbstractCard.setCostForTurn(-9)` semantics.
   - Rust no longer subtracts from `CombatCard.cost_modifier` when Corruption is applied.
@@ -41,15 +45,17 @@ Verification already passed for those checkpoints:
 
 Ironclad / shared Java action audit continued and found one non-strategy mechanics difference:
 
-- `ModifyCardMisc` now matches Java `GetAllInBattleInstances` semantics:
-  - Java `RitualDaggerAction` mutates every battle instance with the matching UUID.
-  - Rust previously stopped after the first matching card in hand/draw/discard/exhaust/limbo.
-  - Rust now updates every matching combat-zone instance.
+- Combat misc growth now persists back to the run master deck:
+  - Java `RitualDaggerAction` first mutates the matching `player.masterDeck` card, then mutates `GetAllInBattleInstances`.
+  - Rust now emits `MetaChange::ModifyCardMisc { card_uuid, amount }` from combat.
+  - `tick_run` consumes that meta change and updates the matching `RunState.master_deck` card.
+  - The post-combat stable turn-state key now includes this meta-change variant.
 
 Verification passed for this work:
 
 - `cargo test -q content::cards::tests::on_kill_card_rewards_ignore_minions_and_half_dead_targets_like_java_actions`
-- `cargo test -q content::cards::tests::ironclad_rampage_and_rupture_runtime_actions_match_java_use_methods`
+- `cargo test -q engine::run_loop::tests::combat_misc_meta_change_updates_matching_master_deck_card`
+- `cargo test -q engine::run_loop::tests`
 - `cargo test -q content::cards::tests`
 - `cargo test -q engine::action_handlers::cards::tests`
 - `cargo check -q`

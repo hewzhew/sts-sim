@@ -646,6 +646,11 @@ pub fn handle_upgrade_random_card(state: &mut CombatState) {
 }
 
 pub fn handle_modify_card_misc(card_uuid: u32, amount: i32, state: &mut CombatState) {
+    state
+        .meta
+        .meta_changes
+        .push(crate::runtime::combat::MetaChange::ModifyCardMisc { card_uuid, amount });
+
     for card in state
         .zones
         .hand
