@@ -98,6 +98,11 @@ mechanical_hosted_in_ui:
   Java stores or triggers the mechanic from a UI/VFX/screen class; Rust must
   extract the state transition and must not implement the UI carrier
 
+screen_hosted_decision:
+  Java screen object stores candidates, partial selection, selected result, or
+  choice mode; Rust must extract the decision state and must not implement UI
+  widgets, layout, hover, scrolling, or controller cursor behavior
+
 render_only:
   UI/animation data that no combat mechanic reads
 
@@ -144,6 +149,7 @@ The minimum source inventory is:
 | `potions/AbstractPotion.java` and concrete potions | potion id, slot, potency, can-use/target-required/thrown/discarded flags, concrete potion payloads |
 | `orbs/AbstractOrb.java` and concrete orbs | orb id, slot order, evoke/passive/base amounts, focus-applied values, concrete orb payloads |
 | `stances/AbstractStance.java` and concrete stances | stance id and concrete stance counters/timers only when mechanically read |
+| `screens/CardRewardScreen.java` | reward card candidates, generated-choice mode flags, selected Codex/Discovery refs, reward-item link, draft progress, skip legality |
 | `screens/select/GridCardSelectScreen.java` | target group, selected cards, selection amount, confirm/cancel state, upgrade/transform/purge/any-number/clarity flags |
 | `screens/select/HandCardSelectScreen.java` | selected cards, number to select, can-pick-zero/up-to/any-number/transform/upgrade flags, selection reason, retrieval flag |
 | `random/Random.java` | `RandomXS128` state words and counter for every combat-consuming RNG stream |
@@ -199,9 +205,12 @@ structural, not mechanical.
 
 ## Top-Level Snapshot
 
-The initial Rust type skeleton lives in
-`src/ai/combat_state_snapshot/mod.rs`. It is an audit schema boundary, not a
-legacy engine wrapper.
+The Rust type skeleton lives under `src/ai/combat_state_snapshot/`. It is an
+audit schema boundary, not a legacy engine wrapper. `mod.rs` is only the
+top-level `CombatStateSnapshot` and re-export surface; domain types must live in
+focused modules such as `actions.rs`, `cards.rs`, `choices.rs`, `rng.rs`, and
+the other source-derived slices. New Java source coverage must be added to the
+owning module, not dumped into `mod.rs`.
 
 ```text
 CombatStateSnapshot {
@@ -1208,6 +1217,7 @@ relic, potion, power, or action effect.
 ```text
 ChoiceScreenState {
   active_screen,
+  card_reward,
   grid_select,
   hand_select,
   generated_choice,
@@ -1238,6 +1248,26 @@ tip_msg
 last_tip
 prev_deck_size
 upgrade_preview_card_ref
+```
+
+`CardRewardScreenState` must cover the source fields from
+`CardRewardScreen.java`:
+
+```text
+reward_card_refs
+discovery_card_ref
+codex_card_ref
+touch_card_ref
+reward_item_ref
+has_taken_all
+card_only
+draft
+discovery
+choose_one
+codex
+skippable
+header
+draft_count
 ```
 
 `HandSelectState` must cover the source fields from

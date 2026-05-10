@@ -32,6 +32,11 @@ mechanical_hosted_in_ui:
   Java stores or triggers the mechanic from a UI/VFX/screen class; Rust must
   extract the state transition and must not implement the UI carrier
 
+screen_hosted_decision:
+  Java screen object stores candidates, partial selection, selected result, or
+  choice mode; Rust must extract the decision state and must not implement UI
+  widgets, layout, hover, scrolling, or controller cursor behavior
+
 render_only:
   UI/animation state that no mechanic reads
 
@@ -46,10 +51,11 @@ unsupported_abort:
   known combat path not implemented; reaching it is non-trainable KernelAbort
 ```
 
-`mechanical_hosted_in_ui` is not permission to implement Java UI. It means the
-Java UI/VFX class is a source witness for a real state transition that Rust must
-model directly. `unsupported_abort` is not implementation. It is a blocker with
-a source reference and exact missing behavior.
+`mechanical_hosted_in_ui` and `screen_hosted_decision` are not permission to
+implement Java UI. They mean the Java UI/VFX/screen class is a source witness
+for real state or decision semantics that Rust must model directly.
+`unsupported_abort` is not implementation. It is a blocker with a source
+reference and exact missing behavior.
 
 ## Required Columns
 
@@ -108,6 +114,7 @@ kernel done; it is the minimum table implementation must extend.
 | `potions/*Potion.java` | concrete potion behavior and payload | potion-specific mechanics | modeled or unsupported_abort per class | `PotionInstance.concrete_payload` | rewrite |
 | `orbs/AbstractOrb.java` | id, slot order, base/current passive/evoke amounts | Defect state and hooks | modeled | `OrbInstance` | rewrite |
 | `stances/AbstractStance.java` | id and concrete stance behavior | Watcher stance hooks | modeled | `StanceState` | rewrite |
+| `screens/CardRewardScreen.java` | reward cards, generated-choice flags, selected Codex/Discovery card refs, reward item link, draft count, skip legality | reward/generated choice state | modeled | `ChoiceScreenState.card_reward` | rewrite |
 | `screens/select/GridCardSelectScreen.java` | selected cards, target group, amount, confirm/cancel, upgrade/transform/purge/any-number flags | grid choice state | modeled | `ChoiceScreenState.grid_select` | rewrite |
 | `screens/select/HandCardSelectScreen.java` | selected cards, count, can-pick-zero/up-to/any-number/transform/upgrade/retrieval flags | hand choice state | modeled | `ChoiceScreenState.hand_select` | rewrite |
 | `random/Random.java` | `RandomXS128` state and `counter` | deterministic RNG replay | modeled | `CombatRngState.RngStreamState` | keep/rewrite audit |
@@ -202,6 +209,7 @@ directly, with the Java class kept only as source evidence.
 
 | Source | Classification | Extracted Rust mechanic | Notes |
 | --- | --- | --- | --- |
+| `screens/CardRewardScreen.java` | screen_hosted_decision | candidate card list, Codex/Discovery/ChooseOne/draft flags, selected result refs, skip legality, reward item linkage | Rust must extract reward/generated-choice decision state; ignore hover, scroll, controller, Twitch voting, buttons, layout, and FTUE |
 | `vfx/campfire/CampfireDigEffect.java` | mechanical_hosted_in_ui | clear room rewards, generate random relic reward using relic RNG/tier logic, open combat reward screen, mark room complete | run/rest-site Dig mechanic; ignore shovel sound, fade, and screen cover |
 | `vfx/campfire/CampfireLiftEffect.java` | mechanical_hosted_in_ui | increment Girya counter and mark room complete | run/rest-site Lift mechanic; ignore border flash, screen shake, sound, and fade |
 | `vfx/campfire/CampfireRecallEffect.java` | mechanical_hosted_in_ui | clear room rewards, enqueue red-key obtain, mark room complete | run/rest-site Recall mechanic; `ObtainKeyEffect` carries the actual key flag write in Java |
@@ -947,6 +955,27 @@ where the Java runtime stores them.
 | `ID` | modeled | `StanceState.stance_id` | stance identity |
 | `tips`, color, image, angle | render_only | none | rendering/UI |
 | `particleTimer`, `particleTimer2` | render_only | `StanceState.*particle_timer*_bits` if parity requires | VFX timers retained as raw bits for audit |
+
+## Field Ledger: `screens/CardRewardScreen.java`
+
+| Field | Classification | Schema path | Notes |
+| --- | --- | --- | --- |
+| localization, logger, layout constants, scroll fields, buttons, `touchCard` hitbox behavior | render_only | none | UI/input only unless `touchCard` is needed for touch-confirm replay |
+| `rewardGroup` | modeled | `CardRewardScreenState.reward_card_refs` | candidate cards for reward/generated choice |
+| `discoveryCard` | modeled | `CardRewardScreenState.discovery_card_ref` | selected generated card for Discovery-like flows |
+| `codexCard` | modeled | `CardRewardScreenState.codex_card_ref` | selected generated card for Codex-like flows |
+| `touchCard` | modeled | `CardRewardScreenState.touch_card_ref` | pending touch confirmation state if replaying touch input |
+| `hasTakenAll` | modeled | `CardRewardScreenState.has_taken_all` | reward screen completion state |
+| `cardOnly` | modeled | `CardRewardScreenState.card_only` | reward screen mode |
+| `rItem` | modeled | `CardRewardScreenState.reward_item_ref` | links screen decision to reward item removal |
+| `draft` | modeled | `CardRewardScreenState.draft` | draft mode repeats reward generation |
+| `discovery` | modeled | `CardRewardScreenState.discovery` | generated-choice mode |
+| `chooseOne` | modeled | `CardRewardScreenState.choose_one` | choose-one mode calls selected card option |
+| `codex` | modeled | `CardRewardScreenState.codex` | generated-choice mode storing `codexCard` |
+| `skippable` | modeled | `CardRewardScreenState.skippable` | skip action legality |
+| `header` | modeled | `CardRewardScreenState.header` | public prompt/context |
+| `draftCount` | modeled | `CardRewardScreenState.draft_count` | draft progress count |
+| Twitch voting fields | non_combat | none | external input integration; Rust simulator must use explicit actions, not Twitch side effects |
 
 ## Field Ledger: `screens/select/GridCardSelectScreen.java`
 
