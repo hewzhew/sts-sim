@@ -5,7 +5,7 @@ use crate::content::powers::{store, PowerId};
 use crate::runtime::action::{Action, AddTo, DamageInfo, DamageType, NO_SOURCE};
 use crate::runtime::combat::{CombatCard, Power};
 use crate::state::events::EventId;
-use crate::state::selection::DomainEventSource;
+use crate::state::selection::{DomainEvent, DomainEventSource};
 
 #[test]
 fn ironclad_blood_skull_and_frog_relic_metadata_matches_java_sources() {
@@ -1015,4 +1015,131 @@ fn tiny_chest_counter_forces_treasure_roll_every_fourth_unknown_room() {
         generator.roll_room_type(&mut rng, &ctx),
         crate::events::generator::RoomRoll::Treasure
     );
+}
+
+#[test]
+fn shared_common_obtain_potion_upgrade_relic_metadata_matches_java_sources() {
+    assert_eq!(get_relic_tier(RelicId::Omamori), RelicTier::Common);
+    assert_eq!(get_relic_tier(RelicId::PotionBelt), RelicTier::Common);
+    assert_eq!(get_relic_tier(RelicId::ToyOrnithopter), RelicTier::Common);
+    assert_eq!(get_relic_tier(RelicId::WarPaint), RelicTier::Common);
+    assert_eq!(get_relic_tier(RelicId::Whetstone), RelicTier::Common);
+
+    assert!(!get_relic_subscriptions(RelicId::Omamori).at_battle_start);
+    assert!(!get_relic_subscriptions(RelicId::PotionBelt).at_battle_start);
+    assert!(get_relic_subscriptions(RelicId::ToyOrnithopter).on_use_potion);
+    assert!(!get_relic_subscriptions(RelicId::WarPaint).at_battle_start);
+    assert!(!get_relic_subscriptions(RelicId::Whetstone).at_battle_start);
+}
+
+#[test]
+fn omamori_blocks_exactly_two_curse_obtains_then_marks_used_up() {
+    let mut run_state = crate::state::run::RunState::new(1, 0, false, "Ironclad");
+    run_state.relics.clear();
+    run_state.relics.push(RelicState::new(RelicId::Omamori));
+    let deck_len = run_state.master_deck.len();
+
+    assert!(!run_state.add_card_to_deck(CardId::Regret));
+    let omamori = run_state
+        .relics
+        .iter()
+        .find(|relic| relic.id == RelicId::Omamori)
+        .expect("Omamori should be present");
+    assert_eq!(omamori.counter, 1);
+    assert!(!omamori.used_up);
+    assert_eq!(run_state.master_deck.len(), deck_len);
+
+    assert!(!run_state.add_card_to_deck(CardId::Injury));
+    let omamori = run_state
+        .relics
+        .iter()
+        .find(|relic| relic.id == RelicId::Omamori)
+        .expect("Omamori should be present");
+    assert_eq!(omamori.counter, 0);
+    assert!(omamori.used_up);
+    assert_eq!(run_state.master_deck.len(), deck_len);
+
+    assert!(run_state.add_card_to_deck(CardId::Doubt));
+    assert_eq!(run_state.master_deck.len(), deck_len + 1);
+}
+
+#[test]
+fn potion_belt_appends_two_empty_slots_without_reordering_existing_potions() {
+    let mut run_state = crate::state::run::RunState::new(1, 0, false, "Ironclad");
+    run_state.potions = vec![
+        Some(crate::content::potions::Potion::new(
+            crate::content::potions::PotionId::StrengthPotion,
+            1,
+        )),
+        None,
+    ];
+
+    assert!(potion_belt::on_equip(&mut run_state).is_none());
+    assert_eq!(run_state.potions.len(), 4);
+    assert_eq!(
+        run_state.potions[0].as_ref().map(|potion| potion.id),
+        Some(crate::content::potions::PotionId::StrengthPotion)
+    );
+    assert!(run_state.potions[1].is_none());
+    assert!(run_state.potions[2].is_none());
+    assert!(run_state.potions[3].is_none());
+}
+
+#[test]
+fn toy_ornithopter_queues_bottom_heal_when_potion_is_used() {
+    let mut state = crate::test_support::blank_test_combat();
+    state
+        .entities
+        .player
+        .add_relic(RelicState::new(RelicId::ToyOrnithopter));
+
+    let actions = hooks::on_use_potion(&state, 0);
+    assert_eq!(actions.len(), 1);
+    assert_eq!(actions[0].insertion_mode, AddTo::Bottom);
+    assert!(matches!(
+        actions[0].action,
+        Action::Heal {
+            target: 0,
+            amount: 5
+        }
+    ));
+}
+
+#[test]
+fn war_paint_and_whetstone_upgrade_only_matching_card_types_with_relic_source() {
+    let mut whetstone_run = crate::state::run::RunState::new(1, 0, false, "Ironclad");
+    whetstone_run.master_deck = vec![
+        CombatCard::new(CardId::Strike, 1),
+        CombatCard::new(CardId::Defend, 2),
+    ];
+    whetstone_run.emitted_events.clear();
+
+    assert!(whetstone::on_equip(&mut whetstone_run).is_none());
+    assert_eq!(whetstone_run.master_deck[0].upgrades, 1);
+    assert_eq!(whetstone_run.master_deck[1].upgrades, 0);
+    assert!(whetstone_run.emitted_events.iter().any(|event| matches!(
+        event,
+        DomainEvent::CardUpgraded {
+            source: DomainEventSource::Relic(RelicId::Whetstone),
+            ..
+        }
+    )));
+
+    let mut war_paint_run = crate::state::run::RunState::new(1, 0, false, "Ironclad");
+    war_paint_run.master_deck = vec![
+        CombatCard::new(CardId::Strike, 1),
+        CombatCard::new(CardId::Defend, 2),
+    ];
+    war_paint_run.emitted_events.clear();
+
+    assert!(war_paint::on_equip(&mut war_paint_run).is_none());
+    assert_eq!(war_paint_run.master_deck[0].upgrades, 0);
+    assert_eq!(war_paint_run.master_deck[1].upgrades, 1);
+    assert!(war_paint_run.emitted_events.iter().any(|event| matches!(
+        event,
+        DomainEvent::CardUpgraded {
+            source: DomainEventSource::Relic(RelicId::WarPaint),
+            ..
+        }
+    )));
 }

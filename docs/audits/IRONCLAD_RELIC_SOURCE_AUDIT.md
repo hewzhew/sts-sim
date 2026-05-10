@@ -1238,6 +1238,163 @@ Coverage:
 - `shared_common_shop_rest_event_relic_metadata_matches_java_sources`
 - `tiny_chest_counter_forces_treasure_roll_every_fourth_unknown_room`
 
+## Shared Common Obtain / Potion / Upgrade Batch
+
+### Omamori
+
+Status: `exact`
+
+Java source:
+- `D:/rust/cardcrawl/relics/Omamori.java`
+- `D:/rust/cardcrawl/vfx/FastCardObtainEffect.java`
+- `D:/rust/cardcrawl/vfx/cardManip/ShowCardAndObtainEffect.java`
+
+Rust source:
+- `src/deck/manager.rs`
+- `src/state/run.rs`
+- `src/content/relics/omamori.rs`
+
+Java evidence:
+- Constructor: ID `"Omamori"`, tier `COMMON`, landing sound `FLAT`, counter
+  starts at `2`.
+- Curse obtain effects check for Omamori with nonzero counter, call `use()`,
+  decrement counter, and prevent the curse from being obtained.
+- `setCounter(0)` marks the relic used up.
+- `canSpawn` is false after floor 48 unless Endless mode is active.
+
+Rust result:
+- Tier and initial counter match Java.
+- Deck obtain pipeline blocks curses while Omamori counter is positive,
+  decrements the counter, and marks the relic used up at `0`.
+- Removed an unused placeholder function from `omamori.rs`; the real behavior is
+  in the deck obtain pipeline.
+- Spawn gating is a relic-pool/reward-generation concern and is not handled by
+  the deck hook.
+
+Coverage:
+- `shared_common_obtain_potion_upgrade_relic_metadata_matches_java_sources`
+- `omamori_blocks_exactly_two_curse_obtains_then_marks_used_up`
+
+### Potion Belt
+
+Status: `exact`
+
+Java source:
+- `D:/rust/cardcrawl/relics/PotionBelt.java`
+
+Rust source:
+- `src/content/relics/potion_belt.rs`
+- `src/engine/relic_manager.rs`
+
+Java evidence:
+- Constructor: ID `"Potion Belt"`, tier `COMMON`, landing sound `FLAT`.
+- `onEquip`: increments potion slots by `2` and appends two empty `PotionSlot`
+  objects at the end.
+- `canSpawn` is false after floor 48 unless Endless mode is active.
+
+Rust result:
+- Tier matches Java.
+- On-equip appends two empty potion slots without reordering existing potions.
+- Spawn gating is a relic-pool/reward-generation concern and is not handled by
+  the on-equip hook.
+
+Coverage:
+- `shared_common_obtain_potion_upgrade_relic_metadata_matches_java_sources`
+- `potion_belt_appends_two_empty_slots_without_reordering_existing_potions`
+
+### Toy Ornithopter
+
+Status: `known-gap`
+
+Java source:
+- `D:/rust/cardcrawl/relics/ToyOrnithopter.java`
+- `D:/rust/cardcrawl/ui/panels/PotionPopUp.java`
+
+Rust source:
+- `src/content/relics/toy_ornithopter.rs`
+- `src/content/relics/hooks.rs`
+- `src/engine/action_handlers/cards.rs`
+
+Java evidence:
+- Constructor: ID `"Toy Ornithopter"`, tier `COMMON`, landing sound `FLAT`.
+- `PotionPopUp` calls `r.onUsePotion()` after a potion is used.
+- In combat, Toy Ornithopter queues `RelicAboveCreatureAction` and
+  `HealAction(player, player, 5)` at the bottom.
+- Outside combat, it directly calls `AbstractDungeon.player.heal(5)`.
+
+Rust result:
+- Tier and combat `on_use_potion` subscription match Java.
+- Combat potion use queues a bottom `Heal { amount: 5 }`, so combat healing
+  still flows through the normal heal handler, including Magic Flower and Mark
+  of the Bloom.
+- UI-only above-creature action is intentionally not represented.
+- Known gap: the current Rust run layer has no canonical out-of-combat potion
+  use path, so the Java non-combat `player.heal(5)` branch is not implemented.
+
+Coverage:
+- `shared_common_obtain_potion_upgrade_relic_metadata_matches_java_sources`
+- `toy_ornithopter_queues_bottom_heal_when_potion_is_used`
+
+### War Paint
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/relics/WarPaint.java`
+
+Rust source:
+- `src/content/relics/war_paint.rs`
+- `src/engine/relic_manager.rs`
+
+Java evidence:
+- Constructor: ID `"War Paint"`, tier `COMMON`, landing sound `SOLID`.
+- `onEquip`: collects upgradable SKILL cards, shuffles with
+  `new Random(AbstractDungeon.miscRng.randomLong())`, and upgrades up to two.
+- Calls `bottledCardUpgradeCheck` for upgraded cards; this is only relevant once
+  bottled-card display/state metadata is fully modeled.
+
+Rust result:
+- Tier matches Java.
+- Random selection uses `misc_rng.randomLong()` shuffle and upgrades up to two
+  matching skill cards.
+- Fixed direct `upgrades += 1` mutation to call `upgrade_card_with_source` with
+  `DomainEventSource::Relic(WarPaint)`, preserving card-upgrade trace data.
+- UI-only card show / shine effects are intentionally not represented.
+
+Coverage:
+- `shared_common_obtain_potion_upgrade_relic_metadata_matches_java_sources`
+- `war_paint_and_whetstone_upgrade_only_matching_card_types_with_relic_source`
+
+### Whetstone
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/relics/Whetstone.java`
+
+Rust source:
+- `src/content/relics/whetstone.rs`
+- `src/engine/relic_manager.rs`
+
+Java evidence:
+- Constructor: ID `"Whetstone"`, tier `COMMON`, landing sound `SOLID`.
+- `onEquip`: collects upgradable ATTACK cards, shuffles with
+  `new Random(AbstractDungeon.miscRng.randomLong())`, and upgrades up to two.
+- Calls `bottledCardUpgradeCheck` for upgraded cards; this is only relevant once
+  bottled-card display/state metadata is fully modeled.
+
+Rust result:
+- Tier matches Java.
+- Random selection uses `misc_rng.randomLong()` shuffle and upgrades up to two
+  matching attack cards, including repeat-upgradable `SearingBlow`.
+- Fixed direct `upgrades += 1` mutation to call `upgrade_card_with_source` with
+  `DomainEventSource::Relic(Whetstone)`, preserving card-upgrade trace data.
+- UI-only card show / shine effects are intentionally not represented.
+
+Coverage:
+- `shared_common_obtain_potion_upgrade_relic_metadata_matches_java_sources`
+- `war_paint_and_whetstone_upgrade_only_matching_card_types_with_relic_source`
+
 ## Full Ironclad Class-Specific Relic Queue
 
 Relics remain `unreviewed` until their Java file, Rust definition/subscription,
@@ -1291,3 +1448,8 @@ class-specific queue.
 | 25 | `RegalPillow.java` | campfire handler | `exact` |
 | 26 | `SmilingMask.java` | shop generation / shop handler | `exact` |
 | 27 | `TinyChest.java` | event generator | `exact` |
+| 28 | `Omamori.java` | deck manager | `exact` |
+| 29 | `PotionBelt.java` | `potion_belt.rs` | `exact` |
+| 30 | `ToyOrnithopter.java` | `toy_ornithopter.rs` | `known-gap` |
+| 31 | `WarPaint.java` | `war_paint.rs` | `wrong-fixed` |
+| 32 | `Whetstone.java` | `whetstone.rs` | `wrong-fixed` |
