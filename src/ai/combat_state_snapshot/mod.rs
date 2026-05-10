@@ -317,6 +317,7 @@ pub enum ActionType {
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ActionPayload {
+    AddCardToDeck(AddCardToDeckActionState),
     ApplyPoisonOnRandomMonster(ApplyPoisonOnRandomMonsterActionState),
     ApplyPower(ApplyPowerActionState),
     ApplyPowerToRandomEnemy(ApplyPowerToRandomEnemyActionState),
@@ -371,6 +372,7 @@ pub enum ActionPayload {
 }
 
 pub const TYPED_ACTION_PAYLOAD_SOURCE_CLASSES: &[&str] = &[
+    "AddCardToDeckAction",
     "ApplyPoisonOnRandomMonsterAction",
     "ApplyPowerAction",
     "ApplyPowerToRandomEnemyAction",
@@ -452,9 +454,20 @@ pub const RENDER_ONLY_ACTION_SOURCE_CLASSES: &[&str] = &[
     "WaitAction",
 ];
 
+/// Java VFX/UI classes whose constructors or updates mutate combat/run state.
+/// Rust must extract their mechanical transition and must not implement their
+/// rendering, timing, hitbox, sound, or coordinate behavior.
+pub const MECHANICAL_HOSTED_IN_UI_SOURCE_CLASSES: &[&str] = &[
+    "ShowCardAndAddToDiscardEffect",
+    "ShowCardAndAddToDrawPileEffect",
+    "ShowCardAndAddToHandEffect",
+    "ShowCardAndObtainEffect",
+];
+
 impl ActionPayload {
     pub fn java_source_class(&self) -> &'static str {
         match self {
+            ActionPayload::AddCardToDeck(_) => "AddCardToDeckAction",
             ActionPayload::ApplyPoisonOnRandomMonster(_) => "ApplyPoisonOnRandomMonsterAction",
             ActionPayload::ApplyPower(_) => "ApplyPowerAction",
             ActionPayload::ApplyPowerToRandomEnemy(_) => "ApplyPowerToRandomEnemyAction",
@@ -508,6 +521,11 @@ impl ActionPayload {
             ActionPayload::UseCard(_) => "UseCardAction",
         }
     }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AddCardToDeckActionState {
+    pub card_to_obtain: CardRef,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

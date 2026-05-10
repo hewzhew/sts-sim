@@ -94,6 +94,10 @@ modeled:
 derived:
   recomputed deterministically from modeled state
 
+mechanical_hosted_in_ui:
+  Java stores or triggers the mechanic from a UI/VFX/screen class; Rust must
+  extract the state transition and must not implement the UI carrier
+
 render_only:
   UI/animation data that no combat mechanic reads
 
@@ -459,6 +463,10 @@ trainable or searchable. Initial source-backed payloads:
 
 ```text
 ActionPayload {
+  AddCardToDeck {
+    card_to_obtain,
+  }
+
   ApplyPoisonOnRandomMonster {
     starting_duration_bits,
     power_to_apply,
@@ -716,6 +724,7 @@ ActionPayload::java_source_class()
 TYPED_ACTION_PAYLOAD_SOURCE_CLASSES
 NO_EXTRA_ACTION_PAYLOAD_SOURCE_CLASSES
 RENDER_ONLY_ACTION_SOURCE_CLASSES
+MECHANICAL_HOSTED_IN_UI_SOURCE_CLASSES
 ```
 
 Adding an `ActionPayload` variant without a Java source class mapping is a
@@ -730,6 +739,13 @@ source ledger as `render_only`. Render-only actions are not part of the Rust AI
 mechanical action queues. An importer or bridge may consume and drop them, but
 dropping them must not mutate RNG, combatants, cards, powers, relics, potions,
 or any combat decision state.
+
+A Java UI/VFX class that mutates combat or run state must be listed in
+`MECHANICAL_HOSTED_IN_UI_SOURCE_CLASSES`. Rust must implement the equivalent
+mechanical transition directly and must not preserve the Java effect object,
+animation duration, coordinates, sounds, hitboxes, or render queue lifecycle.
+Each listed class requires an extraction test before any path that reaches it is
+trainable or searchable.
 
 Any action subclass that cannot be serialized and restored must populate
 `unsupported_subclass_payload` and make the frame `unsupported_abort` before it
@@ -1412,6 +1428,8 @@ The probe must:
 6. Produce identical ordered hash sequences.
 7. Record every missing source field as a schema defect.
 8. Record every reused Rust module in the migration ledger.
+9. Include at least one `mechanical_hosted_in_ui` extraction probe before any
+   generated-card or obtain-card path is marked trainable.
 ```
 
 No `DecisionFrame`, Python adapter, trainer, search, or planner is allowed to
@@ -1428,5 +1446,7 @@ become the reason this probe passes.
 - Do not consume reward-generation RNG inside `CombatKernel`.
 - Do not treat render-only classification as permanent if a mechanic reads the
   field later.
+- Do not implement Java UI/VFX carriers for performance parity; extract only
+  the mechanical state transition and cite the Java source row.
 - Do not preserve existing Rust APIs for compatibility when they conflict with
   Java-derived mechanics or deterministic replay.

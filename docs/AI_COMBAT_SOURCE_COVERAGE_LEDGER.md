@@ -28,6 +28,10 @@ modeled:
 derived:
   recomputed deterministically from modeled state
 
+mechanical_hosted_in_ui:
+  Java stores or triggers the mechanic from a UI/VFX/screen class; Rust must
+  extract the state transition and must not implement the UI carrier
+
 render_only:
   UI/animation state that no mechanic reads
 
@@ -42,8 +46,10 @@ unsupported_abort:
   known combat path not implemented; reaching it is non-trainable KernelAbort
 ```
 
-`unsupported_abort` is not implementation. It is a blocker with a source
-reference and exact missing behavior.
+`mechanical_hosted_in_ui` is not permission to implement Java UI. It means the
+Java UI/VFX class is a source witness for a real state transition that Rust must
+model directly. `unsupported_abort` is not implementation. It is a blocker with
+a source reference and exact missing behavior.
 
 ## Required Columns
 
@@ -166,10 +172,10 @@ not fields and are not included here.
 | `shrineList` | non_combat | none | event generation |
 | `specialOneTimeEventList` | non_combat | none | event generation |
 | `actionManager` | modeled | `CombatStateSnapshot.action_manager` | queue driver |
-| `topLevelEffects` | render_only | none | visual effects |
-| `topLevelEffectsQueue` | render_only | none | visual effects |
-| `effectList` | render_only | none | visual effects |
-| `effectsQueue` | render_only | none | visual effects |
+| `topLevelEffects` | render_only | none | top-level VFX; if a source class mutates mechanics it must be audited separately as `mechanical_hosted_in_ui` |
+| `topLevelEffectsQueue` | render_only | none | top-level VFX queue; no generic Rust effect queue |
+| `effectList` | mechanical_hosted_in_ui/render_only split | none | Java effect carrier; Rust must extract audited mechanics and drop render-only effects |
+| `effectsQueue` | mechanical_hosted_in_ui/render_only split | none | Java effect carrier; Rust must extract audited mechanics and drop render-only effects |
 | `turnPhaseEffectActive` | modeled | `GlobalCombatTempState.turn_phase_effect_active` | phase transition state; model until proven render-only |
 | `colorlessRareChance` | modeled | `GlobalCombatTempState.colorless_rare_chance_bits` | generated colorless rarity state stored as raw float bits |
 | `shopRoomChance` | non_combat | none | map generation |
@@ -187,6 +193,19 @@ not fields and are not included here.
 | `currMapNode` | run_level_materialized | `DungeonCombatContext.curr_map_node_ref` | room identity/context |
 | `map` | non_combat | none | pathing/run kernel |
 | `leftRoomAvailable` | non_combat | none | map UI |
+
+## Field Ledger: UI/VFX-Hosted Mechanical Sources
+
+These Java classes live under UI/VFX packages but write real game state. Rust
+must not implement the UI carrier. Rust must implement the listed transition
+directly, with the Java class kept only as source evidence.
+
+| Source | Classification | Extracted Rust mechanic | Notes |
+| --- | --- | --- | --- |
+| `vfx/cardManip/ShowCardAndAddToHandEffect.java` | mechanical_hosted_in_ui | add generated card to hand; trigger copied-card hooks; refresh/apply hand powers; run draw/discard callback; apply Corruption cost change | ignore card coordinates, scale, transparency, sound, poof, and effect duration |
+| `vfx/cardManip/ShowCardAndAddToDiscardEffect.java` | mechanical_hosted_in_ui | add generated card to discard pile; preserve constructor-specific source-card vs visual-copy behavior | ignore coordinates, sound, poof, and delayed souls animation |
+| `vfx/cardManip/ShowCardAndAddToDrawPileEffect.java` | mechanical_hosted_in_ui | add generated card to draw pile top, bottom, or random spot; preserve constructor-specific source-card vs visual-copy behavior | random draw-pile insertion is mechanical; spawn position and card offset are render-only |
+| `vfx/cardManip/ShowCardAndObtainEffect.java` | mechanical_hosted_in_ui | obtain a card into master deck and fire obtain/master-deck-change relic hooks | used by combat `AddCardToDeckAction` for Writhing Mass Parasite; Omamori curse prevention is a real source quirk |
 | `centerRoomAvailable` | non_combat | none | map UI |
 | `rightRoomAvailable` | non_combat | none | map UI |
 | `firstRoomChosen` | non_combat | none | map/run state |
@@ -548,6 +567,13 @@ typed payload work and must not enter AI mechanical action queues.
 | `UseCardAction.java` | `exhaustCard` | modeled | `ActionPayload::UseCard.exhaust_card` | post-use destination branch |
 | `UseCardAction.java` | `returnToHand` | modeled | `ActionPayload::UseCard.return_to_hand` | public source field even though card flag also exists |
 | `UseCardAction.java` | `reboundCard` | modeled | `ActionPayload::UseCard.rebound_card` | post-use draw-pile top branch |
+
+## Field Ledger: Unique `actions/unique/*Action.java` Subclasses
+
+| Source | Field | Classification | Schema path | Notes |
+| --- | --- | --- | --- | --- |
+| `AddCardToDeckAction.java` | `cardToObtain` | modeled | `ActionPayload::AddCardToDeck.card_to_obtain` | combat can add a card to master deck, e.g. Writhing Mass Parasite |
+| `AddCardToDeckAction.java` | `ShowCardAndObtainEffect` carrier | mechanical_hosted_in_ui | extracted transition via `ShowCardAndObtainEffect.java` ledger row | Java uses VFX object to perform obtain/master-deck-change mechanics |
 
 ## Field Ledger: `cards/DamageInfo.java`
 
