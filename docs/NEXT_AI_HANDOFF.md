@@ -9,10 +9,15 @@ Continue Java-source-backed mechanics cleanup. Do not add strategy heuristics, b
 
 ## Last Pushed Checkpoint
 
-`ce0fb76 Persist combat misc card growth`
+`dda7e4e Centralize Java card cost semantics`
 
 Recent pushed mechanics fixes:
 
+- `dda7e4e Centralize Java card cost semantics`
+  - Added centralized `CombatCard` helpers for Java `AbstractCard` cost semantics.
+  - Migrated known direct cost mutations through those helpers, including Blood for Blood, Corruption, Madness, Enlightenment, Confusion, Mummified Hand, generated-card overrides, and Liquid Memories.
+  - Added `CardZones` UUID helpers for Java battle instances and queued-card artifacts.
+  - Removed the old Blood for Blood cost rewrite from `evaluate_card`; cost changes now happen at Java lifecycle points.
 - `ce0fb76 Persist combat misc card growth`
   - Java `RitualDaggerAction` first mutates the matching master-deck card and then the matching combat instances.
   - Rust now emits `MetaChange::ModifyCardMisc { card_uuid, amount }` from combat and applies it to `RunState.master_deck`.
@@ -47,39 +52,21 @@ Verification already passed for those checkpoints:
 
 ## Current Work To Commit
 
-Architecture cleanup for Java card-cost and card-instance mutation semantics:
+Dual Wield pending-choice execution parity:
 
-- Added `CombatCard` helpers for Java `AbstractCard` cost semantics:
-  - `set_cost_for_turn_java`
-  - `update_cost_java`
-  - `modify_cost_for_combat_java`
-  - combat-cost setters that either preserve or overwrite `costForTurn`
-- Added `CardZones` helpers for UUID-matched Java battle instances and queued-card artifacts.
-- Migrated known direct cost mutations through those helpers:
-  - `BloodForBlood` damage and generated-copy discounts
-  - `Corruption` skill cost override
-  - `Madness`
-  - `Enlightenment`
-  - `Confusion`
-  - `Mummified Hand`
-  - generated-card cost overrides
-  - `Liquid Memories` / discard-to-hand cost override
-- Removed the old `evaluate_card` Blood for Blood cost rewrite. Cost changes now happen at Java lifecycle points instead of during damage/block evaluation.
+- Java `HandCardSelectScreen` removes the selected original from hand before `DualWieldAction` reads `selectedCards`.
+- Java `DualWieldAction` then queues one extra `MakeTempCardInHandAction` plus `dupeAmount` more copies, replacing the removed original and creating the visible net copies.
+- Rust `HandSelectReason::Copy` previously kept the selected original and also made the extra replacement copy, giving one extra card in multi-candidate Dual Wield selections.
+- Rust now removes the selected hand card before calling `handle_make_copy_in_hand`.
 
 Verification passed for this work:
 
 - `cargo fmt`
 - `cargo check --lib`
-- `cargo test combat_card_ --lib`
-- `cargo test card_zones_uuid_helper --lib`
-- `cargo test blood_for_blood_cost_updates_when_player_takes_hp_loss --lib`
-- `cargo test corruption_power_on_apply_modifies_skill_costs_in_java_piles --lib`
-- `cargo test mummified_hand_sets_one_eligible_hand_card_cost_to_zero_immediately --lib`
-- `cargo test generated_skill_entering_hand_obeys_corruption_cost_override --lib`
-- `cargo test content::cards::tests::ironclad_cost_and_hp_cards_runtime_actions_match_java_use_methods --lib`
-- `cargo test content::cards::tests::ironclad_rampage_and_rupture_runtime_actions_match_java_use_methods --lib`
-- `cargo test engine::action_handlers::cards::tests::random_pool_blood_for_blood_copy_uses_java_make_copy_damage_discount --lib`
+- `cargo test hand_select_copy_matches_dual_wield_selected_card_replacement --lib`
+- `cargo test ironclad_copy_and_block_runtime_actions_match_java_use_methods --lib`
 - `cargo test content::cards::tests --lib`
+- `cargo test engine::pending_choices::tests --lib`
 - `cargo test engine::action_handlers::cards::tests --lib`
 
 Known verification limitation:
@@ -97,7 +84,6 @@ Recommended next targets:
    - `RagePower.onUseCard`
    - `BerserkPower.atStartOfTurn`
    - `ExhumeAction`
-   - `DualWieldAction`
    - `VampireDamageAllEnemiesAction`
 2. Keep checking Java action timing, not just card `use()` methods:
    - queued `addToTop` vs `addToBot`

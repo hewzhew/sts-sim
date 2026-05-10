@@ -203,12 +203,16 @@ pub fn handle_hand_select(
                     // Currently a stub — retain flag not in CombatCard
                 }
                 HandSelectReason::Copy { amount } => {
-                    // Dual Wield: copy selected card(s) into hand
+                    // Java DualWieldAction reads selectedCards after the hand
+                    // select screen has removed the selected original from
+                    // hand. Its selected branch queues one extra copy to
+                    // replace that original, so Rust must remove the selected
+                    // card before applying `amount`.
                     for uuid in &uuids {
                         if let Some(pos) =
                             combat_state.zones.hand.iter().position(|c| c.uuid == *uuid)
                         {
-                            let card = combat_state.zones.hand[pos].clone();
+                            let card = combat_state.zones.hand.remove(pos);
                             crate::engine::action_handlers::cards::handle_make_copy_in_hand(
                                 Box::new(card),
                                 amount,
@@ -433,7 +437,7 @@ mod tests {
     }
 
     #[test]
-    fn hand_select_copy_uses_generated_card_uuid_counter_and_hand_overflow_rules() {
+    fn hand_select_copy_matches_dual_wield_selected_card_replacement() {
         let mut engine_state =
             EngineState::PendingChoice(crate::state::core::PendingChoice::HandSelect {
                 reason: HandSelectReason::Copy { amount: 3 },
@@ -467,7 +471,28 @@ mod tests {
         assert_eq!(engine_state, EngineState::CombatProcessing);
         assert_eq!(combat_state.zones.card_uuid_counter, 103);
         assert_eq!(combat_state.zones.hand.len(), 10);
-        assert_eq!(combat_state.zones.discard_pile.len(), 3);
+        assert_eq!(
+            combat_state
+                .zones
+                .hand
+                .iter()
+                .filter(|c| c.uuid == 10)
+                .count(),
+            0,
+            "Java hand select removes the selected original before DualWieldAction creates copies"
+        );
+        assert_eq!(
+            combat_state
+                .zones
+                .hand
+                .iter()
+                .filter(|card| card.id == CardId::Strike)
+                .map(|card| card.uuid)
+                .collect::<Vec<_>>(),
+            vec![101],
+            "one replacement copy fits in hand after the selected original is removed"
+        );
+        assert_eq!(combat_state.zones.discard_pile.len(), 2);
         assert_eq!(
             combat_state
                 .zones
@@ -475,11 +500,7 @@ mod tests {
                 .iter()
                 .map(|card| (card.id, card.uuid))
                 .collect::<Vec<_>>(),
-            vec![
-                (CardId::Strike, 101),
-                (CardId::Strike, 102),
-                (CardId::Strike, 103),
-            ]
+            vec![(CardId::Strike, 102), (CardId::Strike, 103),]
         );
     }
 }
