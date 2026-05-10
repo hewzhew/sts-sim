@@ -1257,17 +1257,7 @@ fn init_combat(run_state: &mut RunState, current_display: DisplayMode) -> Combat
         &mut cs.zones.draw_pile,
         &mut cs.rng.shuffle_rng,
     );
-    let mut innate_cards = Vec::new();
-    let mut normal_cards = Vec::new();
-    for card in std::mem::take(&mut cs.zones.draw_pile) {
-        if sts_simulator::content::cards::is_innate_card(&card) {
-            innate_cards.push(card);
-        } else {
-            normal_cards.push(card);
-        }
-    }
-    innate_cards.extend(normal_cards);
-    cs.zones.draw_pile = innate_cards;
+    cs.apply_java_initialize_deck_order_after_shuffle();
 
     cs.queue_action_back(sts_simulator::runtime::action::Action::PreBattleTrigger);
 
@@ -1394,17 +1384,7 @@ fn init_event_combat(
         &mut cs.zones.draw_pile,
         &mut cs.rng.shuffle_rng,
     );
-    let mut innate_cards = Vec::new();
-    let mut normal_cards = Vec::new();
-    for card in std::mem::take(&mut cs.zones.draw_pile) {
-        if sts_simulator::content::cards::is_innate_card(&card) {
-            innate_cards.push(card);
-        } else {
-            normal_cards.push(card);
-        }
-    }
-    innate_cards.extend(normal_cards);
-    cs.zones.draw_pile = innate_cards;
+    cs.apply_java_initialize_deck_order_after_shuffle();
 
     cs.queue_action_back(sts_simulator::runtime::action::Action::PreBattleTrigger);
 

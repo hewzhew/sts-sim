@@ -154,17 +154,7 @@ pub fn build_natural_start_state(
 
     combat.reset_turn_energy_from_player();
     rng::shuffle_with_random_long(&mut combat.zones.draw_pile, &mut combat.rng.shuffle_rng);
-    let mut innate_cards = Vec::new();
-    let mut normal_cards = Vec::new();
-    for card in std::mem::take(&mut combat.zones.draw_pile) {
-        if crate::content::cards::is_innate_card(&card) {
-            innate_cards.push(card);
-        } else {
-            normal_cards.push(card);
-        }
-    }
-    innate_cards.extend(normal_cards);
-    combat.zones.draw_pile = innate_cards;
+    combat.apply_java_initialize_deck_order_after_shuffle();
     combat.queue_action_back(Action::PreBattleTrigger);
 
     let mut engine_state = EngineState::CombatProcessing;

@@ -131,6 +131,13 @@ impl CardZones {
     pub fn add_to_discard_pile_top(&mut self, card: CombatCard) {
         self.discard_pile.push(card);
     }
+
+    /// Java exhaustPile is also a CardGroup: addToTop appends to the end.
+    /// Preserve that internal order here for parity with any later selection
+    /// or replay that observes exhaust-pile group order.
+    pub fn add_to_exhaust_pile_top(&mut self, card: CombatCard) {
+        self.exhaust_pile.push(card);
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -1231,6 +1238,10 @@ impl CombatState {
         self.zones.add_to_discard_pile_top(card);
     }
 
+    pub fn add_card_to_exhaust_pile_top(&mut self, card: CombatCard) {
+        self.zones.add_to_exhaust_pile_top(card);
+    }
+
     pub fn shuffle_discard_pile_into_draw_pile(&mut self) {
         self.zones.draw_pile.append(&mut self.zones.discard_pile);
         crate::runtime::rng::shuffle_with_random_long(
@@ -1240,6 +1251,21 @@ impl CombatState {
         // Java draw-pile top is the end of CardGroup.group. Rust draw-pile top
         // is index 0, so reverse only after preserving Java shuffle order.
         self.zones.draw_pile.reverse();
+    }
+
+    pub fn apply_java_initialize_deck_order_after_shuffle(&mut self) {
+        let mut java_group_order = Vec::new();
+        let mut place_on_top = Vec::new();
+        for card in std::mem::take(&mut self.zones.draw_pile) {
+            if crate::content::cards::is_innate_card(&card) {
+                place_on_top.push(card);
+            } else {
+                java_group_order.push(card);
+            }
+        }
+        java_group_order.extend(place_on_top);
+        java_group_order.reverse();
+        self.zones.draw_pile = java_group_order;
     }
 
     /// Helper to find a card by UUID in a specific slice and remove it. Returns the removed card.
@@ -1426,6 +1452,53 @@ mod tests {
 
         assert_eq!(zones.discard_pile[0].id, CardId::Strike);
         assert_eq!(zones.discard_pile[1].id, CardId::Defend);
+    }
+
+    #[test]
+    fn card_zones_exhaust_pile_preserves_java_card_group_order() {
+        let mut zones = CardZones {
+            draw_pile: vec![],
+            hand: vec![],
+            discard_pile: vec![],
+            exhaust_pile: vec![],
+            limbo: vec![],
+            queued_cards: VecDeque::new(),
+            card_uuid_counter: 0,
+        };
+
+        zones.add_to_exhaust_pile_top(CombatCard::new(CardId::Strike, 1));
+        zones.add_to_exhaust_pile_top(CombatCard::new(CardId::Defend, 2));
+
+        assert_eq!(zones.exhaust_pile[0].id, CardId::Strike);
+        assert_eq!(zones.exhaust_pile[1].id, CardId::Defend);
+    }
+
+    #[test]
+    fn java_initialize_deck_order_places_innate_on_rust_top_after_reversing() {
+        let mut state = crate::test_support::blank_test_combat();
+        state.zones.draw_pile = vec![
+            CombatCard::new(CardId::Strike, 1),
+            CombatCard::new(CardId::Writhe, 2),
+            CombatCard::new(CardId::Defend, 3),
+            CombatCard::new(CardId::Pride, 4),
+        ];
+
+        state.apply_java_initialize_deck_order_after_shuffle();
+
+        assert_eq!(
+            state
+                .zones
+                .draw_pile
+                .iter()
+                .map(|card| card.id)
+                .collect::<Vec<_>>(),
+            vec![
+                CardId::Pride,
+                CardId::Writhe,
+                CardId::Defend,
+                CardId::Strike
+            ]
+        );
     }
 
     #[test]

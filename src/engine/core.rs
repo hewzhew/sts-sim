@@ -95,10 +95,10 @@ fn settle_victory_if_ready(
         && combat_state.zones.queued_cards.is_empty()
         && !combat_state.zones.limbo.is_empty()
     {
-        combat_state
-            .zones
-            .discard_pile
-            .append(&mut combat_state.zones.limbo);
+        let limbo_cards = std::mem::take(&mut combat_state.zones.limbo);
+        for card in limbo_cards {
+            combat_state.add_card_to_discard_pile_top(card);
+        }
     }
 
     // Java does not cut off queued onUseCard / onDeath aftermath when the last monster dies.
@@ -473,6 +473,33 @@ pub fn tick_engine(
                 Action::SuspendForStanceChoice => {
                     update_monster_intents(combat_state);
                     *engine_state = EngineState::PendingChoice(PendingChoice::StanceChoice);
+                    return true;
+                }
+
+                Action::Scry(amount) => {
+                    let amount = crate::content::relics::hooks::on_scry(combat_state, amount);
+                    if amount == 0 || combat_state.zones.draw_pile.is_empty() {
+                        return true;
+                    }
+                    let limit = amount.min(combat_state.zones.draw_pile.len());
+                    let cards = combat_state
+                        .zones
+                        .draw_pile
+                        .iter()
+                        .take(limit)
+                        .map(|card| card.id)
+                        .collect();
+                    let card_uuids = combat_state
+                        .zones
+                        .draw_pile
+                        .iter()
+                        .take(limit)
+                        .map(|card| card.uuid)
+                        .collect();
+
+                    update_monster_intents(combat_state);
+                    *engine_state =
+                        EngineState::PendingChoice(PendingChoice::ScrySelect { cards, card_uuids });
                     return true;
                 }
 
@@ -937,10 +964,13 @@ fn resolve_pending_choice(
     };
 
     match choice {
-        PendingChoice::ScrySelect {
-            cards,
-            card_uuids: _,
-        } => pending_choices::handle_scry(engine_state, combat_state, cards.len(), input),
+        PendingChoice::ScrySelect { cards, card_uuids } => pending_choices::handle_scry(
+            engine_state,
+            combat_state,
+            cards.len(),
+            &card_uuids,
+            input,
+        ),
         PendingChoice::HandSelect {
             candidate_uuids,
             min_cards,

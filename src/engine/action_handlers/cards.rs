@@ -47,7 +47,7 @@ pub fn move_card_to_exhaust_pile(
     state: &mut CombatState,
 ) {
     queue_exhaust_triggers(&card, state);
-    state.zones.exhaust_pile.push(card);
+    state.add_card_to_exhaust_pile_top(card);
 }
 
 pub fn handle_draw_cards(amount: u32, state: &mut CombatState) {
@@ -232,7 +232,7 @@ pub fn handle_move_card(
             crate::state::PileType::Discard => state.add_card_to_discard_pile_top(card),
             crate::state::PileType::Exhaust => {
                 if matches!(from, crate::state::PileType::Exhaust) {
-                    state.zones.exhaust_pile.push(card);
+                    state.add_card_to_exhaust_pile_top(card);
                 } else {
                     move_card_to_exhaust_pile(card, state);
                 }
@@ -665,23 +665,33 @@ pub fn handle_draw_pile_to_hand_by_type(
     card_type: crate::content::cards::CardType,
     state: &mut CombatState,
 ) {
-    let mut candidates: Vec<u32> = state
+    let mut candidates: Vec<u32> = Vec::new();
+    let matching_uuids: Vec<u32> = state
         .zones
         .draw_pile
         .iter()
+        .rev()
         .filter(|card| crate::content::cards::get_card_definition(card.id).card_type == card_type)
         .map(|card| card.uuid)
         .collect();
+    for uuid in matching_uuids {
+        if candidates.is_empty() {
+            candidates.push(uuid);
+        } else {
+            let index = state
+                .rng
+                .card_random_rng
+                .random(candidates.len() as i32 - 1) as usize;
+            candidates.insert(index, uuid);
+        }
+    }
 
     for _ in 0..amount {
         if candidates.is_empty() {
             break;
         }
-        let idx = state
-            .rng
-            .card_random_rng
-            .random(candidates.len() as i32 - 1) as usize;
-        let chosen_uuid = candidates.swap_remove(idx);
+        crate::runtime::rng::shuffle_with_random_long(&mut candidates, &mut state.rng.shuffle_rng);
+        let chosen_uuid = candidates.remove(0);
         if let Some(pos) = state
             .zones
             .draw_pile
@@ -1225,10 +1235,10 @@ pub fn handle_end_turn_trigger(state: &mut CombatState) {
 #[cfg(test)]
 mod tests {
     use super::{
-        handle_make_temp_card_in_draw_pile, handle_make_temp_card_in_hand,
-        obtain_specific_potion_if_allowed,
+        handle_draw_pile_to_hand_by_type, handle_make_temp_card_in_draw_pile,
+        handle_make_temp_card_in_hand, obtain_specific_potion_if_allowed,
     };
-    use crate::content::cards::CardId;
+    use crate::content::cards::{CardId, CardType};
     use crate::content::potions::PotionId;
     use crate::content::powers::PowerId;
     use crate::content::relics::{RelicId, RelicState};
@@ -1416,6 +1426,69 @@ mod tests {
         state.add_card_to_draw_pile_random_spot(CombatCard::new(CardId::Wound, 4));
 
         assert_eq!(state.zones.draw_pile[expected_rust_index].id, CardId::Wound);
+    }
+
+    #[test]
+    fn draw_pile_to_hand_by_type_matches_java_temp_group_rng_sequence() {
+        let mut state = blank_test_combat();
+        state.zones.draw_pile = vec![
+            CombatCard::new(CardId::Strike, 1),
+            CombatCard::new(CardId::Defend, 2),
+            CombatCard::new(CardId::Bash, 3),
+            CombatCard::new(CardId::Strike, 4),
+        ];
+        let mut expected_rng = state.rng.clone();
+        let mut expected_candidates = Vec::new();
+        for uuid in [4_u32, 3, 1] {
+            if expected_candidates.is_empty() {
+                expected_candidates.push(uuid);
+            } else {
+                let index = expected_rng
+                    .card_random_rng
+                    .random(expected_candidates.len() as i32 - 1)
+                    as usize;
+                expected_candidates.insert(index, uuid);
+            }
+        }
+        crate::runtime::rng::shuffle_with_random_long(
+            &mut expected_candidates,
+            &mut expected_rng.shuffle_rng,
+        );
+        let expected_uuid = expected_candidates[0];
+
+        handle_draw_pile_to_hand_by_type(1, CardType::Attack, &mut state);
+
+        assert_eq!(state.zones.hand.len(), 1);
+        assert_eq!(state.zones.hand[0].uuid, expected_uuid);
+        assert!(!state
+            .zones
+            .draw_pile
+            .iter()
+            .any(|card| card.uuid == expected_uuid));
+        assert_eq!(
+            state.rng.card_random_rng.counter,
+            expected_rng.card_random_rng.counter
+        );
+        assert_eq!(
+            state.rng.shuffle_rng.counter,
+            expected_rng.shuffle_rng.counter
+        );
+    }
+
+    #[test]
+    fn draw_pile_to_hand_by_type_overflow_discards_selected_card() {
+        let mut state = blank_test_combat();
+        for uuid in 10..20 {
+            state.zones.hand.push(CombatCard::new(CardId::Defend, uuid));
+        }
+        state.zones.draw_pile = vec![CombatCard::new(CardId::Strike, 1)];
+
+        handle_draw_pile_to_hand_by_type(1, CardType::Attack, &mut state);
+
+        assert_eq!(state.zones.hand.len(), 10);
+        assert!(state.zones.draw_pile.is_empty());
+        assert_eq!(state.zones.discard_pile.len(), 1);
+        assert_eq!(state.zones.discard_pile[0].uuid, 1);
     }
 }
 

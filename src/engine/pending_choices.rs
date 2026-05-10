@@ -50,18 +50,43 @@ fn snapshot_cards_from_hand(combat_state: &CombatState, uuids: &[u32]) -> Vec<Do
 pub fn handle_scry(
     engine_state: &mut EngineState,
     combat_state: &mut CombatState,
-    _amount: usize,
+    amount: usize,
+    card_uuids: &[u32],
     input: ClientInput,
 ) -> Result<(), &'static str> {
     match input {
         ClientInput::SubmitScryDiscard(indices) => {
-            // Simplified stub
-            if indices.len() <= combat_state.zones.draw_pile.len() {
-                *engine_state = EngineState::CombatProcessing;
-                Ok(())
-            } else {
-                Err("Invalid discard indices")
+            if card_uuids.len() != amount {
+                return Err("Scry candidate count mismatch");
             }
+            let mut selected = Vec::new();
+            for index in indices {
+                if index >= card_uuids.len() {
+                    return Err("Invalid discard indices");
+                }
+                let uuid = card_uuids[index];
+                if selected.contains(&uuid) {
+                    return Err("Duplicate scry discard index");
+                }
+                selected.push(uuid);
+            }
+
+            for uuid in selected {
+                if let Some(pos) = combat_state
+                    .zones
+                    .draw_pile
+                    .iter()
+                    .position(|card| card.uuid == uuid)
+                {
+                    let card = combat_state.zones.draw_pile.remove(pos);
+                    combat_state.add_card_to_discard_pile_top(card);
+                } else {
+                    return Err("Scry candidate no longer in draw pile");
+                }
+            }
+
+            *engine_state = EngineState::CombatProcessing;
+            Ok(())
         }
         _ => Err("Invalid input for Scry"),
     }
@@ -343,5 +368,77 @@ pub fn handle_grid_select(
             *engine_state = EngineState::CombatProcessing;
             Ok(())
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::handle_scry;
+    use crate::content::cards::CardId;
+    use crate::runtime::combat::CombatCard;
+    use crate::state::core::{ClientInput, EngineState};
+    use crate::test_support::blank_test_combat;
+
+    #[test]
+    fn scry_discards_selected_top_candidates_by_index() {
+        let mut engine_state =
+            EngineState::PendingChoice(crate::state::core::PendingChoice::ScrySelect {
+                cards: vec![CardId::Strike, CardId::Defend],
+                card_uuids: vec![1, 2],
+            });
+        let mut combat_state = blank_test_combat();
+        combat_state.zones.draw_pile = vec![
+            CombatCard::new(CardId::Strike, 1),
+            CombatCard::new(CardId::Defend, 2),
+            CombatCard::new(CardId::Bash, 3),
+        ];
+
+        handle_scry(
+            &mut engine_state,
+            &mut combat_state,
+            2,
+            &[1, 2],
+            ClientInput::SubmitScryDiscard(vec![1]),
+        )
+        .expect("scry selection should resolve");
+
+        assert_eq!(engine_state, EngineState::CombatProcessing);
+        assert_eq!(
+            combat_state
+                .zones
+                .draw_pile
+                .iter()
+                .map(|card| card.id)
+                .collect::<Vec<_>>(),
+            vec![CardId::Strike, CardId::Bash]
+        );
+        assert_eq!(combat_state.zones.discard_pile.len(), 1);
+        assert_eq!(combat_state.zones.discard_pile[0].id, CardId::Defend);
+    }
+
+    #[test]
+    fn scry_rejects_duplicate_indices_without_mutating_piles() {
+        let mut engine_state =
+            EngineState::PendingChoice(crate::state::core::PendingChoice::ScrySelect {
+                cards: vec![CardId::Strike, CardId::Defend],
+                card_uuids: vec![1, 2],
+            });
+        let mut combat_state = blank_test_combat();
+        combat_state.zones.draw_pile = vec![
+            CombatCard::new(CardId::Strike, 1),
+            CombatCard::new(CardId::Defend, 2),
+        ];
+
+        let result = handle_scry(
+            &mut engine_state,
+            &mut combat_state,
+            2,
+            &[1, 2],
+            ClientInput::SubmitScryDiscard(vec![0, 0]),
+        );
+
+        assert!(result.is_err());
+        assert_eq!(combat_state.zones.draw_pile.len(), 2);
+        assert!(combat_state.zones.discard_pile.is_empty());
     }
 }

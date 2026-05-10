@@ -631,7 +631,7 @@ fn build_combat_state(run_state: &mut RunState, encounter_id: EncounterId) -> Co
     initialize_monster_intents(&mut combat);
     combat.reset_turn_energy_from_player();
     shuffle_with_random_long(&mut combat.zones.draw_pile, &mut combat.rng.shuffle_rng);
-    move_innate_cards_to_front(&mut combat);
+    combat.apply_java_initialize_deck_order_after_shuffle();
     combat.queue_action_back(Action::PreBattleTrigger);
     combat
 }
@@ -684,20 +684,6 @@ fn initialize_monster_intents(combat: &mut CombatState) {
             .or_default()
             .observation = Default::default();
     }
-}
-
-fn move_innate_cards_to_front(combat: &mut CombatState) {
-    let mut innate_cards = Vec::new();
-    let mut normal_cards = Vec::new();
-    for card in std::mem::take(&mut combat.zones.draw_pile) {
-        if crate::content::cards::is_innate_card(&card) {
-            innate_cards.push(card);
-        } else {
-            normal_cards.push(card);
-        }
-    }
-    innate_cards.extend(normal_cards);
-    combat.zones.draw_pile = innate_cards;
 }
 
 fn encounter_key_to_id(key: &str) -> Option<EncounterId> {
