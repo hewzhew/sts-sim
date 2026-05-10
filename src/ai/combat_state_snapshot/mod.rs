@@ -364,7 +364,12 @@ pub enum ActionPayload {
     ReduceCostForTurn(ReduceCostForTurnActionState),
     ReducePower(ReducePowerActionState),
     RemoveSpecificPower(RemoveSpecificPowerActionState),
+    ReviveMonster(ReviveMonsterActionState),
+    RollMove(RollMoveActionState),
+    SetMove(SetMoveActionState),
     SetDontTrigger(SetDontTriggerActionState),
+    SpawnMonster(SpawnMonsterActionState),
+    Suicide(SuicideActionState),
     TransformCardInHand(TransformCardInHandActionState),
 }
 
@@ -398,7 +403,12 @@ pub const TYPED_ACTION_PAYLOAD_SOURCE_CLASSES: &[&str] = &[
     "ReduceCostForTurnAction",
     "ReducePowerAction",
     "RemoveSpecificPowerAction",
+    "ReviveMonsterAction",
+    "RollMoveAction",
+    "SetMoveAction",
     "SetDontTriggerAction",
+    "SpawnMonsterAction",
+    "SuicideAction",
     "TransformCardInHandAction",
 ];
 
@@ -434,7 +444,12 @@ impl ActionPayload {
             ActionPayload::ReduceCostForTurn(_) => "ReduceCostForTurnAction",
             ActionPayload::ReducePower(_) => "ReducePowerAction",
             ActionPayload::RemoveSpecificPower(_) => "RemoveSpecificPowerAction",
+            ActionPayload::ReviveMonster(_) => "ReviveMonsterAction",
+            ActionPayload::RollMove(_) => "RollMoveAction",
+            ActionPayload::SetMove(_) => "SetMoveAction",
             ActionPayload::SetDontTrigger(_) => "SetDontTriggerAction",
+            ActionPayload::SpawnMonster(_) => "SpawnMonsterAction",
+            ActionPayload::Suicide(_) => "SuicideAction",
             ActionPayload::TransformCardInHand(_) => "TransformCardInHandAction",
         }
     }
@@ -618,9 +633,45 @@ pub struct RemoveSpecificPowerActionState {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ReviveMonsterActionState {
+    pub healing_effect: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RollMoveActionState {
+    pub monster_ref: MonsterRef,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SetMoveActionState {
+    pub monster_ref: MonsterRef,
+    pub next_move: i8,
+    pub next_intent: IntentKind,
+    pub next_damage: i32,
+    pub next_name: Option<String>,
+    pub multiplier: i32,
+    pub is_multiplier: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SetDontTriggerActionState {
     pub card_ref: CardRef,
     pub trigger: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SpawnMonsterActionState {
+    pub used: bool,
+    pub monster_ref: MonsterRef,
+    pub minion: bool,
+    pub target_slot: i32,
+    pub use_smart_positioning: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SuicideActionState {
+    pub monster_ref: MonsterRef,
+    pub relic_trigger: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

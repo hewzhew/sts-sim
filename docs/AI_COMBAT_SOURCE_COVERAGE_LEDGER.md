@@ -439,6 +439,7 @@ that payload is not trainable and not searchable. Unknown subclass state is an
 | `GainEnergyAction.java` | `energyGain` | modeled | `ActionPayload::GainEnergy.energy_gain` | energy gained and hand trigger amount |
 | `GainGoldAction.java` | no subclass fields beyond common action fields | modeled | `ActionState` | `amount` covers gained gold |
 | `HealAction.java` | no subclass fields beyond common action fields | modeled | `ActionState` | `amount`, target/source, duration cover heal |
+| `InstantKillAction.java` | no subclass fields beyond common action fields | modeled | `ActionState` | target/source and class cover behavior |
 | `LoseHPAction.java` | no subclass fields beyond common action fields | modeled | `ActionState` | `amount`, target/source, attack effect, duration cover HP loss |
 | `LosePercentHPAction.java` | no subclass fields beyond common action fields | modeled | `ActionState` | `amount` is percent |
 | `MakeTempCardAtBottomOfDeckAction.java` | no subclass fields beyond common action fields | modeled | `ActionState` | generates random combat card at update; `amount` and RNG cover behavior |
@@ -471,8 +472,24 @@ that payload is not trainable and not searchable. Unknown subclass state is an
 | `RemoveAllBlockAction.java` | no subclass fields beyond common action fields | modeled | `ActionState` | target/source and duration cover it |
 | `RemoveSpecificPowerAction.java` | `powerToRemove` | modeled | `ActionPayload::RemoveSpecificPower.power_id` | string lookup path |
 | `RemoveSpecificPowerAction.java` | `powerInstance` | modeled | `ActionPayload::RemoveSpecificPower.power_ref` | direct instance path |
+| `ReviveMonsterAction.java` | `healingEffect` | modeled | `ActionPayload::ReviveMonster.healing_effect` | full-heal visual/mechanical revive path |
+| `RollMoveAction.java` | `monster` | modeled | `ActionPayload::RollMove.monster_ref` | rolls monster next move |
+| `SetMoveAction.java` | `monster` | modeled | `ActionPayload::SetMove.monster_ref` | target monster |
+| `SetMoveAction.java` | `theNextMove` | modeled | `ActionPayload::SetMove.next_move` | next move byte |
+| `SetMoveAction.java` | `theNextIntent` | modeled | `ActionPayload::SetMove.next_intent` | next visible intent |
+| `SetMoveAction.java` | `theNextDamage` | modeled | `ActionPayload::SetMove.next_damage` | base damage |
+| `SetMoveAction.java` | `theNextName` | modeled | `ActionPayload::SetMove.next_name` | nullable move name |
+| `SetMoveAction.java` | `theMultiplier` | modeled | `ActionPayload::SetMove.multiplier` | hit multiplier |
+| `SetMoveAction.java` | `isMultiplier` | modeled | `ActionPayload::SetMove.is_multiplier` | multi-hit flag |
 | `SetDontTriggerAction.java` | `card` | modeled | `ActionPayload::SetDontTrigger.card_ref` | direct card instance |
 | `SetDontTriggerAction.java` | `trigger` | modeled | `ActionPayload::SetDontTrigger.trigger` | target `dontTriggerOnUseCard` value |
+| `SpawnMonsterAction.java` | `used` | modeled | `ActionPayload::SpawnMonster.used` | one-shot spawn guard |
+| `SpawnMonsterAction.java` | `m` | modeled | `ActionPayload::SpawnMonster.monster_ref` | monster instance to insert |
+| `SpawnMonsterAction.java` | `minion` | modeled | `ActionPayload::SpawnMonster.minion` | applies MinionPower |
+| `SpawnMonsterAction.java` | `targetSlot` | modeled | `ActionPayload::SpawnMonster.target_slot` | insertion slot when not smart positioned |
+| `SpawnMonsterAction.java` | `useSmartPositioning` | modeled | `ActionPayload::SpawnMonster.use_smart_positioning` | derive slot from drawX ordering |
+| `SuicideAction.java` | `m` | modeled | `ActionPayload::Suicide.monster_ref` | monster to kill |
+| `SuicideAction.java` | `relicTrigger` | modeled | `ActionPayload::Suicide.relic_trigger` | controls death relic trigger path |
 | `TransformCardInHandAction.java` | `replacement` | modeled | `ActionPayload::TransformCardInHand.replacement_card` | replacement card instance |
 | `TransformCardInHandAction.java` | `handIndex` | modeled | `ActionPayload::TransformCardInHand.hand_index` | hand slot to replace |
 | `EmptyDeckShuffleAction.java` | `shuffled` | modeled | `ActionPayload::EmptyDeckShuffle.shuffled` | delayed shuffle state |

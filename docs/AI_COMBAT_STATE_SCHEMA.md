@@ -606,9 +606,40 @@ ActionPayload {
     power_ref,
   }
 
+  ReviveMonster {
+    healing_effect,
+  }
+
+  RollMove {
+    monster_ref,
+  }
+
+  SetMove {
+    monster_ref,
+    next_move,
+    next_intent,
+    next_damage,
+    next_name,
+    multiplier,
+    is_multiplier,
+  }
+
   SetDontTrigger {
     card_ref,
     trigger,
+  }
+
+  SpawnMonster {
+    used,
+    monster_ref,
+    minion,
+    target_slot,
+    use_smart_positioning,
+  }
+
+  Suicide {
+    monster_ref,
+    relic_trigger,
   }
 
   TransformCardInHand {
