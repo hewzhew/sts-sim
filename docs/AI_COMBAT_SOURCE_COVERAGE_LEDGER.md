@@ -469,6 +469,11 @@ basic damage, block, draw, discard, exhaust, shuffle, and energy loops. Other
 action subclasses must be added to this ledger before they are allowed out of
 `UnsupportedActionPayload` quarantine.
 
+Rust `ActionPayload` variants must expose their Java source class through
+`ActionPayload::java_source_class()` and the
+`TYPED_ACTION_PAYLOAD_SOURCE_CLASSES` registry. A payload variant without a
+source class mapping is not reviewable.
+
 ## Field Ledger: `cards/DamageInfo.java`
 
 | Field | Classification | Schema path | Notes |

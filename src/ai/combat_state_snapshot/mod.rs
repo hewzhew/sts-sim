@@ -361,6 +361,64 @@ pub enum ActionPayload {
     SetDontTrigger(SetDontTriggerActionState),
 }
 
+pub const TYPED_ACTION_PAYLOAD_SOURCE_CLASSES: &[&str] = &[
+    "ApplyPoisonOnRandomMonsterAction",
+    "ApplyPowerAction",
+    "ApplyPowerToRandomEnemyAction",
+    "DamageAction",
+    "DamageAllEnemiesAction",
+    "DiscardAction",
+    "DiscardSpecificCardAction",
+    "DrawCardAction",
+    "EmptyDeckShuffleAction",
+    "ExhaustAction",
+    "ExhaustSpecificCardAction",
+    "GainEnergyAction",
+    "MakeTempCardInDiscardAction",
+    "MakeTempCardInDiscardAndDeckAction",
+    "MakeTempCardInDrawPileAction",
+    "MakeTempCardInHandAction",
+    "ModifyBlockAction",
+    "PutOnBottomOfDeckAction",
+    "PutOnDeckAction",
+    "ReduceCostAction",
+    "ReduceCostForTurnAction",
+    "ReducePowerAction",
+    "RemoveSpecificPowerAction",
+    "SetDontTriggerAction",
+];
+
+impl ActionPayload {
+    pub fn java_source_class(&self) -> &'static str {
+        match self {
+            ActionPayload::ApplyPoisonOnRandomMonster(_) => "ApplyPoisonOnRandomMonsterAction",
+            ActionPayload::ApplyPower(_) => "ApplyPowerAction",
+            ActionPayload::ApplyPowerToRandomEnemy(_) => "ApplyPowerToRandomEnemyAction",
+            ActionPayload::Damage(_) => "DamageAction",
+            ActionPayload::DamageAllEnemies(_) => "DamageAllEnemiesAction",
+            ActionPayload::DrawCard(_) => "DrawCardAction",
+            ActionPayload::Discard(_) => "DiscardAction",
+            ActionPayload::DiscardSpecificCard(_) => "DiscardSpecificCardAction",
+            ActionPayload::EmptyDeckShuffle(_) => "EmptyDeckShuffleAction",
+            ActionPayload::Exhaust(_) => "ExhaustAction",
+            ActionPayload::ExhaustSpecificCard(_) => "ExhaustSpecificCardAction",
+            ActionPayload::GainEnergy(_) => "GainEnergyAction",
+            ActionPayload::MakeTempCardInDiscard(_) => "MakeTempCardInDiscardAction",
+            ActionPayload::MakeTempCardInDiscardAndDeck(_) => "MakeTempCardInDiscardAndDeckAction",
+            ActionPayload::MakeTempCardInDrawPile(_) => "MakeTempCardInDrawPileAction",
+            ActionPayload::MakeTempCardInHand(_) => "MakeTempCardInHandAction",
+            ActionPayload::ModifyBlock(_) => "ModifyBlockAction",
+            ActionPayload::PutOnBottomOfDeck(_) => "PutOnBottomOfDeckAction",
+            ActionPayload::PutOnDeck(_) => "PutOnDeckAction",
+            ActionPayload::ReduceCost(_) => "ReduceCostAction",
+            ActionPayload::ReduceCostForTurn(_) => "ReduceCostForTurnAction",
+            ActionPayload::ReducePower(_) => "ReducePowerAction",
+            ActionPayload::RemoveSpecificPower(_) => "RemoveSpecificPowerAction",
+            ActionPayload::SetDontTrigger(_) => "SetDontTriggerAction",
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ApplyPoisonOnRandomMonsterActionState {
     pub starting_duration_bits: F32Bits,

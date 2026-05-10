@@ -588,6 +588,16 @@ ActionPayload {
 }
 ```
 
+Rust must keep a code-level source link for every typed payload:
+
+```text
+ActionPayload::java_source_class()
+TYPED_ACTION_PAYLOAD_SOURCE_CLASSES
+```
+
+Adding an `ActionPayload` variant without a Java source class mapping is a
+schema defect.
+
 Any action subclass that cannot be serialized and restored must populate
 `unsupported_subclass_payload` and make the frame `unsupported_abort` before it
 is used for training or search. This field is not a generic escape hatch for
