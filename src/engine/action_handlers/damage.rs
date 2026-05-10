@@ -336,7 +336,52 @@ fn apply_damage_to_monster_via_pipeline(
     outcome
 }
 
+fn damage_action_target_is_dead_or_escaped(state: &CombatState, target_id: usize) -> bool {
+    if target_id == 0 {
+        state.entities.player.current_hp <= 0
+    } else {
+        state
+            .entities
+            .monsters
+            .iter()
+            .find(|m| m.id == target_id)
+            .map_or(true, |m| m.is_dead_or_escaped())
+    }
+}
+
+fn damage_action_source_is_dying_or_half_dead(state: &CombatState, source_id: usize) -> bool {
+    if source_id == NO_SOURCE {
+        return false;
+    }
+    if source_id == 0 {
+        return state.entities.player.current_hp <= 0;
+    }
+
+    state
+        .entities
+        .monsters
+        .iter()
+        .find(|m| m.id == source_id)
+        .is_some_and(|m| m.is_dying || m.half_dead)
+}
+
+fn should_cancel_java_damage_action(
+    state: &CombatState,
+    info: &crate::runtime::action::DamageInfo,
+) -> bool {
+    if info.damage_type == DamageType::Thorns {
+        return false;
+    }
+
+    damage_action_target_is_dead_or_escaped(state, info.target)
+        || damage_action_source_is_dying_or_half_dead(state, info.source)
+}
+
 pub fn handle_damage(info: crate::runtime::action::DamageInfo, state: &mut CombatState) {
+    if should_cancel_java_damage_action(state, &info) {
+        return;
+    }
+
     let target_id = info.target;
     let source_id = info.source;
 
@@ -1153,5 +1198,103 @@ mod tests {
         let monster = &state.entities.monsters[0];
         assert_eq!(monster.block, 0);
         assert_eq!(monster.current_hp, 9);
+    }
+
+    #[test]
+    fn normal_damage_action_cancels_against_dead_or_escaped_target() {
+        for (is_dying, half_dead, is_escaped) in [
+            (true, false, false),
+            (false, true, false),
+            (false, false, true),
+        ] {
+            let mut state = blank_test_combat();
+            let mut monster = test_monster(EnemyId::JawWorm);
+            monster.id = 63;
+            monster.current_hp = 20;
+            monster.block = 3;
+            monster.is_dying = is_dying;
+            monster.half_dead = half_dead;
+            monster.is_escaped = is_escaped;
+            state.entities.monsters = vec![monster];
+
+            handle_damage(
+                DamageInfo {
+                    source: 0,
+                    target: 63,
+                    base: 10,
+                    output: 10,
+                    damage_type: DamageType::Normal,
+                    is_modified: false,
+                },
+                &mut state,
+            );
+
+            let monster = &state.entities.monsters[0];
+            assert_eq!(monster.current_hp, 20);
+            assert_eq!(monster.block, 3);
+            assert_eq!(
+                state.pop_next_action(),
+                None,
+                "Java DamageAction.shouldCancelAction returns before damage when target.isDeadOrEscaped()"
+            );
+        }
+    }
+
+    #[test]
+    fn normal_damage_action_cancels_when_source_is_dying_or_half_dead() {
+        for (is_dying, half_dead) in [(true, false), (false, true)] {
+            let mut state = blank_test_combat();
+            state.entities.player.current_hp = 30;
+            let mut source = test_monster(EnemyId::JawWorm);
+            source.id = 64;
+            source.is_dying = is_dying;
+            source.half_dead = half_dead;
+            state.entities.monsters = vec![source];
+
+            handle_damage(
+                DamageInfo {
+                    source: 64,
+                    target: 0,
+                    base: 7,
+                    output: 7,
+                    damage_type: DamageType::Normal,
+                    is_modified: false,
+                },
+                &mut state,
+            );
+
+            assert_eq!(
+                state.entities.player.current_hp, 30,
+                "Java DamageAction returns before damage when info.owner is dying or halfDead"
+            );
+        }
+    }
+
+    #[test]
+    fn thorns_damage_action_does_not_use_dead_or_escaped_cancel_guard() {
+        let mut state = blank_test_combat();
+        let mut monster = test_monster(EnemyId::JawWorm);
+        monster.id = 65;
+        monster.current_hp = 20;
+        monster.block = 0;
+        monster.half_dead = true;
+        state.entities.monsters = vec![monster];
+
+        handle_damage(
+            DamageInfo {
+                source: 0,
+                target: 65,
+                base: 6,
+                output: 6,
+                damage_type: DamageType::Thorns,
+                is_modified: false,
+            },
+            &mut state,
+        );
+
+        assert_eq!(
+            state.entities.monsters[0].current_hp, 14,
+            "Java DamageAction bypasses shouldCancelAction for THORNS damage"
+        );
     }
 }

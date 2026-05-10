@@ -9,10 +9,14 @@ Continue Java-source-backed mechanics cleanup. Do not add strategy heuristics, b
 
 ## Last Pushed Checkpoint
 
-Latest pushed branch tip: `Match Pummel and Spot Weakness actions`
+Latest pushed branch tip: `Match DamageAction cancel guards`
 
 Recent pushed mechanics fixes:
 
+- `Match DamageAction cancel guards`
+  - Java `DamageAction.update()` returns before damage when non-THORNS damage has a dead/half-dead/escaped target or a dying/half-dead source.
+  - Rust `handle_damage` now applies that Java `shouldCancelAction()` equivalent before damage resolution.
+  - THORNS damage explicitly bypasses this cancel guard, matching Java `DamageAction`.
 - `Match Pummel and Spot Weakness actions`
   - Java `Pummel.use()` emits `magicNumber - 1` `PummelDamageAction` hits, then one ordinary `DamageAction`; Rust now has `Action::PummelDamage` and only the final hit is generic `Damage`.
   - Java `PummelDamageAction` re-checks `target.currentHealth > 0` at execution time and skips without damage/death cleanup if the target is already at 0 HP; Rust now preserves that guard.
@@ -71,25 +75,19 @@ Verification already passed for those checkpoints:
 
 ## Latest Mechanics Work
 
-Pummel / Spot Weakness execution-time parity:
+DamageAction cancel parity:
 
-- Java `Pummel.use()` emits `magicNumber - 1` `PummelDamageAction` hits, then one ordinary `DamageAction`; Rust now has `Action::PummelDamage` and only the final hit is generic `Damage`.
-- Java `PummelDamageAction` re-checks `target.currentHealth > 0` at execution time and skips without damage/death cleanup if the target is already at 0 HP; Rust now preserves that guard.
-- Java `SpotWeaknessAction` checks `targetMonster.getIntentBaseDmg() >= 0`; Rust no longer relies solely on the UI-style visible-intent projection that hides dying/half-dead monsters.
-- `PutOnDeckAction` and `FiendFireAction` were rechecked against Java. Existing Rust behavior/tests already cover the important edges: PutOnDeck's RNG fallback and shrinking-hand loop, Fiend Fire's queue order where random exhaust actions execute before the queued damage actions.
+- Java `DamageAction.update()` returns before damage when non-THORNS damage has a dead/half-dead/escaped target or a dying/half-dead source.
+- Rust `handle_damage` now applies that Java `shouldCancelAction()` equivalent before damage resolution.
+- THORNS damage explicitly bypasses this cancel guard, matching Java `DamageAction`.
 
 Verification passed for this work:
 
 - `cargo fmt`
 - `cargo check --lib`
-- `cargo test pummel_damage_action --lib`
 - `cargo test engine::action_handlers::damage::tests --lib`
-- `cargo test spot_weakness_reads_raw_intent_base_damage_even_if_target_is_dying --lib`
-- `cargo test engine::action_handlers::powers::tests --lib`
-- `cargo test ironclad_multi_hit_and_rage_runtime_actions_match_java_use_methods --lib`
-- `cargo test fire_breathing_flame_barrier_and_fiend_fire_hooks_match_java_sources --lib`
-- `cargo test put_on_deck_action_matches_java_rng_and_selection_edges --lib`
 - `cargo test content::cards::tests --lib`
+- `cargo test content::relics::tests --lib`
 
 Known verification limitation:
 
