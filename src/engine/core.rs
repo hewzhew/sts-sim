@@ -1023,19 +1023,7 @@ fn resolve_pending_choice(
                             }
                             crate::runtime::action::CardDestination::DrawPileRandom => {
                                 // Java CodexAction: add to draw pile at random position
-                                if combat_state.zones.draw_pile.is_empty() {
-                                    combat_state.zones.draw_pile.push(card);
-                                } else {
-                                    let pos = combat_state
-                                        .rng
-                                        .card_random_rng
-                                        .random(combat_state.zones.draw_pile.len() as i32)
-                                        as usize;
-                                    combat_state
-                                        .zones
-                                        .draw_pile
-                                        .insert(pos.min(combat_state.zones.draw_pile.len()), card);
-                                }
+                                combat_state.add_card_to_draw_pile_random_spot(card);
                             }
                         }
                         *engine_state = EngineState::CombatProcessing;

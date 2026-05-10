@@ -773,7 +773,7 @@ impl NeutralEngineQueryService {
                 let card = branch_combat.zones.draw_pile.remove(draw_index);
                 let scenario_debug =
                     format!("draw_top_card_sample/index:{draw_index}/card:{:?}", card.id);
-                branch_combat.zones.draw_pile.insert(0, card);
+                branch_combat.add_card_to_draw_pile_top(card);
                 let branch_context = SearchExecutionContext {
                     decision_id: context.decision_id.clone(),
                     engine: context.engine.clone(),

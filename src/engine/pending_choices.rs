@@ -155,7 +155,7 @@ pub fn handle_hand_select(
                             combat_state.zones.hand.iter().position(|c| c.uuid == *uuid)
                         {
                             let card = combat_state.zones.hand.remove(pos);
-                            combat_state.zones.draw_pile.insert(0, card);
+                            combat_state.add_card_to_draw_pile_top(card);
                         }
                     }
                 }
@@ -169,7 +169,7 @@ pub fn handle_hand_select(
                             if card.get_cost() > 0 {
                                 card.free_to_play_once = true;
                             }
-                            combat_state.zones.draw_pile.push(card);
+                            combat_state.add_card_to_draw_pile_bottom(card);
                         }
                     }
                 }
@@ -280,7 +280,7 @@ pub fn handle_grid_select(
                     }
                 }
                 GridSelectReason::MoveToDrawPile => {
-                    // Move from source pile to draw pile (random position)
+                    // Headbutt-style movement: selected card returns to the top of draw pile.
                     for uuid in &uuids {
                         let pile = match source_pile {
                             PileType::Discard => &mut combat_state.zones.discard_pile,
@@ -289,7 +289,7 @@ pub fn handle_grid_select(
                         };
                         if let Some(pos) = pile.iter().position(|c| c.uuid == *uuid) {
                             let card = pile.remove(pos);
-                            combat_state.zones.draw_pile.push(card);
+                            combat_state.add_card_to_draw_pile_top(card);
                         }
                     }
                 }

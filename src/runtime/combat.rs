@@ -89,6 +89,42 @@ pub struct CardZones {
     pub card_uuid_counter: u32,
 }
 
+impl CardZones {
+    /// Internal Rust draw-pile invariant: index 0 is the next card drawn.
+    /// Java CardGroup stores the draw-pile top at the end of the list, so all
+    /// Java addToTop/addToBottom/addToRandomSpot semantics must pass through
+    /// these helpers instead of writing `draw_pile` indices directly.
+    pub fn add_to_draw_pile_top(&mut self, card: CombatCard) {
+        self.draw_pile.insert(0, card);
+    }
+
+    pub fn add_to_draw_pile_bottom(&mut self, card: CombatCard) {
+        self.draw_pile.push(card);
+    }
+
+    pub fn draw_top_card(&mut self) -> Option<CombatCard> {
+        if self.draw_pile.is_empty() {
+            None
+        } else {
+            Some(self.draw_pile.remove(0))
+        }
+    }
+
+    pub fn add_to_draw_pile_random_spot_from_java_index(
+        &mut self,
+        card: CombatCard,
+        java_insert_index: usize,
+    ) {
+        let len = self.draw_pile.len();
+        if len == 0 {
+            self.draw_pile.push(card);
+            return;
+        }
+        let rust_insert_index = len.saturating_sub(java_insert_index.min(len - 1));
+        self.draw_pile.insert(rust_insert_index, card);
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct EntityState {
     pub player: PlayerEntity,
@@ -1159,6 +1195,30 @@ impl CombatState {
 
 // Card-zone utilities used by action handlers to reconcile card movement.
 impl CombatState {
+    pub fn add_card_to_draw_pile_top(&mut self, card: CombatCard) {
+        self.zones.add_to_draw_pile_top(card);
+    }
+
+    pub fn add_card_to_draw_pile_bottom(&mut self, card: CombatCard) {
+        self.zones.add_to_draw_pile_bottom(card);
+    }
+
+    pub fn add_card_to_draw_pile_random_spot(&mut self, card: CombatCard) {
+        let java_insert_index = if self.zones.draw_pile.is_empty() {
+            0
+        } else {
+            self.rng
+                .card_random_rng
+                .random(self.zones.draw_pile.len() as i32 - 1) as usize
+        };
+        self.zones
+            .add_to_draw_pile_random_spot_from_java_index(card, java_insert_index);
+    }
+
+    pub fn draw_top_card(&mut self) -> Option<CombatCard> {
+        self.zones.draw_top_card()
+    }
+
     /// Helper to find a card by UUID in a specific slice and remove it. Returns the removed card.
     pub fn remove_card_by_uuid(pile: &mut Vec<CombatCard>, uuid: u32) -> Option<CombatCard> {
         if let Some(index) = pile.iter().position(|c| c.uuid == uuid) {
@@ -1272,6 +1332,59 @@ mod tests {
     use super::*;
     use crate::runtime::action::ActionInfo;
     use std::collections::VecDeque;
+
+    #[test]
+    fn card_zones_draw_pile_top_is_index_zero() {
+        let mut zones = CardZones {
+            draw_pile: vec![CombatCard::new(CardId::Strike, 1)],
+            hand: vec![],
+            discard_pile: vec![],
+            exhaust_pile: vec![],
+            limbo: vec![],
+            queued_cards: VecDeque::new(),
+            card_uuid_counter: 1,
+        };
+
+        zones.add_to_draw_pile_top(CombatCard::new(CardId::Defend, 2));
+        zones.add_to_draw_pile_bottom(CombatCard::new(CardId::Bash, 3));
+
+        assert_eq!(
+            zones.draw_top_card().map(|card| card.id),
+            Some(CardId::Defend)
+        );
+        assert_eq!(
+            zones.draw_top_card().map(|card| card.id),
+            Some(CardId::Strike)
+        );
+        assert_eq!(
+            zones.draw_top_card().map(|card| card.id),
+            Some(CardId::Bash)
+        );
+    }
+
+    #[test]
+    fn card_zones_random_spot_maps_java_bottom_index_to_rust_top_index() {
+        let mut zones = CardZones {
+            draw_pile: vec![
+                CombatCard::new(CardId::Strike, 1),
+                CombatCard::new(CardId::Defend, 2),
+                CombatCard::new(CardId::Bash, 3),
+            ],
+            hand: vec![],
+            discard_pile: vec![],
+            exhaust_pile: vec![],
+            limbo: vec![],
+            queued_cards: VecDeque::new(),
+            card_uuid_counter: 3,
+        };
+
+        zones.add_to_draw_pile_random_spot_from_java_index(CombatCard::new(CardId::Wound, 4), 0);
+        assert_eq!(zones.draw_pile[3].id, CardId::Wound);
+
+        zones.add_to_draw_pile_random_spot_from_java_index(CombatCard::new(CardId::Burn, 5), 3);
+        assert_eq!(zones.draw_pile[1].id, CardId::Burn);
+        assert_eq!(zones.draw_pile[0].id, CardId::Strike);
+    }
 
     #[test]
     fn engine_runtime_queue_actions_preserves_top_before_bottom_order() {

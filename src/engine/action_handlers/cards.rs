@@ -72,7 +72,9 @@ pub fn handle_draw_cards(amount: u32, state: &mut CombatState) {
         if state.zones.draw_pile.is_empty() {
             break;
         }
-        let mut card = state.zones.draw_pile.remove(0);
+        let mut card = state
+            .draw_top_card()
+            .expect("draw pile was checked non-empty before drawing");
 
         if card.id == CardId::Void {
             let void_actions = crate::content::cards::status::void::on_drawn(state);
@@ -241,7 +243,7 @@ pub fn handle_move_card(
                     state.zones.discard_pile.push(card);
                 }
             }
-            crate::state::PileType::Draw => state.zones.draw_pile.insert(0, card),
+            crate::state::PileType::Draw => state.add_card_to_draw_pile_top(card),
             crate::state::PileType::Discard => state.zones.discard_pile.push(card),
             crate::state::PileType::Exhaust => {
                 if matches!(from, crate::state::PileType::Exhaust) {
@@ -345,15 +347,11 @@ pub fn handle_make_temp_card_in_draw_pile(
             card.upgrades = 1;
         }
         if to_bottom {
-            state.zones.draw_pile.push(card);
-        } else if random_spot && !state.zones.draw_pile.is_empty() {
-            let idx = state
-                .rng
-                .card_random_rng
-                .random(state.zones.draw_pile.len() as i32) as usize;
-            state.zones.draw_pile.insert(idx, card);
+            state.add_card_to_draw_pile_bottom(card);
+        } else if random_spot {
+            state.add_card_to_draw_pile_random_spot(card);
         } else {
-            state.zones.draw_pile.insert(0, card);
+            state.add_card_to_draw_pile_top(card);
         }
     }
 }
@@ -393,11 +391,7 @@ pub fn handle_make_temp_card_in_discard_and_deck(
         state.zones.card_uuid_counter += 1;
         let card = crate::runtime::combat::CombatCard::new(card_id, state.zones.card_uuid_counter);
         state.zones.discard_pile.push(card.clone());
-        let pos = state
-            .rng
-            .card_random_rng
-            .random(state.zones.draw_pile.len() as i32) as usize;
-        state.zones.draw_pile.insert(pos, card);
+        state.add_card_to_draw_pile_random_spot(card);
     }
 }
 
@@ -673,14 +667,10 @@ pub fn handle_make_random_card_in_draw_pile(
         if let Some(cost) = cost_for_turn {
             card.cost_for_turn = Some(cost);
         }
-        if random_spot && !state.zones.draw_pile.is_empty() {
-            let idx = state
-                .rng
-                .card_random_rng
-                .random(state.zones.draw_pile.len() as i32) as usize;
-            state.zones.draw_pile.insert(idx, card);
+        if random_spot {
+            state.add_card_to_draw_pile_random_spot(card);
         } else {
-            state.zones.draw_pile.push(card);
+            state.add_card_to_draw_pile_top(card);
         }
     }
 }
@@ -1066,7 +1056,11 @@ pub fn handle_play_top_card(target: Option<usize>, exhaust: bool, state: &mut Co
         return;
     }
 
-    let mut card = Box::new(state.zones.draw_pile.remove(0));
+    let mut card = Box::new(
+        state
+            .draw_top_card()
+            .expect("draw pile was checked non-empty before PlayTopCard"),
+    );
     card.free_to_play_once = true;
     if crate::content::cards::get_card_definition(card.id).cost == -1 {
         card.energy_on_use = state.turn.energy as i32;
@@ -1398,6 +1392,45 @@ mod tests {
         assert_eq!(state.zones.draw_pile[0].id, CardId::Strike);
         assert_eq!(state.zones.draw_pile[1].id, CardId::Defend);
         assert_eq!(state.zones.draw_pile[2].id, CardId::Wound);
+    }
+
+    #[test]
+    fn random_draw_pile_insert_does_not_put_card_on_top_when_pile_is_nonempty() {
+        let mut state = blank_test_combat();
+        state.zones.draw_pile = vec![
+            CombatCard::new(CardId::Strike, 1),
+            CombatCard::new(CardId::Defend, 2),
+        ];
+
+        state.add_card_to_draw_pile_random_spot(CombatCard::new(CardId::Wound, 3));
+
+        assert_eq!(state.zones.draw_pile[0].id, CardId::Strike);
+        assert!(state
+            .zones
+            .draw_pile
+            .iter()
+            .any(|card| card.id == CardId::Wound));
+    }
+
+    #[test]
+    fn random_draw_pile_insert_maps_java_bottom_to_top_order() {
+        let mut state = blank_test_combat();
+        state.zones.draw_pile = vec![
+            CombatCard::new(CardId::Strike, 1),
+            CombatCard::new(CardId::Defend, 2),
+            CombatCard::new(CardId::Bash, 3),
+        ];
+        let java_insert_index = state
+            .rng
+            .card_random_rng
+            .clone()
+            .random(state.zones.draw_pile.len() as i32 - 1)
+            as usize;
+        let expected_rust_index = state.zones.draw_pile.len() - java_insert_index;
+
+        state.add_card_to_draw_pile_random_spot(CombatCard::new(CardId::Wound, 4));
+
+        assert_eq!(state.zones.draw_pile[expected_rust_index].id, CardId::Wound);
     }
 }
 
