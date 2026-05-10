@@ -1372,6 +1372,120 @@ Coverage:
 - `ironclad_topdeck_and_strength_scaling_definitions_match_java_sources`
 - `ironclad_topdeck_and_strength_scaling_runtime_actions_match_java_use_methods`
 
+## Batch 11 - HP Loss / Status Generation / Random Attack Coverage
+
+### Hemokinesis
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/cards/red/Hemokinesis.java`
+
+Rust source:
+- `src/content/cards/mod.rs`
+- `src/content/cards/ironclad/hemokinesis.rs`
+
+Java evidence:
+- Constructor: cost `1`, type `ATTACK`, color `RED`, rarity `UNCOMMON`, target
+  `ENEMY`, `baseDamage = 15`, `baseMagicNumber = magicNumber = 2`.
+- `use`: VFX only, then queues `LoseHPAction(p, p, this.magicNumber)`, then
+  damage with `this.damage`.
+- `upgrade`: `upgradeDamage(5)` only.
+
+Rust result:
+- Definition matches Java constructor and upgrade damage.
+- Runtime now evaluates damage and magic at play time.
+- Existing HP-loss action is player-authored and keeps `triggers_rupture = true`,
+  matching the Java `LoseHPAction(p, p, ...)` path.
+
+Coverage:
+- `ironclad_hp_loss_and_generated_attack_definitions_match_java_sources`
+- `ironclad_hp_loss_and_generated_attack_runtime_actions_match_java_use_methods`
+
+### Immolate
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/cards/red/Immolate.java`
+- `D:/rust/cardcrawl/actions/common/MakeTempCardInDiscardAction.java`
+
+Rust source:
+- `src/content/cards/mod.rs`
+- `src/content/cards/ironclad/immolate.rs`
+
+Java evidence:
+- Constructor: cost `2`, type `ATTACK`, color `RED`, rarity `RARE`, target
+  `ALL_ENEMY`, `baseDamage = 21`, `isMultiDamage = true`, preview card `Burn`.
+- `use`: queues `DamageAllEnemiesAction(p, this.multiDamage, this.damageTypeForTurn,
+  FIRE)`, then `MakeTempCardInDiscardAction(new Burn(), 1)`.
+- `upgrade`: `upgradeDamage(7)`.
+- The generated Burn is a Status, so Master Reality does not upgrade it.
+
+Rust result:
+- Definition matches Java constructor, multi-damage flag, target, and upgrade
+  damage.
+- Runtime now evaluates the card at play time before reading `multi_damage`;
+  this prevents stale/empty multi-damage from being emitted.
+- Runtime already adds one unupgraded Burn to discard.
+
+Coverage:
+- `ironclad_hp_loss_and_generated_attack_definitions_match_java_sources`
+- `ironclad_hp_loss_and_generated_attack_runtime_actions_match_java_use_methods`
+
+### Impervious
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/cards/red/Impervious.java`
+
+Rust source:
+- `src/content/cards/mod.rs`
+- `src/content/cards/ironclad/impervious.rs`
+
+Java evidence:
+- Constructor: cost `2`, type `SKILL`, color `RED`, rarity `RARE`, target
+  `SELF`, `baseBlock = 30`, `exhaust = true`.
+- `use`: queues `GainBlockAction(p, p, this.block)`.
+- `upgrade`: `upgradeBlock(10)`.
+
+Rust result:
+- Definition matches Java constructor, exhaust flag, and upgrade block.
+- Runtime now evaluates block at play time before emitting GainBlock.
+
+Coverage:
+- `ironclad_hp_loss_and_generated_attack_definitions_match_java_sources`
+- `ironclad_hp_loss_and_generated_attack_runtime_actions_match_java_use_methods`
+
+### Infernal Blade
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/cards/red/InfernalBlade.java`
+
+Rust source:
+- `src/content/cards/mod.rs`
+- `src/content/cards/runtime_impl.rs`
+- `src/content/cards/ironclad/infernal_blade.rs`
+
+Java evidence:
+- Constructor: cost `1`, type `SKILL`, color `RED`, rarity `UNCOMMON`, target
+  `NONE`, `exhaust = true`.
+- `use`: creates a truly random combat Attack, copies it, sets cost for turn to
+  `0`, then queues `MakeTempCardInHandAction(c, true)`.
+- `upgrade`: `upgradeBaseCost(0)`.
+
+Rust result:
+- Definition matches Java constructor and exhaust flag.
+- Fixed upgraded base cost override for `InfernalBlade+` to `0`.
+- Runtime already creates a random Attack in hand with `cost_for_turn = Some(0)`.
+
+Coverage:
+- `ironclad_hp_loss_and_generated_attack_definitions_match_java_sources`
+- `ironclad_hp_loss_and_generated_attack_runtime_actions_match_java_use_methods`
+
 ## Full Ironclad Queue
 
 Cards remain `unreviewed` until their Java file, Rust definition, Rust runtime,
@@ -1418,10 +1532,10 @@ and supporting engine behavior have all been checked.
 | 37 | `Havoc.java` | `havoc.rs` | `wrong-fixed` |
 | 38 | `Headbutt.java` | `headbutt.rs` | `wrong-fixed` |
 | 39 | `HeavyBlade.java` | `heavy_blade.rs` | `wrong-fixed` |
-| 40 | `Hemokinesis.java` | `hemokinesis.rs` | `unreviewed` |
-| 41 | `Immolate.java` | `immolate.rs` | `unreviewed` |
-| 42 | `Impervious.java` | `impervious.rs` | `unreviewed` |
-| 43 | `InfernalBlade.java` | `infernal_blade.rs` | `unreviewed` |
+| 40 | `Hemokinesis.java` | `hemokinesis.rs` | `wrong-fixed` |
+| 41 | `Immolate.java` | `immolate.rs` | `wrong-fixed` |
+| 42 | `Impervious.java` | `impervious.rs` | `wrong-fixed` |
+| 43 | `InfernalBlade.java` | `infernal_blade.rs` | `wrong-fixed` |
 | 44 | `Inflame.java` | `inflame.rs` | `unreviewed` |
 | 45 | `Intimidate.java` | `intimidate.rs` | `unreviewed` |
 | 46 | `IronWave.java` | `iron_wave.rs` | `unreviewed` |

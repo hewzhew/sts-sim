@@ -2106,3 +2106,143 @@ fn headbutt_and_havoc_execution_helpers_match_java_sources() {
         other => panic!("Havoc should lock random target before empty-deck shuffle, got {other:?}"),
     }
 }
+
+#[test]
+fn ironclad_hp_loss_and_generated_attack_definitions_match_java_sources() {
+    let hemokinesis = get_card_definition(CardId::Hemokinesis);
+    assert_eq!(hemokinesis.card_type, CardType::Attack);
+    assert_eq!(hemokinesis.rarity, CardRarity::Uncommon);
+    assert_eq!(hemokinesis.cost, 1);
+    assert_eq!(hemokinesis.base_damage, 15);
+    assert_eq!(hemokinesis.base_magic, 2);
+    assert_eq!(hemokinesis.target, CardTarget::Enemy);
+    assert_eq!(hemokinesis.upgrade_damage, 5);
+
+    let immolate = get_card_definition(CardId::Immolate);
+    assert_eq!(immolate.card_type, CardType::Attack);
+    assert_eq!(immolate.rarity, CardRarity::Rare);
+    assert_eq!(immolate.cost, 2);
+    assert_eq!(immolate.base_damage, 21);
+    assert_eq!(immolate.target, CardTarget::AllEnemy);
+    assert!(immolate.is_multi_damage);
+    assert_eq!(immolate.upgrade_damage, 7);
+
+    let impervious = get_card_definition(CardId::Impervious);
+    assert_eq!(impervious.card_type, CardType::Skill);
+    assert_eq!(impervious.rarity, CardRarity::Rare);
+    assert_eq!(impervious.cost, 2);
+    assert_eq!(impervious.base_block, 30);
+    assert_eq!(impervious.target, CardTarget::SelfTarget);
+    assert!(impervious.exhaust);
+    assert_eq!(impervious.upgrade_block, 10);
+
+    let infernal_blade = get_card_definition(CardId::InfernalBlade);
+    assert_eq!(infernal_blade.card_type, CardType::Skill);
+    assert_eq!(infernal_blade.rarity, CardRarity::Uncommon);
+    assert_eq!(infernal_blade.cost, 1);
+    assert_eq!(infernal_blade.target, CardTarget::None);
+    assert!(infernal_blade.exhaust);
+    let mut infernal_blade_plus = CombatCard::new(CardId::InfernalBlade, 270);
+    infernal_blade_plus.upgrades = 1;
+    assert_eq!(upgraded_base_cost_override(&infernal_blade_plus), Some(0));
+}
+
+#[test]
+fn ironclad_hp_loss_and_generated_attack_runtime_actions_match_java_use_methods() {
+    let mut state = crate::test_support::blank_test_combat();
+    let mut first = crate::test_support::test_monster(EnemyId::JawWorm);
+    first.id = 81;
+    let mut second = crate::test_support::test_monster(EnemyId::Cultist);
+    second.id = 82;
+    second.slot = 1;
+    state.entities.monsters = vec![first, second];
+    crate::content::powers::store::set_powers_for(
+        &mut state,
+        0,
+        vec![Power {
+            power_type: PowerId::Strength,
+            instance_id: None,
+            amount: 2,
+            extra_data: 0,
+            just_applied: false,
+        }],
+    );
+
+    let mut hemokinesis_plus = CombatCard::new(CardId::Hemokinesis, 271);
+    hemokinesis_plus.upgrades = 1;
+    let hemokinesis_actions =
+        resolve_card_play(CardId::Hemokinesis, &state, &hemokinesis_plus, Some(81));
+    assert_eq!(hemokinesis_actions.len(), 2);
+    assert!(matches!(
+        hemokinesis_actions[0].action,
+        Action::LoseHp {
+            target: 0,
+            amount: 2,
+            triggers_rupture: true
+        }
+    ));
+    match &hemokinesis_actions[1].action {
+        Action::Damage(info) => {
+            assert_eq!(info.source, 0);
+            assert_eq!(info.target, 81);
+            assert_eq!(info.base, 22);
+            assert_eq!(info.output, 22);
+            assert_eq!(info.damage_type, DamageType::Normal);
+        }
+        other => panic!("Hemokinesis+ should damage after HP loss, got {other:?}"),
+    }
+
+    let mut immolate_plus = CombatCard::new(CardId::Immolate, 272);
+    immolate_plus.upgrades = 1;
+    let immolate_actions = resolve_card_play(CardId::Immolate, &state, &immolate_plus, None);
+    assert_eq!(immolate_actions.len(), 2);
+    match &immolate_actions[0].action {
+        Action::DamageAllEnemies {
+            source,
+            damages,
+            damage_type,
+            is_modified,
+        } => {
+            assert_eq!(*source, 0);
+            assert_eq!(damages.as_slice(), &[30, 30]);
+            assert_eq!(*damage_type, DamageType::Normal);
+            assert!(!*is_modified);
+        }
+        other => panic!("Immolate+ should damage all enemies, got {other:?}"),
+    }
+    assert!(matches!(
+        immolate_actions[1].action,
+        Action::MakeTempCardInDiscard {
+            card_id: CardId::Burn,
+            amount: 1,
+            upgraded: false
+        }
+    ));
+
+    let mut impervious_plus = CombatCard::new(CardId::Impervious, 273);
+    impervious_plus.upgrades = 1;
+    let impervious_actions = resolve_card_play(CardId::Impervious, &state, &impervious_plus, None);
+    assert_eq!(impervious_actions.len(), 1);
+    assert!(matches!(
+        impervious_actions[0].action,
+        Action::GainBlock {
+            target: 0,
+            amount: 40
+        }
+    ));
+
+    let infernal_blade_actions = resolve_card_play(
+        CardId::InfernalBlade,
+        &state,
+        &CombatCard::new(CardId::InfernalBlade, 274),
+        None,
+    );
+    assert_eq!(infernal_blade_actions.len(), 1);
+    assert!(matches!(
+        infernal_blade_actions[0].action,
+        Action::MakeRandomCardInHand {
+            card_type: Some(CardType::Attack),
+            cost_for_turn: Some(0)
+        }
+    ));
+}
