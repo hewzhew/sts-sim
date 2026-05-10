@@ -160,6 +160,42 @@ mod tests {
             other => panic!("expected reward screen, got {other:?}"),
         }
     }
+
+    #[test]
+    fn regal_pillow_adds_to_rest_heal_but_mark_of_bloom_blocks_it() {
+        let mut engine_state = EngineState::Campfire;
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        run_state.current_hp = 20;
+        run_state.max_hp = 80;
+        run_state.relics.clear();
+        run_state.relics.push(RelicState::new(RelicId::RegalPillow));
+
+        assert!(handle(
+            &mut engine_state,
+            &mut run_state,
+            Some(ClientInput::CampfireOption(CampfireChoice::Rest))
+        ));
+        assert_eq!(run_state.current_hp, 59);
+        assert!(matches!(engine_state, EngineState::MapNavigation));
+
+        let mut blocked_engine = EngineState::Campfire;
+        let mut blocked = RunState::new(1, 0, false, "Ironclad");
+        blocked.current_hp = 20;
+        blocked.max_hp = 80;
+        blocked.relics.clear();
+        blocked.relics.push(RelicState::new(RelicId::RegalPillow));
+        blocked
+            .relics
+            .push(RelicState::new(RelicId::MarkOfTheBloom));
+
+        assert!(handle(
+            &mut blocked_engine,
+            &mut blocked,
+            Some(ClientInput::CampfireOption(CampfireChoice::Rest))
+        ));
+        assert_eq!(blocked.current_hp, 20);
+        assert!(matches!(blocked_engine, EngineState::MapNavigation));
+    }
 }
 
 /// Check if a card is bottled (attached to BottledFlame/Lightning/Tornado).

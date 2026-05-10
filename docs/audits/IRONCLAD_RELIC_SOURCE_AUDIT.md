@@ -1079,6 +1079,165 @@ Coverage:
 - `maw_bank_only_spending_in_shop_uses_it_up_like_java_lose_gold`
 - `engine::shop_handler::tests`
 
+## Shared Common Shop / Rest / Event Batch
+
+### Cross-Cutting Room-Entry Heal Source Normalization
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/core/AbstractCreature.java`
+- `D:/rust/cardcrawl/relics/MarkOfTheBloom.java`
+- `D:/rust/cardcrawl/relics/MagicFlower.java`
+
+Rust source:
+- `src/engine/run_loop.rs`
+
+Java evidence:
+- Player healing routes through `AbstractCreature.heal`.
+- `MarkOfTheBloom.onPlayerHeal` always returns `0`.
+- `MagicFlower.onPlayerHeal` only modifies healing while the current room phase
+  is `COMBAT`, so shop/rest-room entry healing is not multiplied.
+
+Rust result:
+- Kept the existing Mark of the Bloom guard for out-of-combat room-entry heals.
+- Routed room-entry `MealTicket` and `EternalFeather` heals through
+  `change_hp_with_source` after the Mark guard, preserving resource-domain
+  events without incorrectly applying combat-only Magic Flower.
+
+Coverage:
+- `engine::run_loop::tests`
+
+### Meal Ticket
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/relics/MealTicket.java`
+
+Rust source:
+- `src/engine/run_loop.rs`
+
+Java evidence:
+- Constructor: ID `"MealTicket"`, tier `COMMON`, landing sound `CLINK`.
+- `justEnteredRoom(AbstractRoom room)`: when the room is a `ShopRoom`, queues
+  visual relic action and calls `AbstractDungeon.player.heal(15)`.
+- `canSpawn` is false after floor 48 unless Endless mode is active.
+
+Rust result:
+- Tier matches Java.
+- Shop-room entry heals `15` HP and is blocked by `MarkOfTheBloom`.
+- Fixed the heal to route through `change_hp_with_source` with relic source
+  instead of directly mutating HP.
+- UI-only flash / above-creature action is intentionally not represented.
+- Spawn gating is a relic-pool/reward-generation concern and is not handled by
+  the room-entry hook.
+
+Coverage:
+- `shared_common_shop_rest_event_relic_metadata_matches_java_sources`
+- `meal_ticket_shop_entry_heal_uses_relic_source_and_mark_of_bloom_guard`
+
+### Regal Pillow
+
+Status: `exact`
+
+Java source:
+- `D:/rust/cardcrawl/relics/RegalPillow.java`
+- `D:/rust/cardcrawl/vfx/campfire/CampfireSleepEffect.java`
+- `D:/rust/cardcrawl/ui/campfire/RestOption.java`
+
+Rust source:
+- `src/engine/campfire_handler.rs`
+
+Java evidence:
+- Constructor: ID `"Regal Pillow"`, tier `COMMON`, landing sound `MAGICAL`.
+- The relic class has no hook method; sleep/rest code adds flat `15` to the
+  normal campfire rest heal.
+- The resulting heal still routes through `player.heal`, so Mark of the Bloom
+  blocks it.
+- `canSpawn` is false after floor 48 unless Endless mode is active.
+
+Rust result:
+- Tier matches Java.
+- Campfire rest adds flat `15` before applying the existing Mark of the Bloom
+  block.
+- Spawn gating is a relic-pool/reward-generation concern and is not handled by
+  the campfire hook.
+
+Coverage:
+- `shared_common_shop_rest_event_relic_metadata_matches_java_sources`
+- `regal_pillow_adds_to_rest_heal_but_mark_of_bloom_blocks_it`
+
+### Smiling Mask
+
+Status: `exact`
+
+Java source:
+- `D:/rust/cardcrawl/relics/SmilingMask.java`
+- `D:/rust/cardcrawl/shop/ShopScreen.java`
+- `D:/rust/cardcrawl/shop/StoreRelic.java`
+
+Rust source:
+- `src/shop/shop_screen.rs`
+- `src/engine/shop_handler.rs`
+
+Java evidence:
+- Constructor: ID `"Smiling Mask"`, tier `COMMON`, landing sound `FLAT`.
+- `onEnterRoom`: pulses only in shop rooms; this is UI-only.
+- Shop init and purge updates force `actualPurgeCost = 50` when owned.
+- Buying Smiling Mask in a shop immediately sets current shop
+  `actualPurgeCost` to `50`.
+- `canSpawn` is false after floor 48 unless Endless mode is active, and false
+  in shop rooms.
+
+Rust result:
+- Tier matches Java.
+- Shop generation forces purge cost to `50` when owned, after other discounts.
+- Buying Smiling Mask in the current shop immediately sets purge cost to `50`.
+- UI-only pulse/stopPulse is intentionally not represented.
+- Spawn gating is a relic-pool/reward-generation concern and is not handled by
+  the shop hook.
+
+Coverage:
+- `shared_common_shop_rest_event_relic_metadata_matches_java_sources`
+- `smiling_mask_overrides_discounted_initial_purge_cost`
+- `smiling_mask_purchase_sets_purge_cost_to_50`
+
+### Tiny Chest
+
+Status: `exact`
+
+Java source:
+- `D:/rust/cardcrawl/relics/TinyChest.java`
+- `D:/rust/cardcrawl/helpers/EventHelper.java`
+
+Rust source:
+- `src/state/run.rs`
+- `src/events/generator.rs`
+
+Java evidence:
+- Constructor: ID `"Tiny Chest"`, tier `COMMON`, landing sound `SOLID`;
+  constructor sets counter `-1`, and `onEquip` sets counter `0`.
+- On every unknown-room roll, EventHelper increments the counter. When it
+  reaches `4`, the counter resets to `0`, the relic flashes, and the roll is
+  forced to `TREASURE`.
+- The random roll is still consumed before the forced treasure result.
+- `canSpawn` is false after floor 35 unless Endless mode is active.
+
+Rust result:
+- Tier and initial equipped counter match Java's `onEquip` state.
+- `RunState::generate_event` increments and resets Tiny Chest before room-type
+  rolling.
+- `EventGenerator::roll_room_type` consumes the event RNG and then forces a
+  treasure result when `tiny_chest_counter == 3`.
+- UI-only flash is intentionally not represented.
+- Spawn gating is a relic-pool/reward-generation concern and is not handled by
+  the event hook.
+
+Coverage:
+- `shared_common_shop_rest_event_relic_metadata_matches_java_sources`
+- `tiny_chest_counter_forces_treasure_roll_every_fourth_unknown_room`
+
 ## Full Ironclad Class-Specific Relic Queue
 
 Relics remain `unreviewed` until their Java file, Rust definition/subscription,
@@ -1128,3 +1287,7 @@ class-specific queue.
 | 21 | `DreamCatcher.java` | `dream_catcher.rs` / campfire handler | `exact` |
 | 22 | `JuzuBracelet.java` | event generator | `exact` |
 | 23 | `MawBank.java` | run loop / shop handler | `wrong-fixed` |
+| 24 | `MealTicket.java` | run loop | `wrong-fixed` |
+| 25 | `RegalPillow.java` | campfire handler | `exact` |
+| 26 | `SmilingMask.java` | shop generation / shop handler | `exact` |
+| 27 | `TinyChest.java` | event generator | `exact` |

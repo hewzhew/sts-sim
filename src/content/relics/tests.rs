@@ -962,3 +962,57 @@ fn juzu_bracelet_converts_monster_event_roll_without_preserving_monster_chance()
         "Java resets MONSTER_CHANCE after a Juzu-converted monster roll"
     );
 }
+
+#[test]
+fn shared_common_shop_rest_event_relic_metadata_matches_java_sources() {
+    assert_eq!(get_relic_tier(RelicId::MealTicket), RelicTier::Common);
+    assert_eq!(get_relic_tier(RelicId::RegalPillow), RelicTier::Common);
+    assert_eq!(get_relic_tier(RelicId::SmilingMask), RelicTier::Common);
+    assert_eq!(get_relic_tier(RelicId::TinyChest), RelicTier::Common);
+
+    assert!(!get_relic_subscriptions(RelicId::MealTicket).at_battle_start);
+    assert!(!get_relic_subscriptions(RelicId::RegalPillow).at_battle_start);
+    assert!(!get_relic_subscriptions(RelicId::SmilingMask).at_battle_start);
+    assert!(!get_relic_subscriptions(RelicId::TinyChest).at_battle_start);
+}
+
+#[test]
+fn tiny_chest_counter_forces_treasure_roll_every_fourth_unknown_room() {
+    let mut run_state = crate::state::run::RunState::new(1, 0, false, "Ironclad");
+    run_state.relics.clear();
+    let mut tiny_chest = RelicState::new(RelicId::TinyChest);
+    tiny_chest.counter = 3;
+    run_state.relics.push(tiny_chest);
+
+    let _ = run_state.generate_event();
+    let tiny_chest = run_state
+        .relics
+        .iter()
+        .find(|relic| relic.id == RelicId::TinyChest)
+        .expect("Tiny Chest should be present");
+    assert_eq!(tiny_chest.counter, 0);
+
+    let mut generator = crate::events::generator::EventGenerator::new(1);
+    generator.monster_chance = 1.0;
+    generator.shop_chance = 0.0;
+    generator.treasure_chance = 0.0;
+    let mut rng = crate::runtime::rng::RngPool::new(1);
+    let ctx = crate::events::context::EventContext {
+        act_num: 1,
+        ascension_level: 0,
+        floor_num: 10,
+        gold: 99,
+        current_hp: 80,
+        max_hp: 80,
+        has_curses: false,
+        tiny_chest_counter: 3,
+        has_golden_idol: false,
+        has_juzu_bracelet: false,
+        relic_count: 1,
+    };
+
+    assert_eq!(
+        generator.roll_room_type(&mut rng, &ctx),
+        crate::events::generator::RoomRoll::Treasure
+    );
+}

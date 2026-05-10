@@ -318,8 +318,12 @@ pub fn tick_run(
                                         r.id == crate::content::relics::RelicId::MarkOfTheBloom
                                     })
                                 {
-                                    run_state.current_hp =
-                                        (run_state.current_hp + heal).min(run_state.max_hp);
+                                    run_state.change_hp_with_source(
+                                        heal,
+                                        DomainEventSource::Relic(
+                                            crate::content::relics::RelicId::EternalFeather,
+                                        ),
+                                    );
                                 }
                             }
                         }
@@ -361,8 +365,12 @@ pub fn tick_run(
                                         r.id == crate::content::relics::RelicId::MarkOfTheBloom
                                     })
                                 {
-                                    run_state.current_hp =
-                                        (run_state.current_hp + 15).min(run_state.max_hp);
+                                    run_state.change_hp_with_source(
+                                        15,
+                                        DomainEventSource::Relic(
+                                            crate::content::relics::RelicId::MealTicket,
+                                        ),
+                                    );
                                 }
                                 *engine_state = EngineState::Shop(run_state.generate_shop());
                             }
@@ -634,5 +642,118 @@ pub fn tick_run(
             }
         }
         EngineState::GameOver(_) => false,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::tick_run;
+    use crate::content::cards::CardId;
+    use crate::content::relics::{RelicId, RelicState};
+    use crate::map::node::{MapEdge, MapRoomNode, RoomType};
+    use crate::map::state::MapState;
+    use crate::runtime::combat::CombatCard;
+    use crate::state::core::{ClientInput, EngineState};
+    use crate::state::run::RunState;
+
+    fn run_state_with_first_room(room_type: RoomType) -> RunState {
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        let mut first = MapRoomNode::new(0, 0);
+        first.class = Some(room_type);
+        first.edges.insert(MapEdge::new(0, 0, 0, 1));
+        let mut second = MapRoomNode::new(0, 1);
+        second.class = Some(RoomType::MonsterRoom);
+        run_state.map = MapState::new(vec![vec![first], vec![second]]);
+        run_state
+    }
+
+    #[test]
+    fn meal_ticket_shop_entry_heal_uses_relic_source_and_mark_of_bloom_guard() {
+        let mut run_state = run_state_with_first_room(RoomType::ShopRoom);
+        run_state.current_hp = 20;
+        run_state.max_hp = 80;
+        run_state.relics.clear();
+        run_state.relics.push(RelicState::new(RelicId::MealTicket));
+        let mut engine_state = EngineState::MapNavigation;
+        let mut combat_state = None;
+
+        assert!(tick_run(
+            &mut engine_state,
+            &mut run_state,
+            &mut combat_state,
+            Some(ClientInput::SelectMapNode(0)),
+        ));
+        assert_eq!(run_state.current_hp, 35);
+        assert!(matches!(engine_state, EngineState::Shop(_)));
+
+        let mut blocked = run_state_with_first_room(RoomType::ShopRoom);
+        blocked.current_hp = 20;
+        blocked.max_hp = 80;
+        blocked.relics.clear();
+        blocked.relics.push(RelicState::new(RelicId::MealTicket));
+        blocked
+            .relics
+            .push(RelicState::new(RelicId::MarkOfTheBloom));
+        let mut blocked_engine = EngineState::MapNavigation;
+        let mut blocked_combat = None;
+
+        assert!(tick_run(
+            &mut blocked_engine,
+            &mut blocked,
+            &mut blocked_combat,
+            Some(ClientInput::SelectMapNode(0)),
+        ));
+        assert_eq!(blocked.current_hp, 20);
+        assert!(matches!(blocked_engine, EngineState::Shop(_)));
+    }
+
+    #[test]
+    fn eternal_feather_rest_room_heal_uses_relic_source_and_mark_of_bloom_guard() {
+        let mut run_state = run_state_with_first_room(RoomType::RestRoom);
+        run_state.current_hp = 20;
+        run_state.max_hp = 80;
+        run_state.relics.clear();
+        run_state
+            .relics
+            .push(RelicState::new(RelicId::EternalFeather));
+        run_state.master_deck = (0..10)
+            .map(|uuid| CombatCard::new(CardId::Strike, uuid))
+            .collect();
+        let mut engine_state = EngineState::MapNavigation;
+        let mut combat_state = None;
+
+        assert!(tick_run(
+            &mut engine_state,
+            &mut run_state,
+            &mut combat_state,
+            Some(ClientInput::SelectMapNode(0)),
+        ));
+        assert_eq!(run_state.current_hp, 26);
+        assert!(matches!(engine_state, EngineState::Campfire));
+
+        let mut blocked = run_state_with_first_room(RoomType::RestRoom);
+        blocked.current_hp = 20;
+        blocked.max_hp = 80;
+        blocked.relics.clear();
+        blocked
+            .relics
+            .push(RelicState::new(RelicId::EternalFeather));
+        blocked
+            .relics
+            .push(RelicState::new(RelicId::MarkOfTheBloom));
+        blocked.master_deck = (0..10)
+            .map(|uuid| CombatCard::new(CardId::Strike, uuid))
+            .collect();
+        let mut blocked_engine = EngineState::MapNavigation;
+        let mut blocked_combat = None;
+
+        assert!(tick_run(
+            &mut blocked_engine,
+            &mut blocked,
+            &mut blocked_combat,
+            Some(ClientInput::SelectMapNode(0)),
+        ));
+        assert_eq!(blocked.current_hp, 20);
+        assert!(matches!(blocked_engine, EngineState::Campfire));
     }
 }
