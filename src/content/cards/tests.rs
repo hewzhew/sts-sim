@@ -3299,3 +3299,237 @@ fn sever_soul_exhaust_all_non_attack_queues_exhausts_before_following_damage() {
         }))
     ));
 }
+
+#[test]
+fn ironclad_random_and_exhaust_attack_definitions_match_java_sources() {
+    let sword_boomerang = get_card_definition(CardId::SwordBoomerang);
+    assert_eq!(sword_boomerang.card_type, CardType::Attack);
+    assert_eq!(sword_boomerang.rarity, CardRarity::Common);
+    assert_eq!(sword_boomerang.cost, 1);
+    assert_eq!(sword_boomerang.base_damage, 3);
+    assert_eq!(sword_boomerang.base_magic, 3);
+    assert_eq!(sword_boomerang.target, CardTarget::AllEnemy);
+    assert_eq!(sword_boomerang.upgrade_magic, 1);
+
+    let thunderclap = get_card_definition(CardId::ThunderClap);
+    assert_eq!(thunderclap.name, "Thunderclap");
+    assert_eq!(thunderclap.card_type, CardType::Attack);
+    assert_eq!(thunderclap.rarity, CardRarity::Common);
+    assert_eq!(thunderclap.cost, 1);
+    assert_eq!(thunderclap.base_damage, 4);
+    assert_eq!(thunderclap.base_magic, 0);
+    assert_eq!(thunderclap.target, CardTarget::AllEnemy);
+    assert!(thunderclap.is_multi_damage);
+    assert_eq!(thunderclap.upgrade_damage, 3);
+
+    let true_grit = get_card_definition(CardId::TrueGrit);
+    assert_eq!(true_grit.card_type, CardType::Skill);
+    assert_eq!(true_grit.rarity, CardRarity::Common);
+    assert_eq!(true_grit.cost, 1);
+    assert_eq!(true_grit.base_block, 7);
+    assert_eq!(true_grit.base_magic, 0);
+    assert_eq!(true_grit.target, CardTarget::SelfTarget);
+    assert_eq!(true_grit.upgrade_block, 2);
+
+    let twin_strike = get_card_definition(CardId::TwinStrike);
+    assert_eq!(twin_strike.card_type, CardType::Attack);
+    assert_eq!(twin_strike.rarity, CardRarity::Common);
+    assert_eq!(twin_strike.cost, 1);
+    assert_eq!(twin_strike.base_damage, 5);
+    assert_eq!(twin_strike.target, CardTarget::Enemy);
+    assert!(twin_strike.tags.contains(&CardTag::Strike));
+    assert_eq!(twin_strike.upgrade_damage, 2);
+}
+
+#[test]
+fn ironclad_random_and_exhaust_attack_runtime_actions_match_java_use_methods() {
+    let mut state = crate::test_support::blank_test_combat();
+    crate::content::powers::store::set_powers_for(
+        &mut state,
+        0,
+        vec![
+            Power {
+                power_type: PowerId::Strength,
+                instance_id: None,
+                amount: 2,
+                extra_data: 0,
+                just_applied: false,
+            },
+            Power {
+                power_type: PowerId::Dexterity,
+                instance_id: None,
+                amount: 2,
+                extra_data: 0,
+                just_applied: false,
+            },
+        ],
+    );
+    let mut first = crate::test_support::test_monster(EnemyId::JawWorm);
+    first.id = 601;
+    let mut second = crate::test_support::test_monster(EnemyId::Cultist);
+    second.id = 602;
+    state.entities.monsters = vec![first, second];
+
+    let mut sword_plus = CombatCard::new(CardId::SwordBoomerang, 370);
+    sword_plus.upgrades = 1;
+    let sword_actions = resolve_card_play(CardId::SwordBoomerang, &state, &sword_plus, None);
+    assert_eq!(sword_actions.len(), 4);
+    for action in &sword_actions {
+        assert!(matches!(
+            action.action,
+            Action::AttackDamageRandomEnemy {
+                base_damage: 5,
+                damage_type: DamageType::Normal,
+                applies_target_modifiers: true
+            }
+        ));
+    }
+
+    let mut thunder_plus = CombatCard::new(CardId::ThunderClap, 371);
+    thunder_plus.upgrades = 1;
+    let thunder_actions = resolve_card_play(CardId::ThunderClap, &state, &thunder_plus, None);
+    assert_eq!(thunder_actions.len(), 3);
+    match &thunder_actions[0].action {
+        Action::DamageAllEnemies {
+            source,
+            damages,
+            damage_type,
+            is_modified,
+        } => {
+            assert_eq!(*source, 0);
+            assert_eq!(damages.as_slice(), &[9, 9]);
+            assert_eq!(*damage_type, DamageType::Normal);
+            assert!(!*is_modified);
+        }
+        other => panic!("Thunderclap+ should damage all enemies first, got {other:?}"),
+    }
+    assert!(matches!(
+        thunder_actions[1].action,
+        Action::ApplyPower {
+            source: 0,
+            target: 601,
+            power_id: PowerId::Vulnerable,
+            amount: 1
+        }
+    ));
+    assert!(matches!(
+        thunder_actions[2].action,
+        Action::ApplyPower {
+            source: 0,
+            target: 602,
+            power_id: PowerId::Vulnerable,
+            amount: 1
+        }
+    ));
+
+    let mut true_grit_plus = CombatCard::new(CardId::TrueGrit, 372);
+    true_grit_plus.upgrades = 1;
+    let mut true_grit_state = state.clone();
+    true_grit_state.zones.hand = vec![
+        CombatCard::new(CardId::Strike, 373),
+        CombatCard::new(CardId::Defend, 374),
+    ];
+    let true_grit_actions =
+        resolve_card_play(CardId::TrueGrit, &true_grit_state, &true_grit_plus, None);
+    assert_eq!(true_grit_actions.len(), 2);
+    assert!(matches!(
+        true_grit_actions[0].action,
+        Action::GainBlock {
+            target: 0,
+            amount: 11
+        }
+    ));
+    assert!(matches!(
+        true_grit_actions[1].action,
+        Action::SuspendForHandSelect {
+            min: 1,
+            max: 1,
+            can_cancel: false,
+            filter: crate::state::HandSelectFilter::Any,
+            reason: crate::state::HandSelectReason::Exhaust,
+        }
+    ));
+
+    let mut twin_plus = CombatCard::new(CardId::TwinStrike, 375);
+    twin_plus.upgrades = 1;
+    let twin_actions = resolve_card_play(CardId::TwinStrike, &state, &twin_plus, Some(601));
+    assert_eq!(twin_actions.len(), 2);
+    for action in &twin_actions {
+        match &action.action {
+            Action::Damage(info) => {
+                assert_eq!(info.source, 0);
+                assert_eq!(info.target, 601);
+                assert_eq!(info.base, 9);
+                assert_eq!(info.output, 9);
+                assert_eq!(info.damage_type, DamageType::Normal);
+            }
+            other => panic!("Twin Strike+ should emit two DamageActions, got {other:?}"),
+        }
+    }
+}
+
+#[test]
+fn true_grit_exhaust_action_edges_match_java_exhaust_action() {
+    let empty_state = crate::test_support::blank_test_combat();
+    let true_grit = CombatCard::new(CardId::TrueGrit, 380);
+    let empty_actions = resolve_card_play(CardId::TrueGrit, &empty_state, &true_grit, None);
+    assert_eq!(empty_actions.len(), 1);
+    assert!(matches!(
+        empty_actions[0].action,
+        Action::GainBlock {
+            target: 0,
+            amount: 7
+        }
+    ));
+
+    let mut one_card_state = crate::test_support::blank_test_combat();
+    one_card_state.zones.hand = vec![CombatCard::new(CardId::Strike, 381)];
+    let one_card_actions = resolve_card_play(CardId::TrueGrit, &one_card_state, &true_grit, None);
+    assert_eq!(one_card_actions.len(), 2);
+    assert!(matches!(
+        one_card_actions[1].action,
+        Action::ExhaustCard {
+            card_uuid: 381,
+            source_pile: crate::state::PileType::Hand
+        }
+    ));
+
+    let mut two_card_state = crate::test_support::blank_test_combat();
+    two_card_state.zones.hand = vec![
+        CombatCard::new(CardId::Strike, 382),
+        CombatCard::new(CardId::Defend, 383),
+    ];
+    let two_card_actions = resolve_card_play(CardId::TrueGrit, &two_card_state, &true_grit, None);
+    assert_eq!(two_card_actions.len(), 2);
+    assert!(matches!(
+        two_card_actions[1].action,
+        Action::ExhaustRandomCard { amount: 1 }
+    ));
+
+    let mut true_grit_plus = CombatCard::new(CardId::TrueGrit, 384);
+    true_grit_plus.upgrades = 1;
+    let one_card_plus_actions =
+        resolve_card_play(CardId::TrueGrit, &one_card_state, &true_grit_plus, None);
+    assert_eq!(one_card_plus_actions.len(), 2);
+    assert!(matches!(
+        one_card_plus_actions[1].action,
+        Action::ExhaustCard {
+            card_uuid: 381,
+            source_pile: crate::state::PileType::Hand
+        }
+    ));
+
+    let two_card_plus_actions =
+        resolve_card_play(CardId::TrueGrit, &two_card_state, &true_grit_plus, None);
+    assert_eq!(two_card_plus_actions.len(), 2);
+    assert!(matches!(
+        two_card_plus_actions[1].action,
+        Action::SuspendForHandSelect {
+            min: 1,
+            max: 1,
+            can_cancel: false,
+            filter: crate::state::HandSelectFilter::Any,
+            reason: crate::state::HandSelectReason::Exhaust,
+        }
+    ));
+}

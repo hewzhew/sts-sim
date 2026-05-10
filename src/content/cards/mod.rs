@@ -1308,7 +1308,7 @@ pub fn get_card_definition(id: CardId) -> CardDefinition {
             cost: 1,
             base_damage: 4,
             base_block: 0,
-            base_magic: 1,
+            base_magic: 0,
             target: CardTarget::AllEnemy,
             is_multi_damage: true,
             exhaust: false,

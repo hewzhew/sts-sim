@@ -2236,6 +2236,143 @@ Coverage:
 - `ironclad_exhaust_debuff_and_intent_definitions_match_java_sources`
 - `ironclad_exhaust_debuff_and_intent_runtime_actions_match_java_use_methods`
 
+## Batch 18 - Random Hit / Thunderclap / True Grit / Twin Strike Coverage
+
+### Sword Boomerang
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/cards/red/SwordBoomerang.java`
+- `D:/rust/cardcrawl/actions/common/AttackDamageRandomEnemyAction.java`
+
+Rust source:
+- `src/content/cards/mod.rs`
+- `src/content/cards/ironclad/sword_boomerang.rs`
+- `src/engine/action_handlers/damage.rs`
+
+Java evidence:
+- Constructor: cost `1`, type `ATTACK`, color `RED`, rarity `COMMON`,
+  target `ALL_ENEMY`, `baseDamage = 3`,
+  `baseMagicNumber = magicNumber = 3`.
+- `use`: loops `magicNumber` times and queues
+  `AttackDamageRandomEnemyAction(this, SLASH_HORIZONTAL)`.
+- `AttackDamageRandomEnemyAction.update`: selects a random living monster with
+  `cardRandomRng`, calls `card.calculateCardDamage(target)`, then queues a
+  `DamageAction` using the card's calculated damage.
+- `upgrade`: `upgradeMagicNumber(1)`.
+
+Rust result:
+- Definition matches Java constructor and upgrade magic.
+- Runtime now evaluates damage/magic at play time before queuing one
+  `AttackDamageRandomEnemy` per hit instead of using stale card mutation
+  fields.
+- Existing random-hit handler resolves the random target at execution time and
+  applies target-specific modifiers before damage.
+
+Coverage:
+- `ironclad_random_and_exhaust_attack_definitions_match_java_sources`
+- `ironclad_random_and_exhaust_attack_runtime_actions_match_java_use_methods`
+
+### Thunderclap
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/cards/red/ThunderClap.java`
+- `D:/rust/cardcrawl/actions/common/DamageAllEnemiesAction.java`
+
+Rust source:
+- `src/content/cards/mod.rs`
+- `src/content/cards/ironclad/thunderclap.rs`
+
+Java evidence:
+- Constructor ID is `"Thunderclap"`; cost `1`, type `ATTACK`, color `RED`,
+  rarity `COMMON`, target `ALL_ENEMY`, `isMultiDamage = true`,
+  `baseDamage = 4`.
+- The card has no magic number. Its Vulnerable amount is the literal constant
+  `1` in `use`.
+- `use`: queues VFX/SFX presentation actions, then
+  `DamageAllEnemiesAction(p, this.multiDamage, NORMAL, NONE)`, then queues
+  `ApplyPowerAction` Vulnerable `1` for every monster in the room.
+- `upgrade`: `upgradeDamage(3)`.
+
+Rust result:
+- Removed fake `base_magic = 1`; Thunderclap's Vulnerable amount is now a
+  runtime constant.
+- Runtime now evaluates multi-damage at play time, then applies Vulnerable `1`
+  to each monster id in Java loop order.
+- UI-only SFX/VFX actions are intentionally not represented.
+
+Coverage:
+- `ironclad_random_and_exhaust_attack_definitions_match_java_sources`
+- `ironclad_random_and_exhaust_attack_runtime_actions_match_java_use_methods`
+
+### True Grit
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/cards/red/TrueGrit.java`
+- `D:/rust/cardcrawl/actions/common/ExhaustAction.java`
+
+Rust source:
+- `src/content/cards/mod.rs`
+- `src/content/cards/ironclad/true_grit.rs`
+
+Java evidence:
+- Constructor: cost `1`, type `SKILL`, color `RED`, rarity `COMMON`, target
+  `SELF`, `baseBlock = 7`.
+- `use`: queues GainBlock using `this.block`.
+- If upgraded, queues `ExhaustAction(1, false)`, meaning choose exactly one
+  hand card to exhaust.
+- If unupgraded, queues `ExhaustAction(1, true, false, false)`, meaning random
+  exhaust one hand card.
+- `ExhaustAction.update`: if hand is empty, does nothing; if
+  `!anyNumber && hand.size() <= amount`, exhausts all immediately before the
+  random branch. Therefore True Grit with exactly one other hand card consumes
+  no card RNG even when unupgraded.
+- `upgrade`: `upgradeBlock(2)`.
+
+Rust result:
+- Runtime now evaluates block at play time.
+- Unupgraded True Grit now emits no exhaust action for an empty hand, an
+  immediate `ExhaustCard` for one card, and `ExhaustRandomCard` only for two or
+  more cards, preserving Java RNG consumption.
+- Upgraded True Grit keeps the same empty/one-card immediate cases and emits a
+  non-cancelable hand select only when there is a real choice.
+
+Coverage:
+- `ironclad_random_and_exhaust_attack_definitions_match_java_sources`
+- `ironclad_random_and_exhaust_attack_runtime_actions_match_java_use_methods`
+- `true_grit_exhaust_action_edges_match_java_exhaust_action`
+
+### Twin Strike
+
+Status: `exact`
+
+Java source:
+- `D:/rust/cardcrawl/cards/red/TwinStrike.java`
+
+Rust source:
+- `src/content/cards/mod.rs`
+- `src/content/cards/ironclad/twin_strike.rs`
+
+Java evidence:
+- Constructor: cost `1`, type `ATTACK`, color `RED`, rarity `COMMON`, target
+  `ENEMY`, `baseDamage = 5`, tag `STRIKE`.
+- `use`: queues two `DamageAction` instances using `this.damage`.
+- `upgrade`: `upgradeDamage(2)`.
+
+Rust result:
+- Definition matches Java constructor, Strike tag, and upgrade damage.
+- Runtime already evaluates damage at play time and emits two Damage actions
+  to the selected target.
+
+Coverage:
+- `ironclad_random_and_exhaust_attack_definitions_match_java_sources`
+- `ironclad_random_and_exhaust_attack_runtime_actions_match_java_use_methods`
+
 ## Full Ironclad Queue
 
 Cards remain `unreviewed` until their Java file, Rust definition, Rust runtime,
@@ -2310,10 +2447,10 @@ and supporting engine behavior have all been checked.
 | 65 | `Shockwave.java` | `shockwave.rs` | `wrong-fixed` |
 | 66 | `ShrugItOff.java` | `shrug_it_off.rs` | `wrong-fixed` |
 | 67 | `SpotWeakness.java` | `spot_weakness.rs` | `wrong-fixed` |
-| 68 | `SwordBoomerang.java` | `sword_boomerang.rs` | `unreviewed` |
-| 69 | `ThunderClap.java` | `thunderclap.rs` | `unreviewed` |
-| 70 | `TrueGrit.java` | `true_grit.rs` | `unreviewed` |
-| 71 | `TwinStrike.java` | `twin_strike.rs` | `unreviewed` |
+| 68 | `SwordBoomerang.java` | `sword_boomerang.rs` | `wrong-fixed` |
+| 69 | `ThunderClap.java` | `thunderclap.rs` | `wrong-fixed` |
+| 70 | `TrueGrit.java` | `true_grit.rs` | `wrong-fixed` |
+| 71 | `TwinStrike.java` | `twin_strike.rs` | `exact` |
 | 72 | `Uppercut.java` | `uppercut.rs` | `unreviewed` |
 | 73 | `Warcry.java` | `warcry.rs` | `unreviewed` |
 | 74 | `Whirlwind.java` | `whirlwind.rs` | `unreviewed` |
