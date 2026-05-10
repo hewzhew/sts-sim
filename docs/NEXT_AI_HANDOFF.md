@@ -9,62 +9,20 @@ Continue Java-source-backed mechanics cleanup. Do not add strategy heuristics, b
 
 ## Last Pushed Checkpoint
 
-`8b1aef8 Ground Java generated card edge cases`
+`f7733d6 Tighten post-combat retained actions`
 
-What it fixed:
+Recent pushed mechanics fixes:
 
-- `8b1aef8 Ground Java generated card edge cases`
-  - Added Java-backed `make_fresh_card_copy_for_combat` for `makeCopy()` hooks that depend on current combat state.
-  - `Blood for Blood.makeCopy()` now applies `damagedThisCombat` cost reduction for random generated copies.
-  - Master Reality generated-card handling now models Java upgrade call-site counts instead of treating UI/VFX classes as harmless:
-    - hand paths such as `MakeTempCardInHandAction` plus `ShowCardAndAddToHandEffect` call upgrade twice;
-    - draw-pile `MakeTempCardInDrawPileAction` with `amount < 6` plus `ShowCardAndAddToDrawPileEffect` calls upgrade twice;
-    - discard-only `MakeTempCardInDiscardAction(card, amount)` calls upgrade once.
-  - This matters mostly for `Searing Blow`, because normal cards ignore the second upgrade after their first upgrade but `SearingBlow.upgrade()` is repeatable.
-  - Discovery / Toolbox / Codex pending-choice resolution now creates selected cards through the Java make-copy context and applies the appropriate Master Reality path.
-- `35c4397 Ground generated card copy semantics`
-  - Added Java-backed `CombatCard::make_stat_equivalent_copy_with_uuid`.
-  - Generated copies now preserve permanent/stat-equivalent fields but drop transient evaluated damage/block/magic/multi-damage and one-shot play flags.
-  - Added `PowerId::MasterRealityPower` so generated non-curse/non-status cards can upgrade when entering hand/discard/draw.
-  - `MakeTempCardInDiscardAndDeck` now creates distinct draw/discard instances instead of cloning one UUID.
-- `f637fed Ground Rupture HP loss strength amount`
-  - Java `RupturePower.wasHPLost` grants `RupturePower.amount`, not HP lost.
-  - Rust `resolve_power_on_hp_lost` now receives both `hp_lost` and `power_amount`.
-  - Actual `handle_lose_hp` path now queues Strength equal to the Rupture stack amount.
+- `f7733d6 Tighten post-combat retained actions`
+  - Refined Rust post-combat queue filtering to mirror Java `GameActionManager.clearPostCombatActions()`.
+  - Only Java DAMAGE-equivalent actions, `Heal`, `GainBlock`, and `UseCardDone` are retained after lethal cleanup.
+  - Java WAIT wrappers such as `WhirlwindAction`, `DropkickAction`, and `FiendFireAction` are not retained merely because they may later emit damage.
+- `27e0fdf Match Java post-combat damage cleanup`
+  - Added Java post-combat cleanup after lethal damage.
+  - `Hand of Greed` gold and `Ritual Dagger` misc growth now resolve immediately inside their damage handlers, matching Java unique-action timing.
+  - `Corruption` on-apply scan scope matches Java `ApplyPowerAction`: hand, draw pile, discard pile, and exhaust pile only; not `limbo`.
 
-Verification already passed:
-
-- `cargo test -q engine::action_handlers::cards::tests`
-- `cargo test -q engine::core::tests`
-- `cargo test -q engine::core::tests::discovery_selection_uses_java_make_copy_and_master_reality_path`
-- `cargo test -q engine::core::tests::card_reward_selection_preserves_codex_master_reality_single_draw_path`
-- `cargo test -q content::cards::tests`
-- `cargo test -q engine::action_handlers::cards::tests::searing_blow_preserves_java_master_reality_effect_call_counts`
-- `cargo test -q engine::action_handlers::cards::tests::random_pool_blood_for_blood_copy_uses_java_make_copy_damage_discount`
-- `cargo test -q engine::action_handlers::cards::tests::generated_cards_apply_master_reality_before_entering_zones`
-- `cargo test -q content::cards::tests::rupture_and_reaper_execution_hooks_match_java_sources`
-- `cargo test -q content::cards::tests::ironclad_random_and_exhaust_attack_runtime_actions_match_java_use_methods`
-- `cargo test -q content::cards::tests::ironclad_common_utility_runtime_actions_match_java_use_methods`
-- `cargo check -q`
-- `git diff --check`
-
-## Current Work To Commit
-
-Ironclad Java audit continued and found two non-strategy mechanics differences:
-
-- `Corruption` on-apply now matches Java `ApplyPowerAction` scan scope:
-  - Java scans hand, draw pile, discard pile, and exhaust pile.
-  - Java does not scan `limbo`.
-  - Rust no longer zeroes Skill cards sitting in `limbo` when Corruption is applied.
-- Lethal damage now applies Java `GameActionManager.clearPostCombatActions()` queue filtering:
-  - Java damage actions call `clearPostCombatActions()` when all monsters are basically dead.
-  - The filter keeps DAMAGE actions, `HealAction`, `GainBlockAction`, and `UseCardAction`.
-  - Rust now keeps equivalent damage-domain actions, `Heal`, `GainBlock`, and `UseCardDone`.
-  - Actions whose Java `actionType` is not DAMAGE, such as `WhirlwindAction`, `DropkickAction`, and `FiendFireAction`, are not retained merely because they may later emit damage.
-  - This prevents lethal `Wild Strike` / `Reckless Charge` / `Immolate`-style queued card generation, lethal `Dropkick` draw/energy, and other non-retained post-combat actions from executing after the last monster dies.
-  - `Hand of Greed` gold and `Ritual Dagger` misc growth now resolve immediately inside their damage handlers, matching Java unique action timing before post-combat queue filtering.
-
-Verification passed for this work:
+Verification already passed for those checkpoints:
 
 - `cargo test -q content::cards::tests::lethal_damage_filters_post_combat_actions_like_java_action_manager`
 - `cargo test -q content::cards::tests::on_kill_card_rewards_ignore_minions_and_half_dead_targets_like_java_actions`
@@ -73,6 +31,22 @@ Verification passed for this work:
 - `cargo test -q content::cards::tests::ironclad`
 - `cargo test -q engine::action_handlers::cards::tests`
 - `cargo test -q engine::core::tests`
+
+## Current Work To Commit
+
+Ironclad Java audit continued and found one non-strategy mechanics difference:
+
+- `Corruption` on-apply now matches Java `AbstractCard.setCostForTurn(-9)` semantics:
+  - Java `ApplyPowerAction` sets `costForTurn` for Skill cards in hand, draw pile, discard pile, and exhaust pile.
+  - Java `setCostForTurn` does not mutate base cost or combat cost modifiers.
+  - Rust no longer subtracts from `CombatCard.cost_modifier` when Corruption is applied.
+
+Verification passed for this work:
+
+- `cargo test -q content::cards::tests::ironclad_power_and_debuff_runtime_actions_match_java_use_methods`
+- `cargo test -q content::cards::tests::ironclad`
+- `cargo test -q content::cards::tests`
+- `cargo check -q`
 
 ## Next Work
 

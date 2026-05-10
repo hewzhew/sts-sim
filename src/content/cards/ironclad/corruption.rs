@@ -37,7 +37,6 @@ pub fn corruption_on_apply(state: &mut CombatState) {
         .chain(state.zones.exhaust_pile.iter_mut())
     {
         if is_skill(c.id) {
-            c.cost_modifier -= 9;
             c.cost_for_turn = Some(0);
         }
     }

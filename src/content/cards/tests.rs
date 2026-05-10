@@ -1028,7 +1028,9 @@ fn ironclad_power_and_debuff_runtime_actions_match_java_use_methods() {
     assert!(duplicate_corruption_actions.is_empty());
 
     let mut corruption_apply_state = crate::test_support::blank_test_combat();
-    corruption_apply_state.zones.hand = vec![CombatCard::new(CardId::Defend, 910)];
+    let mut hand_skill = CombatCard::new(CardId::Defend, 910);
+    hand_skill.cost_modifier = 2;
+    corruption_apply_state.zones.hand = vec![hand_skill];
     corruption_apply_state.zones.draw_pile = vec![CombatCard::new(CardId::ShrugItOff, 911)];
     corruption_apply_state.zones.discard_pile = vec![CombatCard::new(CardId::BurningPact, 912)];
     corruption_apply_state.zones.exhaust_pile = vec![CombatCard::new(CardId::PowerThrough, 913)];
@@ -1037,6 +1039,10 @@ fn ironclad_power_and_debuff_runtime_actions_match_java_use_methods() {
     crate::content::cards::ironclad::corruption::corruption_on_apply(&mut corruption_apply_state);
 
     assert_eq!(corruption_apply_state.zones.hand[0].cost_for_turn, Some(0));
+    assert_eq!(
+        corruption_apply_state.zones.hand[0].cost_modifier, 2,
+        "Java setCostForTurn(-9) changes costForTurn only; it does not apply a combat cost modifier"
+    );
     assert_eq!(
         corruption_apply_state.zones.draw_pile[0].cost_for_turn,
         Some(0)
