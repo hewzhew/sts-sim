@@ -261,6 +261,8 @@ pub struct ActionStaticState {
     pub discard_action_num_discarded: i32,
     pub exhaust_action_num_exhausted: i32,
     pub nightmare_action_num_discarded: i32,
+    pub put_on_deck_action_num_placed: i32,
+    pub put_on_bottom_of_deck_action_num_placed: i32,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -340,12 +342,23 @@ pub enum ActionPayload {
     DamageAllEnemies(DamageAllEnemiesActionState),
     DrawCard(DrawCardActionState),
     Discard(DiscardActionState),
+    DiscardSpecificCard(DiscardSpecificCardActionState),
     EmptyDeckShuffle(EmptyDeckShuffleActionState),
     Exhaust(ExhaustActionState),
+    ExhaustSpecificCard(ExhaustSpecificCardActionState),
     GainEnergy(GainEnergyActionState),
+    MakeTempCardInDiscard(MakeTempCardInDiscardActionState),
+    MakeTempCardInDiscardAndDeck(MakeTempCardInDiscardAndDeckActionState),
+    MakeTempCardInDrawPile(MakeTempCardInDrawPileActionState),
+    MakeTempCardInHand(MakeTempCardInHandActionState),
     ModifyBlock(ModifyBlockActionState),
+    PutOnBottomOfDeck(PutOnBottomOfDeckActionState),
+    PutOnDeck(PutOnDeckActionState),
+    ReduceCost(ReduceCostActionState),
+    ReduceCostForTurn(ReduceCostForTurnActionState),
     ReducePower(ReducePowerActionState),
     RemoveSpecificPower(RemoveSpecificPowerActionState),
+    SetDontTrigger(SetDontTriggerActionState),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -396,6 +409,12 @@ pub struct DiscardActionState {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DiscardSpecificCardActionState {
+    pub target_card: CardRef,
+    pub group_zone_ref: Option<ZoneRef>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct EmptyDeckShuffleActionState {
     pub shuffled: bool,
     pub vfx_done: bool,
@@ -410,13 +429,70 @@ pub struct ExhaustActionState {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ExhaustSpecificCardActionState {
+    pub target_card: CardRef,
+    pub group_zone_ref: ZoneRef,
+    pub starting_duration_bits: F32Bits,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct GainEnergyActionState {
     pub energy_gain: i32,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MakeTempCardInDiscardActionState {
+    pub card_to_make: CardRef,
+    pub num_cards: i32,
+    pub same_uuid: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MakeTempCardInDiscardAndDeckActionState {
+    pub card_to_make: CardRef,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MakeTempCardInDrawPileActionState {
+    pub card_to_make: CardRef,
+    pub random_spot: bool,
+    pub auto_position: bool,
+    pub to_bottom: bool,
+    pub x_bits: F32Bits,
+    pub y_bits: F32Bits,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MakeTempCardInHandActionState {
+    pub card_to_make: CardRef,
+    pub is_other_card_in_center: bool,
+    pub same_uuid: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ModifyBlockActionState {
     pub target_uuid: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PutOnBottomOfDeckActionState {
+    pub is_random: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PutOnDeckActionState {
+    pub is_random: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ReduceCostActionState {
+    pub target_uuid: Option<String>,
+    pub card_ref: Option<CardRef>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ReduceCostForTurnActionState {
+    pub target_card: CardRef,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -429,6 +505,12 @@ pub struct ReducePowerActionState {
 pub struct RemoveSpecificPowerActionState {
     pub power_id: Option<String>,
     pub power_ref: Option<PowerRef>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SetDontTriggerActionState {
+    pub card_ref: CardRef,
+    pub trigger: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

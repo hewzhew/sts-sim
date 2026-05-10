@@ -415,22 +415,51 @@ that payload is not trainable and not searchable. Unknown subclass state is an
 | `DiscardAction.java` | `isRandom` | modeled | `ActionPayload::Discard.is_random` | random discard branch |
 | `DiscardAction.java` | `endTurn` | modeled | `ActionPayload::Discard.end_turn` | manual discard trigger behavior |
 | `DiscardAction.java` | `numDiscarded` | modeled | `ActionStaticState.discard_action_num_discarded` | static hand-select counter |
+| `DiscardSpecificCardAction.java` | `targetCard` | modeled | `ActionPayload::DiscardSpecificCard.target_card` | specific card instance |
+| `DiscardSpecificCardAction.java` | `group` | modeled | `ActionPayload::DiscardSpecificCard.group_zone_ref` | nullable; defaults to hand |
 | `ExhaustAction.java` | `p` | modeled/derived | `ActionState.target` | player target |
 | `ExhaustAction.java` | `isRandom` | modeled | `ActionPayload::Exhaust.is_random` | random exhaust branch |
 | `ExhaustAction.java` | `anyNumber` | modeled | `ActionPayload::Exhaust.any_number` | hand select constraint |
 | `ExhaustAction.java` | `canPickZero` | modeled | `ActionPayload::Exhaust.can_pick_zero` | hand select constraint |
 | `ExhaustAction.java` | `numExhausted` | modeled | `ActionStaticState.exhaust_action_num_exhausted` | static hand-select counter |
+| `ExhaustSpecificCardAction.java` | `targetCard` | modeled | `ActionPayload::ExhaustSpecificCard.target_card` | specific card instance |
+| `ExhaustSpecificCardAction.java` | `group` | modeled | `ActionPayload::ExhaustSpecificCard.group_zone_ref` | source card group |
+| `ExhaustSpecificCardAction.java` | `startingDuration` | modeled | `ActionPayload::ExhaustSpecificCard.starting_duration_bits` | subclass private duration |
 | `GainEnergyAction.java` | `energyGain` | modeled | `ActionPayload::GainEnergy.energy_gain` | energy gained and hand trigger amount |
 | `GainGoldAction.java` | no subclass fields beyond common action fields | modeled | `ActionState` | `amount` covers gained gold |
 | `HealAction.java` | no subclass fields beyond common action fields | modeled | `ActionState` | `amount`, target/source, duration cover heal |
 | `LoseHPAction.java` | no subclass fields beyond common action fields | modeled | `ActionState` | `amount`, target/source, attack effect, duration cover HP loss |
 | `LosePercentHPAction.java` | no subclass fields beyond common action fields | modeled | `ActionState` | `amount` is percent |
+| `MakeTempCardAtBottomOfDeckAction.java` | no subclass fields beyond common action fields | modeled | `ActionState` | generates random combat card at update; `amount` and RNG cover behavior |
+| `MakeTempCardInDiscardAction.java` | `c` | modeled | `ActionPayload::MakeTempCardInDiscard.card_to_make` | prototype card instance |
+| `MakeTempCardInDiscardAction.java` | `numCards` | modeled | `ActionPayload::MakeTempCardInDiscard.num_cards` | number generated |
+| `MakeTempCardInDiscardAction.java` | `sameUUID` | modeled | `ActionPayload::MakeTempCardInDiscard.same_uuid` | same-instance copy behavior |
+| `MakeTempCardInDiscardAndDeckAction.java` | `cardToMake` | modeled | `ActionPayload::MakeTempCardInDiscardAndDeck.card_to_make` | prototype card instance |
+| `MakeTempCardInDrawPileAction.java` | `cardToMake` | modeled | `ActionPayload::MakeTempCardInDrawPile.card_to_make` | prototype card instance |
+| `MakeTempCardInDrawPileAction.java` | `randomSpot` | modeled | `ActionPayload::MakeTempCardInDrawPile.random_spot` | draw-pile insertion mode |
+| `MakeTempCardInDrawPileAction.java` | `autoPosition` | modeled | `ActionPayload::MakeTempCardInDrawPile.auto_position` | effect positioning input |
+| `MakeTempCardInDrawPileAction.java` | `toBottom` | modeled | `ActionPayload::MakeTempCardInDrawPile.to_bottom` | draw-pile bottom insertion |
+| `MakeTempCardInDrawPileAction.java` | `x`, `y` | modeled | `ActionPayload::MakeTempCardInDrawPile.x_bits/y_bits` | stored source floats; raw bits |
+| `MakeTempCardInHandAction.java` | `c` | modeled | `ActionPayload::MakeTempCardInHand.card_to_make` | prototype card instance |
+| `MakeTempCardInHandAction.java` | `isOtherCardInCenter` | modeled | `ActionPayload::MakeTempCardInHand.is_other_card_in_center` | source field retained for action replay |
+| `MakeTempCardInHandAction.java` | `sameUUID` | modeled | `ActionPayload::MakeTempCardInHand.same_uuid` | same-instance copy behavior |
 | `ModifyBlockAction.java` | `uuid` | modeled | `ActionPayload::ModifyBlock.target_uuid` | all in-battle card instances with this UUID are modified |
+| `PutOnBottomOfDeckAction.java` | `p` | modeled/derived | `ActionState.target` | player target |
+| `PutOnBottomOfDeckAction.java` | `isRandom` | modeled | `ActionPayload::PutOnBottomOfDeck.is_random` | random hand selection |
+| `PutOnBottomOfDeckAction.java` | `numPlaced` | modeled | `ActionStaticState.put_on_bottom_of_deck_action_num_placed` | static hand-select count |
+| `PutOnDeckAction.java` | `p` | modeled/derived | `ActionState.target` | player target |
+| `PutOnDeckAction.java` | `isRandom` | modeled | `ActionPayload::PutOnDeck.is_random` | random hand selection |
+| `PutOnDeckAction.java` | `numPlaced` | modeled | `ActionStaticState.put_on_deck_action_num_placed` | static hand-select count |
+| `ReduceCostAction.java` | `uuid` | modeled | `ActionPayload::ReduceCost.target_uuid` | all in-battle card instances with this UUID |
+| `ReduceCostAction.java` | `card` | modeled | `ActionPayload::ReduceCost.card_ref` | direct card instance path |
+| `ReduceCostForTurnAction.java` | `targetCard` | modeled | `ActionPayload::ReduceCostForTurn.target_card` | direct card instance path |
 | `ReducePowerAction.java` | `powerID` | modeled | `ActionPayload::ReducePower.power_id` | string lookup path |
 | `ReducePowerAction.java` | `powerInstance` | modeled | `ActionPayload::ReducePower.power_ref` | direct instance path |
 | `RemoveAllBlockAction.java` | no subclass fields beyond common action fields | modeled | `ActionState` | target/source and duration cover it |
 | `RemoveSpecificPowerAction.java` | `powerToRemove` | modeled | `ActionPayload::RemoveSpecificPower.power_id` | string lookup path |
 | `RemoveSpecificPowerAction.java` | `powerInstance` | modeled | `ActionPayload::RemoveSpecificPower.power_ref` | direct instance path |
+| `SetDontTriggerAction.java` | `card` | modeled | `ActionPayload::SetDontTrigger.card_ref` | direct card instance |
+| `SetDontTriggerAction.java` | `trigger` | modeled | `ActionPayload::SetDontTrigger.trigger` | target `dontTriggerOnUseCard` value |
 | `EmptyDeckShuffleAction.java` | `shuffled` | modeled | `ActionPayload::EmptyDeckShuffle.shuffled` | delayed shuffle state |
 | `EmptyDeckShuffleAction.java` | `vfxDone` | modeled | `ActionPayload::EmptyDeckShuffle.vfx_done` | delayed discard movement state |
 | `EmptyDeckShuffleAction.java` | `count` | modeled | `ActionPayload::EmptyDeckShuffle.count` | discard movement counter |

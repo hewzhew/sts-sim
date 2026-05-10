@@ -419,6 +419,8 @@ ActionStaticState {
   discard_action_num_discarded,
   exhaust_action_num_exhausted,
   nightmare_action_num_discarded,
+  put_on_deck_action_num_placed,
+  put_on_bottom_of_deck_action_num_placed,
 }
 ```
 
@@ -496,6 +498,11 @@ ActionPayload {
     end_turn,
   }
 
+  DiscardSpecificCard {
+    target_card,
+    group_zone_ref,
+  }
+
   EmptyDeckShuffle {
     shuffled,
     vfx_done,
@@ -508,12 +515,60 @@ ActionPayload {
     can_pick_zero,
   }
 
+  ExhaustSpecificCard {
+    target_card,
+    group_zone_ref,
+    starting_duration_bits,
+  }
+
   GainEnergy {
     energy_gain,
   }
 
+  MakeTempCardInDiscard {
+    card_to_make,
+    num_cards,
+    same_uuid,
+  }
+
+  MakeTempCardInDiscardAndDeck {
+    card_to_make,
+  }
+
+  MakeTempCardInDrawPile {
+    card_to_make,
+    random_spot,
+    auto_position,
+    to_bottom,
+    x_bits,
+    y_bits,
+  }
+
+  MakeTempCardInHand {
+    card_to_make,
+    is_other_card_in_center,
+    same_uuid,
+  }
+
   ModifyBlock {
     target_uuid,
+  }
+
+  PutOnBottomOfDeck {
+    is_random,
+  }
+
+  PutOnDeck {
+    is_random,
+  }
+
+  ReduceCost {
+    target_uuid,
+    card_ref,
+  }
+
+  ReduceCostForTurn {
+    target_card,
   }
 
   ReducePower {
@@ -524,6 +579,11 @@ ActionPayload {
   RemoveSpecificPower {
     power_id,
     power_ref,
+  }
+
+  SetDontTrigger {
+    card_ref,
+    trigger,
   }
 }
 ```
