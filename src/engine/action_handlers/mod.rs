@@ -348,10 +348,16 @@ pub fn execute_action(action: Action, state: &mut CombatState) {
             card_id,
             amount,
             random_spot,
+            to_bottom,
             upgraded,
-        } => {
-            cards::handle_make_temp_card_in_draw_pile(card_id, amount, random_spot, upgraded, state)
-        }
+        } => cards::handle_make_temp_card_in_draw_pile(
+            card_id,
+            amount,
+            random_spot,
+            to_bottom,
+            upgraded,
+            state,
+        ),
         Action::MakeCopyInHand { original, amount } => {
             cards::handle_make_copy_in_hand(original, amount, state)
         }

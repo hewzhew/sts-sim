@@ -333,6 +333,7 @@ pub fn handle_make_temp_card_in_draw_pile(
     card_id: CardId,
     amount: u8,
     random_spot: bool,
+    to_bottom: bool,
     upgraded: bool,
     state: &mut CombatState,
 ) {
@@ -343,14 +344,16 @@ pub fn handle_make_temp_card_in_draw_pile(
         if upgraded {
             card.upgrades = 1;
         }
-        if random_spot && !state.zones.draw_pile.is_empty() {
+        if to_bottom {
+            state.zones.draw_pile.push(card);
+        } else if random_spot && !state.zones.draw_pile.is_empty() {
             let idx = state
                 .rng
                 .card_random_rng
                 .random(state.zones.draw_pile.len() as i32) as usize;
             state.zones.draw_pile.insert(idx, card);
         } else {
-            state.zones.draw_pile.push(card);
+            state.zones.draw_pile.insert(0, card);
         }
     }
 }
@@ -1242,7 +1245,10 @@ pub fn handle_end_turn_trigger(state: &mut CombatState) {
 
 #[cfg(test)]
 mod tests {
-    use super::{handle_make_temp_card_in_hand, obtain_specific_potion_if_allowed};
+    use super::{
+        handle_make_temp_card_in_draw_pile, handle_make_temp_card_in_hand,
+        obtain_specific_potion_if_allowed,
+    };
     use crate::content::cards::CardId;
     use crate::content::potions::PotionId;
     use crate::content::powers::PowerId;
@@ -1360,6 +1366,38 @@ mod tests {
         assert_eq!(state.zones.discard_pile.len(), 1);
         assert_eq!(state.zones.discard_pile[0].id, CardId::Defend);
         assert_eq!(state.zones.discard_pile[0].cost_for_turn, None);
+    }
+
+    #[test]
+    fn make_temp_card_in_draw_pile_non_random_goes_to_top() {
+        let mut state = blank_test_combat();
+        state.zones.draw_pile = vec![
+            CombatCard::new(CardId::Strike, 1),
+            CombatCard::new(CardId::Defend, 2),
+        ];
+        state.zones.card_uuid_counter = 2;
+
+        handle_make_temp_card_in_draw_pile(CardId::Wound, 1, false, false, false, &mut state);
+
+        assert_eq!(state.zones.draw_pile[0].id, CardId::Wound);
+        assert_eq!(state.zones.draw_pile[1].id, CardId::Strike);
+        assert_eq!(state.zones.draw_pile[2].id, CardId::Defend);
+    }
+
+    #[test]
+    fn make_temp_card_in_draw_pile_to_bottom_goes_under_existing_cards() {
+        let mut state = blank_test_combat();
+        state.zones.draw_pile = vec![
+            CombatCard::new(CardId::Strike, 1),
+            CombatCard::new(CardId::Defend, 2),
+        ];
+        state.zones.card_uuid_counter = 2;
+
+        handle_make_temp_card_in_draw_pile(CardId::Wound, 1, false, true, false, &mut state);
+
+        assert_eq!(state.zones.draw_pile[0].id, CardId::Strike);
+        assert_eq!(state.zones.draw_pile[1].id, CardId::Defend);
+        assert_eq!(state.zones.draw_pile[2].id, CardId::Wound);
     }
 }
 

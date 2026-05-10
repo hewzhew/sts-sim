@@ -10,6 +10,7 @@ pub fn at_battle_start() -> SmallVec<[ActionInfo; 4]> {
             card_id: crate::content::cards::CardId::Wound,
             amount: 2,
             random_spot: true,
+            to_bottom: false,
             upgraded: false,
         },
         insertion_mode: AddTo::Bottom,

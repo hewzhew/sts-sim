@@ -13,6 +13,7 @@ pub fn on_end_turn_in_hand(_state: &CombatState) -> smallvec::SmallVec<[ActionIn
             card_id: CardId::Pride,
             amount: 1,
             random_spot: false,
+            to_bottom: false,
             upgraded: false
         }, // Top of draw pile
         insertion_mode: AddTo::Bottom,

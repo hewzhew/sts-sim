@@ -25,6 +25,7 @@ pub fn reckless_charge_play(
                 card_id: crate::content::cards::CardId::Dazed,
                 amount: 1,
                 random_spot: true,
+                to_bottom: false,
                 upgraded: false
             },
             insertion_mode: AddTo::Bottom,

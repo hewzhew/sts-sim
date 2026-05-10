@@ -62,6 +62,7 @@ pub fn add_card_action(step: &AddCardStep) -> Action {
             card_id: step.card_id,
             amount: step.amount,
             random_spot: true,
+            to_bottom: false,
             upgraded: step.upgraded,
         },
     }

@@ -398,6 +398,7 @@ pub enum Action {
         card_id: crate::content::cards::CardId,
         amount: u8,
         random_spot: bool,
+        to_bottom: bool,
         upgraded: bool,
     },
     /// Java PlayTopCardAction with random target selection via cardRandomRng.
