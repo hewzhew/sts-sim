@@ -57,7 +57,7 @@ pub fn try_revive(state: &mut CombatState) {
         .relics
         .iter()
         .find(|r| r.id == crate::content::relics::RelicId::LizardTail)
-        .map_or(false, |r| !r.used_up);
+        .map_or(false, |r| r.counter == -1 && !r.used_up);
     if lizard_unused {
         let heal_amount = crate::content::relics::hooks::on_calculate_heal(
             state,

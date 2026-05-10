@@ -2179,3 +2179,211 @@ fn tungsten_rod_is_only_final_hp_loss_modifier() {
         "Java Tungsten Rod has no onLoseHp action hook"
     );
 }
+
+#[test]
+fn shared_rare_passive_resource_relic_metadata_matches_java_sources() {
+    assert_eq!(get_relic_tier(RelicId::Ginger), RelicTier::Rare);
+    assert_eq!(get_relic_tier(RelicId::Turnip), RelicTier::Rare);
+    assert_eq!(get_relic_tier(RelicId::IceCream), RelicTier::Rare);
+    assert_eq!(get_relic_tier(RelicId::LizardTail), RelicTier::Rare);
+
+    assert!(get_relic_subscriptions(RelicId::Ginger).on_receive_power_modify);
+    assert!(get_relic_subscriptions(RelicId::Turnip).on_receive_power_modify);
+    assert!(get_relic_subscriptions(RelicId::IceCream).on_calculate_energy_retained);
+
+    let lizard = get_relic_subscriptions(RelicId::LizardTail);
+    assert!(!lizard.on_lose_hp);
+    assert!(!lizard.on_lose_hp_last);
+    assert!(!lizard.on_calculate_heal);
+}
+
+#[test]
+fn ginger_and_turnip_block_apply_power_before_artifact_without_blocking_cleanup() {
+    let mut state = crate::test_support::blank_test_combat();
+    state
+        .entities
+        .player
+        .add_relic(RelicState::new(RelicId::Ginger));
+    store::set_powers_for(
+        &mut state,
+        0,
+        vec![Power {
+            power_type: PowerId::Artifact,
+            instance_id: None,
+            amount: 1,
+            extra_data: 0,
+            just_applied: false,
+        }],
+    );
+
+    crate::engine::action_handlers::powers::handle_apply_power(
+        901,
+        0,
+        PowerId::Weak,
+        2,
+        &mut state,
+    );
+    let player_powers = store::powers_snapshot_for(&state, 0);
+    assert!(
+        !player_powers.iter().any(|p| p.power_type == PowerId::Weak),
+        "Ginger should block Weakened ApplyPowerAction"
+    );
+    assert_eq!(
+        player_powers
+            .iter()
+            .find(|p| p.power_type == PowerId::Artifact)
+            .map(|p| p.amount),
+        Some(1),
+        "Java checks Ginger before Artifact, so Artifact is not consumed"
+    );
+
+    state
+        .entities
+        .player
+        .add_relic(RelicState::new(RelicId::Turnip));
+    crate::engine::action_handlers::powers::handle_apply_power(
+        901,
+        0,
+        PowerId::Frail,
+        2,
+        &mut state,
+    );
+    assert!(
+        !store::powers_snapshot_for(&state, 0)
+            .iter()
+            .any(|p| p.power_type == PowerId::Frail),
+        "Turnip should block Frail ApplyPowerAction"
+    );
+
+    let weak_cleanup = crate::content::powers::core::weak::at_end_of_round(0, 2, false);
+    assert_eq!(weak_cleanup.len(), 1);
+    assert!(matches!(
+        weak_cleanup[0],
+        Action::ReducePower {
+            target: 0,
+            power_id: PowerId::Weak,
+            amount: 1
+        }
+    ));
+
+    let frail_cleanup = crate::content::powers::core::frail::at_end_of_round(0, 2, false);
+    assert_eq!(frail_cleanup.len(), 1);
+    assert!(matches!(
+        frail_cleanup[0],
+        Action::ReducePower {
+            target: 0,
+            power_id: PowerId::Frail,
+            amount: 1
+        }
+    ));
+
+    store::set_powers_for(
+        &mut state,
+        0,
+        vec![Power {
+            power_type: PowerId::Weak,
+            instance_id: None,
+            amount: 2,
+            extra_data: 0,
+            just_applied: false,
+        }],
+    );
+    crate::engine::action_handlers::powers::handle_reduce_power(0, PowerId::Weak, 1, &mut state);
+    assert_eq!(
+        store::powers_snapshot_for(&state, 0)
+            .iter()
+            .find(|p| p.power_type == PowerId::Weak)
+            .map(|p| p.amount),
+        Some(1),
+        "Weak/Frail cleanup is ReducePowerAction in Java and must not be blocked by Ginger/Turnip"
+    );
+}
+
+#[test]
+fn ice_cream_recharge_preserves_unspent_energy_before_adding_base_energy() {
+    let mut state = crate::test_support::blank_test_combat();
+    state.turn.energy = 2;
+    state.entities.player.energy_master = 3;
+    state
+        .entities
+        .player
+        .add_relic(RelicState::new(RelicId::IceCream));
+
+    assert!(hooks::on_calculate_energy_retained(&state));
+    state.begin_next_player_turn();
+    assert_eq!(
+        state.turn.energy, 5,
+        "Java Ice Cream uses EnergyPanel.addEnergy(base), preserving prior total"
+    );
+    assert_eq!(state.turn.counters.cards_played_this_turn, 0);
+}
+
+#[test]
+fn lizard_tail_uses_java_counter_gate_and_fairy_priority() {
+    let mut state = crate::test_support::blank_test_combat();
+    state.entities.player.current_hp = 0;
+    state.entities.player.max_hp = 80;
+    state
+        .entities
+        .player
+        .add_relic(RelicState::new(RelicId::LizardTail));
+
+    crate::engine::action_handlers::try_revive(&mut state);
+    assert_eq!(state.entities.player.current_hp, 40);
+    assert_eq!(state.entities.player.relics[0].counter, -2);
+    assert!(state.entities.player.relics[0].used_up);
+
+    let mut counter_used = crate::test_support::blank_test_combat();
+    counter_used.entities.player.current_hp = 0;
+    let mut used_lizard = RelicState::new(RelicId::LizardTail);
+    used_lizard.counter = -2;
+    used_lizard.used_up = false;
+    counter_used.entities.player.add_relic(used_lizard);
+    crate::engine::action_handlers::try_revive(&mut counter_used);
+    assert_eq!(
+        counter_used.entities.player.current_hp, 0,
+        "Java checks LizardTail.counter == -1, not just used_up"
+    );
+
+    let mut fairy_first = crate::test_support::blank_test_combat();
+    fairy_first.entities.player.current_hp = 0;
+    fairy_first.entities.player.max_hp = 80;
+    fairy_first
+        .entities
+        .player
+        .add_relic(RelicState::new(RelicId::LizardTail));
+    fairy_first.entities.potions = vec![Some(crate::content::potions::Potion::new(
+        crate::content::potions::PotionId::FairyPotion,
+        7001,
+    ))];
+    crate::engine::action_handlers::try_revive(&mut fairy_first);
+    assert_eq!(fairy_first.entities.player.current_hp, 24);
+    assert!(fairy_first.entities.potions[0].is_none());
+    assert_eq!(
+        fairy_first.entities.player.relics[0].counter, -1,
+        "Java consumes Fairy before Lizard Tail"
+    );
+    assert!(!fairy_first.entities.player.relics[0].used_up);
+
+    let mut bloom_blocks = crate::test_support::blank_test_combat();
+    bloom_blocks.entities.player.current_hp = 0;
+    bloom_blocks
+        .entities
+        .player
+        .add_relic(RelicState::new(RelicId::MarkOfTheBloom));
+    bloom_blocks
+        .entities
+        .player
+        .add_relic(RelicState::new(RelicId::LizardTail));
+    bloom_blocks.entities.potions = vec![Some(crate::content::potions::Potion::new(
+        crate::content::potions::PotionId::FairyPotion,
+        7002,
+    ))];
+    crate::engine::action_handlers::try_revive(&mut bloom_blocks);
+    assert_eq!(bloom_blocks.entities.player.current_hp, 0);
+    assert!(
+        bloom_blocks.entities.potions[0].is_some(),
+        "Mark of the Bloom blocks Fairy and Lizard revive before either is consumed"
+    );
+    assert_eq!(bloom_blocks.entities.player.relics[1].counter, -1);
+}

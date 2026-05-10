@@ -2594,6 +2594,137 @@ Coverage:
 - `shared_rare_damage_retention_relic_metadata_matches_java_sources`
 - `tungsten_rod_is_only_final_hp_loss_modifier`
 
+## Shared Relic Batch 10 - Rare Passive / Revive / Energy Relics
+
+### Ginger
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/relics/Ginger.java`
+- `D:/rust/cardcrawl/actions/common/ApplyPowerAction.java`
+
+Rust source:
+- `src/content/relics/ginger.rs`
+- `src/content/relics/hooks.rs`
+- `src/engine/action_handlers/powers.rs`
+- `src/content/powers/core/weak.rs`
+
+Java evidence:
+- Constructor: ID `"Ginger"`, tier `RARE`, landing sound `FLAT`.
+- Ginger has no hook method in its relic class.
+- `ApplyPowerAction.update()` checks Ginger before Artifact: if the target is
+  the player and the power to apply is `"Weakened"`, it returns without applying
+  the power or consuming Artifact.
+- Weak end-of-round cleanup uses `ReducePowerAction`, not `ApplyPowerAction`.
+
+Rust result:
+- Tier and receive-power modifier subscription match the Java ApplyPowerAction
+  path.
+- Removed unused empty hook helpers from the Ginger module.
+- Fixed Weak cleanup to use `ReducePower` instead of `ApplyPower(-1)`, so Ginger
+  blocks new Weak applications without blocking normal turn countdown.
+- Artifact remains unconsumed when Ginger blocks Weak.
+
+Coverage:
+- `shared_rare_passive_resource_relic_metadata_matches_java_sources`
+- `ginger_and_turnip_block_apply_power_before_artifact_without_blocking_cleanup`
+
+### Turnip
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/relics/Turnip.java`
+- `D:/rust/cardcrawl/actions/common/ApplyPowerAction.java`
+
+Rust source:
+- `src/content/relics/turnip.rs`
+- `src/content/relics/hooks.rs`
+- `src/engine/action_handlers/powers.rs`
+- `src/content/powers/core/frail.rs`
+
+Java evidence:
+- Constructor: ID `"Turnip"`, tier `RARE`, landing sound `FLAT`.
+- Turnip has no hook method in its relic class.
+- `ApplyPowerAction.update()` checks Turnip before Artifact: if the target is
+  the player and the power to apply is `"Frail"`, it returns without applying
+  the power or consuming Artifact.
+- Frail end-of-round cleanup uses `ReducePowerAction`, not `ApplyPowerAction`.
+
+Rust result:
+- Tier and receive-power modifier subscription match the Java ApplyPowerAction
+  path.
+- Removed unused empty helper functions from the Turnip module.
+- Fixed Frail cleanup to use `ReducePower` instead of `ApplyPower(-1)`, so
+  Turnip blocks new Frail applications without blocking normal turn countdown.
+
+Coverage:
+- `shared_rare_passive_resource_relic_metadata_matches_java_sources`
+- `ginger_and_turnip_block_apply_power_before_artifact_without_blocking_cleanup`
+
+### Ice Cream
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/relics/IceCream.java`
+- `D:/rust/cardcrawl/core/EnergyManager.java`
+
+Rust source:
+- `src/content/relics/ice_cream.rs`
+- `src/content/relics/hooks.rs`
+- `src/runtime/combat.rs`
+
+Java evidence:
+- Constructor: ID `"Ice Cream"`, tier `RARE`, landing sound `FLAT`.
+- Ice Cream has no hook method in its relic class.
+- `EnergyManager.recharge()`: when Ice Cream is present, it calls
+  `EnergyPanel.addEnergy(this.energy)` instead of `EnergyPanel.setEnergy(...)`,
+  preserving unspent energy and adding the base recharge.
+- UI-only flash / relic-above-creature behavior is intentionally ignored.
+
+Rust result:
+- Tier and energy-retention subscription match Java.
+- Fixed player turn begin to preserve current energy and add `energy_master`
+  when the Ice Cream energy-retention hook is present.
+
+Coverage:
+- `shared_rare_passive_resource_relic_metadata_matches_java_sources`
+- `ice_cream_recharge_preserves_unspent_energy_before_adding_base_energy`
+
+### Lizard Tail
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/relics/LizardTail.java`
+- `D:/rust/cardcrawl/characters/AbstractPlayer.java`
+
+Rust source:
+- `src/content/relics/lizard_tail.rs`
+- `src/engine/action_handlers/mod.rs`
+
+Java evidence:
+- Constructor: ID `"Lizard Tail"`, tier `RARE`, landing sound `MAGICAL`.
+- `AbstractPlayer.damage(...)` revive priority:
+  - if Mark of the Bloom is present, no Fairy/Lizard revive;
+  - Fairy Potion triggers before Lizard Tail;
+  - Lizard Tail triggers only when the relic exists and `counter == -1`.
+- `LizardTail.onTrigger()` heals `max(maxHealth / 2, 1)` and calls
+  `setCounter(-2)`, marking the relic used up.
+
+Rust result:
+- Tier matches Java. Lizard Tail remains handled inline by death/revive logic,
+  not by a generic on-lose-hp bus.
+- Fixed revive eligibility to require `counter == -1` as well as `!used_up`.
+- Fairy Potion priority and Mark of the Bloom blocking behavior are covered.
+- UI-only relic-above-creature behavior is intentionally not represented.
+
+Coverage:
+- `shared_rare_passive_resource_relic_metadata_matches_java_sources`
+- `lizard_tail_uses_java_counter_gate_and_fairy_priority`
+
 ## Full Ironclad Class-Specific Relic Queue
 
 Relics remain `unreviewed` until their Java file, Rust definition/subscription,
@@ -2691,3 +2822,7 @@ class-specific queue.
 | 69 | `Calipers.java` | `calipers.rs` / turn block cleanup | `exact` |
 | 70 | `Torii.java` | `torii.rs` / damage handler | `wrong-fixed` |
 | 71 | `TungstenRod.java` | `tungsten_rod.rs` / damage handler | `wrong-fixed` |
+| 72 | `Ginger.java` | `ginger.rs` / apply-power handler | `wrong-fixed` |
+| 73 | `Turnip.java` | `turnip.rs` / apply-power handler | `wrong-fixed` |
+| 74 | `IceCream.java` | `ice_cream.rs` / turn energy recharge | `wrong-fixed` |
+| 75 | `LizardTail.java` | `lizard_tail.rs` / death revive check | `wrong-fixed` |

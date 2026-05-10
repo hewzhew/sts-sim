@@ -379,8 +379,14 @@ impl CombatState {
     }
 
     pub fn begin_next_player_turn(&mut self) {
-        self.turn
-            .begin_next_player_turn(self.entities.player.energy_master);
+        let energy = if crate::content::relics::hooks::on_calculate_energy_retained(self) {
+            self.turn
+                .energy
+                .saturating_add(self.entities.player.energy_master)
+        } else {
+            self.entities.player.energy_master
+        };
+        self.turn.begin_next_player_turn(energy);
     }
 
     pub fn reset_turn_energy_from_player(&mut self) {
