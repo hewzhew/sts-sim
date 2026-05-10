@@ -2101,6 +2101,205 @@ Coverage:
 - `shared_uncommon_action_counter_relic_metadata_matches_java_sources`
 - `matryoshka_counter_starts_at_two_and_only_positive_counter_grants_extra_relic`
 
+## Shared Relic Batch 7 - Bottles / Shop / Rest / Special Reward Relics
+
+### Bottled Flame
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/relics/BottledFlame.java`
+- `D:/rust/cardcrawl/dungeons/AbstractDungeon.java`
+
+Rust source:
+- `src/engine/relic_manager.rs`
+- `src/engine/run_loop.rs`
+- `src/rewards/handler.rs`
+- `src/runtime/combat.rs`
+- `src/state/core.rs`
+- `src/state/run.rs`
+
+Java evidence:
+- Constructor: ID `"Bottled Flame"`, tier `UNCOMMON`, landing sound `CLINK`.
+- `canSpawn()` is true only when the master deck has a non-BASIC ATTACK.
+- `onEquip()` opens a grid select over purgeable ATTACK cards; the selected
+  card is marked `inBottleFlame = true`.
+- `onUnequip()` clears that selected card flag.
+- `atBattleStart()` only flashes and queues a relic visual action.
+- `returnRandomRelic` can return bottled relics, while
+  `returnRandomScreenlessRelic` skips Bottled Flame, Bottled Lightning,
+  Bottled Tornado, and Whetstone.
+
+Rust result:
+- Normal relic reward rolls can now return bottled relics; screenless event
+  reward paths skip them.
+- Added a run pending selection reason for Bottled Flame and filter targets to
+  ATTACK cards for `onEquip`.
+- The selected card uuid is stored in the relic state, and combat deck
+  initialization treats that uuid as innate.
+- Claiming a bottled relic from a reward screen preserves the remaining reward
+  items as the return state after the deck selection.
+- Spawn gating now rejects Bottled Flame unless the deck has a non-BASIC attack.
+- Java's UI/VFX-only battle-start relic action is intentionally not represented.
+
+Coverage:
+- `shared_uncommon_bottle_shop_and_rest_relic_metadata_matches_java_sources`
+- `normal_relic_rewards_can_return_bottled_relics_but_screenless_rewards_skip_them`
+- `bottled_relic_on_equip_filters_selection_by_card_type_and_marks_uuid`
+- `bottled_relic_uuid_counts_as_innate_during_combat_deck_initialization`
+- `interrupting_relic_claim_preserves_remaining_reward_screen_items`
+
+### Bottled Lightning
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/relics/BottledLightning.java`
+
+Rust source:
+- `src/engine/relic_manager.rs`
+- `src/engine/run_loop.rs`
+- `src/rewards/handler.rs`
+- `src/runtime/combat.rs`
+- `src/state/core.rs`
+- `src/state/run.rs`
+
+Java evidence:
+- Constructor: ID `"Bottled Lightning"`, tier `UNCOMMON`, landing sound
+  `CLINK`.
+- `canSpawn()` is true only when the master deck has a non-BASIC SKILL.
+- `onEquip()` opens a grid select over purgeable SKILL cards; the selected card
+  is marked `inBottleLightning = true`.
+- `atBattleStart()` is UI-only.
+
+Rust result:
+- Added selection reason, target filtering, selected uuid persistence, and
+  combat start innate handling for Bottled Lightning.
+- Spawn gating now rejects it unless the deck has a non-BASIC skill.
+- UI-only battle-start behavior is intentionally not represented.
+
+Coverage:
+- `shared_uncommon_bottle_shop_and_rest_relic_metadata_matches_java_sources`
+- `normal_relic_rewards_can_return_bottled_relics_but_screenless_rewards_skip_them`
+
+### Bottled Tornado
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/relics/BottledTornado.java`
+
+Rust source:
+- `src/engine/relic_manager.rs`
+- `src/engine/run_loop.rs`
+- `src/rewards/handler.rs`
+- `src/runtime/combat.rs`
+- `src/state/core.rs`
+- `src/state/run.rs`
+
+Java evidence:
+- Constructor: ID `"Bottled Tornado"`, tier `UNCOMMON`, landing sound `CLINK`.
+- `canSpawn()` checks for any POWER card in the master deck.
+- `onEquip()` opens a grid select over purgeable POWER cards; the selected card
+  is marked `inBottleTornado = true`.
+- `atBattleStart()` is UI-only.
+
+Rust result:
+- Added selection reason, target filtering, selected uuid persistence, and
+  combat start innate handling for Bottled Tornado.
+- Spawn gating now rejects it unless the deck has a power.
+- UI-only battle-start behavior is intentionally not represented.
+
+Coverage:
+- `shared_uncommon_bottle_shop_and_rest_relic_metadata_matches_java_sources`
+- `bottled_relic_uuid_counts_as_innate_during_combat_deck_initialization`
+
+### Courier
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/relics/Courier.java`
+- `D:/rust/cardcrawl/shop/ShopScreen.java`
+
+Rust source:
+- `src/shop/shop_handler.rs`
+- `src/shop/shop_screen.rs`
+- `src/state/run.rs`
+
+Java evidence:
+- Constructor: ID `"The Courier"`, tier `UNCOMMON`, landing sound `FLAT`.
+- Shop prices are multiplied by `0.8`.
+- Purchased shop cards, relics, and potions are replenished rather than leaving
+  the slot empty.
+- `onEnterRoom(ShopRoom)` only sets UI pulse/flash state.
+- `canSpawn()` is false after floor 48 unless Endless mode is active and is
+  false while currently in a shop.
+
+Rust result:
+- Existing shop purchase paths preserve the 20% discount and replenish card,
+  relic, and potion slots when Courier is present.
+- Spawn gating now blocks Courier after floor 48 in non-Endless runs. Rust does
+  not currently model Endless mode or the current-room shop `canSpawn` clause in
+  the relic-pool helper.
+- UI-only room-entry pulse behavior is intentionally not represented.
+
+Coverage:
+- `shared_uncommon_bottle_shop_and_rest_relic_metadata_matches_java_sources`
+- `courier_keeps_relic_slot_filled_after_purchase`
+- `courier_keeps_potion_slot_filled_after_purchase`
+- `courier_refills_sozu_absorbed_shop_potion_purchase`
+- `courier_keeps_card_slot_filled_after_purchase`
+
+### Eternal Feather
+
+Status: `exact`
+
+Java source:
+- `D:/rust/cardcrawl/relics/EternalFeather.java`
+
+Rust source:
+- `src/engine/run_loop.rs`
+
+Java evidence:
+- Constructor: ID `"Eternal Feather"`, tier `UNCOMMON`, landing sound
+  `MAGICAL`.
+- `onEnterRoom(RestRoom)` heals `masterDeck.size() / 5 * 3`.
+
+Rust result:
+- Rest-room entry applies the same integer deck-size formula and emits the
+  healing through the Eternal Feather relic source.
+- Mark of the Bloom blocks the heal through the out-of-combat healing guard.
+- UI-only flash behavior is intentionally not represented.
+
+Coverage:
+- `shared_uncommon_bottle_shop_and_rest_relic_metadata_matches_java_sources`
+- `eternal_feather_rest_room_heal_uses_relic_source_and_mark_of_bloom_guard`
+
+### Nloth's Gift
+
+Status: `exact`
+
+Java source:
+- `D:/rust/cardcrawl/relics/NlothsGift.java`
+
+Rust source:
+- `src/rewards/generator.rs`
+- `src/content/relics/mod.rs`
+
+Java evidence:
+- Constructor: ID `"Nloth's Gift"`, tier `SPECIAL`, landing sound `FLAT`.
+- `changeRareCardRewardChance(rareCardChance)` returns `rareCardChance * 3`.
+
+Rust result:
+- Card reward generation triples the rare-card threshold while Nloth's Gift is
+  present.
+- The relic has no combat hook subscriptions.
+
+Coverage:
+- `shared_uncommon_bottle_shop_and_rest_relic_metadata_matches_java_sources`
+- `rewards::generator::tests` coverage for rare-card reward generation
+
 ## Full Ironclad Class-Specific Relic Queue
 
 Relics remain `unreviewed` until their Java file, Rust definition/subscription,
@@ -2182,3 +2381,9 @@ class-specific queue.
 | 53 | `Sundial.java` | `sundial.rs` | `wrong-fixed` |
 | 54 | `StrikeDummy.java` | `strike_dummy.rs` | `exact` |
 | 55 | `Matryoshka.java` | `matryoshka.rs` / run loop | `exact` |
+| 56 | `BottledFlame.java` | `relic_manager.rs` / run loop / combat init | `wrong-fixed` |
+| 57 | `BottledLightning.java` | `relic_manager.rs` / run loop / combat init | `wrong-fixed` |
+| 58 | `BottledTornado.java` | `relic_manager.rs` / run loop / combat init | `wrong-fixed` |
+| 59 | `Courier.java` | shop generation / shop handler | `wrong-fixed` |
+| 60 | `EternalFeather.java` | run loop | `exact` |
+| 61 | `NlothsGift.java` | reward generator | `exact` |

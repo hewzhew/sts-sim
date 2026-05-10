@@ -1,6 +1,31 @@
+use crate::content::cards::CardType;
 use crate::content::relics::RelicId;
 use crate::state::core::EngineState;
 use crate::state::run::RunState;
+
+fn bottle_on_equip(
+    run_state: &RunState,
+    card_type: CardType,
+    reason: crate::state::core::RunPendingChoiceReason,
+    return_state: EngineState,
+) -> Option<EngineState> {
+    let has_candidate = run_state
+        .master_deck
+        .iter()
+        .any(|card| crate::content::cards::get_card_definition(card.id).card_type == card_type);
+    if !has_candidate {
+        return None;
+    }
+
+    Some(EngineState::RunPendingChoice(
+        crate::state::core::RunPendingChoiceState {
+            min_choices: 1,
+            max_choices: 1,
+            reason,
+            return_state: Box::new(return_state),
+        },
+    ))
+}
 
 /// Central router for macro/out-of-combat relic hooks, modeling Java's AbstractRelic lifecycle.
 /// Primary hook: on_equip (called when a relic is added to the player's run state).
@@ -32,6 +57,24 @@ pub fn on_equip(
         RelicId::TinyHouse => tiny_house::on_equip(run_state),
 
         // === State-interrupting Relics (return an EngineState override) ===
+        RelicId::BottledFlame => bottle_on_equip(
+            run_state,
+            CardType::Attack,
+            crate::state::core::RunPendingChoiceReason::BottleFlame,
+            return_state,
+        ),
+        RelicId::BottledLightning => bottle_on_equip(
+            run_state,
+            CardType::Skill,
+            crate::state::core::RunPendingChoiceReason::BottleLightning,
+            return_state,
+        ),
+        RelicId::BottledTornado => bottle_on_equip(
+            run_state,
+            CardType::Power,
+            crate::state::core::RunPendingChoiceReason::BottleTornado,
+            return_state,
+        ),
         // DollysMirror: duplicate a card from deck
         RelicId::DollysMirror => dollys_mirror::on_equip(run_state, return_state),
         // Astrolabe: select 3 cards to Transform + Upgrade

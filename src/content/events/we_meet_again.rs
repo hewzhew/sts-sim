@@ -172,7 +172,7 @@ pub fn handle_choice(_engine_state: &mut EngineState, run_state: &mut RunState, 
                     if potion_slot < run_state.potions.len() {
                         run_state.potions[potion_slot] = None;
                     }
-                    let relic_id = run_state.random_relic();
+                    let relic_id = run_state.random_screenless_relic_reward();
                     event_state.current_screen = 1;
                     if let Some(next_state) =
                         run_state.obtain_relic(relic_id, EngineState::EventRoom)
@@ -187,7 +187,7 @@ pub fn handle_choice(_engine_state: &mut EngineState, run_state: &mut RunState, 
                         -amt,
                         DomainEventSource::Event(EventId::WeMeetAgain),
                     );
-                    let relic_id = run_state.random_relic();
+                    let relic_id = run_state.random_screenless_relic_reward();
                     event_state.current_screen = 1;
                     if let Some(next_state) =
                         run_state.obtain_relic(relic_id, EngineState::EventRoom)
@@ -202,7 +202,7 @@ pub fn handle_choice(_engine_state: &mut EngineState, run_state: &mut RunState, 
                         let uuid = run_state.master_deck[card_idx].uuid;
                         run_state.remove_card_from_deck(uuid);
                     }
-                    let relic_id = run_state.random_relic();
+                    let relic_id = run_state.random_screenless_relic_reward();
                     event_state.current_screen = 1;
                     if let Some(next_state) =
                         run_state.obtain_relic(relic_id, EngineState::EventRoom)

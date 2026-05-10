@@ -1001,7 +1001,7 @@ impl RunState {
         tier: crate::content::relics::RelicTier,
     ) -> crate::content::relics::RelicId {
         use crate::content::relics::{RelicId, RelicTier};
-        match tier {
+        let id = match tier {
             RelicTier::Common => {
                 if let Some(id) = self.common_relic_pool.pop() {
                     id
@@ -1026,6 +1026,40 @@ impl RunState {
             }
             RelicTier::Boss => self.boss_relic_pool.pop().unwrap_or(RelicId::Circlet),
             _ => RelicId::Circlet,
+        };
+
+        if id != RelicId::Circlet && !self.relic_can_spawn_now(id) {
+            self.random_relic_by_tier(tier)
+        } else {
+            id
+        }
+    }
+
+    fn relic_can_spawn_now(&self, id: crate::content::relics::RelicId) -> bool {
+        use crate::content::cards::{CardRarity, CardType};
+        use crate::content::relics::RelicId;
+
+        match id {
+            RelicId::BlackBlood => self
+                .relics
+                .iter()
+                .any(|relic| relic.id == RelicId::BurningBlood),
+            RelicId::BottledFlame => self.master_deck.iter().any(|card| {
+                let def = crate::content::cards::get_card_definition(card.id);
+                def.card_type == CardType::Attack && def.rarity != CardRarity::Basic
+            }),
+            RelicId::BottledLightning => self.master_deck.iter().any(|card| {
+                let def = crate::content::cards::get_card_definition(card.id);
+                def.card_type == CardType::Skill && def.rarity != CardRarity::Basic
+            }),
+            RelicId::BottledTornado => self.master_deck.iter().any(|card| {
+                crate::content::cards::get_card_definition(card.id).card_type == CardType::Power
+            }),
+            RelicId::Courier | RelicId::MeatOnTheBone | RelicId::SingingBowl => {
+                self.floor_num <= 48
+            }
+            RelicId::Matryoshka => self.floor_num <= 40,
+            _ => true,
         }
     }
 
@@ -1052,11 +1086,21 @@ impl RunState {
         }
     }
 
-    /// Default random relic: roll tier then grab screenless relic.
-    /// Java: returnRandomScreenlessRelic(returnRandomRelicTier())
-    pub fn random_relic(&mut self) -> crate::content::relics::RelicId {
+    /// Roll a relic tier, then return a Java screenless relic from that tier.
+    /// Used by events that call `AbstractDungeon.returnRandomScreenlessRelic`
+    /// rather than room reward generation.
+    pub fn random_screenless_relic_reward(&mut self) -> crate::content::relics::RelicId {
         let tier = self.return_random_relic_tier();
         self.random_screenless_relic(tier)
+    }
+
+    /// Default random relic reward: roll tier then return a normal relic from
+    /// that tier. Java combat/chest reward paths use `returnRandomRelic`, not
+    /// `returnRandomScreenlessRelic`, so screen-interrupting relics such as
+    /// Bottled Flame can appear here.
+    pub fn random_relic(&mut self) -> crate::content::relics::RelicId {
+        let tier = self.return_random_relic_tier();
+        self.random_relic_by_tier(tier)
     }
 
     /// Returns a random potion, weighted by rarity and filtered to the current player class.

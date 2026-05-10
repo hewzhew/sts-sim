@@ -1,4 +1,4 @@
-use crate::content::cards::CardId;
+use crate::content::cards::{CardId, CardType};
 use crate::core::EntityId;
 use crate::state::selection::{
     SelectionConstraint, SelectionReason, SelectionRequest, SelectionResolution, SelectionScope,
@@ -48,13 +48,16 @@ pub enum PostCombatReturn {
     MapNavigation,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum RunPendingChoiceReason {
     Purge,
     Upgrade,
     Transform,
     TransformUpgraded,
     Duplicate,
+    BottleFlame,
+    BottleLightning,
+    BottleTornado,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -219,6 +222,9 @@ impl From<RunPendingChoiceReason> for SelectionReason {
             RunPendingChoiceReason::Transform => SelectionReason::Transform,
             RunPendingChoiceReason::TransformUpgraded => SelectionReason::TransformUpgraded,
             RunPendingChoiceReason::Duplicate => SelectionReason::Duplicate,
+            RunPendingChoiceReason::BottleFlame => SelectionReason::BottleFlame,
+            RunPendingChoiceReason::BottleLightning => SelectionReason::BottleLightning,
+            RunPendingChoiceReason::BottleTornado => SelectionReason::BottleTornado,
         }
     }
 }
@@ -303,20 +309,36 @@ impl PendingChoice {
 
 impl RunPendingChoiceState {
     pub fn selection_request(&self, run_state: &crate::state::run::RunState) -> SelectionRequest {
+        let targets: Vec<_> = run_state
+            .master_deck
+            .iter()
+            .filter(|card| run_pending_choice_allows_card(&self.reason, card))
+            .map(|card| SelectionTargetRef::CardUuid(card.uuid))
+            .collect();
+
         SelectionRequest {
             scope: SelectionScope::Deck,
             reason: self.reason.clone().into(),
             constraint: SelectionConstraint::from_bounds(
                 self.min_choices,
                 self.max_choices,
-                run_state.master_deck.len(),
+                targets.len(),
             ),
             can_cancel: self.min_choices == 0,
-            targets: run_state
-                .master_deck
-                .iter()
-                .map(|card| SelectionTargetRef::CardUuid(card.uuid))
-                .collect(),
+            targets,
         }
+    }
+}
+
+fn run_pending_choice_allows_card(
+    reason: &RunPendingChoiceReason,
+    card: &crate::runtime::combat::CombatCard,
+) -> bool {
+    let def = crate::content::cards::get_card_definition(card.id);
+    match reason {
+        RunPendingChoiceReason::BottleFlame => def.card_type == CardType::Attack,
+        RunPendingChoiceReason::BottleLightning => def.card_type == CardType::Skill,
+        RunPendingChoiceReason::BottleTornado => def.card_type == CardType::Power,
+        _ => true,
     }
 }

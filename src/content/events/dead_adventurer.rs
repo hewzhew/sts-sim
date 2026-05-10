@@ -141,7 +141,7 @@ fn apply_reward(run_state: &mut RunState, reward_type: i32) {
         } // Gold
         2 => {
             // Relic
-            let relic_id = run_state.random_relic();
+            let relic_id = run_state.random_screenless_relic_reward();
             let _ = run_state.obtain_relic_with_source(
                 relic_id,
                 EngineState::EventRoom,

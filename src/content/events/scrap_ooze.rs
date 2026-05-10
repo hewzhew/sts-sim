@@ -79,7 +79,7 @@ pub fn handle_choice(_engine_state: &mut EngineState, run_state: &mut RunState, 
                     let roll = run_state.rng_pool.misc_rng.random_range(0, 99);
                     if roll >= 99 - chance {
                         // Success! Get a relic
-                        let relic_id = run_state.random_relic();
+                        let relic_id = run_state.random_screenless_relic_reward();
                         if let Some(next_state) = run_state.obtain_relic_with_source(
                             relic_id,
                             EngineState::EventRoom,

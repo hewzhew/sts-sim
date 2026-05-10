@@ -11,6 +11,64 @@ use crate::state::selection::{
 use super::campfire_handler;
 use super::shop_handler;
 
+fn bottled_choice_target(
+    reason: &crate::state::core::RunPendingChoiceReason,
+) -> Option<(
+    crate::content::relics::RelicId,
+    crate::content::cards::CardType,
+)> {
+    match reason {
+        crate::state::core::RunPendingChoiceReason::BottleFlame => Some((
+            crate::content::relics::RelicId::BottledFlame,
+            crate::content::cards::CardType::Attack,
+        )),
+        crate::state::core::RunPendingChoiceReason::BottleLightning => Some((
+            crate::content::relics::RelicId::BottledLightning,
+            crate::content::cards::CardType::Skill,
+        )),
+        crate::state::core::RunPendingChoiceReason::BottleTornado => Some((
+            crate::content::relics::RelicId::BottledTornado,
+            crate::content::cards::CardType::Power,
+        )),
+        _ => None,
+    }
+}
+
+fn assign_bottled_card(
+    run_state: &mut RunState,
+    relic_id: crate::content::relics::RelicId,
+    card_type: crate::content::cards::CardType,
+    selected_indices: &[usize],
+) {
+    let Some(&idx) = selected_indices.first() else {
+        return;
+    };
+    let Some(card) = run_state.master_deck.get(idx) else {
+        return;
+    };
+    let def = crate::content::cards::get_card_definition(card.id);
+    if def.card_type != card_type {
+        return;
+    }
+
+    let selected_uuid = card.uuid as i32;
+    if let Some(relic) = run_state
+        .relics
+        .iter_mut()
+        .rev()
+        .find(|relic| relic.id == relic_id && relic.amount == 0)
+    {
+        relic.amount = selected_uuid;
+    } else if let Some(relic) = run_state
+        .relics
+        .iter_mut()
+        .rev()
+        .find(|relic| relic.id == relic_id)
+    {
+        relic.amount = selected_uuid;
+    }
+}
+
 fn run_selection_source(
     run_state: &RunState,
     reason: crate::state::core::RunPendingChoiceReason,
@@ -224,6 +282,13 @@ pub fn tick_run(
                         for (card_id, upgrades) in cards_to_copy {
                             run_state
                                 .add_card_to_deck_with_upgrades_from(card_id, upgrades, source);
+                        }
+                    }
+                    reason @ (crate::state::core::RunPendingChoiceReason::BottleFlame
+                    | crate::state::core::RunPendingChoiceReason::BottleLightning
+                    | crate::state::core::RunPendingChoiceReason::BottleTornado) => {
+                        if let Some((relic_id, card_type)) = bottled_choice_target(&reason) {
+                            assign_bottled_card(run_state, relic_id, card_type, &sorted_indices);
                         }
                     }
                 }
@@ -655,6 +720,9 @@ mod tests {
     use crate::runtime::combat::CombatCard;
     use crate::state::core::{ClientInput, EngineState};
     use crate::state::run::RunState;
+    use crate::state::selection::{
+        DomainEventSource, SelectionReason, SelectionResolution, SelectionScope, SelectionTargetRef,
+    };
 
     fn run_state_with_first_room(room_type: RoomType) -> RunState {
         let mut run_state = RunState::new(1, 0, false, "Ironclad");
@@ -755,5 +823,74 @@ mod tests {
         ));
         assert_eq!(blocked.current_hp, 20);
         assert!(matches!(blocked_engine, EngineState::Campfire));
+    }
+
+    #[test]
+    fn bottled_relic_on_equip_filters_selection_by_card_type_and_marks_uuid() {
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        run_state.relics.clear();
+        run_state.master_deck = vec![
+            CombatCard::new(CardId::Bash, 101),
+            CombatCard::new(CardId::Defend, 102),
+            CombatCard::new(CardId::Inflame, 103),
+        ];
+
+        let next_state = run_state
+            .obtain_relic_with_source(
+                RelicId::BottledFlame,
+                EngineState::MapNavigation,
+                DomainEventSource::RewardScreen,
+            )
+            .expect("Bottled Flame should open a deck selection when an attack exists");
+
+        let EngineState::RunPendingChoice(choice) = next_state else {
+            panic!("Bottled Flame should return RunPendingChoice");
+        };
+        let request = choice.selection_request(&run_state);
+        assert_eq!(request.reason, SelectionReason::BottleFlame);
+        assert_eq!(request.targets, vec![SelectionTargetRef::CardUuid(101)]);
+
+        let mut engine_state = EngineState::RunPendingChoice(choice);
+        let mut combat_state = None;
+        assert!(tick_run(
+            &mut engine_state,
+            &mut run_state,
+            &mut combat_state,
+            Some(ClientInput::SubmitSelection(SelectionResolution {
+                scope: SelectionScope::Deck,
+                selected: vec![SelectionTargetRef::CardUuid(101)],
+            })),
+        ));
+
+        assert!(matches!(engine_state, EngineState::MapNavigation));
+        assert_eq!(
+            run_state
+                .relics
+                .iter()
+                .find(|relic| relic.id == RelicId::BottledFlame)
+                .map(|relic| relic.amount),
+            Some(101)
+        );
+    }
+
+    #[test]
+    fn bottled_relic_uuid_counts_as_innate_during_combat_deck_initialization() {
+        let mut state = crate::test_support::blank_test_combat();
+        let mut bottle = RelicState::new(RelicId::BottledTornado);
+        bottle.amount = 103;
+        state.entities.player.add_relic(bottle);
+        state.zones.draw_pile = vec![
+            CombatCard::new(CardId::Strike, 101),
+            CombatCard::new(CardId::Defend, 102),
+            CombatCard::new(CardId::Inflame, 103),
+        ];
+
+        state.apply_java_initialize_deck_order_after_shuffle();
+
+        assert_eq!(
+            state.zones.draw_pile.first().map(|card| card.uuid),
+            Some(103),
+            "the card selected by Bottled Tornado must be handled by the same start-hand path as innate cards"
+        );
     }
 }

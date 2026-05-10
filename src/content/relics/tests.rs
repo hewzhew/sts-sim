@@ -1779,3 +1779,56 @@ fn matryoshka_counter_starts_at_two_and_only_positive_counter_grants_extra_relic
     assert!(!matryoshka::should_grant_extra_relic(0));
     assert!(!matryoshka::should_grant_extra_relic(-2));
 }
+
+#[test]
+fn shared_uncommon_bottle_shop_and_rest_relic_metadata_matches_java_sources() {
+    assert_eq!(get_relic_tier(RelicId::BottledFlame), RelicTier::Uncommon);
+    assert_eq!(
+        get_relic_tier(RelicId::BottledLightning),
+        RelicTier::Uncommon
+    );
+    assert_eq!(get_relic_tier(RelicId::BottledTornado), RelicTier::Uncommon);
+    assert_eq!(get_relic_tier(RelicId::Courier), RelicTier::Uncommon);
+    assert_eq!(get_relic_tier(RelicId::EternalFeather), RelicTier::Uncommon);
+    assert_eq!(get_relic_tier(RelicId::NlothsGift), RelicTier::Special);
+
+    assert!(!get_relic_subscriptions(RelicId::BottledFlame).at_battle_start);
+    assert!(!get_relic_subscriptions(RelicId::BottledLightning).at_battle_start);
+    assert!(!get_relic_subscriptions(RelicId::BottledTornado).at_battle_start);
+    assert!(!get_relic_subscriptions(RelicId::Courier).at_battle_start);
+    assert!(!get_relic_subscriptions(RelicId::EternalFeather).at_battle_start);
+    assert!(!get_relic_subscriptions(RelicId::NlothsGift).at_battle_start);
+}
+
+#[test]
+fn normal_relic_rewards_can_return_bottled_relics_but_screenless_rewards_skip_them() {
+    let mut no_non_basic_attack = crate::state::run::RunState::new(1, 0, false, "Ironclad");
+    no_non_basic_attack.uncommon_relic_pool = vec![RelicId::Pear, RelicId::BottledFlame];
+    assert_eq!(
+        no_non_basic_attack.random_relic_by_tier(RelicTier::Uncommon),
+        RelicId::Pear,
+        "Java Bottled Flame canSpawn rejects starter-only attack decks"
+    );
+
+    let mut normal = crate::state::run::RunState::new(1, 0, false, "Ironclad");
+    normal
+        .master_deck
+        .push(CombatCard::new(CardId::PommelStrike, 1001));
+    normal.uncommon_relic_pool = vec![RelicId::Pear, RelicId::BottledFlame];
+    assert_eq!(
+        normal.random_relic_by_tier(RelicTier::Uncommon),
+        RelicId::BottledFlame,
+        "Java returnRandomRelic can return bottled relics from normal reward paths"
+    );
+
+    let mut screenless = crate::state::run::RunState::new(1, 0, false, "Ironclad");
+    screenless
+        .master_deck
+        .push(CombatCard::new(CardId::PommelStrike, 1001));
+    screenless.uncommon_relic_pool = vec![RelicId::Pear, RelicId::BottledFlame];
+    assert_eq!(
+        screenless.random_screenless_relic(RelicTier::Uncommon),
+        RelicId::Pear,
+        "Java returnRandomScreenlessRelic skips Bottled Flame/Lightning/Tornado and Whetstone"
+    );
+}

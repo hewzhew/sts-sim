@@ -44,7 +44,7 @@ pub fn handle_choice(_engine_state: &mut EngineState, run_state: &mut RunState, 
                             -GOLD_COST,
                             DomainEventSource::Event(EventId::Addict),
                         );
-                        let relic_id = run_state.random_relic();
+                        let relic_id = run_state.random_screenless_relic_reward();
                         if let Some(next_state) = run_state.obtain_relic_with_source(
                             relic_id,
                             EngineState::EventRoom,
@@ -57,7 +57,7 @@ pub fn handle_choice(_engine_state: &mut EngineState, run_state: &mut RunState, 
                 }
                 1 => {
                     // Rob: relic + Shame curse
-                    let relic_id = run_state.random_relic();
+                    let relic_id = run_state.random_screenless_relic_reward();
                     if let Some(next_state) = run_state.obtain_relic_with_source(
                         relic_id,
                         EngineState::EventRoom,

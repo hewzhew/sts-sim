@@ -76,7 +76,7 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, _
                 }
                 1 => {
                     // Random relic — Java: addRelicToRewards(r) + combatRewardScreen.open()
-                    let relic = run_state.random_relic();
+                    let relic = run_state.random_screenless_relic_reward();
                     let mut rewards = crate::rewards::state::RewardState::new();
                     rewards
                         .items

@@ -74,15 +74,12 @@ pub fn handle(
                                 .change_gold_with_source(amount, DomainEventSource::RewardScreen);
                         }
                         RewardItem::Relic { relic_id: id } => {
-                            if let Some(next_state) =
-                                run_state.obtain_relic_with_source(
-                                    id,
-                                    EngineState::RewardScreen(
-                                        crate::rewards::state::RewardState::new(),
-                                    ),
-                                    DomainEventSource::RewardScreen,
-                                )
-                            {
+                            let return_state = EngineState::RewardScreen(reward_state.clone());
+                            if let Some(next_state) = run_state.obtain_relic_with_source(
+                                id,
+                                return_state,
+                                DomainEventSource::RewardScreen,
+                            ) {
                                 return Some(next_state);
                             }
                         }
@@ -185,4 +182,48 @@ fn handle_card_choice(
         }
     }
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::handle;
+    use crate::content::cards::CardId;
+    use crate::content::relics::RelicId;
+    use crate::rewards::state::{RewardItem, RewardState};
+    use crate::runtime::combat::CombatCard;
+    use crate::state::core::{ClientInput, EngineState};
+    use crate::state::run::RunState;
+
+    #[test]
+    fn interrupting_relic_claim_preserves_remaining_reward_screen_items() {
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        run_state
+            .master_deck
+            .push(CombatCard::new(CardId::PommelStrike, 1001));
+        let mut reward_state = RewardState::new();
+        reward_state.items = vec![
+            RewardItem::Relic {
+                relic_id: RelicId::BottledFlame,
+            },
+            RewardItem::Gold { amount: 25 },
+        ];
+
+        let next = handle(
+            &mut run_state,
+            &mut reward_state,
+            Some(ClientInput::ClaimReward(0)),
+        )
+        .expect("Bottled Flame should interrupt into deck selection");
+
+        let EngineState::RunPendingChoice(choice) = next else {
+            panic!("expected Bottled Flame selection");
+        };
+        let EngineState::RewardScreen(returned_rewards) = *choice.return_state else {
+            panic!("Bottled Flame should return to the current reward screen");
+        };
+        assert_eq!(
+            returned_rewards.items,
+            vec![RewardItem::Gold { amount: 25 }]
+        );
+    }
 }

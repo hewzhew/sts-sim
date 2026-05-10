@@ -1,7 +1,8 @@
 use crate::content::cards::CardId;
 use crate::state::core::EngineState;
-use crate::state::events::{EventChoiceMeta, EventState};
+use crate::state::events::{EventChoiceMeta, EventId, EventState};
 use crate::state::run::RunState;
+use crate::state::selection::DomainEventSource;
 
 pub fn get_choices(run_state: &RunState, event_state: &EventState) -> Vec<EventChoiceMeta> {
     match event_state.current_screen {
@@ -23,7 +24,7 @@ pub fn get_choices(run_state: &RunState, event_state: &EventState) -> Vec<EventC
     }
 }
 
-pub fn handle_choice(_engine_state: &mut EngineState, run_state: &mut RunState, choice_idx: usize) {
+pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, choice_idx: usize) {
     let mut event_state = run_state.event_state.take().unwrap();
 
     match event_state.current_screen {
@@ -39,10 +40,14 @@ pub fn handle_choice(_engine_state: &mut EngineState, run_state: &mut RunState, 
                     if gets_curse {
                         run_state.add_card_to_deck(CardId::Writhe);
                     }
-                    let relic_id = run_state.random_relic();
-                    run_state
-                        .relics
-                        .push(crate::content::relics::RelicState::new(relic_id));
+                    let relic_id = run_state.random_screenless_relic_reward();
+                    if let Some(next_state) = run_state.obtain_relic_with_source(
+                        relic_id,
+                        EngineState::EventRoom,
+                        DomainEventSource::Event(EventId::Mausoleum),
+                    ) {
+                        *engine_state = next_state;
+                    }
                     event_state.current_screen = 1;
                 }
                 _ => {

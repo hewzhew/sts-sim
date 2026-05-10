@@ -1254,10 +1254,26 @@ impl CombatState {
     }
 
     pub fn apply_java_initialize_deck_order_after_shuffle(&mut self) {
+        let bottled_uuids: Vec<u32> = self
+            .entities
+            .player
+            .relics
+            .iter()
+            .filter_map(|relic| match relic.id {
+                crate::content::relics::RelicId::BottledFlame
+                | crate::content::relics::RelicId::BottledLightning
+                | crate::content::relics::RelicId::BottledTornado
+                    if relic.amount > 0 =>
+                {
+                    Some(relic.amount as u32)
+                }
+                _ => None,
+            })
+            .collect();
         let mut java_group_order = Vec::new();
         let mut place_on_top = Vec::new();
         for card in std::mem::take(&mut self.zones.draw_pile) {
-            if crate::content::cards::is_innate_card(&card) {
+            if crate::content::cards::is_innate_card(&card) || bottled_uuids.contains(&card.uuid) {
                 place_on_top.push(card);
             } else {
                 java_group_order.push(card);
