@@ -338,8 +338,12 @@ pub enum ActionPayload {
     ApplyPoisonOnRandomMonster(ApplyPoisonOnRandomMonsterActionState),
     ApplyPower(ApplyPowerActionState),
     ApplyPowerToRandomEnemy(ApplyPowerToRandomEnemyActionState),
+    AttackDamageRandomEnemy(AttackDamageRandomEnemyActionState),
+    BetterDiscardPileToHand(BetterDiscardPileToHandActionState),
+    BetterDrawPileToHand(BetterDrawPileToHandActionState),
     Damage(DamageActionState),
     DamageAllEnemies(DamageAllEnemiesActionState),
+    DamageRandomEnemy(DamageRandomEnemyActionState),
     DrawCard(DrawCardActionState),
     Discard(DiscardActionState),
     DiscardSpecificCard(DiscardSpecificCardActionState),
@@ -352,21 +356,28 @@ pub enum ActionPayload {
     MakeTempCardInDrawPile(MakeTempCardInDrawPileActionState),
     MakeTempCardInHand(MakeTempCardInHandActionState),
     ModifyBlock(ModifyBlockActionState),
+    PlayTopCard(PlayTopCardActionState),
     PutOnBottomOfDeck(PutOnBottomOfDeckActionState),
     PutOnDeck(PutOnDeckActionState),
+    PummelDamage(PummelDamageActionState),
     ReduceCost(ReduceCostActionState),
     ReduceCostForTurn(ReduceCostForTurnActionState),
     ReducePower(ReducePowerActionState),
     RemoveSpecificPower(RemoveSpecificPowerActionState),
     SetDontTrigger(SetDontTriggerActionState),
+    TransformCardInHand(TransformCardInHandActionState),
 }
 
 pub const TYPED_ACTION_PAYLOAD_SOURCE_CLASSES: &[&str] = &[
     "ApplyPoisonOnRandomMonsterAction",
     "ApplyPowerAction",
     "ApplyPowerToRandomEnemyAction",
+    "AttackDamageRandomEnemyAction",
+    "BetterDiscardPileToHandAction",
+    "BetterDrawPileToHandAction",
     "DamageAction",
     "DamageAllEnemiesAction",
+    "DamageRandomEnemyAction",
     "DiscardAction",
     "DiscardSpecificCardAction",
     "DrawCardAction",
@@ -379,13 +390,16 @@ pub const TYPED_ACTION_PAYLOAD_SOURCE_CLASSES: &[&str] = &[
     "MakeTempCardInDrawPileAction",
     "MakeTempCardInHandAction",
     "ModifyBlockAction",
+    "PlayTopCardAction",
     "PutOnBottomOfDeckAction",
     "PutOnDeckAction",
+    "PummelDamageAction",
     "ReduceCostAction",
     "ReduceCostForTurnAction",
     "ReducePowerAction",
     "RemoveSpecificPowerAction",
     "SetDontTriggerAction",
+    "TransformCardInHandAction",
 ];
 
 impl ActionPayload {
@@ -394,8 +408,12 @@ impl ActionPayload {
             ActionPayload::ApplyPoisonOnRandomMonster(_) => "ApplyPoisonOnRandomMonsterAction",
             ActionPayload::ApplyPower(_) => "ApplyPowerAction",
             ActionPayload::ApplyPowerToRandomEnemy(_) => "ApplyPowerToRandomEnemyAction",
+            ActionPayload::AttackDamageRandomEnemy(_) => "AttackDamageRandomEnemyAction",
+            ActionPayload::BetterDiscardPileToHand(_) => "BetterDiscardPileToHandAction",
+            ActionPayload::BetterDrawPileToHand(_) => "BetterDrawPileToHandAction",
             ActionPayload::Damage(_) => "DamageAction",
             ActionPayload::DamageAllEnemies(_) => "DamageAllEnemiesAction",
+            ActionPayload::DamageRandomEnemy(_) => "DamageRandomEnemyAction",
             ActionPayload::DrawCard(_) => "DrawCardAction",
             ActionPayload::Discard(_) => "DiscardAction",
             ActionPayload::DiscardSpecificCard(_) => "DiscardSpecificCardAction",
@@ -408,13 +426,16 @@ impl ActionPayload {
             ActionPayload::MakeTempCardInDrawPile(_) => "MakeTempCardInDrawPileAction",
             ActionPayload::MakeTempCardInHand(_) => "MakeTempCardInHandAction",
             ActionPayload::ModifyBlock(_) => "ModifyBlockAction",
+            ActionPayload::PlayTopCard(_) => "PlayTopCardAction",
             ActionPayload::PutOnBottomOfDeck(_) => "PutOnBottomOfDeckAction",
             ActionPayload::PutOnDeck(_) => "PutOnDeckAction",
+            ActionPayload::PummelDamage(_) => "PummelDamageAction",
             ActionPayload::ReduceCost(_) => "ReduceCostAction",
             ActionPayload::ReduceCostForTurn(_) => "ReduceCostForTurnAction",
             ActionPayload::ReducePower(_) => "ReducePowerAction",
             ActionPayload::RemoveSpecificPower(_) => "RemoveSpecificPowerAction",
             ActionPayload::SetDontTrigger(_) => "SetDontTriggerAction",
+            ActionPayload::TransformCardInHand(_) => "TransformCardInHandAction",
         }
     }
 }
@@ -439,6 +460,26 @@ pub struct ApplyPowerToRandomEnemyActionState {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AttackDamageRandomEnemyActionState {
+    pub card_ref: CardRef,
+    pub effect: AttackEffect,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BetterDiscardPileToHandActionState {
+    pub number_of_cards: i32,
+    pub optional: bool,
+    pub new_cost: i32,
+    pub set_cost: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BetterDrawPileToHandActionState {
+    pub number_of_cards: i32,
+    pub optional: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DamageActionState {
     pub gold_amount: i32,
     pub skip_wait: bool,
@@ -452,6 +493,9 @@ pub struct DamageAllEnemiesActionState {
     pub first_frame: bool,
     pub utilize_base_damage: bool,
 }
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DamageRandomEnemyActionState {}
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DrawCardActionState {
@@ -533,6 +577,11 @@ pub struct ModifyBlockActionState {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PlayTopCardActionState {
+    pub exhaust_cards: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PutOnBottomOfDeckActionState {
     pub is_random: bool,
 }
@@ -541,6 +590,9 @@ pub struct PutOnBottomOfDeckActionState {
 pub struct PutOnDeckActionState {
     pub is_random: bool,
 }
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PummelDamageActionState {}
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ReduceCostActionState {
@@ -569,6 +621,12 @@ pub struct RemoveSpecificPowerActionState {
 pub struct SetDontTriggerActionState {
     pub card_ref: CardRef,
     pub trigger: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TransformCardInHandActionState {
+    pub replacement_card: CardRef,
+    pub hand_index: i32,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

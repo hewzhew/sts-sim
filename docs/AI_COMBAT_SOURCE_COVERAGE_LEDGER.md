@@ -398,6 +398,16 @@ that payload is not trainable and not searchable. Unknown subclass state is an
 | `ApplyPowerToRandomEnemyAction.java` | `effect` | modeled | `ActionPayload::ApplyPowerToRandomEnemy.effect` | forwarded attack effect |
 | `ApplyPoisonOnRandomMonsterAction.java` | `startingDuration` | modeled | `ActionPayload::ApplyPoisonOnRandomMonster.starting_duration_bits` | deprecated action still source-present |
 | `ApplyPoisonOnRandomMonsterAction.java` | `powerToApply` | modeled | `ActionPayload::ApplyPoisonOnRandomMonster.power_to_apply` | created during update; nullable before target roll |
+| `AttackDamageRandomEnemyAction.java` | `card` | modeled | `ActionPayload::AttackDamageRandomEnemy.card_ref` | source card for target-specific damage recalculation |
+| `AttackDamageRandomEnemyAction.java` | `effect` | modeled | `ActionPayload::AttackDamageRandomEnemy.effect` | attack effect and lightning special queue |
+| `BetterDiscardPileToHandAction.java` | `player` | modeled/derived | `CombatStateSnapshot.player` | always current player |
+| `BetterDiscardPileToHandAction.java` | `numberOfCards` | modeled | `ActionPayload::BetterDiscardPileToHand.number_of_cards` | grid select amount |
+| `BetterDiscardPileToHandAction.java` | `optional` | modeled | `ActionPayload::BetterDiscardPileToHand.optional` | grid select may pick fewer |
+| `BetterDiscardPileToHandAction.java` | `newCost` | modeled | `ActionPayload::BetterDiscardPileToHand.new_cost` | optional cost override |
+| `BetterDiscardPileToHandAction.java` | `setCost` | modeled | `ActionPayload::BetterDiscardPileToHand.set_cost` | whether `newCost` applies |
+| `BetterDrawPileToHandAction.java` | `player` | modeled/derived | `CombatStateSnapshot.player` | always current player |
+| `BetterDrawPileToHandAction.java` | `numberOfCards` | modeled | `ActionPayload::BetterDrawPileToHand.number_of_cards` | grid select amount |
+| `BetterDrawPileToHandAction.java` | `optional` | modeled | `ActionPayload::BetterDrawPileToHand.optional` | grid select may pick fewer |
 | `DamageAction.java` | `info` | modeled | `ActionState.damage_info` | concrete damage object |
 | `DamageAction.java` | `goldAmount` | modeled | `ActionPayload::Damage.gold_amount` | steal-gold damage |
 | `DamageAction.java` | `skipWait` | modeled | `ActionPayload::Damage.skip_wait` | controls post-hit wait action |
@@ -406,6 +416,7 @@ that payload is not trainable and not searchable. Unknown subclass state is an
 | `DamageAllEnemiesAction.java` | `baseDamage` | modeled | `ActionPayload::DamageAllEnemies.base_damage` | source base for dynamic matrix |
 | `DamageAllEnemiesAction.java` | `firstFrame` | modeled | `ActionPayload::DamageAllEnemies.first_frame` | delayed execution state |
 | `DamageAllEnemiesAction.java` | `utilizeBaseDamage` | modeled | `ActionPayload::DamageAllEnemies.utilize_base_damage` | recompute damage matrix |
+| `DamageRandomEnemyAction.java` | `info` | modeled | `ActionState.damage_info` | concrete damage object |
 | `GainBlockAction.java` | no subclass fields beyond common action fields | modeled | `ActionState` | duration/startDuration/amount/target/source cover it |
 | `DrawCardAction.java` | `shuffleCheck` | modeled | `ActionPayload::DrawCard.shuffle_check` | shuffle split state |
 | `DrawCardAction.java` | `drawnCards` | modeled | `ActionStaticState.draw_card_action_drawn_cards` | static mechanical history used by follow-up actions |
@@ -444,12 +455,14 @@ that payload is not trainable and not searchable. Unknown subclass state is an
 | `MakeTempCardInHandAction.java` | `isOtherCardInCenter` | modeled | `ActionPayload::MakeTempCardInHand.is_other_card_in_center` | source field retained for action replay |
 | `MakeTempCardInHandAction.java` | `sameUUID` | modeled | `ActionPayload::MakeTempCardInHand.same_uuid` | same-instance copy behavior |
 | `ModifyBlockAction.java` | `uuid` | modeled | `ActionPayload::ModifyBlock.target_uuid` | all in-battle card instances with this UUID are modified |
+| `PlayTopCardAction.java` | `exhaustCards` | modeled | `ActionPayload::PlayTopCard.exhaust_cards` | sets top card `exhaustOnUseOnce` |
 | `PutOnBottomOfDeckAction.java` | `p` | modeled/derived | `ActionState.target` | player target |
 | `PutOnBottomOfDeckAction.java` | `isRandom` | modeled | `ActionPayload::PutOnBottomOfDeck.is_random` | random hand selection |
 | `PutOnBottomOfDeckAction.java` | `numPlaced` | modeled | `ActionStaticState.put_on_bottom_of_deck_action_num_placed` | static hand-select count |
 | `PutOnDeckAction.java` | `p` | modeled/derived | `ActionState.target` | player target |
 | `PutOnDeckAction.java` | `isRandom` | modeled | `ActionPayload::PutOnDeck.is_random` | random hand selection |
 | `PutOnDeckAction.java` | `numPlaced` | modeled | `ActionStaticState.put_on_deck_action_num_placed` | static hand-select count |
+| `PummelDamageAction.java` | `info` | modeled | `ActionState.damage_info` | concrete damage object |
 | `ReduceCostAction.java` | `uuid` | modeled | `ActionPayload::ReduceCost.target_uuid` | all in-battle card instances with this UUID |
 | `ReduceCostAction.java` | `card` | modeled | `ActionPayload::ReduceCost.card_ref` | direct card instance path |
 | `ReduceCostForTurnAction.java` | `targetCard` | modeled | `ActionPayload::ReduceCostForTurn.target_card` | direct card instance path |
@@ -460,6 +473,8 @@ that payload is not trainable and not searchable. Unknown subclass state is an
 | `RemoveSpecificPowerAction.java` | `powerInstance` | modeled | `ActionPayload::RemoveSpecificPower.power_ref` | direct instance path |
 | `SetDontTriggerAction.java` | `card` | modeled | `ActionPayload::SetDontTrigger.card_ref` | direct card instance |
 | `SetDontTriggerAction.java` | `trigger` | modeled | `ActionPayload::SetDontTrigger.trigger` | target `dontTriggerOnUseCard` value |
+| `TransformCardInHandAction.java` | `replacement` | modeled | `ActionPayload::TransformCardInHand.replacement_card` | replacement card instance |
+| `TransformCardInHandAction.java` | `handIndex` | modeled | `ActionPayload::TransformCardInHand.hand_index` | hand slot to replace |
 | `EmptyDeckShuffleAction.java` | `shuffled` | modeled | `ActionPayload::EmptyDeckShuffle.shuffled` | delayed shuffle state |
 | `EmptyDeckShuffleAction.java` | `vfxDone` | modeled | `ActionPayload::EmptyDeckShuffle.vfx_done` | delayed discard movement state |
 | `EmptyDeckShuffleAction.java` | `count` | modeled | `ActionPayload::EmptyDeckShuffle.count` | discard movement counter |

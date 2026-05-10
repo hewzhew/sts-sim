@@ -474,6 +474,23 @@ ActionPayload {
     effect,
   }
 
+  AttackDamageRandomEnemy {
+    card_ref,
+    effect,
+  }
+
+  BetterDiscardPileToHand {
+    number_of_cards,
+    optional,
+    new_cost,
+    set_cost,
+  }
+
+  BetterDrawPileToHand {
+    number_of_cards,
+    optional,
+  }
+
   Damage {
     gold_amount,
     skip_wait,
@@ -486,6 +503,8 @@ ActionPayload {
     first_frame,
     utilize_base_damage,
   }
+
+  DamageRandomEnemy {}
 
   DrawCard {
     shuffle_check,
@@ -554,6 +573,10 @@ ActionPayload {
     target_uuid,
   }
 
+  PlayTopCard {
+    exhaust_cards,
+  }
+
   PutOnBottomOfDeck {
     is_random,
   }
@@ -561,6 +584,8 @@ ActionPayload {
   PutOnDeck {
     is_random,
   }
+
+  PummelDamage {}
 
   ReduceCost {
     target_uuid,
@@ -584,6 +609,11 @@ ActionPayload {
   SetDontTrigger {
     card_ref,
     trigger,
+  }
+
+  TransformCardInHand {
+    replacement_card,
+    hand_index,
   }
 }
 ```
