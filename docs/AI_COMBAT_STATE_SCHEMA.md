@@ -498,6 +498,10 @@ ActionPayload {
     optional,
   }
 
+  BurnIncrease {
+    got_burned,
+  }
+
   ChooseOneColorless {
     retrieve_card,
   }

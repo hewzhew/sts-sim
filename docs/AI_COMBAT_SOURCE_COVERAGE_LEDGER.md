@@ -460,15 +460,19 @@ that payload is not trainable and not searchable. Unknown subclass state is an
 | `MakeTempCardInDiscardAction.java` | `c` | modeled | `ActionPayload::MakeTempCardInDiscard.card_to_make` | prototype card instance |
 | `MakeTempCardInDiscardAction.java` | `numCards` | modeled | `ActionPayload::MakeTempCardInDiscard.num_cards` | number generated |
 | `MakeTempCardInDiscardAction.java` | `sameUUID` | modeled | `ActionPayload::MakeTempCardInDiscard.same_uuid` | same-instance copy behavior |
+| `MakeTempCardInDiscardAction.java` | `ShowCardAndAddToDiscardEffect` carrier | mechanical_hosted_in_ui | extracted transition via `ShowCardAndAddToDiscardEffect.java` ledger row | Java uses VFX object to add generated cards to discard pile |
 | `MakeTempCardInDiscardAndDeckAction.java` | `cardToMake` | modeled | `ActionPayload::MakeTempCardInDiscardAndDeck.card_to_make` | prototype card instance |
+| `MakeTempCardInDiscardAndDeckAction.java` | `ShowCardAndAddToDiscardEffect` / `ShowCardAndAddToDrawPileEffect` carriers | mechanical_hosted_in_ui | extracted transitions via UI-hosted source rows | Java uses VFX objects to add one copy to discard and one copy to draw pile |
 | `MakeTempCardInDrawPileAction.java` | `cardToMake` | modeled | `ActionPayload::MakeTempCardInDrawPile.card_to_make` | prototype card instance |
 | `MakeTempCardInDrawPileAction.java` | `randomSpot` | modeled | `ActionPayload::MakeTempCardInDrawPile.random_spot` | draw-pile insertion mode |
 | `MakeTempCardInDrawPileAction.java` | `autoPosition` | render_only | none | effect positioning only |
 | `MakeTempCardInDrawPileAction.java` | `toBottom` | modeled | `ActionPayload::MakeTempCardInDrawPile.to_bottom` | draw-pile bottom insertion |
 | `MakeTempCardInDrawPileAction.java` | `x`, `y` | render_only | none | card animation spawn position only |
+| `MakeTempCardInDrawPileAction.java` | `ShowCardAndAddToDrawPileEffect` carrier | mechanical_hosted_in_ui | extracted transition via `ShowCardAndAddToDrawPileEffect.java` ledger row | Java uses VFX object to insert generated cards into draw pile |
 | `MakeTempCardInHandAction.java` | `c` | modeled | `ActionPayload::MakeTempCardInHand.card_to_make` | prototype card instance |
 | `MakeTempCardInHandAction.java` | `isOtherCardInCenter` | render_only | none | card animation layout only |
 | `MakeTempCardInHandAction.java` | `sameUUID` | modeled | `ActionPayload::MakeTempCardInHand.same_uuid` | same-instance copy behavior |
+| `MakeTempCardInHandAction.java` | `ShowCardAndAddToHandEffect` / `ShowCardAndAddToDiscardEffect` carriers | mechanical_hosted_in_ui | extracted transitions via UI-hosted source rows | Java uses VFX objects to add generated cards to hand, with overflow to discard |
 | `ModifyBlockAction.java` | `uuid` | modeled | `ActionPayload::ModifyBlock.target_uuid` | all in-battle card instances with this UUID are modified |
 | `PlayTopCardAction.java` | `exhaustCards` | modeled | `ActionPayload::PlayTopCard.exhaust_cards` | sets top card `exhaustOnUseOnce` |
 | `PutOnBottomOfDeckAction.java` | `p` | modeled/derived | `ActionState.target` | player target |
@@ -574,6 +578,9 @@ typed payload work and must not enter AI mechanical action queues.
 | --- | --- | --- | --- | --- |
 | `AddCardToDeckAction.java` | `cardToObtain` | modeled | `ActionPayload::AddCardToDeck.card_to_obtain` | combat can add a card to master deck, e.g. Writhing Mass Parasite |
 | `AddCardToDeckAction.java` | `ShowCardAndObtainEffect` carrier | mechanical_hosted_in_ui | extracted transition via `ShowCardAndObtainEffect.java` ledger row | Java uses VFX object to perform obtain/master-deck-change mechanics |
+| `BurnIncreaseAction.java` | `gotBurned` | modeled | `ActionPayload::BurnIncrease.got_burned` | delayed guard for adding three upgraded Burns |
+| `BurnIncreaseAction.java` | existing Burns in draw/discard | derived | card zones and card instance upgrades | first update upgrades all existing Burn cards in draw and discard piles |
+| `BurnIncreaseAction.java` | `ShowCardAndAddToDiscardEffect` carrier | mechanical_hosted_in_ui | extracted transition via `ShowCardAndAddToDiscardEffect.java` ledger row | Java uses VFX object to add three upgraded Burns to discard pile |
 
 ## Field Ledger: `cards/DamageInfo.java`
 

@@ -324,6 +324,7 @@ pub enum ActionPayload {
     AttackDamageRandomEnemy(AttackDamageRandomEnemyActionState),
     BetterDiscardPileToHand(BetterDiscardPileToHandActionState),
     BetterDrawPileToHand(BetterDrawPileToHandActionState),
+    BurnIncrease(BurnIncreaseActionState),
     ChooseOneColorless(ChooseOneColorlessActionState),
     ConditionalDraw(ConditionalDrawActionState),
     Damage(DamageActionState),
@@ -379,6 +380,7 @@ pub const TYPED_ACTION_PAYLOAD_SOURCE_CLASSES: &[&str] = &[
     "AttackDamageRandomEnemyAction",
     "BetterDiscardPileToHandAction",
     "BetterDrawPileToHandAction",
+    "BurnIncreaseAction",
     "ChooseOneColorless",
     "ConditionalDrawAction",
     "DamageAction",
@@ -474,6 +476,7 @@ impl ActionPayload {
             ActionPayload::AttackDamageRandomEnemy(_) => "AttackDamageRandomEnemyAction",
             ActionPayload::BetterDiscardPileToHand(_) => "BetterDiscardPileToHandAction",
             ActionPayload::BetterDrawPileToHand(_) => "BetterDrawPileToHandAction",
+            ActionPayload::BurnIncrease(_) => "BurnIncreaseAction",
             ActionPayload::ChooseOneColorless(_) => "ChooseOneColorless",
             ActionPayload::ConditionalDraw(_) => "ConditionalDrawAction",
             ActionPayload::Damage(_) => "DamageAction",
@@ -563,6 +566,11 @@ pub struct BetterDiscardPileToHandActionState {
 pub struct BetterDrawPileToHandActionState {
     pub number_of_cards: i32,
     pub optional: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BurnIncreaseActionState {
+    pub got_burned: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
