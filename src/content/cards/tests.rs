@@ -1301,11 +1301,15 @@ fn ironclad_copy_and_block_runtime_actions_match_java_use_methods() {
     assert_eq!(entrench_actions.len(), 1);
     assert!(matches!(
         entrench_actions[0].action,
-        Action::GainBlock {
-            target: 0,
-            amount: 14
-        }
+        Action::DoubleBlock { target: 0 }
     ));
+
+    state.entities.player.block = 9;
+    crate::engine::action_handlers::damage::handle_double_block(0, &mut state);
+    assert_eq!(
+        state.entities.player.block, 18,
+        "Java DoubleYourBlockAction reads currentBlock when the action updates"
+    );
 }
 
 #[test]
@@ -3049,6 +3053,44 @@ fn rupture_and_reaper_execution_hooks_match_java_sources() {
     assert_eq!(reaper_state.entities.monsters[0].current_hp, 17);
     assert_eq!(reaper_state.entities.monsters[1].current_hp, 13);
     assert_eq!(reaper_state.entities.player.current_hp, 60);
+
+    let mut flower_state = reaper_state.clone();
+    flower_state.entities.player.current_hp = 50;
+    flower_state
+        .entities
+        .player
+        .add_relic(crate::content::relics::RelicState::new(
+            crate::content::relics::RelicId::MagicFlower,
+        ));
+    crate::engine::action_handlers::damage::handle_vampire_damage_all_enemies(
+        0,
+        smallvec::smallvec![2, 2],
+        DamageType::Normal,
+        &mut flower_state,
+    );
+    assert_eq!(
+        flower_state.entities.player.current_hp, 56,
+        "Java Reaper queues HealAction, so Magic Flower modifies the vampire heal"
+    );
+
+    let mut bloom_state = reaper_state.clone();
+    bloom_state.entities.player.current_hp = 50;
+    bloom_state
+        .entities
+        .player
+        .add_relic(crate::content::relics::RelicState::new(
+            crate::content::relics::RelicId::MarkOfTheBloom,
+        ));
+    crate::engine::action_handlers::damage::handle_vampire_damage_all_enemies(
+        0,
+        smallvec::smallvec![2, 2],
+        DamageType::Normal,
+        &mut bloom_state,
+    );
+    assert_eq!(
+        bloom_state.entities.player.current_hp, 50,
+        "Java Mark of the Bloom returns zero from onPlayerHeal, including Reaper heals"
+    );
 }
 
 #[test]

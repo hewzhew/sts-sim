@@ -240,6 +240,7 @@ pub fn execute_action(action: Action, state: &mut CombatState) {
         } => damage::handle_lose_hp(target, amount, triggers_rupture, state),
         Action::SetCurrentHp { target, hp } => damage::handle_set_current_hp(target, hp, state),
         Action::GainBlock { target, amount } => damage::handle_gain_block(target, amount, state),
+        Action::DoubleBlock { target } => damage::handle_double_block(target, state),
         Action::GainBlockRandomMonster { source, amount } => {
             damage::handle_gain_block_random_monster(source, amount, state)
         }

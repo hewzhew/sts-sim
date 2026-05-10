@@ -136,6 +136,9 @@ pub enum Action {
         target: EntityId,
         amount: i32,
     },
+    DoubleBlock {
+        target: EntityId,
+    },
     GainBlockRandomMonster {
         source: EntityId,
         amount: i32,

@@ -776,6 +776,7 @@ fn heal_vampire_source(state: &mut CombatState, source: usize, amount: i32) {
     }
 
     if source == 0 {
+        let amount = crate::content::relics::hooks::on_calculate_heal(state, amount);
         let previous_hp = state.entities.player.current_hp;
         state.entities.player.current_hp =
             (state.entities.player.current_hp + amount).min(state.entities.player.max_hp);
@@ -859,6 +860,22 @@ pub fn handle_gain_block(target: usize, amount: i32, state: &mut CombatState) {
         if m.current_hp > 0 {
             m.block += amount;
         }
+    }
+}
+
+pub fn handle_double_block(target: usize, state: &mut CombatState) {
+    let current_block = if target == 0 {
+        state.entities.player.block
+    } else {
+        state
+            .entities
+            .monsters
+            .iter()
+            .find(|m| m.id == target)
+            .map_or(0, |m| m.block)
+    };
+    if current_block > 0 {
+        handle_gain_block(target, current_block, state);
     }
 }
 
