@@ -3533,3 +3533,207 @@ fn true_grit_exhaust_action_edges_match_java_exhaust_action() {
         }
     ));
 }
+
+#[test]
+fn ironclad_debuff_draw_xcost_and_wound_definitions_match_java_sources() {
+    let uppercut = get_card_definition(CardId::Uppercut);
+    assert_eq!(uppercut.card_type, CardType::Attack);
+    assert_eq!(uppercut.rarity, CardRarity::Uncommon);
+    assert_eq!(uppercut.cost, 2);
+    assert_eq!(uppercut.base_damage, 13);
+    assert_eq!(uppercut.base_magic, 1);
+    assert_eq!(uppercut.target, CardTarget::Enemy);
+    assert_eq!(uppercut.upgrade_magic, 1);
+
+    let warcry = get_card_definition(CardId::Warcry);
+    assert_eq!(warcry.card_type, CardType::Skill);
+    assert_eq!(warcry.rarity, CardRarity::Common);
+    assert_eq!(warcry.cost, 0);
+    assert_eq!(warcry.base_magic, 1);
+    assert_eq!(warcry.target, CardTarget::SelfTarget);
+    assert!(warcry.exhaust);
+    assert_eq!(warcry.upgrade_magic, 1);
+
+    let whirlwind = get_card_definition(CardId::Whirlwind);
+    assert_eq!(whirlwind.card_type, CardType::Attack);
+    assert_eq!(whirlwind.rarity, CardRarity::Uncommon);
+    assert_eq!(whirlwind.cost, -1);
+    assert_eq!(whirlwind.base_damage, 5);
+    assert_eq!(whirlwind.target, CardTarget::AllEnemy);
+    assert!(whirlwind.is_multi_damage);
+    assert_eq!(whirlwind.upgrade_damage, 3);
+
+    let wild_strike = get_card_definition(CardId::WildStrike);
+    assert_eq!(wild_strike.card_type, CardType::Attack);
+    assert_eq!(wild_strike.rarity, CardRarity::Common);
+    assert_eq!(wild_strike.cost, 1);
+    assert_eq!(wild_strike.base_damage, 12);
+    assert_eq!(wild_strike.target, CardTarget::Enemy);
+    assert!(wild_strike.tags.contains(&CardTag::Strike));
+    assert_eq!(wild_strike.upgrade_damage, 5);
+}
+
+#[test]
+fn ironclad_debuff_draw_xcost_and_wound_runtime_actions_match_java_use_methods() {
+    let mut state = crate::test_support::blank_test_combat();
+    crate::content::powers::store::set_powers_for(
+        &mut state,
+        0,
+        vec![Power {
+            power_type: PowerId::Strength,
+            instance_id: None,
+            amount: 2,
+            extra_data: 0,
+            just_applied: false,
+        }],
+    );
+    let mut first = crate::test_support::test_monster(EnemyId::JawWorm);
+    first.id = 701;
+    let mut second = crate::test_support::test_monster(EnemyId::Cultist);
+    second.id = 702;
+    state.entities.monsters = vec![first, second];
+
+    let mut uppercut_plus = CombatCard::new(CardId::Uppercut, 390);
+    uppercut_plus.upgrades = 1;
+    let uppercut_actions = resolve_card_play(CardId::Uppercut, &state, &uppercut_plus, Some(701));
+    assert_eq!(uppercut_actions.len(), 3);
+    match &uppercut_actions[0].action {
+        Action::Damage(info) => {
+            assert_eq!(info.source, 0);
+            assert_eq!(info.target, 701);
+            assert_eq!(info.base, 15);
+            assert_eq!(info.output, 15);
+            assert_eq!(info.damage_type, DamageType::Normal);
+        }
+        other => panic!("Uppercut+ should damage before debuffs, got {other:?}"),
+    }
+    assert!(matches!(
+        uppercut_actions[1].action,
+        Action::ApplyPower {
+            source: 0,
+            target: 701,
+            power_id: PowerId::Weak,
+            amount: 2
+        }
+    ));
+    assert!(matches!(
+        uppercut_actions[2].action,
+        Action::ApplyPower {
+            source: 0,
+            target: 701,
+            power_id: PowerId::Vulnerable,
+            amount: 2
+        }
+    ));
+
+    let mut warcry_plus = CombatCard::new(CardId::Warcry, 391);
+    warcry_plus.upgrades = 1;
+    let warcry_actions = resolve_card_play(CardId::Warcry, &state, &warcry_plus, None);
+    assert_eq!(warcry_actions.len(), 2);
+    assert!(matches!(warcry_actions[0].action, Action::DrawCards(2)));
+    assert!(matches!(
+        warcry_actions[1].action,
+        Action::PutOnDeck {
+            amount: 1,
+            random: false
+        }
+    ));
+
+    let mut whirlwind_plus = CombatCard::new(CardId::Whirlwind, 392);
+    whirlwind_plus.upgrades = 1;
+    whirlwind_plus.energy_on_use = 3;
+    let whirlwind_actions = resolve_card_play(CardId::Whirlwind, &state, &whirlwind_plus, None);
+    assert_eq!(whirlwind_actions.len(), 3);
+    for action in &whirlwind_actions {
+        match &action.action {
+            Action::DamageAllEnemies {
+                source,
+                damages,
+                damage_type,
+                is_modified,
+            } => {
+                assert_eq!(*source, 0);
+                assert_eq!(damages.as_slice(), &[10, 10]);
+                assert_eq!(*damage_type, DamageType::Normal);
+                assert!(!*is_modified);
+            }
+            other => panic!("Whirlwind+ should emit one DamageAllEnemies per X, got {other:?}"),
+        }
+    }
+
+    let mut wild_plus = CombatCard::new(CardId::WildStrike, 393);
+    wild_plus.upgrades = 1;
+    let wild_actions = resolve_card_play(CardId::WildStrike, &state, &wild_plus, Some(702));
+    assert_eq!(wild_actions.len(), 2);
+    match &wild_actions[0].action {
+        Action::Damage(info) => {
+            assert_eq!(info.source, 0);
+            assert_eq!(info.target, 702);
+            assert_eq!(info.base, 19);
+            assert_eq!(info.output, 19);
+            assert_eq!(info.damage_type, DamageType::Normal);
+        }
+        other => panic!("Wild Strike+ should damage before Wound generation, got {other:?}"),
+    }
+    assert!(matches!(
+        wild_actions[1].action,
+        Action::MakeTempCardInDrawPile {
+            card_id: CardId::Wound,
+            amount: 1,
+            random_spot: true,
+            to_bottom: false,
+            upgraded: false
+        }
+    ));
+}
+
+#[test]
+fn put_on_deck_action_matches_java_rng_and_selection_edges() {
+    let mut one_card_state = crate::test_support::blank_test_combat();
+    one_card_state.zones.hand = vec![CombatCard::new(CardId::Strike, 400)];
+    one_card_state.zones.draw_pile = vec![CombatCard::new(CardId::Defend, 401)];
+    assert_eq!(one_card_state.rng.card_random_rng.counter, 0);
+
+    crate::engine::action_handlers::cards::handle_put_on_deck(1, false, &mut one_card_state);
+
+    assert!(one_card_state.zones.hand.is_empty());
+    assert_eq!(one_card_state.zones.draw_pile[0].uuid, 400);
+    assert_eq!(one_card_state.zones.draw_pile[1].uuid, 401);
+    assert_eq!(
+        one_card_state.rng.card_random_rng.counter, 1,
+        "Java PutOnDeckAction uses getRandomCard(cardRandomRng) when hand size <= amount"
+    );
+
+    let mut two_card_state = crate::test_support::blank_test_combat();
+    two_card_state.zones.hand = vec![
+        CombatCard::new(CardId::Strike, 402),
+        CombatCard::new(CardId::Defend, 403),
+    ];
+    crate::engine::action_handlers::cards::handle_put_on_deck(1, false, &mut two_card_state);
+    assert_eq!(two_card_state.zones.hand.len(), 2);
+    assert_eq!(two_card_state.rng.card_random_rng.counter, 0);
+    assert!(matches!(
+        two_card_state.pop_next_action(),
+        Some(Action::SuspendForHandSelect {
+            min: 1,
+            max: 1,
+            can_cancel: false,
+            filter: crate::state::HandSelectFilter::Any,
+            reason: crate::state::HandSelectReason::PutOnDrawPile,
+        })
+    ));
+
+    let mut fallback_state = crate::test_support::blank_test_combat();
+    fallback_state.zones.hand = vec![
+        CombatCard::new(CardId::Strike, 404),
+        CombatCard::new(CardId::Defend, 405),
+    ];
+    crate::engine::action_handlers::cards::handle_put_on_deck(2, false, &mut fallback_state);
+    assert_eq!(
+        fallback_state.zones.hand.len(),
+        1,
+        "Java PutOnDeckAction fallback loop checks the shrinking hand size each iteration"
+    );
+    assert_eq!(fallback_state.zones.draw_pile.len(), 1);
+    assert_eq!(fallback_state.rng.card_random_rng.counter, 1);
+}

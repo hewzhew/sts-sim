@@ -331,6 +331,7 @@ pub fn execute_action(action: Action, state: &mut CombatState) {
             from,
             to,
         } => cards::handle_move_card(card_uuid, from, to, state),
+        Action::PutOnDeck { amount, random } => cards::handle_put_on_deck(amount, random, state),
         Action::DiscardPileToTopOfDeck => cards::handle_discard_pile_to_top_of_deck(state),
         Action::ExhumeCard { card_uuid, upgrade } => {
             cards::handle_exhume_card(card_uuid, upgrade, state)

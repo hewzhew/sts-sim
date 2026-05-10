@@ -267,6 +267,10 @@ pub enum Action {
         from: PileType,
         to: PileType,
     },
+    PutOnDeck {
+        amount: usize,
+        random: bool,
+    },
     DiscardPileToTopOfDeck,
     ExhumeCard {
         card_uuid: u32,

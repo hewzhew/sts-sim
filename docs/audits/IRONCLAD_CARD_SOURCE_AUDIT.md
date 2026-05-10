@@ -2373,6 +2373,151 @@ Coverage:
 - `ironclad_random_and_exhaust_attack_definitions_match_java_sources`
 - `ironclad_random_and_exhaust_attack_runtime_actions_match_java_use_methods`
 
+## Batch 19 - Uppercut / Warcry / Whirlwind / Wild Strike Coverage
+
+### Uppercut
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/cards/red/Uppercut.java`
+
+Rust source:
+- `src/content/cards/mod.rs`
+- `src/content/cards/ironclad/uppercut.rs`
+
+Java evidence:
+- Constructor: cost `2`, type `ATTACK`, color `RED`, rarity `UNCOMMON`,
+  target `ENEMY`, `baseDamage = 13`,
+  `baseMagicNumber = magicNumber = 1`.
+- `use`: queues one `DamageAction`, then Weak for `magicNumber`, then
+  Vulnerable for `magicNumber`.
+- `upgrade`: `upgradeMagicNumber(1)`.
+
+Rust result:
+- Definition matches Java constructor and upgrade magic.
+- Runtime now evaluates damage and magic at play time before emitting damage,
+  Weak, and Vulnerable in Java order.
+
+Coverage:
+- `ironclad_debuff_draw_xcost_and_wound_definitions_match_java_sources`
+- `ironclad_debuff_draw_xcost_and_wound_runtime_actions_match_java_use_methods`
+
+### Warcry
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/cards/red/Warcry.java`
+- `D:/rust/cardcrawl/actions/common/PutOnDeckAction.java`
+- `D:/rust/cardcrawl/cards/CardGroup.java`
+- `D:/rust/cardcrawl/cards/Soul.java`
+
+Rust source:
+- `src/content/cards/mod.rs`
+- `src/content/cards/ironclad/warcry.rs`
+- `src/runtime/action.rs`
+- `src/engine/action_handlers/cards.rs`
+- `src/engine/action_handlers/mod.rs`
+
+Java evidence:
+- Constructor: cost `0`, type `SKILL`, color `RED`, rarity `COMMON`, target
+  `SELF`, `exhaust = true`,
+  `baseMagicNumber = magicNumber = 1`.
+- `use`: queues UI-only VFX, then `DrawCardAction(p, this.magicNumber)`, then
+  `PutOnDeckAction(p, p, 1, false)`.
+- `PutOnDeckAction`: clamps amount to current hand size. If `isRandom`, moves
+  random hand cards to the draw pile. If not random and hand size is greater
+  than amount, opens hand selection. Otherwise it still uses
+  `getRandomCard(AbstractDungeon.cardRandomRng)` before moving cards to the top
+  of the draw pile; its fallback loop checks the shrinking hand size each
+  iteration, so it is preserved as written instead of normalized.
+- `CardGroup.moveToDeck(c, false)` routes through `Soul.onToDeck`, which calls
+  draw pile `addToTop`.
+- `upgrade`: `upgradeMagicNumber(1)`.
+
+Rust result:
+- Fixed Warcry target from `None` to `SelfTarget`.
+- Runtime now evaluates draw count at play time.
+- Added explicit `Action::PutOnDeck` and engine handler so Warcry preserves
+  Java's selection boundary, top-of-draw placement, and one-card RNG
+  consumption behavior instead of abusing a generic hand-select action. The
+  handler also preserves Java's non-random fallback loop behavior for larger
+  amounts.
+- UI-only VFX is intentionally not represented.
+
+Coverage:
+- `ironclad_debuff_draw_xcost_and_wound_definitions_match_java_sources`
+- `ironclad_debuff_draw_xcost_and_wound_runtime_actions_match_java_use_methods`
+- `put_on_deck_action_matches_java_rng_and_selection_edges`
+
+### Whirlwind
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/cards/red/Whirlwind.java`
+- `D:/rust/cardcrawl/actions/unique/WhirlwindAction.java`
+
+Rust source:
+- `src/content/cards/mod.rs`
+- `src/content/cards/ironclad/whirlwind.rs`
+- `src/engine/action_handlers/cards.rs`
+
+Java evidence:
+- Constructor: cost `-1`, type `ATTACK`, color `RED`, rarity `UNCOMMON`,
+  target `ALL_ENEMY`, `baseDamage = 5`, `isMultiDamage = true`.
+- `use`: queues `WhirlwindAction(p, this.multiDamage, this.damageTypeForTurn,
+  this.freeToPlayOnce, this.energyOnUse)`.
+- `WhirlwindAction.update`: effect count is `EnergyPanel.totalCount`, or
+  `energyOnUse` when provided; Chemical X adds 2; queues one
+  `DamageAllEnemiesAction` per effect count; spends current energy unless
+  `freeToPlayOnce`.
+- `upgrade`: `upgradeDamage(3)`.
+
+Rust result:
+- Definition matches Java constructor and upgrade damage.
+- Runtime now evaluates multi-damage at play time before emitting one
+  `DamageAllEnemies` action per `card.energy_on_use`.
+- Existing card-play handling already stores X-cost effect count on
+  `card.energy_on_use` after Chemical X hooks and spends the original current
+  energy separately, matching the split between effect count and energy spend.
+- UI-only SFX/VFX is intentionally not represented.
+
+Coverage:
+- `ironclad_debuff_draw_xcost_and_wound_definitions_match_java_sources`
+- `ironclad_debuff_draw_xcost_and_wound_runtime_actions_match_java_use_methods`
+
+### Wild Strike
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/cards/red/WildStrike.java`
+- `D:/rust/cardcrawl/actions/common/MakeTempCardInDrawPileAction.java`
+
+Rust source:
+- `src/content/cards/mod.rs`
+- `src/content/cards/ironclad/wild_strike.rs`
+
+Java evidence:
+- Constructor ID is `"Wild Strike"`; cost `1`, type `ATTACK`, color `RED`,
+  rarity `COMMON`, target `ENEMY`, `baseDamage = 12`, tag `STRIKE`, preview
+  card `Wound`.
+- `use`: queues one `DamageAction`, then
+  `MakeTempCardInDrawPileAction(new Wound(), 1, true, true)`, which means
+  random draw-pile spot, not bottom.
+- `upgrade`: `upgradeDamage(5)`.
+
+Rust result:
+- Fixed definition to include the Strike tag.
+- Runtime already evaluates damage at play time and generates one Wound into a
+  random draw-pile spot with `to_bottom = false`.
+
+Coverage:
+- `ironclad_debuff_draw_xcost_and_wound_definitions_match_java_sources`
+- `ironclad_debuff_draw_xcost_and_wound_runtime_actions_match_java_use_methods`
+
 ## Full Ironclad Queue
 
 Cards remain `unreviewed` until their Java file, Rust definition, Rust runtime,
@@ -2451,7 +2596,7 @@ and supporting engine behavior have all been checked.
 | 69 | `ThunderClap.java` | `thunderclap.rs` | `wrong-fixed` |
 | 70 | `TrueGrit.java` | `true_grit.rs` | `wrong-fixed` |
 | 71 | `TwinStrike.java` | `twin_strike.rs` | `exact` |
-| 72 | `Uppercut.java` | `uppercut.rs` | `unreviewed` |
-| 73 | `Warcry.java` | `warcry.rs` | `unreviewed` |
-| 74 | `Whirlwind.java` | `whirlwind.rs` | `unreviewed` |
-| 75 | `WildStrike.java` | `wild_strike.rs` | `unreviewed` |
+| 72 | `Uppercut.java` | `uppercut.rs` | `wrong-fixed` |
+| 73 | `Warcry.java` | `warcry.rs` | `wrong-fixed` |
+| 74 | `Whirlwind.java` | `whirlwind.rs` | `wrong-fixed` |
+| 75 | `WildStrike.java` | `wild_strike.rs` | `wrong-fixed` |

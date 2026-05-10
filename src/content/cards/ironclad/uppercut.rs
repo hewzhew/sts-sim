@@ -4,14 +4,15 @@ use crate::runtime::combat::{CombatCard, CombatState};
 use smallvec::SmallVec;
 
 pub fn uppercut_play(
-    _state: &CombatState,
+    state: &CombatState,
     card: &CombatCard,
     target: Option<crate::core::EntityId>,
 ) -> SmallVec<[ActionInfo; 4]> {
     let target = target.expect("Uppercut requires a valid target!");
     let mut actions = smallvec::SmallVec::new();
-    let damage = card.base_damage_mut;
-    let amount = card.base_magic_num_mut; // 1, upgraded 2
+    let evaluated = crate::content::cards::evaluate_card_for_play(card, state, Some(target));
+    let damage = evaluated.base_damage_mut;
+    let amount = evaluated.base_magic_num_mut;
 
     actions.push(ActionInfo {
         action: Action::Damage(DamageInfo {

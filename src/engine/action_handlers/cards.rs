@@ -1,6 +1,6 @@
 // action_handlers/cards.rs — Card pile management domain
 //
-// Handles: DrawCards, EmptyDeckShuffle, DiscardCard, ExhaustCard, MoveCard,
+// Handles: DrawCards, EmptyDeckShuffle, DiscardCard, ExhaustCard, MoveCard, PutOnDeck,
 //          MakeTempCard*, MakeCopy*, MakeRandom*, PlayCardDirect, PlayTopCard,
 //          UseCardDone, UpgradeCard, UpgradeRandomCard, UpgradeAllInHand, UpgradeAllBurns,
 //          ReduceAllHandCosts, RandomizeHandCosts, ModifyCardMisc, MummifiedHandEffect,
@@ -51,6 +51,18 @@ pub fn move_card_to_exhaust_pile(
     state.add_card_to_exhaust_pile_top(card);
 }
 
+fn move_random_hand_card_to_draw_top(state: &mut CombatState) {
+    if state.zones.hand.is_empty() {
+        return;
+    }
+    let idx = state
+        .rng
+        .card_random_rng
+        .random(state.zones.hand.len() as i32 - 1) as usize;
+    let card = state.zones.hand.remove(idx);
+    state.add_card_to_draw_pile_top(card);
+}
+
 pub fn handle_draw_cards(amount: u32, state: &mut CombatState) {
     let has_no_draw = store::has_power(state, 0, PowerId::NoDraw);
     if has_no_draw {
@@ -97,6 +109,37 @@ pub fn handle_draw_cards(amount: u32, state: &mut CombatState) {
                 state.queue_action_back(a);
             }
         }
+    }
+}
+
+pub fn handle_put_on_deck(amount: usize, random: bool, state: &mut CombatState) {
+    let amount = amount.min(state.zones.hand.len());
+    if amount == 0 {
+        return;
+    }
+
+    if random {
+        for _ in 0..amount {
+            move_random_hand_card_to_draw_top(state);
+        }
+        return;
+    }
+
+    if state.zones.hand.len() > amount {
+        state.queue_action_front(Action::SuspendForHandSelect {
+            min: amount as u8,
+            max: amount as u8,
+            can_cancel: false,
+            filter: crate::state::HandSelectFilter::Any,
+            reason: crate::state::HandSelectReason::PutOnDrawPile,
+        });
+        return;
+    }
+
+    let mut i = 0;
+    while i < state.zones.hand.len() {
+        move_random_hand_card_to_draw_top(state);
+        i += 1;
     }
 }
 
