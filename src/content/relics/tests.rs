@@ -615,3 +615,103 @@ fn pen_nib_counter_and_power_timing_match_java() {
     ));
     assert!(pen_nib::at_battle_start(8).is_empty());
 }
+
+#[test]
+fn shared_common_turn_state_relic_metadata_matches_java_sources() {
+    assert_eq!(get_relic_tier(RelicId::AncientTeaSet), RelicTier::Common);
+    assert_eq!(get_relic_tier(RelicId::ArtOfWar), RelicTier::Common);
+    assert_eq!(get_relic_tier(RelicId::Orichalcum), RelicTier::Common);
+    assert_eq!(get_relic_tier(RelicId::OddlySmoothStone), RelicTier::Common);
+
+    assert!(get_relic_subscriptions(RelicId::AncientTeaSet).at_pre_battle);
+    assert!(get_relic_subscriptions(RelicId::AncientTeaSet).at_turn_start);
+    assert!(get_relic_subscriptions(RelicId::AncientTeaSet).on_enter_rest_room);
+    assert!(get_relic_subscriptions(RelicId::ArtOfWar).at_pre_battle);
+    assert!(get_relic_subscriptions(RelicId::ArtOfWar).at_turn_start);
+    assert!(get_relic_subscriptions(RelicId::ArtOfWar).on_use_card);
+    assert!(get_relic_subscriptions(RelicId::Orichalcum).at_end_of_turn);
+    assert!(get_relic_subscriptions(RelicId::OddlySmoothStone).at_battle_start);
+}
+
+#[test]
+fn ancient_tea_set_first_turn_state_matches_java() {
+    let mut relic = RelicState::new(RelicId::AncientTeaSet);
+    ancient_tea_set::AncientTeaSet::on_enter_rest_room(&mut relic);
+    assert_eq!(relic.counter, -2);
+
+    assert!(ancient_tea_set::AncientTeaSet::at_pre_battle(&mut relic).is_empty());
+    assert!(!relic.used_up);
+
+    let actions = ancient_tea_set::AncientTeaSet::at_turn_start(&mut relic);
+    assert!(relic.used_up);
+    assert_eq!(relic.counter, -1);
+    assert_eq!(actions.len(), 1);
+    assert_eq!(actions[0].insertion_mode, AddTo::Top);
+    assert!(matches!(
+        actions[0].action,
+        Action::GainEnergy { amount: 2 }
+    ));
+
+    assert!(ancient_tea_set::AncientTeaSet::at_turn_start(&mut relic).is_empty());
+}
+
+#[test]
+fn art_of_war_turn_and_attack_state_matches_java() {
+    let state = crate::test_support::blank_test_combat();
+    let mut relic = RelicState::new(RelicId::ArtOfWar);
+
+    assert!(art_of_war::at_pre_battle(&mut relic).is_empty());
+    assert_eq!(relic.counter, -1);
+
+    assert!(art_of_war::at_turn_start(&state, &mut relic).is_empty());
+    assert_eq!(relic.counter, 1);
+
+    assert!(art_of_war::on_use_card(&state, &mut relic, CardId::Defend).is_empty());
+    assert_eq!(relic.counter, 1);
+    assert!(art_of_war::on_use_card(&state, &mut relic, CardId::Strike).is_empty());
+    assert_eq!(relic.counter, 0);
+
+    assert!(art_of_war::at_turn_start(&state, &mut relic).is_empty());
+    assert_eq!(relic.counter, 1);
+
+    let actions = art_of_war::at_turn_start(&state, &mut relic);
+    assert_eq!(relic.counter, 1);
+    assert_eq!(actions.len(), 1);
+    assert_eq!(actions[0].insertion_mode, AddTo::Bottom);
+    assert!(matches!(
+        actions[0].action,
+        Action::GainEnergy { amount: 1 }
+    ));
+}
+
+#[test]
+fn orichalcum_and_smooth_stone_actions_match_java_sources() {
+    let mut state = crate::test_support::blank_test_combat();
+    state.entities.player.block = 0;
+    let orichalcum_actions = orichalcum::at_end_of_turn(&state);
+    assert_eq!(orichalcum_actions.len(), 1);
+    assert_eq!(orichalcum_actions[0].insertion_mode, AddTo::Top);
+    assert!(matches!(
+        orichalcum_actions[0].action,
+        Action::GainBlock {
+            target: 0,
+            amount: 6
+        }
+    ));
+
+    state.entities.player.block = 1;
+    assert!(orichalcum::at_end_of_turn(&state).is_empty());
+
+    let stone_actions = oddly_smooth_stone::at_battle_start();
+    assert_eq!(stone_actions.len(), 1);
+    assert_eq!(stone_actions[0].insertion_mode, AddTo::Top);
+    assert!(matches!(
+        stone_actions[0].action,
+        Action::ApplyPower {
+            source: 0,
+            target: 0,
+            power_id: PowerId::Dexterity,
+            amount: 1
+        }
+    ));
+}

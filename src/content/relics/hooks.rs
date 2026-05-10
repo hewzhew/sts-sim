@@ -442,10 +442,11 @@ pub fn at_turn_start(state: &mut CombatState) -> SmallVec<[ActionInfo; 4]> {
         let relic_id = state.entities.player.relics[relic_index].id;
         match relic_id {
             RelicId::AncientTeaSet => {
-                let counter = state.entities.player.relics[relic_index].counter;
+                let mut rs = state.entities.player.relics[relic_index].clone();
                 actions.extend(
-                    crate::content::relics::ancient_tea_set::AncientTeaSet::at_turn_start(counter),
+                    crate::content::relics::ancient_tea_set::AncientTeaSet::at_turn_start(&mut rs),
                 );
+                state.entities.player.relics[relic_index] = rs;
             }
             RelicId::Brimstone => actions.extend(
                 crate::content::relics::brimstone::Brimstone::at_turn_start(&*state),

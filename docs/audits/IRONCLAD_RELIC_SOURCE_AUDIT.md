@@ -667,6 +667,130 @@ Coverage:
 - `shared_common_counter_relic_metadata_matches_java_sources`
 - `pen_nib_counter_and_power_timing_match_java`
 
+## Shared Relic Batch 4 - Common Turn-State Relics
+
+### Ancient Tea Set
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/relics/AncientTeaSet.java`
+
+Rust source:
+- `src/content/relics/ancient_tea_set.rs`
+- `src/content/relics/hooks.rs`
+
+Java evidence:
+- Constructor: ID `"Ancient Tea Set"`, tier `COMMON`, landing sound `SOLID`.
+- `onEnterRestRoom`: sets `counter = -2` and starts pulse UI.
+- `atPreBattle`: sets `firstTurn = true`.
+- `atTurnStart`: only on first turn, if `counter == -2`, sets `counter = -1`
+  immediately and queues energy `2` with `addToTop`.
+- `canSpawn` is false after floor 48 unless Endless mode is active.
+
+Rust result:
+- Tier, pre-battle, turn-start, and rest-room subscriptions match Java.
+- Fixed first-turn state to mutate `RelicState.used_up` immediately.
+- Fixed `counter` mutation from delayed queued action to immediate mutation and
+  fixed energy insertion from bottom to top.
+- Spawn gating is a relic-pool/reward-generation concern and is not handled by
+  the combat hook.
+- UI-only pulse / relic-above-creature visual action is intentionally not
+  represented.
+
+Coverage:
+- `shared_common_turn_state_relic_metadata_matches_java_sources`
+- `ancient_tea_set_first_turn_state_matches_java`
+
+### Art of War
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/relics/ArtOfWar.java`
+
+Rust source:
+- `src/content/relics/art_of_war.rs`
+- `src/content/relics/hooks.rs`
+
+Java evidence:
+- Constructor: ID `"Art of War"`, tier `COMMON`, landing sound `FLAT`.
+- `atPreBattle`: sets `firstTurn = true` and `gainEnergyNext = true`.
+- `atTurnStart`: if `gainEnergyNext` and not first turn, queues energy `1` with
+  `addToBot`; then sets `firstTurn = false` and `gainEnergyNext = true`.
+- `onUseCard`: if the card is an Attack, sets `gainEnergyNext = false`
+  immediately.
+
+Rust result:
+- Tier, pre-battle, turn-start, and use-card subscriptions match Java.
+- Fixed the hook to mutate `RelicState.counter` immediately instead of queuing
+  later counter-update actions.
+- Counter encoding: `-1` means the first turn skip, `1` means gain energy next
+  turn, and `0` means an Attack was played this turn.
+- UI-only pulse / relic-above-creature visual action is intentionally not
+  represented.
+
+Coverage:
+- `shared_common_turn_state_relic_metadata_matches_java_sources`
+- `art_of_war_turn_and_attack_state_matches_java`
+
+### Orichalcum
+
+Status: `exact`
+
+Java source:
+- `D:/rust/cardcrawl/relics/Orichalcum.java`
+
+Rust source:
+- `src/content/relics/orichalcum.rs`
+- `src/content/relics/hooks.rs`
+
+Java evidence:
+- Constructor: ID `"Orichalcum"`, tier `COMMON`, landing sound `HEAVY`.
+- `onPlayerEndTurn`: if player block is `0` or public field `trigger` is true,
+  clears `trigger` and queues block `6` with `addToTop`.
+- No decompiled game source in `D:/rust/cardcrawl` writes `trigger = true`.
+- `onPlayerGainedBlock`, pulse, and victory behavior are UI/presentation state
+  except for the final floored block amount that the normal block pipeline
+  already uses.
+
+Rust result:
+- Tier and end-of-turn subscription match Java's effective game path.
+- Emits player block `6` with top insertion when current block is `0`.
+- Public `trigger` side path is not modeled because the Java source tree has no
+  gameplay writer for it.
+- UI-only pulse / relic-above-creature visual action is intentionally not
+  represented.
+
+Coverage:
+- `shared_common_turn_state_relic_metadata_matches_java_sources`
+- `orichalcum_and_smooth_stone_actions_match_java_sources`
+
+### Oddly Smooth Stone
+
+Status: `exact`
+
+Java source:
+- `D:/rust/cardcrawl/relics/OddlySmoothStone.java`
+
+Rust source:
+- `src/content/relics/oddly_smooth_stone.rs`
+- `src/content/relics/hooks.rs`
+
+Java evidence:
+- Constructor: ID `"Oddly Smooth Stone"`, tier `COMMON`, landing sound `SOLID`.
+- `atBattleStart`: queues Dexterity `1` on the player with `addToTop`.
+
+Rust result:
+- Tier and battle-start subscription match Java.
+- Emits player Dexterity `1` with top insertion.
+- UI-only relic flash / above-creature visual action is intentionally not
+  represented.
+
+Coverage:
+- `shared_common_turn_state_relic_metadata_matches_java_sources`
+- `orichalcum_and_smooth_stone_actions_match_java_sources`
+
 ## Full Ironclad Class-Specific Relic Queue
 
 Relics remain `unreviewed` until their Java file, Rust definition/subscription,
@@ -704,3 +828,7 @@ class-specific queue.
 | 9 | `Lantern.java` | `lantern.rs` | `wrong-fixed` |
 | 10 | `Nunchaku.java` | `nunchaku.rs` | `wrong-fixed` |
 | 11 | `PenNib.java` | `pen_nib.rs` | `wrong-fixed` |
+| 12 | `AncientTeaSet.java` | `ancient_tea_set.rs` | `wrong-fixed` |
+| 13 | `ArtOfWar.java` | `art_of_war.rs` | `wrong-fixed` |
+| 14 | `Orichalcum.java` | `orichalcum.rs` | `exact` |
+| 15 | `OddlySmoothStone.java` | `oddly_smooth_stone.rs` | `exact` |
