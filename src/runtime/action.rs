@@ -558,18 +558,12 @@ impl Action {
             Action::Damage(_)
                 | Action::MonsterAttack { .. }
                 | Action::DamageAllEnemies { .. }
-                | Action::Whirlwind { .. }
-                | Action::AttackDamageRandomEnemy { .. }
-                | Action::BouncingFlask { .. }
-                | Action::DropkickDamageAndEffect { .. }
-                | Action::FiendFire { .. }
                 | Action::Feed { .. }
                 | Action::HandOfGreed { .. }
                 | Action::RitualDagger { .. }
                 | Action::VampireDamage(_)
                 | Action::VampireDamageAllEnemies { .. }
                 | Action::LoseHp { .. }
-                | Action::SetCurrentHp { .. }
                 | Action::GainBlock { .. }
                 | Action::Heal { .. }
                 | Action::UseCardDone { .. }

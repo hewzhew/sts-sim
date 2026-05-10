@@ -4126,6 +4126,28 @@ fn lethal_damage_filters_post_combat_actions_like_java_action_manager() {
         power_id: PowerId::Vulnerable,
         amount: 1,
     });
+    state.queue_action_back(Action::Whirlwind {
+        damages: smallvec::smallvec![3],
+        damage_type: DamageType::Normal,
+        free_to_play_once: false,
+        energy_on_use: 1,
+    });
+    state.queue_action_back(Action::AttackDamageRandomEnemy {
+        base_damage: 3,
+        damage_type: DamageType::Normal,
+        applies_target_modifiers: true,
+    });
+    state.queue_action_back(Action::DropkickDamageAndEffect {
+        target: 720,
+        damage_info: crate::runtime::action::DamageInfo {
+            source: 0,
+            target: 720,
+            base: 5,
+            output: 5,
+            damage_type: DamageType::Normal,
+            is_modified: false,
+        },
+    });
     state.queue_action_back(Action::GainBlock {
         target: 0,
         amount: 3,

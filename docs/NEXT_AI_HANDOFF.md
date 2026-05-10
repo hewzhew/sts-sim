@@ -60,6 +60,7 @@ Ironclad Java audit continued and found two non-strategy mechanics differences:
   - Java damage actions call `clearPostCombatActions()` when all monsters are basically dead.
   - The filter keeps DAMAGE actions, `HealAction`, `GainBlockAction`, and `UseCardAction`.
   - Rust now keeps equivalent damage-domain actions, `Heal`, `GainBlock`, and `UseCardDone`.
+  - Actions whose Java `actionType` is not DAMAGE, such as `WhirlwindAction`, `DropkickAction`, and `FiendFireAction`, are not retained merely because they may later emit damage.
   - This prevents lethal `Wild Strike` / `Reckless Charge` / `Immolate`-style queued card generation, lethal `Dropkick` draw/energy, and other non-retained post-combat actions from executing after the last monster dies.
   - `Hand of Greed` gold and `Ritual Dagger` misc growth now resolve immediately inside their damage handlers, matching Java unique action timing before post-combat queue filtering.
 
