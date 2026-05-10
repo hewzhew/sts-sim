@@ -99,8 +99,24 @@ pub fn on_equip(
         RelicId::CallingBell => calling_bell::on_equip(run_state, return_state),
         // Orrery: 5 Card Rewards
         RelicId::Orrery => orrery::on_equip(run_state, return_state),
+        RelicId::Necronomicon => {
+            necronomicon::on_equip(run_state);
+            None
+        }
         RelicId::DuVuDoll => du_vu_doll::on_equip(run_state),
 
         _ => None,
+    }
+}
+
+pub fn on_unequip(
+    run_state: &mut RunState,
+    relic_id: RelicId,
+    source: crate::state::selection::DomainEventSource,
+) {
+    use crate::content::relics::*;
+    match relic_id {
+        RelicId::Necronomicon => necronomicon::on_unequip(run_state, source),
+        _ => {}
     }
 }

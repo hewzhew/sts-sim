@@ -346,6 +346,7 @@ impl RunState {
             relic_id: relic.id,
             source,
         });
+        crate::engine::relic_manager::on_unequip(self, relic.id, source);
         Some(relic.id)
     }
 

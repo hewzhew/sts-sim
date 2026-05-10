@@ -4547,3 +4547,76 @@ fn neows_lament_sets_live_enemy_hp_to_one_and_expires_on_third_combat() {
         }
     )));
 }
+
+#[test]
+fn necronomicon_on_equip_adds_necronomicurse_to_master_deck() {
+    let mut run = crate::state::run::RunState::new(4, 0, false, "Ironclad");
+    run.master_deck.clear();
+
+    assert!(run
+        .obtain_relic_with_source(
+            RelicId::Necronomicon,
+            crate::state::core::EngineState::MapNavigation,
+            DomainEventSource::RewardScreen,
+        )
+        .is_none());
+
+    assert!(run
+        .relics
+        .iter()
+        .any(|relic| relic.id == RelicId::Necronomicon));
+    assert_eq!(
+        run.master_deck
+            .iter()
+            .filter(|card| card.id == CardId::Necronomicurse)
+            .count(),
+        1,
+        "Java Necronomicon.onEquip obtains one Necronomicurse"
+    );
+    assert!(run.emitted_events.iter().any(|event| matches!(
+        event,
+        DomainEvent::CardObtained {
+            card,
+            source: DomainEventSource::Relic(RelicId::Necronomicon),
+        } if card.id == CardId::Necronomicurse
+    )));
+}
+
+#[test]
+fn necronomicon_on_unequip_removes_one_necronomicurse_without_regenerating_it() {
+    let mut run = crate::state::run::RunState::new(5, 0, false, "Ironclad");
+    run.relics.clear();
+    run.relics.push(RelicState::new(RelicId::Necronomicon));
+    run.master_deck.clear();
+    run.master_deck
+        .push(CombatCard::new(CardId::Necronomicurse, 6001));
+    run.master_deck.push(CombatCard::new(CardId::Strike, 6002));
+
+    assert_eq!(
+        run.remove_first_relic_with_id_and_source(
+            RelicId::Necronomicon,
+            DomainEventSource::Event(EventId::CursedTome),
+        ),
+        Some(RelicId::Necronomicon)
+    );
+
+    assert!(!run
+        .master_deck
+        .iter()
+        .any(|card| card.id == CardId::Necronomicurse));
+    assert!(run.master_deck.iter().any(|card| card.id == CardId::Strike));
+    assert_eq!(
+        run.emitted_events
+            .iter()
+            .filter(|event| matches!(
+                event,
+                DomainEvent::CardObtained {
+                    card,
+                    ..
+                } if card.id == CardId::Necronomicurse
+            ))
+            .count(),
+        0,
+        "Java Necronomicon.onUnequip directly removes a Necronomicurse; it must not trigger the card's self-regeneration"
+    );
+}

@@ -44,6 +44,21 @@ pub(crate) fn compute_player_turn_start_draw_count(combat_state: &CombatState) -
     draw_count
 }
 
+fn class_combat_card_pool(player_class: &str) -> Vec<crate::content::cards::CardId> {
+    let mut class_pool = Vec::new();
+    for &rarity in &[
+        crate::content::cards::CardRarity::Common,
+        crate::content::cards::CardRarity::Uncommon,
+        crate::content::cards::CardRarity::Rare,
+    ] {
+        class_pool.extend(crate::engine::campfire_handler::card_pool_for_class(
+            player_class,
+            rarity,
+        ));
+    }
+    class_pool
+}
+
 fn resolve_victory_hooks_immediately(combat_state: &mut CombatState) {
     let actions = crate::content::relics::hooks::on_victory(combat_state);
     if actions.is_empty() {
@@ -376,16 +391,7 @@ pub fn tick_engine(
                     let mut pool: Vec<crate::content::cards::CardId> = if colorless {
                         combat_state.colorless_combat_pool()
                     } else {
-                        let mut class_pool = Vec::new();
-                        for &rarity in &[
-                            crate::content::cards::CardRarity::Common,
-                            crate::content::cards::CardRarity::Uncommon,
-                            crate::content::cards::CardRarity::Rare,
-                        ] {
-                            class_pool
-                                .extend(crate::content::cards::ironclad_pool_for_rarity(rarity));
-                        }
-                        class_pool
+                        class_combat_card_pool(combat_state.meta.player_class)
                     };
 
                     if let Some(ct) = card_type {
@@ -423,16 +429,10 @@ pub fn tick_engine(
                     let mut card_pool: Vec<crate::content::cards::CardId> = Vec::new();
                     match pool {
                         CardRewardPool::ClassAll => {
-                            // Java: returnTrulyRandomCardInCombat() -> all class cards.
-                            for &rarity in &[
-                                crate::content::cards::CardRarity::Common,
-                                crate::content::cards::CardRarity::Uncommon,
-                                crate::content::cards::CardRarity::Rare,
-                            ] {
-                                for &id in crate::content::cards::ironclad_pool_for_rarity(rarity) {
-                                    card_pool.push(id);
-                                }
-                            }
+                            // Java: returnTrulyRandomCardInCombat() -> all cards for
+                            // the current player's class, not always Ironclad.
+                            card_pool
+                                .extend(class_combat_card_pool(combat_state.meta.player_class));
                         }
                         CardRewardPool::Colorless => {
                             // Java: returnTrulyRandomColorlessCardInCombat()
@@ -1246,4 +1246,25 @@ pub fn tick_until_stable_turn(
         }
     }
     true
+}
+
+#[cfg(test)]
+mod tests {
+    use super::class_combat_card_pool;
+    use crate::content::cards::CardId;
+
+    #[test]
+    fn class_combat_card_pool_uses_current_player_class_not_ironclad_fallback() {
+        let silent_pool = class_combat_card_pool("Silent");
+        assert!(silent_pool.contains(&CardId::Acrobatics));
+        assert!(silent_pool.contains(&CardId::Adrenaline));
+        assert!(
+            !silent_pool.contains(&CardId::PommelStrike),
+            "Discovery/Codex-style class pools must not hard-code Ironclad cards for Silent"
+        );
+
+        let ironclad_pool = class_combat_card_pool("Ironclad");
+        assert!(ironclad_pool.contains(&CardId::PommelStrike));
+        assert!(!ironclad_pool.contains(&CardId::Acrobatics));
+    }
 }

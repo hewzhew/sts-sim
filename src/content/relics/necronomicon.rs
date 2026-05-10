@@ -1,5 +1,6 @@
 use crate::runtime::action::{Action, ActionInfo, AddTo};
 use crate::runtime::combat::{QueuedCardPlay, QueuedCardSource};
+use crate::state::selection::{DomainCardSnapshot, DomainEvent, DomainEventSource};
 use smallvec::SmallVec;
 
 /// Necronomicon: The first Attack you play each turn that costs 2 or more is played twice.
@@ -13,6 +14,33 @@ pub fn at_turn_start() -> SmallVec<[crate::runtime::action::ActionInfo; 4]> {
         },
         insertion_mode: AddTo::Bottom,
     }]
+}
+
+pub fn on_equip(run_state: &mut crate::state::run::RunState) {
+    run_state.add_card_to_deck_with_upgrades_from(
+        crate::content::cards::CardId::Necronomicurse,
+        0,
+        DomainEventSource::Relic(crate::content::relics::RelicId::Necronomicon),
+    );
+}
+
+pub fn on_unequip(run_state: &mut crate::state::run::RunState, source: DomainEventSource) {
+    if let Some(pos) = run_state
+        .master_deck
+        .iter()
+        .position(|card| card.id == crate::content::cards::CardId::Necronomicurse)
+    {
+        let removed = run_state.master_deck.remove(pos);
+        run_state.emit_event(DomainEvent::CardRemoved {
+            card: DomainCardSnapshot {
+                id: removed.id,
+                upgrades: removed.upgrades,
+                uuid: removed.uuid,
+            },
+            source,
+        });
+        run_state.dispatch_on_master_deck_change();
+    }
 }
 
 pub fn on_use_card(
