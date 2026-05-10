@@ -399,6 +399,7 @@ impl RelicState {
             | RelicId::Sundial
             | RelicId::OrnamentalFan
             | RelicId::StoneCalendar
+            | RelicId::Inserter
             | RelicId::TinyChest => counter = 0,
             RelicId::Circlet => counter = 1,
             _ => {}
@@ -974,7 +975,7 @@ pub fn get_relic_subscriptions(id: RelicId) -> RelicSubscriptions {
         RelicId::Sozu => {}       // Passive — blocks potion obtaining
         RelicId::RunicCube => sub.on_lose_hp = true,
         RelicId::PureWater => sub.at_battle_start_pre_draw = true,
-        RelicId::SymbioticVirus => sub.at_pre_battle = true, // Java: atPreBattle → channelOrb(Dark)
+        RelicId::SymbioticVirus => sub.at_pre_battle = true, // Java: atPreBattle -> channelOrb(Dark)
         RelicId::TeardropLocket => sub.at_battle_start = true, // start combat in calm
         RelicId::VioletLotus => sub.on_change_stance = true, // obtaining
         RelicId::UnceasingTop => {
@@ -1038,8 +1039,11 @@ pub fn get_relic_subscriptions(id: RelicId) -> RelicSubscriptions {
             sub.at_battle_start = true;
             sub.on_victory = true;
         } // Java: beforeEnergyPrep
-        RelicId::RunicCapacitor => sub.at_pre_battle = true, // Java: atBattleStart → IncreaseMaxOrb(3)
-        RelicId::NilrysCodex => sub.at_end_of_turn = true,   // Java: onPlayerEndTurn → CodexAction
+        RelicId::RunicCapacitor => {
+            sub.at_pre_battle = true;
+            sub.at_turn_start = true;
+        }
+        RelicId::NilrysCodex => sub.at_end_of_turn = true, // Java: onPlayerEndTurn → CodexAction
         RelicId::Toolbox => sub.at_battle_start_pre_draw = true, // Java: atBattleStartPreDraw → ChooseOneColorless
         _ => {}
     }

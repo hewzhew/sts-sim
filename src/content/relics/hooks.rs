@@ -54,7 +54,9 @@ pub fn at_pre_battle(state: &mut CombatState) -> SmallVec<[ActionInfo; 4]> {
                 actions.extend(crate::content::relics::nuclear_battery::at_battle_start())
             }
             RelicId::RunicCapacitor => {
-                actions.extend(crate::content::relics::runic_capacitor::at_battle_start())
+                let mut rs = state.entities.player.relics[relic_index].clone();
+                crate::content::relics::runic_capacitor::at_pre_battle(&mut rs);
+                state.entities.player.relics[relic_index] = rs;
             }
             RelicId::SneckoEye => {
                 actions.extend(crate::content::relics::snecko_eye::at_battle_start())
@@ -498,6 +500,13 @@ pub fn at_turn_start(state: &mut CombatState) -> SmallVec<[ActionInfo; 4]> {
                 actions.extend(crate::content::relics::inserter::Inserter::at_turn_start(
                     counter,
                 ));
+            }
+            RelicId::RunicCapacitor => {
+                let mut rs = state.entities.player.relics[relic_index].clone();
+                actions.extend(crate::content::relics::runic_capacitor::at_turn_start(
+                    &mut rs,
+                ));
+                state.entities.player.relics[relic_index] = rs;
             }
             RelicId::Lantern => {
                 let mut rs = state.entities.player.relics[relic_index].clone();

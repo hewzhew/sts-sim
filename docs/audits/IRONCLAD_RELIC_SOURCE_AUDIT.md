@@ -4591,6 +4591,108 @@ Coverage:
 - `silent_relic_gap_batch_metadata_matches_java_sources`
 - `paper_crane_changes_weak_monster_damage_from_75_to_60_percent`
 
+## Shared Relic Batch 22 - Defect Orb Slot Relic Grounding
+
+### Nuclear Battery
+
+Status: `exact`
+
+Java source:
+- `D:/rust/cardcrawl/relics/NuclearBattery.java`
+
+Rust source:
+- `src/content/relics/nuclear_battery.rs`
+- `src/content/relics/hooks.rs`
+
+Java evidence:
+- Constructor: ID `"Nuclear Battery"`, tier `BOSS`, landing sound `HEAVY`.
+- `atPreBattle`: directly channels one `Plasma`.
+
+Rust result:
+- Tier and pre-battle subscription match Java.
+- Hook queues `ChannelOrb(Plasma)`.
+
+Coverage:
+- `defect_orb_slot_relic_gap_batch_metadata_matches_java_sources`
+- `nuclear_battery_and_symbiotic_virus_channel_expected_orbs_pre_battle`
+
+### Symbiotic Virus
+
+Status: `exact`
+
+Java source:
+- `D:/rust/cardcrawl/relics/SymbioticVirus.java`
+
+Rust source:
+- `src/content/relics/symbiotic_virus.rs`
+- `src/content/relics/hooks.rs`
+
+Java evidence:
+- Constructor: ID `"Symbiotic Virus"`, tier `UNCOMMON`, landing sound
+  `MAGICAL`.
+- `atPreBattle`: directly channels one `Dark`.
+
+Rust result:
+- Tier and pre-battle subscription match Java.
+- Hook queues `ChannelOrb(Dark)`.
+
+Coverage:
+- `defect_orb_slot_relic_gap_batch_metadata_matches_java_sources`
+- `nuclear_battery_and_symbiotic_virus_channel_expected_orbs_pre_battle`
+
+### Runic Capacitor
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/relics/RunicCapacitor.java`
+
+Rust source:
+- `src/content/relics/runic_capacitor.rs`
+- `src/content/relics/hooks.rs`
+
+Java evidence:
+- Constructor: ID `"Runic Capacitor"`, tier `SHOP`, landing sound `SOLID`.
+- `atPreBattle`: sets `firstTurn = true`.
+- `atTurnStart`: on the first turn only, queues `IncreaseMaxOrbAction(3)` and
+  clears `firstTurn`.
+
+Rust result:
+- Tier matches Java.
+- Fixed the previous pre-battle immediate slot increase. The relic now marks the
+  first turn at pre-battle and queues `IncreaseMaxOrb(3)` from turn-start once.
+
+Coverage:
+- `defect_orb_slot_relic_gap_batch_metadata_matches_java_sources`
+- `runic_capacitor_increases_orb_slots_on_first_turn_after_pre_battle_only`
+
+### Inserter
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/relics/Inserter.java`
+
+Rust source:
+- `src/content/relics/inserter.rs`
+- `src/content/relics/mod.rs`
+- `src/content/relics/hooks.rs`
+
+Java evidence:
+- Constructor: ID `"Inserter"`, tier `BOSS`, landing sound `SOLID`.
+- `onEquip`: sets counter to `0`.
+- `atTurnStart`: increments the counter; every second turn, resets it to `0` and
+  queues `IncreaseMaxOrbAction(1)`.
+
+Rust result:
+- Tier and turn-start subscription match Java.
+- Fixed default relic state so Inserter starts with counter `0`.
+- Turn-start hook already matches Java's every-second-turn orb slot increase.
+
+Coverage:
+- `defect_orb_slot_relic_gap_batch_metadata_matches_java_sources`
+- `inserter_counter_starts_at_zero_and_adds_orb_slot_every_second_turn`
+
 ## Full Ironclad Class-Specific Relic Queue
 
 Relics remain `unreviewed` until their Java file, Rust definition/subscription,
@@ -4757,3 +4859,7 @@ class-specific queue.
 | 138 | `HoveringKite.java` | `hovering_kite.rs` / manual discard energy | `exact` |
 | 139 | `SneckoSkull.java` | power application / Poison amount mutation | `exact` |
 | 140 | `PaperCrane.java` | monster damage pipeline / Weak multiplier | `wrong-fixed` |
+| 141 | `NuclearBattery.java` | `nuclear_battery.rs` / pre-battle Plasma | `exact` |
+| 142 | `SymbioticVirus.java` | `symbiotic_virus.rs` / pre-battle Dark | `exact` |
+| 143 | `RunicCapacitor.java` | `runic_capacitor.rs` / first-turn orb slots | `wrong-fixed` |
+| 144 | `Inserter.java` | `inserter.rs` / every-second-turn orb slot | `wrong-fixed` |

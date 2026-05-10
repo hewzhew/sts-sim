@@ -3783,6 +3783,83 @@ fn paper_crane_changes_weak_monster_damage_from_75_to_60_percent() {
 }
 
 #[test]
+fn defect_orb_slot_relic_gap_batch_metadata_matches_java_sources() {
+    assert_eq!(get_relic_tier(RelicId::NuclearBattery), RelicTier::Boss);
+    assert_eq!(get_relic_tier(RelicId::SymbioticVirus), RelicTier::Uncommon);
+    assert_eq!(get_relic_tier(RelicId::RunicCapacitor), RelicTier::Shop);
+    assert_eq!(get_relic_tier(RelicId::Inserter), RelicTier::Boss);
+
+    assert!(get_relic_subscriptions(RelicId::NuclearBattery).at_pre_battle);
+    assert!(get_relic_subscriptions(RelicId::SymbioticVirus).at_pre_battle);
+
+    let runic = get_relic_subscriptions(RelicId::RunicCapacitor);
+    assert!(runic.at_pre_battle);
+    assert!(runic.at_turn_start);
+
+    assert!(get_relic_subscriptions(RelicId::Inserter).at_turn_start);
+    assert_eq!(RelicState::new(RelicId::Inserter).counter, 0);
+}
+
+#[test]
+fn nuclear_battery_and_symbiotic_virus_channel_expected_orbs_pre_battle() {
+    let nuclear_actions = nuclear_battery::at_battle_start();
+    assert_eq!(nuclear_actions.len(), 1);
+    assert!(matches!(
+        nuclear_actions[0].action,
+        Action::ChannelOrb(OrbId::Plasma)
+    ));
+
+    let virus_actions = symbiotic_virus::at_battle_start();
+    assert_eq!(virus_actions.len(), 1);
+    assert!(matches!(
+        virus_actions[0].action,
+        Action::ChannelOrb(OrbId::Dark)
+    ));
+}
+
+#[test]
+fn runic_capacitor_increases_orb_slots_on_first_turn_after_pre_battle_only() {
+    let mut relic = RelicState::new(RelicId::RunicCapacitor);
+    runic_capacitor::at_pre_battle(&mut relic);
+    assert_eq!(relic.amount, 1);
+
+    let first = runic_capacitor::at_turn_start(&mut relic);
+    assert_eq!(relic.amount, 0);
+    assert_eq!(first.len(), 1);
+    assert!(matches!(first[0].action, Action::IncreaseMaxOrb(3)));
+
+    assert!(runic_capacitor::at_turn_start(&mut relic).is_empty());
+}
+
+#[test]
+fn inserter_counter_starts_at_zero_and_adds_orb_slot_every_second_turn() {
+    let mut relic = RelicState::new(RelicId::Inserter);
+    assert_eq!(relic.counter, 0);
+
+    let first = inserter::Inserter::at_turn_start(relic.counter);
+    assert_eq!(first.len(), 1);
+    assert!(matches!(
+        first[0].action,
+        Action::UpdateRelicCounter {
+            relic_id: RelicId::Inserter,
+            counter: 1
+        }
+    ));
+    relic.counter = 1;
+
+    let second = inserter::Inserter::at_turn_start(relic.counter);
+    assert_eq!(second.len(), 2);
+    assert!(matches!(second[0].action, Action::IncreaseMaxOrb(1)));
+    assert!(matches!(
+        second[1].action,
+        Action::UpdateRelicCounter {
+            relic_id: RelicId::Inserter,
+            counter: 0
+        }
+    ));
+}
+
+#[test]
 fn shared_rare_damage_retention_relic_metadata_matches_java_sources() {
     assert_eq!(get_relic_tier(RelicId::Calipers), RelicTier::Rare);
     assert_eq!(get_relic_tier(RelicId::Torii), RelicTier::Rare);
