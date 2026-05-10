@@ -354,3 +354,77 @@ fn self_forming_clay_hp_loss_hook_matches_java_positive_damage_guard() {
         }
     ));
 }
+
+#[test]
+fn shared_common_battle_start_relic_metadata_matches_java_sources() {
+    assert_eq!(get_relic_tier(RelicId::Akabeko), RelicTier::Common);
+    assert_eq!(get_relic_tier(RelicId::Anchor), RelicTier::Common);
+    assert_eq!(get_relic_tier(RelicId::BagOfMarbles), RelicTier::Common);
+    assert_eq!(get_relic_tier(RelicId::BagOfPreparation), RelicTier::Common);
+
+    assert!(get_relic_subscriptions(RelicId::Akabeko).at_battle_start);
+    assert!(get_relic_subscriptions(RelicId::Anchor).at_battle_start);
+    assert!(get_relic_subscriptions(RelicId::BagOfMarbles).at_battle_start);
+    assert!(get_relic_subscriptions(RelicId::BagOfPreparation).at_battle_start);
+}
+
+#[test]
+fn akabeko_anchor_and_bag_of_preparation_battle_start_actions_match_java_sources() {
+    let akabeko_actions = akabeko::Akabeko::at_battle_start();
+    assert_eq!(akabeko_actions.len(), 1);
+    assert_eq!(akabeko_actions[0].insertion_mode, AddTo::Top);
+    assert!(matches!(
+        akabeko_actions[0].action,
+        Action::ApplyPower {
+            source: 0,
+            target: 0,
+            power_id: PowerId::Vigor,
+            amount: 8
+        }
+    ));
+
+    let anchor_actions = anchor::Anchor::at_battle_start();
+    assert_eq!(anchor_actions.len(), 1);
+    assert_eq!(anchor_actions[0].insertion_mode, AddTo::Bottom);
+    assert!(matches!(
+        anchor_actions[0].action,
+        Action::GainBlock {
+            target: 0,
+            amount: 10
+        }
+    ));
+
+    let bag_actions = bag_of_preparation::BagOfPreparation::at_battle_start();
+    assert_eq!(bag_actions.len(), 1);
+    assert_eq!(bag_actions[0].insertion_mode, AddTo::Bottom);
+    assert!(matches!(bag_actions[0].action, Action::DrawCards(2)));
+}
+
+#[test]
+fn bag_of_marbles_queues_vulnerable_for_every_current_monster() {
+    let mut state = crate::test_support::blank_test_combat();
+    let mut alive = crate::test_support::test_monster(EnemyId::JawWorm);
+    alive.id = 901;
+    let mut dying = crate::test_support::test_monster(EnemyId::Cultist);
+    dying.id = 902;
+    dying.is_dying = true;
+    let mut escaped = crate::test_support::test_monster(EnemyId::AcidSlimeM);
+    escaped.id = 903;
+    escaped.is_escaped = true;
+    state.entities.monsters = vec![alive, dying, escaped];
+
+    let actions = bag_of_marbles::BagOfMarbles::at_battle_start(&state);
+    assert_eq!(actions.len(), 3);
+    for (action, target) in actions.iter().zip([901, 902, 903]) {
+        assert_eq!(action.insertion_mode, AddTo::Bottom);
+        assert!(matches!(
+            action.action,
+            Action::ApplyPower {
+                source: 0,
+                target: actual_target,
+                power_id: PowerId::Vulnerable,
+                amount: 1
+            } if actual_target == target
+        ));
+    }
+}

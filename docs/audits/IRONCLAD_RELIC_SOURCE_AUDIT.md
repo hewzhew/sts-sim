@@ -1,8 +1,8 @@
 # Ironclad Relic Source Audit
 
 Purpose:
-- Compare Rust relic mechanics against the decompiled Java source under
-  `D:/rust/cardcrawl/relics`.
+- Compare Rust relic mechanics available to Ironclad runs against the
+  decompiled Java source under `D:/rust/cardcrawl/relics`.
 - Preserve gameplay semantics even when the Java behavior is odd.
 - Exclude UI/VFX-only behavior unless it changes state, RNG, ordering, or
   observable combat decisions.
@@ -345,7 +345,118 @@ Coverage:
 - `ironclad_pain_cube_clay_relic_metadata_matches_java_sources`
 - `self_forming_clay_hp_loss_hook_matches_java_positive_damage_guard`
 
-## Full Ironclad Relic Queue
+## Shared Relic Batch 1 - Common Battle-Start Relics
+
+### Akabeko
+
+Status: `exact`
+
+Java source:
+- `D:/rust/cardcrawl/relics/Akabeko.java`
+
+Rust source:
+- `src/content/relics/akabeko.rs`
+- `src/content/relics/hooks.rs`
+
+Java evidence:
+- Constructor: ID `"Akabeko"`, tier `COMMON`, landing sound `CLINK`.
+- `atBattleStart`: flashes, calls `addToTop` for Vigor `8` on the player,
+  then calls `addToTop` for a UI-only relic action.
+
+Rust result:
+- Tier and battle-start subscription match Java.
+- Emits player Vigor `8` with top insertion.
+- UI-only relic flash / above-creature visual action is intentionally not
+  represented.
+
+Coverage:
+- `shared_common_battle_start_relic_metadata_matches_java_sources`
+- `akabeko_anchor_and_bag_of_preparation_battle_start_actions_match_java_sources`
+
+### Anchor
+
+Status: `exact`
+
+Java source:
+- `D:/rust/cardcrawl/relics/Anchor.java`
+
+Rust source:
+- `src/content/relics/anchor.rs`
+- `src/content/relics/hooks.rs`
+
+Java evidence:
+- Constructor: ID `"Anchor"`, tier `COMMON`, landing sound `HEAVY`.
+- `atBattleStart`: flashes, queues a UI-only relic action, then queues
+  `GainBlockAction(player, player, 10)` with `addToBot`.
+- `justEnteredRoom` only clears grayscale UI state.
+
+Rust result:
+- Tier and battle-start subscription match Java.
+- Emits player block `10` with bottom insertion.
+- UI-only relic flash / above-creature / grayscale state is intentionally not
+  represented.
+
+Coverage:
+- `shared_common_battle_start_relic_metadata_matches_java_sources`
+- `akabeko_anchor_and_bag_of_preparation_battle_start_actions_match_java_sources`
+
+### Bag of Marbles
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/relics/BagOfMarbles.java`
+
+Rust source:
+- `src/content/relics/bag_of_marbles.rs`
+- `src/content/relics/hooks.rs`
+
+Java evidence:
+- Constructor: ID `"Bag of Marbles"`, tier `COMMON`, landing sound `FLAT`.
+- `atBattleStart`: loops every monster in the room, queues a UI-only relic
+  action, then queues Vulnerable `1` from the player to that monster with
+  `addToBot`.
+- The loop itself does not skip dying or escaped monsters; invalid targets are
+  handled by `ApplyPowerAction` when the action executes.
+
+Rust result:
+- Tier and battle-start subscription match Java.
+- Fixed Rust to emit an ApplyPower action for every current monster rather than
+  filtering dying/escaped monsters before the action queue.
+- UI-only relic flash / above-creature visual actions are intentionally not
+  represented.
+
+Coverage:
+- `shared_common_battle_start_relic_metadata_matches_java_sources`
+- `bag_of_marbles_queues_vulnerable_for_every_current_monster`
+
+### Bag of Preparation
+
+Status: `exact`
+
+Java source:
+- `D:/rust/cardcrawl/relics/BagOfPreparation.java`
+
+Rust source:
+- `src/content/relics/bag_of_preparation.rs`
+- `src/content/relics/hooks.rs`
+
+Java evidence:
+- Constructor: ID `"Bag of Preparation"`, tier `COMMON`, landing sound `FLAT`.
+- `atBattleStart`: flashes, queues a UI-only relic action, then queues
+  `DrawCardAction(player, 2)` with `addToBot`.
+
+Rust result:
+- Tier and battle-start subscription match Java.
+- Emits draw `2` with bottom insertion.
+- UI-only relic flash / above-creature visual action is intentionally not
+  represented.
+
+Coverage:
+- `shared_common_battle_start_relic_metadata_matches_java_sources`
+- `akabeko_anchor_and_bag_of_preparation_battle_start_actions_match_java_sources`
+
+## Full Ironclad Class-Specific Relic Queue
 
 Relics remain `unreviewed` until their Java file, Rust definition/subscription,
 hook implementation, and supporting engine behavior have all been checked.
@@ -363,3 +474,15 @@ hook implementation, and supporting engine behavior have all been checked.
 | 9 | `MarkOfPain.java` | `mark_of_pain.rs` | `exact` |
 | 10 | `RunicCube.java` | `runic_cube.rs` | `exact` |
 | 11 | `SelfFormingClay.java` | `self_forming_clay.rs` | `wrong-fixed` |
+
+## Shared Relic Queue Started
+
+Shared relics are available to Ironclad runs and are audited after the
+class-specific queue.
+
+| # | Java relic file | Rust relic module | Status |
+|---:|---|---|---|
+| 1 | `Akabeko.java` | `akabeko.rs` | `exact` |
+| 2 | `Anchor.java` | `anchor.rs` | `exact` |
+| 3 | `BagOfMarbles.java` | `bag_of_marbles.rs` | `wrong-fixed` |
+| 4 | `BagOfPreparation.java` | `bag_of_preparation.rs` | `exact` |
