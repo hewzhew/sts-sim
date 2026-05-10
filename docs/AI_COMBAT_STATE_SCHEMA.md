@@ -205,6 +205,8 @@ CombatStateSnapshot {
   snapshot_origin: CombatSnapshotOrigin,
   dungeon_context: DungeonCombatContext,
   room_state: RoomCombatState,
+  content_pools: CombatContentPoolState,
+  global_temp: GlobalCombatTempState,
   action_manager: ActionManagerState,
   player: PlayerCombatState,
   monster_group: MonsterGroupState,
@@ -248,12 +250,16 @@ inventory. If `D:\rust\cardcrawl` changes, the manifest must change.
 
 ```text
 DungeonCombatContext {
+  dungeon_name,
+  level_num,
   player_class,
   floor_num,
   act_num,
   ascension_level,
+  is_ascension_mode,
   curr_map_node_ref,
   dungeon_id,
+  boss_key,
   screen_state,
   combat_relevant_global_flags,
 }
@@ -290,6 +296,62 @@ RoomCombatState {
 
 `CombatKernel` stops at `CombatTerminalReport`. It must define whether combat-end
 hooks have been applied and must not consume post-combat reward-generation RNG.
+
+## Combat Content Pools
+
+These fields materialize combat-usable pools from `AbstractDungeon`. They are not
+permission to run reward or map generation inside `CombatKernel`.
+
+```text
+CombatContentPoolState {
+  src_colorless_card_pool,
+  src_curse_card_pool,
+  src_common_card_pool,
+  src_uncommon_card_pool,
+  src_rare_card_pool,
+  colorless_card_pool,
+  curse_card_pool,
+  common_card_pool,
+  uncommon_card_pool,
+  rare_card_pool,
+  common_relic_pool,
+  uncommon_relic_pool,
+  rare_relic_pool,
+  shop_relic_pool,
+  boss_relic_pool,
+  monster_list,
+  elite_monster_list,
+  boss_list,
+}
+```
+
+Card pools are modeled because combat card generation and transform effects can
+read them. Relic and monster pools are run-level materialized unless a combat
+path proves it consumes them.
+
+## Global Combat Temp State
+
+These are Java globals that are mechanically relevant or must be explicitly
+guarded at the combat boundary.
+
+```text
+GlobalCombatTempState {
+  transformed_card_ref,
+  loading_post_combat,
+  is_victory,
+  turn_phase_effect_active,
+  colorless_rare_chance_bits,
+  card_blizz_start_offset,
+  card_blizz_randomizer,
+  card_blizz_growth,
+  card_blizz_max_offset,
+  boss_count,
+  relics_to_remove_on_start,
+}
+```
+
+Java `float` fields stored in replay-critical state must be represented as raw
+bits, not as ordinary float comparison keys.
 
 ## Action Manager State
 
@@ -366,6 +428,7 @@ is_end_turn_auto_play
 PlayerCombatState {
   creature: CreatureState,
   player_class,
+  starting_max_hp,
   master_deck_zone_ref,
   draw_pile_zone_ref,
   hand_zone_ref,
@@ -376,13 +439,18 @@ PlayerCombatState {
   blight_refs,
   potion_slot_refs,
   energy,
+  is_ending_turn,
+  end_turn_queued,
   master_hand_size,
   game_hand_size,
+  master_max_orbs,
   max_orbs,
   orb_refs_in_order,
   stance_ref,
   card_in_use_ref,
   damaged_this_combat,
+  deprecated_cards_played_this_turn_counter,
+  custom_mods,
   class_specific_payload,
 }
 ```

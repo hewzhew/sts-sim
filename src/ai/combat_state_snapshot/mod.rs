@@ -46,12 +46,17 @@ pub struct ZoneRef(pub u64);
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct ActionRef(pub u64);
 
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+pub struct F32Bits(pub u32);
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CombatStateSnapshot {
     pub source_manifest: SourceManifest,
     pub snapshot_origin: CombatSnapshotOrigin,
     pub dungeon_context: DungeonCombatContext,
     pub room_state: RoomCombatState,
+    pub content_pools: CombatContentPoolState,
+    pub global_temp: GlobalCombatTempState,
     pub action_manager: ActionManagerState,
     pub player: PlayerCombatState,
     pub monster_group: MonsterGroupState,
@@ -91,12 +96,16 @@ pub enum CombatSnapshotOrigin {
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DungeonCombatContext {
+    pub dungeon_name: String,
+    pub level_num: String,
     pub player_class: PlayerClass,
     pub floor_num: i32,
     pub act_num: i32,
     pub ascension_level: i32,
+    pub is_ascension_mode: bool,
     pub curr_map_node_ref: Option<String>,
     pub dungeon_id: String,
+    pub boss_key: Option<String>,
     pub screen_state: ScreenState,
     pub combat_relevant_global_flags: BTreeMap<String, bool>,
 }
@@ -138,6 +147,43 @@ pub struct RoomCombatState {
     pub rare_card_chance: i32,
     pub uncommon_card_chance: i32,
     pub combat_end_timer_state: TimerState,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CombatContentPoolState {
+    pub src_colorless_card_pool: Vec<String>,
+    pub src_curse_card_pool: Vec<String>,
+    pub src_common_card_pool: Vec<String>,
+    pub src_uncommon_card_pool: Vec<String>,
+    pub src_rare_card_pool: Vec<String>,
+    pub colorless_card_pool: Vec<String>,
+    pub curse_card_pool: Vec<String>,
+    pub common_card_pool: Vec<String>,
+    pub uncommon_card_pool: Vec<String>,
+    pub rare_card_pool: Vec<String>,
+    pub common_relic_pool: Vec<String>,
+    pub uncommon_relic_pool: Vec<String>,
+    pub rare_relic_pool: Vec<String>,
+    pub shop_relic_pool: Vec<String>,
+    pub boss_relic_pool: Vec<String>,
+    pub monster_list: Vec<String>,
+    pub elite_monster_list: Vec<String>,
+    pub boss_list: Vec<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GlobalCombatTempState {
+    pub transformed_card_ref: Option<CardRef>,
+    pub loading_post_combat: bool,
+    pub is_victory: bool,
+    pub turn_phase_effect_active: bool,
+    pub colorless_rare_chance_bits: F32Bits,
+    pub card_blizz_start_offset: i32,
+    pub card_blizz_randomizer: i32,
+    pub card_blizz_growth: i32,
+    pub card_blizz_max_offset: i32,
+    pub boss_count: i32,
+    pub relics_to_remove_on_start: Vec<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -249,6 +295,7 @@ pub struct CardQueueItemState {
 pub struct PlayerCombatState {
     pub creature: CreatureState,
     pub player_class: PlayerClass,
+    pub starting_max_hp: i32,
     pub master_deck_zone_ref: ZoneRef,
     pub draw_pile_zone_ref: ZoneRef,
     pub hand_zone_ref: ZoneRef,
@@ -259,13 +306,18 @@ pub struct PlayerCombatState {
     pub blight_refs: Vec<BlightRef>,
     pub potion_slot_refs: Vec<Option<PotionRef>>,
     pub energy: EnergyState,
+    pub is_ending_turn: bool,
+    pub end_turn_queued: bool,
     pub master_hand_size: i32,
     pub game_hand_size: i32,
+    pub master_max_orbs: i32,
     pub max_orbs: i32,
     pub orb_refs_in_order: Vec<OrbRef>,
     pub stance_ref: StanceRef,
     pub card_in_use_ref: Option<CardRef>,
     pub damaged_this_combat: i32,
+    pub deprecated_cards_played_this_turn_counter: i32,
+    pub custom_mods: Vec<String>,
     pub class_specific_payload: BTreeMap<String, String>,
 }
 
