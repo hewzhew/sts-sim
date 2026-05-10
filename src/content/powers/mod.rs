@@ -607,16 +607,17 @@ pub fn resolve_power_on_hp_lost(
     id: PowerId,
     state: &CombatState,
     owner: crate::core::EntityId,
-    amount: i32,
+    hp_lost: i32,
+    power_amount: i32,
     source: Option<crate::core::EntityId>,
     damage_type: crate::runtime::action::DamageType,
     triggers_rupture: bool,
 ) -> smallvec::SmallVec<[crate::runtime::action::Action; 2]> {
     match id {
-        PowerId::Rupture if triggers_rupture => ironclad::rupture::on_hp_lost(amount),
-        PowerId::Split => core::split::on_hp_lost(state, owner, amount),
+        PowerId::Rupture if triggers_rupture => ironclad::rupture::on_hp_lost(power_amount),
+        PowerId::Split => core::split::on_hp_lost(state, owner, hp_lost),
         PowerId::PlatedArmor => {
-            core::plated_armor::on_hp_lost(state, owner, amount, source, damage_type)
+            core::plated_armor::on_hp_lost(state, owner, hp_lost, source, damage_type)
         }
         _ => smallvec::smallvec![],
     }

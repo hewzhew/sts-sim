@@ -3007,6 +3007,7 @@ fn rupture_and_reaper_execution_hooks_match_java_sources() {
         &state,
         0,
         3,
+        2,
         None,
         DamageType::HpLoss,
         true,
@@ -3017,7 +3018,7 @@ fn rupture_and_reaper_execution_hooks_match_java_sources() {
             source: 0,
             target: 0,
             power_id: PowerId::Strength,
-            amount: 3
+            amount: 2
         }]
     );
     assert!(crate::content::powers::resolve_power_on_hp_lost(
@@ -3025,11 +3026,36 @@ fn rupture_and_reaper_execution_hooks_match_java_sources() {
         &state,
         0,
         3,
+        2,
         None,
         DamageType::HpLoss,
         false,
     )
     .is_empty());
+
+    let mut rupture_state = crate::test_support::blank_test_combat();
+    rupture_state.entities.player.current_hp = 70;
+    rupture_state.entities.power_db.insert(
+        0,
+        vec![Power {
+            power_type: PowerId::Rupture,
+            instance_id: None,
+            amount: 2,
+            extra_data: 0,
+            just_applied: false,
+        }],
+    );
+    crate::engine::action_handlers::damage::handle_lose_hp(0, 5, true, &mut rupture_state);
+    assert_eq!(
+        rupture_state.pop_next_action(),
+        Some(Action::ApplyPower {
+            source: 0,
+            target: 0,
+            power_id: PowerId::Strength,
+            amount: 2
+        }),
+        "Java RupturePower grants its power amount, not the HP lost amount"
+    );
 
     let mut reaper_state = crate::test_support::blank_test_combat();
     reaper_state.entities.player.current_hp = 50;
