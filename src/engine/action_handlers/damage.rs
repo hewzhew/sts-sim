@@ -916,25 +916,21 @@ pub fn handle_block_per_non_attack(block_per_card: i32, state: &mut CombatState)
         .map(|c| c.uuid)
         .collect();
 
-    // Java BlockPerNonAttackAction queues one ExhaustSpecificCardAction per non-attack,
-    // then one GainBlockAction per exhausted card. That matters for on-exhaust and
-    // on-gained-block hooks such as Feel No Pain and Juggernaut.
-    let mut queued_actions = Vec::new();
-    for uuid in &non_attacks {
-        queued_actions.push(Action::ExhaustCard {
-            card_uuid: *uuid,
-            source_pile: crate::state::PileType::Hand,
-        });
-    }
+    // Java BlockPerNonAttackAction uses addToTop in two loops: first
+    // GainBlockAction for every card, then ExhaustSpecificCardAction for every
+    // card. The resulting queue executes all exhausts before all block gains,
+    // and each group is reversed relative to hand iteration order.
     for _ in &non_attacks {
-        queued_actions.push(Action::GainBlock {
+        state.queue_action_front(Action::GainBlock {
             target: 0,
             amount: block_per_card,
         });
     }
-
-    for action in queued_actions.into_iter().rev() {
-        state.queue_action_front(action);
+    for uuid in &non_attacks {
+        state.queue_action_front(Action::ExhaustCard {
+            card_uuid: *uuid,
+            source_pile: crate::state::PileType::Hand,
+        });
     }
 }
 

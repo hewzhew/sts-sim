@@ -3276,6 +3276,47 @@ fn ironclad_exhaust_debuff_and_intent_runtime_actions_match_java_use_methods() {
 }
 
 #[test]
+fn second_wind_block_per_non_attack_matches_java_add_to_top_order() {
+    let mut state = crate::test_support::blank_test_combat();
+    state.zones.hand = vec![
+        CombatCard::new(CardId::Strike, 350),
+        CombatCard::new(CardId::Defend, 351),
+        CombatCard::new(CardId::ShrugItOff, 352),
+    ];
+
+    crate::engine::action_handlers::damage::handle_block_per_non_attack(7, &mut state);
+
+    assert_eq!(
+        state.pop_next_action(),
+        Some(Action::ExhaustCard {
+            card_uuid: 352,
+            source_pile: crate::state::PileType::Hand
+        })
+    );
+    assert_eq!(
+        state.pop_next_action(),
+        Some(Action::ExhaustCard {
+            card_uuid: 351,
+            source_pile: crate::state::PileType::Hand
+        })
+    );
+    assert!(matches!(
+        state.pop_next_action(),
+        Some(Action::GainBlock {
+            target: 0,
+            amount: 7
+        })
+    ));
+    assert!(matches!(
+        state.pop_next_action(),
+        Some(Action::GainBlock {
+            target: 0,
+            amount: 7
+        })
+    ));
+}
+
+#[test]
 fn sever_soul_exhaust_all_non_attack_queues_exhausts_before_following_damage() {
     let mut state = crate::test_support::blank_test_combat();
     state.zones.hand = vec![

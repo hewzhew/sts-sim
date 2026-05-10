@@ -9,18 +9,19 @@ Continue Java-source-backed mechanics cleanup. Do not add strategy heuristics, b
 
 ## Last Pushed Checkpoint
 
-`c98abfc Ground Clash forced-play semantics`
+`59187db Ground hand-select copy generation`
 
 What it fixed:
 
-- Java `Clash.canUse(...)` blocks only manual play when hand contains non-attacks.
-- Java `Clash.use(...)` always queues damage.
-- Rust now keeps the manual play gate in `can_play_card`, but `resolve_card_play(Clash)` emits damage for forced-play paths.
+- Java `DualWieldAction` creates copies via `MakeTempCardInHandAction`.
+- Rust pending hand-select copy path no longer manually pushes copies with synthetic UUIDs.
+- `HandSelectReason::Copy` now uses `handle_make_copy_in_hand`, preserving `card_uuid_counter` and hand-overflow-to-discard behavior.
 
 Verification already passed:
 
-- `cargo test -q content::cards::tests::ironclad_attack_condition_and_dot_power_runtime_actions_match_java_use_methods`
-- `cargo test -q engine::action_handlers::cards::tests`
+- `cargo test -q engine::pending_choices::tests`
+- `cargo test -q content::cards::tests::ironclad_copy_and_block_definitions_match_java_sources`
+- `cargo test -q content::cards::tests::ironclad_block_exhaust_and_ethereal_definitions_match_java_sources`
 - `cargo check -q`
 - `git diff --check`
 
@@ -28,29 +29,32 @@ Verification already passed:
 
 Files changed:
 
-- `src/engine/pending_choices.rs`
+- `src/engine/action_handlers/damage.rs`
+- `src/content/cards/tests.rs`
 
 Java evidence:
 
-- `D:\rust\cardcrawl\actions\unique\DualWieldAction.java`
-- `D:\rust\cardcrawl\actions\common\MakeTempCardInHandAction.java`
+- `D:\rust\cardcrawl\actions\unique\BlockPerNonAttackAction.java`
+- `D:\rust\cardcrawl\cards\red\SecondWind.java`
 
 Finding:
 
-- Java `DualWieldAction` creates copies via `MakeTempCardInHandAction`.
-- Rust pending hand-select copy path was manually pushing copies with `uuid = 60000 + hand.len()`.
-- That bypassed `card_uuid_counter` and generated-card hand overflow behavior.
+- Java `BlockPerNonAttackAction` uses `addToTop` in two loops:
+  - first one `GainBlockAction` per non-attack;
+  - then one `ExhaustSpecificCardAction` per non-attack.
+- Actual execution order is all exhausts first, then all block gains, with each group reversed relative to hand iteration.
+- Rust `handle_block_per_non_attack` used an intermediate action list and reversed it, producing a different order.
 
 Implemented locally:
 
-- `HandSelectReason::Copy` now calls `handle_make_copy_in_hand`.
-- Added a pending-choice test proving generated copies use `card_uuid_counter` and overflow to discard when hand is full.
+- `handle_block_per_non_attack` now queues actions in the same two-loop `addToTop` shape as Java.
+- Added a test proving two non-attacks execute as: later non-attack exhaust, earlier non-attack exhaust, block, block.
 
 Verification already passed for this uncommitted work:
 
 - `cargo test -q engine::pending_choices::tests`
-- `cargo test -q content::cards::tests::ironclad_copy_and_block_definitions_match_java_sources`
-- `cargo test -q content::cards::tests::ironclad_block_exhaust_and_ethereal_definitions_match_java_sources`
+- `cargo test -q content::cards::tests::second_wind_block_per_non_attack_matches_java_add_to_top_order`
+- `cargo test -q content::cards::tests::sever_soul_exhaust_all_non_attack_queues_exhausts_before_following_damage`
 
 Before continuing:
 
