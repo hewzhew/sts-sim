@@ -382,6 +382,60 @@ pub fn evaluate_card_for_play(
     evaluated
 }
 
+/// Creates a fresh combat card using Java `makeCopy()` state hooks that depend
+/// on the current combat.
+///
+/// Most cards return a plain new instance. `Blood for Blood` is an important
+/// exception: its Java `makeCopy()` immediately applies the player's
+/// `damagedThisCombat` cost reduction, which matters for random-card sources
+/// such as Dead Branch, Nilry's Codex, Discovery, Infernal Blade, and
+/// Metamorphosis.
+pub fn make_fresh_card_copy_for_combat(
+    card_id: CardId,
+    uuid: u32,
+    state: &CombatState,
+) -> CombatCard {
+    let mut card = CombatCard::new(card_id, uuid);
+    if card_id == CardId::BloodForBlood {
+        let damaged = state.turn.counters.times_damaged_this_combat.min(i8::MAX as u8) as i8;
+        card.cost_modifier = -damaged;
+    }
+    card
+}
+
+pub fn can_upgrade_card_once(card: &CombatCard) -> bool {
+    card.id == CardId::SearingBlow || card.upgrades == 0
+}
+
+/// Applies Java Master Reality upgrade semantics to generated cards.
+///
+/// Java routes generated cards through action constructors and card-manipulation
+/// effects. Those are UI classes, but they also call `upgrade()`. Normal cards
+/// ignore the second call after the first upgrade; `Searing Blow` does not, so
+/// callers must pass the number of Java upgrade call sites for that path.
+pub fn apply_master_reality_to_generated_card(
+    card: &mut CombatCard,
+    state: &CombatState,
+    upgrade_call_sites: u8,
+) {
+    let def = get_card_definition(card.id);
+    if def.card_type == CardType::Curse || def.card_type == CardType::Status {
+        return;
+    }
+    if !crate::content::powers::store::has_power(
+        state,
+        0,
+        crate::content::powers::PowerId::MasterRealityPower,
+    ) {
+        return;
+    }
+    for _ in 0..upgrade_call_sites {
+        if can_upgrade_card_once(card) {
+            card.upgrades += 1;
+        }
+    }
+}
+
 /// Returns the card's intrinsic exhaust-on-play behavior after applying
 /// upgrade-sensitive card rules.
 pub fn exhausts_when_played(card: &CombatCard) -> bool {

@@ -1011,12 +1011,32 @@ fn resolve_pending_choice(
                     let uuid = 50000
                         + combat_state.zones.hand.len() as u32
                         + combat_state.zones.discard_pile.len() as u32;
-                    let mut card = crate::runtime::combat::CombatCard::new(card_id, uuid);
+                    let mut card = crate::content::cards::make_fresh_card_copy_for_combat(
+                        card_id,
+                        uuid,
+                        combat_state,
+                    );
                     // Apply cost override from the SuspendForDiscovery action
                     if let Some(cost) = combat_state.turn.take_discovery_cost_for_turn() {
                         card.cost_for_turn = Some(cost);
                     }
+                    crate::content::cards::apply_master_reality_to_generated_card(
+                        &mut card,
+                        combat_state,
+                        2,
+                    );
                     if combat_state.zones.hand.len() < 10 {
+                        if crate::content::powers::store::has_power(
+                            combat_state,
+                            0,
+                            crate::content::powers::PowerId::Corruption,
+                        ) {
+                            crate::content::cards::ironclad::corruption::corruption_on_card_draw(
+                                combat_state,
+                                &mut card,
+                            );
+                        }
+                        crate::content::cards::evaluate_card(&mut card, combat_state, None);
                         combat_state.zones.hand.push(card);
                     } else {
                         combat_state.add_card_to_discard_pile_top(card);
@@ -1041,11 +1061,35 @@ fn resolve_pending_choice(
                             + combat_state.zones.hand.len() as u32
                             + combat_state.zones.discard_pile.len() as u32
                             + combat_state.zones.draw_pile.len() as u32;
-                        let card = crate::runtime::combat::CombatCard::new(card_id, uuid);
+                        let mut card = crate::content::cards::make_fresh_card_copy_for_combat(
+                            card_id,
+                            uuid,
+                            combat_state,
+                        );
                         match destination {
                             crate::runtime::action::CardDestination::Hand => {
                                 // Java ChooseOneColorless: hand (or discard if full)
+                                crate::content::cards::apply_master_reality_to_generated_card(
+                                    &mut card,
+                                    combat_state,
+                                    2,
+                                );
                                 if combat_state.zones.hand.len() < 10 {
+                                    if crate::content::powers::store::has_power(
+                                        combat_state,
+                                        0,
+                                        crate::content::powers::PowerId::Corruption,
+                                    ) {
+                                        crate::content::cards::ironclad::corruption::corruption_on_card_draw(
+                                            combat_state,
+                                            &mut card,
+                                        );
+                                    }
+                                    crate::content::cards::evaluate_card(
+                                        &mut card,
+                                        combat_state,
+                                        None,
+                                    );
                                     combat_state.zones.hand.push(card);
                                 } else {
                                     combat_state.add_card_to_discard_pile_top(card);
@@ -1053,6 +1097,11 @@ fn resolve_pending_choice(
                             }
                             crate::runtime::action::CardDestination::DrawPileRandom => {
                                 // Java CodexAction: add to draw pile at random position
+                                crate::content::cards::apply_master_reality_to_generated_card(
+                                    &mut card,
+                                    combat_state,
+                                    1,
+                                );
                                 combat_state.add_card_to_draw_pile_random_spot(card);
                             }
                         }
