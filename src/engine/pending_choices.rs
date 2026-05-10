@@ -116,6 +116,11 @@ pub fn handle_hand_select(
             if uuids.iter().any(|uuid| !candidate_uuids.contains(uuid)) {
                 return Err("Selected card is not in the frozen hand-select candidate set");
             }
+            for (idx, uuid) in uuids.iter().enumerate() {
+                if uuids[..idx].contains(uuid) {
+                    return Err("Duplicate hand selection");
+                }
+            }
             if requires_exact && uuids.len() != count {
                 return Err("Must select exact number of cards");
             }
@@ -222,22 +227,57 @@ pub fn handle_hand_select(
                     }
                 }
                 HandSelectReason::Upgrade => {
-                    // Armaments upgraded: upgrade selected card in hand
-                    for uuid in &uuids {
-                        if let Some(card) =
-                            combat_state.zones.hand.iter_mut().find(|c| c.uuid == *uuid)
-                        {
+                    if candidate_uuids.len() > 1 {
+                        let mut remaining_candidates = Vec::new();
+                        let mut selected_cards = Vec::new();
+                        let mut non_candidates = Vec::new();
+
+                        for card in combat_state.zones.hand.drain(..) {
+                            if uuids.contains(&card.uuid) {
+                                selected_cards.push(card);
+                            } else if candidate_uuids.contains(&card.uuid) {
+                                remaining_candidates.push(card);
+                            } else {
+                                non_candidates.push(card);
+                            }
+                        }
+
+                        combat_state.zones.hand = remaining_candidates;
+                        for mut card in selected_cards {
                             let before = DomainCardSnapshot {
                                 id: card.id,
                                 upgrades: card.upgrades,
                                 uuid: card.uuid,
                             };
                             card.upgrades += 1;
+                            combat_state.zones.hand.push(card);
                             combat_state.emit_event(DomainEvent::CardUpgraded {
                                 before,
                                 after: before.upgraded(),
                                 source: DomainEventSource::Selection(reason.into()),
                             });
+                        }
+                        for card in non_candidates {
+                            combat_state.zones.hand.push(card);
+                        }
+                    } else {
+                        // Java ArmamentsAction's single-upgradeable branch upgrades in place.
+                        for uuid in &uuids {
+                            if let Some(card) =
+                                combat_state.zones.hand.iter_mut().find(|c| c.uuid == *uuid)
+                            {
+                                let before = DomainCardSnapshot {
+                                    id: card.id,
+                                    upgrades: card.upgrades,
+                                    uuid: card.uuid,
+                                };
+                                card.upgrades += 1;
+                                combat_state.emit_event(DomainEvent::CardUpgraded {
+                                    before,
+                                    after: before.upgraded(),
+                                    source: DomainEventSource::Selection(reason.into()),
+                                });
+                            }
                         }
                     }
                 }
@@ -501,6 +541,56 @@ mod tests {
                 .map(|card| (card.id, card.uuid))
                 .collect::<Vec<_>>(),
             vec![(CardId::Strike, 102), (CardId::Strike, 103),]
+        );
+    }
+
+    #[test]
+    fn hand_select_upgrade_matches_armaments_screen_order() {
+        let mut engine_state =
+            EngineState::PendingChoice(crate::state::core::PendingChoice::HandSelect {
+                reason: HandSelectReason::Upgrade,
+                candidate_uuids: vec![20, 30],
+                min_cards: 1,
+                max_cards: 1,
+                can_cancel: false,
+            });
+        let mut combat_state = blank_test_combat();
+        let mut already_upgraded = CombatCard::new(CardId::Strike, 10);
+        already_upgraded.upgrades = 1;
+        combat_state.zones.hand = vec![
+            already_upgraded,
+            CombatCard::new(CardId::Defend, 20),
+            CombatCard::new(CardId::Bash, 30),
+            CombatCard::new(CardId::Wound, 40),
+        ];
+
+        handle_hand_select(
+            &mut engine_state,
+            &mut combat_state,
+            &[20, 30],
+            1,
+            true,
+            false,
+            HandSelectReason::Upgrade,
+            ClientInput::SubmitHandSelect(vec![20]),
+        )
+        .expect("upgrade selection should resolve");
+
+        assert_eq!(engine_state, EngineState::CombatProcessing);
+        assert_eq!(
+            combat_state
+                .zones
+                .hand
+                .iter()
+                .map(|card| (card.id, card.uuid, card.upgrades))
+                .collect::<Vec<_>>(),
+            vec![
+                (CardId::Bash, 30, 0),
+                (CardId::Defend, 20, 1),
+                (CardId::Strike, 10, 1),
+                (CardId::Wound, 40, 0),
+            ],
+            "Java ArmamentsAction removes non-upgradeable cards before selection, then addToTop returns the selected card and non-upgradeables"
         );
     }
 }

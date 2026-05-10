@@ -9,10 +9,14 @@ Continue Java-source-backed mechanics cleanup. Do not add strategy heuristics, b
 
 ## Last Pushed Checkpoint
 
-`0460ef3 Match Dual Wield hand select replacement`
+`0da451c Align vampire heal and Corruption timing`
 
 Recent pushed mechanics fixes:
 
+- `0da451c Align vampire heal and Corruption timing`
+  - Java `VampireDamageAction` / `VampireDamageAllEnemiesAction` queue `HealAction`; Rust no longer heals inline.
+  - Single-target vampire heals queue to the front; Reaper/all-enemy vampire heals queue to the back, with post-combat cleanup re-run so retained `Heal` semantics match Java.
+  - Java `ApplyPowerAction` applies Corruption to existing skills with `modifyCostForCombat(-9)`; Rust now mutates combat cost on apply while preserving `CorruptionPower.onCardDraw` as `setCostForTurn(-9)`.
 - `0460ef3 Match Dual Wield hand select replacement`
   - Java `DualWieldAction` multi-candidate flow removes the selected original from hand via `HandCardSelectScreen` before adding replacement/copy cards.
   - Rust `HandSelectReason::Copy` now removes the selected original before making Dual Wield copies, avoiding one extra visible card.
@@ -56,29 +60,20 @@ Verification already passed for those checkpoints:
 
 ## Current Work To Commit
 
-Ironclad Java-source audit follow-up:
+Armaments hand-select order parity:
 
-- `VampireDamageAction` / `VampireDamageAllEnemiesAction`
-  - Java queues `HealAction` after damage instead of healing inline.
-  - Rust now queues single-target vampire heals to the front and Reaper/all-enemy vampire heals to the back, then re-runs post-combat action cleanup so retained `Heal` semantics match Java.
-  - Tests now verify Reaper does not immediately heal, Magic Flower / Mark of the Bloom modify the queued heal through `handle_heal`, and Shelled Parasite-style single vampire damage heals the source only when the queued heal action executes.
-- `ApplyPowerAction` Corruption special case
-  - Java calls `modifyCostForCombat(-9)` on skills in hand/draw/discard/exhaust when Corruption is applied.
-  - Rust previously used `set_cost_for_turn_java(0)`, which only changed visible turn cost.
-  - Rust now uses `modify_cost_for_combat_java(-9)` for the on-apply scan while keeping `CorruptionPower.onCardDraw` as `setCostForTurn(-9)`.
+- Java `ArmamentsAction` removes non-upgradeable cards before opening the hand select screen, then returns the selected card and non-upgradeables with `addToTop`.
+- Rust `HandSelectReason::Upgrade` now reproduces that multi-candidate hand order instead of upgrading in place.
+- The single-upgradeable branch still upgrades in place, matching Java's early return before temporary removal.
+- Hand select now rejects duplicate UUID submissions before mutation.
 
 Verification passed for this work:
 
 - `cargo fmt`
 - `cargo check --lib`
-- `cargo test rupture_and_reaper_execution_hooks_match_java_sources --lib`
-- `cargo test ironclad_power_and_debuff_runtime_actions_match_java_use_methods --lib`
-- `cargo test combat_card_modify_cost_for_combat_matches_java_zero_turn_branch --lib`
-- `cargo test content::cards::tests::corruption_power_on_apply_modifies_skill_costs_in_java_piles --lib`
+- `cargo test hand_select_upgrade_matches_armaments_screen_order --lib`
 - `cargo test content::cards::tests --lib`
 - `cargo test engine::pending_choices::tests --lib`
-- `cargo test engine::action_handlers::cards::tests --lib`
-- `cargo test content::monsters --lib`
 
 Known verification limitation:
 
@@ -91,7 +86,6 @@ Resume from Ironclad card-by-card Java audit, prioritizing non-trivial mechanics
 Recommended next targets:
 
 1. Continue Ironclad from the latter half, with emphasis on execution-time custom actions:
-   - `ArmamentsAction` hand-select/order behavior
    - `PutOnDeckAction` selection/random edge cases beyond existing coverage
    - `SpotWeaknessAction` intent-base-damage parity on unusual attack intents
    - `FiendFireAction` / exhaust-trigger ordering under hand mutation
