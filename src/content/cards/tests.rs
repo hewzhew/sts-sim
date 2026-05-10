@@ -2719,3 +2719,198 @@ fn rage_power_hooks_match_java_source() {
         }]
     );
 }
+
+#[test]
+fn ironclad_rampage_and_rupture_definitions_match_java_sources() {
+    let rampage = get_card_definition(CardId::Rampage);
+    assert_eq!(rampage.card_type, CardType::Attack);
+    assert_eq!(rampage.rarity, CardRarity::Uncommon);
+    assert_eq!(rampage.cost, 1);
+    assert_eq!(rampage.base_damage, 8);
+    assert_eq!(rampage.base_magic, 5);
+    assert_eq!(rampage.target, CardTarget::Enemy);
+    assert_eq!(rampage.upgrade_magic, 3);
+
+    let reaper = get_card_definition(CardId::Reaper);
+    assert_eq!(reaper.card_type, CardType::Attack);
+    assert_eq!(reaper.rarity, CardRarity::Rare);
+    assert_eq!(reaper.cost, 2);
+    assert_eq!(reaper.base_damage, 4);
+    assert_eq!(reaper.target, CardTarget::AllEnemy);
+    assert!(reaper.is_multi_damage);
+    assert!(reaper.exhaust);
+    assert!(reaper.tags.contains(&CardTag::Healing));
+    assert_eq!(reaper.upgrade_damage, 1);
+
+    let reckless_charge = get_card_definition(CardId::RecklessCharge);
+    assert_eq!(reckless_charge.card_type, CardType::Attack);
+    assert_eq!(reckless_charge.rarity, CardRarity::Uncommon);
+    assert_eq!(reckless_charge.cost, 0);
+    assert_eq!(reckless_charge.base_damage, 7);
+    assert_eq!(reckless_charge.target, CardTarget::Enemy);
+    assert_eq!(reckless_charge.upgrade_damage, 3);
+
+    let rupture = get_card_definition(CardId::Rupture);
+    assert_eq!(rupture.card_type, CardType::Power);
+    assert_eq!(rupture.rarity, CardRarity::Uncommon);
+    assert_eq!(rupture.cost, 1);
+    assert_eq!(rupture.base_magic, 1);
+    assert_eq!(rupture.target, CardTarget::SelfTarget);
+    assert_eq!(rupture.upgrade_magic, 1);
+}
+
+#[test]
+fn ironclad_rampage_and_rupture_runtime_actions_match_java_use_methods() {
+    let mut state = crate::test_support::blank_test_combat();
+    crate::content::powers::store::set_powers_for(
+        &mut state,
+        0,
+        vec![Power {
+            power_type: PowerId::Strength,
+            instance_id: None,
+            amount: 2,
+            extra_data: 0,
+            just_applied: false,
+        }],
+    );
+    let mut first = crate::test_support::test_monster(EnemyId::JawWorm);
+    first.id = 31;
+    let mut second = crate::test_support::test_monster(EnemyId::Cultist);
+    second.id = 42;
+    state.entities.monsters = vec![first, second];
+
+    let mut rampage_plus = CombatCard::new(CardId::Rampage, 320);
+    rampage_plus.upgrades = 1;
+    let rampage_actions = resolve_card_play(CardId::Rampage, &state, &rampage_plus, Some(31));
+    assert_eq!(rampage_actions.len(), 2);
+    match &rampage_actions[0].action {
+        Action::Damage(info) => {
+            assert_eq!(info.source, 0);
+            assert_eq!(info.target, 31);
+            assert_eq!(info.base, 10);
+            assert_eq!(info.output, 10);
+            assert_eq!(info.damage_type, DamageType::Normal);
+        }
+        other => panic!("Rampage+ should damage before modifying itself, got {other:?}"),
+    }
+    assert!(matches!(
+        rampage_actions[1].action,
+        Action::ModifyCardDamage {
+            card_uuid: 320,
+            amount: 8
+        }
+    ));
+
+    let mut reaper_plus = CombatCard::new(CardId::Reaper, 321);
+    reaper_plus.upgrades = 1;
+    let reaper_actions = resolve_card_play(CardId::Reaper, &state, &reaper_plus, None);
+    assert_eq!(reaper_actions.len(), 1);
+    match &reaper_actions[0].action {
+        Action::VampireDamageAllEnemies {
+            source,
+            damages,
+            damage_type,
+        } => {
+            assert_eq!(*source, 0);
+            assert_eq!(damages.as_slice(), &[7, 7]);
+            assert_eq!(*damage_type, DamageType::Normal);
+        }
+        other => panic!("Reaper+ should emit VampireDamageAllEnemiesAction, got {other:?}"),
+    }
+
+    let mut reckless_plus = CombatCard::new(CardId::RecklessCharge, 322);
+    reckless_plus.upgrades = 1;
+    let reckless_actions =
+        resolve_card_play(CardId::RecklessCharge, &state, &reckless_plus, Some(42));
+    assert_eq!(reckless_actions.len(), 2);
+    match &reckless_actions[0].action {
+        Action::Damage(info) => {
+            assert_eq!(info.source, 0);
+            assert_eq!(info.target, 42);
+            assert_eq!(info.base, 12);
+            assert_eq!(info.output, 12);
+            assert_eq!(info.damage_type, DamageType::Normal);
+        }
+        other => panic!("Reckless Charge+ should damage first, got {other:?}"),
+    }
+    assert!(matches!(
+        reckless_actions[1].action,
+        Action::MakeTempCardInDrawPile {
+            card_id: CardId::Dazed,
+            amount: 1,
+            random_spot: true,
+            to_bottom: false,
+            upgraded: false
+        }
+    ));
+
+    let mut rupture_plus = CombatCard::new(CardId::Rupture, 323);
+    rupture_plus.upgrades = 1;
+    let rupture_actions = resolve_card_play(CardId::Rupture, &state, &rupture_plus, None);
+    assert_eq!(rupture_actions.len(), 1);
+    assert!(matches!(
+        rupture_actions[0].action,
+        Action::ApplyPower {
+            source: 0,
+            target: 0,
+            power_id: PowerId::Rupture,
+            amount: 2
+        }
+    ));
+}
+
+#[test]
+fn rupture_and_reaper_execution_hooks_match_java_sources() {
+    let state = crate::test_support::blank_test_combat();
+    let rupture_actions = crate::content::powers::resolve_power_on_hp_lost(
+        PowerId::Rupture,
+        &state,
+        0,
+        3,
+        None,
+        DamageType::HpLoss,
+        true,
+    );
+    assert_eq!(
+        rupture_actions.as_slice(),
+        &[Action::ApplyPower {
+            source: 0,
+            target: 0,
+            power_id: PowerId::Strength,
+            amount: 3
+        }]
+    );
+    assert!(crate::content::powers::resolve_power_on_hp_lost(
+        PowerId::Rupture,
+        &state,
+        0,
+        3,
+        None,
+        DamageType::HpLoss,
+        false,
+    )
+    .is_empty());
+
+    let mut reaper_state = crate::test_support::blank_test_combat();
+    reaper_state.entities.player.current_hp = 50;
+    let mut first = crate::test_support::test_monster(EnemyId::JawWorm);
+    first.id = 31;
+    first.current_hp = 20;
+    first.max_hp = 20;
+    let mut second = crate::test_support::test_monster(EnemyId::Cultist);
+    second.id = 42;
+    second.current_hp = 20;
+    second.max_hp = 20;
+    reaper_state.entities.monsters = vec![first, second];
+
+    crate::engine::action_handlers::damage::handle_vampire_damage_all_enemies(
+        0,
+        smallvec::smallvec![3, 7],
+        DamageType::Normal,
+        &mut reaper_state,
+    );
+
+    assert_eq!(reaper_state.entities.monsters[0].current_hp, 17);
+    assert_eq!(reaper_state.entities.monsters[1].current_hp, 13);
+    assert_eq!(reaper_state.entities.player.current_hp, 60);
+}

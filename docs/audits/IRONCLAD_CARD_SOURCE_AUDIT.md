@@ -1842,6 +1842,146 @@ Coverage:
 - `ironclad_multi_hit_and_rage_runtime_actions_match_java_use_methods`
 - `rage_power_hooks_match_java_source`
 
+## Batch 15 - Rampage / Reaper / Reckless Charge / Rupture Coverage
+
+### Rampage
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/cards/red/Rampage.java`
+
+Rust source:
+- `src/content/cards/mod.rs`
+- `src/content/cards/ironclad/rampage.rs`
+- `src/engine/action_handlers/cards.rs`
+
+Java evidence:
+- Constructor: cost `1`, type `ATTACK`, color `RED`, rarity `UNCOMMON`, target
+  `ENEMY`, `baseDamage = 8`, `baseMagicNumber = magicNumber = 5`.
+- `use`: queues DamageAction using `this.damage`, then
+  `ModifyDamageAction(this.uuid, this.magicNumber)`.
+- `upgrade`: `upgradeMagicNumber(3)`.
+
+Rust result:
+- Definition matches Java constructor and upgrade magic.
+- Runtime now evaluates damage and magic at play time before emitting damage and
+  `ModifyCardDamage`.
+- Existing `ModifyCardDamage` targets the concrete card UUID across combat piles
+  and queued card state, matching Java's UUID-based `ModifyDamageAction`.
+
+Coverage:
+- `ironclad_rampage_and_rupture_definitions_match_java_sources`
+- `ironclad_rampage_and_rupture_runtime_actions_match_java_use_methods`
+
+### Reaper
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/cards/red/Reaper.java`
+- `D:/rust/cardcrawl/actions/unique/VampireDamageAllEnemiesAction.java`
+
+Rust source:
+- `src/content/cards/mod.rs`
+- `src/content/cards/ironclad/reaper.rs`
+- `src/engine/action_handlers/damage.rs`
+
+Java evidence:
+- Constructor: cost `2`, type `ATTACK`, color `RED`, rarity `RARE`, target
+  `ALL_ENEMY`, `baseDamage = 4`, `isMultiDamage = true`, `exhaust = true`, tag
+  `HEALING`.
+- `use`: queues VFX only, then `VampireDamageAllEnemiesAction(p,
+  this.multiDamage, this.damageTypeForTurn, NONE)`.
+- `VampireDamageAllEnemiesAction`: iterates the monster list by index, skips
+  dying/dead/escaping monsters, applies `damage[i]`, and heals the source for
+  total HP lost.
+- `upgrade`: `upgradeDamage(1)`.
+
+Rust result:
+- Definition matches Java constructor, exhaust flag, Healing tag, and upgrade
+  damage.
+- Runtime now evaluates multi-damage at play time before emitting
+  `VampireDamageAllEnemies`.
+- Fixed `VampireDamageAllEnemies` execution to target the monster list entries
+  that correspond to the damage array, instead of assuming monster IDs are
+  `index + 1`; escaping monsters are also skipped.
+
+Coverage:
+- `ironclad_rampage_and_rupture_definitions_match_java_sources`
+- `ironclad_rampage_and_rupture_runtime_actions_match_java_use_methods`
+- `rupture_and_reaper_execution_hooks_match_java_sources`
+
+### Reckless Charge
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/cards/red/RecklessCharge.java`
+- `D:/rust/cardcrawl/actions/common/MakeTempCardInDrawPileAction.java`
+- `D:/rust/cardcrawl/vfx/cardManip/ShowCardAndAddToDrawPileEffect.java`
+
+Rust source:
+- `src/content/cards/mod.rs`
+- `src/content/cards/ironclad/reckless_charge.rs`
+
+Java evidence:
+- Constructor: cost `0`, type `ATTACK`, color `RED`, rarity `UNCOMMON`, target
+  `ENEMY`, `baseDamage = 7`, preview card `Dazed`.
+- `use`: queues DamageAction using `this.damage`, then
+  `MakeTempCardInDrawPileAction(new Dazed(), 1, true, true)`.
+- The four-argument draw-pile constructor maps to `randomSpot = true`,
+  `autoPosition = true`, `toBottom = false`.
+- `ShowCardAndAddToDrawPileEffect` applies draw-pile placement immediately:
+  `toBottom` -> bottom, `randomSpot` -> random spot, otherwise top. The
+  `autoPosition` argument is visual-only.
+- Generated `Dazed` is a Status, so Master Reality does not upgrade it.
+- `upgrade`: `upgradeDamage(3)`.
+
+Rust result:
+- Definition matches Java constructor and upgrade damage.
+- Runtime now evaluates damage at play time before emitting DamageAction.
+- Generated `Dazed` action uses `random_spot = true`, `to_bottom = false`, and
+  `upgraded = false`. No UI positioning state is migrated.
+
+Coverage:
+- `ironclad_rampage_and_rupture_definitions_match_java_sources`
+- `ironclad_rampage_and_rupture_runtime_actions_match_java_use_methods`
+
+### Rupture
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/cards/red/Rupture.java`
+- `D:/rust/cardcrawl/powers/RupturePower.java`
+
+Rust source:
+- `src/content/cards/mod.rs`
+- `src/content/cards/ironclad/rupture.rs`
+- `src/content/powers/ironclad/rupture.rs`
+- `src/content/powers/mod.rs`
+
+Java evidence:
+- Constructor: cost `1`, type `POWER`, color `RED`, rarity `UNCOMMON`, target
+  `SELF`, `baseMagicNumber = magicNumber = 1`.
+- `use`: applies `RupturePower(p, this.magicNumber)`.
+- `RupturePower.wasHPLost`: if `damageAmount > 0` and `info.owner == owner`,
+  queues Strength gain equal to Rupture amount.
+- `upgrade`: `upgradeMagicNumber(1)`.
+
+Rust result:
+- Definition matches Java constructor and upgrade magic.
+- Runtime now evaluates magic at play time before applying Rupture.
+- Existing HP-loss provenance flag remains the Rust migration boundary for
+  Java's `info.owner == owner` condition; tests lock that Rupture fires only for
+  player-authored self HP-loss paths marked with `triggers_rupture`.
+
+Coverage:
+- `ironclad_rampage_and_rupture_definitions_match_java_sources`
+- `ironclad_rampage_and_rupture_runtime_actions_match_java_use_methods`
+- `rupture_and_reaper_execution_hooks_match_java_sources`
+
 ## Full Ironclad Queue
 
 Cards remain `unreviewed` until their Java file, Rust definition, Rust runtime,
@@ -1904,10 +2044,10 @@ and supporting engine behavior have all been checked.
 | 53 | `PowerThrough.java` | `power_through.rs` | `wrong-fixed` |
 | 54 | `Pummel.java` | `pummel.rs` | `wrong-fixed` |
 | 55 | `Rage.java` | `rage.rs` | `wrong-fixed` |
-| 56 | `Rampage.java` | `rampage.rs` | `unreviewed` |
-| 57 | `Reaper.java` | `reaper.rs` | `unreviewed` |
-| 58 | `RecklessCharge.java` | `reckless_charge.rs` | `unreviewed` |
-| 59 | `Rupture.java` | `rupture.rs` | `unreviewed` |
+| 56 | `Rampage.java` | `rampage.rs` | `wrong-fixed` |
+| 57 | `Reaper.java` | `reaper.rs` | `wrong-fixed` |
+| 58 | `RecklessCharge.java` | `reckless_charge.rs` | `wrong-fixed` |
+| 59 | `Rupture.java` | `rupture.rs` | `wrong-fixed` |
 | 60 | `SearingBlow.java` | `searing_blow.rs` | `unreviewed` |
 | 61 | `SecondWind.java` | `second_wind.rs` | `unreviewed` |
 | 62 | `SeeingRed.java` | `seeing_red.rs` | `unreviewed` |

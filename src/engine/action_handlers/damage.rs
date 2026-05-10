@@ -694,13 +694,22 @@ pub fn handle_vampire_damage_all_enemies(
     state: &mut CombatState,
 ) {
     let mut total_hp_lost = 0;
-    for (i, &dmg) in damages.iter().enumerate() {
-        let target_id = i + 1;
-        if let Some(m) = state.entities.monsters.iter().find(|m| m.id == target_id) {
-            if m.current_hp <= 0 || m.is_dying {
-                continue;
+    let target_damage_pairs: Vec<(usize, i32)> = state
+        .entities
+        .monsters
+        .iter()
+        .zip(damages.iter())
+        .filter_map(|(m, &dmg)| {
+            if m.current_hp <= 0 || m.is_dying || m.is_escaped {
+                None
+            } else {
+                Some((m.id, dmg))
             }
-        } else {
+        })
+        .collect();
+
+    for (target_id, dmg) in target_damage_pairs {
+        if dmg <= 0 {
             continue;
         }
         let outcome = apply_damage_to_monster_via_pipeline(

@@ -9,8 +9,9 @@ pub fn rampage_play(
 ) -> SmallVec<[ActionInfo; 4]> {
     let target = target.expect("Rampage requires a valid target!");
     let mut actions = smallvec::SmallVec::new();
-    let damage = card.base_damage_mut;
-    let increase_amount = card.base_magic_num_mut;
+    let evaluated = crate::content::cards::evaluate_card_for_play(card, _state, Some(target));
+    let damage = evaluated.base_damage_mut;
+    let increase_amount = evaluated.base_magic_num_mut;
 
     actions.push(ActionInfo {
         action: Action::Damage(DamageInfo {
@@ -26,7 +27,7 @@ pub fn rampage_play(
 
     actions.push(ActionInfo {
         action: Action::ModifyCardDamage {
-            card_uuid: card.uuid,
+            card_uuid: evaluated.uuid,
             amount: increase_amount,
         },
         insertion_mode: AddTo::Bottom,
