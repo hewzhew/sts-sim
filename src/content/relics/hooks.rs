@@ -616,12 +616,6 @@ pub fn at_end_of_turn(state: &mut CombatState) -> SmallVec<[ActionInfo; 4]> {
                 ));
                 state.entities.player.relics[relic_index] = rs;
             }
-            RelicId::GoldPlatedCables => {
-                actions.extend(crate::content::relics::gold_plated_cables::at_end_of_turn(
-                    &*state,
-                    &state.entities.player,
-                ))
-            }
             RelicId::Orichalcum => {
                 actions.extend(crate::content::relics::orichalcum::at_end_of_turn(&*state))
             }

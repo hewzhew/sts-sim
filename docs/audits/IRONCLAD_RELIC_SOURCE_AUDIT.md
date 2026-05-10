@@ -4094,6 +4094,219 @@ Coverage:
 - `shared_shop_relic_gap_batch_two_metadata_matches_java_sources`
 - `sling_only_grants_strength_in_elite_combats`
 
+## Shared Relic Batch 19 - Defect Orb Relic Grounding
+
+### Cloak Clasp
+
+Status: `exact`
+
+Java source:
+- `D:/rust/cardcrawl/relics/CloakClasp.java`
+
+Rust source:
+- `src/content/relics/cloak_clasp.rs`
+- `src/engine/action_handlers/cards.rs`
+
+Java evidence:
+- Constructor: ID `"CloakClasp"`, tier `RARE`, landing sound `CLINK`.
+- `onPlayerEndTurn`: if the hand is not empty, adds `GainBlockAction` for
+  `player.hand.group.size()`.
+
+Rust result:
+- Tier and end-turn subscription match Java.
+- The combat end-turn marker now owns the end-turn relic expansion, preventing a
+  duplicate Cloak Clasp trigger from the previous split path.
+
+Coverage:
+- `defect_orb_relic_gap_batch_metadata_matches_java_sources`
+- `end_turn_marker_triggers_cloak_clasp_once`
+
+### Cracked Core
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/relics/CrackedCore.java`
+
+Rust source:
+- `src/content/relics/cracked_core.rs`
+- `src/content/orbs/hooks.rs`
+
+Java evidence:
+- Constructor: ID `"Cracked Core"`, tier `STARTER`, landing sound `CLINK`.
+- `atPreBattle`: directly channels one `Lightning` orb.
+
+Rust result:
+- Tier and pre-battle subscription match Java.
+- Fixed the pre-battle hook from an empty placeholder to `ChannelOrb(Lightning)`.
+- Basic orb passive execution now has a real marker/action-handler path.
+- Full-slot channeling now evokes the oldest orb before channeling the new orb,
+  matching `AbstractPlayer.channelOrb`.
+
+Coverage:
+- `defect_orb_relic_gap_batch_metadata_matches_java_sources`
+- `cracked_core_channels_lightning_from_pre_battle_hook`
+- `channeling_into_full_orb_slots_evokes_oldest_before_channeling_new_orb`
+
+### Damaru
+
+Status: `exact`
+
+Java source:
+- `D:/rust/cardcrawl/relics/Damaru.java`
+
+Rust source:
+- `src/content/relics/damaru.rs`
+
+Java evidence:
+- Constructor: ID `"Damaru"`, tier `COMMON`, landing sound `SOLID`.
+- `atTurnStart`: queues `ApplyPowerAction(... MantraPower(player, 1), 1)`.
+- `update` only plays a sound and flashes when clicked; this is UI-only.
+
+Rust result:
+- Tier and turn-start subscription match Java.
+- Turn-start hook grants one Mantra and omits click/sound UI behavior.
+
+Coverage:
+- `defect_orb_relic_gap_batch_metadata_matches_java_sources`
+
+### Data Disk
+
+Status: `exact`
+
+Java source:
+- `D:/rust/cardcrawl/relics/DataDisk.java`
+
+Rust source:
+- `src/content/relics/data_disk.rs`
+- `src/content/orbs/hooks.rs`
+- `src/engine/action_handlers/mod.rs`
+
+Java evidence:
+- Constructor: ID `"DataDisk"`, tier `COMMON`, landing sound `FLAT`.
+- `atBattleStart`: adds `FocusPower(player, 1)` to the top of the action queue.
+
+Rust result:
+- Tier and battle-start subscription match Java.
+- Focus is applied as a power.
+- Orb passive/evoke amount refresh now reads current Focus so Data Disk affects
+  Lightning/Frost/Dark orb behavior instead of being disconnected from orbs.
+
+Coverage:
+- `defect_orb_relic_gap_batch_metadata_matches_java_sources`
+- `data_disk_focus_changes_orb_passive_amounts`
+
+### Gold-Plated Cables
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/relics/GoldPlatedCables.java`
+- `D:/rust/cardcrawl/actions/defect/TriggerEndOfTurnOrbsAction.java`
+- `D:/rust/cardcrawl/characters/AbstractPlayer.java`
+- `D:/rust/cardcrawl/actions/defect/ImpulseAction.java`
+
+Rust source:
+- `src/content/orbs/hooks.rs`
+- `src/content/relics/mod.rs`
+
+Java evidence:
+- Constructor: ID `"Cables"`, tier `UNCOMMON`, landing sound `FLAT`.
+- The relic class has no callback method. Orb trigger code checks whether the
+  player has `"Cables"` and then triggers the first orb one additional time.
+- The extra trigger applies to end-of-turn orbs, start-of-turn orbs, and
+  `ImpulseAction`.
+
+Rust result:
+- Tier matches Java.
+- Removed the false relic end-turn subscription and stale standalone relic hook.
+- Implemented the extra first-orb trigger inside the orb trigger path, matching
+  the Java ownership boundary.
+
+Coverage:
+- `defect_orb_relic_gap_batch_metadata_matches_java_sources`
+- `orb_passives_fire_from_marker_actions_and_gold_plated_cables_doubles_first_orb`
+
+### Emotion Chip
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/relics/EmotionChip.java`
+- `D:/rust/cardcrawl/actions/defect/ImpulseAction.java`
+
+Rust source:
+- `src/content/relics/emotion_chip.rs`
+- `src/content/orbs/hooks.rs`
+
+Java evidence:
+- `wasHPLost`: during combat, positive HP loss sets the relic pulse flag.
+- `atTurnStart`: if pulsing, resets the pulse and queues `ImpulseAction`.
+- `ImpulseAction`: for each orb, triggers start-of-turn and end-of-turn orb
+  behavior, then applies Gold-Plated Cables to the first orb if present.
+- `onVictory`: clears the pulse flag.
+
+Rust result:
+- Tier and subscriptions match Java.
+- Fixed the queued action from an ambiguous/unhandled passive marker to
+  `TriggerImpulseOrbs`.
+- The marker now executes Plasma start passives, Frost/Lightning/Dark end
+  passives, and the Gold-Plated Cables extra first-orb behavior.
+
+Coverage:
+- `defect_orb_relic_gap_batch_metadata_matches_java_sources`
+- `emotion_chip_impulse_triggers_start_and_end_orb_passives_then_resets_counter`
+
+### Frozen Core
+
+Status: `exact`
+
+Java source:
+- `D:/rust/cardcrawl/relics/FrozenCore.java`
+
+Rust source:
+- `src/content/relics/frozen_core.rs`
+
+Java evidence:
+- Constructor: ID `"FrozenCore"`, tier `BOSS`, landing sound `CLINK`.
+- `onPlayerEndTurn`: if the player has any empty orb slot, channels one `Frost`.
+- `canSpawn`: requires `Cracked Core`.
+
+Rust result:
+- Tier and end-turn subscription match Java.
+- End-turn hook checks for any empty orb slot and channels Frost only then.
+- Spawn-condition audit is still tracked at reward/relic-pool level; combat hook
+  behavior is exact.
+
+Coverage:
+- `defect_orb_relic_gap_batch_metadata_matches_java_sources`
+- `frozen_core_channels_frost_only_when_an_orb_slot_is_empty`
+
+### Hand Drill
+
+Status: `exact`
+
+Java source:
+- `D:/rust/cardcrawl/relics/HandDrill.java`
+
+Rust source:
+- `src/content/relics/hand_drill.rs`
+- `src/engine/action_handlers/damage.rs`
+
+Java evidence:
+- Constructor: ID `"HandDrill"`, tier `SHOP`, landing sound `FLAT`.
+- `onBlockBroken(AbstractCreature m)`: queues Vulnerable 2 on the block-broken
+  creature.
+
+Rust result:
+- Tier matches Java.
+- Damage pipeline detects monster block breaking and queues Vulnerable 2 through
+  the Hand Drill hook.
+
+Coverage:
+- `defect_orb_relic_gap_batch_metadata_matches_java_sources`
+- `hand_drill_applies_vulnerable_when_damage_exactly_breaks_block`
+
 ## Full Ironclad Class-Specific Relic Queue
 
 Relics remain `unreviewed` until their Java file, Rust definition/subscription,
@@ -4241,3 +4454,11 @@ class-specific queue.
 | 119 | `MedicalKit.java` | playability / exhaust path | `exact` |
 | 120 | `OrangePellets.java` | `orange_pellets.rs` / debuff cleanup | `wrong-fixed` |
 | 121 | `Sling.java` | `sling.rs` / elite check | `wrong-fixed` |
+| 122 | `CloakClasp.java` | `cloak_clasp.rs` / end-turn block | `exact` |
+| 123 | `CrackedCore.java` | `cracked_core.rs` / channel Lightning | `wrong-fixed` |
+| 124 | `Damaru.java` | `damaru.rs` / Mantra turn start | `exact` |
+| 125 | `DataDisk.java` | `data_disk.rs` / Focus and orb passives | `exact` |
+| 126 | `GoldPlatedCables.java` | orb trigger path / first orb extra passive | `wrong-fixed` |
+| 127 | `EmotionChip.java` | `emotion_chip.rs` / Impulse orb trigger | `wrong-fixed` |
+| 128 | `FrozenCore.java` | `frozen_core.rs` / empty slot Frost channel | `exact` |
+| 129 | `HandDrill.java` | damage pipeline / block break Vulnerable | `exact` |

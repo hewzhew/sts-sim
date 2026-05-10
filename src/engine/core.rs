@@ -938,15 +938,9 @@ fn handle_player_turn_input(
         }
 
         ClientInput::EndTurn => {
-            // Queue end-of-turn processing
-            // 1. EndTurnTrigger handles in-hand card effects (Burn, Decay, ethereal exhaust, etc.)
+            // Queue Java callEndOfTurnActions equivalent. The marker expands to
+            // relics, powers, orb passives, in-hand card triggers, and stance cleanup.
             combat_state.queue_action_back(Action::EndTurnTrigger);
-            // 2. Relic at_end_of_turn hooks (Orichalcum, CloakClasp, ArtOfWar, etc.)
-            let end_turn_relic_actions =
-                crate::content::relics::hooks::at_end_of_turn(combat_state);
-            combat_state.queue_actions(end_turn_relic_actions);
-            // 3. Transition: the engine loop will detect CombatProcessing and handle
-            //    discarding hand, applying power at_end_of_turn, enemy turns, draw, etc.
             *engine_state = EngineState::CombatProcessing;
             combat_state.begin_turn_transition();
             Ok(())

@@ -3,9 +3,15 @@ use crate::content::cards::{evaluate_card_for_play, CardId};
 use crate::content::monsters::EnemyId;
 use crate::content::powers::{store, PowerId};
 use crate::runtime::action::{Action, AddTo, DamageInfo, DamageType, NO_SOURCE};
-use crate::runtime::combat::{CombatCard, Power};
+use crate::runtime::combat::{CombatCard, OrbEntity, OrbId, Power};
 use crate::state::events::EventId;
 use crate::state::selection::{DomainEvent, DomainEventSource};
+
+fn drain_test_actions(state: &mut crate::runtime::combat::CombatState) {
+    while let Some(action) = state.pop_next_action() {
+        crate::engine::action_handlers::execute_action(action, state);
+    }
+}
 
 #[test]
 fn ironclad_blood_skull_and_frog_relic_metadata_matches_java_sources() {
@@ -3288,6 +3294,256 @@ fn sling_only_grants_strength_in_elite_combats() {
             ..
         }
     ));
+}
+
+#[test]
+fn defect_orb_relic_gap_batch_metadata_matches_java_sources() {
+    assert_eq!(get_relic_tier(RelicId::CloakClasp), RelicTier::Rare);
+    assert_eq!(get_relic_tier(RelicId::CrackedCore), RelicTier::Starter);
+    assert_eq!(get_relic_tier(RelicId::Damaru), RelicTier::Common);
+    assert_eq!(get_relic_tier(RelicId::DataDisk), RelicTier::Common);
+    assert_eq!(
+        get_relic_tier(RelicId::GoldPlatedCables),
+        RelicTier::Uncommon
+    );
+    assert_eq!(get_relic_tier(RelicId::EmotionChip), RelicTier::Rare);
+    assert_eq!(get_relic_tier(RelicId::FrozenCore), RelicTier::Boss);
+    assert_eq!(get_relic_tier(RelicId::HandDrill), RelicTier::Shop);
+
+    assert!(get_relic_subscriptions(RelicId::CloakClasp).at_end_of_turn);
+    assert!(get_relic_subscriptions(RelicId::CrackedCore).at_pre_battle);
+    assert!(get_relic_subscriptions(RelicId::Damaru).at_turn_start);
+    assert!(get_relic_subscriptions(RelicId::DataDisk).at_battle_start);
+
+    let emotion_chip = get_relic_subscriptions(RelicId::EmotionChip);
+    assert!(emotion_chip.at_turn_start);
+    assert!(emotion_chip.on_lose_hp);
+    assert!(emotion_chip.on_victory);
+
+    assert!(get_relic_subscriptions(RelicId::FrozenCore).at_end_of_turn);
+    assert!(
+        !get_relic_subscriptions(RelicId::GoldPlatedCables).at_end_of_turn,
+        "Java Gold-Plated Cables is read by orb trigger code, not a relic callback"
+    );
+}
+
+#[test]
+fn cracked_core_channels_lightning_from_pre_battle_hook() {
+    let mut state = crate::test_support::blank_test_combat();
+    state
+        .entities
+        .player
+        .add_relic(RelicState::new(RelicId::CrackedCore));
+
+    let actions = hooks::at_pre_battle(&mut state);
+    assert_eq!(actions.len(), 1);
+    assert_eq!(actions[0].insertion_mode, AddTo::Bottom);
+    assert!(matches!(
+        actions[0].action,
+        Action::ChannelOrb(OrbId::Lightning)
+    ));
+}
+
+#[test]
+fn end_turn_marker_triggers_cloak_clasp_once() {
+    let mut state = crate::test_support::blank_test_combat();
+    state
+        .entities
+        .player
+        .add_relic(RelicState::new(RelicId::CloakClasp));
+    state.zones.hand = vec![
+        CombatCard::new(CardId::Strike, 11),
+        CombatCard::new(CardId::Defend, 12),
+    ];
+
+    crate::engine::action_handlers::execute_action(Action::EndTurnTrigger, &mut state);
+    drain_test_actions(&mut state);
+
+    assert_eq!(
+        state.entities.player.block, 2,
+        "Cloak Clasp must not fire once from core and once from EndTurnTrigger"
+    );
+}
+
+#[test]
+fn channeling_into_full_orb_slots_evokes_oldest_before_channeling_new_orb() {
+    let mut state = crate::test_support::blank_test_combat();
+    state.entities.player.max_orbs = 1;
+    state.entities.player.orbs = vec![OrbEntity::new(OrbId::Frost)];
+
+    crate::engine::action_handlers::execute_action(
+        Action::ChannelOrb(OrbId::Lightning),
+        &mut state,
+    );
+    assert!(matches!(state.pop_next_action(), Some(Action::EvokeOrb)));
+    crate::engine::action_handlers::execute_action(Action::EvokeOrb, &mut state);
+    assert!(matches!(
+        state.pop_next_action(),
+        Some(Action::GainBlock {
+            target: 0,
+            amount: 5
+        })
+    ));
+    crate::engine::action_handlers::execute_action(
+        Action::GainBlock {
+            target: 0,
+            amount: 5,
+        },
+        &mut state,
+    );
+    assert!(matches!(
+        state.pop_next_action(),
+        Some(Action::ChannelOrb(OrbId::Lightning))
+    ));
+    crate::engine::action_handlers::execute_action(
+        Action::ChannelOrb(OrbId::Lightning),
+        &mut state,
+    );
+    drain_test_actions(&mut state);
+
+    assert_eq!(
+        state.entities.player.block, 5,
+        "full-slot channeling should evoke the old Frost instead of silently deleting it"
+    );
+    assert_eq!(state.entities.player.orbs.len(), 1);
+    assert_eq!(state.entities.player.orbs[0].id, OrbId::Lightning);
+}
+
+#[test]
+fn orb_passives_fire_from_marker_actions_and_gold_plated_cables_doubles_first_orb() {
+    let mut state = crate::test_support::blank_test_combat();
+    state.entities.player.max_orbs = 3;
+    state.entities.player.orbs = vec![
+        OrbEntity::new(OrbId::Frost),
+        OrbEntity::new(OrbId::Frost),
+        OrbEntity::new(OrbId::Empty),
+    ];
+    state
+        .entities
+        .player
+        .add_relic(RelicState::new(RelicId::GoldPlatedCables));
+
+    crate::engine::action_handlers::execute_action(Action::TriggerEndOfTurnOrbs, &mut state);
+    drain_test_actions(&mut state);
+
+    assert_eq!(
+        state.entities.player.block, 6,
+        "two Frost passives plus one extra rightmost passive from Cables"
+    );
+}
+
+#[test]
+fn data_disk_focus_changes_orb_passive_amounts() {
+    let mut state =
+        crate::test_support::combat_with_monsters(vec![crate::test_support::test_monster(
+            EnemyId::JawWorm,
+        )]);
+    state.entities.player.max_orbs = 3;
+    state.entities.player.orbs = vec![
+        OrbEntity::new(OrbId::Lightning),
+        OrbEntity::new(OrbId::Empty),
+        OrbEntity::new(OrbId::Empty),
+    ];
+    store::set_powers_for(
+        &mut state,
+        0,
+        vec![Power {
+            power_type: PowerId::Focus,
+            instance_id: None,
+            amount: 1,
+            extra_data: 0,
+            just_applied: false,
+        }],
+    );
+
+    crate::engine::action_handlers::execute_action(Action::TriggerEndOfTurnOrbs, &mut state);
+    drain_test_actions(&mut state);
+
+    assert_eq!(
+        state.entities.monsters[0].current_hp,
+        state.entities.monsters[0].max_hp - 4,
+        "Lightning passive is 3 plus one Focus"
+    );
+}
+
+#[test]
+fn emotion_chip_impulse_triggers_start_and_end_orb_passives_then_resets_counter() {
+    let mut state = crate::test_support::blank_test_combat();
+    state.entities.player.max_orbs = 3;
+    state.entities.player.orbs = vec![
+        OrbEntity::new(OrbId::Plasma),
+        OrbEntity::new(OrbId::Frost),
+        OrbEntity::new(OrbId::Empty),
+    ];
+    let mut relic = RelicState::new(RelicId::EmotionChip);
+    relic.counter = 1;
+
+    let actions = emotion_chip::at_turn_start(&state, &mut relic);
+    assert_eq!(relic.counter, 0);
+    assert_eq!(actions.len(), 1);
+    assert!(matches!(actions[0].action, Action::TriggerImpulseOrbs));
+
+    state.queue_actions(actions);
+    drain_test_actions(&mut state);
+    assert_eq!(state.turn.energy, 4, "Plasma start passive gives 1 energy");
+    assert_eq!(
+        state.entities.player.block, 2,
+        "Frost end passive gives block"
+    );
+}
+
+#[test]
+fn frozen_core_channels_frost_only_when_an_orb_slot_is_empty() {
+    let mut full = crate::test_support::blank_test_combat();
+    full.entities.player.max_orbs = 1;
+    full.entities.player.orbs = vec![OrbEntity::new(OrbId::Lightning)];
+    assert!(
+        frozen_core::at_end_of_turn(&full, &mut RelicState::new(RelicId::FrozenCore)).is_empty()
+    );
+
+    let mut empty = crate::test_support::blank_test_combat();
+    empty.entities.player.max_orbs = 1;
+    empty.entities.player.orbs = vec![OrbEntity::new(OrbId::Empty)];
+    let actions = frozen_core::at_end_of_turn(&empty, &mut RelicState::new(RelicId::FrozenCore));
+    assert_eq!(actions.len(), 1);
+    assert!(matches!(
+        actions[0].action,
+        Action::ChannelOrb(OrbId::Frost)
+    ));
+}
+
+#[test]
+fn hand_drill_applies_vulnerable_when_damage_exactly_breaks_block() {
+    let mut state =
+        crate::test_support::combat_with_monsters(vec![crate::test_support::test_monster(
+            EnemyId::JawWorm,
+        )]);
+    state
+        .entities
+        .player
+        .add_relic(RelicState::new(RelicId::HandDrill));
+    state.entities.monsters[0].block = 5;
+    let target = state.entities.monsters[0].id;
+
+    crate::engine::action_handlers::execute_action(
+        Action::Damage(DamageInfo {
+            source: 0,
+            target,
+            base: 5,
+            output: 5,
+            damage_type: DamageType::Normal,
+            is_modified: false,
+        }),
+        &mut state,
+    );
+    drain_test_actions(&mut state);
+
+    assert_eq!(state.entities.monsters[0].block, 0);
+    assert_eq!(
+        state.entities.monsters[0].current_hp,
+        state.entities.monsters[0].max_hp
+    );
+    assert_eq!(store::power_amount(&state, target, PowerId::Vulnerable), 2);
 }
 
 #[test]

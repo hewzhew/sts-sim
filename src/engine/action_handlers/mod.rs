@@ -513,6 +513,14 @@ pub fn execute_action(action: Action, state: &mut CombatState) {
 
         Action::IncreaseMaxOrb(amount) => handle_increase_max_orb(amount, state),
         Action::ChannelOrb(orb_id) => handle_channel_orb(orb_id, state),
+        Action::EvokeOrb => crate::content::orbs::hooks::evoke_next_orb_now(state),
+        Action::TriggerStartOfTurnOrbs => {
+            crate::content::orbs::hooks::trigger_start_of_turn_orbs_now(state)
+        }
+        Action::TriggerEndOfTurnOrbs => {
+            crate::content::orbs::hooks::trigger_end_of_turn_orbs_now(state)
+        }
+        Action::TriggerImpulseOrbs => crate::content::orbs::hooks::trigger_impulse_orbs_now(state),
         Action::EnterStance(stance) => handle_enter_stance(&stance, state),
 
         // === Pass-through / unhandled ===
@@ -524,9 +532,7 @@ pub fn execute_action(action: Action, state: &mut CombatState) {
         | Action::AbortDeath { .. }
         | Action::ExecuteMonsterTurn(_)
         | Action::SpawnEncounter { .. }
-        | Action::Scry(_)
-        | Action::EvokeOrb
-        | Action::TriggerPassiveOrbs => {
+        | Action::Scry(_) => {
             #[cfg(debug_assertions)]
             eprintln!("[action_handlers] Unhandled action: {:?}", action);
         }
@@ -570,7 +576,21 @@ fn handle_channel_orb(orb_id: crate::runtime::combat::OrbId, state: &mut CombatS
                 crate::runtime::combat::OrbId::Empty,
             ));
     }
-    let new_orb = crate::runtime::combat::OrbEntity::new(orb_id);
+    let mut new_orb = crate::runtime::combat::OrbEntity::new(orb_id);
+    if !matches!(
+        new_orb.id,
+        crate::runtime::combat::OrbId::Empty | crate::runtime::combat::OrbId::Plasma
+    ) {
+        let focus = crate::content::powers::store::power_amount(
+            state,
+            0,
+            crate::content::powers::PowerId::Focus,
+        );
+        new_orb.passive_amount = (new_orb.base_passive_amount + focus).max(0);
+        if new_orb.id != crate::runtime::combat::OrbId::Dark {
+            new_orb.evoke_amount = (new_orb.base_evoke_amount + focus).max(0);
+        }
+    }
     if let Some(empty_slot) = state
         .entities
         .player
@@ -580,8 +600,8 @@ fn handle_channel_orb(orb_id: crate::runtime::combat::OrbId, state: &mut CombatS
     {
         state.entities.player.orbs[empty_slot] = new_orb;
     } else {
-        state.entities.player.orbs.remove(0);
-        state.entities.player.orbs.push(new_orb);
+        state.queue_action_front(Action::ChannelOrb(orb_id));
+        state.queue_action_front(Action::EvokeOrb);
     }
 }
 

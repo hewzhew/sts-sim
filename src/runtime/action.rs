@@ -516,7 +516,9 @@ pub enum Action {
     },
     ChannelOrb(crate::runtime::combat::OrbId),
     EvokeOrb,
-    TriggerPassiveOrbs,
+    TriggerStartOfTurnOrbs,
+    TriggerEndOfTurnOrbs,
+    TriggerImpulseOrbs,
     Scry(usize),
     EnterStance(String), // Watcher stance: "Wrath", "Calm", "Divinity", "Neutral"
     ObtainPotion,

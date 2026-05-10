@@ -78,7 +78,6 @@ pub mod frozen_egg;
 pub mod frozen_eye;
 pub mod gambling_chip;
 pub mod ginger;
-pub mod gold_plated_cables;
 pub mod golden_eye;
 pub mod golden_idol;
 pub mod gremlin_mask;
@@ -874,9 +873,7 @@ pub fn get_relic_subscriptions(id: RelicId) -> RelicSubscriptions {
         }
         RelicId::Ginger => sub.on_receive_power_modify = true,
         RelicId::Turnip => sub.on_receive_power_modify = true,
-        RelicId::GoldPlatedCables => {
-            sub.at_end_of_turn = true;
-        }
+        RelicId::GoldPlatedCables => {}
         RelicId::GoldenEye => sub.on_scry = true,
         RelicId::GoldenIdol => {
             // Gold multiplier passive

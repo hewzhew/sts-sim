@@ -1267,7 +1267,10 @@ pub fn obtain_specific_potion_if_allowed(
 pub fn handle_end_turn_trigger(state: &mut CombatState) {
     let mut actions = smallvec::SmallVec::new();
 
-    // 1. Player Powers
+    // 1. Relics
+    actions.extend(crate::content::relics::hooks::at_end_of_turn(state));
+
+    // 2. Player powers
     for power in store::powers_snapshot_for(state, 0) {
         actions.extend(
             crate::content::powers::resolve_power_at_end_of_turn(&power, state, 0)
@@ -1279,7 +1282,10 @@ pub fn handle_end_turn_trigger(state: &mut CombatState) {
         );
     }
 
-    // 2. Ethereal exhaust
+    // 3. Orbs
+    actions.extend(crate::content::orbs::hooks::trigger_end_of_turn_orbs(state));
+
+    // 4. Ethereal exhaust and status/curse in-hand triggers
     for card in &state.zones.hand {
         if crate::content::cards::is_ethereal(card) {
             actions.push(ActionInfo {
@@ -1292,13 +1298,6 @@ pub fn handle_end_turn_trigger(state: &mut CombatState) {
         }
     }
 
-    // 3. Relics
-    actions.extend(crate::content::relics::hooks::at_end_of_turn(state));
-
-    // 4. Orbs
-    actions.extend(crate::content::orbs::hooks::trigger_end_of_turn_orbs(state));
-
-    // 5. Curses and Burns in hand
     for card in &state.zones.hand {
         if card.id == CardId::Burn {
             actions.extend(crate::content::cards::status::burn::on_end_turn_in_hand(
@@ -1332,7 +1331,7 @@ pub fn handle_end_turn_trigger(state: &mut CombatState) {
         }
     }
 
-    // 6. Stances
+    // 5. Stances
     actions.extend(crate::content::stances::hooks::on_end_of_turn(state));
 
     state.queue_actions(actions);
