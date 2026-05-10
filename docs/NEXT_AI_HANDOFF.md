@@ -9,10 +9,19 @@ Continue Java-source-backed mechanics cleanup. Do not add strategy heuristics, b
 
 ## Last Pushed Checkpoint
 
-`f637fed Ground Rupture HP loss strength amount`
+`8b1aef8 Ground Java generated card edge cases`
 
 What it fixed:
 
+- `8b1aef8 Ground Java generated card edge cases`
+  - Added Java-backed `make_fresh_card_copy_for_combat` for `makeCopy()` hooks that depend on current combat state.
+  - `Blood for Blood.makeCopy()` now applies `damagedThisCombat` cost reduction for random generated copies.
+  - Master Reality generated-card handling now models Java upgrade call-site counts instead of treating UI/VFX classes as harmless:
+    - hand paths such as `MakeTempCardInHandAction` plus `ShowCardAndAddToHandEffect` call upgrade twice;
+    - draw-pile `MakeTempCardInDrawPileAction` with `amount < 6` plus `ShowCardAndAddToDrawPileEffect` calls upgrade twice;
+    - discard-only `MakeTempCardInDiscardAction(card, amount)` calls upgrade once.
+  - This matters mostly for `Searing Blow`, because normal cards ignore the second upgrade after their first upgrade but `SearingBlow.upgrade()` is repeatable.
+  - Discovery / Toolbox / Codex pending-choice resolution now creates selected cards through the Java make-copy context and applies the appropriate Master Reality path.
 - `35c4397 Ground generated card copy semantics`
   - Added Java-backed `CombatCard::make_stat_equivalent_copy_with_uuid`.
   - Generated copies now preserve permanent/stat-equivalent fields but drop transient evaluated damage/block/magic/multi-damage and one-shot play flags.
@@ -27,6 +36,9 @@ Verification already passed:
 
 - `cargo test -q engine::action_handlers::cards::tests`
 - `cargo test -q content::cards::tests`
+- `cargo test -q engine::action_handlers::cards::tests::searing_blow_preserves_java_master_reality_effect_call_counts`
+- `cargo test -q engine::action_handlers::cards::tests::random_pool_blood_for_blood_copy_uses_java_make_copy_damage_discount`
+- `cargo test -q engine::action_handlers::cards::tests::generated_cards_apply_master_reality_before_entering_zones`
 - `cargo test -q content::cards::tests::rupture_and_reaper_execution_hooks_match_java_sources`
 - `cargo test -q content::cards::tests::ironclad_random_and_exhaust_attack_runtime_actions_match_java_use_methods`
 - `cargo test -q content::cards::tests::ironclad_common_utility_runtime_actions_match_java_use_methods`
@@ -63,5 +75,8 @@ Useful reminders:
 - Java `CardGroup` top is the list end.
 - Java `MakeTempCardInDrawPileAction`: `toBottom` -> bottom, `randomSpot` -> random spot, otherwise top.
 - Java `CardGroup.addToRandomSpot` never creates a new top when the group is nonempty; Rust helper already maps this.
+- Java UI/VFX classes are ignored only when they are UI-only. `ShowCardAndAddToHandEffect`,
+  `ShowCardAndAddToDiscardEffect`, and `ShowCardAndAddToDrawPileEffect` can call Master Reality
+  and therefore carry gameplay state for repeat-upgrade cards like `Searing Blow`.
 - Java `Shockwave.java` in this source applies Weak and Vulnerable only. Do not add Frail unless the Java source changes.
 - Master Reality is a shared generated-card rule, not a reason to start the full Watcher card sweep yet.
