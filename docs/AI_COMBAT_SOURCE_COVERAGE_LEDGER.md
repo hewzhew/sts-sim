@@ -530,6 +530,9 @@ source class mapping is not reviewable.
 | `ReApplyPowersAction.java` | `m` | modeled | `ActionPayload::ReApplyPowers.monster_ref` | target monster for recalculation |
 | `ResetFlagsAction.java` | `card` | modeled | `ActionPayload::ResetFlags.card_ref` | copied card whose flags are reset |
 | `ScryAction.java` | `startingDuration` | modeled | `ActionPayload::Scry.starting_duration_bits` | subclass private duration |
+| `ShakeScreenAction.java` | `startDur` | modeled | `ActionPayload::ShakeScreen.start_duration_bits` | Java `float`; raw bits |
+| `ShakeScreenAction.java` | `shakeDur` | modeled | `ActionPayload::ShakeScreen.shake_duration` | `ScreenShake.ShakeDur` |
+| `ShakeScreenAction.java` | `intensity` | modeled | `ActionPayload::ShakeScreen.intensity` | `ScreenShake.ShakeIntensity` |
 | `ShowCardAction.java` | `card` | modeled | `ActionPayload::ShowCard.card_ref` | limbo/card-in-use cleanup target |
 | `ShowCardAndPoofAction.java` | `card` | modeled | `ActionPayload::ShowCardAndPoof.card_ref` | limbo/card-in-use cleanup plus exhaust VFX |
 | `UnlimboAction.java` | `card` | modeled | `ActionPayload::Unlimbo.card_ref` | limbo card to remove |
@@ -539,6 +542,8 @@ source class mapping is not reviewable.
 | `SFXAction.java` | `adjust` | modeled | `ActionPayload::Sfx.adjust` | selects adjusted sound call |
 | `TextAboveCreatureAction.java` | `used` | modeled | `ActionPayload::TextAboveCreature.used` | one-shot text effect guard |
 | `TextAboveCreatureAction.java` | `msg` | modeled | `ActionPayload::TextAboveCreature.message` | nullable when constructor marks done |
+| `TextCenteredAction.java` | `used` | modeled | `ActionPayload::TextCentered.used` | one-shot text effect guard |
+| `TextCenteredAction.java` | `msg` | modeled | `ActionPayload::TextCentered.message` | centered text message |
 | `UnhoverCardAction.java` | no subclass fields beyond common action fields | modeled | `ActionState` | uses global hovered card state |
 | `UpdateCardDescriptionAction.java` | `targetCard` | modeled | `ActionPayload::UpdateCardDescription.target_card` | card whose description is initialized |
 | `UseCardAction.java` | `targetCard` | modeled | `ActionPayload::UseCard.target_card` | card being resolved |

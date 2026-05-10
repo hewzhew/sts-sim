@@ -673,6 +673,12 @@ ActionPayload {
     trigger,
   }
 
+  ShakeScreen {
+    start_duration_bits,
+    shake_duration,
+    intensity,
+  }
+
   ShowCard {
     card_ref,
   }
@@ -701,6 +707,11 @@ ActionPayload {
   }
 
   TextAboveCreature {
+    used,
+    message,
+  }
+
+  TextCentered {
     used,
     message,
   }

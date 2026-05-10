@@ -378,12 +378,14 @@ pub enum ActionPayload {
     Scry(ScryActionState),
     SetMove(SetMoveActionState),
     SetDontTrigger(SetDontTriggerActionState),
+    ShakeScreen(ShakeScreenActionState),
     ShowCard(ShowCardActionState),
     ShowCardAndPoof(ShowCardAndPoofActionState),
     Sfx(SfxActionState),
     SpawnMonster(SpawnMonsterActionState),
     Suicide(SuicideActionState),
     TextAboveCreature(TextAboveCreatureActionState),
+    TextCentered(TextCenteredActionState),
     TransformCardInHand(TransformCardInHandActionState),
     Unlimbo(UnlimboActionState),
     UpdateCardDescription(UpdateCardDescriptionActionState),
@@ -434,12 +436,14 @@ pub const TYPED_ACTION_PAYLOAD_SOURCE_CLASSES: &[&str] = &[
     "ScryAction",
     "SetMoveAction",
     "SetDontTriggerAction",
+    "ShakeScreenAction",
     "ShowCardAction",
     "ShowCardAndPoofAction",
     "SFXAction",
     "SpawnMonsterAction",
     "SuicideAction",
     "TextAboveCreatureAction",
+    "TextCenteredAction",
     "TransformCardInHandAction",
     "UnlimboAction",
     "UpdateCardDescriptionAction",
@@ -492,12 +496,14 @@ impl ActionPayload {
             ActionPayload::Scry(_) => "ScryAction",
             ActionPayload::SetMove(_) => "SetMoveAction",
             ActionPayload::SetDontTrigger(_) => "SetDontTriggerAction",
+            ActionPayload::ShakeScreen(_) => "ShakeScreenAction",
             ActionPayload::ShowCard(_) => "ShowCardAction",
             ActionPayload::ShowCardAndPoof(_) => "ShowCardAndPoofAction",
             ActionPayload::Sfx(_) => "SFXAction",
             ActionPayload::SpawnMonster(_) => "SpawnMonsterAction",
             ActionPayload::Suicide(_) => "SuicideAction",
             ActionPayload::TextAboveCreature(_) => "TextAboveCreatureAction",
+            ActionPayload::TextCentered(_) => "TextCenteredAction",
             ActionPayload::TransformCardInHand(_) => "TransformCardInHandAction",
             ActionPayload::Unlimbo(_) => "UnlimboAction",
             ActionPayload::UpdateCardDescription(_) => "UpdateCardDescriptionAction",
@@ -765,6 +771,30 @@ pub struct SetDontTriggerActionState {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ShakeScreenActionState {
+    pub start_duration_bits: F32Bits,
+    pub shake_duration: ScreenShakeDuration,
+    pub intensity: ScreenShakeIntensity,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ScreenShakeDuration {
+    Short,
+    Medium,
+    Long,
+    ExtraLong,
+    Unknown { source_name: String },
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ScreenShakeIntensity {
+    Low,
+    Medium,
+    High,
+    Unknown { source_name: String },
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ShowCardActionState {
     pub card_ref: CardRef,
 }
@@ -800,6 +830,12 @@ pub struct SuicideActionState {
 pub struct TextAboveCreatureActionState {
     pub used: bool,
     pub message: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TextCenteredActionState {
+    pub used: bool,
+    pub message: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
