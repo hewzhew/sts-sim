@@ -3,14 +3,15 @@ use crate::runtime::combat::{CombatCard, CombatState};
 use smallvec::SmallVec;
 
 pub fn pummel_play(
-    _state: &CombatState,
+    state: &CombatState,
     card: &CombatCard,
     target: Option<crate::core::EntityId>,
 ) -> SmallVec<[ActionInfo; 4]> {
     let target = target.expect("Pummel requires a valid target!");
+    let evaluated = crate::content::cards::evaluate_card_for_play(card, state, Some(target));
     let mut actions = smallvec::SmallVec::new();
-    let damage = card.base_damage_mut;
-    let amount = card.base_magic_num_mut; // 4, upgraded 5
+    let damage = evaluated.base_damage_mut;
+    let amount = evaluated.base_magic_num_mut;
 
     for _ in 0..amount {
         actions.push(ActionInfo {

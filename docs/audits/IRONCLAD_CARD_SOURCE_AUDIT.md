@@ -1725,6 +1725,123 @@ Coverage:
 - `ironclad_limit_and_strike_scaling_definitions_match_java_sources`
 - `ironclad_limit_and_strike_scaling_runtime_actions_match_java_use_methods`
 
+## Batch 14 - Multi-Hit / Wound Generation / Rage Timing Coverage
+
+### Pommel Strike
+
+Status: `exact`
+
+Java source:
+- `D:/rust/cardcrawl/cards/red/PommelStrike.java`
+
+Rust source:
+- `src/content/cards/mod.rs`
+- `src/content/cards/ironclad/pommel_strike.rs`
+
+Java evidence:
+- Constructor: cost `1`, type `ATTACK`, color `RED`, rarity `COMMON`, target
+  `ENEMY`, `baseDamage = 9`, `baseMagicNumber = magicNumber = 1`, tag `STRIKE`.
+- `use`: queues damage, then draw `this.magicNumber`.
+- `upgrade`: `upgradeDamage(1)` and `upgradeMagicNumber(1)`.
+
+Rust result:
+- Definition matches Java constructor, Strike tag, and upgrades.
+- Runtime already evaluates damage/magic at play time and emits damage before
+  draw.
+
+Coverage:
+- `ironclad_multi_hit_and_rage_definitions_match_java_sources`
+- `ironclad_multi_hit_and_rage_runtime_actions_match_java_use_methods`
+
+### Power Through
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/cards/red/PowerThrough.java`
+
+Rust source:
+- `src/content/cards/mod.rs`
+- `src/content/cards/ironclad/power_through.rs`
+
+Java evidence:
+- Constructor: cost `1`, type `SKILL`, color `RED`, rarity `UNCOMMON`, target
+  `SELF`, `baseBlock = 15`, preview card `Wound`.
+- `use`: queues `MakeTempCardInHandAction(new Wound(), 2)`, then GainBlock.
+- `upgrade`: `upgradeBlock(5)`.
+
+Rust result:
+- Definition matches Java constructor and upgrade block.
+- Runtime now evaluates block at play time before emitting GainBlock.
+- Existing generated-card action adds two unupgraded Wounds to hand before block.
+
+Coverage:
+- `ironclad_multi_hit_and_rage_definitions_match_java_sources`
+- `ironclad_multi_hit_and_rage_runtime_actions_match_java_use_methods`
+
+### Pummel
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/cards/red/Pummel.java`
+- `D:/rust/cardcrawl/actions/common/PummelDamageAction.java`
+
+Rust source:
+- `src/content/cards/mod.rs`
+- `src/content/cards/ironclad/pummel.rs`
+
+Java evidence:
+- Constructor: cost `1`, type `ATTACK`, color `RED`, rarity `UNCOMMON`, target
+  `ENEMY`, `baseDamage = 2`, `exhaust = true`,
+  `baseMagicNumber = magicNumber = 4`.
+- `use`: queues `magicNumber - 1` light Pummel damage actions, then one ordinary
+  DamageAction. Gameplay damage is one hit per magic number.
+- `upgrade`: `upgradeMagicNumber(1)`.
+
+Rust result:
+- Definition matches Java constructor, exhaust flag, and upgrade magic.
+- Runtime now evaluates damage and magic at play time before emitting one damage
+  action per hit.
+
+Coverage:
+- `ironclad_multi_hit_and_rage_definitions_match_java_sources`
+- `ironclad_multi_hit_and_rage_runtime_actions_match_java_use_methods`
+
+### Rage
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/cards/red/Rage.java`
+- `D:/rust/cardcrawl/powers/RagePower.java`
+
+Rust source:
+- `src/content/cards/mod.rs`
+- `src/content/cards/ironclad/rage.rs`
+- `src/content/powers/core/rage.rs`
+- `src/content/powers/mod.rs`
+
+Java evidence:
+- Constructor: cost `0`, type `SKILL`, color `RED`, rarity `UNCOMMON`, target
+  `SELF`, `baseMagicNumber = magicNumber = 3`.
+- `use`: SFX/VFX only, then applies `RagePower(p, this.magicNumber)`.
+- `upgrade`: `upgradeMagicNumber(2)`.
+- `RagePower.onUseCard`: if the played card is an Attack, queues GainBlock for
+  the Rage amount.
+- `RagePower.atEndOfTurn`: removes Rage. It is not a start-of-turn removal.
+
+Rust result:
+- Fixed definition target to `SELF`.
+- Runtime now evaluates magic at play time before applying Rage.
+- Existing attack-only block hook matches Java.
+- Fixed power lifecycle so Rage removes at end of turn instead of start of turn.
+
+Coverage:
+- `ironclad_multi_hit_and_rage_definitions_match_java_sources`
+- `ironclad_multi_hit_and_rage_runtime_actions_match_java_use_methods`
+- `rage_power_hooks_match_java_source`
+
 ## Full Ironclad Queue
 
 Cards remain `unreviewed` until their Java file, Rust definition, Rust runtime,
@@ -1783,10 +1900,10 @@ and supporting engine behavior have all been checked.
 | 49 | `Metallicize.java` | `metallicize.rs` | `wrong-fixed` |
 | 50 | `Offering.java` | `offering.rs` | `wrong-fixed` |
 | 51 | `PerfectedStrike.java` | `perfected_strike.rs` | `wrong-fixed` |
-| 52 | `PommelStrike.java` | `pommel_strike.rs` | `unreviewed` |
-| 53 | `PowerThrough.java` | `power_through.rs` | `unreviewed` |
-| 54 | `Pummel.java` | `pummel.rs` | `unreviewed` |
-| 55 | `Rage.java` | `rage.rs` | `unreviewed` |
+| 52 | `PommelStrike.java` | `pommel_strike.rs` | `exact` |
+| 53 | `PowerThrough.java` | `power_through.rs` | `wrong-fixed` |
+| 54 | `Pummel.java` | `pummel.rs` | `wrong-fixed` |
+| 55 | `Rage.java` | `rage.rs` | `wrong-fixed` |
 | 56 | `Rampage.java` | `rampage.rs` | `unreviewed` |
 | 57 | `Reaper.java` | `reaper.rs` | `unreviewed` |
 | 58 | `RecklessCharge.java` | `reckless_charge.rs` | `unreviewed` |

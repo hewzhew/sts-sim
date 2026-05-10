@@ -685,7 +685,7 @@ pub fn resolve_power_at_turn_start(
     amount: i32,
 ) -> smallvec::SmallVec<[crate::runtime::action::Action; 2]> {
     match id {
-        PowerId::FlameBarrier | PowerId::Rage => {
+        PowerId::FlameBarrier => {
             smallvec::smallvec![crate::runtime::action::Action::RemovePower {
                 target: owner,
                 power_id: id
@@ -779,6 +779,10 @@ pub fn resolve_power_at_end_of_turn(
         PowerId::Constricted => core::constricted::at_end_of_turn(owner, amount),
         PowerId::Fading => core::fading::at_end_of_turn(owner, amount),
         PowerId::LoseStrength => core::lose_strength::at_end_of_turn(owner, amount),
+        PowerId::Rage => smallvec::smallvec![crate::runtime::action::Action::RemovePower {
+            target: owner,
+            power_id: PowerId::Rage,
+        }],
         PowerId::DexterityDown => core::dexterity_down::at_end_of_turn(owner, amount),
         PowerId::NoDraw => core::no_draw::at_end_of_turn(owner),
         PowerId::Ritual => core::ritual::at_end_of_turn(owner, amount, power.extra_data),

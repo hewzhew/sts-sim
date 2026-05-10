@@ -2550,3 +2550,172 @@ fn limit_break_and_metallicize_hooks_match_java_sources() {
         }]
     );
 }
+
+#[test]
+fn ironclad_multi_hit_and_rage_definitions_match_java_sources() {
+    let pommel = get_card_definition(CardId::PommelStrike);
+    assert_eq!(pommel.card_type, CardType::Attack);
+    assert_eq!(pommel.rarity, CardRarity::Common);
+    assert_eq!(pommel.cost, 1);
+    assert_eq!(pommel.base_damage, 9);
+    assert_eq!(pommel.base_magic, 1);
+    assert_eq!(pommel.target, CardTarget::Enemy);
+    assert!(pommel.tags.contains(&CardTag::Strike));
+    assert_eq!(pommel.upgrade_damage, 1);
+    assert_eq!(pommel.upgrade_magic, 1);
+
+    let power_through = get_card_definition(CardId::PowerThrough);
+    assert_eq!(power_through.card_type, CardType::Skill);
+    assert_eq!(power_through.rarity, CardRarity::Uncommon);
+    assert_eq!(power_through.cost, 1);
+    assert_eq!(power_through.base_block, 15);
+    assert_eq!(power_through.target, CardTarget::SelfTarget);
+    assert_eq!(power_through.upgrade_block, 5);
+
+    let pummel = get_card_definition(CardId::Pummel);
+    assert_eq!(pummel.card_type, CardType::Attack);
+    assert_eq!(pummel.rarity, CardRarity::Uncommon);
+    assert_eq!(pummel.cost, 1);
+    assert_eq!(pummel.base_damage, 2);
+    assert_eq!(pummel.base_magic, 4);
+    assert_eq!(pummel.target, CardTarget::Enemy);
+    assert!(pummel.exhaust);
+    assert_eq!(pummel.upgrade_magic, 1);
+
+    let rage = get_card_definition(CardId::Rage);
+    assert_eq!(rage.card_type, CardType::Skill);
+    assert_eq!(rage.rarity, CardRarity::Uncommon);
+    assert_eq!(rage.cost, 0);
+    assert_eq!(rage.base_magic, 3);
+    assert_eq!(rage.target, CardTarget::SelfTarget);
+    assert_eq!(rage.upgrade_magic, 2);
+}
+
+#[test]
+fn ironclad_multi_hit_and_rage_runtime_actions_match_java_use_methods() {
+    let mut state = crate::test_support::blank_test_combat();
+    crate::content::powers::store::set_powers_for(
+        &mut state,
+        0,
+        vec![Power {
+            power_type: PowerId::Strength,
+            instance_id: None,
+            amount: 1,
+            extra_data: 0,
+            just_applied: false,
+        }],
+    );
+
+    let mut pommel_plus = CombatCard::new(CardId::PommelStrike, 300);
+    pommel_plus.upgrades = 1;
+    let pommel_actions = resolve_card_play(CardId::PommelStrike, &state, &pommel_plus, Some(111));
+    assert_eq!(pommel_actions.len(), 2);
+    match &pommel_actions[0].action {
+        Action::Damage(info) => {
+            assert_eq!(info.source, 0);
+            assert_eq!(info.target, 111);
+            assert_eq!(info.base, 11);
+            assert_eq!(info.output, 11);
+            assert_eq!(info.damage_type, DamageType::Normal);
+        }
+        other => panic!("Pommel Strike+ should damage first, got {other:?}"),
+    }
+    assert!(matches!(pommel_actions[1].action, Action::DrawCards(2)));
+
+    let mut power_through_plus = CombatCard::new(CardId::PowerThrough, 301);
+    power_through_plus.upgrades = 1;
+    let power_through_actions =
+        resolve_card_play(CardId::PowerThrough, &state, &power_through_plus, None);
+    assert_eq!(power_through_actions.len(), 2);
+    assert!(matches!(
+        power_through_actions[0].action,
+        Action::MakeTempCardInHand {
+            card_id: CardId::Wound,
+            amount: 2,
+            upgraded: false
+        }
+    ));
+    assert!(matches!(
+        power_through_actions[1].action,
+        Action::GainBlock {
+            target: 0,
+            amount: 20
+        }
+    ));
+
+    let mut pummel_plus = CombatCard::new(CardId::Pummel, 302);
+    pummel_plus.upgrades = 1;
+    let pummel_actions = resolve_card_play(CardId::Pummel, &state, &pummel_plus, Some(111));
+    assert_eq!(pummel_actions.len(), 5);
+    for action in pummel_actions {
+        match action.action {
+            Action::Damage(info) => {
+                assert_eq!(info.source, 0);
+                assert_eq!(info.target, 111);
+                assert_eq!(info.base, 3);
+                assert_eq!(info.output, 3);
+                assert_eq!(info.damage_type, DamageType::Normal);
+            }
+            other => panic!("Pummel+ should emit one damage action per hit, got {other:?}"),
+        }
+    }
+
+    let mut rage_plus = CombatCard::new(CardId::Rage, 303);
+    rage_plus.upgrades = 1;
+    let rage_actions = resolve_card_play(CardId::Rage, &state, &rage_plus, None);
+    assert_eq!(rage_actions.len(), 1);
+    assert!(matches!(
+        rage_actions[0].action,
+        Action::ApplyPower {
+            source: 0,
+            target: 0,
+            power_id: PowerId::Rage,
+            amount: 5
+        }
+    ));
+}
+
+#[test]
+fn rage_power_hooks_match_java_source() {
+    let state = crate::test_support::blank_test_combat();
+    let strike = CombatCard::new(CardId::Strike, 310);
+    let defend = CombatCard::new(CardId::Defend, 311);
+    let rage_block =
+        crate::content::powers::resolve_power_on_card_played(PowerId::Rage, &state, 0, &strike, 5);
+    assert_eq!(
+        rage_block.as_slice(),
+        &[Action::GainBlock {
+            target: 0,
+            amount: 5
+        }]
+    );
+    assert!(crate::content::powers::resolve_power_on_card_played(
+        PowerId::Rage,
+        &state,
+        0,
+        &defend,
+        5,
+    )
+    .is_empty());
+    assert!(
+        crate::content::powers::resolve_power_at_turn_start(PowerId::Rage, &state, 0, 5).is_empty()
+    );
+    assert_eq!(
+        crate::content::powers::resolve_power_at_end_of_turn(
+            &Power {
+                power_type: PowerId::Rage,
+                instance_id: None,
+                amount: 5,
+                extra_data: 0,
+                just_applied: false,
+            },
+            &state,
+            0,
+        )
+        .as_slice(),
+        &[Action::RemovePower {
+            target: 0,
+            power_id: PowerId::Rage
+        }]
+    );
+}

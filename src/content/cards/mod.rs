@@ -2391,7 +2391,7 @@ pub fn get_card_definition(id: CardId) -> CardDefinition {
             base_damage: 0,
             base_block: 0,
             base_magic: 3,
-            target: CardTarget::None,
+            target: CardTarget::SelfTarget,
             is_multi_damage: false,
             exhaust: false,
             ethereal: false,
