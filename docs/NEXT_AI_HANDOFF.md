@@ -9,15 +9,17 @@ Continue Java-source-backed mechanics cleanup. Do not add strategy heuristics, b
 
 ## Last Pushed Checkpoint
 
-`99b6234 Ground random generated card class pools`
+`c98abfc Ground Clash forced-play semantics`
 
 What it fixed:
 
-- `MakeRandomCardInHand` and `MakeRandomCardInDrawPile` now use `state.meta.player_class` instead of hardcoded Ironclad pools.
-- Added Silent regression tests proving random generated combat cards do not leak Ironclad cards.
+- Java `Clash.canUse(...)` blocks only manual play when hand contains non-attacks.
+- Java `Clash.use(...)` always queues damage.
+- Rust now keeps the manual play gate in `can_play_card`, but `resolve_card_play(Clash)` emits damage for forced-play paths.
 
 Verification already passed:
 
+- `cargo test -q content::cards::tests::ironclad_attack_condition_and_dot_power_runtime_actions_match_java_use_methods`
 - `cargo test -q engine::action_handlers::cards::tests`
 - `cargo check -q`
 - `git diff --check`
@@ -26,32 +28,29 @@ Verification already passed:
 
 Files changed:
 
-- `src/content/cards/ironclad/clash.rs`
-- `src/content/cards/tests.rs`
+- `src/engine/pending_choices.rs`
 
 Java evidence:
 
-- `D:\rust\cardcrawl\cards\red\Clash.java`
-- `D:\rust\cardcrawl\actions\common\PlayTopCardAction.java`
+- `D:\rust\cardcrawl\actions\unique\DualWieldAction.java`
+- `D:\rust\cardcrawl\actions\common\MakeTempCardInHandAction.java`
 
 Finding:
 
-- Java `Clash.canUse(...)` blocks only manual play when hand contains non-attacks.
-- Java `Clash.use(...)` always queues damage.
-- Forced play paths such as `PlayTopCardAction` / Havoc-style play should execute `Clash.use(...)`; they should not be blocked by manual `canUse` rules.
+- Java `DualWieldAction` creates copies via `MakeTempCardInHandAction`.
+- Rust pending hand-select copy path was manually pushing copies with `uuid = 60000 + hand.len()`.
+- That bypassed `card_uuid_counter` and generated-card hand overflow behavior.
 
 Implemented locally:
 
-- Removed the hand non-attack check from `clash_play`.
-- Kept the manual play gate in `can_play_card`.
-- Updated the Ironclad runtime test to assert:
-  - manual `can_play_card(Clash)` still fails with a Defend in hand;
-  - direct `resolve_card_play(Clash)` still emits DamageAction, matching Java `use()`.
+- `HandSelectReason::Copy` now calls `handle_make_copy_in_hand`.
+- Added a pending-choice test proving generated copies use `card_uuid_counter` and overflow to discard when hand is full.
 
 Verification already passed for this uncommitted work:
 
-- `cargo test -q content::cards::tests::ironclad_attack_condition_and_dot_power_runtime_actions_match_java_use_methods`
-- `cargo test -q engine::action_handlers::cards::tests`
+- `cargo test -q engine::pending_choices::tests`
+- `cargo test -q content::cards::tests::ironclad_copy_and_block_definitions_match_java_sources`
+- `cargo test -q content::cards::tests::ironclad_block_exhaust_and_ethereal_definitions_match_java_sources`
 
 Before continuing:
 
@@ -83,4 +82,3 @@ Useful reminders:
 - Java `CardGroup` top is the list end.
 - Java `MakeTempCardInDrawPileAction`: `toBottom` -> bottom, `randomSpot` -> random spot, otherwise top.
 - Java `CardGroup.addToRandomSpot` never creates a new top when the group is nonempty; Rust helper already maps this.
-

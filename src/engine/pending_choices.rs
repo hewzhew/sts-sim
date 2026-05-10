@@ -209,11 +209,11 @@ pub fn handle_hand_select(
                             combat_state.zones.hand.iter().position(|c| c.uuid == *uuid)
                         {
                             let card = combat_state.zones.hand[pos].clone();
-                            for _ in 0..amount {
-                                let mut copy = card.clone();
-                                copy.uuid = 60000 + combat_state.zones.hand.len() as u32;
-                                combat_state.zones.hand.push(copy);
-                            }
+                            crate::engine::action_handlers::cards::handle_make_copy_in_hand(
+                                Box::new(card),
+                                amount,
+                                combat_state,
+                            );
                         }
                     }
                 }
@@ -363,10 +363,10 @@ pub fn handle_grid_select(
 
 #[cfg(test)]
 mod tests {
-    use super::handle_scry;
+    use super::{handle_hand_select, handle_scry};
     use crate::content::cards::CardId;
     use crate::runtime::combat::CombatCard;
-    use crate::state::core::{ClientInput, EngineState};
+    use crate::state::core::{ClientInput, EngineState, HandSelectReason};
     use crate::test_support::blank_test_combat;
 
     #[test]
@@ -430,5 +430,56 @@ mod tests {
         assert!(result.is_err());
         assert_eq!(combat_state.zones.draw_pile.len(), 2);
         assert!(combat_state.zones.discard_pile.is_empty());
+    }
+
+    #[test]
+    fn hand_select_copy_uses_generated_card_uuid_counter_and_hand_overflow_rules() {
+        let mut engine_state =
+            EngineState::PendingChoice(crate::state::core::PendingChoice::HandSelect {
+                reason: HandSelectReason::Copy { amount: 3 },
+                candidate_uuids: vec![10],
+                min_cards: 1,
+                max_cards: 1,
+                can_cancel: false,
+            });
+        let mut combat_state = blank_test_combat();
+        combat_state.zones.card_uuid_counter = 100;
+        combat_state.zones.hand = vec![CombatCard::new(CardId::Strike, 10)];
+        for uuid in 11..20 {
+            combat_state
+                .zones
+                .hand
+                .push(CombatCard::new(CardId::Defend, uuid));
+        }
+
+        handle_hand_select(
+            &mut engine_state,
+            &mut combat_state,
+            &[10],
+            1,
+            true,
+            false,
+            HandSelectReason::Copy { amount: 3 },
+            ClientInput::SubmitHandSelect(vec![10]),
+        )
+        .expect("copy selection should resolve");
+
+        assert_eq!(engine_state, EngineState::CombatProcessing);
+        assert_eq!(combat_state.zones.card_uuid_counter, 103);
+        assert_eq!(combat_state.zones.hand.len(), 10);
+        assert_eq!(combat_state.zones.discard_pile.len(), 3);
+        assert_eq!(
+            combat_state
+                .zones
+                .discard_pile
+                .iter()
+                .map(|card| (card.id, card.uuid))
+                .collect::<Vec<_>>(),
+            vec![
+                (CardId::Strike, 101),
+                (CardId::Strike, 102),
+                (CardId::Strike, 103),
+            ]
+        );
     }
 }
