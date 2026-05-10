@@ -218,6 +218,7 @@ pub fn evaluate_card(card: &mut CombatCard, state: &CombatState, target: Option<
         .base_damage_override
         .unwrap_or(def.base_damage + u * def.upgrade_damage) as f32;
     let mut block = (def.base_block + u * def.upgrade_block) as f32;
+    card.base_magic_num_mut = def.base_magic + u * def.upgrade_magic;
 
     // 1. Card specific base overrides (Perfected Strike)
     if card.id == CardId::PerfectedStrike {
@@ -371,7 +372,6 @@ pub fn evaluate_card(card: &mut CombatCard, state: &CombatState, target: Option<
 
     card.base_damage_mut = damage as i32;
     card.base_block_mut = block as i32;
-    card.base_magic_num_mut = def.base_magic + u * def.upgrade_magic;
 }
 
 /// Produces a freshly evaluated combat card for actual play execution.
@@ -418,6 +418,7 @@ pub fn upgraded_base_cost_override(card: &CombatCard) -> Option<i8> {
         CardId::DarkEmbrace if card.upgrades > 0 => Some(1),
         CardId::Entrench if card.upgrades > 0 => Some(1),
         CardId::Exhume if card.upgrades > 0 => Some(0),
+        CardId::Havoc if card.upgrades > 0 => Some(0),
         CardId::Madness if card.upgrades > 0 => Some(0),
         _ => None,
     }

@@ -1231,6 +1231,147 @@ Coverage:
 - `ironclad_fire_and_strength_runtime_actions_match_java_use_methods`
 - `fire_breathing_flame_barrier_and_fiend_fire_hooks_match_java_sources`
 
+## Batch 10 - Topdeck / Ethereal / Strength-Scaling Coverage
+
+### Ghostly Armor
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/cards/red/GhostlyArmor.java`
+- `D:/rust/cardcrawl/actions/utility/ExhaustAllEtherealAction.java`
+
+Rust source:
+- `src/content/cards/mod.rs`
+- `src/content/cards/ironclad/ghostly_armor.rs`
+- `src/content/cards/runtime_impl.rs`
+
+Java evidence:
+- Constructor: cost `1`, type `SKILL`, color `RED`, rarity `UNCOMMON`, target
+  `SELF`, `isEthereal = true`, `baseBlock = 10`.
+- `use`: queues `GainBlockAction(p, p, this.block)`.
+- `triggerOnEndOfPlayerTurn`: queues `ExhaustAllEtherealAction`.
+- `upgrade`: `upgradeBlock(3)`.
+
+Rust result:
+- Definition matches Java constructor, ethereal flag, block, target, and upgrade
+  block.
+- Runtime now evaluates block at play time before emitting GainBlock.
+- Existing end-turn ethereal exhaust pipeline covers the Java trigger without a
+  card-specific UI action.
+
+Coverage:
+- `ironclad_topdeck_and_strength_scaling_definitions_match_java_sources`
+- `ironclad_topdeck_and_strength_scaling_runtime_actions_match_java_use_methods`
+
+### Havoc
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/cards/red/Havoc.java`
+- `D:/rust/cardcrawl/actions/common/PlayTopCardAction.java`
+
+Rust source:
+- `src/content/cards/mod.rs`
+- `src/content/cards/runtime_impl.rs`
+- `src/content/cards/ironclad/havoc.rs`
+- `src/engine/action_handlers/cards.rs`
+
+Java evidence:
+- Constructor: cost `1`, type `SKILL`, color `RED`, rarity `COMMON`, target
+  `NONE`.
+- `use`: queues `PlayTopCardAction(random alive monster, true)`.
+- `upgrade`: `upgradeBaseCost(0)`.
+- `PlayTopCardAction`: if draw and discard are both empty, no-op. If draw is
+  empty, queues itself and `EmptyDeckShuffleAction` on top. Otherwise removes
+  the top draw-pile card, sets `exhaustOnUseOnce`, places it in limbo, applies
+  powers, then queues it for free autoplay.
+- Target selection happens before the draw-pile action resolves; UI positioning
+  and waits are presentation only.
+
+Rust result:
+- Definition matches Java constructor.
+- Fixed upgraded base cost override for `Havoc+` to `0`.
+- Runtime emits a top-card autoplay with `exhaust = true`.
+- `PlayTopCard` now locks a random target before empty-deck shuffle handling
+  instead of waiting until after the top card is drawn.
+
+Coverage:
+- `ironclad_topdeck_and_strength_scaling_definitions_match_java_sources`
+- `ironclad_topdeck_and_strength_scaling_runtime_actions_match_java_use_methods`
+- `headbutt_and_havoc_execution_helpers_match_java_sources`
+
+### Headbutt
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/cards/red/Headbutt.java`
+- `D:/rust/cardcrawl/actions/unique/DiscardPileToTopOfDeckAction.java`
+
+Rust source:
+- `src/content/cards/mod.rs`
+- `src/content/cards/ironclad/headbutt.rs`
+- `src/runtime/action.rs`
+- `src/engine/action_handlers/cards.rs`
+
+Java evidence:
+- Constructor: cost `1`, type `ATTACK`, color `RED`, rarity `COMMON`, target
+  `ENEMY`, `baseDamage = 9`.
+- `use`: queues damage, then `DiscardPileToTopOfDeckAction`.
+- `upgrade`: `upgradeDamage(3)`.
+- `DiscardPileToTopOfDeckAction.update`: if battle is ending, no-op. If discard
+  pile is empty, no-op. If discard has one card, move that card to draw-pile top.
+  If discard has more than one card, open a non-cancellable one-card grid select
+  from discard.
+
+Rust result:
+- Definition matches Java constructor and upgrade damage.
+- Runtime already evaluated damage at play time.
+- Replaced static play-time discard-pile branching with a dedicated
+  `DiscardPileToTopOfDeck` execution action so battle-ending and discard-pile
+  state are checked after the damage action, matching Java ordering.
+
+Coverage:
+- `ironclad_topdeck_and_strength_scaling_definitions_match_java_sources`
+- `ironclad_topdeck_and_strength_scaling_runtime_actions_match_java_use_methods`
+- `headbutt_and_havoc_execution_helpers_match_java_sources`
+
+### Heavy Blade
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/cards/red/HeavyBlade.java`
+- `D:/rust/cardcrawl/powers/StrengthPower.java`
+
+Rust source:
+- `src/content/cards/mod.rs`
+- `src/content/cards/runtime_impl.rs`
+- `src/content/cards/ironclad/heavy_blade.rs`
+- `src/content/powers/core/strength.rs`
+
+Java evidence:
+- Constructor: cost `2`, type `ATTACK`, color `RED`, rarity `COMMON`, target
+  `ENEMY`, `baseDamage = 14`, `baseMagicNumber = magicNumber = 3`.
+- `use`: queues `DamageAction(m, new DamageInfo(p, this.damage,
+  this.damageTypeForTurn))`; VFX is presentation only.
+- `applyPowers` and `calculateCardDamage`: temporarily multiply Strength power
+  amount by `magicNumber`, call the base calculation, then divide it back.
+- `upgrade`: `upgradeMagicNumber(2)` only.
+
+Rust result:
+- Definition matches Java constructor and upgrade magic.
+- Runtime now evaluates damage at play time.
+- Fixed card evaluation ordering so upgraded/base magic is written before
+  card-specific and power damage calculations. This makes Heavy Blade's Strength
+  multiplier use the current magic value instead of stale cached state.
+
+Coverage:
+- `ironclad_topdeck_and_strength_scaling_definitions_match_java_sources`
+- `ironclad_topdeck_and_strength_scaling_runtime_actions_match_java_use_methods`
+
 ## Full Ironclad Queue
 
 Cards remain `unreviewed` until their Java file, Rust definition, Rust runtime,
@@ -1273,10 +1414,10 @@ and supporting engine behavior have all been checked.
 | 33 | `FireBreathing.java` | `fire_breathing.rs` | `wrong-fixed` |
 | 34 | `FlameBarrier.java` | `flame_barrier.rs` | `wrong-fixed` |
 | 35 | `Flex.java` | `flex.rs` | `wrong-fixed` |
-| 36 | `GhostlyArmor.java` | `ghostly_armor.rs` | `unreviewed` |
-| 37 | `Havoc.java` | `havoc.rs` | `unreviewed` |
-| 38 | `Headbutt.java` | `headbutt.rs` | `unreviewed` |
-| 39 | `HeavyBlade.java` | `heavy_blade.rs` | `unreviewed` |
+| 36 | `GhostlyArmor.java` | `ghostly_armor.rs` | `wrong-fixed` |
+| 37 | `Havoc.java` | `havoc.rs` | `wrong-fixed` |
+| 38 | `Headbutt.java` | `headbutt.rs` | `wrong-fixed` |
+| 39 | `HeavyBlade.java` | `heavy_blade.rs` | `wrong-fixed` |
 | 40 | `Hemokinesis.java` | `hemokinesis.rs` | `unreviewed` |
 | 41 | `Immolate.java` | `immolate.rs` | `unreviewed` |
 | 42 | `Impervious.java` | `impervious.rs` | `unreviewed` |

@@ -267,6 +267,7 @@ pub enum Action {
         from: PileType,
         to: PileType,
     },
+    DiscardPileToTopOfDeck,
     ExhumeCard {
         card_uuid: u32,
         upgrade: bool,

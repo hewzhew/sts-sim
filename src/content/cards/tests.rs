@@ -1921,3 +1921,188 @@ fn fire_breathing_flame_barrier_and_fiend_fire_hooks_match_java_sources() {
     assert_eq!(fiend_fire_state.zones.exhaust_pile.len(), 3);
     assert_eq!(fiend_fire_state.entities.monsters[0].current_hp, 19);
 }
+
+#[test]
+fn ironclad_topdeck_and_strength_scaling_definitions_match_java_sources() {
+    let ghostly_armor = get_card_definition(CardId::GhostlyArmor);
+    assert_eq!(ghostly_armor.card_type, CardType::Skill);
+    assert_eq!(ghostly_armor.rarity, CardRarity::Uncommon);
+    assert_eq!(ghostly_armor.cost, 1);
+    assert_eq!(ghostly_armor.base_block, 10);
+    assert_eq!(ghostly_armor.target, CardTarget::SelfTarget);
+    assert!(ghostly_armor.ethereal);
+    assert_eq!(ghostly_armor.upgrade_block, 3);
+
+    let havoc = get_card_definition(CardId::Havoc);
+    assert_eq!(havoc.card_type, CardType::Skill);
+    assert_eq!(havoc.rarity, CardRarity::Common);
+    assert_eq!(havoc.cost, 1);
+    assert_eq!(havoc.target, CardTarget::None);
+    let mut havoc_plus = CombatCard::new(CardId::Havoc, 240);
+    havoc_plus.upgrades = 1;
+    assert_eq!(upgraded_base_cost_override(&havoc_plus), Some(0));
+
+    let headbutt = get_card_definition(CardId::Headbutt);
+    assert_eq!(headbutt.card_type, CardType::Attack);
+    assert_eq!(headbutt.rarity, CardRarity::Common);
+    assert_eq!(headbutt.cost, 1);
+    assert_eq!(headbutt.base_damage, 9);
+    assert_eq!(headbutt.target, CardTarget::Enemy);
+    assert_eq!(headbutt.upgrade_damage, 3);
+
+    let heavy_blade = get_card_definition(CardId::HeavyBlade);
+    assert_eq!(heavy_blade.card_type, CardType::Attack);
+    assert_eq!(heavy_blade.rarity, CardRarity::Common);
+    assert_eq!(heavy_blade.cost, 2);
+    assert_eq!(heavy_blade.base_damage, 14);
+    assert_eq!(heavy_blade.base_magic, 3);
+    assert_eq!(heavy_blade.target, CardTarget::Enemy);
+    assert_eq!(heavy_blade.upgrade_magic, 2);
+}
+
+#[test]
+fn ironclad_topdeck_and_strength_scaling_runtime_actions_match_java_use_methods() {
+    let mut state = crate::test_support::blank_test_combat();
+    crate::content::powers::store::set_powers_for(
+        &mut state,
+        0,
+        vec![Power {
+            power_type: PowerId::Strength,
+            instance_id: None,
+            amount: 2,
+            extra_data: 0,
+            just_applied: false,
+        }],
+    );
+
+    let mut ghostly_armor_plus = CombatCard::new(CardId::GhostlyArmor, 241);
+    ghostly_armor_plus.upgrades = 1;
+    let ghostly_armor_actions =
+        resolve_card_play(CardId::GhostlyArmor, &state, &ghostly_armor_plus, None);
+    assert_eq!(ghostly_armor_actions.len(), 1);
+    assert!(matches!(
+        ghostly_armor_actions[0].action,
+        Action::GainBlock {
+            target: 0,
+            amount: 13
+        }
+    ));
+
+    let havoc_actions = resolve_card_play(
+        CardId::Havoc,
+        &state,
+        &CombatCard::new(CardId::Havoc, 242),
+        None,
+    );
+    assert_eq!(havoc_actions.len(), 1);
+    assert!(matches!(
+        havoc_actions[0].action,
+        Action::PlayTopCard {
+            target: None,
+            exhaust: true
+        }
+    ));
+
+    let mut headbutt_plus = CombatCard::new(CardId::Headbutt, 243);
+    headbutt_plus.upgrades = 1;
+    let headbutt_actions = resolve_card_play(CardId::Headbutt, &state, &headbutt_plus, Some(51));
+    assert_eq!(headbutt_actions.len(), 2);
+    match &headbutt_actions[0].action {
+        Action::Damage(info) => {
+            assert_eq!(info.source, 0);
+            assert_eq!(info.target, 51);
+            assert_eq!(info.base, 14);
+            assert_eq!(info.output, 14);
+            assert_eq!(info.damage_type, DamageType::Normal);
+        }
+        other => panic!("Headbutt+ first action should be damage, got {other:?}"),
+    }
+    assert!(matches!(
+        headbutt_actions[1].action,
+        Action::DiscardPileToTopOfDeck
+    ));
+
+    let mut heavy_blade_plus = CombatCard::new(CardId::HeavyBlade, 244);
+    heavy_blade_plus.upgrades = 1;
+    let heavy_blade_actions =
+        resolve_card_play(CardId::HeavyBlade, &state, &heavy_blade_plus, Some(51));
+    assert_eq!(heavy_blade_actions.len(), 1);
+    match &heavy_blade_actions[0].action {
+        Action::Damage(info) => {
+            assert_eq!(info.source, 0);
+            assert_eq!(info.target, 51);
+            assert_eq!(info.base, 24);
+            assert_eq!(info.output, 24);
+            assert_eq!(info.damage_type, DamageType::Normal);
+        }
+        other => panic!("Heavy Blade+ should multiply Strength by 5, got {other:?}"),
+    }
+}
+
+#[test]
+fn headbutt_and_havoc_execution_helpers_match_java_sources() {
+    let mut headbutt_state = crate::test_support::blank_test_combat();
+    let mut jaw_worm = crate::test_support::test_monster(EnemyId::JawWorm);
+    jaw_worm.id = 61;
+    jaw_worm.current_hp = 0;
+    jaw_worm.is_dying = true;
+    headbutt_state.entities.monsters = vec![jaw_worm];
+    headbutt_state.zones.discard_pile = vec![CombatCard::new(CardId::Strike, 250)];
+    crate::engine::action_handlers::cards::handle_discard_pile_to_top_of_deck(&mut headbutt_state);
+    assert_eq!(headbutt_state.zones.discard_pile.len(), 1);
+    assert!(headbutt_state.zones.draw_pile.is_empty());
+
+    headbutt_state.entities.monsters[0].current_hp = 20;
+    headbutt_state.entities.monsters[0].is_dying = false;
+    crate::engine::action_handlers::cards::handle_discard_pile_to_top_of_deck(&mut headbutt_state);
+    assert!(headbutt_state.zones.discard_pile.is_empty());
+    assert_eq!(headbutt_state.zones.draw_pile.len(), 1);
+    assert_eq!(headbutt_state.zones.draw_pile[0].uuid, 250);
+
+    headbutt_state.zones.discard_pile = vec![
+        CombatCard::new(CardId::Strike, 251),
+        CombatCard::new(CardId::Defend, 252),
+    ];
+    crate::engine::action_handlers::cards::handle_discard_pile_to_top_of_deck(&mut headbutt_state);
+    match headbutt_state.pop_next_action() {
+        Some(Action::SuspendForGridSelect {
+            source_pile,
+            min,
+            max,
+            can_cancel,
+            filter,
+            reason,
+        }) => {
+            assert_eq!(source_pile, crate::state::PileType::Discard);
+            assert_eq!(min, 1);
+            assert_eq!(max, 1);
+            assert!(!can_cancel);
+            assert_eq!(filter, crate::state::GridSelectFilter::Any);
+            assert_eq!(reason, crate::state::GridSelectReason::MoveToDrawPile);
+        }
+        other => {
+            panic!("Headbutt should defer multi-card discard choice to grid select, got {other:?}")
+        }
+    }
+
+    let mut havoc_state = crate::test_support::blank_test_combat();
+    let mut first = crate::test_support::test_monster(EnemyId::JawWorm);
+    first.id = 71;
+    let mut second = crate::test_support::test_monster(EnemyId::Cultist);
+    second.id = 72;
+    second.slot = 1;
+    havoc_state.entities.monsters = vec![first, second];
+    havoc_state.zones.discard_pile = vec![CombatCard::new(CardId::Strike, 260)];
+    crate::engine::action_handlers::cards::handle_play_top_card(None, true, &mut havoc_state);
+    assert!(matches!(
+        havoc_state.pop_next_action(),
+        Some(Action::EmptyDeckShuffle)
+    ));
+    match havoc_state.pop_next_action() {
+        Some(Action::PlayTopCard { target, exhaust }) => {
+            assert!(matches!(target, Some(71 | 72)));
+            assert!(exhaust);
+        }
+        other => panic!("Havoc should lock random target before empty-deck shuffle, got {other:?}"),
+    }
+}

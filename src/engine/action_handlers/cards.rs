@@ -242,6 +242,41 @@ pub fn handle_move_card(
     }
 }
 
+fn monsters_are_basically_dead(state: &CombatState) -> bool {
+    !state
+        .entities
+        .monsters
+        .iter()
+        .any(|m| m.current_hp > 0 && !m.is_dying && !m.is_escaped && !m.half_dead)
+}
+
+pub fn handle_discard_pile_to_top_of_deck(state: &mut CombatState) {
+    if monsters_are_basically_dead(state) {
+        return;
+    }
+
+    match state.zones.discard_pile.len() {
+        0 => {}
+        1 => {
+            let card_uuid = state.zones.discard_pile[0].uuid;
+            handle_move_card(
+                card_uuid,
+                crate::state::PileType::Discard,
+                crate::state::PileType::Draw,
+                state,
+            );
+        }
+        _ => state.queue_action_front(Action::SuspendForGridSelect {
+            source_pile: crate::state::PileType::Discard,
+            min: 1,
+            max: 1,
+            can_cancel: false,
+            filter: crate::state::GridSelectFilter::Any,
+            reason: crate::state::GridSelectReason::MoveToDrawPile,
+        }),
+    }
+}
+
 fn can_upgrade_card_once(card: &crate::runtime::combat::CombatCard) -> bool {
     card.id == CardId::SearingBlow || card.upgrades == 0
 }
@@ -1074,11 +1109,17 @@ pub fn handle_use_potion(slot: usize, target: Option<usize>, state: &mut CombatS
 }
 
 pub fn handle_play_top_card(target: Option<usize>, exhaust: bool, state: &mut CombatState) {
+    let queued_random_target = target
+        .or_else(|| targeting::pick_random_target(state, crate::state::TargetValidation::AnyEnemy));
+
     if state.zones.draw_pile.is_empty() {
         if state.zones.discard_pile.is_empty() {
             return;
         }
-        state.queue_action_front(Action::PlayTopCard { target, exhaust });
+        state.queue_action_front(Action::PlayTopCard {
+            target: queued_random_target,
+            exhaust,
+        });
         state.queue_action_front(Action::EmptyDeckShuffle);
         return;
     }
@@ -1092,8 +1133,6 @@ pub fn handle_play_top_card(target: Option<usize>, exhaust: bool, state: &mut Co
     if crate::content::cards::get_card_definition(card.id).cost == -1 {
         card.energy_on_use = state.turn.energy as i32;
     }
-    let queued_random_target = target
-        .or_else(|| targeting::pick_random_target(state, crate::state::TargetValidation::AnyEnemy));
     let resolved_target = if let Some(validation) =
         targeting::validation_for_card_target(crate::content::cards::effective_target(&card))
     {
