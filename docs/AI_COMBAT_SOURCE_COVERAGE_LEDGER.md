@@ -82,7 +82,7 @@ kernel done; it is the minimum table implementation must extend.
 | `cards/CardQueueItem.java` | card, target, X-cost energy, ignore/autoplay/random/end-turn flags | queued card execution | modeled | `CardQueueItemState` | rewrite |
 | `actions/GameActionManager.java` | `actions`, `preTurnActions`, `cardQueue`, `monsterQueue`, current/previous actions | pending execution state | modeled | `ActionManagerState` | rewrite |
 | `actions/GameActionManager.java` | cards played this turn/combat, orb/stance history, damage/discard/energy counters, turn | public history and hook state | modeled | `ActionManagerState` | rewrite |
-| `actions/AbstractGameAction.java` and subclasses | action type/effect, source/target, amount, damage type, duration/start duration/done, subclass payload | resumable action queue | modeled or unsupported_abort per subclass | `ActionState` | rewrite |
+| `actions/AbstractGameAction.java` and subclasses | action type/effect, source/target, amount, damage type, duration/start duration/done, subclass fields | resumable action queue | modeled or unsupported_abort per subclass | `ActionState`, `UnsupportedActionPayload` | rewrite |
 | `rooms/AbstractRoom.java` | phase, monsters, battle-over flags, cannot-lose, elite/combat-event/smoke/mug flags | room combat lifecycle | modeled | `RoomCombatState` | rewrite |
 | `rooms/AbstractRoom.java` | reward timing and rarity chance fields touched at combat end | terminal boundary and reward-RNG guard | modeled/run_level_materialized | `RoomCombatState`, `CombatLifecycleState` | rewrite |
 | `monsters/AbstractMonster.java` | id, HP/block/powers/lifecycle, `halfDead`, escape/death flags | monster state | modeled | `MonsterState` | rewrite |
@@ -377,9 +377,10 @@ not fields and are not included here.
 `SLASH_HORIZONTAL`, `SLASH_VERTICAL`, `NONE`, `FIRE`, `POISON`, `SHIELD`, and
 `LIGHTNING`.
 
-Subclasses add fields through `ActionState.subclass_payload` only until they
-receive a typed migration row. Unknown subclass state is an `unsupported_abort`
-for trainable/searchable frames, not an ignored field.
+Subclasses may use `ActionState.unsupported_subclass_payload` only as a
+quarantine record while a typed migration row is missing. Any frame containing
+that payload is not trainable and not searchable. Unknown subclass state is an
+`unsupported_abort`, not an ignored field and not a stringly-typed mechanism.
 
 ## Field Ledger: `cards/DamageInfo.java`
 

@@ -410,7 +410,7 @@ ActionState {
   power_ref,
   relic_ref,
   potion_ref,
-  subclass_payload,
+  unsupported_subclass_payload,
 }
 ```
 
@@ -419,8 +419,18 @@ ActionState {
 stored as raw bits. `action_type`, `attack_effect`, and `damage_type` must keep
 the Java enum surface; collapsing missing variants into `Special` is forbidden.
 
-Any action subclass that cannot be serialized and restored must be
-`unsupported_abort` before the frame is used for training or search.
+Any action subclass that cannot be serialized and restored must populate
+`unsupported_subclass_payload` and make the frame `unsupported_abort` before it
+is used for training or search. This field is not a generic escape hatch for
+mechanics; it is a quarantine record for migration:
+
+```text
+UnsupportedActionPayload {
+  source_class,
+  source_fields,
+  abort_reason,
+}
+```
 
 `CardQueueItemState` must include:
 

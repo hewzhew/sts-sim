@@ -269,7 +269,7 @@ pub struct ActionState {
     pub power_ref: Option<PowerRef>,
     pub relic_ref: Option<RelicRef>,
     pub potion_ref: Option<PotionRef>,
-    pub subclass_payload: BTreeMap<String, String>,
+    pub unsupported_subclass_payload: Option<UnsupportedActionPayload>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -309,6 +309,21 @@ pub enum AttackEffect {
     Poison,
     Shield,
     Lightning,
+    Unknown { source_name: String },
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct UnsupportedActionPayload {
+    pub source_class: String,
+    pub source_fields: BTreeMap<String, String>,
+    pub abort_reason: UnsupportedActionAbortReason,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum UnsupportedActionAbortReason {
+    UnmodeledActionSubclass,
+    UnmodeledSourceField { field_name: String },
+    OpaqueEngineState { field_name: String },
     Unknown { source_name: String },
 }
 
