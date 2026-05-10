@@ -1,11 +1,15 @@
 use crate::runtime::action::{Action, ActionInfo, AddTo};
+use crate::runtime::combat::CombatState;
 use smallvec::SmallVec;
 
 pub struct BurningBlood;
 
 impl BurningBlood {
-    pub fn on_victory() -> SmallVec<[ActionInfo; 4]> {
+    pub fn on_victory(state: &CombatState) -> SmallVec<[ActionInfo; 4]> {
         let mut actions = SmallVec::new();
+        if state.entities.player.current_hp <= 0 {
+            return actions;
+        }
         actions.push(ActionInfo {
             action: Action::Heal {
                 target: 0,

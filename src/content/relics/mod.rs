@@ -173,6 +173,9 @@ pub mod waffle;
 pub mod war_paint;
 pub mod whetstone;
 
+#[cfg(test)]
+mod tests;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum RelicTier {
     Starter,
