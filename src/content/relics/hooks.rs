@@ -341,9 +341,6 @@ pub fn on_lose_hp(state: &mut CombatState, amount: i32) -> smallvec::SmallVec<[A
             RelicId::SelfFormingClay => actions.extend(
                 crate::content::relics::self_forming_clay::on_lose_hp(amount),
             ),
-            RelicId::TungstenRod => {
-                actions.extend(crate::content::relics::tungsten_rod::on_lose_hp(amount))
-            }
             RelicId::RunicCube => {
                 actions.extend(crate::content::relics::runic_cube::was_hp_lost(amount))
             }

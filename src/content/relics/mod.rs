@@ -1016,10 +1016,7 @@ pub fn get_relic_subscriptions(id: RelicId) -> RelicSubscriptions {
         }
         RelicId::Sundial => sub.on_shuffle = true,
         RelicId::WarpedTongs => sub.at_turn_start = true,
-        RelicId::TungstenRod => {
-            sub.on_lose_hp = true;
-            sub.on_lose_hp_last = true;
-        }
+        RelicId::TungstenRod => sub.on_lose_hp_last = true,
         // Remaining P1 Relics
         RelicId::Necronomicon => {
             sub.on_use_card = true;

@@ -2080,3 +2080,102 @@ fn pocketwatch_first_turn_and_three_card_limit_match_java() {
     assert_eq!(relic.counter, -1);
     assert_eq!(relic.amount, 0);
 }
+
+#[test]
+fn shared_rare_damage_retention_relic_metadata_matches_java_sources() {
+    assert_eq!(get_relic_tier(RelicId::Calipers), RelicTier::Rare);
+    assert_eq!(get_relic_tier(RelicId::Torii), RelicTier::Rare);
+    assert_eq!(get_relic_tier(RelicId::TungstenRod), RelicTier::Rare);
+
+    let calipers = get_relic_subscriptions(RelicId::Calipers);
+    assert!(calipers.on_calculate_block_retained);
+    assert!(!calipers.at_battle_start);
+
+    let torii = get_relic_subscriptions(RelicId::Torii);
+    assert!(torii.on_attacked_to_change_damage);
+    assert!(!torii.on_lose_hp_last);
+
+    let tungsten = get_relic_subscriptions(RelicId::TungstenRod);
+    assert!(
+        !tungsten.on_lose_hp,
+        "Java Tungsten Rod only overrides onLoseHpLast"
+    );
+    assert!(tungsten.on_lose_hp_last);
+}
+
+#[test]
+fn calipers_retains_only_block_above_fifteen_without_barricade_logic() {
+    assert_eq!(calipers::on_calculate_block_retained(0), 0);
+    assert_eq!(calipers::on_calculate_block_retained(14), 0);
+    assert_eq!(calipers::on_calculate_block_retained(15), 0);
+    assert_eq!(calipers::on_calculate_block_retained(16), 1);
+    assert_eq!(calipers::on_calculate_block_retained(40), 25);
+
+    let mut state = crate::test_support::blank_test_combat();
+    state
+        .entities
+        .player
+        .add_relic(RelicState::new(RelicId::Calipers));
+    assert_eq!(hooks::on_calculate_block_retained(&state, 40), 25);
+}
+
+#[test]
+fn torii_requires_real_non_player_owner_and_normal_non_thorns_damage() {
+    let owned_normal = DamageInfo {
+        source: 901,
+        target: 0,
+        base: 4,
+        output: 4,
+        damage_type: DamageType::Normal,
+        is_modified: true,
+    };
+    assert_eq!(torii::on_attacked_to_change_damage(&owned_normal, 4), 1);
+    assert_eq!(torii::on_attacked_to_change_damage(&owned_normal, 1), 1);
+    assert_eq!(torii::on_attacked_to_change_damage(&owned_normal, 6), 6);
+
+    let player_owned = DamageInfo {
+        source: 0,
+        ..owned_normal.clone()
+    };
+    assert_eq!(torii::on_attacked_to_change_damage(&player_owned, 4), 4);
+
+    let no_owner = DamageInfo {
+        source: NO_SOURCE,
+        ..owned_normal.clone()
+    };
+    assert_eq!(
+        torii::on_attacked_to_change_damage(&no_owner, 4),
+        4,
+        "Java requires info.owner != null; Rust NO_SOURCE must not trigger Torii"
+    );
+
+    let hp_loss = DamageInfo {
+        damage_type: DamageType::HpLoss,
+        ..owned_normal.clone()
+    };
+    assert_eq!(torii::on_attacked_to_change_damage(&hp_loss, 4), 4);
+
+    let thorns = DamageInfo {
+        damage_type: DamageType::Thorns,
+        ..owned_normal
+    };
+    assert_eq!(torii::on_attacked_to_change_damage(&thorns, 4), 4);
+}
+
+#[test]
+fn tungsten_rod_is_only_final_hp_loss_modifier() {
+    assert_eq!(tungsten_rod::modify_hp_loss(0), 0);
+    assert_eq!(tungsten_rod::modify_hp_loss(1), 0);
+    assert_eq!(tungsten_rod::modify_hp_loss(5), 4);
+
+    let mut state = crate::test_support::blank_test_combat();
+    state
+        .entities
+        .player
+        .add_relic(RelicState::new(RelicId::TungstenRod));
+    assert_eq!(hooks::on_lose_hp_last(&state, 5), 4);
+    assert!(
+        hooks::on_lose_hp(&mut state, 5).is_empty(),
+        "Java Tungsten Rod has no onLoseHp action hook"
+    );
+}

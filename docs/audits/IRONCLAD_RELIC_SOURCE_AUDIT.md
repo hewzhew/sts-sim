@@ -2506,6 +2506,94 @@ Coverage:
 - `shared_rare_start_and_turn_relic_metadata_matches_java_sources`
 - `start_relic_action_order_matches_java_non_ui_actions`
 
+## Shared Relic Batch 9 - Rare Damage / Retention Modifiers
+
+### Calipers
+
+Status: `exact`
+
+Java source:
+- `D:/rust/cardcrawl/relics/Calipers.java`
+
+Rust source:
+- `src/content/relics/calipers.rs`
+- `src/engine/core.rs`
+- `src/content/relics/hooks.rs`
+
+Java evidence:
+- Constructor: ID `"Calipers"`, tier `RARE`, landing sound `CLINK`.
+- The relic has no explicit hook method in its own Java class; block-retention
+  behavior is implemented by the player's end/start turn block clearing logic.
+- The gameplay effect is losing `15` block instead of all block when turn block
+  cleanup runs, unless another mechanic such as Barricade preserves all block.
+
+Rust result:
+- Tier and block-retention subscription match the engine-level Java behavior.
+- Retains `max(block - 15, 0)` at the player-turn boundary when Barricade is not
+  present.
+
+Coverage:
+- `shared_rare_damage_retention_relic_metadata_matches_java_sources`
+- `calipers_retains_only_block_above_fifteen_without_barricade_logic`
+
+### Torii
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/relics/Torii.java`
+
+Rust source:
+- `src/content/relics/torii.rs`
+- `src/content/relics/hooks.rs`
+- `src/engine/action_handlers/damage.rs`
+
+Java evidence:
+- Constructor: ID `"Torii"`, tier `RARE`, landing sound `HEAVY`.
+- `onAttacked(info, damageAmount)` returns `1` only when:
+  - `info.owner != null`;
+  - damage type is not `HP_LOSS`;
+  - damage type is not `THORNS`;
+  - final incoming damage is `2..=5`.
+- UI-only flash / relic-above-creature behavior has no simulator state effect.
+
+Rust result:
+- Tier and attacked-damage modifier subscription match Java.
+- Fixed Rust to exclude both player source `0` and `NO_SOURCE`, matching Java's
+  `info.owner != null` guard.
+- HP-loss and thorns damage remain unmodified.
+
+Coverage:
+- `shared_rare_damage_retention_relic_metadata_matches_java_sources`
+- `torii_requires_real_non_player_owner_and_normal_non_thorns_damage`
+
+### Tungsten Rod
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/relics/TungstenRod.java`
+
+Rust source:
+- `src/content/relics/tungsten_rod.rs`
+- `src/content/relics/hooks.rs`
+- `src/engine/action_handlers/damage.rs`
+
+Java evidence:
+- Constructor: ID `"TungstenRod"`, tier `RARE`, landing sound `HEAVY`.
+- `onLoseHpLast(damageAmount)` returns `damageAmount - 1` only when
+  `damageAmount > 0`.
+- The Java relic has no `onLoseHp` action hook.
+
+Rust result:
+- Tier and final HP-loss modifier subscription match Java.
+- Removed the spurious `on_lose_hp` subscription and empty action hook.
+- Keeps the final HP-loss reduction at `max(amount - 1, 0)`.
+
+Coverage:
+- `shared_rare_damage_retention_relic_metadata_matches_java_sources`
+- `tungsten_rod_is_only_final_hp_loss_modifier`
+
 ## Full Ironclad Class-Specific Relic Queue
 
 Relics remain `unreviewed` until their Java file, Rust definition/subscription,
@@ -2600,3 +2688,6 @@ class-specific queue.
 | 66 | `Pocketwatch.java` | `pocketwatch.rs` | `exact` |
 | 67 | `StoneCalendar.java` | `stone_calendar.rs` | `wrong-fixed` |
 | 68 | `ThreadAndNeedle.java` | `thread_and_needle.rs` | `wrong-fixed` |
+| 69 | `Calipers.java` | `calipers.rs` / turn block cleanup | `exact` |
+| 70 | `Torii.java` | `torii.rs` / damage handler | `wrong-fixed` |
+| 71 | `TungstenRod.java` | `tungsten_rod.rs` / damage handler | `wrong-fixed` |
