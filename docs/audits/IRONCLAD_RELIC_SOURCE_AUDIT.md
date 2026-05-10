@@ -2725,6 +2725,206 @@ Coverage:
 - `shared_rare_passive_resource_relic_metadata_matches_java_sources`
 - `lizard_tail_uses_java_counter_gate_and_fairy_priority`
 
+## Shared Relic Batch 11 - Rare Run / Campfire Relics
+
+### Mango
+
+Status: `exact`
+
+Java source:
+- `D:/rust/cardcrawl/relics/Mango.java`
+
+Rust source:
+- `src/content/relics/mango.rs`
+- `src/engine/relic_manager.rs`
+
+Java evidence:
+- Constructor: ID `"Mango"`, tier `RARE`, landing sound `FLAT`.
+- `onEquip`: calls `increaseMaxHp(14, true)`.
+
+Rust result:
+- Tier matches Java.
+- Run-level on-equip increases max HP by `14` and heals current HP by `14`,
+  capped at max HP.
+
+Coverage:
+- `shared_rare_run_campfire_relic_metadata_matches_java_sources`
+- `mango_and_old_coin_on_equip_match_java_resource_changes`
+
+### Old Coin
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/relics/OldCoin.java`
+
+Rust source:
+- `src/content/relics/old_coin.rs`
+- `src/engine/relic_manager.rs`
+- `src/state/run.rs`
+- `src/engine/shop_handler.rs`
+
+Java evidence:
+- Constructor: ID `"Old Coin"`, tier `RARE`, landing sound `CLINK`.
+- `onEquip`: calls `AbstractDungeon.player.gainGold(300)`.
+- `canSpawn`: requires floor `<= 48` unless Endless, and rejects shop rooms.
+
+Rust result:
+- Tier and on-equip gold amount match Java.
+- Ectoplasm blocks the gold gain through the same gain-gold semantics.
+- Added normal relic-pool spawn gating for floor `<= 48`.
+- Shop-room exclusion is handled by shop generation excluding Old Coin from
+  shop relic sale slots.
+
+Coverage:
+- `shared_rare_run_campfire_relic_metadata_matches_java_sources`
+- `mango_and_old_coin_on_equip_match_java_resource_changes`
+- `rare_run_relic_can_spawn_gates_match_java_sources`
+
+### Girya
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/relics/Girya.java`
+
+Rust source:
+- `src/content/relics/girya.rs`
+- `src/content/relics/mod.rs`
+- `src/content/relics/hooks.rs`
+- `src/engine/campfire_handler.rs`
+- `src/state/run.rs`
+
+Java evidence:
+- Constructor: ID `"Girya"`, tier `RARE`, landing sound `HEAVY`, and
+  `counter = 0`.
+- `atBattleStart`: if `counter != 0`, queues player Strength equal to counter
+  with `addToTop`.
+- `addCampfireOption`: adds Lift, enabled while `counter < 3`.
+- `canSpawn`: rejects floor `>= 48` unless Endless and rejects when two of
+  Girya / Peace Pipe / Shovel are already owned.
+
+Rust result:
+- Tier and battle-start subscription match Java.
+- Fixed `RelicState::new(Girya)` to initialize `counter = 0`.
+- Campfire Lift increments counter up to `3`; battle start applies matching
+  Strength with top insertion.
+- Added rare relic-pool spawn gating for floor and two-campfire-relic limit.
+- UI-only relic-above-creature behavior is intentionally not represented.
+
+Coverage:
+- `shared_rare_run_campfire_relic_metadata_matches_java_sources`
+- `girya_lift_counter_and_battle_start_strength_match_java`
+- `rare_run_relic_can_spawn_gates_match_java_sources`
+
+### Peace Pipe
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/relics/PeacePipe.java`
+
+Rust source:
+- `src/engine/campfire_handler.rs`
+- `src/state/run.rs`
+
+Java evidence:
+- Constructor: ID `"Peace Pipe"`, tier `RARE`, landing sound `FLAT`.
+- `addCampfireOption`: adds Toke when the deck has a non-bottled purgeable card.
+- `canSpawn`: rejects floor `>= 48` unless Endless and rejects when two of
+  Girya / Peace Pipe / Shovel are already owned.
+
+Rust result:
+- Tier matches Java. The effect is modeled in campfire option generation and
+  campfire execution, not in a combat hook.
+- Existing Toke path filters bottled cards by bottle relic stored UUID.
+- Added rare relic-pool spawn gating for floor and two-campfire-relic limit.
+
+Coverage:
+- `shared_rare_run_campfire_relic_metadata_matches_java_sources`
+- `rare_run_relic_can_spawn_gates_match_java_sources`
+
+### Prayer Wheel
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/relics/PrayerWheel.java`
+
+Rust source:
+- `src/rewards/generator.rs`
+- `src/state/run.rs`
+
+Java evidence:
+- Constructor: ID `"Prayer Wheel"`, tier `RARE`, landing sound `CLINK`.
+- `canSpawn`: requires floor `<= 48` unless Endless.
+- Reward generation adds an extra card reward for non-boss monster rewards.
+
+Rust result:
+- Tier matches Java.
+- Existing reward generation adds a second card reward for non-boss fights while
+  Prayer Wheel is present.
+- Added normal relic-pool spawn gating for floor `<= 48`.
+
+Coverage:
+- `shared_rare_run_campfire_relic_metadata_matches_java_sources`
+- `prayer_wheel_adds_second_non_boss_card_reward`
+- `rare_run_relic_can_spawn_gates_match_java_sources`
+
+### Shovel
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/relics/Shovel.java`
+
+Rust source:
+- `src/engine/campfire_handler.rs`
+- `src/state/run.rs`
+
+Java evidence:
+- Constructor: ID `"Shovel"`, tier `RARE`, landing sound `FLAT`.
+- `addCampfireOption`: adds Dig.
+- `canSpawn`: rejects floor `>= 48` unless Endless and rejects when two of
+  Girya / Peace Pipe / Shovel are already owned.
+
+Rust result:
+- Tier matches Java. The effect is modeled in campfire option generation and Dig
+  execution, not in a combat hook.
+- Dig grants a relic through a reward screen.
+- Added rare relic-pool spawn gating for floor and two-campfire-relic limit.
+
+Coverage:
+- `shared_rare_run_campfire_relic_metadata_matches_java_sources`
+- `rare_run_relic_can_spawn_gates_match_java_sources`
+
+### Wing Boots
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/relics/WingBoots.java`
+
+Rust source:
+- `src/content/relics/mod.rs`
+- `src/engine/run_loop.rs`
+- `src/state/run.rs`
+
+Java evidence:
+- Constructor: ID `"WingedGreaves"`, tier `RARE`, landing sound `FLAT`, and
+  `counter = 3`.
+- `setCounter(-2)` marks the relic used up.
+- `canSpawn`: requires floor `<= 40` unless Endless.
+
+Rust result:
+- Tier and initial counter `3` match Java.
+- Flight consumes charges in map navigation and marks the relic used up at zero.
+- Added normal relic-pool spawn gating for floor `<= 40`.
+
+Coverage:
+- `shared_rare_run_campfire_relic_metadata_matches_java_sources`
+- `rare_run_relic_can_spawn_gates_match_java_sources`
+
 ## Full Ironclad Class-Specific Relic Queue
 
 Relics remain `unreviewed` until their Java file, Rust definition/subscription,
@@ -2826,3 +3026,10 @@ class-specific queue.
 | 73 | `Turnip.java` | `turnip.rs` / apply-power handler | `wrong-fixed` |
 | 74 | `IceCream.java` | `ice_cream.rs` / turn energy recharge | `wrong-fixed` |
 | 75 | `LizardTail.java` | `lizard_tail.rs` / death revive check | `wrong-fixed` |
+| 76 | `Mango.java` | `mango.rs` / relic manager | `exact` |
+| 77 | `OldCoin.java` | `old_coin.rs` / relic manager / pool gate | `wrong-fixed` |
+| 78 | `Girya.java` | `girya.rs` / campfire handler / pool gate | `wrong-fixed` |
+| 79 | `PeacePipe.java` | campfire handler / pool gate | `wrong-fixed` |
+| 80 | `PrayerWheel.java` | reward generator / pool gate | `wrong-fixed` |
+| 81 | `Shovel.java` | campfire handler / pool gate | `wrong-fixed` |
+| 82 | `WingBoots.java` | run loop / pool gate | `wrong-fixed` |

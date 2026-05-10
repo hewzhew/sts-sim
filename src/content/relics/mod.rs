@@ -395,6 +395,7 @@ impl RelicState {
             | RelicId::Nunchaku
             | RelicId::InkBottle
             | RelicId::IncenseBurner
+            | RelicId::Girya
             | RelicId::HappyFlower
             | RelicId::Sundial
             | RelicId::OrnamentalFan

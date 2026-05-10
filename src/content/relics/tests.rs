@@ -2387,3 +2387,203 @@ fn lizard_tail_uses_java_counter_gate_and_fairy_priority() {
     );
     assert_eq!(bloom_blocks.entities.player.relics[1].counter, -1);
 }
+
+#[test]
+fn shared_rare_run_campfire_relic_metadata_matches_java_sources() {
+    assert_eq!(get_relic_tier(RelicId::Mango), RelicTier::Rare);
+    assert_eq!(get_relic_tier(RelicId::OldCoin), RelicTier::Rare);
+    assert_eq!(get_relic_tier(RelicId::Girya), RelicTier::Rare);
+    assert_eq!(get_relic_tier(RelicId::PeacePipe), RelicTier::Rare);
+    assert_eq!(get_relic_tier(RelicId::PrayerWheel), RelicTier::Rare);
+    assert_eq!(get_relic_tier(RelicId::Shovel), RelicTier::Rare);
+    assert_eq!(get_relic_tier(RelicId::WingBoots), RelicTier::Rare);
+
+    assert_eq!(RelicState::new(RelicId::Girya).counter, 0);
+    assert_eq!(RelicState::new(RelicId::WingBoots).counter, 3);
+
+    assert!(get_relic_subscriptions(RelicId::Girya).at_battle_start);
+    assert!(!get_relic_subscriptions(RelicId::Mango).at_battle_start);
+    assert!(!get_relic_subscriptions(RelicId::OldCoin).at_battle_start);
+    assert!(!get_relic_subscriptions(RelicId::PeacePipe).at_battle_start);
+    assert!(!get_relic_subscriptions(RelicId::PrayerWheel).at_battle_start);
+    assert!(!get_relic_subscriptions(RelicId::Shovel).at_battle_start);
+    assert!(!get_relic_subscriptions(RelicId::WingBoots).at_battle_start);
+}
+
+#[test]
+fn mango_and_old_coin_on_equip_match_java_resource_changes() {
+    let mut mango_run = crate::state::run::RunState::new(1, 0, false, "Ironclad");
+    mango_run.max_hp = 80;
+    mango_run.current_hp = 40;
+    assert!(mango::on_equip(&mut mango_run).is_none());
+    assert_eq!(mango_run.max_hp, 94);
+    assert_eq!(mango_run.current_hp, 54);
+
+    let mut old_coin_run = crate::state::run::RunState::new(1, 0, false, "Ironclad");
+    old_coin_run.gold = 25;
+    assert!(old_coin::on_equip(&mut old_coin_run).is_none());
+    assert_eq!(old_coin_run.gold, 325);
+
+    let mut ectoplasm_run = crate::state::run::RunState::new(1, 0, false, "Ironclad");
+    ectoplasm_run.gold = 25;
+    ectoplasm_run
+        .relics
+        .push(RelicState::new(RelicId::Ectoplasm));
+    assert!(old_coin::on_equip(&mut ectoplasm_run).is_none());
+    assert_eq!(
+        ectoplasm_run.gold, 25,
+        "Java Old Coin uses player.gainGold, so Ectoplasm blocks it"
+    );
+}
+
+#[test]
+fn rare_run_relic_can_spawn_gates_match_java_sources() {
+    fn rare_spawn_result(
+        blocked_candidate: RelicId,
+        floor_num: i32,
+        owned_relics: Vec<RelicState>,
+    ) -> RelicId {
+        let mut run = crate::state::run::RunState::new(1, 0, false, "Ironclad");
+        run.floor_num = floor_num;
+        run.relics = owned_relics;
+        run.rare_relic_pool = vec![RelicId::Mango, blocked_candidate];
+        run.random_relic_by_tier(RelicTier::Rare)
+    }
+
+    assert_eq!(
+        rare_spawn_result(RelicId::OldCoin, 48, vec![]),
+        RelicId::OldCoin
+    );
+    assert_eq!(
+        rare_spawn_result(RelicId::OldCoin, 49, vec![]),
+        RelicId::Mango
+    );
+    assert_eq!(
+        rare_spawn_result(RelicId::PrayerWheel, 49, vec![]),
+        RelicId::Mango
+    );
+    assert_eq!(
+        rare_spawn_result(RelicId::WingBoots, 40, vec![]),
+        RelicId::WingBoots
+    );
+    assert_eq!(
+        rare_spawn_result(RelicId::WingBoots, 41, vec![]),
+        RelicId::Mango
+    );
+
+    assert_eq!(
+        rare_spawn_result(RelicId::Girya, 48, vec![]),
+        RelicId::Mango,
+        "Java Girya/PeacePipe/Shovel reject floorNum >= 48"
+    );
+    assert_eq!(
+        rare_spawn_result(
+            RelicId::Girya,
+            47,
+            vec![
+                RelicState::new(RelicId::PeacePipe),
+                RelicState::new(RelicId::Shovel)
+            ],
+        ),
+        RelicId::Mango,
+        "Java campfire relics reject when two of Girya/Peace Pipe/Shovel are already owned"
+    );
+    assert_eq!(
+        rare_spawn_result(
+            RelicId::Girya,
+            47,
+            vec![RelicState::new(RelicId::PeacePipe)]
+        ),
+        RelicId::Girya
+    );
+    assert_eq!(
+        rare_spawn_result(
+            RelicId::PeacePipe,
+            47,
+            vec![
+                RelicState::new(RelicId::Girya),
+                RelicState::new(RelicId::Shovel)
+            ],
+        ),
+        RelicId::Mango
+    );
+    assert_eq!(
+        rare_spawn_result(
+            RelicId::Shovel,
+            47,
+            vec![
+                RelicState::new(RelicId::Girya),
+                RelicState::new(RelicId::PeacePipe)
+            ],
+        ),
+        RelicId::Mango
+    );
+}
+
+#[test]
+fn girya_lift_counter_and_battle_start_strength_match_java() {
+    let mut engine_state = crate::state::core::EngineState::Campfire;
+    let mut run = crate::state::run::RunState::new(1, 0, false, "Ironclad");
+    run.relics.clear();
+    run.relics.push(RelicState::new(RelicId::Girya));
+
+    assert!(crate::engine::campfire_handler::handle(
+        &mut engine_state,
+        &mut run,
+        Some(crate::state::core::ClientInput::CampfireOption(
+            crate::state::core::CampfireChoice::Lift,
+        )),
+    ));
+    assert_eq!(run.relics[0].counter, 1);
+
+    let actions = girya::Girya::at_battle_start(run.relics[0].counter);
+    assert_eq!(actions.len(), 1);
+    assert_eq!(actions[0].insertion_mode, AddTo::Top);
+    assert!(matches!(
+        actions[0].action,
+        Action::ApplyPower {
+            source: 0,
+            target: 0,
+            power_id: PowerId::Strength,
+            amount: 1
+        }
+    ));
+
+    run.relics[0].counter = 3;
+    let options = crate::engine::campfire_handler::get_available_options(&run);
+    assert!(
+        !options.contains(&crate::state::core::CampfireChoice::Lift),
+        "Java LiftOption is disabled once Girya counter reaches 3"
+    );
+}
+
+#[test]
+fn prayer_wheel_adds_second_non_boss_card_reward() {
+    let mut normal = crate::state::run::RunState::new(1, 0, false, "Ironclad");
+    normal.relics.clear();
+    normal.relics.push(RelicState::new(RelicId::PrayerWheel));
+    let normal_rewards =
+        crate::rewards::generator::generate_combat_rewards(&mut normal, false, false);
+    assert_eq!(
+        normal_rewards
+            .items
+            .iter()
+            .filter(|item| matches!(item, crate::rewards::state::RewardItem::Card { .. }))
+            .count(),
+        2
+    );
+
+    let mut boss = crate::state::run::RunState::new(1, 0, false, "Ironclad");
+    boss.relics.clear();
+    boss.relics.push(RelicState::new(RelicId::PrayerWheel));
+    let boss_rewards = crate::rewards::generator::generate_combat_rewards(&mut boss, false, true);
+    assert_eq!(
+        boss_rewards
+            .items
+            .iter()
+            .filter(|item| matches!(item, crate::rewards::state::RewardItem::Card { .. }))
+            .count(),
+        1,
+        "Java Prayer Wheel does not add an extra boss card reward"
+    );
+}

@@ -1058,9 +1058,27 @@ impl RunState {
             RelicId::Courier | RelicId::MeatOnTheBone | RelicId::SingingBowl => {
                 self.floor_num <= 48
             }
+            RelicId::OldCoin | RelicId::PrayerWheel => self.floor_num <= 48,
             RelicId::Matryoshka => self.floor_num <= 40,
+            RelicId::WingBoots => self.floor_num <= 40,
+            RelicId::Girya | RelicId::PeacePipe | RelicId::Shovel => {
+                self.floor_num < 48 && self.campfire_relic_count() < 2
+            }
             _ => true,
         }
+    }
+
+    fn campfire_relic_count(&self) -> usize {
+        use crate::content::relics::RelicId;
+        self.relics
+            .iter()
+            .filter(|relic| {
+                matches!(
+                    relic.id,
+                    RelicId::Girya | RelicId::PeacePipe | RelicId::Shovel
+                )
+            })
+            .count()
     }
 
     /// Returns a random "screenless" relic of the given tier.
