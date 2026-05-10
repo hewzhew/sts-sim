@@ -352,6 +352,181 @@ not fields and are not included here.
 | `energyGainedThisCombat` | modeled | `ActionManagerState.energy_gained_this_combat` | energy history hooks |
 | `turn` | modeled | `ActionManagerState.turn_index` | turn number |
 
+## Field Ledger: `core/AbstractCreature.java`
+
+| Field | Classification | Schema path | Notes |
+| --- | --- | --- | --- |
+| `logger` | non_combat | none | logging only |
+| `name` | modeled | `CreatureState.name_id` | public identity/display id |
+| `id` | modeled | `CreatureState.creature_id` | combat identity |
+| `powers` | modeled | `CreatureState.powers` | ordered power refs |
+| `isPlayer` | modeled | `CreatureState.is_player` | combatant kind |
+| `isBloodied` | modeled | `CreatureState.is_bloodied` | source field; keep until proven render-only |
+| `drawX`, `drawY`, `dialogX`, `dialogY` | render_only | none | render/tooltip position |
+| `hb` | render_only | none | hitbox; target legality uses public refs instead |
+| `gold` | modeled | `CreatureState.gold` | player gold can change in combat effects |
+| `displayGold` | modeled | `CreatureState.display_gold` | source state; likely render, keep until parity says derived |
+| `isDying` | modeled | `CreatureState.lifecycle` | death lifecycle |
+| `isDead` | modeled | `CreatureState.lifecycle` | death lifecycle |
+| `halfDead` | modeled | `CreatureState.half_dead` | boss/minion special death behavior |
+| `flipHorizontal`, `flipVertical` | render_only | none | render orientation |
+| `escapeTimer` | modeled | `CreatureState.escape_timer_bits` | Java timer controls escape completion; Rust may structurally redesign later |
+| `isEscaping` | modeled | `CreatureState.escape_state` | escape lifecycle |
+| `TIP_X_THRESHOLD`, `MULTI_TIP_Y_OFFSET`, `TIP_OFFSET_R_X`, `TIP_OFFSET_L_X`, `TIP_OFFSET_Y` | render_only | none | tooltip constants |
+| `tips` | render_only | none | UI tips |
+| `uiStrings`, `TEXT` | non_combat | none | localization |
+| `healthHb`, `healthHideTimer`, health bar width/timer/color fields, `hbAlpha`, `hbYOffset` | render_only | none | health UI rendering |
+| `lastDamageTaken` | modeled | `CreatureState.last_damage_taken` | damage hook/history state |
+| `hb_x`, `hb_y`, `hb_w`, `hb_h` | render_only | none | hitbox geometry |
+| `currentHealth` | modeled | `CreatureState.hp` | HP |
+| `maxHealth` | modeled | `CreatureState.max_hp` | max HP |
+| `currentBlock` | modeled | `CreatureState.block` | block |
+| block/health UI constants and colors | render_only | none | rendering constants |
+| `tint`, `sr`, `shakeToggle`, shake constants | render_only | none | VFX/rendering |
+| `animX`, `animY`, `vX`, `vY`, `animation`, `animationTimer`, animation constants | render_only | none | animation |
+| `atlas`, `skeleton`, `state`, `stateData` | render_only | none | animation runtime |
+| `RETICLE_W`, `reticleAlpha`, `reticleColor`, `reticleShadowColor`, `reticleRendered`, `reticleOffset`, `reticleAnimTimer`, `RETICLE_OFFSET_DIST` | render_only | none | targeting UI |
+
+## Field Ledger: `cards/AbstractCard.java`
+
+| Field | Classification | Schema path | Notes |
+| --- | --- | --- | --- |
+| `logger` | non_combat | none | logging only |
+| `type` | modeled | `CardInstance.card_type` | card mechanics |
+| `cost` | modeled | `CardInstance.cost` | base cost |
+| `costForTurn` | modeled | `CardInstance.cost_for_turn` | current cost |
+| `price` | run_level_materialized | `CardInstance.price` | shop/run value; preserved on card instance |
+| `chargeCost` | modeled | `CardInstance.charge_cost` | X-cost/charge behavior |
+| `isCostModified` | modeled | `CardInstance.is_cost_modified` | cost display/logic |
+| `isCostModifiedForTurn` | modeled | `CardInstance.is_cost_modified_for_turn` | cost display/logic |
+| `retain` | modeled | `CardInstance.retain` | end-turn discard behavior |
+| `selfRetain` | modeled | `CardInstance.self_retain` | end-turn discard behavior |
+| `dontTriggerOnUseCard` | modeled | `CardInstance.dont_trigger_on_use_card` | on-use hook suppression |
+| `rarity` | modeled | `CardInstance.rarity` | generation/reward context |
+| `color` | modeled | `CardInstance.color` | card pool/color mechanics |
+| `isInnate` | modeled | `CardInstance.innate` | opening hand behavior |
+| `isLocked` | non_combat | `CardInstance.is_locked` | unlock state; retained for source parity but not combat mechanics |
+| `showEvokeValue` | modeled | `CardInstance.show_evoke_value` | Defect hover/orb preview; keep because source reads it in player update |
+| `showEvokeOrbCount` | modeled | `CardInstance.show_evoke_orb_count` | Defect hover/orb preview |
+| `keywords` | modeled | `CardInstance.keywords` | card metadata; may affect public text/observation |
+| card price constants | non_combat | none | constants |
+| `isUsed` | modeled | `CardInstance.is_used` | use-state flag |
+| `upgraded` | modeled | `CardInstance.upgraded` | upgrade state |
+| `timesUpgraded` | modeled | `CardInstance.times_upgraded` | upgrade count |
+| `misc` | modeled | `CardInstance.misc` | card-specific persistent value |
+| `energyOnUse` | modeled | `CardInstance.energy_on_use` | X-cost and queued use |
+| `ignoreEnergyOnUse` | modeled | `CardInstance.ignore_energy_on_use` | queued/autoplay use |
+| `isSeen` | non_combat | `CardInstance.is_seen` | unlock/compendium; retained for source parity |
+| `upgradedCost` | modeled | `CardInstance.upgraded_cost` | upgrade display/state |
+| `upgradedDamage` | modeled | `CardInstance.upgraded_damage` | upgrade display/state |
+| `upgradedBlock` | modeled | `CardInstance.upgraded_block` | upgrade display/state |
+| `upgradedMagicNumber` | modeled | `CardInstance.upgraded_magic_number` | upgrade display/state |
+| `uuid` | modeled | `CardInstance.source_uuid` | duplicate card identity |
+| `isSelected` | modeled | `CardInstance.is_selected` | grid/hand selection state |
+| `exhaust` | modeled | `CardInstance.exhaust` | post-use behavior |
+| `returnToHand` | modeled | `CardInstance.return_to_hand` | post-use behavior |
+| `shuffleBackIntoDrawPile` | modeled | `CardInstance.shuffle_back_into_draw_pile` | post-use behavior |
+| `isEthereal` | modeled | `CardInstance.ethereal` | end-turn exhaust |
+| `tags` | modeled | `CardInstance.tags` | tag-based mechanics |
+| `multiDamage` | modeled | `CardInstance.multi_damage` | multi-target damage |
+| `isMultiDamage` | modeled | `CardInstance.is_multi_damage` | multi-target damage flag |
+| base/current damage, block, magic, heal, draw, discard fields | modeled | `CardInstance.*` value fields | source fields mirrored in `CardInstance` |
+| `isDamageModified` | modeled | `CardInstance.is_damage_modified` | rendered/combat value |
+| `isBlockModified` | modeled | `CardInstance.is_block_modified` | rendered/combat value |
+| `isMagicNumberModified` | modeled | `CardInstance.is_magic_number_modified` | rendered/combat value |
+| `damageType` | modeled | `CardInstance.damage_type` | damage semantics |
+| `damageTypeForTurn` | modeled | `CardInstance.damage_type_for_turn` | current damage semantics |
+| `target` | modeled | `CardInstance.target` | target legality |
+| `purgeOnUse` | modeled | `CardInstance.purge_on_use` | post-use behavior |
+| `exhaustOnUseOnce` | modeled | `CardInstance.exhaust_on_use_once` | post-use behavior |
+| `exhaustOnFire` | modeled | `CardInstance.exhaust_on_fire` | fire/exhaust behavior |
+| `freeToPlayOnce` | modeled | `CardInstance.free_to_play_once` | cost behavior |
+| `isInAutoplay` | modeled | `CardInstance.is_in_autoplay` | queued/autoplay behavior |
+| static atlases, orb regions, portraits, colors, dimensions, hitboxes, glow timers, hover timers, card render strings | render_only | none | rendering/UI only |
+| `assetUrl` | render_only | none | asset path |
+| `fadingOut`, `transparency`, `targetTransparency`, `targetAngle`, `angle`, position/scale fields | render_only | none | UI animation |
+| `cardsToPreview` | render_only | none | card preview UI |
+| `originalName` | modeled | `CardInstance.original_name_id` | source identity/display |
+| `name` | modeled | `CardInstance.name_id` | source identity/display |
+| `rawDescription`, `description`, `cantUseMessage` | modeled | `CardInstance.cant_use_message` and payload | public text/unplayable reason; full text can be payload |
+| `cardID` | modeled | `CardInstance.card_id` | card identity |
+| `inBottleFlame` | run_level_materialized | `CardInstance.in_bottle_flame` | bottled innate/run state |
+| `inBottleLightning` | run_level_materialized | `CardInstance.in_bottle_lightning` | bottled innate/run state |
+| `inBottleTornado` | run_level_materialized | `CardInstance.in_bottle_tornado` | bottled innate/run state |
+| `glowColor` | render_only | none | UI glow |
+
+## Field Ledger: `cards/CardGroup.java`
+
+| Field | Classification | Schema path | Notes |
+| --- | --- | --- | --- |
+| `logger` | non_combat | none | logging only |
+| `group` | modeled | `CardZone.ordered_card_refs` | card order |
+| `HAND_START_X`, `HAND_OFFSET_X`, hand push constants, draw/discard pile coordinates | render_only | none | layout |
+| `type` | modeled | `CardZone.group_type` / `zone_kind` | zone behavior |
+| `handPositioningMap` | modeled | `CardZone.hand_positioning_map` | source state; likely UI but kept until parity proves derived |
+| `queued` | modeled | `CardZone.queued_card_refs` | internal queue bookkeeping |
+| `inHand` | modeled | `CardZone.in_hand_refs` | hand bookkeeping |
+
+## Field Ledger: `cards/CardQueueItem.java`
+
+| Field | Classification | Schema path | Notes |
+| --- | --- | --- | --- |
+| `card` | modeled | `CardQueueItemState.card_ref` | queued card |
+| `monster` | modeled | `CardQueueItemState.monster_ref` | queued target |
+| `energyOnUse` | modeled | `CardQueueItemState.energy_on_use` | queued X-cost/current energy |
+| `ignoreEnergyTotal` | modeled | `CardQueueItemState.ignore_energy_total` | queued cost behavior |
+| `autoplayCard` | modeled | `CardQueueItemState.autoplay_card` | autoplay behavior |
+| `randomTarget` | modeled | `CardQueueItemState.random_target` | random target behavior |
+| `isEndTurnAutoPlay` | modeled | `CardQueueItemState.is_end_turn_auto_play` | Unceasing Top/end-turn autoplay behavior |
+
+## Field Ledger: `monsters/AbstractMonster.java`
+
+| Field | Classification | Schema path | Notes |
+| --- | --- | --- | --- |
+| `logger`, `uiStrings`, `TEXT`, `MOVES`, `DIALOG` | non_combat | none | logging/localization |
+| `DEATH_TIME`, `ESCAPE_TIME`, `ESCAPE`, `ROLL`, intent constants | modeled/derived | `MonsterState`, `MonsterMoveState` | byte constants influence move/escape semantics |
+| `deathTimer` | modeled | `MonsterState.death_timer_bits` | revive/death timing state; Rust may redesign only with parity |
+| `nameColor`, `nameBgColor`, `img`, intent textures/colors/particles/bob, disposable render assets | render_only | none | rendering |
+| `tintFadeOutCalled` | modeled | `MonsterState.tint_fade_out_called` | revive actions reset/read death fade state |
+| `moveSet` | modeled | `MonsterState.move_set` | move byte/name mapping |
+| `escaped` | modeled | `MonsterState.escaped` | escape lifecycle |
+| `escapeNext` | modeled | `MonsterState.escape_next` | escape lifecycle |
+| `intentTip` | render_only | none | tooltip |
+| `type` | modeled | `MonsterState.enemy_type` | normal/elite/boss classification |
+| `hoverTimer`, `intentHb`, `intentAlpha`, `intentAlphaTarget`, `intentOffsetX`, `intentAngle` | render_only | none | UI/rendering |
+| `cannotEscape` | modeled | `MonsterState.cannot_escape` | escape legality |
+| `damage` | modeled | `MonsterState.damage_entries` | multi-hit damage list |
+| `move` | modeled | `MonsterMoveState.enemy_move_info` | next move payload |
+| `intentParticleTimer`, `intentVfx` | render_only | none | VFX |
+| `moveHistory` | modeled | `MonsterMoveState.move_history` | AI history |
+| `nextMove` | modeled | `MonsterMoveState.next_move` | next move byte |
+| `intent` | modeled | `IntentState.intent_kind` | visible/mechanical intent |
+| `tipIntent` | modeled | `IntentState.tip_intent_kind` | intent tooltip/public display |
+| `intentDmg` | modeled | `IntentState.displayed_damage` | displayed/current intent damage |
+| `intentBaseDmg` | modeled | `IntentState.base_damage` | base intent damage |
+| `intentMultiAmt` | modeled | `IntentState.hit_count` | multi-hit count |
+| `isMultiDmg` | modeled | `IntentState.is_multi_damage` | multi-hit flag |
+| `moveName` | modeled | `MonsterMoveState.move_name_id` | ShowMoveNameAction reads and clears it |
+| `sortByHitbox` | render_only | none | UI sorting |
+
+## Field Ledger: `monsters/MonsterGroup.java`
+
+| Field | Classification | Schema path | Notes |
+| --- | --- | --- | --- |
+| `logger` | non_combat | none | logging only |
+| `monsters` | modeled | `MonsterGroupState.monsters_in_slot_order` and `monsters` | monster order and identities |
+| `hoveredMonster` | render_only | `MonsterGroupState.hovered_monster_ref_if_mechanical` only if a mechanic reads it | normally UI tooltip/targeting |
+
+## Field Ledger: `monsters/EnemyMoveInfo.java`
+
+| Field | Classification | Schema path | Notes |
+| --- | --- | --- | --- |
+| `nextMove` | modeled | `EnemyMoveInfoState.next_move` | move byte |
+| `intent` | modeled | `EnemyMoveInfoState.intent` | intent enum |
+| `baseDamage` | modeled | `EnemyMoveInfoState.base_damage` | base damage |
+| `multiplier` | modeled | `EnemyMoveInfoState.multiplier` | multi-hit multiplier |
+| `isMultiDamage` | modeled | `EnemyMoveInfoState.is_multi_damage` | multi-hit flag |
+
 ## Blocker Rules
 
 An implementation is not allowed to claim source coverage while any row has:
