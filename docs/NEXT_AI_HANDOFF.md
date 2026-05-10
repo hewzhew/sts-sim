@@ -48,9 +48,30 @@ Verification already passed:
 - `cargo check -q`
 - `git diff --check`
 
-## Current Uncommitted Work
+## Current Work To Commit
 
-None.
+Ironclad Java audit continued and found two non-strategy mechanics differences:
+
+- `Corruption` on-apply now matches Java `ApplyPowerAction` scan scope:
+  - Java scans hand, draw pile, discard pile, and exhaust pile.
+  - Java does not scan `limbo`.
+  - Rust no longer zeroes Skill cards sitting in `limbo` when Corruption is applied.
+- Lethal damage now applies Java `GameActionManager.clearPostCombatActions()` queue filtering:
+  - Java damage actions call `clearPostCombatActions()` when all monsters are basically dead.
+  - The filter keeps DAMAGE actions, `HealAction`, `GainBlockAction`, and `UseCardAction`.
+  - Rust now keeps equivalent damage-domain actions, `Heal`, `GainBlock`, and `UseCardDone`.
+  - This prevents lethal `Wild Strike` / `Reckless Charge` / `Immolate`-style queued card generation, lethal `Dropkick` draw/energy, and other non-retained post-combat actions from executing after the last monster dies.
+  - `Hand of Greed` gold and `Ritual Dagger` misc growth now resolve immediately inside their damage handlers, matching Java unique action timing before post-combat queue filtering.
+
+Verification passed for this work:
+
+- `cargo test -q content::cards::tests::lethal_damage_filters_post_combat_actions_like_java_action_manager`
+- `cargo test -q content::cards::tests::on_kill_card_rewards_ignore_minions_and_half_dead_targets_like_java_actions`
+- `cargo test -q content::cards::tests::ironclad_power_and_debuff_runtime_actions_match_java_use_methods`
+- `cargo test -q content::cards::tests`
+- `cargo test -q content::cards::tests::ironclad`
+- `cargo test -q engine::action_handlers::cards::tests`
+- `cargo test -q engine::core::tests`
 
 ## Next Work
 

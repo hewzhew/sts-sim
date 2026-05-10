@@ -1027,6 +1027,33 @@ fn ironclad_power_and_debuff_runtime_actions_match_java_use_methods() {
     );
     assert!(duplicate_corruption_actions.is_empty());
 
+    let mut corruption_apply_state = crate::test_support::blank_test_combat();
+    corruption_apply_state.zones.hand = vec![CombatCard::new(CardId::Defend, 910)];
+    corruption_apply_state.zones.draw_pile = vec![CombatCard::new(CardId::ShrugItOff, 911)];
+    corruption_apply_state.zones.discard_pile = vec![CombatCard::new(CardId::BurningPact, 912)];
+    corruption_apply_state.zones.exhaust_pile = vec![CombatCard::new(CardId::PowerThrough, 913)];
+    corruption_apply_state.zones.limbo = vec![CombatCard::new(CardId::TrueGrit, 914)];
+
+    crate::content::cards::ironclad::corruption::corruption_on_apply(&mut corruption_apply_state);
+
+    assert_eq!(corruption_apply_state.zones.hand[0].cost_for_turn, Some(0));
+    assert_eq!(
+        corruption_apply_state.zones.draw_pile[0].cost_for_turn,
+        Some(0)
+    );
+    assert_eq!(
+        corruption_apply_state.zones.discard_pile[0].cost_for_turn,
+        Some(0)
+    );
+    assert_eq!(
+        corruption_apply_state.zones.exhaust_pile[0].cost_for_turn,
+        Some(0)
+    );
+    assert_eq!(
+        corruption_apply_state.zones.limbo[0].cost_for_turn, None,
+        "Java ApplyPowerAction's Corruption constructor scans hand/draw/discard/exhaust, not limbo"
+    );
+
     let dark_embrace_actions = resolve_card_play(
         CardId::DarkEmbrace,
         &state,
@@ -1678,6 +1705,7 @@ fn on_kill_card_rewards_ignore_minions_and_half_dead_targets_like_java_actions()
     }
 
     let mut greed_normal = crate::test_support::blank_test_combat();
+    let starting_gold = greed_normal.entities.player.gold;
     let mut normal = crate::test_support::test_monster(EnemyId::JawWorm);
     normal.id = 41;
     normal.current_hp = 5;
@@ -1688,12 +1716,16 @@ fn on_kill_card_rewards_ignore_minions_and_half_dead_targets_like_java_actions()
         20,
         &mut greed_normal,
     );
+    assert_eq!(greed_normal.entities.player.gold, starting_gold + 20);
+    assert_eq!(greed_normal.entities.player.gold_delta_this_combat, 20);
     assert_eq!(
         greed_normal.pop_next_action(),
-        Some(Action::GainGold { amount: 20 })
+        None,
+        "Java GreedAction calls player.gainGold inside the damage action, before clearPostCombatActions"
     );
 
     let mut greed_minion = crate::test_support::blank_test_combat();
+    let minion_starting_gold = greed_minion.entities.player.gold;
     let mut minion = crate::test_support::test_monster(EnemyId::JawWorm);
     minion.id = 42;
     minion.current_hp = 5;
@@ -1715,7 +1747,28 @@ fn on_kill_card_rewards_ignore_minions_and_half_dead_targets_like_java_actions()
         20,
         &mut greed_minion,
     );
+    assert_eq!(greed_minion.entities.player.gold, minion_starting_gold);
     assert_eq!(greed_minion.pop_next_action(), None);
+
+    let mut dagger_normal = crate::test_support::blank_test_combat();
+    let mut dagger_target = crate::test_support::test_monster(EnemyId::JawWorm);
+    dagger_target.id = 44;
+    dagger_target.current_hp = 5;
+    dagger_normal.entities.monsters = vec![dagger_target];
+    dagger_normal.zones.hand = vec![CombatCard::new(CardId::RitualDagger, 900)];
+    crate::engine::action_handlers::damage::handle_ritual_dagger(
+        44,
+        test_damage(44),
+        3,
+        900,
+        &mut dagger_normal,
+    );
+    assert_eq!(dagger_normal.zones.hand[0].misc_value, 3);
+    assert_eq!(
+        dagger_normal.pop_next_action(),
+        None,
+        "Java RitualDaggerAction mutates GetAllInBattleInstances inside the damage action"
+    );
 
     let mut dagger_half_dead = crate::test_support::blank_test_combat();
     let mut half_dead = crate::test_support::test_monster(EnemyId::AwakenedOne);
@@ -4048,6 +4101,73 @@ fn ironclad_debuff_draw_xcost_and_wound_runtime_actions_match_java_use_methods()
             upgraded: false
         }
     ));
+}
+
+#[test]
+fn lethal_damage_filters_post_combat_actions_like_java_action_manager() {
+    let mut state = crate::test_support::blank_test_combat();
+    let mut target = crate::test_support::test_monster(EnemyId::JawWorm);
+    target.id = 720;
+    target.current_hp = 5;
+    state.entities.monsters = vec![target];
+
+    state.queue_action_back(Action::MakeTempCardInDrawPile {
+        card_id: CardId::Wound,
+        amount: 1,
+        random_spot: true,
+        to_bottom: false,
+        upgraded: false,
+    });
+    state.queue_action_back(Action::DrawCards(1));
+    state.queue_action_back(Action::GainEnergy { amount: 1 });
+    state.queue_action_back(Action::ApplyPower {
+        source: 0,
+        target: 720,
+        power_id: PowerId::Vulnerable,
+        amount: 1,
+    });
+    state.queue_action_back(Action::GainBlock {
+        target: 0,
+        amount: 3,
+    });
+    state.queue_action_back(Action::Heal {
+        target: 0,
+        amount: 2,
+    });
+    state.queue_action_back(Action::UseCardDone {
+        should_exhaust: false,
+    });
+
+    crate::engine::action_handlers::execute_action(
+        Action::Damage(crate::runtime::action::DamageInfo {
+            source: 0,
+            target: 720,
+            base: 99,
+            output: 99,
+            damage_type: DamageType::Normal,
+            is_modified: false,
+        }),
+        &mut state,
+    );
+
+    let remaining: Vec<_> = std::iter::from_fn(|| state.pop_next_action()).collect();
+    assert_eq!(
+        remaining,
+        vec![
+            Action::GainBlock {
+                target: 0,
+                amount: 3
+            },
+            Action::Heal {
+                target: 0,
+                amount: 2
+            },
+            Action::UseCardDone {
+                should_exhaust: false
+            }
+        ],
+        "Java GameActionManager.clearPostCombatActions keeps DAMAGE/Heal/GainBlock/UseCardAction and removes generated cards, draw, energy, and powers"
+    );
 }
 
 #[test]

@@ -551,6 +551,32 @@ pub enum Action {
     },
 }
 
+impl Action {
+    pub fn retained_by_java_clear_post_combat_actions(&self) -> bool {
+        matches!(
+            self,
+            Action::Damage(_)
+                | Action::MonsterAttack { .. }
+                | Action::DamageAllEnemies { .. }
+                | Action::Whirlwind { .. }
+                | Action::AttackDamageRandomEnemy { .. }
+                | Action::BouncingFlask { .. }
+                | Action::DropkickDamageAndEffect { .. }
+                | Action::FiendFire { .. }
+                | Action::Feed { .. }
+                | Action::HandOfGreed { .. }
+                | Action::RitualDagger { .. }
+                | Action::VampireDamage(_)
+                | Action::VampireDamageAllEnemies { .. }
+                | Action::LoseHp { .. }
+                | Action::SetCurrentHp { .. }
+                | Action::GainBlock { .. }
+                | Action::Heal { .. }
+                | Action::UseCardDone { .. }
+        )
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum CardRewardPool {
     /// All class cards (Common + Uncommon + Rare), any type

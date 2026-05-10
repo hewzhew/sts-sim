@@ -21,7 +21,8 @@ pub fn corruption_play(state: &CombatState, _card: &CombatCard) -> SmallVec<[Act
     actions
 }
 
-/// Mimics `ApplyPowerAction.java` line 43: Immediately reduces all skill costs in all piles
+/// Mimics `ApplyPowerAction.java`: immediately reduces all skill costs in the
+/// four Java player card groups scanned by the Corruption special case.
 pub fn corruption_on_apply(state: &mut CombatState) {
     let is_skill = |id| {
         crate::content::cards::get_card_definition(id).card_type
@@ -34,7 +35,6 @@ pub fn corruption_on_apply(state: &mut CombatState) {
         .chain(state.zones.draw_pile.iter_mut())
         .chain(state.zones.discard_pile.iter_mut())
         .chain(state.zones.exhaust_pile.iter_mut())
-        .chain(state.zones.limbo.iter_mut())
     {
         if is_skill(c.id) {
             c.cost_modifier -= 9;

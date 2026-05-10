@@ -111,6 +111,20 @@ fn target_qualifies_for_non_minion_kill_reward(state: &CombatState, target: usiz
         .is_some_and(|m| !m.half_dead && !store::has_power(state, target, PowerId::Minion))
 }
 
+fn monsters_are_basically_dead_for_post_combat(state: &CombatState) -> bool {
+    !state
+        .entities
+        .monsters
+        .iter()
+        .any(|m| m.current_hp > 0 && !m.is_dying && !m.is_escaped && !m.half_dead)
+}
+
+fn clear_post_combat_actions_if_ready(state: &mut CombatState) {
+    if monsters_are_basically_dead_for_post_combat(state) {
+        state.clear_post_combat_actions();
+    }
+}
+
 /// Shared block-deduction logic. Returns unblocked damage.
 pub fn deduct_block(block: &mut i32, damage: i32) -> i32 {
     if *block > 0 {
@@ -318,6 +332,7 @@ fn apply_damage_to_monster_via_pipeline(
         }
     }
 
+    clear_post_combat_actions_if_ready(state);
     outcome
 }
 
@@ -631,9 +646,7 @@ pub fn handle_hand_of_greed(
     info.target = target;
     let outcome = apply_damage_to_monster_via_pipeline(state, &info, info.output.max(0));
     if outcome.died && target_qualifies_for_non_minion_kill_reward(state, target) {
-        state.queue_action_front(Action::GainGold {
-            amount: gold_amount,
-        });
+        handle_gain_gold(gold_amount, state);
     }
 }
 
@@ -648,10 +661,11 @@ pub fn handle_ritual_dagger(
     info.target = target;
     let outcome = apply_damage_to_monster_via_pipeline(state, &info, info.output.max(0));
     if outcome.died && target_qualifies_for_non_minion_kill_reward(state, target) {
-        state.queue_action_front(Action::ModifyCardMisc {
+        crate::engine::action_handlers::cards::handle_modify_card_misc(
             card_uuid,
-            amount: misc_amount,
-        });
+            misc_amount,
+            state,
+        );
     }
 }
 
@@ -833,6 +847,7 @@ pub fn handle_lose_hp(target: usize, amount: i32, triggers_rupture: bool, state:
                 }
             }
         }
+        clear_post_combat_actions_if_ready(state);
     }
 }
 
@@ -850,6 +865,7 @@ pub fn handle_set_current_hp(target: usize, hp: i32, state: &mut CombatState) {
         monster.current_hp = clamped_hp.min(monster.max_hp);
     }
     super::check_and_trigger_monster_death(state, target);
+    clear_post_combat_actions_if_ready(state);
 }
 
 pub fn handle_gain_block(target: usize, amount: i32, state: &mut CombatState) {

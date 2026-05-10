@@ -364,6 +364,11 @@ impl CombatState {
         self.engine.clear();
     }
 
+    pub fn clear_post_combat_actions(&mut self) {
+        self.engine
+            .retain(|action| action.retained_by_java_clear_post_combat_actions());
+    }
+
     pub fn ensure_flush_next_queued_card(&mut self) {
         if !self.engine.has_actions() && !self.zones.queued_cards.is_empty() {
             self.engine.push_back(Action::FlushNextQueuedCard);
