@@ -674,18 +674,17 @@ pub fn handle_randomize_hand_costs(state: &mut CombatState) {
     }
 }
 
-pub fn handle_make_random_card_in_hand(
+fn class_card_pool_for_type(
+    player_class: &str,
     card_type: Option<crate::content::cards::CardType>,
-    cost_for_turn: Option<u8>,
-    state: &mut CombatState,
-) {
-    let mut pool: Vec<CardId> = Vec::new();
+) -> Vec<CardId> {
+    let mut pool = Vec::new();
     for &rarity in &[
         crate::content::cards::CardRarity::Common,
         crate::content::cards::CardRarity::Uncommon,
         crate::content::cards::CardRarity::Rare,
     ] {
-        for &id in crate::content::cards::ironclad_pool_for_rarity(rarity) {
+        for &id in crate::engine::campfire_handler::card_pool_for_class(player_class, rarity) {
             if let Some(ct) = card_type {
                 let def = crate::content::cards::get_card_definition(id);
                 if def.card_type != ct {
@@ -695,6 +694,15 @@ pub fn handle_make_random_card_in_hand(
             pool.push(id);
         }
     }
+    pool
+}
+
+pub fn handle_make_random_card_in_hand(
+    card_type: Option<crate::content::cards::CardType>,
+    cost_for_turn: Option<u8>,
+    state: &mut CombatState,
+) {
+    let pool = class_card_pool_for_type(state.meta.player_class, card_type);
     if !pool.is_empty() {
         let idx = state.rng.card_random_rng.random(pool.len() as i32 - 1) as usize;
         let card_id = pool[idx];
@@ -714,22 +722,7 @@ pub fn handle_make_random_card_in_draw_pile(
     random_spot: bool,
     state: &mut CombatState,
 ) {
-    let mut pool: Vec<CardId> = Vec::new();
-    for &rarity in &[
-        crate::content::cards::CardRarity::Common,
-        crate::content::cards::CardRarity::Uncommon,
-        crate::content::cards::CardRarity::Rare,
-    ] {
-        for &id in crate::content::cards::ironclad_pool_for_rarity(rarity) {
-            if let Some(ct) = card_type {
-                let def = crate::content::cards::get_card_definition(id);
-                if def.card_type != ct {
-                    continue;
-                }
-            }
-            pool.push(id);
-        }
-    }
+    let pool = class_card_pool_for_type(state.meta.player_class, card_type);
     if !pool.is_empty() {
         let idx = state.rng.card_random_rng.random(pool.len() as i32 - 1) as usize;
         let card_id = pool[idx];
@@ -1340,7 +1333,8 @@ pub fn handle_end_turn_trigger(state: &mut CombatState) {
 #[cfg(test)]
 mod tests {
     use super::{
-        handle_draw_pile_to_hand_by_type, handle_make_temp_card_in_draw_pile,
+        handle_draw_pile_to_hand_by_type, handle_make_random_card_in_draw_pile,
+        handle_make_random_card_in_hand, handle_make_temp_card_in_draw_pile,
         handle_make_temp_card_in_hand, obtain_specific_potion_if_allowed,
     };
     use crate::content::cards::{CardId, CardType};
@@ -1460,6 +1454,50 @@ mod tests {
         assert_eq!(state.zones.discard_pile.len(), 1);
         assert_eq!(state.zones.discard_pile[0].id, CardId::Defend);
         assert_eq!(state.zones.discard_pile[0].cost_for_turn, None);
+    }
+
+    #[test]
+    fn make_random_card_in_hand_uses_current_player_class_pool() {
+        let mut state = blank_test_combat();
+        state.meta.player_class = "Silent";
+
+        handle_make_random_card_in_hand(Some(CardType::Attack), Some(0), &mut state);
+
+        assert_eq!(state.zones.hand.len(), 1);
+        let generated = &state.zones.hand[0];
+        assert_eq!(generated.cost_for_turn, Some(0));
+        assert!(
+            crate::content::cards::silent_pool_for_type(CardType::Attack).contains(&generated.id),
+            "random generated combat cards must come from the current character pool"
+        );
+        assert!(
+            !crate::content::cards::ironclad_pool_for_type(CardType::Attack)
+                .contains(&generated.id),
+            "Silent random generated combat cards must not leak Ironclad cards"
+        );
+    }
+
+    #[test]
+    fn make_random_card_in_draw_pile_uses_current_player_class_pool() {
+        let mut state = blank_test_combat();
+        state.meta.player_class = "Silent";
+        state.zones.draw_pile = vec![CombatCard::new(CardId::Strike, 1)];
+        state.zones.card_uuid_counter = 1;
+
+        handle_make_random_card_in_draw_pile(Some(CardType::Skill), Some(0), false, &mut state);
+
+        assert_eq!(state.zones.draw_pile.len(), 2);
+        let generated = &state.zones.draw_pile[0];
+        assert_eq!(generated.cost_for_turn, Some(0));
+        assert!(
+            crate::content::cards::silent_pool_for_type(CardType::Skill).contains(&generated.id),
+            "random generated draw-pile cards must come from the current character pool"
+        );
+        assert!(
+            !crate::content::cards::ironclad_pool_for_type(CardType::Skill).contains(&generated.id),
+            "Silent random generated draw-pile cards must not leak Ironclad cards"
+        );
+        assert_eq!(state.zones.draw_pile[1].id, CardId::Strike);
     }
 
     #[test]
