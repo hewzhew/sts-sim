@@ -573,6 +573,13 @@ ActionPayload {
     target_uuid,
   }
 
+  NewQueueCard {
+    card_ref,
+    random_target,
+    immediate_card,
+    autoplay_card,
+  }
+
   PlayTopCard {
     exhaust_cards,
   }
@@ -586,6 +593,10 @@ ActionPayload {
   }
 
   PummelDamage {}
+
+  QueueCard {
+    card_ref,
+  }
 
   ReduceCost {
     target_uuid,
@@ -629,6 +640,12 @@ ActionPayload {
     trigger,
   }
 
+  Sfx {
+    key,
+    pitch_var_bits,
+    adjust,
+  }
+
   SpawnMonster {
     used,
     monster_ref,
@@ -642,9 +659,27 @@ ActionPayload {
     relic_trigger,
   }
 
+  TextAboveCreature {
+    used,
+    message,
+  }
+
   TransformCardInHand {
     replacement_card,
     hand_index,
+  }
+
+  Unlimbo {
+    card_ref,
+    exhaust,
+  }
+
+  UseCard {
+    target_card,
+    card_target,
+    exhaust_card,
+    return_to_hand,
+    rebound_card,
   }
 }
 ```

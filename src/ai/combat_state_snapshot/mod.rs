@@ -356,10 +356,12 @@ pub enum ActionPayload {
     MakeTempCardInDrawPile(MakeTempCardInDrawPileActionState),
     MakeTempCardInHand(MakeTempCardInHandActionState),
     ModifyBlock(ModifyBlockActionState),
+    NewQueueCard(NewQueueCardActionState),
     PlayTopCard(PlayTopCardActionState),
     PutOnBottomOfDeck(PutOnBottomOfDeckActionState),
     PutOnDeck(PutOnDeckActionState),
     PummelDamage(PummelDamageActionState),
+    QueueCard(QueueCardActionState),
     ReduceCost(ReduceCostActionState),
     ReduceCostForTurn(ReduceCostForTurnActionState),
     ReducePower(ReducePowerActionState),
@@ -368,9 +370,13 @@ pub enum ActionPayload {
     RollMove(RollMoveActionState),
     SetMove(SetMoveActionState),
     SetDontTrigger(SetDontTriggerActionState),
+    Sfx(SfxActionState),
     SpawnMonster(SpawnMonsterActionState),
     Suicide(SuicideActionState),
+    TextAboveCreature(TextAboveCreatureActionState),
     TransformCardInHand(TransformCardInHandActionState),
+    Unlimbo(UnlimboActionState),
+    UseCard(UseCardActionState),
 }
 
 pub const TYPED_ACTION_PAYLOAD_SOURCE_CLASSES: &[&str] = &[
@@ -395,10 +401,12 @@ pub const TYPED_ACTION_PAYLOAD_SOURCE_CLASSES: &[&str] = &[
     "MakeTempCardInDrawPileAction",
     "MakeTempCardInHandAction",
     "ModifyBlockAction",
+    "NewQueueCardAction",
     "PlayTopCardAction",
     "PutOnBottomOfDeckAction",
     "PutOnDeckAction",
     "PummelDamageAction",
+    "QueueCardAction",
     "ReduceCostAction",
     "ReduceCostForTurnAction",
     "ReducePowerAction",
@@ -407,9 +415,13 @@ pub const TYPED_ACTION_PAYLOAD_SOURCE_CLASSES: &[&str] = &[
     "RollMoveAction",
     "SetMoveAction",
     "SetDontTriggerAction",
+    "SFXAction",
     "SpawnMonsterAction",
     "SuicideAction",
+    "TextAboveCreatureAction",
     "TransformCardInHandAction",
+    "UnlimboAction",
+    "UseCardAction",
 ];
 
 impl ActionPayload {
@@ -436,10 +448,12 @@ impl ActionPayload {
             ActionPayload::MakeTempCardInDrawPile(_) => "MakeTempCardInDrawPileAction",
             ActionPayload::MakeTempCardInHand(_) => "MakeTempCardInHandAction",
             ActionPayload::ModifyBlock(_) => "ModifyBlockAction",
+            ActionPayload::NewQueueCard(_) => "NewQueueCardAction",
             ActionPayload::PlayTopCard(_) => "PlayTopCardAction",
             ActionPayload::PutOnBottomOfDeck(_) => "PutOnBottomOfDeckAction",
             ActionPayload::PutOnDeck(_) => "PutOnDeckAction",
             ActionPayload::PummelDamage(_) => "PummelDamageAction",
+            ActionPayload::QueueCard(_) => "QueueCardAction",
             ActionPayload::ReduceCost(_) => "ReduceCostAction",
             ActionPayload::ReduceCostForTurn(_) => "ReduceCostForTurnAction",
             ActionPayload::ReducePower(_) => "ReducePowerAction",
@@ -448,9 +462,13 @@ impl ActionPayload {
             ActionPayload::RollMove(_) => "RollMoveAction",
             ActionPayload::SetMove(_) => "SetMoveAction",
             ActionPayload::SetDontTrigger(_) => "SetDontTriggerAction",
+            ActionPayload::Sfx(_) => "SFXAction",
             ActionPayload::SpawnMonster(_) => "SpawnMonsterAction",
             ActionPayload::Suicide(_) => "SuicideAction",
+            ActionPayload::TextAboveCreature(_) => "TextAboveCreatureAction",
             ActionPayload::TransformCardInHand(_) => "TransformCardInHandAction",
+            ActionPayload::Unlimbo(_) => "UnlimboAction",
+            ActionPayload::UseCard(_) => "UseCardAction",
         }
     }
 }
@@ -592,6 +610,14 @@ pub struct ModifyBlockActionState {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct NewQueueCardActionState {
+    pub card_ref: Option<CardRef>,
+    pub random_target: bool,
+    pub immediate_card: bool,
+    pub autoplay_card: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PlayTopCardActionState {
     pub exhaust_cards: bool,
 }
@@ -608,6 +634,11 @@ pub struct PutOnDeckActionState {
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PummelDamageActionState {}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct QueueCardActionState {
+    pub card_ref: Option<CardRef>,
+}
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ReduceCostActionState {
@@ -660,6 +691,13 @@ pub struct SetDontTriggerActionState {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SfxActionState {
+    pub key: String,
+    pub pitch_var_bits: F32Bits,
+    pub adjust: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SpawnMonsterActionState {
     pub used: bool,
     pub monster_ref: MonsterRef,
@@ -675,9 +713,30 @@ pub struct SuicideActionState {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TextAboveCreatureActionState {
+    pub used: bool,
+    pub message: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TransformCardInHandActionState {
     pub replacement_card: CardRef,
     pub hand_index: i32,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct UnlimboActionState {
+    pub card_ref: CardRef,
+    pub exhaust: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct UseCardActionState {
+    pub target_card: CardRef,
+    pub card_target: Option<CombatantRef>,
+    pub exhaust_card: bool,
+    pub return_to_hand: bool,
+    pub rebound_card: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

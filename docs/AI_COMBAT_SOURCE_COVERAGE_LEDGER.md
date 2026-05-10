@@ -506,6 +506,29 @@ Rust `ActionPayload` variants must expose their Java source class through
 `TYPED_ACTION_PAYLOAD_SOURCE_CLASSES` registry. A payload variant without a
 source class mapping is not reviewable.
 
+## Field Ledger: Core `actions/utility/*Action.java` Subclasses
+
+| Source | Field | Classification | Schema path | Notes |
+| --- | --- | --- | --- | --- |
+| `WaitAction.java` | no subclass fields beyond common action fields | modeled | `ActionState` | `duration_bits` is the wait duration |
+| `NewQueueCardAction.java` | `card` | modeled | `ActionPayload::NewQueueCard.card_ref` | nullable end-turn queue sentinel |
+| `NewQueueCardAction.java` | `randomTarget` | modeled | `ActionPayload::NewQueueCard.random_target` | queued random target behavior |
+| `NewQueueCardAction.java` | `immediateCard` | modeled | `ActionPayload::NewQueueCard.immediate_card` | insertion point in card queue |
+| `NewQueueCardAction.java` | `autoplayCard` | modeled | `ActionPayload::NewQueueCard.autoplay_card` | queued autoplay behavior |
+| `QueueCardAction.java` | `card` | modeled | `ActionPayload::QueueCard.card_ref` | deprecated queue path; target is `ActionState.target` |
+| `UnlimboAction.java` | `card` | modeled | `ActionPayload::Unlimbo.card_ref` | limbo card to remove |
+| `UnlimboAction.java` | `exhaust` | modeled | `ActionPayload::Unlimbo.exhaust` | whether removal creates exhaust effect |
+| `SFXAction.java` | `key` | modeled | `ActionPayload::Sfx.key` | sound key; retained for deterministic action replay |
+| `SFXAction.java` | `pitchVar` | modeled | `ActionPayload::Sfx.pitch_var_bits` | Java `float`; raw bits |
+| `SFXAction.java` | `adjust` | modeled | `ActionPayload::Sfx.adjust` | selects adjusted sound call |
+| `TextAboveCreatureAction.java` | `used` | modeled | `ActionPayload::TextAboveCreature.used` | one-shot text effect guard |
+| `TextAboveCreatureAction.java` | `msg` | modeled | `ActionPayload::TextAboveCreature.message` | nullable when constructor marks done |
+| `UseCardAction.java` | `targetCard` | modeled | `ActionPayload::UseCard.target_card` | card being resolved |
+| `UseCardAction.java` | subclass `target` | modeled | `ActionPayload::UseCard.card_target` | card target; distinct from superclass `ActionState.target` |
+| `UseCardAction.java` | `exhaustCard` | modeled | `ActionPayload::UseCard.exhaust_card` | post-use destination branch |
+| `UseCardAction.java` | `returnToHand` | modeled | `ActionPayload::UseCard.return_to_hand` | public source field even though card flag also exists |
+| `UseCardAction.java` | `reboundCard` | modeled | `ActionPayload::UseCard.rebound_card` | post-use draw-pile top branch |
+
 ## Field Ledger: `cards/DamageInfo.java`
 
 | Field | Classification | Schema path | Notes |
