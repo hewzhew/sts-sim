@@ -996,6 +996,7 @@ pub fn get_relic_subscriptions(id: RelicId) -> RelicSubscriptions {
         }
         RelicId::LetterOpener => {
             sub.on_use_card = true;
+            sub.at_turn_start = true;
             sub.on_victory = true;
         }
         RelicId::ToughBandages => sub.on_discard = true,

@@ -3,6 +3,16 @@ use smallvec::SmallVec;
 
 /// LetterOpener: Every time you play 3 Skills in a single turn, deal 5 damage to ALL enemies.
 /// Java: onUseCard() → ++counter; if counter % 3 == 0: counter=0, addToBot(DamageAllEnemiesAction(5, THORNS))
+pub fn at_turn_start() -> SmallVec<[ActionInfo; 4]> {
+    smallvec::smallvec![ActionInfo {
+        action: Action::UpdateRelicCounter {
+            relic_id: crate::content::relics::RelicId::LetterOpener,
+            counter: 0,
+        },
+        insertion_mode: AddTo::Bottom,
+    }]
+}
+
 pub fn on_use_card(
     state: &crate::runtime::combat::CombatState,
     card_id: crate::content::cards::CardId,
@@ -12,7 +22,8 @@ pub fn on_use_card(
     let def = crate::content::cards::get_card_definition(card_id);
 
     if def.card_type == crate::content::cards::CardType::Skill {
-        let next_counter = if counter + 1 >= 3 { 0 } else { counter + 1 };
+        let current = counter.max(0);
+        let next_counter = if current + 1 >= 3 { 0 } else { current + 1 };
 
         actions.push(ActionInfo {
             action: Action::UpdateRelicCounter {

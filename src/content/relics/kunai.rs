@@ -23,7 +23,8 @@ pub fn on_use_card(
     let def = crate::content::cards::get_card_definition(card_id);
 
     if def.card_type == crate::content::cards::CardType::Attack {
-        let next_counter = if counter + 1 >= 3 { 0 } else { counter + 1 };
+        let current = counter.max(0);
+        let next_counter = if current + 1 >= 3 { 0 } else { current + 1 };
 
         actions.push(ActionInfo {
             action: Action::UpdateRelicCounter {

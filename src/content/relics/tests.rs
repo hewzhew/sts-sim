@@ -1232,3 +1232,191 @@ fn egg_relics_preview_obtain_upgrades_without_double_upgrading_existing_plus_car
         "Java Egg relics call upgrade only when !card.upgraded; pre-upgraded Searing Blow is not incremented again"
     );
 }
+
+#[test]
+fn shared_uncommon_combat_trigger_relic_metadata_matches_java_sources() {
+    assert_eq!(get_relic_tier(RelicId::GremlinHorn), RelicTier::Uncommon);
+    assert_eq!(get_relic_tier(RelicId::LetterOpener), RelicTier::Uncommon);
+    assert_eq!(get_relic_tier(RelicId::Kunai), RelicTier::Uncommon);
+    assert_eq!(get_relic_tier(RelicId::Shuriken), RelicTier::Uncommon);
+    assert_eq!(get_relic_tier(RelicId::OrnamentalFan), RelicTier::Uncommon);
+    assert_eq!(
+        get_relic_tier(RelicId::MercuryHourglass),
+        RelicTier::Uncommon
+    );
+
+    assert!(get_relic_subscriptions(RelicId::GremlinHorn).on_monster_death);
+    assert!(get_relic_subscriptions(RelicId::LetterOpener).on_use_card);
+    assert!(get_relic_subscriptions(RelicId::LetterOpener).at_turn_start);
+    assert!(get_relic_subscriptions(RelicId::LetterOpener).on_victory);
+    assert!(get_relic_subscriptions(RelicId::Kunai).on_use_card);
+    assert!(get_relic_subscriptions(RelicId::Kunai).at_turn_start);
+    assert!(get_relic_subscriptions(RelicId::Kunai).on_victory);
+    assert!(get_relic_subscriptions(RelicId::Shuriken).on_use_card);
+    assert!(get_relic_subscriptions(RelicId::Shuriken).at_turn_start);
+    assert!(get_relic_subscriptions(RelicId::Shuriken).on_victory);
+    assert!(get_relic_subscriptions(RelicId::OrnamentalFan).on_use_card);
+    assert!(get_relic_subscriptions(RelicId::OrnamentalFan).at_turn_start);
+    assert!(get_relic_subscriptions(RelicId::OrnamentalFan).on_victory);
+    assert!(get_relic_subscriptions(RelicId::MercuryHourglass).at_turn_start);
+}
+
+#[test]
+fn gremlin_horn_triggers_only_when_another_monster_remains_alive() {
+    let mut dying = crate::test_support::test_monster(EnemyId::JawWorm);
+    dying.id = 1;
+    dying.current_hp = 0;
+    dying.is_dying = true;
+    let mut alive = crate::test_support::test_monster(EnemyId::Cultist);
+    alive.id = 2;
+
+    let state = crate::test_support::combat_with_monsters(vec![dying.clone(), alive]);
+    let actions = gremlin_horn::GremlinHorn::on_monster_death(&state, 1);
+    assert_eq!(actions.len(), 2);
+    assert!(matches!(
+        actions[0].action,
+        Action::GainEnergy { amount: 1 }
+    ));
+    assert!(matches!(actions[1].action, Action::DrawCards(1)));
+
+    let last_monster_state = crate::test_support::combat_with_monsters(vec![dying]);
+    assert!(
+        gremlin_horn::GremlinHorn::on_monster_death(&last_monster_state, 1).is_empty(),
+        "Java Gremlin Horn checks !areMonstersBasicallyDead(), so the final kill does not trigger"
+    );
+}
+
+#[test]
+fn letter_opener_resets_each_turn_and_fires_on_third_skill() {
+    let mut state = crate::test_support::blank_test_combat();
+    state
+        .entities
+        .monsters
+        .push(crate::test_support::test_monster(EnemyId::JawWorm));
+    state
+        .entities
+        .monsters
+        .push(crate::test_support::test_monster(EnemyId::Cultist));
+
+    let start_actions = letter_opener::at_turn_start();
+    assert!(matches!(
+        start_actions[0].action,
+        Action::UpdateRelicCounter {
+            relic_id: RelicId::LetterOpener,
+            counter: 0
+        }
+    ));
+
+    let first_skill = letter_opener::on_use_card(&state, CardId::Defend, -1);
+    assert_eq!(first_skill.len(), 1);
+    assert!(matches!(
+        first_skill[0].action,
+        Action::UpdateRelicCounter {
+            relic_id: RelicId::LetterOpener,
+            counter: 1
+        }
+    ));
+
+    let third_skill = letter_opener::on_use_card(&state, CardId::Defend, 2);
+    assert_eq!(third_skill.len(), 2);
+    assert!(matches!(
+        third_skill[0].action,
+        Action::UpdateRelicCounter {
+            relic_id: RelicId::LetterOpener,
+            counter: 0
+        }
+    ));
+    match &third_skill[1].action {
+        Action::DamageAllEnemies {
+            damages,
+            damage_type,
+            ..
+        } => {
+            assert_eq!(damages.as_slice(), &[5, 5]);
+            assert_eq!(*damage_type, crate::runtime::action::DamageType::Thorns);
+        }
+        other => panic!("expected Letter Opener all-enemy damage, got {other:?}"),
+    }
+}
+
+#[test]
+fn attack_counter_relics_fire_on_third_attack_and_reset_on_victory() {
+    let kunai_actions = kunai::on_use_card(CardId::Strike, 2);
+    assert_eq!(kunai_actions.len(), 2);
+    assert!(matches!(
+        kunai_actions[0].action,
+        Action::UpdateRelicCounter {
+            relic_id: RelicId::Kunai,
+            counter: 0
+        }
+    ));
+    assert!(matches!(
+        kunai_actions[1].action,
+        Action::ApplyPower {
+            power_id: PowerId::Dexterity,
+            amount: 1,
+            ..
+        }
+    ));
+    assert!(kunai::on_use_card(CardId::Defend, 2).is_empty());
+
+    let shuriken_actions = shuriken::on_use_card(CardId::Strike, 2);
+    assert_eq!(shuriken_actions.len(), 2);
+    assert!(matches!(
+        shuriken_actions[1].action,
+        Action::ApplyPower {
+            power_id: PowerId::Strength,
+            amount: 1,
+            ..
+        }
+    ));
+
+    let fan_actions = ornamental_fan::on_use_card(2);
+    assert_eq!(fan_actions.len(), 2);
+    assert!(matches!(
+        fan_actions[0].action,
+        Action::UpdateRelicCounter {
+            relic_id: RelicId::OrnamentalFan,
+            counter: 0
+        }
+    ));
+    assert!(matches!(
+        fan_actions[1].action,
+        Action::GainBlock {
+            target: 0,
+            amount: 4
+        }
+    ));
+
+    let mut relic = RelicState::new(RelicId::Kunai);
+    relic.counter = 2;
+    kunai::on_victory(&mut relic);
+    assert_eq!(relic.counter, -1);
+}
+
+#[test]
+fn mercury_hourglass_queues_thorns_damage_to_all_monster_slots() {
+    let mut state = crate::test_support::blank_test_combat();
+    state
+        .entities
+        .monsters
+        .push(crate::test_support::test_monster(EnemyId::JawWorm));
+    state
+        .entities
+        .monsters
+        .push(crate::test_support::test_monster(EnemyId::Cultist));
+
+    let actions = mercury_hourglass::at_turn_start(&state);
+    assert_eq!(actions.len(), 1);
+    match &actions[0].action {
+        Action::DamageAllEnemies {
+            damages,
+            damage_type,
+            ..
+        } => {
+            assert_eq!(damages.as_slice(), &[3, 3]);
+            assert_eq!(*damage_type, crate::runtime::action::DamageType::Thorns);
+        }
+        other => panic!("expected Mercury Hourglass all-enemy damage, got {other:?}"),
+    }
+}

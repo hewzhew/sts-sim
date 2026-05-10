@@ -1560,6 +1560,171 @@ Coverage:
 - `dream_catcher_reward_respects_question_card`
 - `orrery_card_rewards_respect_question_card`
 
+### Gremlin Horn
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/relics/GremlinHorn.java`
+
+Rust source:
+- `src/content/relics/gremlin_horn.rs`
+- `src/content/relics/hooks.rs`
+
+Java evidence:
+- Constructor: ID `"Gremlin Horn"`, tier `UNCOMMON`, landing sound `HEAVY`.
+- `energyBased = true`.
+- `onMonsterDeath(AbstractMonster m)` triggers only when
+  `m.currentHealth == 0` and `!AbstractDungeon.getMonsters().areMonstersBasicallyDead()`.
+- Queues, in order, `GainEnergyAction(1)` then `DrawCardAction(player, 1)`.
+
+Rust result:
+- Tier and `on_monster_death` subscription match Java.
+- Fixed the hook to check that the target is actually dead and that another
+  monster remains alive; the final kill no longer grants energy/draw.
+- UI-only relic-above-creature action is intentionally not represented.
+
+Coverage:
+- `shared_uncommon_combat_trigger_relic_metadata_matches_java_sources`
+- `gremlin_horn_triggers_only_when_another_monster_remains_alive`
+
+### Letter Opener
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/relics/LetterOpener.java`
+
+Rust source:
+- `src/content/relics/letter_opener.rs`
+- `src/content/relics/hooks.rs`
+
+Java evidence:
+- Constructor: ID `"Letter Opener"`, tier `UNCOMMON`, landing sound `CLINK`.
+- `atTurnStart()` sets `counter = 0`.
+- `onUseCard`: if the card is a SKILL, increments `counter`; on every third
+  skill it resets counter to 0 and queues 5 THORNS damage to all enemies.
+- `onVictory()` sets `counter = -1`.
+
+Rust result:
+- Tier and subscriptions now match Java, including the previously missing
+  `at_turn_start` reset.
+- The counter hook treats negative pre-turn values as zero, then updates the
+  visible relic counter through the shared counter action.
+- Damage uses all-enemy THORNS damage with 5 per monster slot.
+
+Coverage:
+- `shared_uncommon_combat_trigger_relic_metadata_matches_java_sources`
+- `letter_opener_resets_each_turn_and_fires_on_third_skill`
+
+### Kunai
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/relics/Kunai.java`
+
+Rust source:
+- `src/content/relics/kunai.rs`
+- `src/content/relics/hooks.rs`
+
+Java evidence:
+- Constructor: ID `"Kunai"`, tier `UNCOMMON`, landing sound `CLINK`.
+- `atTurnStart()` sets `counter = 0`.
+- `onUseCard`: every third ATTACK resets counter to 0 and queues
+  `DexterityPower(player, 1)`.
+- `onVictory()` sets `counter = -1`.
+
+Rust result:
+- Tier and subscriptions match Java.
+- Counter logic now treats negative values as zero before incrementing, avoiding
+  an off-by-one if a turn-start reset has not yet materialized.
+- Third attack queues `+1 Dexterity` and counter reset.
+
+Coverage:
+- `shared_uncommon_combat_trigger_relic_metadata_matches_java_sources`
+- `attack_counter_relics_fire_on_third_attack_and_reset_on_victory`
+
+### Shuriken
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/relics/Shuriken.java`
+
+Rust source:
+- `src/content/relics/shuriken.rs`
+- `src/content/relics/hooks.rs`
+
+Java evidence:
+- Constructor: ID `"Shuriken"`, tier `UNCOMMON`, landing sound `CLINK`.
+- `atTurnStart()` sets `counter = 0`.
+- `onUseCard`: every third ATTACK resets counter to 0 and queues
+  `StrengthPower(player, 1)`.
+- `onVictory()` sets `counter = -1`.
+
+Rust result:
+- Tier and subscriptions match Java.
+- Counter logic now treats negative values as zero before incrementing.
+- Third attack queues `+1 Strength` and counter reset.
+
+Coverage:
+- `shared_uncommon_combat_trigger_relic_metadata_matches_java_sources`
+- `attack_counter_relics_fire_on_third_attack_and_reset_on_victory`
+
+### Ornamental Fan
+
+Status: `exact`
+
+Java source:
+- `D:/rust/cardcrawl/relics/OrnamentalFan.java`
+
+Rust source:
+- `src/content/relics/ornamental_fan.rs`
+- `src/content/relics/hooks.rs`
+
+Java evidence:
+- Constructor: ID `"Ornamental Fan"`, tier `UNCOMMON`, landing sound `FLAT`.
+- `atTurnStart()` sets `counter = 0`.
+- `onUseCard`: every third ATTACK resets counter to 0 and queues
+  `GainBlockAction(player, player, 4)`.
+- `onVictory()` sets `counter = -1`.
+
+Rust result:
+- Tier and subscriptions match Java.
+- Existing implementation already normalizes negative counter values and queues
+  counter update plus 4 block on the third attack.
+- UI-only relic-above-creature action is intentionally not represented.
+
+Coverage:
+- `shared_uncommon_combat_trigger_relic_metadata_matches_java_sources`
+- `attack_counter_relics_fire_on_third_attack_and_reset_on_victory`
+
+### Mercury Hourglass
+
+Status: `exact`
+
+Java source:
+- `D:/rust/cardcrawl/relics/MercuryHourglass.java`
+
+Rust source:
+- `src/content/relics/mercury_hourglass.rs`
+- `src/content/relics/hooks.rs`
+
+Java evidence:
+- Constructor: ID `"Mercury Hourglass"`, tier `UNCOMMON`, landing sound
+  `CLINK`.
+- `atTurnStart()` queues 3 THORNS damage to all enemies.
+
+Rust result:
+- Tier and `at_turn_start` subscription match Java.
+- Queues one all-enemy THORNS damage action with 3 damage per monster slot.
+- UI-only relic-above-creature action is intentionally not represented.
+
+Coverage:
+- `shared_uncommon_combat_trigger_relic_metadata_matches_java_sources`
+- `mercury_hourglass_queues_thorns_damage_to_all_monster_slots`
+
 ## Full Ironclad Class-Specific Relic Queue
 
 Relics remain `unreviewed` until their Java file, Rust definition/subscription,
@@ -1623,3 +1788,9 @@ class-specific queue.
 | 35 | `ToxicEgg2.java` | reward/shop/deck preview pipeline | `wrong-fixed` |
 | 36 | `FrozenEgg2.java` | reward/shop/deck preview pipeline | `wrong-fixed` |
 | 37 | `QuestionCard.java` | reward generator | `exact` |
+| 38 | `GremlinHorn.java` | `gremlin_horn.rs` | `wrong-fixed` |
+| 39 | `LetterOpener.java` | `letter_opener.rs` | `wrong-fixed` |
+| 40 | `Kunai.java` | `kunai.rs` | `wrong-fixed` |
+| 41 | `Shuriken.java` | `shuriken.rs` | `wrong-fixed` |
+| 42 | `OrnamentalFan.java` | `ornamental_fan.rs` | `exact` |
+| 43 | `MercuryHourglass.java` | `mercury_hourglass.rs` | `exact` |

@@ -494,6 +494,9 @@ pub fn at_turn_start(state: &mut CombatState) -> SmallVec<[ActionInfo; 4]> {
             RelicId::Necronomicon => {
                 actions.extend(crate::content::relics::necronomicon::at_turn_start())
             }
+            RelicId::LetterOpener => {
+                actions.extend(crate::content::relics::letter_opener::at_turn_start())
+            }
             RelicId::OrnamentalFan => {
                 actions.extend(crate::content::relics::ornamental_fan::at_turn_start())
             }
@@ -764,8 +767,9 @@ pub fn on_monster_death(
     for &relic_index in &bus {
         let relic_id = state.entities.player.relics[relic_index].id;
         match relic_id {
-            RelicId::GremlinHorn => actions
-                .extend(crate::content::relics::gremlin_horn::GremlinHorn::on_monster_death()),
+            RelicId::GremlinHorn => actions.extend(
+                crate::content::relics::gremlin_horn::GremlinHorn::on_monster_death(state, _target),
+            ),
             RelicId::TheSpecimen => actions.extend(
                 crate::content::relics::the_specimen::on_monster_death(&*state, _target),
             ),
