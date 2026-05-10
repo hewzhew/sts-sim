@@ -378,12 +378,15 @@ pub enum ActionPayload {
     Scry(ScryActionState),
     SetMove(SetMoveActionState),
     SetDontTrigger(SetDontTriggerActionState),
+    ShowCard(ShowCardActionState),
+    ShowCardAndPoof(ShowCardAndPoofActionState),
     Sfx(SfxActionState),
     SpawnMonster(SpawnMonsterActionState),
     Suicide(SuicideActionState),
     TextAboveCreature(TextAboveCreatureActionState),
     TransformCardInHand(TransformCardInHandActionState),
     Unlimbo(UnlimboActionState),
+    UpdateCardDescription(UpdateCardDescriptionActionState),
     UseCard(UseCardActionState),
 }
 
@@ -431,12 +434,15 @@ pub const TYPED_ACTION_PAYLOAD_SOURCE_CLASSES: &[&str] = &[
     "ScryAction",
     "SetMoveAction",
     "SetDontTriggerAction",
+    "ShowCardAction",
+    "ShowCardAndPoofAction",
     "SFXAction",
     "SpawnMonsterAction",
     "SuicideAction",
     "TextAboveCreatureAction",
     "TransformCardInHandAction",
     "UnlimboAction",
+    "UpdateCardDescriptionAction",
     "UseCardAction",
 ];
 
@@ -486,12 +492,15 @@ impl ActionPayload {
             ActionPayload::Scry(_) => "ScryAction",
             ActionPayload::SetMove(_) => "SetMoveAction",
             ActionPayload::SetDontTrigger(_) => "SetDontTriggerAction",
+            ActionPayload::ShowCard(_) => "ShowCardAction",
+            ActionPayload::ShowCardAndPoof(_) => "ShowCardAndPoofAction",
             ActionPayload::Sfx(_) => "SFXAction",
             ActionPayload::SpawnMonster(_) => "SpawnMonsterAction",
             ActionPayload::Suicide(_) => "SuicideAction",
             ActionPayload::TextAboveCreature(_) => "TextAboveCreatureAction",
             ActionPayload::TransformCardInHand(_) => "TransformCardInHandAction",
             ActionPayload::Unlimbo(_) => "UnlimboAction",
+            ActionPayload::UpdateCardDescription(_) => "UpdateCardDescriptionAction",
             ActionPayload::UseCard(_) => "UseCardAction",
         }
     }
@@ -756,6 +765,16 @@ pub struct SetDontTriggerActionState {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ShowCardActionState {
+    pub card_ref: CardRef,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ShowCardAndPoofActionState {
+    pub card_ref: CardRef,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SfxActionState {
     pub key: String,
     pub pitch_var_bits: F32Bits,
@@ -793,6 +812,11 @@ pub struct TransformCardInHandActionState {
 pub struct UnlimboActionState {
     pub card_ref: CardRef,
     pub exhaust: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct UpdateCardDescriptionActionState {
+    pub target_card: CardRef,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

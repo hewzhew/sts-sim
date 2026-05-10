@@ -673,6 +673,14 @@ ActionPayload {
     trigger,
   }
 
+  ShowCard {
+    card_ref,
+  }
+
+  ShowCardAndPoof {
+    card_ref,
+  }
+
   Sfx {
     key,
     pitch_var_bits,
@@ -705,6 +713,10 @@ ActionPayload {
   Unlimbo {
     card_ref,
     exhaust,
+  }
+
+  UpdateCardDescription {
+    target_card,
   }
 
   UseCard {

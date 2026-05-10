@@ -519,6 +519,7 @@ source class mapping is not reviewable.
 | `ExhaustAllEtherealAction.java` | no subclass fields beyond common action fields | modeled | `ActionState` | scans hand and queues `ExhaustSpecificCardAction` |
 | `ExhaustToHandAction.java` | `card` | modeled | `ActionPayload::ExhaustToHand.card_ref` | exhaust-pile card to move to hand |
 | `HandCheckAction.java` | `player` | modeled/derived | `CombatStateSnapshot.player` | applies hand powers and glow check |
+| `HideHealthBarAction.java` | no subclass fields beyond common action fields | modeled | `ActionState` | `source` is the health-bar owner |
 | `LoseBlockAction.java` | no subclass fields beyond common action fields | modeled | `ActionState` | `amount`, target/source cover block loss |
 | `NewQueueCardAction.java` | `card` | modeled | `ActionPayload::NewQueueCard.card_ref` | nullable end-turn queue sentinel |
 | `NewQueueCardAction.java` | `randomTarget` | modeled | `ActionPayload::NewQueueCard.random_target` | queued random target behavior |
@@ -529,6 +530,8 @@ source class mapping is not reviewable.
 | `ReApplyPowersAction.java` | `m` | modeled | `ActionPayload::ReApplyPowers.monster_ref` | target monster for recalculation |
 | `ResetFlagsAction.java` | `card` | modeled | `ActionPayload::ResetFlags.card_ref` | copied card whose flags are reset |
 | `ScryAction.java` | `startingDuration` | modeled | `ActionPayload::Scry.starting_duration_bits` | subclass private duration |
+| `ShowCardAction.java` | `card` | modeled | `ActionPayload::ShowCard.card_ref` | limbo/card-in-use cleanup target |
+| `ShowCardAndPoofAction.java` | `card` | modeled | `ActionPayload::ShowCardAndPoof.card_ref` | limbo/card-in-use cleanup plus exhaust VFX |
 | `UnlimboAction.java` | `card` | modeled | `ActionPayload::Unlimbo.card_ref` | limbo card to remove |
 | `UnlimboAction.java` | `exhaust` | modeled | `ActionPayload::Unlimbo.exhaust` | whether removal creates exhaust effect |
 | `SFXAction.java` | `key` | modeled | `ActionPayload::Sfx.key` | sound key; retained for deterministic action replay |
@@ -536,6 +539,8 @@ source class mapping is not reviewable.
 | `SFXAction.java` | `adjust` | modeled | `ActionPayload::Sfx.adjust` | selects adjusted sound call |
 | `TextAboveCreatureAction.java` | `used` | modeled | `ActionPayload::TextAboveCreature.used` | one-shot text effect guard |
 | `TextAboveCreatureAction.java` | `msg` | modeled | `ActionPayload::TextAboveCreature.message` | nullable when constructor marks done |
+| `UnhoverCardAction.java` | no subclass fields beyond common action fields | modeled | `ActionState` | uses global hovered card state |
+| `UpdateCardDescriptionAction.java` | `targetCard` | modeled | `ActionPayload::UpdateCardDescription.target_card` | card whose description is initialized |
 | `UseCardAction.java` | `targetCard` | modeled | `ActionPayload::UseCard.target_card` | card being resolved |
 | `UseCardAction.java` | subclass `target` | modeled | `ActionPayload::UseCard.card_target` | card target; distinct from superclass `ActionState.target` |
 | `UseCardAction.java` | `exhaustCard` | modeled | `ActionPayload::UseCard.exhaust_card` | post-use destination branch |
