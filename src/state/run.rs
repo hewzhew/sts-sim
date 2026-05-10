@@ -349,6 +349,15 @@ impl RunState {
     }
 
     pub fn change_gold_with_source(&mut self, delta: i32, source: DomainEventSource) -> i32 {
+        if delta > 0
+            && self
+                .relics
+                .iter()
+                .any(|relic| relic.id == crate::content::relics::RelicId::Ectoplasm)
+        {
+            return 0;
+        }
+
         let old_gold = self.gold;
         self.gold = (self.gold + delta).max(0);
         let actual_delta = self.gold - old_gold;

@@ -1,7 +1,8 @@
 use crate::content::cards::CardId;
 use crate::state::core::EngineState;
-use crate::state::events::{EventChoiceMeta, EventState};
+use crate::state::events::{EventChoiceMeta, EventId, EventState};
 use crate::state::run::RunState;
+use crate::state::selection::DomainEventSource;
 
 pub fn get_choices(run_state: &RunState, event_state: &EventState) -> Vec<EventChoiceMeta> {
     match event_state.current_screen {
@@ -37,7 +38,10 @@ pub fn handle_choice(_engine_state: &mut EngineState, run_state: &mut RunState, 
                     } else {
                         99
                     };
-                    run_state.gold += gold_gain;
+                    run_state.change_gold_with_source(
+                        gold_gain,
+                        DomainEventSource::Event(EventId::Nest),
+                    );
                     event_state.current_screen = 2;
                 }
                 _ => {

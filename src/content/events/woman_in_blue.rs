@@ -1,9 +1,10 @@
 use crate::state::core::EngineState;
 use crate::state::events::{
-    EventActionKind, EventChoiceMeta, EventEffect, EventOption, EventOptionConstraint,
+    EventActionKind, EventChoiceMeta, EventEffect, EventId, EventOption, EventOptionConstraint,
     EventOptionSemantics, EventOptionTransition, EventState,
 };
 use crate::state::run::RunState;
+use crate::state::selection::DomainEventSource;
 
 const COST_1: i32 = 20;
 const COST_2: i32 = 30;
@@ -189,14 +190,20 @@ pub fn handle_choice(_engine_state: &mut EngineState, run_state: &mut RunState, 
         0 => {
             match choice_idx {
                 0 => {
-                    run_state.gold -= COST_1;
+                    run_state.change_gold_with_source(
+                        -COST_1,
+                        DomainEventSource::Event(EventId::WomanInBlue),
+                    );
                     let pid = run_state.random_potion();
                     let p = crate::content::potions::Potion::new(pid, 30001);
                     run_state.obtain_potion(p);
                     event_state.current_screen = 1;
                 }
                 1 => {
-                    run_state.gold -= COST_2;
+                    run_state.change_gold_with_source(
+                        -COST_2,
+                        DomainEventSource::Event(EventId::WomanInBlue),
+                    );
                     for i in 0..2u32 {
                         let pid = run_state.random_potion();
                         let p = crate::content::potions::Potion::new(pid, 30010 + i);
@@ -205,7 +212,10 @@ pub fn handle_choice(_engine_state: &mut EngineState, run_state: &mut RunState, 
                     event_state.current_screen = 1;
                 }
                 2 => {
-                    run_state.gold -= COST_3;
+                    run_state.change_gold_with_source(
+                        -COST_3,
+                        DomainEventSource::Event(EventId::WomanInBlue),
+                    );
                     for i in 0..3u32 {
                         let pid = run_state.random_potion();
                         let p = crate::content::potions::Potion::new(pid, 30020 + i);

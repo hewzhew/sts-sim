@@ -4,6 +4,8 @@ use crate::content::monsters::EnemyId;
 use crate::content::powers::{store, PowerId};
 use crate::runtime::action::{Action, AddTo, DamageInfo, DamageType, NO_SOURCE};
 use crate::runtime::combat::{CombatCard, Power};
+use crate::state::events::EventId;
+use crate::state::selection::DomainEventSource;
 
 #[test]
 fn ironclad_blood_skull_and_frog_relic_metadata_matches_java_sources() {
@@ -821,4 +823,142 @@ fn vajra_and_strawberry_match_java_sources() {
     assert!(strawberry::on_equip(&mut run_state).is_none());
     assert_eq!(run_state.max_hp, 87);
     assert_eq!(run_state.current_hp, 57);
+}
+
+#[test]
+fn shared_common_run_gold_relic_metadata_matches_java_sources() {
+    assert_eq!(get_relic_tier(RelicId::CeramicFish), RelicTier::Common);
+    assert_eq!(get_relic_tier(RelicId::DreamCatcher), RelicTier::Common);
+    assert_eq!(get_relic_tier(RelicId::JuzuBracelet), RelicTier::Common);
+    assert_eq!(get_relic_tier(RelicId::MawBank), RelicTier::Common);
+
+    assert!(!get_relic_subscriptions(RelicId::CeramicFish).at_battle_start);
+    assert!(!get_relic_subscriptions(RelicId::DreamCatcher).at_battle_start);
+    assert!(!get_relic_subscriptions(RelicId::JuzuBracelet).at_battle_start);
+    assert!(!get_relic_subscriptions(RelicId::MawBank).at_battle_start);
+}
+
+#[test]
+fn ceramic_fish_obtain_card_gold_uses_java_gain_gold_semantics() {
+    let mut run_state = crate::state::run::RunState::new(1, 0, false, "Ironclad");
+    run_state.gold = 10;
+    run_state.relics.clear();
+    run_state.relics.push(RelicState::new(RelicId::CeramicFish));
+
+    let deck_len = run_state.master_deck.len();
+    assert!(run_state.add_card_to_deck(CardId::Strike));
+    assert_eq!(run_state.master_deck.len(), deck_len + 1);
+    assert_eq!(run_state.gold, 19);
+
+    let mut blocked = crate::state::run::RunState::new(1, 0, false, "Ironclad");
+    blocked.gold = 10;
+    blocked.relics.clear();
+    blocked.relics.push(RelicState::new(RelicId::CeramicFish));
+    blocked.relics.push(RelicState::new(RelicId::Omamori));
+
+    let blocked_len = blocked.master_deck.len();
+    assert!(!blocked.add_card_to_deck(CardId::Regret));
+    assert_eq!(blocked.master_deck.len(), blocked_len);
+    assert_eq!(
+        blocked.gold, 10,
+        "Omamori prevents the curse obtain, so Ceramic Fish onObtainCard does not fire"
+    );
+
+    let mut ectoplasm = crate::state::run::RunState::new(1, 0, false, "Ironclad");
+    ectoplasm.gold = 10;
+    ectoplasm.relics.clear();
+    ectoplasm.relics.push(RelicState::new(RelicId::CeramicFish));
+    ectoplasm.relics.push(RelicState::new(RelicId::Ectoplasm));
+
+    assert!(ectoplasm.add_card_to_deck(CardId::Strike));
+    assert_eq!(
+        ectoplasm.gold, 10,
+        "Java routes Ceramic Fish through AbstractPlayer.gainGold, which Ectoplasm blocks"
+    );
+}
+
+#[test]
+fn ectoplasm_blocks_run_combat_and_on_equip_gold_gain_paths() {
+    let mut run_state = crate::state::run::RunState::new(1, 0, false, "Ironclad");
+    run_state.gold = 10;
+    run_state.relics.clear();
+    run_state.relics.push(RelicState::new(RelicId::Ectoplasm));
+    assert_eq!(
+        run_state.change_gold_with_source(50, DomainEventSource::Event(EventId::GoldenShrine)),
+        0
+    );
+    assert_eq!(run_state.gold, 10);
+
+    old_coin::on_equip(&mut run_state);
+    assert_eq!(
+        run_state.gold, 10,
+        "Old Coin also routes through Java gainGold semantics when Ectoplasm is present"
+    );
+
+    let mut combat_state = crate::test_support::blank_test_combat();
+    combat_state.entities.player.gold = 10;
+    combat_state
+        .entities
+        .player
+        .add_relic(RelicState::new(RelicId::Ectoplasm));
+    crate::engine::action_handlers::damage::handle_gain_gold(50, &mut combat_state);
+    assert_eq!(combat_state.entities.player.gold, 10);
+    assert_eq!(combat_state.entities.player.gold_delta_this_combat, 0);
+}
+
+#[test]
+fn maw_bank_only_spending_in_shop_uses_it_up_like_java_lose_gold() {
+    let mut run_state = crate::state::run::RunState::new(1, 0, false, "Ironclad");
+    run_state.gold = 100;
+    run_state.relics.clear();
+    run_state.relics.push(RelicState::new(RelicId::MawBank));
+
+    run_state.change_gold_with_source(-25, DomainEventSource::Event(EventId::TheJoust));
+    let maw_bank = run_state
+        .relics
+        .iter()
+        .find(|relic| relic.id == RelicId::MawBank)
+        .expect("MawBank should be present");
+    assert!(!maw_bank.used_up);
+    assert_eq!(maw_bank.counter, -1);
+
+    run_state.change_gold_with_source(-25, DomainEventSource::Shop);
+    let maw_bank = run_state
+        .relics
+        .iter()
+        .find(|relic| relic.id == RelicId::MawBank)
+        .expect("MawBank should be present");
+    assert!(maw_bank.used_up);
+    assert_eq!(maw_bank.counter, -2);
+}
+
+#[test]
+fn juzu_bracelet_converts_monster_event_roll_without_preserving_monster_chance() {
+    let mut generator = crate::events::generator::EventGenerator::new(1);
+    generator.monster_chance = 1.0;
+    generator.shop_chance = 0.0;
+    generator.treasure_chance = 0.0;
+    let mut rng = crate::runtime::rng::RngPool::new(1);
+    let ctx = crate::events::context::EventContext {
+        act_num: 1,
+        ascension_level: 0,
+        floor_num: 10,
+        gold: 99,
+        current_hp: 80,
+        max_hp: 80,
+        has_curses: false,
+        tiny_chest_counter: 0,
+        has_golden_idol: false,
+        has_juzu_bracelet: true,
+        relic_count: 1,
+    };
+
+    assert_eq!(
+        generator.roll_room_type(&mut rng, &ctx),
+        crate::events::generator::RoomRoll::Event
+    );
+    assert_eq!(
+        generator.monster_chance, 0.10,
+        "Java resets MONSTER_CHANCE after a Juzu-converted monster roll"
+    );
 }

@@ -10,8 +10,9 @@
 // Screen 1: [Leave] after result applied
 
 use crate::state::core::{EngineState, RunPendingChoiceReason, RunPendingChoiceState};
-use crate::state::events::{EventChoiceMeta, EventState};
+use crate::state::events::{EventChoiceMeta, EventId, EventState};
 use crate::state::run::RunState;
+use crate::state::selection::DomainEventSource;
 
 pub fn get_choices(run_state: &RunState, event_state: &EventState) -> Vec<EventChoiceMeta> {
     match event_state.current_screen {
@@ -68,7 +69,10 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, _
                         2 => 200,
                         _ => 300,
                     };
-                    run_state.gold += gold;
+                    run_state.change_gold_with_source(
+                        gold,
+                        DomainEventSource::Event(EventId::GremlinWheelGame),
+                    );
                 }
                 1 => {
                     // Random relic — Java: addRelicToRewards(r) + combatRewardScreen.open()

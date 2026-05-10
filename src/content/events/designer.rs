@@ -1,10 +1,11 @@
 use crate::state::core::{EngineState, RunPendingChoiceReason, RunPendingChoiceState};
 use crate::state::events::{
-    EventActionKind, EventCardKind, EventChoiceMeta, EventEffect, EventOption,
+    EventActionKind, EventCardKind, EventChoiceMeta, EventEffect, EventId, EventOption,
     EventOptionConstraint, EventOptionSemantics, EventOptionTransition, EventSelectionKind,
     EventState,
 };
 use crate::state::run::RunState;
+use crate::state::selection::DomainEventSource;
 
 // Java Designer: randomizes upgrade-one vs upgrade-two-random, and remove-one vs transform-two
 // internal_state encodes: bit0 = adjustmentUpgradesOne, bit1 = cleanUpRemovesCards
@@ -321,7 +322,10 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
             match choice_idx {
                 0 => {
                     // Adjust
-                    run_state.gold -= adjust_cost(asc);
+                    run_state.change_gold_with_source(
+                        -adjust_cost(asc),
+                        DomainEventSource::Event(EventId::Designer),
+                    );
                     if upgrades_one(event_state.internal_state) {
                         // Upgrade 1: go to RunPendingChoice::Upgrade
                         event_state.current_screen = 2;
@@ -363,7 +367,10 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
                 }
                 1 => {
                     // Clean Up
-                    run_state.gold -= cleanup_cost(asc);
+                    run_state.change_gold_with_source(
+                        -cleanup_cost(asc),
+                        DomainEventSource::Event(EventId::Designer),
+                    );
                     if removes_cards(event_state.internal_state) {
                         // Remove 1 card
                         event_state.current_screen = 2;
@@ -390,7 +397,10 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
                 }
                 2 => {
                     // Full Service: remove 1 card + upgrade 1 random (Java: REMOVE_AND_UPGRADE)
-                    run_state.gold -= full_service_cost(asc);
+                    run_state.change_gold_with_source(
+                        -full_service_cost(asc),
+                        DomainEventSource::Event(EventId::Designer),
+                    );
                     event_state.extra_data = vec![1]; // Mark as Full Service for post-purge upgrade
                     event_state.current_screen = 2;
                     run_state.event_state = Some(event_state);

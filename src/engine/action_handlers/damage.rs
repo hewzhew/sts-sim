@@ -627,6 +627,14 @@ pub fn handle_gain_gold(amount: i32, state: &mut CombatState) {
         return;
     }
 
+    if state
+        .entities
+        .player
+        .has_relic(crate::content::relics::RelicId::Ectoplasm)
+    {
+        return;
+    }
+
     state.entities.player.gold += amount;
     state.entities.player.gold_delta_this_combat += amount;
 

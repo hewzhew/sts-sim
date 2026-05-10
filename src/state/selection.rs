@@ -98,6 +98,7 @@ pub struct SelectionResolution {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DomainEventSource {
     Event(EventId),
+    Relic(RelicId),
     CampfireSmith,
     CampfireToke,
     Selection(SelectionReason),

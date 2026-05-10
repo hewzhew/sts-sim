@@ -1,6 +1,7 @@
 use crate::state::core::{EngineState, RunPendingChoiceReason, RunPendingChoiceState};
-use crate::state::events::{EventChoiceMeta, EventState};
+use crate::state::events::{EventChoiceMeta, EventId, EventState};
 use crate::state::run::RunState;
+use crate::state::selection::DomainEventSource;
 
 const GOLD_COST: i32 = 75;
 
@@ -36,7 +37,8 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
     match event_state.current_screen {
         0 => match choice_idx {
             0 => {
-                run_state.gold -= GOLD_COST;
+                run_state
+                    .change_gold_with_source(-GOLD_COST, DomainEventSource::Event(EventId::Beggar));
                 event_state.current_screen = 1;
                 run_state.event_state = Some(event_state);
                 *engine_state = EngineState::RunPendingChoice(RunPendingChoiceState {

@@ -1,7 +1,8 @@
 use crate::content::relics::{RelicId, RelicState};
 use crate::state::core::EngineState;
-use crate::state::events::{EventChoiceMeta, EventState};
+use crate::state::events::{EventChoiceMeta, EventId, EventState};
 use crate::state::run::RunState;
+use crate::state::selection::DomainEventSource;
 
 pub fn get_choices(run_state: &RunState, event_state: &EventState) -> Vec<EventChoiceMeta> {
     match event_state.current_screen {
@@ -54,7 +55,10 @@ pub fn handle_choice(_engine_state: &mut EngineState, run_state: &mut RunState, 
                         damage = (damage - 1).max(0);
                     }
                     run_state.current_hp = (run_state.current_hp - damage).max(0);
-                    run_state.gold += gold_reward;
+                    run_state.change_gold_with_source(
+                        gold_reward,
+                        DomainEventSource::Event(EventId::FaceTrader),
+                    );
                     event_state.current_screen = 2;
                 }
                 1 => {

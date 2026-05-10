@@ -1,7 +1,8 @@
 use crate::content::relics::RelicId;
 use crate::state::core::EngineState;
-use crate::state::events::{EventChoiceMeta, EventState};
+use crate::state::events::{EventChoiceMeta, EventId, EventState};
 use crate::state::run::RunState;
+use crate::state::selection::DomainEventSource;
 
 pub fn get_choices(run_state: &RunState, event_state: &EventState) -> Vec<EventChoiceMeta> {
     match event_state.current_screen {
@@ -60,7 +61,10 @@ pub fn handle_choice(_engine_state: &mut EngineState, run_state: &mut RunState, 
                         .position(|r| r.id == RelicId::GoldenIdol)
                     {
                         run_state.relics.remove(pos);
-                        run_state.gold += 333;
+                        run_state.change_gold_with_source(
+                            333,
+                            DomainEventSource::Event(EventId::MoaiHead),
+                        );
                     }
                     event_state.current_screen = 1;
                 }

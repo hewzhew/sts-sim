@@ -1,7 +1,8 @@
 use crate::content::cards::CardId;
 use crate::state::core::EngineState;
-use crate::state::events::{EventChoiceMeta, EventState};
+use crate::state::events::{EventChoiceMeta, EventId, EventState};
 use crate::state::run::RunState;
+use crate::state::selection::DomainEventSource;
 
 fn gold_reward(run_state: &RunState) -> i32 {
     if run_state.ascension_level >= 15 {
@@ -50,7 +51,7 @@ pub fn handle_choice(_engine_state: &mut EngineState, run_state: &mut RunState, 
         1 => {
             // Confirm: gain gold + receive curse
             let gold = gold_reward(run_state);
-            run_state.gold += gold;
+            run_state.change_gold_with_source(gold, DomainEventSource::Event(EventId::Ssssserpent));
             run_state.add_card_to_deck(CardId::Doubt);
             event_state.current_screen = 99;
         }

@@ -2,10 +2,11 @@ use crate::content::cards::CardId;
 use crate::content::relics::{RelicId, RelicState};
 use crate::state::core::EngineState;
 use crate::state::events::{
-    EventActionKind, EventCardKind, EventChoiceMeta, EventEffect, EventOption,
+    EventActionKind, EventCardKind, EventChoiceMeta, EventEffect, EventId, EventOption,
     EventOptionSemantics, EventOptionTransition, EventRelicKind, EventState,
 };
 use crate::state::run::RunState;
+use crate::state::selection::DomainEventSource;
 
 pub fn get_options(run_state: &RunState, event_state: &EventState) -> Vec<EventOption> {
     match event_state.current_screen {
@@ -177,7 +178,10 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
                     // Desire: depends on floorNum % 50
                     if run_state.floor_num % 50 <= 40 {
                         // Normal path: 999 gold + 2 Normality
-                        run_state.gold += 999;
+                        run_state.change_gold_with_source(
+                            999,
+                            DomainEventSource::Event(EventId::MindBloom),
+                        );
                         run_state.add_card_to_deck(CardId::Normality);
                         run_state.add_card_to_deck(CardId::Normality);
                     } else {

@@ -1,9 +1,10 @@
 use crate::state::core::EngineState;
 use crate::state::events::{
-    EventActionKind, EventCardKind, EventChoiceMeta, EventEffect, EventOption,
+    EventActionKind, EventCardKind, EventChoiceMeta, EventEffect, EventId, EventOption,
     EventOptionConstraint, EventOptionSemantics, EventOptionTransition, EventRelicKind, EventState,
 };
 use crate::state::run::RunState;
+use crate::state::selection::DomainEventSource;
 
 pub fn get_options(_run_state: &RunState, event_state: &EventState) -> Vec<EventOption> {
     match event_state.current_screen {
@@ -182,7 +183,10 @@ pub fn handle_choice(_engine_state: &mut EngineState, run_state: &mut RunState, 
                 1 => {
                     // Give gold → relic
                     let amt = event_state.internal_state & 0xFF;
-                    run_state.gold = (run_state.gold - amt).max(0);
+                    run_state.change_gold_with_source(
+                        -amt,
+                        DomainEventSource::Event(EventId::WeMeetAgain),
+                    );
                     let relic_id = run_state.random_relic();
                     event_state.current_screen = 1;
                     if let Some(next_state) =

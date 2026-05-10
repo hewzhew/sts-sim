@@ -906,6 +906,179 @@ Coverage:
 - `shared_common_damage_hp_relic_metadata_matches_java_sources`
 - `vajra_and_strawberry_match_java_sources`
 
+## Shared Common Run Gold / Event Batch
+
+### Cross-Cutting Gold Entry Normalization
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/characters/AbstractPlayer.java`
+- `D:/rust/cardcrawl/relics/Ectoplasm.java`
+
+Rust source:
+- `src/state/run.rs`
+- `src/engine/run_loop.rs`
+- `src/engine/action_handlers/damage.rs`
+- `src/content/events/*.rs`
+
+Java evidence:
+- `AbstractPlayer.gainGold(int)` returns without changing gold when the player
+  has `Ectoplasm`.
+- `AbstractPlayer.loseGold(int)` calls `AbstractRelic.onSpendGold()` only when
+  the current room is a `ShopRoom`; event gold loss does not use up `MawBank`.
+
+Rust result:
+- Fixed `RunState::change_gold_with_source` to block positive gold gains while
+  `Ectoplasm` is present.
+- Fixed combat `GainGold` action handling to respect `Ectoplasm`.
+- Routed event gold gains/losses through `change_gold_with_source` instead of
+  direct `run_state.gold +=/-=`, preserving Ectoplasm and domain-event
+  semantics.
+- Kept shop-only `MawBank` spend exhaustion, matching Java `loseGold`.
+- Relic `on_equip` paths that are already wrapped by
+  `obtain_relic_with_source` resource-diff emission were guarded for Ectoplasm
+  without switching to `change_gold_with_source`, avoiding duplicate resource
+  events.
+
+Coverage:
+- `content::events`
+- `content::relics::tests`
+- `engine::shop_handler::tests`
+- `ectoplasm_blocks_run_combat_and_on_equip_gold_gain_paths`
+
+### Ceramic Fish
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/relics/CeramicFish.java`
+
+Rust source:
+- `src/deck/manager.rs`
+- `src/state/run.rs`
+- `src/content/relics/ceramic_fish.rs`
+
+Java evidence:
+- Constructor: ID `"CeramicFish"`, tier `COMMON`, landing sound `FLAT`.
+- `onObtainCard(AbstractCard c)` calls `AbstractDungeon.player.gainGold(9)`.
+- `canSpawn` is false after floor 48 unless Endless mode is active.
+- Because this routes through `gainGold`, `Ectoplasm` blocks the gold.
+
+Rust result:
+- Tier matches Java.
+- Existing deck obtain pipeline grants `+9` gold only after Omamori has failed
+  to prevent the obtain, so blocked curses do not trigger Ceramic Fish.
+- Fixed the shared gold entry path so Ceramic Fish gold is blocked by
+  `Ectoplasm`, matching Java.
+- Spawn gating is a relic-pool/reward-generation concern and is not handled by
+  the deck hook.
+
+Coverage:
+- `shared_common_run_gold_relic_metadata_matches_java_sources`
+- `ceramic_fish_obtain_card_gold_uses_java_gain_gold_semantics`
+
+### Dream Catcher
+
+Status: `exact`
+
+Java source:
+- `D:/rust/cardcrawl/relics/DreamCatcher.java`
+- `D:/rust/cardcrawl/vfx/campfire/CampfireSleepEffect.java`
+
+Rust source:
+- `src/engine/campfire_handler.rs`
+- `src/content/relics/dream_catcher.rs`
+
+Java evidence:
+- Constructor: ID `"Dream Catcher"`, tier `COMMON`, landing sound `MAGICAL`.
+- The relic class itself has no hook method; after sleep resolves,
+  `CampfireSleepEffect` checks for Dream Catcher and opens a normal card reward
+  if reward cards are available.
+- `canSpawn` is false after floor 48 unless Endless mode is active.
+
+Rust result:
+- Tier matches Java.
+- Campfire rest path generates a card reward after resting and preserves
+  `QuestionCard` reward-size adjustment.
+- Spawn gating is a relic-pool/reward-generation concern and is not handled by
+  the campfire hook.
+
+Coverage:
+- `shared_common_run_gold_relic_metadata_matches_java_sources`
+- `dream_catcher_reward_respects_question_card`
+
+### Juzu Bracelet
+
+Status: `exact`
+
+Java source:
+- `D:/rust/cardcrawl/relics/JuzuBracelet.java`
+- `D:/rust/cardcrawl/helpers/EventHelper.java`
+
+Rust source:
+- `src/state/run.rs`
+- `src/events/generator.rs`
+- `src/content/relics/mod.rs`
+
+Java evidence:
+- Constructor: ID `"Juzu Bracelet"`, tier `COMMON`, landing sound `MAGICAL`.
+- The relic class itself has no hook method.
+- `EventHelper.roll` converts a rolled `MONSTER` result into `EVENT` when the
+  player has Juzu Bracelet, but still resets `MONSTER_CHANCE` to `0.1`.
+- `canSpawn` is false after floor 48 unless Endless mode is active.
+
+Rust result:
+- Tier matches Java.
+- `RunState::generate_event` passes `has_juzu_bracelet` into the event roll
+  context.
+- `EventGenerator::roll_room_type` converts monster rolls to event and still
+  resets monster chance to `0.10`.
+- Spawn gating is a relic-pool/reward-generation concern and is not handled by
+  the event hook.
+
+Coverage:
+- `shared_common_run_gold_relic_metadata_matches_java_sources`
+- `juzu_bracelet_converts_monster_event_roll_without_preserving_monster_chance`
+
+### Maw Bank
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/relics/MawBank.java`
+- `D:/rust/cardcrawl/characters/AbstractPlayer.java`
+
+Rust source:
+- `src/engine/run_loop.rs`
+- `src/state/run.rs`
+- `src/engine/shop_handler.rs`
+
+Java evidence:
+- Constructor: ID `"MawBank"`, tier `COMMON`, landing sound `CLINK`.
+- `onEnterRoom`: if not used up, calls `AbstractDungeon.player.gainGold(12)`.
+- `onSpendGold`: if not used up, calls `setCounter(-2)`, which marks the relic
+  used up and leaves counter at `-2`.
+- `AbstractPlayer.loseGold` only calls `onSpendGold` in `ShopRoom`.
+- `canSpawn` is false after floor 48 unless Endless mode is active, and false
+  in shop rooms.
+
+Rust result:
+- Tier matches Java.
+- Existing shop purchase/removal path uses up Maw Bank through
+  `change_gold_with_source(..., Shop)`, matching Java.
+- Fixed room-entry Maw Bank gold to use `change_gold_with_source` instead of
+  direct `gold += 12`, preserving `Ectoplasm` and gold-domain events.
+- Confirmed event gold loss does not use up Maw Bank, matching Java's
+  shop-room guard.
+- Spawn gating is a relic-pool/reward-generation concern and is not handled by
+  the room-entry hook.
+
+Coverage:
+- `shared_common_run_gold_relic_metadata_matches_java_sources`
+- `maw_bank_only_spending_in_shop_uses_it_up_like_java_lose_gold`
+- `engine::shop_handler::tests`
+
 ## Full Ironclad Class-Specific Relic Queue
 
 Relics remain `unreviewed` until their Java file, Rust definition/subscription,
@@ -951,3 +1124,7 @@ class-specific queue.
 | 17 | `PreservedInsect.java` | `preserved_insect.rs` | `wrong-fixed` |
 | 18 | `Vajra.java` | `vajra.rs` | `wrong-fixed` |
 | 19 | `Strawberry.java` | `strawberry.rs` | `exact` |
+| 20 | `CeramicFish.java` | `ceramic_fish.rs` / deck manager | `wrong-fixed` |
+| 21 | `DreamCatcher.java` | `dream_catcher.rs` / campfire handler | `exact` |
+| 22 | `JuzuBracelet.java` | event generator | `exact` |
+| 23 | `MawBank.java` | run loop / shop handler | `wrong-fixed` |

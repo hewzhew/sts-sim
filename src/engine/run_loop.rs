@@ -292,13 +292,15 @@ pub fn tick_run(
 
                     // --- onEnterRoom() relic hooks (fire for ALL room types) ---
                     // MawBank: +12 gold each room entered (unless used up from spending gold)
-                    if let Some(maw) = run_state
+                    if run_state
                         .relics
                         .iter()
-                        .find(|r| r.id == crate::content::relics::RelicId::MawBank && !r.used_up)
+                        .any(|r| r.id == crate::content::relics::RelicId::MawBank && !r.used_up)
                     {
-                        let _ = maw; // borrow satisfied
-                        run_state.gold += 12;
+                        run_state.change_gold_with_source(
+                            12,
+                            DomainEventSource::Relic(crate::content::relics::RelicId::MawBank),
+                        );
                     }
 
                     if let Some(room_type) = run_state.map.get_current_room_type() {
@@ -328,7 +330,12 @@ pub fn tick_run(
                                 .iter()
                                 .any(|r| r.id == crate::content::relics::RelicId::SsserpentHead)
                             {
-                                run_state.gold += 50;
+                                run_state.change_gold_with_source(
+                                    50,
+                                    DomainEventSource::Relic(
+                                        crate::content::relics::RelicId::SsserpentHead,
+                                    ),
+                                );
                             }
                         }
 

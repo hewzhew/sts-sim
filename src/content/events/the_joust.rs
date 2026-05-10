@@ -9,8 +9,9 @@
 // Java uses miscRng.randomBoolean(0.3f) — owner wins 30%, murderer wins 70%
 
 use crate::state::core::EngineState;
-use crate::state::events::{EventChoiceMeta, EventState};
+use crate::state::events::{EventChoiceMeta, EventId, EventState};
 use crate::state::run::RunState;
+use crate::state::selection::DomainEventSource;
 
 pub fn get_choices(_run_state: &RunState, event_state: &EventState) -> Vec<EventChoiceMeta> {
     match event_state.current_screen {
@@ -56,7 +57,7 @@ pub fn handle_choice(_engine_state: &mut EngineState, run_state: &mut RunState, 
         1 => {
             // Place bet
             let bet_for = choice_idx == 1;
-            run_state.gold = (run_state.gold - 50).max(0);
+            run_state.change_gold_with_source(-50, DomainEventSource::Event(EventId::TheJoust));
             event_state.internal_state = if bet_for { 1 } else { 0 };
             event_state.current_screen = 2;
         }
@@ -69,9 +70,9 @@ pub fn handle_choice(_engine_state: &mut EngineState, run_state: &mut RunState, 
 
             // Calculate gold payout
             if owner_wins && bet_for {
-                run_state.gold += 250;
+                run_state.change_gold_with_source(250, DomainEventSource::Event(EventId::TheJoust));
             } else if !owner_wins && !bet_for {
-                run_state.gold += 100;
+                run_state.change_gold_with_source(100, DomainEventSource::Event(EventId::TheJoust));
             }
             // else: bet lost, gold already deducted
 

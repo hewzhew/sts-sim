@@ -1,6 +1,7 @@
 use crate::state::core::{EngineState, RunPendingChoiceReason, RunPendingChoiceState};
-use crate::state::events::{EventChoiceMeta, EventState};
+use crate::state::events::{EventChoiceMeta, EventId, EventState};
 use crate::state::run::RunState;
+use crate::state::selection::DomainEventSource;
 
 const DAMAGE: i32 = 7;
 const MIN_GOLD: i32 = 50;
@@ -67,7 +68,10 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
                     // Attack: gain gold
                     if has_high_damage_card(run_state) {
                         let gold = run_state.rng_pool.misc_rng.random_range(MIN_GOLD, MAX_GOLD);
-                        run_state.gold += gold;
+                        run_state.change_gold_with_source(
+                            gold,
+                            DomainEventSource::Event(EventId::GoldenWing),
+                        );
                     }
                     event_state.current_screen = 1;
                 }

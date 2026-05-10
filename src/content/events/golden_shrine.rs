@@ -1,7 +1,8 @@
 use crate::content::cards::CardId;
 use crate::state::core::EngineState;
-use crate::state::events::{EventChoiceMeta, EventState};
+use crate::state::events::{EventChoiceMeta, EventId, EventState};
 use crate::state::run::RunState;
+use crate::state::selection::DomainEventSource;
 
 pub fn get_choices(run_state: &RunState, event_state: &EventState) -> Vec<EventChoiceMeta> {
     if event_state.current_screen == 1 {
@@ -41,14 +42,20 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
                     } else {
                         100
                     };
-                    run_state.gold += gold_amt;
+                    run_state.change_gold_with_source(
+                        gold_amt,
+                        DomainEventSource::Event(EventId::GoldenShrine),
+                    );
                     if let Some(es) = &mut run_state.event_state {
                         es.current_screen = 1; // Transition to leave screen
                     }
                 }
                 1 => {
                     // Desecrate: +275 Gold, +Regret (via add_card_to_deck for Omamori check)
-                    run_state.gold += 275;
+                    run_state.change_gold_with_source(
+                        275,
+                        DomainEventSource::Event(EventId::GoldenShrine),
+                    );
                     run_state.add_card_to_deck(CardId::Regret);
 
                     if let Some(es) = &mut run_state.event_state {

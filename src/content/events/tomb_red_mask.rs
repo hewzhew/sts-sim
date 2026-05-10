@@ -1,7 +1,8 @@
 use crate::content::relics::{RelicId, RelicState};
 use crate::state::core::EngineState;
-use crate::state::events::{EventChoiceMeta, EventState};
+use crate::state::events::{EventChoiceMeta, EventId, EventState};
 use crate::state::run::RunState;
+use crate::state::selection::DomainEventSource;
 
 pub fn get_choices(run_state: &RunState, event_state: &EventState) -> Vec<EventChoiceMeta> {
     match event_state.current_screen {
@@ -37,7 +38,10 @@ pub fn handle_choice(_engine_state: &mut EngineState, run_state: &mut RunState, 
                 match choice_idx {
                     0 => {
                         // Don the Mask: +222 gold
-                        run_state.gold += 222;
+                        run_state.change_gold_with_source(
+                            222,
+                            DomainEventSource::Event(EventId::TombRedMask),
+                        );
                         event_state.current_screen = 1;
                     }
                     _ => {
@@ -48,7 +52,10 @@ pub fn handle_choice(_engine_state: &mut EngineState, run_state: &mut RunState, 
                 match choice_idx {
                     1 => {
                         // Pay all gold, get Red Mask
-                        run_state.gold = 0;
+                        run_state.set_gold_with_source(
+                            0,
+                            DomainEventSource::Event(EventId::TombRedMask),
+                        );
                         run_state.relics.push(RelicState::new(RelicId::RedMask));
                         event_state.current_screen = 1;
                     }

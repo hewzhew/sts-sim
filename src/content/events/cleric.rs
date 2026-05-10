@@ -1,9 +1,10 @@
 use crate::state::events::{
-    EventActionKind, EventCardKind, EventChoiceMeta, EventEffect, EventOption,
+    EventActionKind, EventCardKind, EventChoiceMeta, EventEffect, EventId, EventOption,
     EventOptionConstraint, EventOptionSemantics, EventOptionTransition, EventSelectionKind,
     EventState,
 };
 use crate::state::run::RunState;
+use crate::state::selection::DomainEventSource;
 
 pub fn get_options(run_state: &RunState, event_state: &EventState) -> Vec<EventOption> {
     match event_state.current_screen {
@@ -152,7 +153,8 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
             match choice_idx {
                 0 => {
                     // Heal
-                    run_state.gold -= 35;
+                    run_state
+                        .change_gold_with_source(-35, DomainEventSource::Event(EventId::Cleric));
                     let heal = (run_state.max_hp as f32 * 0.25).round() as i32;
                     run_state.current_hp = (run_state.current_hp + heal).min(run_state.max_hp);
                     event_state.current_screen = 1;
@@ -165,7 +167,10 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
                     } else {
                         50
                     };
-                    run_state.gold -= purify_cost;
+                    run_state.change_gold_with_source(
+                        -purify_cost,
+                        DomainEventSource::Event(EventId::Cleric),
+                    );
                     *engine_state = EngineState::RunPendingChoice(RunPendingChoiceState {
                         min_choices: 1,
                         max_choices: 1,
