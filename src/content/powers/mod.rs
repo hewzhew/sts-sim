@@ -695,7 +695,6 @@ pub fn resolve_power_at_turn_start(
             smallvec::smallvec![crate::runtime::action::Action::GainEnergy { amount }]
         }
         PowerId::NextTurnBlock => core::next_turn_block::at_turn_start(owner, amount),
-        PowerId::Energized => core::energized::at_turn_start(owner, amount),
         PowerId::MagnetismPower => {
             // Add `amount` random colorless cards to hand
             let mut acts = smallvec::SmallVec::new();

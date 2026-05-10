@@ -1,12 +1,30 @@
 // action_handlers/powers.rs — Power management domain
 //
 // Handles: ApplyPower, RemovePower, RemoveAllDebuffs, ApplyStasis,
-//          UpdatePowerExtraData, AwakenedRebirthClear, GainEnergy
+//          UpdatePowerExtraData, AwakenedRebirthClear, GainEnergy,
+//          player-turn energy recharge hooks
 
 use crate::content::powers::store;
 use crate::content::powers::PowerId;
 use crate::runtime::action::Action;
 use crate::runtime::combat::CombatState;
+
+pub fn apply_player_turn_energy_recharge_hooks(state: &mut CombatState) {
+    // Java PlayerTurnEffect first recharges base energy, then calls
+    // relic/power onEnergyRecharge hooks before ordinary start-of-turn hooks.
+    for power in store::powers_snapshot_for(state, 0) {
+        match power.power_type {
+            PowerId::Energized => {
+                state.turn.adjust_energy(power.amount);
+                state.queue_action_back(Action::RemovePower {
+                    target: 0,
+                    power_id: PowerId::Energized,
+                });
+            }
+            _ => {}
+        }
+    }
+}
 
 pub fn handle_apply_power(
     source: usize,
@@ -533,5 +551,68 @@ pub fn handle_lose_max_hp(target: usize, amount: i32, state: &mut CombatState) {
             .player
             .current_hp
             .min(state.entities.player.max_hp);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::runtime::combat::Power;
+    use crate::test_support::blank_test_combat;
+
+    #[test]
+    fn player_turn_energy_recharge_applies_energized_immediately() {
+        let mut state = blank_test_combat();
+        state.turn.energy = 0;
+        state.entities.player.energy_master = 3;
+        state.entities.power_db.insert(
+            0,
+            vec![Power {
+                power_type: PowerId::Energized,
+                instance_id: None,
+                amount: 2,
+                extra_data: 0,
+                just_applied: false,
+            }],
+        );
+
+        state.begin_next_player_turn();
+        apply_player_turn_energy_recharge_hooks(&mut state);
+
+        assert_eq!(state.turn.energy, 5);
+        assert_eq!(
+            state.pop_next_action(),
+            Some(Action::RemovePower {
+                target: 0,
+                power_id: PowerId::Energized,
+            })
+        );
+        assert_eq!(state.pop_next_action(), None);
+    }
+
+    #[test]
+    fn player_turn_energy_recharge_without_hooks_keeps_base_energy() {
+        let mut state = blank_test_combat();
+        state.turn.energy = 0;
+        state.entities.player.energy_master = 3;
+
+        state.begin_next_player_turn();
+        apply_player_turn_energy_recharge_hooks(&mut state);
+
+        assert_eq!(state.turn.energy, 3);
+        assert_eq!(state.pop_next_action(), None);
+    }
+
+    #[test]
+    fn energized_is_not_an_ordinary_at_turn_start_power() {
+        let state = blank_test_combat();
+
+        let actions =
+            crate::content::powers::resolve_power_at_turn_start(PowerId::Energized, &state, 0, 2);
+
+        assert!(
+            actions.is_empty(),
+            "Energized belongs to Java onEnergyRecharge, not applyStartOfTurnPowers"
+        );
     }
 }

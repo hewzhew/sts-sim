@@ -773,6 +773,9 @@ pub fn tick_engine(
                     // (Monster blocks are cleared per-monster at the start of each monster's turn above)
 
                     combat_state.begin_next_player_turn();
+                    crate::engine::action_handlers::powers::apply_player_turn_energy_recharge_hooks(
+                        combat_state,
+                    );
                     // Reset per-turn relic counters (OrangePellets)
                     for relic in combat_state.entities.player.relics.iter_mut() {
                         match relic.id {

@@ -9,7 +9,6 @@ pub mod dexterity;
 pub mod dexterity_down;
 pub mod draw_reduction;
 pub mod duplication_power;
-pub mod energized;
 pub mod entangle;
 pub mod explosive;
 pub mod fading;
