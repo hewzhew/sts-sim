@@ -2,7 +2,25 @@ use crate::runtime::action::{Action, ActionInfo, AddTo};
 use crate::runtime::combat::{CombatCard, CombatState};
 use smallvec::SmallVec;
 
-pub fn exhume_play(state: &CombatState, card: &CombatCard) -> SmallVec<[ActionInfo; 4]> {
+pub fn exhume_play(state: &CombatState, _card: &CombatCard) -> SmallVec<[ActionInfo; 4]> {
+    if state.zones.hand.len() >= 10 {
+        return smallvec::smallvec![];
+    }
+
+    if state.zones.exhaust_pile.len() == 1 {
+        let only = &state.zones.exhaust_pile[0];
+        if only.id == crate::content::cards::CardId::Exhume {
+            return smallvec::smallvec![];
+        }
+        return smallvec::smallvec![ActionInfo {
+            action: Action::ExhumeCard {
+                card_uuid: only.uuid,
+                upgrade: false,
+            },
+            insertion_mode: AddTo::Bottom,
+        }];
+    }
+
     let valid_count = state
         .zones
         .exhaust_pile
@@ -21,9 +39,7 @@ pub fn exhume_play(state: &CombatState, card: &CombatCard) -> SmallVec<[ActionIn
             max: 1,
             can_cancel: false,
             filter: crate::state::GridSelectFilter::NonExhume,
-            reason: crate::state::GridSelectReason::Exhume {
-                upgrade: card.upgrades > 0
-            },
+            reason: crate::state::GridSelectReason::Exhume { upgrade: false },
         },
         insertion_mode: AddTo::Bottom,
     }]

@@ -319,22 +319,12 @@ pub fn handle_grid_select(
                     }
                 }
                 GridSelectReason::Exhume { upgrade } => {
-                    // Exhume: move from exhaust to hand
                     for uuid in &uuids {
-                        if let Some(pos) = combat_state
-                            .zones
-                            .exhaust_pile
-                            .iter()
-                            .position(|c| c.uuid == *uuid)
-                        {
-                            let mut card = combat_state.zones.exhaust_pile.remove(pos);
-                            if upgrade {
-                                card.upgrades += 1;
-                            }
-                            if combat_state.zones.hand.len() < 10 {
-                                combat_state.zones.hand.push(card);
-                            }
-                        }
+                        crate::engine::action_handlers::cards::handle_exhume_card(
+                            *uuid,
+                            upgrade,
+                            combat_state,
+                        );
                     }
                 }
                 GridSelectReason::SkillFromDeckToHand | GridSelectReason::AttackFromDeckToHand => {

@@ -267,6 +267,10 @@ pub enum Action {
         from: PileType,
         to: PileType,
     },
+    ExhumeCard {
+        card_uuid: u32,
+        upgrade: bool,
+    },
     RemoveCardFromPile {
         card_uuid: u32,
         from: PileType,

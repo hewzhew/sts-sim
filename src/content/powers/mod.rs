@@ -905,7 +905,7 @@ pub fn resolve_power_on_card_drawn(
 ) -> smallvec::SmallVec<[crate::runtime::action::Action; 2]> {
     if let Some(card) = state.zones.hand.iter().find(|c| c.uuid == card_uuid) {
         match id {
-            PowerId::Evolve => ironclad::evolve::on_card_drawn(card.id, amount),
+            PowerId::Evolve => ironclad::evolve::on_card_drawn(state, owner, card.id, amount),
             PowerId::FireBreathing => {
                 ironclad::fire_breathing::on_card_drawn(state, owner, card.id, amount)
             }

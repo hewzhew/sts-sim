@@ -1366,3 +1366,279 @@ fn dropkick_and_double_tap_action_hooks_match_java_sources() {
         other => panic!("Double Tap should enqueue a purge-on-use copy, got {other:?}"),
     }
 }
+
+#[test]
+fn ironclad_exhaust_and_growth_definitions_match_java_sources() {
+    let evolve = get_card_definition(CardId::Evolve);
+    assert_eq!(evolve.card_type, CardType::Power);
+    assert_eq!(evolve.rarity, CardRarity::Uncommon);
+    assert_eq!(evolve.cost, 1);
+    assert_eq!(evolve.base_magic, 1);
+    assert_eq!(evolve.target, CardTarget::SelfTarget);
+    assert_eq!(evolve.upgrade_magic, 1);
+
+    let exhume = get_card_definition(CardId::Exhume);
+    assert_eq!(exhume.card_type, CardType::Skill);
+    assert_eq!(exhume.rarity, CardRarity::Rare);
+    assert_eq!(exhume.cost, 1);
+    assert_eq!(exhume.target, CardTarget::None);
+    assert!(exhume.exhaust);
+    let mut exhume_plus = CombatCard::new(CardId::Exhume, 150);
+    exhume_plus.upgrades = 1;
+    assert_eq!(upgraded_base_cost_override(&exhume_plus), Some(0));
+
+    let feed = get_card_definition(CardId::Feed);
+    assert_eq!(feed.card_type, CardType::Attack);
+    assert_eq!(feed.rarity, CardRarity::Rare);
+    assert_eq!(feed.cost, 1);
+    assert_eq!(feed.base_damage, 10);
+    assert_eq!(feed.base_magic, 3);
+    assert_eq!(feed.target, CardTarget::Enemy);
+    assert!(feed.exhaust);
+    assert!(feed.tags.contains(&CardTag::Healing));
+    assert_eq!(feed.upgrade_damage, 2);
+    assert_eq!(feed.upgrade_magic, 1);
+
+    let feel_no_pain = get_card_definition(CardId::FeelNoPain);
+    assert_eq!(feel_no_pain.card_type, CardType::Power);
+    assert_eq!(feel_no_pain.rarity, CardRarity::Uncommon);
+    assert_eq!(feel_no_pain.cost, 1);
+    assert_eq!(feel_no_pain.base_magic, 3);
+    assert_eq!(feel_no_pain.target, CardTarget::SelfTarget);
+    assert_eq!(feel_no_pain.upgrade_magic, 1);
+}
+
+#[test]
+fn ironclad_exhaust_and_growth_runtime_actions_match_java_use_methods() {
+    let mut state = crate::test_support::blank_test_combat();
+
+    let mut evolve_plus = CombatCard::new(CardId::Evolve, 151);
+    evolve_plus.upgrades = 1;
+    let evolve_actions = resolve_card_play(CardId::Evolve, &state, &evolve_plus, None);
+    assert_eq!(evolve_actions.len(), 1);
+    match &evolve_actions[0].action {
+        Action::ApplyPower {
+            source,
+            target,
+            power_id,
+            amount,
+        } => {
+            assert_eq!(*source, 0);
+            assert_eq!(*target, 0);
+            assert_eq!(*power_id, PowerId::Evolve);
+            assert_eq!(*amount, 2);
+        }
+        other => panic!("Evolve+ should apply upgraded EvolvePower, got {other:?}"),
+    }
+
+    let mut feel_no_pain_plus = CombatCard::new(CardId::FeelNoPain, 152);
+    feel_no_pain_plus.upgrades = 1;
+    let feel_no_pain_actions =
+        resolve_card_play(CardId::FeelNoPain, &state, &feel_no_pain_plus, None);
+    assert_eq!(feel_no_pain_actions.len(), 1);
+    match &feel_no_pain_actions[0].action {
+        Action::ApplyPower {
+            source,
+            target,
+            power_id,
+            amount,
+        } => {
+            assert_eq!(*source, 0);
+            assert_eq!(*target, 0);
+            assert_eq!(*power_id, PowerId::FeelNoPain);
+            assert_eq!(*amount, 4);
+        }
+        other => panic!("Feel No Pain+ should apply upgraded power, got {other:?}"),
+    }
+
+    let mut feed_plus = CombatCard::new(CardId::Feed, 153);
+    feed_plus.upgrades = 1;
+    let feed_actions = resolve_card_play(CardId::Feed, &state, &feed_plus, Some(7));
+    assert_eq!(feed_actions.len(), 1);
+    match &feed_actions[0].action {
+        Action::Feed {
+            target,
+            damage_info,
+            max_hp_amount,
+        } => {
+            assert_eq!(*target, 7);
+            assert_eq!(damage_info.source, 0);
+            assert_eq!(damage_info.target, 7);
+            assert_eq!(damage_info.base, 12);
+            assert_eq!(damage_info.output, 12);
+            assert_eq!(damage_info.damage_type, DamageType::Normal);
+            assert_eq!(*max_hp_amount, 4);
+        }
+        other => panic!("Feed+ should emit upgraded FeedAction, got {other:?}"),
+    }
+
+    state.zones.exhaust_pile = vec![CombatCard::new(CardId::Strike, 154)];
+    let exhume_actions = resolve_card_play(
+        CardId::Exhume,
+        &state,
+        &CombatCard::new(CardId::Exhume, 155),
+        None,
+    );
+    assert_eq!(exhume_actions.len(), 1);
+    match &exhume_actions[0].action {
+        Action::ExhumeCard { card_uuid, upgrade } => {
+            assert_eq!(*card_uuid, 154);
+            assert!(!*upgrade);
+        }
+        other => panic!("Exhume should auto-return sole non-Exhume exhaust card, got {other:?}"),
+    }
+
+    state.zones.exhaust_pile = vec![
+        CombatCard::new(CardId::Exhume, 156),
+        CombatCard::new(CardId::Strike, 157),
+    ];
+    let mut exhume_plus = CombatCard::new(CardId::Exhume, 158);
+    exhume_plus.upgrades = 1;
+    let select_actions = resolve_card_play(CardId::Exhume, &state, &exhume_plus, None);
+    assert_eq!(select_actions.len(), 1);
+    match &select_actions[0].action {
+        Action::SuspendForGridSelect {
+            source_pile,
+            min,
+            max,
+            can_cancel,
+            filter,
+            reason,
+        } => {
+            assert_eq!(*source_pile, crate::state::PileType::Exhaust);
+            assert_eq!(*min, 1);
+            assert_eq!(*max, 1);
+            assert!(!*can_cancel);
+            assert_eq!(*filter, crate::state::GridSelectFilter::NonExhume);
+            assert_eq!(
+                *reason,
+                crate::state::GridSelectReason::Exhume { upgrade: false }
+            );
+        }
+        other => panic!("Exhume should open non-cancellable exhaust grid select, got {other:?}"),
+    }
+
+    state.zones.hand = (0..10)
+        .map(|offset| CombatCard::new(CardId::Defend, 170 + offset))
+        .collect();
+    state.zones.exhaust_pile = vec![CombatCard::new(CardId::Strike, 181)];
+    let full_hand_actions = resolve_card_play(
+        CardId::Exhume,
+        &state,
+        &CombatCard::new(CardId::Exhume, 182),
+        None,
+    );
+    assert!(full_hand_actions.is_empty());
+}
+
+#[test]
+fn evolve_exhume_feed_and_feel_no_pain_hooks_match_java_sources() {
+    let mut state = crate::test_support::blank_test_combat();
+    state.zones.hand = vec![CombatCard::new(CardId::Wound, 190)];
+    let evolve_draw =
+        crate::content::powers::resolve_power_on_card_drawn(PowerId::Evolve, &state, 0, 2, 190);
+    assert_eq!(evolve_draw.as_slice(), &[Action::DrawCards(2)]);
+
+    crate::content::powers::store::set_powers_for(
+        &mut state,
+        0,
+        vec![Power {
+            power_type: PowerId::NoDraw,
+            instance_id: None,
+            amount: -1,
+            extra_data: 0,
+            just_applied: false,
+        }],
+    );
+    let blocked_evolve_draw =
+        crate::content::powers::resolve_power_on_card_drawn(PowerId::Evolve, &state, 0, 2, 190);
+    assert!(blocked_evolve_draw.is_empty());
+
+    let feel_no_pain_block = crate::content::powers::resolve_power_on_exhaust(
+        PowerId::FeelNoPain,
+        &state,
+        0,
+        4,
+        191,
+        CardId::Strike,
+    );
+    assert_eq!(
+        feel_no_pain_block.as_slice(),
+        &[Action::GainBlock {
+            target: 0,
+            amount: 4
+        }]
+    );
+
+    let mut exhume_state = crate::test_support::blank_test_combat();
+    exhume_state.zones.exhaust_pile = vec![CombatCard::new(CardId::Defend, 192)];
+    crate::content::powers::store::set_powers_for(
+        &mut exhume_state,
+        0,
+        vec![Power {
+            power_type: PowerId::Corruption,
+            instance_id: None,
+            amount: 1,
+            extra_data: 0,
+            just_applied: false,
+        }],
+    );
+    crate::engine::action_handlers::cards::handle_exhume_card(192, false, &mut exhume_state);
+    assert!(exhume_state.zones.exhaust_pile.is_empty());
+    assert_eq!(exhume_state.zones.hand.len(), 1);
+    assert_eq!(exhume_state.zones.hand[0].id, CardId::Defend);
+    assert_eq!(exhume_state.zones.hand[0].cost_for_turn, Some(0));
+
+    let mut normal_feed_state = crate::test_support::blank_test_combat();
+    let mut jaw_worm = crate::test_support::test_monster(EnemyId::JawWorm);
+    jaw_worm.id = 31;
+    jaw_worm.current_hp = 5;
+    normal_feed_state.entities.monsters = vec![jaw_worm];
+    crate::engine::action_handlers::damage::handle_feed(
+        31,
+        crate::runtime::action::DamageInfo {
+            source: 0,
+            target: 31,
+            base: 10,
+            output: 10,
+            damage_type: DamageType::Normal,
+            is_modified: false,
+        },
+        3,
+        &mut normal_feed_state,
+    );
+    assert_eq!(normal_feed_state.entities.player.max_hp, 83);
+    assert_eq!(normal_feed_state.entities.player.current_hp, 83);
+
+    let mut minion_feed_state = crate::test_support::blank_test_combat();
+    let mut minion = crate::test_support::test_monster(EnemyId::JawWorm);
+    minion.id = 32;
+    minion.current_hp = 5;
+    minion_feed_state.entities.monsters = vec![minion];
+    crate::content::powers::store::set_powers_for(
+        &mut minion_feed_state,
+        32,
+        vec![Power {
+            power_type: PowerId::Minion,
+            instance_id: None,
+            amount: -1,
+            extra_data: 0,
+            just_applied: false,
+        }],
+    );
+    crate::engine::action_handlers::damage::handle_feed(
+        32,
+        crate::runtime::action::DamageInfo {
+            source: 0,
+            target: 32,
+            base: 10,
+            output: 10,
+            damage_type: DamageType::Normal,
+            is_modified: false,
+        },
+        3,
+        &mut minion_feed_state,
+    );
+    assert_eq!(minion_feed_state.entities.player.max_hp, 80);
+    assert_eq!(minion_feed_state.entities.player.current_hp, 80);
+}

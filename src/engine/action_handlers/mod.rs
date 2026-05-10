@@ -331,6 +331,9 @@ pub fn execute_action(action: Action, state: &mut CombatState) {
             from,
             to,
         } => cards::handle_move_card(card_uuid, from, to, state),
+        Action::ExhumeCard { card_uuid, upgrade } => {
+            cards::handle_exhume_card(card_uuid, upgrade, state)
+        }
         Action::RemoveCardFromPile { card_uuid, from } => {
             cards::handle_remove_card_from_pile(card_uuid, from, state)
         }

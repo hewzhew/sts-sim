@@ -574,7 +574,13 @@ pub fn handle_feed(
     let mut info = damage_info;
     info.target = target;
     let outcome = apply_damage_to_monster_via_pipeline(state, &info, info.output.max(0));
-    if outcome.died {
+    let qualifies_for_feed = state
+        .entities
+        .monsters
+        .iter()
+        .find(|m| m.id == target)
+        .is_some_and(|m| !m.half_dead && !store::has_power(state, target, PowerId::Minion));
+    if outcome.died && qualifies_for_feed {
         state.entities.player.max_hp += max_hp_amount;
         state.entities.player.current_hp += max_hp_amount;
     }

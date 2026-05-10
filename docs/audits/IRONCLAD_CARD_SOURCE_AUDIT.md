@@ -936,6 +936,156 @@ Coverage:
 - `ironclad_copy_and_block_definitions_match_java_sources`
 - `ironclad_copy_and_block_runtime_actions_match_java_use_methods`
 
+## Batch 8 - Exhaust Retrieval / Growth Hooks Coverage
+
+### Evolve
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/cards/red/Evolve.java`
+- `D:/rust/cardcrawl/powers/EvolvePower.java`
+
+Rust source:
+- `src/content/cards/mod.rs`
+- `src/content/cards/ironclad/evolve.rs`
+- `src/content/powers/ironclad/evolve.rs`
+- `src/content/powers/mod.rs`
+
+Java evidence:
+- Constructor: cost `1`, type `POWER`, color `RED`, rarity `UNCOMMON`, target
+  `SELF`, `baseMagicNumber = magicNumber = 1`.
+- `use`: queues `ApplyPowerAction(p, p, new EvolvePower(p, this.magicNumber),
+  this.magicNumber)`.
+- `upgrade`: `upgradeMagicNumber(1)`.
+- `EvolvePower.onCardDraw`: if the drawn card is a `STATUS` and the owner does
+  not have `No Draw`, queues `DrawCardAction(owner, amount)`.
+
+Rust result:
+- Definition matches Java constructor and upgrade magic.
+- Runtime now evaluates magic at play time before applying Evolve.
+- Power hook now checks `NoDraw` before queuing the bonus draw, matching Java
+  source behavior rather than relying only on the draw handler's later guard.
+
+Coverage:
+- `ironclad_exhaust_and_growth_definitions_match_java_sources`
+- `ironclad_exhaust_and_growth_runtime_actions_match_java_use_methods`
+- `evolve_exhume_feed_and_feel_no_pain_hooks_match_java_sources`
+
+### Exhume
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/cards/red/Exhume.java`
+- `D:/rust/cardcrawl/actions/unique/ExhumeAction.java`
+
+Rust source:
+- `src/content/cards/mod.rs`
+- `src/content/cards/runtime_impl.rs`
+- `src/content/cards/ironclad/exhume.rs`
+- `src/runtime/action.rs`
+- `src/engine/action_handlers/cards.rs`
+- `src/engine/pending_choices.rs`
+
+Java evidence:
+- Constructor: cost `1`, type `SKILL`, color `RED`, rarity `RARE`, target
+  `NONE`, `exhaust = true`.
+- `use`: queues `ExhumeAction(false)`. Upgraded Exhume only changes base cost;
+  it does not pass `true` to the action.
+- `upgrade`: `upgradeBaseCost(0)`.
+- `ExhumeAction`: if hand is full, does nothing. If exhaust pile is empty, does
+  nothing. If the only exhaust card is `Exhume`, does nothing. If the exhaust
+  pile has exactly one non-Exhume card, moves it to hand immediately. If there
+  are multiple exhaust cards, temporarily removes Exhume cards from the grid,
+  opens a non-cancellable one-card exhaust selection, then restores the removed
+  Exhumes.
+- When a selected Skill is returned while the player has Corruption, Java calls
+  `setCostForTurn(-9)`, which makes the returned Skill cost `0` this turn.
+- Hover/fade/target position calls are UI presentation only and are not
+  simulator mechanics.
+
+Rust result:
+- Fixed upgraded base cost override for `Exhume+` to `0`.
+- Runtime now preserves Java's hand-full no-op and sole-card auto-return split.
+- Runtime emits a dedicated `ExhumeCard` action instead of generic `MoveCard`,
+  because Exhume has source-specific behavior: exclude Exhume itself, do not
+  drop the card when hand is full, and apply Corruption's temporary Skill cost.
+- `Exhume+` now still passes `upgrade = false`, matching the actual card source.
+
+Coverage:
+- `ironclad_exhaust_and_growth_definitions_match_java_sources`
+- `ironclad_exhaust_and_growth_runtime_actions_match_java_use_methods`
+- `evolve_exhume_feed_and_feel_no_pain_hooks_match_java_sources`
+
+### Feed
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/cards/red/Feed.java`
+- `D:/rust/cardcrawl/actions/unique/FeedAction.java`
+
+Rust source:
+- `src/content/cards/mod.rs`
+- `src/content/cards/ironclad/feed.rs`
+- `src/engine/action_handlers/damage.rs`
+
+Java evidence:
+- Constructor: cost `1`, type `ATTACK`, color `RED`, rarity `RARE`, target
+  `ENEMY`, `baseDamage = 10`, `baseMagicNumber = magicNumber = 3`,
+  `exhaust = true`, tag `HEALING`.
+- `use`: if target exists, queues `FeedAction(m, new DamageInfo(p, this.damage,
+  this.damageTypeForTurn), this.magicNumber)`.
+- `upgrade`: `upgradeDamage(2)` and `upgradeMagicNumber(1)`.
+- `FeedAction.update`: after damaging the target, increases player max HP only
+  if the target died and is not `halfDead` and does not have `Minion`.
+
+Rust result:
+- Definition matches Java constructor, upgrade damage, upgrade magic, exhaust,
+  target, and Healing tag.
+- Runtime now evaluates damage and magic at play time before emitting the
+  deferred Feed action.
+- Engine Feed handler now excludes Minion and half-dead targets from max HP gain.
+
+Coverage:
+- `ironclad_exhaust_and_growth_definitions_match_java_sources`
+- `ironclad_exhaust_and_growth_runtime_actions_match_java_use_methods`
+- `evolve_exhume_feed_and_feel_no_pain_hooks_match_java_sources`
+
+### Feel No Pain
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/cards/red/FeelNoPain.java`
+- `D:/rust/cardcrawl/powers/FeelNoPainPower.java`
+
+Rust source:
+- `src/content/cards/mod.rs`
+- `src/content/cards/ironclad/feel_no_pain.rs`
+- `src/content/powers/ironclad/feel_no_pain.rs`
+
+Java evidence:
+- Constructor: cost `1`, type `POWER`, color `RED`, rarity `UNCOMMON`, target
+  `SELF`, `baseMagicNumber = magicNumber = 3`.
+- `use`: queues `ApplyPowerAction(p, p, new FeelNoPainPower(p,
+  this.magicNumber), this.magicNumber)`.
+- `upgrade`: `upgradeMagicNumber(1)`.
+- `FeelNoPainPower.onExhaust`: flashes and queues `GainBlockAction(owner,
+  amount)`. There is no alive-monster guard.
+
+Rust result:
+- Definition matches Java constructor and upgrade magic.
+- Runtime now evaluates magic at play time before applying the power.
+- Existing power hook already queues block on exhaust without an alive-monster
+  guard, matching Java.
+
+Coverage:
+- `ironclad_exhaust_and_growth_definitions_match_java_sources`
+- `ironclad_exhaust_and_growth_runtime_actions_match_java_use_methods`
+- `evolve_exhume_feed_and_feel_no_pain_hooks_match_java_sources`
+
 ## Full Ironclad Queue
 
 Cards remain `unreviewed` until their Java file, Rust definition, Rust runtime,
@@ -970,10 +1120,10 @@ and supporting engine behavior have all been checked.
 | 25 | `Dropkick.java` | `dropkick.rs` | `wrong-fixed` |
 | 26 | `DualWield.java` | `dual_wield.rs` | `wrong-fixed` |
 | 27 | `Entrench.java` | `entrench.rs` | `wrong-fixed` |
-| 28 | `Evolve.java` | `evolve.rs` | `unreviewed` |
-| 29 | `Exhume.java` | `exhume.rs` | `unreviewed` |
-| 30 | `Feed.java` | `feed.rs` | `unreviewed` |
-| 31 | `FeelNoPain.java` | `feel_no_pain.rs` | `unreviewed` |
+| 28 | `Evolve.java` | `evolve.rs` | `wrong-fixed` |
+| 29 | `Exhume.java` | `exhume.rs` | `wrong-fixed` |
+| 30 | `Feed.java` | `feed.rs` | `wrong-fixed` |
+| 31 | `FeelNoPain.java` | `feel_no_pain.rs` | `wrong-fixed` |
 | 32 | `FiendFire.java` | `fiend_fire.rs` | `unreviewed` |
 | 33 | `FireBreathing.java` | `fire_breathing.rs` | `unreviewed` |
 | 34 | `FlameBarrier.java` | `flame_barrier.rs` | `unreviewed` |

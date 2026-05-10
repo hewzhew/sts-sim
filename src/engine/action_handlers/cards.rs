@@ -242,6 +242,37 @@ pub fn handle_move_card(
     }
 }
 
+fn can_upgrade_card_once(card: &crate::runtime::combat::CombatCard) -> bool {
+    card.id == CardId::SearingBlow || card.upgrades == 0
+}
+
+pub fn handle_exhume_card(card_uuid: u32, upgrade: bool, state: &mut CombatState) {
+    if state.zones.hand.len() >= 10 {
+        return;
+    }
+
+    let Some(pos) = state
+        .zones
+        .exhaust_pile
+        .iter()
+        .position(|c| c.uuid == card_uuid && c.id != CardId::Exhume)
+    else {
+        return;
+    };
+
+    let mut card = state.zones.exhaust_pile.remove(pos);
+    if upgrade && can_upgrade_card_once(&card) {
+        card.upgrades += 1;
+    }
+    if store::has_power(state, 0, PowerId::Corruption)
+        && crate::content::cards::get_card_definition(card.id).card_type
+            == crate::content::cards::CardType::Skill
+    {
+        card.cost_for_turn = Some(0);
+    }
+    state.zones.hand.push(card);
+}
+
 pub fn handle_remove_card_from_pile(
     card_uuid: u32,
     from: crate::state::PileType,
