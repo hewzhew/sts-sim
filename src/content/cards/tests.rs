@@ -1661,6 +1661,75 @@ fn evolve_exhume_feed_and_feel_no_pain_hooks_match_java_sources() {
 }
 
 #[test]
+fn on_kill_card_rewards_ignore_minions_and_half_dead_targets_like_java_actions() {
+    fn test_damage(target: usize) -> DamageInfo {
+        DamageInfo {
+            source: 0,
+            target,
+            base: 10,
+            output: 10,
+            damage_type: DamageType::Normal,
+            is_modified: false,
+        }
+    }
+
+    let mut greed_normal = crate::test_support::blank_test_combat();
+    let mut normal = crate::test_support::test_monster(EnemyId::JawWorm);
+    normal.id = 41;
+    normal.current_hp = 5;
+    greed_normal.entities.monsters = vec![normal];
+    crate::engine::action_handlers::damage::handle_hand_of_greed(
+        41,
+        test_damage(41),
+        20,
+        &mut greed_normal,
+    );
+    assert_eq!(
+        greed_normal.pop_next_action(),
+        Some(Action::GainGold { amount: 20 })
+    );
+
+    let mut greed_minion = crate::test_support::blank_test_combat();
+    let mut minion = crate::test_support::test_monster(EnemyId::JawWorm);
+    minion.id = 42;
+    minion.current_hp = 5;
+    greed_minion.entities.monsters = vec![minion];
+    crate::content::powers::store::set_powers_for(
+        &mut greed_minion,
+        42,
+        vec![Power {
+            power_type: PowerId::Minion,
+            instance_id: None,
+            amount: -1,
+            extra_data: 0,
+            just_applied: false,
+        }],
+    );
+    crate::engine::action_handlers::damage::handle_hand_of_greed(
+        42,
+        test_damage(42),
+        20,
+        &mut greed_minion,
+    );
+    assert_eq!(greed_minion.pop_next_action(), None);
+
+    let mut dagger_half_dead = crate::test_support::blank_test_combat();
+    let mut half_dead = crate::test_support::test_monster(EnemyId::AwakenedOne);
+    half_dead.id = 43;
+    half_dead.current_hp = 5;
+    half_dead.half_dead = true;
+    dagger_half_dead.entities.monsters = vec![half_dead];
+    crate::engine::action_handlers::damage::handle_ritual_dagger(
+        43,
+        test_damage(43),
+        3,
+        900,
+        &mut dagger_half_dead,
+    );
+    assert_eq!(dagger_half_dead.pop_next_action(), None);
+}
+
+#[test]
 fn ironclad_fire_and_strength_definitions_match_java_sources() {
     let fiend_fire = get_card_definition(CardId::FiendFire);
     assert_eq!(fiend_fire.card_type, CardType::Attack);

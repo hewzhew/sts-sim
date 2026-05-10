@@ -9,18 +9,17 @@ Continue Java-source-backed mechanics cleanup. Do not add strategy heuristics, b
 
 ## Last Pushed Checkpoint
 
-`511e3f7 Ground Spot Weakness action timing`
+`4cb0237 Ground X-cost action timing`
 
 What it fixed:
 
-- Java `SpotWeakness.use()` queues `SpotWeaknessAction`; `SpotWeaknessAction.update()` checks `targetMonster.getIntentBaseDmg() >= 0` when the action executes.
-- Rust now emits `Action::SpotWeakness`; execution checks current monster intent and queues `ApplyPower(Strength)` to the back, matching Java `addToBot`.
+- Java generic `AbstractPlayer.useCard` does not spend energy for X-cost cards; each X-cost action computes effect and spends current energy during its own `update()`.
+- Rust now records raw current energy as `energy_on_use` for X cards and lets Whirlwind/Transmutation handlers own Chemical X and spend timing.
 
 Verification already passed:
 
-- `cargo test -q content::cards::tests::ironclad_exhaust_debuff_and_intent_runtime_actions_match_java_use_methods`
-- `cargo test -q content::cards::tests::ironclad_copy_and_block_runtime_actions_match_java_use_methods`
 - `cargo test -q content::cards::tests::ironclad_topdeck_and_strength_scaling_runtime_actions_match_java_use_methods`
+- `cargo test -q content::cards::tests::transmutation_x_cost_action_matches_java_energy_and_chemical_x_timing`
 - `cargo check -q`
 - `git diff --check`
 
@@ -28,41 +27,30 @@ Verification already passed:
 
 Files changed:
 
-- `src/runtime/action.rs`
-- `src/engine/action_handlers/mod.rs`
-- `src/engine/action_handlers/cards.rs`
 - `src/engine/action_handlers/damage.rs`
-- `src/content/cards/ironclad/whirlwind.rs`
-- `src/content/cards/colorless/mod.rs`
 - `src/content/cards/tests.rs`
 
 Java evidence:
 
-- `D:\rust\cardcrawl\cards\red\Whirlwind.java`
-- `D:\rust\cardcrawl\actions\unique\WhirlwindAction.java`
-- `D:\rust\cardcrawl\cards\colorless\Transmutation.java`
-- `D:\rust\cardcrawl\actions\unique\TransmutationAction.java`
-- `D:\rust\cardcrawl\characters\AbstractPlayer.java`
-- `D:\rust\cardcrawl\cards\CardQueueItem.java`
+- `D:\rust\cardcrawl\actions\unique\FeedAction.java`
+- `D:\rust\cardcrawl\actions\unique\GreedAction.java`
+- `D:\rust\cardcrawl\actions\unique\RitualDaggerAction.java`
 
 Finding:
 
-- Java generic `AbstractPlayer.useCard` does not spend energy for X-cost cards; each X-cost action computes effect and spends current energy during its own `update()`.
-- Java X-cost actions add Chemical X inside the action, not in the generic card-play path.
-- Rust spent all X energy in `handle_play_card_from_hand` before card actions executed and stored Chemical X-adjusted `energy_on_use` on the card.
+- Java Feed / Greed / Ritual Dagger grant their kill reward only if the damaged target is dead and not `halfDead` and does not have `Minion`.
+- Rust Feed had that guard, but Hand of Greed and Ritual Dagger rewarded any `outcome.died` target, including minions and half-dead targets.
 
 Implemented locally:
 
-- Added `Action::Whirlwind` and `Action::Transmutation`.
-- `handle_play_card_from_hand` now records raw current energy as `energy_on_use` for X cards and does not spend X energy in the generic path.
-- Whirlwind and Transmutation handlers apply Chemical X at action execution, queue their repeated effects, and spend current energy only if not `free_to_play_once`.
-- Updated Whirlwind tests to prove Chemical X adds two repeats, free X does not spend energy, and manual hand play leaves X energy untouched until the X action executes.
-- Added a Transmutation test for Java's stale `energyOnUse` correction to current energy plus Chemical X timing.
+- Added shared `target_qualifies_for_non_minion_kill_reward` in the damage handler.
+- Feed, Hand of Greed, and Ritual Dagger now use the same non-minion/non-halfDead reward guard.
+- Added a regression test proving Greed rewards normal kills, rejects Minion kills, and Ritual Dagger rejects half-dead kills.
 
 Verification already passed for this uncommitted work:
 
-- `cargo test -q content::cards::tests::ironclad_topdeck_and_strength_scaling_runtime_actions_match_java_use_methods`
-- `cargo test -q content::cards::tests::transmutation_x_cost_action_matches_java_energy_and_chemical_x_timing`
+- `cargo test -q content::cards::tests::on_kill_card_rewards_ignore_minions_and_half_dead_targets_like_java_actions`
+- `cargo test -q content::cards::tests::evolve_exhume_feed_and_feel_no_pain_hooks_match_java_sources`
 - `cargo check -q`
 - `git diff --check`
 

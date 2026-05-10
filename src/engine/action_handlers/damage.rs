@@ -101,6 +101,15 @@ fn update_player_cards_on_damage(state: &mut CombatState) {
     }
 }
 
+fn target_qualifies_for_non_minion_kill_reward(state: &CombatState, target: usize) -> bool {
+    state
+        .entities
+        .monsters
+        .iter()
+        .find(|m| m.id == target)
+        .is_some_and(|m| !m.half_dead && !store::has_power(state, target, PowerId::Minion))
+}
+
 /// Shared block-deduction logic. Returns unblocked damage.
 pub fn deduct_block(block: &mut i32, damage: i32) -> i32 {
     if *block > 0 {
@@ -604,13 +613,7 @@ pub fn handle_feed(
     let mut info = damage_info;
     info.target = target;
     let outcome = apply_damage_to_monster_via_pipeline(state, &info, info.output.max(0));
-    let qualifies_for_feed = state
-        .entities
-        .monsters
-        .iter()
-        .find(|m| m.id == target)
-        .is_some_and(|m| !m.half_dead && !store::has_power(state, target, PowerId::Minion));
-    if outcome.died && qualifies_for_feed {
+    if outcome.died && target_qualifies_for_non_minion_kill_reward(state, target) {
         state.entities.player.max_hp += max_hp_amount;
         state.entities.player.current_hp += max_hp_amount;
     }
@@ -625,7 +628,7 @@ pub fn handle_hand_of_greed(
     let mut info = damage_info;
     info.target = target;
     let outcome = apply_damage_to_monster_via_pipeline(state, &info, info.output.max(0));
-    if outcome.died {
+    if outcome.died && target_qualifies_for_non_minion_kill_reward(state, target) {
         state.queue_action_front(Action::GainGold {
             amount: gold_amount,
         });
@@ -642,7 +645,7 @@ pub fn handle_ritual_dagger(
     let mut info = damage_info;
     info.target = target;
     let outcome = apply_damage_to_monster_via_pipeline(state, &info, info.output.max(0));
-    if outcome.died {
+    if outcome.died && target_qualifies_for_non_minion_kill_reward(state, target) {
         state.queue_action_front(Action::ModifyCardMisc {
             card_uuid,
             amount: misc_amount,
