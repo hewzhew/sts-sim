@@ -459,10 +459,11 @@ pub fn at_turn_start(state: &mut CombatState) -> SmallVec<[ActionInfo; 4]> {
                 crate::content::relics::brimstone::Brimstone::at_turn_start(&*state),
             ),
             RelicId::CaptainsWheel => {
-                let counter = state.entities.player.relics[relic_index].counter;
+                let mut rs = state.entities.player.relics[relic_index].clone();
                 actions.extend(
-                    crate::content::relics::captains_wheel::CaptainsWheel::at_turn_start(counter),
+                    crate::content::relics::captains_wheel::CaptainsWheel::at_turn_start(&mut rs),
                 );
+                state.entities.player.relics[relic_index] = rs;
             }
             RelicId::HappyFlower => {
                 let mut rs = state.entities.player.relics[relic_index].clone();
@@ -478,10 +479,11 @@ pub fn at_turn_start(state: &mut CombatState) -> SmallVec<[ActionInfo; 4]> {
                 state.entities.player.relics[relic_index] = rs;
             }
             RelicId::IncenseBurner => {
-                let counter = state.entities.player.relics[relic_index].counter;
+                let mut rs = state.entities.player.relics[relic_index].clone();
                 actions.extend(crate::content::relics::incense_burner::at_turn_start(
-                    counter,
+                    &mut rs,
                 ));
+                state.entities.player.relics[relic_index] = rs;
             }
             RelicId::Inserter => {
                 let counter = state.entities.player.relics[relic_index].counter;
@@ -523,10 +525,11 @@ pub fn at_turn_start(state: &mut CombatState) -> SmallVec<[ActionInfo; 4]> {
                 state.entities.player.relics[relic_index] = rs;
             }
             RelicId::StoneCalendar => {
-                let counter = state.entities.player.relics[relic_index].counter;
+                let mut rs = state.entities.player.relics[relic_index].clone();
                 actions.extend(crate::content::relics::stone_calendar::at_turn_start(
-                    counter,
+                    &mut rs,
                 ));
+                state.entities.player.relics[relic_index] = rs;
             }
             // FrozenCore moved to at_end_of_turn (Java: onPlayerEndTurn)
             RelicId::HoveringKite => {

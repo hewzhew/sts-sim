@@ -1832,3 +1832,251 @@ fn normal_relic_rewards_can_return_bottled_relics_but_screenless_rewards_skip_th
         "Java returnRandomScreenlessRelic skips Bottled Flame/Lightning/Tornado and Whetstone"
     );
 }
+
+#[test]
+fn shared_rare_start_and_turn_relic_metadata_matches_java_sources() {
+    assert_eq!(get_relic_tier(RelicId::CaptainsWheel), RelicTier::Rare);
+    assert_eq!(get_relic_tier(RelicId::ClockworkSouvenir), RelicTier::Shop);
+    assert_eq!(get_relic_tier(RelicId::FossilizedHelix), RelicTier::Rare);
+    assert_eq!(get_relic_tier(RelicId::IncenseBurner), RelicTier::Rare);
+    assert_eq!(get_relic_tier(RelicId::Pocketwatch), RelicTier::Rare);
+    assert_eq!(get_relic_tier(RelicId::StoneCalendar), RelicTier::Rare);
+    assert_eq!(get_relic_tier(RelicId::ThreadAndNeedle), RelicTier::Rare);
+
+    let captains = get_relic_subscriptions(RelicId::CaptainsWheel);
+    assert!(captains.at_battle_start);
+    assert!(captains.at_turn_start);
+    assert!(captains.on_victory);
+
+    assert!(get_relic_subscriptions(RelicId::ClockworkSouvenir).at_battle_start);
+    assert!(get_relic_subscriptions(RelicId::FossilizedHelix).at_battle_start);
+    assert!(get_relic_subscriptions(RelicId::IncenseBurner).at_turn_start);
+    assert!(get_relic_subscriptions(RelicId::ThreadAndNeedle).at_battle_start);
+
+    let pocketwatch = get_relic_subscriptions(RelicId::Pocketwatch);
+    assert!(pocketwatch.at_battle_start);
+    assert!(pocketwatch.at_turn_start_post_draw);
+    assert!(pocketwatch.on_use_card);
+    assert!(pocketwatch.on_victory);
+
+    let stone_calendar = get_relic_subscriptions(RelicId::StoneCalendar);
+    assert!(stone_calendar.at_battle_start);
+    assert!(stone_calendar.at_turn_start);
+    assert!(stone_calendar.at_end_of_turn);
+    assert!(stone_calendar.on_victory);
+}
+
+#[test]
+fn captains_wheel_mutates_counter_immediately_and_fires_once_on_third_turn() {
+    let mut relic = RelicState::new(RelicId::CaptainsWheel);
+    captains_wheel::CaptainsWheel::at_battle_start(&mut relic);
+    assert_eq!(relic.counter, 0);
+
+    assert!(captains_wheel::CaptainsWheel::at_turn_start(&mut relic).is_empty());
+    assert_eq!(relic.counter, 1);
+    assert!(captains_wheel::CaptainsWheel::at_turn_start(&mut relic).is_empty());
+    assert_eq!(relic.counter, 2);
+
+    let actions = captains_wheel::CaptainsWheel::at_turn_start(&mut relic);
+    assert_eq!(relic.counter, -1, "Java sets counter to -1 after firing");
+    assert_eq!(actions.len(), 1);
+    assert_eq!(actions[0].insertion_mode, AddTo::Bottom);
+    assert!(matches!(
+        actions[0].action,
+        Action::GainBlock {
+            target: 0,
+            amount: 18
+        }
+    ));
+
+    assert!(captains_wheel::CaptainsWheel::at_turn_start(&mut relic).is_empty());
+    assert_eq!(relic.counter, -1);
+    captains_wheel::CaptainsWheel::on_victory(&mut relic);
+    assert_eq!(relic.counter, -1);
+}
+
+#[test]
+fn incense_burner_counter_mutates_immediately_and_grants_intangible_on_six() {
+    let mut relic = RelicState::new(RelicId::IncenseBurner);
+    relic.counter = 4;
+    assert!(incense_burner::at_turn_start(&mut relic).is_empty());
+    assert_eq!(relic.counter, 5);
+
+    let actions = incense_burner::at_turn_start(&mut relic);
+    assert_eq!(relic.counter, 0, "Java resets counter to 0 when it fires");
+    assert_eq!(actions.len(), 1);
+    assert_eq!(actions[0].insertion_mode, AddTo::Bottom);
+    assert!(matches!(
+        actions[0].action,
+        Action::ApplyPower {
+            source: 0,
+            target: 0,
+            power_id: PowerId::IntangiblePlayer,
+            amount: 1
+        }
+    ));
+
+    relic.counter = -1;
+    assert!(incense_burner::at_turn_start(&mut relic).is_empty());
+    assert_eq!(relic.counter, 1, "Java -1 counter advances to 1, not 0");
+}
+
+#[test]
+fn hook_persists_mutated_turn_start_relic_counters_before_actions_execute() {
+    let mut state = crate::test_support::blank_test_combat();
+    state
+        .entities
+        .player
+        .add_relic(RelicState::new(RelicId::CaptainsWheel));
+    state
+        .entities
+        .player
+        .add_relic(RelicState::new(RelicId::IncenseBurner));
+    state
+        .entities
+        .player
+        .add_relic(RelicState::new(RelicId::StoneCalendar));
+
+    state.entities.player.relics[0].counter = 2;
+    state.entities.player.relics[1].counter = 5;
+    state.entities.player.relics[2].counter = 6;
+
+    let actions = hooks::at_turn_start(&mut state);
+    assert_eq!(state.entities.player.relics[0].counter, -1);
+    assert_eq!(state.entities.player.relics[1].counter, 0);
+    assert_eq!(state.entities.player.relics[2].counter, 7);
+    assert_eq!(actions.len(), 2);
+    assert!(actions.iter().any(|info| matches!(
+        info.action,
+        Action::GainBlock {
+            target: 0,
+            amount: 18
+        }
+    )));
+    assert!(actions.iter().any(|info| matches!(
+        info.action,
+        Action::ApplyPower {
+            source: 0,
+            target: 0,
+            power_id: PowerId::IntangiblePlayer,
+            amount: 1
+        }
+    )));
+}
+
+#[test]
+fn stone_calendar_counter_and_null_source_damage_match_java() {
+    let mut relic = RelicState::new(RelicId::StoneCalendar);
+    stone_calendar::at_battle_start(&mut relic);
+    assert_eq!(relic.counter, 0);
+
+    for expected in 1..=7 {
+        assert!(stone_calendar::at_turn_start(&mut relic).is_empty());
+        assert_eq!(relic.counter, expected);
+    }
+
+    let mut state = crate::test_support::blank_test_combat();
+    state.entities.monsters = vec![
+        crate::test_support::test_monster(EnemyId::JawWorm),
+        crate::test_support::test_monster(EnemyId::Cultist),
+    ];
+    let actions = stone_calendar::at_end_of_turn(&state, relic.counter);
+    assert_eq!(actions.len(), 1);
+    assert_eq!(actions[0].insertion_mode, AddTo::Bottom);
+    match &actions[0].action {
+        Action::DamageAllEnemies {
+            source,
+            damages,
+            damage_type,
+            is_modified,
+        } => {
+            assert_eq!(*source, NO_SOURCE);
+            assert_eq!(damages.as_slice(), &[52, 52]);
+            assert_eq!(*damage_type, DamageType::Thorns);
+            assert!(!is_modified);
+        }
+        other => panic!("unexpected Stone Calendar action: {other:?}"),
+    }
+
+    stone_calendar::on_victory(&mut relic);
+    assert_eq!(relic.counter, -1);
+}
+
+#[test]
+fn start_relic_action_order_matches_java_non_ui_actions() {
+    let thread_actions = thread_and_needle::at_battle_start();
+    assert_eq!(thread_actions.len(), 1);
+    assert_eq!(
+        thread_actions[0].insertion_mode,
+        AddTo::Top,
+        "Java uses addToTop for Thread and Needle PlatedArmor; UI relic action is ignored"
+    );
+    assert!(matches!(
+        thread_actions[0].action,
+        Action::ApplyPower {
+            source: 0,
+            target: 0,
+            power_id: PowerId::PlatedArmor,
+            amount: 4
+        }
+    ));
+
+    let clockwork_actions = clockwork_souvenir::ClockworkSouvenir::at_battle_start();
+    assert_eq!(clockwork_actions.len(), 1);
+    assert_eq!(clockwork_actions[0].insertion_mode, AddTo::Top);
+    assert!(matches!(
+        clockwork_actions[0].action,
+        Action::ApplyPower {
+            source: 0,
+            target: 0,
+            power_id: PowerId::Artifact,
+            amount: 1
+        }
+    ));
+
+    let helix_actions = fossilized_helix::FossilizedHelix::at_battle_start();
+    assert_eq!(helix_actions.len(), 1);
+    assert_eq!(helix_actions[0].insertion_mode, AddTo::Bottom);
+    assert!(matches!(
+        helix_actions[0].action,
+        Action::ApplyPower {
+            source: 0,
+            target: 0,
+            power_id: PowerId::Buffer,
+            amount: 1
+        }
+    ));
+}
+
+#[test]
+fn pocketwatch_first_turn_and_three_card_limit_match_java() {
+    let mut relic = RelicState::new(RelicId::Pocketwatch);
+    pocketwatch::at_battle_start(&mut relic);
+    assert_eq!(relic.counter, 0);
+    assert_eq!(relic.amount, 1, "amount stores Java firstTurn=true");
+
+    assert!(pocketwatch::at_turn_start_post_draw(&mut relic).is_empty());
+    assert_eq!(relic.counter, 0);
+    assert_eq!(relic.amount, 0, "first turn is consumed without drawing");
+
+    for _ in 0..3 {
+        pocketwatch::on_use_card(&mut relic);
+    }
+    let draw_actions = pocketwatch::at_turn_start_post_draw(&mut relic);
+    assert_eq!(draw_actions.len(), 1);
+    assert_eq!(draw_actions[0].insertion_mode, AddTo::Bottom);
+    assert!(matches!(draw_actions[0].action, Action::DrawCards(3)));
+    assert_eq!(relic.counter, 0);
+    assert_eq!(relic.amount, 0);
+
+    for _ in 0..4 {
+        pocketwatch::on_use_card(&mut relic);
+    }
+    assert!(pocketwatch::at_turn_start_post_draw(&mut relic).is_empty());
+    assert_eq!(relic.counter, 0);
+    assert_eq!(relic.amount, 0);
+
+    pocketwatch::on_victory(&mut relic);
+    assert_eq!(relic.counter, -1);
+    assert_eq!(relic.amount, 0);
+}

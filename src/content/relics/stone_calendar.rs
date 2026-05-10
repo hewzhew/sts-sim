@@ -1,4 +1,4 @@
-use crate::runtime::action::{Action, ActionInfo, AddTo};
+use crate::runtime::action::{Action, ActionInfo, AddTo, NO_SOURCE};
 use smallvec::SmallVec;
 
 /// Java StoneCalendar:
@@ -9,14 +9,11 @@ pub fn at_battle_start(relic_state: &mut crate::content::relics::RelicState) {
     relic_state.counter = 0;
 }
 
-pub fn at_turn_start(counter: i32) -> SmallVec<[ActionInfo; 4]> {
-    smallvec::smallvec![ActionInfo {
-        action: Action::UpdateRelicCounter {
-            relic_id: crate::content::relics::RelicId::StoneCalendar,
-            counter: counter + 1,
-        },
-        insertion_mode: AddTo::Bottom,
-    }]
+pub fn at_turn_start(
+    relic_state: &mut crate::content::relics::RelicState,
+) -> SmallVec<[ActionInfo; 4]> {
+    relic_state.counter += 1;
+    SmallVec::new()
 }
 
 pub fn at_end_of_turn(
@@ -29,7 +26,7 @@ pub fn at_end_of_turn(
             state.entities.monsters.iter().map(|_| 52).collect();
         actions.push(ActionInfo {
             action: Action::DamageAllEnemies {
-                source: 0,
+                source: NO_SOURCE,
                 damages,
                 damage_type: crate::runtime::action::DamageType::Thorns,
                 is_modified: false,

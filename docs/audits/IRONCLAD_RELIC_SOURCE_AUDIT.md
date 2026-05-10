@@ -2300,6 +2300,212 @@ Coverage:
 - `shared_uncommon_bottle_shop_and_rest_relic_metadata_matches_java_sources`
 - `rewards::generator::tests` coverage for rare-card reward generation
 
+## Shared Relic Batch 8 - Rare Start / Turn Counter Relics
+
+### Captain's Wheel
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/relics/CaptainsWheel.java`
+
+Rust source:
+- `src/content/relics/captains_wheel.rs`
+- `src/content/relics/hooks.rs`
+
+Java evidence:
+- Constructor: ID `"CaptainsWheel"`, tier `RARE`, landing sound `FLAT`.
+- `atBattleStart`: sets `counter = 0`.
+- `atTurnStart`: increments `counter` only while the relic is not grayscale.
+- When `counter == 3`, queues player block `18` with `addToBot`, then sets
+  `counter = -1` and `grayscale = true`.
+- `onVictory`: sets `counter = -1` and clears grayscale.
+
+Rust result:
+- Tier and hook subscriptions match Java.
+- Fixed the turn-start hook to mutate the relic counter immediately instead of
+  emitting `UpdateRelicCounter` actions.
+- Fixed the firing state to set `counter = -1` after the block trigger, matching
+  Java's disabled/grayscale combat state.
+- UI-only grayscale and relic-above-creature actions are intentionally not
+  represented.
+
+Coverage:
+- `shared_rare_start_and_turn_relic_metadata_matches_java_sources`
+- `captains_wheel_mutates_counter_immediately_and_fires_once_on_third_turn`
+- `hook_persists_mutated_turn_start_relic_counters_before_actions_execute`
+
+### Clockwork Souvenir
+
+Status: `exact`
+
+Java source:
+- `D:/rust/cardcrawl/relics/ClockworkSouvenir.java`
+
+Rust source:
+- `src/content/relics/clockwork_souvenir.rs`
+- `src/content/relics/hooks.rs`
+
+Java evidence:
+- Constructor: ID `"ClockworkSouvenir"`, tier `SHOP`, landing sound `HEAVY`.
+- `atBattleStart`: queues player Artifact `1` with `addToTop`.
+
+Rust result:
+- Tier and battle-start subscription match Java.
+- Emits player Artifact `1` with top insertion.
+- UI-only flash behavior is intentionally not represented.
+
+Coverage:
+- `shared_rare_start_and_turn_relic_metadata_matches_java_sources`
+- `start_relic_action_order_matches_java_non_ui_actions`
+
+### Fossilized Helix
+
+Status: `exact`
+
+Java source:
+- `D:/rust/cardcrawl/relics/FossilizedHelix.java`
+
+Rust source:
+- `src/content/relics/fossilized_helix.rs`
+- `src/content/relics/hooks.rs`
+
+Java evidence:
+- Constructor: ID `"FossilizedHelix"`, tier `RARE`, landing sound `HEAVY`.
+- `atBattleStart`: queues relic-above-creature UI action, then queues player
+  Buffer `1` with `addToBot`, and sets grayscale.
+- `justEnteredRoom`: clears grayscale.
+
+Rust result:
+- Tier and battle-start subscription match Java.
+- Emits player Buffer `1` with bottom insertion.
+- UI-only relic-above-creature and grayscale room-state behavior is
+  intentionally not represented.
+
+Coverage:
+- `shared_rare_start_and_turn_relic_metadata_matches_java_sources`
+- `start_relic_action_order_matches_java_non_ui_actions`
+
+### Incense Burner
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/relics/IncenseBurner.java`
+
+Rust source:
+- `src/content/relics/incense_burner.rs`
+- `src/content/relics/hooks.rs`
+
+Java evidence:
+- Constructor: ID `"Incense Burner"`, tier `RARE`, landing sound `CLINK`.
+- `onEquip`: sets `counter = 0`.
+- `atTurnStart`: updates `counter = counter == -1 ? counter + 2 : counter + 1`.
+- If the resulting counter is `6`, sets `counter = 0` and queues player
+  Intangible `1` with `addToBot`.
+
+Rust result:
+- Tier and turn-start subscription match Java.
+- Fixed the turn-start hook to mutate `RelicState.counter` immediately instead
+  of queuing a delayed counter update.
+- Fixed the `-1 -> 1` uninitialized transition and the `6 -> 0` firing reset.
+- UI-only flash / relic-above-creature behavior is intentionally not
+  represented.
+
+Coverage:
+- `shared_rare_start_and_turn_relic_metadata_matches_java_sources`
+- `incense_burner_counter_mutates_immediately_and_grants_intangible_on_six`
+- `hook_persists_mutated_turn_start_relic_counters_before_actions_execute`
+
+### Pocketwatch
+
+Status: `exact`
+
+Java source:
+- `D:/rust/cardcrawl/relics/Pocketwatch.java`
+
+Rust source:
+- `src/content/relics/pocketwatch.rs`
+- `src/content/relics/hooks.rs`
+
+Java evidence:
+- Constructor: ID `"Pocketwatch"`, tier `RARE`, landing sound `FLAT`.
+- `atBattleStart`: sets `counter = 0` and private `firstTurn = true`.
+- `onPlayCard`: increments `counter`.
+- `atTurnStartPostDraw`: if `counter <= 3` and not first turn, queues draw
+  `3`; otherwise clears `firstTurn`; then sets `counter = 0`.
+- `onVictory`: sets `counter = -1`.
+
+Rust result:
+- Tier and hook subscriptions match Java.
+- Uses `RelicState.amount` to store Java's private `firstTurn` flag.
+- Draws 3 on non-first turns after 0-3 cards were played and resets counter
+  every post-draw turn.
+- UI-only pulse behavior is intentionally not represented.
+
+Coverage:
+- `shared_rare_start_and_turn_relic_metadata_matches_java_sources`
+- `pocketwatch_first_turn_and_three_card_limit_match_java`
+
+### Stone Calendar
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/relics/StoneCalendar.java`
+
+Rust source:
+- `src/content/relics/stone_calendar.rs`
+- `src/content/relics/hooks.rs`
+
+Java evidence:
+- Constructor: ID `"StoneCalendar"`, tier `RARE`, landing sound `HEAVY`.
+- `atBattleStart`: sets `counter = 0`.
+- `atTurnStart`: increments `counter`; starts a UI pulse when `counter == 7`.
+- `onPlayerEndTurn`: if `counter == 7`, queues all-enemy damage `52` using
+  `DamageAllEnemiesAction(null, ..., THORNS, ...)`, stops pulse, and sets
+  grayscale.
+- `onVictory`: sets `counter = -1`.
+
+Rust result:
+- Tier and hook subscriptions match Java.
+- Fixed turn-start to mutate the relic counter immediately instead of queuing a
+  delayed counter update.
+- Fixed the end-turn damage source to `NO_SOURCE`, matching Java's `null`
+  `DamageInfo.owner`.
+- UI-only pulse/grayscale and relic-above-creature actions are intentionally not
+  represented.
+
+Coverage:
+- `shared_rare_start_and_turn_relic_metadata_matches_java_sources`
+- `stone_calendar_counter_and_null_source_damage_match_java`
+- `hook_persists_mutated_turn_start_relic_counters_before_actions_execute`
+
+### Thread and Needle
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/relics/ThreadAndNeedle.java`
+
+Rust source:
+- `src/content/relics/thread_and_needle.rs`
+- `src/content/relics/hooks.rs`
+
+Java evidence:
+- Constructor: ID `"Thread and Needle"`, tier `RARE`, landing sound `CLINK`.
+- `atBattleStart`: queues player Plated Armor `4` with `addToTop`, then queues a
+  relic-above-creature UI action with `addToTop`.
+
+Rust result:
+- Tier and battle-start subscription match Java.
+- Fixed Plated Armor action insertion from bottom to top.
+- UI-only relic-above-creature behavior is intentionally not represented.
+
+Coverage:
+- `shared_rare_start_and_turn_relic_metadata_matches_java_sources`
+- `start_relic_action_order_matches_java_non_ui_actions`
+
 ## Full Ironclad Class-Specific Relic Queue
 
 Relics remain `unreviewed` until their Java file, Rust definition/subscription,
@@ -2387,3 +2593,10 @@ class-specific queue.
 | 59 | `Courier.java` | shop generation / shop handler | `wrong-fixed` |
 | 60 | `EternalFeather.java` | run loop | `exact` |
 | 61 | `NlothsGift.java` | reward generator | `exact` |
+| 62 | `CaptainsWheel.java` | `captains_wheel.rs` | `wrong-fixed` |
+| 63 | `ClockworkSouvenir.java` | `clockwork_souvenir.rs` | `exact` |
+| 64 | `FossilizedHelix.java` | `fossilized_helix.rs` | `exact` |
+| 65 | `IncenseBurner.java` | `incense_burner.rs` | `wrong-fixed` |
+| 66 | `Pocketwatch.java` | `pocketwatch.rs` | `exact` |
+| 67 | `StoneCalendar.java` | `stone_calendar.rs` | `wrong-fixed` |
+| 68 | `ThreadAndNeedle.java` | `thread_and_needle.rs` | `wrong-fixed` |
