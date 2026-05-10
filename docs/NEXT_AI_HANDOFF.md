@@ -9,10 +9,14 @@ Continue Java-source-backed mechanics cleanup. Do not add strategy heuristics, b
 
 ## Last Pushed Checkpoint
 
-Latest pushed branch tip: `Match DamageAction cancel guards`
+Latest pushed branch tip: `Match unique kill reward conditions`
 
 Recent pushed mechanics fixes:
 
+- `Match unique kill reward conditions`
+  - Java `FeedAction`, `GreedAction`, `RitualDaggerAction`, and `LessonLearnedAction` do not use `shouldCancelAction()`.
+  - Rust Feed / Hand of Greed / Ritual Dagger now check reward eligibility from the target's post-damage state, not only from this damage call's `outcome.died`.
+  - This preserves the retained-DAMAGE-action edge where an already `isDying` non-minion/non-halfDead target can still grant the unique reward. `LessonLearnedAction` was audited from Java, but Rust currently has no Lesson Learned implementation.
 - `Match DamageAction cancel guards`
   - Java `DamageAction.update()` returns before damage when non-THORNS damage has a dead/half-dead/escaped target or a dying/half-dead source.
   - Rust `handle_damage` now applies that Java `shouldCancelAction()` equivalent before damage resolution.
@@ -75,17 +79,19 @@ Verification already passed for those checkpoints:
 
 ## Latest Mechanics Work
 
-DamageAction cancel parity:
+Unique kill reward action parity:
 
-- Java `DamageAction.update()` returns before damage when non-THORNS damage has a dead/half-dead/escaped target or a dying/half-dead source.
-- Rust `handle_damage` now applies that Java `shouldCancelAction()` equivalent before damage resolution.
-- THORNS damage explicitly bypasses this cancel guard, matching Java `DamageAction`.
+- Java `FeedAction`, `GreedAction`, `RitualDaggerAction`, and `LessonLearnedAction` do not use `shouldCancelAction()`.
+- Their reward condition is checked after `target.damage(info)` from the target's current state: reward when target is dying or at 0 HP, unless it is `halfDead` or has `Minion`.
+- Rust Feed / Hand of Greed / Ritual Dagger now use that post-damage target-state condition instead of relying only on this damage call's `outcome.died`.
+- This preserves the Java retained-DAMAGE-action edge where an already `isDying` target can still grant the unique reward. `LessonLearnedAction` was audited from Java, but Rust currently has no Lesson Learned card/action implementation.
 
 Verification passed for this work:
 
 - `cargo fmt`
 - `cargo check --lib`
 - `cargo test engine::action_handlers::damage::tests --lib`
+- `cargo test on_kill_card_rewards_ignore_minions_and_half_dead_targets_like_java_actions --lib`
 - `cargo test content::cards::tests --lib`
 - `cargo test content::relics::tests --lib`
 

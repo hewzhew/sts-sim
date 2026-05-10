@@ -102,13 +102,17 @@ fn update_player_cards_on_damage(state: &mut CombatState) {
     }
 }
 
-fn target_qualifies_for_non_minion_kill_reward(state: &CombatState, target: usize) -> bool {
+fn target_receives_java_unique_kill_reward(state: &CombatState, target: usize) -> bool {
     state
         .entities
         .monsters
         .iter()
         .find(|m| m.id == target)
-        .is_some_and(|m| !m.half_dead && !store::has_power(state, target, PowerId::Minion))
+        .is_some_and(|m| {
+            (m.is_dying || m.current_hp <= 0)
+                && !m.half_dead
+                && !store::has_power(state, target, PowerId::Minion)
+        })
 }
 
 fn monsters_are_basically_dead_for_post_combat(state: &CombatState) -> bool {
@@ -718,11 +722,12 @@ pub fn handle_feed(
 ) {
     let mut info = damage_info;
     info.target = target;
-    let outcome = apply_damage_to_monster_via_pipeline(state, &info, info.output.max(0));
-    if outcome.died && target_qualifies_for_non_minion_kill_reward(state, target) {
+    let _ = apply_damage_to_monster_via_pipeline(state, &info, info.output.max(0));
+    if target_receives_java_unique_kill_reward(state, target) {
         state.entities.player.max_hp += max_hp_amount;
         state.entities.player.current_hp += max_hp_amount;
     }
+    clear_post_combat_actions_if_ready(state);
 }
 
 pub fn handle_hand_of_greed(
@@ -733,10 +738,11 @@ pub fn handle_hand_of_greed(
 ) {
     let mut info = damage_info;
     info.target = target;
-    let outcome = apply_damage_to_monster_via_pipeline(state, &info, info.output.max(0));
-    if outcome.died && target_qualifies_for_non_minion_kill_reward(state, target) {
+    let _ = apply_damage_to_monster_via_pipeline(state, &info, info.output.max(0));
+    if target_receives_java_unique_kill_reward(state, target) {
         handle_gain_gold(gold_amount, state);
     }
+    clear_post_combat_actions_if_ready(state);
 }
 
 pub fn handle_ritual_dagger(
@@ -748,14 +754,15 @@ pub fn handle_ritual_dagger(
 ) {
     let mut info = damage_info;
     info.target = target;
-    let outcome = apply_damage_to_monster_via_pipeline(state, &info, info.output.max(0));
-    if outcome.died && target_qualifies_for_non_minion_kill_reward(state, target) {
+    let _ = apply_damage_to_monster_via_pipeline(state, &info, info.output.max(0));
+    if target_receives_java_unique_kill_reward(state, target) {
         crate::engine::action_handlers::cards::handle_modify_card_misc(
             card_uuid,
             misc_amount,
             state,
         );
     }
+    clear_post_combat_actions_if_ready(state);
 }
 
 pub fn handle_gain_gold(amount: i32, state: &mut CombatState) {
@@ -1137,8 +1144,11 @@ pub fn handle_exhaust_random_card(amount: usize, state: &mut CombatState) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::content::cards::CardId;
     use crate::content::monsters::EnemyId;
+    use crate::content::powers::PowerId;
     use crate::runtime::action::{DamageInfo, DamageType};
+    use crate::runtime::combat::{CombatCard, Power};
     use crate::test_support::{blank_test_combat, test_monster};
 
     #[test]
@@ -1295,6 +1305,89 @@ mod tests {
         assert_eq!(
             state.entities.monsters[0].current_hp, 14,
             "Java DamageAction bypasses shouldCancelAction for THORNS damage"
+        );
+    }
+
+    fn player_damage(target: usize) -> DamageInfo {
+        DamageInfo {
+            source: 0,
+            target,
+            base: 10,
+            output: 10,
+            damage_type: DamageType::Normal,
+            is_modified: false,
+        }
+    }
+
+    #[test]
+    fn feed_action_rewards_already_dying_target_like_java_unique_action() {
+        let mut state = blank_test_combat();
+        let mut target = test_monster(EnemyId::JawWorm);
+        target.id = 66;
+        target.current_hp = 0;
+        target.is_dying = true;
+        state.entities.monsters = vec![target];
+
+        handle_feed(66, player_damage(66), 3, &mut state);
+
+        assert_eq!(state.entities.player.max_hp, 83);
+        assert_eq!(
+            state.entities.player.current_hp, 83,
+            "Java FeedAction does not use shouldCancelAction; after target.damage returns for isDying, the reward condition still passes"
+        );
+    }
+
+    #[test]
+    fn greed_action_still_blocks_already_dying_minion_reward() {
+        let mut state = blank_test_combat();
+        let starting_gold = state.entities.player.gold;
+        let mut target = test_monster(EnemyId::JawWorm);
+        target.id = 67;
+        target.current_hp = 0;
+        target.is_dying = true;
+        state.entities.monsters = vec![target];
+        crate::content::powers::store::set_powers_for(
+            &mut state,
+            67,
+            vec![Power {
+                power_type: PowerId::Minion,
+                instance_id: None,
+                amount: -1,
+                extra_data: 0,
+                just_applied: false,
+            }],
+        );
+
+        handle_hand_of_greed(67, player_damage(67), 20, &mut state);
+
+        assert_eq!(
+            state.entities.player.gold, starting_gold,
+            "Java GreedAction reward condition still excludes targets with Minion power"
+        );
+    }
+
+    #[test]
+    fn ritual_dagger_action_rewards_already_dying_target_like_java_unique_action() {
+        let mut state = blank_test_combat();
+        let mut target = test_monster(EnemyId::JawWorm);
+        target.id = 68;
+        target.current_hp = 0;
+        target.is_dying = true;
+        state.entities.monsters = vec![target];
+        state.zones.hand = vec![CombatCard::new(CardId::RitualDagger, 680)];
+        state.zones.limbo = vec![CombatCard::new(CardId::RitualDagger, 680)];
+
+        handle_ritual_dagger(68, player_damage(68), 3, 680, &mut state);
+
+        assert_eq!(state.zones.hand[0].misc_value, 3);
+        assert_eq!(state.zones.limbo[0].misc_value, 3);
+        assert_eq!(
+            state.meta.meta_changes,
+            vec![crate::runtime::combat::MetaChange::ModifyCardMisc {
+                card_uuid: 680,
+                amount: 3,
+            }],
+            "Java RitualDaggerAction applies the reward from its own post-damage target state, even when damage() returned because the target was already isDying"
         );
     }
 }
