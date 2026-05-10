@@ -87,6 +87,20 @@ fn queue_on_block_gained_hooks(
     }
 }
 
+fn update_player_cards_on_damage(state: &mut CombatState) {
+    for card in state
+        .zones
+        .hand
+        .iter_mut()
+        .chain(state.zones.discard_pile.iter_mut())
+        .chain(state.zones.draw_pile.iter_mut())
+    {
+        if card.id == crate::content::cards::CardId::BloodForBlood {
+            card.cost_modifier = card.cost_modifier.saturating_sub(1);
+        }
+    }
+}
+
 /// Shared block-deduction logic. Returns unblocked damage.
 pub fn deduct_block(block: &mut i32, damage: i32) -> i32 {
     if *block > 0 {
@@ -376,6 +390,7 @@ pub fn handle_damage(info: crate::runtime::action::DamageInfo, state: &mut Comba
             let previous_hp = state.entities.player.current_hp;
             state.entities.player.current_hp =
                 (state.entities.player.current_hp - final_damage).max(0);
+            update_player_cards_on_damage(state);
             state.turn.increment_times_damaged_this_combat();
             queue_red_skull_threshold_actions(state, previous_hp, state.entities.player.current_hp);
             queue_player_hp_loss_hooks(
@@ -720,6 +735,7 @@ pub fn handle_lose_hp(target: usize, amount: i32, triggers_rupture: bool, state:
         let previous_hp = state.entities.player.current_hp;
         state.entities.player.current_hp = (state.entities.player.current_hp - final_amount).max(0);
         if final_amount > 0 {
+            update_player_cards_on_damage(state);
             state.turn.increment_times_damaged_this_combat();
             queue_red_skull_threshold_actions(state, previous_hp, state.entities.player.current_hp);
             queue_player_hp_loss_hooks(

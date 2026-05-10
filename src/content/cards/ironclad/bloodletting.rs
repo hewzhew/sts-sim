@@ -2,7 +2,8 @@ use crate::runtime::action::{Action, ActionInfo, AddTo};
 use crate::runtime::combat::{CombatCard, CombatState};
 use smallvec::SmallVec;
 
-pub fn bloodletting_play(_state: &CombatState, card: &CombatCard) -> SmallVec<[ActionInfo; 4]> {
+pub fn bloodletting_play(state: &CombatState, card: &CombatCard) -> SmallVec<[ActionInfo; 4]> {
+    let evaluated = crate::content::cards::evaluate_card_for_play(card, state, None);
     smallvec::smallvec![
         ActionInfo {
             action: Action::LoseHp {
@@ -14,7 +15,7 @@ pub fn bloodletting_play(_state: &CombatState, card: &CombatCard) -> SmallVec<[A
         },
         ActionInfo {
             action: Action::GainEnergy {
-                amount: card.base_magic_num_mut
+                amount: evaluated.base_magic_num_mut
             },
             insertion_mode: AddTo::Bottom,
         }

@@ -248,6 +248,150 @@ Coverage:
 - `ironclad_common_utility_definitions_match_java_sources`
 - `ironclad_common_utility_runtime_actions_match_java_use_methods`
 
+## Batch 3 - Cost / HP-Loss Ironclad Coverage
+
+### Berserk
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/cards/red/Berserk.java`
+
+Rust source:
+- `src/content/cards/mod.rs`
+- `src/content/cards/ironclad/berserk.rs`
+- `src/content/cards/runtime_impl.rs`
+
+Java evidence:
+- Constructor: cost `0`, type `POWER`, color `RED`, rarity `RARE`, target
+  `SELF`, `baseMagicNumber = magicNumber = 2`.
+- `use`: queues `ApplyPowerAction` for player Vulnerable with `magicNumber`,
+  then `ApplyPowerAction` for `BerserkPower(p, 1)`.
+- `upgrade`: `upgradeMagicNumber(-1)`.
+
+Rust result:
+- Fixed definition target from `None` to `SelfTarget`.
+- Runtime now evaluates magic at play time, so `Berserk+` applies 1
+  Vulnerable instead of relying on stale mutation fields.
+
+Coverage:
+- `ironclad_cost_and_hp_cards_definitions_match_java_sources`
+- `ironclad_cost_and_hp_cards_runtime_actions_match_java_use_methods`
+
+### Blood for Blood
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/cards/red/BloodForBlood.java`
+- `D:/rust/cardcrawl/characters/AbstractPlayer.java`
+
+Rust source:
+- `src/content/cards/mod.rs`
+- `src/content/cards/ironclad/blood_for_blood.rs`
+- `src/content/cards/runtime_impl.rs`
+- `src/engine/action_handlers/damage.rs`
+
+Java evidence:
+- Constructor: cost `4`, type `ATTACK`, color `RED`, rarity `UNCOMMON`,
+  target `ENEMY`, `baseDamage = 18`.
+- `tookDamage`: `updateCost(-1)`.
+- `AbstractPlayer.updateCardsOnDamage`: when the player loses HP in combat,
+  calls `tookDamage()` on cards in hand, discard pile, and draw pile.
+- `makeCopy`: if player exists, applies
+  `updateCost(-AbstractDungeon.player.damagedThisCombat)`.
+- `use`: queues one `DamageAction`.
+- `upgrade`: if current cost is already below `4`, upgrades base cost to
+  current cost minus one, clamped at zero; otherwise upgrades base cost to `3`;
+  then `upgradeDamage(4)`.
+
+Rust result:
+- Fixed upgraded base cost override for `Blood for Blood+` to `3`.
+- Damage / HP-loss handling now decrements Blood for Blood cost modifiers in
+  hand, discard pile, and draw pile when the player actually loses HP.
+- Runtime damage already evaluates card damage at play time.
+
+Coverage:
+- `ironclad_cost_and_hp_cards_definitions_match_java_sources`
+- `ironclad_cost_and_hp_cards_runtime_actions_match_java_use_methods`
+- `blood_for_blood_cost_updates_when_player_takes_hp_loss`
+
+### Bloodletting
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/cards/red/Bloodletting.java`
+- `D:/rust/cardcrawl/actions/common/LoseHPAction.java`
+
+Rust source:
+- `src/content/cards/mod.rs`
+- `src/content/cards/ironclad/bloodletting.rs`
+- `src/engine/action_handlers/damage.rs`
+
+Java evidence:
+- Constructor: cost `0`, type `SKILL`, color `RED`, rarity `UNCOMMON`, target
+  `SELF`, `baseMagicNumber = magicNumber = 2`.
+- `use`: queues `LoseHPAction(p, p, 3)`, then
+  `GainEnergyAction(this.magicNumber)`.
+- `LoseHPAction` calls `target.damage(... DamageType.HP_LOSS)`, so ordinary
+  player HP-loss hooks and card `tookDamage()` behavior apply.
+- `upgrade`: `upgradeMagicNumber(1)`.
+
+Rust result:
+- Runtime now evaluates magic at play time before emitting energy gain.
+- Existing `LoseHp` action keeps `triggers_rupture = true` for self-inflicted
+  card HP loss and now also updates Blood for Blood costs through the damage
+  pipeline.
+
+Coverage:
+- `ironclad_cost_and_hp_cards_definitions_match_java_sources`
+- `ironclad_cost_and_hp_cards_runtime_actions_match_java_use_methods`
+
+### Bludgeon
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/cards/red/Bludgeon.java`
+
+Rust source:
+- `src/content/cards/mod.rs`
+- `src/content/cards/ironclad/bludgeon.rs`
+- `src/content/cards/runtime_impl.rs`
+
+Java evidence:
+- Constructor: cost `3`, type `ATTACK`, color `RED`, rarity `RARE`, target
+  `ENEMY`, `baseDamage = 32`.
+- `use`: queues VFX if target exists, then `WaitAction(0.8f)`, then one
+  `DamageAction`.
+- `upgrade`: `upgradeDamage(10)`.
+- VFX and wait timing are presentation/timing-only for the Rust simulator and
+  do not change combat mechanics.
+
+Rust result:
+- Runtime now evaluates the card at play time before emitting damage.
+- Runtime emits the gameplay-visible damage action with base/upgraded values.
+
+Coverage:
+- `ironclad_cost_and_hp_cards_definitions_match_java_sources`
+- `ironclad_cost_and_hp_cards_runtime_actions_match_java_use_methods`
+
+### Shared Cost-Spend Fix
+
+Status: `wrong-fixed`
+
+Java evidence:
+- Cards with `upgradeBaseCost` spend the upgraded base cost when played.
+
+Rust result:
+- `handle_play_card_from_hand` now uses `CombatCard::get_cost()`, including
+  upgraded base cost overrides and cost modifiers, when spending non-X-cost
+  energy. This fixes `Barricade+` and protects future upgraded-cost cards.
+
+Coverage:
+- `upgraded_base_cost_is_used_when_spending_energy`
+
 ## Full Ironclad Queue
 
 Cards remain `unreviewed` until their Java file, Rust definition, Rust runtime,
@@ -262,10 +406,10 @@ and supporting engine behavior have all been checked.
 | 5 | `Armaments.java` | `armaments.rs` | `wrong-fixed` |
 | 6 | `Barricade.java` | `barricade.rs` | `wrong-fixed` |
 | 7 | `BattleTrance.java` | `battle_trance.rs` | `wrong-fixed` |
-| 8 | `Berserk.java` | `berserk.rs` | `unreviewed` |
-| 9 | `BloodForBlood.java` | `blood_for_blood.rs` | `unreviewed` |
-| 10 | `Bloodletting.java` | `bloodletting.rs` | `unreviewed` |
-| 11 | `Bludgeon.java` | `bludgeon.rs` | `unreviewed` |
+| 8 | `Berserk.java` | `berserk.rs` | `wrong-fixed` |
+| 9 | `BloodForBlood.java` | `blood_for_blood.rs` | `wrong-fixed` |
+| 10 | `Bloodletting.java` | `bloodletting.rs` | `wrong-fixed` |
+| 11 | `Bludgeon.java` | `bludgeon.rs` | `wrong-fixed` |
 | 12 | `BodySlam.java` | `body_slam.rs` | `unreviewed` |
 | 13 | `Brutality.java` | `brutality.rs` | `unreviewed` |
 | 14 | `BurningPact.java` | `burning_pact.rs` | `unreviewed` |

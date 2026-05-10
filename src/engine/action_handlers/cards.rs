@@ -882,15 +882,16 @@ pub fn handle_play_card_from_hand(
         target,
     )?;
 
+    let base_cost = crate::content::cards::upgraded_base_cost_override(card).unwrap_or(def.cost);
     let effective_cost = if card.free_to_play_once {
         0
     } else if let Some(cft) = card.cost_for_turn {
         cft as i32
     } else {
-        (def.cost as i32 + card.cost_modifier as i32).max(0)
+        card.get_cost() as i32
     };
 
-    let is_x_cost = def.cost == -1;
+    let is_x_cost = base_cost == -1;
     let energy_to_spend = if is_x_cost {
         state.turn.energy as i32
     } else {
