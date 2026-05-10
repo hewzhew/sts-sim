@@ -36,6 +36,21 @@ pub fn handle_apply_power(
     handle_apply_power_detailed(source, target, power_id, amount, None, None, state);
 }
 
+pub fn handle_spot_weakness(target: usize, amount: i32, state: &mut CombatState) {
+    let Some(target_monster) = state.entities.monsters.iter().find(|m| m.id == target) else {
+        return;
+    };
+
+    if crate::projection::combat::monster_has_visible_attack_in_combat(state, target_monster) {
+        state.queue_action_back(Action::ApplyPower {
+            source: 0,
+            target: 0,
+            power_id: PowerId::Strength,
+            amount,
+        });
+    }
+}
+
 pub fn handle_apply_power_detailed(
     source: usize,
     target: usize,

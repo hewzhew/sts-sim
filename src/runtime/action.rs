@@ -188,6 +188,10 @@ pub enum Action {
         target: EntityId,
         damage_info: DamageInfo,
     },
+    SpotWeakness {
+        target: EntityId,
+        amount: i32,
+    },
     FiendFire {
         target: EntityId,
         damage_info: DamageInfo,

@@ -192,6 +192,9 @@ pub fn execute_action(action: Action, state: &mut CombatState) {
             target,
             damage_info,
         } => damage::handle_dropkick(target, damage_info, state),
+        Action::SpotWeakness { target, amount } => {
+            powers::handle_spot_weakness(target, amount, state)
+        }
         Action::FiendFire {
             target,
             damage_info,

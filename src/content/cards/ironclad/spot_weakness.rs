@@ -12,25 +12,13 @@ pub fn spot_weakness_play(
     let mut actions = smallvec::SmallVec::new();
     let evaluated = crate::content::cards::evaluate_card_for_play(card, state, Some(target));
 
-    // Check if target intends to attack
-    let is_attacking =
-        if let Some(target_monster) = state.entities.monsters.iter().find(|m| m.id == target) {
-            crate::projection::combat::monster_has_visible_attack_in_combat(state, target_monster)
-        } else {
-            false
-        };
-
-    if is_attacking {
-        actions.push(ActionInfo {
-            action: Action::ApplyPower {
-                source: 0,
-                target: 0,
-                power_id: crate::content::powers::PowerId::Strength,
-                amount: evaluated.base_magic_num_mut,
-            },
-            insertion_mode: AddTo::Bottom,
-        });
-    }
+    actions.push(ActionInfo {
+        action: Action::SpotWeakness {
+            target,
+            amount: evaluated.base_magic_num_mut,
+        },
+        insertion_mode: AddTo::Bottom,
+    });
 
     actions
 }

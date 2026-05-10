@@ -3315,14 +3315,49 @@ fn ironclad_exhaust_debuff_and_intent_runtime_actions_match_java_use_methods() {
     assert_eq!(spot_actions.len(), 1);
     assert!(matches!(
         spot_actions[0].action,
-        Action::ApplyPower {
-            source: 0,
-            target: 0,
-            power_id: PowerId::Strength,
+        Action::SpotWeakness {
+            target: 501,
             amount: 4
         }
     ));
-    assert!(resolve_card_play(CardId::SpotWeakness, &state, &spot_plus, Some(502)).is_empty());
+
+    let mut spot_state = state.clone();
+    crate::engine::action_handlers::execute_action(spot_actions[0].action.clone(), &mut spot_state);
+    let queued_apply = spot_state.pop_next_action();
+    assert_eq!(
+        queued_apply,
+        Some(Action::ApplyPower {
+            source: 0,
+            target: 0,
+            power_id: PowerId::Strength,
+            amount: 4,
+        })
+    );
+    crate::engine::action_handlers::execute_action(queued_apply.unwrap(), &mut spot_state);
+    assert_eq!(
+        crate::content::powers::store::powers_for(&spot_state, 0)
+            .unwrap()
+            .iter()
+            .find(|power| power.power_type == PowerId::Strength)
+            .map(|power| power.amount),
+        Some(6)
+    );
+
+    let mut changed_state = state.clone();
+    changed_state.entities.monsters[0].set_planned_move_id(2);
+    crate::engine::action_handlers::execute_action(
+        spot_actions[0].action.clone(),
+        &mut changed_state,
+    );
+    assert_eq!(changed_state.pop_next_action(), None);
+    assert_eq!(
+        crate::content::powers::store::powers_for(&changed_state, 0)
+            .unwrap()
+            .iter()
+            .find(|power| power.power_type == PowerId::Strength)
+            .map(|power| power.amount),
+        Some(2)
+    );
 }
 
 #[test]
