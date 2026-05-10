@@ -2328,6 +2328,151 @@ fn unceasing_top_uses_mechanical_refresh_conditions_without_ui_state() {
 }
 
 #[test]
+fn shared_boss_relic_first_batch_metadata_matches_java_sources() {
+    assert_eq!(get_relic_tier(RelicId::Astrolabe), RelicTier::Boss);
+    assert_eq!(get_relic_tier(RelicId::BlackStar), RelicTier::Boss);
+    assert_eq!(get_relic_tier(RelicId::BustedCrown), RelicTier::Boss);
+    assert_eq!(get_relic_tier(RelicId::CallingBell), RelicTier::Boss);
+    assert_eq!(get_relic_tier(RelicId::CoffeeDripper), RelicTier::Boss);
+    assert_eq!(get_relic_tier(RelicId::CursedKey), RelicTier::Boss);
+
+    assert_eq!(energy_master_delta(RelicId::BustedCrown), 1);
+    assert_eq!(energy_master_delta(RelicId::CoffeeDripper), 1);
+    assert_eq!(energy_master_delta(RelicId::CursedKey), 1);
+}
+
+#[test]
+fn astrolabe_uses_java_purgeable_cards_and_auto_transforms_three_or_fewer() {
+    let mut run = crate::state::run::RunState::new(7, 0, false, "Ironclad");
+    run.master_deck.clear();
+    run.master_deck.push(CombatCard::new(CardId::Strike, 1));
+    run.master_deck.push(CombatCard::new(CardId::Injury, 2));
+    run.master_deck
+        .push(CombatCard::new(CardId::AscendersBane, 3));
+    run.master_deck
+        .push(CombatCard::new(CardId::CurseOfTheBell, 4));
+    run.master_deck
+        .push(CombatCard::new(CardId::Necronomicurse, 5));
+
+    let next = astrolabe::on_equip(&mut run, crate::state::core::EngineState::MapNavigation);
+    assert!(
+        next.is_none(),
+        "Java auto-transforms when there are <= 3 candidates"
+    );
+    assert_eq!(run.master_deck.len(), 5);
+    assert!(run
+        .master_deck
+        .iter()
+        .any(|card| card.id == CardId::AscendersBane));
+    assert!(run
+        .master_deck
+        .iter()
+        .any(|card| card.id == CardId::CurseOfTheBell));
+    assert!(run
+        .master_deck
+        .iter()
+        .any(|card| card.id == CardId::Necronomicurse));
+    assert!(!run.master_deck.iter().any(|card| card.id == CardId::Strike));
+    assert!(!run.master_deck.iter().any(|card| card.id == CardId::Injury));
+
+    let mut pending = crate::state::run::RunState::new(7, 0, false, "Ironclad");
+    pending.master_deck.clear();
+    for (idx, card_id) in [
+        CardId::Strike,
+        CardId::Defend,
+        CardId::Bash,
+        CardId::Pain,
+        CardId::AscendersBane,
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        pending
+            .master_deck
+            .push(CombatCard::new(card_id, idx as u32 + 10));
+    }
+
+    let Some(crate::state::core::EngineState::RunPendingChoice(choice)) =
+        astrolabe::on_equip(&mut pending, crate::state::core::EngineState::MapNavigation)
+    else {
+        panic!("expected Astrolabe to open a 3-card transform choice");
+    };
+    assert_eq!(choice.min_choices, 3);
+    assert_eq!(choice.max_choices, 3);
+    assert_eq!(
+        choice.reason,
+        crate::state::core::RunPendingChoiceReason::TransformUpgraded
+    );
+}
+
+#[test]
+fn calling_bell_uses_screenless_relic_rewards_after_curse_obtain() {
+    let mut run = crate::state::run::RunState::new(9, 0, false, "Ironclad");
+    run.master_deck
+        .push(CombatCard::new(CardId::PommelStrike, 1001));
+    run.common_relic_pool = vec![RelicId::Anchor];
+    run.uncommon_relic_pool = vec![RelicId::Pear, RelicId::BottledFlame];
+    run.rare_relic_pool = vec![RelicId::Mango];
+
+    let Some(crate::state::core::EngineState::RewardScreen(rewards)) =
+        calling_bell::on_equip(&mut run, crate::state::core::EngineState::MapNavigation)
+    else {
+        panic!("expected Calling Bell reward screen");
+    };
+
+    assert!(run
+        .master_deck
+        .iter()
+        .any(|card| card.id == CardId::CurseOfTheBell));
+    let relic_rewards = rewards
+        .items
+        .iter()
+        .filter_map(|item| match item {
+            crate::rewards::state::RewardItem::Relic { relic_id } => Some(*relic_id),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        relic_rewards,
+        vec![RelicId::Anchor, RelicId::Pear, RelicId::Mango]
+    );
+}
+
+#[test]
+fn boss_relic_passives_affect_rewards_campfires_and_curse_pool() {
+    let mut elite = crate::state::run::RunState::new(11, 0, false, "Ironclad");
+    elite.relics.push(RelicState::new(RelicId::BlackStar));
+    let rewards = crate::rewards::generator::generate_combat_rewards(&mut elite, true, false);
+    assert_eq!(
+        rewards
+            .items
+            .iter()
+            .filter(|item| matches!(item, crate::rewards::state::RewardItem::Relic { .. }))
+            .count(),
+        2,
+        "Java Black Star adds a second elite relic reward"
+    );
+
+    let mut campfire = crate::state::run::RunState::new(11, 0, false, "Ironclad");
+    campfire
+        .relics
+        .push(RelicState::new(RelicId::CoffeeDripper));
+    let options = crate::engine::campfire_handler::get_available_options(&campfire);
+    assert!(
+        !options
+            .iter()
+            .any(|choice| matches!(choice, crate::state::core::CampfireChoice::Rest)),
+        "Java Coffee Dripper disables the normal Rest option"
+    );
+
+    let curse_pool = crate::content::cards::get_curse_pool();
+    assert!(!curse_pool.contains(&CardId::AscendersBane));
+    assert!(!curse_pool.contains(&CardId::CurseOfTheBell));
+    assert!(!curse_pool.contains(&CardId::Necronomicurse));
+    assert!(!curse_pool.contains(&CardId::Pride));
+}
+
+#[test]
 fn shared_rare_damage_retention_relic_metadata_matches_java_sources() {
     assert_eq!(get_relic_tier(RelicId::Calipers), RelicTier::Rare);
     assert_eq!(get_relic_tier(RelicId::Torii), RelicTier::Rare);

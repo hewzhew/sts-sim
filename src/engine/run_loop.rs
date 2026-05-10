@@ -489,10 +489,16 @@ pub fn tick_run(
                                     if !curse_pool.is_empty() {
                                         let idx = run_state
                                             .rng_pool
-                                            .misc_rng
+                                            .card_rng
                                             .random_range(0, (curse_pool.len() - 1) as i32)
                                             as usize;
-                                        run_state.add_card_to_deck(curse_pool[idx]);
+                                        run_state.add_card_to_deck_with_upgrades_from(
+                                            curse_pool[idx],
+                                            0,
+                                            crate::state::selection::DomainEventSource::Relic(
+                                                crate::content::relics::RelicId::CursedKey,
+                                            ),
+                                        );
                                     }
                                 }
 

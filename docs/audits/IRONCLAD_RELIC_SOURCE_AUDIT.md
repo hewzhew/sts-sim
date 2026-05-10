@@ -3105,6 +3105,181 @@ Rust result:
 Coverage:
 - `player_add_relic_registers_pre_battle_and_pre_draw_buses`
 
+## Shared Relic Batch 13 - Boss Relics Part 1
+
+### Astrolabe
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/relics/Astrolabe.java`
+- `D:/rust/cardcrawl/cards/CardGroup.java`
+
+Rust source:
+- `src/content/relics/astrolabe.rs`
+- `src/engine/relic_manager.rs`
+- `src/state/run.rs`
+
+Java evidence:
+- Constructor: ID `"Astrolabe"`, tier `BOSS`, landing sound `CLINK`.
+- `onEquip`: builds candidates from `masterDeck.getPurgeableCards()`.
+- `CardGroup.getPurgeableCards()` excludes only `Necronomicurse`,
+  `CurseOfTheBell`, and `AscendersBane`.
+- If candidate count is `0`, no effect.
+- If candidate count is `<= 3`, transforms all candidates immediately.
+- If candidate count is `> 3`, opens a grid select for exactly `3`.
+- `giveCards`: removes selected cards, calls `transformCard(card, true, miscRng)`.
+
+Rust result:
+- Tier and relic-manager on-equip route match Java.
+- Fixed candidate filtering: normal curses such as Injury/Pain are purgeable;
+  only Java's three unpurgeable special curses are excluded.
+- Fixed small-deck behavior: `<= 3` candidates now auto-transform without
+  creating a pending choice.
+- Pending choice for larger decks is exactly three `TransformUpgraded` picks.
+
+Coverage:
+- `shared_boss_relic_first_batch_metadata_matches_java_sources`
+- `astrolabe_uses_java_purgeable_cards_and_auto_transforms_three_or_fewer`
+
+### Black Star
+
+Status: `exact`
+
+Java source:
+- `D:/rust/cardcrawl/relics/BlackStar.java`
+
+Rust source:
+- `src/rewards/generator.rs`
+
+Java evidence:
+- Constructor: ID `"Black Star"`, tier `BOSS`, landing sound `HEAVY`.
+- UI pulse/flash occurs on elite rooms and victory.
+- Gameplay effect is reward-side: elite fights grant an additional relic reward.
+
+Rust result:
+- Tier matches Java.
+- Elite combat reward generation adds a second relic while Black Star is owned.
+- UI-only pulse/flash behavior is intentionally not represented.
+
+Coverage:
+- `shared_boss_relic_first_batch_metadata_matches_java_sources`
+- `boss_relic_passives_affect_rewards_campfires_and_curse_pool`
+
+### Busted Crown
+
+Status: `exact`
+
+Java source:
+- `D:/rust/cardcrawl/relics/BustedCrown.java`
+
+Rust source:
+- `src/content/relics/mod.rs`
+- `src/rewards/generator.rs`
+
+Java evidence:
+- Constructor: ID `"Busted Crown"`, tier `BOSS`, landing sound `CLINK`.
+- `onEquip`: increments `energyMaster`.
+- `onUnequip`: decrements `energyMaster`.
+- `changeNumberOfCardsInReward(numberOfCards)`: returns `numberOfCards - 2`.
+
+Rust result:
+- Tier and energy delta match Java.
+- Combat player construction derives +1 energy from boss relic energy deltas.
+- Card reward choice count applies the `-2` modifier in reward generation.
+
+Coverage:
+- `shared_boss_relic_first_batch_metadata_matches_java_sources`
+- `rewards::generator::tests::busted_crown_reduces_choices_with_floor_of_one`
+
+### Calling Bell
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/relics/CallingBell.java`
+
+Rust source:
+- `src/content/relics/calling_bell.rs`
+- `src/engine/relic_manager.rs`
+- `src/state/run.rs`
+
+Java evidence:
+- Constructor: ID `"Calling Bell"`, tier `BOSS`, landing sound `SOLID`.
+- `onEquip`: presents Curse of the Bell through a confirmation grid.
+- After confirmation, opens a reward screen containing exactly one common,
+  one uncommon, and one rare `returnRandomScreenlessRelic` reward.
+
+Rust result:
+- Tier and on-equip route match Java.
+- Curse of the Bell is obtained through the deck manager, preserving Omamori
+  interception semantics from obtain effects.
+- Fixed relic rewards to use `random_screenless_relic` for each tier instead of
+  normal tier rolls that could return screen-interrupting relics.
+
+Coverage:
+- `shared_boss_relic_first_batch_metadata_matches_java_sources`
+- `calling_bell_uses_screenless_relic_rewards_after_curse_obtain`
+
+### Coffee Dripper
+
+Status: `exact`
+
+Java source:
+- `D:/rust/cardcrawl/relics/CoffeeDripper.java`
+
+Rust source:
+- `src/content/relics/mod.rs`
+- `src/engine/campfire_handler.rs`
+
+Java evidence:
+- Constructor: ID `"Coffee Dripper"`, tier `BOSS`, landing sound `CLINK`.
+- `onEquip`: increments `energyMaster`.
+- `onUnequip`: decrements `energyMaster`.
+- `canUseCampfireOption`: disables the normal Rest option.
+
+Rust result:
+- Tier and energy delta match Java.
+- Campfire option generation omits Rest while Coffee Dripper is owned.
+
+Coverage:
+- `shared_boss_relic_first_batch_metadata_matches_java_sources`
+- `boss_relic_passives_affect_rewards_campfires_and_curse_pool`
+
+### Cursed Key
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/relics/CursedKey.java`
+- `D:/rust/cardcrawl/helpers/CardLibrary.java`
+
+Rust source:
+- `src/content/relics/mod.rs`
+- `src/content/cards/mod.rs`
+- `src/engine/run_loop.rs`
+
+Java evidence:
+- Constructor: ID `"Cursed Key"`, tier `BOSS`, landing sound `CLINK`.
+- `onEquip`: increments `energyMaster`.
+- `onUnequip`: decrements `energyMaster`.
+- `onChestOpen(false)`: obtains `AbstractDungeon.returnRandomCurse()`.
+- `CardLibrary.getCurse()` excludes `AscendersBane`, `Necronomicurse`,
+  `CurseOfTheBell`, and `Pride`, and rolls with `cardRng`.
+- Boss chests do not trigger the curse.
+
+Rust result:
+- Tier and energy delta match Java.
+- Fixed random curse pool to exclude `Necronomicurse` and `Pride` in addition
+  to Ascender's Bane and Curse of the Bell.
+- Fixed non-boss chest curse roll to use `card_rng` and record the event source
+  as Cursed Key.
+- Omamori/Darkstone style obtain hooks still pass through the deck manager.
+
+Coverage:
+- `shared_boss_relic_first_batch_metadata_matches_java_sources`
+- `boss_relic_passives_affect_rewards_campfires_and_curse_pool`
+
 ## Full Ironclad Class-Specific Relic Queue
 
 Relics remain `unreviewed` until their Java file, Rust definition/subscription,
@@ -3218,3 +3393,9 @@ class-specific queue.
 | 85 | `DuVuDoll.java` | `du_vu_doll.rs` / relic manager / run deck change | `wrong-fixed` |
 | 86 | `GamblingChip.java` | `gambling_chip.rs` / pending choice | `wrong-fixed` |
 | 87 | `UnceasingTop.java` | `unceasing_top.rs` / engine refresh loop | `wrong-fixed` |
+| 88 | `Astrolabe.java` | `astrolabe.rs` / run pending choice | `wrong-fixed` |
+| 89 | `BlackStar.java` | reward generator | `exact` |
+| 90 | `BustedCrown.java` | reward generator / energy delta | `exact` |
+| 91 | `CallingBell.java` | `calling_bell.rs` / reward screen | `wrong-fixed` |
+| 92 | `CoffeeDripper.java` | campfire handler / energy delta | `exact` |
+| 93 | `CursedKey.java` | run loop chest / curse pool | `wrong-fixed` |

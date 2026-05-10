@@ -3206,14 +3206,13 @@ pub const SILENT_RARE_POOL: &[CardId] = &[CardId::Adrenaline, CardId::AfterImage
 /// Returns the pool for a given rarity (Ironclad).
 /// Returns the pool of randomly obtainable curse cards.
 /// Java: AbstractDungeon.returnRandomCurse() draws from this pool.
-/// Excludes AscendersBane (Asc10 special) and CurseOfTheBell (event-only).
+/// Excludes AscendersBane, Necronomicurse, CurseOfTheBell, and Pride.
 pub fn get_curse_pool() -> &'static [CardId] {
     &[
         CardId::Clumsy,
         CardId::Decay,
         CardId::Doubt,
         CardId::Injury,
-        CardId::Necronomicurse,
         CardId::Normality,
         CardId::Pain,
         CardId::Parasite,
