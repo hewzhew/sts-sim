@@ -3786,23 +3786,78 @@ fn ironclad_debuff_draw_xcost_and_wound_runtime_actions_match_java_use_methods()
     whirlwind_plus.upgrades = 1;
     whirlwind_plus.energy_on_use = 3;
     let whirlwind_actions = resolve_card_play(CardId::Whirlwind, &state, &whirlwind_plus, None);
-    assert_eq!(whirlwind_actions.len(), 3);
-    for action in &whirlwind_actions {
-        match &action.action {
-            Action::DamageAllEnemies {
-                source,
-                damages,
-                damage_type,
-                is_modified,
-            } => {
-                assert_eq!(*source, 0);
-                assert_eq!(damages.as_slice(), &[10, 10]);
-                assert_eq!(*damage_type, DamageType::Normal);
-                assert!(!*is_modified);
-            }
-            other => panic!("Whirlwind+ should emit one DamageAllEnemies per X, got {other:?}"),
+    assert_eq!(whirlwind_actions.len(), 1);
+    match &whirlwind_actions[0].action {
+        Action::Whirlwind {
+            damages,
+            damage_type,
+            free_to_play_once,
+            energy_on_use,
+        } => {
+            assert_eq!(damages.as_slice(), &[10, 10]);
+            assert_eq!(*damage_type, DamageType::Normal);
+            assert!(!*free_to_play_once);
+            assert_eq!(*energy_on_use, 3);
         }
+        other => panic!("Whirlwind+ should emit WhirlwindAction equivalent, got {other:?}"),
     }
+
+    let mut chemical_x_state = state.clone();
+    chemical_x_state.turn.energy = 3;
+    chemical_x_state
+        .entities
+        .player
+        .add_relic(crate::content::relics::RelicState::new(
+            crate::content::relics::RelicId::ChemicalX,
+        ));
+    crate::engine::action_handlers::execute_action(
+        Action::Whirlwind {
+            damages: smallvec::smallvec![10, 10],
+            damage_type: DamageType::Normal,
+            free_to_play_once: false,
+            energy_on_use: 3,
+        },
+        &mut chemical_x_state,
+    );
+    assert_eq!(chemical_x_state.turn.energy, 0);
+    let mut queued_damage_all = 0;
+    while let Some(action) = chemical_x_state.pop_next_action() {
+        assert!(matches!(action, Action::DamageAllEnemies { .. }));
+        queued_damage_all += 1;
+    }
+    assert_eq!(queued_damage_all, 5);
+
+    let mut free_x_state = state.clone();
+    free_x_state.turn.energy = 3;
+    crate::engine::action_handlers::execute_action(
+        Action::Whirlwind {
+            damages: smallvec::smallvec![10, 10],
+            damage_type: DamageType::Normal,
+            free_to_play_once: true,
+            energy_on_use: 3,
+        },
+        &mut free_x_state,
+    );
+    assert_eq!(free_x_state.turn.energy, 3);
+
+    let mut hand_x_state = state.clone();
+    hand_x_state.turn.energy = 3;
+    hand_x_state.zones.hand = vec![whirlwind_plus.clone()];
+    crate::engine::action_handlers::cards::handle_play_card_from_hand(0, None, &mut hand_x_state)
+        .expect("Whirlwind should be playable with current energy captured as X");
+    assert_eq!(
+        hand_x_state.turn.energy, 3,
+        "Java does not spend X-card energy in the generic useCard path"
+    );
+    let queued_whirlwind = hand_x_state
+        .pop_next_action()
+        .expect("WhirlwindAction should be queued before UseCardDone");
+    match &queued_whirlwind {
+        Action::Whirlwind { energy_on_use, .. } => assert_eq!(*energy_on_use, 3),
+        other => panic!("WhirlwindAction should be queued before UseCardDone, got {other:?}"),
+    }
+    crate::engine::action_handlers::execute_action(queued_whirlwind, &mut hand_x_state);
+    assert_eq!(hand_x_state.turn.energy, 0);
 
     let mut wild_plus = CombatCard::new(CardId::WildStrike, 393);
     wild_plus.upgrades = 1;
@@ -3828,6 +3883,54 @@ fn ironclad_debuff_draw_xcost_and_wound_runtime_actions_match_java_use_methods()
             upgraded: false
         }
     ));
+}
+
+#[test]
+fn transmutation_x_cost_action_matches_java_energy_and_chemical_x_timing() {
+    let mut state = crate::test_support::blank_test_combat();
+    state.turn.energy = 3;
+    let mut transmutation = CombatCard::new(CardId::Transmutation, 394);
+    transmutation.upgrades = 1;
+    transmutation.energy_on_use = 1;
+
+    let actions = resolve_card_play(CardId::Transmutation, &state, &transmutation, None);
+    assert_eq!(actions.len(), 1);
+    match &actions[0].action {
+        Action::Transmutation {
+            upgraded,
+            free_to_play_once,
+            energy_on_use,
+        } => {
+            assert!(*upgraded);
+            assert!(!*free_to_play_once);
+            assert_eq!(
+                *energy_on_use, 3,
+                "Java Transmutation.use raises stale energyOnUse to current EnergyPanel.totalCount"
+            );
+        }
+        other => panic!("Transmutation should emit TransmutationAction equivalent, got {other:?}"),
+    }
+
+    state
+        .entities
+        .player
+        .add_relic(crate::content::relics::RelicState::new(
+            crate::content::relics::RelicId::ChemicalX,
+        ));
+    crate::engine::action_handlers::execute_action(actions[0].action.clone(), &mut state);
+    assert_eq!(state.turn.energy, 0);
+    let mut generated = 0;
+    while let Some(action) = state.pop_next_action() {
+        assert!(matches!(
+            action,
+            Action::MakeRandomColorlessCardInHand {
+                cost_for_turn: Some(0),
+                upgraded: true
+            }
+        ));
+        generated += 1;
+    }
+    assert_eq!(generated, 5);
 }
 
 #[test]

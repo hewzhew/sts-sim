@@ -814,6 +814,32 @@ pub fn handle_make_random_colorless_card_in_hand(
     }
 }
 
+pub fn handle_transmutation(
+    upgraded: bool,
+    free_to_play_once: bool,
+    energy_on_use: i32,
+    state: &mut CombatState,
+) {
+    let base_effect = if energy_on_use != -1 {
+        energy_on_use
+    } else {
+        state.turn.energy as i32
+    };
+    let effect = crate::content::relics::hooks::on_calculate_x_cost(state, base_effect);
+
+    if effect > 0 {
+        for _ in 0..effect {
+            state.queue_action_back(Action::MakeRandomColorlessCardInHand {
+                cost_for_turn: Some(0),
+                upgraded,
+            });
+        }
+        if !free_to_play_once {
+            state.turn.spend_energy(state.turn.energy as i32);
+        }
+    }
+}
+
 pub fn handle_use_card_done(should_exhaust: bool, state: &mut CombatState) {
     if let Some(card) = state.zones.limbo.pop() {
         if should_exhaust {
@@ -984,26 +1010,23 @@ pub fn handle_play_card_from_hand(
     };
 
     let is_x_cost = base_cost == -1;
-    let energy_to_spend = if is_x_cost {
+    let energy_on_use = if is_x_cost {
         state.turn.energy as i32
     } else {
         effective_cost
     };
-    let x_effect = if is_x_cost {
-        crate::content::relics::hooks::on_calculate_x_cost(state, energy_to_spend)
-    } else {
-        energy_to_spend
-    };
 
-    if !is_x_cost && energy_to_spend > state.turn.energy as i32 {
+    if !is_x_cost && energy_on_use > state.turn.energy as i32 {
         return Err("Not enough energy");
     }
 
-    state.turn.spend_energy(energy_to_spend);
+    if !is_x_cost {
+        state.turn.spend_energy(energy_on_use);
+    }
 
     let card_mut = &mut state.zones.hand[card_index];
     if is_x_cost {
-        card_mut.energy_on_use = x_effect;
+        card_mut.energy_on_use = energy_on_use;
     }
 
     {

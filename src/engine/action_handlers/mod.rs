@@ -178,6 +178,18 @@ pub fn execute_action(action: Action, state: &mut CombatState) {
             damage_type,
             is_modified,
         } => damage::handle_damage_all_enemies(source, damages, damage_type, is_modified, state),
+        Action::Whirlwind {
+            damages,
+            damage_type,
+            free_to_play_once,
+            energy_on_use,
+        } => damage::handle_whirlwind(
+            damages,
+            damage_type,
+            free_to_play_once,
+            energy_on_use,
+            state,
+        ),
         Action::AttackDamageRandomEnemy {
             base_damage,
             damage_type,
@@ -410,6 +422,11 @@ pub fn execute_action(action: Action, state: &mut CombatState) {
             cost_for_turn,
             upgraded,
         } => cards::handle_make_random_colorless_card_in_hand(cost_for_turn, upgraded, state),
+        Action::Transmutation {
+            upgraded,
+            free_to_play_once,
+            energy_on_use,
+        } => cards::handle_transmutation(upgraded, free_to_play_once, energy_on_use, state),
         Action::UseCardDone { should_exhaust } => {
             cards::handle_use_card_done(should_exhaust, state)
         }

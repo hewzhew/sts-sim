@@ -126,6 +126,12 @@ pub enum Action {
         damage_type: DamageType,
         is_modified: bool,
     },
+    Whirlwind {
+        damages: smallvec::SmallVec<[i32; 5]>,
+        damage_type: DamageType,
+        free_to_play_once: bool,
+        energy_on_use: i32,
+    },
     GainBlock {
         target: EntityId,
         amount: i32,
@@ -395,6 +401,11 @@ pub enum Action {
     MakeRandomColorlessCardInHand {
         cost_for_turn: Option<u8>,
         upgraded: bool,
+    },
+    Transmutation {
+        upgraded: bool,
+        free_to_play_once: bool,
+        energy_on_use: i32,
     },
     ReduceAllHandCosts {
         amount: u8,

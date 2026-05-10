@@ -477,6 +477,35 @@ pub fn handle_damage_all_enemies(
     }
 }
 
+pub fn handle_whirlwind(
+    damages: smallvec::SmallVec<[i32; 5]>,
+    damage_type: DamageType,
+    free_to_play_once: bool,
+    energy_on_use: i32,
+    state: &mut CombatState,
+) {
+    let base_effect = if energy_on_use != -1 {
+        energy_on_use
+    } else {
+        state.turn.energy as i32
+    };
+    let effect = crate::content::relics::hooks::on_calculate_x_cost(state, base_effect);
+
+    if effect > 0 {
+        for _ in 0..effect {
+            state.queue_action_back(Action::DamageAllEnemies {
+                source: 0,
+                damages: damages.clone(),
+                damage_type,
+                is_modified: false,
+            });
+        }
+        if !free_to_play_once {
+            state.turn.spend_energy(state.turn.energy as i32);
+        }
+    }
+}
+
 pub fn handle_attack_damage_random_enemy(
     base_damage: i32,
     damage_type: DamageType,

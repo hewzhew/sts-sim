@@ -419,12 +419,11 @@ pub fn play_colorless(
             }
         }
         CardId::Transmutation => {
-            for _ in 0..card.energy_on_use.max(0) {
-                acts.push(Action::MakeRandomColorlessCardInHand {
-                    cost_for_turn: Some(0),
-                    upgraded: card.upgrades > 0,
-                });
-            }
+            acts.push(Action::Transmutation {
+                upgraded: card.upgrades > 0,
+                free_to_play_once: card.free_to_play_once,
+                energy_on_use: card.energy_on_use.max(state.turn.energy as i32),
+            });
         }
         CardId::Violence => {
             acts.push(Action::DrawPileToHandByType {
