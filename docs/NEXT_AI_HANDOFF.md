@@ -9,10 +9,14 @@ Continue Java-source-backed mechanics cleanup. Do not add strategy heuristics, b
 
 ## Last Pushed Checkpoint
 
-`889a0f0 Update all matching misc card instances`
+`ce0fb76 Persist combat misc card growth`
 
 Recent pushed mechanics fixes:
 
+- `ce0fb76 Persist combat misc card growth`
+  - Java `RitualDaggerAction` first mutates the matching master-deck card and then the matching combat instances.
+  - Rust now emits `MetaChange::ModifyCardMisc { card_uuid, amount }` from combat and applies it to `RunState.master_deck`.
+  - Post-combat state keys include that meta change so retained action cleanup does not hide permanent growth.
 - `889a0f0 Update all matching misc card instances`
   - `ModifyCardMisc` now matches Java `GetAllInBattleInstances` combat-zone semantics.
   - Java `RitualDaggerAction` mutates every battle instance with the matching UUID.
@@ -43,22 +47,44 @@ Verification already passed for those checkpoints:
 
 ## Current Work To Commit
 
-Ironclad / shared Java action audit continued and found one non-strategy mechanics difference:
+Architecture cleanup for Java card-cost and card-instance mutation semantics:
 
-- Combat misc growth now persists back to the run master deck:
-  - Java `RitualDaggerAction` first mutates the matching `player.masterDeck` card, then mutates `GetAllInBattleInstances`.
-  - Rust now emits `MetaChange::ModifyCardMisc { card_uuid, amount }` from combat.
-  - `tick_run` consumes that meta change and updates the matching `RunState.master_deck` card.
-  - The post-combat stable turn-state key now includes this meta-change variant.
+- Added `CombatCard` helpers for Java `AbstractCard` cost semantics:
+  - `set_cost_for_turn_java`
+  - `update_cost_java`
+  - `modify_cost_for_combat_java`
+  - combat-cost setters that either preserve or overwrite `costForTurn`
+- Added `CardZones` helpers for UUID-matched Java battle instances and queued-card artifacts.
+- Migrated known direct cost mutations through those helpers:
+  - `BloodForBlood` damage and generated-copy discounts
+  - `Corruption` skill cost override
+  - `Madness`
+  - `Enlightenment`
+  - `Confusion`
+  - `Mummified Hand`
+  - generated-card cost overrides
+  - `Liquid Memories` / discard-to-hand cost override
+- Removed the old `evaluate_card` Blood for Blood cost rewrite. Cost changes now happen at Java lifecycle points instead of during damage/block evaluation.
 
 Verification passed for this work:
 
-- `cargo test -q content::cards::tests::on_kill_card_rewards_ignore_minions_and_half_dead_targets_like_java_actions`
-- `cargo test -q engine::run_loop::tests::combat_misc_meta_change_updates_matching_master_deck_card`
-- `cargo test -q engine::run_loop::tests`
-- `cargo test -q content::cards::tests`
-- `cargo test -q engine::action_handlers::cards::tests`
-- `cargo check -q`
+- `cargo fmt`
+- `cargo check --lib`
+- `cargo test combat_card_ --lib`
+- `cargo test card_zones_uuid_helper --lib`
+- `cargo test blood_for_blood_cost_updates_when_player_takes_hp_loss --lib`
+- `cargo test corruption_power_on_apply_modifies_skill_costs_in_java_piles --lib`
+- `cargo test mummified_hand_sets_one_eligible_hand_card_cost_to_zero_immediately --lib`
+- `cargo test generated_skill_entering_hand_obeys_corruption_cost_override --lib`
+- `cargo test content::cards::tests::ironclad_cost_and_hp_cards_runtime_actions_match_java_use_methods --lib`
+- `cargo test content::cards::tests::ironclad_rampage_and_rupture_runtime_actions_match_java_use_methods --lib`
+- `cargo test engine::action_handlers::cards::tests::random_pool_blood_for_blood_copy_uses_java_make_copy_damage_discount --lib`
+- `cargo test content::cards::tests --lib`
+- `cargo test engine::action_handlers::cards::tests --lib`
+
+Known verification limitation:
+
+- `cargo test --lib` currently reports 432 passed / 13 failed because protocol fixture files under `tests/protocol_screen_action_space/...` are missing. Those failures are unrelated to this cost/instance cleanup and come from the deleted/dirty fixture tree.
 
 ## Next Work
 

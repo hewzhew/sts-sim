@@ -297,7 +297,7 @@ pub fn handle_grid_select(
                             .position(|c| c.uuid == *uuid)
                         {
                             let mut card = combat_state.zones.discard_pile.remove(pos);
-                            card.cost_for_turn = Some(0);
+                            card.set_cost_for_turn_java(0);
                             if combat_state.zones.hand.len() < 10 {
                                 combat_state.zones.hand.push(card);
                             }

@@ -37,7 +37,7 @@ pub fn corruption_on_apply(state: &mut CombatState) {
         .chain(state.zones.exhaust_pile.iter_mut())
     {
         if is_skill(c.id) {
-            c.cost_for_turn = Some(0);
+            c.set_cost_for_turn_java(0);
         }
     }
 }
@@ -47,7 +47,7 @@ pub fn corruption_on_apply(state: &mut CombatState) {
 pub fn corruption_on_card_draw(_state: &CombatState, card: &mut CombatCard) {
     let def = crate::content::cards::get_card_definition(card.id);
     if def.card_type == crate::content::cards::CardType::Skill {
-        card.cost_for_turn = Some(0);
+        card.set_cost_for_turn_java(0);
     }
 }
 

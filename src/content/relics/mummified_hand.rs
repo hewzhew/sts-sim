@@ -22,14 +22,16 @@ pub fn apply_effect(state: &mut CombatState) {
         .enumerate()
         .filter(|(_, c)| {
             let def = crate::content::cards::get_card_definition(c.id);
-            let current = c.cost_for_turn.unwrap_or(def.cost as u8);
-            def.cost > 0 && current > 0 && !c.free_to_play_once && !reserved.contains(&c.uuid)
+            def.cost > 0
+                && c.cost_for_turn_java() > 0
+                && !c.free_to_play_once
+                && !reserved.contains(&c.uuid)
         })
         .map(|(i, _)| i)
         .collect();
     if !eligible.is_empty() {
         let idx = state.rng.card_random_rng.random(eligible.len() as i32 - 1) as usize;
         let card_idx = eligible[idx];
-        state.zones.hand[card_idx].cost_for_turn = Some(0);
+        state.zones.hand[card_idx].set_cost_for_turn_java(0);
     }
 }

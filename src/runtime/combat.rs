@@ -139,6 +139,45 @@ impl CardZones {
     pub fn add_to_exhaust_pile_top(&mut self, card: CombatCard) {
         self.exhaust_pile.push(card);
     }
+
+    /// Applies a mutation to every visible Java battle instance that shares a
+    /// UUID. This is the common path for effects such as Rampage/Searing Blow
+    /// growth that call AbstractDungeon.player.masterDeck.getSpecificCard()
+    /// plus GetAllInBattleInstances-like combat copies.
+    pub fn for_each_java_battle_instance_mut_by_uuid(
+        &mut self,
+        card_uuid: u32,
+        mut apply: impl FnMut(&mut CombatCard),
+    ) {
+        for card in self
+            .hand
+            .iter_mut()
+            .chain(self.draw_pile.iter_mut())
+            .chain(self.discard_pile.iter_mut())
+            .chain(self.exhaust_pile.iter_mut())
+            .chain(self.limbo.iter_mut())
+        {
+            if card.uuid == card_uuid {
+                apply(card);
+            }
+        }
+    }
+
+    /// Queued card plays are a Rust runtime artifact rather than a Java
+    /// CardGroup, but some delayed play paths carry stat-equivalent copies
+    /// there before execution. Use this only for mutations that must preserve
+    /// existing queued-card behavior.
+    pub fn for_each_queued_instance_mut_by_uuid(
+        &mut self,
+        card_uuid: u32,
+        mut apply: impl FnMut(&mut CombatCard),
+    ) {
+        for queued in &mut self.queued_cards {
+            if queued.card.uuid == card_uuid {
+                apply(&mut queued.card);
+            }
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -1226,19 +1265,118 @@ impl CombatCard {
         if let Some(c) = self.cost_for_turn {
             c as i8
         } else {
-            let def = crate::content::cards::get_card_definition(self.id);
-            let base_cost =
-                crate::content::cards::upgraded_base_cost_override(self).unwrap_or(def.cost);
-            if base_cost < 0 {
-                return base_cost;
-            }
-            let mut c = base_cost as i8 + self.cost_modifier;
-            if c < 0 {
-                c = 0;
-            }
-            c
+            self.combat_cost_without_turn_override_java()
+                .clamp(i8::MIN as i32, i8::MAX as i32) as i8
         }
     }
+
+    pub fn base_cost_for_combat_java(&self) -> i32 {
+        let def = crate::content::cards::get_card_definition(self.id);
+        crate::content::cards::upgraded_base_cost_override(self).unwrap_or(def.cost) as i32
+    }
+
+    /// Java `AbstractCard.cost`: the combat copy's actual cost after
+    /// cost-modifying effects, before `costForTurn` overrides.
+    pub fn combat_cost_without_turn_override_java(&self) -> i32 {
+        let base_cost = self.base_cost_for_combat_java();
+        if base_cost < 0 {
+            return base_cost;
+        }
+        (base_cost + self.cost_modifier as i32).max(0)
+    }
+
+    /// Java `AbstractCard.costForTurn`: the visible playable cost for this
+    /// turn, falling back to the combat cost when no temporary override exists
+    /// in Rust.
+    pub fn cost_for_turn_java(&self) -> i32 {
+        self.cost_for_turn
+            .map(i32::from)
+            .unwrap_or_else(|| self.combat_cost_without_turn_override_java())
+    }
+
+    pub fn set_cost_for_turn_java(&mut self, amount: i32) {
+        if self.cost_for_turn_java() >= 0 {
+            self.cost_for_turn = Some(clamp_turn_cost(amount));
+        }
+    }
+
+    /// Mirrors Java `AbstractCard.updateCost(int)`: adjust combat cost and
+    /// preserve any existing difference between `cost` and `costForTurn`.
+    pub fn update_cost_java(&mut self, amount: i32) {
+        let def = crate::content::cards::get_card_definition(self.id);
+        if (def.card_type == crate::content::cards::CardType::Status && self.id != CardId::Slimed)
+            || (def.card_type == crate::content::cards::CardType::Curse && self.id != CardId::Pride)
+        {
+            return;
+        }
+
+        let old_cost = self.combat_cost_without_turn_override_java();
+        if old_cost < 0 {
+            return;
+        }
+        let old_cost_for_turn = self.cost_for_turn_java();
+        let cost_for_turn_diff = old_cost - old_cost_for_turn;
+        let new_cost = (old_cost + amount).max(0);
+        if new_cost == old_cost {
+            return;
+        }
+
+        self.set_combat_cost_without_turn_override_java(new_cost);
+        if self.cost_for_turn.is_some() || cost_for_turn_diff != 0 {
+            self.cost_for_turn = Some(clamp_turn_cost(new_cost - cost_for_turn_diff));
+        }
+    }
+
+    /// Mirrors Java `AbstractCard.modifyCostForCombat(int)`, used by effects
+    /// such as Madness that mutate this combat copy's cost and visible
+    /// cost-for-turn together.
+    pub fn modify_cost_for_combat_java(&mut self, amount: i32) {
+        let old_cost = self.combat_cost_without_turn_override_java();
+        if old_cost < 0 {
+            return;
+        }
+
+        let old_cost_for_turn = self.cost_for_turn_java();
+        if old_cost_for_turn > 0 {
+            let new_cost = (old_cost_for_turn + amount).max(0);
+            self.set_combat_cost_without_turn_override_java(new_cost);
+            self.cost_for_turn = Some(clamp_turn_cost(new_cost));
+        } else {
+            let new_cost = (old_cost + amount).max(0);
+            self.set_combat_cost_without_turn_override_java(new_cost);
+            self.cost_for_turn = Some(0);
+        }
+    }
+
+    pub fn set_combat_cost_preserving_turn_java(&mut self, new_cost: i32) {
+        if self.base_cost_for_combat_java() >= 0 {
+            self.set_combat_cost_without_turn_override_java(new_cost.max(0));
+        }
+    }
+
+    pub fn set_combat_and_turn_cost_java(&mut self, new_cost: i32) {
+        if self.base_cost_for_combat_java() >= 0 {
+            let new_cost = new_cost.max(0);
+            self.set_combat_cost_without_turn_override_java(new_cost);
+            self.cost_for_turn = Some(clamp_turn_cost(new_cost));
+        }
+    }
+
+    fn set_combat_cost_without_turn_override_java(&mut self, new_cost: i32) {
+        let base_cost = self.base_cost_for_combat_java();
+        if base_cost < 0 {
+            return;
+        }
+        self.cost_modifier = clamp_cost_modifier(new_cost - base_cost);
+    }
+}
+
+fn clamp_turn_cost(cost: i32) -> u8 {
+    cost.clamp(0, u8::MAX as i32) as u8
+}
+
+fn clamp_cost_modifier(modifier: i32) -> i8 {
+    modifier.clamp(i8::MIN as i32, i8::MAX as i32) as i8
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -1553,6 +1691,82 @@ mod tests {
 
         assert_eq!(zones.exhaust_pile[0].id, CardId::Strike);
         assert_eq!(zones.exhaust_pile[1].id, CardId::Defend);
+    }
+
+    #[test]
+    fn card_zones_uuid_helper_updates_java_battle_instances_only() {
+        let mut zones = CardZones {
+            draw_pile: vec![CombatCard::new(CardId::Rampage, 7)],
+            hand: vec![CombatCard::new(CardId::Rampage, 7)],
+            discard_pile: vec![CombatCard::new(CardId::Strike, 8)],
+            exhaust_pile: vec![CombatCard::new(CardId::Rampage, 7)],
+            limbo: vec![CombatCard::new(CardId::Rampage, 7)],
+            queued_cards: VecDeque::from([QueuedCardPlay {
+                card: CombatCard::new(CardId::Rampage, 7),
+                target: None,
+                energy_on_use: 1,
+                ignore_energy_total: false,
+                autoplay: false,
+                random_target: false,
+                is_end_turn_autoplay: false,
+                purge_on_use: false,
+                source: QueuedCardSource::Normal,
+            }]),
+            card_uuid_counter: 8,
+        };
+
+        zones.for_each_java_battle_instance_mut_by_uuid(7, |card| {
+            card.misc_value += 2;
+        });
+
+        assert_eq!(zones.hand[0].misc_value, 2);
+        assert_eq!(zones.draw_pile[0].misc_value, 2);
+        assert_eq!(zones.exhaust_pile[0].misc_value, 2);
+        assert_eq!(zones.limbo[0].misc_value, 2);
+        assert_eq!(zones.discard_pile[0].misc_value, 0);
+        assert_eq!(
+            zones.queued_cards[0].card.misc_value, 0,
+            "queued cards are not Java CardGroup battle instances"
+        );
+
+        zones.for_each_queued_instance_mut_by_uuid(7, |card| {
+            card.misc_value += 3;
+        });
+        assert_eq!(zones.queued_cards[0].card.misc_value, 3);
+    }
+
+    #[test]
+    fn combat_card_update_cost_preserves_java_cost_for_turn_difference() {
+        let mut card = CombatCard::new(CardId::BloodForBlood, 1);
+        card.set_cost_for_turn_java(1);
+
+        card.update_cost_java(-1);
+
+        assert_eq!(card.combat_cost_without_turn_override_java(), 3);
+        assert_eq!(card.cost_for_turn_java(), 0);
+        assert_eq!(card.get_cost(), 0);
+    }
+
+    #[test]
+    fn combat_card_modify_cost_for_combat_matches_java_zero_turn_branch() {
+        let mut card = CombatCard::new(CardId::BloodForBlood, 1);
+        card.set_cost_for_turn_java(0);
+
+        card.modify_cost_for_combat_java(-1);
+
+        assert_eq!(card.combat_cost_without_turn_override_java(), 3);
+        assert_eq!(card.cost_for_turn_java(), 0);
+    }
+
+    #[test]
+    fn combat_card_can_set_combat_cost_without_erasing_turn_override() {
+        let mut card = CombatCard::new(CardId::BloodForBlood, 1);
+        card.set_cost_for_turn_java(0);
+
+        card.set_combat_cost_preserving_turn_java(1);
+
+        assert_eq!(card.combat_cost_without_turn_override_java(), 1);
+        assert_eq!(card.cost_for_turn_java(), 0);
     }
 
     #[test]

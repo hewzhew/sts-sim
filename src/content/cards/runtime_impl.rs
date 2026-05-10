@@ -246,9 +246,6 @@ pub fn evaluate_card(card: &mut CombatCard, state: &CombatState, target: Option<
         }
 
         damage += (card.base_magic_num_mut as f32) * (strike_count as f32);
-    } else if card.id == CardId::BloodForBlood {
-        // Dynamic Cost Reduction based on hits taken (unblocked or blocked depending on earlier engine implementation; Java increments when hp lost)
-        card.cost_modifier = -(state.turn.counters.times_damaged_this_combat as i8);
     } else if card.id == CardId::BodySlam {
         damage = state.entities.player.block as f32;
     } else if card.id == CardId::SearingBlow {
@@ -397,8 +394,8 @@ pub fn make_fresh_card_copy_for_combat(
 ) -> CombatCard {
     let mut card = CombatCard::new(card_id, uuid);
     if card_id == CardId::BloodForBlood {
-        let damaged = state.turn.counters.times_damaged_this_combat.min(i8::MAX as u8) as i8;
-        card.cost_modifier = -damaged;
+        let damaged = state.turn.counters.times_damaged_this_combat as i32;
+        card.update_cost_java(-damaged);
     }
     card
 }

@@ -97,7 +97,7 @@ fn update_player_cards_on_damage(state: &mut CombatState) {
         .chain(state.zones.draw_pile.iter_mut())
     {
         if card.id == crate::content::cards::CardId::BloodForBlood {
-            card.cost_modifier = card.cost_modifier.saturating_sub(1);
+            card.update_cost_java(-1);
         }
     }
 }

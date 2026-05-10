@@ -1018,7 +1018,7 @@ fn resolve_pending_choice(
                     );
                     // Apply cost override from the SuspendForDiscovery action
                     if let Some(cost) = combat_state.turn.take_discovery_cost_for_turn() {
-                        card.cost_for_turn = Some(cost);
+                        card.set_cost_for_turn_java(cost as i32);
                     }
                     crate::content::cards::apply_master_reality_to_generated_card(
                         &mut card,

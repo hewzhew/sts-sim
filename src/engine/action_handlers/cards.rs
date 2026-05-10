@@ -371,7 +371,7 @@ pub fn handle_exhume_card(card_uuid: u32, upgrade: bool, state: &mut CombatState
         && crate::content::cards::get_card_definition(card.id).card_type
             == crate::content::cards::CardType::Skill
     {
-        card.cost_for_turn = Some(0);
+        card.set_cost_for_turn_java(0);
     }
     state.zones.hand.push(card);
 }
@@ -516,28 +516,27 @@ pub fn handle_make_temp_card_in_discard_and_deck(
 
 pub fn handle_reduce_all_hand_costs(amount: u8, state: &mut CombatState) {
     for card in state.zones.hand.iter_mut() {
-        let def = crate::content::cards::get_card_definition(card.id);
-        if def.cost >= 0 {
-            let current = card.cost_for_turn.unwrap_or(def.cost as u8);
-            card.cost_for_turn = Some(current.saturating_sub(amount));
+        if card.cost_for_turn_java() > 0 {
+            let current = card.cost_for_turn_java();
+            card.set_cost_for_turn_java(current - amount as i32);
         }
     }
 }
 
 pub fn handle_enlightenment(permanent: bool, state: &mut CombatState) {
     for card in state.zones.hand.iter_mut() {
-        let def = crate::content::cards::get_card_definition(card.id);
-        if def.cost < 0 {
+        let base_cost = card.base_cost_for_combat_java();
+        if base_cost < 0 {
             continue;
         }
 
-        let current = card.cost_for_turn.unwrap_or(def.cost as u8);
+        let current = card.cost_for_turn_java();
         if current > 1 {
-            card.cost_for_turn = Some(1);
+            card.set_cost_for_turn_java(1);
         }
 
-        if permanent && def.cost > 1 {
-            card.cost_modifier = 1 - def.cost;
+        if permanent && base_cost > 1 {
+            card.set_combat_cost_preserving_turn_java(1);
         }
     }
 }
@@ -580,12 +579,7 @@ pub fn handle_madness(state: &mut CombatState) {
 
     let pick = state.rng.card_random_rng.random(pool.len() as i32 - 1) as usize;
     let card = &mut state.zones.hand[pool[pick]];
-    let def = crate::content::cards::get_card_definition(card.id);
-    let base_cost = crate::content::cards::upgraded_base_cost_override(card).unwrap_or(def.cost);
-    if base_cost >= 0 {
-        card.cost_modifier = -base_cost;
-        card.cost_for_turn = Some(0);
-    }
+    card.modify_cost_for_combat_java(-99);
 }
 
 pub fn handle_upgrade_all_in_hand(state: &mut CombatState) {
@@ -651,45 +645,30 @@ pub fn handle_modify_card_misc(card_uuid: u32, amount: i32, state: &mut CombatSt
         .meta_changes
         .push(crate::runtime::combat::MetaChange::ModifyCardMisc { card_uuid, amount });
 
-    for card in state
+    state
         .zones
-        .hand
-        .iter_mut()
-        .chain(state.zones.draw_pile.iter_mut())
-        .chain(state.zones.discard_pile.iter_mut())
-        .chain(state.zones.exhaust_pile.iter_mut())
-        .chain(state.zones.limbo.iter_mut())
-    {
-        if card.uuid == card_uuid {
+        .for_each_java_battle_instance_mut_by_uuid(card_uuid, |card| {
             card.misc_value += amount;
-        }
-    }
+        });
 }
 
 pub fn handle_modify_card_damage(card_uuid: u32, amount: i32, state: &mut CombatState) {
-    for card in state
+    state
         .zones
-        .hand
-        .iter_mut()
-        .chain(state.zones.draw_pile.iter_mut())
-        .chain(state.zones.discard_pile.iter_mut())
-        .chain(state.zones.exhaust_pile.iter_mut())
-        .chain(state.zones.limbo.iter_mut())
-        .chain(
-            state
-                .zones
-                .queued_cards
-                .iter_mut()
-                .map(|queued| &mut queued.card),
-        )
-    {
-        if card.uuid == card_uuid {
+        .for_each_java_battle_instance_mut_by_uuid(card_uuid, |card| {
             let def = crate::content::cards::get_card_definition(card.id);
             let upgraded_base = def.base_damage + (card.upgrades as i32) * def.upgrade_damage;
             let current = card.base_damage_override.unwrap_or(upgraded_base);
             card.base_damage_override = Some((current + amount).max(0));
-        }
-    }
+        });
+    state
+        .zones
+        .for_each_queued_instance_mut_by_uuid(card_uuid, |card| {
+            let def = crate::content::cards::get_card_definition(card.id);
+            let upgraded_base = def.base_damage + (card.upgrades as i32) * def.upgrade_damage;
+            let current = card.base_damage_override.unwrap_or(upgraded_base);
+            card.base_damage_override = Some((current + amount).max(0));
+        });
 }
 
 pub fn handle_randomize_hand_costs(state: &mut CombatState) {
@@ -697,7 +676,7 @@ pub fn handle_randomize_hand_costs(state: &mut CombatState) {
         let base_cost = crate::content::cards::get_card_definition(card.id).cost;
         if base_cost >= 0 {
             let new_cost = state.rng.card_random_rng.random(3) as u8;
-            card.cost_for_turn = Some(new_cost);
+            card.set_cost_for_turn_java(new_cost as i32);
         }
     }
 }
@@ -737,7 +716,7 @@ pub fn handle_make_random_card_in_hand(
         state.zones.card_uuid_counter += 1;
         let mut card = make_random_pool_card_from_id(card_id, state.zones.card_uuid_counter, state);
         if let Some(cost) = cost_for_turn {
-            card.cost_for_turn = Some(cost);
+            card.set_cost_for_turn_java(cost as i32);
         }
         add_generated_card_to_hand_or_discard(card, state);
     }
@@ -756,7 +735,7 @@ pub fn handle_make_random_card_in_draw_pile(
         state.zones.card_uuid_counter += 1;
         let mut card = make_random_pool_card_from_id(card_id, state.zones.card_uuid_counter, state);
         if let Some(cost) = cost_for_turn {
-            card.cost_for_turn = Some(cost);
+            card.set_cost_for_turn_java(cost as i32);
         }
         apply_master_reality_to_generated_card(&mut card, state, 2);
         if random_spot {
@@ -831,7 +810,7 @@ pub fn handle_make_random_colorless_card_in_hand(
             card.upgrades = 1;
         }
         if let Some(cost) = cost_for_turn {
-            card.cost_for_turn = Some(cost);
+            card.set_cost_for_turn_java(cost as i32);
         }
         add_generated_card_to_hand_or_discard(card, state);
     }
@@ -1161,7 +1140,7 @@ pub fn handle_use_potion(slot: usize, target: Option<usize>, state: &mut CombatS
             for uuid in uuids {
                 if let Some(pos) = state.zones.discard_pile.iter().position(|c| c.uuid == uuid) {
                     let mut card = state.zones.discard_pile.remove(pos);
-                    card.cost_for_turn = Some(0);
+                    card.set_cost_for_turn_java(0);
                     if state.zones.hand.len() < 10 {
                         state.zones.hand.push(card);
                     }
