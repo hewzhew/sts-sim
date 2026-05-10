@@ -538,6 +538,8 @@ typed payload work and must not enter AI mechanical action queues.
 | --- | --- | --- | --- | --- |
 | `WaitAction.java` | no subclass fields beyond common action fields | render_only | none | delay/pacing only; Rust AI simulator must not model it |
 | `ChooseOneColorless.java` | `retrieveCard` | modeled | `ActionPayload::ChooseOneColorless.retrieve_card` | waits for card reward screen selection |
+| `ChooseOneColorless.java` | generated card choices | modeled/derived | `ChoiceScreenState.generated_choice` | three unique random colorless cards from combat card RNG |
+| `ChooseOneColorless.java` | `ShowCardAndAddToHandEffect` / `ShowCardAndAddToDiscardEffect` carriers | mechanical_hosted_in_ui | extracted transitions via UI-hosted source rows | selected card enters hand or discard based on hand capacity |
 | `ConditionalDrawAction.java` | `restrictedType` | modeled | `ActionPayload::ConditionalDraw.restricted_type` | draw only if hand lacks this card type |
 | `DiscardToHandAction.java` | `card` | modeled | `ActionPayload::DiscardToHand.card_ref` | discard-pile card to move to hand |
 | `DrawPileToHandAction.java` | `p` | modeled/derived | `CombatStateSnapshot.player` | always current player |
@@ -581,6 +583,24 @@ typed payload work and must not enter AI mechanical action queues.
 | `BurnIncreaseAction.java` | `gotBurned` | modeled | `ActionPayload::BurnIncrease.got_burned` | delayed guard for adding three upgraded Burns |
 | `BurnIncreaseAction.java` | existing Burns in draw/discard | derived | card zones and card instance upgrades | first update upgrades all existing Burn cards in draw and discard piles |
 | `BurnIncreaseAction.java` | `ShowCardAndAddToDiscardEffect` carrier | mechanical_hosted_in_ui | extracted transition via `ShowCardAndAddToDiscardEffect.java` ledger row | Java uses VFX object to add three upgraded Burns to discard pile |
+| `CodexAction.java` | `retrieveCard` | modeled | `ActionPayload::Codex.retrieve_card` | waits for card reward screen selection |
+| `CodexAction.java` | `numPlaced` | non_combat | none | declared static field; no source read/write beyond declaration |
+| `CodexAction.java` | generated card choices | modeled/derived | `ChoiceScreenState.generated_choice` | three unique random combat cards; skips if monsters are basically dead |
+| `CodexAction.java` | `ShowCardAndAddToDrawPileEffect` carrier | mechanical_hosted_in_ui | extracted transition via `ShowCardAndAddToDrawPileEffect.java` ledger row | selected card copy is inserted randomly into draw pile |
+| `DiscoveryAction.java` | `retrieveCard` | modeled | `ActionPayload::Discovery.retrieve_card` | waits for card reward screen selection |
+| `DiscoveryAction.java` | `returnColorless` | modeled | `ActionPayload::Discovery.return_colorless` | selects colorless generation pool |
+| `DiscoveryAction.java` | `cardType` | modeled | `ActionPayload::Discovery.card_type` | optional typed generation filter |
+| `DiscoveryAction.java` | generated card choices | modeled/derived | `ChoiceScreenState.generated_choice` | three unique random combat cards, optionally colorless or type-filtered |
+| `DiscoveryAction.java` | `ShowCardAndAddToHandEffect` / `ShowCardAndAddToDiscardEffect` carriers | mechanical_hosted_in_ui | extracted transitions via UI-hosted source rows | selected copies get zero cost, Master Reality upgrade, and hand-overflow discard handling |
+
+## Field Ledger: Watcher `actions/watcher/*Action.java` Subclasses
+
+| Source | Field | Classification | Schema path | Notes |
+| --- | --- | --- | --- | --- |
+| `ForeignInfluenceAction.java` | `retrieveCard` | modeled | `ActionPayload::ForeignInfluence.retrieve_card` | waits for card reward screen selection |
+| `ForeignInfluenceAction.java` | `upgraded` | modeled | `ActionPayload::ForeignInfluence.upgraded` | selected card cost is set to zero when true |
+| `ForeignInfluenceAction.java` | generated card choices | modeled/derived | `ChoiceScreenState.generated_choice` | three unique random attack cards using rarity roll from combat card RNG |
+| `ForeignInfluenceAction.java` | `ShowCardAndAddToHandEffect` / `ShowCardAndAddToDiscardEffect` carriers | mechanical_hosted_in_ui | extracted transitions via UI-hosted source rows | selected card enters hand or discard based on hand capacity |
 
 ## Field Ledger: `cards/DamageInfo.java`
 

@@ -510,6 +510,10 @@ ActionPayload {
     restricted_type,
   }
 
+  Codex {
+    retrieve_card,
+  }
+
   Damage {
     gold_amount,
   }
@@ -547,6 +551,12 @@ ActionPayload {
     group_zone_ref,
   }
 
+  Discovery {
+    retrieve_card,
+    return_colorless,
+    card_type,
+  }
+
   EmptyDeckShuffle {
     shuffled,
     vfx_done,
@@ -567,6 +577,11 @@ ActionPayload {
     target_card,
     group_zone_ref,
     starting_duration_bits,
+  }
+
+  ForeignInfluence {
+    retrieve_card,
+    upgraded,
   }
 
   GainEnergy {

@@ -327,6 +327,7 @@ pub enum ActionPayload {
     BurnIncrease(BurnIncreaseActionState),
     ChooseOneColorless(ChooseOneColorlessActionState),
     ConditionalDraw(ConditionalDrawActionState),
+    Codex(CodexActionState),
     Damage(DamageActionState),
     DamageAllEnemies(DamageAllEnemiesActionState),
     DamageRandomEnemy(DamageRandomEnemyActionState),
@@ -335,10 +336,12 @@ pub enum ActionPayload {
     DrawPileToHand(DrawPileToHandActionState),
     Discard(DiscardActionState),
     DiscardSpecificCard(DiscardSpecificCardActionState),
+    Discovery(DiscoveryActionState),
     EmptyDeckShuffle(EmptyDeckShuffleActionState),
     Exhaust(ExhaustActionState),
     ExhaustToHand(ExhaustToHandActionState),
     ExhaustSpecificCard(ExhaustSpecificCardActionState),
+    ForeignInfluence(ForeignInfluenceActionState),
     GainEnergy(GainEnergyActionState),
     MakeTempCardInDiscard(MakeTempCardInDiscardActionState),
     MakeTempCardInDiscardAndDeck(MakeTempCardInDiscardAndDeckActionState),
@@ -383,18 +386,21 @@ pub const TYPED_ACTION_PAYLOAD_SOURCE_CLASSES: &[&str] = &[
     "BurnIncreaseAction",
     "ChooseOneColorless",
     "ConditionalDrawAction",
+    "CodexAction",
     "DamageAction",
     "DamageAllEnemiesAction",
     "DamageRandomEnemyAction",
     "DiscardToHandAction",
     "DiscardAction",
     "DiscardSpecificCardAction",
+    "DiscoveryAction",
     "DrawCardAction",
     "DrawPileToHandAction",
     "EmptyDeckShuffleAction",
     "ExhaustAction",
     "ExhaustSpecificCardAction",
     "ExhaustToHandAction",
+    "ForeignInfluenceAction",
     "GainEnergyAction",
     "MakeTempCardInDiscardAction",
     "MakeTempCardInDiscardAndDeckAction",
@@ -479,6 +485,7 @@ impl ActionPayload {
             ActionPayload::BurnIncrease(_) => "BurnIncreaseAction",
             ActionPayload::ChooseOneColorless(_) => "ChooseOneColorless",
             ActionPayload::ConditionalDraw(_) => "ConditionalDrawAction",
+            ActionPayload::Codex(_) => "CodexAction",
             ActionPayload::Damage(_) => "DamageAction",
             ActionPayload::DamageAllEnemies(_) => "DamageAllEnemiesAction",
             ActionPayload::DamageRandomEnemy(_) => "DamageRandomEnemyAction",
@@ -487,10 +494,12 @@ impl ActionPayload {
             ActionPayload::DrawPileToHand(_) => "DrawPileToHandAction",
             ActionPayload::Discard(_) => "DiscardAction",
             ActionPayload::DiscardSpecificCard(_) => "DiscardSpecificCardAction",
+            ActionPayload::Discovery(_) => "DiscoveryAction",
             ActionPayload::EmptyDeckShuffle(_) => "EmptyDeckShuffleAction",
             ActionPayload::Exhaust(_) => "ExhaustAction",
             ActionPayload::ExhaustSpecificCard(_) => "ExhaustSpecificCardAction",
             ActionPayload::ExhaustToHand(_) => "ExhaustToHandAction",
+            ActionPayload::ForeignInfluence(_) => "ForeignInfluenceAction",
             ActionPayload::GainEnergy(_) => "GainEnergyAction",
             ActionPayload::MakeTempCardInDiscard(_) => "MakeTempCardInDiscardAction",
             ActionPayload::MakeTempCardInDiscardAndDeck(_) => "MakeTempCardInDiscardAndDeckAction",
@@ -584,6 +593,11 @@ pub struct ConditionalDrawActionState {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CodexActionState {
+    pub retrieve_card: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DamageActionState {
     pub gold_amount: i32,
 }
@@ -629,6 +643,13 @@ pub struct DiscardSpecificCardActionState {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DiscoveryActionState {
+    pub retrieve_card: bool,
+    pub return_colorless: bool,
+    pub card_type: Option<CardType>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct EmptyDeckShuffleActionState {
     pub shuffled: bool,
     pub vfx_done: bool,
@@ -652,6 +673,12 @@ pub struct ExhaustSpecificCardActionState {
     pub target_card: CardRef,
     pub group_zone_ref: ZoneRef,
     pub starting_duration_bits: F32Bits,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ForeignInfluenceActionState {
+    pub retrieve_card: bool,
+    pub upgraded: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
