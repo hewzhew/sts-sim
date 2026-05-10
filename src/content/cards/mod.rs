@@ -310,6 +310,7 @@ pub fn is_starter_basic(id: CardId) -> bool {
 
 pub fn is_innate_card(card: &crate::runtime::combat::CombatCard) -> bool {
     get_card_definition(card.id).innate
+        || matches!(card.id, CardId::Brutality) && card.upgrades > 0
         || matches!(card.id, CardId::AfterImage) && card.upgrades > 0
 }
 

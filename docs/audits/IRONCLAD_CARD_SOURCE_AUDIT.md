@@ -392,6 +392,128 @@ Rust result:
 Coverage:
 - `upgraded_base_cost_is_used_when_spending_energy`
 
+## Batch 4 - Block / Exhaust / Ethereal Ironclad Coverage
+
+### Body Slam
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/cards/red/BodySlam.java`
+
+Rust source:
+- `src/content/cards/mod.rs`
+- `src/content/cards/ironclad/body_slam.rs`
+- `src/content/cards/runtime_impl.rs`
+
+Java evidence:
+- Constructor: cost `1`, type `ATTACK`, color `RED`, rarity `COMMON`, target
+  `ENEMY`, `baseDamage = 0`.
+- `applyPowers` and `use`: set `baseDamage` to player current block, then
+  calculate damage.
+- `upgrade`: `upgradeBaseCost(0)`.
+- Description changes in `applyPowers`, `calculateCardDamage`, and
+  `onMoveToDiscard` are UI text behavior and are not part of Rust simulator
+  mechanics.
+
+Rust result:
+- Fixed upgraded base cost override for `Body Slam+` to `0`.
+- Runtime now evaluates the card at play time, so damage is based on current
+  player block and target damage modifiers without relying on stale mutation
+  fields.
+
+Coverage:
+- `ironclad_block_exhaust_and_ethereal_definitions_match_java_sources`
+- `ironclad_block_exhaust_and_ethereal_runtime_actions_match_java_use_methods`
+
+### Brutality
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/cards/red/Brutality.java`
+- `D:/rust/cardcrawl/powers/BrutalityPower.java`
+
+Rust source:
+- `src/content/cards/mod.rs`
+- `src/content/cards/ironclad/brutality.rs`
+- `src/content/powers/ironclad/brutality.rs`
+
+Java evidence:
+- Constructor: cost `0`, type `POWER`, color `RED`, rarity `RARE`, target
+  `SELF`.
+- `use`: applies `BrutalityPower(p, 1)`.
+- `upgrade`: sets `isInnate = true`.
+- `BrutalityPower.atStartOfTurnPostDraw`: draws `amount`, then queues
+  `LoseHPAction(owner, owner, amount)`.
+
+Rust result:
+- Fixed `is_innate_card` so `Brutality+` is innate.
+- Runtime card use applies `PowerId::Brutality` amount `1`.
+- Existing post-draw power hook draws and then loses HP through the normal
+  HP-loss pipeline.
+
+Coverage:
+- `ironclad_block_exhaust_and_ethereal_definitions_match_java_sources`
+- `ironclad_block_exhaust_and_ethereal_runtime_actions_match_java_use_methods`
+
+### Burning Pact
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/cards/red/BurningPact.java`
+- `D:/rust/cardcrawl/actions/common/ExhaustAction.java`
+
+Rust source:
+- `src/content/cards/mod.rs`
+- `src/content/cards/ironclad/burning_pact.rs`
+
+Java evidence:
+- Constructor: cost `1`, type `SKILL`, color `RED`, rarity `UNCOMMON`, target
+  `NONE`, `baseMagicNumber = magicNumber = 2`.
+- `use`: queues `ExhaustAction(1, false)`, then
+  `DrawCardAction(p, this.magicNumber)`.
+- `ExhaustAction(1, false)`: if hand size is 0, does nothing; if hand size is
+  `<= amount`, exhausts all; otherwise opens a non-random 1-card hand select.
+- `upgrade`: `upgradeMagicNumber(1)`.
+
+Rust result:
+- Runtime now evaluates magic at play time before emitting draw count.
+- Runtime preserves the Java action order: exhaust one eligible hand card first,
+  then draw 2/3 cards.
+
+Coverage:
+- `ironclad_block_exhaust_and_ethereal_definitions_match_java_sources`
+- `ironclad_block_exhaust_and_ethereal_runtime_actions_match_java_use_methods`
+
+### Carnage
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/cards/red/Carnage.java`
+
+Rust source:
+- `src/content/cards/mod.rs`
+- `src/content/cards/ironclad/carnage.rs`
+
+Java evidence:
+- Constructor: cost `2`, type `ATTACK`, color `RED`, rarity `UNCOMMON`, target
+  `ENEMY`, `baseDamage = 20`, `isEthereal = true`.
+- `use`: queues VFX actions, then one `DamageAction`.
+- `upgrade`: `upgradeDamage(8)`.
+- VFX and wait/timing behavior are presentation-only and are not part of Rust
+  simulator mechanics.
+
+Rust result:
+- Runtime now evaluates the card at play time before emitting damage.
+- Definition already preserves ethereal behavior and upgrade damage.
+
+Coverage:
+- `ironclad_block_exhaust_and_ethereal_definitions_match_java_sources`
+- `ironclad_block_exhaust_and_ethereal_runtime_actions_match_java_use_methods`
+
 ## Full Ironclad Queue
 
 Cards remain `unreviewed` until their Java file, Rust definition, Rust runtime,
@@ -410,10 +532,10 @@ and supporting engine behavior have all been checked.
 | 9 | `BloodForBlood.java` | `blood_for_blood.rs` | `wrong-fixed` |
 | 10 | `Bloodletting.java` | `bloodletting.rs` | `wrong-fixed` |
 | 11 | `Bludgeon.java` | `bludgeon.rs` | `wrong-fixed` |
-| 12 | `BodySlam.java` | `body_slam.rs` | `unreviewed` |
-| 13 | `Brutality.java` | `brutality.rs` | `unreviewed` |
-| 14 | `BurningPact.java` | `burning_pact.rs` | `unreviewed` |
-| 15 | `Carnage.java` | `carnage.rs` | `unreviewed` |
+| 12 | `BodySlam.java` | `body_slam.rs` | `wrong-fixed` |
+| 13 | `Brutality.java` | `brutality.rs` | `wrong-fixed` |
+| 14 | `BurningPact.java` | `burning_pact.rs` | `wrong-fixed` |
+| 15 | `Carnage.java` | `carnage.rs` | `wrong-fixed` |
 | 16 | `Clash.java` | `clash.rs` | `unreviewed` |
 | 17 | `Cleave.java` | `cleave.rs` | `unreviewed` |
 | 18 | `Clothesline.java` | `clothesline.rs` | `unreviewed` |

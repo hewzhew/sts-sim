@@ -522,3 +522,176 @@ fn upgraded_base_cost_is_used_when_spending_energy() {
 
     assert_eq!(state.turn.energy, 1);
 }
+
+#[test]
+fn ironclad_block_exhaust_and_ethereal_definitions_match_java_sources() {
+    let body_slam = get_card_definition(CardId::BodySlam);
+    assert_eq!(body_slam.name, "Body Slam");
+    assert_eq!(body_slam.card_type, CardType::Attack);
+    assert_eq!(body_slam.rarity, CardRarity::Common);
+    assert_eq!(body_slam.cost, 1);
+    assert_eq!(body_slam.base_damage, 0);
+    assert_eq!(body_slam.target, CardTarget::Enemy);
+    let mut body_slam_plus = CombatCard::new(CardId::BodySlam, 80);
+    body_slam_plus.upgrades = 1;
+    assert_eq!(upgraded_base_cost_override(&body_slam_plus), Some(0));
+
+    let brutality = get_card_definition(CardId::Brutality);
+    assert_eq!(brutality.name, "Brutality");
+    assert_eq!(brutality.card_type, CardType::Power);
+    assert_eq!(brutality.rarity, CardRarity::Rare);
+    assert_eq!(brutality.cost, 0);
+    assert_eq!(brutality.target, CardTarget::SelfTarget);
+    assert!(!brutality.innate);
+    let mut brutality_plus = CombatCard::new(CardId::Brutality, 81);
+    brutality_plus.upgrades = 1;
+    assert!(is_innate_card(&brutality_plus));
+
+    let burning_pact = get_card_definition(CardId::BurningPact);
+    assert_eq!(burning_pact.name, "Burning Pact");
+    assert_eq!(burning_pact.card_type, CardType::Skill);
+    assert_eq!(burning_pact.rarity, CardRarity::Uncommon);
+    assert_eq!(burning_pact.cost, 1);
+    assert_eq!(burning_pact.base_magic, 2);
+    assert_eq!(burning_pact.target, CardTarget::None);
+    assert_eq!(burning_pact.upgrade_magic, 1);
+
+    let carnage = get_card_definition(CardId::Carnage);
+    assert_eq!(carnage.name, "Carnage");
+    assert_eq!(carnage.card_type, CardType::Attack);
+    assert_eq!(carnage.rarity, CardRarity::Uncommon);
+    assert_eq!(carnage.cost, 2);
+    assert_eq!(carnage.base_damage, 20);
+    assert_eq!(carnage.target, CardTarget::Enemy);
+    assert!(carnage.ethereal);
+    assert_eq!(carnage.upgrade_damage, 8);
+}
+
+#[test]
+fn ironclad_block_exhaust_and_ethereal_runtime_actions_match_java_use_methods() {
+    let mut state = crate::test_support::blank_test_combat();
+    state.entities.player.block = 13;
+
+    let body_slam_actions = resolve_card_play(
+        CardId::BodySlam,
+        &state,
+        &CombatCard::new(CardId::BodySlam, 82),
+        Some(7),
+    );
+    assert_eq!(body_slam_actions.len(), 1);
+    match &body_slam_actions[0].action {
+        Action::Damage(info) => {
+            assert_eq!(info.source, 0);
+            assert_eq!(info.target, 7);
+            assert_eq!(info.base, 13);
+            assert_eq!(info.output, 13);
+            assert_eq!(info.damage_type, DamageType::Normal);
+        }
+        other => panic!("Body Slam should emit block-based DamageAction, got {other:?}"),
+    }
+
+    let brutality_actions = resolve_card_play(
+        CardId::Brutality,
+        &state,
+        &CombatCard::new(CardId::Brutality, 83),
+        None,
+    );
+    assert_eq!(brutality_actions.len(), 1);
+    match &brutality_actions[0].action {
+        Action::ApplyPower {
+            source,
+            target,
+            power_id,
+            amount,
+        } => {
+            assert_eq!(*source, 0);
+            assert_eq!(*target, 0);
+            assert_eq!(*power_id, PowerId::Brutality);
+            assert_eq!(*amount, 1);
+        }
+        other => panic!("Brutality should apply BrutalityPower, got {other:?}"),
+    }
+
+    state.zones.hand = vec![CombatCard::new(CardId::Strike, 84)];
+    let burning_pact_actions = resolve_card_play(
+        CardId::BurningPact,
+        &state,
+        &CombatCard::new(CardId::BurningPact, 85),
+        None,
+    );
+    assert_eq!(burning_pact_actions.len(), 2);
+    match &burning_pact_actions[0].action {
+        Action::ExhaustCard {
+            card_uuid,
+            source_pile,
+        } => {
+            assert_eq!(*card_uuid, 84);
+            assert_eq!(*source_pile, crate::state::PileType::Hand);
+        }
+        other => panic!("Burning Pact should exhaust one hand card first, got {other:?}"),
+    }
+    assert!(matches!(
+        burning_pact_actions[1].action,
+        Action::DrawCards(2)
+    ));
+
+    state.zones.hand = vec![
+        CombatCard::new(CardId::Strike, 86),
+        CombatCard::new(CardId::Defend, 87),
+    ];
+    let burning_pact_select_actions = resolve_card_play(
+        CardId::BurningPact,
+        &state,
+        &CombatCard::new(CardId::BurningPact, 88),
+        None,
+    );
+    match &burning_pact_select_actions[0].action {
+        Action::SuspendForHandSelect {
+            min,
+            max,
+            can_cancel,
+            filter,
+            reason,
+        } => {
+            assert_eq!(*min, 1);
+            assert_eq!(*max, 1);
+            assert!(!*can_cancel);
+            assert_eq!(*filter, crate::state::HandSelectFilter::Any);
+            assert_eq!(*reason, crate::state::HandSelectReason::Exhaust);
+        }
+        other => panic!("Burning Pact should open ExhaustAction hand select, got {other:?}"),
+    }
+    let mut burning_pact_plus = CombatCard::new(CardId::BurningPact, 89);
+    burning_pact_plus.upgrades = 1;
+    let burning_pact_plus_actions =
+        resolve_card_play(CardId::BurningPact, &state, &burning_pact_plus, None);
+    assert!(matches!(
+        burning_pact_plus_actions[1].action,
+        Action::DrawCards(3)
+    ));
+
+    let carnage_actions = resolve_card_play(
+        CardId::Carnage,
+        &state,
+        &CombatCard::new(CardId::Carnage, 90),
+        Some(7),
+    );
+    assert_eq!(carnage_actions.len(), 1);
+    match &carnage_actions[0].action {
+        Action::Damage(info) => {
+            assert_eq!(info.source, 0);
+            assert_eq!(info.target, 7);
+            assert_eq!(info.base, 20);
+            assert_eq!(info.output, 20);
+            assert_eq!(info.damage_type, DamageType::Normal);
+        }
+        other => panic!("Carnage should emit DamageAction, got {other:?}"),
+    }
+    let mut carnage_plus = CombatCard::new(CardId::Carnage, 91);
+    carnage_plus.upgrades = 1;
+    let carnage_plus_actions = resolve_card_play(CardId::Carnage, &state, &carnage_plus, Some(7));
+    match &carnage_plus_actions[0].action {
+        Action::Damage(info) => assert_eq!(info.output, 28),
+        other => panic!("Carnage+ should emit upgraded DamageAction, got {other:?}"),
+    }
+}

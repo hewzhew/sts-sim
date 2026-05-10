@@ -3,13 +3,14 @@ use crate::runtime::combat::{CombatCard, CombatState};
 use smallvec::SmallVec;
 
 pub fn body_slam_play(
-    _state: &CombatState,
+    state: &CombatState,
     card: &CombatCard,
     target: Option<crate::core::EntityId>,
 ) -> SmallVec<[ActionInfo; 4]> {
     let target = target.expect("Body Slam requires a valid target!");
+    let evaluated = crate::content::cards::evaluate_card_for_play(card, state, Some(target));
     let mut actions = smallvec::SmallVec::new();
-    let damage = card.base_damage_mut; // Correctly pre-calculated in cards/mod.rs router
+    let damage = evaluated.base_damage_mut;
 
     actions.push(ActionInfo {
         action: Action::Damage(DamageInfo {
