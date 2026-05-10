@@ -9,65 +9,24 @@ Continue Java-source-backed mechanics cleanup. Do not add strategy heuristics, b
 
 ## Last Pushed Checkpoint
 
-`f44003e Ground on-kill reward guards`
+`12bb623 Ground half-dead apply-power guard`
 
 What it fixed:
 
-- Java Feed / Greed / Ritual Dagger grant their kill reward only if the damaged target is dead and not `halfDead` and does not have `Minion`.
-- Rust now shares that non-minion/non-halfDead reward guard for Feed, Hand of Greed, and Ritual Dagger.
+- Java `AbstractCreature.isDeadOrEscaped()` returns true for `isDying`, `halfDead`, and escaping monsters.
+- Java `ApplyPowerAction.update()` returns before on-apply hooks, Champion Belt, Artifact, or core power application when `target.isDeadOrEscaped()`.
+- Rust `handle_apply_power_detailed` now treats half-dead monster targets as invalid before any side effects, including after the post-hook monster re-check.
 
 Verification already passed:
 
-- `cargo test -q content::cards::tests::on_kill_card_rewards_ignore_minions_and_half_dead_targets_like_java_actions`
-- `cargo test -q content::cards::tests::evolve_exhume_feed_and_feel_no_pain_hooks_match_java_sources`
+- `cargo test -q engine::action_handlers::powers::tests::apply_power_ignores_half_dead_monsters_like_java_is_dead_or_escaped`
+- `cargo test -q content::cards::tests::ironclad_exhaust_debuff_and_intent_runtime_actions_match_java_use_methods`
 - `cargo check -q`
 - `git diff --check`
 
 ## Current Uncommitted Work
 
-Files changed:
-
-- `src/engine/action_handlers/damage.rs`
-- `src/engine/action_handlers/mod.rs`
-- `src/runtime/action.rs`
-- `src/content/cards/ironclad/entrench.rs`
-- `src/content/cards/tests.rs`
-
-Java evidence:
-
-- `D:\rust\cardcrawl\actions\unique\VampireDamageAllEnemiesAction.java`
-- `D:\rust\cardcrawl\actions\unique\VampireDamageAction.java`
-- `D:\rust\cardcrawl\actions\common\HealAction.java`
-- `D:\rust\cardcrawl\core\AbstractCreature.java`
-- `D:\rust\cardcrawl\relics\MagicFlower.java`
-- `D:\rust\cardcrawl\relics\MarkOfTheBloom.java`
-- `D:\rust\cardcrawl\cards\red\Entrench.java`
-- `D:\rust\cardcrawl\actions\unique\DoubleYourBlockAction.java`
-
-Finding:
-
-- Java Reaper/Shelled Parasite vampire damage queues `HealAction`; player healing therefore passes through `AbstractCreature.heal()`, including `MagicFlower.onPlayerHeal` and `MarkOfTheBloom.onPlayerHeal`.
-- Rust vampire healing wrote player HP directly and bypassed those heal modifiers.
-- Java Entrench queues `DoubleYourBlockAction`, which reads `target.currentBlock` when the action updates.
-- Rust Entrench flattened current block into `GainBlock(amount)` during card play resolution.
-
-Implemented locally:
-
-- `heal_vampire_source` now applies the normal player heal modifier chain before changing HP.
-- Added Reaper regression coverage for Magic Flower and Mark of the Bloom.
-- Added `Action::DoubleBlock` and `handle_double_block`, and changed Entrench to emit it instead of precomputed `GainBlock`.
-- Added regression coverage proving DoubleBlock reads block at execution time.
-
-Verification already passed for this uncommitted work:
-
-- `cargo test -q content::cards::tests::rupture_and_reaper_execution_hooks_match_java_sources`
-- `cargo test -q content::cards::tests::ironclad_copy_and_block_runtime_actions_match_java_use_methods`
-- `cargo check -q`
-- `git diff --check`
-
-Before continuing:
-
-1. Commit and push if clean.
+None.
 
 ## Next Work
 
