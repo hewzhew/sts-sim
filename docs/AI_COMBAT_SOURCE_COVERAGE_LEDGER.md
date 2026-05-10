@@ -10,6 +10,11 @@ Source root:
 D:\rust\cardcrawl
 ```
 
+Every snapshot that claims this ledger must include a `SourceManifest` with the
+canonical manifest hash and per-file hashes for the Java files it used. A row in
+this ledger is not evidence unless its source file is present in
+`SourceManifest.source_files`.
+
 The ledger is not optional. Every combat-relevant source field, method family,
 queue, RNG stream, screen state, and hook path must be classified before the
 combat kernel can claim source coverage.

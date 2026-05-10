@@ -237,6 +237,7 @@ SourceManifest {
   cardcrawl_root,
   game_version,
   decompile_manifest_hash,
+  source_files,
   simulator_commit,
   schema_hash,
   content_manifest_hash,
@@ -245,6 +246,23 @@ SourceManifest {
 
 `decompile_manifest_hash` is a canonical hash of the source files used for the
 inventory. If `D:\rust\cardcrawl` changes, the manifest must change.
+
+The manifest also carries per-file evidence:
+
+```text
+SourceFileManifestEntry {
+  source_path,
+  sha256,
+  byte_len,
+  line_count,
+}
+```
+
+`source_path` is relative to `cardcrawl_root` for decompiled Java files. The
+canonical manifest hash is computed from the ordered list of
+`SourceFileManifestEntry` values. A schema or Rust implementation change that
+depends on a Java source file must be traceable to one or more entries in this
+list.
 
 ## Dungeon Combat Context
 
