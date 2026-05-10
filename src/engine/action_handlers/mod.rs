@@ -425,18 +425,7 @@ pub fn execute_action(action: Action, state: &mut CombatState) {
         }
         Action::ObtainPotion => cards::handle_obtain_potion(state),
         Action::ObtainSpecificPotion(potion_id) => {
-            if !state
-                .entities
-                .player
-                .has_relic(crate::content::relics::RelicId::Sozu)
-            {
-                if let Some(slot) = state.entities.potions.iter().position(|p| p.is_none()) {
-                    state.entities.potions[slot] = Some(crate::content::potions::Potion::new(
-                        potion_id,
-                        40000 + slot as u32,
-                    ));
-                }
-            }
+            cards::obtain_specific_potion_if_allowed(state, potion_id);
         }
         Action::EndTurnTrigger => cards::handle_end_turn_trigger(state),
         Action::ClearCardQueue => cards::handle_clear_card_queue(state),

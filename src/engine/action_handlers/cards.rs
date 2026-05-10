@@ -1127,6 +1127,35 @@ pub fn handle_obtain_potion(state: &mut CombatState) {
     }
 }
 
+/// Java source evidence:
+/// `actions/common/ObtainPotionAction.java` stores one concrete `AbstractPotion`
+/// and on first update performs:
+///   if Sozu: flash only
+///   else: AbstractDungeon.player.obtainPotion(this.potion)
+/// `AbstractPlayer.obtainPotion` places into the first empty potion slot and
+/// does nothing if all slots are full. Rust models only the mechanical state
+/// transition; sound/flash/UI effects are intentionally excluded.
+pub fn obtain_specific_potion_if_allowed(
+    state: &mut CombatState,
+    potion_id: crate::content::potions::PotionId,
+) -> bool {
+    if state
+        .entities
+        .player
+        .has_relic(crate::content::relics::RelicId::Sozu)
+    {
+        return false;
+    }
+    let Some(slot) = state.entities.potions.iter().position(|p| p.is_none()) else {
+        return false;
+    };
+    state.entities.potions[slot] = Some(crate::content::potions::Potion::new(
+        potion_id,
+        40000 + slot as u32,
+    ));
+    true
+}
+
 pub fn handle_end_turn_trigger(state: &mut CombatState) {
     let mut actions = smallvec::SmallVec::new();
 
@@ -1199,6 +1228,79 @@ pub fn handle_end_turn_trigger(state: &mut CombatState) {
     actions.extend(crate::content::stances::hooks::on_end_of_turn(state));
 
     state.queue_actions(actions);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::obtain_specific_potion_if_allowed;
+    use crate::content::potions::PotionId;
+    use crate::content::relics::{RelicId, RelicState};
+    use crate::test_support::blank_test_combat;
+
+    #[test]
+    fn obtain_specific_potion_fills_first_empty_slot() {
+        let mut state = blank_test_combat();
+        state.entities.potions = vec![
+            Some(crate::content::potions::Potion::new(
+                PotionId::FirePotion,
+                1,
+            )),
+            None,
+            None,
+        ];
+
+        assert!(obtain_specific_potion_if_allowed(
+            &mut state,
+            PotionId::EnergyPotion
+        ));
+
+        assert_eq!(
+            state.entities.potions[1].as_ref().map(|p| p.id),
+            Some(PotionId::EnergyPotion)
+        );
+        assert!(state.entities.potions[2].is_none());
+    }
+
+    #[test]
+    fn obtain_specific_potion_is_blocked_by_sozu() {
+        let mut state = blank_test_combat();
+        state.entities.potions = vec![None, None, None];
+        state
+            .entities
+            .player
+            .relics
+            .push(RelicState::new(RelicId::Sozu));
+
+        assert!(!obtain_specific_potion_if_allowed(
+            &mut state,
+            PotionId::EnergyPotion
+        ));
+
+        assert!(state.entities.potions.iter().all(Option::is_none));
+    }
+
+    #[test]
+    fn obtain_specific_potion_does_nothing_when_slots_are_full() {
+        let mut state = blank_test_combat();
+        state.entities.potions = vec![
+            Some(crate::content::potions::Potion::new(
+                PotionId::FirePotion,
+                1,
+            )),
+            Some(crate::content::potions::Potion::new(
+                PotionId::BlockPotion,
+                2,
+            )),
+        ];
+        let before = state.entities.potions.clone();
+
+        assert!(!obtain_specific_potion_if_allowed(
+            &mut state,
+            PotionId::EnergyPotion
+        ));
+
+        assert_eq!(state.entities.potions, before);
+    }
 }
 
 pub fn handle_post_draw_trigger(state: &mut CombatState) {
