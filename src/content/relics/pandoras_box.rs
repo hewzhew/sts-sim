@@ -11,7 +11,9 @@
 ///   - `transform_card` uses `miscRng` and excludes the original card from the pool
 ///   - PandorasBox uses `cardRandomRng` and picks from the ENTIRE pool (no exclusion)
 use crate::content::cards::{get_card_definition, CardId};
+use crate::content::relics::RelicId;
 use crate::state::run::RunState;
+use crate::state::selection::DomainEventSource;
 
 /// Executes PandorasBox's onEquip logic.
 /// Returns a Vec of (old_card_name, new_card_name) pairs for CLI display.
@@ -28,7 +30,10 @@ pub fn on_equip(run_state: &mut RunState) -> Vec<(String, String)> {
     }
 
     for uuid in to_remove_uuids {
-        run_state.remove_card_from_deck(uuid);
+        run_state.remove_card_from_deck_with_source(
+            uuid,
+            DomainEventSource::Relic(RelicId::PandorasBox),
+        );
     }
 
     let count = removed_names.len();
@@ -79,7 +84,11 @@ pub fn on_equip(run_state: &mut RunState) -> Vec<(String, String)> {
 
         // Java calls onPreviewObtainCard for each relic (egg auto-upgrade etc.)
         // Our add_card_to_deck already handles egg logic, CeramicFish, Omamori, etc.
-        run_state.add_card_to_deck(new_card_id);
+        run_state.add_card_to_deck_with_upgrades_from(
+            new_card_id,
+            0,
+            DomainEventSource::Relic(RelicId::PandorasBox),
+        );
 
         let new_def = get_card_definition(new_card_id);
         results.push((old_name, new_def.name.to_string()));

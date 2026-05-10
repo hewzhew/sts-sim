@@ -2403,6 +2403,13 @@ fn astrolabe_uses_java_purgeable_cards_and_auto_transforms_three_or_fewer() {
         choice.reason,
         crate::state::core::RunPendingChoiceReason::TransformUpgraded
     );
+    let request = choice.selection_request(&pending);
+    assert!(
+        !request
+            .targets
+            .contains(&crate::state::selection::SelectionTargetRef::CardUuid(14)),
+        "Java Astrolabe uses getPurgeableCards; Ascender's Bane is not selectable"
+    );
 }
 
 #[test]
@@ -2470,6 +2477,321 @@ fn boss_relic_passives_affect_rewards_campfires_and_curse_pool() {
     assert!(!curse_pool.contains(&CardId::CurseOfTheBell));
     assert!(!curse_pool.contains(&CardId::Necronomicurse));
     assert!(!curse_pool.contains(&CardId::Pride));
+}
+
+#[test]
+fn shared_boss_relic_second_batch_metadata_matches_java_sources() {
+    assert_eq!(get_relic_tier(RelicId::Ectoplasm), RelicTier::Boss);
+    assert_eq!(get_relic_tier(RelicId::EmptyCage), RelicTier::Boss);
+    assert_eq!(get_relic_tier(RelicId::FusionHammer), RelicTier::Boss);
+    assert_eq!(get_relic_tier(RelicId::PandorasBox), RelicTier::Boss);
+    assert_eq!(get_relic_tier(RelicId::PhilosopherStone), RelicTier::Boss);
+    assert_eq!(get_relic_tier(RelicId::RunicDome), RelicTier::Boss);
+
+    assert_eq!(energy_master_delta(RelicId::Ectoplasm), 1);
+    assert_eq!(energy_master_delta(RelicId::FusionHammer), 1);
+    assert_eq!(energy_master_delta(RelicId::PhilosopherStone), 1);
+    assert_eq!(energy_master_delta(RelicId::RunicDome), 1);
+
+    assert!(!get_relic_subscriptions(RelicId::Ectoplasm).at_battle_start);
+    assert!(!get_relic_subscriptions(RelicId::FusionHammer).at_battle_start);
+    assert!(get_relic_subscriptions(RelicId::PhilosopherStone).at_battle_start);
+    assert!(get_relic_subscriptions(RelicId::PhilosopherStone).on_spawn_monster);
+    assert!(!get_relic_subscriptions(RelicId::RunicDome).at_battle_start);
+}
+
+#[test]
+fn ectoplasm_can_spawn_only_in_act_one_and_blocks_gold_gain() {
+    fn boss_spawn_result(act_num: u8) -> RelicId {
+        let mut run = crate::state::run::RunState::new(13, 0, false, "Ironclad");
+        run.act_num = act_num;
+        run.boss_relic_pool = vec![RelicId::CoffeeDripper, RelicId::Ectoplasm];
+        run.random_relic_by_tier(RelicTier::Boss)
+    }
+
+    assert_eq!(boss_spawn_result(1), RelicId::Ectoplasm);
+    assert_eq!(
+        boss_spawn_result(2),
+        RelicId::CoffeeDripper,
+        "Java Ectoplasm.canSpawn rejects actNum > 1"
+    );
+
+    let mut run = crate::state::run::RunState::new(13, 0, false, "Ironclad");
+    run.gold = 25;
+    run.relics.push(RelicState::new(RelicId::Ectoplasm));
+    assert_eq!(
+        run.change_gold_with_source(50, DomainEventSource::RewardScreen),
+        0
+    );
+    assert_eq!(run.gold, 25);
+}
+
+#[test]
+fn empty_cage_uses_java_purgeable_cards_and_auto_deletes_two_or_fewer() {
+    let mut run = crate::state::run::RunState::new(14, 0, false, "Ironclad");
+    run.master_deck = vec![
+        CombatCard::new(CardId::Strike, 1),
+        CombatCard::new(CardId::Injury, 2),
+        CombatCard::new(CardId::AscendersBane, 3),
+        CombatCard::new(CardId::CurseOfTheBell, 4),
+        CombatCard::new(CardId::Necronomicurse, 5),
+    ];
+    run.emitted_events.clear();
+
+    let next = empty_cage::on_equip(&mut run, crate::state::core::EngineState::MapNavigation);
+    assert!(
+        next.is_none(),
+        "Java Empty Cage auto-deletes when there are <= 2 purgeable cards"
+    );
+    assert_eq!(
+        run.master_deck
+            .iter()
+            .map(|card| card.id)
+            .collect::<Vec<_>>(),
+        vec![
+            CardId::AscendersBane,
+            CardId::CurseOfTheBell,
+            CardId::Necronomicurse
+        ]
+    );
+    assert_eq!(
+        run.emitted_events
+            .iter()
+            .filter(|event| matches!(
+                event,
+                DomainEvent::CardRemoved {
+                    source: DomainEventSource::Relic(RelicId::EmptyCage),
+                    ..
+                }
+            ))
+            .count(),
+        2
+    );
+
+    let mut pending = crate::state::run::RunState::new(14, 0, false, "Ironclad");
+    pending.relics.push(RelicState::new(RelicId::EmptyCage));
+    pending.event_state = None;
+    pending.master_deck = vec![
+        CombatCard::new(CardId::Strike, 10),
+        CombatCard::new(CardId::Defend, 11),
+        CombatCard::new(CardId::Pain, 12),
+        CombatCard::new(CardId::AscendersBane, 13),
+    ];
+    pending.emitted_events.clear();
+    let Some(crate::state::core::EngineState::RunPendingChoice(choice)) =
+        empty_cage::on_equip(&mut pending, crate::state::core::EngineState::MapNavigation)
+    else {
+        panic!("expected Empty Cage to open a 2-card purge choice");
+    };
+    assert_eq!(choice.min_choices, 2);
+    assert_eq!(choice.max_choices, 2);
+    let request = choice.selection_request(&pending);
+    assert!(
+        !request
+            .targets
+            .contains(&crate::state::selection::SelectionTargetRef::CardUuid(13)),
+        "Java Empty Cage uses getPurgeableCards; Ascender's Bane is not selectable"
+    );
+
+    let mut invalid_engine_state =
+        crate::state::core::EngineState::RunPendingChoice(choice.clone());
+    let mut invalid_combat_state = None;
+    assert!(crate::engine::run_loop::tick_run(
+        &mut invalid_engine_state,
+        &mut pending,
+        &mut invalid_combat_state,
+        Some(crate::state::core::ClientInput::SubmitSelection(
+            crate::state::selection::SelectionResolution {
+                scope: crate::state::selection::SelectionScope::Deck,
+                selected: vec![crate::state::selection::SelectionTargetRef::CardUuid(13)],
+            },
+        )),
+    ));
+    assert!(matches!(
+        invalid_engine_state,
+        crate::state::core::EngineState::RunPendingChoice(_)
+    ));
+    assert_eq!(
+        pending.master_deck.len(),
+        4,
+        "invalid direct input must not remove unpurgeable cards"
+    );
+
+    let selected = vec![10, 11]
+        .into_iter()
+        .map(crate::state::selection::SelectionTargetRef::CardUuid)
+        .collect();
+    let mut engine_state = crate::state::core::EngineState::RunPendingChoice(choice);
+    let mut combat_state = None;
+    assert!(crate::engine::run_loop::tick_run(
+        &mut engine_state,
+        &mut pending,
+        &mut combat_state,
+        Some(crate::state::core::ClientInput::SubmitSelection(
+            crate::state::selection::SelectionResolution {
+                scope: crate::state::selection::SelectionScope::Deck,
+                selected,
+            },
+        )),
+    ));
+    assert!(matches!(
+        engine_state,
+        crate::state::core::EngineState::MapNavigation
+    ));
+    assert_eq!(
+        pending
+            .emitted_events
+            .iter()
+            .filter(|event| matches!(
+                event,
+                DomainEvent::CardRemoved {
+                    source: DomainEventSource::Relic(RelicId::EmptyCage),
+                    ..
+                }
+            ))
+            .count(),
+        2,
+        "pending Empty Cage purge must keep relic source, not generic Selection(Purge)"
+    );
+}
+
+#[test]
+fn pandoras_box_replaces_only_starter_strike_defend_with_relic_source() {
+    let mut run = crate::state::run::RunState::new(15, 0, false, "Ironclad");
+    run.emitted_events.clear();
+
+    let deck_len = run.master_deck.len();
+    let results = pandoras_box::on_equip(&mut run);
+    assert_eq!(results.len(), 9);
+    assert_eq!(run.master_deck.len(), deck_len);
+    assert!(run.master_deck.iter().any(|card| card.id == CardId::Bash));
+    assert!(!run
+        .master_deck
+        .iter()
+        .any(|card| crate::content::cards::is_starter_basic(card.id)));
+
+    assert_eq!(
+        run.emitted_events
+            .iter()
+            .filter(|event| matches!(
+                event,
+                DomainEvent::CardRemoved {
+                    source: DomainEventSource::Relic(RelicId::PandorasBox),
+                    ..
+                }
+            ))
+            .count(),
+        9
+    );
+    assert_eq!(
+        run.emitted_events
+            .iter()
+            .filter(|event| matches!(
+                event,
+                DomainEvent::CardObtained {
+                    source: DomainEventSource::Relic(RelicId::PandorasBox),
+                    ..
+                }
+            ))
+            .count(),
+        9
+    );
+}
+
+#[test]
+fn fusion_hammer_blocks_only_normal_smith_option() {
+    let mut run = crate::state::run::RunState::new(16, 0, false, "Ironclad");
+    let baseline = crate::engine::campfire_handler::get_available_options(&run);
+    assert!(baseline
+        .iter()
+        .any(|choice| matches!(choice, crate::state::core::CampfireChoice::Smith(_))));
+
+    run.relics.push(RelicState::new(RelicId::FusionHammer));
+    let blocked = crate::engine::campfire_handler::get_available_options(&run);
+    assert!(!blocked
+        .iter()
+        .any(|choice| matches!(choice, crate::state::core::CampfireChoice::Smith(_))));
+    assert!(blocked.contains(&crate::state::core::CampfireChoice::Rest));
+}
+
+#[test]
+fn philosopher_stone_strength_matches_java_battle_and_spawn_hooks() {
+    let mut state = crate::test_support::blank_test_combat();
+    let mut alive = crate::test_support::test_monster(EnemyId::JawWorm);
+    alive.id = 41;
+    let mut dying = crate::test_support::test_monster(EnemyId::JawWorm);
+    dying.id = 42;
+    dying.is_dying = true;
+    state.entities.monsters = vec![alive, dying];
+
+    let actions = philosopher_stone::at_battle_start(&state);
+    assert_eq!(
+        actions.len(),
+        2,
+        "Java iterates every monster in AbstractDungeon.getMonsters().monsters"
+    );
+    assert!(matches!(
+        actions[0].action,
+        Action::ApplyPower {
+            source: 41,
+            target: 41,
+            power_id: PowerId::Strength,
+            amount: 1
+        }
+    ));
+    assert!(matches!(
+        actions[1].action,
+        Action::ApplyPower {
+            source: 42,
+            target: 42,
+            power_id: PowerId::Strength,
+            amount: 1
+        }
+    ));
+
+    let mut spawn_state = crate::test_support::blank_test_combat();
+    spawn_state
+        .entities
+        .player
+        .add_relic(RelicState::new(RelicId::PhilosopherStone));
+    spawn_state
+        .entities
+        .monsters
+        .push(crate::test_support::test_monster(EnemyId::JawWorm));
+    let spawn_actions = hooks::on_spawn_monster(&spawn_state, 0);
+    assert_eq!(spawn_actions.len(), 1);
+    assert!(matches!(
+        spawn_actions[0],
+        Action::ApplyPower {
+            target: 1,
+            power_id: PowerId::Strength,
+            amount: 1,
+            ..
+        }
+    ));
+}
+
+#[test]
+fn runic_dome_hides_public_intent_without_a_ui_model() {
+    let mut state = crate::test_support::blank_test_combat();
+    let mut monster = crate::test_support::test_monster(EnemyId::JawWorm);
+    monster.id = 99;
+    state.entities.monsters.push(monster);
+    state.set_monster_protocol_visible_intent(
+        99,
+        crate::runtime::combat::Intent::Attack { damage: 7, hits: 1 },
+    );
+    assert!(!crate::bot::combat::monster_belief::hidden_intent_active(
+        &state
+    ));
+
+    state
+        .entities
+        .player
+        .add_relic(RelicState::new(RelicId::RunicDome));
+    assert!(crate::bot::combat::monster_belief::hidden_intent_active(
+        &state
+    ));
 }
 
 #[test]

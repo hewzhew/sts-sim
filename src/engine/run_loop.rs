@@ -73,11 +73,38 @@ fn run_selection_source(
     run_state: &RunState,
     reason: crate::state::core::RunPendingChoiceReason,
 ) -> DomainEventSource {
-    run_state
-        .event_state
-        .as_ref()
-        .map(|event| DomainEventSource::Event(event.id))
-        .unwrap_or_else(|| DomainEventSource::Selection(reason.into()))
+    if let Some(event) = run_state.event_state.as_ref() {
+        return DomainEventSource::Event(event.id);
+    }
+
+    let has_relic = |id| run_state.relics.iter().any(|relic| relic.id == id);
+    match reason {
+        crate::state::core::RunPendingChoiceReason::TransformUpgraded
+            if has_relic(crate::content::relics::RelicId::Astrolabe) =>
+        {
+            DomainEventSource::Relic(crate::content::relics::RelicId::Astrolabe)
+        }
+        crate::state::core::RunPendingChoiceReason::Purge
+            if has_relic(crate::content::relics::RelicId::EmptyCage) =>
+        {
+            DomainEventSource::Relic(crate::content::relics::RelicId::EmptyCage)
+        }
+        crate::state::core::RunPendingChoiceReason::Duplicate
+            if has_relic(crate::content::relics::RelicId::DollysMirror) =>
+        {
+            DomainEventSource::Relic(crate::content::relics::RelicId::DollysMirror)
+        }
+        crate::state::core::RunPendingChoiceReason::BottleFlame => {
+            DomainEventSource::Relic(crate::content::relics::RelicId::BottledFlame)
+        }
+        crate::state::core::RunPendingChoiceReason::BottleLightning => {
+            DomainEventSource::Relic(crate::content::relics::RelicId::BottledLightning)
+        }
+        crate::state::core::RunPendingChoiceReason::BottleTornado => {
+            DomainEventSource::Relic(crate::content::relics::RelicId::BottledTornado)
+        }
+        reason => DomainEventSource::Selection(reason.into()),
+    }
 }
 
 fn resolve_run_pending_selection(input: ClientInput, run_state: &RunState) -> Option<Vec<usize>> {
@@ -203,8 +230,25 @@ pub fn tick_run(
                 .clone()
                 .and_then(|value| resolve_run_pending_selection(value, run_state))
             {
-                // Validation against min/max would securely happen here or in the UI client.
-                // Assuming it's valid:
+                if indices.len() < rpc_state.min_choices || indices.len() > rpc_state.max_choices {
+                    return true;
+                }
+                let mut seen_indices = Vec::new();
+                for &idx in &indices {
+                    let Some(card) = run_state.master_deck.get(idx) else {
+                        return true;
+                    };
+                    if seen_indices.contains(&idx)
+                        || !crate::state::core::run_pending_choice_allows_card(
+                            &rpc_state.reason,
+                            card,
+                        )
+                    {
+                        return true;
+                    }
+                    seen_indices.push(idx);
+                }
+
                 let mut sorted_indices = indices.clone();
                 sorted_indices.sort_unstable();
                 sorted_indices.reverse(); // Remove from highest index to lowest

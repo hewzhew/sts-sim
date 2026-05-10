@@ -1060,6 +1060,7 @@ impl RunState {
             RelicId::Courier | RelicId::MeatOnTheBone | RelicId::SingingBowl => {
                 self.floor_num <= 48
             }
+            RelicId::Ectoplasm => self.act_num <= 1,
             RelicId::OldCoin | RelicId::PrayerWheel => self.floor_num <= 48,
             RelicId::Matryoshka => self.floor_num <= 40,
             RelicId::WingBoots => self.floor_num <= 40,

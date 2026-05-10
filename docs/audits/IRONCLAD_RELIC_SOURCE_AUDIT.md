@@ -3137,6 +3137,8 @@ Rust result:
 - Fixed small-deck behavior: `<= 3` candidates now auto-transform without
   creating a pending choice.
 - Pending choice for larger decks is exactly three `TransformUpgraded` picks.
+- Run pending-choice candidate generation and execution reject Java's
+  unpurgeable special curses for Astrolabe selections.
 
 Coverage:
 - `shared_boss_relic_first_batch_metadata_matches_java_sources`
@@ -3280,6 +3282,190 @@ Coverage:
 - `shared_boss_relic_first_batch_metadata_matches_java_sources`
 - `boss_relic_passives_affect_rewards_campfires_and_curse_pool`
 
+## Shared Relic Batch 14 - Boss Relics Part 2
+
+### Ectoplasm
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/relics/Ectoplasm.java`
+
+Rust source:
+- `src/content/relics/mod.rs`
+- `src/state/run.rs`
+
+Java evidence:
+- Constructor: ID `"Ectoplasm"`, tier `BOSS`, landing sound `FLAT`.
+- `onEquip`: increments `energyMaster`.
+- `onUnequip`: decrements `energyMaster`.
+- `canSpawn`: returns `AbstractDungeon.actNum <= 1`.
+- Gold gain prevention is represented through the gold-gain path, not a
+  combat hook.
+
+Rust result:
+- Tier and energy delta match Java.
+- Fixed boss relic pool gating so Ectoplasm cannot spawn after Act 1.
+- Gold gain path already blocks positive gold changes while owned.
+- Removed the misleading empty combat hook module; Ectoplasm has no combat
+  action hook.
+
+Coverage:
+- `shared_boss_relic_second_batch_metadata_matches_java_sources`
+- `ectoplasm_can_spawn_only_in_act_one_and_blocks_gold_gain`
+
+### Empty Cage
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/relics/EmptyCage.java`
+- `D:/rust/cardcrawl/cards/CardGroup.java`
+
+Rust source:
+- `src/content/relics/empty_cage.rs`
+- `src/engine/run_loop.rs`
+
+Java evidence:
+- Constructor: ID `"Empty Cage"`, tier `BOSS`, landing sound `SOLID`.
+- `onEquip`: candidates come from `masterDeck.getPurgeableCards()`.
+- `CardGroup.getPurgeableCards()` excludes only `Necronomicurse`,
+  `CurseOfTheBell`, and `AscendersBane`.
+- If candidate count is `0`, no effect.
+- If candidate count is `<= 2`, deletes all candidates immediately.
+- If candidate count is `> 2`, opens a grid select for exactly `2`.
+
+Rust result:
+- Fixed candidate filtering to use Java purgeable semantics instead of full
+  deck length.
+- Fixed `<= 2` candidates to auto-delete without a pending choice.
+- Pending choice for larger decks is exactly two purge picks.
+- Run pending-choice candidate generation and execution reject Java's
+  unpurgeable special curses for purge selections.
+- Run pending-choice event source now records the owning relic for Empty Cage
+  rather than generic `Selection(Purge)` when not inside an event.
+
+Coverage:
+- `shared_boss_relic_second_batch_metadata_matches_java_sources`
+- `empty_cage_uses_java_purgeable_cards_and_auto_deletes_two_or_fewer`
+
+### Fusion Hammer
+
+Status: `exact`
+
+Java source:
+- `D:/rust/cardcrawl/relics/FusionHammer.java`
+
+Rust source:
+- `src/content/relics/mod.rs`
+- `src/engine/campfire_handler.rs`
+
+Java evidence:
+- Constructor: ID `"Fusion Hammer"`, tier `BOSS`, landing sound `HEAVY`.
+- `onEquip`: increments `energyMaster`.
+- `onUnequip`: decrements `energyMaster`.
+- `canUseCampfireOption`: disables the normal `SmithOption`.
+
+Rust result:
+- Tier and energy delta match Java.
+- Campfire option generation omits normal Smith while Fusion Hammer is owned.
+- The Rust relic module now documents that it has no combat hook instead of
+  carrying unused placeholder code.
+
+Coverage:
+- `shared_boss_relic_second_batch_metadata_matches_java_sources`
+- `fusion_hammer_blocks_only_normal_smith_option`
+
+### Pandora's Box
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/relics/PandorasBox.java`
+
+Rust source:
+- `src/content/relics/pandoras_box.rs`
+- `src/state/run.rs`
+
+Java evidence:
+- Constructor: ID `"Pandora's Box"`, tier `BOSS`, landing sound `MAGICAL`.
+- `onEquip`: removes master-deck cards tagged `STARTER_STRIKE` or
+  `STARTER_DEFEND`.
+- For each removed card, rolls `AbstractDungeon.returnTrulyRandomCard()`,
+  which uses `cardRandomRng` and does not exclude the removed card by transform
+  identity.
+- Calls each relic's `onPreviewObtainCard` before showing a confirmation grid.
+
+Rust result:
+- Starter Strike/Defend removal and replacement count match Java.
+- Random replacement uses the card RNG and class card pools rather than the
+  transform path.
+- Fixed card removal and obtain events to record `Relic(PandorasBox)` as the
+  source.
+- Egg/Ceramic Fish/Omamori style obtain hooks continue through the deck manager.
+
+Coverage:
+- `shared_boss_relic_second_batch_metadata_matches_java_sources`
+- `pandoras_box_replaces_only_starter_strike_defend_with_relic_source`
+
+### Philosopher's Stone
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/relics/PhilosopherStone.java`
+
+Rust source:
+- `src/content/relics/philosopher_stone.rs`
+- `src/content/relics/hooks.rs`
+
+Java evidence:
+- Constructor: ID `"Philosopher's Stone"`, tier `BOSS`, landing sound `CLINK`.
+- `onEquip`: increments `energyMaster`.
+- `onUnequip`: decrements `energyMaster`.
+- `atBattleStart`: iterates every monster in
+  `AbstractDungeon.getMonsters().monsters` and adds `StrengthPower(1)`.
+- `onSpawnMonster`: adds `StrengthPower(1)` to the spawned monster.
+
+Rust result:
+- Tier and energy delta match Java.
+- Fixed battle-start hook to iterate every monster in the group instead of
+  adding Rust-only dying/escaped filters.
+- Spawn hook already applies Strength to the spawned monster.
+
+Coverage:
+- `shared_boss_relic_second_batch_metadata_matches_java_sources`
+- `philosopher_stone_strength_matches_java_battle_and_spawn_hooks`
+
+### Runic Dome
+
+Status: `exact`
+
+Java source:
+- `D:/rust/cardcrawl/relics/RunicDome.java`
+
+Rust source:
+- `src/content/relics/mod.rs`
+- `src/bot/combat/monster_belief.rs`
+
+Java evidence:
+- Constructor: ID `"Runic Dome"`, tier `BOSS`, landing sound `HEAVY`.
+- `onEquip`: increments `energyMaster`.
+- `onUnequip`: decrements `energyMaster`.
+- The relic itself has no combat action hook; intent hiding is a public
+  observation rule.
+
+Rust result:
+- Tier and energy delta match Java.
+- No combat hook is registered.
+- The current combat belief/observation path treats Runic Dome as hidden intent
+  even when a protocol visible-intent cache exists.
+- No Java UI/VFX model is copied into Rust.
+
+Coverage:
+- `shared_boss_relic_second_batch_metadata_matches_java_sources`
+- `runic_dome_hides_public_intent_without_a_ui_model`
+
 ## Full Ironclad Class-Specific Relic Queue
 
 Relics remain `unreviewed` until their Java file, Rust definition/subscription,
@@ -3399,3 +3585,9 @@ class-specific queue.
 | 91 | `CallingBell.java` | `calling_bell.rs` / reward screen | `wrong-fixed` |
 | 92 | `CoffeeDripper.java` | campfire handler / energy delta | `exact` |
 | 93 | `CursedKey.java` | run loop chest / curse pool | `wrong-fixed` |
+| 94 | `Ectoplasm.java` | `mod.rs` / run relic pool gate | `wrong-fixed` |
+| 95 | `EmptyCage.java` | `empty_cage.rs` / run pending choice | `wrong-fixed` |
+| 96 | `FusionHammer.java` | campfire handler / energy delta | `exact` |
+| 97 | `PandorasBox.java` | `pandoras_box.rs` / deck manager | `wrong-fixed` |
+| 98 | `PhilosopherStone.java` | `philosopher_stone.rs` / spawn hooks | `wrong-fixed` |
+| 99 | `RunicDome.java` | intent observation / energy delta | `exact` |

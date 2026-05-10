@@ -330,12 +330,16 @@ impl RunPendingChoiceState {
     }
 }
 
-fn run_pending_choice_allows_card(
+pub(crate) fn run_pending_choice_allows_card(
     reason: &RunPendingChoiceReason,
     card: &crate::runtime::combat::CombatCard,
 ) -> bool {
     let def = crate::content::cards::get_card_definition(card.id);
     match reason {
+        RunPendingChoiceReason::Purge | RunPendingChoiceReason::TransformUpgraded => !matches!(
+            card.id,
+            CardId::AscendersBane | CardId::CurseOfTheBell | CardId::Necronomicurse
+        ),
         RunPendingChoiceReason::BottleFlame => def.card_type == CardType::Attack,
         RunPendingChoiceReason::BottleLightning => def.card_type == CardType::Skill,
         RunPendingChoiceReason::BottleTornado => def.card_type == CardType::Power,

@@ -1,16 +1,9 @@
-use crate::content::relics::RelicState;
-use crate::runtime::action::ActionInfo;
-use crate::runtime::combat::CombatState;
-use smallvec::SmallVec;
-
-/// Ectoplasm
-/// Boss Relic
-/// Gain 1 Energy at the start of each turn. You can no longer gain Gold.
-///
-/// Note: The +1 Energy is typically handled by `energy_master` increment at onEquip out of combat.
-/// The gold restriction is handled by a check `if !player.has_relic(Ectoplasm)` globally in out-of-combat.
-/// No direct combat hooks for Ectoplasm are needed unless we manually hook turn energy override,
-/// but standard StS implementation bumps `energy_master` directly in `RunState::on_equip`.
-pub fn at_battle_start(_state: &CombatState, _relic: &mut RelicState) -> SmallVec<[ActionInfo; 4]> {
-    SmallVec::new()
-}
+//! Ectoplasm has no combat hook.
+//!
+//! Java semantics:
+//! - `onEquip`/`onUnequip` adjust `energyMaster`.
+//! - `canSpawn` allows this boss relic only while `AbstractDungeon.actNum <= 1`.
+//! - gold gain is blocked by the gold-gain path, not by a combat action.
+//!
+//! Rust handles those in `energy_master_delta`, `RunState::relic_can_spawn_now`,
+//! and `RunState::change_gold_with_source`.
