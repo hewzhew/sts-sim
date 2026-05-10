@@ -791,6 +791,121 @@ Coverage:
 - `shared_common_turn_state_relic_metadata_matches_java_sources`
 - `orichalcum_and_smooth_stone_actions_match_java_sources`
 
+## Shared Relic Batch 5 - Common Damage / HP Relics
+
+### Boot
+
+Status: `exact`
+
+Java source:
+- `D:/rust/cardcrawl/relics/Boot.java`
+
+Rust source:
+- `src/content/relics/boot.rs`
+- `src/engine/action_handlers/damage.rs`
+
+Java evidence:
+- Constructor: ID `"Boot"`, tier `COMMON`, landing sound `HEAVY`.
+- `onAttackToChangeDamage`: if `info.owner != null`, damage type is not
+  `HP_LOSS` or `THORNS`, and final damage is between `1` and `4`, returns `5`.
+- The relic-above-creature action is UI-only.
+
+Rust result:
+- Tier matches Java. Boot is handled natively in the damage pipeline rather than
+  through a subscription bus.
+- Player-origin normal damage after block is raised to `5` when it would deal
+  `1..4`.
+- THORNS / no-source damage is not raised.
+- UI-only relic flash / above-creature visual action is intentionally not
+  represented.
+
+Coverage:
+- `shared_common_damage_hp_relic_metadata_matches_java_sources`
+- `boot_damage_floor_applies_only_to_positive_normal_player_damage`
+
+### Preserved Insect
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/relics/PreservedInsect.java`
+
+Rust source:
+- `src/content/relics/preserved_insect.rs`
+- `src/content/relics/hooks.rs`
+
+Java evidence:
+- Constructor: ID `"PreservedInsect"`, tier `COMMON`, landing sound `FLAT`.
+- `atBattleStart`: only if the current room's `eliteTrigger` is true, loops all
+  current monsters and sets `currentHealth` to `floor(maxHealth * 0.75)` only
+  when the monster is above that threshold.
+- The relic does not reduce max HP.
+- `canSpawn` is false after floor 52 unless Endless mode is active.
+
+Rust result:
+- Tier and battle-start subscription match Java.
+- Fixed Rust to use `CombatMeta.is_elite_fight` rather than guessing from
+  monster IDs.
+- Fixed Rust to mutate monster current HP immediately and leave max HP
+  unchanged, instead of queuing max-HP loss actions.
+- Spawn gating is a relic-pool/reward-generation concern and is not handled by
+  the combat hook.
+- UI-only relic flash / above-creature visual action is intentionally not
+  represented.
+
+Coverage:
+- `shared_common_damage_hp_relic_metadata_matches_java_sources`
+- `preserved_insect_uses_elite_room_flag_and_reduces_current_hp_only`
+
+### Vajra
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/relics/Vajra.java`
+
+Rust source:
+- `src/content/relics/vajra.rs`
+- `src/content/relics/hooks.rs`
+
+Java evidence:
+- Constructor: ID `"Vajra"`, tier `COMMON`, landing sound `CLINK`.
+- `atBattleStart`: queues Strength `1` on the player with `addToTop`.
+
+Rust result:
+- Tier and battle-start subscription match Java.
+- Fixed insertion from bottom to top.
+- UI-only relic flash / above-creature visual action is intentionally not
+  represented.
+
+Coverage:
+- `shared_common_damage_hp_relic_metadata_matches_java_sources`
+- `vajra_and_strawberry_match_java_sources`
+
+### Strawberry
+
+Status: `exact`
+
+Java source:
+- `D:/rust/cardcrawl/relics/Strawberry.java`
+
+Rust source:
+- `src/content/relics/strawberry.rs`
+- `src/engine/relic_manager.rs`
+
+Java evidence:
+- Constructor: ID `"Strawberry"`, tier `COMMON`, landing sound `FLAT`.
+- `onEquip`: calls `increaseMaxHp(7, true)`.
+
+Rust result:
+- Tier matches Java.
+- Run-level on-equip increases max HP by `7` and heals current HP by `7`, capped
+  at max HP.
+
+Coverage:
+- `shared_common_damage_hp_relic_metadata_matches_java_sources`
+- `vajra_and_strawberry_match_java_sources`
+
 ## Full Ironclad Class-Specific Relic Queue
 
 Relics remain `unreviewed` until their Java file, Rust definition/subscription,
@@ -832,3 +947,7 @@ class-specific queue.
 | 13 | `ArtOfWar.java` | `art_of_war.rs` | `wrong-fixed` |
 | 14 | `Orichalcum.java` | `orichalcum.rs` | `exact` |
 | 15 | `OddlySmoothStone.java` | `oddly_smooth_stone.rs` | `exact` |
+| 16 | `Boot.java` | `boot.rs` / damage handler | `exact` |
+| 17 | `PreservedInsect.java` | `preserved_insect.rs` | `wrong-fixed` |
+| 18 | `Vajra.java` | `vajra.rs` | `wrong-fixed` |
+| 19 | `Strawberry.java` | `strawberry.rs` | `exact` |

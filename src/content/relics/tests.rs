@@ -2,7 +2,7 @@ use super::*;
 use crate::content::cards::{evaluate_card_for_play, CardId};
 use crate::content::monsters::EnemyId;
 use crate::content::powers::{store, PowerId};
-use crate::runtime::action::{Action, AddTo, DamageType, NO_SOURCE};
+use crate::runtime::action::{Action, AddTo, DamageInfo, DamageType, NO_SOURCE};
 use crate::runtime::combat::{CombatCard, Power};
 
 #[test]
@@ -714,4 +714,111 @@ fn orichalcum_and_smooth_stone_actions_match_java_sources() {
             amount: 1
         }
     ));
+}
+
+#[test]
+fn shared_common_damage_hp_relic_metadata_matches_java_sources() {
+    assert_eq!(get_relic_tier(RelicId::Boot), RelicTier::Common);
+    assert_eq!(get_relic_tier(RelicId::PreservedInsect), RelicTier::Common);
+    assert_eq!(get_relic_tier(RelicId::Vajra), RelicTier::Common);
+    assert_eq!(get_relic_tier(RelicId::Strawberry), RelicTier::Common);
+
+    assert!(!get_relic_subscriptions(RelicId::Boot).at_battle_start);
+    assert!(get_relic_subscriptions(RelicId::PreservedInsect).at_battle_start);
+    assert!(get_relic_subscriptions(RelicId::Vajra).at_battle_start);
+    assert_eq!(energy_master_delta(RelicId::Strawberry), 0);
+}
+
+#[test]
+fn boot_damage_floor_applies_only_to_positive_normal_player_damage() {
+    let mut state = crate::test_support::blank_test_combat();
+    state
+        .entities
+        .player
+        .add_relic(RelicState::new(RelicId::Boot));
+    let mut monster = crate::test_support::test_monster(EnemyId::JawWorm);
+    monster.id = 901;
+    monster.current_hp = 20;
+    monster.max_hp = 20;
+    state.entities.monsters = vec![monster];
+
+    crate::engine::action_handlers::damage::handle_damage(
+        DamageInfo {
+            source: 0,
+            target: 901,
+            base: 3,
+            output: 3,
+            damage_type: DamageType::Normal,
+            is_modified: false,
+        },
+        &mut state,
+    );
+    assert_eq!(state.entities.monsters[0].current_hp, 15);
+
+    state.entities.monsters[0].current_hp = 20;
+    crate::engine::action_handlers::damage::handle_damage(
+        DamageInfo {
+            source: NO_SOURCE,
+            target: 901,
+            base: 3,
+            output: 3,
+            damage_type: DamageType::Thorns,
+            is_modified: false,
+        },
+        &mut state,
+    );
+    assert_eq!(state.entities.monsters[0].current_hp, 17);
+}
+
+#[test]
+fn preserved_insect_uses_elite_room_flag_and_reduces_current_hp_only() {
+    let mut state = crate::test_support::blank_test_combat();
+    state.meta.is_elite_fight = true;
+    let mut first = crate::test_support::test_monster(EnemyId::Cultist);
+    first.id = 901;
+    first.current_hp = 100;
+    first.max_hp = 100;
+    let mut second = crate::test_support::test_monster(EnemyId::JawWorm);
+    second.id = 902;
+    second.current_hp = 20;
+    second.max_hp = 100;
+    state.entities.monsters = vec![first, second];
+
+    let actions = preserved_insect::at_battle_start(&mut state);
+    assert!(actions.is_empty());
+    assert_eq!(state.entities.monsters[0].current_hp, 75);
+    assert_eq!(state.entities.monsters[0].max_hp, 100);
+    assert_eq!(
+        state.entities.monsters[1].current_hp, 20,
+        "Java does not heal monsters that are already below the 75% threshold"
+    );
+    assert_eq!(state.entities.monsters[1].max_hp, 100);
+
+    state.meta.is_elite_fight = false;
+    state.entities.monsters[0].current_hp = 100;
+    assert!(preserved_insect::at_battle_start(&mut state).is_empty());
+    assert_eq!(state.entities.monsters[0].current_hp, 100);
+}
+
+#[test]
+fn vajra_and_strawberry_match_java_sources() {
+    let vajra_actions = vajra::at_battle_start();
+    assert_eq!(vajra_actions.len(), 1);
+    assert_eq!(vajra_actions[0].insertion_mode, AddTo::Top);
+    assert!(matches!(
+        vajra_actions[0].action,
+        Action::ApplyPower {
+            source: 0,
+            target: 0,
+            power_id: PowerId::Strength,
+            amount: 1
+        }
+    ));
+
+    let mut run_state = crate::state::run::RunState::new(1, 0, false, "Ironclad");
+    run_state.current_hp = 50;
+    run_state.max_hp = 80;
+    assert!(strawberry::on_equip(&mut run_state).is_none());
+    assert_eq!(run_state.max_hp, 87);
+    assert_eq!(run_state.current_hp, 57);
 }

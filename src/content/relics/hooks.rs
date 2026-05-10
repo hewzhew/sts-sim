@@ -163,7 +163,7 @@ pub fn at_battle_start(state: &mut CombatState) -> SmallVec<[ActionInfo; 4]> {
                 state.entities.player.relics[relic_index] = rs;
             }
             RelicId::PreservedInsect => actions.extend(
-                crate::content::relics::preserved_insect::at_battle_start(&*state),
+                crate::content::relics::preserved_insect::at_battle_start(state),
             ),
             RelicId::DataDisk => {
                 let mut rs = state.entities.player.relics[relic_index].clone();
