@@ -282,3 +282,75 @@ fn magic_flower_combat_heal_rounding_matches_java_mathutils_round() {
         .add_relic(RelicState::new(RelicId::MagicFlower));
     assert_eq!(hooks::on_calculate_heal(&state, 5), 8);
 }
+
+#[test]
+fn ironclad_pain_cube_clay_relic_metadata_matches_java_sources() {
+    assert_eq!(get_relic_tier(RelicId::MarkOfPain), RelicTier::Boss);
+    assert_eq!(get_relic_tier(RelicId::RunicCube), RelicTier::Boss);
+    assert_eq!(
+        get_relic_tier(RelicId::SelfFormingClay),
+        RelicTier::Uncommon
+    );
+
+    assert!(get_relic_subscriptions(RelicId::MarkOfPain).at_battle_start);
+    assert!(get_relic_subscriptions(RelicId::RunicCube).on_lose_hp);
+    assert!(get_relic_subscriptions(RelicId::SelfFormingClay).on_lose_hp);
+    assert_eq!(energy_master_delta(RelicId::MarkOfPain), 1);
+    assert_eq!(energy_master_delta(RelicId::RunicCube), 0);
+    assert_eq!(energy_master_delta(RelicId::SelfFormingClay), 0);
+}
+
+#[test]
+fn mark_of_pain_battle_start_matches_java_wound_generation_and_energy() {
+    let actions = mark_of_pain::at_battle_start();
+    assert_eq!(actions.len(), 1);
+    assert_eq!(actions[0].insertion_mode, AddTo::Bottom);
+    assert!(matches!(
+        actions[0].action,
+        Action::MakeTempCardInDrawPile {
+            card_id: CardId::Wound,
+            amount: 2,
+            random_spot: true,
+            to_bottom: false,
+            upgraded: false,
+        }
+    ));
+
+    let mut state = crate::test_support::blank_test_combat();
+    assert_eq!(state.entities.player.energy_master, 3);
+    state
+        .entities
+        .player
+        .add_relic(RelicState::new(RelicId::MarkOfPain));
+    assert_eq!(state.entities.player.energy_master, 4);
+}
+
+#[test]
+fn runic_cube_hp_loss_hook_matches_java_positive_damage_guard() {
+    assert!(runic_cube::was_hp_lost(0).is_empty());
+    assert!(runic_cube::was_hp_lost(-1).is_empty());
+
+    let actions = runic_cube::was_hp_lost(3);
+    assert_eq!(actions.len(), 1);
+    assert_eq!(actions[0].insertion_mode, AddTo::Top);
+    assert!(matches!(actions[0].action, Action::DrawCards(1)));
+}
+
+#[test]
+fn self_forming_clay_hp_loss_hook_matches_java_positive_damage_guard() {
+    assert!(self_forming_clay::on_lose_hp(0).is_empty());
+    assert!(self_forming_clay::on_lose_hp(-1).is_empty());
+
+    let actions = self_forming_clay::on_lose_hp(3);
+    assert_eq!(actions.len(), 1);
+    assert_eq!(actions[0].insertion_mode, AddTo::Top);
+    assert!(matches!(
+        actions[0].action,
+        Action::ApplyPower {
+            source: 0,
+            target: 0,
+            power_id: PowerId::NextTurnBlock,
+            amount: 3
+        }
+    ));
+}

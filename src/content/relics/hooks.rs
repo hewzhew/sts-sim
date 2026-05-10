@@ -330,9 +330,9 @@ pub fn on_lose_hp(state: &mut CombatState, amount: i32) -> smallvec::SmallVec<[A
                 ));
                 state.entities.player.relics[relic_index] = rs;
             }
-            RelicId::SelfFormingClay => {
-                actions.extend(crate::content::relics::self_forming_clay::on_lose_hp())
-            }
+            RelicId::SelfFormingClay => actions.extend(
+                crate::content::relics::self_forming_clay::on_lose_hp(amount),
+            ),
             RelicId::TungstenRod => {
                 actions.extend(crate::content::relics::tungsten_rod::on_lose_hp(amount))
             }

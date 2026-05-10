@@ -256,6 +256,95 @@ Coverage:
 - `ironclad_brimstone_belt_ashes_flower_relic_metadata_matches_java_sources`
 - `magic_flower_combat_heal_rounding_matches_java_mathutils_round`
 
+## Batch 3 - Wound / HP-Loss Relics
+
+### Mark of Pain
+
+Status: `exact`
+
+Java source:
+- `D:/rust/cardcrawl/relics/MarkOfPain.java`
+
+Rust source:
+- `src/content/relics/mark_of_pain.rs`
+- `src/content/relics/hooks.rs`
+- `src/content/relics/mod.rs`
+
+Java evidence:
+- Constructor: ID `"Mark of Pain"`, tier `BOSS`, landing sound `MAGICAL`.
+- `atBattleStart`: flashes, queues a UI-only `RelicAboveCreatureAction`, then
+  queues `MakeTempCardInDrawPileAction(new Wound(), 2, true, true)`.
+- The four-argument constructor maps to `randomSpot=true`,
+  `autoPosition=true`, and `toBottom=false`.
+- `onEquip` increments `player.energy.energyMaster`; `onUnequip`
+  decrements it.
+
+Rust result:
+- Tier, battle-start subscription, and permanent energy delta match Java.
+- Battle start emits two Wounds into random draw-pile positions with
+  `to_bottom=false`.
+- UI-only relic flash / above-creature visual action and card spawn animation
+  auto-position are intentionally not represented.
+
+Coverage:
+- `ironclad_pain_cube_clay_relic_metadata_matches_java_sources`
+- `mark_of_pain_battle_start_matches_java_wound_generation_and_energy`
+
+### Runic Cube
+
+Status: `exact`
+
+Java source:
+- `D:/rust/cardcrawl/relics/RunicCube.java`
+
+Rust source:
+- `src/content/relics/runic_cube.rs`
+- `src/content/relics/hooks.rs`
+
+Java evidence:
+- Constructor: ID `"Runic Cube"`, tier `BOSS`, landing sound `FLAT`.
+- `wasHPLost(damageAmount)`: during combat, if `damageAmount > 0`, flashes,
+  then calls `addToTop(new DrawCardAction(player, 1))` and `addToTop` for a
+  UI-only relic action.
+
+Rust result:
+- Tier and HP-loss subscription match Java.
+- Hook emits `DrawCards(1)` with top insertion only for positive HP loss.
+- UI-only relic flash / above-creature visual action is intentionally not
+  represented.
+
+Coverage:
+- `ironclad_pain_cube_clay_relic_metadata_matches_java_sources`
+- `runic_cube_hp_loss_hook_matches_java_positive_damage_guard`
+
+### Self-Forming Clay
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/relics/SelfFormingClay.java`
+
+Rust source:
+- `src/content/relics/self_forming_clay.rs`
+- `src/content/relics/hooks.rs`
+
+Java evidence:
+- Constructor: ID `"Self Forming Clay"`, tier `UNCOMMON`, landing sound `FLAT`.
+- `wasHPLost(damageAmount)`: during combat, if `damageAmount > 0`, flashes and
+  calls `addToTop(new ApplyPowerAction(player, player,
+  new NextTurnBlockPower(player, 3, this.name), 3))`.
+
+Rust result:
+- Tier and HP-loss subscription match Java.
+- Fixed the relic hook itself to guard on positive HP loss, rather than relying
+  only on the current caller to filter zero/negative values.
+- Emits `NextTurnBlock` amount `3` on the player with top insertion.
+- UI-only relic flash is intentionally not represented.
+
+Coverage:
+- `ironclad_pain_cube_clay_relic_metadata_matches_java_sources`
+- `self_forming_clay_hp_loss_hook_matches_java_positive_damage_guard`
+
 ## Full Ironclad Relic Queue
 
 Relics remain `unreviewed` until their Java file, Rust definition/subscription,
@@ -271,6 +360,6 @@ hook implementation, and supporting engine behavior have all been checked.
 | 6 | `ChampionBelt.java` | `champion_belt.rs` | `wrong-fixed` |
 | 7 | `CharonsAshes.java` | `charons_ashes.rs` | `wrong-fixed` |
 | 8 | `MagicFlower.java` | `magic_flower.rs` | `exact` |
-| 9 | `MarkOfPain.java` | `mark_of_pain.rs` | `unreviewed` |
-| 10 | `RunicCube.java` | `runic_cube.rs` | `unreviewed` |
-| 11 | `SelfFormingClay.java` | `self_forming_clay.rs` | `unreviewed` |
+| 9 | `MarkOfPain.java` | `mark_of_pain.rs` | `exact` |
+| 10 | `RunicCube.java` | `runic_cube.rs` | `exact` |
+| 11 | `SelfFormingClay.java` | `self_forming_clay.rs` | `wrong-fixed` |
