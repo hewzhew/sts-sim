@@ -850,6 +850,18 @@ pub struct MonsterEntity {
 }
 
 impl MonsterEntity {
+    pub fn is_dead_or_escaped(&self) -> bool {
+        self.is_dying || self.half_dead || self.is_escaped
+    }
+
+    pub fn is_alive_for_action(&self) -> bool {
+        self.current_hp > 0 && !self.is_dead_or_escaped()
+    }
+
+    pub fn is_random_target_candidate(&self) -> bool {
+        self.is_alive_for_action()
+    }
+
     pub fn turn_plan(&self) -> MonsterTurnPlan {
         let move_id = self.planned_move_id();
         if self.is_dying || self.half_dead {

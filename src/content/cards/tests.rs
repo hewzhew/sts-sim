@@ -3723,6 +3723,34 @@ fn ironclad_random_and_exhaust_attack_runtime_actions_match_java_use_methods() {
 }
 
 #[test]
+fn random_enemy_attacks_ignore_half_dead_monsters_like_java_random_monster() {
+    let mut state = crate::test_support::blank_test_combat();
+    let mut half_dead = crate::test_support::test_monster(EnemyId::Darkling);
+    half_dead.id = 610;
+    half_dead.current_hp = 20;
+    half_dead.half_dead = true;
+    state.entities.monsters = vec![half_dead];
+
+    crate::engine::action_handlers::damage::handle_attack_damage_random_enemy(
+        7,
+        DamageType::Normal,
+        false,
+        &mut state,
+    );
+
+    let target = state
+        .entities
+        .monsters
+        .iter()
+        .find(|m| m.id == 610)
+        .expect("test monster should remain present");
+    assert_eq!(
+        target.current_hp, 20,
+        "Java MonsterGroup.getRandomMonster(aliveOnly=true) excludes halfDead monsters"
+    );
+}
+
+#[test]
 fn true_grit_exhaust_action_edges_match_java_exhaust_action() {
     let empty_state = crate::test_support::blank_test_combat();
     let true_grit = CombatCard::new(CardId::TrueGrit, 380);

@@ -126,7 +126,7 @@ fn queue_dark_damage(state: &mut CombatState, amount: i32, to_front: bool) {
         .entities
         .monsters
         .iter()
-        .filter(|m| m.current_hp > 0 && !m.is_dying && !m.is_escaped)
+        .filter(|m| m.is_random_target_candidate())
         .min_by_key(|m| m.current_hp)
         .map(|m| m.id)
     else {

@@ -469,7 +469,7 @@ pub fn handle_damage_all_enemies(
             break;
         }
         let m = &state.entities.monsters[i];
-        if m.current_hp <= 0 || m.is_dying || m.is_escaped {
+        if !m.is_alive_for_action() {
             continue;
         }
         individual_damages.push(Action::Damage(crate::runtime::action::DamageInfo {
@@ -525,7 +525,7 @@ pub fn handle_attack_damage_random_enemy(
         .entities
         .monsters
         .iter()
-        .filter(|m| m.current_hp > 0 && !m.is_dying && !m.is_escaped)
+        .filter(|m| m.is_random_target_candidate())
         .map(|m| m.id)
         .collect();
     if !alive.is_empty() {
@@ -739,7 +739,7 @@ pub fn handle_vampire_damage_all_enemies(
         .iter()
         .zip(damages.iter())
         .filter_map(|(m, &dmg)| {
-            if m.current_hp <= 0 || m.is_dying || m.is_escaped {
+            if !m.is_alive_for_action() {
                 None
             } else {
                 Some((m.id, dmg))

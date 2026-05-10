@@ -80,7 +80,7 @@ pub fn handle_apply_power_detailed(
     if target == 0 {
         // Player target — always valid
     } else if let Some(m) = state.entities.monsters.iter().find(|m| m.id == target) {
-        if m.is_dying || m.is_escaped || m.half_dead || m.current_hp <= 0 {
+        if !m.is_alive_for_action() {
             return;
         }
     }
@@ -114,7 +114,7 @@ pub fn handle_apply_power_detailed(
     // U5: Monster re-check after hooks
     if target != 0 {
         if let Some(m) = state.entities.monsters.iter().find(|m| m.id == target) {
-            if m.is_dying || m.is_escaped || m.half_dead || m.current_hp <= 0 {
+            if !m.is_alive_for_action() {
                 return;
             }
         }
@@ -278,7 +278,7 @@ pub fn handle_trigger_time_warp_end_turn(owner: usize, state: &mut CombatState) 
         .entities
         .monsters
         .iter()
-        .filter(|m| m.current_hp > 0 && !m.is_dying && !m.is_escaped)
+        .filter(|m| m.is_random_target_candidate())
         .map(|m| m.id)
         .collect();
     for monster_id in alive_monster_ids {
@@ -296,7 +296,7 @@ fn random_alive_monster(state: &mut CombatState) -> Option<usize> {
         .entities
         .monsters
         .iter()
-        .filter(|m| m.current_hp > 0 && !m.is_dying && !m.is_escaped)
+        .filter(|m| m.is_random_target_candidate())
         .map(|m| m.id)
         .collect();
     if alive.is_empty() {
@@ -330,7 +330,7 @@ pub fn handle_bouncing_flask(
         .entities
         .monsters
         .iter()
-        .any(|m| m.id == target_id && m.current_hp > 0 && !m.is_dying && !m.is_escaped)
+        .any(|m| m.id == target_id && m.is_alive_for_action())
     {
         state.queue_action_front(Action::ApplyPower {
             source: 0,
@@ -647,6 +647,24 @@ mod tests {
         assert!(
             store::powers_snapshot_for(&state, 44).is_empty(),
             "Java ApplyPowerAction returns before applying powers when target.isDeadOrEscaped(), and halfDead is part of that predicate"
+        );
+    }
+
+    #[test]
+    fn bouncing_flask_random_target_ignores_half_dead_monsters_like_java_random_monster() {
+        let mut state = blank_test_combat();
+        let mut half_dead = crate::test_support::test_monster(EnemyId::Darkling);
+        half_dead.id = 45;
+        half_dead.current_hp = 12;
+        half_dead.half_dead = true;
+        state.entities.monsters = vec![half_dead];
+
+        handle_bouncing_flask(None, 3, 1, &mut state);
+
+        assert_eq!(
+            state.pop_next_action(),
+            None,
+            "Java BouncingFlaskAction chooses targets via getRandomMonster(aliveOnly=true), which excludes halfDead monsters"
         );
     }
 }
