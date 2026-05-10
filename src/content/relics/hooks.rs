@@ -259,8 +259,9 @@ pub fn on_shuffle(state: &mut CombatState) -> SmallVec<[ActionInfo; 4]> {
             RelicId::Abacus => actions.extend(crate::content::relics::abacus::Abacus::on_shuffle()),
             RelicId::Melange => actions.extend(crate::content::relics::melange::on_shuffle()),
             RelicId::Sundial => {
-                let counter = state.entities.player.relics[relic_index].counter;
-                actions.extend(crate::content::relics::sundial::on_shuffle(counter));
+                let mut rs = state.entities.player.relics[relic_index].clone();
+                actions.extend(crate::content::relics::sundial::on_shuffle(&mut rs));
+                state.entities.player.relics[relic_index] = rs;
             }
             _ => {
                 unreachable!("Relic present in on_shuffle bus but unhandled in hooks.rs match arm")
@@ -651,8 +652,9 @@ pub fn on_use_card(
             RelicId::BlueCandle => actions
                 .extend(crate::content::relics::blue_candle::BlueCandle::on_use_card(card_id)),
             RelicId::InkBottle => {
-                let counter = state.entities.player.relics[relic_index].counter;
-                actions.extend(crate::content::relics::ink_bottle::on_use_card(counter));
+                let mut rs = state.entities.player.relics[relic_index].clone();
+                actions.extend(crate::content::relics::ink_bottle::on_use_card(&mut rs));
+                state.entities.player.relics[relic_index] = rs;
             }
             RelicId::Kunai => {
                 let counter = state.entities.player.relics[relic_index].counter;
@@ -699,7 +701,7 @@ pub fn on_use_card(
             }
             RelicId::MummifiedHand => {
                 actions.extend(crate::content::relics::mummified_hand::on_use_card(
-                    card, &*state,
+                    card, state,
                 ));
             }
             RelicId::Shuriken => {

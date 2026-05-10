@@ -1628,3 +1628,154 @@ fn white_beast_statue_forces_potion_reward_unless_sozu_blocks_potions() {
         "Java Sozu prevents potion rewards before White Beast can matter"
     );
 }
+
+#[test]
+fn shared_uncommon_action_counter_relic_metadata_matches_java_sources() {
+    assert_eq!(get_relic_tier(RelicId::BlueCandle), RelicTier::Uncommon);
+    assert_eq!(get_relic_tier(RelicId::InkBottle), RelicTier::Uncommon);
+    assert_eq!(get_relic_tier(RelicId::MummifiedHand), RelicTier::Uncommon);
+    assert_eq!(get_relic_tier(RelicId::Sundial), RelicTier::Uncommon);
+    assert_eq!(get_relic_tier(RelicId::StrikeDummy), RelicTier::Uncommon);
+    assert_eq!(get_relic_tier(RelicId::Matryoshka), RelicTier::Uncommon);
+
+    assert!(get_relic_subscriptions(RelicId::BlueCandle).on_use_card);
+    assert!(get_relic_subscriptions(RelicId::InkBottle).on_use_card);
+    assert!(get_relic_subscriptions(RelicId::MummifiedHand).on_use_card);
+    assert!(get_relic_subscriptions(RelicId::Sundial).on_shuffle);
+    assert!(!get_relic_subscriptions(RelicId::StrikeDummy).on_use_card);
+    assert!(!get_relic_subscriptions(RelicId::Matryoshka).on_use_card);
+}
+
+#[test]
+fn blue_candle_only_loses_hp_for_curse_cards_and_marks_rupture_path() {
+    assert!(blue_candle::BlueCandle::on_use_card(CardId::Strike).is_empty());
+
+    let actions = blue_candle::BlueCandle::on_use_card(CardId::Regret);
+    assert_eq!(actions.len(), 1);
+    assert_eq!(actions[0].insertion_mode, AddTo::Bottom);
+    assert!(matches!(
+        actions[0].action,
+        Action::LoseHp {
+            target: 0,
+            amount: 1,
+            triggers_rupture: true
+        }
+    ));
+}
+
+#[test]
+fn ink_bottle_counter_mutates_immediately_and_draws_on_tenth_card() {
+    let mut relic = RelicState::new(RelicId::InkBottle);
+    relic.counter = 8;
+    assert!(ink_bottle::on_use_card(&mut relic).is_empty());
+    assert_eq!(relic.counter, 9);
+
+    let actions = ink_bottle::on_use_card(&mut relic);
+    assert_eq!(relic.counter, 0);
+    assert_eq!(actions.len(), 1);
+    assert_eq!(actions[0].insertion_mode, AddTo::Bottom);
+    assert!(matches!(actions[0].action, Action::DrawCards(1)));
+
+    relic.counter = -1;
+    assert!(ink_bottle::on_use_card(&mut relic).is_empty());
+    assert_eq!(
+        relic.counter, 0,
+        "Java ++counter from -1 reaches 0 without triggering the tenth-card draw"
+    );
+
+    let mut state = crate::test_support::blank_test_combat();
+    let mut state_relic = RelicState::new(RelicId::InkBottle);
+    state_relic.counter = 9;
+    state.entities.player.add_relic(state_relic);
+    let strike = CombatCard::new(CardId::Strike, 11);
+    assert_eq!(hooks::on_use_card(&mut state, &strike, None).len(), 1);
+    assert_eq!(state.entities.player.relics[0].counter, 0);
+}
+
+#[test]
+fn sundial_counter_mutates_immediately_and_grants_energy_on_third_shuffle() {
+    let mut relic = RelicState::new(RelicId::Sundial);
+    relic.counter = 1;
+    assert!(sundial::on_shuffle(&mut relic).is_empty());
+    assert_eq!(relic.counter, 2);
+
+    let actions = sundial::on_shuffle(&mut relic);
+    assert_eq!(relic.counter, 0);
+    assert_eq!(actions.len(), 1);
+    assert_eq!(actions[0].insertion_mode, AddTo::Bottom);
+    assert!(matches!(
+        actions[0].action,
+        Action::GainEnergy { amount: 2 }
+    ));
+
+    relic.counter = -1;
+    assert!(sundial::on_shuffle(&mut relic).is_empty());
+    assert_eq!(
+        relic.counter, 0,
+        "Java ++counter from -1 reaches 0 without granting energy"
+    );
+
+    let mut state = crate::test_support::blank_test_combat();
+    let mut state_relic = RelicState::new(RelicId::Sundial);
+    state_relic.counter = 2;
+    state.entities.player.add_relic(state_relic);
+    assert_eq!(hooks::on_shuffle(&mut state).len(), 1);
+    assert_eq!(state.entities.player.relics[0].counter, 0);
+}
+
+#[test]
+fn mummified_hand_sets_one_eligible_hand_card_cost_to_zero_immediately() {
+    let mut state = crate::test_support::blank_test_combat();
+    state.zones.hand = vec![
+        CombatCard::new(CardId::Defend, 1),
+        {
+            let mut zero_cost = CombatCard::new(CardId::Strike, 2);
+            zero_cost.cost_for_turn = Some(0);
+            zero_cost
+        },
+        {
+            let mut free_once = CombatCard::new(CardId::Bash, 3);
+            free_once.free_to_play_once = true;
+            free_once
+        },
+    ];
+
+    let power = CombatCard::new(CardId::Inflame, 99);
+    let actions = mummified_hand::on_use_card(&power, &mut state);
+    assert!(actions.is_empty());
+    assert_eq!(state.zones.hand[0].cost_for_turn, Some(0));
+    assert_eq!(state.zones.hand[1].cost_for_turn, Some(0));
+    assert_eq!(state.zones.hand[2].cost_for_turn, None);
+
+    state.zones.hand[0].cost_for_turn = None;
+    let attack = CombatCard::new(CardId::Strike, 100);
+    assert!(mummified_hand::on_use_card(&attack, &mut state).is_empty());
+    assert_eq!(state.zones.hand[0].cost_for_turn, None);
+}
+
+#[test]
+fn strike_dummy_adds_three_damage_to_strike_tag_attacks_before_power_modifiers() {
+    let strike = CombatCard::new(CardId::Strike, 1);
+    let pommel = CombatCard::new(CardId::PommelStrike, 2);
+    let bash = CombatCard::new(CardId::Bash, 3);
+
+    assert_eq!(
+        strike_dummy::modify_attack_damage_for_card(&strike, 6.0),
+        9.0
+    );
+    assert_eq!(
+        strike_dummy::modify_attack_damage_for_card(&pommel, 9.0),
+        12.0
+    );
+    assert_eq!(strike_dummy::modify_attack_damage_for_card(&bash, 8.0), 8.0);
+}
+
+#[test]
+fn matryoshka_counter_starts_at_two_and_only_positive_counter_grants_extra_relic() {
+    let relic = RelicState::new(RelicId::Matryoshka);
+    assert_eq!(relic.counter, 2);
+    assert!(matryoshka::should_grant_extra_relic(2));
+    assert!(matryoshka::should_grant_extra_relic(1));
+    assert!(!matryoshka::should_grant_extra_relic(0));
+    assert!(!matryoshka::should_grant_extra_relic(-2));
+}

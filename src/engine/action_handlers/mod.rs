@@ -386,7 +386,6 @@ pub fn execute_action(action: Action, state: &mut CombatState) {
             cards::handle_modify_card_damage(card_uuid, amount, state)
         }
         Action::RandomizeHandCosts => cards::handle_randomize_hand_costs(state),
-        Action::MummifiedHandEffect => cards::handle_mummified_hand_effect(state),
         Action::MakeRandomCardInHand {
             card_type,
             cost_for_turn,

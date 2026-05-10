@@ -519,7 +519,6 @@ pub enum Action {
     TriggerPassiveOrbs,
     Scry(usize),
     EnterStance(String), // Watcher stance: "Wrath", "Calm", "Divinity", "Neutral"
-    MummifiedHandEffect,
     ObtainPotion,
     ObtainSpecificPotion(crate::content::potions::PotionId),
     /// Unified action for NilrysCodex (Codex) / Toolbox (ChooseOneColorless) / similar relic reward screens.

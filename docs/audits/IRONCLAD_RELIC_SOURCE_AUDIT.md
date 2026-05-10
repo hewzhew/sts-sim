@@ -1913,6 +1913,194 @@ Coverage:
 - `shared_uncommon_start_victory_reward_relic_metadata_matches_java_sources`
 - `white_beast_statue_forces_potion_reward_unless_sozu_blocks_potions`
 
+## Shared Relic Batch 6 - Uncommon Action / Counter Relics
+
+### Blue Candle
+
+Status: `exact`
+
+Java source:
+- `D:/rust/cardcrawl/relics/BlueCandle.java`
+
+Rust source:
+- `src/content/relics/blue_candle.rs`
+- `src/content/relics/hooks.rs`
+- `src/engine/action_handlers/cards.rs`
+
+Java evidence:
+- Constructor: ID `"Blue Candle"`, tier `UNCOMMON`, landing sound `MAGICAL`.
+- `onUseCard(card, action)`: if the card type is `CURSE`, queues
+  `LoseHPAction(player, player, 1, FIRE)`, sets `card.exhaust = true`, and sets
+  `action.exhaustCard = true`.
+
+Rust result:
+- Tier and `on_use_card` subscription match Java.
+- Curse use queues player self HP loss `1` with the Rupture-triggering
+  provenance used by Java's `LoseHPAction(player, player, ...)` path.
+- The play handler exhausts Curse cards when Blue Candle is present, matching
+  Java's `action.exhaustCard = true`.
+- UI-only relic flash is intentionally not represented.
+
+Coverage:
+- `shared_uncommon_action_counter_relic_metadata_matches_java_sources`
+- `blue_candle_only_loses_hp_for_curse_cards_and_marks_rupture_path`
+
+### Ink Bottle
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/relics/InkBottle.java`
+
+Rust source:
+- `src/content/relics/ink_bottle.rs`
+- `src/content/relics/hooks.rs`
+
+Java evidence:
+- Constructor: ID `"InkBottle"`, tier `UNCOMMON`, landing sound `CLINK`, and
+  initializes `counter = 0`.
+- `onUseCard`: increments `counter` immediately. When `counter == 10`, it sets
+  `counter = 0` immediately and queues `DrawCardAction(1)` with `addToBot`.
+- `atBattleStart` only starts UI pulse when `counter == 9`.
+
+Rust result:
+- Tier, initial counter, and `on_use_card` subscription match Java.
+- Fixed counter updates to mutate `RelicState.counter` immediately rather than
+  queueing a later `UpdateRelicCounter` action.
+- Fixed the negative-counter edge: Java `++counter` from `-1` reaches `0`
+  without drawing; the old Rust `next_counter == 0` check would draw
+  incorrectly.
+- UI-only pulse/flash/relic-above-creature behavior is intentionally not
+  represented.
+
+Coverage:
+- `shared_uncommon_action_counter_relic_metadata_matches_java_sources`
+- `ink_bottle_counter_mutates_immediately_and_draws_on_tenth_card`
+
+### Mummified Hand
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/relics/MummifiedHand.java`
+
+Rust source:
+- `src/content/relics/mummified_hand.rs`
+- `src/content/relics/hooks.rs`
+- `src/engine/action_handlers/cards.rs`
+
+Java evidence:
+- Constructor: ID `"Mummified Hand"`, tier `UNCOMMON`, landing sound `FLAT`.
+- `onUseCard`: if the played card is a POWER, it builds a candidate list from
+  hand cards with `cost > 0`, `costForTurn > 0`, and not `freeToPlayOnce`.
+- It removes cards already present in `AbstractDungeon.actionManager.cardQueue`.
+- It selects one candidate with `AbstractDungeon.cardRandomRng` and immediately
+  calls `setCostForTurn(0)`.
+
+Rust result:
+- Tier and `on_use_card` subscription match Java.
+- Fixed the effect to mutate hand-card cost immediately during the relic hook,
+  rather than queueing a later synthetic `MummifiedHandEffect` action.
+- The candidate filter preserves Java's base-cost, current-cost,
+  free-to-play-once, and queued-card exclusion rules.
+- UI-only flash/relic-above-creature behavior and Java logger messages are
+  intentionally not represented.
+
+Coverage:
+- `shared_uncommon_action_counter_relic_metadata_matches_java_sources`
+- `mummified_hand_sets_one_eligible_hand_card_cost_to_zero_immediately`
+
+### Sundial
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/relics/Sundial.java`
+
+Rust source:
+- `src/content/relics/sundial.rs`
+- `src/content/relics/hooks.rs`
+
+Java evidence:
+- Constructor: ID `"Sundial"`, tier `UNCOMMON`, landing sound `SOLID`.
+- `onEquip()` sets `counter = 0`.
+- `onShuffle()` increments `counter` immediately. When `counter == 3`, it sets
+  `counter = 0` immediately and queues `GainEnergyAction(2)` with `addToBot`.
+
+Rust result:
+- Tier, initial counter, and shuffle subscription match Java.
+- Fixed counter updates to mutate `RelicState.counter` immediately rather than
+  queueing a later `UpdateRelicCounter` action.
+- Fixed the negative-counter edge: Java `++counter` from `-1` reaches `0`
+  without granting energy; the old Rust `next_counter == 0` check would grant
+  energy incorrectly.
+- UI-only relic-above-creature behavior is intentionally not represented.
+
+Coverage:
+- `shared_uncommon_action_counter_relic_metadata_matches_java_sources`
+- `sundial_counter_mutates_immediately_and_grants_energy_on_third_shuffle`
+
+### Strike Dummy
+
+Status: `exact`
+
+Java source:
+- `D:/rust/cardcrawl/relics/StrikeDummy.java`
+
+Rust source:
+- `src/content/relics/strike_dummy.rs`
+- `src/content/relics/hooks.rs`
+- `src/content/cards/runtime_impl.rs`
+
+Java evidence:
+- Constructor: ID `"StrikeDummy"`, tier `UNCOMMON`, landing sound `HEAVY`.
+- `atDamageModify(damage, card)` returns `damage + 3.0f` when the card has the
+  `STRIKE` tag; otherwise it returns the input damage.
+
+Rust result:
+- Tier matches Java.
+- Damage calculation routes relic damage modifiers before player power damage
+  modifiers, preserving Java ordering for cases like Strike Dummy under Weak.
+- The modifier checks the `Strike` tag, not the literal card name, so cards such
+  as Pommel Strike and Twin Strike are covered.
+
+Coverage:
+- `shared_uncommon_action_counter_relic_metadata_matches_java_sources`
+- `strike_dummy_adds_three_damage_to_strike_tag_attacks_before_power_modifiers`
+
+### Matryoshka
+
+Status: `exact`
+
+Java source:
+- `D:/rust/cardcrawl/relics/Matryoshka.java`
+
+Rust source:
+- `src/content/relics/matryoshka.rs`
+- `src/engine/run_loop.rs`
+- `src/content/relics/mod.rs`
+
+Java evidence:
+- Constructor: ID `"Matryoshka"`, tier `UNCOMMON`, landing sound `SOLID`, and
+  initializes `counter = 2`.
+- `onChestOpen(bossChest)`: only non-boss chests trigger. While `counter > 0`,
+  decrements the counter, adds one extra relic reward, and rolls the extra relic
+  tier as `75% COMMON / 25% UNCOMMON`.
+- When counter reaches `0`, `setCounter(-2)` marks the relic used up.
+- `canSpawn` is false after floor 40 unless Endless mode is active.
+
+Rust result:
+- Tier and initial counter match Java.
+- Treasure-room handling applies the non-boss chest behavior, decrements the
+  counter, marks the relic used up at `-2`, and rolls the extra reward tier with
+  the same 75/25 split.
+- Spawn gating is a relic-pool/reward-generation concern and is not handled by
+  the chest helper.
+
+Coverage:
+- `shared_uncommon_action_counter_relic_metadata_matches_java_sources`
+- `matryoshka_counter_starts_at_two_and_only_positive_counter_grants_extra_relic`
+
 ## Full Ironclad Class-Specific Relic Queue
 
 Relics remain `unreviewed` until their Java file, Rust definition/subscription,
@@ -1988,3 +2176,9 @@ class-specific queue.
 | 47 | `Pear.java` | `pear.rs` | `exact` |
 | 48 | `SingingBowl.java` | reward handler | `exact` |
 | 49 | `WhiteBeast.java` | reward generator | `exact` |
+| 50 | `BlueCandle.java` | `blue_candle.rs` / play handler | `exact` |
+| 51 | `InkBottle.java` | `ink_bottle.rs` | `wrong-fixed` |
+| 52 | `MummifiedHand.java` | `mummified_hand.rs` | `wrong-fixed` |
+| 53 | `Sundial.java` | `sundial.rs` | `wrong-fixed` |
+| 54 | `StrikeDummy.java` | `strike_dummy.rs` | `exact` |
+| 55 | `Matryoshka.java` | `matryoshka.rs` / run loop | `exact` |
