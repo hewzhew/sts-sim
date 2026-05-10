@@ -276,7 +276,6 @@ pub struct ActionState {
     pub action_ref: ActionRef,
     pub action_class: String,
     pub action_type: ActionType,
-    pub attack_effect: AttackEffect,
     pub damage_type: Option<DamageType>,
     pub duration_bits: F32Bits,
     pub start_duration_bits: F32Bits,
@@ -313,23 +312,6 @@ pub enum ActionType {
     Wait,
     Shuffle,
     ReducePower,
-    Unknown { source_name: String },
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub enum AttackEffect {
-    BluntLight,
-    BluntHeavy,
-    SlashDiagonal,
-    Smash,
-    SlashHeavy,
-    SlashHorizontal,
-    SlashVertical,
-    None,
-    Fire,
-    Poison,
-    Shield,
-    Lightning,
     Unknown { source_name: String },
 }
 
@@ -378,14 +360,10 @@ pub enum ActionPayload {
     Scry(ScryActionState),
     SetMove(SetMoveActionState),
     SetDontTrigger(SetDontTriggerActionState),
-    ShakeScreen(ShakeScreenActionState),
     ShowCard(ShowCardActionState),
     ShowCardAndPoof(ShowCardAndPoofActionState),
-    Sfx(SfxActionState),
     SpawnMonster(SpawnMonsterActionState),
     Suicide(SuicideActionState),
-    TextAboveCreature(TextAboveCreatureActionState),
-    TextCentered(TextCenteredActionState),
     TransformCardInHand(TransformCardInHandActionState),
     Unlimbo(UnlimboActionState),
     UpdateCardDescription(UpdateCardDescriptionActionState),
@@ -436,14 +414,10 @@ pub const TYPED_ACTION_PAYLOAD_SOURCE_CLASSES: &[&str] = &[
     "ScryAction",
     "SetMoveAction",
     "SetDontTriggerAction",
-    "ShakeScreenAction",
     "ShowCardAction",
     "ShowCardAndPoofAction",
-    "SFXAction",
     "SpawnMonsterAction",
     "SuicideAction",
-    "TextAboveCreatureAction",
-    "TextCenteredAction",
     "TransformCardInHandAction",
     "UnlimboAction",
     "UpdateCardDescriptionAction",
@@ -457,13 +431,23 @@ pub const NO_EXTRA_ACTION_PAYLOAD_SOURCE_CLASSES: &[&str] = &[
     "GainGoldAction",
     "HandCheckAction",
     "HealAction",
-    "HideHealthBarAction",
     "InstantKillAction",
     "LoseBlockAction",
     "LoseHPAction",
     "LosePercentHPAction",
     "MakeTempCardAtBottomOfDeckAction",
     "RemoveAllBlockAction",
+];
+
+/// Java action classes whose update methods only drive UI, VFX, audio, hover,
+/// text, or pacing. The Rust AI simulator must consume/drop them instead of
+/// exposing them as mechanical queued actions.
+pub const RENDER_ONLY_ACTION_SOURCE_CLASSES: &[&str] = &[
+    "HideHealthBarAction",
+    "SFXAction",
+    "ShakeScreenAction",
+    "TextAboveCreatureAction",
+    "TextCenteredAction",
     "UnhoverCardAction",
     "WaitAction",
 ];
@@ -514,14 +498,10 @@ impl ActionPayload {
             ActionPayload::Scry(_) => "ScryAction",
             ActionPayload::SetMove(_) => "SetMoveAction",
             ActionPayload::SetDontTrigger(_) => "SetDontTriggerAction",
-            ActionPayload::ShakeScreen(_) => "ShakeScreenAction",
             ActionPayload::ShowCard(_) => "ShowCardAction",
             ActionPayload::ShowCardAndPoof(_) => "ShowCardAndPoofAction",
-            ActionPayload::Sfx(_) => "SFXAction",
             ActionPayload::SpawnMonster(_) => "SpawnMonsterAction",
             ActionPayload::Suicide(_) => "SuicideAction",
-            ActionPayload::TextAboveCreature(_) => "TextAboveCreatureAction",
-            ActionPayload::TextCentered(_) => "TextCenteredAction",
             ActionPayload::TransformCardInHand(_) => "TransformCardInHandAction",
             ActionPayload::Unlimbo(_) => "UnlimboAction",
             ActionPayload::UpdateCardDescription(_) => "UpdateCardDescriptionAction",
@@ -546,13 +526,11 @@ pub struct ApplyPowerActionState {
 pub struct ApplyPowerToRandomEnemyActionState {
     pub power_to_apply: PowerRef,
     pub is_fast: bool,
-    pub effect: AttackEffect,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AttackDamageRandomEnemyActionState {
     pub card_ref: CardRef,
-    pub effect: AttackEffect,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -582,8 +560,6 @@ pub struct ConditionalDrawActionState {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DamageActionState {
     pub gold_amount: i32,
-    pub skip_wait: bool,
-    pub mute_sfx: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -673,16 +649,12 @@ pub struct MakeTempCardInDiscardAndDeckActionState {
 pub struct MakeTempCardInDrawPileActionState {
     pub card_to_make: CardRef,
     pub random_spot: bool,
-    pub auto_position: bool,
     pub to_bottom: bool,
-    pub x_bits: F32Bits,
-    pub y_bits: F32Bits,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MakeTempCardInHandActionState {
     pub card_to_make: CardRef,
-    pub is_other_card_in_center: bool,
     pub same_uuid: bool,
 }
 
@@ -757,9 +729,7 @@ pub struct ResetFlagsActionState {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ReviveMonsterActionState {
-    pub healing_effect: bool,
-}
+pub struct ReviveMonsterActionState {}
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RollMoveActionState {
@@ -789,30 +759,6 @@ pub struct SetDontTriggerActionState {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ShakeScreenActionState {
-    pub start_duration_bits: F32Bits,
-    pub shake_duration: ScreenShakeDuration,
-    pub intensity: ScreenShakeIntensity,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub enum ScreenShakeDuration {
-    Short,
-    Medium,
-    Long,
-    ExtraLong,
-    Unknown { source_name: String },
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub enum ScreenShakeIntensity {
-    Low,
-    Medium,
-    High,
-    Unknown { source_name: String },
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ShowCardActionState {
     pub card_ref: CardRef,
 }
@@ -820,13 +766,6 @@ pub struct ShowCardActionState {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ShowCardAndPoofActionState {
     pub card_ref: CardRef,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct SfxActionState {
-    pub key: String,
-    pub pitch_var_bits: F32Bits,
-    pub adjust: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -842,18 +781,6 @@ pub struct SpawnMonsterActionState {
 pub struct SuicideActionState {
     pub monster_ref: MonsterRef,
     pub relic_trigger: bool,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct TextAboveCreatureActionState {
-    pub used: bool,
-    pub message: Option<String>,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct TextCenteredActionState {
-    pub used: bool,
-    pub message: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

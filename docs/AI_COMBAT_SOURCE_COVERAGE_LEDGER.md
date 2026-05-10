@@ -87,7 +87,7 @@ kernel done; it is the minimum table implementation must extend.
 | `cards/CardQueueItem.java` | card, target, X-cost energy, ignore/autoplay/random/end-turn flags | queued card execution | modeled | `CardQueueItemState` | rewrite |
 | `actions/GameActionManager.java` | `actions`, `preTurnActions`, `cardQueue`, `monsterQueue`, current/previous actions | pending execution state | modeled | `ActionManagerState` | rewrite |
 | `actions/GameActionManager.java` | cards played this turn/combat, orb/stance history, damage/discard/energy counters, turn | public history and hook state | modeled | `ActionManagerState` | rewrite |
-| `actions/AbstractGameAction.java` and subclasses | action type/effect, source/target, amount, damage type, duration/start duration/done, subclass fields | resumable action queue | modeled or unsupported_abort per subclass | `ActionState`, `UnsupportedActionPayload` | rewrite |
+| `actions/AbstractGameAction.java` and subclasses | action type, source/target, amount, damage type, duration/start duration/done, subclass fields; attack effects are render-only unless a source mechanic reads them | resumable action queue | modeled, render_only, or unsupported_abort per subclass | `ActionState`, `UnsupportedActionPayload`, `RENDER_ONLY_ACTION_SOURCE_CLASSES` | rewrite |
 | `rooms/AbstractRoom.java` | phase, monsters, battle-over flags, cannot-lose, elite/combat-event/smoke/mug flags | room combat lifecycle | modeled | `RoomCombatState` | rewrite |
 | `rooms/AbstractRoom.java` | reward timing and rarity chance fields touched at combat end | terminal boundary and reward-RNG guard | modeled/run_level_materialized | `RoomCombatState`, `CombatLifecycleState` | rewrite |
 | `monsters/AbstractMonster.java` | id, HP/block/powers/lifecycle, `halfDead`, escape/death flags | monster state | modeled | `MonsterState` | rewrite |
@@ -365,7 +365,7 @@ not fields and are not included here.
 | `duration` | modeled | `ActionState.duration_bits` | Java `float`; raw bits required for replay |
 | `startDuration` | modeled | `ActionState.start_duration_bits` | Java `float`; raw bits required for replay |
 | `actionType` | modeled | `ActionState.action_type` | preserve all Java `ActionType` variants |
-| `attackEffect` | modeled | `ActionState.attack_effect` | preserve all Java `AttackEffect` variants |
+| `attackEffect` | render_only | none | attack animation/effect selection; Rust AI simulator must not model it as combat state |
 | `damageType` | modeled | `ActionState.damage_type` | nullable per action |
 | `isDone` | modeled | `ActionState.is_done` | action completion state |
 | `amount` | modeled | `ActionState.amount` | generic action amount |
@@ -376,11 +376,6 @@ not fields and are not included here.
 `POWER`, `CARD_MANIPULATION`, `DAMAGE`, `DEBUFF`, `DISCARD`, `DRAW`,
 `EXHAUST`, `HEAL`, `ENERGY`, `TEXT`, `USE`, `CLEAR_CARD_QUEUE`, `DIALOG`,
 `SPECIAL`, `WAIT`, `SHUFFLE`, and `REDUCE_POWER`.
-
-`AttackEffect` variants from Java that must not be collapsed are:
-`BLUNT_LIGHT`, `BLUNT_HEAVY`, `SLASH_DIAGONAL`, `SMASH`, `SLASH_HEAVY`,
-`SLASH_HORIZONTAL`, `SLASH_VERTICAL`, `NONE`, `FIRE`, `POISON`, `SHIELD`, and
-`LIGHTNING`.
 
 Subclasses may use `ActionState.unsupported_subclass_payload` only as a
 quarantine record while a typed migration row is missing. Any frame containing
@@ -395,11 +390,11 @@ that payload is not trainable and not searchable. Unknown subclass state is an
 | `ApplyPowerAction.java` | `startingDuration` | modeled | `ActionPayload::ApplyPower.starting_duration_bits` | subclass private duration, not `AbstractGameAction.startDuration` |
 | `ApplyPowerToRandomEnemyAction.java` | `powerToApply` | modeled | `ActionPayload::ApplyPowerToRandomEnemy.power_to_apply` | pending power instance |
 | `ApplyPowerToRandomEnemyAction.java` | `isFast` | modeled | `ActionPayload::ApplyPowerToRandomEnemy.is_fast` | forwarded into `ApplyPowerAction` |
-| `ApplyPowerToRandomEnemyAction.java` | `effect` | modeled | `ActionPayload::ApplyPowerToRandomEnemy.effect` | forwarded attack effect |
+| `ApplyPowerToRandomEnemyAction.java` | `effect` | render_only | none | forwarded only to attack/power VFX |
 | `ApplyPoisonOnRandomMonsterAction.java` | `startingDuration` | modeled | `ActionPayload::ApplyPoisonOnRandomMonster.starting_duration_bits` | deprecated action still source-present |
 | `ApplyPoisonOnRandomMonsterAction.java` | `powerToApply` | modeled | `ActionPayload::ApplyPoisonOnRandomMonster.power_to_apply` | created during update; nullable before target roll |
 | `AttackDamageRandomEnemyAction.java` | `card` | modeled | `ActionPayload::AttackDamageRandomEnemy.card_ref` | source card for target-specific damage recalculation |
-| `AttackDamageRandomEnemyAction.java` | `effect` | modeled | `ActionPayload::AttackDamageRandomEnemy.effect` | attack effect and lightning special queue |
+| `AttackDamageRandomEnemyAction.java` | `effect` | render_only | none | attack/VFX selection only; LIGHTNING path queues sound/VFX but same mechanical damage |
 | `BetterDiscardPileToHandAction.java` | `player` | modeled/derived | `CombatStateSnapshot.player` | always current player |
 | `BetterDiscardPileToHandAction.java` | `numberOfCards` | modeled | `ActionPayload::BetterDiscardPileToHand.number_of_cards` | grid select amount |
 | `BetterDiscardPileToHandAction.java` | `optional` | modeled | `ActionPayload::BetterDiscardPileToHand.optional` | grid select may pick fewer |
@@ -410,8 +405,8 @@ that payload is not trainable and not searchable. Unknown subclass state is an
 | `BetterDrawPileToHandAction.java` | `optional` | modeled | `ActionPayload::BetterDrawPileToHand.optional` | grid select may pick fewer |
 | `DamageAction.java` | `info` | modeled | `ActionState.damage_info` | concrete damage object |
 | `DamageAction.java` | `goldAmount` | modeled | `ActionPayload::Damage.gold_amount` | steal-gold damage |
-| `DamageAction.java` | `skipWait` | modeled | `ActionPayload::Damage.skip_wait` | controls post-hit wait action |
-| `DamageAction.java` | `muteSfx` | modeled | `ActionPayload::Damage.mute_sfx` | controls attack VFX sound |
+| `DamageAction.java` | `skipWait` | render_only | none | only controls whether a render-only `WaitAction` is queued |
+| `DamageAction.java` | `muteSfx` | render_only | none | controls attack VFX sound only |
 | `DamageAllEnemiesAction.java` | `damage` | modeled | `ActionPayload::DamageAllEnemies.damage` | per-monster damage array |
 | `DamageAllEnemiesAction.java` | `baseDamage` | modeled | `ActionPayload::DamageAllEnemies.base_damage` | source base for dynamic matrix |
 | `DamageAllEnemiesAction.java` | `firstFrame` | modeled | `ActionPayload::DamageAllEnemies.first_frame` | delayed execution state |
@@ -440,7 +435,7 @@ that payload is not trainable and not searchable. Unknown subclass state is an
 | `GainGoldAction.java` | no subclass fields beyond common action fields | modeled | `ActionState` | `amount` covers gained gold |
 | `HealAction.java` | no subclass fields beyond common action fields | modeled | `ActionState` | `amount`, target/source, duration cover heal |
 | `InstantKillAction.java` | no subclass fields beyond common action fields | modeled | `ActionState` | target/source and class cover behavior |
-| `LoseHPAction.java` | no subclass fields beyond common action fields | modeled | `ActionState` | `amount`, target/source, attack effect, duration cover HP loss |
+| `LoseHPAction.java` | no subclass fields beyond common action fields | modeled | `ActionState` | `amount`, target/source, duration cover HP loss |
 | `LosePercentHPAction.java` | no subclass fields beyond common action fields | modeled | `ActionState` | `amount` is percent |
 | `MakeTempCardAtBottomOfDeckAction.java` | no subclass fields beyond common action fields | modeled | `ActionState` | generates random combat card at update; `amount` and RNG cover behavior |
 | `MakeTempCardInDiscardAction.java` | `c` | modeled | `ActionPayload::MakeTempCardInDiscard.card_to_make` | prototype card instance |
@@ -449,11 +444,11 @@ that payload is not trainable and not searchable. Unknown subclass state is an
 | `MakeTempCardInDiscardAndDeckAction.java` | `cardToMake` | modeled | `ActionPayload::MakeTempCardInDiscardAndDeck.card_to_make` | prototype card instance |
 | `MakeTempCardInDrawPileAction.java` | `cardToMake` | modeled | `ActionPayload::MakeTempCardInDrawPile.card_to_make` | prototype card instance |
 | `MakeTempCardInDrawPileAction.java` | `randomSpot` | modeled | `ActionPayload::MakeTempCardInDrawPile.random_spot` | draw-pile insertion mode |
-| `MakeTempCardInDrawPileAction.java` | `autoPosition` | modeled | `ActionPayload::MakeTempCardInDrawPile.auto_position` | effect positioning input |
+| `MakeTempCardInDrawPileAction.java` | `autoPosition` | render_only | none | effect positioning only |
 | `MakeTempCardInDrawPileAction.java` | `toBottom` | modeled | `ActionPayload::MakeTempCardInDrawPile.to_bottom` | draw-pile bottom insertion |
-| `MakeTempCardInDrawPileAction.java` | `x`, `y` | modeled | `ActionPayload::MakeTempCardInDrawPile.x_bits/y_bits` | stored source floats; raw bits |
+| `MakeTempCardInDrawPileAction.java` | `x`, `y` | render_only | none | card animation spawn position only |
 | `MakeTempCardInHandAction.java` | `c` | modeled | `ActionPayload::MakeTempCardInHand.card_to_make` | prototype card instance |
-| `MakeTempCardInHandAction.java` | `isOtherCardInCenter` | modeled | `ActionPayload::MakeTempCardInHand.is_other_card_in_center` | source field retained for action replay |
+| `MakeTempCardInHandAction.java` | `isOtherCardInCenter` | render_only | none | card animation layout only |
 | `MakeTempCardInHandAction.java` | `sameUUID` | modeled | `ActionPayload::MakeTempCardInHand.same_uuid` | same-instance copy behavior |
 | `ModifyBlockAction.java` | `uuid` | modeled | `ActionPayload::ModifyBlock.target_uuid` | all in-battle card instances with this UUID are modified |
 | `PlayTopCardAction.java` | `exhaustCards` | modeled | `ActionPayload::PlayTopCard.exhaust_cards` | sets top card `exhaustOnUseOnce` |
@@ -472,7 +467,7 @@ that payload is not trainable and not searchable. Unknown subclass state is an
 | `RemoveAllBlockAction.java` | no subclass fields beyond common action fields | modeled | `ActionState` | target/source and duration cover it |
 | `RemoveSpecificPowerAction.java` | `powerToRemove` | modeled | `ActionPayload::RemoveSpecificPower.power_id` | string lookup path |
 | `RemoveSpecificPowerAction.java` | `powerInstance` | modeled | `ActionPayload::RemoveSpecificPower.power_ref` | direct instance path |
-| `ReviveMonsterAction.java` | `healingEffect` | modeled | `ActionPayload::ReviveMonster.healing_effect` | full-heal visual/mechanical revive path |
+| `ReviveMonsterAction.java` | `healingEffect` | render_only | none | passed to monster heal effect flag; revive mechanics are target/source/common state plus monster reset |
 | `RollMoveAction.java` | `monster` | modeled | `ActionPayload::RollMove.monster_ref` | rolls monster next move |
 | `SetMoveAction.java` | `monster` | modeled | `ActionPayload::SetMove.monster_ref` | target monster |
 | `SetMoveAction.java` | `theNextMove` | modeled | `ActionPayload::SetMove.next_move` | next move byte |
@@ -510,11 +505,15 @@ Action classes with no fields beyond `AbstractGameAction` must be listed in
 `NO_EXTRA_ACTION_PAYLOAD_SOURCE_CLASSES`. They are modeled by `ActionState`
 plus `action_class`; they are not missing typed payload work.
 
+Action classes with only UI, sound, animation, hover, text, or pacing behavior
+must be listed in `RENDER_ONLY_ACTION_SOURCE_CLASSES`. They are not missing
+typed payload work and must not enter AI mechanical action queues.
+
 ## Field Ledger: Core `actions/utility/*Action.java` Subclasses
 
 | Source | Field | Classification | Schema path | Notes |
 | --- | --- | --- | --- | --- |
-| `WaitAction.java` | no subclass fields beyond common action fields | modeled | `ActionState` | `duration_bits` is the wait duration |
+| `WaitAction.java` | no subclass fields beyond common action fields | render_only | none | delay/pacing only; Rust AI simulator must not model it |
 | `ChooseOneColorless.java` | `retrieveCard` | modeled | `ActionPayload::ChooseOneColorless.retrieve_card` | waits for card reward screen selection |
 | `ConditionalDrawAction.java` | `restrictedType` | modeled | `ActionPayload::ConditionalDraw.restricted_type` | draw only if hand lacks this card type |
 | `DiscardToHandAction.java` | `card` | modeled | `ActionPayload::DiscardToHand.card_ref` | discard-pile card to move to hand |
@@ -523,7 +522,7 @@ plus `action_class`; they are not missing typed payload work.
 | `ExhaustAllEtherealAction.java` | no subclass fields beyond common action fields | modeled | `ActionState` | scans hand and queues `ExhaustSpecificCardAction` |
 | `ExhaustToHandAction.java` | `card` | modeled | `ActionPayload::ExhaustToHand.card_ref` | exhaust-pile card to move to hand |
 | `HandCheckAction.java` | `player` | modeled/derived | `CombatStateSnapshot.player` | applies hand powers and glow check |
-| `HideHealthBarAction.java` | no subclass fields beyond common action fields | modeled | `ActionState` | `source` is the health-bar owner |
+| `HideHealthBarAction.java` | no subclass fields beyond common action fields | render_only | none | UI health-bar visibility only |
 | `LoseBlockAction.java` | no subclass fields beyond common action fields | modeled | `ActionState` | `amount`, target/source cover block loss |
 | `NewQueueCardAction.java` | `card` | modeled | `ActionPayload::NewQueueCard.card_ref` | nullable end-turn queue sentinel |
 | `NewQueueCardAction.java` | `randomTarget` | modeled | `ActionPayload::NewQueueCard.random_target` | queued random target behavior |
@@ -534,21 +533,15 @@ plus `action_class`; they are not missing typed payload work.
 | `ReApplyPowersAction.java` | `m` | modeled | `ActionPayload::ReApplyPowers.monster_ref` | target monster for recalculation |
 | `ResetFlagsAction.java` | `card` | modeled | `ActionPayload::ResetFlags.card_ref` | copied card whose flags are reset |
 | `ScryAction.java` | `startingDuration` | modeled | `ActionPayload::Scry.starting_duration_bits` | subclass private duration |
-| `ShakeScreenAction.java` | `startDur` | modeled | `ActionPayload::ShakeScreen.start_duration_bits` | Java `float`; raw bits |
-| `ShakeScreenAction.java` | `shakeDur` | modeled | `ActionPayload::ShakeScreen.shake_duration` | `ScreenShake.ShakeDur` |
-| `ShakeScreenAction.java` | `intensity` | modeled | `ActionPayload::ShakeScreen.intensity` | `ScreenShake.ShakeIntensity` |
+| `ShakeScreenAction.java` | `startDur`, `shakeDur`, `intensity` | render_only | none | screen shake VFX only; Rust AI simulator must not model it |
 | `ShowCardAction.java` | `card` | modeled | `ActionPayload::ShowCard.card_ref` | limbo/card-in-use cleanup target |
 | `ShowCardAndPoofAction.java` | `card` | modeled | `ActionPayload::ShowCardAndPoof.card_ref` | limbo/card-in-use cleanup plus exhaust VFX |
 | `UnlimboAction.java` | `card` | modeled | `ActionPayload::Unlimbo.card_ref` | limbo card to remove |
 | `UnlimboAction.java` | `exhaust` | modeled | `ActionPayload::Unlimbo.exhaust` | whether removal creates exhaust effect |
-| `SFXAction.java` | `key` | modeled | `ActionPayload::Sfx.key` | sound key; retained for deterministic action replay |
-| `SFXAction.java` | `pitchVar` | modeled | `ActionPayload::Sfx.pitch_var_bits` | Java `float`; raw bits |
-| `SFXAction.java` | `adjust` | modeled | `ActionPayload::Sfx.adjust` | selects adjusted sound call |
-| `TextAboveCreatureAction.java` | `used` | modeled | `ActionPayload::TextAboveCreature.used` | one-shot text effect guard |
-| `TextAboveCreatureAction.java` | `msg` | modeled | `ActionPayload::TextAboveCreature.message` | nullable when constructor marks done |
-| `TextCenteredAction.java` | `used` | modeled | `ActionPayload::TextCentered.used` | one-shot text effect guard |
-| `TextCenteredAction.java` | `msg` | modeled | `ActionPayload::TextCentered.message` | centered text message |
-| `UnhoverCardAction.java` | no subclass fields beyond common action fields | modeled | `ActionState` | uses global hovered card state |
+| `SFXAction.java` | `key`, `pitchVar`, `adjust` | render_only | none | sound effect only; Rust AI simulator must not model it |
+| `TextAboveCreatureAction.java` | `used`, `msg` | render_only | none | floating combat text only; Rust AI simulator must not model it |
+| `TextCenteredAction.java` | `used`, `msg` | render_only | none | centered text VFX only; Rust AI simulator must not model it |
+| `UnhoverCardAction.java` | no subclass fields beyond common action fields | render_only | none | hover/exhaust visual cleanup only |
 | `UpdateCardDescriptionAction.java` | `targetCard` | modeled | `ActionPayload::UpdateCardDescription.target_card` | card whose description is initialized |
 | `UseCardAction.java` | `targetCard` | modeled | `ActionPayload::UseCard.target_card` | card being resolved |
 | `UseCardAction.java` | subclass `target` | modeled | `ActionPayload::UseCard.card_target` | card target; distinct from superclass `ActionState.target` |

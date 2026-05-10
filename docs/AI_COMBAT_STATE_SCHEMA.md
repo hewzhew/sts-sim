@@ -430,7 +430,6 @@ Queued actions are typed state, not opaque callbacks:
 ActionState {
   action_class,
   action_type,
-  attack_effect,
   damage_type,
   duration_bits,
   start_duration_bits,
@@ -450,8 +449,10 @@ ActionState {
 
 `ActionState` models the shared `AbstractGameAction` fields. Java action
 `duration` and `startDuration` are replay-critical `float` fields and must be
-stored as raw bits. `action_type`, `attack_effect`, and `damage_type` must keep
-the Java enum surface; collapsing missing variants into `Special` is forbidden.
+stored as raw bits. `action_type` and `damage_type` must keep the Java enum
+surface; collapsing missing variants into `Special` is forbidden. Java
+`attackEffect` is classified as `render_only`; it must not enter mechanical
+state, action hashes, search inputs, or trainable samples.
 
 Concrete action subclasses must migrate to typed payloads before they are
 trainable or searchable. Initial source-backed payloads:
@@ -471,12 +472,10 @@ ActionPayload {
   ApplyPowerToRandomEnemy {
     power_to_apply,
     is_fast,
-    effect,
   }
 
   AttackDamageRandomEnemy {
     card_ref,
-    effect,
   }
 
   BetterDiscardPileToHand {
@@ -501,8 +500,6 @@ ActionPayload {
 
   Damage {
     gold_amount,
-    skip_wait,
-    mute_sfx,
   }
 
   DamageAllEnemies {
@@ -577,15 +574,11 @@ ActionPayload {
   MakeTempCardInDrawPile {
     card_to_make,
     random_spot,
-    auto_position,
     to_bottom,
-    x_bits,
-    y_bits,
   }
 
   MakeTempCardInHand {
     card_to_make,
-    is_other_card_in_center,
     same_uuid,
   }
 
@@ -646,9 +639,7 @@ ActionPayload {
     card_ref,
   }
 
-  ReviveMonster {
-    healing_effect,
-  }
+  ReviveMonster {}
 
   RollMove {
     monster_ref,
@@ -673,24 +664,12 @@ ActionPayload {
     trigger,
   }
 
-  ShakeScreen {
-    start_duration_bits,
-    shake_duration,
-    intensity,
-  }
-
   ShowCard {
     card_ref,
   }
 
   ShowCardAndPoof {
     card_ref,
-  }
-
-  Sfx {
-    key,
-    pitch_var_bits,
-    adjust,
   }
 
   SpawnMonster {
@@ -704,16 +683,6 @@ ActionPayload {
   Suicide {
     monster_ref,
     relic_trigger,
-  }
-
-  TextAboveCreature {
-    used,
-    message,
-  }
-
-  TextCentered {
-    used,
-    message,
   }
 
   TransformCardInHand {
@@ -746,6 +715,7 @@ Rust must keep a code-level source link for every typed payload:
 ActionPayload::java_source_class()
 TYPED_ACTION_PAYLOAD_SOURCE_CLASSES
 NO_EXTRA_ACTION_PAYLOAD_SOURCE_CLASSES
+RENDER_ONLY_ACTION_SOURCE_CLASSES
 ```
 
 Adding an `ActionPayload` variant without a Java source class mapping is a
@@ -753,6 +723,13 @@ schema defect. A Java action class with no subclass fields beyond
 `AbstractGameAction` must be listed in `NO_EXTRA_ACTION_PAYLOAD_SOURCE_CLASSES`
 and in the source ledger, so absence of a payload is auditable rather than
 accidental.
+
+A Java action class whose behavior is only UI, text, animation, sound, hover,
+or delay pacing must be listed in `RENDER_ONLY_ACTION_SOURCE_CLASSES` and in the
+source ledger as `render_only`. Render-only actions are not part of the Rust AI
+mechanical action queues. An importer or bridge may consume and drop them, but
+dropping them must not mutate RNG, combatants, cards, powers, relics, potions,
+or any combat decision state.
 
 Any action subclass that cannot be serialized and restored must populate
 `unsupported_subclass_payload` and make the frame `unsupported_abort` before it
