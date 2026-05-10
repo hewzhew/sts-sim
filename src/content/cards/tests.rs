@@ -2246,3 +2246,151 @@ fn ironclad_hp_loss_and_generated_attack_runtime_actions_match_java_use_methods(
         }
     ));
 }
+
+#[test]
+fn ironclad_power_and_hybrid_attack_definitions_match_java_sources() {
+    let inflame = get_card_definition(CardId::Inflame);
+    assert_eq!(inflame.card_type, CardType::Power);
+    assert_eq!(inflame.rarity, CardRarity::Uncommon);
+    assert_eq!(inflame.cost, 1);
+    assert_eq!(inflame.base_magic, 2);
+    assert_eq!(inflame.target, CardTarget::SelfTarget);
+    assert_eq!(inflame.upgrade_magic, 1);
+
+    let intimidate = get_card_definition(CardId::Intimidate);
+    assert_eq!(intimidate.card_type, CardType::Skill);
+    assert_eq!(intimidate.rarity, CardRarity::Uncommon);
+    assert_eq!(intimidate.cost, 0);
+    assert_eq!(intimidate.base_magic, 1);
+    assert_eq!(intimidate.target, CardTarget::AllEnemy);
+    assert!(intimidate.exhaust);
+    assert_eq!(intimidate.upgrade_magic, 1);
+
+    let iron_wave = get_card_definition(CardId::IronWave);
+    assert_eq!(iron_wave.card_type, CardType::Attack);
+    assert_eq!(iron_wave.rarity, CardRarity::Common);
+    assert_eq!(iron_wave.cost, 1);
+    assert_eq!(iron_wave.base_damage, 5);
+    assert_eq!(iron_wave.base_block, 5);
+    assert_eq!(iron_wave.target, CardTarget::Enemy);
+    assert_eq!(iron_wave.upgrade_damage, 2);
+    assert_eq!(iron_wave.upgrade_block, 2);
+
+    let juggernaut = get_card_definition(CardId::Juggernaut);
+    assert_eq!(juggernaut.card_type, CardType::Power);
+    assert_eq!(juggernaut.rarity, CardRarity::Rare);
+    assert_eq!(juggernaut.cost, 2);
+    assert_eq!(juggernaut.base_magic, 5);
+    assert_eq!(juggernaut.target, CardTarget::SelfTarget);
+    assert_eq!(juggernaut.upgrade_magic, 2);
+}
+
+#[test]
+fn ironclad_power_and_hybrid_attack_runtime_actions_match_java_use_methods() {
+    let mut state = crate::test_support::blank_test_combat();
+    let mut first = crate::test_support::test_monster(EnemyId::JawWorm);
+    first.id = 91;
+    let mut second = crate::test_support::test_monster(EnemyId::Cultist);
+    second.id = 92;
+    second.slot = 1;
+    state.entities.monsters = vec![first, second];
+    crate::content::powers::store::set_powers_for(
+        &mut state,
+        0,
+        vec![Power {
+            power_type: PowerId::Strength,
+            instance_id: None,
+            amount: 2,
+            extra_data: 0,
+            just_applied: false,
+        }],
+    );
+
+    let mut inflame_plus = CombatCard::new(CardId::Inflame, 280);
+    inflame_plus.upgrades = 1;
+    let inflame_actions = resolve_card_play(CardId::Inflame, &state, &inflame_plus, None);
+    assert_eq!(inflame_actions.len(), 1);
+    assert!(matches!(
+        inflame_actions[0].action,
+        Action::ApplyPower {
+            source: 0,
+            target: 0,
+            power_id: PowerId::Strength,
+            amount: 3
+        }
+    ));
+
+    let mut intimidate_plus = CombatCard::new(CardId::Intimidate, 281);
+    intimidate_plus.upgrades = 1;
+    let intimidate_actions = resolve_card_play(CardId::Intimidate, &state, &intimidate_plus, None);
+    assert_eq!(intimidate_actions.len(), 2);
+    for (action, expected_target) in intimidate_actions.iter().zip([91, 92]) {
+        assert!(matches!(
+            action.action,
+            Action::ApplyPower {
+                source: 0,
+                target,
+                power_id: PowerId::Weak,
+                amount: 2
+            } if target == expected_target
+        ));
+    }
+
+    let mut iron_wave_plus = CombatCard::new(CardId::IronWave, 282);
+    iron_wave_plus.upgrades = 1;
+    let iron_wave_actions = resolve_card_play(CardId::IronWave, &state, &iron_wave_plus, Some(91));
+    assert_eq!(iron_wave_actions.len(), 2);
+    assert!(matches!(
+        iron_wave_actions[0].action,
+        Action::GainBlock {
+            target: 0,
+            amount: 7
+        }
+    ));
+    match &iron_wave_actions[1].action {
+        Action::Damage(info) => {
+            assert_eq!(info.source, 0);
+            assert_eq!(info.target, 91);
+            assert_eq!(info.base, 9);
+            assert_eq!(info.output, 9);
+            assert_eq!(info.damage_type, DamageType::Normal);
+        }
+        other => panic!("Iron Wave+ should gain block then deal damage, got {other:?}"),
+    }
+
+    let mut juggernaut_plus = CombatCard::new(CardId::Juggernaut, 283);
+    juggernaut_plus.upgrades = 1;
+    let juggernaut_actions = resolve_card_play(CardId::Juggernaut, &state, &juggernaut_plus, None);
+    assert_eq!(juggernaut_actions.len(), 1);
+    assert!(matches!(
+        juggernaut_actions[0].action,
+        Action::ApplyPower {
+            source: 0,
+            target: 0,
+            power_id: PowerId::Juggernaut,
+            amount: 7
+        }
+    ));
+}
+
+#[test]
+fn juggernaut_block_hook_matches_java_source() {
+    let state = crate::test_support::blank_test_combat();
+    let actions =
+        crate::content::powers::resolve_power_on_block_gained(PowerId::Juggernaut, &state, 0, 7, 5);
+    assert_eq!(actions.len(), 1);
+    match &actions[0] {
+        Action::AttackDamageRandomEnemy {
+            base_damage,
+            damage_type,
+            applies_target_modifiers,
+        } => {
+            assert_eq!(*base_damage, 7);
+            assert_eq!(*damage_type, DamageType::Thorns);
+            assert!(!*applies_target_modifiers);
+        }
+        other => {
+            panic!("Juggernaut should queue random THORNS damage on block gain, got {other:?}")
+        }
+    }
+}

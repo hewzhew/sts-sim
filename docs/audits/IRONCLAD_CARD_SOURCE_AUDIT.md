@@ -1486,6 +1486,117 @@ Coverage:
 - `ironclad_hp_loss_and_generated_attack_definitions_match_java_sources`
 - `ironclad_hp_loss_and_generated_attack_runtime_actions_match_java_use_methods`
 
+## Batch 12 - Strength / Weak / Hybrid Attack / Block-Damage Power Coverage
+
+### Inflame
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/cards/red/Inflame.java`
+
+Rust source:
+- `src/content/cards/mod.rs`
+- `src/content/cards/ironclad/inflame.rs`
+
+Java evidence:
+- Constructor: cost `1`, type `POWER`, color `RED`, rarity `UNCOMMON`, target
+  `SELF`, `baseMagicNumber = magicNumber = 2`.
+- `use`: VFX only, then applies Strength equal to `this.magicNumber`.
+- `upgrade`: `upgradeMagicNumber(1)`.
+
+Rust result:
+- Definition matches Java constructor and upgrade magic.
+- Runtime now evaluates magic at play time before applying Strength.
+
+Coverage:
+- `ironclad_power_and_hybrid_attack_definitions_match_java_sources`
+- `ironclad_power_and_hybrid_attack_runtime_actions_match_java_use_methods`
+
+### Intimidate
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/cards/red/Intimidate.java`
+
+Rust source:
+- `src/content/cards/mod.rs`
+- `src/content/cards/ironclad/intimidate.rs`
+
+Java evidence:
+- Constructor: cost `0`, type `SKILL`, color `RED`, rarity `UNCOMMON`, target
+  `ALL_ENEMY`, `exhaust = true`, `baseMagicNumber = magicNumber = 1`.
+- `use`: SFX/VFX only, then applies Weak equal to `this.magicNumber` to each
+  room monster.
+- `upgrade`: `upgradeMagicNumber(1)`.
+
+Rust result:
+- Definition matches Java constructor, exhaust flag, target, and upgrade magic.
+- Runtime now evaluates magic at play time before applying Weak.
+
+Coverage:
+- `ironclad_power_and_hybrid_attack_definitions_match_java_sources`
+- `ironclad_power_and_hybrid_attack_runtime_actions_match_java_use_methods`
+
+### Iron Wave
+
+Status: `exact`
+
+Java source:
+- `D:/rust/cardcrawl/cards/red/IronWave.java`
+
+Rust source:
+- `src/content/cards/mod.rs`
+- `src/content/cards/ironclad/iron_wave.rs`
+
+Java evidence:
+- Constructor: cost `1`, type `ATTACK`, color `RED`, rarity `COMMON`, target
+  `ENEMY`, `baseDamage = 5`, `baseBlock = 5`.
+- `use`: queues GainBlock, waits/VFX, then queues damage.
+- `upgrade`: `upgradeDamage(2)` and `upgradeBlock(2)`.
+
+Rust result:
+- Definition matches Java constructor and upgrades.
+- Runtime already evaluates block and damage at play time and emits GainBlock
+  before damage. Wait/VFX actions are presentation only.
+
+Coverage:
+- `ironclad_power_and_hybrid_attack_definitions_match_java_sources`
+- `ironclad_power_and_hybrid_attack_runtime_actions_match_java_use_methods`
+
+### Juggernaut
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/cards/red/Juggernaut.java`
+- `D:/rust/cardcrawl/powers/JuggernautPower.java`
+
+Rust source:
+- `src/content/cards/mod.rs`
+- `src/content/cards/ironclad/juggernaut.rs`
+- `src/content/powers/ironclad/juggernaut.rs`
+
+Java evidence:
+- Constructor: cost `2`, type `POWER`, color `RED`, rarity `RARE`, target
+  `SELF`, `baseMagicNumber = magicNumber = 5`.
+- `use`: applies `JuggernautPower(p, this.magicNumber)`.
+- `upgrade`: `upgradeMagicNumber(2)`.
+- `JuggernautPower.onGainedBlock`: when `blockAmount > 0`, queues random enemy
+  damage with `DamageType.THORNS` and amount equal to the power amount.
+
+Rust result:
+- Definition matches Java constructor and upgrade magic.
+- Runtime now evaluates magic at play time before applying Juggernaut.
+- Existing block-gained hook already only runs for positive gained block and
+  emits random enemy Thorns damage with target modifiers disabled.
+
+Coverage:
+- `ironclad_power_and_hybrid_attack_definitions_match_java_sources`
+- `ironclad_power_and_hybrid_attack_runtime_actions_match_java_use_methods`
+- `juggernaut_block_hook_matches_java_source`
+
 ## Full Ironclad Queue
 
 Cards remain `unreviewed` until their Java file, Rust definition, Rust runtime,
@@ -1536,10 +1647,10 @@ and supporting engine behavior have all been checked.
 | 41 | `Immolate.java` | `immolate.rs` | `wrong-fixed` |
 | 42 | `Impervious.java` | `impervious.rs` | `wrong-fixed` |
 | 43 | `InfernalBlade.java` | `infernal_blade.rs` | `wrong-fixed` |
-| 44 | `Inflame.java` | `inflame.rs` | `unreviewed` |
-| 45 | `Intimidate.java` | `intimidate.rs` | `unreviewed` |
-| 46 | `IronWave.java` | `iron_wave.rs` | `unreviewed` |
-| 47 | `Juggernaut.java` | `juggernaut.rs` | `unreviewed` |
+| 44 | `Inflame.java` | `inflame.rs` | `wrong-fixed` |
+| 45 | `Intimidate.java` | `intimidate.rs` | `wrong-fixed` |
+| 46 | `IronWave.java` | `iron_wave.rs` | `exact` |
+| 47 | `Juggernaut.java` | `juggernaut.rs` | `wrong-fixed` |
 | 48 | `LimitBreak.java` | `limit_break.rs` | `unreviewed` |
 | 49 | `Metallicize.java` | `metallicize.rs` | `unreviewed` |
 | 50 | `Offering.java` | `offering.rs` | `unreviewed` |

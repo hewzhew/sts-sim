@@ -5,7 +5,8 @@ use smallvec::SmallVec;
 
 pub fn intimidate_play(state: &CombatState, card: &CombatCard) -> SmallVec<[ActionInfo; 4]> {
     let mut actions = smallvec::SmallVec::new();
-    let amount = card.base_magic_num_mut; // 1, upgraded 2
+    let evaluated = crate::content::cards::evaluate_card_for_play(card, state, None);
+    let amount = evaluated.base_magic_num_mut;
 
     for m in &state.entities.monsters {
         if !m.is_dying && !m.is_escaped {
