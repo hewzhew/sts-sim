@@ -1,7 +1,7 @@
 use super::*;
 use crate::content::monsters::EnemyId;
 use crate::content::powers::PowerId;
-use crate::runtime::action::{Action, DamageType, NO_SOURCE};
+use crate::runtime::action::{Action, DamageInfo, DamageType, NO_SOURCE};
 use crate::runtime::combat::{CombatCard, Power};
 
 #[test]
@@ -768,7 +768,24 @@ fn ironclad_attack_condition_and_dot_power_runtime_actions_match_java_use_method
         CombatCard::new(CardId::Defend, 104),
     ];
     assert!(can_play_card(&state.zones.hand[0], &state).is_err());
-    assert!(resolve_card_play(CardId::Clash, &state, &state.zones.hand[0], Some(7)).is_empty());
+    let forced_clash = CombatCard::new(CardId::Clash, 105);
+    let forced_clash_actions = resolve_card_play(CardId::Clash, &state, &forced_clash, Some(7));
+    assert_eq!(
+        forced_clash_actions.len(),
+        1,
+        "Clash.canUse gates manual play only; forced play still runs Clash.use()"
+    );
+    assert!(matches!(
+        forced_clash_actions[0].action,
+        Action::Damage(DamageInfo {
+            source: 0,
+            target: 7,
+            base: 14,
+            output: 14,
+            damage_type: DamageType::Normal,
+            ..
+        })
+    ));
 
     let mut first = crate::test_support::test_monster(EnemyId::JawWorm);
     first.id = 11;

@@ -3,23 +3,14 @@ use crate::runtime::combat::{CombatCard, CombatState};
 use smallvec::SmallVec;
 
 pub fn clash_play(
-    state: &CombatState,
+    _state: &CombatState,
     card: &CombatCard,
     target: Option<crate::core::EntityId>,
 ) -> SmallVec<[ActionInfo; 4]> {
     let target = target.expect("Clash requires a valid target!");
     let mut actions = smallvec::SmallVec::new();
 
-    // Unplayable if there are non-attacks in hand
-    let has_non_attacks = state.zones.hand.iter().any(|c| {
-        crate::content::cards::get_card_definition(c.id).card_type
-            != crate::content::cards::CardType::Attack
-    });
-    if has_non_attacks {
-        return actions;
-    }
-
-    let evaluated = crate::content::cards::evaluate_card_for_play(card, state, Some(target));
+    let evaluated = crate::content::cards::evaluate_card_for_play(card, _state, Some(target));
     let damage = evaluated.base_damage_mut;
 
     actions.push(ActionInfo {
