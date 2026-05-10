@@ -4307,6 +4307,133 @@ Coverage:
 - `defect_orb_relic_gap_batch_metadata_matches_java_sources`
 - `hand_drill_applies_vulnerable_when_damage_exactly_breaks_block`
 
+## Shared Relic Batch 20 - Watcher Relic Grounding
+
+### Pure Water
+
+Status: `exact`
+
+Java source:
+- `D:/rust/cardcrawl/relics/PureWater.java`
+
+Rust source:
+- `src/content/relics/pure_water.rs`
+- `src/content/relics/hooks.rs`
+
+Java evidence:
+- Constructor: ID `"PureWater"`, tier `STARTER`, landing sound `MAGICAL`.
+- `atBattleStartPreDraw`: queues one `Miracle` into hand.
+
+Rust result:
+- Tier and pre-draw battle-start subscription match Java.
+- Hook queues one unupgraded Miracle.
+- Relic-above-creature VFX is UI-only and is not modeled.
+
+Coverage:
+- `watcher_relic_gap_batch_metadata_matches_java_sources`
+- `pure_and_holy_water_add_correct_miracle_counts_pre_draw`
+
+### Holy Water
+
+Status: `exact`
+
+Java source:
+- `D:/rust/cardcrawl/relics/HolyWater.java`
+
+Rust source:
+- `src/content/relics/holy_water.rs`
+- `src/content/relics/hooks.rs`
+
+Java evidence:
+- Constructor: ID `"HolyWater"`, tier `BOSS`, landing sound `MAGICAL`.
+- `atBattleStartPreDraw`: queues three `Miracle` cards into hand.
+- `canSpawn`: requires `PureWater`.
+
+Rust result:
+- Tier and pre-draw battle-start subscription match Java.
+- Hook queues three unupgraded Miracles.
+- Spawn-condition audit is still tracked at reward/relic-pool level; combat hook
+  behavior is exact.
+
+Coverage:
+- `watcher_relic_gap_batch_metadata_matches_java_sources`
+- `pure_and_holy_water_add_correct_miracle_counts_pre_draw`
+
+### Duality
+
+Status: `exact`
+
+Java source:
+- `D:/rust/cardcrawl/relics/Duality.java`
+
+Rust source:
+- `src/content/relics/duality.rs`
+- `src/content/relics/hooks.rs`
+
+Java evidence:
+- Constructor: ID `"Yang"`, tier `UNCOMMON`, landing sound `MAGICAL`.
+- `onUseCard`: if the used card is an Attack, queues Dexterity +1 and
+  `LoseDexterityPower` 1.
+
+Rust result:
+- Tier and on-use subscription match Java.
+- Attack cards queue Dexterity and DexterityDown; non-attacks do nothing.
+
+Coverage:
+- `watcher_relic_gap_batch_metadata_matches_java_sources`
+- `duality_grants_temporary_dexterity_only_for_attack_cards`
+
+### Golden Eye
+
+Status: `exact`
+
+Java source:
+- `D:/rust/cardcrawl/relics/GoldenEye.java`
+
+Rust source:
+- `src/content/relics/golden_eye.rs`
+- `src/content/relics/hooks.rs`
+- `src/engine/core.rs`
+
+Java evidence:
+- Constructor: ID `"GoldenEye"`, tier `RARE`, landing sound `HEAVY`.
+- Relic class has no explicit callback; scry amount is affected by the scry
+  pipeline.
+
+Rust result:
+- Tier and scry subscription match Java intent.
+- The scry hook adds two to the requested scry amount before the pending-choice
+  frame is created.
+
+Coverage:
+- `watcher_relic_gap_batch_metadata_matches_java_sources`
+- `golden_eye_adds_two_to_scry_amount_and_melange_queues_scry_three_on_shuffle`
+
+### Melange
+
+Status: `exact`
+
+Java source:
+- `D:/rust/cardcrawl/relics/Melange.java`
+
+Rust source:
+- `src/content/relics/melange.rs`
+- `src/content/relics/hooks.rs`
+- `src/engine/action_handlers/cards.rs`
+
+Java evidence:
+- Constructor: ID `"Melange"`, tier `SHOP`, landing sound `MAGICAL`.
+- `onShuffle`: queues `ScryAction(3)`.
+
+Rust result:
+- Tier and shuffle subscription match Java.
+- Shuffle hook queues `Scry(3)`.
+- Relic-above-creature VFX is UI-only and is not modeled.
+
+Coverage:
+- `watcher_relic_gap_batch_metadata_matches_java_sources`
+- `golden_eye_adds_two_to_scry_amount_and_melange_queues_scry_three_on_shuffle`
+
 ## Full Ironclad Class-Specific Relic Queue
 
 Relics remain `unreviewed` until their Java file, Rust definition/subscription,
@@ -4462,3 +4589,8 @@ class-specific queue.
 | 127 | `EmotionChip.java` | `emotion_chip.rs` / Impulse orb trigger | `wrong-fixed` |
 | 128 | `FrozenCore.java` | `frozen_core.rs` / empty slot Frost channel | `exact` |
 | 129 | `HandDrill.java` | damage pipeline / block break Vulnerable | `exact` |
+| 130 | `PureWater.java` | `pure_water.rs` / pre-draw Miracle | `exact` |
+| 131 | `HolyWater.java` | `holy_water.rs` / pre-draw Miracles | `exact` |
+| 132 | `Duality.java` | `duality.rs` / temporary Dexterity | `exact` |
+| 133 | `GoldenEye.java` | `golden_eye.rs` / scry amount modifier | `exact` |
+| 134 | `Melange.java` | `melange.rs` / shuffle Scry | `exact` |

@@ -3547,6 +3547,102 @@ fn hand_drill_applies_vulnerable_when_damage_exactly_breaks_block() {
 }
 
 #[test]
+fn watcher_relic_gap_batch_metadata_matches_java_sources() {
+    assert_eq!(get_relic_tier(RelicId::PureWater), RelicTier::Starter);
+    assert_eq!(get_relic_tier(RelicId::HolyWater), RelicTier::Boss);
+    assert_eq!(get_relic_tier(RelicId::Duality), RelicTier::Uncommon);
+    assert_eq!(get_relic_tier(RelicId::GoldenEye), RelicTier::Rare);
+    assert_eq!(get_relic_tier(RelicId::Melange), RelicTier::Shop);
+
+    assert!(get_relic_subscriptions(RelicId::PureWater).at_battle_start_pre_draw);
+    assert!(get_relic_subscriptions(RelicId::HolyWater).at_battle_start_pre_draw);
+    assert!(get_relic_subscriptions(RelicId::Duality).on_use_card);
+    assert!(get_relic_subscriptions(RelicId::GoldenEye).on_scry);
+    assert!(get_relic_subscriptions(RelicId::Melange).on_shuffle);
+}
+
+#[test]
+fn pure_and_holy_water_add_correct_miracle_counts_pre_draw() {
+    let pure_actions = pure_water::at_battle_start();
+    assert_eq!(pure_actions.len(), 1);
+    assert_eq!(pure_actions[0].insertion_mode, AddTo::Bottom);
+    assert!(matches!(
+        pure_actions[0].action,
+        Action::MakeTempCardInHand {
+            card_id: CardId::Miracle,
+            amount: 1,
+            upgraded: false
+        }
+    ));
+
+    let state = crate::test_support::blank_test_combat();
+    let holy_actions = holy_water::at_battle_start(&state);
+    assert_eq!(holy_actions.len(), 1);
+    assert_eq!(holy_actions[0].insertion_mode, AddTo::Bottom);
+    assert!(matches!(
+        holy_actions[0].action,
+        Action::MakeTempCardInHand {
+            card_id: CardId::Miracle,
+            amount: 3,
+            upgraded: false
+        }
+    ));
+}
+
+#[test]
+fn duality_grants_temporary_dexterity_only_for_attack_cards() {
+    let state = crate::test_support::blank_test_combat();
+    let mut relic = RelicState::new(RelicId::Duality);
+
+    let strike_actions =
+        duality::on_use_card(&state, &mut relic, &CombatCard::new(CardId::Strike, 19001));
+    assert_eq!(strike_actions.len(), 2);
+    assert!(matches!(
+        strike_actions[0].action,
+        Action::ApplyPower {
+            target: 0,
+            power_id: PowerId::Dexterity,
+            amount: 1,
+            ..
+        }
+    ));
+    assert!(matches!(
+        strike_actions[1].action,
+        Action::ApplyPower {
+            target: 0,
+            power_id: PowerId::DexterityDown,
+            amount: 1,
+            ..
+        }
+    ));
+
+    assert!(
+        duality::on_use_card(&state, &mut relic, &CombatCard::new(CardId::Defend, 19002))
+            .is_empty()
+    );
+}
+
+#[test]
+fn golden_eye_adds_two_to_scry_amount_and_melange_queues_scry_three_on_shuffle() {
+    let mut state = crate::test_support::blank_test_combat();
+    state
+        .entities
+        .player
+        .add_relic(RelicState::new(RelicId::GoldenEye));
+    assert_eq!(hooks::on_scry(&state, 3), 5);
+
+    let mut shuffle_state = crate::test_support::blank_test_combat();
+    shuffle_state
+        .entities
+        .player
+        .add_relic(RelicState::new(RelicId::Melange));
+    let actions = hooks::on_shuffle(&mut shuffle_state);
+    assert_eq!(actions.len(), 1);
+    assert_eq!(actions[0].insertion_mode, AddTo::Bottom);
+    assert!(matches!(actions[0].action, Action::Scry(3)));
+}
+
+#[test]
 fn shared_rare_damage_retention_relic_metadata_matches_java_sources() {
     assert_eq!(get_relic_tier(RelicId::Calipers), RelicTier::Rare);
     assert_eq!(get_relic_tier(RelicId::Torii), RelicTier::Rare);
