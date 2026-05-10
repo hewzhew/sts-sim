@@ -1681,15 +1681,12 @@ pub fn handle_battle_start_pre_draw_trigger(state: &mut CombatState) {
     state.queue_actions(pre_draw_actions);
 
     // Auto-chain Phase 3 Initial Draw
-    let mut draw_amount = 5;
-    if state
-        .entities
-        .player
-        .has_relic(crate::content::relics::RelicId::SneckoEye)
-    {
-        draw_amount += 2;
+    let draw_amount = crate::engine::core::compute_player_turn_start_draw_count(state);
+    if draw_amount > 0 {
+        state.queue_action_back(crate::runtime::action::Action::DrawCards(
+            draw_amount as u32,
+        ));
     }
-    state.queue_action_back(crate::runtime::action::Action::DrawCards(draw_amount));
 
     // Auto-chain Phase 4
     state.queue_action_back(crate::runtime::action::Action::BattleStartTrigger);

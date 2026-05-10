@@ -1219,6 +1219,13 @@ pub struct Power {
 impl CombatState {
     pub fn recompute_turn_start_draw_modifier(&mut self) {
         let mut modifier = 0;
+        if self
+            .entities
+            .player
+            .has_relic(crate::content::relics::RelicId::RingOfTheSerpent)
+        {
+            modifier += 1;
+        }
         if let Some(powers) = crate::content::powers::store::powers_for(self, 0) {
             for power in powers {
                 match power.power_type {

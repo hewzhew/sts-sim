@@ -1158,7 +1158,19 @@ pub fn calculate_monster_damage(
                 PowerId::Strength => {
                     core::strength::on_attack_to_change_damage(tmp as i32, p.amount) as f32
                 } // Strength is linear addition
-                PowerId::Weak => tmp * 0.75,
+                PowerId::Weak => {
+                    if source_id != 0
+                        && target_id == 0
+                        && state
+                            .entities
+                            .player
+                            .has_relic(crate::content::relics::RelicId::PaperCrane)
+                    {
+                        tmp * crate::content::relics::paper_crane::WEAK_MULTIPLIER
+                    } else {
+                        tmp * 0.75
+                    }
+                }
                 _ => tmp,
             };
         }

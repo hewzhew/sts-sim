@@ -4434,6 +4434,163 @@ Coverage:
 - `watcher_relic_gap_batch_metadata_matches_java_sources`
 - `golden_eye_adds_two_to_scry_amount_and_melange_queues_scry_three_on_shuffle`
 
+## Shared Relic Batch 21 - Silent Relic Grounding
+
+### Ring of the Snake
+
+Status: `exact`
+
+Java source:
+- `D:/rust/cardcrawl/relics/SnakeRing.java`
+
+Rust source:
+- `src/content/relics/snake_ring.rs`
+- `src/content/relics/hooks.rs`
+
+Java evidence:
+- Constructor: ID `"Ring of the Snake"`, tier `STARTER`, landing sound `FLAT`.
+- `atBattleStart`: queues `DrawCardAction(..., 2)`.
+
+Rust result:
+- Tier and battle-start subscription match Java.
+- Battle-start hook queues `DrawCards(2)`.
+- Relic-above-creature VFX is UI-only and is not modeled.
+
+Coverage:
+- `silent_relic_gap_batch_metadata_matches_java_sources`
+- `snake_ring_and_ninja_scroll_start_actions_match_java_counts`
+
+### Ring of the Serpent
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/relics/RingOfTheSerpent.java`
+
+Rust source:
+- `src/runtime/combat.rs`
+- `src/engine/core.rs`
+- `src/engine/action_handlers/cards.rs`
+
+Java evidence:
+- Constructor: ID `"Ring of the Serpent"`, tier `BOSS`, landing sound `CLINK`.
+- `onEquip`: increments `AbstractDungeon.player.masterHandSize`.
+- `onUnequip`: decrements `masterHandSize`.
+- `atTurnStart`: only flashes.
+- `canSpawn`: requires `"Ring of the Snake"`.
+
+Rust result:
+- Tier matches Java.
+- Fixed the passive hand-size effect by including Ring of the Serpent in the
+  derived turn-start draw modifier.
+- Opening combat draw now uses the same draw-count helper as ordinary turn-start
+  draw, so the +1 applies to the opening hand as well.
+- Java flash-only `atTurnStart` is UI-only and is not modeled.
+
+Coverage:
+- `silent_relic_gap_batch_metadata_matches_java_sources`
+- `ring_of_the_serpent_increases_opening_and_turn_start_draw_count`
+
+### Ninja Scroll
+
+Status: `exact`
+
+Java source:
+- `D:/rust/cardcrawl/relics/NinjaScroll.java`
+
+Rust source:
+- `src/content/relics/ninja_scroll.rs`
+- `src/content/relics/hooks.rs`
+
+Java evidence:
+- Constructor: ID `"Ninja Scroll"`, tier `UNCOMMON`, landing sound `FLAT`.
+- `atBattleStartPreDraw`: queues three `Shiv` cards into hand.
+
+Rust result:
+- Tier and pre-draw battle-start subscription match Java.
+- Hook queues three unupgraded Shivs.
+- Relic-above-creature VFX is UI-only and is not modeled.
+
+Coverage:
+- `silent_relic_gap_batch_metadata_matches_java_sources`
+- `snake_ring_and_ninja_scroll_start_actions_match_java_counts`
+
+### Hovering Kite
+
+Status: `exact`
+
+Java source:
+- `D:/rust/cardcrawl/relics/HoveringKite.java`
+
+Rust source:
+- `src/content/relics/hovering_kite.rs`
+- `src/content/relics/hooks.rs`
+
+Java evidence:
+- Constructor: ID `"HoveringKite"`, tier `BOSS`, landing sound `MAGICAL`.
+- `atTurnStart`: clears `triggeredThisTurn`.
+- `onManualDiscard`: the first manual discard each turn queues one energy.
+
+Rust result:
+- Tier and subscriptions match Java.
+- Relic state uses `used_up` as the per-turn fired flag.
+- First discard queues one energy, later discards that turn do nothing, and
+  turn-start resets the flag.
+
+Coverage:
+- `silent_relic_gap_batch_metadata_matches_java_sources`
+- `hovering_kite_gains_energy_only_on_first_manual_discard_each_turn`
+
+### Snecko Skull
+
+Status: `exact`
+
+Java source:
+- `D:/rust/cardcrawl/relics/SneckoSkull.java`
+
+Rust source:
+- `src/engine/action_handlers/powers.rs`
+
+Java evidence:
+- Constructor: ID `"Snake Skull"`, tier `COMMON`, landing sound `FLAT`.
+- Relic class has no callback method; poison amount mutation is handled by power
+  application logic.
+
+Rust result:
+- Tier matches Java.
+- Player-authored Poison applied to a monster is increased by one.
+- Poison applied to the player is not increased.
+
+Coverage:
+- `silent_relic_gap_batch_metadata_matches_java_sources`
+- `snecko_skull_adds_one_poison_only_when_player_applies_poison_to_monster`
+
+### Paper Crane
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/relics/PaperCrane.java`
+- `D:/rust/cardcrawl/powers/WeakPower.java`
+
+Rust source:
+- `src/content/relics/paper_crane.rs`
+- `src/content/powers/mod.rs`
+
+Java evidence:
+- Constructor: ID `"Paper Crane"`, tier `UNCOMMON`, landing sound `FLAT`.
+- `WeakPower.atDamageGive`: for non-player Weak owners, if the player has
+  Paper Crane, normal attack damage is multiplied by `0.6` instead of `0.75`.
+
+Rust result:
+- Tier matches Java.
+- Fixed the monster-damage pipeline to use the Paper Crane multiplier when a
+  Weak monster attacks the player.
+
+Coverage:
+- `silent_relic_gap_batch_metadata_matches_java_sources`
+- `paper_crane_changes_weak_monster_damage_from_75_to_60_percent`
+
 ## Full Ironclad Class-Specific Relic Queue
 
 Relics remain `unreviewed` until their Java file, Rust definition/subscription,
@@ -4594,3 +4751,9 @@ class-specific queue.
 | 132 | `Duality.java` | `duality.rs` / temporary Dexterity | `exact` |
 | 133 | `GoldenEye.java` | `golden_eye.rs` / scry amount modifier | `exact` |
 | 134 | `Melange.java` | `melange.rs` / shuffle Scry | `exact` |
+| 135 | `SnakeRing.java` | `snake_ring.rs` / battle-start draw | `exact` |
+| 136 | `RingOfTheSerpent.java` | draw-count runtime / hand-size passive | `wrong-fixed` |
+| 137 | `NinjaScroll.java` | `ninja_scroll.rs` / pre-draw Shivs | `exact` |
+| 138 | `HoveringKite.java` | `hovering_kite.rs` / manual discard energy | `exact` |
+| 139 | `SneckoSkull.java` | power application / Poison amount mutation | `exact` |
+| 140 | `PaperCrane.java` | monster damage pipeline / Weak multiplier | `wrong-fixed` |

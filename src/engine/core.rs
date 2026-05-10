@@ -32,7 +32,7 @@ pub(crate) fn with_suppressed_engine_warnings<T>(f: impl FnOnce() -> T) -> T {
     })
 }
 
-fn compute_player_turn_start_draw_count(combat_state: &CombatState) -> i32 {
+pub(crate) fn compute_player_turn_start_draw_count(combat_state: &CombatState) -> i32 {
     let mut draw_count: i32 = 5 + combat_state.turn.turn_start_draw_modifier;
     if combat_state
         .entities

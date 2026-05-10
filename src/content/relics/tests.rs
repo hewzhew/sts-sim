@@ -3643,6 +3643,146 @@ fn golden_eye_adds_two_to_scry_amount_and_melange_queues_scry_three_on_shuffle()
 }
 
 #[test]
+fn silent_relic_gap_batch_metadata_matches_java_sources() {
+    assert_eq!(get_relic_tier(RelicId::SnakeRing), RelicTier::Starter);
+    assert_eq!(get_relic_tier(RelicId::RingOfTheSerpent), RelicTier::Boss);
+    assert_eq!(get_relic_tier(RelicId::NinjaScroll), RelicTier::Uncommon);
+    assert_eq!(get_relic_tier(RelicId::HoveringKite), RelicTier::Boss);
+    assert_eq!(get_relic_tier(RelicId::SneckoSkull), RelicTier::Common);
+    assert_eq!(get_relic_tier(RelicId::PaperCrane), RelicTier::Uncommon);
+
+    assert!(get_relic_subscriptions(RelicId::SnakeRing).at_battle_start);
+    assert!(get_relic_subscriptions(RelicId::NinjaScroll).at_battle_start_pre_draw);
+    assert!(get_relic_subscriptions(RelicId::HoveringKite).at_turn_start);
+    assert!(get_relic_subscriptions(RelicId::HoveringKite).on_discard);
+    assert!(get_relic_subscriptions(RelicId::SneckoSkull).on_apply_power);
+    assert!(
+        !get_relic_subscriptions(RelicId::RingOfTheSerpent).at_turn_start,
+        "Java atTurnStart only flashes; hand-size effect is passive state"
+    );
+}
+
+#[test]
+fn snake_ring_and_ninja_scroll_start_actions_match_java_counts() {
+    let snake_actions = snake_ring::at_battle_start();
+    assert_eq!(snake_actions.len(), 1);
+    assert_eq!(snake_actions[0].insertion_mode, AddTo::Bottom);
+    assert!(matches!(snake_actions[0].action, Action::DrawCards(2)));
+
+    let ninja_actions = ninja_scroll::at_battle_start();
+    assert_eq!(ninja_actions.len(), 1);
+    assert_eq!(ninja_actions[0].insertion_mode, AddTo::Bottom);
+    assert!(matches!(
+        ninja_actions[0].action,
+        Action::MakeTempCardInHand {
+            card_id: CardId::Shiv,
+            amount: 3,
+            upgraded: false
+        }
+    ));
+}
+
+#[test]
+fn ring_of_the_serpent_increases_opening_and_turn_start_draw_count() {
+    let mut state = crate::test_support::blank_test_combat();
+    state
+        .entities
+        .player
+        .add_relic(RelicState::new(RelicId::RingOfTheSerpent));
+    state.recompute_turn_start_draw_modifier();
+
+    assert_eq!(
+        crate::engine::core::compute_player_turn_start_draw_count(&state),
+        6
+    );
+
+    crate::engine::action_handlers::cards::handle_battle_start_pre_draw_trigger(&mut state);
+    assert!(matches!(
+        state.pop_next_action(),
+        Some(Action::DrawCards(6))
+    ));
+}
+
+#[test]
+fn hovering_kite_gains_energy_only_on_first_manual_discard_each_turn() {
+    let state = crate::test_support::blank_test_combat();
+    let mut relic = RelicState::new(RelicId::HoveringKite);
+
+    let first = hovering_kite::on_discard(&state, &mut relic);
+    assert_eq!(first.len(), 1);
+    assert!(matches!(first[0].action, Action::GainEnergy { amount: 1 }));
+    assert!(hovering_kite::on_discard(&state, &mut relic).is_empty());
+
+    assert!(hovering_kite::at_turn_start(&mut relic).is_empty());
+    let next_turn = hovering_kite::on_discard(&state, &mut relic);
+    assert_eq!(next_turn.len(), 1);
+}
+
+#[test]
+fn snecko_skull_adds_one_poison_only_when_player_applies_poison_to_monster() {
+    let mut state =
+        crate::test_support::combat_with_monsters(vec![crate::test_support::test_monster(
+            EnemyId::JawWorm,
+        )]);
+    state
+        .entities
+        .player
+        .add_relic(RelicState::new(RelicId::SneckoSkull));
+    let target = state.entities.monsters[0].id;
+
+    crate::engine::action_handlers::powers::handle_apply_power(
+        0,
+        target,
+        PowerId::Poison,
+        2,
+        &mut state,
+    );
+    assert_eq!(store::power_amount(&state, target, PowerId::Poison), 3);
+
+    crate::engine::action_handlers::powers::handle_apply_power(
+        target,
+        0,
+        PowerId::Poison,
+        2,
+        &mut state,
+    );
+    assert_eq!(store::power_amount(&state, 0, PowerId::Poison), 2);
+}
+
+#[test]
+fn paper_crane_changes_weak_monster_damage_from_75_to_60_percent() {
+    let mut normal =
+        crate::test_support::combat_with_monsters(vec![crate::test_support::test_monster(
+            EnemyId::JawWorm,
+        )]);
+    let source = normal.entities.monsters[0].id;
+    store::set_powers_for(
+        &mut normal,
+        source,
+        vec![Power {
+            power_type: PowerId::Weak,
+            instance_id: None,
+            amount: 1,
+            extra_data: 0,
+            just_applied: false,
+        }],
+    );
+    assert_eq!(
+        crate::content::powers::calculate_monster_damage(20, source, 0, &normal),
+        15
+    );
+
+    normal
+        .entities
+        .player
+        .add_relic(RelicState::new(RelicId::PaperCrane));
+    assert_eq!(
+        crate::content::powers::calculate_monster_damage(20, source, 0, &normal),
+        12
+    );
+}
+
+#[test]
 fn shared_rare_damage_retention_relic_metadata_matches_java_sources() {
     assert_eq!(get_relic_tier(RelicId::Calipers), RelicTier::Rare);
     assert_eq!(get_relic_tier(RelicId::Torii), RelicTier::Rare);
