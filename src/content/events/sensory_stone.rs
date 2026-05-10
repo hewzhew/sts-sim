@@ -85,14 +85,21 @@ fn generate_colorless_card_row(run_state: &mut RunState) -> Vec<crate::rewards::
             .iter()
             .any(|c: &crate::rewards::state::RewardCard| c.id == card_id)
         {
-            cards.push(crate::rewards::state::RewardCard::new(card_id, 0));
+            cards.push(crate::rewards::state::RewardCard::new(
+                card_id,
+                run_state.preview_obtain_card_upgrades(card_id, 0),
+            ));
         } else {
             // If duplicate, try again with next random
             let idx2 = run_state
                 .rng_pool
                 .card_rng
                 .random_range(0, pool.len() as i32 - 1) as usize;
-            cards.push(crate::rewards::state::RewardCard::new(pool[idx2], 0));
+            let fallback_id = pool[idx2];
+            cards.push(crate::rewards::state::RewardCard::new(
+                fallback_id,
+                run_state.preview_obtain_card_upgrades(fallback_id, 0),
+            ));
         }
     }
     cards

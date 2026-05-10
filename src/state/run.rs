@@ -517,6 +517,18 @@ impl RunState {
                 .relics
                 .iter()
                 .any(|r| r.id == crate::content::relics::RelicId::SmilingMask),
+            has_molten_egg: self
+                .relics
+                .iter()
+                .any(|r| r.id == crate::content::relics::RelicId::MoltenEgg),
+            has_toxic_egg: self
+                .relics
+                .iter()
+                .any(|r| r.id == crate::content::relics::RelicId::ToxicEgg),
+            has_frozen_egg: self
+                .relics
+                .iter()
+                .any(|r| r.id == crate::content::relics::RelicId::FrozenEgg),
             previous_purge_count: self.shop_purge_count,
             potion_class: self.potion_class(),
             card_blizz_randomizer: self.card_blizz_randomizer,
@@ -675,7 +687,7 @@ impl RunState {
             self.dispatch_on_master_deck_change();
         }
 
-        self.resolve_deck_actions(result.actions);
+        self.resolve_deck_actions(result.actions, source);
         was_added
     }
 
@@ -699,7 +711,7 @@ impl RunState {
         if let Some(card_id) = removed_id {
             let result = crate::deck::manager::DeckManager::remove_card(card_id);
             self.dispatch_on_master_deck_change();
-            self.resolve_deck_actions(result.actions);
+            self.resolve_deck_actions(result.actions, source);
         }
     }
 
@@ -730,19 +742,32 @@ impl RunState {
         }
     }
 
-    fn resolve_deck_actions(&mut self, actions: Vec<crate::deck::manager::DeckAction>) {
+    pub fn preview_obtain_card_upgrades(
+        &self,
+        card_id: crate::content::cards::CardId,
+        pre_upgrades: u8,
+    ) -> u8 {
+        let ctx = self.build_deck_context();
+        crate::deck::manager::DeckManager::preview_obtain_upgrades(&ctx, card_id, pre_upgrades)
+    }
+
+    fn resolve_deck_actions(
+        &mut self,
+        actions: Vec<crate::deck::manager::DeckAction>,
+        source: DomainEventSource,
+    ) {
         use crate::deck::manager::DeckAction;
         for action in actions {
             match action {
                 DeckAction::PreventObtain => { /* Handled structurally */ }
                 DeckAction::GainGold(amount) => {
-                    self.change_gold_with_source(amount, DomainEventSource::DeckMutation);
+                    self.change_gold_with_source(amount, source);
                 }
                 DeckAction::GainMaxHp(amount) => {
-                    self.gain_max_hp_with_source(amount, amount, DomainEventSource::DeckMutation);
+                    self.gain_max_hp_with_source(amount, amount, source);
                 }
                 DeckAction::LoseMaxHp(amount) => {
-                    self.lose_max_hp_with_source(amount, DomainEventSource::DeckMutation);
+                    self.lose_max_hp_with_source(amount, source);
                 }
                 DeckAction::UpdateRelicCounter(relic_id, counter) => {
                     if let Some(relic) = self.relics.iter_mut().find(|r| r.id == relic_id) {
@@ -754,7 +779,7 @@ impl RunState {
                 }
                 DeckAction::TriggerObtainCard(card_id) => {
                     // Re-enters add_card_to_deck (e.g. for Necronomicurse)
-                    self.add_card_to_deck(card_id);
+                    self.add_card_to_deck_with_upgrades_from(card_id, 0, source);
                 }
             }
         }
@@ -1311,7 +1336,7 @@ impl RunState {
         }
         if let Some(card_id) = removed_id {
             let remove_result = crate::deck::manager::DeckManager::remove_card(card_id);
-            self.resolve_deck_actions(remove_result.actions);
+            self.resolve_deck_actions(remove_result.actions, source);
         }
 
         // 2. Add logically
@@ -1340,7 +1365,7 @@ impl RunState {
         let _ = obtained_any;
 
         // 4. Resolve obtain-triggered deck actions
-        self.resolve_deck_actions(result.actions);
+        self.resolve_deck_actions(result.actions, source);
         self.dispatch_on_master_deck_change();
     }
 

@@ -552,12 +552,14 @@ fn stable_postcombat_keys_normalize_display_only_order() {
         cards: vec![
             crate::shop::ShopCard {
                 card_id: CardId::Strike,
+                upgrades: 0,
                 price: 50,
                 can_buy: true,
                 blocked_reason: None,
             },
             crate::shop::ShopCard {
                 card_id: CardId::Defend,
+                upgrades: 0,
                 price: 60,
                 can_buy: true,
                 blocked_reason: None,
@@ -582,12 +584,14 @@ fn stable_postcombat_keys_normalize_display_only_order() {
         cards: vec![
             crate::shop::ShopCard {
                 card_id: CardId::Defend,
+                upgrades: 0,
                 price: 60,
                 can_buy: true,
                 blocked_reason: None,
             },
             crate::shop::ShopCard {
                 card_id: CardId::Strike,
+                upgrades: 0,
                 price: 50,
                 can_buy: true,
                 blocked_reason: None,

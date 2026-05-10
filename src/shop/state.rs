@@ -9,6 +9,9 @@ pub struct ShopConfig {
     pub has_courier: bool,
     pub has_membership_card: bool,
     pub has_smiling_mask: bool,
+    pub has_molten_egg: bool,
+    pub has_toxic_egg: bool,
+    pub has_frozen_egg: bool,
     pub previous_purge_count: i32,
     pub potion_class: crate::content::potions::PotionClass,
     pub card_blizz_randomizer: i32,
@@ -17,6 +20,7 @@ pub struct ShopConfig {
 #[derive(Debug, Clone, PartialEq)]
 pub struct ShopCard {
     pub card_id: CardId,
+    pub upgrades: u8,
     pub price: i32,
     pub can_buy: bool,
     pub blocked_reason: Option<String>,

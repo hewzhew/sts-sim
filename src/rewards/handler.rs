@@ -147,8 +147,11 @@ fn handle_card_choice(
                 if let Some(ref cards) = reward_state.pending_card_choice {
                     if idx < cards.len() {
                         let reward_card = &cards[idx];
-                        run_state
-                            .add_card_to_deck_with_upgrades(reward_card.id, reward_card.upgrades);
+                        run_state.add_card_to_deck_with_upgrades_from(
+                            reward_card.id,
+                            reward_card.upgrades,
+                            DomainEventSource::RewardScreen,
+                        );
                     } else if idx == cards.len() {
                         // SingingBowl: extra option at index == cards.len()
                         // Choosing this gives +2 Max HP instead of a card

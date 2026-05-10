@@ -24,6 +24,26 @@ pub struct RemoveResult {
 pub struct DeckManager;
 
 impl DeckManager {
+    pub fn preview_obtain_upgrades(ctx: &DeckContext, card_id: CardId, current_upgrades: u8) -> u8 {
+        if current_upgrades > 0 {
+            return current_upgrades;
+        }
+
+        let def = get_card_definition(card_id);
+        let should_upgrade = match def.card_type {
+            CardType::Attack => ctx.has_molten_egg,
+            CardType::Skill => ctx.has_toxic_egg,
+            CardType::Power => ctx.has_frozen_egg,
+            _ => false,
+        };
+
+        if should_upgrade {
+            1
+        } else {
+            current_upgrades
+        }
+    }
+
     /// Simulates Soul.java/AbstractCard obtain hooks
     pub fn obtain_card(
         ctx: &DeckContext,
@@ -59,26 +79,7 @@ impl DeckManager {
         }
 
         // --- 3. Modification Phase (Eggs) ---
-        let mut should_upgrade = false;
-        match def.card_type {
-            CardType::Attack => {
-                if ctx.has_molten_egg {
-                    should_upgrade = true;
-                }
-            }
-            CardType::Skill => {
-                if ctx.has_toxic_egg {
-                    should_upgrade = true;
-                }
-            }
-            CardType::Power => {
-                if ctx.has_frozen_egg {
-                    should_upgrade = true;
-                }
-            }
-            _ => {}
-        }
-
+        let preview_upgrades = Self::preview_obtain_upgrades(ctx, card_id, pre_upgrades);
         let copy_count = if ctx.has_hoarder_mod { 3 } else { 1 };
         let mut final_cards = Vec::new();
 
@@ -86,17 +87,7 @@ impl DeckManager {
             let mut card = CombatCard::new(card_id, *next_uuid);
             *next_uuid += 1;
 
-            card.upgrades = pre_upgrades;
-            if should_upgrade {
-                // Mimics Java: if (!c.upgraded) c.upgrade()
-                // Usually prevents double upgrades, but Searing Blow can stack.
-                // If it's 0, it becomes 1. If it's already 1 (e.g. from cardUpgradedChance or previously), we leave it or add 1 if Searing Blow.
-                if card_id == CardId::SearingBlow {
-                    card.upgrades += 1;
-                } else {
-                    card.upgrades = card.upgrades.max(1);
-                }
-            }
+            card.upgrades = preview_upgrades;
 
             final_cards.push(card);
         }

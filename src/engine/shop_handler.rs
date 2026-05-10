@@ -174,6 +174,7 @@ fn replace_shop_card_slot(
     };
     let replacement = ShopCard {
         card_id: replacement_id,
+        upgrades: run_state.preview_obtain_card_upgrades(replacement_id, 0),
         price: reprice_card_price(run_state, replacement_id),
         can_buy: true,
         blocked_reason: None,
@@ -182,6 +183,12 @@ fn replace_shop_card_slot(
         shop.cards[idx] = replacement;
     } else {
         shop.cards.push(replacement);
+    }
+}
+
+fn preview_shop_cards_after_relic_purchase(run_state: &RunState, shop: &mut ShopState) {
+    for card in &mut shop.cards {
+        card.upgrades = run_state.preview_obtain_card_upgrades(card.card_id, card.upgrades);
     }
 }
 
@@ -196,7 +203,11 @@ pub fn handle(
                 if idx < shop.cards.len() && run_state.gold >= shop.cards[idx].price {
                     let purchased = shop.cards.remove(idx);
                     run_state.change_gold_with_source(-purchased.price, DomainEventSource::Shop);
-                    run_state.add_card_to_deck(purchased.card_id);
+                    run_state.add_card_to_deck_with_upgrades_from(
+                        purchased.card_id,
+                        purchased.upgrades,
+                        DomainEventSource::Shop,
+                    );
                     if has_relic(run_state, RelicId::Courier) {
                         replace_shop_card_slot(run_state, shop, idx, purchased.card_id);
                     }
@@ -225,6 +236,12 @@ pub fn handle(
                     }
                     if purchased.relic_id == RelicId::SmilingMask {
                         shop.purge_cost = 50;
+                    }
+                    if matches!(
+                        purchased.relic_id,
+                        RelicId::MoltenEgg | RelicId::ToxicEgg | RelicId::FrozenEgg
+                    ) {
+                        preview_shop_cards_after_relic_purchase(run_state, shop);
                     }
                     if purchased.relic_id == RelicId::Courier
                         || has_relic(run_state, RelicId::Courier)
@@ -300,6 +317,7 @@ mod tests {
         let mut shop = ShopState::new();
         shop.cards.push(ShopCard {
             card_id: CardId::Strike,
+            upgrades: 0,
             price: 50,
             can_buy: true,
             blocked_reason: None,
@@ -346,6 +364,7 @@ mod tests {
         shop.purge_cost = 100;
         shop.cards.push(ShopCard {
             card_id: CardId::Strike,
+            upgrades: 0,
             price: 100,
             can_buy: true,
             blocked_reason: None,
@@ -500,6 +519,7 @@ mod tests {
         let mut shop = ShopState::new();
         shop.cards.push(ShopCard {
             card_id: CardId::Strike,
+            upgrades: 0,
             price: 50,
             can_buy: true,
             blocked_reason: None,
@@ -509,5 +529,68 @@ mod tests {
         assert!(next.is_none());
         assert_eq!(run_state.master_deck.len(), starting_deck_len + 1);
         assert_eq!(shop.cards.len(), 1);
+    }
+
+    #[test]
+    fn shop_card_purchase_preserves_preview_upgrades() {
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        run_state.gold = 500;
+        run_state.relics.clear();
+        run_state.master_deck.clear();
+
+        let mut shop = ShopState::new();
+        shop.cards.push(ShopCard {
+            card_id: CardId::SearingBlow,
+            upgrades: 1,
+            price: 50,
+            can_buy: true,
+            blocked_reason: None,
+        });
+
+        let next = handle(&mut run_state, &mut shop, Some(ClientInput::BuyCard(0)));
+        assert!(next.is_none());
+        assert_eq!(run_state.master_deck.len(), 1);
+        assert_eq!(run_state.master_deck[0].id, CardId::SearingBlow);
+        assert_eq!(
+            run_state.master_deck[0].upgrades, 1,
+            "shop purchase must carry the visible card upgrade state into master_deck"
+        );
+    }
+
+    #[test]
+    fn buying_egg_relic_previews_existing_shop_cards_like_java_store_relic() {
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        run_state.gold = 500;
+        run_state.relics.clear();
+
+        let mut shop = ShopState::new();
+        shop.cards.push(ShopCard {
+            card_id: CardId::Strike,
+            upgrades: 0,
+            price: 50,
+            can_buy: true,
+            blocked_reason: None,
+        });
+        shop.cards.push(ShopCard {
+            card_id: CardId::Defend,
+            upgrades: 0,
+            price: 50,
+            can_buy: true,
+            blocked_reason: None,
+        });
+        shop.relics.push(ShopRelic {
+            relic_id: RelicId::MoltenEgg,
+            price: 100,
+            can_buy: true,
+            blocked_reason: None,
+        });
+
+        let next = handle(&mut run_state, &mut shop, Some(ClientInput::BuyRelic(0)));
+        assert!(next.is_none());
+        assert_eq!(shop.cards[0].upgrades, 1);
+        assert_eq!(
+            shop.cards[1].upgrades, 0,
+            "Molten Egg previews attack cards only; skill cards wait for Toxic Egg"
+        );
     }
 }

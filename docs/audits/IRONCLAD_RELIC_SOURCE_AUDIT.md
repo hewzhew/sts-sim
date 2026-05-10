@@ -1395,6 +1395,171 @@ Coverage:
 - `shared_common_obtain_potion_upgrade_relic_metadata_matches_java_sources`
 - `war_paint_and_whetstone_upgrade_only_matching_card_types_with_relic_source`
 
+### Darkstone Periapt
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/relics/DarkstonePeriapt.java`
+
+Rust source:
+- `src/deck/manager.rs`
+- `src/state/run.rs`
+
+Java evidence:
+- Constructor: ID `"Darkstone Periapt"`, tier `UNCOMMON`, landing sound
+  `MAGICAL`.
+- `onObtainCard(AbstractCard card)` grants `+6` max HP only when the obtained
+  card color is `CURSE`.
+- If Omamori prevents the curse from being obtained, this hook does not fire.
+- `canSpawn` is false after floor 48 unless Endless mode is active.
+
+Rust result:
+- Tier matches Java.
+- The deck obtain pipeline now preserves the original obtain source when
+  resolving Darkstone's max-HP side effect, instead of collapsing it to a
+  generic deck mutation.
+- Omamori interception runs before Darkstone, so blocked curses do not grant
+  max HP.
+- Spawn gating is a relic-pool/reward-generation concern and is not handled by
+  the deck hook.
+
+Coverage:
+- `shared_uncommon_card_reward_relic_metadata_matches_java_sources`
+- `darkstone_periapt_triggers_only_after_curse_is_obtained`
+
+### Molten Egg
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/relics/MoltenEgg2.java`
+- `D:/rust/cardcrawl/dungeons/AbstractDungeon.java`
+- `D:/rust/cardcrawl/shop/ShopScreen.java`
+- `D:/rust/cardcrawl/shop/StoreRelic.java`
+
+Rust source:
+- `src/deck/manager.rs`
+- `src/rewards/generator.rs`
+- `src/shop/shop_screen.rs`
+- `src/engine/shop_handler.rs`
+
+Java evidence:
+- Constructor: ID `"Molten Egg 2"`, tier `UNCOMMON`, landing sound `SOLID`.
+- `onObtainCard(AbstractCard c)` upgrades ATTACK cards only when
+  `c.canUpgrade() && !c.upgraded`.
+- `onPreviewObtainCard(c)` calls the same upgrade path for visible reward/shop
+  cards.
+- `AbstractDungeon.getRewardCards()` skips relic preview for cards already
+  upgraded by `cardUpgradedChance`.
+- Buying an Egg relic in a shop immediately calls `onPreviewObtainCard` on
+  existing shop cards.
+
+Rust result:
+- Tier matches Java.
+- Added one shared obtain-preview helper used by deck obtains, card rewards,
+  generated reward rows, initial shop cards, Courier shop-card replacement, and
+  visible shop cards after buying an Egg.
+- Fixed the previous Searing Blow over-upgrade: a pre-upgraded card remains at
+  its current upgrade count because Java checks `!c.upgraded`.
+- `ShopCard` now carries `upgrades`, and buying a shop card preserves the
+  visible preview upgrade into `master_deck`.
+
+Coverage:
+- `shared_uncommon_card_reward_relic_metadata_matches_java_sources`
+- `egg_relics_preview_obtain_upgrades_without_double_upgrading_existing_plus_cards`
+- `initial_shop_card_previews_apply_existing_egg_relics`
+- `shop_card_purchase_preserves_preview_upgrades`
+- `buying_egg_relic_previews_existing_shop_cards_like_java_store_relic`
+
+### Toxic Egg
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/relics/ToxicEgg2.java`
+
+Rust source:
+- `src/deck/manager.rs`
+- `src/rewards/generator.rs`
+- `src/shop/shop_screen.rs`
+- `src/engine/shop_handler.rs`
+
+Java evidence:
+- Constructor: ID `"Toxic Egg 2"`, tier `UNCOMMON`, landing sound `SOLID`.
+- Uses the same obtain/preview structure as Molten Egg, but targets SKILL cards.
+- `canSpawn` is false after floor 48 unless Endless mode is active.
+
+Rust result:
+- Shares the corrected Egg preview pipeline with Molten Egg.
+- Applies to unupgraded SKILL cards across real obtain, reward preview, shop
+  preview, and shop purchase preservation.
+
+Coverage:
+- `shared_uncommon_card_reward_relic_metadata_matches_java_sources`
+- `egg_relics_preview_obtain_upgrades_without_double_upgrading_existing_plus_cards`
+- `initial_shop_card_previews_apply_existing_egg_relics`
+
+### Frozen Egg
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/relics/FrozenEgg2.java`
+
+Rust source:
+- `src/deck/manager.rs`
+- `src/rewards/generator.rs`
+- `src/shop/shop_screen.rs`
+- `src/engine/shop_handler.rs`
+
+Java evidence:
+- Constructor: ID `"Frozen Egg 2"`, tier `UNCOMMON`, landing sound `CLINK`.
+- Uses the same obtain/preview structure as Molten Egg, but targets POWER cards.
+- `canSpawn` is false after floor 48 unless Endless mode is active.
+
+Rust result:
+- Shares the corrected Egg preview pipeline with Molten Egg.
+- Applies to unupgraded POWER cards across real obtain, reward preview, shop
+  preview, and shop purchase preservation.
+
+Coverage:
+- `shared_uncommon_card_reward_relic_metadata_matches_java_sources`
+- `egg_relics_preview_obtain_upgrades_without_double_upgrading_existing_plus_cards`
+- `initial_shop_card_previews_apply_existing_egg_relics`
+
+### Question Card
+
+Status: `exact`
+
+Java source:
+- `D:/rust/cardcrawl/relics/QuestionCard.java`
+- `D:/rust/cardcrawl/dungeons/AbstractDungeon.java`
+
+Rust source:
+- `src/rewards/generator.rs`
+
+Java evidence:
+- Constructor: ID `"Question Card"`, tier `UNCOMMON`, landing sound `FLAT`.
+- `changeNumberOfCardsInReward(int n)` returns `n + 1`.
+- `AbstractDungeon.getRewardCards()` starts at 3 cards and lets relics adjust
+  the count before rolling card rewards.
+- `canSpawn` is false after floor 48 unless Endless mode is active.
+
+Rust result:
+- Tier matches Java.
+- Card reward count adjustment adds one choice and composes with Busted Crown.
+- Existing Dream Catcher and Orrery reward generation use the same adjusted
+  reward count path.
+- Spawn gating is a relic-pool/reward-generation concern and is not handled by
+  the reward-count helper.
+
+Coverage:
+- `question_card_adds_one_choice`
+- `question_card_and_busted_crown_still_net_one_choice`
+- `dream_catcher_reward_respects_question_card`
+- `orrery_card_rewards_respect_question_card`
+
 ## Full Ironclad Class-Specific Relic Queue
 
 Relics remain `unreviewed` until their Java file, Rust definition/subscription,
@@ -1453,3 +1618,8 @@ class-specific queue.
 | 30 | `ToyOrnithopter.java` | `toy_ornithopter.rs` | `known-gap` |
 | 31 | `WarPaint.java` | `war_paint.rs` | `wrong-fixed` |
 | 32 | `Whetstone.java` | `whetstone.rs` | `wrong-fixed` |
+| 33 | `DarkstonePeriapt.java` | deck manager | `wrong-fixed` |
+| 34 | `MoltenEgg2.java` | reward/shop/deck preview pipeline | `wrong-fixed` |
+| 35 | `ToxicEgg2.java` | reward/shop/deck preview pipeline | `wrong-fixed` |
+| 36 | `FrozenEgg2.java` | reward/shop/deck preview pipeline | `wrong-fixed` |
+| 37 | `QuestionCard.java` | reward generator | `exact` |

@@ -569,7 +569,11 @@ fn generate_neow_class_cards(
                 .rng_pool
                 .card_rng
                 .random_range(0, (pool.len() - 1) as i32) as usize;
-            cards.push(crate::rewards::state::RewardCard::new(pool[idx], 0));
+            let card_id = pool[idx];
+            cards.push(crate::rewards::state::RewardCard::new(
+                card_id,
+                run_state.preview_obtain_card_upgrades(card_id, 0),
+            ));
         }
     }
     cards
@@ -640,7 +644,11 @@ fn generate_neow_colorless_cards(
                 .rng_pool
                 .card_rng
                 .random_range(0, (pool.len() - 1) as i32) as usize;
-            cards.push(crate::rewards::state::RewardCard::new(pool[idx], 0));
+            let card_id = pool[idx];
+            cards.push(crate::rewards::state::RewardCard::new(
+                card_id,
+                run_state.preview_obtain_card_upgrades(card_id, 0),
+            ));
         }
     }
     cards

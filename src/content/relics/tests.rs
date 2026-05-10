@@ -1143,3 +1143,92 @@ fn war_paint_and_whetstone_upgrade_only_matching_card_types_with_relic_source() 
         }
     )));
 }
+
+#[test]
+fn shared_uncommon_card_reward_relic_metadata_matches_java_sources() {
+    assert_eq!(
+        get_relic_tier(RelicId::DarkstonePeriapt),
+        RelicTier::Uncommon
+    );
+    assert_eq!(get_relic_tier(RelicId::MoltenEgg), RelicTier::Uncommon);
+    assert_eq!(get_relic_tier(RelicId::ToxicEgg), RelicTier::Uncommon);
+    assert_eq!(get_relic_tier(RelicId::FrozenEgg), RelicTier::Uncommon);
+    assert_eq!(get_relic_tier(RelicId::QuestionCard), RelicTier::Uncommon);
+
+    assert!(!get_relic_subscriptions(RelicId::DarkstonePeriapt).at_battle_start);
+    assert!(!get_relic_subscriptions(RelicId::MoltenEgg).at_battle_start);
+    assert!(!get_relic_subscriptions(RelicId::ToxicEgg).at_battle_start);
+    assert!(!get_relic_subscriptions(RelicId::FrozenEgg).at_battle_start);
+    assert!(!get_relic_subscriptions(RelicId::QuestionCard).at_battle_start);
+}
+
+#[test]
+fn darkstone_periapt_triggers_only_after_curse_is_obtained() {
+    let mut run_state = crate::state::run::RunState::new(1, 0, false, "Ironclad");
+    run_state.relics.clear();
+    run_state
+        .relics
+        .push(RelicState::new(RelicId::DarkstonePeriapt));
+    run_state.current_hp = 50;
+    run_state.max_hp = 80;
+    run_state.emitted_events.clear();
+
+    let deck_len = run_state.master_deck.len();
+    assert!(run_state.add_card_to_deck_with_upgrades_from(
+        CardId::Regret,
+        0,
+        DomainEventSource::RewardScreen
+    ));
+    assert_eq!(run_state.master_deck.len(), deck_len + 1);
+    assert_eq!(run_state.max_hp, 86);
+    assert_eq!(run_state.current_hp, 56);
+    assert!(run_state.emitted_events.iter().any(|event| matches!(
+        event,
+        DomainEvent::MaxHpChanged {
+            delta: 6,
+            source: DomainEventSource::RewardScreen,
+            ..
+        }
+    )));
+
+    let mut blocked = crate::state::run::RunState::new(1, 0, false, "Ironclad");
+    blocked.relics.clear();
+    blocked
+        .relics
+        .push(RelicState::new(RelicId::DarkstonePeriapt));
+    blocked.relics.push(RelicState::new(RelicId::Omamori));
+    blocked.current_hp = 50;
+    blocked.max_hp = 80;
+
+    let blocked_len = blocked.master_deck.len();
+    assert!(!blocked.add_card_to_deck(CardId::Regret));
+    assert_eq!(blocked.master_deck.len(), blocked_len);
+    assert_eq!(
+        blocked.max_hp, 80,
+        "Omamori prevents the curse obtain, so Darkstone Periapt onObtainCard does not fire"
+    );
+    assert_eq!(blocked.current_hp, 50);
+}
+
+#[test]
+fn egg_relics_preview_obtain_upgrades_without_double_upgrading_existing_plus_cards() {
+    let mut run_state = crate::state::run::RunState::new(1, 0, false, "Ironclad");
+    run_state.relics.clear();
+    run_state.relics.push(RelicState::new(RelicId::MoltenEgg));
+    run_state.relics.push(RelicState::new(RelicId::ToxicEgg));
+    run_state.relics.push(RelicState::new(RelicId::FrozenEgg));
+    run_state.master_deck.clear();
+
+    assert!(run_state.add_card_to_deck(CardId::Strike));
+    assert!(run_state.add_card_to_deck(CardId::Defend));
+    assert!(run_state.add_card_to_deck(CardId::Inflame));
+    assert!(run_state.add_card_to_deck_with_upgrades(CardId::SearingBlow, 1));
+
+    assert_eq!(run_state.master_deck[0].upgrades, 1);
+    assert_eq!(run_state.master_deck[1].upgrades, 1);
+    assert_eq!(run_state.master_deck[2].upgrades, 1);
+    assert_eq!(
+        run_state.master_deck[3].upgrades, 1,
+        "Java Egg relics call upgrade only when !card.upgraded; pre-upgraded Searing Blow is not incremented again"
+    );
+}

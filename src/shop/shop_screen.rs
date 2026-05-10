@@ -1,8 +1,27 @@
 use crate::content::cards::get_card_definition;
 use crate::content::potions;
 use crate::content::relics::{RelicId, RelicTier};
+use crate::deck::context::DeckContext;
+use crate::deck::manager::DeckManager;
 use crate::shop::merchant::generate_cards;
 use crate::shop::state::{ShopCard, ShopConfig, ShopPotion, ShopRelic, ShopState};
+
+fn shop_deck_context(config: &ShopConfig) -> DeckContext {
+    DeckContext {
+        has_hoarder_mod: false,
+        has_omamori: false,
+        omamori_charges: 0,
+        has_ceramic_fish: false,
+        has_darkstone_periapt: false,
+        has_molten_egg: config.has_molten_egg,
+        has_toxic_egg: config.has_toxic_egg,
+        has_frozen_egg: config.has_frozen_egg,
+    }
+}
+
+fn preview_shop_upgrades(config: &ShopConfig, card_id: crate::content::cards::CardId) -> u8 {
+    DeckManager::preview_obtain_upgrades(&shop_deck_context(config), card_id, 0)
+}
 
 /// Equivalent to Java's `ShopScreen.init(...)` + associated methods.
 /// Consumes rng sequences and populates the ShopState, determining prices and discounts.
@@ -33,6 +52,7 @@ where
         let price = tmp_price.trunc() as i32;
         shop.cards.push(ShopCard {
             card_id: c,
+            upgrades: preview_shop_upgrades(config, c),
             price,
             can_buy: true,
             blocked_reason: None,
@@ -53,6 +73,7 @@ where
         let price = tmp_price.trunc() as i32;
         shop.cards.push(ShopCard {
             card_id: c,
+            upgrades: preview_shop_upgrades(config, c),
             price,
             can_buy: true,
             blocked_reason: None,
@@ -156,6 +177,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::generate_shop;
+    use crate::content::cards::{get_card_definition, CardType};
     use crate::content::potions::PotionClass;
     use crate::content::relics::{RelicId, RelicTier};
     use crate::runtime::rng::RngPool;
@@ -182,6 +204,9 @@ mod tests {
                 has_courier: true,
                 has_membership_card: true,
                 has_smiling_mask: false,
+                has_molten_egg: false,
+                has_toxic_egg: false,
+                has_frozen_egg: false,
                 previous_purge_count: 1,
                 potion_class: PotionClass::Ironclad,
                 card_blizz_randomizer: 5,
@@ -202,6 +227,9 @@ mod tests {
                 has_courier: true,
                 has_membership_card: true,
                 has_smiling_mask: true,
+                has_molten_egg: false,
+                has_toxic_egg: false,
+                has_frozen_egg: false,
                 previous_purge_count: 3,
                 potion_class: PotionClass::Ironclad,
                 card_blizz_randomizer: 5,
@@ -209,5 +237,38 @@ mod tests {
             fixed_relic,
         );
         assert_eq!(shop.purge_cost, 50);
+    }
+
+    #[test]
+    fn initial_shop_card_previews_apply_existing_egg_relics() {
+        let mut rng_pool = RngPool::new(1);
+        let shop = generate_shop(
+            &mut rng_pool,
+            &ShopConfig {
+                ascension_level: 0,
+                player_class: "Ironclad",
+                has_courier: false,
+                has_membership_card: false,
+                has_smiling_mask: false,
+                has_molten_egg: true,
+                has_toxic_egg: true,
+                has_frozen_egg: true,
+                previous_purge_count: 0,
+                potion_class: PotionClass::Ironclad,
+                card_blizz_randomizer: 5,
+            },
+            fixed_relic,
+        );
+
+        assert!(!shop.cards.is_empty());
+        for card in &shop.cards {
+            let def = get_card_definition(card.card_id);
+            if matches!(
+                def.card_type,
+                CardType::Attack | CardType::Skill | CardType::Power
+            ) {
+                assert_eq!(card.upgrades, 1);
+            }
+        }
     }
 }

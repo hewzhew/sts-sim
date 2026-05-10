@@ -267,5 +267,10 @@ pub fn generate_card_reward(
         }
     }
 
+    for reward_card in &mut cards {
+        reward_card.upgrades =
+            run_state.preview_obtain_card_upgrades(reward_card.id, reward_card.upgrades);
+    }
+
     cards
 }
