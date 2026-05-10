@@ -9,10 +9,14 @@ Continue Java-source-backed mechanics cleanup. Do not add strategy heuristics, b
 
 ## Last Pushed Checkpoint
 
-`0da451c Align vampire heal and Corruption timing`
+`329376e Match Armaments hand select order`
 
 Recent pushed mechanics fixes:
 
+- `329376e Match Armaments hand select order`
+  - Java `ArmamentsAction` removes non-upgradeable cards before opening the hand select screen, then returns the selected card and non-upgradeables with `addToTop`.
+  - Rust `HandSelectReason::Upgrade` now reproduces that multi-candidate hand order instead of upgrading in place.
+  - Hand select now rejects duplicate UUID submissions before mutation.
 - `0da451c Align vampire heal and Corruption timing`
   - Java `VampireDamageAction` / `VampireDamageAllEnemiesAction` queue `HealAction`; Rust no longer heals inline.
   - Single-target vampire heals queue to the front; Reaper/all-enemy vampire heals queue to the back, with post-combat cleanup re-run so retained `Heal` semantics match Java.
@@ -60,20 +64,17 @@ Verification already passed for those checkpoints:
 
 ## Current Work To Commit
 
-Armaments hand-select order parity:
+Limit Break action queue parity:
 
-- Java `ArmamentsAction` removes non-upgradeable cards before opening the hand select screen, then returns the selected card and non-upgradeables with `addToTop`.
-- Rust `HandSelectReason::Upgrade` now reproduces that multi-candidate hand order instead of upgrading in place.
-- The single-upgradeable branch still upgrades in place, matching Java's early return before temporary removal.
-- Hand select now rejects duplicate UUID submissions before mutation.
+- Java `LimitBreakAction` queues `ApplyPowerAction` with `addToTop`; it does not mutate Strength inline.
+- Rust `handle_limit_break` now queues `Action::ApplyPower` to the front instead of directly calling `handle_apply_power`.
+- The regression test now checks the queued action before applying it.
 
 Verification passed for this work:
 
 - `cargo fmt`
-- `cargo check --lib`
-- `cargo test hand_select_upgrade_matches_armaments_screen_order --lib`
+- `cargo test limit_break_and_metallicize_hooks_match_java_sources --lib`
 - `cargo test content::cards::tests --lib`
-- `cargo test engine::pending_choices::tests --lib`
 
 Known verification limitation:
 
@@ -89,6 +90,7 @@ Recommended next targets:
    - `PutOnDeckAction` selection/random edge cases beyond existing coverage
    - `SpotWeaknessAction` intent-base-damage parity on unusual attack intents
    - `FiendFireAction` / exhaust-trigger ordering under hand mutation
+   - `PummelDamageAction` target-alive guard vs generic `DamageAction`
    - `CorruptionPower.onCardDraw` vs generated-card hand insertion paths
 2. Keep checking Java action timing, not just card `use()` methods:
    - queued `addToTop` vs `addToBot`

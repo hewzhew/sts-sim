@@ -2751,6 +2751,23 @@ fn limit_break_and_metallicize_hooks_match_java_sources() {
     );
     crate::engine::action_handlers::damage::handle_limit_break(&mut state);
     assert_eq!(
+        state.pop_next_action(),
+        Some(Action::ApplyPower {
+            source: 0,
+            target: 0,
+            power_id: PowerId::Strength,
+            amount: 3,
+        }),
+        "Java LimitBreakAction queues ApplyPowerAction to top instead of applying Strength inline"
+    );
+    crate::engine::action_handlers::powers::handle_apply_power(
+        0,
+        0,
+        PowerId::Strength,
+        3,
+        &mut state,
+    );
+    assert_eq!(
         crate::content::powers::store::power_amount(&state, 0, PowerId::Strength),
         6
     );

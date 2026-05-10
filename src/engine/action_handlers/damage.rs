@@ -973,7 +973,12 @@ pub fn handle_limit_break(state: &mut CombatState) {
         .and_then(|powers| powers.iter().find(|p| p.power_type == PowerId::Strength))
         .map(|power| power.amount)
     {
-        super::powers::handle_apply_power(0, 0, PowerId::Strength, strength, state);
+        state.queue_action_front(Action::ApplyPower {
+            source: 0,
+            target: 0,
+            power_id: PowerId::Strength,
+            amount: strength,
+        });
     }
 }
 
