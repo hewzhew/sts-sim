@@ -276,10 +276,12 @@ card, monster, or RNG state.
 RoomCombatState {
   room_kind,
   phase,
+  map_symbol,
   monster_group_ref,
   is_battle_over,
   cannot_lose,
   elite_trigger,
+  blizzard_potion_mod,
   mugged,
   smoked,
   combat_event,
@@ -291,6 +293,8 @@ RoomCombatState {
   rare_card_chance,
   uncommon_card_chance,
   combat_end_timer_state,
+  reward_pop_out_timer_bits,
+  wait_timer_bits,
 }
 ```
 
@@ -663,6 +667,8 @@ PowerState {
 PowerInstance {
   power_ref,
   power_id,
+  name_id,
+  description_id,
   owner_ref,
   amount,
   priority,
@@ -688,10 +694,18 @@ RelicState {
 RelicInstance {
   relic_ref,
   relic_id,
+  name_id,
+  description_id,
+  cost,
   counter,
+  tier,
   used_up,
   grayscale,
   energy_based,
+  is_seen,
+  is_done,
+  is_animating,
+  is_obtained,
   discarded,
   concrete_payload,
 }
@@ -720,8 +734,14 @@ PotionSlotState {
 PotionInstance {
   potion_ref,
   potion_id,
+  name_id,
+  description_id,
   slot,
   potency,
+  effect,
+  color,
+  rarity,
+  size,
   can_use,
   target_required,
   is_obtained,
@@ -747,17 +767,25 @@ OrbState {
 OrbInstance {
   orb_ref,
   orb_id,
+  name_id,
+  description_id,
   slot,
   evoke_amount,
   passive_amount,
   base_evoke_amount,
   base_passive_amount,
+  show_evoke_value,
+  channel_anim_timer_bits,
   concrete_payload,
 }
 
 StanceState {
   stance_ref,
   stance_id,
+  name_id,
+  description_id,
+  particle_timer_bits,
+  particle_timer2_bits,
   concrete_payload,
 }
 ```
@@ -786,6 +814,7 @@ ChoiceScreenState {
 ```text
 target_group_zone_ref
 selected_card_refs
+hovered_card_ref
 num_cards
 card_select_amount
 can_cancel
@@ -797,6 +826,10 @@ is_just_for_confirming
 any_number
 for_clarity
 cancel_was_on
+cancel_text
+tip_msg
+last_tip
+prev_deck_size
 upgrade_preview_card_ref
 ```
 
@@ -806,6 +839,8 @@ upgrade_preview_card_ref
 ```text
 num_cards_to_select
 selected_card_refs
+hovered_card_ref
+upgrade_preview_card_ref
 selection_reason
 were_cards_retrieved
 can_pick_zero
@@ -814,7 +849,10 @@ any_number
 for_transform
 for_upgrade
 num_selected
+message
+hand_zone_ref
 wait_then_close_if_mechanical
+wait_to_close_timer_bits
 ```
 
 Multi-step selection is a state machine. Fork, restore, cancel, confirm, and

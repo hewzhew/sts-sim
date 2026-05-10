@@ -527,6 +527,177 @@ not fields and are not included here.
 | `multiplier` | modeled | `EnemyMoveInfoState.multiplier` | multi-hit multiplier |
 | `isMultiDamage` | modeled | `EnemyMoveInfoState.is_multi_damage` | multi-hit flag |
 
+## Field Ledger: `rooms/AbstractRoom.java`
+
+| Field | Classification | Schema path | Notes |
+| --- | --- | --- | --- |
+| `uiStrings`, `TEXT`, `logger` | non_combat | none | localization/logging |
+| `potions` | run_level_materialized | future run reward kernel | room reward/drop list, not combat step |
+| `relics` | run_level_materialized | future run reward kernel | room reward/drop list |
+| `rewards` | non_combat | none | post-combat reward screen excluded from `CombatKernel` |
+| `souls` | render_only | none | card animation group |
+| `phase` | modeled | `RoomCombatState.phase` | room combat lifecycle |
+| `event` | non_combat | none | event dialog outside combat kernel |
+| `monsters` | modeled | `RoomCombatState.monster_group_ref`, `MonsterGroupState` | active monster group |
+| `endBattleTimer` | modeled | `RoomCombatState.combat_end_timer_state` | battle-end timing state |
+| `rewardPopOutTimer` | run_level_materialized | `RoomCombatState.reward_pop_out_timer_bits` | reward transition guard; combat kernel must stop before reward RNG |
+| `END_TURN_WAIT_DURATION` | derived | none | constant for turn transition |
+| `mapSymbol` | run_level_materialized | `RoomCombatState.map_symbol` | room identity/context |
+| `mapImg`, `mapImgOutline` | render_only | none | map rendering |
+| `isBattleOver` | modeled | `RoomCombatState.is_battle_over` | combat terminal lifecycle |
+| `cannotLose` | modeled | `RoomCombatState.cannot_lose` | loss prevention |
+| `eliteTrigger` | modeled | `RoomCombatState.elite_trigger` | elite/relic context |
+| `blizzardPotionMod` | run_level_materialized | `RoomCombatState.blizzard_potion_mod` | potion reward modifier, guard at terminal boundary |
+| `BLIZZARD_POTION_MOD_AMT` | derived | none | constant |
+| `mugged` | modeled | `RoomCombatState.mugged` | stolen gold/reward behavior |
+| `smoked` | modeled | `RoomCombatState.smoked` | Smoke Bomb escape behavior |
+| `combatEvent` | modeled | `RoomCombatState.combat_event` | event combat flag |
+| `rewardAllowed` | modeled | `RoomCombatState.reward_allowed` | terminal/reward boundary |
+| `rewardTime` | modeled | `RoomCombatState.reward_time` | terminal/reward boundary |
+| `skipMonsterTurn` | modeled | `RoomCombatState.skip_monster_turn` | turn processing |
+| `baseRareCardChance`, `baseUncommonCardChance`, `rareCardChance`, `uncommonCardChance` | run_level_materialized | `RoomCombatState.*card_chance` | card reward probabilities; model only to guard combat-end transition |
+| `waitTimer` | modeled | `RoomCombatState.wait_timer_bits` | room update wait gate |
+
+## Field Ledger: `powers/AbstractPower.java`
+
+| Field | Classification | Schema path | Notes |
+| --- | --- | --- | --- |
+| `logger` | non_combat | none | logging |
+| `atlas`, `region48`, `region128`, `RAW_W`, font constants, colors, effects, `img` | render_only | none | power rendering/VFX |
+| `fontScale` | render_only | none | UI animation |
+| `owner` | modeled | `PowerInstance.owner_ref` | power owner |
+| `name` | modeled | `PowerInstance.name_id` | public identity/display |
+| `description` | modeled | `PowerInstance.description_id` | public identity/display |
+| `ID` | modeled | `PowerInstance.power_id` | power identity |
+| `amount` | modeled | `PowerInstance.amount` | stack value |
+| `priority` | modeled | `PowerInstance.priority` | hook ordering |
+| `type` | modeled | `PowerInstance.power_type` | buff/debuff/neutral |
+| `isTurnBased` | modeled | `PowerInstance.is_turn_based` | duration behavior |
+| `isPostActionPower` | modeled | `PowerInstance.is_post_action_power` | hook timing |
+| `canGoNegative` | modeled | `PowerInstance.can_go_negative` | stack behavior |
+| `DESCRIPTIONS` | non_combat | none | localization |
+
+## Field Ledger: `relics/AbstractRelic.java`
+
+| Field | Classification | Schema path | Notes |
+| --- | --- | --- | --- |
+| `tutorialStrings`, `MSG`, `LABEL`, `USED_UP_MSG` | non_combat | none | localization/tutorial |
+| `name` | modeled | `RelicInstance.name_id` | public identity/display |
+| `relicId` | modeled | `RelicInstance.relic_id` | relic identity |
+| `relicStrings`, `DESCRIPTIONS`, `description`, `flavorText`, `tips` | modeled/render_only split | `RelicInstance.description_id`, payload if needed | description public; tips render-only |
+| `energyBased` | modeled | `RelicInstance.energy_based` | energy relic behavior |
+| `usedUp` | modeled | `RelicInstance.used_up` | disabled/used state |
+| `grayscale` | modeled | `RelicInstance.grayscale` | used-up visible state |
+| `cost` | run_level_materialized | `RelicInstance.cost` | shop/run value, preserved on instance |
+| `counter` | modeled | `RelicInstance.counter` | relic counter |
+| `tier` | run_level_materialized | `RelicInstance.tier` | reward/shop context; preserved |
+| images, img paths, page/position/scale/color/pulse/animation/glow/flash/hitbox/rotation/floaty fields | render_only | none | rendering/UI |
+| `isSeen` | non_combat | `RelicInstance.is_seen` | compendium/unlock state; retained for parity |
+| `isDone` | run_level_materialized | `RelicInstance.is_done` | room pickup/update state |
+| `isAnimating` | render_only | `RelicInstance.is_animating` if a pickup path needs it | normally UI |
+| `isObtained` | run_level_materialized | `RelicInstance.is_obtained` | room pickup/update state |
+| `landingSFX` | render_only | none | audio |
+| `discarded` | modeled | `RelicInstance.discarded` | relic removal/discard state |
+| `assetURL` | render_only | none | asset path |
+
+## Field Ledger: `potions/AbstractPotion.java`
+
+| Field | Classification | Schema path | Notes |
+| --- | --- | --- | --- |
+| `uiStrings`, `TEXT` | non_combat | none | localization |
+| `ID` | modeled | `PotionInstance.potion_id` | potion identity |
+| `name` | modeled | `PotionInstance.name_id` | public identity/display |
+| `description` | modeled | `PotionInstance.description_id` | public identity/display |
+| `slot` | modeled | `PotionInstance.slot` | potion slot |
+| `tips` | render_only | none | UI tips |
+| texture/color rendering fields, position, scale, flash/sparkle timers, hitbox, angle, placeholder color | render_only | none | potion rendering/UI |
+| `isObtained` | run_level_materialized | `PotionInstance.is_obtained` | pickup state |
+| `p_effect` | modeled | `PotionInstance.effect` | potion effect kind |
+| `color` | modeled | `PotionInstance.color` | potion color kind |
+| `rarity` | run_level_materialized | `PotionInstance.rarity` | generation/shop context |
+| `size` | modeled | `PotionInstance.size` | potion representation |
+| `potency` | modeled | `PotionInstance.potency` | potion amount |
+| `canUse` | modeled | `PotionInstance.can_use` | legal use state |
+| `discarded` | modeled | `PotionInstance.discarded` | potion discarded |
+| `isThrown` | modeled | `PotionInstance.is_thrown` | thrown/used state |
+| `targetRequired` | modeled | `PotionInstance.target_required` | target legality |
+
+## Field Ledger: `orbs/AbstractOrb.java`
+
+| Field | Classification | Schema path | Notes |
+| --- | --- | --- | --- |
+| `name` | modeled | `OrbInstance.name_id` | public identity/display |
+| `description` | modeled | `OrbInstance.description_id` | public identity/display |
+| `ID` | modeled | `OrbInstance.orb_id` | orb identity |
+| `tips`, position/target/color/texture/bob/hitbox/angle/scale/font constants | render_only | none | rendering/UI |
+| `evokeAmount` | modeled | `OrbInstance.evoke_amount` | evoke value |
+| `passiveAmount` | modeled | `OrbInstance.passive_amount` | passive value |
+| `baseEvokeAmount` | modeled | `OrbInstance.base_evoke_amount` | base evoke value |
+| `basePassiveAmount` | modeled | `OrbInstance.base_passive_amount` | base passive value |
+| `showEvokeValue` | modeled | `OrbInstance.show_evoke_value` | card hover can toggle this before render |
+| `channelAnimTimer` | render_only | `OrbInstance.channel_anim_timer_bits` if parity requires | channel animation; currently retained as raw bits |
+
+## Field Ledger: `stances/AbstractStance.java`
+
+| Field | Classification | Schema path | Notes |
+| --- | --- | --- | --- |
+| `logger` | non_combat | none | logging |
+| `name` | modeled | `StanceState.name_id` | public identity/display |
+| `description` | modeled | `StanceState.description_id` | public identity/display |
+| `ID` | modeled | `StanceState.stance_id` | stance identity |
+| `tips`, color, image, angle | render_only | none | rendering/UI |
+| `particleTimer`, `particleTimer2` | render_only | `StanceState.*particle_timer*_bits` if parity requires | VFX timers retained as raw bits for audit |
+
+## Field Ledger: `screens/select/GridCardSelectScreen.java`
+
+| Field | Classification | Schema path | Notes |
+| --- | --- | --- | --- |
+| localization/layout/static scroll fields | render_only | none | UI layout |
+| `selectedCards` | modeled | `GridSelectState.selected_card_refs` | partial selection state |
+| `targetGroup` | modeled | `GridSelectState.target_group_zone_ref` | candidate group |
+| `hoveredCard` | render_only | `GridSelectState.hovered_card_ref` if input replay needs it | UI hover |
+| `upgradePreviewCard` | modeled | `GridSelectState.upgrade_preview_card_ref` | upgrade/transform confirmation preview |
+| `numCards` | modeled | `GridSelectState.num_cards` | required selection count |
+| `cardSelectAmount` | modeled | `GridSelectState.card_select_amount` | selected count/progress |
+| scroll/grab/controller/arrow/timer fields | render_only | none | UI only |
+| `canCancel` | modeled | `GridSelectState.can_cancel` | cancellation legality |
+| `forUpgrade` | modeled | `GridSelectState.for_upgrade` | selection semantics |
+| `forTransform` | modeled | `GridSelectState.for_transform` | selection semantics |
+| `forPurge` | modeled | `GridSelectState.for_purge` | selection semantics |
+| `confirmScreenUp` | modeled | `GridSelectState.confirm_screen_up` | multi-step state |
+| `isJustForConfirming` | modeled | `GridSelectState.is_just_for_confirming` | confirm-only state |
+| `confirmButton`, `peekButton` | render_only | none | UI widgets |
+| `tipMsg`, `lastTip` | modeled | `GridSelectState.tip_msg`, `last_tip` | selection screen public prompt |
+| `ritualAnimTimer` | render_only | none | event animation |
+| `prevDeckSize` | modeled | `GridSelectState.prev_deck_size` | grid screen state |
+| `cancelWasOn` | modeled | `GridSelectState.cancel_was_on` | cancel restore state |
+| `anyNumber` | modeled | `GridSelectState.any_number` | choice constraint |
+| `forClarity` | modeled | `GridSelectState.for_clarity` | choice constraint |
+| `cancelText` | modeled | `GridSelectState.cancel_text` | public cancel prompt |
+
+## Field Ledger: `screens/select/HandCardSelectScreen.java`
+
+| Field | Classification | Schema path | Notes |
+| --- | --- | --- | --- |
+| localization/layout/static hover/arrow fields | render_only | none | UI layout |
+| `numCardsToSelect` | modeled | `HandSelectState.num_cards_to_select` | choice constraint |
+| `selectedCards` | modeled | `HandSelectState.selected_card_refs` | partial selection state |
+| `hoveredCard` | render_only | `HandSelectState.hovered_card_ref` if input replay needs it | UI hover |
+| `upgradePreviewCard` | modeled | `HandSelectState.upgrade_preview_card_ref` | upgrade/transform confirmation preview |
+| `selectionReason` | modeled | `HandSelectState.selection_reason` | choice context |
+| `wereCardsRetrieved` | modeled | `HandSelectState.were_cards_retrieved` | retrieval state |
+| `canPickZero` | modeled | `HandSelectState.can_pick_zero` | choice constraint |
+| `upTo` | modeled | `HandSelectState.up_to` | choice constraint |
+| `message` | modeled | `HandSelectState.message` | public prompt |
+| `button`, `peekButton` | render_only | none | UI widgets |
+| `anyNumber` | modeled | `HandSelectState.any_number` | choice constraint |
+| `forTransform` | modeled | `HandSelectState.for_transform` | selection semantics |
+| `forUpgrade` | modeled | `HandSelectState.for_upgrade` | selection semantics |
+| `numSelected` | modeled | `HandSelectState.num_selected` | selected count/progress |
+| `waitThenClose` | modeled | `HandSelectState.wait_then_close_if_mechanical` | delayed close affects transform timing |
+| `waitToCloseTimer` | modeled | `HandSelectState.wait_to_close_timer_bits` | delayed close timer raw bits |
+| `hand` | modeled | `HandSelectState.hand_zone_ref` | source hand group |
+
 ## Blocker Rules
 
 An implementation is not allowed to claim source coverage while any row has:

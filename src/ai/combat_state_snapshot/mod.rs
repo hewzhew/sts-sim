@@ -132,10 +132,12 @@ pub enum ScreenState {
 pub struct RoomCombatState {
     pub room_kind: RoomKind,
     pub phase: RoomPhase,
+    pub map_symbol: Option<String>,
     pub monster_group_ref: String,
     pub is_battle_over: bool,
     pub cannot_lose: bool,
     pub elite_trigger: bool,
+    pub blizzard_potion_mod: i32,
     pub mugged: bool,
     pub smoked: bool,
     pub combat_event: bool,
@@ -147,6 +149,8 @@ pub struct RoomCombatState {
     pub rare_card_chance: i32,
     pub uncommon_card_chance: i32,
     pub combat_end_timer_state: TimerState,
+    pub reward_pop_out_timer_bits: F32Bits,
+    pub wait_timer_bits: F32Bits,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -673,6 +677,8 @@ pub struct PowerState {
 pub struct PowerInstance {
     pub power_ref: PowerRef,
     pub power_id: String,
+    pub name_id: String,
+    pub description_id: String,
     pub owner_ref: CombatantRef,
     pub amount: i32,
     pub priority: i32,
@@ -701,12 +707,33 @@ pub struct RelicState {
 pub struct RelicInstance {
     pub relic_ref: RelicRef,
     pub relic_id: String,
+    pub name_id: String,
+    pub description_id: String,
+    pub cost: i32,
     pub counter: i32,
+    pub tier: RelicTier,
     pub used_up: bool,
     pub grayscale: bool,
     pub energy_based: bool,
+    pub is_seen: bool,
+    pub is_done: bool,
+    pub is_animating: bool,
+    pub is_obtained: bool,
     pub discarded: bool,
     pub concrete_payload: BTreeMap<String, String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum RelicTier {
+    Starter,
+    Common,
+    Uncommon,
+    Rare,
+    Shop,
+    Boss,
+    Special,
+    Deprecated,
+    Unknown { source_name: String },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -739,14 +766,56 @@ pub struct PotionSlotState {
 pub struct PotionInstance {
     pub potion_ref: PotionRef,
     pub potion_id: String,
+    pub name_id: String,
+    pub description_id: String,
     pub slot: i32,
     pub potency: i32,
+    pub effect: PotionEffectKind,
+    pub color: PotionColorKind,
+    pub rarity: PotionRarity,
+    pub size: PotionSize,
     pub can_use: bool,
     pub target_required: bool,
     pub is_obtained: bool,
     pub discarded: bool,
     pub is_thrown: bool,
     pub concrete_payload: BTreeMap<String, String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum PotionEffectKind {
+    None,
+    Known { source_name: String },
+    Unknown { source_name: String },
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum PotionColorKind {
+    Known { source_name: String },
+    CustomRgb { r: u8, g: u8, b: u8, a: u8 },
+    Unknown { source_name: String },
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum PotionRarity {
+    Common,
+    Uncommon,
+    Rare,
+    Placeholder,
+    Unknown { source_name: String },
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum PotionSize {
+    Tiny,
+    Small,
+    Medium,
+    Heart,
+    Bottle,
+    Sphere,
+    Snecko,
+    Fairy,
+    Unknown { source_name: String },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -760,11 +829,15 @@ pub struct OrbState {
 pub struct OrbInstance {
     pub orb_ref: OrbRef,
     pub orb_id: String,
+    pub name_id: String,
+    pub description_id: String,
     pub slot: i32,
     pub evoke_amount: i32,
     pub passive_amount: i32,
     pub base_evoke_amount: i32,
     pub base_passive_amount: i32,
+    pub show_evoke_value: bool,
+    pub channel_anim_timer_bits: F32Bits,
     pub concrete_payload: BTreeMap<String, String>,
 }
 
@@ -772,6 +845,10 @@ pub struct OrbInstance {
 pub struct StanceState {
     pub stance_ref: StanceRef,
     pub stance_id: String,
+    pub name_id: String,
+    pub description_id: String,
+    pub particle_timer_bits: F32Bits,
+    pub particle_timer2_bits: F32Bits,
     pub concrete_payload: BTreeMap<String, String>,
 }
 
@@ -796,6 +873,7 @@ pub enum ChoiceScreenKind {
 pub struct GridSelectState {
     pub target_group_zone_ref: Option<ZoneRef>,
     pub selected_card_refs: Vec<CardRef>,
+    pub hovered_card_ref: Option<CardRef>,
     pub num_cards: i32,
     pub card_select_amount: i32,
     pub can_cancel: bool,
@@ -807,6 +885,10 @@ pub struct GridSelectState {
     pub any_number: bool,
     pub for_clarity: bool,
     pub cancel_was_on: bool,
+    pub cancel_text: Option<String>,
+    pub tip_msg: String,
+    pub last_tip: String,
+    pub prev_deck_size: i32,
     pub upgrade_preview_card_ref: Option<CardRef>,
 }
 
@@ -814,6 +896,8 @@ pub struct GridSelectState {
 pub struct HandSelectState {
     pub num_cards_to_select: i32,
     pub selected_card_refs: Vec<CardRef>,
+    pub hovered_card_ref: Option<CardRef>,
+    pub upgrade_preview_card_ref: Option<CardRef>,
     pub selection_reason: String,
     pub were_cards_retrieved: bool,
     pub can_pick_zero: bool,
@@ -822,7 +906,10 @@ pub struct HandSelectState {
     pub for_transform: bool,
     pub for_upgrade: bool,
     pub num_selected: i32,
+    pub message: String,
+    pub hand_zone_ref: Option<ZoneRef>,
     pub wait_then_close_if_mechanical: bool,
+    pub wait_to_close_timer_bits: F32Bits,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
