@@ -82,7 +82,7 @@ kernel done; it is the minimum table implementation must extend.
 | `cards/CardQueueItem.java` | card, target, X-cost energy, ignore/autoplay/random/end-turn flags | queued card execution | modeled | `CardQueueItemState` | rewrite |
 | `actions/GameActionManager.java` | `actions`, `preTurnActions`, `cardQueue`, `monsterQueue`, current/previous actions | pending execution state | modeled | `ActionManagerState` | rewrite |
 | `actions/GameActionManager.java` | cards played this turn/combat, orb/stance history, damage/discard/energy counters, turn | public history and hook state | modeled | `ActionManagerState` | rewrite |
-| `actions/AbstractGameAction.java` and subclasses | action type, source/target, amount, duration/done, subclass payload | resumable action queue | modeled or unsupported_abort per subclass | `ActionState` | rewrite |
+| `actions/AbstractGameAction.java` and subclasses | action type/effect, source/target, amount, damage type, duration/start duration/done, subclass payload | resumable action queue | modeled or unsupported_abort per subclass | `ActionState` | rewrite |
 | `rooms/AbstractRoom.java` | phase, monsters, battle-over flags, cannot-lose, elite/combat-event/smoke/mug flags | room combat lifecycle | modeled | `RoomCombatState` | rewrite |
 | `rooms/AbstractRoom.java` | reward timing and rarity chance fields touched at combat end | terminal boundary and reward-RNG guard | modeled/run_level_materialized | `RoomCombatState`, `CombatLifecycleState` | rewrite |
 | `monsters/AbstractMonster.java` | id, HP/block/powers/lifecycle, `halfDead`, escape/death flags | monster state | modeled | `MonsterState` | rewrite |
@@ -328,7 +328,7 @@ not fields and are not included here.
 | `actions` | modeled | `ActionManagerState.actions` | main action queue |
 | `preTurnActions` | modeled | `ActionManagerState.pre_turn_actions` | start-turn action queue |
 | `cardQueue` | modeled | `ActionManagerState.card_queue` | queued card execution |
-| `monsterQueue` | modeled | `ActionManagerState.monster_queue` | queued monster turns |
+| `monsterQueue` | modeled | `ActionManagerState.monster_queue` | queued `MonsterQueueItem` turns |
 | `cardsPlayedThisTurn` | modeled | `ActionManagerState.cards_played_this_turn` | card-count mechanics |
 | `cardsPlayedThisCombat` | modeled | `ActionManagerState.cards_played_this_combat` | combat history mechanics |
 | `orbsChanneledThisCombat` | modeled | `ActionManagerState.orbs_channeled_this_combat` | orb history mechanics |
@@ -351,6 +351,72 @@ not fields and are not included here.
 | `playerHpLastTurn` | modeled | `ActionManagerState.player_hp_last_turn` | end-turn damage/loss state |
 | `energyGainedThisCombat` | modeled | `ActionManagerState.energy_gained_this_combat` | energy history hooks |
 | `turn` | modeled | `ActionManagerState.turn_index` | turn number |
+
+## Field Ledger: `actions/AbstractGameAction.java`
+
+| Field | Classification | Schema path | Notes |
+| --- | --- | --- | --- |
+| `DEFAULT_DURATION` | source_constant | action implementation constant | default action timing |
+| `duration` | modeled | `ActionState.duration_bits` | Java `float`; raw bits required for replay |
+| `startDuration` | modeled | `ActionState.start_duration_bits` | Java `float`; raw bits required for replay |
+| `actionType` | modeled | `ActionState.action_type` | preserve all Java `ActionType` variants |
+| `attackEffect` | modeled | `ActionState.attack_effect` | preserve all Java `AttackEffect` variants |
+| `damageType` | modeled | `ActionState.damage_type` | nullable per action |
+| `isDone` | modeled | `ActionState.is_done` | action completion state |
+| `amount` | modeled | `ActionState.amount` | generic action amount |
+| `target` | modeled | `ActionState.target` | nullable combatant ref |
+| `source` | modeled | `ActionState.source` | nullable combatant ref |
+
+`ActionType` variants from Java that must not be collapsed are: `BLOCK`,
+`POWER`, `CARD_MANIPULATION`, `DAMAGE`, `DEBUFF`, `DISCARD`, `DRAW`,
+`EXHAUST`, `HEAL`, `ENERGY`, `TEXT`, `USE`, `CLEAR_CARD_QUEUE`, `DIALOG`,
+`SPECIAL`, `WAIT`, `SHUFFLE`, and `REDUCE_POWER`.
+
+`AttackEffect` variants from Java that must not be collapsed are:
+`BLUNT_LIGHT`, `BLUNT_HEAVY`, `SLASH_DIAGONAL`, `SMASH`, `SLASH_HEAVY`,
+`SLASH_HORIZONTAL`, `SLASH_VERTICAL`, `NONE`, `FIRE`, `POISON`, `SHIELD`, and
+`LIGHTNING`.
+
+Subclasses add fields through `ActionState.subclass_payload` only until they
+receive a typed migration row. Unknown subclass state is an `unsupported_abort`
+for trainable/searchable frames, not an ignored field.
+
+## Field Ledger: `cards/DamageInfo.java`
+
+| Field | Classification | Schema path | Notes |
+| --- | --- | --- | --- |
+| `owner` | modeled | `DamageInfoState.owner` | nullable source creature |
+| `name` | modeled | `DamageInfoState.name` | source field; nullable |
+| `type` | modeled | `DamageInfoState.damage_type` | `NORMAL`, `THORNS`, `HP_LOSS` |
+| `base` | modeled | `DamageInfoState.base` | unmodified base value |
+| `output` | modeled | `DamageInfoState.output` | post power/stance/final hooks value |
+| `isModified` | modeled | `DamageInfoState.is_modified` | whether source hooks changed damage |
+
+Damage matrix helpers are behavior, not additional state. Their outputs must be
+represented through concrete `DamageInfoState` entries or card rendered values
+where the Java runtime stores them.
+
+## Field Ledger: `monsters/MonsterQueueItem.java`
+
+| Field | Classification | Schema path | Notes |
+| --- | --- | --- | --- |
+| `monster` | modeled | `MonsterQueueItemState.monster_ref` | queued monster turn item |
+
+## Field Ledger: `core/EnergyManager.java`
+
+| Field | Classification | Schema path | Notes |
+| --- | --- | --- | --- |
+| `energy` | modeled | `EnergyState.turn_energy` | turn recharge amount used by `recharge()` |
+| `energyMaster` | modeled | `EnergyState.energy_master` | base per-turn energy |
+
+## Field Ledger: `ui/panels/EnergyPanel.java`
+
+| Field | Classification | Schema path | Notes |
+| --- | --- | --- | --- |
+| `totalCount` | modeled | `EnergyState.panel_total_count` | current spendable energy |
+| `fontScale` | render_only | none | energy number animation |
+| `energyVfxTimer` | render_only | none | energy VFX timing |
+| `ENERGY_VFX_TIME`, `VFX_ROTATE_SPEED`, texture/color/hitbox fields | render_only | none | UI only |
 
 ## Field Ledger: `core/AbstractCreature.java`
 

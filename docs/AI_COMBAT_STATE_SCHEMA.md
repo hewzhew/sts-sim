@@ -397,7 +397,10 @@ Queued actions are typed state, not opaque callbacks:
 ActionState {
   action_class,
   action_type,
-  duration,
+  attack_effect,
+  damage_type,
+  duration_bits,
+  start_duration_bits,
   is_done,
   source_ref,
   target_ref,
@@ -410,6 +413,11 @@ ActionState {
   subclass_payload,
 }
 ```
+
+`ActionState` models the shared `AbstractGameAction` fields. Java action
+`duration` and `startDuration` are replay-critical `float` fields and must be
+stored as raw bits. `action_type`, `attack_effect`, and `damage_type` must keep
+the Java enum surface; collapsing missing variants into `Special` is forbidden.
 
 Any action subclass that cannot be serialized and restored must be
 `unsupported_abort` before the frame is used for training or search.
@@ -425,6 +433,33 @@ autoplay_card
 random_target
 is_end_turn_auto_play
 ```
+
+`MonsterQueueItemState` must include the queued monster ref. The queue item
+exists as its own source object in Java and must not be silently flattened in
+the schema.
+
+```text
+MonsterQueueItemState {
+  monster_ref,
+}
+```
+
+`DamageInfoState` preserves the Java `DamageInfo` object used by actions,
+monster damage tables, and damage matrix calculation:
+
+```text
+DamageInfoState {
+  owner,
+  name,
+  damage_type,
+  output,
+  base,
+  is_modified,
+}
+```
+
+`base` and `output` are both required. `is_modified` records whether power,
+stance, blight, or final damage hooks changed the value from the base damage.
 
 ## Player Combat State
 
@@ -458,6 +493,21 @@ PlayerCombatState {
   class_specific_payload,
 }
 ```
+
+`EnergyState` covers both `EnergyManager` and `EnergyPanel` mechanical state:
+
+```text
+EnergyState {
+  turn_energy,
+  energy_master,
+  panel_total_count,
+}
+```
+
+`turn_energy` is `EnergyManager.energy`; `energy_master` is
+`EnergyManager.energyMaster`; `panel_total_count` is `EnergyPanel.totalCount`.
+They are distinct in Java: start-of-turn recharge and Ice Cream / Conserve
+semantics read and write them differently.
 
 `CreatureState` covers fields inherited through `AbstractCreature`:
 

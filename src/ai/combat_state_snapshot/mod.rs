@@ -228,7 +228,7 @@ pub struct ActionManagerState {
     pub actions: Vec<ActionState>,
     pub pre_turn_actions: Vec<ActionState>,
     pub card_queue: Vec<CardQueueItemState>,
-    pub monster_queue: Vec<MonsterRef>,
+    pub monster_queue: Vec<MonsterQueueItemState>,
     pub cards_played_this_turn: Vec<CardRef>,
     pub cards_played_this_combat: Vec<CardRef>,
     pub orbs_channeled_this_turn: Vec<OrbRef>,
@@ -256,7 +256,10 @@ pub struct ActionState {
     pub action_ref: ActionRef,
     pub action_class: String,
     pub action_type: ActionType,
-    pub duration_ticks: i64,
+    pub attack_effect: AttackEffect,
+    pub damage_type: Option<DamageType>,
+    pub duration_bits: F32Bits,
+    pub start_duration_bits: F32Bits,
     pub is_done: bool,
     pub source: Option<CombatantRef>,
     pub target: Option<CombatantRef>,
@@ -272,15 +275,40 @@ pub struct ActionState {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ActionType {
     Block,
+    Power,
+    CardManipulation,
     Damage,
     Debuff,
     Discard,
     Draw,
     Exhaust,
     Heal,
-    Power,
+    Energy,
+    Text,
+    Use,
+    ClearCardQueue,
+    Dialog,
     Special,
     Wait,
+    Shuffle,
+    ReducePower,
+    Unknown { source_name: String },
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum AttackEffect {
+    BluntLight,
+    BluntHeavy,
+    SlashDiagonal,
+    Smash,
+    SlashHeavy,
+    SlashHorizontal,
+    SlashVertical,
+    None,
+    Fire,
+    Poison,
+    Shield,
+    Lightning,
     Unknown { source_name: String },
 }
 
@@ -293,6 +321,11 @@ pub struct CardQueueItemState {
     pub autoplay_card: bool,
     pub random_target: bool,
     pub is_end_turn_auto_play: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MonsterQueueItemState {
+    pub monster_ref: MonsterRef,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -371,8 +404,9 @@ pub struct EscapeState {
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct EnergyState {
-    pub current: i32,
-    pub max_for_turn: i32,
+    pub turn_energy: i32,
+    pub energy_master: i32,
+    pub panel_total_count: i32,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -509,9 +543,11 @@ pub enum DamageType {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DamageInfoState {
     pub owner: Option<CombatantRef>,
+    pub name: Option<String>,
+    pub damage_type: DamageType,
     pub output: i32,
     pub base: i32,
-    pub damage_type: DamageType,
+    pub is_modified: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
