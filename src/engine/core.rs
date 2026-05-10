@@ -1299,8 +1299,13 @@ pub fn tick_until_stable_turn(
 
 #[cfg(test)]
 mod tests {
-    use super::class_combat_card_pool;
+    use super::{class_combat_card_pool, resolve_pending_choice};
     use crate::content::cards::CardId;
+    use crate::content::powers::PowerId;
+    use crate::runtime::action::CardDestination;
+    use crate::runtime::combat::Power;
+    use crate::state::core::{ClientInput, EngineState, PendingChoice};
+    use crate::test_support::blank_test_combat;
 
     #[test]
     fn class_combat_card_pool_uses_current_player_class_not_ironclad_fallback() {
@@ -1315,5 +1320,80 @@ mod tests {
         let ironclad_pool = class_combat_card_pool("Ironclad");
         assert!(ironclad_pool.contains(&CardId::PommelStrike));
         assert!(!ironclad_pool.contains(&CardId::Acrobatics));
+    }
+
+    #[test]
+    fn discovery_selection_uses_java_make_copy_and_master_reality_path() {
+        let mut combat_state = blank_test_combat();
+        combat_state.turn.counters.times_damaged_this_combat = 2;
+        combat_state.entities.power_db.insert(
+            0,
+            vec![Power {
+                power_type: PowerId::MasterRealityPower,
+                instance_id: None,
+                amount: -1,
+                extra_data: 0,
+                just_applied: false,
+            }],
+        );
+        let mut engine_state =
+            EngineState::PendingChoice(PendingChoice::DiscoverySelect(vec![CardId::BloodForBlood]));
+
+        resolve_pending_choice(
+            &mut engine_state,
+            &mut combat_state,
+            ClientInput::SubmitDiscoverChoice(0),
+        )
+        .expect("valid discovery choice should resolve");
+
+        assert_eq!(engine_state, EngineState::CombatProcessing);
+        assert_eq!(combat_state.zones.hand.len(), 1);
+        let card = &combat_state.zones.hand[0];
+        assert_eq!(card.id, CardId::BloodForBlood);
+        assert_eq!(card.cost_modifier, -2);
+        assert_eq!(
+            card.get_cost(),
+            1,
+            "Java Discovery keeps Blood for Blood.makeCopy damagedThisCombat discount before Master Reality upgrades it"
+        );
+        assert_eq!(
+            card.upgrades, 1,
+            "Blood for Blood ignores the second Master Reality upgrade call because it is already upgraded"
+        );
+    }
+
+    #[test]
+    fn card_reward_selection_preserves_codex_master_reality_single_draw_path() {
+        let mut combat_state = blank_test_combat();
+        combat_state.entities.power_db.insert(
+            0,
+            vec![Power {
+                power_type: PowerId::MasterRealityPower,
+                instance_id: None,
+                amount: -1,
+                extra_data: 0,
+                just_applied: false,
+            }],
+        );
+        let mut engine_state = EngineState::PendingChoice(PendingChoice::CardRewardSelect {
+            cards: vec![CardId::SearingBlow],
+            destination: CardDestination::DrawPileRandom,
+            can_skip: true,
+        });
+
+        resolve_pending_choice(
+            &mut engine_state,
+            &mut combat_state,
+            ClientInput::SubmitDiscoverChoice(0),
+        )
+        .expect("valid Codex-style choice should resolve");
+
+        assert_eq!(engine_state, EngineState::CombatProcessing);
+        assert_eq!(combat_state.zones.draw_pile.len(), 1);
+        assert_eq!(combat_state.zones.draw_pile[0].id, CardId::SearingBlow);
+        assert_eq!(
+            combat_state.zones.draw_pile[0].upgrades, 1,
+            "Java CodexAction relies on ShowCardAndAddToDrawPileEffect for one Master Reality upgrade"
+        );
     }
 }

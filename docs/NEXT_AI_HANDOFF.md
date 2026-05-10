@@ -35,6 +35,9 @@ What it fixed:
 Verification already passed:
 
 - `cargo test -q engine::action_handlers::cards::tests`
+- `cargo test -q engine::core::tests`
+- `cargo test -q engine::core::tests::discovery_selection_uses_java_make_copy_and_master_reality_path`
+- `cargo test -q engine::core::tests::card_reward_selection_preserves_codex_master_reality_single_draw_path`
 - `cargo test -q content::cards::tests`
 - `cargo test -q engine::action_handlers::cards::tests::searing_blow_preserves_java_master_reality_effect_call_counts`
 - `cargo test -q engine::action_handlers::cards::tests::random_pool_blood_for_blood_copy_uses_java_make_copy_damage_discount`
