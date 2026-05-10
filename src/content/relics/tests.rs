@@ -501,3 +501,117 @@ fn centennial_puzzle_hook_updates_relic_state_before_draw_action_executes() {
 
     assert!(hooks::on_lose_hp(&mut state, 3).is_empty());
 }
+
+#[test]
+fn shared_common_counter_relic_metadata_matches_java_sources() {
+    assert_eq!(get_relic_tier(RelicId::HappyFlower), RelicTier::Common);
+    assert_eq!(get_relic_tier(RelicId::Lantern), RelicTier::Common);
+    assert_eq!(get_relic_tier(RelicId::Nunchaku), RelicTier::Common);
+    assert_eq!(get_relic_tier(RelicId::PenNib), RelicTier::Common);
+
+    assert!(get_relic_subscriptions(RelicId::HappyFlower).at_turn_start);
+    assert!(get_relic_subscriptions(RelicId::Lantern).at_pre_battle);
+    assert!(get_relic_subscriptions(RelicId::Lantern).at_turn_start);
+    assert!(get_relic_subscriptions(RelicId::Nunchaku).on_use_card);
+    assert!(get_relic_subscriptions(RelicId::PenNib).at_battle_start);
+    assert!(get_relic_subscriptions(RelicId::PenNib).on_use_card);
+}
+
+#[test]
+fn happy_flower_counter_updates_immediately_like_java() {
+    let mut relic = RelicState::new(RelicId::HappyFlower);
+
+    assert!(happy_flower::HappyFlower::at_turn_start(&mut relic).is_empty());
+    assert_eq!(relic.counter, 1);
+    assert!(happy_flower::HappyFlower::at_turn_start(&mut relic).is_empty());
+    assert_eq!(relic.counter, 2);
+
+    let actions = happy_flower::HappyFlower::at_turn_start(&mut relic);
+    assert_eq!(relic.counter, 0);
+    assert_eq!(actions.len(), 1);
+    assert_eq!(actions[0].insertion_mode, AddTo::Bottom);
+    assert!(matches!(
+        actions[0].action,
+        Action::GainEnergy { amount: 1 }
+    ));
+
+    relic.counter = -1;
+    assert!(happy_flower::HappyFlower::at_turn_start(&mut relic).is_empty());
+    assert_eq!(relic.counter, 1);
+}
+
+#[test]
+fn lantern_first_turn_state_updates_immediately_like_java() {
+    let mut relic = RelicState::new(RelicId::Lantern);
+    relic.used_up = true;
+
+    let pre_battle_actions = lantern::at_pre_battle(&mut relic);
+    assert!(pre_battle_actions.is_empty());
+    assert!(!relic.used_up);
+
+    let first_turn_actions = lantern::at_turn_start(&mut relic);
+    assert!(relic.used_up);
+    assert_eq!(first_turn_actions.len(), 1);
+    assert_eq!(first_turn_actions[0].insertion_mode, AddTo::Top);
+    assert!(matches!(
+        first_turn_actions[0].action,
+        Action::GainEnergy { amount: 1 }
+    ));
+
+    assert!(lantern::at_turn_start(&mut relic).is_empty());
+}
+
+#[test]
+fn nunchaku_counter_updates_immediately_like_java() {
+    let mut relic = RelicState::new(RelicId::Nunchaku);
+    relic.counter = 8;
+
+    assert!(nunchaku::on_use_card(&mut relic).is_empty());
+    assert_eq!(relic.counter, 9);
+
+    let actions = nunchaku::on_use_card(&mut relic);
+    assert_eq!(relic.counter, 0);
+    assert_eq!(actions.len(), 1);
+    assert_eq!(actions[0].insertion_mode, AddTo::Bottom);
+    assert!(matches!(
+        actions[0].action,
+        Action::GainEnergy { amount: 1 }
+    ));
+}
+
+#[test]
+fn pen_nib_counter_and_power_timing_match_java() {
+    let mut relic = RelicState::new(RelicId::PenNib);
+    relic.counter = 8;
+
+    let ninth_actions = pen_nib::on_use_card(&mut relic);
+    assert_eq!(relic.counter, 9);
+    assert_eq!(ninth_actions.len(), 1);
+    assert_eq!(ninth_actions[0].insertion_mode, AddTo::Bottom);
+    assert!(matches!(
+        ninth_actions[0].action,
+        Action::ApplyPower {
+            source: 0,
+            target: 0,
+            power_id: PowerId::PenNibPower,
+            amount: 1
+        }
+    ));
+
+    let tenth_actions = pen_nib::on_use_card(&mut relic);
+    assert_eq!(relic.counter, 0);
+    assert!(tenth_actions.is_empty());
+
+    let battle_start_actions = pen_nib::at_battle_start(9);
+    assert_eq!(battle_start_actions.len(), 1);
+    assert!(matches!(
+        battle_start_actions[0].action,
+        Action::ApplyPower {
+            source: 0,
+            target: 0,
+            power_id: PowerId::PenNibPower,
+            amount: 1
+        }
+    ));
+    assert!(pen_nib::at_battle_start(8).is_empty());
+}

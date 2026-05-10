@@ -543,6 +543,130 @@ Coverage:
 - `centennial_puzzle_marks_used_immediately_and_resets_pre_battle`
 - `centennial_puzzle_hook_updates_relic_state_before_draw_action_executes`
 
+## Shared Relic Batch 3 - Common Counter / Energy Relics
+
+### Happy Flower
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/relics/HappyFlower.java`
+
+Rust source:
+- `src/content/relics/happy_flower.rs`
+- `src/content/relics/hooks.rs`
+
+Java evidence:
+- Constructor: ID `"Happy Flower"`, tier `COMMON`, landing sound `SOLID`.
+- `onEquip` initializes `counter = 0`.
+- `atTurnStart`: mutates `counter` immediately; `-1` becomes `1`, otherwise it
+  increments by one. When the counter reaches `3`, it resets to `0` immediately
+  and queues energy `1` with `addToBot`.
+
+Rust result:
+- Tier and turn-start subscription match Java.
+- Fixed the hook to mutate `RelicState.counter` immediately instead of queuing
+  a later counter-update action.
+- Emits energy `1` with bottom insertion when the counter reaches `3`.
+- UI-only relic flash / above-creature visual action is intentionally not
+  represented.
+
+Coverage:
+- `shared_common_counter_relic_metadata_matches_java_sources`
+- `happy_flower_counter_updates_immediately_like_java`
+
+### Lantern
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/relics/Lantern.java`
+
+Rust source:
+- `src/content/relics/lantern.rs`
+- `src/content/relics/hooks.rs`
+
+Java evidence:
+- Constructor: ID `"Lantern"`, tier `COMMON`, landing sound `SOLID`.
+- `atPreBattle`: sets `firstTurn = true` immediately.
+- `atTurnStart`: if `firstTurn`, calls `addToTop(new GainEnergyAction(1))` and
+  then sets `firstTurn = false` immediately.
+
+Rust result:
+- Tier, pre-battle subscription, and turn-start subscription match Java.
+- Fixed pre-battle and first-turn state to mutate `RelicState.used_up`
+  immediately rather than queuing update actions.
+- Fixed first-turn energy insertion to top insertion.
+- UI-only relic flash / above-creature visual action is intentionally not
+  represented.
+
+Coverage:
+- `shared_common_counter_relic_metadata_matches_java_sources`
+- `lantern_first_turn_state_updates_immediately_like_java`
+
+### Nunchaku
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/relics/Nunchaku.java`
+
+Rust source:
+- `src/content/relics/nunchaku.rs`
+- `src/content/relics/hooks.rs`
+
+Java evidence:
+- Constructor: ID `"Nunchaku"`, tier `COMMON`, landing sound `FLAT`,
+  initializes `counter = 0`.
+- `onUseCard`: only for Attack cards, increments `counter` immediately. When
+  `counter % 10 == 0`, resets `counter` to `0` immediately and queues energy
+  `1` with `addToBot`.
+
+Rust result:
+- Tier and use-card subscription match Java.
+- Fixed the hook to mutate `RelicState.counter` immediately instead of queuing
+  a later counter-update action.
+- The dispatcher still gates the hook to Attack cards.
+- UI-only relic flash / above-creature visual action is intentionally not
+  represented.
+
+Coverage:
+- `shared_common_counter_relic_metadata_matches_java_sources`
+- `nunchaku_counter_updates_immediately_like_java`
+
+### Pen Nib
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/relics/PenNib.java`
+
+Rust source:
+- `src/content/relics/pen_nib.rs`
+- `src/content/relics/hooks.rs`
+- `src/content/powers/core/pen_nib.rs`
+
+Java evidence:
+- Constructor: ID `"Pen Nib"`, tier `COMMON`, landing sound `CLINK`,
+  initializes `counter = 0`.
+- `onUseCard`: only for Attack cards, increments `counter` immediately.
+- When `counter == 9`, queues `PenNibPower(1)` with `addToBot`; this prepares
+  the next attack. When `counter == 10`, resets `counter` to `0` immediately.
+- `atBattleStart`: if `counter == 9`, queues `PenNibPower(1)` with `addToBot`.
+
+Rust result:
+- Tier, battle-start subscription, and use-card subscription match Java.
+- Fixed the hook to mutate `RelicState.counter` immediately instead of queuing
+  later counter-update actions.
+- Existing `PenNibPower` doubles attack damage and removes itself when an Attack
+  card is used.
+- UI-only pulse / hand layout / relic-above-creature behavior is intentionally
+  not represented.
+
+Coverage:
+- `shared_common_counter_relic_metadata_matches_java_sources`
+- `pen_nib_counter_and_power_timing_match_java`
+
 ## Full Ironclad Class-Specific Relic Queue
 
 Relics remain `unreviewed` until their Java file, Rust definition/subscription,
@@ -576,3 +700,7 @@ class-specific queue.
 | 5 | `BloodVial.java` | `blood_vial.rs` | `exact` |
 | 6 | `BronzeScales.java` | `bronze_scales.rs` | `exact` |
 | 7 | `CentennialPuzzle.java` | `centennial_puzzle.rs` | `wrong-fixed` |
+| 8 | `HappyFlower.java` | `happy_flower.rs` | `wrong-fixed` |
+| 9 | `Lantern.java` | `lantern.rs` | `wrong-fixed` |
+| 10 | `Nunchaku.java` | `nunchaku.rs` | `wrong-fixed` |
+| 11 | `PenNib.java` | `pen_nib.rs` | `wrong-fixed` |

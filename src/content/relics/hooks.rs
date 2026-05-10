@@ -45,7 +45,11 @@ pub fn at_pre_battle(state: &mut CombatState) -> SmallVec<[ActionInfo; 4]> {
                 ));
                 state.entities.player.relics[relic_index] = rs;
             }
-            RelicId::Lantern => actions.extend(crate::content::relics::lantern::at_battle_start()),
+            RelicId::Lantern => {
+                let mut rs = state.entities.player.relics[relic_index].clone();
+                actions.extend(crate::content::relics::lantern::at_pre_battle(&mut rs));
+                state.entities.player.relics[relic_index] = rs;
+            }
             RelicId::NuclearBattery => {
                 actions.extend(crate::content::relics::nuclear_battery::at_battle_start())
             }
@@ -453,10 +457,11 @@ pub fn at_turn_start(state: &mut CombatState) -> SmallVec<[ActionInfo; 4]> {
                 );
             }
             RelicId::HappyFlower => {
-                let counter = state.entities.player.relics[relic_index].counter;
+                let mut rs = state.entities.player.relics[relic_index].clone();
                 actions.extend(
-                    crate::content::relics::happy_flower::HappyFlower::at_turn_start(counter),
+                    crate::content::relics::happy_flower::HappyFlower::at_turn_start(&mut rs),
                 );
+                state.entities.player.relics[relic_index] = rs;
             }
             RelicId::HornCleat => {
                 let counter = state.entities.player.relics[relic_index].counter;
@@ -476,8 +481,9 @@ pub fn at_turn_start(state: &mut CombatState) -> SmallVec<[ActionInfo; 4]> {
                 ));
             }
             RelicId::Lantern => {
-                let used_up = state.entities.player.relics[relic_index].used_up;
-                actions.extend(crate::content::relics::lantern::at_turn_start(used_up));
+                let mut rs = state.entities.player.relics[relic_index].clone();
+                actions.extend(crate::content::relics::lantern::at_turn_start(&mut rs));
+                state.entities.player.relics[relic_index] = rs;
             }
             RelicId::Kunai => actions.extend(crate::content::relics::kunai::at_turn_start()),
             RelicId::Shuriken => actions.extend(crate::content::relics::shuriken::at_turn_start()),
@@ -643,8 +649,9 @@ pub fn on_use_card(
             }
             RelicId::Nunchaku => {
                 if is_attack {
-                    let counter = state.entities.player.relics[relic_index].counter;
-                    actions.extend(crate::content::relics::nunchaku::on_use_card(counter));
+                    let mut rs = state.entities.player.relics[relic_index].clone();
+                    actions.extend(crate::content::relics::nunchaku::on_use_card(&mut rs));
+                    state.entities.player.relics[relic_index] = rs;
                 }
             }
             RelicId::OrnamentalFan => {
@@ -667,8 +674,9 @@ pub fn on_use_card(
             }
             RelicId::PenNib => {
                 if is_attack {
-                    let counter = state.entities.player.relics[relic_index].counter;
-                    actions.extend(crate::content::relics::pen_nib::on_use_card(counter));
+                    let mut rs = state.entities.player.relics[relic_index].clone();
+                    actions.extend(crate::content::relics::pen_nib::on_use_card(&mut rs));
+                    state.entities.player.relics[relic_index] = rs;
                 }
             }
             RelicId::Duality => {
