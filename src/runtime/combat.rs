@@ -1199,6 +1199,23 @@ impl CombatCard {
         }
     }
 
+    /// Java `AbstractCard.makeStatEquivalentCopy()` preserves card identity
+    /// state such as upgrades, misc, base damage mutation, cost-for-turn, and
+    /// free-to-play state, but it does not preserve transient calculated
+    /// damage/block/magic/multi-damage or one-shot play flags.
+    pub fn make_stat_equivalent_copy_with_uuid(&self, uuid: u32) -> Self {
+        let mut card = self.clone();
+        card.uuid = uuid;
+        card.base_damage_mut = 0;
+        card.base_block_mut = 0;
+        card.base_magic_num_mut = 0;
+        card.multi_damage.clear();
+        card.exhaust_override = None;
+        card.retain_override = None;
+        card.energy_on_use = 0;
+        card
+    }
+
     pub fn get_cost(&self) -> i8 {
         if let Some(c) = self.cost_for_turn {
             c as i8

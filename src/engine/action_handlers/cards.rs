@@ -325,6 +325,33 @@ fn can_upgrade_card_once(card: &crate::runtime::combat::CombatCard) -> bool {
     card.id == CardId::SearingBlow || card.upgrades == 0
 }
 
+fn apply_master_reality_to_generated_card(
+    card: &mut crate::runtime::combat::CombatCard,
+    state: &CombatState,
+) {
+    let def = crate::content::cards::get_card_definition(card.id);
+    if def.card_type == crate::content::cards::CardType::Curse
+        || def.card_type == crate::content::cards::CardType::Status
+    {
+        return;
+    }
+    if store::has_power(state, 0, PowerId::MasterRealityPower) && can_upgrade_card_once(card) {
+        card.upgrades += 1;
+    }
+}
+
+fn make_generated_card_from_id(
+    card_id: CardId,
+    uuid: u32,
+    upgraded: bool,
+) -> crate::runtime::combat::CombatCard {
+    let mut card = crate::runtime::combat::CombatCard::new(card_id, uuid);
+    if upgraded {
+        card.upgrades = 1;
+    }
+    card
+}
+
 pub fn handle_exhume_card(card_uuid: u32, upgrade: bool, state: &mut CombatState) {
     if state.zones.hand.len() >= 10 {
         return;
@@ -384,6 +411,7 @@ fn add_generated_card_to_hand_or_discard(
     mut card: crate::runtime::combat::CombatCard,
     state: &mut CombatState,
 ) {
+    apply_master_reality_to_generated_card(&mut card, state);
     if state.zones.hand.len() < 10 {
         apply_generated_card_entering_hand_mechanics(&mut card, state);
         state.zones.hand.push(card);
@@ -400,11 +428,7 @@ pub fn handle_make_temp_card_in_hand(
 ) {
     for _ in 0..amount {
         state.zones.card_uuid_counter += 1;
-        let mut card =
-            crate::runtime::combat::CombatCard::new(card_id, state.zones.card_uuid_counter);
-        if upgraded {
-            card.upgrades = 1;
-        }
+        let card = make_generated_card_from_id(card_id, state.zones.card_uuid_counter, upgraded);
         add_generated_card_to_hand_or_discard(card, state);
     }
 }
@@ -418,10 +442,8 @@ pub fn handle_make_temp_card_in_discard(
     for _ in 0..amount {
         state.zones.card_uuid_counter += 1;
         let mut card =
-            crate::runtime::combat::CombatCard::new(card_id, state.zones.card_uuid_counter);
-        if upgraded {
-            card.upgrades = 1;
-        }
+            make_generated_card_from_id(card_id, state.zones.card_uuid_counter, upgraded);
+        apply_master_reality_to_generated_card(&mut card, state);
         state.add_card_to_discard_pile_top(card);
     }
 }
@@ -437,10 +459,8 @@ pub fn handle_make_temp_card_in_draw_pile(
     for _ in 0..amount {
         state.zones.card_uuid_counter += 1;
         let mut card =
-            crate::runtime::combat::CombatCard::new(card_id, state.zones.card_uuid_counter);
-        if upgraded {
-            card.upgrades = 1;
-        }
+            make_generated_card_from_id(card_id, state.zones.card_uuid_counter, upgraded);
+        apply_master_reality_to_generated_card(&mut card, state);
         if to_bottom {
             state.add_card_to_draw_pile_bottom(card);
         } else if random_spot {
@@ -458,8 +478,7 @@ pub fn handle_make_copy_in_hand(
 ) {
     for _ in 0..amount {
         state.zones.card_uuid_counter += 1;
-        let mut card = (*original).clone();
-        card.uuid = state.zones.card_uuid_counter;
+        let card = original.make_stat_equivalent_copy_with_uuid(state.zones.card_uuid_counter);
         add_generated_card_to_hand_or_discard(card, state);
     }
 }
@@ -471,8 +490,8 @@ pub fn handle_make_copy_in_discard(
 ) {
     for _ in 0..amount {
         state.zones.card_uuid_counter += 1;
-        let mut card = (*original).clone();
-        card.uuid = state.zones.card_uuid_counter;
+        let mut card = original.make_stat_equivalent_copy_with_uuid(state.zones.card_uuid_counter);
+        apply_master_reality_to_generated_card(&mut card, state);
         state.add_card_to_discard_pile_top(card);
     }
 }
@@ -484,9 +503,16 @@ pub fn handle_make_temp_card_in_discard_and_deck(
 ) {
     for _ in 0..amount {
         state.zones.card_uuid_counter += 1;
-        let card = crate::runtime::combat::CombatCard::new(card_id, state.zones.card_uuid_counter);
-        state.add_card_to_discard_pile_top(card.clone());
-        state.add_card_to_draw_pile_random_spot(card);
+        let mut discard_card =
+            make_generated_card_from_id(card_id, state.zones.card_uuid_counter, false);
+        apply_master_reality_to_generated_card(&mut discard_card, state);
+        state.add_card_to_discard_pile_top(discard_card);
+
+        state.zones.card_uuid_counter += 1;
+        let mut draw_card =
+            make_generated_card_from_id(card_id, state.zones.card_uuid_counter, false);
+        apply_master_reality_to_generated_card(&mut draw_card, state);
+        state.add_card_to_draw_pile_random_spot(draw_card);
     }
 }
 
@@ -732,6 +758,7 @@ pub fn handle_make_random_card_in_draw_pile(
         if let Some(cost) = cost_for_turn {
             card.cost_for_turn = Some(cost);
         }
+        apply_master_reality_to_generated_card(&mut card, state);
         if random_spot {
             state.add_card_to_draw_pile_random_spot(card);
         } else {
@@ -806,11 +833,7 @@ pub fn handle_make_random_colorless_card_in_hand(
         if let Some(cost) = cost_for_turn {
             card.cost_for_turn = Some(cost);
         }
-        if state.zones.hand.len() < 10 {
-            state.zones.hand.push(card);
-        } else {
-            state.add_card_to_discard_pile_top(card);
-        }
+        add_generated_card_to_hand_or_discard(card, state);
     }
 }
 
@@ -1368,9 +1391,11 @@ pub fn handle_end_turn_trigger(state: &mut CombatState) {
 #[cfg(test)]
 mod tests {
     use super::{
-        handle_draw_pile_to_hand_by_type, handle_make_random_card_in_draw_pile,
-        handle_make_random_card_in_hand, handle_make_temp_card_in_draw_pile,
-        handle_make_temp_card_in_hand, obtain_specific_potion_if_allowed,
+        handle_draw_pile_to_hand_by_type, handle_make_copy_in_discard,
+        handle_make_random_card_in_draw_pile, handle_make_random_card_in_hand,
+        handle_make_temp_card_in_discard, handle_make_temp_card_in_discard_and_deck,
+        handle_make_temp_card_in_draw_pile, handle_make_temp_card_in_hand,
+        obtain_specific_potion_if_allowed,
     };
     use crate::content::cards::{CardId, CardType};
     use crate::content::potions::PotionId;
@@ -1489,6 +1514,91 @@ mod tests {
         assert_eq!(state.zones.discard_pile.len(), 1);
         assert_eq!(state.zones.discard_pile[0].id, CardId::Defend);
         assert_eq!(state.zones.discard_pile[0].cost_for_turn, None);
+    }
+
+    #[test]
+    fn generated_cards_apply_master_reality_before_entering_zones() {
+        let mut state = blank_test_combat();
+        state.entities.power_db.insert(
+            0,
+            vec![Power {
+                power_type: PowerId::MasterRealityPower,
+                instance_id: None,
+                amount: -1,
+                extra_data: 0,
+                just_applied: false,
+            }],
+        );
+
+        handle_make_temp_card_in_hand(CardId::Anger, 1, false, &mut state);
+        handle_make_temp_card_in_discard(CardId::Anger, 1, false, &mut state);
+        handle_make_temp_card_in_draw_pile(CardId::Anger, 1, false, false, false, &mut state);
+        handle_make_temp_card_in_hand(CardId::Wound, 1, false, &mut state);
+
+        assert_eq!(state.zones.hand[0].id, CardId::Anger);
+        assert_eq!(state.zones.hand[0].upgrades, 1);
+        assert_eq!(state.zones.discard_pile[0].id, CardId::Anger);
+        assert_eq!(state.zones.discard_pile[0].upgrades, 1);
+        assert_eq!(state.zones.draw_pile[0].id, CardId::Anger);
+        assert_eq!(state.zones.draw_pile[0].upgrades, 1);
+        assert_eq!(state.zones.hand[1].id, CardId::Wound);
+        assert_eq!(state.zones.hand[1].upgrades, 0);
+    }
+
+    #[test]
+    fn make_copy_in_discard_uses_java_stat_equivalent_copy_not_transient_evaluation() {
+        let mut state = blank_test_combat();
+        state.zones.card_uuid_counter = 20;
+        let mut original = CombatCard::new(CardId::Anger, 10);
+        original.upgrades = 1;
+        original.misc_value = 3;
+        original.base_damage_override = Some(17);
+        original.cost_modifier = -1;
+        original.cost_for_turn = Some(0);
+        original.free_to_play_once = true;
+        original.base_damage_mut = 99;
+        original.base_block_mut = 88;
+        original.base_magic_num_mut = 77;
+        original.multi_damage = smallvec::smallvec![1, 2, 3];
+        original.exhaust_override = Some(true);
+        original.retain_override = Some(true);
+        original.energy_on_use = 5;
+
+        handle_make_copy_in_discard(Box::new(original), 1, &mut state);
+
+        let copied = &state.zones.discard_pile[0];
+        assert_eq!(copied.uuid, 21);
+        assert_eq!(copied.id, CardId::Anger);
+        assert_eq!(copied.upgrades, 1);
+        assert_eq!(copied.misc_value, 3);
+        assert_eq!(copied.base_damage_override, Some(17));
+        assert_eq!(copied.cost_modifier, -1);
+        assert_eq!(copied.cost_for_turn, Some(0));
+        assert!(copied.free_to_play_once);
+        assert_eq!(copied.base_damage_mut, 0);
+        assert_eq!(copied.base_block_mut, 0);
+        assert_eq!(copied.base_magic_num_mut, 0);
+        assert!(copied.multi_damage.is_empty());
+        assert_eq!(copied.exhaust_override, None);
+        assert_eq!(copied.retain_override, None);
+        assert_eq!(copied.energy_on_use, 0);
+    }
+
+    #[test]
+    fn make_temp_card_in_discard_and_deck_creates_distinct_instances() {
+        let mut state = blank_test_combat();
+        state.zones.card_uuid_counter = 30;
+
+        handle_make_temp_card_in_discard_and_deck(CardId::Burn, 1, &mut state);
+
+        assert_eq!(state.zones.discard_pile.len(), 1);
+        assert_eq!(state.zones.draw_pile.len(), 1);
+        assert_eq!(state.zones.discard_pile[0].id, CardId::Burn);
+        assert_eq!(state.zones.draw_pile[0].id, CardId::Burn);
+        assert_ne!(
+            state.zones.discard_pile[0].uuid, state.zones.draw_pile[0].uuid,
+            "Java MakeTempCardInDiscardAndDeckAction uses separate stat-equivalent copies"
+        );
     }
 
     #[test]

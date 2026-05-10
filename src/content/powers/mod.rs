@@ -93,6 +93,7 @@ pub enum PowerId {
     NoxiousFumes,
     AfterImage,
     Burst,
+    MasterRealityPower,
 }
 
 use crate::runtime::combat::{CombatCard, CombatState};
@@ -503,6 +504,10 @@ pub fn get_power_definition(id: PowerId) -> PowerDefinition {
             name: "After Image",
         },
         PowerId::Burst => PowerDefinition { id, name: "Burst" },
+        PowerId::MasterRealityPower => PowerDefinition {
+            id,
+            name: "Master Reality",
+        },
     }
 }
 
