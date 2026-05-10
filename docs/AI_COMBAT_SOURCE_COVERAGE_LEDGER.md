@@ -202,10 +202,22 @@ directly, with the Java class kept only as source evidence.
 
 | Source | Classification | Extracted Rust mechanic | Notes |
 | --- | --- | --- | --- |
+| `vfx/campfire/CampfireDigEffect.java` | mechanical_hosted_in_ui | clear room rewards, generate random relic reward using relic RNG/tier logic, open combat reward screen, mark room complete | run/rest-site Dig mechanic; ignore shovel sound, fade, and screen cover |
+| `vfx/campfire/CampfireLiftEffect.java` | mechanical_hosted_in_ui | increment Girya counter and mark room complete | run/rest-site Lift mechanic; ignore border flash, screen shake, sound, and fade |
+| `vfx/campfire/CampfireRecallEffect.java` | mechanical_hosted_in_ui | clear room rewards, enqueue red-key obtain, mark room complete | run/rest-site Recall mechanic; `ObtainKeyEffect` carries the actual key flag write in Java |
+| `vfx/campfire/CampfireSleepEffect.java` | mechanical_hosted_in_ui | compute rest heal including Night Terrors, Regal Pillow, relic `onRest`, Dream Catcher reward generation, and room completion | run/rest-site Rest mechanic; ignore sleep jingle, fade, screen cover, and fire sound |
+| `vfx/campfire/CampfireSmithEffect.java` | mechanical_hosted_in_ui | open upgrade choice, upgrade selected master-deck card, run bottled-card upgrade check, fire relic `onSmith`, mark room complete | run kernel/rest-site mechanic; ignore fade, shine, brief-card display, fire sound, and render screen |
+| `vfx/campfire/CampfireTokeEffect.java` | mechanical_hosted_in_ui | open purge choice, remove selected purgeable master-deck card, mark room complete | run kernel/rest-site mechanic; `PurgeCardEffect` is render-only after removal |
+| `vfx/FastCardObtainEffect.java` | mechanical_hosted_in_ui | obtain a card into master deck and fire obtain/master-deck-change relic hooks | used by reward/shop/grid/neow flows; run kernel must extract mechanics and ignore coordinates, sound, and duration |
+| `vfx/NecronomicurseEffect.java` | mechanical_hosted_in_ui | add Necronomicurse back to master deck, then complete obtain animation bookkeeping | source quirk from `Necronomicurse.onRemoveFromMasterDeck`; Rust must preserve master-deck restoration without VFX |
+| `vfx/ObtainKeyEffect.java` | mechanical_hosted_in_ui | set Ruby, Emerald, or Sapphire key ownership flag | key acquisition is mechanically relevant for Act 4 eligibility; ignore key sprite, sound, rotation, and fade |
+| `vfx/ObtainPotionEffect.java` | mechanical_hosted_in_ui | if player lacks Sozu, obtain the generated potion | used by non-combat `EntropicBrew`; run/potion kernel must extract the potion acquisition and ignore the effect wrapper |
+| `vfx/PlayerTurnEffect.java` | mechanical_hosted_in_ui | recharge player energy, fire relic/power `onEnergyRecharge`, reveal monster intents, then fire power `atEnergyGain` when the banner finishes | combat lifecycle mechanic hidden in turn banner VFX; Rust must make this an explicit turn-start transition and ignore text, sound, fade, and duration |
+| `vfx/combat/BattleStartEffect.java` | render_only | none | health-bar visibility, intent display, sounds, screen shake, and banner rendering only; real combat start/turn setup must be modeled elsewhere |
 | `vfx/cardManip/ShowCardAndAddToHandEffect.java` | mechanical_hosted_in_ui | add generated card to hand; trigger copied-card hooks; refresh/apply hand powers; run draw/discard callback; apply Corruption cost change | ignore card coordinates, scale, transparency, sound, poof, and effect duration |
 | `vfx/cardManip/ShowCardAndAddToDiscardEffect.java` | mechanical_hosted_in_ui | add generated card to discard pile; preserve constructor-specific source-card vs visual-copy behavior | ignore coordinates, sound, poof, and delayed souls animation |
 | `vfx/cardManip/ShowCardAndAddToDrawPileEffect.java` | mechanical_hosted_in_ui | add generated card to draw pile top, bottom, or random spot; preserve constructor-specific source-card vs visual-copy behavior | random draw-pile insertion is mechanical; spawn position and card offset are render-only |
-| `vfx/cardManip/ShowCardAndObtainEffect.java` | mechanical_hosted_in_ui | obtain a card into master deck and fire obtain/master-deck-change relic hooks | used by combat `AddCardToDeckAction` for Writhing Mass Parasite; Omamori curse prevention is a real source quirk |
+| `vfx/cardManip/ShowCardAndObtainEffect.java` | mechanical_hosted_in_ui | obtain a card into master deck and fire obtain/master-deck-change relic hooks | used by combat `AddCardToDeckAction` for Writhing Mass Parasite and many run-level event/relic flows; Omamori curse prevention is a real source quirk |
 | `centerRoomAvailable` | non_combat | none | map UI |
 | `rightRoomAvailable` | non_combat | none | map UI |
 | `firstRoomChosen` | non_combat | none | map/run state |
@@ -553,6 +565,7 @@ typed payload work and must not enter AI mechanical action queues.
 | `NewQueueCardAction.java` | `randomTarget` | modeled | `ActionPayload::NewQueueCard.random_target` | queued random target behavior |
 | `NewQueueCardAction.java` | `immediateCard` | modeled | `ActionPayload::NewQueueCard.immediate_card` | insertion point in card queue |
 | `NewQueueCardAction.java` | `autoplayCard` | modeled | `ActionPayload::NewQueueCard.autoplay_card` | queued autoplay behavior |
+| `ObtainPotionAction.java` | `potion` | modeled | `ActionPayload::ObtainPotion.potion_ref` | combat potion acquisition; Sozu blocks obtain and flashes only in Java |
 | `QueueCardAction.java` | `card` | modeled | `ActionPayload::QueueCard.card_ref` | deprecated queue path; target is `ActionState.target` |
 | `ReApplyPowersAction.java` | `card` | modeled | `ActionPayload::ReApplyPowers.card_ref` | card whose target damage is recalculated |
 | `ReApplyPowersAction.java` | `m` | modeled | `ActionPayload::ReApplyPowers.monster_ref` | target monster for recalculation |

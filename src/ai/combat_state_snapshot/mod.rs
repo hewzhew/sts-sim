@@ -349,6 +349,7 @@ pub enum ActionPayload {
     MakeTempCardInHand(MakeTempCardInHandActionState),
     ModifyBlock(ModifyBlockActionState),
     NewQueueCard(NewQueueCardActionState),
+    ObtainPotion(ObtainPotionActionState),
     PlayTopCard(PlayTopCardActionState),
     PutOnBottomOfDeck(PutOnBottomOfDeckActionState),
     PutOnDeck(PutOnDeckActionState),
@@ -408,6 +409,7 @@ pub const TYPED_ACTION_PAYLOAD_SOURCE_CLASSES: &[&str] = &[
     "MakeTempCardInHandAction",
     "ModifyBlockAction",
     "NewQueueCardAction",
+    "ObtainPotionAction",
     "PlayTopCardAction",
     "PutOnBottomOfDeckAction",
     "PutOnDeckAction",
@@ -462,10 +464,26 @@ pub const RENDER_ONLY_ACTION_SOURCE_CLASSES: &[&str] = &[
     "WaitAction",
 ];
 
+/// Java VFX/UI classes that do not mutate AI-relevant mechanical state.
+/// Rust must not implement them as simulator work; they are listed here so
+/// source audits do not reintroduce UI carriers under mechanical names.
+pub const RENDER_ONLY_UI_SOURCE_CLASSES: &[&str] = &["BattleStartEffect"];
+
 /// Java VFX/UI classes whose constructors or updates mutate combat/run state.
 /// Rust must extract their mechanical transition and must not implement their
 /// rendering, timing, hitbox, sound, or coordinate behavior.
 pub const MECHANICAL_HOSTED_IN_UI_SOURCE_CLASSES: &[&str] = &[
+    "CampfireDigEffect",
+    "CampfireLiftEffect",
+    "CampfireRecallEffect",
+    "CampfireSleepEffect",
+    "CampfireSmithEffect",
+    "CampfireTokeEffect",
+    "FastCardObtainEffect",
+    "NecronomicurseEffect",
+    "ObtainKeyEffect",
+    "ObtainPotionEffect",
+    "PlayerTurnEffect",
     "ShowCardAndAddToDiscardEffect",
     "ShowCardAndAddToDrawPileEffect",
     "ShowCardAndAddToHandEffect",
@@ -507,6 +525,7 @@ impl ActionPayload {
             ActionPayload::MakeTempCardInHand(_) => "MakeTempCardInHandAction",
             ActionPayload::ModifyBlock(_) => "ModifyBlockAction",
             ActionPayload::NewQueueCard(_) => "NewQueueCardAction",
+            ActionPayload::ObtainPotion(_) => "ObtainPotionAction",
             ActionPayload::PlayTopCard(_) => "PlayTopCardAction",
             ActionPayload::PutOnBottomOfDeck(_) => "PutOnBottomOfDeckAction",
             ActionPayload::PutOnDeck(_) => "PutOnDeckAction",
@@ -722,6 +741,11 @@ pub struct NewQueueCardActionState {
     pub random_target: bool,
     pub immediate_card: bool,
     pub autoplay_card: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ObtainPotionActionState {
+    pub potion_ref: PotionRef,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
