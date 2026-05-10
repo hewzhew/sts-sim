@@ -411,6 +411,7 @@ pub fn is_ethereal(card: &CombatCard) -> bool {
 
 pub fn upgraded_base_cost_override(card: &CombatCard) -> Option<i8> {
     match card.id {
+        CardId::Barricade if card.upgrades > 0 => Some(2),
         CardId::Madness if card.upgrades > 0 => Some(0),
         _ => None,
     }

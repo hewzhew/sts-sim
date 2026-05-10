@@ -2314,7 +2314,7 @@ pub fn get_card_definition(id: CardId) -> CardDefinition {
             base_damage: 0,
             base_block: 5,
             base_magic: 0,
-            target: CardTarget::None,
+            target: CardTarget::SelfTarget,
             is_multi_damage: false,
             exhaust: false,
             ethereal: false,
@@ -3698,7 +3698,7 @@ mod tests {
     use super::*;
     use crate::content::powers::PowerId;
     use crate::runtime::action::{Action, DamageType};
-    use crate::runtime::combat::CombatCard;
+    use crate::runtime::combat::{CombatCard, Power};
 
     #[test]
     fn ironclad_starter_basic_definitions_match_java_sources() {
@@ -3814,5 +3814,209 @@ mod tests {
             }
             other => panic!("Bash second action should be ApplyPowerAction, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn ironclad_common_utility_definitions_match_java_sources() {
+        let anger = get_card_definition(CardId::Anger);
+        assert_eq!(anger.name, "Anger");
+        assert_eq!(anger.card_type, CardType::Attack);
+        assert_eq!(anger.rarity, CardRarity::Common);
+        assert_eq!(anger.cost, 0);
+        assert_eq!(anger.base_damage, 6);
+        assert_eq!(anger.target, CardTarget::Enemy);
+        assert_eq!(anger.upgrade_damage, 2);
+
+        let armaments = get_card_definition(CardId::Armaments);
+        assert_eq!(armaments.name, "Armaments");
+        assert_eq!(armaments.card_type, CardType::Skill);
+        assert_eq!(armaments.rarity, CardRarity::Common);
+        assert_eq!(armaments.cost, 1);
+        assert_eq!(armaments.base_block, 5);
+        assert_eq!(armaments.target, CardTarget::SelfTarget);
+        assert_eq!(armaments.upgrade_damage, 0);
+        assert_eq!(armaments.upgrade_block, 0);
+        assert_eq!(armaments.upgrade_magic, 0);
+
+        let barricade = get_card_definition(CardId::Barricade);
+        assert_eq!(barricade.name, "Barricade");
+        assert_eq!(barricade.card_type, CardType::Power);
+        assert_eq!(barricade.rarity, CardRarity::Rare);
+        assert_eq!(barricade.cost, 3);
+        assert_eq!(barricade.target, CardTarget::SelfTarget);
+        let mut barricade_plus = CombatCard::new(CardId::Barricade, 41);
+        barricade_plus.upgrades = 1;
+        assert_eq!(upgraded_base_cost_override(&barricade_plus), Some(2));
+
+        let battle_trance = get_card_definition(CardId::BattleTrance);
+        assert_eq!(battle_trance.name, "Battle Trance");
+        assert_eq!(battle_trance.card_type, CardType::Skill);
+        assert_eq!(battle_trance.rarity, CardRarity::Uncommon);
+        assert_eq!(battle_trance.cost, 0);
+        assert_eq!(battle_trance.base_magic, 3);
+        assert_eq!(battle_trance.target, CardTarget::None);
+        assert_eq!(battle_trance.upgrade_magic, 1);
+    }
+
+    #[test]
+    fn ironclad_common_utility_runtime_actions_match_java_use_methods() {
+        let mut state = crate::test_support::blank_test_combat();
+
+        let anger_actions = resolve_card_play(
+            CardId::Anger,
+            &state,
+            &CombatCard::new(CardId::Anger, 10),
+            Some(7),
+        );
+        assert_eq!(anger_actions.len(), 2);
+        match &anger_actions[0].action {
+            Action::Damage(info) => {
+                assert_eq!(info.source, 0);
+                assert_eq!(info.target, 7);
+                assert_eq!(info.base, 6);
+                assert_eq!(info.output, 6);
+                assert_eq!(info.damage_type, DamageType::Normal);
+            }
+            other => panic!("Anger first action should be DamageAction, got {other:?}"),
+        }
+        match &anger_actions[1].action {
+            Action::MakeCopyInDiscard { original, amount } => {
+                assert_eq!(original.id, CardId::Anger);
+                assert_eq!(original.upgrades, 0);
+                assert_eq!(*amount, 1);
+            }
+            other => panic!(
+                "Anger second action should be MakeTempCardInDiscardAction equivalent, got {other:?}"
+            ),
+        }
+
+        state.zones.hand = vec![
+            CombatCard::new(CardId::Strike, 11),
+            {
+                let mut upgraded = CombatCard::new(CardId::Defend, 12);
+                upgraded.upgrades = 1;
+                upgraded
+            },
+            CombatCard::new(CardId::Wound, 13),
+        ];
+        let mut armaments_plus = CombatCard::new(CardId::Armaments, 14);
+        armaments_plus.upgrades = 1;
+        let armaments_plus_actions =
+            resolve_card_play(CardId::Armaments, &state, &armaments_plus, None);
+        assert_eq!(armaments_plus_actions.len(), 2);
+        assert!(matches!(
+            armaments_plus_actions[0].action,
+            Action::GainBlock {
+                target: 0,
+                amount: 5
+            }
+        ));
+        match &armaments_plus_actions[1].action {
+            Action::UpgradeCard { card_uuid } => assert_eq!(*card_uuid, 11),
+            other => panic!("Armaments+ should only upgrade canUpgrade cards, got {other:?}"),
+        }
+
+        state.zones.hand = vec![
+            CombatCard::new(CardId::Strike, 21),
+            CombatCard::new(CardId::Defend, 22),
+        ];
+        let armaments_actions = resolve_card_play(
+            CardId::Armaments,
+            &state,
+            &CombatCard::new(CardId::Armaments, 23),
+            None,
+        );
+        assert_eq!(armaments_actions.len(), 2);
+        match &armaments_actions[1].action {
+            Action::SuspendForHandSelect {
+                min,
+                max,
+                can_cancel,
+                filter,
+                reason,
+            } => {
+                assert_eq!(*min, 1);
+                assert_eq!(*max, 1);
+                assert!(!*can_cancel);
+                assert_eq!(*filter, crate::state::HandSelectFilter::Upgradeable);
+                assert_eq!(*reason, crate::state::HandSelectReason::Upgrade);
+            }
+            other => panic!("Armaments should open upgrade hand select, got {other:?}"),
+        }
+
+        let barricade_actions = resolve_card_play(
+            CardId::Barricade,
+            &state,
+            &CombatCard::new(CardId::Barricade, 30),
+            None,
+        );
+        assert_eq!(barricade_actions.len(), 1);
+        match &barricade_actions[0].action {
+            Action::ApplyPower {
+                source,
+                target,
+                power_id,
+                amount,
+            } => {
+                assert_eq!(*source, 0);
+                assert_eq!(*target, 0);
+                assert_eq!(*power_id, PowerId::Barricade);
+                assert_eq!(*amount, -1);
+            }
+            other => panic!("Barricade should apply BarricadePower, got {other:?}"),
+        }
+        crate::content::powers::store::set_powers_for(
+            &mut state,
+            0,
+            vec![Power {
+                power_type: PowerId::Barricade,
+                instance_id: None,
+                amount: -1,
+                extra_data: 0,
+                just_applied: false,
+            }],
+        );
+        let duplicate_barricade_actions = resolve_card_play(
+            CardId::Barricade,
+            &state,
+            &CombatCard::new(CardId::Barricade, 31),
+            None,
+        );
+        assert!(duplicate_barricade_actions.is_empty());
+
+        let battle_trance_actions = resolve_card_play(
+            CardId::BattleTrance,
+            &state,
+            &CombatCard::new(CardId::BattleTrance, 40),
+            None,
+        );
+        assert_eq!(battle_trance_actions.len(), 2);
+        assert!(matches!(
+            battle_trance_actions[0].action,
+            Action::DrawCards(3)
+        ));
+        match &battle_trance_actions[1].action {
+            Action::ApplyPower {
+                source,
+                target,
+                power_id,
+                amount,
+            } => {
+                assert_eq!(*source, 0);
+                assert_eq!(*target, 0);
+                assert_eq!(*power_id, PowerId::NoDraw);
+                assert_eq!(*amount, -1);
+            }
+            other => panic!("Battle Trance should apply NoDrawPower, got {other:?}"),
+        }
+
+        let mut battle_trance_plus = CombatCard::new(CardId::BattleTrance, 41);
+        battle_trance_plus.upgrades = 1;
+        let battle_trance_plus_actions =
+            resolve_card_play(CardId::BattleTrance, &state, &battle_trance_plus, None);
+        assert!(matches!(
+            battle_trance_plus_actions[0].action,
+            Action::DrawCards(4)
+        ));
     }
 }

@@ -3,13 +3,14 @@ use crate::runtime::combat::{CombatCard, CombatState};
 use smallvec::SmallVec;
 
 pub fn anger_play(
-    _state: &CombatState,
+    state: &CombatState,
     card: &CombatCard,
     target: Option<crate::core::EntityId>,
 ) -> SmallVec<[ActionInfo; 4]> {
     let target = target.expect("Anger requires a valid target!");
+    let evaluated = crate::content::cards::evaluate_card_for_play(card, state, Some(target));
     let mut actions = smallvec::SmallVec::new();
-    let damage = card.base_damage_mut; // 6, upgraded 8
+    let damage = evaluated.base_damage_mut; // 6, upgraded 8
 
     actions.push(ActionInfo {
         action: Action::Damage(DamageInfo {
@@ -25,7 +26,7 @@ pub fn anger_play(
 
     actions.push(ActionInfo {
         action: Action::MakeCopyInDiscard {
-            original: Box::new(card.clone()),
+            original: Box::new(evaluated),
             amount: 1,
         },
         insertion_mode: AddTo::Bottom,

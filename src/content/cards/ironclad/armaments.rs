@@ -4,21 +4,26 @@ use crate::state::HandSelectFilter;
 use crate::state::HandSelectReason;
 use smallvec::SmallVec;
 
-pub fn armaments_play(state: &CombatState, _card: &CombatCard) -> SmallVec<[ActionInfo; 4]> {
+fn can_armaments_upgrade(card: &CombatCard) -> bool {
+    let def = crate::content::cards::get_card_definition(card.id);
+    (card.id == crate::content::cards::CardId::SearingBlow || card.upgrades == 0)
+        && def.card_type != crate::content::cards::CardType::Status
+        && def.card_type != crate::content::cards::CardType::Curse
+}
+
+pub fn armaments_play(state: &CombatState, card: &CombatCard) -> SmallVec<[ActionInfo; 4]> {
+    let evaluated = crate::content::cards::evaluate_card_for_play(card, state, None);
     let mut actions = smallvec::SmallVec::new();
-    // Armaments provides Block explicitly.
     actions.push(ActionInfo {
         action: Action::GainBlock {
             target: 0,
-            amount: _card.base_block_mut,
+            amount: evaluated.base_block_mut,
         },
         insertion_mode: AddTo::Bottom,
     });
 
-    // Armaments Upgrade logic
-    if _card.upgrades > 0 {
-        // Upgrade all
-        for c in &state.zones.hand {
+    if card.upgrades > 0 {
+        for c in state.zones.hand.iter().filter(|c| can_armaments_upgrade(c)) {
             actions.push(ActionInfo {
                 action: Action::UpgradeCard { card_uuid: c.uuid },
                 insertion_mode: AddTo::Bottom,
@@ -29,11 +34,7 @@ pub fn armaments_play(state: &CombatState, _card: &CombatCard) -> SmallVec<[Acti
             .zones
             .hand
             .iter()
-            .filter(|c| {
-                c.upgrades == 0
-                    && crate::content::cards::get_card_definition(c.id).card_type
-                        != crate::content::cards::CardType::Status
-            })
+            .filter(|c| can_armaments_upgrade(c))
             .map(|c| c.uuid)
             .collect();
         if upgradeable.is_empty() {

@@ -117,6 +117,137 @@ Coverage:
 - `ironclad_starter_basic_definitions_match_java_sources`
 - `ironclad_starter_basic_runtime_actions_match_java_use_methods`
 
+## Batch 2 - Early Ironclad Utility / Power Coverage
+
+### Anger
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/cards/red/Anger.java`
+
+Rust source:
+- `src/content/cards/mod.rs`
+- `src/content/cards/ironclad/anger.rs`
+- `src/content/cards/runtime_impl.rs`
+
+Java evidence:
+- Constructor: cost `0`, type `ATTACK`, color `RED`, rarity `COMMON`,
+  target `ENEMY`, `baseDamage = 6`.
+- `use`: queues `DamageAction`, then a VFX action, then
+  `MakeTempCardInDiscardAction(this.makeStatEquivalentCopy(), 1)`.
+- `upgrade`: `upgradeDamage(2)`.
+- `VFXAction` / `VerticalAuraEffect` is UI/VFX-only and is not part of Rust
+  simulator mechanics.
+
+Rust result:
+- Runtime now evaluates the card at play time before producing damage.
+- Runtime emits damage followed by `MakeCopyInDiscard`, preserving upgraded
+  stat-equivalent copy behavior.
+
+Coverage:
+- `ironclad_common_utility_definitions_match_java_sources`
+- `ironclad_common_utility_runtime_actions_match_java_use_methods`
+
+### Armaments
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/cards/red/Armaments.java`
+- `D:/rust/cardcrawl/actions/unique/ArmamentsAction.java`
+
+Rust source:
+- `src/content/cards/mod.rs`
+- `src/content/cards/ironclad/armaments.rs`
+- `src/content/cards/runtime_impl.rs`
+
+Java evidence:
+- Constructor: cost `1`, type `SKILL`, color `RED`, rarity `COMMON`, target
+  `SELF`, `baseBlock = 5`.
+- `use`: queues `GainBlockAction(p, p, this.block)`, then
+  `ArmamentsAction(this.upgraded)`.
+- Unupgraded `ArmamentsAction`: if exactly one card in hand can upgrade, upgrade
+  it automatically; if more than one can upgrade, open a 1-card hand select.
+- Upgraded `ArmamentsAction`: upgrades every card in hand where `c.canUpgrade()`
+  is true.
+- `superFlash`, `refreshHandLayout`, and select-screen UI presentation are
+  UI-only. The gameplay-visible result is which cards are upgraded.
+
+Rust result:
+- Fixed definition target from `None` to `SelfTarget`.
+- Runtime now evaluates block at play time.
+- Runtime now applies the Java `canUpgrade()` equivalent: exclude status/curse
+  cards, skip already-upgraded ordinary cards, but still allow Searing Blow's
+  repeat upgrades.
+- Unupgraded Armaments still auto-upgrades one candidate and opens hand-select
+  for multiple candidates.
+
+Coverage:
+- `ironclad_common_utility_definitions_match_java_sources`
+- `ironclad_common_utility_runtime_actions_match_java_use_methods`
+
+### Barricade
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/cards/red/Barricade.java`
+- `D:/rust/cardcrawl/powers/BarricadePower.java`
+
+Rust source:
+- `src/content/cards/mod.rs`
+- `src/content/cards/ironclad/barricade.rs`
+- `src/content/cards/runtime_impl.rs`
+
+Java evidence:
+- Constructor: cost `3`, type `POWER`, color `RED`, rarity `RARE`, target
+  `SELF`.
+- `use`: checks player powers; only queues `ApplyPowerAction` if Barricade is
+  not already present.
+- `BarricadePower` has sentinel `amount = -1`.
+- `upgrade`: `upgradeBaseCost(2)`.
+
+Rust result:
+- Fixed upgraded base cost override for `Barricade+` to `2`.
+- Runtime now emits no action if the player already has Barricade.
+- Runtime applies Barricade with sentinel amount `-1`.
+
+Coverage:
+- `ironclad_common_utility_definitions_match_java_sources`
+- `ironclad_common_utility_runtime_actions_match_java_use_methods`
+
+### Battle Trance
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/cards/red/BattleTrance.java`
+- `D:/rust/cardcrawl/powers/NoDrawPower.java`
+
+Rust source:
+- `src/content/cards/mod.rs`
+- `src/content/cards/ironclad/battle_trance.rs`
+- `src/content/cards/runtime_impl.rs`
+
+Java evidence:
+- Constructor: cost `0`, type `SKILL`, color `RED`, rarity `UNCOMMON`, target
+  `NONE`, `baseMagicNumber = magicNumber = 3`.
+- `use`: queues `DrawCardAction(p, this.magicNumber)`, then
+  `ApplyPowerAction(p, p, new NoDrawPower(p))`.
+- `NoDrawPower` has sentinel `amount = -1` and removes itself at end of the
+  player's turn.
+- `upgrade`: `upgradeMagicNumber(1)`.
+
+Rust result:
+- Runtime now evaluates the card at play time before emitting draw count.
+- Runtime emits `DrawCards(3/4)` followed by player `NoDraw` with sentinel
+  amount `-1`.
+
+Coverage:
+- `ironclad_common_utility_definitions_match_java_sources`
+- `ironclad_common_utility_runtime_actions_match_java_use_methods`
+
 ## Full Ironclad Queue
 
 Cards remain `unreviewed` until their Java file, Rust definition, Rust runtime,
@@ -127,10 +258,10 @@ and supporting engine behavior have all been checked.
 | 1 | `Strike_Red.java` | `strike.rs` | `exact` |
 | 2 | `Defend_Red.java` | `defend.rs` | `wrong-fixed` |
 | 3 | `Bash.java` | `bash.rs` | `exact` |
-| 4 | `Anger.java` | `anger.rs` | `unreviewed` |
-| 5 | `Armaments.java` | `armaments.rs` | `unreviewed` |
-| 6 | `Barricade.java` | `barricade.rs` | `unreviewed` |
-| 7 | `BattleTrance.java` | `battle_trance.rs` | `unreviewed` |
+| 4 | `Anger.java` | `anger.rs` | `wrong-fixed` |
+| 5 | `Armaments.java` | `armaments.rs` | `wrong-fixed` |
+| 6 | `Barricade.java` | `barricade.rs` | `wrong-fixed` |
+| 7 | `BattleTrance.java` | `battle_trance.rs` | `wrong-fixed` |
 | 8 | `Berserk.java` | `berserk.rs` | `unreviewed` |
 | 9 | `BloodForBlood.java` | `blood_for_blood.rs` | `unreviewed` |
 | 10 | `Bloodletting.java` | `bloodletting.rs` | `unreviewed` |
