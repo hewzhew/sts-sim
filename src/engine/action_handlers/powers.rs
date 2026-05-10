@@ -75,11 +75,12 @@ pub fn handle_apply_power_detailed(
         }
     }
 
-    // U1: Dead/Escaped target guard
+    // U1: Java ApplyPowerAction.update(): target.isDeadOrEscaped() returns true
+    // for dying, escaped, and half-dead monsters, so no hooks or Artifact checks run.
     if target == 0 {
         // Player target — always valid
     } else if let Some(m) = state.entities.monsters.iter().find(|m| m.id == target) {
-        if m.is_dying || m.is_escaped || m.current_hp <= 0 {
+        if m.is_dying || m.is_escaped || m.half_dead || m.current_hp <= 0 {
             return;
         }
     }
@@ -113,7 +114,7 @@ pub fn handle_apply_power_detailed(
     // U5: Monster re-check after hooks
     if target != 0 {
         if let Some(m) = state.entities.monsters.iter().find(|m| m.id == target) {
-            if m.is_dying || m.is_escaped || m.current_hp <= 0 {
+            if m.is_dying || m.is_escaped || m.half_dead || m.current_hp <= 0 {
                 return;
             }
         }
@@ -572,6 +573,7 @@ pub fn handle_lose_max_hp(target: usize, amount: i32, state: &mut CombatState) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::content::monsters::EnemyId;
     use crate::runtime::combat::Power;
     use crate::test_support::blank_test_combat;
 
@@ -628,6 +630,23 @@ mod tests {
         assert!(
             actions.is_empty(),
             "Energized belongs to Java onEnergyRecharge, not applyStartOfTurnPowers"
+        );
+    }
+
+    #[test]
+    fn apply_power_ignores_half_dead_monsters_like_java_is_dead_or_escaped() {
+        let mut state = blank_test_combat();
+        let mut half_dead = crate::test_support::test_monster(EnemyId::Darkling);
+        half_dead.id = 44;
+        half_dead.current_hp = 12;
+        half_dead.half_dead = true;
+        state.entities.monsters = vec![half_dead];
+
+        handle_apply_power(0, 44, PowerId::Weak, 2, &mut state);
+
+        assert!(
+            store::powers_snapshot_for(&state, 44).is_empty(),
+            "Java ApplyPowerAction returns before applying powers when target.isDeadOrEscaped(), and halfDead is part of that predicate"
         );
     }
 }
