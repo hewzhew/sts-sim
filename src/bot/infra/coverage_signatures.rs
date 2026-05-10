@@ -268,6 +268,7 @@ fn source_descriptor(combat: &CombatState, input: &ClientInput) -> (String, Stri
 fn card_target_shape(target: CardTarget) -> &'static str {
     match target {
         CardTarget::Enemy => "single_enemy",
+        CardTarget::SelfAndEnemy => "self_and_enemy",
         CardTarget::AllEnemy => "aoe",
         CardTarget::SelfTarget => "self",
         CardTarget::None => "none",

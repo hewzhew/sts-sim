@@ -2113,6 +2113,129 @@ Coverage:
 - `ironclad_upgrade_and_exhaust_utility_runtime_actions_match_java_use_methods`
 - `sentinel_exhaust_trigger_matches_java_add_to_top_energy`
 
+## Batch 17 - Sever Soul / Shockwave / Shrug It Off / Spot Weakness Coverage
+
+### Sever Soul
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/cards/red/SeverSoul.java`
+- `D:/rust/cardcrawl/actions/unique/ExhaustAllNonAttackAction.java`
+
+Rust source:
+- `src/content/cards/mod.rs`
+- `src/content/cards/ironclad/sever_soul.rs`
+- `src/engine/action_handlers/damage.rs`
+
+Java evidence:
+- Constructor: cost `2`, type `ATTACK`, color `RED`, rarity `UNCOMMON`, target
+  `ENEMY`, `baseDamage = 16`.
+- `use`: queues `ExhaustAllNonAttackAction()`, then DamageAction using
+  `this.damage`.
+- `ExhaustAllNonAttackAction`: iterates the current hand and `addToTop`s one
+  ExhaustSpecificCardAction for each non-Attack card. Those exhausts therefore
+  resolve before the following queued DamageAction.
+- `upgrade`: `upgradeDamage(6)`.
+
+Rust result:
+- Definition matches Java constructor and upgrade damage.
+- Runtime now evaluates damage at play time before emitting DamageAction.
+- Fixed `ExhaustAllNonAttack` to queue exhausted cards to the front, preserving
+  Java's exhaust-before-following-damage order.
+
+Coverage:
+- `ironclad_exhaust_debuff_and_intent_definitions_match_java_sources`
+- `ironclad_exhaust_debuff_and_intent_runtime_actions_match_java_use_methods`
+- `sever_soul_exhaust_all_non_attack_queues_exhausts_before_following_damage`
+
+### Shockwave
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/cards/red/Shockwave.java`
+
+Rust source:
+- `src/content/cards/mod.rs`
+- `src/content/cards/ironclad/shockwave.rs`
+
+Java evidence:
+- Constructor: cost `2`, type `SKILL`, color `RED`, rarity `UNCOMMON`, target
+  `ALL_ENEMY`, `exhaust = true`,
+  `baseMagicNumber = magicNumber = 3`.
+- `use`: for every monster in the room, queues Weak then Vulnerable for
+  `this.magicNumber`.
+- `upgrade`: `upgradeMagicNumber(2)`.
+
+Rust result:
+- Definition matches Java constructor, exhaust flag, and upgrade magic.
+- Runtime now evaluates magic at play time before applying Weak/Vulnerable.
+- Existing implementation applies Weak then Vulnerable per monster, matching the
+  Java loop order. It does not migrate UI-only attack effects.
+
+Coverage:
+- `ironclad_exhaust_debuff_and_intent_definitions_match_java_sources`
+- `ironclad_exhaust_debuff_and_intent_runtime_actions_match_java_use_methods`
+
+### Shrug It Off
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/cards/red/ShrugItOff.java`
+
+Rust source:
+- `src/content/cards/mod.rs`
+- `src/content/cards/ironclad/shrug_it_off.rs`
+
+Java evidence:
+- Constructor: cost `1`, type `SKILL`, color `RED`, rarity `COMMON`, target
+  `SELF`, `baseBlock = 8`.
+- `use`: queues GainBlock using `this.block`, then DrawCardAction 1.
+- `upgrade`: `upgradeBlock(3)`.
+
+Rust result:
+- Fixed definition base magic from fake draw count `1` to `0`; draw 1 is an
+  action constant, not Java card magic.
+- Runtime now evaluates block at play time and then emits DrawCards(1).
+
+Coverage:
+- `ironclad_exhaust_debuff_and_intent_definitions_match_java_sources`
+- `ironclad_exhaust_debuff_and_intent_runtime_actions_match_java_use_methods`
+
+### Spot Weakness
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/cards/red/SpotWeakness.java`
+- `D:/rust/cardcrawl/actions/unique/SpotWeaknessAction.java`
+
+Rust source:
+- `src/content/cards/mod.rs`
+- `src/content/cards/ironclad/spot_weakness.rs`
+- `src/engine/targeting.rs`
+
+Java evidence:
+- Constructor: cost `1`, type `SKILL`, color `RED`, rarity `UNCOMMON`, target
+  `SELF_AND_ENEMY`, `baseMagicNumber = magicNumber = 3`.
+- `use`: queues `SpotWeaknessAction(this.magicNumber, m)`.
+- `SpotWeaknessAction`: if the target monster exists and
+  `getIntentBaseDmg() >= 0`, applies Strength to the player; otherwise it only
+  shows a ThoughtBubble.
+- `upgrade`: `upgradeMagicNumber(1)`.
+
+Rust result:
+- Added `CardTarget::SelfAndEnemy` and mapped it to enemy target validation.
+- Fixed Spot Weakness definition target from `Enemy` to `SelfAndEnemy`.
+- Runtime now evaluates magic at play time and applies Strength only when the
+  selected monster's resolved visible turn plan contains an attack.
+
+Coverage:
+- `ironclad_exhaust_debuff_and_intent_definitions_match_java_sources`
+- `ironclad_exhaust_debuff_and_intent_runtime_actions_match_java_use_methods`
+
 ## Full Ironclad Queue
 
 Cards remain `unreviewed` until their Java file, Rust definition, Rust runtime,
@@ -2183,10 +2306,10 @@ and supporting engine behavior have all been checked.
 | 61 | `SecondWind.java` | `second_wind.rs` | `wrong-fixed` |
 | 62 | `SeeingRed.java` | `seeing_red.rs` | `wrong-fixed` |
 | 63 | `Sentinel.java` | `sentinel.rs` | `wrong-fixed` |
-| 64 | `SeverSoul.java` | `sever_soul.rs` | `unreviewed` |
-| 65 | `Shockwave.java` | `shockwave.rs` | `unreviewed` |
-| 66 | `ShrugItOff.java` | `shrug_it_off.rs` | `unreviewed` |
-| 67 | `SpotWeakness.java` | `spot_weakness.rs` | `unreviewed` |
+| 64 | `SeverSoul.java` | `sever_soul.rs` | `wrong-fixed` |
+| 65 | `Shockwave.java` | `shockwave.rs` | `wrong-fixed` |
+| 66 | `ShrugItOff.java` | `shrug_it_off.rs` | `wrong-fixed` |
+| 67 | `SpotWeakness.java` | `spot_weakness.rs` | `wrong-fixed` |
 | 68 | `SwordBoomerang.java` | `sword_boomerang.rs` | `unreviewed` |
 | 69 | `ThunderClap.java` | `thunderclap.rs` | `unreviewed` |
 | 70 | `TrueGrit.java` | `true_grit.rs` | `unreviewed` |

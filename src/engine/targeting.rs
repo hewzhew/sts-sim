@@ -5,7 +5,7 @@ use crate::state::TargetValidation;
 
 pub fn validation_for_card_target(target: CardTarget) -> Option<TargetValidation> {
     match target {
-        CardTarget::Enemy => Some(TargetValidation::AnyEnemy),
+        CardTarget::Enemy | CardTarget::SelfAndEnemy => Some(TargetValidation::AnyEnemy),
         _ => None,
     }
 }

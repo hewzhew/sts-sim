@@ -10,6 +10,7 @@ pub fn spot_weakness_play(
 ) -> SmallVec<[ActionInfo; 4]> {
     let target = target.expect("Spot Weakness requires a valid target!");
     let mut actions = smallvec::SmallVec::new();
+    let evaluated = crate::content::cards::evaluate_card_for_play(card, state, Some(target));
 
     // Check if target intends to attack
     let is_attacking =
@@ -25,7 +26,7 @@ pub fn spot_weakness_play(
                 source: 0,
                 target: 0,
                 power_id: crate::content::powers::PowerId::Strength,
-                amount: card.base_magic_num_mut,
+                amount: evaluated.base_magic_num_mut,
             },
             insertion_mode: AddTo::Bottom,
         });

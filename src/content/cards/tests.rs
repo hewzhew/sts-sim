@@ -3085,3 +3085,217 @@ fn sentinel_exhaust_trigger_matches_java_add_to_top_energy() {
         })
     );
 }
+
+#[test]
+fn ironclad_exhaust_debuff_and_intent_definitions_match_java_sources() {
+    let sever_soul = get_card_definition(CardId::SeverSoul);
+    assert_eq!(sever_soul.card_type, CardType::Attack);
+    assert_eq!(sever_soul.rarity, CardRarity::Uncommon);
+    assert_eq!(sever_soul.cost, 2);
+    assert_eq!(sever_soul.base_damage, 16);
+    assert_eq!(sever_soul.target, CardTarget::Enemy);
+    assert_eq!(sever_soul.upgrade_damage, 6);
+
+    let shockwave = get_card_definition(CardId::Shockwave);
+    assert_eq!(shockwave.card_type, CardType::Skill);
+    assert_eq!(shockwave.rarity, CardRarity::Uncommon);
+    assert_eq!(shockwave.cost, 2);
+    assert_eq!(shockwave.base_magic, 3);
+    assert_eq!(shockwave.target, CardTarget::AllEnemy);
+    assert!(shockwave.exhaust);
+    assert_eq!(shockwave.upgrade_magic, 2);
+
+    let shrug = get_card_definition(CardId::ShrugItOff);
+    assert_eq!(shrug.card_type, CardType::Skill);
+    assert_eq!(shrug.rarity, CardRarity::Common);
+    assert_eq!(shrug.cost, 1);
+    assert_eq!(shrug.base_block, 8);
+    assert_eq!(shrug.base_magic, 0);
+    assert_eq!(shrug.target, CardTarget::SelfTarget);
+    assert_eq!(shrug.upgrade_block, 3);
+
+    let spot_weakness = get_card_definition(CardId::SpotWeakness);
+    assert_eq!(spot_weakness.card_type, CardType::Skill);
+    assert_eq!(spot_weakness.rarity, CardRarity::Uncommon);
+    assert_eq!(spot_weakness.cost, 1);
+    assert_eq!(spot_weakness.base_magic, 3);
+    assert_eq!(spot_weakness.target, CardTarget::SelfAndEnemy);
+    assert_eq!(spot_weakness.upgrade_magic, 1);
+}
+
+#[test]
+fn ironclad_exhaust_debuff_and_intent_runtime_actions_match_java_use_methods() {
+    let mut state = crate::test_support::blank_test_combat();
+    crate::content::powers::store::set_powers_for(
+        &mut state,
+        0,
+        vec![
+            Power {
+                power_type: PowerId::Strength,
+                instance_id: None,
+                amount: 2,
+                extra_data: 0,
+                just_applied: false,
+            },
+            Power {
+                power_type: PowerId::Dexterity,
+                instance_id: None,
+                amount: 2,
+                extra_data: 0,
+                just_applied: false,
+            },
+        ],
+    );
+    let mut attack_monster = crate::test_support::test_monster(EnemyId::JawWorm);
+    attack_monster.id = 501;
+    attack_monster.set_planned_move_id(1);
+    let attack_spec =
+        crate::semantics::combat::MonsterMoveSpec::Attack(crate::semantics::combat::AttackSpec {
+            base_damage: 11,
+            hits: 1,
+            damage_kind: crate::semantics::combat::DamageKind::Normal,
+        });
+    attack_monster.move_state.planned_steps = Some(attack_spec.to_steps());
+    attack_monster.move_state.planned_visible_spec = Some(attack_spec);
+
+    let mut defend_monster = crate::test_support::test_monster(EnemyId::Cultist);
+    defend_monster.id = 502;
+    defend_monster.set_planned_move_id(3);
+    let defend_spec =
+        crate::semantics::combat::MonsterMoveSpec::Defend(crate::semantics::combat::DefendSpec {
+            block: 6,
+        });
+    defend_monster.move_state.planned_steps = Some(defend_spec.to_steps());
+    defend_monster.move_state.planned_visible_spec = Some(defend_spec);
+    state.entities.monsters = vec![attack_monster, defend_monster];
+
+    let mut sever_plus = CombatCard::new(CardId::SeverSoul, 350);
+    sever_plus.upgrades = 1;
+    let sever_actions = resolve_card_play(CardId::SeverSoul, &state, &sever_plus, Some(501));
+    assert_eq!(sever_actions.len(), 2);
+    assert!(matches!(
+        sever_actions[0].action,
+        Action::ExhaustAllNonAttack
+    ));
+    match &sever_actions[1].action {
+        Action::Damage(info) => {
+            assert_eq!(info.source, 0);
+            assert_eq!(info.target, 501);
+            assert_eq!(info.base, 24);
+            assert_eq!(info.output, 24);
+            assert_eq!(info.damage_type, DamageType::Normal);
+        }
+        other => panic!("Sever Soul+ should damage after ExhaustAllNonAttack, got {other:?}"),
+    }
+
+    let mut shockwave_plus = CombatCard::new(CardId::Shockwave, 351);
+    shockwave_plus.upgrades = 1;
+    let shockwave_actions = resolve_card_play(CardId::Shockwave, &state, &shockwave_plus, None);
+    assert_eq!(shockwave_actions.len(), 4);
+    assert!(matches!(
+        shockwave_actions[0].action,
+        Action::ApplyPower {
+            source: 0,
+            target: 501,
+            power_id: PowerId::Weak,
+            amount: 5
+        }
+    ));
+    assert!(matches!(
+        shockwave_actions[1].action,
+        Action::ApplyPower {
+            source: 0,
+            target: 501,
+            power_id: PowerId::Vulnerable,
+            amount: 5
+        }
+    ));
+    assert!(matches!(
+        shockwave_actions[2].action,
+        Action::ApplyPower {
+            source: 0,
+            target: 502,
+            power_id: PowerId::Weak,
+            amount: 5
+        }
+    ));
+    assert!(matches!(
+        shockwave_actions[3].action,
+        Action::ApplyPower {
+            source: 0,
+            target: 502,
+            power_id: PowerId::Vulnerable,
+            amount: 5
+        }
+    ));
+
+    let mut shrug_plus = CombatCard::new(CardId::ShrugItOff, 352);
+    shrug_plus.upgrades = 1;
+    let shrug_actions = resolve_card_play(CardId::ShrugItOff, &state, &shrug_plus, None);
+    assert_eq!(shrug_actions.len(), 2);
+    assert!(matches!(
+        shrug_actions[0].action,
+        Action::GainBlock {
+            target: 0,
+            amount: 13
+        }
+    ));
+    assert!(matches!(shrug_actions[1].action, Action::DrawCards(1)));
+
+    let mut spot_plus = CombatCard::new(CardId::SpotWeakness, 353);
+    spot_plus.upgrades = 1;
+    let spot_actions = resolve_card_play(CardId::SpotWeakness, &state, &spot_plus, Some(501));
+    assert_eq!(spot_actions.len(), 1);
+    assert!(matches!(
+        spot_actions[0].action,
+        Action::ApplyPower {
+            source: 0,
+            target: 0,
+            power_id: PowerId::Strength,
+            amount: 4
+        }
+    ));
+    assert!(resolve_card_play(CardId::SpotWeakness, &state, &spot_plus, Some(502)).is_empty());
+}
+
+#[test]
+fn sever_soul_exhaust_all_non_attack_queues_exhausts_before_following_damage() {
+    let mut state = crate::test_support::blank_test_combat();
+    state.zones.hand = vec![
+        CombatCard::new(CardId::Strike, 360),
+        CombatCard::new(CardId::Defend, 361),
+        CombatCard::new(CardId::ShrugItOff, 362),
+    ];
+    state.queue_action_back(Action::Damage(crate::runtime::action::DamageInfo {
+        source: 0,
+        target: 501,
+        base: 16,
+        output: 16,
+        damage_type: DamageType::Normal,
+        is_modified: false,
+    }));
+
+    crate::engine::action_handlers::damage::handle_exhaust_all_non_attack(&mut state);
+
+    assert_eq!(
+        state.pop_next_action(),
+        Some(Action::ExhaustCard {
+            card_uuid: 362,
+            source_pile: crate::state::PileType::Hand
+        })
+    );
+    assert_eq!(
+        state.pop_next_action(),
+        Some(Action::ExhaustCard {
+            card_uuid: 361,
+            source_pile: crate::state::PileType::Hand
+        })
+    );
+    assert!(matches!(
+        state.pop_next_action(),
+        Some(Action::Damage(crate::runtime::action::DamageInfo {
+            target: 501,
+            ..
+        }))
+    ));
+}

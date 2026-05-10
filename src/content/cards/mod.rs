@@ -192,6 +192,7 @@ pub enum CardRarity {
 pub enum CardTarget {
     Enemy,
     AllEnemy,
+    SelfAndEnemy,
     SelfTarget,
     None,
 }
@@ -1326,7 +1327,7 @@ pub fn get_card_definition(id: CardId) -> CardDefinition {
             cost: 1,
             base_damage: 0,
             base_block: 8,
-            base_magic: 1,
+            base_magic: 0,
             target: CardTarget::SelfTarget,
             is_multi_damage: false,
             exhaust: false,
@@ -1935,7 +1936,7 @@ pub fn get_card_definition(id: CardId) -> CardDefinition {
             base_damage: 0,
             base_block: 0,
             base_magic: 3,
-            target: CardTarget::Enemy,
+            target: CardTarget::SelfAndEnemy,
             is_multi_damage: false,
             exhaust: false,
             ethereal: false,

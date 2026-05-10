@@ -1514,6 +1514,7 @@ fn card_type_name(card_type: CardType) -> String {
 fn card_target_mode_name(target: CardTarget) -> String {
     match target {
         CardTarget::Enemy => "single_enemy",
+        CardTarget::SelfAndEnemy => "self_and_enemy",
         CardTarget::AllEnemy => "all_enemy",
         CardTarget::SelfTarget => "self",
         CardTarget::None => "none",

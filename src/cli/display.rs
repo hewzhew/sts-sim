@@ -359,7 +359,7 @@ pub fn describe_play_card_choice(
     let card = combat.zones.hand.get(card_index)?;
     let def = cards::get_card_definition(card.id);
     let mut text = format!("Play {} [hand {}]", def.name, card_index);
-    if matches!(def.target, CardTarget::Enemy) {
+    if matches!(def.target, CardTarget::Enemy | CardTarget::SelfAndEnemy) {
         if let Some(target_id) = target.and_then(|id| describe_monster_target(combat, id)) {
             text.push_str(&format!(" -> {target_id}"));
         } else {

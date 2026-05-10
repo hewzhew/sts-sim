@@ -9,6 +9,7 @@ pub fn sever_soul_play(
     target: Option<EntityId>,
 ) -> SmallVec<[ActionInfo; 4]> {
     let target = target.expect("Sever Soul requires a valid target!");
+    let evaluated = crate::content::cards::evaluate_card_for_play(card, _state, Some(target));
     smallvec::smallvec![
         ActionInfo {
             action: Action::ExhaustAllNonAttack,
@@ -18,8 +19,8 @@ pub fn sever_soul_play(
             action: Action::Damage(DamageInfo {
                 source: 0,
                 target,
-                base: card.base_damage_mut,
-                output: card.base_damage_mut,
+                base: evaluated.base_damage_mut,
+                output: evaluated.base_damage_mut,
                 damage_type: DamageType::Normal,
                 is_modified: false,
             }),

@@ -8,7 +8,7 @@
 
 use crate::content::powers::store;
 use crate::content::powers::PowerId;
-use crate::runtime::action::{Action, ActionInfo, AddTo, DamageType, NO_SOURCE};
+use crate::runtime::action::{Action, DamageType, NO_SOURCE};
 use crate::runtime::combat::CombatState;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -942,13 +942,10 @@ pub fn handle_exhaust_all_non_attack(state: &mut CombatState) {
         .map(|c| c.uuid)
         .collect();
     for uuid in non_attacks {
-        state.queue_actions(smallvec::smallvec![ActionInfo {
-            action: Action::ExhaustCard {
-                card_uuid: uuid,
-                source_pile: crate::state::PileType::Hand
-            },
-            insertion_mode: AddTo::Bottom
-        }]);
+        state.queue_action_front(Action::ExhaustCard {
+            card_uuid: uuid,
+            source_pile: crate::state::PileType::Hand,
+        });
     }
 }
 
