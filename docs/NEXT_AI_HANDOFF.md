@@ -9,17 +9,21 @@ Continue Java-source-backed mechanics cleanup. Do not add strategy heuristics, b
 
 ## Last Pushed Checkpoint
 
-`12bb623 Ground half-dead apply-power guard`
+`6035c5e Ground half-dead random target guards`
 
 What it fixed:
 
-- Java `AbstractCreature.isDeadOrEscaped()` returns true for `isDying`, `halfDead`, and escaping monsters.
-- Java `ApplyPowerAction.update()` returns before on-apply hooks, Champion Belt, Artifact, or core power application when `target.isDeadOrEscaped()`.
-- Rust `handle_apply_power_detailed` now treats half-dead monster targets as invalid before any side effects, including after the post-hook monster re-check.
+- Java `MonsterGroup.getRandomMonster(..., aliveOnly=true, rng)` excludes `halfDead`, `isDying`, and escaping monsters.
+- Java `DamageAllEnemiesAction` skips `isDeadOrEscaped()` targets when applying damage, which includes half-dead monsters.
+- Rust now has `MonsterEntity` helpers for Java-style dead/escaped and actionable/random-target checks.
+- Random target, AOE, vampire-all, Dark orb lowest-HP target, Bouncing Flask, Time Warp monster self-buff targeting, and The Specimen no longer treat half-dead monsters as valid action targets.
 
 Verification already passed:
 
+- `cargo test -q content::cards::tests::random_enemy_attacks_ignore_half_dead_monsters_like_java_random_monster`
+- `cargo test -q engine::action_handlers::powers::tests::bouncing_flask_random_target_ignores_half_dead_monsters_like_java_random_monster`
 - `cargo test -q engine::action_handlers::powers::tests::apply_power_ignores_half_dead_monsters_like_java_is_dead_or_escaped`
+- `cargo test -q content::cards::tests::ironclad_random_and_exhaust_attack_runtime_actions_match_java_use_methods`
 - `cargo test -q content::cards::tests::ironclad_exhaust_debuff_and_intent_runtime_actions_match_java_use_methods`
 - `cargo check -q`
 - `git diff --check`
