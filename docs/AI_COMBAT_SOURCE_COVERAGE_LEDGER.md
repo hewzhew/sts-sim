@@ -506,6 +506,10 @@ Rust `ActionPayload` variants must expose their Java source class through
 `TYPED_ACTION_PAYLOAD_SOURCE_CLASSES` registry. A payload variant without a
 source class mapping is not reviewable.
 
+Action classes with no fields beyond `AbstractGameAction` must be listed in
+`NO_EXTRA_ACTION_PAYLOAD_SOURCE_CLASSES`. They are modeled by `ActionState`
+plus `action_class`; they are not missing typed payload work.
+
 ## Field Ledger: Core `actions/utility/*Action.java` Subclasses
 
 | Source | Field | Classification | Schema path | Notes |

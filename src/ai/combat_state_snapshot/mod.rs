@@ -450,6 +450,24 @@ pub const TYPED_ACTION_PAYLOAD_SOURCE_CLASSES: &[&str] = &[
     "UseCardAction",
 ];
 
+pub const NO_EXTRA_ACTION_PAYLOAD_SOURCE_CLASSES: &[&str] = &[
+    "EscapeAction",
+    "ExhaustAllEtherealAction",
+    "GainBlockAction",
+    "GainGoldAction",
+    "HandCheckAction",
+    "HealAction",
+    "HideHealthBarAction",
+    "InstantKillAction",
+    "LoseBlockAction",
+    "LoseHPAction",
+    "LosePercentHPAction",
+    "MakeTempCardAtBottomOfDeckAction",
+    "RemoveAllBlockAction",
+    "UnhoverCardAction",
+    "WaitAction",
+];
+
 impl ActionPayload {
     pub fn java_source_class(&self) -> &'static str {
         match self {

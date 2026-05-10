@@ -745,10 +745,14 @@ Rust must keep a code-level source link for every typed payload:
 ```text
 ActionPayload::java_source_class()
 TYPED_ACTION_PAYLOAD_SOURCE_CLASSES
+NO_EXTRA_ACTION_PAYLOAD_SOURCE_CLASSES
 ```
 
 Adding an `ActionPayload` variant without a Java source class mapping is a
-schema defect.
+schema defect. A Java action class with no subclass fields beyond
+`AbstractGameAction` must be listed in `NO_EXTRA_ACTION_PAYLOAD_SOURCE_CLASSES`
+and in the source ledger, so absence of a payload is auditable rather than
+accidental.
 
 Any action subclass that cannot be serialized and restored must populate
 `unsupported_subclass_payload` and make the frame `unsupported_abort` before it
