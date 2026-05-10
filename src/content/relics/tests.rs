@@ -428,3 +428,76 @@ fn bag_of_marbles_queues_vulnerable_for_every_current_monster() {
         ));
     }
 }
+
+#[test]
+fn shared_common_hp_and_thorns_relic_metadata_matches_java_sources() {
+    assert_eq!(get_relic_tier(RelicId::BloodVial), RelicTier::Common);
+    assert_eq!(get_relic_tier(RelicId::BronzeScales), RelicTier::Common);
+    assert_eq!(get_relic_tier(RelicId::CentennialPuzzle), RelicTier::Common);
+
+    assert!(get_relic_subscriptions(RelicId::BloodVial).at_battle_start);
+    assert!(get_relic_subscriptions(RelicId::BronzeScales).at_battle_start);
+    assert!(get_relic_subscriptions(RelicId::CentennialPuzzle).at_pre_battle);
+    assert!(get_relic_subscriptions(RelicId::CentennialPuzzle).on_lose_hp);
+}
+
+#[test]
+fn blood_vial_and_bronze_scales_battle_start_actions_match_java_sources() {
+    let blood_actions = blood_vial::BloodVial::at_battle_start();
+    assert_eq!(blood_actions.len(), 1);
+    assert_eq!(blood_actions[0].insertion_mode, AddTo::Top);
+    assert!(matches!(
+        blood_actions[0].action,
+        Action::Heal {
+            target: 0,
+            amount: 2
+        }
+    ));
+
+    let scale_actions = bronze_scales::BronzeScales::at_battle_start(0);
+    assert_eq!(scale_actions.len(), 1);
+    assert_eq!(scale_actions[0].insertion_mode, AddTo::Top);
+    assert!(matches!(
+        scale_actions[0].action,
+        Action::ApplyPower {
+            source: 0,
+            target: 0,
+            power_id: PowerId::Thorns,
+            amount: 3
+        }
+    ));
+}
+
+#[test]
+fn centennial_puzzle_marks_used_immediately_and_resets_pre_battle() {
+    let mut relic_state = RelicState::new(RelicId::CentennialPuzzle);
+    assert!(centennial_puzzle::CentennialPuzzle::on_lose_hp(&mut relic_state, 0).is_empty());
+    assert!(!relic_state.used_up);
+
+    let actions = centennial_puzzle::CentennialPuzzle::on_lose_hp(&mut relic_state, 4);
+    assert!(relic_state.used_up);
+    assert_eq!(actions.len(), 1);
+    assert_eq!(actions[0].insertion_mode, AddTo::Top);
+    assert!(matches!(actions[0].action, Action::DrawCards(3)));
+    assert!(centennial_puzzle::CentennialPuzzle::on_lose_hp(&mut relic_state, 4).is_empty());
+
+    let reset_actions = centennial_puzzle::CentennialPuzzle::at_pre_battle(&mut relic_state);
+    assert!(reset_actions.is_empty());
+    assert!(!relic_state.used_up);
+}
+
+#[test]
+fn centennial_puzzle_hook_updates_relic_state_before_draw_action_executes() {
+    let mut state = crate::test_support::blank_test_combat();
+    state
+        .entities
+        .player
+        .add_relic(RelicState::new(RelicId::CentennialPuzzle));
+
+    let actions = hooks::on_lose_hp(&mut state, 3);
+    assert!(state.entities.player.relics[0].used_up);
+    assert_eq!(actions.len(), 1);
+    assert!(matches!(actions[0].action, Action::DrawCards(3)));
+
+    assert!(hooks::on_lose_hp(&mut state, 3).is_empty());
+}

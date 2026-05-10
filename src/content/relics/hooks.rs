@@ -316,12 +316,13 @@ pub fn on_lose_hp(state: &mut CombatState, amount: i32) -> smallvec::SmallVec<[A
         let relic_id = state.entities.player.relics[relic_index].id;
         match relic_id {
             RelicId::CentennialPuzzle => {
-                let used_up = state.entities.player.relics[relic_index].used_up;
+                let mut rs = state.entities.player.relics[relic_index].clone();
                 actions.extend(
                     crate::content::relics::centennial_puzzle::CentennialPuzzle::on_lose_hp(
-                        used_up,
+                        &mut rs, amount,
                     ),
                 );
+                state.entities.player.relics[relic_index] = rs;
             }
             RelicId::EmotionChip => {
                 let mut rs = state.entities.player.relics[relic_index].clone();

@@ -456,6 +456,93 @@ Coverage:
 - `shared_common_battle_start_relic_metadata_matches_java_sources`
 - `akabeko_anchor_and_bag_of_preparation_battle_start_actions_match_java_sources`
 
+## Shared Relic Batch 2 - Common Heal / Thorns / First HP Loss Relics
+
+### Blood Vial
+
+Status: `exact`
+
+Java source:
+- `D:/rust/cardcrawl/relics/BloodVial.java`
+
+Rust source:
+- `src/content/relics/blood_vial.rs`
+- `src/content/relics/hooks.rs`
+
+Java evidence:
+- Constructor: ID `"Blood Vial"`, tier `COMMON`, landing sound `CLINK`.
+- `atBattleStart`: flashes, calls `addToTop` for a UI-only relic action, then
+  calls `addToTop(new HealAction(player, player, 2, 0.0f))`.
+
+Rust result:
+- Tier and battle-start subscription match Java.
+- Emits player heal `2` with top insertion. The normal heal path still applies
+  combat healing modifiers such as Magic Flower.
+- UI-only relic flash / above-creature visual action is intentionally not
+  represented.
+
+Coverage:
+- `shared_common_hp_and_thorns_relic_metadata_matches_java_sources`
+- `blood_vial_and_bronze_scales_battle_start_actions_match_java_sources`
+
+### Bronze Scales
+
+Status: `exact`
+
+Java source:
+- `D:/rust/cardcrawl/relics/BronzeScales.java`
+
+Rust source:
+- `src/content/relics/bronze_scales.rs`
+- `src/content/relics/hooks.rs`
+
+Java evidence:
+- Constructor: ID `"Bronze Scales"`, tier `COMMON`, landing sound `CLINK`.
+- `atBattleStart`: flashes and calls `addToTop` with Thorns `3` on the player.
+
+Rust result:
+- Tier and battle-start subscription match Java.
+- Emits player Thorns `3` with top insertion.
+- UI-only relic flash is intentionally not represented.
+
+Coverage:
+- `shared_common_hp_and_thorns_relic_metadata_matches_java_sources`
+- `blood_vial_and_bronze_scales_battle_start_actions_match_java_sources`
+
+### Centennial Puzzle
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/relics/CentennialPuzzle.java`
+
+Rust source:
+- `src/content/relics/centennial_puzzle.rs`
+- `src/content/relics/hooks.rs`
+
+Java evidence:
+- Constructor: ID `"Centennial Puzzle"`, tier `COMMON`, landing sound `HEAVY`.
+- Static `usedThisCombat` is reset to false in `atPreBattle`.
+- `wasHPLost(damageAmount)`: during combat, if `damageAmount > 0` and the
+  relic has not triggered this combat, calls `addToTop(new DrawCardAction(player,
+  3))`, then sets `usedThisCombat = true` immediately inside the hook method.
+- `justEnteredRoom`, pulse, grayscale, and relic-above-creature behavior are
+  UI-only.
+
+Rust result:
+- Tier, pre-battle subscription, and HP-loss subscription match Java.
+- Fixed the hook to mutate `RelicState.used_up` immediately when the first
+  positive HP loss triggers it, rather than queuing a later state-update action
+  after the draw action.
+- Pre-battle reset clears `used_up`.
+- UI-only relic flash / pulse / grayscale / above-creature visual action is
+  intentionally not represented.
+
+Coverage:
+- `shared_common_hp_and_thorns_relic_metadata_matches_java_sources`
+- `centennial_puzzle_marks_used_immediately_and_resets_pre_battle`
+- `centennial_puzzle_hook_updates_relic_state_before_draw_action_executes`
+
 ## Full Ironclad Class-Specific Relic Queue
 
 Relics remain `unreviewed` until their Java file, Rust definition/subscription,
@@ -486,3 +573,6 @@ class-specific queue.
 | 2 | `Anchor.java` | `anchor.rs` | `exact` |
 | 3 | `BagOfMarbles.java` | `bag_of_marbles.rs` | `wrong-fixed` |
 | 4 | `BagOfPreparation.java` | `bag_of_preparation.rs` | `exact` |
+| 5 | `BloodVial.java` | `blood_vial.rs` | `exact` |
+| 6 | `BronzeScales.java` | `bronze_scales.rs` | `exact` |
+| 7 | `CentennialPuzzle.java` | `centennial_puzzle.rs` | `wrong-fixed` |
