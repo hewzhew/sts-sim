@@ -229,7 +229,9 @@ pub fn at_battle_start(state: &mut CombatState) -> SmallVec<[ActionInfo; 4]> {
             RelicId::TwistedFunnel => actions.extend(
                 crate::content::relics::twisted_funnel::at_battle_start(&*state),
             ),
-            RelicId::Sling => actions.extend(crate::content::relics::sling::at_battle_start()),
+            RelicId::Sling => {
+                actions.extend(crate::content::relics::sling::at_battle_start(&*state))
+            }
             RelicId::RedSkull => {
                 let (hp, max_hp) = (
                     state.entities.player.current_hp,

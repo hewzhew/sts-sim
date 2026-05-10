@@ -3957,6 +3957,143 @@ Coverage:
 - `shared_event_special_relic_gap_batch_metadata_matches_java_sources`
 - `gremlin_mask_applies_one_weak_to_player_at_battle_start`
 
+## Shared Relic Batch 18 - Shop Relics Part 1
+
+### Membership Card
+
+Status: `exact`
+
+Java source:
+- `D:/rust/cardcrawl/relics/MembershipCard.java`
+- `D:/rust/cardcrawl/shop/ShopScreen.java`
+
+Rust source:
+- `src/engine/shop_handler.rs`
+
+Java evidence:
+- Constructor: ID `"Membership Card"`, tier `SHOP`, landing sound `MAGICAL`.
+- `onEnterRoom`: shop pulse only.
+- `ShopScreen` applies the 0.5 price multiplier to shop inventory and purge
+  cost. Buying Membership Card discounts remaining shop inventory.
+
+Rust result:
+- Tier matches Java.
+- Shop pricing and post-purchase repricing apply the 0.5 multiplier.
+- UI-only shop pulse is not modeled.
+
+Coverage:
+- `shared_shop_relic_gap_batch_two_metadata_matches_java_sources`
+- `membership_card_purchase_discounts_remaining_shop_inventory`
+
+### Orrery
+
+Status: `exact`
+
+Java source:
+- `D:/rust/cardcrawl/relics/Orrery.java`
+- `D:/rust/cardcrawl/screens/CombatRewardScreen.java`
+
+Rust source:
+- `src/content/relics/orrery.rs`
+- `src/engine/relic_manager.rs`
+
+Java evidence:
+- Constructor: ID `"Orrery"`, tier `SHOP`, landing sound `CLINK`.
+- `onEquip`: adds four card rewards to the current room, then opens the combat
+  reward screen.
+- `CombatRewardScreen.open(String)` calls `setupItemReward()`, which adds the
+  normal card reward unless the room suppresses card rewards. This yields five
+  card rewards in the normal case.
+
+Rust result:
+- Tier and relic-manager route match Java.
+- On equip opens a reward screen with five card rewards, and those card rewards
+  pass through existing card reward modifiers such as Question Card.
+
+Coverage:
+- `shared_shop_relic_gap_batch_two_metadata_matches_java_sources`
+- `orrery_card_rewards_respect_question_card`
+
+### Medical Kit
+
+Status: `exact`
+
+Java source:
+- `D:/rust/cardcrawl/relics/MedicalKit.java`
+
+Rust source:
+- `src/content/relics/medical_kit.rs`
+- `src/content/cards/runtime_impl.rs`
+- `src/engine/action_handlers/cards.rs`
+
+Java evidence:
+- Constructor: ID `"Medical Kit"`, tier `SHOP`, landing sound `MAGICAL`.
+- `onUseCard`: when the played card is `STATUS`, sets both card and use action
+  exhaust flags.
+- The playable-status behavior is represented by card playability checks.
+
+Rust result:
+- Tier and on-use subscription match Java.
+- Status cards become playable when Medical Kit is owned.
+- Status cards played with Medical Kit are exhausted by the card play cleanup
+  path.
+
+Coverage:
+- `shared_shop_relic_gap_batch_two_metadata_matches_java_sources`
+- `medical_kit_allows_status_cards_to_be_played`
+
+### Orange Pellets
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/relics/OrangePellets.java`
+- `D:/rust/cardcrawl/actions/unique/RemoveDebuffsAction.java`
+
+Rust source:
+- `src/content/relics/orange_pellets.rs`
+- `src/content/relics/hooks.rs`
+
+Java evidence:
+- Constructor: ID `"OrangePellets"`, tier `SHOP`, landing sound `CLINK`.
+- Tracks whether an Attack, Skill, and Power have been played this turn.
+- Once all three are seen, queues `RemoveDebuffsAction(player)` and resets its
+  three flags.
+
+Rust result:
+- Tier and on-use subscription match Java.
+- Fixed the cleanup action to use `RemoveAllDebuffs` instead of only removing
+  Weak, Vulnerable, and Frail.
+- Existing turn-start reset clears the combo counter each turn.
+
+Coverage:
+- `shared_shop_relic_gap_batch_two_metadata_matches_java_sources`
+- `orange_pellets_uses_remove_all_debuffs_action_and_resets_combo_counter`
+
+### Sling
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/relics/Sling.java`
+
+Rust source:
+- `src/content/relics/sling.rs`
+- `src/content/relics/hooks.rs`
+
+Java evidence:
+- Constructor: ID `"Sling"`, tier `SHOP`, landing sound `CLINK`.
+- `atBattleStart`: if current room `eliteTrigger` is true, adds 2 Strength to
+  the player. It does nothing in hallway or boss combats.
+
+Rust result:
+- Tier and battle-start subscription match Java.
+- Fixed Sling to grant Strength only when `CombatMeta.is_elite_fight` is true.
+
+Coverage:
+- `shared_shop_relic_gap_batch_two_metadata_matches_java_sources`
+- `sling_only_grants_strength_in_elite_combats`
+
 ## Full Ironclad Class-Specific Relic Queue
 
 Relics remain `unreviewed` until their Java file, Rust definition/subscription,
@@ -4099,3 +4236,8 @@ class-specific queue.
 | 114 | `Enchiridion.java` | `enchiridion.rs` / pre-battle card generation | `exact` |
 | 115 | `FaceOfCleric.java` | `face_of_cleric.rs` / victory max HP | `exact` |
 | 116 | `GremlinMask.java` | `gremlin_mask.rs` / battle-start weak | `exact` |
+| 117 | `MembershipCard.java` | shop handler / price multiplier | `exact` |
+| 118 | `Orrery.java` | `orrery.rs` / reward screen | `exact` |
+| 119 | `MedicalKit.java` | playability / exhaust path | `exact` |
+| 120 | `OrangePellets.java` | `orange_pellets.rs` / debuff cleanup | `wrong-fixed` |
+| 121 | `Sling.java` | `sling.rs` / elite check | `wrong-fixed` |

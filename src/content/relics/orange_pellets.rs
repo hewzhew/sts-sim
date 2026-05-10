@@ -32,27 +32,10 @@ pub fn on_use_card(
         });
     }
 
-    // All 3 types played → remove debuffs
+    // All 3 types played -> Java RemoveDebuffsAction removes all debuffs.
     if new_counter & 0b111 == 0b111 {
         actions.push(ActionInfo {
-            action: Action::RemovePower {
-                target: 0,
-                power_id: crate::content::powers::PowerId::Weak,
-            },
-            insertion_mode: AddTo::Bottom,
-        });
-        actions.push(ActionInfo {
-            action: Action::RemovePower {
-                target: 0,
-                power_id: crate::content::powers::PowerId::Vulnerable,
-            },
-            insertion_mode: AddTo::Bottom,
-        });
-        actions.push(ActionInfo {
-            action: Action::RemovePower {
-                target: 0,
-                power_id: crate::content::powers::PowerId::Frail,
-            },
+            action: Action::RemoveAllDebuffs { target: 0 },
             insertion_mode: AddTo::Bottom,
         });
         // Reset counter for next combo

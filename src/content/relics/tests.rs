@@ -3228,6 +3228,69 @@ fn gremlin_mask_applies_one_weak_to_player_at_battle_start() {
 }
 
 #[test]
+fn shared_shop_relic_gap_batch_two_metadata_matches_java_sources() {
+    assert_eq!(get_relic_tier(RelicId::MembershipCard), RelicTier::Shop);
+    assert_eq!(get_relic_tier(RelicId::Orrery), RelicTier::Shop);
+    assert_eq!(get_relic_tier(RelicId::MedicalKit), RelicTier::Shop);
+    assert_eq!(get_relic_tier(RelicId::OrangePellets), RelicTier::Shop);
+    assert_eq!(get_relic_tier(RelicId::Sling), RelicTier::Shop);
+
+    assert!(get_relic_subscriptions(RelicId::MedicalKit).on_use_card);
+    assert!(get_relic_subscriptions(RelicId::OrangePellets).on_use_card);
+    assert!(get_relic_subscriptions(RelicId::Sling).at_battle_start);
+}
+
+#[test]
+fn medical_kit_allows_status_cards_to_be_played() {
+    let burn = CombatCard::new(CardId::Burn, 901);
+    let mut state = crate::test_support::blank_test_combat();
+    assert!(crate::content::cards::can_play_card(&burn, &state).is_err());
+
+    state
+        .entities
+        .player
+        .add_relic(RelicState::new(RelicId::MedicalKit));
+    assert!(crate::content::cards::can_play_card(&burn, &state).is_ok());
+}
+
+#[test]
+fn orange_pellets_uses_remove_all_debuffs_action_and_resets_combo_counter() {
+    let actions = orange_pellets::on_use_card(CardId::Inflame, 0b011);
+
+    assert!(actions
+        .iter()
+        .any(|info| matches!(info.action, Action::RemoveAllDebuffs { target: 0 })));
+    assert!(actions.iter().any(|info| matches!(
+        info.action,
+        Action::UpdateRelicCounter {
+            relic_id: RelicId::OrangePellets,
+            counter: 0
+        }
+    )));
+}
+
+#[test]
+fn sling_only_grants_strength_in_elite_combats() {
+    let hallway = crate::test_support::blank_test_combat();
+    assert!(sling::at_battle_start(&hallway).is_empty());
+
+    let mut elite = crate::test_support::blank_test_combat();
+    elite.meta.is_elite_fight = true;
+    let actions = sling::at_battle_start(&elite);
+    assert_eq!(actions.len(), 1);
+    assert_eq!(actions[0].insertion_mode, AddTo::Top);
+    assert!(matches!(
+        actions[0].action,
+        Action::ApplyPower {
+            target: 0,
+            power_id: PowerId::Strength,
+            amount: 2,
+            ..
+        }
+    ));
+}
+
+#[test]
 fn shared_rare_damage_retention_relic_metadata_matches_java_sources() {
     assert_eq!(get_relic_tier(RelicId::Calipers), RelicTier::Rare);
     assert_eq!(get_relic_tier(RelicId::Torii), RelicTier::Rare);
