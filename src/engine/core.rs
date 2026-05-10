@@ -528,7 +528,9 @@ pub fn tick_engine(
                         // Java end-of-turn discard repeatedly removes hand.getTopCard(),
                         // so the surviving non-retained hand is discarded from top to bottom.
                         discarded.reverse();
-                        combat_state.zones.discard_pile.extend(discarded);
+                        for card in discarded {
+                            combat_state.add_card_to_discard_pile_top(card);
+                        }
                         combat_state.zones.hand = retained;
                     }
 
@@ -989,7 +991,7 @@ fn resolve_pending_choice(
                     if combat_state.zones.hand.len() < 10 {
                         combat_state.zones.hand.push(card);
                     } else {
-                        combat_state.zones.discard_pile.push(card);
+                        combat_state.add_card_to_discard_pile_top(card);
                     }
                     *engine_state = EngineState::CombatProcessing;
                     return Ok(());
@@ -1018,7 +1020,7 @@ fn resolve_pending_choice(
                                 if combat_state.zones.hand.len() < 10 {
                                     combat_state.zones.hand.push(card);
                                 } else {
-                                    combat_state.zones.discard_pile.push(card);
+                                    combat_state.add_card_to_discard_pile_top(card);
                                 }
                             }
                             crate::runtime::action::CardDestination::DrawPileRandom => {

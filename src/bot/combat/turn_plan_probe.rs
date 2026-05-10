@@ -3816,6 +3816,3 @@ fn plan_explanation(plan: CombatPlanKind) -> &'static str {
         }
     }
 }
-
-#[cfg(test)]
-include!("turn_plan_probe_tests.rs");

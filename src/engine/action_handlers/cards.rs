@@ -60,12 +60,7 @@ pub fn handle_draw_cards(amount: u32, state: &mut CombatState) {
             break;
         }
         if state.zones.draw_pile.is_empty() && !state.zones.discard_pile.is_empty() {
-            state.zones.draw_pile.append(&mut state.zones.discard_pile);
-            crate::runtime::rng::shuffle_with_random_long(
-                &mut state.zones.draw_pile,
-                &mut state.rng.shuffle_rng,
-            );
-            state.zones.draw_pile.reverse();
+            state.shuffle_discard_pile_into_draw_pile();
             let shuffle_actions = crate::content::relics::hooks::on_shuffle(state);
             state.queue_actions(shuffle_actions);
         }
@@ -106,12 +101,7 @@ pub fn handle_draw_cards(amount: u32, state: &mut CombatState) {
 
 pub fn handle_empty_deck_shuffle(state: &mut CombatState) {
     if state.zones.draw_pile.is_empty() && !state.zones.discard_pile.is_empty() {
-        state.zones.draw_pile.append(&mut state.zones.discard_pile);
-        crate::runtime::rng::shuffle_with_random_long(
-            &mut state.zones.draw_pile,
-            &mut state.rng.shuffle_rng,
-        );
-        state.zones.draw_pile.reverse();
+        state.shuffle_discard_pile_into_draw_pile();
         let shuffle_actions = crate::content::relics::hooks::on_shuffle(state);
         state.queue_actions(shuffle_actions);
     }
@@ -121,12 +111,7 @@ pub fn handle_shuffle_discard_into_draw(state: &mut CombatState) {
     if state.zones.discard_pile.is_empty() {
         return;
     }
-    state.zones.draw_pile.append(&mut state.zones.discard_pile);
-    crate::runtime::rng::shuffle_with_random_long(
-        &mut state.zones.draw_pile,
-        &mut state.rng.shuffle_rng,
-    );
-    state.zones.draw_pile.reverse();
+    state.shuffle_discard_pile_into_draw_pile();
     let shuffle_actions = crate::content::relics::hooks::on_shuffle(state);
     state.queue_actions(shuffle_actions);
 }
@@ -134,7 +119,7 @@ pub fn handle_shuffle_discard_into_draw(state: &mut CombatState) {
 pub fn handle_discard_card(card_uuid: u32, state: &mut CombatState) {
     if let Some(pos) = state.zones.hand.iter().position(|c| c.uuid == card_uuid) {
         let card = state.zones.hand.remove(pos);
-        state.zones.discard_pile.push(card);
+        state.add_card_to_discard_pile_top(card);
         let discard_actions = crate::content::relics::hooks::on_discard(state);
         state.queue_actions(discard_actions);
     }
@@ -240,11 +225,11 @@ pub fn handle_move_card(
                 if state.zones.hand.len() < 10 {
                     state.zones.hand.push(card);
                 } else {
-                    state.zones.discard_pile.push(card);
+                    state.add_card_to_discard_pile_top(card);
                 }
             }
             crate::state::PileType::Draw => state.add_card_to_draw_pile_top(card),
-            crate::state::PileType::Discard => state.zones.discard_pile.push(card),
+            crate::state::PileType::Discard => state.add_card_to_discard_pile_top(card),
             crate::state::PileType::Exhaust => {
                 if matches!(from, crate::state::PileType::Exhaust) {
                     state.zones.exhaust_pile.push(card);
@@ -293,7 +278,7 @@ fn add_generated_card_to_hand_or_discard(
         apply_generated_card_entering_hand_mechanics(&mut card, state);
         state.zones.hand.push(card);
     } else {
-        state.zones.discard_pile.push(card);
+        state.add_card_to_discard_pile_top(card);
     }
 }
 
@@ -327,7 +312,7 @@ pub fn handle_make_temp_card_in_discard(
         if upgraded {
             card.upgrades = 1;
         }
-        state.zones.discard_pile.push(card);
+        state.add_card_to_discard_pile_top(card);
     }
 }
 
@@ -378,7 +363,7 @@ pub fn handle_make_copy_in_discard(
         state.zones.card_uuid_counter += 1;
         let mut card = (*original).clone();
         card.uuid = state.zones.card_uuid_counter;
-        state.zones.discard_pile.push(card);
+        state.add_card_to_discard_pile_top(card);
     }
 }
 
@@ -390,7 +375,7 @@ pub fn handle_make_temp_card_in_discard_and_deck(
     for _ in 0..amount {
         state.zones.card_uuid_counter += 1;
         let card = crate::runtime::combat::CombatCard::new(card_id, state.zones.card_uuid_counter);
-        state.zones.discard_pile.push(card.clone());
+        state.add_card_to_discard_pile_top(card.clone());
         state.add_card_to_draw_pile_random_spot(card);
     }
 }
@@ -707,7 +692,7 @@ pub fn handle_draw_pile_to_hand_by_type(
             if state.zones.hand.len() < 10 {
                 state.zones.hand.push(card);
             } else {
-                state.zones.discard_pile.push(card);
+                state.add_card_to_discard_pile_top(card);
             }
         }
     }
@@ -734,7 +719,7 @@ pub fn handle_make_random_colorless_card_in_hand(
         if state.zones.hand.len() < 10 {
             state.zones.hand.push(card);
         } else {
-            state.zones.discard_pile.push(card);
+            state.add_card_to_discard_pile_top(card);
         }
     }
 }
@@ -744,7 +729,7 @@ pub fn handle_use_card_done(should_exhaust: bool, state: &mut CombatState) {
         if should_exhaust {
             move_card_to_exhaust_pile(card, state);
         } else {
-            state.zones.discard_pile.push(card);
+            state.add_card_to_discard_pile_top(card);
         }
     }
 

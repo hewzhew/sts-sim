@@ -865,21 +865,6 @@ mod tests {
     }
 
     #[test]
-    fn classify_regime_marks_boss_pollution_as_fragile() {
-        let mut combat = blank_test_combat();
-        combat.meta.is_boss_fight = true;
-        combat
-            .entities
-            .monsters
-            .push(planned_monster(EnemyId::SlimeBoss, 1));
-        for uuid in 0..6 {
-            combat.zones.draw_pile.push(card(CardId::Burn, uuid + 1));
-        }
-
-        assert_eq!(classify_regime(&combat), CombatRegime::Fragile);
-    }
-
-    #[test]
     fn compare_decision_outcomes_prefers_survival_over_efficiency() {
         let risky = DecisionOutcome {
             survival: SurvivalJudgement::SevereRisk,

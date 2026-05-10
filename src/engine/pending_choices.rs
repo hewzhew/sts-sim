@@ -108,7 +108,7 @@ pub fn handle_hand_select(
                             combat_state.zones.hand.iter().position(|c| c.uuid == *uuid)
                         {
                             let card = combat_state.zones.hand.remove(pos);
-                            combat_state.zones.discard_pile.push(card);
+                            combat_state.add_card_to_discard_pile_top(card);
                         }
                     }
                     // Queue draw actions for same number of cards
@@ -144,7 +144,7 @@ pub fn handle_hand_select(
                             combat_state.zones.hand.iter().position(|c| c.uuid == *uuid)
                         {
                             let card = combat_state.zones.hand.remove(pos);
-                            combat_state.zones.discard_pile.push(card);
+                            combat_state.add_card_to_discard_pile_top(card);
                         }
                     }
                 }

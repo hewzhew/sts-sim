@@ -123,6 +123,14 @@ impl CardZones {
         let rust_insert_index = len.saturating_sub(java_insert_index.min(len - 1));
         self.draw_pile.insert(rust_insert_index, card);
     }
+
+    /// Internal Rust discard-pile invariant intentionally preserves Java
+    /// CardGroup order: index 0 is the bottom and the last element is the top.
+    /// This differs from Rust draw_pile because Java shuffles discardPile.group
+    /// in this order before moving cards back to the draw pile.
+    pub fn add_to_discard_pile_top(&mut self, card: CombatCard) {
+        self.discard_pile.push(card);
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -1219,6 +1227,21 @@ impl CombatState {
         self.zones.draw_top_card()
     }
 
+    pub fn add_card_to_discard_pile_top(&mut self, card: CombatCard) {
+        self.zones.add_to_discard_pile_top(card);
+    }
+
+    pub fn shuffle_discard_pile_into_draw_pile(&mut self) {
+        self.zones.draw_pile.append(&mut self.zones.discard_pile);
+        crate::runtime::rng::shuffle_with_random_long(
+            &mut self.zones.draw_pile,
+            &mut self.rng.shuffle_rng,
+        );
+        // Java draw-pile top is the end of CardGroup.group. Rust draw-pile top
+        // is index 0, so reverse only after preserving Java shuffle order.
+        self.zones.draw_pile.reverse();
+    }
+
     /// Helper to find a card by UUID in a specific slice and remove it. Returns the removed card.
     pub fn remove_card_by_uuid(pile: &mut Vec<CombatCard>, uuid: u32) -> Option<CombatCard> {
         if let Some(index) = pile.iter().position(|c| c.uuid == uuid) {
@@ -1384,6 +1407,25 @@ mod tests {
         zones.add_to_draw_pile_random_spot_from_java_index(CombatCard::new(CardId::Burn, 5), 3);
         assert_eq!(zones.draw_pile[1].id, CardId::Burn);
         assert_eq!(zones.draw_pile[0].id, CardId::Strike);
+    }
+
+    #[test]
+    fn card_zones_discard_pile_preserves_java_card_group_order() {
+        let mut zones = CardZones {
+            draw_pile: vec![],
+            hand: vec![],
+            discard_pile: vec![],
+            exhaust_pile: vec![],
+            limbo: vec![],
+            queued_cards: VecDeque::new(),
+            card_uuid_counter: 0,
+        };
+
+        zones.add_to_discard_pile_top(CombatCard::new(CardId::Strike, 1));
+        zones.add_to_discard_pile_top(CombatCard::new(CardId::Defend, 2));
+
+        assert_eq!(zones.discard_pile[0].id, CardId::Strike);
+        assert_eq!(zones.discard_pile[1].id, CardId::Defend);
     }
 
     #[test]
