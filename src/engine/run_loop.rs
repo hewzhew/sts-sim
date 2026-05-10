@@ -8,6 +8,23 @@ use crate::state::selection::{
     SelectionTargetRef,
 };
 
+fn remove_one_relic_from_rewards_after_chest_open(
+    items: &mut Vec<crate::rewards::state::RewardItem>,
+) {
+    if let Some(pos) = items
+        .iter()
+        .position(|item| matches!(item, crate::rewards::state::RewardItem::Relic { .. }))
+    {
+        items.remove(pos);
+        if matches!(
+            items.get(pos),
+            Some(crate::rewards::state::RewardItem::SapphireKey)
+        ) {
+            items.remove(pos);
+        }
+    }
+}
+
 use super::campfire_handler;
 use super::shop_handler;
 
@@ -506,17 +523,6 @@ pub fn tick_run(
                             }
                             RoomType::TreasureRoom => {
                                 let mut reward = crate::rewards::state::RewardState::new();
-                                // Generate chest relic reward (simplified chest logic)
-                                let relic_id = run_state.random_relic();
-                                reward
-                                    .items
-                                    .push(crate::rewards::state::RewardItem::Relic { relic_id });
-                                // Sapphire key: paired with relic (Java: AbstractChest:87)
-                                if run_state.is_final_act_available && !run_state.keys[1] {
-                                    reward
-                                        .items
-                                        .push(crate::rewards::state::RewardItem::SapphireKey);
-                                }
 
                                 // --- onChestOpen() relic hooks (non-boss chest) ---
                                 // CursedKey: add a random curse to deck
@@ -565,6 +571,19 @@ pub fn tick_run(
                                     });
                                 }
 
+                                // Generate chest relic reward after onChestOpen hooks, matching
+                                // Java AbstractChest.open(): Matryoshka inserts before the
+                                // base chest relic, and SapphireKey links to the last relic.
+                                let relic_id = run_state.random_relic();
+                                reward
+                                    .items
+                                    .push(crate::rewards::state::RewardItem::Relic { relic_id });
+                                if run_state.is_final_act_available && !run_state.keys[1] {
+                                    reward
+                                        .items
+                                        .push(crate::rewards::state::RewardItem::SapphireKey);
+                                }
+
                                 // NlothsMask: remove one relic from rewards (onChestOpenAfter)
                                 if let Some(mask) = run_state.relics.iter_mut().find(|r| {
                                     r.id == crate::content::relics::RelicId::NlothsMask
@@ -575,15 +594,9 @@ pub fn tick_run(
                                         mask.counter = -2;
                                         mask.used_up = true;
                                     }
-                                    // Remove the first relic reward
-                                    if let Some(pos) = reward.items.iter().position(|item| {
-                                        matches!(
-                                            item,
-                                            crate::rewards::state::RewardItem::Relic { .. }
-                                        )
-                                    }) {
-                                        reward.items.remove(pos);
-                                    }
+                                    remove_one_relic_from_rewards_after_chest_open(
+                                        &mut reward.items,
+                                    );
                                 }
 
                                 *engine_state = EngineState::RewardScreen(reward);
@@ -758,11 +771,12 @@ pub fn tick_run(
 
 #[cfg(test)]
 mod tests {
-    use super::tick_run;
+    use super::{remove_one_relic_from_rewards_after_chest_open, tick_run};
     use crate::content::cards::CardId;
     use crate::content::relics::{RelicId, RelicState};
     use crate::map::node::{MapEdge, MapRoomNode, RoomType};
     use crate::map::state::MapState;
+    use crate::rewards::state::RewardItem;
     use crate::runtime::combat::CombatCard;
     use crate::state::core::{ClientInput, EngineState};
     use crate::state::run::RunState;
@@ -993,6 +1007,46 @@ mod tests {
             state.zones.draw_pile.first().map(|card| card.uuid),
             Some(103),
             "the card selected by Bottled Tornado must be handled by the same start-hand path as innate cards"
+        );
+    }
+
+    #[test]
+    fn nloths_mask_chest_removal_also_removes_sapphire_key_linked_to_removed_relic() {
+        let mut items = vec![
+            RewardItem::Relic {
+                relic_id: RelicId::Mango,
+            },
+            RewardItem::SapphireKey,
+        ];
+
+        remove_one_relic_from_rewards_after_chest_open(&mut items);
+
+        assert!(items.is_empty());
+    }
+
+    #[test]
+    fn nloths_mask_removes_matryoshka_relic_before_base_chest_key_pair() {
+        let mut items = vec![
+            RewardItem::Relic {
+                relic_id: RelicId::Omamori,
+            },
+            RewardItem::Relic {
+                relic_id: RelicId::Mango,
+            },
+            RewardItem::SapphireKey,
+        ];
+
+        remove_one_relic_from_rewards_after_chest_open(&mut items);
+
+        assert_eq!(
+            items,
+            vec![
+                RewardItem::Relic {
+                    relic_id: RelicId::Mango,
+                },
+                RewardItem::SapphireKey,
+            ],
+            "Java Matryoshka adds its relic during onChestOpen before the base chest relic/key pair"
         );
     }
 }

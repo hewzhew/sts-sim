@@ -4365,3 +4365,185 @@ fn prayer_wheel_adds_second_non_boss_card_reward() {
         "Java Prayer Wheel does not add an extra boss card reward"
     );
 }
+
+#[test]
+fn shared_event_special_relic_followup_metadata_matches_java_sources() {
+    assert_eq!(get_relic_tier(RelicId::CultistMask), RelicTier::Special);
+    assert_eq!(get_relic_tier(RelicId::GoldenIdol), RelicTier::Special);
+    assert_eq!(get_relic_tier(RelicId::NeowsLament), RelicTier::Special);
+    assert_eq!(get_relic_tier(RelicId::NlothsMask), RelicTier::Special);
+    assert_eq!(get_relic_tier(RelicId::OddMushroom), RelicTier::Special);
+    assert_eq!(get_relic_tier(RelicId::RedMask), RelicTier::Special);
+
+    assert!(get_relic_subscriptions(RelicId::CultistMask).at_battle_start);
+    assert!(get_relic_subscriptions(RelicId::NeowsLament).at_battle_start);
+    assert!(get_relic_subscriptions(RelicId::OddMushroom).on_calculate_vulnerable_multiplier);
+    assert!(get_relic_subscriptions(RelicId::RedMask).at_battle_start);
+    assert_eq!(RelicState::new(RelicId::NeowsLament).counter, 3);
+    assert_eq!(RelicState::new(RelicId::NlothsMask).counter, 1);
+}
+
+#[test]
+fn cultist_mask_battle_start_is_ui_only_in_headless_simulator() {
+    let mut state = crate::test_support::blank_test_combat();
+    state
+        .entities
+        .player
+        .add_relic(RelicState::new(RelicId::CultistMask));
+
+    let actions = hooks::at_battle_start(&mut state);
+    assert!(
+        actions.is_empty(),
+        "Java CultistMask.atBattleStart only flashes, plays SFX, and queues TalkAction"
+    );
+}
+
+#[test]
+fn red_mask_applies_one_weak_to_each_live_enemy_at_battle_start() {
+    let mut state = crate::test_support::blank_test_combat();
+    state
+        .entities
+        .player
+        .add_relic(RelicState::new(RelicId::RedMask));
+    let mut first = crate::test_support::test_monster(EnemyId::JawWorm);
+    first.id = 11;
+    let mut second = crate::test_support::test_monster(EnemyId::Cultist);
+    second.id = 12;
+    state.entities.monsters = vec![first, second];
+
+    let actions = hooks::at_battle_start(&mut state);
+    assert_eq!(actions.len(), 2);
+    assert!(actions.iter().any(|action| matches!(
+        action.action,
+        Action::ApplyPower {
+            target: 11,
+            power_id: PowerId::Weak,
+            amount: 1,
+            ..
+        }
+    )));
+    assert!(actions.iter().any(|action| matches!(
+        action.action,
+        Action::ApplyPower {
+            target: 12,
+            power_id: PowerId::Weak,
+            amount: 1,
+            ..
+        }
+    )));
+}
+
+#[test]
+fn odd_mushroom_changes_only_player_vulnerable_multiplier() {
+    let mut state = crate::test_support::blank_test_combat();
+    state
+        .entities
+        .player
+        .add_relic(RelicState::new(RelicId::OddMushroom));
+
+    assert_eq!(
+        hooks::on_calculate_vulnerable_multiplier(&state, true),
+        1.25
+    );
+    assert_eq!(
+        hooks::on_calculate_vulnerable_multiplier(&state, false),
+        1.5
+    );
+}
+
+#[test]
+fn golden_idol_reward_gold_bonus_is_applied_once_when_claimed() {
+    let mut run = crate::state::run::RunState::new(2, 0, false, "Ironclad");
+    run.gold = 0;
+    run.relics.clear();
+    run.relics.push(RelicState::new(RelicId::GoldenIdol));
+
+    let mut rewards = crate::rewards::generator::generate_combat_rewards(&mut run, false, false);
+    let base_gold = rewards
+        .items
+        .iter()
+        .find_map(|item| match item {
+            crate::rewards::state::RewardItem::Gold { amount } => Some(*amount),
+            _ => None,
+        })
+        .expect("combat rewards should include base gold");
+    assert!(
+        (10..=20).contains(&base_gold),
+        "generated RewardItem stores Java goldAmt; Golden Idol bonus is not pre-applied"
+    );
+    let gold_index = rewards
+        .items
+        .iter()
+        .position(|item| matches!(item, crate::rewards::state::RewardItem::Gold { .. }))
+        .unwrap();
+
+    crate::rewards::handler::handle(
+        &mut run,
+        &mut rewards,
+        Some(crate::state::core::ClientInput::ClaimReward(gold_index)),
+    );
+
+    assert_eq!(
+        run.gold,
+        crate::content::relics::golden_idol::apply_reward_gold_bonus(base_gold)
+    );
+}
+
+#[test]
+fn golden_idol_does_not_apply_to_stolen_gold() {
+    let mut run = crate::state::run::RunState::new(3, 0, false, "Ironclad");
+    run.gold = 0;
+    run.relics.clear();
+    run.relics.push(RelicState::new(RelicId::GoldenIdol));
+    let mut rewards = crate::rewards::state::RewardState::new();
+    rewards
+        .items
+        .push(crate::rewards::state::RewardItem::StolenGold { amount: 40 });
+
+    crate::rewards::handler::handle(
+        &mut run,
+        &mut rewards,
+        Some(crate::state::core::ClientInput::ClaimReward(0)),
+    );
+
+    assert_eq!(run.gold, 40);
+}
+
+#[test]
+fn neows_lament_sets_live_enemy_hp_to_one_and_expires_on_third_combat() {
+    let mut state = crate::test_support::blank_test_combat();
+    let mut first = crate::test_support::test_monster(EnemyId::JawWorm);
+    first.id = 21;
+    first.current_hp = 20;
+    let mut second = crate::test_support::test_monster(EnemyId::Cultist);
+    second.id = 22;
+    second.current_hp = 1;
+    state.entities.monsters = vec![first, second];
+    state
+        .entities
+        .player
+        .add_relic(RelicState::new(RelicId::NeowsLament));
+    state.entities.player.relics[0].counter = 1;
+
+    let actions = hooks::at_battle_start(&mut state);
+    assert!(actions
+        .iter()
+        .any(|action| matches!(action.action, Action::SetCurrentHp { target: 21, hp: 1 })));
+    assert!(!actions
+        .iter()
+        .any(|action| matches!(action.action, Action::SetCurrentHp { target: 22, .. })));
+    assert!(actions.iter().any(|action| matches!(
+        action.action,
+        Action::UpdateRelicCounter {
+            relic_id: RelicId::NeowsLament,
+            counter: -2,
+        }
+    )));
+    assert!(actions.iter().any(|action| matches!(
+        action.action,
+        Action::UpdateRelicUsedUp {
+            relic_id: RelicId::NeowsLament,
+            used_up: true,
+        }
+    )));
+}

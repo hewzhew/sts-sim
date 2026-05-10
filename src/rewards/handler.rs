@@ -59,7 +59,7 @@ pub fn handle(
                             // Java: applyGoldBonus(false) — GoldenIdol adds 25% in non-treasure rooms
                             let bonus =
                                 if run_state.relics.iter().any(|r| r.id == RelicId::GoldenIdol) {
-                                    (amount as f32 * 0.25).round() as i32
+                                    crate::content::relics::golden_idol::reward_gold_bonus(amount)
                                 } else {
                                     0
                                 };

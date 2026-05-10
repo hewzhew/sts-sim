@@ -31,10 +31,6 @@ pub fn generate_combat_rewards(
 ) -> RewardState {
     let mut items = Vec::new();
 
-    let has_golden_idol = run_state
-        .relics
-        .iter()
-        .any(|r| r.id == crate::content::relics::RelicId::GoldenIdol);
     let has_prayer_wheel = run_state
         .relics
         .iter()
@@ -52,19 +48,13 @@ pub fn generate_combat_rewards(
             if run_state.ascension_level >= 13 {
                 amount = (amount as f32 * 0.75).round() as i32;
             }
-            if has_golden_idol {
-                amount += (amount as f32 * 0.25).round() as i32;
-            }
             items.push(RewardItem::Gold { amount });
         } else {
-            let mut amount = if is_elite {
+            let amount = if is_elite {
                 run_state.rng_pool.treasure_rng.random_range(25, 35)
             } else {
                 run_state.rng_pool.treasure_rng.random_range(10, 20)
             };
-            if has_golden_idol {
-                amount += (amount as f32 * 0.25).round() as i32;
-            }
             items.push(RewardItem::Gold { amount });
         }
     }
