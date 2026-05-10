@@ -37,7 +37,7 @@ pub fn corruption_on_apply(state: &mut CombatState) {
         .chain(state.zones.exhaust_pile.iter_mut())
     {
         if is_skill(c.id) {
-            c.set_cost_for_turn_java(0);
+            c.modify_cost_for_combat_java(-9);
         }
     }
 }

@@ -732,13 +732,14 @@ pub fn handle_vampire_damage(info: crate::runtime::action::DamageInfo, state: &m
         handle_damage(info, state);
         let hp_lost = (previous_hp - state.entities.player.current_hp).max(0);
         if hp_lost > 0 {
-            heal_vampire_source(state, source, hp_lost);
+            queue_vampire_heal_source(state, source, hp_lost, AddTo::Top);
         }
     } else {
         let outcome = apply_damage_to_monster_via_pipeline(state, &info, info.output.max(0));
         if outcome.hp_lost > 0 {
-            heal_vampire_source(state, source, outcome.hp_lost);
+            queue_vampire_heal_source(state, source, outcome.hp_lost, AddTo::Top);
         }
+        clear_post_combat_actions_if_ready(state);
     }
 }
 
@@ -782,23 +783,29 @@ pub fn handle_vampire_damage_all_enemies(
         total_hp_lost += outcome.hp_lost;
     }
     if total_hp_lost > 0 {
-        heal_vampire_source(state, source, total_hp_lost);
+        queue_vampire_heal_source(state, source, total_hp_lost, AddTo::Bottom);
     }
+    clear_post_combat_actions_if_ready(state);
 }
 
-fn heal_vampire_source(state: &mut CombatState, source: usize, amount: i32) {
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum AddTo {
+    Top,
+    Bottom,
+}
+
+fn queue_vampire_heal_source(state: &mut CombatState, source: usize, amount: i32, add_to: AddTo) {
     if amount <= 0 {
         return;
     }
 
-    if source == 0 {
-        let amount = crate::content::relics::hooks::on_calculate_heal(state, amount);
-        let previous_hp = state.entities.player.current_hp;
-        state.entities.player.current_hp =
-            (state.entities.player.current_hp + amount).min(state.entities.player.max_hp);
-        queue_red_skull_threshold_actions(state, previous_hp, state.entities.player.current_hp);
-    } else if let Some(monster) = state.entities.monsters.iter_mut().find(|m| m.id == source) {
-        monster.current_hp = (monster.current_hp + amount).min(monster.max_hp);
+    let action = Action::Heal {
+        target: source,
+        amount,
+    };
+    match add_to {
+        AddTo::Top => state.queue_action_front(action),
+        AddTo::Bottom => state.queue_action_back(action),
     }
 }
 

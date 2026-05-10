@@ -1040,8 +1040,17 @@ fn ironclad_power_and_debuff_runtime_actions_match_java_use_methods() {
 
     assert_eq!(corruption_apply_state.zones.hand[0].cost_for_turn, Some(0));
     assert_eq!(
-        corruption_apply_state.zones.hand[0].cost_modifier, 2,
-        "Java setCostForTurn(-9) changes costForTurn only; it does not apply a combat cost modifier"
+        corruption_apply_state.zones.hand[0].cost_modifier, -1,
+        "Java ApplyPowerAction applies Corruption with modifyCostForCombat(-9), mutating combat cost too"
+    );
+    assert_eq!(corruption_apply_state.zones.draw_pile[0].cost_modifier, -1);
+    assert_eq!(
+        corruption_apply_state.zones.discard_pile[0].cost_modifier,
+        -1
+    );
+    assert_eq!(
+        corruption_apply_state.zones.exhaust_pile[0].cost_modifier,
+        -1
     );
     assert_eq!(
         corruption_apply_state.zones.draw_pile[0].cost_for_turn,
@@ -3153,6 +3162,18 @@ fn rupture_and_reaper_execution_hooks_match_java_sources() {
 
     assert_eq!(reaper_state.entities.monsters[0].current_hp, 17);
     assert_eq!(reaper_state.entities.monsters[1].current_hp, 13);
+    assert_eq!(
+        reaper_state.entities.player.current_hp, 50,
+        "Java VampireDamageAllEnemiesAction queues HealAction instead of healing inline"
+    );
+    assert_eq!(
+        reaper_state.pop_next_action(),
+        Some(Action::Heal {
+            target: 0,
+            amount: 10
+        })
+    );
+    crate::engine::action_handlers::damage::handle_heal(0, 10, &mut reaper_state);
     assert_eq!(reaper_state.entities.player.current_hp, 60);
 
     let mut flower_state = reaper_state.clone();
@@ -3169,6 +3190,14 @@ fn rupture_and_reaper_execution_hooks_match_java_sources() {
         DamageType::Normal,
         &mut flower_state,
     );
+    assert_eq!(
+        flower_state.pop_next_action(),
+        Some(Action::Heal {
+            target: 0,
+            amount: 4
+        })
+    );
+    crate::engine::action_handlers::damage::handle_heal(0, 4, &mut flower_state);
     assert_eq!(
         flower_state.entities.player.current_hp, 56,
         "Java Reaper queues HealAction, so Magic Flower modifies the vampire heal"
@@ -3189,9 +3218,48 @@ fn rupture_and_reaper_execution_hooks_match_java_sources() {
         &mut bloom_state,
     );
     assert_eq!(
+        bloom_state.pop_next_action(),
+        Some(Action::Heal {
+            target: 0,
+            amount: 4
+        })
+    );
+    crate::engine::action_handlers::damage::handle_heal(0, 4, &mut bloom_state);
+    assert_eq!(
         bloom_state.entities.player.current_hp, 50,
         "Java Mark of the Bloom returns zero from onPlayerHeal, including Reaper heals"
     );
+
+    let mut single_vampire_state = crate::test_support::blank_test_combat();
+    single_vampire_state.entities.player.current_hp = 70;
+    let mut parasite = crate::test_support::test_monster(EnemyId::ShelledParasite);
+    parasite.id = 77;
+    parasite.current_hp = 10;
+    parasite.max_hp = 30;
+    single_vampire_state.entities.monsters = vec![parasite];
+    crate::engine::action_handlers::damage::handle_vampire_damage(
+        DamageInfo {
+            source: 77,
+            target: 0,
+            base: 6,
+            output: 6,
+            damage_type: DamageType::Normal,
+            is_modified: true,
+        },
+        &mut single_vampire_state,
+    );
+    assert_eq!(single_vampire_state.entities.player.current_hp, 64);
+    assert_eq!(single_vampire_state.entities.monsters[0].current_hp, 10);
+    assert_eq!(
+        single_vampire_state.pop_next_action(),
+        Some(Action::Heal {
+            target: 77,
+            amount: 6
+        }),
+        "Java VampireDamageAction queues HealAction to top instead of healing inline"
+    );
+    crate::engine::action_handlers::damage::handle_heal(77, 6, &mut single_vampire_state);
+    assert_eq!(single_vampire_state.entities.monsters[0].current_hp, 16);
 }
 
 #[test]
