@@ -1762,6 +1762,10 @@ fn on_kill_card_rewards_ignore_minions_and_half_dead_targets_like_java_actions()
     dagger_target.current_hp = 5;
     dagger_normal.entities.monsters = vec![dagger_target];
     dagger_normal.zones.hand = vec![CombatCard::new(CardId::RitualDagger, 900)];
+    dagger_normal.zones.draw_pile = vec![CombatCard::new(CardId::RitualDagger, 900)];
+    dagger_normal.zones.discard_pile = vec![CombatCard::new(CardId::RitualDagger, 900)];
+    dagger_normal.zones.exhaust_pile = vec![CombatCard::new(CardId::RitualDagger, 900)];
+    dagger_normal.zones.limbo = vec![CombatCard::new(CardId::RitualDagger, 900)];
     crate::engine::action_handlers::damage::handle_ritual_dagger(
         44,
         test_damage(44),
@@ -1770,10 +1774,14 @@ fn on_kill_card_rewards_ignore_minions_and_half_dead_targets_like_java_actions()
         &mut dagger_normal,
     );
     assert_eq!(dagger_normal.zones.hand[0].misc_value, 3);
+    assert_eq!(dagger_normal.zones.draw_pile[0].misc_value, 3);
+    assert_eq!(dagger_normal.zones.discard_pile[0].misc_value, 3);
+    assert_eq!(dagger_normal.zones.exhaust_pile[0].misc_value, 3);
+    assert_eq!(dagger_normal.zones.limbo[0].misc_value, 3);
     assert_eq!(
         dagger_normal.pop_next_action(),
         None,
-        "Java RitualDaggerAction mutates GetAllInBattleInstances inside the damage action"
+        "Java RitualDaggerAction mutates every matching GetAllInBattleInstances card inside the damage action"
     );
 
     let mut dagger_half_dead = crate::test_support::blank_test_combat();

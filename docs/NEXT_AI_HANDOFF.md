@@ -9,10 +9,14 @@ Continue Java-source-backed mechanics cleanup. Do not add strategy heuristics, b
 
 ## Last Pushed Checkpoint
 
-`f7733d6 Tighten post-combat retained actions`
+`e2ef01d Match Corruption cost-for-turn semantics`
 
 Recent pushed mechanics fixes:
 
+- `e2ef01d Match Corruption cost-for-turn semantics`
+  - `Corruption` on-apply now matches Java `AbstractCard.setCostForTurn(-9)` semantics.
+  - Rust no longer subtracts from `CombatCard.cost_modifier` when Corruption is applied.
+  - Java `setCostForTurn` changes only the current turn cost field, not base cost or combat cost modifiers.
 - `f7733d6 Tighten post-combat retained actions`
   - Refined Rust post-combat queue filtering to mirror Java `GameActionManager.clearPostCombatActions()`.
   - Only Java DAMAGE-equivalent actions, `Heal`, `GainBlock`, and `UseCardDone` are retained after lethal cleanup.
@@ -29,23 +33,25 @@ Verification already passed for those checkpoints:
 - `cargo test -q content::cards::tests::ironclad_power_and_debuff_runtime_actions_match_java_use_methods`
 - `cargo test -q content::cards::tests`
 - `cargo test -q content::cards::tests::ironclad`
+- `cargo check -q`
 - `cargo test -q engine::action_handlers::cards::tests`
 - `cargo test -q engine::core::tests`
 
 ## Current Work To Commit
 
-Ironclad Java audit continued and found one non-strategy mechanics difference:
+Ironclad / shared Java action audit continued and found one non-strategy mechanics difference:
 
-- `Corruption` on-apply now matches Java `AbstractCard.setCostForTurn(-9)` semantics:
-  - Java `ApplyPowerAction` sets `costForTurn` for Skill cards in hand, draw pile, discard pile, and exhaust pile.
-  - Java `setCostForTurn` does not mutate base cost or combat cost modifiers.
-  - Rust no longer subtracts from `CombatCard.cost_modifier` when Corruption is applied.
+- `ModifyCardMisc` now matches Java `GetAllInBattleInstances` semantics:
+  - Java `RitualDaggerAction` mutates every battle instance with the matching UUID.
+  - Rust previously stopped after the first matching card in hand/draw/discard/exhaust/limbo.
+  - Rust now updates every matching combat-zone instance.
 
 Verification passed for this work:
 
-- `cargo test -q content::cards::tests::ironclad_power_and_debuff_runtime_actions_match_java_use_methods`
-- `cargo test -q content::cards::tests::ironclad`
+- `cargo test -q content::cards::tests::on_kill_card_rewards_ignore_minions_and_half_dead_targets_like_java_actions`
+- `cargo test -q content::cards::tests::ironclad_rampage_and_rupture_runtime_actions_match_java_use_methods`
 - `cargo test -q content::cards::tests`
+- `cargo test -q engine::action_handlers::cards::tests`
 - `cargo check -q`
 
 ## Next Work

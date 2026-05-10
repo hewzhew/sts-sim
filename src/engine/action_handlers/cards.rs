@@ -657,7 +657,6 @@ pub fn handle_modify_card_misc(card_uuid: u32, amount: i32, state: &mut CombatSt
     {
         if card.uuid == card_uuid {
             card.misc_value += amount;
-            break;
         }
     }
 }
