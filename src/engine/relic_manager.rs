@@ -46,6 +46,9 @@ pub fn on_equip(
         // === Gold ===
         RelicId::OldCoin => old_coin::on_equip(run_state),
 
+        // === Reward-screen relics ===
+        RelicId::Cauldron => cauldron::on_equip(run_state, return_state),
+
         // === Potion Slots ===
         RelicId::PotionBelt => potion_belt::on_equip(run_state),
 

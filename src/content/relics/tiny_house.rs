@@ -29,11 +29,8 @@ pub fn on_equip(run_state: &mut RunState) -> Option<EngineState> {
     run_state.gain_max_hp_with_source(5, 5, DomainEventSource::Relic(RelicId::TinyHouse));
 
     let potion_class = run_state.potion_class();
-    let potion_id = crate::content::potions::random_potion(
-        &mut run_state.rng_pool.misc_rng,
-        potion_class,
-        false,
-    );
+    let potion_id =
+        crate::content::potions::random_potion_any(&mut run_state.rng_pool.misc_rng, potion_class);
     let num_cards = crate::rewards::generator::adjusted_card_reward_choice_count(run_state, 3);
     let cards = crate::rewards::generator::generate_card_reward(run_state, num_cards, false);
 

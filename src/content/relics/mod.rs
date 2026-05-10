@@ -401,6 +401,7 @@ impl RelicState {
             | RelicId::OrnamentalFan
             | RelicId::StoneCalendar
             | RelicId::TinyChest => counter = 0,
+            RelicId::Circlet => counter = 1,
             _ => {}
         }
 
@@ -430,10 +431,11 @@ pub fn get_relic_tier(id: RelicId) -> RelicTier {
         Damaru | DataDisk | RedSkull | SneckoSkull => RelicTier::Common,
         // Uncommon (shared)
         BlueCandle | BottledFlame | BottledLightning | BottledTornado | Courier
-        | DarkstonePeriapt | EternalFeather | FrozenEgg | GremlinHorn | HornCleat | InkBottle
-        | Kunai | LetterOpener | Matryoshka | MeatOnTheBone | MercuryHourglass | MoltenEgg
-        | MummifiedHand | OrnamentalFan | Pantograph | Pear | QuestionCard | Shuriken
-        | SingingBowl | StrikeDummy | Sundial | ToxicEgg | WhiteBeastStatue => RelicTier::Uncommon,
+        | DarkstonePeriapt | DiscerningMonocle | EternalFeather | FrozenEgg | GremlinHorn
+        | HornCleat | InkBottle | Kunai | LetterOpener | Matryoshka | MeatOnTheBone
+        | MercuryHourglass | MoltenEgg | MummifiedHand | OrnamentalFan | Pantograph | Pear
+        | QuestionCard | Shuriken | SingingBowl | StrikeDummy | Sundial | ToxicEgg
+        | WhiteBeastStatue => RelicTier::Uncommon,
         // Uncommon (class-specific)
         Duality | GoldPlatedCables | NinjaScroll | PaperCrane | PaperFrog | SelfFormingClay
         | SymbioticVirus | TeardropLocket => RelicTier::Uncommon,
@@ -458,9 +460,9 @@ pub fn get_relic_tier(id: RelicId) -> RelicTier {
             RelicTier::Boss
         }
         // Shop (shared)
-        Abacus | Cauldron | ChemicalX | ClockworkSouvenir | DiscerningMonocle | DollysMirror
-        | FrozenEye | HandDrill | MedicalKit | MembershipCard | OrangePellets | Orrery
-        | PrismaticShard | Sling | StrangeSpoon | Toolbox | Waffle => RelicTier::Shop,
+        Abacus | Cauldron | ChemicalX | ClockworkSouvenir | DollysMirror | FrozenEye
+        | HandDrill | MedicalKit | MembershipCard | OrangePellets | Orrery | PrismaticShard
+        | Sling | StrangeSpoon | Toolbox | Waffle => RelicTier::Shop,
         // Shop (class-specific)
         Brimstone | Melange | RunicCapacitor | TwistedFunnel => RelicTier::Shop,
         // Special / Event (never in relic pools)

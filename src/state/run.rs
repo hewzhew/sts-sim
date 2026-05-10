@@ -310,6 +310,18 @@ impl RunState {
         return_state: crate::state::core::EngineState,
         source: DomainEventSource,
     ) -> Option<crate::state::core::EngineState> {
+        if relic_id == crate::content::relics::RelicId::Circlet {
+            if let Some(circlet) = self
+                .relics
+                .iter_mut()
+                .find(|relic| relic.id == crate::content::relics::RelicId::Circlet)
+            {
+                circlet.counter += 1;
+                self.emit_event(DomainEvent::RelicObtained { relic_id, source });
+                return None;
+            }
+        }
+
         let previous_gold = self.gold;
         let previous_hp = self.current_hp;
         let previous_max_hp = self.max_hp;
@@ -377,6 +389,17 @@ impl RunState {
                 new_total: self.gold,
                 source,
             });
+        }
+        if actual_delta > 0
+            && self
+                .relics
+                .iter()
+                .any(|relic| relic.id == crate::content::relics::RelicId::BloodyIdol)
+        {
+            self.change_hp_with_source(
+                5,
+                DomainEventSource::Relic(crate::content::relics::RelicId::BloodyIdol),
+            );
         }
         actual_delta
     }

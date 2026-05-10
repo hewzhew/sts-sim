@@ -2950,6 +2950,204 @@ fn wrist_blade_adds_four_damage_to_java_zero_cost_attacks_only() {
 }
 
 #[test]
+fn shared_shop_special_relic_gap_batch_metadata_matches_java_sources() {
+    assert_eq!(get_relic_tier(RelicId::Abacus), RelicTier::Shop);
+    assert_eq!(get_relic_tier(RelicId::BloodyIdol), RelicTier::Special);
+    assert_eq!(get_relic_tier(RelicId::Cauldron), RelicTier::Shop);
+    assert_eq!(get_relic_tier(RelicId::ChemicalX), RelicTier::Shop);
+    assert_eq!(get_relic_tier(RelicId::Circlet), RelicTier::Special);
+    assert_eq!(
+        get_relic_tier(RelicId::DiscerningMonocle),
+        RelicTier::Uncommon,
+        "Java DiscerningMonocle constructor is UNCOMMON, not SHOP"
+    );
+
+    assert!(get_relic_subscriptions(RelicId::Abacus).on_shuffle);
+    assert!(get_relic_subscriptions(RelicId::ChemicalX).on_calculate_x_cost);
+    assert!(!get_relic_subscriptions(RelicId::BloodyIdol).at_battle_start);
+    assert!(!get_relic_subscriptions(RelicId::Cauldron).at_battle_start);
+    assert_eq!(RelicState::new(RelicId::Circlet).counter, 1);
+}
+
+#[test]
+fn abacus_grants_six_block_on_shuffle() {
+    let mut state = crate::test_support::blank_test_combat();
+    state
+        .entities
+        .player
+        .add_relic(RelicState::new(RelicId::Abacus));
+
+    let actions = hooks::on_shuffle(&mut state);
+    assert_eq!(actions.len(), 1);
+    assert_eq!(actions[0].insertion_mode, AddTo::Bottom);
+    assert!(matches!(
+        actions[0].action,
+        Action::GainBlock {
+            target: 0,
+            amount: 6
+        }
+    ));
+}
+
+#[test]
+fn bloody_idol_heals_from_run_level_gold_gain_unless_ectoplasm_blocks_gold() {
+    let mut run = crate::state::run::RunState::new(19, 0, false, "Ironclad");
+    run.current_hp = 40;
+    run.max_hp = 80;
+    run.relics.push(RelicState::new(RelicId::BloodyIdol));
+    run.emitted_events.clear();
+
+    assert_eq!(
+        run.change_gold_with_source(50, DomainEventSource::RewardScreen),
+        50
+    );
+    assert_eq!(run.gold, 149);
+    assert_eq!(run.current_hp, 45);
+    assert!(run.emitted_events.iter().any(|event| matches!(
+        event,
+        DomainEvent::HpChanged {
+            delta: 5,
+            source: DomainEventSource::Relic(RelicId::BloodyIdol),
+            ..
+        }
+    )));
+
+    let mut blocked = crate::state::run::RunState::new(20, 0, false, "Ironclad");
+    blocked.current_hp = 40;
+    blocked.relics.push(RelicState::new(RelicId::BloodyIdol));
+    blocked.relics.push(RelicState::new(RelicId::Ectoplasm));
+    blocked.emitted_events.clear();
+
+    assert_eq!(
+        blocked.change_gold_with_source(50, DomainEventSource::RewardScreen),
+        0
+    );
+    assert_eq!(blocked.gold, 99);
+    assert_eq!(blocked.current_hp, 40);
+    assert!(blocked.emitted_events.is_empty());
+}
+
+#[test]
+fn cauldron_opens_potion_reward_screen_and_removes_first_card_reward() {
+    let mut run = crate::state::run::RunState::new(21, 0, false, "Ironclad");
+    let mut existing_rewards = crate::rewards::state::RewardState::new();
+    existing_rewards
+        .items
+        .push(crate::rewards::state::RewardItem::Gold { amount: 12 });
+    existing_rewards
+        .items
+        .push(crate::rewards::state::RewardItem::Card {
+            cards: vec![crate::rewards::state::RewardCard::new(CardId::Strike, 0)],
+        });
+    existing_rewards
+        .items
+        .push(crate::rewards::state::RewardItem::Relic {
+            relic_id: RelicId::Akabeko,
+        });
+
+    let Some(crate::state::core::EngineState::RewardScreen(rewards)) = cauldron::on_equip(
+        &mut run,
+        crate::state::core::EngineState::RewardScreen(existing_rewards),
+    ) else {
+        panic!("expected Cauldron to open a reward screen");
+    };
+
+    assert_eq!(
+        rewards
+            .items
+            .iter()
+            .filter(|item| matches!(item, crate::rewards::state::RewardItem::Potion { .. }))
+            .count(),
+        5
+    );
+    assert!(!rewards
+        .items
+        .iter()
+        .any(|item| matches!(item, crate::rewards::state::RewardItem::Card { .. })));
+    assert!(rewards
+        .items
+        .iter()
+        .any(|item| matches!(item, crate::rewards::state::RewardItem::Gold { amount: 12 })));
+    assert!(rewards.items.iter().any(|item| matches!(
+        item,
+        crate::rewards::state::RewardItem::Relic {
+            relic_id: RelicId::Akabeko
+        }
+    )));
+}
+
+#[test]
+fn chemical_x_adds_two_to_x_cost_amount() {
+    let mut state = crate::test_support::blank_test_combat();
+    state
+        .entities
+        .player
+        .add_relic(RelicState::new(RelicId::ChemicalX));
+
+    assert_eq!(hooks::on_calculate_x_cost(&state, 0), 2);
+    assert_eq!(hooks::on_calculate_x_cost(&state, 3), 5);
+}
+
+#[test]
+fn circlet_duplicate_obtain_increments_existing_counter_instead_of_adding_copy() {
+    let mut run = crate::state::run::RunState::new(22, 0, false, "Ironclad");
+    assert!(run
+        .obtain_relic_with_source(
+            RelicId::Circlet,
+            crate::state::core::EngineState::MapNavigation,
+            DomainEventSource::RewardScreen,
+        )
+        .is_none());
+    assert_eq!(
+        run.relics
+            .iter()
+            .filter(|relic| relic.id == RelicId::Circlet)
+            .count(),
+        1
+    );
+    let circlet = run
+        .relics
+        .iter()
+        .find(|relic| relic.id == RelicId::Circlet)
+        .expect("Circlet should be obtained");
+    assert_eq!(circlet.counter, 1);
+
+    assert!(run
+        .obtain_relic_with_source(
+            RelicId::Circlet,
+            crate::state::core::EngineState::MapNavigation,
+            DomainEventSource::RewardScreen,
+        )
+        .is_none());
+    assert_eq!(
+        run.relics
+            .iter()
+            .filter(|relic| relic.id == RelicId::Circlet)
+            .count(),
+        1
+    );
+    let circlet = run
+        .relics
+        .iter()
+        .find(|relic| relic.id == RelicId::Circlet)
+        .expect("Circlet should still be a single relic");
+    assert_eq!(circlet.counter, 2);
+    assert_eq!(
+        run.emitted_events
+            .iter()
+            .filter(|event| matches!(
+                event,
+                DomainEvent::RelicObtained {
+                    relic_id: RelicId::Circlet,
+                    ..
+                }
+            ))
+            .count(),
+        2
+    );
+}
+
+#[test]
 fn shared_rare_damage_retention_relic_metadata_matches_java_sources() {
     assert_eq!(get_relic_tier(RelicId::Calipers), RelicTier::Rare);
     assert_eq!(get_relic_tier(RelicId::Torii), RelicTier::Rare);

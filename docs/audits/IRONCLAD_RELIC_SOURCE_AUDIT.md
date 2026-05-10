@@ -3597,7 +3597,9 @@ Java evidence:
 - `onEquip`: shuffles all upgradable master-deck cards with
   `new Random(AbstractDungeon.miscRng.randomLong())` and upgrades one if any.
 - Increases max HP by `5`.
-- Adds `50` gold and one random potion to the current room rewards.
+- Adds `50` gold and one random potion to the current room rewards. The potion
+  uses `PotionHelper.getRandomPotion(AbstractDungeon.miscRng)`, which samples the
+  initialized potion list directly rather than rolling drop rarity first.
 - Opens the combat reward screen, whose setup also provides the normal card
   reward unless the current room suppresses card rewards.
 
@@ -3606,6 +3608,8 @@ Rust result:
 - Fixed max HP gain to emit `Relic(TinyHouse)` source.
 - Fixed gold, potion, and card reward handling to return a `RewardScreen`
   instead of directly adding gold and omitting potion/card rewards.
+- Fixed the potion reward to use the uniform PotionHelper-style pool with
+  `misc_rng`, matching the Java overload used by Tiny House.
 - Gold is now gained only when the reward is claimed, preserving Ectoplasm and
   other reward-claim modifiers.
 
@@ -3668,6 +3672,177 @@ Rust result:
 Coverage:
 - `shared_boss_relic_third_batch_metadata_matches_java_sources`
 - `wrist_blade_adds_four_damage_to_java_zero_cost_attacks_only`
+
+## Shared Relic Batch 16 - Shop / Special Gaps Part 1
+
+### Abacus
+
+Status: `exact`
+
+Java source:
+- `D:/rust/cardcrawl/relics/Abacus.java`
+
+Rust source:
+- `src/content/relics/abacus.rs`
+- `src/content/relics/hooks.rs`
+- `src/engine/action_handlers/cards.rs`
+
+Java evidence:
+- Constructor: ID `"TheAbacus"`, tier `SHOP`, landing sound `SOLID`.
+- `onShuffle`: flashes, queues relic-above-player VFX, then queues
+  `GainBlockAction(player, player, 6)`.
+
+Rust result:
+- Tier and shuffle subscription match Java.
+- Shuffle hook queues 6 block. UI-only relic-above-player VFX is not modeled.
+
+Coverage:
+- `shared_shop_special_relic_gap_batch_metadata_matches_java_sources`
+- `abacus_grants_six_block_on_shuffle`
+
+### Bloody Idol
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/relics/BloodyIdol.java`
+- `D:/rust/cardcrawl/characters/AbstractPlayer.java`
+
+Rust source:
+- `src/content/relics/bloody_idol.rs`
+- `src/engine/action_handlers/damage.rs`
+- `src/state/run.rs`
+
+Java evidence:
+- Constructor: ID `"Bloody Idol"`, tier `SPECIAL`, landing sound `HEAVY`.
+- `AbstractPlayer.gainGold`: Ectoplasm blocks positive gold before it changes
+  gold; otherwise positive gold increments gold and then calls every relic's
+  `onGainGold`.
+- `BloodyIdol.onGainGold`: heals 5.
+
+Rust result:
+- Tier matches Java.
+- Combat `GainGold` already triggered Bloody Idol through the combat action
+  path.
+- Fixed run/reward/event-level positive gold changes to heal 5 through
+  `Relic(BloodyIdol)` after gold is actually gained.
+- Ectoplasm-blocked gold gain does not trigger the heal.
+
+Coverage:
+- `shared_shop_special_relic_gap_batch_metadata_matches_java_sources`
+- `bloody_idol_heals_from_run_level_gold_gain_unless_ectoplasm_blocks_gold`
+
+### Cauldron
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/relics/Cauldron.java`
+- `D:/rust/cardcrawl/helpers/PotionHelper.java`
+- `D:/rust/cardcrawl/rooms/AbstractRoom.java`
+
+Rust source:
+- `src/content/relics/cauldron.rs`
+- `src/engine/relic_manager.rs`
+
+Java evidence:
+- Constructor: ID `"Cauldron"`, tier `SHOP`, landing sound `HEAVY`.
+- `onEquip`: adds five potion rewards with `PotionHelper.getRandomPotion()`,
+  opens the combat reward screen, and removes the first card reward if one is
+  present.
+- `PotionHelper.getRandomPotion()` samples uniformly from the initialized
+  potion list through `AbstractDungeon.potionRng`; it is not the weighted
+  reward-drop potion roll.
+
+Rust result:
+- Tier matches Java.
+- Fixed Cauldron to route through the relic manager on acquire.
+- Fixed Cauldron to return a reward screen containing five potion rewards,
+  preserving existing non-card rewards and removing the first card reward.
+- Fixed potion generation to use the uniform PotionHelper-style pool with
+  `potion_rng`.
+
+Coverage:
+- `shared_shop_special_relic_gap_batch_metadata_matches_java_sources`
+- `cauldron_opens_potion_reward_screen_and_removes_first_card_reward`
+
+### Chemical X
+
+Status: `exact`
+
+Java source:
+- `D:/rust/cardcrawl/relics/ChemicalX.java`
+
+Rust source:
+- `src/content/relics/chemical_x.rs`
+- `src/content/relics/hooks.rs`
+- `src/engine/action_handlers/cards.rs`
+
+Java evidence:
+- Constructor: ID `"Chemical X"`, tier `SHOP`, landing sound `CLINK`.
+- Relic class stores `BOOST = 2`; X-card action code consumes this as an
+  additional X amount.
+
+Rust result:
+- Tier and X-cost subscription match Java.
+- X-cost calculation adds 2 when Chemical X is owned.
+
+Coverage:
+- `shared_shop_special_relic_gap_batch_metadata_matches_java_sources`
+- `chemical_x_adds_two_to_x_cost_amount`
+
+### Circlet
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/relics/Circlet.java`
+- `D:/rust/cardcrawl/relics/AbstractRelic.java`
+
+Rust source:
+- `src/content/relics/mod.rs`
+- `src/state/run.rs`
+
+Java evidence:
+- Constructor: ID `"Circlet"`, tier `SPECIAL`, landing sound `CLINK`, and
+  `counter = 1`.
+- `AbstractRelic.instantObtain` / `obtain`: if the player already has Circlet,
+  increments the existing Circlet counter instead of adding another relic copy.
+
+Rust result:
+- Fixed new Circlets to start with counter 1.
+- Fixed run relic acquisition so duplicate Circlets increment the existing
+  Circlet counter and do not add a second relic instance.
+
+Coverage:
+- `shared_shop_special_relic_gap_batch_metadata_matches_java_sources`
+- `circlet_duplicate_obtain_increments_existing_counter_instead_of_adding_copy`
+
+### Discerning Monocle
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/relics/DiscerningMonocle.java`
+
+Rust source:
+- `src/content/relics/discerning_monocle.rs`
+- `src/content/relics/mod.rs`
+
+Java evidence:
+- Constructor: ID `"Discerning Monocle"`, tier `UNCOMMON`, landing sound
+  `CLINK`.
+- `onEnterRoom`: pulses only in `ShopRoom`; otherwise stops pulsing.
+- Although the class defines `MULTIPLIER = 0.8f`, this vanilla Java source tree
+  does not reference `DiscerningMonocle` in `ShopScreen` price calculation.
+
+Rust result:
+- Fixed tier from the old shop-tier assumption to Java's `UNCOMMON`.
+- Removed the misleading headless comment that claimed a shop discount.
+- No UI-only shop pulse is modeled.
+
+Coverage:
+- `shared_shop_special_relic_gap_batch_metadata_matches_java_sources`
 
 ## Full Ironclad Class-Specific Relic Queue
 
@@ -3801,3 +3976,9 @@ class-specific queue.
 | 104 | `TinyHouse.java` | `tiny_house.rs` / reward screen | `wrong-fixed` |
 | 105 | `VelvetChoker.java` | card play limit / energy delta | `exact` |
 | 106 | `WristBlade.java` | `wrist_blade.rs` / damage hook | `wrong-fixed` |
+| 107 | `Abacus.java` | `abacus.rs` / shuffle hook | `exact` |
+| 108 | `BloodyIdol.java` | `bloody_idol.rs` / run gold gain | `wrong-fixed` |
+| 109 | `Cauldron.java` | `cauldron.rs` / reward screen | `wrong-fixed` |
+| 110 | `ChemicalX.java` | `chemical_x.rs` / X-cost hook | `exact` |
+| 111 | `Circlet.java` | `mod.rs` / run relic obtain | `wrong-fixed` |
+| 112 | `DiscerningMonocle.java` | `discerning_monocle.rs` / tier | `wrong-fixed` |
