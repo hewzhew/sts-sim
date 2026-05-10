@@ -9,18 +9,17 @@ Continue Java-source-backed mechanics cleanup. Do not add strategy heuristics, b
 
 ## Last Pushed Checkpoint
 
-`7dc3875 Ground Second Wind action ordering`
+`fd68b33 Ground Fiend Fire queue semantics`
 
 What it fixed:
 
-- Java `BlockPerNonAttackAction` queues `GainBlockAction` and `ExhaustSpecificCardAction` with two `addToTop` loops.
-- Rust `handle_block_per_non_attack` now matches the Java queue order: all exhaust actions before all block gains, each group reversed relative to hand iteration.
+- Java `FiendFireAction` queues random `ExhaustAction` instances and `DamageAction` instances; it does not immediately drain hand and damage monsters.
+- Rust `handle_fiend_fire` now queues `ExhaustRandomCard` and `Damage` actions instead of directly mutating hand/monster HP.
 
 Verification already passed:
 
-- `cargo test -q engine::pending_choices::tests`
+- `cargo test -q content::cards::tests::fire_breathing_flame_barrier_and_fiend_fire_hooks_match_java_sources`
 - `cargo test -q content::cards::tests::second_wind_block_per_non_attack_matches_java_add_to_top_order`
-- `cargo test -q content::cards::tests::sever_soul_exhaust_all_non_attack_queues_exhausts_before_following_damage`
 - `cargo check -q`
 - `git diff --check`
 
@@ -28,29 +27,30 @@ Verification already passed:
 
 Files changed:
 
-- `src/engine/action_handlers/damage.rs`
+- `src/engine/action_handlers/cards.rs`
 - `src/content/cards/tests.rs`
 
 Java evidence:
 
-- `D:\rust\cardcrawl\cards\red\FiendFire.java`
-- `D:\rust\cardcrawl\actions\unique\FiendFireAction.java`
+- `D:\rust\cardcrawl\cards\red\Havoc.java`
+- `D:\rust\cardcrawl\actions\common\PlayTopCardAction.java`
 
 Finding:
 
-- Java `FiendFireAction` reads initial hand size, queues one `DamageAction` per hand card, then queues one random `ExhaustAction` per hand card.
-- Actual execution is random exhaust actions first, then damage actions.
-- Rust `handle_fiend_fire` directly drained the whole hand in order and applied damage immediately, skipping random exhaust actions and queue semantics.
+- Java `Havoc.use()` calls `getRandomMonster(..., cardRandomRng)` immediately and stores the result in `PlayTopCardAction`.
+- Rust `havoc_play` emitted `PlayTopCard { target: None }`, causing target selection to occur later in `handle_play_top_card`.
+- That changes RNG timing and can change target semantics when queued effects intervene.
 
 Implemented locally:
 
-- `handle_fiend_fire` now queues `Action::Damage` and `Action::ExhaustRandomCard { amount: 1 }` instead of immediately mutating hand/monster HP.
-- Updated the Fiend Fire hook test to assert queued random exhausts appear before queued damage actions.
+- `execute_played_card` now locks Havoc's random target into `Action::PlayTopCard` at real play time while keeping `resolve_card_play` pure.
+- Added a test proving played Havoc consumes `cardRandomRng` immediately and queues `PlayTopCard` with `Some(target)`.
 
 Verification already passed for this uncommitted work:
 
+- `cargo test -q content::cards::tests::headbutt_and_havoc_execution_helpers_match_java_sources`
+- `cargo test -q content::cards::tests::ironclad_topdeck_and_strength_scaling_runtime_actions_match_java_use_methods`
 - `cargo test -q content::cards::tests::fire_breathing_flame_barrier_and_fiend_fire_hooks_match_java_sources`
-- `cargo test -q content::cards::tests::second_wind_block_per_non_attack_matches_java_add_to_top_order`
 
 Before continuing:
 

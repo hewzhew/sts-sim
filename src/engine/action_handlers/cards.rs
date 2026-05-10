@@ -845,8 +845,20 @@ fn execute_played_card(
 
     crate::content::cards::evaluate_card(&mut played_card, state, target);
 
-    let card_actions =
+    let mut card_actions =
         crate::content::cards::resolve_card_play(card_id, state, &played_card, target);
+    if card_id == CardId::Havoc {
+        for action in &mut card_actions {
+            if let Action::PlayTopCard { target, .. } = &mut action.action {
+                if target.is_none() {
+                    *target = targeting::pick_random_target(
+                        state,
+                        crate::state::TargetValidation::AnyEnemy,
+                    );
+                }
+            }
+        }
+    }
     state.queue_actions(card_actions);
 
     let passive_card_actions = crate::content::cards::on_play_card(&played_card, state);

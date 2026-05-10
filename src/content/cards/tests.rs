@@ -2140,6 +2140,38 @@ fn headbutt_and_havoc_execution_helpers_match_java_sources() {
         }
         other => panic!("Havoc should lock random target before empty-deck shuffle, got {other:?}"),
     }
+
+    let mut played_havoc_state = crate::test_support::blank_test_combat();
+    let mut first = crate::test_support::test_monster(EnemyId::JawWorm);
+    first.id = 73;
+    let mut second = crate::test_support::test_monster(EnemyId::Cultist);
+    second.id = 74;
+    second.slot = 1;
+    played_havoc_state.entities.monsters = vec![first, second];
+    played_havoc_state.zones.hand = vec![CombatCard::new(CardId::Havoc, 270)];
+    played_havoc_state.zones.draw_pile = vec![CombatCard::new(CardId::Clash, 271)];
+    assert_eq!(played_havoc_state.rng.card_random_rng.counter, 0);
+
+    crate::engine::action_handlers::cards::handle_play_card_from_hand(
+        0,
+        None,
+        &mut played_havoc_state,
+    )
+    .expect("Havoc should be playable");
+
+    assert_eq!(
+        played_havoc_state.rng.card_random_rng.counter, 1,
+        "Havoc.use chooses its random monster target immediately"
+    );
+    match played_havoc_state.pop_next_action() {
+        Some(Action::PlayTopCard { target, exhaust }) => {
+            assert!(matches!(target, Some(73 | 74)));
+            assert!(exhaust);
+        }
+        other => {
+            panic!("played Havoc should enqueue PlayTopCard with locked target, got {other:?}")
+        }
+    }
 }
 
 #[test]
