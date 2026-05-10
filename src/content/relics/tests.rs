@@ -2082,6 +2082,252 @@ fn pocketwatch_first_turn_and_three_card_limit_match_java() {
 }
 
 #[test]
+fn shared_rare_card_flow_relic_metadata_matches_java_sources() {
+    assert_eq!(get_relic_tier(RelicId::BirdFacedUrn), RelicTier::Rare);
+    assert_eq!(get_relic_tier(RelicId::DeadBranch), RelicTier::Rare);
+    assert_eq!(get_relic_tier(RelicId::DuVuDoll), RelicTier::Rare);
+    assert_eq!(get_relic_tier(RelicId::GamblingChip), RelicTier::Rare);
+    assert_eq!(get_relic_tier(RelicId::UnceasingTop), RelicTier::Rare);
+
+    assert!(get_relic_subscriptions(RelicId::BirdFacedUrn).on_use_card);
+    assert!(get_relic_subscriptions(RelicId::DeadBranch).on_exhaust);
+    assert!(get_relic_subscriptions(RelicId::DuVuDoll).at_battle_start);
+
+    let gambling_chip = get_relic_subscriptions(RelicId::GamblingChip);
+    assert!(gambling_chip.at_battle_start_pre_draw);
+    assert!(gambling_chip.at_turn_start_post_draw);
+    assert!(
+        !gambling_chip.at_turn_start,
+        "Java Gambling Chip fires atTurnStartPostDraw, not atTurnStart"
+    );
+
+    let top = get_relic_subscriptions(RelicId::UnceasingTop);
+    assert!(top.at_pre_battle);
+    assert!(top.at_turn_start);
+}
+
+#[test]
+fn player_add_relic_registers_pre_battle_and_pre_draw_buses() {
+    let mut state = crate::test_support::blank_test_combat();
+    state
+        .entities
+        .player
+        .add_relic(RelicState::new(RelicId::CrackedCore));
+    state
+        .entities
+        .player
+        .add_relic(RelicState::new(RelicId::GamblingChip));
+
+    assert_eq!(
+        state.entities.player.relic_buses.at_pre_battle.as_slice(),
+        &[0]
+    );
+    assert_eq!(
+        state
+            .entities
+            .player
+            .relic_buses
+            .at_battle_start_pre_draw
+            .as_slice(),
+        &[1]
+    );
+}
+
+#[test]
+fn bird_faced_urn_heals_only_when_power_card_is_used() {
+    let actions = bird_faced_urn::BirdFacedUrn::on_use_card(CardId::Inflame);
+    assert_eq!(actions.len(), 1);
+    assert_eq!(actions[0].insertion_mode, AddTo::Top);
+    assert!(matches!(
+        actions[0].action,
+        Action::Heal {
+            target: 0,
+            amount: 2
+        }
+    ));
+
+    assert!(bird_faced_urn::BirdFacedUrn::on_use_card(CardId::Strike).is_empty());
+}
+
+#[test]
+fn dead_branch_skips_when_monsters_are_basically_dead() {
+    let mut active = crate::test_support::blank_test_combat();
+    active
+        .entities
+        .monsters
+        .push(crate::test_support::test_monster(EnemyId::JawWorm));
+    let actions = dead_branch::on_exhaust(&active, &mut RelicState::new(RelicId::DeadBranch));
+    assert_eq!(actions.len(), 1);
+    assert_eq!(actions[0].insertion_mode, AddTo::Bottom);
+    assert!(matches!(
+        actions[0].action,
+        Action::MakeRandomCardInHand {
+            card_type: None,
+            cost_for_turn: None
+        }
+    ));
+
+    let mut dying = crate::test_support::test_monster(EnemyId::JawWorm);
+    dying.current_hp = 0;
+    dying.is_dying = true;
+    let basically_dead = crate::test_support::combat_with_monsters(vec![dying]);
+    assert!(
+        dead_branch::on_exhaust(&basically_dead, &mut RelicState::new(RelicId::DeadBranch),)
+            .is_empty()
+    );
+}
+
+#[test]
+fn du_vu_doll_counter_tracks_master_deck_and_battle_start_uses_counter() {
+    let mut run = crate::state::run::RunState::new(1, 0, false, "Ironclad");
+    run.master_deck.clear();
+    run.master_deck.push(CombatCard::new(CardId::Strike, 1));
+    run.master_deck.push(CombatCard::new(CardId::Injury, 2));
+
+    assert!(run
+        .obtain_relic(
+            RelicId::DuVuDoll,
+            crate::state::core::EngineState::MapNavigation
+        )
+        .is_none());
+    assert_eq!(
+        run.relics
+            .iter()
+            .find(|relic| relic.id == RelicId::DuVuDoll)
+            .unwrap()
+            .counter,
+        1
+    );
+
+    assert!(run.add_card_to_deck_with_upgrades(CardId::Pain, 0));
+    assert_eq!(
+        run.relics
+            .iter()
+            .find(|relic| relic.id == RelicId::DuVuDoll)
+            .unwrap()
+            .counter,
+        2
+    );
+
+    let injury_uuid = run
+        .master_deck
+        .iter()
+        .find(|card| card.id == CardId::Injury)
+        .unwrap()
+        .uuid;
+    run.remove_card_from_deck(injury_uuid);
+    assert_eq!(
+        run.relics
+            .iter()
+            .find(|relic| relic.id == RelicId::DuVuDoll)
+            .unwrap()
+            .counter,
+        1
+    );
+
+    let mut relic = RelicState::new(RelicId::DuVuDoll);
+    relic.counter = 2;
+    let actions =
+        du_vu_doll::at_battle_start(&crate::test_support::blank_test_combat(), &mut relic);
+    assert_eq!(actions.len(), 1);
+    assert_eq!(actions[0].insertion_mode, AddTo::Top);
+    assert!(matches!(
+        actions[0].action,
+        Action::ApplyPower {
+            source: 0,
+            target: 0,
+            power_id: PowerId::Strength,
+            amount: 2
+        }
+    ));
+}
+
+#[test]
+fn gambling_chip_resets_pre_draw_and_fires_once_post_draw() {
+    let mut relic = RelicState::new(RelicId::GamblingChip);
+    relic.used_up = true;
+    gambling_chip::at_battle_start_pre_draw(&mut relic);
+    assert!(!relic.used_up);
+
+    let actions = gambling_chip::at_turn_start_post_draw(&mut relic);
+    assert!(relic.used_up);
+    assert_eq!(actions.len(), 1);
+    assert_eq!(actions[0].insertion_mode, AddTo::Bottom);
+    assert!(matches!(
+        actions[0].action,
+        Action::SuspendForHandSelect {
+            min: 0,
+            max: 99,
+            can_cancel: true,
+            filter: crate::state::HandSelectFilter::Any,
+            reason: crate::state::HandSelectReason::GamblingChip
+        }
+    ));
+    assert!(gambling_chip::at_turn_start_post_draw(&mut relic).is_empty());
+
+    let mut state = crate::test_support::blank_test_combat();
+    let mut state_relic = RelicState::new(RelicId::GamblingChip);
+    state_relic.used_up = true;
+    state.entities.player.add_relic(state_relic);
+    assert!(hooks::at_battle_start_pre_draw(&mut state).is_empty());
+    assert!(!state.entities.player.relics[0].used_up);
+    assert_eq!(hooks::at_turn_start_post_draw(&mut state).len(), 1);
+    assert!(state.entities.player.relics[0].used_up);
+}
+
+#[test]
+fn unceasing_top_uses_mechanical_refresh_conditions_without_ui_state() {
+    let mut state = crate::test_support::blank_test_combat();
+    state
+        .entities
+        .player
+        .add_relic(RelicState::new(RelicId::UnceasingTop));
+    state
+        .zones
+        .draw_pile
+        .push(CombatCard::new(CardId::Strike, 1));
+
+    hooks::at_pre_battle(&mut state);
+    assert_eq!(state.entities.player.relics[0].amount, 0);
+    assert!(!unceasing_top::maybe_on_refresh_hand(&mut state));
+
+    hooks::at_turn_start(&mut state);
+    assert_eq!(state.entities.player.relics[0].amount, 1);
+    assert!(unceasing_top::maybe_on_refresh_hand(&mut state));
+    assert!(matches!(
+        state.pop_next_action(),
+        Some(Action::DrawCards(1))
+    ));
+
+    state
+        .zones
+        .draw_pile
+        .push(CombatCard::new(CardId::Strike, 2));
+    state
+        .entities
+        .player
+        .relics
+        .iter_mut()
+        .find(|relic| relic.id == RelicId::UnceasingTop)
+        .map(unceasing_top::disable_until_turn_ends);
+    assert!(!unceasing_top::maybe_on_refresh_hand(&mut state));
+
+    state.entities.player.relics[0].used_up = false;
+    store::set_powers_for(
+        &mut state,
+        0,
+        vec![Power {
+            power_type: PowerId::NoDraw,
+            instance_id: None,
+            amount: -1,
+            extra_data: 0,
+            just_applied: false,
+        }],
+    );
+    assert!(!unceasing_top::maybe_on_refresh_hand(&mut state));
+}
+
+#[test]
 fn shared_rare_damage_retention_relic_metadata_matches_java_sources() {
     assert_eq!(get_relic_tier(RelicId::Calipers), RelicTier::Rare);
     assert_eq!(get_relic_tier(RelicId::Torii), RelicTier::Rare);

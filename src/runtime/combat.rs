@@ -648,6 +648,12 @@ impl PlayerEntity {
         index: usize,
         sub: crate::content::relics::RelicSubscriptions,
     ) {
+        if sub.at_pre_battle {
+            self.relic_buses.at_pre_battle.push(index);
+        }
+        if sub.at_battle_start_pre_draw {
+            self.relic_buses.at_battle_start_pre_draw.push(index);
+        }
         if sub.at_battle_start {
             self.relic_buses.at_battle_start.push(index);
         }

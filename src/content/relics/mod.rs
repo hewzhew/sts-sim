@@ -868,6 +868,7 @@ pub fn get_relic_subscriptions(id: RelicId) -> RelicSubscriptions {
         }
         RelicId::GamblingChip => {
             sub.at_battle_start_pre_draw = true;
+            sub.at_turn_start_post_draw = true;
         }
         RelicId::Ginger => sub.on_receive_power_modify = true,
         RelicId::Turnip => sub.on_receive_power_modify = true,
@@ -977,7 +978,10 @@ pub fn get_relic_subscriptions(id: RelicId) -> RelicSubscriptions {
         RelicId::SymbioticVirus => sub.at_pre_battle = true, // Java: atPreBattle → channelOrb(Dark)
         RelicId::TeardropLocket => sub.at_battle_start = true, // start combat in calm
         RelicId::VioletLotus => sub.on_change_stance = true, // obtaining
-        RelicId::UnceasingTop => {}                          // Engine loop evaluated natively
+        RelicId::UnceasingTop => {
+            sub.at_pre_battle = true;
+            sub.at_turn_start = true;
+        }
         RelicId::Vajra => sub.at_battle_start = true,
         RelicId::WhiteBeastStatue => {} // Passive out of combat
         RelicId::RedMask => sub.at_battle_start = true,

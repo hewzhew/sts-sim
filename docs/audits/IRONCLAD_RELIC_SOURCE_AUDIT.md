@@ -2925,6 +2925,186 @@ Coverage:
 - `shared_rare_run_campfire_relic_metadata_matches_java_sources`
 - `rare_run_relic_can_spawn_gates_match_java_sources`
 
+## Shared Relic Batch 12 - Rare Card Flow / Refresh Relics
+
+### Bird-Faced Urn
+
+Status: `exact`
+
+Java source:
+- `D:/rust/cardcrawl/relics/BirdFacedUrn.java`
+
+Rust source:
+- `src/content/relics/bird_faced_urn.rs`
+- `src/content/relics/hooks.rs`
+
+Java evidence:
+- Constructor: ID `"Bird-Faced Urn"`, tier `RARE`, landing sound `CLINK`.
+- `onUseCard`: if the used card type is `POWER`, queues `HealAction` for `2`
+  with `addToTop`; UI relic action is also top but is not gameplay.
+
+Rust result:
+- Tier and `on_use_card` subscription match Java.
+- Power-card use queues player heal `2` with top insertion.
+- Non-power cards do not trigger.
+- UI-only relic-above-creature behavior is intentionally not represented.
+
+Coverage:
+- `shared_rare_card_flow_relic_metadata_matches_java_sources`
+- `bird_faced_urn_heals_only_when_power_card_is_used`
+
+### Dead Branch
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/relics/DeadBranch.java`
+
+Rust source:
+- `src/content/relics/dead_branch.rs`
+- `src/content/relics/hooks.rs`
+
+Java evidence:
+- Constructor: ID `"Dead Branch"`, tier `RARE`, landing sound `FLAT`.
+- `onExhaust`: only fires when `!AbstractDungeon.getMonsters().areMonstersBasicallyDead()`.
+- Gameplay action is `MakeTempCardInHandAction(returnTrulyRandomCardInCombat().makeCopy(), false)`
+  with `addToBot`; UI relic action is ignored.
+
+Rust result:
+- Tier and `on_exhaust` subscription match Java.
+- Fixed missing `areMonstersBasicallyDead` gate so final-kill exhausts do not
+  generate a random card.
+- Random combat card generation remains unfiltered and bottom-queued.
+
+Coverage:
+- `shared_rare_card_flow_relic_metadata_matches_java_sources`
+- `dead_branch_skips_when_monsters_are_basically_dead`
+
+### Du-Vu Doll
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/relics/DuVuDoll.java`
+
+Rust source:
+- `src/content/relics/du_vu_doll.rs`
+- `src/engine/relic_manager.rs`
+- `src/state/run.rs`
+- `src/content/relics/hooks.rs`
+
+Java evidence:
+- Constructor: ID `"Du-Vu Doll"`, tier `RARE`, landing sound `MAGICAL`.
+- `onEquip` and `onMasterDeckChange`: recalculate `counter` from curses in
+  `AbstractDungeon.player.masterDeck.group`.
+- `atBattleStart`: if `counter > 0`, queues player Strength equal to counter
+  with `addToTop`; UI relic action is ignored.
+
+Rust result:
+- Tier and battle-start subscription match Java.
+- Fixed battle-start logic to use the relic counter, not the combat draw pile.
+  The old implementation missed curses already drawn into hand before
+  `atBattleStart`.
+- Added run-level `on_equip` and master-deck-change counter refresh for Du-Vu
+  Doll.
+
+Coverage:
+- `shared_rare_card_flow_relic_metadata_matches_java_sources`
+- `du_vu_doll_counter_tracks_master_deck_and_battle_start_uses_counter`
+
+### Gambling Chip
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/relics/GamblingChip.java`
+- `D:/rust/cardcrawl/actions/unique/GamblingChipAction.java`
+
+Rust source:
+- `src/content/relics/gambling_chip.rs`
+- `src/content/relics/mod.rs`
+- `src/content/relics/hooks.rs`
+- `src/engine/pending_choices.rs`
+
+Java evidence:
+- Constructor: ID `"Gambling Chip"`, tier `RARE`, landing sound `FLAT`.
+- `atBattleStartPreDraw`: sets private `activated = false`.
+- `atTurnStartPostDraw`: if not activated, sets activated true and queues
+  `GamblingChipAction` with `addToBot`.
+- `GamblingChipAction`: choose any number of hand cards, discard them, then
+  draw the same count.
+
+Rust result:
+- Tier matches Java.
+- Fixed subscriptions: Gambling Chip now registers both
+  `at_battle_start_pre_draw` and `at_turn_start_post_draw`, and no longer uses
+  the wrong `at_turn_start` phase.
+- Reuses `RelicState.used_up` for Java's private activated flag.
+- Existing pending-choice resolution discards selected cards and draws the same
+  count.
+
+Coverage:
+- `shared_rare_card_flow_relic_metadata_matches_java_sources`
+- `gambling_chip_resets_pre_draw_and_fires_once_post_draw`
+
+### Unceasing Top
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/relics/UnceasingTop.java`
+- `D:/rust/cardcrawl/actions/GameActionManager.java`
+
+Rust source:
+- `src/content/relics/unceasing_top.rs`
+- `src/content/relics/mod.rs`
+- `src/content/relics/hooks.rs`
+- `src/engine/core.rs`
+- `src/engine/action_handlers/cards.rs`
+
+Java evidence:
+- Constructor: ID `"Unceasing Top"`, tier `RARE`, landing sound `CLINK`.
+- `atPreBattle`: `canDraw = false`.
+- `atTurnStart`: `canDraw = true`, `disabledUntilEndOfTurn = false`.
+- `onRefreshHand`: when the action queue is empty, the player hand is empty,
+  turn has not ended, canDraw is true, the player lacks `No Draw`, the room is
+  in combat, the relic is not disabled, and draw/discard piles are not both
+  empty, queues draw 1.
+- `GameActionManager.getNextAction`: disables Unceasing Top until turn end when
+  resolving the final end-turn autoplay queued card.
+
+Rust result:
+- Tier and start-turn subscriptions match Java.
+- Implemented a headless engine refresh check from mechanical state only:
+  no UI/screen state is modeled.
+- `RelicState.amount` stores Java `canDraw`; `RelicState.used_up` stores
+  Java `disabledUntilEndOfTurn`.
+- Engine checks Unceasing Top before returning player control when the action
+  queue is empty.
+- Final end-turn autoplay queued card disables the relic until the turn ends.
+
+Coverage:
+- `shared_rare_card_flow_relic_metadata_matches_java_sources`
+- `unceasing_top_uses_mechanical_refresh_conditions_without_ui_state`
+
+### Pre-Battle Relic Bus Registration
+
+Status: `wrong-fixed`
+
+Rust source:
+- `src/runtime/combat.rs`
+
+Finding:
+- `PlayerEntity::add_relic` registered most relic buses but omitted
+  `at_pre_battle` and `at_battle_start_pre_draw`. That meant runtime-added
+  combat relics could silently miss Java lifecycle hooks.
+
+Rust result:
+- Added both missing bus registrations.
+
+Coverage:
+- `player_add_relic_registers_pre_battle_and_pre_draw_buses`
+
 ## Full Ironclad Class-Specific Relic Queue
 
 Relics remain `unreviewed` until their Java file, Rust definition/subscription,
@@ -3033,3 +3213,8 @@ class-specific queue.
 | 80 | `PrayerWheel.java` | reward generator / pool gate | `wrong-fixed` |
 | 81 | `Shovel.java` | campfire handler / pool gate | `wrong-fixed` |
 | 82 | `WingBoots.java` | run loop / pool gate | `wrong-fixed` |
+| 83 | `BirdFacedUrn.java` | `bird_faced_urn.rs` | `exact` |
+| 84 | `DeadBranch.java` | `dead_branch.rs` | `wrong-fixed` |
+| 85 | `DuVuDoll.java` | `du_vu_doll.rs` / relic manager / run deck change | `wrong-fixed` |
+| 86 | `GamblingChip.java` | `gambling_chip.rs` / pending choice | `wrong-fixed` |
+| 87 | `UnceasingTop.java` | `unceasing_top.rs` / engine refresh loop | `wrong-fixed` |

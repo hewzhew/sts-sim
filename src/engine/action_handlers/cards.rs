@@ -1021,6 +1021,20 @@ pub fn handle_enqueue_card_play(
 }
 
 pub fn handle_flush_next_queued_card(state: &mut CombatState) {
+    if state.zones.queued_cards.len() == 1
+        && state
+            .zones
+            .queued_cards
+            .front()
+            .is_some_and(|queued| queued.is_end_turn_autoplay)
+    {
+        for relic in &mut state.entities.player.relics {
+            if relic.id == crate::content::relics::RelicId::UnceasingTop {
+                crate::content::relics::unceasing_top::disable_until_turn_ends(relic);
+            }
+        }
+    }
+
     let Some(mut queued) = state.zones.queued_cards.pop_front() else {
         return;
     };

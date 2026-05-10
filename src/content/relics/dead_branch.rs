@@ -5,10 +5,14 @@ use crate::runtime::combat::CombatState;
 /// Dead Branch: Whenever you Exhaust a card, add a random card to your hand.
 /// Java: MakeTempCardInHandAction(returnTrulyRandomCardInCombat().makeCopy())
 pub fn on_exhaust(
-    _state: &CombatState,
+    state: &CombatState,
     _relic: &mut RelicState,
 ) -> smallvec::SmallVec<[ActionInfo; 4]> {
     let mut actions = smallvec::SmallVec::new();
+    if are_monsters_basically_dead(state) {
+        return actions;
+    }
+
     // Java: returnTrulyRandomCardInCombat() — no type filter, no cost override
     actions.push(ActionInfo {
         action: Action::MakeRandomCardInHand {
@@ -18,4 +22,12 @@ pub fn on_exhaust(
         insertion_mode: AddTo::Bottom,
     });
     actions
+}
+
+fn are_monsters_basically_dead(state: &CombatState) -> bool {
+    state
+        .entities
+        .monsters
+        .iter()
+        .all(|monster| monster.is_dying || monster.is_escaped)
 }

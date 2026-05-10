@@ -528,6 +528,10 @@ pub fn tick_engine(
             // Queue is empty; decide next state based on combat phase.
             match combat_state.turn.current_phase {
                 CombatPhase::PlayerTurn => {
+                    if crate::content::relics::unceasing_top::maybe_on_refresh_hand(combat_state) {
+                        *engine_state = EngineState::CombatProcessing;
+                        return true;
+                    }
                     update_monster_intents(combat_state);
                     *engine_state = EngineState::CombatPlayerTurn;
                 }

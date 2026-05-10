@@ -96,6 +96,7 @@ pub fn on_equip(
         RelicId::CallingBell => calling_bell::on_equip(run_state, return_state),
         // Orrery: 5 Card Rewards
         RelicId::Orrery => orrery::on_equip(run_state, return_state),
+        RelicId::DuVuDoll => du_vu_doll::on_equip(run_state),
 
         _ => None,
     }

@@ -62,6 +62,11 @@ pub fn at_pre_battle(state: &mut CombatState) -> SmallVec<[ActionInfo; 4]> {
             RelicId::SymbioticVirus => {
                 actions.extend(crate::content::relics::symbiotic_virus::at_battle_start())
             }
+            RelicId::UnceasingTop => {
+                let mut rs = state.entities.player.relics[relic_index].clone();
+                crate::content::relics::unceasing_top::at_pre_battle(&mut rs);
+                state.entities.player.relics[relic_index] = rs;
+            }
             _ => unreachable!(
                 "Relic {} present in at_pre_battle bus but unhandled in hooks.rs match arm",
                 relic_id as usize
@@ -87,7 +92,11 @@ pub fn at_battle_start_pre_draw(state: &mut CombatState) -> SmallVec<[ActionInfo
             RelicId::NinjaScroll => actions.extend(crate::content::relics::ninja_scroll::at_battle_start()),
             RelicId::PureWater => actions.extend(crate::content::relics::pure_water::at_battle_start()),
             RelicId::Toolbox => actions.extend(crate::content::relics::toolbox::at_battle_start()),
-            RelicId::GamblingChip => {} // Handled elsewhere or TODO
+            RelicId::GamblingChip => {
+                crate::content::relics::gambling_chip::at_battle_start_pre_draw(
+                    &mut state.entities.player.relics[relic_index],
+                );
+            }
             _ => unreachable!("Relic {} present in at_battle_start_pre_draw bus but unhandled in hooks.rs match arm", relic_id as usize),
         }
     }
@@ -546,11 +555,10 @@ pub fn at_turn_start(state: &mut CombatState) -> SmallVec<[ActionInfo; 4]> {
                 ));
                 state.entities.player.relics[relic_index] = rs;
             }
-            RelicId::GamblingChip => {
-                actions.extend(crate::content::relics::gambling_chip::at_turn_start(
-                    &*state,
-                    &state.entities.player,
-                ))
+            RelicId::UnceasingTop => {
+                let mut rs = state.entities.player.relics[relic_index].clone();
+                crate::content::relics::unceasing_top::at_turn_start(&mut rs);
+                state.entities.player.relics[relic_index] = rs;
             }
             _ => unreachable!(
                 "Relic present in at_turn_start bus but unhandled in hooks.rs match arm"
@@ -575,6 +583,13 @@ pub fn at_turn_start_post_draw(state: &mut CombatState) -> SmallVec<[ActionInfo;
                 let mut rs = state.entities.player.relics[relic_index].clone();
                 actions
                     .extend(crate::content::relics::pocketwatch::at_turn_start_post_draw(&mut rs));
+                state.entities.player.relics[relic_index] = rs;
+            }
+            RelicId::GamblingChip => {
+                let mut rs = state.entities.player.relics[relic_index].clone();
+                actions.extend(
+                    crate::content::relics::gambling_chip::at_turn_start_post_draw(&mut rs),
+                );
                 state.entities.player.relics[relic_index] = rs;
             }
             _ => unreachable!(

@@ -787,8 +787,10 @@ impl RunState {
 
     /// Triggers AbstractRelic.onMasterDeckChange for all relics
     pub fn dispatch_on_master_deck_change(&mut self) {
-        // e.g., Du-Vu Doll might recalculate strength later.
-        // Currently a no-op placeholder for future relic callbacks
+        crate::content::relics::du_vu_doll::refresh_counters_from_deck(
+            &self.master_deck,
+            &mut self.relics,
+        );
     }
 
     /// Returns a simple auto-incrementing UUID for new cards.
