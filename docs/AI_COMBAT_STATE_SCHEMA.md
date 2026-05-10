@@ -456,6 +456,22 @@ trainable or searchable. Initial source-backed payloads:
 
 ```text
 ActionPayload {
+  ApplyPoisonOnRandomMonster {
+    starting_duration_bits,
+    power_to_apply,
+  }
+
+  ApplyPower {
+    power_to_apply,
+    starting_duration_bits,
+  }
+
+  ApplyPowerToRandomEnemy {
+    power_to_apply,
+    is_fast,
+    effect,
+  }
+
   Damage {
     gold_amount,
     skip_wait,
@@ -494,6 +510,20 @@ ActionPayload {
 
   GainEnergy {
     energy_gain,
+  }
+
+  ModifyBlock {
+    target_uuid,
+  }
+
+  ReducePower {
+    power_id,
+    power_ref,
+  }
+
+  RemoveSpecificPower {
+    power_id,
+    power_ref,
   }
 }
 ```

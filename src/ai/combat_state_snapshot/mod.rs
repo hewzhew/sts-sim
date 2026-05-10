@@ -333,6 +333,9 @@ pub enum AttackEffect {
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ActionPayload {
+    ApplyPoisonOnRandomMonster(ApplyPoisonOnRandomMonsterActionState),
+    ApplyPower(ApplyPowerActionState),
+    ApplyPowerToRandomEnemy(ApplyPowerToRandomEnemyActionState),
     Damage(DamageActionState),
     DamageAllEnemies(DamageAllEnemiesActionState),
     DrawCard(DrawCardActionState),
@@ -340,6 +343,28 @@ pub enum ActionPayload {
     EmptyDeckShuffle(EmptyDeckShuffleActionState),
     Exhaust(ExhaustActionState),
     GainEnergy(GainEnergyActionState),
+    ModifyBlock(ModifyBlockActionState),
+    ReducePower(ReducePowerActionState),
+    RemoveSpecificPower(RemoveSpecificPowerActionState),
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ApplyPoisonOnRandomMonsterActionState {
+    pub starting_duration_bits: F32Bits,
+    pub power_to_apply: Option<PowerRef>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ApplyPowerActionState {
+    pub power_to_apply: PowerRef,
+    pub starting_duration_bits: F32Bits,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ApplyPowerToRandomEnemyActionState {
+    pub power_to_apply: PowerRef,
+    pub is_fast: bool,
+    pub effect: AttackEffect,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -387,6 +412,23 @@ pub struct ExhaustActionState {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct GainEnergyActionState {
     pub energy_gain: i32,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ModifyBlockActionState {
+    pub target_uuid: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ReducePowerActionState {
+    pub power_id: Option<String>,
+    pub power_ref: Option<PowerRef>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RemoveSpecificPowerActionState {
+    pub power_id: Option<String>,
+    pub power_ref: Option<PowerRef>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

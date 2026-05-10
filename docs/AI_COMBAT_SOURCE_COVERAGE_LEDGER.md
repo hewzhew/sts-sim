@@ -391,6 +391,13 @@ that payload is not trainable and not searchable. Unknown subclass state is an
 
 | Source | Field | Classification | Schema path | Notes |
 | --- | --- | --- | --- | --- |
+| `ApplyPowerAction.java` | `powerToApply` | modeled | `ActionPayload::ApplyPower.power_to_apply` | pending power instance |
+| `ApplyPowerAction.java` | `startingDuration` | modeled | `ActionPayload::ApplyPower.starting_duration_bits` | subclass private duration, not `AbstractGameAction.startDuration` |
+| `ApplyPowerToRandomEnemyAction.java` | `powerToApply` | modeled | `ActionPayload::ApplyPowerToRandomEnemy.power_to_apply` | pending power instance |
+| `ApplyPowerToRandomEnemyAction.java` | `isFast` | modeled | `ActionPayload::ApplyPowerToRandomEnemy.is_fast` | forwarded into `ApplyPowerAction` |
+| `ApplyPowerToRandomEnemyAction.java` | `effect` | modeled | `ActionPayload::ApplyPowerToRandomEnemy.effect` | forwarded attack effect |
+| `ApplyPoisonOnRandomMonsterAction.java` | `startingDuration` | modeled | `ActionPayload::ApplyPoisonOnRandomMonster.starting_duration_bits` | deprecated action still source-present |
+| `ApplyPoisonOnRandomMonsterAction.java` | `powerToApply` | modeled | `ActionPayload::ApplyPoisonOnRandomMonster.power_to_apply` | created during update; nullable before target roll |
 | `DamageAction.java` | `info` | modeled | `ActionState.damage_info` | concrete damage object |
 | `DamageAction.java` | `goldAmount` | modeled | `ActionPayload::Damage.gold_amount` | steal-gold damage |
 | `DamageAction.java` | `skipWait` | modeled | `ActionPayload::Damage.skip_wait` | controls post-hit wait action |
@@ -414,6 +421,16 @@ that payload is not trainable and not searchable. Unknown subclass state is an
 | `ExhaustAction.java` | `canPickZero` | modeled | `ActionPayload::Exhaust.can_pick_zero` | hand select constraint |
 | `ExhaustAction.java` | `numExhausted` | modeled | `ActionStaticState.exhaust_action_num_exhausted` | static hand-select counter |
 | `GainEnergyAction.java` | `energyGain` | modeled | `ActionPayload::GainEnergy.energy_gain` | energy gained and hand trigger amount |
+| `GainGoldAction.java` | no subclass fields beyond common action fields | modeled | `ActionState` | `amount` covers gained gold |
+| `HealAction.java` | no subclass fields beyond common action fields | modeled | `ActionState` | `amount`, target/source, duration cover heal |
+| `LoseHPAction.java` | no subclass fields beyond common action fields | modeled | `ActionState` | `amount`, target/source, attack effect, duration cover HP loss |
+| `LosePercentHPAction.java` | no subclass fields beyond common action fields | modeled | `ActionState` | `amount` is percent |
+| `ModifyBlockAction.java` | `uuid` | modeled | `ActionPayload::ModifyBlock.target_uuid` | all in-battle card instances with this UUID are modified |
+| `ReducePowerAction.java` | `powerID` | modeled | `ActionPayload::ReducePower.power_id` | string lookup path |
+| `ReducePowerAction.java` | `powerInstance` | modeled | `ActionPayload::ReducePower.power_ref` | direct instance path |
+| `RemoveAllBlockAction.java` | no subclass fields beyond common action fields | modeled | `ActionState` | target/source and duration cover it |
+| `RemoveSpecificPowerAction.java` | `powerToRemove` | modeled | `ActionPayload::RemoveSpecificPower.power_id` | string lookup path |
+| `RemoveSpecificPowerAction.java` | `powerInstance` | modeled | `ActionPayload::RemoveSpecificPower.power_ref` | direct instance path |
 | `EmptyDeckShuffleAction.java` | `shuffled` | modeled | `ActionPayload::EmptyDeckShuffle.shuffled` | delayed shuffle state |
 | `EmptyDeckShuffleAction.java` | `vfxDone` | modeled | `ActionPayload::EmptyDeckShuffle.vfx_done` | delayed discard movement state |
 | `EmptyDeckShuffleAction.java` | `count` | modeled | `ActionPayload::EmptyDeckShuffle.count` | discard movement counter |
