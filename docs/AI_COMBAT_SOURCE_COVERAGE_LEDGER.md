@@ -511,11 +511,24 @@ source class mapping is not reviewable.
 | Source | Field | Classification | Schema path | Notes |
 | --- | --- | --- | --- | --- |
 | `WaitAction.java` | no subclass fields beyond common action fields | modeled | `ActionState` | `duration_bits` is the wait duration |
+| `ChooseOneColorless.java` | `retrieveCard` | modeled | `ActionPayload::ChooseOneColorless.retrieve_card` | waits for card reward screen selection |
+| `ConditionalDrawAction.java` | `restrictedType` | modeled | `ActionPayload::ConditionalDraw.restricted_type` | draw only if hand lacks this card type |
+| `DiscardToHandAction.java` | `card` | modeled | `ActionPayload::DiscardToHand.card_ref` | discard-pile card to move to hand |
+| `DrawPileToHandAction.java` | `p` | modeled/derived | `CombatStateSnapshot.player` | always current player |
+| `DrawPileToHandAction.java` | `typeToCheck` | modeled | `ActionPayload::DrawPileToHand.type_to_check` | eligible draw-pile card type |
+| `ExhaustAllEtherealAction.java` | no subclass fields beyond common action fields | modeled | `ActionState` | scans hand and queues `ExhaustSpecificCardAction` |
+| `ExhaustToHandAction.java` | `card` | modeled | `ActionPayload::ExhaustToHand.card_ref` | exhaust-pile card to move to hand |
+| `HandCheckAction.java` | `player` | modeled/derived | `CombatStateSnapshot.player` | applies hand powers and glow check |
+| `LoseBlockAction.java` | no subclass fields beyond common action fields | modeled | `ActionState` | `amount`, target/source cover block loss |
 | `NewQueueCardAction.java` | `card` | modeled | `ActionPayload::NewQueueCard.card_ref` | nullable end-turn queue sentinel |
 | `NewQueueCardAction.java` | `randomTarget` | modeled | `ActionPayload::NewQueueCard.random_target` | queued random target behavior |
 | `NewQueueCardAction.java` | `immediateCard` | modeled | `ActionPayload::NewQueueCard.immediate_card` | insertion point in card queue |
 | `NewQueueCardAction.java` | `autoplayCard` | modeled | `ActionPayload::NewQueueCard.autoplay_card` | queued autoplay behavior |
 | `QueueCardAction.java` | `card` | modeled | `ActionPayload::QueueCard.card_ref` | deprecated queue path; target is `ActionState.target` |
+| `ReApplyPowersAction.java` | `card` | modeled | `ActionPayload::ReApplyPowers.card_ref` | card whose target damage is recalculated |
+| `ReApplyPowersAction.java` | `m` | modeled | `ActionPayload::ReApplyPowers.monster_ref` | target monster for recalculation |
+| `ResetFlagsAction.java` | `card` | modeled | `ActionPayload::ResetFlags.card_ref` | copied card whose flags are reset |
+| `ScryAction.java` | `startingDuration` | modeled | `ActionPayload::Scry.starting_duration_bits` | subclass private duration |
 | `UnlimboAction.java` | `card` | modeled | `ActionPayload::Unlimbo.card_ref` | limbo card to remove |
 | `UnlimboAction.java` | `exhaust` | modeled | `ActionPayload::Unlimbo.exhaust` | whether removal creates exhaust effect |
 | `SFXAction.java` | `key` | modeled | `ActionPayload::Sfx.key` | sound key; retained for deterministic action replay |

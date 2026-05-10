@@ -341,14 +341,19 @@ pub enum ActionPayload {
     AttackDamageRandomEnemy(AttackDamageRandomEnemyActionState),
     BetterDiscardPileToHand(BetterDiscardPileToHandActionState),
     BetterDrawPileToHand(BetterDrawPileToHandActionState),
+    ChooseOneColorless(ChooseOneColorlessActionState),
+    ConditionalDraw(ConditionalDrawActionState),
     Damage(DamageActionState),
     DamageAllEnemies(DamageAllEnemiesActionState),
     DamageRandomEnemy(DamageRandomEnemyActionState),
+    DiscardToHand(DiscardToHandActionState),
     DrawCard(DrawCardActionState),
+    DrawPileToHand(DrawPileToHandActionState),
     Discard(DiscardActionState),
     DiscardSpecificCard(DiscardSpecificCardActionState),
     EmptyDeckShuffle(EmptyDeckShuffleActionState),
     Exhaust(ExhaustActionState),
+    ExhaustToHand(ExhaustToHandActionState),
     ExhaustSpecificCard(ExhaustSpecificCardActionState),
     GainEnergy(GainEnergyActionState),
     MakeTempCardInDiscard(MakeTempCardInDiscardActionState),
@@ -362,12 +367,15 @@ pub enum ActionPayload {
     PutOnDeck(PutOnDeckActionState),
     PummelDamage(PummelDamageActionState),
     QueueCard(QueueCardActionState),
+    ReApplyPowers(ReApplyPowersActionState),
     ReduceCost(ReduceCostActionState),
     ReduceCostForTurn(ReduceCostForTurnActionState),
     ReducePower(ReducePowerActionState),
     RemoveSpecificPower(RemoveSpecificPowerActionState),
+    ResetFlags(ResetFlagsActionState),
     ReviveMonster(ReviveMonsterActionState),
     RollMove(RollMoveActionState),
+    Scry(ScryActionState),
     SetMove(SetMoveActionState),
     SetDontTrigger(SetDontTriggerActionState),
     Sfx(SfxActionState),
@@ -386,15 +394,20 @@ pub const TYPED_ACTION_PAYLOAD_SOURCE_CLASSES: &[&str] = &[
     "AttackDamageRandomEnemyAction",
     "BetterDiscardPileToHandAction",
     "BetterDrawPileToHandAction",
+    "ChooseOneColorless",
+    "ConditionalDrawAction",
     "DamageAction",
     "DamageAllEnemiesAction",
     "DamageRandomEnemyAction",
+    "DiscardToHandAction",
     "DiscardAction",
     "DiscardSpecificCardAction",
     "DrawCardAction",
+    "DrawPileToHandAction",
     "EmptyDeckShuffleAction",
     "ExhaustAction",
     "ExhaustSpecificCardAction",
+    "ExhaustToHandAction",
     "GainEnergyAction",
     "MakeTempCardInDiscardAction",
     "MakeTempCardInDiscardAndDeckAction",
@@ -407,12 +420,15 @@ pub const TYPED_ACTION_PAYLOAD_SOURCE_CLASSES: &[&str] = &[
     "PutOnDeckAction",
     "PummelDamageAction",
     "QueueCardAction",
+    "ReApplyPowersAction",
     "ReduceCostAction",
     "ReduceCostForTurnAction",
     "ReducePowerAction",
     "RemoveSpecificPowerAction",
+    "ResetFlagsAction",
     "ReviveMonsterAction",
     "RollMoveAction",
+    "ScryAction",
     "SetMoveAction",
     "SetDontTriggerAction",
     "SFXAction",
@@ -433,15 +449,20 @@ impl ActionPayload {
             ActionPayload::AttackDamageRandomEnemy(_) => "AttackDamageRandomEnemyAction",
             ActionPayload::BetterDiscardPileToHand(_) => "BetterDiscardPileToHandAction",
             ActionPayload::BetterDrawPileToHand(_) => "BetterDrawPileToHandAction",
+            ActionPayload::ChooseOneColorless(_) => "ChooseOneColorless",
+            ActionPayload::ConditionalDraw(_) => "ConditionalDrawAction",
             ActionPayload::Damage(_) => "DamageAction",
             ActionPayload::DamageAllEnemies(_) => "DamageAllEnemiesAction",
             ActionPayload::DamageRandomEnemy(_) => "DamageRandomEnemyAction",
+            ActionPayload::DiscardToHand(_) => "DiscardToHandAction",
             ActionPayload::DrawCard(_) => "DrawCardAction",
+            ActionPayload::DrawPileToHand(_) => "DrawPileToHandAction",
             ActionPayload::Discard(_) => "DiscardAction",
             ActionPayload::DiscardSpecificCard(_) => "DiscardSpecificCardAction",
             ActionPayload::EmptyDeckShuffle(_) => "EmptyDeckShuffleAction",
             ActionPayload::Exhaust(_) => "ExhaustAction",
             ActionPayload::ExhaustSpecificCard(_) => "ExhaustSpecificCardAction",
+            ActionPayload::ExhaustToHand(_) => "ExhaustToHandAction",
             ActionPayload::GainEnergy(_) => "GainEnergyAction",
             ActionPayload::MakeTempCardInDiscard(_) => "MakeTempCardInDiscardAction",
             ActionPayload::MakeTempCardInDiscardAndDeck(_) => "MakeTempCardInDiscardAndDeckAction",
@@ -454,12 +475,15 @@ impl ActionPayload {
             ActionPayload::PutOnDeck(_) => "PutOnDeckAction",
             ActionPayload::PummelDamage(_) => "PummelDamageAction",
             ActionPayload::QueueCard(_) => "QueueCardAction",
+            ActionPayload::ReApplyPowers(_) => "ReApplyPowersAction",
             ActionPayload::ReduceCost(_) => "ReduceCostAction",
             ActionPayload::ReduceCostForTurn(_) => "ReduceCostForTurnAction",
             ActionPayload::ReducePower(_) => "ReducePowerAction",
             ActionPayload::RemoveSpecificPower(_) => "RemoveSpecificPowerAction",
+            ActionPayload::ResetFlags(_) => "ResetFlagsAction",
             ActionPayload::ReviveMonster(_) => "ReviveMonsterAction",
             ActionPayload::RollMove(_) => "RollMoveAction",
+            ActionPayload::Scry(_) => "ScryAction",
             ActionPayload::SetMove(_) => "SetMoveAction",
             ActionPayload::SetDontTrigger(_) => "SetDontTriggerAction",
             ActionPayload::Sfx(_) => "SFXAction",
@@ -513,6 +537,16 @@ pub struct BetterDrawPileToHandActionState {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ChooseOneColorlessActionState {
+    pub retrieve_card: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ConditionalDrawActionState {
+    pub restricted_type: CardType,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DamageActionState {
     pub gold_amount: i32,
     pub skip_wait: bool,
@@ -531,10 +565,20 @@ pub struct DamageAllEnemiesActionState {
 pub struct DamageRandomEnemyActionState {}
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DiscardToHandActionState {
+    pub card_ref: CardRef,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DrawCardActionState {
     pub shuffle_check: bool,
     pub clear_draw_history: bool,
     pub follow_up_action: Option<Box<ActionState>>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DrawPileToHandActionState {
+    pub type_to_check: CardType,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -561,6 +605,11 @@ pub struct ExhaustActionState {
     pub is_random: bool,
     pub any_number: bool,
     pub can_pick_zero: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ExhaustToHandActionState {
+    pub card_ref: CardRef,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -641,6 +690,12 @@ pub struct QueueCardActionState {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ReApplyPowersActionState {
+    pub card_ref: CardRef,
+    pub monster_ref: MonsterRef,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ReduceCostActionState {
     pub target_uuid: Option<String>,
     pub card_ref: Option<CardRef>,
@@ -664,6 +719,11 @@ pub struct RemoveSpecificPowerActionState {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ResetFlagsActionState {
+    pub card_ref: CardRef,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ReviveMonsterActionState {
     pub healing_effect: bool,
 }
@@ -671,6 +731,11 @@ pub struct ReviveMonsterActionState {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RollMoveActionState {
     pub monster_ref: MonsterRef,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ScryActionState {
+    pub starting_duration_bits: F32Bits,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

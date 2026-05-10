@@ -491,6 +491,14 @@ ActionPayload {
     optional,
   }
 
+  ChooseOneColorless {
+    retrieve_card,
+  }
+
+  ConditionalDraw {
+    restricted_type,
+  }
+
   Damage {
     gold_amount,
     skip_wait,
@@ -506,10 +514,18 @@ ActionPayload {
 
   DamageRandomEnemy {}
 
+  DiscardToHand {
+    card_ref,
+  }
+
   DrawCard {
     shuffle_check,
     clear_draw_history,
     follow_up_action,
+  }
+
+  DrawPileToHand {
+    type_to_check,
   }
 
   Discard {
@@ -532,6 +548,10 @@ ActionPayload {
     is_random,
     any_number,
     can_pick_zero,
+  }
+
+  ExhaustToHand {
+    card_ref,
   }
 
   ExhaustSpecificCard {
@@ -598,6 +618,11 @@ ActionPayload {
     card_ref,
   }
 
+  ReApplyPowers {
+    card_ref,
+    monster_ref,
+  }
+
   ReduceCost {
     target_uuid,
     card_ref,
@@ -617,12 +642,20 @@ ActionPayload {
     power_ref,
   }
 
+  ResetFlags {
+    card_ref,
+  }
+
   ReviveMonster {
     healing_effect,
   }
 
   RollMove {
     monster_ref,
+  }
+
+  Scry {
+    starting_duration_bits,
   }
 
   SetMove {
