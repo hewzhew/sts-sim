@@ -1122,7 +1122,7 @@ pub fn get_card_definition(id: CardId) -> CardDefinition {
             exhaust: false,
             ethereal: false,
             innate: false,
-            tags: &[],
+            tags: &[CardTag::StarterDefend],
             upgrade_damage: 0,
             upgrade_block: 3,
             upgrade_magic: 0,
@@ -3691,4 +3691,128 @@ pub fn build_java_id_map() -> std::collections::HashMap<&'static str, CardId> {
         map.insert(java_id(id), id);
     }
     map
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::content::powers::PowerId;
+    use crate::runtime::action::{Action, DamageType};
+    use crate::runtime::combat::CombatCard;
+
+    #[test]
+    fn ironclad_starter_basic_definitions_match_java_sources() {
+        let strike = get_card_definition(CardId::Strike);
+        assert_eq!(strike.name, "Strike");
+        assert_eq!(strike.card_type, CardType::Attack);
+        assert_eq!(strike.rarity, CardRarity::Basic);
+        assert_eq!(strike.cost, 1);
+        assert_eq!(strike.base_damage, 6);
+        assert_eq!(strike.base_block, 0);
+        assert_eq!(strike.base_magic, 0);
+        assert_eq!(strike.target, CardTarget::Enemy);
+        assert_eq!(strike.upgrade_damage, 3);
+        assert_eq!(strike.upgrade_block, 0);
+        assert_eq!(strike.upgrade_magic, 0);
+        assert!(strike.tags.contains(&CardTag::Strike));
+        assert!(strike.tags.contains(&CardTag::StarterStrike));
+
+        let defend = get_card_definition(CardId::Defend);
+        assert_eq!(defend.name, "Defend");
+        assert_eq!(defend.card_type, CardType::Skill);
+        assert_eq!(defend.rarity, CardRarity::Basic);
+        assert_eq!(defend.cost, 1);
+        assert_eq!(defend.base_damage, 0);
+        assert_eq!(defend.base_block, 5);
+        assert_eq!(defend.base_magic, 0);
+        assert_eq!(defend.target, CardTarget::SelfTarget);
+        assert_eq!(defend.upgrade_damage, 0);
+        assert_eq!(defend.upgrade_block, 3);
+        assert_eq!(defend.upgrade_magic, 0);
+        assert!(defend.tags.contains(&CardTag::StarterDefend));
+
+        let bash = get_card_definition(CardId::Bash);
+        assert_eq!(bash.name, "Bash");
+        assert_eq!(bash.card_type, CardType::Attack);
+        assert_eq!(bash.rarity, CardRarity::Basic);
+        assert_eq!(bash.cost, 2);
+        assert_eq!(bash.base_damage, 8);
+        assert_eq!(bash.base_block, 0);
+        assert_eq!(bash.base_magic, 2);
+        assert_eq!(bash.target, CardTarget::Enemy);
+        assert_eq!(bash.upgrade_damage, 2);
+        assert_eq!(bash.upgrade_block, 0);
+        assert_eq!(bash.upgrade_magic, 1);
+        assert!(bash.tags.is_empty());
+    }
+
+    #[test]
+    fn ironclad_starter_basic_runtime_actions_match_java_use_methods() {
+        let state = crate::test_support::blank_test_combat();
+
+        let strike_actions = resolve_card_play(
+            CardId::Strike,
+            &state,
+            &CombatCard::new(CardId::Strike, 1),
+            Some(7),
+        );
+        assert_eq!(strike_actions.len(), 1);
+        match &strike_actions[0].action {
+            Action::Damage(info) => {
+                assert_eq!(info.source, 0);
+                assert_eq!(info.target, 7);
+                assert_eq!(info.base, 6);
+                assert_eq!(info.output, 6);
+                assert_eq!(info.damage_type, DamageType::Normal);
+            }
+            other => panic!("Strike should emit DamageAction, got {other:?}"),
+        }
+
+        let defend_actions = resolve_card_play(
+            CardId::Defend,
+            &state,
+            &CombatCard::new(CardId::Defend, 2),
+            None,
+        );
+        assert_eq!(defend_actions.len(), 1);
+        match &defend_actions[0].action {
+            Action::GainBlock { target, amount } => {
+                assert_eq!(*target, 0);
+                assert_eq!(*amount, 5);
+            }
+            other => panic!("Defend should emit GainBlockAction, got {other:?}"),
+        }
+
+        let bash_actions = resolve_card_play(
+            CardId::Bash,
+            &state,
+            &CombatCard::new(CardId::Bash, 3),
+            Some(7),
+        );
+        assert_eq!(bash_actions.len(), 2);
+        match &bash_actions[0].action {
+            Action::Damage(info) => {
+                assert_eq!(info.source, 0);
+                assert_eq!(info.target, 7);
+                assert_eq!(info.base, 8);
+                assert_eq!(info.output, 8);
+                assert_eq!(info.damage_type, DamageType::Normal);
+            }
+            other => panic!("Bash first action should be DamageAction, got {other:?}"),
+        }
+        match &bash_actions[1].action {
+            Action::ApplyPower {
+                source,
+                target,
+                power_id,
+                amount,
+            } => {
+                assert_eq!(*source, 0);
+                assert_eq!(*target, 7);
+                assert_eq!(*power_id, PowerId::Vulnerable);
+                assert_eq!(*amount, 2);
+            }
+            other => panic!("Bash second action should be ApplyPowerAction, got {other:?}"),
+        }
+    }
 }
