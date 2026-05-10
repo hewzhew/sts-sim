@@ -131,6 +131,131 @@ Coverage:
 - `ironclad_blood_skull_and_frog_relic_metadata_matches_java_sources`
 - `paper_frog_vulnerable_multiplier_applies_only_to_enemy_targets`
 
+## Batch 2 - Strength / Debuff / Exhaust / Heal Relics
+
+### Brimstone
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/relics/Brimstone.java`
+
+Rust source:
+- `src/content/relics/brimstone.rs`
+- `src/content/relics/hooks.rs`
+
+Java evidence:
+- Constructor: ID `"Brimstone"`, tier `SHOP`, landing sound `CLINK`.
+- `atTurnStart`: flashes, queues a UI-only `RelicAboveCreatureAction`, then
+  calls `addToTop` for Strength `2` on the player.
+- The same method loops all current monsters and calls `addToTop` for
+  Strength `1` on each monster, with each monster as its own source.
+
+Rust result:
+- Tier and turn-start subscription match Java.
+- Fixed the player Strength action to use top insertion rather than bottom
+  insertion.
+- Fixed enemy Strength source from player to the target monster itself.
+- Emitted top actions in Java's effective execution order, because repeated
+  `addToTop` calls execute later calls first.
+- UI-only relic flash / above-creature visual action is intentionally not
+  represented.
+
+Coverage:
+- `ironclad_brimstone_belt_ashes_flower_relic_metadata_matches_java_sources`
+- `brimstone_turn_start_matches_java_strength_sources_and_top_order`
+
+### Champion Belt
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/relics/ChampionBelt.java`
+- `D:/rust/cardcrawl/actions/common/ApplyPowerAction.java`
+
+Rust source:
+- `src/content/relics/champion_belt.rs`
+- `src/content/relics/hooks.rs`
+- `src/engine/action_handlers/powers.rs`
+
+Java evidence:
+- Constructor: ID `"Champion Belt"`, tier `RARE`, landing sound `HEAVY`.
+- `ChampionBelt.onTrigger(target)`: queues a UI-only relic action, then queues
+  Weak `1` on `target` from the player.
+- `ApplyPowerAction` triggers the relic only when the source is the player, the
+  target is not the source, the applied power is Vulnerable, and the target
+  does not have Artifact.
+
+Rust result:
+- Tier and apply-power subscription match Java.
+- Fixed the relic hook to receive the power source and inspect current target
+  powers.
+- Fixed false triggers from non-player sources and fixed the missing Artifact
+  guard.
+- UI-only relic flash / above-creature visual action is intentionally not
+  represented.
+
+Coverage:
+- `ironclad_brimstone_belt_ashes_flower_relic_metadata_matches_java_sources`
+- `champion_belt_respects_java_player_source_and_artifact_guard`
+
+### Charon's Ashes
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/relics/CharonsAshes.java`
+
+Rust source:
+- `src/content/relics/charons_ashes.rs`
+- `src/content/relics/hooks.rs`
+
+Java evidence:
+- Constructor: ID `"Charon's Ashes"`, tier `RARE`, landing sound `MAGICAL`.
+- `onExhaust`: flashes, then calls `addToTop` with
+  `DamageAllEnemiesAction(null, DamageInfo.createDamageMatrix(3, true),
+  DamageInfo.DamageType.THORNS, FIRE)`.
+- The per-enemy relic-above-creature actions are UI/VFX only.
+
+Rust result:
+- Tier and exhaust subscription match Java.
+- Fixed `DamageAllEnemies` source from player to `NO_SOURCE`.
+- Fixed damage type from `Normal` to `Thorns`; this preserves Java's pure relic
+  damage path and avoids player attack modifiers.
+- UI-only relic flash / above-creature visual actions are intentionally not
+  represented.
+
+Coverage:
+- `ironclad_brimstone_belt_ashes_flower_relic_metadata_matches_java_sources`
+- `charons_ashes_exhaust_damage_matches_java_thorns_null_source`
+
+### Magic Flower
+
+Status: `exact`
+
+Java source:
+- `D:/rust/cardcrawl/relics/MagicFlower.java`
+
+Rust source:
+- `src/content/relics/magic_flower.rs`
+- `src/content/relics/hooks.rs`
+
+Java evidence:
+- Constructor: ID `"Magic Flower"`, tier `RARE`, landing sound `SOLID`.
+- `onPlayerHeal`: during combat only, returns
+  `MathUtils.round(healAmount * 1.5f)`; outside combat, returns the original
+  heal amount.
+
+Rust result:
+- Tier and heal-calculation subscription match Java.
+- Existing combat hook applies `round(amount * 1.5)` for combat healing.
+- The hook is combat-state scoped; out-of-combat healing must not route through
+  this combat hook.
+
+Coverage:
+- `ironclad_brimstone_belt_ashes_flower_relic_metadata_matches_java_sources`
+- `magic_flower_combat_heal_rounding_matches_java_mathutils_round`
+
 ## Full Ironclad Relic Queue
 
 Relics remain `unreviewed` until their Java file, Rust definition/subscription,
@@ -142,10 +267,10 @@ hook implementation, and supporting engine behavior have all been checked.
 | 2 | `BlackBlood.java` | `black_blood.rs` | `wrong-fixed` |
 | 3 | `RedSkull.java` | `red_skull.rs` | `exact` |
 | 4 | `PaperFrog.java` | `paper_frog.rs` | `exact` |
-| 5 | `Brimstone.java` | `brimstone.rs` | `unreviewed` |
-| 6 | `ChampionBelt.java` | `champion_belt.rs` | `unreviewed` |
-| 7 | `CharonsAshes.java` | `charons_ashes.rs` | `unreviewed` |
-| 8 | `MagicFlower.java` | `magic_flower.rs` | `unreviewed` |
+| 5 | `Brimstone.java` | `brimstone.rs` | `wrong-fixed` |
+| 6 | `ChampionBelt.java` | `champion_belt.rs` | `wrong-fixed` |
+| 7 | `CharonsAshes.java` | `charons_ashes.rs` | `wrong-fixed` |
+| 8 | `MagicFlower.java` | `magic_flower.rs` | `exact` |
 | 9 | `MarkOfPain.java` | `mark_of_pain.rs` | `unreviewed` |
 | 10 | `RunicCube.java` | `runic_cube.rs` | `unreviewed` |
 | 11 | `SelfFormingClay.java` | `self_forming_clay.rs` | `unreviewed` |

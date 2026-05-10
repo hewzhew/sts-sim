@@ -720,6 +720,7 @@ pub fn on_use_card(
 
 pub fn on_apply_power(
     state: &mut CombatState,
+    source: crate::core::EntityId,
     power_id: crate::content::powers::PowerId,
     target: crate::core::EntityId,
 ) -> smallvec::SmallVec<[ActionInfo; 4]> {
@@ -730,7 +731,7 @@ pub fn on_apply_power(
         match relic_id {
             RelicId::ChampionBelt => actions.extend(
                 crate::content::relics::champion_belt::ChampionBelt::on_apply_power(
-                    power_id, target,
+                    &*state, source, target, power_id,
                 ),
             ),
             RelicId::SneckoSkull => actions.extend(

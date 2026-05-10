@@ -1,5 +1,5 @@
 use crate::runtime::action::DamageType;
-use crate::runtime::action::{Action, ActionInfo, AddTo};
+use crate::runtime::action::{Action, ActionInfo, AddTo, NO_SOURCE};
 use crate::runtime::combat::CombatState;
 use smallvec::SmallVec;
 
@@ -15,9 +15,9 @@ impl CharonsAshes {
 
         actions.push(ActionInfo {
             action: Action::DamageAllEnemies {
-                source: 0,
+                source: NO_SOURCE,
                 damages,
-                damage_type: DamageType::Normal,
+                damage_type: DamageType::Thorns,
                 is_modified: false,
             },
             insertion_mode: AddTo::Top,

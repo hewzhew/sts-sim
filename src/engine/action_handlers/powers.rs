@@ -92,7 +92,7 @@ pub fn handle_apply_power_detailed(
 
     // U4: Champion Belt
     let champion_belt_actions =
-        crate::content::relics::hooks::on_apply_power(state, power_id, target);
+        crate::content::relics::hooks::on_apply_power(state, source, power_id, target);
     state.queue_actions(champion_belt_actions);
 
     // U5: Monster re-check after hooks
