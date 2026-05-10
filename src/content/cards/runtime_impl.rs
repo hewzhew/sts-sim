@@ -240,12 +240,6 @@ pub fn evaluate_card(card: &mut CombatCard, state: &CombatState, target: Option<
                 strike_count += 1;
             }
         }
-        for c in &state.zones.limbo {
-            if is_strike(c.id) && c.uuid != card.uuid {
-                strike_count += 1;
-            }
-        }
-
         // Count the card itself definitively once
         if is_strike(card.id) {
             strike_count += 1;

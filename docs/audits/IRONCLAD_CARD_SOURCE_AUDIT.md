@@ -1597,6 +1597,134 @@ Coverage:
 - `ironclad_power_and_hybrid_attack_runtime_actions_match_java_use_methods`
 - `juggernaut_block_hook_matches_java_source`
 
+## Batch 13 - Limit / Metallicize / Offering / Strike Count Coverage
+
+### Limit Break
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/cards/red/LimitBreak.java`
+- `D:/rust/cardcrawl/actions/unique/LimitBreakAction.java`
+
+Rust source:
+- `src/content/cards/mod.rs`
+- `src/content/cards/runtime_impl.rs`
+- `src/content/cards/ironclad/limit_break.rs`
+- `src/engine/action_handlers/damage.rs`
+
+Java evidence:
+- Constructor: cost `1`, type `SKILL`, color `RED`, rarity `RARE`, target
+  `SELF`, `exhaust = true`.
+- `use`: queues `LimitBreakAction()`.
+- `upgrade`: sets `exhaust = false`.
+- `LimitBreakAction.update`: if player has Strength, gets current Strength
+  amount and queues `ApplyPowerAction(player, player, new StrengthPower(player,
+  strAmt), strAmt)`.
+
+Rust result:
+- Definition matches Java constructor.
+- Existing `exhausts_when_played` correctly makes `LimitBreak+` non-exhausting.
+- Runtime already emits `Action::LimitBreak`.
+- Engine handler now routes the doubling through the normal ApplyPower handler
+  instead of directly mutating Strength amount.
+
+Coverage:
+- `ironclad_limit_and_strike_scaling_definitions_match_java_sources`
+- `ironclad_limit_and_strike_scaling_runtime_actions_match_java_use_methods`
+- `limit_break_and_metallicize_hooks_match_java_sources`
+
+### Metallicize
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/cards/red/Metallicize.java`
+- `D:/rust/cardcrawl/powers/MetallicizePower.java`
+
+Rust source:
+- `src/content/cards/mod.rs`
+- `src/content/cards/ironclad/metallicize.rs`
+- `src/content/powers/ironclad/metallicize.rs`
+
+Java evidence:
+- Constructor: cost `1`, type `POWER`, color `RED`, rarity `UNCOMMON`, target
+  `SELF`, `baseMagicNumber = magicNumber = 3`.
+- `use`: applies `MetallicizePower(p, this.magicNumber)`.
+- `upgrade`: `upgradeMagicNumber(1)`.
+- `MetallicizePower.atEndOfTurnPreEndTurnCards`: queues `GainBlockAction(owner,
+  owner, amount)`.
+
+Rust result:
+- Definition matches Java constructor and upgrade magic.
+- Runtime now evaluates magic at play time before applying Metallicize.
+- Existing end-of-turn hook queues GainBlock for the power amount.
+
+Coverage:
+- `ironclad_limit_and_strike_scaling_definitions_match_java_sources`
+- `ironclad_limit_and_strike_scaling_runtime_actions_match_java_use_methods`
+- `limit_break_and_metallicize_hooks_match_java_sources`
+
+### Offering
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/cards/red/Offering.java`
+
+Rust source:
+- `src/content/cards/mod.rs`
+- `src/content/cards/ironclad/offering.rs`
+
+Java evidence:
+- Constructor: cost `0`, type `SKILL`, color `RED`, rarity `RARE`, target
+  `SELF`, `exhaust = true`, `baseMagicNumber = magicNumber = 3`.
+- `use`: VFX only, then queues LoseHP `6`, gain energy `2`, and draw
+  `this.magicNumber`.
+- `upgrade`: `upgradeMagicNumber(2)`.
+
+Rust result:
+- Definition matches Java constructor, exhaust flag, and upgrade magic.
+- Runtime now evaluates magic at play time before emitting DrawCards.
+- Existing HP-loss action keeps `triggers_rupture = true`, matching the Java
+  `LoseHPAction(p, p, 6)` path.
+
+Coverage:
+- `ironclad_limit_and_strike_scaling_definitions_match_java_sources`
+- `ironclad_limit_and_strike_scaling_runtime_actions_match_java_use_methods`
+
+### Perfected Strike
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/cards/red/PerfectedStrike.java`
+
+Rust source:
+- `src/content/cards/mod.rs`
+- `src/content/cards/runtime_impl.rs`
+- `src/content/cards/ironclad/perfected_strike.rs`
+
+Java evidence:
+- Constructor: cost `2`, type `ATTACK`, color `RED`, rarity `COMMON`, target
+  `ENEMY`, `baseDamage = 6`, `baseMagicNumber = magicNumber = 2`, tag `STRIKE`.
+- `countCards`: counts Strike-tagged cards in hand, draw pile, and discard pile.
+  It does not count limbo.
+- `applyPowers` / `calculateCardDamage`: temporarily adds `magicNumber *
+  countCards()` to base damage, runs normal calculation, then restores base
+  damage.
+- `upgrade`: `upgradeMagicNumber(1)`.
+
+Rust result:
+- Definition matches Java constructor, Strike tag, and upgrade magic.
+- Runtime already evaluates damage at play time.
+- Fixed card evaluation so Perfected Strike counts only hand/draw/discard
+  Strike cards plus the card itself, not other limbo Strike cards.
+
+Coverage:
+- `ironclad_limit_and_strike_scaling_definitions_match_java_sources`
+- `ironclad_limit_and_strike_scaling_runtime_actions_match_java_use_methods`
+
 ## Full Ironclad Queue
 
 Cards remain `unreviewed` until their Java file, Rust definition, Rust runtime,
@@ -1651,10 +1779,10 @@ and supporting engine behavior have all been checked.
 | 45 | `Intimidate.java` | `intimidate.rs` | `wrong-fixed` |
 | 46 | `IronWave.java` | `iron_wave.rs` | `exact` |
 | 47 | `Juggernaut.java` | `juggernaut.rs` | `wrong-fixed` |
-| 48 | `LimitBreak.java` | `limit_break.rs` | `unreviewed` |
-| 49 | `Metallicize.java` | `metallicize.rs` | `unreviewed` |
-| 50 | `Offering.java` | `offering.rs` | `unreviewed` |
-| 51 | `PerfectedStrike.java` | `perfected_strike.rs` | `unreviewed` |
+| 48 | `LimitBreak.java` | `limit_break.rs` | `wrong-fixed` |
+| 49 | `Metallicize.java` | `metallicize.rs` | `wrong-fixed` |
+| 50 | `Offering.java` | `offering.rs` | `wrong-fixed` |
+| 51 | `PerfectedStrike.java` | `perfected_strike.rs` | `wrong-fixed` |
 | 52 | `PommelStrike.java` | `pommel_strike.rs` | `unreviewed` |
 | 53 | `PowerThrough.java` | `power_through.rs` | `unreviewed` |
 | 54 | `Pummel.java` | `pummel.rs` | `unreviewed` |

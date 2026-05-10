@@ -879,9 +879,12 @@ pub fn handle_heal(target: usize, mut amount: i32, state: &mut CombatState) {
 }
 
 pub fn handle_limit_break(state: &mut CombatState) {
-    let _ = store::with_power_mut(state, 0, PowerId::Strength, |str_power| {
-        str_power.amount *= 2;
-    });
+    if let Some(strength) = store::powers_for(state, 0)
+        .and_then(|powers| powers.iter().find(|p| p.power_type == PowerId::Strength))
+        .map(|power| power.amount)
+    {
+        super::powers::handle_apply_power(0, 0, PowerId::Strength, strength, state);
+    }
 }
 
 pub fn handle_block_per_non_attack(block_per_card: i32, state: &mut CombatState) {

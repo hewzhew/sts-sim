@@ -2394,3 +2394,159 @@ fn juggernaut_block_hook_matches_java_source() {
         }
     }
 }
+
+#[test]
+fn ironclad_limit_and_strike_scaling_definitions_match_java_sources() {
+    let limit_break = get_card_definition(CardId::LimitBreak);
+    assert_eq!(limit_break.card_type, CardType::Skill);
+    assert_eq!(limit_break.rarity, CardRarity::Rare);
+    assert_eq!(limit_break.cost, 1);
+    assert_eq!(limit_break.target, CardTarget::SelfTarget);
+    assert!(limit_break.exhaust);
+    let mut limit_break_plus = CombatCard::new(CardId::LimitBreak, 290);
+    limit_break_plus.upgrades = 1;
+    assert!(!exhausts_when_played(&limit_break_plus));
+
+    let metallicize = get_card_definition(CardId::Metallicize);
+    assert_eq!(metallicize.card_type, CardType::Power);
+    assert_eq!(metallicize.rarity, CardRarity::Uncommon);
+    assert_eq!(metallicize.cost, 1);
+    assert_eq!(metallicize.base_magic, 3);
+    assert_eq!(metallicize.target, CardTarget::SelfTarget);
+    assert_eq!(metallicize.upgrade_magic, 1);
+
+    let offering = get_card_definition(CardId::Offering);
+    assert_eq!(offering.card_type, CardType::Skill);
+    assert_eq!(offering.rarity, CardRarity::Rare);
+    assert_eq!(offering.cost, 0);
+    assert_eq!(offering.base_magic, 3);
+    assert_eq!(offering.target, CardTarget::SelfTarget);
+    assert!(offering.exhaust);
+    assert_eq!(offering.upgrade_magic, 2);
+
+    let perfected_strike = get_card_definition(CardId::PerfectedStrike);
+    assert_eq!(perfected_strike.card_type, CardType::Attack);
+    assert_eq!(perfected_strike.rarity, CardRarity::Common);
+    assert_eq!(perfected_strike.cost, 2);
+    assert_eq!(perfected_strike.base_damage, 6);
+    assert_eq!(perfected_strike.base_magic, 2);
+    assert_eq!(perfected_strike.target, CardTarget::Enemy);
+    assert!(perfected_strike.tags.contains(&CardTag::Strike));
+    assert_eq!(perfected_strike.upgrade_magic, 1);
+}
+
+#[test]
+fn ironclad_limit_and_strike_scaling_runtime_actions_match_java_use_methods() {
+    let mut state = crate::test_support::blank_test_combat();
+    let mut perfected_strike_plus = CombatCard::new(CardId::PerfectedStrike, 291);
+    perfected_strike_plus.upgrades = 1;
+    state.zones.hand = vec![
+        perfected_strike_plus.clone(),
+        CombatCard::new(CardId::Strike, 292),
+    ];
+    state.zones.draw_pile = vec![CombatCard::new(CardId::Strike, 293)];
+    state.zones.discard_pile = vec![CombatCard::new(CardId::Strike, 294)];
+    state.zones.limbo = vec![CombatCard::new(CardId::Strike, 295)];
+
+    let perfected_actions = resolve_card_play(
+        CardId::PerfectedStrike,
+        &state,
+        &perfected_strike_plus,
+        Some(101),
+    );
+    assert_eq!(perfected_actions.len(), 1);
+    match &perfected_actions[0].action {
+        Action::Damage(info) => {
+            assert_eq!(info.source, 0);
+            assert_eq!(info.target, 101);
+            assert_eq!(info.base, 18);
+            assert_eq!(info.output, 18);
+            assert_eq!(info.damage_type, DamageType::Normal);
+        }
+        other => panic!(
+            "Perfected Strike+ should count hand/draw/discard Strike cards only, got {other:?}"
+        ),
+    }
+
+    let limit_break_actions = resolve_card_play(
+        CardId::LimitBreak,
+        &state,
+        &CombatCard::new(CardId::LimitBreak, 296),
+        None,
+    );
+    assert_eq!(limit_break_actions.len(), 1);
+    assert!(matches!(limit_break_actions[0].action, Action::LimitBreak));
+
+    let mut metallicize_plus = CombatCard::new(CardId::Metallicize, 297);
+    metallicize_plus.upgrades = 1;
+    let metallicize_actions =
+        resolve_card_play(CardId::Metallicize, &state, &metallicize_plus, None);
+    assert_eq!(metallicize_actions.len(), 1);
+    assert!(matches!(
+        metallicize_actions[0].action,
+        Action::ApplyPower {
+            source: 0,
+            target: 0,
+            power_id: PowerId::Metallicize,
+            amount: 4
+        }
+    ));
+
+    let mut offering_plus = CombatCard::new(CardId::Offering, 298);
+    offering_plus.upgrades = 1;
+    let offering_actions = resolve_card_play(CardId::Offering, &state, &offering_plus, None);
+    assert_eq!(offering_actions.len(), 3);
+    assert!(matches!(
+        offering_actions[0].action,
+        Action::LoseHp {
+            target: 0,
+            amount: 6,
+            triggers_rupture: true
+        }
+    ));
+    assert!(matches!(
+        offering_actions[1].action,
+        Action::GainEnergy { amount: 2 }
+    ));
+    assert!(matches!(offering_actions[2].action, Action::DrawCards(5)));
+}
+
+#[test]
+fn limit_break_and_metallicize_hooks_match_java_sources() {
+    let mut state = crate::test_support::blank_test_combat();
+    crate::content::powers::store::set_powers_for(
+        &mut state,
+        0,
+        vec![Power {
+            power_type: PowerId::Strength,
+            instance_id: None,
+            amount: 3,
+            extra_data: 0,
+            just_applied: false,
+        }],
+    );
+    crate::engine::action_handlers::damage::handle_limit_break(&mut state);
+    assert_eq!(
+        crate::content::powers::store::power_amount(&state, 0, PowerId::Strength),
+        6
+    );
+
+    let metallicize_block = crate::content::powers::resolve_power_at_end_of_turn(
+        &Power {
+            power_type: PowerId::Metallicize,
+            instance_id: None,
+            amount: 4,
+            extra_data: 0,
+            just_applied: false,
+        },
+        &state,
+        0,
+    );
+    assert_eq!(
+        metallicize_block.as_slice(),
+        &[Action::GainBlock {
+            target: 0,
+            amount: 4
+        }]
+    );
+}
