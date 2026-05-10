@@ -1147,3 +1147,222 @@ fn corruption_power_on_apply_modifies_skill_costs_in_java_piles() {
     assert_eq!(state.zones.discard_pile[0].get_cost(), 0);
     assert_eq!(state.zones.exhaust_pile[0].get_cost(), 0);
 }
+
+#[test]
+fn ironclad_copy_and_block_definitions_match_java_sources() {
+    let double_tap = get_card_definition(CardId::DoubleTap);
+    assert_eq!(double_tap.name, "Double Tap");
+    assert_eq!(double_tap.card_type, CardType::Skill);
+    assert_eq!(double_tap.rarity, CardRarity::Rare);
+    assert_eq!(double_tap.cost, 1);
+    assert_eq!(double_tap.base_magic, 1);
+    assert_eq!(double_tap.target, CardTarget::SelfTarget);
+    assert_eq!(double_tap.upgrade_magic, 1);
+
+    let dropkick = get_card_definition(CardId::Dropkick);
+    assert_eq!(dropkick.name, "Dropkick");
+    assert_eq!(dropkick.card_type, CardType::Attack);
+    assert_eq!(dropkick.rarity, CardRarity::Uncommon);
+    assert_eq!(dropkick.cost, 1);
+    assert_eq!(dropkick.base_damage, 5);
+    assert_eq!(dropkick.target, CardTarget::Enemy);
+    assert_eq!(dropkick.upgrade_damage, 3);
+
+    let dual_wield = get_card_definition(CardId::DualWield);
+    assert_eq!(dual_wield.name, "Dual Wield");
+    assert_eq!(dual_wield.card_type, CardType::Skill);
+    assert_eq!(dual_wield.rarity, CardRarity::Uncommon);
+    assert_eq!(dual_wield.cost, 1);
+    assert_eq!(dual_wield.base_magic, 1);
+    assert_eq!(dual_wield.target, CardTarget::None);
+    assert_eq!(dual_wield.upgrade_magic, 1);
+
+    let entrench = get_card_definition(CardId::Entrench);
+    assert_eq!(entrench.name, "Entrench");
+    assert_eq!(entrench.card_type, CardType::Skill);
+    assert_eq!(entrench.rarity, CardRarity::Uncommon);
+    assert_eq!(entrench.cost, 2);
+    assert_eq!(entrench.target, CardTarget::SelfTarget);
+    let mut entrench_plus = CombatCard::new(CardId::Entrench, 130);
+    entrench_plus.upgrades = 1;
+    assert_eq!(upgraded_base_cost_override(&entrench_plus), Some(1));
+}
+
+#[test]
+fn ironclad_copy_and_block_runtime_actions_match_java_use_methods() {
+    let mut state = crate::test_support::blank_test_combat();
+
+    let mut double_tap_plus = CombatCard::new(CardId::DoubleTap, 131);
+    double_tap_plus.upgrades = 1;
+    let double_tap_plus_actions =
+        resolve_card_play(CardId::DoubleTap, &state, &double_tap_plus, None);
+    assert_eq!(double_tap_plus_actions.len(), 1);
+    match &double_tap_plus_actions[0].action {
+        Action::ApplyPower {
+            source,
+            target,
+            power_id,
+            amount,
+        } => {
+            assert_eq!(*source, 0);
+            assert_eq!(*target, 0);
+            assert_eq!(*power_id, PowerId::DoubleTap);
+            assert_eq!(*amount, 2);
+        }
+        other => panic!("Double Tap+ should apply DoubleTapPower(2), got {other:?}"),
+    }
+
+    let mut dropkick_plus = CombatCard::new(CardId::Dropkick, 132);
+    dropkick_plus.upgrades = 1;
+    let dropkick_plus_actions =
+        resolve_card_play(CardId::Dropkick, &state, &dropkick_plus, Some(7));
+    assert_eq!(dropkick_plus_actions.len(), 1);
+    match &dropkick_plus_actions[0].action {
+        Action::DropkickDamageAndEffect {
+            target,
+            damage_info,
+        } => {
+            assert_eq!(*target, 7);
+            assert_eq!(damage_info.source, 0);
+            assert_eq!(damage_info.target, 7);
+            assert_eq!(damage_info.base, 8);
+            assert_eq!(damage_info.output, 8);
+            assert_eq!(damage_info.damage_type, DamageType::Normal);
+        }
+        other => panic!("Dropkick+ should emit DropkickAction equivalent, got {other:?}"),
+    }
+
+    state.zones.hand = vec![
+        CombatCard::new(CardId::Strike, 133),
+        CombatCard::new(CardId::Defend, 134),
+    ];
+    let mut dual_wield_plus = CombatCard::new(CardId::DualWield, 135);
+    dual_wield_plus.upgrades = 1;
+    let dual_wield_auto_actions =
+        resolve_card_play(CardId::DualWield, &state, &dual_wield_plus, None);
+    assert_eq!(dual_wield_auto_actions.len(), 1);
+    match &dual_wield_auto_actions[0].action {
+        Action::MakeCopyInHand { original, amount } => {
+            assert_eq!(original.id, CardId::Strike);
+            assert_eq!(*amount, 2);
+        }
+        other => panic!("Dual Wield+ should auto-copy sole valid card, got {other:?}"),
+    }
+
+    state.zones.hand = vec![
+        CombatCard::new(CardId::Strike, 136),
+        CombatCard::new(CardId::Inflame, 137),
+        CombatCard::new(CardId::Defend, 138),
+    ];
+    let dual_wield_select_actions =
+        resolve_card_play(CardId::DualWield, &state, &dual_wield_plus, None);
+    assert_eq!(dual_wield_select_actions.len(), 1);
+    match &dual_wield_select_actions[0].action {
+        Action::SuspendForHandSelect {
+            min,
+            max,
+            can_cancel,
+            filter,
+            reason,
+        } => {
+            assert_eq!(*min, 1);
+            assert_eq!(*max, 1);
+            assert!(!*can_cancel);
+            assert_eq!(*filter, crate::state::HandSelectFilter::AttackOrPower);
+            assert_eq!(*reason, crate::state::HandSelectReason::Copy { amount: 3 });
+        }
+        other => panic!("Dual Wield should open Attack/Power hand select, got {other:?}"),
+    }
+
+    state.entities.player.block = 14;
+    let entrench_actions = resolve_card_play(
+        CardId::Entrench,
+        &state,
+        &CombatCard::new(CardId::Entrench, 139),
+        None,
+    );
+    assert_eq!(entrench_actions.len(), 1);
+    assert!(matches!(
+        entrench_actions[0].action,
+        Action::GainBlock {
+            target: 0,
+            amount: 14
+        }
+    ));
+}
+
+#[test]
+fn dropkick_and_double_tap_action_hooks_match_java_sources() {
+    let mut state = crate::test_support::blank_test_combat();
+    crate::content::powers::store::set_powers_for(
+        &mut state,
+        7,
+        vec![Power {
+            power_type: PowerId::Vulnerable,
+            instance_id: None,
+            amount: 1,
+            extra_data: 0,
+            just_applied: false,
+        }],
+    );
+    crate::engine::action_handlers::damage::handle_dropkick(
+        7,
+        crate::runtime::action::DamageInfo {
+            source: 0,
+            target: 7,
+            base: 5,
+            output: 5,
+            damage_type: DamageType::Normal,
+            is_modified: false,
+        },
+        &mut state,
+    );
+    assert!(matches!(
+        state.pop_next_action(),
+        Some(Action::Damage(crate::runtime::action::DamageInfo {
+            target: 7,
+            ..
+        }))
+    ));
+    assert!(matches!(
+        state.pop_next_action(),
+        Some(Action::GainEnergy { amount: 1 })
+    ));
+    assert!(matches!(
+        state.pop_next_action(),
+        Some(Action::DrawCards(1))
+    ));
+
+    crate::content::powers::store::set_powers_for(
+        &mut state,
+        0,
+        vec![Power {
+            power_type: PowerId::DoubleTap,
+            instance_id: None,
+            amount: 1,
+            extra_data: 0,
+            just_applied: false,
+        }],
+    );
+    let strike = CombatCard::new(CardId::Strike, 140);
+    crate::content::powers::ironclad::double_tap::on_use_card(&mut state, &strike, false, Some(7));
+    assert_eq!(
+        crate::content::powers::store::power_amount(&state, 0, PowerId::DoubleTap),
+        0
+    );
+    match state.pop_next_action() {
+        Some(Action::EnqueueCardPlay { item, in_front }) => {
+            assert!(in_front);
+            assert_eq!(item.card.id, CardId::Strike);
+            assert_eq!(item.target, Some(7));
+            assert!(item.ignore_energy_total);
+            assert!(item.autoplay);
+            assert!(item.purge_on_use);
+            assert_eq!(
+                item.source,
+                crate::runtime::combat::QueuedCardSource::DoubleTap
+            );
+        }
+        other => panic!("Double Tap should enqueue a purge-on-use copy, got {other:?}"),
+    }
+}

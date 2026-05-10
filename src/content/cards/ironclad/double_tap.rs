@@ -4,18 +4,19 @@ use crate::runtime::combat::{CombatCard, CombatState};
 use smallvec::SmallVec;
 
 pub fn double_tap_play(
-    _state: &CombatState,
+    state: &CombatState,
     card: &CombatCard,
     _target: Option<EntityId>,
 ) -> SmallVec<[ActionInfo; 4]> {
     let mut actions = SmallVec::new();
+    let evaluated = crate::content::cards::evaluate_card_for_play(card, state, None);
 
     actions.push(ActionInfo {
         action: Action::ApplyPower {
             source: 0,
             target: 0,
             power_id: crate::content::powers::PowerId::DoubleTap,
-            amount: card.base_magic_num_mut,
+            amount: evaluated.base_magic_num_mut,
         },
         insertion_mode: AddTo::Bottom,
     });

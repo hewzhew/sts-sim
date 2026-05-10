@@ -789,6 +789,153 @@ Coverage:
 - `ironclad_power_and_debuff_definitions_match_java_sources`
 - `ironclad_power_and_debuff_runtime_actions_match_java_use_methods`
 
+## Batch 7 - Copy / Conditional Attack / Block Doubling Coverage
+
+### Double Tap
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/cards/red/DoubleTap.java`
+- `D:/rust/cardcrawl/powers/DoubleTapPower.java`
+
+Rust source:
+- `src/content/cards/mod.rs`
+- `src/content/cards/ironclad/double_tap.rs`
+- `src/content/powers/ironclad/double_tap.rs`
+
+Java evidence:
+- Card constructor: cost `1`, type `SKILL`, color `RED`, rarity `RARE`,
+  target `SELF`, `baseMagicNumber = magicNumber = 1`.
+- Card `use`: applies `DoubleTapPower(p, this.magicNumber)` with the same
+  stack amount.
+- Card `upgrade`: `upgradeMagicNumber(1)`.
+- `DoubleTapPower.onUseCard`: if the played card is a non-purge Attack and
+  amount is positive, creates a same-instance copy in limbo, queues it with
+  `purgeOnUse = true`, decrements amount, and removes the power at zero.
+- `DoubleTapPower.atEndOfTurn(true)`: removes itself.
+
+Rust result:
+- Definition matches Java constructor and upgrade magic.
+- Runtime now evaluates magic at play time, so `Double Tap+` applies amount
+  `2` instead of stale amount `1`.
+- Existing power hook queues a purge-on-use `QueuedCardPlay` copy for non-purge
+  Attacks, decrements the power, and removes it at zero.
+
+Coverage:
+- `ironclad_copy_and_block_definitions_match_java_sources`
+- `ironclad_copy_and_block_runtime_actions_match_java_use_methods`
+- `dropkick_and_double_tap_action_hooks_match_java_sources`
+
+### Dropkick
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/cards/red/Dropkick.java`
+- `D:/rust/cardcrawl/actions/unique/DropkickAction.java`
+
+Rust source:
+- `src/content/cards/mod.rs`
+- `src/content/cards/ironclad/dropkick.rs`
+- `src/engine/action_handlers/damage.rs`
+
+Java evidence:
+- Constructor: cost `1`, type `ATTACK`, color `RED`, rarity `UNCOMMON`, target
+  `ENEMY`, `baseDamage = 5`.
+- `use`: queues `DropkickAction(m, new DamageInfo(p, this.damage,
+  this.damageTypeForTurn))`.
+- `DropkickAction.update`: if the target has Vulnerable at execution time,
+  queues draw 1 and gain 1 energy, then queues damage on top. Because all three
+  are added to top, damage executes before energy gain and draw.
+- `triggerOnGlowCheck` changes border color only; it is UI feedback, not
+  simulator mechanics.
+- `upgrade`: `upgradeDamage(3)`.
+
+Rust result:
+- Definition matches Java constructor and upgrade damage.
+- Runtime now evaluates damage at play time before emitting the deferred
+  Dropkick action.
+- Engine Dropkick action checks Vulnerable at execution time and preserves Java
+  queue order: damage, then gain energy, then draw.
+
+Coverage:
+- `ironclad_copy_and_block_definitions_match_java_sources`
+- `ironclad_copy_and_block_runtime_actions_match_java_use_methods`
+- `dropkick_and_double_tap_action_hooks_match_java_sources`
+
+### Dual Wield
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/cards/red/DualWield.java`
+- `D:/rust/cardcrawl/actions/unique/DualWieldAction.java`
+
+Rust source:
+- `src/content/cards/mod.rs`
+- `src/content/cards/ironclad/dual_wield.rs`
+- `src/engine/pending_choices.rs`
+
+Java evidence:
+- Constructor: cost `1`, type `SKILL`, color `RED`, rarity `UNCOMMON`, target
+  `NONE`, `baseMagicNumber = magicNumber = 1`.
+- `use`: queues `DualWieldAction(p, this.magicNumber)`.
+- `DualWieldAction` only allows Attack or Power cards.
+- If no valid cards exist, it does nothing.
+- If exactly one valid card exists, it creates `dupeAmount` stat-equivalent
+  copies.
+- If multiple valid cards exist, it opens a one-card hand select. The decompiled
+  selected-card branch queues one copy before its `dupeAmount` loop, making the
+  selected branch create `dupeAmount + 1` copies. This is source-visible
+  gameplay behavior, not UI.
+- `upgrade`: `upgradeMagicNumber(1)`.
+
+Rust result:
+- Definition matches Java constructor and upgrade magic.
+- Runtime now evaluates magic at play time.
+- Runtime preserves the Java valid-card filter, no-op/auto/select split, and
+  the selected-branch `dupeAmount + 1` copy behavior.
+
+Coverage:
+- `ironclad_copy_and_block_definitions_match_java_sources`
+- `ironclad_copy_and_block_runtime_actions_match_java_use_methods`
+
+### Entrench
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/cards/red/Entrench.java`
+- `D:/rust/cardcrawl/actions/unique/DoubleYourBlockAction.java`
+- `D:/rust/cardcrawl/actions/utility/ExhaustAllEtherealAction.java`
+
+Rust source:
+- `src/content/cards/mod.rs`
+- `src/content/cards/ironclad/entrench.rs`
+- `src/content/cards/runtime_impl.rs`
+- `src/engine/action_handlers/cards.rs`
+
+Java evidence:
+- Constructor: cost `2`, type `SKILL`, color `RED`, rarity `UNCOMMON`, target
+  `SELF`.
+- `use`: queues `DoubleYourBlockAction(p)`.
+- `DoubleYourBlockAction.update`: if target exists and current block is
+  positive, adds block equal to current block.
+- `triggerOnEndOfPlayerTurn`: queues `ExhaustAllEtherealAction`, which exhausts
+  all ethereal cards in hand. Rust already exhausts ethereal cards from the
+  end-turn card pipeline, so no Entrench-specific UI action is needed.
+- `upgrade`: `upgradeBaseCost(1)`.
+
+Rust result:
+- Fixed upgraded base cost override for `Entrench+` to `1`.
+- Runtime already preserves the block doubling behavior by gaining block equal
+  to the player's current block and doing nothing at zero block.
+
+Coverage:
+- `ironclad_copy_and_block_definitions_match_java_sources`
+- `ironclad_copy_and_block_runtime_actions_match_java_use_methods`
+
 ## Full Ironclad Queue
 
 Cards remain `unreviewed` until their Java file, Rust definition, Rust runtime,
@@ -819,10 +966,10 @@ and supporting engine behavior have all been checked.
 | 21 | `DarkEmbrace.java` | `dark_embrace.rs` | `wrong-fixed` |
 | 22 | `DemonForm.java` | `demon_form.rs` | `wrong-fixed` |
 | 23 | `Disarm.java` | `disarm.rs` | `wrong-fixed` |
-| 24 | `DoubleTap.java` | `double_tap.rs` | `unreviewed` |
-| 25 | `Dropkick.java` | `dropkick.rs` | `unreviewed` |
-| 26 | `DualWield.java` | `dual_wield.rs` | `unreviewed` |
-| 27 | `Entrench.java` | `entrench.rs` | `unreviewed` |
+| 24 | `DoubleTap.java` | `double_tap.rs` | `wrong-fixed` |
+| 25 | `Dropkick.java` | `dropkick.rs` | `wrong-fixed` |
+| 26 | `DualWield.java` | `dual_wield.rs` | `wrong-fixed` |
+| 27 | `Entrench.java` | `entrench.rs` | `wrong-fixed` |
 | 28 | `Evolve.java` | `evolve.rs` | `unreviewed` |
 | 29 | `Exhume.java` | `exhume.rs` | `unreviewed` |
 | 30 | `Feed.java` | `feed.rs` | `unreviewed` |

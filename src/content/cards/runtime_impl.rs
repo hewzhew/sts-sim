@@ -416,6 +416,7 @@ pub fn upgraded_base_cost_override(card: &CombatCard) -> Option<i8> {
         CardId::BodySlam if card.upgrades > 0 => Some(0),
         CardId::Corruption if card.upgrades > 0 => Some(2),
         CardId::DarkEmbrace if card.upgrades > 0 => Some(1),
+        CardId::Entrench if card.upgrades > 0 => Some(1),
         CardId::Madness if card.upgrades > 0 => Some(0),
         _ => None,
     }
