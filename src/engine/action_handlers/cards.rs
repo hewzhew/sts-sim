@@ -273,6 +273,28 @@ pub fn handle_remove_card_from_pile(
     }
 }
 
+fn apply_generated_card_entering_hand_mechanics(
+    card: &mut crate::runtime::combat::CombatCard,
+    state: &CombatState,
+) {
+    if store::has_power(state, 0, PowerId::Corruption) {
+        crate::content::cards::ironclad::corruption::corruption_on_card_draw(state, card);
+    }
+    crate::content::cards::evaluate_card(card, state, None);
+}
+
+fn add_generated_card_to_hand_or_discard(
+    mut card: crate::runtime::combat::CombatCard,
+    state: &mut CombatState,
+) {
+    if state.zones.hand.len() < 10 {
+        apply_generated_card_entering_hand_mechanics(&mut card, state);
+        state.zones.hand.push(card);
+    } else {
+        state.zones.discard_pile.push(card);
+    }
+}
+
 pub fn handle_make_temp_card_in_hand(
     card_id: CardId,
     amount: u8,
@@ -286,11 +308,7 @@ pub fn handle_make_temp_card_in_hand(
         if upgraded {
             card.upgrades = 1;
         }
-        if state.zones.hand.len() < 10 {
-            state.zones.hand.push(card);
-        } else {
-            state.zones.discard_pile.push(card);
-        }
+        add_generated_card_to_hand_or_discard(card, state);
     }
 }
 
@@ -346,11 +364,7 @@ pub fn handle_make_copy_in_hand(
         state.zones.card_uuid_counter += 1;
         let mut card = (*original).clone();
         card.uuid = state.zones.card_uuid_counter;
-        if state.zones.hand.len() < 10 {
-            state.zones.hand.push(card);
-        } else {
-            state.zones.discard_pile.push(card);
-        }
+        add_generated_card_to_hand_or_discard(card, state);
     }
 }
 
@@ -621,11 +635,7 @@ pub fn handle_make_random_card_in_hand(
         if let Some(cost) = cost_for_turn {
             card.cost_for_turn = Some(cost);
         }
-        if state.zones.hand.len() < 10 {
-            state.zones.hand.push(card);
-        } else {
-            state.zones.discard_pile.push(card);
-        }
+        add_generated_card_to_hand_or_discard(card, state);
     }
 }
 
@@ -1232,9 +1242,12 @@ pub fn handle_end_turn_trigger(state: &mut CombatState) {
 
 #[cfg(test)]
 mod tests {
-    use super::obtain_specific_potion_if_allowed;
+    use super::{handle_make_temp_card_in_hand, obtain_specific_potion_if_allowed};
+    use crate::content::cards::CardId;
     use crate::content::potions::PotionId;
+    use crate::content::powers::PowerId;
     use crate::content::relics::{RelicId, RelicState};
+    use crate::runtime::combat::{CombatCard, Power};
     use crate::test_support::blank_test_combat;
 
     #[test]
@@ -1300,6 +1313,53 @@ mod tests {
         ));
 
         assert_eq!(state.entities.potions, before);
+    }
+
+    #[test]
+    fn generated_skill_entering_hand_obeys_corruption_cost_override() {
+        let mut state = blank_test_combat();
+        state.entities.power_db.insert(
+            0,
+            vec![Power {
+                power_type: PowerId::Corruption,
+                instance_id: None,
+                amount: -1,
+                extra_data: 0,
+                just_applied: false,
+            }],
+        );
+
+        handle_make_temp_card_in_hand(CardId::Defend, 1, false, &mut state);
+
+        assert_eq!(state.zones.hand.len(), 1);
+        assert_eq!(state.zones.hand[0].id, CardId::Defend);
+        assert_eq!(state.zones.hand[0].cost_for_turn, Some(0));
+    }
+
+    #[test]
+    fn generated_skill_overflowing_to_discard_does_not_apply_hand_only_corruption_hook() {
+        let mut state = blank_test_combat();
+        state.entities.power_db.insert(
+            0,
+            vec![Power {
+                power_type: PowerId::Corruption,
+                instance_id: None,
+                amount: -1,
+                extra_data: 0,
+                just_applied: false,
+            }],
+        );
+        for uuid in 1..=10 {
+            state.zones.hand.push(CombatCard::new(CardId::Strike, uuid));
+        }
+        state.zones.card_uuid_counter = 10;
+
+        handle_make_temp_card_in_hand(CardId::Defend, 1, false, &mut state);
+
+        assert_eq!(state.zones.hand.len(), 10);
+        assert_eq!(state.zones.discard_pile.len(), 1);
+        assert_eq!(state.zones.discard_pile[0].id, CardId::Defend);
+        assert_eq!(state.zones.discard_pile[0].cost_for_turn, None);
     }
 }
 
