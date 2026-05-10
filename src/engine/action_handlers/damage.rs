@@ -555,15 +555,14 @@ pub fn handle_fiend_fire(
     damage_info: crate::runtime::action::DamageInfo,
     state: &mut CombatState,
 ) {
-    let hand_cards: Vec<crate::runtime::combat::CombatCard> = state.zones.hand.drain(..).collect();
-    let count = hand_cards.len();
-    for card in hand_cards {
-        super::cards::move_card_to_exhaust_pile(card, state);
-    }
+    let count = state.zones.hand.len();
     for _ in 0..count {
         let mut info = damage_info.clone();
         info.target = target;
-        let _ = apply_damage_to_monster_via_pipeline(state, &info, info.output.max(0));
+        state.queue_action_front(Action::Damage(info));
+    }
+    for _ in 0..count {
+        state.queue_action_front(Action::ExhaustRandomCard { amount: 1 });
     }
 }
 

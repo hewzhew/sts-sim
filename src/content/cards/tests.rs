@@ -1934,9 +1934,27 @@ fn fire_breathing_flame_barrier_and_fiend_fire_hooks_match_java_sources() {
         },
         &mut fiend_fire_state,
     );
-    assert!(fiend_fire_state.zones.hand.is_empty());
-    assert_eq!(fiend_fire_state.zones.exhaust_pile.len(), 3);
-    assert_eq!(fiend_fire_state.entities.monsters[0].current_hp, 19);
+    assert_eq!(
+        fiend_fire_state.zones.hand.len(),
+        3,
+        "FiendFireAction queues random ExhaustAction instances; it does not drain hand immediately"
+    );
+    for _ in 0..3 {
+        assert_eq!(
+            fiend_fire_state.pop_next_action(),
+            Some(Action::ExhaustRandomCard { amount: 1 })
+        );
+    }
+    for _ in 0..3 {
+        assert!(matches!(
+            fiend_fire_state.pop_next_action(),
+            Some(Action::Damage(crate::runtime::action::DamageInfo {
+                target: 41,
+                output: 7,
+                ..
+            }))
+        ));
+    }
 }
 
 #[test]

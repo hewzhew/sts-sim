@@ -9,19 +9,18 @@ Continue Java-source-backed mechanics cleanup. Do not add strategy heuristics, b
 
 ## Last Pushed Checkpoint
 
-`59187db Ground hand-select copy generation`
+`7dc3875 Ground Second Wind action ordering`
 
 What it fixed:
 
-- Java `DualWieldAction` creates copies via `MakeTempCardInHandAction`.
-- Rust pending hand-select copy path no longer manually pushes copies with synthetic UUIDs.
-- `HandSelectReason::Copy` now uses `handle_make_copy_in_hand`, preserving `card_uuid_counter` and hand-overflow-to-discard behavior.
+- Java `BlockPerNonAttackAction` queues `GainBlockAction` and `ExhaustSpecificCardAction` with two `addToTop` loops.
+- Rust `handle_block_per_non_attack` now matches the Java queue order: all exhaust actions before all block gains, each group reversed relative to hand iteration.
 
 Verification already passed:
 
 - `cargo test -q engine::pending_choices::tests`
-- `cargo test -q content::cards::tests::ironclad_copy_and_block_definitions_match_java_sources`
-- `cargo test -q content::cards::tests::ironclad_block_exhaust_and_ethereal_definitions_match_java_sources`
+- `cargo test -q content::cards::tests::second_wind_block_per_non_attack_matches_java_add_to_top_order`
+- `cargo test -q content::cards::tests::sever_soul_exhaust_all_non_attack_queues_exhausts_before_following_damage`
 - `cargo check -q`
 - `git diff --check`
 
@@ -34,27 +33,24 @@ Files changed:
 
 Java evidence:
 
-- `D:\rust\cardcrawl\actions\unique\BlockPerNonAttackAction.java`
-- `D:\rust\cardcrawl\cards\red\SecondWind.java`
+- `D:\rust\cardcrawl\cards\red\FiendFire.java`
+- `D:\rust\cardcrawl\actions\unique\FiendFireAction.java`
 
 Finding:
 
-- Java `BlockPerNonAttackAction` uses `addToTop` in two loops:
-  - first one `GainBlockAction` per non-attack;
-  - then one `ExhaustSpecificCardAction` per non-attack.
-- Actual execution order is all exhausts first, then all block gains, with each group reversed relative to hand iteration.
-- Rust `handle_block_per_non_attack` used an intermediate action list and reversed it, producing a different order.
+- Java `FiendFireAction` reads initial hand size, queues one `DamageAction` per hand card, then queues one random `ExhaustAction` per hand card.
+- Actual execution is random exhaust actions first, then damage actions.
+- Rust `handle_fiend_fire` directly drained the whole hand in order and applied damage immediately, skipping random exhaust actions and queue semantics.
 
 Implemented locally:
 
-- `handle_block_per_non_attack` now queues actions in the same two-loop `addToTop` shape as Java.
-- Added a test proving two non-attacks execute as: later non-attack exhaust, earlier non-attack exhaust, block, block.
+- `handle_fiend_fire` now queues `Action::Damage` and `Action::ExhaustRandomCard { amount: 1 }` instead of immediately mutating hand/monster HP.
+- Updated the Fiend Fire hook test to assert queued random exhausts appear before queued damage actions.
 
 Verification already passed for this uncommitted work:
 
-- `cargo test -q engine::pending_choices::tests`
+- `cargo test -q content::cards::tests::fire_breathing_flame_barrier_and_fiend_fire_hooks_match_java_sources`
 - `cargo test -q content::cards::tests::second_wind_block_per_non_attack_matches_java_add_to_top_order`
-- `cargo test -q content::cards::tests::sever_soul_exhaust_all_non_attack_queues_exhausts_before_following_damage`
 
 Before continuing:
 
