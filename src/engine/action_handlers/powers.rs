@@ -41,7 +41,7 @@ pub fn handle_spot_weakness(target: usize, amount: i32, state: &mut CombatState)
         return;
     };
 
-    if crate::projection::combat::monster_has_visible_attack_in_combat(state, target_monster) {
+    if monster_has_java_spot_weakness_intent(state, target_monster) {
         state.queue_action_back(Action::ApplyPower {
             source: 0,
             target: 0,
@@ -49,6 +49,40 @@ pub fn handle_spot_weakness(target: usize, amount: i32, state: &mut CombatState)
             amount,
         });
     }
+}
+
+fn monster_has_java_spot_weakness_intent(
+    state: &CombatState,
+    monster: &crate::runtime::combat::MonsterEntity,
+) -> bool {
+    let current_plan = crate::content::monsters::resolve_monster_turn_plan(state, monster);
+    if current_plan.attack().is_some() {
+        return true;
+    }
+
+    if !monster.is_dead_or_escaped() {
+        return false;
+    }
+
+    if monster
+        .move_state
+        .planned_visible_spec
+        .as_ref()
+        .and_then(|spec| spec.attack())
+        .is_some()
+    {
+        return true;
+    }
+
+    monster
+        .move_state
+        .planned_steps
+        .as_ref()
+        .is_some_and(|steps| {
+            steps
+                .iter()
+                .any(|step| matches!(step, crate::semantics::combat::MoveStep::Attack(_)))
+        })
 }
 
 pub fn handle_apply_power_detailed(
@@ -575,6 +609,7 @@ mod tests {
     use super::*;
     use crate::content::monsters::EnemyId;
     use crate::runtime::combat::Power;
+    use crate::semantics::combat::{AttackSpec, DamageKind, MonsterMoveSpec};
     use crate::test_support::blank_test_combat;
 
     #[test]
@@ -665,6 +700,37 @@ mod tests {
             state.pop_next_action(),
             None,
             "Java BouncingFlaskAction chooses targets via getRandomMonster(aliveOnly=true), which excludes halfDead monsters"
+        );
+    }
+
+    #[test]
+    fn spot_weakness_reads_raw_intent_base_damage_even_if_target_is_dying() {
+        let attack = MonsterMoveSpec::Attack(AttackSpec {
+            base_damage: 0,
+            hits: 1,
+            damage_kind: DamageKind::Normal,
+        });
+        let mut monster = crate::test_support::test_monster(EnemyId::JawWorm);
+        monster.id = 46;
+        monster.current_hp = 0;
+        monster.is_dying = true;
+        monster.move_state.planned_steps = Some(attack.to_steps());
+        monster.move_state.planned_visible_spec = Some(attack);
+
+        let mut state = blank_test_combat();
+        state.entities.monsters = vec![monster];
+
+        handle_spot_weakness(46, 3, &mut state);
+
+        assert_eq!(
+            state.pop_next_action(),
+            Some(Action::ApplyPower {
+                source: 0,
+                target: 0,
+                power_id: PowerId::Strength,
+                amount: 3,
+            }),
+            "Java SpotWeaknessAction only checks targetMonster.getIntentBaseDmg() >= 0; it does not cancel just because the target object is already dying"
         );
     }
 }

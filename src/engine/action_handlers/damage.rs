@@ -439,6 +439,50 @@ pub fn handle_damage(info: crate::runtime::action::DamageInfo, state: &mut Comba
     }
 }
 
+fn pummel_source_is_dying(state: &CombatState, source_id: usize) -> bool {
+    if source_id == 0 {
+        state.entities.player.current_hp <= 0
+    } else if source_id == NO_SOURCE {
+        false
+    } else {
+        state
+            .entities
+            .monsters
+            .iter()
+            .find(|m| m.id == source_id)
+            .is_some_and(|m| m.is_dying)
+    }
+}
+
+fn target_current_hp_is_positive(state: &CombatState, target_id: usize) -> bool {
+    if target_id == 0 {
+        state.entities.player.current_hp > 0
+    } else {
+        state
+            .entities
+            .monsters
+            .iter()
+            .find(|m| m.id == target_id)
+            .is_some_and(|m| m.current_hp > 0)
+    }
+}
+
+pub fn handle_pummel_damage(info: crate::runtime::action::DamageInfo, state: &mut CombatState) {
+    if !target_current_hp_is_positive(state, info.target) {
+        return;
+    }
+    if info.damage_type != DamageType::Thorns && pummel_source_is_dying(state, info.source) {
+        return;
+    }
+
+    if info.target == 0 {
+        handle_damage(info, state);
+    } else {
+        let final_damage = info.output.max(0);
+        let _ = apply_damage_to_monster_via_pipeline(state, &info, final_damage);
+    }
+}
+
 fn damage_type(kind: crate::semantics::combat::DamageKind) -> crate::runtime::action::DamageType {
     match kind {
         crate::semantics::combat::DamageKind::Normal => crate::runtime::action::DamageType::Normal,
@@ -1042,5 +1086,72 @@ pub fn handle_exhaust_random_card(amount: usize, state: &mut CombatState) {
             .random(state.zones.hand.len() as i32 - 1) as usize;
         let card_uuid = state.zones.hand[idx].uuid;
         super::cards::handle_exhaust_card(card_uuid, crate::state::PileType::Hand, state);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::content::monsters::EnemyId;
+    use crate::runtime::action::{DamageInfo, DamageType};
+    use crate::test_support::{blank_test_combat, test_monster};
+
+    #[test]
+    fn pummel_damage_action_skips_target_that_is_already_at_zero_hp() {
+        let mut state = blank_test_combat();
+        let mut monster = test_monster(EnemyId::JawWorm);
+        monster.id = 61;
+        monster.current_hp = 0;
+        monster.block = 4;
+        monster.is_dying = false;
+        state.entities.monsters = vec![monster];
+
+        handle_pummel_damage(
+            DamageInfo {
+                source: 0,
+                target: 61,
+                base: 10,
+                output: 10,
+                damage_type: DamageType::Normal,
+                is_modified: false,
+            },
+            &mut state,
+        );
+
+        let monster = &state.entities.monsters[0];
+        assert_eq!(monster.current_hp, 0);
+        assert_eq!(monster.block, 4);
+        assert!(!monster.is_dying);
+        assert_eq!(
+            state.pop_next_action(),
+            None,
+            "Java PummelDamageAction checks target.currentHealth > 0 before damage and does not run death cleanup from this skipped hit"
+        );
+    }
+
+    #[test]
+    fn pummel_damage_action_applies_to_live_target() {
+        let mut state = blank_test_combat();
+        let mut monster = test_monster(EnemyId::JawWorm);
+        monster.id = 62;
+        monster.current_hp = 12;
+        monster.block = 2;
+        state.entities.monsters = vec![monster];
+
+        handle_pummel_damage(
+            DamageInfo {
+                source: 0,
+                target: 62,
+                base: 5,
+                output: 5,
+                damage_type: DamageType::Normal,
+                is_modified: false,
+            },
+            &mut state,
+        );
+
+        let monster = &state.entities.monsters[0];
+        assert_eq!(monster.block, 0);
+        assert_eq!(monster.current_hp, 9);
     }
 }

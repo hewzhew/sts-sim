@@ -13,16 +13,28 @@ pub fn pummel_play(
     let damage = evaluated.base_damage_mut;
     let amount = evaluated.base_magic_num_mut;
 
-    for _ in 0..amount {
-        actions.push(ActionInfo {
-            action: Action::Damage(DamageInfo {
+    for hit in 0..amount {
+        let action = if hit + 1 == amount {
+            Action::Damage(DamageInfo {
                 source: 0,
                 target,
                 base: damage,
                 output: damage,
                 damage_type: DamageType::Normal,
                 is_modified: false,
-            }),
+            })
+        } else {
+            Action::PummelDamage(DamageInfo {
+                source: 0,
+                target,
+                base: damage,
+                output: damage,
+                damage_type: DamageType::Normal,
+                is_modified: false,
+            })
+        };
+        actions.push(ActionInfo {
+            action,
             insertion_mode: AddTo::Bottom,
         });
     }

@@ -9,10 +9,17 @@ Continue Java-source-backed mechanics cleanup. Do not add strategy heuristics, b
 
 ## Last Pushed Checkpoint
 
-`329376e Match Armaments hand select order`
+Latest pushed branch tip: `Match Pummel and Spot Weakness actions`
 
 Recent pushed mechanics fixes:
 
+- `Match Pummel and Spot Weakness actions`
+  - Java `Pummel.use()` emits `magicNumber - 1` `PummelDamageAction` hits, then one ordinary `DamageAction`; Rust now has `Action::PummelDamage` and only the final hit is generic `Damage`.
+  - Java `PummelDamageAction` re-checks `target.currentHealth > 0` at execution time and skips without damage/death cleanup if the target is already at 0 HP; Rust now preserves that guard.
+  - Java `SpotWeaknessAction` checks `targetMonster.getIntentBaseDmg() >= 0`; Rust no longer relies solely on the UI-style visible-intent projection that hides dying/half-dead monsters.
+- `2760997 Queue Limit Break strength application`
+  - Java `LimitBreakAction` queues `ApplyPowerAction` with `addToTop`; Rust now queues `Action::ApplyPower` to the front instead of mutating Strength inline.
+  - Regression checks the queued action before applying it.
 - `329376e Match Armaments hand select order`
   - Java `ArmamentsAction` removes non-upgradeable cards before opening the hand select screen, then returns the selected card and non-upgradeables with `addToTop`.
   - Rust `HandSelectReason::Upgrade` now reproduces that multi-candidate hand order instead of upgrading in place.
@@ -62,18 +69,26 @@ Verification already passed for those checkpoints:
 - `cargo test -q engine::action_handlers::cards::tests`
 - `cargo test -q engine::core::tests`
 
-## Current Work To Commit
+## Latest Mechanics Work
 
-Limit Break action queue parity:
+Pummel / Spot Weakness execution-time parity:
 
-- Java `LimitBreakAction` queues `ApplyPowerAction` with `addToTop`; it does not mutate Strength inline.
-- Rust `handle_limit_break` now queues `Action::ApplyPower` to the front instead of directly calling `handle_apply_power`.
-- The regression test now checks the queued action before applying it.
+- Java `Pummel.use()` emits `magicNumber - 1` `PummelDamageAction` hits, then one ordinary `DamageAction`; Rust now has `Action::PummelDamage` and only the final hit is generic `Damage`.
+- Java `PummelDamageAction` re-checks `target.currentHealth > 0` at execution time and skips without damage/death cleanup if the target is already at 0 HP; Rust now preserves that guard.
+- Java `SpotWeaknessAction` checks `targetMonster.getIntentBaseDmg() >= 0`; Rust no longer relies solely on the UI-style visible-intent projection that hides dying/half-dead monsters.
+- `PutOnDeckAction` and `FiendFireAction` were rechecked against Java. Existing Rust behavior/tests already cover the important edges: PutOnDeck's RNG fallback and shrinking-hand loop, Fiend Fire's queue order where random exhaust actions execute before the queued damage actions.
 
 Verification passed for this work:
 
 - `cargo fmt`
-- `cargo test limit_break_and_metallicize_hooks_match_java_sources --lib`
+- `cargo check --lib`
+- `cargo test pummel_damage_action --lib`
+- `cargo test engine::action_handlers::damage::tests --lib`
+- `cargo test spot_weakness_reads_raw_intent_base_damage_even_if_target_is_dying --lib`
+- `cargo test engine::action_handlers::powers::tests --lib`
+- `cargo test ironclad_multi_hit_and_rage_runtime_actions_match_java_use_methods --lib`
+- `cargo test fire_breathing_flame_barrier_and_fiend_fire_hooks_match_java_sources --lib`
+- `cargo test put_on_deck_action_matches_java_rng_and_selection_edges --lib`
 - `cargo test content::cards::tests --lib`
 
 Known verification limitation:
@@ -87,11 +102,9 @@ Resume from Ironclad card-by-card Java audit, prioritizing non-trivial mechanics
 Recommended next targets:
 
 1. Continue Ironclad from the latter half, with emphasis on execution-time custom actions:
-   - `PutOnDeckAction` selection/random edge cases beyond existing coverage
-   - `SpotWeaknessAction` intent-base-damage parity on unusual attack intents
-   - `FiendFireAction` / exhaust-trigger ordering under hand mutation
-   - `PummelDamageAction` target-alive guard vs generic `DamageAction`
    - `CorruptionPower.onCardDraw` vs generated-card hand insertion paths
+   - remaining custom queued actions where Java uses specialized action classes instead of plain `DamageAction`
+   - selection actions whose Java screen order mutates hand or selected-card order
 2. Keep checking Java action timing, not just card `use()` methods:
    - queued `addToTop` vs `addToBot`
    - state inspected at action execution time

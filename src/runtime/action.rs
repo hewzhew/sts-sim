@@ -95,6 +95,13 @@ pub enum MonsterRuntimePatch {
 #[derive(Clone, Debug, PartialEq)]
 pub enum Action {
     Damage(DamageInfo),
+    /// Java `PummelDamageAction`.
+    ///
+    /// Unlike ordinary `DamageAction`, execution re-checks that the target's
+    /// current HP is still above zero before applying damage. Pummel queues
+    /// light hits through this action and finishes with one ordinary
+    /// `DamageAction`.
+    PummelDamage(DamageInfo),
     /// Canonical monster attack action.
     ///
     /// Contract:
@@ -556,6 +563,7 @@ impl Action {
         matches!(
             self,
             Action::Damage(_)
+                | Action::PummelDamage(_)
                 | Action::MonsterAttack { .. }
                 | Action::DamageAllEnemies { .. }
                 | Action::Feed { .. }

@@ -171,6 +171,7 @@ pub fn execute_action(action: Action, state: &mut CombatState) {
     match action {
         // === Damage domain ===
         Action::Damage(info) => damage::handle_damage(info, state),
+        Action::PummelDamage(info) => damage::handle_pummel_damage(info, state),
         #[rustfmt::skip] Action::MonsterAttack { source, target, base_damage, damage_kind } => damage::handle_monster_attack(source, target, base_damage, damage_kind, state),
         Action::DamageAllEnemies {
             source,

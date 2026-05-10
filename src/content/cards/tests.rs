@@ -2888,16 +2888,25 @@ fn ironclad_multi_hit_and_rage_runtime_actions_match_java_use_methods() {
     pummel_plus.upgrades = 1;
     let pummel_actions = resolve_card_play(CardId::Pummel, &state, &pummel_plus, Some(111));
     assert_eq!(pummel_actions.len(), 5);
-    for action in pummel_actions {
+    for (index, action) in pummel_actions.into_iter().enumerate() {
         match action.action {
-            Action::Damage(info) => {
+            Action::PummelDamage(info) if index < 4 => {
                 assert_eq!(info.source, 0);
                 assert_eq!(info.target, 111);
                 assert_eq!(info.base, 3);
                 assert_eq!(info.output, 3);
                 assert_eq!(info.damage_type, DamageType::Normal);
             }
-            other => panic!("Pummel+ should emit one damage action per hit, got {other:?}"),
+            Action::Damage(info) if index == 4 => {
+                assert_eq!(info.source, 0);
+                assert_eq!(info.target, 111);
+                assert_eq!(info.base, 3);
+                assert_eq!(info.output, 3);
+                assert_eq!(info.damage_type, DamageType::Normal);
+            }
+            other => panic!(
+                "Java Pummel+ should emit four PummelDamageAction hits and one final DamageAction, got {other:?} at index {index}"
+            ),
         }
     }
 
