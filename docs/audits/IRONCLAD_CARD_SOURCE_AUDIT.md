@@ -649,6 +649,146 @@ Coverage:
 - `ironclad_attack_condition_and_dot_power_runtime_actions_match_java_use_methods`
 - `combust_power_stacks_damage_and_hp_loss_like_java_source`
 
+## Batch 6 - Power Hooks / Cost Override / Debuff Coverage
+
+### Corruption
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/cards/red/Corruption.java`
+- `D:/rust/cardcrawl/powers/CorruptionPower.java`
+- `D:/rust/cardcrawl/actions/common/ApplyPowerAction.java`
+
+Rust source:
+- `src/content/cards/mod.rs`
+- `src/content/cards/ironclad/corruption.rs`
+- `src/content/cards/runtime_impl.rs`
+- `src/content/powers/ironclad/corruption.rs`
+- `src/engine/action_handlers/powers.rs`
+
+Java evidence:
+- Card constructor: cost `3`, type `POWER`, color `RED`, rarity `RARE`,
+  target `SELF`, `baseMagicNumber = magicNumber = 3`.
+- Card `use`: queues VFX/SFX, scans player powers, and applies
+  `CorruptionPower(p)` only if the player does not already have Corruption.
+- Card `upgrade`: `upgradeBaseCost(2)`.
+- `ApplyPowerAction` constructor special-cases Corruption by calling
+  `modifyCostForCombat(-9)` on every Skill in hand, draw, discard, and exhaust.
+- `CorruptionPower.onCardDraw`: Skills drawn after Corruption get
+  `setCostForTurn(-9)`, effectively `0`.
+- `CorruptionPower.onUseCard`: played Skills set `UseCardAction.exhaustCard =
+  true`.
+- VFX/SFX and flash behavior are presentation-only and are not simulator
+  mechanics.
+
+Rust result:
+- Fixed definition to preserve Java `baseMagicNumber = 3`.
+- Fixed upgraded base cost override for `Corruption+` to `2`.
+- Runtime preserves the Java no-duplicate-power check before applying
+  Corruption.
+- Existing Corruption power hooks preserve skill cost reduction on apply/draw
+  and force played Skills to exhaust.
+
+Coverage:
+- `ironclad_power_and_debuff_definitions_match_java_sources`
+- `ironclad_power_and_debuff_runtime_actions_match_java_use_methods`
+- `corruption_power_on_apply_modifies_skill_costs_in_java_piles`
+
+### Dark Embrace
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/cards/red/DarkEmbrace.java`
+- `D:/rust/cardcrawl/powers/DarkEmbracePower.java`
+
+Rust source:
+- `src/content/cards/mod.rs`
+- `src/content/cards/ironclad/dark_embrace.rs`
+- `src/content/powers/ironclad/dark_embrace.rs`
+- `src/content/powers/mod.rs`
+
+Java evidence:
+- Card constructor: cost `2`, type `POWER`, color `RED`, rarity `UNCOMMON`,
+  target `SELF`.
+- Card `use`: applies `DarkEmbracePower(p, 1)` with stack amount `1`.
+- Card `upgrade`: `upgradeBaseCost(1)`.
+- `DarkEmbracePower.onExhaust`: if monsters are not basically dead, draws
+  `amount` cards.
+
+Rust result:
+- Fixed upgraded base cost override for `Dark Embrace+` to `1`.
+- Runtime now evaluates the effect amount at play time before applying the
+  power.
+- Fixed Dark Embrace exhaust hook to skip draw when monsters are basically
+  dead, matching the Java guard.
+
+Coverage:
+- `ironclad_power_and_debuff_definitions_match_java_sources`
+- `ironclad_power_and_debuff_runtime_actions_match_java_use_methods`
+- `dark_embrace_and_demon_form_power_hooks_match_java_sources`
+
+### Demon Form
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/cards/red/DemonForm.java`
+- `D:/rust/cardcrawl/powers/DemonFormPower.java`
+
+Rust source:
+- `src/content/cards/mod.rs`
+- `src/content/cards/ironclad/demon_form.rs`
+- `src/content/powers/ironclad/demon_form.rs`
+
+Java evidence:
+- Card constructor: cost `3`, type `POWER`, color `RED`, rarity `RARE`, target
+  `NONE`, `baseMagicNumber = magicNumber = 2`.
+- Card `use`: applies `DemonFormPower(p, this.magicNumber)` with the same
+  stack amount.
+- Card `upgrade`: `upgradeMagicNumber(1)`.
+- `DemonFormPower.atStartOfTurnPostDraw`: applies `StrengthPower(owner,
+  amount)` to the player.
+
+Rust result:
+- Fixed definition target from `SelfTarget` to `None`.
+- Runtime now evaluates magic at play time, so `Demon Form+` applies amount
+  `3` instead of stale base amount `2`.
+- Existing post-draw power hook applies Strength equal to stored power amount.
+
+Coverage:
+- `ironclad_power_and_debuff_definitions_match_java_sources`
+- `ironclad_power_and_debuff_runtime_actions_match_java_use_methods`
+- `dark_embrace_and_demon_form_power_hooks_match_java_sources`
+
+### Disarm
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/cards/red/Disarm.java`
+
+Rust source:
+- `src/content/cards/mod.rs`
+- `src/content/cards/ironclad/disarm.rs`
+
+Java evidence:
+- Constructor: cost `1`, type `SKILL`, color `RED`, rarity `UNCOMMON`, target
+  `ENEMY`, `baseMagicNumber = magicNumber = 2`, `exhaust = true`.
+- `use`: applies `StrengthPower(m, -this.magicNumber)` to the target with
+  stack amount `-this.magicNumber`.
+- `upgrade`: `upgradeMagicNumber(1)`.
+
+Rust result:
+- Definition already preserves target, exhaust, and base/upgrade magic.
+- Runtime now evaluates magic at play time, so `Disarm+` applies `-3`
+  Strength instead of stale `-2`.
+
+Coverage:
+- `ironclad_power_and_debuff_definitions_match_java_sources`
+- `ironclad_power_and_debuff_runtime_actions_match_java_use_methods`
+
 ## Full Ironclad Queue
 
 Cards remain `unreviewed` until their Java file, Rust definition, Rust runtime,
@@ -675,10 +815,10 @@ and supporting engine behavior have all been checked.
 | 17 | `Cleave.java` | `cleave.rs` | `wrong-fixed` |
 | 18 | `Clothesline.java` | `clothesline.rs` | `wrong-fixed` |
 | 19 | `Combust.java` | `combust.rs` | `wrong-fixed` |
-| 20 | `Corruption.java` | `corruption.rs` | `unreviewed` |
-| 21 | `DarkEmbrace.java` | `dark_embrace.rs` | `unreviewed` |
-| 22 | `DemonForm.java` | `demon_form.rs` | `unreviewed` |
-| 23 | `Disarm.java` | `disarm.rs` | `unreviewed` |
+| 20 | `Corruption.java` | `corruption.rs` | `wrong-fixed` |
+| 21 | `DarkEmbrace.java` | `dark_embrace.rs` | `wrong-fixed` |
+| 22 | `DemonForm.java` | `demon_form.rs` | `wrong-fixed` |
+| 23 | `Disarm.java` | `disarm.rs` | `wrong-fixed` |
 | 24 | `DoubleTap.java` | `double_tap.rs` | `unreviewed` |
 | 25 | `Dropkick.java` | `dropkick.rs` | `unreviewed` |
 | 26 | `DualWield.java` | `dual_wield.rs` | `unreviewed` |

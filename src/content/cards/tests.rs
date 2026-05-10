@@ -921,3 +921,229 @@ fn combust_power_stacks_damage_and_hp_loss_like_java_source() {
         "Java skips Combust atEndOfTurn when monsters are basically dead"
     );
 }
+
+#[test]
+fn ironclad_power_and_debuff_definitions_match_java_sources() {
+    let corruption = get_card_definition(CardId::Corruption);
+    assert_eq!(corruption.name, "Corruption");
+    assert_eq!(corruption.card_type, CardType::Power);
+    assert_eq!(corruption.rarity, CardRarity::Rare);
+    assert_eq!(corruption.cost, 3);
+    assert_eq!(corruption.base_magic, 3);
+    assert_eq!(corruption.target, CardTarget::SelfTarget);
+    let mut corruption_plus = CombatCard::new(CardId::Corruption, 110);
+    corruption_plus.upgrades = 1;
+    assert_eq!(upgraded_base_cost_override(&corruption_plus), Some(2));
+
+    let dark_embrace = get_card_definition(CardId::DarkEmbrace);
+    assert_eq!(dark_embrace.name, "Dark Embrace");
+    assert_eq!(dark_embrace.card_type, CardType::Power);
+    assert_eq!(dark_embrace.rarity, CardRarity::Uncommon);
+    assert_eq!(dark_embrace.cost, 2);
+    assert_eq!(dark_embrace.target, CardTarget::SelfTarget);
+    let mut dark_embrace_plus = CombatCard::new(CardId::DarkEmbrace, 111);
+    dark_embrace_plus.upgrades = 1;
+    assert_eq!(upgraded_base_cost_override(&dark_embrace_plus), Some(1));
+
+    let demon_form = get_card_definition(CardId::DemonForm);
+    assert_eq!(demon_form.name, "Demon Form");
+    assert_eq!(demon_form.card_type, CardType::Power);
+    assert_eq!(demon_form.rarity, CardRarity::Rare);
+    assert_eq!(demon_form.cost, 3);
+    assert_eq!(demon_form.base_magic, 2);
+    assert_eq!(demon_form.target, CardTarget::None);
+    assert_eq!(demon_form.upgrade_magic, 1);
+
+    let disarm = get_card_definition(CardId::Disarm);
+    assert_eq!(disarm.name, "Disarm");
+    assert_eq!(disarm.card_type, CardType::Skill);
+    assert_eq!(disarm.rarity, CardRarity::Uncommon);
+    assert_eq!(disarm.cost, 1);
+    assert_eq!(disarm.base_magic, 2);
+    assert_eq!(disarm.target, CardTarget::Enemy);
+    assert!(disarm.exhaust);
+    assert_eq!(disarm.upgrade_magic, 1);
+}
+
+#[test]
+fn ironclad_power_and_debuff_runtime_actions_match_java_use_methods() {
+    let mut state = crate::test_support::blank_test_combat();
+
+    let corruption_actions = resolve_card_play(
+        CardId::Corruption,
+        &state,
+        &CombatCard::new(CardId::Corruption, 112),
+        None,
+    );
+    assert_eq!(corruption_actions.len(), 1);
+    match &corruption_actions[0].action {
+        Action::ApplyPower {
+            source,
+            target,
+            power_id,
+            amount,
+        } => {
+            assert_eq!(*source, 0);
+            assert_eq!(*target, 0);
+            assert_eq!(*power_id, PowerId::Corruption);
+            assert_eq!(*amount, -1);
+        }
+        other => panic!("Corruption should apply CorruptionPower once, got {other:?}"),
+    }
+
+    crate::content::powers::store::set_powers_for(
+        &mut state,
+        0,
+        vec![Power {
+            power_type: PowerId::Corruption,
+            instance_id: None,
+            amount: -1,
+            extra_data: 0,
+            just_applied: false,
+        }],
+    );
+    let duplicate_corruption_actions = resolve_card_play(
+        CardId::Corruption,
+        &state,
+        &CombatCard::new(CardId::Corruption, 113),
+        None,
+    );
+    assert!(duplicate_corruption_actions.is_empty());
+
+    let dark_embrace_actions = resolve_card_play(
+        CardId::DarkEmbrace,
+        &state,
+        &CombatCard::new(CardId::DarkEmbrace, 114),
+        None,
+    );
+    assert_eq!(dark_embrace_actions.len(), 1);
+    match &dark_embrace_actions[0].action {
+        Action::ApplyPower {
+            source,
+            target,
+            power_id,
+            amount,
+        } => {
+            assert_eq!(*source, 0);
+            assert_eq!(*target, 0);
+            assert_eq!(*power_id, PowerId::DarkEmbrace);
+            assert_eq!(*amount, 1);
+        }
+        other => panic!("Dark Embrace should apply DarkEmbracePower(1), got {other:?}"),
+    }
+
+    let mut demon_form_plus = CombatCard::new(CardId::DemonForm, 115);
+    demon_form_plus.upgrades = 1;
+    let demon_form_plus_actions =
+        resolve_card_play(CardId::DemonForm, &state, &demon_form_plus, None);
+    assert_eq!(demon_form_plus_actions.len(), 1);
+    match &demon_form_plus_actions[0].action {
+        Action::ApplyPower {
+            source,
+            target,
+            power_id,
+            amount,
+        } => {
+            assert_eq!(*source, 0);
+            assert_eq!(*target, 0);
+            assert_eq!(*power_id, PowerId::DemonForm);
+            assert_eq!(*amount, 3);
+        }
+        other => panic!("Demon Form+ should apply upgraded DemonFormPower, got {other:?}"),
+    }
+
+    let mut disarm_plus = CombatCard::new(CardId::Disarm, 116);
+    disarm_plus.upgrades = 1;
+    let disarm_plus_actions = resolve_card_play(CardId::Disarm, &state, &disarm_plus, Some(23));
+    assert_eq!(disarm_plus_actions.len(), 1);
+    match &disarm_plus_actions[0].action {
+        Action::ApplyPower {
+            source,
+            target,
+            power_id,
+            amount,
+        } => {
+            assert_eq!(*source, 0);
+            assert_eq!(*target, 23);
+            assert_eq!(*power_id, PowerId::Strength);
+            assert_eq!(*amount, -3);
+        }
+        other => panic!("Disarm+ should apply negative Strength to target, got {other:?}"),
+    }
+}
+
+#[test]
+fn dark_embrace_and_demon_form_power_hooks_match_java_sources() {
+    let mut state = crate::test_support::blank_test_combat();
+    let no_monster_dark_embrace = crate::content::powers::resolve_power_on_exhaust(
+        PowerId::DarkEmbrace,
+        &state,
+        0,
+        1,
+        117,
+        CardId::Strike,
+    );
+    assert!(
+        no_monster_dark_embrace.is_empty(),
+        "Java skips Dark Embrace draw when monsters are basically dead"
+    );
+
+    state
+        .entities
+        .monsters
+        .push(crate::test_support::test_monster(EnemyId::JawWorm));
+    let dark_embrace_actions = crate::content::powers::resolve_power_on_exhaust(
+        PowerId::DarkEmbrace,
+        &state,
+        0,
+        1,
+        118,
+        CardId::Strike,
+    );
+    assert_eq!(dark_embrace_actions.len(), 1);
+    assert!(matches!(dark_embrace_actions[0], Action::DrawCards(1)));
+
+    let demon_form_actions =
+        crate::content::powers::resolve_power_on_post_draw(PowerId::DemonForm, &state, 0, 3);
+    assert_eq!(demon_form_actions.len(), 1);
+    match &demon_form_actions[0] {
+        Action::ApplyPower {
+            source,
+            target,
+            power_id,
+            amount,
+        } => {
+            assert_eq!(*source, 0);
+            assert_eq!(*target, 0);
+            assert_eq!(*power_id, PowerId::Strength);
+            assert_eq!(*amount, 3);
+        }
+        other => panic!("Demon Form post-draw hook should apply Strength, got {other:?}"),
+    }
+}
+
+#[test]
+fn corruption_power_on_apply_modifies_skill_costs_in_java_piles() {
+    let mut state = crate::test_support::blank_test_combat();
+    state.zones.hand = vec![
+        CombatCard::new(CardId::Defend, 120),
+        CombatCard::new(CardId::Strike, 121),
+    ];
+    state.zones.draw_pile = vec![CombatCard::new(CardId::Armaments, 122)];
+    state.zones.discard_pile = vec![CombatCard::new(CardId::Disarm, 123)];
+    state.zones.exhaust_pile = vec![CombatCard::new(CardId::BurningPact, 124)];
+
+    crate::engine::action_handlers::powers::handle_apply_power(
+        0,
+        0,
+        PowerId::Corruption,
+        -1,
+        &mut state,
+    );
+
+    assert_eq!(state.zones.hand[0].get_cost(), 0);
+    assert_eq!(state.zones.hand[1].get_cost(), 1);
+    assert_eq!(state.zones.draw_pile[0].get_cost(), 0);
+    assert_eq!(state.zones.discard_pile[0].get_cost(), 0);
+    assert_eq!(state.zones.exhaust_pile[0].get_cost(), 0);
+}

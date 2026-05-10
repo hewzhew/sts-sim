@@ -593,7 +593,7 @@ pub fn resolve_power_on_exhaust(
 ) -> smallvec::SmallVec<[crate::runtime::action::Action; 2]> {
     match id {
         PowerId::FeelNoPain => ironclad::feel_no_pain::on_exhaust(owner, amount),
-        PowerId::DarkEmbrace => ironclad::dark_embrace::on_exhaust(amount),
+        PowerId::DarkEmbrace => ironclad::dark_embrace::on_exhaust(_state, amount),
         _ => smallvec::smallvec![],
     }
 }
