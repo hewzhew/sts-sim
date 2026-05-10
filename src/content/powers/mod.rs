@@ -950,11 +950,14 @@ pub fn resolve_power_on_attacked(
     owner: crate::core::EntityId,
     damage: i32,
     source: crate::core::EntityId,
+    damage_type: crate::runtime::action::DamageType,
     power_amount: i32,
 ) -> smallvec::SmallVec<[crate::runtime::action::Action; 2]> {
     match id {
         PowerId::Angry => core::angry::on_attacked(state, owner, damage, source, power_amount),
-        PowerId::FlameBarrier => ironclad::flame_barrier::on_attacked(source, power_amount),
+        PowerId::FlameBarrier => {
+            ironclad::flame_barrier::on_attacked(owner, source, damage_type, power_amount)
+        }
         PowerId::CurlUp => core::curl_up::on_attacked(state, owner, damage, source, power_amount),
         // SharpHide: moved from on_attacked to on_card_played (Java uses onUseCard, not onAttacked)
         PowerId::Flight => core::flight::on_attacked(state, owner, damage, source, power_amount),

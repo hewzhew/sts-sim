@@ -284,6 +284,7 @@ fn apply_damage_to_monster_via_pipeline(
                 target_id,
                 outcome.hp_lost,
                 source_id,
+                info.damage_type,
                 power.amount,
             );
             if matches!(
@@ -375,6 +376,7 @@ pub fn handle_damage(info: crate::runtime::action::DamageInfo, state: &mut Comba
                     0,
                     final_damage,
                     source_id,
+                    info.damage_type,
                     power.amount,
                 );
                 for a in hook_actions.into_iter().rev() {

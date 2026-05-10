@@ -1642,3 +1642,282 @@ fn evolve_exhume_feed_and_feel_no_pain_hooks_match_java_sources() {
     assert_eq!(minion_feed_state.entities.player.max_hp, 80);
     assert_eq!(minion_feed_state.entities.player.current_hp, 80);
 }
+
+#[test]
+fn ironclad_fire_and_strength_definitions_match_java_sources() {
+    let fiend_fire = get_card_definition(CardId::FiendFire);
+    assert_eq!(fiend_fire.card_type, CardType::Attack);
+    assert_eq!(fiend_fire.rarity, CardRarity::Rare);
+    assert_eq!(fiend_fire.cost, 2);
+    assert_eq!(fiend_fire.base_damage, 7);
+    assert_eq!(fiend_fire.target, CardTarget::Enemy);
+    assert!(fiend_fire.exhaust);
+    assert_eq!(fiend_fire.upgrade_damage, 3);
+
+    let fire_breathing = get_card_definition(CardId::FireBreathing);
+    assert_eq!(fire_breathing.card_type, CardType::Power);
+    assert_eq!(fire_breathing.rarity, CardRarity::Uncommon);
+    assert_eq!(fire_breathing.cost, 1);
+    assert_eq!(fire_breathing.base_magic, 6);
+    assert_eq!(fire_breathing.target, CardTarget::SelfTarget);
+    assert_eq!(fire_breathing.upgrade_magic, 4);
+
+    let flame_barrier = get_card_definition(CardId::FlameBarrier);
+    assert_eq!(flame_barrier.card_type, CardType::Skill);
+    assert_eq!(flame_barrier.rarity, CardRarity::Uncommon);
+    assert_eq!(flame_barrier.cost, 2);
+    assert_eq!(flame_barrier.base_block, 12);
+    assert_eq!(flame_barrier.base_magic, 4);
+    assert_eq!(flame_barrier.target, CardTarget::SelfTarget);
+    assert_eq!(flame_barrier.upgrade_block, 4);
+    assert_eq!(flame_barrier.upgrade_magic, 2);
+
+    let flex = get_card_definition(CardId::Flex);
+    assert_eq!(flex.card_type, CardType::Skill);
+    assert_eq!(flex.rarity, CardRarity::Common);
+    assert_eq!(flex.cost, 0);
+    assert_eq!(flex.base_magic, 2);
+    assert_eq!(flex.target, CardTarget::SelfTarget);
+    assert_eq!(flex.upgrade_magic, 2);
+}
+
+#[test]
+fn ironclad_fire_and_strength_runtime_actions_match_java_use_methods() {
+    let state = crate::test_support::blank_test_combat();
+
+    let mut fiend_fire_plus = CombatCard::new(CardId::FiendFire, 210);
+    fiend_fire_plus.upgrades = 1;
+    let fiend_fire_actions =
+        resolve_card_play(CardId::FiendFire, &state, &fiend_fire_plus, Some(9));
+    assert_eq!(fiend_fire_actions.len(), 1);
+    match &fiend_fire_actions[0].action {
+        Action::FiendFire {
+            target,
+            damage_info,
+        } => {
+            assert_eq!(*target, 9);
+            assert_eq!(damage_info.source, 0);
+            assert_eq!(damage_info.target, 9);
+            assert_eq!(damage_info.base, 10);
+            assert_eq!(damage_info.output, 10);
+            assert_eq!(damage_info.damage_type, DamageType::Normal);
+        }
+        other => panic!("Fiend Fire+ should emit upgraded FiendFireAction, got {other:?}"),
+    }
+
+    let mut fire_breathing_plus = CombatCard::new(CardId::FireBreathing, 211);
+    fire_breathing_plus.upgrades = 1;
+    let fire_breathing_actions =
+        resolve_card_play(CardId::FireBreathing, &state, &fire_breathing_plus, None);
+    assert_eq!(fire_breathing_actions.len(), 1);
+    match &fire_breathing_actions[0].action {
+        Action::ApplyPower {
+            source,
+            target,
+            power_id,
+            amount,
+        } => {
+            assert_eq!(*source, 0);
+            assert_eq!(*target, 0);
+            assert_eq!(*power_id, PowerId::FireBreathing);
+            assert_eq!(*amount, 10);
+        }
+        other => panic!("Fire Breathing+ should apply upgraded power, got {other:?}"),
+    }
+
+    let mut flame_barrier_plus = CombatCard::new(CardId::FlameBarrier, 212);
+    flame_barrier_plus.upgrades = 1;
+    let flame_barrier_actions =
+        resolve_card_play(CardId::FlameBarrier, &state, &flame_barrier_plus, None);
+    assert_eq!(flame_barrier_actions.len(), 2);
+    assert!(matches!(
+        flame_barrier_actions[0].action,
+        Action::GainBlock {
+            target: 0,
+            amount: 16
+        }
+    ));
+    match &flame_barrier_actions[1].action {
+        Action::ApplyPower {
+            source,
+            target,
+            power_id,
+            amount,
+        } => {
+            assert_eq!(*source, 0);
+            assert_eq!(*target, 0);
+            assert_eq!(*power_id, PowerId::FlameBarrier);
+            assert_eq!(*amount, 6);
+        }
+        other => panic!("Flame Barrier+ should apply upgraded power, got {other:?}"),
+    }
+
+    let mut flex_plus = CombatCard::new(CardId::Flex, 213);
+    flex_plus.upgrades = 1;
+    let flex_actions = resolve_card_play(CardId::Flex, &state, &flex_plus, None);
+    assert_eq!(flex_actions.len(), 2);
+    match &flex_actions[0].action {
+        Action::ApplyPower {
+            source,
+            target,
+            power_id,
+            amount,
+        } => {
+            assert_eq!(*source, 0);
+            assert_eq!(*target, 0);
+            assert_eq!(*power_id, PowerId::Strength);
+            assert_eq!(*amount, 4);
+        }
+        other => panic!("Flex+ first action should apply Strength, got {other:?}"),
+    }
+    match &flex_actions[1].action {
+        Action::ApplyPower {
+            source,
+            target,
+            power_id,
+            amount,
+        } => {
+            assert_eq!(*source, 0);
+            assert_eq!(*target, 0);
+            assert_eq!(*power_id, PowerId::LoseStrength);
+            assert_eq!(*amount, 4);
+        }
+        other => panic!("Flex+ second action should apply LoseStrength, got {other:?}"),
+    }
+}
+
+#[test]
+fn fire_breathing_flame_barrier_and_fiend_fire_hooks_match_java_sources() {
+    let mut state = crate::test_support::blank_test_combat();
+    let mut first = crate::test_support::test_monster(EnemyId::JawWorm);
+    first.id = 41;
+    let mut second = crate::test_support::test_monster(EnemyId::Cultist);
+    second.id = 42;
+    second.slot = 1;
+    state.entities.monsters = vec![first, second];
+    state.zones.hand = vec![CombatCard::new(CardId::Injury, 220)];
+
+    let fire_breathing_damage = crate::content::powers::resolve_power_on_card_drawn(
+        PowerId::FireBreathing,
+        &state,
+        0,
+        10,
+        220,
+    );
+    assert_eq!(fire_breathing_damage.len(), 1);
+    match &fire_breathing_damage[0] {
+        Action::DamageAllEnemies {
+            source,
+            damages,
+            damage_type,
+            is_modified,
+        } => {
+            assert_eq!(*source, NO_SOURCE);
+            assert_eq!(damages.as_slice(), &[10, 10]);
+            assert_eq!(*damage_type, DamageType::Thorns);
+            assert!(!*is_modified);
+        }
+        other => panic!("Fire Breathing should damage all enemies with THORNS, got {other:?}"),
+    }
+
+    state.zones.hand = vec![CombatCard::new(CardId::Strike, 221)];
+    let non_status_draw = crate::content::powers::resolve_power_on_card_drawn(
+        PowerId::FireBreathing,
+        &state,
+        0,
+        10,
+        221,
+    );
+    assert!(non_status_draw.is_empty());
+
+    let flame_barrier_damage = crate::content::powers::resolve_power_on_attacked(
+        PowerId::FlameBarrier,
+        &state,
+        0,
+        7,
+        41,
+        DamageType::Normal,
+        6,
+    );
+    assert_eq!(flame_barrier_damage.len(), 1);
+    match &flame_barrier_damage[0] {
+        Action::Damage(info) => {
+            assert_eq!(info.source, 0);
+            assert_eq!(info.target, 41);
+            assert_eq!(info.base, 6);
+            assert_eq!(info.output, 6);
+            assert_eq!(info.damage_type, DamageType::Thorns);
+        }
+        other => panic!("Flame Barrier should retaliate with THORNS damage, got {other:?}"),
+    }
+    assert!(crate::content::powers::resolve_power_on_attacked(
+        PowerId::FlameBarrier,
+        &state,
+        0,
+        7,
+        41,
+        DamageType::Thorns,
+        6,
+    )
+    .is_empty());
+    assert!(crate::content::powers::resolve_power_on_attacked(
+        PowerId::FlameBarrier,
+        &state,
+        0,
+        7,
+        NO_SOURCE,
+        DamageType::Normal,
+        6,
+    )
+    .is_empty());
+
+    let lose_strength_turn_end = crate::content::powers::resolve_power_at_end_of_turn(
+        &Power {
+            power_type: PowerId::LoseStrength,
+            instance_id: None,
+            amount: 4,
+            extra_data: 0,
+            just_applied: false,
+        },
+        &state,
+        0,
+    );
+    assert_eq!(
+        lose_strength_turn_end.as_slice(),
+        &[
+            Action::ApplyPower {
+                source: 0,
+                target: 0,
+                power_id: PowerId::Strength,
+                amount: -4
+            },
+            Action::RemovePower {
+                target: 0,
+                power_id: PowerId::LoseStrength
+            }
+        ]
+    );
+
+    let mut fiend_fire_state = state.clone();
+    fiend_fire_state.zones.hand = vec![
+        CombatCard::new(CardId::Strike, 230),
+        CombatCard::new(CardId::Defend, 231),
+        CombatCard::new(CardId::Bash, 232),
+    ];
+    fiend_fire_state.entities.monsters[0].current_hp = 40;
+    crate::engine::action_handlers::damage::handle_fiend_fire(
+        41,
+        crate::runtime::action::DamageInfo {
+            source: 0,
+            target: 41,
+            base: 7,
+            output: 7,
+            damage_type: DamageType::Normal,
+            is_modified: false,
+        },
+        &mut fiend_fire_state,
+    );
+    assert!(fiend_fire_state.zones.hand.is_empty());
+    assert_eq!(fiend_fire_state.zones.exhaust_pile.len(), 3);
+    assert_eq!(fiend_fire_state.entities.monsters[0].current_hp, 19);
+}

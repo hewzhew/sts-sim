@@ -1086,6 +1086,151 @@ Coverage:
 - `ironclad_exhaust_and_growth_runtime_actions_match_java_use_methods`
 - `evolve_exhume_feed_and_feel_no_pain_hooks_match_java_sources`
 
+## Batch 9 - Fire / Temporary Strength Coverage
+
+### Fiend Fire
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/cards/red/FiendFire.java`
+- `D:/rust/cardcrawl/actions/unique/FiendFireAction.java`
+
+Rust source:
+- `src/content/cards/mod.rs`
+- `src/content/cards/ironclad/fiend_fire.rs`
+- `src/engine/action_handlers/damage.rs`
+
+Java evidence:
+- Constructor: cost `2`, type `ATTACK`, color `RED`, rarity `RARE`, target
+  `ENEMY`, `baseDamage = 7`, `exhaust = true`.
+- `use`: queues `FiendFireAction(m, new DamageInfo(p, this.damage,
+  this.damageTypeForTurn))`.
+- `upgrade`: `upgradeDamage(3)`.
+- `FiendFireAction.update`: captures current hand size, queues that many damage
+  actions and that many random exhaust actions. Since the exhaust count equals
+  the hand size at execution, the whole hand is exhausted.
+
+Rust result:
+- Definition matches Java constructor, exhaust, target, and upgrade damage.
+- Runtime now evaluates damage at play time before emitting Fiend Fire's
+  deferred action.
+- Existing engine action exhausts the current hand and deals one hit per card
+  in that hand, matching the source-visible effect.
+
+Coverage:
+- `ironclad_fire_and_strength_definitions_match_java_sources`
+- `ironclad_fire_and_strength_runtime_actions_match_java_use_methods`
+- `fire_breathing_flame_barrier_and_fiend_fire_hooks_match_java_sources`
+
+### Fire Breathing
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/cards/red/FireBreathing.java`
+- `D:/rust/cardcrawl/powers/FireBreathingPower.java`
+
+Rust source:
+- `src/content/cards/mod.rs`
+- `src/content/cards/ironclad/fire_breathing.rs`
+- `src/content/powers/ironclad/fire_breathing.rs`
+
+Java evidence:
+- Constructor: cost `1`, type `POWER`, color `RED`, rarity `UNCOMMON`, target
+  `SELF`, `baseMagicNumber = magicNumber = 6`.
+- `use`: queues `ApplyPowerAction(p, p, new FireBreathingPower(p,
+  this.magicNumber), this.magicNumber)`.
+- `upgrade`: `upgradeMagicNumber(4)`.
+- `FireBreathingPower.onCardDraw`: if the drawn card is `STATUS` or `CURSE`,
+  queues `DamageAllEnemiesAction(null, createDamageMatrix(amount, true),
+  THORNS, FIRE, true)`.
+
+Rust result:
+- Definition matches Java constructor and upgrade magic.
+- Runtime now evaluates magic at play time before applying Fire Breathing.
+- Power hook now emits no-source `THORNS` all-enemy damage for Status/Curse
+  draws instead of player-source Normal damage.
+
+Coverage:
+- `ironclad_fire_and_strength_definitions_match_java_sources`
+- `ironclad_fire_and_strength_runtime_actions_match_java_use_methods`
+- `fire_breathing_flame_barrier_and_fiend_fire_hooks_match_java_sources`
+
+### Flame Barrier
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/cards/red/FlameBarrier.java`
+- `D:/rust/cardcrawl/powers/FlameBarrierPower.java`
+
+Rust source:
+- `src/content/cards/mod.rs`
+- `src/content/cards/ironclad/flame_barrier.rs`
+- `src/content/powers/ironclad/flame_barrier.rs`
+- `src/content/powers/mod.rs`
+
+Java evidence:
+- Constructor: cost `2`, type `SKILL`, color `RED`, rarity `UNCOMMON`, target
+  `SELF`, `baseBlock = 12`, `baseMagicNumber = magicNumber = 4`.
+- `use`: VFX only, then queues `GainBlockAction(p, p, this.block)` and
+  `ApplyPowerAction(p, p, new FlameBarrierPower(p, this.magicNumber),
+  this.magicNumber)`.
+- `upgrade`: `upgradeBlock(4)` and `upgradeMagicNumber(2)`.
+- `FlameBarrierPower.onAttacked`: retaliates only when `info.owner != null`,
+  damage type is neither `THORNS` nor `HP_LOSS`, and attacker is not the owner.
+  Retaliation damage is `THORNS`.
+
+Rust result:
+- Definition matches Java constructor, block/magic values, and upgrades.
+- Runtime now evaluates block and magic at play time.
+- Power hook now checks no-source/self-source/Thorns/HP-loss exclusions before
+  retaliating and emits Thorns damage from the owner to the attacker.
+- VFX is intentionally ignored as presentation, not simulator mechanics.
+
+Coverage:
+- `ironclad_fire_and_strength_definitions_match_java_sources`
+- `ironclad_fire_and_strength_runtime_actions_match_java_use_methods`
+- `fire_breathing_flame_barrier_and_fiend_fire_hooks_match_java_sources`
+
+### Flex
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/cards/red/Flex.java`
+- `D:/rust/cardcrawl/powers/LoseStrengthPower.java`
+- `D:/rust/cardcrawl/powers/StrengthPower.java`
+
+Rust source:
+- `src/content/cards/mod.rs`
+- `src/content/cards/ironclad/flex.rs`
+- `src/content/powers/core/lose_strength.rs`
+- `src/content/powers/core/strength.rs`
+
+Java evidence:
+- Constructor: cost `0`, type `SKILL`, color `RED`, rarity `COMMON`, target
+  `SELF`, `baseMagicNumber = magicNumber = 2`.
+- `use`: queues `ApplyPowerAction` for `StrengthPower(amount)`, then
+  `LoseStrengthPower(amount)`.
+- `upgrade`: `upgradeMagicNumber(2)`.
+- `LoseStrengthPower.atEndOfTurn`: applies Strength `-amount`, then removes
+  the `Flex` power.
+- `StrengthPower` can go negative and clamps to `[-999, 999]`.
+
+Rust result:
+- Definition matches Java constructor and upgrade magic.
+- Runtime now evaluates magic at play time before applying Strength and
+  LoseStrength.
+- Existing LoseStrength hook applies negative Strength and removes itself at end
+  of turn, matching Java.
+
+Coverage:
+- `ironclad_fire_and_strength_definitions_match_java_sources`
+- `ironclad_fire_and_strength_runtime_actions_match_java_use_methods`
+- `fire_breathing_flame_barrier_and_fiend_fire_hooks_match_java_sources`
+
 ## Full Ironclad Queue
 
 Cards remain `unreviewed` until their Java file, Rust definition, Rust runtime,
@@ -1124,10 +1269,10 @@ and supporting engine behavior have all been checked.
 | 29 | `Exhume.java` | `exhume.rs` | `wrong-fixed` |
 | 30 | `Feed.java` | `feed.rs` | `wrong-fixed` |
 | 31 | `FeelNoPain.java` | `feel_no_pain.rs` | `wrong-fixed` |
-| 32 | `FiendFire.java` | `fiend_fire.rs` | `unreviewed` |
-| 33 | `FireBreathing.java` | `fire_breathing.rs` | `unreviewed` |
-| 34 | `FlameBarrier.java` | `flame_barrier.rs` | `unreviewed` |
-| 35 | `Flex.java` | `flex.rs` | `unreviewed` |
+| 32 | `FiendFire.java` | `fiend_fire.rs` | `wrong-fixed` |
+| 33 | `FireBreathing.java` | `fire_breathing.rs` | `wrong-fixed` |
+| 34 | `FlameBarrier.java` | `flame_barrier.rs` | `wrong-fixed` |
+| 35 | `Flex.java` | `flex.rs` | `wrong-fixed` |
 | 36 | `GhostlyArmor.java` | `ghostly_armor.rs` | `unreviewed` |
 | 37 | `Havoc.java` | `havoc.rs` | `unreviewed` |
 | 38 | `Headbutt.java` | `headbutt.rs` | `unreviewed` |
