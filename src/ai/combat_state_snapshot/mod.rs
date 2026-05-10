@@ -216,6 +216,7 @@ pub struct TimerState {
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ActionManagerState {
+    pub action_static_state: ActionStaticState,
     pub phase: ActionManagerPhase,
     pub has_control: bool,
     pub turn_has_ended: bool,
@@ -245,6 +246,14 @@ pub struct ActionManagerState {
     pub turn_index: i32,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ActionStaticState {
+    pub draw_card_action_drawn_cards: Vec<CardRef>,
+    pub discard_action_num_discarded: i32,
+    pub exhaust_action_num_exhausted: i32,
+    pub nightmare_action_num_discarded: i32,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ActionManagerPhase {
     WaitingOnUser,
@@ -269,6 +278,7 @@ pub struct ActionState {
     pub power_ref: Option<PowerRef>,
     pub relic_ref: Option<RelicRef>,
     pub potion_ref: Option<PotionRef>,
+    pub action_payload: Option<ActionPayload>,
     pub unsupported_subclass_payload: Option<UnsupportedActionPayload>,
 }
 
@@ -310,6 +320,64 @@ pub enum AttackEffect {
     Shield,
     Lightning,
     Unknown { source_name: String },
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ActionPayload {
+    Damage(DamageActionState),
+    DamageAllEnemies(DamageAllEnemiesActionState),
+    DrawCard(DrawCardActionState),
+    Discard(DiscardActionState),
+    EmptyDeckShuffle(EmptyDeckShuffleActionState),
+    Exhaust(ExhaustActionState),
+    GainEnergy(GainEnergyActionState),
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DamageActionState {
+    pub gold_amount: i32,
+    pub skip_wait: bool,
+    pub mute_sfx: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DamageAllEnemiesActionState {
+    pub damage: Vec<i32>,
+    pub base_damage: i32,
+    pub first_frame: bool,
+    pub utilize_base_damage: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DrawCardActionState {
+    pub shuffle_check: bool,
+    pub clear_draw_history: bool,
+    pub follow_up_action: Option<Box<ActionState>>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DiscardActionState {
+    pub is_random: bool,
+    pub end_turn: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EmptyDeckShuffleActionState {
+    pub shuffled: bool,
+    pub vfx_done: bool,
+    pub count: i32,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ExhaustActionState {
+    pub is_random: bool,
+    pub any_number: bool,
+    pub can_pick_zero: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GainEnergyActionState {
+    pub energy_gain: i32,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

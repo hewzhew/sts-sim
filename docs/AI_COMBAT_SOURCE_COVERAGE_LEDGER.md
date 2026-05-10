@@ -382,6 +382,42 @@ quarantine record while a typed migration row is missing. Any frame containing
 that payload is not trainable and not searchable. Unknown subclass state is an
 `unsupported_abort`, not an ignored field and not a stringly-typed mechanism.
 
+## Field Ledger: Core `actions/common/*Action.java` Subclasses
+
+| Source | Field | Classification | Schema path | Notes |
+| --- | --- | --- | --- | --- |
+| `DamageAction.java` | `info` | modeled | `ActionState.damage_info` | concrete damage object |
+| `DamageAction.java` | `goldAmount` | modeled | `ActionPayload::Damage.gold_amount` | steal-gold damage |
+| `DamageAction.java` | `skipWait` | modeled | `ActionPayload::Damage.skip_wait` | controls post-hit wait action |
+| `DamageAction.java` | `muteSfx` | modeled | `ActionPayload::Damage.mute_sfx` | controls attack VFX sound |
+| `DamageAllEnemiesAction.java` | `damage` | modeled | `ActionPayload::DamageAllEnemies.damage` | per-monster damage array |
+| `DamageAllEnemiesAction.java` | `baseDamage` | modeled | `ActionPayload::DamageAllEnemies.base_damage` | source base for dynamic matrix |
+| `DamageAllEnemiesAction.java` | `firstFrame` | modeled | `ActionPayload::DamageAllEnemies.first_frame` | delayed execution state |
+| `DamageAllEnemiesAction.java` | `utilizeBaseDamage` | modeled | `ActionPayload::DamageAllEnemies.utilize_base_damage` | recompute damage matrix |
+| `GainBlockAction.java` | no subclass fields beyond common action fields | modeled | `ActionState` | duration/startDuration/amount/target/source cover it |
+| `DrawCardAction.java` | `shuffleCheck` | modeled | `ActionPayload::DrawCard.shuffle_check` | shuffle split state |
+| `DrawCardAction.java` | `drawnCards` | modeled | `ActionStaticState.draw_card_action_drawn_cards` | static mechanical history used by follow-up actions |
+| `DrawCardAction.java` | `clearDrawHistory` | modeled | `ActionPayload::DrawCard.clear_draw_history` | controls static drawn-card reset |
+| `DrawCardAction.java` | `followUpAction` | modeled | `ActionPayload::DrawCard.follow_up_action` | queued after draw completes |
+| `DiscardAction.java` | `p` | modeled/derived | `ActionState.target` | player target |
+| `DiscardAction.java` | `isRandom` | modeled | `ActionPayload::Discard.is_random` | random discard branch |
+| `DiscardAction.java` | `endTurn` | modeled | `ActionPayload::Discard.end_turn` | manual discard trigger behavior |
+| `DiscardAction.java` | `numDiscarded` | modeled | `ActionStaticState.discard_action_num_discarded` | static hand-select counter |
+| `ExhaustAction.java` | `p` | modeled/derived | `ActionState.target` | player target |
+| `ExhaustAction.java` | `isRandom` | modeled | `ActionPayload::Exhaust.is_random` | random exhaust branch |
+| `ExhaustAction.java` | `anyNumber` | modeled | `ActionPayload::Exhaust.any_number` | hand select constraint |
+| `ExhaustAction.java` | `canPickZero` | modeled | `ActionPayload::Exhaust.can_pick_zero` | hand select constraint |
+| `ExhaustAction.java` | `numExhausted` | modeled | `ActionStaticState.exhaust_action_num_exhausted` | static hand-select counter |
+| `GainEnergyAction.java` | `energyGain` | modeled | `ActionPayload::GainEnergy.energy_gain` | energy gained and hand trigger amount |
+| `EmptyDeckShuffleAction.java` | `shuffled` | modeled | `ActionPayload::EmptyDeckShuffle.shuffled` | delayed shuffle state |
+| `EmptyDeckShuffleAction.java` | `vfxDone` | modeled | `ActionPayload::EmptyDeckShuffle.vfx_done` | delayed discard movement state |
+| `EmptyDeckShuffleAction.java` | `count` | modeled | `ActionPayload::EmptyDeckShuffle.count` | discard movement counter |
+
+The source files above are the first typed migration target because they cover
+basic damage, block, draw, discard, exhaust, shuffle, and energy loops. Other
+action subclasses must be added to this ledger before they are allowed out of
+`UnsupportedActionPayload` quarantine.
+
 ## Field Ledger: `cards/DamageInfo.java`
 
 | Field | Classification | Schema path | Notes |

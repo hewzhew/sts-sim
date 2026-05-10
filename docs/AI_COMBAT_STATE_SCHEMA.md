@@ -361,6 +361,7 @@ bits, not as ordinary float comparison keys.
 
 ```text
 ActionManagerState {
+  action_static_state,
   phase,
   has_control,
   turn_has_ended,
@@ -391,6 +392,18 @@ ActionManagerState {
 }
 ```
 
+Action classes with Java `static` mechanical state are not allowed to hide that
+state inside individual queued actions:
+
+```text
+ActionStaticState {
+  draw_card_action_drawn_cards,
+  discard_action_num_discarded,
+  exhaust_action_num_exhausted,
+  nightmare_action_num_discarded,
+}
+```
+
 Queued actions are typed state, not opaque callbacks:
 
 ```text
@@ -410,6 +423,7 @@ ActionState {
   power_ref,
   relic_ref,
   potion_ref,
+  action_payload,
   unsupported_subclass_payload,
 }
 ```
@@ -418,6 +432,53 @@ ActionState {
 `duration` and `startDuration` are replay-critical `float` fields and must be
 stored as raw bits. `action_type`, `attack_effect`, and `damage_type` must keep
 the Java enum surface; collapsing missing variants into `Special` is forbidden.
+
+Concrete action subclasses must migrate to typed payloads before they are
+trainable or searchable. Initial source-backed payloads:
+
+```text
+ActionPayload {
+  Damage {
+    gold_amount,
+    skip_wait,
+    mute_sfx,
+  }
+
+  DamageAllEnemies {
+    damage,
+    base_damage,
+    first_frame,
+    utilize_base_damage,
+  }
+
+  DrawCard {
+    shuffle_check,
+    clear_draw_history,
+    follow_up_action,
+  }
+
+  Discard {
+    is_random,
+    end_turn,
+  }
+
+  EmptyDeckShuffle {
+    shuffled,
+    vfx_done,
+    count,
+  }
+
+  Exhaust {
+    is_random,
+    any_number,
+    can_pick_zero,
+  }
+
+  GainEnergy {
+    energy_gain,
+  }
+}
+```
 
 Any action subclass that cannot be serialized and restored must populate
 `unsupported_subclass_payload` and make the frame `unsupported_abort` before it
