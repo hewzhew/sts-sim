@@ -920,6 +920,7 @@ pub fn handle_lose_hp(target: usize, amount: i32, triggers_rupture: bool, state:
         if state.entities.player.current_hp <= 0 {
             super::try_revive(state);
         }
+        clear_post_combat_actions_if_ready(state);
     } else {
         let mut actual_lost = 0;
         if let Some(m) = state.entities.monsters.iter_mut().find(|m| m.id == target) {
@@ -1238,6 +1239,30 @@ mod tests {
         assert!(
             matches!(state.pop_next_action(), Some(Action::Damage(_))),
             "Java PummelDamageAction calls clearPostCombatActions after a killing hit, retaining only Java-retained post-combat actions"
+        );
+        assert_eq!(state.pop_next_action(), None);
+    }
+
+    #[test]
+    fn player_lose_hp_action_clears_post_combat_actions_like_java() {
+        let mut state = blank_test_combat();
+        state.entities.monsters.clear();
+        state.queue_action_back(Action::DrawCards(1));
+        state.queue_action_back(Action::Damage(DamageInfo {
+            source: 0,
+            target: 64,
+            base: 1,
+            output: 1,
+            damage_type: DamageType::Normal,
+            is_modified: false,
+        }));
+
+        handle_lose_hp(0, 3, true, &mut state);
+
+        assert_eq!(state.entities.player.current_hp, 77);
+        assert!(
+            matches!(state.pop_next_action(), Some(Action::Damage(_))),
+            "Java LoseHPAction checks clearPostCombatActions even when the target is the player"
         );
         assert_eq!(state.pop_next_action(), None);
     }
