@@ -4455,6 +4455,60 @@ fn ironclad_debuff_draw_xcost_and_wound_runtime_actions_match_java_use_methods()
     crate::engine::action_handlers::execute_action(queued_whirlwind, &mut hand_x_state);
     assert_eq!(hand_x_state.turn.energy, 0);
 
+    let mut autoplay_x_state = state.clone();
+    autoplay_x_state.turn.energy = 3;
+    let mut queued_whirlwind_card = CombatCard::new(CardId::Whirlwind, 394);
+    queued_whirlwind_card.energy_on_use = 3;
+    autoplay_x_state.enqueue_card_play(
+        crate::runtime::combat::QueuedCardPlay {
+            card: queued_whirlwind_card,
+            target: None,
+            energy_on_use: 3,
+            ignore_energy_total: false,
+            autoplay: true,
+            random_target: false,
+            is_end_turn_autoplay: false,
+            purge_on_use: false,
+            source: crate::runtime::combat::QueuedCardSource::Normal,
+        },
+        false,
+    );
+    let flush_autoplay = autoplay_x_state
+        .pop_next_action()
+        .expect("enqueueing an autoplay card should schedule a queue flush");
+    assert!(matches!(flush_autoplay, Action::FlushNextQueuedCard));
+    crate::engine::action_handlers::execute_action(flush_autoplay, &mut autoplay_x_state);
+    let queued_direct_play = autoplay_x_state
+        .pop_next_action()
+        .expect("autoplay queue should emit a direct card play");
+    match &queued_direct_play {
+        Action::PlayCardDirect { card, .. } => assert!(
+            !card.free_to_play_once,
+            "Java autoplay sets isInAutoplay/ignoreEnergyOnUse, not freeToPlayOnce"
+        ),
+        other => panic!("autoplay queue should emit PlayCardDirect, got {other:?}"),
+    }
+    crate::engine::action_handlers::execute_action(queued_direct_play, &mut autoplay_x_state);
+    let autoplay_whirlwind = autoplay_x_state
+        .pop_next_action()
+        .expect("autoplay Whirlwind should queue WhirlwindAction");
+    match &autoplay_whirlwind {
+        Action::Whirlwind {
+            free_to_play_once,
+            energy_on_use,
+            ..
+        } => {
+            assert!(!*free_to_play_once);
+            assert_eq!(*energy_on_use, 3);
+        }
+        other => panic!("autoplay Whirlwind should emit WhirlwindAction, got {other:?}"),
+    }
+    crate::engine::action_handlers::execute_action(autoplay_whirlwind, &mut autoplay_x_state);
+    assert_eq!(
+        autoplay_x_state.turn.energy, 0,
+        "Java autoplayed X-cost cards still let their card-specific X action spend energy"
+    );
+
     let mut wild_plus = CombatCard::new(CardId::WildStrike, 393);
     wild_plus.upgrades = 1;
     let wild_actions = resolve_card_play(CardId::WildStrike, &state, &wild_plus, Some(702));

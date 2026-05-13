@@ -1055,9 +1055,6 @@ pub fn handle_flush_next_queued_card(state: &mut CombatState) {
     };
 
     queued.card.energy_on_use = queued.energy_on_use;
-    if queued.autoplay {
-        queued.card.free_to_play_once = true;
-    }
     let target = if queued.random_target {
         targeting::validation_for_card_target(crate::content::cards::effective_target(&queued.card))
             .and_then(|validation| targeting::pick_random_target(state, validation))
@@ -1179,7 +1176,6 @@ pub fn handle_play_top_card(target: Option<usize>, exhaust: bool, state: &mut Co
             .draw_top_card()
             .expect("draw pile was checked non-empty before PlayTopCard"),
     );
-    card.free_to_play_once = true;
     if crate::content::cards::get_card_definition(card.id).cost == -1 {
         card.energy_on_use = state.turn.energy as i32;
     }
