@@ -4911,3 +4911,21 @@ fn put_on_deck_action_matches_java_rng_and_selection_edges() {
     assert_eq!(fallback_state.zones.draw_pile.len(), 1);
     assert_eq!(fallback_state.rng.card_random_rng.counter, 1);
 }
+
+#[test]
+fn apotheosis_uses_combat_wide_upgrade_action_not_armaments_hand_action() {
+    let state = crate::test_support::blank_test_combat();
+    let actions = resolve_card_play(
+        CardId::Apotheosis,
+        &state,
+        &CombatCard::new(CardId::Apotheosis, 900),
+        None,
+    );
+
+    assert_eq!(actions.len(), 1);
+    assert_eq!(
+        actions[0].action,
+        Action::UpgradeAllCardsInCombat,
+        "Java ApotheosisAction upgrades hand, draw, discard, and exhaust; Blessing of the Forge is the ArmamentsAction(true) hand-only path"
+    );
+}

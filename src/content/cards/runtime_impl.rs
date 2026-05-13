@@ -401,7 +401,11 @@ pub fn make_fresh_card_copy_for_combat(
 }
 
 pub fn can_upgrade_card_once(card: &CombatCard) -> bool {
-    card.id == CardId::SearingBlow || card.upgrades == 0
+    if card.id == CardId::SearingBlow {
+        return true;
+    }
+    let def = get_card_definition(card.id);
+    card.upgrades == 0 && def.card_type != CardType::Status && def.card_type != CardType::Curse
 }
 
 /// Applies Java Master Reality upgrade semantics to generated cards.

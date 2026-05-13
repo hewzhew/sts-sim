@@ -391,6 +391,7 @@ pub fn execute_action(action: Action, state: &mut CombatState) {
         Action::Enlightenment { permanent } => cards::handle_enlightenment(permanent, state),
         Action::Madness => cards::handle_madness(state),
         Action::UpgradeAllInHand => cards::handle_upgrade_all_in_hand(state),
+        Action::UpgradeAllCardsInCombat => cards::handle_upgrade_all_cards_in_combat(state),
         Action::UpgradeAllBurns => cards::handle_upgrade_all_burns(state),
         Action::UpgradeCard { card_uuid } => cards::handle_upgrade_card(card_uuid, state),
         Action::UpgradeRandomCard => cards::handle_upgrade_random_card(state),

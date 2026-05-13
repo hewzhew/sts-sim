@@ -570,7 +570,24 @@ pub fn handle_madness(state: &mut CombatState) {
 
 pub fn handle_upgrade_all_in_hand(state: &mut CombatState) {
     for card in state.zones.hand.iter_mut() {
-        card.upgrades += 1;
+        if crate::content::cards::can_upgrade_card_once(card) {
+            card.upgrades += 1;
+        }
+    }
+}
+
+pub fn handle_upgrade_all_cards_in_combat(state: &mut CombatState) {
+    for card in state
+        .zones
+        .hand
+        .iter_mut()
+        .chain(state.zones.draw_pile.iter_mut())
+        .chain(state.zones.discard_pile.iter_mut())
+        .chain(state.zones.exhaust_pile.iter_mut())
+    {
+        if crate::content::cards::can_upgrade_card_once(card) {
+            card.upgrades += 1;
+        }
     }
 }
 
@@ -597,7 +614,9 @@ pub fn handle_upgrade_card(card_uuid: u32, state: &mut CombatState) {
         .chain(state.zones.discard_pile.iter_mut())
     {
         if card.uuid == card_uuid {
-            card.upgrades += 1;
+            if crate::content::cards::can_upgrade_card_once(card) {
+                card.upgrades += 1;
+            }
             break;
         }
     }
@@ -608,11 +627,7 @@ pub fn handle_upgrade_random_card(state: &mut CombatState) {
         .zones
         .hand
         .iter()
-        .filter(|c| {
-            c.upgrades == 0
-                && crate::content::cards::get_card_definition(c.id).card_type
-                    != crate::content::cards::CardType::Status
-        })
+        .filter(|c| crate::content::cards::can_upgrade_card_once(c))
         .map(|c| c.uuid)
         .collect();
     if !upgradeable_uuids.is_empty() {
@@ -1426,7 +1441,8 @@ mod tests {
         handle_make_random_card_in_draw_pile, handle_make_random_card_in_hand,
         handle_make_temp_card_in_discard, handle_make_temp_card_in_discard_and_deck,
         handle_make_temp_card_in_draw_pile, handle_make_temp_card_in_hand, handle_play_card_direct,
-        handle_use_card_done, obtain_specific_potion_if_allowed,
+        handle_upgrade_all_cards_in_combat, handle_upgrade_all_in_hand, handle_use_card_done,
+        obtain_specific_potion_if_allowed,
     };
     use crate::content::cards::{CardId, CardType};
     use crate::content::monsters::EnemyId;
@@ -2100,6 +2116,67 @@ mod tests {
         assert!(
             state.zones.limbo.iter().any(|card| card.uuid == 711),
             "Java failed autoplay canUse path still routes the card through UseCardAction"
+        );
+    }
+
+    #[test]
+    fn upgrade_all_in_hand_matches_armaments_plus_can_upgrade_filter() {
+        let mut state = blank_test_combat();
+        let mut upgraded_defend = CombatCard::new(CardId::Defend, 801);
+        upgraded_defend.upgrades = 1;
+        let mut searing = CombatCard::new(CardId::SearingBlow, 804);
+        searing.upgrades = 2;
+        state.zones.hand = vec![
+            CombatCard::new(CardId::Strike, 800),
+            upgraded_defend,
+            CombatCard::new(CardId::Wound, 802),
+            CombatCard::new(CardId::Injury, 803),
+            searing,
+        ];
+
+        handle_upgrade_all_in_hand(&mut state);
+
+        assert_eq!(state.zones.hand[0].upgrades, 1);
+        assert_eq!(
+            state.zones.hand[1].upgrades, 1,
+            "Java canUpgrade() rejects already-upgraded normal cards"
+        );
+        assert_eq!(
+            state.zones.hand[2].upgrades, 0,
+            "Java canUpgrade() rejects Status cards"
+        );
+        assert_eq!(
+            state.zones.hand[3].upgrades, 0,
+            "Java canUpgrade() rejects Curse cards"
+        );
+        assert_eq!(
+            state.zones.hand[4].upgrades, 3,
+            "Searing Blow remains repeatedly upgradeable through its override"
+        );
+    }
+
+    #[test]
+    fn upgrade_all_cards_in_combat_matches_apotheosis_groups() {
+        let mut state = blank_test_combat();
+        state.zones.hand = vec![
+            CombatCard::new(CardId::Strike, 810),
+            CombatCard::new(CardId::Wound, 811),
+        ];
+        state.zones.draw_pile = vec![CombatCard::new(CardId::Defend, 812)];
+        state.zones.discard_pile = vec![CombatCard::new(CardId::Bash, 813)];
+        state.zones.exhaust_pile = vec![CombatCard::new(CardId::ShrugItOff, 814)];
+        state.zones.limbo = vec![CombatCard::new(CardId::Strike, 815)];
+
+        handle_upgrade_all_cards_in_combat(&mut state);
+
+        assert_eq!(state.zones.hand[0].upgrades, 1);
+        assert_eq!(state.zones.hand[1].upgrades, 0);
+        assert_eq!(state.zones.draw_pile[0].upgrades, 1);
+        assert_eq!(state.zones.discard_pile[0].upgrades, 1);
+        assert_eq!(state.zones.exhaust_pile[0].upgrades, 1);
+        assert_eq!(
+            state.zones.limbo[0].upgrades, 0,
+            "Java ApotheosisAction upgrades hand/draw/discard/exhaust, not limbo/cardInUse"
         );
     }
 }

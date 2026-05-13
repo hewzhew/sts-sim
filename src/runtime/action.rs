@@ -440,6 +440,7 @@ pub enum Action {
     Madness,
     RandomizeHandCosts,
     UpgradeAllInHand,
+    UpgradeAllCardsInCombat,
     /// Hexaghost's BurnIncreaseAction: upgrades all Burn cards in draw pile and discard pile.
     UpgradeAllBurns,
     MakeTempCardInDrawPile {

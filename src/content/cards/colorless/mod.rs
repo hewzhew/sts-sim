@@ -252,7 +252,7 @@ pub fn play_colorless(
                 amount: mag,
             });
         }
-        CardId::Apotheosis => acts.push(Action::UpgradeAllInHand),
+        CardId::Apotheosis => acts.push(Action::UpgradeAllCardsInCombat),
         CardId::Chrysalis => {
             for _ in 0..mag {
                 acts.push(Action::MakeRandomCardInDrawPile {
