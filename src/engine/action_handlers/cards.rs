@@ -408,11 +408,12 @@ fn add_generated_card_to_hand_or_discard(
     mut card: crate::runtime::combat::CombatCard,
     state: &mut CombatState,
 ) {
-    apply_master_reality_to_generated_card(&mut card, state, 2);
     if state.zones.hand.len() < 10 {
+        apply_master_reality_to_generated_card(&mut card, state, 2);
         apply_generated_card_entering_hand_mechanics(&mut card, state);
         state.zones.hand.push(card);
     } else {
+        apply_master_reality_to_generated_card(&mut card, state, 1);
         state.add_card_to_discard_pile_top(card);
     }
 }
@@ -1554,6 +1555,35 @@ mod tests {
         assert_eq!(
             state.zones.draw_pile[0].upgrades, 2,
             "Java MakeTempCardInDrawPileAction amount<6 and the draw-pile effect both call Master Reality"
+        );
+    }
+
+    #[test]
+    fn make_temp_card_in_hand_overflow_uses_java_discard_effect_upgrade_count() {
+        let mut state = blank_test_combat();
+        state.entities.power_db.insert(
+            0,
+            vec![Power {
+                power_type: PowerId::MasterRealityPower,
+                instance_id: None,
+                amount: -1,
+                extra_data: 0,
+                just_applied: false,
+            }],
+        );
+        for uuid in 1..=10 {
+            state.zones.hand.push(CombatCard::new(CardId::Strike, uuid));
+        }
+        state.zones.card_uuid_counter = 10;
+
+        handle_make_temp_card_in_hand(CardId::SearingBlow, 1, false, &mut state);
+
+        assert_eq!(state.zones.hand.len(), 10);
+        assert_eq!(state.zones.discard_pile.len(), 1);
+        assert_eq!(state.zones.discard_pile[0].id, CardId::SearingBlow);
+        assert_eq!(
+            state.zones.discard_pile[0].upgrades, 1,
+            "Java MakeTempCardInHandAction overflow adds srcCard to discard, so only the action constructor Master Reality call affects the actual card"
         );
     }
 
