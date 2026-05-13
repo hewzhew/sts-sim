@@ -11,9 +11,7 @@ pub fn on_use_card(state: &mut CombatState, card: &CombatCard, purge: bool, targ
         return;
     }
 
-    let mut clone = card.clone();
-    state.zones.card_uuid_counter += 1;
-    clone.uuid = state.zones.card_uuid_counter;
+    let clone = card.clone();
 
     if let Some(amount) = store::with_power_mut(state, 0, PowerId::Burst, |p| {
         p.amount -= 1;

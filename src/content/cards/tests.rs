@@ -1450,11 +1450,70 @@ fn dropkick_and_double_tap_action_hooks_match_java_sources() {
             assert!(item.autoplay);
             assert!(item.purge_on_use);
             assert_eq!(
+                item.card.uuid, 140,
+                "Java DoubleTapPower uses makeSameInstanceOf(), preserving UUID"
+            );
+            assert_eq!(
                 item.source,
                 crate::runtime::combat::QueuedCardSource::DoubleTap
             );
         }
         other => panic!("Double Tap should enqueue a purge-on-use copy, got {other:?}"),
+    }
+}
+
+#[test]
+fn same_instance_replay_powers_preserve_card_uuid_like_java() {
+    let mut burst_state = crate::test_support::blank_test_combat();
+    crate::content::powers::store::set_powers_for(
+        &mut burst_state,
+        0,
+        vec![Power {
+            power_type: PowerId::Burst,
+            instance_id: None,
+            amount: 1,
+            extra_data: 0,
+            just_applied: false,
+        }],
+    );
+    let shrug = CombatCard::new(CardId::ShrugItOff, 920);
+    crate::content::powers::silent::burst::on_use_card(&mut burst_state, &shrug, false, None);
+    match burst_state.pop_next_action() {
+        Some(Action::EnqueueCardPlay { item, .. }) => {
+            assert_eq!(item.card.uuid, 920);
+            assert_eq!(item.source, crate::runtime::combat::QueuedCardSource::Burst);
+        }
+        other => panic!("Burst should enqueue same-instance skill copy, got {other:?}"),
+    }
+
+    let mut duplication_state = crate::test_support::blank_test_combat();
+    crate::content::powers::store::set_powers_for(
+        &mut duplication_state,
+        0,
+        vec![Power {
+            power_type: PowerId::DuplicationPower,
+            instance_id: None,
+            amount: 1,
+            extra_data: 0,
+            just_applied: false,
+        }],
+    );
+    let strike = CombatCard::new(CardId::Strike, 921);
+    crate::content::powers::core::duplication_power::on_use_card(
+        &mut duplication_state,
+        &strike,
+        false,
+        Some(7),
+    );
+    match duplication_state.pop_next_action() {
+        Some(Action::EnqueueCardPlay { item, .. }) => {
+            assert_eq!(item.card.uuid, 921);
+            assert_eq!(
+                item.source,
+                crate::runtime::combat::QueuedCardSource::Duplication
+            );
+        }
+        other => panic!("DuplicationPower should enqueue same-instance copy, got {other:?}"),
     }
 }
 

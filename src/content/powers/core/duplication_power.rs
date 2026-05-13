@@ -8,11 +8,7 @@ use crate::runtime::combat::{CombatCard, CombatState, QueuedCardPlay, QueuedCard
 /// Java: DuplicationPower.onUseCard checks !card.purgeOnUse && amount > 0 (no type check).
 pub fn on_use_card(state: &mut CombatState, card: &CombatCard, purge: bool, target: Option<usize>) {
     if !purge {
-        let mut clone = card.clone();
-
-        // Allocate a new UUID for the cloned card
-        state.zones.card_uuid_counter += 1;
-        clone.uuid = state.zones.card_uuid_counter;
+        let clone = card.clone();
 
         // Deduct power amount
         if let Some(amount) = store::with_power_mut(state, 0, PowerId::DuplicationPower, |p| {

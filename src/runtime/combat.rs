@@ -1250,7 +1250,7 @@ impl CombatCard {
     /// Java `AbstractCard.makeStatEquivalentCopy()` preserves card identity
     /// state such as upgrades, misc, base damage mutation, cost-for-turn, and
     /// free-to-play state, but it does not preserve transient calculated
-    /// damage/block/magic/multi-damage or one-shot play flags.
+    /// damage/block/magic/multi-damage or queued play metadata.
     pub fn make_stat_equivalent_copy_with_uuid(&self, uuid: u32) -> Self {
         let mut card = self.clone();
         card.uuid = uuid;
@@ -1417,6 +1417,11 @@ impl CombatState {
 
 // Card-zone utilities used by action handlers to reconcile card movement.
 impl CombatState {
+    pub fn next_card_uuid(&mut self) -> u32 {
+        self.zones.card_uuid_counter += 1;
+        self.zones.card_uuid_counter
+    }
+
     /// Java `MonsterGroup.areMonstersBasicallyDead()` only skips monsters that
     /// are `isDying` or `isEscaping`. It does not check current HP and does not
     /// treat `halfDead` as basically dead by itself.

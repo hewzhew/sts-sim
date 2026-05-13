@@ -1008,9 +1008,7 @@ fn resolve_pending_choice(
             if let ClientInput::SubmitDiscoverChoice(idx) = input {
                 if idx < cards.len() {
                     let card_id = cards[idx];
-                    let uuid = 50000
-                        + combat_state.zones.hand.len() as u32
-                        + combat_state.zones.discard_pile.len() as u32;
+                    let uuid = combat_state.next_card_uuid();
                     let mut card = crate::content::cards::make_fresh_card_copy_for_combat(
                         card_id,
                         uuid,
@@ -1057,10 +1055,7 @@ fn resolve_pending_choice(
                 ClientInput::SubmitDiscoverChoice(idx) => {
                     if idx < cards.len() {
                         let card_id = cards[idx];
-                        let uuid = 50000
-                            + combat_state.zones.hand.len() as u32
-                            + combat_state.zones.discard_pile.len() as u32
-                            + combat_state.zones.draw_pile.len() as u32;
+                        let uuid = combat_state.next_card_uuid();
                         let mut card = crate::content::cards::make_fresh_card_copy_for_combat(
                             card_id,
                             uuid,
@@ -1360,6 +1355,34 @@ mod tests {
             card.upgrades, 1,
             "Blood for Blood ignores the second Master Reality upgrade call because it is already upgraded"
         );
+    }
+
+    #[test]
+    fn pending_choice_generated_cards_use_combat_uuid_counter() {
+        let mut combat_state = blank_test_combat();
+        combat_state.zones.card_uuid_counter = 100;
+
+        let mut first_choice =
+            EngineState::PendingChoice(PendingChoice::DiscoverySelect(vec![CardId::Strike]));
+        resolve_pending_choice(
+            &mut first_choice,
+            &mut combat_state,
+            ClientInput::SubmitDiscoverChoice(0),
+        )
+        .expect("first discovery choice should resolve");
+
+        let mut second_choice =
+            EngineState::PendingChoice(PendingChoice::DiscoverySelect(vec![CardId::Defend]));
+        resolve_pending_choice(
+            &mut second_choice,
+            &mut combat_state,
+            ClientInput::SubmitDiscoverChoice(0),
+        )
+        .expect("second discovery choice should resolve");
+
+        assert_eq!(combat_state.zones.hand[0].uuid, 101);
+        assert_eq!(combat_state.zones.hand[1].uuid, 102);
+        assert_eq!(combat_state.zones.card_uuid_counter, 102);
     }
 
     #[test]

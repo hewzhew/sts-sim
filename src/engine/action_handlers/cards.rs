@@ -421,8 +421,7 @@ pub fn handle_make_temp_card_in_hand(
     state: &mut CombatState,
 ) {
     for _ in 0..amount {
-        state.zones.card_uuid_counter += 1;
-        let card = make_generated_card_from_id(card_id, state.zones.card_uuid_counter, upgraded);
+        let card = make_generated_card_from_id(card_id, state.next_card_uuid(), upgraded);
         add_generated_card_to_hand_or_discard(card, state);
     }
 }
@@ -434,9 +433,7 @@ pub fn handle_make_temp_card_in_discard(
     state: &mut CombatState,
 ) {
     for _ in 0..amount {
-        state.zones.card_uuid_counter += 1;
-        let mut card =
-            make_generated_card_from_id(card_id, state.zones.card_uuid_counter, upgraded);
+        let mut card = make_generated_card_from_id(card_id, state.next_card_uuid(), upgraded);
         apply_master_reality_to_generated_card(&mut card, state, 1);
         state.add_card_to_discard_pile_top(card);
     }
@@ -451,9 +448,7 @@ pub fn handle_make_temp_card_in_draw_pile(
     state: &mut CombatState,
 ) {
     for _ in 0..amount {
-        state.zones.card_uuid_counter += 1;
-        let mut card =
-            make_generated_card_from_id(card_id, state.zones.card_uuid_counter, upgraded);
+        let mut card = make_generated_card_from_id(card_id, state.next_card_uuid(), upgraded);
         let upgrade_call_sites = if amount < 6 { 2 } else { 1 };
         apply_master_reality_to_generated_card(&mut card, state, upgrade_call_sites);
         if to_bottom {
@@ -472,8 +467,7 @@ pub fn handle_make_copy_in_hand(
     state: &mut CombatState,
 ) {
     for _ in 0..amount {
-        state.zones.card_uuid_counter += 1;
-        let card = original.make_stat_equivalent_copy_with_uuid(state.zones.card_uuid_counter);
+        let card = original.make_stat_equivalent_copy_with_uuid(state.next_card_uuid());
         add_generated_card_to_hand_or_discard(card, state);
     }
 }
@@ -484,8 +478,7 @@ pub fn handle_make_copy_in_discard(
     state: &mut CombatState,
 ) {
     for _ in 0..amount {
-        state.zones.card_uuid_counter += 1;
-        let mut card = original.make_stat_equivalent_copy_with_uuid(state.zones.card_uuid_counter);
+        let mut card = original.make_stat_equivalent_copy_with_uuid(state.next_card_uuid());
         apply_master_reality_to_generated_card(&mut card, state, 1);
         state.add_card_to_discard_pile_top(card);
     }
@@ -497,15 +490,11 @@ pub fn handle_make_temp_card_in_discard_and_deck(
     state: &mut CombatState,
 ) {
     for _ in 0..amount {
-        state.zones.card_uuid_counter += 1;
-        let mut discard_card =
-            make_generated_card_from_id(card_id, state.zones.card_uuid_counter, false);
+        let mut discard_card = make_generated_card_from_id(card_id, state.next_card_uuid(), false);
         apply_master_reality_to_generated_card(&mut discard_card, state, 1);
         state.add_card_to_discard_pile_top(discard_card);
 
-        state.zones.card_uuid_counter += 1;
-        let mut draw_card =
-            make_generated_card_from_id(card_id, state.zones.card_uuid_counter, false);
+        let mut draw_card = make_generated_card_from_id(card_id, state.next_card_uuid(), false);
         apply_master_reality_to_generated_card(&mut draw_card, state, 1);
         state.add_card_to_draw_pile_random_spot(draw_card);
     }
@@ -713,8 +702,7 @@ pub fn handle_make_random_card_in_hand(
     if !pool.is_empty() {
         let idx = state.rng.card_random_rng.random(pool.len() as i32 - 1) as usize;
         let card_id = pool[idx];
-        state.zones.card_uuid_counter += 1;
-        let mut card = make_random_pool_card_from_id(card_id, state.zones.card_uuid_counter, state);
+        let mut card = make_random_pool_card_from_id(card_id, state.next_card_uuid(), state);
         if let Some(cost) = cost_for_turn {
             card.set_cost_for_turn_java(cost as i32);
         }
@@ -732,8 +720,7 @@ pub fn handle_make_random_card_in_draw_pile(
     if !pool.is_empty() {
         let idx = state.rng.card_random_rng.random(pool.len() as i32 - 1) as usize;
         let card_id = pool[idx];
-        state.zones.card_uuid_counter += 1;
-        let mut card = make_random_pool_card_from_id(card_id, state.zones.card_uuid_counter, state);
+        let mut card = make_random_pool_card_from_id(card_id, state.next_card_uuid(), state);
         if let Some(cost) = cost_for_turn {
             card.set_cost_for_turn_java(cost as i32);
         }
@@ -803,9 +790,7 @@ pub fn handle_make_random_colorless_card_in_hand(
     if !pool.is_empty() {
         let idx = state.rng.card_random_rng.random(pool.len() as i32 - 1) as usize;
         let card_id = pool[idx];
-        state.zones.card_uuid_counter += 1;
-        let mut card =
-            crate::runtime::combat::CombatCard::new(card_id, state.zones.card_uuid_counter);
+        let mut card = crate::runtime::combat::CombatCard::new(card_id, state.next_card_uuid());
         if upgraded {
             card.upgrades = 1;
         }
