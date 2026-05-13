@@ -102,6 +102,9 @@ pub enum Action {
     /// light hits through this action and finishes with one ordinary
     /// `DamageAction`.
     PummelDamage(DamageInfo),
+    /// Java `BaneAction`: execute a second attack only if the target is alive
+    /// and still has Poison when this queued action resolves.
+    BaneDamage(DamageInfo),
     /// Canonical monster attack action.
     ///
     /// Contract:

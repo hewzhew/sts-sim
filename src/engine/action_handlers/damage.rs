@@ -529,6 +529,26 @@ pub fn handle_pummel_damage(info: crate::runtime::action::DamageInfo, state: &mu
     }
 }
 
+pub fn handle_bane_damage(info: crate::runtime::action::DamageInfo, state: &mut CombatState) {
+    if !store::has_power(state, info.target, PowerId::Poison) {
+        return;
+    }
+    if !target_current_hp_is_positive(state, info.target) {
+        return;
+    }
+    if info.damage_type != DamageType::Thorns && pummel_source_is_dying(state, info.source) {
+        return;
+    }
+
+    if info.target == 0 {
+        handle_damage(info, state);
+    } else {
+        let final_damage = info.output.max(0);
+        let _ = apply_damage_to_monster_via_pipeline(state, &info, final_damage);
+        clear_post_combat_actions_if_ready(state);
+    }
+}
+
 fn damage_type(kind: crate::semantics::combat::DamageKind) -> crate::runtime::action::DamageType {
     match kind {
         crate::semantics::combat::DamageKind::Normal => crate::runtime::action::DamageType::Normal,

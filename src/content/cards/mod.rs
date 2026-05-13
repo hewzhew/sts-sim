@@ -177,6 +177,7 @@ pub enum CardId {
     Outmaneuver,
     SneakyStrike,
     Dash,
+    Bane,
     // Add more as we expand
 }
 
@@ -3173,6 +3174,25 @@ pub fn get_card_definition(id: CardId) -> CardDefinition {
             upgrade_block: 3,
             upgrade_magic: 0,
         },
+        CardId::Bane => CardDefinition {
+            id: CardId::Bane,
+            name: "Bane",
+            card_type: CardType::Attack,
+            rarity: CardRarity::Common,
+            cost: 1,
+            base_damage: 7,
+            base_block: 0,
+            base_magic: 0,
+            target: CardTarget::Enemy,
+            is_multi_damage: false,
+            exhaust: false,
+            ethereal: false,
+            innate: false,
+            tags: &[],
+            upgrade_damage: 3,
+            upgrade_block: 0,
+            upgrade_magic: 0,
+        },
         CardId::Adrenaline => CardDefinition {
             id: CardId::Adrenaline,
             name: "Adrenaline",
@@ -3420,6 +3440,7 @@ pub const SILENT_COMMON_POOL: &[CardId] = &[
     CardId::SuckerPunch,
     CardId::Outmaneuver,
     CardId::SneakyStrike,
+    CardId::Bane,
 ];
 
 pub const SILENT_UNCOMMON_POOL: &[CardId] = &[
@@ -3760,6 +3781,7 @@ pub fn java_id(id: CardId) -> &'static str {
         CardId::Outmaneuver => "Outmaneuver",
         CardId::SneakyStrike => "Underhanded Strike",
         CardId::Dash => "Dash",
+        CardId::Bane => "Bane",
         CardId::Adrenaline => "Adrenaline",
         CardId::AfterImage => "After Image",
         CardId::Burst => "Burst",
@@ -3934,6 +3956,7 @@ pub fn build_java_id_map() -> std::collections::HashMap<&'static str, CardId> {
         Outmaneuver,
         SneakyStrike,
         Dash,
+        Bane,
         Adrenaline,
         AfterImage,
         Burst,

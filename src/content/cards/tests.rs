@@ -5401,6 +5401,87 @@ fn silent_economy_and_dash_runtime_actions_match_java_use_methods() {
 }
 
 #[test]
+fn bane_uses_java_delayed_poison_check_for_second_hit() {
+    let bane = get_card_definition(CardId::Bane);
+    assert_eq!(bane.name, "Bane");
+    assert_eq!(bane.card_type, CardType::Attack);
+    assert_eq!(bane.rarity, CardRarity::Common);
+    assert_eq!(bane.cost, 1);
+    assert_eq!(bane.base_damage, 7);
+    assert_eq!(bane.upgrade_damage, 3);
+    assert_eq!(java_id(CardId::Bane), "Bane");
+
+    let state = crate::test_support::blank_test_combat();
+    let actions = resolve_card_play(
+        CardId::Bane,
+        &state,
+        &CombatCard::new(CardId::Bane, 890),
+        Some(7),
+    );
+    assert!(matches!(actions[0].action, Action::Damage(_)));
+    let Action::BaneDamage(bane_info) = actions[1].action.clone() else {
+        panic!("Bane second action should be Java BaneAction");
+    };
+    assert_eq!(bane_info.target, 7);
+    assert_eq!(bane_info.output, 7);
+
+    let mut no_poison_state = crate::test_support::blank_test_combat();
+    let mut monster = crate::test_support::test_monster(EnemyId::JawWorm);
+    monster.id = 7;
+    monster.current_hp = 20;
+    no_poison_state.entities.monsters = vec![monster.clone()];
+    crate::engine::action_handlers::execute_action(
+        Action::BaneDamage(bane_info.clone()),
+        &mut no_poison_state,
+    );
+    assert_eq!(
+        no_poison_state.entities.monsters[0].current_hp, 20,
+        "Java BaneAction does nothing if the target lacks Poison at execution time"
+    );
+
+    let mut poison_state = crate::test_support::blank_test_combat();
+    poison_state.entities.monsters = vec![monster.clone()];
+    poison_state.entities.power_db.insert(
+        7,
+        vec![Power {
+            power_type: PowerId::Poison,
+            instance_id: None,
+            amount: 3,
+            extra_data: 0,
+            just_applied: false,
+        }],
+    );
+    crate::engine::action_handlers::execute_action(
+        Action::BaneDamage(bane_info.clone()),
+        &mut poison_state,
+    );
+    assert_eq!(poison_state.entities.monsters[0].current_hp, 13);
+
+    let mut dead_poison_state = crate::test_support::blank_test_combat();
+    let mut dead_monster = monster;
+    dead_monster.current_hp = 0;
+    dead_poison_state.entities.monsters = vec![dead_monster];
+    dead_poison_state.entities.power_db.insert(
+        7,
+        vec![Power {
+            power_type: PowerId::Poison,
+            instance_id: None,
+            amount: 3,
+            extra_data: 0,
+            just_applied: false,
+        }],
+    );
+    crate::engine::action_handlers::execute_action(
+        Action::BaneDamage(bane_info),
+        &mut dead_poison_state,
+    );
+    assert_eq!(
+        dead_poison_state.entities.monsters[0].current_hp, 0,
+        "Java BaneAction checks target.currentHealth > 0 before applying the second hit"
+    );
+}
+
+#[test]
 fn reflex_and_tactician_manual_discard_hooks_match_java_order() {
     let reflex = get_card_definition(CardId::Reflex);
     assert_eq!(reflex.cost, -2);

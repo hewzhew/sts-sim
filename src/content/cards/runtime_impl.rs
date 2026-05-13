@@ -170,6 +170,7 @@ pub fn resolve_card_play_with_context(
         CardId::Outmaneuver => silent::outmaneuver::outmaneuver_play(_state, _card),
         CardId::SneakyStrike => silent::sneaky_strike::sneaky_strike_play(_state, _card, t),
         CardId::Dash => silent::dash::dash_play(_state, _card, t),
+        CardId::Bane => silent::bane::bane_play(_state, _card, t),
         CardId::Adrenaline => silent::adrenaline::adrenaline_play(_state, _card),
         CardId::AfterImage => silent::after_image::after_image_play(_state, _card),
         CardId::Burst => silent::burst::burst_play(_state, _card),

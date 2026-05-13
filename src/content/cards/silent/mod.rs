@@ -2,6 +2,7 @@ pub mod acrobatics;
 pub mod adrenaline;
 pub mod after_image;
 pub mod backflip;
+pub mod bane;
 pub mod blade_dance;
 pub mod bouncing_flask;
 pub mod burst;
