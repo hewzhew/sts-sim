@@ -23,12 +23,7 @@ pub fn at_end_of_turn(
 ) -> SmallVec<[Action; 2]> {
     let mut actions = SmallVec::new();
 
-    if !state
-        .entities
-        .monsters
-        .iter()
-        .any(|m| m.current_hp > 0 && !m.is_dying && !m.is_escaped && !m.half_dead)
-    {
+    if state.are_monsters_basically_dead_java() {
         return actions;
     }
 

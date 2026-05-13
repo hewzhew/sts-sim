@@ -287,11 +287,7 @@ pub fn handle_move_card(
 }
 
 fn monsters_are_basically_dead(state: &CombatState) -> bool {
-    !state
-        .entities
-        .monsters
-        .iter()
-        .any(|m| m.current_hp > 0 && !m.is_dying && !m.is_escaped && !m.half_dead)
+    state.are_monsters_basically_dead_java()
 }
 
 pub fn handle_discard_pile_to_top_of_deck(state: &mut CombatState) {
@@ -1374,18 +1370,20 @@ pub fn handle_end_turn_trigger(state: &mut CombatState) {
 #[cfg(test)]
 mod tests {
     use super::{
-        class_card_pool_for_type, handle_draw_pile_to_hand_by_type, handle_make_copy_in_discard,
+        class_card_pool_for_type, handle_discard_pile_to_top_of_deck,
+        handle_draw_pile_to_hand_by_type, handle_make_copy_in_discard,
         handle_make_random_card_in_draw_pile, handle_make_random_card_in_hand,
         handle_make_temp_card_in_discard, handle_make_temp_card_in_discard_and_deck,
         handle_make_temp_card_in_draw_pile, handle_make_temp_card_in_hand,
         obtain_specific_potion_if_allowed,
     };
     use crate::content::cards::{CardId, CardType};
+    use crate::content::monsters::EnemyId;
     use crate::content::potions::PotionId;
     use crate::content::powers::PowerId;
     use crate::content::relics::{RelicId, RelicState};
     use crate::runtime::combat::{CombatCard, Power};
-    use crate::test_support::blank_test_combat;
+    use crate::test_support::{blank_test_combat, test_monster};
 
     #[test]
     fn obtain_specific_potion_fills_first_empty_slot() {
@@ -1463,6 +1461,23 @@ mod tests {
         assert!(!attacks.contains(&CardId::Reaper));
         assert!(!attacks.contains(&CardId::InfernalBlade));
         assert!(attacks.contains(&CardId::Pummel));
+    }
+
+    #[test]
+    fn discard_pile_to_top_uses_java_basically_dead_guard() {
+        let mut state = blank_test_combat();
+        let mut monster = test_monster(EnemyId::JawWorm);
+        monster.id = 900;
+        monster.current_hp = 0;
+        monster.is_dying = false;
+        monster.is_escaped = false;
+        state.entities.monsters = vec![monster];
+        state.zones.discard_pile = vec![CombatCard::new(CardId::Strike, 901)];
+
+        handle_discard_pile_to_top_of_deck(&mut state);
+
+        assert!(state.zones.discard_pile.is_empty());
+        assert_eq!(state.zones.draw_pile[0].uuid, 901);
     }
 
     #[test]

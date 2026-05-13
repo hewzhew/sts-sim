@@ -929,6 +929,18 @@ fn combust_power_stacks_damage_and_hp_loss_like_java_source() {
 
     for monster in &mut state.entities.monsters {
         monster.current_hp = 0;
+        monster.is_dying = false;
+    }
+    let zero_hp_not_dying_actions =
+        crate::content::powers::resolve_power_at_end_of_turn(&combust_power, &state, 0);
+    assert_eq!(
+        zero_hp_not_dying_actions.len(),
+        2,
+        "Java areMonstersBasicallyDead ignores currentHealth; Combust still fires until monsters are isDying/isEscaping"
+    );
+
+    for monster in &mut state.entities.monsters {
+        monster.current_hp = 0;
         monster.is_dying = true;
     }
     let no_monster_actions =
@@ -1147,16 +1159,32 @@ fn dark_embrace_and_demon_form_power_hooks_match_java_sources() {
         "Java skips Dark Embrace draw when monsters are basically dead"
     );
 
-    state
-        .entities
-        .monsters
-        .push(crate::test_support::test_monster(EnemyId::JawWorm));
-    let dark_embrace_actions = crate::content::powers::resolve_power_on_exhaust(
+    let mut zero_hp_not_dying = crate::test_support::test_monster(EnemyId::JawWorm);
+    zero_hp_not_dying.current_hp = 0;
+    zero_hp_not_dying.is_dying = false;
+    state.entities.monsters.push(zero_hp_not_dying);
+    let zero_hp_dark_embrace = crate::content::powers::resolve_power_on_exhaust(
         PowerId::DarkEmbrace,
         &state,
         0,
         1,
         118,
+        CardId::Strike,
+    );
+    assert_eq!(
+        zero_hp_dark_embrace.len(),
+        1,
+        "Java areMonstersBasicallyDead ignores currentHealth; Dark Embrace still draws until monsters are isDying/isEscaping"
+    );
+
+    state.entities.monsters[0].current_hp = 20;
+    state.entities.monsters[0].is_dying = false;
+    let dark_embrace_actions = crate::content::powers::resolve_power_on_exhaust(
+        PowerId::DarkEmbrace,
+        &state,
+        0,
+        1,
+        119,
         CardId::Strike,
     );
     assert_eq!(dark_embrace_actions.len(), 1);

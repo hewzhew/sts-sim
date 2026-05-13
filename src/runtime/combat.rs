@@ -1414,6 +1414,16 @@ impl CombatState {
 
 // Card-zone utilities used by action handlers to reconcile card movement.
 impl CombatState {
+    /// Java `MonsterGroup.areMonstersBasicallyDead()` only skips monsters that
+    /// are `isDying` or `isEscaping`. It does not check current HP and does not
+    /// treat `halfDead` as basically dead by itself.
+    pub fn are_monsters_basically_dead_java(&self) -> bool {
+        self.entities
+            .monsters
+            .iter()
+            .all(|m| m.is_dying || m.is_escaped)
+    }
+
     pub fn add_card_to_draw_pile_top(&mut self, card: CombatCard) {
         self.zones.add_to_draw_pile_top(card);
     }

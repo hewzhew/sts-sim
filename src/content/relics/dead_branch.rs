@@ -9,7 +9,7 @@ pub fn on_exhaust(
     _relic: &mut RelicState,
 ) -> smallvec::SmallVec<[ActionInfo; 4]> {
     let mut actions = smallvec::SmallVec::new();
-    if are_monsters_basically_dead(state) {
+    if state.are_monsters_basically_dead_java() {
         return actions;
     }
 
@@ -22,12 +22,4 @@ pub fn on_exhaust(
         insertion_mode: AddTo::Bottom,
     });
     actions
-}
-
-fn are_monsters_basically_dead(state: &CombatState) -> bool {
-    state
-        .entities
-        .monsters
-        .iter()
-        .all(|monster| monster.is_dying || monster.is_escaped)
 }

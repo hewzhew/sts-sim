@@ -116,11 +116,7 @@ fn target_receives_java_unique_kill_reward(state: &CombatState, target: usize) -
 }
 
 fn monsters_are_basically_dead_for_post_combat(state: &CombatState) -> bool {
-    !state
-        .entities
-        .monsters
-        .iter()
-        .any(|m| m.current_hp > 0 && !m.is_dying && !m.is_escaped && !m.half_dead)
+    state.are_monsters_basically_dead_java()
 }
 
 fn clear_post_combat_actions_if_ready(state: &mut CombatState) {
@@ -1265,6 +1261,27 @@ mod tests {
             "Java LoseHPAction checks clearPostCombatActions even when the target is the player"
         );
         assert_eq!(state.pop_next_action(), None);
+    }
+
+    #[test]
+    fn post_combat_cleanup_uses_java_basically_dead_not_zero_hp() {
+        let mut state = blank_test_combat();
+        let mut monster = test_monster(EnemyId::JawWorm);
+        monster.id = 69;
+        monster.current_hp = 0;
+        monster.is_dying = false;
+        monster.is_escaped = false;
+        state.entities.monsters = vec![monster];
+        state.queue_action_back(Action::DrawCards(1));
+
+        handle_lose_hp(0, 3, true, &mut state);
+
+        assert_eq!(state.entities.player.current_hp, 77);
+        assert_eq!(
+            state.pop_next_action(),
+            Some(Action::DrawCards(1)),
+            "Java MonsterGroup.areMonstersBasicallyDead ignores currentHealth; only isDying/isEscaping count"
+        );
     }
 
     #[test]

@@ -2181,6 +2181,41 @@ fn dead_branch_skips_when_monsters_are_basically_dead() {
         dead_branch::on_exhaust(&basically_dead, &mut RelicState::new(RelicId::DeadBranch),)
             .is_empty()
     );
+
+    let mut zero_hp_not_dying = crate::test_support::test_monster(EnemyId::JawWorm);
+    zero_hp_not_dying.current_hp = 0;
+    zero_hp_not_dying.is_dying = false;
+    let zero_hp_state = crate::test_support::combat_with_monsters(vec![zero_hp_not_dying]);
+    assert_eq!(
+        dead_branch::on_exhaust(&zero_hp_state, &mut RelicState::new(RelicId::DeadBranch)).len(),
+        1,
+        "Java MonsterGroup.areMonstersBasicallyDead ignores currentHealth"
+    );
+}
+
+#[test]
+fn nilrys_codex_uses_java_basically_dead_guard() {
+    let mut state = crate::test_support::blank_test_combat();
+    let mut zero_hp_not_dying = crate::test_support::test_monster(EnemyId::JawWorm);
+    zero_hp_not_dying.current_hp = 0;
+    zero_hp_not_dying.is_dying = false;
+    zero_hp_not_dying.is_escaped = false;
+    state.entities.monsters = vec![zero_hp_not_dying];
+
+    let actions = nilrys_codex::at_end_of_turn(&state);
+    assert_eq!(
+        actions.len(),
+        1,
+        "Java CodexAction checks MonsterGroup.areMonstersBasicallyDead, which ignores currentHealth"
+    );
+    assert_eq!(actions[0].insertion_mode, AddTo::Bottom);
+    assert!(matches!(
+        actions[0].action,
+        Action::SuspendForCardReward { .. }
+    ));
+
+    state.entities.monsters[0].is_dying = true;
+    assert!(nilrys_codex::at_end_of_turn(&state).is_empty());
 }
 
 #[test]
