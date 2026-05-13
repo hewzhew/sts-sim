@@ -77,17 +77,40 @@ pub fn handle_draw_cards(amount: u32, state: &mut CombatState) {
     if has_no_draw {
         return;
     }
+
+    if amount == 0 {
+        return;
+    }
+
+    let deck_size = state.zones.draw_pile.len();
+    let discard_size = state.zones.discard_pile.len();
+    if deck_size + discard_size == 0 {
+        return;
+    }
+
+    let hand_size = state.zones.hand.len();
+    if hand_size >= 10 {
+        return;
+    }
+
+    let amount = amount.min((10 - hand_size) as u32);
+    if amount == 0 {
+        return;
+    }
+
+    if amount as usize > deck_size {
+        let remaining = amount - deck_size as u32;
+        state.queue_action_front(Action::DrawCards(remaining));
+        state.queue_action_front(Action::EmptyDeckShuffle);
+        if deck_size != 0 {
+            state.queue_action_front(Action::DrawCards(deck_size as u32));
+        }
+        return;
+    }
+
     for _ in 0..amount {
-        if state.zones.hand.len() >= 10 {
-            break;
-        }
-        if state.zones.draw_pile.is_empty() && !state.zones.discard_pile.is_empty() {
-            state.shuffle_discard_pile_into_draw_pile();
-            let shuffle_actions = crate::content::relics::hooks::on_shuffle(state);
-            state.queue_actions(shuffle_actions);
-        }
         if state.zones.draw_pile.is_empty() {
-            break;
+            return;
         }
         let mut card = state
             .draw_top_card()
@@ -1591,7 +1614,7 @@ pub fn handle_end_turn_trigger(state: &mut CombatState) {
 #[cfg(test)]
 mod tests {
     use super::{
-        class_card_pool_for_type, handle_discard_pile_to_top_of_deck,
+        class_card_pool_for_type, handle_discard_pile_to_top_of_deck, handle_draw_cards,
         handle_draw_pile_to_hand_by_type, handle_end_turn_trigger, handle_make_copy_in_discard,
         handle_make_random_card_in_draw_pile, handle_make_random_card_in_hand,
         handle_make_temp_card_in_discard, handle_make_temp_card_in_discard_and_deck,
@@ -1607,6 +1630,51 @@ mod tests {
     use crate::runtime::action::Action;
     use crate::runtime::combat::{CombatCard, Power};
     use crate::test_support::{blank_test_combat, test_monster};
+
+    #[test]
+    fn draw_cards_splits_shuffle_like_java_draw_card_action() {
+        let mut state = blank_test_combat();
+        state.zones.draw_pile = vec![
+            CombatCard::new(CardId::Strike, 10),
+            CombatCard::new(CardId::Defend, 11),
+        ];
+        state.zones.discard_pile = vec![CombatCard::new(CardId::Bash, 12)];
+        state.queue_action_back(Action::GainEnergy { amount: 1 });
+
+        handle_draw_cards(3, &mut state);
+
+        assert!(
+            state.zones.hand.is_empty(),
+            "Java DrawCardAction does not draw immediately when amount exceeds draw pile; it splits into top-queued actions"
+        );
+        assert_eq!(state.pop_next_action(), Some(Action::DrawCards(2)));
+        assert_eq!(state.pop_next_action(), Some(Action::EmptyDeckShuffle));
+        assert_eq!(state.pop_next_action(), Some(Action::DrawCards(1)));
+        assert_eq!(
+            state.pop_next_action(),
+            Some(Action::GainEnergy { amount: 1 }),
+            "split draw actions are addToTop-style and must run before previously queued actions"
+        );
+    }
+
+    #[test]
+    fn draw_cards_caps_amount_to_available_hand_space_before_split() {
+        let mut state = blank_test_combat();
+        state.zones.hand = (0..9)
+            .map(|idx| CombatCard::new(CardId::Defend, 100 + idx))
+            .collect();
+        state.zones.discard_pile = vec![
+            CombatCard::new(CardId::Strike, 200),
+            CombatCard::new(CardId::Strike, 201),
+        ];
+
+        handle_draw_cards(5, &mut state);
+
+        assert_eq!(state.zones.hand.len(), 9);
+        assert_eq!(state.pop_next_action(), Some(Action::EmptyDeckShuffle));
+        assert_eq!(state.pop_next_action(), Some(Action::DrawCards(1)));
+        assert_eq!(state.pop_next_action(), None);
+    }
 
     #[test]
     fn obtain_specific_potion_fills_first_empty_slot() {
