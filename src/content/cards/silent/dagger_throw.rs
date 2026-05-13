@@ -29,12 +29,10 @@ pub fn dagger_throw_play(
         insertion_mode: AddTo::Bottom,
     });
     actions.push(ActionInfo {
-        action: Action::SuspendForHandSelect {
-            min: 1,
-            max: 1,
-            can_cancel: false,
-            filter: crate::state::HandSelectFilter::Any,
-            reason: crate::state::HandSelectReason::Discard,
+        action: Action::DiscardFromHand {
+            amount: 1,
+            random: false,
+            end_turn: false,
         },
         insertion_mode: AddTo::Bottom,
     });

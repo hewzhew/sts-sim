@@ -150,14 +150,11 @@ pub fn handle_hand_select(
                 HandSelectReason::GamblingChip => {
                     // Java GamblingChipAction: discard selected cards, then draw equal count
                     let num_selected = uuids.len();
-                    // Move selected cards from hand to discard
                     for uuid in &uuids {
-                        if let Some(pos) =
-                            combat_state.zones.hand.iter().position(|c| c.uuid == *uuid)
-                        {
-                            let card = combat_state.zones.hand.remove(pos);
-                            combat_state.add_card_to_discard_pile_top(card);
-                        }
+                        crate::engine::action_handlers::cards::handle_discard_card(
+                            *uuid,
+                            combat_state,
+                        );
                     }
                     // Queue draw actions for same number of cards
                     if num_selected > 0 {
@@ -188,12 +185,10 @@ pub fn handle_hand_select(
                 HandSelectReason::Discard => {
                     // Discard selected cards from hand
                     for uuid in &uuids {
-                        if let Some(pos) =
-                            combat_state.zones.hand.iter().position(|c| c.uuid == *uuid)
-                        {
-                            let card = combat_state.zones.hand.remove(pos);
-                            combat_state.add_card_to_discard_pile_top(card);
-                        }
+                        crate::engine::action_handlers::cards::handle_discard_card(
+                            *uuid,
+                            combat_state,
+                        );
                     }
                 }
                 HandSelectReason::PutOnDrawPile => {

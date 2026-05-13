@@ -9,12 +9,10 @@ pub fn prepared_play(_state: &CombatState, card: &CombatCard) -> SmallVec<[Actio
             insertion_mode: AddTo::Bottom,
         },
         ActionInfo {
-            action: Action::SuspendForHandSelect {
-                min: card.base_magic_num_mut.max(0) as u8,
-                max: card.base_magic_num_mut.max(0) as u8,
-                can_cancel: false,
-                filter: crate::state::HandSelectFilter::Any,
-                reason: crate::state::HandSelectReason::Discard,
+            action: Action::DiscardFromHand {
+                amount: card.base_magic_num_mut.max(0),
+                random: false,
+                end_turn: false,
             },
             insertion_mode: AddTo::Bottom,
         },

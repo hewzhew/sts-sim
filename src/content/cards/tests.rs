@@ -4954,6 +4954,95 @@ fn thinking_ahead_uses_java_use_time_hand_visibility() {
 }
 
 #[test]
+fn discard_cards_queue_java_discard_action_instead_of_prechecking_hand() {
+    let empty_state = crate::test_support::blank_test_combat();
+
+    let mut acrobatics = CombatCard::new(CardId::Acrobatics, 840);
+    acrobatics.base_magic_num_mut = 3;
+    let acrobatics_actions = resolve_card_play(CardId::Acrobatics, &empty_state, &acrobatics, None);
+    assert_eq!(acrobatics_actions.len(), 2);
+    assert!(matches!(acrobatics_actions[0].action, Action::DrawCards(3)));
+    assert_eq!(
+        acrobatics_actions[1].action,
+        Action::DiscardFromHand {
+            amount: 1,
+            random: false,
+            end_turn: false,
+        },
+        "Java Acrobatics.use always queues DiscardAction after DrawCardAction; it does not precheck the hand before drawing"
+    );
+
+    let survivor = CombatCard::new(CardId::Survivor, 841);
+    let survivor_actions = resolve_card_play(CardId::Survivor, &empty_state, &survivor, None);
+    assert_eq!(survivor_actions.len(), 2);
+    assert_eq!(
+        survivor_actions[1].action,
+        Action::DiscardFromHand {
+            amount: 1,
+            random: false,
+            end_turn: false,
+        }
+    );
+
+    let mut prepared_plus = CombatCard::new(CardId::Prepared, 842);
+    prepared_plus.upgrades = 1;
+    prepared_plus.base_magic_num_mut = 2;
+    let prepared_actions = resolve_card_play(CardId::Prepared, &empty_state, &prepared_plus, None);
+    assert_eq!(
+        prepared_actions[1].action,
+        Action::DiscardFromHand {
+            amount: 2,
+            random: false,
+            end_turn: false,
+        }
+    );
+
+    let dagger_actions = resolve_card_play(
+        CardId::DaggerThrow,
+        &empty_state,
+        &CombatCard::new(CardId::DaggerThrow, 843),
+        Some(844),
+    );
+    assert_eq!(
+        dagger_actions[2].action,
+        Action::DiscardFromHand {
+            amount: 1,
+            random: false,
+            end_turn: false,
+        }
+    );
+}
+
+#[test]
+fn discard_from_hand_auto_discards_all_when_hand_size_is_not_greater_than_amount() {
+    let mut state = crate::test_support::blank_test_combat();
+    state.entities.monsters = vec![crate::test_support::test_monster(EnemyId::JawWorm)];
+    state.zones.hand = vec![
+        CombatCard::new(CardId::Strike, 850),
+        CombatCard::new(CardId::Defend, 851),
+    ];
+
+    crate::engine::action_handlers::cards::handle_discard_from_hand(2, false, false, &mut state);
+
+    assert!(state.zones.hand.is_empty());
+    assert_eq!(
+        state
+            .zones
+            .discard_pile
+            .iter()
+            .map(|card| card.uuid)
+            .collect::<Vec<_>>(),
+        vec![851, 850],
+        "Java DiscardAction repeatedly moves hand.getTopCard(); Rust discard_pile preserves Java CardGroup order with top at the end"
+    );
+    assert_eq!(
+        state.pop_next_action(),
+        None,
+        "Java DiscardAction does not open a choice screen when hand.size() <= amount"
+    );
+}
+
+#[test]
 fn upgraded_blind_and_trip_enqueue_apply_power_for_every_monster_like_java() {
     let mut state = crate::test_support::blank_test_combat();
     let mut zero_hp_not_dying = crate::test_support::test_monster(EnemyId::JawWorm);

@@ -296,6 +296,11 @@ pub enum Action {
     DiscardCard {
         card_uuid: u32,
     },
+    DiscardFromHand {
+        amount: i32,
+        random: bool,
+        end_turn: bool,
+    },
     MoveCard {
         card_uuid: u32,
         from: PileType,

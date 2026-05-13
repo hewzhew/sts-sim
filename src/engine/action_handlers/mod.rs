@@ -337,6 +337,11 @@ pub fn execute_action(action: Action, state: &mut CombatState) {
         Action::EmptyDeckShuffle => cards::handle_empty_deck_shuffle(state),
         Action::ShuffleDiscardIntoDraw => cards::handle_shuffle_discard_into_draw(state),
         Action::DiscardCard { card_uuid } => cards::handle_discard_card(card_uuid, state),
+        Action::DiscardFromHand {
+            amount,
+            random,
+            end_turn,
+        } => cards::handle_discard_from_hand(amount, random, end_turn, state),
         Action::ExhaustCard {
             card_uuid,
             source_pile,

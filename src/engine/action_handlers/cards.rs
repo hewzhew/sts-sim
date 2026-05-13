@@ -63,6 +63,15 @@ fn move_random_hand_card_to_draw_top(state: &mut CombatState) {
     state.add_card_to_draw_pile_top(card);
 }
 
+fn move_hand_card_to_discard_at(pos: usize, manual: bool, state: &mut CombatState) {
+    let card = state.zones.hand.remove(pos);
+    state.add_card_to_discard_pile_top(card);
+    if manual {
+        let discard_actions = crate::content::relics::hooks::on_discard(state);
+        state.queue_actions(discard_actions);
+    }
+}
+
 pub fn handle_draw_cards(amount: u32, state: &mut CombatState) {
     let has_no_draw = store::has_power(state, 0, PowerId::NoDraw);
     if has_no_draw {
@@ -189,11 +198,65 @@ pub fn handle_shuffle_discard_into_draw(state: &mut CombatState) {
 
 pub fn handle_discard_card(card_uuid: u32, state: &mut CombatState) {
     if let Some(pos) = state.zones.hand.iter().position(|c| c.uuid == card_uuid) {
-        let card = state.zones.hand.remove(pos);
-        state.add_card_to_discard_pile_top(card);
-        let discard_actions = crate::content::relics::hooks::on_discard(state);
-        state.queue_actions(discard_actions);
+        move_hand_card_to_discard_at(pos, true, state);
     }
+}
+
+pub fn handle_discard_from_hand(
+    amount: i32,
+    random: bool,
+    end_turn: bool,
+    state: &mut CombatState,
+) {
+    if state.are_monsters_basically_dead_java() {
+        return;
+    }
+
+    if state.zones.hand.is_empty() {
+        return;
+    }
+
+    if amount < 0 && !random {
+        state.queue_action_front(Action::SuspendForHandSelect {
+            min: 0,
+            max: 99,
+            can_cancel: true,
+            filter: crate::state::HandSelectFilter::Any,
+            reason: crate::state::HandSelectReason::Discard,
+        });
+        return;
+    }
+
+    let amount = amount.max(0) as usize;
+    if state.zones.hand.len() <= amount {
+        while !state.zones.hand.is_empty() {
+            let top = state.zones.hand.len() - 1;
+            move_hand_card_to_discard_at(top, !end_turn, state);
+        }
+        return;
+    }
+
+    if random {
+        for _ in 0..amount {
+            if state.zones.hand.is_empty() {
+                break;
+            }
+            let idx = state
+                .rng
+                .card_random_rng
+                .random(state.zones.hand.len() as i32 - 1) as usize;
+            move_hand_card_to_discard_at(idx, !end_turn, state);
+        }
+        return;
+    }
+
+    state.queue_action_front(Action::SuspendForHandSelect {
+        min: amount as u8,
+        max: amount as u8,
+        can_cancel: false,
+        filter: crate::state::HandSelectFilter::Any,
+        reason: crate::state::HandSelectReason::Discard,
+    });
 }
 
 pub fn handle_exhaust_card(
