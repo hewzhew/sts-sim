@@ -1,6 +1,6 @@
 // action_handlers/damage.rs — Combat damage domain
 //
-// Handles: Damage, DamageAllEnemies, AttackDamageRandomEnemy, DropkickDamageAndEffect,
+// Handles: Damage, DamageAllEnemies, random-target damage, DropkickDamageAndEffect,
 //          FiendFire, Feed, VampireDamage, VampireDamageAllEnemies,
 //          LoseHp, GainBlock, GainBlockRandomMonster, LoseBlock, GainEnergy,
 //          Heal, GainMaxHp, LoseMaxHp,
@@ -625,10 +625,10 @@ pub fn handle_whirlwind(
     }
 }
 
-pub fn handle_attack_damage_random_enemy(
+pub fn handle_damage_random_enemy(
+    source: usize,
     base_damage: i32,
     damage_type: DamageType,
-    applies_target_modifiers: bool,
     state: &mut CombatState,
 ) {
     let alive: Vec<usize> = state
@@ -641,47 +641,41 @@ pub fn handle_attack_damage_random_enemy(
     if !alive.is_empty() {
         let idx = state.rng.card_random_rng.random(alive.len() as i32 - 1) as usize;
         let target_id = alive[idx];
-        let final_damage = if applies_target_modifiers && matches!(damage_type, DamageType::Normal)
-        {
-            let mut damage = base_damage as f32;
-            let pseudo_card = crate::runtime::combat::CombatCard::new(
-                crate::content::cards::CardId::SwordBoomerang,
-                0,
-            );
-            for power in &store::powers_snapshot_for(state, target_id) {
-                damage = crate::content::powers::resolve_power_on_calculate_damage_from_player(
-                    power.power_type,
-                    state,
-                    &pseudo_card,
-                    target_id,
-                    damage,
-                    power.amount,
-                );
-            }
-            let mut damage_i = damage.max(0.0).floor() as i32;
-            for power in &store::powers_snapshot_for(state, target_id) {
-                damage_i = crate::content::powers::resolve_power_at_damage_final_receive(
-                    power.power_type,
-                    damage_i,
-                    power.amount,
-                    damage_type,
-                );
-            }
-            damage_i.max(0)
-        } else {
-            base_damage
-        };
-        handle_damage(
-            crate::runtime::action::DamageInfo {
-                source: 0,
-                target: target_id,
-                base: base_damage,
-                output: final_damage,
-                damage_type,
-                is_modified: applies_target_modifiers,
-            },
-            state,
-        );
+        state.queue_action_front(Action::Damage(crate::runtime::action::DamageInfo {
+            source,
+            target: target_id,
+            base: base_damage,
+            output: base_damage,
+            damage_type,
+            is_modified: false,
+        }));
+    }
+}
+
+pub fn handle_attack_damage_random_enemy_card(
+    card: crate::runtime::combat::CombatCard,
+    state: &mut CombatState,
+) {
+    let alive: Vec<usize> = state
+        .entities
+        .monsters
+        .iter()
+        .filter(|m| m.is_random_target_candidate())
+        .map(|m| m.id)
+        .collect();
+    if !alive.is_empty() {
+        let idx = state.rng.card_random_rng.random(alive.len() as i32 - 1) as usize;
+        let target_id = alive[idx];
+        let evaluated =
+            crate::content::cards::evaluate_card_for_play(&card, state, Some(target_id));
+        state.queue_action_front(Action::Damage(crate::runtime::action::DamageInfo {
+            source: 0,
+            target: target_id,
+            base: evaluated.base_damage_mut,
+            output: evaluated.base_damage_mut,
+            damage_type: DamageType::Normal,
+            is_modified: false,
+        }));
     }
 }
 

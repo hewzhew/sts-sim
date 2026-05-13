@@ -108,10 +108,10 @@ fn queue_lightning_damage(state: &mut CombatState, amount: i32, to_front: bool) 
     } else {
         queue_orb_action(
             state,
-            Action::AttackDamageRandomEnemy {
+            Action::DamageRandomEnemy {
+                source: 0,
                 base_damage: amount,
                 damage_type: DamageType::Thorns,
-                applies_target_modifiers: false,
             },
             to_front,
         );

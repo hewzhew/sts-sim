@@ -2604,14 +2604,14 @@ fn juggernaut_block_hook_matches_java_source() {
         crate::content::powers::resolve_power_on_block_gained(PowerId::Juggernaut, &state, 0, 7, 5);
     assert_eq!(actions.len(), 1);
     match &actions[0] {
-        Action::AttackDamageRandomEnemy {
+        Action::DamageRandomEnemy {
+            source,
             base_damage,
             damage_type,
-            applies_target_modifiers,
         } => {
+            assert_eq!(*source, 0);
             assert_eq!(*base_damage, 7);
             assert_eq!(*damage_type, DamageType::Thorns);
-            assert!(!*applies_target_modifiers);
         }
         other => {
             panic!("Juggernaut should queue random THORNS damage on block gain, got {other:?}")
@@ -3824,14 +3824,15 @@ fn ironclad_random_and_exhaust_attack_runtime_actions_match_java_use_methods() {
     let sword_actions = resolve_card_play(CardId::SwordBoomerang, &state, &sword_plus, None);
     assert_eq!(sword_actions.len(), 4);
     for action in &sword_actions {
-        assert!(matches!(
-            action.action,
-            Action::AttackDamageRandomEnemy {
-                base_damage: 5,
-                damage_type: DamageType::Normal,
-                applies_target_modifiers: true
+        match &action.action {
+            Action::AttackDamageRandomEnemyCard { card } => {
+                assert_eq!(card.id, CardId::SwordBoomerang);
+                assert_eq!(card.upgrades, 1);
             }
-        ));
+            other => {
+                panic!("Sword Boomerang+ should queue AttackDamageRandomEnemyAction, got {other:?}")
+            }
+        }
     }
 
     let mut thunder_plus = CombatCard::new(CardId::ThunderClap, 371);
@@ -3926,10 +3927,10 @@ fn random_enemy_attacks_ignore_half_dead_monsters_like_java_random_monster() {
     half_dead.half_dead = true;
     state.entities.monsters = vec![half_dead];
 
-    crate::engine::action_handlers::damage::handle_attack_damage_random_enemy(
+    crate::engine::action_handlers::damage::handle_damage_random_enemy(
+        0,
         7,
         DamageType::Normal,
-        false,
         &mut state,
     );
 
@@ -3943,6 +3944,52 @@ fn random_enemy_attacks_ignore_half_dead_monsters_like_java_random_monster() {
         target.current_hp, 20,
         "Java MonsterGroup.getRandomMonster(aliveOnly=true) excludes halfDead monsters"
     );
+}
+
+#[test]
+fn attack_damage_random_enemy_card_recalculates_damage_at_execution_like_java() {
+    let mut state = crate::test_support::blank_test_combat();
+    let mut target = crate::test_support::test_monster(EnemyId::JawWorm);
+    target.id = 611;
+    target.current_hp = 30;
+    state.entities.monsters = vec![target];
+
+    crate::content::powers::store::set_powers_for(
+        &mut state,
+        0,
+        vec![Power {
+            power_type: PowerId::Strength,
+            instance_id: None,
+            amount: 4,
+            extra_data: 0,
+            just_applied: false,
+        }],
+    );
+
+    crate::engine::action_handlers::execute_action(
+        Action::AttackDamageRandomEnemyCard {
+            card: Box::new(CombatCard::new(CardId::SwordBoomerang, 612)),
+        },
+        &mut state,
+    );
+
+    assert_eq!(
+        state.entities.monsters[0].current_hp, 30,
+        "Java AttackDamageRandomEnemyAction queues a DamageAction instead of damaging inline"
+    );
+    match state
+        .pop_next_action()
+        .expect("AttackDamageRandomEnemyAction should queue DamageAction")
+    {
+        Action::Damage(info) => {
+            assert_eq!(info.target, 611);
+            assert_eq!(
+                info.output, 7,
+                "Java recalculates the card at random-target action execution time"
+            );
+        }
+        other => panic!("AttackDamageRandomEnemyAction should queue DamageAction, got {other:?}"),
+    }
 }
 
 #[test]
@@ -4248,10 +4295,13 @@ fn lethal_damage_filters_post_combat_actions_like_java_action_manager() {
         free_to_play_once: false,
         energy_on_use: 1,
     });
-    state.queue_action_back(Action::AttackDamageRandomEnemy {
+    state.queue_action_back(Action::DamageRandomEnemy {
+        source: 0,
         base_damage: 3,
         damage_type: DamageType::Normal,
-        applies_target_modifiers: true,
+    });
+    state.queue_action_back(Action::AttackDamageRandomEnemyCard {
+        card: Box::new(CombatCard::new(CardId::SwordBoomerang, 721)),
     });
     state.queue_action_back(Action::DropkickDamageAndEffect {
         target: 720,
@@ -4292,6 +4342,11 @@ fn lethal_damage_filters_post_combat_actions_like_java_action_manager() {
     assert_eq!(
         remaining,
         vec![
+            Action::DamageRandomEnemy {
+                source: 0,
+                base_damage: 3,
+                damage_type: DamageType::Normal,
+            },
             Action::GainBlock {
                 target: 0,
                 amount: 3
@@ -4304,7 +4359,7 @@ fn lethal_damage_filters_post_combat_actions_like_java_action_manager() {
                 should_exhaust: false
             }
         ],
-        "Java GameActionManager.clearPostCombatActions keeps DAMAGE/Heal/GainBlock/UseCardAction and removes generated cards, draw, energy, and powers"
+        "Java GameActionManager.clearPostCombatActions keeps DamageRandomEnemyAction/Heal/GainBlock/UseCardAction and removes generated cards, draw, energy, powers, and AttackDamageRandomEnemyAction"
     );
 }
 

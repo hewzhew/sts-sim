@@ -190,10 +190,24 @@ pub enum Action {
         target: EntityId,
         amount: i32,
     },
-    AttackDamageRandomEnemy {
+    /// Java `DamageRandomEnemyAction`: select a random living monster at
+    /// execution time, then queue/resolve a normal `DamageAction`.
+    ///
+    /// This is a DAMAGE action in Java and is therefore retained by
+    /// `GameActionManager.clearPostCombatActions`.
+    DamageRandomEnemy {
+        source: EntityId,
         base_damage: i32,
         damage_type: DamageType,
-        applies_target_modifiers: bool,
+    },
+    /// Java `AttackDamageRandomEnemyAction`: select a random living monster at
+    /// execution time, recalculate the referenced card against that target,
+    /// then queue/resolve a normal `DamageAction`.
+    ///
+    /// This action does not set `actionType = DAMAGE` in Java; only the
+    /// generated `DamageAction` is retained after post-combat cleanup.
+    AttackDamageRandomEnemyCard {
+        card: Box<crate::runtime::combat::CombatCard>,
     },
     BouncingFlask {
         target: Option<EntityId>,
@@ -566,6 +580,7 @@ impl Action {
                 | Action::PummelDamage(_)
                 | Action::MonsterAttack { .. }
                 | Action::DamageAllEnemies { .. }
+                | Action::DamageRandomEnemy { .. }
                 | Action::Feed { .. }
                 | Action::HandOfGreed { .. }
                 | Action::RitualDagger { .. }

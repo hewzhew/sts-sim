@@ -191,16 +191,14 @@ pub fn execute_action(action: Action, state: &mut CombatState) {
             energy_on_use,
             state,
         ),
-        Action::AttackDamageRandomEnemy {
+        Action::DamageRandomEnemy {
+            source,
             base_damage,
             damage_type,
-            applies_target_modifiers,
-        } => damage::handle_attack_damage_random_enemy(
-            base_damage,
-            damage_type,
-            applies_target_modifiers,
-            state,
-        ),
+        } => damage::handle_damage_random_enemy(source, base_damage, damage_type, state),
+        Action::AttackDamageRandomEnemyCard { card } => {
+            damage::handle_attack_damage_random_enemy_card(*card, state)
+        }
         Action::DropkickDamageAndEffect {
             target,
             damage_info,
