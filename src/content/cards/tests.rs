@@ -2626,6 +2626,91 @@ fn ironclad_power_and_hybrid_attack_runtime_actions_match_java_use_methods() {
 }
 
 #[test]
+fn intimidate_and_shockwave_enqueue_apply_power_for_every_monster_like_java() {
+    let mut state = crate::test_support::blank_test_combat();
+    let mut dying = crate::test_support::test_monster(EnemyId::JawWorm);
+    dying.id = 910;
+    dying.current_hp = 0;
+    dying.is_dying = true;
+    let mut escaped = crate::test_support::test_monster(EnemyId::Cultist);
+    escaped.id = 911;
+    escaped.is_escaped = true;
+    state.entities.monsters = vec![dying, escaped];
+
+    let mut intimidate_plus = CombatCard::new(CardId::Intimidate, 912);
+    intimidate_plus.upgrades = 1;
+    let intimidate_actions = resolve_card_play(CardId::Intimidate, &state, &intimidate_plus, None);
+    assert_eq!(
+        intimidate_actions.len(),
+        2,
+        "Java Intimidate loops over monsters.monsters and leaves dead/escaped filtering to ApplyPowerAction"
+    );
+    assert!(matches!(
+        intimidate_actions[0].action,
+        Action::ApplyPower {
+            target: 910,
+            power_id: PowerId::Weak,
+            amount: 2,
+            ..
+        }
+    ));
+    assert!(matches!(
+        intimidate_actions[1].action,
+        Action::ApplyPower {
+            target: 911,
+            power_id: PowerId::Weak,
+            amount: 2,
+            ..
+        }
+    ));
+
+    let mut shockwave_plus = CombatCard::new(CardId::Shockwave, 913);
+    shockwave_plus.upgrades = 1;
+    let shockwave_actions = resolve_card_play(CardId::Shockwave, &state, &shockwave_plus, None);
+    assert_eq!(
+        shockwave_actions.len(),
+        4,
+        "Java Shockwave loops over monsters.monsters and leaves dead/escaped filtering to ApplyPowerAction"
+    );
+    assert!(matches!(
+        shockwave_actions[0].action,
+        Action::ApplyPower {
+            target: 910,
+            power_id: PowerId::Weak,
+            amount: 5,
+            ..
+        }
+    ));
+    assert!(matches!(
+        shockwave_actions[1].action,
+        Action::ApplyPower {
+            target: 910,
+            power_id: PowerId::Vulnerable,
+            amount: 5,
+            ..
+        }
+    ));
+    assert!(matches!(
+        shockwave_actions[2].action,
+        Action::ApplyPower {
+            target: 911,
+            power_id: PowerId::Weak,
+            amount: 5,
+            ..
+        }
+    ));
+    assert!(matches!(
+        shockwave_actions[3].action,
+        Action::ApplyPower {
+            target: 911,
+            power_id: PowerId::Vulnerable,
+            amount: 5,
+            ..
+        }
+    ));
+}
+
+#[test]
 fn juggernaut_block_hook_matches_java_source() {
     let state = crate::test_support::blank_test_combat();
     let actions =
