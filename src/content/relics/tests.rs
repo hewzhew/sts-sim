@@ -4618,6 +4618,33 @@ fn necronomicon_on_equip_adds_necronomicurse_to_master_deck() {
 }
 
 #[test]
+fn necronomicon_replay_uses_same_instance_copy_like_java() {
+    let mut card = CombatCard::new(CardId::Bludgeon, 6201);
+    card.base_damage_mut = 99;
+    card.energy_on_use = 2;
+
+    let actions = necronomicon::on_use_card(CardId::Bludgeon, 3, false, &card, Some(70));
+    assert_eq!(actions.len(), 2);
+    match &actions[1].action {
+        Action::EnqueueCardPlay { item, in_front } => {
+            assert!(*in_front);
+            assert_eq!(item.card.uuid, 6201);
+            assert_eq!(
+                item.card.base_damage_mut, 0,
+                "Java Necronomicon uses makeSameInstanceOf(), not a raw transient clone"
+            );
+            assert_eq!(item.energy_on_use, 2);
+            assert_eq!(item.target, Some(70));
+            assert_eq!(
+                item.source,
+                crate::runtime::combat::QueuedCardSource::Necronomicon
+            );
+        }
+        other => panic!("Necronomicon should enqueue a same-instance card play, got {other:?}"),
+    }
+}
+
+#[test]
 fn necronomicon_on_unequip_removes_one_necronomicurse_without_regenerating_it() {
     let mut run = crate::state::run::RunState::new(5, 0, false, "Ironclad");
     run.relics.clear();

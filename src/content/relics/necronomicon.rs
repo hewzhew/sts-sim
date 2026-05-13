@@ -58,7 +58,7 @@ pub fn on_use_card(
 
     if !used_up && def.card_type == crate::content::cards::CardType::Attack && meets_cost_threshold
     {
-        let mut clone = card.clone();
+        let mut clone = card.make_same_instance_of_java();
         clone.energy_on_use = card.energy_on_use;
         actions.push(ActionInfo {
             action: Action::UpdateRelicUsedUp {

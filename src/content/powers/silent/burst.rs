@@ -11,7 +11,7 @@ pub fn on_use_card(state: &mut CombatState, card: &CombatCard, purge: bool, targ
         return;
     }
 
-    let clone = card.clone();
+    let clone = card.make_same_instance_of_java();
 
     if let Some(amount) = store::with_power_mut(state, 0, PowerId::Burst, |p| {
         p.amount -= 1;

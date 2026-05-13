@@ -1435,7 +1435,8 @@ fn dropkick_and_double_tap_action_hooks_match_java_sources() {
             just_applied: false,
         }],
     );
-    let strike = CombatCard::new(CardId::Strike, 140);
+    let mut strike = CombatCard::new(CardId::Strike, 140);
+    strike.base_damage_mut = 99;
     crate::content::powers::ironclad::double_tap::on_use_card(&mut state, &strike, false, Some(7));
     assert_eq!(
         crate::content::powers::store::power_amount(&state, 0, PowerId::DoubleTap),
@@ -1452,6 +1453,10 @@ fn dropkick_and_double_tap_action_hooks_match_java_sources() {
             assert_eq!(
                 item.card.uuid, 140,
                 "Java DoubleTapPower uses makeSameInstanceOf(), preserving UUID"
+            );
+            assert_eq!(
+                item.card.base_damage_mut, 0,
+                "makeSameInstanceOf is a stat-equivalent copy, not a raw clone of transient evaluated damage"
             );
             assert_eq!(
                 item.source,
@@ -1476,11 +1481,13 @@ fn same_instance_replay_powers_preserve_card_uuid_like_java() {
             just_applied: false,
         }],
     );
-    let shrug = CombatCard::new(CardId::ShrugItOff, 920);
+    let mut shrug = CombatCard::new(CardId::ShrugItOff, 920);
+    shrug.base_block_mut = 99;
     crate::content::powers::silent::burst::on_use_card(&mut burst_state, &shrug, false, None);
     match burst_state.pop_next_action() {
         Some(Action::EnqueueCardPlay { item, .. }) => {
             assert_eq!(item.card.uuid, 920);
+            assert_eq!(item.card.base_block_mut, 0);
             assert_eq!(item.source, crate::runtime::combat::QueuedCardSource::Burst);
         }
         other => panic!("Burst should enqueue same-instance skill copy, got {other:?}"),
@@ -1498,7 +1505,8 @@ fn same_instance_replay_powers_preserve_card_uuid_like_java() {
             just_applied: false,
         }],
     );
-    let strike = CombatCard::new(CardId::Strike, 921);
+    let mut strike = CombatCard::new(CardId::Strike, 921);
+    strike.base_damage_mut = 99;
     crate::content::powers::core::duplication_power::on_use_card(
         &mut duplication_state,
         &strike,
@@ -1508,6 +1516,7 @@ fn same_instance_replay_powers_preserve_card_uuid_like_java() {
     match duplication_state.pop_next_action() {
         Some(Action::EnqueueCardPlay { item, .. }) => {
             assert_eq!(item.card.uuid, 921);
+            assert_eq!(item.card.base_damage_mut, 0);
             assert_eq!(
                 item.source,
                 crate::runtime::combat::QueuedCardSource::Duplication

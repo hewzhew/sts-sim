@@ -8,7 +8,7 @@ pub fn on_use_card(state: &mut CombatState, card: &CombatCard, purge: bool, targ
         && crate::content::cards::get_card_definition(card.id).card_type
             == crate::content::cards::CardType::Attack
     {
-        let clone = card.clone();
+        let clone = card.make_same_instance_of_java();
 
         // Deduct power
         if let Some(amount) = store::with_power_mut(state, 0, PowerId::DoubleTap, |p| {

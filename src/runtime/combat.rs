@@ -1264,6 +1264,13 @@ impl CombatCard {
         card
     }
 
+    /// Java `AbstractCard.makeSameInstanceOf()` is a stat-equivalent copy with
+    /// the original UUID restored. Replay effects such as Double Tap, Burst,
+    /// Duplication Potion, and Necronomicon use this path.
+    pub fn make_same_instance_of_java(&self) -> Self {
+        self.make_stat_equivalent_copy_with_uuid(self.uuid)
+    }
+
     pub fn get_cost(&self) -> i8 {
         if let Some(c) = self.cost_for_turn {
             c as i8
