@@ -843,7 +843,11 @@ pub fn handle_vampire_damage_all_enemies(
         .iter()
         .zip(damages.iter())
         .filter_map(|(m, &dmg)| {
-            if !m.is_alive_for_action() {
+            // Java VampireDamageAllEnemiesAction skips only isDying,
+            // currentHealth <= 0, and isEscaping.  It does not consult
+            // isDeadOrEscaped(), so `halfDead` is intentionally not a filter
+            // here.
+            if m.is_dying || m.current_hp <= 0 || m.is_escaped {
                 None
             } else {
                 Some((m.id, dmg))
@@ -1237,6 +1241,38 @@ mod tests {
             "Java PummelDamageAction calls clearPostCombatActions after a killing hit, retaining only Java-retained post-combat actions"
         );
         assert_eq!(state.pop_next_action(), None);
+    }
+
+    #[test]
+    fn vampire_damage_all_enemies_matches_java_half_dead_filter() {
+        let mut state = blank_test_combat();
+        state.entities.player.current_hp = 50;
+        let mut half_dead = test_monster(EnemyId::Darkling);
+        half_dead.id = 67;
+        half_dead.current_hp = 10;
+        half_dead.half_dead = true;
+        half_dead.is_dying = false;
+        half_dead.is_escaped = false;
+        state.entities.monsters = vec![half_dead];
+
+        handle_vampire_damage_all_enemies(
+            0,
+            smallvec::smallvec![2],
+            DamageType::Normal,
+            &mut state,
+        );
+
+        assert_eq!(
+            state.entities.monsters[0].current_hp, 8,
+            "Java VampireDamageAllEnemiesAction does not filter halfDead unless currentHealth <= 0"
+        );
+        assert_eq!(
+            state.pop_next_action(),
+            Some(Action::Heal {
+                target: 0,
+                amount: 2
+            })
+        );
     }
 
     #[test]
