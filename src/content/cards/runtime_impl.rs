@@ -219,7 +219,9 @@ pub fn resolve_card_play_with_context(
         | CardId::Normality
         | CardId::Pain
         | CardId::Shame
-        | CardId::Writhe => smallvec::smallvec![], // Unplayable / Stub
+        | CardId::Writhe
+        | CardId::Reflex
+        | CardId::Tactician => smallvec::smallvec![], // Unplayable / Stub
         CardId::Madness => smallvec::smallvec![ActionInfo {
             action: Action::Madness,
             insertion_mode: crate::runtime::action::AddTo::Bottom,
@@ -630,4 +632,27 @@ pub fn on_play_card(played_card: &CombatCard, state: &CombatState) -> SmallVec<[
     // Other hooks (Time Eater, Velvet Choker, etc.) can be placed here later.
 
     passive_actions
+}
+
+pub fn resolve_card_on_manual_discard(
+    card: &CombatCard,
+    _state: &CombatState,
+) -> SmallVec<[ActionInfo; 4]> {
+    let def = get_card_definition(card.id);
+    let upgraded = if card.upgrades > 0 { 1 } else { 0 };
+    let magic = def.base_magic + upgraded * def.upgrade_magic;
+
+    match card.id {
+        CardId::Reflex => smallvec::smallvec![ActionInfo {
+            action: Action::DrawCards(magic.max(0) as u32),
+            insertion_mode: crate::runtime::action::AddTo::Bottom,
+        }],
+        CardId::Tactician => smallvec::smallvec![ActionInfo {
+            action: Action::GainEnergy {
+                amount: magic.max(0),
+            },
+            insertion_mode: crate::runtime::action::AddTo::Top,
+        }],
+        _ => smallvec::smallvec![],
+    }
 }

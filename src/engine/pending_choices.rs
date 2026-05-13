@@ -148,21 +148,23 @@ pub fn handle_hand_select(
 
             match reason {
                 HandSelectReason::GamblingChip => {
-                    // Java GamblingChipAction: discard selected cards, then draw equal count
                     let num_selected = uuids.len();
-                    for uuid in &uuids {
-                        crate::engine::action_handlers::cards::handle_discard_card(
-                            *uuid,
-                            combat_state,
-                        );
-                    }
-                    // Queue draw actions for same number of cards
+                    // Java GamblingChipAction queues the draw action to top
+                    // before processing selected discards. Tactician's later
+                    // addToTop must therefore run before this draw.
                     if num_selected > 0 {
                         let action = ActionInfo {
                             action: Action::DrawCards(num_selected as u32),
                             insertion_mode: AddTo::Top,
                         };
                         combat_state.queue_actions(smallvec::smallvec![action]);
+                    }
+                    for uuid in &uuids {
+                        crate::engine::action_handlers::cards::handle_discard_card_with_order(
+                            *uuid,
+                            crate::engine::action_handlers::cards::DiscardHookOrder::RelicsThenCard,
+                            combat_state,
+                        );
                     }
                 }
                 HandSelectReason::Exhaust => {
@@ -183,10 +185,12 @@ pub fn handle_hand_select(
                     }
                 }
                 HandSelectReason::Discard => {
-                    // Discard selected cards from hand
+                    // Java DiscardAction selected-card path triggers card
+                    // manual-discard hooks before incrementDiscard relic hooks.
                     for uuid in &uuids {
-                        crate::engine::action_handlers::cards::handle_discard_card(
+                        crate::engine::action_handlers::cards::handle_discard_card_with_order(
                             *uuid,
+                            crate::engine::action_handlers::cards::DiscardHookOrder::CardThenRelics,
                             combat_state,
                         );
                     }

@@ -5053,6 +5053,177 @@ fn discard_from_hand_auto_discards_all_when_hand_size_is_not_greater_than_amount
 }
 
 #[test]
+fn reflex_and_tactician_manual_discard_hooks_match_java_order() {
+    let reflex = get_card_definition(CardId::Reflex);
+    assert_eq!(reflex.cost, -2);
+    assert_eq!(reflex.card_type, CardType::Skill);
+    assert_eq!(reflex.rarity, CardRarity::Uncommon);
+    assert_eq!(reflex.base_magic, 2);
+    assert_eq!(reflex.upgrade_magic, 1);
+
+    let tactician = get_card_definition(CardId::Tactician);
+    assert_eq!(tactician.cost, -2);
+    assert_eq!(tactician.base_magic, 1);
+    assert_eq!(tactician.upgrade_magic, 1);
+    assert_eq!(java_id(CardId::Reflex), "Reflex");
+    assert_eq!(java_id(CardId::Tactician), "Tactician");
+    assert_eq!(build_java_id_map().get("Reflex"), Some(&CardId::Reflex));
+    assert_eq!(
+        build_java_id_map().get("Tactician"),
+        Some(&CardId::Tactician)
+    );
+
+    let mut reflex_state = crate::test_support::blank_test_combat();
+    reflex_state
+        .entities
+        .player
+        .add_relic(crate::content::relics::RelicState::new(
+            crate::content::relics::RelicId::Tingsha,
+        ));
+    reflex_state.zones.hand = vec![CombatCard::new(CardId::Reflex, 870)];
+    crate::engine::action_handlers::cards::handle_discard_card(870, &mut reflex_state);
+
+    assert_eq!(reflex_state.turn.counters.cards_discarded_this_turn, 1);
+    assert_eq!(reflex_state.zones.discard_pile[0].id, CardId::Reflex);
+    assert!(matches!(
+        reflex_state.pop_next_action(),
+        Some(Action::DamageRandomEnemy { .. }),
+    ));
+    assert_eq!(
+        reflex_state.pop_next_action(),
+        Some(Action::DrawCards(2)),
+        "Java DiscardSpecificCardAction/GamblingChipAction increments discard before Reflex.triggerOnManualDiscard"
+    );
+
+    let mut tactician_state = crate::test_support::blank_test_combat();
+    tactician_state
+        .entities
+        .player
+        .add_relic(crate::content::relics::RelicState::new(
+            crate::content::relics::RelicId::ToughBandages,
+        ));
+    let mut tactician_plus = CombatCard::new(CardId::Tactician, 871);
+    tactician_plus.upgrades = 1;
+    tactician_state.zones.hand = vec![tactician_plus];
+    crate::engine::action_handlers::cards::handle_discard_card(871, &mut tactician_state);
+
+    assert_eq!(tactician_state.turn.counters.cards_discarded_this_turn, 1);
+    assert_eq!(
+        tactician_state.pop_next_action(),
+        Some(Action::GainEnergy { amount: 2 }),
+        "Java Tactician.triggerOnManualDiscard uses addToTop, so it executes before relic addToBot actions queued by incrementDiscard"
+    );
+    assert_eq!(
+        tactician_state.pop_next_action(),
+        Some(Action::GainBlock {
+            target: 0,
+            amount: 3,
+        })
+    );
+}
+
+#[test]
+fn discard_action_manual_discard_hooks_run_card_before_relic_hooks() {
+    let mut reflex_state = crate::test_support::blank_test_combat();
+    reflex_state.entities.monsters = vec![crate::test_support::test_monster(EnemyId::JawWorm)];
+    reflex_state
+        .entities
+        .player
+        .add_relic(crate::content::relics::RelicState::new(
+            crate::content::relics::RelicId::Tingsha,
+        ));
+    reflex_state.zones.hand = vec![CombatCard::new(CardId::Reflex, 872)];
+
+    crate::engine::action_handlers::cards::handle_discard_from_hand(
+        1,
+        false,
+        false,
+        &mut reflex_state,
+    );
+
+    assert_eq!(reflex_state.turn.counters.cards_discarded_this_turn, 1);
+    assert_eq!(
+        reflex_state.pop_next_action(),
+        Some(Action::DrawCards(2)),
+        "Java DiscardAction calls triggerOnManualDiscard before incrementDiscard"
+    );
+    assert!(matches!(
+        reflex_state.pop_next_action(),
+        Some(Action::DamageRandomEnemy { .. }),
+    ));
+
+    let mut chip_state = crate::test_support::blank_test_combat();
+    chip_state
+        .entities
+        .player
+        .add_relic(crate::content::relics::RelicState::new(
+            crate::content::relics::RelicId::ToughBandages,
+        ));
+    let mut tactician_plus = CombatCard::new(CardId::Tactician, 873);
+    tactician_plus.upgrades = 1;
+    chip_state.zones.hand = vec![tactician_plus];
+    let mut engine_state = crate::state::EngineState::CombatProcessing;
+
+    crate::engine::pending_choices::handle_hand_select(
+        &mut engine_state,
+        &mut chip_state,
+        &[873],
+        1,
+        false,
+        true,
+        crate::state::HandSelectReason::GamblingChip,
+        crate::state::ClientInput::SubmitHandSelect(vec![873]),
+    )
+    .expect("valid Gambling Chip hand selection");
+
+    assert_eq!(chip_state.turn.counters.cards_discarded_this_turn, 1);
+    assert_eq!(
+        chip_state.pop_next_action(),
+        Some(Action::GainEnergy { amount: 2 }),
+        "Java GamblingChipAction queues DrawCardAction to top before discards, so later Tactician addToTop executes first"
+    );
+    assert_eq!(chip_state.pop_next_action(), Some(Action::DrawCards(1)));
+    assert_eq!(
+        chip_state.pop_next_action(),
+        Some(Action::GainBlock {
+            target: 0,
+            amount: 3,
+        })
+    );
+}
+
+#[test]
+fn discard_action_random_end_turn_path_keeps_card_hook_without_relic_hook() {
+    let mut state = crate::test_support::blank_test_combat();
+    state.entities.monsters = vec![crate::test_support::test_monster(EnemyId::JawWorm)];
+    state
+        .entities
+        .player
+        .add_relic(crate::content::relics::RelicState::new(
+            crate::content::relics::RelicId::Tingsha,
+        ));
+    state.zones.hand = vec![
+        CombatCard::new(CardId::Reflex, 874),
+        CombatCard::new(CardId::Reflex, 875),
+    ];
+
+    crate::engine::action_handlers::cards::handle_discard_from_hand(1, true, true, &mut state);
+
+    assert_eq!(state.turn.counters.cards_discarded_this_turn, 1);
+    assert_eq!(state.zones.discard_pile.len(), 1);
+    assert_eq!(
+        state.pop_next_action(),
+        Some(Action::DrawCards(2)),
+        "Java DiscardAction random branch calls triggerOnManualDiscard even when endTurn=true"
+    );
+    assert_eq!(
+        state.pop_next_action(),
+        None,
+        "GameActionManager.incrementDiscard(endTurn=true) suppresses relic onManualDiscard"
+    );
+}
+
+#[test]
 fn exhaust_from_hand_matches_java_auto_and_any_number_paths() {
     let mut auto_state = crate::test_support::blank_test_combat();
     auto_state.zones.hand = vec![

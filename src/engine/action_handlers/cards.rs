@@ -63,13 +63,53 @@ fn move_random_hand_card_to_draw_top(state: &mut CombatState) {
     state.add_card_to_draw_pile_top(card);
 }
 
-fn move_hand_card_to_discard_at(pos: usize, manual: bool, state: &mut CombatState) {
-    let card = state.zones.hand.remove(pos);
-    state.add_card_to_discard_pile_top(card);
-    if manual {
-        let discard_actions = crate::content::relics::hooks::on_discard(state);
-        state.queue_actions(discard_actions);
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DiscardHookOrder {
+    /// Java end-turn all-card discard path: count the discard, but do not
+    /// trigger manual-discard card hooks or relic hooks.
+    None,
+    /// Java DiscardAction random path with endTurn=true: card hook still fires,
+    /// but GameActionManager.incrementDiscard does not fire relic hooks.
+    CardOnly,
+    /// Java DiscardAction: moveToDiscardPile, triggerOnManualDiscard,
+    /// then GameActionManager.incrementDiscard.
+    CardThenRelics,
+    /// Java DiscardSpecificCardAction/GamblingChipAction: moveToDiscardPile,
+    /// GameActionManager.incrementDiscard, then triggerOnManualDiscard.
+    RelicsThenCard,
+}
+
+fn queue_manual_discard_hooks(
+    card: &crate::runtime::combat::CombatCard,
+    order: DiscardHookOrder,
+    state: &mut CombatState,
+) {
+    match order {
+        DiscardHookOrder::None => {}
+        DiscardHookOrder::CardOnly => {
+            let card_actions = crate::content::cards::resolve_card_on_manual_discard(card, state);
+            state.queue_actions(card_actions);
+        }
+        DiscardHookOrder::CardThenRelics => {
+            let card_actions = crate::content::cards::resolve_card_on_manual_discard(card, state);
+            state.queue_actions(card_actions);
+            let relic_actions = crate::content::relics::hooks::on_discard(state);
+            state.queue_actions(relic_actions);
+        }
+        DiscardHookOrder::RelicsThenCard => {
+            let relic_actions = crate::content::relics::hooks::on_discard(state);
+            state.queue_actions(relic_actions);
+            let card_actions = crate::content::cards::resolve_card_on_manual_discard(card, state);
+            state.queue_actions(card_actions);
+        }
     }
+}
+
+fn move_hand_card_to_discard_at(pos: usize, hook_order: DiscardHookOrder, state: &mut CombatState) {
+    let card = state.zones.hand.remove(pos);
+    state.add_card_to_discard_pile_top(card.clone());
+    state.turn.increment_cards_discarded();
+    queue_manual_discard_hooks(&card, hook_order, state);
 }
 
 pub fn handle_draw_cards(amount: u32, state: &mut CombatState) {
@@ -220,8 +260,16 @@ pub fn handle_shuffle_discard_into_draw(state: &mut CombatState) {
 }
 
 pub fn handle_discard_card(card_uuid: u32, state: &mut CombatState) {
+    handle_discard_card_with_order(card_uuid, DiscardHookOrder::RelicsThenCard, state);
+}
+
+pub fn handle_discard_card_with_order(
+    card_uuid: u32,
+    hook_order: DiscardHookOrder,
+    state: &mut CombatState,
+) {
     if let Some(pos) = state.zones.hand.iter().position(|c| c.uuid == card_uuid) {
-        move_hand_card_to_discard_at(pos, true, state);
+        move_hand_card_to_discard_at(pos, hook_order, state);
     }
 }
 
@@ -252,14 +300,24 @@ pub fn handle_discard_from_hand(
 
     let amount = amount.max(0) as usize;
     if state.zones.hand.len() <= amount {
+        let hook_order = if end_turn {
+            DiscardHookOrder::None
+        } else {
+            DiscardHookOrder::CardThenRelics
+        };
         while !state.zones.hand.is_empty() {
             let top = state.zones.hand.len() - 1;
-            move_hand_card_to_discard_at(top, !end_turn, state);
+            move_hand_card_to_discard_at(top, hook_order, state);
         }
         return;
     }
 
     if random {
+        let hook_order = if end_turn {
+            DiscardHookOrder::CardOnly
+        } else {
+            DiscardHookOrder::CardThenRelics
+        };
         for _ in 0..amount {
             if state.zones.hand.is_empty() {
                 break;
@@ -268,7 +326,7 @@ pub fn handle_discard_from_hand(
                 .rng
                 .card_random_rng
                 .random(state.zones.hand.len() as i32 - 1) as usize;
-            move_hand_card_to_discard_at(idx, !end_turn, state);
+            move_hand_card_to_discard_at(idx, hook_order, state);
         }
         return;
     }

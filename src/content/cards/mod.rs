@@ -166,6 +166,8 @@ pub enum CardId {
     Adrenaline,
     AfterImage,
     Burst,
+    Reflex,
+    Tactician,
     // Add more as we expand
 }
 
@@ -3048,6 +3050,44 @@ pub fn get_card_definition(id: CardId) -> CardDefinition {
             upgrade_block: 0,
             upgrade_magic: 1,
         },
+        CardId::Reflex => CardDefinition {
+            id: CardId::Reflex,
+            name: "Reflex",
+            card_type: CardType::Skill,
+            rarity: CardRarity::Uncommon,
+            cost: -2,
+            base_damage: 0,
+            base_block: 0,
+            base_magic: 2,
+            target: CardTarget::None,
+            is_multi_damage: false,
+            exhaust: false,
+            ethereal: false,
+            innate: false,
+            tags: &[],
+            upgrade_damage: 0,
+            upgrade_block: 0,
+            upgrade_magic: 1,
+        },
+        CardId::Tactician => CardDefinition {
+            id: CardId::Tactician,
+            name: "Tactician",
+            card_type: CardType::Skill,
+            rarity: CardRarity::Uncommon,
+            cost: -2,
+            base_damage: 0,
+            base_block: 0,
+            base_magic: 1,
+            target: CardTarget::None,
+            is_multi_damage: false,
+            exhaust: false,
+            ethereal: false,
+            innate: false,
+            tags: &[],
+            upgrade_damage: 0,
+            upgrade_block: 0,
+            upgrade_magic: 1,
+        },
     }
 }
 
@@ -3199,6 +3239,8 @@ pub const SILENT_UNCOMMON_POOL: &[CardId] = &[
     CardId::Catalyst,
     CardId::Footwork,
     CardId::NoxiousFumes,
+    CardId::Reflex,
+    CardId::Tactician,
 ];
 
 pub const SILENT_RARE_POOL: &[CardId] = &[CardId::Adrenaline, CardId::AfterImage, CardId::Burst];
@@ -3523,6 +3565,8 @@ pub fn java_id(id: CardId) -> &'static str {
         CardId::Adrenaline => "Adrenaline",
         CardId::AfterImage => "After Image",
         CardId::Burst => "Burst",
+        CardId::Reflex => "Reflex",
+        CardId::Tactician => "Tactician",
     }
 }
 
@@ -3686,6 +3730,8 @@ pub fn build_java_id_map() -> std::collections::HashMap<&'static str, CardId> {
         Adrenaline,
         AfterImage,
         Burst,
+        Reflex,
+        Tactician,
     ];
     let mut map = std::collections::HashMap::with_capacity(all_ids.len());
     for id in all_ids {

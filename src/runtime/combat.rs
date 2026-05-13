@@ -255,6 +255,7 @@ pub enum CombatPhase {
 pub struct EphemeralCounters {
     pub cards_played_this_turn: u8,
     pub attacks_played_this_turn: u8,
+    pub cards_discarded_this_turn: u16,
     pub card_ids_played_this_turn: Vec<CardId>,
     pub times_damaged_this_combat: u8,
     pub victory_triggered: bool,
@@ -475,6 +476,11 @@ impl TurnRuntime {
         self.counters.attacks_played_this_turn += 1;
     }
 
+    pub fn increment_cards_discarded(&mut self) {
+        self.counters.cards_discarded_this_turn =
+            self.counters.cards_discarded_this_turn.saturating_add(1);
+    }
+
     pub fn increment_times_damaged_this_combat(&mut self) {
         self.counters.times_damaged_this_combat += 1;
     }
@@ -529,6 +535,7 @@ impl TurnRuntime {
         self.energy = energy;
         self.counters.cards_played_this_turn = 0;
         self.counters.attacks_played_this_turn = 0;
+        self.counters.cards_discarded_this_turn = 0;
         self.counters.card_ids_played_this_turn.clear();
     }
 }
@@ -1875,6 +1882,7 @@ mod tests {
             counters: EphemeralCounters {
                 cards_played_this_turn: 4,
                 attacks_played_this_turn: 2,
+                cards_discarded_this_turn: 3,
                 card_ids_played_this_turn: vec![CardId::Strike, CardId::Defend],
                 times_damaged_this_combat: 3,
                 victory_triggered: false,
@@ -1892,6 +1900,7 @@ mod tests {
         assert_eq!(turn.energy, 3);
         assert_eq!(turn.counters.cards_played_this_turn, 0);
         assert_eq!(turn.counters.attacks_played_this_turn, 0);
+        assert_eq!(turn.counters.cards_discarded_this_turn, 0);
         assert!(turn.counters.card_ids_played_this_turn.is_empty());
         assert_eq!(
             turn.counters.times_damaged_this_combat, 3,
