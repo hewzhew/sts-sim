@@ -4060,6 +4060,36 @@ fn random_enemy_attacks_ignore_half_dead_monsters_like_java_random_monster() {
 }
 
 #[test]
+fn random_enemy_attacks_do_not_filter_zero_hp_before_action_like_java_random_monster() {
+    let mut state = crate::test_support::blank_test_combat();
+    let mut zero_hp_not_dying = crate::test_support::test_monster(EnemyId::JawWorm);
+    zero_hp_not_dying.id = 614;
+    zero_hp_not_dying.current_hp = 0;
+    zero_hp_not_dying.is_dying = false;
+    zero_hp_not_dying.is_escaped = false;
+    zero_hp_not_dying.half_dead = false;
+    state.entities.monsters = vec![zero_hp_not_dying];
+
+    crate::engine::action_handlers::damage::handle_damage_random_enemy(
+        0,
+        7,
+        DamageType::Normal,
+        &mut state,
+    );
+
+    match state
+        .pop_next_action()
+        .expect("Java random target selection can still pick a 0 HP non-dying monster")
+    {
+        Action::Damage(info) => {
+            assert_eq!(info.target, 614);
+            assert_eq!(info.output, 7);
+        }
+        other => panic!("DamageRandomEnemyAction should queue DamageAction, got {other:?}"),
+    }
+}
+
+#[test]
 fn attack_damage_random_enemy_card_recalculates_damage_at_execution_like_java() {
     let mut state = crate::test_support::blank_test_combat();
     let mut target = crate::test_support::test_monster(EnemyId::JawWorm);

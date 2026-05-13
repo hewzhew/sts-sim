@@ -903,8 +903,11 @@ impl MonsterEntity {
         self.current_hp > 0 && !self.is_dead_or_escaped()
     }
 
+    /// Java `MonsterGroup.getRandomMonster(..., aliveOnly=true, cardRandomRng)`
+    /// filters out half-dead, dying, and escaping monsters. It does not check
+    /// `currentHealth`, because subsequent actions own their own cancellation.
     pub fn is_random_target_candidate(&self) -> bool {
-        self.is_alive_for_action()
+        !self.half_dead && !self.is_dying && !self.is_escaped
     }
 
     pub fn turn_plan(&self) -> MonsterTurnPlan {
