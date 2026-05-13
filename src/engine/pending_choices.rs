@@ -208,13 +208,16 @@ pub fn handle_hand_select(
                     }
                 }
                 HandSelectReason::PutToBottomOfDraw => {
-                    // Forethought: move to bottom of draw pile; only cards with cost > 0 become free once.
+                    // Java ForethoughtAction checks AbstractCard.cost, not
+                    // costForTurn. Temporary turn-cost reductions do not stop
+                    // the selected card from becoming free next time it is
+                    // drawn.
                     for uuid in &uuids {
                         if let Some(pos) =
                             combat_state.zones.hand.iter().position(|c| c.uuid == *uuid)
                         {
                             let mut card = combat_state.zones.hand.remove(pos);
-                            if card.get_cost() > 0 {
+                            if card.combat_cost_without_turn_override_java() > 0 {
                                 card.free_to_play_once = true;
                             }
                             combat_state.add_card_to_draw_pile_bottom(card);
@@ -730,6 +733,44 @@ mod tests {
                 (CardId::Defend, 20, Some(true)),
             ],
             "Java RetainCardsAction/MeditateAction marks only the selected cards with one-turn retain"
+        );
+    }
+
+    #[test]
+    fn hand_select_forethought_uses_combat_cost_not_turn_cost_for_free_once() {
+        let mut engine_state =
+            EngineState::PendingChoice(crate::state::core::PendingChoice::HandSelect {
+                reason: HandSelectReason::PutToBottomOfDraw,
+                candidate_uuids: vec![10],
+                min_cards: 1,
+                max_cards: 1,
+                can_cancel: false,
+            });
+        let mut combat_state = blank_test_combat();
+        let mut temporarily_free_defend = CombatCard::new(CardId::Defend, 10);
+        temporarily_free_defend.set_cost_for_turn_java(0);
+        combat_state.zones.hand = vec![temporarily_free_defend];
+
+        handle_hand_select(
+            &mut engine_state,
+            &mut combat_state,
+            &[10],
+            1,
+            true,
+            false,
+            HandSelectReason::PutToBottomOfDraw,
+            ClientInput::SubmitHandSelect(vec![10]),
+        )
+        .expect("Forethought-style selection should resolve");
+
+        assert_eq!(engine_state, EngineState::CombatProcessing);
+        assert!(combat_state.zones.hand.is_empty());
+        assert_eq!(combat_state.zones.draw_pile.len(), 1);
+        let moved = &combat_state.zones.draw_pile[0];
+        assert_eq!(moved.uuid, 10);
+        assert!(
+            moved.free_to_play_once,
+            "Java ForethoughtAction checks AbstractCard.cost > 0, so a card made free only for this turn still becomes free once after redraw"
         );
     }
 
