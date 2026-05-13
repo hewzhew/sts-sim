@@ -1071,7 +1071,19 @@ pub fn handle_flush_next_queued_card(state: &mut CombatState) {
     };
 
     queued.card.energy_on_use = queued.energy_on_use;
+    let has_more_queued_cards = !state.zones.queued_cards.is_empty();
     if crate::content::cards::can_play_card_ignoring_energy(&queued.card, state).is_err() {
+        if queued.autoplay && !queued.purge_on_use {
+            let should_exhaust = queued
+                .card
+                .exhaust_override
+                .unwrap_or(crate::content::cards::exhausts_when_played(&queued.card));
+            state.zones.limbo.push(queued.card);
+            state.queue_action_front(Action::UseCardDone { should_exhaust });
+        }
+        if has_more_queued_cards {
+            state.queue_action_back(Action::FlushNextQueuedCard);
+        }
         return;
     }
     let target = if queued.random_target {
@@ -1081,7 +1093,7 @@ pub fn handle_flush_next_queued_card(state: &mut CombatState) {
         queued.target
     };
 
-    if !state.zones.queued_cards.is_empty() {
+    if has_more_queued_cards {
         state.queue_action_back(Action::FlushNextQueuedCard);
     }
     state.queue_action_front(Action::PlayCardDirect {

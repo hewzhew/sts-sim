@@ -810,9 +810,67 @@ fn ironclad_attack_condition_and_dot_power_runtime_actions_match_java_use_method
         .pop_next_action()
         .expect("autoplay Clash should schedule queue flush");
     crate::engine::action_handlers::execute_action(flush_autoplay_clash, &mut autoplay_clash_state);
+    let fizzled_clash_cleanup = autoplay_clash_state.pop_next_action();
     assert!(
-        autoplay_clash_state.pop_next_action().is_none(),
-        "Java queued/autoplay cards still call canUse; Clash fizzles if hand contains a non-Attack"
+        matches!(
+            fizzled_clash_cleanup,
+            Some(Action::UseCardDone {
+                should_exhaust: false
+            })
+        ),
+        "Java queued/autoplay cards still call canUse; failed autoplay still resolves UseCardAction cleanup"
+    );
+    crate::engine::action_handlers::execute_action(
+        fizzled_clash_cleanup.unwrap(),
+        &mut autoplay_clash_state,
+    );
+    assert_eq!(autoplay_clash_state.zones.discard_pile.len(), 1);
+    assert_eq!(autoplay_clash_state.zones.discard_pile[0].id, CardId::Clash);
+
+    let mut fizzle_then_continue_state = crate::test_support::blank_test_combat();
+    fizzle_then_continue_state.entities.monsters = vec![clash_target.clone()];
+    fizzle_then_continue_state.zones.hand = vec![CombatCard::new(CardId::Defend, 109)];
+    fizzle_then_continue_state.enqueue_card_play(
+        crate::runtime::combat::QueuedCardPlay {
+            card: CombatCard::new(CardId::Clash, 110),
+            target: Some(7),
+            energy_on_use: 0,
+            ignore_energy_total: true,
+            autoplay: true,
+            random_target: false,
+            is_end_turn_autoplay: false,
+            purge_on_use: false,
+            source: crate::runtime::combat::QueuedCardSource::Normal,
+        },
+        false,
+    );
+    fizzle_then_continue_state.enqueue_card_play(
+        crate::runtime::combat::QueuedCardPlay {
+            card: CombatCard::new(CardId::Strike, 111),
+            target: Some(7),
+            energy_on_use: 0,
+            ignore_energy_total: true,
+            autoplay: true,
+            random_target: false,
+            is_end_turn_autoplay: false,
+            purge_on_use: false,
+            source: crate::runtime::combat::QueuedCardSource::Normal,
+        },
+        false,
+    );
+    let first_flush = fizzle_then_continue_state
+        .pop_next_action()
+        .expect("first queued card should schedule flush");
+    crate::engine::action_handlers::execute_action(first_flush, &mut fizzle_then_continue_state);
+    let cleanup = fizzle_then_continue_state
+        .pop_next_action()
+        .expect("failed autoplay should clean up before later queued cards");
+    assert!(matches!(cleanup, Action::UseCardDone { .. }));
+    crate::engine::action_handlers::execute_action(cleanup, &mut fizzle_then_continue_state);
+    assert_eq!(
+        fizzle_then_continue_state.pop_next_action(),
+        Some(Action::FlushNextQueuedCard),
+        "a failed autoplay card must not strand later queued cards"
     );
 
     let mut autoplay_no_energy_state = crate::test_support::blank_test_combat();
