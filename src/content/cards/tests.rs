@@ -4848,6 +4848,112 @@ fn transmutation_x_cost_action_matches_java_energy_and_chemical_x_timing() {
 }
 
 #[test]
+fn forethought_resolves_as_execution_time_action_like_java() {
+    let state = crate::test_support::blank_test_combat();
+    let forethought = CombatCard::new(CardId::Forethought, 830);
+    let actions = resolve_card_play(CardId::Forethought, &state, &forethought, None);
+    assert_eq!(actions.len(), 1);
+    assert_eq!(
+        actions[0].action,
+        Action::Forethought { upgraded: false },
+        "Java Forethought.use always queues ForethoughtAction; hand size is read when that action executes"
+    );
+
+    let mut one_card_state = crate::test_support::blank_test_combat();
+    let mut temporarily_free_defend = CombatCard::new(CardId::Defend, 831);
+    temporarily_free_defend.set_cost_for_turn_java(0);
+    one_card_state.zones.hand = vec![temporarily_free_defend];
+
+    crate::engine::action_handlers::cards::handle_forethought(false, &mut one_card_state);
+
+    assert!(one_card_state.zones.hand.is_empty());
+    assert_eq!(one_card_state.zones.draw_pile.len(), 1);
+    assert_eq!(one_card_state.zones.draw_pile[0].uuid, 831);
+    assert!(
+        one_card_state.zones.draw_pile[0].free_to_play_once,
+        "Java ForethoughtAction auto-move path also checks AbstractCard.cost, not costForTurn"
+    );
+    assert_eq!(
+        one_card_state.pop_next_action(),
+        None,
+        "Java ForethoughtAction auto-moves the only selectable card without opening the hand-select screen"
+    );
+}
+
+#[test]
+fn upgraded_forethought_opens_any_number_selection_at_execution() {
+    let mut state = crate::test_support::blank_test_combat();
+    state.zones.hand = vec![CombatCard::new(CardId::Strike, 832)];
+
+    crate::engine::action_handlers::cards::handle_forethought(true, &mut state);
+
+    assert!(matches!(
+        state.pop_next_action(),
+        Some(Action::SuspendForHandSelect {
+            min: 0,
+            max: 99,
+            can_cancel: true,
+            filter: crate::state::HandSelectFilter::Any,
+            reason: crate::state::HandSelectReason::PutToBottomOfDraw,
+        })
+    ));
+}
+
+#[test]
+fn thinking_ahead_uses_java_use_time_hand_visibility() {
+    let mut direct_empty_hand = crate::test_support::blank_test_combat();
+    direct_empty_hand.zones.draw_pile = vec![CombatCard::new(CardId::Strike, 833)];
+    let thinking = CombatCard::new(CardId::ThinkingAhead, 834);
+
+    let direct_actions = resolve_card_play_with_context(
+        CardId::ThinkingAhead,
+        &direct_empty_hand,
+        &thinking,
+        None,
+        CardUseContext {
+            played_from_hand: false,
+        },
+    );
+    assert_eq!(direct_actions.len(), 1);
+    assert!(matches!(direct_actions[0].action, Action::DrawCards(2)));
+
+    let hand_play_actions = resolve_card_play_with_context(
+        CardId::ThinkingAhead,
+        &direct_empty_hand,
+        &thinking,
+        None,
+        CardUseContext {
+            played_from_hand: true,
+        },
+    );
+    assert_eq!(hand_play_actions.len(), 2);
+    assert!(matches!(
+        hand_play_actions[1].action,
+        Action::SuspendForHandSelect {
+            reason: crate::state::HandSelectReason::PutOnDrawPile,
+            ..
+        }
+    ));
+
+    let mut direct_with_hand = direct_empty_hand.clone();
+    direct_with_hand.zones.hand = vec![CombatCard::new(CardId::Defend, 835)];
+    let direct_with_hand_actions = resolve_card_play_with_context(
+        CardId::ThinkingAhead,
+        &direct_with_hand,
+        &thinking,
+        None,
+        CardUseContext {
+            played_from_hand: false,
+        },
+    );
+    assert_eq!(
+        direct_with_hand_actions.len(),
+        2,
+        "Java direct/autoplay use paths only queue PutOnDeckAction when another card is already in hand"
+    );
+}
+
+#[test]
 fn upgraded_blind_and_trip_enqueue_apply_power_for_every_monster_like_java() {
     let mut state = crate::test_support::blank_test_combat();
     let mut zero_hp_not_dying = crate::test_support::test_monster(EnemyId::JawWorm);

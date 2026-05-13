@@ -9,6 +9,7 @@ pub fn play_colorless(
     state: &CombatState,
     card: &CombatCard,
     target: Option<EntityId>,
+    context: crate::content::cards::CardUseContext,
 ) -> SmallVec<[ActionInfo; 4]> {
     let dmg = card.base_damage_mut;
     let mag = card.base_magic_num_mut;
@@ -132,15 +133,9 @@ pub fn play_colorless(
             acts.push(Action::DrawCards(1));
         }
         CardId::Forethought => {
-            if !state.zones.hand.is_empty() {
-                acts.push(Action::SuspendForHandSelect {
-                    min: if card.upgrades > 0 { 0 } else { 1 },
-                    max: if card.upgrades > 0 { 99 } else { 1 },
-                    can_cancel: card.upgrades > 0,
-                    filter: crate::state::HandSelectFilter::Any,
-                    reason: crate::state::HandSelectReason::PutToBottomOfDraw,
-                });
-            }
+            acts.push(Action::Forethought {
+                upgraded: card.upgrades > 0,
+            });
         }
         CardId::GoodInstincts => {
             acts.push(Action::GainBlock {
@@ -397,10 +392,7 @@ pub fn play_colorless(
         }
         CardId::ThinkingAhead => {
             acts.push(Action::DrawCards(2));
-            if !state.zones.hand.is_empty()
-                || !state.zones.draw_pile.is_empty()
-                || !state.zones.discard_pile.is_empty()
-            {
+            if context.played_from_hand || !state.zones.hand.is_empty() {
                 acts.push(Action::SuspendForHandSelect {
                     min: 1,
                     max: 1,

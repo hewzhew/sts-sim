@@ -305,6 +305,9 @@ pub enum Action {
         amount: usize,
         random: bool,
     },
+    Forethought {
+        upgraded: bool,
+    },
     DiscardPileToTopOfDeck,
     ExhumeCard {
         card_uuid: u32,

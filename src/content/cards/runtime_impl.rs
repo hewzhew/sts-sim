@@ -6,12 +6,30 @@ use crate::runtime::action::{Action, ActionInfo};
 use crate::runtime::combat::{CombatCard, CombatState};
 use smallvec::SmallVec;
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct CardUseContext {
+    /// Java `AbstractPlayer.useCard` calls `card.use(...)` before removing a
+    /// normally played card from hand. Autoplay/direct paths can call the same
+    /// card code while the card is already outside the hand.
+    pub played_from_hand: bool,
+}
+
 /// Central dispatch table for resolving card play mechanics.
 pub fn resolve_card_play(
+    card_id: CardId,
+    state: &CombatState,
+    card: &CombatCard,
+    target: Option<EntityId>,
+) -> SmallVec<[ActionInfo; 4]> {
+    resolve_card_play_with_context(card_id, state, card, target, CardUseContext::default())
+}
+
+pub fn resolve_card_play_with_context(
     card_id: CardId,
     _state: &CombatState,
     _card: &CombatCard,
     target: Option<EntityId>,
+    context: CardUseContext,
 ) -> SmallVec<[ActionInfo; 4]> {
     let t = target;
     match card_id {
@@ -120,7 +138,7 @@ pub fn resolve_card_play(
             }
             actions
         }
-        CardId::Bite => colorless::play_colorless(_state, _card, t),
+        CardId::Bite => colorless::play_colorless(_state, _card, t, context),
         CardId::Apparition => smallvec::smallvec![ActionInfo {
             action: Action::ApplyPower {
                 source: 0,
@@ -182,7 +200,7 @@ pub fn resolve_card_play(
         | CardId::Transmutation
         | CardId::Violence
         | CardId::JAX
-        | CardId::RitualDagger => colorless::play_colorless(_state, _card, t),
+        | CardId::RitualDagger => colorless::play_colorless(_state, _card, t, context),
         // Unplayable stubs — curses, status, and special cards
         CardId::Wound
         | CardId::Burn

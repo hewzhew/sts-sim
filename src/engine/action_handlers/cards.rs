@@ -143,6 +143,33 @@ pub fn handle_put_on_deck(amount: usize, random: bool, state: &mut CombatState) 
     }
 }
 
+pub fn handle_forethought(upgraded: bool, state: &mut CombatState) {
+    if state.zones.hand.is_empty() {
+        return;
+    }
+
+    if !upgraded && state.zones.hand.len() == 1 {
+        let mut card = state
+            .zones
+            .hand
+            .pop()
+            .expect("checked non-empty hand before Forethought auto move");
+        if card.combat_cost_without_turn_override_java() > 0 {
+            card.free_to_play_once = true;
+        }
+        state.add_card_to_draw_pile_bottom(card);
+        return;
+    }
+
+    state.queue_action_front(Action::SuspendForHandSelect {
+        min: if upgraded { 0 } else { 1 },
+        max: if upgraded { 99 } else { 1 },
+        can_cancel: upgraded,
+        filter: crate::state::HandSelectFilter::Any,
+        reason: crate::state::HandSelectReason::PutToBottomOfDraw,
+    });
+}
+
 pub fn handle_empty_deck_shuffle(state: &mut CombatState) {
     if state.zones.draw_pile.is_empty() && !state.zones.discard_pile.is_empty() {
         state.shuffle_discard_pile_into_draw_pile();
@@ -878,10 +905,17 @@ pub fn handle_queue_early_end_turn(state: &mut CombatState) {
     state.turn.mark_early_end_turn_pending();
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum CardPlaySource {
+    Hand,
+    Direct,
+}
+
 fn execute_played_card(
     mut played_card: crate::runtime::combat::CombatCard,
     target: Option<usize>,
     purge: bool,
+    source: CardPlaySource,
     state: &mut CombatState,
 ) {
     let card_id = played_card.id;
@@ -889,8 +923,15 @@ fn execute_played_card(
 
     crate::content::cards::evaluate_card(&mut played_card, state, target);
 
-    let mut card_actions =
-        crate::content::cards::resolve_card_play(card_id, state, &played_card, target);
+    let mut card_actions = crate::content::cards::resolve_card_play_with_context(
+        card_id,
+        state,
+        &played_card,
+        target,
+        crate::content::cards::CardUseContext {
+            played_from_hand: source == CardPlaySource::Hand,
+        },
+    );
     if card_id == CardId::Havoc {
         for action in &mut card_actions {
             if let Action::PlayTopCard { target, .. } = &mut action.action {
@@ -1054,7 +1095,7 @@ pub fn handle_play_card_from_hand(
     }
 
     let played_card = state.zones.hand.remove(card_index);
-    execute_played_card(played_card, target, false, state);
+    execute_played_card(played_card, target, false, CardPlaySource::Hand, state);
     Ok(())
 }
 
@@ -1179,7 +1220,7 @@ pub fn handle_play_card_direct(
     if !queued_card_target_allows_java_use_card(&played_card, target, state) {
         return;
     }
-    execute_played_card(played_card, target, purge, state);
+    execute_played_card(played_card, target, purge, CardPlaySource::Direct, state);
 }
 
 pub fn handle_use_potion(slot: usize, target: Option<usize>, state: &mut CombatState) {
