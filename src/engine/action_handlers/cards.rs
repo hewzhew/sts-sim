@@ -828,10 +828,26 @@ pub fn handle_transmutation(
 }
 
 pub fn handle_use_card_done(should_exhaust: bool, state: &mut CombatState) {
-    if let Some(card) = state.zones.limbo.pop() {
-        if should_exhaust {
+    if let Some(mut card) = state.zones.limbo.pop() {
+        // Java UseCardAction clears this before moving the card to discard or
+        // exhaust. Keeping it on a saved/discarded card makes later draws free.
+        card.free_to_play_once = false;
+
+        let def = crate::content::cards::get_card_definition(card.id);
+        let spoon_saves_exhaust = should_exhaust
+            && def.card_type != crate::content::cards::CardType::Power
+            && state
+                .entities
+                .player
+                .has_relic(crate::content::relics::RelicId::StrangeSpoon)
+            && state.rng.card_random_rng.random_boolean();
+
+        if should_exhaust && !spoon_saves_exhaust {
             move_card_to_exhaust_pile(card, state);
         } else {
+            if spoon_saves_exhaust {
+                card.exhaust_override = None;
+            }
             state.add_card_to_discard_pile_top(card);
         }
     }
@@ -1358,7 +1374,7 @@ mod tests {
         handle_draw_pile_to_hand_by_type, handle_make_copy_in_discard,
         handle_make_random_card_in_draw_pile, handle_make_random_card_in_hand,
         handle_make_temp_card_in_discard, handle_make_temp_card_in_discard_and_deck,
-        handle_make_temp_card_in_draw_pile, handle_make_temp_card_in_hand,
+        handle_make_temp_card_in_draw_pile, handle_make_temp_card_in_hand, handle_use_card_done,
         obtain_specific_potion_if_allowed,
     };
     use crate::content::cards::{CardId, CardType};
@@ -1853,6 +1869,114 @@ mod tests {
         assert!(state.zones.draw_pile.is_empty());
         assert_eq!(state.zones.discard_pile.len(), 1);
         assert_eq!(state.zones.discard_pile[0].uuid, 1);
+    }
+
+    fn seed_with_next_card_random_boolean(desired: bool) -> u64 {
+        for seed in 1..10_000 {
+            let mut rng = crate::runtime::rng::StsRng::new(seed);
+            if rng.random_boolean() == desired {
+                return seed;
+            }
+        }
+        panic!("failed to find cardRandomRng seed with next randomBoolean={desired}");
+    }
+
+    #[test]
+    fn use_card_done_resets_free_to_play_once_before_zone_move() {
+        let mut discarded = blank_test_combat();
+        let mut free_strike = CombatCard::new(CardId::Strike, 90);
+        free_strike.free_to_play_once = true;
+        discarded.zones.limbo = vec![free_strike];
+
+        handle_use_card_done(false, &mut discarded);
+
+        assert_eq!(discarded.zones.discard_pile.len(), 1);
+        assert!(
+            !discarded.zones.discard_pile[0].free_to_play_once,
+            "Java UseCardAction clears freeToPlayOnce before discarding the used card"
+        );
+
+        let mut exhausted = blank_test_combat();
+        let mut free_havoc_target = CombatCard::new(CardId::Strike, 91);
+        free_havoc_target.free_to_play_once = true;
+        free_havoc_target.exhaust_override = Some(true);
+        exhausted.zones.limbo = vec![free_havoc_target];
+
+        handle_use_card_done(true, &mut exhausted);
+
+        assert_eq!(exhausted.zones.exhaust_pile.len(), 1);
+        assert!(
+            !exhausted.zones.exhaust_pile[0].free_to_play_once,
+            "Java UseCardAction clears freeToPlayOnce before exhausting the used card"
+        );
+    }
+
+    #[test]
+    fn use_card_done_applies_strange_spoon_to_exhaust_on_use_once_cards() {
+        for expected_saved in [true, false] {
+            let mut state = blank_test_combat();
+            state
+                .entities
+                .player
+                .add_relic(RelicState::new(RelicId::StrangeSpoon));
+            state.rng.card_random_rng = crate::runtime::rng::StsRng::new(
+                seed_with_next_card_random_boolean(expected_saved),
+            );
+
+            let mut havoc_target = CombatCard::new(CardId::Strike, 92);
+            havoc_target.free_to_play_once = true;
+            havoc_target.exhaust_override = Some(true);
+            state.zones.limbo = vec![havoc_target];
+
+            handle_use_card_done(true, &mut state);
+
+            assert_eq!(
+                state.rng.card_random_rng.counter, 1,
+                "Java Strange Spoon uses cardRandomRng.randomBoolean() when exhaustCard is true"
+            );
+            if expected_saved {
+                assert!(state.zones.exhaust_pile.is_empty());
+                assert_eq!(state.zones.discard_pile.len(), 1);
+                assert_eq!(state.zones.discard_pile[0].id, CardId::Strike);
+                assert_eq!(
+                    state.zones.discard_pile[0].exhaust_override, None,
+                    "Java clears exhaustOnUseOnce after UseCardAction resolves"
+                );
+                assert!(!state.zones.discard_pile[0].free_to_play_once);
+            } else {
+                assert!(state.zones.discard_pile.is_empty());
+                assert_eq!(state.zones.exhaust_pile.len(), 1);
+                assert_eq!(state.zones.exhaust_pile[0].id, CardId::Strike);
+                assert!(!state.zones.exhaust_pile[0].free_to_play_once);
+            }
+        }
+    }
+
+    #[test]
+    fn use_card_done_does_not_consume_spoon_rng_without_spoon_or_exhaust() {
+        let mut no_spoon = blank_test_combat();
+        no_spoon.rng.card_random_rng = crate::runtime::rng::StsRng::new(7);
+        let before_counter = no_spoon.rng.card_random_rng.counter;
+        no_spoon.zones.limbo = vec![CombatCard::new(CardId::Strike, 93)];
+
+        handle_use_card_done(true, &mut no_spoon);
+
+        assert_eq!(no_spoon.rng.card_random_rng.counter, before_counter);
+        assert_eq!(no_spoon.zones.exhaust_pile.len(), 1);
+
+        let mut not_exhausting = blank_test_combat();
+        not_exhausting
+            .entities
+            .player
+            .add_relic(RelicState::new(RelicId::StrangeSpoon));
+        not_exhausting.rng.card_random_rng = crate::runtime::rng::StsRng::new(7);
+        let before_counter = not_exhausting.rng.card_random_rng.counter;
+        not_exhausting.zones.limbo = vec![CombatCard::new(CardId::Strike, 94)];
+
+        handle_use_card_done(false, &mut not_exhausting);
+
+        assert_eq!(not_exhausting.rng.card_random_rng.counter, before_counter);
+        assert_eq!(not_exhausting.zones.discard_pile.len(), 1);
     }
 }
 
