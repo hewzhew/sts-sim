@@ -329,6 +329,11 @@ pub fn execute_action(action: Action, state: &mut CombatState) {
             powers::handle_trigger_time_warp_end_turn(owner, state)
         }
         Action::GainEnergy { amount } => powers::handle_gain_energy(amount, state),
+        Action::GainEnergyIfDiscardedThisTurn { amount } => {
+            if state.turn.counters.cards_discarded_this_turn > 0 {
+                powers::handle_gain_energy(amount, state);
+            }
+        }
         Action::GainMaxHp { amount } => powers::handle_gain_max_hp(amount, state),
         Action::LoseMaxHp { target, amount } => powers::handle_lose_max_hp(target, amount, state),
 

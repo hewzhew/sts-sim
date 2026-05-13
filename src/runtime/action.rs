@@ -183,6 +183,10 @@ pub enum Action {
     GainEnergy {
         amount: i32,
     },
+    /// Java `GainEnergyIfDiscardAction`: checked at action execution time.
+    GainEnergyIfDiscardedThisTurn {
+        amount: i32,
+    },
     GainMaxHp {
         amount: i32,
     },

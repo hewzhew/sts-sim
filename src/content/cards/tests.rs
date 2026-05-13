@@ -5274,6 +5274,133 @@ fn silent_common_batch_runtime_actions_match_java_use_methods() {
 }
 
 #[test]
+fn silent_economy_and_dash_cards_match_java_sources() {
+    let outmaneuver = get_card_definition(CardId::Outmaneuver);
+    assert_eq!(outmaneuver.name, "Outmaneuver");
+    assert_eq!(outmaneuver.card_type, CardType::Skill);
+    assert_eq!(outmaneuver.rarity, CardRarity::Common);
+    assert_eq!(outmaneuver.cost, 1);
+    assert_eq!(outmaneuver.base_magic, 2);
+    assert_eq!(outmaneuver.upgrade_magic, 1);
+    assert_eq!(java_id(CardId::Outmaneuver), "Outmaneuver");
+
+    let sneaky = get_card_definition(CardId::SneakyStrike);
+    assert_eq!(sneaky.name, "Sneaky Strike");
+    assert_eq!(sneaky.card_type, CardType::Attack);
+    assert_eq!(sneaky.rarity, CardRarity::Common);
+    assert_eq!(sneaky.cost, 2);
+    assert_eq!(sneaky.base_damage, 12);
+    assert_eq!(sneaky.upgrade_damage, 4);
+    assert!(sneaky.tags.contains(&CardTag::Strike));
+    assert_eq!(java_id(CardId::SneakyStrike), "Underhanded Strike");
+    assert_eq!(
+        build_java_id_map().get("Underhanded Strike"),
+        Some(&CardId::SneakyStrike)
+    );
+
+    let dash = get_card_definition(CardId::Dash);
+    assert_eq!(dash.name, "Dash");
+    assert_eq!(dash.card_type, CardType::Attack);
+    assert_eq!(dash.rarity, CardRarity::Uncommon);
+    assert_eq!(dash.cost, 2);
+    assert_eq!(dash.base_damage, 10);
+    assert_eq!(dash.base_block, 10);
+    assert_eq!(dash.upgrade_damage, 3);
+    assert_eq!(dash.upgrade_block, 3);
+}
+
+#[test]
+fn silent_economy_and_dash_runtime_actions_match_java_use_methods() {
+    let state = crate::test_support::blank_test_combat();
+
+    let outmaneuver = resolve_card_play(
+        CardId::Outmaneuver,
+        &state,
+        &CombatCard::new(CardId::Outmaneuver, 886),
+        None,
+    );
+    assert_eq!(
+        outmaneuver[0].action,
+        Action::ApplyPower {
+            source: 0,
+            target: 0,
+            power_id: PowerId::Energized,
+            amount: 2,
+        }
+    );
+
+    let mut outmaneuver_plus = CombatCard::new(CardId::Outmaneuver, 887);
+    outmaneuver_plus.upgrades = 1;
+    let outmaneuver_plus_actions =
+        resolve_card_play(CardId::Outmaneuver, &state, &outmaneuver_plus, None);
+    assert_eq!(
+        outmaneuver_plus_actions[0].action,
+        Action::ApplyPower {
+            source: 0,
+            target: 0,
+            power_id: PowerId::Energized,
+            amount: 3,
+        }
+    );
+
+    let sneaky = resolve_card_play(
+        CardId::SneakyStrike,
+        &state,
+        &CombatCard::new(CardId::SneakyStrike, 888),
+        Some(7),
+    );
+    match &sneaky[0].action {
+        Action::Damage(info) => {
+            assert_eq!(info.target, 7);
+            assert_eq!(info.output, 12);
+        }
+        other => panic!("Sneaky Strike first action should damage, got {other:?}"),
+    }
+    assert_eq!(
+        sneaky[1].action,
+        Action::GainEnergyIfDiscardedThisTurn { amount: 2 }
+    );
+
+    let mut no_discard_state = crate::test_support::blank_test_combat();
+    no_discard_state.turn.set_energy(0);
+    crate::engine::action_handlers::execute_action(
+        Action::GainEnergyIfDiscardedThisTurn { amount: 2 },
+        &mut no_discard_state,
+    );
+    assert_eq!(no_discard_state.turn.energy, 0);
+
+    let mut discard_state = crate::test_support::blank_test_combat();
+    discard_state.turn.set_energy(0);
+    discard_state.turn.increment_cards_discarded();
+    crate::engine::action_handlers::execute_action(
+        Action::GainEnergyIfDiscardedThisTurn { amount: 2 },
+        &mut discard_state,
+    );
+    assert_eq!(discard_state.turn.energy, 2);
+
+    let dash = resolve_card_play(
+        CardId::Dash,
+        &state,
+        &CombatCard::new(CardId::Dash, 889),
+        Some(7),
+    );
+    assert_eq!(
+        dash[0].action,
+        Action::GainBlock {
+            target: 0,
+            amount: 10,
+        }
+    );
+    match &dash[1].action {
+        Action::Damage(info) => {
+            assert_eq!(info.target, 7);
+            assert_eq!(info.output, 10);
+        }
+        other => panic!("Dash second action should damage, got {other:?}"),
+    }
+}
+
+#[test]
 fn reflex_and_tactician_manual_discard_hooks_match_java_order() {
     let reflex = get_card_definition(CardId::Reflex);
     assert_eq!(reflex.cost, -2);
