@@ -222,8 +222,16 @@ pub fn handle_hand_select(
                     }
                 }
                 HandSelectReason::Retain => {
-                    // Retain: mark selected cards as retained (skip discard at turn end)
-                    // Currently a stub — retain flag not in CombatCard
+                    // Java RetainCardsAction/MeditateAction sets AbstractCard.retain
+                    // for one end-of-turn discard pass. RestoreRetainedCardsAction
+                    // clears that flag after the card survives the turn.
+                    for uuid in &uuids {
+                        if let Some(card) =
+                            combat_state.zones.hand.iter_mut().find(|c| c.uuid == *uuid)
+                        {
+                            card.retain_override = Some(true);
+                        }
+                    }
                 }
                 HandSelectReason::Copy { amount } => {
                     // Java DualWieldAction reads selectedCards after the hand
@@ -678,6 +686,50 @@ mod tests {
                 (CardId::Wound, 40, 0),
             ],
             "Java ArmamentsAction removes non-upgradeable cards before selection, then addToTop returns the selected card and non-upgradeables"
+        );
+    }
+
+    #[test]
+    fn hand_select_retain_marks_selected_cards_for_one_turn_retain() {
+        let mut engine_state =
+            EngineState::PendingChoice(crate::state::core::PendingChoice::HandSelect {
+                reason: HandSelectReason::Retain,
+                candidate_uuids: vec![10, 20],
+                min_cards: 1,
+                max_cards: 1,
+                can_cancel: false,
+            });
+        let mut combat_state = blank_test_combat();
+        combat_state.zones.hand = vec![
+            CombatCard::new(CardId::Strike, 10),
+            CombatCard::new(CardId::Defend, 20),
+        ];
+
+        handle_hand_select(
+            &mut engine_state,
+            &mut combat_state,
+            &[10, 20],
+            1,
+            true,
+            false,
+            HandSelectReason::Retain,
+            ClientInput::SubmitHandSelect(vec![20]),
+        )
+        .expect("retain selection should resolve");
+
+        assert_eq!(engine_state, EngineState::CombatProcessing);
+        assert_eq!(
+            combat_state
+                .zones
+                .hand
+                .iter()
+                .map(|card| (card.id, card.uuid, card.retain_override))
+                .collect::<Vec<_>>(),
+            vec![
+                (CardId::Strike, 10, None),
+                (CardId::Defend, 20, Some(true)),
+            ],
+            "Java RetainCardsAction/MeditateAction marks only the selected cards with one-turn retain"
         );
     }
 

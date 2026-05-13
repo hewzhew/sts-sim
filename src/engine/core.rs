@@ -145,6 +145,42 @@ pub fn is_smoke_escape_stable_boundary(
         && combat_state.zones.limbo.is_empty()
 }
 
+fn discard_hand_for_turn_transition(combat_state: &mut CombatState) {
+    let has_runic_pyramid = combat_state
+        .entities
+        .player
+        .has_relic(crate::content::relics::RelicId::RunicPyramid);
+    if has_runic_pyramid {
+        // RunicPyramid keeps the hand, but Java RestoreRetainedCardsAction
+        // still clears one-turn retain flags created by RetainCardsAction.
+        for card in &mut combat_state.zones.hand {
+            if card.retain_override == Some(true) {
+                card.retain_override = None;
+            }
+        }
+        return;
+    }
+
+    let mut retained = Vec::new();
+    let mut discarded = Vec::new();
+    for mut card in combat_state.zones.hand.drain(..) {
+        if card.retain_override == Some(true) {
+            card.retain_override = None;
+            retained.push(card);
+        } else {
+            discarded.push(card);
+        }
+    }
+
+    // Java end-of-turn discard repeatedly removes hand.getTopCard(), so the
+    // surviving non-retained hand is discarded from top to bottom.
+    discarded.reverse();
+    for card in discarded {
+        combat_state.add_card_to_discard_pile_top(card);
+    }
+    combat_state.zones.hand = retained;
+}
+
 pub fn tick_engine(
     engine_state: &mut EngineState,
     combat_state: &mut CombatState,
@@ -539,31 +575,7 @@ pub fn tick_engine(
                     // === TURN TRANSITION: end of player turn -> enemy turn -> new player turn ===
 
                     // 1. Discard hand (respecting Retain and RunicPyramid)
-                    let has_runic_pyramid = combat_state
-                        .entities
-                        .player
-                        .has_relic(crate::content::relics::RelicId::RunicPyramid);
-                    if has_runic_pyramid {
-                        // RunicPyramid: retain all cards -> skip discard entirely.
-                    } else {
-                        let mut retained = Vec::new();
-                        let mut discarded = Vec::new();
-                        for card in combat_state.zones.hand.drain(..) {
-                            // Check for actual retain: card.retain_override
-                            if card.retain_override == Some(true) {
-                                retained.push(card);
-                            } else {
-                                discarded.push(card);
-                            }
-                        }
-                        // Java end-of-turn discard repeatedly removes hand.getTopCard(),
-                        // so the surviving non-retained hand is discarded from top to bottom.
-                        discarded.reverse();
-                        for card in discarded {
-                            combat_state.add_card_to_discard_pile_top(card);
-                        }
-                        combat_state.zones.hand = retained;
-                    }
+                    discard_hand_for_turn_transition(combat_state);
 
                     // Smoke Bomb escape path: Java leaves an intermediate combat
                     // snapshot after end-of-turn effects and discarding, but before
@@ -1286,11 +1298,12 @@ pub fn tick_until_stable_turn(
 
 #[cfg(test)]
 mod tests {
-    use super::{class_combat_card_pool, resolve_pending_choice};
+    use super::{class_combat_card_pool, discard_hand_for_turn_transition, resolve_pending_choice};
     use crate::content::cards::CardId;
     use crate::content::powers::PowerId;
+    use crate::content::relics::{RelicId, RelicState};
     use crate::runtime::action::CardDestination;
-    use crate::runtime::combat::Power;
+    use crate::runtime::combat::{CombatCard, Power};
     use crate::state::core::{ClientInput, EngineState, PendingChoice};
     use crate::test_support::blank_test_combat;
 
@@ -1410,5 +1423,69 @@ mod tests {
             combat_state.zones.draw_pile[0].upgrades, 1,
             "Java CodexAction relies on ShowCardAndAddToDrawPileEffect for one Master Reality upgrade"
         );
+    }
+
+    #[test]
+    fn turn_transition_retains_selected_cards_once_and_clears_flag() {
+        let mut combat_state = blank_test_combat();
+        let mut retained = CombatCard::new(CardId::Defend, 20);
+        retained.retain_override = Some(true);
+        combat_state.zones.hand = vec![CombatCard::new(CardId::Strike, 10), retained];
+
+        discard_hand_for_turn_transition(&mut combat_state);
+
+        assert_eq!(
+            combat_state
+                .zones
+                .hand
+                .iter()
+                .map(|card| (card.id, card.uuid, card.retain_override))
+                .collect::<Vec<_>>(),
+            vec![(CardId::Defend, 20, None)],
+            "Java RestoreRetainedCardsAction clears AbstractCard.retain after preserving the card"
+        );
+        assert_eq!(
+            combat_state
+                .zones
+                .discard_pile
+                .iter()
+                .map(|card| (card.id, card.uuid))
+                .collect::<Vec<_>>(),
+            vec![(CardId::Strike, 10)]
+        );
+    }
+
+    #[test]
+    fn runic_pyramid_keeps_hand_but_clears_one_turn_retain_flags() {
+        let mut combat_state = blank_test_combat();
+        combat_state
+            .entities
+            .player
+            .add_relic(RelicState::new(RelicId::RunicPyramid));
+        let mut explicitly_retained = CombatCard::new(CardId::Defend, 20);
+        explicitly_retained.retain_override = Some(true);
+        combat_state.zones.hand = vec![
+            CombatCard::new(CardId::Strike, 10),
+            explicitly_retained,
+            CombatCard::new(CardId::Bash, 30),
+        ];
+
+        discard_hand_for_turn_transition(&mut combat_state);
+
+        assert_eq!(
+            combat_state
+                .zones
+                .hand
+                .iter()
+                .map(|card| (card.id, card.uuid, card.retain_override))
+                .collect::<Vec<_>>(),
+            vec![
+                (CardId::Strike, 10, None),
+                (CardId::Defend, 20, None),
+                (CardId::Bash, 30, None),
+            ],
+            "Runic Pyramid's global retention does not keep RetainCardsAction's one-turn retain flag alive"
+        );
+        assert!(combat_state.zones.discard_pile.is_empty());
     }
 }

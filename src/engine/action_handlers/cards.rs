@@ -1441,12 +1441,12 @@ pub fn handle_end_turn_trigger(state: &mut CombatState) {
 mod tests {
     use super::{
         class_card_pool_for_type, handle_discard_pile_to_top_of_deck,
-        handle_draw_pile_to_hand_by_type, handle_make_copy_in_discard,
+        handle_draw_pile_to_hand_by_type, handle_end_turn_trigger, handle_make_copy_in_discard,
         handle_make_random_card_in_draw_pile, handle_make_random_card_in_hand,
         handle_make_temp_card_in_discard, handle_make_temp_card_in_discard_and_deck,
         handle_make_temp_card_in_draw_pile, handle_make_temp_card_in_hand, handle_play_card_direct,
-        handle_end_turn_trigger, handle_upgrade_all_cards_in_combat, handle_upgrade_all_in_hand,
-        handle_use_card_done, obtain_specific_potion_if_allowed,
+        handle_upgrade_all_cards_in_combat, handle_upgrade_all_in_hand, handle_use_card_done,
+        obtain_specific_potion_if_allowed,
     };
     use crate::content::cards::{CardId, CardType};
     use crate::content::monsters::EnemyId;
