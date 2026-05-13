@@ -580,7 +580,7 @@ pub fn handle_damage_all_enemies(
             break;
         }
         let m = &state.entities.monsters[i];
-        if !m.is_alive_for_action() {
+        if m.is_dead_or_escaped() {
             continue;
         }
         individual_damages.push(Action::Damage(crate::runtime::action::DamageInfo {
@@ -1265,6 +1265,38 @@ mod tests {
             "Java LoseHPAction checks clearPostCombatActions even when the target is the player"
         );
         assert_eq!(state.pop_next_action(), None);
+    }
+
+    #[test]
+    fn damage_all_enemies_does_not_skip_zero_hp_target_unless_dead_or_escaped() {
+        let mut state = blank_test_combat();
+        let mut monster = test_monster(EnemyId::JawWorm);
+        monster.id = 65;
+        monster.current_hp = 0;
+        monster.is_dying = false;
+        monster.is_escaped = false;
+        monster.half_dead = false;
+        state.entities.monsters = vec![monster];
+
+        handle_damage_all_enemies(
+            0,
+            smallvec::smallvec![7],
+            DamageType::Normal,
+            false,
+            &mut state,
+        );
+
+        assert!(
+            matches!(
+                state.pop_next_action(),
+                Some(Action::Damage(DamageInfo {
+                    target: 65,
+                    output: 7,
+                    ..
+                }))
+            ),
+            "Java DamageAllEnemiesAction damage loop skips isDeadOrEscaped(), not currentHealth <= 0"
+        );
     }
 
     #[test]
