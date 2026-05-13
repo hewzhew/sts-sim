@@ -1383,7 +1383,11 @@ pub fn handle_end_turn_trigger(state: &mut CombatState) {
 
     // 4. Ethereal exhaust and status/curse in-hand triggers
     for card in &state.zones.hand {
-        if crate::content::cards::is_ethereal(card) {
+        // Java DiscardAtEndOfTurnAction moves retain/selfRetain cards out of
+        // hand before calling triggerOnEndOfPlayerTurn(), so explicit retain
+        // wins over ethereal. Runic Pyramid does not set per-card retain and
+        // therefore still allows ethereal cards to exhaust.
+        if card.retain_override != Some(true) && crate::content::cards::is_ethereal(card) {
             actions.push(ActionInfo {
                 action: Action::ExhaustCard {
                     card_uuid: card.uuid,
@@ -1441,8 +1445,8 @@ mod tests {
         handle_make_random_card_in_draw_pile, handle_make_random_card_in_hand,
         handle_make_temp_card_in_discard, handle_make_temp_card_in_discard_and_deck,
         handle_make_temp_card_in_draw_pile, handle_make_temp_card_in_hand, handle_play_card_direct,
-        handle_upgrade_all_cards_in_combat, handle_upgrade_all_in_hand, handle_use_card_done,
-        obtain_specific_potion_if_allowed,
+        handle_end_turn_trigger, handle_upgrade_all_cards_in_combat, handle_upgrade_all_in_hand,
+        handle_use_card_done, obtain_specific_potion_if_allowed,
     };
     use crate::content::cards::{CardId, CardType};
     use crate::content::monsters::EnemyId;
@@ -2177,6 +2181,42 @@ mod tests {
         assert_eq!(
             state.zones.limbo[0].upgrades, 0,
             "Java ApotheosisAction upgrades hand/draw/discard/exhaust, not limbo/cardInUse"
+        );
+    }
+
+    #[test]
+    fn end_turn_ethereal_exhaust_respects_explicit_retain_like_java_discard_at_end() {
+        let mut state = blank_test_combat();
+        let mut retained_ethereal = CombatCard::new(CardId::GhostlyArmor, 830);
+        retained_ethereal.retain_override = Some(true);
+        state.zones.hand = vec![
+            retained_ethereal,
+            CombatCard::new(CardId::Carnage, 831),
+            CombatCard::new(CardId::Strike, 832),
+        ];
+
+        handle_end_turn_trigger(&mut state);
+        let queued: Vec<_> = std::iter::from_fn(|| state.pop_next_action()).collect();
+
+        assert!(
+            !queued.iter().any(|action| matches!(
+                action,
+                Action::ExhaustCard {
+                    card_uuid: 830,
+                    source_pile: crate::state::PileType::Hand
+                }
+            )),
+            "Java removes retained/selfRetain cards from hand before triggerOnEndOfPlayerTurn, so explicit retain prevents ethereal exhaust"
+        );
+        assert!(
+            queued.iter().any(|action| matches!(
+                action,
+                Action::ExhaustCard {
+                    card_uuid: 831,
+                    source_pile: crate::state::PileType::Hand
+                }
+            )),
+            "non-retained ethereal cards still exhaust at end of turn"
         );
     }
 }
