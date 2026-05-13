@@ -24,7 +24,19 @@ pub fn candidate_targets(state: &CombatState, validation: TargetValidation) -> V
             .entities
             .monsters
             .iter()
-            .filter(|m| !m.is_dying && !m.is_escaped && !m.half_dead)
+            .filter(|m| m.current_hp > 0 && !m.is_dying && !m.is_escaped && !m.half_dead)
+            .map(|m| m.id)
+            .collect(),
+    }
+}
+
+fn random_target_candidates(state: &CombatState, validation: TargetValidation) -> Vec<EntityId> {
+    match validation {
+        TargetValidation::AnyEnemy | TargetValidation::AnyMonster => state
+            .entities
+            .monsters
+            .iter()
+            .filter(|m| m.is_random_target_candidate())
             .map(|m| m.id)
             .collect(),
     }
@@ -53,7 +65,7 @@ pub fn pick_random_target(
     state: &mut CombatState,
     validation: TargetValidation,
 ) -> Option<EntityId> {
-    let targetable = candidate_targets(state, validation);
+    let targetable = random_target_candidates(state, validation);
     if targetable.is_empty() {
         return None;
     }
@@ -62,4 +74,50 @@ pub fn pick_random_target(
         .card_random_rng
         .random(targetable.len() as i32 - 1) as usize;
     targetable.get(idx).copied()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::content::monsters::EnemyId;
+
+    #[test]
+    fn manual_target_candidates_exclude_zero_hp_like_java_player_targeting() {
+        let mut state = crate::test_support::blank_test_combat();
+        let mut zero_hp_not_dying = crate::test_support::test_monster(EnemyId::JawWorm);
+        zero_hp_not_dying.id = 701;
+        zero_hp_not_dying.current_hp = 0;
+        zero_hp_not_dying.is_dying = false;
+        zero_hp_not_dying.is_escaped = false;
+        let mut alive = crate::test_support::test_monster(EnemyId::Cultist);
+        alive.id = 702;
+        alive.current_hp = 12;
+        state.entities.monsters = vec![zero_hp_not_dying, alive];
+
+        assert_eq!(
+            candidate_targets(&state, TargetValidation::AnyEnemy),
+            vec![702]
+        );
+        assert_eq!(
+            resolve_target_request(&state, Some(TargetValidation::AnyEnemy), Some(701)),
+            Err("Invalid or untargetable monster selected.")
+        );
+    }
+
+    #[test]
+    fn random_target_candidates_do_not_exclude_zero_hp_like_java_get_random_monster() {
+        let mut state = crate::test_support::blank_test_combat();
+        let mut zero_hp_not_dying = crate::test_support::test_monster(EnemyId::JawWorm);
+        zero_hp_not_dying.id = 703;
+        zero_hp_not_dying.current_hp = 0;
+        zero_hp_not_dying.is_dying = false;
+        zero_hp_not_dying.is_escaped = false;
+        zero_hp_not_dying.half_dead = false;
+        state.entities.monsters = vec![zero_hp_not_dying];
+
+        assert_eq!(
+            pick_random_target(&mut state, TargetValidation::AnyEnemy),
+            Some(703)
+        );
+    }
 }
