@@ -110,11 +110,11 @@ pub fn handle_apply_power_detailed(
     }
 
     // U1: Java ApplyPowerAction.update(): target.isDeadOrEscaped() returns true
-    // for dying, escaped, and half-dead monsters, so no hooks or Artifact checks run.
+    // for dying, escaped, and half-dead monsters. It does not check currentHealth.
     if target == 0 {
         // Player target — always valid
     } else if let Some(m) = state.entities.monsters.iter().find(|m| m.id == target) {
-        if !m.is_alive_for_action() {
+        if m.is_dead_or_escaped() {
             return;
         }
     }
@@ -148,7 +148,7 @@ pub fn handle_apply_power_detailed(
     // U5: Monster re-check after hooks
     if target != 0 {
         if let Some(m) = state.entities.monsters.iter().find(|m| m.id == target) {
-            if !m.is_alive_for_action() {
+            if m.is_dead_or_escaped() {
                 return;
             }
         }
@@ -682,6 +682,26 @@ mod tests {
         assert!(
             store::powers_snapshot_for(&state, 44).is_empty(),
             "Java ApplyPowerAction returns before applying powers when target.isDeadOrEscaped(), and halfDead is part of that predicate"
+        );
+    }
+
+    #[test]
+    fn apply_power_does_not_skip_zero_hp_target_unless_dead_or_escaped() {
+        let mut state = blank_test_combat();
+        let mut target = crate::test_support::test_monster(EnemyId::JawWorm);
+        target.id = 47;
+        target.current_hp = 0;
+        target.is_dying = false;
+        target.half_dead = false;
+        target.is_escaped = false;
+        state.entities.monsters = vec![target];
+
+        handle_apply_power(0, 47, PowerId::Weak, 2, &mut state);
+
+        assert_eq!(
+            store::power_amount(&state, 47, PowerId::Weak),
+            2,
+            "Java ApplyPowerAction checks isDeadOrEscaped(), not currentHealth <= 0"
         );
     }
 
