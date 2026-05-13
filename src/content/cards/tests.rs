@@ -4440,6 +4440,69 @@ fn transmutation_x_cost_action_matches_java_energy_and_chemical_x_timing() {
 }
 
 #[test]
+fn upgraded_blind_and_trip_enqueue_apply_power_for_every_monster_like_java() {
+    let mut state = crate::test_support::blank_test_combat();
+    let mut zero_hp_not_dying = crate::test_support::test_monster(EnemyId::JawWorm);
+    zero_hp_not_dying.id = 810;
+    zero_hp_not_dying.current_hp = 0;
+    zero_hp_not_dying.is_dying = false;
+    let mut half_dead = crate::test_support::test_monster(EnemyId::Darkling);
+    half_dead.id = 811;
+    half_dead.half_dead = true;
+    state.entities.monsters = vec![zero_hp_not_dying, half_dead];
+
+    let mut blind_plus = CombatCard::new(CardId::Blind, 812);
+    blind_plus.upgrades = 1;
+    let blind_actions = resolve_card_play(CardId::Blind, &state, &blind_plus, None);
+    assert_eq!(
+        blind_actions.len(),
+        2,
+        "Java Blind+ loops over monsters.monsters and lets ApplyPowerAction handle dead/escaped filtering"
+    );
+    assert!(matches!(
+        blind_actions[0].action,
+        Action::ApplyPower {
+            target: 810,
+            power_id: PowerId::Weak,
+            ..
+        }
+    ));
+    assert!(matches!(
+        blind_actions[1].action,
+        Action::ApplyPower {
+            target: 811,
+            power_id: PowerId::Weak,
+            ..
+        }
+    ));
+
+    let mut trip_plus = CombatCard::new(CardId::Trip, 813);
+    trip_plus.upgrades = 1;
+    let trip_actions = resolve_card_play(CardId::Trip, &state, &trip_plus, None);
+    assert_eq!(
+        trip_actions.len(),
+        2,
+        "Java Trip+ loops over monsters.monsters and lets ApplyPowerAction handle dead/escaped filtering"
+    );
+    assert!(matches!(
+        trip_actions[0].action,
+        Action::ApplyPower {
+            target: 810,
+            power_id: PowerId::Vulnerable,
+            ..
+        }
+    ));
+    assert!(matches!(
+        trip_actions[1].action,
+        Action::ApplyPower {
+            target: 811,
+            power_id: PowerId::Vulnerable,
+            ..
+        }
+    ));
+}
+
+#[test]
 fn put_on_deck_action_matches_java_rng_and_selection_edges() {
     let mut one_card_state = crate::test_support::blank_test_combat();
     one_card_state.zones.hand = vec![CombatCard::new(CardId::Strike, 400)];

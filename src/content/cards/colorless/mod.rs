@@ -56,11 +56,7 @@ pub fn play_colorless(
         }
         CardId::Blind => {
             if card.upgrades > 0 {
-                for monster in
-                    state.entities.monsters.iter().filter(|m| {
-                        m.current_hp > 0 && !m.is_dying && !m.is_escaped && !m.half_dead
-                    })
-                {
+                for monster in &state.entities.monsters {
                     acts.push(Action::ApplyPower {
                         source: 0,
                         target: monster.id,
@@ -225,11 +221,7 @@ pub fn play_colorless(
         }
         CardId::Trip => {
             if card.upgrades > 0 {
-                for monster in
-                    state.entities.monsters.iter().filter(|m| {
-                        m.current_hp > 0 && !m.is_dying && !m.is_escaped && !m.half_dead
-                    })
-                {
+                for monster in &state.entities.monsters {
                     acts.push(Action::ApplyPower {
                         source: 0,
                         target: monster.id,
