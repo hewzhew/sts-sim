@@ -693,8 +693,11 @@ fn class_card_pool_for_type(
         crate::content::cards::CardRarity::Rare,
     ] {
         for &id in crate::engine::campfire_handler::card_pool_for_class(player_class, rarity) {
+            let def = crate::content::cards::get_card_definition(id);
+            if def.tags.contains(&crate::content::cards::CardTag::Healing) {
+                continue;
+            }
             if let Some(ct) = card_type {
-                let def = crate::content::cards::get_card_definition(id);
                 if def.card_type != ct {
                     continue;
                 }
@@ -1371,7 +1374,7 @@ pub fn handle_end_turn_trigger(state: &mut CombatState) {
 #[cfg(test)]
 mod tests {
     use super::{
-        handle_draw_pile_to_hand_by_type, handle_make_copy_in_discard,
+        class_card_pool_for_type, handle_draw_pile_to_hand_by_type, handle_make_copy_in_discard,
         handle_make_random_card_in_draw_pile, handle_make_random_card_in_hand,
         handle_make_temp_card_in_discard, handle_make_temp_card_in_discard_and_deck,
         handle_make_temp_card_in_draw_pile, handle_make_temp_card_in_hand,
@@ -1447,6 +1450,19 @@ mod tests {
         ));
 
         assert_eq!(state.entities.potions, before);
+    }
+
+    #[test]
+    fn random_class_card_in_combat_pool_excludes_healing_cards_like_java() {
+        let all = class_card_pool_for_type("Ironclad", None);
+        assert!(!all.contains(&CardId::Feed));
+        assert!(!all.contains(&CardId::Reaper));
+
+        let attacks = class_card_pool_for_type("Ironclad", Some(CardType::Attack));
+        assert!(!attacks.contains(&CardId::Feed));
+        assert!(!attacks.contains(&CardId::Reaper));
+        assert!(!attacks.contains(&CardId::InfernalBlade));
+        assert!(attacks.contains(&CardId::Pummel));
     }
 
     #[test]

@@ -529,6 +529,7 @@ pub fn handle_pummel_damage(info: crate::runtime::action::DamageInfo, state: &mu
     } else {
         let final_damage = info.output.max(0);
         let _ = apply_damage_to_monster_via_pipeline(state, &info, final_damage);
+        clear_post_combat_actions_if_ready(state);
     }
 }
 
@@ -1202,6 +1203,43 @@ mod tests {
         let monster = &state.entities.monsters[0];
         assert_eq!(monster.block, 0);
         assert_eq!(monster.current_hp, 9);
+    }
+
+    #[test]
+    fn pummel_damage_action_clears_post_combat_actions_after_killing_hit() {
+        let mut state = blank_test_combat();
+        let mut monster = test_monster(EnemyId::JawWorm);
+        monster.id = 63;
+        monster.current_hp = 5;
+        state.entities.monsters = vec![monster];
+        state.queue_action_back(Action::DrawCards(1));
+        state.queue_action_back(Action::Damage(DamageInfo {
+            source: 0,
+            target: 63,
+            base: 1,
+            output: 1,
+            damage_type: DamageType::Normal,
+            is_modified: false,
+        }));
+
+        handle_pummel_damage(
+            DamageInfo {
+                source: 0,
+                target: 63,
+                base: 5,
+                output: 5,
+                damage_type: DamageType::Normal,
+                is_modified: false,
+            },
+            &mut state,
+        );
+
+        assert!(state.entities.monsters[0].is_dying);
+        assert!(
+            matches!(state.pop_next_action(), Some(Action::Damage(_))),
+            "Java PummelDamageAction calls clearPostCombatActions after a killing hit, retaining only Java-retained post-combat actions"
+        );
+        assert_eq!(state.pop_next_action(), None);
     }
 
     #[test]
