@@ -5053,6 +5053,227 @@ fn discard_from_hand_auto_discards_all_when_hand_size_is_not_greater_than_amount
 }
 
 #[test]
+fn silent_common_batch_definitions_match_java_sources() {
+    let cases = [
+        (
+            CardId::Deflect,
+            "Deflect",
+            CardType::Skill,
+            0,
+            0,
+            4,
+            0,
+            CardTarget::SelfTarget,
+            0,
+            3,
+            0,
+        ),
+        (
+            CardId::QuickSlash,
+            "Quick Slash",
+            CardType::Attack,
+            1,
+            8,
+            0,
+            0,
+            CardTarget::Enemy,
+            4,
+            0,
+            0,
+        ),
+        (
+            CardId::Slice,
+            "Slice",
+            CardType::Attack,
+            0,
+            6,
+            0,
+            0,
+            CardTarget::Enemy,
+            3,
+            0,
+            0,
+        ),
+        (
+            CardId::FlyingKnee,
+            "Flying Knee",
+            CardType::Attack,
+            1,
+            8,
+            0,
+            0,
+            CardTarget::Enemy,
+            3,
+            0,
+            0,
+        ),
+        (
+            CardId::DodgeAndRoll,
+            "Dodge and Roll",
+            CardType::Skill,
+            1,
+            0,
+            4,
+            0,
+            CardTarget::SelfTarget,
+            0,
+            2,
+            0,
+        ),
+        (
+            CardId::SuckerPunch,
+            "Sucker Punch",
+            CardType::Attack,
+            1,
+            7,
+            0,
+            1,
+            CardTarget::Enemy,
+            2,
+            0,
+            1,
+        ),
+    ];
+
+    let java_map = build_java_id_map();
+    for (
+        id,
+        java_name,
+        card_type,
+        cost,
+        damage,
+        block,
+        magic,
+        target,
+        upgrade_damage,
+        upgrade_block,
+        upgrade_magic,
+    ) in cases
+    {
+        let def = get_card_definition(id);
+        assert_eq!(def.name, java_name);
+        assert_eq!(def.card_type, card_type);
+        assert_eq!(def.rarity, CardRarity::Common);
+        assert_eq!(def.cost, cost);
+        assert_eq!(def.base_damage, damage);
+        assert_eq!(def.base_block, block);
+        assert_eq!(def.base_magic, magic);
+        assert_eq!(def.target, target);
+        assert_eq!(def.upgrade_damage, upgrade_damage);
+        assert_eq!(def.upgrade_block, upgrade_block);
+        assert_eq!(def.upgrade_magic, upgrade_magic);
+        assert_eq!(java_id(id), java_name);
+        assert_eq!(java_map.get(java_name), Some(&id));
+    }
+}
+
+#[test]
+fn silent_common_batch_runtime_actions_match_java_use_methods() {
+    fn assert_damage(action: &Action, target: usize, amount: i32) {
+        match action {
+            Action::Damage(info) => {
+                assert_eq!(info.source, 0);
+                assert_eq!(info.target, target);
+                assert_eq!(info.base, amount);
+                assert_eq!(info.output, amount);
+                assert_eq!(info.damage_type, DamageType::Normal);
+            }
+            other => panic!("expected DamageAction, got {other:?}"),
+        }
+    }
+
+    let state = crate::test_support::blank_test_combat();
+
+    let deflect = resolve_card_play(
+        CardId::Deflect,
+        &state,
+        &CombatCard::new(CardId::Deflect, 880),
+        None,
+    );
+    assert_eq!(
+        deflect[0].action,
+        Action::GainBlock {
+            target: 0,
+            amount: 4,
+        }
+    );
+
+    let quick_slash = resolve_card_play(
+        CardId::QuickSlash,
+        &state,
+        &CombatCard::new(CardId::QuickSlash, 881),
+        Some(7),
+    );
+    assert_damage(&quick_slash[0].action, 7, 8);
+    assert_eq!(quick_slash[1].action, Action::DrawCards(1));
+
+    let slice = resolve_card_play(
+        CardId::Slice,
+        &state,
+        &CombatCard::new(CardId::Slice, 882),
+        Some(7),
+    );
+    assert_damage(&slice[0].action, 7, 6);
+
+    let flying_knee = resolve_card_play(
+        CardId::FlyingKnee,
+        &state,
+        &CombatCard::new(CardId::FlyingKnee, 883),
+        Some(7),
+    );
+    assert_damage(&flying_knee[0].action, 7, 8);
+    assert_eq!(
+        flying_knee[1].action,
+        Action::ApplyPower {
+            source: 0,
+            target: 0,
+            power_id: PowerId::Energized,
+            amount: 1,
+        }
+    );
+
+    let dodge = resolve_card_play(
+        CardId::DodgeAndRoll,
+        &state,
+        &CombatCard::new(CardId::DodgeAndRoll, 884),
+        None,
+    );
+    assert_eq!(
+        dodge[0].action,
+        Action::GainBlock {
+            target: 0,
+            amount: 4,
+        }
+    );
+    assert_eq!(
+        dodge[1].action,
+        Action::ApplyPower {
+            source: 0,
+            target: 0,
+            power_id: PowerId::NextTurnBlock,
+            amount: 4,
+        }
+    );
+
+    let sucker_punch = resolve_card_play(
+        CardId::SuckerPunch,
+        &state,
+        &CombatCard::new(CardId::SuckerPunch, 885),
+        Some(7),
+    );
+    assert_damage(&sucker_punch[0].action, 7, 7);
+    assert_eq!(
+        sucker_punch[1].action,
+        Action::ApplyPower {
+            source: 0,
+            target: 7,
+            power_id: PowerId::Weak,
+            amount: 1,
+        }
+    );
+}
+
+#[test]
 fn reflex_and_tactician_manual_discard_hooks_match_java_order() {
     let reflex = get_card_definition(CardId::Reflex);
     assert_eq!(reflex.cost, -2);
