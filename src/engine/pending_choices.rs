@@ -29,6 +29,21 @@ fn selection_to_uuids(
     }
 }
 
+fn reject_duplicate_uuids(uuids: &[u32], message: &'static str) -> Result<(), &'static str> {
+    for (idx, uuid) in uuids.iter().enumerate() {
+        if uuids[..idx].contains(uuid) {
+            return Err(message);
+        }
+    }
+    Ok(())
+}
+
+fn pile_contains_all(pile: &[crate::runtime::combat::CombatCard], uuids: &[u32]) -> bool {
+    uuids
+        .iter()
+        .all(|uuid| pile.iter().any(|card| card.uuid == *uuid))
+}
+
 fn snapshot_cards_from_hand(combat_state: &CombatState, uuids: &[u32]) -> Vec<DomainCardSnapshot> {
     uuids
         .iter()
@@ -69,6 +84,10 @@ pub fn handle_scry(
                     return Err("Duplicate scry discard index");
                 }
                 selected.push(uuid);
+            }
+
+            if !pile_contains_all(&combat_state.zones.draw_pile, &selected) {
+                return Err("Scry candidate no longer in draw pile");
             }
 
             for uuid in selected {
@@ -116,10 +135,9 @@ pub fn handle_hand_select(
             if uuids.iter().any(|uuid| !candidate_uuids.contains(uuid)) {
                 return Err("Selected card is not in the frozen hand-select candidate set");
             }
-            for (idx, uuid) in uuids.iter().enumerate() {
-                if uuids[..idx].contains(uuid) {
-                    return Err("Duplicate hand selection");
-                }
+            reject_duplicate_uuids(&uuids, "Duplicate hand selection")?;
+            if !pile_contains_all(&combat_state.zones.hand, &uuids) {
+                return Err("Selected hand card no longer in hand");
             }
             if requires_exact && uuids.len() != count {
                 return Err("Must select exact number of cards");
@@ -324,6 +342,7 @@ pub fn handle_grid_select(
             if uuids.iter().any(|uuid| !candidate_uuids.contains(uuid)) {
                 return Err("Selected card is not in the frozen grid-select candidate set");
             }
+            reject_duplicate_uuids(&uuids, "Duplicate grid selection")?;
             if uuids.len() < min_cards as usize {
                 return Err("Must select at least the minimum number of cards");
             }
@@ -333,36 +352,64 @@ pub fn handle_grid_select(
             match reason {
                 GridSelectReason::DiscardToHand => {
                     // Java BetterDiscardPileToHandAction: move from discard to hand, setCostForTurn(0)
+                    if !matches!(source_pile, PileType::Discard) {
+                        return Err("Discard-to-hand selection must source from discard pile");
+                    }
+                    if !pile_contains_all(&combat_state.zones.discard_pile, &uuids) {
+                        return Err("Grid candidate no longer in discard pile");
+                    }
                     for uuid in &uuids {
-                        if let Some(pos) = combat_state
-                            .zones
-                            .discard_pile
-                            .iter()
-                            .position(|c| c.uuid == *uuid)
-                        {
+                        if combat_state.zones.hand.len() < 10 {
+                            let pos = combat_state
+                                .zones
+                                .discard_pile
+                                .iter()
+                                .position(|c| c.uuid == *uuid)
+                                .expect("validated discard-to-hand selection must still exist");
                             let mut card = combat_state.zones.discard_pile.remove(pos);
                             card.set_cost_for_turn_java(0);
-                            if combat_state.zones.hand.len() < 10 {
-                                combat_state.zones.hand.push(card);
-                            }
+                            combat_state.zones.hand.push(card);
                         }
                     }
                 }
                 GridSelectReason::MoveToDrawPile => {
                     // Headbutt-style movement: selected card returns to the top of draw pile.
+                    let candidates_still_present =
+                        match source_pile {
+                            PileType::Discard => {
+                                pile_contains_all(&combat_state.zones.discard_pile, &uuids)
+                            }
+                            PileType::Exhaust => {
+                                pile_contains_all(&combat_state.zones.exhaust_pile, &uuids)
+                            }
+                            _ => return Err(
+                                "Move-to-draw selection must source from discard or exhaust pile",
+                            ),
+                        };
+                    if !candidates_still_present {
+                        return Err("Grid candidate no longer in source pile");
+                    }
                     for uuid in &uuids {
                         let pile = match source_pile {
                             PileType::Discard => &mut combat_state.zones.discard_pile,
                             PileType::Exhaust => &mut combat_state.zones.exhaust_pile,
-                            _ => &mut combat_state.zones.discard_pile,
+                            _ => unreachable!("source pile was validated above"),
                         };
-                        if let Some(pos) = pile.iter().position(|c| c.uuid == *uuid) {
-                            let card = pile.remove(pos);
-                            combat_state.add_card_to_draw_pile_top(card);
-                        }
+                        let pos = pile
+                            .iter()
+                            .position(|c| c.uuid == *uuid)
+                            .expect("validated move-to-draw selection must still exist");
+                        let card = pile.remove(pos);
+                        combat_state.add_card_to_draw_pile_top(card);
                     }
                 }
                 GridSelectReason::Exhume { upgrade } => {
+                    if !matches!(source_pile, PileType::Exhaust) {
+                        return Err("Exhume selection must source from exhaust pile");
+                    }
+                    if !pile_contains_all(&combat_state.zones.exhaust_pile, &uuids) {
+                        return Err("Grid candidate no longer in exhaust pile");
+                    }
                     for uuid in &uuids {
                         crate::engine::action_handlers::cards::handle_exhume_card(
                             *uuid,
@@ -373,17 +420,24 @@ pub fn handle_grid_select(
                 }
                 GridSelectReason::SkillFromDeckToHand | GridSelectReason::AttackFromDeckToHand => {
                     // SecretTechnique/SecretWeapon: move from draw pile to hand
+                    if !matches!(source_pile, PileType::Draw) {
+                        return Err("Deck-to-hand selection must source from draw pile");
+                    }
+                    if !pile_contains_all(&combat_state.zones.draw_pile, &uuids) {
+                        return Err("Grid candidate no longer in draw pile");
+                    }
                     for uuid in &uuids {
-                        if let Some(pos) = combat_state
+                        let pos = combat_state
                             .zones
                             .draw_pile
                             .iter()
                             .position(|c| c.uuid == *uuid)
-                        {
-                            let card = combat_state.zones.draw_pile.remove(pos);
-                            if combat_state.zones.hand.len() < 10 {
-                                combat_state.zones.hand.push(card);
-                            }
+                            .expect("validated deck-to-hand selection must still exist");
+                        let card = combat_state.zones.draw_pile.remove(pos);
+                        if combat_state.zones.hand.len() < 10 {
+                            combat_state.zones.hand.push(card);
+                        } else {
+                            combat_state.add_card_to_discard_pile_top(card);
                         }
                     }
                 }
@@ -407,10 +461,12 @@ pub fn handle_grid_select(
 
 #[cfg(test)]
 mod tests {
-    use super::{handle_hand_select, handle_scry};
+    use super::{handle_grid_select, handle_hand_select, handle_scry};
     use crate::content::cards::CardId;
     use crate::runtime::combat::CombatCard;
-    use crate::state::core::{ClientInput, EngineState, HandSelectReason};
+    use crate::state::core::{
+        ClientInput, EngineState, GridSelectReason, HandSelectReason, PileType,
+    };
     use crate::test_support::blank_test_combat;
 
     #[test]
@@ -473,6 +529,37 @@ mod tests {
 
         assert!(result.is_err());
         assert_eq!(combat_state.zones.draw_pile.len(), 2);
+        assert!(combat_state.zones.discard_pile.is_empty());
+    }
+
+    #[test]
+    fn scry_rejects_stale_candidate_without_partial_mutation() {
+        let mut engine_state =
+            EngineState::PendingChoice(crate::state::core::PendingChoice::ScrySelect {
+                cards: vec![CardId::Strike, CardId::Defend],
+                card_uuids: vec![10, 20],
+            });
+        let mut combat_state = blank_test_combat();
+        combat_state.zones.draw_pile = vec![CombatCard::new(CardId::Strike, 10)];
+
+        let result = handle_scry(
+            &mut engine_state,
+            &mut combat_state,
+            2,
+            &[10, 20],
+            ClientInput::SubmitScryDiscard(vec![0, 1]),
+        );
+
+        assert_eq!(result, Err("Scry candidate no longer in draw pile"));
+        assert_eq!(
+            combat_state
+                .zones
+                .draw_pile
+                .iter()
+                .map(|card| card.uuid)
+                .collect::<Vec<_>>(),
+            vec![10]
+        );
         assert!(combat_state.zones.discard_pile.is_empty());
     }
 
@@ -592,5 +679,172 @@ mod tests {
             ],
             "Java ArmamentsAction removes non-upgradeable cards before selection, then addToTop returns the selected card and non-upgradeables"
         );
+    }
+
+    #[test]
+    fn grid_select_rejects_duplicate_candidate_without_mutation() {
+        let mut engine_state =
+            EngineState::PendingChoice(crate::state::core::PendingChoice::GridSelect {
+                source_pile: PileType::Discard,
+                candidate_uuids: vec![10],
+                min_cards: 1,
+                max_cards: 2,
+                can_cancel: false,
+                reason: GridSelectReason::MoveToDrawPile,
+            });
+        let mut combat_state = blank_test_combat();
+        combat_state.zones.discard_pile = vec![CombatCard::new(CardId::Strike, 10)];
+
+        let result = handle_grid_select(
+            &mut engine_state,
+            &mut combat_state,
+            &[10],
+            PileType::Discard,
+            1,
+            2,
+            false,
+            GridSelectReason::MoveToDrawPile,
+            ClientInput::SubmitGridSelect(vec![10, 10]),
+        );
+
+        assert_eq!(result, Err("Duplicate grid selection"));
+        assert_eq!(
+            combat_state
+                .zones
+                .discard_pile
+                .iter()
+                .map(|card| card.uuid)
+                .collect::<Vec<_>>(),
+            vec![10]
+        );
+        assert!(combat_state.zones.draw_pile.is_empty());
+    }
+
+    #[test]
+    fn discard_to_hand_selection_leaves_card_when_hand_is_full() {
+        let mut engine_state =
+            EngineState::PendingChoice(crate::state::core::PendingChoice::GridSelect {
+                source_pile: PileType::Discard,
+                candidate_uuids: vec![20],
+                min_cards: 1,
+                max_cards: 1,
+                can_cancel: false,
+                reason: GridSelectReason::DiscardToHand,
+            });
+        let mut combat_state = blank_test_combat();
+        combat_state.zones.hand = (0..10)
+            .map(|idx| CombatCard::new(CardId::Defend, 100 + idx))
+            .collect();
+        combat_state.zones.discard_pile = vec![CombatCard::new(CardId::Strike, 20)];
+
+        handle_grid_select(
+            &mut engine_state,
+            &mut combat_state,
+            &[20],
+            PileType::Discard,
+            1,
+            1,
+            false,
+            GridSelectReason::DiscardToHand,
+            ClientInput::SubmitGridSelect(vec![20]),
+        )
+        .expect("full hand still resolves like Java BetterDiscardPileToHandAction");
+
+        assert_eq!(engine_state, EngineState::CombatProcessing);
+        assert_eq!(combat_state.zones.hand.len(), 10);
+        assert_eq!(
+            combat_state
+                .zones
+                .discard_pile
+                .iter()
+                .map(|card| card.uuid)
+                .collect::<Vec<_>>(),
+            vec![20],
+            "Java leaves selected discard cards in discard when the hand is full"
+        );
+    }
+
+    #[test]
+    fn deck_to_hand_selection_discards_selected_card_when_hand_is_full() {
+        let mut engine_state =
+            EngineState::PendingChoice(crate::state::core::PendingChoice::GridSelect {
+                source_pile: PileType::Draw,
+                candidate_uuids: vec![30],
+                min_cards: 1,
+                max_cards: 1,
+                can_cancel: false,
+                reason: GridSelectReason::AttackFromDeckToHand,
+            });
+        let mut combat_state = blank_test_combat();
+        combat_state.zones.hand = (0..10)
+            .map(|idx| CombatCard::new(CardId::Defend, 200 + idx))
+            .collect();
+        combat_state.zones.draw_pile = vec![CombatCard::new(CardId::Strike, 30)];
+
+        handle_grid_select(
+            &mut engine_state,
+            &mut combat_state,
+            &[30],
+            PileType::Draw,
+            1,
+            1,
+            false,
+            GridSelectReason::AttackFromDeckToHand,
+            ClientInput::SubmitGridSelect(vec![30]),
+        )
+        .expect("full hand should discard selected deck-to-hand card");
+
+        assert_eq!(engine_state, EngineState::CombatProcessing);
+        assert!(combat_state.zones.draw_pile.is_empty());
+        assert_eq!(
+            combat_state
+                .zones
+                .discard_pile
+                .iter()
+                .map(|card| card.uuid)
+                .collect::<Vec<_>>(),
+            vec![30],
+            "Java SecretWeapon/SecretTechnique move selected draw-pile card to discard when hand is full"
+        );
+    }
+
+    #[test]
+    fn deck_to_hand_selection_rejects_stale_candidate_without_partial_mutation() {
+        let mut engine_state =
+            EngineState::PendingChoice(crate::state::core::PendingChoice::GridSelect {
+                source_pile: PileType::Draw,
+                candidate_uuids: vec![40, 50],
+                min_cards: 2,
+                max_cards: 2,
+                can_cancel: false,
+                reason: GridSelectReason::SkillFromDeckToHand,
+            });
+        let mut combat_state = blank_test_combat();
+        combat_state.zones.draw_pile = vec![CombatCard::new(CardId::Defend, 40)];
+
+        let result = handle_grid_select(
+            &mut engine_state,
+            &mut combat_state,
+            &[40, 50],
+            PileType::Draw,
+            2,
+            2,
+            false,
+            GridSelectReason::SkillFromDeckToHand,
+            ClientInput::SubmitGridSelect(vec![40, 50]),
+        );
+
+        assert_eq!(result, Err("Grid candidate no longer in draw pile"));
+        assert_eq!(
+            combat_state
+                .zones
+                .draw_pile
+                .iter()
+                .map(|card| card.uuid)
+                .collect::<Vec<_>>(),
+            vec![40]
+        );
+        assert!(combat_state.zones.hand.is_empty());
+        assert!(combat_state.zones.discard_pile.is_empty());
     }
 }

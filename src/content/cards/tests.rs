@@ -3326,6 +3326,10 @@ fn rupture_and_reaper_execution_hooks_match_java_sources() {
 
     let mut rupture_state = crate::test_support::blank_test_combat();
     rupture_state.entities.player.current_hp = 70;
+    rupture_state
+        .entities
+        .monsters
+        .push(crate::test_support::test_monster(EnemyId::JawWorm));
     rupture_state.entities.power_db.insert(
         0,
         vec![Power {
