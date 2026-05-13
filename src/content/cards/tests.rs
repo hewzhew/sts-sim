@@ -787,6 +787,66 @@ fn ironclad_attack_condition_and_dot_power_runtime_actions_match_java_use_method
         })
     ));
 
+    let mut autoplay_clash_state = crate::test_support::blank_test_combat();
+    let mut clash_target = crate::test_support::test_monster(EnemyId::JawWorm);
+    clash_target.id = 7;
+    autoplay_clash_state.entities.monsters = vec![clash_target.clone()];
+    autoplay_clash_state.zones.hand = vec![CombatCard::new(CardId::Defend, 106)];
+    autoplay_clash_state.enqueue_card_play(
+        crate::runtime::combat::QueuedCardPlay {
+            card: CombatCard::new(CardId::Clash, 107),
+            target: Some(7),
+            energy_on_use: 0,
+            ignore_energy_total: true,
+            autoplay: true,
+            random_target: false,
+            is_end_turn_autoplay: false,
+            purge_on_use: false,
+            source: crate::runtime::combat::QueuedCardSource::Normal,
+        },
+        false,
+    );
+    let flush_autoplay_clash = autoplay_clash_state
+        .pop_next_action()
+        .expect("autoplay Clash should schedule queue flush");
+    crate::engine::action_handlers::execute_action(flush_autoplay_clash, &mut autoplay_clash_state);
+    assert!(
+        autoplay_clash_state.pop_next_action().is_none(),
+        "Java queued/autoplay cards still call canUse; Clash fizzles if hand contains a non-Attack"
+    );
+
+    let mut autoplay_no_energy_state = crate::test_support::blank_test_combat();
+    autoplay_no_energy_state.turn.energy = 0;
+    autoplay_no_energy_state.entities.monsters = vec![clash_target];
+    autoplay_no_energy_state.enqueue_card_play(
+        crate::runtime::combat::QueuedCardPlay {
+            card: CombatCard::new(CardId::Strike, 108),
+            target: Some(7),
+            energy_on_use: 0,
+            ignore_energy_total: true,
+            autoplay: true,
+            random_target: false,
+            is_end_turn_autoplay: false,
+            purge_on_use: false,
+            source: crate::runtime::combat::QueuedCardSource::Normal,
+        },
+        false,
+    );
+    let flush_autoplay_strike = autoplay_no_energy_state
+        .pop_next_action()
+        .expect("autoplay Strike should schedule queue flush");
+    crate::engine::action_handlers::execute_action(
+        flush_autoplay_strike,
+        &mut autoplay_no_energy_state,
+    );
+    assert!(
+        matches!(
+            autoplay_no_energy_state.pop_next_action(),
+            Some(Action::PlayCardDirect { .. })
+        ),
+        "Java isInAutoplay bypasses only the final energy check"
+    );
+
     let mut first = crate::test_support::test_monster(EnemyId::JawWorm);
     first.id = 11;
     first.slot = 0;

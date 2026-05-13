@@ -481,6 +481,23 @@ pub fn effective_target(card: &CombatCard) -> CardTarget {
 
 /// Validates whether a card can be played based on energy, status locks, and curses like Normality.
 pub fn can_play_card(card: &CombatCard, state: &CombatState) -> Result<(), &'static str> {
+    can_play_card_internal(card, state, false)
+}
+
+/// Java queued/autoplay cards still call `canUse`, but `isInAutoplay` only
+/// bypasses the final energy-count check inside `hasEnoughEnergy`.
+pub fn can_play_card_ignoring_energy(
+    card: &CombatCard,
+    state: &CombatState,
+) -> Result<(), &'static str> {
+    can_play_card_internal(card, state, true)
+}
+
+fn can_play_card_internal(
+    card: &CombatCard,
+    state: &CombatState,
+    ignore_energy: bool,
+) -> Result<(), &'static str> {
     // Curse: Normality Lock
     if state.zones.hand.iter().any(|c| c.id == CardId::Normality) {
         if state.turn.counters.cards_played_this_turn >= 3 {
@@ -570,7 +587,7 @@ pub fn can_play_card(card: &CombatCard, state: &CombatState) -> Result<(), &'sta
     }
 
     // Default cost validation
-    if cost >= 0 && state.turn.energy < (cost as u8) {
+    if !ignore_energy && cost >= 0 && state.turn.energy < (cost as u8) {
         return Err("Not enough energy.");
     }
 

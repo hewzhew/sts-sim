@@ -1055,6 +1055,9 @@ pub fn handle_flush_next_queued_card(state: &mut CombatState) {
     };
 
     queued.card.energy_on_use = queued.energy_on_use;
+    if crate::content::cards::can_play_card_ignoring_energy(&queued.card, state).is_err() {
+        return;
+    }
     let target = if queued.random_target {
         targeting::validation_for_card_target(crate::content::cards::effective_target(&queued.card))
             .and_then(|validation| targeting::pick_random_target(state, validation))
