@@ -1051,6 +1051,54 @@ pub fn handle_enqueue_card_play(
     state.enqueue_card_play(item, in_front);
 }
 
+fn queued_card_target_fails_java_can_use(
+    card: &crate::runtime::combat::CombatCard,
+    target: Option<usize>,
+    state: &CombatState,
+) -> bool {
+    if targeting::validation_for_card_target(crate::content::cards::effective_target(card))
+        .is_none()
+    {
+        return false;
+    }
+
+    if state.are_monsters_basically_dead_java() {
+        return true;
+    }
+
+    target.is_some_and(|target_id| {
+        state
+            .entities
+            .monsters
+            .iter()
+            .find(|m| m.id == target_id)
+            .is_some_and(|m| m.is_dying)
+    })
+}
+
+fn queued_card_target_allows_java_use_card(
+    card: &crate::runtime::combat::CombatCard,
+    target: Option<usize>,
+    state: &CombatState,
+) -> bool {
+    if targeting::validation_for_card_target(crate::content::cards::effective_target(card))
+        .is_none()
+    {
+        return true;
+    }
+
+    let Some(target_id) = target else {
+        return false;
+    };
+
+    state
+        .entities
+        .monsters
+        .iter()
+        .find(|m| m.id == target_id)
+        .is_some_and(|m| !m.is_dead_or_escaped())
+}
+
 pub fn handle_flush_next_queued_card(state: &mut CombatState) {
     if state.zones.queued_cards.len() == 1
         && state
@@ -1071,8 +1119,17 @@ pub fn handle_flush_next_queued_card(state: &mut CombatState) {
     };
 
     queued.card.energy_on_use = queued.energy_on_use;
+    let target = if queued.random_target {
+        targeting::validation_for_card_target(crate::content::cards::effective_target(&queued.card))
+            .and_then(|validation| targeting::pick_random_target(state, validation))
+    } else {
+        queued.target
+    };
+
     let has_more_queued_cards = !state.zones.queued_cards.is_empty();
-    if crate::content::cards::can_play_card_ignoring_energy(&queued.card, state).is_err() {
+    if crate::content::cards::can_play_card_ignoring_energy(&queued.card, state).is_err()
+        || queued_card_target_fails_java_can_use(&queued.card, target, state)
+    {
         if queued.autoplay && !queued.purge_on_use {
             let should_exhaust = queued
                 .card
@@ -1086,12 +1143,6 @@ pub fn handle_flush_next_queued_card(state: &mut CombatState) {
         }
         return;
     }
-    let target = if queued.random_target {
-        targeting::validation_for_card_target(crate::content::cards::effective_target(&queued.card))
-            .and_then(|validation| targeting::pick_random_target(state, validation))
-    } else {
-        queued.target
-    };
 
     if has_more_queued_cards {
         state.queue_action_back(Action::FlushNextQueuedCard);
@@ -1110,19 +1161,7 @@ pub fn handle_play_card_direct(
     state: &mut CombatState,
 ) {
     let played_card = *card;
-    let target = targeting::resolve_target_request(
-        state,
-        targeting::validation_for_card_target(crate::content::cards::effective_target(
-            &played_card,
-        )),
-        target,
-    )
-    .ok()
-    .flatten();
-    if targeting::validation_for_card_target(crate::content::cards::effective_target(&played_card))
-        .is_some()
-        && target.is_none()
-    {
+    if !queued_card_target_allows_java_use_card(&played_card, target, state) {
         return;
     }
     execute_played_card(played_card, target, purge, state);
@@ -1386,14 +1425,15 @@ mod tests {
         handle_draw_pile_to_hand_by_type, handle_make_copy_in_discard,
         handle_make_random_card_in_draw_pile, handle_make_random_card_in_hand,
         handle_make_temp_card_in_discard, handle_make_temp_card_in_discard_and_deck,
-        handle_make_temp_card_in_draw_pile, handle_make_temp_card_in_hand, handle_use_card_done,
-        obtain_specific_potion_if_allowed,
+        handle_make_temp_card_in_draw_pile, handle_make_temp_card_in_hand, handle_play_card_direct,
+        handle_use_card_done, obtain_specific_potion_if_allowed,
     };
     use crate::content::cards::{CardId, CardType};
     use crate::content::monsters::EnemyId;
     use crate::content::potions::PotionId;
     use crate::content::powers::PowerId;
     use crate::content::relics::{RelicId, RelicState};
+    use crate::runtime::action::Action;
     use crate::runtime::combat::{CombatCard, Power};
     use crate::test_support::{blank_test_combat, test_monster};
 
@@ -1989,6 +2029,78 @@ mod tests {
 
         assert_eq!(not_exhausting.rng.card_random_rng.counter, before_counter);
         assert_eq!(not_exhausting.zones.discard_pile.len(), 1);
+    }
+
+    #[test]
+    fn queued_direct_card_accepts_zero_hp_target_if_java_dead_flags_are_clear() {
+        let mut state = blank_test_combat();
+        let mut zero_hp = test_monster(EnemyId::JawWorm);
+        zero_hp.id = 700;
+        zero_hp.current_hp = 0;
+        zero_hp.is_dying = false;
+        zero_hp.half_dead = false;
+        zero_hp.is_escaped = false;
+        state.entities.monsters = vec![zero_hp];
+
+        handle_play_card_direct(
+            Box::new(CombatCard::new(CardId::Strike, 701)),
+            Some(700),
+            false,
+            &mut state,
+        );
+
+        assert_eq!(
+            state.zones.limbo.len(),
+            1,
+            "Java GameActionManager checks isDeadOrEscaped(), not currentHealth, before useCard"
+        );
+        assert!(matches!(
+            state.pop_next_action(),
+            Some(Action::Damage(crate::runtime::action::DamageInfo {
+                target: 700,
+                ..
+            }))
+        ));
+    }
+
+    #[test]
+    fn failed_autoplay_target_cleanup_matches_java_can_use_path() {
+        let mut state = blank_test_combat();
+        let mut dying = test_monster(EnemyId::JawWorm);
+        dying.id = 710;
+        dying.current_hp = 0;
+        dying.is_dying = true;
+        state.entities.monsters = vec![dying];
+        state.enqueue_card_play(
+            crate::runtime::combat::QueuedCardPlay {
+                card: CombatCard::new(CardId::Strike, 711),
+                target: Some(710),
+                energy_on_use: 0,
+                ignore_energy_total: true,
+                autoplay: true,
+                random_target: false,
+                is_end_turn_autoplay: false,
+                purge_on_use: false,
+                source: crate::runtime::combat::QueuedCardSource::Normal,
+            },
+            false,
+        );
+
+        let flush = state
+            .pop_next_action()
+            .expect("queued autoplay card should schedule flush");
+        crate::engine::action_handlers::execute_action(flush, &mut state);
+
+        assert!(matches!(
+            state.pop_next_action(),
+            Some(Action::UseCardDone {
+                should_exhaust: false
+            }),
+        ));
+        assert!(
+            state.zones.limbo.iter().any(|card| card.uuid == 711),
+            "Java failed autoplay canUse path still routes the card through UseCardAction"
+        );
     }
 }
 
