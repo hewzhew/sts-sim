@@ -12,39 +12,24 @@ pub fn true_grit_play(state: &CombatState, card: &CombatCard) -> SmallVec<[Actio
         insertion_mode: AddTo::Bottom,
     }];
 
-    let hand_len = state.zones.hand.len();
     if card.upgrades > 0 {
-        if hand_len == 1 {
-            actions.push(ActionInfo {
-                action: Action::ExhaustCard {
-                    card_uuid: state.zones.hand[0].uuid,
-                    source_pile: crate::state::PileType::Hand,
-                },
-                insertion_mode: AddTo::Bottom,
-            });
-        } else if hand_len > 1 {
-            actions.push(ActionInfo {
-                action: Action::SuspendForHandSelect {
-                    min: 1,
-                    max: 1,
-                    can_cancel: false,
-                    filter: crate::state::HandSelectFilter::Any,
-                    reason: crate::state::HandSelectReason::Exhaust,
-                },
-                insertion_mode: AddTo::Bottom,
-            });
-        }
-    } else if hand_len == 1 {
         actions.push(ActionInfo {
-            action: Action::ExhaustCard {
-                card_uuid: state.zones.hand[0].uuid,
-                source_pile: crate::state::PileType::Hand,
+            action: Action::ExhaustFromHand {
+                amount: 1,
+                random: false,
+                any_number: false,
+                can_pick_zero: false,
             },
             insertion_mode: AddTo::Bottom,
         });
-    } else if hand_len > 1 {
+    } else {
         actions.push(ActionInfo {
-            action: Action::ExhaustRandomCard { amount: 1 },
+            action: Action::ExhaustFromHand {
+                amount: 1,
+                random: true,
+                any_number: false,
+                can_pick_zero: false,
+            },
             insertion_mode: AddTo::Bottom,
         });
     }

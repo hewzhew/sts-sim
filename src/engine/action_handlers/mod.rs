@@ -346,6 +346,12 @@ pub fn execute_action(action: Action, state: &mut CombatState) {
             card_uuid,
             source_pile,
         } => cards::handle_exhaust_card(card_uuid, source_pile, state),
+        Action::ExhaustFromHand {
+            amount,
+            random,
+            any_number,
+            can_pick_zero,
+        } => cards::handle_exhaust_from_hand(amount, random, any_number, can_pick_zero, state),
         Action::MoveCard {
             card_uuid,
             from,

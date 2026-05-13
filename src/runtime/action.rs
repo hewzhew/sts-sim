@@ -293,6 +293,12 @@ pub enum Action {
     ExhaustRandomCard {
         amount: usize,
     },
+    ExhaustFromHand {
+        amount: usize,
+        random: bool,
+        any_number: bool,
+        can_pick_zero: bool,
+    },
     DiscardCard {
         card_uuid: u32,
     },

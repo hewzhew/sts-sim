@@ -303,6 +303,53 @@ pub fn handle_exhaust_card(
     }
 }
 
+pub fn handle_exhaust_from_hand(
+    amount: usize,
+    random: bool,
+    any_number: bool,
+    can_pick_zero: bool,
+    state: &mut CombatState,
+) {
+    if state.zones.hand.is_empty() {
+        return;
+    }
+
+    if !any_number && state.zones.hand.len() <= amount {
+        while !state.zones.hand.is_empty() {
+            let card = state
+                .zones
+                .hand
+                .pop()
+                .expect("checked non-empty hand before ExhaustAction auto move");
+            move_card_to_exhaust_pile(card, state);
+        }
+        return;
+    }
+
+    if random {
+        for _ in 0..amount {
+            if state.zones.hand.is_empty() {
+                break;
+            }
+            let idx = state
+                .rng
+                .card_random_rng
+                .random(state.zones.hand.len() as i32 - 1) as usize;
+            let card = state.zones.hand.remove(idx);
+            move_card_to_exhaust_pile(card, state);
+        }
+        return;
+    }
+
+    state.queue_action_front(Action::SuspendForHandSelect {
+        min: if can_pick_zero { 0 } else { 1 },
+        max: amount.min(u8::MAX as usize) as u8,
+        can_cancel: can_pick_zero,
+        filter: crate::state::HandSelectFilter::Any,
+        reason: crate::state::HandSelectReason::Exhaust,
+    });
+}
+
 pub fn handle_move_card(
     card_uuid: u32,
     from: crate::state::PileType,

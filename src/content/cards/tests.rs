@@ -621,16 +621,16 @@ fn ironclad_block_exhaust_and_ethereal_runtime_actions_match_java_use_methods() 
         None,
     );
     assert_eq!(burning_pact_actions.len(), 2);
-    match &burning_pact_actions[0].action {
-        Action::ExhaustCard {
-            card_uuid,
-            source_pile,
-        } => {
-            assert_eq!(*card_uuid, 84);
-            assert_eq!(*source_pile, crate::state::PileType::Hand);
-        }
-        other => panic!("Burning Pact should exhaust one hand card first, got {other:?}"),
-    }
+    assert_eq!(
+        burning_pact_actions[0].action,
+        Action::ExhaustFromHand {
+            amount: 1,
+            random: false,
+            any_number: false,
+            can_pick_zero: false,
+        },
+        "Java Burning Pact queues ExhaustAction; it reads hand size when the action executes"
+    );
     assert!(matches!(
         burning_pact_actions[1].action,
         Action::DrawCards(2)
@@ -646,22 +646,15 @@ fn ironclad_block_exhaust_and_ethereal_runtime_actions_match_java_use_methods() 
         &CombatCard::new(CardId::BurningPact, 88),
         None,
     );
-    match &burning_pact_select_actions[0].action {
-        Action::SuspendForHandSelect {
-            min,
-            max,
-            can_cancel,
-            filter,
-            reason,
-        } => {
-            assert_eq!(*min, 1);
-            assert_eq!(*max, 1);
-            assert!(!*can_cancel);
-            assert_eq!(*filter, crate::state::HandSelectFilter::Any);
-            assert_eq!(*reason, crate::state::HandSelectReason::Exhaust);
+    assert_eq!(
+        burning_pact_select_actions[0].action,
+        Action::ExhaustFromHand {
+            amount: 1,
+            random: false,
+            any_number: false,
+            can_pick_zero: false,
         }
-        other => panic!("Burning Pact should open ExhaustAction hand select, got {other:?}"),
-    }
+    );
     let mut burning_pact_plus = CombatCard::new(CardId::BurningPact, 89);
     burning_pact_plus.upgrades = 1;
     let burning_pact_plus_actions =
@@ -4243,12 +4236,11 @@ fn ironclad_random_and_exhaust_attack_runtime_actions_match_java_use_methods() {
     ));
     assert!(matches!(
         true_grit_actions[1].action,
-        Action::SuspendForHandSelect {
-            min: 1,
-            max: 1,
-            can_cancel: false,
-            filter: crate::state::HandSelectFilter::Any,
-            reason: crate::state::HandSelectReason::Exhaust,
+        Action::ExhaustFromHand {
+            amount: 1,
+            random: false,
+            any_number: false,
+            can_pick_zero: false
         }
     ));
 
@@ -4379,7 +4371,7 @@ fn true_grit_exhaust_action_edges_match_java_exhaust_action() {
     let empty_state = crate::test_support::blank_test_combat();
     let true_grit = CombatCard::new(CardId::TrueGrit, 380);
     let empty_actions = resolve_card_play(CardId::TrueGrit, &empty_state, &true_grit, None);
-    assert_eq!(empty_actions.len(), 1);
+    assert_eq!(empty_actions.len(), 2);
     assert!(matches!(
         empty_actions[0].action,
         Action::GainBlock {
@@ -4387,6 +4379,16 @@ fn true_grit_exhaust_action_edges_match_java_exhaust_action() {
             amount: 7
         }
     ));
+    assert_eq!(
+        empty_actions[1].action,
+        Action::ExhaustFromHand {
+            amount: 1,
+            random: true,
+            any_number: false,
+            can_pick_zero: false,
+        },
+        "Java True Grit queues ExhaustAction even when it will fizzle on an empty hand"
+    );
 
     let mut one_card_state = crate::test_support::blank_test_combat();
     one_card_state.zones.hand = vec![CombatCard::new(CardId::Strike, 381)];
@@ -4394,9 +4396,11 @@ fn true_grit_exhaust_action_edges_match_java_exhaust_action() {
     assert_eq!(one_card_actions.len(), 2);
     assert!(matches!(
         one_card_actions[1].action,
-        Action::ExhaustCard {
-            card_uuid: 381,
-            source_pile: crate::state::PileType::Hand
+        Action::ExhaustFromHand {
+            amount: 1,
+            random: true,
+            any_number: false,
+            can_pick_zero: false
         }
     ));
 
@@ -4409,7 +4413,12 @@ fn true_grit_exhaust_action_edges_match_java_exhaust_action() {
     assert_eq!(two_card_actions.len(), 2);
     assert!(matches!(
         two_card_actions[1].action,
-        Action::ExhaustRandomCard { amount: 1 }
+        Action::ExhaustFromHand {
+            amount: 1,
+            random: true,
+            any_number: false,
+            can_pick_zero: false
+        }
     ));
 
     let mut true_grit_plus = CombatCard::new(CardId::TrueGrit, 384);
@@ -4419,9 +4428,11 @@ fn true_grit_exhaust_action_edges_match_java_exhaust_action() {
     assert_eq!(one_card_plus_actions.len(), 2);
     assert!(matches!(
         one_card_plus_actions[1].action,
-        Action::ExhaustCard {
-            card_uuid: 381,
-            source_pile: crate::state::PileType::Hand
+        Action::ExhaustFromHand {
+            amount: 1,
+            random: false,
+            any_number: false,
+            can_pick_zero: false
         }
     ));
 
@@ -4430,12 +4441,11 @@ fn true_grit_exhaust_action_edges_match_java_exhaust_action() {
     assert_eq!(two_card_plus_actions.len(), 2);
     assert!(matches!(
         two_card_plus_actions[1].action,
-        Action::SuspendForHandSelect {
-            min: 1,
-            max: 1,
-            can_cancel: false,
-            filter: crate::state::HandSelectFilter::Any,
-            reason: crate::state::HandSelectReason::Exhaust,
+        Action::ExhaustFromHand {
+            amount: 1,
+            random: false,
+            any_number: false,
+            can_pick_zero: false
         }
     ));
 }
@@ -5040,6 +5050,57 @@ fn discard_from_hand_auto_discards_all_when_hand_size_is_not_greater_than_amount
         None,
         "Java DiscardAction does not open a choice screen when hand.size() <= amount"
     );
+}
+
+#[test]
+fn exhaust_from_hand_matches_java_auto_and_any_number_paths() {
+    let mut auto_state = crate::test_support::blank_test_combat();
+    auto_state.zones.hand = vec![
+        CombatCard::new(CardId::Strike, 860),
+        CombatCard::new(CardId::Defend, 861),
+    ];
+
+    crate::engine::action_handlers::cards::handle_exhaust_from_hand(
+        2,
+        false,
+        false,
+        false,
+        &mut auto_state,
+    );
+
+    assert!(auto_state.zones.hand.is_empty());
+    assert_eq!(
+        auto_state
+            .zones
+            .exhaust_pile
+            .iter()
+            .map(|card| card.uuid)
+            .collect::<Vec<_>>(),
+        vec![861, 860],
+        "Java ExhaustAction auto path repeatedly moves hand.getTopCard when hand.size() <= amount"
+    );
+    assert_eq!(auto_state.pop_next_action(), None);
+
+    let mut any_number_state = crate::test_support::blank_test_combat();
+    any_number_state.zones.hand = vec![CombatCard::new(CardId::Strike, 862)];
+    crate::engine::action_handlers::cards::handle_exhaust_from_hand(
+        3,
+        false,
+        true,
+        true,
+        &mut any_number_state,
+    );
+
+    assert!(matches!(
+        any_number_state.pop_next_action(),
+        Some(Action::SuspendForHandSelect {
+            min: 0,
+            max: 3,
+            can_cancel: true,
+            filter: crate::state::HandSelectFilter::Any,
+            reason: crate::state::HandSelectReason::Exhaust,
+        })
+    ));
 }
 
 #[test]

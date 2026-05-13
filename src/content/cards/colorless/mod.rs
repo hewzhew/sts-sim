@@ -193,15 +193,12 @@ pub fn play_colorless(
             });
         }
         CardId::Purity => {
-            if !state.zones.hand.is_empty() {
-                acts.push(Action::SuspendForHandSelect {
-                    min: 0,
-                    max: mag as u8,
-                    can_cancel: true,
-                    filter: crate::state::HandSelectFilter::Any,
-                    reason: crate::state::HandSelectReason::Exhaust,
-                });
-            }
+            acts.push(Action::ExhaustFromHand {
+                amount: mag.max(0) as usize,
+                random: false,
+                any_number: true,
+                can_pick_zero: true,
+            });
         }
         CardId::SwiftStrike => {
             let target_id = target.expect("Swift Strike requires a target!");
