@@ -3760,6 +3760,55 @@ fn sentinel_exhaust_trigger_matches_java_add_to_top_energy() {
             amount: 4
         })
     );
+
+    let mut charon_state = crate::test_support::blank_test_combat();
+    charon_state.entities.monsters = vec![crate::test_support::test_monster(EnemyId::JawWorm)];
+    charon_state
+        .entities
+        .player
+        .add_relic(crate::content::relics::RelicState::new(
+            crate::content::relics::RelicId::CharonsAshes,
+        ));
+    charon_state.zones.hand = vec![CombatCard::new(CardId::Sentinel, 342)];
+    crate::engine::action_handlers::cards::handle_exhaust_card(
+        342,
+        crate::state::PileType::Hand,
+        &mut charon_state,
+    );
+    assert_eq!(
+        charon_state.pop_next_action(),
+        Some(Action::GainEnergy { amount: 2 }),
+        "Sentinel triggerOnExhaust is called after relic onExhaust and uses Java addToTop, so it resolves first"
+    );
+    assert!(
+        matches!(
+            charon_state.pop_next_action(),
+            Some(Action::DamageAllEnemies { .. })
+        ),
+        "Charon's Ashes addToTop action remains next after the later Sentinel addToTop"
+    );
+}
+
+#[test]
+fn burning_pact_exhausted_sentinel_energy_precedes_followup_draw() {
+    let mut state = crate::test_support::blank_test_combat();
+    state.zones.hand = vec![CombatCard::new(CardId::Sentinel, 350)];
+
+    let burning_pact = CombatCard::new(CardId::BurningPact, 351);
+    let actions = resolve_card_play(CardId::BurningPact, &state, &burning_pact, None);
+    state.queue_actions(actions);
+
+    let exhaust = state
+        .pop_next_action()
+        .expect("Burning Pact should queue its exhaust action before drawing");
+    crate::engine::action_handlers::execute_action(exhaust, &mut state);
+
+    assert_eq!(
+        state.pop_next_action(),
+        Some(Action::GainEnergy { amount: 2 }),
+        "Sentinel addToTop should interrupt Burning Pact's already-queued DrawCardAction"
+    );
+    assert_eq!(state.pop_next_action(), Some(Action::DrawCards(2)));
 }
 
 #[test]

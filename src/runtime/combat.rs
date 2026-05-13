@@ -569,21 +569,14 @@ impl EngineRuntime {
     }
 
     pub fn queue_actions(&mut self, actions: smallvec::SmallVec<[ActionInfo; 4]>) {
-        let mut to_bottom = vec![];
-        let mut to_front = vec![];
-
+        // `ActionInfo` order is the Java call order.  Java `addToTop`
+        // inserts at index 0 immediately, so later top insertions run before
+        // earlier top insertions.
         for a in actions {
             match a.insertion_mode {
-                AddTo::Top => to_front.push(a.action),
-                AddTo::Bottom => to_bottom.push(a.action),
+                AddTo::Top => self.push_front(a.action),
+                AddTo::Bottom => self.push_back(a.action),
             }
-        }
-
-        for action in to_front.into_iter().rev() {
-            self.push_front(action);
-        }
-        for action in to_bottom {
-            self.push_back(action);
         }
     }
 }
@@ -1823,11 +1816,12 @@ mod tests {
     }
 
     #[test]
-    fn engine_runtime_queue_actions_preserves_top_before_bottom_order() {
+    fn engine_runtime_queue_actions_matches_java_add_to_top_order() {
         let mut engine = EngineRuntime {
             action_queue: VecDeque::new(),
         };
 
+        engine.push_back(Action::DrawCards(99));
         engine.queue_actions(smallvec::smallvec![
             ActionInfo {
                 action: Action::DrawCards(1),
@@ -1848,21 +1842,26 @@ mod tests {
 
         assert_eq!(
             engine.pop_front(),
-            Some(Action::GainEnergy { amount: 2 }),
-            "first top action should execute first"
-        );
-        assert_eq!(
-            engine.pop_front(),
             Some(Action::GainBlock {
                 target: 0,
                 amount: 3,
             }),
-            "subsequent top actions should preserve insertion order"
+            "later addToTop calls should execute before earlier top calls"
+        );
+        assert_eq!(
+            engine.pop_front(),
+            Some(Action::GainEnergy { amount: 2 }),
+            "earlier addToTop calls should remain ahead of existing queued actions"
+        );
+        assert_eq!(
+            engine.pop_front(),
+            Some(Action::DrawCards(99)),
+            "existing queued actions remain ahead of later addToBot actions"
         );
         assert_eq!(
             engine.pop_front(),
             Some(Action::DrawCards(1)),
-            "bottom actions should remain after top actions"
+            "addToBot actions should append after existing queued actions"
         );
     }
 

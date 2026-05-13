@@ -1219,22 +1219,14 @@ pub fn queue_actions(
     queue: &mut std::collections::VecDeque<Action>,
     actions: SmallVec<[ActionInfo; 4]>,
 ) {
-    let mut to_bottom = vec![];
-    let mut to_front = vec![];
-
+    // `ActionInfo` order is the Java call order.  Java `addToTop`
+    // inserts at index 0 immediately, so later top insertions run before
+    // earlier top insertions.
     for a in actions {
         match a.insertion_mode {
-            crate::runtime::action::AddTo::Top => to_front.push(a.action),
-            crate::runtime::action::AddTo::Bottom => to_bottom.push(a.action),
+            crate::runtime::action::AddTo::Top => queue.push_front(a.action),
+            crate::runtime::action::AddTo::Bottom => queue.push_back(a.action),
         }
-    }
-
-    // Top actions: push in reverse so first item ends up at front
-    for action in to_front.into_iter().rev() {
-        queue.push_front(action);
-    }
-    for action in to_bottom {
-        queue.push_back(action);
     }
 }
 
