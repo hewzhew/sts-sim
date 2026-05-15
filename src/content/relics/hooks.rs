@@ -41,7 +41,7 @@ pub fn at_pre_battle(state: &mut CombatState) -> SmallVec<[ActionInfo; 4]> {
             RelicId::Enchiridion => {
                 let mut rs = state.entities.player.relics[relic_index].clone();
                 actions.extend(crate::content::relics::enchiridion::at_battle_start(
-                    &*state, &mut rs,
+                    state, &mut rs,
                 ));
                 state.entities.player.relics[relic_index] = rs;
             }
@@ -317,7 +317,7 @@ pub fn on_exhaust(state: &mut CombatState) -> smallvec::SmallVec<[ActionInfo; 4]
             RelicId::DeadBranch => {
                 let mut rs = state.entities.player.relics[relic_index].clone();
                 actions.extend(crate::content::relics::dead_branch::on_exhaust(
-                    &*state, &mut rs,
+                    state, &mut rs,
                 ));
                 state.entities.player.relics[relic_index] = rs;
             }

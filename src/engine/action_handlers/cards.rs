@@ -1214,26 +1214,7 @@ fn class_card_pool_for_type(
     player_class: &str,
     card_type: Option<crate::content::cards::CardType>,
 ) -> Vec<CardId> {
-    let mut pool = Vec::new();
-    for &rarity in &[
-        crate::content::cards::CardRarity::Common,
-        crate::content::cards::CardRarity::Uncommon,
-        crate::content::cards::CardRarity::Rare,
-    ] {
-        for &id in crate::engine::campfire_handler::card_pool_for_class(player_class, rarity) {
-            let def = crate::content::cards::get_card_definition(id);
-            if def.tags.contains(&crate::content::cards::CardTag::Healing) {
-                continue;
-            }
-            if let Some(ct) = card_type {
-                if def.card_type != ct {
-                    continue;
-                }
-            }
-            pool.push(id);
-        }
-    }
-    pool
+    crate::content::cards::class_combat_card_pool_for_type(player_class, card_type)
 }
 
 pub fn handle_make_random_card_in_hand(

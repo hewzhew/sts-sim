@@ -483,6 +483,48 @@ pub fn make_fresh_card_copy_for_combat(
     card
 }
 
+pub fn class_combat_card_pool_for_type(
+    player_class: &str,
+    card_type: Option<CardType>,
+) -> Vec<CardId> {
+    let mut pool = Vec::new();
+    for &rarity in &[CardRarity::Common, CardRarity::Uncommon, CardRarity::Rare] {
+        let rarity_pool = match player_class {
+            "Ironclad" => ironclad_pool_for_rarity(rarity),
+            "Silent" => silent_pool_for_rarity(rarity),
+            "Defect" => defect_pool_for_rarity(rarity),
+            "Watcher" => watcher_pool_for_rarity(rarity),
+            _ => ironclad_pool_for_rarity(rarity),
+        };
+        for &id in rarity_pool {
+            let def = get_card_definition(id);
+            if def.tags.contains(&CardTag::Healing) {
+                continue;
+            }
+            if let Some(card_type) = card_type {
+                if def.card_type != card_type {
+                    continue;
+                }
+            }
+            pool.push(id);
+        }
+    }
+    pool
+}
+
+pub fn make_random_class_card_copy_for_combat(
+    state: &mut CombatState,
+    card_type: Option<CardType>,
+) -> Option<CombatCard> {
+    let pool = class_combat_card_pool_for_type(state.meta.player_class, card_type);
+    if pool.is_empty() {
+        return None;
+    }
+
+    let idx = state.rng.card_random_rng.random(pool.len() as i32 - 1) as usize;
+    Some(make_fresh_card_copy_for_combat(pool[idx], 0, state))
+}
+
 pub fn can_upgrade_card_once(card: &CombatCard) -> bool {
     if card.id == CardId::SearingBlow {
         return true;

@@ -2164,32 +2164,44 @@ fn dead_branch_skips_when_monsters_are_basically_dead() {
         .entities
         .monsters
         .push(crate::test_support::test_monster(EnemyId::JawWorm));
-    let actions = dead_branch::on_exhaust(&active, &mut RelicState::new(RelicId::DeadBranch));
+    assert_eq!(active.rng.card_random_rng.counter, 0);
+    let actions = dead_branch::on_exhaust(&mut active, &mut RelicState::new(RelicId::DeadBranch));
     assert_eq!(actions.len(), 1);
+    assert_eq!(
+        active.rng.card_random_rng.counter, 1,
+        "Java DeadBranch.onExhaust samples the random card before queuing MakeTempCardInHandAction"
+    );
     assert_eq!(actions[0].insertion_mode, AddTo::Bottom);
-    assert!(matches!(
-        actions[0].action,
-        Action::MakeRandomCardInHand {
-            card_type: None,
-            cost_for_turn: None
+    match &actions[0].action {
+        Action::MakeCopyInHand { original, amount } => {
+            assert_eq!(*amount, 1);
+            assert!(!crate::content::cards::get_card_definition(original.id)
+                .tags
+                .contains(&crate::content::cards::CardTag::Healing));
         }
-    ));
+        other => panic!("Dead Branch should queue a concrete generated card, got {other:?}"),
+    }
 
     let mut dying = crate::test_support::test_monster(EnemyId::JawWorm);
     dying.current_hp = 0;
     dying.is_dying = true;
-    let basically_dead = crate::test_support::combat_with_monsters(vec![dying]);
-    assert!(
-        dead_branch::on_exhaust(&basically_dead, &mut RelicState::new(RelicId::DeadBranch),)
-            .is_empty()
-    );
+    let mut basically_dead = crate::test_support::combat_with_monsters(vec![dying]);
+    assert!(dead_branch::on_exhaust(
+        &mut basically_dead,
+        &mut RelicState::new(RelicId::DeadBranch),
+    )
+    .is_empty());
 
     let mut zero_hp_not_dying = crate::test_support::test_monster(EnemyId::JawWorm);
     zero_hp_not_dying.current_hp = 0;
     zero_hp_not_dying.is_dying = false;
-    let zero_hp_state = crate::test_support::combat_with_monsters(vec![zero_hp_not_dying]);
+    let mut zero_hp_state = crate::test_support::combat_with_monsters(vec![zero_hp_not_dying]);
     assert_eq!(
-        dead_branch::on_exhaust(&zero_hp_state, &mut RelicState::new(RelicId::DeadBranch)).len(),
+        dead_branch::on_exhaust(
+            &mut zero_hp_state,
+            &mut RelicState::new(RelicId::DeadBranch)
+        )
+        .len(),
         1,
         "Java MonsterGroup.areMonstersBasicallyDead ignores currentHealth"
     );
@@ -3227,16 +3239,25 @@ fn enchiridion_adds_random_zero_cost_power_at_pre_battle() {
     let mut state = crate::test_support::blank_test_combat();
     let mut relic = RelicState::new(RelicId::Enchiridion);
 
-    let actions = enchiridion::at_battle_start(&state, &mut relic);
+    assert_eq!(state.rng.card_random_rng.counter, 0);
+    let actions = enchiridion::at_battle_start(&mut state, &mut relic);
     assert_eq!(actions.len(), 1);
+    assert_eq!(
+        state.rng.card_random_rng.counter, 1,
+        "Java Enchiridion.atPreBattle samples the random Power before queuing MakeTempCardInHandAction"
+    );
     assert_eq!(actions[0].insertion_mode, AddTo::Bottom);
-    assert!(matches!(
-        actions[0].action,
-        Action::MakeRandomCardInHand {
-            card_type: Some(crate::content::cards::CardType::Power),
-            cost_for_turn: Some(0),
+    match &actions[0].action {
+        Action::MakeCopyInHand { original, amount } => {
+            assert_eq!(*amount, 1);
+            let def = crate::content::cards::get_card_definition(original.id);
+            assert_eq!(def.card_type, crate::content::cards::CardType::Power);
+            if original.combat_cost_without_turn_override_java() != -1 {
+                assert_eq!(original.cost_for_turn_java(), 0);
+            }
         }
-    ));
+        other => panic!("Enchiridion should queue a concrete generated Power, got {other:?}"),
+    }
 
     state.entities.player.add_relic(relic);
     assert!(get_relic_subscriptions(RelicId::Enchiridion).at_pre_battle);
