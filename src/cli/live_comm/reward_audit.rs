@@ -413,21 +413,28 @@ fn build_human_card_reward_replay_context(
         .and_then(|m| m.get("last_command"))
         .and_then(|v| v.as_str())
         .unwrap_or("");
+    let skip_available = gs
+        .get("screen_state")
+        .and_then(|ss| ss.get("skip_available"))
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
 
     let engine_state =
         if matches!(last_command_kind, Some("potion")) || last_command.starts_with("POTION USE ") {
             truth.turn.counters.discovery_cost_for_turn = Some(0);
-            EngineState::PendingChoice(PendingChoice::DiscoverySelect(offered_ids))
+            EngineState::PendingChoice(PendingChoice::DiscoverySelect(
+                crate::state::core::DiscoveryChoiceState {
+                    cards: offered_ids,
+                    colorless: false,
+                    card_type: None,
+                    can_skip: skip_available,
+                },
+            ))
         } else {
-            let can_skip = gs
-                .get("screen_state")
-                .and_then(|ss| ss.get("skip_available"))
-                .and_then(|v| v.as_bool())
-                .unwrap_or(false);
             EngineState::PendingChoice(PendingChoice::CardRewardSelect {
                 cards: offered_ids,
                 destination: CardDestination::Hand,
-                can_skip,
+                can_skip: skip_available,
             })
         };
 

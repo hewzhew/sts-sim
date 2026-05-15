@@ -4872,15 +4872,23 @@ fn transmutation_x_cost_action_matches_java_energy_and_chemical_x_timing() {
         ));
     crate::engine::action_handlers::execute_action(actions[0].action.clone(), &mut state);
     assert_eq!(state.turn.energy, 0);
+    assert_eq!(
+        state.rng.card_random_rng.counter, 5,
+        "Java TransmutationAction.update samples concrete colorless cards before queuing MakeTempCardInHandAction"
+    );
     let mut generated = 0;
     while let Some(action) = state.pop_next_action() {
-        assert!(matches!(
-            action,
-            Action::MakeRandomColorlessCardInHand {
-                cost_for_turn: Some(0),
-                upgraded: true
+        match action {
+            Action::MakeCopyInHand { original, amount } => {
+                assert_eq!(amount, 1);
+                assert!(state.colorless_combat_pool().contains(&original.id));
+                assert_eq!(original.upgrades, 1);
+                assert_eq!(original.cost_for_turn_java(), 0);
             }
-        ));
+            other => panic!(
+                "TransmutationAction should queue concrete MakeTempCardInHandAction cards, got {other:?}"
+            ),
+        }
         generated += 1;
     }
     assert_eq!(generated, 5);

@@ -1338,10 +1338,12 @@ pub fn handle_transmutation(
 
     if effect > 0 {
         for _ in 0..effect {
-            state.queue_action_back(Action::MakeRandomColorlessCardInHand {
+            let mut action = Action::MakeRandomColorlessCardInHand {
                 cost_for_turn: Some(0),
                 upgraded,
-            });
+            };
+            materialize_random_colorless_card_in_hand_action(&mut action, state);
+            state.queue_action_back(action);
         }
         if !free_to_play_once {
             state.turn.spend_energy(state.turn.energy as i32);

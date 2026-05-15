@@ -85,10 +85,13 @@ pub(crate) fn engine_local_moves(engine: &EngineState, combat: &CombatState) -> 
             } => {
                 extend_grid_select_moves(&mut moves, candidate_uuids, *min_cards, *max_cards);
             }
-            PendingChoice::DiscoverySelect(_) => {
-                moves.push(ClientInput::SubmitDiscoverChoice(0));
-                moves.push(ClientInput::SubmitDiscoverChoice(1));
-                moves.push(ClientInput::SubmitDiscoverChoice(2));
+            PendingChoice::DiscoverySelect(choice) => {
+                for index in 0..choice.cards.len() {
+                    moves.push(ClientInput::SubmitDiscoverChoice(index));
+                }
+                if choice.can_skip {
+                    moves.push(ClientInput::Cancel);
+                }
             }
             PendingChoice::CardRewardSelect {
                 cards, can_skip, ..

@@ -103,6 +103,7 @@ pub fn play_colorless(
                 colorless: false,
                 card_type: None,
                 cost_for_turn: Some(0),
+                can_skip: false,
             });
         }
         CardId::DramaticEntrance => {

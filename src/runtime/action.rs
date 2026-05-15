@@ -414,6 +414,7 @@ pub enum Action {
         colorless: bool,
         card_type: Option<crate::content::cards::CardType>,
         cost_for_turn: Option<u8>,
+        can_skip: bool,
     },
     /// StancePotion: Java ChooseOneAction(ChooseWrath, ChooseCalm)
     SuspendForStanceChoice,

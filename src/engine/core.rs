@@ -1,7 +1,9 @@
 use crate::content::powers::store;
 use crate::runtime::action::{Action, ActionInfo};
 use crate::runtime::combat::{CombatPhase, CombatState};
-use crate::state::core::{ClientInput, EngineState, PendingChoice, RunResult};
+use crate::state::core::{
+    ClientInput, DiscoveryChoiceState, EngineState, PendingChoice, RunResult,
+};
 use crate::state::selection::{EngineDiagnostic, EngineDiagnosticClass, EngineDiagnosticSeverity};
 use smallvec::SmallVec;
 use std::cell::Cell;
@@ -57,6 +59,42 @@ fn class_combat_card_pool(player_class: &str) -> Vec<crate::content::cards::Card
         ));
     }
     class_pool
+}
+
+fn discovery_card_pool(
+    combat_state: &CombatState,
+    colorless: bool,
+    card_type: Option<crate::content::cards::CardType>,
+) -> Vec<crate::content::cards::CardId> {
+    let mut pool = if colorless {
+        combat_state.colorless_combat_pool()
+    } else {
+        class_combat_card_pool(combat_state.meta.player_class)
+    };
+    if let Some(ct) = card_type {
+        pool.retain(|&id| crate::content::cards::get_card_definition(id).card_type == ct);
+    }
+    pool
+}
+
+fn generate_discovery_choices(
+    combat_state: &mut CombatState,
+    colorless: bool,
+    card_type: Option<crate::content::cards::CardType>,
+) -> Vec<crate::content::cards::CardId> {
+    let pool = discovery_card_pool(combat_state, colorless, card_type);
+    let mut cards = Vec::new();
+    while cards.len() < 3 && !pool.is_empty() {
+        let idx = combat_state
+            .rng
+            .card_random_rng
+            .random(pool.len() as i32 - 1) as usize;
+        let id = pool[idx];
+        if !cards.contains(&id) {
+            cards.push(id);
+        }
+    }
+    cards
 }
 
 fn resolve_victory_hooks_immediately(combat_state: &mut CombatState) {
@@ -420,39 +458,22 @@ pub fn tick_engine(
                     colorless,
                     card_type,
                     cost_for_turn,
+                    can_skip,
                 } => {
-                    // Generate 3 unique random cards from pool, filtered by card_type
-                    // Java: DiscoveryAction.generateCardChoices(type) or
-                    // generateColorlessCardChoices() -> 3 unique cards.
-                    let mut pool: Vec<crate::content::cards::CardId> = if colorless {
-                        combat_state.colorless_combat_pool()
-                    } else {
-                        class_combat_card_pool(combat_state.meta.player_class)
-                    };
-
-                    if let Some(ct) = card_type {
-                        pool.retain(|&id| {
-                            crate::content::cards::get_card_definition(id).card_type == ct
-                        });
-                    }
-                    let mut cards = Vec::new();
-                    while cards.len() < 3 && !pool.is_empty() {
-                        let idx = combat_state
-                            .rng
-                            .card_random_rng
-                            .random(pool.len() as i32 - 1)
-                            as usize;
-                        let id = pool[idx];
-                        if !cards.contains(&id) {
-                            cards.push(id);
-                        }
-                    }
-                    // Store cost_for_turn in the first element of limbo as a signal
-                    // (it will be applied when the choice is resolved)
+                    // Java DiscoveryAction.generateCardChoices(type) /
+                    // generateColorlessCardChoices() samples three unique card
+                    // IDs when the screen opens.
+                    let cards = generate_discovery_choices(combat_state, colorless, card_type);
                     combat_state.turn.set_discovery_cost_for_turn(cost_for_turn);
                     update_monster_intents(combat_state);
-                    *engine_state =
-                        EngineState::PendingChoice(PendingChoice::DiscoverySelect(cards));
+                    *engine_state = EngineState::PendingChoice(PendingChoice::DiscoverySelect(
+                        DiscoveryChoiceState {
+                            cards,
+                            colorless,
+                            card_type,
+                            can_skip,
+                        },
+                    ));
                     return true;
                 }
                 Action::SuspendForCardReward {
@@ -1020,11 +1041,21 @@ fn resolve_pending_choice(
             reason,
             input,
         ),
-        PendingChoice::DiscoverySelect(ref cards) => {
+        PendingChoice::DiscoverySelect(ref choice) => {
             // Player picks one card from the discovery options
-            if let ClientInput::SubmitDiscoverChoice(idx) = input {
-                if idx < cards.len() {
-                    let card_id = cards[idx];
+            let choice = choice.clone();
+            match input {
+                ClientInput::SubmitDiscoverChoice(idx) if idx < choice.cards.len() => {
+                    // Java DiscoveryAction.update() calls generateCardChoices()
+                    // before checking whether the screen returned a selected
+                    // discoveryCard, so resuming the action burns one more
+                    // unused set of random choices.
+                    let _ = generate_discovery_choices(
+                        combat_state,
+                        choice.colorless,
+                        choice.card_type,
+                    );
+                    let card_id = choice.cards[idx];
                     let uuid = combat_state.next_card_uuid();
                     let mut card = crate::content::cards::make_fresh_card_copy_for_combat(
                         card_id,
@@ -1057,10 +1088,20 @@ fn resolve_pending_choice(
                         combat_state.add_card_to_discard_pile_top(card);
                     }
                     *engine_state = EngineState::CombatProcessing;
-                    return Ok(());
+                    Ok(())
                 }
+                ClientInput::Cancel if choice.can_skip => {
+                    let _ = generate_discovery_choices(
+                        combat_state,
+                        choice.colorless,
+                        choice.card_type,
+                    );
+                    let _ = combat_state.turn.take_discovery_cost_for_turn();
+                    *engine_state = EngineState::CombatProcessing;
+                    Ok(())
+                }
+                _ => Err("Invalid discovery choice"),
             }
-            Err("Invalid discovery choice")
         }
         PendingChoice::CardRewardSelect {
             ref cards,
@@ -1311,7 +1352,7 @@ mod tests {
     use crate::content::relics::{RelicId, RelicState};
     use crate::runtime::action::CardDestination;
     use crate::runtime::combat::{CombatCard, Power};
-    use crate::state::core::{ClientInput, EngineState, PendingChoice};
+    use crate::state::core::{ClientInput, DiscoveryChoiceState, EngineState, PendingChoice};
     use crate::test_support::blank_test_combat;
 
     #[test]
@@ -1330,6 +1371,89 @@ mod tests {
     }
 
     #[test]
+    fn discovery_resume_burns_java_unused_choice_rng() {
+        let mut combat_state = blank_test_combat();
+        let mut engine_state = EngineState::CombatProcessing;
+        combat_state.queue_action_back(crate::runtime::action::Action::SuspendForDiscovery {
+            colorless: false,
+            card_type: None,
+            cost_for_turn: Some(0),
+            can_skip: false,
+        });
+
+        assert!(super::tick_engine(
+            &mut engine_state,
+            &mut combat_state,
+            None
+        ));
+        let counter_after_open = combat_state.rng.card_random_rng.counter;
+        let selected_id = match &engine_state {
+            EngineState::PendingChoice(PendingChoice::DiscoverySelect(choice)) => {
+                assert!(!choice.can_skip);
+                assert_eq!(choice.cards.len(), 3);
+                choice.cards[0]
+            }
+            other => panic!("DiscoveryAction should open a discovery choice, got {other:?}"),
+        };
+
+        resolve_pending_choice(
+            &mut engine_state,
+            &mut combat_state,
+            ClientInput::SubmitDiscoverChoice(0),
+        )
+        .expect("valid discovery choice should resolve");
+
+        assert!(
+            combat_state.rng.card_random_rng.counter >= counter_after_open + 3,
+            "Java DiscoveryAction.update regenerates an unused choice set when the action resumes"
+        );
+        assert_eq!(engine_state, EngineState::CombatProcessing);
+        assert_eq!(combat_state.zones.hand.len(), 1);
+        assert_eq!(combat_state.zones.hand[0].id, selected_id);
+    }
+
+    #[test]
+    fn typed_discovery_choice_can_skip_and_still_burns_resume_rng() {
+        let mut combat_state = blank_test_combat();
+        let mut engine_state = EngineState::CombatProcessing;
+        combat_state.queue_action_back(crate::runtime::action::Action::SuspendForDiscovery {
+            colorless: false,
+            card_type: Some(crate::content::cards::CardType::Attack),
+            cost_for_turn: Some(0),
+            can_skip: true,
+        });
+
+        assert!(super::tick_engine(
+            &mut engine_state,
+            &mut combat_state,
+            None
+        ));
+        let counter_after_open = combat_state.rng.card_random_rng.counter;
+        match &engine_state {
+            EngineState::PendingChoice(PendingChoice::DiscoverySelect(choice)) => {
+                assert!(choice.can_skip);
+                assert_eq!(
+                    choice.card_type,
+                    Some(crate::content::cards::CardType::Attack)
+                );
+                assert_eq!(choice.cards.len(), 3);
+            }
+            other => panic!("typed DiscoveryAction should open a skippable choice, got {other:?}"),
+        }
+
+        resolve_pending_choice(&mut engine_state, &mut combat_state, ClientInput::Cancel)
+            .expect("skippable typed discovery choice should accept cancel");
+
+        assert!(
+            combat_state.rng.card_random_rng.counter >= counter_after_open + 3,
+            "Java typed DiscoveryAction burns the resume-time generated choice set even when skipped"
+        );
+        assert_eq!(engine_state, EngineState::CombatProcessing);
+        assert!(combat_state.zones.hand.is_empty());
+        assert_eq!(combat_state.turn.take_discovery_cost_for_turn(), None);
+    }
+
+    #[test]
     fn discovery_selection_uses_java_make_copy_and_master_reality_path() {
         let mut combat_state = blank_test_combat();
         combat_state.turn.counters.times_damaged_this_combat = 2;
@@ -1345,7 +1469,12 @@ mod tests {
             }],
         );
         let mut engine_state =
-            EngineState::PendingChoice(PendingChoice::DiscoverySelect(vec![CardId::BloodForBlood]));
+            EngineState::PendingChoice(PendingChoice::DiscoverySelect(DiscoveryChoiceState {
+                cards: vec![CardId::BloodForBlood],
+                colorless: false,
+                card_type: None,
+                can_skip: false,
+            }));
 
         resolve_pending_choice(
             &mut engine_state,
@@ -1376,7 +1505,12 @@ mod tests {
         combat_state.zones.card_uuid_counter = 100;
 
         let mut first_choice =
-            EngineState::PendingChoice(PendingChoice::DiscoverySelect(vec![CardId::Strike]));
+            EngineState::PendingChoice(PendingChoice::DiscoverySelect(DiscoveryChoiceState {
+                cards: vec![CardId::Strike],
+                colorless: false,
+                card_type: None,
+                can_skip: false,
+            }));
         resolve_pending_choice(
             &mut first_choice,
             &mut combat_state,
@@ -1385,7 +1519,12 @@ mod tests {
         .expect("first discovery choice should resolve");
 
         let mut second_choice =
-            EngineState::PendingChoice(PendingChoice::DiscoverySelect(vec![CardId::Defend]));
+            EngineState::PendingChoice(PendingChoice::DiscoverySelect(DiscoveryChoiceState {
+                cards: vec![CardId::Defend],
+                colorless: false,
+                card_type: None,
+                can_skip: false,
+            }));
         resolve_pending_choice(
             &mut second_choice,
             &mut combat_state,

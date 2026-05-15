@@ -208,6 +208,7 @@ pub fn get_potion_actions(
                     colorless: false,
                     card_type: Some(crate::content::cards::CardType::Attack),
                     cost_for_turn: Some(0),
+                    can_skip: true,
                 },
             );
         }
@@ -219,6 +220,7 @@ pub fn get_potion_actions(
                     colorless: false,
                     card_type: Some(crate::content::cards::CardType::Skill),
                     cost_for_turn: Some(0),
+                    can_skip: true,
                 },
             );
         }
@@ -232,6 +234,7 @@ pub fn get_potion_actions(
                     colorless: false,
                     card_type: Some(crate::content::cards::CardType::Power),
                     cost_for_turn: Some(0),
+                    can_skip: true,
                 },
             );
         }
@@ -245,6 +248,7 @@ pub fn get_potion_actions(
                     colorless: true,
                     card_type: None,
                     cost_for_turn: Some(0),
+                    can_skip: false,
                 },
             );
         }

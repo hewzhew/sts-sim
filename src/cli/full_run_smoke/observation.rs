@@ -538,14 +538,15 @@ fn build_run_pending_choice_observation(
         return None;
     };
     match choice {
-        PendingChoice::DiscoverySelect(cards) => Some(RunPendingChoiceObservationV0 {
+        PendingChoice::DiscoverySelect(choice) => Some(RunPendingChoiceObservationV0 {
             kind: "discovery_select".to_string(),
             min_select: 1,
             max_select: 1,
-            can_cancel: false,
+            can_cancel: choice.can_skip,
             reason: None,
             source_pile: None,
-            options: cards
+            options: choice
+                .cards
                 .iter()
                 .enumerate()
                 .map(

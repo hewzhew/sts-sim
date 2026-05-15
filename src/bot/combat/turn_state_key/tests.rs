@@ -152,19 +152,25 @@ fn stable_outcome_key_normalizes_hand_and_discovery_choice_order() {
 
     assert_eq!(
         stable_outcome_key(
-            &EngineState::PendingChoice(PendingChoice::DiscoverySelect(vec![
-                CardId::Strike,
-                CardId::Defend,
-                CardId::Bash,
-            ])),
+            &EngineState::PendingChoice(PendingChoice::DiscoverySelect(
+                crate::state::core::DiscoveryChoiceState {
+                    cards: vec![CardId::Strike, CardId::Defend, CardId::Bash],
+                    colorless: false,
+                    card_type: None,
+                    can_skip: false,
+                },
+            )),
             &baseline,
         ),
         stable_outcome_key(
-            &EngineState::PendingChoice(PendingChoice::DiscoverySelect(vec![
-                CardId::Bash,
-                CardId::Strike,
-                CardId::Defend,
-            ])),
+            &EngineState::PendingChoice(PendingChoice::DiscoverySelect(
+                crate::state::core::DiscoveryChoiceState {
+                    cards: vec![CardId::Bash, CardId::Strike, CardId::Defend],
+                    colorless: false,
+                    card_type: None,
+                    can_skip: false,
+                },
+            )),
             &baseline,
         ),
     );

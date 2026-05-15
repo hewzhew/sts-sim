@@ -61,8 +61,8 @@ pub(super) fn pending_choice_key(
                 "unknown_ref",
             ),
         },
-        PendingChoice::DiscoverySelect(cards) => {
-            StablePendingChoiceKey::Discovery(sorted_debug_values(cards))
+        PendingChoice::DiscoverySelect(choice) => {
+            StablePendingChoiceKey::Discovery(sorted_debug_values(&choice.cards))
         }
         PendingChoice::ScrySelect { card_uuids, .. } => {
             StablePendingChoiceKey::Scry(scry_candidates_key(combat, card_uuids))

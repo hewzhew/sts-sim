@@ -1995,7 +1995,14 @@ fn build_engine_state_from_root_meta(
 
     if matches!(last_command_kind, Some("potion")) || last_command.starts_with("POTION USE ") {
         combat.turn.counters.discovery_cost_for_turn = Some(0);
-        return EngineState::PendingChoice(PendingChoice::DiscoverySelect(offered));
+        return EngineState::PendingChoice(PendingChoice::DiscoverySelect(
+            crate::state::core::DiscoveryChoiceState {
+                cards: offered,
+                colorless: false,
+                card_type: None,
+                can_skip: skip_available,
+            },
+        ));
     }
 
     EngineState::PendingChoice(PendingChoice::CardRewardSelect {

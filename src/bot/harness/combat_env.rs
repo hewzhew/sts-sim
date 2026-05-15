@@ -1001,9 +1001,15 @@ fn enumerate_pending_choice_actions(
     combat: &CombatState,
 ) -> Vec<CombatAction> {
     match choice {
-        PendingChoice::DiscoverySelect(cards) => (0..cards.len())
-            .map(|index| CombatAction::SubmitDiscoverChoice { index })
-            .collect(),
+        PendingChoice::DiscoverySelect(choice) => {
+            let mut actions = (0..choice.cards.len())
+                .map(|index| CombatAction::SubmitDiscoverChoice { index })
+                .collect::<Vec<_>>();
+            if choice.can_skip {
+                actions.push(CombatAction::Cancel);
+            }
+            actions
+        }
         PendingChoice::CardRewardSelect {
             cards, can_skip, ..
         } => {
@@ -1222,14 +1228,15 @@ fn build_pending_choice_observation(
         return None;
     };
     match choice {
-        PendingChoice::DiscoverySelect(cards) => Some(CombatObservationPendingChoice {
+        PendingChoice::DiscoverySelect(choice) => Some(CombatObservationPendingChoice {
             kind: "discovery_select".to_string(),
             min_select: 1,
             max_select: 1,
-            can_cancel: false,
+            can_cancel: choice.can_skip,
             reason: None,
             source_pile: None,
-            options: cards
+            options: choice
+                .cards
                 .iter()
                 .enumerate()
                 .map(

@@ -91,7 +91,7 @@ pub enum PendingChoice {
         can_cancel: bool,
         reason: HandSelectReason,
     },
-    DiscoverySelect(Vec<CardId>),
+    DiscoverySelect(DiscoveryChoiceState),
     ScrySelect {
         cards: Vec<CardId>,
         card_uuids: Vec<u32>,
@@ -130,6 +130,14 @@ pub enum HandSelectReason {
     Nightmare { amount: u8 },
     Upgrade,
     GamblingChip,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct DiscoveryChoiceState {
+    pub cards: Vec<CardId>,
+    pub colorless: bool,
+    pub card_type: Option<CardType>,
+    pub can_skip: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
