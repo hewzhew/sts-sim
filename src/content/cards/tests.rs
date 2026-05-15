@@ -5978,6 +5978,7 @@ fn silent_reward_pools_preserve_java_registration_order_for_implemented_cards() 
             CardId::Malaise,
             CardId::PhantasmalKiller,
             CardId::StormOfSteel,
+            CardId::ToolsOfTheTrade,
             CardId::Unload,
             CardId::WraithForm,
         ]
@@ -7532,6 +7533,56 @@ fn bullet_time_matches_java_no_draw_and_hand_cost_override() {
             .iter()
             .all(|card| card.cost_for_turn_java() == 0),
         "Java ApplyBulletTimeAction calls setCostForTurn(-9) on every current hand card"
+    );
+}
+
+#[test]
+fn tools_of_the_trade_matches_java_post_draw_cycle() {
+    let tools = get_card_definition(CardId::ToolsOfTheTrade);
+    assert_eq!(tools.name, "Tools of the Trade");
+    assert_eq!(tools.card_type, CardType::Power);
+    assert_eq!(tools.rarity, CardRarity::Rare);
+    assert_eq!(tools.cost, 1);
+    assert_eq!(tools.target, CardTarget::SelfTarget);
+    assert_eq!(java_id(CardId::ToolsOfTheTrade), "Tools of the Trade");
+    assert_eq!(
+        build_java_id_map().get("Tools of the Trade"),
+        Some(&CardId::ToolsOfTheTrade)
+    );
+    let mut tools_plus = CombatCard::new(CardId::ToolsOfTheTrade, 1004);
+    tools_plus.upgrades = 1;
+    assert_eq!(upgraded_base_cost_override(&tools_plus), Some(0));
+
+    let actions = resolve_card_play(
+        CardId::ToolsOfTheTrade,
+        &crate::test_support::blank_test_combat(),
+        &tools_plus,
+        None,
+    );
+    assert_eq!(
+        actions[0].action,
+        Action::ApplyPower {
+            source: 0,
+            target: 0,
+            power_id: PowerId::ToolsOfTheTrade,
+            amount: 1,
+        }
+    );
+
+    let post_draw_actions = crate::content::powers::resolve_power_on_post_draw(
+        PowerId::ToolsOfTheTrade,
+        &crate::test_support::blank_test_combat(),
+        0,
+        2,
+    );
+    assert_eq!(post_draw_actions[0], Action::DrawCards(2));
+    assert_eq!(
+        post_draw_actions[1],
+        Action::DiscardFromHand {
+            amount: 2,
+            random: false,
+            end_turn: false,
+        }
     );
 }
 

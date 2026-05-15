@@ -60,5 +60,6 @@ pub mod storm_of_steel;
 pub mod sucker_punch;
 pub mod survivor;
 pub mod terror;
+pub mod tools_of_the_trade;
 pub mod unload;
 pub mod wraith_form;

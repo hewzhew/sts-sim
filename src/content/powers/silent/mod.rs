@@ -6,4 +6,5 @@ pub mod envenom;
 pub mod noxious_fumes;
 pub mod phantasmal;
 pub mod thousand_cuts;
+pub mod tools_of_the_trade;
 pub mod wraith_form;

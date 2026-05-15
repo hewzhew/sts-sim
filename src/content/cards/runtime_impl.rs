@@ -211,6 +211,9 @@ pub fn resolve_card_play_with_context(
         CardId::PhantasmalKiller => {
             silent::phantasmal_killer::phantasmal_killer_play(_state, _card)
         }
+        CardId::ToolsOfTheTrade => {
+            silent::tools_of_the_trade::tools_of_the_trade_play(_state, _card)
+        }
         CardId::Adrenaline => silent::adrenaline::adrenaline_play(_state, _card),
         CardId::AfterImage => silent::after_image::after_image_play(_state, _card),
         CardId::AThousandCuts => silent::a_thousand_cuts::a_thousand_cuts_play(_state, _card),
@@ -548,6 +551,7 @@ pub fn upgraded_base_cost_override(card: &CombatCard) -> Option<i8> {
         CardId::PhantasmalKiller if card.upgrades > 0 => Some(0),
         CardId::SeeingRed if card.upgrades > 0 => Some(0),
         CardId::Terror if card.upgrades > 0 => Some(0),
+        CardId::ToolsOfTheTrade if card.upgrades > 0 => Some(0),
         _ => None,
     }
 }

@@ -103,6 +103,7 @@ pub enum PowerId {
     Phantasmal,
     DoubleDamage,
     Envenom,
+    ToolsOfTheTrade,
 }
 
 use crate::runtime::combat::{CombatCard, CombatState};
@@ -551,6 +552,10 @@ pub fn get_power_definition(id: PowerId) -> PowerDefinition {
             id,
             name: "Envenom",
         },
+        PowerId::ToolsOfTheTrade => PowerDefinition {
+            id,
+            name: "Tools of the Trade",
+        },
     }
 }
 
@@ -811,6 +816,7 @@ pub fn resolve_power_on_post_draw(
         PowerId::Brutality => ironclad::brutality::on_post_draw(owner, amount),
         PowerId::DemonForm => ironclad::demon_form::on_post_draw(owner, amount),
         PowerId::NoxiousFumes => silent::noxious_fumes::on_post_draw(_state, owner, amount),
+        PowerId::ToolsOfTheTrade => silent::tools_of_the_trade::on_post_draw(owner, amount),
         PowerId::DrawCardNextTurn => smallvec::smallvec![
             crate::runtime::action::Action::DrawCards(amount.max(0) as u32),
             crate::runtime::action::Action::RemovePower {
