@@ -51,6 +51,72 @@ pub fn handle_spot_weakness(target: usize, amount: i32, state: &mut CombatState)
     }
 }
 
+pub fn handle_doppelganger(
+    upgraded: bool,
+    free_to_play_once: bool,
+    energy_on_use: i32,
+    state: &mut CombatState,
+) {
+    let effect = x_cost_effect(state, upgraded, energy_on_use);
+    if effect > 0 {
+        state.queue_action_back(Action::ApplyPower {
+            source: 0,
+            target: 0,
+            power_id: PowerId::Energized,
+            amount: effect,
+        });
+        state.queue_action_back(Action::ApplyPower {
+            source: 0,
+            target: 0,
+            power_id: PowerId::DrawCardNextTurn,
+            amount: effect,
+        });
+        if !free_to_play_once {
+            state.turn.spend_energy(state.turn.energy as i32);
+        }
+    }
+}
+
+pub fn handle_malaise(
+    target: usize,
+    upgraded: bool,
+    free_to_play_once: bool,
+    energy_on_use: i32,
+    state: &mut CombatState,
+) {
+    let effect = x_cost_effect(state, upgraded, energy_on_use);
+    if effect > 0 {
+        state.queue_action_back(Action::ApplyPower {
+            source: 0,
+            target,
+            power_id: PowerId::Strength,
+            amount: -effect,
+        });
+        state.queue_action_back(Action::ApplyPower {
+            source: 0,
+            target,
+            power_id: PowerId::Weak,
+            amount: effect,
+        });
+        if !free_to_play_once {
+            state.turn.spend_energy(state.turn.energy as i32);
+        }
+    }
+}
+
+fn x_cost_effect(state: &CombatState, upgraded: bool, energy_on_use: i32) -> i32 {
+    let base_effect = if energy_on_use != -1 {
+        energy_on_use
+    } else {
+        state.turn.energy as i32
+    };
+    let mut effect = crate::content::relics::hooks::on_calculate_x_cost(state, base_effect);
+    if upgraded {
+        effect += 1;
+    }
+    effect
+}
+
 fn monster_has_java_spot_weakness_intent(
     state: &CombatState,
     monster: &crate::runtime::combat::MonsterEntity,

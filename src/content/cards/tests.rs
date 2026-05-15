@@ -5969,8 +5969,10 @@ fn silent_reward_pools_preserve_java_registration_order_for_implemented_cards() 
             CardId::AfterImage,
             CardId::Burst,
             CardId::DieDieDie,
+            CardId::Doppelganger,
             CardId::GlassKnife,
             CardId::GrandFinale,
+            CardId::Malaise,
             CardId::StormOfSteel,
             CardId::Unload,
         ]
@@ -6983,6 +6985,175 @@ fn skewer_matches_java_x_cost_single_target_action() {
         chemical_x_state.action_queue_len(),
         2,
         "Chemical X adds two Skewer hits even when current energy is zero"
+    );
+}
+
+#[test]
+fn silent_x_cost_power_cards_match_java_actions() {
+    let doppelganger = get_card_definition(CardId::Doppelganger);
+    assert_eq!(doppelganger.name, "Doppelganger");
+    assert_eq!(doppelganger.card_type, CardType::Skill);
+    assert_eq!(doppelganger.rarity, CardRarity::Rare);
+    assert_eq!(doppelganger.cost, -1);
+    assert_eq!(doppelganger.target, CardTarget::SelfTarget);
+    assert!(doppelganger.exhaust);
+    assert!(exhausts_when_played(&CombatCard::new(
+        CardId::Doppelganger,
+        980
+    )));
+    assert_eq!(java_id(CardId::Doppelganger), "Doppelganger");
+
+    let malaise = get_card_definition(CardId::Malaise);
+    assert_eq!(malaise.name, "Malaise");
+    assert_eq!(malaise.card_type, CardType::Skill);
+    assert_eq!(malaise.rarity, CardRarity::Rare);
+    assert_eq!(malaise.cost, -1);
+    assert_eq!(malaise.target, CardTarget::Enemy);
+    assert!(malaise.exhaust);
+    assert!(exhausts_when_played(&CombatCard::new(CardId::Malaise, 981)));
+    assert_eq!(java_id(CardId::Malaise), "Malaise");
+
+    assert_eq!(
+        build_java_id_map().get("Doppelganger"),
+        Some(&CardId::Doppelganger)
+    );
+    assert_eq!(build_java_id_map().get("Malaise"), Some(&CardId::Malaise));
+
+    let state = crate::test_support::blank_test_combat();
+    let mut doppelganger_card = CombatCard::new(CardId::Doppelganger, 982);
+    doppelganger_card.upgrades = 1;
+    doppelganger_card.energy_on_use = 2;
+    let doppelganger_actions =
+        resolve_card_play(CardId::Doppelganger, &state, &doppelganger_card, None);
+    assert_eq!(doppelganger_actions.len(), 1);
+    assert_eq!(
+        doppelganger_actions[0].action,
+        Action::Doppelganger {
+            upgraded: true,
+            free_to_play_once: false,
+            energy_on_use: 2,
+        }
+    );
+
+    let mut malaise_card = CombatCard::new(CardId::Malaise, 983);
+    malaise_card.upgrades = 1;
+    malaise_card.free_to_play_once = true;
+    malaise_card.energy_on_use = 2;
+    let malaise_actions = resolve_card_play(CardId::Malaise, &state, &malaise_card, Some(7));
+    assert_eq!(malaise_actions.len(), 1);
+    assert_eq!(
+        malaise_actions[0].action,
+        Action::Malaise {
+            target: 7,
+            upgraded: true,
+            free_to_play_once: true,
+            energy_on_use: 2,
+        }
+    );
+
+    let mut doppelganger_state = crate::test_support::blank_test_combat();
+    doppelganger_state.turn.energy = 5;
+    crate::engine::action_handlers::execute_action(
+        Action::Doppelganger {
+            upgraded: true,
+            free_to_play_once: false,
+            energy_on_use: 2,
+        },
+        &mut doppelganger_state,
+    );
+    assert_eq!(
+        doppelganger_state.turn.energy, 0,
+        "Java DoppelgangerAction spends current EnergyPanel.totalCount"
+    );
+    assert_eq!(
+        doppelganger_state.pop_next_action(),
+        Some(Action::ApplyPower {
+            source: 0,
+            target: 0,
+            power_id: PowerId::Energized,
+            amount: 3,
+        })
+    );
+    assert_eq!(
+        doppelganger_state.pop_next_action(),
+        Some(Action::ApplyPower {
+            source: 0,
+            target: 0,
+            power_id: PowerId::DrawCardNextTurn,
+            amount: 3,
+        })
+    );
+    assert!(doppelganger_state.pop_next_action().is_none());
+
+    let mut malaise_state = crate::test_support::blank_test_combat();
+    malaise_state.turn.energy = 5;
+    crate::engine::action_handlers::execute_action(
+        Action::Malaise {
+            target: 7,
+            upgraded: false,
+            free_to_play_once: false,
+            energy_on_use: 2,
+        },
+        &mut malaise_state,
+    );
+    assert_eq!(
+        malaise_state.turn.energy, 0,
+        "Java MalaiseAction spends current EnergyPanel.totalCount"
+    );
+    assert_eq!(
+        malaise_state.pop_next_action(),
+        Some(Action::ApplyPower {
+            source: 0,
+            target: 7,
+            power_id: PowerId::Strength,
+            amount: -2,
+        })
+    );
+    assert_eq!(
+        malaise_state.pop_next_action(),
+        Some(Action::ApplyPower {
+            source: 0,
+            target: 7,
+            power_id: PowerId::Weak,
+            amount: 2,
+        })
+    );
+    assert!(malaise_state.pop_next_action().is_none());
+
+    let mut chemical_x_state = crate::test_support::blank_test_combat();
+    chemical_x_state.turn.energy = 0;
+    chemical_x_state
+        .entities
+        .player
+        .add_relic(crate::content::relics::RelicState::new(
+            crate::content::relics::RelicId::ChemicalX,
+        ));
+    crate::engine::action_handlers::execute_action(
+        Action::Malaise {
+            target: 7,
+            upgraded: true,
+            free_to_play_once: false,
+            energy_on_use: -1,
+        },
+        &mut chemical_x_state,
+    );
+    assert_eq!(
+        chemical_x_state.pop_next_action(),
+        Some(Action::ApplyPower {
+            source: 0,
+            target: 7,
+            power_id: PowerId::Strength,
+            amount: -3,
+        })
+    );
+    assert_eq!(
+        chemical_x_state.pop_next_action(),
+        Some(Action::ApplyPower {
+            source: 0,
+            target: 7,
+            power_id: PowerId::Weak,
+            amount: 3,
+        })
     );
 }
 

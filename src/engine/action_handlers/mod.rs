@@ -216,6 +216,17 @@ pub fn execute_action(action: Action, state: &mut CombatState) {
         Action::SpotWeakness { target, amount } => {
             powers::handle_spot_weakness(target, amount, state)
         }
+        Action::Doppelganger {
+            upgraded,
+            free_to_play_once,
+            energy_on_use,
+        } => powers::handle_doppelganger(upgraded, free_to_play_once, energy_on_use, state),
+        Action::Malaise {
+            target,
+            upgraded,
+            free_to_play_once,
+            energy_on_use,
+        } => powers::handle_malaise(target, upgraded, free_to_play_once, energy_on_use, state),
         Action::FiendFire {
             target,
             damage_info,
