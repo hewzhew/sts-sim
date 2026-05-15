@@ -95,6 +95,8 @@ pub enum PowerId {
     AfterImage,
     Burst,
     MasterRealityPower,
+    AccuracyPower,
+    InfiniteBladesPower,
 }
 
 use crate::runtime::combat::{CombatCard, CombatState};
@@ -512,6 +514,14 @@ pub fn get_power_definition(id: PowerId) -> PowerDefinition {
             id,
             name: "Master Reality",
         },
+        PowerId::AccuracyPower => PowerDefinition {
+            id,
+            name: "Accuracy",
+        },
+        PowerId::InfiniteBladesPower => PowerDefinition {
+            id,
+            name: "Infinite Blades",
+        },
     }
 }
 
@@ -705,6 +715,17 @@ pub fn resolve_power_at_turn_start(
             smallvec::smallvec![crate::runtime::action::Action::GainEnergy { amount }]
         }
         PowerId::NextTurnBlock => core::next_turn_block::at_turn_start(owner, amount),
+        PowerId::InfiniteBladesPower => {
+            if _state.are_monsters_basically_dead_java() {
+                smallvec::smallvec![]
+            } else {
+                smallvec::smallvec![crate::runtime::action::Action::MakeTempCardInHand {
+                    card_id: crate::content::cards::CardId::Shiv,
+                    amount: amount.max(0) as u8,
+                    upgraded: false,
+                }]
+            }
+        }
         PowerId::MagnetismPower => {
             // Add `amount` random colorless cards to hand
             let mut acts = smallvec::SmallVec::new();
@@ -1087,6 +1108,9 @@ pub fn resolve_power_on_calculate_damage_to_enemy(
             PowerId::Weak => damage * 0.75,
             // Java: atDamageGive — Vigor adds its amount to NORMAL attack damage
             PowerId::Vigor => damage + amount as f32,
+            PowerId::AccuracyPower if card.id == crate::content::cards::CardId::Shiv => {
+                damage + amount as f32
+            }
             _ => damage,
         }
     } else {

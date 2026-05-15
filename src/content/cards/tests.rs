@@ -5811,6 +5811,35 @@ fn silent_direct_attack_batch_matches_java_sources() {
     assert_eq!(predator.upgrade_damage, 5);
     assert_eq!(java_id(CardId::Predator), "Predator");
 
+    let accuracy = get_card_definition(CardId::Accuracy);
+    assert_eq!(accuracy.name, "Accuracy");
+    assert_eq!(accuracy.card_type, CardType::Power);
+    assert_eq!(accuracy.rarity, CardRarity::Uncommon);
+    assert_eq!(accuracy.cost, 1);
+    assert_eq!(accuracy.base_magic, 4);
+    assert_eq!(accuracy.upgrade_magic, 2);
+    assert_eq!(java_id(CardId::Accuracy), "Accuracy");
+
+    let caltrops = get_card_definition(CardId::Caltrops);
+    assert_eq!(caltrops.name, "Caltrops");
+    assert_eq!(caltrops.card_type, CardType::Power);
+    assert_eq!(caltrops.rarity, CardRarity::Uncommon);
+    assert_eq!(caltrops.cost, 1);
+    assert_eq!(caltrops.base_magic, 3);
+    assert_eq!(caltrops.upgrade_magic, 2);
+    assert_eq!(java_id(CardId::Caltrops), "Caltrops");
+
+    let infinite = get_card_definition(CardId::InfiniteBlades);
+    assert_eq!(infinite.name, "Infinite Blades");
+    assert_eq!(infinite.card_type, CardType::Power);
+    assert_eq!(infinite.rarity, CardRarity::Uncommon);
+    assert_eq!(infinite.cost, 1);
+    assert!(!infinite.innate);
+    let mut infinite_plus = CombatCard::new(CardId::InfiniteBlades, 927);
+    infinite_plus.upgrades = 1;
+    assert!(is_innate_card(&infinite_plus));
+    assert_eq!(java_id(CardId::InfiniteBlades), "Infinite Blades");
+
     assert_eq!(build_java_id_map().get("Backstab"), Some(&CardId::Backstab));
     assert_eq!(
         build_java_id_map().get("Riddle With Holes"),
@@ -5838,6 +5867,12 @@ fn silent_direct_attack_batch_matches_java_sources() {
         Some(&CardId::EscapePlan)
     );
     assert_eq!(build_java_id_map().get("Predator"), Some(&CardId::Predator));
+    assert_eq!(build_java_id_map().get("Accuracy"), Some(&CardId::Accuracy));
+    assert_eq!(build_java_id_map().get("Caltrops"), Some(&CardId::Caltrops));
+    assert_eq!(
+        build_java_id_map().get("Infinite Blades"),
+        Some(&CardId::InfiniteBlades)
+    );
 }
 
 #[test]
@@ -5869,10 +5904,12 @@ fn silent_reward_pools_preserve_java_registration_order_for_implemented_cards() 
     assert_eq!(
         SILENT_UNCOMMON_POOL,
         &[
+            CardId::Accuracy,
             CardId::AllOutAttack,
             CardId::Backstab,
             CardId::BouncingFlask,
             CardId::CalculatedGamble,
+            CardId::Caltrops,
             CardId::Catalyst,
             CardId::Concentrate,
             CardId::Dash,
@@ -5882,6 +5919,7 @@ fn silent_reward_pools_preserve_java_registration_order_for_implemented_cards() 
             CardId::Flechettes,
             CardId::Footwork,
             CardId::HeelHook,
+            CardId::InfiniteBlades,
             CardId::NoxiousFumes,
             CardId::Predator,
             CardId::Reflex,
@@ -6223,6 +6261,98 @@ fn silent_execution_time_action_cards_match_java_actions() {
                 power_id: PowerId::DrawCardNextTurn,
             },
         ]
+    );
+}
+
+#[test]
+fn silent_power_cards_match_java_power_hooks() {
+    let state = crate::test_support::blank_test_combat();
+
+    let accuracy = resolve_card_play(
+        CardId::Accuracy,
+        &state,
+        &CombatCard::new(CardId::Accuracy, 928),
+        None,
+    );
+    assert_eq!(
+        accuracy[0].action,
+        Action::ApplyPower {
+            source: 0,
+            target: 0,
+            power_id: PowerId::AccuracyPower,
+            amount: 4,
+        }
+    );
+
+    let mut accuracy_state = crate::test_support::blank_test_combat();
+    let mut target = crate::test_support::test_monster(EnemyId::JawWorm);
+    target.id = 7;
+    accuracy_state.entities.monsters = vec![target];
+    accuracy_state.entities.power_db.insert(
+        0,
+        vec![Power {
+            power_type: PowerId::AccuracyPower,
+            instance_id: None,
+            amount: 4,
+            extra_data: 0,
+            just_applied: false,
+        }],
+    );
+    let shiv_damage = evaluate_card_for_play(
+        &CombatCard::new(CardId::Shiv, 929),
+        &accuracy_state,
+        Some(7),
+    );
+    assert_eq!(shiv_damage.base_damage_mut, 8);
+
+    let caltrops = resolve_card_play(
+        CardId::Caltrops,
+        &state,
+        &CombatCard::new(CardId::Caltrops, 930),
+        None,
+    );
+    assert_eq!(
+        caltrops[0].action,
+        Action::ApplyPower {
+            source: 0,
+            target: 0,
+            power_id: PowerId::Thorns,
+            amount: 3,
+        }
+    );
+
+    let infinite = resolve_card_play(
+        CardId::InfiniteBlades,
+        &state,
+        &CombatCard::new(CardId::InfiniteBlades, 931),
+        None,
+    );
+    assert_eq!(
+        infinite[0].action,
+        Action::ApplyPower {
+            source: 0,
+            target: 0,
+            power_id: PowerId::InfiniteBladesPower,
+            amount: 1,
+        }
+    );
+    let mut live_state = crate::test_support::blank_test_combat();
+    let mut live_monster = crate::test_support::test_monster(EnemyId::JawWorm);
+    live_monster.id = 7;
+    live_state.entities.monsters = vec![live_monster];
+    let start_actions = crate::content::powers::resolve_power_at_turn_start(
+        PowerId::InfiniteBladesPower,
+        &live_state,
+        0,
+        1,
+    );
+    assert_eq!(
+        start_actions.as_slice(),
+        &[Action::MakeTempCardInHand {
+            card_id: CardId::Shiv,
+            amount: 1,
+            upgraded: false,
+        }]
     );
 }
 

@@ -193,6 +193,9 @@ pub enum CardId {
     Expertise,
     EscapePlan,
     Predator,
+    Accuracy,
+    Caltrops,
+    InfiniteBlades,
     // Add more as we expand
 }
 
@@ -340,6 +343,7 @@ pub fn is_innate_card(card: &crate::runtime::combat::CombatCard) -> bool {
     get_card_definition(card.id).innate
         || matches!(card.id, CardId::Brutality) && card.upgrades > 0
         || matches!(card.id, CardId::AfterImage) && card.upgrades > 0
+        || matches!(card.id, CardId::InfiniteBlades) && card.upgrades > 0
 }
 
 pub fn get_card_definition(id: CardId) -> CardDefinition {
@@ -3493,6 +3497,63 @@ pub fn get_card_definition(id: CardId) -> CardDefinition {
             upgrade_block: 0,
             upgrade_magic: 0,
         },
+        CardId::Accuracy => CardDefinition {
+            id: CardId::Accuracy,
+            name: "Accuracy",
+            card_type: CardType::Power,
+            rarity: CardRarity::Uncommon,
+            cost: 1,
+            base_damage: 0,
+            base_block: 0,
+            base_magic: 4,
+            target: CardTarget::SelfTarget,
+            is_multi_damage: false,
+            exhaust: false,
+            ethereal: false,
+            innate: false,
+            tags: &[],
+            upgrade_damage: 0,
+            upgrade_block: 0,
+            upgrade_magic: 2,
+        },
+        CardId::Caltrops => CardDefinition {
+            id: CardId::Caltrops,
+            name: "Caltrops",
+            card_type: CardType::Power,
+            rarity: CardRarity::Uncommon,
+            cost: 1,
+            base_damage: 0,
+            base_block: 0,
+            base_magic: 3,
+            target: CardTarget::SelfTarget,
+            is_multi_damage: false,
+            exhaust: false,
+            ethereal: false,
+            innate: false,
+            tags: &[],
+            upgrade_damage: 0,
+            upgrade_block: 0,
+            upgrade_magic: 2,
+        },
+        CardId::InfiniteBlades => CardDefinition {
+            id: CardId::InfiniteBlades,
+            name: "Infinite Blades",
+            card_type: CardType::Power,
+            rarity: CardRarity::Uncommon,
+            cost: 1,
+            base_damage: 0,
+            base_block: 0,
+            base_magic: 1,
+            target: CardTarget::SelfTarget,
+            is_multi_damage: false,
+            exhaust: false,
+            ethereal: false,
+            innate: false,
+            tags: &[],
+            upgrade_damage: 0,
+            upgrade_block: 0,
+            upgrade_magic: 0,
+        },
         CardId::Adrenaline => CardDefinition {
             id: CardId::Adrenaline,
             name: "Adrenaline",
@@ -3745,10 +3806,12 @@ pub const SILENT_COMMON_POOL: &[CardId] = &[
 ];
 
 pub const SILENT_UNCOMMON_POOL: &[CardId] = &[
+    CardId::Accuracy,
     CardId::AllOutAttack,
     CardId::Backstab,
     CardId::BouncingFlask,
     CardId::CalculatedGamble,
+    CardId::Caltrops,
     CardId::Catalyst,
     CardId::Concentrate,
     CardId::Dash,
@@ -3758,6 +3821,7 @@ pub const SILENT_UNCOMMON_POOL: &[CardId] = &[
     CardId::Flechettes,
     CardId::Footwork,
     CardId::HeelHook,
+    CardId::InfiniteBlades,
     CardId::NoxiousFumes,
     CardId::Predator,
     CardId::Reflex,
@@ -4116,6 +4180,9 @@ pub fn java_id(id: CardId) -> &'static str {
         CardId::Expertise => "Expertise",
         CardId::EscapePlan => "Escape Plan",
         CardId::Predator => "Predator",
+        CardId::Accuracy => "Accuracy",
+        CardId::Caltrops => "Caltrops",
+        CardId::InfiniteBlades => "Infinite Blades",
         CardId::Adrenaline => "Adrenaline",
         CardId::AfterImage => "After Image",
         CardId::Burst => "Burst",
@@ -4306,6 +4373,9 @@ pub fn build_java_id_map() -> std::collections::HashMap<&'static str, CardId> {
         Expertise,
         EscapePlan,
         Predator,
+        Accuracy,
+        Caltrops,
+        InfiniteBlades,
         Adrenaline,
         AfterImage,
         Burst,
