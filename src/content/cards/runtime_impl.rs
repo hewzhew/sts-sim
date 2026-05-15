@@ -200,6 +200,9 @@ pub fn resolve_card_play_with_context(
         CardId::CripplingPoison => silent::crippling_poison::crippling_poison_play(_state, _card),
         CardId::LegSweep => silent::leg_sweep::leg_sweep_play(_state, _card, t),
         CardId::Terror => silent::terror::terror_play(_state, _card, t),
+        CardId::EndlessAgony => silent::endless_agony::endless_agony_play(_state, _card, t),
+        CardId::GlassKnife => silent::glass_knife::glass_knife_play(_state, _card, t),
+        CardId::GrandFinale => silent::grand_finale::grand_finale_play(_state, _card),
         CardId::Adrenaline => silent::adrenaline::adrenaline_play(_state, _card),
         CardId::AfterImage => silent::after_image::after_image_play(_state, _card),
         CardId::Burst => silent::burst::burst_play(_state, _card),
@@ -647,7 +650,11 @@ fn can_play_card_internal(
                 return Err("No Attack cards in draw pile.");
             }
         }
-        // Future cards like Grand Finale (if draw pile not empty) go here
+        CardId::GrandFinale => {
+            if !state.zones.draw_pile.is_empty() {
+                return Err("Can only play Grand Finale if the draw pile is empty.");
+            }
+        }
         _ => {}
     }
 

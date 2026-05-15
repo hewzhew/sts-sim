@@ -128,13 +128,18 @@ fn apply_player_update_cards_on_discard(state: &mut CombatState) {
 
 fn apply_card_trigger_when_drawn(
     card: &mut crate::runtime::combat::CombatCard,
-    state: &CombatState,
+    state: &mut CombatState,
 ) {
     if card.id == CardId::Eviscerate {
         card.set_cost_for_turn_java(
             card.combat_cost_without_turn_override_java()
                 - state.turn.counters.cards_discarded_this_turn as i32,
         );
+    } else if card.id == CardId::EndlessAgony {
+        state.queue_action_front(Action::MakeCopyInHand {
+            original: Box::new(card.clone()),
+            amount: 1,
+        });
     }
 }
 

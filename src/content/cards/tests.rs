@@ -5942,6 +5942,7 @@ fn silent_reward_pools_preserve_java_registration_order_for_implemented_cards() 
             CardId::Concentrate,
             CardId::CripplingPoison,
             CardId::Dash,
+            CardId::EndlessAgony,
             CardId::EscapePlan,
             CardId::Eviscerate,
             CardId::Expertise,
@@ -5967,6 +5968,8 @@ fn silent_reward_pools_preserve_java_registration_order_for_implemented_cards() 
             CardId::AfterImage,
             CardId::Burst,
             CardId::DieDieDie,
+            CardId::GlassKnife,
+            CardId::GrandFinale,
             CardId::StormOfSteel,
             CardId::Unload,
         ]
@@ -6723,6 +6726,162 @@ fn silent_target_control_cards_match_java_sources_and_power_hooks() {
             amount: 1,
         }
     );
+}
+
+#[test]
+fn silent_special_attack_cards_match_java_draw_and_mutation_hooks() {
+    let endless = get_card_definition(CardId::EndlessAgony);
+    assert_eq!(endless.name, "Endless Agony");
+    assert_eq!(endless.card_type, CardType::Attack);
+    assert_eq!(endless.rarity, CardRarity::Uncommon);
+    assert_eq!(endless.cost, 0);
+    assert_eq!(endless.base_damage, 4);
+    assert_eq!(endless.upgrade_damage, 2);
+    assert!(exhausts_when_played(&CombatCard::new(
+        CardId::EndlessAgony,
+        959
+    )));
+    assert_eq!(java_id(CardId::EndlessAgony), "Endless Agony");
+
+    let glass = get_card_definition(CardId::GlassKnife);
+    assert_eq!(glass.name, "Glass Knife");
+    assert_eq!(glass.card_type, CardType::Attack);
+    assert_eq!(glass.rarity, CardRarity::Rare);
+    assert_eq!(glass.cost, 1);
+    assert_eq!(glass.base_damage, 8);
+    assert_eq!(glass.upgrade_damage, 4);
+    assert_eq!(java_id(CardId::GlassKnife), "Glass Knife");
+
+    let finale = get_card_definition(CardId::GrandFinale);
+    assert_eq!(finale.name, "Grand Finale");
+    assert_eq!(finale.card_type, CardType::Attack);
+    assert_eq!(finale.rarity, CardRarity::Rare);
+    assert_eq!(finale.cost, 0);
+    assert_eq!(finale.base_damage, 50);
+    assert_eq!(finale.upgrade_damage, 10);
+    assert!(finale.is_multi_damage);
+    assert_eq!(java_id(CardId::GrandFinale), "Grand Finale");
+
+    assert_eq!(
+        build_java_id_map().get("Endless Agony"),
+        Some(&CardId::EndlessAgony)
+    );
+    assert_eq!(
+        build_java_id_map().get("Glass Knife"),
+        Some(&CardId::GlassKnife)
+    );
+    assert_eq!(
+        build_java_id_map().get("Grand Finale"),
+        Some(&CardId::GrandFinale)
+    );
+
+    let mut state = crate::test_support::blank_test_combat();
+    let mut first = crate::test_support::test_monster(EnemyId::JawWorm);
+    first.id = 7;
+    let mut second = crate::test_support::test_monster(EnemyId::Cultist);
+    second.id = 8;
+    state.entities.monsters = vec![first, second];
+
+    let endless_actions = resolve_card_play(
+        CardId::EndlessAgony,
+        &state,
+        &CombatCard::new(CardId::EndlessAgony, 960),
+        Some(7),
+    );
+    match &endless_actions[0].action {
+        Action::Damage(info) => {
+            assert_eq!(info.target, 7);
+            assert_eq!(info.output, 4);
+        }
+        other => panic!("Endless Agony should queue DamageAction, got {other:?}"),
+    }
+
+    let glass_actions = resolve_card_play(
+        CardId::GlassKnife,
+        &state,
+        &CombatCard::new(CardId::GlassKnife, 961),
+        Some(7),
+    );
+    assert_eq!(glass_actions.len(), 3);
+    for action in glass_actions.iter().take(2) {
+        match &action.action {
+            Action::Damage(info) => {
+                assert_eq!(info.target, 7);
+                assert_eq!(info.output, 8);
+            }
+            other => panic!("Glass Knife should queue two DamageActions, got {other:?}"),
+        }
+    }
+    assert_eq!(
+        glass_actions[2].action,
+        Action::ModifyCardDamage {
+            card_uuid: 961,
+            amount: -2,
+        }
+    );
+
+    let finale_actions = resolve_card_play(
+        CardId::GrandFinale,
+        &state,
+        &CombatCard::new(CardId::GrandFinale, 962),
+        None,
+    );
+    assert_eq!(
+        finale_actions[0].action,
+        Action::DamageAllEnemies {
+            source: 0,
+            damages: smallvec::smallvec![50, 50],
+            damage_type: DamageType::Normal,
+            is_modified: true,
+        }
+    );
+
+    let mut finale_blocked = state.clone();
+    finale_blocked.zones.draw_pile = vec![CombatCard::new(CardId::StrikeG, 963)];
+    assert!(
+        can_play_card(&CombatCard::new(CardId::GrandFinale, 964), &finale_blocked).is_err(),
+        "Java Grand Finale.canUse requires an empty draw pile"
+    );
+    let mut finale_allowed = state.clone();
+    finale_allowed.zones.draw_pile.clear();
+    assert!(can_play_card(&CombatCard::new(CardId::GrandFinale, 965), &finale_allowed).is_ok());
+
+    let mut draw_state = crate::test_support::blank_test_combat();
+    let mut drawn = CombatCard::new(CardId::EndlessAgony, 966);
+    drawn.upgrades = 1;
+    draw_state.zones.draw_pile = vec![drawn];
+    crate::engine::action_handlers::execute_action(Action::DrawCards(1), &mut draw_state);
+    assert_eq!(draw_state.zones.hand.len(), 1);
+    assert_eq!(draw_state.zones.hand[0].id, CardId::EndlessAgony);
+    let trigger = draw_state
+        .pop_next_action()
+        .expect("Endless Agony.triggerWhenDrawn should queue MakeTempCardInHandAction");
+    match trigger {
+        Action::MakeCopyInHand { original, amount } => {
+            assert_eq!(original.id, CardId::EndlessAgony);
+            assert_eq!(original.upgrades, 1);
+            assert_eq!(amount, 1);
+            crate::engine::action_handlers::execute_action(
+                Action::MakeCopyInHand { original, amount },
+                &mut draw_state,
+            );
+        }
+        other => panic!("Endless Agony draw hook should make a hand copy, got {other:?}"),
+    }
+    assert_eq!(draw_state.zones.hand.len(), 2);
+    assert_eq!(draw_state.zones.hand[1].id, CardId::EndlessAgony);
+    assert_eq!(draw_state.zones.hand[1].upgrades, 1);
+
+    let mut knife_state = crate::test_support::blank_test_combat();
+    knife_state.zones.limbo = vec![CombatCard::new(CardId::GlassKnife, 967)];
+    crate::engine::action_handlers::execute_action(
+        Action::ModifyCardDamage {
+            card_uuid: 967,
+            amount: -2,
+        },
+        &mut knife_state,
+    );
+    assert_eq!(knife_state.zones.limbo[0].base_damage_override, Some(6));
 }
 
 #[test]
