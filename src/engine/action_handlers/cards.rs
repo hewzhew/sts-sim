@@ -230,6 +230,13 @@ pub fn handle_unload_non_attack(state: &mut CombatState) {
     }
 }
 
+pub fn handle_expertise_draw(target_hand_size: i32, state: &mut CombatState) {
+    let to_draw = target_hand_size - state.zones.hand.len() as i32;
+    if to_draw > 0 {
+        state.queue_action_front(Action::DrawCards(to_draw as u32));
+    }
+}
+
 pub fn handle_put_on_deck(amount: usize, random: bool, state: &mut CombatState) {
     let amount = amount.min(state.zones.hand.len());
     if amount == 0 {

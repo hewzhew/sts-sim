@@ -185,6 +185,10 @@ pub fn resolve_card_play_with_context(
         }
         CardId::DieDieDie => silent::die_die_die::die_die_die_play(_state, _card),
         CardId::Finisher => silent::finisher::finisher_play(_state, _card, t),
+        CardId::Flechettes => silent::flechettes::flechettes_play(_state, _card, t),
+        CardId::HeelHook => silent::heel_hook::heel_hook_play(_state, _card, t),
+        CardId::Expertise => silent::expertise::expertise_play(_state, _card),
+        CardId::Predator => silent::predator::predator_play(_state, _card, t),
         CardId::Adrenaline => silent::adrenaline::adrenaline_play(_state, _card),
         CardId::AfterImage => silent::after_image::after_image_play(_state, _card),
         CardId::Burst => silent::burst::burst_play(_state, _card),

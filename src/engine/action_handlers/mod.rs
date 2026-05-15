@@ -174,6 +174,8 @@ pub fn execute_action(action: Action, state: &mut CombatState) {
         Action::PummelDamage(info) => damage::handle_pummel_damage(info, state),
         Action::BaneDamage(info) => damage::handle_bane_damage(info, state),
         Action::DamagePerAttackPlayed(info) => damage::handle_damage_per_attack_played(info, state),
+        Action::HeelHook(info) => damage::handle_heel_hook(info, state),
+        Action::Flechettes(info) => damage::handle_flechettes(info, state),
         #[rustfmt::skip] Action::MonsterAttack { source, target, base_damage, damage_kind } => damage::handle_monster_attack(source, target, base_damage, damage_kind, state),
         Action::DamageAllEnemies {
             source,
@@ -341,6 +343,9 @@ pub fn execute_action(action: Action, state: &mut CombatState) {
 
         // === Card domain ===
         Action::DrawCards(amount) => cards::handle_draw_cards(amount, state),
+        Action::ExpertiseDraw { target_hand_size } => {
+            cards::handle_expertise_draw(target_hand_size, state)
+        }
         Action::CalculatedGamble { draw_extra } => {
             cards::handle_calculated_gamble(draw_extra, state)
         }

@@ -75,6 +75,7 @@ pub enum PowerId {
     DexterityDown,
     PenNibPower,
     NextTurnBlock,
+    DrawCardNextTurn,
     Energized,
     // Colorless card powers
     MagnetismPower,
@@ -460,6 +461,10 @@ pub fn get_power_definition(id: PowerId) -> PowerDefinition {
             id,
             name: "Next Turn Block",
         },
+        PowerId::DrawCardNextTurn => PowerDefinition {
+            id,
+            name: "Draw Card",
+        },
         PowerId::Energized => PowerDefinition {
             id,
             name: "Energized",
@@ -753,6 +758,13 @@ pub fn resolve_power_on_post_draw(
         PowerId::Brutality => ironclad::brutality::on_post_draw(owner, amount),
         PowerId::DemonForm => ironclad::demon_form::on_post_draw(owner, amount),
         PowerId::NoxiousFumes => silent::noxious_fumes::on_post_draw(_state, owner, amount),
+        PowerId::DrawCardNextTurn => smallvec::smallvec![
+            crate::runtime::action::Action::DrawCards(amount.max(0) as u32),
+            crate::runtime::action::Action::RemovePower {
+                target: owner,
+                power_id: PowerId::DrawCardNextTurn,
+            },
+        ],
         _ => smallvec::smallvec![],
     }
 }

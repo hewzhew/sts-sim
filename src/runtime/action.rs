@@ -111,6 +111,12 @@ pub enum Action {
     /// subtracts the Finisher card itself, and queues that many ordinary
     /// `DamageAction`s to the top.
     DamagePerAttackPlayed(DamageInfo),
+    /// Java `HeelHookAction`: queue damage, and if the target has Weak at
+    /// execution time queue the energy/draw follow-up behind that damage.
+    HeelHook(DamageInfo),
+    /// Java `FlechetteAction`: count Skills in hand at execution time and
+    /// queue one ordinary `DamageAction` per Skill.
+    Flechettes(DamageInfo),
     /// Canonical monster attack action.
     ///
     /// Contract:
@@ -195,6 +201,11 @@ pub enum Action {
     /// Java `GainEnergyIfDiscardAction`: checked at action execution time.
     GainEnergyIfDiscardedThisTurn {
         amount: i32,
+    },
+    /// Java `ExpertiseAction`: draw until the current hand size reaches this
+    /// amount, evaluated when the queued action resolves.
+    ExpertiseDraw {
+        target_hand_size: i32,
     },
     GainMaxHp {
         amount: i32,

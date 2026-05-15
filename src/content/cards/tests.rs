@@ -5766,6 +5766,42 @@ fn silent_direct_attack_batch_matches_java_sources() {
     assert_eq!(finisher.upgrade_damage, 2);
     assert_eq!(java_id(CardId::Finisher), "Finisher");
 
+    let flechettes = get_card_definition(CardId::Flechettes);
+    assert_eq!(flechettes.name, "Flechettes");
+    assert_eq!(flechettes.card_type, CardType::Attack);
+    assert_eq!(flechettes.rarity, CardRarity::Uncommon);
+    assert_eq!(flechettes.cost, 1);
+    assert_eq!(flechettes.base_damage, 4);
+    assert_eq!(flechettes.upgrade_damage, 2);
+    assert_eq!(java_id(CardId::Flechettes), "Flechettes");
+
+    let heel = get_card_definition(CardId::HeelHook);
+    assert_eq!(heel.name, "Heel Hook");
+    assert_eq!(heel.card_type, CardType::Attack);
+    assert_eq!(heel.rarity, CardRarity::Uncommon);
+    assert_eq!(heel.cost, 1);
+    assert_eq!(heel.base_damage, 5);
+    assert_eq!(heel.upgrade_damage, 3);
+    assert_eq!(java_id(CardId::HeelHook), "Heel Hook");
+
+    let expertise = get_card_definition(CardId::Expertise);
+    assert_eq!(expertise.name, "Expertise");
+    assert_eq!(expertise.card_type, CardType::Skill);
+    assert_eq!(expertise.rarity, CardRarity::Uncommon);
+    assert_eq!(expertise.cost, 1);
+    assert_eq!(expertise.base_magic, 6);
+    assert_eq!(expertise.upgrade_magic, 1);
+    assert_eq!(java_id(CardId::Expertise), "Expertise");
+
+    let predator = get_card_definition(CardId::Predator);
+    assert_eq!(predator.name, "Predator");
+    assert_eq!(predator.card_type, CardType::Attack);
+    assert_eq!(predator.rarity, CardRarity::Uncommon);
+    assert_eq!(predator.cost, 2);
+    assert_eq!(predator.base_damage, 15);
+    assert_eq!(predator.upgrade_damage, 5);
+    assert_eq!(java_id(CardId::Predator), "Predator");
+
     assert_eq!(build_java_id_map().get("Backstab"), Some(&CardId::Backstab));
     assert_eq!(
         build_java_id_map().get("Riddle With Holes"),
@@ -5776,6 +5812,19 @@ fn silent_direct_attack_batch_matches_java_sources() {
         Some(&CardId::DieDieDie)
     );
     assert_eq!(build_java_id_map().get("Finisher"), Some(&CardId::Finisher));
+    assert_eq!(
+        build_java_id_map().get("Flechettes"),
+        Some(&CardId::Flechettes)
+    );
+    assert_eq!(
+        build_java_id_map().get("Heel Hook"),
+        Some(&CardId::HeelHook)
+    );
+    assert_eq!(
+        build_java_id_map().get("Expertise"),
+        Some(&CardId::Expertise)
+    );
+    assert_eq!(build_java_id_map().get("Predator"), Some(&CardId::Predator));
 }
 
 #[test]
@@ -5814,9 +5863,13 @@ fn silent_reward_pools_preserve_java_registration_order_for_implemented_cards() 
             CardId::Catalyst,
             CardId::Concentrate,
             CardId::Dash,
+            CardId::Expertise,
             CardId::Finisher,
+            CardId::Flechettes,
             CardId::Footwork,
+            CardId::HeelHook,
             CardId::NoxiousFumes,
+            CardId::Predator,
             CardId::Reflex,
             CardId::RiddleWithHoles,
             CardId::Tactician,
@@ -5950,6 +6003,154 @@ fn finisher_reads_attack_count_when_queued_action_executes() {
         dead_target_state.pop_next_action(),
         None,
         "Java DamagePerAttackPlayedAction does nothing unless target.currentHealth > 0"
+    );
+}
+
+#[test]
+fn silent_execution_time_action_cards_match_java_actions() {
+    let state = crate::test_support::blank_test_combat();
+
+    let heel = resolve_card_play(
+        CardId::HeelHook,
+        &state,
+        &CombatCard::new(CardId::HeelHook, 914),
+        Some(7),
+    );
+    let Action::HeelHook(heel_info) = heel[0].action.clone() else {
+        panic!("Heel Hook should emit Java HeelHookAction");
+    };
+    assert_eq!(heel_info.target, 7);
+    assert_eq!(heel_info.output, 5);
+
+    let mut weak_state = crate::test_support::blank_test_combat();
+    let mut weak_monster = crate::test_support::test_monster(EnemyId::JawWorm);
+    weak_monster.id = 7;
+    weak_state.entities.monsters = vec![weak_monster];
+    weak_state.entities.power_db.insert(
+        7,
+        vec![Power {
+            power_type: PowerId::Weak,
+            instance_id: None,
+            amount: 1,
+            extra_data: 0,
+            just_applied: false,
+        }],
+    );
+    crate::engine::action_handlers::execute_action(
+        Action::HeelHook(heel_info.clone()),
+        &mut weak_state,
+    );
+    assert!(matches!(
+        weak_state.pop_next_action(),
+        Some(Action::Damage(_))
+    ));
+    assert_eq!(
+        weak_state.pop_next_action(),
+        Some(Action::GainEnergy { amount: 1 }),
+        "Java HeelHookAction addToTop order makes damage execute before the energy follow-up"
+    );
+    assert_eq!(weak_state.pop_next_action(), Some(Action::DrawCards(1)));
+
+    let mut no_weak_state = crate::test_support::blank_test_combat();
+    no_weak_state.entities.monsters = weak_state.entities.monsters.clone();
+    crate::engine::action_handlers::execute_action(Action::HeelHook(heel_info), &mut no_weak_state);
+    assert!(matches!(
+        no_weak_state.pop_next_action(),
+        Some(Action::Damage(_))
+    ));
+    assert_eq!(no_weak_state.pop_next_action(), None);
+
+    let flechettes = resolve_card_play(
+        CardId::Flechettes,
+        &state,
+        &CombatCard::new(CardId::Flechettes, 915),
+        Some(7),
+    );
+    let Action::Flechettes(flechettes_info) = flechettes[0].action.clone() else {
+        panic!("Flechettes should emit Java FlechetteAction");
+    };
+    let mut flechettes_state = crate::test_support::blank_test_combat();
+    flechettes_state.zones.hand = vec![
+        CombatCard::new(CardId::DefendG, 916),
+        CombatCard::new(CardId::Prepared, 917),
+        CombatCard::new(CardId::StrikeG, 918),
+    ];
+    crate::engine::action_handlers::execute_action(
+        Action::Flechettes(flechettes_info),
+        &mut flechettes_state,
+    );
+    assert!(matches!(
+        flechettes_state.pop_next_action(),
+        Some(Action::Damage(_))
+    ));
+    assert!(matches!(
+        flechettes_state.pop_next_action(),
+        Some(Action::Damage(_))
+    ));
+    assert_eq!(flechettes_state.pop_next_action(), None);
+
+    let expertise = resolve_card_play(
+        CardId::Expertise,
+        &state,
+        &CombatCard::new(CardId::Expertise, 919),
+        None,
+    );
+    assert_eq!(
+        expertise[0].action,
+        Action::ExpertiseDraw {
+            target_hand_size: 6,
+        }
+    );
+    let mut expertise_state = crate::test_support::blank_test_combat();
+    expertise_state.zones.hand = vec![
+        CombatCard::new(CardId::StrikeG, 920),
+        CombatCard::new(CardId::DefendG, 921),
+    ];
+    crate::engine::action_handlers::execute_action(
+        Action::ExpertiseDraw {
+            target_hand_size: 6,
+        },
+        &mut expertise_state,
+    );
+    assert_eq!(
+        expertise_state.pop_next_action(),
+        Some(Action::DrawCards(4))
+    );
+
+    let predator = resolve_card_play(
+        CardId::Predator,
+        &state,
+        &CombatCard::new(CardId::Predator, 922),
+        Some(7),
+    );
+    match &predator[0].action {
+        Action::Damage(info) => {
+            assert_eq!(info.target, 7);
+            assert_eq!(info.output, 15);
+        }
+        other => panic!("Predator first action should damage, got {other:?}"),
+    }
+    assert_eq!(
+        predator[1].action,
+        Action::ApplyPower {
+            source: 0,
+            target: 0,
+            power_id: PowerId::DrawCardNextTurn,
+            amount: 2,
+        }
+    );
+
+    let post_draw_actions =
+        crate::content::powers::resolve_power_on_post_draw(PowerId::DrawCardNextTurn, &state, 0, 2);
+    assert_eq!(
+        post_draw_actions.as_slice(),
+        &[
+            Action::DrawCards(2),
+            Action::RemovePower {
+                target: 0,
+                power_id: PowerId::DrawCardNextTurn,
+            },
+        ]
     );
 }
 

@@ -567,6 +567,29 @@ pub fn handle_damage_per_attack_played(
     }
 }
 
+pub fn handle_heel_hook(info: crate::runtime::action::DamageInfo, state: &mut CombatState) {
+    if store::has_power(state, info.target, PowerId::Weak) {
+        state.queue_action_front(Action::DrawCards(1));
+        state.queue_action_front(Action::GainEnergy { amount: 1 });
+    }
+    state.queue_action_front(Action::Damage(info));
+}
+
+pub fn handle_flechettes(info: crate::runtime::action::DamageInfo, state: &mut CombatState) {
+    let skill_count = state
+        .zones
+        .hand
+        .iter()
+        .filter(|card| {
+            crate::content::cards::get_card_definition(card.id).card_type
+                == crate::content::cards::CardType::Skill
+        })
+        .count();
+    for _ in 0..skill_count {
+        state.queue_action_front(Action::Damage(info.clone()));
+    }
+}
+
 fn damage_type(kind: crate::semantics::combat::DamageKind) -> crate::runtime::action::DamageType {
     match kind {
         crate::semantics::combat::DamageKind::Normal => crate::runtime::action::DamageType::Normal,
