@@ -5958,6 +5958,7 @@ fn silent_reward_pools_preserve_java_registration_order_for_implemented_cards() 
             CardId::Predator,
             CardId::Reflex,
             CardId::RiddleWithHoles,
+            CardId::Setup,
             CardId::Skewer,
             CardId::Tactician,
             CardId::Terror,
@@ -7772,6 +7773,77 @@ fn corpse_explosion_power_on_death_matches_java_max_hp_thorns_blast() {
         last_monster_state.pop_next_action(),
         None,
         "Java CorpseExplosionPower skips the blast once all monsters are basically dead"
+    );
+}
+
+#[test]
+fn setup_matches_java_hand_select_to_draw_top_with_free_once() {
+    let setup = get_card_definition(CardId::Setup);
+    assert_eq!(setup.name, "Setup");
+    assert_eq!(setup.card_type, CardType::Skill);
+    assert_eq!(setup.rarity, CardRarity::Uncommon);
+    assert_eq!(setup.cost, 1);
+    assert_eq!(setup.target, CardTarget::None);
+    assert_eq!(java_id(CardId::Setup), "Setup");
+    assert_eq!(build_java_id_map().get("Setup"), Some(&CardId::Setup));
+
+    let mut setup_plus = CombatCard::new(CardId::Setup, 1010);
+    setup_plus.upgrades = 1;
+    assert_eq!(upgraded_base_cost_override(&setup_plus), Some(0));
+
+    let actions = resolve_card_play(
+        CardId::Setup,
+        &crate::test_support::blank_test_combat(),
+        &setup_plus,
+        None,
+    );
+    assert_eq!(actions.len(), 1);
+    assert_eq!(
+        actions[0].action,
+        Action::SuspendForHandSelect {
+            min: 1,
+            max: 1,
+            can_cancel: false,
+            filter: crate::state::HandSelectFilter::Any,
+            reason: crate::state::HandSelectReason::Setup,
+        }
+    );
+
+    let mut choice_state = crate::state::core::EngineState::PendingChoice(
+        crate::state::core::PendingChoice::HandSelect {
+            candidate_uuids: vec![21],
+            min_cards: 1,
+            max_cards: 1,
+            can_cancel: false,
+            reason: crate::state::HandSelectReason::Setup,
+        },
+    );
+    let mut combat_state = crate::test_support::blank_test_combat();
+    let mut chosen = CombatCard::new(CardId::DefendG, 21);
+    chosen.cost_for_turn = Some(0);
+    combat_state.zones.hand = vec![chosen, CombatCard::new(CardId::Slice, 22)];
+
+    crate::engine::pending_choices::handle_hand_select(
+        &mut choice_state,
+        &mut combat_state,
+        &[21, 22],
+        1,
+        true,
+        false,
+        crate::state::HandSelectReason::Setup,
+        crate::state::core::ClientInput::SubmitHandSelect(vec![21]),
+    )
+    .expect("Setup selection should resolve");
+
+    assert_eq!(
+        choice_state,
+        crate::state::core::EngineState::CombatProcessing
+    );
+    assert_eq!(combat_state.zones.hand.len(), 1);
+    assert_eq!(combat_state.zones.draw_pile[0].uuid, 21);
+    assert!(
+        combat_state.zones.draw_pile[0].free_to_play_once,
+        "Java SetupAction checks AbstractCard.cost, so a temporary zero-cost turn override still becomes free once"
     );
 }
 

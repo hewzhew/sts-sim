@@ -56,6 +56,7 @@ pub mod predator;
 pub mod prepared;
 pub mod quick_slash;
 pub mod riddle_with_holes;
+pub mod setup;
 pub mod skewer;
 pub mod slice;
 pub mod sneaky_strike;

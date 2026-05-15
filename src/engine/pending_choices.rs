@@ -206,6 +206,22 @@ pub fn handle_hand_select(
                         }
                     }
                 }
+                HandSelectReason::Setup => {
+                    // Java SetupAction checks AbstractCard.cost, not costForTurn.
+                    // Temporary turn-cost reductions do not stop the selected
+                    // card from becoming free next time it is played.
+                    for uuid in &uuids {
+                        if let Some(pos) =
+                            combat_state.zones.hand.iter().position(|c| c.uuid == *uuid)
+                        {
+                            let mut card = combat_state.zones.hand.remove(pos);
+                            if card.combat_cost_without_turn_override_java() > 0 {
+                                card.free_to_play_once = true;
+                            }
+                            combat_state.add_card_to_draw_pile_top(card);
+                        }
+                    }
+                }
                 HandSelectReason::PutToBottomOfDraw => {
                     // Java ForethoughtAction checks AbstractCard.cost, not
                     // costForTurn. Temporary turn-cost reductions do not stop

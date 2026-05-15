@@ -25,6 +25,7 @@ pub enum SelectionReason {
     Retain,
     PutOnDrawPile,
     PutToBottomOfDraw,
+    Setup,
     Copy,
     GamblingChip,
     MoveToDrawPile,

@@ -125,6 +125,7 @@ pub enum HandSelectReason {
     Retain,
     PutOnDrawPile,
     PutToBottomOfDraw, // Forethought: moved cards become free_to_play_once
+    Setup,             // Setup: selected card moves to draw-pile top and may become free
     Copy { amount: u8 },
     Upgrade,
     GamblingChip,
@@ -237,6 +238,7 @@ impl From<HandSelectReason> for SelectionReason {
             HandSelectReason::Retain => SelectionReason::Retain,
             HandSelectReason::PutOnDrawPile => SelectionReason::PutOnDrawPile,
             HandSelectReason::PutToBottomOfDraw => SelectionReason::PutToBottomOfDraw,
+            HandSelectReason::Setup => SelectionReason::Setup,
             HandSelectReason::Copy { .. } => SelectionReason::Copy,
             HandSelectReason::Upgrade => SelectionReason::Upgrade,
             HandSelectReason::GamblingChip => SelectionReason::GamblingChip,

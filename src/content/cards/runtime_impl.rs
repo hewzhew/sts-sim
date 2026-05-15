@@ -211,6 +211,7 @@ pub fn resolve_card_play_with_context(
         CardId::EndlessAgony => silent::endless_agony::endless_agony_play(_state, _card, t),
         CardId::GlassKnife => silent::glass_knife::glass_knife_play(_state, _card, t),
         CardId::GrandFinale => silent::grand_finale::grand_finale_play(_state, _card),
+        CardId::Setup => silent::setup::setup_play(_state, _card),
         CardId::WraithForm => silent::wraith_form::wraith_form_play(_state, _card),
         CardId::PhantasmalKiller => {
             silent::phantasmal_killer::phantasmal_killer_play(_state, _card)
@@ -557,6 +558,7 @@ pub fn upgraded_base_cost_override(card: &CombatCard) -> Option<i8> {
         CardId::Madness if card.upgrades > 0 => Some(0),
         CardId::PhantasmalKiller if card.upgrades > 0 => Some(0),
         CardId::SeeingRed if card.upgrades > 0 => Some(0),
+        CardId::Setup if card.upgrades > 0 => Some(0),
         CardId::Terror if card.upgrades > 0 => Some(0),
         CardId::ToolsOfTheTrade if card.upgrades > 0 => Some(0),
         _ => None,
