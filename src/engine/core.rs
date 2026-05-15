@@ -480,7 +480,13 @@ pub fn tick_engine(
                     pool,
                     destination,
                     can_skip,
+                    skip_if_monsters_basically_dead,
                 } => {
+                    if skip_if_monsters_basically_dead
+                        && combat_state.are_monsters_basically_dead_java()
+                    {
+                        return true;
+                    }
                     // Generate 3 unique random cards from pool
                     use crate::runtime::action::CardRewardPool;
                     let mut card_pool: Vec<crate::content::cards::CardId> = Vec::new();

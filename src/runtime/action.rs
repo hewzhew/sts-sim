@@ -673,6 +673,7 @@ pub enum Action {
         pool: CardRewardPool,
         destination: CardDestination,
         can_skip: bool,
+        skip_if_monsters_basically_dead: bool,
     },
 }
 

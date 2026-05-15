@@ -2208,7 +2208,7 @@ fn dead_branch_skips_when_monsters_are_basically_dead() {
 }
 
 #[test]
-fn nilrys_codex_uses_java_basically_dead_guard() {
+fn nilrys_codex_queues_action_and_action_uses_java_basically_dead_guard() {
     let mut state = crate::test_support::blank_test_combat();
     let mut zero_hp_not_dying = crate::test_support::test_monster(EnemyId::JawWorm);
     zero_hp_not_dying.current_hp = 0;
@@ -2225,11 +2225,32 @@ fn nilrys_codex_uses_java_basically_dead_guard() {
     assert_eq!(actions[0].insertion_mode, AddTo::Bottom);
     assert!(matches!(
         actions[0].action,
-        Action::SuspendForCardReward { .. }
+        Action::SuspendForCardReward {
+            skip_if_monsters_basically_dead: true,
+            ..
+        }
     ));
 
-    state.entities.monsters[0].is_dying = true;
-    assert!(nilrys_codex::at_end_of_turn(&state).is_empty());
+    let mut dying_monster = crate::test_support::test_monster(EnemyId::JawWorm);
+    dying_monster.is_dying = true;
+    let mut dying_state = crate::test_support::combat_with_monsters(vec![dying_monster]);
+    dying_state.queue_action_back(actions[0].action.clone());
+    let mut engine_state = crate::state::core::EngineState::CombatProcessing;
+
+    assert!(crate::engine::core::tick_engine(
+        &mut engine_state,
+        &mut dying_state,
+        None,
+    ));
+    assert_eq!(
+        engine_state,
+        crate::state::core::EngineState::CombatProcessing,
+        "Java CodexAction skips at action execution when MonsterGroup.areMonstersBasicallyDead is true"
+    );
+    assert_eq!(
+        dying_state.rng.card_random_rng.counter, 0,
+        "CodexAction's execution-time basically-dead guard runs before generating card choices"
+    );
 }
 
 #[test]
