@@ -215,6 +215,7 @@ pub enum CardId {
     AThousandCuts,
     BulletTime,
     ToolsOfTheTrade,
+    Alchemize,
     // Add more as we expand
 }
 
@@ -3934,6 +3935,25 @@ pub fn get_card_definition(id: CardId) -> CardDefinition {
             upgrade_block: 0,
             upgrade_magic: 0,
         },
+        CardId::Alchemize => CardDefinition {
+            id: CardId::Alchemize,
+            name: "Alchemize",
+            card_type: CardType::Skill,
+            rarity: CardRarity::Rare,
+            cost: 1,
+            base_damage: 0,
+            base_block: 0,
+            base_magic: 0,
+            target: CardTarget::SelfTarget,
+            is_multi_damage: false,
+            exhaust: true,
+            ethereal: false,
+            innate: false,
+            tags: &[CardTag::Healing],
+            upgrade_damage: 0,
+            upgrade_block: 0,
+            upgrade_magic: 0,
+        },
         CardId::Adrenaline => CardDefinition {
             id: CardId::Adrenaline,
             name: "Adrenaline",
@@ -4221,6 +4241,7 @@ pub const SILENT_UNCOMMON_POOL: &[CardId] = &[
 pub const SILENT_RARE_POOL: &[CardId] = &[
     CardId::Adrenaline,
     CardId::AfterImage,
+    CardId::Alchemize,
     CardId::AThousandCuts,
     CardId::BulletTime,
     CardId::Burst,
@@ -4601,6 +4622,7 @@ pub fn java_id(id: CardId) -> &'static str {
         CardId::AThousandCuts => "A Thousand Cuts",
         CardId::BulletTime => "Bullet Time",
         CardId::ToolsOfTheTrade => "Tools of the Trade",
+        CardId::Alchemize => "Venomology",
         CardId::Adrenaline => "Adrenaline",
         CardId::AfterImage => "After Image",
         CardId::Burst => "Burst",
@@ -4813,6 +4835,7 @@ pub fn build_java_id_map() -> std::collections::HashMap<&'static str, CardId> {
         AThousandCuts,
         BulletTime,
         ToolsOfTheTrade,
+        Alchemize,
         Adrenaline,
         AfterImage,
         Burst,

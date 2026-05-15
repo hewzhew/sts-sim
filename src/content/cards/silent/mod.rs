@@ -3,6 +3,7 @@ pub mod accuracy;
 pub mod acrobatics;
 pub mod adrenaline;
 pub mod after_image;
+pub mod alchemize;
 pub mod all_out_attack;
 pub mod backflip;
 pub mod backstab;

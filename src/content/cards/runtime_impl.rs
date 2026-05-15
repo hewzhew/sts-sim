@@ -216,6 +216,7 @@ pub fn resolve_card_play_with_context(
         }
         CardId::Adrenaline => silent::adrenaline::adrenaline_play(_state, _card),
         CardId::AfterImage => silent::after_image::after_image_play(_state, _card),
+        CardId::Alchemize => silent::alchemize::alchemize_play(_state, _card),
         CardId::AThousandCuts => silent::a_thousand_cuts::a_thousand_cuts_play(_state, _card),
         CardId::BulletTime => silent::bullet_time::bullet_time_play(_state, _card),
         CardId::Burst => silent::burst::burst_play(_state, _card),
@@ -536,6 +537,7 @@ pub fn is_ethereal(card: &CombatCard) -> bool {
 
 pub fn upgraded_base_cost_override(card: &CombatCard) -> Option<i8> {
     match card.id {
+        CardId::Alchemize if card.upgrades > 0 => Some(0),
         CardId::Barricade if card.upgrades > 0 => Some(2),
         CardId::BloodForBlood if card.upgrades > 0 => Some(3),
         CardId::BodySlam if card.upgrades > 0 => Some(0),

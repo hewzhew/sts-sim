@@ -5967,6 +5967,7 @@ fn silent_reward_pools_preserve_java_registration_order_for_implemented_cards() 
         &[
             CardId::Adrenaline,
             CardId::AfterImage,
+            CardId::Alchemize,
             CardId::AThousandCuts,
             CardId::BulletTime,
             CardId::Burst,
@@ -7584,6 +7585,39 @@ fn tools_of_the_trade_matches_java_post_draw_cycle() {
             end_turn: false,
         }
     );
+}
+
+#[test]
+fn alchemize_matches_java_random_potion_action() {
+    let alchemize = get_card_definition(CardId::Alchemize);
+    assert_eq!(alchemize.name, "Alchemize");
+    assert_eq!(alchemize.card_type, CardType::Skill);
+    assert_eq!(alchemize.rarity, CardRarity::Rare);
+    assert_eq!(alchemize.cost, 1);
+    assert_eq!(alchemize.target, CardTarget::SelfTarget);
+    assert!(alchemize.exhaust);
+    assert!(alchemize.tags.contains(&CardTag::Healing));
+    assert!(exhausts_when_played(&CombatCard::new(
+        CardId::Alchemize,
+        1005
+    )));
+    assert_eq!(java_id(CardId::Alchemize), "Venomology");
+    assert_eq!(
+        build_java_id_map().get("Venomology"),
+        Some(&CardId::Alchemize)
+    );
+    let mut alchemize_plus = CombatCard::new(CardId::Alchemize, 1006);
+    alchemize_plus.upgrades = 1;
+    assert_eq!(upgraded_base_cost_override(&alchemize_plus), Some(0));
+
+    let actions = resolve_card_play(
+        CardId::Alchemize,
+        &crate::test_support::blank_test_combat(),
+        &alchemize_plus,
+        None,
+    );
+    assert_eq!(actions.len(), 1);
+    assert_eq!(actions[0].action, Action::ObtainPotion);
 }
 
 #[test]
