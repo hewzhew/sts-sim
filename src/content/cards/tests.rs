@@ -5482,6 +5482,148 @@ fn bane_uses_java_delayed_poison_check_for_second_hit() {
 }
 
 #[test]
+fn silent_discard_action_cards_match_java_sources() {
+    let all_out = get_card_definition(CardId::AllOutAttack);
+    assert_eq!(all_out.name, "All-Out Attack");
+    assert_eq!(all_out.card_type, CardType::Attack);
+    assert_eq!(all_out.rarity, CardRarity::Uncommon);
+    assert_eq!(all_out.cost, 1);
+    assert_eq!(all_out.base_damage, 10);
+    assert!(all_out.is_multi_damage);
+    assert_eq!(all_out.upgrade_damage, 4);
+    assert_eq!(java_id(CardId::AllOutAttack), "All Out Attack");
+
+    let concentrate = get_card_definition(CardId::Concentrate);
+    assert_eq!(concentrate.name, "Concentrate");
+    assert_eq!(concentrate.card_type, CardType::Skill);
+    assert_eq!(concentrate.rarity, CardRarity::Uncommon);
+    assert_eq!(concentrate.cost, 0);
+    assert_eq!(concentrate.base_magic, 3);
+    assert_eq!(concentrate.upgrade_magic, -1);
+
+    let gamble = get_card_definition(CardId::CalculatedGamble);
+    assert_eq!(gamble.name, "Calculated Gamble");
+    assert_eq!(gamble.card_type, CardType::Skill);
+    assert_eq!(gamble.rarity, CardRarity::Uncommon);
+    assert_eq!(gamble.cost, 0);
+    assert!(gamble.exhaust);
+    assert!(exhausts_when_played(&CombatCard::new(
+        CardId::CalculatedGamble,
+        891
+    )));
+    let mut gamble_plus = CombatCard::new(CardId::CalculatedGamble, 892);
+    gamble_plus.upgrades = 1;
+    assert!(
+        !exhausts_when_played(&gamble_plus),
+        "Calculated Gamble+ changes exhaust only"
+    );
+}
+
+#[test]
+fn silent_discard_action_cards_runtime_actions_match_java_use_methods() {
+    let mut state = crate::test_support::blank_test_combat();
+    let mut first = crate::test_support::test_monster(EnemyId::JawWorm);
+    first.id = 7;
+    let mut second = crate::test_support::test_monster(EnemyId::JawWorm);
+    second.id = 8;
+    state.entities.monsters = vec![first, second];
+
+    let all_out = resolve_card_play(
+        CardId::AllOutAttack,
+        &state,
+        &CombatCard::new(CardId::AllOutAttack, 893),
+        None,
+    );
+    assert_eq!(all_out.len(), 2);
+    assert_eq!(
+        all_out[0].action,
+        Action::DamageAllEnemies {
+            source: 0,
+            damages: smallvec::smallvec![10, 10],
+            damage_type: DamageType::Normal,
+            is_modified: true,
+        }
+    );
+    assert_eq!(
+        all_out[1].action,
+        Action::DiscardFromHand {
+            amount: 1,
+            random: true,
+            end_turn: false,
+        }
+    );
+
+    let concentrate = resolve_card_play(
+        CardId::Concentrate,
+        &state,
+        &CombatCard::new(CardId::Concentrate, 894),
+        None,
+    );
+    assert_eq!(
+        concentrate[0].action,
+        Action::DiscardFromHand {
+            amount: 3,
+            random: false,
+            end_turn: false,
+        }
+    );
+    assert_eq!(concentrate[1].action, Action::GainEnergy { amount: 2 });
+
+    let mut concentrate_plus = CombatCard::new(CardId::Concentrate, 895);
+    concentrate_plus.upgrades = 1;
+    let concentrate_plus_actions =
+        resolve_card_play(CardId::Concentrate, &state, &concentrate_plus, None);
+    assert_eq!(
+        concentrate_plus_actions[0].action,
+        Action::DiscardFromHand {
+            amount: 2,
+            random: false,
+            end_turn: false,
+        }
+    );
+
+    let gamble = resolve_card_play(
+        CardId::CalculatedGamble,
+        &state,
+        &CombatCard::new(CardId::CalculatedGamble, 896),
+        None,
+    );
+    assert_eq!(
+        gamble[0].action,
+        Action::CalculatedGamble { draw_extra: false }
+    );
+
+    let mut gamble_plus = CombatCard::new(CardId::CalculatedGamble, 897);
+    gamble_plus.upgrades = 1;
+    let gamble_plus_actions =
+        resolve_card_play(CardId::CalculatedGamble, &state, &gamble_plus, None);
+    assert_eq!(
+        gamble_plus_actions[0].action,
+        Action::CalculatedGamble { draw_extra: false },
+        "Java CalculatedGamble.use passes false even when upgraded"
+    );
+
+    let mut runtime_state = crate::test_support::blank_test_combat();
+    runtime_state.zones.hand = vec![
+        CombatCard::new(CardId::Strike, 898),
+        CombatCard::new(CardId::Defend, 899),
+    ];
+    crate::engine::action_handlers::execute_action(
+        Action::CalculatedGamble { draw_extra: false },
+        &mut runtime_state,
+    );
+    assert_eq!(
+        runtime_state.pop_next_action(),
+        Some(Action::DiscardFromHand {
+            amount: 2,
+            random: true,
+            end_turn: false,
+        })
+    );
+    assert_eq!(runtime_state.pop_next_action(), Some(Action::DrawCards(2)));
+}
+
+#[test]
 fn reflex_and_tactician_manual_discard_hooks_match_java_order() {
     let reflex = get_card_definition(CardId::Reflex);
     assert_eq!(reflex.cost, -2);

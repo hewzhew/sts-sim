@@ -184,6 +184,21 @@ pub fn handle_draw_cards(amount: u32, state: &mut CombatState) {
     }
 }
 
+pub fn handle_calculated_gamble(draw_extra: bool, state: &mut CombatState) {
+    let count = state.zones.hand.len() as u32;
+    if count == 0 && !draw_extra {
+        return;
+    }
+
+    let draw_count = count + u32::from(draw_extra);
+    state.queue_action_front(Action::DrawCards(draw_count));
+    state.queue_action_front(Action::DiscardFromHand {
+        amount: count as i32,
+        random: true,
+        end_turn: false,
+    });
+}
+
 pub fn handle_put_on_deck(amount: usize, random: bool, state: &mut CombatState) {
     let amount = amount.min(state.zones.hand.len());
     if amount == 0 {

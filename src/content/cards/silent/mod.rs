@@ -1,13 +1,16 @@
 pub mod acrobatics;
 pub mod adrenaline;
 pub mod after_image;
+pub mod all_out_attack;
 pub mod backflip;
 pub mod bane;
 pub mod blade_dance;
 pub mod bouncing_flask;
 pub mod burst;
+pub mod calculated_gamble;
 pub mod catalyst;
 pub mod cloak_and_dagger;
+pub mod concentrate;
 pub mod dagger_spray;
 pub mod dagger_throw;
 pub mod dash;

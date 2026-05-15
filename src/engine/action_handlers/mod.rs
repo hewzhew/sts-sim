@@ -340,6 +340,9 @@ pub fn execute_action(action: Action, state: &mut CombatState) {
 
         // === Card domain ===
         Action::DrawCards(amount) => cards::handle_draw_cards(amount, state),
+        Action::CalculatedGamble { draw_extra } => {
+            cards::handle_calculated_gamble(draw_extra, state)
+        }
         Action::EmptyDeckShuffle => cards::handle_empty_deck_shuffle(state),
         Action::ShuffleDiscardIntoDraw => cards::handle_shuffle_discard_into_draw(state),
         Action::DiscardCard { card_uuid } => cards::handle_discard_card(card_uuid, state),

@@ -171,6 +171,11 @@ pub fn resolve_card_play_with_context(
         CardId::SneakyStrike => silent::sneaky_strike::sneaky_strike_play(_state, _card, t),
         CardId::Dash => silent::dash::dash_play(_state, _card, t),
         CardId::Bane => silent::bane::bane_play(_state, _card, t),
+        CardId::AllOutAttack => silent::all_out_attack::all_out_attack_play(_state, _card),
+        CardId::Concentrate => silent::concentrate::concentrate_play(_state, _card),
+        CardId::CalculatedGamble => {
+            silent::calculated_gamble::calculated_gamble_play(_state, _card)
+        }
         CardId::Adrenaline => silent::adrenaline::adrenaline_play(_state, _card),
         CardId::AfterImage => silent::after_image::after_image_play(_state, _card),
         CardId::Burst => silent::burst::burst_play(_state, _card),
@@ -471,6 +476,7 @@ pub fn apply_master_reality_to_generated_card(
 /// upgrade-sensitive card rules.
 pub fn exhausts_when_played(card: &CombatCard) -> bool {
     match card.id {
+        CardId::CalculatedGamble => card.upgrades == 0,
         CardId::LimitBreak => card.upgrades == 0,
         CardId::Discovery => card.upgrades == 0,
         CardId::SecretTechnique => card.upgrades == 0,

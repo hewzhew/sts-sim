@@ -261,6 +261,11 @@ pub enum Action {
     },
     LimitBreak,
     DrawCards(u32),
+    /// Java `CalculatedGambleAction`: at execution time, discard the current
+    /// hand, then draw the same count, optionally plus one.
+    CalculatedGamble {
+        draw_extra: bool,
+    },
     EmptyDeckShuffle,
     ShuffleDiscardIntoDraw,
     PlayCard {
